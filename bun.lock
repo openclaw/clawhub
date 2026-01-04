@@ -6,7 +6,6 @@
       "name": "clawdhub",
       "dependencies": {
         "@auth/core": "^0.41.1",
-        "@clawdhub/schema": "^0.1.0",
         "@convex-dev/auth": "^0.0.90",
         "@fontsource/bricolage-grotesque": "^5.2.10",
         "@fontsource/ibm-plex-mono": "^5.2.7",
@@ -19,6 +18,7 @@
         "@tanstack/react-router-devtools": "^1.144.0",
         "@tanstack/react-start": "^1.145.3",
         "@tanstack/router-plugin": "^1.145.2",
+        "clawdhub-schema": "^0.0.1",
         "clsx": "^2.1.1",
         "convex": "^1.31.2",
         "fflate": "^0.8.2",
@@ -54,13 +54,13 @@
     },
     "packages/clawdhub": {
       "name": "clawdhub",
-      "version": "0.1.0",
+      "version": "0.0.1",
       "bin": {
         "clawdhub": "./bin/clawdhub.js",
       },
       "dependencies": {
         "@clack/prompts": "^0.11.0",
-        "@clawdhub/schema": "^0.1.0",
+        "clawdhub-schema": "^0.0.1",
         "commander": "^14.0.2",
         "fflate": "^0.8.2",
         "ignore": "^7.0.5",
@@ -75,8 +75,8 @@
       },
     },
     "packages/schema": {
-      "name": "@clawdhub/schema",
-      "version": "0.1.0",
+      "name": "clawdhub-schema",
+      "version": "0.0.1",
       "dependencies": {
         "arktype": "^2.1.29",
       },
@@ -167,8 +167,6 @@
     "@clack/core": ["@clack/core@0.5.0", "", { "dependencies": { "picocolors": "^1.0.0", "sisteransi": "^1.0.5" } }, "sha512-p3y0FIOwaYRUPRcMO7+dlmLh8PSRcrjuTndsiA0WAFbWES0mLZlrjVoBRZ9DzkPFJZG6KGkJmoEAY0ZcVWTkow=="],
 
     "@clack/prompts": ["@clack/prompts@0.11.0", "", { "dependencies": { "@clack/core": "0.5.0", "picocolors": "^1.0.0", "sisteransi": "^1.0.5" } }, "sha512-pMN5FcrEw9hUkZA4f+zLlzivQSeQf5dRGJjSUbvVYDLvpKCdQx5OaknvKzgbtXOizhP+SJJJjqEbOe55uKKfAw=="],
-
-    "@clawdhub/schema": ["@clawdhub/schema@workspace:packages/schema"],
 
     "@convex-dev/auth": ["@convex-dev/auth@0.0.90", "", { "dependencies": { "@oslojs/crypto": "^1.0.1", "@oslojs/encoding": "^1.1.0", "cookie": "^1.0.1", "is-network-error": "^1.1.0", "jose": "^5.2.2", "jwt-decode": "^4.0.0", "lucia": "^3.2.0", "oauth4webapi": "^3.1.2", "path-to-regexp": "^6.3.0", "server-only": "^0.0.1" }, "peerDependencies": { "@auth/core": "^0.37.0", "convex": "^1.17.0", "react": "^18.2.0 || ^19.0.0-0" }, "optionalPeers": ["react"], "bin": { "auth": "dist/bin.cjs" } }, "sha512-aqw88EB042HvnaF4wcf/f/wTocmT2Bus2VDQRuV79cM0+8kORM0ICK/ByZ6XsHgQ9qr6TmidNbXm6QAgndrdpQ=="],
 
@@ -703,6 +701,8 @@
     "chokidar": ["chokidar@3.6.0", "", { "dependencies": { "anymatch": "~3.1.2", "braces": "~3.0.2", "glob-parent": "~5.1.2", "is-binary-path": "~2.1.0", "is-glob": "~4.0.1", "normalize-path": "~3.0.0", "readdirp": "~3.6.0" }, "optionalDependencies": { "fsevents": "~2.3.2" } }, "sha512-7VT13fmjotKpGipCW9JEQAusEPE+Ei8nl6/g4FBAmIm0GOOLMua9NDDo/DWp0ZAxCr3cPq5ZpBqmPAQgDda2Pw=="],
 
     "clawdhub": ["clawdhub@workspace:packages/clawdhub"],
+
+    "clawdhub-schema": ["clawdhub-schema@workspace:packages/schema"],
 
     "cli-cursor": ["cli-cursor@5.0.0", "", { "dependencies": { "restore-cursor": "^5.0.0" } }, "sha512-aCj4O5wKyszjMmDT4tZj93kxyydN/K5zPWSCe6/0AV/AA1pqe5ZBIw0a2ZfPQV7lL5/yb5HsUreJ6UFAF1tEQw=="],
 

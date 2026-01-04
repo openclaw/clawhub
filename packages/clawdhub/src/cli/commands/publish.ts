@@ -8,7 +8,7 @@ import {
   ApiUploadFileResponseSchema,
   CliPublishRequestSchema,
   parseArk,
-} from '@clawdhub/schema'
+} from 'clawdhub-schema'
 import semver from 'semver'
 import { readGlobalConfig } from '../../config.js'
 import { apiRequest } from '../../http.js'

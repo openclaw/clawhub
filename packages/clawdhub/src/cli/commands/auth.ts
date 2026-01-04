@@ -1,4 +1,4 @@
-import { ApiCliWhoamiResponseSchema, ApiRoutes } from '@clawdhub/schema'
+import { ApiCliWhoamiResponseSchema, ApiRoutes } from 'clawdhub-schema'
 import { buildCliAuthUrl, startLoopbackAuthServer } from '../../browserAuth.js'
 import { readGlobalConfig, writeGlobalConfig } from '../../config.js'
 import { discoverRegistryFromSite } from '../../discovery.js'

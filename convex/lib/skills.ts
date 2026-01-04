@@ -5,7 +5,7 @@ import {
   parseArk,
   type SkillInstallSpec,
   TEXT_FILE_EXTENSION_SET,
-} from '@clawdhub/schema'
+} from 'clawdhub-schema'
 
 export type ParsedSkillFrontmatter = Record<string, string>
 export type { ClawdisSkillMetadata, SkillInstallSpec }

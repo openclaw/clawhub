@@ -6,7 +6,7 @@ import {
   ApiRoutes,
   ApiSkillMetaResponseSchema,
   ApiSkillResolveResponseSchema,
-} from '@clawdhub/schema'
+} from 'clawdhub-schema'
 import semver from 'semver'
 import { readGlobalConfig } from '../../config.js'
 import { apiRequest, downloadZip } from '../../http.js'

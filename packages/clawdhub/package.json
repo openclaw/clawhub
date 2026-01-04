@@ -1,6 +1,6 @@
 {
   "name": "clawdhub",
-  "version": "0.1.0",
+  "version": "0.0.1",
   "description": "ClawdHub CLI — install, update, search, and publish agent skills.",
   "license": "MIT",
   "type": "module",
@@ -20,7 +20,7 @@
   },
   "dependencies": {
     "@clack/prompts": "^0.11.0",
-    "@clawdhub/schema": "^0.1.0",
+    "clawdhub-schema": "^0.0.1",
     "commander": "^14.0.2",
     "fflate": "^0.8.2",
     "ignore": "^7.0.5",

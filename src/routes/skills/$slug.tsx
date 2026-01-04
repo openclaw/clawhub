@@ -1,5 +1,5 @@
-import type { ClawdisSkillMetadata, SkillInstallSpec } from '@clawdhub/schema'
 import { createFileRoute } from '@tanstack/react-router'
+import type { ClawdisSkillMetadata, SkillInstallSpec } from 'clawdhub-schema'
 import { useAction, useConvexAuth, useMutation, useQuery } from 'convex/react'
 import { useEffect, useMemo, useState } from 'react'
 import ReactMarkdown from 'react-markdown'

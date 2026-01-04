@@ -5,7 +5,7 @@ import {
   ApiSearchResponseSchema,
   ApiSkillMetaResponseSchema,
   ApiSkillResolveResponseSchema,
-} from '@clawdhub/schema'
+} from 'clawdhub-schema'
 import semver from 'semver'
 import { apiRequest, downloadZip } from '../../http.js'
 import {

@@ -1,6 +1,6 @@
 /* @vitest-environment node */
 
-import { ApiCliWhoamiResponseSchema } from '@clawdhub/schema'
+import { ApiCliWhoamiResponseSchema } from 'clawdhub-schema'
 import { describe, expect, it, vi } from 'vitest'
 import { apiRequest, downloadZip } from './http'
 

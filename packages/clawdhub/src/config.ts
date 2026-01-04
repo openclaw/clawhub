@@ -1,7 +1,7 @@
 import { mkdir, readFile, writeFile } from 'node:fs/promises'
 import { homedir } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
-import { type GlobalConfig, GlobalConfigSchema, parseArk } from '@clawdhub/schema'
+import { type GlobalConfig, GlobalConfigSchema, parseArk } from 'clawdhub-schema'
 
 export function getGlobalConfigPath() {
   const override = process.env.CLAWDHUB_CONFIG_PATH?.trim()

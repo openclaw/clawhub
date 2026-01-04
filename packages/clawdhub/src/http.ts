@@ -1,5 +1,5 @@
-import type { ArkValidator } from '@clawdhub/schema'
-import { ApiRoutes, parseArk } from '@clawdhub/schema'
+import type { ArkValidator } from 'clawdhub-schema'
+import { ApiRoutes, parseArk } from 'clawdhub-schema'
 import pRetry, { AbortError } from 'p-retry'
 
 type RequestArgs =

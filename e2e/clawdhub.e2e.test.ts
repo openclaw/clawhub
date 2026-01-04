@@ -9,7 +9,7 @@ import {
   ApiRoutes,
   ApiSearchResponseSchema,
   parseArk,
-} from '@clawdhub/schema'
+} from 'clawdhub-schema'
 import { describe, expect, it } from 'vitest'
 import { readGlobalConfig } from '../packages/clawdhub/src/config'
 

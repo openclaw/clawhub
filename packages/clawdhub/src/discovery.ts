@@ -1,4 +1,4 @@
-import { parseArk, WellKnownConfigSchema } from '@clawdhub/schema'
+import { parseArk, WellKnownConfigSchema } from 'clawdhub-schema'
 
 export async function discoverRegistryFromSite(siteUrl: string) {
   const url = new URL('/.well-known/clawdhub.json', siteUrl)

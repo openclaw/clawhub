@@ -9,7 +9,7 @@ import {
   WellKnownConfigSchema,
 } from './schemas'
 
-describe('@clawdhub/schema', () => {
+describe('clawdhub-schema', () => {
   it('parses lockfile records', () => {
     const lock = parseArk(
       LockfileSchema,

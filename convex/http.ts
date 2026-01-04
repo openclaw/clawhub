@@ -1,4 +1,4 @@
-import { ApiRoutes } from '@clawdhub/schema'
+import { ApiRoutes } from 'clawdhub-schema'
 import { httpRouter } from 'convex/server'
 import { auth } from './auth'
 import { downloadZip } from './downloads'
