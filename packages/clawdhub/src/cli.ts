@@ -20,7 +20,7 @@ import { Command } from 'commander'
 import ora from 'ora'
 import semver from 'semver'
 import { buildCliAuthUrl, startLoopbackAuthServer } from './browserAuth.js'
-import { getGlobalConfigPath, readGlobalConfig, writeGlobalConfig } from './config.js'
+import { readGlobalConfig, writeGlobalConfig } from './config.js'
 import { discoverRegistryFromSite } from './discovery.js'
 import { apiRequest, downloadZip } from './http.js'
 import {
@@ -74,7 +74,8 @@ program
   .command('logout')
   .description('Remove stored token')
   .action(async () => {
-    await cmdLogout()
+    const opts = resolveGlobalOpts()
+    await cmdLogout(opts)
   })
 
 program
@@ -106,7 +107,8 @@ auth
   .command('logout')
   .description('Remove stored token')
   .action(async () => {
-    await cmdLogout()
+    const opts = resolveGlobalOpts()
+    await cmdLogout(opts)
   })
 
 auth
@@ -227,16 +229,17 @@ async function cmdLogin(opts: GlobalOpts, tokenFlag?: string) {
   const token = tokenFlag || (await promptHidden('ClawdHub token: '))
   if (!token) fail('Token required')
 
+  const registry = await getRegistry(opts, { cache: true })
   const spinner = createSpinner('Verifying token')
   try {
     const whoami = await apiRequest(
-      opts.registry,
+      registry,
       { method: 'GET', path: ApiRoutes.cliWhoami, token },
       ApiCliWhoamiResponseSchema,
     )
     if (!whoami.user) fail('Login failed')
 
-    await writeGlobalConfig({ registry: opts.registry, token })
+    await writeGlobalConfig({ registry, token })
     const handle = whoami.user.handle ? `@${whoami.user.handle}` : 'unknown user'
     spinner.succeed(`OK. Logged in as ${handle}.`)
   } catch (error) {
@@ -245,8 +248,10 @@ async function cmdLogin(opts: GlobalOpts, tokenFlag?: string) {
   }
 }
 
-async function cmdLogout() {
-  await rm(getGlobalConfigPath(), { force: true })
+async function cmdLogout(opts: GlobalOpts) {
+  const cfg = await readGlobalConfig()
+  const registry = cfg?.registry || (await getRegistry(opts, { cache: true }))
+  await writeGlobalConfig({ registry, token: undefined })
   console.log('OK. Logged out.')
 }
 
@@ -254,7 +259,7 @@ async function cmdWhoami(opts: GlobalOpts) {
   const cfg = await readGlobalConfig()
   const token = cfg?.token
   if (!token) fail('Not logged in. Run: clawdhub login')
-  const registry = cfg?.registry ?? opts.registry
+  const registry = await getRegistry(opts, { cache: true })
 
   const spinner = createSpinner('Checking token')
   try {
@@ -273,7 +278,7 @@ async function cmdWhoami(opts: GlobalOpts) {
 async function cmdSearch(opts: GlobalOpts, query: string, limit?: number) {
   if (!query) fail('Query required')
 
-  const registry = await resolveRegistry(opts)
+  const registry = await getRegistry(opts, { cache: true })
   const spinner = createSpinner('Searching')
   try {
     const url = new URL(ApiRoutes.search, registry)
@@ -304,7 +309,7 @@ async function cmdInstall(opts: GlobalOpts, slug: string, versionFlag?: string, 
   const trimmed = slug.trim()
   if (!trimmed) fail('Slug required')
 
-  const registry = await resolveRegistry(opts)
+  const registry = await getRegistry(opts, { cache: true })
   await mkdir(opts.dir, { recursive: true })
   const target = join(opts.dir, trimmed)
   if (!force) {
@@ -360,7 +365,7 @@ async function cmdUpdate(
   const inputAllowed = options.input ?? globalFlags.input
   const allowPrompt = isInteractive() && inputAllowed !== false
 
-  const registry = await resolveRegistry(opts)
+  const registry = await getRegistry(opts, { cache: true })
   const lock = await readLockfile(opts.workdir)
   const slugs = slug ? [slug] : Object.keys(lock.skills)
   if (slugs.length === 0) {
@@ -483,7 +488,7 @@ async function cmdPublish(
   const cfg = await readGlobalConfig()
   const token = cfg?.token
   if (!token) fail('Not logged in. Run: clawdhub login')
-  const registry = cfg?.registry ?? opts.registry
+  const registry = await getRegistry(opts, { cache: true })
 
   const slug = options.slug ?? sanitizeSlug(basename(folder))
   const displayName = options.name ?? titleCase(basename(folder))
@@ -611,7 +616,7 @@ function titleCase(value: string) {
 
 async function resolveRegistry(opts: GlobalOpts) {
   const cfg = await readGlobalConfig()
-  if (cfg?.registry) return cfg.registry
+  if (cfg?.registry && cfg.registry !== DEFAULT_REGISTRY) return cfg.registry
 
   const explicit = opts.registry.trim()
   if (explicit && explicit !== DEFAULT_REGISTRY) return explicit
@@ -619,6 +624,17 @@ async function resolveRegistry(opts: GlobalOpts) {
   const discovery = await discoverRegistryFromSite(opts.site).catch(() => null)
   const discovered = discovery?.apiBase?.trim()
   return discovered || explicit || DEFAULT_REGISTRY
+}
+
+async function getRegistry(opts: GlobalOpts, params?: { cache?: boolean }) {
+  const cache = params?.cache !== false
+  const registry = await resolveRegistry(opts)
+  if (!cache) return registry
+  const cfg = await readGlobalConfig()
+  if (!cfg || !cfg.registry || cfg.registry === DEFAULT_REGISTRY) {
+    await writeGlobalConfig({ registry, token: cfg?.token })
+  }
+  return registry
 }
 
 async function fileExists(path: string) {
