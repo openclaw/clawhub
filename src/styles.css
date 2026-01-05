@@ -966,6 +966,13 @@ code {
   color: #ffd0bf;
 }
 
+.skill-actions {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+  align-items: center;
+}
+
 .star-toggle {
   width: 36px;
   height: 36px;
@@ -1006,6 +1013,52 @@ code {
   border-color: rgba(232, 106, 71, 0.45);
   background: rgba(232, 106, 71, 0.16);
   color: #ffd0bf;
+}
+
+.highlight-toggle {
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  border: 1px solid rgba(43, 198, 164, 0.45);
+  background: rgba(43, 198, 164, 0.14);
+  color: #1a6b5b;
+  display: grid;
+  place-items: center;
+  cursor: pointer;
+  transition:
+    transform 0.2s ease,
+    box-shadow 0.2s ease,
+    background 0.2s ease;
+}
+
+.highlight-toggle span {
+  font-size: 1.05rem;
+}
+
+.highlight-toggle:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 10px 18px rgba(43, 198, 164, 0.2);
+}
+
+.highlight-toggle.is-active {
+  background: rgba(43, 198, 164, 0.28);
+  border-color: rgba(43, 198, 164, 0.7);
+}
+
+.highlight-toggle:focus-visible {
+  outline: 3px solid rgba(43, 198, 164, 0.3);
+  outline-offset: 3px;
+}
+
+[data-theme="dark"] .highlight-toggle {
+  border-color: rgba(255, 131, 95, 0.45);
+  background: rgba(255, 131, 95, 0.12);
+  color: #ffd0bf;
+}
+
+[data-theme="dark"] .highlight-toggle.is-active {
+  background: rgba(255, 131, 95, 0.22);
+  border-color: rgba(255, 131, 95, 0.55);
 }
 
 .stat {

@@ -20,6 +20,7 @@ function SkillDetail() {
   const addComment = useMutation(api.comments.add)
   const removeComment = useMutation(api.comments.remove)
   const updateTags = useMutation(api.skills.updateTags)
+  const setBatch = useMutation(api.skills.setBatch)
   const getReadme = useAction(api.skills.getReadme)
   const [readme, setReadme] = useState<string | null>(null)
   const [comment, setComment] = useState('')
@@ -47,6 +48,7 @@ function SkillDetail() {
   const canManage = Boolean(
     me && skill && (me._id === skill.ownerUserId || ['admin', 'moderator'].includes(me.role ?? '')),
   )
+  const canHighlight = Boolean(me && ['admin', 'moderator'].includes(me.role ?? ''))
 
   const versionById = new Map<Id<'skillVersions'>, Doc<'skillVersions'>>(
     (versions ?? []).map((version) => [version._id, version]),
@@ -117,16 +119,35 @@ function SkillDetail() {
               </div>
             ) : null}
             {skill.batch === 'highlighted' ? <div className="tag">Highlighted</div> : null}
-            {isAuthenticated ? (
-              <button
-                className={`star-toggle${isStarred ? ' is-active' : ''}`}
-                type="button"
-                onClick={() => void toggleStar({ skillId: skill._id })}
-                aria-label={isStarred ? 'Unstar skill' : 'Star skill'}
-              >
-                <span aria-hidden="true">★</span>
-              </button>
-            ) : null}
+            <div className="skill-actions">
+              {isAuthenticated ? (
+                <button
+                  className={`star-toggle${isStarred ? ' is-active' : ''}`}
+                  type="button"
+                  onClick={() => void toggleStar({ skillId: skill._id })}
+                  aria-label={isStarred ? 'Unstar skill' : 'Star skill'}
+                >
+                  <span aria-hidden="true">★</span>
+                </button>
+              ) : null}
+              {canHighlight ? (
+                <button
+                  className={`highlight-toggle${skill.batch === 'highlighted' ? ' is-active' : ''}`}
+                  type="button"
+                  onClick={() =>
+                    void setBatch({
+                      skillId: skill._id,
+                      batch: skill.batch === 'highlighted' ? undefined : 'highlighted',
+                    })
+                  }
+                  aria-label={
+                    skill.batch === 'highlighted' ? 'Unhighlight skill' : 'Highlight skill'
+                  }
+                >
+                  <span aria-hidden="true">✦</span>
+                </button>
+              ) : null}
+            </div>
           </div>
           <div className="card">
             <h2 className="section-title" style={{ fontSize: '1.2rem', margin: 0 }}>
