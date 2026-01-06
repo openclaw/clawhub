@@ -74,7 +74,7 @@ async function isSkillFolder(folder: string): Promise<SkillFolder | null> {
 }
 
 async function findSkillMarker(folder: string) {
-  const candidates = ['SKILL.md', 'skill.md', 'Skills.md', 'skills.md']
+  const candidates = ['SKILL.md', 'skill.md']
   for (const name of candidates) {
     const path = join(folder, name)
     const st = await stat(path).catch(() => null)

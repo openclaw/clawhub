@@ -41,6 +41,20 @@ describe('scanSkills', () => {
     }
   })
 
+  it('ignores plural skills.md marker files', async () => {
+    const root = await makeTmpDir()
+    try {
+      const folder = join(root, 'docs')
+      await mkdir(folder, { recursive: true })
+      await writeFile(join(folder, 'skills.md'), '# Docs\n', 'utf8')
+
+      const found = await findSkillFolders(root)
+      expect(found).toHaveLength(0)
+    } finally {
+      await rm(root, { recursive: true, force: true })
+    }
+  })
+
   it('includes known legacy roots', () => {
     const roots = getFallbackSkillRoots('/tmp/anywhere')
     expect(roots.some((p) => p.endsWith('/clawdis/skills'))).toBe(true)
