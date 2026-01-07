@@ -46,6 +46,9 @@ export async function publishVersionForUser(
   userId: Id<'users'>,
   args: PublishVersionArgs,
 ): Promise<PublishResult> {
+  const owner = (await ctx.runQuery(api.users.getById, { userId })) as Doc<'users'> | null
+  if (!owner || owner.deletedAt) throw new ConvexError('User not found')
+
   const version = args.version.trim()
   const slug = args.slug.trim().toLowerCase()
   const displayName = args.displayName.trim()
@@ -125,6 +128,20 @@ export async function publishVersionForUser(
       throw new ConvexError(formatEmbeddingError(error))
     }),
   ])
+
+  try {
+    await ctx.runAction(internal.githubBackupsNode.backupSkillForPublishInternal, {
+      slug,
+      version,
+      displayName,
+      ownerHandle: owner.handle ?? owner.name ?? owner.email ?? owner._id,
+      files: sanitizedFiles,
+      publishedAt: Date.now(),
+    })
+  } catch (error) {
+    console.error('GitHub backup failed', error)
+    throw new ConvexError('GitHub backup failed. Please try again.')
+  }
 
   const publishResult = (await ctx.runMutation(internal.skills.insertVersion, {
     userId,

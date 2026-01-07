@@ -11,7 +11,7 @@ read_when:
 ## Goals
 - Minimal, fast SPA for browsing and publishing agent skills.
 - Skills stored in Convex (files + metadata + versions + stats).
-- GitHub OAuth login; optional GitHub App repo sync later.
+- GitHub OAuth login; GitHub App backs up skills to `clawdbot/skills`.
 - Vector-based search over skill text + metadata.
 - Versioning, tags (`latest` + user tags), changelog, rollback (tag movement).
 - Public read access; upload requires auth.
@@ -19,7 +19,7 @@ read_when:
 
 ## Non-goals (v1)
 - Paid features, private skills, or binary assets.
-- GitHub App sync (future phase).
+- GitHub App sync beyond backups (future phase).
 
 ## Core objects
 
@@ -122,7 +122,7 @@ From SKILL.md frontmatter + AgentSkills + Clawdis extensions:
 - Lint: Biome + Oxlint (type-aware).
 
 ## Vercel
-- Env vars: Convex deployment URLs + GitHub OAuth client + OpenAI key (if used).
+- Env vars: Convex deployment URLs + GitHub OAuth client + OpenAI key (if used) + GitHub App backup credentials.
 - SPA feel: client-side transitions, prefetching, optimistic UI.
 
 ## Open questions (carry forward)

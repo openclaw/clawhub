@@ -11,6 +11,8 @@
 import type * as auth from "../auth.js";
 import type * as comments from "../comments.js";
 import type * as downloads from "../downloads.js";
+import type * as githubBackups from "../githubBackups.js";
+import type * as githubBackupsNode from "../githubBackupsNode.js";
 import type * as http from "../http.js";
 import type * as httpApi from "../httpApi.js";
 import type * as httpApiV1 from "../httpApiV1.js";
@@ -44,6 +46,8 @@ declare const fullApi: ApiFromModules<{
   auth: typeof auth;
   comments: typeof comments;
   downloads: typeof downloads;
+  githubBackups: typeof githubBackups;
+  githubBackupsNode: typeof githubBackupsNode;
   http: typeof http;
   httpApi: typeof httpApi;
   httpApiV1: typeof httpApiV1;
