@@ -392,10 +392,7 @@ export function Upload() {
               ref={fileInputRef}
               className="upload-input"
               id="upload-files"
-<<<<<<< HEAD
               data-testid="upload-input"
-=======
->>>>>>> 9d66e54 (feat: add soulhub ui and docs)
               type="file"
               multiple
               onChange={(event) => {
@@ -474,15 +471,11 @@ export function Upload() {
             </div>
           ) : null}
           {status ? <div className="stat">{status}</div> : null}
-<<<<<<< HEAD
           <button
             className="btn btn-primary"
             type="submit"
             disabled={!validation.ready || isSubmitting}
           >
-=======
-          <button className="btn btn-primary" type="submit" disabled={!validation.ready}>
->>>>>>> 9d66e54 (feat: add soulhub ui and docs)
             Publish {contentLabel}
           </button>
           {hasAttempted && !validation.ready ? (

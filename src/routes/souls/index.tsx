@@ -212,7 +212,6 @@ function SoulsIndex() {
                   <span>{soul.displayName}</span>
                   <span className="skills-row-slug">/{soul.slug}</span>
                 </div>
-<<<<<<< HEAD
                 <div className="skills-row-summary">{soul.summary ?? 'SOUL.md bundle.'}</div>
               </div>
               <div className="skills-row-metrics">
