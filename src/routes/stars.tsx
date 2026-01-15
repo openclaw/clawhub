@@ -43,7 +43,14 @@ function Stars() {
                 <span className="stat">⭐ {skill.stats.stars}</span>
                 <button
                   className="button button-small"
-                  onClick={() => void toggleStar({ skillId: skill._id })}
+                  onClick={async () => {
+                    try {
+                      await toggleStar({ skillId: skill._id })
+                    } catch (error) {
+                      console.error('Failed to unstar skill:', error)
+                      window.alert('Unable to unstar this skill. Please try again.')
+                    }
+                  }}
                   aria-label={`Unstar ${skill.displayName}`}
                 >
                   Unstar
