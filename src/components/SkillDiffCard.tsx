@@ -418,7 +418,7 @@ function buildDiffOptions(viewMode: 'split' | 'inline'): DiffEditorProps['option
 
 function applyMonacoTheme(monaco: NonNullable<ReturnType<typeof useMonaco>>) {
   const styles = getComputedStyle(document.documentElement)
-  const surface = styles.getPropertyValue('--surface').trim() || '#ffffff'
+  const surface = normalizeHex(styles.getPropertyValue('--surface').trim() || '#ffffff')
   const surfaceMuted = styles.getPropertyValue('--surface-muted').trim() || '#f6f1ec'
   const ink = styles.getPropertyValue('--ink').trim() || '#1d1a17'
   const inkSoft = styles.getPropertyValue('--ink-soft').trim() || '#4c463f'
