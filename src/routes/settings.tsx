@@ -2,7 +2,7 @@ import { createFileRoute } from '@tanstack/react-router'
 import { useMutation, useQuery } from 'convex/react'
 import { useEffect, useState } from 'react'
 import { api } from '../../convex/_generated/api'
-import type { Doc } from '../../convex/_generated/dataModel'
+import type { Id } from '../../convex/_generated/dataModel'
 import { gravatarUrl } from '../lib/gravatar'
 
 export const Route = createFileRoute('/settings')({
@@ -13,7 +13,16 @@ function Settings() {
   const me = useQuery(api.users.me)
   const updateProfile = useMutation(api.users.updateProfile)
   const deleteAccount = useMutation(api.users.deleteAccount)
-  const tokens = useQuery(api.tokens.listMine) as Doc<'tokens'>[] | undefined
+  const tokens = useQuery(api.tokens.listMine) as
+    | Array<{
+        _id: Id<'apiTokens'>
+        label: string
+        prefix: string
+        createdAt: number
+        lastUsedAt?: number
+        revokedAt?: number
+      }>
+    | undefined
   const createToken = useMutation(api.tokens.create)
   const revokeToken = useMutation(api.tokens.revoke)
   const [displayName, setDisplayName] = useState('')

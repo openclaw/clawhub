@@ -75,16 +75,20 @@ export async function publishVersionForUser(
   if (sanitizedFiles.some((file) => !file.path)) {
     throw new ConvexError('Invalid file paths')
   }
-  if (sanitizedFiles.some((file) => !isTextFile(file.path ?? '', file.contentType ?? undefined))) {
+  const safeFiles = sanitizedFiles.map((file) => ({
+    ...file,
+    path: file.path as string,
+  }))
+  if (safeFiles.some((file) => !isTextFile(file.path, file.contentType ?? undefined))) {
     throw new ConvexError('Only text-based files are allowed')
   }
 
-  const totalBytes = sanitizedFiles.reduce((sum, file) => sum + file.size, 0)
+  const totalBytes = safeFiles.reduce((sum, file) => sum + file.size, 0)
   if (totalBytes > MAX_TOTAL_BYTES) {
     throw new ConvexError('Skill bundle exceeds 50MB limit')
   }
 
-  const readmeFile = sanitizedFiles.find(
+  const readmeFile = safeFiles.find(
     (file) => file.path?.toLowerCase() === 'skill.md' || file.path?.toLowerCase() === 'skills.md',
   )
   if (!readmeFile) throw new ConvexError('SKILL.md is required')
@@ -95,7 +99,7 @@ export async function publishVersionForUser(
   const metadata = mergeSourceIntoMetadata(getFrontmatterMetadata(frontmatter), args.source)
 
   const otherFiles = [] as Array<{ path: string; content: string }>
-  for (const file of sanitizedFiles) {
+  for (const file of safeFiles) {
     if (!file.path || file.path.toLowerCase().endsWith('.md')) continue
     if (!isTextFile(file.path, file.contentType ?? undefined)) continue
     const content = await fetchText(ctx, file.storageId)
@@ -110,7 +114,7 @@ export async function publishVersionForUser(
   })
 
   const fingerprintPromise = hashSkillFiles(
-    sanitizedFiles.map((file) => ({ path: file.path ?? '', sha256: file.sha256 })),
+    safeFiles.map((file) => ({ path: file.path, sha256: file.sha256 })),
   )
 
   const changelogPromise =
@@ -120,7 +124,7 @@ export async function publishVersionForUser(
           slug,
           version,
           readmeText,
-          files: sanitizedFiles.map((file) => ({ path: file.path ?? '', sha256: file.sha256 })),
+          files: safeFiles.map((file) => ({ path: file.path, sha256: file.sha256 })),
         })
 
   const embeddingPromise = generateEmbedding(embeddingText)
@@ -148,9 +152,9 @@ export async function publishVersionForUser(
           version: args.forkOf.version?.trim() || undefined,
         }
       : undefined,
-    files: sanitizedFiles.map((file) => ({
+    files: safeFiles.map((file) => ({
       ...file,
-      path: file.path ?? '',
+      path: file.path,
     })),
     parsed: {
       frontmatter,
@@ -169,7 +173,7 @@ export async function publishVersionForUser(
       version,
       displayName,
       ownerHandle,
-      files: sanitizedFiles,
+      files: safeFiles,
       publishedAt: Date.now(),
     })
     .catch((error) => {
