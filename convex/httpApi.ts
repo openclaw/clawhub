@@ -50,7 +50,7 @@ async function searchSkillsHandler(ctx: ActionCtx, request: Request) {
   const results = (await ctx.runAction(api.search.searchSkills, {
     query,
     limit,
-    approvedOnly: approvedOnly || undefined,
+    highlightedOnly: approvedOnly || undefined,
   })) as SearchSkillEntry[]
 
   return json({

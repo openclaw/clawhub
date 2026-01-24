@@ -38,8 +38,8 @@ export const searchSkills: ReturnType<typeof action> = action({
       return []
     }
     const limit = args.limit ?? 10
-    const maxCandidate = Math.min(Math.max(limit * 10, 200), 1000)
-    let candidateLimit = Math.max(limit * 3, 50)
+    const maxCandidate = Math.min(Math.max(limit * 4, 64), 256)
+    let candidateLimit = Math.min(Math.max(limit * 2, 32), 256)
     let hydrated: HydratedEntry[] = []
     let scoreById = new Map<Id<'skillEmbeddings'>, number>()
     let exactMatches: HydratedEntry[] = []
@@ -149,8 +149,8 @@ export const searchSouls: ReturnType<typeof action> = action({
       return []
     }
     const limit = args.limit ?? 10
-    const maxCandidate = Math.min(Math.max(limit * 10, 200), 1000)
-    let candidateLimit = Math.max(limit * 3, 50)
+    const maxCandidate = Math.min(Math.max(limit * 4, 64), 256)
+    let candidateLimit = Math.min(Math.max(limit * 2, 32), 256)
     let hydrated: HydratedSoulEntry[] = []
     let scoreById = new Map<Id<'soulEmbeddings'>, number>()
     let exactMatches: HydratedSoulEntry[] = []
