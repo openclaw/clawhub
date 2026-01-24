@@ -170,6 +170,7 @@ describe('cmdUpdate', () => {
     mockApiRequest.mockResolvedValue({ latestVersion: { version: '1.0.0' } })
     mockDownloadZip.mockResolvedValue(new Uint8Array([1, 2, 3]))
     vi.mocked(readLockfile).mockResolvedValue({
+      version: 1,
       skills: { demo: { version: '0.1.0', installedAt: 123 } },
     })
     vi.mocked(writeLockfile).mockResolvedValue()
