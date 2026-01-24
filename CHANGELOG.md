@@ -4,6 +4,7 @@
 
 ### Fixed
 - Registry: drop missing skills during search hydration (thanks @aaronn, #28).
+- Registry: relax search token matching to require at least one prefix match (thanks @afmire877, #27).
 
 ## 0.3.0 - 2026-01-19
 

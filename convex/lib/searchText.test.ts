@@ -35,6 +35,11 @@ describe('searchText', () => {
     expect(matchesExactTokens(['xyz'], ['GoHome', '/gohome', 'Navigate home'])).toBe(false)
   })
 
+  it('matchesExactTokens does not match non-prefix substrings', () => {
+    expect(matchesExactTokens(['art'], ['Cartoon', '/cartoon', 'Animated'])).toBe(false)
+    expect(matchesExactTokens(['art'], ['Smart tool', '/smart', 'Overview'])).toBe(false)
+  })
+
   it('matchesExactTokens ignores empty inputs', () => {
     expect(matchesExactTokens([], ['text'])).toBe(false)
     expect(matchesExactTokens(['token'], ['  ', null, undefined])).toBe(false)
