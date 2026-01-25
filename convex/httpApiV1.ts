@@ -538,8 +538,18 @@ async function skillsPostRouterV1Handler(ctx: ActionCtx, request: Request) {
       deleted: false,
     })
     return json({ ok: true }, 200, rate.headers)
-  } catch {
-    return text('Unauthorized', 401, rate.headers)
+  } catch (error) {
+    const message = error instanceof Error ? error.message : 'Undelete failed'
+    if (message === 'Unauthorized') {
+      return text('Unauthorized', 401, rate.headers)
+    }
+    if (message === 'Forbidden') {
+      return text('Forbidden', 403, rate.headers)
+    }
+    if (message === 'Skill not found' || message === 'User not found') {
+      return text('Not found', 404, rate.headers)
+    }
+    return text(message, 400, rate.headers)
   }
 }
 
@@ -560,8 +570,18 @@ async function skillsDeleteRouterV1Handler(ctx: ActionCtx, request: Request) {
       deleted: true,
     })
     return json({ ok: true }, 200, rate.headers)
-  } catch {
-    return text('Unauthorized', 401, rate.headers)
+  } catch (error) {
+    const message = error instanceof Error ? error.message : 'Delete failed'
+    if (message === 'Unauthorized') {
+      return text('Unauthorized', 401, rate.headers)
+    }
+    if (message === 'Forbidden') {
+      return text('Forbidden', 403, rate.headers)
+    }
+    if (message === 'Skill not found' || message === 'User not found') {
+      return text('Not found', 404, rate.headers)
+    }
+    return text(message, 400, rate.headers)
   }
 }
 
@@ -1235,8 +1255,18 @@ async function soulsPostRouterV1Handler(ctx: ActionCtx, request: Request) {
       deleted: false,
     })
     return json({ ok: true }, 200, rate.headers)
-  } catch {
-    return text('Unauthorized', 401, rate.headers)
+  } catch (error) {
+    const message = error instanceof Error ? error.message : 'Undelete failed'
+    if (message === 'Unauthorized') {
+      return text('Unauthorized', 401, rate.headers)
+    }
+    if (message === 'Forbidden') {
+      return text('Forbidden', 403, rate.headers)
+    }
+    if (message === 'Soul not found' || message === 'User not found') {
+      return text('Not found', 404, rate.headers)
+    }
+    return text(message, 400, rate.headers)
   }
 }
 
@@ -1257,8 +1287,18 @@ async function soulsDeleteRouterV1Handler(ctx: ActionCtx, request: Request) {
       deleted: true,
     })
     return json({ ok: true }, 200, rate.headers)
-  } catch {
-    return text('Unauthorized', 401, rate.headers)
+  } catch (error) {
+    const message = error instanceof Error ? error.message : 'Delete failed'
+    if (message === 'Unauthorized') {
+      return text('Unauthorized', 401, rate.headers)
+    }
+    if (message === 'Forbidden') {
+      return text('Forbidden', 403, rate.headers)
+    }
+    if (message === 'Soul not found' || message === 'User not found') {
+      return text('Not found', 404, rate.headers)
+    }
+    return text(message, 400, rate.headers)
   }
 }
 
