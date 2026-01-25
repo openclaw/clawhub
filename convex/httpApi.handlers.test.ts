@@ -33,7 +33,7 @@ describe('httpApi handlers', () => {
     expect(await response.json()).toEqual({ results: [] })
   })
 
-  it('searchSkillsHttp forwards args', async () => {
+  it('searchSkillsHttp forwards args (approvedOnly alias)', async () => {
     const runAction = vi.fn().mockResolvedValue([
       {
         score: 1,
@@ -48,14 +48,27 @@ describe('httpApi handlers', () => {
     expect(runAction).toHaveBeenCalledWith(expect.anything(), {
       query: 'test',
       limit: 5,
-      approvedOnly: true,
+      highlightedOnly: true,
     })
     expect(response.status).toBe(200)
     const json = await response.json()
     expect(json.results[0].slug).toBe('a')
   })
 
-  it('searchSkillsHttp omits approvedOnly when false', async () => {
+  it('searchSkillsHttp forwards highlightedOnly', async () => {
+    const runAction = vi.fn().mockResolvedValue([])
+    await __handlers.searchSkillsHandler(
+      makeCtx({ runAction }),
+      new Request('https://example.com/api/search?q=test&highlightedOnly=true'),
+    )
+    expect(runAction).toHaveBeenCalledWith(expect.anything(), {
+      query: 'test',
+      limit: undefined,
+      highlightedOnly: true,
+    })
+  })
+
+  it('searchSkillsHttp omits highlightedOnly when approvedOnly is false', async () => {
     const runAction = vi.fn().mockResolvedValue([])
     await __handlers.searchSkillsHandler(
       makeCtx({ runAction }),
@@ -64,7 +77,7 @@ describe('httpApi handlers', () => {
     expect(runAction).toHaveBeenCalledWith(expect.anything(), {
       query: 'test',
       limit: undefined,
-      approvedOnly: undefined,
+      highlightedOnly: undefined,
     })
   })
 

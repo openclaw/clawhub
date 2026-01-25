@@ -44,13 +44,14 @@ async function searchSkillsHandler(ctx: ActionCtx, request: Request) {
   const query = url.searchParams.get('q')?.trim() ?? ''
   const limit = toOptionalNumber(url.searchParams.get('limit'))
   const approvedOnly = url.searchParams.get('approvedOnly') === 'true'
+  const highlightedOnly = url.searchParams.get('highlightedOnly') === 'true' || approvedOnly
 
   if (!query) return json({ results: [] })
 
   const results = (await ctx.runAction(api.search.searchSkills, {
     query,
     limit,
-    approvedOnly: approvedOnly || undefined,
+    highlightedOnly: highlightedOnly || undefined,
   })) as SearchSkillEntry[]
 
   return json({
