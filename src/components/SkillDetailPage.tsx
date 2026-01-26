@@ -205,7 +205,7 @@ export function SkillDetailPage({
                 {skill.repoUrl ? (
                   <div className="stat">
                     <a href={skill.repoUrl} target="_blank" rel="noopener noreferrer">
-                      {skill.repoUrl.includes('github.com') ? '🔗 GitHub' : '🔗 Repository'}
+                      🔗 GitHub
                     </a>
                   </div>
                 ) : null}

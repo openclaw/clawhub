@@ -681,10 +681,11 @@ export const insertVersion = internalMutation({
       }
 
       const summary = getFrontmatterValue(args.parsed.frontmatter, 'description')
-      const repoUrl =
+      const repoUrl = parseGitHubRepoUrl(
         getFrontmatterValue(args.parsed.frontmatter, 'homepage') ??
         getFrontmatterValue(args.parsed.frontmatter, 'repository') ??
-        getFrontmatterValue(args.parsed.frontmatter, 'repo')
+        getFrontmatterValue(args.parsed.frontmatter, 'repo'),
+      )
       const skillId = await ctx.db.insert('skills', {
         slug: args.slug,
         displayName: args.displayName,
@@ -746,11 +747,11 @@ export const insertVersion = internalMutation({
 
     const latestBefore = skill.latestVersionId
 
-    const updatedRepoUrl =
+    const updatedRepoUrl = parseGitHubRepoUrl(
       getFrontmatterValue(args.parsed.frontmatter, 'homepage') ??
       getFrontmatterValue(args.parsed.frontmatter, 'repository') ??
-      getFrontmatterValue(args.parsed.frontmatter, 'repo') ??
-      skill.repoUrl
+      getFrontmatterValue(args.parsed.frontmatter, 'repo'),
+    ) ?? skill.repoUrl
 
     await ctx.db.patch(skill._id, {
       displayName: args.displayName,
@@ -864,6 +865,24 @@ function visibilityFor(isLatest: boolean, isApproved: boolean) {
 function clampInt(value: number, min: number, max: number) {
   const rounded = Number.isFinite(value) ? Math.round(value) : min
   return Math.min(max, Math.max(min, rounded))
+}
+
+const GITHUB_REPO_RE = /^https:\/\/github\.com\/[a-zA-Z0-9._-]+\/[a-zA-Z0-9._-]+\/?$/
+
+/**
+ * Validate and normalize a repo URL. Only accepts GitHub repository URLs
+ * (https://github.com/owner/repo) to prevent malicious links.
+ * Returns the validated URL or undefined if invalid/missing.
+ */
+function parseGitHubRepoUrl(raw: string | undefined): string | undefined {
+  if (!raw) return undefined
+  const trimmed = raw.trim().replace(/\/+$/, '')
+  if (!GITHUB_REPO_RE.test(trimmed + '/') && !GITHUB_REPO_RE.test(trimmed)) {
+    // Not a valid GitHub repo URL — silently ignore
+    return undefined
+  }
+  // Normalize: strip trailing slash
+  return trimmed
 }
 
 async function findCanonicalSkillForFingerprint(
