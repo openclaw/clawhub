@@ -202,6 +202,13 @@ export function SkillDetailPage({
                     by <a href={`/u/${owner.handle}`}>@{owner.handle}</a>
                   </div>
                 ) : null}
+                {skill.repoUrl ? (
+                  <div className="stat">
+                    <a href={skill.repoUrl} target="_blank" rel="noopener noreferrer">
+                      {skill.repoUrl.includes('github.com') ? '🔗 GitHub' : '🔗 Repository'}
+                    </a>
+                  </div>
+                ) : null}
                 {forkOf && forkOfHref ? (
                   <div className="stat">
                     {forkOfLabel}{' '}

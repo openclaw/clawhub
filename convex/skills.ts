@@ -681,10 +681,15 @@ export const insertVersion = internalMutation({
       }
 
       const summary = getFrontmatterValue(args.parsed.frontmatter, 'description')
+      const repoUrl =
+        getFrontmatterValue(args.parsed.frontmatter, 'homepage') ??
+        getFrontmatterValue(args.parsed.frontmatter, 'repository') ??
+        getFrontmatterValue(args.parsed.frontmatter, 'repo')
       const skillId = await ctx.db.insert('skills', {
         slug: args.slug,
         displayName: args.displayName,
         summary: summary ?? undefined,
+        repoUrl: repoUrl ?? undefined,
         ownerUserId: userId,
         canonicalSkillId,
         forkOf,
@@ -741,9 +746,16 @@ export const insertVersion = internalMutation({
 
     const latestBefore = skill.latestVersionId
 
+    const updatedRepoUrl =
+      getFrontmatterValue(args.parsed.frontmatter, 'homepage') ??
+      getFrontmatterValue(args.parsed.frontmatter, 'repository') ??
+      getFrontmatterValue(args.parsed.frontmatter, 'repo') ??
+      skill.repoUrl
+
     await ctx.db.patch(skill._id, {
       displayName: args.displayName,
       summary: getFrontmatterValue(args.parsed.frontmatter, 'description') ?? skill.summary,
+      repoUrl: updatedRepoUrl,
       latestVersionId: versionId,
       tags: nextTags,
       stats: { ...skill.stats, versions: skill.stats.versions + 1 },
