@@ -2,18 +2,21 @@ import { Link, useNavigate } from '@tanstack/react-router'
 import type { ClawdisSkillMetadata, SkillInstallSpec } from 'clawhub-schema'
 import { useAction, useMutation, useQuery } from 'convex/react'
 import { lazy, Suspense, useEffect, useMemo, useState } from 'react'
-import ReactMarkdown from 'react-markdown'
-import remarkGfm from 'remark-gfm'
 import { api } from '../../convex/_generated/api'
 import type { Doc, Id } from '../../convex/_generated/dataModel'
 import { getSkillBadges } from '../lib/badges'
 import type { PublicSkill, PublicUser } from '../lib/publicUser'
 import { canManageSkill, isModerator } from '../lib/roles'
 import { useAuthStatus } from '../lib/useAuthStatus'
+import { SkillCommentsPanel } from './SkillCommentsPanel'
 import { UserBadge } from './UserBadge'
 
 const SkillDiffCard = lazy(() =>
   import('./SkillDiffCard').then((m) => ({ default: m.SkillDiffCard })),
+)
+
+const SkillFilesPanel = lazy(() =>
+  import('./SkillFilesPanel').then((m) => ({ default: m.SkillFilesPanel })),
 )
 
 type VtAnalysis = {
@@ -389,13 +392,10 @@ export function SkillDetailPage({
   const result = isStaff ? staffResult : publicResult
   const toggleStar = useMutation(api.stars.toggle)
   const reportSkill = useMutation(api.skills.report)
-  const addComment = useMutation(api.comments.add)
-  const removeComment = useMutation(api.comments.remove)
   const updateTags = useMutation(api.skills.updateTags)
   const getReadme = useAction(api.skills.getReadme)
   const [readme, setReadme] = useState<string | null>(null)
   const [readmeError, setReadmeError] = useState<string | null>(null)
-  const [comment, setComment] = useState('')
   const [tagName, setTagName] = useState('latest')
   const [tagVersionId, setTagVersionId] = useState<Id<'skillVersions'> | ''>('')
   const [activeTab, setActiveTab] = useState<'files' | 'compare' | 'versions'>('files')
@@ -421,10 +421,6 @@ export function SkillDetailPage({
     api.stars.isStarred,
     isAuthenticated && skill ? { skillId: skill._id } : 'skip',
   )
-  const comments = useQuery(
-    api.comments.listBySkill,
-    skill ? { skillId: skill._id, limit: 50 } : 'skip',
-  ) as Array<{ comment: Doc<'comments'>; user: PublicUser | null }> | undefined
 
   const canManage = canManageSkill(me, skill)
 
@@ -965,44 +961,14 @@ export function SkillDetailPage({
             </button>
           </div>
           {activeTab === 'files' ? (
-            <div className="tab-body">
-              <div>
-                <h2 className="section-title" style={{ fontSize: '1.2rem', margin: 0 }}>
-                  SKILL.md
-                </h2>
-                <div className="markdown">
-                  {readmeContent ? (
-                    <ReactMarkdown remarkPlugins={[remarkGfm]}>{readmeContent}</ReactMarkdown>
-                  ) : readmeError ? (
-                    <div className="stat">Failed to load SKILL.md: {readmeError}</div>
-                  ) : (
-                    <div>Loading…</div>
-                  )}
-                </div>
-              </div>
-              <div className="file-list">
-                <div className="file-list-header">
-                  <h3 className="section-title" style={{ fontSize: '1.05rem', margin: 0 }}>
-                    Files
-                  </h3>
-                  <span className="section-subtitle" style={{ margin: 0 }}>
-                    {latestFiles.length} total
-                  </span>
-                </div>
-                <div className="file-list-body">
-                  {latestFiles.length === 0 ? (
-                    <div className="stat">No files available.</div>
-                  ) : (
-                    latestFiles.map((file) => (
-                      <div key={file.path} className="file-row">
-                        <span className="file-path">{file.path}</span>
-                        <span className="file-meta">{formatBytes(file.size)}</span>
-                      </div>
-                    ))
-                  )}
-                </div>
-              </div>
-            </div>
+            <Suspense fallback={<div className="tab-body stat">Loading file viewer…</div>}>
+              <SkillFilesPanel
+                versionId={latestVersion?._id ?? null}
+                readmeContent={readmeContent}
+                readmeError={readmeError}
+                latestFiles={latestFiles}
+              />
+            </Suspense>
           ) : null}
           {activeTab === 'compare' && skill ? (
             <div className="tab-body">
@@ -1065,59 +1031,7 @@ export function SkillDetailPage({
             </div>
           ) : null}
         </div>
-        <div className="card">
-          <h2 className="section-title" style={{ fontSize: '1.2rem', margin: 0 }}>
-            Comments
-          </h2>
-          {isAuthenticated ? (
-            <form
-              onSubmit={(event) => {
-                event.preventDefault()
-                if (!comment.trim()) return
-                void addComment({ skillId: skill._id, body: comment.trim() }).then(() =>
-                  setComment(''),
-                )
-              }}
-              className="comment-form"
-            >
-              <textarea
-                className="comment-input"
-                rows={4}
-                value={comment}
-                onChange={(event) => setComment(event.target.value)}
-                placeholder="Leave a note…"
-              />
-              <button className="btn comment-submit" type="submit">
-                Post comment
-              </button>
-            </form>
-          ) : (
-            <p className="section-subtitle">Sign in to comment.</p>
-          )}
-          <div style={{ display: 'grid', gap: 12, marginTop: 16 }}>
-            {(comments ?? []).length === 0 ? (
-              <div className="stat">No comments yet.</div>
-            ) : (
-              (comments ?? []).map((entry) => (
-                <div key={entry.comment._id} className="comment-item">
-                  <div className="comment-body">
-                    <strong>@{entry.user?.handle ?? entry.user?.name ?? 'user'}</strong>
-                    <div className="comment-body-text">{entry.comment.body}</div>
-                  </div>
-                  {isAuthenticated && me && (me._id === entry.comment.userId || isModerator(me)) ? (
-                    <button
-                      className="btn comment-delete"
-                      type="button"
-                      onClick={() => void removeComment({ commentId: entry.comment._id })}
-                    >
-                      Delete
-                    </button>
-                  ) : null}
-                </div>
-              ))
-            )}
-          </div>
-        </div>
+        <SkillCommentsPanel skillId={skill._id} isAuthenticated={isAuthenticated} me={me ?? null} />
       </div>
       {isAuthenticated && isReportDialogOpen ? (
         <div className="report-dialog-backdrop">
@@ -1327,19 +1241,6 @@ function formatInstallCommand(spec: SkillInstallSpec) {
     return `uv tool install ${spec.package}`
   }
   return null
-}
-
-function formatBytes(bytes: number) {
-  if (!Number.isFinite(bytes)) return '—'
-  if (bytes < 1024) return `${bytes} B`
-  const units = ['KB', 'MB', 'GB']
-  let value = bytes / 1024
-  let unitIndex = 0
-  while (value >= 1024 && unitIndex < units.length - 1) {
-    value /= 1024
-    unitIndex += 1
-  }
-  return `${value.toFixed(value >= 10 ? 0 : 1)} ${units[unitIndex]}`
 }
 
 function formatNixInstallSnippet(plugin: string) {

@@ -2289,6 +2289,53 @@ code {
   padding-right: 4px;
 }
 
+.file-browser {
+  display: grid;
+  gap: 16px;
+}
+
+.file-row-button {
+  border: 1px solid var(--line);
+  background: var(--surface-muted);
+  text-align: left;
+  cursor: pointer;
+}
+
+.file-row-button.is-active {
+  border-color: var(--ink);
+  box-shadow: 0 8px 18px rgba(29, 26, 23, 0.12);
+}
+
+.file-viewer {
+  border-radius: 16px;
+  border: 1px solid var(--line);
+  background: var(--surface);
+  display: grid;
+  gap: 12px;
+  padding: 16px;
+}
+
+.file-viewer-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.file-viewer-body {
+  max-height: 320px;
+  overflow: auto;
+  padding-right: 4px;
+}
+
+.file-viewer-code {
+  margin: 0;
+  white-space: pre-wrap;
+  font-family: var(--font-mono);
+  font-size: 0.9rem;
+  color: var(--ink);
+}
+
 .version-scroll {
   max-height: 320px;
   overflow: auto;
