@@ -52,7 +52,16 @@ export async function applyRateLimit(
 
 export function getClientIp(request: Request) {
   const header = request.headers.get('cf-connecting-ip')
-  if (!header) return null
+  if (!header) {
+    if (!shouldTrustForwardedIps()) return null
+    const forwarded =
+      request.headers.get('x-real-ip') ??
+      request.headers.get('x-forwarded-for') ??
+      request.headers.get('fly-client-ip')
+    if (!forwarded) return null
+    if (forwarded.includes(',')) return forwarded.split(',')[0]?.trim() || null
+    return forwarded.trim()
+  }
   if (header.includes(',')) return header.split(',')[0]?.trim() || null
   return header.trim()
 }
@@ -97,4 +106,8 @@ export function parseBearerToken(request: Request) {
 
 function mergeHeaders(base: HeadersInit, extra?: HeadersInit) {
   return { ...(base as Record<string, string>), ...(extra as Record<string, string>) }
+}
+
+function shouldTrustForwardedIps() {
+  return String(process.env.TRUST_FORWARDED_IPS ?? '').toLowerCase() === 'true'
 }

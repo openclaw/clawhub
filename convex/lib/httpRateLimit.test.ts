@@ -9,6 +9,7 @@ describe('getClientIp', () => {
         'x-forwarded-for': '203.0.113.9',
       },
     })
+    process.env.TRUST_FORWARDED_IPS = ''
     expect(getClientIp(request)).toBeNull()
   })
 
@@ -19,5 +20,16 @@ describe('getClientIp', () => {
       },
     })
     expect(getClientIp(request)).toBe('203.0.113.1')
+  })
+
+  it('uses forwarded headers when opt-in enabled', () => {
+    const request = new Request('https://example.com', {
+      headers: {
+        'x-forwarded-for': '203.0.113.9, 198.51.100.2',
+      },
+    })
+    process.env.TRUST_FORWARDED_IPS = 'true'
+    expect(getClientIp(request)).toBe('203.0.113.9')
+    process.env.TRUST_FORWARDED_IPS = ''
   })
 })
