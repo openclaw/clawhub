@@ -5,7 +5,7 @@ metadata: {
   "clawdbot": {
     "emoji": "🔍",
     "requires": {
-      "optionalBins": ["qmd"]
+      "bins": ["qmd"]
     },
     "nix": {
       "packages": ["github:tobi/qmd"]
