@@ -27,42 +27,59 @@ export function SkillFilesPanel({
   const [fileMeta, setFileMeta] = useState<{ size: number; sha256: string } | null>(null)
   const [fileError, setFileError] = useState<string | null>(null)
   const [isLoading, setIsLoading] = useState(false)
+  const isMounted = useRef(true)
+  const activeRequest = useRef<AbortController | null>(null)
   const requestId = useRef(0)
 
   useEffect(() => {
-    if (versionId === null) {
-      setSelectedPath(null)
-      setFileContent(null)
-      setFileMeta(null)
-      setFileError(null)
-      setIsLoading(false)
-      return
+    isMounted.current = true
+    return () => {
+      isMounted.current = false
+      activeRequest.current?.abort()
+      activeRequest.current = null
     }
+  }, [])
+
+  useEffect(() => {
+    activeRequest.current?.abort()
+    activeRequest.current = null
+    requestId.current += 1
+
     setSelectedPath(null)
     setFileContent(null)
     setFileMeta(null)
     setFileError(null)
     setIsLoading(false)
+
+    if (versionId === null) return
   }, [versionId])
 
   const handleSelect = useCallback(
     (path: string) => {
       if (!versionId) return
+      activeRequest.current?.abort()
+      const controller = new AbortController()
+      activeRequest.current = controller
+
+      const current = requestId.current + 1
+      requestId.current = current
       setSelectedPath(path)
       setFileContent(null)
       setFileMeta(null)
       setFileError(null)
       setIsLoading(true)
-      const current = requestId.current + 1
-      requestId.current = current
       void getFileText({ versionId, path })
         .then((data) => {
+          if (!isMounted.current) return
+          if (controller.signal.aborted) return
           if (requestId.current !== current) return
           setFileContent(data.text)
           setFileMeta({ size: data.size, sha256: data.sha256 })
           setIsLoading(false)
         })
         .catch((error) => {
+          if (!isMounted.current) return
+          if (controller.signal.aborted) return
           if (requestId.current !== current) return
           setFileError(error instanceof Error ? error.message : 'Failed to load file')
           setIsLoading(false)
