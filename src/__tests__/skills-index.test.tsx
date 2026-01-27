@@ -52,7 +52,7 @@ describe('SkillsIndex', () => {
     expect(usePaginatedQueryMock).toHaveBeenCalledWith(
       expect.anything(),
       {},
-      { initialNumItems: 50 },
+      { initialNumItems: 25 },
     )
   })
 
@@ -71,7 +71,7 @@ describe('SkillsIndex', () => {
 
     // usePaginatedQuery should be called with 'skip' when there's a search query
     expect(usePaginatedQueryMock).toHaveBeenCalledWith(expect.anything(), 'skip', {
-      initialNumItems: 50,
+      initialNumItems: 25,
     })
     await act(async () => {
       await vi.runAllTimersAsync()
@@ -79,7 +79,15 @@ describe('SkillsIndex', () => {
     expect(actionFn).toHaveBeenCalledWith({
       query: 'remind',
       highlightedOnly: false,
-      limit: 50,
+      limit: 25,
+    })
+    await act(async () => {
+      await vi.runAllTimersAsync()
+    })
+    expect(actionFn).toHaveBeenCalledWith({
+      query: 'remind',
+      highlightedOnly: false,
+      limit: 25,
     })
   })
 
@@ -88,8 +96,8 @@ describe('SkillsIndex', () => {
     vi.stubGlobal('IntersectionObserver', undefined)
     const actionFn = vi
       .fn()
+      .mockResolvedValueOnce(makeSearchResults(25))
       .mockResolvedValueOnce(makeSearchResults(50))
-      .mockResolvedValueOnce(makeSearchResults(100))
     useActionMock.mockReturnValue(actionFn)
     vi.useFakeTimers()
 
@@ -107,7 +115,7 @@ describe('SkillsIndex', () => {
     expect(actionFn).toHaveBeenLastCalledWith({
       query: 'remind',
       highlightedOnly: false,
-      limit: 100,
+      limit: 50,
     })
   })
 })
