@@ -1084,6 +1084,16 @@ code {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
   gap: 20px;
+  max-width: 100%;
+}
+
+.skills-header-top {
+  margin-bottom: 22px;
+}
+
+.skills-container {
+  max-width: 900px;
+  margin: 0 auto;
 }
 
 .skills-header {
@@ -1102,7 +1112,7 @@ code {
   border-radius: var(--radius-md);
   border: 1px solid var(--border-ui);
   background: linear-gradient(135deg, var(--surface), var(--surface-muted));
-  min-width: min(520px, 100%);
+  margin-bottom: 22px;
 }
 
 .skills-search {

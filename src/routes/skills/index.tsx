@@ -311,17 +311,17 @@ export function SkillsIndex() {
 
   return (
     <main className="section">
-      <header className="skills-header">
-        <div>
-          <h1 className="section-title" style={{ marginBottom: 8 }}>
-            Skills
-          </h1>
-          <p className="section-subtitle" style={{ marginBottom: 0 }}>
-            {isLoadingSkills
-              ? 'Loading skills…'
-              : `Browse the skill library${activeFilters.length ? ` (${activeFilters.join(', ')})` : ''}.`}
-          </p>
-        </div>
+      <header className="skills-header-top">
+        <h1 className="section-title" style={{ marginBottom: 8 }}>
+          Skills
+        </h1>
+        <p className="section-subtitle" style={{ marginBottom: 0 }}>
+          {isLoadingSkills
+            ? 'Loading skills…'
+            : `Browse the skill library${activeFilters.length ? ` (${activeFilters.join(', ')})` : ''}.`}
+        </p>
+      </header>
+      <div className="skills-container">
         <div className="skills-toolbar">
           <div className="skills-search">
             <input
@@ -430,7 +430,6 @@ export function SkillsIndex() {
             </button>
           </div>
         </div>
-      </header>
 
       {isLoadingSkills ? (
         <div className="card">
@@ -523,6 +522,7 @@ export function SkillsIndex() {
           )}
         </div>
       ) : null}
+      </div>
     </main>
   )
 }

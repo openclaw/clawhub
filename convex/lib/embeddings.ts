@@ -12,27 +12,40 @@ export async function generateEmbedding(text: string) {
     return emptyEmbedding()
   }
 
-  const response = await fetch('https://api.openai.com/v1/embeddings', {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      Authorization: `Bearer ${apiKey}`,
-    },
-    body: JSON.stringify({
-      model: EMBEDDING_MODEL,
-      input: text,
-    }),
-  })
+  const controller = new AbortController()
+  const timeoutId = setTimeout(() => controller.abort(), 10000) // 10 second timeout
 
-  if (!response.ok) {
-    const message = await response.text()
-    throw new Error(`Embedding failed: ${message}`)
-  }
+  try {
+    const response = await fetch('https://api.openai.com/v1/embeddings', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${apiKey}`,
+      },
+      body: JSON.stringify({
+        model: EMBEDDING_MODEL,
+        input: text,
+      }),
+      signal: controller.signal,
+    })
 
-  const payload = (await response.json()) as {
-    data?: Array<{ embedding: number[] }>
+    if (!response.ok) {
+      const message = await response.text()
+      throw new Error(`Embedding failed: ${message}`)
+    }
+
+    const payload = (await response.json()) as {
+      data?: Array<{ embedding: number[] }>
+    }
+    const embedding = payload.data?.[0]?.embedding
+    if (!embedding) throw new Error('Embedding missing from response')
+    return embedding
+  } catch (error) {
+    if (error instanceof Error && error.name === 'AbortError') {
+      throw new Error('OpenAI API request timed out after 10 seconds')
+    }
+    throw error
+  } finally {
+    clearTimeout(timeoutId)
   }
-  const embedding = payload.data?.[0]?.embedding
-  if (!embedding) throw new Error('Embedding missing from response')
-  return embedding
 }
