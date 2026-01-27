@@ -48,7 +48,17 @@ function SkillsHome() {
               <Link to="/upload" search={{ updateSlug: undefined }} className="btn btn-primary">
                 Publish a skill
               </Link>
-              <Link to="/skills" className="btn">
+              <Link
+                to="/skills"
+                search={{
+                  q: undefined,
+                  sort: undefined,
+                  dir: undefined,
+                  highlighted: undefined,
+                  view: undefined,
+                }}
+                className="btn"
+              >
                 Browse skills
               </Link>
             </div>
@@ -110,7 +120,17 @@ function SkillsHome() {
           )}
         </div>
         <div className="section-cta">
-          <Link to="/skills" className="btn">
+          <Link
+            to="/skills"
+            search={{
+              q: undefined,
+              sort: undefined,
+              dir: undefined,
+              highlighted: undefined,
+              view: undefined,
+            }}
+            className="btn"
+          >
             See all skills
           </Link>
         </div>

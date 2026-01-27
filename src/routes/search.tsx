@@ -10,7 +10,10 @@ export const Route = createFileRoute('/search')({
       to: '/skills',
       search: {
         q: search.q || undefined,
+        sort: undefined,
+        dir: undefined,
         highlighted: search.highlighted || undefined,
+        view: undefined,
       },
       replace: true,
     })
