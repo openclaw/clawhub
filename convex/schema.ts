@@ -37,6 +37,7 @@ const skills = defineTable({
       at: v.number(),
     }),
   ),
+  repoUrl: v.optional(v.string()),
   latestVersionId: v.optional(v.id('skillVersions')),
   tags: v.record(v.string(), v.id('skillVersions')),
   softDeletedAt: v.optional(v.number()),
