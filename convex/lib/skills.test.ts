@@ -150,6 +150,8 @@ describe('skills utils', () => {
     expect(isTextFile('note.txt', 'text/plain')).toBe(true)
     expect(isTextFile('data.any', 'application/json')).toBe(true)
     expect(isTextFile('data.json')).toBe(true)
+    expect(isTextFile('icon.svg')).toBe(false)
+    expect(isTextFile('icon.svg', 'image/svg+xml')).toBe(false)
   })
 
   it('builds embedding text', () => {

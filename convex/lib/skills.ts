@@ -125,6 +125,8 @@ export function isTextFile(path: string, contentType?: string | null) {
   if (!trimmed) return false
   const parts = trimmed.split('.')
   const extension = parts.length > 1 ? (parts.at(-1) ?? '') : ''
+  const normalizedContentType = contentType?.split(';', 1)[0]?.trim().toLowerCase() ?? ''
+  if (normalizedContentType === 'image/svg+xml' || extension === 'svg') return false
   if (contentType) {
     if (isTextContentType(contentType)) return true
   }
