@@ -3,6 +3,7 @@ import { type inferred, type } from 'arktype'
 export const GlobalConfigSchema = type({
   registry: 'string',
   token: 'string?',
+  dir: 'string?',
 })
 export type GlobalConfig = (typeof GlobalConfigSchema)[inferred]
 

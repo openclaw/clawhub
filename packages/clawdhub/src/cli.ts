@@ -34,7 +34,7 @@ const program = new Command()
   .showSuggestionAfterError()
   .addHelpText(
     'after',
-    styleEnvBlock('\nEnv:\n  CLAWDHUB_SITE\n  CLAWDHUB_REGISTRY\n  CLAWDHUB_WORKDIR\n'),
+    styleEnvBlock('\nEnv:\n  CLAWDHUB_SITE\n  CLAWDHUB_REGISTRY\n  CLAWDHUB_WORKDIR\n  CLAWDHUB_DIR\n'),
   )
 
 configureCommanderHelp(program)
@@ -42,7 +42,9 @@ configureCommanderHelp(program)
 async function resolveGlobalOpts(): Promise<GlobalOpts> {
   const raw = program.opts<{ workdir?: string; dir?: string; site?: string; registry?: string }>()
   const workdir = await resolveWorkdir(raw.workdir)
-  const dir = resolve(workdir, raw.dir ?? 'skills')
+  const config = await readGlobalConfig()
+  const dirRel = raw.dir ?? process.env.CLAWDHUB_DIR ?? config?.dir ?? 'skills'
+  const dir = resolve(workdir, dirRel)
   const site = raw.site ?? process.env.CLAWDHUB_SITE ?? DEFAULT_SITE
   const registrySource = raw.registry ? 'cli' : process.env.CLAWDHUB_REGISTRY ? 'env' : 'default'
   const registry = raw.registry ?? process.env.CLAWDHUB_REGISTRY ?? DEFAULT_REGISTRY

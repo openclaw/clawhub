@@ -54,4 +54,4 @@ clawdhub sync --root ../clawdis/skills --all --dry-run
 - Site: `https://clawdhub.com` (override via `--site` or `CLAWDHUB_SITE`)
 - Registry: discovered from `/.well-known/clawdhub.json` on the site (override via `--registry` or `CLAWDHUB_REGISTRY`)
 - Workdir: current directory (falls back to Clawdbot workspace if configured; override via `--workdir` or `CLAWDHUB_WORKDIR`)
-- Install dir: `./skills` under workdir (override via `--dir`)
+- Install dir: `./skills` under workdir (override via `--dir`, `CLAWDHUB_DIR`, or `dir` in config.json)
