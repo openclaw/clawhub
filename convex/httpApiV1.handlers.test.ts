@@ -337,7 +337,7 @@ describe('httpApiV1 handlers', () => {
     expect(await response.text()).toBe('hello')
     expect(response.headers.get('Content-Type')).toBe('text/plain; charset=utf-8')
     expect(response.headers.get('X-Content-Type-Options')).toBe('nosniff')
-    expect(response.headers.get('Content-Security-Policy')).toBe('sandbox; default-src \'none\'')
+    expect(response.headers.get('Content-Security-Policy')).toBe("sandbox; default-src 'none'")
     expect(response.headers.get('X-Content-SHA256')).toBe('abcd')
   })
 
@@ -383,7 +383,7 @@ describe('httpApiV1 handlers', () => {
     expect(await response.text()).toBe('hello')
     expect(response.headers.get('Content-Type')).toBe('text/plain; charset=utf-8')
     expect(response.headers.get('X-Content-Type-Options')).toBe('nosniff')
-    expect(response.headers.get('Content-Security-Policy')).toBe('sandbox; default-src \'none\'')
+    expect(response.headers.get('Content-Security-Policy')).toBe("sandbox; default-src 'none'")
     expect(response.headers.get('X-Content-SHA256')).toBe('abcd')
   })
 

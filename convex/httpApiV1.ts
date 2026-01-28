@@ -15,7 +15,7 @@ const RATE_LIMITS = {
 } as const
 const MAX_RAW_FILE_BYTES = 200 * 1024
 const RAW_FILE_CONTENT_TYPE = 'text/plain; charset=utf-8'
-const RAW_FILE_CSP = 'sandbox; default-src \'none\''
+const RAW_FILE_CSP = "sandbox; default-src 'none'"
 
 type SearchSkillEntry = {
   score: number
