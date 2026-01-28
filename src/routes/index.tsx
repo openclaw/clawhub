@@ -20,7 +20,10 @@ function Home() {
 
 function SkillsHome() {
   const highlighted =
-    (useQuery(api.skills.list, { batch: 'highlighted', limit: 6 }) as Doc<'skills'>[]) ?? []
+    (useQuery(api.skills.list, {
+      batch: 'highlighted',
+      limit: 6,
+    }) as Doc<'skills'>[]) ?? []
   const latest = (useQuery(api.skills.list, { limit: 12 }) as Doc<'skills'>[]) ?? []
 
   return (
@@ -50,7 +53,7 @@ function SkillsHome() {
                 }}
                 className="btn"
               >
-                See all skills
+                Browse skills
               </Link>
             </div>
           </div>
@@ -123,7 +126,7 @@ function SkillsHome() {
             }}
             className="btn"
           >
-            Browse skills
+            See all skills
           </Link>
         </div>
       </section>
