@@ -33,6 +33,7 @@ import type * as lib_githubImport from "../lib/githubImport.js";
 import type * as lib_githubSoulBackup from "../lib/githubSoulBackup.js";
 import type * as lib_leaderboards from "../lib/leaderboards.js";
 import type * as lib_moderation from "../lib/moderation.js";
+import type * as lib_public from "../lib/public.js";
 import type * as lib_searchText from "../lib/searchText.js";
 import type * as lib_skillBackfill from "../lib/skillBackfill.js";
 import type * as lib_skillPublish from "../lib/skillPublish.js";
@@ -93,6 +94,7 @@ declare const fullApi: ApiFromModules<{
   "lib/githubSoulBackup": typeof lib_githubSoulBackup;
   "lib/leaderboards": typeof lib_leaderboards;
   "lib/moderation": typeof lib_moderation;
+  "lib/public": typeof lib_public;
   "lib/searchText": typeof lib_searchText;
   "lib/skillBackfill": typeof lib_skillBackfill;
   "lib/skillPublish": typeof lib_skillPublish;

@@ -1,6 +1,6 @@
 import { ConvexError } from 'convex/values'
 import semver from 'semver'
-import { api, internal } from '../_generated/api'
+import { internal } from '../_generated/api'
 import type { Doc, Id } from '../_generated/dataModel'
 import type { ActionCtx } from '../_generated/server'
 import { generateEmbedding } from './embeddings'

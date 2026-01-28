@@ -1,5 +1,4 @@
 import { v } from 'convex/values'
-import type { Doc } from './_generated/dataModel'
 import { internalMutation, mutation, query } from './_generated/server'
 import { requireUser } from './lib/access'
 import { toPublicSkill } from './lib/public'

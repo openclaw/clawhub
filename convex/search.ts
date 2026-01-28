@@ -3,7 +3,7 @@ import { internal } from './_generated/api'
 import type { Doc, Id } from './_generated/dataModel'
 import { action, internalQuery } from './_generated/server'
 import { generateEmbedding } from './lib/embeddings'
-import { getSkillBadgeMaps, isSkillHighlighted } from './lib/badges'
+import { getSkillBadgeMaps, isSkillHighlighted, type SkillBadgeMap } from './lib/badges'
 import { matchesExactTokens, tokenize } from './lib/searchText'
 import { toPublicSkill, toPublicSoul } from './lib/public'
 
@@ -62,10 +62,10 @@ export const searchSkills: ReturnType<typeof action> = action({
         results.map((result) => [result._id, result._score]),
       )
 
-      const badgeMapBySkillId = await getSkillBadgeMaps(
-        ctx,
-        hydrated.map((entry) => entry.skill._id),
-      )
+      const badgeMapEntries = (await ctx.runQuery(internal.search.getSkillBadgeMapsInternal, {
+        skillIds: hydrated.map((entry) => entry.skill._id),
+      })) as Array<[Id<'skills'>, SkillBadgeMap]>
+      const badgeMapBySkillId = new Map(badgeMapEntries)
       const hydratedWithBadges = hydrated.map((entry) => ({
         ...entry,
         skill: {
@@ -224,6 +224,14 @@ export const hydrateSoulResults = internalQuery({
     }
 
     return entries
+  },
+})
+
+export const getSkillBadgeMapsInternal = internalQuery({
+  args: { skillIds: v.array(v.id('skills')) },
+  handler: async (ctx, args) => {
+    const badgeMap = await getSkillBadgeMaps(ctx, args.skillIds)
+    return Array.from(badgeMap.entries())
   },
 })
 
