@@ -17,7 +17,7 @@ import { v } from 'convex/values'
 import { internal } from './_generated/api'
 import type { Doc, Id } from './_generated/dataModel'
 import type { MutationCtx } from './_generated/server'
-import { internalMutation } from './_generated/server'
+import { internalAction, internalMutation, internalQuery } from './_generated/server'
 import { applySkillStatDeltas, bumpDailySkillStats } from './lib/skillStats'
 
 /**
@@ -276,5 +276,292 @@ export const processSkillStatEventsInternal = internalMutation({
     }
 
     return { processed: events.length }
+  },
+})
+
+// ============================================================================
+// Action-based processing (cursor-based, runs outside transaction window)
+// ============================================================================
+
+const CURSOR_KEY = 'skill_stat_events'
+const EVENT_BATCH_SIZE = 500
+const MAX_SKILLS_PER_RUN = 500
+
+/**
+ * Fetch a batch of events after the given cursor (by _creationTime).
+ * Returns events sorted by _creationTime ascending.
+ */
+export const getUnprocessedEventBatch = internalQuery({
+  args: {
+    cursorCreationTime: v.optional(v.number()),
+    limit: v.optional(v.number()),
+  },
+  handler: async (ctx, args) => {
+    const limit = args.limit ?? EVENT_BATCH_SIZE
+    const cursor = args.cursorCreationTime
+
+    // Query events after the cursor, ordered by _creationTime (default order)
+    let query = ctx.db.query('skillStatEvents')
+    if (cursor !== undefined) {
+      query = query.filter((q) => q.gt(q.field('_creationTime'), cursor))
+    }
+
+    const events = await query.take(limit)
+    return events
+  },
+})
+
+/**
+ * Get the current cursor position from the cursors table.
+ */
+export const getStatEventCursor = internalQuery({
+  args: {},
+  handler: async (ctx) => {
+    const cursor = await ctx.db
+      .query('skillStatUpdateCursors')
+      .withIndex('by_key', (q) => q.eq('key', CURSOR_KEY))
+      .unique()
+    return cursor?.cursorCreationTime
+  },
+})
+
+/**
+ * Validator for skill deltas passed to the mutation.
+ */
+const skillDeltaValidator = v.object({
+  skillId: v.id('skills'),
+  downloads: v.number(),
+  stars: v.number(),
+  installsAllTime: v.number(),
+  installsCurrent: v.number(),
+  downloadEvents: v.array(v.number()),
+  installNewEvents: v.array(v.number()),
+})
+
+/**
+ * Apply aggregated stats to skills and update the cursor.
+ * This is a single atomic mutation that:
+ * 1. Updates all affected skills with their aggregated deltas
+ * 2. Updates daily stats for trending
+ * 3. Advances the cursor to the new position
+ */
+export const applyAggregatedStatsAndUpdateCursor = internalMutation({
+  args: {
+    skillDeltas: v.array(skillDeltaValidator),
+    newCursor: v.number(),
+  },
+  handler: async (ctx, args) => {
+    const now = Date.now()
+
+    // Process each skill's aggregated deltas
+    for (const delta of args.skillDeltas) {
+      const skill = await ctx.db.get(delta.skillId)
+
+      // Skill was deleted - skip
+      if (!skill) {
+        continue
+      }
+
+      // Apply aggregated deltas to skill stats
+      if (
+        delta.downloads !== 0 ||
+        delta.stars !== 0 ||
+        delta.installsAllTime !== 0 ||
+        delta.installsCurrent !== 0
+      ) {
+        const patch = applySkillStatDeltas(skill, {
+          downloads: delta.downloads,
+          stars: delta.stars,
+          installsAllTime: delta.installsAllTime,
+          installsCurrent: delta.installsCurrent,
+        })
+        await ctx.db.patch(skill._id, {
+          ...patch,
+          updatedAt: now,
+        })
+      }
+
+      // Update daily stats for trending/leaderboards
+      for (const occurredAt of delta.downloadEvents) {
+        await bumpDailySkillStats(ctx, { skillId: delta.skillId, now: occurredAt, downloads: 1 })
+      }
+      for (const occurredAt of delta.installNewEvents) {
+        await bumpDailySkillStats(ctx, { skillId: delta.skillId, now: occurredAt, installs: 1 })
+      }
+    }
+
+    // Update cursor position (upsert)
+    const existingCursor = await ctx.db
+      .query('skillStatUpdateCursors')
+      .withIndex('by_key', (q) => q.eq('key', CURSOR_KEY))
+      .unique()
+
+    if (existingCursor) {
+      await ctx.db.patch(existingCursor._id, {
+        cursorCreationTime: args.newCursor,
+        updatedAt: now,
+      })
+    } else {
+      await ctx.db.insert('skillStatUpdateCursors', {
+        key: CURSOR_KEY,
+        cursorCreationTime: args.newCursor,
+        updatedAt: now,
+      })
+    }
+
+    return { skillsUpdated: args.skillDeltas.length }
+  },
+})
+
+/**
+ * Action that processes skill stat events in batches outside the transaction window.
+ *
+ * Algorithm:
+ * 1. Get current cursor position
+ * 2. Fetch events in batches of 500, aggregating as we go
+ * 3. Stop when we have >= 500 unique skills OR run out of events
+ * 4. Call mutation to apply all deltas and update cursor atomically
+ * 5. Self-schedule if we stopped due to skill limit (not exhaustion)
+ */
+export const processSkillStatEventsAction = internalAction({
+  args: {},
+  handler: async (ctx) => {
+    // Get current cursor position (convert null to undefined for consistency)
+    const cursorResult = await ctx.runQuery(internal.skillStatEvents.getStatEventCursor)
+    let cursor: number | undefined = cursorResult ?? undefined
+
+    console.log(`[STAT-AGG] Starting aggregation, cursor=${cursor ?? 'none'}`)
+
+    // Aggregated deltas per skill
+    const aggregatedBySkill = new Map<
+      Id<'skills'>,
+      {
+        downloads: number
+        stars: number
+        installsAllTime: number
+        installsCurrent: number
+        downloadEvents: number[]
+        installNewEvents: number[]
+      }
+    >()
+
+    let maxCreationTime: number | undefined = cursor
+    let exhausted = false
+    let totalEventsFetched = 0
+
+    // Fetch and aggregate until we have enough skills or run out of events
+    while (aggregatedBySkill.size < MAX_SKILLS_PER_RUN) {
+      const events = await ctx.runQuery(internal.skillStatEvents.getUnprocessedEventBatch, {
+        cursorCreationTime: cursor,
+        limit: EVENT_BATCH_SIZE,
+      })
+
+      console.log(
+        `[STAT-AGG] Fetched ${events.length} events, unique skills so far: ${aggregatedBySkill.size}`,
+      )
+
+      if (events.length === 0) {
+        exhausted = true
+        break
+      }
+
+      totalEventsFetched += events.length
+
+      // Aggregate events into per-skill deltas
+      for (const event of events) {
+        let skillDelta = aggregatedBySkill.get(event.skillId)
+        if (!skillDelta) {
+          skillDelta = {
+            downloads: 0,
+            stars: 0,
+            installsAllTime: 0,
+            installsCurrent: 0,
+            downloadEvents: [],
+            installNewEvents: [],
+          }
+          aggregatedBySkill.set(event.skillId, skillDelta)
+        }
+
+        // Apply event to aggregated deltas
+        switch (event.kind) {
+          case 'download':
+            skillDelta.downloads += 1
+            skillDelta.downloadEvents.push(event.occurredAt)
+            break
+          case 'star':
+            skillDelta.stars += 1
+            break
+          case 'unstar':
+            skillDelta.stars -= 1
+            break
+          case 'install_new':
+            skillDelta.installsAllTime += 1
+            skillDelta.installsCurrent += 1
+            skillDelta.installNewEvents.push(event.occurredAt)
+            break
+          case 'install_reactivate':
+            skillDelta.installsCurrent += 1
+            break
+          case 'install_deactivate':
+            skillDelta.installsCurrent -= 1
+            break
+          case 'install_clear':
+            if (event.delta) {
+              skillDelta.installsAllTime += event.delta.allTime
+              skillDelta.installsCurrent += event.delta.current
+            }
+            break
+        }
+
+        // Track highest _creationTime seen
+        if (maxCreationTime === undefined || event._creationTime > maxCreationTime) {
+          maxCreationTime = event._creationTime
+        }
+      }
+
+      // Update cursor for next batch fetch
+      cursor = events[events.length - 1]._creationTime
+
+      // If we got fewer than requested, we've exhausted the events
+      if (events.length < EVENT_BATCH_SIZE) {
+        exhausted = true
+        break
+      }
+    }
+
+    // If we have nothing to process, we're done
+    if (aggregatedBySkill.size === 0 || maxCreationTime === undefined) {
+      console.log('[STAT-AGG] No events to process, done')
+      return { processed: 0, skillsUpdated: 0, exhausted: true }
+    }
+
+    // Convert map to array for mutation
+    const skillDeltas = Array.from(aggregatedBySkill.entries()).map(([skillId, delta]) => ({
+      skillId,
+      ...delta,
+    }))
+
+    console.log(
+      `[STAT-AGG] Running mutation for ${skillDeltas.length} skills (${totalEventsFetched} total events)`,
+    )
+
+    // Apply all deltas and update cursor atomically
+    await ctx.runMutation(internal.skillStatEvents.applyAggregatedStatsAndUpdateCursor, {
+      skillDeltas,
+      newCursor: maxCreationTime,
+    })
+
+    // Self-schedule if we stopped because of skill limit, not exhaustion
+    if (!exhausted) {
+      console.log('[STAT-AGG] More events remaining, self-scheduling')
+      await ctx.scheduler.runAfter(0, internal.skillStatEvents.processSkillStatEventsAction, {})
+    } else {
+      console.log('[STAT-AGG] All events processed, done')
+    }
+
+    return {
+      skillsUpdated: skillDeltas.length,
+      exhausted,
+    }
   },
 })

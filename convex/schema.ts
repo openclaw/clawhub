@@ -289,6 +289,12 @@ const skillStatEvents = defineTable({
   .index('by_unprocessed', ['processedAt'])
   .index('by_skill', ['skillId'])
 
+const skillStatUpdateCursors = defineTable({
+  key: v.string(),
+  cursorCreationTime: v.optional(v.number()),
+  updatedAt: v.number(),
+}).index('by_key', ['key'])
+
 const soulEmbeddings = defineTable({
   soulId: v.id('souls'),
   versionId: v.id('soulVersions'),
@@ -450,6 +456,7 @@ export default defineSchema({
   skillLeaderboards,
   skillStatBackfillState,
   skillStatEvents,
+  skillStatUpdateCursors,
   comments,
   skillReports,
   soulComments,

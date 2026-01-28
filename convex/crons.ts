@@ -24,11 +24,13 @@ crons.interval(
   { batchSize: 200, maxBatches: 5 },
 )
 
-crons.interval(
-  'skill-stat-events',
-  { minutes: 5 },
-  internal.skillStatEvents.processSkillStatEventsInternal,
-  { batchSize: 100 },
-)
+// Commented out: replaced by action-based processSkillStatEventsAction
+// which should be triggered manually or via a different scheduling mechanism
+// crons.interval(
+//   'skill-stat-events',
+//   { minutes: 5 },
+//   internal.skillStatEvents.processSkillStatEventsInternal,
+//   { batchSize: 100 },
+// )
 
 export default crons
