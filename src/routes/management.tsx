@@ -90,11 +90,15 @@ function Management() {
   const [selectedDuplicate, setSelectedDuplicate] = useState('')
   const [selectedOwner, setSelectedOwner] = useState('')
 
+  const selectedSkillId = selectedSkill?.skill?._id ?? null
+  const selectedOwnerUserId = selectedSkill?.skill?.ownerUserId ?? null
+  const selectedCanonicalSlug = selectedSkill?.canonical?.skill?.slug ?? ''
+
   useEffect(() => {
-    if (!selectedSkill?.skill) return
-    setSelectedDuplicate(selectedSkill.canonical?.skill?.slug ?? '')
-    setSelectedOwner(String(selectedSkill.skill.ownerUserId))
-  }, [selectedSkill])
+    if (!selectedSkillId || !selectedOwnerUserId) return
+    setSelectedDuplicate(selectedCanonicalSlug)
+    setSelectedOwner(String(selectedOwnerUserId))
+  }, [selectedCanonicalSlug, selectedOwnerUserId, selectedSkillId])
 
   if (!staff) {
     return (
