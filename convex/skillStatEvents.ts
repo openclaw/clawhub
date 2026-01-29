@@ -456,16 +456,13 @@ export const processSkillStatEventsAction = internalAction({
         limit: EVENT_BATCH_SIZE,
       })
 
-      console.log(
-        `[STAT-AGG] Fetched ${events.length} events, unique skills so far: ${aggregatedBySkill.size}`,
-      )
-
       if (events.length === 0) {
         exhausted = true
         break
       }
 
       totalEventsFetched += events.length
+      const skillsBefore = aggregatedBySkill.size
 
       // Aggregate events into per-skill deltas
       for (const event of events) {
@@ -521,6 +518,10 @@ export const processSkillStatEventsAction = internalAction({
 
       // Update cursor for next batch fetch
       cursor = events[events.length - 1]._creationTime
+
+      console.log(
+        `[STAT-AGG] Fetched ${events.length} events, ${aggregatedBySkill.size - skillsBefore} new skills (${aggregatedBySkill.size} total)`,
+      )
 
       // If we got fewer than requested, we've exhausted the events
       if (events.length < EVENT_BATCH_SIZE) {
