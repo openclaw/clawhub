@@ -11,8 +11,8 @@ import { internal } from './_generated/api'
 import type { Id } from './_generated/dataModel'
 import type { ActionCtx } from './_generated/server'
 import { internalAction, internalMutation } from './_generated/server'
-import { parseFrontmatter, parseMoltbotMetadata } from './lib/skills'
 import { upsertResourceForSkill } from './lib/resource'
+import { parseFrontmatter, parseMoltbotMetadata } from './lib/skills'
 
 type SeedSkillSpec = {
   slug: string

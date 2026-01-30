@@ -1,5 +1,5 @@
-import * as React from 'react'
 import * as TabsPrimitive from '@radix-ui/react-tabs'
+import * as React from 'react'
 import { cn } from '../../lib/utils'
 
 const Tabs = TabsPrimitive.Root
@@ -40,7 +40,10 @@ const TabsContent = React.forwardRef<
 >(({ className, ...props }, ref) => (
   <TabsPrimitive.Content
     ref={ref}
-    className={cn('mt-4 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring', className)}
+    className={cn(
+      'mt-4 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
+      className,
+    )}
     {...props}
   />
 ))

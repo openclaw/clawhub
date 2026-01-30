@@ -3,8 +3,8 @@ import { useMutation, useQuery } from 'convex/react'
 import { api } from '../../convex/_generated/api'
 import type { Doc } from '../../convex/_generated/dataModel'
 import { PageShell } from '../components/PageShell'
-import { SectionHeader } from '../components/SectionHeader'
 import { ResourceCard } from '../components/ResourceCard'
+import { SectionHeader } from '../components/SectionHeader'
 import { Button } from '../components/ui/button'
 import { Card } from '../components/ui/card'
 import type { PublicSkill } from '../lib/publicUser'
@@ -26,9 +26,7 @@ function Stars() {
     return (
       <main className="py-10">
         <PageShell>
-          <Card className="p-6 text-sm text-muted-foreground">
-            Sign in to see your highlights.
-          </Card>
+          <Card className="p-6 text-sm text-muted-foreground">Sign in to see your highlights.</Card>
         </PageShell>
       </main>
     )
@@ -37,7 +35,10 @@ function Stars() {
   return (
     <main className="py-10">
       <PageShell className="space-y-8">
-        <SectionHeader title="Your highlights" description="Skills you’ve starred for quick access." />
+        <SectionHeader
+          title="Your highlights"
+          description="Skills you’ve starred for quick access."
+        />
         {skills.length === 0 ? (
           <Card className="p-6 text-sm text-muted-foreground">No stars yet.</Card>
         ) : (

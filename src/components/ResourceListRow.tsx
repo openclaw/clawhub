@@ -25,8 +25,7 @@ export function ResourceListRow({
   chip,
   href,
 }: ResourceListRowProps) {
-  const link =
-    href ?? getResourceLink(type, resource, resource.slug, ownerHandle ?? null)
+  const link = href ?? getResourceLink(type, resource, resource.slug, ownerHandle ?? null)
   const resolvedBadges = badges ?? getResourceBadge(type, resource)
 
   return (
@@ -44,9 +43,7 @@ export function ResourceListRow({
         ))}
         {chip ? <Badge variant="accent">{chip}</Badge> : null}
       </div>
-      <p className="text-sm text-muted-foreground">
-        {resource.summary ?? summaryFallback}
-      </p>
+      <p className="text-sm text-muted-foreground">{resource.summary ?? summaryFallback}</p>
       {meta ? <div className="text-xs text-muted-foreground">{meta}</div> : null}
     </Link>
   )

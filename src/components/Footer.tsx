@@ -1,5 +1,5 @@
-import { Separator } from './ui/separator'
 import { getSiteName } from '../lib/site'
+import { Separator } from './ui/separator'
 
 export function Footer() {
   const siteName = getSiteName()

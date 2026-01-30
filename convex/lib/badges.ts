@@ -44,7 +44,9 @@ export async function getResourceBadgeMaps(
   resourceIds: Array<Id<'resources'>>,
 ): Promise<Map<Id<'resources'>, ResourceBadgeMap>> {
   const entries = await Promise.all(
-    resourceIds.map(async (resourceId) => [resourceId, await getResourceBadgeMap(ctx, resourceId)] as const),
+    resourceIds.map(
+      async (resourceId) => [resourceId, await getResourceBadgeMap(ctx, resourceId)] as const,
+    ),
   )
   return new Map(entries)
 }

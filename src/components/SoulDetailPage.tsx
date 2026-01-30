@@ -100,7 +100,8 @@ export function SoulDetailPage({ slug, canonicalOwner, redirectToCanonical }: So
     setReadme(null)
     setReadmeError(null)
     let cancelled = false
-    void getReadmeRef.current({ versionId: latestVersionId })
+    void getReadmeRef
+      .current({ versionId: latestVersionId })
       .then((data) => {
         if (cancelled) return
         setReadme(data.text)
@@ -187,7 +188,9 @@ export function SoulDetailPage({ slug, canonicalOwner, redirectToCanonical }: So
             {readmeContent ? (
               <ReactMarkdown remarkPlugins={[remarkGfm]}>{readmeContent}</ReactMarkdown>
             ) : readmeError ? (
-              <div className="text-sm text-muted-foreground">Failed to load SOUL.md: {readmeError}</div>
+              <div className="text-sm text-muted-foreground">
+                Failed to load SOUL.md: {readmeError}
+              </div>
             ) : (
               <div className="text-sm text-muted-foreground">Loading SOUL.md…</div>
             )}
@@ -260,7 +263,9 @@ export function SoulDetailPage({ slug, canonicalOwner, redirectToCanonical }: So
                   className="flex items-start justify-between gap-4 rounded-[var(--radius)] border border-border p-4"
                 >
                   <div className="space-y-1">
-                    <strong className="text-sm">@{entry.user?.handle ?? entry.user?.name ?? 'user'}</strong>
+                    <strong className="text-sm">
+                      @{entry.user?.handle ?? entry.user?.name ?? 'user'}
+                    </strong>
                     <div className="text-sm text-muted-foreground">{entry.comment.body}</div>
                   </div>
                   {isAuthenticated && me && (me._id === entry.comment.userId || isModerator(me)) ? (

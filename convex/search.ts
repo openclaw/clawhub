@@ -3,8 +3,8 @@ import { internal } from './_generated/api'
 import type { Doc, Id } from './_generated/dataModel'
 import { action, internalQuery } from './_generated/server'
 import { getResourceBadgeMaps, isResourceHighlighted, type ResourceBadgeMap } from './lib/badges'
-import { isSkillPublic } from './lib/moderation'
 import { generateEmbedding } from './lib/embeddings'
+import { isSkillPublic } from './lib/moderation'
 import { toPublicSkill, toPublicSoul } from './lib/public'
 import { matchesExactTokens, tokenize } from './lib/searchText'
 
@@ -75,7 +75,7 @@ export const searchSkills: ReturnType<typeof action> = action({
         ...entry,
         skill: {
           ...entry.skill,
-          badges: entry.resourceId ? badgeMapByResourceId.get(entry.resourceId) ?? {} : {},
+          badges: entry.resourceId ? (badgeMapByResourceId.get(entry.resourceId) ?? {}) : {},
         },
       }))
 

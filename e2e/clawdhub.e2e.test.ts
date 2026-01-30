@@ -4,13 +4,13 @@ import { spawnSync } from 'node:child_process'
 import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import { unzipSync } from 'fflate'
 import {
   ApiRoutes,
   ApiV1SearchResponseSchema,
   ApiV1WhoamiResponseSchema,
   parseArk,
 } from 'molthub-schema'
-import { unzipSync } from 'fflate'
 import { Agent, setGlobalDispatcher } from 'undici'
 import { describe, expect, it } from 'vitest'
 import { readGlobalConfig } from '../packages/clawdhub/src/config'

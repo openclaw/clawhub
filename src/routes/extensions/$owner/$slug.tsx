@@ -3,8 +3,8 @@ import { useQuery } from 'convex/react'
 import { api } from '../../../../convex/_generated/api'
 import { PageShell } from '../../../components/PageShell'
 import { ResourceDetailShell } from '../../../components/ResourceDetailShell'
-import { Card } from '../../../components/ui/card'
 import { buttonVariants } from '../../../components/ui/button'
+import { Card } from '../../../components/ui/card'
 
 function toTitleCase(value: string) {
   return value
@@ -31,13 +31,13 @@ function ExtensionDetail() {
           title={displayName || 'Extension'}
           subtitle={`/${owner}/${slug}`}
           note={
-            summary ??
-            'Extensions are not available yet. This page is ready for future releases.'
+            summary ?? 'Extensions are not available yet. This page is ready for future releases.'
           }
           stats={
             resource ? (
               <span>
-                ⭐ {resource.stats.stars} · ⤓ {resource.stats.downloads} · {resource.stats.versions} v
+                ⭐ {resource.stats.stars} · ⤓ {resource.stats.downloads} · {resource.stats.versions}{' '}
+                v
               </span>
             ) : null
           }

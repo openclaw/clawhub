@@ -1,7 +1,7 @@
 import type { DiffEditorProps } from '@monaco-editor/react'
 import { DiffEditor, useMonaco } from '@monaco-editor/react'
 import { useAction } from 'convex/react'
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useEffect, useId, useMemo, useRef, useState } from 'react'
 import { api } from '../../convex/_generated/api'
 import type { Doc, Id } from '../../convex/_generated/dataModel'
 import {
@@ -14,16 +14,10 @@ import {
   sortVersionsBySemver,
 } from '../lib/diffing'
 import { cn } from '../lib/utils'
+import { ClientOnly } from './ClientOnly'
 import { Badge } from './ui/badge'
 import { Button } from './ui/button'
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from './ui/select'
-import { ClientOnly } from './ClientOnly'
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from './ui/select'
 
 type SkillDiffCardProps = {
   skill: Doc<'skills'>
@@ -60,6 +54,8 @@ export function SkillDiffCard({ skill, versions, variant = 'card' }: SkillDiffCa
   const [error, setError] = useState<string | null>(null)
   const [sizeWarning, setSizeWarning] = useState<SizeWarning | null>(null)
   const cacheRef = useRef(new Map<string, string>())
+  const leftVersionSelectId = useId()
+  const rightVersionSelectId = useId()
 
   const versionEntries = useMemo(
     () => versions.map((entry) => ({ id: entry._id, version: entry.version })),
@@ -298,17 +294,23 @@ export function SkillDiffCard({ skill, versions, variant = 'card' }: SkillDiffCa
 
       <div className="flex flex-col gap-3 md:flex-row md:items-end">
         <div className="flex-1">
-          <label className="text-xs font-medium">From</label>
+          <label className="text-xs font-medium" htmlFor={leftVersionSelectId}>
+            From
+          </label>
           <Select
             value={leftVersionId ? String(leftVersionId) : ''}
             onValueChange={(value) => setLeftVersionId(value as Id<'skillVersions'>)}
           >
-            <SelectTrigger>
+            <SelectTrigger id={leftVersionSelectId}>
               <SelectValue placeholder="Select version" />
             </SelectTrigger>
             <SelectContent>
               {versionOptions.map((option) => (
-                <SelectItem key={option.value} value={String(option.value)} disabled={option.disabled}>
+                <SelectItem
+                  key={option.value}
+                  value={String(option.value)}
+                  disabled={option.disabled}
+                >
                   {option.label}
                 </SelectItem>
               ))}
@@ -327,17 +329,23 @@ export function SkillDiffCard({ skill, versions, variant = 'card' }: SkillDiffCa
           Swap
         </Button>
         <div className="flex-1">
-          <label className="text-xs font-medium">To</label>
+          <label className="text-xs font-medium" htmlFor={rightVersionSelectId}>
+            To
+          </label>
           <Select
             value={rightVersionId ? String(rightVersionId) : ''}
             onValueChange={(value) => setRightVersionId(value as Id<'skillVersions'>)}
           >
-            <SelectTrigger>
+            <SelectTrigger id={rightVersionSelectId}>
               <SelectValue placeholder="Select version" />
             </SelectTrigger>
             <SelectContent>
               {versionOptions.map((option) => (
-                <SelectItem key={option.value} value={String(option.value)} disabled={option.disabled}>
+                <SelectItem
+                  key={option.value}
+                  value={String(option.value)}
+                  disabled={option.disabled}
+                >
                   {option.label}
                 </SelectItem>
               ))}

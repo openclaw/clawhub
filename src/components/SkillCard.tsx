@@ -1,6 +1,6 @@
 import type { ReactNode } from 'react'
-import type { PublicSkill } from '../lib/publicUser'
 import { getSkillBadges } from '../lib/badges'
+import type { PublicSkill } from '../lib/publicUser'
 import { ResourceCard } from './ResourceCard'
 
 type SkillCardProps = {

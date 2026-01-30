@@ -1,5 +1,5 @@
-import * as React from 'react'
 import * as DialogPrimitive from '@radix-ui/react-dialog'
+import * as React from 'react'
 import { cn } from '../../lib/utils'
 
 const Sheet = DialogPrimitive.Root
@@ -53,4 +53,13 @@ const SheetTitle = React.forwardRef<
 ))
 SheetTitle.displayName = DialogPrimitive.Title.displayName
 
-export { Sheet, SheetTrigger, SheetClose, SheetPortal, SheetOverlay, SheetContent, SheetHeader, SheetTitle }
+export {
+  Sheet,
+  SheetTrigger,
+  SheetClose,
+  SheetPortal,
+  SheetOverlay,
+  SheetContent,
+  SheetHeader,
+  SheetTitle,
+}

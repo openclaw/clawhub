@@ -4,9 +4,9 @@ import { usePaginatedQuery } from 'convex-helpers/react'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { api } from '../../../convex/_generated/api'
 import type { Doc } from '../../../convex/_generated/dataModel'
+import { PageShell } from '../../components/PageShell'
 import { ResourceCard } from '../../components/ResourceCard'
 import { ResourceListRow } from '../../components/ResourceListRow'
-import { PageShell } from '../../components/PageShell'
 import { SectionHeader } from '../../components/SectionHeader'
 import { Badge } from '../../components/ui/badge'
 import { Button, buttonVariants } from '../../components/ui/button'
@@ -392,7 +392,9 @@ export function SkillsIndex() {
                   meta={
                     <span className="flex flex-wrap gap-2">
                       <Badge variant="secondary">⤓ {skill.stats.downloads} downloads</Badge>
-                      <Badge variant="secondary">⤒ {skill.stats.installsAllTime ?? 0} installs</Badge>
+                      <Badge variant="secondary">
+                        ⤒ {skill.stats.installsAllTime ?? 0} installs
+                      </Badge>
                       <Badge variant="secondary">★ {skill.stats.stars} stars</Badge>
                       <Badge variant="secondary">{skill.stats.versions} versions</Badge>
                     </span>

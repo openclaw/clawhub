@@ -1089,7 +1089,10 @@ export const getSkillResourceBackfillPageInternal = internalQuery({
     cursor: v.optional(v.string()),
     batchSize: v.optional(v.number()),
   },
-  handler: async (ctx, args): Promise<ResourceBackfillPageResult<SkillResourceBackfillPageItem>> => {
+  handler: async (
+    ctx,
+    args,
+  ): Promise<ResourceBackfillPageResult<SkillResourceBackfillPageItem>> => {
     const batchSize = clampInt(args.batchSize ?? DEFAULT_BATCH_SIZE, 1, MAX_BATCH_SIZE)
     const { page, isDone, continueCursor } = await ctx.db
       .query('skills')
@@ -1447,13 +1450,10 @@ export const backfillResourceBadgesFromLegacyInternal = internalAction({
           totals.badgesSkipped++
           continue
         }
-        const existing = await ctx.runQuery(
-          internal.maintenance.getResourceBadgeByKindInternal,
-          {
-            resourceId: skillResult.resourceId,
-            kind: badge.kind,
-          },
-        )
+        const existing = await ctx.runQuery(internal.maintenance.getResourceBadgeByKindInternal, {
+          resourceId: skillResult.resourceId,
+          kind: badge.kind,
+        })
         if (existing) {
           totals.badgesSkipped++
           continue

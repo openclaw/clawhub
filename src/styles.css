@@ -28,8 +28,8 @@
   --font-display: "Bricolage Grotesque", "Manrope", sans-serif;
   --font-body: "Manrope", "Bricolage Grotesque", sans-serif;
   --font-mono:
-    "IBM Plex Mono", ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas,
-    "Liberation Mono", "Courier New", monospace;
+    "IBM Plex Mono", ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono",
+    "Courier New", monospace;
 }
 
 @theme {

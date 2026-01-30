@@ -1,7 +1,7 @@
 import type { ReactNode } from 'react'
+import { cn } from '../lib/utils'
 import { Badge } from './ui/badge'
 import { Card } from './ui/card'
-import { cn } from '../lib/utils'
 
 type ResourceDetailShellProps = {
   title: string

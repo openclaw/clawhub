@@ -5,9 +5,9 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import {
   detectSiteMode,
   detectSiteModeFromUrl,
-  getOpenClawSiteUrl,
   getOnlyCrabsHost,
   getOnlyCrabsSiteUrl,
+  getOpenClawSiteUrl,
   getSiteDescription,
   getSiteMode,
   getSiteName,

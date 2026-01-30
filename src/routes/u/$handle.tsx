@@ -4,14 +4,14 @@ import { useEffect, useState } from 'react'
 import { api } from '../../../convex/_generated/api'
 import type { Doc } from '../../../convex/_generated/dataModel'
 import { PageShell } from '../../components/PageShell'
+import { ResourceCard } from '../../components/ResourceCard'
 import { SectionHeader } from '../../components/SectionHeader'
+import { SkillCard } from '../../components/SkillCard'
 import { Avatar, AvatarFallback, AvatarImage } from '../../components/ui/avatar'
 import { Badge } from '../../components/ui/badge'
 import { Button } from '../../components/ui/button'
 import { Card } from '../../components/ui/card'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '../../components/ui/tabs'
-import { ResourceCard } from '../../components/ResourceCard'
-import { SkillCard } from '../../components/SkillCard'
 import { getSkillBadges } from '../../lib/badges'
 import type { PublicResource, PublicSkill, PublicSoul, PublicUser } from '../../lib/publicUser'
 import { toCanonicalResourcePath } from '../../lib/resources'
@@ -141,7 +141,9 @@ function UserProfile() {
                         ))}
                       </div>
                     ) : (
-                      <Card className="p-4 text-sm text-muted-foreground">No published skills yet.</Card>
+                      <Card className="p-4 text-sm text-muted-foreground">
+                        No published skills yet.
+                      </Card>
                     )}
                   </div>
                   <div className="space-y-3">
@@ -165,7 +167,9 @@ function UserProfile() {
                         ))}
                       </div>
                     ) : (
-                      <Card className="p-4 text-sm text-muted-foreground">No published souls yet.</Card>
+                      <Card className="p-4 text-sm text-muted-foreground">
+                        No published souls yet.
+                      </Card>
                     )}
                   </div>
                   <div className="space-y-3">
@@ -181,14 +185,17 @@ function UserProfile() {
                             summaryFallback="Extension bundle."
                             meta={
                               <span>
-                                ⭐ {extension.stats.stars} stars · ⤓ {extension.stats.downloads} downloads
+                                ⭐ {extension.stats.stars} stars · ⤓ {extension.stats.downloads}{' '}
+                                downloads
                               </span>
                             }
                           />
                         ))}
                       </div>
                     ) : (
-                      <Card className="p-4 text-sm text-muted-foreground">No published extensions yet.</Card>
+                      <Card className="p-4 text-sm text-muted-foreground">
+                        No published extensions yet.
+                      </Card>
                     )}
                   </div>
                 </div>
@@ -236,13 +243,15 @@ function InstalledSection(props: {
   const [showRaw, setShowRaw] = useState(false)
   const data = props.data
   if (data === undefined) {
-    return (
-      <Card className="p-6 text-sm text-muted-foreground">Loading telemetry…</Card>
-    )
+    return <Card className="p-6 text-sm text-muted-foreground">Loading telemetry…</Card>
   }
 
   if (data === null) {
-    return <Card className="p-6 text-sm text-muted-foreground">Sign in to view your installed skills.</Card>
+    return (
+      <Card className="p-6 text-sm text-muted-foreground">
+        Sign in to view your installed skills.
+      </Card>
+    )
   }
 
   return (

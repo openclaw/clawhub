@@ -93,7 +93,10 @@ async function classifyWithOpenAI(args: {
     args.skill.summary ? `Summary: ${args.skill.summary}` : null,
     `Latest version: ${args.version?.version ?? 'unknown'}`,
     args.version?.files?.length
-      ? `Files: ${args.version.files.map((file) => file.path).slice(0, 80).join(', ')}`
+      ? `Files: ${args.version.files
+          .map((file) => file.path)
+          .slice(0, 80)
+          .join(', ')}`
       : 'Files: none',
   ]
     .filter(Boolean)
@@ -149,7 +152,10 @@ export const setSkillAutomodCursorInternal = internalMutation({
       .withIndex('by_key', (q) => q.eq('key', CURSOR_KEY))
       .unique()
     if (existing) {
-      await ctx.db.patch(existing._id, { cursorUpdatedAt: args.cursorUpdatedAt, updatedAt: Date.now() })
+      await ctx.db.patch(existing._id, {
+        cursorUpdatedAt: args.cursorUpdatedAt,
+        updatedAt: Date.now(),
+      })
       return
     }
     await ctx.db.insert('automodCursors', {

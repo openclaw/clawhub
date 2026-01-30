@@ -3,8 +3,8 @@ import { useAction, useQuery } from 'convex/react'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { api } from '../../convex/_generated/api'
 import { InstallSwitcher } from '../components/InstallSwitcher'
-import { ResourceCard } from '../components/ResourceCard'
 import { PageShell } from '../components/PageShell'
+import { ResourceCard } from '../components/ResourceCard'
 import { SectionHeader } from '../components/SectionHeader'
 import { buttonVariants } from '../components/ui/button'
 import { Input } from '../components/ui/input'
@@ -46,11 +46,7 @@ function SkillsHome() {
                 vectors. No gatekeeping, just signal.
               </p>
               <div className="flex flex-wrap gap-3">
-                <Link
-                  to="/upload"
-                  search={{ updateSlug: undefined }}
-                  className={buttonVariants()}
-                >
+                <Link to="/upload" search={{ updateSlug: undefined }} className={buttonVariants()}>
                   Publish a skill
                 </Link>
                 <Link
@@ -70,7 +66,9 @@ function SkillsHome() {
               </div>
             </div>
             <div className="rounded-[var(--radius)] border border-border bg-muted p-6">
-              <div className="text-xs text-muted-foreground">Search skills. Versioned, rollback-ready.</div>
+              <div className="text-xs text-muted-foreground">
+                Search skills. Versioned, rollback-ready.
+              </div>
               <div className="mt-4">
                 <InstallSwitcher exampleSlug="sonoscli" />
               </div>
@@ -188,11 +186,7 @@ function OnlyCrabsHome() {
                 public place.
               </p>
               <div className="flex flex-wrap gap-3">
-                <Link
-                  to="/upload"
-                  search={{ updateSlug: undefined }}
-                  className={buttonVariants()}
-                >
+                <Link to="/upload" search={{ updateSlug: undefined }} className={buttonVariants()}>
                   Publish a soul
                 </Link>
                 <Link
@@ -242,7 +236,10 @@ function OnlyCrabsHome() {
         </section>
 
         <section className="space-y-6">
-          <SectionHeader title="Latest souls" description="Newest SOUL.md bundles across the hub." />
+          <SectionHeader
+            title="Latest souls"
+            description="Newest SOUL.md bundles across the hub."
+          />
           <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
             {latest.length === 0 ? (
               <div className="rounded-[var(--radius)] border border-dashed border-border bg-card p-6 text-sm text-muted-foreground">

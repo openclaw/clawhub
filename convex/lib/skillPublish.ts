@@ -220,9 +220,7 @@ export async function queueHighlightedWebhook(ctx: MutationCtx, skillId: Id<'ski
   const owner = await ctx.db.get(skill.ownerUserId)
   const latestVersion = skill.latestVersionId ? await ctx.db.get(skill.latestVersionId) : null
 
-  const badges = skill.resourceId
-    ? await getResourceBadgeMap(ctx, skill.resourceId)
-    : {}
+  const badges = skill.resourceId ? await getResourceBadgeMap(ctx, skill.resourceId) : {}
   const payload: WebhookSkillPayload = {
     slug: skill.slug,
     displayName: skill.displayName,

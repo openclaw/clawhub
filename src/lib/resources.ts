@@ -1,5 +1,5 @@
-import type { PublicResource, PublicSkill, PublicSoul } from './publicUser'
 import { getResourceBadges } from './badges'
+import type { PublicResource, PublicSkill, PublicSoul } from './publicUser'
 
 export type ResourceType = 'skill' | 'soul' | 'extension'
 
@@ -29,8 +29,7 @@ export function getResourceLabel(type: ResourceType, options?: { plural?: boolea
 }
 
 export function getResourceOwner(resource: ResourceSource, ownerHandle?: string | null) {
-  const resourceHandle =
-    resource && 'ownerHandle' in resource ? resource.ownerHandle : undefined
+  const resourceHandle = resource && 'ownerHandle' in resource ? resource.ownerHandle : undefined
   const handle = ownerHandle?.trim() || resourceHandle?.trim()
   if (handle) return handle
   const ownerId = resource?.ownerUserId ? String(resource.ownerUserId) : null

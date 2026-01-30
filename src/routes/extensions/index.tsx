@@ -1,11 +1,11 @@
 import { createFileRoute, Link } from '@tanstack/react-router'
 import { usePaginatedQuery } from 'convex-helpers/react'
 import { api } from '../../../convex/_generated/api'
-import { ResourceCard } from '../../components/ResourceCard'
 import { PageShell } from '../../components/PageShell'
+import { ResourceCard } from '../../components/ResourceCard'
 import { SectionHeader } from '../../components/SectionHeader'
-import { Card } from '../../components/ui/card'
 import { Button, buttonVariants } from '../../components/ui/button'
+import { Card } from '../../components/ui/card'
 import type { PublicResource } from '../../lib/publicUser'
 
 export const Route = createFileRoute('/extensions/')({
@@ -29,9 +29,7 @@ function ExtensionsIndex() {
         <SectionHeader
           title="Extensions"
           description={
-            isLoading
-              ? 'Loading extensions…'
-              : 'Browse the extension catalog when it launches.'
+            isLoading ? 'Loading extensions…' : 'Browse the extension catalog when it launches.'
           }
         />
 
@@ -60,11 +58,7 @@ function ExtensionsIndex() {
               >
                 Browse skills
               </Link>
-              <Link
-                to="/upload"
-                search={{ updateSlug: undefined }}
-                className={buttonVariants()}
-              >
+              <Link to="/upload" search={{ updateSlug: undefined }} className={buttonVariants()}>
                 Upload a skill
               </Link>
             </div>

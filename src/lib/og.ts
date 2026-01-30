@@ -1,4 +1,4 @@
-import { getOpenClawSiteUrl, getOnlyCrabsSiteUrl } from './site'
+import { getOnlyCrabsSiteUrl, getOpenClawSiteUrl } from './site'
 
 type SkillMetaSource = {
   slug: string

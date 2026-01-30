@@ -1,16 +1,16 @@
 import { Link, useNavigate } from '@tanstack/react-router'
 import { useAction, useMutation, useQuery } from 'convex/react'
 import type { MoltbotSkillMetadata, SkillInstallSpec } from 'molthub-schema'
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useEffect, useId, useMemo, useRef, useState } from 'react'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import { api } from '../../convex/_generated/api'
 import type { Doc, Id } from '../../convex/_generated/dataModel'
 import { getSkillBadges } from '../lib/badges'
 import type { PublicSkill, PublicUser } from '../lib/publicUser'
+import { toCanonicalResourcePath } from '../lib/resources'
 import { canManageSkill, isModerator } from '../lib/roles'
 import { useAuthStatus } from '../lib/useAuthStatus'
-import { toCanonicalResourcePath } from '../lib/resources'
 import { PageShell } from './PageShell'
 import { ResourceDetailShell } from './ResourceDetailShell'
 import { SkillDiffCard } from './SkillDiffCard'
@@ -18,13 +18,7 @@ import { Badge } from './ui/badge'
 import { Button, buttonVariants } from './ui/button'
 import { Card } from './ui/card'
 import { Input } from './ui/input'
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from './ui/select'
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from './ui/select'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from './ui/tabs'
 import { Textarea } from './ui/textarea'
 
@@ -68,6 +62,8 @@ export function SkillDetailPage({
   const [tagName, setTagName] = useState('latest')
   const [tagVersionId, setTagVersionId] = useState<Id<'skillVersions'> | ''>('')
   const [activeTab, setActiveTab] = useState<'files' | 'compare' | 'versions'>('files')
+  const tagNameInputId = useId()
+  const tagVersionSelectId = useId()
 
   const isLoadingSkill = result === undefined
   const skill = result?.skill
@@ -163,7 +159,8 @@ export function SkillDetailPage({
     setReadme(null)
     setReadmeError(null)
     let cancelled = false
-    void getReadmeRef.current({ versionId: latestVersionId })
+    void getReadmeRef
+      .current({ versionId: latestVersionId })
       .then((data) => {
         if (cancelled) return
         setReadme(data.text)
@@ -221,8 +218,8 @@ export function SkillDetailPage({
           stats={
             <span>
               ⭐ {skill.stats.stars} stars · ⤓ {skill.stats.downloads} downloads · ⤒{' '}
-              {skill.stats.installsCurrent ?? 0} current installs · {skill.stats.installsAllTime ?? 0}{' '}
-              total installs
+              {skill.stats.installsCurrent ?? 0} current installs ·{' '}
+              {skill.stats.installsAllTime ?? 0} total installs
             </span>
           }
           ownerLine={
@@ -337,7 +334,9 @@ export function SkillDetailPage({
             ) : null}
             {cliHelp ? (
               <details className="rounded-[var(--radius)] border border-border bg-muted px-4 py-3 text-xs">
-                <summary className="cursor-pointer text-sm font-medium">CLI help (from plugin)</summary>
+                <summary className="cursor-pointer text-sm font-medium">
+                  CLI help (from plugin)
+                </summary>
                 <pre className="mt-3 whitespace-pre-wrap font-mono text-xs">{cliHelp}</pre>
               </details>
             ) : null}
@@ -378,16 +377,24 @@ export function SkillDetailPage({
               className="flex flex-col gap-3 md:flex-row md:items-end"
             >
               <div className="flex-1">
-                <label className="text-xs font-medium">Tag</label>
-                <Input value={tagName} onChange={(event) => setTagName(event.target.value)} />
+                <label className="text-xs font-medium" htmlFor={tagNameInputId}>
+                  Tag
+                </label>
+                <Input
+                  id={tagNameInputId}
+                  value={tagName}
+                  onChange={(event) => setTagName(event.target.value)}
+                />
               </div>
               <div className="flex-1">
-                <label className="text-xs font-medium">Version</label>
+                <label className="text-xs font-medium" htmlFor={tagVersionSelectId}>
+                  Version
+                </label>
                 <Select
                   value={tagVersionValue}
                   onValueChange={(value) => setTagVersionId(value as Id<'skillVersions'>)}
                 >
-                  <SelectTrigger>
+                  <SelectTrigger id={tagVersionSelectId}>
                     <SelectValue placeholder="Select version" />
                   </SelectTrigger>
                   <SelectContent>
@@ -410,10 +417,10 @@ export function SkillDetailPage({
               <Card className="space-y-4 p-6">
                 <h2 className="font-display text-lg font-semibold">Runtime</h2>
                 <div className="flex flex-wrap gap-2 text-xs text-muted-foreground">
-                  {moltbot?.emoji ? <Badge variant="secondary">{moltbot.emoji} Moltbot</Badge> : null}
-                  {osLabels.length ? (
-                    <span>OS: {osLabels.join(', ')}</span>
+                  {moltbot?.emoji ? (
+                    <Badge variant="secondary">{moltbot.emoji} Moltbot</Badge>
                   ) : null}
+                  {osLabels.length ? <span>OS: {osLabels.join(', ')}</span> : null}
                   {requirements?.bins?.length ? (
                     <span>Bins: {requirements.bins.join(', ')}</span>
                   ) : null}
@@ -510,7 +517,9 @@ export function SkillDetailPage({
                       className="flex items-center justify-between border-b border-border pb-2 last:border-none"
                     >
                       <span className="font-mono text-xs text-muted-foreground">{file.path}</span>
-                      <span className="text-xs text-muted-foreground">{formatBytes(file.size)}</span>
+                      <span className="text-xs text-muted-foreground">
+                        {formatBytes(file.size)}
+                      </span>
                     </div>
                   ))
                 )}
@@ -592,7 +601,9 @@ export function SkillDetailPage({
                   className="flex items-start justify-between gap-4 rounded-[var(--radius)] border border-border p-4"
                 >
                   <div className="space-y-1">
-                    <strong className="text-sm">@{entry.user?.handle ?? entry.user?.name ?? 'user'}</strong>
+                    <strong className="text-sm">
+                      @{entry.user?.handle ?? entry.user?.name ?? 'user'}
+                    </strong>
                     <div className="text-sm text-muted-foreground">{entry.comment.body}</div>
                   </div>
                   {isAuthenticated && me && (me._id === entry.comment.userId || isModerator(me)) ? (

@@ -2,9 +2,9 @@ import { createFileRoute, Link } from '@tanstack/react-router'
 import { useAction, useQuery } from 'convex/react'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { api } from '../../../convex/_generated/api'
+import { PageShell } from '../../components/PageShell'
 import { ResourceCard } from '../../components/ResourceCard'
 import { ResourceListRow } from '../../components/ResourceListRow'
-import { PageShell } from '../../components/PageShell'
 import { SectionHeader } from '../../components/SectionHeader'
 import { Badge } from '../../components/ui/badge'
 import { Button, buttonVariants } from '../../components/ui/button'
@@ -229,7 +229,8 @@ function SoulsIndex() {
                 summaryFallback="A SOUL.md bundle."
                 meta={
                   <span>
-                    ⭐ {soul.stats.stars} stars · ⤓ {soul.stats.downloads} downloads · {soul.stats.versions} versions
+                    ⭐ {soul.stats.stars} stars · ⤓ {soul.stats.downloads} downloads ·{' '}
+                    {soul.stats.versions} versions
                   </span>
                 }
               />

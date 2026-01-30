@@ -1,5 +1,5 @@
-import { paginationOptsValidator } from 'convex/server'
 import { getAuthUserId } from '@convex-dev/auth/server'
+import { paginationOptsValidator } from 'convex/server'
 import { ConvexError, v } from 'convex/values'
 import { paginator } from 'convex-helpers/server/pagination'
 import { internal } from './_generated/api'
@@ -59,7 +59,7 @@ async function getBadgeMapBySkillId(ctx: BadgeContext, skills: Doc<'skills'>[]) 
   return new Map(
     skills.map((skill) => [
       skill._id,
-      skill.resourceId ? badgeMapByResourceId.get(skill.resourceId) ?? {} : {},
+      skill.resourceId ? (badgeMapByResourceId.get(skill.resourceId) ?? {}) : {},
     ]),
   )
 }
@@ -67,7 +67,9 @@ async function getBadgeMapBySkillId(ctx: BadgeContext, skills: Doc<'skills'>[]) 
 async function upsertSkillModeration(
   ctx: MutationCtx,
   skillId: Id<'skills'>,
-  patch: Partial<Pick<Doc<'skillModeration'>, 'notes' | 'reason' | 'reviewedAt' | 'hiddenAt' | 'hiddenBy'>>,
+  patch: Partial<
+    Pick<Doc<'skillModeration'>, 'notes' | 'reason' | 'reviewedAt' | 'hiddenAt' | 'hiddenBy'>
+  >,
 ) {
   const existing = await ctx.db
     .query('skillModeration')
@@ -80,11 +82,7 @@ async function upsertSkillModeration(
   await ctx.db.insert('skillModeration', { skillId, ...patch })
 }
 
-async function upsertSkillReportStats(
-  ctx: MutationCtx,
-  skillId: Id<'skills'>,
-  now: number,
-) {
+async function upsertSkillReportStats(ctx: MutationCtx, skillId: Id<'skills'>, now: number) {
   const existing = await ctx.db
     .query('skillReportStats')
     .withIndex('by_skill', (q) => q.eq('skillId', skillId))
@@ -180,17 +178,15 @@ async function buildPublicSkillEntriesFromSkillResources(
   return hydrated.filter((entry): entry is PublicSkillEntry => entry !== null)
 }
 
-async function buildPublicSkillEntriesFromResources(
-  ctx: QueryCtx,
-  resources: Doc<'resources'>[],
-) {
+async function buildPublicSkillEntriesFromResources(ctx: QueryCtx, resources: Doc<'resources'>[]) {
   const skillEntries = await Promise.all(
     resources.map(async (resource) => {
       const skill = await ctx.db
         .query('skills')
         .withIndex('by_resource', (q) => q.eq('resourceId', resource._id))
         .unique()
-      if (!skill || skill.softDeletedAt || resource.softDeletedAt || !isSkillPublic(skill)) return null
+      if (!skill || skill.softDeletedAt || resource.softDeletedAt || !isSkillPublic(skill))
+        return null
       return { skill, resource }
     }),
   )
@@ -1782,4 +1778,3 @@ function clampInt(value: number, min: number, max: number) {
   const rounded = Number.isFinite(value) ? Math.round(value) : min
   return Math.min(max, Math.max(min, rounded))
 }
-
