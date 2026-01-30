@@ -1,6 +1,6 @@
 /* @vitest-environment node */
-import { describe, expect, it } from 'vitest'
-import { __test } from './httpApi'
+import { describe, expect, it, vi } from 'vitest'
+import { __handlers, __test } from './httpApi'
 
 describe('httpApi', () => {
   it('parses publish payload', () => {
@@ -66,5 +66,21 @@ describe('httpApi', () => {
     expect(__test.toOptionalNumber('')).toBeUndefined()
     expect(__test.toOptionalNumber('10')).toBe(10)
     expect(__test.toOptionalNumber('nope')).toBeUndefined()
+  })
+
+  it('returns maintenance status', async () => {
+    const ctx = {
+      runQuery: vi.fn(async () => ({ enabled: true, message: 'Updating', updatedAt: 123 })),
+    }
+    const response = await __handlers.maintenanceStatusHandler(
+      ctx as unknown as Parameters<typeof __handlers.maintenanceStatusHandler>[0],
+      new Request('https://example.com/maintenance'),
+    )
+    const payload = (await response.json()) as {
+      enabled: boolean
+      message: string | null
+      updatedAt: number
+    }
+    expect(payload).toEqual({ enabled: true, message: 'Updating', updatedAt: 123 })
   })
 })

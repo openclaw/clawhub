@@ -10,6 +10,7 @@ import {
   cliUploadUrlHttp,
   cliWhoamiHttp,
   getSkillHttp,
+  maintenanceStatusHttp,
   resolveSkillVersionHttp,
   searchSkillsHttp,
 } from './httpApi'
@@ -189,6 +190,12 @@ http.route({
   path: LegacyApiRoutes.cliSkillUndelete,
   method: 'POST',
   handler: cliSkillUndeleteHttp,
+})
+
+http.route({
+  path: '/maintenance',
+  method: 'GET',
+  handler: maintenanceStatusHttp,
 })
 
 export default http

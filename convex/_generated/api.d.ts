@@ -47,6 +47,7 @@ import type * as lib_soulPublish from "../lib/soulPublish.js";
 import type * as lib_tokens from "../lib/tokens.js";
 import type * as lib_webhooks from "../lib/webhooks.js";
 import type * as maintenance from "../maintenance.js";
+import type * as maintenanceMode from "../maintenanceMode.js";
 import type * as rateLimits from "../rateLimits.js";
 import type * as search from "../search.js";
 import type * as seed from "../seed.js";
@@ -111,6 +112,7 @@ declare const fullApi: ApiFromModules<{
   "lib/tokens": typeof lib_tokens;
   "lib/webhooks": typeof lib_webhooks;
   maintenance: typeof maintenance;
+  maintenanceMode: typeof maintenanceMode;
   rateLimits: typeof rateLimits;
   search: typeof search;
   seed: typeof seed;

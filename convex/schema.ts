@@ -350,6 +350,13 @@ const automodCursors = defineTable({
   updatedAt: v.number(),
 }).index('by_key', ['key'])
 
+const maintenance = defineTable({
+  key: v.string(),
+  enabled: v.boolean(),
+  message: v.optional(v.string()),
+  updatedAt: v.number(),
+}).index('by_key', ['key'])
+
 const soulEmbeddings = defineTable({
   soulId: v.id('souls'),
   versionId: v.id('soulVersions'),
@@ -535,6 +542,7 @@ export default defineSchema({
   skillStatEvents,
   skillStatUpdateCursors,
   automodCursors,
+  maintenance,
   comments,
   skillReports,
   skillReportStats,

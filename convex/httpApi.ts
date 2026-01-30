@@ -11,6 +11,7 @@ import type { Id } from './_generated/dataModel'
 import type { ActionCtx } from './_generated/server'
 import { httpAction } from './_generated/server'
 import { requireApiTokenUser } from './lib/apiTokenAuth'
+import type { MaintenanceStatus } from './maintenanceMode'
 import { publishVersionForUser } from './skills'
 
 type SearchSkillEntry = {
@@ -238,6 +239,19 @@ async function cliTelemetrySyncHandler(ctx: ActionCtx, request: Request) {
 
 export const cliTelemetrySyncHttp = httpAction(cliTelemetrySyncHandler)
 
+async function maintenanceStatusHandler(ctx: ActionCtx, _request: Request) {
+  const status = (await ctx.runQuery(
+    internal.maintenanceMode.getMaintenanceStatusInternal,
+  )) as MaintenanceStatus
+  return json({
+    enabled: status.enabled,
+    message: status.message ?? null,
+    updatedAt: status.updatedAt,
+  })
+}
+
+export const maintenanceStatusHttp = httpAction(maintenanceStatusHandler)
+
 function json(value: unknown, status = 200) {
   return new Response(JSON.stringify(value), {
     status,
@@ -302,4 +316,5 @@ export const __handlers = {
   cliPublishHandler,
   cliSkillDeleteHandler,
   cliTelemetrySyncHandler,
+  maintenanceStatusHandler,
 }
