@@ -6,6 +6,8 @@
   <a href="LICENSE"><img src="https://img.shields.io/badge/License-MIT-blue.svg?style=for-the-badge" alt="MIT License"></a>
 </p>
 
+![GitHub Repo Banner](https://ghrb.waren.build/banner?header=%F0%9F%A6%9EClawHub&subheader=Skill+Directory+for+OpenClaw&bg=00000000&color=ffffff&support=true)<!-- Created with GitHub Repo Banner by Waren Gonzaga: https://ghrb.waren.build -->
+
 ClawHub is the **public skill registry for Clawdbot**: publish, version, and search text-based agent skills (a `SKILL.md` plus supporting files).
 It’s designed for fast browsing + a CLI-friendly API, with moderation hooks and vector search.
 
