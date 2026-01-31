@@ -20,7 +20,7 @@ const REQUEST_TIMEOUT_MS = 15_000
 try {
   setGlobalDispatcher(
     new Agent({
-      allowH2: true,
+      allowH2: false,
       connect: { timeout: REQUEST_TIMEOUT_MS },
     }),
   )
