@@ -720,23 +720,43 @@ export const listPublicPage = query({
 export const listPublicPageV2 = query({
   args: {
     paginationOpts: paginationOptsValidator,
+    sort: v.optional(
+      v.union(
+        v.literal('newest'),
+        v.literal('updated'),
+        v.literal('downloads'),
+        v.literal('installs'),
+        v.literal('stars'),
+        v.literal('name'),
+      ),
+    ),
+    dir: v.optional(v.union(v.literal('asc'), v.literal('desc'))),
   },
   handler: async (ctx, args) => {
-    // Use the new index to filter out soft-deleted skills at query time.
-    // softDeletedAt === undefined means active (non-deleted) skills only.
+    const sort = args.sort ?? 'updated'
+    const dir = args.dir ?? 'desc'
+
+    const indexName =
+      sort === 'downloads'
+        ? 'by_stats_downloads'
+        : sort === 'stars'
+          ? 'by_stats_stars'
+          : sort === 'installs'
+            ? 'by_stats_installs_all_time'
+            : 'by_active_updated'
+
+    const useActiveFilter = indexName === 'by_active_updated'
+
     const result = await paginator(ctx.db, schema)
       .query('skills')
-      .withIndex('by_active_updated', (q) => q.eq('softDeletedAt', undefined))
-      .order('desc')
+      .withIndex(indexName, useActiveFilter ? (q) => q.eq('softDeletedAt', undefined) : (q) => q)
+      .order(dir)
       .paginate(args.paginationOpts)
 
-    // Build the public skill entries (fetch latestVersion + ownerHandle)
-    const items = await buildPublicSkillEntries(ctx, result.page)
+    const page = useActiveFilter ? result.page : result.page.filter((s) => !s.softDeletedAt)
+    const items = await buildPublicSkillEntries(ctx, page)
 
-    return {
-      ...result,
-      page: items,
-    }
+    return { ...result, page: items }
   },
 })
 
