@@ -733,28 +733,29 @@ export const listPublicPageV2 = query({
     dir: v.optional(v.union(v.literal('asc'), v.literal('desc'))),
   },
   handler: async (ctx, args) => {
-    const sort = args.sort ?? 'updated'
+    const sort = args.sort ?? 'newest'
     const dir = args.dir ?? 'desc'
 
     const indexName =
-      sort === 'downloads'
-        ? 'by_stats_downloads'
-        : sort === 'stars'
-          ? 'by_stats_stars'
-          : sort === 'installs'
-            ? 'by_stats_installs_all_time'
-            : 'by_active_updated'
-
-    const useActiveFilter = indexName === 'by_active_updated'
+      sort === 'newest'
+        ? 'by_active_created'
+        : sort === 'updated'
+          ? 'by_active_updated'
+          : sort === 'name'
+            ? 'by_active_name'
+            : sort === 'downloads'
+              ? 'by_active_stats_downloads'
+              : sort === 'stars'
+                ? 'by_active_stats_stars'
+                : 'by_active_stats_installs_all_time'
 
     const result = await paginator(ctx.db, schema)
       .query('skills')
-      .withIndex(indexName, useActiveFilter ? (q) => q.eq('softDeletedAt', undefined) : (q) => q)
+      .withIndex(indexName, (q) => q.eq('softDeletedAt', undefined))
       .order(dir)
       .paginate(args.paginationOpts)
 
-    const page = useActiveFilter ? result.page : result.page.filter((s) => !s.softDeletedAt)
-    const items = await buildPublicSkillEntries(ctx, page)
+    const items = await buildPublicSkillEntries(ctx, result.page)
 
     return { ...result, page: items }
   },
