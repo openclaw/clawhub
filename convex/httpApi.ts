@@ -11,6 +11,7 @@ import type { Id } from './_generated/dataModel'
 import type { ActionCtx } from './_generated/server'
 import { httpAction } from './_generated/server'
 import { requireApiTokenUser } from './lib/apiTokenAuth'
+import { CORS_HEADERS } from './lib/cors'
 import { publishVersionForUser } from './skills'
 
 type SearchSkillEntry = {
@@ -244,6 +245,7 @@ function json(value: unknown, status = 200) {
     headers: {
       'Content-Type': 'application/json',
       'Cache-Control': 'no-store',
+      ...CORS_HEADERS,
     },
   })
 }
@@ -254,6 +256,7 @@ function text(value: string, status: number) {
     headers: {
       'Content-Type': 'text/plain; charset=utf-8',
       'Cache-Control': 'no-store',
+      ...CORS_HEADERS,
     },
   })
 }

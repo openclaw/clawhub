@@ -2,6 +2,7 @@ import { v } from 'convex/values'
 import { zipSync } from 'fflate'
 import { api } from './_generated/api'
 import { httpAction, mutation } from './_generated/server'
+import { CORS_HEADERS } from './lib/cors'
 import { insertStatEvent } from './skillStatEvents'
 
 export const downloadZip = httpAction(async (ctx, request) => {
@@ -11,12 +12,12 @@ export const downloadZip = httpAction(async (ctx, request) => {
   const tagParam = url.searchParams.get('tag')?.trim()
 
   if (!slug) {
-    return new Response('Missing slug', { status: 400 })
+    return new Response('Missing slug', { status: 400, headers: CORS_HEADERS })
   }
 
   const skillResult = await ctx.runQuery(api.skills.getBySlug, { slug })
   if (!skillResult?.skill) {
-    return new Response('Skill not found', { status: 404 })
+    return new Response('Skill not found', { status: 404, headers: CORS_HEADERS })
   }
 
   const skill = skillResult.skill
@@ -35,10 +36,10 @@ export const downloadZip = httpAction(async (ctx, request) => {
   }
 
   if (!version) {
-    return new Response('Version not found', { status: 404 })
+    return new Response('Version not found', { status: 404, headers: CORS_HEADERS })
   }
   if (version.softDeletedAt) {
-    return new Response('Version not available', { status: 410 })
+    return new Response('Version not available', { status: 410, headers: CORS_HEADERS })
   }
 
   const files: Record<string, Uint8Array> = {}
@@ -61,6 +62,7 @@ export const downloadZip = httpAction(async (ctx, request) => {
       'Content-Type': 'application/zip',
       'Content-Disposition': `attachment; filename="${slug}-${version.version}.zip"`,
       'Cache-Control': 'private, max-age=60',
+      ...CORS_HEADERS,
     },
   })
 })

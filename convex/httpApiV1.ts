@@ -4,6 +4,7 @@ import type { Doc, Id } from './_generated/dataModel'
 import type { ActionCtx } from './_generated/server'
 import { httpAction } from './_generated/server'
 import { requireApiTokenUser } from './lib/apiTokenAuth'
+import { CORS_HEADERS } from './lib/cors'
 import { hashToken } from './lib/tokens'
 import { publishVersionForUser } from './skills'
 import { publishSoulVersionForUser } from './souls'
@@ -394,6 +395,7 @@ async function skillsGetRouterV1Handler(ctx: ActionCtx, request: Request) {
       'Content-Security-Policy':
         "default-src 'none'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'",
       ...(isSvg ? { 'Content-Disposition': 'attachment' } : {}),
+      ...CORS_HEADERS,
     })
     return new Response(textContent, { status: 200, headers })
   }
@@ -731,6 +733,7 @@ function json(value: unknown, status = 200, headers?: HeadersInit) {
       {
         'Content-Type': 'application/json',
         'Cache-Control': 'no-store',
+        ...CORS_HEADERS,
       },
       headers,
     ),
@@ -744,6 +747,7 @@ function text(value: string, status: number, headers?: HeadersInit) {
       {
         'Content-Type': 'text/plain; charset=utf-8',
         'Cache-Control': 'no-store',
+        ...CORS_HEADERS,
       },
       headers,
     ),
@@ -1014,6 +1018,7 @@ async function soulsGetRouterV1Handler(ctx: ActionCtx, request: Request) {
       'Content-Security-Policy':
         "default-src 'none'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'",
       ...(isSvg ? { 'Content-Disposition': 'attachment' } : {}),
+      ...CORS_HEADERS,
     })
     return new Response(textContent, { status: 200, headers })
   }
