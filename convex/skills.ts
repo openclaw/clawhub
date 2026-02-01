@@ -31,6 +31,15 @@ const MAX_PUBLIC_LIST_LIMIT = 200
 const MAX_LIST_BULK_LIMIT = 200
 const MAX_LIST_TAKE = 1000
 
+const SORT_INDEXES = {
+  newest: 'by_active_created',
+  updated: 'by_active_updated',
+  name: 'by_active_name',
+  downloads: 'by_active_stats_downloads',
+  stars: 'by_active_stats_stars',
+  installs: 'by_active_stats_installs_all_time',
+} as const
+
 function isSkillVersionId(
   value: Id<'skillVersions'> | null | undefined,
 ): value is Id<'skillVersions'> {
@@ -736,28 +745,21 @@ export const listPublicPageV2 = query({
     const sort = args.sort ?? 'newest'
     const dir = args.dir ?? 'desc'
 
-    const indexName =
-      sort === 'newest'
-        ? 'by_active_created'
-        : sort === 'updated'
-          ? 'by_active_updated'
-          : sort === 'name'
-            ? 'by_active_name'
-            : sort === 'downloads'
-              ? 'by_active_stats_downloads'
-              : sort === 'stars'
-                ? 'by_active_stats_stars'
-                : 'by_active_stats_installs_all_time'
-
+    // Use the index to filter out soft-deleted skills at query time.
+    // softDeletedAt === undefined means active (non-deleted) skills only.
     const result = await paginator(ctx.db, schema)
       .query('skills')
-      .withIndex(indexName, (q) => q.eq('softDeletedAt', undefined))
+      .withIndex(SORT_INDEXES[sort], (q) => q.eq('softDeletedAt', undefined))
       .order(dir)
       .paginate(args.paginationOpts)
 
+    // Build the public skill entries (fetch latestVersion + ownerHandle)
     const items = await buildPublicSkillEntries(ctx, result.page)
 
-    return { ...result, page: items }
+    return {
+      ...result,
+      page: items,
+    }
   },
 })
 
