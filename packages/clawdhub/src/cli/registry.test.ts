@@ -22,7 +22,7 @@ function makeOpts(overrides: Partial<GlobalOpts> = {}): GlobalOpts {
   return {
     workdir: '/work',
     dir: '/work/skills',
-    site: 'https://clawhub.ai',
+    site: 'https://www.clawhub.ai',
     registry: DEFAULT_REGISTRY,
     registrySource: 'default',
     ...overrides,
@@ -38,7 +38,7 @@ beforeEach(() => {
 describe('registry resolution', () => {
   it('prefers explicit registry over discovery/cache', async () => {
     readGlobalConfig.mockResolvedValue({ registry: 'https://auth.clawdhub.com' })
-    discoverRegistryFromSite.mockResolvedValue({ apiBase: 'https://clawhub.ai' })
+    discoverRegistryFromSite.mockResolvedValue({ apiBase: 'https://www.clawhub.ai' })
 
     const registry = await resolveRegistry(
       makeOpts({ registry: 'https://custom.example', registrySource: 'cli' }),
@@ -50,13 +50,13 @@ describe('registry resolution', () => {
 
   it('ignores legacy registry and updates cache from discovery', async () => {
     readGlobalConfig.mockResolvedValue({ registry: 'https://auth.clawdhub.com', token: 'tkn' })
-    discoverRegistryFromSite.mockResolvedValue({ apiBase: 'https://clawhub.ai' })
+    discoverRegistryFromSite.mockResolvedValue({ apiBase: 'https://www.clawhub.ai' })
 
     const registry = await getRegistry(makeOpts(), { cache: true })
 
-    expect(registry).toBe('https://clawhub.ai')
+    expect(registry).toBe('https://www.clawhub.ai')
     expect(writeGlobalConfig).toHaveBeenCalledWith({
-      registry: 'https://clawhub.ai',
+      registry: 'https://www.clawhub.ai',
       token: 'tkn',
     })
   })

@@ -11,7 +11,7 @@ vi.mock('../../http.js', () => ({
   fetchText: (...args: unknown[]) => mockFetchText(...args),
 }))
 
-const mockGetRegistry = vi.fn(async () => 'https://clawhub.ai')
+const mockGetRegistry = vi.fn(async () => 'https://www.clawhub.ai')
 vi.mock('../registry.js', () => ({
   getRegistry: () => mockGetRegistry(),
 }))
@@ -41,8 +41,8 @@ function makeOpts(): GlobalOpts {
   return {
     workdir: '/work',
     dir: '/work/skills',
-    site: 'https://clawhub.ai',
-    registry: 'https://clawhub.ai',
+    site: 'https://www.clawhub.ai',
+    registry: 'https://www.clawhub.ai',
     registrySource: 'default',
   }
 }
