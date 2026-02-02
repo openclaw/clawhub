@@ -20,11 +20,14 @@ When combined with OpenClaw's agent capabilities, this creates a powerful memory
 # Install via ClawHub (when available)
 clawhub install claude-mem
 
-# Or manually
+# Or manually - creates ~/.claude/plugins/marketplaces/thedotmack/
 cd ~/.claude/plugins/marketplaces
 git clone https://github.com/thedotmack/claude-mem.git thedotmack
-cd thedotmack && npm install
+cd thedotmack
+npm install
 ```
+
+> **Note:** The `thedotmack` directory name is the marketplace namespace. The plugin code lives inside it.
 
 ### Configuration
 
@@ -32,7 +35,7 @@ Settings at `~/.claude-mem/settings.json`:
 
 ```json
 {
-  "model": "claude-sonnet-4-20250514",
+  "model": "claude-sonnet-4-latest",
   "workerPort": 37777,
   "dataDir": "~/.claude-mem/data",
   "logLevel": "info",
@@ -42,6 +45,8 @@ Settings at `~/.claude-mem/settings.json`:
   }
 }
 ```
+
+> **Note:** Replace `claude-sonnet-4-latest` with your preferred model identifier (e.g., `claude-sonnet-4-20250514`).
 
 ## How It Works with OpenClaw
 
@@ -83,7 +88,7 @@ description: Persistent memory compression for Claude Code. Automatically captur
 homepage: https://github.com/thedotmack/claude-mem
 metadata:
   openclaw:
-    emoji: "🧠"
+    emoji: "🧠"  # Emoji supported in SKILL.md frontmatter
     requires:
       bins: ["node", "npm", "claude"]
 ---
@@ -95,7 +100,7 @@ metadata:
 
 ## Web Viewer
 
-Access the memory stream at http://localhost:37777 to:
+Access the memory stream at `http://localhost:37777` to:
 - View real-time observations
 - Browse session history
 - Search past context
@@ -105,8 +110,8 @@ Access the memory stream at http://localhost:37777 to:
 
 - [claude-mem GitHub](https://github.com/thedotmack/claude-mem)
 - [claude-mem Documentation](https://docs.claude-mem.ai)
-- [OpenClaw Documentation](https://docs.openclaw.ai)
-- [Discord](https://discord.com/invite/J4wttp9vDu)
+- [OpenClaw Documentation](https://docs.openclaw.ai) — Official OpenClaw docs
+- [OpenClaw Discord](https://discord.com/invite/clawd) — Community support
 
 ## License
 

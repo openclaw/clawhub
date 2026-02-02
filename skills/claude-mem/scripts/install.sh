@@ -36,8 +36,10 @@ KNOWN_MARKETPLACES="$HOME/.claude/plugins/known_marketplaces.json"
 
 # Create or update known_marketplaces.json
 if [ -f "$KNOWN_MARKETPLACES" ]; then
-  # Check if thedotmack already registered
-  if grep -q "thedotmack" "$KNOWN_MARKETPLACES"; then
+  # Check if thedotmack already registered using jq for proper JSON parsing
+  if command -v jq >/dev/null 2>&1 && jq -e '.thedotmack' "$KNOWN_MARKETPLACES" >/dev/null 2>&1; then
+    echo "  ✓ Marketplace already registered"
+  elif grep -q '"thedotmack"' "$KNOWN_MARKETPLACES" 2>/dev/null; then
     echo "  ✓ Marketplace already registered"
   else
     # Add thedotmack to existing file using jq or fallback

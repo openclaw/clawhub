@@ -28,6 +28,10 @@ Feature/ops docs (already present):
 - `docs/diffing.md`: version-to-version diff UI spec.
 - `docs/manual-testing.md`: CLI smoke scripts.
 
+Integration guides:
+
+- `docs/claude-mem-integration.md`: using claude-mem with OpenClaw for token savings.
+
 Docs tooling:
 
 - `docs/mintlify.md`: publish these docs with Mintlify.
