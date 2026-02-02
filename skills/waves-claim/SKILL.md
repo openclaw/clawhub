@@ -7,7 +7,7 @@ metadata:
     emoji: "🎴"
     category: "web3"
     requires:
-      bins: ["cast"]
+      bins: ["cast", "jq"]
 ---
 
 # Waves Claim Skill
