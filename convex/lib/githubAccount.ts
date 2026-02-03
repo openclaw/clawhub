@@ -36,8 +36,13 @@ export async function requireGitHubAccountAge(ctx: ActionCtx, userId: Id<'users'
 
     // Verify the GitHub user ID matches to prevent username swap attacks
     const storedGithubId = await ctx.runQuery(internal.users.getGithubAccountIdInternal, { userId })
-    if (storedGithubId && payload.id !== undefined && String(payload.id) !== storedGithubId) {
-      throw new ConvexError('GitHub account mismatch - username may have changed ownership')
+    if (storedGithubId) {
+      if (payload.id === undefined) {
+        throw new ConvexError('GitHub account lookup failed - unable to verify user identity')
+      }
+      if (String(payload.id) !== storedGithubId) {
+        throw new ConvexError('GitHub account mismatch - username may have changed ownership')
+      }
     }
 
     createdAt = parsed

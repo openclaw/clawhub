@@ -21,6 +21,10 @@ describe('requireGitHubAccountAge', () => {
     vi.restoreAllMocks()
   })
 
+  afterEach(() => {
+    vi.useRealTimers()
+  })
+
   it('uses cached githubCreatedAt when fresh', async () => {
     vi.useFakeTimers()
     const now = new Date('2026-02-02T12:00:00Z')
@@ -40,8 +44,6 @@ describe('requireGitHubAccountAge', () => {
     expect(fetchMock).not.toHaveBeenCalled()
     expect(runMutation).not.toHaveBeenCalled()
     expect(runQuery).toHaveBeenCalledWith(internal.users.getByIdInternal, { userId: 'users:1' })
-
-    vi.useRealTimers()
   })
 
   it('rejects accounts younger than 7 days', async () => {
@@ -59,25 +61,26 @@ describe('requireGitHubAccountAge', () => {
     await expect(
       requireGitHubAccountAge({ runQuery, runMutation } as never, 'users:1' as never),
     ).rejects.toThrow(/GitHub account must be at least 7 days old/i)
-
-    vi.useRealTimers()
   })
 
-  it('refreshes githubCreatedAt when cache is stale', async () => {
+  it('refreshes githubCreatedAt when cache is stale (no stored GitHub ID)', async () => {
     vi.useFakeTimers()
     const now = new Date('2026-02-02T12:00:00Z')
     vi.setSystemTime(now)
 
-    const runQuery = vi.fn().mockResolvedValue({
-      _id: 'users:1',
-      handle: 'steipete',
-      githubCreatedAt: undefined,
-      githubFetchedAt: now.getTime() - 2 * ONE_DAY_MS,
-    })
+    const runQuery = vi.fn()
+      .mockResolvedValueOnce({
+        _id: 'users:1',
+        handle: 'steipete',
+        githubCreatedAt: undefined,
+        githubFetchedAt: now.getTime() - 2 * ONE_DAY_MS,
+      })
+      .mockResolvedValueOnce(null) // No stored GitHub ID (legacy user)
     const runMutation = vi.fn()
     const fetchMock = vi.fn().mockResolvedValue({
       ok: true,
       json: async () => ({
+        id: 12345,
         created_at: '2020-01-01T00:00:00Z',
       }),
     })
@@ -94,8 +97,6 @@ describe('requireGitHubAccountAge', () => {
       githubCreatedAt: Date.parse('2020-01-01T00:00:00Z'),
       githubFetchedAt: now.getTime(),
     })
-
-    vi.useRealTimers()
   })
 
   it('throws when GitHub lookup fails', async () => {
@@ -140,8 +141,34 @@ describe('requireGitHubAccountAge', () => {
     await expect(
       requireGitHubAccountAge({ runQuery, runMutation } as never, 'users:1' as never),
     ).rejects.toThrow(/GitHub account mismatch/i)
+  })
 
-    vi.useRealTimers()
+  it('rejects when GitHub API omits user ID but stored ID exists (fail closed)', async () => {
+    vi.useFakeTimers()
+    const now = new Date('2026-02-02T12:00:00Z')
+    vi.setSystemTime(now)
+
+    const runQuery = vi.fn()
+      .mockResolvedValueOnce({
+        _id: 'users:1',
+        handle: 'someuser',
+        githubCreatedAt: undefined,
+        githubFetchedAt: 0,
+      })
+      .mockResolvedValueOnce('12345') // Stored GitHub ID exists
+    const runMutation = vi.fn()
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        // id is missing from response
+        created_at: '2020-01-01T00:00:00Z',
+      }),
+    })
+    vi.stubGlobal('fetch', fetchMock)
+
+    await expect(
+      requireGitHubAccountAge({ runQuery, runMutation } as never, 'users:1' as never),
+    ).rejects.toThrow(/unable to verify user identity/i)
   })
 
   it('allows when GitHub user ID matches', async () => {
@@ -170,7 +197,5 @@ describe('requireGitHubAccountAge', () => {
     await requireGitHubAccountAge({ runQuery, runMutation } as never, 'users:1' as never)
 
     expect(runMutation).toHaveBeenCalled()
-
-    vi.useRealTimers()
   })
 })
