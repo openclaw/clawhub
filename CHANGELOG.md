@@ -3,11 +3,36 @@
 ## Unreleased
 
 ### Added
-- Admin: ban users and delete owned skills from management console.
+- CLI/API: add `set-role` to change user roles (admin only).
 
 ### Changed
 
 ### Fixed
+
+## 0.5.1 - TBD
+
+### Added
+
+### Changed
+
+### Fixed
+
+## 0.5.0 - 2026-02-02
+
+### Added
+- Admin: ban users and delete owned skills from management console.
+- Moderation: auto-hide skills after 4 unique reports; per-user report cap; moderators can ban users.
+- Uploads: require GitHub accounts to be at least 7 days old for skill + soul publish/import.
+- CLI: add `inspect` to fetch skill metadata/files without installing.
+- CLI: add moderation commands for hide/unhide/delete and ban users.
+- Management: add filters for reported skills and users.
+
+### Changed
+- Deps: update dependencies to latest available versions.
+- Reporting: require reasons, show them in management console, warn about abuse bans.
+
+### Fixed
+- Bans: batch hard-delete cleanup to avoid Convex read limits on large skills.
 
 ## 0.4.0 - 2026-01-30
 

@@ -215,6 +215,17 @@ export const ApiV1DeleteResponseSchema = type({
   ok: 'true',
 })
 
+export const ApiV1BanUserResponseSchema = type({
+  ok: 'true',
+  alreadyBanned: 'boolean',
+  deletedSkills: 'number',
+})
+
+export const ApiV1SetRoleResponseSchema = type({
+  ok: 'true',
+  role: '"admin"|"moderator"|"user"',
+})
+
 export const ApiV1StarResponseSchema = type({
   ok: 'true',
   starred: 'boolean',

@@ -17,6 +17,29 @@ const convexBrowserPath = join(convexRoot, 'dist/esm/browser/index.js')
 const convexValuesPath = join(convexRoot, 'dist/esm/values/index.js')
 const convexAuthReactPath = require.resolve('@convex-dev/auth/react')
 
+function handleRollupWarning(
+  warning: { code?: string; message: string; id?: string },
+  warn: (warning: { code?: string; message: string; id?: string }) => void,
+) {
+  if (
+    warning.code === 'MODULE_LEVEL_DIRECTIVE' &&
+    warning.id?.includes('node_modules') &&
+    /use client/i.test(warning.message)
+  ) {
+    return
+  }
+  if (
+    warning.code === 'UNUSED_EXTERNAL_IMPORT' &&
+    /@tanstack\/start-|@tanstack\/router-core\/ssr\/(client|server)/.test(warning.message)
+  ) {
+    return
+  }
+  if (warning.code === 'EMPTY_BUNDLE' || /Generated an empty chunk/i.test(warning.message)) {
+    return
+  }
+  warn(warning)
+}
+
 const config = defineConfig({
   resolve: {
     dedupe: ['convex', '@convex-dev/auth', 'react', 'react-dom'],
@@ -34,6 +57,9 @@ const config = defineConfig({
     devtools(),
     nitro({
       serverDir: 'server',
+      rollupConfig: {
+        onwarn: handleRollupWarning,
+      },
     }),
     // this is the plugin that enables path aliases
     viteTsConfigPaths({
@@ -43,6 +69,17 @@ const config = defineConfig({
     tanstackStart(),
     viteReact(),
   ],
+  build: {
+    chunkSizeWarningLimit: 900,
+    rollupOptions: {
+      onwarn: handleRollupWarning,
+    },
+  },
+  ssr: {
+    rollupOptions: {
+      onwarn: handleRollupWarning,
+    },
+  },
 })
 
 export default config

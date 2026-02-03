@@ -19,9 +19,9 @@ type SkillDetailPageProps = {
 }
 
 type SkillBySlugResult = {
-  skill: PublicSkill
+  skill: Doc<'skills'> | PublicSkill
   latestVersion: Doc<'skillVersions'> | null
-  owner: PublicUser | null
+  owner: Doc<'users'> | PublicUser | null
   forkOf: {
     kind: 'fork' | 'duplicate'
     version: string | null
@@ -36,6 +36,32 @@ type SkillBySlugResult = {
 
 type SkillFile = Doc<'skillVersions'>['files'][number]
 
+function formatReportError(error: unknown) {
+  if (error && typeof error === 'object' && 'data' in error) {
+    const data = (error as { data?: unknown }).data
+    if (typeof data === 'string' && data.trim()) return data.trim()
+    if (
+      data &&
+      typeof data === 'object' &&
+      'message' in data &&
+      typeof (data as { message?: unknown }).message === 'string'
+    ) {
+      const message = (data as { message?: string }).message?.trim()
+      if (message) return message
+    }
+  }
+  if (error instanceof Error) {
+    const cleaned = error.message
+      .replace(/\[CONVEX[^\]]*\]\s*/g, '')
+      .replace(/\[Request ID:[^\]]*\]\s*/g, '')
+      .replace(/^Server Error Called by client\s*/i, '')
+      .replace(/^ConvexError:\s*/i, '')
+      .trim()
+    if (cleaned && cleaned !== 'Server Error') return cleaned
+  }
+  return 'Unable to submit report. Please try again.'
+}
+
 export function SkillDetailPage({
   slug,
   canonicalOwner,
@@ -43,7 +69,14 @@ export function SkillDetailPage({
 }: SkillDetailPageProps) {
   const navigate = useNavigate()
   const { isAuthenticated, me } = useAuthStatus()
-  const result = useQuery(api.skills.getBySlug, { slug }) as SkillBySlugResult | undefined
+  const isStaff = isModerator(me)
+  const staffResult = useQuery(api.skills.getBySlugForStaff, isStaff ? { slug } : 'skip') as
+    | SkillBySlugResult
+    | undefined
+  const publicResult = useQuery(api.skills.getBySlug, !isStaff ? { slug } : 'skip') as
+    | SkillBySlugResult
+    | undefined
+  const result = isStaff ? staffResult : publicResult
   const toggleStar = useMutation(api.stars.toggle)
   const reportSkill = useMutation(api.skills.report)
   const addComment = useMutation(api.comments.add)
@@ -80,7 +113,6 @@ export function SkillDetailPage({
   ) as Array<{ comment: Doc<'comments'>; user: PublicUser | null }> | undefined
 
   const canManage = canManageSkill(me, skill)
-  const isStaff = isModerator(me)
 
   const ownerHandle = owner?.handle ?? owner?.name ?? null
   const ownerParam = ownerHandle ?? (owner?._id ? String(owner._id) : null)
@@ -104,6 +136,26 @@ export function SkillDetailPage({
     canonical?.skill?.slug && canonical.skill.slug !== forkOf?.skill?.slug
       ? buildSkillHref(canonicalOwnerHandle, canonicalOwnerId, canonical.skill.slug)
       : null
+  const staffSkill = isStaff && skill ? (skill as Doc<'skills'>) : null
+  const moderationStatus =
+    staffSkill?.moderationStatus ?? (staffSkill?.softDeletedAt ? 'hidden' : undefined)
+  const isHidden = moderationStatus === 'hidden' || Boolean(staffSkill?.softDeletedAt)
+  const isRemoved = moderationStatus === 'removed'
+  const isAutoHidden = isHidden && staffSkill?.moderationReason === 'auto.reports'
+  const staffVisibilityTag = isRemoved
+    ? 'Removed'
+    : isAutoHidden
+      ? 'Auto-hidden'
+      : isHidden
+        ? 'Hidden'
+        : null
+  const staffModerationNote = staffVisibilityTag
+    ? isAutoHidden
+      ? 'Auto-hidden after 4+ unique reports.'
+      : isRemoved
+        ? 'Removed from public view.'
+        : 'Hidden from public view.'
+    : null
 
   useEffect(() => {
     if (!wantsCanonicalRedirect || !ownerParam) return
@@ -207,6 +259,9 @@ export function SkillDetailPage({
                 </div>
                 <p className="section-subtitle">{skill.summary ?? 'No summary provided.'}</p>
 
+                {isStaff && staffModerationNote ? (
+                  <div className="skill-hero-note">{staffModerationNote}</div>
+                ) : null}
                 {nixPlugin ? (
                   <div className="skill-hero-note">
                     Bundles the skill pack, CLI binary, and config requirements in one Nix install.
@@ -246,6 +301,11 @@ export function SkillDetailPage({
                     {badge}
                   </div>
                 ))}
+                {isStaff && staffVisibilityTag ? (
+                  <div className={`tag${isAutoHidden || isRemoved ? ' tag-accent' : ''}`}>
+                    {staffVisibilityTag}
+                  </div>
+                ) : null}
                 <div className="skill-actions">
                   {isAuthenticated ? (
                     <button
@@ -262,12 +322,19 @@ export function SkillDetailPage({
                       className="btn btn-ghost"
                       type="button"
                       onClick={async () => {
-                        const reason = window.prompt('Report this skill? Add a reason if you want.')
+                        const reason = window.prompt(
+                          'Report this skill? A reason is required. Abuse may result in a ban.',
+                        )
                         if (reason === null) return
+                        const trimmedReason = reason.trim()
+                        if (!trimmedReason) {
+                          window.alert('Report reason required.')
+                          return
+                        }
                         try {
                           const result = await reportSkill({
                             skillId: skill._id,
-                            reason: reason.trim() || undefined,
+                            reason: trimmedReason,
                           })
                           if (result.reported) {
                             window.alert('Thanks — your report has been submitted.')
@@ -276,7 +343,7 @@ export function SkillDetailPage({
                           }
                         } catch (error) {
                           console.error('Failed to report skill', error)
-                          window.alert('Unable to submit report. Please try again.')
+                          window.alert(formatReportError(error))
                         }
                       }}
                     >
@@ -289,6 +356,11 @@ export function SkillDetailPage({
                     </Link>
                   ) : null}
                 </div>
+                {isAuthenticated ? (
+                  <div className="section-subtitle" style={{ margin: '6px 0 0' }}>
+                    Reports require a reason. Abuse may result in a ban.
+                  </div>
+                ) : null}
               </div>
               <div className="skill-hero-cta">
                 <div className="skill-version-pill">

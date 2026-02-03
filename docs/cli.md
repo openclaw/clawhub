@@ -61,10 +61,21 @@ Stores your API token + cached registry URL.
 
 - Lists latest updated skills via `/api/v1/skills?limit=...` (sorted by `updatedAt` desc).
 - Flags:
-  - `--limit <n>` (1–200, default: 25)
+- `--limit <n>` (1-200, default: 25)
   - `--sort newest|downloads|rating|installs|installsAllTime|trending` (default: newest)
   - `--json` (machine-readable output)
 - Output: `<slug>  v<version>  <age>  <summary>` (summary truncated to 50 chars).
+
+### `inspect <slug>`
+
+- Fetches skill metadata and version files without installing.
+- `--version <version>`: inspect a specific version (default: latest).
+- `--tag <tag>`: inspect a tagged version (e.g. `latest`).
+- `--versions`: list version history (first page).
+- `--limit <n>`: max versions to list (1-200).
+- `--files`: list files for the selected version.
+- `--file <path>`: fetch raw file content (text files only; 200KB limit).
+- `--json`: machine-readable output.
 
 ### `install <slug>`
 
@@ -91,6 +102,42 @@ Stores your API token + cached registry URL.
 
 - Publishes via `POST /api/v1/skills` (multipart).
 - Requires semver: `--version 1.2.3`.
+
+### `delete <slug>`
+
+- Soft-delete a skill (moderator/admin only).
+- Calls `DELETE /api/v1/skills/{slug}`.
+- `--yes` skips confirmation.
+
+### `undelete <slug>`
+
+- Restore a hidden skill (moderator/admin only).
+- Calls `POST /api/v1/skills/{slug}/undelete`.
+- `--yes` skips confirmation.
+
+### `hide <slug>`
+
+- Hide a skill (moderator/admin only).
+- Alias for `delete`.
+
+### `unhide <slug>`
+
+- Unhide a skill (moderator/admin only).
+- Alias for `undelete`.
+
+### `ban-user <handleOrId>`
+
+- Ban a user and delete owned skills (moderator/admin only).
+- Calls `POST /api/v1/users/ban`.
+- `--id` treats the argument as a user id instead of a handle.
+- `--yes` skips confirmation.
+
+### `set-role <handleOrId> <role>`
+
+- Change a user role (admin only).
+- Calls `POST /api/v1/users/role`.
+- `--id` treats the argument as a user id instead of a handle.
+- `--yes` skips confirmation.
 
 ### `sync`
 

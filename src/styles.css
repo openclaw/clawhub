@@ -2687,6 +2687,15 @@ html.theme-transition::view-transition-new(theme) {
   min-width: 180px;
 }
 
+.management-search input {
+  min-width: 240px;
+}
+
+.management-count {
+  font-size: 0.85rem;
+  color: var(--ink-soft);
+}
+
 .management-sublist {
   display: grid;
   gap: 8px;
@@ -2701,6 +2710,18 @@ html.theme-transition::view-transition-new(theme) {
   gap: 10px;
   align-items: center;
   justify-content: space-between;
+}
+
+.management-report-item {
+  display: grid;
+  gap: 4px;
+  font-size: 0.95rem;
+  color: var(--ink);
+}
+
+.management-report-meta {
+  font-size: 0.8rem;
+  color: var(--ink-soft);
 }
 
 @media (max-width: 900px) {

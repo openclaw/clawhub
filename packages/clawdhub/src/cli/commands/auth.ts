@@ -37,7 +37,8 @@ export async function cmdLoginFlow(
 
   const result = await receiver.waitForResult()
   const registry = result.registry?.trim() || opts.registry
-  await cmdLogin({ ...opts, registry }, result.token, inputAllowed)
+  const registrySource = result.registry?.trim() ? 'cli' : opts.registrySource
+  await cmdLogin({ ...opts, registry, registrySource }, result.token, inputAllowed)
 }
 
 export async function cmdLogin(

@@ -143,7 +143,51 @@ Publishes a new version.
 
 ### `DELETE /api/v1/skills/{slug}` / `POST /api/v1/skills/{slug}/undelete`
 
-Soft-delete / restore a skill (owner/admin only).
+Soft-delete / restore a skill (moderator/admin only).
+
+### `POST /api/v1/users/ban`
+
+Ban a user and hard-delete owned skills (moderator/admin only).
+
+Body:
+
+```json
+{ "handle": "user_handle" }
+```
+
+or
+
+```json
+{ "userId": "users_..." }
+```
+
+Response:
+
+```json
+{ "ok": true, "alreadyBanned": false, "deletedSkills": 3 }
+```
+
+### `POST /api/v1/users/role`
+
+Change a user role (admin only).
+
+Body:
+
+```json
+{ "handle": "user_handle", "role": "moderator" }
+```
+
+or
+
+```json
+{ "userId": "users_...", "role": "admin" }
+```
+
+Response:
+
+```json
+{ "ok": true, "role": "moderator" }
+```
 
 ### `POST /api/v1/stars/{slug}` / `DELETE /api/v1/stars/{slug}`
 

@@ -18,6 +18,17 @@ type ManagementSkillEntry = {
   owner: Doc<'users'> | null
 }
 
+type ReportReasonEntry = {
+  reason: string
+  createdAt: number
+  reporterHandle: string | null
+  reporterId: Id<'users'>
+}
+
+type ReportedSkillEntry = ManagementSkillEntry & {
+  reports: ReportReasonEntry[]
+}
+
 type RecentVersionEntry = {
   version: Doc<'skillVersions'>
   skill: Doc<'skills'> | null
@@ -64,14 +75,14 @@ function Management() {
     | undefined
   const selectedSlug = search.skill?.trim()
   const selectedSkill = useQuery(
-    api.skills.getBySlug,
+    api.skills.getBySlugForStaff,
     staff && selectedSlug ? { slug: selectedSlug } : 'skip',
   ) as SkillBySlugResult | undefined
   const recentVersions = useQuery(api.skills.listRecentVersions, staff ? { limit: 20 } : 'skip') as
     | RecentVersionEntry[]
     | undefined
   const reportedSkills = useQuery(api.skills.listReportedSkills, staff ? { limit: 25 } : 'skip') as
-    | ManagementSkillEntry[]
+    | ReportedSkillEntry[]
     | undefined
   const duplicateCandidates = useQuery(
     api.skills.listDuplicateCandidates,
@@ -90,6 +101,10 @@ function Management() {
 
   const [selectedDuplicate, setSelectedDuplicate] = useState('')
   const [selectedOwner, setSelectedOwner] = useState('')
+  const [reportSearch, setReportSearch] = useState('')
+  const [reportSearchDebounced, setReportSearchDebounced] = useState('')
+  const [userSearch, setUserSearch] = useState('')
+  const [userSearchDebounced, setUserSearchDebounced] = useState('')
 
   const selectedSkillId = selectedSkill?.skill?._id ?? null
   const selectedOwnerUserId = selectedSkill?.skill?.ownerUserId ?? null
@@ -100,6 +115,16 @@ function Management() {
     setSelectedDuplicate(selectedCanonicalSlug)
     setSelectedOwner(String(selectedOwnerUserId))
   }, [selectedCanonicalSlug, selectedOwnerUserId, selectedSkillId])
+
+  useEffect(() => {
+    const handle = setTimeout(() => setReportSearchDebounced(reportSearch), 250)
+    return () => clearTimeout(handle)
+  }, [reportSearch])
+
+  useEffect(() => {
+    const handle = setTimeout(() => setUserSearchDebounced(userSearch), 250)
+    return () => clearTimeout(handle)
+  }, [userSearch])
 
   if (!staff) {
     return (
@@ -117,6 +142,46 @@ function Management() {
     )
   }
 
+  const reportQuery = reportSearchDebounced.trim().toLowerCase()
+  const filteredReportedSkills = reportQuery
+    ? reportedSkills.filter((entry) => {
+        const reportReasons = (entry.reports ?? []).map((report) => report.reason).join(' ')
+        const reporterHandles = (entry.reports ?? [])
+          .map((report) => report.reporterHandle)
+          .filter(Boolean)
+          .join(' ')
+        const haystack = [
+          entry.skill.displayName,
+          entry.skill.slug,
+          entry.owner?.handle,
+          entry.owner?.name,
+          reportReasons,
+          reporterHandles,
+        ]
+          .filter(Boolean)
+          .join(' ')
+          .toLowerCase()
+        return haystack.includes(reportQuery)
+      })
+    : reportedSkills
+  const reportCountLabel =
+    filteredReportedSkills.length === 0 && reportedSkills.length > 0
+      ? 'No matching reports.'
+      : 'No reports yet.'
+  const reportSummary = `Showing ${filteredReportedSkills.length} of ${reportedSkills.length}`
+
+  const userQuery = userSearchDebounced.trim().toLowerCase()
+  const filteredUsers = userQuery
+    ? (users ?? []).filter((user) => {
+        const haystack = [user.handle, user.name, user.role, user._id]
+          .filter(Boolean)
+          .join(' ')
+          .toLowerCase()
+        return haystack.includes(userQuery)
+      })
+    : (users ?? [])
+  const userSummary = `Showing ${filteredUsers.length} of ${(users ?? []).length}`
+
   return (
     <main className="section">
       <h1 className="section-title">Management console</h1>
@@ -126,16 +191,29 @@ function Management() {
         <h2 className="section-title" style={{ fontSize: '1.2rem', margin: 0 }}>
           Reported skills
         </h2>
+        <div className="management-controls">
+          <div className="management-control management-search">
+            <span className="mono">Filter</span>
+            <input
+              type="search"
+              placeholder="Search reported skills"
+              value={reportSearch}
+              onChange={(event) => setReportSearch(event.target.value)}
+            />
+          </div>
+          <div className="management-count">{reportSummary}</div>
+        </div>
         <div className="management-list">
-          {reportedSkills.length === 0 ? (
-            <div className="stat">No reports yet.</div>
+          {filteredReportedSkills.length === 0 ? (
+            <div className="stat">{reportCountLabel}</div>
           ) : (
-            reportedSkills.map((entry) => {
-              const { skill, latestVersion, owner } = entry
+            filteredReportedSkills.map((entry) => {
+              const { skill, latestVersion, owner, reports } = entry
               const ownerParam = resolveOwnerParam(
                 owner?.handle ?? null,
                 owner?._id ?? skill.ownerUserId,
               )
+              const reportEntries = reports ?? []
               return (
                 <div key={skill._id} className="management-item">
                   <div className="management-item-main">
@@ -149,6 +227,26 @@ function Management() {
                         ? ` · last ${formatTimestamp(skill.lastReportedAt)}`
                         : ''}
                     </div>
+                    {reportEntries.length > 0 ? (
+                      <div className="management-sublist">
+                        {reportEntries.map((report) => (
+                          <div
+                            key={`${report.reporterId}-${report.createdAt}`}
+                            className="management-report-item"
+                          >
+                            <span className="management-report-meta">
+                              {formatTimestamp(report.createdAt)}
+                              {report.reporterHandle ? ` · @${report.reporterHandle}` : ''}
+                            </span>
+                            <span>{report.reason}</span>
+                          </div>
+                        ))}
+                      </div>
+                    ) : (
+                      <div className="section-subtitle" style={{ margin: 0 }}>
+                        No report reasons yet.
+                      </div>
+                    )}
                   </div>
                   <div className="management-actions">
                     <button
@@ -212,6 +310,11 @@ function Management() {
               const isOfficial = isSkillOfficial(skill)
               const isDeprecated = isSkillDeprecated(skill)
               const badges = getSkillBadges(skill)
+              const ownerUserId = skill.ownerUserId ?? selectedOwnerUserId
+              const ownerHandle = owner?.handle ?? owner?.name ?? 'user'
+              const isOwnerAdmin = owner?.role === 'admin'
+              const canBanOwner =
+                staff && ownerUserId && ownerUserId !== me?._id && (admin || !isOwnerAdmin)
 
               return (
                 <div key={skill._id} className="management-item">
@@ -323,6 +426,22 @@ function Management() {
                         }}
                       >
                         Hard delete
+                      </button>
+                    ) : null}
+                    {staff ? (
+                      <button
+                        className="btn"
+                        type="button"
+                        disabled={!canBanOwner}
+                        onClick={() => {
+                          if (!ownerUserId || ownerUserId === me?._id) return
+                          if (!window.confirm(`Ban @${ownerHandle} and delete their skills?`)) {
+                            return
+                          }
+                          void banUser({ userId: ownerUserId })
+                        }}
+                      >
+                        Ban user
                       </button>
                     ) : null}
                     {admin ? (
@@ -495,47 +614,65 @@ function Management() {
           <h2 className="section-title" style={{ fontSize: '1.2rem', margin: 0 }}>
             Users
           </h2>
+          <div className="management-controls">
+            <div className="management-control management-search">
+              <span className="mono">Filter</span>
+              <input
+                type="search"
+                placeholder="Search users"
+                value={userSearch}
+                onChange={(event) => setUserSearch(event.target.value)}
+              />
+            </div>
+            <div className="management-count">{userSummary}</div>
+          </div>
           <div className="management-list">
-            {(users ?? []).map((user) => (
-              <div key={user._id} className="management-item">
-                <div className="management-item-main">
-                  <span className="mono">@{user.handle ?? user.name ?? 'user'}</span>
-                </div>
-                <div className="management-actions">
-                  <select
-                    value={user.role ?? 'user'}
-                    onChange={(event) => {
-                      const value = event.target.value
-                      if (value === 'admin' || value === 'moderator' || value === 'user') {
-                        void setRole({ userId: user._id, role: value })
-                      }
-                    }}
-                  >
-                    <option value="user">User</option>
-                    <option value="moderator">Moderator</option>
-                    <option value="admin">Admin</option>
-                  </select>
-                  <button
-                    className="btn"
-                    type="button"
-                    disabled={user._id === me?._id}
-                    onClick={() => {
-                      if (user._id === me?._id) return
-                      if (
-                        !window.confirm(
-                          `Ban @${user.handle ?? user.name ?? 'user'} and delete their skills?`,
-                        )
-                      ) {
-                        return
-                      }
-                      void banUser({ userId: user._id })
-                    }}
-                  >
-                    Ban user
-                  </button>
-                </div>
+            {filteredUsers.length === 0 ? (
+              <div className="stat">
+                {(users ?? []).length === 0 ? 'No users yet.' : 'No matching users.'}
               </div>
-            ))}
+            ) : (
+              filteredUsers.map((user) => (
+                <div key={user._id} className="management-item">
+                  <div className="management-item-main">
+                    <span className="mono">@{user.handle ?? user.name ?? 'user'}</span>
+                  </div>
+                  <div className="management-actions">
+                    <select
+                      value={user.role ?? 'user'}
+                      onChange={(event) => {
+                        const value = event.target.value
+                        if (value === 'admin' || value === 'moderator' || value === 'user') {
+                          void setRole({ userId: user._id, role: value })
+                        }
+                      }}
+                    >
+                      <option value="user">User</option>
+                      <option value="moderator">Moderator</option>
+                      <option value="admin">Admin</option>
+                    </select>
+                    <button
+                      className="btn"
+                      type="button"
+                      disabled={user._id === me?._id}
+                      onClick={() => {
+                        if (user._id === me?._id) return
+                        if (
+                          !window.confirm(
+                            `Ban @${user.handle ?? user.name ?? 'user'} and delete their skills?`,
+                          )
+                        ) {
+                          return
+                        }
+                        void banUser({ userId: user._id })
+                      }}
+                    >
+                      Ban user
+                    </button>
+                  </div>
+                </div>
+              ))
+            )}
           </div>
         </div>
       ) : null}

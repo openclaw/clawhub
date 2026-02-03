@@ -5,7 +5,14 @@ import { Command } from 'commander'
 import { getCliBuildLabel, getCliVersion } from './cli/buildInfo.js'
 import { resolveClawdbotDefaultWorkspace } from './cli/clawdbotConfig.js'
 import { cmdLoginFlow, cmdLogout, cmdWhoami } from './cli/commands/auth.js'
-import { cmdDeleteSkill, cmdUndeleteSkill } from './cli/commands/delete.js'
+import {
+  cmdDeleteSkill,
+  cmdHideSkill,
+  cmdUndeleteSkill,
+  cmdUnhideSkill,
+} from './cli/commands/delete.js'
+import { cmdInspect } from './cli/commands/inspect.js'
+import { cmdBanUser, cmdSetRole } from './cli/commands/moderation.js'
 import { cmdPublish } from './cli/commands/publish.js'
 import { cmdExplore, cmdInstall, cmdList, cmdSearch, cmdUpdate } from './cli/commands/skills.js'
 import { cmdStarSkill } from './cli/commands/star.js'
@@ -222,6 +229,22 @@ program
   })
 
 program
+  .command('inspect')
+  .description('Fetch skill metadata and files without installing')
+  .argument('<slug>', 'Skill slug')
+  .option('--version <version>', 'Version to inspect')
+  .option('--tag <tag>', 'Tag to inspect (default: latest)')
+  .option('--versions', 'List version history (first page)')
+  .option('--limit <n>', 'Max versions to list (1-200)', (value) => Number.parseInt(value, 10))
+  .option('--files', 'List files for the selected version')
+  .option('--file <path>', 'Fetch raw file content (text <= 200KB)')
+  .option('--json', 'Output JSON')
+  .action(async (slug, options) => {
+    const opts = await resolveGlobalOpts()
+    await cmdInspect(opts, slug, options)
+  })
+
+program
   .command('publish')
   .description('Publish skill from folder')
   .argument('<path>', 'Skill folder path')
@@ -238,7 +261,7 @@ program
 
 program
   .command('delete')
-  .description('Soft-delete a skill (owner/admin only)')
+  .description('Soft-delete a skill (moderator/admin only)')
   .argument('<slug>', 'Skill slug')
   .option('--yes', 'Skip confirmation')
   .action(async (slug, options) => {
@@ -247,13 +270,56 @@ program
   })
 
 program
+  .command('hide')
+  .description('Hide a skill (moderator/admin only)')
+  .argument('<slug>', 'Skill slug')
+  .option('--yes', 'Skip confirmation')
+  .action(async (slug, options) => {
+    const opts = await resolveGlobalOpts()
+    await cmdHideSkill(opts, slug, options, isInputAllowed())
+  })
+
+program
   .command('undelete')
-  .description('Restore a soft-deleted skill (owner/admin only)')
+  .description('Restore a hidden skill (moderator/admin only)')
   .argument('<slug>', 'Skill slug')
   .option('--yes', 'Skip confirmation')
   .action(async (slug, options) => {
     const opts = await resolveGlobalOpts()
     await cmdUndeleteSkill(opts, slug, options, isInputAllowed())
+  })
+
+program
+  .command('unhide')
+  .description('Unhide a skill (moderator/admin only)')
+  .argument('<slug>', 'Skill slug')
+  .option('--yes', 'Skip confirmation')
+  .action(async (slug, options) => {
+    const opts = await resolveGlobalOpts()
+    await cmdUnhideSkill(opts, slug, options, isInputAllowed())
+  })
+
+program
+  .command('ban-user')
+  .description('Ban a user and delete owned skills (moderator/admin only)')
+  .argument('<handleOrId>', 'User handle (default) or user id')
+  .option('--id', 'Treat argument as user id')
+  .option('--yes', 'Skip confirmation')
+  .action(async (handleOrId, options) => {
+    const opts = await resolveGlobalOpts()
+    await cmdBanUser(opts, handleOrId, options, isInputAllowed())
+  })
+
+program
+  .command('set-role')
+  .description('Change a user role (admin only)')
+  .argument('<handleOrId>', 'User handle (default) or user id')
+  .argument('<role>', 'user | moderator | admin')
+  .option('--id', 'Treat argument as user id')
+  .option('--yes', 'Skip confirmation')
+  .action(async (handleOrId, role, options) => {
+    const opts = await resolveGlobalOpts()
+    await cmdSetRole(opts, handleOrId, role, options, isInputAllowed())
   })
 
 program

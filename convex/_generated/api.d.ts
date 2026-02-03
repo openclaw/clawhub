@@ -28,6 +28,7 @@ import type * as lib_apiTokenAuth from "../lib/apiTokenAuth.js";
 import type * as lib_badges from "../lib/badges.js";
 import type * as lib_changelog from "../lib/changelog.js";
 import type * as lib_embeddings from "../lib/embeddings.js";
+import type * as lib_githubAccount from "../lib/githubAccount.js";
 import type * as lib_githubBackup from "../lib/githubBackup.js";
 import type * as lib_githubImport from "../lib/githubImport.js";
 import type * as lib_githubSoulBackup from "../lib/githubSoulBackup.js";
@@ -89,6 +90,7 @@ declare const fullApi: ApiFromModules<{
   "lib/badges": typeof lib_badges;
   "lib/changelog": typeof lib_changelog;
   "lib/embeddings": typeof lib_embeddings;
+  "lib/githubAccount": typeof lib_githubAccount;
   "lib/githubBackup": typeof lib_githubBackup;
   "lib/githubImport": typeof lib_githubImport;
   "lib/githubSoulBackup": typeof lib_githubSoulBackup;
