@@ -8,7 +8,7 @@ export function Footer() {
         <div className="site-footer-divider" aria-hidden="true" />
         <div className="site-footer-row">
           <div className="site-footer-copy">
-            {siteName} · A{' '}
+            {siteName} · An{' '}
             <a href="https://openclaw.ai" target="_blank" rel="noreferrer">
               OpenClaw
             </a>{' '}
