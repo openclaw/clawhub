@@ -724,10 +724,16 @@ async function resolveSoulTagsBatch(
     }
   }
 
+  // Short-circuit if no tags to resolve
+  if (allVersionIds.size === 0) {
+    return tagsList.map(() => ({}))
+  }
+
   // Single batch query
-  const versions = await ctx.runQuery(api.souls.getVersionsByIds, {
-    versionIds: [...allVersionIds],
-  })
+  const versions =
+    (await ctx.runQuery(api.souls.getVersionsByIds, {
+      versionIds: [...allVersionIds],
+    })) ?? []
 
   // Build lookup map: versionId -> version string
   const versionMap = new Map<Id<'soulVersions'>, string>()
@@ -765,10 +771,16 @@ async function resolveTagsBatch(
     }
   }
 
+  // Short-circuit if no tags to resolve
+  if (allVersionIds.size === 0) {
+    return tagsList.map(() => ({}))
+  }
+
   // Single batch query
-  const versions = await ctx.runQuery(api.skills.getVersionsByIds, {
-    versionIds: [...allVersionIds],
-  })
+  const versions =
+    (await ctx.runQuery(api.skills.getVersionsByIds, {
+      versionIds: [...allVersionIds],
+    })) ?? []
 
   // Build lookup map: versionId -> version string
   const versionMap = new Map<Id<'skillVersions'>, string>()
