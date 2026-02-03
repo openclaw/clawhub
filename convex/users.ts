@@ -20,6 +20,17 @@ export const getByIdInternal = internalQuery({
   handler: async (ctx, args) => ctx.db.get(args.userId),
 })
 
+export const getGithubAccountIdInternal = internalQuery({
+  args: { userId: v.id('users') },
+  handler: async (ctx, args) => {
+    const account = await ctx.db
+      .query('authAccounts')
+      .withIndex('userIdAndProvider', (q) => q.eq('userId', args.userId).eq('provider', 'github'))
+      .unique()
+    return account?.providerAccountId ?? null
+  },
+})
+
 export const updateGithubMetaInternal = internalMutation({
   args: {
     userId: v.id('users'),

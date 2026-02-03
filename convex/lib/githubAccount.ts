@@ -8,6 +8,7 @@ const MIN_ACCOUNT_AGE_MS = 7 * 24 * 60 * 60 * 1000
 const FETCH_TTL_MS = 24 * 60 * 60 * 1000
 
 type GitHubUser = {
+  id?: number
   created_at?: string
 }
 
@@ -32,6 +33,12 @@ export async function requireGitHubAccountAge(ctx: ActionCtx, userId: Id<'users'
     const payload = (await response.json()) as GitHubUser
     const parsed = payload.created_at ? Date.parse(payload.created_at) : Number.NaN
     if (!Number.isFinite(parsed)) throw new ConvexError('GitHub account lookup failed')
+
+    // Verify the GitHub user ID matches to prevent username swap attacks
+    const storedGithubId = await ctx.runQuery(internal.users.getGithubAccountIdInternal, { userId })
+    if (storedGithubId && payload.id !== undefined && String(payload.id) !== storedGithubId) {
+      throw new ConvexError('GitHub account mismatch - username may have changed ownership')
+    }
 
     createdAt = parsed
     await ctx.runMutation(internal.users.updateGithubMetaInternal, {
