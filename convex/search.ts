@@ -14,7 +14,13 @@ type HydratedEntry = {
   ownerHandle: string | null
 }
 
-type SearchResult = HydratedEntry & { score: number }
+type DirectMatchEntry = {
+  skill: NonNullable<ReturnType<typeof toPublicSkill>>
+  version: Doc<'skillVersions'> | null
+  ownerHandle: string | null
+}
+
+type SearchResult = (HydratedEntry | (DirectMatchEntry & { embeddingId: null })) & { score: number }
 
 function getNextCandidateLimit(current: number, max: number) {
   const next = Math.min(current * 2, max)
@@ -32,14 +38,31 @@ export const searchSkills: ReturnType<typeof action> = action({
     if (!query) return []
     const queryTokens = tokenize(query)
     if (queryTokens.length === 0) return []
+
+    const limit = args.limit ?? 10
+
+    // Run direct name/slug match in parallel with vector search
+    // This ensures exact name matches are found even with low semantic similarity
+    const directMatchPromise = ctx.runQuery(internal.search.findDirectMatches, {
+      query,
+      queryTokens,
+      limit,
+    }) as Promise<DirectMatchEntry[]>
+
     let vector: number[]
     try {
       vector = await generateEmbedding(query)
     } catch (error) {
       console.warn('Search embedding generation failed', error)
-      return []
+      // Fall back to direct matches only
+      const directMatches = await directMatchPromise
+      return directMatches.map((entry) => ({
+        ...entry,
+        embeddingId: null,
+        score: 1.0, // Exact matches get high score
+      }))
     }
-    const limit = args.limit ?? 10
+
     // Convex vectorSearch max limit is 256; clamp candidate sizes accordingly.
     const maxCandidate = Math.min(Math.max(limit * 10, 200), 256)
     let candidateLimit = Math.min(Math.max(limit * 3, 50), 256)
@@ -95,13 +118,130 @@ export const searchSkills: ReturnType<typeof action> = action({
       candidateLimit = nextLimit
     }
 
-    return exactMatches
-      .map((entry) => ({
-        ...entry,
-        score: scoreById.get(entry.embeddingId) ?? 0,
-      }))
-      .filter((entry) => entry.skill)
-      .slice(0, limit)
+    // Merge vector search results with direct matches
+    const directMatches = await directMatchPromise
+    const seenSkillIds = new Set<string>()
+    const mergedResults: SearchResult[] = []
+
+    // Add direct matches first with boosted score (exact name matches are highly relevant)
+    for (const entry of directMatches) {
+      if (args.highlightedOnly && !isSkillHighlighted(entry.skill)) continue
+      if (!seenSkillIds.has(entry.skill._id)) {
+        seenSkillIds.add(entry.skill._id)
+        mergedResults.push({
+          ...entry,
+          embeddingId: null,
+          score: 1.0, // Exact name/slug matches get top score
+        })
+      }
+    }
+
+    // Add vector search results
+    for (const entry of exactMatches) {
+      if (!seenSkillIds.has(entry.skill._id)) {
+        seenSkillIds.add(entry.skill._id)
+        mergedResults.push({
+          ...entry,
+          score: scoreById.get(entry.embeddingId) ?? 0,
+        })
+      }
+    }
+
+    return mergedResults.filter((entry) => entry.skill).slice(0, limit)
+  },
+})
+
+export const findDirectMatches = internalQuery({
+  args: {
+    query: v.string(),
+    queryTokens: v.array(v.string()),
+    limit: v.number(),
+  },
+  handler: async (ctx, args): Promise<DirectMatchEntry[]> => {
+    const { query, queryTokens, limit } = args
+    const normalizedQuery = query.toLowerCase().trim()
+
+    // Try exact slug match first
+    const exactSlugMatch = await ctx.db
+      .query('skills')
+      .withIndex('by_slug', (q) => q.eq('slug', normalizedQuery))
+      .filter((q) => q.eq(q.field('softDeletedAt'), undefined))
+      .first()
+
+    // Also try slug with hyphens (e.g., "guardian angel" -> "guardian-angel")
+    const hyphenatedSlug = normalizedQuery.replace(/\s+/g, '-')
+    const hyphenatedMatch =
+      hyphenatedSlug !== normalizedQuery
+        ? await ctx.db
+            .query('skills')
+            .withIndex('by_slug', (q) => q.eq('slug', hyphenatedSlug))
+            .filter((q) => q.eq(q.field('softDeletedAt'), undefined))
+            .first()
+        : null
+
+    // Collect unique matches
+    const matchedSkills: Doc<'skills'>[] = []
+    const seenIds = new Set<string>()
+
+    for (const skill of [exactSlugMatch, hyphenatedMatch]) {
+      if (skill && !seenIds.has(skill._id)) {
+        seenIds.add(skill._id)
+        matchedSkills.push(skill)
+      }
+    }
+
+    // Also search for partial matches in displayName
+    // Query recent active skills and filter by name match
+    if (matchedSkills.length < limit) {
+      const recentSkills = await ctx.db
+        .query('skills')
+        .withIndex('by_active_updated', (q) => q.eq('softDeletedAt', undefined))
+        .order('desc')
+        .take(500) // Check recent skills for name matches
+
+      for (const skill of recentSkills) {
+        if (seenIds.has(skill._id)) continue
+        if (matchedSkills.length >= limit) break
+
+        // Check if query tokens match displayName or slug
+        const nameTokens = tokenize(skill.displayName)
+        const slugTokens = tokenize(skill.slug)
+        const allTokens = [...nameTokens, ...slugTokens]
+
+        const isMatch = queryTokens.every((qt) => allTokens.some((t) => t.includes(qt)))
+
+        if (isMatch) {
+          seenIds.add(skill._id)
+          matchedSkills.push(skill)
+        }
+      }
+    }
+
+    // Hydrate results
+    const results: DirectMatchEntry[] = []
+    const ownerCache = new Map<Id<'users'>, string | null>()
+
+    for (const skill of matchedSkills) {
+      const publicSkill = toPublicSkill(skill)
+      if (!publicSkill) continue
+
+      let ownerHandle = ownerCache.get(skill.ownerUserId)
+      if (ownerHandle === undefined) {
+        const owner = await ctx.db.get(skill.ownerUserId)
+        ownerHandle = owner?.handle ?? owner?.name ?? null
+        ownerCache.set(skill.ownerUserId, ownerHandle)
+      }
+
+      const version = skill.latestVersionId ? await ctx.db.get(skill.latestVersionId) : null
+
+      results.push({
+        skill: publicSkill,
+        version,
+        ownerHandle,
+      })
+    }
+
+    return results
   },
 })
 
