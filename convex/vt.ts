@@ -63,14 +63,18 @@ export const fetchResults = action({
       const stats = data.data.attributes.last_analysis_stats
       let status = 'pending'
 
-      if (stats && stats.malicious > 0) {
-        status = 'malicious'
-      } else if (stats && stats.suspicious > 0) {
-        status = 'suspicious'
-      } else if (aiResult?.verdict) {
+      if (aiResult?.verdict) {
+        // Prioritize AI Analysis (Code Insight)
         status = aiResult.verdict.toLowerCase()
-      } else if (stats && stats.undetected > 0) {
-        status = 'clean'
+      } else if (stats) {
+        // Fallback to AV engines
+        if (stats.malicious > 0) {
+          status = 'malicious'
+        } else if (stats.suspicious > 0) {
+          status = 'suspicious'
+        } else if (stats.undetected > 0 || stats.harmless > 0) {
+          status = 'clean'
+        }
       }
 
       return {
