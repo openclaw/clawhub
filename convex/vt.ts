@@ -117,13 +117,13 @@ export const scanWithVirusTotal = internalAction({
     })
     const owner = skill
       ? await ctx.runQuery(internal.users.getByIdInternal, {
-          userId: skill.ownerUserId,
-        })
+        userId: skill.ownerUserId,
+      })
       : null
     const versions = skill
       ? await ctx.runQuery(internal.skills.listVersionsInternal, {
-          skillId: skill._id,
-        })
+        skillId: skill._id,
+      })
       : []
 
     // Helper to get commit URL or placeholder
@@ -209,14 +209,15 @@ export const scanWithVirusTotal = internalAction({
         if (aiResult) {
           // File exists and has AI analysis - use the verdict
           const verdict = aiResult.verdict.toLowerCase()
-          const status = verdict === 'malicious' ? 'malicious' : 'clean'
+          const isSafe = verdict === 'benign'
+          const status = isSafe ? 'clean' : verdict === 'malicious' ? 'malicious' : 'suspicious'
 
           console.log(
             `Version ${args.versionId} found in VT with AI analysis. Hash: ${sha256hash}. Verdict: ${verdict}`,
           )
 
-          // Auto-approve if clean and from VT directly
-          if (status === 'clean') {
+          // ONLY auto-approve if the AI verdict is explicitly 'benign'
+          if (isSafe) {
             await ctx.runMutation(internal.skills.approveSkillByHashInternal, {
               sha256hash,
               scanner: 'vt',
