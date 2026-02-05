@@ -176,7 +176,7 @@ type SkillDetailPageProps = {
   redirectToCanonical?: boolean
 }
 
-type OwnerModerationInfo = {
+type ModerationInfo = {
   isPendingScan: boolean
   isMalwareBlocked: boolean
   isHiddenByMod: boolean
@@ -189,7 +189,7 @@ type SkillBySlugResult = {
   latestVersion: Doc<'skillVersions'> | null
   owner: Doc<'users'> | PublicUser | null
   pendingReview?: boolean
-  ownerModerationInfo?: OwnerModerationInfo | null
+  moderationInfo?: ModerationInfo | null
   forkOf: {
     kind: 'fork' | 'duplicate'
     version: string | null
@@ -294,7 +294,7 @@ export function SkillDetailPage({
   const forkOf = result?.forkOf ?? null
   const canonical = result?.canonical ?? null
   const pendingReview = result?.pendingReview ?? false
-  const ownerModInfo = result?.ownerModerationInfo ?? null
+  const modInfo = result?.moderationInfo ?? null
   const forkOfLabel = forkOf?.kind === 'duplicate' ? 'duplicate of' : 'fork of'
   const forkOfOwnerHandle = forkOf?.owner?.handle ?? null
   const forkOfOwnerId = forkOf?.owner?.userId ?? null
@@ -418,7 +418,7 @@ export function SkillDetailPage({
   return (
     <main className="section">
       <div className="skill-detail-stack">
-        {ownerModInfo?.isPendingScan ? (
+        {modInfo?.isPendingScan ? (
           <div className="pending-banner">
             <div className="pending-banner-content">
               <strong>Security scan in progress</strong>
@@ -428,7 +428,7 @@ export function SkillDetailPage({
               </p>
             </div>
           </div>
-        ) : ownerModInfo?.isMalwareBlocked ? (
+        ) : modInfo?.isMalwareBlocked ? (
           <div className="pending-banner pending-banner-blocked">
             <div className="pending-banner-content">
               <strong>Skill blocked — security issue detected</strong>
@@ -438,14 +438,14 @@ export function SkillDetailPage({
               </p>
             </div>
           </div>
-        ) : ownerModInfo?.isRemoved ? (
+        ) : modInfo?.isRemoved ? (
           <div className="pending-banner pending-banner-blocked">
             <div className="pending-banner-content">
               <strong>Skill removed by moderator</strong>
               <p>This skill has been removed and is not visible to others.</p>
             </div>
           </div>
-        ) : ownerModInfo?.isHiddenByMod ? (
+        ) : modInfo?.isHiddenByMod ? (
           <div className="pending-banner pending-banner-blocked">
             <div className="pending-banner-content">
               <strong>Skill hidden</strong>
@@ -579,7 +579,7 @@ export function SkillDetailPage({
                   <span className="skill-version-label">Current version</span>
                   <strong>v{latestVersion?.version ?? '—'}</strong>
                 </div>
-                {!nixPlugin && !ownerModInfo?.isMalwareBlocked && !ownerModInfo?.isRemoved ? (
+                {!nixPlugin && !modInfo?.isMalwareBlocked && !modInfo?.isRemoved ? (
                   <a
                     className="btn btn-primary"
                     href={`${import.meta.env.VITE_CONVEX_SITE_URL}/api/v1/download?slug=${skill.slug}`}

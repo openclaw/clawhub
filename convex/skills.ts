@@ -509,14 +509,14 @@ export const getBySlug = query({
     // If not owner, apply normal public filtering
     const publicSkill = toPublicSkill({ ...skill, badges })
 
-    // Non-owners only see public skills
-    if (!publicSkill && !isOwner) return null
-
-    // Determine moderation state for owners
+    // Determine moderation state
     const isPendingScan = skill.moderationStatus === 'hidden' && skill.moderationReason === 'pending.scan'
     const isMalwareBlocked = skill.moderationFlags?.includes('blocked.malware') ?? false
-    const isHiddenByMod = skill.moderationStatus === 'hidden' && !isPendingScan
+    const isHiddenByMod = skill.moderationStatus === 'hidden' && !isPendingScan && !isMalwareBlocked
     const isRemoved = skill.moderationStatus === 'removed'
+
+    // Non-owners can see malware-blocked skills (transparency), but not other hidden states
+    if (!publicSkill && !isOwner && !isMalwareBlocked) return null
 
     // For owners viewing their moderated skill, construct the response manually
     const skillData = publicSkill ?? {
@@ -536,13 +536,15 @@ export const getBySlug = query({
       updatedAt: skill.updatedAt,
     }
 
-    // Owner moderation info (only populated for owners of non-public skills)
-    const ownerModerationInfo = isOwner && !publicSkill ? {
+    // Moderation info - visible to owners for all states, or anyone for malware-blocked
+    const showModerationInfo = !publicSkill && (isOwner || isMalwareBlocked)
+    const moderationInfo = showModerationInfo ? {
       isPendingScan,
       isMalwareBlocked,
       isHiddenByMod,
       isRemoved,
-      reason: skill.moderationReason,
+      // Only show detailed reason to owners
+      reason: isOwner ? skill.moderationReason : undefined,
     } : null
 
     return {
@@ -550,7 +552,7 @@ export const getBySlug = query({
       latestVersion,
       owner,
       pendingReview: isOwner && isPendingScan,
-      ownerModerationInfo,
+      moderationInfo,
       forkOf: forkOfSkill
         ? {
             kind: skill.forkOf?.kind ?? 'fork',
