@@ -131,17 +131,23 @@ export async function fetchText(registry: string, args: TextRequestArgs): Promis
   )
 }
 
-export async function downloadZip(registry: string, args: { slug: string; version?: string }) {
+export async function downloadZip(
+  registry: string,
+  args: { slug: string; version?: string; token?: string },
+) {
   const url = new URL(ApiRoutes.download, registry)
   url.searchParams.set('slug', args.slug)
   if (args.version) url.searchParams.set('version', args.version)
   return pRetry(
     async () => {
       if (isBun) {
-        return await fetchBinaryViaCurl(url.toString())
+        return await fetchBinaryViaCurl(url.toString(), args.token)
       }
 
-      const response = await fetchWithTimeout(url.toString(), { method: 'GET' })
+      const headers: Record<string, string> = {}
+      if (args.token) headers.Authorization = `Bearer ${args.token}`
+
+      const response = await fetchWithTimeout(url.toString(), { method: 'GET', headers })
       if (!response.ok) {
         throwHttpStatusError(response.status, await readResponseTextSafe(response))
       }
@@ -304,16 +310,22 @@ async function fetchTextViaCurl(url: string, args: { token?: string }) {
   return body
 }
 
-async function fetchBinaryViaCurl(url: string) {
+async function fetchBinaryViaCurl(url: string, token?: string) {
   const tempDir = await mkdtemp(join(tmpdir(), 'clawhub-download-'))
   const filePath = join(tempDir, 'payload.bin')
   try {
+    const headers: string[] = []
+    if (token) {
+      headers.push('-H', `Authorization: Bearer ${token}`)
+    }
+
     const curlArgs = [
       '--silent',
       '--show-error',
       '--location',
       '--max-time',
       String(REQUEST_TIMEOUT_SECONDS),
+      ...headers,
       '-o',
       filePath,
       '--write-out',
