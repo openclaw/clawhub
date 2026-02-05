@@ -968,6 +968,7 @@ function json(value: unknown, status = 200, headers?: HeadersInit) {
       {
         'Content-Type': 'application/json',
         'Cache-Control': 'no-store',
+        'Access-Control-Allow-Origin': '*',
       },
       headers,
     ),
@@ -981,6 +982,7 @@ function text(value: string, status: number, headers?: HeadersInit) {
       {
         'Content-Type': 'text/plain; charset=utf-8',
         'Cache-Control': 'no-store',
+        'Access-Control-Allow-Origin': '*',
       },
       headers,
     ),
