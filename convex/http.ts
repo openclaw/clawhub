@@ -31,6 +31,7 @@ import {
   usersListV1Http,
   usersPostRouterV1Http,
   whoamiV1Http,
+  preflightHandler,
 } from './httpApiV1'
 
 const http = httpRouter()
@@ -143,6 +144,12 @@ http.route({
   pathPrefix: `${ApiRoutes.souls}/`,
   method: 'DELETE',
   handler: soulsDeleteRouterV1Http,
+})
+
+http.route({
+  pathPrefix: '/api/',
+  method: 'OPTIONS',
+  handler: preflightHandler,
 })
 
 // TODO: remove legacy /api routes after deprecation window.

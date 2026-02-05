@@ -503,6 +503,18 @@ async function publishSkillV1Handler(ctx: ActionCtx, request: Request) {
 
 export const publishSkillV1Http = httpAction(publishSkillV1Handler)
 
+export const preflightHandler = httpAction(async (_ctx, _request) => {
+  return new Response(null, {
+    status: 204,
+    headers: {
+      'Access-Control-Allow-Origin': '*',
+      'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS, PATCH',
+      'Access-Control-Allow-Headers': 'Content-Type, Authorization, Digest, X-Clawhub-Version',
+      'Access-Control-Max-Age': '86400',
+    },
+  })
+})
+
 type FileLike = {
   name: string
   size: number
