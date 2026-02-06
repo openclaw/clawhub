@@ -79,7 +79,7 @@ export const ensure = mutation({
     const now = Date.now()
     const updates: Record<string, unknown> = {}
 
-    const handle = user.handle ?? user.name ?? user.email?.split('@')[0]
+    const handle = user.handle || user.name || user.email?.split('@')[0]
     if (!user.handle && handle) updates.handle = handle
     if (!user.displayName) updates.displayName = handle
     if (!user.role) {
