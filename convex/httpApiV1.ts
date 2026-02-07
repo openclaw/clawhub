@@ -461,24 +461,146 @@ async function skillsPostRouterV1Handler(ctx: ActionCtx, request: Request) {
   if (!rate.ok) return rate.response
 
   const segments = getPathSegments(request, '/api/v1/skills/')
-  if (segments.length !== 2 || segments[1] !== 'undelete') {
+  const slug = segments[0]?.trim().toLowerCase() ?? ''
+  const action = segments[1] ?? ''
+
+  // Handle undelete
+  if (segments.length === 2 && action === 'undelete') {
+    try {
+      const { userId } = await requireApiTokenUser(ctx, request)
+      await ctx.runMutation(internal.skills.setSkillSoftDeletedInternal, {
+        userId,
+        slug,
+        deleted: false,
+      })
+      return json({ ok: true }, 200, rate.headers)
+    } catch {
+      return text('Unauthorized', 401, rate.headers)
+    }
+  }
+
+  // Handle transfer request: POST /api/v1/skills/{slug}/transfer
+  if (segments.length === 2 && action === 'transfer') {
+    try {
+      const { userId } = await requireApiTokenUser(ctx, request)
+      const body = (await request.json()) as { toUserHandle?: string; message?: string }
+      const toUserHandle = body.toUserHandle?.trim()
+      if (!toUserHandle) return text('toUserHandle required', 400, rate.headers)
+
+      const skill = await ctx.runQuery(internal.skills.getSkillBySlugInternal, { slug })
+      if (!skill) return text('Skill not found', 404, rate.headers)
+
+      const result = await ctx.runMutation(api.skillTransfers.requestTransfer, {
+        skillId: skill._id,
+        toUserHandle,
+        message: body.message,
+      })
+      return json(result, 200, rate.headers)
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Transfer failed'
+      return text(message, 400, rate.headers)
+    }
+  }
+
+  // Handle transfer accept: POST /api/v1/skills/{slug}/transfer/accept
+  if (segments.length === 3 && action === 'transfer' && segments[2] === 'accept') {
+    try {
+      const { userId } = await requireApiTokenUser(ctx, request)
+      const skill = await ctx.runQuery(internal.skills.getSkillBySlugInternal, { slug })
+      if (!skill) return text('Skill not found', 404, rate.headers)
+
+      // Find the pending transfer for this skill to this user
+      const transfer = await ctx.runQuery(internal.skillTransfers.getPendingTransferBySkillAndUser, {
+        skillId: skill._id,
+        toUserId: userId,
+      })
+      if (!transfer) return text('No pending transfer found', 404, rate.headers)
+
+      const result = await ctx.runMutation(api.skillTransfers.acceptTransfer, {
+        transferId: transfer._id,
+      })
+      return json(result, 200, rate.headers)
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Accept failed'
+      return text(message, 400, rate.headers)
+    }
+  }
+
+  // Handle transfer reject: POST /api/v1/skills/{slug}/transfer/reject
+  if (segments.length === 3 && action === 'transfer' && segments[2] === 'reject') {
+    try {
+      const { userId } = await requireApiTokenUser(ctx, request)
+      const skill = await ctx.runQuery(internal.skills.getSkillBySlugInternal, { slug })
+      if (!skill) return text('Skill not found', 404, rate.headers)
+
+      const transfer = await ctx.runQuery(internal.skillTransfers.getPendingTransferBySkillAndUser, {
+        skillId: skill._id,
+        toUserId: userId,
+      })
+      if (!transfer) return text('No pending transfer found', 404, rate.headers)
+
+      const result = await ctx.runMutation(api.skillTransfers.rejectTransfer, {
+        transferId: transfer._id,
+      })
+      return json(result, 200, rate.headers)
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Reject failed'
+      return text(message, 400, rate.headers)
+    }
+  }
+
+  // Handle transfer cancel: POST /api/v1/skills/{slug}/transfer/cancel
+  if (segments.length === 3 && action === 'transfer' && segments[2] === 'cancel') {
+    try {
+      const { userId } = await requireApiTokenUser(ctx, request)
+      const skill = await ctx.runQuery(internal.skills.getSkillBySlugInternal, { slug })
+      if (!skill) return text('Skill not found', 404, rate.headers)
+
+      const transfer = await ctx.runQuery(internal.skillTransfers.getPendingTransferBySkillAndFromUser, {
+        skillId: skill._id,
+        fromUserId: userId,
+      })
+      if (!transfer) return text('No pending transfer found', 404, rate.headers)
+
+      const result = await ctx.runMutation(api.skillTransfers.cancelTransfer, {
+        transferId: transfer._id,
+      })
+      return json(result, 200, rate.headers)
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Cancel failed'
+      return text(message, 400, rate.headers)
+    }
+  }
+
+  return text('Not found', 404, rate.headers)
+}
+
+export const skillsPostRouterV1Http = httpAction(skillsPostRouterV1Handler)
+
+async function transfersGetRouterV1Handler(ctx: ActionCtx, request: Request) {
+  const rate = await applyRateLimit(ctx, request, 'read')
+  if (!rate.ok) return rate.response
+
+  const segments = getPathSegments(request, '/api/v1/transfers/')
+  const direction = segments[0] ?? ''
+
+  if (direction !== 'incoming' && direction !== 'outgoing') {
     return text('Not found', 404, rate.headers)
   }
-  const slug = segments[0]?.trim().toLowerCase() ?? ''
+
   try {
     const { userId } = await requireApiTokenUser(ctx, request)
-    await ctx.runMutation(internal.skills.setSkillSoftDeletedInternal, {
-      userId,
-      slug,
-      deleted: false,
-    })
-    return json({ ok: true }, 200, rate.headers)
+    const transfers =
+      direction === 'incoming'
+        ? await ctx.runQuery(api.skillTransfers.listIncoming, {})
+        : await ctx.runQuery(api.skillTransfers.listOutgoing, {})
+    return json({ transfers }, 200, rate.headers)
   } catch {
     return text('Unauthorized', 401, rate.headers)
   }
 }
 
-export const skillsPostRouterV1Http = httpAction(skillsPostRouterV1Handler)
+export const transfersGetRouterV1Http = httpAction(transfersGetRouterV1Handler)
 
 async function skillsDeleteRouterV1Handler(ctx: ActionCtx, request: Request) {
   const rate = await applyRateLimit(ctx, request, 'write')

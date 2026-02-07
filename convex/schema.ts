@@ -454,6 +454,28 @@ const userSkillRootInstalls = defineTable({
   .index('by_user_skill', ['userId', 'skillId'])
   .index('by_skill', ['skillId'])
 
+const skillOwnershipTransfers = defineTable({
+  skillId: v.id('skills'),
+  fromUserId: v.id('users'),
+  toUserId: v.id('users'),
+  status: v.union(
+    v.literal('pending'),
+    v.literal('accepted'),
+    v.literal('rejected'),
+    v.literal('cancelled'),
+    v.literal('expired'),
+  ),
+  message: v.optional(v.string()),
+  requestedAt: v.number(),
+  respondedAt: v.optional(v.number()),
+  expiresAt: v.number(),
+})
+  .index('by_skill', ['skillId'])
+  .index('by_from_user', ['fromUserId'])
+  .index('by_to_user', ['toUserId'])
+  .index('by_to_user_status', ['toUserId', 'status'])
+  .index('by_skill_status', ['skillId', 'status'])
+
 export default defineSchema({
   ...authSchema,
   users,
@@ -483,4 +505,5 @@ export default defineSchema({
   userSyncRoots,
   userSkillInstalls,
   userSkillRootInstalls,
+  skillOwnershipTransfers,
 })
