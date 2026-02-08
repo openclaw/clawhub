@@ -205,7 +205,8 @@ export function SkillsIndex() {
   }, [canLoadMore, hasQuery, isLoadingMore, loadMorePaginated])
 
   useEffect(() => {
-    if (!canLoadMore || typeof IntersectionObserver === 'undefined') return
+    // Don't set up observer while loading to prevent infinite request loop
+    if (!canLoadMore || isLoadingMore || typeof IntersectionObserver === 'undefined') return
     const target = loadMoreRef.current
     if (!target) return
     const observer = new IntersectionObserver(
@@ -218,7 +219,7 @@ export function SkillsIndex() {
     )
     observer.observe(target)
     return () => observer.disconnect()
-  }, [canLoadMore, loadMore])
+  }, [canLoadMore, isLoadingMore, loadMore])
 
   return (
     <main className="section">
