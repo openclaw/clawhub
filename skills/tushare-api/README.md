@@ -1,1 +1,26 @@
-IyBUdXNoYXJlIEFQSSBTa2lsbAoKIyMg5o+P6L+wClR1c2hhcmUgUHJvIOmHkeiejeaVsOaNriBBUEkg5p+l6K+i5Yqp5omL44CC55So5LqO5biu5Yqp55So5oi35p+l6K+i5Lit5Zu96IKh56Wo44CB5Z+66YeR44CB5pyf6LSn44CB5YC65Yi4562J6YeR6J6N5pWw5o2u44CC5b2T55So5oi36ZyA6KaB6I635Y+W6IKh56Wo6KGM5oOF44CB6LSi5Yqh5pWw5o2u44CB5Z+656GA5L+h5oGv44CB5a6P6KeC57uP5rWO5pWw5o2u5pe25L2/55So5q2kIHNraWxs44CCCgojIyDlip/og70KLSDwn5OIIOiCoeelqOWfuuehgOS/oeaBr+WSjOihjOaDheaVsOaNruafpeivogotIPCfkrAg6LSi5Yqh5pWw5o2u77yI5Yip5ram6KGo44CB6LWE5Lqn6LSf5YC66KGo44CB546w6YeR5rWB6YeP6KGo77yJCi0g8J+TiiDluILlnLrmlbDmja7vvIjotYTph5HmtYHlkJHjgIHmtqjot4zlgZzjgIHpvpnomY7mppzvvIkKLSDwn4+iIOS4iuW4guWFrOWPuOWfuuacrOS/oeaBrwotIPCfk4Ug5Lqk5piT5pel5Y6G5ZKMIElQTyDmlrDogqHliJfooagKCiMjIOaUr+aMgeeahOaVsOaNruexu+Weiwp8IOexu+WIqyB8IOaVsOaNriB8CnwtLS0tLS18LS0tLS0tfAp8IOiCoeelqCB8IEHogqHjgIHmuK/ogqHjgIHnvo7ogqEgfAp8IOWfuumHkSB8IOWFrOWLn+WfuumHkeOAgUVURuOAgUxPRiB8Cnwg5pyf6LSnIHwg5ZWG5ZOB5pyf6LSn44CB6IKh5oyH5pyf6LSnIHwKfCDlgLrliLggfCDlm73lgLrjgIHkvIHkuJrlgLrjgIHlj6/ovazlgLogfAp8IOWuj+ingiB8IOe7j+a1juaMh+agh+OAgeWIqeeOh+OAgeaxh+eOhyB8CgojIyDkvZzogIUKQHl5Ym90CgojIyDorrjlj6/or4EKTUlUCg==
+# Tushare API Skill
+
+## 描述
+Tushare Pro 金融数据 API 查询助手。用于帮助用户查询中国股票、基金、期货、债券等金融数据。当用户需要获取股票行情、财务数据、基础信息、宏观经济数据时使用此 skill。
+
+## 功能
+- 📈 股票基础信息和行情数据查询
+- 💰 财务数据（利润表、资产负债表、现金流量表）
+- 📊 市场数据（资金流向、涨跌停、龙虎榜）
+- 🏢 上市公司基本信息
+- 📅 交易日历和 IPO 新股列表
+
+## 支持的数据类型
+| 类别 | 数据 |
+|------|------|
+| 股票 | A股、港股、美股 |
+| 基金 | 公募基金、ETF、LOF |
+| 期货 | 商品期货、股指期货 |
+| 债券 | 国债、企业债、可转债 |
+| 宏观 | 经济指标、利率、汇率 |
+
+## 作者
+@yybot
+
+## 许可证
+MIT
