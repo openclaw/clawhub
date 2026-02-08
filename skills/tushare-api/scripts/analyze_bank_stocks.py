@@ -82,6 +82,7 @@ def analyze_bank_stocks(ts):
     
     try:
         latest_trade = pro.trade_cal(exchange='SSE', start_date=end_date, end_date=end_date, is_open='1')
+        trade_date = None
         if len(latest_trade) > 0:
             trade_date = latest_trade.iloc[0]['cal_date']
         else:
@@ -92,6 +93,10 @@ def analyze_bank_stocks(ts):
                 if len(latest_trade) > 0:
                     trade_date = check_date
                     break
+        
+        if trade_date is None:
+            print("无法找到最近交易日")
+            return
         
         daily = pro.daily(ts_code=stock_codes, trade_date=trade_date)
         if daily is not None and len(daily) > 0:
