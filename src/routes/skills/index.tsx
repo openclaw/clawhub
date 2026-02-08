@@ -84,7 +84,7 @@ export function SkillsIndex() {
     results: paginatedResults,
     status: paginationStatus,
     loadMore: loadMorePaginated,
-  } = usePaginatedQuery(api.skills.listPublicPageV2, hasQuery ? 'skip' : {}, {
+  } = usePaginatedQuery(api.skills.listPublicPageV2, hasQuery ? 'skip' : { sort, dir }, {
     initialNumItems: pageSize,
   })
 
@@ -161,32 +161,46 @@ export function SkillsIndex() {
   )
 
   const sorted = useMemo(() => {
+    if (!hasQuery) {
+      return filtered
+    }
     const multiplier = dir === 'asc' ? 1 : -1
     const results = [...filtered]
     results.sort((a, b) => {
+      const tieBreak = () => {
+        const updated = (a.skill.updatedAt - b.skill.updatedAt) * multiplier
+        if (updated !== 0) return updated
+        return a.skill.slug.localeCompare(b.skill.slug)
+      }
       switch (sort) {
         case 'downloads':
-          return (a.skill.stats.downloads - b.skill.stats.downloads) * multiplier
+          return (a.skill.stats.downloads - b.skill.stats.downloads) * multiplier || tieBreak()
         case 'installs':
           return (
             ((a.skill.stats.installsAllTime ?? 0) - (b.skill.stats.installsAllTime ?? 0)) *
-            multiplier
+              multiplier || tieBreak()
           )
         case 'stars':
-          return (a.skill.stats.stars - b.skill.stats.stars) * multiplier
+          return (a.skill.stats.stars - b.skill.stats.stars) * multiplier || tieBreak()
         case 'updated':
-          return (a.skill.updatedAt - b.skill.updatedAt) * multiplier
+          return (
+            (a.skill.updatedAt - b.skill.updatedAt) * multiplier ||
+            a.skill.slug.localeCompare(b.skill.slug)
+          )
         case 'name':
           return (
             (a.skill.displayName.localeCompare(b.skill.displayName) ||
               a.skill.slug.localeCompare(b.skill.slug)) * multiplier
           )
         default:
-          return (a.skill.createdAt - b.skill.createdAt) * multiplier
+          return (
+            (a.skill.createdAt - b.skill.createdAt) * multiplier ||
+            a.skill.slug.localeCompare(b.skill.slug)
+          )
       }
     })
     return results
-  }, [dir, filtered, sort])
+  }, [dir, filtered, hasQuery, sort])
 
   const isLoadingSkills = hasQuery ? isSearching && searchResults.length === 0 : isLoadingList
   const canLoadMore = hasQuery
