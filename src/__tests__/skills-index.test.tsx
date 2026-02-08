@@ -48,10 +48,10 @@ describe('SkillsIndex', () => {
 
   it('requests the first skills page', () => {
     render(<SkillsIndex />)
-    // usePaginatedQuery should be called with the API endpoint and empty args
+    // usePaginatedQuery should be called with the API endpoint and sort/dir args
     expect(usePaginatedQueryMock).toHaveBeenCalledWith(
       expect.anything(),
-      {},
+      { sort: 'newest', dir: 'desc' },
       { initialNumItems: 25 },
     )
   })
