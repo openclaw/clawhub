@@ -19,6 +19,27 @@ export const downloadZip = httpAction(async (ctx, request) => {
     return new Response('Skill not found', { status: 404 })
   }
 
+  // Block downloads based on moderation status
+  const mod = skillResult.moderationInfo
+  if (mod?.isMalwareBlocked) {
+    return new Response(
+      'Blocked: this skill has been flagged as malicious by VirusTotal and cannot be downloaded.',
+      { status: 403 },
+    )
+  }
+  if (mod?.isPendingScan) {
+    return new Response(
+      'This skill is pending a security scan by VirusTotal. Please try again in a few minutes.',
+      { status: 423 },
+    )
+  }
+  if (mod?.isRemoved) {
+    return new Response('This skill has been removed by a moderator.', { status: 410 })
+  }
+  if (mod?.isHiddenByMod) {
+    return new Response('This skill is currently unavailable.', { status: 403 })
+  }
+
   const skill = skillResult.skill
   let version = skillResult.latestVersion
 
