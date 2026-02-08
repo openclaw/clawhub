@@ -15,7 +15,7 @@ export async function handleSoftDeletedUserReauth(
   if (!user?.deletedAt) return
 
   // Verify that the incoming identity matches the soft-deleted user to prevent bypass.
-  if (args.existingUserId !== args.userId) {
+  if (args.existingUserId && args.existingUserId !== args.userId) {
     return
   }
 
