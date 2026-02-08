@@ -38,6 +38,7 @@ import type * as lib_public from "../lib/public.js";
 import type * as lib_searchText from "../lib/searchText.js";
 import type * as lib_skillBackfill from "../lib/skillBackfill.js";
 import type * as lib_skillPublish from "../lib/skillPublish.js";
+import type * as lib_skillScan from "../lib/skillScan.js";
 import type * as lib_skillStats from "../lib/skillStats.js";
 import type * as lib_skillZip from "../lib/skillZip.js";
 import type * as lib_skills from "../lib/skills.js";
@@ -103,6 +104,7 @@ declare const fullApi: ApiFromModules<{
   "lib/searchText": typeof lib_searchText;
   "lib/skillBackfill": typeof lib_skillBackfill;
   "lib/skillPublish": typeof lib_skillPublish;
+  "lib/skillScan": typeof lib_skillScan;
   "lib/skillStats": typeof lib_skillStats;
   "lib/skillZip": typeof lib_skillZip;
   "lib/skills": typeof lib_skills;
