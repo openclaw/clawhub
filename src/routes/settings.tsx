@@ -56,7 +56,10 @@ function Settings() {
   }
 
   async function onDelete() {
-    const ok = window.confirm('Soft delete your account? This cannot be undone.')
+    const ok = window.confirm(
+      'Delete your account? Your published skills will remain public.\n\n' +
+        'You can restore your account by logging in again within 30 days.',
+    )
     if (!ok) return
     await deleteAccount()
   }
@@ -185,7 +188,10 @@ function Settings() {
 
       <div className="card danger-card">
         <h2 className="section-title danger-title">Danger zone</h2>
-        <p className="section-subtitle">Soft delete your account. Skills remain public.</p>
+        <p className="section-subtitle">
+          Delete your account. Published skills remain public. Log in again within 30 days to
+          restore.
+        </p>
         <button className="btn btn-danger" type="button" onClick={() => void onDelete()}>
           Delete account
         </button>
