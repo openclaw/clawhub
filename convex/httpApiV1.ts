@@ -212,27 +212,28 @@ async function listSkillsV1Handler(ctx: ActionCtx, request: Request) {
     sort,
   })) as ListSkillsResult
 
-  const items = await Promise.all(
-    result.items.map(async (item) => {
-      const tags = await resolveTags(ctx, item.skill.tags)
-      return {
-        slug: item.skill.slug,
-        displayName: item.skill.displayName,
-        summary: item.skill.summary ?? null,
-        tags,
-        stats: item.skill.stats,
-        createdAt: item.skill.createdAt,
-        updatedAt: item.skill.updatedAt,
-        latestVersion: item.latestVersion
-          ? {
-              version: item.latestVersion.version,
-              createdAt: item.latestVersion.createdAt,
-              changelog: item.latestVersion.changelog,
-            }
-          : null,
-      }
-    }),
+  // Batch resolve all tags in a single query instead of N queries
+  const resolvedTagsList = await resolveTagsBatch(
+    ctx,
+    result.items.map((item) => item.skill.tags),
   )
+
+  const items = result.items.map((item, idx) => ({
+    slug: item.skill.slug,
+    displayName: item.skill.displayName,
+    summary: item.skill.summary ?? null,
+    tags: resolvedTagsList[idx],
+    stats: item.skill.stats,
+    createdAt: item.skill.createdAt,
+    updatedAt: item.skill.updatedAt,
+    latestVersion: item.latestVersion
+      ? {
+          version: item.latestVersion.version,
+          createdAt: item.latestVersion.createdAt,
+          changelog: item.latestVersion.changelog,
+        }
+      : null,
+  }))
 
   return json({ items, nextCursor: result.nextCursor ?? null }, 200, rate.headers)
 }
@@ -253,7 +254,7 @@ async function skillsGetRouterV1Handler(ctx: ActionCtx, request: Request) {
     const result = (await ctx.runQuery(api.skills.getBySlug, { slug })) as GetBySlugResult
     if (!result?.skill) return text('Skill not found', 404, rate.headers)
 
-    const tags = await resolveTags(ctx, result.skill.tags)
+    const [tags] = await resolveTagsBatch(ctx, [result.skill.tags])
     return json(
       {
         skill: {
@@ -762,32 +763,98 @@ function parsePublishBody(body: unknown) {
   }
 }
 
-async function resolveSoulTags(
+/**
+ * Batch resolve soul version tags to version strings.
+ * Collects all version IDs, fetches them in a single query, then maps back.
+ * Reduces N sequential queries to 1 batch query.
+ */
+async function resolveSoulTagsBatch(
   ctx: ActionCtx,
-  tags: Record<string, Id<'soulVersions'>>,
-): Promise<Record<string, string>> {
-  const resolved: Record<string, string> = {}
-  for (const [tag, versionId] of Object.entries(tags)) {
-    const version = await ctx.runQuery(api.souls.getVersionById, { versionId })
-    if (version && !version.softDeletedAt) {
-      resolved[tag] = version.version
+  tagsList: Array<Record<string, Id<'soulVersions'>>>,
+): Promise<Array<Record<string, string>>> {
+  // Collect all unique version IDs
+  const allVersionIds = new Set<Id<'soulVersions'>>()
+  for (const tags of tagsList) {
+    for (const versionId of Object.values(tags)) {
+      allVersionIds.add(versionId)
     }
   }
-  return resolved
+
+  // Short-circuit if no tags to resolve
+  if (allVersionIds.size === 0) {
+    return tagsList.map(() => ({}))
+  }
+
+  // Single batch query
+  const versions =
+    (await ctx.runQuery(api.souls.getVersionsByIds, {
+      versionIds: [...allVersionIds],
+    })) ?? []
+
+  // Build lookup map: versionId -> version string
+  const versionMap = new Map<Id<'soulVersions'>, string>()
+  for (const v of versions) {
+    if (v && !v.softDeletedAt) {
+      versionMap.set(v._id, v.version)
+    }
+  }
+
+  // Resolve each tags record
+  return tagsList.map((tags) => {
+    const resolved: Record<string, string> = {}
+    for (const [tag, versionId] of Object.entries(tags)) {
+      const version = versionMap.get(versionId)
+      if (version) resolved[tag] = version
+    }
+    return resolved
+  })
 }
 
-async function resolveTags(
+/**
+ * Batch resolve skill version tags to version strings.
+ * Collects all version IDs, fetches them in a single query, then maps back.
+ * Reduces N sequential queries to 1 batch query.
+ */
+async function resolveTagsBatch(
   ctx: ActionCtx,
-  tags: Record<string, Id<'skillVersions'>>,
-): Promise<Record<string, string>> {
-  const resolved: Record<string, string> = {}
-  for (const [tag, versionId] of Object.entries(tags)) {
-    const version = await ctx.runQuery(api.skills.getVersionById, { versionId })
-    if (version && !version.softDeletedAt) {
-      resolved[tag] = version.version
+  tagsList: Array<Record<string, Id<'skillVersions'>>>,
+): Promise<Array<Record<string, string>>> {
+  // Collect all unique version IDs
+  const allVersionIds = new Set<Id<'skillVersions'>>()
+  for (const tags of tagsList) {
+    for (const versionId of Object.values(tags)) {
+      allVersionIds.add(versionId)
     }
   }
-  return resolved
+
+  // Short-circuit if no tags to resolve
+  if (allVersionIds.size === 0) {
+    return tagsList.map(() => ({}))
+  }
+
+  // Single batch query
+  const versions =
+    (await ctx.runQuery(api.skills.getVersionsByIds, {
+      versionIds: [...allVersionIds],
+    })) ?? []
+
+  // Build lookup map: versionId -> version string
+  const versionMap = new Map<Id<'skillVersions'>, string>()
+  for (const v of versions) {
+    if (v && !v.softDeletedAt) {
+      versionMap.set(v._id, v.version)
+    }
+  }
+
+  // Resolve each tags record
+  return tagsList.map((tags) => {
+    const resolved: Record<string, string> = {}
+    for (const [tag, versionId] of Object.entries(tags)) {
+      const version = versionMap.get(versionId)
+      if (version) resolved[tag] = version
+    }
+    return resolved
+  })
 }
 
 async function applyRateLimit(
@@ -970,27 +1037,28 @@ async function listSoulsV1Handler(ctx: ActionCtx, request: Request) {
     cursor,
   })) as ListSoulsResult
 
-  const items = await Promise.all(
-    result.items.map(async (item) => {
-      const tags = await resolveSoulTags(ctx, item.soul.tags)
-      return {
-        slug: item.soul.slug,
-        displayName: item.soul.displayName,
-        summary: item.soul.summary ?? null,
-        tags,
-        stats: item.soul.stats,
-        createdAt: item.soul.createdAt,
-        updatedAt: item.soul.updatedAt,
-        latestVersion: item.latestVersion
-          ? {
-              version: item.latestVersion.version,
-              createdAt: item.latestVersion.createdAt,
-              changelog: item.latestVersion.changelog,
-            }
-          : null,
-      }
-    }),
+  // Batch resolve all tags in a single query instead of N queries
+  const resolvedTagsList = await resolveSoulTagsBatch(
+    ctx,
+    result.items.map((item) => item.soul.tags),
   )
+
+  const items = result.items.map((item, idx) => ({
+    slug: item.soul.slug,
+    displayName: item.soul.displayName,
+    summary: item.soul.summary ?? null,
+    tags: resolvedTagsList[idx],
+    stats: item.soul.stats,
+    createdAt: item.soul.createdAt,
+    updatedAt: item.soul.updatedAt,
+    latestVersion: item.latestVersion
+      ? {
+          version: item.latestVersion.version,
+          createdAt: item.latestVersion.createdAt,
+          changelog: item.latestVersion.changelog,
+        }
+      : null,
+  }))
 
   return json({ items, nextCursor: result.nextCursor ?? null }, 200, rate.headers)
 }
@@ -1011,7 +1079,7 @@ async function soulsGetRouterV1Handler(ctx: ActionCtx, request: Request) {
     const result = (await ctx.runQuery(api.souls.getBySlug, { slug })) as GetSoulBySlugResult
     if (!result?.soul) return text('Soul not found', 404, rate.headers)
 
-    const tags = await resolveSoulTags(ctx, result.soul.tags)
+    const [tags] = await resolveSoulTagsBatch(ctx, [result.soul.tags])
     return json(
       {
         soul: {
