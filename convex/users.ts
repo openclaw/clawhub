@@ -79,9 +79,16 @@ export const ensure = mutation({
     const now = Date.now()
     const updates: Record<string, unknown> = {}
 
-    const handle = user.handle || user.name || user.email?.split('@')[0]
-    if (!user.handle && handle) updates.handle = handle
-    if (!user.displayName) updates.displayName = handle
+    const handle = user.name || user.email?.split('@')[0]
+    const normalizedHandle = handle?.trim()
+    if (!user.handle && normalizedHandle) {
+      updates.handle = normalizedHandle
+    } else if (user.handle && normalizedHandle && user.handle !== normalizedHandle) {
+      updates.handle = normalizedHandle
+    }
+    if (!user.displayName || user.displayName === user.handle) {
+      if (normalizedHandle) updates.displayName = normalizedHandle
+    }
     if (!user.role) {
       updates.role = handle === ADMIN_HANDLE ? 'admin' : DEFAULT_ROLE
     }
