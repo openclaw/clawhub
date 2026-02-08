@@ -14,6 +14,11 @@ export async function handleSoftDeletedUserReauth(
   const user = await ctx.db.get(args.userId)
   if (!user?.deletedAt) return
 
+  // Verify that the incoming identity matches the soft-deleted user to prevent bypass.
+  if (args.existingUserId !== args.userId) {
+    return
+  }
+
   const userId = args.userId
   const banRecord = await ctx.db
     .query('auditLogs')
