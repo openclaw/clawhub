@@ -57,6 +57,7 @@
 - Registry: drop missing skills during search hydration (thanks @aaronn, #28).
 - CLI: use path-based skill metadata lookup for updates (thanks @daveonkels, #22).
 - Search: keep highlighted-only filtering and clamp vector candidates to Convex limits (thanks @aaronn, #30).
+- CLI: add missing `undici` dependency to package.json (fixes #23).
 
 ## 0.3.0 - 2026-01-19
 
