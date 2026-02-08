@@ -26,7 +26,7 @@ crons.interval(
 
 crons.interval(
   'skill-stat-events',
-  { minutes: 1 },
+  60000,
   internal.skillStatEvents.processSkillStatEventsAction,
   {},
 )
