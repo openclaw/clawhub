@@ -1,1 +1,103 @@
-LS0tCm5hbWU6IHR1c2hhcmUtYXBpCmRlc2NyaXB0aW9uOiBUdXNoYXJlIFBybyDph5Hono3mlbDmja4gQVBJIOafpeivouWKqeaJi+OAgueUqOS6juW4ruWKqeeUqOaIt+afpeivouS4reWbveiCoeelqOOAgeWfuumHkeOAgeacn+i0p+OAgeWAuuWIuOetiemHkeiejeaVsOaNruOAguW9k+eUqOaIt+mcgOimgeiOt+WPluiCoeelqOihjOaDheOAgei0ouWKoeaVsOaNruOAgeWfuuehgOS/oeaBr+OAgeWuj+ingue7j+a1juaVsOaNruaXtuS9v+eUqOatpCBza2lsbOOAggotLS0KCiMgVHVzaGFyZSBBUEkgU2tpbGwKCiMjIOeugOS7iwoKVHVzaGFyZSBQcm8g5piv5Lit5Zu96aKG5YWI55qE6YeR6J6N5pWw5o2u5bmz5Y+w77yM5o+Q5L6b6IKh56Wo44CB5Z+66YeR44CB5pyf6LSn44CB5YC65Yi444CB5aSW5rGH44CB5pWw5a2X6LSn5biB562J5YWo5ZOB57G76YeR6J6N5aSn5pWw5o2u44CCCgoqKuWumOe9kSoqOiBodHRwczovL3R1c2hhcmUucHJvCioqQVBJIOaWh+ahoyoqOiBodHRwczovL3R1c2hhcmUucHJvL2RvY3VtZW50LzIKCiMjIOiCoeelqOS7o+eggeinhOiMgwoK5omA5pyJ6IKh56Wo5Luj56CB6YO96ZyA6KaB5bim5ZCO57yA77yaCgp8IOS6pOaYk+aJgCB8IOWQjue8gCB8IOekuuS+iyB8CnwtLS0tLS0tLXwtLS0tLS18LS0tLS0tfAp8IOS4iua1t+ivgeWIuOS6pOaYk+aJgCB8IC5TSCB8IDYwMDAwMC5TSCB8Cnwg5rex5Zyz6K+B5Yi45Lqk5piT5omAIHwgLlNaIHwgMDAwMDAxLlNaIHwKfCDljJfkuqzor4HliLjkuqTmmJPmiYAgfCAuQkogfCA4MzUzMDUuQkogfAp8IOmmmea4r+ivgeWIuOS6pOaYk+aJgCB8IC5ISyB8IDAwMDAxLkhLIHwKCiMjIOW4uOeUqCBBUEkg5o6l5Y+jCgojIyMg5Z+656GA5pWw5o2uCi0gYHN0b2NrX2Jhc2ljYCAtIOiCoeelqOWfuuehgOS/oeaBrwotIGB0cmFkZV9jYWxgIC0g5Lqk5piT5pel5Y6GCi0gYHN0b2NrX2NvbXBhbnlgIC0g5LiK5biC5YWs5Y+45Z+65pys5L+h5oGvCi0gYG5ld19zaGFyZWAgLSBJUE8g5paw6IKh5YiX6KGoCgojIyMg6KGM5oOF5pWw5o2uCi0gYGRhaWx5YCAtIOaXpee6v+ihjOaDhQotIGB3ZWVrbHlgIC0g5ZGo57q/6KGM5oOFCi0gYG1vbnRobHlgIC0g5pyI57q/6KGM5oOFCi0gYGFkal9mYWN0b3JgIC0g5aSN5p2D5Zug5a2QCi0gYGRhaWx5X2Jhc2ljYCAtIOavj+aXpeaMh+agh++8iFBFL1BCL+W4guWAvOetie+8iQoKIyMjIOi0ouWKoeaVsOaNrgotIGBpbmNvbWVgIC0g5Yip5ram6KGoCi0gYGJhbGFuY2Vfc2hlZXRgIC0g6LWE5Lqn6LSf5YC66KGoCi0gYGNhc2hmbG93YCAtIOeOsOmHkea1gemHj+ihqAotIGBmb3JlY2FzdGAgLSDkuJrnu6npooTlkYoKLSBgZXhwcmVzc2AgLSDkuJrnu6nlv6vmiqUKLSBgZGl2aWRlbmRgIC0g5YiG57qi6YCB6IKhCi0gYGZpbmFfaW5kaWNhdG9yYCAtIOi0ouWKoeaMh+aghwoKIyMjIOW4guWcuuaVsOaNrgotIGBtb25leWZsb3dgIC0g5Liq6IKh6LWE6YeR5rWB5ZCRCi0gYGxpbWl0X2xpc3RgIC0g5q+P5pel5rao6LeM5YGc6IKh56WoCi0gYHRvcF9saXN0YCAtIOm+meiZjuamnOaVsOaNrgotIGBibG9ja190cmFkZWAgLSDlpKflrpfkuqTmmJMKCiMjIOS9v+eUqOaWueazlQoKIyMjIFB5dGhvbiBTREsKYGBgcHl0aG9uCmltcG9ydCB0dXNoYXJlIGFzIHRzCgojIOiuvue9riB0b2tlbu+8iOmcgOimgeeUqOaIt+iHquihjOeUs+ivt++8iQpwcm8gPSB0cy5wcm9fYXBpKCd5b3VyX3Rva2VuX2hlcmUnKQoKIyDojrflj5bogqHnpajliJfooagKZGYgPSBwcm8uc3RvY2tfYmFzaWMoZXhjaGFuZ2U9JycsIGxpc3Rfc3RhdHVzPSdMJywgZmllbGRzPSd0c19jb2RlLHN5bWJvbCxuYW1lLGFyZWEsaW5kdXN0cnksbGlzdF9kYXRlJykKCiMg6I635Y+W5pel57q/6KGM5oOFCmRmID0gcHJvLmRhaWx5KHRzX2NvZGU9JzAwMDAwMS5TWicsIHN0YXJ0X2RhdGU9JzIwMjQwMTAxJywgZW5kX2RhdGU9JzIwMjQwMjAxJykKCiMg6I635Y+W6LSi5Yqh5pWw5o2uCmRmID0gcHJvLmluY29tZSh0c19jb2RlPSc2MDAwMDAuU0gnLCBzdGFydF9kYXRlPScyMDIzMDEwMScsIGVuZF9kYXRlPScyMDIzMTIzMScpCmBgYAoKIyMjIEhUVFAgQVBJCmBgYGJhc2gKY3VybCAtWCBQT1NUIGh0dHBzOi8vYXBpLnR1c2hhcmUucHJvIFwKICAtSCAiQ29udGVudC1UeXBlOiBhcHBsaWNhdGlvbi9qc29uIiBcCiAgLWQgJ3sKICAgICJhcGlfbmFtZSI6ICJkYWlseSIsCiAgICAidG9rZW4iOiAieW91cl90b2tlbiIsCiAgICAicGFyYW1zIjogeyJ0c19jb2RlIjogIjAwMDAwMS5TWiIsICJzdGFydF9kYXRlIjogIjIwMjQwMTAxIn0sCiAgICAiZmllbGRzIjogInRzX2NvZGUsdHJhZGVfZGF0ZSxvcGVuLGhpZ2gsbG93LGNsb3NlLHZvbCIKICB9JwpgYGAKCiMjIOenr+WIhuezu+e7nwoKLSDms6jlhozotaDpgIHliJ3lp4vnp6/liIYKLSDpgJrov4fnrb7liLDjgIHliIbkuqvjgIHotKHnjK7mlbDmja7nrYnmlrnlvI/ojrflj5bnp6/liIYKLSDkuI3lkIwgQVBJIOiwg+eUqOa2iOiAl+S4jeWQjOenr+WIhgotIOenr+WIhuS4jumikeasoeWvueW6lOihqDogaHR0cHM6Ly90dXNoYXJlLnByby9kb2N1bWVudC8xP2RvY19pZD0yOTAKCiMjIOivpue7huaWh+ahowoK5pu05aSa5o6l5Y+j6K+m5oOF6KeBIFtyZWZlcmVuY2VzL2FwaS1yZWZlcmVuY2UubWRdKHJlZmVyZW5jZXMvYXBpLXJlZmVyZW5jZS5tZCkKCiMjIOazqOaEj+S6i+mhuQoKMS4g6ZyA6KaB55Sz6K+3IHRva2VuIOaJjeiDveS9v+eUqCBBUEkKMi4g5rOo5oSP56ev5YiG5raI6ICX77yM6auY6aKR5o6l5Y+j5raI6ICX5pu05aSa56ev5YiGCjMuIOaVsOaNruacieabtOaWsOW7tui/n++8jOaXpee6v+aVsOaNrumAmuW4uOWcqOaUtuebmOWQjiAxLTIg5bCP5pe25pu05pawCjQuIOWFjei0ueeUqOaIt+acieiwg+eUqOmikeasoemZkOWItgo=
+---
+name: tushare-api
+description: Tushare Pro 金融数据 API 查询助手。用于帮助用户查询中国股票、基金、期货、债券等金融数据。当用户需要获取股票行情、财务数据、基础信息、宏观经济数据时使用此 skill。
+---
+
+# Tushare API Skill
+
+## 简介
+
+Tushare Pro 是中国领先的金融数据平台，提供股票、基金、期货、债券、外汇、数字货币等全品类金融大数据。
+
+**官网**: https://tushare.pro
+**API 文档**: https://tushare.pro/document/2
+
+## 股票代码规范
+
+所有股票代码都需要带后缀：
+
+| 交易所 | 后缀 | 示例 |
+|--------|------|------|
+| 上海证券交易所 | .SH | 600000.SH |
+| 深圳证券交易所 | .SZ | 000001.SZ |
+| 北京证券交易所 | .BJ | 835305.BJ |
+| 香港证券交易所 | .HK | 00001.HK |
+
+## 常用 API 接口
+
+### 基础数据
+- `stock_basic` - 股票基础信息
+- `trade_cal` - 交易日历
+- `stock_company` - 上市公司基本信息
+- `new_share` - IPO 新股列表
+
+### 行情数据
+- `daily` - 日线行情
+- `weekly` - 周线行情
+- `monthly` - 月线行情
+- `adj_factor` - 复权因子
+- `daily_basic` - 每日指标（PE/PB/市值等）
+
+### 财务数据
+- `income` - 利润表
+- `balance_sheet` - 资产负债表
+- `cashflow` - 现金流量表
+- `forecast` - 业绩预告
+- `express` - 业绩快报
+- `dividend` - 分红送股
+- `fina_indicator` - 财务指标
+
+### 市场数据
+- `moneyflow` - 个股资金流向
+- `limit_list` - 每日涨跌停股票
+- `top_list` - 龙虎榜数据
+- `block_trade` - 大宗交易
+
+## 使用方法
+
+### Python SDK
+```python
+import tushare as ts
+
+# 设置 token（需要用户自行申请）
+pro = ts.pro_api('your_token_here')
+
+# 获取股票列表
+df = pro.stock_basic(exchange='', list_status='L', fields='ts_code,symbol,name,area,industry,list_date')
+
+# 获取日线行情
+df = pro.daily(ts_code='000001.SZ', start_date='20240101', end_date='20240201')
+
+# 获取财务数据
+df = pro.income(ts_code='600000.SH', start_date='20230101', end_date='20231231')
+```
+
+### HTTP API
+```bash
+curl -X POST https://api.tushare.pro \
+  -H "Content-Type: application/json" \
+  -d '{
+    "api_name": "daily",
+    "token": "your_token",
+    "params": {"ts_code": "000001.SZ", "start_date": "20240101"},
+    "fields": "ts_code,trade_date,open,high,low,close,vol"
+  }'
+```
+
+## 积分系统
+
+- 注册赠送初始积分
+- 通过签到、分享、贡献数据等方式获取积分
+- 不同 API 调用消耗不同积分
+- 积分与频次对应表: https://tushare.pro/document/1?doc_id=290
+
+## 详细文档
+
+更多接口详情见 [references/api-reference.md](references/api-reference.md)
+
+## 注意事项
+
+1. 需要申请 token 才能使用 API
+2. 注意积分消耗，高频接口消耗更多积分
+3. 数据有更新延迟，日线数据通常在收盘后 1-2 小时更新
+4. 免费用户有调用频次限制
