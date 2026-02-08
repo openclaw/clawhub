@@ -90,7 +90,8 @@ export const ensure = mutation({
       if (normalizedHandle) updates.displayName = normalizedHandle
     }
     if (!user.role) {
-      updates.role = handle === ADMIN_HANDLE ? 'admin' : DEFAULT_ROLE
+      const roleHandle = normalizedHandle ?? user.handle?.trim()
+      updates.role = roleHandle === ADMIN_HANDLE ? 'admin' : DEFAULT_ROLE
     }
     if (!user.createdAt) updates.createdAt = user._creationTime
     updates.updatedAt = now
