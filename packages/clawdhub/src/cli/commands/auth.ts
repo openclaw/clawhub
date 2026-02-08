@@ -74,7 +74,7 @@ export async function cmdLogout(opts: GlobalOpts) {
   const cfg = await readGlobalConfig()
   const registry = cfg?.registry || (await getRegistry(opts, { cache: true }))
   await writeGlobalConfig({ registry, token: undefined })
-  console.log('OK. Logged out.')
+  console.log('Logged out locally. Token still valid until revoked at clawhub.io/settings')
 }
 
 export async function cmdWhoami(opts: GlobalOpts) {
