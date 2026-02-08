@@ -144,7 +144,7 @@ export const hydrateResults = internalQuery({
       }),
     )
 
-    return entries.filter((entry): entry is HydratedEntry => entry !== null)
+    return entries.filter((entry) => entry !== null) as HydratedEntry[]
   },
 })
 
