@@ -32,7 +32,7 @@ describe('handleSoftDeletedUserReauth', () => {
   it('skips when user not found', async () => {
     const { ctx } = makeCtx({ user: null })
 
-    await handleSoftDeletedUserReauth(ctx as never, { userId })
+    await handleSoftDeletedUserReauth(ctx as never, { userId, existingUserId: userId })
 
     expect(ctx.db.get).toHaveBeenCalledWith(userId)
     expect(ctx.db.query).not.toHaveBeenCalled()
@@ -41,7 +41,7 @@ describe('handleSoftDeletedUserReauth', () => {
   it('skips active users', async () => {
     const { ctx } = makeCtx({ user: { deletedAt: undefined } })
 
-    await handleSoftDeletedUserReauth(ctx as never, { userId })
+    await handleSoftDeletedUserReauth(ctx as never, { userId, existingUserId: userId })
 
     expect(ctx.db.query).not.toHaveBeenCalled()
     expect(ctx.db.patch).not.toHaveBeenCalled()
@@ -50,7 +50,7 @@ describe('handleSoftDeletedUserReauth', () => {
   it('restores soft-deleted users when not banned', async () => {
     const { ctx } = makeCtx({ user: { deletedAt: 123 }, banRecord: null })
 
-    await handleSoftDeletedUserReauth(ctx as never, { userId })
+    await handleSoftDeletedUserReauth(ctx as never, { userId, existingUserId: userId })
 
     expect(ctx.db.patch).toHaveBeenCalledWith(userId, {
       deletedAt: undefined,
