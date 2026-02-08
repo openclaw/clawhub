@@ -28,6 +28,7 @@ import {
   soulsPostRouterV1Http,
   starsDeleteRouterV1Http,
   starsPostRouterV1Http,
+  transfersGetRouterV1Http,
   usersListV1Http,
   usersPostRouterV1Http,
   whoamiV1Http,
@@ -113,6 +114,12 @@ http.route({
   path: ApiRoutes.users,
   method: 'GET',
   handler: usersListV1Http,
+})
+
+http.route({
+  pathPrefix: '/api/v1/transfers/',
+  method: 'GET',
+  handler: transfersGetRouterV1Http,
 })
 
 http.route({
