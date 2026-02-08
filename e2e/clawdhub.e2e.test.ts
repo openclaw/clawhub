@@ -38,13 +38,13 @@ function getRegistry() {
   return (
     process.env.CLAWHUB_REGISTRY?.trim() ||
     process.env.CLAWDHUB_REGISTRY?.trim() ||
-    'https://clawhub.ai'
+    'https://www.clawhub.ai'
   )
 }
 
 function getSite() {
   return (
-    process.env.CLAWHUB_SITE?.trim() || process.env.CLAWDHUB_SITE?.trim() || 'https://clawhub.ai'
+    process.env.CLAWHUB_SITE?.trim() || process.env.CLAWDHUB_SITE?.trim() || 'https://www.clawhub.ai'
   )
 }
 

@@ -7,10 +7,10 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { GlobalOpts } from '../types'
 
 vi.mock('../../config.js', () => ({
-  readGlobalConfig: vi.fn(async () => ({ registry: 'https://clawhub.ai', token: 'tkn' })),
+  readGlobalConfig: vi.fn(async () => ({ registry: 'https://www.clawhub.ai', token: 'tkn' })),
 }))
 
-const mockGetRegistry = vi.fn(async (_opts: unknown, _params?: unknown) => 'https://clawhub.ai')
+const mockGetRegistry = vi.fn(async (_opts: unknown, _params?: unknown) => 'https://www.clawhub.ai')
 vi.mock('../registry.js', () => ({
   getRegistry: (opts: unknown, params?: unknown) => mockGetRegistry(opts, params),
 }))
@@ -42,8 +42,8 @@ function makeOpts(workdir: string): GlobalOpts {
   return {
     workdir,
     dir: join(workdir, 'skills'),
-    site: 'https://clawhub.ai',
-    registry: 'https://clawhub.ai',
+    site: 'https://www.clawhub.ai',
+    registry: 'https://www.clawhub.ai',
     registrySource: 'default',
   }
 }

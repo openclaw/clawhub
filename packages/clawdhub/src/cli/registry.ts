@@ -2,8 +2,8 @@ import { readGlobalConfig, writeGlobalConfig } from '../config.js'
 import { discoverRegistryFromSite } from '../discovery.js'
 import type { GlobalOpts } from './types.js'
 
-export const DEFAULT_SITE = 'https://clawhub.ai'
-export const DEFAULT_REGISTRY = 'https://clawhub.ai'
+export const DEFAULT_SITE = 'https://www.clawhub.ai'
+export const DEFAULT_REGISTRY = 'https://www.clawhub.ai'
 const LEGACY_REGISTRY_HOSTS = new Set(['auth.clawdhub.com', 'auth.clawhub.com', 'auth.clawhub.ai'])
 
 export async function resolveRegistry(opts: GlobalOpts) {
