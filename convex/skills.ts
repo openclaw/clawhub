@@ -2391,7 +2391,14 @@ export const insertVersion = internalMutation({
       .unique()
 
     if (skill && skill.ownerUserId !== userId) {
-      throw new Error('Only the owner can publish updates')
+      // Fallback: compare by handle in case Convex Auth created duplicate user records
+      const owner = await ctx.db.get(skill.ownerUserId)
+      const caller = await ctx.db.get(userId)
+      if (!owner || !caller || owner.handle !== caller.handle) {
+        throw new Error('Only the owner can publish updates')
+      }
+      // Same GitHub user but different Convex user IDs — update ownership to current ID
+      await ctx.db.patch(skill._id, { ownerUserId: userId, updatedAt: Date.now() })
     }
 
     const now = Date.now()
