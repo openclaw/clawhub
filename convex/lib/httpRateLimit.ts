@@ -1,0 +1,112 @@
+import { internal } from '../_generated/api'
+import type { ActionCtx } from '../_generated/server'
+import { hashToken } from './tokens'
+
+const RATE_LIMIT_WINDOW_MS = 60_000
+export const RATE_LIMITS = {
+  read: { ip: 120, key: 600 },
+  write: { ip: 30, key: 120 },
+} as const
+
+type RateLimitResult = {
+  allowed: boolean
+  remaining: number
+  limit: number
+  resetAt: number
+}
+
+export async function applyRateLimit(
+  ctx: ActionCtx,
+  request: Request,
+  kind: keyof typeof RATE_LIMITS,
+): Promise<{ ok: true; headers: HeadersInit } | { ok: false; response: Response }> {
+  const ip = getClientIp(request) ?? 'unknown'
+  const ipResult = await checkRateLimit(ctx, `ip:${ip}`, RATE_LIMITS[kind].ip)
+  const token = parseBearerToken(request)
+  const keyResult = token
+    ? await checkRateLimit(ctx, `key:${await hashToken(token)}`, RATE_LIMITS[kind].key)
+    : null
+
+  const chosen = pickMostRestrictive(ipResult, keyResult)
+  const headers = rateHeaders(chosen)
+
+  if (!ipResult.allowed || (keyResult && !keyResult.allowed)) {
+    return {
+      ok: false,
+      response: new Response('Rate limit exceeded', {
+        status: 429,
+        headers: mergeHeaders(
+          {
+            'Content-Type': 'text/plain; charset=utf-8',
+            'Cache-Control': 'no-store',
+          },
+          headers,
+        ),
+      }),
+    }
+  }
+
+  return { ok: true, headers }
+}
+
+export function getClientIp(request: Request) {
+  const header = request.headers.get('cf-connecting-ip')
+  if (!header) {
+    if (!shouldTrustForwardedIps()) return null
+    const forwarded =
+      request.headers.get('x-real-ip') ??
+      request.headers.get('x-forwarded-for') ??
+      request.headers.get('fly-client-ip')
+    if (!forwarded) return null
+    if (forwarded.includes(',')) return forwarded.split(',')[0]?.trim() || null
+    return forwarded.trim()
+  }
+  if (header.includes(',')) return header.split(',')[0]?.trim() || null
+  return header.trim()
+}
+
+async function checkRateLimit(
+  ctx: ActionCtx,
+  key: string,
+  limit: number,
+): Promise<RateLimitResult> {
+  return (await ctx.runMutation(internal.rateLimits.checkRateLimitInternal, {
+    key,
+    limit,
+    windowMs: RATE_LIMIT_WINDOW_MS,
+  })) as RateLimitResult
+}
+
+function pickMostRestrictive(primary: RateLimitResult, secondary: RateLimitResult | null) {
+  if (!secondary) return primary
+  if (!primary.allowed) return primary
+  if (!secondary.allowed) return secondary
+  return secondary.remaining < primary.remaining ? secondary : primary
+}
+
+function rateHeaders(result: RateLimitResult): HeadersInit {
+  const resetSeconds = Math.ceil(result.resetAt / 1000)
+  return {
+    'X-RateLimit-Limit': String(result.limit),
+    'X-RateLimit-Remaining': String(result.remaining),
+    'X-RateLimit-Reset': String(resetSeconds),
+    ...(result.allowed ? {} : { 'Retry-After': String(resetSeconds) }),
+  }
+}
+
+export function parseBearerToken(request: Request) {
+  const header = request.headers.get('authorization') ?? request.headers.get('Authorization')
+  if (!header) return null
+  const trimmed = header.trim()
+  if (!trimmed.toLowerCase().startsWith('bearer ')) return null
+  const token = trimmed.slice(7).trim()
+  return token || null
+}
+
+function mergeHeaders(base: HeadersInit, extra?: HeadersInit) {
+  return { ...(base as Record<string, string>), ...(extra as Record<string, string>) }
+}
+
+function shouldTrustForwardedIps() {
+  return String(process.env.TRUST_FORWARDED_IPS ?? '').toLowerCase() === 'true'
+}

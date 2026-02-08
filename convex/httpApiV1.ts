@@ -1,18 +1,12 @@
 import { CliPublishRequestSchema, parseArk } from 'clawhub-schema'
 import { api, internal } from './_generated/api'
 import type { Doc, Id } from './_generated/dataModel'
-import type { ActionCtx } from './_generated/server'
-import { httpAction } from './_generated/server'
+import { type ActionCtx, httpAction } from './_generated/server'
 import { requireApiTokenUser } from './lib/apiTokenAuth'
-import { hashToken } from './lib/tokens'
+import { applyRateLimit, parseBearerToken } from './lib/httpRateLimit'
 import { publishVersionForUser } from './skills'
 import { publishSoulVersionForUser } from './souls'
 
-const RATE_LIMIT_WINDOW_MS = 60_000
-const RATE_LIMITS = {
-  read: { ip: 120, key: 600 },
-  write: { ip: 30, key: 120 },
-} as const
 const MAX_RAW_FILE_BYTES = 200 * 1024
 
 type SearchSkillEntry = {
@@ -788,87 +782,6 @@ async function resolveTags(
     }
   }
   return resolved
-}
-
-async function applyRateLimit(
-  ctx: ActionCtx,
-  request: Request,
-  kind: 'read' | 'write',
-): Promise<{ ok: true; headers: HeadersInit } | { ok: false; response: Response }> {
-  const ip = getClientIp(request) ?? 'unknown'
-  const ipResult = await checkRateLimit(ctx, `ip:${ip}`, RATE_LIMITS[kind].ip)
-  const token = parseBearerToken(request)
-  const keyResult = token
-    ? await checkRateLimit(ctx, `key:${await hashToken(token)}`, RATE_LIMITS[kind].key)
-    : null
-
-  const chosen = pickMostRestrictive(ipResult, keyResult)
-  const headers = rateHeaders(chosen)
-
-  if (!ipResult.allowed || (keyResult && !keyResult.allowed)) {
-    return {
-      ok: false,
-      response: text('Rate limit exceeded', 429, headers),
-    }
-  }
-
-  return { ok: true, headers }
-}
-
-type RateLimitResult = {
-  allowed: boolean
-  remaining: number
-  limit: number
-  resetAt: number
-}
-
-async function checkRateLimit(
-  ctx: ActionCtx,
-  key: string,
-  limit: number,
-): Promise<RateLimitResult> {
-  return (await ctx.runMutation(internal.rateLimits.checkRateLimitInternal, {
-    key,
-    limit,
-    windowMs: RATE_LIMIT_WINDOW_MS,
-  })) as RateLimitResult
-}
-
-function pickMostRestrictive(primary: RateLimitResult, secondary: RateLimitResult | null) {
-  if (!secondary) return primary
-  if (!primary.allowed) return primary
-  if (!secondary.allowed) return secondary
-  return secondary.remaining < primary.remaining ? secondary : primary
-}
-
-function rateHeaders(result: RateLimitResult): HeadersInit {
-  const resetSeconds = Math.ceil(result.resetAt / 1000)
-  return {
-    'X-RateLimit-Limit': String(result.limit),
-    'X-RateLimit-Remaining': String(result.remaining),
-    'X-RateLimit-Reset': String(resetSeconds),
-    ...(result.allowed ? {} : { 'Retry-After': String(resetSeconds) }),
-  }
-}
-
-function getClientIp(request: Request) {
-  const header =
-    request.headers.get('cf-connecting-ip') ??
-    request.headers.get('x-real-ip') ??
-    request.headers.get('x-forwarded-for') ??
-    request.headers.get('fly-client-ip')
-  if (!header) return null
-  if (header.includes(',')) return header.split(',')[0]?.trim() || null
-  return header.trim()
-}
-
-function parseBearerToken(request: Request) {
-  const header = request.headers.get('authorization') ?? request.headers.get('Authorization')
-  if (!header) return null
-  const trimmed = header.trim()
-  if (!trimmed.toLowerCase().startsWith('bearer ')) return null
-  const token = trimmed.slice(7).trim()
-  return token || null
 }
 
 function json(value: unknown, status = 200, headers?: HeadersInit) {
