@@ -127,7 +127,7 @@ export function isTextFile(path: string, contentType?: string | null) {
   const trimmed = path.trim().toLowerCase()
   if (!trimmed) return false
   const parts = trimmed.split('.')
-  const extension = parts.length > 1 ? (parts.at(-1) ?? '') : ''
+  const extension = parts.length > 1 ? (parts[parts.length - 1] ?? '') : ''
   if (contentType) {
     if (isTextContentType(contentType)) return true
   }

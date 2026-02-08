@@ -141,7 +141,8 @@ async function resolveHeadCommit(parsed: GitHubImportUrl, fetcher: typeof fetch)
     url = next.toString()
   }
 
-  const maybe = url.split('/').at(-1) ?? ''
+  const urlParts = url.split('/')
+  const maybe = urlParts[urlParts.length - 1] ?? ''
   if (!/^[a-f0-9]{40}$/i.test(maybe)) {
     throw new Error('Could not resolve commit for HEAD')
   }
@@ -363,7 +364,8 @@ function isUnderRoot(path: string, rootWithSlash: string) {
 
 function isTextPath(path: string) {
   const lower = path.toLowerCase()
-  const ext = lower.split('.').at(-1) ?? ''
+  const extParts = lower.split('.')
+  const ext = extParts[extParts.length - 1] ?? ''
   if (!ext) return false
   return TEXT_FILE_EXTENSION_SET.has(ext)
 }

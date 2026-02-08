@@ -85,7 +85,8 @@ export const previewGitHubImportCandidate = action({
       defaultSelectedPaths,
     })
 
-    const baseForNaming = candidate.path ? (candidate.path.split('/').at(-1) ?? '') : resolved.repo
+    const pathParts = candidate.path ? candidate.path.split('/') : []
+    const baseForNaming = candidate.path ? (pathParts[pathParts.length - 1] ?? '') : resolved.repo
     const suggestedDisplayName = suggestDisplayName(candidate, baseForNaming)
 
     const rawSlugBase = sanitizeSlug(candidate.path ? baseForNaming : resolved.repo)
