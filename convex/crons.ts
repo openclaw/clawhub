@@ -24,9 +24,9 @@ crons.interval(
   { batchSize: 200, maxBatches: 5 },
 )
 
-crons.schedule(
+crons.interval(
   'skill-stat-events',
-  '*/1 * * * *',
+  { minutes: 1 },
   internal.skillStatEvents.processSkillStatEventsAction,
   {},
 )
