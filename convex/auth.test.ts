@@ -62,7 +62,7 @@ describe('handleSoftDeletedUserReauth', () => {
     const { ctx } = makeCtx({ user: { deletedAt: 123 }, banRecord: { action: 'user.ban' } })
 
     await expect(
-      handleSoftDeletedUserReauth(ctx as never, { userId }),
+      handleSoftDeletedUserReauth(ctx as never, { userId, existingUserId: userId }),
     ).rejects.toThrow(BANNED_REAUTH_MESSAGE)
 
     expect(ctx.db.patch).not.toHaveBeenCalled()
