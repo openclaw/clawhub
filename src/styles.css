@@ -3004,3 +3004,157 @@ html.theme-transition::view-transition-new(theme) {
   background: rgba(243, 201, 122, 0.18);
   color: #f3c97a;
 }
+
+/* ========================================
+   Trust Tier Badges
+   ======================================== */
+
+.trust-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35em;
+  padding: 0.25em 0.6em;
+  border-radius: var(--radius-sm);
+  font-size: 0.8rem;
+  font-weight: 600;
+  line-height: 1.2;
+  white-space: nowrap;
+  transition: transform 0.15s ease, box-shadow 0.15s ease;
+}
+
+.trust-badge:hover {
+  transform: translateY(-1px);
+}
+
+.trust-badge-compact {
+  padding: 0.2em 0.4em;
+  font-size: 0.9rem;
+}
+
+.trust-badge-icon {
+  font-size: 1em;
+}
+
+.trust-badge-label {
+  font-size: 0.75rem;
+  text-transform: uppercase;
+  letter-spacing: 0.02em;
+}
+
+.trust-badge-warning {
+  margin-left: 0.2em;
+  font-size: 0.9em;
+}
+
+/* Verified - highest trust level */
+.trust-tier-verified {
+  background: linear-gradient(135deg, #10b98120 0%, #059f6810 100%);
+  color: #059f68;
+  border: 1px solid #10b98130;
+}
+
+[data-theme="dark"] .trust-tier-verified {
+  background: linear-gradient(135deg, #10b98125 0%, #059f6815 100%);
+  color: #4ade80;
+  border-color: #10b98140;
+}
+
+/* Clean - passed scan but publisher not established */
+.trust-tier-clean {
+  background: linear-gradient(135deg, #3b82f620 0%, #2563eb10 100%);
+  color: #2563eb;
+  border: 1px solid #3b82f630;
+}
+
+[data-theme="dark"] .trust-tier-clean {
+  background: linear-gradient(135deg, #3b82f625 0%, #2563eb15 100%);
+  color: #60a5fa;
+  border-color: #3b82f640;
+}
+
+/* Pending - awaiting scan */
+.trust-tier-pending {
+  background: linear-gradient(135deg, #f59e0b20 0%, #d9740010 100%);
+  color: #d97400;
+  border: 1px solid #f59e0b30;
+}
+
+[data-theme="dark"] .trust-tier-pending {
+  background: linear-gradient(135deg, #f59e0b25 0%, #d9740015 100%);
+  color: #fbbf24;
+  border-color: #f59e0b40;
+}
+
+/* Suspicious - flagged but not confirmed malicious */
+.trust-tier-suspicious {
+  background: linear-gradient(135deg, #f97316 20 0%, #ea580c10 100%);
+  color: #ea580c;
+  border: 1px solid #f9731630;
+}
+
+[data-theme="dark"] .trust-tier-suspicious {
+  background: linear-gradient(135deg, #f9731625 0%, #ea580c15 100%);
+  color: #fb923c;
+  border-color: #f9731640;
+}
+
+/* Malicious - confirmed dangerous */
+.trust-tier-malicious {
+  background: linear-gradient(135deg, #ef444420 0%, #dc262610 100%);
+  color: #dc2626;
+  border: 1px solid #ef444430;
+}
+
+[data-theme="dark"] .trust-tier-malicious {
+  background: linear-gradient(135deg, #ef444425 0%, #dc262615 100%);
+  color: #f87171;
+  border-color: #ef444440;
+}
+
+/* Unknown - could not determine */
+.trust-tier-unknown {
+  background: linear-gradient(135deg, #6b728020 0%, #52525b10 100%);
+  color: #52525b;
+  border: 1px solid #6b728030;
+}
+
+[data-theme="dark"] .trust-tier-unknown {
+  background: linear-gradient(135deg, #6b728025 0%, #52525b15 100%);
+  color: #a1a1aa;
+  border-color: #6b728040;
+}
+
+/* Detailed trust badge for skill detail pages */
+.trust-badge-detailed {
+  padding: 0.75rem 1rem;
+  border-radius: var(--radius-md);
+  border: 1px solid var(--line);
+}
+
+.trust-badge-detailed .trust-badge-header {
+  display: flex;
+  align-items: center;
+  gap: 0.5em;
+  margin-bottom: 0.5rem;
+  font-weight: 700;
+}
+
+.trust-badge-detailed .trust-badge-description {
+  font-size: 0.85rem;
+  color: var(--ink-soft);
+  margin: 0 0 0.5rem 0;
+}
+
+.trust-badge-detailed .trust-badge-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+  font-size: 0.75rem;
+  color: var(--ink-soft);
+}
+
+.trust-badge-meta-item {
+  display: flex;
+  align-items: center;
+  gap: 0.25em;
+}
