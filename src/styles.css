@@ -1731,6 +1731,7 @@ code {
 .tab-body {
   display: grid;
   gap: 20px;
+  max-width: 100%;
 }
 
 .file-list {
@@ -2353,6 +2354,7 @@ code {
 
 .markdown {
   line-height: 1.7;
+  max-width: 100%;
   color: #3f3a34;
 }
 
@@ -2379,6 +2381,7 @@ code {
 
 .markdown pre {
   white-space: pre;
+  max-width: 100%;
   overflow-x: auto;
   -webkit-overflow-scrolling: touch;
   background: linear-gradient(180deg, rgba(255, 255, 255, 0.9), rgba(255, 250, 247, 0.88));
