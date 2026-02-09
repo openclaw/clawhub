@@ -24,7 +24,6 @@ type SClawHubBadgeProps = {
 export function SClawHubBadge({ skill, ownerHandle, variant = 'compact' }: SClawHubBadgeProps) {
   const [report, setReport] = useState<SClawHubReport | null>(null)
   const [loading, setLoading] = useState(false)
-  const [error, setError] = useState(false)
 
   // Build skill slug for SClawHub
   const owner = ownerHandle?.trim() || String(skill.ownerUserId)
@@ -34,25 +33,32 @@ export function SClawHubBadge({ skill, ownerHandle, variant = 'compact' }: SClaw
   useEffect(() => {
     let cancelled = false
     setLoading(true)
-    setError(false)
 
     // Fetch security report from SClawHub API
     fetch(`https://sclawhub.com/api/skills/${skillSlug}`)
       .then((res) => {
         if (!res.ok) {
-          throw new Error('Not scanned yet')
+          // Only permanently hide on 404 (not scanned)
+          // Other errors (500, timeout) allow retry on next render
+          if (res.status === 404) {
+            throw new Error('Not scanned')
+          }
+          // For other errors, just don't set report but don't block future attempts
+          return null
         }
         return res.json()
       })
-      .then((data: SClawHubReport) => {
-        if (!cancelled) {
+      .then((data: SClawHubReport | null) => {
+        if (!cancelled && data) {
           setReport(data)
+          setLoading(false)
+        } else if (!cancelled) {
           setLoading(false)
         }
       })
       .catch(() => {
+        // 404 or network error - don't show badge
         if (!cancelled) {
-          setError(true)
           setLoading(false)
         }
       })
@@ -62,7 +68,7 @@ export function SClawHubBadge({ skill, ownerHandle, variant = 'compact' }: SClaw
     }
   }, [skillSlug])
 
-  if (loading || error || !report) {
+  if (loading || !report) {
     // Don't render anything if not yet scanned or loading
     return null
   }
