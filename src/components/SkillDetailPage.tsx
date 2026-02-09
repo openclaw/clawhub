@@ -11,6 +11,7 @@ import type { PublicSkill, PublicUser } from '../lib/publicUser'
 import { canManageSkill, isModerator } from '../lib/roles'
 import { useAuthStatus } from '../lib/useAuthStatus'
 import { SkillDiffCard } from './SkillDiffCard'
+import { SClawHubBadge } from './SClawHubBadge'
 
 type VtAnalysis = {
   status: string
@@ -474,6 +475,10 @@ export function SkillDetailPage({
                   <div className={`tag${isAutoHidden || isRemoved ? ' tag-accent' : ''}`}>
                     {staffVisibilityTag}
                   </div>
+                {/* SClawHub security badge - shows trust score if skill has been scanned */}
+                <div style={{ marginTop: '0.5rem' }}>
+                  <SClawHubBadge skill={skill} ownerHandle={ownerHandle} variant="full" />
+                </div>
                 ) : null}
                 <div className="skill-actions">
                   {isAuthenticated ? (
