@@ -1259,6 +1259,8 @@ code {
 .skill-detail-stack {
   display: grid;
   gap: 16px;
+  max-width: 100%;
+  overflow-x: auto;
 }
 
 .skill-hero {
@@ -1699,6 +1701,8 @@ code {
 
 .tab-card {
   gap: 14px;
+  max-width: 100%;
+  overflow-x: auto;
 }
 
 .tab-header {
@@ -1732,6 +1736,7 @@ code {
   display: grid;
   gap: 20px;
   max-width: 100%;
+  overflow-x: auto;
 }
 
 .file-list {
