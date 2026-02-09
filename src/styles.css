@@ -1751,6 +1751,7 @@ code {
   display: grid;
   gap: 8px;
   max-height: 260px;
+  max-width: 100%;
   overflow: auto;
   padding-right: 4px;
 }
@@ -1766,6 +1767,7 @@ code {
   align-items: center;
   justify-content: space-between;
   gap: 12px;
+  max-width: 100%;
   padding: 10px 12px;
   border-radius: 12px;
   border: 1px solid var(--line);
