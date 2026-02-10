@@ -3091,6 +3091,7 @@ html.theme-transition::view-transition-new(theme) {
   color: #ea580c;
   border: 1px solid #f9731630;
 }
+}
 
 [data-theme="dark"] .trust-tier-suspicious {
   background: linear-gradient(135deg, #f9731625 0%, #ea580c15 100%);
