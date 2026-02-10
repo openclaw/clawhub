@@ -58,6 +58,27 @@ describe('handleSoftDeletedUserReauth', () => {
     })
   })
 
+  it('restores soft-deleted users on fresh login (existingUserId is null)', async () => {
+    const { ctx } = makeCtx({ user: { deletedAt: 123 }, banRecord: null })
+
+    await handleSoftDeletedUserReauth(ctx as never, { userId, existingUserId: null })
+
+    expect(ctx.db.patch).toHaveBeenCalledWith(userId, {
+      deletedAt: undefined,
+      updatedAt: expect.any(Number),
+    })
+  })
+
+  it('skips reactivation when existingUserId does not match userId', async () => {
+    const otherUserId = 'users:999' as Id<'users'>
+    const { ctx } = makeCtx({ user: { deletedAt: 123 } })
+
+    await handleSoftDeletedUserReauth(ctx as never, { userId, existingUserId: otherUserId })
+
+    expect(ctx.db.query).not.toHaveBeenCalled()
+    expect(ctx.db.patch).not.toHaveBeenCalled()
+  })
+
   it('blocks banned users with a custom message', async () => {
     const { ctx } = makeCtx({ user: { deletedAt: 123 }, banRecord: { action: 'user.ban' } })
 
