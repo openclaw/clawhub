@@ -1,6 +1,4 @@
-import type { Doc, Id } from '../../convex/_generated/dataModel'
-
-/**
+// (remove unused import)
  * Trust tier levels for skills.
  *
  * These tiers help users make informed decisions about skill safety:
