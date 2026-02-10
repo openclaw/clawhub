@@ -3087,7 +3087,7 @@ html.theme-transition::view-transition-new(theme) {
 
 /* Suspicious - flagged but not confirmed malicious */
 .trust-tier-suspicious {
-  background: linear-gradient(135deg, #f97316 20 0%, #ea580c10 100%);
+  background: linear-gradient(135deg, #f9731620 0%, #ea580c10 100%);
   color: #ea580c;
   border: 1px solid #f9731630;
 }
