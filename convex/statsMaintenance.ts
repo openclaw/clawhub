@@ -200,6 +200,102 @@ function buildSkillStatPatch(skill: Doc<'skills'>) {
   }
 }
 
+/**
+ * Reconcile skill stats by counting actual records in source-of-truth tables.
+ *
+ * This fixes stats that got out of sync due to missed events, cursor issues,
+ * or bugs in the event processing pipeline. It counts:
+ * - stars: actual records in the `stars` table for each skill
+ * - comments: actual records in the `comments` table for each skill
+ *
+ * Downloads and installs are event-sourced only (no separate table to count from),
+ * so they cannot be reconciled this way.
+ */
+export const reconcileSkillStarCounts = internalMutation({
+  args: {
+    cursor: v.optional(v.string()),
+    batchSize: v.optional(v.number()),
+  },
+  handler: async (ctx, args) => {
+    const batchSize = clampInt(args.batchSize ?? 50, 1, 200)
+    const now = Date.now()
+
+    const { page, isDone, continueCursor } = await ctx.db
+      .query('skills')
+      .order('asc')
+      .paginate({ cursor: args.cursor ?? null, numItems: batchSize })
+
+    let patched = 0
+    for (const skill of page) {
+      // Count actual star records for this skill
+      const starRecords = await ctx.db
+        .query('stars')
+        .withIndex('by_skill_user', (q) => q.eq('skillId', skill._id))
+        .collect()
+      const actualStars = starRecords.length
+
+      // Count actual comment records for this skill
+      const commentRecords = await ctx.db
+        .query('comments')
+        .withIndex('by_skill', (q) => q.eq('skillId', skill._id))
+        .collect()
+      const actualComments = commentRecords.filter((c) => !c.softDeletedAt).length
+
+      // Check if stats are out of sync
+      if (skill.stats.stars !== actualStars || skill.stats.comments !== actualComments) {
+        const updatedStats = {
+          ...skill.stats,
+          stars: actualStars,
+          comments: actualComments,
+        }
+        await ctx.db.patch(skill._id, {
+          statsStars: actualStars,
+          stats: updatedStats,
+          updatedAt: now,
+        })
+        patched += 1
+      }
+    }
+
+    return {
+      scanned: page.length,
+      patched,
+      cursor: isDone ? null : continueCursor,
+      isDone,
+    }
+  },
+})
+
+export const runReconcileSkillStarCountsInternal = internalAction({
+  args: {
+    batchSize: v.optional(v.number()),
+    maxBatches: v.optional(v.number()),
+  },
+  handler: async (ctx, args) => {
+    const batchSize = clampInt(args.batchSize ?? 50, 1, 200)
+    const maxBatches = clampInt(args.maxBatches ?? 10, 1, 50)
+
+    let cursor: string | undefined
+    let totalScanned = 0
+    let totalPatched = 0
+
+    for (let i = 0; i < maxBatches; i++) {
+      const result = (await ctx.runMutation(
+        internal.statsMaintenance.reconcileSkillStarCounts,
+        { cursor, batchSize },
+      )) as { scanned: number; patched: number; cursor: string | null; isDone: boolean }
+
+      totalScanned += result.scanned
+      totalPatched += result.patched
+
+      if (result.isDone) break
+      cursor = result.cursor ?? undefined
+    }
+
+    return { scanned: totalScanned, patched: totalPatched }
+  },
+})
+
 function clampInt(value: number, min: number, max: number) {
   return Math.min(Math.max(value, min), max)
 }

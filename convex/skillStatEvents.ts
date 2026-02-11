@@ -379,12 +379,14 @@ export const applyAggregatedStatsAndUpdateCursor = internalMutation({
       if (
         delta.downloads !== 0 ||
         delta.stars !== 0 ||
+        delta.comments !== 0 ||
         delta.installsAllTime !== 0 ||
         delta.installsCurrent !== 0
       ) {
         const patch = applySkillStatDeltas(skill, {
           downloads: delta.downloads,
           stars: delta.stars,
+          comments: delta.comments,
           installsAllTime: delta.installsAllTime,
           installsCurrent: delta.installsCurrent,
         })
