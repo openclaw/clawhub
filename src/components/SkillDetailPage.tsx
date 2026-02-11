@@ -1,7 +1,7 @@
 import { Link, useNavigate } from '@tanstack/react-router'
 import type { ClawdisSkillMetadata, SkillInstallSpec } from 'clawhub-schema'
 import { useAction, useMutation, useQuery } from 'convex/react'
-import { useEffect, useMemo, useState } from 'react'
+import { Suspense, lazy, useEffect, useMemo, useState } from 'react'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import { api } from '../../convex/_generated/api'
@@ -10,7 +10,7 @@ import { getSkillBadges } from '../lib/badges'
 import type { PublicSkill, PublicUser } from '../lib/publicUser'
 import { canManageSkill, isModerator } from '../lib/roles'
 import { useAuthStatus } from '../lib/useAuthStatus'
-import { SkillDiffCard } from './SkillDiffCard'
+const SkillDiffCard = lazy(() => import('./SkillDiffCard').then((m) => ({ default: m.SkillDiffCard })))
 
 type VtAnalysis = {
   status: string
@@ -1002,7 +1002,9 @@ export function SkillDetailPage({
           ) : null}
           {activeTab === 'compare' && skill ? (
             <div className="tab-body">
-              <SkillDiffCard skill={skill} versions={diffVersions ?? []} variant="embedded" />
+              <Suspense fallback={<div className="stat">Loading diff viewer…</div>}>
+                <SkillDiffCard skill={skill} versions={diffVersions ?? []} variant="embedded" />
+              </Suspense>
             </div>
           ) : null}
           {activeTab === 'versions' ? (
