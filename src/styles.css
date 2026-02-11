@@ -3206,7 +3206,7 @@ html.theme-transition::view-transition-new(theme) {
   margin: 0;
 }
 
-.pending-banner-appeal {
+.pending-banner-content .pending-banner-appeal {
   margin-top: 6px;
   font-size: 0.8rem;
   opacity: 0.75;

@@ -4,6 +4,30 @@ export function getLlmEvalModel(): string {
 export const LLM_EVAL_MAX_OUTPUT_TOKENS = 16000
 
 // ---------------------------------------------------------------------------
+// Helpers
+// ---------------------------------------------------------------------------
+
+function formatScalar(value: unknown): string {
+  if (value === undefined) return 'undefined'
+  if (value === null) return 'null'
+  if (typeof value === 'string') return value
+  if (typeof value === 'number' || typeof value === 'boolean' || typeof value === 'bigint') {
+    return String(value)
+  }
+  // Avoid throwing on circular structures; fall back to a safe representation.
+  try {
+    return JSON.stringify(value)
+  } catch {
+    return Object.prototype.toString.call(value)
+  }
+}
+
+function formatWithDefault(value: unknown, defaultLabel: string): string {
+  if (value === undefined || value === null) return defaultLabel
+  return formatScalar(value)
+}
+
+// ---------------------------------------------------------------------------
 // Types
 // ---------------------------------------------------------------------------
 
@@ -288,27 +312,6 @@ export function assembleEvalUserMessage(ctx: SkillEvalContext): string {
   const userInvocable = fm['user-invocable'] ?? clawdis.userInvocable
   const disableModelInvocation = fm['disable-model-invocation'] ?? clawdis.disableModelInvocation
   const os = clawdis.os
-
-  const formatScalar = (value: unknown): string => {
-    if (value === undefined) return 'undefined'
-    if (value === null) return 'null'
-    if (typeof value === 'string') return value
-    if (typeof value === 'number' || typeof value === 'boolean' || typeof value === 'bigint') {
-      return String(value)
-    }
-    // Avoid throwing on circular structures; fall back to default coercion.
-    try {
-      return JSON.stringify(value)
-    } catch {
-      return Object.prototype.toString.call(value)
-    }
-  }
-
-  const formatWithDefault = (value: unknown, defaultLabel: string): string => {
-    if (value === undefined || value === null) return defaultLabel
-    return formatScalar(value)
-  }
-
   sections.push(`**Flags:**
 - always: ${formatWithDefault(always, 'false (default)')}
 - user-invocable: ${formatWithDefault(userInvocable, 'true (default)')}
