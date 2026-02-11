@@ -138,7 +138,30 @@ metadata: {"clawdbot":{"cliHelp":"padel --help\\nUsage: padel [command]\\n"}}
 ---
 ```
 
-`metadata.clawdbot` is preferred, but `metadata.clawdis` is accepted as an alias for compatibility.
+`metadata.clawdbot` is preferred, but `metadata.clawdis` and `metadata.openclaw` are accepted as aliases.
+
+## Skill metadata
+
+Skills declare their runtime requirements (env vars, binaries, install specs) in the `SKILL.md` frontmatter. ClawHub's security analysis checks these declarations against actual skill behavior.
+
+Full reference: [`docs/skill-format.md`](docs/skill-format.md#frontmatter-metadata)
+
+Quick example:
+
+```yaml
+---
+name: my-skill
+description: Does a thing with an API.
+metadata:
+  openclaw:
+    requires:
+      env:
+        - MY_API_KEY
+      bins:
+        - curl
+    primaryEnv: MY_API_KEY
+---
+```
 
 ## Scripts
 

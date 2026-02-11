@@ -3206,6 +3206,17 @@ html.theme-transition::view-transition-new(theme) {
   margin: 0;
 }
 
+.pending-banner-content .pending-banner-appeal {
+  margin-top: 6px;
+  font-size: 0.8rem;
+  opacity: 0.75;
+}
+
+.pending-banner-appeal a {
+  color: inherit;
+  text-decoration: underline;
+}
+
 /* Blocked/removed banner variant */
 .pending-banner-blocked {
   background: rgba(239, 68, 68, 0.12);

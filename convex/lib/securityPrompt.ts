@@ -4,6 +4,30 @@ export function getLlmEvalModel(): string {
 export const LLM_EVAL_MAX_OUTPUT_TOKENS = 16000
 
 // ---------------------------------------------------------------------------
+// Helpers
+// ---------------------------------------------------------------------------
+
+function formatScalar(value: unknown): string {
+  if (value === undefined) return 'undefined'
+  if (value === null) return 'null'
+  if (typeof value === 'string') return value
+  if (typeof value === 'number' || typeof value === 'boolean' || typeof value === 'bigint') {
+    return String(value)
+  }
+  // Avoid throwing on circular structures; fall back to a safe representation.
+  try {
+    return JSON.stringify(value)
+  } catch {
+    return Object.prototype.toString.call(value)
+  }
+}
+
+function formatWithDefault(value: unknown, defaultLabel: string): string {
+  if (value === undefined || value === null) return defaultLabel
+  return formatScalar(value)
+}
+
+// ---------------------------------------------------------------------------
 // Types
 // ---------------------------------------------------------------------------
 
@@ -23,6 +47,7 @@ export type SkillEvalContext = {
   }
   files: Array<{ path: string; size: number }>
   skillMdContent: string
+  fileContents: Array<{ path: string; content: string }>
   injectionSignals: string[]
 }
 
@@ -127,15 +152,16 @@ Flag when:
 Evaluate the skill's requested level of system presence.
 
 - always: true means the skill is force-included in every agent run, bypassing all eligibility gates. This is a significant privilege.
-- disableModelInvocation: false (default) means the AI model can invoke this skill autonomously.
-- The combination of always + model-invocable + broad env access means the skill is permanently present, autonomously triggerable, and has credentials available. That combination deserves scrutiny regardless of what the skill claims to do.
+- disable-model-invocation defaults to false. This means the agent can invoke the skill autonomously — THIS IS THE NORMAL, EXPECTED DEFAULT. Autonomous agent invocation is the entire purpose of skills. Do NOT flag this as a concern on its own.
+- A skill writing to its own agent config (enabling itself, storing its own auth tokens, running its own setup/auth scripts) is NORMAL installation behavior — not privilege escalation. Do not flag this.
 
-Most skills do not set always: true and leave model invocation enabled — that's the normal default and is fine for a typical integration skill.
+MITRE ATLAS context: Autonomous invocation relates to AML.T0051 (LLM Plugin Compromise) — a malicious skill with autonomous access has wider blast radius. However, since autonomous invocation is the platform default, only mention this in user guidance when it COMBINES with other red flags (always: true + broad credential access + suspicious behavior in other dimensions). Never flag autonomous invocation alone.
 
 Flag when:
 - always: true is set without clear justification (most skills should not need this)
 - The skill requests permanent presence (always) combined with broad environment access
-- A skill that handles sensitive operations doesn't set disableModelInvocation: true (allowing the model to trigger it without explicit user request)
+- The skill modifies OTHER skills' configurations or system-wide agent settings beyond its own scope
+- The skill accesses credentials or config paths belonging to other skills
 
 ## Interpreting static scan findings
 
@@ -227,14 +253,33 @@ const MAX_SKILL_MD_CHARS = 6000
 
 export function assembleEvalUserMessage(ctx: SkillEvalContext): string {
   const fm = ctx.parsed.frontmatter ?? {}
-  const clawdis = (ctx.parsed.clawdis ?? {}) as Record<string, unknown>
-  const requires = (clawdis.requires ?? {}) as Record<string, unknown>
+  const rawClawdis = (ctx.parsed.clawdis ?? {}) as Record<string, unknown>
+  const meta = (ctx.parsed.metadata ?? {}) as Record<string, unknown>
+  const openclawFallback =
+    meta.openclaw && typeof meta.openclaw === 'object' && !Array.isArray(meta.openclaw)
+      ? (meta.openclaw as Record<string, unknown>)
+      : {}
+  const clawdis = Object.keys(rawClawdis).length > 0 ? rawClawdis : openclawFallback
+  const requires = (clawdis.requires ?? openclawFallback.requires ?? {}) as Record<string, unknown>
   const install = (clawdis.install ?? []) as Array<Record<string, unknown>>
 
   const codeExtensions = new Set([
-    '.js', '.ts', '.mjs', '.cjs', '.jsx', '.tsx',
-    '.py', '.rb', '.sh', '.bash', '.zsh',
-    '.go', '.rs', '.c', '.cpp', '.java',
+    '.js',
+    '.ts',
+    '.mjs',
+    '.cjs',
+    '.jsx',
+    '.tsx',
+    '.py',
+    '.rb',
+    '.sh',
+    '.bash',
+    '.zsh',
+    '.go',
+    '.rs',
+    '.c',
+    '.cpp',
+    '.java',
   ])
   const codeFiles = ctx.files.filter((f) => {
     const ext = f.path.slice(f.path.lastIndexOf('.')).toLowerCase()
@@ -243,7 +288,7 @@ export function assembleEvalUserMessage(ctx: SkillEvalContext): string {
 
   const skillMd =
     ctx.skillMdContent.length > MAX_SKILL_MD_CHARS
-      ? ctx.skillMdContent.slice(0, MAX_SKILL_MD_CHARS) + '\n…[truncated]'
+      ? `${ctx.skillMdContent.slice(0, MAX_SKILL_MD_CHARS)}\n…[truncated]`
       : ctx.skillMdContent
 
   const sections: string[] = []
@@ -267,12 +312,14 @@ export function assembleEvalUserMessage(ctx: SkillEvalContext): string {
   const userInvocable = fm['user-invocable'] ?? clawdis.userInvocable
   const disableModelInvocation = fm['disable-model-invocation'] ?? clawdis.disableModelInvocation
   const os = clawdis.os
-
   sections.push(`**Flags:**
-- always: ${always ?? 'not set'}
-- user-invocable: ${userInvocable ?? 'not set'}
-- disable-model-invocation: ${disableModelInvocation ?? 'not set'}
-- OS restriction: ${Array.isArray(os) ? os.join(', ') : os ?? 'none'}`)
+- always: ${formatWithDefault(always, 'false (default)')}
+- user-invocable: ${formatWithDefault(userInvocable, 'true (default)')}
+- disable-model-invocation: ${formatWithDefault(
+    disableModelInvocation,
+    'false (default — agent can invoke autonomously, this is normal)',
+  )}
+- OS restriction: ${Array.isArray(os) ? os.join(', ') : formatWithDefault(os, 'none')}`)
 
   // Requirements
   const bins = (requires.bins as string[] | undefined) ?? []
@@ -292,13 +339,13 @@ export function assembleEvalUserMessage(ctx: SkillEvalContext): string {
   if (install.length > 0) {
     const specLines = install.map((spec, i) => {
       const kind = spec.kind ?? 'unknown'
-      const parts = [`- **[${i}] ${kind}**`]
-      if (spec.formula) parts.push(`formula: ${spec.formula}`)
-      if (spec.package) parts.push(`package: ${spec.package}`)
-      if (spec.module) parts.push(`module: ${spec.module}`)
-      if (spec.url) parts.push(`url: ${spec.url}`)
-      if (spec.archive) parts.push(`archive: ${spec.archive}`)
-      if (spec.extract !== undefined) parts.push(`extract: ${spec.extract}`)
+      const parts = [`- **[${i}] ${formatScalar(kind)}**`]
+      if (spec.formula) parts.push(`formula: ${formatScalar(spec.formula)}`)
+      if (spec.package) parts.push(`package: ${formatScalar(spec.package)}`)
+      if (spec.module) parts.push(`module: ${formatScalar(spec.module)}`)
+      if (spec.url) parts.push(`url: ${formatScalar(spec.url)}`)
+      if (spec.archive) parts.push(`archive: ${formatScalar(spec.archive)}`)
+      if (spec.extract !== undefined) parts.push(`extract: ${formatScalar(spec.extract)}`)
       if (spec.bins) parts.push(`creates binaries: ${(spec.bins as string[]).join(', ')}`)
       return parts.join(' | ')
     })
@@ -334,6 +381,31 @@ export function assembleEvalUserMessage(ctx: SkillEvalContext): string {
 
   // SKILL.md content
   sections.push(`### SKILL.md content (runtime instructions)\n${skillMd}`)
+
+  // All file contents
+  if (ctx.fileContents.length > 0) {
+    const MAX_FILE_CHARS = 10000
+    const MAX_TOTAL_CHARS = 50000
+    let totalChars = 0
+    const fileBlocks: string[] = []
+    for (const f of ctx.fileContents) {
+      if (totalChars >= MAX_TOTAL_CHARS) {
+        fileBlocks.push(
+          `\n…[remaining files truncated, ${ctx.fileContents.length - fileBlocks.length} file(s) omitted]`,
+        )
+        break
+      }
+      const content =
+        f.content.length > MAX_FILE_CHARS
+          ? `${f.content.slice(0, MAX_FILE_CHARS)}\n…[truncated]`
+          : f.content
+      fileBlocks.push(`#### ${f.path}\n\`\`\`\n${content}\n\`\`\``)
+      totalChars += content.length
+    }
+    sections.push(
+      `### File contents\nFull source of all included files. Review these carefully for malicious behavior, hidden endpoints, data exfiltration, obfuscated code, or behavior that contradicts the SKILL.md.\n\n${fileBlocks.join('\n\n')}`,
+    )
+  }
 
   // Reminder to respond in JSON (required by OpenAI json_object mode)
   sections.push('Respond with your evaluation as a single JSON object.')
@@ -408,7 +480,7 @@ export function parseLlmEvalResponse(raw: string): LlmEvalResponse | null {
         const ruleId = entry.ruleId ?? 'unknown'
         const expected = entry.expected_for_purpose ? 'expected' : 'unexpected'
         const note = entry.note ?? ''
-        return `[${ruleId}] ${expected}: ${note}`
+        return `[${formatScalar(ruleId)}] ${expected}: ${formatScalar(note)}`
       })
       .filter(Boolean)
       .join('\n')

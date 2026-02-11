@@ -1,7 +1,7 @@
 import { Link, useNavigate } from '@tanstack/react-router'
 import type { ClawdisSkillMetadata, SkillInstallSpec } from 'clawhub-schema'
 import { useAction, useMutation, useQuery } from 'convex/react'
-import { useEffect, useMemo, useState } from 'react'
+import { lazy, Suspense, useEffect, useMemo, useState } from 'react'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import { api } from '../../convex/_generated/api'
@@ -10,7 +10,10 @@ import { getSkillBadges } from '../lib/badges'
 import type { PublicSkill, PublicUser } from '../lib/publicUser'
 import { canManageSkill, isModerator } from '../lib/roles'
 import { useAuthStatus } from '../lib/useAuthStatus'
-import { SkillDiffCard } from './SkillDiffCard'
+
+const SkillDiffCard = lazy(() =>
+  import('./SkillDiffCard').then((m) => ({ default: m.SkillDiffCard })),
+)
 
 type VtAnalysis = {
   status: string
@@ -132,23 +135,17 @@ function LlmAnalysisDetail({ analysis }: { analysis: LlmAnalysis }) {
 
   return (
     <div className={`analysis-detail${isOpen ? ' is-open' : ''}`}>
-      <div
+      <button
+        type="button"
         className="analysis-detail-header"
         onClick={() => setIsOpen((prev) => !prev)}
-        role="button"
-        tabIndex={0}
-        onKeyDown={(e) => {
-          if (e.key === 'Enter' || e.key === ' ') {
-            e.preventDefault()
-            setIsOpen((prev) => !prev)
-          }
-        }}
+        aria-expanded={isOpen}
       >
         <span className="analysis-summary-text">{analysis.summary}</span>
         <span className="analysis-detail-toggle">
           Details <span className="chevron">{'\u25BE'}</span>
         </span>
-      </div>
+      </button>
       <div className="analysis-body">
         {analysis.dimensions && analysis.dimensions.length > 0 ? (
           <div className="analysis-dimensions">
@@ -169,11 +166,18 @@ function LlmAnalysisDetail({ analysis }: { analysis: LlmAnalysis }) {
         {analysis.findings ? (
           <div className="scan-findings-section">
             <div className="scan-findings-title">Scan Findings in Context</div>
-            {analysis.findings.split('\n').map((line, i) => (
-              <div key={i} className="scan-finding-row">
-                {line}
-              </div>
-            ))}
+            {(() => {
+              const counts = new Map<string, number>()
+              return analysis.findings.split('\n').map((line) => {
+                const count = (counts.get(line) ?? 0) + 1
+                counts.set(line, count)
+                return (
+                  <div key={`${line}-${count}`} className="scan-finding-row">
+                    {line}
+                  </div>
+                )
+              })
+            })()}
           </div>
         ) : null}
         {analysis.guidance ? (
@@ -577,6 +581,19 @@ export function SkillDetailPage({
                 ClawHub Security flagged this skill as suspicious. Review the scan results before
                 using.
               </p>
+              {canManage ? (
+                <p className="pending-banner-appeal">
+                  If you believe this skill has been incorrectly flagged, please{' '}
+                  <a
+                    href="https://github.com/openclaw/clawhub/issues"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                  >
+                    submit an issue on GitHub
+                  </a>{' '}
+                  and we'll break down why it was flagged and what you can do.
+                </p>
+              ) : null}
             </div>
           </div>
         ) : modInfo?.isRemoved ? (
@@ -993,7 +1010,9 @@ export function SkillDetailPage({
           ) : null}
           {activeTab === 'compare' && skill ? (
             <div className="tab-body">
-              <SkillDiffCard skill={skill} versions={diffVersions ?? []} variant="embedded" />
+              <Suspense fallback={<div className="stat">Loading diff viewer…</div>}>
+                <SkillDiffCard skill={skill} versions={diffVersions ?? []} variant="embedded" />
+              </Suspense>
             </div>
           ) : null}
           {activeTab === 'versions' ? (
