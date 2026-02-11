@@ -13,6 +13,7 @@ export type PublicSkill = Pick<
   | 'displayName'
   | 'summary'
   | 'ownerUserId'
+  | 'thirdPartyServiceOverride'
   | 'canonicalSkillId'
   | 'forkOf'
   | 'latestVersionId'
@@ -62,6 +63,7 @@ export function toPublicSkill(skill: Doc<'skills'> | null | undefined): PublicSk
     displayName: skill.displayName,
     summary: skill.summary,
     ownerUserId: skill.ownerUserId,
+    thirdPartyServiceOverride: skill.thirdPartyServiceOverride,
     canonicalSkillId: skill.canonicalSkillId,
     forkOf: skill.forkOf,
     latestVersionId: skill.latestVersionId,

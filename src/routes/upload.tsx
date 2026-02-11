@@ -62,6 +62,7 @@ export function Upload() {
   const [displayName, setDisplayName] = useState('')
   const [version, setVersion] = useState('1.0.0')
   const [tags, setTags] = useState('latest')
+  const [thirdPartyService, setThirdPartyService] = useState(false)
   const [changelog, setChangelog] = useState('')
   const [changelogStatus, setChangelogStatus] = useState<'idle' | 'loading' | 'ready' | 'error'>(
     'idle',
@@ -302,6 +303,7 @@ export function Upload() {
         version,
         changelog: trimmedChangelog,
         tags: parsedTags,
+        ...(isSoulMode ? {} : { thirdPartyService }),
         files: uploaded,
       })
       setStatus(null)
@@ -373,6 +375,24 @@ export function Upload() {
             onChange={(event) => setTags(event.target.value)}
             placeholder="latest, stable"
           />
+          {!isSoulMode ? (
+            <label className="form-checkbox" htmlFor="thirdPartyService">
+              <input
+                id="thirdPartyService"
+                type="checkbox"
+                checked={thirdPartyService}
+                onChange={(event) => setThirdPartyService(event.target.checked)}
+              />
+              <span>
+                This skill uses a third-party service to fetch data for its intended source.
+              </span>
+            </label>
+          ) : null}
+          {!isSoulMode ? (
+            <div className="form-helper">
+              A warning banner will be displayed so users understand how their data is transmitted.
+            </div>
+          ) : null}
         </div>
 
         <div className="card">

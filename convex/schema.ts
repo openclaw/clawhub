@@ -34,6 +34,7 @@ const skills = defineTable({
   summary: v.optional(v.string()),
   resourceId: v.optional(v.string()),
   ownerUserId: v.id('users'),
+  thirdPartyServiceOverride: v.optional(v.boolean()),
   canonicalSkillId: v.optional(v.id('skills')),
   forkOf: v.optional(
     v.object({
@@ -143,6 +144,7 @@ const skillVersions = defineTable({
   fingerprint: v.optional(v.string()),
   changelog: v.string(),
   changelogSource: v.optional(v.union(v.literal('auto'), v.literal('user'))),
+  thirdPartyService: v.optional(v.boolean()),
   files: v.array(
     v.object({
       path: v.string(),

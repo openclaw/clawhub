@@ -35,6 +35,7 @@ export type PublishVersionArgs = {
   changelog: string
   tags?: string[]
   forkOf?: { slug: string; version?: string }
+  thirdPartyService?: boolean
   source?: {
     kind: 'github'
     url: string
@@ -103,6 +104,7 @@ export async function publishVersionForUser(
   const frontmatter = parseFrontmatter(readmeText)
   const clawdis = parseClawdisMetadata(frontmatter)
   const metadata = mergeSourceIntoMetadata(getFrontmatterMetadata(frontmatter), args.source)
+  const thirdPartyService = resolveThirdPartyService(frontmatter, args.thirdPartyService)
 
   const otherFiles = [] as Array<{ path: string; content: string }>
   for (const file of safeFiles) {
@@ -167,6 +169,7 @@ export async function publishVersionForUser(
       metadata,
       clawdis,
     },
+    thirdPartyService,
     embedding,
   })) as PublishResult
 
@@ -203,6 +206,19 @@ export async function publishVersionForUser(
   })
 
   return publishResult
+}
+
+function resolveThirdPartyService(
+  frontmatter: Record<string, unknown>,
+  supplied?: boolean,
+): boolean | undefined {
+  if (typeof supplied === 'boolean') return supplied
+  const raw =
+    frontmatter.thirdPartyService ??
+    frontmatter.thirdpartyservice ??
+    frontmatter['third-party-service'] ??
+    frontmatter['third_party_service']
+  return typeof raw === 'boolean' ? raw : undefined
 }
 
 function mergeSourceIntoMetadata(metadata: unknown, source: PublishVersionArgs['source']) {

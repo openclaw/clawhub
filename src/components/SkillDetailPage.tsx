@@ -382,6 +382,7 @@ export function SkillDetailPage({
   const addComment = useMutation(api.comments.add)
   const removeComment = useMutation(api.comments.remove)
   const updateTags = useMutation(api.skills.updateTags)
+  const setThirdPartyServiceOverride = useMutation(api.skills.setThirdPartyServiceOverride)
   const getReadme = useAction(api.skills.getReadme)
   const [readme, setReadme] = useState<string | null>(null)
   const [readmeError, setReadmeError] = useState<string | null>(null)
@@ -544,6 +545,9 @@ export function SkillDetailPage({
   }
 
   const tagEntries = Object.entries(skill.tags ?? {}) as Array<[string, Id<'skillVersions'>]>
+  const isThirdPartyService = Boolean(latestVersion?.thirdPartyService)
+  const isThirdPartyOverride = Boolean(skill.thirdPartyServiceOverride)
+  const showThirdPartyWarning = isThirdPartyService || isThirdPartyOverride
 
   return (
     <main className="section">
@@ -600,6 +604,17 @@ export function SkillDetailPage({
             <div className="pending-banner-content">
               <strong>Skill hidden</strong>
               <p>This skill is currently hidden and not visible to others.</p>
+            </div>
+          </div>
+        ) : null}
+        {showThirdPartyWarning ? (
+          <div className="pending-banner pending-banner-warning">
+            <div className="pending-banner-content">
+              <strong>Warning — This skill uses a third-party service</strong>
+              <p>
+                By using this skill, you are interacting with a third-party service to facilitate its functionality. Consider
+                what data and permissions you are granting to that third-party.
+              </p>
             </div>
           </div>
         ) : null}
@@ -661,6 +676,25 @@ export function SkillDetailPage({
                   <div className={`tag${isAutoHidden || isRemoved ? ' tag-accent' : ''}`}>
                     {staffVisibilityTag}
                   </div>
+                ) : null}
+                {isStaff ? (
+                  <label
+                    className="form-checkbox warning-override-toggle"
+                    htmlFor="third-party-override"
+                  >
+                    <input
+                      id="third-party-override"
+                      type="checkbox"
+                      checked={isThirdPartyOverride}
+                      onChange={(event) => {
+                        void setThirdPartyServiceOverride({
+                          skillId: skill._id,
+                          enabled: event.target.checked,
+                        })
+                      }}
+                    />
+                    <span>Force third-party service warning</span>
+                  </label>
                 ) : null}
                 <div className="skill-actions">
                   {isAuthenticated ? (

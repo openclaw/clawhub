@@ -528,6 +528,7 @@ export const getBySlug = query({
       displayName: skill.displayName,
       summary: skill.summary,
       ownerUserId: skill.ownerUserId,
+      thirdPartyServiceOverride: skill.thirdPartyServiceOverride,
       canonicalSkillId: skill.canonicalSkillId,
       forkOf: skill.forkOf,
       latestVersionId: skill.latestVersionId,
@@ -2112,6 +2113,7 @@ export const publishVersion: ReturnType<typeof action> = action({
         version: v.optional(v.string()),
       }),
     ),
+    thirdPartyService: v.optional(v.boolean()),
     files: v.array(
       v.object({
         path: v.string(),
@@ -2331,6 +2333,22 @@ export const setRedactionApproved = mutation({
       targetId: skill._id,
       metadata: { badge: 'redactionApproved', approved: args.approved },
       createdAt: now,
+    })
+  },
+})
+
+export const setThirdPartyServiceOverride = mutation({
+  args: { skillId: v.id('skills'), enabled: v.boolean() },
+  handler: async (ctx, args) => {
+    const { user } = await requireUser(ctx)
+    assertModerator(user)
+
+    const skill = await ctx.db.get(args.skillId)
+    if (!skill) throw new Error('Skill not found')
+
+    await ctx.db.patch(skill._id, {
+      thirdPartyServiceOverride: args.enabled,
+      updatedAt: Date.now(),
     })
   },
 })
@@ -2622,6 +2640,7 @@ export const insertVersion = internalMutation({
         version: v.optional(v.string()),
       }),
     ),
+    thirdPartyService: v.optional(v.boolean()),
     files: v.array(
       v.object({
         path: v.string(),
@@ -2754,6 +2773,7 @@ export const insertVersion = internalMutation({
       fingerprint: args.fingerprint,
       changelog: args.changelog,
       changelogSource: args.changelogSource,
+      thirdPartyService: args.thirdPartyService,
       files: args.files,
       parsed: args.parsed,
       createdBy: userId,

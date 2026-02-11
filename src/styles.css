@@ -458,6 +458,76 @@ code {
   gap: 28px;
 }
 
+.form-label {
+  font-size: 0.75rem;
+  text-transform: uppercase;
+  letter-spacing: 0.12em;
+  font-weight: 700;
+  color: var(--ink-soft);
+}
+
+.form-input {
+  border-radius: 14px;
+  border: 1px solid rgba(255, 107, 74, 0.2);
+  background: var(--surface-muted);
+  padding: 12px 14px;
+  font-size: 1rem;
+  color: var(--ink);
+  outline: none;
+  transition:
+    border 0.2s ease,
+    box-shadow 0.2s ease;
+}
+
+.form-input:focus {
+  border-color: rgba(255, 107, 74, 0.5);
+  box-shadow: 0 0 0 3px rgba(255, 107, 74, 0.15);
+}
+
+[data-theme="dark"] .form-input {
+  background: #251f1b;
+  border-color: rgba(255, 131, 95, 0.25);
+  color: var(--ink);
+}
+
+[data-theme="dark"] .form-input:focus {
+  border-color: rgba(255, 131, 95, 0.5);
+  box-shadow: 0 0 0 3px rgba(255, 131, 95, 0.2);
+}
+
+.form-checkbox {
+  display: flex;
+  gap: 10px;
+  align-items: flex-start;
+  font-size: 0.92rem;
+  color: var(--ink);
+}
+
+.form-checkbox input {
+  margin-top: 2px;
+  width: 16px;
+  height: 16px;
+}
+
+.form-helper {
+  font-size: 0.82rem;
+  color: var(--ink-soft);
+  margin-left: 26px;
+}
+
+.warning-override-toggle {
+  margin-top: 8px;
+  background: rgba(255, 107, 74, 0.08);
+  border: 1px solid rgba(255, 107, 74, 0.25);
+  border-radius: 12px;
+  padding: 8px 12px;
+}
+
+[data-theme="dark"] .warning-override-toggle {
+  background: rgba(255, 131, 95, 0.12);
+  border-color: rgba(255, 131, 95, 0.35);
+}
+
 .upload-fields {
   display: grid;
   gap: 14px;

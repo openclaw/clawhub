@@ -13,6 +13,7 @@ export type PublicSkill = Pick<
   | 'displayName'
   | 'summary'
   | 'ownerUserId'
+  | 'thirdPartyServiceOverride'
   | 'canonicalSkillId'
   | 'forkOf'
   | 'latestVersionId'
