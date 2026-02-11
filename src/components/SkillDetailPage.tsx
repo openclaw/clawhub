@@ -1,7 +1,7 @@
 import { Link, useNavigate } from '@tanstack/react-router'
 import type { ClawdisSkillMetadata, SkillInstallSpec } from 'clawhub-schema'
 import { useAction, useMutation, useQuery } from 'convex/react'
-import { Suspense, lazy, useEffect, useMemo, useState } from 'react'
+import { lazy, Suspense, useEffect, useMemo, useState } from 'react'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import { api } from '../../convex/_generated/api'
@@ -10,7 +10,10 @@ import { getSkillBadges } from '../lib/badges'
 import type { PublicSkill, PublicUser } from '../lib/publicUser'
 import { canManageSkill, isModerator } from '../lib/roles'
 import { useAuthStatus } from '../lib/useAuthStatus'
-const SkillDiffCard = lazy(() => import('./SkillDiffCard').then((m) => ({ default: m.SkillDiffCard })))
+
+const SkillDiffCard = lazy(() =>
+  import('./SkillDiffCard').then((m) => ({ default: m.SkillDiffCard })),
+)
 
 type VtAnalysis = {
   status: string
@@ -580,7 +583,11 @@ export function SkillDetailPage({
               {canManage ? (
                 <p className="pending-banner-appeal">
                   If you believe this skill has been incorrectly flagged, please{' '}
-                  <a href="https://github.com/openclaw/clawhub/issues" target="_blank" rel="noopener noreferrer">
+                  <a
+                    href="https://github.com/openclaw/clawhub/issues"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                  >
                     submit an issue on GitHub
                   </a>{' '}
                   and we'll break down why it was flagged and what you can do.
