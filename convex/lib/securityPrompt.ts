@@ -128,15 +128,16 @@ Flag when:
 Evaluate the skill's requested level of system presence.
 
 - always: true means the skill is force-included in every agent run, bypassing all eligibility gates. This is a significant privilege.
-- disableModelInvocation: false (default) means the AI model can invoke this skill autonomously.
-- The combination of always + model-invocable + broad env access means the skill is permanently present, autonomously triggerable, and has credentials available. That combination deserves scrutiny regardless of what the skill claims to do.
+- disable-model-invocation defaults to false. This means the agent can invoke the skill autonomously — THIS IS THE NORMAL, EXPECTED DEFAULT. Autonomous agent invocation is the entire purpose of skills. Do NOT flag this as a concern on its own.
+- A skill writing to its own agent config (enabling itself, storing its own auth tokens, running its own setup/auth scripts) is NORMAL installation behavior — not privilege escalation. Do not flag this.
 
-Most skills do not set always: true and leave model invocation enabled — that's the normal default and is fine for a typical integration skill.
+MITRE ATLAS context: Autonomous invocation relates to AML.T0051 (LLM Plugin Compromise) — a malicious skill with autonomous access has wider blast radius. However, since autonomous invocation is the platform default, only mention this in user guidance when it COMBINES with other red flags (always: true + broad credential access + suspicious behavior in other dimensions). Never flag autonomous invocation alone.
 
 Flag when:
 - always: true is set without clear justification (most skills should not need this)
 - The skill requests permanent presence (always) combined with broad environment access
-- A skill that handles sensitive operations doesn't set disableModelInvocation: true (allowing the model to trigger it without explicit user request)
+- The skill modifies OTHER skills' configurations or system-wide agent settings beyond its own scope
+- The skill accesses credentials or config paths belonging to other skills
 
 ## Interpreting static scan findings
 
@@ -275,9 +276,9 @@ export function assembleEvalUserMessage(ctx: SkillEvalContext): string {
   const os = clawdis.os
 
   sections.push(`**Flags:**
-- always: ${always ?? 'not set'}
-- user-invocable: ${userInvocable ?? 'not set'}
-- disable-model-invocation: ${disableModelInvocation ?? 'not set'}
+- always: ${always ?? 'false (default)'}
+- user-invocable: ${userInvocable ?? 'true (default)'}
+- disable-model-invocation: ${disableModelInvocation ?? 'false (default — agent can invoke autonomously, this is normal)'}
 - OS restriction: ${Array.isArray(os) ? os.join(', ') : os ?? 'none'}`)
 
   // Requirements

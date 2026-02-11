@@ -49,7 +49,9 @@ export function getFrontmatterMetadata(frontmatter: ParsedSkillFrontmatter) {
   if (!raw) return undefined
   if (typeof raw === 'string') {
     try {
-      const parsed = JSON.parse(raw) as unknown
+      // Strip trailing commas in JSON objects/arrays (common authoring mistake)
+      const cleaned = raw.replace(/,\s*([\]}])/g, '$1')
+      const parsed = JSON.parse(cleaned) as unknown
       return parsed ?? undefined
     } catch {
       return undefined
