@@ -53,7 +53,8 @@ export function toPublicUser(user: Doc<'users'> | null | undefined): PublicUser 
 
 export function toPublicSkill(skill: Doc<'skills'> | null | undefined): PublicSkill | null {
   if (!skill || skill.softDeletedAt) return null
-  if (skill.moderationStatus && skill.moderationStatus !== 'active') return null
+  const isPendingScan = skill.moderationStatus === 'hidden' && skill.moderationReason === 'pending.scan'
+  if (skill.moderationStatus && skill.moderationStatus !== 'active' && !isPendingScan) return null
   if (skill.moderationFlags?.includes('blocked.malware')) return null
   return {
     _id: skill._id,
