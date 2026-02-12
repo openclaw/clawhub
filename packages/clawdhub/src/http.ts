@@ -15,7 +15,6 @@ if (typeof process !== 'undefined' && process.versions?.node) {
   try {
     setGlobalDispatcher(
       new Agent({
-        allowH2: true,
         connect: { timeout: REQUEST_TIMEOUT_MS },
       }),
     )
