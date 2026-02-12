@@ -295,6 +295,44 @@ export async function cmdList(opts: GlobalOpts) {
   }
 }
 
+export async function cmdUninstall(
+  opts: GlobalOpts,
+  slug: string,
+  options: { yes?: boolean },
+  inputAllowed: boolean,
+) {
+  const trimmed = slug.trim()
+  if (!trimmed) fail('Slug required')
+
+  const lock = await readLockfile(opts.workdir)
+  if (!lock.skills[trimmed]) {
+    fail(`Not installed: ${trimmed}`)
+  }
+
+  const allowPrompt = isInteractive() && inputAllowed !== false
+  if (!options.yes && allowPrompt) {
+    const confirm = await promptConfirm(`Uninstall ${trimmed}?`)
+    if (!confirm) {
+      console.log('Cancelled.')
+      return
+    }
+  }
+
+  const spinner = createSpinner(`Uninstalling ${trimmed}`)
+  try {
+    const target = join(opts.dir, trimmed)
+    await rm(target, { recursive: true, force: true })
+
+    delete lock.skills[trimmed]
+    await writeLockfile(opts.workdir, lock)
+
+    spinner.succeed(`Uninstalled ${trimmed}`)
+  } catch (error) {
+    spinner.fail(formatError(error))
+    throw error
+  }
+}
+
 type ExploreSort = 'newest' | 'downloads' | 'rating' | 'installs' | 'installsAllTime' | 'trending'
 type ApiExploreSort =
   | 'updated'

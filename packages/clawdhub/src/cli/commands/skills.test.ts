@@ -55,7 +55,7 @@ vi.mock('node:fs/promises', () => ({
   stat: vi.fn(),
 }))
 
-const { clampLimit, cmdExplore, cmdInstall, cmdUpdate, formatExploreLine } = await import('./skills')
+const { clampLimit, cmdExplore, cmdInstall, cmdUninstall, cmdUpdate, formatExploreLine } = await import('./skills')
 const {
   extractZipToDir,
   hashSkillFiles,
@@ -218,5 +218,66 @@ describe('cmdInstall', () => {
     expect(requestArgs?.token).toBe('tkn')
     const [, zipArgs] = mockDownloadZip.mock.calls[0] ?? []
     expect(zipArgs?.token).toBe('tkn')
+  })
+})
+
+describe('cmdUninstall', () => {
+  it('fails when skill is not installed', async () => {
+    vi.mocked(readLockfile).mockResolvedValue({ version: 1, skills: {} })
+
+    await expect(cmdUninstall(makeOpts(), 'missing', {}, false)).rejects.toThrow(
+      'Not installed: missing',
+    )
+  })
+
+  it('removes skill directory and lockfile entry with --yes flag', async () => {
+    vi.mocked(readLockfile).mockResolvedValue({
+      version: 1,
+      skills: { demo: { version: '1.0.0', installedAt: 123 } },
+    })
+    vi.mocked(writeLockfile).mockResolvedValue()
+    vi.mocked(rm).mockResolvedValue()
+
+    await cmdUninstall(makeOpts(), 'demo', { yes: true }, false)
+
+    expect(rm).toHaveBeenCalledWith('/work/skills/demo', { recursive: true, force: true })
+    expect(writeLockfile).toHaveBeenCalledWith('/work', {
+      version: 1,
+      skills: {},
+    })
+    expect(mockSpinner.succeed).toHaveBeenCalledWith('Uninstalled demo')
+  })
+
+  it('removes skill and updates lockfile keeping other skills', async () => {
+    vi.mocked(readLockfile).mockResolvedValue({
+      version: 1,
+      skills: {
+        demo: { version: '1.0.0', installedAt: 123 },
+        other: { version: '2.0.0', installedAt: 456 },
+      },
+    })
+    vi.mocked(writeLockfile).mockResolvedValue()
+    vi.mocked(rm).mockResolvedValue()
+
+    await cmdUninstall(makeOpts(), 'demo', { yes: true }, false)
+
+    expect(rm).toHaveBeenCalledWith('/work/skills/demo', { recursive: true, force: true })
+    expect(writeLockfile).toHaveBeenCalledWith('/work', {
+      version: 1,
+      skills: { other: { version: '2.0.0', installedAt: 456 } },
+    })
+  })
+
+  it('trims slug whitespace', async () => {
+    vi.mocked(readLockfile).mockResolvedValue({
+      version: 1,
+      skills: { demo: { version: '1.0.0', installedAt: 123 } },
+    })
+    vi.mocked(writeLockfile).mockResolvedValue()
+    vi.mocked(rm).mockResolvedValue()
+
+    await cmdUninstall(makeOpts(), '  demo  ', { yes: true }, false)
+
+    expect(rm).toHaveBeenCalledWith('/work/skills/demo', { recursive: true, force: true })
   })
 })
