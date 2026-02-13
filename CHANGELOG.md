@@ -1,6 +1,6 @@
 # Changelog
 
-## 0.6.1 - Unreleased
+## 0.6.1 - 2026-02-13
 
 ### Added
 - Security: add LLM-based security evaluation during skill publish.
