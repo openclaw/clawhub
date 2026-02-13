@@ -73,16 +73,36 @@ export async function cmdInstall(
 
   const spinner = createSpinner(`Resolving ${trimmed}`)
   try {
-    const resolvedVersion =
-      versionFlag ??
-      (
-        await apiRequest(
-          registry,
-          { method: 'GET', path: `${ApiRoutes.skills}/${encodeURIComponent(trimmed)}` },
-          ApiV1SkillResponseSchema,
-        )
-      ).latestVersion?.version ??
-      null
+    // Fetch skill metadata including moderation status
+    const skillMeta = await apiRequest(
+      registry,
+      { method: 'GET', path: `${ApiRoutes.skills}/${encodeURIComponent(trimmed)}` },
+      ApiV1SkillResponseSchema,
+    )
+
+    // Check moderation status before proceeding
+    if (skillMeta.moderation?.isMalwareBlocked) {
+      spinner.fail(`Blocked: ${trimmed} is flagged as malicious`)
+      fail('This skill has been flagged as malware and cannot be installed.')
+    }
+
+    if (skillMeta.moderation?.isSuspicious && !force) {
+      spinner.stop()
+      console.log(
+        `\n⚠️  Warning: "${trimmed}" is flagged as suspicious by VirusTotal Code Insight.\n` +
+          '   This skill may contain risky patterns (crypto keys, external APIs, eval, etc.)\n' +
+          '   Review the skill code before use.\n',
+      )
+      if (isInteractive()) {
+        const confirm = await promptConfirm('Install anyway?')
+        if (!confirm) fail('Installation cancelled')
+        spinner.start(`Resolving ${trimmed}`)
+      } else {
+        fail('Use --force to install suspicious skills in non-interactive mode')
+      }
+    }
+
+    const resolvedVersion = versionFlag ?? skillMeta.latestVersion?.version ?? null
     if (!resolvedVersion) fail('Could not resolve latest version')
 
     spinner.text = `Downloading ${trimmed}@${resolvedVersion}`
@@ -138,6 +158,39 @@ export async function cmdUpdate(
       const target = join(opts.dir, entry)
       const exists = await fileExists(target)
 
+      // Always fetch skill metadata to check moderation status
+      const skillMeta = await apiRequest(
+        registry,
+        { method: 'GET', path: `${ApiRoutes.skills}/${encodeURIComponent(entry)}` },
+        ApiV1SkillResponseSchema,
+      )
+
+      // Check moderation status before proceeding
+      if (skillMeta.moderation?.isMalwareBlocked) {
+        spinner.fail(`${entry}: blocked as malicious`)
+        console.log('   This skill has been flagged as malware and cannot be updated.')
+        continue
+      }
+
+      if (skillMeta.moderation?.isSuspicious && !options.force) {
+        spinner.stop()
+        console.log(
+          `\n⚠️  Warning: "${entry}" is flagged as suspicious by VirusTotal Code Insight.\n` +
+            '   This skill may contain risky patterns (crypto keys, external APIs, eval, etc.)\n',
+        )
+        if (allowPrompt) {
+          const confirm = await promptConfirm('Update anyway?')
+          if (!confirm) {
+            console.log(`${entry}: skipped`)
+            continue
+          }
+          spinner.start(`Checking ${entry}`)
+        } else {
+          console.log(`${entry}: skipped (use --force to update suspicious skills)`)
+          continue
+        }
+      }
+
       let localFingerprint: string | null = null
       if (exists) {
         const filesOnDisk = await listTextFiles(target)
@@ -151,12 +204,7 @@ export async function cmdUpdate(
       if (localFingerprint) {
         resolveResult = await resolveSkillVersion(registry, entry, localFingerprint)
       } else {
-        const meta = await apiRequest(
-          registry,
-          { method: 'GET', path: `${ApiRoutes.skills}/${encodeURIComponent(entry)}` },
-          ApiV1SkillResponseSchema,
-        )
-        resolveResult = { match: null, latestVersion: meta.latestVersion ?? null }
+        resolveResult = { match: null, latestVersion: skillMeta.latestVersion ?? null }
       }
 
       const latest = resolveResult.latestVersion?.version ?? null

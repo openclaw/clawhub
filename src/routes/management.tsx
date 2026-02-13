@@ -57,6 +57,13 @@ function resolveOwnerParam(handle: string | null | undefined, ownerId?: Id<'user
   return handle?.trim() || (ownerId ? String(ownerId) : 'unknown')
 }
 
+function promptBanReason(label: string) {
+  const result = window.prompt(`Ban reason for ${label} (optional)`)
+  if (result === null) return null
+  const trimmed = result.trim()
+  return trimmed.length > 0 ? trimmed : undefined
+}
+
 export const Route = createFileRoute('/management')({
   validateSearch: (search) => ({
     skill: typeof search.skill === 'string' && search.skill.trim() ? search.skill : undefined,
@@ -70,9 +77,6 @@ function Management() {
   const staff = isModerator(me)
   const admin = isAdmin(me)
 
-  const users = useQuery(api.users.list, admin ? { limit: 50 } : 'skip') as
-    | Doc<'users'>[]
-    | undefined
   const selectedSlug = search.skill?.trim()
   const selectedSkill = useQuery(
     api.skills.getBySlugForStaff,
@@ -105,6 +109,12 @@ function Management() {
   const [reportSearchDebounced, setReportSearchDebounced] = useState('')
   const [userSearch, setUserSearch] = useState('')
   const [userSearchDebounced, setUserSearchDebounced] = useState('')
+
+  const userQuery = userSearchDebounced.trim()
+  const userResult = useQuery(
+    api.users.list,
+    admin ? { limit: 200, search: userQuery || undefined } : 'skip',
+  ) as { items: Doc<'users'>[]; total: number } | undefined
 
   const selectedSkillId = selectedSkill?.skill?._id ?? null
   const selectedOwnerUserId = selectedSkill?.skill?.ownerUserId ?? null
@@ -170,17 +180,18 @@ function Management() {
       : 'No reports yet.'
   const reportSummary = `Showing ${filteredReportedSkills.length} of ${reportedSkills.length}`
 
-  const userQuery = userSearchDebounced.trim().toLowerCase()
-  const filteredUsers = userQuery
-    ? (users ?? []).filter((user) => {
-        const haystack = [user.handle, user.name, user.role, user._id]
-          .filter(Boolean)
-          .join(' ')
-          .toLowerCase()
-        return haystack.includes(userQuery)
-      })
-    : (users ?? [])
-  const userSummary = `Showing ${filteredUsers.length} of ${(users ?? []).length}`
+  const filteredUsers = userResult?.items ?? []
+  const userTotal = userResult?.total ?? 0
+  const userSummary = userResult
+    ? `Showing ${filteredUsers.length} of ${userTotal}`
+    : 'Loading users…'
+  const userEmptyLabel = userResult
+    ? filteredUsers.length === 0
+      ? userQuery
+        ? 'No matching users.'
+        : 'No users yet.'
+      : ''
+    : 'Loading users…'
 
   return (
     <main className="section">
@@ -365,7 +376,7 @@ function Management() {
                             value={selectedOwner}
                             onChange={(event) => setSelectedOwner(event.target.value)}
                           >
-                            {(users ?? []).map((user) => (
+                            {filteredUsers.map((user) => (
                               <option key={user._id} value={user._id}>
                                 @{user.handle ?? user.name ?? 'user'}
                               </option>
@@ -438,7 +449,9 @@ function Management() {
                           if (!window.confirm(`Ban @${ownerHandle} and delete their skills?`)) {
                             return
                           }
-                          void banUser({ userId: ownerUserId })
+                          const reason = promptBanReason(`@${ownerHandle}`)
+                          if (reason === null) return
+                          void banUser({ userId: ownerUserId, reason })
                         }}
                       >
                         Ban user
@@ -628,14 +641,19 @@ function Management() {
           </div>
           <div className="management-list">
             {filteredUsers.length === 0 ? (
-              <div className="stat">
-                {(users ?? []).length === 0 ? 'No users yet.' : 'No matching users.'}
-              </div>
+              <div className="stat">{userEmptyLabel}</div>
             ) : (
               filteredUsers.map((user) => (
                 <div key={user._id} className="management-item">
                   <div className="management-item-main">
                     <span className="mono">@{user.handle ?? user.name ?? 'user'}</span>
+                    {user.deletedAt ? (
+                      <div className="section-subtitle" style={{ margin: 0 }}>
+                        {user.banReason
+                          ? `Banned ${formatTimestamp(user.deletedAt)} · ${user.banReason}`
+                          : `Deleted ${formatTimestamp(user.deletedAt)}`}
+                      </div>
+                    ) : null}
                   </div>
                   <div className="management-actions">
                     <select
@@ -664,7 +682,10 @@ function Management() {
                         ) {
                           return
                         }
-                        void banUser({ userId: user._id })
+                        const label = `@${user.handle ?? user.name ?? 'user'}`
+                        const reason = promptBanReason(label)
+                        if (reason === null) return
+                        void banUser({ userId: user._id, reason })
                       }}
                     >
                       Ban user

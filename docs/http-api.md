@@ -40,6 +40,10 @@ Response:
 { "results": [{ "score": 0.123, "slug": "gifgrep", "displayName": "GifGrep", "summary": "…", "version": "1.2.3", "updatedAt": 1730000000000 }] }
 ```
 
+Notes:
+
+- Results are returned in relevance order (embedding similarity + exact slug/name token boosts + popularity prior from downloads).
+
 ### `GET /api/v1/skills`
 
 Query params:
@@ -152,13 +156,13 @@ Ban a user and hard-delete owned skills (moderator/admin only).
 Body:
 
 ```json
-{ "handle": "user_handle" }
+{ "handle": "user_handle", "reason": "optional ban reason" }
 ```
 
 or
 
 ```json
-{ "userId": "users_..." }
+{ "userId": "users_...", "reason": "optional ban reason" }
 ```
 
 Response:
@@ -187,6 +191,33 @@ Response:
 
 ```json
 { "ok": true, "role": "moderator" }
+```
+
+### `GET /api/v1/users`
+
+List or search users (admin only).
+
+Query params:
+
+- `q` (optional): search query
+- `query` (optional): alias for `q`
+- `limit` (optional): max results (default 20, max 200)
+
+Response:
+
+```json
+{
+  "items": [
+    {
+      "userId": "users_...",
+      "handle": "user_handle",
+      "displayName": "User",
+      "name": "User",
+      "role": "moderator"
+    }
+  ],
+  "total": 1
+}
 ```
 
 ### `POST /api/v1/stars/{slug}` / `DELETE /api/v1/stars/{slug}`

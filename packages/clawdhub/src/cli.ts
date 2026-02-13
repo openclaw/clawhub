@@ -304,6 +304,8 @@ program
   .description('Ban a user and delete owned skills (moderator/admin only)')
   .argument('<handleOrId>', 'User handle (default) or user id')
   .option('--id', 'Treat argument as user id')
+  .option('--fuzzy', 'Resolve handle via fuzzy user search (admin only)')
+  .option('--reason <reason>', 'Ban reason (optional)')
   .option('--yes', 'Skip confirmation')
   .action(async (handleOrId, options) => {
     const opts = await resolveGlobalOpts()
@@ -316,6 +318,7 @@ program
   .argument('<handleOrId>', 'User handle (default) or user id')
   .argument('<role>', 'user | moderator | admin')
   .option('--id', 'Treat argument as user id')
+  .option('--fuzzy', 'Resolve handle via fuzzy user search (admin only)')
   .option('--yes', 'Skip confirmation')
   .action(async (handleOrId, role, options) => {
     const opts = await resolveGlobalOpts()

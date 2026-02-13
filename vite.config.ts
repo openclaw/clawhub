@@ -75,11 +75,6 @@ const config = defineConfig({
       onwarn: handleRollupWarning,
     },
   },
-  ssr: {
-    rollupOptions: {
-      onwarn: handleRollupWarning,
-    },
-  },
 })
 
 export default config

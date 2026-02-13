@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.6.1 - 2026-02-13
 
 ### Added
 - Security: add LLM-based security evaluation during skill publish.
@@ -24,18 +24,18 @@
 ## 0.6.0 - 2026-02-10
 ### Added
 - CLI/API: add `set-role` to change user roles (admin only).
+- Security: quarantine skill publishes with VirusTotal scans + UI (thanks @aleph8, #130).
+- Testing: add tests for badges, skillZip, uploadFiles expandDroppedItems, and ark schema error truncation.
+- Moderation: add ban reasons to API/CLI and show in management UI.
 
 ### Changed
+- Coverage: track `convex/lib/skillZip.ts` in coverage reports.
 
 ### Fixed
-
-## 0.5.1 - TBD
-
-### Added
-
-### Changed
-
-### Fixed
+- Web: show pending-scan skills to owners without 404 (thanks @orlyjamie, #136).
+- Users: backfill empty handles from name/email in ensure (thanks @adlai88, #158).
+- Web: update footer branding to OpenClaw (thanks @jontsai, #122).
+- Auth: restore soft-deleted users on reauth, block banned users (thanks @mkrokosz, #106).
 
 ## 0.5.0 - 2026-02-02
 

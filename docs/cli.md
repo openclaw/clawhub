@@ -130,6 +130,8 @@ Stores your API token + cached registry URL.
 - Ban a user and delete owned skills (moderator/admin only).
 - Calls `POST /api/v1/users/ban`.
 - `--id` treats the argument as a user id instead of a handle.
+- `--fuzzy` resolves the handle via fuzzy user search (admin only).
+- `--reason` records an optional ban reason.
 - `--yes` skips confirmation.
 
 ### `set-role <handleOrId> <role>`
@@ -137,6 +139,7 @@ Stores your API token + cached registry URL.
 - Change a user role (admin only).
 - Calls `POST /api/v1/users/role`.
 - `--id` treats the argument as a user id instead of a handle.
+- `--fuzzy` resolves the handle via fuzzy user search (admin only).
 - `--yes` skips confirmation.
 
 ### `sync`

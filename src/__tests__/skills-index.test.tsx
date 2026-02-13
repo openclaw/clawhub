@@ -118,6 +118,30 @@ describe('SkillsIndex', () => {
       limit: 50,
     })
   })
+
+  it('uses relevance as default sort when searching', async () => {
+    searchMock = { q: 'notion' }
+    const actionFn = vi
+      .fn()
+      .mockResolvedValue([
+        makeSearchResult('newer-low-score', 'Newer Low Score', 0.1, 2000),
+        makeSearchResult('older-high-score', 'Older High Score', 0.9, 1000),
+      ])
+    useActionMock.mockReturnValue(actionFn)
+    vi.useFakeTimers()
+
+    render(<SkillsIndex />)
+    await act(async () => {
+      await vi.runAllTimersAsync()
+    })
+
+    const titles = Array.from(
+      document.querySelectorAll('.skills-row-title > span:first-child'),
+    ).map((node) => node.textContent)
+
+    expect(titles[0]).toBe('Older High Score')
+    expect(titles[1]).toBe('Newer Low Score')
+  })
 })
 
 function makeSearchResults(count: number) {
@@ -142,4 +166,28 @@ function makeSearchResults(count: number) {
     },
     version: null,
   }))
+}
+
+function makeSearchResult(slug: string, displayName: string, score: number, createdAt: number) {
+  return {
+    score,
+    skill: {
+      _id: `skill_${slug}`,
+      slug,
+      displayName,
+      summary: `${displayName} summary`,
+      tags: {},
+      stats: {
+        downloads: 0,
+        installsCurrent: 0,
+        installsAllTime: 0,
+        stars: 0,
+        versions: 1,
+        comments: 0,
+      },
+      createdAt,
+      updatedAt: createdAt,
+    },
+    version: null,
+  }
 }

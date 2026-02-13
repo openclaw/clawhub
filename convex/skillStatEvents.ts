@@ -35,6 +35,8 @@ export type StatEventKind =
   | 'download'
   | 'star'
   | 'unstar'
+  | 'comment'
+  | 'uncomment'
   | 'install_new'
   | 'install_reactivate'
   | 'install_deactivate'
@@ -86,6 +88,7 @@ export async function insertStatEvent(
 type AggregatedDeltas = {
   downloads: number
   stars: number
+  comments: number
   installsAllTime: number
   installsCurrent: number
   /** Original timestamps for each download event (for daily stats bucketing) */
@@ -117,6 +120,7 @@ function aggregateEvents(events: Doc<'skillStatEvents'>[]): AggregatedDeltas {
   const result: AggregatedDeltas = {
     downloads: 0,
     stars: 0,
+    comments: 0,
     installsAllTime: 0,
     installsCurrent: 0,
     downloadEvents: [],
@@ -134,6 +138,12 @@ function aggregateEvents(events: Doc<'skillStatEvents'>[]): AggregatedDeltas {
         break
       case 'unstar':
         result.stars -= 1
+        break
+      case 'comment':
+        result.comments += 1
+        break
+      case 'uncomment':
+        result.comments -= 1
         break
       case 'install_new':
         // New user installing for the first time: count toward both lifetime and current
@@ -231,12 +241,14 @@ export const processSkillStatEventsInternal = internalMutation({
       if (
         deltas.downloads !== 0 ||
         deltas.stars !== 0 ||
+        deltas.comments !== 0 ||
         deltas.installsAllTime !== 0 ||
         deltas.installsCurrent !== 0
       ) {
         const patch = applySkillStatDeltas(skill, {
           downloads: deltas.downloads,
           stars: deltas.stars,
+          comments: deltas.comments,
           installsAllTime: deltas.installsAllTime,
           installsCurrent: deltas.installsCurrent,
         })
@@ -285,7 +297,7 @@ export const processSkillStatEventsInternal = internalMutation({
 
 const CURSOR_KEY = 'skill_stat_events'
 const EVENT_BATCH_SIZE = 500
-const MAX_SKILLS_PER_RUN = 500
+const MAX_SKILLS_PER_RUN = 50
 
 /**
  * Fetch a batch of events after the given cursor (by _creationTime).
@@ -332,6 +344,7 @@ const skillDeltaValidator = v.object({
   skillId: v.id('skills'),
   downloads: v.number(),
   stars: v.number(),
+  comments: v.number(),
   installsAllTime: v.number(),
   installsCurrent: v.number(),
   downloadEvents: v.array(v.number()),
@@ -366,12 +379,14 @@ export const applyAggregatedStatsAndUpdateCursor = internalMutation({
       if (
         delta.downloads !== 0 ||
         delta.stars !== 0 ||
+        delta.comments !== 0 ||
         delta.installsAllTime !== 0 ||
         delta.installsCurrent !== 0
       ) {
         const patch = applySkillStatDeltas(skill, {
           downloads: delta.downloads,
           stars: delta.stars,
+          comments: delta.comments,
           installsAllTime: delta.installsAllTime,
           installsCurrent: delta.installsCurrent,
         })
@@ -438,6 +453,7 @@ export const processSkillStatEventsAction = internalAction({
       {
         downloads: number
         stars: number
+        comments: number
         installsAllTime: number
         installsCurrent: number
         downloadEvents: number[]
@@ -471,6 +487,7 @@ export const processSkillStatEventsAction = internalAction({
           skillDelta = {
             downloads: 0,
             stars: 0,
+            comments: 0,
             installsAllTime: 0,
             installsCurrent: 0,
             downloadEvents: [],
@@ -490,6 +507,12 @@ export const processSkillStatEventsAction = internalAction({
             break
           case 'unstar':
             skillDelta.stars -= 1
+            break
+          case 'comment':
+            skillDelta.comments += 1
+            break
+          case 'uncomment':
+            skillDelta.comments -= 1
             break
           case 'install_new':
             skillDelta.installsAllTime += 1

@@ -15,8 +15,33 @@ const { __handlers } = await import('./httpApiV1')
 
 type ActionCtx = import('./_generated/server').ActionCtx
 
+type RateLimitArgs = { key: string; limit: number; windowMs: number }
+
+function isRateLimitArgs(args: unknown): args is RateLimitArgs {
+  if (!args || typeof args !== 'object') return false
+  const value = args as Record<string, unknown>
+  return (
+    typeof value.key === 'string' &&
+    typeof value.limit === 'number' &&
+    typeof value.windowMs === 'number'
+  )
+}
+
 function makeCtx(partial: Record<string, unknown>) {
-  return partial as unknown as ActionCtx
+  const partialRunQuery =
+    typeof partial.runQuery === 'function'
+      ? (partial.runQuery as (query: unknown, args: Record<string, unknown>) => unknown)
+      : null
+  const runQuery = vi.fn(async (query: unknown, args: Record<string, unknown>) => {
+    if (isRateLimitArgs(args)) return okRate()
+    return partialRunQuery ? await partialRunQuery(query, args) : null
+  })
+  const runMutation =
+    typeof partial.runMutation === 'function'
+      ? partial.runMutation
+      : vi.fn().mockResolvedValue(okRate())
+
+  return { ...partial, runQuery, runMutation } as unknown as ActionCtx
 }
 
 const okRate = () => ({
@@ -559,6 +584,34 @@ describe('httpApiV1 handlers', () => {
     expect(response.status).toBe(200)
     const json = await response.json()
     expect(json.deletedSkills).toBe(2)
+  })
+
+  it('ban user forwards reason', async () => {
+    vi.mocked(requireApiTokenUser).mockResolvedValue({
+      userId: 'users:1',
+      user: { handle: 'p' },
+    } as never)
+    const runQuery = vi.fn().mockResolvedValue({ _id: 'users:2' })
+    const runMutation = vi
+      .fn()
+      .mockResolvedValueOnce(okRate())
+      .mockResolvedValueOnce({ ok: true, alreadyBanned: false, deletedSkills: 0 })
+    await __handlers.usersPostRouterV1Handler(
+      makeCtx({ runQuery, runMutation }),
+      new Request('https://example.com/api/v1/users/ban', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ handle: 'demo', reason: 'malware' }),
+      }),
+    )
+    expect(runMutation).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({
+        actorUserId: 'users:1',
+        targetUserId: 'users:2',
+        reason: 'malware',
+      }),
+    )
   })
 
   it('set role requires auth', async () => {
