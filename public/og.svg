@@ -76,7 +76,7 @@
     fill="#F6EFE4"
     font-size="92"
     font-weight="700"
-    font-family="Bricolage Grotesque, Manrope, -apple-system, BlinkMacSystemFont, Helvetica Neue, Helvetica, Arial, sans-serif">ClawdHub</text>
+    font-family="Bricolage Grotesque, Manrope, -apple-system, BlinkMacSystemFont, Helvetica Neue, Helvetica, Arial, sans-serif">ClawHub</text>
 
   <!-- Subtitle -->
   <text x="114" y="332"
@@ -94,5 +94,5 @@
     font-size="20"
     font-weight="600"
     opacity="0.90"
-    font-family="IBM Plex Mono, ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, Liberation Mono, Courier New, monospace">clawdhub.com</text>
+    font-family="IBM Plex Mono, ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, Liberation Mono, Courier New, monospace">clawhub.ai</text>
 </svg>

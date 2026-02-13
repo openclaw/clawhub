@@ -7,10 +7,10 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { GlobalOpts } from '../types'
 
 vi.mock('../../config.js', () => ({
-  readGlobalConfig: vi.fn(async () => ({ registry: 'https://clawdhub.com', token: 'tkn' })),
+  readGlobalConfig: vi.fn(async () => ({ registry: 'https://clawhub.ai', token: 'tkn' })),
 }))
 
-const mockGetRegistry = vi.fn(async (_opts: unknown, _params?: unknown) => 'https://clawdhub.com')
+const mockGetRegistry = vi.fn(async (_opts: unknown, _params?: unknown) => 'https://clawhub.ai')
 vi.mock('../registry.js', () => ({
   getRegistry: (opts: unknown, params?: unknown) => mockGetRegistry(opts, params),
 }))
@@ -34,7 +34,7 @@ vi.mock('../ui.js', () => ({
 const { cmdPublish } = await import('./publish')
 
 async function makeTmpWorkdir() {
-  const root = await mkdtemp(join(tmpdir(), 'clawdhub-publish-'))
+  const root = await mkdtemp(join(tmpdir(), 'clawhub-publish-'))
   return root
 }
 
@@ -42,8 +42,8 @@ function makeOpts(workdir: string): GlobalOpts {
   return {
     workdir,
     dir: join(workdir, 'skills'),
-    site: 'https://clawdhub.com',
-    registry: 'https://clawdhub.com',
+    site: 'https://clawhub.ai',
+    registry: 'https://clawhub.ai',
     registrySource: 'default',
   }
 }

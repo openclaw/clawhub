@@ -5,6 +5,7 @@ import { toDayKey } from './leaderboards'
 type SkillStatDeltas = {
   downloads?: number
   stars?: number
+  comments?: number
   installsCurrent?: number
   installsAllTime?: number
 }
@@ -22,8 +23,10 @@ export function applySkillStatDeltas(skill: Doc<'skills'>, deltas: SkillStatDelt
       ? skill.statsInstallsAllTime
       : (skill.stats.installsAllTime ?? 0)
 
+  const currentComments = skill.stats.comments
   const nextDownloads = Math.max(0, currentDownloads + (deltas.downloads ?? 0))
   const nextStars = Math.max(0, currentStars + (deltas.stars ?? 0))
+  const nextComments = Math.max(0, currentComments + (deltas.comments ?? 0))
   const nextInstallsCurrent = Math.max(0, currentInstallsCurrent + (deltas.installsCurrent ?? 0))
   const nextInstallsAllTime = Math.max(0, currentInstallsAllTime + (deltas.installsAllTime ?? 0))
 
@@ -36,6 +39,7 @@ export function applySkillStatDeltas(skill: Doc<'skills'>, deltas: SkillStatDelt
       ...skill.stats,
       downloads: nextDownloads,
       stars: nextStars,
+      comments: nextComments,
       installsCurrent: nextInstallsCurrent,
       installsAllTime: nextInstallsAllTime,
     },

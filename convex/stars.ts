@@ -1,8 +1,8 @@
 import { v } from 'convex/values'
-import type { Doc } from './_generated/dataModel'
 import { internalMutation, mutation, query } from './_generated/server'
 import { requireUser } from './lib/access'
-import { applySkillStatDeltas } from './lib/skillStats'
+import { toPublicSkill } from './lib/public'
+import { insertStatEvent } from './skillStatEvents'
 
 export const isStarred = query({
   args: { skillId: v.id('skills') },
@@ -30,11 +30,7 @@ export const toggle = mutation({
 
     if (existing) {
       await ctx.db.delete(existing._id)
-      const patch = applySkillStatDeltas(skill, { stars: -1 })
-      await ctx.db.patch(skill._id, {
-        ...patch,
-        updatedAt: Date.now(),
-      })
+      await insertStatEvent(ctx, { skillId: skill._id, kind: 'unstar' })
       return { starred: false }
     }
 
@@ -44,10 +40,7 @@ export const toggle = mutation({
       createdAt: Date.now(),
     })
 
-    await ctx.db.patch(skill._id, {
-      ...applySkillStatDeltas(skill, { stars: 1 }),
-      updatedAt: Date.now(),
-    })
+    await insertStatEvent(ctx, { skillId: skill._id, kind: 'star' })
 
     return { starred: true }
   },
@@ -62,10 +55,12 @@ export const listByUser = query({
       .withIndex('by_user', (q) => q.eq('userId', args.userId))
       .order('desc')
       .take(limit)
-    const skills: Doc<'skills'>[] = []
+    const skills: NonNullable<ReturnType<typeof toPublicSkill>>[] = []
     for (const star of stars) {
       const skill = await ctx.db.get(star.skillId)
-      if (skill) skills.push(skill)
+      const publicSkill = toPublicSkill(skill)
+      if (!publicSkill) continue
+      skills.push(publicSkill)
     }
     return skills
   },
@@ -88,10 +83,7 @@ export const addStarInternal = internalMutation({
       createdAt: Date.now(),
     })
 
-    await ctx.db.patch(skill._id, {
-      ...applySkillStatDeltas(skill, { stars: 1 }),
-      updatedAt: Date.now(),
-    })
+    await insertStatEvent(ctx, { skillId: skill._id, kind: 'star' })
 
     return { ok: true as const, starred: true, alreadyStarred: false }
   },
@@ -109,10 +101,7 @@ export const removeStarInternal = internalMutation({
     if (!existing) return { ok: true as const, unstarred: false, alreadyUnstarred: true }
 
     await ctx.db.delete(existing._id)
-    await ctx.db.patch(skill._id, {
-      ...applySkillStatDeltas(skill, { stars: -1 }),
-      updatedAt: Date.now(),
-    })
+    await insertStatEvent(ctx, { skillId: skill._id, kind: 'unstar' })
 
     return { ok: true as const, unstarred: true, alreadyUnstarred: false }
   },

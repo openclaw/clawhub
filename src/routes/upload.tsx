@@ -4,7 +4,7 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import semver from 'semver'
 import { api } from '../../convex/_generated/api'
 import { getSiteMode } from '../lib/site'
-import { expandFiles } from '../lib/uploadFiles'
+import { expandDroppedItems, expandFiles } from '../lib/uploadFiles'
 import { useAuthStatus } from '../lib/useAuthStatus'
 import {
   formatBytes,
@@ -13,7 +13,7 @@ import {
   isTextFile,
   readText,
   uploadFile,
-} from './upload/utils'
+} from './upload/-utils'
 
 const SLUG_PATTERN = /^[a-z0-9]+(?:-[a-z0-9]+)*$/
 
@@ -25,7 +25,7 @@ export const Route = createFileRoute('/upload')({
 })
 
 export function Upload() {
-  const { isAuthenticated } = useAuthStatus()
+  const { isAuthenticated, me } = useAuthStatus()
   const { updateSlug } = useSearch({ from: '/upload' })
   const siteMode = getSiteMode()
   const isSoulMode = siteMode === 'souls'
@@ -309,9 +309,10 @@ export function Upload() {
       setHasAttempted(false)
       setChangelogSource('user')
       if (result) {
+        const ownerParam = me?.handle ?? (me?._id ? String(me._id) : 'unknown')
         void navigate({
-          to: isSoulMode ? '/souls/$slug' : '/skills/$slug',
-          params: { slug: trimmedSlug },
+          to: isSoulMode ? '/souls/$slug' : '/$owner/$slug',
+          params: isSoulMode ? { slug: trimmedSlug } : { owner: ownerParam, slug: trimmedSlug },
         })
       }
     } catch (error) {
@@ -321,14 +322,18 @@ export function Upload() {
   }
 
   return (
-    <main className="section">
-      <h1 className="section-title">Publish a {contentLabel}</h1>
-      <p className="section-subtitle">
-        Drop a folder with {requiredFileLabel} and text files. We will handle the rest.
-      </p>
+    <main className="section upload-page">
+      <header className="upload-page-header">
+        <div>
+          <h1 className="upload-page-title">Publish a {contentLabel}</h1>
+          <p className="upload-page-subtitle">
+            Drop a folder with {requiredFileLabel} and text files. We will handle the rest.
+          </p>
+        </div>
+      </header>
 
       <form onSubmit={handleSubmit} className="upload-grid">
-        <div className="card">
+        <div className="card upload-panel">
           <label className="form-label" htmlFor="slug">
             Slug
           </label>
@@ -374,7 +379,7 @@ export function Upload() {
           />
         </div>
 
-        <div className="card">
+        <div className="card upload-panel">
           <label
             className={`upload-dropzone${isDragging ? ' is-dragging' : ''}`}
             onDragOver={(event) => {
@@ -385,28 +390,46 @@ export function Upload() {
             onDrop={(event) => {
               event.preventDefault()
               setIsDragging(false)
-              const dropped = Array.from(event.dataTransfer.files)
-              void expandFiles(dropped).then((next) => setFiles(next))
+              const items = event.dataTransfer.items
+              void (async () => {
+                const dropped = items?.length
+                  ? await expandDroppedItems(items)
+                  : Array.from(event.dataTransfer.files)
+                const next = await expandFiles(dropped)
+                setFiles(next)
+              })()
             }}
           >
             <input
               ref={fileInputRef}
-              className="upload-input"
+              className="upload-file-input"
               id="upload-files"
               data-testid="upload-input"
               type="file"
               multiple
+              // @ts-expect-error - non-standard attribute to allow folder selection
+              webkitdirectory=""
+              directory=""
               onChange={(event) => {
                 const picked = Array.from(event.target.files ?? [])
                 void expandFiles(picked).then((next) => setFiles(next))
               }}
             />
             <div className="upload-dropzone-copy">
-              <strong>Drop a folder</strong>
-              <span>
-                {files.length} files · {sizeLabel}
+              <div className="upload-dropzone-title-row">
+                <strong>Drop a folder</strong>
+                <span className="upload-dropzone-count">
+                  {files.length} files · {sizeLabel}
+                </span>
+              </div>
+              <span className="upload-dropzone-hint">
+                We keep folder paths and flatten the outer wrapper automatically.
               </span>
-              <button className="btn" type="button" onClick={() => fileInputRef.current?.click()}>
+              <button
+                className="btn upload-picker-btn"
+                type="button"
+                onClick={() => fileInputRef.current?.click()}
+              >
                 Choose folder
               </button>
             </div>
@@ -425,10 +448,8 @@ export function Upload() {
           </div>
         </div>
 
-        <div className="card" ref={validationRef}>
-          <h2 className="section-title" style={{ fontSize: '1.2rem', margin: 0 }}>
-            Validation
-          </h2>
+        <div className="card upload-panel" ref={validationRef}>
+          <h2 className="upload-panel-title">Validation</h2>
           {validation.issues.length === 0 ? (
             <div className="stat">All checks passed.</div>
           ) : (
@@ -440,7 +461,7 @@ export function Upload() {
           )}
         </div>
 
-        <div className="card">
+        <div className="card upload-panel">
           <label className="form-label" htmlFor="changelog">
             Changelog
           </label>
@@ -465,23 +486,25 @@ export function Upload() {
           ) : null}
         </div>
 
-        <div className="card">
-          {error ? (
-            <div className="error" role="alert">
-              {error}
-            </div>
-          ) : null}
-          {status ? <div className="stat">{status}</div> : null}
+        <div className="upload-submit-row">
+          <div className="upload-submit-notes">
+            {error ? (
+              <div className="error" role="alert">
+                {error}
+              </div>
+            ) : null}
+            {status ? <div className="stat">{status}</div> : null}
+            {hasAttempted && !validation.ready ? (
+              <div className="stat">Fix validation issues to continue.</div>
+            ) : null}
+          </div>
           <button
-            className="btn btn-primary"
+            className="btn btn-primary upload-submit-btn"
             type="submit"
             disabled={!validation.ready || isSubmitting}
           >
             Publish {contentLabel}
           </button>
-          {hasAttempted && !validation.ready ? (
-            <div className="stat">Fix validation issues to continue.</div>
-          ) : null}
         </div>
       </form>
     </main>

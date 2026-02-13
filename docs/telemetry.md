@@ -1,5 +1,5 @@
 ---
-summary: 'Install telemetry collected via `clawdhub sync` + opt-out.'
+summary: 'Install telemetry collected via `clawhub sync` + opt-out.'
 read_when:
   - Working on telemetry / privacy controls
   - Questions about what data is collected
@@ -7,22 +7,22 @@ read_when:
 
 # Telemetry
 
-ClawdHub uses **minimal telemetry** to compute **install counts** (what’s actually in use) and to power better sorting/filtering.
-This is based on the CLI `clawdhub sync` command.
+ClawHub uses **minimal telemetry** to compute **install counts** (what’s actually in use) and to power better sorting/filtering.
+This is based on the CLI `clawhub sync` command.
 
 ## When telemetry is collected
 
 Telemetry is only sent when:
 
 - You are **logged in** in the CLI (we already require auth for sync/publish flows).
-- You run `clawdhub sync`.
+- You run `clawhub sync`.
 - Telemetry is **not disabled** (see “How to disable” below).
 
 If you are not logged in, nothing is reported.
 
 ## What we collect
 
-On each `clawdhub sync`, the CLI reports a **full snapshot** of what it found, grouped by scan root (“folder/root”).
+On each `clawhub sync`, the CLI reports a **full snapshot** of what it found, grouped by scan root (“folder/root”).
 
 For each root we store:
 
@@ -70,7 +70,7 @@ This is evaluated lazily (on the next telemetry report) to avoid background jobs
 
 ## Transparency + user controls
 
-ClawdHub provides a private “Installed” tab on your own profile:
+ClawHub provides a private “Installed” tab on your own profile:
 
 - Shows the exact roots + installed skills we store.
 - Includes a **JSON export** view.
@@ -85,7 +85,7 @@ Deleting your account also deletes your telemetry data.
 Set the environment variable:
 
 ```bash
-export CLAWDHUB_DISABLE_TELEMETRY=1
+export CLAWHUB_DISABLE_TELEMETRY=1
 ```
 
-With this set, the CLI will not send telemetry during `clawdhub sync`.
+With this set, the CLI will not send telemetry during `clawhub sync`.

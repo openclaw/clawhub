@@ -9,7 +9,7 @@ import {
   ApiV1SearchResponseSchema,
   ApiV1WhoamiResponseSchema,
   parseArk,
-} from 'clawdhub-schema'
+} from 'clawhub-schema'
 import { unzipSync } from 'fflate'
 import { Agent, setGlobalDispatcher } from 'undici'
 import { describe, expect, it } from 'vitest'
@@ -20,7 +20,6 @@ const REQUEST_TIMEOUT_MS = 15_000
 try {
   setGlobalDispatcher(
     new Agent({
-      allowH2: true,
       connect: { timeout: REQUEST_TIMEOUT_MS },
     }),
   )
@@ -29,13 +28,27 @@ try {
 }
 
 function mustGetToken() {
-  const fromEnv = process.env.CLAWDHUB_E2E_TOKEN?.trim()
+  const fromEnv = process.env.CLAWHUB_E2E_TOKEN?.trim() || process.env.CLAWDHUB_E2E_TOKEN?.trim()
   if (fromEnv) return fromEnv
   return null
 }
 
+function getRegistry() {
+  return (
+    process.env.CLAWHUB_REGISTRY?.trim() ||
+    process.env.CLAWDHUB_REGISTRY?.trim() ||
+    'https://clawhub.ai'
+  )
+}
+
+function getSite() {
+  return (
+    process.env.CLAWHUB_SITE?.trim() || process.env.CLAWDHUB_SITE?.trim() || 'https://clawhub.ai'
+  )
+}
+
 async function makeTempConfig(registry: string, token: string | null) {
-  const dir = await mkdtemp(join(tmpdir(), 'clawdhub-e2e-'))
+  const dir = await mkdtemp(join(tmpdir(), 'clawhub-e2e-'))
   const path = join(dir, 'config.json')
   await writeFile(
     path,
@@ -55,9 +68,9 @@ async function fetchWithTimeout(input: RequestInfo | URL, init?: RequestInit) {
   }
 }
 
-describe('clawdhub e2e', () => {
+describe('clawhub e2e', () => {
   it('prints CLI version via --cli-version', async () => {
-    const result = spawnSync('bun', ['clawdhub', '--cli-version'], {
+    const result = spawnSync('bun', ['clawhub', '--cli-version'], {
       cwd: process.cwd(),
       encoding: 'utf8',
     })
@@ -66,7 +79,7 @@ describe('clawdhub e2e', () => {
   })
 
   it('search endpoint returns a results array (schema parse)', async () => {
-    const registry = process.env.CLAWDHUB_REGISTRY?.trim() || 'https://clawdhub.com'
+    const registry = getRegistry()
     const url = new URL(ApiRoutes.search, registry)
     url.searchParams.set('q', 'gif')
     url.searchParams.set('limit', '5')
@@ -81,17 +94,17 @@ describe('clawdhub e2e', () => {
   })
 
   it('cli search does not error on multi-result responses', async () => {
-    const registry = process.env.CLAWDHUB_REGISTRY?.trim() || 'https://clawdhub.com'
-    const site = process.env.CLAWDHUB_SITE?.trim() || 'https://clawdhub.com'
+    const registry = getRegistry()
+    const site = getSite()
     const token = mustGetToken() ?? (await readGlobalConfig())?.token ?? null
 
     const cfg = await makeTempConfig(registry, token)
     try {
-      const workdir = await mkdtemp(join(tmpdir(), 'clawdhub-e2e-workdir-'))
+      const workdir = await mkdtemp(join(tmpdir(), 'clawhub-e2e-workdir-'))
       const result = spawnSync(
         'bun',
         [
-          'clawdhub',
+          'clawhub',
           'search',
           'gif',
           '--limit',
@@ -105,7 +118,7 @@ describe('clawdhub e2e', () => {
         ],
         {
           cwd: process.cwd(),
-          env: { ...process.env, CLAWDHUB_CONFIG_PATH: cfg.path, CLAWDHUB_DISABLE_TELEMETRY: '1' },
+          env: { ...process.env, CLAWHUB_CONFIG_PATH: cfg.path, CLAWHUB_DISABLE_TELEMETRY: '1' },
           encoding: 'utf8',
         },
       )
@@ -119,11 +132,11 @@ describe('clawdhub e2e', () => {
   })
 
   it('assumes a logged-in user (whoami succeeds)', async () => {
-    const registry = process.env.CLAWDHUB_REGISTRY?.trim() || 'https://clawdhub.com'
-    const site = process.env.CLAWDHUB_SITE?.trim() || 'https://clawdhub.com'
+    const registry = getRegistry()
+    const site = getSite()
     const token = mustGetToken() ?? (await readGlobalConfig())?.token ?? null
     if (!token) {
-      throw new Error('Missing token. Set CLAWDHUB_E2E_TOKEN or run: bun clawdhub auth login')
+      throw new Error('Missing token. Set CLAWHUB_E2E_TOKEN or run: bun clawhub auth login')
     }
 
     const cfg = await makeTempConfig(registry, token)
@@ -142,10 +155,10 @@ describe('clawdhub e2e', () => {
 
       const result = spawnSync(
         'bun',
-        ['clawdhub', 'whoami', '--site', site, '--registry', registry],
+        ['clawhub', 'whoami', '--site', site, '--registry', registry],
         {
           cwd: process.cwd(),
-          env: { ...process.env, CLAWDHUB_CONFIG_PATH: cfg.path, CLAWDHUB_DISABLE_TELEMETRY: '1' },
+          env: { ...process.env, CLAWHUB_CONFIG_PATH: cfg.path, CLAWHUB_DISABLE_TELEMETRY: '1' },
           encoding: 'utf8',
         },
       )
@@ -157,15 +170,15 @@ describe('clawdhub e2e', () => {
   })
 
   it('sync dry-run finds skills from an explicit root', async () => {
-    const registry = process.env.CLAWDHUB_REGISTRY?.trim() || 'https://clawdhub.com'
-    const site = process.env.CLAWDHUB_SITE?.trim() || 'https://clawdhub.com'
+    const registry = getRegistry()
+    const site = getSite()
     const token = mustGetToken() ?? (await readGlobalConfig())?.token ?? null
     if (!token) {
-      throw new Error('Missing token. Set CLAWDHUB_E2E_TOKEN or run: bun clawdhub auth login')
+      throw new Error('Missing token. Set CLAWHUB_E2E_TOKEN or run: bun clawhub auth login')
     }
 
     const cfg = await makeTempConfig(registry, token)
-    const root = await mkdtemp(join(tmpdir(), 'clawdhub-e2e-sync-'))
+    const root = await mkdtemp(join(tmpdir(), 'clawhub-e2e-sync-'))
     try {
       const skillDir = join(root, 'cool-skill')
       await mkdir(skillDir, { recursive: true })
@@ -174,7 +187,7 @@ describe('clawdhub e2e', () => {
       const result = spawnSync(
         'bun',
         [
-          'clawdhub',
+          'clawhub',
           'sync',
           '--dry-run',
           '--all',
@@ -187,7 +200,7 @@ describe('clawdhub e2e', () => {
         ],
         {
           cwd: process.cwd(),
-          env: { ...process.env, CLAWDHUB_CONFIG_PATH: cfg.path, CLAWDHUB_DISABLE_TELEMETRY: '1' },
+          env: { ...process.env, CLAWHUB_CONFIG_PATH: cfg.path, CLAWHUB_DISABLE_TELEMETRY: '1' },
           encoding: 'utf8',
         },
       )
@@ -201,15 +214,15 @@ describe('clawdhub e2e', () => {
   })
 
   it('sync dry-run finds skills from clawdbot.json roots', async () => {
-    const registry = process.env.CLAWDHUB_REGISTRY?.trim() || 'https://clawdhub.com'
-    const site = process.env.CLAWDHUB_SITE?.trim() || 'https://clawdhub.com'
+    const registry = getRegistry()
+    const site = getSite()
     const token = mustGetToken() ?? (await readGlobalConfig())?.token ?? null
     if (!token) {
-      throw new Error('Missing token. Set CLAWDHUB_E2E_TOKEN or run: bun clawdhub auth login')
+      throw new Error('Missing token. Set CLAWHUB_E2E_TOKEN or run: bun clawhub auth login')
     }
 
     const cfg = await makeTempConfig(registry, token)
-    const root = await mkdtemp(join(tmpdir(), 'clawdhub-e2e-clawdbot-'))
+    const root = await mkdtemp(join(tmpdir(), 'clawhub-e2e-clawdbot-'))
     const stateDir = join(root, 'state')
     const configPath = join(root, 'clawdbot.json')
     const workspace = join(root, 'clawd-work')
@@ -232,13 +245,13 @@ describe('clawdhub e2e', () => {
 
       const result = spawnSync(
         'bun',
-        ['clawdhub', 'sync', '--dry-run', '--all', '--site', site, '--registry', registry],
+        ['clawhub', 'sync', '--dry-run', '--all', '--site', site, '--registry', registry],
         {
           cwd: process.cwd(),
           env: {
             ...process.env,
-            CLAWDHUB_CONFIG_PATH: cfg.path,
-            CLAWDHUB_DISABLE_TELEMETRY: '1',
+            CLAWHUB_CONFIG_PATH: cfg.path,
+            CLAWHUB_DISABLE_TELEMETRY: '1',
             CLAWDBOT_CONFIG_PATH: configPath,
             CLAWDBOT_STATE_DIR: stateDir,
           },
@@ -256,16 +269,16 @@ describe('clawdhub e2e', () => {
   })
 
   it('publishes, deletes, and undeletes a skill (logged-in)', async () => {
-    const registry = process.env.CLAWDHUB_REGISTRY?.trim() || 'https://clawdhub.com'
-    const site = process.env.CLAWDHUB_SITE?.trim() || 'https://clawdhub.com'
+    const registry = getRegistry()
+    const site = getSite()
     const token = mustGetToken() ?? (await readGlobalConfig())?.token ?? null
     if (!token) {
-      throw new Error('Missing token. Set CLAWDHUB_E2E_TOKEN or run: bun clawdhub auth login')
+      throw new Error('Missing token. Set CLAWHUB_E2E_TOKEN or run: bun clawhub auth login')
     }
 
     const cfg = await makeTempConfig(registry, token)
-    const workdir = await mkdtemp(join(tmpdir(), 'clawdhub-e2e-publish-'))
-    const installWorkdir = await mkdtemp(join(tmpdir(), 'clawdhub-e2e-install-'))
+    const workdir = await mkdtemp(join(tmpdir(), 'clawhub-e2e-publish-'))
+    const installWorkdir = await mkdtemp(join(tmpdir(), 'clawhub-e2e-install-'))
     const slug = `e2e-${Date.now()}`
     const skillDir = join(workdir, slug)
 
@@ -276,7 +289,7 @@ describe('clawdhub e2e', () => {
       const publish1 = spawnSync(
         'bun',
         [
-          'clawdhub',
+          'clawhub',
           'publish',
           skillDir,
           '--slug',
@@ -296,7 +309,7 @@ describe('clawdhub e2e', () => {
         ],
         {
           cwd: process.cwd(),
-          env: { ...process.env, CLAWDHUB_CONFIG_PATH: cfg.path, CLAWDHUB_DISABLE_TELEMETRY: '1' },
+          env: { ...process.env, CLAWHUB_CONFIG_PATH: cfg.path, CLAWHUB_DISABLE_TELEMETRY: '1' },
           encoding: 'utf8',
         },
       )
@@ -306,7 +319,7 @@ describe('clawdhub e2e', () => {
       const publish2 = spawnSync(
         'bun',
         [
-          'clawdhub',
+          'clawhub',
           'publish',
           skillDir,
           '--slug',
@@ -326,7 +339,7 @@ describe('clawdhub e2e', () => {
         ],
         {
           cwd: process.cwd(),
-          env: { ...process.env, CLAWDHUB_CONFIG_PATH: cfg.path, CLAWDHUB_DISABLE_TELEMETRY: '1' },
+          env: { ...process.env, CLAWHUB_CONFIG_PATH: cfg.path, CLAWHUB_DISABLE_TELEMETRY: '1' },
           encoding: 'utf8',
         },
       )
@@ -345,7 +358,7 @@ describe('clawdhub e2e', () => {
       const install = spawnSync(
         'bun',
         [
-          'clawdhub',
+          'clawhub',
           'install',
           slug,
           '--version',
@@ -360,7 +373,7 @@ describe('clawdhub e2e', () => {
         ],
         {
           cwd: process.cwd(),
-          env: { ...process.env, CLAWDHUB_CONFIG_PATH: cfg.path, CLAWDHUB_DISABLE_TELEMETRY: '1' },
+          env: { ...process.env, CLAWHUB_CONFIG_PATH: cfg.path, CLAWHUB_DISABLE_TELEMETRY: '1' },
           encoding: 'utf8',
         },
       )
@@ -368,10 +381,10 @@ describe('clawdhub e2e', () => {
 
       const list = spawnSync(
         'bun',
-        ['clawdhub', 'list', '--site', site, '--registry', registry, '--workdir', installWorkdir],
+        ['clawhub', 'list', '--site', site, '--registry', registry, '--workdir', installWorkdir],
         {
           cwd: process.cwd(),
-          env: { ...process.env, CLAWDHUB_CONFIG_PATH: cfg.path, CLAWDHUB_DISABLE_TELEMETRY: '1' },
+          env: { ...process.env, CLAWHUB_CONFIG_PATH: cfg.path, CLAWHUB_DISABLE_TELEMETRY: '1' },
           encoding: 'utf8',
         },
       )
@@ -381,7 +394,7 @@ describe('clawdhub e2e', () => {
       const update = spawnSync(
         'bun',
         [
-          'clawdhub',
+          'clawhub',
           'update',
           slug,
           '--force',
@@ -394,7 +407,7 @@ describe('clawdhub e2e', () => {
         ],
         {
           cwd: process.cwd(),
-          env: { ...process.env, CLAWDHUB_CONFIG_PATH: cfg.path, CLAWDHUB_DISABLE_TELEMETRY: '1' },
+          env: { ...process.env, CLAWHUB_CONFIG_PATH: cfg.path, CLAWHUB_DISABLE_TELEMETRY: '1' },
           encoding: 'utf8',
         },
       )
@@ -409,7 +422,7 @@ describe('clawdhub e2e', () => {
       const del = spawnSync(
         'bun',
         [
-          'clawdhub',
+          'clawhub',
           'delete',
           slug,
           '--yes',
@@ -422,7 +435,7 @@ describe('clawdhub e2e', () => {
         ],
         {
           cwd: process.cwd(),
-          env: { ...process.env, CLAWDHUB_CONFIG_PATH: cfg.path, CLAWDHUB_DISABLE_TELEMETRY: '1' },
+          env: { ...process.env, CLAWHUB_CONFIG_PATH: cfg.path, CLAWHUB_DISABLE_TELEMETRY: '1' },
           encoding: 'utf8',
         },
       )
@@ -439,7 +452,7 @@ describe('clawdhub e2e', () => {
       const undelete = spawnSync(
         'bun',
         [
-          'clawdhub',
+          'clawhub',
           'undelete',
           slug,
           '--yes',
@@ -452,7 +465,7 @@ describe('clawdhub e2e', () => {
         ],
         {
           cwd: process.cwd(),
-          env: { ...process.env, CLAWDHUB_CONFIG_PATH: cfg.path, CLAWDHUB_DISABLE_TELEMETRY: '1' },
+          env: { ...process.env, CLAWHUB_CONFIG_PATH: cfg.path, CLAWHUB_DISABLE_TELEMETRY: '1' },
           encoding: 'utf8',
         },
       )
@@ -466,7 +479,7 @@ describe('clawdhub e2e', () => {
       const cleanup = spawnSync(
         'bun',
         [
-          'clawdhub',
+          'clawhub',
           'delete',
           slug,
           '--yes',
@@ -479,7 +492,7 @@ describe('clawdhub e2e', () => {
         ],
         {
           cwd: process.cwd(),
-          env: { ...process.env, CLAWDHUB_CONFIG_PATH: cfg.path, CLAWDHUB_DISABLE_TELEMETRY: '1' },
+          env: { ...process.env, CLAWHUB_CONFIG_PATH: cfg.path, CLAWHUB_DISABLE_TELEMETRY: '1' },
           encoding: 'utf8',
         },
       )

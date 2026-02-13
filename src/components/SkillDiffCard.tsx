@@ -396,8 +396,8 @@ function renderOptions(options: VersionOption[]) {
 }
 
 function getMonacoThemeName() {
-  if (typeof document === 'undefined') return 'clawdhub-light'
-  return document.documentElement.dataset.theme === 'dark' ? 'clawdhub-dark' : 'clawdhub-light'
+  if (typeof document === 'undefined') return 'clawhub-light'
+  return document.documentElement.dataset.theme === 'dark' ? 'clawhub-dark' : 'clawhub-light'
 }
 
 function buildDiffOptions(viewMode: 'split' | 'inline'): DiffEditorProps['options'] {
@@ -435,7 +435,7 @@ function applyMonacoTheme(monaco: NonNullable<ReturnType<typeof useMonaco>>) {
   const diffInserted = toRgba(diffAdded, isDark ? 0.12 : 0.16)
   const diffRemovedBg = toRgba(diffRemoved, isDark ? 0.12 : 0.16)
 
-  monaco.editor.defineTheme(`clawdhub-${isDark ? 'dark' : 'light'}`, {
+  monaco.editor.defineTheme(`clawhub-${isDark ? 'dark' : 'light'}`, {
     base,
     inherit: true,
     rules: [
@@ -464,7 +464,7 @@ function applyMonacoTheme(monaco: NonNullable<ReturnType<typeof useMonaco>>) {
     },
   })
 
-  monaco.editor.setTheme(`clawdhub-${isDark ? 'dark' : 'light'}`)
+  monaco.editor.setTheme(`clawhub-${isDark ? 'dark' : 'light'}`)
 }
 
 function normalizeHex(value: string) {

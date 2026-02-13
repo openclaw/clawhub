@@ -221,6 +221,10 @@ export declare const ApiV1PublishResponseSchema: import("arktype/internal/varian
 export declare const ApiV1DeleteResponseSchema: import("arktype/internal/variants/object.ts").ObjectType<{
     ok: true;
 }, {}>;
+export declare const ApiV1SetRoleResponseSchema: import("arktype/internal/variants/object.ts").ObjectType<{
+    ok: true;
+    role: "user" | "admin" | "moderator";
+}, {}>;
 export declare const ApiV1StarResponseSchema: import("arktype/internal/variants/object.ts").ObjectType<{
     ok: true;
     starred: boolean;

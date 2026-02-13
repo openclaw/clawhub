@@ -5,7 +5,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import {
   detectSiteMode,
   detectSiteModeFromUrl,
-  getClawdHubSiteUrl,
+  getClawHubSiteUrl,
   getOnlyCrabsHost,
   getOnlyCrabsSiteUrl,
   getSiteDescription,
@@ -42,9 +42,15 @@ afterEach(() => {
 
 describe('site helpers', () => {
   it('returns default and env configured site URLs', () => {
-    expect(getClawdHubSiteUrl()).toBe('https://clawdhub.com')
+    expect(getClawHubSiteUrl()).toBe('https://clawhub.ai')
     withMetaEnv({ VITE_SITE_URL: 'https://example.com' }, () => {
-      expect(getClawdHubSiteUrl()).toBe('https://example.com')
+      expect(getClawHubSiteUrl()).toBe('https://example.com')
+    })
+    withMetaEnv({ VITE_SITE_URL: 'https://clawdhub.com' }, () => {
+      expect(getClawHubSiteUrl()).toBe('https://clawhub.ai')
+    })
+    withMetaEnv({ VITE_SITE_URL: 'https://auth.clawdhub.com' }, () => {
+      expect(getClawHubSiteUrl()).toBe('https://clawhub.ai')
     })
   })
 
@@ -79,11 +85,11 @@ describe('site helpers', () => {
       expect(getOnlyCrabsHost()).toBe('souls.example.com')
       expect(detectSiteMode('souls.example.com')).toBe('souls')
       expect(detectSiteMode('sub.souls.example.com')).toBe('souls')
-      expect(detectSiteMode('clawdhub.com')).toBe('skills')
+      expect(detectSiteMode('clawhub.ai')).toBe('skills')
 
       expect(detectSiteModeFromUrl('https://souls.example.com/x')).toBe('souls')
       expect(detectSiteModeFromUrl('souls.example.com')).toBe('souls')
-      expect(detectSiteModeFromUrl('https://clawdhub.com')).toBe('skills')
+      expect(detectSiteModeFromUrl('https://clawhub.ai')).toBe('skills')
     })
   })
 
@@ -118,13 +124,13 @@ describe('site helpers', () => {
   })
 
   it('derives site metadata from mode', () => {
-    expect(getSiteName('skills')).toBe('ClawdHub')
+    expect(getSiteName('skills')).toBe('ClawHub')
     expect(getSiteName('souls')).toBe('SoulHub')
 
-    expect(getSiteDescription('skills')).toContain('ClawdHub')
+    expect(getSiteDescription('skills')).toContain('ClawHub')
     expect(getSiteDescription('souls')).toContain('SoulHub')
 
-    expect(getSiteUrlForMode('skills')).toBe('https://clawdhub.com')
+    expect(getSiteUrlForMode('skills')).toBe('https://clawhub.ai')
     expect(getSiteUrlForMode('souls')).toBe('https://onlycrabs.ai')
   })
 })

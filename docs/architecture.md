@@ -11,8 +11,8 @@ read_when:
 
 - Web app: TanStack Start (React) under `src/`.
 - Backend: Convex under `convex/` (DB, storage, actions, HTTP routes).
-- CLI: `packages/clawdhub/` (published as `clawdhub`).
-- Shared schemas/routes: `packages/schema/` (`clawdhub-schema`).
+- CLI: `packages/clawdhub/` (published as `clawhub`, legacy `clawdhub`).
+- Shared schemas/routes: `packages/schema/` (`clawhub-schema`).
 
 ## Data + storage
 
@@ -38,8 +38,8 @@ read_when:
 - Download zip via `/api/v1/download?slug=...&version=...`.
 - Extract into `./skills/<slug>` (default).
 - Persist install state:
-  - `./.clawdhub/lock.json` (per workdir)
-  - `./skills/<slug>/.clawdhub/origin.json` (per skill folder)
+  - `./.clawhub/lock.json` (per workdir, legacy `.clawdhub`)
+  - `./skills/<slug>/.clawhub/origin.json` (per skill folder, legacy `.clawdhub`)
 
 ### Update (CLI)
 

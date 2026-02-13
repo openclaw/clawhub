@@ -20,7 +20,7 @@ import {
 
 describe('skills', () => {
   it('extracts zip into directory and skips traversal', async () => {
-    const dir = await mkdtemp(join(tmpdir(), 'clawdhub-'))
+    const dir = await mkdtemp(join(tmpdir(), 'clawhub-'))
     const zip = zipSync({
       'SKILL.md': strToU8('hello'),
       '../evil.txt': strToU8('nope'),
@@ -32,7 +32,7 @@ describe('skills', () => {
   })
 
   it('writes and reads lockfile', async () => {
-    const workdir = await mkdtemp(join(tmpdir(), 'clawdhub-work-'))
+    const workdir = await mkdtemp(join(tmpdir(), 'clawhub-work-'))
     await writeLockfile(workdir, {
       version: 1,
       skills: { demo: { version: '1.0.0', installedAt: 1 } },
@@ -42,18 +42,18 @@ describe('skills', () => {
   })
 
   it('returns empty lockfile on invalid json', async () => {
-    const workdir = await mkdtemp(join(tmpdir(), 'clawdhub-work-bad-'))
-    await mkdir(join(workdir, '.clawdhub'), { recursive: true })
-    await writeFile(join(workdir, '.clawdhub', 'lock.json'), '{', 'utf8')
+    const workdir = await mkdtemp(join(tmpdir(), 'clawhub-work-bad-'))
+    await mkdir(join(workdir, '.clawhub'), { recursive: true })
+    await writeFile(join(workdir, '.clawhub', 'lock.json'), '{', 'utf8')
     const read = await readLockfile(workdir)
     expect(read).toEqual({ version: 1, skills: {} })
   })
 
   it('returns empty lockfile on schema mismatch', async () => {
-    const workdir = await mkdtemp(join(tmpdir(), 'clawdhub-work-schema-'))
-    await mkdir(join(workdir, '.clawdhub'), { recursive: true })
+    const workdir = await mkdtemp(join(tmpdir(), 'clawhub-work-schema-'))
+    await mkdir(join(workdir, '.clawhub'), { recursive: true })
     await writeFile(
-      join(workdir, '.clawdhub', 'lock.json'),
+      join(workdir, '.clawhub', 'lock.json'),
       JSON.stringify({ version: 1, skills: 'nope' }),
       'utf8',
     )
@@ -62,7 +62,7 @@ describe('skills', () => {
   })
 
   it('skips dotfiles and node_modules when listing text files', async () => {
-    const workdir = await mkdtemp(join(tmpdir(), 'clawdhub-files-'))
+    const workdir = await mkdtemp(join(tmpdir(), 'clawhub-files-'))
     await writeFile(join(workdir, 'SKILL.md'), 'hi', 'utf8')
     await writeFile(join(workdir, '.secret.txt'), 'no', 'utf8')
     await mkdir(join(workdir, 'node_modules'), { recursive: true })
@@ -71,10 +71,10 @@ describe('skills', () => {
     expect(files.map((file) => file.relPath)).toEqual(['SKILL.md'])
   })
 
-  it('respects .gitignore and .clawdhubignore', async () => {
-    const workdir = await mkdtemp(join(tmpdir(), 'clawdhub-ignore-'))
+  it('respects .gitignore and .clawhubignore', async () => {
+    const workdir = await mkdtemp(join(tmpdir(), 'clawhub-ignore-'))
     await writeFile(join(workdir, '.gitignore'), 'ignored.md\n', 'utf8')
-    await writeFile(join(workdir, '.clawdhubignore'), 'private.md\n', 'utf8')
+    await writeFile(join(workdir, '.clawhubignore'), 'private.md\n', 'utf8')
     await writeFile(join(workdir, 'SKILL.md'), 'hi', 'utf8')
     await writeFile(join(workdir, 'ignored.md'), 'no', 'utf8')
     await writeFile(join(workdir, 'private.md'), 'no', 'utf8')
@@ -90,7 +90,7 @@ describe('skills', () => {
   })
 
   it('falls back to text/plain for unknown text extensions', async () => {
-    const workdir = await mkdtemp(join(tmpdir(), 'clawdhub-env-'))
+    const workdir = await mkdtemp(join(tmpdir(), 'clawhub-env-'))
     await writeFile(join(workdir, 'SKILL.md'), 'hi', 'utf8')
     await writeFile(join(workdir, 'config.env'), 'TOKEN=demo', 'utf8')
     const files = await listTextFiles(workdir)
@@ -147,26 +147,26 @@ describe('skills', () => {
   })
 
   it('returns null for invalid skill origin metadata', async () => {
-    const workdir = await mkdtemp(join(tmpdir(), 'clawdhub-origin-'))
+    const workdir = await mkdtemp(join(tmpdir(), 'clawhub-origin-'))
     expect(await readSkillOrigin(workdir)).toBeNull()
 
-    await mkdir(join(workdir, '.clawdhub'), { recursive: true })
+    await mkdir(join(workdir, '.clawhub'), { recursive: true })
     await writeFile(
-      join(workdir, '.clawdhub', 'origin.json'),
+      join(workdir, '.clawhub', 'origin.json'),
       JSON.stringify({ version: 2 }),
       'utf8',
     )
     expect(await readSkillOrigin(workdir)).toBeNull()
 
     await writeFile(
-      join(workdir, '.clawdhub', 'origin.json'),
+      join(workdir, '.clawhub', 'origin.json'),
       JSON.stringify({ version: 1, registry: 'demo', slug: 'x', installedAt: 1 }),
       'utf8',
     )
     expect(await readSkillOrigin(workdir)).toBeNull()
 
     await writeFile(
-      join(workdir, '.clawdhub', 'origin.json'),
+      join(workdir, '.clawhub', 'origin.json'),
       JSON.stringify({
         version: 1,
         registry: 'demo',

@@ -1,7 +1,7 @@
 import { v } from 'convex/values'
-import type { Doc } from './_generated/dataModel'
 import { mutation, query } from './_generated/server'
 import { requireUser } from './lib/access'
+import { toPublicSoul } from './lib/public'
 
 export const isStarred = query({
   args: { soulId: v.id('souls') },
@@ -59,10 +59,12 @@ export const listByUser = query({
       .order('desc')
       .take(limit)
 
-    const souls: Doc<'souls'>[] = []
+    const souls: NonNullable<ReturnType<typeof toPublicSoul>>[] = []
     for (const star of stars) {
       const soul = await ctx.db.get(star.soulId)
-      if (soul) souls.push(soul)
+      const publicSoul = toPublicSoul(soul)
+      if (!publicSoul) continue
+      souls.push(publicSoul)
     }
     return souls
   },

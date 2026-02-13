@@ -30,11 +30,11 @@ import type { Candidate, LocalSkill, SyncOptions } from './syncTypes.js'
 
 export async function cmdSync(opts: GlobalOpts, options: SyncOptions, inputAllowed: boolean) {
   const allowPrompt = isInteractive() && inputAllowed !== false
-  intro('ClawdHub sync')
+  intro('ClawHub sync')
 
   const cfg = await readGlobalConfig()
   const token = cfg?.token
-  if (!token) fail('Not logged in. Run: clawdhub login')
+  if (!token) fail('Not logged in. Run: clawhub login')
 
   const registry = await getRegistryWithAuth(opts, token)
   const selectedRoots = buildScanRoots(opts, options.root)

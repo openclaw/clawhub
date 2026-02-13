@@ -1,9 +1,9 @@
 import { Link } from '@tanstack/react-router'
 import type { ReactNode } from 'react'
-import type { Doc } from '../../convex/_generated/dataModel'
+import type { PublicSoul } from '../lib/publicUser'
 
 type SoulCardProps = {
-  soul: Doc<'souls'>
+  soul: PublicSoul
   summaryFallback: string
   meta: ReactNode
 }

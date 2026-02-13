@@ -8,53 +8,53 @@ read_when:
 # Manual testing (CLI)
 
 ## Setup
-- Ensure logged in: `bun clawdhub whoami` (or `bun clawdhub login`).
+- Ensure logged in: `bun clawhub whoami` (or `bun clawhub login`).
 - Optional: set env
-  - `CLAWDHUB_SITE=https://clawdhub.com`
-  - `CLAWDHUB_REGISTRY=https://clawdhub.com`
+  - `CLAWHUB_SITE=https://clawhub.ai`
+  - `CLAWHUB_REGISTRY=https://clawhub.ai`
 
 ## Smoke
-- `bun clawdhub --help`
-- `bun clawdhub --cli-version`
-- `bun clawdhub whoami`
+- `bun clawhub --help`
+- `bun clawhub --cli-version`
+- `bun clawhub whoami`
 
 ## Search
-- `bun clawdhub search gif --limit 5`
+- `bun clawhub search gif --limit 5`
 
 ## Install / list / update
-- `mkdir -p /tmp/clawdhub-manual && cd /tmp/clawdhub-manual`
-- `bunx clawdhub@beta install gifgrep --force`
-- `bunx clawdhub@beta list`
-- `bunx clawdhub@beta update gifgrep --force`
+- `mkdir -p /tmp/clawhub-manual && cd /tmp/clawhub-manual`
+- `bunx clawhub@beta install gifgrep --force`
+- `bunx clawhub@beta list`
+- `bunx clawhub@beta update gifgrep --force`
 
 ## Publish (changelog optional)
-- `mkdir -p /tmp/clawdhub-skill-demo/SKILL && cd /tmp/clawdhub-skill-demo`
+- `mkdir -p /tmp/clawhub-skill-demo/SKILL && cd /tmp/clawhub-skill-demo`
 - Create files:
   - `SKILL.md`
   - `notes.md`
 - Publish:
-  - `bun clawdhub publish . --slug clawdhub-manual-<ts> --name "Manual <ts>" --version 1.0.0 --tags latest`
+  - `bun clawhub publish . --slug clawhub-manual-<ts> --name "Manual <ts>" --version 1.0.0 --tags latest`
 - Publish update with empty changelog:
-  - `bun clawdhub publish . --slug clawdhub-manual-<ts> --name "Manual <ts>" --version 1.0.1 --tags latest`
+  - `bun clawhub publish . --slug clawhub-manual-<ts> --name "Manual <ts>" --version 1.0.1 --tags latest`
 
 ## Delete / undelete (owner/admin)
-- `bun clawdhub delete clawdhub-manual-<ts> --yes`
+- `bun clawhub delete clawhub-manual-<ts> --yes`
 - Verify hidden:
-- `curl -i "https://clawdhub.com/api/v1/skills/clawdhub-manual-<ts>"`
+- `curl -i "https://clawhub.ai/api/v1/skills/clawhub-manual-<ts>"`
 - Restore:
-  - `bun clawdhub undelete clawdhub-manual-<ts> --yes`
+  - `bun clawhub undelete clawhub-manual-<ts> --yes`
 - Cleanup:
-  - `bun clawdhub delete clawdhub-manual-<ts> --yes`
+  - `bun clawhub delete clawhub-manual-<ts> --yes`
 
 ## Sync
-- `bun clawdhub sync --dry-run --all`
+- `bun clawhub sync --dry-run --all`
 
 ## Playwright (menu smoke)
 
 Run against prod:
 
 ```
-PLAYWRIGHT_BASE_URL=https://clawdhub.com bun run test:pw
+PLAYWRIGHT_BASE_URL=https://clawhub.ai bun run test:pw
 ```
 
 Run against a local preview server:

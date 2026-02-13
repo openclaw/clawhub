@@ -8,7 +8,7 @@ const GITHUB_API = 'https://api.github.com'
 const DEFAULT_REPO = 'clawdbot/skills'
 const DEFAULT_ROOT = 'skills'
 const META_FILENAME = '_meta.json'
-const USER_AGENT = 'clawdhub/skills-backup'
+const USER_AGENT = 'clawhub/skills-backup'
 
 type BackupFile = {
   path: string

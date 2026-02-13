@@ -1,11 +1,25 @@
 export type SiteMode = 'skills' | 'souls'
 
-const DEFAULT_CLAWDHUB_SITE_URL = 'https://clawdhub.com'
+const DEFAULT_CLAWHUB_SITE_URL = 'https://clawhub.ai'
 const DEFAULT_ONLYCRABS_SITE_URL = 'https://onlycrabs.ai'
 const DEFAULT_ONLYCRABS_HOST = 'onlycrabs.ai'
+const LEGACY_CLAWDHUB_HOSTS = new Set(['clawdhub.com', 'www.clawdhub.com', 'auth.clawdhub.com'])
 
-export function getClawdHubSiteUrl() {
-  return import.meta.env.VITE_SITE_URL ?? DEFAULT_CLAWDHUB_SITE_URL
+export function normalizeClawHubSiteOrigin(value?: string | null) {
+  if (!value) return null
+  try {
+    const url = new URL(value)
+    if (LEGACY_CLAWDHUB_HOSTS.has(url.hostname.toLowerCase())) {
+      return DEFAULT_CLAWHUB_SITE_URL
+    }
+    return url.origin
+  } catch {
+    return null
+  }
+}
+
+export function getClawHubSiteUrl() {
+  return normalizeClawHubSiteOrigin(import.meta.env.VITE_SITE_URL) ?? DEFAULT_CLAWHUB_SITE_URL
 }
 
 export function getOnlyCrabsSiteUrl() {
@@ -70,15 +84,15 @@ export function getSiteMode(): SiteMode {
 }
 
 export function getSiteName(mode: SiteMode = getSiteMode()) {
-  return mode === 'souls' ? 'SoulHub' : 'ClawdHub'
+  return mode === 'souls' ? 'SoulHub' : 'ClawHub'
 }
 
 export function getSiteDescription(mode: SiteMode = getSiteMode()) {
   return mode === 'souls'
     ? 'SoulHub — the home for SOUL.md bundles and personal system lore.'
-    : 'ClawdHub — a fast skill registry for agents, with vector search.'
+    : 'ClawHub — a fast skill registry for agents, with vector search.'
 }
 
 export function getSiteUrlForMode(mode: SiteMode = getSiteMode()) {
-  return mode === 'souls' ? getOnlyCrabsSiteUrl() : getClawdHubSiteUrl()
+  return mode === 'souls' ? getOnlyCrabsSiteUrl() : getClawHubSiteUrl()
 }

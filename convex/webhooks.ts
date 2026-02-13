@@ -11,7 +11,7 @@ export const sendDiscordWebhook = internalAction({
       summary: v.optional(v.string()),
       version: v.optional(v.string()),
       ownerHandle: v.optional(v.string()),
-      batch: v.optional(v.string()),
+      highlighted: v.optional(v.boolean()),
       tags: v.optional(v.array(v.string())),
     }),
   },
@@ -21,7 +21,7 @@ export const sendDiscordWebhook = internalAction({
       event: args.event,
       slug: args.skill.slug,
       version: args.skill.version ?? null,
-      batch: args.skill.batch ?? null,
+      highlighted: args.skill.highlighted ?? false,
       highlightedOnly: config.highlightedOnly,
     }
     if (!shouldSendWebhook(args.event, args.skill, config)) {

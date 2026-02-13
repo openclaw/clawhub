@@ -1,7 +1,9 @@
 import { v } from 'convex/values'
 import type { Doc } from './_generated/dataModel'
 import { mutation, query } from './_generated/server'
-import { assertRole, requireUser } from './lib/access'
+import { assertModerator, requireUser } from './lib/access'
+import { type PublicUser, toPublicUser } from './lib/public'
+import { insertStatEvent } from './skillStatEvents'
 
 export const listBySkill = query({
   args: { skillId: v.id('skills'), limit: v.optional(v.number()) },
@@ -13,10 +15,10 @@ export const listBySkill = query({
       .order('desc')
       .take(limit)
 
-    const results: Array<{ comment: Doc<'comments'>; user: Doc<'users'> | null }> = []
+    const results: Array<{ comment: Doc<'comments'>; user: PublicUser | null }> = []
     for (const comment of comments) {
       if (comment.softDeletedAt) continue
-      const user = await ctx.db.get(comment.userId)
+      const user = toPublicUser(await ctx.db.get(comment.userId))
       results.push({ comment, user })
     }
     return results
@@ -42,10 +44,7 @@ export const add = mutation({
       deletedBy: undefined,
     })
 
-    await ctx.db.patch(skill._id, {
-      stats: { ...skill.stats, comments: skill.stats.comments + 1 },
-      updatedAt: Date.now(),
-    })
+    await insertStatEvent(ctx, { skillId: skill._id, kind: 'comment' })
   },
 })
 
@@ -59,7 +58,7 @@ export const remove = mutation({
 
     const isOwner = comment.userId === user._id
     if (!isOwner) {
-      assertRole(user, ['admin', 'moderator'])
+      assertModerator(user)
     }
 
     await ctx.db.patch(comment._id, {
@@ -67,13 +66,7 @@ export const remove = mutation({
       deletedBy: user._id,
     })
 
-    const skill = await ctx.db.get(comment.skillId)
-    if (skill) {
-      await ctx.db.patch(skill._id, {
-        stats: { ...skill.stats, comments: Math.max(0, skill.stats.comments - 1) },
-        updatedAt: Date.now(),
-      })
-    }
+    await insertStatEvent(ctx, { skillId: comment.skillId, kind: 'uncomment' })
 
     await ctx.db.insert('auditLogs', {
       actorUserId: user._id,
