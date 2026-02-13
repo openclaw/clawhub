@@ -562,6 +562,7 @@ async function usersPostRouterV1Handler(ctx: ActionCtx, request: Request) {
 
   const handleRaw = typeof payload.handle === 'string' ? payload.handle.trim() : ''
   const userIdRaw = typeof payload.userId === 'string' ? payload.userId.trim() : ''
+  const reasonRaw = typeof payload.reason === 'string' ? payload.reason.trim() : ''
   if (!handleRaw && !userIdRaw) {
     return text('Missing userId or handle', 400, rate.headers)
   }
@@ -592,10 +593,15 @@ async function usersPostRouterV1Handler(ctx: ActionCtx, request: Request) {
   }
 
   if (action === 'ban') {
+    const reason = reasonRaw.length > 0 ? reasonRaw : undefined
+    if (reason && reason.length > 500) {
+      return text('Reason too long (max 500 chars)', 400, rate.headers)
+    }
     try {
       const result = await ctx.runMutation(internal.users.banUserInternal, {
         actorUserId,
         targetUserId,
+        reason,
       })
       return json(result, 200, rate.headers)
     } catch (error) {
@@ -827,11 +833,30 @@ async function checkRateLimit(
   key: string,
   limit: number,
 ): Promise<RateLimitResult> {
-  return (await ctx.runMutation(internal.rateLimits.checkRateLimitInternal, {
+  // Step 1: Read-only check — no write conflicts for denied requests
+  const status = (await ctx.runQuery(internal.rateLimits.getRateLimitStatusInternal, {
     key,
     limit,
     windowMs: RATE_LIMIT_WINDOW_MS,
   })) as RateLimitResult
+
+  if (!status.allowed) {
+    return status
+  }
+
+  // Step 2: Consume a token (only when allowed, with double-check for races)
+  const result = (await ctx.runMutation(internal.rateLimits.consumeRateLimitInternal, {
+    key,
+    limit,
+    windowMs: RATE_LIMIT_WINDOW_MS,
+  })) as { allowed: boolean; remaining: number }
+
+  return {
+    allowed: result.allowed,
+    remaining: result.remaining,
+    limit: status.limit,
+    resetAt: status.resetAt,
+  }
 }
 
 function pickMostRestrictive(primary: RateLimitResult, secondary: RateLimitResult | null) {

@@ -8,7 +8,15 @@ import { SkillCard } from '../../components/SkillCard'
 import { getSkillBadges, isSkillHighlighted } from '../../lib/badges'
 import type { PublicSkill } from '../../lib/publicUser'
 
-const sortKeys = ['newest', 'downloads', 'installs', 'stars', 'name', 'updated'] as const
+const sortKeys = [
+  'relevance',
+  'newest',
+  'downloads',
+  'installs',
+  'stars',
+  'name',
+  'updated',
+] as const
 const pageSize = 25
 type SortKey = (typeof sortKeys)[number]
 type SortDir = 'asc' | 'desc'
@@ -28,6 +36,7 @@ type SkillListEntry = {
   skill: PublicSkill
   latestVersion: Doc<'skillVersions'> | null
   ownerHandle?: string | null
+  searchScore?: number
 }
 
 type SkillSearchEntry = {
@@ -62,11 +71,9 @@ export const Route = createFileRoute('/skills/')({
 export function SkillsIndex() {
   const navigate = Route.useNavigate()
   const search = Route.useSearch()
-  const sort = search.sort ?? 'newest'
-  const dir = parseDir(search.dir, sort)
+  const [query, setQuery] = useState(search.q ?? '')
   const view = search.view ?? 'list'
   const highlightedOnly = search.highlighted ?? false
-  const [query, setQuery] = useState(search.q ?? '')
   const searchSkills = useAction(api.search.searchSkills)
   const [searchResults, setSearchResults] = useState<Array<SkillSearchEntry>>([])
   const [searchLimit, setSearchLimit] = useState(pageSize)
@@ -77,6 +84,11 @@ export function SkillsIndex() {
   const searchInputRef = useRef<HTMLInputElement>(null)
   const trimmedQuery = useMemo(() => query.trim(), [query])
   const hasQuery = trimmedQuery.length > 0
+  const sort =
+    search.sort === 'relevance' && !hasQuery
+      ? 'newest'
+      : (search.sort ?? (hasQuery ? 'relevance' : 'newest'))
+  const dir = parseDir(search.dir, sort)
   const searchKey = trimmedQuery ? `${trimmedQuery}::${highlightedOnly ? '1' : '0'}` : ''
 
   // Use convex-helpers usePaginatedQuery for better cache behavior
@@ -149,6 +161,7 @@ export function SkillsIndex() {
         skill: entry.skill,
         latestVersion: entry.version,
         ownerHandle: entry.ownerHandle ?? null,
+        searchScore: entry.score,
       }))
     }
     // paginatedResults is an array of page items from usePaginatedQuery
@@ -165,6 +178,8 @@ export function SkillsIndex() {
     const results = [...filtered]
     results.sort((a, b) => {
       switch (sort) {
+        case 'relevance':
+          return ((a.searchScore ?? 0) - (b.searchScore ?? 0)) * multiplier
         case 'downloads':
           return (a.skill.stats.downloads - b.skill.stats.downloads) * multiplier
         case 'installs':
@@ -284,6 +299,7 @@ export function SkillsIndex() {
               }}
               aria-label="Sort skills"
             >
+              {hasQuery ? <option value="relevance">Relevance</option> : null}
               <option value="newest">Newest</option>
               <option value="updated">Recently updated</option>
               <option value="downloads">Downloads</option>

@@ -174,6 +174,10 @@ export async function publishVersionForUser(
     versionId: publishResult.versionId,
   })
 
+  await ctx.scheduler.runAfter(0, internal.llmEval.evaluateWithLlm, {
+    versionId: publishResult.versionId,
+  })
+
   const owner = (await ctx.runQuery(internal.users.getByIdInternal, {
     userId,
   })) as Doc<'users'> | null

@@ -62,6 +62,25 @@ describe('cmdBanUser', () => {
     )
   })
 
+  it('includes reason when provided', async () => {
+    mockApiRequest.mockResolvedValueOnce({ ok: true, alreadyBanned: false, deletedSkills: 0 })
+    await cmdBanUser(
+      makeOpts(),
+      'hightower6eu',
+      { yes: true, reason: 'malware distribution' },
+      false,
+    )
+    expect(mockApiRequest).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({
+        method: 'POST',
+        path: '/api/v1/users/ban',
+        body: { handle: 'hightower6eu', reason: 'malware distribution' },
+      }),
+      expect.anything(),
+    )
+  })
+
   it('posts user id payload when --id is set', async () => {
     mockApiRequest.mockResolvedValueOnce({ ok: true, alreadyBanned: false, deletedSkills: 0 })
     await cmdBanUser(makeOpts(), 'user_123', { yes: true, id: true }, false)
