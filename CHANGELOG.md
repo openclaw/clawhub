@@ -16,6 +16,7 @@
 - Upload gate: handle GitHub API rate limits and optional authenticated lookup token (thanks @superlowburn, #246).
 - HTTP: remove `allowH2` from Undici agent to prevent `fetch failed` on Node.js 22+ (#245).
 - Tests: add root `undici` dev dependency for Node E2E imports (thanks @tanujbhaud, #255).
+- Downloads: add download rate limiting + per-IP/day dedupe + scheduled dedupe pruning; preserve moderation gating and deterministic zips (thanks @regenrek, #43).
 - VirusTotal: fix scan sync race conditions and retry behavior in scan/backfill paths.
 - Metadata: tolerate trailing commas in JSON metadata.
 - Auth: allow soft-deleted users to re-authenticate on fresh login, while keeping banned users blocked (thanks @tanujbhaud, #177).
