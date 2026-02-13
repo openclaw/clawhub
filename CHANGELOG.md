@@ -1,7 +1,7 @@
 # Changelog
 
 ## Unreleased
-
+ 
 ### Added
 - CLI/API: add `set-role` to change user roles (admin only).
 - Security: quarantine skill publishes with VirusTotal scans + UI (thanks @aleph8, #130).
@@ -15,6 +15,7 @@
 - Users: backfill empty handles from name/email in ensure (thanks @adlai88, #158).
 - Web: update footer branding to OpenClaw (thanks @jontsai, #122).
 - Auth: restore soft-deleted users on reauth, block banned users (thanks @mkrokosz, #106).
+- Web: prevent horizontal overflow from long code blocks in skill pages (thanks @bewithgaurav, #183).
 
 ## 0.5.1 - TBD
 
