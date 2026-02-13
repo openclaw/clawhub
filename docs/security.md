@@ -36,6 +36,7 @@ read_when:
   - hard-deletes all owned skills
   - revokes API tokens
   - sets `deletedAt` on the user
+- Optional ban reason is stored in `users.banReason` and audit logs.
 - Moderators cannot ban admins; nobody can ban themselves.
 - Report counters effectively reset because deleted/banned skills are no longer
   considered active in the per-user report cap.
@@ -48,3 +49,7 @@ read_when:
   - `githubFetchedAt` (fetch timestamp)
 - Cache TTL: 24 hours.
 - Gate applies to web uploads, CLI publish, and GitHub import.
+- If GitHub responds `403` or `429`, publish fails with:
+  - `GitHub API rate limit exceeded — please try again in a few minutes`
+- To reduce rate-limit failures, set `GITHUB_TOKEN` in Convex env for authenticated
+  GitHub API requests.

@@ -92,10 +92,11 @@ export const downloadZip = httpAction(async (ctx, request) => {
 export const increment = mutation({
   args: { skillId: v.id('skills') },
   handler: async (ctx, args) => {
-    const skill = await ctx.db.get(args.skillId)
-    if (!skill) return
+    // Skip db.get to avoid adding the skill doc to the read set.
+    // The calling HTTP action already validated the skill exists,
+    // and the stat processor handles deleted skills gracefully.
     await insertStatEvent(ctx, {
-      skillId: skill._id,
+      skillId: args.skillId,
       kind: 'download',
     })
   },

@@ -3,6 +3,7 @@ import type { Doc } from './_generated/dataModel'
 import { mutation, query } from './_generated/server'
 import { assertModerator, requireUser } from './lib/access'
 import { type PublicUser, toPublicUser } from './lib/public'
+import { insertStatEvent } from './skillStatEvents'
 
 export const listBySkill = query({
   args: { skillId: v.id('skills'), limit: v.optional(v.number()) },
@@ -43,10 +44,7 @@ export const add = mutation({
       deletedBy: undefined,
     })
 
-    await ctx.db.patch(skill._id, {
-      stats: { ...skill.stats, comments: skill.stats.comments + 1 },
-      updatedAt: Date.now(),
-    })
+    await insertStatEvent(ctx, { skillId: skill._id, kind: 'comment' })
   },
 })
 
@@ -68,13 +66,7 @@ export const remove = mutation({
       deletedBy: user._id,
     })
 
-    const skill = await ctx.db.get(comment.skillId)
-    if (skill) {
-      await ctx.db.patch(skill._id, {
-        stats: { ...skill.stats, comments: Math.max(0, skill.stats.comments - 1) },
-        updatedAt: Date.now(),
-      })
-    }
+    await insertStatEvent(ctx, { skillId: comment.skillId, kind: 'uncomment' })
 
     await ctx.db.insert('auditLogs', {
       actorUserId: user._id,

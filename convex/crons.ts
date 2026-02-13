@@ -33,6 +33,10 @@ crons.interval(
 
 crons.interval('vt-pending-scans', { minutes: 5 }, internal.vt.pollPendingScans, { batchSize: 100 })
 
+crons.interval('vt-cache-backfill', { minutes: 30 }, internal.vt.backfillActiveSkillsVTCache, {
+  batchSize: 100,
+})
+
 // Daily re-scan of all active skills at 3am UTC
 crons.daily('vt-daily-rescan', { hourUTC: 3, minuteUTC: 0 }, internal.vt.rescanActiveSkills, {})
 

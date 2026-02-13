@@ -22,11 +22,13 @@ async function requireToken() {
 export async function cmdBanUser(
   opts: GlobalOpts,
   identifierArg: string,
-  options: { yes?: boolean; id?: boolean; fuzzy?: boolean },
+  options: { yes?: boolean; id?: boolean; fuzzy?: boolean; reason?: string },
   inputAllowed: boolean,
 ) {
   const raw = identifierArg.trim()
   if (!raw) fail('Handle or user id required')
+
+  const reason = options.reason?.trim() || undefined
 
   const token = await requireToken()
   const registry = await getRegistry(opts, { cache: true })
@@ -55,7 +57,9 @@ export async function cmdBanUser(
         method: 'POST',
         path: `${ApiRoutes.users}/ban`,
         token,
-        body: resolved.userId ? { userId: resolved.userId } : { handle: resolved.handle },
+        body: resolved.userId
+          ? { userId: resolved.userId, reason }
+          : { handle: resolved.handle, reason },
       },
       ApiV1BanUserResponseSchema,
     )

@@ -29,12 +29,13 @@ function makeCtx({
 describe('handleSoftDeletedUserReauth', () => {
   const userId = 'users:1' as Id<'users'>
 
-  it('skips when no existing user', async () => {
+  it('skips when user not found', async () => {
     const { ctx } = makeCtx({ user: null })
 
-    await handleSoftDeletedUserReauth(ctx as never, { userId, existingUserId: null })
+    await handleSoftDeletedUserReauth(ctx as never, { userId, existingUserId: userId })
 
-    expect(ctx.db.get).not.toHaveBeenCalled()
+    expect(ctx.db.get).toHaveBeenCalledWith(userId)
+    expect(ctx.db.query).not.toHaveBeenCalled()
   })
 
   it('skips active users', async () => {
@@ -57,11 +58,42 @@ describe('handleSoftDeletedUserReauth', () => {
     })
   })
 
+  it('restores soft-deleted users on fresh login (existingUserId is null)', async () => {
+    const { ctx } = makeCtx({ user: { deletedAt: 123 }, banRecord: null })
+
+    await handleSoftDeletedUserReauth(ctx as never, { userId, existingUserId: null })
+
+    expect(ctx.db.patch).toHaveBeenCalledWith(userId, {
+      deletedAt: undefined,
+      updatedAt: expect.any(Number),
+    })
+  })
+
+  it('skips reactivation when existingUserId does not match userId', async () => {
+    const otherUserId = 'users:999' as Id<'users'>
+    const { ctx } = makeCtx({ user: { deletedAt: 123 } })
+
+    await handleSoftDeletedUserReauth(ctx as never, { userId, existingUserId: otherUserId })
+
+    expect(ctx.db.query).not.toHaveBeenCalled()
+    expect(ctx.db.patch).not.toHaveBeenCalled()
+  })
+
   it('blocks banned users with a custom message', async () => {
     const { ctx } = makeCtx({ user: { deletedAt: 123 }, banRecord: { action: 'user.ban' } })
 
     await expect(
       handleSoftDeletedUserReauth(ctx as never, { userId, existingUserId: userId }),
+    ).rejects.toThrow(BANNED_REAUTH_MESSAGE)
+
+    expect(ctx.db.patch).not.toHaveBeenCalled()
+  })
+
+  it('blocks banned users on fresh login (existingUserId is null)', async () => {
+    const { ctx } = makeCtx({ user: { deletedAt: 123 }, banRecord: { action: 'user.ban' } })
+
+    await expect(
+      handleSoftDeletedUserReauth(ctx as never, { userId, existingUserId: null }),
     ).rejects.toThrow(BANNED_REAUTH_MESSAGE)
 
     expect(ctx.db.patch).not.toHaveBeenCalled()

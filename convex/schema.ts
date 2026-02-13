@@ -20,6 +20,7 @@ const users = defineTable({
   githubCreatedAt: v.optional(v.number()),
   githubFetchedAt: v.optional(v.number()),
   deletedAt: v.optional(v.number()),
+  banReason: v.optional(v.string()),
   createdAt: v.optional(v.number()),
   updatedAt: v.optional(v.number()),
 })
@@ -170,6 +171,28 @@ const skillVersions = defineTable({
       checkedAt: v.number(),
     }),
   ),
+  llmAnalysis: v.optional(
+    v.object({
+      status: v.string(),
+      verdict: v.optional(v.string()),
+      confidence: v.optional(v.string()),
+      summary: v.optional(v.string()),
+      dimensions: v.optional(
+        v.array(
+          v.object({
+            name: v.string(),
+            label: v.string(),
+            rating: v.string(),
+            detail: v.string(),
+          }),
+        ),
+      ),
+      guidance: v.optional(v.string()),
+      findings: v.optional(v.string()),
+      model: v.optional(v.string()),
+      checkedAt: v.number(),
+    }),
+  ),
 })
   .index('by_skill', ['skillId'])
   .index('by_skill_version', ['skillId', 'version'])
@@ -294,6 +317,8 @@ const skillStatEvents = defineTable({
     v.literal('download'),
     v.literal('star'),
     v.literal('unstar'),
+    v.literal('comment'),
+    v.literal('uncomment'),
     v.literal('install_new'),
     v.literal('install_reactivate'),
     v.literal('install_deactivate'),
