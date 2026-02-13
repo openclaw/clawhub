@@ -1,4 +1,4 @@
-import { createFileRoute, Link } from '@tanstack/react-router'
+import { createFileRoute, Link, redirect } from '@tanstack/react-router'
 import { useAction } from 'convex/react'
 import { usePaginatedQuery } from 'convex-helpers/react'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
@@ -87,6 +87,23 @@ export const Route = createFileRoute('/skills/')({
       view: search.view === 'cards' || search.view === 'list' ? search.view : undefined,
       focus: search.focus === 'search' ? 'search' : undefined,
     }
+  },
+  beforeLoad: ({ search }) => {
+    const hasQuery = Boolean(search.q?.trim())
+    if (hasQuery || search.sort) return
+    throw redirect({
+      to: '/skills',
+      search: {
+        q: search.q || undefined,
+        sort: 'downloads',
+        dir: search.dir || undefined,
+        highlighted: search.highlighted || undefined,
+        nonSuspicious: search.nonSuspicious || undefined,
+        view: search.view || undefined,
+        focus: search.focus || undefined,
+      },
+      replace: true,
+    })
   },
   component: SkillsIndex,
 })

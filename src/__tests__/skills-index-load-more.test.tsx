@@ -15,6 +15,7 @@ vi.mock('@tanstack/react-router', () => ({
     useNavigate: () => navigateMock,
     useSearch: () => searchMock,
   }),
+  redirect: (options: unknown) => ({ redirect: options }),
   Link: (props: { children: ReactNode }) => <a href="/">{props.children}</a>,
 }))
 
