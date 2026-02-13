@@ -5,6 +5,41 @@ import { getRegistry } from '../registry.js'
 import type { GlobalOpts } from '../types.js'
 import { createSpinner, fail, formatError, isInteractive, promptConfirm } from '../ui.js'
 
+type SkillActionLabels = {
+  verb: string
+  progress: string
+  past: string
+  promptSuffix?: string
+}
+
+const deleteLabels: SkillActionLabels = {
+  verb: 'Delete',
+  progress: 'Deleting',
+  past: 'Deleted',
+  promptSuffix: 'soft delete, requires moderator/admin',
+}
+
+const undeleteLabels: SkillActionLabels = {
+  verb: 'Undelete',
+  progress: 'Undeleting',
+  past: 'Undeleted',
+  promptSuffix: 'requires moderator/admin',
+}
+
+const hideLabels: SkillActionLabels = {
+  verb: 'Hide',
+  progress: 'Hiding',
+  past: 'Hidden',
+  promptSuffix: 'requires moderator/admin',
+}
+
+const unhideLabels: SkillActionLabels = {
+  verb: 'Unhide',
+  progress: 'Unhiding',
+  past: 'Unhidden',
+  promptSuffix: 'requires moderator/admin',
+}
+
 async function requireToken() {
   const cfg = await readGlobalConfig()
   const token = cfg?.token
@@ -17,6 +52,7 @@ export async function cmdDeleteSkill(
   slugArg: string,
   options: { yes?: boolean },
   inputAllowed: boolean,
+  labels: SkillActionLabels = deleteLabels,
 ) {
   const slug = slugArg.trim().toLowerCase()
   if (!slug) fail('Slug required')
@@ -24,20 +60,20 @@ export async function cmdDeleteSkill(
 
   if (!options.yes) {
     if (!allowPrompt) fail('Pass --yes (no input)')
-    const ok = await promptConfirm(`Delete ${slug}? (soft delete)`)
+    const ok = await promptConfirm(formatPrompt(labels, slug))
     if (!ok) return
   }
 
   const token = await requireToken()
   const registry = await getRegistry(opts, { cache: true })
-  const spinner = createSpinner(`Deleting ${slug}`)
+  const spinner = createSpinner(`${labels.progress} ${slug}`)
   try {
     const result = await apiRequest(
       registry,
       { method: 'DELETE', path: `${ApiRoutes.skills}/${encodeURIComponent(slug)}`, token },
       ApiV1DeleteResponseSchema,
     )
-    spinner.succeed(`OK. Deleted ${slug}`)
+    spinner.succeed(`OK. ${labels.past} ${slug}`)
     return parseArk(ApiV1DeleteResponseSchema, result, 'Delete response')
   } catch (error) {
     spinner.fail(formatError(error))
@@ -50,6 +86,7 @@ export async function cmdUndeleteSkill(
   slugArg: string,
   options: { yes?: boolean },
   inputAllowed: boolean,
+  labels: SkillActionLabels = undeleteLabels,
 ) {
   const slug = slugArg.trim().toLowerCase()
   if (!slug) fail('Slug required')
@@ -57,13 +94,13 @@ export async function cmdUndeleteSkill(
 
   if (!options.yes) {
     if (!allowPrompt) fail('Pass --yes (no input)')
-    const ok = await promptConfirm(`Undelete ${slug}?`)
+    const ok = await promptConfirm(formatPrompt(labels, slug))
     if (!ok) return
   }
 
   const token = await requireToken()
   const registry = await getRegistry(opts, { cache: true })
-  const spinner = createSpinner(`Undeleting ${slug}`)
+  const spinner = createSpinner(`${labels.progress} ${slug}`)
   try {
     const result = await apiRequest(
       registry,
@@ -74,10 +111,33 @@ export async function cmdUndeleteSkill(
       },
       ApiV1DeleteResponseSchema,
     )
-    spinner.succeed(`OK. Undeleted ${slug}`)
+    spinner.succeed(`OK. ${labels.past} ${slug}`)
     return parseArk(ApiV1DeleteResponseSchema, result, 'Undelete response')
   } catch (error) {
     spinner.fail(formatError(error))
     throw error
   }
+}
+
+export async function cmdHideSkill(
+  opts: GlobalOpts,
+  slugArg: string,
+  options: { yes?: boolean },
+  inputAllowed: boolean,
+) {
+  return cmdDeleteSkill(opts, slugArg, options, inputAllowed, hideLabels)
+}
+
+export async function cmdUnhideSkill(
+  opts: GlobalOpts,
+  slugArg: string,
+  options: { yes?: boolean },
+  inputAllowed: boolean,
+) {
+  return cmdUndeleteSkill(opts, slugArg, options, inputAllowed, unhideLabels)
+}
+
+function formatPrompt(labels: SkillActionLabels, slug: string) {
+  const suffix = labels.promptSuffix ? ` (${labels.promptSuffix})` : ''
+  return `${labels.verb} ${slug}?${suffix}`
 }

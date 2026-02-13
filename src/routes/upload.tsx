@@ -13,7 +13,7 @@ import {
   isTextFile,
   readText,
   uploadFile,
-} from './upload/utils'
+} from './upload/-utils'
 
 const SLUG_PATTERN = /^[a-z0-9]+(?:-[a-z0-9]+)*$/
 

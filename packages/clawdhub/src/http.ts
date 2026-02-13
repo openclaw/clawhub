@@ -15,7 +15,6 @@ if (typeof process !== 'undefined' && process.versions?.node) {
   try {
     setGlobalDispatcher(
       new Agent({
-        allowH2: true,
         connect: { timeout: REQUEST_TIMEOUT_MS },
       }),
     )
@@ -125,6 +124,36 @@ export async function apiRequestForm<T>(
   )
   if (schema) return parseArk(schema, json, 'API response')
   return json as T
+}
+
+type TextRequestArgs = { path: string; token?: string } | { url: string; token?: string }
+
+export async function fetchText(registry: string, args: TextRequestArgs): Promise<string> {
+  const url = 'url' in args ? args.url : new URL(args.path, registry).toString()
+  return pRetry(
+    async () => {
+      if (isBun) {
+        return await fetchTextViaCurl(url, args)
+      }
+
+      const headers: Record<string, string> = { Accept: 'text/plain' }
+      if (args.token) headers.Authorization = `Bearer ${args.token}`
+      const controller = new AbortController()
+      const timeout = setTimeout(() => controller.abort('Timeout'), REQUEST_TIMEOUT_MS)
+      const response = await fetch(url, { method: 'GET', headers, signal: controller.signal })
+      clearTimeout(timeout)
+      const text = await response.text()
+      if (!response.ok) {
+        const message = text || `HTTP ${response.status}`
+        if (response.status === 429 || response.status >= 500) {
+          throw new Error(message)
+        }
+        throw new AbortError(message)
+      }
+      return text
+    },
+    { retries: 2 },
+  )
 }
 
 export async function downloadZip(registry: string, args: { slug: string; version?: string }) {
@@ -252,6 +281,43 @@ async function fetchJsonFormViaCurl(url: string, args: FormRequestArgs) {
   } finally {
     await rm(tempDir, { recursive: true, force: true })
   }
+}
+
+async function fetchTextViaCurl(url: string, args: { token?: string }) {
+  const headers = ['-H', 'Accept: text/plain']
+  if (args.token) {
+    headers.push('-H', `Authorization: Bearer ${args.token}`)
+  }
+  const curlArgs = [
+    '--silent',
+    '--show-error',
+    '--location',
+    '--max-time',
+    String(REQUEST_TIMEOUT_SECONDS),
+    '--write-out',
+    '\n%{http_code}',
+    '-X',
+    'GET',
+    ...headers,
+    url,
+  ]
+  const result = spawnSync('curl', curlArgs, { encoding: 'utf8' })
+  if (result.status !== 0) {
+    throw new Error(result.stderr || 'curl failed')
+  }
+  const output = result.stdout ?? ''
+  const splitAt = output.lastIndexOf('\n')
+  if (splitAt === -1) throw new Error('curl response missing status')
+  const body = output.slice(0, splitAt)
+  const status = Number(output.slice(splitAt + 1).trim())
+  if (!Number.isFinite(status)) throw new Error('curl response missing status')
+  if (status < 200 || status >= 300) {
+    if (status === 429 || status >= 500) {
+      throw new Error(body || `HTTP ${status}`)
+    }
+    throw new AbortError(body || `HTTP ${status}`)
+  }
+  return body
 }
 
 async function fetchBinaryViaCurl(url: string) {

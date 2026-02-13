@@ -98,6 +98,17 @@ describe('clawhub-schema', () => {
     expect(() => parseArk(LockfileSchema, null, 'Lockfile')).toThrow(/Lockfile:/)
   })
 
+  it('truncates error messages when there are more than 3 errors', () => {
+    const invalidPayload = {
+      slug: 123,
+      displayName: 456,
+      version: 789,
+      changelog: true,
+      files: 'not-an-array',
+    }
+    expect(() => parseArk(CliPublishRequestSchema, invalidPayload, 'Publish')).toThrow('+')
+  })
+
   it('parses search results arrays', () => {
     expect(parseArk(ApiSearchResponseSchema, { results: [] }, 'Search')).toEqual({ results: [] })
 

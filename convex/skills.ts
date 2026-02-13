@@ -1,10 +1,18 @@
+import { getAuthUserId } from '@convex-dev/auth/server'
 import { paginationOptsValidator } from 'convex/server'
 import { ConvexError, v } from 'convex/values'
 import { paginator } from 'convex-helpers/server/pagination'
 import { internal } from './_generated/api'
 import type { Doc, Id } from './_generated/dataModel'
 import type { MutationCtx, QueryCtx } from './_generated/server'
-import { action, internalMutation, internalQuery, mutation, query } from './_generated/server'
+import {
+  action,
+  internalAction,
+  internalMutation,
+  internalQuery,
+  mutation,
+  query,
+} from './_generated/server'
 import { assertAdmin, assertModerator, requireUser, requireUserFromAction } from './lib/access'
 import { getSkillBadgeMap, getSkillBadgeMaps, isSkillHighlighted } from './lib/badges'
 import { generateChangelogPreview as buildChangelogPreview } from './lib/changelog'
@@ -30,6 +38,12 @@ const MAX_LIST_LIMIT = 50
 const MAX_PUBLIC_LIST_LIMIT = 200
 const MAX_LIST_BULK_LIMIT = 200
 const MAX_LIST_TAKE = 1000
+const HARD_DELETE_BATCH_SIZE = 100
+const HARD_DELETE_VERSION_BATCH_SIZE = 10
+const HARD_DELETE_LEADERBOARD_BATCH_SIZE = 25
+const MAX_ACTIVE_REPORTS_PER_USER = 20
+const AUTO_HIDE_REPORT_THRESHOLD = 3
+const MAX_REPORT_REASON_SAMPLE = 5
 
 function isSkillVersionId(
   value: Id<'skillVersions'> | null | undefined,
@@ -46,140 +60,293 @@ async function resolveOwnerHandle(ctx: QueryCtx, ownerUserId: Id<'users'>) {
   return owner?.handle ?? owner?._id ?? null
 }
 
-async function hardDeleteSkill(
+const HARD_DELETE_PHASES = [
+  'versions',
+  'fingerprints',
+  'embeddings',
+  'comments',
+  'reports',
+  'stars',
+  'badges',
+  'dailyStats',
+  'statEvents',
+  'installs',
+  'rootInstalls',
+  'leaderboards',
+  'canonical',
+  'forks',
+  'finalize',
+] as const
+
+type HardDeletePhase = (typeof HARD_DELETE_PHASES)[number]
+
+function isHardDeletePhase(value: string | undefined): value is HardDeletePhase {
+  if (!value) return false
+  return (HARD_DELETE_PHASES as readonly string[]).includes(value)
+}
+
+async function scheduleHardDelete(
+  ctx: MutationCtx,
+  skillId: Id<'skills'>,
+  actorUserId: Id<'users'>,
+  phase: HardDeletePhase,
+) {
+  await ctx.scheduler.runAfter(0, internal.skills.hardDeleteInternal, {
+    skillId,
+    actorUserId,
+    phase,
+  })
+}
+
+async function hardDeleteSkillStep(
   ctx: MutationCtx,
   skill: Doc<'skills'>,
-  actorUserId: Id<'users'> | null,
+  actorUserId: Id<'users'>,
+  phase: HardDeletePhase,
 ) {
-  const versions = await ctx.db
-    .query('skillVersions')
-    .withIndex('by_skill', (q) => q.eq('skillId', skill._id))
-    .collect()
-
-  for (const version of versions) {
-    const versionFingerprints = await ctx.db
-      .query('skillVersionFingerprints')
-      .withIndex('by_version', (q) => q.eq('versionId', version._id))
-      .collect()
-    for (const fingerprint of versionFingerprints) {
-      await ctx.db.delete(fingerprint._id)
-    }
-
-    const embeddings = await ctx.db
-      .query('skillEmbeddings')
-      .withIndex('by_version', (q) => q.eq('versionId', version._id))
-      .collect()
-    for (const embedding of embeddings) {
-      await ctx.db.delete(embedding._id)
-    }
-
-    await ctx.db.delete(version._id)
-  }
-
-  const remainingFingerprints = await ctx.db
-    .query('skillVersionFingerprints')
-    .withIndex('by_skill_fingerprint', (q) => q.eq('skillId', skill._id))
-    .collect()
-  for (const fingerprint of remainingFingerprints) {
-    await ctx.db.delete(fingerprint._id)
-  }
-
-  const remainingEmbeddings = await ctx.db
-    .query('skillEmbeddings')
-    .withIndex('by_skill', (q) => q.eq('skillId', skill._id))
-    .collect()
-  for (const embedding of remainingEmbeddings) {
-    await ctx.db.delete(embedding._id)
-  }
-
-  const comments = await ctx.db
-    .query('comments')
-    .withIndex('by_skill', (q) => q.eq('skillId', skill._id))
-    .collect()
-  for (const comment of comments) {
-    await ctx.db.delete(comment._id)
-  }
-
-  const stars = await ctx.db
-    .query('stars')
-    .withIndex('by_skill', (q) => q.eq('skillId', skill._id))
-    .collect()
-  for (const star of stars) {
-    await ctx.db.delete(star._id)
-  }
-
-  const badges = await ctx.db
-    .query('skillBadges')
-    .withIndex('by_skill', (q) => q.eq('skillId', skill._id))
-    .collect()
-  for (const badge of badges) {
-    await ctx.db.delete(badge._id)
-  }
-
-  const dailyStats = await ctx.db
-    .query('skillDailyStats')
-    .withIndex('by_skill_day', (q) => q.eq('skillId', skill._id))
-    .collect()
-  for (const stat of dailyStats) {
-    await ctx.db.delete(stat._id)
-  }
-
-  const statEvents = await ctx.db
-    .query('skillStatEvents')
-    .withIndex('by_skill', (q) => q.eq('skillId', skill._id))
-    .collect()
-  for (const statEvent of statEvents) {
-    await ctx.db.delete(statEvent._id)
-  }
-
-  const installs = await ctx.db
-    .query('userSkillInstalls')
-    .withIndex('by_skill', (q) => q.eq('skillId', skill._id))
-    .collect()
-  for (const install of installs) {
-    await ctx.db.delete(install._id)
-  }
-
-  const rootInstalls = await ctx.db
-    .query('userSkillRootInstalls')
-    .withIndex('by_skill', (q) => q.eq('skillId', skill._id))
-    .collect()
-  for (const rootInstall of rootInstalls) {
-    await ctx.db.delete(rootInstall._id)
-  }
-
-  const leaderboards = await ctx.db.query('skillLeaderboards').collect()
-  for (const leaderboard of leaderboards) {
-    const items = leaderboard.items.filter((item) => item.skillId !== skill._id)
-    if (items.length !== leaderboard.items.length) {
-      await ctx.db.patch(leaderboard._id, { items })
-    }
-  }
-
-  const relatedSkills = await ctx.db.query('skills').collect()
   const now = Date.now()
-  for (const related of relatedSkills) {
-    if (related._id === skill._id) continue
-    if (related.canonicalSkillId === skill._id || related.forkOf?.skillId === skill._id) {
-      await ctx.db.patch(related._id, {
-        canonicalSkillId: related.canonicalSkillId === skill._id ? undefined : related.canonicalSkillId,
-        forkOf: related.forkOf?.skillId === skill._id ? undefined : related.forkOf,
-        updatedAt: now,
-      })
-    }
+  const patch: Partial<Doc<'skills'>> = {}
+  if (!skill.softDeletedAt) patch.softDeletedAt = now
+  if (skill.moderationStatus !== 'removed') patch.moderationStatus = 'removed'
+  if (!skill.hiddenAt) patch.hiddenAt = now
+  if (!skill.hiddenBy) patch.hiddenBy = actorUserId
+  if (Object.keys(patch).length) {
+    patch.lastReviewedAt = now
+    patch.updatedAt = now
+    await ctx.db.patch(skill._id, patch)
   }
 
-  await ctx.db.delete(skill._id)
-
-  if (actorUserId) {
-    await ctx.db.insert('auditLogs', {
-      actorUserId,
-      action: 'skill.hard_delete',
-      targetType: 'skill',
-      targetId: skill._id,
-      metadata: { slug: skill.slug },
-      createdAt: now,
-    })
+  switch (phase) {
+    case 'versions': {
+      const versions = await ctx.db
+        .query('skillVersions')
+        .withIndex('by_skill', (q) => q.eq('skillId', skill._id))
+        .take(HARD_DELETE_VERSION_BATCH_SIZE)
+      for (const version of versions) {
+        await ctx.db.delete(version._id)
+      }
+      if (versions.length === HARD_DELETE_VERSION_BATCH_SIZE) {
+        await scheduleHardDelete(ctx, skill._id, actorUserId, 'versions')
+        return
+      }
+      await scheduleHardDelete(ctx, skill._id, actorUserId, 'fingerprints')
+      return
+    }
+    case 'fingerprints': {
+      const fingerprints = await ctx.db
+        .query('skillVersionFingerprints')
+        .withIndex('by_skill_fingerprint', (q) => q.eq('skillId', skill._id))
+        .take(HARD_DELETE_BATCH_SIZE)
+      for (const fingerprint of fingerprints) {
+        await ctx.db.delete(fingerprint._id)
+      }
+      if (fingerprints.length === HARD_DELETE_BATCH_SIZE) {
+        await scheduleHardDelete(ctx, skill._id, actorUserId, 'fingerprints')
+        return
+      }
+      await scheduleHardDelete(ctx, skill._id, actorUserId, 'embeddings')
+      return
+    }
+    case 'embeddings': {
+      const embeddings = await ctx.db
+        .query('skillEmbeddings')
+        .withIndex('by_skill', (q) => q.eq('skillId', skill._id))
+        .take(HARD_DELETE_BATCH_SIZE)
+      for (const embedding of embeddings) {
+        await ctx.db.delete(embedding._id)
+      }
+      if (embeddings.length === HARD_DELETE_BATCH_SIZE) {
+        await scheduleHardDelete(ctx, skill._id, actorUserId, 'embeddings')
+        return
+      }
+      await scheduleHardDelete(ctx, skill._id, actorUserId, 'comments')
+      return
+    }
+    case 'comments': {
+      const comments = await ctx.db
+        .query('comments')
+        .withIndex('by_skill', (q) => q.eq('skillId', skill._id))
+        .take(HARD_DELETE_BATCH_SIZE)
+      for (const comment of comments) {
+        await ctx.db.delete(comment._id)
+      }
+      if (comments.length === HARD_DELETE_BATCH_SIZE) {
+        await scheduleHardDelete(ctx, skill._id, actorUserId, 'comments')
+        return
+      }
+      await scheduleHardDelete(ctx, skill._id, actorUserId, 'reports')
+      return
+    }
+    case 'reports': {
+      const reports = await ctx.db
+        .query('skillReports')
+        .withIndex('by_skill', (q) => q.eq('skillId', skill._id))
+        .take(HARD_DELETE_BATCH_SIZE)
+      for (const report of reports) {
+        await ctx.db.delete(report._id)
+      }
+      if (reports.length === HARD_DELETE_BATCH_SIZE) {
+        await scheduleHardDelete(ctx, skill._id, actorUserId, 'reports')
+        return
+      }
+      await scheduleHardDelete(ctx, skill._id, actorUserId, 'stars')
+      return
+    }
+    case 'stars': {
+      const stars = await ctx.db
+        .query('stars')
+        .withIndex('by_skill', (q) => q.eq('skillId', skill._id))
+        .take(HARD_DELETE_BATCH_SIZE)
+      for (const star of stars) {
+        await ctx.db.delete(star._id)
+      }
+      if (stars.length === HARD_DELETE_BATCH_SIZE) {
+        await scheduleHardDelete(ctx, skill._id, actorUserId, 'stars')
+        return
+      }
+      await scheduleHardDelete(ctx, skill._id, actorUserId, 'badges')
+      return
+    }
+    case 'badges': {
+      const badges = await ctx.db
+        .query('skillBadges')
+        .withIndex('by_skill', (q) => q.eq('skillId', skill._id))
+        .take(HARD_DELETE_BATCH_SIZE)
+      for (const badge of badges) {
+        await ctx.db.delete(badge._id)
+      }
+      if (badges.length === HARD_DELETE_BATCH_SIZE) {
+        await scheduleHardDelete(ctx, skill._id, actorUserId, 'badges')
+        return
+      }
+      await scheduleHardDelete(ctx, skill._id, actorUserId, 'dailyStats')
+      return
+    }
+    case 'dailyStats': {
+      const dailyStats = await ctx.db
+        .query('skillDailyStats')
+        .withIndex('by_skill_day', (q) => q.eq('skillId', skill._id))
+        .take(HARD_DELETE_BATCH_SIZE)
+      for (const stat of dailyStats) {
+        await ctx.db.delete(stat._id)
+      }
+      if (dailyStats.length === HARD_DELETE_BATCH_SIZE) {
+        await scheduleHardDelete(ctx, skill._id, actorUserId, 'dailyStats')
+        return
+      }
+      await scheduleHardDelete(ctx, skill._id, actorUserId, 'statEvents')
+      return
+    }
+    case 'statEvents': {
+      const statEvents = await ctx.db
+        .query('skillStatEvents')
+        .withIndex('by_skill', (q) => q.eq('skillId', skill._id))
+        .take(HARD_DELETE_BATCH_SIZE)
+      for (const statEvent of statEvents) {
+        await ctx.db.delete(statEvent._id)
+      }
+      if (statEvents.length === HARD_DELETE_BATCH_SIZE) {
+        await scheduleHardDelete(ctx, skill._id, actorUserId, 'statEvents')
+        return
+      }
+      await scheduleHardDelete(ctx, skill._id, actorUserId, 'installs')
+      return
+    }
+    case 'installs': {
+      const installs = await ctx.db
+        .query('userSkillInstalls')
+        .withIndex('by_skill', (q) => q.eq('skillId', skill._id))
+        .take(HARD_DELETE_BATCH_SIZE)
+      for (const install of installs) {
+        await ctx.db.delete(install._id)
+      }
+      if (installs.length === HARD_DELETE_BATCH_SIZE) {
+        await scheduleHardDelete(ctx, skill._id, actorUserId, 'installs')
+        return
+      }
+      await scheduleHardDelete(ctx, skill._id, actorUserId, 'rootInstalls')
+      return
+    }
+    case 'rootInstalls': {
+      const rootInstalls = await ctx.db
+        .query('userSkillRootInstalls')
+        .withIndex('by_skill', (q) => q.eq('skillId', skill._id))
+        .take(HARD_DELETE_BATCH_SIZE)
+      for (const rootInstall of rootInstalls) {
+        await ctx.db.delete(rootInstall._id)
+      }
+      if (rootInstalls.length === HARD_DELETE_BATCH_SIZE) {
+        await scheduleHardDelete(ctx, skill._id, actorUserId, 'rootInstalls')
+        return
+      }
+      await scheduleHardDelete(ctx, skill._id, actorUserId, 'leaderboards')
+      return
+    }
+    case 'leaderboards': {
+      const leaderboards = await ctx.db
+        .query('skillLeaderboards')
+        .take(HARD_DELETE_LEADERBOARD_BATCH_SIZE)
+      for (const leaderboard of leaderboards) {
+        const items = leaderboard.items.filter((item) => item.skillId !== skill._id)
+        if (items.length !== leaderboard.items.length) {
+          await ctx.db.patch(leaderboard._id, { items })
+        }
+      }
+      if (leaderboards.length === HARD_DELETE_LEADERBOARD_BATCH_SIZE) {
+        await scheduleHardDelete(ctx, skill._id, actorUserId, 'leaderboards')
+        return
+      }
+      await scheduleHardDelete(ctx, skill._id, actorUserId, 'canonical')
+      return
+    }
+    case 'canonical': {
+      const canonicalRefs = await ctx.db
+        .query('skills')
+        .withIndex('by_canonical', (q) => q.eq('canonicalSkillId', skill._id))
+        .take(HARD_DELETE_BATCH_SIZE)
+      for (const related of canonicalRefs) {
+        await ctx.db.patch(related._id, {
+          canonicalSkillId: undefined,
+          updatedAt: now,
+        })
+      }
+      if (canonicalRefs.length === HARD_DELETE_BATCH_SIZE) {
+        await scheduleHardDelete(ctx, skill._id, actorUserId, 'canonical')
+        return
+      }
+      await scheduleHardDelete(ctx, skill._id, actorUserId, 'forks')
+      return
+    }
+    case 'forks': {
+      const forkRefs = await ctx.db
+        .query('skills')
+        .withIndex('by_fork_of', (q) => q.eq('forkOf.skillId', skill._id))
+        .take(HARD_DELETE_BATCH_SIZE)
+      for (const related of forkRefs) {
+        await ctx.db.patch(related._id, {
+          forkOf: undefined,
+          updatedAt: now,
+        })
+      }
+      if (forkRefs.length === HARD_DELETE_BATCH_SIZE) {
+        await scheduleHardDelete(ctx, skill._id, actorUserId, 'forks')
+        return
+      }
+      await scheduleHardDelete(ctx, skill._id, actorUserId, 'finalize')
+      return
+    }
+    case 'finalize': {
+      await ctx.db.delete(skill._id)
+      await ctx.db.insert('auditLogs', {
+        actorUserId,
+        action: 'skill.hard_delete',
+        targetType: 'skill',
+        targetId: skill._id,
+        metadata: { slug: skill.slug },
+        createdAt: now,
+      })
+      return
+    }
   }
 }
 
@@ -325,6 +492,113 @@ export const getBySlug = query({
       .withIndex('by_slug', (q) => q.eq('slug', args.slug))
       .unique()
     if (!skill || skill.softDeletedAt) return null
+
+    const userId = await getAuthUserId(ctx)
+    const isOwner = Boolean(userId && userId === skill.ownerUserId)
+
+    const latestVersion = skill.latestVersionId ? await ctx.db.get(skill.latestVersionId) : null
+    const owner = await ctx.db.get(skill.ownerUserId)
+    const badges = await getSkillBadgeMap(ctx, skill._id)
+
+    const forkOfSkill = skill.forkOf?.skillId ? await ctx.db.get(skill.forkOf.skillId) : null
+    const forkOfOwner = forkOfSkill ? await ctx.db.get(forkOfSkill.ownerUserId) : null
+
+    const canonicalSkill = skill.canonicalSkillId ? await ctx.db.get(skill.canonicalSkillId) : null
+    const canonicalOwner = canonicalSkill ? await ctx.db.get(canonicalSkill.ownerUserId) : null
+
+    const publicSkill = toPublicSkill({ ...skill, badges })
+
+    // Determine moderation state
+    const isPendingScan =
+      skill.moderationStatus === 'hidden' && skill.moderationReason === 'pending.scan'
+    const isMalwareBlocked = skill.moderationFlags?.includes('blocked.malware') ?? false
+    const isSuspicious = skill.moderationFlags?.includes('flagged.suspicious') ?? false
+    const isHiddenByMod = skill.moderationStatus === 'hidden' && !isPendingScan && !isMalwareBlocked
+    const isRemoved = skill.moderationStatus === 'removed'
+
+    // Non-owners can see malware-blocked skills (transparency), but not other hidden states
+    // Owners can see all their moderated skills
+    if (!publicSkill && !isOwner && !isMalwareBlocked) return null
+
+    // For owners viewing their moderated skill, construct the response manually
+    const skillData = publicSkill ?? {
+      _id: skill._id,
+      _creationTime: skill._creationTime,
+      slug: skill.slug,
+      displayName: skill.displayName,
+      summary: skill.summary,
+      ownerUserId: skill.ownerUserId,
+      canonicalSkillId: skill.canonicalSkillId,
+      forkOf: skill.forkOf,
+      latestVersionId: skill.latestVersionId,
+      tags: skill.tags,
+      badges,
+      stats: skill.stats,
+      createdAt: skill.createdAt,
+      updatedAt: skill.updatedAt,
+    }
+
+    // Moderation info - visible to owners for all states, or anyone for flagged skills (transparency)
+    const showModerationInfo = isOwner || isMalwareBlocked || isSuspicious
+    const moderationInfo = showModerationInfo
+      ? {
+          isPendingScan,
+          isMalwareBlocked,
+          isSuspicious,
+          isHiddenByMod,
+          isRemoved,
+          reason: isOwner ? skill.moderationReason : undefined,
+        }
+      : null
+
+    return {
+      skill: skillData,
+      latestVersion,
+      owner,
+      pendingReview: isOwner && isPendingScan,
+      moderationInfo,
+      forkOf: forkOfSkill
+        ? {
+            kind: skill.forkOf?.kind ?? 'fork',
+            version: skill.forkOf?.version ?? null,
+            skill: {
+              slug: forkOfSkill.slug,
+              displayName: forkOfSkill.displayName,
+            },
+            owner: {
+              handle: forkOfOwner?.handle ?? forkOfOwner?.name ?? null,
+              userId: forkOfOwner?._id ?? null,
+            },
+          }
+        : null,
+      canonical: canonicalSkill
+        ? {
+            skill: {
+              slug: canonicalSkill.slug,
+              displayName: canonicalSkill.displayName,
+            },
+            owner: {
+              handle: canonicalOwner?.handle ?? canonicalOwner?.name ?? null,
+              userId: canonicalOwner?._id ?? null,
+            },
+          }
+        : null,
+    }
+  },
+})
+
+export const getBySlugForStaff = query({
+  args: { slug: v.string() },
+  handler: async (ctx, args) => {
+    const { user } = await requireUser(ctx)
+    assertModerator(user)
+
+    const skill = await ctx.db
+      .query('skills')
+      .withIndex('by_slug', (q) => q.eq('slug', args.slug))
+      .unique()
+    if (!skill) return null
+
     const latestVersion = skill.latestVersionId ? await ctx.db.get(skill.latestVersionId) : null
     const owner = toPublicUser(await ctx.db.get(skill.ownerUserId))
     const badges = await getSkillBadgeMap(ctx, skill._id)
@@ -335,11 +609,8 @@ export const getBySlug = query({
     const canonicalSkill = skill.canonicalSkillId ? await ctx.db.get(skill.canonicalSkillId) : null
     const canonicalOwner = canonicalSkill ? await ctx.db.get(canonicalSkill.ownerUserId) : null
 
-    const publicSkill = toPublicSkill({ ...skill, badges })
-    if (!publicSkill) return null
-
     return {
-      skill: publicSkill,
+      skill: { ...skill, badges },
       latestVersion,
       owner,
       forkOf: forkOfSkill
@@ -382,6 +653,189 @@ export const getSkillBySlugInternal = internalQuery({
   },
 })
 
+/**
+ * Get quick stats without loading versions (fast).
+ */
+export const getQuickStatsInternal = internalQuery({
+  args: {},
+  handler: async (ctx) => {
+    const allSkills = await ctx.db.query('skills').collect()
+    const active = allSkills.filter((s) => !s.softDeletedAt)
+
+    const byStatus: Record<string, number> = {}
+    const byReason: Record<string, number> = {}
+
+    for (const skill of active) {
+      const status = skill.moderationStatus ?? 'active'
+      byStatus[status] = (byStatus[status] ?? 0) + 1
+
+      if (skill.moderationReason) {
+        byReason[skill.moderationReason] = (byReason[skill.moderationReason] ?? 0) + 1
+      }
+    }
+
+    return { total: active.length, byStatus, byReason }
+  },
+})
+
+/**
+ * Get aggregate stats for all skills (for social posts, dashboards, etc.)
+ */
+/**
+ * Paginated helper: counts stats for a batch of skills.
+ * Returns partial counts + cursor for the next page.
+ */
+export const getStatsPageInternal = internalQuery({
+  args: { cursor: v.optional(v.number()) },
+  handler: async (ctx, args) => {
+    const PAGE_SIZE = 500
+    const cursor = args.cursor ?? 0
+
+    const page = await ctx.db
+      .query('skills')
+      .filter((q) => q.gt(q.field('_creationTime'), cursor))
+      .order('asc')
+      .take(PAGE_SIZE)
+
+    let total = 0
+    const byStatus: Record<string, number> = {}
+    const byReason: Record<string, number> = {}
+    const byFlags: Record<string, number> = {}
+    const vtStats = { clean: 0, suspicious: 0, malicious: 0, pending: 0, noAnalysis: 0 }
+
+    for (const skill of page) {
+      if (skill.softDeletedAt) continue
+      total++
+
+      const status = skill.moderationStatus ?? 'active'
+      byStatus[status] = (byStatus[status] ?? 0) + 1
+
+      if (skill.moderationReason) {
+        byReason[skill.moderationReason] = (byReason[skill.moderationReason] ?? 0) + 1
+      }
+
+      for (const flag of skill.moderationFlags ?? []) {
+        byFlags[flag] = (byFlags[flag] ?? 0) + 1
+      }
+
+      if (status === 'active') {
+        const reason = skill.moderationReason
+        if (!reason) {
+          vtStats.noAnalysis++
+        } else if (reason === 'scanner.vt.clean') {
+          vtStats.clean++
+        } else if (reason === 'scanner.vt.malicious') {
+          vtStats.malicious++
+        } else if (reason === 'scanner.vt.suspicious') {
+          vtStats.suspicious++
+        } else if (reason === 'scanner.vt.pending' || reason === 'pending.scan') {
+          vtStats.pending++
+        } else if (reason.startsWith('scanner.vt-rescan.')) {
+          const suffix = reason.slice('scanner.vt-rescan.'.length)
+          if (suffix === 'clean') vtStats.clean++
+          else if (suffix === 'malicious') vtStats.malicious++
+          else if (suffix === 'suspicious') vtStats.suspicious++
+          else vtStats.pending++
+        } else {
+          vtStats.noAnalysis++
+        }
+      }
+    }
+
+    const nextCursor = page.length > 0 ? page[page.length - 1]._creationTime : null
+    const done = page.length < PAGE_SIZE
+
+    return { total, byStatus, byReason, byFlags, vtStats, nextCursor, done }
+  },
+})
+
+export const getHighlightedCountInternal = internalQuery({
+  args: {},
+  handler: async (ctx) => {
+    const badges = await ctx.db
+      .query('skillBadges')
+      .withIndex('by_kind_at', (q) => q.eq('kind', 'highlighted'))
+      .collect()
+    return badges.length
+  },
+})
+
+/**
+ * Get aggregate stats for all skills (for social posts, dashboards, etc.)
+ * Uses an action to call paginated queries, avoiding the 16MB byte limit.
+ */
+type StatsResult = {
+  total: number
+  highlighted: number
+  byStatus: Record<string, number>
+  byReason: Record<string, number>
+  byFlags: Record<string, number>
+  vtStats: {
+    clean: number
+    suspicious: number
+    malicious: number
+    pending: number
+    noAnalysis: number
+  }
+}
+
+export const getStatsInternal = internalAction({
+  args: {},
+  handler: async (ctx): Promise<StatsResult> => {
+    let total = 0
+    const byStatus: Record<string, number> = {}
+    const byReason: Record<string, number> = {}
+    const byFlags: Record<string, number> = {}
+    const vtStats = { clean: 0, suspicious: 0, malicious: 0, pending: 0, noAnalysis: 0 }
+
+    let cursor: number | undefined
+    let done = false
+
+    while (!done) {
+      const page: {
+        total: number
+        byStatus: Record<string, number>
+        byReason: Record<string, number>
+        byFlags: Record<string, number>
+        vtStats: {
+          clean: number
+          suspicious: number
+          malicious: number
+          pending: number
+          noAnalysis: number
+        }
+        nextCursor: number | null
+        done: boolean
+      } = await ctx.runQuery(internal.skills.getStatsPageInternal, { cursor })
+
+      total += page.total
+      for (const [k, cnt] of Object.entries(page.byStatus)) {
+        byStatus[k] = (byStatus[k] ?? 0) + cnt
+      }
+      for (const [k, cnt] of Object.entries(page.byReason)) {
+        byReason[k] = (byReason[k] ?? 0) + cnt
+      }
+      for (const [k, cnt] of Object.entries(page.byFlags)) {
+        byFlags[k] = (byFlags[k] ?? 0) + cnt
+      }
+      vtStats.clean += page.vtStats.clean
+      vtStats.suspicious += page.vtStats.suspicious
+      vtStats.malicious += page.vtStats.malicious
+      vtStats.pending += page.vtStats.pending
+      vtStats.noAnalysis += page.vtStats.noAnalysis
+
+      done = page.done
+      if (page.nextCursor !== null) {
+        cursor = page.nextCursor
+      }
+    }
+
+    const highlighted: number = await ctx.runQuery(internal.skills.getHighlightedCountInternal, {})
+
+    return { total, highlighted, byStatus, byReason, byFlags, vtStats }
+  },
+})
+
 export const list = query({
   args: {
     batch: v.optional(v.string()),
@@ -412,6 +866,8 @@ export const list = query({
     }
     const ownerUserId = args.ownerUserId
     if (ownerUserId) {
+      const userId = await getAuthUserId(ctx)
+      const isOwnDashboard = Boolean(userId && userId === ownerUserId)
       const entries = await ctx.db
         .query('skills')
         .withIndex('by_owner', (q) => q.eq('ownerUserId', ownerUserId))
@@ -419,6 +875,42 @@ export const list = query({
         .take(takeLimit)
       const filtered = entries.filter((skill) => !skill.softDeletedAt).slice(0, limit)
       const withBadges = await attachBadgesToSkills(ctx, filtered)
+
+      if (isOwnDashboard) {
+        // For owner's own dashboard, include pending skills
+        return withBadges
+          .map((skill) => {
+            const publicSkill = toPublicSkill(skill)
+            if (publicSkill) return publicSkill
+            // Include pending skills for owner
+            const isPending =
+              skill.moderationStatus === 'hidden' && skill.moderationReason === 'pending.scan'
+            if (isPending) {
+              // Use computed badges from attachBadgesToSkills, not stored skill.badges
+              const { badges } = skill
+              return {
+                _id: skill._id,
+                _creationTime: skill._creationTime,
+                slug: skill.slug,
+                displayName: skill.displayName,
+                summary: skill.summary,
+                ownerUserId: skill.ownerUserId,
+                canonicalSkillId: skill.canonicalSkillId,
+                forkOf: skill.forkOf,
+                latestVersionId: skill.latestVersionId,
+                tags: skill.tags,
+                badges,
+                stats: skill.stats,
+                createdAt: skill.createdAt,
+                updatedAt: skill.updatedAt,
+                pendingReview: true as const,
+              }
+            }
+            return null
+          })
+          .filter((skill): skill is NonNullable<typeof skill> => Boolean(skill))
+      }
+
       return withBadges
         .map((skill) => toPublicSkill(skill))
         .filter((skill): skill is NonNullable<typeof skill> => Boolean(skill))
@@ -551,7 +1043,39 @@ export const listReportedSkills = query({
       .filter((skill) => (skill.reportCount ?? 0) > 0)
       .sort((a, b) => (b.lastReportedAt ?? 0) - (a.lastReportedAt ?? 0))
       .slice(0, limit)
-    return buildManagementSkillEntries(ctx, reported)
+    const managementEntries = await buildManagementSkillEntries(ctx, reported)
+    const reporterCache = new Map<Id<'users'>, Promise<Doc<'users'> | null>>()
+
+    const getReporter = (reporterId: Id<'users'>) => {
+      const cached = reporterCache.get(reporterId)
+      if (cached) return cached
+      const reporterPromise = ctx.db.get(reporterId)
+      reporterCache.set(reporterId, reporterPromise)
+      return reporterPromise
+    }
+
+    return Promise.all(
+      managementEntries.map(async (entry) => {
+        const reports = await ctx.db
+          .query('skillReports')
+          .withIndex('by_skill_createdAt', (q) => q.eq('skillId', entry.skill._id))
+          .order('desc')
+          .take(MAX_REPORT_REASON_SAMPLE)
+        const reportEntries = await Promise.all(
+          reports.map(async (report) => {
+            const reporter = await getReporter(report.userId)
+            const reason = report.reason?.trim()
+            return {
+              reason: reason && reason.length > 0 ? reason : 'No reason provided.',
+              createdAt: report.createdAt,
+              reporterHandle: reporter?.handle ?? reporter?.name ?? null,
+              reporterId: report.userId,
+            }
+          }),
+        )
+        return { ...entry, reports: reportEntries }
+      }),
+    )
   },
 })
 
@@ -616,12 +1140,39 @@ export const listDuplicateCandidates = query({
   },
 })
 
+async function countActiveReportsForUser(ctx: MutationCtx, userId: Id<'users'>) {
+  const reports = await ctx.db
+    .query('skillReports')
+    .withIndex('by_user', (q) => q.eq('userId', userId))
+    .collect()
+
+  let count = 0
+  for (const report of reports) {
+    const skill = await ctx.db.get(report.skillId)
+    if (!skill) continue
+    if (skill.softDeletedAt) continue
+    if (skill.moderationStatus === 'removed') continue
+    const owner = await ctx.db.get(skill.ownerUserId)
+    if (!owner || owner.deletedAt) continue
+    count += 1
+    if (count >= MAX_ACTIVE_REPORTS_PER_USER) break
+  }
+
+  return count
+}
+
 export const report = mutation({
-  args: { skillId: v.id('skills'), reason: v.optional(v.string()) },
+  args: { skillId: v.id('skills'), reason: v.string() },
   handler: async (ctx, args) => {
     const { userId } = await requireUser(ctx)
     const skill = await ctx.db.get(args.skillId)
-    if (!skill || skill.softDeletedAt) throw new Error('Skill not found')
+    if (!skill || skill.softDeletedAt || skill.moderationStatus === 'removed') {
+      throw new Error('Skill not found')
+    }
+    const reason = args.reason.trim()
+    if (!reason) {
+      throw new Error('Report reason required.')
+    }
 
     const existing = await ctx.db
       .query('skillReports')
@@ -629,20 +1180,60 @@ export const report = mutation({
       .unique()
     if (existing) return { ok: true as const, reported: false, alreadyReported: true }
 
+    const activeReports = await countActiveReportsForUser(ctx, userId)
+    if (activeReports >= MAX_ACTIVE_REPORTS_PER_USER) {
+      throw new Error('Report limit reached. Please wait for moderation before reporting more.')
+    }
+
     const now = Date.now()
-    const reason = args.reason?.trim()
     await ctx.db.insert('skillReports', {
       skillId: args.skillId,
       userId,
-      reason: reason ? reason.slice(0, 500) : undefined,
+      reason: reason.slice(0, 500),
       createdAt: now,
     })
 
-    await ctx.db.patch(skill._id, {
-      reportCount: (skill.reportCount ?? 0) + 1,
+    const nextReportCount = (skill.reportCount ?? 0) + 1
+    const shouldAutoHide = nextReportCount > AUTO_HIDE_REPORT_THRESHOLD && !skill.softDeletedAt
+    const updates: Partial<Doc<'skills'>> = {
+      reportCount: nextReportCount,
       lastReportedAt: now,
       updatedAt: now,
-    })
+    }
+    if (shouldAutoHide) {
+      Object.assign(updates, {
+        softDeletedAt: now,
+        moderationStatus: 'hidden',
+        moderationReason: 'auto.reports',
+        moderationNotes: 'Auto-hidden after 4 unique reports.',
+        hiddenAt: now,
+        lastReviewedAt: now,
+      })
+    }
+
+    await ctx.db.patch(skill._id, updates)
+
+    if (shouldAutoHide) {
+      const embeddings = await ctx.db
+        .query('skillEmbeddings')
+        .withIndex('by_skill', (q) => q.eq('skillId', skill._id))
+        .collect()
+      for (const embedding of embeddings) {
+        await ctx.db.patch(embedding._id, {
+          visibility: 'deleted',
+          updatedAt: now,
+        })
+      }
+
+      await ctx.db.insert('auditLogs', {
+        actorUserId: userId,
+        action: 'skill.auto_hide',
+        targetType: 'skill',
+        targetId: skill._id,
+        metadata: { reportCount: nextReportCount },
+        createdAt: now,
+      })
+    }
 
     return { ok: true as const, reported: true, alreadyReported: false }
   },
@@ -697,15 +1288,15 @@ export const listPublicPage = query({
     }
 
     const index = sortToIndex(sort)
-    const page = await ctx.db
+    const { page, isDone, continueCursor } = await ctx.db
       .query('skills')
       .withIndex(index, (q) => q)
       .order('desc')
-      .take(Math.min(limit * 5, MAX_LIST_TAKE))
+      .paginate({ cursor: args.cursor ?? null, numItems: limit })
 
-    const filtered = page.filter((skill) => !skill.softDeletedAt).slice(0, limit)
+    const filtered = page.filter((skill) => !skill.softDeletedAt)
     const items = await buildPublicSkillEntries(ctx, filtered)
-    return { items, nextCursor: null }
+    return { items, nextCursor: isDone ? null : continueCursor }
   },
 })
 
@@ -815,6 +1406,798 @@ export const getVersionById = query({
 export const getVersionByIdInternal = internalQuery({
   args: { versionId: v.id('skillVersions') },
   handler: async (ctx, args) => ctx.db.get(args.versionId),
+})
+
+export const getSkillByIdInternal = internalQuery({
+  args: { skillId: v.id('skills') },
+  handler: async (ctx, args) => ctx.db.get(args.skillId),
+})
+
+export const getPendingScanSkillsInternal = internalQuery({
+  args: { limit: v.optional(v.number()), skipRecentMinutes: v.optional(v.number()) },
+  handler: async (ctx, args) => {
+    const limit = args.limit ?? 10
+    const skipRecentMinutes = args.skipRecentMinutes ?? 60
+    const skipThreshold = Date.now() - skipRecentMinutes * 60 * 1000
+
+    // Fetch more than needed so we can randomize selection.
+    // Include newly-published skills (hidden/pending.scan), skills stuck at
+    // scanner.vt.pending, AND LLM-evaluated skills that still need VT results.
+    const poolSize = Math.min(limit * 3, 500)
+    const pendingScan = await ctx.db
+      .query('skills')
+      .filter((q) =>
+        q.and(
+          q.eq(q.field('moderationStatus'), 'hidden'),
+          q.eq(q.field('moderationReason'), 'pending.scan'),
+        ),
+      )
+      .take(poolSize)
+    const vtPending = await ctx.db
+      .query('skills')
+      .filter((q) =>
+        q.and(
+          q.eq(q.field('moderationStatus'), 'active'),
+          q.eq(q.field('moderationReason'), 'scanner.vt.pending'),
+        ),
+      )
+      .take(poolSize)
+    // LLM-evaluated skills whose VT scan hasn't completed yet
+    const llmEvaluated = await ctx.db
+      .query('skills')
+      .filter((q) =>
+        q.or(
+          q.eq(q.field('moderationReason'), 'scanner.llm.clean'),
+          q.eq(q.field('moderationReason'), 'scanner.llm.suspicious'),
+          q.eq(q.field('moderationReason'), 'scanner.llm.malicious'),
+        ),
+      )
+      .take(poolSize)
+
+    // Dedup across pools by skill ID
+    const seen = new Set<string>()
+    const allSkills: typeof pendingScan = []
+    for (const skill of [...pendingScan, ...vtPending, ...llmEvaluated]) {
+      if (!seen.has(skill._id)) {
+        seen.add(skill._id)
+        allSkills.push(skill)
+      }
+    }
+
+    // Filter out recently checked skills
+    const skills = allSkills.filter(
+      (s) => !s.scanLastCheckedAt || s.scanLastCheckedAt < skipThreshold,
+    )
+
+    // Shuffle and take the requested limit (Fisher-Yates)
+    for (let i = skills.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1))
+      ;[skills[i], skills[j]] = [skills[j], skills[i]]
+    }
+    const selected = skills.slice(0, limit)
+
+    const results: Array<{
+      skillId: Id<'skills'>
+      versionId: Id<'skillVersions'> | null
+      sha256hash: string | null
+      checkCount: number
+    }> = []
+
+    for (const skill of selected) {
+      const version = skill.latestVersionId ? await ctx.db.get(skill.latestVersionId) : null
+      // Skip skills where version already has vtAnalysis or lacks sha256hash
+      if (version?.vtAnalysis || !version?.sha256hash) continue
+      results.push({
+        skillId: skill._id,
+        versionId: version?._id ?? null,
+        sha256hash: version?.sha256hash ?? null,
+        checkCount: skill.scanCheckCount ?? 0,
+      })
+    }
+
+    return results
+  },
+})
+
+/**
+ * Health check query to monitor scan queue status
+ */
+export const getScanQueueHealthInternal = internalQuery({
+  args: {},
+  handler: async (ctx) => {
+    const pending = await ctx.db
+      .query('skills')
+      .filter((q) =>
+        q.and(
+          q.eq(q.field('moderationStatus'), 'hidden'),
+          q.eq(q.field('moderationReason'), 'pending.scan'),
+        ),
+      )
+      .collect()
+
+    const now = Date.now()
+    const oneHourAgo = now - 60 * 60 * 1000
+    const oneDayAgo = now - 24 * 60 * 60 * 1000
+
+    let staleCount = 0
+    let veryStaleCount = 0
+    let oldestTimestamp = now
+
+    for (const skill of pending) {
+      const createdAt = skill.createdAt ?? skill._creationTime
+      if (createdAt < oldestTimestamp) oldestTimestamp = createdAt
+      if (createdAt < oneHourAgo) staleCount++
+      if (createdAt < oneDayAgo) veryStaleCount++
+    }
+
+    return {
+      queueSize: pending.length,
+      staleCount, // pending > 1 hour
+      veryStaleCount, // pending > 24 hours
+      oldestAgeMinutes: Math.round((now - oldestTimestamp) / 60000),
+      healthy: pending.length < 50 && veryStaleCount === 0,
+    }
+  },
+})
+
+/**
+ * Get active skills that have a version hash but no vtAnalysis cached.
+ * Used to backfill VT results for skills approved before VT integration.
+ */
+export const getActiveSkillsMissingVTCacheInternal = internalQuery({
+  args: { limit: v.optional(v.number()) },
+  handler: async (ctx, args) => {
+    const limit = args.limit ?? 100
+    const poolSize = limit * 2 // Take more to account for some having vtAnalysis
+
+    // Skills waiting for VT + LLM-evaluated skills that still need VT cache
+    const vtPending = await ctx.db
+      .query('skills')
+      .filter((q) =>
+        q.and(
+          q.eq(q.field('moderationStatus'), 'active'),
+          q.eq(q.field('moderationReason'), 'scanner.vt.pending'),
+        ),
+      )
+      .take(poolSize)
+    const llmEvaluated = await ctx.db
+      .query('skills')
+      .filter((q) =>
+        q.or(
+          q.eq(q.field('moderationReason'), 'scanner.llm.clean'),
+          q.eq(q.field('moderationReason'), 'scanner.llm.suspicious'),
+          q.eq(q.field('moderationReason'), 'scanner.llm.malicious'),
+        ),
+      )
+      .take(poolSize)
+
+    // Dedup across pools
+    const seen = new Set<string>()
+    const allSkills: typeof vtPending = []
+    for (const skill of [...vtPending, ...llmEvaluated]) {
+      if (!seen.has(skill._id)) {
+        seen.add(skill._id)
+        allSkills.push(skill)
+      }
+    }
+
+    const results: Array<{
+      skillId: Id<'skills'>
+      versionId: Id<'skillVersions'>
+      sha256hash: string
+      slug: string
+    }> = []
+
+    for (const skill of allSkills) {
+      if (results.length >= limit) break
+      if (!skill.latestVersionId) continue
+      const version = await ctx.db.get(skill.latestVersionId)
+      if (!version) continue
+      // Include if version has hash but no vtAnalysis
+      if (version.sha256hash && !version.vtAnalysis) {
+        results.push({
+          skillId: skill._id,
+          versionId: version._id,
+          sha256hash: version.sha256hash,
+          slug: skill.slug,
+        })
+      }
+    }
+
+    return results
+  },
+})
+
+/**
+ * Get all active skills with VT analysis for daily re-scan.
+ */
+export const getAllActiveSkillsForRescanInternal = internalQuery({
+  args: {},
+  handler: async (ctx) => {
+    const activeSkills = await ctx.db
+      .query('skills')
+      .filter((q) => q.eq(q.field('moderationStatus'), 'active'))
+      .collect()
+
+    const results: Array<{
+      skillId: Id<'skills'>
+      versionId: Id<'skillVersions'>
+      sha256hash: string
+      slug: string
+    }> = []
+
+    for (const skill of activeSkills) {
+      if (!skill.latestVersionId) continue
+      const version = await ctx.db.get(skill.latestVersionId)
+      if (!version?.sha256hash) continue
+
+      results.push({
+        skillId: skill._id,
+        versionId: version._id,
+        sha256hash: version.sha256hash,
+        slug: skill.slug,
+      })
+    }
+
+    return results
+  },
+})
+
+/**
+ * Cursor-based batch query for daily rescan. Uses _creationTime for stable pagination.
+ * Returns a batch of active skills with sha256hash, plus a cursor and done flag.
+ */
+export const getActiveSkillBatchForRescanInternal = internalQuery({
+  args: {
+    cursor: v.optional(v.number()),
+    batchSize: v.optional(v.number()),
+  },
+  handler: async (ctx, args) => {
+    const batchSize = args.batchSize ?? 100
+    const cursor = args.cursor ?? 0
+
+    // Query skills created after the cursor, ordered by _creationTime (ascending for stable pagination)
+    const candidates = await ctx.db
+      .query('skills')
+      .filter((q) => q.gt(q.field('_creationTime'), cursor))
+      .order('asc')
+      .take(batchSize * 3) // Over-fetch to account for filtering
+
+    const results: Array<{
+      skillId: Id<'skills'>
+      versionId: Id<'skillVersions'>
+      sha256hash: string
+      slug: string
+    }> = []
+    let nextCursor = cursor
+
+    for (const skill of candidates) {
+      nextCursor = skill._creationTime
+      if (results.length >= batchSize) break
+
+      // Filter out soft-deleted and non-active
+      if (skill.softDeletedAt) continue
+      if ((skill.moderationStatus ?? 'active') !== 'active') continue
+      if (!skill.latestVersionId) continue
+
+      const version = await ctx.db.get(skill.latestVersionId)
+      if (!version?.sha256hash) continue
+
+      results.push({
+        skillId: skill._id,
+        versionId: version._id,
+        sha256hash: version.sha256hash,
+        slug: skill.slug,
+      })
+    }
+
+    // Done when we got fewer candidates than our over-fetch limit
+    const done = candidates.length < batchSize * 3
+
+    return { skills: results, nextCursor, done }
+  },
+})
+
+/**
+ * Get active skills whose latest version has no llmAnalysis.
+ * Used for LLM evaluation backfill. Same cursor pattern as getActiveSkillBatchForRescanInternal.
+ */
+export const getActiveSkillBatchForLlmBackfillInternal = internalQuery({
+  args: {
+    cursor: v.optional(v.number()),
+    batchSize: v.optional(v.number()),
+  },
+  handler: async (ctx, args) => {
+    const batchSize = args.batchSize ?? 10
+    const cursor = args.cursor ?? 0
+
+    const candidates = await ctx.db
+      .query('skills')
+      .filter((q) => q.gt(q.field('_creationTime'), cursor))
+      .order('asc')
+      .take(batchSize * 3)
+
+    const results: Array<{
+      skillId: Id<'skills'>
+      versionId: Id<'skillVersions'>
+      slug: string
+    }> = []
+    let nextCursor = cursor
+
+    for (const skill of candidates) {
+      nextCursor = skill._creationTime
+      if (results.length >= batchSize) break
+
+      if (skill.softDeletedAt) continue
+      if ((skill.moderationStatus ?? 'active') !== 'active') continue
+      if (!skill.latestVersionId) continue
+
+      const version = await ctx.db.get(skill.latestVersionId)
+      if (!version) continue
+      // Re-evaluate all skills (full file content reading upgrade)
+      // if (version.llmAnalysis && version.llmAnalysis.status !== 'error') continue
+
+      results.push({
+        skillId: skill._id,
+        versionId: version._id,
+        slug: skill.slug,
+      })
+    }
+
+    const done = candidates.length < batchSize * 3
+
+    return { skills: results, nextCursor, done }
+  },
+})
+
+/**
+ * Get skills with stale moderationReason that have vtAnalysis cached.
+ * Used to sync moderationReason with cached VT results.
+ */
+export const getSkillsWithStaleModerationReasonInternal = internalQuery({
+  args: { limit: v.optional(v.number()) },
+  handler: async (ctx, args) => {
+    const limit = args.limit ?? 100
+
+    // Find skills with pending-like moderationReason
+    const staleReasons = ['scanner.vt.pending', 'pending.scan']
+    const allSkills = await ctx.db
+      .query('skills')
+      .filter((q) => q.eq(q.field('moderationStatus'), 'active'))
+      .collect()
+
+    const results: Array<{
+      skillId: Id<'skills'>
+      versionId: Id<'skillVersions'>
+      slug: string
+      currentReason: string
+      vtStatus: string | null
+    }> = []
+
+    for (const skill of allSkills) {
+      if (!skill.moderationReason || !staleReasons.includes(skill.moderationReason)) continue
+      if (!skill.latestVersionId) continue
+
+      const version = await ctx.db.get(skill.latestVersionId)
+      if (!version?.vtAnalysis?.status) continue // Skip if no vtAnalysis
+
+      results.push({
+        skillId: skill._id,
+        versionId: version._id,
+        slug: skill.slug,
+        currentReason: skill.moderationReason,
+        vtStatus: version.vtAnalysis.status,
+      })
+
+      if (results.length >= limit) break
+    }
+
+    return results
+  },
+})
+
+/**
+ * Get skills with scanner.vt.pending that need reanalysis.
+ * Returns skills regardless of whether they have vtAnalysis cached.
+ */
+export const getPendingVTSkillsInternal = internalQuery({
+  args: { limit: v.optional(v.number()) },
+  handler: async (ctx, args) => {
+    const limit = args.limit ?? 100
+
+    const skills = await ctx.db
+      .query('skills')
+      .filter((q) =>
+        q.and(
+          q.eq(q.field('moderationStatus'), 'active'),
+          q.eq(q.field('moderationReason'), 'scanner.vt.pending'),
+        ),
+      )
+      .take(limit)
+
+    const results: Array<{
+      skillId: Id<'skills'>
+      versionId: Id<'skillVersions'>
+      slug: string
+      sha256hash: string
+    }> = []
+
+    for (const skill of skills) {
+      if (!skill.latestVersionId) continue
+      const version = await ctx.db.get(skill.latestVersionId)
+      if (!version?.sha256hash) continue
+
+      results.push({
+        skillId: skill._id,
+        versionId: version._id,
+        slug: skill.slug,
+        sha256hash: version.sha256hash,
+      })
+    }
+
+    return results
+  },
+})
+
+/**
+ * Update a skill's moderationReason.
+ */
+export const updateSkillModerationReasonInternal = internalMutation({
+  args: {
+    skillId: v.id('skills'),
+    moderationReason: v.string(),
+  },
+  handler: async (ctx, args) => {
+    await ctx.db.patch(args.skillId, {
+      moderationReason: args.moderationReason,
+    })
+  },
+})
+
+/**
+ * Get skills with null moderationStatus that need to be normalized.
+ */
+export const getSkillsWithNullModerationStatusInternal = internalQuery({
+  args: { limit: v.optional(v.number()) },
+  handler: async (ctx, args) => {
+    const limit = args.limit ?? 100
+    const skills = await ctx.db
+      .query('skills')
+      .filter((q) =>
+        q.and(
+          q.eq(q.field('moderationStatus'), undefined),
+          q.eq(q.field('softDeletedAt'), undefined),
+        ),
+      )
+      .take(limit)
+
+    return skills.map((s) => ({
+      skillId: s._id,
+      slug: s.slug,
+      moderationReason: s.moderationReason,
+    }))
+  },
+})
+
+/**
+ * Set moderationStatus to 'active' for a skill.
+ */
+export const setSkillModerationStatusActiveInternal = internalMutation({
+  args: { skillId: v.id('skills') },
+  handler: async (ctx, args) => {
+    await ctx.db.patch(args.skillId, {
+      moderationStatus: 'active',
+    })
+  },
+})
+
+/**
+ * Get legacy skills that are active but still have "pending.scan" reason.
+ * These need to be scanned through VT to get proper verdicts.
+ */
+export const getLegacyPendingScanSkillsInternal = internalQuery({
+  args: { limit: v.optional(v.number()) },
+  handler: async (ctx, args) => {
+    const limit = args.limit ?? 1000
+    const skills = await ctx.db
+      .query('skills')
+      .filter((q) =>
+        q.and(
+          q.eq(q.field('moderationStatus'), 'active'),
+          q.eq(q.field('moderationReason'), 'pending.scan'),
+        ),
+      )
+      .take(limit)
+
+    const results: Array<{
+      skillId: Id<'skills'>
+      versionId: Id<'skillVersions'>
+      slug: string
+      hasHash: boolean
+    }> = []
+
+    for (const skill of skills) {
+      if (!skill.latestVersionId) continue
+      const version = await ctx.db.get(skill.latestVersionId)
+      results.push({
+        skillId: skill._id,
+        versionId: version?._id ?? ('' as Id<'skillVersions'>),
+        slug: skill.slug,
+        hasHash: Boolean(version?.sha256hash),
+      })
+    }
+
+    return results
+  },
+})
+
+/**
+ * Get active skills that bypassed VT entirely (null moderationReason).
+ */
+export const getUnscannedActiveSkillsInternal = internalQuery({
+  args: { limit: v.optional(v.number()) },
+  handler: async (ctx, args) => {
+    const limit = args.limit ?? 1000
+    const skills = await ctx.db
+      .query('skills')
+      .filter((q) =>
+        q.and(
+          q.eq(q.field('moderationStatus'), 'active'),
+          q.eq(q.field('moderationReason'), undefined),
+        ),
+      )
+      .take(limit)
+
+    const results: Array<{
+      skillId: Id<'skills'>
+      versionId: Id<'skillVersions'>
+      slug: string
+    }> = []
+
+    for (const skill of skills) {
+      if (skill.softDeletedAt) continue
+      if (!skill.latestVersionId) continue
+      const version = await ctx.db.get(skill.latestVersionId)
+      results.push({
+        skillId: skill._id,
+        versionId: version?._id ?? ('' as Id<'skillVersions'>),
+        slug: skill.slug,
+      })
+    }
+
+    return results
+  },
+})
+
+/**
+ * Update scan tracking for a skill (called after each VT check)
+ */
+export const updateScanCheckInternal = internalMutation({
+  args: { skillId: v.id('skills') },
+  handler: async (ctx, args) => {
+    const skill = await ctx.db.get(args.skillId)
+    if (!skill) return
+
+    await ctx.db.patch(args.skillId, {
+      scanLastCheckedAt: Date.now(),
+      scanCheckCount: (skill.scanCheckCount ?? 0) + 1,
+    })
+  },
+})
+
+/**
+ * Mark a skill as stale after too many failed scan checks
+ * TODO: Setup webhook/notification when skills are marked stale for manual review
+ */
+export const markScanStaleInternal = internalMutation({
+  args: { skillId: v.id('skills') },
+  handler: async (ctx, args) => {
+    const skill = await ctx.db.get(args.skillId)
+    if (!skill) return
+
+    await ctx.db.patch(args.skillId, {
+      moderationReason: 'pending.scan.stale',
+      updatedAt: Date.now(),
+    })
+  },
+})
+
+export const listVersionsInternal = internalQuery({
+  args: { skillId: v.id('skills') },
+  handler: async (ctx, args) => {
+    return await ctx.db
+      .query('skillVersions')
+      .withIndex('by_skill', (q) => q.eq('skillId', args.skillId))
+      .collect()
+  },
+})
+
+export const updateVersionScanResultsInternal = internalMutation({
+  args: {
+    versionId: v.id('skillVersions'),
+    sha256hash: v.optional(v.string()),
+    vtAnalysis: v.optional(
+      v.object({
+        status: v.string(),
+        verdict: v.optional(v.string()),
+        analysis: v.optional(v.string()),
+        source: v.optional(v.string()),
+        checkedAt: v.number(),
+      }),
+    ),
+  },
+  handler: async (ctx, args) => {
+    const version = await ctx.db.get(args.versionId)
+    if (!version) return
+
+    const patch: Partial<Doc<'skillVersions'>> = {}
+    if (args.sha256hash !== undefined) {
+      patch.sha256hash = args.sha256hash
+    }
+    if (args.vtAnalysis !== undefined) {
+      patch.vtAnalysis = args.vtAnalysis
+    }
+
+    if (Object.keys(patch).length > 0) {
+      await ctx.db.patch(args.versionId, patch)
+    }
+  },
+})
+
+export const updateVersionLlmAnalysisInternal = internalMutation({
+  args: {
+    versionId: v.id('skillVersions'),
+    llmAnalysis: v.object({
+      status: v.string(),
+      verdict: v.optional(v.string()),
+      confidence: v.optional(v.string()),
+      summary: v.optional(v.string()),
+      dimensions: v.optional(
+        v.array(
+          v.object({
+            name: v.string(),
+            label: v.string(),
+            rating: v.string(),
+            detail: v.string(),
+          }),
+        ),
+      ),
+      guidance: v.optional(v.string()),
+      findings: v.optional(v.string()),
+      model: v.optional(v.string()),
+      checkedAt: v.number(),
+    }),
+  },
+  handler: async (ctx, args) => {
+    const version = await ctx.db.get(args.versionId)
+    if (!version) return
+    await ctx.db.patch(args.versionId, { llmAnalysis: args.llmAnalysis })
+  },
+})
+
+export const approveSkillByHashInternal = internalMutation({
+  args: {
+    sha256hash: v.string(),
+    scanner: v.string(),
+    status: v.string(),
+    moderationStatus: v.optional(v.union(v.literal('active'), v.literal('hidden'))),
+  },
+  handler: async (ctx, args) => {
+    const version = await ctx.db
+      .query('skillVersions')
+      .withIndex('by_sha256hash', (q) => q.eq('sha256hash', args.sha256hash))
+      .unique()
+
+    if (!version) throw new Error('Version not found for hash')
+
+    // Update the skill's moderation status based on scan result
+    const skill = await ctx.db.get(version.skillId)
+    if (skill) {
+      const isMalicious = args.status === 'malicious'
+      const isSuspicious = args.status === 'suspicious'
+      const isClean = !isMalicious && !isSuspicious
+
+      // Defense-in-depth: read existing flags to merge scanner results.
+      // The stricter verdict always wins across scanners.
+      const existingFlags: string[] = (skill.moderationFlags as string[] | undefined) ?? []
+      const existingReason: string | undefined = skill.moderationReason as string | undefined
+      const alreadyBlocked = existingFlags.includes('blocked.malware')
+      const alreadyFlagged = existingFlags.includes('flagged.suspicious')
+
+      // Determine new flags based on multi-scanner merge
+      let newFlags: string[] | undefined
+      if (isMalicious || alreadyBlocked) {
+        // Malicious from ANY scanner → blocked.malware (upgrade from suspicious)
+        newFlags = ['blocked.malware']
+      } else if (isSuspicious || alreadyFlagged) {
+        // Suspicious from ANY scanner → flagged.suspicious
+        newFlags = ['flagged.suspicious']
+      } else if (isClean) {
+        // Clean from this scanner — only clear if no other scanner has flagged
+        const otherScannerFlagged =
+          existingReason?.startsWith('scanner.') &&
+          !existingReason.startsWith(`scanner.${args.scanner}.`) &&
+          !existingReason.endsWith('.clean') &&
+          !existingReason.endsWith('.pending')
+        newFlags = otherScannerFlagged ? existingFlags : undefined
+      }
+
+      await ctx.db.patch(skill._id, {
+        moderationStatus: 'active', // Always visible for transparency
+        moderationReason: `scanner.${args.scanner}.${args.status}`,
+        moderationFlags: newFlags,
+        updatedAt: Date.now(),
+      })
+
+      // Auto-ban authors of malicious skills (skips moderators/admins)
+      if (isMalicious && skill.ownerUserId) {
+        await ctx.scheduler.runAfter(0, internal.users.autobanMalwareAuthorInternal, {
+          ownerUserId: skill.ownerUserId,
+          sha256hash: args.sha256hash,
+          slug: skill.slug,
+        })
+      }
+    }
+
+    return { ok: true, skillId: version.skillId, versionId: version._id }
+  },
+})
+
+/**
+ * Lighter VT-only escalation: adds moderation flags and hides/bans for malicious,
+ * but never touches moderationReason (preserves the LLM verdict).
+ */
+export const escalateByVtInternal = internalMutation({
+  args: {
+    sha256hash: v.string(),
+    status: v.union(v.literal('malicious'), v.literal('suspicious')),
+  },
+  handler: async (ctx, args) => {
+    const version = await ctx.db
+      .query('skillVersions')
+      .withIndex('by_sha256hash', (q) => q.eq('sha256hash', args.sha256hash))
+      .unique()
+
+    if (!version) throw new Error('Version not found for hash')
+
+    const skill = await ctx.db.get(version.skillId)
+    if (!skill) return
+
+    const isMalicious = args.status === 'malicious'
+    const existingFlags: string[] = (skill.moderationFlags as string[] | undefined) ?? []
+    const alreadyBlocked = existingFlags.includes('blocked.malware')
+
+    // Determine new flags — stricter verdict always wins
+    let newFlags: string[]
+    if (isMalicious || alreadyBlocked) {
+      newFlags = ['blocked.malware']
+    } else {
+      newFlags = ['flagged.suspicious']
+    }
+
+    const patch: Record<string, unknown> = {
+      moderationFlags: newFlags,
+      updatedAt: Date.now(),
+    }
+
+    // Only hide for malicious — suspicious stays visible with a flag
+    if (isMalicious) {
+      patch.moderationStatus = 'hidden'
+    }
+
+    await ctx.db.patch(skill._id, patch)
+
+    // Auto-ban authors of malicious skills
+    if (isMalicious && skill.ownerUserId) {
+      await ctx.scheduler.runAfter(0, internal.users.autobanMalwareAuthorInternal, {
+        ownerUserId: skill.ownerUserId,
+        sha256hash: args.sha256hash,
+        slug: skill.slug,
+      })
+    }
+
+    return { ok: true, skillId: version.skillId, versionId: version._id }
+  },
 })
 
 export const getVersionBySkillAndVersion = query({
@@ -1319,19 +2702,20 @@ export const hardDelete = mutation({
     assertAdmin(user)
     const skill = await ctx.db.get(args.skillId)
     if (!skill) throw new Error('Skill not found')
-    await hardDeleteSkill(ctx, skill, user._id)
+    await hardDeleteSkillStep(ctx, skill, user._id, 'versions')
   },
 })
 
 export const hardDeleteInternal = internalMutation({
-  args: { skillId: v.id('skills'), actorUserId: v.id('users') },
+  args: { skillId: v.id('skills'), actorUserId: v.id('users'), phase: v.optional(v.string()) },
   handler: async (ctx, args) => {
     const actor = await ctx.db.get(args.actorUserId)
     if (!actor || actor.deletedAt) throw new Error('User not found')
     assertAdmin(actor)
     const skill = await ctx.db.get(args.skillId)
-    if (!skill) throw new Error('Skill not found')
-    await hardDeleteSkill(ctx, skill, actor._id)
+    if (!skill) return
+    const phase = isHardDeletePhase(args.phase) ? args.phase : 'versions'
+    await hardDeleteSkillStep(ctx, skill, actor._id, phase)
   },
 })
 
@@ -1444,7 +2828,8 @@ export const insertVersion = internalMutation({
           official: undefined,
           deprecated: undefined,
         },
-        moderationStatus: 'active',
+        moderationStatus: 'hidden',
+        moderationReason: 'pending.scan',
         moderationFlags: moderationFlags.length ? moderationFlags : undefined,
         reportCount: 0,
         lastReportedAt: undefined,
@@ -1511,7 +2896,8 @@ export const insertVersion = internalMutation({
       tags: nextTags,
       stats: { ...skill.stats, versions: skill.stats.versions + 1 },
       softDeletedAt: undefined,
-      moderationStatus: skill.moderationStatus ?? 'active',
+      moderationStatus: 'hidden',
+      moderationReason: 'pending.scan',
       moderationFlags: moderationFlags.length ? moderationFlags : undefined,
       updatedAt: now,
     })

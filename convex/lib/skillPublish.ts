@@ -6,6 +6,7 @@ import type { ActionCtx, MutationCtx } from '../_generated/server'
 import { getSkillBadgeMap, isSkillHighlighted } from './badges'
 import { generateChangelogForPublish } from './changelog'
 import { generateEmbedding } from './embeddings'
+import { requireGitHubAccountAge } from './githubAccount'
 import type { PublicUser } from './public'
 import {
   buildEmbeddingText,
@@ -67,6 +68,9 @@ export async function publishVersionForUser(
   if (!semver.valid(version)) {
     throw new ConvexError('Version must be valid semver')
   }
+
+  await requireGitHubAccountAge(ctx, userId)
+
   const suppliedChangelog = args.changelog.trim()
   const changelogSource = suppliedChangelog ? ('user' as const) : ('auto' as const)
 
@@ -165,6 +169,14 @@ export async function publishVersionForUser(
     },
     embedding,
   })) as PublishResult
+
+  await ctx.scheduler.runAfter(0, internal.vt.scanWithVirusTotal, {
+    versionId: publishResult.versionId,
+  })
+
+  await ctx.scheduler.runAfter(0, internal.llmEval.evaluateWithLlm, {
+    versionId: publishResult.versionId,
+  })
 
   const owner = (await ctx.runQuery(internal.users.getByIdInternal, {
     userId,
