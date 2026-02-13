@@ -5,7 +5,7 @@ import { action, internalQuery } from './_generated/server'
 import { getSkillBadgeMaps, isSkillHighlighted, type SkillBadgeMap } from './lib/badges'
 import { generateEmbedding } from './lib/embeddings'
 import { toPublicSkill, toPublicSoul } from './lib/public'
-import { matchesExactTokens, tokenize } from './lib/searchText'
+import { matchesExactTokens, scoreTokenMatch, tokenize } from './lib/searchText'
 import { isSkillSuspicious } from './lib/skillSafety'
 
 type SkillSearchEntry = {
@@ -17,10 +17,11 @@ type SkillSearchEntry = {
 
 type SearchResult = SkillSearchEntry & { score: number }
 
-const SLUG_EXACT_BOOST = 1.4
-const SLUG_PREFIX_BOOST = 0.8
-const NAME_EXACT_BOOST = 1.1
-const NAME_PREFIX_BOOST = 0.6
+const SLUG_EXACT_BOOST = 3.0
+const SLUG_PREFIX_BOOST = 1.5
+const NAME_EXACT_BOOST = 2.5
+const NAME_PREFIX_BOOST = 1.2
+const SUMMARY_MATCH_WEIGHT = 0.3
 const POPULARITY_WEIGHT = 0.08
 const FALLBACK_SCAN_LIMIT = 1200
 
@@ -70,10 +71,14 @@ function scoreSkillResult(
   displayName: string,
   slug: string,
   downloads: number,
+  summary?: string,
 ) {
   const lexicalBoost = getLexicalBoost(queryTokens, displayName, slug)
+  const summaryScore = summary
+    ? scoreTokenMatch(queryTokens, [summary]) * SUMMARY_MATCH_WEIGHT
+    : 0
   const popularityBoost = Math.log1p(Math.max(downloads, 0)) * POPULARITY_WEIGHT
-  return vectorScore + lexicalBoost + popularityBoost
+  return vectorScore + lexicalBoost + summaryScore + popularityBoost
 }
 
 function mergeUniqueBySkillId(primary: SkillSearchEntry[], fallback: SkillSearchEntry[]) {
@@ -188,6 +193,7 @@ export const searchSkills: ReturnType<typeof action> = action({
             entry.skill.displayName,
             entry.skill.slug,
             entry.skill.stats.downloads,
+            entry.skill.summary,
           ),
         }
       })
