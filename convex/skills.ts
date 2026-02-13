@@ -3172,6 +3172,7 @@ export const insertVersion = internalMutation({
     }
 
     const latestBefore = skill.latestVersionId
+    const isUpdate = Boolean(latestBefore)
 
     const nextSummary =
       args.summary ?? getFrontmatterValue(args.parsed.frontmatter, 'description') ?? skill.summary
@@ -3181,6 +3182,13 @@ export const insertVersion = internalMutation({
       files: args.files,
     })
 
+    // For updates to existing skills, preserve the current moderation status
+    // Only new skills start as hidden pending scan
+    const shouldPreserveStatus = isUpdate && skill.moderationStatus === 'active'
+    const nextModerationStatus = shouldPreserveStatus ? skill.moderationStatus : 'hidden'
+    const nextModerationReason = shouldPreserveStatus ? skill.moderationReason : moderationReason
+    const nextModerationNotes = shouldPreserveStatus ? skill.moderationNotes : moderationNotes
+
     await ctx.db.patch(skill._id, {
       displayName: args.displayName,
       summary: nextSummary ?? undefined,
@@ -3188,9 +3196,9 @@ export const insertVersion = internalMutation({
       tags: nextTags,
       stats: { ...skill.stats, versions: skill.stats.versions + 1 },
       softDeletedAt: undefined,
-      moderationStatus: 'hidden',
-      moderationReason,
-      moderationNotes,
+      moderationStatus: nextModerationStatus,
+      moderationReason: nextModerationReason,
+      moderationNotes: nextModerationNotes,
       quality: qualityRecord ?? skill.quality,
       moderationFlags: moderationFlags.length ? moderationFlags : undefined,
       updatedAt: now,
