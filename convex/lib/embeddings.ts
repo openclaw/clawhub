@@ -12,27 +12,56 @@ export async function generateEmbedding(text: string) {
     return emptyEmbedding()
   }
 
-  const response = await fetch('https://api.openai.com/v1/embeddings', {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      Authorization: `Bearer ${apiKey}`,
-    },
-    body: JSON.stringify({
-      model: EMBEDDING_MODEL,
-      input: text,
-    }),
-  })
+  const maxRetries = 3
+  const baseDelay = 1000
 
-  if (!response.ok) {
-    const message = await response.text()
-    throw new Error(`Embedding failed: ${message}`)
+  for (let attempt = 0; attempt <= maxRetries; attempt++) {
+    try {
+      const response = await fetch('https://api.openai.com/v1/embeddings', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${apiKey}`,
+        },
+        body: JSON.stringify({
+          model: EMBEDDING_MODEL,
+          input: text,
+        }),
+      })
+
+      if (!response.ok) {
+        const message = await response.text()
+        const isRateLimit = response.status === 429
+        const isServerError = response.status >= 500
+
+        if ((isRateLimit || isServerError) && attempt < maxRetries) {
+          const delay = baseDelay * Math.pow(2, attempt)
+          console.warn(
+            `OpenAI API error (${response.status}), retrying in ${delay}ms (attempt ${attempt + 1}/${maxRetries})`,
+          )
+          await new Promise((resolve) => setTimeout(resolve, delay))
+          continue
+        }
+
+        throw new Error(`Embedding failed: ${message}`)
+      }
+
+      const payload = (await response.json()) as {
+        data?: Array<{ embedding: number[] }>
+      }
+      const embedding = payload.data?.[0]?.embedding
+      if (!embedding) throw new Error('Embedding missing from response')
+      return embedding
+    } catch (error) {
+      if (attempt < maxRetries && error instanceof Error && error.message.includes('fetch')) {
+        const delay = baseDelay * Math.pow(2, attempt)
+        console.warn(`Network error, retrying in ${delay}ms (attempt ${attempt + 1}/${maxRetries})`)
+        await new Promise((resolve) => setTimeout(resolve, delay))
+        continue
+      }
+      throw error
+    }
   }
 
-  const payload = (await response.json()) as {
-    data?: Array<{ embedding: number[] }>
-  }
-  const embedding = payload.data?.[0]?.embedding
-  if (!embedding) throw new Error('Embedding missing from response')
-  return embedding
+  throw new Error('Embedding failed after retries')
 }
