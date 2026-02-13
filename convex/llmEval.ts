@@ -16,6 +16,37 @@ import {
 // Helpers
 // ---------------------------------------------------------------------------
 
+/**
+ * Check if a file path is a test file that should be excluded from security scanning.
+ * Test files often contain malicious code patterns for testing purposes (e.g., security skills).
+ */
+function isTestFile(path: string): boolean {
+  const lower = path.toLowerCase()
+
+  // Common test file patterns
+  if (lower.endsWith('.test.ts')) return true
+  if (lower.endsWith('.test.js')) return true
+  if (lower.endsWith('.test.tsx')) return true
+  if (lower.endsWith('.test.jsx')) return true
+  if (lower.endsWith('.spec.ts')) return true
+  if (lower.endsWith('.spec.js')) return true
+  if (lower.endsWith('.spec.tsx')) return true
+  if (lower.endsWith('.spec.jsx')) return true
+
+  // Common test directories
+  const parts = path.split('/')
+  for (const part of parts) {
+    const lowerPart = part.toLowerCase()
+    if (lowerPart === '__tests__') return true
+    if (lowerPart === 'tests') return true
+    if (lowerPart === 'test') return true
+    if (lowerPart === '__mocks__') return true
+    if (lowerPart === 'mocks') return true
+  }
+
+  return false
+}
+
 function extractResponseText(payload: unknown): string | null {
   if (!payload || typeof payload !== 'object') return null
   const output = (payload as { output?: unknown }).output
@@ -120,11 +151,15 @@ export const evaluateWithLlm = internalAction({
       return
     }
 
-    // 4. Read all file contents
+    // 4. Read all file contents (excluding test files)
     const fileContents: Array<{ path: string; content: string }> = []
     for (const f of version.files) {
       const lower = f.path.toLowerCase()
       if (lower === 'skill.md' || lower === 'skills.md') continue
+
+      // Skip test files to avoid false positives from test code
+      if (isTestFile(f.path)) continue
+
       try {
         const blob = await ctx.storage.get(f.storageId as Id<'_storage'>)
         if (blob) {
