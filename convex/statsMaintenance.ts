@@ -280,10 +280,10 @@ export const runReconcileSkillStarCountsInternal = internalAction({
     let totalPatched = 0
 
     for (let i = 0; i < maxBatches; i++) {
-      const result = (await ctx.runMutation(
-        internal.statsMaintenance.reconcileSkillStarCounts,
-        { cursor, batchSize },
-      )) as { scanned: number; patched: number; cursor: string | null; isDone: boolean }
+      const result = (await ctx.runMutation(internal.statsMaintenance.reconcileSkillStarCounts, {
+        cursor,
+        batchSize,
+      })) as { scanned: number; patched: number; cursor: string | null; isDone: boolean }
 
       totalScanned += result.scanned
       totalPatched += result.patched
