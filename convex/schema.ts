@@ -113,7 +113,11 @@ const skills = defineTable({
   .index('by_active_name', ['softDeletedAt', 'displayName'])
   .index('by_active_stats_downloads', ['softDeletedAt', 'statsDownloads', 'updatedAt'])
   .index('by_active_stats_stars', ['softDeletedAt', 'statsStars', 'updatedAt'])
-  .index('by_active_stats_installs_all_time', ['softDeletedAt', 'statsInstallsAllTime', 'updatedAt'])
+  .index('by_active_stats_installs_all_time', [
+    'softDeletedAt',
+    'statsInstallsAllTime',
+    'updatedAt',
+  ])
   .index('by_canonical', ['canonicalSkillId'])
   .index('by_fork_of', ['forkOf.skillId'])
 
