@@ -222,6 +222,15 @@ describe('cmdInstall', () => {
 })
 
 describe('cmdUninstall', () => {
+  it('requires --yes when input is disabled', async () => {
+    vi.mocked(readLockfile).mockResolvedValue({
+      version: 1,
+      skills: { demo: { version: '1.0.0', installedAt: 123 } },
+    })
+
+    await expect(cmdUninstall(makeOpts(), 'demo', {}, false)).rejects.toThrow(/--yes/i)
+  })
+
   it('fails when skill is not installed', async () => {
     vi.mocked(readLockfile).mockResolvedValue({ version: 1, skills: {} })
 

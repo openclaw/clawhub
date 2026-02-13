@@ -310,7 +310,8 @@ export async function cmdUninstall(
   }
 
   const allowPrompt = isInteractive() && inputAllowed !== false
-  if (!options.yes && allowPrompt) {
+  if (!options.yes) {
+    if (!allowPrompt) fail('Pass --yes (no input)')
     const confirm = await promptConfirm(`Uninstall ${trimmed}?`)
     if (!confirm) {
       console.log('Cancelled.')
@@ -321,10 +322,11 @@ export async function cmdUninstall(
   const spinner = createSpinner(`Uninstalling ${trimmed}`)
   try {
     const target = join(opts.dir, trimmed)
-    await rm(target, { recursive: true, force: true })
 
     delete lock.skills[trimmed]
     await writeLockfile(opts.workdir, lock)
+
+    await rm(target, { recursive: true, force: true })
 
     spinner.succeed(`Uninstalled ${trimmed}`)
   } catch (error) {
