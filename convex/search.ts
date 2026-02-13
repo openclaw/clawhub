@@ -2,21 +2,89 @@ import { v } from 'convex/values'
 import { internal } from './_generated/api'
 import type { Doc, Id } from './_generated/dataModel'
 import { action, internalQuery } from './_generated/server'
+import { getSkillBadgeMaps, isSkillHighlighted, type SkillBadgeMap } from './lib/badges'
 import { generateEmbedding } from './lib/embeddings'
+import { toPublicSkill, toPublicSoul } from './lib/public'
 import { matchesExactTokens, tokenize } from './lib/searchText'
 
-type HydratedEntry = {
-  embeddingId: Id<'skillEmbeddings'>
-  skill: Doc<'skills'> | null
+type SkillSearchEntry = {
+  embeddingId?: Id<'skillEmbeddings'>
+  skill: NonNullable<ReturnType<typeof toPublicSkill>>
   version: Doc<'skillVersions'> | null
   ownerHandle: string | null
 }
 
-type SearchResult = HydratedEntry & { score: number }
+type SearchResult = SkillSearchEntry & { score: number }
+
+const SLUG_EXACT_BOOST = 1.4
+const SLUG_PREFIX_BOOST = 0.8
+const NAME_EXACT_BOOST = 1.1
+const NAME_PREFIX_BOOST = 0.6
+const POPULARITY_WEIGHT = 0.08
+const FALLBACK_SCAN_LIMIT = 1200
 
 function getNextCandidateLimit(current: number, max: number) {
   const next = Math.min(current * 2, max)
   return next > current ? next : null
+}
+
+function matchesAllTokens(
+  queryTokens: string[],
+  candidateTokens: string[],
+  matcher: (candidate: string, query: string) => boolean,
+) {
+  if (queryTokens.length === 0 || candidateTokens.length === 0) return false
+  return queryTokens.every((queryToken) =>
+    candidateTokens.some((candidateToken) => matcher(candidateToken, queryToken)),
+  )
+}
+
+function getLexicalBoost(queryTokens: string[], displayName: string, slug: string) {
+  const slugTokens = tokenize(slug)
+  const nameTokens = tokenize(displayName)
+
+  let boost = 0
+  if (matchesAllTokens(queryTokens, slugTokens, (candidate, query) => candidate === query)) {
+    boost += SLUG_EXACT_BOOST
+  } else if (
+    matchesAllTokens(queryTokens, slugTokens, (candidate, query) => candidate.startsWith(query))
+  ) {
+    boost += SLUG_PREFIX_BOOST
+  }
+
+  if (matchesAllTokens(queryTokens, nameTokens, (candidate, query) => candidate === query)) {
+    boost += NAME_EXACT_BOOST
+  } else if (
+    matchesAllTokens(queryTokens, nameTokens, (candidate, query) => candidate.startsWith(query))
+  ) {
+    boost += NAME_PREFIX_BOOST
+  }
+
+  return boost
+}
+
+function scoreSkillResult(
+  queryTokens: string[],
+  vectorScore: number,
+  displayName: string,
+  slug: string,
+  downloads: number,
+) {
+  const lexicalBoost = getLexicalBoost(queryTokens, displayName, slug)
+  const popularityBoost = Math.log1p(Math.max(downloads, 0)) * POPULARITY_WEIGHT
+  return vectorScore + lexicalBoost + popularityBoost
+}
+
+function mergeUniqueBySkillId(primary: SkillSearchEntry[], fallback: SkillSearchEntry[]) {
+  if (fallback.length === 0) return primary
+  const out = [...primary]
+  const seen = new Set(primary.map((entry) => entry.skill._id))
+  for (const entry of fallback) {
+    if (seen.has(entry.skill._id)) continue
+    seen.add(entry.skill._id)
+    out.push(entry)
+  }
+  return out
 }
 
 export const searchSkills: ReturnType<typeof action> = action({
@@ -41,9 +109,9 @@ export const searchSkills: ReturnType<typeof action> = action({
     // Convex vectorSearch max limit is 256; clamp candidate sizes accordingly.
     const maxCandidate = Math.min(Math.max(limit * 10, 200), 256)
     let candidateLimit = Math.min(Math.max(limit * 3, 50), 256)
-    let hydrated: HydratedEntry[] = []
+    let hydrated: SkillSearchEntry[] = []
     let scoreById = new Map<Id<'skillEmbeddings'>, number>()
-    let exactMatches: HydratedEntry[] = []
+    let exactMatches: SkillSearchEntry[] = []
 
     while (candidateLimit <= maxCandidate) {
       const results = await ctx.vectorSearch('skillEmbeddings', 'by_embedding', {
@@ -54,21 +122,33 @@ export const searchSkills: ReturnType<typeof action> = action({
 
       hydrated = (await ctx.runQuery(internal.search.hydrateResults, {
         embeddingIds: results.map((result) => result._id),
-      })) as HydratedEntry[]
+      })) as SkillSearchEntry[]
 
       scoreById = new Map<Id<'skillEmbeddings'>, number>(
         results.map((result) => [result._id, result._score]),
       )
 
+      const badgeMapEntries = (await ctx.runQuery(internal.search.getSkillBadgeMapsInternal, {
+        skillIds: hydrated.map((entry) => entry.skill._id),
+      })) as Array<[Id<'skills'>, SkillBadgeMap]>
+      const badgeMapBySkillId = new Map(badgeMapEntries)
+      const hydratedWithBadges = hydrated.map((entry) => ({
+        ...entry,
+        skill: {
+          ...entry.skill,
+          badges: badgeMapBySkillId.get(entry.skill._id) ?? {},
+        },
+      }))
+
       const filtered = args.highlightedOnly
-        ? hydrated.filter((entry) => entry.skill?.batch === 'highlighted')
-        : hydrated
+        ? hydratedWithBadges.filter((entry) => isSkillHighlighted(entry.skill))
+        : hydratedWithBadges
 
       exactMatches = filtered.filter((entry) =>
         matchesExactTokens(queryTokens, [
-          entry.skill?.displayName,
-          entry.skill?.slug,
-          entry.skill?.summary,
+          entry.skill.displayName,
+          entry.skill.slug,
+          entry.skill.summary,
         ]),
       )
 
@@ -81,19 +161,49 @@ export const searchSkills: ReturnType<typeof action> = action({
       candidateLimit = nextLimit
     }
 
-    return exactMatches
-      .map((entry) => ({
-        ...entry,
-        score: scoreById.get(entry.embeddingId) ?? 0,
-      }))
+    const fallbackMatches =
+      exactMatches.length >= limit
+        ? []
+        : ((await ctx.runQuery(internal.search.lexicalFallbackSkills, {
+            query,
+            queryTokens,
+            limit: Math.min(Math.max(limit * 4, 200), FALLBACK_SCAN_LIMIT),
+            highlightedOnly: args.highlightedOnly,
+          })) as SkillSearchEntry[])
+
+    const mergedMatches = mergeUniqueBySkillId(exactMatches, fallbackMatches)
+
+    return mergedMatches
+      .map((entry) => {
+        const vectorScore = entry.embeddingId ? (scoreById.get(entry.embeddingId) ?? 0) : 0
+        return {
+          ...entry,
+          score: scoreSkillResult(
+            queryTokens,
+            vectorScore,
+            entry.skill.displayName,
+            entry.skill.slug,
+            entry.skill.stats.downloads,
+          ),
+        }
+      })
       .filter((entry) => entry.skill)
+      .sort((a, b) => b.score - a.score || b.skill.stats.downloads - a.skill.stats.downloads)
       .slice(0, limit)
+  },
+})
+
+export const getBadgeMapsForSkills = internalQuery({
+  args: { skillIds: v.array(v.id('skills')) },
+  handler: async (ctx, args): Promise<Array<[Id<'skills'>, SkillBadgeMap]>> => {
+    const badgeMap = await getSkillBadgeMaps(ctx, args.skillIds)
+    return Array.from(badgeMap.entries())
   },
 })
 
 export const hydrateResults = internalQuery({
   args: { embeddingIds: v.array(v.id('skillEmbeddings')) },
-  handler: async (ctx, args): Promise<HydratedEntry[]> => {
+  handler: async (ctx, args): Promise<SkillSearchEntry[]> => {
     const ownerHandleCache = new Map<Id<'users'>, Promise<string | null>>()
 
     const getOwnerHandle = (ownerUserId: Id<'users'>) => {
@@ -116,17 +226,104 @@ export const hydrateResults = internalQuery({
           ctx.db.get(embedding.versionId),
           getOwnerHandle(skill.ownerUserId),
         ])
-        return { embeddingId, skill, version, ownerHandle }
+        const publicSkill = toPublicSkill(skill)
+        if (!publicSkill) return null
+        return { embeddingId, skill: publicSkill, version, ownerHandle }
       }),
     )
 
-    return entries.filter((entry): entry is HydratedEntry => entry !== null)
+    return entries.filter((entry): entry is SkillSearchEntry => entry !== null)
+  },
+})
+
+export const lexicalFallbackSkills = internalQuery({
+  args: {
+    query: v.string(),
+    queryTokens: v.array(v.string()),
+    limit: v.optional(v.number()),
+    highlightedOnly: v.optional(v.boolean()),
+  },
+  handler: async (ctx, args): Promise<SkillSearchEntry[]> => {
+    const limit = Math.min(Math.max(args.limit ?? 200, 10), FALLBACK_SCAN_LIMIT)
+    const seenSkillIds = new Set<Id<'skills'>>()
+    const candidateSkills: Doc<'skills'>[] = []
+
+    const slugQuery = args.query.trim().toLowerCase()
+    if (/^[a-z0-9][a-z0-9-]*$/.test(slugQuery)) {
+      const exactSlugSkill = await ctx.db
+        .query('skills')
+        .withIndex('by_slug', (q) => q.eq('slug', slugQuery))
+        .unique()
+      if (exactSlugSkill && !exactSlugSkill.softDeletedAt) {
+        seenSkillIds.add(exactSlugSkill._id)
+        candidateSkills.push(exactSlugSkill)
+      }
+    }
+
+    const recentSkills = await ctx.db
+      .query('skills')
+      .withIndex('by_active_updated', (q) => q.eq('softDeletedAt', undefined))
+      .order('desc')
+      .take(FALLBACK_SCAN_LIMIT)
+
+    for (const skill of recentSkills) {
+      if (seenSkillIds.has(skill._id)) continue
+      seenSkillIds.add(skill._id)
+      candidateSkills.push(skill)
+    }
+
+    const matched = candidateSkills.filter((skill) =>
+      matchesExactTokens(args.queryTokens, [skill.displayName, skill.slug, skill.summary]),
+    )
+    if (matched.length === 0) return []
+
+    const ownerHandleCache = new Map<Id<'users'>, Promise<string | null>>()
+    const getOwnerHandle = (ownerUserId: Id<'users'>) => {
+      const cached = ownerHandleCache.get(ownerUserId)
+      if (cached) return cached
+      const handlePromise = ctx.db
+        .get(ownerUserId)
+        .then((owner) => owner?.handle ?? owner?._id ?? null)
+      ownerHandleCache.set(ownerUserId, handlePromise)
+      return handlePromise
+    }
+
+    const entries = await Promise.all(
+      matched.map(async (skill) => {
+        const [version, ownerHandle] = await Promise.all([
+          skill.latestVersionId ? ctx.db.get(skill.latestVersionId) : Promise.resolve(null),
+          getOwnerHandle(skill.ownerUserId),
+        ])
+        const publicSkill = toPublicSkill(skill)
+        if (!publicSkill) return null
+        return { skill: publicSkill, version, ownerHandle }
+      }),
+    )
+    const validEntries = entries.filter((entry): entry is SkillSearchEntry => entry !== null)
+    if (validEntries.length === 0) return []
+
+    const badgeMap = await getSkillBadgeMaps(
+      ctx,
+      validEntries.map((entry) => entry.skill._id),
+    )
+    const withBadges = validEntries.map((entry) => ({
+      ...entry,
+      skill: {
+        ...entry.skill,
+        badges: badgeMap.get(entry.skill._id) ?? {},
+      },
+    }))
+
+    const filtered = args.highlightedOnly
+      ? withBadges.filter((entry) => isSkillHighlighted(entry.skill))
+      : withBadges
+    return filtered.slice(0, limit)
   },
 })
 
 type HydratedSoulEntry = {
   embeddingId: Id<'soulEmbeddings'>
-  soul: Doc<'souls'> | null
+  soul: NonNullable<ReturnType<typeof toPublicSoul>>
   version: Doc<'soulVersions'> | null
 }
 
@@ -174,9 +371,9 @@ export const searchSouls: ReturnType<typeof action> = action({
 
       exactMatches = hydrated.filter((entry) =>
         matchesExactTokens(queryTokens, [
-          entry.soul?.displayName,
-          entry.soul?.slug,
-          entry.soul?.summary,
+          entry.soul.displayName,
+          entry.soul.slug,
+          entry.soul.summary,
         ]),
       )
 
@@ -210,11 +407,27 @@ export const hydrateSoulResults = internalQuery({
       const soul = await ctx.db.get(embedding.soulId)
       if (soul?.softDeletedAt) continue
       const version = await ctx.db.get(embedding.versionId)
-      entries.push({ embeddingId, soul, version })
+      const publicSoul = toPublicSoul(soul)
+      if (!publicSoul) continue
+      entries.push({ embeddingId, soul: publicSoul, version })
     }
 
     return entries
   },
 })
 
-export const __test = { getNextCandidateLimit }
+export const getSkillBadgeMapsInternal = internalQuery({
+  args: { skillIds: v.array(v.id('skills')) },
+  handler: async (ctx, args) => {
+    const badgeMap = await getSkillBadgeMaps(ctx, args.skillIds)
+    return Array.from(badgeMap.entries())
+  },
+})
+
+export const __test = {
+  getNextCandidateLimit,
+  matchesAllTokens,
+  getLexicalBoost,
+  scoreSkillResult,
+  mergeUniqueBySkillId,
+}

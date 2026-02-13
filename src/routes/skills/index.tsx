@@ -1,12 +1,23 @@
 import { createFileRoute, Link } from '@tanstack/react-router'
-import { useAction, useQuery } from 'convex/react'
+import { useAction } from 'convex/react'
+import { usePaginatedQuery } from 'convex-helpers/react'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { api } from '../../../convex/_generated/api'
 import type { Doc } from '../../../convex/_generated/dataModel'
 import { SkillCard } from '../../components/SkillCard'
+import { getSkillBadges, isSkillHighlighted } from '../../lib/badges'
+import type { PublicSkill } from '../../lib/publicUser'
 
-const sortKeys = ['newest', 'downloads', 'installs', 'stars', 'name', 'updated'] as const
-const pageSize = 50
+const sortKeys = [
+  'relevance',
+  'newest',
+  'downloads',
+  'installs',
+  'stars',
+  'name',
+  'updated',
+] as const
+const pageSize = 25
 type SortKey = (typeof sortKeys)[number]
 type SortDir = 'asc' | 'desc'
 
@@ -22,20 +33,21 @@ function parseDir(value: unknown, sort: SortKey): SortDir {
 }
 
 type SkillListEntry = {
-  skill: Doc<'skills'>
+  skill: PublicSkill
   latestVersion: Doc<'skillVersions'> | null
   ownerHandle?: string | null
+  searchScore?: number
 }
 
 type SkillSearchEntry = {
-  skill: Doc<'skills'>
+  skill: PublicSkill
   version: Doc<'skillVersions'> | null
   score: number
   ownerHandle?: string | null
 }
 
-function buildSkillHref(skill: Doc<'skills'>, ownerHandle?: string | null) {
-  const owner = ownerHandle ?? 'unknown'
+function buildSkillHref(skill: PublicSkill, ownerHandle?: string | null) {
+  const owner = ownerHandle?.trim() || String(skill.ownerUserId)
   return `/${encodeURIComponent(owner)}/${encodeURIComponent(skill.slug)}`
 }
 
@@ -50,6 +62,7 @@ export const Route = createFileRoute('/skills/')({
           ? true
           : undefined,
       view: search.view === 'cards' || search.view === 'list' ? search.view : undefined,
+      focus: search.focus === 'search' ? 'search' : undefined,
     }
   },
   component: SkillsIndex,
@@ -58,52 +71,54 @@ export const Route = createFileRoute('/skills/')({
 export function SkillsIndex() {
   const navigate = Route.useNavigate()
   const search = Route.useSearch()
-  const sort = search.sort ?? 'newest'
-  const dir = parseDir(search.dir, sort)
+  const [query, setQuery] = useState(search.q ?? '')
   const view = search.view ?? 'list'
   const highlightedOnly = search.highlighted ?? false
-  const [query, setQuery] = useState(search.q ?? '')
   const searchSkills = useAction(api.search.searchSkills)
-  const [pages, setPages] = useState<Array<SkillListEntry>>([])
-  const [cursor, setCursor] = useState<string | null>(null)
-  const [nextCursor, setNextCursor] = useState<string | null>(null)
   const [searchResults, setSearchResults] = useState<Array<SkillSearchEntry>>([])
   const [searchLimit, setSearchLimit] = useState(pageSize)
   const [isSearching, setIsSearching] = useState(false)
   const searchRequest = useRef(0)
   const loadMoreRef = useRef<HTMLDivElement | null>(null)
+  const loadMoreInFlightRef = useRef(false)
 
+  const searchInputRef = useRef<HTMLInputElement>(null)
   const trimmedQuery = useMemo(() => query.trim(), [query])
   const hasQuery = trimmedQuery.length > 0
+  const sort =
+    search.sort === 'relevance' && !hasQuery
+      ? 'newest'
+      : (search.sort ?? (hasQuery ? 'relevance' : 'newest'))
+  const dir = parseDir(search.dir, sort)
   const searchKey = trimmedQuery ? `${trimmedQuery}::${highlightedOnly ? '1' : '0'}` : ''
 
-  const listPage = useQuery(
-    api.skills.listPublicPage,
-    hasQuery ? 'skip' : { cursor: cursor ?? undefined, limit: pageSize },
-  ) as
-    | {
-        items: Array<SkillListEntry>
-        nextCursor: string | null
-      }
-    | undefined
-  const isLoadingList = !hasQuery && pages.length === 0 && listPage === undefined
+  // Use convex-helpers usePaginatedQuery for better cache behavior
+  const {
+    results: paginatedResults,
+    status: paginationStatus,
+    loadMore: loadMorePaginated,
+  } = usePaginatedQuery(api.skills.listPublicPageV2, hasQuery ? 'skip' : { sort, dir }, {
+    initialNumItems: pageSize,
+  })
+
+  // Derive loading states from pagination status
+  // status: 'LoadingFirstPage' | 'CanLoadMore' | 'LoadingMore' | 'Exhausted'
+  const isLoadingList = paginationStatus === 'LoadingFirstPage'
+  const canLoadMoreList = paginationStatus === 'CanLoadMore'
+  const isLoadingMoreList = paginationStatus === 'LoadingMore'
 
   useEffect(() => {
     setQuery(search.q ?? '')
   }, [search.q])
 
+  // Auto-focus search input when focus=search param is present
   useEffect(() => {
-    if (hasQuery) return
-    setPages([])
-    setCursor(null)
-    setNextCursor(null)
-  }, [hasQuery])
-
-  useEffect(() => {
-    if (hasQuery || !listPage) return
-    setNextCursor(listPage.nextCursor)
-    setPages((prev) => (cursor ? [...prev, ...listPage.items] : listPage.items))
-  }, [cursor, hasQuery, listPage])
+    if (search.focus === 'search' && searchInputRef.current) {
+      searchInputRef.current.focus()
+      // Clear the focus param from URL to avoid re-focusing on navigation
+      void navigate({ search: (prev) => ({ ...prev, focus: undefined }), replace: true })
+    }
+  }, [search.focus, navigate])
 
   useEffect(() => {
     if (!searchKey) {
@@ -147,14 +162,15 @@ export function SkillsIndex() {
         skill: entry.skill,
         latestVersion: entry.version,
         ownerHandle: entry.ownerHandle ?? null,
+        searchScore: entry.score,
       }))
     }
-    return pages
-  }, [hasQuery, pages, searchResults])
+    // paginatedResults is an array of page items from usePaginatedQuery
+    return paginatedResults as Array<SkillListEntry>
+  }, [hasQuery, paginatedResults, searchResults])
 
   const filtered = useMemo(
-    () =>
-      baseItems.filter((entry) => (highlightedOnly ? entry.skill.batch === 'highlighted' : true)),
+    () => baseItems.filter((entry) => (highlightedOnly ? isSkillHighlighted(entry.skill) : true)),
     [baseItems, highlightedOnly],
   )
 
@@ -163,6 +179,8 @@ export function SkillsIndex() {
     const results = [...filtered]
     results.sort((a, b) => {
       switch (sort) {
+        case 'relevance':
+          return ((a.searchScore ?? 0) - (b.searchScore ?? 0)) * multiplier
         case 'downloads':
           return (a.skill.stats.downloads - b.skill.stats.downloads) * multiplier
         case 'installs':
@@ -189,20 +207,25 @@ export function SkillsIndex() {
   const isLoadingSkills = hasQuery ? isSearching && searchResults.length === 0 : isLoadingList
   const canLoadMore = hasQuery
     ? !isSearching && searchResults.length === searchLimit && searchResults.length > 0
-    : nextCursor !== null
-  const isLoadingMore = hasQuery
-    ? isSearching && searchResults.length > 0
-    : listPage === undefined && pages.length > 0
+    : canLoadMoreList
+  const isLoadingMore = hasQuery ? isSearching && searchResults.length > 0 : isLoadingMoreList
   const canAutoLoad = typeof IntersectionObserver !== 'undefined'
 
   const loadMore = useCallback(() => {
-    if (isLoadingMore || !canLoadMore) return
+    if (loadMoreInFlightRef.current || isLoadingMore || !canLoadMore) return
+    loadMoreInFlightRef.current = true
     if (hasQuery) {
       setSearchLimit((value) => value + pageSize)
-    } else if (nextCursor) {
-      setCursor(nextCursor)
+    } else {
+      loadMorePaginated(pageSize)
     }
-  }, [canLoadMore, hasQuery, isLoadingMore, nextCursor])
+  }, [canLoadMore, hasQuery, isLoadingMore, loadMorePaginated])
+
+  useEffect(() => {
+    if (!isLoadingMore) {
+      loadMoreInFlightRef.current = false
+    }
+  }, [isLoadingMore])
 
   useEffect(() => {
     if (!canLoadMore || typeof IntersectionObserver === 'undefined') return
@@ -211,6 +234,7 @@ export function SkillsIndex() {
     const observer = new IntersectionObserver(
       (entries) => {
         if (entries.some((entry) => entry.isIntersecting)) {
+          observer.disconnect()
           loadMore()
         }
       },
@@ -236,6 +260,7 @@ export function SkillsIndex() {
         <div className="skills-toolbar">
           <div className="skills-search">
             <input
+              ref={searchInputRef}
               className="skills-search-input"
               value={query}
               onChange={(event) => {
@@ -283,6 +308,7 @@ export function SkillsIndex() {
               }}
               aria-label="Sort skills"
             >
+              {hasQuery ? <option value="relevance">Relevance</option> : null}
               <option value="newest">Newest</option>
               <option value="updated">Recently updated</option>
               <option value="downloads">Downloads</option>
@@ -342,7 +368,7 @@ export function SkillsIndex() {
                 key={skill._id}
                 skill={skill}
                 href={skillHref}
-                badge={skill.batch === 'highlighted' ? 'Highlighted' : undefined}
+                badge={getSkillBadges(skill)}
                 chip={isPlugin ? 'Plugin bundle (nix)' : undefined}
                 summaryFallback="Agent-ready skill pack."
                 meta={
@@ -367,9 +393,11 @@ export function SkillsIndex() {
                   <div className="skills-row-title">
                     <span>{skill.displayName}</span>
                     <span className="skills-row-slug">/{skill.slug}</span>
-                    {skill.batch === 'highlighted' ? (
-                      <span className="tag">Highlighted</span>
-                    ) : null}
+                    {getSkillBadges(skill).map((badge) => (
+                      <span key={badge} className="tag">
+                        {badge}
+                      </span>
+                    ))}
                     {isPlugin ? (
                       <span className="tag tag-accent tag-compact">Plugin bundle (nix)</span>
                     ) : null}

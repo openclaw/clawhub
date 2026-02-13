@@ -37,6 +37,10 @@ export function getFallbackSkillRoots(workdir: string) {
     resolve(workdir, '..', 'clawdis', 'Skills'),
     resolve(workdir, '..', 'clawdbot', 'skills'),
     resolve(workdir, '..', 'clawdbot', 'Skills'),
+    resolve(workdir, '..', 'openclaw', 'skills'),
+    resolve(workdir, '..', 'openclaw', 'Skills'),
+    resolve(workdir, '..', 'moltbot', 'skills'),
+    resolve(workdir, '..', 'moltbot', 'Skills'),
 
     // legacy locations
     resolve(home, 'clawd', 'skills'),
@@ -54,11 +58,25 @@ export function getFallbackSkillRoots(workdir: string) {
     resolve(home, '.clawdis', 'skills'),
     resolve(home, '.clawdis', 'Skills'),
 
+    resolve(home, 'openclaw', 'skills'),
+    resolve(home, 'openclaw', 'Skills'),
+    resolve(home, '.openclaw', 'skills'),
+    resolve(home, '.openclaw', 'Skills'),
+
+    resolve(home, 'moltbot', 'skills'),
+    resolve(home, 'moltbot', 'Skills'),
+    resolve(home, '.moltbot', 'skills'),
+    resolve(home, '.moltbot', 'Skills'),
+
     // macOS App Support legacy
     resolve(home, 'Library', 'Application Support', 'clawdbot', 'skills'),
     resolve(home, 'Library', 'Application Support', 'clawdbot', 'Skills'),
     resolve(home, 'Library', 'Application Support', 'clawdis', 'skills'),
     resolve(home, 'Library', 'Application Support', 'clawdis', 'Skills'),
+    resolve(home, 'Library', 'Application Support', 'openclaw', 'skills'),
+    resolve(home, 'Library', 'Application Support', 'openclaw', 'Skills'),
+    resolve(home, 'Library', 'Application Support', 'moltbot', 'skills'),
+    resolve(home, 'Library', 'Application Support', 'moltbot', 'Skills'),
   ]
   return Array.from(new Set(roots))
 }

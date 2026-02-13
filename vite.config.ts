@@ -9,16 +9,6 @@ import { defineConfig } from 'vite'
 import viteTsConfigPaths from 'vite-tsconfig-paths'
 
 const require = createRequire(import.meta.url)
-const resvgWasmPath = require.resolve('@resvg/resvg-wasm/index_bg.wasm')
-const bricolageBoldPath = require.resolve(
-  '@fontsource/bricolage-grotesque/files/bricolage-grotesque-latin-800-normal.woff2',
-)
-const bricolageTextPath = require.resolve(
-  '@fontsource/bricolage-grotesque/files/bricolage-grotesque-latin-500-normal.woff2',
-)
-const plexMonoPath = require.resolve(
-  '@fontsource/ibm-plex-mono/files/ibm-plex-mono-latin-500-normal.woff2',
-)
 
 const convexEntry = require.resolve('convex')
 const convexRoot = dirname(dirname(dirname(convexEntry)))
@@ -26,6 +16,29 @@ const convexReactPath = join(convexRoot, 'dist/esm/react/index.js')
 const convexBrowserPath = join(convexRoot, 'dist/esm/browser/index.js')
 const convexValuesPath = join(convexRoot, 'dist/esm/values/index.js')
 const convexAuthReactPath = require.resolve('@convex-dev/auth/react')
+
+function handleRollupWarning(
+  warning: { code?: string; message: string; id?: string },
+  warn: (warning: { code?: string; message: string; id?: string }) => void,
+) {
+  if (
+    warning.code === 'MODULE_LEVEL_DIRECTIVE' &&
+    warning.id?.includes('node_modules') &&
+    /use client/i.test(warning.message)
+  ) {
+    return
+  }
+  if (
+    warning.code === 'UNUSED_EXTERNAL_IMPORT' &&
+    /@tanstack\/start-|@tanstack\/router-core\/ssr\/(client|server)/.test(warning.message)
+  ) {
+    return
+  }
+  if (warning.code === 'EMPTY_BUNDLE' || /Generated an empty chunk/i.test(warning.message)) {
+    return
+  }
+  warn(warning)
+}
 
 const config = defineConfig({
   resolve: {
@@ -44,8 +57,8 @@ const config = defineConfig({
     devtools(),
     nitro({
       serverDir: 'server',
-      externals: {
-        traceInclude: [resvgWasmPath, bricolageBoldPath, bricolageTextPath, plexMonoPath],
+      rollupConfig: {
+        onwarn: handleRollupWarning,
       },
     }),
     // this is the plugin that enables path aliases
@@ -56,6 +69,12 @@ const config = defineConfig({
     tanstackStart(),
     viteReact(),
   ],
+  build: {
+    chunkSizeWarningLimit: 900,
+    rollupOptions: {
+      onwarn: handleRollupWarning,
+    },
+  },
 })
 
 export default config

@@ -27,10 +27,10 @@ vi.mock('@clack/prompts', () => ({
 }))
 
 vi.mock('../../config.js', () => ({
-  readGlobalConfig: vi.fn(async () => ({ registry: 'https://clawdhub.com', token: 'tkn' })),
+  readGlobalConfig: vi.fn(async () => ({ registry: 'https://clawhub.ai', token: 'tkn' })),
 }))
 
-const mockGetRegistry = vi.fn(async () => 'https://clawdhub.com')
+const mockGetRegistry = vi.fn(async () => 'https://clawhub.ai')
 vi.mock('../registry.js', () => ({
   getRegistry: () => mockGetRegistry(),
 }))
@@ -89,8 +89,8 @@ function makeOpts(): GlobalOpts {
   return {
     workdir: '/work',
     dir: '/work/skills',
-    site: 'https://clawdhub.com',
-    registry: 'https://clawdhub.com',
+    site: 'https://clawhub.ai',
+    registry: 'https://clawhub.ai',
     registrySource: 'default',
   }
 }
@@ -290,9 +290,9 @@ describe('cmdSync', () => {
     expect(update.changelog).toBe('')
   })
 
-  it('skips telemetry when CLAWDHUB_DISABLE_TELEMETRY is set', async () => {
+  it('skips telemetry when CLAWHUB_DISABLE_TELEMETRY is set', async () => {
     interactive = false
-    process.env.CLAWDHUB_DISABLE_TELEMETRY = '1'
+    process.env.CLAWHUB_DISABLE_TELEMETRY = '1'
     mockApiRequest.mockImplementation(async (_registry: string, args: { path: string }) => {
       if (args.path === '/api/v1/whoami') return { user: { handle: 'steipete' } }
       if (args.path.startsWith('/api/v1/resolve?')) {
@@ -305,6 +305,6 @@ describe('cmdSync', () => {
     expect(
       mockApiRequest.mock.calls.some((call) => call[1]?.path === '/api/cli/telemetry/sync'),
     ).toBe(false)
-    delete process.env.CLAWDHUB_DISABLE_TELEMETRY
+    delete process.env.CLAWHUB_DISABLE_TELEMETRY
   })
 })

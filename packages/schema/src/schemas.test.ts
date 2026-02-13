@@ -10,7 +10,7 @@ import {
   WellKnownConfigSchema,
 } from './schemas'
 
-describe('clawdhub-schema', () => {
+describe('clawhub-schema', () => {
   it('parses lockfile records', () => {
     const lock = parseArk(
       LockfileSchema,
@@ -68,10 +68,10 @@ describe('clawdhub-schema', () => {
     expect(
       parseArk(
         WellKnownConfigSchema,
-        { registry: 'https://example.convex.site', authBase: 'https://clawdhub.com' },
+        { registry: 'https://example.convex.site', authBase: 'https://clawhub.ai' },
         'WellKnown',
       ),
-    ).toEqual({ registry: 'https://example.convex.site', authBase: 'https://clawdhub.com' })
+    ).toEqual({ registry: 'https://example.convex.site', authBase: 'https://clawhub.ai' })
 
     expect(
       parseArk(
@@ -84,18 +84,29 @@ describe('clawdhub-schema', () => {
     const combined = parseArk(
       WellKnownConfigSchema,
       {
-        apiBase: 'https://clawdhub.com',
-        registry: 'https://clawdhub.com',
-        authBase: 'https://clawdhub.com',
+        apiBase: 'https://clawhub.ai',
+        registry: 'https://clawhub.ai',
+        authBase: 'https://clawhub.ai',
       },
       'WellKnown',
     ) as unknown as Record<string, unknown>
-    expect(combined.apiBase).toBe('https://clawdhub.com')
-    expect(combined.registry).toBe('https://clawdhub.com')
+    expect(combined.apiBase).toBe('https://clawhub.ai')
+    expect(combined.registry).toBe('https://clawhub.ai')
   })
 
   it('throws labeled errors', () => {
     expect(() => parseArk(LockfileSchema, null, 'Lockfile')).toThrow(/Lockfile:/)
+  })
+
+  it('truncates error messages when there are more than 3 errors', () => {
+    const invalidPayload = {
+      slug: 123,
+      displayName: 456,
+      version: 789,
+      changelog: true,
+      files: 'not-an-array',
+    }
+    expect(() => parseArk(CliPublishRequestSchema, invalidPayload, 'Publish')).toThrow('+')
   })
 
   it('parses search results arrays', () => {

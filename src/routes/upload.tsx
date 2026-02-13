@@ -4,7 +4,7 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import semver from 'semver'
 import { api } from '../../convex/_generated/api'
 import { getSiteMode } from '../lib/site'
-import { expandFiles } from '../lib/uploadFiles'
+import { expandDroppedItems, expandFiles } from '../lib/uploadFiles'
 import { useAuthStatus } from '../lib/useAuthStatus'
 import {
   formatBytes,
@@ -13,7 +13,7 @@ import {
   isTextFile,
   readText,
   uploadFile,
-} from './upload/utils'
+} from './upload/-utils'
 
 const SLUG_PATTERN = /^[a-z0-9]+(?:-[a-z0-9]+)*$/
 
@@ -25,7 +25,7 @@ export const Route = createFileRoute('/upload')({
 })
 
 export function Upload() {
-  const { isAuthenticated } = useAuthStatus()
+  const { isAuthenticated, me } = useAuthStatus()
   const { updateSlug } = useSearch({ from: '/upload' })
   const siteMode = getSiteMode()
   const isSoulMode = siteMode === 'souls'
@@ -309,9 +309,10 @@ export function Upload() {
       setHasAttempted(false)
       setChangelogSource('user')
       if (result) {
+        const ownerParam = me?.handle ?? (me?._id ? String(me._id) : 'unknown')
         void navigate({
-          to: isSoulMode ? '/souls/$slug' : '/skills/$slug',
-          params: { slug: trimmedSlug },
+          to: isSoulMode ? '/souls/$slug' : '/$owner/$slug',
+          params: isSoulMode ? { slug: trimmedSlug } : { owner: ownerParam, slug: trimmedSlug },
         })
       }
     } catch (error) {
@@ -385,8 +386,14 @@ export function Upload() {
             onDrop={(event) => {
               event.preventDefault()
               setIsDragging(false)
-              const dropped = Array.from(event.dataTransfer.files)
-              void expandFiles(dropped).then((next) => setFiles(next))
+              const items = event.dataTransfer.items
+              void (async () => {
+                const dropped = items?.length
+                  ? await expandDroppedItems(items)
+                  : Array.from(event.dataTransfer.files)
+                const next = await expandFiles(dropped)
+                setFiles(next)
+              })()
             }}
           >
             <input
@@ -396,6 +403,9 @@ export function Upload() {
               data-testid="upload-input"
               type="file"
               multiple
+              // @ts-expect-error - non-standard attribute to allow folder selection
+              webkitdirectory=""
+              directory=""
               onChange={(event) => {
                 const picked = Array.from(event.target.files ?? [])
                 void expandFiles(picked).then((next) => setFiles(next))

@@ -3,8 +3,11 @@ import semver from 'semver'
 import { api, internal } from '../_generated/api'
 import type { Doc, Id } from '../_generated/dataModel'
 import type { ActionCtx, MutationCtx } from '../_generated/server'
+import { getSkillBadgeMap, isSkillHighlighted } from './badges'
 import { generateChangelogForPublish } from './changelog'
 import { generateEmbedding } from './embeddings'
+import { requireGitHubAccountAge } from './githubAccount'
+import type { PublicUser } from './public'
 import {
   buildEmbeddingText,
   getFrontmatterMetadata,
@@ -65,6 +68,9 @@ export async function publishVersionForUser(
   if (!semver.valid(version)) {
     throw new ConvexError('Version must be valid semver')
   }
+
+  await requireGitHubAccountAge(ctx, userId)
+
   const suppliedChangelog = args.changelog.trim()
   const changelogSource = suppliedChangelog ? ('user' as const) : ('auto' as const)
 
@@ -164,7 +170,17 @@ export async function publishVersionForUser(
     embedding,
   })) as PublishResult
 
-  const owner = (await ctx.runQuery(api.users.getById, { userId })) as Doc<'users'> | null
+  await ctx.scheduler.runAfter(0, internal.vt.scanWithVirusTotal, {
+    versionId: publishResult.versionId,
+  })
+
+  await ctx.scheduler.runAfter(0, internal.llmEval.evaluateWithLlm, {
+    versionId: publishResult.versionId,
+  })
+
+  const owner = (await ctx.runQuery(internal.users.getByIdInternal, {
+    userId,
+  })) as Doc<'users'> | null
   const ownerHandle = owner?.handle ?? owner?.displayName ?? owner?.name ?? 'unknown'
 
   void ctx.scheduler
@@ -216,13 +232,14 @@ export async function queueHighlightedWebhook(ctx: MutationCtx, skillId: Id<'ski
   const owner = await ctx.db.get(skill.ownerUserId)
   const latestVersion = skill.latestVersionId ? await ctx.db.get(skill.latestVersionId) : null
 
+  const badges = await getSkillBadgeMap(ctx, skillId)
   const payload: WebhookSkillPayload = {
     slug: skill.slug,
     displayName: skill.displayName,
     summary: skill.summary ?? undefined,
     version: latestVersion?.version ?? undefined,
     ownerHandle: owner?.handle ?? owner?.name ?? undefined,
-    batch: skill.batch ?? undefined,
+    highlighted: isSkillHighlighted({ badges }),
     tags: Object.keys(skill.tags ?? {}),
   }
 
@@ -259,7 +276,7 @@ async function schedulePublishWebhook(
 ) {
   const result = (await ctx.runQuery(api.skills.getBySlug, {
     slug: params.slug,
-  })) as { skill: Doc<'skills'>; owner: Doc<'users'> | null } | null
+  })) as { skill: Doc<'skills'>; owner: PublicUser | null } | null
   if (!result?.skill) return
 
   const payload: WebhookSkillPayload = {
@@ -268,7 +285,7 @@ async function schedulePublishWebhook(
     summary: result.skill.summary ?? undefined,
     version: params.version,
     ownerHandle: result.owner?.handle ?? result.owner?.name ?? undefined,
-    batch: result.skill.batch ?? undefined,
+    highlighted: isSkillHighlighted(result.skill),
     tags: Object.keys(result.skill.tags ?? {}),
   }
 

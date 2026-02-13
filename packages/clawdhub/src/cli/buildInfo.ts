@@ -24,6 +24,7 @@ function shortCommit(value: string) {
 
 export function getCliCommit() {
   const candidates = [
+    process.env.CLAWHUB_COMMIT,
     process.env.CLAWDHUB_COMMIT,
     process.env.VERCEL_GIT_COMMIT_SHA,
     process.env.GITHUB_SHA,

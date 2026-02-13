@@ -4,11 +4,11 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { GlobalOpts } from '../types'
 
 vi.mock('../../config.js', () => ({
-  readGlobalConfig: vi.fn(async () => ({ registry: 'https://clawdhub.com', token: 'tkn' })),
+  readGlobalConfig: vi.fn(async () => ({ registry: 'https://clawhub.ai', token: 'tkn' })),
 }))
 
 vi.mock('../registry.js', () => ({
-  getRegistry: vi.fn(async () => 'https://clawdhub.com'),
+  getRegistry: vi.fn(async () => 'https://clawhub.ai'),
 }))
 
 const mockApiRequest = vi.fn()
@@ -29,14 +29,14 @@ vi.mock('../ui.js', () => ({
   promptConfirm: vi.fn(async () => true),
 }))
 
-const { cmdDeleteSkill, cmdUndeleteSkill } = await import('./delete')
+const { cmdDeleteSkill, cmdHideSkill, cmdUndeleteSkill, cmdUnhideSkill } = await import('./delete')
 
 function makeOpts(): GlobalOpts {
   return {
     workdir: '/work',
     dir: '/work/skills',
-    site: 'https://clawdhub.com',
-    registry: 'https://clawdhub.com',
+    site: 'https://clawhub.ai',
+    registry: 'https://clawhub.ai',
     registrySource: 'default',
   }
 }
@@ -49,6 +49,8 @@ describe('delete/undelete', () => {
   it('requires --yes when input is disabled', async () => {
     await expect(cmdDeleteSkill(makeOpts(), 'demo', {}, false)).rejects.toThrow(/--yes/i)
     await expect(cmdUndeleteSkill(makeOpts(), 'demo', {}, false)).rejects.toThrow(/--yes/i)
+    await expect(cmdHideSkill(makeOpts(), 'demo', {}, false)).rejects.toThrow(/--yes/i)
+    await expect(cmdUnhideSkill(makeOpts(), 'demo', {}, false)).rejects.toThrow(/--yes/i)
   })
 
   it('calls delete endpoint with --yes', async () => {
@@ -64,6 +66,22 @@ describe('delete/undelete', () => {
   it('calls undelete endpoint with --yes', async () => {
     mockApiRequest.mockResolvedValueOnce({ ok: true })
     await cmdUndeleteSkill(makeOpts(), 'demo', { yes: true }, false)
+    expect(mockApiRequest).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({ method: 'POST', path: '/api/v1/skills/demo/undelete' }),
+      expect.anything(),
+    )
+  })
+
+  it('supports hide/unhide aliases', async () => {
+    mockApiRequest.mockResolvedValue({ ok: true })
+    await cmdHideSkill(makeOpts(), 'demo', { yes: true }, false)
+    await cmdUnhideSkill(makeOpts(), 'demo', { yes: true }, false)
+    expect(mockApiRequest).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({ method: 'DELETE', path: '/api/v1/skills/demo' }),
+      expect.anything(),
+    )
     expect(mockApiRequest).toHaveBeenCalledWith(
       expect.anything(),
       expect.objectContaining({ method: 'POST', path: '/api/v1/skills/demo/undelete' }),

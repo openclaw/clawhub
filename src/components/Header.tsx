@@ -3,7 +3,8 @@ import { Link } from '@tanstack/react-router'
 import { Menu, Monitor, Moon, Sun } from 'lucide-react'
 import { useMemo, useRef } from 'react'
 import { gravatarUrl } from '../lib/gravatar'
-import { getClawdHubSiteUrl, getSiteMode, getSiteName } from '../lib/site'
+import { isModerator } from '../lib/roles'
+import { getClawHubSiteUrl, getSiteMode, getSiteName } from '../lib/site'
 import { applyTheme, useThemeMode } from '../lib/theme'
 import { startThemeTransition } from '../lib/theme-transition'
 import { useAuthStatus } from '../lib/useAuthStatus'
@@ -24,12 +25,12 @@ export default function Header() {
   const siteMode = getSiteMode()
   const siteName = useMemo(() => getSiteName(siteMode), [siteMode])
   const isSoulMode = siteMode === 'souls'
-  const clawdHubUrl = getClawdHubSiteUrl()
+  const clawHubUrl = getClawHubSiteUrl()
 
   const avatar = me?.image ?? (me?.email ? gravatarUrl(me.email) : undefined)
   const handle = me?.handle ?? me?.displayName ?? 'user'
   const initial = (me?.displayName ?? me?.name ?? handle).charAt(0).toUpperCase()
-  const isModerator = me?.role === 'admin' || me?.role === 'moderator'
+  const isStaff = isModerator(me)
 
   const setTheme = (next: 'system' | 'light' | 'dark') => {
     startThemeTransition({
@@ -58,11 +59,17 @@ export default function Header() {
           <span className="brand-name">{siteName}</span>
         </Link>
         <nav className="nav-links">
-          {isSoulMode ? <a href={clawdHubUrl}>ClawdHub</a> : null}
+          {isSoulMode ? <a href={clawHubUrl}>ClawHub</a> : null}
           {isSoulMode ? (
             <Link
               to="/souls"
-              search={{ q: undefined, sort: undefined, dir: undefined, view: undefined }}
+              search={{
+                q: undefined,
+                sort: undefined,
+                dir: undefined,
+                view: undefined,
+                focus: undefined,
+              }}
             >
               Souls
             </Link>
@@ -75,6 +82,7 @@ export default function Header() {
                 dir: undefined,
                 highlighted: undefined,
                 view: undefined,
+                focus: undefined,
               }}
             >
               Skills
@@ -84,11 +92,35 @@ export default function Header() {
             Upload
           </Link>
           {isSoulMode ? null : <Link to="/import">Import</Link>}
-          <Link to="/" search={{ q: undefined, highlighted: undefined, search: true }}>
+          <Link
+            to={isSoulMode ? '/souls' : '/skills'}
+            search={
+              isSoulMode
+                ? {
+                    q: undefined,
+                    sort: undefined,
+                    dir: undefined,
+                    view: undefined,
+                    focus: 'search',
+                  }
+                : {
+                    q: undefined,
+                    sort: undefined,
+                    dir: undefined,
+                    highlighted: undefined,
+                    view: undefined,
+                    focus: 'search',
+                  }
+            }
+          >
             Search
           </Link>
           {me ? <Link to="/stars">Stars</Link> : null}
-          {isModerator ? <Link to="/admin">Admin</Link> : null}
+          {isStaff ? (
+            <Link to="/management" search={{ skill: undefined }}>
+              Management
+            </Link>
+          ) : null}
         </nav>
         <div className="nav-actions">
           <div className="nav-mobile">
@@ -101,14 +133,20 @@ export default function Header() {
               <DropdownMenuContent align="end">
                 {isSoulMode ? (
                   <DropdownMenuItem asChild>
-                    <a href={clawdHubUrl}>ClawdHub</a>
+                    <a href={clawHubUrl}>ClawHub</a>
                   </DropdownMenuItem>
                 ) : null}
                 <DropdownMenuItem asChild>
                   {isSoulMode ? (
                     <Link
                       to="/souls"
-                      search={{ q: undefined, sort: undefined, dir: undefined, view: undefined }}
+                      search={{
+                        q: undefined,
+                        sort: undefined,
+                        dir: undefined,
+                        view: undefined,
+                        focus: undefined,
+                      }}
                     >
                       Souls
                     </Link>
@@ -121,6 +159,7 @@ export default function Header() {
                         dir: undefined,
                         highlighted: undefined,
                         view: undefined,
+                        focus: undefined,
                       }}
                     >
                       Skills
@@ -138,7 +177,27 @@ export default function Header() {
                   </DropdownMenuItem>
                 )}
                 <DropdownMenuItem asChild>
-                  <Link to="/" search={{ q: undefined, highlighted: undefined, search: true }}>
+                  <Link
+                    to={isSoulMode ? '/souls' : '/skills'}
+                    search={
+                      isSoulMode
+                        ? {
+                            q: undefined,
+                            sort: undefined,
+                            dir: undefined,
+                            view: undefined,
+                            focus: 'search',
+                          }
+                        : {
+                            q: undefined,
+                            sort: undefined,
+                            dir: undefined,
+                            highlighted: undefined,
+                            view: undefined,
+                            focus: 'search',
+                          }
+                    }
+                  >
                     Search
                   </Link>
                 </DropdownMenuItem>
@@ -147,9 +206,11 @@ export default function Header() {
                     <Link to="/stars">Stars</Link>
                   </DropdownMenuItem>
                 ) : null}
-                {isModerator ? (
+                {isStaff ? (
                   <DropdownMenuItem asChild>
-                    <Link to="/admin">Admin</Link>
+                    <Link to="/management" search={{ skill: undefined }}>
+                      Management
+                    </Link>
                   </DropdownMenuItem>
                 ) : null}
                 <DropdownMenuSeparator />
@@ -168,9 +229,8 @@ export default function Header() {
               </DropdownMenuContent>
             </DropdownMenu>
           </div>
-          <div className="theme-toggle">
+          <div className="theme-toggle" ref={toggleRef}>
             <ToggleGroup
-              ref={toggleRef}
               type="single"
               value={mode}
               onValueChange={(value) => {

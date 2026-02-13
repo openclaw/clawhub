@@ -38,7 +38,7 @@ type CandidatePreview = {
 }
 
 function ImportGitHub() {
-  const { isAuthenticated, isLoading } = useAuthStatus()
+  const { isAuthenticated, isLoading, me } = useAuthStatus()
   const previewImport = useAction(api.githubImport.previewGitHubImport)
   const previewCandidate = useAction(api.githubImport.previewGitHubImportCandidate)
   const importSkill = useAction(api.githubImport.importGitHubSkill)
@@ -167,7 +167,8 @@ function ImportGitHub() {
       })
       const nextSlug = result.slug
       setStatus('Imported.')
-      await navigate({ to: '/skills/$slug', params: { slug: nextSlug } })
+      const ownerParam = me?.handle ?? (me?._id ? String(me._id) : 'unknown')
+      await navigate({ to: '/$owner/$slug', params: { owner: ownerParam, slug: nextSlug } })
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Import failed')
       setStatus(null)

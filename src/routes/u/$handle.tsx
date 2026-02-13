@@ -4,6 +4,8 @@ import { useEffect, useState } from 'react'
 import { api } from '../../../convex/_generated/api'
 import type { Doc } from '../../../convex/_generated/dataModel'
 import { SkillCard } from '../../components/SkillCard'
+import { getSkillBadges } from '../../lib/badges'
+import type { PublicSkill, PublicUser } from '../../lib/publicUser'
 
 export const Route = createFileRoute('/u/$handle')({
   component: UserProfile,
@@ -11,16 +13,16 @@ export const Route = createFileRoute('/u/$handle')({
 
 function UserProfile() {
   const { handle } = Route.useParams()
-  const me = useQuery(api.users.me)
-  const user = useQuery(api.users.getByHandle, { handle }) as Doc<'users'> | null | undefined
+  const me = useQuery(api.users.me) as Doc<'users'> | null | undefined
+  const user = useQuery(api.users.getByHandle, { handle }) as PublicUser | null | undefined
   const publishedSkills = useQuery(
     api.skills.list,
     user ? { ownerUserId: user._id, limit: 50 } : 'skip',
-  ) as Doc<'skills'>[] | undefined
+  ) as PublicSkill[] | undefined
   const starredSkills = useQuery(
     api.stars.listByUser,
     user ? { userId: user._id, limit: 50 } : 'skip',
-  ) as Doc<'skills'>[] | undefined
+  ) as PublicSkill[] | undefined
 
   const isSelf = Boolean(me && user && me._id === user._id)
   const [tab, setTab] = useState<'stars' | 'installed'>('stars')
@@ -119,7 +121,7 @@ function UserProfile() {
                 <SkillCard
                   key={skill._id}
                   skill={skill}
-                  badge={skill.batch === 'highlighted' ? 'Highlighted' : undefined}
+                  badge={getSkillBadges(skill)}
                   summaryFallback="Agent-ready skill pack."
                   meta={
                     <div className="stat">
@@ -149,7 +151,7 @@ function UserProfile() {
                 <SkillCard
                   key={skill._id}
                   skill={skill}
-                  badge={skill.batch === 'highlighted' ? 'Highlighted' : undefined}
+                  badge={getSkillBadges(skill)}
                   summaryFallback="Agent-ready skill pack."
                   meta={
                     <div className="stat">
@@ -236,7 +238,7 @@ function InstalledSection(props: {
       ) : null}
 
       {data.roots.length === 0 ? (
-        <div className="card">No telemetry yet. Run `clawdhub sync` from the CLI.</div>
+        <div className="card">No telemetry yet. Run `clawhub sync` from the CLI.</div>
       ) : (
         <div style={{ display: 'grid', gap: 16 }}>
           {data.roots.map((root) => (
@@ -257,7 +259,10 @@ function InstalledSection(props: {
                 <div className="telemetry-skill-list">
                   {root.skills.map((entry) => (
                     <div key={`${root.rootId}:${entry.skill.slug}`} className="telemetry-skill-row">
-                      <a className="telemetry-skill-link" href={`/skills/${entry.skill.slug}`}>
+                      <a
+                        className="telemetry-skill-link"
+                        href={`/${encodeURIComponent(String(entry.skill.ownerUserId))}/${entry.skill.slug}`}
+                      >
                         <span>{entry.skill.displayName}</span>
                         <span className="telemetry-skill-slug">/{entry.skill.slug}</span>
                       </a>
@@ -285,7 +290,13 @@ type TelemetryResponse = {
     lastSeenAt: number
     expiredAt?: number
     skills: Array<{
-      skill: { slug: string; displayName: string; summary?: string; stats: unknown }
+      skill: {
+        slug: string
+        displayName: string
+        summary?: string
+        stats: unknown
+        ownerUserId: string
+      }
       firstSeenAt: number
       lastSeenAt: number
       lastVersion?: string

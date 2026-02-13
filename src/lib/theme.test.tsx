@@ -45,10 +45,12 @@ describe('theme', () => {
 
   it('reads stored theme with fallback', () => {
     expect(getStoredTheme()).toBe('system')
+    window.localStorage.setItem('clawhub-theme', 'dark')
+    expect(getStoredTheme()).toBe('dark')
+    window.localStorage.setItem('clawhub-theme', 'nope')
+    expect(getStoredTheme()).toBe('system')
     window.localStorage.setItem('clawdhub-theme', 'dark')
     expect(getStoredTheme()).toBe('dark')
-    window.localStorage.setItem('clawdhub-theme', 'nope')
-    expect(getStoredTheme()).toBe('system')
   })
 
   it('applies theme and toggles dark class', () => {
@@ -83,6 +85,6 @@ describe('theme', () => {
     await waitFor(() => {
       expect(document.documentElement.dataset.theme).toBe('dark')
     })
-    expect(window.localStorage.getItem('clawdhub-theme')).toBe('dark')
+    expect(window.localStorage.getItem('clawhub-theme')).toBe('dark')
   })
 })

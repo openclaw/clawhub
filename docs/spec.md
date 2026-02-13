@@ -1,12 +1,12 @@
 ---
-summary: "ClawdHub spec: skills registry, versioning, vector search, moderation"
+summary: "ClawHub spec: skills registry, versioning, vector search, moderation"
 read_when:
-  - Bootstrapping ClawdHub
+  - Bootstrapping ClawHub
   - Implementing schema/auth/search/versioning
   - Reviewing API and upload/download flows
 ---
 
-# ClawdHub — product + implementation spec (v1)
+# ClawHub — product + implementation spec (v1)
 
 ## Goals
 - onlycrabs.ai mode for sharing `SOUL.md` bundles (host-based entry point).
@@ -29,7 +29,7 @@ read_when:
 - `handle` (GitHub login)
 - `name`, `bio`
 - `avatarUrl` (GitHub, fallback gravatar)
-- `role`: `admin | moderator | user`
+- `role`: `admin | moderator | user` (moderators can soft-delete and flag; admins can hard-delete + change owners)
 - `createdAt`, `updatedAt`
 
 ### Skill
@@ -40,9 +40,14 @@ read_when:
 - `latestVersionId`
 - `latestTagVersionId` (for `latest` tag)
 - `tags` map: `{ tag -> versionId }`
-- `badges`: `{ redactionApproved?: { byUserId, at } }`
+- `badges`: `{ redactionApproved?: { byUserId, at }, highlighted?: { byUserId, at }, official?: { byUserId, at }, deprecated?: { byUserId, at } }`
+  - `official` marks admin-verified/official skills.
+  - `deprecated` marks skills that should not be used for new integrations.
+- `moderationStatus`: `active | hidden | removed`
+- `moderationFlags`: `string[]` (automatic detection)
+- `moderationNotes`, `moderationReason`
+- `hiddenAt`, `hiddenBy`, `lastReviewedAt`, `reportCount`
 - `stats`: `{ downloads, stars, versions, comments }`
-- `status`: `active` only (soft-delete on version/comment only)
 - `createdAt`, `updatedAt`
 
 ### SkillVersion
@@ -118,7 +123,9 @@ From SKILL.md frontmatter + AgentSkills + Clawdis extensions:
 ## Auth + roles
 - Convex Auth with GitHub OAuth App.
 - Default role `user`; bootstrap `steipete` to `admin` on first login.
-- Admin UI to promote/demote roles; all changes logged.
+- Management console: moderators can hide/restore skills + mark duplicates + ban users; admins can change owners, approve badges, hard-delete skills, and ban users (deletes owned skills).
+- Role changes are admin-only and audited.
+- Reporting: any user can report skills; per-user cap 20 active reports; skills auto-hide after >3 unique reports (mods can review/unhide/delete/ban).
 
 ## Upload flow (50MB per version)
 1) Client requests upload session.
@@ -129,9 +136,10 @@ From SKILL.md frontmatter + AgentSkills + Clawdis extensions:
    - file extensions/text content
    - SKILL.md exists and frontmatter parseable
    - version uniqueness
+   - GitHub account age ≥ 7 days
 5) Server stores files + metadata, sets `latest` tag, updates stats.
 
-Soul upload flow: same as skills, but only `SOUL.md` is allowed in the bundle.
+Soul upload flow: same as skills (including GitHub account age checks), but only `SOUL.md` is allowed.
 Seed data lives in `convex/seed.ts` for local dev.
 
 ## Versioning + tags
@@ -151,7 +159,7 @@ Seed data lives in `convex/seed.ts` for local dev.
 - Soft-delete versions; downloads remain for non-deleted versions only.
 
 ## UI (SPA)
-- Home: search + filters + trending/featured + “Highlighted” batch.
+- Home: search + filters + trending/featured + “Highlighted” badge.
 - Skill detail: README render, files list, version history, tags, stats, badges.
 - Upload/edit: file picker + version + tag + changelog.
 - Account settings: name + delete account (soft delete).

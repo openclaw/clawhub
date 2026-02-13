@@ -6,7 +6,7 @@ export type WebhookSkillPayload = {
   summary?: string
   version?: string
   ownerHandle?: string
-  batch?: string
+  highlighted?: boolean
   tags?: string[]
 }
 
@@ -16,7 +16,7 @@ export type WebhookConfig = {
   siteUrl: string
 }
 
-const DEFAULT_SITE_URL = 'https://clawdhub.com'
+const DEFAULT_SITE_URL = 'https://clawhub.ai'
 
 export function getWebhookConfig(env: NodeJS.ProcessEnv = process.env): WebhookConfig {
   const url = env.DISCORD_WEBHOOK_URL?.trim() || null
@@ -33,7 +33,7 @@ export function shouldSendWebhook(
   if (!config.url) return false
   if (!config.highlightedOnly) return true
   if (event === 'skill.highlighted') return true
-  return skill.batch === 'highlighted'
+  return Boolean(skill.highlighted)
 }
 
 export function buildDiscordPayload(
@@ -72,7 +72,7 @@ export function buildDiscordPayload(
           },
         ],
         footer: {
-          text: 'ClawdHub',
+          text: 'ClawHub',
         },
         timestamp: new Date().toISOString(),
       },
@@ -89,9 +89,9 @@ export function buildSkillUrl(skill: WebhookSkillPayload, siteUrl: string) {
 function buildDescription(event: WebhookEvent, skill: WebhookSkillPayload) {
   const summary = (skill.summary ?? '').trim()
   if (summary) return truncate(summary, 200)
-  if (event === 'skill.highlighted') return 'Newly highlighted skill on ClawdHub.'
-  if (skill.version) return `New version v${skill.version} published on ClawdHub.`
-  return 'New skill published on ClawdHub.'
+  if (event === 'skill.highlighted') return 'Newly highlighted skill on ClawHub.'
+  if (skill.version) return `New version v${skill.version} published on ClawHub.`
+  return 'New skill published on ClawHub.'
 }
 
 function parseBoolean(value?: string) {

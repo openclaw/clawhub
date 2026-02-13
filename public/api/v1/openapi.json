@@ -1,11 +1,11 @@
 {
   "openapi": "3.1.0",
   "info": {
-    "title": "ClawdHub API",
+    "title": "ClawHub API",
     "version": "1.0.0",
     "description": "Public REST API for skills. Rate limits: read 120/min per IP + 600/min per key; write 30/min per IP + 120/min per key."
   },
-  "servers": [{ "url": "https://clawdhub.com" }],
+  "servers": [{ "url": "https://clawhub.ai" }],
   "components": {
     "securitySchemes": {
       "bearerAuth": {

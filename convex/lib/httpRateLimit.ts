@@ -51,19 +51,17 @@ export async function applyRateLimit(
 }
 
 export function getClientIp(request: Request) {
-  const header = request.headers.get('cf-connecting-ip')
-  if (!header) {
-    if (!shouldTrustForwardedIps()) return null
-    const forwarded =
-      request.headers.get('x-real-ip') ??
-      request.headers.get('x-forwarded-for') ??
-      request.headers.get('fly-client-ip')
-    if (!forwarded) return null
-    if (forwarded.includes(',')) return forwarded.split(',')[0]?.trim() || null
-    return forwarded.trim()
-  }
-  if (header.includes(',')) return header.split(',')[0]?.trim() || null
-  return header.trim()
+  const cfHeader = request.headers.get('cf-connecting-ip')
+  if (cfHeader) return splitFirstIp(cfHeader)
+
+  if (!shouldTrustForwardedIps()) return null
+
+  const forwarded =
+    request.headers.get('x-real-ip') ??
+    request.headers.get('x-forwarded-for') ??
+    request.headers.get('fly-client-ip')
+
+  return splitFirstIp(forwarded)
 }
 
 async function checkRateLimit(
@@ -71,11 +69,30 @@ async function checkRateLimit(
   key: string,
   limit: number,
 ): Promise<RateLimitResult> {
-  return (await ctx.runMutation(internal.rateLimits.checkRateLimitInternal, {
+  // Step 1: Read-only check to avoid write conflicts on denied requests.
+  const status = (await ctx.runQuery(internal.rateLimits.getRateLimitStatusInternal, {
     key,
     limit,
     windowMs: RATE_LIMIT_WINDOW_MS,
   })) as RateLimitResult
+
+  if (!status.allowed) {
+    return status
+  }
+
+  // Step 2: Consume with a mutation only when still allowed.
+  const result = (await ctx.runMutation(internal.rateLimits.consumeRateLimitInternal, {
+    key,
+    limit,
+    windowMs: RATE_LIMIT_WINDOW_MS,
+  })) as { allowed: boolean; remaining: number }
+
+  return {
+    allowed: result.allowed,
+    remaining: result.remaining,
+    limit: status.limit,
+    resetAt: status.resetAt,
+  }
 }
 
 function pickMostRestrictive(primary: RateLimitResult, secondary: RateLimitResult | null) {
@@ -102,6 +119,13 @@ export function parseBearerToken(request: Request) {
   if (!trimmed.toLowerCase().startsWith('bearer ')) return null
   const token = trimmed.slice(7).trim()
   return token || null
+}
+
+function splitFirstIp(header: string | null) {
+  if (!header) return null
+  if (header.includes(',')) return header.split(',')[0]?.trim() || null
+  const trimmed = header.trim()
+  return trimmed || null
 }
 
 function mergeHeaders(base: HeadersInit, extra?: HeadersInit) {

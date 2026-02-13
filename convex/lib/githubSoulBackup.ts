@@ -8,7 +8,7 @@ const GITHUB_API = 'https://api.github.com'
 const DEFAULT_REPO = 'clawdbot/souls'
 const DEFAULT_ROOT = 'souls'
 const META_FILENAME = '_meta.json'
-const USER_AGENT = 'clawdhub/souls-backup'
+const USER_AGENT = 'clawhub/souls-backup'
 
 type BackupFile = {
   path: string

@@ -51,29 +51,29 @@ Then paste the printed `JWT_PRIVATE_KEY` + `JWKS` into `.env.local` (and ensure 
 From this repo:
 
 ```bash
-bun clawdhub --help
-bun clawdhub login
-bun clawdhub whoami
-bun clawdhub search gif --limit 5
+bun clawhub --help
+bun clawhub login
+bun clawhub whoami
+bun clawhub search gif --limit 5
 ```
 
 Install a skill into `./skills/<slug>` (if Clawdbot is configured, installs into that workspace instead):
 
 ```bash
-bun clawdhub install <slug>
-bun clawdhub list
+bun clawhub install <slug>
+bun clawhub list
 ```
 
 You can also install into any folder:
 
 ```bash
-bun clawdhub install <slug> --workdir /tmp/clawdhub-demo --dir skills
+bun clawhub install <slug> --workdir /tmp/clawhub-demo --dir skills
 ```
 
 Update:
 
 ```bash
-bun clawdhub update --all
+bun clawhub update --all
 ```
 
 ## 4) Publish a skill
@@ -81,7 +81,7 @@ bun clawdhub update --all
 Create a folder containing `SKILL.md` (required) plus any supporting text files:
 
 ```bash
-mkdir -p /tmp/clawdhub-skill-demo && cd /tmp/clawdhub-skill-demo
+mkdir -p /tmp/clawhub-skill-demo && cd /tmp/clawhub-skill-demo
 cat > SKILL.md <<'EOF'
 ---
 name: Demo Skill
@@ -97,8 +97,8 @@ EOF
 Publish:
 
 ```bash
-bun clawdhub publish . \
-  --slug clawdhub-demo-$(date +%s) \
+bun clawhub publish . \
+  --slug clawhub-demo-$(date +%s) \
   --name "Demo $(date +%s)" \
   --version 1.0.0 \
   --tags latest \
@@ -110,11 +110,11 @@ bun clawdhub publish . \
 `sync` scans for local skill folders and publishes the ones that aren’t “synced” yet.
 
 ```bash
-bun clawdhub sync
+bun clawhub sync
 ```
 
 Dry run + non-interactive:
 
 ```bash
-bun clawdhub sync --all --dry-run --no-input
+bun clawhub sync --all --dry-run --no-input
 ```

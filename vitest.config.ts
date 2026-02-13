@@ -25,6 +25,7 @@ export default defineConfig({
       include: [
         'src/lib/**/*.{ts,tsx}',
         'convex/lib/skills.ts',
+        'convex/lib/skillZip.ts',
         'convex/lib/tokens.ts',
         'convex/httpApi.ts',
         'packages/clawdhub/src/**/*.ts',

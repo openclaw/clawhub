@@ -39,42 +39,25 @@ export async function resolveClawdbotSkillRoots(): Promise<ClawdbotSkillRoots> {
   const roots: string[] = []
   const labels: Record<string, string> = {}
 
-  const stateDir = resolveClawdbotStateDir()
-  const sharedSkills = resolveUserPath(join(stateDir, 'skills'))
+  const clawdbotStateDir = resolveClawdbotStateDir()
+  const sharedSkills = resolveUserPath(join(clawdbotStateDir, 'skills'))
   pushRoot(roots, labels, sharedSkills, 'Shared skills')
 
-  const config = await readClawdbotConfig()
-  if (!config) return { roots, labels }
+  const openclawStateDir = resolveOpenclawStateDir()
+  const openclawShared = resolveUserPath(join(openclawStateDir, 'skills'))
+  pushRoot(roots, labels, openclawShared, 'OpenClaw: Shared skills')
 
-  const mainWorkspace = resolveUserPath(
-    config.agents?.defaults?.workspace ?? config.agent?.workspace ?? '',
-  )
-  if (mainWorkspace) {
-    pushRoot(roots, labels, join(mainWorkspace, 'skills'), 'Agent: main')
+  const [clawdbotConfig, openclawConfig] = await Promise.all([
+    readClawdbotConfig(),
+    readOpenclawConfig(),
+  ])
+  if (!clawdbotConfig && !openclawConfig) return { roots, labels }
+
+  if (clawdbotConfig) {
+    addConfigRoots(clawdbotConfig, roots, labels)
   }
-
-  const listedAgents = config.agents?.list ?? []
-  for (const entry of listedAgents) {
-    const workspace = resolveUserPath(entry?.workspace ?? '')
-    if (!workspace) continue
-    const name = entry?.name?.trim() || entry?.id?.trim() || 'agent'
-    pushRoot(roots, labels, join(workspace, 'skills'), `Agent: ${name}`)
-  }
-
-  const agents = config.routing?.agents ?? {}
-  for (const [agentId, entry] of Object.entries(agents)) {
-    const workspace = resolveUserPath(entry?.workspace ?? '')
-    if (!workspace) continue
-    const name = entry?.name?.trim() || agentId
-    pushRoot(roots, labels, join(workspace, 'skills'), `Agent: ${name}`)
-  }
-
-  const extraDirs = config.skills?.load?.extraDirs ?? []
-  for (const dir of extraDirs) {
-    const resolved = resolveUserPath(String(dir))
-    if (!resolved) continue
-    const label = `Extra: ${basename(resolved) || resolved}`
-    pushRoot(roots, labels, resolved, label)
+  if (openclawConfig) {
+    addConfigRoots(openclawConfig, roots, labels, 'OpenClaw')
   }
 
   return { roots, labels }
@@ -82,18 +65,31 @@ export async function resolveClawdbotSkillRoots(): Promise<ClawdbotSkillRoots> {
 
 export async function resolveClawdbotDefaultWorkspace(): Promise<string | null> {
   const config = await readClawdbotConfig()
-  if (!config) return null
+  const openclawConfig = await readOpenclawConfig()
+  if (!config && !openclawConfig) return null
 
   const defaultsWorkspace = resolveUserPath(
-    config.agents?.defaults?.workspace ?? config.agent?.workspace ?? '',
+    config?.agents?.defaults?.workspace ?? config?.agent?.workspace ?? '',
   )
   if (defaultsWorkspace) return defaultsWorkspace
 
-  const listedAgents = config.agents?.list ?? []
+  const listedAgents = config?.agents?.list ?? []
   const defaultAgent =
     listedAgents.find((entry) => entry.default) ?? listedAgents.find((entry) => entry.id === 'main')
   const listWorkspace = resolveUserPath(defaultAgent?.workspace ?? '')
-  return listWorkspace || null
+  if (listWorkspace) return listWorkspace
+
+  if (!openclawConfig) return null
+  const openclawDefaults = resolveUserPath(
+    openclawConfig.agents?.defaults?.workspace ?? openclawConfig.agent?.workspace ?? '',
+  )
+  if (openclawDefaults) return openclawDefaults
+  const openclawAgents = openclawConfig.agents?.list ?? []
+  const openclawDefaultAgent =
+    openclawAgents.find((entry) => entry.default) ??
+    openclawAgents.find((entry) => entry.id === 'main')
+  const openclawWorkspace = resolveUserPath(openclawDefaultAgent?.workspace ?? '')
+  return openclawWorkspace || null
 }
 
 function resolveClawdbotStateDir() {
@@ -108,6 +104,18 @@ function resolveClawdbotConfigPath() {
   return join(resolveClawdbotStateDir(), 'clawdbot.json')
 }
 
+function resolveOpenclawStateDir() {
+  const override = process.env.OPENCLAW_STATE_DIR?.trim()
+  if (override) return resolveUserPath(override)
+  return join(homedir(), '.openclaw')
+}
+
+function resolveOpenclawConfigPath() {
+  const override = process.env.OPENCLAW_CONFIG_PATH?.trim()
+  if (override) return resolveUserPath(override)
+  return join(resolveOpenclawStateDir(), 'openclaw.json')
+}
+
 function resolveUserPath(input: string) {
   const trimmed = input.trim()
   if (!trimmed) return ''
@@ -118,13 +126,61 @@ function resolveUserPath(input: string) {
 }
 
 async function readClawdbotConfig(): Promise<ClawdbotConfig | null> {
+  return readConfigFile(resolveClawdbotConfigPath())
+}
+
+async function readOpenclawConfig(): Promise<ClawdbotConfig | null> {
+  return readConfigFile(resolveOpenclawConfigPath())
+}
+
+async function readConfigFile(path: string): Promise<ClawdbotConfig | null> {
   try {
-    const raw = await readFile(resolveClawdbotConfigPath(), 'utf8')
+    const raw = await readFile(path, 'utf8')
     const parsed = JSON5.parse(raw)
     if (!parsed || typeof parsed !== 'object') return null
     return parsed as ClawdbotConfig
   } catch {
     return null
+  }
+}
+
+function addConfigRoots(
+  config: ClawdbotConfig,
+  roots: string[],
+  labels: Record<string, string>,
+  labelPrefix?: string,
+) {
+  const prefix = labelPrefix ? `${labelPrefix}: ` : ''
+
+  const mainWorkspace = resolveUserPath(
+    config.agents?.defaults?.workspace ?? config.agent?.workspace ?? '',
+  )
+  if (mainWorkspace) {
+    pushRoot(roots, labels, join(mainWorkspace, 'skills'), `${prefix}Agent: main`)
+  }
+
+  const listedAgents = config.agents?.list ?? []
+  for (const entry of listedAgents) {
+    const workspace = resolveUserPath(entry?.workspace ?? '')
+    if (!workspace) continue
+    const name = entry?.name?.trim() || entry?.id?.trim() || 'agent'
+    pushRoot(roots, labels, join(workspace, 'skills'), `${prefix}Agent: ${name}`)
+  }
+
+  const agents = config.routing?.agents ?? {}
+  for (const [agentId, entry] of Object.entries(agents)) {
+    const workspace = resolveUserPath(entry?.workspace ?? '')
+    if (!workspace) continue
+    const name = entry?.name?.trim() || agentId
+    pushRoot(roots, labels, join(workspace, 'skills'), `${prefix}Agent: ${name}`)
+  }
+
+  const extraDirs = config.skills?.load?.extraDirs ?? []
+  for (const dir of extraDirs) {
+    const resolved = resolveUserPath(String(dir))
+    if (!resolved) continue
+    const label = `${prefix}Extra: ${basename(resolved) || resolved}`
+    pushRoot(roots, labels, resolved, label)
   }
 }
 

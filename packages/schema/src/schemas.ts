@@ -136,6 +136,17 @@ export const ApiV1WhoamiResponseSchema = type({
   },
 })
 
+export const ApiV1UserSearchResponseSchema = type({
+  items: type({
+    userId: 'string',
+    handle: 'string|null',
+    displayName: 'string|null?',
+    name: 'string|null?',
+    role: '"admin"|"moderator"|"user"|null?',
+  }).array(),
+  total: 'number',
+})
+
 export const ApiV1SearchResponseSchema = type({
   results: type({
     slug: 'string?',
@@ -224,6 +235,11 @@ export const ApiV1PublishResponseSchema = type({
 
 export const ApiV1DeleteResponseSchema = type({
   ok: 'true',
+})
+
+export const ApiV1SetRoleResponseSchema = type({
+  ok: 'true',
+  role: '"admin"|"moderator"|"user"',
 })
 
 export const ApiV1StarResponseSchema = type({
