@@ -118,6 +118,80 @@ describe('SkillsIndex', () => {
       limit: 50,
     })
   })
+
+  it('triggers only one load-more request per observer cycle', async () => {
+    const loadMorePaginated = vi.fn()
+    usePaginatedQueryMock.mockReturnValue({
+      results: [makeListResult('skill-0', 'Skill 0')],
+      status: 'CanLoadMore',
+      loadMore: loadMorePaginated,
+    })
+
+    type ObserverInstance = {
+      callback: IntersectionObserverCallback
+      observe: ReturnType<typeof vi.fn>
+      disconnect: ReturnType<typeof vi.fn>
+    }
+
+    const observers: ObserverInstance[] = []
+    class IntersectionObserverMock {
+      callback: IntersectionObserverCallback
+      observe = vi.fn()
+      disconnect = vi.fn()
+      unobserve = vi.fn()
+      takeRecords = vi.fn(() => [])
+      root = null
+      rootMargin = '0px'
+      thresholds: number[] = []
+
+      constructor(callback: IntersectionObserverCallback) {
+        this.callback = callback
+        observers.push(this)
+      }
+    }
+    vi.stubGlobal(
+      'IntersectionObserver',
+      IntersectionObserverMock as unknown as typeof IntersectionObserver,
+    )
+
+    render(<SkillsIndex />)
+
+    expect(observers).toHaveLength(1)
+    const observer = observers[0]
+    const entries = [{ isIntersecting: true }] as Array<IntersectionObserverEntry>
+
+    await act(async () => {
+      observer.callback(entries, observer as unknown as IntersectionObserver)
+      observer.callback(entries, observer as unknown as IntersectionObserver)
+      observer.callback(entries, observer as unknown as IntersectionObserver)
+    })
+
+    expect(loadMorePaginated).toHaveBeenCalledTimes(1)
+  })
+
+  it('uses relevance as default sort when searching', async () => {
+    searchMock = { q: 'notion' }
+    const actionFn = vi
+      .fn()
+      .mockResolvedValue([
+        makeSearchResult('newer-low-score', 'Newer Low Score', 0.1, 2000),
+        makeSearchResult('older-high-score', 'Older High Score', 0.9, 1000),
+      ])
+    useActionMock.mockReturnValue(actionFn)
+    vi.useFakeTimers()
+
+    render(<SkillsIndex />)
+    await act(async () => {
+      await vi.runAllTimersAsync()
+    })
+
+    const titles = Array.from(
+      document.querySelectorAll('.skills-row-title > span:first-child'),
+    ).map((node) => node.textContent)
+
+    expect(titles[0]).toBe('Older High Score')
+    expect(titles[1]).toBe('Newer Low Score')
+  })
 })
 
 function makeSearchResults(count: number) {
@@ -142,4 +216,52 @@ function makeSearchResults(count: number) {
     },
     version: null,
   }))
+}
+
+function makeListResult(slug: string, displayName: string) {
+  return {
+    skill: {
+      _id: `skill_${slug}`,
+      slug,
+      displayName,
+      summary: `${displayName} summary`,
+      tags: {},
+      stats: {
+        downloads: 0,
+        installsCurrent: 0,
+        installsAllTime: 0,
+        stars: 0,
+        versions: 1,
+        comments: 0,
+      },
+      createdAt: 0,
+      updatedAt: 0,
+    },
+    latestVersion: null,
+    ownerHandle: null,
+  }
+}
+
+function makeSearchResult(slug: string, displayName: string, score: number, createdAt: number) {
+  return {
+    score,
+    skill: {
+      _id: `skill_${slug}`,
+      slug,
+      displayName,
+      summary: `${displayName} summary`,
+      tags: {},
+      stats: {
+        downloads: 0,
+        installsCurrent: 0,
+        installsAllTime: 0,
+        stars: 0,
+        versions: 1,
+        comments: 0,
+      },
+      createdAt,
+      updatedAt: createdAt,
+    },
+    version: null,
+  }
 }

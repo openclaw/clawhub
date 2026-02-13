@@ -1,13 +1,57 @@
 # Changelog
 
-## Unreleased
+## 0.6.1 - 2026-02-13
+
+### Added
+- Security: add LLM-based security evaluation during skill publish.
+- Parsing: recognize `metadata.openclaw` frontmatter and evaluate all skill files for requirements.
+
+### Changed
+- Performance: lazy-load Monaco diff viewer on demand (thanks @alexjcm, #212).
+- Search: improve recall/ranking with lexical fallback and relevance prioritization.
+- Moderation UX: collapse OpenClaw analysis by default; update spacing and default reasoning model.
+
+### Fixed
+- Upload gate: handle GitHub API rate limits and optional authenticated lookup token (thanks @superlowburn, #246).
+- HTTP: remove `allowH2` from Undici agent to prevent `fetch failed` on Node.js 22+ (#245).
+- VirusTotal: fix scan sync race conditions and retry behavior in scan/backfill paths.
+- Metadata: tolerate trailing commas in JSON metadata.
+- Auth: allow soft-deleted users to re-authenticate on fresh login, while keeping banned users blocked (thanks @tanujbhaud, #177).
+- Web: prevent horizontal overflow from long code blocks in skill pages (thanks @bewithgaurav, #183).
+- Skills: prevent repeated auto-pagination requests when the load-more sentinel remains visible (thanks @xcqtnr, #90).
+
+## 0.6.0 - 2026-02-10
+### Added
+- CLI/API: add `set-role` to change user roles (admin only).
+- Security: quarantine skill publishes with VirusTotal scans + UI (thanks @aleph8, #130).
+- Testing: add tests for badges, skillZip, uploadFiles expandDroppedItems, and ark schema error truncation.
+- Moderation: add ban reasons to API/CLI and show in management UI.
+
+### Changed
+- Coverage: track `convex/lib/skillZip.ts` in coverage reports.
+
+### Fixed
+- Web: show pending-scan skills to owners without 404 (thanks @orlyjamie, #136).
+- Users: backfill empty handles from name/email in ensure (thanks @adlai88, #158).
+- Web: update footer branding to OpenClaw (thanks @jontsai, #122).
+- Auth: restore soft-deleted users on reauth, block banned users (thanks @mkrokosz, #106).
+
+## 0.5.0 - 2026-02-02
 
 ### Added
 - Admin: ban users and delete owned skills from management console.
+- Moderation: auto-hide skills after 4 unique reports; per-user report cap; moderators can ban users.
+- Uploads: require GitHub accounts to be at least 7 days old for skill + soul publish/import.
+- CLI: add `inspect` to fetch skill metadata/files without installing.
+- CLI: add moderation commands for hide/unhide/delete and ban users.
+- Management: add filters for reported skills and users.
 
 ### Changed
+- Deps: update dependencies to latest available versions.
+- Reporting: require reasons, show them in management console, warn about abuse bans.
 
 ### Fixed
+- Bans: batch hard-delete cleanup to avoid Convex read limits on large skills.
 
 ## 0.4.0 - 2026-01-30
 
