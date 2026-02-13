@@ -45,6 +45,15 @@ const MAX_ACTIVE_REPORTS_PER_USER = 20
 const AUTO_HIDE_REPORT_THRESHOLD = 3
 const MAX_REPORT_REASON_SAMPLE = 5
 
+const SORT_INDEXES = {
+  newest: 'by_active_created',
+  updated: 'by_active_updated',
+  name: 'by_active_name',
+  downloads: 'by_active_stats_downloads',
+  stars: 'by_active_stats_stars',
+  installs: 'by_active_stats_installs_all_time',
+} as const
+
 function isSkillVersionId(
   value: Id<'skillVersions'> | null | undefined,
 ): value is Id<'skillVersions'> {
@@ -1311,14 +1320,28 @@ export const listPublicPage = query({
 export const listPublicPageV2 = query({
   args: {
     paginationOpts: paginationOptsValidator,
+    sort: v.optional(
+      v.union(
+        v.literal('newest'),
+        v.literal('updated'),
+        v.literal('downloads'),
+        v.literal('installs'),
+        v.literal('stars'),
+        v.literal('name'),
+      ),
+    ),
+    dir: v.optional(v.union(v.literal('asc'), v.literal('desc'))),
   },
   handler: async (ctx, args) => {
-    // Use the new index to filter out soft-deleted skills at query time.
+    const sort = args.sort ?? 'newest'
+    const dir = args.dir ?? 'desc'
+
+    // Use the index to filter out soft-deleted skills at query time.
     // softDeletedAt === undefined means active (non-deleted) skills only.
     const result = await paginator(ctx.db, schema)
       .query('skills')
-      .withIndex('by_active_updated', (q) => q.eq('softDeletedAt', undefined))
-      .order('desc')
+      .withIndex(SORT_INDEXES[sort], (q) => q.eq('softDeletedAt', undefined))
+      .order(dir)
       .paginate(args.paginationOpts)
 
     // Build the public skill entries (fetch latestVersion + ownerHandle)

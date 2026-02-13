@@ -12,6 +12,7 @@
 - Moderation UX: collapse OpenClaw analysis by default; update spacing and default reasoning model.
 
 ### Fixed
+- Skills: fix initial `/skills` sort wiring so first page respects selected sort/direction (thanks @bpk9, #92).
 - Upload gate: handle GitHub API rate limits and optional authenticated lookup token (thanks @superlowburn, #246).
 - HTTP: remove `allowH2` from Undici agent to prevent `fetch failed` on Node.js 22+ (#245).
 - Tests: add root `undici` dev dependency for Node E2E imports (thanks @tanujbhaud, #255).

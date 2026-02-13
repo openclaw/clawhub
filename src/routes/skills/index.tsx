@@ -97,7 +97,7 @@ export function SkillsIndex() {
     results: paginatedResults,
     status: paginationStatus,
     loadMore: loadMorePaginated,
-  } = usePaginatedQuery(api.skills.listPublicPageV2, hasQuery ? 'skip' : {}, {
+  } = usePaginatedQuery(api.skills.listPublicPageV2, hasQuery ? 'skip' : { sort, dir }, {
     initialNumItems: pageSize,
   })
 
