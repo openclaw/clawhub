@@ -49,7 +49,7 @@ describe('site helpers', () => {
     withMetaEnv({ VITE_SITE_URL: 'https://clawdhub.com' }, () => {
       expect(getClawHubSiteUrl()).toBe('https://clawhub.ai')
     })
-    withMetaEnv({ VITE_SITE_URL: 'https://auth.clawdhub.com' }, () => {
+    withMetaEnv({ VITE_SITE_URL: 'https://auth.clawhub.com' }, () => {
       expect(getClawHubSiteUrl()).toBe('https://clawhub.ai')
     })
   })

@@ -37,7 +37,7 @@ beforeEach(() => {
 
 describe('registry resolution', () => {
   it('prefers explicit registry over discovery/cache', async () => {
-    readGlobalConfig.mockResolvedValue({ registry: 'https://auth.clawdhub.com' })
+    readGlobalConfig.mockResolvedValue({ registry: 'https://auth.clawhub.com' })
     discoverRegistryFromSite.mockResolvedValue({ apiBase: 'https://clawhub.ai' })
 
     const registry = await resolveRegistry(
@@ -49,7 +49,7 @@ describe('registry resolution', () => {
   })
 
   it('ignores legacy registry and updates cache from discovery', async () => {
-    readGlobalConfig.mockResolvedValue({ registry: 'https://auth.clawdhub.com', token: 'tkn' })
+    readGlobalConfig.mockResolvedValue({ registry: 'https://auth.clawhub.com', token: 'tkn' })
     discoverRegistryFromSite.mockResolvedValue({ apiBase: 'https://clawhub.ai' })
 
     const registry = await getRegistry(makeOpts(), { cache: true })

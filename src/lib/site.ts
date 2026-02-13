@@ -3,7 +3,7 @@ export type SiteMode = 'skills' | 'souls'
 const DEFAULT_CLAWHUB_SITE_URL = 'https://clawhub.ai'
 const DEFAULT_ONLYCRABS_SITE_URL = 'https://onlycrabs.ai'
 const DEFAULT_ONLYCRABS_HOST = 'onlycrabs.ai'
-const LEGACY_CLAWDHUB_HOSTS = new Set(['clawdhub.com', 'www.clawdhub.com', 'auth.clawdhub.com'])
+const LEGACY_CLAWDHUB_HOSTS = new Set(['clawdhub.com', 'www.clawdhub.com', 'auth.clawhub.com'])
 
 export function normalizeClawHubSiteOrigin(value?: string | null) {
   if (!value) return null

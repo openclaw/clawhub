@@ -4,7 +4,7 @@ import type { GlobalOpts } from './types.js'
 
 export const DEFAULT_SITE = 'https://clawhub.ai'
 export const DEFAULT_REGISTRY = 'https://clawhub.ai'
-const LEGACY_REGISTRY_HOSTS = new Set(['auth.clawdhub.com', 'auth.clawhub.com', 'auth.clawhub.ai'])
+const LEGACY_REGISTRY_HOSTS = new Set(['auth.clawhub.com', 'auth.clawhub.ai'])
 
 export async function resolveRegistry(opts: GlobalOpts) {
   const explicit = opts.registrySource !== 'default' ? opts.registry.trim() : ''
