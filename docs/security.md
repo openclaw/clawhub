@@ -49,3 +49,7 @@ read_when:
   - `githubFetchedAt` (fetch timestamp)
 - Cache TTL: 24 hours.
 - Gate applies to web uploads, CLI publish, and GitHub import.
+- If GitHub responds `403` or `429`, publish fails with:
+  - `GitHub API rate limit exceeded — please try again in a few minutes`
+- To reduce rate-limit failures, set `GITHUB_TOKEN` in Convex env for authenticated
+  GitHub API requests.

@@ -1,5 +1,5 @@
 /* @vitest-environment node */
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { internal } from '../_generated/api'
 import { requireGitHubAccountAge } from './githubAccount'
@@ -18,6 +18,11 @@ const ONE_DAY_MS = 24 * 60 * 60 * 1000
 describe('requireGitHubAccountAge', () => {
   beforeEach(() => {
     vi.restoreAllMocks()
+    vi.unstubAllEnvs()
+  })
+
+  afterEach(() => {
+    vi.unstubAllEnvs()
   })
 
   it('uses cached githubCreatedAt when fresh', async () => {
@@ -86,7 +91,9 @@ describe('requireGitHubAccountAge', () => {
 
     expect(fetchMock).toHaveBeenCalledWith(
       'https://api.github.com/users/steipete',
-      expect.objectContaining({ headers: { 'User-Agent': 'clawhub' } }),
+      expect.objectContaining({
+        headers: expect.objectContaining({ 'User-Agent': 'clawhub' }),
+      }),
     )
     expect(runMutation).toHaveBeenCalledWith(internal.users.updateGithubMetaInternal, {
       userId: 'users:1',

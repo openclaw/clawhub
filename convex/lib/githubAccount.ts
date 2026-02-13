@@ -27,7 +27,7 @@ export async function requireGitHubAccountAge(ctx: ActionCtx, userId: Id<'users'
     const headers: Record<string, string> = { 'User-Agent': 'clawhub' }
     const token = process.env.GITHUB_TOKEN
     if (token) {
-      headers['Authorization'] = `Bearer ${token}`
+      headers.Authorization = `Bearer ${token}`
     }
 
     const response = await fetch(`${GITHUB_API}/users/${encodeURIComponent(handle)}`, {
@@ -35,9 +35,7 @@ export async function requireGitHubAccountAge(ctx: ActionCtx, userId: Id<'users'
     })
     if (!response.ok) {
       if (response.status === 403 || response.status === 429) {
-        throw new ConvexError(
-          'GitHub API rate limit exceeded — please try again in a few minutes',
-        )
+        throw new ConvexError('GitHub API rate limit exceeded — please try again in a few minutes')
       }
       throw new ConvexError('GitHub account lookup failed')
     }
