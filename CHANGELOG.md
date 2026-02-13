@@ -16,6 +16,7 @@
 - HTTP: remove `allowH2` from Undici agent to prevent `fetch failed` on Node.js 22+ (#245).
 - VirusTotal: fix scan sync race conditions and retry behavior in scan/backfill paths.
 - Metadata: tolerate trailing commas in JSON metadata.
+- Auth: allow soft-deleted users to re-authenticate on fresh login, while keeping banned users blocked (thanks @tanujbhaud, #177).
 
 ## 0.6.0 - 2026-02-10
 
