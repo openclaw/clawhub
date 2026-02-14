@@ -2,9 +2,10 @@ import { getAuthUserId } from '@convex-dev/auth/server'
 import { v } from 'convex/values'
 import { internal } from './_generated/api'
 import type { Doc, Id } from './_generated/dataModel'
-import type { MutationCtx } from './_generated/server'
-import { internalMutation, internalQuery, mutation, query } from './_generated/server'
+import type { ActionCtx, MutationCtx } from './_generated/server'
+import { internalAction, internalMutation, internalQuery, mutation, query } from './_generated/server'
 import { assertAdmin, assertModerator, requireUser } from './lib/access'
+import { syncGitHubProfile } from './lib/githubAccount'
 import { toPublicUser } from './lib/public'
 import { buildUserSearchResults } from './lib/userSearch'
 
@@ -56,6 +57,55 @@ export const setGitHubCreatedAtInternal = internalMutation({
       githubCreatedAt: args.githubCreatedAt,
       updatedAt: Date.now(),
     })
+  },
+})
+
+/**
+ * Sync the user's GitHub profile (username, avatar) when it changes.
+ * This handles the case where a user renames their GitHub account.
+ */
+export const syncGitHubProfileInternal = internalMutation({
+  args: {
+    userId: v.id('users'),
+    name: v.string(),
+    image: v.optional(v.string()),
+  },
+  handler: async (ctx, args) => {
+    const user = await ctx.db.get(args.userId)
+    if (!user || user.deletedAt || user.deactivatedAt) return
+
+    const updates: Record<string, unknown> = {
+      name: args.name,
+      updatedAt: Date.now(),
+    }
+
+    // Update handle if it was derived from the old username
+    if (user.handle === user.name) {
+      updates.handle = args.name
+    }
+
+    // Update displayName if it was derived from the old username
+    if (user.displayName === user.name || user.displayName === user.handle) {
+      updates.displayName = args.name
+    }
+
+    // Update avatar if provided
+    if (args.image) {
+      updates.image = args.image
+    }
+
+    await ctx.db.patch(args.userId, updates)
+  },
+})
+
+/**
+ * Internal action to sync GitHub profile from the GitHub API.
+ * This is called after login to ensure the username is up-to-date.
+ */
+export const syncGitHubProfileAction = internalAction({
+  args: { userId: v.id('users') },
+  handler: async (ctx: ActionCtx, args) => {
+    await syncGitHubProfile(ctx, args.userId)
   },
 })
 

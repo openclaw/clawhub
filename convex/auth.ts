@@ -2,6 +2,7 @@ import GitHub from '@auth/core/providers/github'
 import { convexAuth } from '@convex-dev/auth/server'
 import type { GenericMutationCtx } from 'convex/server'
 import { ConvexError } from 'convex/values'
+import { internal } from './_generated/api'
 import type { DataModel, Id } from './_generated/dataModel'
 
 export const BANNED_REAUTH_MESSAGE =
@@ -69,14 +70,23 @@ export const { auth, signIn, signOut, store, isAuthenticated } = convexAuth({
   ],
   callbacks: {
     /**
-     * Block sign-in for deleted/deactivated users.
+     * Block sign-in for deleted/deactivated users and sync GitHub profile.
      *
      * Performance note: This callback runs on every OAuth sign-in, but the
      * audit log query ONLY executes when a legacy deleted user attempts to sign
      * in (user.deletedAt is set). For active users, this is a single field check.
+     *
+     * The GitHub profile sync is scheduled as a background action to handle
+     * the case where a user renames their GitHub account (fixes #303).
      */
     async afterUserCreatedOrUpdated(ctx, args) {
       await handleDeletedUserSignIn(ctx, args)
+
+      // Schedule GitHub profile sync to handle username renames (fixes #303)
+      // This runs as a background action so it doesn't block sign-in
+      await ctx.scheduler.runAfter(0, internal.users.syncGitHubProfileAction, {
+        userId: args.userId,
+      })
     },
   },
 })
