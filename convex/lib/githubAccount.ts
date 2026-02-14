@@ -10,6 +10,21 @@ type GitHubUser = {
   created_at?: string
 }
 
+function assertGitHubNumericId(providerAccountId: string) {
+  if (!/^[0-9]+$/.test(providerAccountId)) {
+    throw new ConvexError('GitHub account lookup failed')
+  }
+}
+
+function buildGitHubHeaders() {
+  const headers: Record<string, string> = { 'User-Agent': 'clawhub' }
+  const token = process.env.GITHUB_TOKEN
+  if (token) {
+    headers.Authorization = `Bearer ${token}`
+  }
+  return headers
+}
+
 export async function requireGitHubAccountAge(ctx: ActionCtx, userId: Id<'users'>) {
   const user = await ctx.runQuery(internal.users.getByIdInternal, { userId })
   if (!user || user.deletedAt || user.deactivatedAt) throw new ConvexError('User not found')
@@ -18,26 +33,19 @@ export async function requireGitHubAccountAge(ctx: ActionCtx, userId: Id<'users'
   let createdAt = user.githubCreatedAt ?? null
 
   if (!createdAt) {
-    const providerAccountId = await ctx.runQuery(internal.users.getGitHubProviderAccountIdInternal, {
-      userId,
-    })
+    const providerAccountId = await ctx.runQuery(
+      internal.githubIdentity.getGitHubProviderAccountIdInternal,
+      { userId },
+    )
     if (!providerAccountId) {
       // Invariant: GitHub is our only auth provider, so this should never happen.
       throw new ConvexError('GitHub account required')
     }
-    if (!/^[0-9]+$/.test(providerAccountId)) {
-      throw new ConvexError('GitHub account lookup failed')
-    }
-
-    const headers: Record<string, string> = { 'User-Agent': 'clawhub' }
-    const token = process.env.GITHUB_TOKEN
-    if (token) {
-      headers.Authorization = `Bearer ${token}`
-    }
+    assertGitHubNumericId(providerAccountId)
 
     // Fetch by immutable GitHub numeric ID to avoid username swap attacks entirely.
     const response = await fetch(`${GITHUB_API}/user/${providerAccountId}`, {
-      headers,
+      headers: buildGitHubHeaders(),
     })
     if (!response.ok) {
       if (response.status === 403 || response.status === 429) {
@@ -51,10 +59,9 @@ export async function requireGitHubAccountAge(ctx: ActionCtx, userId: Id<'users'
     if (!Number.isFinite(parsed)) throw new ConvexError('GitHub account lookup failed')
 
     createdAt = parsed
-    await ctx.runMutation(internal.users.updateGithubMetaInternal, {
+    await ctx.runMutation(internal.users.setGitHubCreatedAtInternal, {
       userId,
       githubCreatedAt: createdAt,
-      githubFetchedAt: now,
     })
   }
 

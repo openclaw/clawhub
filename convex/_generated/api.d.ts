@@ -16,6 +16,7 @@ import type * as devSeedExtra from "../devSeedExtra.js";
 import type * as downloads from "../downloads.js";
 import type * as githubBackups from "../githubBackups.js";
 import type * as githubBackupsNode from "../githubBackupsNode.js";
+import type * as githubIdentity from "../githubIdentity.js";
 import type * as githubImport from "../githubImport.js";
 import type * as githubSoulBackups from "../githubSoulBackups.js";
 import type * as githubSoulBackupsNode from "../githubSoulBackupsNode.js";
@@ -90,6 +91,7 @@ declare const fullApi: ApiFromModules<{
   downloads: typeof downloads;
   githubBackups: typeof githubBackups;
   githubBackupsNode: typeof githubBackupsNode;
+  githubIdentity: typeof githubIdentity;
   githubImport: typeof githubImport;
   githubSoulBackups: typeof githubSoulBackups;
   githubSoulBackupsNode: typeof githubSoulBackupsNode;

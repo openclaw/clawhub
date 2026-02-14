@@ -21,17 +21,6 @@ export const getByIdInternal = internalQuery({
   handler: async (ctx, args) => ctx.db.get(args.userId),
 })
 
-export const getGitHubProviderAccountIdInternal = internalQuery({
-  args: { userId: v.id('users') },
-  handler: async (ctx, args) => {
-    const account = await ctx.db
-      .query('authAccounts')
-      .withIndex('userIdAndProvider', (q) => q.eq('userId', args.userId).eq('provider', 'github'))
-      .unique()
-    return account?.providerAccountId ?? null
-  },
-})
-
 export const searchInternal = internalQuery({
   args: {
     actorUserId: v.id('users'),
@@ -56,17 +45,16 @@ export const searchInternal = internalQuery({
     return { items, total: result.total }
   },
 })
-export const updateGithubMetaInternal = internalMutation({
+
+export const setGitHubCreatedAtInternal = internalMutation({
   args: {
     userId: v.id('users'),
     githubCreatedAt: v.number(),
-    githubFetchedAt: v.number(),
   },
   handler: async (ctx, args) => {
     await ctx.db.patch(args.userId, {
       githubCreatedAt: args.githubCreatedAt,
-      githubFetchedAt: args.githubFetchedAt,
-      updatedAt: args.githubFetchedAt,
+      updatedAt: Date.now(),
     })
   },
 })
@@ -191,7 +179,6 @@ export const deleteAccount = mutation({
       isAnonymous: undefined,
       bio: undefined,
       githubCreatedAt: undefined,
-      githubFetchedAt: undefined,
       updatedAt: now,
     })
     await ctx.runMutation(internal.telemetry.clearUserTelemetryInternal, { userId })

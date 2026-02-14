@@ -6,10 +6,12 @@ import { requireGitHubAccountAge } from './githubAccount'
 
 vi.mock('../_generated/api', () => ({
   internal: {
+    githubIdentity: {
+      getGitHubProviderAccountIdInternal: Symbol('getGitHubProviderAccountIdInternal'),
+    },
     users: {
       getByIdInternal: Symbol('getByIdInternal'),
-      getGitHubProviderAccountIdInternal: Symbol('getGitHubProviderAccountIdInternal'),
-      updateGithubMetaInternal: Symbol('updateGithubMetaInternal'),
+      setGitHubCreatedAtInternal: Symbol('setGitHubCreatedAtInternal'),
     },
   },
 }))
@@ -37,7 +39,6 @@ describe('requireGitHubAccountAge', () => {
     const runQuery = vi.fn().mockResolvedValue({
       _id: 'users:1',
       githubCreatedAt: now.getTime() - 10 * ONE_DAY_MS,
-      githubFetchedAt: now.getTime() - ONE_DAY_MS,
     })
     const runMutation = vi.fn()
     const fetchMock = vi.fn()
@@ -48,9 +49,10 @@ describe('requireGitHubAccountAge', () => {
     expect(fetchMock).not.toHaveBeenCalled()
     expect(runMutation).not.toHaveBeenCalled()
     expect(runQuery).toHaveBeenCalledWith(internal.users.getByIdInternal, { userId: 'users:1' })
-    expect(runQuery).not.toHaveBeenCalledWith(internal.users.getGitHubProviderAccountIdInternal, {
-      userId: 'users:1',
-    })
+    expect(runQuery).not.toHaveBeenCalledWith(
+      internal.githubIdentity.getGitHubProviderAccountIdInternal,
+      { userId: 'users:1' },
+    )
   })
 
   it('rejects deactivated users', async () => {
@@ -77,7 +79,6 @@ describe('requireGitHubAccountAge', () => {
     const runQuery = vi.fn().mockResolvedValue({
       _id: 'users:1',
       githubCreatedAt: now.getTime() - 2 * ONE_DAY_MS,
-      githubFetchedAt: now.getTime() - ONE_DAY_MS / 2,
     })
     const runMutation = vi.fn()
 
@@ -95,7 +96,6 @@ describe('requireGitHubAccountAge', () => {
       .mockResolvedValueOnce({
         _id: 'users:1',
         githubCreatedAt: undefined,
-        githubFetchedAt: 0,
       })
       .mockResolvedValueOnce('12345')
     const runMutation = vi.fn()
@@ -115,10 +115,9 @@ describe('requireGitHubAccountAge', () => {
         headers: expect.objectContaining({ 'User-Agent': 'clawhub' }),
       }),
     )
-    expect(runMutation).toHaveBeenCalledWith(internal.users.updateGithubMetaInternal, {
+    expect(runMutation).toHaveBeenCalledWith(internal.users.setGitHubCreatedAtInternal, {
       userId: 'users:1',
       githubCreatedAt: Date.parse('2020-01-01T00:00:00Z'),
-      githubFetchedAt: now.getTime(),
     })
   })
 
@@ -127,7 +126,6 @@ describe('requireGitHubAccountAge', () => {
       .mockResolvedValueOnce({
         _id: 'users:1',
         githubCreatedAt: undefined,
-        githubFetchedAt: 0,
       })
       .mockResolvedValueOnce(null)
     const runMutation = vi.fn()
@@ -146,7 +144,6 @@ describe('requireGitHubAccountAge', () => {
       .mockResolvedValueOnce({
         _id: 'users:1',
         githubCreatedAt: undefined,
-        githubFetchedAt: 0,
       })
       .mockResolvedValueOnce('abc123')
     const runMutation = vi.fn()
@@ -165,7 +162,6 @@ describe('requireGitHubAccountAge', () => {
       .mockResolvedValueOnce({
         _id: 'users:1',
         githubCreatedAt: undefined,
-        githubFetchedAt: 0,
       })
       .mockResolvedValueOnce('12345')
     const runMutation = vi.fn()
@@ -182,7 +178,6 @@ describe('requireGitHubAccountAge', () => {
       .mockResolvedValueOnce({
         _id: 'users:1',
         githubCreatedAt: undefined,
-        githubFetchedAt: 0,
       })
       .mockResolvedValueOnce('12345')
     const runMutation = vi.fn()
@@ -199,7 +194,6 @@ describe('requireGitHubAccountAge', () => {
       .mockResolvedValueOnce({
         _id: 'users:1',
         githubCreatedAt: undefined,
-        githubFetchedAt: 0,
       })
       .mockResolvedValueOnce('12345')
     const runMutation = vi.fn()
@@ -216,7 +210,6 @@ describe('requireGitHubAccountAge', () => {
       .mockResolvedValueOnce({
         _id: 'users:1',
         githubCreatedAt: undefined,
-        githubFetchedAt: 0,
       })
       .mockResolvedValueOnce('12345')
     const runMutation = vi.fn()
@@ -242,7 +235,6 @@ describe('requireGitHubAccountAge', () => {
       .mockResolvedValueOnce({
         _id: 'users:1',
         githubCreatedAt: undefined,
-        githubFetchedAt: 0,
       })
       .mockResolvedValueOnce('12345')
     const runMutation = vi.fn()
@@ -267,4 +259,3 @@ describe('requireGitHubAccountAge', () => {
     )
   })
 })
-
