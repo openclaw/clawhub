@@ -1,7 +1,7 @@
 /* @vitest-environment node */
 
 import { describe, expect, it, vi } from 'vitest'
-import { apiRequest, apiRequestForm, downloadZip } from './http'
+import { apiRequest, apiRequestForm, downloadZip, fetchText } from './http'
 import { ApiV1WhoamiResponseSchema } from './schema/index.js'
 
 describe('apiRequest', () => {
@@ -151,6 +151,50 @@ describe('apiRequestForm', () => {
       }),
     ).rejects.toThrow('HTTP 400')
     expect(fetchMock).toHaveBeenCalledTimes(1)
+    vi.unstubAllGlobals()
+  })
+})
+
+describe('fetchText', () => {
+  it('aborts with Error timeouts and retries', async () => {
+    const setTimeoutMock = vi.fn((callback: () => void) => {
+      callback()
+      return 1 as unknown as ReturnType<typeof setTimeout>
+    })
+    const clearTimeoutMock = vi.fn()
+    vi.stubGlobal('setTimeout', setTimeoutMock as typeof setTimeout)
+    vi.stubGlobal('clearTimeout', clearTimeoutMock as typeof clearTimeout)
+
+    const fetchMock = vi.fn(async (_url: string, init?: RequestInit) => {
+      const signal = init?.signal
+      if (!signal || !(signal instanceof AbortSignal)) {
+        throw new Error('Missing abort signal')
+      }
+      if (signal.aborted) {
+        throw signal.reason
+      }
+      return await new Promise<Response>((_resolve, reject) => {
+        signal.addEventListener(
+          'abort',
+          () => {
+            reject(signal.reason)
+          },
+          { once: true },
+        )
+      })
+    })
+    vi.stubGlobal('fetch', fetchMock)
+
+    let caught: unknown
+    try {
+      await fetchText('https://example.com', { path: '/x' })
+    } catch (error) {
+      caught = error
+    }
+
+    expect(caught).toBeInstanceOf(Error)
+    expect((caught as Error).message).toBe('Timeout')
+    expect(fetchMock).toHaveBeenCalledTimes(3)
     vi.unstubAllGlobals()
   })
 })

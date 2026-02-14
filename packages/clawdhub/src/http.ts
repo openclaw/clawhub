@@ -52,27 +52,20 @@ export async function apiRequest<T>(
         headers['Content-Type'] = 'application/json'
         body = JSON.stringify(args.body ?? {})
       }
-      const controller = new AbortController()
-      const timeout = setTimeout(() => controller.abort(new Error('Timeout')), REQUEST_TIMEOUT_MS)
-      try {
-        const response = await fetch(url, {
-          method: args.method,
-          headers,
-          body,
-          signal: controller.signal,
-        })
-        if (!response.ok) {
-          const text = await response.text().catch(() => '')
-          const message = text || `HTTP ${response.status}`
-          if (response.status === 429 || response.status >= 500) {
-            throw new Error(message)
-          }
-          throw new AbortError(message)
+      const response = await fetchWithTimeout(url, {
+        method: args.method,
+        headers,
+        body,
+      })
+      if (!response.ok) {
+        const text = await response.text().catch(() => '')
+        const message = text || `HTTP ${response.status}`
+        if (response.status === 429 || response.status >= 500) {
+          throw new Error(message)
         }
-        return (await response.json()) as unknown
-      } finally {
-        clearTimeout(timeout)
+        throw new AbortError(message)
       }
+      return (await response.json()) as unknown
     },
     { retries: 2 },
   )
@@ -104,27 +97,20 @@ export async function apiRequestForm<T>(
 
       const headers: Record<string, string> = { Accept: 'application/json' }
       if (args.token) headers.Authorization = `Bearer ${args.token}`
-      const controller = new AbortController()
-      const timeout = setTimeout(() => controller.abort(new Error('Timeout')), REQUEST_TIMEOUT_MS)
-      try {
-        const response = await fetch(url, {
-          method: args.method,
-          headers,
-          body: args.form,
-          signal: controller.signal,
-        })
-        if (!response.ok) {
-          const text = await response.text().catch(() => '')
-          const message = text || `HTTP ${response.status}`
-          if (response.status === 429 || response.status >= 500) {
-            throw new Error(message)
-          }
-          throw new AbortError(message)
+      const response = await fetchWithTimeout(url, {
+        method: args.method,
+        headers,
+        body: args.form,
+      })
+      if (!response.ok) {
+        const text = await response.text().catch(() => '')
+        const message = text || `HTTP ${response.status}`
+        if (response.status === 429 || response.status >= 500) {
+          throw new Error(message)
         }
-        return (await response.json()) as unknown
-      } finally {
-        clearTimeout(timeout)
+        throw new AbortError(message)
       }
+      return (await response.json()) as unknown
     },
     { retries: 2 },
   )
@@ -144,10 +130,7 @@ export async function fetchText(registry: string, args: TextRequestArgs): Promis
 
       const headers: Record<string, string> = { Accept: 'text/plain' }
       if (args.token) headers.Authorization = `Bearer ${args.token}`
-      const controller = new AbortController()
-      const timeout = setTimeout(() => controller.abort('Timeout'), REQUEST_TIMEOUT_MS)
-      const response = await fetch(url, { method: 'GET', headers, signal: controller.signal })
-      clearTimeout(timeout)
+      const response = await fetchWithTimeout(url, { method: 'GET', headers })
       const text = await response.text()
       if (!response.ok) {
         const message = text || `HTTP ${response.status}`
@@ -172,24 +155,28 @@ export async function downloadZip(registry: string, args: { slug: string; versio
         return await fetchBinaryViaCurl(url.toString())
       }
 
-      const controller = new AbortController()
-      const timeout = setTimeout(() => controller.abort(new Error('Timeout')), REQUEST_TIMEOUT_MS)
-      try {
-        const response = await fetch(url.toString(), { method: 'GET', signal: controller.signal })
-        if (!response.ok) {
-          const message = (await response.text().catch(() => '')) || `HTTP ${response.status}`
-          if (response.status === 429 || response.status >= 500) {
-            throw new Error(message)
-          }
-          throw new AbortError(message)
+      const response = await fetchWithTimeout(url.toString(), { method: 'GET' })
+      if (!response.ok) {
+        const message = (await response.text().catch(() => '')) || `HTTP ${response.status}`
+        if (response.status === 429 || response.status >= 500) {
+          throw new Error(message)
         }
-        return new Uint8Array(await response.arrayBuffer())
-      } finally {
-        clearTimeout(timeout)
+        throw new AbortError(message)
       }
+      return new Uint8Array(await response.arrayBuffer())
     },
     { retries: 2 },
   )
+}
+
+async function fetchWithTimeout(url: string, init: RequestInit): Promise<Response> {
+  const controller = new AbortController()
+  const timeout = setTimeout(() => controller.abort(new Error('Timeout')), REQUEST_TIMEOUT_MS)
+  try {
+    return await fetch(url, { ...init, signal: controller.signal })
+  } finally {
+    clearTimeout(timeout)
+  }
 }
 
 async function fetchJsonViaCurl(url: string, args: RequestArgs) {
