@@ -4,6 +4,38 @@ import { describe, expect, it, vi } from 'vitest'
 import { apiRequest, apiRequestForm, downloadZip, fetchText } from './http'
 import { ApiV1WhoamiResponseSchema } from './schema/index.js'
 
+function mockImmediateTimeouts() {
+  const setTimeoutMock = vi.fn((callback: () => void) => {
+    callback()
+    return 1 as unknown as ReturnType<typeof setTimeout>
+  })
+  const clearTimeoutMock = vi.fn()
+  vi.stubGlobal('setTimeout', setTimeoutMock as typeof setTimeout)
+  vi.stubGlobal('clearTimeout', clearTimeoutMock as typeof clearTimeout)
+  return { setTimeoutMock, clearTimeoutMock }
+}
+
+function createAbortingFetchMock() {
+  return vi.fn(async (_url: string, init?: RequestInit) => {
+    const signal = init?.signal
+    if (!signal || !(signal instanceof AbortSignal)) {
+      throw new Error('Missing abort signal')
+    }
+    if (signal.aborted) {
+      throw signal.reason
+    }
+    return await new Promise<Response>((_resolve, reject) => {
+      signal.addEventListener(
+        'abort',
+        () => {
+          reject(signal.reason)
+        },
+        { once: true },
+      )
+    })
+  })
+}
+
 describe('apiRequest', () => {
   it('adds bearer token and parses json', async () => {
     const fetchMock = vi.fn().mockResolvedValue({
@@ -92,6 +124,25 @@ describe('apiRequest', () => {
     expect(fetchMock).toHaveBeenCalledTimes(1)
     vi.unstubAllGlobals()
   })
+
+  it('aborts with Error timeouts and retries', async () => {
+    const { clearTimeoutMock } = mockImmediateTimeouts()
+    const fetchMock = createAbortingFetchMock()
+    vi.stubGlobal('fetch', fetchMock)
+
+    let caught: unknown
+    try {
+      await apiRequest('https://example.com', { method: 'GET', path: '/x' })
+    } catch (error) {
+      caught = error
+    }
+
+    expect(caught).toBeInstanceOf(Error)
+    expect((caught as Error).message).toBe('Timeout')
+    expect(fetchMock).toHaveBeenCalledTimes(3)
+    expect(clearTimeoutMock.mock.calls.length).toBeGreaterThanOrEqual(3)
+    vi.unstubAllGlobals()
+  })
 })
 
 describe('apiRequestForm', () => {
@@ -157,32 +208,8 @@ describe('apiRequestForm', () => {
 
 describe('fetchText', () => {
   it('aborts with Error timeouts and retries', async () => {
-    const setTimeoutMock = vi.fn((callback: () => void) => {
-      callback()
-      return 1 as unknown as ReturnType<typeof setTimeout>
-    })
-    const clearTimeoutMock = vi.fn()
-    vi.stubGlobal('setTimeout', setTimeoutMock as typeof setTimeout)
-    vi.stubGlobal('clearTimeout', clearTimeoutMock as typeof clearTimeout)
-
-    const fetchMock = vi.fn(async (_url: string, init?: RequestInit) => {
-      const signal = init?.signal
-      if (!signal || !(signal instanceof AbortSignal)) {
-        throw new Error('Missing abort signal')
-      }
-      if (signal.aborted) {
-        throw signal.reason
-      }
-      return await new Promise<Response>((_resolve, reject) => {
-        signal.addEventListener(
-          'abort',
-          () => {
-            reject(signal.reason)
-          },
-          { once: true },
-        )
-      })
-    })
+    const { clearTimeoutMock } = mockImmediateTimeouts()
+    const fetchMock = createAbortingFetchMock()
     vi.stubGlobal('fetch', fetchMock)
 
     let caught: unknown
@@ -195,6 +222,7 @@ describe('fetchText', () => {
     expect(caught).toBeInstanceOf(Error)
     expect((caught as Error).message).toBe('Timeout')
     expect(fetchMock).toHaveBeenCalledTimes(3)
+    expect(clearTimeoutMock.mock.calls.length).toBeGreaterThanOrEqual(3)
     vi.unstubAllGlobals()
   })
 })
