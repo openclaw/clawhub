@@ -828,81 +828,49 @@ async function resolveSoulTagsBatch(
   ctx: ActionCtx,
   tagsList: Array<Record<string, Id<'soulVersions'>>>,
 ): Promise<Array<Record<string, string>>> {
-  // Collect all unique version IDs
-  const allVersionIds = new Set<Id<'soulVersions'>>()
-  for (const tags of tagsList) {
-    for (const versionId of Object.values(tags)) {
-      allVersionIds.add(versionId)
-    }
-  }
-
-  // Short-circuit if no tags to resolve
-  if (allVersionIds.size === 0) {
-    return tagsList.map(() => ({}))
-  }
-
-  // Single batch query
-  const versions =
-    (await ctx.runQuery(api.souls.getVersionsByIds, {
-      versionIds: [...allVersionIds],
-    })) ?? []
-
-  // Build lookup map: versionId -> version string
-  const versionMap = new Map<Id<'soulVersions'>, string>()
-  for (const v of versions) {
-    if (v && !v.softDeletedAt) {
-      versionMap.set(v._id, v.version)
-    }
-  }
-
-  // Resolve each tags record
-  return tagsList.map((tags) => {
-    const resolved: Record<string, string> = {}
-    for (const [tag, versionId] of Object.entries(tags)) {
-      const version = versionMap.get(versionId)
-      if (version) resolved[tag] = version
-    }
-    return resolved
-  })
+  return resolveVersionTagsBatch(ctx, tagsList, internal.souls.getVersionsByIdsInternal)
 }
 
-/**
- * Batch resolve skill version tags to version strings.
- * Collects all version IDs, fetches them in a single query, then maps back.
- * Reduces N sequential queries to 1 batch query.
- */
 async function resolveTagsBatch(
   ctx: ActionCtx,
   tagsList: Array<Record<string, Id<'skillVersions'>>>,
 ): Promise<Array<Record<string, string>>> {
-  // Collect all unique version IDs
-  const allVersionIds = new Set<Id<'skillVersions'>>()
+  return resolveVersionTagsBatch(ctx, tagsList, internal.skills.getVersionsByIdsInternal)
+}
+
+/**
+ * Batch resolve version tags to version strings.
+ * Collects all version IDs, fetches them in a single query, then maps back.
+ *
+ * Notes:
+ * - Uses `internal.*` queries to avoid expanding the public Convex API surface.
+ * - Sorts ids for stable query args (helps caching/log diffs).
+ */
+async function resolveVersionTagsBatch<TTable extends string>(
+  ctx: ActionCtx,
+  tagsList: Array<Record<string, Id<TTable>>>,
+  getVersionsByIdsQuery: unknown,
+): Promise<Array<Record<string, string>>> {
+  const allVersionIds = new Set<Id<TTable>>()
   for (const tags of tagsList) {
-    for (const versionId of Object.values(tags)) {
-      allVersionIds.add(versionId)
-    }
+    for (const versionId of Object.values(tags)) allVersionIds.add(versionId)
   }
 
-  // Short-circuit if no tags to resolve
-  if (allVersionIds.size === 0) {
-    return tagsList.map(() => ({}))
-  }
+  if (allVersionIds.size === 0) return tagsList.map(() => ({}))
 
-  // Single batch query
+  const versionIds = [...allVersionIds].sort() as Array<Id<TTable>>
   const versions =
-    (await ctx.runQuery(api.skills.getVersionsByIds, {
-      versionIds: [...allVersionIds],
-    })) ?? []
+    ((await ctx.runQuery(getVersionsByIdsQuery as never, { versionIds })) as Array<{
+      _id: Id<TTable>
+      version: string
+      softDeletedAt?: unknown
+    }> | null) ?? []
 
-  // Build lookup map: versionId -> version string
-  const versionMap = new Map<Id<'skillVersions'>, string>()
+  const versionMap = new Map<Id<TTable>, string>()
   for (const v of versions) {
-    if (v && !v.softDeletedAt) {
-      versionMap.set(v._id, v.version)
-    }
+    if (!v?.softDeletedAt) versionMap.set(v._id, v.version)
   }
 
-  // Resolve each tags record
   return tagsList.map((tags) => {
     const resolved: Record<string, string> = {}
     for (const [tag, versionId] of Object.entries(tags)) {

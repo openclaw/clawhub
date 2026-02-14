@@ -8,6 +8,7 @@
 ### Changed
 - Quality gate: language-aware word counting (`Intl.Segmenter`) and new `cjkChars` signal to reduce false rejects for non-Latin docs.
 - Jobs: run skill stat event processing every 5 minutes (was 15).
+- API performance: batch resolve skill/soul tags in v1 list/get endpoints (fewer action->query round-trips) (#112) (thanks @mkrokosz).
 
 ### Fixed
 - Users: sync handle on ensure when GitHub login changes (#293) (thanks @christianhpoe).

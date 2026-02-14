@@ -1623,7 +1623,7 @@ export const getVersionById = query({
   handler: async (ctx, args) => ctx.db.get(args.versionId),
 })
 
-export const getVersionsByIds = query({
+export const getVersionsByIdsInternal = internalQuery({
   args: { versionIds: v.array(v.id('skillVersions')) },
   handler: async (ctx, args) => {
     const versions = await Promise.all(args.versionIds.map((id) => ctx.db.get(id)))
