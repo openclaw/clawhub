@@ -84,7 +84,9 @@ describe('generateEmbedding', () => {
     fetchMock.mockRejectedValue(new DOMException('aborted', 'AbortError'))
 
     const promise = generateEmbedding('always timeout')
-    const rejection = expect(promise).rejects.toThrow('OpenAI API request timed out after 10 seconds')
+    const rejection = expect(promise).rejects.toThrow(
+      'OpenAI API request timed out after 10 seconds',
+    )
     await vi.runAllTimersAsync()
 
     await rejection
