@@ -53,6 +53,8 @@ const AUTO_HIDE_REPORT_THRESHOLD = 3
 const MAX_REPORT_REASON_SAMPLE = 5
 const RATE_LIMIT_HOUR_MS = 60 * 60 * 1000
 const RATE_LIMIT_DAY_MS = 24 * RATE_LIMIT_HOUR_MS
+const SLUG_RESERVATION_DAYS = 90
+const SLUG_RESERVATION_MS = SLUG_RESERVATION_DAYS * RATE_LIMIT_DAY_MS
 const LOW_TRUST_ACCOUNT_AGE_MS = 30 * RATE_LIMIT_DAY_MS
 const TRUSTED_PUBLISHER_SKILL_THRESHOLD = 10
 const LOW_TRUST_BURST_THRESHOLD_PER_HOUR = 8
@@ -435,6 +437,34 @@ async function hardDeleteSkillStep(
       return
     }
     case 'finalize': {
+      // Reserve the slug so the original owner can reclaim it within the cooldown period.
+      // If a reservation already exists (e.g. created by reclaimSlug for the rightful owner),
+      // do NOT overwrite it -- the reclaim reservation takes priority.
+      const existingReservation = await ctx.db
+        .query('reservedSlugs')
+        .withIndex('by_slug', (q) => q.eq('slug', skill.slug))
+        .unique()
+      if (existingReservation) {
+        // Only update if the existing reservation is for the same owner being deleted
+        // (i.e. a normal hard-delete, not a reclaim). Reclaim reservations point to
+        // the rightful owner and must not be overwritten.
+        if (existingReservation.originalOwnerUserId === skill.ownerUserId) {
+          await ctx.db.patch(existingReservation._id, {
+            deletedAt: now,
+            expiresAt: now + SLUG_RESERVATION_MS,
+            releasedAt: undefined,
+          })
+        }
+        // Otherwise a reclaim reservation exists for a different user -- leave it alone.
+      } else {
+        await ctx.db.insert('reservedSlugs', {
+          slug: skill.slug,
+          originalOwnerUserId: skill.ownerUserId,
+          deletedAt: now,
+          expiresAt: now + SLUG_RESERVATION_MS,
+        })
+      }
+
       await ctx.db.delete(skill._id)
       await ctx.db.insert('auditLogs', {
         actorUserId,
@@ -771,6 +801,16 @@ export const getBySlugForStaff = query({
           }
         : null,
     }
+  },
+})
+
+export const getReservedSlugInternal = internalQuery({
+  args: { slug: v.string() },
+  handler: async (ctx, args) => {
+    return ctx.db
+      .query('reservedSlugs')
+      .withIndex('by_slug', (q) => q.eq('slug', args.slug))
+      .unique()
   },
 })
 
@@ -2807,6 +2847,164 @@ export const changeOwner = mutation({
   },
 })
 
+/**
+ * Admin-only: reclaim a squatted slug by hard-deleting the squatter's skill
+ * and reserving the slug for the rightful owner.
+ */
+export const reclaimSlug = mutation({
+  args: {
+    slug: v.string(),
+    rightfulOwnerUserId: v.id('users'),
+    reason: v.optional(v.string()),
+  },
+  handler: async (ctx, args) => {
+    const { user } = await requireUser(ctx)
+    assertAdmin(user)
+
+    const slug = args.slug.trim().toLowerCase()
+    if (!slug) throw new Error('Slug required')
+
+    const rightfulOwner = await ctx.db.get(args.rightfulOwnerUserId)
+    if (!rightfulOwner) throw new Error('Rightful owner not found')
+
+    const now = Date.now()
+
+    // Check if slug is currently occupied by someone else
+    const existingSkill = await ctx.db
+      .query('skills')
+      .withIndex('by_slug', (q) => q.eq('slug', slug))
+      .unique()
+
+    if (existingSkill) {
+      if (existingSkill.ownerUserId === args.rightfulOwnerUserId) {
+        return { ok: true as const, action: 'already_owned' }
+      }
+
+      // Hard-delete the squatter's skill
+      await ctx.scheduler.runAfter(0, internal.skills.hardDeleteInternal, {
+        skillId: existingSkill._id,
+        actorUserId: user._id,
+      })
+
+      await ctx.db.insert('auditLogs', {
+        actorUserId: user._id,
+        action: 'slug.reclaim',
+        targetType: 'skill',
+        targetId: existingSkill._id,
+        metadata: {
+          slug,
+          squatterUserId: existingSkill.ownerUserId,
+          rightfulOwnerUserId: args.rightfulOwnerUserId,
+          reason: args.reason || undefined,
+        },
+        createdAt: now,
+      })
+    }
+
+    // Create or update the slug reservation for the rightful owner
+    const existingReservation = await ctx.db
+      .query('reservedSlugs')
+      .withIndex('by_slug', (q) => q.eq('slug', slug))
+      .unique()
+
+    if (existingReservation) {
+      await ctx.db.patch(existingReservation._id, {
+        originalOwnerUserId: args.rightfulOwnerUserId,
+        deletedAt: now,
+        expiresAt: now + SLUG_RESERVATION_MS,
+        reason: args.reason || 'slug.reclaimed',
+        releasedAt: undefined,
+      })
+    } else {
+      await ctx.db.insert('reservedSlugs', {
+        slug,
+        originalOwnerUserId: args.rightfulOwnerUserId,
+        deletedAt: now,
+        expiresAt: now + SLUG_RESERVATION_MS,
+        reason: args.reason || 'slug.reclaimed',
+      })
+    }
+
+    return {
+      ok: true as const,
+      action: existingSkill ? 'reclaimed_from_squatter' : 'reserved',
+    }
+  },
+})
+
+/**
+ * Admin-only: reclaim slugs in bulk. Useful for recovering multiple squatted slugs at once.
+ */
+export const reclaimSlugInternal = internalMutation({
+  args: {
+    actorUserId: v.id('users'),
+    slug: v.string(),
+    rightfulOwnerUserId: v.id('users'),
+    reason: v.optional(v.string()),
+  },
+  handler: async (ctx, args) => {
+    const actor = await ctx.db.get(args.actorUserId)
+    if (!actor || actor.deletedAt || actor.deactivatedAt) throw new Error('User not found')
+    assertAdmin(actor)
+
+    const slug = args.slug.trim().toLowerCase()
+    if (!slug) throw new Error('Slug required')
+
+    const now = Date.now()
+
+    const existingSkill = await ctx.db
+      .query('skills')
+      .withIndex('by_slug', (q) => q.eq('slug', slug))
+      .unique()
+
+    if (existingSkill && existingSkill.ownerUserId !== args.rightfulOwnerUserId) {
+      await ctx.scheduler.runAfter(0, internal.skills.hardDeleteInternal, {
+        skillId: existingSkill._id,
+        actorUserId: args.actorUserId,
+      })
+    }
+
+    const existingReservation = await ctx.db
+      .query('reservedSlugs')
+      .withIndex('by_slug', (q) => q.eq('slug', slug))
+      .unique()
+
+    if (existingReservation) {
+      await ctx.db.patch(existingReservation._id, {
+        originalOwnerUserId: args.rightfulOwnerUserId,
+        deletedAt: now,
+        expiresAt: now + SLUG_RESERVATION_MS,
+        reason: args.reason || 'slug.reclaimed',
+        releasedAt: undefined,
+      })
+    } else {
+      await ctx.db.insert('reservedSlugs', {
+        slug,
+        originalOwnerUserId: args.rightfulOwnerUserId,
+        deletedAt: now,
+        expiresAt: now + SLUG_RESERVATION_MS,
+        reason: args.reason || 'slug.reclaimed',
+      })
+    }
+
+    await ctx.db.insert('auditLogs', {
+      actorUserId: args.actorUserId,
+      action: 'slug.reclaim',
+      targetType: 'slug',
+      targetId: slug,
+      metadata: {
+        slug,
+        rightfulOwnerUserId: args.rightfulOwnerUserId,
+        hadSquatter: Boolean(existingSkill && existingSkill.ownerUserId !== args.rightfulOwnerUserId),
+        reason: args.reason || undefined,
+      },
+      createdAt: now,
+    })
+
+    return { ok: true as const }
+  },
+})
+
 export const setDuplicate = mutation({
   args: { skillId: v.id('skills'), canonicalSlug: v.optional(v.string()) },
   handler: async (ctx, args) => {
@@ -3025,7 +3223,19 @@ export const insertVersion = internalMutation({
     const now = Date.now()
     const qualityAssessment = args.qualityAssessment
     const isQualityQuarantine = qualityAssessment?.decision === 'quarantine'
-    const moderationReason = isQualityQuarantine ? 'quality.low' : 'pending.scan'
+    // Trusted publishers (or admins/moderators) bypass auto-hide for pending scans.
+    // Their skills start as 'active' and will be hidden only if VT scan finds issues.
+    const isTrustedPublisher = Boolean(
+      user.trustedPublisher ||
+        user.role === 'admin' ||
+        user.role === 'moderator',
+    )
+    const moderationReason = isQualityQuarantine
+      ? 'quality.low'
+      : isTrustedPublisher
+        ? 'trusted.publisher'
+        : 'pending.scan'
+    const initialModerationStatus = isTrustedPublisher && !isQualityQuarantine ? 'active' : 'hidden'
     const moderationNotes = isQualityQuarantine
       ? `Auto-quarantined by quality gate (score=${qualityAssessment.score}, tier=${qualityAssessment.trustTier}, similar=${qualityAssessment.similarRecentCount}).`
       : undefined
@@ -3042,6 +3252,28 @@ export const insertVersion = internalMutation({
       : undefined
 
     if (!skill) {
+      // Check if the slug is reserved for a previous owner (anti-squatting)
+      const reservation = await ctx.db
+        .query('reservedSlugs')
+        .withIndex('by_slug', (q) => q.eq('slug', args.slug))
+        .unique()
+      if (reservation && !reservation.releasedAt) {
+        if (reservation.expiresAt > now) {
+          // Slug is still within cooldown period
+          if (reservation.originalOwnerUserId !== userId) {
+            throw new Error(
+              `Slug "${args.slug}" is reserved for its previous owner until ${new Date(reservation.expiresAt).toISOString()}. ` +
+                'Please choose a different slug.',
+            )
+          }
+          // Original owner is reclaiming -- release the reservation
+          await ctx.db.patch(reservation._id, { releasedAt: now })
+        } else {
+          // Reservation expired -- release it
+          await ctx.db.patch(reservation._id, { releasedAt: now })
+        }
+      }
+
       const ownerTrustSignals = await getOwnerTrustSignals(ctx, user, now)
       enforceNewSkillRateLimit(ownerTrustSignals)
 
@@ -3106,7 +3338,7 @@ export const insertVersion = internalMutation({
           official: undefined,
           deprecated: undefined,
         },
-        moderationStatus: 'hidden',
+        moderationStatus: initialModerationStatus,
         moderationReason,
         moderationNotes,
         quality: qualityRecord,
@@ -3177,7 +3409,7 @@ export const insertVersion = internalMutation({
       tags: nextTags,
       stats: { ...skill.stats, versions: skill.stats.versions + 1 },
       softDeletedAt: undefined,
-      moderationStatus: 'hidden',
+      moderationStatus: initialModerationStatus,
       moderationReason,
       moderationNotes,
       quality: qualityRecord ?? skill.quality,
