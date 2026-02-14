@@ -74,26 +74,43 @@ export const me = query({
 
 export const ensure = mutation({
   args: {},
-  handler: async (ctx) => {
-    const { userId, user } = await requireUser(ctx)
-    const updates: Record<string, unknown> = {}
-
-    const handle = user.handle || user.name || user.email?.split('@')[0]
-    if (!user.handle && handle) updates.handle = handle
-    if (!user.displayName) updates.displayName = handle
-    if (!user.role) {
-      updates.role = handle === ADMIN_HANDLE ? 'admin' : DEFAULT_ROLE
-    }
-    if (!user.createdAt) updates.createdAt = user._creationTime
-
-    if (Object.keys(updates).length > 0) {
-      updates.updatedAt = Date.now()
-      await ctx.db.patch(userId, updates)
-    }
-
-    return ctx.db.get(userId)
-  },
+  handler: ensureHandler,
 })
+
+export async function ensureHandler(ctx: MutationCtx) {
+  const { userId, user } = await requireUser(ctx)
+  const updates: Record<string, unknown> = {}
+
+  const existingHandle = user.handle?.trim() || undefined
+  const nameHandle = user.name?.trim() || undefined
+  const emailHandle = user.email?.split('@')[0]?.trim() || undefined
+  const derivedHandle = nameHandle || emailHandle
+  const baseHandle = derivedHandle ?? existingHandle
+
+  if (derivedHandle && (!existingHandle || existingHandle !== derivedHandle)) {
+    updates.handle = derivedHandle
+  }
+
+  const displayName = user.displayName?.trim() || undefined
+  if (!displayName && baseHandle) {
+    updates.displayName = baseHandle
+  } else if (derivedHandle && displayName === existingHandle) {
+    updates.displayName = derivedHandle
+  }
+
+  if (!user.role) {
+    updates.role = baseHandle === ADMIN_HANDLE ? 'admin' : DEFAULT_ROLE
+  }
+
+  if (!user.createdAt) updates.createdAt = user._creationTime
+
+  if (Object.keys(updates).length > 0) {
+    updates.updatedAt = Date.now()
+    await ctx.db.patch(userId, updates)
+  }
+
+  return ctx.db.get(userId)
+}
 
 export const updateProfile = mutation({
   args: {
