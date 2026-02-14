@@ -311,17 +311,17 @@ export function SkillsIndex() {
 
   return (
     <main className="section">
-      <header className="skills-header">
-        <div>
-          <h1 className="section-title" style={{ marginBottom: 8 }}>
-            Skills
-          </h1>
-          <p className="section-subtitle" style={{ marginBottom: 0 }}>
-            {isLoadingSkills
-              ? 'Loading skills…'
-              : `Browse the skill library${activeFilters.length ? ` (${activeFilters.join(', ')})` : ''}.`}
-          </p>
-        </div>
+      <header className="skills-header-top">
+        <h1 className="section-title" style={{ marginBottom: 8 }}>
+          Skills
+        </h1>
+        <p className="section-subtitle" style={{ marginBottom: 0 }}>
+          {isLoadingSkills
+            ? 'Loading skills…'
+            : `Browse the skill library${activeFilters.length ? ` (${activeFilters.join(', ')})` : ''}.`}
+        </p>
+      </header>
+      <div className="skills-container">
         <div className="skills-toolbar">
           <div className="skills-search">
             <input
@@ -430,99 +430,99 @@ export function SkillsIndex() {
             </button>
           </div>
         </div>
-      </header>
 
-      {isLoadingSkills ? (
-        <div className="card">
-          <div className="loading-indicator">Loading skills…</div>
-        </div>
-      ) : sorted.length === 0 ? (
-        <div className="card">No skills match that filter.</div>
-      ) : view === 'cards' ? (
-        <div className="grid">
-          {sorted.map((entry) => {
-            const skill = entry.skill
-            const isPlugin = Boolean(entry.latestVersion?.parsed?.clawdis?.nix?.plugin)
-            const skillHref = buildSkillHref(skill, entry.ownerHandle)
-            return (
-              <SkillCard
-                key={skill._id}
-                skill={skill}
-                href={skillHref}
-                badge={getSkillBadges(skill)}
-                chip={isPlugin ? 'Plugin bundle (nix)' : undefined}
-                summaryFallback="Agent-ready skill pack."
-                meta={
-                  <div className="stat">
-                    ⭐ {skill.stats.stars} · ⤓ {skill.stats.downloads} · ⤒{' '}
-                    {skill.stats.installsAllTime ?? 0}
-                  </div>
-                }
-              />
-            )
-          })}
-        </div>
-      ) : (
-        <div className="skills-list">
-          {sorted.map((entry) => {
-            const skill = entry.skill
-            const isPlugin = Boolean(entry.latestVersion?.parsed?.clawdis?.nix?.plugin)
-            const skillHref = buildSkillHref(skill, entry.ownerHandle)
-            return (
-              <Link key={skill._id} className="skills-row" to={skillHref}>
-                <div className="skills-row-main">
-                  <div className="skills-row-title">
-                    <span>{skill.displayName}</span>
-                    <span className="skills-row-slug">/{skill.slug}</span>
-                    {getSkillBadges(skill).map((badge) => (
-                      <span key={badge} className="tag">
-                        {badge}
-                      </span>
-                    ))}
+        {isLoadingSkills ? (
+          <div className="card">
+            <div className="loading-indicator">Loading skills…</div>
+          </div>
+        ) : sorted.length === 0 ? (
+          <div className="card">No skills match that filter.</div>
+        ) : view === 'cards' ? (
+          <div className="grid">
+            {sorted.map((entry) => {
+              const skill = entry.skill
+              const isPlugin = Boolean(entry.latestVersion?.parsed?.clawdis?.nix?.plugin)
+              const skillHref = buildSkillHref(skill, entry.ownerHandle)
+              return (
+                <SkillCard
+                  key={skill._id}
+                  skill={skill}
+                  href={skillHref}
+                  badge={getSkillBadges(skill)}
+                  chip={isPlugin ? 'Plugin bundle (nix)' : undefined}
+                  summaryFallback="Agent-ready skill pack."
+                  meta={
+                    <div className="stat">
+                      ⭐ {skill.stats.stars} · ⤓ {skill.stats.downloads} · ⤒{' '}
+                      {skill.stats.installsAllTime ?? 0}
+                    </div>
+                  }
+                />
+              )
+            })}
+          </div>
+        ) : (
+          <div className="skills-list">
+            {sorted.map((entry) => {
+              const skill = entry.skill
+              const isPlugin = Boolean(entry.latestVersion?.parsed?.clawdis?.nix?.plugin)
+              const skillHref = buildSkillHref(skill, entry.ownerHandle)
+              return (
+                <Link key={skill._id} className="skills-row" to={skillHref}>
+                  <div className="skills-row-main">
+                    <div className="skills-row-title">
+                      <span>{skill.displayName}</span>
+                      <span className="skills-row-slug">/{skill.slug}</span>
+                      {getSkillBadges(skill).map((badge) => (
+                        <span key={badge} className="tag">
+                          {badge}
+                        </span>
+                      ))}
+                      {isPlugin ? (
+                        <span className="tag tag-accent tag-compact">Plugin bundle (nix)</span>
+                      ) : null}
+                    </div>
+                    <div className="skills-row-summary">
+                      {skill.summary ?? 'No summary provided.'}
+                    </div>
                     {isPlugin ? (
-                      <span className="tag tag-accent tag-compact">Plugin bundle (nix)</span>
+                      <div className="skills-row-meta">
+                        Bundle includes SKILL.md, CLI, and config.
+                      </div>
                     ) : null}
                   </div>
-                  <div className="skills-row-summary">
-                    {skill.summary ?? 'No summary provided.'}
+                  <div className="skills-row-metrics">
+                    <span>⤓ {skill.stats.downloads}</span>
+                    <span>⤒ {skill.stats.installsAllTime ?? 0}</span>
+                    <span>★ {skill.stats.stars}</span>
+                    <span>{skill.stats.versions} v</span>
                   </div>
-                  {isPlugin ? (
-                    <div className="skills-row-meta">
-                      Bundle includes SKILL.md, CLI, and config.
-                    </div>
-                  ) : null}
-                </div>
-                <div className="skills-row-metrics">
-                  <span>⤓ {skill.stats.downloads}</span>
-                  <span>⤒ {skill.stats.installsAllTime ?? 0}</span>
-                  <span>★ {skill.stats.stars}</span>
-                  <span>{skill.stats.versions} v</span>
-                </div>
-              </Link>
-            )
-          })}
-        </div>
-      )}
+                </Link>
+              )
+            })}
+          </div>
+        )}
 
-      {canLoadMore ? (
-        <div
-          ref={canAutoLoad ? loadMoreRef : null}
-          className="card"
-          style={{ marginTop: 16, display: 'flex', justifyContent: 'center' }}
-        >
-          {canAutoLoad ? (
-            isLoadingMore ? (
-              'Loading more…'
+        {canLoadMore ? (
+          <div
+            ref={canAutoLoad ? loadMoreRef : null}
+            className="card"
+            style={{ marginTop: 16, display: 'flex', justifyContent: 'center' }}
+          >
+            {canAutoLoad ? (
+              isLoadingMore ? (
+                'Loading more…'
+              ) : (
+                'Scroll to load more'
+              )
             ) : (
-              'Scroll to load more'
-            )
-          ) : (
-            <button className="btn" type="button" onClick={loadMore} disabled={isLoadingMore}>
-              {isLoadingMore ? 'Loading…' : 'Load more'}
-            </button>
-          )}
-        </div>
-      ) : null}
+              <button className="btn" type="button" onClick={loadMore} disabled={isLoadingMore}>
+                {isLoadingMore ? 'Loading…' : 'Load more'}
+              </button>
+            )}
+          </div>
+        ) : null}
+      </div>
     </main>
   )
 }

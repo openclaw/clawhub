@@ -155,6 +155,7 @@ function enforceNewSkillRateLimit(signals: OwnerTrustSignals) {
 
 async function resolveOwnerHandle(ctx: QueryCtx, ownerUserId: Id<'users'>) {
   const owner = await ctx.db.get(ownerUserId)
+  if (!owner || owner.deletedAt || owner.deactivatedAt) return null
   return owner?.handle ?? owner?._id ?? null
 }
 
@@ -812,7 +813,7 @@ export const clearOwnerSuspiciousFlagsInternal = internalMutation({
   },
   handler: async (ctx, args) => {
     const owner = await ctx.db.get(args.ownerUserId)
-    if (!owner || owner.deletedAt) throw new Error('Owner not found')
+    if (!owner || owner.deletedAt || owner.deactivatedAt) throw new Error('Owner not found')
     if (!isPrivilegedOwnerForSuspiciousBypass(owner)) {
       return { inspected: 0, updated: 0, skipped: 'owner_not_privileged' as const }
     }
@@ -1356,7 +1357,7 @@ async function countActiveReportsForUser(ctx: MutationCtx, userId: Id<'users'>) 
     if (skill.softDeletedAt) continue
     if (skill.moderationStatus === 'removed') continue
     const owner = await ctx.db.get(skill.ownerUserId)
-    if (!owner || owner.deletedAt) continue
+    if (!owner || owner.deletedAt || owner.deactivatedAt) continue
     count += 1
     if (count >= MAX_ACTIVE_REPORTS_PER_USER) break
   }
@@ -1962,7 +1963,7 @@ export const getSkillsWithStaleModerationReasonInternal = internalQuery({
     const limit = args.limit ?? 100
 
     // Find skills with pending-like moderationReason
-    const staleReasons = ['scanner.vt.pending', 'pending.scan']
+    const staleReasons = new Set(['scanner.vt.pending', 'pending.scan'])
     const allSkills = await ctx.db
       .query('skills')
       .filter((q) => q.eq(q.field('moderationStatus'), 'active'))
@@ -1977,7 +1978,7 @@ export const getSkillsWithStaleModerationReasonInternal = internalQuery({
     }> = []
 
     for (const skill of allSkills) {
-      if (!skill.moderationReason || !staleReasons.includes(skill.moderationReason)) continue
+      if (!skill.moderationReason || !staleReasons.has(skill.moderationReason)) continue
       if (!skill.latestVersionId) continue
 
       const version = await ctx.db.get(skill.latestVersionId)
@@ -2331,20 +2332,8 @@ export const approveSkillByHashInternal = internalMutation({
       }
 
       const now = Date.now()
-      let shouldHideSuspicious = false
-      if (isSuspicious && !alreadyBlocked && !bypassSuspicious) {
-        if (owner && !owner.deletedAt) {
-          const trustSignals = await getOwnerTrustSignals(ctx, owner, now)
-          shouldHideSuspicious = trustSignals.isLowTrust
-        }
-      }
-
       const qualityLocked = skill.moderationReason === 'quality.low' && !isMalicious
-      const nextModerationStatus = qualityLocked
-        ? 'hidden'
-        : shouldHideSuspicious
-          ? 'hidden'
-          : 'active'
+      const nextModerationStatus = qualityLocked ? 'hidden' : 'active'
       const nextModerationReason = qualityLocked
         ? 'quality.low'
         : bypassSuspicious
@@ -2353,9 +2342,7 @@ export const approveSkillByHashInternal = internalMutation({
       const nextModerationNotes = qualityLocked
         ? (skill.moderationNotes ??
           'Quality gate quarantine is still active. Manual moderation review required.')
-        : shouldHideSuspicious
-          ? 'Auto-hidden: suspicious result from low-trust publisher.'
-          : undefined
+        : undefined
 
       await ctx.db.patch(skill._id, {
         moderationStatus: nextModerationStatus,
@@ -2786,7 +2773,8 @@ export const changeOwner = mutation({
     if (!skill) throw new Error('Skill not found')
 
     const nextOwner = await ctx.db.get(args.ownerUserId)
-    if (!nextOwner || nextOwner.deletedAt) throw new Error('User not found')
+    if (!nextOwner || nextOwner.deletedAt || nextOwner.deactivatedAt)
+      throw new Error('User not found')
 
     if (skill.ownerUserId === args.ownerUserId) return
 
@@ -2959,7 +2947,7 @@ export const hardDeleteInternal = internalMutation({
   args: { skillId: v.id('skills'), actorUserId: v.id('users'), phase: v.optional(v.string()) },
   handler: async (ctx, args) => {
     const actor = await ctx.db.get(args.actorUserId)
-    if (!actor || actor.deletedAt) throw new Error('User not found')
+    if (!actor || actor.deletedAt || actor.deactivatedAt) throw new Error('User not found')
     assertAdmin(actor)
     const skill = await ctx.db.get(args.skillId)
     if (!skill) return
@@ -3022,7 +3010,7 @@ export const insertVersion = internalMutation({
   handler: async (ctx, args) => {
     const userId = args.userId
     const user = await ctx.db.get(userId)
-    if (!user || user.deletedAt) throw new Error('User not found')
+    if (!user || user.deletedAt || user.deactivatedAt) throw new Error('User not found')
 
     let skill = await ctx.db
       .query('skills')
@@ -3243,7 +3231,7 @@ export const setSkillSoftDeletedInternal = internalMutation({
   },
   handler: async (ctx, args) => {
     const user = await ctx.db.get(args.userId)
-    if (!user || user.deletedAt) throw new Error('User not found')
+    if (!user || user.deletedAt || user.deactivatedAt) throw new Error('User not found')
 
     const slug = args.slug.trim().toLowerCase()
     if (!slug) throw new Error('Slug required')

@@ -131,6 +131,7 @@ Notes:
 
 - If neither `version` nor `tag` is provided, the latest version is used.
 - Soft-deleted versions return `410`.
+- Download stats are counted as unique identities per hour (`userId` when API token is valid, otherwise IP).
 
 ## Auth endpoints (Bearer token)
 

@@ -50,9 +50,7 @@ function normalizeRetryableNetworkError(error: unknown) {
   }
 
   if (error instanceof TypeError) {
-    return new RetryableEmbeddingError(`Embedding request failed: ${error.message}`, {
-      cause: error,
-    })
+    return new RetryableEmbeddingError(`Embedding request failed: ${error.message}`, { cause: error })
   }
 
   return null

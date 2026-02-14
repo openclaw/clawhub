@@ -93,7 +93,7 @@ describe('skills anti-spam guards', () => {
     ).rejects.toThrow(/max 5 new skills per hour/i)
   })
 
-  it('auto-hides suspicious skills from low-trust publishers', async () => {
+  it('keeps suspicious skills visible for low-trust publishers', async () => {
     const patch = vi.fn(async () => {})
     const version = { _id: 'skillVersions:1', skillId: 'skills:1' }
     const skill = {
@@ -147,7 +147,7 @@ describe('skills anti-spam guards', () => {
       { db, scheduler: { runAfter: vi.fn() } } as never,
       {
         sha256hash: 'h'.repeat(64),
-        scanner: 'llm',
+        scanner: 'vt',
         status: 'suspicious',
       } as never,
     )
@@ -155,8 +155,9 @@ describe('skills anti-spam guards', () => {
     expect(patch).toHaveBeenCalledWith(
       'skills:1',
       expect.objectContaining({
-        moderationStatus: 'hidden',
-        moderationReason: 'scanner.llm.suspicious',
+        moderationStatus: 'active',
+        moderationReason: 'scanner.vt.suspicious',
+        moderationFlags: ['flagged.suspicious'],
       }),
     )
   })

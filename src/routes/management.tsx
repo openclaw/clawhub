@@ -647,11 +647,11 @@ function Management() {
                 <div key={user._id} className="management-item">
                   <div className="management-item-main">
                     <span className="mono">@{user.handle ?? user.name ?? 'user'}</span>
-                    {user.deletedAt ? (
+                    {user.deletedAt || user.deactivatedAt ? (
                       <div className="section-subtitle" style={{ margin: 0 }}>
-                        {user.banReason
+                        {user.banReason && user.deletedAt
                           ? `Banned ${formatTimestamp(user.deletedAt)} · ${user.banReason}`
-                          : `Deleted ${formatTimestamp(user.deletedAt)}`}
+                          : `Deleted ${formatTimestamp((user.deactivatedAt ?? user.deletedAt) as number)}`}
                       </div>
                     ) : null}
                   </div>

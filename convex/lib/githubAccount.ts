@@ -13,7 +13,7 @@ type GitHubUser = {
 
 export async function requireGitHubAccountAge(ctx: ActionCtx, userId: Id<'users'>) {
   const user = await ctx.runQuery(internal.users.getByIdInternal, { userId })
-  if (!user || user.deletedAt) throw new ConvexError('User not found')
+  if (!user || user.deletedAt || user.deactivatedAt) throw new ConvexError('User not found')
 
   const handle = user.handle?.trim()
   if (!handle) throw new ConvexError('GitHub handle required')

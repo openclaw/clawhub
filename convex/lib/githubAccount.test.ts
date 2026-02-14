@@ -67,6 +67,19 @@ describe('requireGitHubAccountAge', () => {
     vi.useRealTimers()
   })
 
+  it('rejects deactivated users', async () => {
+    const runQuery = vi.fn().mockResolvedValue({
+      _id: 'users:1',
+      handle: 'steipete',
+      deactivatedAt: Date.now(),
+    })
+    const runMutation = vi.fn()
+
+    await expect(
+      requireGitHubAccountAge({ runQuery, runMutation } as never, 'users:1' as never),
+    ).rejects.toThrow(/User not found/i)
+  })
+
   it('refreshes githubCreatedAt when cache is stale', async () => {
     vi.useFakeTimers()
     const now = new Date('2026-02-02T12:00:00Z')

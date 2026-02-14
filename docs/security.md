@@ -43,6 +43,17 @@ read_when:
 - Report counters effectively reset because deleted/banned skills are no longer
   considered active in the per-user report cap.
 
+## User account deletion
+
+- User-initiated deletion is irreversible.
+- Deletion flow:
+  - sets `deactivatedAt` + `purgedAt`
+  - revokes API tokens
+  - clears profile/contact fields
+  - clears telemetry
+- Deleted accounts cannot be restored by logging in again.
+- Published skills remain public.
+
 ## Upload gate (GitHub account age)
 
 - Skill + soul publish actions require GitHub account age ≥ 7 days.

@@ -375,8 +375,6 @@ export const scanWithVirusTotal = internalAction({
           // File exists and has AI analysis - use the verdict
           const verdict = normalizeVerdict(aiResult.verdict)
           const status = verdictToStatus(verdict)
-          const isSafe = status === 'clean'
-
           console.log(
             `Version ${args.versionId} found in VT with AI analysis. Hash: ${sha256hash}. Verdict: ${verdict}`,
           )
@@ -393,14 +391,12 @@ export const scanWithVirusTotal = internalAction({
             },
           })
 
-          // VT is supplementary — only escalate (never override LLM verdict)
-          if (!isSafe && (status === 'malicious' || status === 'suspicious')) {
-            await ctx.runMutation(internal.skills.escalateByVtInternal, {
-              sha256hash,
-              status,
-            })
-          }
-          // Clean VT result: vtAnalysis already written above — don't touch moderation
+          // VT finalizes moderation visibility for newly published versions.
+          await ctx.runMutation(internal.skills.approveSkillByHashInternal, {
+            sha256hash,
+            scanner: 'vt',
+            status,
+          })
           return
         }
 
@@ -578,13 +574,12 @@ export const pollPendingScans = internalAction({
           },
         })
 
-        // VT is supplementary — only escalate for malicious/suspicious
-        if (status === 'malicious' || status === 'suspicious') {
-          await ctx.runMutation(internal.skills.escalateByVtInternal, {
-            sha256hash,
-            status,
-          })
-        }
+        // VT finalizes moderation visibility for newly published versions.
+        await ctx.runMutation(internal.skills.approveSkillByHashInternal, {
+          sha256hash,
+          scanner: 'vt',
+          status,
+        })
         updated++
       } catch (error) {
         console.error(`[vt:pollPendingScans] Error checking hash ${sha256hash}:`, error)

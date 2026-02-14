@@ -6,8 +6,12 @@ import { expandDroppedItems, expandFiles } from './uploadFiles'
 function readWithFileReader(blob: Blob) {
   return new Promise<ArrayBuffer>((resolve, reject) => {
     const reader = new FileReader()
-    reader.onerror = () => reject(reader.error ?? new Error('Could not read blob.'))
-    reader.onload = () => resolve(reader.result as ArrayBuffer)
+    reader.addEventListener('error', () => {
+      reject(reader.error ?? new Error('Could not read blob.'))
+    })
+    reader.addEventListener('load', () => {
+      resolve(reader.result as ArrayBuffer)
+    })
     reader.readAsArrayBuffer(blob)
   })
 }

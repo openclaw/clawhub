@@ -29,7 +29,7 @@ export const searchInternal = internalQuery({
   },
   handler: async (ctx, args) => {
     const actor = await ctx.db.get(args.actorUserId)
-    if (!actor || actor.deletedAt) throw new Error('Unauthorized')
+    if (!actor || actor.deletedAt || actor.deactivatedAt) throw new Error('Unauthorized')
     assertAdmin(actor)
 
     const limit = Math.min(Math.max(args.limit ?? 20, 1), 200)
@@ -67,7 +67,7 @@ export const me = query({
     const userId = await getAuthUserId(ctx)
     if (!userId) return null
     const user = await ctx.db.get(userId)
-    if (!user || user.deletedAt) return null
+    if (!user || user.deletedAt || user.deactivatedAt) return null
     return user
   },
 })
@@ -114,9 +114,37 @@ export const deleteAccount = mutation({
   args: {},
   handler: async (ctx) => {
     const { userId } = await requireUser(ctx)
+    const now = Date.now()
+
+    const tokens = await ctx.db
+      .query('apiTokens')
+      .withIndex('by_user', (q) => q.eq('userId', userId))
+      .collect()
+    for (const token of tokens) {
+      if (!token.revokedAt) {
+        await ctx.db.patch(token._id, { revokedAt: now })
+      }
+    }
+
     await ctx.db.patch(userId, {
-      deletedAt: Date.now(),
-      updatedAt: Date.now(),
+      deactivatedAt: now,
+      purgedAt: now,
+      deletedAt: undefined,
+      banReason: undefined,
+      role: 'user',
+      handle: undefined,
+      displayName: undefined,
+      name: undefined,
+      image: undefined,
+      email: undefined,
+      emailVerificationTime: undefined,
+      phone: undefined,
+      phoneVerificationTime: undefined,
+      isAnonymous: undefined,
+      bio: undefined,
+      githubCreatedAt: undefined,
+      githubFetchedAt: undefined,
+      updatedAt: now,
     })
     await ctx.runMutation(internal.telemetry.clearUserTelemetryInternal, { userId })
   },
@@ -165,7 +193,7 @@ export const setRoleInternal = internalMutation({
   },
   handler: async (ctx, args) => {
     const actor = await ctx.db.get(args.actorUserId)
-    if (!actor || actor.deletedAt) throw new Error('User not found')
+    if (!actor || actor.deletedAt || actor.deactivatedAt) throw new Error('User not found')
     return setRoleWithActor(ctx, actor, args.targetUserId, args.role)
   },
 })
@@ -208,7 +236,7 @@ export const banUserInternal = internalMutation({
   },
   handler: async (ctx, args) => {
     const actor = await ctx.db.get(args.actorUserId)
-    if (!actor || actor.deletedAt) throw new Error('User not found')
+    if (!actor || actor.deletedAt || actor.deactivatedAt) throw new Error('User not found')
     return banUserWithActor(ctx, actor, args.targetUserId, args.reason)
   },
 })
@@ -234,7 +262,7 @@ async function banUserWithActor(
   if (reason && reason.length > 500) {
     throw new Error('Reason too long (max 500 chars)')
   }
-  if (target.deletedAt) {
+  if (target.deletedAt || target.deactivatedAt) {
     return { ok: true as const, alreadyBanned: true, deletedSkills: 0 }
   }
 
@@ -292,7 +320,7 @@ export const autobanMalwareAuthorInternal = internalMutation({
   handler: async (ctx, args) => {
     const target = await ctx.db.get(args.ownerUserId)
     if (!target) return { ok: false, reason: 'user_not_found' }
-    if (target.deletedAt) return { ok: true, alreadyBanned: true }
+    if (target.deletedAt || target.deactivatedAt) return { ok: true, alreadyBanned: true }
 
     // Never auto-ban moderators or admins
     if (target.role === 'admin' || target.role === 'moderator') {

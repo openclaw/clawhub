@@ -8,6 +8,7 @@ import { SoulCard } from '../components/SoulCard'
 import { getSkillBadges } from '../lib/badges'
 import type { PublicSkill, PublicSoul } from '../lib/publicUser'
 import { getSiteMode } from '../lib/site'
+import { mapPublicSkillPageEntries } from '../lib/skillPageEntries'
 
 export const Route = createFileRoute('/')({
   component: Home,
@@ -19,6 +20,12 @@ function Home() {
 }
 
 function SkillsHome() {
+  type SkillPageEntry = {
+    skill: PublicSkill
+    ownerHandle?: string | null
+    latestVersion?: unknown
+  }
+
   const highlighted =
     (useQuery(api.skills.list, {
       batch: 'highlighted',
@@ -29,8 +36,8 @@ function SkillsHome() {
     sort: 'downloads',
     dir: 'desc',
     nonSuspiciousOnly: true,
-  }) as { page: PublicSkill[] } | undefined
-  const popular = popularResult?.page ?? []
+  }) as { page: SkillPageEntry[] } | undefined
+  const popular = mapPublicSkillPageEntries(popularResult?.page)
 
   return (
     <main>
@@ -112,7 +119,7 @@ function SkillsHome() {
                 summaryFallback="Agent-ready skill pack."
                 meta={
                   <div className="stat">
-                    {skill.stats.versions} versions · ⤓ {skill.stats.downloads} · ⤒{' '}
+                    ⭐ {skill.stats.stars} · ⤓ {skill.stats.downloads} · ⤒{' '}
                     {skill.stats.installsAllTime ?? 0}
                   </div>
                 }
@@ -134,7 +141,7 @@ function SkillsHome() {
             }}
             className="btn"
           >
-            See all non-suspicious skills
+            See all skills
           </Link>
         </div>
       </section>

@@ -1,28 +1,28 @@
 {
   "name": "clawhub",
   "private": true,
-  "type": "module",
   "workspaces": [
     "packages/*"
   ],
+  "type": "module",
   "scripts": {
-    "preinstall": "bunx only-allow bun",
-    "dev": "bun --bun vite dev --port 3000",
     "build": "bun --bun vite build",
-    "preview": "bun --bun vite preview",
-    "docs:list": "bun scripts/docs-list.ts",
     "check:peers": "bun scripts/check-peer-deps.ts",
+    "convex:deploy": "bunx convex deploy --typecheck=disable --yes",
+    "coverage": "vitest run --coverage",
+    "dev": "bun --bun vite dev --port 3000",
+    "docs:list": "bun scripts/docs-list.ts",
+    "format": "oxfmt --write",
+    "lint": "bun run lint:oxlint",
+    "lint:fix": "oxlint --type-aware --tsconfig ./tsconfig.oxlint.json ./src ./convex ./packages/clawdhub/src ./packages/schema/src --fix && bun run format",
+    "lint:oxlint": "oxlint --type-aware --tsconfig ./tsconfig.oxlint.json ./src ./convex ./packages/clawdhub/src ./packages/schema/src",
+    "preinstall": "bunx only-allow bun",
+    "preview": "bun --bun vite preview",
     "test": "vitest run",
-    "test:watch": "vitest",
     "test:e2e": "vitest run -c vitest.e2e.config.ts",
     "test:e2e:local": "bash scripts/run-playwright-local.sh",
     "test:pw": "playwright test",
-    "coverage": "vitest run --coverage",
-    "convex:deploy": "bunx convex deploy --typecheck=disable --yes",
-    "lint": "bun run lint:biome && bun run lint:oxlint",
-    "lint:biome": "biome check .",
-    "lint:oxlint": "oxlint --type-aware --tsconfig ./tsconfig.oxlint.json ./src ./convex ./packages/clawdhub/src ./packages/schema/src",
-    "format": "biome format --write ."
+    "test:watch": "vitest"
   },
   "dependencies": {
     "@auth/core": "^0.37.4",
@@ -61,7 +61,6 @@
     "yaml": "^2.8.2"
   },
   "devDependencies": {
-    "@biomejs/biome": "^2.3.13",
     "@playwright/test": "^1.58.1",
     "@tanstack/devtools-vite": "^0.5.0",
     "@testing-library/dom": "^10.4.1",
@@ -74,10 +73,11 @@
     "@vitest/coverage-v8": "^4.0.18",
     "jsdom": "^28.0.0",
     "only-allow": "^1.2.2",
+    "oxfmt": "0.32.0",
     "oxlint": "^1.42.0",
     "oxlint-tsgolint": "^0.11.4",
-    "undici": "^7.19.2",
     "typescript": "^5.9.3",
+    "undici": "^7.19.2",
     "vite": "^7.3.1",
     "vitest": "^4.0.18"
   }
