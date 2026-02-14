@@ -807,6 +807,63 @@ describe('httpApiV1 handlers', () => {
     expect(response2.status).toBe(200)
   })
 
+  it('delete/undelete map forbidden/not-found/unknown to 403/404/500', async () => {
+    vi.mocked(requireApiTokenUser).mockResolvedValue({
+      userId: 'users:1',
+      user: { handle: 'p' },
+    } as never)
+
+    const runMutationForbidden = vi.fn(async (_query: unknown, args: Record<string, unknown>) => {
+      if ('key' in args) return okRate()
+      throw new Error('Forbidden')
+    })
+    const forbidden = await __handlers.skillsDeleteRouterV1Handler(
+      makeCtx({ runMutation: runMutationForbidden }),
+      new Request('https://example.com/api/v1/skills/demo', {
+        method: 'DELETE',
+        headers: { Authorization: 'Bearer clh_test' },
+      }),
+    )
+    expect(forbidden.status).toBe(403)
+    expect(await forbidden.text()).toBe('Forbidden')
+
+    vi.mocked(requireApiTokenUser).mockResolvedValue({
+      userId: 'users:1',
+      user: { handle: 'p' },
+    } as never)
+    const runMutationNotFound = vi.fn(async (_query: unknown, args: Record<string, unknown>) => {
+      if ('key' in args) return okRate()
+      throw new Error('Skill not found')
+    })
+    const notFound = await __handlers.skillsPostRouterV1Handler(
+      makeCtx({ runMutation: runMutationNotFound }),
+      new Request('https://example.com/api/v1/skills/demo/undelete', {
+        method: 'POST',
+        headers: { Authorization: 'Bearer clh_test' },
+      }),
+    )
+    expect(notFound.status).toBe(404)
+    expect(await notFound.text()).toBe('Skill not found')
+
+    vi.mocked(requireApiTokenUser).mockResolvedValue({
+      userId: 'users:1',
+      user: { handle: 'p' },
+    } as never)
+    const runMutationUnknown = vi.fn(async (_query: unknown, args: Record<string, unknown>) => {
+      if ('key' in args) return okRate()
+      throw new Error('boom')
+    })
+    const unknown = await __handlers.soulsDeleteRouterV1Handler(
+      makeCtx({ runMutation: runMutationUnknown }),
+      new Request('https://example.com/api/v1/souls/demo-soul', {
+        method: 'DELETE',
+        headers: { Authorization: 'Bearer clh_test' },
+      }),
+    )
+    expect(unknown.status).toBe(500)
+    expect(await unknown.text()).toBe('Internal Server Error')
+  })
+
   it('ban user requires auth', async () => {
     vi.mocked(requireApiTokenUser).mockRejectedValueOnce(new Error('Unauthorized'))
     const runMutation = vi.fn().mockResolvedValue(okRate())

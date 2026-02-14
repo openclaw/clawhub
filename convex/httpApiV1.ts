@@ -539,17 +539,7 @@ async function skillsPostRouterV1Handler(ctx: ActionCtx, request: Request) {
     })
     return json({ ok: true }, 200, rate.headers)
   } catch (error) {
-    const message = error instanceof Error ? error.message : 'Undelete failed'
-    if (message === 'Unauthorized') {
-      return text('Unauthorized', 401, rate.headers)
-    }
-    if (message === 'Forbidden') {
-      return text('Forbidden', 403, rate.headers)
-    }
-    if (message === 'Skill not found' || message === 'User not found') {
-      return text('Not found', 404, rate.headers)
-    }
-    return text(message, 400, rate.headers)
+    return softDeleteErrorToResponse('skill', error, rate.headers)
   }
 }
 
@@ -571,17 +561,7 @@ async function skillsDeleteRouterV1Handler(ctx: ActionCtx, request: Request) {
     })
     return json({ ok: true }, 200, rate.headers)
   } catch (error) {
-    const message = error instanceof Error ? error.message : 'Delete failed'
-    if (message === 'Unauthorized') {
-      return text('Unauthorized', 401, rate.headers)
-    }
-    if (message === 'Forbidden') {
-      return text('Forbidden', 403, rate.headers)
-    }
-    if (message === 'Skill not found' || message === 'User not found') {
-      return text('Not found', 404, rate.headers)
-    }
-    return text(message, 400, rate.headers)
+    return softDeleteErrorToResponse('skill', error, rate.headers)
   }
 }
 
@@ -1256,17 +1236,7 @@ async function soulsPostRouterV1Handler(ctx: ActionCtx, request: Request) {
     })
     return json({ ok: true }, 200, rate.headers)
   } catch (error) {
-    const message = error instanceof Error ? error.message : 'Undelete failed'
-    if (message === 'Unauthorized') {
-      return text('Unauthorized', 401, rate.headers)
-    }
-    if (message === 'Forbidden') {
-      return text('Forbidden', 403, rate.headers)
-    }
-    if (message === 'Soul not found' || message === 'User not found') {
-      return text('Not found', 404, rate.headers)
-    }
-    return text(message, 400, rate.headers)
+    return softDeleteErrorToResponse('soul', error, rate.headers)
   }
 }
 
@@ -1288,21 +1258,28 @@ async function soulsDeleteRouterV1Handler(ctx: ActionCtx, request: Request) {
     })
     return json({ ok: true }, 200, rate.headers)
   } catch (error) {
-    const message = error instanceof Error ? error.message : 'Delete failed'
-    if (message === 'Unauthorized') {
-      return text('Unauthorized', 401, rate.headers)
-    }
-    if (message === 'Forbidden') {
-      return text('Forbidden', 403, rate.headers)
-    }
-    if (message === 'Soul not found' || message === 'User not found') {
-      return text('Not found', 404, rate.headers)
-    }
-    return text(message, 400, rate.headers)
+    return softDeleteErrorToResponse('soul', error, rate.headers)
   }
 }
 
 export const soulsDeleteRouterV1Http = httpAction(soulsDeleteRouterV1Handler)
+
+function softDeleteErrorToResponse(
+  entity: 'skill' | 'soul',
+  error: unknown,
+  headers: HeadersInit,
+) {
+  const message = error instanceof Error ? error.message : `${entity} delete failed`
+  const lower = message.toLowerCase()
+
+  if (lower.includes('unauthorized')) return text('Unauthorized', 401, headers)
+  if (lower.includes('forbidden')) return text('Forbidden', 403, headers)
+  if (lower.includes('not found')) return text(message, 404, headers)
+  if (lower.includes('slug required')) return text('Slug required', 400, headers)
+
+  // Unknown: server-side failure. Keep body generic.
+  return text('Internal Server Error', 500, headers)
+}
 
 async function starsPostRouterV1Handler(ctx: ActionCtx, request: Request) {
   const rate = await applyRateLimit(ctx, request, 'write')
