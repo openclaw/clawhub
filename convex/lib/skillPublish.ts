@@ -19,6 +19,7 @@ import { generateSkillSummary } from './skillSummary'
 import {
   buildEmbeddingText,
   getFrontmatterMetadata,
+  getFrontmatterValue,
   hashSkillFiles,
   isTextFile,
   parseClawdisMetadata,
@@ -122,13 +123,18 @@ export async function publishVersionForUser(
   const ownerCreatedAt = owner?.createdAt ?? owner?._creationTime ?? Date.now()
   const now = Date.now()
   const frontmatterMetadata = getFrontmatterMetadata(frontmatter)
-  const summaryFromFrontmatter =
+  // Check for description in metadata.description (nested) or description (direct frontmatter field)
+  const metadataDescription =
     frontmatterMetadata &&
     typeof frontmatterMetadata === 'object' &&
     !Array.isArray(frontmatterMetadata) &&
     typeof (frontmatterMetadata as Record<string, unknown>).description === 'string'
       ? ((frontmatterMetadata as Record<string, unknown>).description as string)
       : undefined
+  const directDescription = getFrontmatterValue(frontmatter, 'description')
+  // Prioritize the new description from frontmatter over the existing skill summary
+  // This ensures updates to the description are reflected on subsequent publishes (#301)
+  const summaryFromFrontmatter = metadataDescription ?? directDescription
   const summary = await generateSkillSummary({
     slug,
     displayName,
