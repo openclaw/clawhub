@@ -1,4 +1,4 @@
-import { expect, test, describe } from 'vitest'
+import { describe, expect, test } from 'vitest'
 import { deriveModerationFlags } from './moderation'
 
 describe('deriveModerationFlags', () => {
@@ -228,6 +228,7 @@ describe('deriveModerationFlags', () => {
         summary: 'Normal description',
       },
       parsed: { frontmatter: {} },
+      // biome-ignore lint/suspicious/noExplicitAny: test mock value
       files: [{ path: 'install-malware.sh', size: 100, storageId: 'abc' as any }],
     })
     expect(flags).toContain('suspicious.keyword')
@@ -241,6 +242,7 @@ describe('deriveModerationFlags', () => {
         summary: 'Get weather data from wttr.in',
       },
       parsed: { frontmatter: {} },
+      // biome-ignore lint/suspicious/noExplicitAny: test mock value
       files: [{ path: 'SKILL.md', size: 100, storageId: 'abc' as any }],
     })
     expect(flags.length).toBe(0)
