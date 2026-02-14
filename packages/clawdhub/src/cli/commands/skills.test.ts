@@ -1,6 +1,6 @@
 /* @vitest-environment node */
 
-import { afterEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, describe, expect, it, vi, beforeEach } from 'vitest'
 import { ApiRoutes } from '../../schema/index.js'
 import type { GlobalOpts } from '../types'
 
@@ -35,7 +35,7 @@ vi.mock('../ui.js', () => ({
     throw new Error(message)
   },
   formatError: (error: unknown) => (error instanceof Error ? error.message : String(error)),
-  isInteractive: () => false,
+  isInteractive: vi.fn(() => false),
   promptConfirm: vi.fn(async () => false),
 }))
 
@@ -55,7 +55,9 @@ vi.mock('node:fs/promises', () => ({
   stat: vi.fn(),
 }))
 
-const { clampLimit, cmdExplore, cmdInstall, cmdUpdate, formatExploreLine } = await import('./skills')
+const { clampLimit, cmdExplore, cmdInstall, cmdUpdate, formatExploreLine } = await import(
+  './skills'
+)
 const {
   extractZipToDir,
   hashSkillFiles,
@@ -66,6 +68,12 @@ const {
   writeSkillOrigin,
 } = await import('../../skills.js')
 const { rm, stat } = await import('node:fs/promises')
+const { isInteractive, promptConfirm } = await import('../ui.js')
+const { execSync } = await import('node:child_process')
+
+vi.mock('node:child_process', () => ({
+  execSync: vi.fn(),
+}))
 
 const mockLog = vi.spyOn(console, 'log').mockImplementation(() => {})
 
@@ -81,6 +89,91 @@ function makeOpts(): GlobalOpts {
 
 afterEach(() => {
   vi.clearAllMocks()
+})
+
+describe('cmdInstall', () => {
+  beforeEach(() => {
+    // Default mocks for a successful installation path
+    mockApiRequest.mockResolvedValue({
+      latestVersion: { version: '1.0.0' },
+      moderation: { isMalwareBlocked: false, isSuspicious: false },
+    })
+    mockDownloadZip.mockResolvedValue(new Uint8Array([1, 2, 3]))
+    vi.mocked(readLockfile).mockResolvedValue({ version: 1, skills: {} })
+    vi.mocked(writeLockfile).mockResolvedValue()
+    vi.mocked(writeSkillOrigin).mockResolvedValue()
+    vi.mocked(extractZipToDir).mockResolvedValue()
+    vi.mocked(stat).mockRejectedValue(new Error('missing')) // Simulate file not existing
+    vi.mocked(rm).mockResolvedValue()
+    vi.mocked(execSync).mockReturnValue('{}') // Clean scan
+  })
+
+  it('installs a skill successfully when scan finds no violations', async () => {
+    await cmdInstall(makeOpts(), 'test-skill')
+    expect(execSync).toHaveBeenCalledWith('uvx mcp-scan@latest --skills /work/skills/test-skill --json')
+    expect(mockSpinner.succeed).toHaveBeenCalledWith('OK. Installed test-skill -> /work/skills/test-skill')
+    expect(rm).not.toHaveBeenCalled()
+  })
+
+  it('installs a skill if user accepts after a violation warning', async () => {
+    const violation = { issues: [{ code: 'W011', message: 'Third-party content' }] }
+    vi.mocked(execSync).mockReturnValue(JSON.stringify({ '/path/to/skill': violation }))
+    vi.mocked(isInteractive).mockReturnValue(true)
+    vi.mocked(promptConfirm).mockResolvedValue(true)
+
+    await cmdInstall(makeOpts(), 'test-skill')
+
+    expect(mockLog).toHaveBeenCalledWith(expect.stringContaining('⚠️  Warning'))
+    expect(promptConfirm).toHaveBeenCalledWith('Install anyway?')
+    expect(mockSpinner.succeed).toHaveBeenCalledWith('OK. Installed test-skill -> /work/skills/test-skill')
+    expect(rm).not.toHaveBeenCalled()
+  })
+
+  it('aborts installation if user rejects after a violation warning', async () => {
+    const violation = { issues: [{ code: 'W011', message: 'Third-party content' }] }
+    vi.mocked(execSync).mockReturnValue(JSON.stringify({ '/path/to/skill': violation }))
+    vi.mocked(isInteractive).mockReturnValue(true)
+    vi.mocked(promptConfirm).mockResolvedValue(false)
+
+    await expect(cmdInstall(makeOpts(), 'test-skill')).rejects.toThrow('Installation cancelled')
+
+    expect(promptConfirm).toHaveBeenCalledWith('Install anyway?')
+    expect(rm).toHaveBeenCalledWith('/work/skills/test-skill', { recursive: true, force: true })
+    expect(mockSpinner.succeed).not.toHaveBeenCalled()
+  })
+
+  it('fails installation if scan command throws an error', async () => {
+    const scanError = new Error('Scan failed critically')
+    vi.mocked(execSync).mockImplementation(() => {
+      throw scanError
+    })
+
+    await expect(cmdInstall(makeOpts(), 'test-skill')).rejects.toThrow(scanError)
+
+    expect(mockSpinner.fail).toHaveBeenCalledWith('Scan failed for test-skill@1.0.0')
+    expect(rm).toHaveBeenCalledWith('/work/skills/test-skill', { recursive: true, force: true })
+    expect(mockSpinner.succeed).not.toHaveBeenCalled()
+  })
+
+  it('passes optional auth token to API + download requests', async () => {
+    mockGetOptionalAuthToken.mockResolvedValue('tkn')
+    // Re-setup mocks as they might be overwritten by beforeEach if they clash,
+    // but here we are specific about return values.
+    mockApiRequest.mockResolvedValue({
+      skill: { slug: 'demo', displayName: 'Demo', summary: null, tags: {}, stats: {}, createdAt: 0, updatedAt: 0 },
+      latestVersion: { version: '1.0.0' },
+      owner: null,
+      moderation: null,
+    })
+    mockDownloadZip.mockResolvedValue(new Uint8Array([1, 2, 3]))
+    
+    await cmdInstall(makeOpts(), 'demo')
+
+    const [, requestArgs] = mockApiRequest.mock.calls[0] ?? []
+    expect(requestArgs?.token).toBe('tkn')
+    const [, zipArgs] = mockDownloadZip.mock.calls[0] ?? []
+    expect(zipArgs?.token).toBe('tkn')
+  })
 })
 
 describe('explore helpers', () => {
@@ -192,31 +285,5 @@ describe('cmdUpdate', () => {
     const [, args] = mockApiRequest.mock.calls[0] ?? []
     expect(args?.path).toBe(`${ApiRoutes.skills}/${encodeURIComponent('demo')}`)
     expect(args?.url).toBeUndefined()
-  })
-})
-
-describe('cmdInstall', () => {
-  it('passes optional auth token to API + download requests', async () => {
-    mockGetOptionalAuthToken.mockResolvedValue('tkn')
-    mockApiRequest.mockResolvedValue({
-      skill: { slug: 'demo', displayName: 'Demo', summary: null, tags: {}, stats: {}, createdAt: 0, updatedAt: 0 },
-      latestVersion: { version: '1.0.0' },
-      owner: null,
-      moderation: null,
-    })
-    mockDownloadZip.mockResolvedValue(new Uint8Array([1, 2, 3]))
-    vi.mocked(readLockfile).mockResolvedValue({ version: 1, skills: {} })
-    vi.mocked(writeLockfile).mockResolvedValue()
-    vi.mocked(writeSkillOrigin).mockResolvedValue()
-    vi.mocked(extractZipToDir).mockResolvedValue()
-    vi.mocked(stat).mockRejectedValue(new Error('missing'))
-    vi.mocked(rm).mockResolvedValue()
-
-    await cmdInstall(makeOpts(), 'demo')
-
-    const [, requestArgs] = mockApiRequest.mock.calls[0] ?? []
-    expect(requestArgs?.token).toBe('tkn')
-    const [, zipArgs] = mockDownloadZip.mock.calls[0] ?? []
-    expect(zipArgs?.token).toBe('tkn')
   })
 })

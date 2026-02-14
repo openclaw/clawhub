@@ -1,3 +1,4 @@
+import { execSync } from 'node:child_process'
 import { mkdir, rm, stat } from 'node:fs/promises'
 import { join } from 'node:path'
 import semver from 'semver'
@@ -51,6 +52,53 @@ export async function cmdSearch(opts: GlobalOpts, query: string, limit?: number)
     spinner.fail(formatError(error))
     throw error
   }
+}
+
+// mcp-scan types
+interface ScanIssue {
+  code: string
+  message: string
+}
+
+interface ServerResult {
+  error?: { message: string }
+}
+
+interface PathResult {
+  error?: { message: string }
+  servers?: ServerResult[]
+  issues: ScanIssue[]
+}
+
+type ScanResult = Record<string, PathResult>
+
+async function checkSkillSecurity(targetPath: string): Promise<string[]> {
+  const scanOutput = execSync(`uvx mcp-scan@latest --skills ${targetPath} --json`).toString()
+  const scanResult = JSON.parse(scanOutput) as ScanResult
+
+  // Internal codes to ignore
+  const IGNORE_CODES = ['W003', 'W004', 'W005', 'W006', 'X002']
+  const violations: string[] = []
+
+  for (const [path, result] of Object.entries(scanResult)) {
+    // 1. Check for top-level execution failures
+    if (result.error) {
+      throw new Error(`Scan failed for ${path}: ${result.error.message}`)
+    }
+
+    // 2. Check for server-level startup failures
+    const startupError = result.servers?.find((s) => s.error)?.error
+    if (startupError) {
+      throw new Error(`Server failed to start: ${startupError.message}`)
+    }
+
+    // 3. Filter for real policy violations (Errors or Warnings)
+    const filteredViolations = result.issues.filter((issue) => !IGNORE_CODES.includes(issue.code))
+    if (filteredViolations.length > 0) {
+      violations.push(...filteredViolations.map((v) => `[${v.code}] ${v.message}`))
+    }
+  }
+  return violations
 }
 
 export async function cmdInstall(
@@ -111,6 +159,38 @@ export async function cmdInstall(
     spinner.text = `Downloading ${trimmed}@${resolvedVersion}`
     const zip = await downloadZip(registry, { slug: trimmed, version: resolvedVersion, token })
     await extractZipToDir(zip, target)
+
+    spinner.text = `Scanning ${trimmed}@${resolvedVersion}`
+    let scanViolations: string[] = []
+    try {
+      scanViolations = await checkSkillSecurity(target)
+    } catch (error) {
+      await rm(target, { recursive: true, force: true })
+      spinner.fail(`Scan failed for ${trimmed}@${resolvedVersion}`)
+      throw error
+    }
+
+    if (scanViolations.length > 0) {
+      spinner.stop()
+      console.log(
+        `\n⚠️  Warning: "${trimmed}" has security policy violations by Snyk Agent Scan:\n` +
+          scanViolations.map((msg) => `   - ${msg}`).join('\n') +
+          '\n   Review the skill code before use.\n',
+      )
+      if (isInteractive()) {
+        const confirm = await promptConfirm('Install anyway?')
+        if (!confirm) {
+          await rm(target, { recursive: true, force: true })
+          fail('Installation cancelled')
+        }
+        spinner.start(`Resolving ${trimmed}`)
+      } else {
+        await rm(target, { recursive: true, force: true })
+        fail(
+          'Use --force to install skills with security policy violations in non-interactive mode',
+        )
+      }
+    }
 
     await writeSkillOrigin(target, {
       version: 1,
