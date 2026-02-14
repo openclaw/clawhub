@@ -6,8 +6,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { SkillsIndex } from '../routes/skills/index'
 
 const navigateMock = vi.fn()
-const useQueryMock = vi.fn()
 const useActionMock = vi.fn()
+const usePaginatedQueryMock = vi.fn()
 let searchMock: Record<string, unknown> = {}
 
 vi.mock('@tanstack/react-router', () => ({
@@ -15,22 +15,31 @@ vi.mock('@tanstack/react-router', () => ({
     useNavigate: () => navigateMock,
     useSearch: () => searchMock,
   }),
+  redirect: (options: unknown) => ({ redirect: options }),
   Link: (props: { children: ReactNode }) => <a href="/">{props.children}</a>,
 }))
 
 vi.mock('convex/react', () => ({
   useAction: (...args: unknown[]) => useActionMock(...args),
-  useQuery: (...args: unknown[]) => useQueryMock(...args),
+}))
+
+vi.mock('convex-helpers/react', () => ({
+  usePaginatedQuery: (...args: unknown[]) => usePaginatedQueryMock(...args),
 }))
 
 describe('SkillsIndex', () => {
   beforeEach(() => {
-    useQueryMock.mockReset()
+    usePaginatedQueryMock.mockReset()
     useActionMock.mockReset()
     navigateMock.mockReset()
     searchMock = {}
     useActionMock.mockReturnValue(() => Promise.resolve([]))
-    useQueryMock.mockReturnValue({ items: [], nextCursor: null })
+    // Default: return empty results with Exhausted status
+    usePaginatedQueryMock.mockReturnValue({
+      results: [],
+      status: 'Exhausted',
+      loadMore: vi.fn(),
+    })
   })
 
   afterEach(() => {
@@ -40,10 +49,12 @@ describe('SkillsIndex', () => {
 
   it('requests the first skills page', () => {
     render(<SkillsIndex />)
-    expect(useQueryMock).toHaveBeenCalledWith(expect.anything(), {
-      cursor: undefined,
-      limit: 50,
-    })
+    // usePaginatedQuery should be called with the API endpoint and sort/dir args
+    expect(usePaginatedQueryMock).toHaveBeenCalledWith(
+      expect.anything(),
+      { sort: 'downloads', dir: 'desc', nonSuspiciousOnly: false },
+      { initialNumItems: 25 },
+    )
   })
 
   it('renders an empty state when no skills are returned', () => {
@@ -55,19 +66,31 @@ describe('SkillsIndex', () => {
     searchMock = { q: 'remind' }
     const actionFn = vi.fn().mockResolvedValue([])
     useActionMock.mockReturnValue(actionFn)
-    useQueryMock.mockReturnValue(undefined)
     vi.useFakeTimers()
 
     render(<SkillsIndex />)
 
-    expect(useQueryMock).toHaveBeenCalledWith(expect.anything(), 'skip')
+    // usePaginatedQuery should be called with 'skip' when there's a search query
+    expect(usePaginatedQueryMock).toHaveBeenCalledWith(expect.anything(), 'skip', {
+      initialNumItems: 25,
+    })
     await act(async () => {
       await vi.runAllTimersAsync()
     })
     expect(actionFn).toHaveBeenCalledWith({
       query: 'remind',
       highlightedOnly: false,
-      limit: 50,
+      nonSuspiciousOnly: false,
+      limit: 25,
+    })
+    await act(async () => {
+      await vi.runAllTimersAsync()
+    })
+    expect(actionFn).toHaveBeenCalledWith({
+      query: 'remind',
+      highlightedOnly: false,
+      nonSuspiciousOnly: false,
+      limit: 25,
     })
   })
 
@@ -76,10 +99,9 @@ describe('SkillsIndex', () => {
     vi.stubGlobal('IntersectionObserver', undefined)
     const actionFn = vi
       .fn()
+      .mockResolvedValueOnce(makeSearchResults(25))
       .mockResolvedValueOnce(makeSearchResults(50))
-      .mockResolvedValueOnce(makeSearchResults(100))
     useActionMock.mockReturnValue(actionFn)
-    useQueryMock.mockReturnValue(undefined)
     vi.useFakeTimers()
 
     render(<SkillsIndex />)
@@ -96,8 +118,44 @@ describe('SkillsIndex', () => {
     expect(actionFn).toHaveBeenLastCalledWith({
       query: 'remind',
       highlightedOnly: false,
-      limit: 100,
+      nonSuspiciousOnly: false,
+      limit: 50,
     })
+  })
+
+  it('uses relevance as default sort when searching', async () => {
+    searchMock = { q: 'notion' }
+    const actionFn = vi
+      .fn()
+      .mockResolvedValue([
+        makeSearchResult('newer-low-score', 'Newer Low Score', 0.1, 2000),
+        makeSearchResult('older-high-score', 'Older High Score', 0.9, 1000),
+      ])
+    useActionMock.mockReturnValue(actionFn)
+    vi.useFakeTimers()
+
+    render(<SkillsIndex />)
+    await act(async () => {
+      await vi.runAllTimersAsync()
+    })
+
+    const titles = Array.from(
+      document.querySelectorAll('.skills-row-title > span:first-child'),
+    ).map((node) => node.textContent)
+
+    expect(titles[0]).toBe('Older High Score')
+    expect(titles[1]).toBe('Newer Low Score')
+  })
+
+  it('passes nonSuspiciousOnly to list query when filter is active', () => {
+    searchMock = { nonSuspicious: true }
+    render(<SkillsIndex />)
+
+    expect(usePaginatedQueryMock).toHaveBeenCalledWith(
+      expect.anything(),
+      { sort: 'downloads', dir: 'desc', nonSuspiciousOnly: true },
+      { initialNumItems: 25 },
+    )
   })
 })
 
@@ -123,4 +181,28 @@ function makeSearchResults(count: number) {
     },
     version: null,
   }))
+}
+
+function makeSearchResult(slug: string, displayName: string, score: number, createdAt: number) {
+  return {
+    score,
+    skill: {
+      _id: `skill_${slug}`,
+      slug,
+      displayName,
+      summary: `${displayName} summary`,
+      tags: {},
+      stats: {
+        downloads: 0,
+        installsCurrent: 0,
+        installsAllTime: 0,
+        stars: 0,
+        versions: 1,
+        comments: 0,
+      },
+      createdAt,
+      updatedAt: createdAt,
+    },
+    version: null,
+  }
 }

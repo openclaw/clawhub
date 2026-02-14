@@ -7,7 +7,7 @@ import {
   parseArk,
   type SkillInstallSpec,
   TEXT_FILE_EXTENSION_SET,
-} from 'clawdhub-schema'
+} from 'clawhub-schema'
 import { parse as parseYaml } from 'yaml'
 
 export type ParsedSkillFrontmatter = Record<string, unknown>
@@ -49,7 +49,9 @@ export function getFrontmatterMetadata(frontmatter: ParsedSkillFrontmatter) {
   if (!raw) return undefined
   if (typeof raw === 'string') {
     try {
-      const parsed = JSON.parse(raw) as unknown
+      // Strip trailing commas in JSON objects/arrays (common authoring mistake)
+      const cleaned = raw.replace(/,\s*([\]}])/g, '$1')
+      const parsed = JSON.parse(cleaned) as unknown
       return parsed ?? undefined
     } catch {
       return undefined
@@ -67,12 +69,15 @@ export function parseClawdisMetadata(frontmatter: ParsedSkillFrontmatter) {
       : undefined
   const clawdbotMeta = metadataRecord?.clawdbot
   const clawdisMeta = metadataRecord?.clawdis
+  const openclawMeta = metadataRecord?.openclaw
   const metadataSource =
     clawdbotMeta && typeof clawdbotMeta === 'object' && !Array.isArray(clawdbotMeta)
       ? (clawdbotMeta as Record<string, unknown>)
       : clawdisMeta && typeof clawdisMeta === 'object' && !Array.isArray(clawdisMeta)
         ? (clawdisMeta as Record<string, unknown>)
-        : undefined
+        : openclawMeta && typeof openclawMeta === 'object' && !Array.isArray(openclawMeta)
+          ? (openclawMeta as Record<string, unknown>)
+          : undefined
   const clawdisRaw = metadataSource ?? frontmatter.clawdis
   if (!clawdisRaw || typeof clawdisRaw !== 'object' || Array.isArray(clawdisRaw)) return undefined
 

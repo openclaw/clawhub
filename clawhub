@@ -1,0 +1,46 @@
+#!/usr/bin/env bun
+import { existsSync } from 'node:fs'
+import { stat } from 'node:fs/promises'
+import { fileURLToPath } from 'node:url'
+
+const distCliUrl = new URL('./packages/clawdhub/dist/cli.js', import.meta.url)
+const distCliPath = fileURLToPath(distCliUrl)
+const srcRootPath = fileURLToPath(new URL('./packages/clawdhub/src/', import.meta.url))
+
+const shouldBuild = await (async () => {
+  if (!existsSync(distCliPath)) return true
+  try {
+    const dist = await stat(distCliPath)
+    const latestSrcMtime = await getLatestMtime(srcRootPath)
+    return latestSrcMtime > dist.mtimeMs
+  } catch {
+    return true
+  }
+})()
+
+if (shouldBuild) {
+  const proc = Bun.spawn(['bunx', 'tsc', '-p', 'packages/clawdhub/tsconfig.json'], {
+    stdin: 'inherit',
+    stdout: 'inherit',
+    stderr: 'inherit',
+  })
+  const code = await proc.exited
+  if (code !== 0) process.exit(code)
+}
+
+await import(distCliUrl.href)
+
+async function getLatestMtime(root: string) {
+  let latest = 0
+  const glob = new Bun.Glob('**/*.ts')
+  for await (const rel of glob.scan({ cwd: root, onlyFiles: true })) {
+    const path = `${root}${root.endsWith('/') ? '' : '/'}${rel}`
+    try {
+      const entry = await stat(path)
+      latest = Math.max(latest, entry.mtimeMs)
+    } catch {
+      // ignore
+    }
+  }
+  return latest
+}

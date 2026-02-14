@@ -125,6 +125,17 @@ export const ApiV1WhoamiResponseSchema = type({
   },
 })
 
+export const ApiV1UserSearchResponseSchema = type({
+  items: type({
+    userId: 'string',
+    handle: 'string|null',
+    displayName: 'string|null?',
+    name: 'string|null?',
+    role: '"admin"|"moderator"|"user"|null?',
+  }).array(),
+  total: 'number',
+})
+
 export const ApiV1SearchResponseSchema = type({
   results: type({
     slug: 'string?',
@@ -174,6 +185,12 @@ export const ApiV1SkillResponseSchema = type({
     displayName: 'string|null?',
     image: 'string|null?',
   }).or('null'),
+  moderation: type({
+    isSuspicious: 'boolean',
+    isMalwareBlocked: 'boolean',
+  })
+    .or('null')
+    .optional(),
 })
 
 export const ApiV1SkillVersionListResponseSchema = type({
@@ -213,6 +230,17 @@ export const ApiV1PublishResponseSchema = type({
 
 export const ApiV1DeleteResponseSchema = type({
   ok: 'true',
+})
+
+export const ApiV1BanUserResponseSchema = type({
+  ok: 'true',
+  alreadyBanned: 'boolean',
+  deletedSkills: 'number',
+})
+
+export const ApiV1SetRoleResponseSchema = type({
+  ok: 'true',
+  role: '"admin"|"moderator"|"user"',
 })
 
 export const ApiV1StarResponseSchema = type({

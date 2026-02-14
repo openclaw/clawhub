@@ -22,7 +22,8 @@ Reading order (new contributor):
 Feature/ops docs (already present):
 
 - `docs/spec.md`: product + implementation spec (data model + flows).
-- `docs/telemetry.md`: what `clawdhub sync` reports; opt-out.
+- `docs/security.md`: moderation, reporting, bans, upload gating.
+- `docs/telemetry.md`: what `clawhub sync` reports; opt-out.
 - `docs/webhook.md`: Discord webhook events/payload.
 - `docs/diffing.md`: version-to-version diff UI spec.
 - `docs/manual-testing.md`: CLI smoke scripts.

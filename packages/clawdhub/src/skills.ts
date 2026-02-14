@@ -6,6 +6,11 @@ import ignore from 'ignore'
 import mime from 'mime'
 import { type Lockfile, LockfileSchema, parseArk, TEXT_FILE_EXTENSION_SET } from './schema/index.js'
 
+const DOT_DIR = '.clawhub'
+const LEGACY_DOT_DIR = '.clawdhub'
+const DOT_IGNORE = '.clawhubignore'
+const LEGACY_DOT_IGNORE = '.clawdhubignore'
+
 export type SkillOrigin = {
   version: 1
   registry: string
@@ -30,9 +35,10 @@ export async function listTextFiles(root: string) {
   const files: Array<{ relPath: string; bytes: Uint8Array; contentType?: string }> = []
   const absRoot = resolve(root)
   const ig = ignore()
-  ig.add(['.git/', 'node_modules/', '.clawdhub/'])
+  ig.add(['.git/', 'node_modules/', `${DOT_DIR}/`, `${LEGACY_DOT_DIR}/`])
   await addIgnoreFile(ig, join(absRoot, '.gitignore'))
-  await addIgnoreFile(ig, join(absRoot, '.clawdhubignore'))
+  await addIgnoreFile(ig, join(absRoot, DOT_IGNORE))
+  await addIgnoreFile(ig, join(absRoot, LEGACY_DOT_IGNORE))
 
   await walk(absRoot, async (absPath) => {
     const relPath = normalizePath(relative(absRoot, absPath))
@@ -87,44 +93,55 @@ export function hashSkillZip(zipBytes: Uint8Array) {
 }
 
 export async function readLockfile(workdir: string): Promise<Lockfile> {
-  const path = join(workdir, '.clawdhub', 'lock.json')
-  try {
-    const raw = await readFile(path, 'utf8')
-    const parsed = JSON.parse(raw) as unknown
-    return parseArk(LockfileSchema, parsed, 'Lockfile')
-  } catch {
-    return { version: 1, skills: {} }
+  const paths = [join(workdir, DOT_DIR, 'lock.json'), join(workdir, LEGACY_DOT_DIR, 'lock.json')]
+  for (const path of paths) {
+    try {
+      const raw = await readFile(path, 'utf8')
+      const parsed = JSON.parse(raw) as unknown
+      return parseArk(LockfileSchema, parsed, 'Lockfile')
+    } catch {
+      // try next
+    }
   }
+  return { version: 1, skills: {} }
 }
 
 export async function writeLockfile(workdir: string, lock: Lockfile) {
-  const path = join(workdir, '.clawdhub', 'lock.json')
+  const path = join(workdir, DOT_DIR, 'lock.json')
   await mkdir(dirname(path), { recursive: true })
   await writeFile(path, `${JSON.stringify(lock, null, 2)}\n`, 'utf8')
 }
 
 export async function readSkillOrigin(skillFolder: string): Promise<SkillOrigin | null> {
-  const path = join(skillFolder, '.clawdhub', 'origin.json')
-  try {
-    const raw = await readFile(path, 'utf8')
-    const parsed = JSON.parse(raw) as Partial<SkillOrigin>
-    if (parsed.version !== 1) return null
-    if (!parsed.registry || !parsed.slug || !parsed.installedVersion) return null
-    if (typeof parsed.installedAt !== 'number' || !Number.isFinite(parsed.installedAt)) return null
-    return {
-      version: 1,
-      registry: String(parsed.registry),
-      slug: String(parsed.slug),
-      installedVersion: String(parsed.installedVersion),
-      installedAt: parsed.installedAt,
+  const paths = [
+    join(skillFolder, DOT_DIR, 'origin.json'),
+    join(skillFolder, LEGACY_DOT_DIR, 'origin.json'),
+  ]
+  for (const path of paths) {
+    try {
+      const raw = await readFile(path, 'utf8')
+      const parsed = JSON.parse(raw) as Partial<SkillOrigin>
+      if (parsed.version !== 1) return null
+      if (!parsed.registry || !parsed.slug || !parsed.installedVersion) return null
+      if (typeof parsed.installedAt !== 'number' || !Number.isFinite(parsed.installedAt)) {
+        return null
+      }
+      return {
+        version: 1,
+        registry: String(parsed.registry),
+        slug: String(parsed.slug),
+        installedVersion: String(parsed.installedVersion),
+        installedAt: parsed.installedAt,
+      }
+    } catch {
+      // try next
     }
-  } catch {
-    return null
   }
+  return null
 }
 
 export async function writeSkillOrigin(skillFolder: string, origin: SkillOrigin) {
-  const path = join(skillFolder, '.clawdhub', 'origin.json')
+  const path = join(skillFolder, DOT_DIR, 'origin.json')
   await mkdir(dirname(path), { recursive: true })
   await writeFile(path, `${JSON.stringify(origin, null, 2)}\n`, 'utf8')
 }

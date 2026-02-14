@@ -4,15 +4,23 @@ import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import { api } from '../../convex/_generated/api'
 import type { Doc } from '../../convex/_generated/dataModel'
+import type { PublicSoul, PublicUser } from '../lib/publicUser'
+import { isModerator } from '../lib/roles'
 import { useAuthStatus } from '../lib/useAuthStatus'
 
 type SoulDetailPageProps = {
   slug: string
 }
 
+type SoulBySlugResult = {
+  soul: PublicSoul
+  latestVersion: Doc<'soulVersions'> | null
+  owner: PublicUser | null
+} | null
+
 export function SoulDetailPage({ slug }: SoulDetailPageProps) {
   const { isAuthenticated, me } = useAuthStatus()
-  const result = useQuery(api.souls.getBySlug, { slug })
+  const result = useQuery(api.souls.getBySlug, { slug }) as SoulBySlugResult | undefined
   const toggleStar = useMutation(api.soulStars.toggle)
   const addComment = useMutation(api.soulComments.add)
   const removeComment = useMutation(api.soulComments.remove)
@@ -40,7 +48,7 @@ export function SoulDetailPage({ slug }: SoulDetailPageProps) {
   const comments = useQuery(
     api.soulComments.listBySoul,
     soul ? { soulId: soul._id, limit: 50 } : 'skip',
-  ) as Array<{ comment: Doc<'soulComments'>; user: Doc<'users'> | null }> | undefined
+  ) as Array<{ comment: Doc<'soulComments'>; user: PublicUser | null }> | undefined
 
   const readmeContent = useMemo(() => {
     if (!readme) return null
@@ -222,18 +230,14 @@ export function SoulDetailPage({ slug }: SoulDetailPageProps) {
               <div className="stat">No comments yet.</div>
             ) : (
               (comments ?? []).map((entry) => (
-                <div key={entry.comment._id} className="stat" style={{ alignItems: 'flex-start' }}>
-                  <div>
+                <div key={entry.comment._id} className="comment-item">
+                  <div className="comment-body">
                     <strong>@{entry.user?.handle ?? entry.user?.name ?? 'user'}</strong>
-                    <div style={{ color: '#5c554e' }}>{entry.comment.body}</div>
+                    <div className="comment-body-text">{entry.comment.body}</div>
                   </div>
-                  {isAuthenticated &&
-                  me &&
-                  (me._id === entry.comment.userId ||
-                    me.role === 'admin' ||
-                    me.role === 'moderator') ? (
+                  {isAuthenticated && me && (me._id === entry.comment.userId || isModerator(me)) ? (
                     <button
-                      className="btn"
+                      className="btn comment-delete"
                       type="button"
                       onClick={() => void removeComment({ commentId: entry.comment._id })}
                     >

@@ -1,4 +1,4 @@
-import { CliPublishRequestSchema, parseArk } from 'clawdhub-schema'
+import { CliPublishRequestSchema, parseArk } from 'clawhub-schema'
 import { api, internal } from './_generated/api'
 import type { Doc, Id } from './_generated/dataModel'
 import type { ActionCtx } from './_generated/server'
@@ -59,7 +59,15 @@ type GetBySlugResult = {
     updatedAt: number
   } | null
   latestVersion: Doc<'skillVersions'> | null
-  owner: { handle?: string; displayName?: string; image?: string } | null
+  owner: { _id: Id<'users'>; handle?: string; displayName?: string; image?: string } | null
+  moderationInfo?: {
+    isPendingScan: boolean
+    isMalwareBlocked: boolean
+    isSuspicious: boolean
+    isHiddenByMod: boolean
+    isRemoved: boolean
+    reason?: string
+  } | null
 } | null
 
 type ListVersionsResult = {
@@ -196,7 +204,7 @@ async function listSkillsV1Handler(ctx: ActionCtx, request: Request) {
   const limit = toOptionalNumber(url.searchParams.get('limit'))
   const rawCursor = url.searchParams.get('cursor')?.trim() || undefined
   const sort = parseListSort(url.searchParams.get('sort'))
-  const cursor = sort === 'updated' ? rawCursor : undefined
+  const cursor = sort === 'trending' ? undefined : rawCursor
 
   const result = (await ctx.runQuery(api.skills.listPublicPage, {
     limit,
@@ -267,8 +275,15 @@ async function skillsGetRouterV1Handler(ctx: ActionCtx, request: Request) {
         owner: result.owner
           ? {
               handle: result.owner.handle ?? null,
+              userId: result.owner._id,
               displayName: result.owner.displayName ?? null,
               image: result.owner.image ?? null,
+            }
+          : null,
+        moderation: result.moderationInfo
+          ? {
+              isSuspicious: result.moderationInfo.isSuspicious ?? false,
+              isMalwareBlocked: result.moderationInfo.isMalwareBlocked ?? false,
             }
           : null,
       },
@@ -374,6 +389,9 @@ async function skillsGetRouterV1Handler(ctx: ActionCtx, request: Request) {
     if (!blob) return text('File missing in storage', 410, rate.headers)
     const textContent = await blob.text()
 
+    const isSvg =
+      file.contentType?.toLowerCase().includes('svg') || file.path.toLowerCase().endsWith('.svg')
+
     const headers = mergeHeaders(rate.headers, {
       'Content-Type': file.contentType
         ? `${file.contentType}; charset=utf-8`
@@ -382,6 +400,14 @@ async function skillsGetRouterV1Handler(ctx: ActionCtx, request: Request) {
       ETag: file.sha256,
       'X-Content-SHA256': file.sha256,
       'X-Content-Size': String(file.size),
+      'X-Content-Type-Options': 'nosniff',
+      'X-Frame-Options': 'DENY',
+      // For any text response that a browser might try to render, lock it down.
+      // In particular, this prevents SVG <foreignObject> script execution from
+      // reading localStorage tokens on this origin.
+      'Content-Security-Policy':
+        "default-src 'none'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'",
+      ...(isSvg ? { 'Content-Disposition': 'attachment' } : {}),
     })
     return new Response(textContent, { status: 200, headers })
   }
@@ -513,6 +539,145 @@ async function whoamiV1Handler(ctx: ActionCtx, request: Request) {
 }
 
 export const whoamiV1Http = httpAction(whoamiV1Handler)
+
+async function usersPostRouterV1Handler(ctx: ActionCtx, request: Request) {
+  const rate = await applyRateLimit(ctx, request, 'write')
+  if (!rate.ok) return rate.response
+
+  const segments = getPathSegments(request, '/api/v1/users/')
+  if (segments.length !== 1) {
+    return text('Not found', 404, rate.headers)
+  }
+  const action = segments[0]
+  if (action !== 'ban' && action !== 'role') {
+    return text('Not found', 404, rate.headers)
+  }
+
+  let payload: Record<string, unknown>
+  try {
+    payload = (await request.json()) as Record<string, unknown>
+  } catch {
+    return text('Invalid JSON', 400, rate.headers)
+  }
+
+  const handleRaw = typeof payload.handle === 'string' ? payload.handle.trim() : ''
+  const userIdRaw = typeof payload.userId === 'string' ? payload.userId.trim() : ''
+  const reasonRaw = typeof payload.reason === 'string' ? payload.reason.trim() : ''
+  if (!handleRaw && !userIdRaw) {
+    return text('Missing userId or handle', 400, rate.headers)
+  }
+
+  const roleRaw = typeof payload.role === 'string' ? payload.role.trim().toLowerCase() : ''
+  if (action === 'role' && !roleRaw) {
+    return text('Missing role', 400, rate.headers)
+  }
+  const role = roleRaw === 'user' || roleRaw === 'moderator' || roleRaw === 'admin' ? roleRaw : null
+  if (action === 'role' && !role) {
+    return text('Invalid role', 400, rate.headers)
+  }
+
+  let actorUserId: Id<'users'>
+  try {
+    const auth = await requireApiTokenUser(ctx, request)
+    actorUserId = auth.userId
+  } catch {
+    return text('Unauthorized', 401, rate.headers)
+  }
+
+  let targetUserId: Id<'users'> | null = userIdRaw ? (userIdRaw as Id<'users'>) : null
+  if (!targetUserId) {
+    const handle = handleRaw.toLowerCase()
+    const user = await ctx.runQuery(api.users.getByHandle, { handle })
+    if (!user?._id) return text('User not found', 404, rate.headers)
+    targetUserId = user._id
+  }
+
+  if (action === 'ban') {
+    const reason = reasonRaw.length > 0 ? reasonRaw : undefined
+    if (reason && reason.length > 500) {
+      return text('Reason too long (max 500 chars)', 400, rate.headers)
+    }
+    try {
+      const result = await ctx.runMutation(internal.users.banUserInternal, {
+        actorUserId,
+        targetUserId,
+        reason,
+      })
+      return json(result, 200, rate.headers)
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Ban failed'
+      if (message.toLowerCase().includes('forbidden')) {
+        return text('Forbidden', 403, rate.headers)
+      }
+      if (message.toLowerCase().includes('not found')) {
+        return text(message, 404, rate.headers)
+      }
+      return text(message, 400, rate.headers)
+    }
+  }
+
+  if (!role) {
+    return text('Invalid role', 400, rate.headers)
+  }
+
+  try {
+    const result = await ctx.runMutation(internal.users.setRoleInternal, {
+      actorUserId,
+      targetUserId,
+      role,
+    })
+    return json({ ok: true, role: result.role ?? role }, 200, rate.headers)
+  } catch (error) {
+    const message = error instanceof Error ? error.message : 'Role change failed'
+    if (message.toLowerCase().includes('forbidden')) {
+      return text('Forbidden', 403, rate.headers)
+    }
+    if (message.toLowerCase().includes('not found')) {
+      return text(message, 404, rate.headers)
+    }
+    return text(message, 400, rate.headers)
+  }
+}
+
+export const usersPostRouterV1Http = httpAction(usersPostRouterV1Handler)
+
+async function usersListV1Handler(ctx: ActionCtx, request: Request) {
+  const rate = await applyRateLimit(ctx, request, 'read')
+  if (!rate.ok) return rate.response
+
+  const url = new URL(request.url)
+  const limitRaw = toOptionalNumber(url.searchParams.get('limit'))
+  const query = url.searchParams.get('q') ?? url.searchParams.get('query') ?? ''
+
+  let actorUserId: Id<'users'>
+  try {
+    const auth = await requireApiTokenUser(ctx, request)
+    actorUserId = auth.userId
+  } catch {
+    return text('Unauthorized', 401, rate.headers)
+  }
+
+  const limit = Math.min(Math.max(limitRaw ?? 20, 1), 200)
+  try {
+    const result = await ctx.runQuery(internal.users.searchInternal, {
+      actorUserId,
+      query,
+      limit,
+    })
+    return json(result, 200, rate.headers)
+  } catch (error) {
+    const message = error instanceof Error ? error.message : 'User search failed'
+    if (message.toLowerCase().includes('forbidden')) {
+      return text('Forbidden', 403, rate.headers)
+    }
+    if (message.toLowerCase().includes('unauthorized')) {
+      return text('Unauthorized', 401, rate.headers)
+    }
+    return text(message, 400, rate.headers)
+  }
+}
+
+export const usersListV1Http = httpAction(usersListV1Handler)
 
 async function parseMultipartPublish(
   ctx: ActionCtx,
@@ -668,11 +833,43 @@ async function checkRateLimit(
   key: string,
   limit: number,
 ): Promise<RateLimitResult> {
-  return (await ctx.runMutation(internal.rateLimits.checkRateLimitInternal, {
+  // Step 1: Read-only check — no write conflicts for denied requests
+  const status = (await ctx.runQuery(internal.rateLimits.getRateLimitStatusInternal, {
     key,
     limit,
     windowMs: RATE_LIMIT_WINDOW_MS,
   })) as RateLimitResult
+
+  if (!status.allowed) {
+    return status
+  }
+
+  // Step 2: Consume a token (only when allowed, with double-check for races)
+  let result: { allowed: boolean; remaining: number }
+  try {
+    result = (await ctx.runMutation(internal.rateLimits.consumeRateLimitInternal, {
+      key,
+      limit,
+      windowMs: RATE_LIMIT_WINDOW_MS,
+    })) as { allowed: boolean; remaining: number }
+  } catch (error) {
+    if (isRateLimitWriteConflict(error)) {
+      return {
+        allowed: false,
+        remaining: 0,
+        limit: status.limit,
+        resetAt: status.resetAt,
+      }
+    }
+    throw error
+  }
+
+  return {
+    allowed: result.allowed,
+    remaining: result.remaining,
+    limit: status.limit,
+    resetAt: status.resetAt,
+  }
 }
 
 function pickMostRestrictive(primary: RateLimitResult, secondary: RateLimitResult | null) {
@@ -693,14 +890,16 @@ function rateHeaders(result: RateLimitResult): HeadersInit {
 }
 
 function getClientIp(request: Request) {
-  const header =
-    request.headers.get('cf-connecting-ip') ??
+  const cfHeader = request.headers.get('cf-connecting-ip')
+  if (cfHeader) return splitFirstIp(cfHeader)
+
+  if (!shouldTrustForwardedIps()) return null
+
+  const forwarded =
     request.headers.get('x-real-ip') ??
     request.headers.get('x-forwarded-for') ??
     request.headers.get('fly-client-ip')
-  if (!header) return null
-  if (header.includes(',')) return header.split(',')[0]?.trim() || null
-  return header.trim()
+  return splitFirstIp(forwarded)
 }
 
 function parseBearerToken(request: Request) {
@@ -740,6 +939,31 @@ function text(value: string, status: number, headers?: HeadersInit) {
 
 function mergeHeaders(base: HeadersInit, extra?: HeadersInit) {
   return { ...(base as Record<string, string>), ...(extra as Record<string, string>) }
+}
+
+function splitFirstIp(header: string | null) {
+  if (!header) return null
+  if (header.includes(',')) return header.split(',')[0]?.trim() || null
+  const trimmed = header.trim()
+  return trimmed || null
+}
+
+function shouldTrustForwardedIps() {
+  const value = String(process.env.TRUST_FORWARDED_IPS ?? '')
+    .trim()
+    .toLowerCase()
+  if (!value) return true
+  if (value === '1' || value === 'true' || value === 'yes') return true
+  if (value === '0' || value === 'false' || value === 'no') return false
+  return false
+}
+
+function isRateLimitWriteConflict(error: unknown) {
+  if (!(error instanceof Error)) return false
+  return (
+    error.message.includes('rateLimits') &&
+    error.message.includes('changed while this mutation was being run')
+  )
 }
 
 function getPathSegments(request: Request, prefix: string) {
@@ -983,6 +1207,9 @@ async function soulsGetRouterV1Handler(ctx: ActionCtx, request: Request) {
 
     void ctx.runMutation(api.soulDownloads.increment, { soulId: soulResult.soul._id })
 
+    const isSvg =
+      file.contentType?.toLowerCase().includes('svg') || file.path.toLowerCase().endsWith('.svg')
+
     const headers = mergeHeaders(rate.headers, {
       'Content-Type': file.contentType
         ? `${file.contentType}; charset=utf-8`
@@ -991,6 +1218,14 @@ async function soulsGetRouterV1Handler(ctx: ActionCtx, request: Request) {
       ETag: file.sha256,
       'X-Content-SHA256': file.sha256,
       'X-Content-Size': String(file.size),
+      'X-Content-Type-Options': 'nosniff',
+      'X-Frame-Options': 'DENY',
+      // For any text response that a browser might try to render, lock it down.
+      // In particular, this prevents SVG <foreignObject> script execution from
+      // reading localStorage tokens on this origin.
+      'Content-Security-Policy':
+        "default-src 'none'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'",
+      ...(isSvg ? { 'Content-Disposition': 'attachment' } : {}),
     })
     return new Response(textContent, { status: 200, headers })
   }
@@ -1146,4 +1381,6 @@ export const __handlers = {
   starsPostRouterV1Handler,
   starsDeleteRouterV1Handler,
   whoamiV1Handler,
+  usersPostRouterV1Handler,
+  usersListV1Handler,
 }

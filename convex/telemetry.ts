@@ -4,7 +4,7 @@ import type { Id } from './_generated/dataModel'
 import type { MutationCtx, QueryCtx } from './_generated/server'
 import { internalMutation, mutation, query } from './_generated/server'
 import { requireUser } from './lib/access'
-import { applySkillStatDeltas, bumpDailySkillStats } from './lib/skillStats'
+import { insertStatEvent } from './skillStatEvents'
 
 const TELEMETRY_STALE_MS = 120 * 24 * 60 * 60 * 1000
 
@@ -88,7 +88,13 @@ export const getMyInstalled = query({
       lastSeenAt: number
       expiredAt?: number
       skills: Array<{
-        skill: { slug: string; displayName: string; summary?: string; stats: unknown }
+        skill: {
+          slug: string
+          displayName: string
+          summary?: string
+          stats: unknown
+          ownerUserId: Id<'users'>
+        }
         firstSeenAt: number
         lastSeenAt: number
         lastVersion?: string
@@ -105,7 +111,13 @@ export const getMyInstalled = query({
 
       const filtered = includeRemoved ? installs : installs.filter((entry) => !entry.removedAt)
       const skills: Array<{
-        skill: { slug: string; displayName: string; summary?: string; stats: unknown }
+        skill: {
+          slug: string
+          displayName: string
+          summary?: string
+          stats: unknown
+          ownerUserId: Id<'users'>
+        }
         firstSeenAt: number
         lastSeenAt: number
         lastVersion?: string
@@ -121,6 +133,7 @@ export const getMyInstalled = query({
             displayName: skill.displayName,
             summary: skill.summary,
             stats: skill.stats,
+            ownerUserId: skill.ownerUserId,
           },
           firstSeenAt: entry.firstSeenAt,
           lastSeenAt: entry.lastSeenAt,
@@ -158,13 +171,13 @@ async function clearTelemetryForUser(ctx: MutationCtx, params: { userId: Id<'use
       await ctx.db.delete(entry._id)
       continue
     }
-    const patch = applySkillStatDeltas(skill, {
-      installsCurrent: entry.activeRoots > 0 ? -1 : 0,
-      installsAllTime: -1,
-    })
-    await ctx.db.patch(skill._id, {
-      ...patch,
-      updatedAt: Date.now(),
+    await insertStatEvent(ctx, {
+      skillId: skill._id,
+      kind: 'install_clear',
+      delta: {
+        allTime: -1,
+        current: entry.activeRoots > 0 ? -1 : 0,
+      },
     })
     await ctx.db.delete(entry._id)
   }
@@ -371,25 +384,12 @@ async function bumpSkillInstallCounts(
   ctx: MutationCtx,
   params: { skillId: Id<'skills'>; deltaAllTime: number; deltaCurrent: number },
 ) {
-  const skill = await ctx.db.get(params.skillId)
-  if (!skill) return
-  const now = Date.now()
-  const patch = applySkillStatDeltas(skill, {
-    installsAllTime: params.deltaAllTime,
-    installsCurrent: params.deltaCurrent,
-  })
-
-  await ctx.db.patch(skill._id, {
-    ...patch,
-    updatedAt: now,
-  })
-
-  if (params.deltaAllTime > 0) {
-    await bumpDailySkillStats(ctx, {
-      skillId: params.skillId,
-      now,
-      installs: params.deltaAllTime,
-    })
+  if (params.deltaAllTime === 1 && params.deltaCurrent === 1) {
+    await insertStatEvent(ctx, { skillId: params.skillId, kind: 'install_new' })
+  } else if (params.deltaAllTime === 0 && params.deltaCurrent === 1) {
+    await insertStatEvent(ctx, { skillId: params.skillId, kind: 'install_reactivate' })
+  } else if (params.deltaAllTime === 0 && params.deltaCurrent === -1) {
+    await insertStatEvent(ctx, { skillId: params.skillId, kind: 'install_deactivate' })
   }
 }
 

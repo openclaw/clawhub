@@ -1,4 +1,4 @@
-import { render, screen, waitFor } from '@testing-library/react'
+import { fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { vi } from 'vitest'
 
 import { SkillDetailPage } from '../components/SkillDetailPage'
@@ -42,7 +42,10 @@ describe('SkillDetailPage', () => {
   })
 
   it('shows a loading indicator while loading', () => {
-    useQueryMock.mockImplementationOnce(() => undefined) // getBySlug
+    useQueryMock.mockImplementation((_fn: unknown, args: unknown) => {
+      if (args === 'skip') return undefined
+      return undefined
+    })
 
     render(<SkillDetailPage slug="weather" />)
     expect(screen.getByText(/Loading skill/i)).toBeTruthy()
@@ -50,26 +53,33 @@ describe('SkillDetailPage', () => {
   })
 
   it('shows not found when skill query resolves to null', async () => {
-    useQueryMock.mockImplementationOnce(() => null) // getBySlug
+    useQueryMock.mockImplementation((_fn: unknown, args: unknown) => {
+      if (args === 'skip') return undefined
+      return null
+    })
 
     render(<SkillDetailPage slug="missing-skill" />)
     expect(await screen.findByText(/Skill not found/i)).toBeTruthy()
   })
 
   it('redirects legacy routes to canonical owner/slug', async () => {
-    useQueryMock.mockImplementationOnce(() => ({
-      skill: {
-        _id: 'skills:1',
-        slug: 'weather',
-        displayName: 'Weather',
-        summary: 'Get current weather.',
-        ownerUserId: 'users:1',
-        tags: {},
-        stats: { stars: 0, downloads: 0 },
-      },
-      owner: { handle: 'steipete', name: 'Peter' },
-      latestVersion: { _id: 'skillVersions:1', version: '1.0.0', parsed: {} },
-    }))
+    useQueryMock.mockImplementation((_fn: unknown, args: unknown) => {
+      if (args === 'skip') return undefined
+      if (args && typeof args === 'object' && 'skillId' in args) return []
+      return {
+        skill: {
+          _id: 'skills:1',
+          slug: 'weather',
+          displayName: 'Weather',
+          summary: 'Get current weather.',
+          ownerUserId: 'users:1',
+          tags: {},
+          stats: { stars: 0, downloads: 0 },
+        },
+        owner: { handle: 'steipete', name: 'Peter' },
+        latestVersion: { _id: 'skillVersions:1', version: '1.0.0', parsed: {} },
+      }
+    })
 
     render(<SkillDetailPage slug="weather" redirectToCanonical />)
     expect(screen.getByText(/Loading skill/i)).toBeTruthy()
@@ -82,5 +92,42 @@ describe('SkillDetailPage', () => {
       params: { owner: 'steipete', slug: 'weather' },
       replace: true,
     })
+  })
+
+  it('opens report dialog for authenticated users', async () => {
+    useAuthStatusMock.mockReturnValue({
+      isAuthenticated: true,
+      isLoading: false,
+      me: { _id: 'users:1', role: 'user' },
+    })
+    useQueryMock.mockImplementation((_fn: unknown, args: unknown) => {
+      if (args === 'skip') return undefined
+      if (args && typeof args === 'object' && 'skillId' in args) return []
+      if (args && typeof args === 'object' && 'slug' in args) {
+        return {
+          skill: {
+            _id: 'skills:1',
+            slug: 'weather',
+            displayName: 'Weather',
+            summary: 'Get current weather.',
+            ownerUserId: 'users:1',
+            tags: {},
+            stats: { stars: 0, downloads: 0 },
+          },
+          owner: { handle: 'steipete', name: 'Peter' },
+          latestVersion: { _id: 'skillVersions:1', version: '1.0.0', parsed: {}, files: [] },
+        }
+      }
+      return undefined
+    })
+
+    render(<SkillDetailPage slug="weather" />)
+
+    expect(screen.queryByText(/Reports require a reason\. Abuse may result in a ban\./i)).toBeNull()
+
+    fireEvent.click(await screen.findByRole('button', { name: /report/i }))
+
+    expect(await screen.findByRole('dialog')).toBeTruthy()
+    expect(screen.getByText(/Report skill/i)).toBeTruthy()
   })
 })

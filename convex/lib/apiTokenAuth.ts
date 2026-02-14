@@ -27,6 +27,26 @@ export async function requireApiTokenUser(
   return { user, userId: user._id }
 }
 
+export async function getOptionalApiTokenUserId(
+  ctx: ActionCtx,
+  request: Request,
+): Promise<Doc<'users'>['_id'] | null> {
+  const header = request.headers.get('authorization') ?? request.headers.get('Authorization')
+  const token = parseBearerToken(header)
+  if (!token) return null
+
+  const tokenHash = await hashToken(token)
+  const apiToken = await ctx.runQuery(internal.tokens.getByHashInternal, { tokenHash })
+  if (!apiToken || apiToken.revokedAt) return null
+
+  const user = await ctx.runQuery(internal.tokens.getUserForTokenInternal, {
+    tokenId: apiToken._id,
+  })
+  if (!user || user.deletedAt) return null
+
+  return user._id
+}
+
 function parseBearerToken(header: string | null) {
   if (!header) return null
   const trimmed = header.trim()

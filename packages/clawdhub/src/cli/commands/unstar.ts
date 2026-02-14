@@ -8,7 +8,7 @@ import { createSpinner, fail, formatError, isInteractive, promptConfirm } from '
 async function requireToken() {
   const cfg = await readGlobalConfig()
   const token = cfg?.token
-  if (!token) fail('Not logged in. Run: clawdhub login')
+  if (!token) fail('Not logged in. Run: clawhub login')
   return token
 }
 

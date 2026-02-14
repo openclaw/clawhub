@@ -116,8 +116,8 @@ function wrapText(value: string, maxWidth: number, fontSize: number, maxLines: n
 }
 
 export function buildSkillOgSvg(params: SkillOgSvgParams) {
-  const rawTitle = params.title.trim() || 'ClawdHub Skill'
-  const rawDescription = params.description.trim() || 'Published on ClawdHub.'
+  const rawTitle = params.title.trim() || 'ClawHub Skill'
+  const rawDescription = params.description.trim() || 'Published on ClawHub.'
 
   const cardX = 72
   const cardY = 96

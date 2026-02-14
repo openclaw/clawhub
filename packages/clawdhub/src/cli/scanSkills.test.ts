@@ -7,7 +7,7 @@ import { describe, expect, it } from 'vitest'
 import { findSkillFolders, getFallbackSkillRoots } from './scanSkills'
 
 async function makeTmpDir() {
-  return mkdtemp(join(tmpdir(), 'clawdhub-scan-'))
+  return mkdtemp(join(tmpdir(), 'clawhub-scan-'))
 }
 
 describe('scanSkills', () => {
@@ -60,5 +60,7 @@ describe('scanSkills', () => {
     expect(roots.some((p) => p.endsWith('/clawdis/skills'))).toBe(true)
     expect(roots.some((p) => p.endsWith('/clawd/skills'))).toBe(true)
     expect(roots.some((p) => p.endsWith('/clawdbot/skills'))).toBe(true)
+    expect(roots.some((p) => p.endsWith('/openclaw/skills'))).toBe(true)
+    expect(roots.some((p) => p.endsWith('/moltbot/skills'))).toBe(true)
   })
 })

@@ -1,4 +1,4 @@
-import { TEXT_FILE_EXTENSION_SET } from 'clawdhub-schema'
+import { TEXT_FILE_EXTENSION_SET } from 'clawhub-schema'
 import { gunzipSync, unzipSync } from 'fflate'
 
 const TEXT_TYPES = new Map([
@@ -44,6 +44,64 @@ export async function expandFiles(selected: File[]) {
     expanded.push(file)
   }
   return expanded
+}
+
+export async function expandDroppedItems(items: DataTransferItemList | null) {
+  if (!items || items.length === 0) return []
+  const dropped: File[] = []
+  const entries: FileSystemEntry[] = []
+
+  for (const item of Array.from(items)) {
+    const entry = (item as WebkitDataTransferItem).webkitGetAsEntry?.()
+    if (entry) {
+      entries.push(entry)
+      continue
+    }
+    const file = item.getAsFile()
+    if (file) dropped.push(file)
+  }
+
+  if (entries.length === 0) return dropped
+
+  for (const entry of entries) {
+    await collectEntry(entry, '', dropped)
+  }
+
+  return dropped
+}
+
+async function collectEntry(entry: FileSystemEntry, parentPath: string, files: File[]) {
+  if (entry.isFile && entry.file) {
+    const file = await new Promise<File>((resolve, reject) => {
+      entry.file?.(resolve, reject)
+    })
+    const fullPath = entry.fullPath?.replace(/^\/+/, '')
+    const path = fullPath || (parentPath ? `${parentPath}/${file.name}` : file.name)
+    files.push(new File([file], path, { type: file.type, lastModified: file.lastModified }))
+    return
+  }
+
+  if (!entry.isDirectory || !entry.createReader) return
+
+  const basePath =
+    entry.fullPath?.replace(/^\/+/, '') || (parentPath ? `${parentPath}/${entry.name}` : entry.name)
+  const reader = entry.createReader()
+  const children = await readAllEntries(reader)
+  for (const child of children) {
+    await collectEntry(child, basePath, files)
+  }
+}
+
+async function readAllEntries(reader: FileSystemDirectoryReader) {
+  const entries: FileSystemEntry[] = []
+  while (true) {
+    const batch = await new Promise<FileSystemEntry[]>((resolve, reject) => {
+      reader.readEntries(resolve, reject)
+    })
+    if (batch.length === 0) break
+    entries.push(...batch)
+  }
+  return entries
 }
 
 function pushArchiveEntries(target: File[], entries: Array<{ path: string; data: Uint8Array }>) {
@@ -164,4 +222,24 @@ function isTextPath(path: string) {
   const extension = parts.length > 1 ? (parts.at(-1) ?? '') : ''
   if (!extension) return false
   return TEXT_FILE_EXTENSION_SET.has(extension)
+}
+
+type WebkitDataTransferItem = DataTransferItem & {
+  webkitGetAsEntry?: () => FileSystemEntry | null
+}
+
+type FileSystemEntry = {
+  isFile: boolean
+  isDirectory: boolean
+  name: string
+  fullPath?: string
+  file?: (callback: (file: File) => void, errorCallback?: (error: DOMException) => void) => void
+  createReader?: () => FileSystemDirectoryReader
+}
+
+type FileSystemDirectoryReader = {
+  readEntries: (
+    callback: (entries: FileSystemEntry[]) => void,
+    errorCallback?: (error: DOMException) => void,
+  ) => void
 }

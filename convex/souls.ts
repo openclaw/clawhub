@@ -2,7 +2,8 @@ import { ConvexError, v } from 'convex/values'
 import { internal } from './_generated/api'
 import type { Doc, Id } from './_generated/dataModel'
 import { action, internalMutation, internalQuery, mutation, query } from './_generated/server'
-import { assertRole, requireUser, requireUserFromAction } from './lib/access'
+import { assertModerator, requireUser, requireUserFromAction } from './lib/access'
+import { toPublicSoul, toPublicUser } from './lib/public'
 import { getFrontmatterValue, hashSkillFiles } from './lib/skills'
 import { generateSoulChangelogPreview } from './lib/soulChangelog'
 import { fetchText, type PublishResult, publishSoulVersionForUser } from './lib/soulPublish'
@@ -27,9 +28,11 @@ export const getBySlug = query({
     const soul = matches[0] ?? null
     if (!soul || soul.softDeletedAt) return null
     const latestVersion = soul.latestVersionId ? await ctx.db.get(soul.latestVersionId) : null
-    const owner = await ctx.db.get(soul.ownerUserId)
+    const owner = toPublicUser(await ctx.db.get(soul.ownerUserId))
+    const publicSoul = toPublicSoul(soul)
+    if (!publicSoul) return null
 
-    return { soul, latestVersion, owner }
+    return { soul: publicSoul, latestVersion, owner }
   },
 })
 
@@ -59,13 +62,21 @@ export const list = query({
         .withIndex('by_owner', (q) => q.eq('ownerUserId', ownerUserId))
         .order('desc')
         .take(limit * 5)
-      return entries.filter((soul) => !soul.softDeletedAt).slice(0, limit)
+      return entries
+        .filter((soul) => !soul.softDeletedAt)
+        .slice(0, limit)
+        .map((soul) => toPublicSoul(soul))
+        .filter((soul): soul is NonNullable<typeof soul> => Boolean(soul))
     }
     const entries = await ctx.db
       .query('souls')
       .order('desc')
       .take(limit * 5)
-    return entries.filter((soul) => !soul.softDeletedAt).slice(0, limit)
+    return entries
+      .filter((soul) => !soul.softDeletedAt)
+      .slice(0, limit)
+      .map((soul) => toPublicSoul(soul))
+      .filter((soul): soul is NonNullable<typeof soul> => Boolean(soul))
   },
 })
 
@@ -82,12 +93,17 @@ export const listPublicPage = query({
       .order('desc')
       .paginate({ cursor: args.cursor ?? null, numItems: limit })
 
-    const items: Array<{ soul: Doc<'souls'>; latestVersion: Doc<'soulVersions'> | null }> = []
+    const items: Array<{
+      soul: NonNullable<ReturnType<typeof toPublicSoul>>
+      latestVersion: Doc<'soulVersions'> | null
+    }> = []
 
     for (const soul of page) {
       if (soul.softDeletedAt) continue
       const latestVersion = soul.latestVersionId ? await ctx.db.get(soul.latestVersionId) : null
-      items.push({ soul, latestVersion })
+      const publicSoul = toPublicSoul(soul)
+      if (!publicSoul) continue
+      items.push({ soul: publicSoul, latestVersion })
     }
 
     return { items, nextCursor: isDone ? null : continueCursor }
@@ -309,7 +325,7 @@ export const updateTags = mutation({
     const soul = await ctx.db.get(args.soulId)
     if (!soul) throw new Error('Soul not found')
     if (soul.ownerUserId !== user._id) {
-      assertRole(user, ['admin', 'moderator'])
+      assertModerator(user)
     }
 
     const nextTags = { ...soul.tags }
@@ -506,7 +522,7 @@ export const setSoulSoftDeletedInternal = internalMutation({
     if (!soul) throw new Error('Soul not found')
 
     if (soul.ownerUserId !== args.userId) {
-      assertRole(user, ['admin', 'moderator'])
+      assertModerator(user)
     }
 
     const now = Date.now()

@@ -7,7 +7,7 @@ read_when:
 
 # HTTP API
 
-Base URL: `https://clawdhub.com` (default).
+Base URL: `https://clawhub.ai` (default).
 
 All v1 paths are under `/api/v1/...` and implemented by Convex HTTP routes (`convex/http.ts`).
 Legacy `/api/...` and `/api/cli/...` remain for compatibility (see `DEPRECATIONS.md`).
@@ -19,10 +19,16 @@ Enforced per IP + per API key:
 
 - Read: 120/min per IP, 600/min per key
 - Write: 30/min per IP, 120/min per key
+- Download: 20/min per IP, 120/min per key (`/api/v1/download`)
 
 Headers:
 
 - `X-RateLimit-Limit`, `X-RateLimit-Remaining`, `X-RateLimit-Reset`, `Retry-After` (when limited)
+
+IP source:
+
+- Uses `cf-connecting-ip` first, then falls back to `x-real-ip`, `x-forwarded-for`, or `fly-client-ip`.
+- Set `TRUST_FORWARDED_IPS=false` to disable forwarded-header fallback.
 
 ## Public endpoints (no auth)
 
@@ -39,6 +45,10 @@ Response:
 ```json
 { "results": [{ "score": 0.123, "slug": "gifgrep", "displayName": "GifGrep", "summary": "…", "version": "1.2.3", "updatedAt": 1730000000000 }] }
 ```
+
+Notes:
+
+- Results are returned in relevance order (embedding similarity + exact slug/name token boosts + popularity prior from downloads).
 
 ### `GET /api/v1/skills`
 
@@ -121,6 +131,7 @@ Notes:
 
 - If neither `version` nor `tag` is provided, the latest version is used.
 - Soft-deleted versions return `410`.
+- Download stats are counted as unique identities per hour (`userId` when API token is valid, otherwise IP).
 
 ## Auth endpoints (Bearer token)
 
@@ -143,7 +154,78 @@ Publishes a new version.
 
 ### `DELETE /api/v1/skills/{slug}` / `POST /api/v1/skills/{slug}/undelete`
 
-Soft-delete / restore a skill (owner/admin only).
+Soft-delete / restore a skill (moderator/admin only).
+
+### `POST /api/v1/users/ban`
+
+Ban a user and hard-delete owned skills (moderator/admin only).
+
+Body:
+
+```json
+{ "handle": "user_handle", "reason": "optional ban reason" }
+```
+
+or
+
+```json
+{ "userId": "users_...", "reason": "optional ban reason" }
+```
+
+Response:
+
+```json
+{ "ok": true, "alreadyBanned": false, "deletedSkills": 3 }
+```
+
+### `POST /api/v1/users/role`
+
+Change a user role (admin only).
+
+Body:
+
+```json
+{ "handle": "user_handle", "role": "moderator" }
+```
+
+or
+
+```json
+{ "userId": "users_...", "role": "admin" }
+```
+
+Response:
+
+```json
+{ "ok": true, "role": "moderator" }
+```
+
+### `GET /api/v1/users`
+
+List or search users (admin only).
+
+Query params:
+
+- `q` (optional): search query
+- `query` (optional): alias for `q`
+- `limit` (optional): max results (default 20, max 200)
+
+Response:
+
+```json
+{
+  "items": [
+    {
+      "userId": "users_...",
+      "handle": "user_handle",
+      "displayName": "User",
+      "name": "User",
+      "role": "moderator"
+    }
+  ],
+  "total": 1
+}
+```
 
 ### `POST /api/v1/stars/{slug}` / `DELETE /api/v1/stars/{slug}`
 
@@ -172,16 +254,17 @@ Still supported for older CLI versions:
 
 See `DEPRECATIONS.md` for removal plan.
 
-## Registry discovery (`/.well-known/clawdhub.json`)
+## Registry discovery (`/.well-known/clawhub.json`)
 
 The CLI can discover registry/auth settings from the site:
 
-- `/.well-known/clawdhub.json` (JSON)
+- `/.well-known/clawhub.json` (JSON, preferred)
+- `/.well-known/clawdhub.json` (legacy)
 
 Schema:
 
 ```json
-{ "apiBase": "https://clawdhub.com", "authBase": "https://clawdhub.com", "minCliVersion": "0.0.5" }
+{ "apiBase": "https://clawhub.ai", "authBase": "https://clawhub.ai", "minCliVersion": "0.0.5" }
 ```
 
-If you self-host, serve this file (or set `CLAWDHUB_REGISTRY` explicitly).
+If you self-host, serve this file (or set `CLAWHUB_REGISTRY` explicitly; legacy `CLAWDHUB_REGISTRY`).

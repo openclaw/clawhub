@@ -60,7 +60,7 @@ describe('browserAuth', () => {
     const response = await fetch(server.redirectUri)
     expect(response.status).toBe(200)
     const text = await response.text()
-    expect(text).toContain('ClawdHub CLI Login')
+    expect(text).toContain('ClawHub CLI Login')
     server.close()
   })
 

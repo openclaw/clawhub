@@ -14,7 +14,7 @@ describe('og helpers', () => {
       summary: 'Forecasts for your area.',
       version: '1.2.3',
     })
-    expect(meta.title).toBe('Weather — ClawdHub')
+    expect(meta.title).toBe('Weather — ClawHub')
     expect(meta.description).toBe('Forecasts for your area.')
     expect(meta.url).toContain('/steipete/weather')
     expect(meta.owner).toBe('steipete')
@@ -48,9 +48,9 @@ describe('og helpers', () => {
 
   it('uses defaults when owner and summary are missing', () => {
     const meta = buildSkillMeta({ slug: 'parser' })
-    expect(meta.title).toBe('parser — ClawdHub')
-    expect(meta.description).toMatch(/ClawdHub — a fast skill registry/i)
-    expect(meta.url).toContain('/skills/parser')
+    expect(meta.title).toBe('parser — ClawHub')
+    expect(meta.description).toMatch(/ClawHub — a fast skill registry/i)
+    expect(meta.url).toContain('/unknown/parser')
     expect(meta.owner).toBeNull()
     expect(meta.image).toContain('slug=parser')
   })
@@ -76,7 +76,7 @@ describe('og helpers', () => {
       ok: true,
       json: async () => ({
         skill: { displayName: 'Weather', summary: 'Forecasts' },
-        owner: { handle: 'steipete' },
+        owner: { handle: 'steipete', userId: 'users:1' },
         latestVersion: { version: '1.2.3' },
       }),
     }))
@@ -87,6 +87,7 @@ describe('og helpers', () => {
       displayName: 'Weather',
       summary: 'Forecasts',
       owner: 'steipete',
+      ownerId: 'users:1',
       version: '1.2.3',
     })
   })
