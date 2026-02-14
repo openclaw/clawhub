@@ -29,6 +29,8 @@ read_when:
   - audit log entry: `skill.auto_hide`
 - Public queries hide non-active moderation statuses; staff can still access via
   staff-only queries and unhide/restore/delete/ban.
+- Skills directory supports an optional "Hide suspicious" filter to exclude
+  active-but-flagged (`flagged.suspicious`) entries from browse/search results.
 
 ## Bans
 
@@ -36,9 +38,23 @@ read_when:
   - hard-deletes all owned skills
   - revokes API tokens
   - sets `deletedAt` on the user
+- Admins can manually unban (`deletedAt` + `banReason` cleared); revoked API tokens
+  stay revoked and should be recreated by the user.
+- Optional ban reason is stored in `users.banReason` and audit logs.
 - Moderators cannot ban admins; nobody can ban themselves.
 - Report counters effectively reset because deleted/banned skills are no longer
   considered active in the per-user report cap.
+
+## User account deletion
+
+- User-initiated deletion is irreversible.
+- Deletion flow:
+  - sets `deactivatedAt` + `purgedAt`
+  - revokes API tokens
+  - clears profile/contact fields
+  - clears telemetry
+- Deleted accounts cannot be restored by logging in again.
+- Published skills remain public.
 
 ## Upload gate (GitHub account age)
 
@@ -48,3 +64,14 @@ read_when:
   - `githubFetchedAt` (fetch timestamp)
 - Cache TTL: 24 hours.
 - Gate applies to web uploads, CLI publish, and GitHub import.
+- If GitHub responds `403` or `429`, publish fails with:
+  - `GitHub API rate limit exceeded — please try again in a few minutes`
+- To reduce rate-limit failures, set `GITHUB_TOKEN` in Convex env for authenticated
+  GitHub API requests.
+
+## Empty-skill cleanup (backfill)
+
+- Cleanup uses quality heuristics plus trust tier to identify very thin/templated
+  skills.
+- Word counting is language-aware (`Intl.Segmenter` with fallback), reducing
+  false positives for non-space-separated languages.

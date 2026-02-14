@@ -145,6 +145,14 @@ export const getVersionById = query({
   handler: async (ctx, args) => ctx.db.get(args.versionId),
 })
 
+export const getVersionsByIdsInternal = internalQuery({
+  args: { versionIds: v.array(v.id('soulVersions')) },
+  handler: async (ctx, args) => {
+    const versions = await Promise.all(args.versionIds.map((id) => ctx.db.get(id)))
+    return versions.filter((v): v is NonNullable<typeof v> => v !== null)
+  },
+})
+
 export const getVersionByIdInternal = internalQuery({
   args: { versionId: v.id('soulVersions') },
   handler: async (ctx, args) => ctx.db.get(args.versionId),
@@ -386,7 +394,7 @@ export const insertVersion = internalMutation({
   handler: async (ctx, args) => {
     const userId = args.userId
     const user = await ctx.db.get(userId)
-    if (!user || user.deletedAt) throw new Error('User not found')
+    if (!user || user.deletedAt || user.deactivatedAt) throw new Error('User not found')
 
     const soulMatches = await ctx.db
       .query('souls')
@@ -508,7 +516,7 @@ export const setSoulSoftDeletedInternal = internalMutation({
   },
   handler: async (ctx, args) => {
     const user = await ctx.db.get(args.userId)
-    if (!user || user.deletedAt) throw new Error('User not found')
+    if (!user || user.deletedAt || user.deactivatedAt) throw new Error('User not found')
 
     const slug = args.slug.trim().toLowerCase()
     if (!slug) throw new Error('Slug required')

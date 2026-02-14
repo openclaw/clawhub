@@ -78,7 +78,7 @@ export const getGitHubBackupPageInternal = internalQuery({
       }
 
       const owner = await ctx.db.get(skill.ownerUserId)
-      if (!owner || owner.deletedAt) {
+      if (!owner || owner.deletedAt || owner.deactivatedAt) {
         items.push({ kind: 'missingOwner', skillId: skill._id, ownerUserId: skill.ownerUserId })
         continue
       }

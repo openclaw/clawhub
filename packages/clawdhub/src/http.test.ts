@@ -1,8 +1,40 @@
 /* @vitest-environment node */
 
 import { describe, expect, it, vi } from 'vitest'
-import { apiRequest, apiRequestForm, downloadZip } from './http'
+import { apiRequest, apiRequestForm, downloadZip, fetchText } from './http'
 import { ApiV1WhoamiResponseSchema } from './schema/index.js'
+
+function mockImmediateTimeouts() {
+  const setTimeoutMock = vi.fn((callback: () => void) => {
+    callback()
+    return 1 as unknown as ReturnType<typeof setTimeout>
+  })
+  const clearTimeoutMock = vi.fn()
+  vi.stubGlobal('setTimeout', setTimeoutMock as unknown as typeof setTimeout)
+  vi.stubGlobal('clearTimeout', clearTimeoutMock as typeof clearTimeout)
+  return { setTimeoutMock, clearTimeoutMock }
+}
+
+function createAbortingFetchMock() {
+  return vi.fn(async (_url: string, init?: RequestInit) => {
+    const signal = init?.signal
+    if (!signal || !(signal instanceof AbortSignal)) {
+      throw new Error('Missing abort signal')
+    }
+    if (signal.aborted) {
+      throw signal.reason
+    }
+    return await new Promise<Response>((_resolve, reject) => {
+      signal.addEventListener(
+        'abort',
+        () => {
+          reject(signal.reason)
+        },
+        { once: true },
+      )
+    })
+  })
+}
 
 describe('apiRequest', () => {
   it('adds bearer token and parses json', async () => {
@@ -73,11 +105,16 @@ describe('apiRequest', () => {
       arrayBuffer: async () => new Uint8Array([1, 2, 3]).buffer,
     })
     vi.stubGlobal('fetch', fetchMock)
-    const bytes = await downloadZip('https://example.com', { slug: 'demo', version: '1.0.0' })
+    const bytes = await downloadZip('https://example.com', {
+      slug: 'demo',
+      version: '1.0.0',
+      token: 'clh_token',
+    })
     expect(Array.from(bytes)).toEqual([1, 2, 3])
-    const [url] = fetchMock.mock.calls[0] as [string]
+    const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit]
     expect(url).toContain('slug=demo')
     expect(url).toContain('version=1.0.0')
+    expect((init.headers as Record<string, string>).Authorization).toBe('Bearer clh_token')
     vi.unstubAllGlobals()
   })
 
@@ -90,6 +127,25 @@ describe('apiRequest', () => {
     vi.stubGlobal('fetch', fetchMock)
     await expect(downloadZip('https://example.com', { slug: 'demo' })).rejects.toThrow('nope')
     expect(fetchMock).toHaveBeenCalledTimes(1)
+    vi.unstubAllGlobals()
+  })
+
+  it('aborts with Error timeouts and retries', async () => {
+    const { clearTimeoutMock } = mockImmediateTimeouts()
+    const fetchMock = createAbortingFetchMock()
+    vi.stubGlobal('fetch', fetchMock)
+
+    let caught: unknown
+    try {
+      await apiRequest('https://example.com', { method: 'GET', path: '/x' })
+    } catch (error) {
+      caught = error
+    }
+
+    expect(caught).toBeInstanceOf(Error)
+    expect((caught as Error).message).toBe('Timeout')
+    expect(fetchMock).toHaveBeenCalledTimes(3)
+    expect(clearTimeoutMock.mock.calls.length).toBeGreaterThanOrEqual(3)
     vi.unstubAllGlobals()
   })
 })
@@ -151,6 +207,27 @@ describe('apiRequestForm', () => {
       }),
     ).rejects.toThrow('HTTP 400')
     expect(fetchMock).toHaveBeenCalledTimes(1)
+    vi.unstubAllGlobals()
+  })
+})
+
+describe('fetchText', () => {
+  it('aborts with Error timeouts and retries', async () => {
+    const { clearTimeoutMock } = mockImmediateTimeouts()
+    const fetchMock = createAbortingFetchMock()
+    vi.stubGlobal('fetch', fetchMock)
+
+    let caught: unknown
+    try {
+      await fetchText('https://example.com', { path: '/x' })
+    } catch (error) {
+      caught = error
+    }
+
+    expect(caught).toBeInstanceOf(Error)
+    expect((caught as Error).message).toBe('Timeout')
+    expect(fetchMock).toHaveBeenCalledTimes(3)
+    expect(clearTimeoutMock.mock.calls.length).toBeGreaterThanOrEqual(3)
     vi.unstubAllGlobals()
   })
 })

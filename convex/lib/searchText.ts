@@ -20,7 +20,7 @@ export function matchesExactTokens(
   if (textTokens.length === 0) return false
   // Require at least one token to prefix-match, allowing vector similarity to determine relevance
   return queryTokens.some((queryToken) =>
-    textTokens.some((textToken) => textToken.includes(queryToken)),
+    textTokens.some((textToken) => textToken.startsWith(queryToken)),
   )
 }
 

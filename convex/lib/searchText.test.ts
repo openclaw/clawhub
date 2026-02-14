@@ -33,6 +33,8 @@ describe('searchText', () => {
     expect(matchesExactTokens(['pad'], ['Padel', '/padel', 'Tennis-like sport'])).toBe(true)
     // "xyz" should not match anything
     expect(matchesExactTokens(['xyz'], ['GoHome', '/gohome', 'Navigate home'])).toBe(false)
+    // "notion" should not match "annotations" (substring only)
+    expect(matchesExactTokens(['notion'], ['Annotations helper', '/annotations'])).toBe(false)
   })
 
   it('matchesExactTokens ignores empty inputs', () => {

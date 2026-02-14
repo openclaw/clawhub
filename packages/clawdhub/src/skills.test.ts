@@ -20,7 +20,9 @@ import {
 
 describe('skills', () => {
   it('extracts zip into directory and skips traversal', async () => {
-    const dir = await mkdtemp(join(tmpdir(), 'clawhub-'))
+    const parent = await mkdtemp(join(tmpdir(), 'clawhub-zip-'))
+    const dir = join(parent, 'dir')
+    await mkdir(dir)
     const evilName = `evil-${Date.now()}-${Math.random().toString(16).slice(2)}.txt`
     const zip = zipSync({
       'SKILL.md': strToU8('hello'),
@@ -29,7 +31,7 @@ describe('skills', () => {
     await extractZipToDir(new Uint8Array(zip), dir)
 
     expect((await readFile(join(dir, 'SKILL.md'), 'utf8')).trim()).toBe('hello')
-    await expect(stat(join(dir, '..', evilName))).rejects.toBeTruthy()
+    await expect(stat(join(parent, evilName))).rejects.toBeTruthy()
   })
 
   it('writes and reads lockfile', async () => {

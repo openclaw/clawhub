@@ -19,10 +19,16 @@ Enforced per IP + per API key:
 
 - Read: 120/min per IP, 600/min per key
 - Write: 30/min per IP, 120/min per key
+- Download: 20/min per IP, 120/min per key (`/api/v1/download`)
 
 Headers:
 
 - `X-RateLimit-Limit`, `X-RateLimit-Remaining`, `X-RateLimit-Reset`, `Retry-After` (when limited)
+
+IP source:
+
+- Uses `cf-connecting-ip` first, then falls back to `x-real-ip`, `x-forwarded-for`, or `fly-client-ip`.
+- Set `TRUST_FORWARDED_IPS=false` to disable forwarded-header fallback.
 
 ## Public endpoints (no auth)
 
@@ -39,6 +45,10 @@ Response:
 ```json
 { "results": [{ "score": 0.123, "slug": "gifgrep", "displayName": "GifGrep", "summary": "…", "version": "1.2.3", "updatedAt": 1730000000000 }] }
 ```
+
+Notes:
+
+- Results are returned in relevance order (embedding similarity + exact slug/name token boosts + popularity prior from downloads).
 
 ### `GET /api/v1/skills`
 
@@ -121,6 +131,7 @@ Notes:
 
 - If neither `version` nor `tag` is provided, the latest version is used.
 - Soft-deleted versions return `410`.
+- Download stats are counted as unique identities per hour (`userId` when API token is valid, otherwise IP).
 
 ## Auth endpoints (Bearer token)
 
@@ -152,13 +163,13 @@ Ban a user and hard-delete owned skills (moderator/admin only).
 Body:
 
 ```json
-{ "handle": "user_handle" }
+{ "handle": "user_handle", "reason": "optional ban reason" }
 ```
 
 or
 
 ```json
-{ "userId": "users_..." }
+{ "userId": "users_...", "reason": "optional ban reason" }
 ```
 
 Response:

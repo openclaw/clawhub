@@ -1,4 +1,4 @@
-import { render, screen, waitFor } from '@testing-library/react'
+import { fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { vi } from 'vitest'
 
 import { SkillDetailPage } from '../components/SkillDetailPage'
@@ -94,7 +94,7 @@ describe('SkillDetailPage', () => {
     })
   })
 
-  it('shows report abuse note for authenticated users', async () => {
+  it('opens report dialog for authenticated users', async () => {
     useAuthStatusMock.mockReturnValue({
       isAuthenticated: true,
       isLoading: false,
@@ -123,8 +123,11 @@ describe('SkillDetailPage', () => {
 
     render(<SkillDetailPage slug="weather" />)
 
-    expect(
-      await screen.findByText(/Reports require a reason\. Abuse may result in a ban\./i),
-    ).toBeTruthy()
+    expect(screen.queryByText(/Reports require a reason\. Abuse may result in a ban\./i)).toBeNull()
+
+    fireEvent.click(await screen.findByRole('button', { name: /report/i }))
+
+    expect(await screen.findByRole('dialog')).toBeTruthy()
+    expect(screen.getByText(/Report skill/i)).toBeTruthy()
   })
 })

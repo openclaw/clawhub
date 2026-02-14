@@ -1,10 +1,10 @@
 import { stat } from 'node:fs/promises'
 import { basename, resolve } from 'node:path'
 import semver from 'semver'
-import { readGlobalConfig } from '../../config.js'
 import { apiRequestForm } from '../../http.js'
 import { ApiRoutes, ApiV1PublishResponseSchema } from '../../schema/index.js'
 import { listTextFiles } from '../../skills.js'
+import { requireAuthToken } from '../authToken.js'
 import { getRegistry } from '../registry.js'
 import { sanitizeSlug, titleCase } from '../slug.js'
 import type { GlobalOpts } from '../types.js'
@@ -27,9 +27,7 @@ export async function cmdPublish(
   const folderStat = await stat(folder).catch(() => null)
   if (!folderStat || !folderStat.isDirectory()) fail('Path must be a folder')
 
-  const cfg = await readGlobalConfig()
-  const token = cfg?.token
-  if (!token) fail('Not logged in. Run: clawhub login')
+  const token = await requireAuthToken()
   const registry = await getRegistry(opts, { cache: true })
 
   const slug = options.slug ?? sanitizeSlug(basename(folder))

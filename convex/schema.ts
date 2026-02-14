@@ -19,7 +19,10 @@ const users = defineTable({
   role: v.optional(v.union(v.literal('admin'), v.literal('moderator'), v.literal('user'))),
   githubCreatedAt: v.optional(v.number()),
   githubFetchedAt: v.optional(v.number()),
+  deactivatedAt: v.optional(v.number()),
+  purgedAt: v.optional(v.number()),
   deletedAt: v.optional(v.number()),
+  banReason: v.optional(v.string()),
   createdAt: v.optional(v.number()),
   updatedAt: v.optional(v.number()),
 })
@@ -78,6 +81,26 @@ const skills = defineTable({
   ),
   moderationNotes: v.optional(v.string()),
   moderationReason: v.optional(v.string()),
+  quality: v.optional(
+    v.object({
+      score: v.number(),
+      decision: v.union(v.literal('pass'), v.literal('quarantine'), v.literal('reject')),
+      trustTier: v.union(v.literal('low'), v.literal('medium'), v.literal('trusted')),
+      similarRecentCount: v.number(),
+      reason: v.string(),
+      signals: v.object({
+        bodyChars: v.number(),
+        bodyWords: v.number(),
+        uniqueWordRatio: v.number(),
+        headingCount: v.number(),
+        bulletCount: v.number(),
+        templateMarkerHits: v.number(),
+        genericSummary: v.boolean(),
+        cjkChars: v.optional(v.number()),
+      }),
+      evaluatedAt: v.number(),
+    }),
+  ),
   moderationFlags: v.optional(v.array(v.string())),
   lastReviewedAt: v.optional(v.number()),
   // VT scan tracking
@@ -112,6 +135,15 @@ const skills = defineTable({
   .index('by_stats_installs_all_time', ['statsInstallsAllTime', 'updatedAt'])
   .index('by_batch', ['batch'])
   .index('by_active_updated', ['softDeletedAt', 'updatedAt'])
+  .index('by_active_created', ['softDeletedAt', 'createdAt'])
+  .index('by_active_name', ['softDeletedAt', 'displayName'])
+  .index('by_active_stats_downloads', ['softDeletedAt', 'statsDownloads', 'updatedAt'])
+  .index('by_active_stats_stars', ['softDeletedAt', 'statsStars', 'updatedAt'])
+  .index('by_active_stats_installs_all_time', [
+    'softDeletedAt',
+    'statsInstallsAllTime',
+    'updatedAt',
+  ])
   .index('by_canonical', ['canonicalSkillId'])
   .index('by_fork_of', ['forkOf.skillId'])
 
@@ -167,6 +199,28 @@ const skillVersions = defineTable({
       verdict: v.optional(v.string()),
       analysis: v.optional(v.string()),
       source: v.optional(v.string()),
+      checkedAt: v.number(),
+    }),
+  ),
+  llmAnalysis: v.optional(
+    v.object({
+      status: v.string(),
+      verdict: v.optional(v.string()),
+      confidence: v.optional(v.string()),
+      summary: v.optional(v.string()),
+      dimensions: v.optional(
+        v.array(
+          v.object({
+            name: v.string(),
+            label: v.string(),
+            rating: v.string(),
+            detail: v.string(),
+          }),
+        ),
+      ),
+      guidance: v.optional(v.string()),
+      findings: v.optional(v.string()),
+      model: v.optional(v.string()),
       checkedAt: v.number(),
     }),
   ),
@@ -294,6 +348,8 @@ const skillStatEvents = defineTable({
     v.literal('download'),
     v.literal('star'),
     v.literal('unstar'),
+    v.literal('comment'),
+    v.literal('uncomment'),
     v.literal('install_new'),
     v.literal('install_reactivate'),
     v.literal('install_deactivate'),
@@ -437,6 +493,15 @@ const rateLimits = defineTable({
   .index('by_key_window', ['key', 'windowStart'])
   .index('by_key', ['key'])
 
+const downloadDedupes = defineTable({
+  skillId: v.id('skills'),
+  identityHash: v.string(),
+  hourStart: v.number(),
+  createdAt: v.number(),
+})
+  .index('by_skill_identity_hour', ['skillId', 'identityHash', 'hourStart'])
+  .index('by_hour', ['hourStart'])
+
 const githubBackupSyncState = defineTable({
   key: v.string(),
   cursor: v.optional(v.string()),
@@ -507,6 +572,7 @@ export default defineSchema({
   vtScanLogs,
   apiTokens,
   rateLimits,
+  downloadDedupes,
   githubBackupSyncState,
   userSyncRoots,
   userSkillInstalls,

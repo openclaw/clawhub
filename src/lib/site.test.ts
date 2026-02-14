@@ -46,6 +46,12 @@ describe('site helpers', () => {
     withMetaEnv({ VITE_SITE_URL: 'https://example.com' }, () => {
       expect(getClawHubSiteUrl()).toBe('https://example.com')
     })
+    withMetaEnv({ VITE_SITE_URL: 'https://clawdhub.com' }, () => {
+      expect(getClawHubSiteUrl()).toBe('https://clawhub.ai')
+    })
+    withMetaEnv({ VITE_SITE_URL: 'https://auth.clawdhub.com' }, () => {
+      expect(getClawHubSiteUrl()).toBe('https://clawhub.ai')
+    })
   })
 
   it('picks SoulHub URL from explicit env', () => {

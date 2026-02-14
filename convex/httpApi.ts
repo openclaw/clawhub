@@ -11,6 +11,7 @@ import type { Id } from './_generated/dataModel'
 import type { ActionCtx } from './_generated/server'
 import { httpAction } from './_generated/server'
 import { requireApiTokenUser } from './lib/apiTokenAuth'
+import { corsHeaders, mergeHeaders } from './lib/httpHeaders'
 import { publishVersionForUser } from './skills'
 
 type SearchSkillEntry = {
@@ -241,20 +242,26 @@ export const cliTelemetrySyncHttp = httpAction(cliTelemetrySyncHandler)
 function json(value: unknown, status = 200) {
   return new Response(JSON.stringify(value), {
     status,
-    headers: {
-      'Content-Type': 'application/json',
-      'Cache-Control': 'no-store',
-    },
+    headers: mergeHeaders(
+      {
+        'Content-Type': 'application/json',
+        'Cache-Control': 'no-store',
+      },
+      corsHeaders(),
+    ),
   })
 }
 
 function text(value: string, status: number) {
   return new Response(value, {
     status,
-    headers: {
-      'Content-Type': 'text/plain; charset=utf-8',
-      'Cache-Control': 'no-store',
-    },
+    headers: mergeHeaders(
+      {
+        'Content-Type': 'text/plain; charset=utf-8',
+        'Cache-Control': 'no-store',
+      },
+      corsHeaders(),
+    ),
   })
 }
 

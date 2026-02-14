@@ -20,7 +20,6 @@ const REQUEST_TIMEOUT_MS = 15_000
 try {
   setGlobalDispatcher(
     new Agent({
-      allowH2: true,
       connect: { timeout: REQUEST_TIMEOUT_MS },
     }),
   )
@@ -61,7 +60,7 @@ async function makeTempConfig(registry: string, token: string | null) {
 
 async function fetchWithTimeout(input: RequestInfo | URL, init?: RequestInit) {
   const controller = new AbortController()
-  const timeout = setTimeout(() => controller.abort('Timeout'), REQUEST_TIMEOUT_MS)
+  const timeout = setTimeout(() => controller.abort(new Error('Timeout')), REQUEST_TIMEOUT_MS)
   try {
     return await fetch(input, { ...init, signal: controller.signal })
   } finally {

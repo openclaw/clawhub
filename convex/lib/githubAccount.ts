@@ -13,7 +13,7 @@ type GitHubUser = {
 
 export async function requireGitHubAccountAge(ctx: ActionCtx, userId: Id<'users'>) {
   const user = await ctx.runQuery(internal.users.getByIdInternal, { userId })
-  if (!user || user.deletedAt) throw new ConvexError('User not found')
+  if (!user || user.deletedAt || user.deactivatedAt) throw new ConvexError('User not found')
 
   const handle = user.handle?.trim()
   if (!handle) throw new ConvexError('GitHub handle required')
@@ -24,10 +24,21 @@ export async function requireGitHubAccountAge(ctx: ActionCtx, userId: Id<'users'
   const stale = !createdAt || now - fetchedAt > FETCH_TTL_MS
 
   if (stale) {
+    const headers: Record<string, string> = { 'User-Agent': 'clawhub' }
+    const token = process.env.GITHUB_TOKEN
+    if (token) {
+      headers.Authorization = `Bearer ${token}`
+    }
+
     const response = await fetch(`${GITHUB_API}/users/${encodeURIComponent(handle)}`, {
-      headers: { 'User-Agent': 'clawhub' },
+      headers,
     })
-    if (!response.ok) throw new ConvexError('GitHub account lookup failed')
+    if (!response.ok) {
+      if (response.status === 403 || response.status === 429) {
+        throw new ConvexError('GitHub API rate limit exceeded — please try again in a few minutes')
+      }
+      throw new ConvexError('GitHub account lookup failed')
+    }
 
     const payload = (await response.json()) as GitHubUser
     const parsed = payload.created_at ? Date.parse(payload.created_at) : Number.NaN

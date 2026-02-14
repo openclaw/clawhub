@@ -21,6 +21,7 @@ import {
 import { getRegistry } from '../registry.js'
 import type { GlobalOpts, ResolveResult } from '../types.js'
 import { createSpinner, fail, formatError, isInteractive, promptConfirm } from '../ui.js'
+import { getOptionalAuthToken } from '../authToken.js'
 
 export async function cmdSearch(opts: GlobalOpts, query: string, limit?: number) {
   if (!query) fail('Query required')
@@ -61,6 +62,8 @@ export async function cmdInstall(
   const trimmed = slug.trim()
   if (!trimmed) fail('Slug required')
 
+  const token = await getOptionalAuthToken()
+
   const registry = await getRegistry(opts, { cache: true })
   await mkdir(opts.dir, { recursive: true })
   const target = join(opts.dir, trimmed)
@@ -76,7 +79,7 @@ export async function cmdInstall(
     // Fetch skill metadata including moderation status
     const skillMeta = await apiRequest(
       registry,
-      { method: 'GET', path: `${ApiRoutes.skills}/${encodeURIComponent(trimmed)}` },
+      { method: 'GET', path: `${ApiRoutes.skills}/${encodeURIComponent(trimmed)}`, token },
       ApiV1SkillResponseSchema,
     )
 
@@ -106,7 +109,7 @@ export async function cmdInstall(
     if (!resolvedVersion) fail('Could not resolve latest version')
 
     spinner.text = `Downloading ${trimmed}@${resolvedVersion}`
-    const zip = await downloadZip(registry, { slug: trimmed, version: resolvedVersion })
+    const zip = await downloadZip(registry, { slug: trimmed, version: resolvedVersion, token })
     await extractZipToDir(zip, target)
 
     await writeSkillOrigin(target, {
@@ -144,6 +147,8 @@ export async function cmdUpdate(
   if (options.version && !semver.valid(options.version)) fail('--version must be valid semver')
   const allowPrompt = isInteractive() && inputAllowed !== false
 
+  const token = await getOptionalAuthToken()
+
   const registry = await getRegistry(opts, { cache: true })
   const lock = await readLockfile(opts.workdir)
   const slugs = slug ? [slug] : Object.keys(lock.skills)
@@ -161,7 +166,7 @@ export async function cmdUpdate(
       // Always fetch skill metadata to check moderation status
       const skillMeta = await apiRequest(
         registry,
-        { method: 'GET', path: `${ApiRoutes.skills}/${encodeURIComponent(entry)}` },
+        { method: 'GET', path: `${ApiRoutes.skills}/${encodeURIComponent(entry)}`, token },
         ApiV1SkillResponseSchema,
       )
 
@@ -202,7 +207,7 @@ export async function cmdUpdate(
 
       let resolveResult: ResolveResult
       if (localFingerprint) {
-        resolveResult = await resolveSkillVersion(registry, entry, localFingerprint)
+        resolveResult = await resolveSkillVersion(registry, entry, localFingerprint, token)
       } else {
         resolveResult = { match: null, latestVersion: skillMeta.latestVersion ?? null }
       }
@@ -255,7 +260,7 @@ export async function cmdUpdate(
         spinner.start(`Updating ${entry} -> ${targetVersion}`)
       }
       await rm(target, { recursive: true, force: true })
-      const zip = await downloadZip(registry, { slug: entry, version: targetVersion })
+      const zip = await downloadZip(registry, { slug: entry, version: targetVersion, token })
       await extractZipToDir(zip, target)
 
       const existingOrigin = await readSkillOrigin(target)
@@ -407,13 +412,13 @@ function resolveExploreSort(raw?: string): { sort: ExploreSort; apiSort: ApiExpl
   )
 }
 
-async function resolveSkillVersion(registry: string, slug: string, hash: string) {
+async function resolveSkillVersion(registry: string, slug: string, hash: string, token?: string) {
   const url = new URL(ApiRoutes.resolve, registry)
   url.searchParams.set('slug', slug)
   url.searchParams.set('hash', hash)
   return apiRequest(
     registry,
-    { method: 'GET', url: url.toString() },
+    { method: 'GET', url: url.toString(), token },
     ApiV1SkillResolveResponseSchema,
   )
 }
