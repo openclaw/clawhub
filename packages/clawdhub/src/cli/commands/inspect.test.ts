@@ -16,7 +16,7 @@ vi.mock('../registry.js', () => ({
   getRegistry: () => mockGetRegistry(),
 }))
 
-const mockReadGlobalConfig = vi.fn(async () => null)
+const mockReadGlobalConfig = vi.fn(async () => null as { token?: string } | null)
 vi.mock('../../config.js', () => ({
   readGlobalConfig: () => mockReadGlobalConfig(),
 }))
