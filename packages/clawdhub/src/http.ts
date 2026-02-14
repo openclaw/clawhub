@@ -58,12 +58,7 @@ export async function apiRequest<T>(
         body,
       })
       if (!response.ok) {
-        const text = await response.text().catch(() => '')
-        const message = text || `HTTP ${response.status}`
-        if (response.status === 429 || response.status >= 500) {
-          throw new Error(message)
-        }
-        throw new AbortError(message)
+        throwHttpStatusError(response.status, await readResponseTextSafe(response))
       }
       return (await response.json()) as unknown
     },
@@ -103,12 +98,7 @@ export async function apiRequestForm<T>(
         body: args.form,
       })
       if (!response.ok) {
-        const text = await response.text().catch(() => '')
-        const message = text || `HTTP ${response.status}`
-        if (response.status === 429 || response.status >= 500) {
-          throw new Error(message)
-        }
-        throw new AbortError(message)
+        throwHttpStatusError(response.status, await readResponseTextSafe(response))
       }
       return (await response.json()) as unknown
     },
@@ -133,11 +123,7 @@ export async function fetchText(registry: string, args: TextRequestArgs): Promis
       const response = await fetchWithTimeout(url, { method: 'GET', headers })
       const text = await response.text()
       if (!response.ok) {
-        const message = text || `HTTP ${response.status}`
-        if (response.status === 429 || response.status >= 500) {
-          throw new Error(message)
-        }
-        throw new AbortError(message)
+        throwHttpStatusError(response.status, text)
       }
       return text
     },
@@ -157,11 +143,7 @@ export async function downloadZip(registry: string, args: { slug: string; versio
 
       const response = await fetchWithTimeout(url.toString(), { method: 'GET' })
       if (!response.ok) {
-        const message = (await response.text().catch(() => '')) || `HTTP ${response.status}`
-        if (response.status === 429 || response.status >= 500) {
-          throw new Error(message)
-        }
-        throw new AbortError(message)
+        throwHttpStatusError(response.status, await readResponseTextSafe(response))
       }
       return new Uint8Array(await response.arrayBuffer())
     },
@@ -177,6 +159,18 @@ async function fetchWithTimeout(url: string, init: RequestInit): Promise<Respons
   } finally {
     clearTimeout(timeout)
   }
+}
+
+async function readResponseTextSafe(response: Response): Promise<string> {
+  return await response.text().catch(() => '')
+}
+
+function throwHttpStatusError(status: number, text: string): never {
+  const message = text || `HTTP ${status}`
+  if (status === 429 || status >= 500) {
+    throw new Error(message)
+  }
+  throw new AbortError(message)
 }
 
 async function fetchJsonViaCurl(url: string, args: RequestArgs) {
@@ -213,10 +207,7 @@ async function fetchJsonViaCurl(url: string, args: RequestArgs) {
   const status = Number(output.slice(splitAt + 1).trim())
   if (!Number.isFinite(status)) throw new Error('curl response missing status')
   if (status < 200 || status >= 300) {
-    if (status === 429 || status >= 500) {
-      throw new Error(body || `HTTP ${status}`)
-    }
-    throw new AbortError(body || `HTTP ${status}`)
+    throwHttpStatusError(status, body)
   }
   return JSON.parse(body || 'null') as unknown
 }
@@ -268,10 +259,7 @@ async function fetchJsonFormViaCurl(url: string, args: FormRequestArgs) {
     const status = Number(output.slice(splitAt + 1).trim())
     if (!Number.isFinite(status)) throw new Error('curl response missing status')
     if (status < 200 || status >= 300) {
-      if (status === 429 || status >= 500) {
-        throw new Error(body || `HTTP ${status}`)
-      }
-      throw new AbortError(body || `HTTP ${status}`)
+      throwHttpStatusError(status, body)
     }
     return JSON.parse(body || 'null') as unknown
   } finally {
@@ -340,11 +328,7 @@ async function fetchBinaryViaCurl(url: string) {
     if (!Number.isFinite(status)) throw new Error('curl response missing status')
     if (status < 200 || status >= 300) {
       const body = await readFileSafe(filePath)
-      const message = body ? new TextDecoder().decode(body) : `HTTP ${status}`
-      if (status === 429 || status >= 500) {
-        throw new Error(message)
-      }
-      throw new AbortError(message)
+      throwHttpStatusError(status, body ? new TextDecoder().decode(body) : '')
     }
     const bytes = await readFileSafe(filePath)
     return bytes ? new Uint8Array(bytes) : new Uint8Array()
