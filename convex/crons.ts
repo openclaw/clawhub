@@ -26,8 +26,24 @@ crons.interval(
 
 crons.interval(
   'skill-stat-events',
-  { minutes: 15 },
+  { minutes: 5 },
   internal.skillStatEvents.processSkillStatEventsAction,
+  {},
+)
+
+crons.interval('vt-pending-scans', { minutes: 5 }, internal.vt.pollPendingScans, { batchSize: 100 })
+
+crons.interval('vt-cache-backfill', { minutes: 30 }, internal.vt.backfillActiveSkillsVTCache, {
+  batchSize: 100,
+})
+
+// Daily re-scan of all active skills at 3am UTC
+crons.daily('vt-daily-rescan', { hourUTC: 3, minuteUTC: 0 }, internal.vt.rescanActiveSkills, {})
+
+crons.interval(
+  'download-dedupe-prune',
+  { hours: 24 },
+  internal.downloads.pruneDownloadDedupesInternal,
   {},
 )
 

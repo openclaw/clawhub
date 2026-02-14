@@ -1,6 +1,5 @@
-import { createFileRoute, Link } from '@tanstack/react-router'
-import { useAction } from 'convex/react'
-import { usePaginatedQuery } from 'convex-helpers/react'
+import { createFileRoute, Link, redirect } from '@tanstack/react-router'
+import { useAction, usePaginatedQuery } from 'convex/react'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { api } from '../../../convex/_generated/api'
 import type { Doc } from '../../../convex/_generated/dataModel'
@@ -8,15 +7,24 @@ import { SkillCard } from '../../components/SkillCard'
 import { getSkillBadges, isSkillHighlighted } from '../../lib/badges'
 import type { PublicSkill } from '../../lib/publicUser'
 
-const sortKeys = ['newest', 'downloads', 'installs', 'stars', 'name', 'updated'] as const
+const sortKeys = [
+  'relevance',
+  'newest',
+  'downloads',
+  'installs',
+  'stars',
+  'name',
+  'updated',
+] as const
 const pageSize = 25
 type SortKey = (typeof sortKeys)[number]
+type ListSortKey = Exclude<SortKey, 'relevance'>
 type SortDir = 'asc' | 'desc'
 
 function parseSort(value: unknown): SortKey {
-  if (typeof value !== 'string') return 'newest'
+  if (typeof value !== 'string') return 'downloads'
   if ((sortKeys as readonly string[]).includes(value)) return value as SortKey
-  return 'newest'
+  return 'downloads'
 }
 
 function parseDir(value: unknown, sort: SortKey): SortDir {
@@ -24,10 +32,27 @@ function parseDir(value: unknown, sort: SortKey): SortDir {
   return sort === 'name' ? 'asc' : 'desc'
 }
 
+function toListSort(sort: SortKey): ListSortKey {
+  return sort === 'relevance' ? 'downloads' : sort
+}
+
 type SkillListEntry = {
   skill: PublicSkill
-  latestVersion: Doc<'skillVersions'> | null
+  latestVersion: {
+    version: string
+    createdAt: number
+    changelog: string
+    changelogSource?: 'auto' | 'user'
+    parsed?: {
+      clawdis?: {
+        nix?: {
+          plugin?: boolean
+        }
+      }
+    }
+  } | null
   ownerHandle?: string | null
+  searchScore?: number
 }
 
 type SkillSearchEntry = {
@@ -52,9 +77,32 @@ export const Route = createFileRoute('/skills/')({
         search.highlighted === '1' || search.highlighted === 'true' || search.highlighted === true
           ? true
           : undefined,
+      nonSuspicious:
+        search.nonSuspicious === '1' ||
+        search.nonSuspicious === 'true' ||
+        search.nonSuspicious === true
+          ? true
+          : undefined,
       view: search.view === 'cards' || search.view === 'list' ? search.view : undefined,
       focus: search.focus === 'search' ? 'search' : undefined,
     }
+  },
+  beforeLoad: ({ search }) => {
+    const hasQuery = Boolean(search.q?.trim())
+    if (hasQuery || search.sort) return
+    throw redirect({
+      to: '/skills',
+      search: {
+        q: search.q || undefined,
+        sort: 'downloads',
+        dir: search.dir || undefined,
+        highlighted: search.highlighted || undefined,
+        nonSuspicious: search.nonSuspicious || undefined,
+        view: search.view || undefined,
+        focus: search.focus || undefined,
+      },
+      replace: true,
+    })
   },
   component: SkillsIndex,
 })
@@ -62,31 +110,42 @@ export const Route = createFileRoute('/skills/')({
 export function SkillsIndex() {
   const navigate = Route.useNavigate()
   const search = Route.useSearch()
-  const sort = search.sort ?? 'newest'
-  const dir = parseDir(search.dir, sort)
+  const [query, setQuery] = useState(search.q ?? '')
   const view = search.view ?? 'list'
   const highlightedOnly = search.highlighted ?? false
-  const [query, setQuery] = useState(search.q ?? '')
+  const nonSuspiciousOnly = search.nonSuspicious ?? false
   const searchSkills = useAction(api.search.searchSkills)
   const [searchResults, setSearchResults] = useState<Array<SkillSearchEntry>>([])
   const [searchLimit, setSearchLimit] = useState(pageSize)
   const [isSearching, setIsSearching] = useState(false)
   const searchRequest = useRef(0)
   const loadMoreRef = useRef<HTMLDivElement | null>(null)
+  const loadMoreInFlightRef = useRef(false)
 
   const searchInputRef = useRef<HTMLInputElement>(null)
   const trimmedQuery = useMemo(() => query.trim(), [query])
   const hasQuery = trimmedQuery.length > 0
-  const searchKey = trimmedQuery ? `${trimmedQuery}::${highlightedOnly ? '1' : '0'}` : ''
+  const sort =
+    search.sort === 'relevance' && !hasQuery
+      ? 'downloads'
+      : (search.sort ?? (hasQuery ? 'relevance' : 'downloads'))
+  const listSort = toListSort(sort)
+  const dir = parseDir(search.dir, sort)
+  const searchKey = trimmedQuery
+    ? `${trimmedQuery}::${highlightedOnly ? '1' : '0'}::${nonSuspiciousOnly ? '1' : '0'}`
+    : ''
 
-  // Use convex-helpers usePaginatedQuery for better cache behavior
   const {
     results: paginatedResults,
     status: paginationStatus,
     loadMore: loadMorePaginated,
-  } = usePaginatedQuery(api.skills.listPublicPageV2, hasQuery ? 'skip' : {}, {
-    initialNumItems: pageSize,
-  })
+  } = usePaginatedQuery(
+    api.skills.listPublicPageV2,
+    hasQuery ? 'skip' : { sort: listSort, dir, nonSuspiciousOnly },
+    {
+      initialNumItems: pageSize,
+    },
+  )
 
   // Derive loading states from pagination status
   // status: 'LoadingFirstPage' | 'CanLoadMore' | 'LoadingMore' | 'Exhausted'
@@ -97,6 +156,18 @@ export function SkillsIndex() {
   useEffect(() => {
     setQuery(search.q ?? '')
   }, [search.q])
+
+  // Defense-in-depth for stale client bundles: always normalize browse mode to downloads sort.
+  useEffect(() => {
+    if (hasQuery || search.sort) return
+    void navigate({
+      search: (prev) => ({
+        ...prev,
+        sort: 'downloads',
+      }),
+      replace: true,
+    })
+  }, [hasQuery, navigate, search.sort])
 
   // Auto-focus search input when focus=search param is present
   useEffect(() => {
@@ -128,6 +199,7 @@ export function SkillsIndex() {
           const data = (await searchSkills({
             query: trimmedQuery,
             highlightedOnly,
+            nonSuspiciousOnly,
             limit: searchLimit,
           })) as Array<SkillSearchEntry>
           if (requestId === searchRequest.current) {
@@ -141,7 +213,7 @@ export function SkillsIndex() {
       })()
     }, 220)
     return () => window.clearTimeout(handle)
-  }, [hasQuery, highlightedOnly, searchLimit, searchSkills, trimmedQuery])
+  }, [hasQuery, highlightedOnly, nonSuspiciousOnly, searchLimit, searchSkills, trimmedQuery])
 
   const baseItems = useMemo(() => {
     if (hasQuery) {
@@ -149,6 +221,7 @@ export function SkillsIndex() {
         skill: entry.skill,
         latestVersion: entry.version,
         ownerHandle: entry.ownerHandle ?? null,
+        searchScore: entry.score,
       }))
     }
     // paginatedResults is an array of page items from usePaginatedQuery
@@ -161,32 +234,48 @@ export function SkillsIndex() {
   )
 
   const sorted = useMemo(() => {
+    if (!hasQuery) {
+      return filtered
+    }
     const multiplier = dir === 'asc' ? 1 : -1
     const results = [...filtered]
     results.sort((a, b) => {
+      const tieBreak = () => {
+        const updated = (a.skill.updatedAt - b.skill.updatedAt) * multiplier
+        if (updated !== 0) return updated
+        return a.skill.slug.localeCompare(b.skill.slug)
+      }
       switch (sort) {
+        case 'relevance':
+          return ((a.searchScore ?? 0) - (b.searchScore ?? 0)) * multiplier
         case 'downloads':
-          return (a.skill.stats.downloads - b.skill.stats.downloads) * multiplier
+          return (a.skill.stats.downloads - b.skill.stats.downloads) * multiplier || tieBreak()
         case 'installs':
           return (
             ((a.skill.stats.installsAllTime ?? 0) - (b.skill.stats.installsAllTime ?? 0)) *
-            multiplier
+              multiplier || tieBreak()
           )
         case 'stars':
-          return (a.skill.stats.stars - b.skill.stats.stars) * multiplier
+          return (a.skill.stats.stars - b.skill.stats.stars) * multiplier || tieBreak()
         case 'updated':
-          return (a.skill.updatedAt - b.skill.updatedAt) * multiplier
+          return (
+            (a.skill.updatedAt - b.skill.updatedAt) * multiplier ||
+            a.skill.slug.localeCompare(b.skill.slug)
+          )
         case 'name':
           return (
             (a.skill.displayName.localeCompare(b.skill.displayName) ||
               a.skill.slug.localeCompare(b.skill.slug)) * multiplier
           )
         default:
-          return (a.skill.createdAt - b.skill.createdAt) * multiplier
+          return (
+            (a.skill.createdAt - b.skill.createdAt) * multiplier ||
+            a.skill.slug.localeCompare(b.skill.slug)
+          )
       }
     })
     return results
-  }, [dir, filtered, sort])
+  }, [dir, filtered, hasQuery, sort])
 
   const isLoadingSkills = hasQuery ? isSearching && searchResults.length === 0 : isLoadingList
   const canLoadMore = hasQuery
@@ -196,7 +285,8 @@ export function SkillsIndex() {
   const canAutoLoad = typeof IntersectionObserver !== 'undefined'
 
   const loadMore = useCallback(() => {
-    if (isLoadingMore || !canLoadMore) return
+    if (loadMoreInFlightRef.current || isLoadingMore || !canLoadMore) return
+    loadMoreInFlightRef.current = true
     if (hasQuery) {
       setSearchLimit((value) => value + pageSize)
     } else {
@@ -205,12 +295,19 @@ export function SkillsIndex() {
   }, [canLoadMore, hasQuery, isLoadingMore, loadMorePaginated])
 
   useEffect(() => {
+    if (!isLoadingMore) {
+      loadMoreInFlightRef.current = false
+    }
+  }, [isLoadingMore])
+
+  useEffect(() => {
     if (!canLoadMore || typeof IntersectionObserver === 'undefined') return
     const target = loadMoreRef.current
     if (!target) return
     const observer = new IntersectionObserver(
       (entries) => {
         if (entries.some((entry) => entry.isIntersecting)) {
+          observer.disconnect()
           loadMore()
         }
       },
@@ -220,19 +317,23 @@ export function SkillsIndex() {
     return () => observer.disconnect()
   }, [canLoadMore, loadMore])
 
+  const activeFilters: string[] = []
+  if (highlightedOnly) activeFilters.push('highlighted')
+  if (nonSuspiciousOnly) activeFilters.push('non-suspicious')
+
   return (
     <main className="section">
-      <header className="skills-header">
-        <div>
-          <h1 className="section-title" style={{ marginBottom: 8 }}>
-            Skills
-          </h1>
-          <p className="section-subtitle" style={{ marginBottom: 0 }}>
-            {isLoadingSkills
-              ? 'Loading skills…'
-              : `Browse the skill library${highlightedOnly ? ' (highlighted)' : ''}.`}
-          </p>
-        </div>
+      <header className="skills-header-top">
+        <h1 className="section-title" style={{ marginBottom: 8 }}>
+          Skills
+        </h1>
+        <p className="section-subtitle" style={{ marginBottom: 0 }}>
+          {isLoadingSkills
+            ? 'Loading skills…'
+            : `Browse the skill library${activeFilters.length ? ` (${activeFilters.join(', ')})` : ''}.`}
+        </p>
+      </header>
+      <div className="skills-container">
         <div className="skills-toolbar">
           <div className="skills-search">
             <input
@@ -268,6 +369,22 @@ export function SkillsIndex() {
             >
               Highlighted
             </button>
+            <button
+              className={`search-filter-button${nonSuspiciousOnly ? ' is-active' : ''}`}
+              type="button"
+              aria-pressed={nonSuspiciousOnly}
+              onClick={() => {
+                void navigate({
+                  search: (prev) => ({
+                    ...prev,
+                    nonSuspicious: nonSuspiciousOnly ? undefined : true,
+                  }),
+                  replace: true,
+                })
+              }}
+            >
+              Hide suspicious
+            </button>
             <select
               className="skills-sort"
               value={sort}
@@ -284,6 +401,7 @@ export function SkillsIndex() {
               }}
               aria-label="Sort skills"
             >
+              {hasQuery ? <option value="relevance">Relevance</option> : null}
               <option value="newest">Newest</option>
               <option value="updated">Recently updated</option>
               <option value="downloads">Downloads</option>
@@ -324,99 +442,99 @@ export function SkillsIndex() {
             </button>
           </div>
         </div>
-      </header>
 
-      {isLoadingSkills ? (
-        <div className="card">
-          <div className="loading-indicator">Loading skills…</div>
-        </div>
-      ) : sorted.length === 0 ? (
-        <div className="card">No skills match that filter.</div>
-      ) : view === 'cards' ? (
-        <div className="grid">
-          {sorted.map((entry) => {
-            const skill = entry.skill
-            const isPlugin = Boolean(entry.latestVersion?.parsed?.clawdis?.nix?.plugin)
-            const skillHref = buildSkillHref(skill, entry.ownerHandle)
-            return (
-              <SkillCard
-                key={skill._id}
-                skill={skill}
-                href={skillHref}
-                badge={getSkillBadges(skill)}
-                chip={isPlugin ? 'Plugin bundle (nix)' : undefined}
-                summaryFallback="Agent-ready skill pack."
-                meta={
-                  <div className="stat">
-                    ⭐ {skill.stats.stars} · ⤓ {skill.stats.downloads} · ⤒{' '}
-                    {skill.stats.installsAllTime ?? 0}
-                  </div>
-                }
-              />
-            )
-          })}
-        </div>
-      ) : (
-        <div className="skills-list">
-          {sorted.map((entry) => {
-            const skill = entry.skill
-            const isPlugin = Boolean(entry.latestVersion?.parsed?.clawdis?.nix?.plugin)
-            const skillHref = buildSkillHref(skill, entry.ownerHandle)
-            return (
-              <Link key={skill._id} className="skills-row" to={skillHref}>
-                <div className="skills-row-main">
-                  <div className="skills-row-title">
-                    <span>{skill.displayName}</span>
-                    <span className="skills-row-slug">/{skill.slug}</span>
-                    {getSkillBadges(skill).map((badge) => (
-                      <span key={badge} className="tag">
-                        {badge}
-                      </span>
-                    ))}
+        {isLoadingSkills ? (
+          <div className="card">
+            <div className="loading-indicator">Loading skills…</div>
+          </div>
+        ) : sorted.length === 0 ? (
+          <div className="card">No skills match that filter.</div>
+        ) : view === 'cards' ? (
+          <div className="grid">
+            {sorted.map((entry) => {
+              const skill = entry.skill
+              const isPlugin = Boolean(entry.latestVersion?.parsed?.clawdis?.nix?.plugin)
+              const skillHref = buildSkillHref(skill, entry.ownerHandle)
+              return (
+                <SkillCard
+                  key={skill._id}
+                  skill={skill}
+                  href={skillHref}
+                  badge={getSkillBadges(skill)}
+                  chip={isPlugin ? 'Plugin bundle (nix)' : undefined}
+                  summaryFallback="Agent-ready skill pack."
+                  meta={
+                    <div className="stat">
+                      ⭐ {skill.stats.stars} · ⤓ {skill.stats.downloads} · ⤒{' '}
+                      {skill.stats.installsAllTime ?? 0}
+                    </div>
+                  }
+                />
+              )
+            })}
+          </div>
+        ) : (
+          <div className="skills-list">
+            {sorted.map((entry) => {
+              const skill = entry.skill
+              const isPlugin = Boolean(entry.latestVersion?.parsed?.clawdis?.nix?.plugin)
+              const skillHref = buildSkillHref(skill, entry.ownerHandle)
+              return (
+                <Link key={skill._id} className="skills-row" to={skillHref}>
+                  <div className="skills-row-main">
+                    <div className="skills-row-title">
+                      <span>{skill.displayName}</span>
+                      <span className="skills-row-slug">/{skill.slug}</span>
+                      {getSkillBadges(skill).map((badge) => (
+                        <span key={badge} className="tag">
+                          {badge}
+                        </span>
+                      ))}
+                      {isPlugin ? (
+                        <span className="tag tag-accent tag-compact">Plugin bundle (nix)</span>
+                      ) : null}
+                    </div>
+                    <div className="skills-row-summary">
+                      {skill.summary ?? 'No summary provided.'}
+                    </div>
                     {isPlugin ? (
-                      <span className="tag tag-accent tag-compact">Plugin bundle (nix)</span>
+                      <div className="skills-row-meta">
+                        Bundle includes SKILL.md, CLI, and config.
+                      </div>
                     ) : null}
                   </div>
-                  <div className="skills-row-summary">
-                    {skill.summary ?? 'No summary provided.'}
+                  <div className="skills-row-metrics">
+                    <span>⤓ {skill.stats.downloads}</span>
+                    <span>⤒ {skill.stats.installsAllTime ?? 0}</span>
+                    <span>★ {skill.stats.stars}</span>
+                    <span>{skill.stats.versions} v</span>
                   </div>
-                  {isPlugin ? (
-                    <div className="skills-row-meta">
-                      Bundle includes SKILL.md, CLI, and config.
-                    </div>
-                  ) : null}
-                </div>
-                <div className="skills-row-metrics">
-                  <span>⤓ {skill.stats.downloads}</span>
-                  <span>⤒ {skill.stats.installsAllTime ?? 0}</span>
-                  <span>★ {skill.stats.stars}</span>
-                  <span>{skill.stats.versions} v</span>
-                </div>
-              </Link>
-            )
-          })}
-        </div>
-      )}
+                </Link>
+              )
+            })}
+          </div>
+        )}
 
-      {canLoadMore ? (
-        <div
-          ref={canAutoLoad ? loadMoreRef : null}
-          className="card"
-          style={{ marginTop: 16, display: 'flex', justifyContent: 'center' }}
-        >
-          {canAutoLoad ? (
-            isLoadingMore ? (
-              'Loading more…'
+        {canLoadMore ? (
+          <div
+            ref={canAutoLoad ? loadMoreRef : null}
+            className="card"
+            style={{ marginTop: 16, display: 'flex', justifyContent: 'center' }}
+          >
+            {canAutoLoad ? (
+              isLoadingMore ? (
+                'Loading more…'
+              ) : (
+                'Scroll to load more'
+              )
             ) : (
-              'Scroll to load more'
-            )
-          ) : (
-            <button className="btn" type="button" onClick={loadMore} disabled={isLoadingMore}>
-              {isLoadingMore ? 'Loading…' : 'Load more'}
-            </button>
-          )}
-        </div>
-      ) : null}
+              <button className="btn" type="button" onClick={loadMore} disabled={isLoadingMore}>
+                {isLoadingMore ? 'Loading…' : 'Load more'}
+              </button>
+            )}
+          </div>
+        ) : null}
+      </div>
     </main>
   )
 }

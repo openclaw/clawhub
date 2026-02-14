@@ -14,7 +14,7 @@ export const generateUploadUrlForUserInternal = internalMutation({
   args: { userId: v.id('users') },
   handler: async (ctx, args) => {
     const user = await ctx.db.get(args.userId)
-    if (!user || user.deletedAt) throw new Error('User not found')
+    if (!user || user.deletedAt || user.deactivatedAt) throw new Error('User not found')
     return ctx.storage.generateUploadUrl()
   },
 })

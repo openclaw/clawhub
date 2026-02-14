@@ -15,14 +15,12 @@ vi.mock('@tanstack/react-router', () => ({
     useNavigate: () => navigateMock,
     useSearch: () => searchMock,
   }),
+  redirect: (options: unknown) => ({ redirect: options }),
   Link: (props: { children: ReactNode }) => <a href="/">{props.children}</a>,
 }))
 
 vi.mock('convex/react', () => ({
   useAction: (...args: unknown[]) => useActionMock(...args),
-}))
-
-vi.mock('convex-helpers/react', () => ({
   usePaginatedQuery: (...args: unknown[]) => usePaginatedQueryMock(...args),
 }))
 
@@ -48,10 +46,10 @@ describe('SkillsIndex', () => {
 
   it('requests the first skills page', () => {
     render(<SkillsIndex />)
-    // usePaginatedQuery should be called with the API endpoint and empty args
+    // usePaginatedQuery should be called with the API endpoint and sort/dir args
     expect(usePaginatedQueryMock).toHaveBeenCalledWith(
       expect.anything(),
-      {},
+      { sort: 'downloads', dir: 'desc', nonSuspiciousOnly: false },
       { initialNumItems: 25 },
     )
   })
@@ -79,6 +77,7 @@ describe('SkillsIndex', () => {
     expect(actionFn).toHaveBeenCalledWith({
       query: 'remind',
       highlightedOnly: false,
+      nonSuspiciousOnly: false,
       limit: 25,
     })
     await act(async () => {
@@ -87,6 +86,7 @@ describe('SkillsIndex', () => {
     expect(actionFn).toHaveBeenCalledWith({
       query: 'remind',
       highlightedOnly: false,
+      nonSuspiciousOnly: false,
       limit: 25,
     })
   })
@@ -115,8 +115,70 @@ describe('SkillsIndex', () => {
     expect(actionFn).toHaveBeenLastCalledWith({
       query: 'remind',
       highlightedOnly: false,
+      nonSuspiciousOnly: false,
       limit: 50,
     })
+  })
+
+  it('sorts search results by stars and breaks ties by updatedAt', async () => {
+    searchMock = { q: 'remind', sort: 'stars', dir: 'desc' }
+    const actionFn = vi
+      .fn()
+      .mockResolvedValue([
+        makeSearchEntry({ slug: 'skill-a', displayName: 'Skill A', stars: 5, updatedAt: 100 }),
+        makeSearchEntry({ slug: 'skill-b', displayName: 'Skill B', stars: 5, updatedAt: 200 }),
+        makeSearchEntry({ slug: 'skill-c', displayName: 'Skill C', stars: 4, updatedAt: 999 }),
+      ])
+    useActionMock.mockReturnValue(actionFn)
+    vi.useFakeTimers()
+
+    render(<SkillsIndex />)
+    await act(async () => {
+      await vi.runAllTimersAsync()
+    })
+    await act(async () => {
+      await vi.runAllTimersAsync()
+    })
+
+    const links = screen.getAllByRole('link')
+    expect(links[0]?.textContent).toContain('Skill B')
+    expect(links[1]?.textContent).toContain('Skill A')
+    expect(links[2]?.textContent).toContain('Skill C')
+  })
+
+  it('uses relevance as default sort when searching', async () => {
+    searchMock = { q: 'notion' }
+    const actionFn = vi
+      .fn()
+      .mockResolvedValue([
+        makeSearchResult('newer-low-score', 'Newer Low Score', 0.1, 2000),
+        makeSearchResult('older-high-score', 'Older High Score', 0.9, 1000),
+      ])
+    useActionMock.mockReturnValue(actionFn)
+    vi.useFakeTimers()
+
+    render(<SkillsIndex />)
+    await act(async () => {
+      await vi.runAllTimersAsync()
+    })
+
+    const titles = Array.from(
+      document.querySelectorAll('.skills-row-title > span:first-child'),
+    ).map((node) => node.textContent)
+
+    expect(titles[0]).toBe('Older High Score')
+    expect(titles[1]).toBe('Newer Low Score')
+  })
+
+  it('passes nonSuspiciousOnly to list query when filter is active', () => {
+    searchMock = { nonSuspicious: true }
+    render(<SkillsIndex />)
+
+    expect(usePaginatedQueryMock).toHaveBeenCalledWith(
+      expect.anything(),
+      { sort: 'downloads', dir: 'desc', nonSuspiciousOnly: true },
+      { initialNumItems: 25 },
+    )
   })
 })
 
@@ -142,4 +204,57 @@ function makeSearchResults(count: number) {
     },
     version: null,
   }))
+}
+
+function makeSearchResult(slug: string, displayName: string, score: number, createdAt: number) {
+  return {
+    score,
+    skill: {
+      _id: `skill_${slug}`,
+      slug,
+      displayName,
+      summary: `${displayName} summary`,
+      tags: {},
+      stats: {
+        downloads: 0,
+        installsCurrent: 0,
+        installsAllTime: 0,
+        stars: 0,
+        versions: 1,
+        comments: 0,
+      },
+      createdAt,
+      updatedAt: createdAt,
+    },
+    version: null,
+  }
+}
+
+function makeSearchEntry(params: {
+  slug: string
+  displayName: string
+  stars: number
+  updatedAt: number
+}) {
+  return {
+    score: 0.9,
+    skill: {
+      _id: `skill_${params.slug}`,
+      slug: params.slug,
+      displayName: params.displayName,
+      summary: `Summary ${params.slug}`,
+      tags: {},
+      stats: {
+        downloads: 0,
+        installsCurrent: 0,
+        installsAllTime: 0,
+        stars: params.stars,
+        versions: 1,
+        comments: 0,
+      },
+      createdAt: 0,
+      updatedAt: params.updatedAt,
+    },
+    version: null,
+  }
 }

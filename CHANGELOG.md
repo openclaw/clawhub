@@ -3,19 +3,57 @@
 ## Unreleased
 
 ### Added
-- CLI/API: add `set-role` to change user roles (admin only).
+- Admin: add manual unban for banned users (clears `deletedAt` + `banReason`, audit log entry). Revoked API tokens stay revoked.
 
 ### Changed
+- Quality gate: language-aware word counting (`Intl.Segmenter`) and new `cjkChars` signal to reduce false rejects for non-Latin docs.
+- Jobs: run skill stat event processing every 5 minutes (was 15).
+- API performance: batch resolve skill/soul tags in v1 list/get endpoints (fewer action->query round-trips) (#112) (thanks @mkrokosz).
 
 ### Fixed
+- Users: sync handle on ensure when GitHub login changes (#293) (thanks @christianhpoe).
+- API: for owners, return clearer status/messages for hidden/soft-deleted skills instead of a generic 404.
+- HTTP/CORS: add preflight handler + include CORS headers on API/download errors; CLI: include auth token for owner-visible installs/updates (#146) (thanks @Grenghis-Khan).
+- Skills: keep global sorting across pagination on `/skills` (thanks @CodeBBakGoSu, #98).
 
-## 0.5.1 - TBD
+## 0.6.1 - 2026-02-13
 
 ### Added
+- Security: add LLM-based security evaluation during skill publish.
+- Parsing: recognize `metadata.openclaw` frontmatter and evaluate all skill files for requirements.
 
 ### Changed
+- Performance: lazy-load Monaco diff viewer on demand (thanks @alexjcm, #212).
+- Search: improve recall/ranking with lexical fallback and relevance prioritization.
+- Moderation UX: collapse OpenClaw analysis by default; update spacing and default reasoning model.
 
 ### Fixed
+- Skills: fix initial `/skills` sort wiring so first page respects selected sort/direction (thanks @bpk9, #92).
+- Search/UI: add embedding request timeout and align `/skills` toolbar + list width (thanks @GhadiSaab, #53).
+- Upload gate: handle GitHub API rate limits and optional authenticated lookup token (thanks @superlowburn, #246).
+- HTTP: remove `allowH2` from Undici agent to prevent `fetch failed` on Node.js 22+ (#245).
+- Tests: add root `undici` dev dependency for Node E2E imports (thanks @tanujbhaud, #255).
+- Downloads: add download rate limiting + per-IP/day dedupe + scheduled dedupe pruning; preserve moderation gating and deterministic zips (thanks @regenrek, #43).
+- VirusTotal: fix scan sync race conditions and retry behavior in scan/backfill paths.
+- Metadata: tolerate trailing commas in JSON metadata.
+- Auth: allow soft-deleted users to re-authenticate on fresh login, while keeping banned users blocked (thanks @tanujbhaud, #177).
+- Web: prevent horizontal overflow from long code blocks in skill pages (thanks @bewithgaurav, #183).
+
+## 0.6.0 - 2026-02-10
+### Added
+- CLI/API: add `set-role` to change user roles (admin only).
+- Security: quarantine skill publishes with VirusTotal scans + UI (thanks @aleph8, #130).
+- Testing: add tests for badges, skillZip, uploadFiles expandDroppedItems, and ark schema error truncation.
+- Moderation: add ban reasons to API/CLI and show in management UI.
+
+### Changed
+- Coverage: track `convex/lib/skillZip.ts` in coverage reports.
+
+### Fixed
+- Web: show pending-scan skills to owners without 404 (thanks @orlyjamie, #136).
+- Users: backfill empty handles from name/email in ensure (thanks @adlai88, #158).
+- Web: update footer branding to OpenClaw (thanks @jontsai, #122).
+- Auth: restore soft-deleted users on reauth, block banned users (thanks @mkrokosz, #106).
 
 ## 0.5.0 - 2026-02-02
 

@@ -9,6 +9,14 @@ import { generateEmbedding } from './embeddings'
 import { requireGitHubAccountAge } from './githubAccount'
 import type { PublicUser } from './public'
 import {
+  computeQualitySignals,
+  evaluateQuality,
+  getTrustTier,
+  type QualityAssessment,
+  toStructuralFingerprint,
+} from './skillQuality'
+import { generateSkillSummary } from './skillSummary'
+import {
   buildEmbeddingText,
   getFrontmatterMetadata,
   hashSkillFiles,
@@ -21,6 +29,8 @@ import type { WebhookSkillPayload } from './webhooks'
 
 const MAX_TOTAL_BYTES = 50 * 1024 * 1024
 const MAX_FILES_FOR_EMBEDDING = 40
+const QUALITY_WINDOW_MS = 24 * 60 * 60 * 1000
+const QUALITY_ACTIVITY_LIMIT = 60
 
 export type PublishResult = {
   skillId: Id<'skills'>
@@ -70,6 +80,10 @@ export async function publishVersionForUser(
   }
 
   await requireGitHubAccountAge(ctx, userId)
+  const existingSkill = (await ctx.runQuery(internal.skills.getSkillBySlugInternal, {
+    slug,
+  })) as Doc<'skills'> | null
+  const isNewSkill = !existingSkill
 
   const suppliedChangelog = args.changelog.trim()
   const changelogSource = suppliedChangelog ? ('user' as const) : ('auto' as const)
@@ -102,7 +116,75 @@ export async function publishVersionForUser(
   const readmeText = await fetchText(ctx, readmeFile.storageId)
   const frontmatter = parseFrontmatter(readmeText)
   const clawdis = parseClawdisMetadata(frontmatter)
-  const metadata = mergeSourceIntoMetadata(getFrontmatterMetadata(frontmatter), args.source)
+  const owner = (await ctx.runQuery(internal.users.getByIdInternal, {
+    userId,
+  })) as Doc<'users'> | null
+  const ownerCreatedAt = owner?.createdAt ?? owner?._creationTime ?? Date.now()
+  const now = Date.now()
+  const frontmatterMetadata = getFrontmatterMetadata(frontmatter)
+  const summaryFromFrontmatter =
+    frontmatterMetadata &&
+    typeof frontmatterMetadata === 'object' &&
+    !Array.isArray(frontmatterMetadata) &&
+    typeof (frontmatterMetadata as Record<string, unknown>).description === 'string'
+      ? ((frontmatterMetadata as Record<string, unknown>).description as string)
+      : undefined
+  const summary = await generateSkillSummary({
+    slug,
+    displayName,
+    readmeText,
+    currentSummary: summaryFromFrontmatter ?? existingSkill?.summary ?? undefined,
+  })
+
+  let qualityAssessment: QualityAssessment | null = null
+  if (isNewSkill) {
+    const ownerActivity = (await ctx.runQuery(internal.skills.getOwnerSkillActivityInternal, {
+      ownerUserId: userId,
+      limit: QUALITY_ACTIVITY_LIMIT,
+    })) as Array<{
+      slug: string
+      summary?: string
+      createdAt: number
+      latestVersionId?: Id<'skillVersions'>
+    }>
+
+    const trustTier = getTrustTier(now - ownerCreatedAt, ownerActivity.length)
+    const qualitySignals = computeQualitySignals({
+      readmeText,
+      summary,
+    })
+    const recentCandidates = ownerActivity.filter(
+      (entry) =>
+        entry.slug !== slug && entry.createdAt >= now - QUALITY_WINDOW_MS && entry.latestVersionId,
+    )
+    let similarRecentCount = 0
+    for (const entry of recentCandidates) {
+      const version = (await ctx.runQuery(internal.skills.getVersionByIdInternal, {
+        versionId: entry.latestVersionId as Id<'skillVersions'>,
+      })) as Doc<'skillVersions'> | null
+      if (!version) continue
+      const candidateReadmeFile = version.files.find((file) => {
+        const lower = file.path.toLowerCase()
+        return lower === 'skill.md' || lower === 'skills.md'
+      })
+      if (!candidateReadmeFile) continue
+      const candidateText = await fetchText(ctx, candidateReadmeFile.storageId)
+      if (toStructuralFingerprint(candidateText) === qualitySignals.structuralFingerprint) {
+        similarRecentCount += 1
+      }
+    }
+
+    qualityAssessment = evaluateQuality({
+      signals: qualitySignals,
+      trustTier,
+      similarRecentCount,
+    })
+    if (qualityAssessment.decision === 'reject') {
+      throw new ConvexError(qualityAssessment.reason)
+    }
+  }
+
+  const metadata = mergeSourceIntoMetadata(frontmatterMetadata, args.source, qualityAssessment)
 
   const otherFiles = [] as Array<{ path: string; content: string }>
   for (const file of safeFiles) {
@@ -167,12 +249,28 @@ export async function publishVersionForUser(
       metadata,
       clawdis,
     },
+    summary,
     embedding,
+    qualityAssessment: qualityAssessment
+      ? {
+          decision: qualityAssessment.decision,
+          score: qualityAssessment.score,
+          reason: qualityAssessment.reason,
+          trustTier: qualityAssessment.trustTier,
+          similarRecentCount: qualityAssessment.similarRecentCount,
+          signals: qualityAssessment.signals,
+        }
+      : undefined,
   })) as PublishResult
 
-  const owner = (await ctx.runQuery(internal.users.getByIdInternal, {
-    userId,
-  })) as Doc<'users'> | null
+  await ctx.scheduler.runAfter(0, internal.vt.scanWithVirusTotal, {
+    versionId: publishResult.versionId,
+  })
+
+  await ctx.scheduler.runAfter(0, internal.llmEval.evaluateWithLlm, {
+    versionId: publishResult.versionId,
+  })
+
   const ownerHandle = owner?.handle ?? owner?.displayName ?? owner?.name ?? 'unknown'
 
   void ctx.scheduler
@@ -197,25 +295,48 @@ export async function publishVersionForUser(
   return publishResult
 }
 
-function mergeSourceIntoMetadata(metadata: unknown, source: PublishVersionArgs['source']) {
-  if (!source) return metadata === undefined ? undefined : metadata
-  const sourceValue = {
-    kind: source.kind,
-    url: source.url,
-    repo: source.repo,
-    ref: source.ref,
-    commit: source.commit,
-    path: source.path,
-    importedAt: source.importedAt,
+function mergeSourceIntoMetadata(
+  metadata: unknown,
+  source: PublishVersionArgs['source'],
+  qualityAssessment: QualityAssessment | null = null,
+) {
+  const base =
+    metadata && typeof metadata === 'object' && !Array.isArray(metadata)
+      ? { ...(metadata as Record<string, unknown>) }
+      : {}
+
+  if (source) {
+    base.source = {
+      kind: source.kind,
+      url: source.url,
+      repo: source.repo,
+      ref: source.ref,
+      commit: source.commit,
+      path: source.path,
+      importedAt: source.importedAt,
+    }
   }
 
-  if (!metadata) return { source: sourceValue }
-  if (typeof metadata !== 'object' || Array.isArray(metadata)) return { source: sourceValue }
-  return { ...(metadata as Record<string, unknown>), source: sourceValue }
+  if (qualityAssessment) {
+    base._clawhubQuality = {
+      score: qualityAssessment.score,
+      decision: qualityAssessment.decision,
+      trustTier: qualityAssessment.trustTier,
+      similarRecentCount: qualityAssessment.similarRecentCount,
+      signals: qualityAssessment.signals,
+      reason: qualityAssessment.reason,
+      evaluatedAt: Date.now(),
+    }
+  }
+
+  return Object.keys(base).length ? base : undefined
 }
 
 export const __test = {
   mergeSourceIntoMetadata,
+  computeQualitySignals,
+  evaluateQuality,
+  toStructuralFingerprint,
 }
 
 export async function queueHighlightedWebhook(ctx: MutationCtx, skillId: Id<'skills'>) {

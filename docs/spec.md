@@ -162,7 +162,7 @@ Seed data lives in `convex/seed.ts` for local dev.
 - Home: search + filters + trending/featured + “Highlighted” badge.
 - Skill detail: README render, files list, version history, tags, stats, badges.
 - Upload/edit: file picker + version + tag + changelog.
-- Account settings: name + delete account (soft delete).
+- Account settings: name + delete account (permanent, non-recoverable; published skills stay public).
 - Admin: user role management + badge approvals + audit log.
 
 ## Testing + quality

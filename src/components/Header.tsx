@@ -31,6 +31,7 @@ export default function Header() {
   const handle = me?.handle ?? me?.displayName ?? 'user'
   const initial = (me?.displayName ?? me?.name ?? handle).charAt(0).toUpperCase()
   const isStaff = isModerator(me)
+  const signInRedirectTo = getCurrentRelativeUrl()
 
   const setTheme = (next: 'system' | 'light' | 'dark') => {
     startThemeTransition({
@@ -81,6 +82,7 @@ export default function Header() {
                 sort: undefined,
                 dir: undefined,
                 highlighted: undefined,
+                nonSuspicious: undefined,
                 view: undefined,
                 focus: undefined,
               }}
@@ -108,6 +110,7 @@ export default function Header() {
                     sort: undefined,
                     dir: undefined,
                     highlighted: undefined,
+                    nonSuspicious: undefined,
                     view: undefined,
                     focus: 'search',
                   }
@@ -158,6 +161,7 @@ export default function Header() {
                         sort: undefined,
                         dir: undefined,
                         highlighted: undefined,
+                        nonSuspicious: undefined,
                         view: undefined,
                         focus: undefined,
                       }}
@@ -193,6 +197,7 @@ export default function Header() {
                             sort: undefined,
                             dir: undefined,
                             highlighted: undefined,
+                            nonSuspicious: undefined,
                             view: undefined,
                             focus: 'search',
                           }
@@ -282,7 +287,12 @@ export default function Header() {
               className="btn btn-primary"
               type="button"
               disabled={isLoading}
-              onClick={() => void signIn('github')}
+              onClick={() =>
+                void signIn(
+                  'github',
+                  signInRedirectTo ? { redirectTo: signInRedirectTo } : undefined,
+                )
+              }
             >
               <span className="sign-in-label">Sign in</span>
               <span className="sign-in-provider">with GitHub</span>
@@ -292,4 +302,9 @@ export default function Header() {
       </div>
     </header>
   )
+}
+
+function getCurrentRelativeUrl() {
+  if (typeof window === 'undefined') return '/'
+  return `${window.location.pathname}${window.location.search}${window.location.hash}`
 }
