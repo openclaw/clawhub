@@ -5,24 +5,24 @@
 
 :root {
   color-scheme: light dark;
-  --bg: #f2f7f9;
-  --bg-soft: #f7fcfd;
+  --bg: #f8f2ed;
+  --bg-soft: #fdf7f2;
   --bg-glow-1: #ffe1d4;
-  --bg-glow-2: #d8f0f2;
+  --bg-glow-2: #ffe8d8;
   --surface: #ffffff;
-  --surface-muted: #f0f8fa;
-  --nav-bg: rgba(242, 247, 249, 0.88);
-  --ink: #14242e;
-  --ink-soft: #4b6677;
+  --surface-muted: #f7efe9;
+  --nav-bg: rgba(248, 242, 237, 0.88);
+  --ink: #2a1f19;
+  --ink-soft: #6b5549;
   --accent: #e65c46;
   --accent-deep: #bf3f30;
   --seafoam: #209e92;
   --gold: #e7bb67;
-  --line: rgba(20, 36, 46, 0.14);
+  --line: rgba(42, 31, 25, 0.14);
   --border-ui: rgba(191, 63, 48, 0.28);
   --border-ui-hover: rgba(191, 63, 48, 0.42);
   --border-ui-active: rgba(191, 63, 48, 0.62);
-  --shadow: 0 22px 52px rgba(16, 34, 44, 0.11);
+  --shadow: 0 22px 52px rgba(44, 28, 20, 0.11);
   --radius-lg: 20px;
   --radius-md: 14px;
   --radius-sm: 9px;
@@ -36,20 +36,20 @@
 
 [data-theme="dark"] {
   color-scheme: dark;
-  --bg: #0d1b24;
-  --bg-soft: #142632;
+  --bg: #14100d;
+  --bg-soft: #1d1713;
   --bg-glow-1: #4b211b;
-  --bg-glow-2: #11303b;
-  --surface: #1a2d39;
-  --surface-muted: #213744;
-  --nav-bg: rgba(13, 27, 36, 0.88);
-  --ink: #edf6f9;
-  --ink-soft: #acc2cf;
+  --bg-glow-2: #3a2018;
+  --surface: #241b16;
+  --surface-muted: #2f241d;
+  --nav-bg: rgba(20, 16, 13, 0.88);
+  --ink: #f7eee8;
+  --ink-soft: #c8b3a6;
   --accent: #ff7357;
   --accent-deep: #e25640;
   --seafoam: #47c3b8;
   --gold: #f3c97a;
-  --line: rgba(232, 243, 249, 0.16);
+  --line: rgba(247, 235, 225, 0.16);
   --border-ui: rgba(255, 115, 87, 0.4);
   --border-ui-hover: rgba(255, 115, 87, 0.58);
   --border-ui-active: rgba(255, 115, 87, 0.78);
@@ -3300,7 +3300,7 @@ html.theme-transition::view-transition-new(theme) {
 }
 
 .scan-result-icon-vt {
-  color: #0030ff;
+  color: var(--accent-deep);
 }
 
 .scan-result-icon-oc {
@@ -3449,7 +3449,7 @@ html.theme-transition::view-transition-new(theme) {
 }
 
 .version-scan-icon-vt {
-  color: #0030ff;
+  color: var(--accent-deep);
 }
 
 .version-scan-icon-oc {
