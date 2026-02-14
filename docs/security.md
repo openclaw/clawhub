@@ -62,7 +62,6 @@ read_when:
 - Lookup uses GitHub `created_at` fetched by the immutable GitHub numeric ID (`providerAccountId`)
   and caches on the user:
   - `githubCreatedAt` (source of truth)
-  - `githubFetchedAt` (fetch timestamp; set when `githubCreatedAt` is populated)
 - Gate applies to web uploads, CLI publish, and GitHub import.
 - If GitHub responds `403` or `429`, publish fails with:
   - `GitHub API rate limit exceeded — please try again in a few minutes`
