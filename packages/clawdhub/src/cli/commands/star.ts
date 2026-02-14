@@ -1,16 +1,9 @@
-import { readGlobalConfig } from '../../config.js'
 import { apiRequest } from '../../http.js'
 import { ApiRoutes, ApiV1StarResponseSchema } from '../../schema/index.js'
+import { requireAuthToken } from '../authToken.js'
 import { getRegistry } from '../registry.js'
 import type { GlobalOpts } from '../types.js'
 import { createSpinner, fail, formatError, isInteractive, promptConfirm } from '../ui.js'
-
-async function requireToken() {
-  const cfg = await readGlobalConfig()
-  const token = cfg?.token
-  if (!token) fail('Not logged in. Run: clawhub login')
-  return token
-}
 
 export async function cmdStarSkill(
   opts: GlobalOpts,
@@ -28,7 +21,7 @@ export async function cmdStarSkill(
     if (!ok) return
   }
 
-  const token = await requireToken()
+  const token = await requireAuthToken()
   const registry = await getRegistry(opts, { cache: true })
   const spinner = createSpinner(`Starring ${slug}`)
   try {

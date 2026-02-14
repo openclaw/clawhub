@@ -5,7 +5,7 @@ import {
   ApiV1SkillVersionListResponseSchema,
   ApiV1SkillVersionResponseSchema,
 } from '../../schema/index.js'
-import { readGlobalConfig } from '../../config.js'
+import { getOptionalAuthToken } from '../authToken.js'
 import { getRegistry } from '../registry.js'
 import type { GlobalOpts } from '../types.js'
 import { createSpinner, fail, formatError } from '../ui.js'
@@ -32,9 +32,7 @@ export async function cmdInspect(opts: GlobalOpts, slug: string, options: Inspec
   if (!trimmed) fail('Slug required')
   if (options.version && options.tag) fail('Use either --version or --tag')
 
-  const cfg = await readGlobalConfig()
-  const token = cfg?.token ?? undefined
-
+  const token = await getOptionalAuthToken()
   const registry = await getRegistry(opts, { cache: true })
   const spinner = createSpinner('Fetching skill')
   try {

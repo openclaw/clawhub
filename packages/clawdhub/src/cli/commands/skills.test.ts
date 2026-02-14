@@ -16,9 +16,9 @@ vi.mock('../registry.js', () => ({
   getRegistry: () => mockGetRegistry(),
 }))
 
-const mockReadGlobalConfig = vi.fn(async () => null as { token?: string } | null)
-vi.mock('../../config.js', () => ({
-  readGlobalConfig: () => mockReadGlobalConfig(),
+const mockGetOptionalAuthToken = vi.fn(async () => undefined as string | undefined)
+vi.mock('../authToken.js', () => ({
+  getOptionalAuthToken: () => mockGetOptionalAuthToken(),
 }))
 
 const mockSpinner = {
@@ -197,7 +197,7 @@ describe('cmdUpdate', () => {
 
 describe('cmdInstall', () => {
   it('passes optional auth token to API + download requests', async () => {
-    mockReadGlobalConfig.mockResolvedValue({ token: 'tkn' })
+    mockGetOptionalAuthToken.mockResolvedValue('tkn')
     mockApiRequest.mockResolvedValue({
       skill: { slug: 'demo', displayName: 'Demo', summary: null, tags: {}, stats: {}, createdAt: 0, updatedAt: 0 },
       latestVersion: { version: '1.0.0' },

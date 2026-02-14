@@ -21,7 +21,7 @@ import {
 import { getRegistry } from '../registry.js'
 import type { GlobalOpts, ResolveResult } from '../types.js'
 import { createSpinner, fail, formatError, isInteractive, promptConfirm } from '../ui.js'
-import { readGlobalConfig } from '../../config.js'
+import { getOptionalAuthToken } from '../authToken.js'
 
 export async function cmdSearch(opts: GlobalOpts, query: string, limit?: number) {
   if (!query) fail('Query required')
@@ -62,8 +62,7 @@ export async function cmdInstall(
   const trimmed = slug.trim()
   if (!trimmed) fail('Slug required')
 
-  const cfg = await readGlobalConfig()
-  const token = cfg?.token ?? undefined
+  const token = await getOptionalAuthToken()
 
   const registry = await getRegistry(opts, { cache: true })
   await mkdir(opts.dir, { recursive: true })
@@ -148,8 +147,7 @@ export async function cmdUpdate(
   if (options.version && !semver.valid(options.version)) fail('--version must be valid semver')
   const allowPrompt = isInteractive() && inputAllowed !== false
 
-  const cfg = await readGlobalConfig()
-  const token = cfg?.token ?? undefined
+  const token = await getOptionalAuthToken()
 
   const registry = await getRegistry(opts, { cache: true })
   const lock = await readLockfile(opts.workdir)

@@ -1,5 +1,4 @@
 import { isCancel, select } from '@clack/prompts'
-import { readGlobalConfig } from '../../config.js'
 import { apiRequest } from '../../http.js'
 import {
   ApiRoutes,
@@ -8,16 +7,10 @@ import {
   ApiV1UserSearchResponseSchema,
   parseArk,
 } from '../../schema/index.js'
+import { requireAuthToken } from '../authToken.js'
 import { getRegistry } from '../registry.js'
 import type { GlobalOpts } from '../types.js'
 import { createSpinner, fail, formatError, isInteractive, promptConfirm } from '../ui.js'
-
-async function requireToken() {
-  const cfg = await readGlobalConfig()
-  const token = cfg?.token
-  if (!token) fail('Not logged in. Run: clawhub login')
-  return token
-}
 
 export async function cmdBanUser(
   opts: GlobalOpts,
@@ -30,7 +23,7 @@ export async function cmdBanUser(
 
   const reason = options.reason?.trim() || undefined
 
-  const token = await requireToken()
+  const token = await requireAuthToken()
   const registry = await getRegistry(opts, { cache: true })
   const allowPrompt = isInteractive() && inputAllowed !== false
   const resolved = await resolveUserIdentifier(
@@ -87,7 +80,7 @@ export async function cmdSetRole(
   if (!raw) fail('Handle or user id required')
   const role = normalizeRole(roleArg)
 
-  const token = await requireToken()
+  const token = await requireAuthToken()
   const registry = await getRegistry(opts, { cache: true })
   const allowPrompt = isInteractive() && inputAllowed !== false
   const resolved = await resolveUserIdentifier(

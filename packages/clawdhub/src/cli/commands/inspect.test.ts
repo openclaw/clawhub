@@ -16,9 +16,9 @@ vi.mock('../registry.js', () => ({
   getRegistry: () => mockGetRegistry(),
 }))
 
-const mockReadGlobalConfig = vi.fn(async () => null as { token?: string } | null)
-vi.mock('../../config.js', () => ({
-  readGlobalConfig: () => mockReadGlobalConfig(),
+const mockGetOptionalAuthToken = vi.fn(async () => undefined as string | undefined)
+vi.mock('../authToken.js', () => ({
+  getOptionalAuthToken: () => mockGetOptionalAuthToken(),
 }))
 
 const mockSpinner = {

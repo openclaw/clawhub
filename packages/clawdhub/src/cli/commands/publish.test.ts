@@ -6,8 +6,8 @@ import { join } from 'node:path'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { GlobalOpts } from '../types'
 
-vi.mock('../../config.js', () => ({
-  readGlobalConfig: vi.fn(async () => ({ registry: 'https://clawhub.ai', token: 'tkn' })),
+vi.mock('../authToken.js', () => ({
+  requireAuthToken: vi.fn(async () => 'tkn'),
 }))
 
 const mockGetRegistry = vi.fn(async (_opts: unknown, _params?: unknown) => 'https://clawhub.ai')
