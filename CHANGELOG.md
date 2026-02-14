@@ -12,6 +12,7 @@
 ### Fixed
 - Users: sync handle on ensure when GitHub login changes (#293) (thanks @christianhpoe).
 - API: for owners, return clearer status/messages for hidden/soft-deleted skills instead of a generic 404.
+- HTTP/CORS: add preflight handler + include CORS headers on API/download errors; CLI: include auth token for owner-visible installs/updates (#146) (thanks @Grenghis-Khan).
 
 ## 0.6.1 - 2026-02-13
 

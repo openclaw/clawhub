@@ -148,6 +148,9 @@ export async function cmdUpdate(
   if (options.version && !semver.valid(options.version)) fail('--version must be valid semver')
   const allowPrompt = isInteractive() && inputAllowed !== false
 
+  const cfg = await readGlobalConfig()
+  const token = cfg?.token ?? undefined
+
   const registry = await getRegistry(opts, { cache: true })
   const lock = await readLockfile(opts.workdir)
   const slugs = slug ? [slug] : Object.keys(lock.skills)
@@ -165,7 +168,7 @@ export async function cmdUpdate(
       // Always fetch skill metadata to check moderation status
       const skillMeta = await apiRequest(
         registry,
-        { method: 'GET', path: `${ApiRoutes.skills}/${encodeURIComponent(entry)}` },
+        { method: 'GET', path: `${ApiRoutes.skills}/${encodeURIComponent(entry)}`, token },
         ApiV1SkillResponseSchema,
       )
 
@@ -206,7 +209,7 @@ export async function cmdUpdate(
 
       let resolveResult: ResolveResult
       if (localFingerprint) {
-        resolveResult = await resolveSkillVersion(registry, entry, localFingerprint)
+        resolveResult = await resolveSkillVersion(registry, entry, localFingerprint, token)
       } else {
         resolveResult = { match: null, latestVersion: skillMeta.latestVersion ?? null }
       }
@@ -259,7 +262,7 @@ export async function cmdUpdate(
         spinner.start(`Updating ${entry} -> ${targetVersion}`)
       }
       await rm(target, { recursive: true, force: true })
-      const zip = await downloadZip(registry, { slug: entry, version: targetVersion })
+      const zip = await downloadZip(registry, { slug: entry, version: targetVersion, token })
       await extractZipToDir(zip, target)
 
       const existingOrigin = await readSkillOrigin(target)
@@ -411,13 +414,13 @@ function resolveExploreSort(raw?: string): { sort: ExploreSort; apiSort: ApiExpl
   )
 }
 
-async function resolveSkillVersion(registry: string, slug: string, hash: string) {
+async function resolveSkillVersion(registry: string, slug: string, hash: string, token?: string) {
   const url = new URL(ApiRoutes.resolve, registry)
   url.searchParams.set('slug', slug)
   url.searchParams.set('hash', hash)
   return apiRequest(
     registry,
-    { method: 'GET', url: url.toString() },
+    { method: 'GET', url: url.toString(), token },
     ApiV1SkillResolveResponseSchema,
   )
 }

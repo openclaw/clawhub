@@ -109,7 +109,7 @@ export async function cmdSync(opts: GlobalOpts, options: SyncOptions, inputAllow
     let done = 0
     const resolved = await mapWithConcurrency(locals, Math.min(concurrency, 16), async (skill) => {
       try {
-        return await checkRegistrySyncState(registry, skill, resolveSupport)
+        return await checkRegistrySyncState(registry, skill, resolveSupport, token)
       } finally {
         done += 1
         candidatesSpinner.text = `Checking registry sync state ${done}/${locals.length}`

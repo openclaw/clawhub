@@ -503,14 +503,31 @@ async function publishSkillV1Handler(ctx: ActionCtx, request: Request) {
 
 export const publishSkillV1Http = httpAction(publishSkillV1Handler)
 
-export const preflightHandler = httpAction(async (_ctx, _request) => {
+export const preflightHandler = httpAction(async (_ctx, request) => {
+  const requestedHeaders =
+    request.headers.get('access-control-request-headers')?.trim() ||
+    request.headers.get('Access-Control-Request-Headers')?.trim() ||
+    null
+  const requestedMethod =
+    request.headers.get('access-control-request-method')?.trim() ||
+    request.headers.get('Access-Control-Request-Method')?.trim() ||
+    null
+  const vary = [
+    ...(requestedMethod ? ['Access-Control-Request-Method'] : []),
+    ...(requestedHeaders ? ['Access-Control-Request-Headers'] : []),
+  ].join(', ')
+
+  // No cookies/credentials supported; allow any origin for simple browser access.
+  // If we ever add cookie auth, this must switch to reflecting origin + Allow-Credentials.
   return new Response(null, {
     status: 204,
     headers: {
       'Access-Control-Allow-Origin': '*',
-      'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS, PATCH',
-      'Access-Control-Allow-Headers': 'Content-Type, Authorization, Digest, X-Clawhub-Version',
+      'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS, PATCH, HEAD',
+      'Access-Control-Allow-Headers':
+        requestedHeaders ?? 'Content-Type, Authorization, Digest, X-Clawhub-Version',
       'Access-Control-Max-Age': '86400',
+      ...(vary ? { Vary: vary } : {}),
     },
   })
 })

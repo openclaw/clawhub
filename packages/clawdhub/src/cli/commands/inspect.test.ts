@@ -16,6 +16,11 @@ vi.mock('../registry.js', () => ({
   getRegistry: () => mockGetRegistry(),
 }))
 
+const mockReadGlobalConfig = vi.fn(async () => null)
+vi.mock('../../config.js', () => ({
+  readGlobalConfig: () => mockReadGlobalConfig(),
+}))
+
 const mockSpinner = {
   stop: vi.fn(),
   fail: vi.fn(),

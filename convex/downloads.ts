@@ -32,7 +32,7 @@ export const downloadZip = httpAction(async (ctx, request) => {
   if (!skillResult?.skill) {
     return new Response('Skill not found', {
       status: 404,
-      headers: { 'Access-Control-Allow-Origin': '*' },
+      headers: mergeHeaders(rate.headers, { 'Access-Control-Allow-Origin': '*' }),
     })
   }
 
@@ -41,20 +41,32 @@ export const downloadZip = httpAction(async (ctx, request) => {
   if (mod?.isMalwareBlocked) {
     return new Response(
       'Blocked: this skill has been flagged as malicious by VirusTotal and cannot be downloaded.',
-      { status: 403 },
+      {
+        status: 403,
+        headers: mergeHeaders(rate.headers, { 'Access-Control-Allow-Origin': '*' }),
+      },
     )
   }
   if (mod?.isPendingScan) {
     return new Response(
       'This skill is pending a security scan by VirusTotal. Please try again in a few minutes.',
-      { status: 423 },
+      {
+        status: 423,
+        headers: mergeHeaders(rate.headers, { 'Access-Control-Allow-Origin': '*' }),
+      },
     )
   }
   if (mod?.isRemoved) {
-    return new Response('This skill has been removed by a moderator.', { status: 410 })
+    return new Response('This skill has been removed by a moderator.', {
+      status: 410,
+      headers: mergeHeaders(rate.headers, { 'Access-Control-Allow-Origin': '*' }),
+    })
   }
   if (mod?.isHiddenByMod) {
-    return new Response('This skill is currently unavailable.', { status: 403 })
+    return new Response('This skill is currently unavailable.', {
+      status: 403,
+      headers: mergeHeaders(rate.headers, { 'Access-Control-Allow-Origin': '*' }),
+    })
   }
 
   const skill = skillResult.skill
@@ -75,13 +87,13 @@ export const downloadZip = httpAction(async (ctx, request) => {
   if (!version) {
     return new Response('Version not found', {
       status: 404,
-      headers: { 'Access-Control-Allow-Origin': '*' },
+      headers: mergeHeaders(rate.headers, { 'Access-Control-Allow-Origin': '*' }),
     })
   }
   if (version.softDeletedAt) {
     return new Response('Version not available', {
       status: 410,
-      headers: { 'Access-Control-Allow-Origin': '*' },
+      headers: mergeHeaders(rate.headers, { 'Access-Control-Allow-Origin': '*' }),
     })
   }
 

@@ -5,6 +5,7 @@ import {
   ApiV1SkillVersionListResponseSchema,
   ApiV1SkillVersionResponseSchema,
 } from '../../schema/index.js'
+import { readGlobalConfig } from '../../config.js'
 import { getRegistry } from '../registry.js'
 import type { GlobalOpts } from '../types.js'
 import { createSpinner, fail, formatError } from '../ui.js'
@@ -31,12 +32,15 @@ export async function cmdInspect(opts: GlobalOpts, slug: string, options: Inspec
   if (!trimmed) fail('Slug required')
   if (options.version && options.tag) fail('Use either --version or --tag')
 
+  const cfg = await readGlobalConfig()
+  const token = cfg?.token ?? undefined
+
   const registry = await getRegistry(opts, { cache: true })
   const spinner = createSpinner('Fetching skill')
   try {
     const skillResult = await apiRequest(
       registry,
-      { method: 'GET', path: `${ApiRoutes.skills}/${encodeURIComponent(trimmed)}` },
+      { method: 'GET', path: `${ApiRoutes.skills}/${encodeURIComponent(trimmed)}`, token },
       ApiV1SkillResponseSchema,
     )
 
@@ -67,6 +71,7 @@ export async function cmdInspect(opts: GlobalOpts, slug: string, options: Inspec
           path: `${ApiRoutes.skills}/${encodeURIComponent(trimmed)}/versions/${encodeURIComponent(
             targetVersion,
           )}`,
+          token,
         },
         ApiV1SkillVersionResponseSchema,
       )
@@ -80,7 +85,7 @@ export async function cmdInspect(opts: GlobalOpts, slug: string, options: Inspec
       spinner.text = `Fetching versions (${limit})`
       versionsList = await apiRequest(
         registry,
-        { method: 'GET', url: url.toString() },
+        { method: 'GET', url: url.toString(), token },
         ApiV1SkillVersionListResponseSchema,
       )
     }
@@ -97,7 +102,7 @@ export async function cmdInspect(opts: GlobalOpts, slug: string, options: Inspec
         url.searchParams.set('version', latestVersion)
       }
       spinner.text = `Fetching ${options.file}`
-      fileContent = await fetchText(registry, { url: url.toString() })
+      fileContent = await fetchText(registry, { url: url.toString(), token })
     }
 
     spinner.stop()

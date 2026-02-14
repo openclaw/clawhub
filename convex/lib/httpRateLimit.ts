@@ -40,6 +40,7 @@ export async function applyRateLimit(
           {
             'Content-Type': 'text/plain; charset=utf-8',
             'Cache-Control': 'no-store',
+            'Access-Control-Allow-Origin': '*',
           },
           headers,
         ),

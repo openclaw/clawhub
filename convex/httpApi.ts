@@ -244,6 +244,7 @@ function json(value: unknown, status = 200) {
     headers: {
       'Content-Type': 'application/json',
       'Cache-Control': 'no-store',
+      'Access-Control-Allow-Origin': '*',
     },
   })
 }
@@ -254,6 +255,7 @@ function text(value: string, status: number) {
     headers: {
       'Content-Type': 'text/plain; charset=utf-8',
       'Cache-Control': 'no-store',
+      'Access-Control-Allow-Origin': '*',
     },
   })
 }
