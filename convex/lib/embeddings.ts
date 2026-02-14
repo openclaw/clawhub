@@ -15,7 +15,7 @@ export async function generateEmbedding(text: string) {
   const maxRetries = 3
   const baseDelay = 1000
 
-  for (let attempt = 0; attempt <= maxRetries; attempt++) {
+  for (let attempt = 0; attempt < maxRetries; attempt++) {
     try {
       const response = await fetch('https://api.openai.com/v1/embeddings', {
         method: 'POST',
@@ -53,7 +53,7 @@ export async function generateEmbedding(text: string) {
       if (!embedding) throw new Error('Embedding missing from response')
       return embedding
     } catch (error) {
-      if (attempt < maxRetries && error instanceof Error && error.message.includes('fetch')) {
+      if (attempt < maxRetries && error instanceof Error) {
         const delay = baseDelay * Math.pow(2, attempt)
         console.warn(`Network error, retrying in ${delay}ms (attempt ${attempt + 1}/${maxRetries})`)
         await new Promise((resolve) => setTimeout(resolve, delay))
