@@ -305,7 +305,16 @@ export const scanWithVirusTotal = internalAction({
   handler: async (ctx, args) => {
     const apiKey = process.env.VT_API_KEY
     if (!apiKey) {
-      console.log('VT_API_KEY not configured, skipping scan')
+      console.log('VT_API_KEY not configured, skipping scan — activating skill')
+      // Activate the skill so it appears in search despite no VT scan.
+      const version = await ctx.runQuery(internal.skills.getVersionByIdInternal, {
+        versionId: args.versionId,
+      })
+      if (version) {
+        await ctx.runMutation(internal.skills.setSkillModerationStatusActiveInternal, {
+          skillId: version.skillId,
+        })
+      }
       return
     }
 
@@ -524,6 +533,11 @@ export const pollPendingScans = internalAction({
               versionId,
               vtAnalysis: { status: 'stale', checkedAt: Date.now() },
             })
+            // Activate the skill so it appears in search — absence of a VT
+            // verdict should not permanently hide a published skill.
+            await ctx.runMutation(internal.skills.setSkillModerationStatusActiveInternal, {
+              skillId,
+            })
             staled++
           }
           continue
@@ -548,6 +562,11 @@ export const pollPendingScans = internalAction({
             await ctx.runMutation(internal.skills.updateVersionScanResultsInternal, {
               versionId,
               vtAnalysis: { status: 'stale', checkedAt: Date.now() },
+            })
+            // Activate the skill so it appears in search — absence of a VT
+            // verdict should not permanently hide a published skill.
+            await ctx.runMutation(internal.skills.setSkillModerationStatusActiveInternal, {
+              skillId,
             })
             staled++
           }

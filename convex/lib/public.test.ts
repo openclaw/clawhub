@@ -65,4 +65,32 @@ describe('public skill mapping', () => {
       comments: 0,
     })
   })
+
+  it('returns skill when moderationStatus is active', () => {
+    const skill = makeSkill({ moderationStatus: 'active' })
+    expect(toPublicSkill(skill)).not.toBeNull()
+  })
+
+  it('filters out skill when moderationStatus is hidden', () => {
+    const skill = makeSkill({ moderationStatus: 'hidden' })
+    expect(toPublicSkill(skill)).toBeNull()
+  })
+
+  it('returns skill when moderationStatus is undefined (legacy)', () => {
+    const skill = makeSkill({ moderationStatus: undefined as unknown as string })
+    expect(toPublicSkill(skill)).not.toBeNull()
+  })
+
+  it('filters out soft-deleted skills', () => {
+    const skill = makeSkill({ softDeletedAt: Date.now() })
+    expect(toPublicSkill(skill)).toBeNull()
+  })
+
+  it('filters out skills with blocked.malware flag', () => {
+    const skill = makeSkill({
+      moderationStatus: 'active',
+      moderationFlags: ['blocked.malware'],
+    })
+    expect(toPublicSkill(skill)).toBeNull()
+  })
 })
