@@ -1,13 +1,14 @@
 import { v } from 'convex/values'
 import { api, internal } from './_generated/api'
 import { httpAction, internalMutation, mutation } from './_generated/server'
+import { getOptionalApiTokenUserId } from './lib/apiTokenAuth'
 import { applyRateLimit, getClientIp } from './lib/httpRateLimit'
 import { buildDeterministicZip } from './lib/skillZip'
 import { hashToken } from './lib/tokens'
 import { insertStatEvent } from './skillStatEvents'
 
-const DAY_MS = 86_400_000
-const DEDUPE_RETENTION_DAYS = 14
+const HOUR_MS = 3_600_000
+const DEDUPE_RETENTION_MS = 7 * 24 * HOUR_MS
 const PRUNE_BATCH_SIZE = 200
 const PRUNE_MAX_BATCHES = 50
 
@@ -87,15 +88,16 @@ export const downloadZip = httpAction(async (ctx, request) => {
   })
   const zipBlob = new Blob([zipArray], { type: 'application/zip' })
 
-  const ip = getClientIp(request) ?? 'unknown'
-  const ipHash = await hashToken(ip)
-  const dayStart = getDayStart(Date.now())
   try {
-    await ctx.runMutation(internal.downloads.recordDownloadInternal, {
-      skillId: skill._id,
-      ipHash,
-      dayStart,
-    })
+    const userId = await getOptionalApiTokenUserId(ctx, request)
+    const identity = getDownloadIdentityValue(request, userId ? String(userId) : null)
+    if (identity) {
+      await ctx.runMutation(internal.downloads.recordDownloadInternal, {
+        skillId: skill._id,
+        identityHash: await hashToken(identity),
+        hourStart: getHourStart(Date.now()),
+      })
+    }
   } catch {
     // Best-effort metric path; do not fail downloads.
   }
@@ -126,22 +128,25 @@ export const increment = mutation({
 export const recordDownloadInternal = internalMutation({
   args: {
     skillId: v.id('skills'),
-    ipHash: v.string(),
-    dayStart: v.number(),
+    identityHash: v.string(),
+    hourStart: v.number(),
   },
   handler: async (ctx, args) => {
     const existing = await ctx.db
       .query('downloadDedupes')
-      .withIndex('by_skill_ip_day', (q) =>
-        q.eq('skillId', args.skillId).eq('ipHash', args.ipHash).eq('dayStart', args.dayStart),
+      .withIndex('by_skill_identity_hour', (q) =>
+        q
+          .eq('skillId', args.skillId)
+          .eq('identityHash', args.identityHash)
+          .eq('hourStart', args.hourStart),
       )
       .unique()
     if (existing) return
 
     await ctx.db.insert('downloadDedupes', {
       skillId: args.skillId,
-      ipHash: args.ipHash,
-      dayStart: args.dayStart,
+      identityHash: args.identityHash,
+      hourStart: args.hourStart,
       createdAt: Date.now(),
     })
 
@@ -155,12 +160,12 @@ export const recordDownloadInternal = internalMutation({
 export const pruneDownloadDedupesInternal = internalMutation({
   args: {},
   handler: async (ctx) => {
-    const cutoff = Date.now() - DEDUPE_RETENTION_DAYS * DAY_MS
+    const cutoff = Date.now() - DEDUPE_RETENTION_MS
 
     for (let batches = 0; batches < PRUNE_MAX_BATCHES; batches += 1) {
       const stale = await ctx.db
         .query('downloadDedupes')
-        .withIndex('by_day', (q) => q.lt('dayStart', cutoff))
+        .withIndex('by_hour', (q) => q.lt('hourStart', cutoff))
         .take(PRUNE_BATCH_SIZE)
 
       if (stale.length === 0) break
@@ -174,12 +179,20 @@ export const pruneDownloadDedupesInternal = internalMutation({
   },
 })
 
-export function getDayStart(timestamp: number) {
-  return Math.floor(timestamp / DAY_MS) * DAY_MS
+export function getHourStart(timestamp: number) {
+  return Math.floor(timestamp / HOUR_MS) * HOUR_MS
+}
+
+export function getDownloadIdentityValue(request: Request, userId: string | null) {
+  if (userId) return `user:${userId}`
+  const ip = getClientIp(request)
+  if (!ip) return null
+  return `ip:${ip}`
 }
 
 export const __test = {
-  getDayStart,
+  getHourStart,
+  getDownloadIdentityValue,
 }
 
 function mergeHeaders(base: HeadersInit, extra: HeadersInit) {
