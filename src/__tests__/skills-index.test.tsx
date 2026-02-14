@@ -15,6 +15,7 @@ vi.mock('@tanstack/react-router', () => ({
     useNavigate: () => navigateMock,
     useSearch: () => searchMock,
   }),
+  redirect: (options: unknown) => ({ redirect: options }),
   Link: (props: { children: ReactNode }) => <a href="/">{props.children}</a>,
 }))
 
@@ -51,7 +52,7 @@ describe('SkillsIndex', () => {
     // usePaginatedQuery should be called with the API endpoint and sort/dir args
     expect(usePaginatedQueryMock).toHaveBeenCalledWith(
       expect.anything(),
-      { sort: 'newest', dir: 'desc' },
+      { sort: 'downloads', dir: 'desc', nonSuspiciousOnly: false },
       { initialNumItems: 25 },
     )
   })
@@ -79,6 +80,7 @@ describe('SkillsIndex', () => {
     expect(actionFn).toHaveBeenCalledWith({
       query: 'remind',
       highlightedOnly: false,
+      nonSuspiciousOnly: false,
       limit: 25,
     })
     await act(async () => {
@@ -87,6 +89,7 @@ describe('SkillsIndex', () => {
     expect(actionFn).toHaveBeenCalledWith({
       query: 'remind',
       highlightedOnly: false,
+      nonSuspiciousOnly: false,
       limit: 25,
     })
   })
@@ -115,6 +118,7 @@ describe('SkillsIndex', () => {
     expect(actionFn).toHaveBeenLastCalledWith({
       query: 'remind',
       highlightedOnly: false,
+      nonSuspiciousOnly: false,
       limit: 50,
     })
   })
@@ -144,6 +148,41 @@ describe('SkillsIndex', () => {
     expect(links[1]?.textContent).toContain('Skill A')
     expect(links[2]?.textContent).toContain('Skill C')
   })
+
+  it('uses relevance as default sort when searching', async () => {
+    searchMock = { q: 'notion' }
+    const actionFn = vi
+      .fn()
+      .mockResolvedValue([
+        makeSearchResult('newer-low-score', 'Newer Low Score', 0.1, 2000),
+        makeSearchResult('older-high-score', 'Older High Score', 0.9, 1000),
+      ])
+    useActionMock.mockReturnValue(actionFn)
+    vi.useFakeTimers()
+
+    render(<SkillsIndex />)
+    await act(async () => {
+      await vi.runAllTimersAsync()
+    })
+
+    const titles = Array.from(
+      document.querySelectorAll('.skills-row-title > span:first-child'),
+    ).map((node) => node.textContent)
+
+    expect(titles[0]).toBe('Older High Score')
+    expect(titles[1]).toBe('Newer Low Score')
+  })
+
+  it('passes nonSuspiciousOnly to list query when filter is active', () => {
+    searchMock = { nonSuspicious: true }
+    render(<SkillsIndex />)
+
+    expect(usePaginatedQueryMock).toHaveBeenCalledWith(
+      expect.anything(),
+      { sort: 'downloads', dir: 'desc', nonSuspiciousOnly: true },
+      { initialNumItems: 25 },
+    )
+  })
 })
 
 function makeSearchResults(count: number) {
@@ -168,6 +207,30 @@ function makeSearchResults(count: number) {
     },
     version: null,
   }))
+}
+
+function makeSearchResult(slug: string, displayName: string, score: number, createdAt: number) {
+  return {
+    score,
+    skill: {
+      _id: `skill_${slug}`,
+      slug,
+      displayName,
+      summary: `${displayName} summary`,
+      tags: {},
+      stats: {
+        downloads: 0,
+        installsCurrent: 0,
+        installsAllTime: 0,
+        stars: 0,
+        versions: 1,
+        comments: 0,
+      },
+      createdAt,
+      updatedAt: createdAt,
+    },
+    version: null,
+  }
 }
 
 function makeSearchEntry(params: {

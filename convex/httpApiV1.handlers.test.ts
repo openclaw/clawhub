@@ -3,20 +3,46 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 vi.mock('./lib/apiTokenAuth', () => ({
   requireApiTokenUser: vi.fn(),
+  getOptionalApiTokenUserId: vi.fn(),
 }))
 
 vi.mock('./skills', () => ({
   publishVersionForUser: vi.fn(),
 }))
 
-const { requireApiTokenUser } = await import('./lib/apiTokenAuth')
+const { getOptionalApiTokenUserId, requireApiTokenUser } = await import('./lib/apiTokenAuth')
 const { publishVersionForUser } = await import('./skills')
 const { __handlers } = await import('./httpApiV1')
 
 type ActionCtx = import('./_generated/server').ActionCtx
 
+type RateLimitArgs = { key: string; limit: number; windowMs: number }
+
+function isRateLimitArgs(args: unknown): args is RateLimitArgs {
+  if (!args || typeof args !== 'object') return false
+  const value = args as Record<string, unknown>
+  return (
+    typeof value.key === 'string' &&
+    typeof value.limit === 'number' &&
+    typeof value.windowMs === 'number'
+  )
+}
+
 function makeCtx(partial: Record<string, unknown>) {
-  return partial as unknown as ActionCtx
+  const partialRunQuery =
+    typeof partial.runQuery === 'function'
+      ? (partial.runQuery as (query: unknown, args: Record<string, unknown>) => unknown)
+      : null
+  const runQuery = vi.fn(async (query: unknown, args: Record<string, unknown>) => {
+    if (isRateLimitArgs(args)) return okRate()
+    return partialRunQuery ? await partialRunQuery(query, args) : null
+  })
+  const runMutation =
+    typeof partial.runMutation === 'function'
+      ? partial.runMutation
+      : vi.fn().mockResolvedValue(okRate())
+
+  return { ...partial, runQuery, runMutation } as unknown as ActionCtx
 }
 
 const okRate = () => ({
@@ -34,6 +60,8 @@ const blockedRate = () => ({
 })
 
 beforeEach(() => {
+  vi.mocked(getOptionalApiTokenUserId).mockReset()
+  vi.mocked(getOptionalApiTokenUserId).mockResolvedValue(null)
   vi.mocked(requireApiTokenUser).mockReset()
   vi.mocked(publishVersionForUser).mockReset()
 })
@@ -191,6 +219,52 @@ describe('httpApiV1 handlers', () => {
       new Request('https://example.com/api/v1/skills/missing'),
     )
     expect(response.status).toBe(404)
+  })
+
+  it('get skill returns pending-scan message for owner api token', async () => {
+    vi.mocked(getOptionalApiTokenUserId).mockResolvedValue('users:1' as never)
+    const runQuery = vi.fn(async (_query: unknown, args: Record<string, unknown>) => {
+      if ('slug' in args) {
+        return {
+          _id: 'skills:1',
+          slug: 'demo',
+          ownerUserId: 'users:1',
+          moderationStatus: 'hidden',
+          moderationReason: 'pending.scan',
+        }
+      }
+      return null
+    })
+    const runMutation = vi.fn().mockResolvedValue(okRate())
+    const response = await __handlers.skillsGetRouterV1Handler(
+      makeCtx({ runQuery, runMutation }),
+      new Request('https://example.com/api/v1/skills/demo'),
+    )
+    expect(response.status).toBe(423)
+    expect(await response.text()).toContain('security scan is pending')
+  })
+
+  it('get skill returns undelete hint for owner soft-deleted skill', async () => {
+    vi.mocked(getOptionalApiTokenUserId).mockResolvedValue('users:1' as never)
+    const runQuery = vi.fn(async (_query: unknown, args: Record<string, unknown>) => {
+      if ('slug' in args) {
+        return {
+          _id: 'skills:1',
+          slug: 'demo',
+          ownerUserId: 'users:1',
+          softDeletedAt: 1,
+          moderationStatus: 'hidden',
+        }
+      }
+      return null
+    })
+    const runMutation = vi.fn().mockResolvedValue(okRate())
+    const response = await __handlers.skillsGetRouterV1Handler(
+      makeCtx({ runQuery, runMutation }),
+      new Request('https://example.com/api/v1/skills/demo'),
+    )
+    expect(response.status).toBe(410)
+    expect(await response.text()).toContain('clawhub undelete demo')
   })
 
   it('get skill returns payload', async () => {
@@ -559,6 +633,34 @@ describe('httpApiV1 handlers', () => {
     expect(response.status).toBe(200)
     const json = await response.json()
     expect(json.deletedSkills).toBe(2)
+  })
+
+  it('ban user forwards reason', async () => {
+    vi.mocked(requireApiTokenUser).mockResolvedValue({
+      userId: 'users:1',
+      user: { handle: 'p' },
+    } as never)
+    const runQuery = vi.fn().mockResolvedValue({ _id: 'users:2' })
+    const runMutation = vi
+      .fn()
+      .mockResolvedValueOnce(okRate())
+      .mockResolvedValueOnce({ ok: true, alreadyBanned: false, deletedSkills: 0 })
+    await __handlers.usersPostRouterV1Handler(
+      makeCtx({ runQuery, runMutation }),
+      new Request('https://example.com/api/v1/users/ban', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ handle: 'demo', reason: 'malware' }),
+      }),
+    )
+    expect(runMutation).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({
+        actorUserId: 'users:1',
+        targetUserId: 'users:2',
+        reason: 'malware',
+      }),
+    )
   })
 
   it('set role requires auth', async () => {

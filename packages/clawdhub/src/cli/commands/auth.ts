@@ -3,6 +3,7 @@ import { readGlobalConfig, writeGlobalConfig } from '../../config.js'
 import { discoverRegistryFromSite } from '../../discovery.js'
 import { apiRequest } from '../../http.js'
 import { ApiRoutes, ApiV1WhoamiResponseSchema } from '../../schema/index.js'
+import { requireAuthToken } from '../authToken.js'
 import { getRegistry } from '../registry.js'
 import type { GlobalOpts } from '../types.js'
 import { createSpinner, fail, formatError, openInBrowser, promptHidden } from '../ui.js'
@@ -78,9 +79,7 @@ export async function cmdLogout(opts: GlobalOpts) {
 }
 
 export async function cmdWhoami(opts: GlobalOpts) {
-  const cfg = await readGlobalConfig()
-  const token = cfg?.token
-  if (!token) fail('Not logged in. Run: clawhub login')
+  const token = await requireAuthToken()
   const registry = await getRegistry(opts, { cache: true })
 
   const spinner = createSpinner('Checking token')

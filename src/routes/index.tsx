@@ -8,6 +8,7 @@ import { SoulCard } from '../components/SoulCard'
 import { getSkillBadges } from '../lib/badges'
 import type { PublicSkill, PublicSoul } from '../lib/publicUser'
 import { getSiteMode } from '../lib/site'
+import { mapPublicSkillPageEntries } from '../lib/skillPageEntries'
 
 export const Route = createFileRoute('/')({
   component: Home,
@@ -19,12 +20,24 @@ function Home() {
 }
 
 function SkillsHome() {
+  type SkillPageEntry = {
+    skill: PublicSkill
+    ownerHandle?: string | null
+    latestVersion?: unknown
+  }
+
   const highlighted =
     (useQuery(api.skills.list, {
       batch: 'highlighted',
       limit: 6,
     }) as PublicSkill[]) ?? []
-  const latest = (useQuery(api.skills.list, { limit: 12 }) as PublicSkill[]) ?? []
+  const popularResult = useQuery(api.skills.listPublicPageV2, {
+    paginationOpts: { cursor: null, numItems: 12 },
+    sort: 'downloads',
+    dir: 'desc',
+    nonSuspiciousOnly: true,
+  }) as { page: SkillPageEntry[] } | undefined
+  const popular = mapPublicSkillPageEntries(popularResult?.page)
 
   return (
     <main>
@@ -48,6 +61,7 @@ function SkillsHome() {
                   sort: undefined,
                   dir: undefined,
                   highlighted: undefined,
+                  nonSuspicious: true,
                   view: undefined,
                   focus: undefined,
                 }}
@@ -92,20 +106,20 @@ function SkillsHome() {
       </section>
 
       <section className="section">
-        <h2 className="section-title">Latest drops</h2>
-        <p className="section-subtitle">Newest uploads across the registry.</p>
+        <h2 className="section-title">Popular skills</h2>
+        <p className="section-subtitle">Most-downloaded, non-suspicious picks.</p>
         <div className="grid">
-          {latest.length === 0 ? (
+          {popular.length === 0 ? (
             <div className="card">No skills yet. Be the first.</div>
           ) : (
-            latest.map((skill) => (
+            popular.map((skill) => (
               <SkillCard
                 key={skill._id}
                 skill={skill}
                 summaryFallback="Agent-ready skill pack."
                 meta={
                   <div className="stat">
-                    {skill.stats.versions} versions · ⤓ {skill.stats.downloads} · ⤒{' '}
+                    ⭐ {skill.stats.stars} · ⤓ {skill.stats.downloads} · ⤒{' '}
                     {skill.stats.installsAllTime ?? 0}
                   </div>
                 }
@@ -121,6 +135,7 @@ function SkillsHome() {
               sort: undefined,
               dir: undefined,
               highlighted: undefined,
+              nonSuspicious: true,
               view: undefined,
               focus: undefined,
             }}

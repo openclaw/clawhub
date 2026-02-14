@@ -8,9 +8,9 @@ export function Footer() {
         <div className="site-footer-divider" aria-hidden="true" />
         <div className="site-footer-row">
           <div className="site-footer-copy">
-            {siteName} · A{' '}
-            <a href="https://clawd.bot" target="_blank" rel="noreferrer">
-              Clawdbot
+            {siteName} · An{' '}
+            <a href="https://openclaw.ai" target="_blank" rel="noreferrer">
+              OpenClaw
             </a>{' '}
             project ·{' '}
             <a href="https://github.com/openclaw/clawhub" target="_blank" rel="noreferrer">

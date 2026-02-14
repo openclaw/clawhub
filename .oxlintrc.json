@@ -1,3 +1,37 @@
 {
-  "ignorePatterns": ["node_modules", "dist", "coverage", "convex/_generated", ".tanstack", "public"]
+  "$schema": "./node_modules/oxlint/configuration_schema.json",
+  "plugins": ["unicorn", "typescript", "oxc"],
+  "categories": {
+    "correctness": "error",
+    "perf": "error",
+    "suspicious": "error"
+  },
+  "rules": {
+    "curly": "off",
+    "eslint-plugin-unicorn/prefer-array-find": "off",
+    "eslint-plugin-unicorn/no-array-sort": "off",
+    "eslint/no-await-in-loop": "off",
+    "eslint/no-new": "off",
+    "oxc/no-accumulating-spread": "off",
+    "oxc/no-async-endpoint-handlers": "off",
+    "oxc/no-map-spread": "off",
+    "typescript/no-explicit-any": "error",
+    "typescript/no-extraneous-class": "off",
+    "typescript/no-unnecessary-boolean-literal-compare": "off",
+    "typescript/no-unnecessary-type-assertion": "off",
+    "typescript/no-unsafe-type-assertion": "off",
+    "unicorn/consistent-function-scoping": "off",
+    "unicorn/require-post-message-target-origin": "off"
+  },
+  "ignorePatterns": [
+    ".output/",
+    ".tanstack/",
+    "convex/_generated/",
+    "coverage/",
+    "dist/",
+    "node_modules/",
+    "public/",
+    "src/routeTree.gen.ts",
+    "test-results/"
+  ]
 }

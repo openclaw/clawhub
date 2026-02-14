@@ -16,6 +16,11 @@ vi.mock('../registry.js', () => ({
   getRegistry: () => mockGetRegistry(),
 }))
 
+const mockGetOptionalAuthToken = vi.fn(async () => undefined as string | undefined)
+vi.mock('../authToken.js', () => ({
+  getOptionalAuthToken: () => mockGetOptionalAuthToken(),
+}))
+
 const mockSpinner = {
   stop: vi.fn(),
   fail: vi.fn(),
