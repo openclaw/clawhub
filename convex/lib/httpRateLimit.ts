@@ -1,5 +1,6 @@
 import { internal } from '../_generated/api'
 import type { ActionCtx } from '../_generated/server'
+import { corsHeaders, mergeHeaders } from './httpHeaders'
 import { hashToken } from './tokens'
 
 const RATE_LIMIT_WINDOW_MS = 60_000
@@ -40,9 +41,9 @@ export async function applyRateLimit(
           {
             'Content-Type': 'text/plain; charset=utf-8',
             'Cache-Control': 'no-store',
-            'Access-Control-Allow-Origin': '*',
           },
           headers,
+          corsHeaders(),
         ),
       }),
     }
@@ -140,10 +141,6 @@ function splitFirstIp(header: string | null) {
   if (header.includes(',')) return header.split(',')[0]?.trim() || null
   const trimmed = header.trim()
   return trimmed || null
-}
-
-function mergeHeaders(base: HeadersInit, extra?: HeadersInit) {
-  return { ...(base as Record<string, string>), ...(extra as Record<string, string>) }
 }
 
 function shouldTrustForwardedIps() {

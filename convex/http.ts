@@ -31,8 +31,8 @@ import {
   usersListV1Http,
   usersPostRouterV1Http,
   whoamiV1Http,
-  preflightHandler,
 } from './httpApiV1'
+import { preflightHandler } from './httpPreflight'
 
 const http = httpRouter()
 

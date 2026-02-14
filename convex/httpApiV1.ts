@@ -4,15 +4,11 @@ import type { Doc, Id } from './_generated/dataModel'
 import type { ActionCtx } from './_generated/server'
 import { httpAction } from './_generated/server'
 import { getOptionalApiTokenUserId, requireApiTokenUser } from './lib/apiTokenAuth'
-import { hashToken } from './lib/tokens'
+import { applyRateLimit, parseBearerToken } from './lib/httpRateLimit'
+import { corsHeaders, mergeHeaders } from './lib/httpHeaders'
 import { publishVersionForUser } from './skills'
 import { publishSoulVersionForUser } from './souls'
 
-const RATE_LIMIT_WINDOW_MS = 60_000
-const RATE_LIMITS = {
-  read: { ip: 120, key: 600 },
-  write: { ip: 30, key: 120 },
-} as const
 const MAX_RAW_FILE_BYTES = 200 * 1024
 
 type SearchSkillEntry = {
@@ -396,7 +392,9 @@ async function skillsGetRouterV1Handler(ctx: ActionCtx, request: Request) {
     const isSvg =
       file.contentType?.toLowerCase().includes('svg') || file.path.toLowerCase().endsWith('.svg')
 
-    const headers = mergeHeaders(rate.headers, {
+    const headers = mergeHeaders(
+      rate.headers,
+      {
       'Content-Type': file.contentType
         ? `${file.contentType}; charset=utf-8`
         : 'text/plain; charset=utf-8',
@@ -411,9 +409,10 @@ async function skillsGetRouterV1Handler(ctx: ActionCtx, request: Request) {
       // reading localStorage tokens on this origin.
       'Content-Security-Policy':
         "default-src 'none'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'",
-      'Access-Control-Allow-Origin': '*',
       ...(isSvg ? { 'Content-Disposition': 'attachment' } : {}),
-    })
+      },
+      corsHeaders(),
+    )
     return new Response(textContent, { status: 200, headers })
   }
 
@@ -502,35 +501,6 @@ async function publishSkillV1Handler(ctx: ActionCtx, request: Request) {
 }
 
 export const publishSkillV1Http = httpAction(publishSkillV1Handler)
-
-export const preflightHandler = httpAction(async (_ctx, request) => {
-  const requestedHeaders =
-    request.headers.get('access-control-request-headers')?.trim() ||
-    request.headers.get('Access-Control-Request-Headers')?.trim() ||
-    null
-  const requestedMethod =
-    request.headers.get('access-control-request-method')?.trim() ||
-    request.headers.get('Access-Control-Request-Method')?.trim() ||
-    null
-  const vary = [
-    ...(requestedMethod ? ['Access-Control-Request-Method'] : []),
-    ...(requestedHeaders ? ['Access-Control-Request-Headers'] : []),
-  ].join(', ')
-
-  // No cookies/credentials supported; allow any origin for simple browser access.
-  // If we ever add cookie auth, this must switch to reflecting origin + Allow-Credentials.
-  return new Response(null, {
-    status: 204,
-    headers: {
-      'Access-Control-Allow-Origin': '*',
-      'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS, PATCH, HEAD',
-      'Access-Control-Allow-Headers':
-        requestedHeaders ?? 'Content-Type, Authorization, Digest, X-Clawhub-Version',
-      'Access-Control-Max-Age': '86400',
-      ...(vary ? { Vary: vary } : {}),
-    },
-  })
-})
 
 type FileLike = {
   name: string
@@ -876,121 +846,6 @@ async function resolveTags(
   return resolved
 }
 
-async function applyRateLimit(
-  ctx: ActionCtx,
-  request: Request,
-  kind: 'read' | 'write',
-): Promise<{ ok: true; headers: HeadersInit } | { ok: false; response: Response }> {
-  const ip = getClientIp(request) ?? 'unknown'
-  const ipResult = await checkRateLimit(ctx, `ip:${ip}`, RATE_LIMITS[kind].ip)
-  const token = parseBearerToken(request)
-  const keyResult = token
-    ? await checkRateLimit(ctx, `key:${await hashToken(token)}`, RATE_LIMITS[kind].key)
-    : null
-
-  const chosen = pickMostRestrictive(ipResult, keyResult)
-  const headers = rateHeaders(chosen)
-
-  if (!ipResult.allowed || (keyResult && !keyResult.allowed)) {
-    return {
-      ok: false,
-      response: text('Rate limit exceeded', 429, headers),
-    }
-  }
-
-  return { ok: true, headers }
-}
-
-type RateLimitResult = {
-  allowed: boolean
-  remaining: number
-  limit: number
-  resetAt: number
-}
-
-async function checkRateLimit(
-  ctx: ActionCtx,
-  key: string,
-  limit: number,
-): Promise<RateLimitResult> {
-  // Step 1: Read-only check — no write conflicts for denied requests
-  const status = (await ctx.runQuery(internal.rateLimits.getRateLimitStatusInternal, {
-    key,
-    limit,
-    windowMs: RATE_LIMIT_WINDOW_MS,
-  })) as RateLimitResult
-
-  if (!status.allowed) {
-    return status
-  }
-
-  // Step 2: Consume a token (only when allowed, with double-check for races)
-  let result: { allowed: boolean; remaining: number }
-  try {
-    result = (await ctx.runMutation(internal.rateLimits.consumeRateLimitInternal, {
-      key,
-      limit,
-      windowMs: RATE_LIMIT_WINDOW_MS,
-    })) as { allowed: boolean; remaining: number }
-  } catch (error) {
-    if (isRateLimitWriteConflict(error)) {
-      return {
-        allowed: false,
-        remaining: 0,
-        limit: status.limit,
-        resetAt: status.resetAt,
-      }
-    }
-    throw error
-  }
-
-  return {
-    allowed: result.allowed,
-    remaining: result.remaining,
-    limit: status.limit,
-    resetAt: status.resetAt,
-  }
-}
-
-function pickMostRestrictive(primary: RateLimitResult, secondary: RateLimitResult | null) {
-  if (!secondary) return primary
-  if (!primary.allowed) return primary
-  if (!secondary.allowed) return secondary
-  return secondary.remaining < primary.remaining ? secondary : primary
-}
-
-function rateHeaders(result: RateLimitResult): HeadersInit {
-  const resetSeconds = Math.ceil(result.resetAt / 1000)
-  return {
-    'X-RateLimit-Limit': String(result.limit),
-    'X-RateLimit-Remaining': String(result.remaining),
-    'X-RateLimit-Reset': String(resetSeconds),
-    ...(result.allowed ? {} : { 'Retry-After': String(resetSeconds) }),
-  }
-}
-
-function getClientIp(request: Request) {
-  const cfHeader = request.headers.get('cf-connecting-ip')
-  if (cfHeader) return splitFirstIp(cfHeader)
-
-  if (!shouldTrustForwardedIps()) return null
-
-  const forwarded =
-    request.headers.get('x-real-ip') ??
-    request.headers.get('x-forwarded-for') ??
-    request.headers.get('fly-client-ip')
-  return splitFirstIp(forwarded)
-}
-
-function parseBearerToken(request: Request) {
-  const header = request.headers.get('authorization') ?? request.headers.get('Authorization')
-  if (!header) return null
-  const trimmed = header.trim()
-  if (!trimmed.toLowerCase().startsWith('bearer ')) return null
-  const token = trimmed.slice(7).trim()
-  return token || null
-}
-
 function json(value: unknown, status = 200, headers?: HeadersInit) {
   return new Response(JSON.stringify(value), {
     status,
@@ -998,9 +853,9 @@ function json(value: unknown, status = 200, headers?: HeadersInit) {
       {
         'Content-Type': 'application/json',
         'Cache-Control': 'no-store',
-        'Access-Control-Allow-Origin': '*',
       },
       headers,
+      corsHeaders(),
     ),
   })
 }
@@ -1012,40 +867,11 @@ function text(value: string, status: number, headers?: HeadersInit) {
       {
         'Content-Type': 'text/plain; charset=utf-8',
         'Cache-Control': 'no-store',
-        'Access-Control-Allow-Origin': '*',
       },
       headers,
+      corsHeaders(),
     ),
   })
-}
-
-function mergeHeaders(base: HeadersInit, extra?: HeadersInit) {
-  return { ...(base as Record<string, string>), ...(extra as Record<string, string>) }
-}
-
-function splitFirstIp(header: string | null) {
-  if (!header) return null
-  if (header.includes(',')) return header.split(',')[0]?.trim() || null
-  const trimmed = header.trim()
-  return trimmed || null
-}
-
-function shouldTrustForwardedIps() {
-  const value = String(process.env.TRUST_FORWARDED_IPS ?? '')
-    .trim()
-    .toLowerCase()
-  if (!value) return true
-  if (value === '1' || value === 'true' || value === 'yes') return true
-  if (value === '0' || value === 'false' || value === 'no') return false
-  return false
-}
-
-function isRateLimitWriteConflict(error: unknown) {
-  if (!(error instanceof Error)) return false
-  return (
-    error.message.includes('rateLimits') &&
-    error.message.includes('changed while this mutation was being run')
-  )
 }
 
 function getPathSegments(request: Request, prefix: string) {
@@ -1292,7 +1118,9 @@ async function soulsGetRouterV1Handler(ctx: ActionCtx, request: Request) {
     const isSvg =
       file.contentType?.toLowerCase().includes('svg') || file.path.toLowerCase().endsWith('.svg')
 
-    const headers = mergeHeaders(rate.headers, {
+    const headers = mergeHeaders(
+      rate.headers,
+      {
       'Content-Type': file.contentType
         ? `${file.contentType}; charset=utf-8`
         : 'text/plain; charset=utf-8',
@@ -1307,9 +1135,10 @@ async function soulsGetRouterV1Handler(ctx: ActionCtx, request: Request) {
       // reading localStorage tokens on this origin.
       'Content-Security-Policy':
         "default-src 'none'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'",
-      'Access-Control-Allow-Origin': '*',
       ...(isSvg ? { 'Content-Disposition': 'attachment' } : {}),
-    })
+      },
+      corsHeaders(),
+    )
     return new Response(textContent, { status: 200, headers })
   }
 

@@ -3,6 +3,7 @@ import { api, internal } from './_generated/api'
 import { httpAction, internalMutation, mutation } from './_generated/server'
 import { getOptionalApiTokenUserId } from './lib/apiTokenAuth'
 import { applyRateLimit, getClientIp } from './lib/httpRateLimit'
+import { corsHeaders, mergeHeaders } from './lib/httpHeaders'
 import { buildDeterministicZip } from './lib/skillZip'
 import { hashToken } from './lib/tokens'
 import { insertStatEvent } from './skillStatEvents'
@@ -21,7 +22,7 @@ export const downloadZip = httpAction(async (ctx, request) => {
   if (!slug) {
     return new Response('Missing slug', {
       status: 400,
-      headers: { 'Access-Control-Allow-Origin': '*' },
+      headers: corsHeaders(),
     })
   }
 
@@ -32,7 +33,7 @@ export const downloadZip = httpAction(async (ctx, request) => {
   if (!skillResult?.skill) {
     return new Response('Skill not found', {
       status: 404,
-      headers: mergeHeaders(rate.headers, { 'Access-Control-Allow-Origin': '*' }),
+      headers: mergeHeaders(rate.headers, corsHeaders()),
     })
   }
 
@@ -43,7 +44,7 @@ export const downloadZip = httpAction(async (ctx, request) => {
       'Blocked: this skill has been flagged as malicious by VirusTotal and cannot be downloaded.',
       {
         status: 403,
-        headers: mergeHeaders(rate.headers, { 'Access-Control-Allow-Origin': '*' }),
+        headers: mergeHeaders(rate.headers, corsHeaders()),
       },
     )
   }
@@ -52,20 +53,20 @@ export const downloadZip = httpAction(async (ctx, request) => {
       'This skill is pending a security scan by VirusTotal. Please try again in a few minutes.',
       {
         status: 423,
-        headers: mergeHeaders(rate.headers, { 'Access-Control-Allow-Origin': '*' }),
+        headers: mergeHeaders(rate.headers, corsHeaders()),
       },
     )
   }
   if (mod?.isRemoved) {
     return new Response('This skill has been removed by a moderator.', {
       status: 410,
-      headers: mergeHeaders(rate.headers, { 'Access-Control-Allow-Origin': '*' }),
+      headers: mergeHeaders(rate.headers, corsHeaders()),
     })
   }
   if (mod?.isHiddenByMod) {
     return new Response('This skill is currently unavailable.', {
       status: 403,
-      headers: mergeHeaders(rate.headers, { 'Access-Control-Allow-Origin': '*' }),
+      headers: mergeHeaders(rate.headers, corsHeaders()),
     })
   }
 
@@ -87,13 +88,13 @@ export const downloadZip = httpAction(async (ctx, request) => {
   if (!version) {
     return new Response('Version not found', {
       status: 404,
-      headers: mergeHeaders(rate.headers, { 'Access-Control-Allow-Origin': '*' }),
+      headers: mergeHeaders(rate.headers, corsHeaders()),
     })
   }
   if (version.softDeletedAt) {
     return new Response('Version not available', {
       status: 410,
-      headers: mergeHeaders(rate.headers, { 'Access-Control-Allow-Origin': '*' }),
+      headers: mergeHeaders(rate.headers, corsHeaders()),
     })
   }
 
@@ -128,12 +129,15 @@ export const downloadZip = httpAction(async (ctx, request) => {
 
   return new Response(zipBlob, {
     status: 200,
-    headers: mergeHeaders(rate.headers, {
-      'Content-Type': 'application/zip',
-      'Content-Disposition': `attachment; filename="${slug}-${version.version}.zip"`,
-      'Cache-Control': 'private, max-age=60',
-      'Access-Control-Allow-Origin': '*',
-    }),
+    headers: mergeHeaders(
+      rate.headers,
+      {
+        'Content-Type': 'application/zip',
+        'Content-Disposition': `attachment; filename="${slug}-${version.version}.zip"`,
+        'Cache-Control': 'private, max-age=60',
+      },
+      corsHeaders(),
+    ),
   })
 })
 
@@ -218,8 +222,4 @@ export function getDownloadIdentityValue(request: Request, userId: string | null
 export const __test = {
   getHourStart,
   getDownloadIdentityValue,
-}
-
-function mergeHeaders(base: HeadersInit, extra: HeadersInit) {
-  return { ...(base as Record<string, string>), ...(extra as Record<string, string>) }
 }
