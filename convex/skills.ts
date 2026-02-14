@@ -9,6 +9,10 @@ import { action, internalMutation, internalQuery, mutation, query } from './_gen
 import { assertAdmin, assertModerator, requireUser, requireUserFromAction } from './lib/access'
 import { getSkillBadgeMap, getSkillBadgeMaps, isSkillHighlighted } from './lib/badges'
 import { generateChangelogPreview as buildChangelogPreview } from './lib/changelog'
+import {
+  canHealSkillOwnershipByGitHubProviderAccountId,
+  getGitHubProviderAccountId,
+} from './lib/githubIdentity'
 import { buildTrendingLeaderboard } from './lib/leaderboards'
 import { deriveModerationFlags } from './lib/moderation'
 import { toPublicSkill, toPublicUser } from './lib/public'
@@ -2383,7 +2387,9 @@ export const insertVersion = internalMutation({
   handler: async (ctx, args) => {
     const userId = args.userId
     const user = await ctx.db.get(userId)
-    if (!user || user.deletedAt) throw new Error('User not found')
+    if (!user || user.deletedAt || user.deactivatedAt) throw new Error('User not found')
+
+    const now = Date.now()
 
     let skill = await ctx.db
       .query('skills')
@@ -2391,17 +2397,31 @@ export const insertVersion = internalMutation({
       .unique()
 
     if (skill && skill.ownerUserId !== userId) {
-      // Fallback: compare by handle in case Convex Auth created duplicate user records
+      // Fallback: Convex Auth can create duplicate `users` records. Heal ownership ONLY
+      // when the underlying GitHub identity matches (authAccounts.providerAccountId).
       const owner = await ctx.db.get(skill.ownerUserId)
-      const caller = await ctx.db.get(userId)
-      if (!owner || !caller || owner.handle !== caller.handle) {
+      if (!owner || owner.deletedAt || owner.deactivatedAt) {
         throw new Error('Only the owner can publish updates')
       }
-      // Same GitHub user but different Convex user IDs — update ownership to current ID
-      await ctx.db.patch(skill._id, { ownerUserId: userId, updatedAt: Date.now() })
+
+      const [ownerProviderAccountId, callerProviderAccountId] = await Promise.all([
+        getGitHubProviderAccountId(ctx, skill.ownerUserId),
+        getGitHubProviderAccountId(ctx, userId),
+      ])
+
+      // Deny healing when GitHub identity isn't present/consistent.
+      if (
+        !canHealSkillOwnershipByGitHubProviderAccountId(
+          ownerProviderAccountId,
+          callerProviderAccountId,
+        )
+      ) {
+        throw new Error('Only the owner can publish updates')
+      }
+
+      await ctx.db.patch(skill._id, { ownerUserId: userId, updatedAt: now })
     }
 
-    const now = Date.now()
     if (!skill) {
       const forkOfSlug = args.forkOf?.slug.trim().toLowerCase() || ''
       const forkOfVersion = args.forkOf?.version?.trim() || undefined

@@ -21,14 +21,15 @@ import {
 describe('skills', () => {
   it('extracts zip into directory and skips traversal', async () => {
     const dir = await mkdtemp(join(tmpdir(), 'clawhub-'))
+    const evilName = `evil-${Date.now()}-${Math.random().toString(16).slice(2)}.txt`
     const zip = zipSync({
       'SKILL.md': strToU8('hello'),
-      '../evil.txt': strToU8('nope'),
+      [`../${evilName}`]: strToU8('nope'),
     })
     await extractZipToDir(new Uint8Array(zip), dir)
 
     expect((await readFile(join(dir, 'SKILL.md'), 'utf8')).trim()).toBe('hello')
-    await expect(stat(join(dir, '..', 'evil.txt'))).rejects.toBeTruthy()
+    await expect(stat(join(dir, '..', evilName))).rejects.toBeTruthy()
   })
 
   it('writes and reads lockfile', async () => {
