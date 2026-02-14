@@ -21,9 +21,6 @@ vi.mock('@tanstack/react-router', () => ({
 
 vi.mock('convex/react', () => ({
   useAction: (...args: unknown[]) => useActionMock(...args),
-}))
-
-vi.mock('convex-helpers/react', () => ({
   usePaginatedQuery: (...args: unknown[]) => usePaginatedQueryMock(...args),
 }))
 

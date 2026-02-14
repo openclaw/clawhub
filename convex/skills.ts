@@ -31,7 +31,6 @@ import {
 } from './lib/skillPublish'
 import { isSkillSuspicious } from './lib/skillSafety'
 import { getFrontmatterValue, hashSkillFiles } from './lib/skills'
-import schema from './schema'
 
 export { publishVersionForUser } from './lib/skillPublish'
 
@@ -59,15 +58,6 @@ const OWNER_ACTIVITY_SCAN_LIMIT = 500
 const NEW_SKILL_RATE_LIMITS = {
   lowTrust: { perHour: 5, perDay: 20 },
   trusted: { perHour: 20, perDay: 80 },
-} as const
-
-const SORT_INDEXES = {
-  newest: 'by_active_created',
-  updated: 'by_active_updated',
-  name: 'by_active_name',
-  downloads: 'by_active_stats_downloads',
-  stars: 'by_active_stats_stars',
-  installs: 'by_active_stats_installs_all_time',
 } as const
 
 const SORT_INDEXES = {

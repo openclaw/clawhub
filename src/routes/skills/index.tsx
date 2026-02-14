@@ -1,6 +1,5 @@
 import { createFileRoute, Link, redirect } from '@tanstack/react-router'
-import { useAction } from 'convex/react'
-import { usePaginatedQuery } from 'convex-helpers/react'
+import { useAction, usePaginatedQuery } from 'convex/react'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { api } from '../../../convex/_generated/api'
 import type { Doc } from '../../../convex/_generated/dataModel'
@@ -136,7 +135,6 @@ export function SkillsIndex() {
     ? `${trimmedQuery}::${highlightedOnly ? '1' : '0'}::${nonSuspiciousOnly ? '1' : '0'}`
     : ''
 
-  // Use convex-helpers usePaginatedQuery for better cache behavior
   const {
     results: paginatedResults,
     status: paginationStatus,
