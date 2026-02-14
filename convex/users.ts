@@ -84,7 +84,9 @@ export async function ensureHandler(ctx: MutationCtx) {
   const existingHandle = user.handle?.trim() || undefined
   const nameHandle = user.name?.trim() || undefined
   const emailHandle = user.email?.split('@')[0]?.trim() || undefined
-  const derivedHandle = nameHandle || emailHandle
+  // `user.name` is the GitHub login (see convex/auth.ts profile mapping).
+  // Only fall back to deriving from email if we don't already have a handle.
+  const derivedHandle = nameHandle || (!existingHandle ? emailHandle : undefined)
   const baseHandle = derivedHandle ?? existingHandle
 
   if (derivedHandle && (!existingHandle || existingHandle !== derivedHandle)) {

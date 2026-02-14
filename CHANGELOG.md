@@ -1,5 +1,10 @@
 # Changelog
 
+## Unreleased
+
+### Fixed
+- Users: sync handle on ensure when GitHub login changes (#293) (thanks @christianhpoe).
+
 ## 0.6.1 - 2026-02-13
 
 ### Added

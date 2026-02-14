@@ -1,8 +1,9 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
-vi.mock('./lib/access', () => ({
-  requireUser: vi.fn(),
-}))
+vi.mock('./lib/access', async () => {
+  const actual = await vi.importActual<typeof import('./lib/access')>('./lib/access')
+  return { ...actual, requireUser: vi.fn() }
+})
 
 const { requireUser } = await import('./lib/access')
 const { ensureHandler } = await import('./users')
