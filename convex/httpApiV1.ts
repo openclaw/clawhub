@@ -3,16 +3,12 @@ import { api, internal } from './_generated/api'
 import type { Doc, Id } from './_generated/dataModel'
 import type { ActionCtx } from './_generated/server'
 import { httpAction } from './_generated/server'
-import { requireApiTokenUser } from './lib/apiTokenAuth'
-import { hashToken } from './lib/tokens'
+import { getOptionalApiTokenUserId, requireApiTokenUser } from './lib/apiTokenAuth'
+import { applyRateLimit, parseBearerToken } from './lib/httpRateLimit'
+import { corsHeaders, mergeHeaders } from './lib/httpHeaders'
 import { publishVersionForUser } from './skills'
 import { publishSoulVersionForUser } from './souls'
 
-const RATE_LIMIT_WINDOW_MS = 60_000
-const RATE_LIMITS = {
-  read: { ip: 120, key: 600 },
-  write: { ip: 30, key: 120 },
-} as const
 const MAX_RAW_FILE_BYTES = 200 * 1024
 
 type SearchSkillEntry = {
@@ -60,6 +56,14 @@ type GetBySlugResult = {
   } | null
   latestVersion: Doc<'skillVersions'> | null
   owner: { _id: Id<'users'>; handle?: string; displayName?: string; image?: string } | null
+  moderationInfo?: {
+    isPendingScan: boolean
+    isMalwareBlocked: boolean
+    isSuspicious: boolean
+    isHiddenByMod: boolean
+    isRemoved: boolean
+    reason?: string
+  } | null
 } | null
 
 type ListVersionsResult = {
@@ -196,7 +200,7 @@ async function listSkillsV1Handler(ctx: ActionCtx, request: Request) {
   const limit = toOptionalNumber(url.searchParams.get('limit'))
   const rawCursor = url.searchParams.get('cursor')?.trim() || undefined
   const sort = parseListSort(url.searchParams.get('sort'))
-  const cursor = sort === 'updated' ? rawCursor : undefined
+  const cursor = sort === 'trending' ? undefined : rawCursor
 
   const result = (await ctx.runQuery(api.skills.listPublicPage, {
     limit,
@@ -244,7 +248,11 @@ async function skillsGetRouterV1Handler(ctx: ActionCtx, request: Request) {
 
   if (segments.length === 1) {
     const result = (await ctx.runQuery(api.skills.getBySlug, { slug })) as GetBySlugResult
-    if (!result?.skill) return text('Skill not found', 404, rate.headers)
+    if (!result?.skill) {
+      const hidden = await describeOwnerVisibleSkillState(ctx, request, slug)
+      if (hidden) return text(hidden.message, hidden.status, rate.headers)
+      return text('Skill not found', 404, rate.headers)
+    }
 
     const [tags] = await resolveTagsBatch(ctx, [result.skill.tags])
     return json(
@@ -271,6 +279,12 @@ async function skillsGetRouterV1Handler(ctx: ActionCtx, request: Request) {
               userId: result.owner._id,
               displayName: result.owner.displayName ?? null,
               image: result.owner.image ?? null,
+            }
+          : null,
+        moderation: result.moderationInfo
+          ? {
+              isSuspicious: result.moderationInfo.isSuspicious ?? false,
+              isMalwareBlocked: result.moderationInfo.isMalwareBlocked ?? false,
             }
           : null,
       },
@@ -379,7 +393,9 @@ async function skillsGetRouterV1Handler(ctx: ActionCtx, request: Request) {
     const isSvg =
       file.contentType?.toLowerCase().includes('svg') || file.path.toLowerCase().endsWith('.svg')
 
-    const headers = mergeHeaders(rate.headers, {
+    const headers = mergeHeaders(
+      rate.headers,
+      {
       'Content-Type': file.contentType
         ? `${file.contentType}; charset=utf-8`
         : 'text/plain; charset=utf-8',
@@ -395,11 +411,59 @@ async function skillsGetRouterV1Handler(ctx: ActionCtx, request: Request) {
       'Content-Security-Policy':
         "default-src 'none'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'",
       ...(isSvg ? { 'Content-Disposition': 'attachment' } : {}),
-    })
+      },
+      corsHeaders(),
+    )
     return new Response(textContent, { status: 200, headers })
   }
 
   return text('Not found', 404, rate.headers)
+}
+
+async function describeOwnerVisibleSkillState(
+  ctx: ActionCtx,
+  request: Request,
+  slug: string,
+): Promise<{ status: number; message: string } | null> {
+  const skill = await ctx.runQuery(internal.skills.getSkillBySlugInternal, { slug })
+  if (!skill) return null
+
+  const apiTokenUserId = await getOptionalApiTokenUserId(ctx, request)
+  const isOwner = Boolean(apiTokenUserId && apiTokenUserId === skill.ownerUserId)
+  if (!isOwner) return null
+
+  if (skill.softDeletedAt) {
+    return {
+      status: 410,
+      message: `Skill is hidden/deleted. Run "clawhub undelete ${slug}" to restore it.`,
+    }
+  }
+
+  if (skill.moderationStatus === 'hidden') {
+    if (skill.moderationReason === 'pending.scan' || skill.moderationReason === 'scanner.vt.pending') {
+      return {
+        status: 423,
+        message: 'Skill is hidden while security scan is pending. Try again in a few minutes.',
+      }
+    }
+    if (skill.moderationReason === 'quality.low') {
+      return {
+        status: 403,
+        message:
+          'Skill is hidden by quality checks. Update SKILL.md content or run "clawhub undelete <slug>" after review.',
+      }
+    }
+    return {
+      status: 403,
+      message: `Skill is hidden by moderation${skill.moderationReason ? ` (${skill.moderationReason})` : ''}.`,
+    }
+  }
+
+  if (skill.moderationStatus === 'removed') {
+    return { status: 410, message: 'Skill has been removed by moderation.' }
+  }
+
+  return null
 }
 
 export const skillsGetRouterV1Http = httpAction(skillsGetRouterV1Handler)
@@ -549,6 +613,7 @@ async function usersPostRouterV1Handler(ctx: ActionCtx, request: Request) {
 
   const handleRaw = typeof payload.handle === 'string' ? payload.handle.trim() : ''
   const userIdRaw = typeof payload.userId === 'string' ? payload.userId.trim() : ''
+  const reasonRaw = typeof payload.reason === 'string' ? payload.reason.trim() : ''
   if (!handleRaw && !userIdRaw) {
     return text('Missing userId or handle', 400, rate.headers)
   }
@@ -579,10 +644,15 @@ async function usersPostRouterV1Handler(ctx: ActionCtx, request: Request) {
   }
 
   if (action === 'ban') {
+    const reason = reasonRaw.length > 0 ? reasonRaw : undefined
+    if (reason && reason.length > 500) {
+      return text('Reason too long (max 500 chars)', 400, rate.headers)
+    }
     try {
       const result = await ctx.runMutation(internal.users.banUserInternal, {
         actorUserId,
         targetUserId,
+        reason,
       })
       return json(result, 200, rate.headers)
     } catch (error) {
@@ -595,6 +665,10 @@ async function usersPostRouterV1Handler(ctx: ActionCtx, request: Request) {
       }
       return text(message, 400, rate.headers)
     }
+  }
+
+  if (!role) {
+    return text('Invalid role', 400, rate.headers)
   }
 
   try {
@@ -617,6 +691,44 @@ async function usersPostRouterV1Handler(ctx: ActionCtx, request: Request) {
 }
 
 export const usersPostRouterV1Http = httpAction(usersPostRouterV1Handler)
+
+async function usersListV1Handler(ctx: ActionCtx, request: Request) {
+  const rate = await applyRateLimit(ctx, request, 'read')
+  if (!rate.ok) return rate.response
+
+  const url = new URL(request.url)
+  const limitRaw = toOptionalNumber(url.searchParams.get('limit'))
+  const query = url.searchParams.get('q') ?? url.searchParams.get('query') ?? ''
+
+  let actorUserId: Id<'users'>
+  try {
+    const auth = await requireApiTokenUser(ctx, request)
+    actorUserId = auth.userId
+  } catch {
+    return text('Unauthorized', 401, rate.headers)
+  }
+
+  const limit = Math.min(Math.max(limitRaw ?? 20, 1), 200)
+  try {
+    const result = await ctx.runQuery(internal.users.searchInternal, {
+      actorUserId,
+      query,
+      limit,
+    })
+    return json(result, 200, rate.headers)
+  } catch (error) {
+    const message = error instanceof Error ? error.message : 'User search failed'
+    if (message.toLowerCase().includes('forbidden')) {
+      return text('Forbidden', 403, rate.headers)
+    }
+    if (message.toLowerCase().includes('unauthorized')) {
+      return text('Unauthorized', 401, rate.headers)
+    }
+    return text(message, 400, rate.headers)
+  }
+}
+
+export const usersListV1Http = httpAction(usersListV1Handler)
 
 async function parseMultipartPublish(
   ctx: ActionCtx,
@@ -801,87 +913,6 @@ async function resolveTagsBatch(
   })
 }
 
-async function applyRateLimit(
-  ctx: ActionCtx,
-  request: Request,
-  kind: 'read' | 'write',
-): Promise<{ ok: true; headers: HeadersInit } | { ok: false; response: Response }> {
-  const ip = getClientIp(request) ?? 'unknown'
-  const ipResult = await checkRateLimit(ctx, `ip:${ip}`, RATE_LIMITS[kind].ip)
-  const token = parseBearerToken(request)
-  const keyResult = token
-    ? await checkRateLimit(ctx, `key:${await hashToken(token)}`, RATE_LIMITS[kind].key)
-    : null
-
-  const chosen = pickMostRestrictive(ipResult, keyResult)
-  const headers = rateHeaders(chosen)
-
-  if (!ipResult.allowed || (keyResult && !keyResult.allowed)) {
-    return {
-      ok: false,
-      response: text('Rate limit exceeded', 429, headers),
-    }
-  }
-
-  return { ok: true, headers }
-}
-
-type RateLimitResult = {
-  allowed: boolean
-  remaining: number
-  limit: number
-  resetAt: number
-}
-
-async function checkRateLimit(
-  ctx: ActionCtx,
-  key: string,
-  limit: number,
-): Promise<RateLimitResult> {
-  return (await ctx.runMutation(internal.rateLimits.checkRateLimitInternal, {
-    key,
-    limit,
-    windowMs: RATE_LIMIT_WINDOW_MS,
-  })) as RateLimitResult
-}
-
-function pickMostRestrictive(primary: RateLimitResult, secondary: RateLimitResult | null) {
-  if (!secondary) return primary
-  if (!primary.allowed) return primary
-  if (!secondary.allowed) return secondary
-  return secondary.remaining < primary.remaining ? secondary : primary
-}
-
-function rateHeaders(result: RateLimitResult): HeadersInit {
-  const resetSeconds = Math.ceil(result.resetAt / 1000)
-  return {
-    'X-RateLimit-Limit': String(result.limit),
-    'X-RateLimit-Remaining': String(result.remaining),
-    'X-RateLimit-Reset': String(resetSeconds),
-    ...(result.allowed ? {} : { 'Retry-After': String(resetSeconds) }),
-  }
-}
-
-function getClientIp(request: Request) {
-  const header =
-    request.headers.get('cf-connecting-ip') ??
-    request.headers.get('x-real-ip') ??
-    request.headers.get('x-forwarded-for') ??
-    request.headers.get('fly-client-ip')
-  if (!header) return null
-  if (header.includes(',')) return header.split(',')[0]?.trim() || null
-  return header.trim()
-}
-
-function parseBearerToken(request: Request) {
-  const header = request.headers.get('authorization') ?? request.headers.get('Authorization')
-  if (!header) return null
-  const trimmed = header.trim()
-  if (!trimmed.toLowerCase().startsWith('bearer ')) return null
-  const token = trimmed.slice(7).trim()
-  return token || null
-}
-
 function json(value: unknown, status = 200, headers?: HeadersInit) {
   return new Response(JSON.stringify(value), {
     status,
@@ -891,6 +922,7 @@ function json(value: unknown, status = 200, headers?: HeadersInit) {
         'Cache-Control': 'no-store',
       },
       headers,
+      corsHeaders(),
     ),
   })
 }
@@ -904,12 +936,9 @@ function text(value: string, status: number, headers?: HeadersInit) {
         'Cache-Control': 'no-store',
       },
       headers,
+      corsHeaders(),
     ),
   })
-}
-
-function mergeHeaders(base: HeadersInit, extra?: HeadersInit) {
-  return { ...(base as Record<string, string>), ...(extra as Record<string, string>) }
 }
 
 function getPathSegments(request: Request, prefix: string) {
@@ -1157,7 +1186,9 @@ async function soulsGetRouterV1Handler(ctx: ActionCtx, request: Request) {
     const isSvg =
       file.contentType?.toLowerCase().includes('svg') || file.path.toLowerCase().endsWith('.svg')
 
-    const headers = mergeHeaders(rate.headers, {
+    const headers = mergeHeaders(
+      rate.headers,
+      {
       'Content-Type': file.contentType
         ? `${file.contentType}; charset=utf-8`
         : 'text/plain; charset=utf-8',
@@ -1173,7 +1204,9 @@ async function soulsGetRouterV1Handler(ctx: ActionCtx, request: Request) {
       'Content-Security-Policy':
         "default-src 'none'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'",
       ...(isSvg ? { 'Content-Disposition': 'attachment' } : {}),
-    })
+      },
+      corsHeaders(),
+    )
     return new Response(textContent, { status: 200, headers })
   }
 
@@ -1329,4 +1362,5 @@ export const __handlers = {
   starsDeleteRouterV1Handler,
   whoamiV1Handler,
   usersPostRouterV1Handler,
+  usersListV1Handler,
 }

@@ -39,7 +39,7 @@ export type PublicSoul = Pick<
 >
 
 export function toPublicUser(user: Doc<'users'> | null | undefined): PublicUser | null {
-  if (!user || user.deletedAt) return null
+  if (!user || user.deletedAt || user.deactivatedAt) return null
   return {
     _id: user._id,
     _creationTime: user._creationTime,
@@ -55,6 +55,23 @@ export function toPublicSkill(skill: Doc<'skills'> | null | undefined): PublicSk
   if (!skill || skill.softDeletedAt) return null
   if (skill.moderationStatus && skill.moderationStatus !== 'active') return null
   if (skill.moderationFlags?.includes('blocked.malware')) return null
+  const stats = {
+    downloads:
+      typeof skill.statsDownloads === 'number'
+        ? skill.statsDownloads
+        : (skill.stats?.downloads ?? 0),
+    stars: typeof skill.statsStars === 'number' ? skill.statsStars : (skill.stats?.stars ?? 0),
+    installsCurrent:
+      typeof skill.statsInstallsCurrent === 'number'
+        ? skill.statsInstallsCurrent
+        : (skill.stats?.installsCurrent ?? 0),
+    installsAllTime:
+      typeof skill.statsInstallsAllTime === 'number'
+        ? skill.statsInstallsAllTime
+        : (skill.stats?.installsAllTime ?? 0),
+    versions: skill.stats?.versions ?? 0,
+    comments: skill.stats?.comments ?? 0,
+  }
   return {
     _id: skill._id,
     _creationTime: skill._creationTime,
@@ -67,7 +84,7 @@ export function toPublicSkill(skill: Doc<'skills'> | null | undefined): PublicSk
     latestVersionId: skill.latestVersionId,
     tags: skill.tags,
     badges: skill.badges,
-    stats: skill.stats,
+    stats,
     createdAt: skill.createdAt,
     updatedAt: skill.updatedAt,
   }

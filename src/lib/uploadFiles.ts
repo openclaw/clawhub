@@ -137,8 +137,12 @@ async function readArrayBuffer(file: Blob) {
   if (typeof FileReader !== 'undefined') {
     return new Promise<ArrayBuffer>((resolve, reject) => {
       const reader = new FileReader()
-      reader.onerror = () => reject(reader.error ?? new Error('Could not read file.'))
-      reader.onload = () => resolve(reader.result as ArrayBuffer)
+      reader.addEventListener('error', () => {
+        reject(reader.error ?? new Error('Could not read file.'))
+      })
+      reader.addEventListener('load', () => {
+        resolve(reader.result as ArrayBuffer)
+      })
       reader.readAsArrayBuffer(file)
     })
   }

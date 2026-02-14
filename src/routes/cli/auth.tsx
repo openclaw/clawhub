@@ -3,6 +3,7 @@ import { createFileRoute } from '@tanstack/react-router'
 import { useMutation } from 'convex/react'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { api } from '../../../convex/_generated/api'
+import { getClawHubSiteUrl, normalizeClawHubSiteOrigin } from '../../lib/site'
 import { useAuthStatus } from '../../lib/useAuthStatus'
 
 export const Route = createFileRoute('/cli/auth')({
@@ -27,15 +28,20 @@ function CliAuth() {
   const redirectUri = search.redirect_uri ?? ''
   const label = (decodeLabel(search.label_b64) ?? search.label ?? 'CLI token').trim() || 'CLI token'
   const state = typeof search.state === 'string' ? search.state.trim() : ''
+  const signInRedirectTo = getCurrentRelativeUrl()
 
   const safeRedirect = useMemo(() => isAllowedRedirectUri(redirectUri), [redirectUri])
-  const registry = import.meta.env.VITE_CONVEX_SITE_URL as string | undefined
+  const registry = useMemo(() => {
+    if (typeof window !== 'undefined') {
+      return normalizeClawHubSiteOrigin(window.location.origin) ?? getClawHubSiteUrl()
+    }
+    return getClawHubSiteUrl()
+  }, [])
 
   useEffect(() => {
     if (hasRun.current) return
     if (!safeRedirect) return
     if (!state) return
-    if (!registry) return
     if (!isAuthenticated || !me) return
     hasRun.current = true
 
@@ -56,7 +62,7 @@ function CliAuth() {
       setStatus(message)
       setToken(null)
     })
-  }, [createToken, isAuthenticated, label, me, redirectUri, safeRedirect, state])
+  }, [createToken, isAuthenticated, label, me, redirectUri, registry, safeRedirect, state])
 
   if (!safeRedirect) {
     return (
@@ -90,14 +96,6 @@ function CliAuth() {
     )
   }
 
-  if (!registry) {
-    return (
-      <main className="section">
-        <div className="card">Missing VITE_CONVEX_SITE_URL configuration.</div>
-      </main>
-    )
-  }
-
   if (!isAuthenticated || !me) {
     return (
       <main className="section">
@@ -110,7 +108,9 @@ function CliAuth() {
             className="btn btn-primary"
             type="button"
             disabled={isLoading}
-            onClick={() => void signIn('github')}
+            onClick={() =>
+              void signIn('github', signInRedirectTo ? { redirectTo: signInRedirectTo } : undefined)
+            }
           >
             Sign in with GitHub
           </button>
@@ -165,4 +165,9 @@ function decodeLabel(value: string | undefined) {
   } catch {
     return null
   }
+}
+
+function getCurrentRelativeUrl() {
+  if (typeof window === 'undefined') return '/'
+  return `${window.location.pathname}${window.location.search}${window.location.hash}`
 }

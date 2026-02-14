@@ -26,8 +26,8 @@ vi.mock('@clack/prompts', () => ({
   isCancel: () => false,
 }))
 
-vi.mock('../../config.js', () => ({
-  readGlobalConfig: vi.fn(async () => ({ registry: 'https://clawhub.ai', token: 'tkn' })),
+vi.mock('../authToken.js', () => ({
+  requireAuthToken: vi.fn(async () => 'tkn'),
 }))
 
 const mockGetRegistry = vi.fn(async () => 'https://clawhub.ai')

@@ -19,7 +19,10 @@ const users = defineTable({
   role: v.optional(v.union(v.literal('admin'), v.literal('moderator'), v.literal('user'))),
   githubCreatedAt: v.optional(v.number()),
   githubFetchedAt: v.optional(v.number()),
+  deactivatedAt: v.optional(v.number()),
+  purgedAt: v.optional(v.number()),
   deletedAt: v.optional(v.number()),
+  banReason: v.optional(v.string()),
   createdAt: v.optional(v.number()),
   updatedAt: v.optional(v.number()),
 })
@@ -78,8 +81,31 @@ const skills = defineTable({
   ),
   moderationNotes: v.optional(v.string()),
   moderationReason: v.optional(v.string()),
+  quality: v.optional(
+    v.object({
+      score: v.number(),
+      decision: v.union(v.literal('pass'), v.literal('quarantine'), v.literal('reject')),
+      trustTier: v.union(v.literal('low'), v.literal('medium'), v.literal('trusted')),
+      similarRecentCount: v.number(),
+      reason: v.string(),
+      signals: v.object({
+        bodyChars: v.number(),
+        bodyWords: v.number(),
+        uniqueWordRatio: v.number(),
+        headingCount: v.number(),
+        bulletCount: v.number(),
+        templateMarkerHits: v.number(),
+        genericSummary: v.boolean(),
+        cjkChars: v.optional(v.number()),
+      }),
+      evaluatedAt: v.number(),
+    }),
+  ),
   moderationFlags: v.optional(v.array(v.string())),
   lastReviewedAt: v.optional(v.number()),
+  // VT scan tracking
+  scanLastCheckedAt: v.optional(v.number()),
+  scanCheckCount: v.optional(v.number()),
   hiddenAt: v.optional(v.number()),
   hiddenBy: v.optional(v.id('users')),
   reportCount: v.optional(v.number()),
@@ -109,6 +135,15 @@ const skills = defineTable({
   .index('by_stats_installs_all_time', ['statsInstallsAllTime', 'updatedAt'])
   .index('by_batch', ['batch'])
   .index('by_active_updated', ['softDeletedAt', 'updatedAt'])
+  .index('by_active_created', ['softDeletedAt', 'createdAt'])
+  .index('by_active_name', ['softDeletedAt', 'displayName'])
+  .index('by_active_stats_downloads', ['softDeletedAt', 'statsDownloads', 'updatedAt'])
+  .index('by_active_stats_stars', ['softDeletedAt', 'statsStars', 'updatedAt'])
+  .index('by_active_stats_installs_all_time', [
+    'softDeletedAt',
+    'statsInstallsAllTime',
+    'updatedAt',
+  ])
   .index('by_canonical', ['canonicalSkillId'])
   .index('by_fork_of', ['forkOf.skillId'])
 
@@ -157,9 +192,42 @@ const skillVersions = defineTable({
   createdBy: v.id('users'),
   createdAt: v.number(),
   softDeletedAt: v.optional(v.number()),
+  sha256hash: v.optional(v.string()),
+  vtAnalysis: v.optional(
+    v.object({
+      status: v.string(),
+      verdict: v.optional(v.string()),
+      analysis: v.optional(v.string()),
+      source: v.optional(v.string()),
+      checkedAt: v.number(),
+    }),
+  ),
+  llmAnalysis: v.optional(
+    v.object({
+      status: v.string(),
+      verdict: v.optional(v.string()),
+      confidence: v.optional(v.string()),
+      summary: v.optional(v.string()),
+      dimensions: v.optional(
+        v.array(
+          v.object({
+            name: v.string(),
+            label: v.string(),
+            rating: v.string(),
+            detail: v.string(),
+          }),
+        ),
+      ),
+      guidance: v.optional(v.string()),
+      findings: v.optional(v.string()),
+      model: v.optional(v.string()),
+      checkedAt: v.number(),
+    }),
+  ),
 })
   .index('by_skill', ['skillId'])
   .index('by_skill_version', ['skillId', 'version'])
+  .index('by_sha256hash', ['sha256hash'])
 
 const soulVersions = defineTable({
   soulId: v.id('souls'),
@@ -280,6 +348,8 @@ const skillStatEvents = defineTable({
     v.literal('download'),
     v.literal('star'),
     v.literal('unstar'),
+    v.literal('comment'),
+    v.literal('uncomment'),
     v.literal('install_new'),
     v.literal('install_reactivate'),
     v.literal('install_deactivate'),
@@ -383,6 +453,24 @@ const auditLogs = defineTable({
   .index('by_actor', ['actorUserId'])
   .index('by_target', ['targetType', 'targetId'])
 
+const vtScanLogs = defineTable({
+  type: v.union(v.literal('daily_rescan'), v.literal('backfill'), v.literal('pending_poll')),
+  total: v.number(),
+  updated: v.number(),
+  unchanged: v.number(),
+  errors: v.number(),
+  flaggedSkills: v.optional(
+    v.array(
+      v.object({
+        slug: v.string(),
+        status: v.string(),
+      }),
+    ),
+  ),
+  durationMs: v.number(),
+  createdAt: v.number(),
+}).index('by_type_date', ['type', 'createdAt'])
+
 const apiTokens = defineTable({
   userId: v.id('users'),
   label: v.string(),
@@ -404,6 +492,15 @@ const rateLimits = defineTable({
 })
   .index('by_key_window', ['key', 'windowStart'])
   .index('by_key', ['key'])
+
+const downloadDedupes = defineTable({
+  skillId: v.id('skills'),
+  identityHash: v.string(),
+  hourStart: v.number(),
+  createdAt: v.number(),
+})
+  .index('by_skill_identity_hour', ['skillId', 'identityHash', 'hourStart'])
+  .index('by_hour', ['hourStart'])
 
 const githubBackupSyncState = defineTable({
   key: v.string(),
@@ -472,8 +569,10 @@ export default defineSchema({
   stars,
   soulStars,
   auditLogs,
+  vtScanLogs,
   apiTokens,
   rateLimits,
+  downloadDedupes,
   githubBackupSyncState,
   userSyncRoots,
   userSkillInstalls,
