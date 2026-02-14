@@ -1,5 +1,4 @@
 import { isCancel, select } from '@clack/prompts'
-import { readGlobalConfig } from '../../config.js'
 import { apiRequest } from '../../http.js'
 import {
   ApiRoutes,
@@ -8,27 +7,23 @@ import {
   ApiV1UserSearchResponseSchema,
   parseArk,
 } from '../../schema/index.js'
+import { requireAuthToken } from '../authToken.js'
 import { getRegistry } from '../registry.js'
 import type { GlobalOpts } from '../types.js'
 import { createSpinner, fail, formatError, isInteractive, promptConfirm } from '../ui.js'
 
-async function requireToken() {
-  const cfg = await readGlobalConfig()
-  const token = cfg?.token
-  if (!token) fail('Not logged in. Run: clawhub login')
-  return token
-}
-
 export async function cmdBanUser(
   opts: GlobalOpts,
   identifierArg: string,
-  options: { yes?: boolean; id?: boolean; fuzzy?: boolean },
+  options: { yes?: boolean; id?: boolean; fuzzy?: boolean; reason?: string },
   inputAllowed: boolean,
 ) {
   const raw = identifierArg.trim()
   if (!raw) fail('Handle or user id required')
 
-  const token = await requireToken()
+  const reason = options.reason?.trim() || undefined
+
+  const token = await requireAuthToken()
   const registry = await getRegistry(opts, { cache: true })
   const allowPrompt = isInteractive() && inputAllowed !== false
   const resolved = await resolveUserIdentifier(
@@ -55,7 +50,9 @@ export async function cmdBanUser(
         method: 'POST',
         path: `${ApiRoutes.users}/ban`,
         token,
-        body: resolved.userId ? { userId: resolved.userId } : { handle: resolved.handle },
+        body: resolved.userId
+          ? { userId: resolved.userId, reason }
+          : { handle: resolved.handle, reason },
       },
       ApiV1BanUserResponseSchema,
     )
@@ -83,7 +80,7 @@ export async function cmdSetRole(
   if (!raw) fail('Handle or user id required')
   const role = normalizeRole(roleArg)
 
-  const token = await requireToken()
+  const token = await requireAuthToken()
   const registry = await getRegistry(opts, { cache: true })
   const allowPrompt = isInteractive() && inputAllowed !== false
   const resolved = await resolveUserIdentifier(

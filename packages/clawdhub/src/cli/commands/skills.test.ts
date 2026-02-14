@@ -16,6 +16,11 @@ vi.mock('../registry.js', () => ({
   getRegistry: () => mockGetRegistry(),
 }))
 
+const mockGetOptionalAuthToken = vi.fn(async () => undefined as string | undefined)
+vi.mock('../authToken.js', () => ({
+  getOptionalAuthToken: () => mockGetOptionalAuthToken(),
+}))
+
 const mockSpinner = {
   stop: vi.fn(),
   fail: vi.fn(),
@@ -50,7 +55,7 @@ vi.mock('node:fs/promises', () => ({
   stat: vi.fn(),
 }))
 
-const { clampLimit, cmdExplore, cmdUpdate, formatExploreLine } = await import('./skills')
+const { clampLimit, cmdExplore, cmdInstall, cmdUpdate, formatExploreLine } = await import('./skills')
 const {
   extractZipToDir,
   hashSkillFiles,
@@ -187,5 +192,31 @@ describe('cmdUpdate', () => {
     const [, args] = mockApiRequest.mock.calls[0] ?? []
     expect(args?.path).toBe(`${ApiRoutes.skills}/${encodeURIComponent('demo')}`)
     expect(args?.url).toBeUndefined()
+  })
+})
+
+describe('cmdInstall', () => {
+  it('passes optional auth token to API + download requests', async () => {
+    mockGetOptionalAuthToken.mockResolvedValue('tkn')
+    mockApiRequest.mockResolvedValue({
+      skill: { slug: 'demo', displayName: 'Demo', summary: null, tags: {}, stats: {}, createdAt: 0, updatedAt: 0 },
+      latestVersion: { version: '1.0.0' },
+      owner: null,
+      moderation: null,
+    })
+    mockDownloadZip.mockResolvedValue(new Uint8Array([1, 2, 3]))
+    vi.mocked(readLockfile).mockResolvedValue({ version: 1, skills: {} })
+    vi.mocked(writeLockfile).mockResolvedValue()
+    vi.mocked(writeSkillOrigin).mockResolvedValue()
+    vi.mocked(extractZipToDir).mockResolvedValue()
+    vi.mocked(stat).mockRejectedValue(new Error('missing'))
+    vi.mocked(rm).mockResolvedValue()
+
+    await cmdInstall(makeOpts(), 'demo')
+
+    const [, requestArgs] = mockApiRequest.mock.calls[0] ?? []
+    expect(requestArgs?.token).toBe('tkn')
+    const [, zipArgs] = mockDownloadZip.mock.calls[0] ?? []
+    expect(zipArgs?.token).toBe('tkn')
   })
 })

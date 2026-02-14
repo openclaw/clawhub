@@ -423,7 +423,7 @@ function applyMonacoTheme(monaco: NonNullable<ReturnType<typeof useMonaco>>) {
   const ink = styles.getPropertyValue('--ink').trim() || '#1d1a17'
   const inkSoft = styles.getPropertyValue('--ink-soft').trim() || '#4c463f'
   const line = styles.getPropertyValue('--line').trim() || 'rgba(29, 26, 23, 0.12)'
-  const accent = styles.getPropertyValue('--accent').trim() || '#ff6b4a'
+  const accent = styles.getPropertyValue('--accent').trim() || '#e65c46'
   const seafoam = styles.getPropertyValue('--seafoam').trim() || '#2bc6a4'
   const diffAdded = styles.getPropertyValue('--diff-added').trim() || seafoam
   const diffRemoved = styles.getPropertyValue('--diff-removed').trim() || accent

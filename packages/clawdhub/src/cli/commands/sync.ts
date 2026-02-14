@@ -1,7 +1,7 @@
 import { intro, outro } from '@clack/prompts'
-import { readGlobalConfig } from '../../config.js'
 import { hashSkillFiles, listTextFiles, readSkillOrigin } from '../../skills.js'
 import { resolveClawdbotSkillRoots } from '../clawdbotConfig.js'
+import { requireAuthToken } from '../authToken.js'
 import { getFallbackSkillRoots } from '../scanSkills.js'
 import type { GlobalOpts } from '../types.js'
 import { createSpinner, fail, formatError, isInteractive } from '../ui.js'
@@ -32,9 +32,7 @@ export async function cmdSync(opts: GlobalOpts, options: SyncOptions, inputAllow
   const allowPrompt = isInteractive() && inputAllowed !== false
   intro('ClawHub sync')
 
-  const cfg = await readGlobalConfig()
-  const token = cfg?.token
-  if (!token) fail('Not logged in. Run: clawhub login')
+  const token = await requireAuthToken()
 
   const registry = await getRegistryWithAuth(opts, token)
   const selectedRoots = buildScanRoots(opts, options.root)
@@ -109,7 +107,7 @@ export async function cmdSync(opts: GlobalOpts, options: SyncOptions, inputAllow
     let done = 0
     const resolved = await mapWithConcurrency(locals, Math.min(concurrency, 16), async (skill) => {
       try {
-        return await checkRegistrySyncState(registry, skill, resolveSupport)
+        return await checkRegistrySyncState(registry, skill, resolveSupport, token)
       } finally {
         done += 1
         candidatesSpinner.text = `Checking registry sync state ${done}/${locals.length}`

@@ -3,8 +3,8 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { GlobalOpts } from '../types'
 
-vi.mock('../../config.js', () => ({
-  readGlobalConfig: vi.fn(async () => ({ registry: 'https://clawhub.ai', token: 'tkn' })),
+vi.mock('../authToken.js', () => ({
+  requireAuthToken: vi.fn(async () => 'tkn'),
 }))
 
 vi.mock('../registry.js', () => ({
@@ -57,6 +57,25 @@ describe('cmdBanUser', () => {
         method: 'POST',
         path: '/api/v1/users/ban',
         body: { handle: 'hightower6eu' },
+      }),
+      expect.anything(),
+    )
+  })
+
+  it('includes reason when provided', async () => {
+    mockApiRequest.mockResolvedValueOnce({ ok: true, alreadyBanned: false, deletedSkills: 0 })
+    await cmdBanUser(
+      makeOpts(),
+      'hightower6eu',
+      { yes: true, reason: 'malware distribution' },
+      false,
+    )
+    expect(mockApiRequest).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({
+        method: 'POST',
+        path: '/api/v1/users/ban',
+        body: { handle: 'hightower6eu', reason: 'malware distribution' },
       }),
       expect.anything(),
     )

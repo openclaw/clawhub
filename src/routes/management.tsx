@@ -57,6 +57,13 @@ function resolveOwnerParam(handle: string | null | undefined, ownerId?: Id<'user
   return handle?.trim() || (ownerId ? String(ownerId) : 'unknown')
 }
 
+function promptBanReason(label: string) {
+  const result = window.prompt(`Ban reason for ${label} (optional)`)
+  if (result === null) return null
+  const trimmed = result.trim()
+  return trimmed.length > 0 ? trimmed : undefined
+}
+
 export const Route = createFileRoute('/management')({
   validateSearch: (search) => ({
     skill: typeof search.skill === 'string' && search.skill.trim() ? search.skill : undefined,
@@ -442,7 +449,9 @@ function Management() {
                           if (!window.confirm(`Ban @${ownerHandle} and delete their skills?`)) {
                             return
                           }
-                          void banUser({ userId: ownerUserId })
+                          const reason = promptBanReason(`@${ownerHandle}`)
+                          if (reason === null) return
+                          void banUser({ userId: ownerUserId, reason })
                         }}
                       >
                         Ban user
@@ -638,6 +647,13 @@ function Management() {
                 <div key={user._id} className="management-item">
                   <div className="management-item-main">
                     <span className="mono">@{user.handle ?? user.name ?? 'user'}</span>
+                    {user.deletedAt || user.deactivatedAt ? (
+                      <div className="section-subtitle" style={{ margin: 0 }}>
+                        {user.banReason && user.deletedAt
+                          ? `Banned ${formatTimestamp(user.deletedAt)} · ${user.banReason}`
+                          : `Deleted ${formatTimestamp((user.deactivatedAt ?? user.deletedAt) as number)}`}
+                      </div>
+                    ) : null}
                   </div>
                   <div className="management-actions">
                     <select
@@ -666,7 +682,10 @@ function Management() {
                         ) {
                           return
                         }
-                        void banUser({ userId: user._id })
+                        const label = `@${user.handle ?? user.name ?? 'user'}`
+                        const reason = promptBanReason(label)
+                        if (reason === null) return
+                        void banUser({ userId: user._id, reason })
                       }}
                     >
                       Ban user

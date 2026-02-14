@@ -1,7 +1,7 @@
 import { Link, useNavigate } from '@tanstack/react-router'
 import type { ClawdisSkillMetadata, SkillInstallSpec } from 'clawhub-schema'
 import { useAction, useMutation, useQuery } from 'convex/react'
-import { useEffect, useMemo, useState } from 'react'
+import { lazy, Suspense, useEffect, useMemo, useState } from 'react'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import { api } from '../../convex/_generated/api'
@@ -10,18 +10,36 @@ import { getSkillBadges } from '../lib/badges'
 import type { PublicSkill, PublicUser } from '../lib/publicUser'
 import { canManageSkill, isModerator } from '../lib/roles'
 import { useAuthStatus } from '../lib/useAuthStatus'
-import { SkillDiffCard } from './SkillDiffCard'
 
-type ScanResult = {
+const SkillDiffCard = lazy(() =>
+  import('./SkillDiffCard').then((m) => ({ default: m.SkillDiffCard })),
+)
+
+type VtAnalysis = {
   status: string
-  source?: 'code_insight' | 'engines'
-  url?: string
-  metadata?: {
-    aiVerdict?: string
-    aiAnalysis?: string
-    aiSource?: string
-    stats?: { malicious?: number; suspicious?: number; undetected?: number; harmless?: number }
-  }
+  verdict?: string
+  analysis?: string
+  source?: string
+  checkedAt: number
+}
+
+type LlmAnalysisDimension = {
+  name: string
+  label: string
+  rating: string
+  detail: string
+}
+
+type LlmAnalysis = {
+  status: string
+  verdict?: string
+  confidence?: string
+  summary?: string
+  dimensions?: LlmAnalysisDimension[]
+  guidance?: string
+  findings?: string
+  model?: string
+  checkedAt: number
 }
 
 function VirusTotalIcon({ className }: { className?: string }) {
@@ -39,6 +57,35 @@ function VirusTotalIcon({ className }: { className?: string }) {
         fill="currentColor"
         fillRule="evenodd"
         d="M45.292 44.5 0 89h100V0H0l45.292 44.5zM90 80H22l35.987-35.2L22 9h68v71z"
+      />
+    </svg>
+  )
+}
+
+function OpenClawIcon({ className }: { className?: string }) {
+  return (
+    <svg
+      className={className}
+      width="1em"
+      height="1em"
+      viewBox="0 0 24 24"
+      fill="none"
+      aria-label="OpenClaw"
+    >
+      <title>OpenClaw</title>
+      <path
+        d="M12 2C8.5 2 5.5 4 4 7c-2 4-1 8 2 11 1.5 1.5 3.5 2.5 6 2.5s4.5-1 6-2.5c3-3 4-7 2-11-1.5-3-4.5-5-8-5z"
+        fill="currentColor"
+        opacity="0.2"
+      />
+      <path
+        d="M9 8c1-2 3-3 5-2s3 3 2 5l-3 4-2-1 3-4c.5-1 0-2-1-2.5S11 7 10.5 8L8 12l-2-1 3-4z"
+        fill="currentColor"
+      />
+      <path
+        d="M15 8c-1-2-3-3-5-2s-3 3-2 5l3 4 2-1-3-4c-.5-1 0-2 1-2.5S14 7 14.5 8L17 12l2-1-4-3z"
+        fill="currentColor"
+        opacity="0.6"
       />
     </svg>
   )
@@ -66,84 +113,139 @@ function getScanStatusInfo(status: string) {
   }
 }
 
-function useSecurityScan(sha256hash?: string, enabled = true) {
-  const fetchVT = useAction(api.vt.fetchResults)
-  const [result, setResult] = useState<ScanResult | null>(null)
-  const [loading, setLoading] = useState(false)
+function getDimensionIcon(rating: string) {
+  switch (rating) {
+    case 'ok':
+      return { className: 'dimension-icon-ok', symbol: '\u2713' }
+    case 'note':
+      return { className: 'dimension-icon-note', symbol: '\u2139' }
+    case 'concern':
+      return { className: 'dimension-icon-concern', symbol: '!' }
+    default:
+      return { className: 'dimension-icon-danger', symbol: '\u2717' }
+  }
+}
 
-  useEffect(() => {
-    if (!sha256hash || !enabled) {
-      setResult(null)
-      setLoading(false)
-      return
-    }
+function LlmAnalysisDetail({ analysis }: { analysis: LlmAnalysis }) {
+  const verdict = analysis.verdict ?? analysis.status
+  const [isOpen, setIsOpen] = useState(false)
 
-    let cancelled = false
-    setLoading(true)
+  const guidanceClass =
+    verdict === 'malicious' ? 'malicious' : verdict === 'suspicious' ? 'suspicious' : 'benign'
 
-    void fetchVT({ sha256hash })
-      .then((res) => {
-        if (!cancelled) {
-          setResult(res)
-          setLoading(false)
-        }
-      })
-      .catch(() => {
-        if (!cancelled) {
-          setResult({ status: 'error' })
-          setLoading(false)
-        }
-      })
-
-    return () => {
-      cancelled = true
-    }
-  }, [sha256hash, enabled, fetchVT])
-
-  return { result, loading }
+  return (
+    <div className={`analysis-detail${isOpen ? ' is-open' : ''}`}>
+      <button
+        type="button"
+        className="analysis-detail-header"
+        onClick={() => setIsOpen((prev) => !prev)}
+        aria-expanded={isOpen}
+      >
+        <span className="analysis-summary-text">{analysis.summary}</span>
+        <span className="analysis-detail-toggle">
+          Details <span className="chevron">{'\u25BE'}</span>
+        </span>
+      </button>
+      <div className="analysis-body">
+        {analysis.dimensions && analysis.dimensions.length > 0 ? (
+          <div className="analysis-dimensions">
+            {analysis.dimensions.map((dim) => {
+              const icon = getDimensionIcon(dim.rating)
+              return (
+                <div key={dim.name} className="dimension-row">
+                  <div className={`dimension-icon ${icon.className}`}>{icon.symbol}</div>
+                  <div className="dimension-content">
+                    <div className="dimension-label">{dim.label}</div>
+                    <div className="dimension-detail">{dim.detail}</div>
+                  </div>
+                </div>
+              )
+            })}
+          </div>
+        ) : null}
+        {analysis.findings ? (
+          <div className="scan-findings-section">
+            <div className="scan-findings-title">Scan Findings in Context</div>
+            {(() => {
+              const counts = new Map<string, number>()
+              return analysis.findings.split('\n').map((line) => {
+                const count = (counts.get(line) ?? 0) + 1
+                counts.set(line, count)
+                return (
+                  <div key={`${line}-${count}`} className="scan-finding-row">
+                    {line}
+                  </div>
+                )
+              })
+            })()}
+          </div>
+        ) : null}
+        {analysis.guidance ? (
+          <div className={`analysis-guidance ${guidanceClass}`}>
+            <div className="analysis-guidance-label">
+              {verdict === 'malicious'
+                ? 'Do not install this skill'
+                : verdict === 'suspicious'
+                  ? 'What to consider before installing'
+                  : 'Assessment'}
+            </div>
+            {analysis.guidance}
+          </div>
+        ) : null}
+      </div>
+    </div>
+  )
 }
 
 function SecurityScanResults({
   sha256hash,
+  vtAnalysis,
+  llmAnalysis,
   variant = 'panel',
-  enabled = true,
 }: {
   sha256hash?: string
+  vtAnalysis?: VtAnalysis | null
+  llmAnalysis?: LlmAnalysis | null
   variant?: 'panel' | 'badge'
-  enabled?: boolean
 }) {
-  const { result, loading } = useSecurityScan(sha256hash, enabled)
+  if (!sha256hash && !llmAnalysis) return null
 
-  if (!sha256hash) return null
+  const vtStatus = vtAnalysis?.status ?? 'pending'
+  const vtUrl = sha256hash ? `https://www.virustotal.com/gui/file/${sha256hash}` : null
+  const vtStatusInfo = getScanStatusInfo(vtStatus)
+  const isCodeInsight = vtAnalysis?.source === 'code_insight'
+  const aiAnalysis = vtAnalysis?.analysis
 
-  const status = loading ? 'loading' : (result?.status ?? 'pending')
-  const url = result?.url
-  const statusInfo = getScanStatusInfo(status)
-  const metadata = result?.metadata
-  const isCodeInsight = result?.source === 'code_insight'
-  const aiAnalysis = metadata?.aiAnalysis
-
-  // Determine display label based on source
-  // Always prefer verdict labels (Benign, Suspicious, Malicious) over engine stats
-  const displayLabel = statusInfo.label
+  const llmVerdict = llmAnalysis?.verdict ?? llmAnalysis?.status
+  const llmStatusInfo = llmVerdict ? getScanStatusInfo(llmVerdict) : null
 
   if (variant === 'badge') {
     return (
-      <div className="version-scan-badge">
-        <VirusTotalIcon className="version-scan-icon version-scan-icon-vt" />
-        <span className={statusInfo.className}>{displayLabel}</span>
-        {url ? (
-          <a
-            href={url}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="version-scan-link"
-            onClick={(e) => e.stopPropagation()}
-          >
-            ↗
-          </a>
+      <>
+        {sha256hash ? (
+          <div className="version-scan-badge">
+            <VirusTotalIcon className="version-scan-icon version-scan-icon-vt" />
+            <span className={vtStatusInfo.className}>{vtStatusInfo.label}</span>
+            {vtUrl ? (
+              <a
+                href={vtUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="version-scan-link"
+                onClick={(e) => e.stopPropagation()}
+              >
+                ↗
+              </a>
+            ) : null}
+          </div>
         ) : null}
-      </div>
+        {llmStatusInfo ? (
+          <div className="version-scan-badge">
+            <OpenClawIcon className="version-scan-icon version-scan-icon-oc" />
+            <span className={llmStatusInfo.className}>{llmStatusInfo.label}</span>
+          </div>
+        ) : null}
+      </>
     )
   }
 
@@ -151,23 +253,52 @@ function SecurityScanResults({
     <div className="scan-results-panel">
       <div className="scan-results-title">Security Scan</div>
       <div className="scan-results-list">
-        <div className="scan-result-row">
-          <div className="scan-result-scanner">
-            <VirusTotalIcon className="scan-result-icon scan-result-icon-vt" />
-            <span className="scan-result-scanner-name">VirusTotal</span>
+        {sha256hash ? (
+          <div className="scan-result-row">
+            <div className="scan-result-scanner">
+              <VirusTotalIcon className="scan-result-icon scan-result-icon-vt" />
+              <span className="scan-result-scanner-name">VirusTotal</span>
+            </div>
+            <div className={`scan-result-status ${vtStatusInfo.className}`}>
+              {vtStatusInfo.label}
+            </div>
+            {vtUrl ? (
+              <a
+                href={vtUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="scan-result-link"
+              >
+                View report →
+              </a>
+            ) : null}
           </div>
-          <div className={`scan-result-status ${statusInfo.className}`}>{displayLabel}</div>
-          {url ? (
-            <a href={url} target="_blank" rel="noopener noreferrer" className="scan-result-link">
-              View report →
-            </a>
-          ) : null}
-        </div>
-        {isCodeInsight && aiAnalysis && (status === 'malicious' || status === 'suspicious') ? (
-          <div className={`code-insight-analysis ${status}`}>
+        ) : null}
+        {isCodeInsight && aiAnalysis && (vtStatus === 'malicious' || vtStatus === 'suspicious') ? (
+          <div className={`code-insight-analysis ${vtStatus}`}>
             <div className="code-insight-label">Code Insight</div>
             <p className="code-insight-text">{aiAnalysis}</p>
           </div>
+        ) : null}
+        {llmStatusInfo && llmAnalysis ? (
+          <div className="scan-result-row">
+            <div className="scan-result-scanner">
+              <OpenClawIcon className="scan-result-icon scan-result-icon-oc" />
+              <span className="scan-result-scanner-name">OpenClaw</span>
+            </div>
+            <div className={`scan-result-status ${llmStatusInfo.className}`}>
+              {llmStatusInfo.label}
+            </div>
+            {llmAnalysis.confidence ? (
+              <span className="scan-result-confidence">{llmAnalysis.confidence} confidence</span>
+            ) : null}
+          </div>
+        ) : null}
+        {llmAnalysis &&
+        llmAnalysis.status !== 'error' &&
+        llmAnalysis.status !== 'pending' &&
+        llmAnalysis.summary ? (
+          <LlmAnalysisDetail analysis={llmAnalysis} />
         ) : null}
       </div>
     </div>
@@ -262,7 +393,10 @@ export function SkillDetailPage({
   const [tagName, setTagName] = useState('latest')
   const [tagVersionId, setTagVersionId] = useState<Id<'skillVersions'> | ''>('')
   const [activeTab, setActiveTab] = useState<'files' | 'compare' | 'versions'>('files')
-  const [versionScanOpen, setVersionScanOpen] = useState<Record<string, boolean>>({})
+  const [isReportDialogOpen, setIsReportDialogOpen] = useState(false)
+  const [reportReason, setReportReason] = useState('')
+  const [reportError, setReportError] = useState<string | null>(null)
+  const [isSubmittingReport, setIsSubmittingReport] = useState(false)
 
   const isLoadingSkill = result === undefined
   const skill = result?.skill
@@ -372,6 +506,12 @@ export function SkillDetailPage({
     return stripFrontmatter(readme)
   }, [readme])
   const latestFiles: SkillFile[] = latestVersion?.files ?? []
+  const closeReportDialog = () => {
+    setIsReportDialogOpen(false)
+    setReportReason('')
+    setReportError(null)
+    setIsSubmittingReport(false)
+  }
 
   useEffect(() => {
     if (!latestVersion) return
@@ -438,8 +578,8 @@ export function SkillDetailPage({
             <div className="pending-banner-content">
               <strong>Skill blocked — malicious content detected</strong>
               <p>
-                VirusTotal flagged this skill as malicious. Downloads are disabled. Review the scan
-                results below.
+                ClawHub Security flagged this skill as malicious. Downloads are disabled. Review the
+                scan results below.
               </p>
             </div>
           </div>
@@ -448,8 +588,22 @@ export function SkillDetailPage({
             <div className="pending-banner-content">
               <strong>Skill flagged — suspicious patterns detected</strong>
               <p>
-                VirusTotal flagged this skill as suspicious. Review the scan results before using.
+                ClawHub Security flagged this skill as suspicious. Review the scan results before
+                using.
               </p>
+              {canManage ? (
+                <p className="pending-banner-appeal">
+                  If you believe this skill has been incorrectly flagged, please{' '}
+                  <a
+                    href="https://github.com/openclaw/clawhub/issues"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                  >
+                    submit an issue on GitHub
+                  </a>{' '}
+                  and we'll break down why it was flagged and what you can do.
+                </p>
+              ) : null}
             </div>
           </div>
         ) : modInfo?.isRemoved ? (
@@ -541,30 +695,11 @@ export function SkillDetailPage({
                     <button
                       className="btn btn-ghost"
                       type="button"
-                      onClick={async () => {
-                        const reason = window.prompt(
-                          'Report this skill? A reason is required. Abuse may result in a ban.',
-                        )
-                        if (reason === null) return
-                        const trimmedReason = reason.trim()
-                        if (!trimmedReason) {
-                          window.alert('Report reason required.')
-                          return
-                        }
-                        try {
-                          const result = await reportSkill({
-                            skillId: skill._id,
-                            reason: trimmedReason,
-                          })
-                          if (result.reported) {
-                            window.alert('Thanks — your report has been submitted.')
-                          } else {
-                            window.alert('You have already reported this skill.')
-                          }
-                        } catch (error) {
-                          console.error('Failed to report skill', error)
-                          window.alert(formatReportError(error))
-                        }
+                      onClick={() => {
+                        setReportReason('')
+                        setReportError(null)
+                        setIsSubmittingReport(false)
+                        setIsReportDialogOpen(true)
                       }}
                     >
                       Report
@@ -576,13 +711,12 @@ export function SkillDetailPage({
                     </Link>
                   ) : null}
                 </div>
-                {isAuthenticated ? (
-                  <div className="section-subtitle" style={{ margin: '6px 0 0' }}>
-                    Reports require a reason. Abuse may result in a ban.
-                  </div>
-                ) : null}
-                <SecurityScanResults sha256hash={latestVersion?.sha256hash} />
-                {latestVersion?.sha256hash ? (
+                <SecurityScanResults
+                  sha256hash={latestVersion?.sha256hash}
+                  vtAnalysis={latestVersion?.vtAnalysis}
+                  llmAnalysis={latestVersion?.llmAnalysis as LlmAnalysis | undefined}
+                />
+                {latestVersion?.sha256hash || latestVersion?.llmAnalysis ? (
                   <p className="scan-disclaimer">
                     Like a lobster shell, security has layers — review code before you run it.
                   </p>
@@ -862,7 +996,9 @@ export function SkillDetailPage({
           ) : null}
           {activeTab === 'compare' && skill ? (
             <div className="tab-body">
-              <SkillDiffCard skill={skill} versions={diffVersions ?? []} variant="embedded" />
+              <Suspense fallback={<div className="stat">Loading diff viewer…</div>}>
+                <SkillDiffCard skill={skill} versions={diffVersions ?? []} variant="embedded" />
+              </Suspense>
             </div>
           ) : null}
           {activeTab === 'versions' ? (
@@ -892,27 +1028,13 @@ export function SkillDetailPage({
                           {version.changelog}
                         </div>
                         <div className="version-scan-results">
-                          {version.sha256hash ? (
-                            versionScanOpen[version._id] ? (
-                              <SecurityScanResults
-                                sha256hash={version.sha256hash}
-                                variant="badge"
-                                enabled
-                              />
-                            ) : (
-                              <button
-                                className="version-scan-toggle"
-                                type="button"
-                                onClick={() =>
-                                  setVersionScanOpen((prev) => ({
-                                    ...prev,
-                                    [version._id]: true,
-                                  }))
-                                }
-                              >
-                                Load scan
-                              </button>
-                            )
+                          {version.sha256hash || version.llmAnalysis ? (
+                            <SecurityScanResults
+                              sha256hash={version.sha256hash}
+                              vtAnalysis={version.vtAnalysis}
+                              llmAnalysis={version.llmAnalysis as LlmAnalysis | undefined}
+                              variant="badge"
+                            />
                           ) : null}
                         </div>
                       </div>
@@ -967,14 +1089,14 @@ export function SkillDetailPage({
               <div className="stat">No comments yet.</div>
             ) : (
               (comments ?? []).map((entry) => (
-                <div key={entry.comment._id} className="stat" style={{ alignItems: 'flex-start' }}>
-                  <div>
+                <div key={entry.comment._id} className="comment-item">
+                  <div className="comment-body">
                     <strong>@{entry.user?.handle ?? entry.user?.name ?? 'user'}</strong>
-                    <div style={{ color: '#5c554e' }}>{entry.comment.body}</div>
+                    <div className="comment-body-text">{entry.comment.body}</div>
                   </div>
                   {isAuthenticated && me && (me._id === entry.comment.userId || isModerator(me)) ? (
                     <button
-                      className="btn"
+                      className="btn comment-delete"
                       type="button"
                       onClick={() => void removeComment({ commentId: entry.comment._id })}
                     >
@@ -987,6 +1109,83 @@ export function SkillDetailPage({
           </div>
         </div>
       </div>
+      {isAuthenticated && isReportDialogOpen ? (
+        <div className="report-dialog-backdrop">
+          <div
+            className="report-dialog"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="report-title"
+          >
+            <h2
+              id="report-title"
+              className="section-title"
+              style={{ margin: 0, fontSize: '1.1rem' }}
+            >
+              Report skill
+            </h2>
+            <p className="section-subtitle" style={{ margin: 0 }}>
+              Describe the issue so moderators can review it quickly.
+            </p>
+            <form
+              className="report-dialog-form"
+              onSubmit={async (event) => {
+                event.preventDefault()
+                const trimmedReason = reportReason.trim()
+                if (!trimmedReason) {
+                  setReportError('Report reason required.')
+                  return
+                }
+
+                setIsSubmittingReport(true)
+                setReportError(null)
+                try {
+                  const result = await reportSkill({
+                    skillId: skill._id,
+                    reason: trimmedReason,
+                  })
+                  closeReportDialog()
+                  if (result.reported) {
+                    window.alert('Thanks — your report has been submitted.')
+                  } else {
+                    window.alert('You have already reported this skill.')
+                  }
+                } catch (error) {
+                  console.error('Failed to report skill', error)
+                  setReportError(formatReportError(error))
+                  setIsSubmittingReport(false)
+                }
+              }}
+            >
+              <textarea
+                className="report-dialog-textarea"
+                aria-label="Report reason"
+                placeholder="What should moderators know?"
+                value={reportReason}
+                onChange={(event) => setReportReason(event.target.value)}
+                rows={5}
+                disabled={isSubmittingReport}
+              />
+              {reportError ? <p className="report-dialog-error">{reportError}</p> : null}
+              <div className="report-dialog-actions">
+                <button
+                  type="button"
+                  className="btn btn-ghost"
+                  onClick={() => {
+                    if (!isSubmittingReport) closeReportDialog()
+                  }}
+                  disabled={isSubmittingReport}
+                >
+                  Cancel
+                </button>
+                <button type="submit" className="btn" disabled={isSubmittingReport}>
+                  {isSubmittingReport ? 'Submitting…' : 'Submit report'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      ) : null}
     </main>
   )
 }

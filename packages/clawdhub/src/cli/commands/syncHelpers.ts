@@ -100,6 +100,7 @@ export async function checkRegistrySyncState(
   registry: string,
   skill: LocalSkill,
   resolveSupport: { value: boolean | null },
+  token?: string,
 ): Promise<Candidate> {
   if (resolveSupport.value !== false) {
     try {
@@ -108,6 +109,7 @@ export async function checkRegistrySyncState(
         {
           method: 'GET',
           path: `${ApiRoutes.resolve}?slug=${encodeURIComponent(skill.slug)}&hash=${encodeURIComponent(skill.fingerprint)}`,
+          token,
         },
         ApiV1SkillResolveResponseSchema,
       )
@@ -149,7 +151,7 @@ export async function checkRegistrySyncState(
 
   const meta = await apiRequest(
     registry,
-    { method: 'GET', path: `${ApiRoutes.skills}/${encodeURIComponent(skill.slug)}` },
+    { method: 'GET', path: `${ApiRoutes.skills}/${encodeURIComponent(skill.slug)}`, token },
     ApiV1SkillResponseSchema,
   ).catch(() => null)
 
@@ -163,7 +165,7 @@ export async function checkRegistrySyncState(
     }
   }
 
-  const zip = await downloadZip(registry, { slug: skill.slug, version: latestVersion })
+  const zip = await downloadZip(registry, { slug: skill.slug, version: latestVersion, token })
   const remote = hashSkillZip(zip).fingerprint
   const matchVersion = remote === skill.fingerprint ? latestVersion : null
 

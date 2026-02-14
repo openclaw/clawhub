@@ -29,7 +29,7 @@ export const searchInternal = internalQuery({
   },
   handler: async (ctx, args) => {
     const actor = await ctx.db.get(args.actorUserId)
-    if (!actor || actor.deletedAt) throw new Error('Unauthorized')
+    if (!actor || actor.deletedAt || actor.deactivatedAt) throw new Error('Unauthorized')
     assertAdmin(actor)
 
     const limit = Math.min(Math.max(args.limit ?? 20, 1), 200)
@@ -46,17 +46,15 @@ export const searchInternal = internalQuery({
   },
 })
 
-export const updateGithubMetaInternal = internalMutation({
+export const setGitHubCreatedAtInternal = internalMutation({
   args: {
     userId: v.id('users'),
     githubCreatedAt: v.number(),
-    githubFetchedAt: v.number(),
   },
   handler: async (ctx, args) => {
     await ctx.db.patch(args.userId, {
       githubCreatedAt: args.githubCreatedAt,
-      githubFetchedAt: args.githubFetchedAt,
-      updatedAt: args.githubFetchedAt,
+      updatedAt: Date.now(),
     })
   },
 })
@@ -67,34 +65,71 @@ export const me = query({
     const userId = await getAuthUserId(ctx)
     if (!userId) return null
     const user = await ctx.db.get(userId)
-    if (!user || user.deletedAt) return null
+    if (!user || user.deletedAt || user.deactivatedAt) return null
     return user
   },
 })
 
 export const ensure = mutation({
   args: {},
-  handler: async (ctx) => {
-    const { userId, user } = await requireUser(ctx)
-    const now = Date.now()
-    const updates: Record<string, unknown> = {}
-
-    const handle = user.handle || user.name || user.email?.split('@')[0]
-    if (!user.handle && handle) updates.handle = handle
-    if (!user.displayName) updates.displayName = handle
-    if (!user.role) {
-      updates.role = handle === ADMIN_HANDLE ? 'admin' : DEFAULT_ROLE
-    }
-    if (!user.createdAt) updates.createdAt = user._creationTime
-    updates.updatedAt = now
-
-    if (Object.keys(updates).length > 0) {
-      await ctx.db.patch(userId, updates)
-    }
-
-    return ctx.db.get(userId)
-  },
+  handler: ensureHandler,
 })
+
+function normalizeHandle(handle: string | undefined) {
+  const normalized = handle?.trim()
+  return normalized ? normalized : undefined
+}
+
+function deriveHandle(args: { existingHandle?: string; githubLogin?: string; email?: string }) {
+  // Prefer the GitHub login; only fall back to email-derived handle when we don't already have one.
+  if (args.githubLogin) return args.githubLogin
+  if (!args.existingHandle && args.email) return args.email.split('@')[0]?.trim() || undefined
+  return undefined
+}
+
+function computeEnsureUpdates(user: Doc<'users'>) {
+  const updates: Record<string, unknown> = {}
+
+  const existingHandle = normalizeHandle(user.handle)
+  const githubLogin = normalizeHandle(user.name)
+  const derivedHandle = deriveHandle({
+    existingHandle,
+    githubLogin,
+    email: user.email,
+  })
+  const baseHandle = derivedHandle ?? existingHandle
+
+  if (derivedHandle && existingHandle !== derivedHandle) {
+    updates.handle = derivedHandle
+  }
+
+  const displayName = normalizeHandle(user.displayName)
+  if (!displayName && baseHandle) {
+    updates.displayName = baseHandle
+  } else if (derivedHandle && displayName === existingHandle) {
+    updates.displayName = derivedHandle
+  }
+
+  if (!user.role) {
+    updates.role = baseHandle === ADMIN_HANDLE ? 'admin' : DEFAULT_ROLE
+  }
+
+  if (!user.createdAt) updates.createdAt = user._creationTime
+
+  return updates
+}
+
+export async function ensureHandler(ctx: MutationCtx) {
+  const { userId, user } = await requireUser(ctx)
+  const updates = computeEnsureUpdates(user)
+
+  if (Object.keys(updates).length > 0) {
+    updates.updatedAt = Date.now()
+    await ctx.db.patch(userId, updates)
+  }
+
+  return ctx.db.get(userId)
+}
 
 export const updateProfile = mutation({
   args: {
@@ -115,9 +150,36 @@ export const deleteAccount = mutation({
   args: {},
   handler: async (ctx) => {
     const { userId } = await requireUser(ctx)
+    const now = Date.now()
+
+    const tokens = await ctx.db
+      .query('apiTokens')
+      .withIndex('by_user', (q) => q.eq('userId', userId))
+      .collect()
+    for (const token of tokens) {
+      if (!token.revokedAt) {
+        await ctx.db.patch(token._id, { revokedAt: now })
+      }
+    }
+
     await ctx.db.patch(userId, {
-      deletedAt: Date.now(),
-      updatedAt: Date.now(),
+      deactivatedAt: now,
+      purgedAt: now,
+      deletedAt: undefined,
+      banReason: undefined,
+      role: 'user',
+      handle: undefined,
+      displayName: undefined,
+      name: undefined,
+      image: undefined,
+      email: undefined,
+      emailVerificationTime: undefined,
+      phone: undefined,
+      phoneVerificationTime: undefined,
+      isAnonymous: undefined,
+      bio: undefined,
+      githubCreatedAt: undefined,
+      updatedAt: now,
     })
     await ctx.runMutation(internal.telemetry.clearUserTelemetryInternal, { userId })
   },
@@ -166,7 +228,7 @@ export const setRoleInternal = internalMutation({
   },
   handler: async (ctx, args) => {
     const actor = await ctx.db.get(args.actorUserId)
-    if (!actor || actor.deletedAt) throw new Error('User not found')
+    if (!actor || actor.deletedAt || actor.deactivatedAt) throw new Error('User not found')
     return setRoleWithActor(ctx, actor, args.targetUserId, args.role)
   },
 })
@@ -194,23 +256,53 @@ async function setRoleWithActor(
 }
 
 export const banUser = mutation({
-  args: { userId: v.id('users') },
+  args: { userId: v.id('users'), reason: v.optional(v.string()) },
   handler: async (ctx, args) => {
     const { user } = await requireUser(ctx)
-    return banUserWithActor(ctx, user, args.userId)
+    return banUserWithActor(ctx, user, args.userId, args.reason)
   },
 })
 
 export const banUserInternal = internalMutation({
-  args: { actorUserId: v.id('users'), targetUserId: v.id('users') },
+  args: {
+    actorUserId: v.id('users'),
+    targetUserId: v.id('users'),
+    reason: v.optional(v.string()),
+  },
   handler: async (ctx, args) => {
     const actor = await ctx.db.get(args.actorUserId)
-    if (!actor || actor.deletedAt) throw new Error('User not found')
-    return banUserWithActor(ctx, actor, args.targetUserId)
+    if (!actor || actor.deletedAt || actor.deactivatedAt) throw new Error('User not found')
+    return banUserWithActor(ctx, actor, args.targetUserId, args.reason)
   },
 })
 
-async function banUserWithActor(ctx: MutationCtx, actor: Doc<'users'>, targetUserId: Id<'users'>) {
+export const unbanUser = mutation({
+  args: { userId: v.id('users'), reason: v.optional(v.string()) },
+  handler: async (ctx, args) => {
+    const { user } = await requireUser(ctx)
+    return unbanUserWithActor(ctx, user, args.userId, args.reason)
+  },
+})
+
+export const unbanUserInternal = internalMutation({
+  args: {
+    actorUserId: v.id('users'),
+    targetUserId: v.id('users'),
+    reason: v.optional(v.string()),
+  },
+  handler: async (ctx, args) => {
+    const actor = await ctx.db.get(args.actorUserId)
+    if (!actor || actor.deletedAt || actor.deactivatedAt) throw new Error('User not found')
+    return unbanUserWithActor(ctx, actor, args.targetUserId, args.reason)
+  },
+})
+
+async function banUserWithActor(
+  ctx: MutationCtx,
+  actor: Doc<'users'>,
+  targetUserId: Id<'users'>,
+  reasonRaw?: string,
+) {
   assertModerator(actor)
 
   if (targetUserId === actor._id) throw new Error('Cannot ban yourself')
@@ -222,7 +314,11 @@ async function banUserWithActor(ctx: MutationCtx, actor: Doc<'users'>, targetUse
   }
 
   const now = Date.now()
-  if (target.deletedAt) {
+  const reason = reasonRaw?.trim()
+  if (reason && reason.length > 500) {
+    throw new Error('Reason too long (max 500 chars)')
+  }
+  if (target.deletedAt || target.deactivatedAt) {
     return { ok: true as const, alreadyBanned: true, deletedSkills: 0 }
   }
 
@@ -250,6 +346,7 @@ async function banUserWithActor(ctx: MutationCtx, actor: Doc<'users'>, targetUse
     deletedAt: now,
     role: 'user',
     updatedAt: now,
+    banReason: reason || undefined,
   })
 
   await ctx.runMutation(internal.telemetry.clearUserTelemetryInternal, { userId: targetUserId })
@@ -259,9 +356,133 @@ async function banUserWithActor(ctx: MutationCtx, actor: Doc<'users'>, targetUse
     action: 'user.ban',
     targetType: 'user',
     targetId: targetUserId,
-    metadata: { deletedSkills: skills.length },
+    metadata: { deletedSkills: skills.length, reason: reason || undefined },
     createdAt: now,
   })
 
   return { ok: true as const, alreadyBanned: false, deletedSkills: skills.length }
 }
+
+async function unbanUserWithActor(
+  ctx: MutationCtx,
+  actor: Doc<'users'>,
+  targetUserId: Id<'users'>,
+  reasonRaw?: string,
+) {
+  assertAdmin(actor)
+  if (targetUserId === actor._id) throw new Error('Cannot unban yourself')
+
+  const target = await ctx.db.get(targetUserId)
+  if (!target) throw new Error('User not found')
+  if (target.deactivatedAt) {
+    throw new Error('Cannot unban a permanently deleted account')
+  }
+  if (!target.deletedAt) {
+    return { ok: true as const, alreadyUnbanned: true }
+  }
+
+  const reason = reasonRaw?.trim()
+  if (reason && reason.length > 500) {
+    throw new Error('Reason too long (max 500 chars)')
+  }
+
+  const now = Date.now()
+  await ctx.db.patch(targetUserId, {
+    deletedAt: undefined,
+    banReason: undefined,
+    role: 'user',
+    updatedAt: now,
+  })
+
+  await ctx.db.insert('auditLogs', {
+    actorUserId: actor._id,
+    action: 'user.unban',
+    targetType: 'user',
+    targetId: targetUserId,
+    metadata: { reason: reason || undefined },
+    createdAt: now,
+  })
+
+  return { ok: true as const, alreadyUnbanned: false }
+}
+
+/**
+ * Auto-ban a user whose skill was flagged malicious by VT.
+ * Skips moderators/admins. No actor required — this is a system-level action.
+ */
+export const autobanMalwareAuthorInternal = internalMutation({
+  args: {
+    ownerUserId: v.id('users'),
+    sha256hash: v.string(),
+    slug: v.string(),
+  },
+  handler: async (ctx, args) => {
+    const target = await ctx.db.get(args.ownerUserId)
+    if (!target) return { ok: false, reason: 'user_not_found' }
+    if (target.deletedAt || target.deactivatedAt) return { ok: true, alreadyBanned: true }
+
+    // Never auto-ban moderators or admins
+    if (target.role === 'admin' || target.role === 'moderator') {
+      console.log(`[autoban] Skipping ${target.handle ?? args.ownerUserId}: role=${target.role}`)
+      return { ok: false, reason: 'protected_role' }
+    }
+
+    const now = Date.now()
+
+    // Soft-delete all their skills
+    const skills = await ctx.db
+      .query('skills')
+      .withIndex('by_owner', (q) => q.eq('ownerUserId', args.ownerUserId))
+      .collect()
+
+    for (const skill of skills) {
+      if (!skill.softDeletedAt) {
+        await ctx.db.patch(skill._id, { softDeletedAt: now, updatedAt: now })
+      }
+    }
+
+    // Revoke all API tokens
+    const tokens = await ctx.db
+      .query('apiTokens')
+      .withIndex('by_user', (q) => q.eq('userId', args.ownerUserId))
+      .collect()
+    for (const token of tokens) {
+      if (!token.revokedAt) {
+        await ctx.db.patch(token._id, { revokedAt: now })
+      }
+    }
+
+    // Ban the user
+    await ctx.db.patch(args.ownerUserId, {
+      deletedAt: now,
+      role: 'user',
+      updatedAt: now,
+      banReason: 'malware auto-ban',
+    })
+
+    await ctx.runMutation(internal.telemetry.clearUserTelemetryInternal, {
+      userId: args.ownerUserId,
+    })
+
+    // Audit log — use the target as actor since there's no human actor
+    await ctx.db.insert('auditLogs', {
+      actorUserId: args.ownerUserId,
+      action: 'user.autoban.malware',
+      targetType: 'user',
+      targetId: args.ownerUserId,
+      metadata: {
+        trigger: 'vt.malicious',
+        sha256hash: args.sha256hash,
+        slug: args.slug,
+        deletedSkills: skills.length,
+      },
+      createdAt: now,
+    })
+
+    console.warn(
+      `[autoban] Banned ${target.handle ?? args.ownerUserId} — malicious skill: ${args.slug}`,
+    )
+
+    return { ok: true, alreadyBanned: false, deletedSkills: skills.length }
+  },
+})

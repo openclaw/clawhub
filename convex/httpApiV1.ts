@@ -3,16 +3,12 @@ import { api, internal } from './_generated/api'
 import type { Doc, Id } from './_generated/dataModel'
 import type { ActionCtx } from './_generated/server'
 import { httpAction } from './_generated/server'
-import { requireApiTokenUser } from './lib/apiTokenAuth'
-import { hashToken } from './lib/tokens'
+import { getOptionalApiTokenUserId, requireApiTokenUser } from './lib/apiTokenAuth'
+import { applyRateLimit, parseBearerToken } from './lib/httpRateLimit'
+import { corsHeaders, mergeHeaders } from './lib/httpHeaders'
 import { publishVersionForUser } from './skills'
 import { publishSoulVersionForUser } from './souls'
 
-const RATE_LIMIT_WINDOW_MS = 60_000
-const RATE_LIMITS = {
-  read: { ip: 120, key: 600 },
-  write: { ip: 30, key: 120 },
-} as const
 const MAX_RAW_FILE_BYTES = 200 * 1024
 
 type SearchSkillEntry = {
@@ -60,6 +56,14 @@ type GetBySlugResult = {
   } | null
   latestVersion: Doc<'skillVersions'> | null
   owner: { _id: Id<'users'>; handle?: string; displayName?: string; image?: string } | null
+  moderationInfo?: {
+    isPendingScan: boolean
+    isMalwareBlocked: boolean
+    isSuspicious: boolean
+    isHiddenByMod: boolean
+    isRemoved: boolean
+    reason?: string
+  } | null
 } | null
 
 type ListVersionsResult = {
@@ -204,27 +208,28 @@ async function listSkillsV1Handler(ctx: ActionCtx, request: Request) {
     sort,
   })) as ListSkillsResult
 
-  const items = await Promise.all(
-    result.items.map(async (item) => {
-      const tags = await resolveTags(ctx, item.skill.tags)
-      return {
-        slug: item.skill.slug,
-        displayName: item.skill.displayName,
-        summary: item.skill.summary ?? null,
-        tags,
-        stats: item.skill.stats,
-        createdAt: item.skill.createdAt,
-        updatedAt: item.skill.updatedAt,
-        latestVersion: item.latestVersion
-          ? {
-              version: item.latestVersion.version,
-              createdAt: item.latestVersion.createdAt,
-              changelog: item.latestVersion.changelog,
-            }
-          : null,
-      }
-    }),
+  // Batch resolve all tags in a single query instead of N queries
+  const resolvedTagsList = await resolveTagsBatch(
+    ctx,
+    result.items.map((item) => item.skill.tags),
   )
+
+  const items = result.items.map((item, idx) => ({
+    slug: item.skill.slug,
+    displayName: item.skill.displayName,
+    summary: item.skill.summary ?? null,
+    tags: resolvedTagsList[idx],
+    stats: item.skill.stats,
+    createdAt: item.skill.createdAt,
+    updatedAt: item.skill.updatedAt,
+    latestVersion: item.latestVersion
+      ? {
+          version: item.latestVersion.version,
+          createdAt: item.latestVersion.createdAt,
+          changelog: item.latestVersion.changelog,
+        }
+      : null,
+  }))
 
   return json({ items, nextCursor: result.nextCursor ?? null }, 200, rate.headers)
 }
@@ -243,9 +248,13 @@ async function skillsGetRouterV1Handler(ctx: ActionCtx, request: Request) {
 
   if (segments.length === 1) {
     const result = (await ctx.runQuery(api.skills.getBySlug, { slug })) as GetBySlugResult
-    if (!result?.skill) return text('Skill not found', 404, rate.headers)
+    if (!result?.skill) {
+      const hidden = await describeOwnerVisibleSkillState(ctx, request, slug)
+      if (hidden) return text(hidden.message, hidden.status, rate.headers)
+      return text('Skill not found', 404, rate.headers)
+    }
 
-    const tags = await resolveTags(ctx, result.skill.tags)
+    const [tags] = await resolveTagsBatch(ctx, [result.skill.tags])
     return json(
       {
         skill: {
@@ -270,6 +279,12 @@ async function skillsGetRouterV1Handler(ctx: ActionCtx, request: Request) {
               userId: result.owner._id,
               displayName: result.owner.displayName ?? null,
               image: result.owner.image ?? null,
+            }
+          : null,
+        moderation: result.moderationInfo
+          ? {
+              isSuspicious: result.moderationInfo.isSuspicious ?? false,
+              isMalwareBlocked: result.moderationInfo.isMalwareBlocked ?? false,
             }
           : null,
       },
@@ -378,7 +393,9 @@ async function skillsGetRouterV1Handler(ctx: ActionCtx, request: Request) {
     const isSvg =
       file.contentType?.toLowerCase().includes('svg') || file.path.toLowerCase().endsWith('.svg')
 
-    const headers = mergeHeaders(rate.headers, {
+    const headers = mergeHeaders(
+      rate.headers,
+      {
       'Content-Type': file.contentType
         ? `${file.contentType}; charset=utf-8`
         : 'text/plain; charset=utf-8',
@@ -394,11 +411,59 @@ async function skillsGetRouterV1Handler(ctx: ActionCtx, request: Request) {
       'Content-Security-Policy':
         "default-src 'none'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'",
       ...(isSvg ? { 'Content-Disposition': 'attachment' } : {}),
-    })
+      },
+      corsHeaders(),
+    )
     return new Response(textContent, { status: 200, headers })
   }
 
   return text('Not found', 404, rate.headers)
+}
+
+async function describeOwnerVisibleSkillState(
+  ctx: ActionCtx,
+  request: Request,
+  slug: string,
+): Promise<{ status: number; message: string } | null> {
+  const skill = await ctx.runQuery(internal.skills.getSkillBySlugInternal, { slug })
+  if (!skill) return null
+
+  const apiTokenUserId = await getOptionalApiTokenUserId(ctx, request)
+  const isOwner = Boolean(apiTokenUserId && apiTokenUserId === skill.ownerUserId)
+  if (!isOwner) return null
+
+  if (skill.softDeletedAt) {
+    return {
+      status: 410,
+      message: `Skill is hidden/deleted. Run "clawhub undelete ${slug}" to restore it.`,
+    }
+  }
+
+  if (skill.moderationStatus === 'hidden') {
+    if (skill.moderationReason === 'pending.scan' || skill.moderationReason === 'scanner.vt.pending') {
+      return {
+        status: 423,
+        message: 'Skill is hidden while security scan is pending. Try again in a few minutes.',
+      }
+    }
+    if (skill.moderationReason === 'quality.low') {
+      return {
+        status: 403,
+        message:
+          'Skill is hidden by quality checks. Update SKILL.md content or run "clawhub undelete <slug>" after review.',
+      }
+    }
+    return {
+      status: 403,
+      message: `Skill is hidden by moderation${skill.moderationReason ? ` (${skill.moderationReason})` : ''}.`,
+    }
+  }
+
+  if (skill.moderationStatus === 'removed') {
+    return { status: 410, message: 'Skill has been removed by moderation.' }
+  }
+
+  return null
 }
 
 export const skillsGetRouterV1Http = httpAction(skillsGetRouterV1Handler)
@@ -473,8 +538,8 @@ async function skillsPostRouterV1Handler(ctx: ActionCtx, request: Request) {
       deleted: false,
     })
     return json({ ok: true }, 200, rate.headers)
-  } catch {
-    return text('Unauthorized', 401, rate.headers)
+  } catch (error) {
+    return softDeleteErrorToResponse('skill', error, rate.headers)
   }
 }
 
@@ -495,8 +560,8 @@ async function skillsDeleteRouterV1Handler(ctx: ActionCtx, request: Request) {
       deleted: true,
     })
     return json({ ok: true }, 200, rate.headers)
-  } catch {
-    return text('Unauthorized', 401, rate.headers)
+  } catch (error) {
+    return softDeleteErrorToResponse('skill', error, rate.headers)
   }
 }
 
@@ -548,6 +613,7 @@ async function usersPostRouterV1Handler(ctx: ActionCtx, request: Request) {
 
   const handleRaw = typeof payload.handle === 'string' ? payload.handle.trim() : ''
   const userIdRaw = typeof payload.userId === 'string' ? payload.userId.trim() : ''
+  const reasonRaw = typeof payload.reason === 'string' ? payload.reason.trim() : ''
   if (!handleRaw && !userIdRaw) {
     return text('Missing userId or handle', 400, rate.headers)
   }
@@ -578,10 +644,15 @@ async function usersPostRouterV1Handler(ctx: ActionCtx, request: Request) {
   }
 
   if (action === 'ban') {
+    const reason = reasonRaw.length > 0 ? reasonRaw : undefined
+    if (reason && reason.length > 500) {
+      return text('Reason too long (max 500 chars)', 400, rate.headers)
+    }
     try {
       const result = await ctx.runMutation(internal.users.banUserInternal, {
         actorUserId,
         targetUserId,
+        reason,
       })
       return json(result, 200, rate.headers)
     } catch (error) {
@@ -748,113 +819,66 @@ function parsePublishBody(body: unknown) {
   }
 }
 
-async function resolveSoulTags(
+/**
+ * Batch resolve soul version tags to version strings.
+ * Collects all version IDs, fetches them in a single query, then maps back.
+ * Reduces N sequential queries to 1 batch query.
+ */
+async function resolveSoulTagsBatch(
   ctx: ActionCtx,
-  tags: Record<string, Id<'soulVersions'>>,
-): Promise<Record<string, string>> {
-  const resolved: Record<string, string> = {}
-  for (const [tag, versionId] of Object.entries(tags)) {
-    const version = await ctx.runQuery(api.souls.getVersionById, { versionId })
-    if (version && !version.softDeletedAt) {
-      resolved[tag] = version.version
+  tagsList: Array<Record<string, Id<'soulVersions'>>>,
+): Promise<Array<Record<string, string>>> {
+  return resolveVersionTagsBatch(ctx, tagsList, internal.souls.getVersionsByIdsInternal)
+}
+
+async function resolveTagsBatch(
+  ctx: ActionCtx,
+  tagsList: Array<Record<string, Id<'skillVersions'>>>,
+): Promise<Array<Record<string, string>>> {
+  return resolveVersionTagsBatch(ctx, tagsList, internal.skills.getVersionsByIdsInternal)
+}
+
+/**
+ * Batch resolve version tags to version strings.
+ * Collects all version IDs, fetches them in a single query, then maps back.
+ *
+ * Notes:
+ * - Uses `internal.*` queries to avoid expanding the public Convex API surface.
+ * - Sorts ids for stable query args (helps caching/log diffs).
+ */
+async function resolveVersionTagsBatch<TTable extends 'skillVersions' | 'soulVersions'>(
+  ctx: ActionCtx,
+  tagsList: Array<Record<string, Id<TTable>>>,
+  getVersionsByIdsQuery: unknown,
+): Promise<Array<Record<string, string>>> {
+  const allVersionIds = new Set<Id<TTable>>()
+  for (const tags of tagsList) {
+    for (const versionId of Object.values(tags)) allVersionIds.add(versionId)
+  }
+
+  if (allVersionIds.size === 0) return tagsList.map(() => ({}))
+
+  const versionIds = [...allVersionIds].sort() as Array<Id<TTable>>
+  const versions =
+    ((await ctx.runQuery(getVersionsByIdsQuery as never, { versionIds } as never)) as Array<{
+      _id: Id<TTable>
+      version: string
+      softDeletedAt?: unknown
+    }> | null) ?? []
+
+  const versionMap = new Map<Id<TTable>, string>()
+  for (const v of versions) {
+    if (!v?.softDeletedAt) versionMap.set(v._id, v.version)
+  }
+
+  return tagsList.map((tags) => {
+    const resolved: Record<string, string> = {}
+    for (const [tag, versionId] of Object.entries(tags)) {
+      const version = versionMap.get(versionId)
+      if (version) resolved[tag] = version
     }
-  }
-  return resolved
-}
-
-async function resolveTags(
-  ctx: ActionCtx,
-  tags: Record<string, Id<'skillVersions'>>,
-): Promise<Record<string, string>> {
-  const resolved: Record<string, string> = {}
-  for (const [tag, versionId] of Object.entries(tags)) {
-    const version = await ctx.runQuery(api.skills.getVersionById, { versionId })
-    if (version && !version.softDeletedAt) {
-      resolved[tag] = version.version
-    }
-  }
-  return resolved
-}
-
-async function applyRateLimit(
-  ctx: ActionCtx,
-  request: Request,
-  kind: 'read' | 'write',
-): Promise<{ ok: true; headers: HeadersInit } | { ok: false; response: Response }> {
-  const ip = getClientIp(request) ?? 'unknown'
-  const ipResult = await checkRateLimit(ctx, `ip:${ip}`, RATE_LIMITS[kind].ip)
-  const token = parseBearerToken(request)
-  const keyResult = token
-    ? await checkRateLimit(ctx, `key:${await hashToken(token)}`, RATE_LIMITS[kind].key)
-    : null
-
-  const chosen = pickMostRestrictive(ipResult, keyResult)
-  const headers = rateHeaders(chosen)
-
-  if (!ipResult.allowed || (keyResult && !keyResult.allowed)) {
-    return {
-      ok: false,
-      response: text('Rate limit exceeded', 429, headers),
-    }
-  }
-
-  return { ok: true, headers }
-}
-
-type RateLimitResult = {
-  allowed: boolean
-  remaining: number
-  limit: number
-  resetAt: number
-}
-
-async function checkRateLimit(
-  ctx: ActionCtx,
-  key: string,
-  limit: number,
-): Promise<RateLimitResult> {
-  return (await ctx.runMutation(internal.rateLimits.checkRateLimitInternal, {
-    key,
-    limit,
-    windowMs: RATE_LIMIT_WINDOW_MS,
-  })) as RateLimitResult
-}
-
-function pickMostRestrictive(primary: RateLimitResult, secondary: RateLimitResult | null) {
-  if (!secondary) return primary
-  if (!primary.allowed) return primary
-  if (!secondary.allowed) return secondary
-  return secondary.remaining < primary.remaining ? secondary : primary
-}
-
-function rateHeaders(result: RateLimitResult): HeadersInit {
-  const resetSeconds = Math.ceil(result.resetAt / 1000)
-  return {
-    'X-RateLimit-Limit': String(result.limit),
-    'X-RateLimit-Remaining': String(result.remaining),
-    'X-RateLimit-Reset': String(resetSeconds),
-    ...(result.allowed ? {} : { 'Retry-After': String(resetSeconds) }),
-  }
-}
-
-function getClientIp(request: Request) {
-  const header =
-    request.headers.get('cf-connecting-ip') ??
-    request.headers.get('x-real-ip') ??
-    request.headers.get('x-forwarded-for') ??
-    request.headers.get('fly-client-ip')
-  if (!header) return null
-  if (header.includes(',')) return header.split(',')[0]?.trim() || null
-  return header.trim()
-}
-
-function parseBearerToken(request: Request) {
-  const header = request.headers.get('authorization') ?? request.headers.get('Authorization')
-  if (!header) return null
-  const trimmed = header.trim()
-  if (!trimmed.toLowerCase().startsWith('bearer ')) return null
-  const token = trimmed.slice(7).trim()
-  return token || null
+    return resolved
+  })
 }
 
 function json(value: unknown, status = 200, headers?: HeadersInit) {
@@ -866,6 +890,7 @@ function json(value: unknown, status = 200, headers?: HeadersInit) {
         'Cache-Control': 'no-store',
       },
       headers,
+      corsHeaders(),
     ),
   })
 }
@@ -879,12 +904,9 @@ function text(value: string, status: number, headers?: HeadersInit) {
         'Cache-Control': 'no-store',
       },
       headers,
+      corsHeaders(),
     ),
   })
-}
-
-function mergeHeaders(base: HeadersInit, extra?: HeadersInit) {
-  return { ...(base as Record<string, string>), ...(extra as Record<string, string>) }
 }
 
 function getPathSegments(request: Request, prefix: string) {
@@ -956,27 +978,28 @@ async function listSoulsV1Handler(ctx: ActionCtx, request: Request) {
     cursor,
   })) as ListSoulsResult
 
-  const items = await Promise.all(
-    result.items.map(async (item) => {
-      const tags = await resolveSoulTags(ctx, item.soul.tags)
-      return {
-        slug: item.soul.slug,
-        displayName: item.soul.displayName,
-        summary: item.soul.summary ?? null,
-        tags,
-        stats: item.soul.stats,
-        createdAt: item.soul.createdAt,
-        updatedAt: item.soul.updatedAt,
-        latestVersion: item.latestVersion
-          ? {
-              version: item.latestVersion.version,
-              createdAt: item.latestVersion.createdAt,
-              changelog: item.latestVersion.changelog,
-            }
-          : null,
-      }
-    }),
+  // Batch resolve all tags in a single query instead of N queries
+  const resolvedTagsList = await resolveSoulTagsBatch(
+    ctx,
+    result.items.map((item) => item.soul.tags),
   )
+
+  const items = result.items.map((item, idx) => ({
+    slug: item.soul.slug,
+    displayName: item.soul.displayName,
+    summary: item.soul.summary ?? null,
+    tags: resolvedTagsList[idx],
+    stats: item.soul.stats,
+    createdAt: item.soul.createdAt,
+    updatedAt: item.soul.updatedAt,
+    latestVersion: item.latestVersion
+      ? {
+          version: item.latestVersion.version,
+          createdAt: item.latestVersion.createdAt,
+          changelog: item.latestVersion.changelog,
+        }
+      : null,
+  }))
 
   return json({ items, nextCursor: result.nextCursor ?? null }, 200, rate.headers)
 }
@@ -997,7 +1020,7 @@ async function soulsGetRouterV1Handler(ctx: ActionCtx, request: Request) {
     const result = (await ctx.runQuery(api.souls.getBySlug, { slug })) as GetSoulBySlugResult
     if (!result?.soul) return text('Soul not found', 404, rate.headers)
 
-    const tags = await resolveSoulTags(ctx, result.soul.tags)
+    const [tags] = await resolveSoulTagsBatch(ctx, [result.soul.tags])
     return json(
       {
         soul: {
@@ -1131,7 +1154,9 @@ async function soulsGetRouterV1Handler(ctx: ActionCtx, request: Request) {
     const isSvg =
       file.contentType?.toLowerCase().includes('svg') || file.path.toLowerCase().endsWith('.svg')
 
-    const headers = mergeHeaders(rate.headers, {
+    const headers = mergeHeaders(
+      rate.headers,
+      {
       'Content-Type': file.contentType
         ? `${file.contentType}; charset=utf-8`
         : 'text/plain; charset=utf-8',
@@ -1147,7 +1172,9 @@ async function soulsGetRouterV1Handler(ctx: ActionCtx, request: Request) {
       'Content-Security-Policy':
         "default-src 'none'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'",
       ...(isSvg ? { 'Content-Disposition': 'attachment' } : {}),
-    })
+      },
+      corsHeaders(),
+    )
     return new Response(textContent, { status: 200, headers })
   }
 
@@ -1208,8 +1235,8 @@ async function soulsPostRouterV1Handler(ctx: ActionCtx, request: Request) {
       deleted: false,
     })
     return json({ ok: true }, 200, rate.headers)
-  } catch {
-    return text('Unauthorized', 401, rate.headers)
+  } catch (error) {
+    return softDeleteErrorToResponse('soul', error, rate.headers)
   }
 }
 
@@ -1230,12 +1257,29 @@ async function soulsDeleteRouterV1Handler(ctx: ActionCtx, request: Request) {
       deleted: true,
     })
     return json({ ok: true }, 200, rate.headers)
-  } catch {
-    return text('Unauthorized', 401, rate.headers)
+  } catch (error) {
+    return softDeleteErrorToResponse('soul', error, rate.headers)
   }
 }
 
 export const soulsDeleteRouterV1Http = httpAction(soulsDeleteRouterV1Handler)
+
+function softDeleteErrorToResponse(
+  entity: 'skill' | 'soul',
+  error: unknown,
+  headers: HeadersInit,
+) {
+  const message = error instanceof Error ? error.message : `${entity} delete failed`
+  const lower = message.toLowerCase()
+
+  if (lower.includes('unauthorized')) return text('Unauthorized', 401, headers)
+  if (lower.includes('forbidden')) return text('Forbidden', 403, headers)
+  if (lower.includes('not found')) return text(message, 404, headers)
+  if (lower.includes('slug required')) return text('Slug required', 400, headers)
+
+  // Unknown: server-side failure. Keep body generic.
+  return text('Internal Server Error', 500, headers)
+}
 
 async function starsPostRouterV1Handler(ctx: ActionCtx, request: Request) {
   const rate = await applyRateLimit(ctx, request, 'write')

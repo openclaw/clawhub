@@ -21,10 +21,30 @@ export async function requireApiTokenUser(
   const user = await ctx.runQuery(internal.tokens.getUserForTokenInternal, {
     tokenId: apiToken._id,
   })
-  if (!user || user.deletedAt) throw new ConvexError('Unauthorized')
+  if (!user || user.deletedAt || user.deactivatedAt) throw new ConvexError('Unauthorized')
 
   await ctx.runMutation(internal.tokens.touchInternal, { tokenId: apiToken._id })
   return { user, userId: user._id }
+}
+
+export async function getOptionalApiTokenUserId(
+  ctx: ActionCtx,
+  request: Request,
+): Promise<Doc<'users'>['_id'] | null> {
+  const header = request.headers.get('authorization') ?? request.headers.get('Authorization')
+  const token = parseBearerToken(header)
+  if (!token) return null
+
+  const tokenHash = await hashToken(token)
+  const apiToken = await ctx.runQuery(internal.tokens.getByHashInternal, { tokenHash })
+  if (!apiToken || apiToken.revokedAt) return null
+
+  const user = await ctx.runQuery(internal.tokens.getUserForTokenInternal, {
+    tokenId: apiToken._id,
+  })
+  if (!user || user.deletedAt || user.deactivatedAt) return null
+
+  return user._id
 }
 
 function parseBearerToken(header: string | null) {

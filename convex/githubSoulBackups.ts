@@ -78,7 +78,7 @@ export const getGitHubSoulBackupPageInternal = internalQuery({
       }
 
       const owner = await ctx.db.get(soul.ownerUserId)
-      if (!owner || owner.deletedAt) {
+      if (!owner || owner.deletedAt || owner.deactivatedAt) {
         items.push({ kind: 'missingOwner', soulId: soul._id, ownerUserId: soul.ownerUserId })
         continue
       }

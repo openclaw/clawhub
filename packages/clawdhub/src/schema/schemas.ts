@@ -185,6 +185,12 @@ export const ApiV1SkillResponseSchema = type({
     displayName: 'string|null?',
     image: 'string|null?',
   }).or('null'),
+  moderation: type({
+    isSuspicious: 'boolean',
+    isMalwareBlocked: 'boolean',
+  })
+    .or('null')
+    .optional(),
 })
 
 export const ApiV1SkillVersionListResponseSchema = type({

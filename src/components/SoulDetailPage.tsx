@@ -230,14 +230,14 @@ export function SoulDetailPage({ slug }: SoulDetailPageProps) {
               <div className="stat">No comments yet.</div>
             ) : (
               (comments ?? []).map((entry) => (
-                <div key={entry.comment._id} className="stat" style={{ alignItems: 'flex-start' }}>
-                  <div>
+                <div key={entry.comment._id} className="comment-item">
+                  <div className="comment-body">
                     <strong>@{entry.user?.handle ?? entry.user?.name ?? 'user'}</strong>
-                    <div style={{ color: '#5c554e' }}>{entry.comment.body}</div>
+                    <div className="comment-body-text">{entry.comment.body}</div>
                   </div>
                   {isAuthenticated && me && (me._id === entry.comment.userId || isModerator(me)) ? (
                     <button
-                      className="btn"
+                      className="btn comment-delete"
                       type="button"
                       onClick={() => void removeComment({ commentId: entry.comment._id })}
                     >

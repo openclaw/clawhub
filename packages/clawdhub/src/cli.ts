@@ -305,6 +305,7 @@ program
   .argument('<handleOrId>', 'User handle (default) or user id')
   .option('--id', 'Treat argument as user id')
   .option('--fuzzy', 'Resolve handle via fuzzy user search (admin only)')
+  .option('--reason <reason>', 'Ban reason (optional)')
   .option('--yes', 'Skip confirmation')
   .action(async (handleOrId, options) => {
     const opts = await resolveGlobalOpts()
