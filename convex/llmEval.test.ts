@@ -1,34 +1,5 @@
 import { describe, expect, it } from 'vitest'
-
-/**
- * Helper to test the isTestFile function (not exported, so we recreate it for testing)
- */
-function isTestFile(path: string): boolean {
-  const lower = path.toLowerCase()
-
-  // Common test file patterns
-  if (lower.endsWith('.test.ts')) return true
-  if (lower.endsWith('.test.js')) return true
-  if (lower.endsWith('.test.tsx')) return true
-  if (lower.endsWith('.test.jsx')) return true
-  if (lower.endsWith('.spec.ts')) return true
-  if (lower.endsWith('.spec.js')) return true
-  if (lower.endsWith('.spec.tsx')) return true
-  if (lower.endsWith('.spec.jsx')) return true
-
-  // Common test directories
-  const parts = path.split('/')
-  for (const part of parts) {
-    const lowerPart = part.toLowerCase()
-    if (lowerPart === '__tests__') return true
-    if (lowerPart === 'tests') return true
-    if (lowerPart === 'test') return true
-    if (lowerPart === '__mocks__') return true
-    if (lowerPart === 'mocks') return true
-  }
-
-  return false
-}
+import { isTestFile } from './llmEval'
 
 describe('llmEval test file filtering', () => {
   describe('isTestFile', () => {

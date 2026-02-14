@@ -20,7 +20,7 @@ import {
  * Check if a file path is a test file that should be excluded from security scanning.
  * Test files often contain malicious code patterns for testing purposes (e.g., security skills).
  */
-function isTestFile(path: string): boolean {
+export function isTestFile(path: string): boolean {
   const lower = path.toLowerCase()
 
   // Common test file patterns
