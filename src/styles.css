@@ -3641,6 +3641,8 @@ html.theme-transition::view-transition-new(theme) {
   color: var(--ink);
   line-height: 1.45;
   flex: 1;
+  cursor: text;
+  user-select: text;
 }
 
 .analysis-body {

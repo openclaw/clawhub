@@ -139,7 +139,12 @@ function LlmAnalysisDetail({ analysis }: { analysis: LlmAnalysis }) {
       <button
         type="button"
         className="analysis-detail-header"
-        onClick={() => setIsOpen((prev) => !prev)}
+        onClick={() => {
+          // Drag-select to copy summary text should not toggle open/closed.
+          const selection = window.getSelection()
+          if (selection && !selection.isCollapsed) return
+          setIsOpen((prev) => !prev)
+        }}
         aria-expanded={isOpen}
       >
         <span className="analysis-summary-text">{analysis.summary}</span>
