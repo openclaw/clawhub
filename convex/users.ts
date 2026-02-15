@@ -76,26 +76,6 @@ export const syncGitHubProfileInternal = internalMutation({
     const user = await ctx.db.get(args.userId)
     if (!user || user.deletedAt || user.deactivatedAt) return
 
-    const updates: Record<string, unknown> = {
-      name: args.name,
-      updatedAt: Date.now(),
-    }
-
-    // Update handle if it was derived from the old username
-    if (user.handle === user.name) {
-      updates.handle = args.name
-    }
-
-    // Update displayName if it was derived from the old username
-    if (user.displayName === user.name || user.displayName === user.handle) {
-      updates.displayName = args.name
-    }
-
-    // Update avatar if provided
-    if (args.image) {
-      updates.image = args.image
-    }
-
     const updates: Partial<Doc<'users'>> = { githubProfileSyncedAt: args.syncedAt }
     let didChangeProfile = false
 
