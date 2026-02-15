@@ -84,6 +84,16 @@ describe('skills anti-spam guards', () => {
             },
           }
         }
+        if (table === 'reservedSlugs') {
+          return {
+            withIndex: (name: string) => {
+              if (name === 'by_slug_active_deletedAt') {
+                return { order: () => ({ take: async () => [] }) }
+              }
+              throw new Error(`unexpected index ${name}`)
+            },
+          }
+        }
         throw new Error(`unexpected table ${table}`)
       }),
     }

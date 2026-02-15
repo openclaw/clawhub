@@ -28,6 +28,12 @@ function isRateLimitArgs(args: unknown): args is RateLimitArgs {
   )
 }
 
+function hasSlugArgs(args: unknown): args is { slug: string } {
+  if (!args || typeof args !== 'object') return false
+  const value = args as Record<string, unknown>
+  return typeof value.slug === 'string'
+}
+
 function makeCtx(partial: Record<string, unknown>) {
   const partialRunQuery =
     typeof partial.runQuery === 'function'
@@ -79,6 +85,122 @@ describe('httpApiV1 handlers', () => {
     }
     expect(await response.json()).toEqual({ results: [] })
     expect(runAction).not.toHaveBeenCalled()
+  })
+
+  it('users/restore forbids non-admin api tokens', async () => {
+    const runQuery = vi.fn()
+    const runAction = vi.fn()
+    const runMutation = vi.fn().mockResolvedValue(okRate())
+    vi.mocked(requireApiTokenUser).mockResolvedValue({
+      userId: 'users:actor',
+      user: { _id: 'users:actor', role: 'user' },
+    } as never)
+
+    const response = await __handlers.usersPostRouterV1Handler(
+      makeCtx({ runQuery, runAction, runMutation }),
+      new Request('https://example.com/api/v1/users/restore', {
+        method: 'POST',
+        body: JSON.stringify({ handle: 'target', slugs: ['a'] }),
+      }),
+    )
+    expect(response.status).toBe(403)
+    expect(runQuery).not.toHaveBeenCalled()
+    expect(runAction).not.toHaveBeenCalled()
+  })
+
+  it('users/restore calls restore action for admin', async () => {
+    const runAction = vi.fn().mockResolvedValue({ ok: true, totalRestored: 1, results: [] })
+    const runMutation = vi.fn(async (_mutation: unknown, args: Record<string, unknown>) => {
+      if (isRateLimitArgs(args)) return okRate()
+      return { ok: true }
+    })
+    const runQuery = vi.fn(async (_query: unknown, args: Record<string, unknown>) => {
+      if ('handle' in args) return { _id: 'users:target' }
+      return null
+    })
+    vi.mocked(requireApiTokenUser).mockResolvedValue({
+      userId: 'users:admin',
+      user: { _id: 'users:admin', role: 'admin' },
+    } as never)
+
+    const response = await __handlers.usersPostRouterV1Handler(
+      makeCtx({ runQuery, runAction, runMutation }),
+      new Request('https://example.com/api/v1/users/restore', {
+        method: 'POST',
+        body: JSON.stringify({
+          handle: 'Target',
+          slugs: ['a', 'b'],
+          forceOverwriteSquatter: true,
+        }),
+      }),
+    )
+    if (response.status !== 200) throw new Error(await response.text())
+    expect(runAction).toHaveBeenCalledWith(expect.anything(), {
+      actorUserId: 'users:admin',
+      ownerHandle: 'target',
+      ownerUserId: 'users:target',
+      slugs: ['a', 'b'],
+      forceOverwriteSquatter: true,
+    })
+  })
+
+  it('users/reclaim forbids non-admin api tokens', async () => {
+    const runQuery = vi.fn()
+    const runAction = vi.fn()
+    const runMutation = vi.fn().mockResolvedValue(okRate())
+    vi.mocked(requireApiTokenUser).mockResolvedValue({
+      userId: 'users:actor',
+      user: { _id: 'users:actor', role: 'user' },
+    } as never)
+
+    const response = await __handlers.usersPostRouterV1Handler(
+      makeCtx({ runQuery, runAction, runMutation }),
+      new Request('https://example.com/api/v1/users/reclaim', {
+        method: 'POST',
+        body: JSON.stringify({ handle: 'target', slugs: ['a'] }),
+      }),
+    )
+    expect(response.status).toBe(403)
+    expect(runQuery).not.toHaveBeenCalled()
+  })
+
+  it('users/reclaim calls reclaim mutation for admin', async () => {
+    const runMutation = vi.fn(async (_mutation: unknown, args: Record<string, unknown>) => {
+      if (isRateLimitArgs(args)) return okRate()
+      return { ok: true }
+    })
+    const runQuery = vi.fn(async (_query: unknown, args: Record<string, unknown>) => {
+      if ('handle' in args) return { _id: 'users:target' }
+      return null
+    })
+    vi.mocked(requireApiTokenUser).mockResolvedValue({
+      userId: 'users:admin',
+      user: { _id: 'users:admin', role: 'admin' },
+    } as never)
+
+    const response = await __handlers.usersPostRouterV1Handler(
+      makeCtx({ runQuery, runAction: vi.fn(), runMutation }),
+      new Request('https://example.com/api/v1/users/reclaim', {
+        method: 'POST',
+        body: JSON.stringify({ handle: 'Target', slugs: [' A ', 'b'], reason: 'r' }),
+      }),
+    )
+    if (response.status !== 200) throw new Error(await response.text())
+
+    const reclaimCalls = runMutation.mock.calls.filter(([, args]) => hasSlugArgs(args))
+    expect(reclaimCalls).toHaveLength(2)
+    expect(reclaimCalls[0]?.[1]).toMatchObject({
+      actorUserId: 'users:admin',
+      slug: 'a',
+      rightfulOwnerUserId: 'users:target',
+      reason: 'r',
+    })
+    expect(reclaimCalls[1]?.[1]).toMatchObject({
+      actorUserId: 'users:admin',
+      slug: 'b',
+      rightfulOwnerUserId: 'users:target',
+      reason: 'r',
+    })
   })
 
   it('search forwards limit and highlightedOnly', async () => {

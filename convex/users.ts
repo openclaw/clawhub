@@ -385,24 +385,26 @@ async function banUserWithActor(
     return { ok: true as const, alreadyBanned: true, deletedSkills: 0 }
   }
 
-  const skills = await ctx.db
-    .query('skills')
-    .withIndex('by_owner', (q) => q.eq('ownerUserId', targetUserId))
-    .collect()
-
-  for (const skill of skills) {
-    await ctx.scheduler.runAfter(0, internal.skills.hardDeleteInternal, {
-      skillId: skill._id,
-      actorUserId: actor._id,
-    })
-  }
+  const banSkillsResult = (await ctx.runMutation(
+    internal.skills.applyBanToOwnedSkillsBatchInternal,
+    {
+      ownerUserId: targetUserId,
+      bannedAt: now,
+      hiddenBy: actor._id,
+      cursor: undefined,
+    },
+  )) as { hiddenCount?: number; scheduled?: boolean }
+  const hiddenCount = banSkillsResult.hiddenCount ?? 0
+  const scheduledSkills = banSkillsResult.scheduled ?? false
 
   const tokens = await ctx.db
     .query('apiTokens')
     .withIndex('by_user', (q) => q.eq('userId', targetUserId))
     .collect()
   for (const token of tokens) {
-    await ctx.db.patch(token._id, { revokedAt: now })
+    if (!token.revokedAt) {
+      await ctx.db.patch(token._id, { revokedAt: now })
+    }
   }
 
   await ctx.db.patch(targetUserId, {
@@ -419,11 +421,11 @@ async function banUserWithActor(
     action: 'user.ban',
     targetType: 'user',
     targetId: targetUserId,
-    metadata: { deletedSkills: skills.length, reason: reason || undefined },
+    metadata: { hiddenSkills: hiddenCount, reason: reason || undefined },
     createdAt: now,
   })
 
-  return { ok: true as const, alreadyBanned: false, deletedSkills: skills.length }
+  return { ok: true as const, alreadyBanned: false, deletedSkills: hiddenCount, scheduledSkills }
 }
 
 async function unbanUserWithActor(
@@ -450,6 +452,7 @@ async function unbanUserWithActor(
   }
 
   const now = Date.now()
+  const bannedAt = target.deletedAt
   await ctx.db.patch(targetUserId, {
     deletedAt: undefined,
     banReason: undefined,
@@ -457,17 +460,96 @@ async function unbanUserWithActor(
     updatedAt: now,
   })
 
+  const restoreSkillsResult = (await ctx.runMutation(
+    internal.skills.restoreOwnedSkillsForUnbanBatchInternal,
+    {
+      ownerUserId: targetUserId,
+      bannedAt,
+      cursor: undefined,
+    },
+  )) as { restoredCount?: number; scheduled?: boolean }
+  const restoredCount = restoreSkillsResult.restoredCount ?? 0
+  const scheduledSkills = restoreSkillsResult.scheduled ?? false
+
   await ctx.db.insert('auditLogs', {
     actorUserId: actor._id,
     action: 'user.unban',
     targetType: 'user',
     targetId: targetUserId,
-    metadata: { reason: reason || undefined },
+    metadata: { reason: reason || undefined, restoredSkills: restoredCount },
     createdAt: now,
   })
 
-  return { ok: true as const, alreadyUnbanned: false }
+  return { ok: true as const, alreadyUnbanned: false, restoredSkills: restoredCount, scheduledSkills }
 }
+
+/**
+ * Admin-only: set or unset the trustedPublisher flag for a user.
+ * Trusted publishers bypass the pending.scan auto-hide for new skill publishes.
+ */
+export const setTrustedPublisher = mutation({
+  args: {
+    userId: v.id('users'),
+    trusted: v.boolean(),
+  },
+  handler: async (ctx, args) => {
+    const { user } = await requireUser(ctx)
+    assertAdmin(user)
+
+    const target = await ctx.db.get(args.userId)
+    if (!target) throw new Error('User not found')
+
+    const now = Date.now()
+    await ctx.db.patch(args.userId, {
+      trustedPublisher: args.trusted || undefined,
+      updatedAt: now,
+    })
+
+    await ctx.db.insert('auditLogs', {
+      actorUserId: user._id,
+      action: args.trusted ? 'user.trusted.set' : 'user.trusted.unset',
+      targetType: 'user',
+      targetId: args.userId,
+      metadata: { trusted: args.trusted },
+      createdAt: now,
+    })
+
+    return { ok: true as const, trusted: args.trusted }
+  },
+})
+
+export const setTrustedPublisherInternal = internalMutation({
+  args: {
+    actorUserId: v.id('users'),
+    targetUserId: v.id('users'),
+    trusted: v.boolean(),
+  },
+  handler: async (ctx, args) => {
+    const actor = await ctx.db.get(args.actorUserId)
+    if (!actor || actor.deletedAt || actor.deactivatedAt) throw new Error('User not found')
+    assertAdmin(actor)
+
+    const target = await ctx.db.get(args.targetUserId)
+    if (!target) throw new Error('User not found')
+
+    const now = Date.now()
+    await ctx.db.patch(args.targetUserId, {
+      trustedPublisher: args.trusted || undefined,
+      updatedAt: now,
+    })
+
+    await ctx.db.insert('auditLogs', {
+      actorUserId: args.actorUserId,
+      action: args.trusted ? 'user.trusted.set' : 'user.trusted.unset',
+      targetType: 'user',
+      targetId: args.targetUserId,
+      metadata: { trusted: args.trusted },
+      createdAt: now,
+    })
+
+    return { ok: true as const, trusted: args.trusted }
+  },
+})
 
 /**
  * Auto-ban a user whose skill was flagged malicious by VT.
@@ -492,17 +574,16 @@ export const autobanMalwareAuthorInternal = internalMutation({
 
     const now = Date.now()
 
-    // Soft-delete all their skills
-    const skills = await ctx.db
-      .query('skills')
-      .withIndex('by_owner', (q) => q.eq('ownerUserId', args.ownerUserId))
-      .collect()
-
-    for (const skill of skills) {
-      if (!skill.softDeletedAt) {
-        await ctx.db.patch(skill._id, { softDeletedAt: now, updatedAt: now })
-      }
-    }
+    const banSkillsResult = (await ctx.runMutation(
+      internal.skills.applyBanToOwnedSkillsBatchInternal,
+      {
+        ownerUserId: args.ownerUserId,
+        bannedAt: now,
+        cursor: undefined,
+      },
+    )) as { hiddenCount?: number; scheduled?: boolean }
+    const hiddenCount = banSkillsResult.hiddenCount ?? 0
+    const scheduledSkills = banSkillsResult.scheduled ?? false
 
     // Revoke all API tokens
     const tokens = await ctx.db
@@ -527,7 +608,7 @@ export const autobanMalwareAuthorInternal = internalMutation({
       userId: args.ownerUserId,
     })
 
-    // Audit log — use the target as actor since there's no human actor
+    // Audit log -- use the target as actor since there's no human actor
     await ctx.db.insert('auditLogs', {
       actorUserId: args.ownerUserId,
       action: 'user.autoban.malware',
@@ -537,7 +618,7 @@ export const autobanMalwareAuthorInternal = internalMutation({
         trigger: 'vt.malicious',
         sha256hash: args.sha256hash,
         slug: args.slug,
-        deletedSkills: skills.length,
+        hiddenSkills: hiddenCount,
       },
       createdAt: now,
     })
@@ -546,6 +627,6 @@ export const autobanMalwareAuthorInternal = internalMutation({
       `[autoban] Banned ${target.handle ?? args.ownerUserId} — malicious skill: ${args.slug}`,
     )
 
-    return { ok: true, alreadyBanned: false, deletedSkills: skills.length }
+    return { ok: true, alreadyBanned: false, deletedSkills: hiddenCount, scheduledSkills }
   },
 })

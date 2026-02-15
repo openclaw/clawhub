@@ -4,11 +4,15 @@
 
 ### Added
 - Admin: add manual unban for banned users (clears `deletedAt` + `banReason`, audit log entry). Revoked API tokens stay revoked.
+- Admin: bulk restore skills from GitHub backup; reclaim squatted slugs via v1 endpoints + internal tooling (#298) (thanks @autogame-17).
+- Users: add `trustedPublisher` flag and admin mutations to bypass pending-scan auto-hide for trusted publishers (#298) (thanks @autogame-17).
 
 ### Changed
 - Quality gate: language-aware word counting (`Intl.Segmenter`) and new `cjkChars` signal to reduce false rejects for non-Latin docs.
 - Jobs: run skill stat event processing every 5 minutes (was 15).
 - API performance: batch resolve skill/soul tags in v1 list/get endpoints (fewer action->query round-trips) (#112) (thanks @mkrokosz).
+- Skills: reserve deleted slugs for prior owners (90-day cooldown) to prevent squatting; add admin reclaim flow (#298) (thanks @autogame-17).
+- Moderation: ban flow soft-deletes owned skills (reversible) and removes them from vector search (#298) (thanks @autogame-17).
 
 ### Fixed
 - Users: sync handle on ensure when GitHub login changes (#293) (thanks @christianhpoe).
