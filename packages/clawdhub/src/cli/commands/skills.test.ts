@@ -69,10 +69,10 @@ const {
 } = await import('../../skills.js')
 const { rm, stat } = await import('node:fs/promises')
 const { isInteractive, promptConfirm } = await import('../ui.js')
-const { execSync } = await import('node:child_process')
+const { execFileSync } = await import('node:child_process')
 
 vi.mock('node:child_process', () => ({
-  execSync: vi.fn(),
+  execFileSync: vi.fn(),
 }))
 
 const mockLog = vi.spyOn(console, 'log').mockImplementation(() => {})
@@ -105,19 +105,23 @@ describe('cmdInstall', () => {
     vi.mocked(extractZipToDir).mockResolvedValue()
     vi.mocked(stat).mockRejectedValue(new Error('missing')) // Simulate file not existing
     vi.mocked(rm).mockResolvedValue()
-    vi.mocked(execSync).mockReturnValue('{}') // Clean scan
+    vi.mocked(execFileSync).mockReturnValue('{}') // Clean scan
   })
 
   it('installs a skill successfully when scan finds no violations', async () => {
     await cmdInstall(makeOpts(), 'test-skill')
-    expect(execSync).toHaveBeenCalledWith('uvx mcp-scan@latest --skills /work/skills/test-skill --json')
+    expect(execFileSync).toHaveBeenCalledWith(
+      'uvx',
+      ['mcp-scan@latest', '--skills', '/work/skills/test-skill', '--json'],
+      { encoding: 'utf-8' },
+    )
     expect(mockSpinner.succeed).toHaveBeenCalledWith('OK. Installed test-skill -> /work/skills/test-skill')
     expect(rm).not.toHaveBeenCalled()
   })
 
   it('installs a skill if user accepts after a violation warning', async () => {
     const violation = { issues: [{ code: 'W011', message: 'Third-party content' }] }
-    vi.mocked(execSync).mockReturnValue(JSON.stringify({ '/path/to/skill': violation }))
+    vi.mocked(execFileSync).mockReturnValue(JSON.stringify({ '/path/to/skill': violation }))
     vi.mocked(isInteractive).mockReturnValue(true)
     vi.mocked(promptConfirm).mockResolvedValue(true)
 
@@ -131,7 +135,7 @@ describe('cmdInstall', () => {
 
   it('aborts installation if user rejects after a violation warning', async () => {
     const violation = { issues: [{ code: 'W011', message: 'Third-party content' }] }
-    vi.mocked(execSync).mockReturnValue(JSON.stringify({ '/path/to/skill': violation }))
+    vi.mocked(execFileSync).mockReturnValue(JSON.stringify({ '/path/to/skill': violation }))
     vi.mocked(isInteractive).mockReturnValue(true)
     vi.mocked(promptConfirm).mockResolvedValue(false)
 
@@ -144,7 +148,7 @@ describe('cmdInstall', () => {
 
   it('fails installation if scan command throws an error', async () => {
     const scanError = new Error('Scan failed critically')
-    vi.mocked(execSync).mockImplementation(() => {
+    vi.mocked(execFileSync).mockImplementation(() => {
       throw scanError
     })
 

@@ -1,4 +1,4 @@
-import { execSync } from 'node:child_process'
+import { execFileSync } from 'node:child_process'
 import { mkdir, rm, stat } from 'node:fs/promises'
 import { join } from 'node:path'
 import semver from 'semver'
@@ -73,7 +73,9 @@ interface PathResult {
 type ScanResult = Record<string, PathResult>
 
 async function checkSkillSecurity(targetPath: string): Promise<string[]> {
-  const scanOutput = execSync(`uvx mcp-scan@latest --skills ${targetPath} --json`).toString()
+  const scanOutput = execFileSync('uvx', ['mcp-scan@latest', '--skills', targetPath, '--json'], {
+    encoding: 'utf-8',
+  })
   const scanResult = JSON.parse(scanOutput) as ScanResult
 
   // Internal codes to ignore
