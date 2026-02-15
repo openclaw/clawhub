@@ -170,7 +170,7 @@ export async function cmdInstall(
       throw error
     }
 
-    if (scanViolations.length > 0) {
+    if (scanViolations.length > 0 && !force) {
       spinner.stop()
       console.log(
         `\n⚠️  Warning: "${trimmed}" has security policy violations by Snyk Agent Scan:\n` +
