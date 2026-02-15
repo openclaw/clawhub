@@ -3604,7 +3604,7 @@ html.theme-transition::view-transition-new(theme) {
   gap: 12px;
   padding: 10px 14px;
   cursor: pointer;
-  user-select: text;
+  user-select: none;
   border-radius: 12px;
   transition: background 0.15s ease;
 }
@@ -3641,6 +3641,8 @@ html.theme-transition::view-transition-new(theme) {
   color: var(--ink);
   line-height: 1.45;
   flex: 1;
+  user-select: text;
+  cursor: text;
 }
 
 .analysis-body {
