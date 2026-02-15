@@ -44,7 +44,6 @@
     "clawhub-schema": "workspace:*",
     "clsx": "^2.1.1",
     "convex": "^1.31.7",
-    "convex-helpers": "^0.1.111",
     "fflate": "^0.8.2",
     "h3": "2.0.1-rc.11",
     "lucide-react": "^0.563.0",

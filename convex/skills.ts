@@ -1,7 +1,6 @@
 import { getAuthUserId } from '@convex-dev/auth/server'
 import { paginationOptsValidator } from 'convex/server'
 import { ConvexError, v } from 'convex/values'
-import { paginator } from 'convex-helpers/server/pagination'
 import { internal } from './_generated/api'
 import type { Doc, Id } from './_generated/dataModel'
 import type { MutationCtx, QueryCtx } from './_generated/server'
@@ -21,6 +20,10 @@ import {
   type SkillBadgeMap,
 } from './lib/badges'
 import { generateChangelogPreview as buildChangelogPreview } from './lib/changelog'
+import {
+  canHealSkillOwnershipByGitHubProviderAccountId,
+  getGitHubProviderAccountId,
+} from './lib/githubIdentity'
 import { buildTrendingLeaderboard } from './lib/leaderboards'
 import { deriveModerationFlags } from './lib/moderation'
 import { toPublicSkill, toPublicUser } from './lib/public'
@@ -32,7 +35,6 @@ import {
 } from './lib/skillPublish'
 import { isSkillSuspicious } from './lib/skillSafety'
 import { getFrontmatterValue, hashSkillFiles } from './lib/skills'
-import schema from './schema'
 
 export { publishVersionForUser } from './lib/skillPublish'
 
@@ -1545,10 +1547,9 @@ export const listPublicPage = query({
 })
 
 /**
- * V2 of listPublicPage using convex-helpers paginator for better cache behavior.
+ * V2 of listPublicPage using standard Convex pagination (paginate + usePaginatedQuery).
  *
  * Key differences from V1:
- * - Uses `paginator` from convex-helpers (doesn't track end-cursor internally, better caching)
  * - Uses `by_active_updated` index to filter soft-deleted skills at query level
  * - Returns standard pagination shape compatible with usePaginatedQuery
  */
@@ -1570,15 +1571,15 @@ export const listPublicPageV2 = query({
   },
   handler: async (ctx, args) => {
     const sort = args.sort ?? 'newest'
-    const dir = args.dir ?? 'desc'
-    const paginationOpts = {
+    const dir = args.dir ?? (sort === 'name' ? 'asc' : 'desc')
+    const paginationOpts: { cursor: string | null; numItems: number; id?: number } = {
       ...args.paginationOpts,
       numItems: clampInt(args.paginationOpts.numItems, 1, MAX_PUBLIC_LIST_LIMIT),
     }
 
     // Use the index to filter out soft-deleted skills at query time.
     // softDeletedAt === undefined means active (non-deleted) skills only.
-    const result = await paginator(ctx.db, schema)
+    const result = await ctx.db
       .query('skills')
       .withIndex(SORT_INDEXES[sort], (q) => q.eq('softDeletedAt', undefined))
       .order(dir)
@@ -1590,11 +1591,7 @@ export const listPublicPageV2 = query({
 
     // Build the public skill entries (fetch latestVersion + ownerHandle)
     const items = await buildPublicSkillEntries(ctx, filteredPage)
-
-    return {
-      ...result,
-      page: items,
-    }
+    return { ...result, page: items }
   },
 })
 
@@ -1668,6 +1665,14 @@ export const listVersionsPage = query({
 export const getVersionById = query({
   args: { versionId: v.id('skillVersions') },
   handler: async (ctx, args) => ctx.db.get(args.versionId),
+})
+
+export const getVersionsByIdsInternal = internalQuery({
+  args: { versionIds: v.array(v.id('skillVersions')) },
+  handler: async (ctx, args) => {
+    const versions = await Promise.all(args.versionIds.map((id) => ctx.db.get(id)))
+    return versions.filter((v): v is NonNullable<typeof v> => v !== null)
+  },
 })
 
 export const getVersionByIdInternal = internalQuery({
@@ -3211,34 +3216,56 @@ export const insertVersion = internalMutation({
     const user = await ctx.db.get(userId)
     if (!user || user.deletedAt || user.deactivatedAt) throw new Error('User not found')
 
+    const now = Date.now()
+
     let skill = await ctx.db
       .query('skills')
       .withIndex('by_slug', (q) => q.eq('slug', args.slug))
       .unique()
 
     if (skill && skill.ownerUserId !== userId) {
-      throw new Error('Only the owner can publish updates')
+      // Fallback: Convex Auth can create duplicate `users` records. Heal ownership ONLY
+      // when the underlying GitHub identity matches (authAccounts.providerAccountId).
+      const owner = await ctx.db.get(skill.ownerUserId)
+      if (!owner || owner.deletedAt || owner.deactivatedAt) {
+        throw new Error('Only the owner can publish updates')
+      }
+
+      const [ownerProviderAccountId, callerProviderAccountId] = await Promise.all([
+        getGitHubProviderAccountId(ctx, skill.ownerUserId),
+        getGitHubProviderAccountId(ctx, userId),
+      ])
+
+      // Deny healing when GitHub identity isn't present/consistent.
+      if (
+        !canHealSkillOwnershipByGitHubProviderAccountId(
+          ownerProviderAccountId,
+          callerProviderAccountId,
+        )
+      ) {
+        throw new Error('Only the owner can publish updates')
+      }
+
+      await ctx.db.patch(skill._id, { ownerUserId: userId, updatedAt: now })
+      skill = { ...skill, ownerUserId: userId }
     }
 
-    const now = Date.now()
     const qualityAssessment = args.qualityAssessment
     const isQualityQuarantine = qualityAssessment?.decision === 'quarantine'
-    // Trusted publishers (or admins/moderators) bypass auto-hide for pending scans.
-    // Their skills start as 'active' and will be hidden only if VT scan finds issues.
+
+    // Trusted publishers (and moderators/admins) bypass auto-hide for pending scans.
+    // Keep moderationReason as pending.scan so the VT poller keeps working.
     const isTrustedPublisher = Boolean(
-      user.trustedPublisher ||
-        user.role === 'admin' ||
-        user.role === 'moderator',
+      user.trustedPublisher || user.role === 'admin' || user.role === 'moderator',
     )
-    const moderationReason = isQualityQuarantine
-      ? 'quality.low'
-      : isTrustedPublisher
-        ? 'trusted.publisher'
-        : 'pending.scan'
-    const initialModerationStatus = isTrustedPublisher && !isQualityQuarantine ? 'active' : 'hidden'
+    const initialModerationStatus =
+      isTrustedPublisher && !isQualityQuarantine ? 'active' : 'hidden'
+
+    const moderationReason = isQualityQuarantine ? 'quality.low' : 'pending.scan'
     const moderationNotes = isQualityQuarantine
       ? `Auto-quarantined by quality gate (score=${qualityAssessment.score}, tier=${qualityAssessment.trustTier}, similar=${qualityAssessment.similarRecentCount}).`
       : undefined
+
     const qualityRecord = qualityAssessment
       ? {
           score: qualityAssessment.score,
@@ -3252,26 +3279,29 @@ export const insertVersion = internalMutation({
       : undefined
 
     if (!skill) {
-      // Check if the slug is reserved for a previous owner (anti-squatting)
-      const reservation = await ctx.db
+      // Anti-squatting: enforce reserved slug cooldown.
+      const reservations = await ctx.db
         .query('reservedSlugs')
         .withIndex('by_slug', (q) => q.eq('slug', args.slug))
-        .unique()
-      if (reservation && !reservation.releasedAt) {
-        if (reservation.expiresAt > now) {
-          // Slug is still within cooldown period
-          if (reservation.originalOwnerUserId !== userId) {
-            throw new Error(
-              `Slug "${args.slug}" is reserved for its previous owner until ${new Date(reservation.expiresAt).toISOString()}. ` +
-                'Please choose a different slug.',
-            )
-          }
-          // Original owner is reclaiming -- release the reservation
-          await ctx.db.patch(reservation._id, { releasedAt: now })
-        } else {
-          // Reservation expired -- release it
-          await ctx.db.patch(reservation._id, { releasedAt: now })
+        .take(10)
+
+      const activeReservations = reservations.filter((r) => !r.releasedAt)
+      const reservation = activeReservations.sort((a, b) => b.deletedAt - a.deletedAt)[0]
+      if (reservation) {
+        if (reservation.expiresAt > now && reservation.originalOwnerUserId !== userId) {
+          throw new Error(
+            `Slug "${args.slug}" is reserved for its previous owner until ${new Date(reservation.expiresAt).toISOString()}. ` +
+              'Please choose a different slug.',
+          )
         }
+
+        // Original owner reclaiming, or reservation expired.
+        await ctx.db.patch(reservation._id, { releasedAt: now })
+      }
+
+      // Best-effort: release any duplicate active reservations for same slug.
+      for (const stale of activeReservations.filter((r) => r._id !== reservation?._id)) {
+        await ctx.db.patch(stale._id, { releasedAt: now })
       }
 
       const ownerTrustSignals = await getOwnerTrustSignals(ctx, user, now)

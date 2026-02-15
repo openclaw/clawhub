@@ -75,7 +75,7 @@ export async function cmdLogout(opts: GlobalOpts) {
   const cfg = await readGlobalConfig()
   const registry = cfg?.registry || (await getRegistry(opts, { cache: true }))
   await writeGlobalConfig({ registry, token: undefined })
-  console.log('OK. Logged out.')
+  console.log('OK. Logged out locally. Token still valid until revoked (Settings -> API tokens).')
 }
 
 export async function cmdWhoami(opts: GlobalOpts) {

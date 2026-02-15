@@ -23,7 +23,7 @@ describe('skills', () => {
     const parent = await mkdtemp(join(tmpdir(), 'clawhub-zip-'))
     const dir = join(parent, 'dir')
     await mkdir(dir)
-    const evilName = `evil-${parent.split('/').pop() ?? 'file'}.txt`
+    const evilName = `evil-${Date.now()}-${Math.random().toString(16).slice(2)}.txt`
     const zip = zipSync({
       'SKILL.md': strToU8('hello'),
       [`../${evilName}`]: strToU8('nope'),

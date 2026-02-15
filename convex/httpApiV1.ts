@@ -208,27 +208,28 @@ async function listSkillsV1Handler(ctx: ActionCtx, request: Request) {
     sort,
   })) as ListSkillsResult
 
-  const items = await Promise.all(
-    result.items.map(async (item) => {
-      const tags = await resolveTags(ctx, item.skill.tags)
-      return {
-        slug: item.skill.slug,
-        displayName: item.skill.displayName,
-        summary: item.skill.summary ?? null,
-        tags,
-        stats: item.skill.stats,
-        createdAt: item.skill.createdAt,
-        updatedAt: item.skill.updatedAt,
-        latestVersion: item.latestVersion
-          ? {
-              version: item.latestVersion.version,
-              createdAt: item.latestVersion.createdAt,
-              changelog: item.latestVersion.changelog,
-            }
-          : null,
-      }
-    }),
+  // Batch resolve all tags in a single query instead of N queries
+  const resolvedTagsList = await resolveTagsBatch(
+    ctx,
+    result.items.map((item) => item.skill.tags),
   )
+
+  const items = result.items.map((item, idx) => ({
+    slug: item.skill.slug,
+    displayName: item.skill.displayName,
+    summary: item.skill.summary ?? null,
+    tags: resolvedTagsList[idx],
+    stats: item.skill.stats,
+    createdAt: item.skill.createdAt,
+    updatedAt: item.skill.updatedAt,
+    latestVersion: item.latestVersion
+      ? {
+          version: item.latestVersion.version,
+          createdAt: item.latestVersion.createdAt,
+          changelog: item.latestVersion.changelog,
+        }
+      : null,
+  }))
 
   return json({ items, nextCursor: result.nextCursor ?? null }, 200, rate.headers)
 }
@@ -253,7 +254,7 @@ async function skillsGetRouterV1Handler(ctx: ActionCtx, request: Request) {
       return text('Skill not found', 404, rate.headers)
     }
 
-    const tags = await resolveTags(ctx, result.skill.tags)
+    const [tags] = await resolveTagsBatch(ctx, [result.skill.tags])
     return json(
       {
         skill: {
@@ -537,8 +538,8 @@ async function skillsPostRouterV1Handler(ctx: ActionCtx, request: Request) {
       deleted: false,
     })
     return json({ ok: true }, 200, rate.headers)
-  } catch {
-    return text('Unauthorized', 401, rate.headers)
+  } catch (error) {
+    return softDeleteErrorToResponse('skill', error, rate.headers)
   }
 }
 
@@ -559,8 +560,8 @@ async function skillsDeleteRouterV1Handler(ctx: ActionCtx, request: Request) {
       deleted: true,
     })
     return json({ ok: true }, 200, rate.headers)
-  } catch {
-    return text('Unauthorized', 401, rate.headers)
+  } catch (error) {
+    return softDeleteErrorToResponse('skill', error, rate.headers)
   }
 }
 
@@ -915,32 +916,66 @@ function parsePublishBody(body: unknown) {
   }
 }
 
-async function resolveSoulTags(
+/**
+ * Batch resolve soul version tags to version strings.
+ * Collects all version IDs, fetches them in a single query, then maps back.
+ * Reduces N sequential queries to 1 batch query.
+ */
+async function resolveSoulTagsBatch(
   ctx: ActionCtx,
-  tags: Record<string, Id<'soulVersions'>>,
-): Promise<Record<string, string>> {
-  const resolved: Record<string, string> = {}
-  for (const [tag, versionId] of Object.entries(tags)) {
-    const version = await ctx.runQuery(api.souls.getVersionById, { versionId })
-    if (version && !version.softDeletedAt) {
-      resolved[tag] = version.version
-    }
-  }
-  return resolved
+  tagsList: Array<Record<string, Id<'soulVersions'>>>,
+): Promise<Array<Record<string, string>>> {
+  return resolveVersionTagsBatch(ctx, tagsList, internal.souls.getVersionsByIdsInternal)
 }
 
-async function resolveTags(
+async function resolveTagsBatch(
   ctx: ActionCtx,
-  tags: Record<string, Id<'skillVersions'>>,
-): Promise<Record<string, string>> {
-  const resolved: Record<string, string> = {}
-  for (const [tag, versionId] of Object.entries(tags)) {
-    const version = await ctx.runQuery(api.skills.getVersionById, { versionId })
-    if (version && !version.softDeletedAt) {
-      resolved[tag] = version.version
-    }
+  tagsList: Array<Record<string, Id<'skillVersions'>>>,
+): Promise<Array<Record<string, string>>> {
+  return resolveVersionTagsBatch(ctx, tagsList, internal.skills.getVersionsByIdsInternal)
+}
+
+/**
+ * Batch resolve version tags to version strings.
+ * Collects all version IDs, fetches them in a single query, then maps back.
+ *
+ * Notes:
+ * - Uses `internal.*` queries to avoid expanding the public Convex API surface.
+ * - Sorts ids for stable query args (helps caching/log diffs).
+ */
+async function resolveVersionTagsBatch<TTable extends 'skillVersions' | 'soulVersions'>(
+  ctx: ActionCtx,
+  tagsList: Array<Record<string, Id<TTable>>>,
+  getVersionsByIdsQuery: unknown,
+): Promise<Array<Record<string, string>>> {
+  const allVersionIds = new Set<Id<TTable>>()
+  for (const tags of tagsList) {
+    for (const versionId of Object.values(tags)) allVersionIds.add(versionId)
   }
-  return resolved
+
+  if (allVersionIds.size === 0) return tagsList.map(() => ({}))
+
+  const versionIds = [...allVersionIds].sort() as Array<Id<TTable>>
+  const versions =
+    ((await ctx.runQuery(getVersionsByIdsQuery as never, { versionIds } as never)) as Array<{
+      _id: Id<TTable>
+      version: string
+      softDeletedAt?: unknown
+    }> | null) ?? []
+
+  const versionMap = new Map<Id<TTable>, string>()
+  for (const v of versions) {
+    if (!v?.softDeletedAt) versionMap.set(v._id, v.version)
+  }
+
+  return tagsList.map((tags) => {
+    const resolved: Record<string, string> = {}
+    for (const [tag, versionId] of Object.entries(tags)) {
+      const version = versionMap.get(versionId)
+      if (version) resolved[tag] = version
+    }
+    return resolved
+  })
 }
 
 function json(value: unknown, status = 200, headers?: HeadersInit) {
@@ -1040,27 +1075,28 @@ async function listSoulsV1Handler(ctx: ActionCtx, request: Request) {
     cursor,
   })) as ListSoulsResult
 
-  const items = await Promise.all(
-    result.items.map(async (item) => {
-      const tags = await resolveSoulTags(ctx, item.soul.tags)
-      return {
-        slug: item.soul.slug,
-        displayName: item.soul.displayName,
-        summary: item.soul.summary ?? null,
-        tags,
-        stats: item.soul.stats,
-        createdAt: item.soul.createdAt,
-        updatedAt: item.soul.updatedAt,
-        latestVersion: item.latestVersion
-          ? {
-              version: item.latestVersion.version,
-              createdAt: item.latestVersion.createdAt,
-              changelog: item.latestVersion.changelog,
-            }
-          : null,
-      }
-    }),
+  // Batch resolve all tags in a single query instead of N queries
+  const resolvedTagsList = await resolveSoulTagsBatch(
+    ctx,
+    result.items.map((item) => item.soul.tags),
   )
+
+  const items = result.items.map((item, idx) => ({
+    slug: item.soul.slug,
+    displayName: item.soul.displayName,
+    summary: item.soul.summary ?? null,
+    tags: resolvedTagsList[idx],
+    stats: item.soul.stats,
+    createdAt: item.soul.createdAt,
+    updatedAt: item.soul.updatedAt,
+    latestVersion: item.latestVersion
+      ? {
+          version: item.latestVersion.version,
+          createdAt: item.latestVersion.createdAt,
+          changelog: item.latestVersion.changelog,
+        }
+      : null,
+  }))
 
   return json({ items, nextCursor: result.nextCursor ?? null }, 200, rate.headers)
 }
@@ -1081,7 +1117,7 @@ async function soulsGetRouterV1Handler(ctx: ActionCtx, request: Request) {
     const result = (await ctx.runQuery(api.souls.getBySlug, { slug })) as GetSoulBySlugResult
     if (!result?.soul) return text('Soul not found', 404, rate.headers)
 
-    const tags = await resolveSoulTags(ctx, result.soul.tags)
+    const [tags] = await resolveSoulTagsBatch(ctx, [result.soul.tags])
     return json(
       {
         soul: {
@@ -1296,8 +1332,8 @@ async function soulsPostRouterV1Handler(ctx: ActionCtx, request: Request) {
       deleted: false,
     })
     return json({ ok: true }, 200, rate.headers)
-  } catch {
-    return text('Unauthorized', 401, rate.headers)
+  } catch (error) {
+    return softDeleteErrorToResponse('soul', error, rate.headers)
   }
 }
 
@@ -1318,12 +1354,29 @@ async function soulsDeleteRouterV1Handler(ctx: ActionCtx, request: Request) {
       deleted: true,
     })
     return json({ ok: true }, 200, rate.headers)
-  } catch {
-    return text('Unauthorized', 401, rate.headers)
+  } catch (error) {
+    return softDeleteErrorToResponse('soul', error, rate.headers)
   }
 }
 
 export const soulsDeleteRouterV1Http = httpAction(soulsDeleteRouterV1Handler)
+
+function softDeleteErrorToResponse(
+  entity: 'skill' | 'soul',
+  error: unknown,
+  headers: HeadersInit,
+) {
+  const message = error instanceof Error ? error.message : `${entity} delete failed`
+  const lower = message.toLowerCase()
+
+  if (lower.includes('unauthorized')) return text('Unauthorized', 401, headers)
+  if (lower.includes('forbidden')) return text('Forbidden', 403, headers)
+  if (lower.includes('not found')) return text(message, 404, headers)
+  if (lower.includes('slug required')) return text('Slug required', 400, headers)
+
+  // Unknown: server-side failure. Keep body generic.
+  return text('Internal Server Error', 500, headers)
+}
 
 async function starsPostRouterV1Handler(ctx: ActionCtx, request: Request) {
   const rate = await applyRateLimit(ctx, request, 'write')

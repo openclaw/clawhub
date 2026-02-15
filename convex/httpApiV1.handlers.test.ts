@@ -151,7 +151,7 @@ describe('httpApiV1 handlers', () => {
     expect(json.match.version).toBe('1.0.0')
   })
 
-  it('lists skills with resolved tags', async () => {
+  it('lists skills with resolved tags using batch query', async () => {
     const runQuery = vi.fn(async (_query: unknown, args: Record<string, unknown>) => {
       if ('cursor' in args || 'limit' in args) {
         return {
@@ -173,7 +173,10 @@ describe('httpApiV1 handlers', () => {
           nextCursor: null,
         }
       }
-      if ('versionId' in args) return { version: '1.0.0' }
+      // Batch query: versionIds (plural)
+      if ('versionIds' in args) {
+        return [{ _id: 'versions:1', version: '1.0.0', softDeletedAt: undefined }]
+      }
       return null
     })
     const runMutation = vi.fn().mockResolvedValue(okRate())
@@ -184,6 +187,209 @@ describe('httpApiV1 handlers', () => {
     expect(response.status).toBe(200)
     const json = await response.json()
     expect(json.items[0].tags.latest).toBe('1.0.0')
+  })
+
+  it('batches tag resolution across multiple skills into single query', async () => {
+    const runQuery = vi.fn(async (_query: unknown, args: Record<string, unknown>) => {
+      if ('cursor' in args || 'limit' in args) {
+        return {
+          items: [
+            {
+              skill: {
+                _id: 'skills:1',
+                slug: 'skill-a',
+                displayName: 'Skill A',
+                summary: 's',
+                tags: { latest: 'versions:1', stable: 'versions:2' },
+                stats: { downloads: 0, stars: 0, versions: 2, comments: 0 },
+                createdAt: 1,
+                updatedAt: 2,
+              },
+              latestVersion: { version: '2.0.0', createdAt: 3, changelog: 'c' },
+            },
+            {
+              skill: {
+                _id: 'skills:2',
+                slug: 'skill-b',
+                displayName: 'Skill B',
+                summary: 's',
+                tags: { latest: 'versions:3' },
+                stats: { downloads: 0, stars: 0, versions: 1, comments: 0 },
+                createdAt: 1,
+                updatedAt: 2,
+              },
+              latestVersion: { version: '1.0.0', createdAt: 3, changelog: 'c' },
+            },
+          ],
+          nextCursor: null,
+        }
+      }
+      // Batch query should receive all version IDs from all skills
+      if ('versionIds' in args) {
+        const ids = args.versionIds as string[]
+        expect(ids).toHaveLength(3)
+        expect(ids).toContain('versions:1')
+        expect(ids).toContain('versions:2')
+        expect(ids).toContain('versions:3')
+        return [
+          { _id: 'versions:1', version: '2.0.0', softDeletedAt: undefined },
+          { _id: 'versions:2', version: '1.0.0', softDeletedAt: undefined },
+          { _id: 'versions:3', version: '1.0.0', softDeletedAt: undefined },
+        ]
+      }
+      return null
+    })
+    const runMutation = vi.fn().mockResolvedValue(okRate())
+    const response = await __handlers.listSkillsV1Handler(
+      makeCtx({ runQuery, runMutation }),
+      new Request('https://example.com/api/v1/skills'),
+    )
+    expect(response.status).toBe(200)
+    const json = await response.json()
+    // Verify tags are correctly resolved for each skill
+    expect(json.items[0].tags.latest).toBe('2.0.0')
+    expect(json.items[0].tags.stable).toBe('1.0.0')
+    expect(json.items[1].tags.latest).toBe('1.0.0')
+    // Verify batch query was called exactly once (not per-tag)
+    const batchCalls = runQuery.mock.calls.filter(
+      ([, args]) => args && 'versionIds' in (args as Record<string, unknown>),
+    )
+    expect(batchCalls).toHaveLength(1)
+  })
+
+  it('lists souls with resolved tags using batch query', async () => {
+    const runQuery = vi.fn(async (_query: unknown, args: Record<string, unknown>) => {
+      if ('cursor' in args || 'limit' in args) {
+        return {
+          items: [
+            {
+              soul: {
+                _id: 'souls:1',
+                slug: 'demo-soul',
+                displayName: 'Demo Soul',
+                summary: 's',
+                tags: { latest: 'soulVersions:1' },
+                stats: { downloads: 0, stars: 0, versions: 1, comments: 0 },
+                createdAt: 1,
+                updatedAt: 2,
+              },
+              latestVersion: { version: '1.0.0', createdAt: 3, changelog: 'c' },
+            },
+          ],
+          nextCursor: null,
+        }
+      }
+      if ('versionIds' in args) {
+        return [{ _id: 'soulVersions:1', version: '1.0.0', softDeletedAt: undefined }]
+      }
+      return null
+    })
+    const runMutation = vi.fn().mockResolvedValue(okRate())
+    const response = await __handlers.listSoulsV1Handler(
+      makeCtx({ runQuery, runMutation }),
+      new Request('https://example.com/api/v1/souls?limit=1'),
+    )
+    expect(response.status).toBe(200)
+    const json = await response.json()
+    expect(json.items[0].tags.latest).toBe('1.0.0')
+  })
+
+  it('batches tag resolution across multiple souls into single query', async () => {
+    const runQuery = vi.fn(async (_query: unknown, args: Record<string, unknown>) => {
+      if ('cursor' in args || 'limit' in args) {
+        return {
+          items: [
+            {
+              soul: {
+                _id: 'souls:1',
+                slug: 'soul-a',
+                displayName: 'Soul A',
+                summary: 's',
+                tags: { latest: 'soulVersions:1', stable: 'soulVersions:2' },
+                stats: { downloads: 0, stars: 0, versions: 2, comments: 0 },
+                createdAt: 1,
+                updatedAt: 2,
+              },
+              latestVersion: { version: '2.0.0', createdAt: 3, changelog: 'c' },
+            },
+            {
+              soul: {
+                _id: 'souls:2',
+                slug: 'soul-b',
+                displayName: 'Soul B',
+                summary: 's',
+                tags: { latest: 'soulVersions:3' },
+                stats: { downloads: 0, stars: 0, versions: 1, comments: 0 },
+                createdAt: 1,
+                updatedAt: 2,
+              },
+              latestVersion: { version: '1.0.0', createdAt: 3, changelog: 'c' },
+            },
+          ],
+          nextCursor: null,
+        }
+      }
+      if ('versionIds' in args) {
+        const ids = args.versionIds as string[]
+        expect(ids).toHaveLength(3)
+        expect(ids).toContain('soulVersions:1')
+        expect(ids).toContain('soulVersions:2')
+        expect(ids).toContain('soulVersions:3')
+        return [
+          { _id: 'soulVersions:1', version: '2.0.0', softDeletedAt: undefined },
+          { _id: 'soulVersions:2', version: '1.0.0', softDeletedAt: undefined },
+          { _id: 'soulVersions:3', version: '1.0.0', softDeletedAt: undefined },
+        ]
+      }
+      return null
+    })
+    const runMutation = vi.fn().mockResolvedValue(okRate())
+    const response = await __handlers.listSoulsV1Handler(
+      makeCtx({ runQuery, runMutation }),
+      new Request('https://example.com/api/v1/souls'),
+    )
+    expect(response.status).toBe(200)
+    const json = await response.json()
+    expect(json.items[0].tags.latest).toBe('2.0.0')
+    expect(json.items[0].tags.stable).toBe('1.0.0')
+    expect(json.items[1].tags.latest).toBe('1.0.0')
+    const batchCalls = runQuery.mock.calls.filter(
+      ([, args]) => args && 'versionIds' in (args as Record<string, unknown>),
+    )
+    expect(batchCalls).toHaveLength(1)
+  })
+
+  it('souls get resolves tags using batch query', async () => {
+    const runQuery = vi.fn(async (_query: unknown, args: Record<string, unknown>) => {
+      if ('slug' in args) {
+        return {
+          soul: {
+            _id: 'souls:1',
+            slug: 'demo-soul',
+            displayName: 'Demo Soul',
+            summary: 's',
+            tags: { latest: 'soulVersions:1' },
+            stats: { downloads: 0, stars: 0, versions: 1, comments: 0 },
+            createdAt: 1,
+            updatedAt: 2,
+          },
+          latestVersion: { version: '1.0.0', createdAt: 3, changelog: 'c' },
+          owner: null,
+        }
+      }
+      if ('versionIds' in args) {
+        return [{ _id: 'soulVersions:1', version: '1.0.0', softDeletedAt: undefined }]
+      }
+      return null
+    })
+    const runMutation = vi.fn().mockResolvedValue(okRate())
+    const response = await __handlers.soulsGetRouterV1Handler(
+      makeCtx({ runQuery, runMutation }),
+      new Request('https://example.com/api/v1/souls/demo-soul'),
+    )
+    expect(response.status).toBe(200)
+    const json = await response.json()
+    expect(json.soul.tags.latest).toBe('1.0.0')
   })
 
   it('lists skills supports sort aliases', async () => {
@@ -290,7 +496,10 @@ describe('httpApiV1 handlers', () => {
           owner: { handle: 'p', displayName: 'Peter', image: null },
         }
       }
-      if ('versionId' in args) return { version: '1.0.0' }
+      // Batch query for tag resolution
+      if ('versionIds' in args) {
+        return [{ _id: 'versions:1', version: '1.0.0', softDeletedAt: undefined }]
+      }
       return null
     })
     const runMutation = vi.fn().mockResolvedValue(okRate())
@@ -756,5 +965,62 @@ describe('httpApiV1 handlers', () => {
     const json = await response.json()
     expect(json.ok).toBe(true)
     expect(json.unstarred).toBe(true)
+  })
+
+  it('delete/undelete map forbidden/not-found/unknown to 403/404/500', async () => {
+    vi.mocked(requireApiTokenUser).mockResolvedValue({
+      userId: 'users:1',
+      user: { handle: 'p' },
+    } as never)
+
+    const runMutationForbidden = vi.fn(async (_query: unknown, args: Record<string, unknown>) => {
+      if ('key' in args) return okRate()
+      throw new Error('Forbidden')
+    })
+    const forbidden = await __handlers.skillsDeleteRouterV1Handler(
+      makeCtx({ runMutation: runMutationForbidden }),
+      new Request('https://example.com/api/v1/skills/demo', {
+        method: 'DELETE',
+        headers: { Authorization: 'Bearer clh_test' },
+      }),
+    )
+    expect(forbidden.status).toBe(403)
+    expect(await forbidden.text()).toBe('Forbidden')
+
+    vi.mocked(requireApiTokenUser).mockResolvedValue({
+      userId: 'users:1',
+      user: { handle: 'p' },
+    } as never)
+    const runMutationNotFound = vi.fn(async (_query: unknown, args: Record<string, unknown>) => {
+      if ('key' in args) return okRate()
+      throw new Error('Skill not found')
+    })
+    const notFound = await __handlers.skillsPostRouterV1Handler(
+      makeCtx({ runMutation: runMutationNotFound }),
+      new Request('https://example.com/api/v1/skills/demo/undelete', {
+        method: 'POST',
+        headers: { Authorization: 'Bearer clh_test' },
+      }),
+    )
+    expect(notFound.status).toBe(404)
+    expect(await notFound.text()).toBe('Skill not found')
+
+    vi.mocked(requireApiTokenUser).mockResolvedValue({
+      userId: 'users:1',
+      user: { handle: 'p' },
+    } as never)
+    const runMutationUnknown = vi.fn(async (_query: unknown, args: Record<string, unknown>) => {
+      if ('key' in args) return okRate()
+      throw new Error('boom')
+    })
+    const unknown = await __handlers.soulsDeleteRouterV1Handler(
+      makeCtx({ runMutation: runMutationUnknown }),
+      new Request('https://example.com/api/v1/souls/demo-soul', {
+        method: 'DELETE',
+        headers: { Authorization: 'Bearer clh_test' },
+      }),
+    )
+    expect(unknown.status).toBe(500)
+    expect(await unknown.text()).toBe('Internal Server Error')
   })
 })

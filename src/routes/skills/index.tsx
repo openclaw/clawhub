@@ -1,6 +1,5 @@
 import { createFileRoute, Link, redirect } from '@tanstack/react-router'
-import { useAction } from 'convex/react'
-import { usePaginatedQuery } from 'convex-helpers/react'
+import { useAction, usePaginatedQuery } from 'convex/react'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { api } from '../../../convex/_generated/api'
 import type { Doc } from '../../../convex/_generated/dataModel'
@@ -136,7 +135,6 @@ export function SkillsIndex() {
     ? `${trimmedQuery}::${highlightedOnly ? '1' : '0'}::${nonSuspiciousOnly ? '1' : '0'}`
     : ''
 
-  // Use convex-helpers usePaginatedQuery for better cache behavior
   const {
     results: paginatedResults,
     status: paginationStatus,
@@ -236,34 +234,48 @@ export function SkillsIndex() {
   )
 
   const sorted = useMemo(() => {
+    if (!hasQuery) {
+      return filtered
+    }
     const multiplier = dir === 'asc' ? 1 : -1
     const results = [...filtered]
     results.sort((a, b) => {
+      const tieBreak = () => {
+        const updated = (a.skill.updatedAt - b.skill.updatedAt) * multiplier
+        if (updated !== 0) return updated
+        return a.skill.slug.localeCompare(b.skill.slug)
+      }
       switch (sort) {
         case 'relevance':
           return ((a.searchScore ?? 0) - (b.searchScore ?? 0)) * multiplier
         case 'downloads':
-          return (a.skill.stats.downloads - b.skill.stats.downloads) * multiplier
+          return (a.skill.stats.downloads - b.skill.stats.downloads) * multiplier || tieBreak()
         case 'installs':
           return (
             ((a.skill.stats.installsAllTime ?? 0) - (b.skill.stats.installsAllTime ?? 0)) *
-            multiplier
+              multiplier || tieBreak()
           )
         case 'stars':
-          return (a.skill.stats.stars - b.skill.stats.stars) * multiplier
+          return (a.skill.stats.stars - b.skill.stats.stars) * multiplier || tieBreak()
         case 'updated':
-          return (a.skill.updatedAt - b.skill.updatedAt) * multiplier
+          return (
+            (a.skill.updatedAt - b.skill.updatedAt) * multiplier ||
+            a.skill.slug.localeCompare(b.skill.slug)
+          )
         case 'name':
           return (
             (a.skill.displayName.localeCompare(b.skill.displayName) ||
               a.skill.slug.localeCompare(b.skill.slug)) * multiplier
           )
         default:
-          return (a.skill.createdAt - b.skill.createdAt) * multiplier
+          return (
+            (a.skill.createdAt - b.skill.createdAt) * multiplier ||
+            a.skill.slug.localeCompare(b.skill.slug)
+          )
       }
     })
     return results
-  }, [dir, filtered, sort])
+  }, [dir, filtered, hasQuery, sort])
 
   const isLoadingSkills = hasQuery ? isSearching && searchResults.length === 0 : isLoadingList
   const canLoadMore = hasQuery

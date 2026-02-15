@@ -145,6 +145,14 @@ export const getVersionById = query({
   handler: async (ctx, args) => ctx.db.get(args.versionId),
 })
 
+export const getVersionsByIdsInternal = internalQuery({
+  args: { versionIds: v.array(v.id('soulVersions')) },
+  handler: async (ctx, args) => {
+    const versions = await Promise.all(args.versionIds.map((id) => ctx.db.get(id)))
+    return versions.filter((v): v is NonNullable<typeof v> => v !== null)
+  },
+})
+
 export const getVersionByIdInternal = internalQuery({
   args: { versionId: v.id('soulVersions') },
   handler: async (ctx, args) => ctx.db.get(args.versionId),

@@ -3,8 +3,6 @@ import { defineSchema, defineTable } from 'convex/server'
 import { v } from 'convex/values'
 import { EMBEDDING_DIMENSIONS } from './lib/embeddings'
 
-const authSchema = authTables as unknown as Record<string, ReturnType<typeof defineTable>>
-
 const users = defineTable({
   name: v.optional(v.string()),
   image: v.optional(v.string()),
@@ -560,7 +558,7 @@ const userSkillRootInstalls = defineTable({
   .index('by_skill', ['skillId'])
 
 export default defineSchema({
-  ...authSchema,
+  ...authTables,
   users,
   skills,
   souls,

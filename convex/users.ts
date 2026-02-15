@@ -46,17 +46,15 @@ export const searchInternal = internalQuery({
   },
 })
 
-export const updateGithubMetaInternal = internalMutation({
+export const setGitHubCreatedAtInternal = internalMutation({
   args: {
     userId: v.id('users'),
     githubCreatedAt: v.number(),
-    githubFetchedAt: v.number(),
   },
   handler: async (ctx, args) => {
     await ctx.db.patch(args.userId, {
       githubCreatedAt: args.githubCreatedAt,
-      githubFetchedAt: args.githubFetchedAt,
-      updatedAt: args.githubFetchedAt,
+      updatedAt: Date.now(),
     })
   },
 })
@@ -181,7 +179,6 @@ export const deleteAccount = mutation({
       isAnonymous: undefined,
       bio: undefined,
       githubCreatedAt: undefined,
-      githubFetchedAt: undefined,
       updatedAt: now,
     })
     await ctx.runMutation(internal.telemetry.clearUserTelemetryInternal, { userId })
