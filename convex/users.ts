@@ -323,7 +323,16 @@ async function banUserWithActor(
     return { ok: true as const, alreadyBanned: true, deletedSkills: 0 }
   }
 
-  const hiddenCount = await softDeleteSkillsForBan(ctx, targetUserId, now, { hiddenBy: actor._id })
+  const banSkillsResult = (await ctx.runMutation(
+    internal.users.applyBanToOwnedSkillsBatchInternal,
+    {
+      ownerUserId: targetUserId,
+      bannedAt: now,
+      hiddenBy: actor._id,
+      cursor: undefined,
+    },
+  )) as { hiddenCount?: number }
+  const hiddenCount = banSkillsResult.hiddenCount ?? 0
 
   const tokens = await ctx.db
     .query('apiTokens')
@@ -388,36 +397,15 @@ async function unbanUserWithActor(
     updatedAt: now,
   })
 
-  // Restore soft-deleted skills that were hidden due to the ban
-  const skills = await ctx.db
-    .query('skills')
-    .withIndex('by_owner', (q) => q.eq('ownerUserId', targetUserId))
-    .collect()
-
-  let restoredCount = 0
-  for (const skill of skills) {
-    // Only restore skills we soft-deleted as part of the ban flow.
-    if (
-      skill.softDeletedAt &&
-      skill.softDeletedAt === bannedAt &&
-      skill.moderationReason === 'user.banned'
-    ) {
-      await ctx.db.patch(skill._id, {
-        softDeletedAt: undefined,
-        moderationStatus: 'active',
-        moderationReason: 'restored.unban',
-        hiddenAt: undefined,
-        hiddenBy: undefined,
-        lastReviewedAt: now,
-        updatedAt: now,
-      })
-
-      // Restore embedding visibility
-      await restoreSkillEmbeddingVisibility(ctx, skill._id, now)
-
-      restoredCount += 1
-    }
-  }
+  const restoreSkillsResult = (await ctx.runMutation(
+    internal.users.restoreOwnedSkillsForUnbanBatchInternal,
+    {
+      ownerUserId: targetUserId,
+      bannedAt,
+      cursor: undefined,
+    },
+  )) as { restoredCount?: number }
+  const restoredCount = restoreSkillsResult.restoredCount ?? 0
 
   await ctx.db.insert('auditLogs', {
     actorUserId: actor._id,
@@ -522,7 +510,15 @@ export const autobanMalwareAuthorInternal = internalMutation({
 
     const now = Date.now()
 
-    const hiddenCount = await softDeleteSkillsForBan(ctx, args.ownerUserId, now)
+    const banSkillsResult = (await ctx.runMutation(
+      internal.users.applyBanToOwnedSkillsBatchInternal,
+      {
+        ownerUserId: args.ownerUserId,
+        bannedAt: now,
+        cursor: undefined,
+      },
+    )) as { hiddenCount?: number }
+    const hiddenCount = banSkillsResult.hiddenCount ?? 0
 
     // Revoke all API tokens
     const tokens = await ctx.db
@@ -570,43 +566,103 @@ export const autobanMalwareAuthorInternal = internalMutation({
   },
 })
 
-async function softDeleteSkillsForBan(
-  ctx: MutationCtx,
-  ownerUserId: Id<'users'>,
-  now: number,
-  options?: { hiddenBy?: Id<'users'> },
-) {
-  // Soft-delete owned skills (instead of hard-delete) so they can be restored on unban.
-  // The slug is still occupied by the soft-deleted record, preventing squatting.
-  const skills = await ctx.db
-    .query('skills')
-    .withIndex('by_owner', (q) => q.eq('ownerUserId', ownerUserId))
-    .collect()
+const BAN_SKILLS_BATCH_SIZE = 25
 
-  let hiddenCount = 0
-  for (const skill of skills) {
-    if (skill.softDeletedAt) continue
+export const applyBanToOwnedSkillsBatchInternal = internalMutation({
+  args: {
+    ownerUserId: v.id('users'),
+    bannedAt: v.number(),
+    hiddenBy: v.optional(v.id('users')),
+    cursor: v.optional(v.string()),
+  },
+  handler: async (ctx, args) => {
+    const { page, isDone, continueCursor } = await ctx.db
+      .query('skills')
+      .withIndex('by_owner', (q) => q.eq('ownerUserId', args.ownerUserId))
+      .order('desc')
+      .paginate({ cursor: args.cursor ?? null, numItems: BAN_SKILLS_BATCH_SIZE })
 
-    // Only overwrite moderation fields for active skills. Keep existing hidden/removed
-    // moderation reasons intact.
-    const shouldMarkModeration = skill.moderationStatus === 'active'
+    let hiddenCount = 0
+    for (const skill of page) {
+      if (skill.softDeletedAt) continue
 
-    const patch: Partial<Doc<'skills'>> = { softDeletedAt: now, updatedAt: now }
-    if (shouldMarkModeration) {
-      patch.moderationStatus = 'hidden'
-      patch.moderationReason = 'user.banned'
-      patch.hiddenAt = now
-      if (options?.hiddenBy) patch.hiddenBy = options.hiddenBy
-      patch.lastReviewedAt = now
-      hiddenCount += 1
+      // Only overwrite moderation fields for active skills. Keep existing hidden/removed
+      // moderation reasons intact.
+      const shouldMarkModeration = skill.moderationStatus === 'active'
+
+      const patch: Partial<Doc<'skills'>> = { softDeletedAt: args.bannedAt, updatedAt: args.bannedAt }
+      if (shouldMarkModeration) {
+        patch.moderationStatus = 'hidden'
+        patch.moderationReason = 'user.banned'
+        patch.hiddenAt = args.bannedAt
+        patch.hiddenBy = args.hiddenBy
+        patch.lastReviewedAt = args.bannedAt
+        hiddenCount += 1
+      }
+
+      await ctx.db.patch(skill._id, patch)
+      await markSkillEmbeddingsDeleted(ctx, skill._id, args.bannedAt)
     }
 
-    await ctx.db.patch(skill._id, patch)
-    await markSkillEmbeddingsDeleted(ctx, skill._id, now)
-  }
+    if (!isDone) {
+      await ctx.scheduler.runAfter(0, internal.users.applyBanToOwnedSkillsBatchInternal, {
+        ...args,
+        cursor: continueCursor,
+      })
+    }
 
-  return hiddenCount
-}
+    return { ok: true as const, hiddenCount, scheduled: !isDone }
+  },
+})
+
+export const restoreOwnedSkillsForUnbanBatchInternal = internalMutation({
+  args: {
+    ownerUserId: v.id('users'),
+    bannedAt: v.number(),
+    cursor: v.optional(v.string()),
+  },
+  handler: async (ctx, args) => {
+    const now = Date.now()
+    const { page, isDone, continueCursor } = await ctx.db
+      .query('skills')
+      .withIndex('by_owner', (q) => q.eq('ownerUserId', args.ownerUserId))
+      .order('desc')
+      .paginate({ cursor: args.cursor ?? null, numItems: BAN_SKILLS_BATCH_SIZE })
+
+    let restoredCount = 0
+    for (const skill of page) {
+      if (
+        !skill.softDeletedAt ||
+        skill.softDeletedAt !== args.bannedAt ||
+        skill.moderationReason !== 'user.banned'
+      ) {
+        continue
+      }
+
+      await ctx.db.patch(skill._id, {
+        softDeletedAt: undefined,
+        moderationStatus: 'active',
+        moderationReason: 'restored.unban',
+        hiddenAt: undefined,
+        hiddenBy: undefined,
+        lastReviewedAt: now,
+        updatedAt: now,
+      })
+
+      await restoreSkillEmbeddingVisibility(ctx, skill._id, now)
+      restoredCount += 1
+    }
+
+    if (!isDone) {
+      await ctx.scheduler.runAfter(0, internal.users.restoreOwnedSkillsForUnbanBatchInternal, {
+        ...args,
+        cursor: continueCursor,
+      })
+    }
+
+    return { ok: true as const, restoredCount, scheduled: !isDone }
+  },
+})
 
 async function markSkillEmbeddingsDeleted(ctx: MutationCtx, skillId: Id<'skills'>, now: number) {
   const embeddings = await ctx.db
