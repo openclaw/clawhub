@@ -312,18 +312,22 @@ describe('cmdUninstall', () => {
     expect(writeLockfile).not.toHaveBeenCalled()
   })
 
-  it('updates lockfile after removing directory', async () => {
-    vi.mocked(readLockfile).mockResolvedValue({
-      version: 1,
-      skills: { demo: { version: '1.0.0', installedAt: 123 } },
-    })
-    vi.mocked(writeLockfile).mockResolvedValue()
-    vi.mocked(rm).mockResolvedValue()
+	  it('updates lockfile after removing directory', async () => {
+	    vi.mocked(readLockfile).mockResolvedValue({
+	      version: 1,
+	      skills: { demo: { version: '1.0.0', installedAt: 123 } },
+	    })
+	    vi.mocked(writeLockfile).mockResolvedValue()
+	    vi.mocked(rm).mockResolvedValue()
 
-    await cmdUninstall(makeOpts(), 'demo', { yes: true }, false)
+	    await cmdUninstall(makeOpts(), 'demo', { yes: true }, false)
 
-    expect(rm.mock.invocationCallOrder[0]).toBeLessThan(writeLockfile.mock.invocationCallOrder[0])
-  })
+	    const rmMock = vi.mocked(rm)
+	    const writeLockfileMock = vi.mocked(writeLockfile)
+	    expect(rmMock.mock.invocationCallOrder[0]).toBeLessThan(
+	      writeLockfileMock.mock.invocationCallOrder[0],
+	    )
+	  })
 
   it('removes skill and updates lockfile keeping other skills', async () => {
     vi.mocked(readLockfile).mockResolvedValue({
