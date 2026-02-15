@@ -331,8 +331,9 @@ async function banUserWithActor(
       hiddenBy: actor._id,
       cursor: undefined,
     },
-  )) as { hiddenCount?: number }
+  )) as { hiddenCount?: number; scheduled?: boolean }
   const hiddenCount = banSkillsResult.hiddenCount ?? 0
+  const scheduledSkills = banSkillsResult.scheduled ?? false
 
   const tokens = await ctx.db
     .query('apiTokens')
@@ -362,7 +363,7 @@ async function banUserWithActor(
     createdAt: now,
   })
 
-  return { ok: true as const, alreadyBanned: false, deletedSkills: hiddenCount }
+  return { ok: true as const, alreadyBanned: false, deletedSkills: hiddenCount, scheduledSkills }
 }
 
 async function unbanUserWithActor(
@@ -404,8 +405,9 @@ async function unbanUserWithActor(
       bannedAt,
       cursor: undefined,
     },
-  )) as { restoredCount?: number }
+  )) as { restoredCount?: number; scheduled?: boolean }
   const restoredCount = restoreSkillsResult.restoredCount ?? 0
+  const scheduledSkills = restoreSkillsResult.scheduled ?? false
 
   await ctx.db.insert('auditLogs', {
     actorUserId: actor._id,
@@ -416,7 +418,7 @@ async function unbanUserWithActor(
     createdAt: now,
   })
 
-  return { ok: true as const, alreadyUnbanned: false, restoredSkills: restoredCount }
+  return { ok: true as const, alreadyUnbanned: false, restoredSkills: restoredCount, scheduledSkills }
 }
 
 /**
@@ -517,8 +519,9 @@ export const autobanMalwareAuthorInternal = internalMutation({
         bannedAt: now,
         cursor: undefined,
       },
-    )) as { hiddenCount?: number }
+    )) as { hiddenCount?: number; scheduled?: boolean }
     const hiddenCount = banSkillsResult.hiddenCount ?? 0
+    const scheduledSkills = banSkillsResult.scheduled ?? false
 
     // Revoke all API tokens
     const tokens = await ctx.db
@@ -562,7 +565,7 @@ export const autobanMalwareAuthorInternal = internalMutation({
       `[autoban] Banned ${target.handle ?? args.ownerUserId} — malicious skill: ${args.slug}`,
     )
 
-    return { ok: true, alreadyBanned: false, deletedSkills: hiddenCount }
+    return { ok: true, alreadyBanned: false, deletedSkills: hiddenCount, scheduledSkills }
   },
 })
 
