@@ -5,7 +5,6 @@ import type { Doc, Id } from './_generated/dataModel'
 import type { MutationCtx } from './_generated/server'
 import { internalMutation, internalQuery, mutation, query } from './_generated/server'
 import { assertAdmin, assertModerator, requireUser } from './lib/access'
-import { embeddingVisibilityFor } from './lib/embeddingVisibility'
 import { toPublicUser } from './lib/public'
 import { buildUserSearchResults } from './lib/userSearch'
 
@@ -324,7 +323,7 @@ async function banUserWithActor(
   }
 
   const banSkillsResult = (await ctx.runMutation(
-    internal.users.applyBanToOwnedSkillsBatchInternal,
+    internal.skills.applyBanToOwnedSkillsBatchInternal,
     {
       ownerUserId: targetUserId,
       bannedAt: now,
@@ -399,7 +398,7 @@ async function unbanUserWithActor(
   })
 
   const restoreSkillsResult = (await ctx.runMutation(
-    internal.users.restoreOwnedSkillsForUnbanBatchInternal,
+    internal.skills.restoreOwnedSkillsForUnbanBatchInternal,
     {
       ownerUserId: targetUserId,
       bannedAt,
@@ -513,7 +512,7 @@ export const autobanMalwareAuthorInternal = internalMutation({
     const now = Date.now()
 
     const banSkillsResult = (await ctx.runMutation(
-      internal.users.applyBanToOwnedSkillsBatchInternal,
+      internal.skills.applyBanToOwnedSkillsBatchInternal,
       {
         ownerUserId: args.ownerUserId,
         bannedAt: now,
@@ -568,123 +567,3 @@ export const autobanMalwareAuthorInternal = internalMutation({
     return { ok: true, alreadyBanned: false, deletedSkills: hiddenCount, scheduledSkills }
   },
 })
-
-const BAN_SKILLS_BATCH_SIZE = 25
-
-export const applyBanToOwnedSkillsBatchInternal = internalMutation({
-  args: {
-    ownerUserId: v.id('users'),
-    bannedAt: v.number(),
-    hiddenBy: v.optional(v.id('users')),
-    cursor: v.optional(v.string()),
-  },
-  handler: async (ctx, args) => {
-    const { page, isDone, continueCursor } = await ctx.db
-      .query('skills')
-      .withIndex('by_owner', (q) => q.eq('ownerUserId', args.ownerUserId))
-      .order('desc')
-      .paginate({ cursor: args.cursor ?? null, numItems: BAN_SKILLS_BATCH_SIZE })
-
-    let hiddenCount = 0
-    for (const skill of page) {
-      if (skill.softDeletedAt) continue
-
-      // Only overwrite moderation fields for active skills. Keep existing hidden/removed
-      // moderation reasons intact.
-      const shouldMarkModeration = skill.moderationStatus === 'active'
-
-      const patch: Partial<Doc<'skills'>> = { softDeletedAt: args.bannedAt, updatedAt: args.bannedAt }
-      if (shouldMarkModeration) {
-        patch.moderationStatus = 'hidden'
-        patch.moderationReason = 'user.banned'
-        patch.hiddenAt = args.bannedAt
-        patch.hiddenBy = args.hiddenBy
-        patch.lastReviewedAt = args.bannedAt
-        hiddenCount += 1
-      }
-
-      await ctx.db.patch(skill._id, patch)
-      await markSkillEmbeddingsDeleted(ctx, skill._id, args.bannedAt)
-    }
-
-    if (!isDone) {
-      await ctx.scheduler.runAfter(0, internal.users.applyBanToOwnedSkillsBatchInternal, {
-        ...args,
-        cursor: continueCursor,
-      })
-    }
-
-    return { ok: true as const, hiddenCount, scheduled: !isDone }
-  },
-})
-
-export const restoreOwnedSkillsForUnbanBatchInternal = internalMutation({
-  args: {
-    ownerUserId: v.id('users'),
-    bannedAt: v.number(),
-    cursor: v.optional(v.string()),
-  },
-  handler: async (ctx, args) => {
-    const now = Date.now()
-    const { page, isDone, continueCursor } = await ctx.db
-      .query('skills')
-      .withIndex('by_owner', (q) => q.eq('ownerUserId', args.ownerUserId))
-      .order('desc')
-      .paginate({ cursor: args.cursor ?? null, numItems: BAN_SKILLS_BATCH_SIZE })
-
-    let restoredCount = 0
-    for (const skill of page) {
-      if (
-        !skill.softDeletedAt ||
-        skill.softDeletedAt !== args.bannedAt ||
-        skill.moderationReason !== 'user.banned'
-      ) {
-        continue
-      }
-
-      await ctx.db.patch(skill._id, {
-        softDeletedAt: undefined,
-        moderationStatus: 'active',
-        moderationReason: 'restored.unban',
-        hiddenAt: undefined,
-        hiddenBy: undefined,
-        lastReviewedAt: now,
-        updatedAt: now,
-      })
-
-      await restoreSkillEmbeddingVisibility(ctx, skill._id, now)
-      restoredCount += 1
-    }
-
-    if (!isDone) {
-      await ctx.scheduler.runAfter(0, internal.users.restoreOwnedSkillsForUnbanBatchInternal, {
-        ...args,
-        cursor: continueCursor,
-      })
-    }
-
-    return { ok: true as const, restoredCount, scheduled: !isDone }
-  },
-})
-
-async function markSkillEmbeddingsDeleted(ctx: MutationCtx, skillId: Id<'skills'>, now: number) {
-  const embeddings = await ctx.db
-    .query('skillEmbeddings')
-    .withIndex('by_skill', (q) => q.eq('skillId', skillId))
-    .collect()
-  for (const embedding of embeddings) {
-    if (embedding.visibility === 'deleted') continue
-    await ctx.db.patch(embedding._id, { visibility: 'deleted', updatedAt: now })
-  }
-}
-
-async function restoreSkillEmbeddingVisibility(ctx: MutationCtx, skillId: Id<'skills'>, now: number) {
-  const embeddings = await ctx.db
-    .query('skillEmbeddings')
-    .withIndex('by_skill', (q) => q.eq('skillId', skillId))
-    .collect()
-  for (const embedding of embeddings) {
-    const visibility = embeddingVisibilityFor(embedding.isLatest, embedding.isApproved)
-    await ctx.db.patch(embedding._id, { visibility, updatedAt: now })
-  }
-}

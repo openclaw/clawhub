@@ -510,6 +510,7 @@ const reservedSlugs = defineTable({
   releasedAt: v.optional(v.number()),
 })
   .index('by_slug', ['slug'])
+  .index('by_slug_active_deletedAt', ['slug', 'releasedAt', 'deletedAt'])
   .index('by_owner', ['originalOwnerUserId'])
   .index('by_expiry', ['expiresAt'])
 
