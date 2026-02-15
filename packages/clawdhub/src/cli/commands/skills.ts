@@ -1,5 +1,5 @@
 import { execFileSync } from 'node:child_process'
-import { mkdir, rm, stat } from 'node:fs/promises'
+import { mkdir, rename, rm, stat } from 'node:fs/promises'
 import { join } from 'node:path'
 import semver from 'semver'
 import { apiRequest, downloadZip } from '../../http.js'
@@ -160,38 +160,42 @@ export async function cmdInstall(
 
     spinner.text = `Downloading ${trimmed}@${resolvedVersion}`
     const zip = await downloadZip(registry, { slug: trimmed, version: resolvedVersion, token })
-    await extractZipToDir(zip, target)
 
-    spinner.text = `Scanning ${trimmed}@${resolvedVersion}`
-    let scanViolations: string[] = []
+    const tempTarget = `${target}.tmp-${Math.random().toString(36).slice(2, 7)}`
     try {
-      scanViolations = await checkSkillSecurity(target)
-    } catch (error) {
-      await rm(target, { recursive: true, force: true })
-      spinner.fail(`Scan failed for ${trimmed}@${resolvedVersion}`)
-      throw error
-    }
+      await extractZipToDir(zip, tempTarget)
 
-    if (scanViolations.length > 0 && !force) {
-      spinner.stop()
-      console.log(
-        `\n⚠️  Warning: "${trimmed}" has security policy violations by Snyk Agent Scan:\n` +
-          scanViolations.map((msg) => `   - ${msg}`).join('\n') +
-          '\n   Review the skill code before use.\n',
-      )
-      if (isInteractive()) {
-        const confirm = await promptConfirm('Install anyway?')
-        if (!confirm) {
-          await rm(target, { recursive: true, force: true })
-          fail('Installation cancelled')
-        }
+      spinner.text = `Scanning ${trimmed}@${resolvedVersion}`
+      let scanViolations: string[] = []
+      try {
+        scanViolations = await checkSkillSecurity(tempTarget)
+      } catch (error) {
+        spinner.stop()
+        console.warn(`⚠️  Skipping Snyk Agent Scan: ${formatError(error)}`)
         spinner.start(`Resolving ${trimmed}`)
-      } else {
-        await rm(target, { recursive: true, force: true })
-        fail(
-          'Use --force to install skills with security policy violations in non-interactive mode',
-        )
       }
+
+      if (scanViolations.length > 0 && !force) {
+        spinner.stop()
+        console.log(
+          `\n⚠️  Warning: "${trimmed}" has security policy violations by Snyk Agent Scan:\n` +
+            scanViolations.map((msg) => `   - ${msg}`).join('\n') +
+            '\n   Review the skill code before use.\n',
+        )
+        if (isInteractive()) {
+          const confirm = await promptConfirm('Install anyway?')
+          if (!confirm) fail('Installation cancelled')
+          spinner.start(`Resolving ${trimmed}`)
+        } else {
+          fail(
+            'Use --force to install skills with security policy violations in non-interactive mode',
+          )
+        }
+      }
+
+      await rename(tempTarget, target)
+    } finally {
+      await rm(tempTarget, { recursive: true, force: true })
     }
 
     await writeSkillOrigin(target, {

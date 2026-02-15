@@ -51,6 +51,7 @@ vi.mock('../../skills.js', () => ({
 
 vi.mock('node:fs/promises', () => ({
   mkdir: vi.fn(),
+  rename: vi.fn(),
   rm: vi.fn(),
   stat: vi.fn(),
 }))
@@ -67,7 +68,7 @@ const {
   writeLockfile,
   writeSkillOrigin,
 } = await import('../../skills.js')
-const { rm, stat } = await import('node:fs/promises')
+const { rename, rm, stat } = await import('node:fs/promises')
 const { isInteractive, promptConfirm } = await import('../ui.js')
 const { execFileSync } = await import('node:child_process')
 
@@ -76,6 +77,7 @@ vi.mock('node:child_process', () => ({
 }))
 
 const mockLog = vi.spyOn(console, 'log').mockImplementation(() => {})
+const mockWarn = vi.spyOn(console, 'warn').mockImplementation(() => {})
 
 function makeOpts(): GlobalOpts {
   return {
@@ -105,18 +107,33 @@ describe('cmdInstall', () => {
     vi.mocked(extractZipToDir).mockResolvedValue()
     vi.mocked(stat).mockRejectedValue(new Error('missing')) // Simulate file not existing
     vi.mocked(rm).mockResolvedValue()
+    vi.mocked(rename).mockResolvedValue()
     vi.mocked(execFileSync).mockReturnValue('{}') // Clean scan
   })
 
   it('installs a skill successfully when scan finds no violations', async () => {
     await cmdInstall(makeOpts(), 'test-skill')
+    expect(extractZipToDir).toHaveBeenCalledWith(
+      expect.any(Uint8Array),
+      expect.stringMatching(/\/work\/skills\/test-skill\.tmp-.*/),
+    )
     expect(execFileSync).toHaveBeenCalledWith(
       'uvx',
-      ['mcp-scan@latest', '--skills', '/work/skills/test-skill', '--json'],
+      [
+        'mcp-scan@latest',
+        '--skills',
+        expect.stringMatching(/\/work\/skills\/test-skill\.tmp-.*/),
+        '--json',
+      ],
       { encoding: 'utf-8' },
     )
-    expect(mockSpinner.succeed).toHaveBeenCalledWith('OK. Installed test-skill -> /work/skills/test-skill')
-    expect(rm).not.toHaveBeenCalled()
+    expect(rename).toHaveBeenCalledWith(
+      expect.stringMatching(/\/work\/skills\/test-skill\.tmp-.*/),
+      '/work/skills/test-skill',
+    )
+    expect(mockSpinner.succeed).toHaveBeenCalledWith(
+      'OK. Installed test-skill -> /work/skills/test-skill',
+    )
   })
 
   it('installs a skill if user accepts after a violation warning', async () => {
@@ -129,8 +146,10 @@ describe('cmdInstall', () => {
 
     expect(mockLog).toHaveBeenCalledWith(expect.stringContaining('⚠️  Warning'))
     expect(promptConfirm).toHaveBeenCalledWith('Install anyway?')
-    expect(mockSpinner.succeed).toHaveBeenCalledWith('OK. Installed test-skill -> /work/skills/test-skill')
-    expect(rm).not.toHaveBeenCalled()
+    expect(rename).toHaveBeenCalled()
+    expect(mockSpinner.succeed).toHaveBeenCalledWith(
+      'OK. Installed test-skill -> /work/skills/test-skill',
+    )
   })
 
   it('aborts installation if user rejects after a violation warning', async () => {
@@ -142,21 +161,24 @@ describe('cmdInstall', () => {
     await expect(cmdInstall(makeOpts(), 'test-skill')).rejects.toThrow('Installation cancelled')
 
     expect(promptConfirm).toHaveBeenCalledWith('Install anyway?')
-    expect(rm).toHaveBeenCalledWith('/work/skills/test-skill', { recursive: true, force: true })
+    expect(rename).not.toHaveBeenCalled()
     expect(mockSpinner.succeed).not.toHaveBeenCalled()
   })
 
-  it('fails installation if scan command throws an error', async () => {
-    const scanError = new Error('Scan failed critically')
+  it('skips scan and continues installation if scanner fails', async () => {
     vi.mocked(execFileSync).mockImplementation(() => {
-      throw scanError
+      throw new Error('uvx not found')
     })
 
-    await expect(cmdInstall(makeOpts(), 'test-skill')).rejects.toThrow(scanError)
+    await cmdInstall(makeOpts(), 'test-skill')
 
-    expect(mockSpinner.fail).toHaveBeenCalledWith('Scan failed for test-skill@1.0.0')
-    expect(rm).toHaveBeenCalledWith('/work/skills/test-skill', { recursive: true, force: true })
-    expect(mockSpinner.succeed).not.toHaveBeenCalled()
+    expect(mockWarn).toHaveBeenCalledWith(
+      expect.stringContaining('⚠️  Skipping Snyk Agent Scan: uvx not found'),
+    )
+    expect(rename).toHaveBeenCalled()
+    expect(mockSpinner.succeed).toHaveBeenCalledWith(
+      'OK. Installed test-skill -> /work/skills/test-skill',
+    )
   })
 
   it('passes optional auth token to API + download requests', async () => {
