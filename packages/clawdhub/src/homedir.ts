@@ -1,4 +1,5 @@
 import { homedir } from 'node:os'
+import { win32 } from 'node:path'
 
 /**
  * Resolve the user's home directory, preferring environment variables over
@@ -8,7 +9,21 @@ import { homedir } from 'node:os'
  */
 export function resolveHome(): string {
   if (process.platform === 'win32') {
-    return process.env.USERPROFILE?.trim() || process.env.HOME?.trim() || homedir()
+    return normalizeHome(process.env.USERPROFILE) || normalizeHome(process.env.HOME) || homedir()
   }
-  return process.env.HOME?.trim() || homedir()
+  return normalizeHome(process.env.HOME) || homedir()
+}
+
+function normalizeHome(value: string | undefined): string {
+  const trimmed = value?.trim()
+  if (!trimmed) return ''
+
+  if (process.platform === 'win32') {
+    const root = win32.parse(trimmed).root
+    if (trimmed === root) return trimmed
+    return trimmed.replace(/[\\/]+$/, '')
+  }
+
+  if (trimmed === '/') return '/'
+  return trimmed.replace(/\/+$/, '')
 }

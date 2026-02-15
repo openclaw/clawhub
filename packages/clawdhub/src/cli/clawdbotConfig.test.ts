@@ -203,6 +203,15 @@ describe('resolveClawdbotSkillRoots', () => {
     expect(resolveHome()).toBe(customHome)
   })
 
+  it('normalizes trailing separators in $HOME', async () => {
+    const base = await mkdtemp(join(tmpdir(), 'clawhub-home-trailing-'))
+    const customHome = join(base, 'custom-home')
+
+    process.env.HOME = `${customHome}/`
+
+    expect(resolveHome()).toBe(customHome)
+  })
+
   it('supports OpenClaw configuration files', async () => {
     const base = await mkdtemp(join(tmpdir(), 'clawhub-openclaw-'))
     const stateDir = join(base, 'openclaw-state')
