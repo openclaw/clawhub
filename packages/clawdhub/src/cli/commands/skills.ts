@@ -1,5 +1,6 @@
 import { execFileSync } from 'node:child_process'
-import { mkdir, rename, rm, stat } from 'node:fs/promises'
+import { cp, mkdir, rename, rm, stat } from 'node:fs/promises'
+import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import semver from 'semver'
 import { apiRequest, downloadZip } from '../../http.js'
@@ -161,7 +162,10 @@ export async function cmdInstall(
     spinner.text = `Downloading ${trimmed}@${resolvedVersion}`
     const zip = await downloadZip(registry, { slug: trimmed, version: resolvedVersion, token })
 
-    const tempTarget = `${target}.tmp-${Math.random().toString(36).slice(2, 7)}`
+    const tempTarget = join(
+      tmpdir(),
+      `clawhub-install-${trimmed}-${Math.random().toString(36).slice(2, 7)}`,
+    )
     try {
       await extractZipToDir(zip, tempTarget)
 
@@ -193,7 +197,15 @@ export async function cmdInstall(
         }
       }
 
-      await rename(tempTarget, target)
+      try {
+        await rename(tempTarget, target)
+      } catch (err: any) {
+        if (err.code === 'EXDEV') {
+          await cp(tempTarget, target, { recursive: true })
+        } else {
+          throw err
+        }
+      }
     } finally {
       await rm(tempTarget, { recursive: true, force: true })
     }

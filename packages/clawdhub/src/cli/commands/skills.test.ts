@@ -50,10 +50,15 @@ vi.mock('../../skills.js', () => ({
 }))
 
 vi.mock('node:fs/promises', () => ({
+  cp: vi.fn(),
   mkdir: vi.fn(),
   rename: vi.fn(),
   rm: vi.fn(),
   stat: vi.fn(),
+}))
+
+vi.mock('node:os', () => ({
+  tmpdir: () => '/tmp',
 }))
 
 const { clampLimit, cmdExplore, cmdInstall, cmdUpdate, formatExploreLine } = await import(
@@ -68,7 +73,7 @@ const {
   writeLockfile,
   writeSkillOrigin,
 } = await import('../../skills.js')
-const { rename, rm, stat } = await import('node:fs/promises')
+const { cp, rename, rm, stat } = await import('node:fs/promises')
 const { isInteractive, promptConfirm } = await import('../ui.js')
 const { execFileSync } = await import('node:child_process')
 
@@ -108,6 +113,7 @@ describe('cmdInstall', () => {
     vi.mocked(stat).mockRejectedValue(new Error('missing')) // Simulate file not existing
     vi.mocked(rm).mockResolvedValue()
     vi.mocked(rename).mockResolvedValue()
+    vi.mocked(cp).mockResolvedValue()
     vi.mocked(execFileSync).mockReturnValue('{}') // Clean scan
   })
 
@@ -115,20 +121,20 @@ describe('cmdInstall', () => {
     await cmdInstall(makeOpts(), 'test-skill')
     expect(extractZipToDir).toHaveBeenCalledWith(
       expect.any(Uint8Array),
-      expect.stringMatching(/\/work\/skills\/test-skill\.tmp-.*/),
+      expect.stringMatching(/\/tmp\/clawhub-install-test-skill-.*/),
     )
     expect(execFileSync).toHaveBeenCalledWith(
       'uvx',
       [
         'mcp-scan@latest',
         '--skills',
-        expect.stringMatching(/\/work\/skills\/test-skill\.tmp-.*/),
+        expect.stringMatching(/\/tmp\/clawhub-install-test-skill-.*/),
         '--json',
       ],
       { encoding: 'utf-8' },
     )
     expect(rename).toHaveBeenCalledWith(
-      expect.stringMatching(/\/work\/skills\/test-skill\.tmp-.*/),
+      expect.stringMatching(/\/tmp\/clawhub-install-test-skill-.*/),
       '/work/skills/test-skill',
     )
     expect(mockSpinner.succeed).toHaveBeenCalledWith(
@@ -179,6 +185,35 @@ describe('cmdInstall', () => {
     expect(mockSpinner.succeed).toHaveBeenCalledWith(
       'OK. Installed test-skill -> /work/skills/test-skill',
     )
+  })
+
+  it('falls back to copy when rename fails with EXDEV', async () => {
+    const exdevError = new Error('Cross-device link')
+    ;(exdevError as any).code = 'EXDEV'
+    vi.mocked(rename).mockRejectedValueOnce(exdevError)
+
+    await cmdInstall(makeOpts(), 'test-skill')
+
+    expect(rename).toHaveBeenCalled()
+    expect(cp).toHaveBeenCalledWith(
+      expect.stringMatching(/\/tmp\/clawhub-install-test-skill-.*/),
+      '/work/skills/test-skill',
+      { recursive: true },
+    )
+    expect(mockSpinner.succeed).toHaveBeenCalledWith(
+      'OK. Installed test-skill -> /work/skills/test-skill',
+    )
+  })
+
+  it('fails installation if rename fails with non-EXDEV error', async () => {
+    const otherError = new Error('Permission denied')
+    vi.mocked(rename).mockRejectedValueOnce(otherError)
+
+    await expect(cmdInstall(makeOpts(), 'test-skill')).rejects.toThrow('Permission denied')
+
+    expect(rename).toHaveBeenCalled()
+    expect(cp).not.toHaveBeenCalled()
+    expect(mockSpinner.succeed).not.toHaveBeenCalled()
   })
 
   it('passes optional auth token to API + download requests', async () => {
