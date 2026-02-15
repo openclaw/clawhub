@@ -73,12 +73,10 @@ function findFirstLine(content: string, pattern: RegExp) {
 function scanCodeFile(path: string, content: string, findings: ModerationFinding[]) {
   if (!CODE_EXTENSION.test(path)) return;
   const hasChildProcess = /child_process/.test(content);
+  const execPattern = /\b(exec|execSync|spawn|spawnSync|execFile|execFileSync)\s*\(/;
   if (hasChildProcess) {
-    const match = findFirstLine(
-      content,
-      /\b(exec|execSync|spawn|spawnSync|execFile|execFileSync)\s*\(/,
-    );
-    if (match.text) {
+    if (execPattern.test(content)) {
+      const match = findFirstLine(content, execPattern);
       addFinding(findings, {
         code: REASON_CODES.DANGEROUS_EXEC,
         severity: "critical",

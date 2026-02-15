@@ -2143,16 +2143,22 @@ export const getSkillBatchForModerationBackfillInternal = internalQuery({
     }> = [];
     let nextCursor = cursor;
     for (const skill of candidates) {
-      nextCursor = skill._creationTime;
       if (skills.length >= batchSize) break;
-      if ((skill.moderationStatus ?? "active") === "removed") continue;
-      if (!skill.latestVersionId) continue;
+      if ((skill.moderationStatus ?? "active") === "removed") {
+        nextCursor = skill._creationTime;
+        continue;
+      }
+      if (!skill.latestVersionId) {
+        nextCursor = skill._creationTime;
+        continue;
+      }
       skills.push({
         skillId: skill._id,
         versionId: skill.latestVersionId,
         slug: skill.slug,
         createdCursor: skill._creationTime,
       });
+      nextCursor = skill._creationTime;
     }
     const done = candidates.length < batchSize * 3;
     return { skills, nextCursor, done };
@@ -2788,7 +2794,6 @@ export const escalateByVtInternal = internalMutation({
     patch.moderationEngineVersion = snapshot.engineVersion;
     patch.moderationEvaluatedAt = snapshot.evaluatedAt;
     patch.moderationSourceVersionId = version._id;
-    patch.moderationFlags = legacyFlagsFromVerdict(nextVerdict);
     if (bypassSuspicious) {
       patch.moderationReason = normalizeScannerSuspiciousReason(
         skill.moderationReason as string | undefined,
