@@ -3604,7 +3604,7 @@ html.theme-transition::view-transition-new(theme) {
   gap: 12px;
   padding: 10px 14px;
   cursor: pointer;
-  user-select: none;
+  user-select: text;
   border-radius: 12px;
   transition: background 0.15s ease;
 }
@@ -3625,6 +3625,7 @@ html.theme-transition::view-transition-new(theme) {
   align-items: center;
   gap: 4px;
   white-space: nowrap;
+  user-select: none;
 }
 
 .analysis-detail-toggle .chevron {
