@@ -1445,16 +1445,7 @@ export const report = mutation({
     await ctx.db.patch(skill._id, updates)
 
     if (shouldAutoHide) {
-      const embeddings = await ctx.db
-        .query('skillEmbeddings')
-        .withIndex('by_skill', (q) => q.eq('skillId', skill._id))
-        .collect()
-      for (const embedding of embeddings) {
-        await ctx.db.patch(embedding._id, {
-          visibility: 'deleted',
-          updatedAt: now,
-        })
-      }
+      await setSkillEmbeddingsSoftDeleted(ctx, skill._id, true, now)
 
       await ctx.db.insert('auditLogs', {
         actorUserId: userId,
@@ -2125,25 +2116,73 @@ export const setSkillModerationStatusActiveInternal = internalMutation({
   },
 })
 
-async function markSkillEmbeddingsDeleted(ctx: MutationCtx, skillId: Id<'skills'>, now: number) {
-  const embeddings = await ctx.db
+async function listSkillEmbeddingsForSkill(ctx: MutationCtx, skillId: Id<'skills'>) {
+  return ctx.db
     .query('skillEmbeddings')
     .withIndex('by_skill', (q) => q.eq('skillId', skillId))
     .collect()
+}
+
+async function markSkillEmbeddingsDeleted(ctx: MutationCtx, skillId: Id<'skills'>, now: number) {
+  const embeddings = await listSkillEmbeddingsForSkill(ctx, skillId)
   for (const embedding of embeddings) {
     if (embedding.visibility === 'deleted') continue
     await ctx.db.patch(embedding._id, { visibility: 'deleted', updatedAt: now })
   }
 }
 
-async function restoreSkillEmbeddingVisibility(ctx: MutationCtx, skillId: Id<'skills'>, now: number) {
-  const embeddings = await ctx.db
-    .query('skillEmbeddings')
-    .withIndex('by_skill', (q) => q.eq('skillId', skillId))
-    .collect()
+async function restoreSkillEmbeddingsVisibility(ctx: MutationCtx, skillId: Id<'skills'>, now: number) {
+  const embeddings = await listSkillEmbeddingsForSkill(ctx, skillId)
   for (const embedding of embeddings) {
     const visibility = embeddingVisibilityFor(embedding.isLatest, embedding.isApproved)
     await ctx.db.patch(embedding._id, { visibility, updatedAt: now })
+  }
+}
+
+async function setSkillEmbeddingsSoftDeleted(
+  ctx: MutationCtx,
+  skillId: Id<'skills'>,
+  deleted: boolean,
+  now: number,
+) {
+  if (deleted) {
+    await markSkillEmbeddingsDeleted(ctx, skillId, now)
+    return
+  }
+
+  await restoreSkillEmbeddingsVisibility(ctx, skillId, now)
+}
+
+async function setSkillEmbeddingsLatestVersion(
+  ctx: MutationCtx,
+  skillId: Id<'skills'>,
+  latestVersionId: Id<'skillVersions'>,
+  now: number,
+) {
+  const embeddings = await listSkillEmbeddingsForSkill(ctx, skillId)
+  for (const embedding of embeddings) {
+    const isLatest = embedding.versionId === latestVersionId
+    await ctx.db.patch(embedding._id, {
+      isLatest,
+      visibility: embeddingVisibilityFor(isLatest, embedding.isApproved),
+      updatedAt: now,
+    })
+  }
+}
+
+async function setSkillEmbeddingsApproved(
+  ctx: MutationCtx,
+  skillId: Id<'skills'>,
+  approved: boolean,
+  now: number,
+) {
+  const embeddings = await listSkillEmbeddingsForSkill(ctx, skillId)
+  for (const embedding of embeddings) {
+    await ctx.db.patch(embedding._id, {
+      isApproved: approved,
+      visibility: embeddingVisibilityFor(embedding.isLatest, approved),
+      updatedAt: now,
+    })
   }
 }
 
@@ -2180,7 +2219,7 @@ export const applyBanToOwnedSkillsBatchInternal = internalMutation({
       }
 
       await ctx.db.patch(skill._id, patch)
-      await markSkillEmbeddingsDeleted(ctx, skill._id, args.bannedAt)
+      await setSkillEmbeddingsSoftDeleted(ctx, skill._id, true, args.bannedAt)
     }
 
     scheduleNextBatchIfNeeded(
@@ -2229,7 +2268,7 @@ export const restoreOwnedSkillsForUnbanBatchInternal = internalMutation({
         updatedAt: now,
       })
 
-      await restoreSkillEmbeddingVisibility(ctx, skill._id, now)
+      await setSkillEmbeddingsSoftDeleted(ctx, skill._id, false, now)
       restoredCount += 1
     }
 
@@ -2768,25 +2807,15 @@ export const updateTags = mutation({
     }
 
     const latestEntry = args.tags.find((entry) => entry.tag === 'latest')
+    const now = Date.now()
     await ctx.db.patch(skill._id, {
       tags: nextTags,
       latestVersionId: latestEntry ? latestEntry.versionId : skill.latestVersionId,
-      updatedAt: Date.now(),
+      updatedAt: now,
     })
 
     if (latestEntry) {
-      const embeddings = await ctx.db
-        .query('skillEmbeddings')
-        .withIndex('by_skill', (q) => q.eq('skillId', skill._id))
-        .collect()
-      for (const embedding of embeddings) {
-        const isLatest = embedding.versionId === latestEntry.versionId
-        await ctx.db.patch(embedding._id, {
-          isLatest,
-          visibility: embeddingVisibilityFor(isLatest, embedding.isApproved),
-          updatedAt: Date.now(),
-        })
-      }
+      await setSkillEmbeddingsLatestVersion(ctx, skill._id, latestEntry.versionId, now)
     }
   },
 })
@@ -2812,17 +2841,7 @@ export const setRedactionApproved = mutation({
       updatedAt: now,
     })
 
-    const embeddings = await ctx.db
-      .query('skillEmbeddings')
-      .withIndex('by_skill', (q) => q.eq('skillId', skill._id))
-      .collect()
-    for (const embedding of embeddings) {
-      await ctx.db.patch(embedding._id, {
-        isApproved: args.approved,
-        visibility: embeddingVisibilityFor(embedding.isLatest, args.approved),
-        updatedAt: now,
-      })
-    }
+    await setSkillEmbeddingsApproved(ctx, skill._id, args.approved, now)
 
     await ctx.db.insert('auditLogs', {
       actorUserId: user._id,
@@ -2891,18 +2910,7 @@ export const setSoftDeleted = mutation({
       updatedAt: now,
     })
 
-    const embeddings = await ctx.db
-      .query('skillEmbeddings')
-      .withIndex('by_skill', (q) => q.eq('skillId', skill._id))
-      .collect()
-    for (const embedding of embeddings) {
-      await ctx.db.patch(embedding._id, {
-        visibility: args.deleted
-          ? 'deleted'
-          : embeddingVisibilityFor(embedding.isLatest, embedding.isApproved),
-        updatedAt: now,
-      })
-    }
+    await setSkillEmbeddingsSoftDeleted(ctx, skill._id, args.deleted, now)
 
     await ctx.db.insert('auditLogs', {
       actorUserId: user._id,
@@ -2936,10 +2944,7 @@ export const changeOwner = mutation({
       updatedAt: now,
     })
 
-    const embeddings = await ctx.db
-      .query('skillEmbeddings')
-      .withIndex('by_skill', (q) => q.eq('skillId', skill._id))
-      .collect()
+    const embeddings = await listSkillEmbeddingsForSkill(ctx, skill._id)
     for (const embedding of embeddings) {
       await ctx.db.patch(embedding._id, {
         ownerId: args.ownerUserId,
@@ -3575,18 +3580,7 @@ export const setSkillSoftDeletedInternal = internalMutation({
       updatedAt: now,
     })
 
-    const embeddings = await ctx.db
-      .query('skillEmbeddings')
-      .withIndex('by_skill', (q) => q.eq('skillId', skill._id))
-      .collect()
-    for (const embedding of embeddings) {
-      await ctx.db.patch(embedding._id, {
-        visibility: args.deleted
-          ? 'deleted'
-          : embeddingVisibilityFor(embedding.isLatest, embedding.isApproved),
-        updatedAt: now,
-      })
-    }
+    await setSkillEmbeddingsSoftDeleted(ctx, skill._id, args.deleted, now)
 
     await ctx.db.insert('auditLogs', {
       actorUserId: args.userId,

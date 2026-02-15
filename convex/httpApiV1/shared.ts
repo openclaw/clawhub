@@ -8,6 +8,47 @@ import { corsHeaders, mergeHeaders } from '../lib/httpHeaders'
 
 export const MAX_RAW_FILE_BYTES = 200 * 1024
 
+const SAFE_TEXT_FILE_CSP =
+  "default-src 'none'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'"
+
+function isSvgLike(contentType: string | undefined, path: string) {
+  return contentType?.toLowerCase().includes('svg') || path.toLowerCase().endsWith('.svg')
+}
+
+export function safeTextFileResponse(params: {
+  textContent: string
+  path: string
+  contentType?: string
+  sha256: string
+  size: number
+  headers?: HeadersInit
+}) {
+  const isSvg = isSvgLike(params.contentType, params.path)
+
+  // For any text response that a browser might try to render, lock it down.
+  // In particular, this prevents SVG <foreignObject> script execution from reading
+  // localStorage tokens on this origin.
+  const headers = mergeHeaders(
+    params.headers,
+    {
+      'Content-Type': params.contentType
+        ? `${params.contentType}; charset=utf-8`
+        : 'text/plain; charset=utf-8',
+      'Cache-Control': 'private, max-age=60',
+      ETag: params.sha256,
+      'X-Content-SHA256': params.sha256,
+      'X-Content-Size': String(params.size),
+      'X-Content-Type-Options': 'nosniff',
+      'X-Frame-Options': 'DENY',
+      'Content-Security-Policy': SAFE_TEXT_FILE_CSP,
+      ...(isSvg ? { 'Content-Disposition': 'attachment' } : {}),
+    },
+    corsHeaders(),
+  )
+
+  return new Response(params.textContent, { status: 200, headers })
+}
+
 export function json(value: unknown, status = 200, headers?: HeadersInit) {
   return new Response(JSON.stringify(value), {
     status,

@@ -3,7 +3,6 @@ import type { Doc, Id } from '../_generated/dataModel'
 import type { ActionCtx } from '../_generated/server'
 import { getOptionalApiTokenUserId, requireApiTokenUser } from '../lib/apiTokenAuth'
 import { applyRateLimit, parseBearerToken } from '../lib/httpRateLimit'
-import { corsHeaders, mergeHeaders } from '../lib/httpHeaders'
 import { publishVersionForUser } from '../skills'
 import {
   MAX_RAW_FILE_BYTES,
@@ -12,6 +11,7 @@ import {
   parseMultipartPublish,
   parsePublishBody,
   resolveTagsBatch,
+  safeTextFileResponse,
   softDeleteErrorToResponse,
   text,
   toOptionalNumber,
@@ -406,32 +406,14 @@ export async function skillsGetRouterV1Handler(ctx: ActionCtx, request: Request)
     const blob = await ctx.storage.get(file.storageId)
     if (!blob) return text('File missing in storage', 410, rate.headers)
     const textContent = await blob.text()
-
-    const isSvg =
-      file.contentType?.toLowerCase().includes('svg') || file.path.toLowerCase().endsWith('.svg')
-
-    const headers = mergeHeaders(
-      rate.headers,
-      {
-        'Content-Type': file.contentType
-          ? `${file.contentType}; charset=utf-8`
-          : 'text/plain; charset=utf-8',
-        'Cache-Control': 'private, max-age=60',
-        ETag: file.sha256,
-        'X-Content-SHA256': file.sha256,
-        'X-Content-Size': String(file.size),
-        'X-Content-Type-Options': 'nosniff',
-        'X-Frame-Options': 'DENY',
-        // For any text response that a browser might try to render, lock it down.
-        // In particular, this prevents SVG <foreignObject> script execution from
-        // reading localStorage tokens on this origin.
-        'Content-Security-Policy':
-          "default-src 'none'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'",
-        ...(isSvg ? { 'Content-Disposition': 'attachment' } : {}),
-      },
-      corsHeaders(),
-    )
-    return new Response(textContent, { status: 200, headers })
+    return safeTextFileResponse({
+      textContent,
+      path: file.path,
+      contentType: file.contentType ?? undefined,
+      sha256: file.sha256,
+      size: file.size,
+      headers: rate.headers,
+    })
   }
 
   return text('Not found', 404, rate.headers)
