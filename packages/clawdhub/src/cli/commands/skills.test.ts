@@ -167,13 +167,13 @@ describe('cmdInstall', () => {
 
   it('skips scan and continues installation if scanner fails', async () => {
     vi.mocked(execFileSync).mockImplementation(() => {
-      throw new Error('uvx not found')
+      throw new Error('Rate limit exceeded')
     })
 
     await cmdInstall(makeOpts(), 'test-skill')
 
     expect(mockWarn).toHaveBeenCalledWith(
-      expect.stringContaining('⚠️  Skipping Snyk Agent Scan: uvx not found'),
+      expect.stringContaining('⚠️  Skipping Snyk Agent Scan: Rate limit exceeded'),
     )
     expect(rename).toHaveBeenCalled()
     expect(mockSpinner.succeed).toHaveBeenCalledWith(
