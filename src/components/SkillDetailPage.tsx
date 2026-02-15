@@ -10,6 +10,7 @@ import { getSkillBadges } from '../lib/badges'
 import type { PublicSkill, PublicUser } from '../lib/publicUser'
 import { canManageSkill, isModerator } from '../lib/roles'
 import { useAuthStatus } from '../lib/useAuthStatus'
+import { UserBadge } from './UserBadge'
 
 const SkillDiffCard = lazy(() =>
   import('./SkillDiffCard').then((m) => ({ default: m.SkillDiffCard })),
@@ -646,11 +647,9 @@ export function SkillDetailPage({
                   {skill.stats.installsCurrent ?? 0} current · {skill.stats.installsAllTime ?? 0}{' '}
                   all-time
                 </div>
-                {owner?.handle ? (
-                  <div className="stat">
-                    by <a href={`/u/${owner.handle}`}>@{owner.handle}</a>
-                  </div>
-                ) : null}
+                <div className="stat">
+                  <UserBadge user={owner} fallbackHandle={ownerHandle} prefix="by" size="md" />
+                </div>
                 {forkOf && forkOfHref ? (
                   <div className="stat">
                     {forkOfLabel}{' '}

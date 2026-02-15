@@ -45,6 +45,7 @@ describe('search helpers', () => {
         skill: makePublicSkill({ id: 'skills:orf', slug: 'orf', displayName: 'ORF' }),
         version: null,
         ownerHandle: 'steipete',
+        owner: null,
       },
     ]
     const runQuery = vi
@@ -154,6 +155,7 @@ describe('search helpers', () => {
         }),
         version: null,
         ownerHandle: 'one',
+        owner: null,
       },
       {
         embeddingId: 'skillEmbeddings:b',
@@ -165,6 +167,7 @@ describe('search helpers', () => {
         }),
         version: null,
         ownerHandle: 'two',
+        owner: null,
       },
     ]
     const fallbackEntries = [
@@ -177,6 +180,7 @@ describe('search helpers', () => {
         }),
         version: null,
         ownerHandle: 'one',
+        owner: null,
       },
       {
         skill: makePublicSkill({
@@ -187,6 +191,7 @@ describe('search helpers', () => {
         }),
         version: null,
         ownerHandle: 'three',
+        owner: null,
       },
     ]
 
