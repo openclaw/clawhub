@@ -69,31 +69,44 @@ export const syncGitHubProfileInternal = internalMutation({
     userId: v.id('users'),
     name: v.string(),
     image: v.optional(v.string()),
+    syncedAt: v.number(),
   },
   handler: async (ctx, args) => {
     const user = await ctx.db.get(args.userId)
     if (!user || user.deletedAt || user.deactivatedAt) return
 
-    const updates: Record<string, unknown> = {
-      name: args.name,
-      updatedAt: Date.now(),
+    const updates: Record<string, unknown> = { githubProfileSyncedAt: args.syncedAt }
+    let didChangeProfile = false
+
+    if (user.name !== args.name) {
+      updates.name = args.name
+      didChangeProfile = true
     }
 
     // Update handle if it was derived from the old username
-    if (user.handle === user.name) {
+    if (user.handle === user.name && user.name !== args.name) {
       updates.handle = args.name
+      didChangeProfile = true
     }
 
     // Update displayName if it was derived from the old username
-    if (user.displayName === user.name || user.displayName === user.handle) {
+    if (
+      (user.displayName === user.name || user.displayName === user.handle) &&
+      user.name !== args.name
+    ) {
       updates.displayName = args.name
+      didChangeProfile = true
     }
 
     // Update avatar if provided
-    if (args.image) {
+    if (args.image && args.image !== user.image) {
       updates.image = args.image
+      didChangeProfile = true
     }
 
+    if (didChangeProfile) {
+      updates.updatedAt = Date.now()
+    }
     await ctx.db.patch(args.userId, updates)
   },
 })

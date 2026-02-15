@@ -15,8 +15,9 @@ const REAUTH_BLOCKING_BAN_ACTIONS = new Set(['user.ban', 'user.autoban.malware']
 export async function handleDeletedUserSignIn(
   ctx: GenericMutationCtx<DataModel>,
   args: { userId: Id<'users'>; existingUserId: Id<'users'> | null },
+  userOverride?: { deletedAt?: number; deactivatedAt?: number; purgedAt?: number } | null,
 ) {
-  const user = await ctx.db.get(args.userId)
+  const user = userOverride !== undefined ? userOverride : await ctx.db.get(args.userId)
   if (!user?.deletedAt && !user?.deactivatedAt) return
 
   // Verify that the incoming identity matches the existing account to prevent bypass.
@@ -80,13 +81,20 @@ export const { auth, signIn, signOut, store, isAuthenticated } = convexAuth({
      * the case where a user renames their GitHub account (fixes #303).
      */
     async afterUserCreatedOrUpdated(ctx, args) {
-      await handleDeletedUserSignIn(ctx, args)
+      const user = await ctx.db.get(args.userId)
+      await handleDeletedUserSignIn(ctx, args, user)
 
       // Schedule GitHub profile sync to handle username renames (fixes #303)
       // This runs as a background action so it doesn't block sign-in
-      await ctx.scheduler.runAfter(0, internal.users.syncGitHubProfileAction, {
-        userId: args.userId,
-      })
+      const now = Date.now()
+      const lastSyncedAt = user?.githubProfileSyncedAt ?? null
+      if (user && !user.deletedAt && !user.deactivatedAt) {
+        if (!lastSyncedAt || now - lastSyncedAt >= 6 * 60 * 60 * 1000) {
+          await ctx.scheduler.runAfter(0, internal.users.syncGitHubProfileAction, {
+            userId: args.userId,
+          })
+        }
+      }
     },
   },
 })

@@ -5,6 +5,7 @@ import type { ActionCtx } from '../_generated/server'
 
 const GITHUB_API = 'https://api.github.com'
 const MIN_ACCOUNT_AGE_MS = 7 * 24 * 60 * 60 * 1000
+const PROFILE_SYNC_WINDOW_MS = 6 * 60 * 60 * 1000
 
 type GitHubUser = {
   login?: string
@@ -90,6 +91,10 @@ export async function syncGitHubProfile(ctx: ActionCtx, userId: Id<'users'>) {
   const user = await ctx.runQuery(internal.users.getByIdInternal, { userId })
   if (!user || user.deletedAt || user.deactivatedAt) return
 
+  const now = Date.now()
+  const lastSyncedAt = user.githubProfileSyncedAt ?? null
+  if (lastSyncedAt && now - lastSyncedAt < PROFILE_SYNC_WINDOW_MS) return
+
   const providerAccountId = await ctx.runQuery(
     internal.githubIdentity.getGitHubProviderAccountIdInternal,
     { userId },
@@ -111,12 +116,12 @@ export async function syncGitHubProfile(ctx: ActionCtx, userId: Id<'users'>) {
   const newLogin = payload.login?.trim()
   const newImage = payload.avatar_url?.trim()
 
-  // Only update if the username has changed
-  if (newLogin && newLogin !== user.name) {
-    await ctx.runMutation(internal.users.syncGitHubProfileInternal, {
-      userId,
-      name: newLogin,
-      image: newImage,
-    })
-  }
+  if (!newLogin) return
+
+  await ctx.runMutation(internal.users.syncGitHubProfileInternal, {
+    userId,
+    name: newLogin,
+    image: newImage,
+    syncedAt: now,
+  })
 }

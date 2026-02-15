@@ -2,7 +2,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { internal } from '../_generated/api'
-import { requireGitHubAccountAge } from './githubAccount'
+import { requireGitHubAccountAge, syncGitHubProfile } from './githubAccount'
 
 vi.mock('../_generated/api', () => ({
   internal: {
@@ -12,6 +12,7 @@ vi.mock('../_generated/api', () => ({
     users: {
       getByIdInternal: Symbol('getByIdInternal'),
       setGitHubCreatedAtInternal: Symbol('setGitHubCreatedAtInternal'),
+      syncGitHubProfileInternal: Symbol('syncGitHubProfileInternal'),
     },
   },
 }))
@@ -257,5 +258,105 @@ describe('requireGitHubAccountAge', () => {
         },
       }),
     )
+  })
+})
+
+describe('syncGitHubProfile', () => {
+  beforeEach(() => {
+    vi.restoreAllMocks()
+    vi.unstubAllEnvs()
+    vi.unstubAllGlobals()
+  })
+
+  afterEach(() => {
+    vi.useRealTimers()
+    vi.unstubAllEnvs()
+    vi.unstubAllGlobals()
+  })
+
+  it('skips recent syncs (throttle)', async () => {
+    vi.useFakeTimers()
+    const now = new Date('2026-02-02T12:00:00Z')
+    vi.setSystemTime(now)
+
+    const runQuery = vi.fn()
+      .mockResolvedValueOnce({
+        _id: 'users:1',
+        name: 'oldname',
+        githubProfileSyncedAt: now.getTime(),
+      })
+    const runMutation = vi.fn()
+    const fetchMock = vi.fn()
+    vi.stubGlobal('fetch', fetchMock)
+
+    await syncGitHubProfile({ runQuery, runMutation } as never, 'users:1' as never)
+
+    expect(fetchMock).not.toHaveBeenCalled()
+    expect(runMutation).not.toHaveBeenCalled()
+  })
+
+  it('updates profile even when only avatar changes', async () => {
+    vi.useFakeTimers()
+    const now = new Date('2026-02-02T12:00:00Z')
+    vi.setSystemTime(now)
+
+    const runQuery = vi.fn()
+      .mockResolvedValueOnce({
+        _id: 'users:1',
+        name: 'same',
+        image: 'https://avatars.githubusercontent.com/u/1?v=3',
+        githubProfileSyncedAt: now.getTime() - 10 * ONE_DAY_MS,
+      })
+      .mockResolvedValueOnce('12345')
+    const runMutation = vi.fn()
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        login: 'same',
+        avatar_url: 'https://avatars.githubusercontent.com/u/1?v=4',
+      }),
+    })
+    vi.stubGlobal('fetch', fetchMock)
+
+    await syncGitHubProfile({ runQuery, runMutation } as never, 'users:1' as never)
+
+    expect(runMutation).toHaveBeenCalledWith(internal.users.syncGitHubProfileInternal, {
+      userId: 'users:1',
+      name: 'same',
+      image: 'https://avatars.githubusercontent.com/u/1?v=4',
+      syncedAt: now.getTime(),
+    })
+  })
+
+  it('updates name and records sync timestamp', async () => {
+    vi.useFakeTimers()
+    const now = new Date('2026-02-02T12:00:00Z')
+    vi.setSystemTime(now)
+
+    const runQuery = vi.fn()
+      .mockResolvedValueOnce({
+        _id: 'users:1',
+        name: 'old',
+        githubProfileSyncedAt: now.getTime() - 10 * ONE_DAY_MS,
+      })
+      .mockResolvedValueOnce('12345')
+    const runMutation = vi.fn()
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        login: 'new',
+        avatar_url: 'https://avatars.githubusercontent.com/u/1?v=1',
+      }),
+    })
+    vi.stubGlobal('fetch', fetchMock)
+
+    await syncGitHubProfile({ runQuery, runMutation } as never, 'users:1' as never)
+
+    expect(runMutation).toHaveBeenCalledWith(internal.users.syncGitHubProfileInternal, {
+      userId: 'users:1',
+      name: 'new',
+      image: 'https://avatars.githubusercontent.com/u/1?v=1',
+      syncedAt: now.getTime(),
+    })
   })
 })
