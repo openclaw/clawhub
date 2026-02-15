@@ -48,6 +48,27 @@ type ListSkillsResult = {
 
 type SkillFile = Doc<"skillVersions">["files"][number];
 
+type ModerationEvidence = {
+  code: string;
+  severity: "info" | "warn" | "critical";
+  file: string;
+  line: number;
+  message: string;
+  evidence: string;
+};
+
+type SkillModerationShape = {
+  moderationFlags?: string[];
+  moderationVerdict?: "clean" | "suspicious" | "malicious";
+  moderationReasonCodes?: string[];
+  moderationSummary?: string;
+  moderationEngineVersion?: string;
+  moderationEvaluatedAt?: number;
+  moderationReason?: string;
+  moderationEvidence?: ModerationEvidence[];
+  updatedAt?: number;
+};
+
 type GetBySlugResult = {
   skill: {
     _id: Id<"skills">;
@@ -59,6 +80,8 @@ type GetBySlugResult = {
     stats: unknown;
     createdAt: number;
     updatedAt: number;
+    moderationReason?: string;
+    moderationEvidence?: ModerationEvidence[];
   } | null;
   latestVersion: Doc<"skillVersions"> | null;
   owner: { _id: Id<"users">; handle?: string; displayName?: string; image?: string } | null;
@@ -94,6 +117,46 @@ type ListVersionsResult = {
   }>;
   nextCursor: string | null;
 };
+
+function sanitizeEvidence(
+  evidence: ModerationEvidence[],
+  allowSensitiveEvidence: boolean,
+): ModerationEvidence[] {
+  if (allowSensitiveEvidence) return evidence;
+  return evidence.map((entry) => ({
+    code: entry.code,
+    severity: entry.severity,
+    file: entry.file,
+    line: entry.line,
+    message: entry.message,
+    evidence: "",
+  }));
+}
+
+function normalizeModerationFromSkill(skill: SkillModerationShape) {
+  const flags = Array.isArray(skill.moderationFlags) ? skill.moderationFlags : [];
+  const verdict =
+    skill.moderationVerdict ??
+    (flags.includes("blocked.malware")
+      ? "malicious"
+      : flags.includes("flagged.suspicious")
+        ? "suspicious"
+        : "clean");
+  const isMalwareBlocked = verdict === "malicious" || flags.includes("blocked.malware");
+  const isSuspicious =
+    !isMalwareBlocked && (verdict === "suspicious" || flags.includes("flagged.suspicious"));
+  return {
+    isMalwareBlocked,
+    isSuspicious,
+    verdict,
+    reasonCodes: Array.isArray(skill.moderationReasonCodes) ? skill.moderationReasonCodes : [],
+    summary: skill.moderationSummary ?? null,
+    engineVersion: skill.moderationEngineVersion ?? null,
+    updatedAt: skill.moderationEvaluatedAt ?? skill.updatedAt ?? null,
+    reason: skill.moderationReason ?? null,
+    evidence: Array.isArray(skill.moderationEvidence) ? skill.moderationEvidence : [],
+  };
+}
 
 export async function searchSkillsV1Handler(ctx: ActionCtx, request: Request) {
   const rate = await applyRateLimit(ctx, request, "read");
@@ -331,15 +394,7 @@ export async function skillsGetRouterV1Handler(ctx: ActionCtx, request: Request)
   }
 
   if (second === "moderation" && segments.length === 2) {
-    const result = (await ctx.runQuery(api.skills.getBySlug, { slug })) as GetBySlugResult;
-    if (!result?.skill) {
-      const hidden = await describeOwnerVisibleSkillState(ctx, request, slug);
-      if (hidden) return text(hidden.message, hidden.status, rate.headers);
-      return text("Skill not found", 404, rate.headers);
-    }
-
     const apiTokenUserId = await getOptionalApiTokenUserId(ctx, request);
-    const isOwner = Boolean(apiTokenUserId && apiTokenUserId === result.skill.ownerUserId);
     let isStaff = false;
     if (apiTokenUserId) {
       const caller = await ctx.runQuery(internal.users.getByIdInternal, { userId: apiTokenUserId });
@@ -348,36 +403,44 @@ export async function skillsGetRouterV1Handler(ctx: ActionCtx, request: Request)
       }
     }
 
-    const mod = result.moderationInfo;
+    const result = (await ctx.runQuery(api.skills.getBySlug, { slug })) as GetBySlugResult;
+    if (!result?.skill) {
+      const hiddenSkill = await ctx.runQuery(internal.skills.getSkillBySlugInternal, { slug });
+      const isOwner = Boolean(apiTokenUserId && hiddenSkill && apiTokenUserId === hiddenSkill.ownerUserId);
+      if (hiddenSkill && (isOwner || isStaff)) {
+        const mod = normalizeModerationFromSkill(hiddenSkill as SkillModerationShape);
+        return json(
+          {
+            moderation: {
+              isSuspicious: mod.isSuspicious,
+              isMalwareBlocked: mod.isMalwareBlocked,
+              verdict: mod.verdict,
+              reasonCodes: mod.reasonCodes,
+              summary: mod.summary,
+              engineVersion: mod.engineVersion,
+              updatedAt: mod.updatedAt,
+              evidence: sanitizeEvidence(mod.evidence, true),
+              legacyReason: mod.reason,
+            },
+          },
+          200,
+          rate.headers,
+        );
+      }
+
+      const hidden = await describeOwnerVisibleSkillState(ctx, request, slug);
+      if (hidden) return text(hidden.message, hidden.status, rate.headers);
+      return text("Skill not found", 404, rate.headers);
+    }
+
+    const isOwner = Boolean(apiTokenUserId && apiTokenUserId === result.skill.ownerUserId);
+    const mod = result.moderationInfo ?? normalizeModerationFromSkill(result.skill as SkillModerationShape);
     const isFlagged = Boolean(mod?.isSuspicious || mod?.isMalwareBlocked);
     if (!isOwner && !isStaff && !isFlagged) {
       return text("Moderation details unavailable", 404, rate.headers);
     }
 
-    const allEvidence =
-      (
-        result.skill as {
-          moderationEvidence?: Array<{
-            code: string;
-            severity: "info" | "warn" | "critical";
-            file: string;
-            line: number;
-            message: string;
-            evidence: string;
-          }>;
-        }
-      ).moderationEvidence ?? [];
-    const evidence =
-      isOwner || isStaff
-        ? allEvidence
-        : allEvidence.map((entry) => ({
-            code: entry.code,
-            severity: entry.severity,
-            file: entry.file,
-            line: entry.line,
-            message: entry.message,
-            evidence: "",
-          }));
+    const evidence = sanitizeEvidence(result.skill.moderationEvidence ?? [], Boolean(isOwner || isStaff));
 
     return json(
       {

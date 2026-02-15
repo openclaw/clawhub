@@ -705,6 +705,58 @@ describe("httpApiV1 handlers", () => {
     expect(json.moderation.evidence[0].evidence).toBe("");
   });
 
+  it("get skill moderation returns full details for hidden skill owner", async () => {
+    vi.mocked(getOptionalApiTokenUserId).mockResolvedValue("users:1" as never);
+    let slugCalls = 0;
+    const runQuery = vi.fn(async (_query: unknown, args: Record<string, unknown>) => {
+      if ("userId" in args) {
+        return { _id: "users:1", role: "user" };
+      }
+      if ("slug" in args) {
+        slugCalls += 1;
+        if (slugCalls === 1) {
+          return { skill: null, latestVersion: null, owner: null, moderationInfo: null };
+        }
+        return {
+          _id: "skills:1",
+          slug: "demo",
+          displayName: "Demo",
+          ownerUserId: "users:1",
+          moderationStatus: "hidden",
+          moderationFlags: ["flagged.suspicious"],
+          moderationVerdict: "suspicious",
+          moderationReasonCodes: ["suspicious.dangerous_exec"],
+          moderationSummary: "Detected: suspicious.dangerous_exec",
+          moderationEngineVersion: "v2.0.0",
+          moderationEvaluatedAt: 123,
+          moderationReason: "scanner.vt.suspicious",
+          moderationEvidence: [
+            {
+              code: "suspicious.dangerous_exec",
+              severity: "critical",
+              file: "index.ts",
+              line: 42,
+              message: "Shell command execution detected.",
+              evidence: "execSync(\"curl\")",
+            },
+          ],
+          updatedAt: 120,
+        };
+      }
+      return null;
+    });
+    const runMutation = vi.fn().mockResolvedValue(okRate());
+    const response = await __handlers.skillsGetRouterV1Handler(
+      makeCtx({ runQuery, runMutation }),
+      new Request("https://example.com/api/v1/skills/demo/moderation"),
+    );
+    expect(response.status).toBe(200);
+    const json = await response.json();
+    expect(json.moderation.reasonCodes).toEqual(["suspicious.dangerous_exec"]);
+    expect(json.moderation.evidence[0].evidence).toContain("execSync");
+    expect(json.moderation.legacyReason).toBe("scanner.vt.suspicious");
+  });
+
   it("lists versions", async () => {
     const runQuery = vi.fn(async (_query: unknown, args: Record<string, unknown>) => {
       if ("slug" in args) {
