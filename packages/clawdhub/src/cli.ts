@@ -14,7 +14,14 @@ import {
 import { cmdInspect } from './cli/commands/inspect.js'
 import { cmdBanUser, cmdSetRole } from './cli/commands/moderation.js'
 import { cmdPublish } from './cli/commands/publish.js'
-import { cmdExplore, cmdInstall, cmdList, cmdSearch, cmdUpdate } from './cli/commands/skills.js'
+import {
+  cmdExplore,
+  cmdInstall,
+  cmdList,
+  cmdSearch,
+  cmdUninstall,
+  cmdUpdate,
+} from './cli/commands/skills.js'
 import { cmdStarSkill } from './cli/commands/star.js'
 import { cmdSync } from './cli/commands/sync.js'
 import { cmdUnstarSkill } from './cli/commands/unstar.js'
@@ -196,6 +203,16 @@ program
   .action(async (slug, options) => {
     const opts = await resolveGlobalOpts()
     await cmdUpdate(opts, slug, options, isInputAllowed())
+  })
+
+program
+  .command('uninstall')
+  .description('Uninstall a skill')
+  .argument('<slug>', 'Skill slug')
+  .option('--yes', 'Skip confirmation')
+  .action(async (slug, options) => {
+    const opts = await resolveGlobalOpts()
+    await cmdUninstall(opts, slug, options, isInputAllowed())
   })
 
 program
