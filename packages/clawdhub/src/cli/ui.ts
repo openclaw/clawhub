@@ -52,7 +52,20 @@ export function openInBrowser(url: string) {
         : ['xdg-open', url]
   const [command, ...commandArgs] = args
   if (!command) return
+
   const child = spawn(command, commandArgs, { stdio: 'ignore', detached: true })
+
+  child.on('error', (err) => {
+    if ((err as NodeJS.ErrnoException).code === 'ENOENT') {
+      console.log('')
+      console.log('Could not open browser automatically.')
+      console.log('Please open this URL manually:')
+      console.log('')
+      console.log(`  ${url}`)
+      console.log('')
+    }
+  })
+
   child.unref()
 }
 
