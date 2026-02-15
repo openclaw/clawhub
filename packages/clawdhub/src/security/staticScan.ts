@@ -6,7 +6,7 @@ const CODES = {
   credentialHarvest: "malicious.env_harvesting",
   exfiltration: "suspicious.potential_exfiltration",
   obfuscatedCode: "suspicious.obfuscated_code",
-  suspiciousNetwork: "suspicious.suspicious_network",
+  suspiciousNetwork: "suspicious.nonstandard_network",
   cryptoMining: "malicious.crypto_mining",
   injectionInstructions: "suspicious.prompt_injection_instructions",
   installSource: "suspicious.install_untrusted_source",
