@@ -1,12 +1,29 @@
 import { v } from 'convex/values'
 import { internal } from './_generated/api'
 import type { Doc, Id } from './_generated/dataModel'
+import type { QueryCtx } from './_generated/server'
 import { action, internalQuery } from './_generated/server'
 import { getSkillBadgeMaps, isSkillHighlighted, type SkillBadgeMap } from './lib/badges'
 import { generateEmbedding } from './lib/embeddings'
 import { toPublicSkill, toPublicSoul, toPublicUser } from './lib/public'
 import { matchesExactTokens, tokenize } from './lib/searchText'
 import { isSkillSuspicious } from './lib/skillSafety'
+
+type OwnerInfo = { handle: string | null; owner: ReturnType<typeof toPublicUser> | null }
+
+function makeOwnerInfoGetter(ctx: Pick<QueryCtx, 'db'>) {
+  const ownerCache = new Map<Id<'users'>, Promise<OwnerInfo>>()
+  return (ownerUserId: Id<'users'>) => {
+    const cached = ownerCache.get(ownerUserId)
+    if (cached) return cached
+    const ownerPromise = ctx.db.get(ownerUserId).then((ownerDoc) => ({
+      handle: ownerDoc?.handle ?? (ownerDoc?._id ? String(ownerDoc._id) : null),
+      owner: toPublicUser(ownerDoc),
+    }))
+    ownerCache.set(ownerUserId, ownerPromise)
+    return ownerPromise
+  }
+}
 
 type SkillSearchEntry = {
   embeddingId?: Id<'skillEmbeddings'>
@@ -212,21 +229,7 @@ export const hydrateResults = internalQuery({
     nonSuspiciousOnly: v.optional(v.boolean()),
   },
   handler: async (ctx, args): Promise<SkillSearchEntry[]> => {
-    const ownerCache = new Map<
-      Id<'users'>,
-      Promise<{ handle: string | null; owner: ReturnType<typeof toPublicUser> | null }>
-    >()
-
-    const getOwnerInfo = (ownerUserId: Id<'users'>) => {
-      const cached = ownerCache.get(ownerUserId)
-      if (cached) return cached
-      const ownerPromise = ctx.db.get(ownerUserId).then((ownerDoc) => ({
-        handle: ownerDoc?.handle ?? (ownerDoc?._id ? String(ownerDoc._id) : null),
-        owner: toPublicUser(ownerDoc),
-      }))
-      ownerCache.set(ownerUserId, ownerPromise)
-      return ownerPromise
-    }
+    const getOwnerInfo = makeOwnerInfoGetter(ctx)
 
     const entries: Array<SkillSearchEntry | null> = await Promise.all(
       args.embeddingIds.map(async (embeddingId) => {
@@ -302,20 +305,7 @@ export const lexicalFallbackSkills = internalQuery({
     )
     if (matched.length === 0) return []
 
-    const ownerCache = new Map<
-      Id<'users'>,
-      Promise<{ handle: string | null; owner: ReturnType<typeof toPublicUser> | null }>
-    >()
-    const getOwnerInfo = (ownerUserId: Id<'users'>) => {
-      const cached = ownerCache.get(ownerUserId)
-      if (cached) return cached
-      const ownerPromise = ctx.db.get(ownerUserId).then((ownerDoc) => ({
-        handle: ownerDoc?.handle ?? (ownerDoc?._id ? String(ownerDoc._id) : null),
-        owner: toPublicUser(ownerDoc),
-      }))
-      ownerCache.set(ownerUserId, ownerPromise)
-      return ownerPromise
-    }
+    const getOwnerInfo = makeOwnerInfoGetter(ctx)
 
     const entries = await Promise.all(
       matched.map(async (skill) => {

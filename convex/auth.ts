@@ -4,6 +4,7 @@ import type { GenericMutationCtx } from 'convex/server'
 import { ConvexError } from 'convex/values'
 import { internal } from './_generated/api'
 import type { DataModel, Id } from './_generated/dataModel'
+import { shouldScheduleGitHubProfileSync } from './lib/githubProfileSync'
 
 export const BANNED_REAUTH_MESSAGE =
   'Your account has been banned for uploading malicious skills. If you believe this is a mistake, please contact security@openclaw.ai and we will work with you to restore access.'
@@ -87,13 +88,10 @@ export const { auth, signIn, signOut, store, isAuthenticated } = convexAuth({
       // Schedule GitHub profile sync to handle username renames (fixes #303)
       // This runs as a background action so it doesn't block sign-in
       const now = Date.now()
-      const lastSyncedAt = user?.githubProfileSyncedAt ?? null
-      if (user && !user.deletedAt && !user.deactivatedAt) {
-        if (!lastSyncedAt || now - lastSyncedAt >= 6 * 60 * 60 * 1000) {
-          await ctx.scheduler.runAfter(0, internal.users.syncGitHubProfileAction, {
-            userId: args.userId,
-          })
-        }
+      if (shouldScheduleGitHubProfileSync(user, now)) {
+        await ctx.scheduler.runAfter(0, internal.users.syncGitHubProfileAction, {
+          userId: args.userId,
+        })
       }
     },
   },

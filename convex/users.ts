@@ -75,7 +75,7 @@ export const syncGitHubProfileInternal = internalMutation({
     const user = await ctx.db.get(args.userId)
     if (!user || user.deletedAt || user.deactivatedAt) return
 
-    const updates: Record<string, unknown> = { githubProfileSyncedAt: args.syncedAt }
+    const updates: Partial<Doc<'users'>> = { githubProfileSyncedAt: args.syncedAt }
     let didChangeProfile = false
 
     if (user.name !== args.name) {
