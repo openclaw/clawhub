@@ -4,20 +4,27 @@
 
 ### Added
 - Admin: add manual unban for banned users (clears `deletedAt` + `banReason`, audit log entry). Revoked API tokens stay revoked.
+- Admin: bulk restore skills from GitHub backup; reclaim squatted slugs via v1 endpoints + internal tooling (#298) (thanks @autogame-17).
+- Users: add `trustedPublisher` flag and admin mutations to bypass pending-scan auto-hide for trusted publishers (#298) (thanks @autogame-17).
+- Skills/Web: show skill owner avatar + handle on skill cards, lists, and detail pages (#312) (thanks @ianalloway).
 
 ### Changed
 - Quality gate: language-aware word counting (`Intl.Segmenter`) and new `cjkChars` signal to reduce false rejects for non-Latin docs.
 - Jobs: run skill stat event processing every 5 minutes (was 15).
 - API performance: batch resolve skill/soul tags in v1 list/get endpoints (fewer action->query round-trips) (#112) (thanks @mkrokosz).
+- Skills: reserve deleted slugs for prior owners (90-day cooldown) to prevent squatting; add admin reclaim flow (#298) (thanks @autogame-17).
+- Moderation: ban flow soft-deletes owned skills (reversible) and removes them from vector search (#298) (thanks @autogame-17).
 
 ### Fixed
 - Users: sync handle on ensure when GitHub login changes (#293) (thanks @christianhpoe).
+- Users/Auth: throttle GitHub profile sync on login; also sync avatar when it changes (#312) (thanks @ianalloway).
 - Upload gate: fetch GitHub account age by immutable account ID (prevents username swaps) (#116) (thanks @mkrokosz).
 - API: return proper status codes for delete/undelete errors (#35) (thanks @sergical).
 - API: for owners, return clearer status/messages for hidden/soft-deleted skills instead of a generic 404.
 - HTTP/CORS: add preflight handler + include CORS headers on API/download errors; CLI: include auth token for owner-visible installs/updates (#146) (thanks @Grenghis-Khan).
 - CLI: clarify `logout` only removes the local token; token remains valid until revoked in the web UI (#166) (thanks @aronchick).
 - Skills: keep global sorting across pagination on `/skills` (thanks @CodeBBakGoSu, #98).
+- Skills: allow updating skill description/summary from frontmatter on subsequent publishes (#312) (thanks @ianalloway).
 
 ## 0.6.1 - 2026-02-13
 

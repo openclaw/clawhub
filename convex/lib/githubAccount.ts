@@ -2,12 +2,14 @@ import { ConvexError } from 'convex/values'
 import { internal } from '../_generated/api'
 import type { Id } from '../_generated/dataModel'
 import type { ActionCtx } from '../_generated/server'
+import { GITHUB_PROFILE_SYNC_WINDOW_MS } from './githubProfileSync'
 
 const GITHUB_API = 'https://api.github.com'
 const MIN_ACCOUNT_AGE_MS = 7 * 24 * 60 * 60 * 1000
 
 type GitHubUser = {
   login?: string
+  name?: string
   avatar_url?: string
   created_at?: string
 }
@@ -90,6 +92,10 @@ export async function syncGitHubProfile(ctx: ActionCtx, userId: Id<'users'>) {
   const user = await ctx.runQuery(internal.users.getByIdInternal, { userId })
   if (!user || user.deletedAt || user.deactivatedAt) return
 
+  const now = Date.now()
+  const lastSyncedAt = user.githubProfileSyncedAt ?? null
+  if (lastSyncedAt && now - lastSyncedAt < GITHUB_PROFILE_SYNC_WINDOW_MS) return
+
   const providerAccountId = await ctx.runQuery(
     internal.githubIdentity.getGitHubProviderAccountIdInternal,
     { userId },
@@ -119,4 +125,25 @@ export async function syncGitHubProfile(ctx: ActionCtx, userId: Id<'users'>) {
       image: newImage,
     })
   }
+  const profileName = payload.name?.trim()
+
+  if (!newLogin) return
+
+  const args: {
+    userId: Id<'users'>
+    name: string
+    image?: string
+    syncedAt: number
+    profileName?: string
+  } = {
+    userId,
+    name: newLogin,
+    image: newImage,
+    syncedAt: now,
+  }
+  if (profileName && profileName !== newLogin) {
+    args.profileName = profileName
+  }
+
+  await ctx.runMutation(internal.users.syncGitHubProfileInternal, args)
 }

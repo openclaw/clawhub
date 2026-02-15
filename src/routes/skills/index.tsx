@@ -4,8 +4,9 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { api } from '../../../convex/_generated/api'
 import type { Doc } from '../../../convex/_generated/dataModel'
 import { SkillCard } from '../../components/SkillCard'
+import { UserBadge } from '../../components/UserBadge'
 import { getSkillBadges, isSkillHighlighted } from '../../lib/badges'
-import type { PublicSkill } from '../../lib/publicUser'
+import type { PublicSkill, PublicUser } from '../../lib/publicUser'
 
 const sortKeys = [
   'relevance',
@@ -52,6 +53,7 @@ type SkillListEntry = {
     }
   } | null
   ownerHandle?: string | null
+  owner?: PublicUser | null
   searchScore?: number
 }
 
@@ -60,6 +62,7 @@ type SkillSearchEntry = {
   version: Doc<'skillVersions'> | null
   score: number
   ownerHandle?: string | null
+  owner?: PublicUser | null
 }
 
 function buildSkillHref(skill: PublicSkill, ownerHandle?: string | null) {
@@ -221,6 +224,7 @@ export function SkillsIndex() {
         skill: entry.skill,
         latestVersion: entry.version,
         ownerHandle: entry.ownerHandle ?? null,
+        owner: entry.owner ?? null,
         searchScore: entry.score,
       }))
     }
@@ -454,7 +458,8 @@ export function SkillsIndex() {
             {sorted.map((entry) => {
               const skill = entry.skill
               const isPlugin = Boolean(entry.latestVersion?.parsed?.clawdis?.nix?.plugin)
-              const skillHref = buildSkillHref(skill, entry.ownerHandle)
+              const ownerHandle = entry.owner?.handle ?? entry.owner?.name ?? entry.ownerHandle ?? null
+              const skillHref = buildSkillHref(skill, ownerHandle)
               return (
                 <SkillCard
                   key={skill._id}
@@ -464,9 +469,12 @@ export function SkillsIndex() {
                   chip={isPlugin ? 'Plugin bundle (nix)' : undefined}
                   summaryFallback="Agent-ready skill pack."
                   meta={
-                    <div className="stat">
-                      ⭐ {skill.stats.stars} · ⤓ {skill.stats.downloads} · ⤒{' '}
-                      {skill.stats.installsAllTime ?? 0}
+                    <div className="skill-card-footer-rows">
+                      <UserBadge user={entry.owner} fallbackHandle={ownerHandle} prefix="by" link={false} />
+                      <div className="stat">
+                        ⭐ {skill.stats.stars} · ⤓ {skill.stats.downloads} · ⤒{' '}
+                        {skill.stats.installsAllTime ?? 0}
+                      </div>
                     </div>
                   }
                 />
@@ -478,7 +486,8 @@ export function SkillsIndex() {
             {sorted.map((entry) => {
               const skill = entry.skill
               const isPlugin = Boolean(entry.latestVersion?.parsed?.clawdis?.nix?.plugin)
-              const skillHref = buildSkillHref(skill, entry.ownerHandle)
+              const ownerHandle = entry.owner?.handle ?? entry.owner?.name ?? entry.ownerHandle ?? null
+              const skillHref = buildSkillHref(skill, ownerHandle)
               return (
                 <Link key={skill._id} className="skills-row" to={skillHref}>
                   <div className="skills-row-main">
@@ -496,6 +505,9 @@ export function SkillsIndex() {
                     </div>
                     <div className="skills-row-summary">
                       {skill.summary ?? 'No summary provided.'}
+                    </div>
+                    <div className="skills-row-owner">
+                      <UserBadge user={entry.owner} fallbackHandle={ownerHandle} prefix="by" link={false} />
                     </div>
                     {isPlugin ? (
                       <div className="skills-row-meta">

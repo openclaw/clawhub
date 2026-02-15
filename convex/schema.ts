@@ -16,6 +16,9 @@ const users = defineTable({
   bio: v.optional(v.string()),
   role: v.optional(v.union(v.literal('admin'), v.literal('moderator'), v.literal('user'))),
   githubCreatedAt: v.optional(v.number()),
+  githubFetchedAt: v.optional(v.number()),
+  githubProfileSyncedAt: v.optional(v.number()),
+  trustedPublisher: v.optional(v.boolean()),
   deactivatedAt: v.optional(v.number()),
   purgedAt: v.optional(v.number()),
   deletedAt: v.optional(v.number()),
@@ -499,6 +502,19 @@ const downloadDedupes = defineTable({
   .index('by_skill_identity_hour', ['skillId', 'identityHash', 'hourStart'])
   .index('by_hour', ['hourStart'])
 
+const reservedSlugs = defineTable({
+  slug: v.string(),
+  originalOwnerUserId: v.id('users'),
+  deletedAt: v.number(),
+  expiresAt: v.number(),
+  reason: v.optional(v.string()),
+  releasedAt: v.optional(v.number()),
+})
+  .index('by_slug', ['slug'])
+  .index('by_slug_active_deletedAt', ['slug', 'releasedAt', 'deletedAt'])
+  .index('by_owner', ['originalOwnerUserId'])
+  .index('by_expiry', ['expiresAt'])
+
 const githubBackupSyncState = defineTable({
   key: v.string(),
   cursor: v.optional(v.string()),
@@ -570,6 +586,7 @@ export default defineSchema({
   apiTokens,
   rateLimits,
   downloadDedupes,
+  reservedSlugs,
   githubBackupSyncState,
   userSyncRoots,
   userSkillInstalls,

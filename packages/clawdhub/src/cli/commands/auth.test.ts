@@ -12,7 +12,7 @@ vi.mock('../../config.js', () => ({
 
 const mockGetRegistry = vi.fn(async () => 'https://clawhub.ai')
 vi.mock('../registry.js', () => ({
-  getRegistry: (...args: unknown[]) => mockGetRegistry(...args),
+  getRegistry: () => mockGetRegistry(),
 }))
 
 const { cmdLogout } = await import('./auth')
@@ -63,4 +63,3 @@ describe('cmdLogout', () => {
     })
   })
 })
-
