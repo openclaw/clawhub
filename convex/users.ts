@@ -5,6 +5,7 @@ import type { Doc, Id } from './_generated/dataModel'
 import type { MutationCtx } from './_generated/server'
 import { internalMutation, internalQuery, mutation, query } from './_generated/server'
 import { assertAdmin, assertModerator, requireUser } from './lib/access'
+import { embeddingVisibilityFor } from './lib/embeddingVisibility'
 import { toPublicUser } from './lib/public'
 import { buildUserSearchResults } from './lib/userSearch'
 
@@ -624,13 +625,7 @@ async function restoreSkillEmbeddingVisibility(ctx: MutationCtx, skillId: Id<'sk
     .withIndex('by_skill', (q) => q.eq('skillId', skillId))
     .collect()
   for (const embedding of embeddings) {
-    const visibility = embedding.isLatest
-      ? embedding.isApproved
-        ? 'latest-approved'
-        : 'latest'
-      : embedding.isApproved
-        ? 'archived-approved'
-        : 'archived'
+    const visibility = embeddingVisibilityFor(embedding.isLatest, embedding.isApproved)
     await ctx.db.patch(embedding._id, { visibility, updatedAt: now })
   }
 }

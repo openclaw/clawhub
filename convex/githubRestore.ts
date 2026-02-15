@@ -15,6 +15,7 @@ import {
   readGitHubBackupFile,
 } from './lib/githubRestoreHelpers'
 import { publishVersionForUser } from './lib/skillPublish'
+import { guessContentTypeForPath } from './lib/contentTypes'
 
 type RestoreResult = {
   slug: string
@@ -110,7 +111,7 @@ export const restoreSkillFromBackup = internalAction({
         if (!fileContent) continue
 
         const sha256 = await sha256Hex(fileContent)
-        const contentType = guessContentType(filePath)
+        const contentType = guessContentTypeForPath(filePath)
         const blob = new Blob([Buffer.from(fileContent)], { type: contentType })
         const storageId = await ctx.storage.store(blob)
 
@@ -212,10 +213,4 @@ async function sha256Hex(bytes: Uint8Array) {
   return hash.digest('hex')
 }
 
-function guessContentType(path: string) {
-  const lower = path.trim().toLowerCase()
-  if (lower.endsWith('.md')) return 'text/markdown'
-  if (lower.endsWith('.json')) return 'application/json'
-  if (lower.endsWith('.svg')) return 'image/svg+xml'
-  return 'text/plain'
-}
+// guessContentTypeForPath in lib/contentTypes.ts

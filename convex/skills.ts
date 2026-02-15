@@ -27,6 +27,13 @@ import {
 import { buildTrendingLeaderboard } from './lib/leaderboards'
 import { deriveModerationFlags } from './lib/moderation'
 import { toPublicSkill, toPublicUser } from './lib/public'
+import { embeddingVisibilityFor } from './lib/embeddingVisibility'
+import {
+  enforceReservedSlugCooldownForNewSkill,
+  getLatestActiveReservedSlug,
+  reserveSlugForHardDeleteFinalize,
+  upsertReservedSlugForRightfulOwner,
+} from './lib/reservedSlugs'
 import {
   fetchText,
   type PublishResult,
@@ -439,40 +446,12 @@ async function hardDeleteSkillStep(
       return
     }
     case 'finalize': {
-      // Reserve the slug so the original owner can reclaim it within the cooldown period.
-      // If a reservation already exists (e.g. created by reclaimSlug for the rightful owner),
-      // do NOT overwrite it -- the reclaim reservation takes priority.
-      const reservations = await ctx.db
-        .query('reservedSlugs')
-        .withIndex('by_slug', (q) => q.eq('slug', skill.slug))
-        .take(10)
-      const activeReservations = reservations.filter((r) => !r.releasedAt)
-      const existingReservation = activeReservations.sort((a, b) => b.deletedAt - a.deletedAt)[0]
-      if (existingReservation) {
-        // Only update if the existing reservation is for the same owner being deleted
-        // (i.e. a normal hard-delete, not a reclaim). Reclaim reservations point to
-        // the rightful owner and must not be overwritten.
-        if (existingReservation.originalOwnerUserId === skill.ownerUserId) {
-          await ctx.db.patch(existingReservation._id, {
-            deletedAt: now,
-            expiresAt: now + SLUG_RESERVATION_MS,
-            releasedAt: undefined,
-          })
-        }
-        // Otherwise a reclaim reservation exists for a different user -- leave it alone.
-      } else {
-        await ctx.db.insert('reservedSlugs', {
-          slug: skill.slug,
-          originalOwnerUserId: skill.ownerUserId,
-          deletedAt: now,
-          expiresAt: now + SLUG_RESERVATION_MS,
-        })
-      }
-
-      // Best-effort: clean up duplicate active reservations (shouldn't exist).
-      for (const stale of activeReservations.filter((r) => r._id !== existingReservation?._id)) {
-        await ctx.db.patch(stale._id, { releasedAt: now })
-      }
+      await reserveSlugForHardDeleteFinalize(ctx, {
+        slug: skill.slug,
+        originalOwnerUserId: skill.ownerUserId,
+        deletedAt: now,
+        expiresAt: now + SLUG_RESERVATION_MS,
+      })
 
       await ctx.db.delete(skill._id)
       await ctx.db.insert('auditLogs', {
@@ -816,12 +795,7 @@ export const getBySlugForStaff = query({
 export const getReservedSlugInternal = internalQuery({
   args: { slug: v.string() },
   handler: async (ctx, args) => {
-    const reservations = await ctx.db
-      .query('reservedSlugs')
-      .withIndex('by_slug', (q) => q.eq('slug', args.slug))
-      .take(10)
-    const active = reservations.filter((r) => !r.releasedAt)
-    return active.sort((a, b) => b.deletedAt - a.deletedAt)[0] ?? null
+    return getLatestActiveReservedSlug(ctx, args.slug)
   },
 })
 
@@ -2687,7 +2661,7 @@ export const updateTags = mutation({
         const isLatest = embedding.versionId === latestEntry.versionId
         await ctx.db.patch(embedding._id, {
           isLatest,
-          visibility: visibilityFor(isLatest, embedding.isApproved),
+          visibility: embeddingVisibilityFor(isLatest, embedding.isApproved),
           updatedAt: Date.now(),
         })
       }
@@ -2723,7 +2697,7 @@ export const setRedactionApproved = mutation({
     for (const embedding of embeddings) {
       await ctx.db.patch(embedding._id, {
         isApproved: args.approved,
-        visibility: visibilityFor(embedding.isLatest, args.approved),
+        visibility: embeddingVisibilityFor(embedding.isLatest, args.approved),
         updatedAt: now,
       })
     }
@@ -2803,7 +2777,7 @@ export const setSoftDeleted = mutation({
       await ctx.db.patch(embedding._id, {
         visibility: args.deleted
           ? 'deleted'
-          : visibilityFor(embedding.isLatest, embedding.isApproved),
+          : embeddingVisibilityFor(embedding.isLatest, embedding.isApproved),
         updatedAt: now,
       })
     }
@@ -2916,36 +2890,13 @@ export const reclaimSlug = mutation({
       })
     }
 
-    // Create or update the slug reservation for the rightful owner
-    const reservations = await ctx.db
-      .query('reservedSlugs')
-      .withIndex('by_slug', (q) => q.eq('slug', slug))
-      .take(10)
-    const activeReservations = reservations.filter((r) => !r.releasedAt)
-    const existingReservation = activeReservations.sort((a, b) => b.deletedAt - a.deletedAt)[0]
-
-    if (existingReservation) {
-      await ctx.db.patch(existingReservation._id, {
-        originalOwnerUserId: args.rightfulOwnerUserId,
-        deletedAt: now,
-        expiresAt: now + SLUG_RESERVATION_MS,
-        reason: args.reason || 'slug.reclaimed',
-        releasedAt: undefined,
-      })
-    } else {
-      await ctx.db.insert('reservedSlugs', {
-        slug,
-        originalOwnerUserId: args.rightfulOwnerUserId,
-        deletedAt: now,
-        expiresAt: now + SLUG_RESERVATION_MS,
-        reason: args.reason || 'slug.reclaimed',
-      })
-    }
-
-    // Best-effort: clean up duplicate active reservations (shouldn't exist).
-    for (const stale of activeReservations.filter((r) => r._id !== existingReservation?._id)) {
-      await ctx.db.patch(stale._id, { releasedAt: now })
-    }
+    await upsertReservedSlugForRightfulOwner(ctx, {
+      slug,
+      rightfulOwnerUserId: args.rightfulOwnerUserId,
+      deletedAt: now,
+      expiresAt: now + SLUG_RESERVATION_MS,
+      reason: args.reason || 'slug.reclaimed',
+    })
 
     return {
       ok: true as const,
@@ -2986,35 +2937,13 @@ export const reclaimSlugInternal = internalMutation({
       })
     }
 
-    const reservations = await ctx.db
-      .query('reservedSlugs')
-      .withIndex('by_slug', (q) => q.eq('slug', slug))
-      .take(10)
-    const activeReservations = reservations.filter((r) => !r.releasedAt)
-    const existingReservation = activeReservations.sort((a, b) => b.deletedAt - a.deletedAt)[0]
-
-    if (existingReservation) {
-      await ctx.db.patch(existingReservation._id, {
-        originalOwnerUserId: args.rightfulOwnerUserId,
-        deletedAt: now,
-        expiresAt: now + SLUG_RESERVATION_MS,
-        reason: args.reason || 'slug.reclaimed',
-        releasedAt: undefined,
-      })
-    } else {
-      await ctx.db.insert('reservedSlugs', {
-        slug,
-        originalOwnerUserId: args.rightfulOwnerUserId,
-        deletedAt: now,
-        expiresAt: now + SLUG_RESERVATION_MS,
-        reason: args.reason || 'slug.reclaimed',
-      })
-    }
-
-    // Best-effort: clean up duplicate active reservations (shouldn't exist).
-    for (const stale of activeReservations.filter((r) => r._id !== existingReservation?._id)) {
-      await ctx.db.patch(stale._id, { releasedAt: now })
-    }
+    await upsertReservedSlugForRightfulOwner(ctx, {
+      slug,
+      rightfulOwnerUserId: args.rightfulOwnerUserId,
+      deletedAt: now,
+      expiresAt: now + SLUG_RESERVATION_MS,
+      reason: args.reason || 'slug.reclaimed',
+    })
 
     await ctx.db.insert('auditLogs', {
       actorUserId: args.actorUserId,
@@ -3305,29 +3234,7 @@ export const insertVersion = internalMutation({
 
     if (!skill) {
       // Anti-squatting: enforce reserved slug cooldown.
-      const reservations = await ctx.db
-        .query('reservedSlugs')
-        .withIndex('by_slug', (q) => q.eq('slug', args.slug))
-        .take(10)
-
-      const activeReservations = reservations.filter((r) => !r.releasedAt)
-      const reservation = activeReservations.sort((a, b) => b.deletedAt - a.deletedAt)[0]
-      if (reservation) {
-        if (reservation.expiresAt > now && reservation.originalOwnerUserId !== userId) {
-          throw new Error(
-            `Slug "${args.slug}" is reserved for its previous owner until ${new Date(reservation.expiresAt).toISOString()}. ` +
-              'Please choose a different slug.',
-          )
-        }
-
-        // Original owner reclaiming, or reservation expired.
-        await ctx.db.patch(reservation._id, { releasedAt: now })
-      }
-
-      // Best-effort: release any duplicate active reservations for same slug.
-      for (const stale of activeReservations.filter((r) => r._id !== reservation?._id)) {
-        await ctx.db.patch(stale._id, { releasedAt: now })
-      }
+      await enforceReservedSlugCooldownForNewSkill(ctx, { slug: args.slug, userId, now })
 
       if (!args.bypassNewSkillRateLimit) {
         const ownerTrustSignals = await getOwnerTrustSignals(ctx, user, now)
@@ -3484,7 +3391,7 @@ export const insertVersion = internalMutation({
       embedding: args.embedding,
       isLatest: true,
       isApproved,
-      visibility: visibilityFor(true, isApproved),
+      visibility: embeddingVisibilityFor(true, isApproved),
       updatedAt: now,
     })
 
@@ -3496,7 +3403,7 @@ export const insertVersion = internalMutation({
       if (previousEmbedding) {
         await ctx.db.patch(previousEmbedding._id, {
           isLatest: false,
-          visibility: visibilityFor(false, previousEmbedding.isApproved),
+          visibility: embeddingVisibilityFor(false, previousEmbedding.isApproved),
           updatedAt: now,
         })
       }
@@ -3554,7 +3461,7 @@ export const setSkillSoftDeletedInternal = internalMutation({
       await ctx.db.patch(embedding._id, {
         visibility: args.deleted
           ? 'deleted'
-          : visibilityFor(embedding.isLatest, embedding.isApproved),
+          : embeddingVisibilityFor(embedding.isLatest, embedding.isApproved),
         updatedAt: now,
       })
     }
@@ -3571,13 +3478,6 @@ export const setSkillSoftDeletedInternal = internalMutation({
     return { ok: true as const }
   },
 })
-
-function visibilityFor(isLatest: boolean, isApproved: boolean) {
-  if (isLatest && isApproved) return 'latest-approved'
-  if (isLatest) return 'latest'
-  if (isApproved) return 'archived-approved'
-  return 'archived'
-}
 
 function clampInt(value: number, min: number, max: number) {
   const rounded = Number.isFinite(value) ? Math.round(value) : min

@@ -605,39 +605,25 @@ async function usersPostRouterV1Handler(ctx: ActionCtx, request: Request) {
     return text('Not found', 404, rate.headers)
   }
 
-  let payload: Record<string, unknown>
-  try {
-    payload = (await request.json()) as Record<string, unknown>
-  } catch {
-    return text('Invalid JSON', 400, rate.headers)
-  }
+  const payloadResult = await parseJsonPayload(request, rate.headers)
+  if (!payloadResult.ok) return payloadResult.response
+  const payload = payloadResult.payload
 
-  let actorUserId: Id<'users'>
-  let actorUser: Doc<'users'>
-  try {
-    const auth = await requireApiTokenUser(ctx, request)
-    actorUserId = auth.userId
-    actorUser = auth.user as Doc<'users'>
-  } catch {
-    return text('Unauthorized', 401, rate.headers)
-  }
+  const authResult = await requireApiTokenUserOrResponse(ctx, request, rate.headers)
+  if (!authResult.ok) return authResult.response
+  const actorUserId = authResult.userId
+  const actorUser = authResult.user
 
   // Restore and reclaim have different parameter shapes, handle them separately
   if (action === 'restore') {
-    try {
-      assertAdmin(actorUser)
-    } catch {
-      return text('Forbidden', 403, rate.headers)
-    }
+    const admin = requireAdminOrResponse(actorUser, rate.headers)
+    if (!admin.ok) return admin.response
     return handleAdminRestore(ctx, request, payload, actorUserId, rate.headers)
   }
 
   if (action === 'reclaim') {
-    try {
-      assertAdmin(actorUser)
-    } catch {
-      return text('Forbidden', 403, rate.headers)
-    }
+    const admin = requireAdminOrResponse(actorUser, rate.headers)
+    if (!admin.ok) return admin.response
     return handleAdminReclaim(ctx, request, payload, actorUserId, rate.headers)
   }
 
@@ -1017,6 +1003,33 @@ function text(value: string, status: number, headers?: HeadersInit) {
       corsHeaders(),
     ),
   })
+}
+
+async function parseJsonPayload(request: Request, headers: HeadersInit) {
+  try {
+    const payload = (await request.json()) as Record<string, unknown>
+    return { ok: true as const, payload }
+  } catch {
+    return { ok: false as const, response: text('Invalid JSON', 400, headers) }
+  }
+}
+
+async function requireApiTokenUserOrResponse(ctx: ActionCtx, request: Request, headers: HeadersInit) {
+  try {
+    const auth = await requireApiTokenUser(ctx, request)
+    return { ok: true as const, userId: auth.userId, user: auth.user as Doc<'users'> }
+  } catch {
+    return { ok: false as const, response: text('Unauthorized', 401, headers) }
+  }
+}
+
+function requireAdminOrResponse(user: Doc<'users'>, headers: HeadersInit) {
+  try {
+    assertAdmin(user)
+    return { ok: true as const }
+  } catch {
+    return { ok: false as const, response: text('Forbidden', 403, headers) }
+  }
 }
 
 function getPathSegments(request: Request, prefix: string) {
