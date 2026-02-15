@@ -76,7 +76,7 @@ async function verifyLocalModeration(params: {
   if (!Array.isArray(moderation.reasonCodes) || moderation.reasonCodes.length === 0) {
     return true;
   }
-  const serverCodes = [...(moderation.reasonCodes ?? [])].sort((a, b) => a.localeCompare(b));
+  const serverCodes = [...moderation.reasonCodes].sort((a, b) => a.localeCompare(b));
   const localFiles = await listTextFiles(params.targetDir);
   const localScan = scanLocalSkillFiles(localFiles);
   const localCodes = [...localScan.reasonCodes].sort((a, b) => a.localeCompare(b));
