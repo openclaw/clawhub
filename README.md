@@ -37,6 +37,18 @@ onlycrabs.ai: `https://onlycrabs.ai`
 - Search: OpenAI embeddings (`text-embedding-3-small`) + Convex vector search.
 - API schema + routes: `packages/schema` (`clawhub-schema`).
 
+## CLI
+
+Common CLI flows:
+
+- Auth: `clawhub login`, `clawhub whoami`
+- Discover: `clawhub search ...`, `clawhub explore`
+- Manage local installs: `clawhub install <slug>`, `clawhub uninstall <slug>`, `clawhub list`, `clawhub update --all`
+- Inspect without installing: `clawhub inspect <slug>`
+- Publish/sync: `clawhub publish <path>`, `clawhub sync`
+
+Docs: `docs/quickstart.md`, `docs/cli.md`.
+
 
 ## Telemetry
 

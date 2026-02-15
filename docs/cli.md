@@ -86,6 +86,12 @@ Stores your API token + cached registry URL.
   - `<workdir>/.clawhub/lock.json` (legacy `.clawdhub`)
   - `<skill>/.clawhub/origin.json` (legacy `.clawdhub`)
 
+### `uninstall <slug>`
+
+- Removes `<workdir>/<dir>/<slug>` and deletes the lockfile entry.
+- Interactive: asks for confirmation.
+- Non-interactive (`--no-input`): requires `--yes`.
+
 ### `list`
 
 - Reads `<workdir>/.clawhub/lock.json` (legacy `.clawdhub`).
