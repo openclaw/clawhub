@@ -1,5 +1,5 @@
 ---
-summary: 'Security + moderation controls (reports, bans, upload gating).'
+summary: "Security + moderation controls (reports, bans, upload gating)."
 read_when:
   - Working on moderation or abuse controls
   - Reviewing upload restrictions
@@ -74,3 +74,27 @@ read_when:
   skills.
 - Word counting is language-aware (`Intl.Segmenter` with fallback), reducing
   false positives for non-space-separated languages.
+
+## Moderation v2 (reason codes + evidence)
+
+- Skills now carry normalized moderation fields:
+  - `moderationVerdict`: `clean | suspicious | malicious`
+  - `moderationReasonCodes`: stable reason-code list
+  - `moderationEvidence`: capped finding snippets (`code`, `severity`, `file`, `line`, `message`, `evidence`)
+  - `moderationEngineVersion`, `moderationEvaluatedAt`, `moderationSourceVersionId`
+- Legacy fields (`moderationReason`, `moderationFlags`) remain for compatibility and are kept in sync.
+- Public API responses still include `isSuspicious` and `isMalwareBlocked`, plus additive fields (`verdict`, `reasonCodes`, `summary`, `engineVersion`, `updatedAt`).
+- Detailed moderation endpoint:
+  - `GET /api/v1/skills/:slug/moderation`
+  - owner/staff receive full evidence
+  - public callers receive sanitized evidence for flagged skills only
+
+Policy:
+
+- `malicious`: blocked from install/download.
+- `suspicious`: visible with warnings; CLI install/update requires explicit confirm (or `--force` in non-interactive mode).
+- `pending`: publish-time quarantine behavior unchanged.
+
+Backfill:
+
+- `vt.backfillModerationV2` recomputes normalized moderation fields for historical published skills in bounded batches.
