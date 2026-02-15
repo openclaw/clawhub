@@ -1,4 +1,6 @@
-import { mkdir, rm, stat } from 'node:fs/promises'
+import { execFileSync } from 'node:child_process'
+import { cp, mkdir, rename, rm, stat } from 'node:fs/promises'
+import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import semver from 'semver'
 import { apiRequest, downloadZip } from '../../http.js'
@@ -51,6 +53,55 @@ export async function cmdSearch(opts: GlobalOpts, query: string, limit?: number)
     spinner.fail(formatError(error))
     throw error
   }
+}
+
+// mcp-scan types
+interface ScanIssue {
+  code: string
+  message: string
+}
+
+interface ServerResult {
+  error?: { message: string }
+}
+
+interface PathResult {
+  error?: { message: string }
+  servers?: ServerResult[]
+  issues: ScanIssue[]
+}
+
+type ScanResult = Record<string, PathResult>
+
+async function checkSkillSecurity(targetPath: string): Promise<string[]> {
+  const scanOutput = execFileSync('uvx', ['mcp-scan@latest', '--skills', targetPath, '--json'], {
+    encoding: 'utf-8',
+  })
+  const scanResult = JSON.parse(scanOutput) as ScanResult
+
+  // Internal codes to ignore
+  const IGNORE_CODES = ['W003', 'W004', 'W005', 'W006', 'X002']
+  const violations: string[] = []
+
+  for (const [path, result] of Object.entries(scanResult)) {
+    // 1. Check for top-level execution failures
+    if (result.error) {
+      throw new Error(`Scan failed for ${path}: ${result.error.message}`)
+    }
+
+    // 2. Check for server-level startup failures
+    const startupError = result.servers?.find((s) => s.error)?.error
+    if (startupError) {
+      throw new Error(`Server failed to start: ${startupError.message}`)
+    }
+
+    // 3. Filter for real policy violations (Errors or Warnings)
+    const filteredViolations = result.issues.filter((issue) => !IGNORE_CODES.includes(issue.code))
+    if (filteredViolations.length > 0) {
+      violations.push(...filteredViolations.map((v) => `[${v.code}] ${v.message}`))
+    }
+  }
+  return violations
 }
 
 export async function cmdInstall(
@@ -110,7 +161,54 @@ export async function cmdInstall(
 
     spinner.text = `Downloading ${trimmed}@${resolvedVersion}`
     const zip = await downloadZip(registry, { slug: trimmed, version: resolvedVersion, token })
-    await extractZipToDir(zip, target)
+
+    const tempTarget = join(
+      tmpdir(),
+      `clawhub-install-${trimmed}-${Math.random().toString(36).slice(2, 7)}`,
+    )
+    try {
+      await extractZipToDir(zip, tempTarget)
+
+      spinner.text = `Scanning ${trimmed}@${resolvedVersion}`
+      let scanViolations: string[] = []
+      try {
+        scanViolations = await checkSkillSecurity(tempTarget)
+      } catch (error) {
+        spinner.stop()
+        console.warn(`⚠️  Skipping Snyk Agent Scan: ${formatError(error)}`)
+        spinner.start(`Resolving ${trimmed}`)
+      }
+
+      if (scanViolations.length > 0 && !force) {
+        spinner.stop()
+        console.log(
+          `\n⚠️  Warning: "${trimmed}" has security policy violations by Snyk Agent Scan:\n` +
+            scanViolations.map((msg) => `   - ${msg}`).join('\n') +
+            '\n   Review the skill code before use.\n',
+        )
+        if (isInteractive()) {
+          const confirm = await promptConfirm('Install anyway?')
+          if (!confirm) fail('Installation cancelled')
+          spinner.start(`Resolving ${trimmed}`)
+        } else {
+          fail(
+            'Use --force to install skills with security policy violations in non-interactive mode',
+          )
+        }
+      }
+
+      try {
+        await rename(tempTarget, target)
+      } catch (err: any) {
+        if (err.code === 'EXDEV') {
+          await cp(tempTarget, target, { recursive: true })
+        } else {
+          throw err
+        }
+      }
+    } finally {
+      await rm(tempTarget, { recursive: true, force: true })
+    }
 
     await writeSkillOrigin(target, {
       version: 1,
