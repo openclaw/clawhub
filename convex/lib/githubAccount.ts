@@ -116,6 +116,15 @@ export async function syncGitHubProfile(ctx: ActionCtx, userId: Id<'users'>) {
   const payload = (await response.json()) as GitHubUser
   const newLogin = payload.login?.trim()
   const newImage = payload.avatar_url?.trim()
+
+  // Only update if the username has changed
+  if (newLogin && newLogin !== user.name) {
+    await ctx.runMutation(internal.users.syncGitHubProfileInternal, {
+      userId,
+      name: newLogin,
+      image: newImage,
+    })
+  }
   const profileName = payload.name?.trim()
 
   if (!newLogin) return
