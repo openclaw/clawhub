@@ -7,6 +7,7 @@
 - Admin: bulk restore skills from GitHub backup; reclaim squatted slugs via v1 endpoints + internal tooling (#298) (thanks @autogame-17).
 - Users: add `trustedPublisher` flag and admin mutations to bypass pending-scan auto-hide for trusted publishers (#298) (thanks @autogame-17).
 - Skills/Web: show skill owner avatar + handle on skill cards, lists, and detail pages (#312) (thanks @ianalloway).
+- CLI: add `uninstall` command for skills (#241) (thanks @superlowburn).
 
 ### Changed
 - Quality gate: language-aware word counting (`Intl.Segmenter`) and new `cjkChars` signal to reduce false rejects for non-Latin docs.
@@ -24,6 +25,7 @@
 - Web: allow copying OpenClaw scan summary text (thanks @borisolver, #322).
 - HTTP/CORS: add preflight handler + include CORS headers on API/download errors; CLI: include auth token for owner-visible installs/updates (#146) (thanks @Grenghis-Khan).
 - CLI: clarify `logout` only removes the local token; token remains valid until revoked in the web UI (#166) (thanks @aronchick).
+- CLI: validate skill slugs used for filesystem operations (prevents path traversal) (#241) (thanks @superlowburn).
 - Skills: keep global sorting across pagination on `/skills` (thanks @CodeBBakGoSu, #98).
 - Skills: allow updating skill description/summary from frontmatter on subsequent publishes (#312) (thanks @ianalloway).
 
