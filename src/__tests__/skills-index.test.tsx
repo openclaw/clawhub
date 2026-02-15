@@ -21,9 +21,6 @@ vi.mock('@tanstack/react-router', () => ({
 
 vi.mock('convex/react', () => ({
   useAction: (...args: unknown[]) => useActionMock(...args),
-}))
-
-vi.mock('convex-helpers/react', () => ({
   usePaginatedQuery: (...args: unknown[]) => usePaginatedQueryMock(...args),
 }))
 
@@ -123,6 +120,32 @@ describe('SkillsIndex', () => {
     })
   })
 
+  it('sorts search results by stars and breaks ties by updatedAt', async () => {
+    searchMock = { q: 'remind', sort: 'stars', dir: 'desc' }
+    const actionFn = vi
+      .fn()
+      .mockResolvedValue([
+        makeSearchEntry({ slug: 'skill-a', displayName: 'Skill A', stars: 5, updatedAt: 100 }),
+        makeSearchEntry({ slug: 'skill-b', displayName: 'Skill B', stars: 5, updatedAt: 200 }),
+        makeSearchEntry({ slug: 'skill-c', displayName: 'Skill C', stars: 4, updatedAt: 999 }),
+      ])
+    useActionMock.mockReturnValue(actionFn)
+    vi.useFakeTimers()
+
+    render(<SkillsIndex />)
+    await act(async () => {
+      await vi.runAllTimersAsync()
+    })
+    await act(async () => {
+      await vi.runAllTimersAsync()
+    })
+
+    const links = screen.getAllByRole('link')
+    expect(links[0]?.textContent).toContain('Skill B')
+    expect(links[1]?.textContent).toContain('Skill A')
+    expect(links[2]?.textContent).toContain('Skill C')
+  })
+
   it('uses relevance as default sort when searching', async () => {
     searchMock = { q: 'notion' }
     const actionFn = vi
@@ -202,6 +225,35 @@ function makeSearchResult(slug: string, displayName: string, score: number, crea
       },
       createdAt,
       updatedAt: createdAt,
+    },
+    version: null,
+  }
+}
+
+function makeSearchEntry(params: {
+  slug: string
+  displayName: string
+  stars: number
+  updatedAt: number
+}) {
+  return {
+    score: 0.9,
+    skill: {
+      _id: `skill_${params.slug}`,
+      slug: params.slug,
+      displayName: params.displayName,
+      summary: `Summary ${params.slug}`,
+      tags: {},
+      stats: {
+        downloads: 0,
+        installsCurrent: 0,
+        installsAllTime: 0,
+        stars: params.stars,
+        versions: 1,
+        comments: 0,
+      },
+      createdAt: 0,
+      updatedAt: params.updatedAt,
     },
     version: null,
   }

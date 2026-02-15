@@ -1,7 +1,6 @@
 import { getAuthUserId } from '@convex-dev/auth/server'
 import { paginationOptsValidator } from 'convex/server'
 import { ConvexError, v } from 'convex/values'
-import { paginator } from 'convex-helpers/server/pagination'
 import { internal } from './_generated/api'
 import type { Doc, Id } from './_generated/dataModel'
 import type { MutationCtx, QueryCtx } from './_generated/server'
@@ -21,9 +20,21 @@ import {
   type SkillBadgeMap,
 } from './lib/badges'
 import { generateChangelogPreview as buildChangelogPreview } from './lib/changelog'
+import {
+  canHealSkillOwnershipByGitHubProviderAccountId,
+  getGitHubProviderAccountId,
+} from './lib/githubIdentity'
 import { buildTrendingLeaderboard } from './lib/leaderboards'
 import { deriveModerationFlags } from './lib/moderation'
 import { toPublicSkill, toPublicUser } from './lib/public'
+import { embeddingVisibilityFor } from './lib/embeddingVisibility'
+import { scheduleNextBatchIfNeeded } from './lib/batching'
+import {
+  enforceReservedSlugCooldownForNewSkill,
+  getLatestActiveReservedSlug,
+  reserveSlugForHardDeleteFinalize,
+  upsertReservedSlugForRightfulOwner,
+} from './lib/reservedSlugs'
 import {
   fetchText,
   type PublishResult,
@@ -32,7 +43,6 @@ import {
 } from './lib/skillPublish'
 import { isSkillSuspicious } from './lib/skillSafety'
 import { getFrontmatterValue, hashSkillFiles } from './lib/skills'
-import schema from './schema'
 
 export { publishVersionForUser } from './lib/skillPublish'
 
@@ -48,11 +58,14 @@ const MAX_BADGE_LOOKUP_SKILLS = 200
 const HARD_DELETE_BATCH_SIZE = 100
 const HARD_DELETE_VERSION_BATCH_SIZE = 10
 const HARD_DELETE_LEADERBOARD_BATCH_SIZE = 25
+const BAN_USER_SKILLS_BATCH_SIZE = 25
 const MAX_ACTIVE_REPORTS_PER_USER = 20
 const AUTO_HIDE_REPORT_THRESHOLD = 3
 const MAX_REPORT_REASON_SAMPLE = 5
 const RATE_LIMIT_HOUR_MS = 60 * 60 * 1000
 const RATE_LIMIT_DAY_MS = 24 * RATE_LIMIT_HOUR_MS
+const SLUG_RESERVATION_DAYS = 90
+const SLUG_RESERVATION_MS = SLUG_RESERVATION_DAYS * RATE_LIMIT_DAY_MS
 const LOW_TRUST_ACCOUNT_AGE_MS = 30 * RATE_LIMIT_DAY_MS
 const TRUSTED_PUBLISHER_SKILL_THRESHOLD = 10
 const LOW_TRUST_BURST_THRESHOLD_PER_HOUR = 8
@@ -151,12 +164,6 @@ function enforceNewSkillRateLimit(signals: OwnerTrustSignals) {
       `Rate limit: max ${limits.perDay} new skills per 24 hours. Please wait before publishing more.`,
     )
   }
-}
-
-async function resolveOwnerHandle(ctx: QueryCtx, ownerUserId: Id<'users'>) {
-  const owner = await ctx.db.get(ownerUserId)
-  if (!owner || owner.deletedAt || owner.deactivatedAt) return null
-  return owner?.handle ?? owner?._id ?? null
 }
 
 const HARD_DELETE_PHASES = [
@@ -435,6 +442,13 @@ async function hardDeleteSkillStep(
       return
     }
     case 'finalize': {
+      await reserveSlugForHardDeleteFinalize(ctx, {
+        slug: skill.slug,
+        originalOwnerUserId: skill.ownerUserId,
+        deletedAt: now,
+        expiresAt: now + SLUG_RESERVATION_MS,
+      })
+
       await ctx.db.delete(skill._id)
       await ctx.db.insert('auditLogs', {
         actorUserId,
@@ -453,6 +467,7 @@ type PublicSkillEntry = {
   skill: NonNullable<ReturnType<typeof toPublicSkill>>
   latestVersion: PublicSkillListVersion | null
   ownerHandle: string | null
+  owner: ReturnType<typeof toPublicUser> | null
 }
 
 type PublicSkillListVersion = Pick<
@@ -477,7 +492,10 @@ type ManagementSkillEntry = {
 type BadgeKind = Doc<'skillBadges'>['kind']
 
 async function buildPublicSkillEntries(ctx: QueryCtx, skills: Doc<'skills'>[]) {
-  const ownerHandleCache = new Map<Id<'users'>, Promise<string | null>>()
+  const ownerInfoCache = new Map<
+    Id<'users'>,
+    Promise<{ ownerHandle: string | null; owner: ReturnType<typeof toPublicUser> | null }>
+  >()
   const badgeMapBySkillId: Map<Id<'skills'>, SkillBadgeMap> = skills.length <=
   MAX_BADGE_LOOKUP_SKILLS
     ? await getSkillBadgeMaps(
@@ -486,25 +504,38 @@ async function buildPublicSkillEntries(ctx: QueryCtx, skills: Doc<'skills'>[]) {
       )
     : new Map()
 
-  const getOwnerHandle = (ownerUserId: Id<'users'>) => {
-    const cached = ownerHandleCache.get(ownerUserId)
+  const getOwnerInfo = (ownerUserId: Id<'users'>) => {
+    const cached = ownerInfoCache.get(ownerUserId)
     if (cached) return cached
-    const handlePromise = resolveOwnerHandle(ctx, ownerUserId)
-    ownerHandleCache.set(ownerUserId, handlePromise)
-    return handlePromise
+    const ownerPromise = ctx.db.get(ownerUserId).then((ownerDoc) => {
+      if (!ownerDoc || ownerDoc.deletedAt || ownerDoc.deactivatedAt) {
+        return { ownerHandle: null, owner: null }
+      }
+      return {
+        ownerHandle: ownerDoc.handle ?? (ownerDoc._id ? String(ownerDoc._id) : null),
+        owner: toPublicUser(ownerDoc),
+      }
+    })
+    ownerInfoCache.set(ownerUserId, ownerPromise)
+    return ownerPromise
   }
 
   const entries = await Promise.all(
     skills.map(async (skill) => {
-      const [latestVersionDoc, ownerHandle] = await Promise.all([
+      const [latestVersionDoc, ownerInfo] = await Promise.all([
         skill.latestVersionId ? ctx.db.get(skill.latestVersionId) : null,
-        getOwnerHandle(skill.ownerUserId),
+        getOwnerInfo(skill.ownerUserId),
       ])
       const badges = badgeMapBySkillId.get(skill._id) ?? {}
       const publicSkill = toPublicSkill({ ...skill, badges })
       if (!publicSkill) return null
       const latestVersion = toPublicSkillListVersion(latestVersionDoc)
-      return { skill: publicSkill, latestVersion, ownerHandle }
+      return {
+        skill: publicSkill,
+        latestVersion,
+        ownerHandle: ownerInfo.ownerHandle,
+        owner: ownerInfo.owner,
+      }
     }),
   )
 
@@ -771,6 +802,13 @@ export const getBySlugForStaff = query({
           }
         : null,
     }
+  },
+})
+
+export const getReservedSlugInternal = internalQuery({
+  args: { slug: v.string() },
+  handler: async (ctx, args) => {
+    return getLatestActiveReservedSlug(ctx, args.slug)
   },
 })
 
@@ -1185,6 +1223,15 @@ export const listWithLatest = query({
   },
 })
 
+export const listHighlightedPublic = query({
+  args: { limit: v.optional(v.number()) },
+  handler: async (ctx, args) => {
+    const limit = clampInt(args.limit ?? 12, 1, MAX_PUBLIC_LIST_LIMIT)
+    const skills = await loadHighlightedSkills(ctx, limit)
+    return buildPublicSkillEntries(ctx, skills)
+  },
+})
+
 export const listForManagement = query({
   args: {
     limit: v.optional(v.number()),
@@ -1418,16 +1465,7 @@ export const report = mutation({
     await ctx.db.patch(skill._id, updates)
 
     if (shouldAutoHide) {
-      const embeddings = await ctx.db
-        .query('skillEmbeddings')
-        .withIndex('by_skill', (q) => q.eq('skillId', skill._id))
-        .collect()
-      for (const embedding of embeddings) {
-        await ctx.db.patch(embedding._id, {
-          visibility: 'deleted',
-          updatedAt: now,
-        })
-      }
+      await setSkillEmbeddingsSoftDeleted(ctx, skill._id, true, now)
 
       await ctx.db.insert('auditLogs', {
         actorUserId: userId,
@@ -1505,10 +1543,9 @@ export const listPublicPage = query({
 })
 
 /**
- * V2 of listPublicPage using convex-helpers paginator for better cache behavior.
+ * V2 of listPublicPage using standard Convex pagination (paginate + usePaginatedQuery).
  *
  * Key differences from V1:
- * - Uses `paginator` from convex-helpers (doesn't track end-cursor internally, better caching)
  * - Uses `by_active_updated` index to filter soft-deleted skills at query level
  * - Returns standard pagination shape compatible with usePaginatedQuery
  */
@@ -1530,15 +1567,15 @@ export const listPublicPageV2 = query({
   },
   handler: async (ctx, args) => {
     const sort = args.sort ?? 'newest'
-    const dir = args.dir ?? 'desc'
-    const paginationOpts = {
+    const dir = args.dir ?? (sort === 'name' ? 'asc' : 'desc')
+    const paginationOpts: { cursor: string | null; numItems: number; id?: number } = {
       ...args.paginationOpts,
       numItems: clampInt(args.paginationOpts.numItems, 1, MAX_PUBLIC_LIST_LIMIT),
     }
 
     // Use the index to filter out soft-deleted skills at query time.
     // softDeletedAt === undefined means active (non-deleted) skills only.
-    const result = await paginator(ctx.db, schema)
+    const result = await ctx.db
       .query('skills')
       .withIndex(SORT_INDEXES[sort], (q) => q.eq('softDeletedAt', undefined))
       .order(dir)
@@ -1550,11 +1587,7 @@ export const listPublicPageV2 = query({
 
     // Build the public skill entries (fetch latestVersion + ownerHandle)
     const items = await buildPublicSkillEntries(ctx, filteredPage)
-
-    return {
-      ...result,
-      page: items,
-    }
+    return { ...result, page: items }
   },
 })
 
@@ -1630,6 +1663,14 @@ export const getVersionById = query({
   handler: async (ctx, args) => ctx.db.get(args.versionId),
 })
 
+export const getVersionsByIdsInternal = internalQuery({
+  args: { versionIds: v.array(v.id('skillVersions')) },
+  handler: async (ctx, args) => {
+    const versions = await Promise.all(args.versionIds.map((id) => ctx.db.get(id)))
+    return versions.filter((v): v is NonNullable<typeof v> => v !== null)
+  },
+})
+
 export const getVersionByIdInternal = internalQuery({
   args: { versionId: v.id('skillVersions') },
   handler: async (ctx, args) => ctx.db.get(args.versionId),
@@ -1659,6 +1700,7 @@ export const getPendingScanSkillsInternal = internalQuery({
       const reason = skill.moderationReason
       if (skill.moderationStatus === 'hidden' && reason === 'pending.scan') return true
       if (skill.moderationStatus === 'hidden' && reason === 'quality.low') return true
+      if (skill.moderationStatus === 'active' && reason === 'pending.scan') return true
       if (skill.moderationStatus === 'active' && reason === 'scanner.vt.pending') return true
       return (
         reason === 'scanner.llm.clean' ||
@@ -2091,6 +2133,174 @@ export const setSkillModerationStatusActiveInternal = internalMutation({
     await ctx.db.patch(args.skillId, {
       moderationStatus: 'active',
     })
+  },
+})
+
+async function listSkillEmbeddingsForSkill(ctx: MutationCtx, skillId: Id<'skills'>) {
+  return ctx.db
+    .query('skillEmbeddings')
+    .withIndex('by_skill', (q) => q.eq('skillId', skillId))
+    .collect()
+}
+
+async function markSkillEmbeddingsDeleted(ctx: MutationCtx, skillId: Id<'skills'>, now: number) {
+  const embeddings = await listSkillEmbeddingsForSkill(ctx, skillId)
+  for (const embedding of embeddings) {
+    if (embedding.visibility === 'deleted') continue
+    await ctx.db.patch(embedding._id, { visibility: 'deleted', updatedAt: now })
+  }
+}
+
+async function restoreSkillEmbeddingsVisibility(ctx: MutationCtx, skillId: Id<'skills'>, now: number) {
+  const embeddings = await listSkillEmbeddingsForSkill(ctx, skillId)
+  for (const embedding of embeddings) {
+    const visibility = embeddingVisibilityFor(embedding.isLatest, embedding.isApproved)
+    await ctx.db.patch(embedding._id, { visibility, updatedAt: now })
+  }
+}
+
+async function setSkillEmbeddingsSoftDeleted(
+  ctx: MutationCtx,
+  skillId: Id<'skills'>,
+  deleted: boolean,
+  now: number,
+) {
+  if (deleted) {
+    await markSkillEmbeddingsDeleted(ctx, skillId, now)
+    return
+  }
+
+  await restoreSkillEmbeddingsVisibility(ctx, skillId, now)
+}
+
+async function setSkillEmbeddingsLatestVersion(
+  ctx: MutationCtx,
+  skillId: Id<'skills'>,
+  latestVersionId: Id<'skillVersions'>,
+  now: number,
+) {
+  const embeddings = await listSkillEmbeddingsForSkill(ctx, skillId)
+  for (const embedding of embeddings) {
+    const isLatest = embedding.versionId === latestVersionId
+    await ctx.db.patch(embedding._id, {
+      isLatest,
+      visibility: embeddingVisibilityFor(isLatest, embedding.isApproved),
+      updatedAt: now,
+    })
+  }
+}
+
+async function setSkillEmbeddingsApproved(
+  ctx: MutationCtx,
+  skillId: Id<'skills'>,
+  approved: boolean,
+  now: number,
+) {
+  const embeddings = await listSkillEmbeddingsForSkill(ctx, skillId)
+  for (const embedding of embeddings) {
+    await ctx.db.patch(embedding._id, {
+      isApproved: approved,
+      visibility: embeddingVisibilityFor(embedding.isLatest, approved),
+      updatedAt: now,
+    })
+  }
+}
+
+export const applyBanToOwnedSkillsBatchInternal = internalMutation({
+  args: {
+    ownerUserId: v.id('users'),
+    bannedAt: v.number(),
+    hiddenBy: v.optional(v.id('users')),
+    cursor: v.optional(v.string()),
+  },
+  handler: async (ctx, args) => {
+    const { page, isDone, continueCursor } = await ctx.db
+      .query('skills')
+      .withIndex('by_owner', (q) => q.eq('ownerUserId', args.ownerUserId))
+      .order('desc')
+      .paginate({ cursor: args.cursor ?? null, numItems: BAN_USER_SKILLS_BATCH_SIZE })
+
+    let hiddenCount = 0
+    for (const skill of page) {
+      if (skill.softDeletedAt) continue
+
+      // Only overwrite moderation fields for active skills. Keep existing hidden/removed
+      // moderation reasons intact.
+      const shouldMarkModeration = (skill.moderationStatus ?? 'active') === 'active'
+
+      const patch: Partial<Doc<'skills'>> = { softDeletedAt: args.bannedAt, updatedAt: args.bannedAt }
+      if (shouldMarkModeration) {
+        patch.moderationStatus = 'hidden'
+        patch.moderationReason = 'user.banned'
+        patch.hiddenAt = args.bannedAt
+        patch.hiddenBy = args.hiddenBy
+        patch.lastReviewedAt = args.bannedAt
+        hiddenCount += 1
+      }
+
+      await ctx.db.patch(skill._id, patch)
+      await setSkillEmbeddingsSoftDeleted(ctx, skill._id, true, args.bannedAt)
+    }
+
+    scheduleNextBatchIfNeeded(
+      ctx.scheduler,
+      internal.skills.applyBanToOwnedSkillsBatchInternal,
+      args,
+      isDone,
+      continueCursor,
+    )
+
+    return { ok: true as const, hiddenCount, scheduled: !isDone }
+  },
+})
+
+export const restoreOwnedSkillsForUnbanBatchInternal = internalMutation({
+  args: {
+    ownerUserId: v.id('users'),
+    bannedAt: v.number(),
+    cursor: v.optional(v.string()),
+  },
+  handler: async (ctx, args) => {
+    const now = Date.now()
+    const { page, isDone, continueCursor } = await ctx.db
+      .query('skills')
+      .withIndex('by_owner', (q) => q.eq('ownerUserId', args.ownerUserId))
+      .order('desc')
+      .paginate({ cursor: args.cursor ?? null, numItems: BAN_USER_SKILLS_BATCH_SIZE })
+
+    let restoredCount = 0
+    for (const skill of page) {
+      if (
+        !skill.softDeletedAt ||
+        skill.softDeletedAt !== args.bannedAt ||
+        skill.moderationReason !== 'user.banned'
+      ) {
+        continue
+      }
+
+      await ctx.db.patch(skill._id, {
+        softDeletedAt: undefined,
+        moderationStatus: 'active',
+        moderationReason: 'restored.unban',
+        hiddenAt: undefined,
+        hiddenBy: undefined,
+        lastReviewedAt: now,
+        updatedAt: now,
+      })
+
+      await setSkillEmbeddingsSoftDeleted(ctx, skill._id, false, now)
+      restoredCount += 1
+    }
+
+    scheduleNextBatchIfNeeded(
+      ctx.scheduler,
+      internal.skills.restoreOwnedSkillsForUnbanBatchInternal,
+      args,
+      isDone,
+      continueCursor,
+    )
+
+    return { ok: true as const, restoredCount, scheduled: !isDone }
   },
 })
 
@@ -2617,25 +2827,15 @@ export const updateTags = mutation({
     }
 
     const latestEntry = args.tags.find((entry) => entry.tag === 'latest')
+    const now = Date.now()
     await ctx.db.patch(skill._id, {
       tags: nextTags,
       latestVersionId: latestEntry ? latestEntry.versionId : skill.latestVersionId,
-      updatedAt: Date.now(),
+      updatedAt: now,
     })
 
     if (latestEntry) {
-      const embeddings = await ctx.db
-        .query('skillEmbeddings')
-        .withIndex('by_skill', (q) => q.eq('skillId', skill._id))
-        .collect()
-      for (const embedding of embeddings) {
-        const isLatest = embedding.versionId === latestEntry.versionId
-        await ctx.db.patch(embedding._id, {
-          isLatest,
-          visibility: visibilityFor(isLatest, embedding.isApproved),
-          updatedAt: Date.now(),
-        })
-      }
+      await setSkillEmbeddingsLatestVersion(ctx, skill._id, latestEntry.versionId, now)
     }
   },
 })
@@ -2661,17 +2861,7 @@ export const setRedactionApproved = mutation({
       updatedAt: now,
     })
 
-    const embeddings = await ctx.db
-      .query('skillEmbeddings')
-      .withIndex('by_skill', (q) => q.eq('skillId', skill._id))
-      .collect()
-    for (const embedding of embeddings) {
-      await ctx.db.patch(embedding._id, {
-        isApproved: args.approved,
-        visibility: visibilityFor(embedding.isLatest, args.approved),
-        updatedAt: now,
-      })
-    }
+    await setSkillEmbeddingsApproved(ctx, skill._id, args.approved, now)
 
     await ctx.db.insert('auditLogs', {
       actorUserId: user._id,
@@ -2740,18 +2930,7 @@ export const setSoftDeleted = mutation({
       updatedAt: now,
     })
 
-    const embeddings = await ctx.db
-      .query('skillEmbeddings')
-      .withIndex('by_skill', (q) => q.eq('skillId', skill._id))
-      .collect()
-    for (const embedding of embeddings) {
-      await ctx.db.patch(embedding._id, {
-        visibility: args.deleted
-          ? 'deleted'
-          : visibilityFor(embedding.isLatest, embedding.isApproved),
-        updatedAt: now,
-      })
-    }
+    await setSkillEmbeddingsSoftDeleted(ctx, skill._id, args.deleted, now)
 
     await ctx.db.insert('auditLogs', {
       actorUserId: user._id,
@@ -2785,10 +2964,7 @@ export const changeOwner = mutation({
       updatedAt: now,
     })
 
-    const embeddings = await ctx.db
-      .query('skillEmbeddings')
-      .withIndex('by_skill', (q) => q.eq('skillId', skill._id))
-      .collect()
+    const embeddings = await listSkillEmbeddingsForSkill(ctx, skill._id)
     for (const embedding of embeddings) {
       await ctx.db.patch(embedding._id, {
         ownerId: args.ownerUserId,
@@ -2804,6 +2980,133 @@ export const changeOwner = mutation({
       metadata: { from: skill.ownerUserId, to: args.ownerUserId },
       createdAt: now,
     })
+  },
+})
+
+/**
+ * Admin-only: reclaim a squatted slug by hard-deleting the squatter's skill
+ * and reserving the slug for the rightful owner.
+ */
+export const reclaimSlug = mutation({
+  args: {
+    slug: v.string(),
+    rightfulOwnerUserId: v.id('users'),
+    reason: v.optional(v.string()),
+  },
+  handler: async (ctx, args) => {
+    const { user } = await requireUser(ctx)
+    assertAdmin(user)
+
+    const slug = args.slug.trim().toLowerCase()
+    if (!slug) throw new Error('Slug required')
+
+    const rightfulOwner = await ctx.db.get(args.rightfulOwnerUserId)
+    if (!rightfulOwner) throw new Error('Rightful owner not found')
+
+    const now = Date.now()
+
+    // Check if slug is currently occupied by someone else
+    const existingSkill = await ctx.db
+      .query('skills')
+      .withIndex('by_slug', (q) => q.eq('slug', slug))
+      .unique()
+
+    if (existingSkill) {
+      if (existingSkill.ownerUserId === args.rightfulOwnerUserId) {
+        return { ok: true as const, action: 'already_owned' }
+      }
+
+      // Hard-delete the squatter's skill
+      await ctx.scheduler.runAfter(0, internal.skills.hardDeleteInternal, {
+        skillId: existingSkill._id,
+        actorUserId: user._id,
+      })
+
+      await ctx.db.insert('auditLogs', {
+        actorUserId: user._id,
+        action: 'slug.reclaim',
+        targetType: 'skill',
+        targetId: existingSkill._id,
+        metadata: {
+          slug,
+          squatterUserId: existingSkill.ownerUserId,
+          rightfulOwnerUserId: args.rightfulOwnerUserId,
+          reason: args.reason || undefined,
+        },
+        createdAt: now,
+      })
+    }
+
+    await upsertReservedSlugForRightfulOwner(ctx, {
+      slug,
+      rightfulOwnerUserId: args.rightfulOwnerUserId,
+      deletedAt: now,
+      expiresAt: now + SLUG_RESERVATION_MS,
+      reason: args.reason || 'slug.reclaimed',
+    })
+
+    return {
+      ok: true as const,
+      action: existingSkill ? 'reclaimed_from_squatter' : 'reserved',
+    }
+  },
+})
+
+/**
+ * Admin-only: reclaim slugs in bulk. Useful for recovering multiple squatted slugs at once.
+ */
+export const reclaimSlugInternal = internalMutation({
+  args: {
+    actorUserId: v.id('users'),
+    slug: v.string(),
+    rightfulOwnerUserId: v.id('users'),
+    reason: v.optional(v.string()),
+  },
+  handler: async (ctx, args) => {
+    const actor = await ctx.db.get(args.actorUserId)
+    if (!actor || actor.deletedAt || actor.deactivatedAt) throw new Error('User not found')
+    assertAdmin(actor)
+
+    const slug = args.slug.trim().toLowerCase()
+    if (!slug) throw new Error('Slug required')
+
+    const now = Date.now()
+
+    const existingSkill = await ctx.db
+      .query('skills')
+      .withIndex('by_slug', (q) => q.eq('slug', slug))
+      .unique()
+
+    if (existingSkill && existingSkill.ownerUserId !== args.rightfulOwnerUserId) {
+      await ctx.scheduler.runAfter(0, internal.skills.hardDeleteInternal, {
+        skillId: existingSkill._id,
+        actorUserId: args.actorUserId,
+      })
+    }
+
+    await upsertReservedSlugForRightfulOwner(ctx, {
+      slug,
+      rightfulOwnerUserId: args.rightfulOwnerUserId,
+      deletedAt: now,
+      expiresAt: now + SLUG_RESERVATION_MS,
+      reason: args.reason || 'slug.reclaimed',
+    })
+
+    await ctx.db.insert('auditLogs', {
+      actorUserId: args.actorUserId,
+      action: 'slug.reclaim',
+      targetType: 'slug',
+      targetId: slug,
+      metadata: {
+        slug,
+        rightfulOwnerUserId: args.rightfulOwnerUserId,
+        hadSquatter: Boolean(existingSkill && existingSkill.ownerUserId !== args.rightfulOwnerUserId),
+        reason: args.reason || undefined,
+      },
+      createdAt: now,
+    })
+
+    return { ok: true as const }
   },
 })
 
@@ -2966,6 +3269,7 @@ export const insertVersion = internalMutation({
     changelogSource: v.optional(v.union(v.literal('auto'), v.literal('user'))),
     tags: v.optional(v.array(v.string())),
     fingerprint: v.string(),
+    bypassNewSkillRateLimit: v.optional(v.boolean()),
     forkOf: v.optional(
       v.object({
         slug: v.string(),
@@ -3013,22 +3317,56 @@ export const insertVersion = internalMutation({
     const user = await ctx.db.get(userId)
     if (!user || user.deletedAt || user.deactivatedAt) throw new Error('User not found')
 
+    const now = Date.now()
+
     let skill = await ctx.db
       .query('skills')
       .withIndex('by_slug', (q) => q.eq('slug', args.slug))
       .unique()
 
     if (skill && skill.ownerUserId !== userId) {
-      throw new Error('Only the owner can publish updates')
+      // Fallback: Convex Auth can create duplicate `users` records. Heal ownership ONLY
+      // when the underlying GitHub identity matches (authAccounts.providerAccountId).
+      const owner = await ctx.db.get(skill.ownerUserId)
+      if (!owner || owner.deletedAt || owner.deactivatedAt) {
+        throw new Error('Only the owner can publish updates')
+      }
+
+      const [ownerProviderAccountId, callerProviderAccountId] = await Promise.all([
+        getGitHubProviderAccountId(ctx, skill.ownerUserId),
+        getGitHubProviderAccountId(ctx, userId),
+      ])
+
+      // Deny healing when GitHub identity isn't present/consistent.
+      if (
+        !canHealSkillOwnershipByGitHubProviderAccountId(
+          ownerProviderAccountId,
+          callerProviderAccountId,
+        )
+      ) {
+        throw new Error('Only the owner can publish updates')
+      }
+
+      await ctx.db.patch(skill._id, { ownerUserId: userId, updatedAt: now })
+      skill = { ...skill, ownerUserId: userId }
     }
 
-    const now = Date.now()
     const qualityAssessment = args.qualityAssessment
     const isQualityQuarantine = qualityAssessment?.decision === 'quarantine'
+
+    // Trusted publishers (and moderators/admins) bypass auto-hide for pending scans.
+    // Keep moderationReason as pending.scan so the VT poller keeps working.
+    const isTrustedPublisher = Boolean(
+      user.trustedPublisher || user.role === 'admin' || user.role === 'moderator',
+    )
+    const initialModerationStatus =
+      isTrustedPublisher && !isQualityQuarantine ? 'active' : 'hidden'
+
     const moderationReason = isQualityQuarantine ? 'quality.low' : 'pending.scan'
     const moderationNotes = isQualityQuarantine
       ? `Auto-quarantined by quality gate (score=${qualityAssessment.score}, tier=${qualityAssessment.trustTier}, similar=${qualityAssessment.similarRecentCount}).`
       : undefined
+
     const qualityRecord = qualityAssessment
       ? {
           score: qualityAssessment.score,
@@ -3042,8 +3380,13 @@ export const insertVersion = internalMutation({
       : undefined
 
     if (!skill) {
-      const ownerTrustSignals = await getOwnerTrustSignals(ctx, user, now)
-      enforceNewSkillRateLimit(ownerTrustSignals)
+      // Anti-squatting: enforce reserved slug cooldown.
+      await enforceReservedSlugCooldownForNewSkill(ctx, { slug: args.slug, userId, now })
+
+      if (!args.bypassNewSkillRateLimit) {
+        const ownerTrustSignals = await getOwnerTrustSignals(ctx, user, now)
+        enforceNewSkillRateLimit(ownerTrustSignals)
+      }
 
       const forkOfSlug = args.forkOf?.slug.trim().toLowerCase() || ''
       const forkOfVersion = args.forkOf?.version?.trim() || undefined
@@ -3106,7 +3449,7 @@ export const insertVersion = internalMutation({
           official: undefined,
           deprecated: undefined,
         },
-        moderationStatus: 'hidden',
+        moderationStatus: initialModerationStatus,
         moderationReason,
         moderationNotes,
         quality: qualityRecord,
@@ -3177,7 +3520,7 @@ export const insertVersion = internalMutation({
       tags: nextTags,
       stats: { ...skill.stats, versions: skill.stats.versions + 1 },
       softDeletedAt: undefined,
-      moderationStatus: 'hidden',
+      moderationStatus: initialModerationStatus,
       moderationReason,
       moderationNotes,
       quality: qualityRecord ?? skill.quality,
@@ -3195,7 +3538,7 @@ export const insertVersion = internalMutation({
       embedding: args.embedding,
       isLatest: true,
       isApproved,
-      visibility: visibilityFor(true, isApproved),
+      visibility: embeddingVisibilityFor(true, isApproved),
       updatedAt: now,
     })
 
@@ -3207,7 +3550,7 @@ export const insertVersion = internalMutation({
       if (previousEmbedding) {
         await ctx.db.patch(previousEmbedding._id, {
           isLatest: false,
-          visibility: visibilityFor(false, previousEmbedding.isApproved),
+          visibility: embeddingVisibilityFor(false, previousEmbedding.isApproved),
           updatedAt: now,
         })
       }
@@ -3257,18 +3600,7 @@ export const setSkillSoftDeletedInternal = internalMutation({
       updatedAt: now,
     })
 
-    const embeddings = await ctx.db
-      .query('skillEmbeddings')
-      .withIndex('by_skill', (q) => q.eq('skillId', skill._id))
-      .collect()
-    for (const embedding of embeddings) {
-      await ctx.db.patch(embedding._id, {
-        visibility: args.deleted
-          ? 'deleted'
-          : visibilityFor(embedding.isLatest, embedding.isApproved),
-        updatedAt: now,
-      })
-    }
+    await setSkillEmbeddingsSoftDeleted(ctx, skill._id, args.deleted, now)
 
     await ctx.db.insert('auditLogs', {
       actorUserId: args.userId,
@@ -3282,13 +3614,6 @@ export const setSkillSoftDeletedInternal = internalMutation({
     return { ok: true as const }
   },
 })
-
-function visibilityFor(isLatest: boolean, isApproved: boolean) {
-  if (isLatest && isApproved) return 'latest-approved'
-  if (isLatest) return 'latest'
-  if (isApproved) return 'archived-approved'
-  return 'archived'
-}
 
 function clampInt(value: number, min: number, max: number) {
   const rounded = Number.isFinite(value) ? Math.round(value) : min

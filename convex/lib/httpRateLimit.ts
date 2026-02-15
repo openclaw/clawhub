@@ -147,9 +147,10 @@ function shouldTrustForwardedIps() {
   const value = String(process.env.TRUST_FORWARDED_IPS ?? '')
     .trim()
     .toLowerCase()
-  if (!value) return true
+  // Hardening default: CF-only. Forwarded headers are trivial to spoof unless you
+  // control the trusted proxy layer.
+  if (!value) return false
   if (value === '1' || value === 'true' || value === 'yes') return true
-  if (value === '0' || value === 'false' || value === 'no') return false
   return false
 }
 

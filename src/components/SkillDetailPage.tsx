@@ -10,6 +10,7 @@ import { getSkillBadges } from '../lib/badges'
 import type { PublicSkill, PublicUser } from '../lib/publicUser'
 import { canManageSkill, isModerator } from '../lib/roles'
 import { useAuthStatus } from '../lib/useAuthStatus'
+import { UserBadge } from './UserBadge'
 
 const SkillDiffCard = lazy(() =>
   import('./SkillDiffCard').then((m) => ({ default: m.SkillDiffCard })),
@@ -138,7 +139,12 @@ function LlmAnalysisDetail({ analysis }: { analysis: LlmAnalysis }) {
       <button
         type="button"
         className="analysis-detail-header"
-        onClick={() => setIsOpen((prev) => !prev)}
+        onClick={() => {
+          // Drag-select to copy summary text should not toggle open/closed.
+          const selection = window.getSelection()
+          if (selection && !selection.isCollapsed) return
+          setIsOpen((prev) => !prev)
+        }}
         aria-expanded={isOpen}
       >
         <span className="analysis-summary-text">{analysis.summary}</span>
@@ -646,11 +652,15 @@ export function SkillDetailPage({
                   {skill.stats.installsCurrent ?? 0} current · {skill.stats.installsAllTime ?? 0}{' '}
                   all-time
                 </div>
-                {owner?.handle ? (
-                  <div className="stat">
-                    by <a href={`/u/${owner.handle}`}>@{owner.handle}</a>
-                  </div>
-                ) : null}
+                <div className="stat">
+                  <UserBadge
+                    user={owner}
+                    fallbackHandle={ownerHandle}
+                    prefix="by"
+                    size="md"
+                    showName
+                  />
+                </div>
                 {forkOf && forkOfHref ? (
                   <div className="stat">
                     {forkOfLabel}{' '}

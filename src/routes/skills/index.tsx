@@ -1,12 +1,12 @@
 import { createFileRoute, Link, redirect } from '@tanstack/react-router'
-import { useAction } from 'convex/react'
-import { usePaginatedQuery } from 'convex-helpers/react'
+import { useAction, usePaginatedQuery } from 'convex/react'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { api } from '../../../convex/_generated/api'
 import type { Doc } from '../../../convex/_generated/dataModel'
 import { SkillCard } from '../../components/SkillCard'
+import { UserBadge } from '../../components/UserBadge'
 import { getSkillBadges, isSkillHighlighted } from '../../lib/badges'
-import type { PublicSkill } from '../../lib/publicUser'
+import type { PublicSkill, PublicUser } from '../../lib/publicUser'
 
 const sortKeys = [
   'relevance',
@@ -53,6 +53,7 @@ type SkillListEntry = {
     }
   } | null
   ownerHandle?: string | null
+  owner?: PublicUser | null
   searchScore?: number
 }
 
@@ -61,6 +62,7 @@ type SkillSearchEntry = {
   version: Doc<'skillVersions'> | null
   score: number
   ownerHandle?: string | null
+  owner?: PublicUser | null
 }
 
 function buildSkillHref(skill: PublicSkill, ownerHandle?: string | null) {
@@ -136,7 +138,6 @@ export function SkillsIndex() {
     ? `${trimmedQuery}::${highlightedOnly ? '1' : '0'}::${nonSuspiciousOnly ? '1' : '0'}`
     : ''
 
-  // Use convex-helpers usePaginatedQuery for better cache behavior
   const {
     results: paginatedResults,
     status: paginationStatus,
@@ -223,6 +224,7 @@ export function SkillsIndex() {
         skill: entry.skill,
         latestVersion: entry.version,
         ownerHandle: entry.ownerHandle ?? null,
+        owner: entry.owner ?? null,
         searchScore: entry.score,
       }))
     }
@@ -236,34 +238,48 @@ export function SkillsIndex() {
   )
 
   const sorted = useMemo(() => {
+    if (!hasQuery) {
+      return filtered
+    }
     const multiplier = dir === 'asc' ? 1 : -1
     const results = [...filtered]
     results.sort((a, b) => {
+      const tieBreak = () => {
+        const updated = (a.skill.updatedAt - b.skill.updatedAt) * multiplier
+        if (updated !== 0) return updated
+        return a.skill.slug.localeCompare(b.skill.slug)
+      }
       switch (sort) {
         case 'relevance':
           return ((a.searchScore ?? 0) - (b.searchScore ?? 0)) * multiplier
         case 'downloads':
-          return (a.skill.stats.downloads - b.skill.stats.downloads) * multiplier
+          return (a.skill.stats.downloads - b.skill.stats.downloads) * multiplier || tieBreak()
         case 'installs':
           return (
             ((a.skill.stats.installsAllTime ?? 0) - (b.skill.stats.installsAllTime ?? 0)) *
-            multiplier
+              multiplier || tieBreak()
           )
         case 'stars':
-          return (a.skill.stats.stars - b.skill.stats.stars) * multiplier
+          return (a.skill.stats.stars - b.skill.stats.stars) * multiplier || tieBreak()
         case 'updated':
-          return (a.skill.updatedAt - b.skill.updatedAt) * multiplier
+          return (
+            (a.skill.updatedAt - b.skill.updatedAt) * multiplier ||
+            a.skill.slug.localeCompare(b.skill.slug)
+          )
         case 'name':
           return (
             (a.skill.displayName.localeCompare(b.skill.displayName) ||
               a.skill.slug.localeCompare(b.skill.slug)) * multiplier
           )
         default:
-          return (a.skill.createdAt - b.skill.createdAt) * multiplier
+          return (
+            (a.skill.createdAt - b.skill.createdAt) * multiplier ||
+            a.skill.slug.localeCompare(b.skill.slug)
+          )
       }
     })
     return results
-  }, [dir, filtered, sort])
+  }, [dir, filtered, hasQuery, sort])
 
   const isLoadingSkills = hasQuery ? isSearching && searchResults.length === 0 : isLoadingList
   const canLoadMore = hasQuery
@@ -442,7 +458,8 @@ export function SkillsIndex() {
             {sorted.map((entry) => {
               const skill = entry.skill
               const isPlugin = Boolean(entry.latestVersion?.parsed?.clawdis?.nix?.plugin)
-              const skillHref = buildSkillHref(skill, entry.ownerHandle)
+              const ownerHandle = entry.owner?.handle ?? entry.owner?.name ?? entry.ownerHandle ?? null
+              const skillHref = buildSkillHref(skill, ownerHandle)
               return (
                 <SkillCard
                   key={skill._id}
@@ -452,9 +469,12 @@ export function SkillsIndex() {
                   chip={isPlugin ? 'Plugin bundle (nix)' : undefined}
                   summaryFallback="Agent-ready skill pack."
                   meta={
-                    <div className="stat">
-                      ⭐ {skill.stats.stars} · ⤓ {skill.stats.downloads} · ⤒{' '}
-                      {skill.stats.installsAllTime ?? 0}
+                    <div className="skill-card-footer-rows">
+                      <UserBadge user={entry.owner} fallbackHandle={ownerHandle} prefix="by" link={false} />
+                      <div className="stat">
+                        ⭐ {skill.stats.stars} · ⤓ {skill.stats.downloads} · ⤒{' '}
+                        {skill.stats.installsAllTime ?? 0}
+                      </div>
                     </div>
                   }
                 />
@@ -466,7 +486,8 @@ export function SkillsIndex() {
             {sorted.map((entry) => {
               const skill = entry.skill
               const isPlugin = Boolean(entry.latestVersion?.parsed?.clawdis?.nix?.plugin)
-              const skillHref = buildSkillHref(skill, entry.ownerHandle)
+              const ownerHandle = entry.owner?.handle ?? entry.owner?.name ?? entry.ownerHandle ?? null
+              const skillHref = buildSkillHref(skill, ownerHandle)
               return (
                 <Link key={skill._id} className="skills-row" to={skillHref}>
                   <div className="skills-row-main">
@@ -484,6 +505,9 @@ export function SkillsIndex() {
                     </div>
                     <div className="skills-row-summary">
                       {skill.summary ?? 'No summary provided.'}
+                    </div>
+                    <div className="skills-row-owner">
+                      <UserBadge user={entry.owner} fallbackHandle={ownerHandle} prefix="by" link={false} />
                     </div>
                     {isPlugin ? (
                       <div className="skills-row-meta">

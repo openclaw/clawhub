@@ -1,7 +1,7 @@
 import { createHash } from 'node:crypto'
 import { realpath } from 'node:fs/promises'
-import { homedir } from 'node:os'
 import { resolve } from 'node:path'
+import { resolveHome } from '../../homedir.js'
 import { isCancel, multiselect } from '@clack/prompts'
 import semver from 'semver'
 import { apiRequest, downloadZip } from '../../http.js'
@@ -338,7 +338,7 @@ export function printSection(title: string, body?: string) {
 }
 
 function abbreviatePath(value: string) {
-  const home = homedir()
+  const home = resolveHome()
   if (value.startsWith(home)) return `~${value.slice(home.length)}`
   return value
 }
@@ -348,7 +348,7 @@ function rootTelemetryId(value: string) {
 }
 
 function formatRootLabel(value: string) {
-  const home = homedir()
+  const home = resolveHome()
   if (value === home) return '~'
 
   const normalized = value.replaceAll('\\', '/')

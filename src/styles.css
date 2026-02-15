@@ -1265,6 +1265,14 @@ code {
   -webkit-box-orient: vertical;
 }
 
+.skills-row-owner {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 0.82rem;
+  color: var(--ink-soft);
+}
+
 .skills-row-metrics {
   display: flex;
   align-items: center;
@@ -1366,6 +1374,94 @@ code {
   align-items: center;
   justify-content: space-between;
   gap: 12px;
+}
+
+.skill-card-footer-rows {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 6px;
+  align-items: start;
+}
+
+.skill-card-footer-rows .stat {
+  justify-self: end;
+}
+
+.user-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.user-badge-prefix {
+  color: var(--ink-soft);
+}
+
+.user-avatar {
+  width: 22px;
+  height: 22px;
+  border-radius: 999px;
+  overflow: hidden;
+  display: grid;
+  place-items: center;
+  border: 1px solid color-mix(in srgb, var(--line) 80%, transparent);
+  background: color-mix(in srgb, var(--accent) 10%, transparent);
+  flex: 0 0 auto;
+}
+
+.user-avatar-img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+
+.user-avatar-fallback {
+  font-family: var(--font-display);
+  font-size: 0.82rem;
+  font-weight: 680;
+  color: color-mix(in srgb, var(--ink) 86%, transparent);
+}
+
+.user-handle {
+  color: inherit;
+  text-decoration: none;
+  font-family: var(--font-mono);
+  font-size: 0.82rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 18ch;
+}
+
+.user-name {
+  font-family: var(--font-display);
+  font-size: 0.88rem;
+  letter-spacing: -0.01em;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 28ch;
+  min-width: 0;
+}
+
+.user-name-sep {
+  color: var(--ink-soft);
+  flex: 0 0 auto;
+}
+
+.user-handle:hover {
+  text-decoration: underline;
+}
+
+.user-badge-md .user-avatar {
+  width: 26px;
+  height: 26px;
+}
+
+.user-badge-md .user-handle {
+  font-size: 0.9rem;
 }
 
 .hero-install {
@@ -1872,6 +1968,11 @@ code {
   flex-direction: column;
   align-items: flex-end;
   gap: 10px;
+}
+
+.skill-hero-cta .btn {
+  width: 100%;
+  justify-content: center;
 }
 
 .skill-version-pill {
@@ -2898,9 +2999,10 @@ code {
   max-width: 100%;
   overflow-x: auto;
   -webkit-overflow-scrolling: touch;
-  background: linear-gradient(180deg, rgba(255, 255, 255, 0.9), rgba(255, 250, 247, 0.88));
-  border: 1px solid rgba(255, 107, 74, 0.18);
-  border-left: 3px solid var(--accent-deep);
+  background:
+    radial-gradient(1200px 220px at 12% 0%, rgba(255, 107, 74, 0.08), transparent 55%),
+    linear-gradient(180deg, rgba(255, 255, 255, 0.92), rgba(255, 250, 247, 0.9));
+  border: 1px solid rgba(255, 107, 74, 0.2);
   border-radius: 12px;
   padding: 14px 16px;
   font-family: var(--font-mono);
@@ -2908,7 +3010,9 @@ code {
   line-height: 1.55;
   tab-size: 2;
   color: var(--ink);
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.7);
+  box-shadow:
+    inset 4px 0 0 rgba(255, 107, 74, 0.55),
+    inset 0 1px 0 rgba(255, 255, 255, 0.75);
 }
 
 .markdown pre code {
@@ -2921,11 +3025,14 @@ code {
 }
 
 [data-theme="dark"] .markdown pre {
-  background: linear-gradient(180deg, rgba(20, 36, 47, 0.9), rgba(15, 29, 40, 0.86));
-  border: 1px solid rgba(232, 106, 71, 0.28);
-  border-left-color: rgba(232, 106, 71, 0.8);
-  color: #f5e9e3;
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.05);
+  background:
+    radial-gradient(900px 260px at 12% 0%, rgba(255, 168, 142, 0.08), transparent 55%),
+    linear-gradient(180deg, rgba(14, 22, 32, 0.95), rgba(10, 16, 24, 0.92));
+  border: 1px solid rgba(255, 168, 142, 0.22);
+  color: rgba(244, 238, 234, 0.96);
+  box-shadow:
+    inset 4px 0 0 rgba(255, 140, 110, 0.75),
+    inset 0 1px 0 rgba(255, 255, 255, 0.05);
 }
 
 [data-theme="dark"] .markdown :not(pre) > code {
@@ -3123,13 +3230,13 @@ html.theme-transition::view-transition-new(theme) {
 
 .btn-ghost {
   background: transparent;
-  border: 1px solid var(--card-border);
-  color: var(--color-text);
+  border-color: var(--border-ui);
+  color: var(--ink);
 }
 
 .btn-ghost:hover {
-  background: var(--card-bg);
-  border-color: var(--color-accent);
+  background: color-mix(in srgb, var(--accent) 8%, transparent);
+  border-color: var(--border-ui-hover);
 }
 
 @media (max-width: 640px) {
@@ -3497,7 +3604,7 @@ html.theme-transition::view-transition-new(theme) {
   gap: 12px;
   padding: 10px 14px;
   cursor: pointer;
-  user-select: none;
+  user-select: text;
   border-radius: 12px;
   transition: background 0.15s ease;
 }
@@ -3518,6 +3625,7 @@ html.theme-transition::view-transition-new(theme) {
   align-items: center;
   gap: 4px;
   white-space: nowrap;
+  user-select: none;
 }
 
 .analysis-detail-toggle .chevron {
@@ -3533,6 +3641,8 @@ html.theme-transition::view-transition-new(theme) {
   color: var(--ink);
   line-height: 1.45;
   flex: 1;
+  cursor: text;
+  user-select: text;
 }
 
 .analysis-body {

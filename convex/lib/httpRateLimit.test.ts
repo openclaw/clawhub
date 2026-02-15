@@ -1,19 +1,31 @@
 /* @vitest-environment node */
-import { describe, expect, it } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { getClientIp } from './httpRateLimit'
 
 describe('getClientIp', () => {
-  it('uses forwarded headers by default when cf-connecting-ip is missing', () => {
+  let prev: string | undefined
+  beforeEach(() => {
+    prev = process.env.TRUST_FORWARDED_IPS
+  })
+  afterEach(() => {
+    if (prev === undefined) {
+      delete process.env.TRUST_FORWARDED_IPS
+    } else {
+      process.env.TRUST_FORWARDED_IPS = prev
+    }
+  })
+
+  it('returns null when cf-connecting-ip is missing (CF-only default)', () => {
     const request = new Request('https://example.com', {
       headers: {
         'x-forwarded-for': '203.0.113.9',
       },
     })
     delete process.env.TRUST_FORWARDED_IPS
-    expect(getClientIp(request)).toBe('203.0.113.9')
+    expect(getClientIp(request)).toBeNull()
   })
 
-  it('can disable forwarded headers explicitly', () => {
+  it('keeps forwarded headers disabled when TRUST_FORWARDED_IPS=false', () => {
     const request = new Request('https://example.com', {
       headers: {
         'x-forwarded-for': '203.0.113.9',
@@ -21,7 +33,6 @@ describe('getClientIp', () => {
     })
     process.env.TRUST_FORWARDED_IPS = 'false'
     expect(getClientIp(request)).toBeNull()
-    delete process.env.TRUST_FORWARDED_IPS
   })
 
   it('returns first ip from cf-connecting-ip', () => {
@@ -41,6 +52,5 @@ describe('getClientIp', () => {
     })
     process.env.TRUST_FORWARDED_IPS = 'true'
     expect(getClientIp(request)).toBe('203.0.113.9')
-    delete process.env.TRUST_FORWARDED_IPS
   })
 })
