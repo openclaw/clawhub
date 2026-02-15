@@ -3,6 +3,7 @@ import { api, internal } from './_generated/api'
 import type { Doc, Id } from './_generated/dataModel'
 import type { ActionCtx } from './_generated/server'
 import { httpAction } from './_generated/server'
+import { assertAdmin } from './lib/access'
 import { getOptionalApiTokenUserId, requireApiTokenUser } from './lib/apiTokenAuth'
 import { applyRateLimit, parseBearerToken } from './lib/httpRateLimit'
 import { corsHeaders, mergeHeaders } from './lib/httpHeaders'
@@ -612,19 +613,31 @@ async function usersPostRouterV1Handler(ctx: ActionCtx, request: Request) {
   }
 
   let actorUserId: Id<'users'>
+  let actorUser: Doc<'users'>
   try {
     const auth = await requireApiTokenUser(ctx, request)
     actorUserId = auth.userId
+    actorUser = auth.user as Doc<'users'>
   } catch {
     return text('Unauthorized', 401, rate.headers)
   }
 
   // Restore and reclaim have different parameter shapes, handle them separately
   if (action === 'restore') {
+    try {
+      assertAdmin(actorUser)
+    } catch {
+      return text('Forbidden', 403, rate.headers)
+    }
     return handleAdminRestore(ctx, request, payload, actorUserId, rate.headers)
   }
 
   if (action === 'reclaim') {
+    try {
+      assertAdmin(actorUser)
+    } catch {
+      return text('Forbidden', 403, rate.headers)
+    }
     return handleAdminReclaim(ctx, request, payload, actorUserId, rate.headers)
   }
 

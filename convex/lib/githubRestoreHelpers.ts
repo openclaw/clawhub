@@ -98,8 +98,11 @@ export async function readGitHubBackupFile(
 
     if (!response.content) return null
 
-    const content = fromBase64(response.content)
-    return new TextEncoder().encode(content)
+    if (response.encoding && response.encoding !== 'base64') {
+      throw new Error(`Unsupported GitHub content encoding: ${response.encoding}`)
+    }
+
+    return fromBase64Bytes(response.content)
   } catch (error) {
     if (isNotFoundError(error)) return null
     throw error
@@ -128,8 +131,10 @@ function encodePath(path: string) {
     .join('/')
 }
 
-function fromBase64(value: string) {
-  return Buffer.from(value, 'base64').toString('utf8')
+function fromBase64Bytes(value: string) {
+  // GitHub may include newlines in the base64 payload.
+  const normalized = value.replace(/\s/g, '')
+  return new Uint8Array(Buffer.from(normalized, 'base64'))
 }
 
 async function githubGet<T>(token: string, path: string): Promise<T> {

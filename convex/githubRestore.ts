@@ -9,10 +9,12 @@ import {
   getGitHubBackupContext,
   isGitHubBackupConfigured,
 } from './lib/githubBackup'
+import { assertAdmin } from './lib/access'
 import {
   listGitHubBackupFiles,
   readGitHubBackupFile,
 } from './lib/githubRestoreHelpers'
+import { publishVersionForUser } from './lib/skillPublish'
 
 type RestoreResult = {
   slug: string
@@ -41,11 +43,19 @@ export const restoreSkillFromBackup = internalAction({
     forceOverwriteSquatter: v.optional(v.boolean()),
   },
   handler: async (ctx, args): Promise<RestoreResult> => {
-    if (!isGitHubBackupConfigured()) {
-      return { slug: args.slug, status: 'error', detail: 'GitHub backup not configured' }
-    }
-
     try {
+      const actor = await ctx.runQuery(internal.users.getByIdInternal, {
+        userId: args.actorUserId,
+      })
+      if (!actor || actor.deletedAt || actor.deactivatedAt) {
+        return { slug: args.slug, status: 'error', detail: 'Actor not found' }
+      }
+      assertAdmin(actor as Doc<'users'>)
+
+      if (!isGitHubBackupConfigured()) {
+        return { slug: args.slug, status: 'error', detail: 'GitHub backup not configured' }
+      }
+
       const ghContext = await getGitHubBackupContext()
 
       // Check if skill already exists in the DB
@@ -65,9 +75,13 @@ export const restoreSkillFromBackup = internalAction({
             detail: `Slug occupied by another user. Set forceOverwriteSquatter=true to reclaim.`,
           }
         }
-        // Squatter eviction is handled synchronously inside restoreSkillInternal
-        // to avoid the race condition where an async hardDelete hasn't completed
-        // by the time we try to insert the restored skill.
+
+        // Free the slug in-transaction by renaming the squatter, then enqueue cleanup.
+        await ctx.runMutation(internal.githubRestoreMutations.evictSquatterSkillForRestoreInternal, {
+          actorUserId: args.actorUserId,
+          slug: args.slug,
+          rightfulOwnerUserId: args.ownerUserId,
+        })
       }
 
       // Fetch metadata from GitHub backup
@@ -96,7 +110,8 @@ export const restoreSkillFromBackup = internalAction({
         if (!fileContent) continue
 
         const sha256 = await sha256Hex(fileContent)
-        const blob = new Blob([fileContent], { type: 'text/plain' })
+        const contentType = guessContentType(filePath)
+        const blob = new Blob([Buffer.from(fileContent)], { type: contentType })
         const storageId = await ctx.storage.store(blob)
 
         storedFiles.push({
@@ -104,7 +119,7 @@ export const restoreSkillFromBackup = internalAction({
           size: fileContent.byteLength,
           storageId,
           sha256,
-          contentType: 'text/plain',
+          contentType,
         })
       }
 
@@ -112,18 +127,24 @@ export const restoreSkillFromBackup = internalAction({
         return { slug: args.slug, status: 'error', detail: 'Could not download any backup files' }
       }
 
-      // Re-create the skill via the restore mutation.
-      // Squatter eviction (if needed) is handled synchronously inside the mutation
-      // to ensure the slug is free in the same transaction as the skill creation.
-      await ctx.runMutation(internal.githubRestoreMutations.restoreSkillInternal, {
-        actorUserId: args.actorUserId,
-        ownerUserId: args.ownerUserId,
-        slug: args.slug,
-        displayName: meta.displayName,
-        version: meta.latest.version,
-        forceOverwriteSquatter: args.forceOverwriteSquatter,
-        files: storedFiles,
-      })
+      await publishVersionForUser(
+        ctx,
+        args.ownerUserId,
+        {
+          slug: args.slug,
+          displayName: meta.displayName,
+          version: meta.latest.version,
+          changelog: 'Restored from GitHub backup',
+          files: storedFiles,
+        },
+        {
+          bypassGitHubAccountAge: true,
+          bypassNewSkillRateLimit: true,
+          bypassQualityGate: true,
+          skipBackup: true,
+          skipWebhook: true,
+        },
+      )
 
       return { slug: args.slug, status: 'restored' }
     } catch (error) {
@@ -189,4 +210,12 @@ async function sha256Hex(bytes: Uint8Array) {
   const hash = createHash('sha256')
   hash.update(bytes)
   return hash.digest('hex')
+}
+
+function guessContentType(path: string) {
+  const lower = path.trim().toLowerCase()
+  if (lower.endsWith('.md')) return 'text/markdown'
+  if (lower.endsWith('.json')) return 'application/json'
+  if (lower.endsWith('.svg')) return 'image/svg+xml'
+  return 'text/plain'
 }

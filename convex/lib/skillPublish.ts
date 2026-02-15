@@ -63,10 +63,19 @@ export type PublishVersionArgs = {
   }>
 }
 
+export type PublishOptions = {
+  bypassGitHubAccountAge?: boolean
+  bypassNewSkillRateLimit?: boolean
+  bypassQualityGate?: boolean
+  skipBackup?: boolean
+  skipWebhook?: boolean
+}
+
 export async function publishVersionForUser(
   ctx: ActionCtx,
   userId: Id<'users'>,
   args: PublishVersionArgs,
+  options: PublishOptions = {},
 ): Promise<PublishResult> {
   const version = args.version.trim()
   const slug = args.slug.trim().toLowerCase()
@@ -79,7 +88,9 @@ export async function publishVersionForUser(
     throw new ConvexError('Version must be valid semver')
   }
 
-  await requireGitHubAccountAge(ctx, userId)
+  if (!options.bypassGitHubAccountAge) {
+    await requireGitHubAccountAge(ctx, userId)
+  }
   const existingSkill = (await ctx.runQuery(internal.skills.getSkillBySlugInternal, {
     slug,
   })) as Doc<'skills'> | null
@@ -137,7 +148,7 @@ export async function publishVersionForUser(
   })
 
   let qualityAssessment: QualityAssessment | null = null
-  if (isNewSkill) {
+  if (isNewSkill && !options.bypassQualityGate) {
     const ownerActivity = (await ctx.runQuery(internal.skills.getOwnerSkillActivityInternal, {
       ownerUserId: userId,
       limit: QUALITY_ACTIVITY_LIMIT,
@@ -240,6 +251,7 @@ export async function publishVersionForUser(
           version: args.forkOf.version?.trim() || undefined,
         }
       : undefined,
+    bypassNewSkillRateLimit: options.bypassNewSkillRateLimit || undefined,
     files: safeFiles.map((file) => ({
       ...file,
       path: file.path,
@@ -273,24 +285,28 @@ export async function publishVersionForUser(
 
   const ownerHandle = owner?.handle ?? owner?.displayName ?? owner?.name ?? 'unknown'
 
-  void ctx.scheduler
-    .runAfter(0, internal.githubBackupsNode.backupSkillForPublishInternal, {
+  if (!options.skipBackup) {
+    void ctx.scheduler
+      .runAfter(0, internal.githubBackupsNode.backupSkillForPublishInternal, {
+        slug,
+        version,
+        displayName,
+        ownerHandle,
+        files: safeFiles,
+        publishedAt: Date.now(),
+      })
+      .catch((error) => {
+        console.error('GitHub backup scheduling failed', error)
+      })
+  }
+
+  if (!options.skipWebhook) {
+    void schedulePublishWebhook(ctx, {
       slug,
       version,
       displayName,
-      ownerHandle,
-      files: safeFiles,
-      publishedAt: Date.now(),
     })
-    .catch((error) => {
-      console.error('GitHub backup scheduling failed', error)
-    })
-
-  void schedulePublishWebhook(ctx, {
-    slug,
-    version,
-    displayName,
-  })
+  }
 
   return publishResult
 }

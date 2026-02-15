@@ -442,10 +442,12 @@ async function hardDeleteSkillStep(
       // Reserve the slug so the original owner can reclaim it within the cooldown period.
       // If a reservation already exists (e.g. created by reclaimSlug for the rightful owner),
       // do NOT overwrite it -- the reclaim reservation takes priority.
-      const existingReservation = await ctx.db
+      const reservations = await ctx.db
         .query('reservedSlugs')
         .withIndex('by_slug', (q) => q.eq('slug', skill.slug))
-        .unique()
+        .take(10)
+      const activeReservations = reservations.filter((r) => !r.releasedAt)
+      const existingReservation = activeReservations.sort((a, b) => b.deletedAt - a.deletedAt)[0]
       if (existingReservation) {
         // Only update if the existing reservation is for the same owner being deleted
         // (i.e. a normal hard-delete, not a reclaim). Reclaim reservations point to
@@ -465,6 +467,11 @@ async function hardDeleteSkillStep(
           deletedAt: now,
           expiresAt: now + SLUG_RESERVATION_MS,
         })
+      }
+
+      // Best-effort: clean up duplicate active reservations (shouldn't exist).
+      for (const stale of activeReservations.filter((r) => r._id !== existingReservation?._id)) {
+        await ctx.db.patch(stale._id, { releasedAt: now })
       }
 
       await ctx.db.delete(skill._id)
@@ -809,10 +816,12 @@ export const getBySlugForStaff = query({
 export const getReservedSlugInternal = internalQuery({
   args: { slug: v.string() },
   handler: async (ctx, args) => {
-    return ctx.db
+    const reservations = await ctx.db
       .query('reservedSlugs')
       .withIndex('by_slug', (q) => q.eq('slug', args.slug))
-      .unique()
+      .take(10)
+    const active = reservations.filter((r) => !r.releasedAt)
+    return active.sort((a, b) => b.deletedAt - a.deletedAt)[0] ?? null
   },
 })
 
@@ -1704,6 +1713,7 @@ export const getPendingScanSkillsInternal = internalQuery({
       const reason = skill.moderationReason
       if (skill.moderationStatus === 'hidden' && reason === 'pending.scan') return true
       if (skill.moderationStatus === 'hidden' && reason === 'quality.low') return true
+      if (skill.moderationStatus === 'active' && reason === 'pending.scan') return true
       if (skill.moderationStatus === 'active' && reason === 'scanner.vt.pending') return true
       return (
         reason === 'scanner.llm.clean' ||
@@ -2907,10 +2917,12 @@ export const reclaimSlug = mutation({
     }
 
     // Create or update the slug reservation for the rightful owner
-    const existingReservation = await ctx.db
+    const reservations = await ctx.db
       .query('reservedSlugs')
       .withIndex('by_slug', (q) => q.eq('slug', slug))
-      .unique()
+      .take(10)
+    const activeReservations = reservations.filter((r) => !r.releasedAt)
+    const existingReservation = activeReservations.sort((a, b) => b.deletedAt - a.deletedAt)[0]
 
     if (existingReservation) {
       await ctx.db.patch(existingReservation._id, {
@@ -2928,6 +2940,11 @@ export const reclaimSlug = mutation({
         expiresAt: now + SLUG_RESERVATION_MS,
         reason: args.reason || 'slug.reclaimed',
       })
+    }
+
+    // Best-effort: clean up duplicate active reservations (shouldn't exist).
+    for (const stale of activeReservations.filter((r) => r._id !== existingReservation?._id)) {
+      await ctx.db.patch(stale._id, { releasedAt: now })
     }
 
     return {
@@ -2969,10 +2986,12 @@ export const reclaimSlugInternal = internalMutation({
       })
     }
 
-    const existingReservation = await ctx.db
+    const reservations = await ctx.db
       .query('reservedSlugs')
       .withIndex('by_slug', (q) => q.eq('slug', slug))
-      .unique()
+      .take(10)
+    const activeReservations = reservations.filter((r) => !r.releasedAt)
+    const existingReservation = activeReservations.sort((a, b) => b.deletedAt - a.deletedAt)[0]
 
     if (existingReservation) {
       await ctx.db.patch(existingReservation._id, {
@@ -2990,6 +3009,11 @@ export const reclaimSlugInternal = internalMutation({
         expiresAt: now + SLUG_RESERVATION_MS,
         reason: args.reason || 'slug.reclaimed',
       })
+    }
+
+    // Best-effort: clean up duplicate active reservations (shouldn't exist).
+    for (const stale of activeReservations.filter((r) => r._id !== existingReservation?._id)) {
+      await ctx.db.patch(stale._id, { releasedAt: now })
     }
 
     await ctx.db.insert('auditLogs', {
@@ -3169,6 +3193,7 @@ export const insertVersion = internalMutation({
     changelogSource: v.optional(v.union(v.literal('auto'), v.literal('user'))),
     tags: v.optional(v.array(v.string())),
     fingerprint: v.string(),
+    bypassNewSkillRateLimit: v.optional(v.boolean()),
     forkOf: v.optional(
       v.object({
         slug: v.string(),
@@ -3304,8 +3329,10 @@ export const insertVersion = internalMutation({
         await ctx.db.patch(stale._id, { releasedAt: now })
       }
 
-      const ownerTrustSignals = await getOwnerTrustSignals(ctx, user, now)
-      enforceNewSkillRateLimit(ownerTrustSignals)
+      if (!args.bypassNewSkillRateLimit) {
+        const ownerTrustSignals = await getOwnerTrustSignals(ctx, user, now)
+        enforceNewSkillRateLimit(ownerTrustSignals)
+      }
 
       const forkOfSlug = args.forkOf?.slug.trim().toLowerCase() || ''
       const forkOfVersion = args.forkOf?.version?.trim() || undefined
