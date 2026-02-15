@@ -19,7 +19,7 @@ export const REASON_CODES = {
   CREDENTIAL_HARVEST: "malicious.env_harvesting",
   EXFILTRATION: "suspicious.potential_exfiltration",
   OBFUSCATED_CODE: "suspicious.obfuscated_code",
-  SUSPICIOUS_NETWORK: "suspicious.suspicious_network",
+  SUSPICIOUS_NETWORK: "suspicious.nonstandard_network",
   CRYPTO_MINING: "malicious.crypto_mining",
   INJECTION_INSTRUCTIONS: "suspicious.prompt_injection_instructions",
   SUSPICIOUS_INSTALL_SOURCE: "suspicious.install_untrusted_source",
