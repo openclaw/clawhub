@@ -3,6 +3,7 @@ import { mkdir, mkdtemp, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 import { afterEach, describe, expect, it } from 'vitest'
+import { resolveHome } from '../homedir.js'
 import { resolveClawdbotDefaultWorkspace, resolveClawdbotSkillRoots } from './clawdbotConfig.js'
 
 const originalEnv = { ...process.env }
@@ -175,6 +176,31 @@ describe('resolveClawdbotSkillRoots', () => {
     expect(roots).toEqual([resolve(stateDir, 'skills'), resolve(openclawStateDir, 'skills')])
     expect(labels[resolve(stateDir, 'skills')]).toBe('Shared skills')
     expect(labels[resolve(openclawStateDir, 'skills')]).toBe('OpenClaw: Shared skills')
+  })
+
+  it('uses $HOME over os.homedir() for tilde expansion', async () => {
+    const base = await mkdtemp(join(tmpdir(), 'clawhub-home-override-'))
+    const customHome = join(base, 'custom-home')
+    const stateDir = join(base, 'state')
+    const configPath = join(base, 'clawdbot.json')
+    const openclawStateDir = join(base, 'openclaw-state')
+
+    process.env.HOME = customHome
+    process.env.CLAWDBOT_STATE_DIR = stateDir
+    process.env.CLAWDBOT_CONFIG_PATH = configPath
+    process.env.OPENCLAW_STATE_DIR = openclawStateDir
+    process.env.OPENCLAW_CONFIG_PATH = join(openclawStateDir, 'openclaw.json')
+
+    const config = `{
+      agents: {
+        defaults: { workspace: "~/my-workspace" },
+      },
+    }`
+    await writeFile(configPath, config, 'utf8')
+
+    const workspace = await resolveClawdbotDefaultWorkspace()
+    expect(workspace).toBe(resolve(customHome, 'my-workspace'))
+    expect(resolveHome()).toBe(customHome)
   })
 
   it('supports OpenClaw configuration files', async () => {

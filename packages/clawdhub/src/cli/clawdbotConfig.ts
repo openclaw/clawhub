@@ -1,7 +1,7 @@
 import { readFile } from 'node:fs/promises'
-import { homedir } from 'node:os'
 import { basename, join, resolve } from 'node:path'
 import JSON5 from 'json5'
+import { resolveHome } from '../homedir.js'
 
 type ClawdbotConfig = {
   agent?: { workspace?: string }
@@ -95,7 +95,7 @@ export async function resolveClawdbotDefaultWorkspace(): Promise<string | null> 
 function resolveClawdbotStateDir() {
   const override = process.env.CLAWDBOT_STATE_DIR?.trim()
   if (override) return resolveUserPath(override)
-  return join(homedir(), '.clawdbot')
+  return join(resolveHome(), '.clawdbot')
 }
 
 function resolveClawdbotConfigPath() {
@@ -107,7 +107,7 @@ function resolveClawdbotConfigPath() {
 function resolveOpenclawStateDir() {
   const override = process.env.OPENCLAW_STATE_DIR?.trim()
   if (override) return resolveUserPath(override)
-  return join(homedir(), '.openclaw')
+  return join(resolveHome(), '.openclaw')
 }
 
 function resolveOpenclawConfigPath() {
@@ -120,7 +120,7 @@ function resolveUserPath(input: string) {
   const trimmed = input.trim()
   if (!trimmed) return ''
   if (trimmed.startsWith('~')) {
-    return resolve(trimmed.replace(/^~(?=$|[\\/])/, homedir()))
+    return resolve(trimmed.replace(/^~(?=$|[\\/])/, resolveHome()))
   }
   return resolve(trimmed)
 }

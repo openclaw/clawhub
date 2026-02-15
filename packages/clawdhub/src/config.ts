@@ -1,7 +1,7 @@
 import { existsSync } from 'node:fs'
 import { chmod, mkdir, readFile, writeFile } from 'node:fs/promises'
-import { homedir } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
+import { resolveHome } from './homedir.js'
 import { type GlobalConfig, GlobalConfigSchema, parseArk } from './schema/index.js'
 
 /**
@@ -27,7 +27,7 @@ export function getGlobalConfigPath() {
     process.env.CLAWHUB_CONFIG_PATH?.trim() ?? process.env.CLAWDHUB_CONFIG_PATH?.trim()
   if (override) return resolve(override)
 
-  const home = homedir()
+  const home = resolveHome()
 
   if (process.platform === 'darwin') {
     return resolveConfigPath(join(home, 'Library', 'Application Support'))
