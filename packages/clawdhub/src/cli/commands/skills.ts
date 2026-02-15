@@ -23,6 +23,20 @@ import type { GlobalOpts, ResolveResult } from '../types.js'
 import { createSpinner, fail, formatError, isInteractive, promptConfirm } from '../ui.js'
 import { getOptionalAuthToken } from '../authToken.js'
 
+function normalizeSkillSlugOrFail(raw: string) {
+  const slug = raw.trim()
+  if (!slug) fail('Slug required')
+  // Safety: never allow path traversal or nested paths to become filesystem operations.
+  if (slug.includes('/') || slug.includes('\\') || slug.includes('..')) {
+    fail(`Invalid slug: ${slug}`)
+  }
+  return slug
+}
+
+function isSafeSkillSlug(slug: string) {
+  return Boolean(slug) && !slug.includes('/') && !slug.includes('\\') && !slug.includes('..')
+}
+
 export async function cmdSearch(opts: GlobalOpts, query: string, limit?: number) {
   if (!query) fail('Query required')
 
@@ -59,8 +73,7 @@ export async function cmdInstall(
   versionFlag?: string,
   force = false,
 ) {
-  const trimmed = slug.trim()
-  if (!trimmed) fail('Slug required')
+  const trimmed = normalizeSkillSlugOrFail(slug)
 
   const token = await getOptionalAuthToken()
 
@@ -139,19 +152,19 @@ export async function cmdUpdate(
   options: { all?: boolean; version?: string; force?: boolean },
   inputAllowed: boolean,
 ) {
-  const slug = slugArg?.trim()
+  const slug = slugArg ? normalizeSkillSlugOrFail(slugArg) : undefined
   const all = Boolean(options.all)
   if (!slug && !all) fail('Provide <slug> or --all')
   if (slug && all) fail('Use either <slug> or --all')
   if (options.version && !slug) fail('--version requires a single <slug>')
   if (options.version && !semver.valid(options.version)) fail('--version must be valid semver')
-  const allowPrompt = isInteractive() && inputAllowed !== false
+  const allowPrompt = isInteractive() && inputAllowed
 
   const token = await getOptionalAuthToken()
 
   const registry = await getRegistry(opts, { cache: true })
   const lock = await readLockfile(opts.workdir)
-  const slugs = slug ? [slug] : Object.keys(lock.skills)
+  const slugs = slug ? [slug] : Object.keys(lock.skills).filter(isSafeSkillSlug)
   if (slugs.length === 0) {
     console.log('No installed skills.')
     return
@@ -298,18 +311,17 @@ export async function cmdList(opts: GlobalOpts) {
 export async function cmdUninstall(
   opts: GlobalOpts,
   slug: string,
-  options: { yes?: boolean },
+  options: { yes?: boolean } = {},
   inputAllowed: boolean,
 ) {
-  const trimmed = slug.trim()
-  if (!trimmed) fail('Slug required')
+  const trimmed = normalizeSkillSlugOrFail(slug)
 
   const lock = await readLockfile(opts.workdir)
   if (!lock.skills[trimmed]) {
     fail(`Not installed: ${trimmed}`)
   }
 
-  const allowPrompt = isInteractive() && inputAllowed !== false
+  const allowPrompt = isInteractive() && inputAllowed
   if (!options.yes) {
     if (!allowPrompt) fail('Pass --yes (no input)')
     const confirm = await promptConfirm(`Uninstall ${trimmed}?`)
@@ -323,10 +335,10 @@ export async function cmdUninstall(
   try {
     const target = join(opts.dir, trimmed)
 
+    await rm(target, { recursive: true, force: true })
+
     delete lock.skills[trimmed]
     await writeLockfile(opts.workdir, lock)
-
-    await rm(target, { recursive: true, force: true })
 
     spinner.succeed(`Uninstalled ${trimmed}`)
   } catch (error) {
