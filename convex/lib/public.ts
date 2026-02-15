@@ -1,45 +1,46 @@
-import type { Doc } from '../_generated/dataModel'
+import type { Doc } from "../_generated/dataModel";
+import { resolveSkillVerdict } from "./moderationEngine";
 
 export type PublicUser = Pick<
-  Doc<'users'>,
-  '_id' | '_creationTime' | 'handle' | 'name' | 'displayName' | 'image' | 'bio'
->
+  Doc<"users">,
+  "_id" | "_creationTime" | "handle" | "name" | "displayName" | "image" | "bio"
+>;
 
 export type PublicSkill = Pick<
-  Doc<'skills'>,
-  | '_id'
-  | '_creationTime'
-  | 'slug'
-  | 'displayName'
-  | 'summary'
-  | 'ownerUserId'
-  | 'canonicalSkillId'
-  | 'forkOf'
-  | 'latestVersionId'
-  | 'tags'
-  | 'badges'
-  | 'stats'
-  | 'createdAt'
-  | 'updatedAt'
->
+  Doc<"skills">,
+  | "_id"
+  | "_creationTime"
+  | "slug"
+  | "displayName"
+  | "summary"
+  | "ownerUserId"
+  | "canonicalSkillId"
+  | "forkOf"
+  | "latestVersionId"
+  | "tags"
+  | "badges"
+  | "stats"
+  | "createdAt"
+  | "updatedAt"
+>;
 
 export type PublicSoul = Pick<
-  Doc<'souls'>,
-  | '_id'
-  | '_creationTime'
-  | 'slug'
-  | 'displayName'
-  | 'summary'
-  | 'ownerUserId'
-  | 'latestVersionId'
-  | 'tags'
-  | 'stats'
-  | 'createdAt'
-  | 'updatedAt'
->
+  Doc<"souls">,
+  | "_id"
+  | "_creationTime"
+  | "slug"
+  | "displayName"
+  | "summary"
+  | "ownerUserId"
+  | "latestVersionId"
+  | "tags"
+  | "stats"
+  | "createdAt"
+  | "updatedAt"
+>;
 
-export function toPublicUser(user: Doc<'users'> | null | undefined): PublicUser | null {
-  if (!user || user.deletedAt || user.deactivatedAt) return null
+export function toPublicUser(user: Doc<"users"> | null | undefined): PublicUser | null {
+  if (!user || user.deletedAt || user.deactivatedAt) return null;
   return {
     _id: user._id,
     _creationTime: user._creationTime,
@@ -48,30 +49,35 @@ export function toPublicUser(user: Doc<'users'> | null | undefined): PublicUser 
     displayName: user.displayName,
     image: user.image,
     bio: user.bio,
-  }
+  };
 }
 
-export function toPublicSkill(skill: Doc<'skills'> | null | undefined): PublicSkill | null {
-  if (!skill || skill.softDeletedAt) return null
-  if (skill.moderationStatus && skill.moderationStatus !== 'active') return null
-  if (skill.moderationFlags?.includes('blocked.malware')) return null
+export function toPublicSkill(skill: Doc<"skills"> | null | undefined): PublicSkill | null {
+  if (!skill || skill.softDeletedAt) return null;
+  if (skill.moderationStatus && skill.moderationStatus !== "active") return null;
+  if (
+    resolveSkillVerdict(skill) === "malicious" ||
+    skill.moderationFlags?.includes("blocked.malware")
+  ) {
+    return null;
+  }
   const stats = {
     downloads:
-      typeof skill.statsDownloads === 'number'
+      typeof skill.statsDownloads === "number"
         ? skill.statsDownloads
         : (skill.stats?.downloads ?? 0),
-    stars: typeof skill.statsStars === 'number' ? skill.statsStars : (skill.stats?.stars ?? 0),
+    stars: typeof skill.statsStars === "number" ? skill.statsStars : (skill.stats?.stars ?? 0),
     installsCurrent:
-      typeof skill.statsInstallsCurrent === 'number'
+      typeof skill.statsInstallsCurrent === "number"
         ? skill.statsInstallsCurrent
         : (skill.stats?.installsCurrent ?? 0),
     installsAllTime:
-      typeof skill.statsInstallsAllTime === 'number'
+      typeof skill.statsInstallsAllTime === "number"
         ? skill.statsInstallsAllTime
         : (skill.stats?.installsAllTime ?? 0),
     versions: skill.stats?.versions ?? 0,
     comments: skill.stats?.comments ?? 0,
-  }
+  };
   return {
     _id: skill._id,
     _creationTime: skill._creationTime,
@@ -87,11 +93,11 @@ export function toPublicSkill(skill: Doc<'skills'> | null | undefined): PublicSk
     stats,
     createdAt: skill.createdAt,
     updatedAt: skill.updatedAt,
-  }
+  };
 }
 
-export function toPublicSoul(soul: Doc<'souls'> | null | undefined): PublicSoul | null {
-  if (!soul || soul.softDeletedAt) return null
+export function toPublicSoul(soul: Doc<"souls"> | null | undefined): PublicSoul | null {
+  if (!soul || soul.softDeletedAt) return null;
   return {
     _id: soul._id,
     _creationTime: soul._creationTime,
@@ -104,5 +110,5 @@ export function toPublicSoul(soul: Doc<'souls'> | null | undefined): PublicSoul 
     stats: soul.stats,
     createdAt: soul.createdAt,
     updatedAt: soul.updatedAt,
-  }
+  };
 }

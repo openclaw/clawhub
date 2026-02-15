@@ -1,49 +1,49 @@
-import type { Doc } from '../_generated/dataModel'
+import type { Doc } from "../_generated/dataModel";
 
-const FLAG_RULES: Array<{ flag: string; pattern: RegExp }> = [
-  // Known-bad / known-suspicious identifiers.
-  // NOTE: keep these narrowly scoped; use staff review to confirm removals.
-  {
-    flag: 'blocked.malware',
-    pattern: /(keepcold131\/ClawdAuthenticatorTool|ClawdAuthenticatorTool)/i,
-  },
-
-  { flag: 'suspicious.keyword', pattern: /(malware|stealer|phish|phishing|keylogger)/i },
-  { flag: 'suspicious.secrets', pattern: /(api[-_ ]?key|token|password|private key|secret)/i },
-  { flag: 'suspicious.crypto', pattern: /(wallet|seed phrase|mnemonic|crypto)/i },
-  { flag: 'suspicious.webhook', pattern: /(discord\.gg|webhook|hooks\.slack)/i },
-  { flag: 'suspicious.script', pattern: /(curl[^\n]+\|\s*(sh|bash))/i },
-  { flag: 'suspicious.url_shortener', pattern: /(bit\.ly|tinyurl\.com|t\.co|goo\.gl|is\.gd)/i },
-]
+const KNOWN_BLOCKED_SIGNATURE = /(keepcold131\/ClawdAuthenticatorTool|ClawdAuthenticatorTool)/i;
+const SUSPICIOUS_INSTALL_URL = /https?:\/\/(bit\.ly|tinyurl\.com|t\.co|goo\.gl|is\.gd)\//i;
+const SUSPICIOUS_RAW_IP_URL = /https?:\/\/\d{1,3}(?:\.\d{1,3}){3}/i;
+const SUSPICIOUS_SCRIPT_PIPE = /curl[^\n]+\|\s*(sh|bash)/i;
 
 export function deriveModerationFlags({
   skill,
   parsed,
   files,
 }: {
-  skill: Pick<Doc<'skills'>, 'slug' | 'displayName' | 'summary'>
-  parsed: Doc<'skillVersions'>['parsed']
-  files: Doc<'skillVersions'>['files']
+  skill: Pick<Doc<"skills">, "slug" | "displayName" | "summary">;
+  parsed: Doc<"skillVersions">["parsed"];
+  files: Doc<"skillVersions">["files"];
 }) {
   const text = [
     skill.slug,
     skill.displayName,
-    skill.summary ?? '',
+    skill.summary ?? "",
     JSON.stringify(parsed?.frontmatter ?? {}),
     JSON.stringify(parsed?.metadata ?? {}),
     JSON.stringify((parsed as { moltbot?: unknown } | undefined)?.moltbot ?? {}),
     ...files.map((file) => file.path),
   ]
     .filter(Boolean)
-    .join('\n')
+    .join("\n");
 
-  const flags = new Set<string>()
-
-  for (const rule of FLAG_RULES) {
-    if (rule.pattern.test(text)) {
-      flags.add(rule.flag)
-    }
+  const flags = new Set<string>();
+  if (KNOWN_BLOCKED_SIGNATURE.test(text)) {
+    flags.add("blocked.malware");
   }
 
-  return Array.from(flags)
+  // Context-aware suspicious checks only. Avoid broad keyword-only flags to reduce false positives.
+  if (
+    SUSPICIOUS_INSTALL_URL.test(text) ||
+    SUSPICIOUS_RAW_IP_URL.test(text) ||
+    SUSPICIOUS_SCRIPT_PIPE.test(text)
+  ) {
+    flags.add("flagged.suspicious");
+  }
+
+  const always = (parsed?.frontmatter as Record<string, unknown> | undefined)?.always;
+  if (always === true || always === "true") {
+    flags.add("flagged.suspicious");
+  }
+
+  return Array.from(flags);
 }
