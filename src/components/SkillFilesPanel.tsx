@@ -28,21 +28,17 @@ export function SkillFilesPanel({
   const [fileError, setFileError] = useState<string | null>(null)
   const [isLoading, setIsLoading] = useState(false)
   const isMounted = useRef(true)
-  const activeRequest = useRef<AbortController | null>(null)
   const requestId = useRef(0)
 
   useEffect(() => {
     isMounted.current = true
     return () => {
       isMounted.current = false
-      activeRequest.current?.abort()
-      activeRequest.current = null
+      requestId.current += 1
     }
   }, [])
 
   useEffect(() => {
-    activeRequest.current?.abort()
-    activeRequest.current = null
     requestId.current += 1
 
     setSelectedPath(null)
@@ -57,12 +53,8 @@ export function SkillFilesPanel({
   const handleSelect = useCallback(
     (path: string) => {
       if (!versionId) return
-      activeRequest.current?.abort()
-      const controller = new AbortController()
-      activeRequest.current = controller
-
-      const current = requestId.current + 1
-      requestId.current = current
+      requestId.current += 1
+      const current = requestId.current
       setSelectedPath(path)
       setFileContent(null)
       setFileMeta(null)
@@ -71,7 +63,6 @@ export function SkillFilesPanel({
       void getFileText({ versionId, path })
         .then((data) => {
           if (!isMounted.current) return
-          if (controller.signal.aborted) return
           if (requestId.current !== current) return
           setFileContent(data.text)
           setFileMeta({ size: data.size, sha256: data.sha256 })
@@ -79,7 +70,6 @@ export function SkillFilesPanel({
         })
         .catch((error) => {
           if (!isMounted.current) return
-          if (controller.signal.aborted) return
           if (requestId.current !== current) return
           setFileError(error instanceof Error ? error.message : 'Failed to load file')
           setIsLoading(false)
@@ -126,6 +116,7 @@ export function SkillFilesPanel({
                   }`}
                   type="button"
                   onClick={() => handleSelect(file.path)}
+                  aria-current={selectedPath === file.path ? 'true' : undefined}
                 >
                   <span className="file-path">{file.path}</span>
                   <span className="file-meta">{formatBytes(file.size)}</span>

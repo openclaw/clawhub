@@ -949,6 +949,8 @@ export function SkillDetailPage({
               className={`tab-button${activeTab === 'compare' ? ' is-active' : ''}`}
               type="button"
               onClick={() => setActiveTab('compare')}
+              onMouseEnter={() => void import('./SkillDiffCard')}
+              onFocus={() => void import('./SkillDiffCard')}
             >
               Compare
             </button>

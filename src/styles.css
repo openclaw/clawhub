@@ -2294,11 +2294,24 @@ code {
   gap: 16px;
 }
 
+@media (min-width: 900px) {
+  .file-browser {
+    grid-template-columns: minmax(0, 0.95fr) minmax(0, 1.3fr);
+    align-items: start;
+  }
+}
+
 .file-row-button {
+  width: 100%;
   border: 1px solid var(--line);
   background: var(--surface-muted);
   text-align: left;
   cursor: pointer;
+}
+
+.file-row-button:focus-visible {
+  outline: 3px solid rgba(255, 107, 74, 0.25);
+  outline-offset: 2px;
 }
 
 .file-row-button.is-active {

@@ -7,6 +7,7 @@
 - Admin: bulk restore skills from GitHub backup; reclaim squatted slugs via v1 endpoints + internal tooling (#298) (thanks @autogame-17).
 - Users: add `trustedPublisher` flag and admin mutations to bypass pending-scan auto-hide for trusted publishers (#298) (thanks @autogame-17).
 - Skills/Web: show skill owner avatar + handle on skill cards, lists, and detail pages (#312) (thanks @ianalloway).
+- Skills/Web: add file viewer for skill version files on detail page (#44) (thanks @regenrek).
 - CLI: add `uninstall` command for skills (#241) (thanks @superlowburn).
 
 ### Changed

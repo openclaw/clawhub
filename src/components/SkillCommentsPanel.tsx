@@ -2,7 +2,6 @@ import { useMutation, useQuery } from 'convex/react'
 import { useState } from 'react'
 import { api } from '../../convex/_generated/api'
 import type { Doc, Id } from '../../convex/_generated/dataModel'
-import type { PublicUser } from '../lib/publicUser'
 import { isModerator } from '../lib/roles'
 
 type SkillCommentsPanelProps = {
@@ -15,9 +14,7 @@ export function SkillCommentsPanel({ skillId, isAuthenticated, me }: SkillCommen
   const addComment = useMutation(api.comments.add)
   const removeComment = useMutation(api.comments.remove)
   const [comment, setComment] = useState('')
-  const comments = useQuery(api.comments.listBySkill, { skillId, limit: 50 }) as
-    | Array<{ comment: Doc<'comments'>; user: PublicUser | null }>
-    | undefined
+  const comments = useQuery(api.comments.listBySkill, { skillId, limit: 50 })
 
   return (
     <div className="card">
