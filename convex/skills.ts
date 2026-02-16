@@ -1563,6 +1563,7 @@ export const listPublicPageV2 = query({
       ),
     ),
     dir: v.optional(v.union(v.literal('asc'), v.literal('desc'))),
+    highlightedOnly: v.optional(v.boolean()),
     nonSuspiciousOnly: v.optional(v.boolean()),
   },
   handler: async (ctx, args) => {
@@ -1581,9 +1582,14 @@ export const listPublicPageV2 = query({
       .order(dir)
       .paginate(paginationOpts)
 
-    const filteredPage = args.nonSuspiciousOnly
-      ? result.page.filter((skill) => !isSkillSuspicious(skill))
-      : result.page
+    const filteredPage =
+      args.nonSuspiciousOnly || args.highlightedOnly
+        ? result.page.filter((skill) => {
+            if (args.nonSuspiciousOnly && isSkillSuspicious(skill)) return false
+            if (args.highlightedOnly && !isSkillHighlighted(skill)) return false
+            return true
+          })
+        : result.page
 
     // Build the public skill entries (fetch latestVersion + ownerHandle)
     const items = await buildPublicSkillEntries(ctx, filteredPage)

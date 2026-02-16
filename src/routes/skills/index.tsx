@@ -5,7 +5,7 @@ import { api } from '../../../convex/_generated/api'
 import type { Doc } from '../../../convex/_generated/dataModel'
 import { SkillCard } from '../../components/SkillCard'
 import { UserBadge } from '../../components/UserBadge'
-import { getSkillBadges, isSkillHighlighted } from '../../lib/badges'
+import { getSkillBadges } from '../../lib/badges'
 import type { PublicSkill, PublicUser } from '../../lib/publicUser'
 
 const sortKeys = [
@@ -144,7 +144,7 @@ export function SkillsIndex() {
     loadMore: loadMorePaginated,
   } = usePaginatedQuery(
     api.skills.listPublicPageV2,
-    hasQuery ? 'skip' : { sort: listSort, dir, nonSuspiciousOnly },
+    hasQuery ? 'skip' : { sort: listSort, dir, highlightedOnly, nonSuspiciousOnly },
     {
       initialNumItems: pageSize,
     },
@@ -232,17 +232,12 @@ export function SkillsIndex() {
     return paginatedResults as Array<SkillListEntry>
   }, [hasQuery, paginatedResults, searchResults])
 
-  const filtered = useMemo(
-    () => baseItems.filter((entry) => (highlightedOnly ? isSkillHighlighted(entry.skill) : true)),
-    [baseItems, highlightedOnly],
-  )
-
   const sorted = useMemo(() => {
     if (!hasQuery) {
-      return filtered
+      return baseItems
     }
     const multiplier = dir === 'asc' ? 1 : -1
-    const results = [...filtered]
+    const results = [...baseItems]
     results.sort((a, b) => {
       const tieBreak = () => {
         const updated = (a.skill.updatedAt - b.skill.updatedAt) * multiplier
@@ -279,7 +274,7 @@ export function SkillsIndex() {
       }
     })
     return results
-  }, [dir, filtered, hasQuery, sort])
+  }, [baseItems, dir, hasQuery, sort])
 
   const isLoadingSkills = hasQuery ? isSearching && searchResults.length === 0 : isLoadingList
   const canLoadMore = hasQuery
@@ -531,7 +526,7 @@ export function SkillsIndex() {
           </div>
         )}
 
-        {(canLoadMore || isLoadingMore) && sorted.length > 0 ? (
+        {canLoadMore || isLoadingMore ? (
           <div
             ref={canAutoLoad ? loadMoreRef : null}
             className="card"

@@ -49,7 +49,7 @@ describe('SkillsIndex', () => {
     // usePaginatedQuery should be called with the API endpoint and sort/dir args
     expect(usePaginatedQueryMock).toHaveBeenCalledWith(
       expect.anything(),
-      { sort: 'downloads', dir: 'desc', nonSuspiciousOnly: false },
+      { sort: 'downloads', dir: 'desc', highlightedOnly: false, nonSuspiciousOnly: false },
       { initialNumItems: 25 },
     )
   })
@@ -71,15 +71,14 @@ describe('SkillsIndex', () => {
     expect(screen.queryByText('No skills match that filter.')).toBeNull()
   })
 
-  it('does not show scroll to load more when results are empty', () => {
-    // Even if canLoadMore is true, don't show "Scroll to load more" with no results
+  it('keeps load-more reachable when results are empty but pagination can continue', () => {
     usePaginatedQueryMock.mockReturnValue({
       results: [],
       status: 'CanLoadMore',
       loadMore: vi.fn(),
     })
     render(<SkillsIndex />)
-    expect(screen.queryByText('Scroll to load more')).toBeNull()
+    expect(screen.getByRole('button', { name: 'Load more' })).toBeTruthy()
   })
 
   it('shows loading indicator during pagination instead of hiding load more', () => {
@@ -116,8 +115,8 @@ describe('SkillsIndex', () => {
     // Should show loading message, not "No skills match"
     expect(screen.getByText('Loading skills…')).toBeTruthy()
     expect(screen.queryByText('No skills match that filter.')).toBeNull()
-    // Load more should be hidden when no results
-    expect(screen.queryByText('Loading…')).toBeNull()
+    // Keep the pagination control mounted so loading can continue.
+    expect(screen.getByText('Loading…')).toBeTruthy()
   })
 
   it('shows empty state immediately when search returns no results', async () => {
@@ -261,7 +260,18 @@ describe('SkillsIndex', () => {
 
     expect(usePaginatedQueryMock).toHaveBeenCalledWith(
       expect.anything(),
-      { sort: 'downloads', dir: 'desc', nonSuspiciousOnly: true },
+      { sort: 'downloads', dir: 'desc', highlightedOnly: false, nonSuspiciousOnly: true },
+      { initialNumItems: 25 },
+    )
+  })
+
+  it('passes highlightedOnly to list query when filter is active', () => {
+    searchMock = { highlighted: true }
+    render(<SkillsIndex />)
+
+    expect(usePaginatedQueryMock).toHaveBeenCalledWith(
+      expect.anything(),
+      { sort: 'downloads', dir: 'desc', highlightedOnly: true, nonSuspiciousOnly: false },
       { initialNumItems: 25 },
     )
   })
