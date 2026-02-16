@@ -1571,15 +1571,7 @@ export const listPublicPageV2 = query({
     const dir = args.dir ?? (sort === 'name' ? 'asc' : 'desc')
     const { numItems, cursor: initialCursor } = normalizePublicListPagination(args.paginationOpts)
 
-    const runPaginate = (
-      cursor: string | null,
-    ): Promise<{
-      page: Array<Doc<'skills'>>
-      continueCursor: string | null
-      isDone: boolean
-      pageStatus?: unknown
-      splitCursor?: string | null
-    }> =>
+    const runPaginate = (cursor: string | null) =>
       ctx.db
         .query('skills')
         .withIndex(SORT_INDEXES[sort], (q) => q.eq('softDeletedAt', undefined))
