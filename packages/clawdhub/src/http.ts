@@ -3,7 +3,7 @@ import { mkdtemp, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import pRetry, { AbortError } from 'p-retry'
-import { Agent, ProxyAgent, setGlobalDispatcher } from 'undici'
+import { Agent, EnvHttpProxyAgent, setGlobalDispatcher } from 'undici'
 import type { ArkValidator } from './schema/index.js'
 import { ApiRoutes, parseArk } from './schema/index.js'
 
@@ -13,16 +13,15 @@ const isBun = typeof process !== 'undefined' && Boolean(process.versions?.bun)
 
 if (typeof process !== 'undefined' && process.versions?.node) {
   try {
-    const _httpProxy =
+    const hasProxy =
       process.env.HTTPS_PROXY ||
       process.env.HTTP_PROXY ||
       process.env.https_proxy ||
       process.env.http_proxy
     setGlobalDispatcher(
-      _httpProxy
-        ? new ProxyAgent({
-            uri: _httpProxy,
-            requestTls: { timeout: REQUEST_TIMEOUT_MS },
+      hasProxy
+        ? new EnvHttpProxyAgent({
+            connect: { timeout: REQUEST_TIMEOUT_MS },
           })
         : new Agent({
             connect: { timeout: REQUEST_TIMEOUT_MS },

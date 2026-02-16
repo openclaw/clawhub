@@ -37,15 +37,20 @@ corporate proxies or restricted networks:
 - `HTTPS_PROXY` / `https_proxy`
 - `HTTP_PROXY` / `http_proxy`
 
-When any of these variables is set, the CLI routes all outbound requests through
-the specified proxy. This is required on systems where direct outbound
-connections are blocked (e.g. Docker containers, Hetzner VPS with proxy-only
-internet, corporate firewalls).
+When any of these variables is set, the CLI routes outbound requests through
+the specified proxy. `HTTPS_PROXY` is used for HTTPS requests, `HTTP_PROXY`
+for plain HTTP. `NO_PROXY` / `no_proxy` is respected to bypass the proxy for
+specific hosts or domains.
+
+This is required on systems where direct outbound connections are blocked
+(e.g. Docker containers, Hetzner VPS with proxy-only internet, corporate
+firewalls).
 
 Example:
 
 ```bash
 export HTTPS_PROXY=http://proxy.example.com:3128
+export NO_PROXY=localhost,127.0.0.1
 clawhub search "my query"
 ```
 
