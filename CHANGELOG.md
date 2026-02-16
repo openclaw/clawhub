@@ -31,6 +31,7 @@
 - Skills: allow updating skill description/summary from frontmatter on subsequent publishes (#312) (thanks @ianalloway).
 - Skills/Web: prevent filtered pagination dead-ends and loading-state flicker on `/skills`; move highlighted browse filtering into server list query (#339) (thanks @Marvae).
 - Web: align `/skills` total count with public visibility and format header count (thanks @rknoche6, #76).
+- Skills/Web: centralize public visibility checks and keep `globalStats` skill counts in sync incrementally; remove duplicate `/skills` default-sort fallback and share browse test mocks (thanks @rknoche6, #76).
 
 ## 0.6.1 - 2026-02-13
 

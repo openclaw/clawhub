@@ -24,6 +24,10 @@ import {
   canHealSkillOwnershipByGitHubProviderAccountId,
   getGitHubProviderAccountId,
 } from './lib/githubIdentity'
+import {
+  adjustGlobalPublicSkillsCount,
+  getPublicSkillVisibilityDelta,
+} from './lib/globalStats'
 import { buildTrendingLeaderboard } from './lib/leaderboards'
 import { deriveModerationFlags } from './lib/moderation'
 import { toPublicSkill, toPublicUser } from './lib/public'
@@ -115,6 +119,16 @@ function normalizeScannerSuspiciousReason(reason: string | undefined) {
   if (!reason) return reason
   if (!reason.startsWith('scanner.') || !reason.endsWith('.suspicious')) return reason
   return `${reason.slice(0, -'.suspicious'.length)}.clean`
+}
+
+async function adjustGlobalPublicCountForSkillChange(
+  ctx: MutationCtx,
+  previousSkill: Doc<'skills'> | null | undefined,
+  nextSkill: Doc<'skills'> | null | undefined,
+) {
+  const delta = getPublicSkillVisibilityDelta(previousSkill, nextSkill)
+  if (delta === 0) return
+  await adjustGlobalPublicSkillsCount(ctx, delta)
 }
 
 async function getOwnerTrustSignals(
@@ -219,7 +233,9 @@ async function hardDeleteSkillStep(
   if (Object.keys(patch).length) {
     patch.lastReviewedAt = now
     patch.updatedAt = now
+    const nextSkill = { ...skill, ...patch }
     await ctx.db.patch(skill._id, patch)
+    await adjustGlobalPublicCountForSkillChange(ctx, skill, nextSkill)
   }
 
   switch (phase) {
@@ -887,7 +903,9 @@ export const clearOwnerSuspiciousFlagsInternal = internalMutation({
         patch.moderationStatus = 'active'
       }
 
+      const nextSkill = { ...skill, ...patch }
       await ctx.db.patch(skill._id, patch)
+      await adjustGlobalPublicCountForSkillChange(ctx, skill, nextSkill)
       updated += 1
     }
 
@@ -1462,7 +1480,9 @@ export const report = mutation({
       })
     }
 
+    const nextSkill = { ...skill, ...updates }
     await ctx.db.patch(skill._id, updates)
+    await adjustGlobalPublicCountForSkillChange(ctx, skill, nextSkill)
 
     if (shouldAutoHide) {
       await setSkillEmbeddingsSoftDeleted(ctx, skill._id, true, now)
@@ -2183,9 +2203,13 @@ export const getSkillsWithNullModerationStatusInternal = internalQuery({
 export const setSkillModerationStatusActiveInternal = internalMutation({
   args: { skillId: v.id('skills') },
   handler: async (ctx, args) => {
-    await ctx.db.patch(args.skillId, {
-      moderationStatus: 'active',
-    })
+    const skill = await ctx.db.get(args.skillId)
+    if (!skill) return
+
+    const patch: Partial<Doc<'skills'>> = { moderationStatus: 'active' }
+    const nextSkill = { ...skill, ...patch }
+    await ctx.db.patch(args.skillId, patch)
+    await adjustGlobalPublicCountForSkillChange(ctx, skill, nextSkill)
   },
 })
 
@@ -2291,7 +2315,9 @@ export const applyBanToOwnedSkillsBatchInternal = internalMutation({
         hiddenCount += 1
       }
 
+      const nextSkill = { ...skill, ...patch }
       await ctx.db.patch(skill._id, patch)
+      await adjustGlobalPublicCountForSkillChange(ctx, skill, nextSkill)
       await setSkillEmbeddingsSoftDeleted(ctx, skill._id, true, args.bannedAt)
     }
 
@@ -2331,7 +2357,7 @@ export const restoreOwnedSkillsForUnbanBatchInternal = internalMutation({
         continue
       }
 
-      await ctx.db.patch(skill._id, {
+      const patch: Partial<Doc<'skills'>> = {
         softDeletedAt: undefined,
         moderationStatus: 'active',
         moderationReason: 'restored.unban',
@@ -2339,7 +2365,10 @@ export const restoreOwnedSkillsForUnbanBatchInternal = internalMutation({
         hiddenBy: undefined,
         lastReviewedAt: now,
         updatedAt: now,
-      })
+      }
+      const nextSkill = { ...skill, ...patch }
+      await ctx.db.patch(skill._id, patch)
+      await adjustGlobalPublicCountForSkillChange(ctx, skill, nextSkill)
 
       await setSkillEmbeddingsSoftDeleted(ctx, skill._id, false, now)
       restoredCount += 1
@@ -2607,7 +2636,7 @@ export const approveSkillByHashInternal = internalMutation({
           'Quality gate quarantine is still active. Manual moderation review required.')
         : undefined
 
-      await ctx.db.patch(skill._id, {
+      const patch: Partial<Doc<'skills'>> = {
         moderationStatus: nextModerationStatus,
         moderationReason: nextModerationReason,
         moderationFlags: newFlags,
@@ -2616,7 +2645,10 @@ export const approveSkillByHashInternal = internalMutation({
         hiddenBy: undefined,
         lastReviewedAt: nextModerationStatus === 'hidden' ? now : undefined,
         updatedAt: now,
-      })
+      }
+      const nextSkill = { ...skill, ...patch }
+      await ctx.db.patch(skill._id, patch)
+      await adjustGlobalPublicCountForSkillChange(ctx, skill, nextSkill)
 
       // Auto-ban authors of malicious skills (skips moderators/admins)
       if (isMalicious && skill.ownerUserId) {
@@ -2669,7 +2701,7 @@ export const escalateByVtInternal = internalMutation({
       newFlags = ['flagged.suspicious']
     }
 
-    const patch: Record<string, unknown> = {
+    const patch: Partial<Doc<'skills'>> = {
       moderationFlags: newFlags.length ? newFlags : undefined,
       updatedAt: Date.now(),
     }
@@ -2684,7 +2716,9 @@ export const escalateByVtInternal = internalMutation({
       patch.moderationStatus = 'hidden'
     }
 
+    const nextSkill = { ...skill, ...patch }
     await ctx.db.patch(skill._id, patch)
+    await adjustGlobalPublicCountForSkillChange(ctx, skill, nextSkill)
 
     // Auto-ban authors of malicious skills
     if (isMalicious && skill.ownerUserId) {
@@ -2974,14 +3008,17 @@ export const setSoftDeleted = mutation({
     if (!skill) throw new Error('Skill not found')
 
     const now = Date.now()
-    await ctx.db.patch(skill._id, {
+    const patch: Partial<Doc<'skills'>> = {
       softDeletedAt: args.deleted ? now : undefined,
       moderationStatus: args.deleted ? 'hidden' : 'active',
       hiddenAt: args.deleted ? now : undefined,
       hiddenBy: args.deleted ? user._id : undefined,
       lastReviewedAt: now,
       updatedAt: now,
-    })
+    }
+    const nextSkill = { ...skill, ...patch }
+    await ctx.db.patch(skill._id, patch)
+    await adjustGlobalPublicCountForSkillChange(ctx, skill, nextSkill)
 
     await setSkillEmbeddingsSoftDeleted(ctx, skill._id, args.deleted, now)
 
@@ -3525,6 +3562,9 @@ export const insertVersion = internalMutation({
         updatedAt: now,
       })
       skill = await ctx.db.get(skillId)
+      if (skill) {
+        await adjustGlobalPublicCountForSkillChange(ctx, null, skill)
+      }
     }
 
     if (!skill) throw new Error('Skill creation failed')
@@ -3566,7 +3606,7 @@ export const insertVersion = internalMutation({
       files: args.files,
     })
 
-    await ctx.db.patch(skill._id, {
+    const patch: Partial<Doc<'skills'>> = {
       displayName: args.displayName,
       summary: nextSummary ?? undefined,
       latestVersionId: versionId,
@@ -3579,7 +3619,10 @@ export const insertVersion = internalMutation({
       quality: qualityRecord ?? skill.quality,
       moderationFlags: moderationFlags.length ? moderationFlags : undefined,
       updatedAt: now,
-    })
+    }
+    const nextSkill = { ...skill, ...patch }
+    await ctx.db.patch(skill._id, patch)
+    await adjustGlobalPublicCountForSkillChange(ctx, skill, nextSkill)
 
     const badgeMap = await getSkillBadgeMap(ctx, skill._id)
     const isApproved = Boolean(badgeMap.redactionApproved)
@@ -3644,14 +3687,17 @@ export const setSkillSoftDeletedInternal = internalMutation({
     }
 
     const now = Date.now()
-    await ctx.db.patch(skill._id, {
+    const patch: Partial<Doc<'skills'>> = {
       softDeletedAt: args.deleted ? now : undefined,
       moderationStatus: args.deleted ? 'hidden' : 'active',
       hiddenAt: args.deleted ? now : undefined,
       hiddenBy: args.deleted ? args.userId : undefined,
       lastReviewedAt: now,
       updatedAt: now,
-    })
+    }
+    const nextSkill = { ...skill, ...patch }
+    await ctx.db.patch(skill._id, patch)
+    await adjustGlobalPublicCountForSkillChange(ctx, skill, nextSkill)
 
     await setSkillEmbeddingsSoftDeleted(ctx, skill._id, args.deleted, now)
 

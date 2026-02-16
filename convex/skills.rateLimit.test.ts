@@ -22,6 +22,21 @@ const clearOwnerSuspiciousFlagsHandler = (
   clearOwnerSuspiciousFlagsInternal as unknown as WrappedHandler<Record<string, unknown>>
 )._handler
 
+function buildGlobalStatsQuery(table: string) {
+  if (table !== 'globalStats') return null
+  return {
+    withIndex: (name: string) => {
+      if (name !== 'by_key') throw new Error(`unexpected globalStats index ${name}`)
+      return {
+        unique: async () => ({
+          _id: 'globalStats:1',
+          activeSkillsCount: 100,
+        }),
+      }
+    },
+  }
+}
+
 function createPublishArgs(overrides?: Partial<Record<string, unknown>>) {
   return {
     userId: 'users:owner',
@@ -67,6 +82,8 @@ describe('skills anti-spam guards', () => {
         deletedAt: undefined,
       })),
       query: vi.fn((table: string) => {
+        const globalStatsQuery = buildGlobalStatsQuery(table)
+        if (globalStatsQuery) return globalStatsQuery
         if (table === 'skills') {
           return {
             withIndex: (name: string) => {
@@ -127,6 +144,8 @@ describe('skills anti-spam guards', () => {
         return null
       }),
       query: vi.fn((table: string) => {
+        const globalStatsQuery = buildGlobalStatsQuery(table)
+        if (globalStatsQuery) return globalStatsQuery
         if (table === 'skillVersions') {
           return {
             withIndex: () => ({
@@ -197,6 +216,8 @@ describe('skills anti-spam guards', () => {
         return null
       }),
       query: vi.fn((table: string) => {
+        const globalStatsQuery = buildGlobalStatsQuery(table)
+        if (globalStatsQuery) return globalStatsQuery
         if (table === 'skillVersions') {
           return {
             withIndex: () => ({
@@ -265,6 +286,8 @@ describe('skills anti-spam guards', () => {
         return null
       }),
       query: vi.fn((table: string) => {
+        const globalStatsQuery = buildGlobalStatsQuery(table)
+        if (globalStatsQuery) return globalStatsQuery
         if (table === 'skillVersions') {
           return {
             withIndex: () => ({
@@ -324,6 +347,8 @@ describe('skills anti-spam guards', () => {
         return null
       }),
       query: vi.fn((table: string) => {
+        const globalStatsQuery = buildGlobalStatsQuery(table)
+        if (globalStatsQuery) return globalStatsQuery
         if (table === 'skills') {
           return {
             withIndex: (name: string) => {

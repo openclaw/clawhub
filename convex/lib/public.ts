@@ -1,4 +1,5 @@
 import type { Doc } from '../_generated/dataModel'
+import { isPublicSkillDoc } from './globalStats'
 
 export type PublicUser = Pick<
   Doc<'users'>,
@@ -52,9 +53,7 @@ export function toPublicUser(user: Doc<'users'> | null | undefined): PublicUser 
 }
 
 export function toPublicSkill(skill: Doc<'skills'> | null | undefined): PublicSkill | null {
-  if (!skill || skill.softDeletedAt) return null
-  if (skill.moderationStatus && skill.moderationStatus !== 'active') return null
-  if (skill.moderationFlags?.includes('blocked.malware')) return null
+  if (!isPublicSkillDoc(skill)) return null
   const stats = {
     downloads:
       typeof skill.statsDownloads === 'number'

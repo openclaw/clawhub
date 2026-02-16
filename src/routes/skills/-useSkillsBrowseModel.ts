@@ -78,17 +78,6 @@ export function useSkillsBrowseModel({
   }, [search.q])
 
   useEffect(() => {
-    if (hasQuery || search.sort) return
-    void navigate({
-      search: (prev) => ({
-        ...prev,
-        sort: 'downloads',
-      }),
-      replace: true,
-    })
-  }, [hasQuery, navigate, search.sort])
-
-  useEffect(() => {
     if (search.focus === 'search' && searchInputRef.current) {
       searchInputRef.current.focus()
       void navigate({ search: (prev) => ({ ...prev, focus: undefined }), replace: true })

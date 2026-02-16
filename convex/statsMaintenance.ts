@@ -3,14 +3,16 @@ import { internal } from './_generated/api'
 import type { Doc } from './_generated/dataModel'
 import type { ActionCtx } from './_generated/server'
 import { internalAction, internalMutation, internalQuery } from './_generated/server'
-import { toPublicSkill } from './lib/public'
+import {
+  countPublicSkillsForGlobalStats,
+  setGlobalPublicSkillsCount,
+} from './lib/globalStats'
 
 const DEFAULT_BATCH_SIZE = 200
 const MAX_BATCH_SIZE = 1000
 const DEFAULT_MAX_BATCHES = 5
 const MAX_MAX_BATCHES = 50
 const BACKFILL_STATE_KEY = 'default'
-const GLOBAL_STATS_PAGE_SIZE = 500
 
 export const backfillSkillStatFieldsInternal = internalMutation({
   args: {
@@ -305,40 +307,7 @@ function clampInt(value: number, min: number, max: number) {
 export const updateGlobalStatsInternal = internalMutation({
   args: {},
   handler: async (ctx) => {
-    let count = 0
-    let cursor: string | null = null
-
-    while (true) {
-      const { page, isDone, continueCursor } = await ctx.db
-        .query('skills')
-        .withIndex('by_active_updated', (q) => q.eq('softDeletedAt', undefined))
-        .order('asc')
-        .paginate({ cursor, numItems: GLOBAL_STATS_PAGE_SIZE })
-
-      for (const skill of page) {
-        if (toPublicSkill(skill)) {
-          count += 1
-        }
-      }
-
-      if (isDone) break
-      cursor = continueCursor
-    }
-
-    const now = Date.now()
-    const existing = await ctx.db
-      .query('globalStats')
-      .withIndex('by_key', (q) => q.eq('key', 'default'))
-      .unique()
-
-    if (existing) {
-      await ctx.db.patch(existing._id, { activeSkillsCount: count, updatedAt: now })
-    } else {
-      await ctx.db.insert('globalStats', {
-        key: 'default',
-        activeSkillsCount: count,
-        updatedAt: now,
-      })
-    }
+    const count = await countPublicSkillsForGlobalStats(ctx)
+    await setGlobalPublicSkillsCount(ctx, count)
   },
 })
