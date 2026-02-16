@@ -2,14 +2,14 @@ import type { Doc } from '../_generated/dataModel'
 import type { MutationCtx, QueryCtx } from '../_generated/server'
 
 export const GLOBAL_STATS_KEY = 'default'
-const GLOBAL_STATS_PAGE_SIZE = 500
 
 type SkillVisibilityFields = Pick<
   Doc<'skills'>,
   'softDeletedAt' | 'moderationStatus' | 'moderationFlags'
 >
 
-type DbCtx = Pick<MutationCtx | QueryCtx, 'db'>
+type GlobalStatsReadCtx = Pick<MutationCtx | QueryCtx, 'db'>
+type GlobalStatsWriteCtx = Pick<MutationCtx, 'db'>
 
 export function isPublicSkillDoc(skill: SkillVisibilityFields | null | undefined) {
   if (!skill || skill.softDeletedAt) return false
@@ -52,32 +52,20 @@ export function isGlobalStatsStorageNotReadyError(error: unknown) {
   )
 }
 
-export async function countPublicSkillsForGlobalStats(ctx: DbCtx) {
+export async function countPublicSkillsForGlobalStats(ctx: GlobalStatsReadCtx) {
+  const skills = await ctx.db
+    .query('skills')
+    .withIndex('by_active_updated', (q) => q.eq('softDeletedAt', undefined))
+    .collect()
   let count = 0
-  let cursor: string | null = null
-
-  while (true) {
-    const { page, isDone, continueCursor } = await ctx.db
-      .query('skills')
-      .withIndex('by_active_updated', (q) => q.eq('softDeletedAt', undefined))
-      .order('asc')
-      .paginate({ cursor, numItems: GLOBAL_STATS_PAGE_SIZE })
-
-    for (const skill of page) {
-      if (isPublicSkillDoc(skill)) {
-        count += 1
-      }
-    }
-
-    if (isDone) break
-    cursor = continueCursor
+  for (const skill of skills) {
+    if (isPublicSkillDoc(skill)) count += 1
   }
-
   return count
 }
 
 export async function setGlobalPublicSkillsCount(
-  ctx: DbCtx,
+  ctx: GlobalStatsWriteCtx,
   count: number,
   now = Date.now(),
 ) {
@@ -104,7 +92,7 @@ export async function setGlobalPublicSkillsCount(
 }
 
 export async function adjustGlobalPublicSkillsCount(
-  ctx: DbCtx,
+  ctx: GlobalStatsWriteCtx,
   delta: number,
   now = Date.now(),
 ) {
@@ -139,7 +127,7 @@ export async function adjustGlobalPublicSkillsCount(
   await ctx.db.patch(existing._id, { activeSkillsCount: nextCount, updatedAt: now })
 }
 
-export async function readGlobalPublicSkillsCount(ctx: DbCtx) {
+export async function readGlobalPublicSkillsCount(ctx: GlobalStatsReadCtx) {
   try {
     const stats = await ctx.db
       .query('globalStats')

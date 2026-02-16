@@ -48,6 +48,7 @@ import type * as lib_githubImport from "../lib/githubImport.js";
 import type * as lib_githubProfileSync from "../lib/githubProfileSync.js";
 import type * as lib_githubRestoreHelpers from "../lib/githubRestoreHelpers.js";
 import type * as lib_githubSoulBackup from "../lib/githubSoulBackup.js";
+import type * as lib_globalStats from "../lib/globalStats.js";
 import type * as lib_httpHeaders from "../lib/httpHeaders.js";
 import type * as lib_httpRateLimit from "../lib/httpRateLimit.js";
 import type * as lib_leaderboards from "../lib/leaderboards.js";
@@ -137,6 +138,7 @@ declare const fullApi: ApiFromModules<{
   "lib/githubProfileSync": typeof lib_githubProfileSync;
   "lib/githubRestoreHelpers": typeof lib_githubRestoreHelpers;
   "lib/githubSoulBackup": typeof lib_githubSoulBackup;
+  "lib/globalStats": typeof lib_globalStats;
   "lib/httpHeaders": typeof lib_httpHeaders;
   "lib/httpRateLimit": typeof lib_httpRateLimit;
   "lib/leaderboards": typeof lib_leaderboards;

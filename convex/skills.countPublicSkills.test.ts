@@ -14,18 +14,7 @@ function makeSkillsQuery(skills: Array<{ softDeletedAt?: number; moderationStatu
     withIndex: (name: string) => {
       if (name !== 'by_active_updated') throw new Error(`unexpected skills index ${name}`)
       return {
-        order: (dir: string) => {
-          if (dir !== 'asc') throw new Error(`unexpected skills order ${dir}`)
-          return {
-            paginate: async () => ({
-              page: skills,
-              isDone: true,
-              continueCursor: null,
-              pageStatus: null,
-              splitCursor: null,
-            }),
-          }
-        },
+        collect: async () => skills,
       }
     },
   }

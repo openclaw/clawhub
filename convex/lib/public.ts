@@ -53,6 +53,7 @@ export function toPublicUser(user: Doc<'users'> | null | undefined): PublicUser 
 }
 
 export function toPublicSkill(skill: Doc<'skills'> | null | undefined): PublicSkill | null {
+  if (!skill) return null
   if (!isPublicSkillDoc(skill)) return null
   const stats = {
     downloads:
