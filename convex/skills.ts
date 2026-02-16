@@ -26,7 +26,9 @@ import {
 } from './lib/githubIdentity'
 import {
   adjustGlobalPublicSkillsCount,
+  countPublicSkillsForGlobalStats,
   getPublicSkillVisibilityDelta,
+  readGlobalPublicSkillsCount,
 } from './lib/globalStats'
 import { buildTrendingLeaderboard } from './lib/leaderboards'
 import { deriveModerationFlags } from './lib/moderation'
@@ -1655,12 +1657,10 @@ function isCursorParseError(error: unknown) {
 export const countPublicSkills = query({
   args: {},
   handler: async (ctx) => {
-    const stats = await ctx.db
-      .query('globalStats')
-      .withIndex('by_key', (q) => q.eq('key', 'default'))
-      .unique()
-    // Null means global stats haven't been initialized yet.
-    return stats?.activeSkillsCount ?? null
+    const statsCount = await readGlobalPublicSkillsCount(ctx)
+    if (typeof statsCount === 'number') return statsCount
+    // Fallback for uninitialized/missing globalStats storage.
+    return countPublicSkillsForGlobalStats(ctx)
   },
 })
 
