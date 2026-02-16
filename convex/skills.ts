@@ -1632,6 +1632,18 @@ function isCursorParseError(error: unknown) {
   return false
 }
 
+export const countPublicSkills = query({
+  args: {},
+  handler: async (ctx) => {
+    const stats = await ctx.db
+      .query('globalStats')
+      .withIndex('by_key', (q) => q.eq('key', 'default'))
+      .unique()
+    // Null means global stats haven't been initialized yet.
+    return stats?.activeSkillsCount ?? null
+  },
+})
+
 function sortToIndex(
   sort: 'downloads' | 'stars' | 'installsCurrent' | 'installsAllTime',
 ):

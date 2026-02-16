@@ -1,5 +1,7 @@
 import { createFileRoute, redirect } from '@tanstack/react-router'
+import { useQuery } from 'convex/react'
 import { useRef } from 'react'
+import { api } from '../../../convex/_generated/api'
 import { parseSort } from './-params'
 import { SkillsResults } from './-SkillsResults'
 import { SkillsToolbar } from './-SkillsToolbar'
@@ -49,6 +51,9 @@ export function SkillsIndex() {
   const navigate = Route.useNavigate()
   const search = Route.useSearch()
   const searchInputRef = useRef<HTMLInputElement>(null)
+  const totalSkills = useQuery(api.skills.countPublicSkills)
+  const totalSkillsText =
+    typeof totalSkills === 'number' ? totalSkills.toLocaleString('en-US') : null
 
   const model = useSkillsBrowseModel({
     navigate,
@@ -61,6 +66,7 @@ export function SkillsIndex() {
       <header className="skills-header-top">
         <h1 className="section-title" style={{ marginBottom: 8 }}>
           Skills
+          {totalSkillsText && <span style={{ opacity: 0.55 }}>{` (${totalSkillsText})`}</span>}
         </h1>
         <p className="section-subtitle" style={{ marginBottom: 0 }}>
           {model.isLoadingSkills
