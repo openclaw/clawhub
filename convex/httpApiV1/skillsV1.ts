@@ -386,7 +386,7 @@ export async function skillsGetRouterV1Handler(ctx: ActionCtx, request: Request)
       
       const hasWarnings = analysis.verdict === 'suspicious' || 
                          analysis.verdict === 'malicious' ||
-                         (analysis.dimensions?.some((d: any) => d.rating !== 'ok'))
+                         (analysis.dimensions?.some((d: any) => d.rating !== 'ok') ?? false)
       
       security = {
         status,
