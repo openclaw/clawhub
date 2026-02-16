@@ -120,6 +120,30 @@ describe('SkillsIndex', () => {
     expect(screen.queryByText('Loading…')).toBeNull()
   })
 
+  it('shows empty state immediately when search returns no results', async () => {
+    // When searching and results are empty, show "No skills match" not "Loading"
+    // This tests the hasQuery condition in the empty state logic
+    searchMock = { q: 'nonexistent-skill-xyz' }
+    const actionFn = vi.fn().mockResolvedValue([])
+    useActionMock.mockReturnValue(actionFn)
+    // Pagination is skipped in search mode, so status stays 'LoadingFirstPage'
+    usePaginatedQueryMock.mockReturnValue({
+      results: [],
+      status: 'LoadingFirstPage',
+      loadMore: vi.fn(),
+    })
+    vi.useFakeTimers()
+
+    render(<SkillsIndex />)
+    await act(async () => {
+      await vi.runAllTimersAsync()
+    })
+
+    // Should show empty state, not loading
+    expect(screen.getByText('No skills match that filter.')).toBeTruthy()
+    expect(screen.queryByText('Loading skills…')).toBeNull()
+  })
+
   it('skips list query and calls search when query is set', async () => {
     searchMock = { q: 'remind' }
     const actionFn = vi.fn().mockResolvedValue([])
