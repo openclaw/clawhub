@@ -453,7 +453,7 @@ export function SkillsIndex() {
           </div>
         ) : sorted.length === 0 ? (
           <div className="card">
-            {paginationStatus === 'Exhausted'
+            {paginationStatus === 'Exhausted' || hasQuery
               ? 'No skills match that filter.'
               : 'Loading skills…'}
           </div>
