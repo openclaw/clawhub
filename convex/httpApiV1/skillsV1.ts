@@ -374,7 +374,7 @@ export async function skillsGetRouterV1Handler(ctx: ActionCtx, request: Request)
       security = {
         status,
         hasWarnings,
-        checkedAt: analysis.checkedAt || null,
+        checkedAt: analysis.checkedAt ?? null,
         model: analysis.model || null,
       }
     }
