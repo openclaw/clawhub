@@ -531,7 +531,7 @@ export function SkillsIndex() {
           </div>
         )}
 
-        {canLoadMore && sorted.length > 0 ? (
+        {(canLoadMore || isLoadingMore) && sorted.length > 0 ? (
           <div
             ref={canAutoLoad ? loadMoreRef : null}
             className="card"

@@ -82,6 +82,29 @@ describe('SkillsIndex', () => {
     expect(screen.queryByText('Scroll to load more')).toBeNull()
   })
 
+  it('shows loading indicator during pagination instead of hiding load more', () => {
+    // When status is 'LoadingMore', keep showing the load more area with loading text
+    const mockEntry = {
+      skill: {
+        _id: 'test-id',
+        slug: 'test-skill',
+        displayName: 'Test Skill',
+        stats: { downloads: 0, installsAllTime: 0, stars: 0 },
+      },
+      latestVersion: null,
+      owner: null,
+      ownerHandle: null,
+    }
+    usePaginatedQueryMock.mockReturnValue({
+      results: [mockEntry],
+      status: 'LoadingMore',
+      loadMore: vi.fn(),
+    })
+    render(<SkillsIndex />)
+    // The load more button should still be visible with loading state
+    expect(screen.getByText('Loading…')).toBeTruthy()
+  })
+
   it('skips list query and calls search when query is set', async () => {
     searchMock = { q: 'remind' }
     const actionFn = vi.fn().mockResolvedValue([])
