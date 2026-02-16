@@ -105,6 +105,21 @@ describe('SkillsIndex', () => {
     expect(screen.getByText('Loading…')).toBeTruthy()
   })
 
+  it('handles LoadingMore with empty results gracefully', () => {
+    // Edge case: user changes filter while loading more, results become empty
+    usePaginatedQueryMock.mockReturnValue({
+      results: [],
+      status: 'LoadingMore',
+      loadMore: vi.fn(),
+    })
+    render(<SkillsIndex />)
+    // Should show loading message, not "No skills match"
+    expect(screen.getByText('Loading skills…')).toBeTruthy()
+    expect(screen.queryByText('No skills match that filter.')).toBeNull()
+    // Load more should be hidden when no results
+    expect(screen.queryByText('Loading…')).toBeNull()
+  })
+
   it('skips list query and calls search when query is set', async () => {
     searchMock = { q: 'remind' }
     const actionFn = vi.fn().mockResolvedValue([])
