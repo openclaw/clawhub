@@ -79,7 +79,12 @@ export function parseClawdisMetadata(frontmatter: ParsedSkillFrontmatter) {
           ? (openclawMeta as Record<string, unknown>)
           : undefined
   const clawdisRaw = metadataSource ?? frontmatter.clawdis
-  if (!clawdisRaw || typeof clawdisRaw !== 'object' || Array.isArray(clawdisRaw)) return undefined
+
+  // Support top-level frontmatter env/dependencies/author/links as fallback
+  // even when no clawdis block exists (per #350)
+  if (!clawdisRaw || typeof clawdisRaw !== 'object' || Array.isArray(clawdisRaw)) {
+    return parseFrontmatterLevelDeclarations(frontmatter)
+  }
 
   try {
     const clawdisObj = clawdisRaw as Record<string, unknown>
@@ -121,6 +126,19 @@ export function parseClawdisMetadata(frontmatter: ParsedSkillFrontmatter) {
     if (nix) metadata.nix = nix
     const config = parseClawdbotConfigSpec(clawdisObj.config)
     if (config) metadata.config = config
+
+    // Parse env var declarations (detailed env with descriptions)
+    const envVars = parseEnvVarDeclarations(clawdisObj.envVars ?? clawdisObj.env)
+    if (envVars.length > 0) metadata.envVars = envVars
+
+    // Parse dependency declarations
+    const dependencies = parseDependencyDeclarations(clawdisObj.dependencies)
+    if (dependencies.length > 0) metadata.dependencies = dependencies
+
+    // Parse author and links
+    if (typeof clawdisObj.author === 'string') metadata.author = clawdisObj.author
+    const links = parseSkillLinks(clawdisObj.links)
+    if (links) metadata.links = links
 
     return parseArk(ClawdisSkillMetadataSchema, metadata, 'Clawdis metadata')
   } catch {
@@ -278,4 +296,109 @@ function isPlainObject(value: unknown): value is Record<string, unknown> {
   if (!value || typeof value !== 'object') return false
   const proto = Object.getPrototypeOf(value)
   return proto === Object.prototype || proto === null
+}
+
+/**
+ * Parse env var declarations from frontmatter.
+ * Accepts either an array of {name, required?, description?} objects
+ * or a simple string array (converted to {name, required: true}).
+ */
+function parseEnvVarDeclarations(input: unknown): Array<{ name: string; required?: boolean; description?: string }> {
+  if (!input) return []
+  if (!Array.isArray(input)) return []
+  return input
+    .map((item) => {
+      if (typeof item === 'string') {
+        return { name: item.trim(), required: true }
+      }
+      if (item && typeof item === 'object' && typeof (item as Record<string, unknown>).name === 'string') {
+        const obj = item as Record<string, unknown>
+        const decl: { name: string; required?: boolean; description?: string } = {
+          name: String(obj.name).trim(),
+        }
+        if (typeof obj.required === 'boolean') decl.required = obj.required
+        if (typeof obj.description === 'string') decl.description = obj.description.trim()
+        return decl
+      }
+      return null
+    })
+    .filter((item): item is NonNullable<typeof item> => item !== null && item.name.length > 0)
+}
+
+/**
+ * Parse dependency declarations from frontmatter.
+ * Accepts an array of {name, type, version?, url?, repository?} objects.
+ */
+function parseDependencyDeclarations(input: unknown): Array<{
+  name: string
+  type: 'pip' | 'npm' | 'brew' | 'go' | 'cargo' | 'apt' | 'other'
+  version?: string
+  url?: string
+  repository?: string
+}> {
+  if (!input || !Array.isArray(input)) return []
+  const validTypes = new Set(['pip', 'npm', 'brew', 'go', 'cargo', 'apt', 'other'])
+  return input
+    .map((item) => {
+      if (!item || typeof item !== 'object') return null
+      const obj = item as Record<string, unknown>
+      if (typeof obj.name !== 'string') return null
+      const typeStr = typeof obj.type === 'string' ? obj.type.trim().toLowerCase() : 'other'
+      const depType = validTypes.has(typeStr)
+        ? (typeStr as 'pip' | 'npm' | 'brew' | 'go' | 'cargo' | 'apt' | 'other')
+        : 'other'
+      const decl: {
+        name: string
+        type: typeof depType
+        version?: string
+        url?: string
+        repository?: string
+      } = { name: String(obj.name).trim(), type: depType }
+      if (typeof obj.version === 'string') decl.version = obj.version.trim()
+      if (typeof obj.url === 'string') decl.url = obj.url.trim()
+      if (typeof obj.repository === 'string') decl.repository = obj.repository.trim()
+      return decl
+    })
+    .filter((item): item is NonNullable<typeof item> => item !== null && item.name.length > 0)
+}
+
+/**
+ * Parse links object from frontmatter.
+ */
+function parseSkillLinks(input: unknown): { homepage?: string; repository?: string; documentation?: string; changelog?: string } | undefined {
+  if (!input || typeof input !== 'object' || Array.isArray(input)) return undefined
+  const obj = input as Record<string, unknown>
+  const links: { homepage?: string; repository?: string; documentation?: string; changelog?: string } = {}
+  if (typeof obj.homepage === 'string') links.homepage = obj.homepage.trim()
+  if (typeof obj.repository === 'string') links.repository = obj.repository.trim()
+  if (typeof obj.documentation === 'string') links.documentation = obj.documentation.trim()
+  if (typeof obj.changelog === 'string') links.changelog = obj.changelog.trim()
+  return Object.keys(links).length > 0 ? links : undefined
+}
+
+/**
+ * Parse top-level frontmatter env/dependencies/author/links
+ * when no clawdis block is present (fallback for #350).
+ */
+function parseFrontmatterLevelDeclarations(frontmatter: ParsedSkillFrontmatter): ClawdisSkillMetadata | undefined {
+  const metadata: ClawdisSkillMetadata = {}
+
+  const envVars = parseEnvVarDeclarations(frontmatter.env)
+  if (envVars.length > 0) metadata.envVars = envVars
+
+  const dependencies = parseDependencyDeclarations(frontmatter.dependencies)
+  if (dependencies.length > 0) metadata.dependencies = dependencies
+
+  if (typeof frontmatter.author === 'string') metadata.author = String(frontmatter.author).trim()
+
+  const links = parseSkillLinks(frontmatter.links)
+  if (links) metadata.links = links
+
+  if (typeof frontmatter.homepage === 'string') {
+    metadata.homepage = String(frontmatter.homepage).trim()
+  }
+
+  return Object.keys(metadata).length > 0
+    ? parseArk(ClawdisSkillMetadataSchema, metadata, 'Clawdis metadata')
+    : undefined
 }
