@@ -59,6 +59,29 @@ describe('SkillsIndex', () => {
     expect(screen.getByText('No skills match that filter.')).toBeTruthy()
   })
 
+  it('shows loading state instead of empty state when pagination is not exhausted', () => {
+    // When status is not 'Exhausted', we should show loading, not "No skills match"
+    usePaginatedQueryMock.mockReturnValue({
+      results: [],
+      status: 'CanLoadMore',
+      loadMore: vi.fn(),
+    })
+    render(<SkillsIndex />)
+    expect(screen.getByText('Loading skills…')).toBeTruthy()
+    expect(screen.queryByText('No skills match that filter.')).toBeNull()
+  })
+
+  it('does not show scroll to load more when results are empty', () => {
+    // Even if canLoadMore is true, don't show "Scroll to load more" with no results
+    usePaginatedQueryMock.mockReturnValue({
+      results: [],
+      status: 'CanLoadMore',
+      loadMore: vi.fn(),
+    })
+    render(<SkillsIndex />)
+    expect(screen.queryByText('Scroll to load more')).toBeNull()
+  })
+
   it('skips list query and calls search when query is set', async () => {
     searchMock = { q: 'remind' }
     const actionFn = vi.fn().mockResolvedValue([])

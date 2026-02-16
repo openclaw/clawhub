@@ -452,7 +452,11 @@ export function SkillsIndex() {
             <div className="loading-indicator">Loading skills…</div>
           </div>
         ) : sorted.length === 0 ? (
-          <div className="card">No skills match that filter.</div>
+          <div className="card">
+            {paginationStatus === 'Exhausted'
+              ? 'No skills match that filter.'
+              : 'Loading skills…'}
+          </div>
         ) : view === 'cards' ? (
           <div className="grid">
             {sorted.map((entry) => {
@@ -527,7 +531,7 @@ export function SkillsIndex() {
           </div>
         )}
 
-        {canLoadMore ? (
+        {canLoadMore && sorted.length > 0 ? (
           <div
             ref={canAutoLoad ? loadMoreRef : null}
             className="card"
