@@ -1,6 +1,6 @@
 {
   "name": "clawhub",
-  "version": "0.4.0",
+  "version": "0.7.0",
   "description": "ClawHub CLI \\u2014 install, update, search, and publish agent skills.",
   "license": "MIT",
   "type": "module",

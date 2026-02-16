@@ -9,7 +9,7 @@ export async function requireUser(ctx: MutationCtx | QueryCtx) {
   const userId = await getAuthUserId(ctx)
   if (!userId) throw new Error('Unauthorized')
   const user = await ctx.db.get(userId)
-  if (!user || user.deletedAt) throw new Error('User not found')
+  if (!user || user.deletedAt || user.deactivatedAt) throw new Error('User not found')
   return { userId, user }
 }
 
@@ -17,7 +17,7 @@ export async function requireUserFromAction(ctx: ActionCtx) {
   const userId = await getAuthUserId(ctx)
   if (!userId) throw new Error('Unauthorized')
   const user = await ctx.runQuery(internal.users.getByIdInternal, { userId })
-  if (!user || user.deletedAt) throw new Error('User not found')
+  if (!user || user.deletedAt || user.deactivatedAt) throw new Error('User not found')
   return { userId, user: user as Doc<'users'> }
 }
 

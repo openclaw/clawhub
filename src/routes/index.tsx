@@ -4,9 +4,12 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import { api } from '../../convex/_generated/api'
 import { InstallSwitcher } from '../components/InstallSwitcher'
 import { SkillCard } from '../components/SkillCard'
+import { SkillStatsTripletLine } from '../components/SkillStats'
 import { SoulCard } from '../components/SoulCard'
+import { SoulStatsTripletLine } from '../components/SoulStats'
+import { UserBadge } from '../components/UserBadge'
 import { getSkillBadges } from '../lib/badges'
-import type { PublicSkill, PublicSoul } from '../lib/publicUser'
+import type { PublicSkill, PublicSoul, PublicUser } from '../lib/publicUser'
 import { getSiteMode } from '../lib/site'
 
 export const Route = createFileRoute('/')({
@@ -19,12 +22,22 @@ function Home() {
 }
 
 function SkillsHome() {
+  type SkillPageEntry = {
+    skill: PublicSkill
+    ownerHandle?: string | null
+    owner?: PublicUser | null
+    latestVersion?: unknown
+  }
+
   const highlighted =
-    (useQuery(api.skills.list, {
-      batch: 'highlighted',
-      limit: 6,
-    }) as PublicSkill[]) ?? []
-  const latest = (useQuery(api.skills.list, { limit: 12 }) as PublicSkill[]) ?? []
+    (useQuery(api.skills.listHighlightedPublic, { limit: 6 }) as SkillPageEntry[]) ?? []
+  const popularResult = useQuery(api.skills.listPublicPageV2, {
+    paginationOpts: { cursor: null, numItems: 12 },
+    sort: 'downloads',
+    dir: 'desc',
+    nonSuspiciousOnly: true,
+  }) as { page: SkillPageEntry[] } | undefined
+  const popular = popularResult?.page ?? []
 
   return (
     <main>
@@ -48,6 +61,7 @@ function SkillsHome() {
                   sort: undefined,
                   dir: undefined,
                   highlighted: undefined,
+                  nonSuspicious: true,
                   view: undefined,
                   focus: undefined,
                 }}
@@ -73,16 +87,23 @@ function SkillsHome() {
           {highlighted.length === 0 ? (
             <div className="card">No highlighted skills yet.</div>
           ) : (
-            highlighted.map((skill) => (
+            highlighted.map((entry) => (
               <SkillCard
-                key={skill._id}
-                skill={skill}
-                badge={getSkillBadges(skill)}
+                key={entry.skill._id}
+                skill={entry.skill}
+                badge={getSkillBadges(entry.skill)}
                 summaryFallback="A fresh skill bundle."
                 meta={
-                  <div className="stat">
-                    ⭐ {skill.stats.stars} · ⤓ {skill.stats.downloads} · ⤒{' '}
-                    {skill.stats.installsAllTime ?? 0}
+                  <div className="skill-card-footer-rows">
+                    <UserBadge
+                      user={entry.owner}
+                      fallbackHandle={entry.ownerHandle ?? null}
+                      prefix="by"
+                      link={false}
+                    />
+                    <div className="stat">
+                      <SkillStatsTripletLine stats={entry.skill.stats} />
+                    </div>
                   </div>
                 }
               />
@@ -92,21 +113,28 @@ function SkillsHome() {
       </section>
 
       <section className="section">
-        <h2 className="section-title">Latest drops</h2>
-        <p className="section-subtitle">Newest uploads across the registry.</p>
+        <h2 className="section-title">Popular skills</h2>
+        <p className="section-subtitle">Most-downloaded, non-suspicious picks.</p>
         <div className="grid">
-          {latest.length === 0 ? (
+          {popular.length === 0 ? (
             <div className="card">No skills yet. Be the first.</div>
           ) : (
-            latest.map((skill) => (
+            popular.map((entry) => (
               <SkillCard
-                key={skill._id}
-                skill={skill}
+                key={entry.skill._id}
+                skill={entry.skill}
                 summaryFallback="Agent-ready skill pack."
                 meta={
-                  <div className="stat">
-                    {skill.stats.versions} versions · ⤓ {skill.stats.downloads} · ⤒{' '}
-                    {skill.stats.installsAllTime ?? 0}
+                  <div className="skill-card-footer-rows">
+                    <UserBadge
+                      user={entry.owner}
+                      fallbackHandle={entry.ownerHandle ?? null}
+                      prefix="by"
+                      link={false}
+                    />
+                    <div className="stat">
+                      <SkillStatsTripletLine stats={entry.skill.stats} />
+                    </div>
                   </div>
                 }
               />
@@ -121,6 +149,7 @@ function SkillsHome() {
               sort: undefined,
               dir: undefined,
               highlighted: undefined,
+              nonSuspicious: true,
               view: undefined,
               focus: undefined,
             }}
@@ -224,7 +253,7 @@ function OnlyCrabsHome() {
                 summaryFallback="A SOUL.md bundle."
                 meta={
                   <div className="stat">
-                    ⭐ {soul.stats.stars} · ⤓ {soul.stats.downloads} · {soul.stats.versions} v
+                    <SoulStatsTripletLine stats={soul.stats} />
                   </div>
                 }
               />

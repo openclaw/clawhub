@@ -14,7 +14,7 @@ onlycrabs.ai is the **SOUL.md registry**: publish and share system lore the same
 Live: `https://clawhub.ai`
 onlycrabs.ai: `https://onlycrabs.ai`
 
-## What you can do
+## What you can do with it
 
 - Browse skills + render their `SKILL.md`.
 - Publish new skill versions with changelogs + tags (including `latest`).
@@ -36,6 +36,18 @@ onlycrabs.ai: `https://onlycrabs.ai`
 - Backend: Convex (DB + file storage + HTTP actions) + Convex Auth (GitHub OAuth).
 - Search: OpenAI embeddings (`text-embedding-3-small`) + Convex vector search.
 - API schema + routes: `packages/schema` (`clawhub-schema`).
+
+## CLI
+
+Common CLI flows:
+
+- Auth: `clawhub login`, `clawhub whoami`
+- Discover: `clawhub search ...`, `clawhub explore`
+- Manage local installs: `clawhub install <slug>`, `clawhub uninstall <slug>`, `clawhub list`, `clawhub update --all`
+- Inspect without installing: `clawhub inspect <slug>`
+- Publish/sync: `clawhub publish <path>`, `clawhub sync`
+
+Docs: `docs/quickstart.md`, `docs/cli.md`.
 
 
 ## Telemetry
@@ -138,7 +150,30 @@ metadata: {"clawdbot":{"cliHelp":"padel --help\\nUsage: padel [command]\\n"}}
 ---
 ```
 
-`metadata.clawdbot` is preferred, but `metadata.clawdis` is accepted as an alias for compatibility.
+`metadata.clawdbot` is preferred, but `metadata.clawdis` and `metadata.openclaw` are accepted as aliases.
+
+## Skill metadata
+
+Skills declare their runtime requirements (env vars, binaries, install specs) in the `SKILL.md` frontmatter. ClawHub's security analysis checks these declarations against actual skill behavior.
+
+Full reference: [`docs/skill-format.md`](docs/skill-format.md#frontmatter-metadata)
+
+Quick example:
+
+```yaml
+---
+name: my-skill
+description: Does a thing with an API.
+metadata:
+  openclaw:
+    requires:
+      env:
+        - MY_API_KEY
+      bins:
+        - curl
+    primaryEnv: MY_API_KEY
+---
+```
 
 ## Scripts
 

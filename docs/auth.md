@@ -10,6 +10,7 @@ read_when:
 ## Web auth (GitHub OAuth)
 
 - Convex Auth + GitHub OAuth App.
+- GitHub is the only supported login provider.
 - Env vars:
   - `AUTH_GITHUB_ID`
   - `AUTH_GITHUB_SECRET`

@@ -1,9 +1,12 @@
 import { createFileRoute, Link } from '@tanstack/react-router'
 import { useQuery } from 'convex/react'
-import { Package, Plus, Upload } from 'lucide-react'
+import { Clock, Package, Plus, Upload } from 'lucide-react'
 import { api } from '../../convex/_generated/api'
 import type { Doc } from '../../convex/_generated/dataModel'
+import { formatCompactStat } from '../lib/numberFormat'
 import type { PublicSkill } from '../lib/publicUser'
+
+type DashboardSkill = PublicSkill & { pendingReview?: boolean }
 
 export const Route = createFileRoute('/dashboard')({
   component: Dashboard,
@@ -14,7 +17,7 @@ function Dashboard() {
   const mySkills = useQuery(
     api.skills.list,
     me?._id ? { ownerUserId: me._id, limit: 100 } : 'skip',
-  ) as PublicSkill[] | undefined
+  ) as DashboardSkill[] | undefined
 
   if (!me) {
     return (
@@ -60,22 +63,30 @@ function Dashboard() {
   )
 }
 
-function SkillCard({ skill, ownerHandle }: { skill: PublicSkill; ownerHandle: string | null }) {
+function SkillCard({ skill, ownerHandle }: { skill: DashboardSkill; ownerHandle: string | null }) {
   return (
     <div className="dashboard-skill-card">
       <div className="dashboard-skill-info">
-        <Link
-          to="/$owner/$slug"
-          params={{ owner: ownerHandle ?? 'unknown', slug: skill.slug }}
-          className="dashboard-skill-name"
-        >
-          {skill.displayName}
-        </Link>
-        <span className="dashboard-skill-slug">/{skill.slug}</span>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
+          <Link
+            to="/$owner/$slug"
+            params={{ owner: ownerHandle ?? 'unknown', slug: skill.slug }}
+            className="dashboard-skill-name"
+          >
+            {skill.displayName}
+          </Link>
+          <span className="dashboard-skill-slug">/{skill.slug}</span>
+          {skill.pendingReview ? (
+            <span className="tag tag-pending">
+              <Clock className="h-3 w-3" aria-hidden="true" />
+              Scanning
+            </span>
+          ) : null}
+        </div>
         {skill.summary && <p className="dashboard-skill-description">{skill.summary}</p>}
         <div className="dashboard-skill-stats">
-          <span>⤓ {skill.stats.downloads}</span>
-          <span>★ {skill.stats.stars}</span>
+          <span>⤓ {formatCompactStat(skill.stats.downloads)}</span>
+          <span>★ {formatCompactStat(skill.stats.stars)}</span>
           <span>{skill.stats.versions} v</span>
         </div>
       </div>

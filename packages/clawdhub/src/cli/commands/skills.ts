@@ -21,6 +21,21 @@ import {
 import { getRegistry } from '../registry.js'
 import type { GlobalOpts, ResolveResult } from '../types.js'
 import { createSpinner, fail, formatError, isInteractive, promptConfirm } from '../ui.js'
+import { getOptionalAuthToken } from '../authToken.js'
+
+function normalizeSkillSlugOrFail(raw: string) {
+  const slug = raw.trim()
+  if (!slug) fail('Slug required')
+  // Safety: never allow path traversal or nested paths to become filesystem operations.
+  if (slug.includes('/') || slug.includes('\\') || slug.includes('..')) {
+    fail(`Invalid slug: ${slug}`)
+  }
+  return slug
+}
+
+function isSafeSkillSlug(slug: string) {
+  return Boolean(slug) && !slug.includes('/') && !slug.includes('\\') && !slug.includes('..')
+}
 
 export async function cmdSearch(opts: GlobalOpts, query: string, limit?: number) {
   if (!query) fail('Query required')
@@ -58,8 +73,9 @@ export async function cmdInstall(
   versionFlag?: string,
   force = false,
 ) {
-  const trimmed = slug.trim()
-  if (!trimmed) fail('Slug required')
+  const trimmed = normalizeSkillSlugOrFail(slug)
+
+  const token = await getOptionalAuthToken()
 
   const registry = await getRegistry(opts, { cache: true })
   await mkdir(opts.dir, { recursive: true })
@@ -73,20 +89,40 @@ export async function cmdInstall(
 
   const spinner = createSpinner(`Resolving ${trimmed}`)
   try {
-    const resolvedVersion =
-      versionFlag ??
-      (
-        await apiRequest(
-          registry,
-          { method: 'GET', path: `${ApiRoutes.skills}/${encodeURIComponent(trimmed)}` },
-          ApiV1SkillResponseSchema,
-        )
-      ).latestVersion?.version ??
-      null
+    // Fetch skill metadata including moderation status
+    const skillMeta = await apiRequest(
+      registry,
+      { method: 'GET', path: `${ApiRoutes.skills}/${encodeURIComponent(trimmed)}`, token },
+      ApiV1SkillResponseSchema,
+    )
+
+    // Check moderation status before proceeding
+    if (skillMeta.moderation?.isMalwareBlocked) {
+      spinner.fail(`Blocked: ${trimmed} is flagged as malicious`)
+      fail('This skill has been flagged as malware and cannot be installed.')
+    }
+
+    if (skillMeta.moderation?.isSuspicious && !force) {
+      spinner.stop()
+      console.log(
+        `\n⚠️  Warning: "${trimmed}" is flagged as suspicious by VirusTotal Code Insight.\n` +
+          '   This skill may contain risky patterns (crypto keys, external APIs, eval, etc.)\n' +
+          '   Review the skill code before use.\n',
+      )
+      if (isInteractive()) {
+        const confirm = await promptConfirm('Install anyway?')
+        if (!confirm) fail('Installation cancelled')
+        spinner.start(`Resolving ${trimmed}`)
+      } else {
+        fail('Use --force to install suspicious skills in non-interactive mode')
+      }
+    }
+
+    const resolvedVersion = versionFlag ?? skillMeta.latestVersion?.version ?? null
     if (!resolvedVersion) fail('Could not resolve latest version')
 
     spinner.text = `Downloading ${trimmed}@${resolvedVersion}`
-    const zip = await downloadZip(registry, { slug: trimmed, version: resolvedVersion })
+    const zip = await downloadZip(registry, { slug: trimmed, version: resolvedVersion, token })
     await extractZipToDir(zip, target)
 
     await writeSkillOrigin(target, {
@@ -116,17 +152,19 @@ export async function cmdUpdate(
   options: { all?: boolean; version?: string; force?: boolean },
   inputAllowed: boolean,
 ) {
-  const slug = slugArg?.trim()
+  const slug = slugArg ? normalizeSkillSlugOrFail(slugArg) : undefined
   const all = Boolean(options.all)
   if (!slug && !all) fail('Provide <slug> or --all')
   if (slug && all) fail('Use either <slug> or --all')
   if (options.version && !slug) fail('--version requires a single <slug>')
   if (options.version && !semver.valid(options.version)) fail('--version must be valid semver')
-  const allowPrompt = isInteractive() && inputAllowed !== false
+  const allowPrompt = isInteractive() && inputAllowed
+
+  const token = await getOptionalAuthToken()
 
   const registry = await getRegistry(opts, { cache: true })
   const lock = await readLockfile(opts.workdir)
-  const slugs = slug ? [slug] : Object.keys(lock.skills)
+  const slugs = slug ? [slug] : Object.keys(lock.skills).filter(isSafeSkillSlug)
   if (slugs.length === 0) {
     console.log('No installed skills.')
     return
@@ -137,6 +175,39 @@ export async function cmdUpdate(
     try {
       const target = join(opts.dir, entry)
       const exists = await fileExists(target)
+
+      // Always fetch skill metadata to check moderation status
+      const skillMeta = await apiRequest(
+        registry,
+        { method: 'GET', path: `${ApiRoutes.skills}/${encodeURIComponent(entry)}`, token },
+        ApiV1SkillResponseSchema,
+      )
+
+      // Check moderation status before proceeding
+      if (skillMeta.moderation?.isMalwareBlocked) {
+        spinner.fail(`${entry}: blocked as malicious`)
+        console.log('   This skill has been flagged as malware and cannot be updated.')
+        continue
+      }
+
+      if (skillMeta.moderation?.isSuspicious && !options.force) {
+        spinner.stop()
+        console.log(
+          `\n⚠️  Warning: "${entry}" is flagged as suspicious by VirusTotal Code Insight.\n` +
+            '   This skill may contain risky patterns (crypto keys, external APIs, eval, etc.)\n',
+        )
+        if (allowPrompt) {
+          const confirm = await promptConfirm('Update anyway?')
+          if (!confirm) {
+            console.log(`${entry}: skipped`)
+            continue
+          }
+          spinner.start(`Checking ${entry}`)
+        } else {
+          console.log(`${entry}: skipped (use --force to update suspicious skills)`)
+          continue
+        }
+      }
 
       let localFingerprint: string | null = null
       if (exists) {
@@ -149,14 +220,9 @@ export async function cmdUpdate(
 
       let resolveResult: ResolveResult
       if (localFingerprint) {
-        resolveResult = await resolveSkillVersion(registry, entry, localFingerprint)
+        resolveResult = await resolveSkillVersion(registry, entry, localFingerprint, token)
       } else {
-        const meta = await apiRequest(
-          registry,
-          { method: 'GET', path: `${ApiRoutes.skills}/${encodeURIComponent(entry)}` },
-          ApiV1SkillResponseSchema,
-        )
-        resolveResult = { match: null, latestVersion: meta.latestVersion ?? null }
+        resolveResult = { match: null, latestVersion: skillMeta.latestVersion ?? null }
       }
 
       const latest = resolveResult.latestVersion?.version ?? null
@@ -207,7 +273,7 @@ export async function cmdUpdate(
         spinner.start(`Updating ${entry} -> ${targetVersion}`)
       }
       await rm(target, { recursive: true, force: true })
-      const zip = await downloadZip(registry, { slug: entry, version: targetVersion })
+      const zip = await downloadZip(registry, { slug: entry, version: targetVersion, token })
       await extractZipToDir(zip, target)
 
       const existingOrigin = await readSkillOrigin(target)
@@ -239,6 +305,45 @@ export async function cmdList(opts: GlobalOpts) {
   }
   for (const [slug, entry] of entries) {
     console.log(`${slug}  ${entry.version ?? 'latest'}`)
+  }
+}
+
+export async function cmdUninstall(
+  opts: GlobalOpts,
+  slug: string,
+  options: { yes?: boolean } = {},
+  inputAllowed: boolean,
+) {
+  const trimmed = normalizeSkillSlugOrFail(slug)
+
+  const lock = await readLockfile(opts.workdir)
+  if (!lock.skills[trimmed]) {
+    fail(`Not installed: ${trimmed}`)
+  }
+
+  const allowPrompt = isInteractive() && inputAllowed
+  if (!options.yes) {
+    if (!allowPrompt) fail('Pass --yes (no input)')
+    const confirm = await promptConfirm(`Uninstall ${trimmed}?`)
+    if (!confirm) {
+      console.log('Cancelled.')
+      return
+    }
+  }
+
+  const spinner = createSpinner(`Uninstalling ${trimmed}`)
+  try {
+    const target = join(opts.dir, trimmed)
+
+    await rm(target, { recursive: true, force: true })
+
+    delete lock.skills[trimmed]
+    await writeLockfile(opts.workdir, lock)
+
+    spinner.succeed(`Uninstalled ${trimmed}`)
+  } catch (error) {
+    spinner.fail(formatError(error))
+    throw error
   }
 }
 
@@ -359,13 +464,13 @@ function resolveExploreSort(raw?: string): { sort: ExploreSort; apiSort: ApiExpl
   )
 }
 
-async function resolveSkillVersion(registry: string, slug: string, hash: string) {
+async function resolveSkillVersion(registry: string, slug: string, hash: string, token?: string) {
   const url = new URL(ApiRoutes.resolve, registry)
   url.searchParams.set('slug', slug)
   url.searchParams.set('hash', hash)
   return apiRequest(
     registry,
-    { method: 'GET', url: url.toString() },
+    { method: 'GET', url: url.toString(), token },
     ApiV1SkillResolveResponseSchema,
   )
 }

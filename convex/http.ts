@@ -28,8 +28,11 @@ import {
   soulsPostRouterV1Http,
   starsDeleteRouterV1Http,
   starsPostRouterV1Http,
+  usersListV1Http,
+  usersPostRouterV1Http,
   whoamiV1Http,
 } from './httpApiV1'
+import { preflightHandler } from './httpPreflight'
 
 const http = httpRouter()
 
@@ -102,6 +105,18 @@ http.route({
 })
 
 http.route({
+  pathPrefix: `${ApiRoutes.users}/`,
+  method: 'POST',
+  handler: usersPostRouterV1Http,
+})
+
+http.route({
+  path: ApiRoutes.users,
+  method: 'GET',
+  handler: usersListV1Http,
+})
+
+http.route({
   path: ApiRoutes.souls,
   method: 'GET',
   handler: listSoulsV1Http,
@@ -129,6 +144,12 @@ http.route({
   pathPrefix: `${ApiRoutes.souls}/`,
   method: 'DELETE',
   handler: soulsDeleteRouterV1Http,
+})
+
+http.route({
+  pathPrefix: '/api/',
+  method: 'OPTIONS',
+  handler: preflightHandler,
 })
 
 // TODO: remove legacy /api routes after deprecation window.

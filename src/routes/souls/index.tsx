@@ -2,6 +2,7 @@ import { createFileRoute, Link } from '@tanstack/react-router'
 import { useAction, useQuery } from 'convex/react'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { api } from '../../../convex/_generated/api'
+import { SoulMetricsRow, SoulStatsTripletLine } from '../../components/SoulStats'
 import { SoulCard } from '../../components/SoulCard'
 import type { PublicSoul } from '../../lib/publicUser'
 
@@ -207,7 +208,7 @@ function SoulsIndex() {
               summaryFallback="A SOUL.md bundle."
               meta={
                 <div className="stat">
-                  ⭐ {soul.stats.stars} · ⤓ {soul.stats.downloads} · {soul.stats.versions} v
+                  <SoulStatsTripletLine stats={soul.stats} />
                 </div>
               }
             />
@@ -230,9 +231,7 @@ function SoulsIndex() {
                 <div className="skills-row-summary">{soul.summary ?? 'SOUL.md bundle.'}</div>
               </div>
               <div className="skills-row-metrics">
-                <span>⤓ {soul.stats.downloads}</span>
-                <span>★ {soul.stats.stars}</span>
-                <span>{soul.stats.versions} v</span>
+                <SoulMetricsRow stats={soul.stats} />
               </div>
             </Link>
           ))}

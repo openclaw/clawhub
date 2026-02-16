@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react'
 import { api } from '../../../convex/_generated/api'
 import type { Doc } from '../../../convex/_generated/dataModel'
 import { SkillCard } from '../../components/SkillCard'
+import { SkillStatsTripletLine } from '../../components/SkillStats'
 import { getSkillBadges } from '../../lib/badges'
 import type { PublicSkill, PublicUser } from '../../lib/publicUser'
 
@@ -125,8 +126,7 @@ function UserProfile() {
                   summaryFallback="Agent-ready skill pack."
                   meta={
                     <div className="stat">
-                      ⭐ {skill.stats.stars} · ⤓ {skill.stats.downloads} · ⤒{' '}
-                      {skill.stats.installsAllTime ?? 0}
+                      <SkillStatsTripletLine stats={skill.stats} />
                     </div>
                   }
                 />
@@ -155,8 +155,7 @@ function UserProfile() {
                   summaryFallback="Agent-ready skill pack."
                   meta={
                     <div className="stat">
-                      ⭐ {skill.stats.stars} · ⤓ {skill.stats.downloads} · ⤒{' '}
-                      {skill.stats.installsAllTime ?? 0}
+                      <SkillStatsTripletLine stats={skill.stats} />
                     </div>
                   }
                 />

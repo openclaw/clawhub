@@ -3,6 +3,7 @@ import { internal } from './_generated/api'
 import type { Doc, Id } from './_generated/dataModel'
 import { action, internalMutation, internalQuery, mutation, query } from './_generated/server'
 import { assertModerator, requireUser, requireUserFromAction } from './lib/access'
+import { embeddingVisibilityFor } from './lib/embeddingVisibility'
 import { toPublicSoul, toPublicUser } from './lib/public'
 import { getFrontmatterValue, hashSkillFiles } from './lib/skills'
 import { generateSoulChangelogPreview } from './lib/soulChangelog'
@@ -143,6 +144,14 @@ export const listVersionsPage = query({
 export const getVersionById = query({
   args: { versionId: v.id('soulVersions') },
   handler: async (ctx, args) => ctx.db.get(args.versionId),
+})
+
+export const getVersionsByIdsInternal = internalQuery({
+  args: { versionIds: v.array(v.id('soulVersions')) },
+  handler: async (ctx, args) => {
+    const versions = await Promise.all(args.versionIds.map((id) => ctx.db.get(id)))
+    return versions.filter((v): v is NonNullable<typeof v> => v !== null)
+  },
 })
 
 export const getVersionByIdInternal = internalQuery({
@@ -349,7 +358,7 @@ export const updateTags = mutation({
         const isLatest = embedding.versionId === latestEntry.versionId
         await ctx.db.patch(embedding._id, {
           isLatest,
-          visibility: visibilityFor(isLatest, embedding.isApproved),
+          visibility: embeddingVisibilityFor(isLatest, embedding.isApproved),
           updatedAt: Date.now(),
         })
       }
@@ -386,7 +395,7 @@ export const insertVersion = internalMutation({
   handler: async (ctx, args) => {
     const userId = args.userId
     const user = await ctx.db.get(userId)
-    if (!user || user.deletedAt) throw new Error('User not found')
+    if (!user || user.deletedAt || user.deactivatedAt) throw new Error('User not found')
 
     const soulMatches = await ctx.db
       .query('souls')
@@ -471,7 +480,7 @@ export const insertVersion = internalMutation({
       embedding: args.embedding,
       isLatest: true,
       isApproved: true,
-      visibility: visibilityFor(true, true),
+      visibility: embeddingVisibilityFor(true, true),
       updatedAt: now,
     })
 
@@ -483,7 +492,7 @@ export const insertVersion = internalMutation({
       if (previousEmbedding) {
         await ctx.db.patch(previousEmbedding._id, {
           isLatest: false,
-          visibility: visibilityFor(false, previousEmbedding.isApproved),
+          visibility: embeddingVisibilityFor(false, previousEmbedding.isApproved),
           updatedAt: now,
         })
       }
@@ -508,7 +517,7 @@ export const setSoulSoftDeletedInternal = internalMutation({
   },
   handler: async (ctx, args) => {
     const user = await ctx.db.get(args.userId)
-    if (!user || user.deletedAt) throw new Error('User not found')
+    if (!user || user.deletedAt || user.deactivatedAt) throw new Error('User not found')
 
     const slug = args.slug.trim().toLowerCase()
     if (!slug) throw new Error('Slug required')
@@ -539,7 +548,7 @@ export const setSoulSoftDeletedInternal = internalMutation({
       await ctx.db.patch(embedding._id, {
         visibility: args.deleted
           ? 'deleted'
-          : visibilityFor(embedding.isLatest, embedding.isApproved),
+          : embeddingVisibilityFor(embedding.isLatest, embedding.isApproved),
         updatedAt: now,
       })
     }
@@ -556,13 +565,6 @@ export const setSoulSoftDeletedInternal = internalMutation({
     return { ok: true as const }
   },
 })
-
-function visibilityFor(isLatest: boolean, isApproved: boolean) {
-  if (isLatest && isApproved) return 'latest-approved'
-  if (isLatest) return 'latest'
-  if (isApproved) return 'archived-approved'
-  return 'archived'
-}
 
 function clampInt(value: number, min: number, max: number) {
   const rounded = Number.isFinite(value) ? Math.round(value) : min

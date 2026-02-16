@@ -1,6 +1,6 @@
 import { readdir, stat } from 'node:fs/promises'
-import { homedir } from 'node:os'
 import { basename, join, resolve } from 'node:path'
+import { resolveHome } from '../homedir.js'
 import { sanitizeSlug, titleCase } from './slug.js'
 
 export type SkillFolder = {
@@ -30,7 +30,7 @@ export async function findSkillFolders(root: string): Promise<SkillFolder[]> {
 }
 
 export function getFallbackSkillRoots(workdir: string) {
-  const home = homedir()
+  const home = resolveHome()
   const roots = [
     // adjacent repo installs
     resolve(workdir, '..', 'clawdis', 'skills'),

@@ -15,7 +15,6 @@ if (typeof process !== 'undefined' && process.versions?.node) {
   try {
     setGlobalDispatcher(
       new Agent({
-        allowH2: true,
         connect: { timeout: REQUEST_TIMEOUT_MS },
       }),
     )
@@ -53,22 +52,13 @@ export async function apiRequest<T>(
         headers['Content-Type'] = 'application/json'
         body = JSON.stringify(args.body ?? {})
       }
-      const controller = new AbortController()
-      const timeout = setTimeout(() => controller.abort('Timeout'), REQUEST_TIMEOUT_MS)
-      const response = await fetch(url, {
+      const response = await fetchWithTimeout(url, {
         method: args.method,
         headers,
         body,
-        signal: controller.signal,
       })
-      clearTimeout(timeout)
       if (!response.ok) {
-        const text = await response.text().catch(() => '')
-        const message = text || `HTTP ${response.status}`
-        if (response.status === 429 || response.status >= 500) {
-          throw new Error(message)
-        }
-        throw new AbortError(message)
+        throwHttpStatusError(response.status, await readResponseTextSafe(response))
       }
       return (await response.json()) as unknown
     },
@@ -102,22 +92,13 @@ export async function apiRequestForm<T>(
 
       const headers: Record<string, string> = { Accept: 'application/json' }
       if (args.token) headers.Authorization = `Bearer ${args.token}`
-      const controller = new AbortController()
-      const timeout = setTimeout(() => controller.abort('Timeout'), REQUEST_TIMEOUT_MS)
-      const response = await fetch(url, {
+      const response = await fetchWithTimeout(url, {
         method: args.method,
         headers,
         body: args.form,
-        signal: controller.signal,
       })
-      clearTimeout(timeout)
       if (!response.ok) {
-        const text = await response.text().catch(() => '')
-        const message = text || `HTTP ${response.status}`
-        if (response.status === 429 || response.status >= 500) {
-          throw new Error(message)
-        }
-        throw new AbortError(message)
+        throwHttpStatusError(response.status, await readResponseTextSafe(response))
       }
       return (await response.json()) as unknown
     },
@@ -127,31 +108,75 @@ export async function apiRequestForm<T>(
   return json as T
 }
 
-export async function downloadZip(registry: string, args: { slug: string; version?: string }) {
+type TextRequestArgs = { path: string; token?: string } | { url: string; token?: string }
+
+export async function fetchText(registry: string, args: TextRequestArgs): Promise<string> {
+  const url = 'url' in args ? args.url : new URL(args.path, registry).toString()
+  return pRetry(
+    async () => {
+      if (isBun) {
+        return await fetchTextViaCurl(url, args)
+      }
+
+      const headers: Record<string, string> = { Accept: 'text/plain' }
+      if (args.token) headers.Authorization = `Bearer ${args.token}`
+      const response = await fetchWithTimeout(url, { method: 'GET', headers })
+      const text = await response.text()
+      if (!response.ok) {
+        throwHttpStatusError(response.status, text)
+      }
+      return text
+    },
+    { retries: 2 },
+  )
+}
+
+export async function downloadZip(
+  registry: string,
+  args: { slug: string; version?: string; token?: string },
+) {
   const url = new URL(ApiRoutes.download, registry)
   url.searchParams.set('slug', args.slug)
   if (args.version) url.searchParams.set('version', args.version)
   return pRetry(
     async () => {
       if (isBun) {
-        return await fetchBinaryViaCurl(url.toString())
+        return await fetchBinaryViaCurl(url.toString(), args.token)
       }
 
-      const controller = new AbortController()
-      const timeout = setTimeout(() => controller.abort('Timeout'), REQUEST_TIMEOUT_MS)
-      const response = await fetch(url.toString(), { method: 'GET', signal: controller.signal })
-      clearTimeout(timeout)
+      const headers: Record<string, string> = {}
+      if (args.token) headers.Authorization = `Bearer ${args.token}`
+
+      const response = await fetchWithTimeout(url.toString(), { method: 'GET', headers })
       if (!response.ok) {
-        const message = (await response.text().catch(() => '')) || `HTTP ${response.status}`
-        if (response.status === 429 || response.status >= 500) {
-          throw new Error(message)
-        }
-        throw new AbortError(message)
+        throwHttpStatusError(response.status, await readResponseTextSafe(response))
       }
       return new Uint8Array(await response.arrayBuffer())
     },
     { retries: 2 },
   )
+}
+
+async function fetchWithTimeout(url: string, init: RequestInit): Promise<Response> {
+  const controller = new AbortController()
+  const timeout = setTimeout(() => controller.abort(new Error('Timeout')), REQUEST_TIMEOUT_MS)
+  try {
+    return await fetch(url, { ...init, signal: controller.signal })
+  } finally {
+    clearTimeout(timeout)
+  }
+}
+
+async function readResponseTextSafe(response: Response): Promise<string> {
+  return await response.text().catch(() => '')
+}
+
+function throwHttpStatusError(status: number, text: string): never {
+  const message = text || `HTTP ${status}`
+  if (status === 429 || status >= 500) {
+    throw new Error(message)
+  }
+  throw new AbortError(message)
 }
 
 async function fetchJsonViaCurl(url: string, args: RequestArgs) {
@@ -188,10 +213,7 @@ async function fetchJsonViaCurl(url: string, args: RequestArgs) {
   const status = Number(output.slice(splitAt + 1).trim())
   if (!Number.isFinite(status)) throw new Error('curl response missing status')
   if (status < 200 || status >= 300) {
-    if (status === 429 || status >= 500) {
-      throw new Error(body || `HTTP ${status}`)
-    }
-    throw new AbortError(body || `HTTP ${status}`)
+    throwHttpStatusError(status, body)
   }
   return JSON.parse(body || 'null') as unknown
 }
@@ -243,10 +265,7 @@ async function fetchJsonFormViaCurl(url: string, args: FormRequestArgs) {
     const status = Number(output.slice(splitAt + 1).trim())
     if (!Number.isFinite(status)) throw new Error('curl response missing status')
     if (status < 200 || status >= 300) {
-      if (status === 429 || status >= 500) {
-        throw new Error(body || `HTTP ${status}`)
-      }
-      throw new AbortError(body || `HTTP ${status}`)
+      throwHttpStatusError(status, body)
     }
     return JSON.parse(body || 'null') as unknown
   } finally {
@@ -254,16 +273,59 @@ async function fetchJsonFormViaCurl(url: string, args: FormRequestArgs) {
   }
 }
 
-async function fetchBinaryViaCurl(url: string) {
+async function fetchTextViaCurl(url: string, args: { token?: string }) {
+  const headers = ['-H', 'Accept: text/plain']
+  if (args.token) {
+    headers.push('-H', `Authorization: Bearer ${args.token}`)
+  }
+  const curlArgs = [
+    '--silent',
+    '--show-error',
+    '--location',
+    '--max-time',
+    String(REQUEST_TIMEOUT_SECONDS),
+    '--write-out',
+    '\n%{http_code}',
+    '-X',
+    'GET',
+    ...headers,
+    url,
+  ]
+  const result = spawnSync('curl', curlArgs, { encoding: 'utf8' })
+  if (result.status !== 0) {
+    throw new Error(result.stderr || 'curl failed')
+  }
+  const output = result.stdout ?? ''
+  const splitAt = output.lastIndexOf('\n')
+  if (splitAt === -1) throw new Error('curl response missing status')
+  const body = output.slice(0, splitAt)
+  const status = Number(output.slice(splitAt + 1).trim())
+  if (!Number.isFinite(status)) throw new Error('curl response missing status')
+  if (status < 200 || status >= 300) {
+    if (status === 429 || status >= 500) {
+      throw new Error(body || `HTTP ${status}`)
+    }
+    throw new AbortError(body || `HTTP ${status}`)
+  }
+  return body
+}
+
+async function fetchBinaryViaCurl(url: string, token?: string) {
   const tempDir = await mkdtemp(join(tmpdir(), 'clawhub-download-'))
   const filePath = join(tempDir, 'payload.bin')
   try {
+    const headers: string[] = []
+    if (token) {
+      headers.push('-H', `Authorization: Bearer ${token}`)
+    }
+
     const curlArgs = [
       '--silent',
       '--show-error',
       '--location',
       '--max-time',
       String(REQUEST_TIMEOUT_SECONDS),
+      ...headers,
       '-o',
       filePath,
       '--write-out',
@@ -278,11 +340,7 @@ async function fetchBinaryViaCurl(url: string) {
     if (!Number.isFinite(status)) throw new Error('curl response missing status')
     if (status < 200 || status >= 300) {
       const body = await readFileSafe(filePath)
-      const message = body ? new TextDecoder().decode(body) : `HTTP ${status}`
-      if (status === 429 || status >= 500) {
-        throw new Error(message)
-      }
-      throw new AbortError(message)
+      throwHttpStatusError(status, body ? new TextDecoder().decode(body) : '')
     }
     const bytes = await readFileSafe(filePath)
     return bytes ? new Uint8Array(bytes) : new Uint8Array()

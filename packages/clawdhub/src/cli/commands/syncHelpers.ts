@@ -1,7 +1,7 @@
 import { createHash } from 'node:crypto'
 import { realpath } from 'node:fs/promises'
-import { homedir } from 'node:os'
 import { resolve } from 'node:path'
+import { resolveHome } from '../../homedir.js'
 import { isCancel, multiselect } from '@clack/prompts'
 import semver from 'semver'
 import { apiRequest, downloadZip } from '../../http.js'
@@ -100,6 +100,7 @@ export async function checkRegistrySyncState(
   registry: string,
   skill: LocalSkill,
   resolveSupport: { value: boolean | null },
+  token?: string,
 ): Promise<Candidate> {
   if (resolveSupport.value !== false) {
     try {
@@ -108,6 +109,7 @@ export async function checkRegistrySyncState(
         {
           method: 'GET',
           path: `${ApiRoutes.resolve}?slug=${encodeURIComponent(skill.slug)}&hash=${encodeURIComponent(skill.fingerprint)}`,
+          token,
         },
         ApiV1SkillResolveResponseSchema,
       )
@@ -149,7 +151,7 @@ export async function checkRegistrySyncState(
 
   const meta = await apiRequest(
     registry,
-    { method: 'GET', path: `${ApiRoutes.skills}/${encodeURIComponent(skill.slug)}` },
+    { method: 'GET', path: `${ApiRoutes.skills}/${encodeURIComponent(skill.slug)}`, token },
     ApiV1SkillResponseSchema,
   ).catch(() => null)
 
@@ -163,7 +165,7 @@ export async function checkRegistrySyncState(
     }
   }
 
-  const zip = await downloadZip(registry, { slug: skill.slug, version: latestVersion })
+  const zip = await downloadZip(registry, { slug: skill.slug, version: latestVersion, token })
   const remote = hashSkillZip(zip).fingerprint
   const matchVersion = remote === skill.fingerprint ? latestVersion : null
 
@@ -336,7 +338,7 @@ export function printSection(title: string, body?: string) {
 }
 
 function abbreviatePath(value: string) {
-  const home = homedir()
+  const home = resolveHome()
   if (value.startsWith(home)) return `~${value.slice(home.length)}`
   return value
 }
@@ -346,7 +348,7 @@ function rootTelemetryId(value: string) {
 }
 
 function formatRootLabel(value: string) {
-  const home = homedir()
+  const home = resolveHome()
   if (value === home) return '~'
 
   const normalized = value.replaceAll('\\', '/')

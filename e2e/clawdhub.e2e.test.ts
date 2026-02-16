@@ -20,7 +20,6 @@ const REQUEST_TIMEOUT_MS = 15_000
 try {
   setGlobalDispatcher(
     new Agent({
-      allowH2: true,
       connect: { timeout: REQUEST_TIMEOUT_MS },
     }),
   )
@@ -61,7 +60,7 @@ async function makeTempConfig(registry: string, token: string | null) {
 
 async function fetchWithTimeout(input: RequestInfo | URL, init?: RequestInit) {
   const controller = new AbortController()
-  const timeout = setTimeout(() => controller.abort('Timeout'), REQUEST_TIMEOUT_MS)
+  const timeout = setTimeout(() => controller.abort(new Error('Timeout')), REQUEST_TIMEOUT_MS)
   try {
     return await fetch(input, { ...init, signal: controller.signal })
   } finally {
@@ -505,4 +504,49 @@ describe('clawhub e2e', () => {
       await rm(cfg.dir, { recursive: true, force: true })
     }
   }, 180_000)
+
+  it('delete returns proper error for non-existent skill', async () => {
+    const registry = process.env.CLAWDHUB_REGISTRY?.trim() || 'https://clawdhub.com'
+    const site = process.env.CLAWDHUB_SITE?.trim() || 'https://clawdhub.com'
+    const token = mustGetToken() ?? (await readGlobalConfig())?.token ?? null
+    if (!token) {
+      throw new Error('Missing token. Set CLAWDHUB_E2E_TOKEN or run: bun clawdhub auth login')
+    }
+
+    const cfg = await makeTempConfig(registry, token)
+    const workdir = await mkdtemp(join(tmpdir(), 'clawdhub-e2e-delete-'))
+    const nonExistentSlug = `non-existent-skill-${Date.now()}`
+
+    try {
+      const del = spawnSync(
+        'bun',
+        [
+          'clawdhub',
+          'delete',
+          nonExistentSlug,
+          '--yes',
+          '--site',
+          site,
+          '--registry',
+          registry,
+          '--workdir',
+          workdir,
+        ],
+        {
+          cwd: process.cwd(),
+          env: { ...process.env, CLAWDHUB_CONFIG_PATH: cfg.path, CLAWDHUB_DISABLE_TELEMETRY: '1' },
+          encoding: 'utf8',
+        },
+      )
+      // Should fail with non-zero exit code
+      expect(del.status).not.toBe(0)
+      // Error should mention "not found" - not generic "Unauthorized"
+      const output = (del.stdout + del.stderr).toLowerCase()
+      expect(output).toMatch(/not found|404|does not exist/i)
+      expect(output).not.toMatch(/unauthorized/i)
+    } finally {
+      await rm(workdir, { recursive: true, force: true })
+      await rm(cfg.dir, { recursive: true, force: true })
+    }
+  }, 30_000)
 })

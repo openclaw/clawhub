@@ -2,6 +2,7 @@ import { createFileRoute, Link } from '@tanstack/react-router'
 import { useMutation, useQuery } from 'convex/react'
 import { api } from '../../convex/_generated/api'
 import type { Doc } from '../../convex/_generated/dataModel'
+import { formatCompactStat } from '../lib/numberFormat'
 import type { PublicSkill } from '../lib/publicUser'
 
 export const Route = createFileRoute('/stars')({
@@ -41,7 +42,7 @@ function Stars() {
                   <h3 className="skill-card-title">{skill.displayName}</h3>
                 </Link>
                 <div className="skill-card-footer skill-card-footer-inline">
-                  <span className="stat">⭐ {skill.stats.stars}</span>
+                  <span className="stat">⭐ {formatCompactStat(skill.stats.stars)}</span>
                   <button
                     className="star-toggle is-active"
                     type="button"

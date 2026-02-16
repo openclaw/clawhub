@@ -3,6 +3,7 @@ import { readGlobalConfig, writeGlobalConfig } from '../../config.js'
 import { discoverRegistryFromSite } from '../../discovery.js'
 import { apiRequest } from '../../http.js'
 import { ApiRoutes, ApiV1WhoamiResponseSchema } from '../../schema/index.js'
+import { requireAuthToken } from '../authToken.js'
 import { getRegistry } from '../registry.js'
 import type { GlobalOpts } from '../types.js'
 import { createSpinner, fail, formatError, openInBrowser, promptHidden } from '../ui.js'
@@ -37,7 +38,8 @@ export async function cmdLoginFlow(
 
   const result = await receiver.waitForResult()
   const registry = result.registry?.trim() || opts.registry
-  await cmdLogin({ ...opts, registry }, result.token, inputAllowed)
+  const registrySource = result.registry?.trim() ? 'cli' : opts.registrySource
+  await cmdLogin({ ...opts, registry, registrySource }, result.token, inputAllowed)
 }
 
 export async function cmdLogin(
@@ -73,13 +75,11 @@ export async function cmdLogout(opts: GlobalOpts) {
   const cfg = await readGlobalConfig()
   const registry = cfg?.registry || (await getRegistry(opts, { cache: true }))
   await writeGlobalConfig({ registry, token: undefined })
-  console.log('OK. Logged out.')
+  console.log('OK. Logged out locally. Token still valid until revoked (Settings -> API tokens).')
 }
 
 export async function cmdWhoami(opts: GlobalOpts) {
-  const cfg = await readGlobalConfig()
-  const token = cfg?.token
-  if (!token) fail('Not logged in. Run: clawhub login')
+  const token = await requireAuthToken()
   const registry = await getRegistry(opts, { cache: true })
 
   const spinner = createSpinner('Checking token')

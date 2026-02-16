@@ -18,5 +18,6 @@ export const ApiRoutes = {
   skills: '/api/v1/skills',
   stars: '/api/v1/stars',
   souls: '/api/v1/souls',
+  users: '/api/v1/users',
   whoami: '/api/v1/whoami',
 } as const

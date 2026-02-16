@@ -62,6 +62,7 @@ Install a skill into `./skills/<slug>` (if Clawdbot is configured, installs into
 ```bash
 bun clawhub install <slug>
 bun clawhub list
+bun clawhub uninstall <slug> --yes
 ```
 
 You can also install into any folder:
