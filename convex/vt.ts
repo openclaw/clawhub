@@ -311,9 +311,14 @@ export const scanWithVirusTotal = internalAction({
         versionId: args.versionId,
       })
       if (version) {
-        await ctx.runMutation(internal.skills.setSkillModerationStatusActiveInternal, {
+        const skill = await ctx.runQuery(internal.skills.getSkillByIdInternal, {
           skillId: version.skillId,
         })
+        if (skill?.moderationReason !== 'quality.low') {
+          await ctx.runMutation(internal.skills.setSkillModerationStatusActiveInternal, {
+            skillId: version.skillId,
+          })
+        }
       }
       return
     }
@@ -535,9 +540,12 @@ export const pollPendingScans = internalAction({
             })
             // Activate the skill so it appears in search — absence of a VT
             // verdict should not permanently hide a published skill.
-            await ctx.runMutation(internal.skills.setSkillModerationStatusActiveInternal, {
-              skillId,
-            })
+            const skill = await ctx.runQuery(internal.skills.getSkillByIdInternal, { skillId })
+            if (skill?.moderationReason !== 'quality.low') {
+              await ctx.runMutation(internal.skills.setSkillModerationStatusActiveInternal, {
+                skillId,
+              })
+            }
             staled++
           }
           continue
@@ -565,9 +573,12 @@ export const pollPendingScans = internalAction({
             })
             // Activate the skill so it appears in search — absence of a VT
             // verdict should not permanently hide a published skill.
-            await ctx.runMutation(internal.skills.setSkillModerationStatusActiveInternal, {
-              skillId,
-            })
+            const skill = await ctx.runQuery(internal.skills.getSkillByIdInternal, { skillId })
+            if (skill?.moderationReason !== 'quality.low') {
+              await ctx.runMutation(internal.skills.setSkillModerationStatusActiveInternal, {
+                skillId,
+              })
+            }
             staled++
           }
           continue
