@@ -31,13 +31,6 @@ crons.interval(
   {},
 )
 
-crons.interval(
-  'global-stats-update',
-  { minutes: 60 },
-  internal.statsMaintenance.updateGlobalStatsInternal,
-  {},
-)
-
 crons.interval('vt-pending-scans', { minutes: 5 }, internal.vt.pollPendingScans, { batchSize: 100 })
 
 crons.interval('vt-cache-backfill', { minutes: 30 }, internal.vt.backfillActiveSkillsVTCache, {

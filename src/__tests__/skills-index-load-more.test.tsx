@@ -7,7 +7,6 @@ import { SkillsIndex } from '../routes/skills/index'
 
 const navigateMock = vi.fn()
 const useActionMock = vi.fn()
-const useQueryMock = vi.fn()
 const usePaginatedQueryMock = vi.fn()
 let searchMock: Record<string, unknown> = {}
 
@@ -22,7 +21,6 @@ vi.mock('@tanstack/react-router', () => ({
 
 vi.mock('convex/react', () => ({
   useAction: (...args: unknown[]) => useActionMock(...args),
-  useQuery: (...args: unknown[]) => useQueryMock(...args),
   usePaginatedQuery: (...args: unknown[]) => usePaginatedQueryMock(...args),
 }))
 
@@ -30,11 +28,9 @@ describe('SkillsIndex load-more observer', () => {
   beforeEach(() => {
     usePaginatedQueryMock.mockReset()
     useActionMock.mockReset()
-    useQueryMock.mockReset()
     navigateMock.mockReset()
     searchMock = {}
     useActionMock.mockReturnValue(() => Promise.resolve([]))
-    useQueryMock.mockReturnValue(null)
   })
 
   afterEach(() => {
