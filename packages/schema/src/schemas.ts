@@ -190,6 +190,7 @@ export const ApiV1SkillResponseSchema = type({
     version: 'string',
     createdAt: 'number',
     changelog: 'string',
+    capabilities: 'string[]?',
   }).or('null'),
   owner: type({
     handle: 'string|null',
@@ -256,7 +257,7 @@ export const ApiV1UnstarResponseSchema = type({
 
 export const SkillInstallSpecSchema = type({
   id: 'string?',
-  kind: '"brew"|"node"|"go"|"uv"',
+  kind: '"brew"|"node"|"go"|"uv"|"download"',
   label: 'string?',
   bins: 'string[]?',
   formula: 'string?',
@@ -299,5 +300,6 @@ export const ClawdisSkillMetadataSchema = type({
   install: SkillInstallSpecSchema.array().optional(),
   nix: NixPluginSpecSchema.optional(),
   config: ClawdbotConfigSpecSchema.optional(),
+  capabilities: 'string[]?',
 })
 export type ClawdisSkillMetadata = (typeof ClawdisSkillMetadataSchema)[inferred]

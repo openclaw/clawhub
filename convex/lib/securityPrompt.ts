@@ -335,6 +335,16 @@ export function assembleEvalUserMessage(ctx: SkillEvalContext): string {
 - Primary credential: ${primaryEnv}
 - Required config paths: ${config.length ? config.join(', ') : 'none'}`)
 
+  const capabilities = Array.isArray(clawdis.capabilities)
+    ? (clawdis.capabilities as string[])
+    : []
+
+  if (capabilities.length > 0) {
+    sections.push(`### Declared capabilities\n- ${capabilities.join(', ')}`)
+  } else {
+    sections.push(`### Declared capabilities\nNone declared.`)
+  }
+
   // Install specifications
   if (install.length > 0) {
     const specLines = install.map((spec, i) => {

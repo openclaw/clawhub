@@ -270,6 +270,7 @@ async function skillsGetRouterV1Handler(ctx: ActionCtx, request: Request) {
               version: result.latestVersion.version,
               createdAt: result.latestVersion.createdAt,
               changelog: result.latestVersion.changelog,
+              capabilities: (result.latestVersion.parsed as any)?.clawdis?.capabilities ?? [],
             }
           : null,
         owner: result.owner

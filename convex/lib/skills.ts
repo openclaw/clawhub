@@ -9,6 +9,7 @@ import {
   TEXT_FILE_EXTENSION_SET,
 } from 'clawhub-schema'
 import { parse as parseYaml } from 'yaml'
+import { validateCapabilities } from './skillCapabilities'
 
 export type ParsedSkillFrontmatter = Record<string, unknown>
 export type { ClawdisSkillMetadata, SkillInstallSpec }
@@ -121,6 +122,8 @@ export function parseClawdisMetadata(frontmatter: ParsedSkillFrontmatter) {
     if (nix) metadata.nix = nix
     const config = parseClawdbotConfigSpec(clawdisObj.config)
     if (config) metadata.config = config
+    const capabilities = validateCapabilities(clawdisObj.capabilities)
+    if (capabilities.length > 0) metadata.capabilities = capabilities
 
     return parseArk(ClawdisSkillMetadataSchema, metadata, 'Clawdis metadata')
   } catch {
