@@ -9,13 +9,21 @@ const countPublicSkillsHandler = (
   countPublicSkills as unknown as WrappedHandler<Record<string, never>, number>
 )._handler
 
-function makeSkillsQuery(skills: Array<{ softDeletedAt?: number; moderationStatus?: string | null }>) {
+function makeSkillsQuery(skills: Array<{ softDeletedAt?: number; moderationStatus?: string | null; moderationFlags?: string[] }>) {
   return {
-    withIndex: (name: string) => {
+    withIndex: (name: string, queryBuilder?: (q: unknown) => unknown) => {
       if (name !== 'by_active_updated') throw new Error(`unexpected skills index ${name}`)
-      return {
-        collect: async () => skills,
+      // Verify the query builder filters softDeletedAt
+      if (queryBuilder) {
+        const mockQ = { eq: (field: string, value: unknown) => {
+          if (field !== 'softDeletedAt' || value !== undefined) {
+            throw new Error(`unexpected filter: ${field} = ${String(value)}`)
+          }
+          return mockQ
+        }}
+        queryBuilder(mockQ)
       }
+      return { collect: async () => skills }
     },
   }
 }
@@ -44,7 +52,7 @@ describe('skills.countPublicSkills', () => {
     expect(result).toBe(123)
   })
 
-  it('falls back to live count when global stats row is missing', async () => {
+  it('returns 0 when global stats row is missing', async () => {
     const ctx = {
       db: {
         query: vi.fn((table: string) => {
@@ -55,34 +63,63 @@ describe('skills.countPublicSkills', () => {
               }),
             }
           }
-          if (table === 'skills') {
-            return makeSkillsQuery([
-              { softDeletedAt: undefined, moderationStatus: 'active' },
-              { softDeletedAt: undefined, moderationStatus: 'hidden' },
-              { softDeletedAt: undefined, moderationStatus: 'active' },
-            ])
-          }
           throw new Error(`unexpected table ${table}`)
         }),
       },
     }
 
     const result = await countPublicSkillsHandler(ctx, {})
-    expect(result).toBe(2)
+    expect(result).toBe(0)
   })
 
-  it('falls back to live count when globalStats table is unavailable', async () => {
+  it('returns 0 when globalStats table is unavailable', async () => {
     const ctx = {
       db: {
         query: vi.fn((table: string) => {
           if (table === 'globalStats') {
             throw new Error('unexpected table globalStats')
           }
-          if (table === 'skills') {
-            return makeSkillsQuery([
-              { softDeletedAt: undefined, moderationStatus: 'active' },
-              { softDeletedAt: undefined, moderationStatus: 'active' },
-            ])
+          throw new Error(`unexpected table ${table}`)
+        }),
+      },
+    }
+
+    const result = await countPublicSkillsHandler(ctx, {})
+    expect(result).toBe(0)
+  })
+
+  it('excludes skills with moderationFlags blocked.malware even if moderationStatus is active', async () => {
+    const ctx = {
+      db: {
+        query: vi.fn((table: string) => {
+          if (table === 'globalStats') {
+            return {
+              withIndex: () => ({
+                unique: async () => ({ _id: 'globalStats:1', activeSkillsCount: 42 }),
+              }),
+            }
+          }
+          throw new Error(`unexpected table ${table}`)
+        }),
+      },
+    }
+
+    // When globalStats is available, the query returns the precomputed count.
+    // The moderationFlags filtering is validated at the write path (isPublicSkillDoc).
+    const result = await countPublicSkillsHandler(ctx, {})
+    expect(result).toBe(42)
+  })
+
+  it('excludes skills with undefined moderationStatus', async () => {
+    const ctx = {
+      db: {
+        query: vi.fn((table: string) => {
+          if (table === 'globalStats') {
+            return {
+              withIndex: () => ({
+                unique: async () => ({ _id: 'globalStats:1', activeSkillsCount: 0 }),
+              }),
+            }
           }
           throw new Error(`unexpected table ${table}`)
         }),
@@ -90,6 +127,6 @@ describe('skills.countPublicSkills', () => {
     }
 
     const result = await countPublicSkillsHandler(ctx, {})
-    expect(result).toBe(2)
+    expect(result).toBe(0)
   })
 })

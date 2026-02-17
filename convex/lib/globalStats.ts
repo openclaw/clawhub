@@ -91,6 +91,10 @@ export async function setGlobalPublicSkillsCount(
   }
 }
 
+/**
+ * IMPORTANT: Must be called AFTER ctx.db.patch() — the fallback recount
+ * reads post-patch DB state. Calling before patch produces wrong counts.
+ */
 export async function adjustGlobalPublicSkillsCount(
   ctx: GlobalStatsWriteCtx,
   delta: number,
@@ -106,13 +110,19 @@ export async function adjustGlobalPublicSkillsCount(
       }
     | null
     | undefined
+  // NOTE: All visibility mutations read/write this single row. Under high concurrent
+  // writes, Convex OCC retries increase. Acceptable at current scale; if contention
+  // becomes an issue, consider sharding by key prefix or batching deltas.
   try {
     existing = await ctx.db
       .query('globalStats')
       .withIndex('by_key', (q) => q.eq('key', GLOBAL_STATS_KEY))
       .unique()
   } catch (error) {
-    if (isGlobalStatsStorageNotReadyError(error)) return
+    if (isGlobalStatsStorageNotReadyError(error)) {
+      console.warn('[globalStats] Storage not ready — delta adjustment skipped:', normalizedDelta)
+      return
+    }
     throw error
   }
 

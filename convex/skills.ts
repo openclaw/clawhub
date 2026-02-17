@@ -25,7 +25,6 @@ import {
 } from './lib/githubIdentity'
 import {
   adjustGlobalPublicSkillsCount,
-  countPublicSkillsForGlobalStats,
   getPublicSkillVisibilityDelta,
   readGlobalPublicSkillsCount,
 } from './lib/globalStats'
@@ -1704,8 +1703,9 @@ export const countPublicSkills = query({
   handler: async (ctx) => {
     const statsCount = await readGlobalPublicSkillsCount(ctx)
     if (typeof statsCount === 'number') return statsCount
-    // Fallback for uninitialized/missing globalStats storage.
-    return countPublicSkillsForGlobalStats(ctx)
+    // globalStats not yet initialized — return 0; hourly cron will bootstrap.
+    // Avoid full table scan in reactive query (re-executes on every skill mutation).
+    return 0
   },
 })
 
@@ -2647,6 +2647,88 @@ export const updateVersionLlmAnalysisInternal = internalMutation({
     const version = await ctx.db.get(args.versionId)
     if (!version) return
     await ctx.db.patch(args.versionId, { llmAnalysis: args.llmAnalysis })
+  },
+})
+
+export const updateVersionOatheAnalysisInternal = internalMutation({
+  args: {
+    versionId: v.id('skillVersions'),
+    oatheAnalysis: v.object({
+      status: v.string(),
+      score: v.optional(v.number()),
+      verdict: v.optional(v.string()),
+      summary: v.optional(v.string()),
+      dimensions: v.optional(
+        v.array(
+          v.object({
+            name: v.string(),
+            label: v.string(),
+            rating: v.string(),
+            detail: v.string(),
+          }),
+        ),
+      ),
+      reportUrl: v.optional(v.string()),
+      checkedAt: v.number(),
+    }),
+  },
+  handler: async (ctx, args) => {
+    const version = await ctx.db.get(args.versionId)
+    if (!version) return
+    await ctx.db.patch(args.versionId, { oatheAnalysis: args.oatheAnalysis })
+  },
+})
+
+export const getSkillsPendingOatheInternal = internalQuery({
+  args: {
+    limit: v.optional(v.number()),
+    skipRecentMinutes: v.optional(v.number()),
+  },
+  handler: async (ctx, args) => {
+    const limit = clampInt(args.limit ?? 50, 1, 200)
+    const skipRecentMinutes = args.skipRecentMinutes ?? 8
+    const skipThreshold = Date.now() - skipRecentMinutes * 60 * 1000
+
+    // Bounded pool from skills table via by_active_updated index, order desc
+    const poolSize = Math.min(Math.max(limit * 20, 200), 1000)
+    const allSkills = await ctx.db
+      .query('skills')
+      .withIndex('by_active_updated', (q) => q.eq('softDeletedAt', undefined))
+      .order('desc')
+      .take(poolSize)
+
+    const results: Array<{
+      skillId: Id<'skills'>
+      versionId: Id<'skillVersions'>
+      slug: string
+      pendingSince: number
+    }> = []
+
+    for (const skill of allSkills) {
+      if (results.length >= limit) break
+      if (!skill.latestVersionId) continue
+
+      const version = await ctx.db.get(skill.latestVersionId)
+      if (!version) continue
+
+      // Only include versions with pending oatheAnalysis
+      const oathe = version.oatheAnalysis as
+        | { status: string; checkedAt: number }
+        | undefined
+      if (!oathe || oathe.status !== 'pending') continue
+
+      // Skip recently checked (within skipRecentMinutes)
+      if (oathe.checkedAt && oathe.checkedAt >= skipThreshold) continue
+
+      results.push({
+        skillId: skill._id,
+        versionId: version._id,
+        slug: skill.slug,
+        pendingSince: oathe.checkedAt,
+      })
+    }
+
+    return results
   },
 })
 
