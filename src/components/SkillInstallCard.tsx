@@ -78,14 +78,14 @@ export function SkillInstallCard({ clawdis, osLabels }: SkillInstallCardProps) {
                 <div className="stat">
                   <strong>Environment variables</strong>
                   <div style={{ display: 'flex', flexDirection: 'column', gap: '0.25rem', marginTop: '0.25rem' }}>
-                    {envVars.map((env) => (
-                      <div key={env.name} style={{ display: 'flex', alignItems: 'baseline', gap: '0.5rem' }}>
+                    {envVars.map((env, index) => (
+                      <div key={`${env.name}-${index}`} style={{ display: 'flex', alignItems: 'baseline', gap: '0.5rem' }}>
                         <code style={{ fontSize: '0.85rem' }}>{env.name}</code>
                         {env.required === false ? (
                           <span style={{ color: 'var(--ink-soft)', fontSize: '0.75rem' }}>optional</span>
-                        ) : (
+                        ) : env.required === true ? (
                           <span style={{ color: 'var(--ink-accent)', fontSize: '0.75rem' }}>required</span>
-                        )}
+                        ) : null}
                         {env.description ? (
                           <span style={{ color: 'var(--ink-soft)', fontSize: '0.8rem' }}>— {env.description}</span>
                         ) : null}
