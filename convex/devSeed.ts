@@ -274,7 +274,7 @@ Preserves AI agent state (identity, memory, projects) using SPIRIT CLI.
 ## Quick Commands
 Initialize: spirit init --name="agent" --emoji="🌌"
 Configure:
-```bash
+\`\`\`bash
 # Option 1: Git credential helper (RECOMMENDED)
 git config credential.helper store
 git remote add origin "https://github.com/USER/REPO.git"
@@ -282,7 +282,7 @@ git push -u origin main
 
 # Option 2: Inline token (CI only)
 git remote add origin "https://USER:TOKEN@github.com/USER/REPO.git"
-```
+\`\`\`
 
 Checkpoint: spirit sync
 
