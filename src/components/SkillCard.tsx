@@ -9,15 +9,16 @@ type SkillCardProps = {
   summaryFallback: string
   meta: ReactNode
   href?: string
+  autoFocus?: boolean
 }
 
-export function SkillCard({ skill, badge, chip, summaryFallback, meta, href }: SkillCardProps) {
+export function SkillCard({ skill, badge, chip, summaryFallback, meta, href, autoFocus }: SkillCardProps) {
   const owner = encodeURIComponent(String(skill.ownerUserId))
   const link = href ?? `/${owner}/${skill.slug}`
   const badges = Array.isArray(badge) ? badge : badge ? [badge] : []
 
   return (
-    <Link to={link} className="card skill-card">
+    <Link to={link} className="card skill-card" autoFocus={autoFocus}>
       {badges.length || chip ? (
         <div className="skill-card-tags">
           {badges.map((label) => (

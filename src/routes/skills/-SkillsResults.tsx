@@ -45,7 +45,7 @@ export function SkillsResults({
         </div>
       ) : view === 'cards' ? (
         <div className="grid">
-          {sorted.map((entry) => {
+          {sorted.map((entry, index) => {
             const skill = entry.skill
             const isPlugin = Boolean(entry.latestVersion?.parsed?.clawdis?.nix?.plugin)
             const ownerHandle = entry.owner?.handle ?? entry.owner?.name ?? entry.ownerHandle ?? null
@@ -58,6 +58,7 @@ export function SkillsResults({
                 badge={getSkillBadges(skill)}
                 chip={isPlugin ? 'Plugin bundle (nix)' : undefined}
                 summaryFallback="Agent-ready skill pack."
+                autoFocus={index === 0 && hasQuery}
                 meta={
                   <div className="skill-card-footer-rows">
                     <UserBadge user={entry.owner} fallbackHandle={ownerHandle} prefix="by" link={false} />
@@ -72,13 +73,13 @@ export function SkillsResults({
         </div>
       ) : (
         <div className="skills-list">
-          {sorted.map((entry) => {
+          {sorted.map((entry, index) => {
             const skill = entry.skill
             const isPlugin = Boolean(entry.latestVersion?.parsed?.clawdis?.nix?.plugin)
             const ownerHandle = entry.owner?.handle ?? entry.owner?.name ?? entry.ownerHandle ?? null
             const skillHref = buildSkillHref(skill, ownerHandle)
             return (
-              <Link key={skill._id} className="skills-row" to={skillHref}>
+              <Link key={skill._id} className="skills-row" to={skillHref} autoFocus={index === 0 && hasQuery}>
                 <div className="skills-row-main">
                   <div className="skills-row-title">
                     <span>{skill.displayName}</span>
