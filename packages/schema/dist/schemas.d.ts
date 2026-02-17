@@ -135,6 +135,16 @@ export declare const ApiV1WhoamiResponseSchema: import("arktype/internal/variant
         image?: string | null | undefined;
     };
 }, {}>;
+export declare const ApiV1UserSearchResponseSchema: import("arktype/internal/variants/object.ts").ObjectType<{
+    items: {
+        userId: string;
+        handle: string | null;
+        displayName?: string | null | undefined;
+        name?: string | null | undefined;
+        role?: "user" | "admin" | "moderator" | null | undefined;
+    }[];
+    total: number;
+}, {}>;
 export declare const ApiV1SearchResponseSchema: import("arktype/internal/variants/object.ts").ObjectType<{
     results: {
         score: number;
@@ -181,6 +191,35 @@ export declare const ApiV1SkillResponseSchema: import("arktype/internal/variants
         handle: string | null;
         displayName?: string | null | undefined;
         image?: string | null | undefined;
+    } | null;
+    moderation?: {
+        isSuspicious: boolean;
+        isMalwareBlocked: boolean;
+        verdict?: "clean" | "suspicious" | "malicious" | undefined;
+        reasonCodes?: string[] | undefined;
+        updatedAt?: number | null | undefined;
+        engineVersion?: string | null | undefined;
+        summary?: string | null | undefined;
+    } | null | undefined;
+}, {}>;
+export declare const ApiV1SkillModerationResponseSchema: import("arktype/internal/variants/object.ts").ObjectType<{
+    moderation: {
+        isSuspicious: boolean;
+        isMalwareBlocked: boolean;
+        verdict: "clean" | "suspicious" | "malicious";
+        reasonCodes: string[];
+        evidence: {
+            code: string;
+            severity: "info" | "warn" | "critical";
+            file: string;
+            line: number;
+            message: string;
+            evidence: string;
+        }[];
+        updatedAt?: number | null | undefined;
+        engineVersion?: string | null | undefined;
+        summary?: string | null | undefined;
+        legacyReason?: string | null | undefined;
     } | null;
 }, {}>;
 export declare const ApiV1SkillVersionListResponseSchema: import("arktype/internal/variants/object.ts").ObjectType<{
