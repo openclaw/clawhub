@@ -237,6 +237,19 @@ describe('httpApiV1 handlers', () => {
     expect(response.status).toBe(429)
   })
 
+  it('429 Retry-After is a relative delay, not an absolute epoch', async () => {
+    const runMutation = vi.fn().mockResolvedValue(blockedRate())
+    const response = await __handlers.searchSkillsV1Handler(
+      makeCtx({ runAction: vi.fn(), runMutation }),
+      new Request('https://example.com/api/v1/search?q=test'),
+    )
+    expect(response.status).toBe(429)
+    const retryAfter = Number(response.headers.get('Retry-After'))
+    // Retry-After must be a small relative delay (seconds), not a Unix epoch
+    expect(retryAfter).toBeGreaterThanOrEqual(1)
+    expect(retryAfter).toBeLessThanOrEqual(120)
+  })
+
   it('resolve validates hash', async () => {
     const runMutation = vi.fn().mockResolvedValue(okRate())
     const response = await __handlers.resolveSkillVersionV1Handler(
