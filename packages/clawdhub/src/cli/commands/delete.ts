@@ -16,28 +16,28 @@ const deleteLabels: SkillActionLabels = {
   verb: 'Delete',
   progress: 'Deleting',
   past: 'Deleted',
-  promptSuffix: 'soft delete, requires moderator/admin',
+  promptSuffix: 'soft delete, owner/moderator/admin',
 }
 
 const undeleteLabels: SkillActionLabels = {
   verb: 'Undelete',
   progress: 'Undeleting',
   past: 'Undeleted',
-  promptSuffix: 'requires moderator/admin',
+  promptSuffix: 'owner/moderator/admin',
 }
 
 const hideLabels: SkillActionLabels = {
   verb: 'Hide',
   progress: 'Hiding',
   past: 'Hidden',
-  promptSuffix: 'requires moderator/admin',
+  promptSuffix: 'owner/moderator/admin',
 }
 
 const unhideLabels: SkillActionLabels = {
   verb: 'Unhide',
   progress: 'Unhiding',
   past: 'Unhidden',
-  promptSuffix: 'requires moderator/admin',
+  promptSuffix: 'owner/moderator/admin',
 }
 
 export async function cmdDeleteSkill(
