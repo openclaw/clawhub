@@ -2,9 +2,9 @@
 
 Welcome! ClawHub is the public skill registry for [OpenClaw](https://github.com/openclaw/openclaw). We appreciate bug fixes, documentation improvements, and feature contributions.
 
-- **Questions?** Ask in [#setup-help on Discord](https://discord.gg/clawd).
+- **Questions?** Ask in [#clawhub on Discord](https://discord.gg/clawd).
 - **Bug fixes** — PRs are welcome.
-- **New features or architectural changes** — please start with a Discord conversation first so we can align on scope.
+- **New features or architectural changes** — please start with a Discord conversation in #clawhub first so we can align on scope.
 
 ## Local Development Setup
 
