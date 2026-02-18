@@ -130,6 +130,22 @@ export async function cmdInspect(opts: GlobalOpts, slug: string, options: Inspec
 
     if (shouldPrintMeta && versionResult?.version) {
       printVersionSummary(versionResult.version)
+      
+      // Display security info if available
+      const version = versionResult.version as { security?: any }
+      if (version.security) {
+        const sec = version.security
+        console.log(`\nSecurity: ${sec.status.toUpperCase()}`)
+        if (sec.hasWarnings) {
+          console.log(`⚠️  This skill has security warnings`)
+        }
+        if (sec.checkedAt) {
+          console.log(`Checked: ${new Date(sec.checkedAt).toLocaleDateString()}`)
+        }
+        if (sec.model) {
+          console.log(`Model: ${sec.model}`)
+        }
+      }
     }
 
     if (versionsList?.items && Array.isArray(versionsList.items)) {
