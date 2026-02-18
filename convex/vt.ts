@@ -787,7 +787,7 @@ export const rescanActiveSkills = internalAction({
       `[vt:rescan] Processing batch of ${batch.skills.length} skills (cursor=${cursor}, accumulated=${accTotal})`,
     )
 
-    for (const { versionId, sha256hash, slug } of batch.skills) {
+    for (const { versionId, sha256hash, slug, wasFlagged } of batch.skills) {
       try {
         const vtResult = await checkExistingFile(apiKey, sha256hash)
 
@@ -831,6 +831,15 @@ export const rescanActiveSkills = internalAction({
           accFlaggedSkills.push({ slug, status })
           await ctx.runMutation(internal.skills.escalateByVtInternal, {
             sha256hash,
+            status,
+          })
+          accUpdated++
+        } else if (wasFlagged) {
+          // Verdict improved from suspicious → clean: clear the stale moderation flag
+          console.log(`[vt:rescan] ${slug}: verdict improved to clean, clearing suspicious flag`)
+          await ctx.runMutation(internal.skills.approveSkillByHashInternal, {
+            sha256hash,
+            scanner: 'vt',
             status,
           })
           accUpdated++
