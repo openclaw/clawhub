@@ -104,12 +104,63 @@ describe('skills.listPublicPageV2', () => {
     expect(eqMock).toHaveBeenCalledWith('softDeletedAt', undefined)
   })
 
-  it('preserves pagination cursor when filtering removes the whole page', async () => {
+  it('skips fully filtered pages until it finds matching skills', async () => {
+    const plain = makeSkill('skills:plain', 'plain', 'users:1', 'skillVersions:1')
+    const highlightedClean = makeSkill('skills:hl-clean', 'hl-clean', 'users:2', 'skillVersions:2')
+    const paginateMock = vi
+      .fn()
+      .mockResolvedValueOnce({
+        page: [plain],
+        continueCursor: 'next-cursor',
+        isDone: false,
+        pageStatus: null,
+        splitCursor: null,
+      })
+      .mockResolvedValueOnce({
+        page: [highlightedClean],
+        continueCursor: 'after-highlighted',
+        isDone: false,
+        pageStatus: null,
+        splitCursor: null,
+      })
+    const ctx = {
+      db: {
+        query: vi.fn(() => ({
+          withIndex: vi.fn(() => ({
+            order: vi.fn(() => ({ paginate: paginateMock })),
+          })),
+        })),
+        get: vi.fn(async (id: string) => {
+          if (id.startsWith('users:')) return makeUser(id)
+          if (id.startsWith('skillVersions:')) return makeVersion(id)
+          return null
+        }),
+      },
+    }
+
+    const result = await listPublicPageV2Handler(ctx, {
+      paginationOpts: { cursor: null, numItems: 25 },
+      sort: 'downloads',
+      dir: 'desc',
+      highlightedOnly: true,
+      nonSuspiciousOnly: false,
+    })
+
+    expect(result.page).toHaveLength(1)
+    expect(result.page[0]?.skill.slug).toBe('hl-clean')
+    expect(result.continueCursor).toBe('after-highlighted')
+    expect(result.isDone).toBe(false)
+    expect(paginateMock).toHaveBeenCalledTimes(2)
+    expect(paginateMock).toHaveBeenNthCalledWith(1, { cursor: null, numItems: 25 })
+    expect(paginateMock).toHaveBeenNthCalledWith(2, { cursor: 'next-cursor', numItems: 25 })
+  })
+
+  it('returns exhausted when filtered pages remain empty to the end', async () => {
     const plain = makeSkill('skills:plain', 'plain', 'users:1', 'skillVersions:1')
     const paginateMock = vi.fn().mockResolvedValue({
       page: [plain],
-      continueCursor: 'next-cursor',
-      isDone: false,
+      continueCursor: null,
+      isDone: true,
       pageStatus: null,
       splitCursor: null,
     })
@@ -133,8 +184,9 @@ describe('skills.listPublicPageV2', () => {
     })
 
     expect(result.page).toEqual([])
-    expect(result.continueCursor).toBe('next-cursor')
-    expect(result.isDone).toBe(false)
+    expect(result.continueCursor).toBeNull()
+    expect(result.isDone).toBe(true)
+    expect(paginateMock).toHaveBeenCalledTimes(1)
   })
 
   it('restarts pagination from first page when cursor is stale', async () => {

@@ -1603,22 +1603,35 @@ export const listPublicPageV2 = query({
 
     // Use the index to filter out soft-deleted skills at query time.
     // softDeletedAt === undefined means active (non-deleted) skills only.
-    const result = await paginateWithStaleCursorRecovery(runPaginate, initialCursor)
+    // When post-pagination filters are active, skip empty filtered pages so clients
+    // don't bounce between CanLoadMore/LoadingMore with no visible new rows.
+    let result = await paginateWithStaleCursorRecovery(runPaginate, initialCursor)
+    let filteredPage = filterPublicSkillPage(result.page, args)
 
-    const filteredPage =
-      args.nonSuspiciousOnly || args.highlightedOnly
-        ? result.page.filter((skill) => {
-            if (args.nonSuspiciousOnly && isSkillSuspicious(skill)) return false
-            if (args.highlightedOnly && !isSkillHighlighted(skill)) return false
-            return true
-          })
-        : result.page
+    while ((args.nonSuspiciousOnly || args.highlightedOnly) && filteredPage.length === 0 && !result.isDone) {
+      result = await runPaginate(result.continueCursor)
+      filteredPage = filterPublicSkillPage(result.page, args)
+    }
 
     // Build the public skill entries (fetch latestVersion + ownerHandle)
     const items = await buildPublicSkillEntries(ctx, filteredPage)
     return { ...result, page: items }
   },
 })
+
+function filterPublicSkillPage(
+  page: Array<Doc<'skills'>>,
+  args: { highlightedOnly?: boolean; nonSuspiciousOnly?: boolean },
+) {
+  if (!args.nonSuspiciousOnly && !args.highlightedOnly) {
+    return page
+  }
+  return page.filter((skill) => {
+    if (args.nonSuspiciousOnly && isSkillSuspicious(skill)) return false
+    if (args.highlightedOnly && !isSkillHighlighted(skill)) return false
+    return true
+  })
+}
 
 function normalizePublicListPagination(paginationOpts: {
   cursor?: string | null
