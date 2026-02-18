@@ -18,6 +18,16 @@ read_when:
 - Token missing or revoked: check your config file (`CLAWHUB_CONFIG_PATH` override?).
 - Ensure requests include `Authorization: Bearer ...` (CLI does this automatically).
 
+## CLI/API returns `Rate limit exceeded` (429)
+
+- Read headers in the response:
+  - `Retry-After` = wait seconds before retry
+  - `RateLimit-Remaining` + `RateLimit-Limit` = current budget
+  - `RateLimit-Reset` (or `X-RateLimit-Reset`) = reset timing
+- The CLI now includes retry hints in 429 errors (retry delay + remaining budget).
+- If many users share one egress IP (NAT/proxy), IP limit can be hit even with valid tokens.
+- For non-Cloudflare deploys behind trusted proxies, set `TRUST_FORWARDED_IPS=true` so forwarded client IPs can be used.
+
 ## `publish` fails with `OPENAI_API_KEY is not configured`
 
 - Set `OPENAI_API_KEY` in the Convex environment (not only locally).

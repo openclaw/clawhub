@@ -1044,6 +1044,7 @@ describe('httpApiV1 handlers', () => {
   })
 
   it('stars add succeeds', async () => {
+    vi.mocked(getOptionalApiTokenUserId).mockResolvedValue('users:1' as never)
     vi.mocked(requireApiTokenUser).mockResolvedValue({
       userId: 'users:1',
       user: { handle: 'p' },
@@ -1051,7 +1052,6 @@ describe('httpApiV1 handlers', () => {
     const runQuery = vi.fn().mockResolvedValue({ _id: 'skills:1' })
     const runMutation = vi
       .fn()
-      .mockResolvedValueOnce(okRate())
       .mockResolvedValueOnce(okRate())
       .mockResolvedValueOnce({ ok: true, starred: true, alreadyStarred: false })
     const response = await __handlers.starsPostRouterV1Handler(
@@ -1068,6 +1068,7 @@ describe('httpApiV1 handlers', () => {
   })
 
   it('stars delete succeeds', async () => {
+    vi.mocked(getOptionalApiTokenUserId).mockResolvedValue('users:1' as never)
     vi.mocked(requireApiTokenUser).mockResolvedValue({
       userId: 'users:1',
       user: { handle: 'p' },
@@ -1075,7 +1076,6 @@ describe('httpApiV1 handlers', () => {
     const runQuery = vi.fn().mockResolvedValue({ _id: 'skills:1' })
     const runMutation = vi
       .fn()
-      .mockResolvedValueOnce(okRate())
       .mockResolvedValueOnce(okRate())
       .mockResolvedValueOnce({ ok: true, unstarred: true, alreadyUnstarred: false })
     const response = await __handlers.starsDeleteRouterV1Handler(
