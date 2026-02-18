@@ -24,25 +24,53 @@ export async function applyRateLimit(
 ): Promise<{ ok: true; headers: HeadersInit } | { ok: false; response: Response }> {
   const userId = await getOptionalApiTokenUserId(ctx, request)
   const ip = getClientIp(request) ?? 'unknown'
-  const ipResult = await checkRateLimit(ctx, `ip:${ip}`, RATE_LIMITS[kind].ip)
-  const userResult = userId
-    ? await checkRateLimit(ctx, `user:${userId}`, RATE_LIMITS[kind].key)
-    : null
+  const ipSource = getClientIpSource(request)
+  const hasClientIp = ip !== 'unknown'
 
-  // Authenticated requests are enforced by user bucket to avoid shared-IP false positives.
+  // Authenticated requests are enforced and consumed by user bucket only to
+  // avoid draining shared IP quota.
+  if (userId) {
+    const userResult = await checkRateLimit(ctx, `user:${userId}`, RATE_LIMITS[kind].key)
+    const headers = rateHeaders(userResult)
+    if (!userResult.allowed) {
+      console.info('rate_limit_denied', {
+        kind,
+        auth: true,
+        userAllowed: false,
+        ipAllowed: null,
+        ipSource,
+        hasClientIp,
+      })
+      return {
+        ok: false,
+        response: new Response('Rate limit exceeded', {
+          status: 429,
+          headers: mergeHeaders(
+            {
+              'Content-Type': 'text/plain; charset=utf-8',
+              'Cache-Control': 'no-store',
+            },
+            headers,
+            corsHeaders(),
+          ),
+        }),
+      }
+    }
+    return { ok: true, headers }
+  }
+
   // Anonymous requests remain IP-enforced.
-  const chosen = userResult ?? ipResult
-  const headers = rateHeaders(chosen)
-  const isDenied = userResult ? !userResult.allowed : !ipResult.allowed
+  const ipResult = await checkRateLimit(ctx, `ip:${ip}`, RATE_LIMITS[kind].ip)
+  const headers = rateHeaders(ipResult)
 
-  if (isDenied) {
+  if (!ipResult.allowed) {
     console.info('rate_limit_denied', {
       kind,
-      auth: Boolean(userResult),
-      userAllowed: userResult?.allowed ?? null,
+      auth: false,
+      userAllowed: null,
       ipAllowed: ipResult.allowed,
-      ipSource: getClientIpSource(request),
-      hasClientIp: ip !== 'unknown',
+      ipSource,
+      hasClientIp,
     })
     return {
       ok: false,

@@ -205,6 +205,37 @@ describe('applyRateLimit headers', () => {
     expect(headers.get('Retry-After')).toBeNull()
   })
 
+  it('does not consume ip bucket for authenticated requests', async () => {
+    vi.spyOn(Date, 'now').mockReturnValue(3_100_000)
+    const ctx = makeRateLimitCtx({
+      ip: {
+        allowed: true,
+        remaining: 19,
+        limit: 20,
+        resetAt: 3_140_000,
+      },
+      user: {
+        allowed: true,
+        remaining: 41,
+        limit: 120,
+        resetAt: 3_110_000,
+      },
+    })
+    const request = new Request('https://example.com', {
+      headers: {
+        authorization: 'Bearer clh_token',
+        'cf-connecting-ip': '203.0.113.1',
+      },
+    })
+
+    const result = await applyRateLimit(ctx, request, 'download')
+    expect(result.ok).toBe(true)
+    const runMutation = (ctx as unknown as { runMutation: ReturnType<typeof vi.fn> }).runMutation
+    const consumedKeys = runMutation.mock.calls.map(([, args]) => String(args.key))
+    expect(consumedKeys.some((key) => key.startsWith('user:'))).toBe(true)
+    expect(consumedKeys.some((key) => key.startsWith('ip:'))).toBe(false)
+  })
+
   it('denies authenticated users when user bucket is exhausted even if ip bucket is healthy', async () => {
     vi.spyOn(Date, 'now').mockReturnValue(4_000_000)
     const ctx = makeRateLimitCtx({
