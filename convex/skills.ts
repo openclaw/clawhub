@@ -1987,6 +1987,7 @@ export const getActiveSkillBatchForRescanInternal = internalQuery({
       versionId: Id<'skillVersions'>
       sha256hash: string
       slug: string
+      wasFlagged: boolean
     }> = []
     let nextCursor = cursor
 
@@ -2007,6 +2008,8 @@ export const getActiveSkillBatchForRescanInternal = internalQuery({
         versionId: version._id,
         sha256hash: version.sha256hash,
         slug: skill.slug,
+        wasFlagged:
+          (skill.moderationFlags as string[] | undefined)?.includes('flagged.suspicious') ?? false,
       })
     }
 
@@ -2608,8 +2611,8 @@ export const approveSkillByHashInternal = internalMutation({
       if (isMalicious || alreadyBlocked) {
         // Malicious from ANY scanner → blocked.malware (upgrade from suspicious)
         newFlags = ['blocked.malware']
-      } else if ((isSuspicious || alreadyFlagged) && !bypassSuspicious) {
-        // Suspicious from ANY scanner → flagged.suspicious
+      } else if (isSuspicious && !bypassSuspicious) {
+        // Suspicious from this scanner → flagged.suspicious
         newFlags = ['flagged.suspicious']
       } else if (isClean) {
         // Clean from this scanner — only clear if no other scanner has flagged
