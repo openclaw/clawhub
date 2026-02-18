@@ -1,7 +1,7 @@
 import { internal } from '../_generated/api'
 import type { ActionCtx } from '../_generated/server'
+import { getOptionalApiTokenUserId } from './apiTokenAuth'
 import { corsHeaders, mergeHeaders } from './httpHeaders'
-import { hashToken } from './tokens'
 
 const RATE_LIMIT_WINDOW_MS = 60_000
 export const RATE_LIMITS = {
@@ -22,17 +22,28 @@ export async function applyRateLimit(
   request: Request,
   kind: keyof typeof RATE_LIMITS,
 ): Promise<{ ok: true; headers: HeadersInit } | { ok: false; response: Response }> {
+  const userId = await getOptionalApiTokenUserId(ctx, request)
   const ip = getClientIp(request) ?? 'unknown'
   const ipResult = await checkRateLimit(ctx, `ip:${ip}`, RATE_LIMITS[kind].ip)
-  const token = parseBearerToken(request)
-  const keyResult = token
-    ? await checkRateLimit(ctx, `key:${await hashToken(token)}`, RATE_LIMITS[kind].key)
+  const userResult = userId
+    ? await checkRateLimit(ctx, `user:${userId}`, RATE_LIMITS[kind].key)
     : null
 
-  const chosen = pickMostRestrictive(ipResult, keyResult)
+  // Authenticated requests are enforced by user bucket to avoid shared-IP false positives.
+  // Anonymous requests remain IP-enforced.
+  const chosen = userResult ?? ipResult
   const headers = rateHeaders(chosen)
+  const isDenied = userResult ? !userResult.allowed : !ipResult.allowed
 
-  if (!ipResult.allowed || (keyResult && !keyResult.allowed)) {
+  if (isDenied) {
+    console.info('rate_limit_denied', {
+      kind,
+      auth: Boolean(userResult),
+      userAllowed: userResult?.allowed ?? null,
+      ipAllowed: ipResult.allowed,
+      ipSource: getClientIpSource(request),
+      hasClientIp: ip !== 'unknown',
+    })
     return {
       ok: false,
       response: new Response('Rate limit exceeded', {
@@ -59,11 +70,20 @@ export function getClientIp(request: Request) {
   if (!shouldTrustForwardedIps()) return null
 
   const forwarded =
-    request.headers.get('x-real-ip') ??
     request.headers.get('x-forwarded-for') ??
+    request.headers.get('x-real-ip') ??
     request.headers.get('fly-client-ip')
 
   return splitFirstIp(forwarded)
+}
+
+function getClientIpSource(request: Request) {
+  if (request.headers.get('cf-connecting-ip')) return 'cf-connecting-ip'
+  if (!shouldTrustForwardedIps()) return 'none'
+  if (request.headers.get('x-forwarded-for')) return 'x-forwarded-for'
+  if (request.headers.get('x-real-ip')) return 'x-real-ip'
+  if (request.headers.get('fly-client-ip')) return 'fly-client-ip'
+  return 'none'
 }
 
 async function checkRateLimit(
@@ -108,13 +128,6 @@ async function checkRateLimit(
     limit: status.limit,
     resetAt: status.resetAt,
   }
-}
-
-function pickMostRestrictive(primary: RateLimitResult, secondary: RateLimitResult | null) {
-  if (!secondary) return primary
-  if (!primary.allowed) return primary
-  if (!secondary.allowed) return secondary
-  return secondary.remaining < primary.remaining ? secondary : primary
 }
 
 function rateHeaders(result: RateLimitResult): HeadersInit {

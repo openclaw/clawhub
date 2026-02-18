@@ -15,7 +15,11 @@ OpenAPI: `/api/v1/openapi.json`.
 
 ## Rate limits
 
-Enforced per IP + per API key:
+Enforcement model:
+
+- Anonymous requests: enforced per IP.
+- Authenticated requests (valid Bearer token): enforced per user bucket.
+- If token is missing/invalid, behavior falls back to IP enforcement.
 
 - Read: 120/min per IP, 600/min per key
 - Write: 30/min per IP, 120/min per key

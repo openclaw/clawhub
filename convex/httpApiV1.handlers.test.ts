@@ -1042,6 +1042,7 @@ describe('httpApiV1 handlers', () => {
   })
 
   it('stars add succeeds', async () => {
+    vi.mocked(getOptionalApiTokenUserId).mockResolvedValue('users:1' as never)
     vi.mocked(requireApiTokenUser).mockResolvedValue({
       userId: 'users:1',
       user: { handle: 'p' },
@@ -1066,6 +1067,7 @@ describe('httpApiV1 handlers', () => {
   })
 
   it('stars delete succeeds', async () => {
+    vi.mocked(getOptionalApiTokenUserId).mockResolvedValue('users:1' as never)
     vi.mocked(requireApiTokenUser).mockResolvedValue({
       userId: 'users:1',
       user: { handle: 'p' },
