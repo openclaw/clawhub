@@ -239,6 +239,70 @@ xuezh audio process-voice --file ./utterance.wav
 \`\`\`
 `,
   },
+  {
+    slug: 'spirit',
+    displayName: 'SPIRIT',
+    summary: 'Resurrect your AI agent anywhere. Preserves identity, memory, and projects. Server dies? New machine? Always you.',
+    version: '0.1.0',
+    metadata: {
+      openclaw: {
+        requires: { bins: ['spirit'] },
+        install: [
+          {
+            id: 'spirit-cli',
+            kind: 'brew',
+            tap: 'TheOrionAI/tap',
+            package: 'spirit',
+          },
+        ],
+      },
+    },
+    rawSkillMd: `---
+name: spirit
+description: Resurrect your AI agent anywhere. Preserves identity, memory, and projects so when your server dies or you migrate, your agent is always you. Use when (1) Session ending, (2) User asks to backup/preserve state, (3) Setting up SPIRIT, or (4) Restoring on a new server.
+---
+
+# SPIRIT Skill
+
+Preserves AI agent state (identity, memory, projects) using SPIRIT CLI.
+
+## When to Use
+- Session ending → Auto-checkpoint
+- Manual backup → "checkpoint", "backup", "preserve"
+- Setup → First-time initialization
+- Restore → New server resurrection
+
+## Quick Commands
+\`\`\`bash
+spirit init --name="agent" --emoji="🌌"
+\`\`\`
+Configure:
+\`\`\`bash
+# Option 1: Git credential helper (RECOMMENDED)
+git config credential.helper store
+git remote add origin "https://github.com/USER/REPO.git"
+git push -u origin main
+
+# Option 2: Inline token (CI only)
+git remote add origin "https://USER:TOKEN@github.com/USER/REPO.git"
+\`\`\`
+
+Checkpoint:
+\`\`\`bash
+spirit sync
+\`\`\`
+
+## Install
+\`\`\`bash
+brew install TheOrionAI/tap/spirit
+\`\`\`
+
+## Security
+⚠️ PRIVATE repositories required.
+⚠️ Inline tokens expose credentials. Use credential helper, gh auth login, or env vars.
+See: https://theorionai.github.io/spirit/
+`,
+  },
 ]
 
 function injectMetadata(rawSkillMd: string, metadata: Record<string, unknown>) {
