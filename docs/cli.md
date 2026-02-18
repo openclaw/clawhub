@@ -29,6 +29,33 @@ Env equivalents:
 - `CLAWHUB_REGISTRY` (legacy `CLAWDHUB_REGISTRY`)
 - `CLAWHUB_WORKDIR` (legacy `CLAWDHUB_WORKDIR`)
 
+### HTTP proxy
+
+The CLI respects standard HTTP proxy environment variables for systems behind
+corporate proxies or restricted networks:
+
+- `HTTPS_PROXY` / `https_proxy`
+- `HTTP_PROXY` / `http_proxy`
+
+When any of these variables is set, the CLI routes outbound requests through
+the specified proxy. `HTTPS_PROXY` is used for HTTPS requests, `HTTP_PROXY`
+for plain HTTP. `NO_PROXY` / `no_proxy` is respected to bypass the proxy for
+specific hosts or domains.
+
+This is required on systems where direct outbound connections are blocked
+(e.g. Docker containers, Hetzner VPS with proxy-only internet, corporate
+firewalls).
+
+Example:
+
+```bash
+export HTTPS_PROXY=http://proxy.example.com:3128
+export NO_PROXY=localhost,127.0.0.1
+clawhub search "my query"
+```
+
+When no proxy variable is set, behavior is unchanged (direct connections).
+
 ## Config file
 
 Stores your API token + cached registry URL.

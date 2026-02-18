@@ -18,6 +18,26 @@ read_when:
 - Token missing or revoked: check your config file (`CLAWHUB_CONFIG_PATH` override?).
 - Ensure requests include `Authorization: Bearer ...` (CLI does this automatically).
 
+## `search` / `install` fails with `fetch failed` behind a proxy
+
+If your system requires an HTTP proxy for outbound connections (e.g. corporate
+firewalls, Docker containers with proxy-only internet, Hetzner VPS), the CLI
+will fail with:
+
+```
+✖ fetch failed
+Error: fetch failed
+```
+
+**Fix:** Set the standard proxy environment variables:
+
+```bash
+export HTTPS_PROXY=http://proxy.example.com:3128
+clawhub search "my query"
+```
+
+The CLI respects `HTTPS_PROXY`, `HTTP_PROXY`, `https_proxy`, and `http_proxy`.
+
 ## `publish` fails with `OPENAI_API_KEY is not configured`
 
 - Set `OPENAI_API_KEY` in the Convex environment (not only locally).
