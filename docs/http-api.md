@@ -62,7 +62,7 @@ Client guidance:
 IP source:
 
 - Uses `cf-connecting-ip` (Cloudflare) for client IP by default.
-- Set `TRUST_FORWARDED_IPS=true` to opt in to `x-real-ip`, `x-forwarded-for`, or `fly-client-ip` (non-Cloudflare deployments).
+- Set `TRUST_FORWARDED_IPS=true` to opt in to `x-forwarded-for`, `x-real-ip`, or `fly-client-ip` (non-Cloudflare deployments).
 - If you run behind a reverse proxy/load balancer, ensure real client IP headers are preserved and trusted correctly, or rate limits may be too strict due to shared proxy IPs.
 
 ## Public endpoints (no auth)
