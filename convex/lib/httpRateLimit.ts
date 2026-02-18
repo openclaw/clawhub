@@ -118,12 +118,17 @@ function pickMostRestrictive(primary: RateLimitResult, secondary: RateLimitResul
 }
 
 function rateHeaders(result: RateLimitResult): HeadersInit {
+  const nowMs = Date.now()
   const resetSeconds = Math.ceil(result.resetAt / 1000)
+  const resetDelaySeconds = Math.max(1, Math.ceil((result.resetAt - nowMs) / 1000))
   return {
     'X-RateLimit-Limit': String(result.limit),
     'X-RateLimit-Remaining': String(result.remaining),
     'X-RateLimit-Reset': String(resetSeconds),
-    ...(result.allowed ? {} : { 'Retry-After': String(resetSeconds) }),
+    'RateLimit-Limit': String(result.limit),
+    'RateLimit-Remaining': String(result.remaining),
+    'RateLimit-Reset': String(resetDelaySeconds),
+    ...(result.allowed ? {} : { 'Retry-After': String(resetDelaySeconds) }),
   }
 }
 

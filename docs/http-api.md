@@ -23,12 +23,43 @@ Enforced per IP + per API key:
 
 Headers:
 
-- `X-RateLimit-Limit`, `X-RateLimit-Remaining`, `X-RateLimit-Reset`, `Retry-After` (when limited)
+- Legacy compatibility: `X-RateLimit-Limit`, `X-RateLimit-Remaining`, `X-RateLimit-Reset`
+- Standardized: `RateLimit-Limit`, `RateLimit-Remaining`, `RateLimit-Reset`
+- On `429`: `Retry-After`
+
+Header semantics:
+
+- `X-RateLimit-Reset`: absolute Unix epoch seconds
+- `RateLimit-Reset`: seconds until reset (delay)
+- `Retry-After`: seconds to wait before retry (delay) on `429`
+
+Example `429` response:
+
+```http
+HTTP/2 429
+content-type: text/plain; charset=utf-8
+x-ratelimit-limit: 20
+x-ratelimit-remaining: 0
+x-ratelimit-reset: 1771404540
+ratelimit-limit: 20
+ratelimit-remaining: 0
+ratelimit-reset: 34
+retry-after: 34
+
+Rate limit exceeded
+```
+
+Client guidance:
+
+- If `Retry-After` exists, wait that many seconds before retry.
+- Use jittered backoff to avoid synchronized retries.
+- If `Retry-After` is missing, fallback to `RateLimit-Reset` (or compute from `X-RateLimit-Reset`).
 
 IP source:
 
 - Uses `cf-connecting-ip` (Cloudflare) for client IP by default.
 - Set `TRUST_FORWARDED_IPS=true` to opt in to `x-real-ip`, `x-forwarded-for`, or `fly-client-ip` (non-Cloudflare deployments).
+- If you run behind a reverse proxy/load balancer, ensure real client IP headers are preserved and trusted correctly, or rate limits may be too strict due to shared proxy IPs.
 
 ## Public endpoints (no auth)
 

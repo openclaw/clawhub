@@ -86,6 +86,50 @@ describe('apiRequest', () => {
     vi.unstubAllGlobals()
   })
 
+  it('includes rate-limit guidance from headers on 429', async () => {
+    mockImmediateTimeouts()
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: false,
+      status: 429,
+      headers: new Headers({
+        'Retry-After': '34',
+        'X-RateLimit-Limit': '20',
+        'X-RateLimit-Remaining': '0',
+        'X-RateLimit-Reset': '1771404540',
+      }),
+      text: async () => 'Rate limit exceeded',
+    })
+    vi.stubGlobal('fetch', fetchMock)
+
+    await expect(apiRequest('https://example.com', { method: 'GET', path: '/x' })).rejects.toThrow(
+      /retry in 34s.*remaining: 0\/20.*reset in 34s/i,
+    )
+    expect(fetchMock).toHaveBeenCalledTimes(3)
+    vi.unstubAllGlobals()
+  })
+
+  it('interprets legacy epoch Retry-After values as reset delays', async () => {
+    mockImmediateTimeouts()
+    vi.spyOn(Date, 'now').mockReturnValue(1_771_404_500_000)
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: false,
+      status: 429,
+      headers: new Headers({
+        'Retry-After': '1771404540',
+        'X-RateLimit-Limit': '20',
+        'X-RateLimit-Remaining': '0',
+      }),
+      text: async () => 'Rate limit exceeded',
+    })
+    vi.stubGlobal('fetch', fetchMock)
+
+    await expect(apiRequest('https://example.com', { method: 'GET', path: '/x' })).rejects.toThrow(
+      /retry in 40s.*remaining: 0\/20/i,
+    )
+    vi.restoreAllMocks()
+    vi.unstubAllGlobals()
+  })
+
   it('falls back to HTTP status when body is empty', async () => {
     const fetchMock = vi.fn().mockResolvedValue({
       ok: false,

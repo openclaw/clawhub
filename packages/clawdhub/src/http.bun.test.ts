@@ -22,6 +22,17 @@ function restoreBunRuntime() {
   })
 }
 
+function mockImmediateTimeouts() {
+  const setTimeoutMock = vi.fn((callback: () => void) => {
+    callback()
+    return 1 as unknown as ReturnType<typeof setTimeout>
+  })
+  const clearTimeoutMock = vi.fn()
+  vi.stubGlobal('setTimeout', setTimeoutMock as unknown as typeof setTimeout)
+  vi.stubGlobal('clearTimeout', clearTimeoutMock as typeof clearTimeout)
+  return { setTimeoutMock, clearTimeoutMock }
+}
+
 async function loadHttpModuleWithBunMocks(opts?: {
   spawnImpl?: ReturnType<typeof vi.fn>
   mkdtempValue?: string
@@ -115,6 +126,26 @@ describe('http bun runtime', () => {
         path: '/v1/ping',
       }),
     ).rejects.toThrow('rate limited')
+
+    expect(spawnSync).toHaveBeenCalledTimes(3)
+  })
+
+  it('includes rate-limit guidance from curl metadata on 429', async () => {
+    mockImmediateTimeouts()
+    const spawnSync = vi.fn().mockReturnValue({
+      status: 0,
+      stdout:
+        'rate limited\n__CLAWHUB_CURL_META__\n429\n20\n0\n1771404540\n20\n0\n34\n34\n',
+      stderr: '',
+    })
+    const { http } = await loadHttpModuleWithBunMocks({ spawnImpl: spawnSync })
+
+    await expect(
+      http.apiRequest('https://registry.example', {
+        method: 'GET',
+        path: '/v1/ping',
+      }),
+    ).rejects.toThrow(/retry in 34s.*remaining: 0\/20.*reset in 34s/i)
 
     expect(spawnSync).toHaveBeenCalledTimes(3)
   })
