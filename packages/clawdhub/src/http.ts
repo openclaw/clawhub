@@ -247,17 +247,16 @@ function jitterMs(maxMs: number): number {
 }
 
 function throwHttpStatusError(status: number, text: string, headers?: HeaderSource): never {
-  const message = buildHttpErrorMessage(status, text, headers)
   const rateLimit = parseRateLimitInfo(headers)
+  const message = buildHttpErrorMessage(status, text, rateLimit)
   if (status === 429 || status >= 500) {
     throw new HttpStatusError(status, message, rateLimit)
   }
   throw new AbortError(message)
 }
 
-function buildHttpErrorMessage(status: number, text: string, headers?: HeaderSource): string {
+function buildHttpErrorMessage(status: number, text: string, rateLimit: RateLimitInfo): string {
   const base = text || `HTTP ${status}`
-  const rateLimit = parseRateLimitInfo(headers)
   const details: string[] = []
   if (rateLimit.retryAfterSeconds !== undefined) {
     details.push(`retry in ${rateLimit.retryAfterSeconds}s`)
