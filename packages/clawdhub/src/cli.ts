@@ -278,7 +278,7 @@ program
 
 program
   .command('delete')
-  .description('Soft-delete a skill (moderator/admin only)')
+  .description('Soft-delete a skill (owner, moderator, or admin)')
   .argument('<slug>', 'Skill slug')
   .option('--yes', 'Skip confirmation')
   .action(async (slug, options) => {
@@ -288,7 +288,7 @@ program
 
 program
   .command('hide')
-  .description('Hide a skill (moderator/admin only)')
+  .description('Hide a skill (owner, moderator, or admin)')
   .argument('<slug>', 'Skill slug')
   .option('--yes', 'Skip confirmation')
   .action(async (slug, options) => {
@@ -298,7 +298,7 @@ program
 
 program
   .command('undelete')
-  .description('Restore a hidden skill (moderator/admin only)')
+  .description('Restore a hidden skill (owner, moderator, or admin)')
   .argument('<slug>', 'Skill slug')
   .option('--yes', 'Skip confirmation')
   .action(async (slug, options) => {
@@ -308,7 +308,7 @@ program
 
 program
   .command('unhide')
-  .description('Unhide a skill (moderator/admin only)')
+  .description('Unhide a skill (owner, moderator, or admin)')
   .argument('<slug>', 'Skill slug')
   .option('--yes', 'Skip confirmation')
   .action(async (slug, options) => {
