@@ -1,4 +1,8 @@
-# ClawHub
+<p align="center">
+  <img src="public/clawd-logo.png" alt="ClawHub" width="120">
+</p>
+
+<h1 align="center">ClawHub</h1>
 
 <p align="center">
   <a href="https://github.com/openclaw/clawhub/actions/workflows/ci.yml?branch=main"><img src="https://img.shields.io/github/actions/workflow/status/openclaw/clawhub/ci.yml?branch=main&style=for-the-badge" alt="CI status"></a>
@@ -7,13 +11,18 @@
 </p>
 
 ClawHub is the **public skill registry for Clawdbot**: publish, version, and search text-based agent skills (a `SKILL.md` plus supporting files).
-It’s designed for fast browsing + a CLI-friendly API, with moderation hooks and vector search.
+It's designed for fast browsing + a CLI-friendly API, with moderation hooks and vector search.
 
 onlycrabs.ai is the **SOUL.md registry**: publish and share system lore the same way you publish skills.
 
-Live: `https://clawhub.ai`
-onlycrabs.ai: `https://onlycrabs.ai`
-Vision: [`VISION.md`](VISION.md)
+<p align="center">
+  <a href="https://clawhub.ai">ClawHub</a> ·
+  <a href="https://onlycrabs.ai">onlycrabs.ai</a> ·
+  <a href="VISION.md">Vision</a> ·
+  <a href="docs/README.md">Docs</a> ·
+  <a href="CONTRIBUTING.md">Contributing</a> ·
+  <a href="https://discord.gg/clawd">Discord</a>
+</p>
 
 ## What you can do with it
 
@@ -48,7 +57,7 @@ Common CLI flows:
 - Inspect without installing: `clawhub inspect <slug>`
 - Publish/sync: `clawhub publish <path>`, `clawhub sync`
 
-Docs: `docs/quickstart.md`, `docs/cli.md`.
+Docs: [`docs/quickstart.md`](docs/quickstart.md), [`docs/cli.md`](docs/cli.md).
 
 
 ## Telemetry
@@ -60,39 +69,36 @@ Disable via:
 export CLAWHUB_DISABLE_TELEMETRY=1
 ```
 
-Details: `docs/telemetry.md`.
+Details: [`docs/telemetry.md`](docs/telemetry.md).
 
 ## Repo layout
 
 - `src/` — TanStack Start app (routes, components, styles).
 - `convex/` — schema + queries/mutations/actions + HTTP API routes.
 - `packages/schema/` — shared API types/routes for the CLI and app.
-- `docs/spec.md` — product + implementation spec (good first read).
+- [`docs/`](docs/README.md) — project documentation (architecture, CLI, auth, deployment, and more).
+- [`docs/spec.md`](docs/spec.md) — product + implementation spec (good first read).
 
 ## Local dev
 
-Prereqs: Bun + Convex CLI.
+Prereqs: [Bun](https://bun.sh/) (Convex runs via `bunx`, no global install needed).
 
 ```bash
 bun install
 cp .env.local.example .env.local
+# edit .env.local — see CONTRIBUTING.md for local Convex values
 
-# terminal A: web app
+# terminal A: local Convex backend
+bunx convex dev
+
+# terminal B: web app (port 3000)
 bun run dev
 
-# terminal B: Convex dev deployment
-bunx convex dev
+# seed sample data
+bunx convex run --no-push devSeed:seedNixSkills
 ```
 
-## Auth (GitHub OAuth) setup
-
-Create a GitHub OAuth App, set `AUTH_GITHUB_ID` / `AUTH_GITHUB_SECRET`, then:
-
-```bash
-bunx auth --deployment-name <deployment> --web-server-url http://localhost:3000
-```
-
-This writes `JWT_PRIVATE_KEY` + `JWKS` to the deployment and prints values for your local `.env.local`.
+For full setup instructions (env vars, GitHub OAuth, JWT keys, database seeding), see [CONTRIBUTING.md](CONTRIBUTING.md).
 
 ## Environment
 
