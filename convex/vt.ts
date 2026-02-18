@@ -834,7 +834,7 @@ export const rescanActiveSkills = internalAction({
             status,
           })
           accUpdated++
-        } else if (wasFlagged) {
+        } else if (wasFlagged && status === 'clean') {
           // Verdict improved from suspicious → clean: clear the stale moderation flag
           console.log(`[vt:rescan] ${slug}: verdict improved to clean, clearing suspicious flag`)
           await ctx.runMutation(internal.skills.approveSkillByHashInternal, {
