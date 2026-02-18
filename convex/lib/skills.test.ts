@@ -195,3 +195,119 @@ describe('skills utils', () => {
     expect(a).toBe(b)
   })
 })
+
+describe('parseClawdisMetadata — env/deps/author/links (#350)', () => {
+  it('parses envVars from clawdis block', () => {
+    const frontmatter = parseFrontmatter(`---
+metadata:
+  clawdis:
+    envVars:
+      - name: ANTHROPIC_API_KEY
+        required: true
+        description: API key for Claude
+      - name: MAX_TURNS
+        required: false
+        description: Max turns per phase
+---`)
+    const meta = parseClawdisMetadata(frontmatter)
+    expect(meta?.envVars).toHaveLength(2)
+    expect(meta?.envVars?.[0]).toEqual({
+      name: 'ANTHROPIC_API_KEY',
+      required: true,
+      description: 'API key for Claude',
+    })
+    expect(meta?.envVars?.[1]?.required).toBe(false)
+  })
+
+  it('parses dependencies from clawdis block', () => {
+    const frontmatter = parseFrontmatter(`---
+metadata:
+  clawdis:
+    dependencies:
+      - name: securevibes
+        type: pip
+        version: ">=0.3.0"
+        url: https://pypi.org/project/securevibes/
+        repository: https://github.com/anshumanbh/securevibes
+---`)
+    const meta = parseClawdisMetadata(frontmatter)
+    expect(meta?.dependencies).toHaveLength(1)
+    expect(meta?.dependencies?.[0]).toEqual({
+      name: 'securevibes',
+      type: 'pip',
+      version: '>=0.3.0',
+      url: 'https://pypi.org/project/securevibes/',
+      repository: 'https://github.com/anshumanbh/securevibes',
+    })
+  })
+
+  it('parses author and links from clawdis block', () => {
+    const frontmatter = parseFrontmatter(`---
+metadata:
+  clawdis:
+    author: anshumanbh
+    links:
+      homepage: https://securevibes.ai
+      repository: https://github.com/anshumanbh/securevibes
+---`)
+    const meta = parseClawdisMetadata(frontmatter)
+    expect(meta?.author).toBe('anshumanbh')
+    expect(meta?.links?.homepage).toBe('https://securevibes.ai')
+    expect(meta?.links?.repository).toBe('https://github.com/anshumanbh/securevibes')
+  })
+
+  it('parses env/deps/author/links from top-level frontmatter (no clawdis block)', () => {
+    const frontmatter = parseFrontmatter(`---
+env:
+  - name: MY_API_KEY
+    required: true
+    description: Main API key
+dependencies:
+  - name: requests
+    type: pip
+author: someuser
+links:
+  homepage: https://example.com
+---`)
+    const meta = parseClawdisMetadata(frontmatter)
+    expect(meta?.envVars).toHaveLength(1)
+    expect(meta?.envVars?.[0]?.name).toBe('MY_API_KEY')
+    expect(meta?.dependencies).toHaveLength(1)
+    expect(meta?.author).toBe('someuser')
+    expect(meta?.links?.homepage).toBe('https://example.com')
+  })
+
+  it('handles string-only env arrays as required env vars', () => {
+    const frontmatter = parseFrontmatter(`---
+metadata:
+  clawdis:
+    envVars:
+      - API_KEY
+      - SECRET_TOKEN
+---`)
+    const meta = parseClawdisMetadata(frontmatter)
+    expect(meta?.envVars).toHaveLength(2)
+    expect(meta?.envVars?.[0]).toEqual({ name: 'API_KEY', required: true })
+  })
+
+  it('normalizes unknown dependency types to other', () => {
+    const frontmatter = parseFrontmatter(`---
+metadata:
+  clawdis:
+    dependencies:
+      - name: sometool
+        type: ruby
+---`)
+    const meta = parseClawdisMetadata(frontmatter)
+    expect(meta?.dependencies?.[0]?.type).toBe('other')
+  })
+
+  it('returns undefined when no declarations present', () => {
+    const frontmatter = parseFrontmatter(`---
+name: simple-skill
+description: A simple skill
+---`)
+    const meta = parseClawdisMetadata(frontmatter)
+    expect(meta).toBeUndefined()
+  })
+})

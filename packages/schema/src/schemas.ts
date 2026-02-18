@@ -287,6 +287,30 @@ export const ClawdisRequiresSchema = type({
 })
 export type ClawdisRequires = (typeof ClawdisRequiresSchema)[inferred]
 
+export const EnvVarDeclarationSchema = type({
+  name: 'string',
+  required: 'boolean?',
+  description: 'string?',
+})
+export type EnvVarDeclaration = (typeof EnvVarDeclarationSchema)[inferred]
+
+export const DependencyDeclarationSchema = type({
+  name: 'string',
+  type: '"pip"|"npm"|"brew"|"go"|"cargo"|"apt"|"other"',
+  version: 'string?',
+  url: 'string?',
+  repository: 'string?',
+})
+export type DependencyDeclaration = (typeof DependencyDeclarationSchema)[inferred]
+
+export const SkillLinksSchema = type({
+  homepage: 'string?',
+  repository: 'string?',
+  documentation: 'string?',
+  changelog: 'string?',
+})
+export type SkillLinks = (typeof SkillLinksSchema)[inferred]
+
 export const ClawdisSkillMetadataSchema = type({
   always: 'boolean?',
   skillKey: 'string?',
@@ -299,5 +323,9 @@ export const ClawdisSkillMetadataSchema = type({
   install: SkillInstallSpecSchema.array().optional(),
   nix: NixPluginSpecSchema.optional(),
   config: ClawdbotConfigSpecSchema.optional(),
+  envVars: EnvVarDeclarationSchema.array().optional(),
+  dependencies: DependencyDeclarationSchema.array().optional(),
+  author: 'string?',
+  links: SkillLinksSchema.optional(),
 })
 export type ClawdisSkillMetadata = (typeof ClawdisSkillMetadataSchema)[inferred]

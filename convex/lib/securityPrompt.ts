@@ -145,7 +145,7 @@ Flag when:
 - The number of required environment variables is high relative to the skill's complexity
 - The skill requires config paths that grant access to gateway auth, channel tokens, or tool policies
 - Environment variables named with patterns like SECRET, TOKEN, KEY, PASSWORD are required but not justified by the skill's purpose
-- The SKILL.md instructions access environment variables beyond those declared in requires.env or primaryEnv
+- The SKILL.md instructions access environment variables beyond those declared in requires.env, primaryEnv, or envVars
 
 ### 5. Persistence and privilege
 
