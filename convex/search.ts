@@ -238,8 +238,7 @@ export const hydrateResults = internalQuery({
         const skill = await ctx.db.get(embedding.skillId)
         if (!skill || skill.softDeletedAt) return null
         if (args.nonSuspiciousOnly && isSkillSuspicious(skill)) return null
-        const [version, ownerInfo] = await Promise.all([
-          ctx.db.get(embedding.versionId),
+        const [ownerInfo] = await Promise.all([
           getOwnerInfo(skill.ownerUserId),
         ])
         const publicSkill = toPublicSkill(skill)
@@ -247,7 +246,7 @@ export const hydrateResults = internalQuery({
         return {
           embeddingId,
           skill: publicSkill,
-          version,
+          version: null as Doc<'skillVersions'> | null,
           ownerHandle: ownerInfo.handle,
           owner: ownerInfo.owner,
         }
@@ -309,15 +308,12 @@ export const lexicalFallbackSkills = internalQuery({
 
     const entries = await Promise.all(
       matched.map(async (skill) => {
-        const [version, ownerInfo] = await Promise.all([
-          skill.latestVersionId ? ctx.db.get(skill.latestVersionId) : Promise.resolve(null),
-          getOwnerInfo(skill.ownerUserId),
-        ])
+        const ownerInfo = await getOwnerInfo(skill.ownerUserId)
         const publicSkill = toPublicSkill(skill)
         if (!publicSkill) return null
         return {
           skill: publicSkill,
-          version,
+          version: null as Doc<'skillVersions'> | null,
           ownerHandle: ownerInfo.handle,
           owner: ownerInfo.owner,
         }

@@ -510,7 +510,12 @@ type ManagementSkillEntry = {
 
 type BadgeKind = Doc<'skillBadges'>['kind']
 
-async function buildPublicSkillEntries(ctx: QueryCtx, skills: Doc<'skills'>[]) {
+async function buildPublicSkillEntries(
+  ctx: QueryCtx,
+  skills: Doc<'skills'>[],
+  opts?: { includeVersion?: boolean },
+) {
+  const includeVersion = opts?.includeVersion ?? true
   const ownerInfoCache = new Map<
     Id<'users'>,
     Promise<{ ownerHandle: string | null; owner: ReturnType<typeof toPublicUser> | null }>
@@ -542,7 +547,7 @@ async function buildPublicSkillEntries(ctx: QueryCtx, skills: Doc<'skills'>[]) {
   const entries = await Promise.all(
     skills.map(async (skill) => {
       const [latestVersionDoc, ownerInfo] = await Promise.all([
-        skill.latestVersionId ? ctx.db.get(skill.latestVersionId) : null,
+        includeVersion && skill.latestVersionId ? ctx.db.get(skill.latestVersionId) : null,
         getOwnerInfo(skill.ownerUserId),
       ])
       const badges = badgeMapBySkillId.get(skill._id) ?? {}
@@ -1614,8 +1619,9 @@ export const listPublicPageV2 = query({
           })
         : result.page
 
-    // Build the public skill entries (fetch latestVersion + ownerHandle)
-    const items = await buildPublicSkillEntries(ctx, filteredPage)
+    // Build the public skill entries — skip version doc reads to reduce bandwidth.
+    // Version data is only needed for detail pages, not the listing.
+    const items = await buildPublicSkillEntries(ctx, filteredPage, { includeVersion: false })
     return { ...result, page: items }
   },
 })
