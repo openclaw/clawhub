@@ -216,19 +216,15 @@ export const hydrateResults = internalQuery({
     const entries: Array<SkillSearchEntry | null> = await Promise.all(
       args.embeddingIds.map(async (embeddingId) => {
         // Use lightweight lookup table (~100 bytes) instead of full embedding doc (~12KB).
-        // Falls back to reading the full embedding doc for entries not yet backfilled.
         const lookup = await ctx.db
           .query('embeddingSkillMap')
           .withIndex('by_embedding', (q) => q.eq('embeddingId', embeddingId))
           .unique()
-        let skillId: Id<'skills'>
-        if (lookup) {
-          skillId = lookup.skillId
-        } else {
-          const embedding = await ctx.db.get(embeddingId)
-          if (!embedding) return null
-          skillId = embedding.skillId
-        }
+        // Fallback to full embedding doc for rows not yet backfilled.
+        const skillId = lookup
+          ? lookup.skillId
+          : await ctx.db.get(embeddingId).then((e) => e?.skillId)
+        if (!skillId) return null
         const skill = await ctx.db.get(skillId)
         if (!skill || skill.softDeletedAt) return null
         if (args.nonSuspiciousOnly && isSkillSuspicious(skill)) return null
