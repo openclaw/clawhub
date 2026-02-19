@@ -7,6 +7,19 @@ import { Agent, setGlobalDispatcher } from 'undici'
 import type { ArkValidator } from './schema/index.js'
 import { ApiRoutes, parseArk } from './schema/index.js'
 
+/**
+ * Joins a path onto a registry base URL, preserving the base's path component.
+ *
+ * `new URL('/api/v1/skills', 'http://host/base')` discards `/base` because
+ * the path is absolute. This helper normalises both sides so the result is
+ * `http://host/base/api/v1/skills`.
+ */
+export function registryUrl(path: string, registry: string): URL {
+  const base = registry.endsWith('/') ? registry : `${registry}/`
+  const relative = path.startsWith('/') ? path.slice(1) : path
+  return new URL(relative, base)
+}
+
 const REQUEST_TIMEOUT_MS = 15_000
 const REQUEST_TIMEOUT_SECONDS = Math.ceil(REQUEST_TIMEOUT_MS / 1000)
 const isBun = typeof process !== 'undefined' && Boolean(process.versions?.bun)
@@ -38,7 +51,7 @@ export async function apiRequest<T>(
   args: RequestArgs,
   schema?: ArkValidator<T>,
 ): Promise<T> {
-  const url = 'url' in args ? args.url : new URL(args.path, registry).toString()
+  const url = 'url' in args ? args.url : registryUrl(args.path, registry).toString()
   const json = await pRetry(
     async () => {
       if (isBun) {
@@ -83,7 +96,7 @@ export async function apiRequestForm<T>(
   args: FormRequestArgs,
   schema?: ArkValidator<T>,
 ): Promise<T> {
-  const url = 'url' in args ? args.url : new URL(args.path, registry).toString()
+  const url = 'url' in args ? args.url : registryUrl(args.path, registry).toString()
   const json = await pRetry(
     async () => {
       if (isBun) {
@@ -111,7 +124,7 @@ export async function apiRequestForm<T>(
 type TextRequestArgs = { path: string; token?: string } | { url: string; token?: string }
 
 export async function fetchText(registry: string, args: TextRequestArgs): Promise<string> {
-  const url = 'url' in args ? args.url : new URL(args.path, registry).toString()
+  const url = 'url' in args ? args.url : registryUrl(args.path, registry).toString()
   return pRetry(
     async () => {
       if (isBun) {
@@ -135,7 +148,7 @@ export async function downloadZip(
   registry: string,
   args: { slug: string; version?: string; token?: string },
 ) {
-  const url = new URL(ApiRoutes.download, registry)
+  const url = registryUrl(ApiRoutes.download, registry)
   url.searchParams.set('slug', args.slug)
   if (args.version) url.searchParams.set('version', args.version)
   return pRetry(
