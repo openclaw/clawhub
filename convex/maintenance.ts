@@ -1478,13 +1478,24 @@ export const backfillDenormalizedBadgesInternal = internalMutation({
         canonical[r.kind] = { byUserId: r.byUserId, at: r.at }
       }
 
-      // Compare with existing denormalized badges
-      const existing = skill.badges ?? {}
+      // Compare with existing denormalized badges (keys + values)
+      const existing = (skill.badges ?? {}) as Record<
+        string,
+        { byUserId?: Id<'users'>; at?: number } | undefined
+      >
+      const canonicalKeys = Object.keys(canonical)
+      const existingKeys = Object.keys(existing).filter((k) => existing[k] !== undefined)
       const needsPatch =
-        Object.keys(canonical).length !== Object.keys(existing).length ||
-        Object.keys(canonical).some(
-          (k) => !(existing as Record<string, unknown>)[k],
-        )
+        canonicalKeys.length !== existingKeys.length ||
+        canonicalKeys.some((k) => {
+          const current = existing[k]
+          const next = canonical[k]
+          return (
+            !current ||
+            current.byUserId !== next.byUserId ||
+            current.at !== next.at
+          )
+        })
 
       if (needsPatch) {
         await ctx.db.patch(skill._id, { badges: canonical })

@@ -668,9 +668,8 @@ async function removeSkillBadge(ctx: MutationCtx, skillId: Id<'skills'>, kind: B
   // Keep denormalized badges field on skill doc in sync
   const skill = await ctx.db.get(skillId)
   if (skill) {
-    const updatedBadges = { ...(skill.badges ?? {}) }
-    updatedBadges[kind] = undefined
-    await ctx.db.patch(skillId, { badges: updatedBadges })
+    const { [kind]: _, ...remainingBadges } = (skill.badges ?? {}) as Record<string, unknown>
+    await ctx.db.patch(skillId, { badges: remainingBadges })
   }
 }
 
