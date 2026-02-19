@@ -1451,6 +1451,58 @@ export const backfillEmbeddingSkillMapInternal = internalMutation({
   },
 })
 
+// Sync skillBadges table → denormalized skill.badges field.
+// Run after deploying the badge-read removal to ensure all skills
+// have up-to-date badges on the skill doc itself.
+export const backfillDenormalizedBadgesInternal = internalMutation({
+  args: {
+    cursor: v.optional(v.string()),
+    batchSize: v.optional(v.number()),
+  },
+  handler: async (ctx, args) => {
+    const batchSize = clampInt(args.batchSize ?? 100, 10, 200)
+    const { page, continueCursor, isDone } = await ctx.db
+      .query('skills')
+      .paginate({ cursor: args.cursor ?? null, numItems: batchSize })
+
+    let patched = 0
+    for (const skill of page) {
+      const records = await ctx.db
+        .query('skillBadges')
+        .withIndex('by_skill', (q) => q.eq('skillId', skill._id))
+        .take(10)
+
+      // Build canonical badge map from the table
+      const canonical: Record<string, { byUserId: Id<'users'>; at: number }> = {}
+      for (const r of records) {
+        canonical[r.kind] = { byUserId: r.byUserId, at: r.at }
+      }
+
+      // Compare with existing denormalized badges
+      const existing = skill.badges ?? {}
+      const needsPatch =
+        Object.keys(canonical).length !== Object.keys(existing).length ||
+        Object.keys(canonical).some(
+          (k) => !(existing as Record<string, unknown>)[k],
+        )
+
+      if (needsPatch) {
+        await ctx.db.patch(skill._id, { badges: canonical })
+        patched++
+      }
+    }
+
+    if (!isDone) {
+      await ctx.scheduler.runAfter(0, internal.maintenance.backfillDenormalizedBadgesInternal, {
+        cursor: continueCursor,
+        batchSize: args.batchSize,
+      })
+    }
+
+    return { patched, isDone, scanned: page.length }
+  },
+})
+
 function clampInt(value: number, min: number, max: number) {
   const rounded = Math.trunc(value)
   if (!Number.isFinite(rounded)) return min
