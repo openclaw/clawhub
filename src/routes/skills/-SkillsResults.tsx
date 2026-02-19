@@ -47,7 +47,6 @@ export function SkillsResults({
         <div className="grid">
           {sorted.map((entry) => {
             const skill = entry.skill
-            const isPlugin = Boolean(entry.latestVersion?.parsed?.clawdis?.nix?.plugin)
             const ownerHandle = entry.owner?.handle ?? entry.owner?.name ?? entry.ownerHandle ?? null
             const skillHref = buildSkillHref(skill, ownerHandle)
             return (
@@ -56,7 +55,6 @@ export function SkillsResults({
                 skill={skill}
                 href={skillHref}
                 badge={getSkillBadges(skill)}
-                chip={isPlugin ? 'Plugin bundle (nix)' : undefined}
                 summaryFallback="Agent-ready skill pack."
                 meta={
                   <div className="skill-card-footer-rows">
@@ -74,7 +72,6 @@ export function SkillsResults({
         <div className="skills-list">
           {sorted.map((entry) => {
             const skill = entry.skill
-            const isPlugin = Boolean(entry.latestVersion?.parsed?.clawdis?.nix?.plugin)
             const ownerHandle = entry.owner?.handle ?? entry.owner?.name ?? entry.ownerHandle ?? null
             const skillHref = buildSkillHref(skill, ownerHandle)
             return (
@@ -88,15 +85,11 @@ export function SkillsResults({
                         {badge}
                       </span>
                     ))}
-                    {isPlugin ? <span className="tag tag-accent tag-compact">Plugin bundle (nix)</span> : null}
                   </div>
                   <div className="skills-row-summary">{skill.summary ?? 'No summary provided.'}</div>
                   <div className="skills-row-owner">
                     <UserBadge user={entry.owner} fallbackHandle={ownerHandle} prefix="by" link={false} />
                   </div>
-                  {isPlugin ? (
-                    <div className="skills-row-meta">Bundle includes SKILL.md, CLI, and config.</div>
-                  ) : null}
                 </div>
                 <div className="skills-row-metrics">
                   <SkillMetricsRow stats={skill.stats} />
