@@ -1,5 +1,5 @@
 import { isCancel, select } from '@clack/prompts'
-import { apiRequest } from '../../http.js'
+import { apiRequest, registryUrl } from '../../http.js'
 import {
   ApiRoutes,
   ApiV1BanUserResponseSchema,
@@ -192,12 +192,12 @@ async function resolveUserIdentifier(
 }
 
 async function searchUsers(registry: string, token: string, query: string) {
-  const url = new URL(ApiRoutes.users, registry)
+  const url = registryUrl(ApiRoutes.users, registry)
   url.searchParams.set('q', query.trim())
   url.searchParams.set('limit', '10')
   const result = await apiRequest(
     registry,
-    { method: 'GET', path: `${url.pathname}?${url.searchParams.toString()}`, token },
+    { method: 'GET', url: url.toString(), token },
     ApiV1UserSearchResponseSchema,
   )
   return parseArk(ApiV1UserSearchResponseSchema, result, 'User search response')

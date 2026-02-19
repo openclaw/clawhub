@@ -1,7 +1,7 @@
 /* @vitest-environment node */
 
 import { describe, expect, it, vi } from 'vitest'
-import { apiRequest, apiRequestForm, downloadZip, fetchText } from './http'
+import { apiRequest, apiRequestForm, downloadZip, fetchText, registryUrl } from './http'
 import { ApiV1WhoamiResponseSchema } from './schema/index.js'
 
 function mockImmediateTimeouts() {
@@ -35,6 +35,42 @@ function createAbortingFetchMock() {
     })
   })
 }
+
+describe('registryUrl', () => {
+  it('works with a plain-origin registry (no base path)', () => {
+    expect(registryUrl('/api/v1/skills', 'https://clawhub.ai').toString()).toBe(
+      'https://clawhub.ai/api/v1/skills',
+    )
+  })
+
+  it('preserves the registry base path', () => {
+    const base = 'http://localhost:8081/custom/registry/path'
+    expect(registryUrl('/api/v1/skills', base).toString()).toBe(
+      'http://localhost:8081/custom/registry/path/api/v1/skills',
+    )
+  })
+
+  it('handles a trailing slash on the registry', () => {
+    const base = 'http://localhost:8081/custom/registry/path/'
+    expect(registryUrl('/api/v1/skills', base).toString()).toBe(
+      'http://localhost:8081/custom/registry/path/api/v1/skills',
+    )
+  })
+
+  it('handles paths without a leading slash', () => {
+    expect(registryUrl('api/v1/skills', 'https://clawhub.ai').toString()).toBe(
+      'https://clawhub.ai/api/v1/skills',
+    )
+  })
+
+  it('handles compound paths with encoded segments', () => {
+    const base = 'http://localhost:8081/base'
+    const path = `/api/v1/skills/${encodeURIComponent('my-skill')}/versions`
+    expect(registryUrl(path, base).toString()).toBe(
+      'http://localhost:8081/base/api/v1/skills/my-skill/versions',
+    )
+  })
+})
 
 describe('apiRequest', () => {
   it('adds bearer token and parses json', async () => {

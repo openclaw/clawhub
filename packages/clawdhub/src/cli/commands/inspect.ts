@@ -1,4 +1,4 @@
-import { apiRequest, fetchText } from '../../http.js'
+import { apiRequest, fetchText, registryUrl } from '../../http.js'
 import {
   ApiRoutes,
   ApiV1SkillResponseSchema,
@@ -78,7 +78,7 @@ export async function cmdInspect(opts: GlobalOpts, slug: string, options: Inspec
     let versionsList: { items?: unknown[]; nextCursor?: string | null } | null = null
     if (options.versions) {
       const limit = clampLimit(options.limit ?? 25, 25)
-      const url = new URL(`${ApiRoutes.skills}/${encodeURIComponent(trimmed)}/versions`, registry)
+      const url = registryUrl(`${ApiRoutes.skills}/${encodeURIComponent(trimmed)}/versions`, registry)
       url.searchParams.set('limit', String(limit))
       spinner.text = `Fetching versions (${limit})`
       versionsList = await apiRequest(
@@ -90,7 +90,7 @@ export async function cmdInspect(opts: GlobalOpts, slug: string, options: Inspec
 
     let fileContent: string | null = null
     if (options.file) {
-      const url = new URL(`${ApiRoutes.skills}/${encodeURIComponent(trimmed)}/file`, registry)
+      const url = registryUrl(`${ApiRoutes.skills}/${encodeURIComponent(trimmed)}/file`, registry)
       url.searchParams.set('path', options.file)
       if (options.version) {
         url.searchParams.set('version', options.version)
