@@ -1411,6 +1411,46 @@ export const nominateEmptySkillSpammers: ReturnType<typeof action> = action({
   },
 })
 
+// Backfill embeddingSkillMap from existing skillEmbeddings.
+// Run once after deploying the schema change:
+//   npx convex run maintenance:backfillEmbeddingSkillMapInternal --prod
+export const backfillEmbeddingSkillMapInternal = internalMutation({
+  args: {
+    cursor: v.optional(v.string()),
+    batchSize: v.optional(v.number()),
+  },
+  handler: async (ctx, args) => {
+    const batchSize = clampInt(args.batchSize ?? 200, 10, 500)
+    const { page, continueCursor, isDone } = await ctx.db
+      .query('skillEmbeddings')
+      .paginate({ cursor: args.cursor ?? null, numItems: batchSize })
+
+    let inserted = 0
+    for (const embedding of page) {
+      const existing = await ctx.db
+        .query('embeddingSkillMap')
+        .withIndex('by_embedding', (q) => q.eq('embeddingId', embedding._id))
+        .unique()
+      if (!existing) {
+        await ctx.db.insert('embeddingSkillMap', {
+          embeddingId: embedding._id,
+          skillId: embedding.skillId,
+        })
+        inserted++
+      }
+    }
+
+    if (!isDone) {
+      await ctx.scheduler.runAfter(0, internal.maintenance.backfillEmbeddingSkillMapInternal, {
+        cursor: continueCursor,
+        batchSize: args.batchSize,
+      })
+    }
+
+    return { inserted, isDone, scanned: page.length }
+  },
+})
+
 function clampInt(value: number, min: number, max: number) {
   const rounded = Math.trunc(value)
   if (!Number.isFinite(rounded)) return min

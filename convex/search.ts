@@ -3,7 +3,7 @@ import { internal } from './_generated/api'
 import type { Doc, Id } from './_generated/dataModel'
 import type { QueryCtx } from './_generated/server'
 import { action, internalQuery } from './_generated/server'
-import { getSkillBadgeMaps, isSkillHighlighted, type SkillBadgeMap } from './lib/badges'
+import { isSkillHighlighted } from './lib/badges'
 import { generateEmbedding } from './lib/embeddings'
 import { toPublicSkill, toPublicSoul, toPublicUser } from './lib/public'
 import { matchesExactTokens, tokenize } from './lib/searchText'
@@ -40,7 +40,7 @@ const SLUG_PREFIX_BOOST = 0.8
 const NAME_EXACT_BOOST = 1.1
 const NAME_PREFIX_BOOST = 0.6
 const POPULARITY_WEIGHT = 0.08
-const FALLBACK_SCAN_LIMIT = 1200
+const FALLBACK_SCAN_LIMIT = 500
 
 function getNextCandidateLimit(current: number, max: number) {
   const next = Math.min(current * 2, max)
@@ -149,21 +149,11 @@ export const searchSkills: ReturnType<typeof action> = action({
         results.map((result) => [result._id, result._score]),
       )
 
-      const badgeMapEntries = (await ctx.runQuery(internal.search.getSkillBadgeMapsInternal, {
-        skillIds: hydrated.map((entry) => entry.skill._id),
-      })) as Array<[Id<'skills'>, SkillBadgeMap]>
-      const badgeMapBySkillId = new Map(badgeMapEntries)
-      const hydratedWithBadges = hydrated.map((entry) => ({
-        ...entry,
-        skill: {
-          ...entry.skill,
-          badges: badgeMapBySkillId.get(entry.skill._id) ?? {},
-        },
-      }))
-
+      // Skills already have badges from their docs (via toPublicSkill).
+      // No need for a separate badge table lookup.
       const filtered = args.highlightedOnly
-        ? hydratedWithBadges.filter((entry) => isSkillHighlighted(entry.skill))
-        : hydratedWithBadges
+        ? hydrated.filter((entry) => isSkillHighlighted(entry.skill))
+        : hydrated
 
       exactMatches = filtered.filter((entry) =>
         matchesExactTokens(queryTokens, [
@@ -215,14 +205,6 @@ export const searchSkills: ReturnType<typeof action> = action({
   },
 })
 
-export const getBadgeMapsForSkills = internalQuery({
-  args: { skillIds: v.array(v.id('skills')) },
-  handler: async (ctx, args): Promise<Array<[Id<'skills'>, SkillBadgeMap]>> => {
-    const badgeMap = await getSkillBadgeMaps(ctx, args.skillIds)
-    return Array.from(badgeMap.entries())
-  },
-})
-
 export const hydrateResults = internalQuery({
   args: {
     embeddingIds: v.array(v.id('skillEmbeddings')),
@@ -233,14 +215,24 @@ export const hydrateResults = internalQuery({
 
     const entries: Array<SkillSearchEntry | null> = await Promise.all(
       args.embeddingIds.map(async (embeddingId) => {
-        const embedding = await ctx.db.get(embeddingId)
-        if (!embedding) return null
-        const skill = await ctx.db.get(embedding.skillId)
+        // Use lightweight lookup table (~100 bytes) instead of full embedding doc (~12KB).
+        // Falls back to reading the full embedding doc for entries not yet backfilled.
+        const lookup = await ctx.db
+          .query('embeddingSkillMap')
+          .withIndex('by_embedding', (q) => q.eq('embeddingId', embeddingId))
+          .unique()
+        let skillId: Id<'skills'>
+        if (lookup) {
+          skillId = lookup.skillId
+        } else {
+          const embedding = await ctx.db.get(embeddingId)
+          if (!embedding) return null
+          skillId = embedding.skillId
+        }
+        const skill = await ctx.db.get(skillId)
         if (!skill || skill.softDeletedAt) return null
         if (args.nonSuspiciousOnly && isSkillSuspicious(skill)) return null
-        const [ownerInfo] = await Promise.all([
-          getOwnerInfo(skill.ownerUserId),
-        ])
+        const ownerInfo = await getOwnerInfo(skill.ownerUserId)
         const publicSkill = toPublicSkill(skill)
         if (!publicSkill) return null
         return {
@@ -322,21 +314,11 @@ export const lexicalFallbackSkills = internalQuery({
     const validEntries = entries.filter((entry): entry is SkillSearchEntry => entry !== null)
     if (validEntries.length === 0) return []
 
-    const badgeMap = await getSkillBadgeMaps(
-      ctx,
-      validEntries.map((entry) => entry.skill._id),
-    )
-    const withBadges = validEntries.map((entry) => ({
-      ...entry,
-      skill: {
-        ...entry.skill,
-        badges: badgeMap.get(entry.skill._id) ?? {},
-      },
-    }))
-
+    // Skills already have badges from their docs (via toPublicSkill).
+    // No need for a separate badge table lookup.
     const filtered = args.highlightedOnly
-      ? withBadges.filter((entry) => isSkillHighlighted(entry.skill))
-      : withBadges
+      ? validEntries.filter((entry) => isSkillHighlighted(entry.skill))
+      : validEntries
     return filtered.slice(0, limit)
   },
 })
@@ -433,14 +415,6 @@ export const hydrateSoulResults = internalQuery({
     }
 
     return entries
-  },
-})
-
-export const getSkillBadgeMapsInternal = internalQuery({
-  args: { skillIds: v.array(v.id('skills')) },
-  handler: async (ctx, args) => {
-    const badgeMap = await getSkillBadgeMaps(ctx, args.skillIds)
-    return Array.from(badgeMap.entries())
   },
 })
 
