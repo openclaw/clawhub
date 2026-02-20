@@ -17,7 +17,6 @@ import {
   getSkillBadgeMap,
   getSkillBadgeMaps,
   isSkillHighlighted,
-  type SkillBadgeMap,
 } from './lib/badges'
 import { generateChangelogPreview as buildChangelogPreview } from './lib/changelog'
 import {
@@ -61,7 +60,6 @@ const MAX_LIST_LIMIT = 50
 const MAX_PUBLIC_LIST_LIMIT = 200
 const MAX_LIST_BULK_LIMIT = 200
 const MAX_LIST_TAKE = 1000
-const MAX_BADGE_LOOKUP_SKILLS = 200
 const HARD_DELETE_BATCH_SIZE = 100
 const HARD_DELETE_VERSION_BATCH_SIZE = 10
 const HARD_DELETE_LEADERBOARD_BATCH_SIZE = 25
@@ -510,18 +508,16 @@ type ManagementSkillEntry = {
 
 type BadgeKind = Doc<'skillBadges'>['kind']
 
-async function buildPublicSkillEntries(ctx: QueryCtx, skills: Doc<'skills'>[]) {
+async function buildPublicSkillEntries(
+  ctx: QueryCtx,
+  skills: Doc<'skills'>[],
+  opts?: { includeVersion?: boolean },
+) {
+  const includeVersion = opts?.includeVersion ?? true
   const ownerInfoCache = new Map<
     Id<'users'>,
     Promise<{ ownerHandle: string | null; owner: ReturnType<typeof toPublicUser> | null }>
   >()
-  const badgeMapBySkillId: Map<Id<'skills'>, SkillBadgeMap> = skills.length <=
-  MAX_BADGE_LOOKUP_SKILLS
-    ? await getSkillBadgeMaps(
-        ctx,
-        skills.map((skill) => skill._id),
-      )
-    : new Map()
 
   const getOwnerInfo = (ownerUserId: Id<'users'>) => {
     const cached = ownerInfoCache.get(ownerUserId)
@@ -542,11 +538,10 @@ async function buildPublicSkillEntries(ctx: QueryCtx, skills: Doc<'skills'>[]) {
   const entries = await Promise.all(
     skills.map(async (skill) => {
       const [latestVersionDoc, ownerInfo] = await Promise.all([
-        skill.latestVersionId ? ctx.db.get(skill.latestVersionId) : null,
+        includeVersion && skill.latestVersionId ? ctx.db.get(skill.latestVersionId) : null,
         getOwnerInfo(skill.ownerUserId),
       ])
-      const badges = badgeMapBySkillId.get(skill._id) ?? {}
-      const publicSkill = toPublicSkill({ ...skill, badges })
+      const publicSkill = toPublicSkill(skill)
       if (!publicSkill) return null
       const latestVersion = toPublicSkillListVersion(latestVersionDoc)
       return {
@@ -645,14 +640,21 @@ async function upsertSkillBadge(
     .unique()
   if (existing) {
     await ctx.db.patch(existing._id, { byUserId: userId, at })
-    return existing._id
+  } else {
+    await ctx.db.insert('skillBadges', {
+      skillId,
+      kind,
+      byUserId: userId,
+      at,
+    })
   }
-  return ctx.db.insert('skillBadges', {
-    skillId,
-    kind,
-    byUserId: userId,
-    at,
-  })
+  // Keep denormalized badges field on skill doc in sync
+  const skill = await ctx.db.get(skillId)
+  if (skill) {
+    await ctx.db.patch(skillId, {
+      badges: { ...(skill.badges ?? {}), [kind]: { byUserId: userId, at } },
+    })
+  }
 }
 
 async function removeSkillBadge(ctx: MutationCtx, skillId: Id<'skills'>, kind: BadgeKind) {
@@ -662,6 +664,12 @@ async function removeSkillBadge(ctx: MutationCtx, skillId: Id<'skills'>, kind: B
     .unique()
   if (existing) {
     await ctx.db.delete(existing._id)
+  }
+  // Keep denormalized badges field on skill doc in sync
+  const skill = await ctx.db.get(skillId)
+  if (skill) {
+    const { [kind]: _, ...remainingBadges } = (skill.badges ?? {}) as Record<string, unknown>
+    await ctx.db.patch(skillId, { badges: remainingBadges })
   }
 }
 
@@ -1614,8 +1622,9 @@ export const listPublicPageV2 = query({
           })
         : result.page
 
-    // Build the public skill entries (fetch latestVersion + ownerHandle)
-    const items = await buildPublicSkillEntries(ctx, filteredPage)
+    // Build the public skill entries — skip version doc reads to reduce bandwidth.
+    // Version data is only needed for detail pages, not the listing.
+    const items = await buildPublicSkillEntries(ctx, filteredPage, { includeVersion: false })
     return { ...result, page: items }
   },
 })
@@ -3741,6 +3750,8 @@ export const insertVersion = internalMutation({
       visibility: embeddingVisibilityFor(true, isApproved),
       updatedAt: now,
     })
+    // Lightweight lookup so search hydration can skip reading the 12KB embedding doc
+    await ctx.db.insert('embeddingSkillMap', { embeddingId, skillId: skill._id })
 
     if (latestBefore) {
       const previousEmbedding = await ctx.db

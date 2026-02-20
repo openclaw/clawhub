@@ -4,9 +4,8 @@ import { describe, expect, it, vi } from 'vitest'
 import { tokenize } from './lib/searchText'
 import { __test, hydrateResults, lexicalFallbackSkills, searchSkills } from './search'
 
-const { generateEmbeddingMock, getSkillBadgeMapsMock } = vi.hoisted(() => ({
+const { generateEmbeddingMock } = vi.hoisted(() => ({
   generateEmbeddingMock: vi.fn(),
-  getSkillBadgeMapsMock: vi.fn(),
 }))
 
 vi.mock('./lib/embeddings', () => ({
@@ -14,7 +13,6 @@ vi.mock('./lib/embeddings', () => ({
 }))
 
 vi.mock('./lib/badges', () => ({
-  getSkillBadgeMaps: getSkillBadgeMapsMock,
   isSkillHighlighted: (skill: { badges?: Record<string, unknown> }) =>
     Boolean(skill.badges?.highlighted),
 }))
@@ -50,9 +48,8 @@ describe('search helpers', () => {
     ]
     const runQuery = vi
       .fn()
-      .mockResolvedValueOnce([])
-      .mockResolvedValueOnce([])
-      .mockResolvedValueOnce(fallback)
+      .mockResolvedValueOnce([]) // hydrateResults
+      .mockResolvedValueOnce(fallback) // lexicalFallbackSkills
 
     const result = await searchSkillsHandler(
       {
@@ -71,18 +68,15 @@ describe('search helpers', () => {
   })
 
   it('applies highlightedOnly filtering in lexical fallback', async () => {
-    const highlighted = makeSkillDoc({
-      id: 'skills:hl',
-      slug: 'orf-highlighted',
-      displayName: 'ORF Highlighted',
-    })
+    const highlighted = {
+      ...makeSkillDoc({
+        id: 'skills:hl',
+        slug: 'orf-highlighted',
+        displayName: 'ORF Highlighted',
+      }),
+      badges: { highlighted: { byUserId: 'users:mod', at: 1 } },
+    }
     const plain = makeSkillDoc({ id: 'skills:plain', slug: 'orf-plain', displayName: 'ORF Plain' })
-    getSkillBadgeMapsMock.mockResolvedValueOnce(
-      new Map([
-        ['skills:hl', { highlighted: { byUserId: 'users:mod', at: 1 } }],
-        ['skills:plain', {}],
-      ]),
-    )
 
     const result = await lexicalFallbackSkillsHandler(
       makeLexicalCtx({
@@ -104,12 +98,6 @@ describe('search helpers', () => {
       moderationFlags: ['flagged.suspicious'],
     })
     const clean = makeSkillDoc({ id: 'skills:clean', slug: 'orf-clean', displayName: 'ORF Clean' })
-    getSkillBadgeMapsMock.mockResolvedValueOnce(
-      new Map([
-        ['skills:suspicious', {}],
-        ['skills:clean', {}],
-      ]),
-    )
 
     const result = await lexicalFallbackSkillsHandler(
       makeLexicalCtx({
@@ -125,7 +113,6 @@ describe('search helpers', () => {
 
   it('includes exact slug match from by_slug even when recent scan is empty', async () => {
     const exactSlugSkill = makeSkillDoc({ id: 'skills:orf', slug: 'orf', displayName: 'ORF' })
-    getSkillBadgeMapsMock.mockResolvedValueOnce(new Map([['skills:orf', {}]]))
     const ctx = makeLexicalCtx({
       exactSlugSkill,
       recentSkills: [],
@@ -197,9 +184,8 @@ describe('search helpers', () => {
 
     const runQuery = vi
       .fn()
-      .mockResolvedValueOnce(vectorEntries)
-      .mockResolvedValueOnce([])
-      .mockResolvedValueOnce(fallbackEntries)
+      .mockResolvedValueOnce(vectorEntries) // hydrateResults
+      .mockResolvedValueOnce(fallbackEntries) // lexicalFallbackSkills
 
     const result = await searchSkillsHandler(
       {
@@ -237,6 +223,9 @@ describe('search helpers', () => {
             if (id === 'skillVersions:1') return { _id: 'skillVersions:1', version: '1.0.0' }
             return null
           }),
+          query: vi.fn(() => ({
+            withIndex: () => ({ unique: vi.fn().mockResolvedValue(null) }),
+          })),
         },
       },
       { embeddingIds: ['skillEmbeddings:1'], nonSuspiciousOnly: true },

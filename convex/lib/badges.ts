@@ -35,7 +35,7 @@ export async function getSkillBadgeMap(
   const records = await ctx.db
     .query('skillBadges')
     .withIndex('by_skill', (q) => q.eq('skillId', skillId))
-    .collect()
+    .take(10)
   return buildBadgeMap(records)
 }
 
