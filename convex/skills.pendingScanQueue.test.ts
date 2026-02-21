@@ -141,6 +141,49 @@ describe('skills.getPendingScanSkillsInternal', () => {
     expect(result).toHaveLength(1)
     expect(result[0]?.skillId).toBe('skills:recently-checked')
   })
+
+  it('does not clamp exhaustive mode to 100 records', async () => {
+    const allSkills = Array.from({ length: 150 }, (_, i) =>
+      makeSkill(`skills:bulk-${i}`, `skillVersions:bulk-${i}`, 'scanner.vt.pending'),
+    )
+    const versions = new Map<string, unknown>(
+      allSkills.map((skill) => {
+        const versionId = skill.latestVersionId as string
+        return [versionId, { _id: versionId, sha256hash: `${String(versionId).slice(-8)}${'f'.repeat(56)}` }]
+      }),
+    )
+
+    const withIndex = vi.fn(
+      (
+        indexName: string,
+        builder: (q: { eq: (field: string, value: unknown) => unknown }) => unknown,
+      ) => {
+        builder({ eq: () => ({}) })
+        if (indexName !== 'by_active_updated') throw new Error(`unexpected index ${indexName}`)
+        return {
+          collect: async () => allSkills,
+        }
+      },
+    )
+
+    const ctx = {
+      db: {
+        query: vi.fn((table: string) => {
+          if (table !== 'skills') throw new Error(`unexpected table ${table}`)
+          return { withIndex }
+        }),
+        get: vi.fn(async (id: string) => versions.get(id) ?? null),
+      },
+    }
+
+    const result = await getPendingScanSkillsHandler(ctx, {
+      limit: 10000,
+      exhaustive: true,
+      skipRecentMinutes: 0,
+    })
+
+    expect(result).toHaveLength(150)
+  })
 })
 
 function makeSkill(

@@ -1762,8 +1762,8 @@ export const getPendingScanSkillsInternal = internalQuery({
     exhaustive: v.optional(v.boolean()),
   },
   handler: async (ctx, args) => {
-    const limit = clampInt(args.limit ?? 10, 1, 100)
     const exhaustive = args.exhaustive ?? false
+    const limit = exhaustive ? Math.max(1, Math.floor(args.limit ?? 10000)) : clampInt(args.limit ?? 10, 1, 100)
     const skipRecentMinutes = exhaustive ? 0 : (args.skipRecentMinutes ?? 60)
     const skipThreshold = Date.now() - skipRecentMinutes * 60 * 1000
 
