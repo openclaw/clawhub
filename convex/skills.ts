@@ -1756,19 +1756,47 @@ export const getSkillByIdInternal = internalQuery({
 })
 
 export const getPendingScanSkillsInternal = internalQuery({
-  args: { limit: v.optional(v.number()), skipRecentMinutes: v.optional(v.number()) },
+  args: {
+    limit: v.optional(v.number()),
+    skipRecentMinutes: v.optional(v.number()),
+    exhaustive: v.optional(v.boolean()),
+  },
   handler: async (ctx, args) => {
-    const limit = clampInt(args.limit ?? 10, 1, 100)
-    const skipRecentMinutes = args.skipRecentMinutes ?? 60
+    const exhaustive = args.exhaustive ?? false
+    const limit = exhaustive ? Math.max(1, Math.floor(args.limit ?? 10000)) : clampInt(args.limit ?? 10, 1, 100)
+    const skipRecentMinutes = exhaustive ? 0 : (args.skipRecentMinutes ?? 60)
     const skipThreshold = Date.now() - skipRecentMinutes * 60 * 1000
 
-    // Use an indexed query and bounded scan to avoid full-table reads under spam/high volume.
-    const poolSize = Math.min(Math.max(limit * 20, 200), 1000)
-    const allSkills = await ctx.db
-      .query('skills')
-      .withIndex('by_active_updated', (q) => q.eq('softDeletedAt', undefined))
-      .order('desc')
-      .take(poolSize)
+    let allSkills: Doc<'skills'>[] = []
+    if (exhaustive) {
+      // Used by manual/backfill tooling where fairness matters more than query cost.
+      allSkills = await ctx.db
+        .query('skills')
+        .withIndex('by_active_updated', (q) => q.eq('softDeletedAt', undefined))
+        .collect()
+    } else {
+      // Mix "most recently updated" with "oldest created" slices so older pending
+      // items don't starve behind high-churn records.
+      const poolSize = Math.min(Math.max(limit * 20, 200), 1000)
+      const [recentSkills, oldestSkills] = await Promise.all([
+        ctx.db
+          .query('skills')
+          .withIndex('by_active_updated', (q) => q.eq('softDeletedAt', undefined))
+          .order('desc')
+          .take(poolSize),
+        ctx.db
+          .query('skills')
+          .withIndex('by_active_created', (q) => q.eq('softDeletedAt', undefined))
+          .order('asc')
+          .take(poolSize),
+      ])
+
+      const deduped = new Map<Id<'skills'>, Doc<'skills'>>()
+      for (const skill of [...recentSkills, ...oldestSkills]) {
+        deduped.set(skill._id, skill)
+      }
+      allSkills = [...deduped.values()]
+    }
 
     const candidates = allSkills.filter((skill) => {
       const reason = skill.moderationReason
@@ -1783,10 +1811,11 @@ export const getPendingScanSkillsInternal = internalQuery({
       )
     })
 
-    // Filter out recently checked skills
-    const skills = candidates.filter(
-      (s) => !s.scanLastCheckedAt || s.scanLastCheckedAt < skipThreshold,
-    )
+    // Filter out recently checked skills unless caller explicitly disables recency filtering.
+    const skills =
+      skipRecentMinutes <= 0
+        ? candidates
+        : candidates.filter((s) => !s.scanLastCheckedAt || s.scanLastCheckedAt < skipThreshold)
 
     // Shuffle and take the requested limit (Fisher-Yates)
     for (let i = skills.length - 1; i > 0; i--) {
@@ -1802,10 +1831,13 @@ export const getPendingScanSkillsInternal = internalQuery({
       checkCount: number
     }> = []
 
+    const FINAL_VT_STATUSES = new Set(['clean', 'malicious', 'suspicious'])
     for (const skill of selected) {
       const version = skill.latestVersionId ? await ctx.db.get(skill.latestVersionId) : null
-      // Skip skills where version already has vtAnalysis or lacks sha256hash
-      if (version?.vtAnalysis || !version?.sha256hash) continue
+      if (!version?.sha256hash) continue
+      const vtStatus = version.vtAnalysis?.status?.trim().toLowerCase()
+      // Keep retrying unresolved VT results (pending/stale/error), but skip finalized outcomes.
+      if (vtStatus && FINAL_VT_STATUSES.has(vtStatus)) continue
       results.push({
         skillId: skill._id,
         versionId: version?._id ?? null,
