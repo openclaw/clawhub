@@ -2,7 +2,7 @@ import { spawnSync } from 'node:child_process'
 import { mkdtemp, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import pRetry, { AbortError } from 'p-retry'
+import pRetry, { AbortError, type Options as PRetryOptions } from 'p-retry'
 import { Agent, setGlobalDispatcher } from 'undici'
 import type { ArkValidator } from './schema/index.js'
 import { ApiRoutes, parseArk } from './schema/index.js'
@@ -20,6 +20,25 @@ if (typeof process !== 'undefined' && process.versions?.node) {
     )
   } catch {
     // ignore dispatcher setup failures in non-node runtimes
+  }
+}
+
+/**
+ * Create pRetry options with exponential backoff for rate limiting (429) and server errors (5xx).
+ * Uses exponential backoff starting at 1s, doubling each retry, with random jitter.
+ */
+function createRetryOptions(operationName: string): PRetryOptions {
+  return {
+    retries: 2,
+    minTimeout: 1000,
+    maxTimeout: 8000,
+    factor: 2,
+    randomize: true,
+    onFailedAttempt: (error) => {
+      console.error(
+        `[@clawdhub] ${operationName} failed (attempt ${error.attemptNumber}/${error.retriesLeft + error.attemptNumber}): ${error.message}`
+      )
+    },
   }
 }
 
@@ -62,7 +81,7 @@ export async function apiRequest<T>(
       }
       return (await response.json()) as unknown
     },
-    { retries: 2 },
+    createRetryOptions('apiRequest'),
   )
   if (schema) return parseArk(schema, json, 'API response')
   return json as T
@@ -102,7 +121,7 @@ export async function apiRequestForm<T>(
       }
       return (await response.json()) as unknown
     },
-    { retries: 2 },
+    createRetryOptions('apiRequestForm'),
   )
   if (schema) return parseArk(schema, json, 'API response')
   return json as T
@@ -127,7 +146,7 @@ export async function fetchText(registry: string, args: TextRequestArgs): Promis
       }
       return text
     },
-    { retries: 2 },
+    createRetryOptions('fetchText'),
   )
 }
 
@@ -153,7 +172,7 @@ export async function downloadZip(
       }
       return new Uint8Array(await response.arrayBuffer())
     },
-    { retries: 2 },
+    createRetryOptions('downloadZip'),
   )
 }
 
