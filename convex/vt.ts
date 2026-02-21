@@ -672,6 +672,8 @@ export const backfillPendingScans = internalAction({
       internal.skills.getPendingScanSkillsInternal,
       {
         limit: 10000,
+        exhaustive: true,
+        skipRecentMinutes: 0,
       },
     )
 
