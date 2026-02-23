@@ -90,7 +90,7 @@ export async function apiRequest<T>(
   args: RequestArgs,
   schema?: ArkValidator<T>,
 ): Promise<T> {
-  const url = 'url' in args ? args.url : new URL(args.path, registry).toString()
+  const url = 'url' in args ? args.url : registryUrl(args.path, registry).toString()
   const json = await runWithRetries(
     async () => {
       if (isBun) {
@@ -134,7 +134,7 @@ export async function apiRequestForm<T>(
   args: FormRequestArgs,
   schema?: ArkValidator<T>,
 ): Promise<T> {
-  const url = 'url' in args ? args.url : new URL(args.path, registry).toString()
+  const url = 'url' in args ? args.url : registryUrl(args.path, registry).toString()
   const json = await runWithRetries(
     async () => {
       if (isBun) {
@@ -161,7 +161,7 @@ export async function apiRequestForm<T>(
 type TextRequestArgs = { path: string; token?: string } | { url: string; token?: string }
 
 export async function fetchText(registry: string, args: TextRequestArgs): Promise<string> {
-  const url = 'url' in args ? args.url : new URL(args.path, registry).toString()
+  const url = 'url' in args ? args.url : registryUrl(args.path, registry).toString()
   return runWithRetries(
     async () => {
       if (isBun) {
@@ -184,7 +184,7 @@ export async function downloadZip(
   registry: string,
   args: { slug: string; version?: string; token?: string },
 ) {
-  const url = new URL(ApiRoutes.download, registry)
+  const url = registryUrl(ApiRoutes.download, registry)
   url.searchParams.set('slug', args.slug)
   if (args.version) url.searchParams.set('version', args.version)
   return runWithRetries(

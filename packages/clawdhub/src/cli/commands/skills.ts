@@ -1,7 +1,7 @@
 import { mkdir, rm, stat } from 'node:fs/promises'
 import { join } from 'node:path'
 import semver from 'semver'
-import { apiRequest, downloadZip } from '../../http.js'
+import { apiRequest, downloadZip, registryUrl } from '../../http.js'
 import {
   ApiRoutes,
   ApiV1SearchResponseSchema,
@@ -43,7 +43,7 @@ export async function cmdSearch(opts: GlobalOpts, query: string, limit?: number)
   const registry = await getRegistry(opts, { cache: true })
   const spinner = createSpinner('Searching')
   try {
-    const url = new URL(ApiRoutes.search, registry)
+    const url = registryUrl(ApiRoutes.search, registry)
     url.searchParams.set('q', query)
     if (typeof limit === 'number' && Number.isFinite(limit)) {
       url.searchParams.set('limit', String(limit))
@@ -363,7 +363,7 @@ export async function cmdExplore(
   const registry = await getRegistry(opts, { cache: true })
   const spinner = createSpinner('Fetching latest skills')
   try {
-    const url = new URL(ApiRoutes.skills, registry)
+    const url = registryUrl(ApiRoutes.skills, registry)
     const boundedLimit = clampLimit(options.limit ?? 25)
     const { apiSort } = resolveExploreSort(options.sort)
     url.searchParams.set('limit', String(boundedLimit))
@@ -465,7 +465,7 @@ function resolveExploreSort(raw?: string): { sort: ExploreSort; apiSort: ApiExpl
 }
 
 async function resolveSkillVersion(registry: string, slug: string, hash: string, token?: string) {
-  const url = new URL(ApiRoutes.resolve, registry)
+  const url = registryUrl(ApiRoutes.resolve, registry)
   url.searchParams.set('slug', slug)
   url.searchParams.set('hash', hash)
   return apiRequest(
