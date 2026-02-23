@@ -48,6 +48,12 @@ if (typeof process !== 'undefined' && process.versions?.node) {
   }
 }
 
+export function registryUrl(path: string, registry: string): URL {
+  const base = registry.endsWith('/') ? registry : `${registry}/`
+  const relative = path.startsWith('/') ? path.slice(1) : path
+  return new URL(relative, base)
+}
+
 type RequestArgs =
   | { method: 'GET' | 'POST' | 'DELETE'; path: string; token?: string; body?: unknown }
   | { method: 'GET' | 'POST' | 'DELETE'; url: string; token?: string; body?: unknown }
