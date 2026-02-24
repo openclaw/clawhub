@@ -65,7 +65,7 @@ curl -X POST https://governance.taskhawktech.com/signup \
   -H "Content-Type: application/json" \
   -d '{"agent_id": "my-agent-v1"}'
 
-# Returns: {"api_key": "kvrs_...", "tier": "free", "calls_remaining": 100}
+# Returns: {"api_key": "kvrs_...", "tier": "free", "monthly_limit": 100}
 ```
 
 ```bash
@@ -79,7 +79,7 @@ curl -X POST https://governance.taskhawktech.com/governance/verify \
     "agent_id": "my-agent-v1"
   }'
 
-# Returns: {"decision": "ALLOW", "release_token": "...", "evidence_hash": "sha256:..."}
+# Returns: {"decision": "ALLOW", "release_token": "...", "provenance_hash": "sha256:...", "epoch": 1920}
 # Present the release_token to any service. They verify it without calling us.
 ```
 
@@ -90,9 +90,9 @@ pip install kevros
 ```
 
 ```python
-from kevros import KevrosClient
+from kevros_governance import GovernanceClient
 
-client = KevrosClient(api_key="kvrs_...")
+client = GovernanceClient(agent_id="my-agent")  # auto-signs up if no key
 
 # Precision decision
 result = client.verify(
@@ -100,8 +100,8 @@ result = client.verify(
     action_payload={"service": "api-gateway", "env": "production"},
     agent_id="my-deploy-agent"
 )
-print(result["decision"])       # "ALLOW" — deterministic, signed
-print(result["release_token"])  # Present this to prove authorization
+print(result.decision)       # "ALLOW" — deterministic, signed
+print(result.release_token)  # Present this to prove authorization
 ```
 
 ## x402: Wallet Is Identity
