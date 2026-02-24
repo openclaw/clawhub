@@ -3,6 +3,7 @@ import type { RefObject } from 'react'
 import { SkillCard } from '../../components/SkillCard'
 import { SkillMetricsRow, SkillStatsTripletLine } from '../../components/SkillStats'
 import { UserBadge } from '../../components/UserBadge'
+import { getPlatformLabels } from '../../components/skillDetailUtils'
 import { getSkillBadges } from '../../lib/badges'
 import { buildSkillHref, type SkillListEntry } from './-types'
 
@@ -47,7 +48,9 @@ export function SkillsResults({
         <div className="grid">
           {sorted.map((entry) => {
             const skill = entry.skill
-            const isPlugin = Boolean(entry.latestVersion?.parsed?.clawdis?.nix?.plugin)
+            const clawdis = entry.latestVersion?.parsed?.clawdis
+            const isPlugin = Boolean(clawdis?.nix?.plugin)
+            const platforms = getPlatformLabels(clawdis?.os, clawdis?.nix?.systems)
             const ownerHandle = entry.owner?.handle ?? entry.owner?.name ?? entry.ownerHandle ?? null
             const skillHref = buildSkillHref(skill, ownerHandle)
             return (
@@ -57,6 +60,7 @@ export function SkillsResults({
                 href={skillHref}
                 badge={getSkillBadges(skill)}
                 chip={isPlugin ? 'Plugin bundle (nix)' : undefined}
+                platformLabels={platforms.length ? platforms : undefined}
                 summaryFallback="Agent-ready skill pack."
                 meta={
                   <div className="skill-card-footer-rows">
@@ -74,7 +78,9 @@ export function SkillsResults({
         <div className="skills-list">
           {sorted.map((entry) => {
             const skill = entry.skill
-            const isPlugin = Boolean(entry.latestVersion?.parsed?.clawdis?.nix?.plugin)
+            const clawdis = entry.latestVersion?.parsed?.clawdis
+            const isPlugin = Boolean(clawdis?.nix?.plugin)
+            const platforms = getPlatformLabels(clawdis?.os, clawdis?.nix?.systems)
             const ownerHandle = entry.owner?.handle ?? entry.owner?.name ?? entry.ownerHandle ?? null
             const skillHref = buildSkillHref(skill, ownerHandle)
             return (
@@ -89,6 +95,9 @@ export function SkillsResults({
                       </span>
                     ))}
                     {isPlugin ? <span className="tag tag-accent tag-compact">Plugin bundle (nix)</span> : null}
+                    {platforms.map((label) => (
+                      <span key={label} className="tag tag-compact">{label}</span>
+                    ))}
                   </div>
                   <div className="skills-row-summary">{skill.summary ?? 'No summary provided.'}</div>
                   <div className="skills-row-owner">

@@ -65,7 +65,7 @@ Notes:
 Response:
 
 ```json
-{ "items": [{ "slug": "gifgrep", "displayName": "GifGrep", "summary": "…", "tags": { "latest": "1.2.3" }, "stats": {}, "createdAt": 0, "updatedAt": 0, "latestVersion": { "version": "1.2.3", "createdAt": 0, "changelog": "…" } }], "nextCursor": null }
+{ "items": [{ "slug": "gifgrep", "displayName": "GifGrep", "summary": "…", "tags": { "latest": "1.2.3" }, "stats": {}, "createdAt": 0, "updatedAt": 0, "latestVersion": { "version": "1.2.3", "createdAt": 0, "changelog": "…" }, "metadata": { "os": ["macos"], "systems": ["aarch64-darwin"] } }], "nextCursor": null }
 ```
 
 ### `GET /api/v1/skills/{slug}`
@@ -73,8 +73,14 @@ Response:
 Response:
 
 ```json
-{ "skill": { "slug": "gifgrep", "displayName": "GifGrep", "summary": "…", "tags": { "latest": "1.2.3" }, "stats": {}, "createdAt": 0, "updatedAt": 0 }, "latestVersion": { "version": "1.2.3", "createdAt": 0, "changelog": "…" }, "owner": { "handle": "steipete", "displayName": "Peter", "image": null } }
+{ "skill": { "slug": "gifgrep", "displayName": "GifGrep", "summary": "…", "tags": { "latest": "1.2.3" }, "stats": {}, "createdAt": 0, "updatedAt": 0 }, "latestVersion": { "version": "1.2.3", "createdAt": 0, "changelog": "…" }, "metadata": { "os": ["macos"], "systems": ["aarch64-darwin"] }, "owner": { "handle": "steipete", "displayName": "Peter", "image": null } }
 ```
+
+Notes:
+
+- `metadata.os`: OS restrictions declared in skill frontmatter (e.g. `["macos"]`, `["linux"]`). `null` if not declared.
+- `metadata.systems`: Nix system targets (e.g. `["aarch64-darwin", "x86_64-linux"]`). `null` if not declared.
+- `metadata` is `null` if the skill has no platform metadata.
 
 ### `GET /api/v1/skills/{slug}/versions`
 

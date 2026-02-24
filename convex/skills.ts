@@ -495,8 +495,10 @@ type PublicSkillListVersion = Pick<
 > & {
   parsed?: {
     clawdis?: {
+      os?: string[]
       nix?: {
         plugin?: boolean
+        systems?: string[]
       }
     }
   }

@@ -10,8 +10,10 @@ export type SkillListEntry = {
     changelogSource?: 'auto' | 'user'
     parsed?: {
       clawdis?: {
+        os?: string[]
         nix?: {
           plugin?: boolean
+          systems?: string[]
         }
       }
     }

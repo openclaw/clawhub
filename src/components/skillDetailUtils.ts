@@ -103,6 +103,23 @@ export function formatOsList(os?: string[]) {
   })
 }
 
+export function formatSystemsList(systems?: string[]): string[] {
+  if (!systems?.length) return []
+  const labels: Record<string, string> = {
+    'aarch64-darwin': 'macOS ARM64',
+    'x86_64-darwin': 'macOS x86_64',
+    'aarch64-linux': 'Linux ARM64',
+    'x86_64-linux': 'Linux x86_64',
+  }
+  return systems.map((s) => labels[s.trim()] ?? s)
+}
+
+export function getPlatformLabels(os?: string[], systems?: string[]): string[] {
+  if (systems?.length) return formatSystemsList(systems)
+  if (os?.length) return formatOsList(os)
+  return []
+}
+
 export function formatInstallLabel(spec: SkillInstallSpec) {
   if (spec.kind === 'brew') return 'Homebrew'
   if (spec.kind === 'node') return 'Node'

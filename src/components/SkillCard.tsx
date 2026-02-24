@@ -6,19 +6,21 @@ type SkillCardProps = {
   skill: PublicSkill
   badge?: string | string[]
   chip?: string
+  platformLabels?: string[]
   summaryFallback: string
   meta: ReactNode
   href?: string
 }
 
-export function SkillCard({ skill, badge, chip, summaryFallback, meta, href }: SkillCardProps) {
+export function SkillCard({ skill, badge, chip, platformLabels, summaryFallback, meta, href }: SkillCardProps) {
   const owner = encodeURIComponent(String(skill.ownerUserId))
   const link = href ?? `/${owner}/${skill.slug}`
   const badges = Array.isArray(badge) ? badge : badge ? [badge] : []
+  const hasTags = badges.length || chip || platformLabels?.length
 
   return (
     <Link to={link} className="card skill-card">
-      {badges.length || chip ? (
+      {hasTags ? (
         <div className="skill-card-tags">
           {badges.map((label) => (
             <div key={label} className="tag">
@@ -26,6 +28,9 @@ export function SkillCard({ skill, badge, chip, summaryFallback, meta, href }: S
             </div>
           ))}
           {chip ? <div className="tag tag-accent tag-compact">{chip}</div> : null}
+          {platformLabels?.map((label) => (
+            <div key={label} className="tag tag-compact">{label}</div>
+          ))}
         </div>
       ) : null}
       <h3 className="skill-card-title">{skill.displayName}</h3>
