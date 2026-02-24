@@ -305,8 +305,8 @@ export async function skillsGetRouterV1Handler(ctx: ActionCtx, request: Request)
           : null,
         metadata: result.latestVersion?.parsed?.clawdis
           ? {
-              os: result.latestVersion.parsed.clawdis?.os ?? null,
-              systems: result.latestVersion.parsed.clawdis?.nix?.systems ?? null,
+              os: result.latestVersion.parsed.clawdis.os ?? null,
+              systems: result.latestVersion.parsed.clawdis.nix?.systems ?? null,
             }
           : null,
         owner: result.owner
