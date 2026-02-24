@@ -14,7 +14,7 @@ metadata:
         - curl
     primaryEnv: KEVROS_API_KEY
     install:
-      - kind: pip
+      - kind: uv
         package: kevros
         bins: []
     homepage: https://governance.taskhawktech.com
