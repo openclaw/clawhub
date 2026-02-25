@@ -192,7 +192,15 @@ export const importGitHubSkill = action({
 
       const sha256 = await sha256Hex(bytes)
       const safeBytes = new Uint8Array(bytes)
-      const storageId = await ctx.storage.store(new Blob([safeBytes], { type: 'text/plain' }))
+      let storageId: Id<'_storage'>
+      try {
+        storageId = await ctx.storage.store(new Blob([safeBytes], { type: 'text/plain' }))
+      } catch (error) {
+        const errorMsg = error instanceof Error ? error.message : String(error)
+        throw new ConvexError(
+          `Failed to store file "${sanitized}" (${bytes.byteLength} bytes). ${errorMsg}`,
+        )
+      }
       storedFiles.push({
         path: sanitized,
         size: bytes.byteLength,
@@ -213,23 +221,31 @@ export const importGitHubSkill = action({
     if (!displayName) throw new ConvexError('Display name required')
     if (!version || !semver.valid(version)) throw new ConvexError('Version must be valid semver')
 
-    const result = await publishVersionForUser(ctx, userId, {
-      slug: slugBase,
-      displayName,
-      version,
-      changelog: '',
-      tags,
-      files: storedFiles,
-      source: {
-        kind: 'github',
-        url: resolved.originalUrl,
-        repo: `${resolved.owner}/${resolved.repo}`,
-        ref: resolved.ref,
-        commit: resolved.commit,
-        path: candidate.path,
-        importedAt: Date.now(),
-      },
-    })
+    let result: Awaited<ReturnType<typeof publishVersionForUser>>
+    try {
+      result = await publishVersionForUser(ctx, userId, {
+        slug: slugBase,
+        displayName,
+        version,
+        changelog: '',
+        tags,
+        files: storedFiles,
+        source: {
+          kind: 'github',
+          url: resolved.originalUrl,
+          repo: `${resolved.owner}/${resolved.repo}`,
+          ref: resolved.ref,
+          commit: resolved.commit,
+          path: candidate.path,
+          importedAt: Date.now(),
+        },
+      })
+    } catch (error) {
+      const errorMsg = error instanceof Error ? error.message : String(error)
+      throw new ConvexError(
+        `Import failed during publish: ${errorMsg}. Check skill format, slug availability, and try again.`,
+      )
+    }
 
     return { ok: true, slug: slugBase, version, ...result }
   },
