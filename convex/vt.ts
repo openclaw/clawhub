@@ -1,6 +1,7 @@
 import { v } from 'convex/values'
 import { internal } from './_generated/api'
 import type { Id } from './_generated/dataModel'
+import type { ActionCtx } from './_generated/server'
 import { action, internalAction, internalMutation } from './_generated/server'
 import { buildDeterministicZip } from './lib/skillZip'
 
@@ -136,6 +137,13 @@ type PendingScanSkill = {
   checkCount: number
 }
 
+type SkillActivationCandidate = {
+  moderationStatus?: string
+  moderationReason?: string
+  moderationFlags?: string[]
+  softDeletedAt?: number
+}
+
 type PollPendingScansResult = {
   processed: number
   updated: number
@@ -228,6 +236,23 @@ type SyncModerationReasonsResult = {
   done: boolean
 }
 
+const VT_PENDING_REASONS = new Set(['pending.scan', 'scanner.vt.pending', 'pending.scan.stale'])
+
+function shouldActivateWhenVtUnavailable(skill: SkillActivationCandidate | null | undefined) {
+  if (!skill || skill.softDeletedAt) return false
+  if (skill.moderationFlags?.includes('blocked.malware')) return false
+  if (skill.moderationStatus === 'active') return false
+  const reason = skill.moderationReason
+  return typeof reason === 'string' && VT_PENDING_REASONS.has(reason)
+}
+
+async function activateSkillWhenVtUnavailable(ctx: ActionCtx, skillId: Id<'skills'>) {
+  const skill = await ctx.runQuery(internal.skills.getSkillByIdInternal, { skillId })
+  if (!shouldActivateWhenVtUnavailable(skill)) return
+
+  await ctx.runMutation(internal.skills.setSkillModerationStatusActiveInternal, { skillId })
+}
+
 export const fetchResults = action({
   args: {
     sha256hash: v.optional(v.string()),
@@ -306,19 +331,11 @@ export const scanWithVirusTotal = internalAction({
     const apiKey = process.env.VT_API_KEY
     if (!apiKey) {
       console.log('VT_API_KEY not configured, skipping scan — activating skill')
-      // Activate the skill so it appears in search despite no VT scan.
       const version = await ctx.runQuery(internal.skills.getVersionByIdInternal, {
         versionId: args.versionId,
       })
       if (version) {
-        const skill = await ctx.runQuery(internal.skills.getSkillByIdInternal, {
-          skillId: version.skillId,
-        })
-        if (skill?.moderationReason !== 'quality.low') {
-          await ctx.runMutation(internal.skills.setSkillModerationStatusActiveInternal, {
-            skillId: version.skillId,
-          })
-        }
+        await activateSkillWhenVtUnavailable(ctx, version.skillId)
       }
       return
     }
@@ -538,14 +555,7 @@ export const pollPendingScans = internalAction({
               versionId,
               vtAnalysis: { status: 'stale', checkedAt: Date.now() },
             })
-            // Activate the skill so it appears in search — absence of a VT
-            // verdict should not permanently hide a published skill.
-            const skill = await ctx.runQuery(internal.skills.getSkillByIdInternal, { skillId })
-            if (skill?.moderationReason !== 'quality.low') {
-              await ctx.runMutation(internal.skills.setSkillModerationStatusActiveInternal, {
-                skillId,
-              })
-            }
+            await activateSkillWhenVtUnavailable(ctx, skillId)
             staled++
           }
           continue
@@ -571,14 +581,7 @@ export const pollPendingScans = internalAction({
               versionId,
               vtAnalysis: { status: 'stale', checkedAt: Date.now() },
             })
-            // Activate the skill so it appears in search — absence of a VT
-            // verdict should not permanently hide a published skill.
-            const skill = await ctx.runQuery(internal.skills.getSkillByIdInternal, { skillId })
-            if (skill?.moderationReason !== 'quality.low') {
-              await ctx.runMutation(internal.skills.setSkillModerationStatusActiveInternal, {
-                skillId,
-              })
-            }
+            await activateSkillWhenVtUnavailable(ctx, skillId)
             staled++
           }
           continue
@@ -678,6 +681,10 @@ async function requestRescan(apiKey: string, sha256hash: string): Promise<boolea
     console.error(`[vt:requestRescan] Error for ${sha256hash}:`, error)
     return false
   }
+}
+
+export const __test = {
+  shouldActivateWhenVtUnavailable,
 }
 
 /**
