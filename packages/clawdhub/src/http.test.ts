@@ -203,6 +203,7 @@ describe('apiRequest', () => {
   })
 
   it('falls back to HTTP status when body is empty', async () => {
+    mockImmediateTimeouts()
     const fetchMock = vi.fn().mockResolvedValue({
       ok: false,
       status: 500,
@@ -212,6 +213,7 @@ describe('apiRequest', () => {
     await expect(
       apiRequest('https://example.com', { method: 'GET', url: 'https://example.com/x' }),
     ).rejects.toThrow('HTTP 500')
+    expect(fetchMock).toHaveBeenCalledTimes(3)
     vi.unstubAllGlobals()
   })
 
