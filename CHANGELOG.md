@@ -42,6 +42,7 @@
 - Moderation: clear stale `flagged.suspicious` flags when VirusTotal rescans improve to clean verdicts (#418) (thanks @Phineas1500).
 - CLI: respect `HTTPS_PROXY`/`HTTP_PROXY`/`NO_PROXY` env vars for outbound registry requests, with troubleshooting docs (#363) (thanks @kerrypotter).
 - CLI: preserve registry base paths when composing API URLs for search/inspect/moderation commands (#486) (thanks @Liknox).
+- API tests: lock `Retry-After` behavior to relative-delay semantics for v1 search 429s (#421) (thanks @apoorvdarshan).
 
 ## 0.6.1 - 2026-02-13
 
