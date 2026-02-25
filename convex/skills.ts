@@ -652,7 +652,10 @@ async function upsertSkillBadge(
   const skill = await ctx.db.get(skillId)
   if (skill) {
     await ctx.db.patch(skillId, {
-      badges: { ...(skill.badges ?? {}), [kind]: { byUserId: userId, at } },
+      badges: {
+        ...(skill.badges as Record<string, unknown> | undefined),
+        [kind]: { byUserId: userId, at },
+      },
     })
   }
 }

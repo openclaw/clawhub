@@ -37,6 +37,7 @@ const {
   backfillSkillSummariesInternalHandler,
   cleanupEmptySkillsInternalHandler,
   nominateEmptySkillSpammersInternalHandler,
+  upsertSkillBadgeRecordInternal,
 } = await import('./maintenance')
 const { internal } = await import('./_generated/api')
 const { generateSkillSummary } = await import('./lib/skillSummary')
@@ -191,6 +192,81 @@ describe('maintenance backfill', () => {
         frontmatter: {},
         metadata: undefined,
         clawdis: undefined,
+      },
+    })
+  })
+})
+
+describe('maintenance badge denormalization', () => {
+  it('upserts table badge and keeps skill.badges in sync', async () => {
+    const unique = vi.fn().mockResolvedValue(null)
+    const query = vi.fn().mockReturnValue({
+      withIndex: () => ({ unique }),
+    })
+    const insert = vi.fn().mockResolvedValue('skillBadges:1')
+    const get = vi.fn().mockResolvedValue({ _id: 'skills:1', badges: undefined })
+    const patch = vi.fn().mockResolvedValue(undefined)
+
+    const ctx = {
+      db: {
+        query,
+        insert,
+        get,
+        patch,
+      },
+    } as never
+
+    const result = await (upsertSkillBadgeRecordInternal as { _handler: Function })._handler(ctx, {
+      skillId: 'skills:1',
+      kind: 'highlighted',
+      byUserId: 'users:1',
+      at: 123,
+    })
+
+    expect(result).toEqual({ inserted: true })
+    expect(insert).toHaveBeenCalledWith('skillBadges', {
+      skillId: 'skills:1',
+      kind: 'highlighted',
+      byUserId: 'users:1',
+      at: 123,
+    })
+    expect(patch).toHaveBeenCalledWith('skills:1', {
+      badges: {
+        highlighted: { byUserId: 'users:1', at: 123 },
+      },
+    })
+  })
+
+  it('resyncs denormalized badge even when table record already exists', async () => {
+    const unique = vi.fn().mockResolvedValue({ _id: 'skillBadges:existing' })
+    const query = vi.fn().mockReturnValue({
+      withIndex: () => ({ unique }),
+    })
+    const insert = vi.fn()
+    const get = vi.fn().mockResolvedValue({ _id: 'skills:1', badges: {} })
+    const patch = vi.fn().mockResolvedValue(undefined)
+
+    const ctx = {
+      db: {
+        query,
+        insert,
+        get,
+        patch,
+      },
+    } as never
+
+    const result = await (upsertSkillBadgeRecordInternal as { _handler: Function })._handler(ctx, {
+      skillId: 'skills:1',
+      kind: 'official',
+      byUserId: 'users:2',
+      at: 456,
+    })
+
+    expect(result).toEqual({ inserted: false })
+    expect(insert).not.toHaveBeenCalled()
+    expect(patch).toHaveBeenCalledWith('skills:1', {
+      badges: {
+        official: { byUserId: 'users:2', at: 456 },
       },
     })
   })

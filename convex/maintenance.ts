@@ -642,17 +642,32 @@ export const upsertSkillBadgeRecordInternal = internalMutation({
     at: v.number(),
   },
   handler: async (ctx, args) => {
+    const syncDenormalizedBadge = async () => {
+      const skill = await ctx.db.get(args.skillId)
+      if (!skill) return
+      await ctx.db.patch(args.skillId, {
+        badges: {
+          ...(skill.badges as Record<string, unknown> | undefined),
+          [args.kind]: { byUserId: args.byUserId, at: args.at },
+        },
+      })
+    }
+
     const existing = await ctx.db
       .query('skillBadges')
       .withIndex('by_skill_kind', (q) => q.eq('skillId', args.skillId).eq('kind', args.kind))
       .unique()
-    if (existing) return { inserted: false as const }
+    if (existing) {
+      await syncDenormalizedBadge()
+      return { inserted: false as const }
+    }
     await ctx.db.insert('skillBadges', {
       skillId: args.skillId,
       kind: args.kind,
       byUserId: args.byUserId,
       at: args.at,
     })
+    await syncDenormalizedBadge()
     return { inserted: true as const }
   },
 })

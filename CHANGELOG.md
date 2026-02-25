@@ -9,6 +9,7 @@
 - Skills/Web: show skill owner avatar + handle on skill cards, lists, and detail pages (#312) (thanks @ianalloway).
 - Skills/Web: add file viewer for skill version files on detail page (#44) (thanks @regenrek).
 - CLI: add `uninstall` command for skills (#241) (thanks @superlowburn).
+- CI/Security: add TruffleHog pull-request scanning for verified leaked credentials (#505) (thanks @akses0).
 
 ### Changed
 - Quality gate: language-aware word counting (`Intl.Segmenter`) and new `cjkChars` signal to reduce false rejects for non-Latin docs.
@@ -17,6 +18,8 @@
 - Skills: reserve deleted slugs for prior owners (90-day cooldown) to prevent squatting; add admin reclaim flow (#298) (thanks @autogame-17).
 - Moderation: ban flow soft-deletes owned skills (reversible) and removes them from vector search (#298) (thanks @autogame-17).
 - LLM helpers: centralize OpenAI Responses text extraction for changelog/summary/eval flows (#502) (thanks @ianalloway).
+- Rate limiting: apply authenticated quotas by user bucket (vs shared IP), emit delay-based reset headers, and improve CLI 429 guidance/retries (#412) (thanks @lc0rp).
+- Search/listing performance: cut embedding hydration and badge read bandwidth via `embeddingSkillMap` + denormalized skill badges; shift stat-doc sync to low-frequency cron (#441) (thanks @sethconvex).
 
 ### Fixed
 - Admin API: `POST /api/v1/users/reclaim` now performs non-destructive root-slug owner transfer
