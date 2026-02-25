@@ -6,9 +6,15 @@ import type { GlobalOpts } from '../types'
 
 const mockApiRequest = vi.fn()
 const mockFetchText = vi.fn()
+const mockRegistryUrl = vi.fn((path: string, registry: string) => {
+  const base = registry.endsWith('/') ? registry : `${registry}/`
+  const relative = path.startsWith('/') ? path.slice(1) : path
+  return new URL(relative, base)
+})
 vi.mock('../../http.js', () => ({
   apiRequest: (...args: unknown[]) => mockApiRequest(...args),
   fetchText: (...args: unknown[]) => mockFetchText(...args),
+  registryUrl: (...args: [string, string]) => mockRegistryUrl(...args),
 }))
 
 const mockGetRegistry = vi.fn(async () => 'https://clawhub.ai')

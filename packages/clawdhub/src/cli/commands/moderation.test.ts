@@ -12,9 +12,15 @@ vi.mock('../registry.js', () => ({
 }))
 
 const mockApiRequest = vi.fn()
+const mockRegistryUrl = vi.fn((path: string, registry: string) => {
+  const base = registry.endsWith('/') ? registry : `${registry}/`
+  const relative = path.startsWith('/') ? path.slice(1) : path
+  return new URL(relative, base)
+})
 vi.mock('../../http.js', () => ({
   apiRequest: (registry: unknown, args: unknown, schema?: unknown) =>
     mockApiRequest(registry, args, schema),
+  registryUrl: (...args: [string, string]) => mockRegistryUrl(...args),
 }))
 
 vi.mock('../ui.js', () => ({
@@ -116,7 +122,7 @@ describe('cmdBanUser', () => {
       expect.anything(),
       expect.objectContaining({
         method: 'GET',
-        path: expect.stringContaining('/api/v1/users?'),
+        url: expect.stringContaining('/api/v1/users?'),
       }),
       expect.anything(),
     )

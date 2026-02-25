@@ -197,7 +197,7 @@ async function searchUsers(registry: string, token: string, query: string) {
   url.searchParams.set('limit', '10')
   const result = await apiRequest(
     registry,
-    { method: 'GET', url: `${url.toString()}`, token },
+    { method: 'GET', url: url.toString(), token },
     ApiV1UserSearchResponseSchema,
   )
   return parseArk(ApiV1UserSearchResponseSchema, result, 'User search response')
