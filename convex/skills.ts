@@ -2646,7 +2646,6 @@ export const approveSkillByHashInternal = internalMutation({
       const existingFlags: string[] = (skill.moderationFlags as string[] | undefined) ?? []
       const existingReason: string | undefined = skill.moderationReason as string | undefined
       const alreadyBlocked = existingFlags.includes('blocked.malware')
-      const alreadyFlagged = existingFlags.includes('flagged.suspicious')
       const bypassSuspicious =
         isSuspicious && !alreadyBlocked && isPrivilegedOwnerForSuspiciousBypass(owner)
 

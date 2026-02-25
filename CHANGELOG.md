@@ -39,6 +39,8 @@
 - Skills/Web: prevent filtered pagination dead-ends and loading-state flicker on `/skills`; move highlighted browse filtering into server list query (#339) (thanks @Marvae).
 - Web: align `/skills` total count with public visibility and format header count (thanks @rknoche6, #76).
 - Skills/Web: centralize public visibility checks and keep `globalStats` skill counts in sync incrementally; remove duplicate `/skills` default-sort fallback and share browse test mocks (thanks @rknoche6, #76).
+- Moderation: clear stale `flagged.suspicious` flags when VirusTotal rescans improve to clean verdicts (#418) (thanks @Phineas1500).
+- CLI: respect `HTTPS_PROXY`/`HTTP_PROXY`/`NO_PROXY` env vars for outbound registry requests, with troubleshooting docs (#363) (thanks @kerrypotter).
 
 ## 0.6.1 - 2026-02-13
 
