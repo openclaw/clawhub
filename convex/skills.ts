@@ -2252,6 +2252,7 @@ export const listPublicPage = query({
   args: {
     cursor: v.optional(v.string()),
     limit: v.optional(v.number()),
+    nonSuspiciousOnly: v.optional(v.boolean()),
     sort: v.optional(
       v.union(
         v.literal('updated'),
@@ -2275,7 +2276,10 @@ export const listPublicPage = query({
         .paginate({ cursor: args.cursor ?? null, numItems: limit })
 
       const skills = page.filter((skill) => !skill.softDeletedAt)
-      const items = await buildPublicSkillEntries(ctx, skills)
+      const items = await buildPublicSkillEntries(
+        ctx,
+        filterPublicSkillPage(skills, { nonSuspiciousOnly: args.nonSuspiciousOnly }),
+      )
 
       return { items, nextCursor: isDone ? null : continueCursor }
     }
@@ -2291,7 +2295,10 @@ export const listPublicPage = query({
         if (skills.length >= limit) break
       }
 
-      const items = await buildPublicSkillEntries(ctx, skills)
+      const items = await buildPublicSkillEntries(
+        ctx,
+        filterPublicSkillPage(skills, { nonSuspiciousOnly: args.nonSuspiciousOnly }),
+      )
       return { items, nextCursor: null }
     }
 
@@ -2302,7 +2309,10 @@ export const listPublicPage = query({
       .order('desc')
       .paginate({ cursor: args.cursor ?? null, numItems: limit })
 
-    const filtered = page.filter((skill) => !skill.softDeletedAt)
+    const filtered = filterPublicSkillPage(
+      page.filter((skill) => !skill.softDeletedAt),
+      { nonSuspiciousOnly: args.nonSuspiciousOnly },
+    )
     const items = await buildPublicSkillEntries(ctx, filtered)
     return { items, nextCursor: isDone ? null : continueCursor }
   },

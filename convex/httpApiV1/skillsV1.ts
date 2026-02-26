@@ -2,6 +2,7 @@ import { api, internal } from '../_generated/api'
 import type { Doc, Id } from '../_generated/dataModel'
 import type { ActionCtx } from '../_generated/server'
 import { getOptionalApiTokenUserId, requireApiTokenUser } from '../lib/apiTokenAuth'
+import { parseBooleanQueryParam } from '../lib/httpUtils'
 import { applyRateLimit, parseBearerToken } from '../lib/httpRateLimit'
 import { publishVersionForUser } from '../skills'
 import {
@@ -166,6 +167,138 @@ function normalizeModerationFromSkill(skill: SkillModerationShape) {
   }
 }
 
+type NormalizedSecurityStatus = 'clean' | 'suspicious' | 'malicious' | 'pending' | 'error'
+
+type SkillSecuritySnapshot = {
+  status: NormalizedSecurityStatus
+  hasWarnings: boolean
+  checkedAt: number | null
+  model: string | null
+  isVerified: boolean
+  sha256hash: string | null
+  virustotalUrl: string | null
+  scanners: {
+    vt: {
+      status: string
+      verdict: string | null
+      normalizedStatus: NormalizedSecurityStatus
+      analysis: string | null
+      source: string | null
+      checkedAt: number | null
+    } | null
+    llm: {
+      status: string
+      verdict: string | null
+      normalizedStatus: NormalizedSecurityStatus
+      confidence: string | null
+      summary: string | null
+      dimensions: NonNullable<Doc<'skillVersions'>['llmAnalysis']>['dimensions'] | null
+      guidance: string | null
+      findings: string | null
+      model: string | null
+      checkedAt: number | null
+    } | null
+  }
+}
+
+const SECURITY_STATUS_PRIORITY: Record<NormalizedSecurityStatus, number> = {
+  clean: 0,
+  error: 1,
+  pending: 2,
+  suspicious: 3,
+  malicious: 4,
+}
+
+function normalizeSecurityStatus(value: string | null | undefined): NormalizedSecurityStatus {
+  const normalized = value?.trim().toLowerCase()
+  switch (normalized) {
+    case 'benign':
+    case 'clean':
+      return 'clean'
+    case 'suspicious':
+      return 'suspicious'
+    case 'malicious':
+      return 'malicious'
+    case 'error':
+    case 'failed':
+      return 'error'
+    case 'pending':
+    case 'loading':
+    case 'not_found':
+    case 'not-found':
+    case 'stale':
+      return 'pending'
+    default:
+      return 'pending'
+  }
+}
+
+function mergeSecurityStatuses(statuses: NormalizedSecurityStatus[]) {
+  if (statuses.length === 0) return 'pending' satisfies NormalizedSecurityStatus
+  return statuses.reduce((current, candidate) =>
+    SECURITY_STATUS_PRIORITY[candidate] > SECURITY_STATUS_PRIORITY[current] ? candidate : current,
+  )
+}
+
+function buildSkillSecuritySnapshot(version: Doc<'skillVersions'>): SkillSecuritySnapshot | null {
+  const sha256hash = version.sha256hash ?? null
+  const vt = version.vtAnalysis
+  const llm = version.llmAnalysis
+
+  if (!sha256hash && !vt && !llm) return null
+
+  const vtStatus = vt ? normalizeSecurityStatus(vt.verdict ?? vt.status) : null
+  const llmStatus = llm ? normalizeSecurityStatus(llm.verdict ?? llm.status) : null
+
+  const statuses: NormalizedSecurityStatus[] = []
+  if (vtStatus) statuses.push(vtStatus)
+  if (llmStatus) statuses.push(llmStatus)
+  if (statuses.length === 0 && sha256hash) statuses.push('pending')
+  const status = mergeSecurityStatuses(statuses)
+  const hasWarnings = status === 'suspicious' || status === 'malicious'
+
+  const checkedAtCandidates = [vt?.checkedAt, llm?.checkedAt].filter(
+    (value): value is number => typeof value === 'number',
+  )
+  const checkedAt = checkedAtCandidates.length > 0 ? Math.max(...checkedAtCandidates) : null
+
+  return {
+    status,
+    hasWarnings,
+    checkedAt,
+    model: llm?.model ?? null,
+    isVerified: status === 'clean' || status === 'suspicious' || status === 'malicious',
+    sha256hash,
+    virustotalUrl: sha256hash ? `https://www.virustotal.com/gui/file/${sha256hash}` : null,
+    scanners: {
+      vt: vt
+        ? {
+            status: vt.status,
+            verdict: vt.verdict ?? null,
+            normalizedStatus: vtStatus ?? 'pending',
+            analysis: vt.analysis ?? null,
+            source: vt.source ?? null,
+            checkedAt: vt.checkedAt ?? null,
+          }
+        : null,
+      llm: llm
+        ? {
+            status: llm.status,
+            verdict: llm.verdict ?? null,
+            normalizedStatus: llmStatus ?? 'pending',
+            confidence: llm.confidence ?? null,
+            summary: llm.summary ?? null,
+            dimensions: llm.dimensions ?? null,
+            guidance: llm.guidance ?? null,
+            findings: llm.findings ?? null,
+            model: llm.model ?? null,
+            checkedAt: llm.checkedAt ?? null,
+          }
+        : null,
+    },
+  }
+}
+
 export async function searchSkillsV1Handler(ctx: ActionCtx, request: Request) {
   const rate = await applyRateLimit(ctx, request, 'read')
   if (!rate.ok) return rate.response
@@ -173,7 +306,10 @@ export async function searchSkillsV1Handler(ctx: ActionCtx, request: Request) {
   const url = new URL(request.url)
   const query = url.searchParams.get('q')?.trim() ?? ''
   const limit = toOptionalNumber(url.searchParams.get('limit'))
-  const highlightedOnly = url.searchParams.get('highlightedOnly') === 'true'
+  const highlightedOnly = parseBooleanQueryParam(url.searchParams.get('highlightedOnly'))
+  const nonSuspiciousOnly =
+    parseBooleanQueryParam(url.searchParams.get('nonSuspiciousOnly')) ||
+    parseBooleanQueryParam(url.searchParams.get('nonSuspicious'))
 
   if (!query) return json({ results: [] }, 200, rate.headers)
 
@@ -181,6 +317,7 @@ export async function searchSkillsV1Handler(ctx: ActionCtx, request: Request) {
     query,
     limit,
     highlightedOnly: highlightedOnly || undefined,
+    nonSuspiciousOnly: nonSuspiciousOnly || undefined,
   })) as SearchSkillEntry[]
 
   return json(
@@ -251,11 +388,15 @@ export async function listSkillsV1Handler(ctx: ActionCtx, request: Request) {
   const rawCursor = url.searchParams.get('cursor')?.trim() || undefined
   const sort = parseListSort(url.searchParams.get('sort'))
   const cursor = sort === 'trending' ? undefined : rawCursor
+  const nonSuspiciousOnly =
+    parseBooleanQueryParam(url.searchParams.get('nonSuspiciousOnly')) ||
+    parseBooleanQueryParam(url.searchParams.get('nonSuspicious'))
 
   const result = (await ctx.runQuery(api.skills.listPublicPage, {
     limit,
     cursor,
     sort,
+    nonSuspiciousOnly: nonSuspiciousOnly || undefined,
   })) as ListSkillsResult
 
   // Batch resolve all tags in a single query instead of N queries
@@ -524,43 +665,7 @@ export async function skillsGetRouterV1Handler(ctx: ActionCtx, request: Request)
     })
     if (!version) return text('Version not found', 404, rate.headers)
     if (version.softDeletedAt) return text('Version not available', 410, rate.headers)
-
-    // Map llmAnalysis to security status
-    let security = undefined
-    if (version.llmAnalysis) {
-      const analysis = version.llmAnalysis
-      let status: 'clean' | 'suspicious' | 'malicious' | 'pending' | 'error'
-      switch (analysis.verdict) {
-        case 'benign':
-          status = 'clean'
-          break
-        case 'suspicious':
-          status = 'suspicious'
-          break
-        case 'malicious':
-          status = 'malicious'
-          break
-        default:
-          status = analysis.status === 'error' ? 'error' : 'pending'
-      }
-
-      const hasWarnings =
-        analysis.verdict === 'suspicious' ||
-        analysis.verdict === 'malicious' ||
-        (Array.isArray(analysis.dimensions) &&
-          analysis.dimensions.some((dimension) => {
-            if (!dimension || typeof dimension !== 'object') return false
-            const rating = (dimension as { rating?: unknown }).rating
-            return typeof rating === 'string' && rating !== 'ok'
-          }))
-
-      security = {
-        status,
-        hasWarnings,
-        checkedAt: analysis.checkedAt ?? null,
-        model: analysis.model || null,
-      }
-    }
+    const security = buildSkillSecuritySnapshot(version)
 
     return json(
       {
@@ -577,8 +682,67 @@ export async function skillsGetRouterV1Handler(ctx: ActionCtx, request: Request)
             sha256: file.sha256,
             contentType: file.contentType ?? null,
           })),
-          security,
+          security: security ?? undefined,
         },
+      },
+      200,
+      rate.headers,
+    )
+  }
+
+  if (second === 'scan' && segments.length === 2) {
+    const url = new URL(request.url)
+    const versionParam = url.searchParams.get('version')?.trim()
+    const tagParam = url.searchParams.get('tag')?.trim()
+
+    const result = (await ctx.runQuery(api.skills.getBySlug, { slug })) as GetBySlugResult
+    if (!result?.skill) {
+      const hidden = await describeOwnerVisibleSkillState(ctx, request, slug)
+      if (hidden) return text(hidden.message, hidden.status, rate.headers)
+      return text('Skill not found', 404, rate.headers)
+    }
+
+    let version = result.latestVersion
+    if (versionParam) {
+      version = await ctx.runQuery(api.skills.getVersionBySkillAndVersion, {
+        skillId: result.skill._id,
+        version: versionParam,
+      })
+    } else if (tagParam) {
+      const versionId = result.skill.tags[tagParam]
+      if (versionId) {
+        version = await ctx.runQuery(api.skills.getVersionById, { versionId })
+      } else {
+        version = null
+      }
+    }
+
+    if (!version) return text('Version not found', 404, rate.headers)
+    if (version.softDeletedAt) return text('Version not available', 410, rate.headers)
+
+    const security = buildSkillSecuritySnapshot(version)
+
+    return json(
+      {
+        skill: {
+          slug: result.skill.slug,
+          displayName: result.skill.displayName,
+        },
+        version: {
+          version: version.version,
+          createdAt: version.createdAt,
+          changelogSource: version.changelogSource ?? null,
+        },
+        moderation: result.moderationInfo
+          ? {
+              isPendingScan: result.moderationInfo.isPendingScan ?? false,
+              isMalwareBlocked: result.moderationInfo.isMalwareBlocked ?? false,
+              isSuspicious: result.moderationInfo.isSuspicious ?? false,
+              isHiddenByMod: result.moderationInfo.isHiddenByMod ?? false,
+              isRemoved: result.moderationInfo.isRemoved ?? false,
+            }
+          : null,
+        security,
       },
       200,
       rate.headers,

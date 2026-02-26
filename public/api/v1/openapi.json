@@ -118,6 +118,19 @@
           "nextCursor": { "type": ["string", "null"] }
         }
       },
+      "SecuritySnapshot": {
+        "type": "object",
+        "properties": {
+          "status": { "type": "string", "enum": ["clean", "suspicious", "malicious", "pending", "error"] },
+          "hasWarnings": { "type": "boolean" },
+          "checkedAt": { "type": ["number", "null"] },
+          "model": { "type": ["string", "null"] },
+          "isVerified": { "type": "boolean" },
+          "sha256hash": { "type": ["string", "null"] },
+          "virustotalUrl": { "type": ["string", "null"] },
+          "scanners": { "type": "object", "additionalProperties": true }
+        }
+      },
       "SkillVersionResponse": {
         "type": "object",
         "properties": {
@@ -146,8 +159,42 @@
                     "contentType": { "type": ["string", "null"] }
                   }
                 }
-              }
+              },
+              "security": { "$ref": "#/components/schemas/SecuritySnapshot" }
             }
+          }
+        }
+      },
+      "SkillScanResponse": {
+        "type": "object",
+        "properties": {
+          "skill": {
+            "type": "object",
+            "properties": {
+              "slug": { "type": "string" },
+              "displayName": { "type": "string" }
+            }
+          },
+          "version": {
+            "type": "object",
+            "properties": {
+              "version": { "type": "string" },
+              "createdAt": { "type": "number" },
+              "changelogSource": { "type": ["string", "null"], "enum": ["auto", "user", null] }
+            }
+          },
+          "moderation": {
+            "type": ["object", "null"],
+            "properties": {
+              "isPendingScan": { "type": "boolean" },
+              "isMalwareBlocked": { "type": "boolean" },
+              "isSuspicious": { "type": "boolean" },
+              "isHiddenByMod": { "type": "boolean" },
+              "isRemoved": { "type": "boolean" }
+            }
+          },
+          "security": {
+            "anyOf": [{ "$ref": "#/components/schemas/SecuritySnapshot" }, { "type": "null" }]
           }
         }
       },
@@ -192,7 +239,8 @@
         "parameters": [
           { "name": "q", "in": "query", "required": true, "schema": { "type": "string" } },
           { "name": "limit", "in": "query", "required": false, "schema": { "type": "integer" } },
-          { "name": "highlightedOnly", "in": "query", "required": false, "schema": { "type": "boolean" } }
+          { "name": "highlightedOnly", "in": "query", "required": false, "schema": { "type": "boolean" } },
+          { "name": "nonSuspiciousOnly", "in": "query", "required": false, "schema": { "type": "boolean" } }
         ],
         "responses": {
           "200": {
@@ -220,7 +268,8 @@
         "summary": "List skills",
         "parameters": [
           { "name": "limit", "in": "query", "required": false, "schema": { "type": "integer" } },
-          { "name": "cursor", "in": "query", "required": false, "schema": { "type": "string" } }
+          { "name": "cursor", "in": "query", "required": false, "schema": { "type": "string" } },
+          { "name": "nonSuspiciousOnly", "in": "query", "required": false, "schema": { "type": "boolean" } }
         ],
         "responses": {
           "200": { "description": "Skills", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/SkillListResponse" } } } }
@@ -335,6 +384,20 @@
         ],
         "responses": {
           "200": { "description": "Version", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/SkillVersionResponse" } } } }
+        }
+      }
+    },
+    "/api/v1/skills/{slug}/scan": {
+      "get": {
+        "summary": "Get security scan details",
+        "parameters": [
+          { "name": "slug", "in": "path", "required": true, "schema": { "type": "string" } },
+          { "name": "version", "in": "query", "required": false, "schema": { "type": "string" } },
+          { "name": "tag", "in": "query", "required": false, "schema": { "type": "string" } }
+        ],
+        "responses": {
+          "200": { "description": "Scan results", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/SkillScanResponse" } } } },
+          "404": { "description": "Not found" }
         }
       }
     },
