@@ -310,6 +310,14 @@ const skillEmbeddings = defineTable({
     filterFields: ['visibility'],
   })
 
+// Lightweight lookup: embeddingId → skillId (~100 bytes per doc).
+// Avoids reading full skillEmbeddings docs (~12KB each with vector)
+// during search hydration.
+const embeddingSkillMap = defineTable({
+  embeddingId: v.id('skillEmbeddings'),
+  skillId: v.id('skills'),
+}).index('by_embedding', ['embeddingId'])
+
 const skillDailyStats = defineTable({
   skillId: v.id('skills'),
   day: v.number(),
@@ -576,6 +584,7 @@ export default defineSchema({
   skillBadges,
   soulVersionFingerprints,
   skillEmbeddings,
+  embeddingSkillMap,
   soulEmbeddings,
   skillDailyStats,
   skillLeaderboards,

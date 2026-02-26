@@ -435,6 +435,7 @@ export const seedSkillMutation = internalMutation({
       visibility: 'latest-approved',
       updatedAt: now,
     })
+    await ctx.db.insert('embeddingSkillMap', { embeddingId, skillId })
 
     await ctx.db.patch(skillId, {
       latestVersionId: versionId,

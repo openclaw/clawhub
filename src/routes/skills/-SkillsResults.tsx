@@ -103,9 +103,6 @@ export function SkillsResults({
                   <div className="skills-row-owner">
                     <UserBadge user={entry.owner} fallbackHandle={ownerHandle} prefix="by" link={false} />
                   </div>
-                  {isPlugin ? (
-                    <div className="skills-row-meta">Bundle includes SKILL.md, CLI, and config.</div>
-                  ) : null}
                 </div>
                 <div className="skills-row-metrics">
                   <SkillMetricsRow stats={skill.stats} />

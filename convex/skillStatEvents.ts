@@ -3,14 +3,18 @@
  *
  * Instead of updating skill stats synchronously in the hot path (which can cause
  * contention when multiple users download/star/install the same skill), we insert
- * lightweight event records and process them in batches via a cron job.
+ * lightweight event records and process them in batches via cron jobs.
  *
- * Flow:
- * 1. User action (download, star, install) → insertStatEvent() writes to skillStatEvents table
- * 2. Cron job runs every 5 minutes → processSkillStatEventsInternal() processes batches
- * 3. Events are aggregated per-skill to minimize database operations
- * 4. Stats are applied to skill documents and daily stats tables
- * 5. Events are marked as processed (kept forever for auditing)
+ * Two processing paths run at different frequencies to balance freshness vs bandwidth:
+ *
+ * 1. **Daily stats (15-minute cron)** — `processSkillStatEventsAction`
+ *    Writes to skillDailyStats for trending/leaderboards. Uses a cursor in
+ *    skillStatUpdateCursors. Does NOT touch skill documents.
+ *
+ * 2. **Skill doc sync (6-hour cron)** — `processSkillStatEventsInternal`
+ *    Patches skill documents with accumulated stat deltas. Uses processedAt
+ *    field to track progress. Runs infrequently because patching skill docs
+ *    invalidates reactive queries for all subscribers (thundering herd).
  */
 
 import { v } from 'convex/values'
@@ -175,7 +179,7 @@ function aggregateEvents(events: Doc<'skillStatEvents'>[]): AggregatedDeltas {
 /**
  * Process a batch of unprocessed stat events.
  *
- * Called by cron every 5 minutes. Processes up to batchSize events (default 100).
+ * Called by the 6-hour cron to sync stats to skill docs. Processes up to batchSize events (default 500).
  * If the batch is full, schedules an immediate follow-up run to drain the queue.
  *
  * Processing steps:
@@ -198,7 +202,7 @@ function aggregateEvents(events: Doc<'skillStatEvents'>[]): AggregatedDeltas {
 export const processSkillStatEventsInternal = internalMutation({
   args: { batchSize: v.optional(v.number()) },
   handler: async (ctx, args) => {
-    const batchSize = args.batchSize ?? 100
+    const batchSize = args.batchSize ?? 500
     const now = Date.now()
 
     // Level 1: Fetch a batch of unprocessed events
@@ -252,25 +256,13 @@ export const processSkillStatEventsInternal = internalMutation({
           installsAllTime: deltas.installsAllTime,
           installsCurrent: deltas.installsCurrent,
         })
-        await ctx.db.patch(skill._id, {
-          ...patch,
-          updatedAt: now,
-        })
+        // Don't update `updatedAt` — stat changes shouldn't move the
+        // skill's position in the by_active_updated index.
+        await ctx.db.patch(skill._id, patch)
       }
 
-      // Update daily stats for trending/leaderboards
-      // We use the ORIGINAL event timestamp (occurredAt) so that:
-      // - A download at Mon 11:55 PM counts toward Monday's stats
-      // - Even if the cron processes it on Tuesday
-      //
-      // Level 4: bumpDailySkillStats does its own coalescing - multiple
-      // events on the same day will update the same daily record
-      for (const occurredAt of deltas.downloadEvents) {
-        await bumpDailySkillStats(ctx, { skillId, now: occurredAt, downloads: 1 })
-      }
-      for (const occurredAt of deltas.installNewEvents) {
-        await bumpDailySkillStats(ctx, { skillId, now: occurredAt, installs: 1 })
-      }
+      // NOTE: Daily stats (skillDailyStats) are written by the 15-minute
+      // action cron (processSkillStatEventsAction), not here.
 
       // Mark all events for this skill as processed
       for (const event of skillEvents) {
@@ -352,11 +344,11 @@ const skillDeltaValidator = v.object({
 })
 
 /**
- * Apply aggregated stats to skills and update the cursor.
+ * Write aggregated daily stats and advance the cursor.
  * This is a single atomic mutation that:
- * 1. Updates all affected skills with their aggregated deltas
- * 2. Updates daily stats for trending
- * 3. Advances the cursor to the new position
+ * 1. Updates daily stats for trending/leaderboards (skillDailyStats)
+ * 2. Advances the cursor to the new position
+ * NOTE: Does NOT patch skill documents — that's handled by processSkillStatEventsInternal.
  */
 export const applyAggregatedStatsAndUpdateCursor = internalMutation({
   args: {
@@ -366,37 +358,8 @@ export const applyAggregatedStatsAndUpdateCursor = internalMutation({
   handler: async (ctx, args) => {
     const now = Date.now()
 
-    // Process each skill's aggregated deltas
+    // Update daily stats for trending/leaderboards
     for (const delta of args.skillDeltas) {
-      const skill = await ctx.db.get(delta.skillId)
-
-      // Skill was deleted - skip
-      if (!skill) {
-        continue
-      }
-
-      // Apply aggregated deltas to skill stats
-      if (
-        delta.downloads !== 0 ||
-        delta.stars !== 0 ||
-        delta.comments !== 0 ||
-        delta.installsAllTime !== 0 ||
-        delta.installsCurrent !== 0
-      ) {
-        const patch = applySkillStatDeltas(skill, {
-          downloads: delta.downloads,
-          stars: delta.stars,
-          comments: delta.comments,
-          installsAllTime: delta.installsAllTime,
-          installsCurrent: delta.installsCurrent,
-        })
-        await ctx.db.patch(skill._id, {
-          ...patch,
-          updatedAt: now,
-        })
-      }
-
-      // Update daily stats for trending/leaderboards
       for (const occurredAt of delta.downloadEvents) {
         await bumpDailySkillStats(ctx, { skillId: delta.skillId, now: occurredAt, downloads: 1 })
       }

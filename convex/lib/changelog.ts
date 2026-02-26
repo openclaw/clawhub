@@ -1,6 +1,7 @@
 import { internal } from '../_generated/api'
 import type { Doc, Id } from '../_generated/dataModel'
 import type { ActionCtx } from '../_generated/server'
+import { extractResponseText } from './openaiResponse'
 
 const CHANGELOG_MODEL = process.env.OPENAI_CHANGELOG_MODEL ?? 'gpt-4.1'
 const MAX_README_CHARS = 8_000
@@ -57,27 +58,6 @@ function formatDiffSummary(diff: FileDiffSummary) {
 function pickPaths(values: string[]) {
   if (values.length <= MAX_PATHS_IN_PROMPT) return values
   return values.slice(0, MAX_PATHS_IN_PROMPT)
-}
-
-function extractResponseText(payload: unknown) {
-  if (!payload || typeof payload !== 'object') return null
-  const output = (payload as { output?: unknown }).output
-  if (!Array.isArray(output)) return null
-  const chunks: string[] = []
-  for (const item of output) {
-    if (!item || typeof item !== 'object') continue
-    if ((item as { type?: unknown }).type !== 'message') continue
-    const content = (item as { content?: unknown }).content
-    if (!Array.isArray(content)) continue
-    for (const part of content) {
-      if (!part || typeof part !== 'object') continue
-      if ((part as { type?: unknown }).type !== 'output_text') continue
-      const text = (part as { text?: unknown }).text
-      if (typeof text === 'string' && text.trim()) chunks.push(text)
-    }
-  }
-  const joined = chunks.join('\n').trim()
-  return joined || null
 }
 
 async function generateWithOpenAI(args: {

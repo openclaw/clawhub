@@ -116,6 +116,7 @@ export async function syncGitHubProfile(ctx: ActionCtx, userId: Id<'users'>) {
   const payload = (await response.json()) as GitHubUser
   const newLogin = payload.login?.trim()
   const newImage = payload.avatar_url?.trim()
+
   const profileName = payload.name?.trim()
 
   if (!newLogin) return

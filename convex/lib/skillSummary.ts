@@ -1,4 +1,5 @@
 import { getFrontmatterValue, parseFrontmatter } from './skills'
+import { extractResponseText } from './openaiResponse'
 
 const SKILL_SUMMARY_MODEL = process.env.OPENAI_SKILL_SUMMARY_MODEL ?? 'gpt-4.1-mini'
 const MAX_README_CHARS = 8_000
@@ -59,27 +60,6 @@ function deriveSummaryFallback(readmeText: string) {
 function deriveIdentityFallback(args: { slug: string; displayName: string }) {
   const base = args.displayName.trim() || args.slug.trim()
   return normalizeSummary(`Automation skill for ${base}.`)
-}
-
-function extractResponseText(payload: unknown) {
-  if (!payload || typeof payload !== 'object') return null
-  const output = (payload as { output?: unknown }).output
-  if (!Array.isArray(output)) return null
-  const chunks: string[] = []
-  for (const item of output) {
-    if (!item || typeof item !== 'object') continue
-    if ((item as { type?: unknown }).type !== 'message') continue
-    const content = (item as { content?: unknown }).content
-    if (!Array.isArray(content)) continue
-    for (const part of content) {
-      if (!part || typeof part !== 'object') continue
-      if ((part as { type?: unknown }).type !== 'output_text') continue
-      const text = (part as { text?: unknown }).text
-      if (typeof text === 'string' && text.trim()) chunks.push(text)
-    }
-  }
-  const joined = chunks.join('\n').trim()
-  return joined || null
 }
 
 export async function generateSkillSummary(args: {

@@ -1,7 +1,14 @@
 /* @vitest-environment node */
 
 import { describe, expect, it, vi } from 'vitest'
-import { apiRequest, apiRequestForm, downloadZip, fetchText } from './http'
+import {
+  apiRequest,
+  apiRequestForm,
+  downloadZip,
+  fetchText,
+  registryUrl,
+  shouldUseProxyFromEnv,
+} from './http'
 import { ApiV1WhoamiResponseSchema } from './schema/index.js'
 
 function mockImmediateTimeouts() {
@@ -35,6 +42,71 @@ function createAbortingFetchMock() {
     })
   })
 }
+
+describe('shouldUseProxyFromEnv', () => {
+  it('detects standard proxy variables', () => {
+    expect(
+      shouldUseProxyFromEnv({
+        HTTPS_PROXY: 'http://proxy.example:3128',
+      } as NodeJS.ProcessEnv),
+    ).toBe(true)
+    expect(
+      shouldUseProxyFromEnv({
+        HTTP_PROXY: 'http://proxy.example:3128',
+      } as NodeJS.ProcessEnv),
+    ).toBe(true)
+    expect(
+      shouldUseProxyFromEnv({
+        https_proxy: 'http://proxy.example:3128',
+      } as NodeJS.ProcessEnv),
+    ).toBe(true)
+  })
+
+  it('ignores NO_PROXY-only configs', () => {
+    expect(
+      shouldUseProxyFromEnv({
+        NO_PROXY: 'localhost,127.0.0.1',
+      } as NodeJS.ProcessEnv),
+    ).toBe(false)
+    expect(shouldUseProxyFromEnv({} as NodeJS.ProcessEnv)).toBe(false)
+  })
+})
+
+describe('registryUrl', () => {
+  it('works with a plain-origin registry (no base path)', () => {
+    expect(registryUrl('/api/v1/skills', 'https://clawhub.ai').toString()).toBe(
+      'https://clawhub.ai/api/v1/skills',
+    )
+  })
+
+  it('preserves the registry base path', () => {
+    const base = 'http://localhost:8081/custom/registry/path'
+    expect(registryUrl('/api/v1/skills', base).toString()).toBe(
+      'http://localhost:8081/custom/registry/path/api/v1/skills',
+    )
+  })
+
+  it('handles a trailing slash on the registry', () => {
+    const base = 'http://localhost:8081/custom/registry/path/'
+    expect(registryUrl('/api/v1/skills', base).toString()).toBe(
+      'http://localhost:8081/custom/registry/path/api/v1/skills',
+    )
+  })
+
+  it('handles paths without a leading slash', () => {
+    expect(registryUrl('api/v1/skills', 'https://clawhub.ai').toString()).toBe(
+      'https://clawhub.ai/api/v1/skills',
+    )
+  })
+
+  it('handles compound paths with encoded segments', () => {
+    const base = 'http://localhost:8081/base'
+    const path = `/api/v1/skills/${encodeURIComponent('my-skill')}/versions`
+    expect(registryUrl(path, base).toString()).toBe(
+      'http://localhost:8081/base/api/v1/skills/my-skill/versions',
+    )
+  })
+})
 
 describe('apiRequest', () => {
   it('adds bearer token and parses json', async () => {
@@ -86,7 +158,52 @@ describe('apiRequest', () => {
     vi.unstubAllGlobals()
   })
 
+  it('includes rate-limit guidance from headers on 429', async () => {
+    mockImmediateTimeouts()
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: false,
+      status: 429,
+      headers: new Headers({
+        'Retry-After': '34',
+        'X-RateLimit-Limit': '20',
+        'X-RateLimit-Remaining': '0',
+        'X-RateLimit-Reset': '1771404540',
+      }),
+      text: async () => 'Rate limit exceeded',
+    })
+    vi.stubGlobal('fetch', fetchMock)
+
+    await expect(apiRequest('https://example.com', { method: 'GET', path: '/x' })).rejects.toThrow(
+      /retry in 34s.*remaining: 0\/20.*reset in 34s/i,
+    )
+    expect(fetchMock).toHaveBeenCalledTimes(3)
+    vi.unstubAllGlobals()
+  })
+
+  it('interprets legacy epoch Retry-After values as reset delays', async () => {
+    mockImmediateTimeouts()
+    vi.spyOn(Date, 'now').mockReturnValue(1_771_404_500_000)
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: false,
+      status: 429,
+      headers: new Headers({
+        'Retry-After': '1771404540',
+        'X-RateLimit-Limit': '20',
+        'X-RateLimit-Remaining': '0',
+      }),
+      text: async () => 'Rate limit exceeded',
+    })
+    vi.stubGlobal('fetch', fetchMock)
+
+    await expect(apiRequest('https://example.com', { method: 'GET', path: '/x' })).rejects.toThrow(
+      /retry in 40s.*remaining: 0\/20/i,
+    )
+    vi.restoreAllMocks()
+    vi.unstubAllGlobals()
+  })
+
   it('falls back to HTTP status when body is empty', async () => {
+    mockImmediateTimeouts()
     const fetchMock = vi.fn().mockResolvedValue({
       ok: false,
       status: 500,
@@ -96,6 +213,7 @@ describe('apiRequest', () => {
     await expect(
       apiRequest('https://example.com', { method: 'GET', url: 'https://example.com/x' }),
     ).rejects.toThrow('HTTP 500')
+    expect(fetchMock).toHaveBeenCalledTimes(3)
     vi.unstubAllGlobals()
   })
 

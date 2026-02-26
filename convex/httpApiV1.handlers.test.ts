@@ -237,6 +237,19 @@ describe('httpApiV1 handlers', () => {
     expect(response.status).toBe(429)
   })
 
+  it('429 Retry-After is a relative delay, not an absolute epoch', async () => {
+    const runMutation = vi.fn().mockResolvedValue(blockedRate())
+    const response = await __handlers.searchSkillsV1Handler(
+      makeCtx({ runAction: vi.fn(), runMutation }),
+      new Request('https://example.com/api/v1/search?q=test'),
+    )
+    expect(response.status).toBe(429)
+    const retryAfter = Number(response.headers.get('Retry-After'))
+    // Retry-After must be a small relative delay (seconds), not a Unix epoch
+    expect(retryAfter).toBeGreaterThanOrEqual(1)
+    expect(retryAfter).toBeLessThanOrEqual(120)
+  })
+
   it('resolve validates hash', async () => {
     const runMutation = vi.fn().mockResolvedValue(okRate())
     const response = await __handlers.resolveSkillVersionV1Handler(
@@ -1044,6 +1057,7 @@ describe('httpApiV1 handlers', () => {
   })
 
   it('stars add succeeds', async () => {
+    vi.mocked(getOptionalApiTokenUserId).mockResolvedValue('users:1' as never)
     vi.mocked(requireApiTokenUser).mockResolvedValue({
       userId: 'users:1',
       user: { handle: 'p' },
@@ -1051,7 +1065,6 @@ describe('httpApiV1 handlers', () => {
     const runQuery = vi.fn().mockResolvedValue({ _id: 'skills:1' })
     const runMutation = vi
       .fn()
-      .mockResolvedValueOnce(okRate())
       .mockResolvedValueOnce(okRate())
       .mockResolvedValueOnce({ ok: true, starred: true, alreadyStarred: false })
     const response = await __handlers.starsPostRouterV1Handler(
@@ -1068,6 +1081,7 @@ describe('httpApiV1 handlers', () => {
   })
 
   it('stars delete succeeds', async () => {
+    vi.mocked(getOptionalApiTokenUserId).mockResolvedValue('users:1' as never)
     vi.mocked(requireApiTokenUser).mockResolvedValue({
       userId: 'users:1',
       user: { handle: 'p' },
@@ -1075,7 +1089,6 @@ describe('httpApiV1 handlers', () => {
     const runQuery = vi.fn().mockResolvedValue({ _id: 'skills:1' })
     const runMutation = vi
       .fn()
-      .mockResolvedValueOnce(okRate())
       .mockResolvedValueOnce(okRate())
       .mockResolvedValueOnce({ ok: true, unstarred: true, alreadyUnstarred: false })
     const response = await __handlers.starsDeleteRouterV1Handler(

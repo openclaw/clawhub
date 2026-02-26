@@ -1,7 +1,7 @@
 import { internal } from '../_generated/api'
 import type { ActionCtx } from '../_generated/server'
+import { getOptionalApiTokenUserId } from './apiTokenAuth'
 import { corsHeaders, mergeHeaders } from './httpHeaders'
-import { hashToken } from './tokens'
 
 const RATE_LIMIT_WINDOW_MS = 60_000
 export const RATE_LIMITS = {
@@ -22,17 +22,56 @@ export async function applyRateLimit(
   request: Request,
   kind: keyof typeof RATE_LIMITS,
 ): Promise<{ ok: true; headers: HeadersInit } | { ok: false; response: Response }> {
+  const userId = await getOptionalApiTokenUserId(ctx, request)
   const ip = getClientIp(request) ?? 'unknown'
+  const ipSource = getClientIpSource(request)
+  const hasClientIp = ip !== 'unknown'
+
+  // Authenticated requests are enforced and consumed by user bucket only to
+  // avoid draining shared IP quota.
+  if (userId) {
+    const userResult = await checkRateLimit(ctx, `user:${userId}`, RATE_LIMITS[kind].key)
+    const headers = rateHeaders(userResult)
+    if (!userResult.allowed) {
+      console.info('rate_limit_denied', {
+        kind,
+        auth: true,
+        userAllowed: false,
+        ipAllowed: null,
+        ipSource,
+        hasClientIp,
+      })
+      return {
+        ok: false,
+        response: new Response('Rate limit exceeded', {
+          status: 429,
+          headers: mergeHeaders(
+            {
+              'Content-Type': 'text/plain; charset=utf-8',
+              'Cache-Control': 'no-store',
+            },
+            headers,
+            corsHeaders(),
+          ),
+        }),
+      }
+    }
+    return { ok: true, headers }
+  }
+
+  // Anonymous requests remain IP-enforced.
   const ipResult = await checkRateLimit(ctx, `ip:${ip}`, RATE_LIMITS[kind].ip)
-  const token = parseBearerToken(request)
-  const keyResult = token
-    ? await checkRateLimit(ctx, `key:${await hashToken(token)}`, RATE_LIMITS[kind].key)
-    : null
+  const headers = rateHeaders(ipResult)
 
-  const chosen = pickMostRestrictive(ipResult, keyResult)
-  const headers = rateHeaders(chosen)
-
-  if (!ipResult.allowed || (keyResult && !keyResult.allowed)) {
+  if (!ipResult.allowed) {
+    console.info('rate_limit_denied', {
+      kind,
+      auth: false,
+      userAllowed: null,
+      ipAllowed: ipResult.allowed,
+      ipSource,
+      hasClientIp,
+    })
     return {
       ok: false,
       response: new Response('Rate limit exceeded', {
@@ -59,11 +98,20 @@ export function getClientIp(request: Request) {
   if (!shouldTrustForwardedIps()) return null
 
   const forwarded =
-    request.headers.get('x-real-ip') ??
     request.headers.get('x-forwarded-for') ??
+    request.headers.get('x-real-ip') ??
     request.headers.get('fly-client-ip')
 
   return splitFirstIp(forwarded)
+}
+
+function getClientIpSource(request: Request) {
+  if (request.headers.get('cf-connecting-ip')) return 'cf-connecting-ip'
+  if (!shouldTrustForwardedIps()) return 'none'
+  if (request.headers.get('x-forwarded-for')) return 'x-forwarded-for'
+  if (request.headers.get('x-real-ip')) return 'x-real-ip'
+  if (request.headers.get('fly-client-ip')) return 'fly-client-ip'
+  return 'none'
 }
 
 async function checkRateLimit(
@@ -110,20 +158,18 @@ async function checkRateLimit(
   }
 }
 
-function pickMostRestrictive(primary: RateLimitResult, secondary: RateLimitResult | null) {
-  if (!secondary) return primary
-  if (!primary.allowed) return primary
-  if (!secondary.allowed) return secondary
-  return secondary.remaining < primary.remaining ? secondary : primary
-}
-
 function rateHeaders(result: RateLimitResult): HeadersInit {
+  const nowMs = Date.now()
   const resetSeconds = Math.ceil(result.resetAt / 1000)
+  const resetDelaySeconds = Math.max(1, Math.ceil((result.resetAt - nowMs) / 1000))
   return {
     'X-RateLimit-Limit': String(result.limit),
     'X-RateLimit-Remaining': String(result.remaining),
     'X-RateLimit-Reset': String(resetSeconds),
-    ...(result.allowed ? {} : { 'Retry-After': String(resetSeconds) }),
+    'RateLimit-Limit': String(result.limit),
+    'RateLimit-Remaining': String(result.remaining),
+    'RateLimit-Reset': String(resetDelaySeconds),
+    ...(result.allowed ? {} : { 'Retry-After': String(resetDelaySeconds) }),
   }
 }
 

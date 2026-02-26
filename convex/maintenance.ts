@@ -642,17 +642,32 @@ export const upsertSkillBadgeRecordInternal = internalMutation({
     at: v.number(),
   },
   handler: async (ctx, args) => {
+    const syncDenormalizedBadge = async () => {
+      const skill = await ctx.db.get(args.skillId)
+      if (!skill) return
+      await ctx.db.patch(args.skillId, {
+        badges: {
+          ...(skill.badges as Record<string, unknown> | undefined),
+          [args.kind]: { byUserId: args.byUserId, at: args.at },
+        },
+      })
+    }
+
     const existing = await ctx.db
       .query('skillBadges')
       .withIndex('by_skill_kind', (q) => q.eq('skillId', args.skillId).eq('kind', args.kind))
       .unique()
-    if (existing) return { inserted: false as const }
+    if (existing) {
+      await syncDenormalizedBadge()
+      return { inserted: false as const }
+    }
     await ctx.db.insert('skillBadges', {
       skillId: args.skillId,
       kind: args.kind,
       byUserId: args.byUserId,
       at: args.at,
     })
+    await syncDenormalizedBadge()
     return { inserted: true as const }
   },
 })
@@ -1408,6 +1423,109 @@ export const nominateEmptySkillSpammers: ReturnType<typeof action> = action({
     const { user } = await requireUserFromAction(ctx)
     assertRole(user, ['admin'])
     return ctx.runAction(internal.maintenance.nominateEmptySkillSpammersInternal, args)
+  },
+})
+
+// Backfill embeddingSkillMap from existing skillEmbeddings.
+// Run once after deploying the schema change:
+//   npx convex run maintenance:backfillEmbeddingSkillMapInternal --prod
+export const backfillEmbeddingSkillMapInternal = internalMutation({
+  args: {
+    cursor: v.optional(v.string()),
+    batchSize: v.optional(v.number()),
+  },
+  handler: async (ctx, args) => {
+    const batchSize = clampInt(args.batchSize ?? 200, 10, 500)
+    const { page, continueCursor, isDone } = await ctx.db
+      .query('skillEmbeddings')
+      .paginate({ cursor: args.cursor ?? null, numItems: batchSize })
+
+    let inserted = 0
+    for (const embedding of page) {
+      const existing = await ctx.db
+        .query('embeddingSkillMap')
+        .withIndex('by_embedding', (q) => q.eq('embeddingId', embedding._id))
+        .unique()
+      if (!existing) {
+        await ctx.db.insert('embeddingSkillMap', {
+          embeddingId: embedding._id,
+          skillId: embedding.skillId,
+        })
+        inserted++
+      }
+    }
+
+    if (!isDone) {
+      await ctx.scheduler.runAfter(0, internal.maintenance.backfillEmbeddingSkillMapInternal, {
+        cursor: continueCursor,
+        batchSize: args.batchSize,
+      })
+    }
+
+    return { inserted, isDone, scanned: page.length }
+  },
+})
+
+// Sync skillBadges table → denormalized skill.badges field.
+// Run after deploying the badge-read removal to ensure all skills
+// have up-to-date badges on the skill doc itself.
+export const backfillDenormalizedBadgesInternal = internalMutation({
+  args: {
+    cursor: v.optional(v.string()),
+    batchSize: v.optional(v.number()),
+  },
+  handler: async (ctx, args) => {
+    const batchSize = clampInt(args.batchSize ?? 100, 10, 200)
+    const { page, continueCursor, isDone } = await ctx.db
+      .query('skills')
+      .paginate({ cursor: args.cursor ?? null, numItems: batchSize })
+
+    let patched = 0
+    for (const skill of page) {
+      const records = await ctx.db
+        .query('skillBadges')
+        .withIndex('by_skill', (q) => q.eq('skillId', skill._id))
+        .take(10)
+
+      // Build canonical badge map from the table
+      const canonical: Record<string, { byUserId: Id<'users'>; at: number }> = {}
+      for (const r of records) {
+        canonical[r.kind] = { byUserId: r.byUserId, at: r.at }
+      }
+
+      // Compare with existing denormalized badges (keys + values)
+      const existing = (skill.badges ?? {}) as Record<
+        string,
+        { byUserId?: Id<'users'>; at?: number } | undefined
+      >
+      const canonicalKeys = Object.keys(canonical)
+      const existingKeys = Object.keys(existing).filter((k) => existing[k] !== undefined)
+      const needsPatch =
+        canonicalKeys.length !== existingKeys.length ||
+        canonicalKeys.some((k) => {
+          const current = existing[k]
+          const next = canonical[k]
+          return (
+            !current ||
+            current.byUserId !== next.byUserId ||
+            current.at !== next.at
+          )
+        })
+
+      if (needsPatch) {
+        await ctx.db.patch(skill._id, { badges: canonical })
+        patched++
+      }
+    }
+
+    if (!isDone) {
+      await ctx.scheduler.runAfter(0, internal.maintenance.backfillDenormalizedBadgesInternal, {
+        cursor: continueCursor,
+        batchSize: args.batchSize,
+      })
+    }
+
+    return { patched, isDone, scanned: page.length }
   },
 })
 

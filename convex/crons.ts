@@ -19,16 +19,28 @@ crons.interval(
 
 crons.interval(
   'skill-stats-backfill',
-  { minutes: 10 },
+  { hours: 6 },
   internal.statsMaintenance.runSkillStatBackfillInternal,
   { batchSize: 200, maxBatches: 5 },
 )
 
+// Runs frequently to keep dailyStats/trending accurate,
+// but does NOT patch skill documents (only writes to skillDailyStats).
 crons.interval(
   'skill-stat-events',
-  { minutes: 5 },
+  { minutes: 15 },
   internal.skillStatEvents.processSkillStatEventsAction,
   {},
+)
+
+// Syncs accumulated stat deltas to skill documents every 6 hours.
+// Runs infrequently to avoid thundering-herd reactive query invalidation.
+// Uses processedAt field to track progress (independent of the action cursor).
+crons.interval(
+  'skill-doc-stat-sync',
+  { hours: 6 },
+  internal.skillStatEvents.processSkillStatEventsInternal,
+  { batchSize: 500 },
 )
 
 crons.interval(

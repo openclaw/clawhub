@@ -78,3 +78,21 @@ Then:
 clawhub login --site https://<site>
 clawhub whoami
 ```
+
+Rate-limit sanity checks:
+
+```bash
+curl -i "https://<site>/api/v1/download?slug=gifgrep"
+```
+
+Confirm headers are present:
+
+- `X-RateLimit-Limit`, `X-RateLimit-Remaining`, `X-RateLimit-Reset`
+- `RateLimit-Limit`, `RateLimit-Remaining`, `RateLimit-Reset`
+- `Retry-After` on `429`
+
+Proxy/IP caveat:
+
+- Default IP source is `cf-connecting-ip`.
+- For non-Cloudflare trusted proxy setups, set `TRUST_FORWARDED_IPS=true`.
+- If proxy headers are not forwarded/trusted correctly, multiple users may collapse into one IP and hit false-positive rate limits.
