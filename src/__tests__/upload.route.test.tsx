@@ -198,6 +198,32 @@ describe('Upload route', () => {
     expect(screen.getByText('screenshot.png')).toBeTruthy()
   })
 
+  it('shows an informational note when mac junk files are ignored', async () => {
+    render(<Upload />)
+    fireEvent.change(screen.getByPlaceholderText('skill-name'), {
+      target: { value: 'cool-skill' },
+    })
+    fireEvent.change(screen.getByPlaceholderText('My skill'), {
+      target: { value: 'Cool Skill' },
+    })
+    fireEvent.change(screen.getByPlaceholderText('1.0.0'), {
+      target: { value: '1.2.3' },
+    })
+    fireEvent.change(screen.getByPlaceholderText('latest, stable'), {
+      target: { value: 'latest' },
+    })
+
+    const skill = new File(['hello'], 'SKILL.md', { type: 'text/markdown' })
+    const junk = new File(['junk'], '.DS_Store', { type: 'application/octet-stream' })
+    const input = screen.getByTestId('upload-input') as HTMLInputElement
+    fireEvent.change(input, { target: { files: [skill, junk] } })
+
+    expect(await screen.findByText('SKILL.md')).toBeTruthy()
+    expect(screen.queryByText('.DS_Store')).toBeNull()
+    expect(await screen.findByText(/Ignored 1 macOS junk file/i)).toBeTruthy()
+    expect(await screen.findByText(/All checks passed/i)).toBeTruthy()
+  })
+
   it('surfaces publish errors and stays on page', async () => {
     publishVersion.mockRejectedValueOnce(new Error('Changelog is required'))
     generateUploadUrl.mockResolvedValue('https://upload.local')

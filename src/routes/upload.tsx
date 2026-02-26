@@ -4,7 +4,7 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import semver from 'semver'
 import { api } from '../../convex/_generated/api'
 import { getSiteMode } from '../lib/site'
-import { expandDroppedItems, expandFiles } from '../lib/uploadFiles'
+import { expandDroppedItems, expandFilesWithReport } from '../lib/uploadFiles'
 import { useAuthStatus } from '../lib/useAuthStatus'
 import {
   formatBytes,
@@ -58,6 +58,7 @@ export function Upload() {
 
   const [hasAttempted, setHasAttempted] = useState(false)
   const [files, setFiles] = useState<File[]>([])
+  const [ignoredMacJunkPaths, setIgnoredMacJunkPaths] = useState<string[]>([])
   const [slug, setSlug] = useState(updateSlug ?? '')
   const [displayName, setDisplayName] = useState('')
   const [version, setVersion] = useState('1.0.0')
@@ -108,6 +109,15 @@ export function Upload() {
     [isSoulMode, normalizedPaths],
   )
   const sizeLabel = totalBytes ? formatBytes(totalBytes) : '0 B'
+  const ignoredMacJunkNote = useMemo(() => {
+    if (ignoredMacJunkPaths.length === 0) return null
+    const labels = Array.from(
+      new Set(ignoredMacJunkPaths.map((path) => path.split('/').at(-1) ?? path)),
+    ).slice(0, 3)
+    const suffix = ignoredMacJunkPaths.length > 3 ? ', ...' : ''
+    const count = ignoredMacJunkPaths.length
+    return `Ignored ${count} macOS junk file${count === 1 ? '' : 's'} (${labels.join(', ')}${suffix})`
+  }, [ignoredMacJunkPaths])
   const trimmedSlug = slug.trim()
   const trimmedName = displayName.trim()
   const trimmedChangelog = changelog.trim()
@@ -246,6 +256,12 @@ export function Upload() {
         <div className="card">Sign in to upload a {contentLabel}.</div>
       </main>
     )
+  }
+
+  async function applyExpandedFiles(selected: File[]) {
+    const report = await expandFilesWithReport(selected)
+    setFiles(report.files)
+    setIgnoredMacJunkPaths(report.ignoredMacJunkPaths)
   }
 
   async function handleSubmit(event: React.FormEvent) {
@@ -395,8 +411,7 @@ export function Upload() {
                 const dropped = items?.length
                   ? await expandDroppedItems(items)
                   : Array.from(event.dataTransfer.files)
-                const next = await expandFiles(dropped)
-                setFiles(next)
+                await applyExpandedFiles(dropped)
               })()
             }}
           >
@@ -412,7 +427,7 @@ export function Upload() {
               directory=""
               onChange={(event) => {
                 const picked = Array.from(event.target.files ?? [])
-                void expandFiles(picked).then((next) => setFiles(next))
+                void applyExpandedFiles(picked)
               }}
             />
             <div className="upload-dropzone-copy">
@@ -446,6 +461,7 @@ export function Upload() {
               ))
             )}
           </div>
+          {ignoredMacJunkNote ? <div className="stat">{ignoredMacJunkNote}</div> : null}
         </div>
 
         <div className="card upload-panel" ref={validationRef}>

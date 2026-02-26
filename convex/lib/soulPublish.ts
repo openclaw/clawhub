@@ -10,6 +10,7 @@ import {
   getFrontmatterMetadata,
   getFrontmatterValue,
   hashSkillFiles,
+  isMacJunkPath,
   isTextFile,
   parseFrontmatter,
   sanitizePath,
@@ -100,22 +101,23 @@ export async function publishSoulVersionForUser(
   const sanitizedFiles = args.files.map((file) => {
     const path = sanitizePath(file.path)
     if (!path) throw new ConvexError('Invalid file paths')
-    if (!isTextFile(path, file.contentType ?? undefined)) {
-      throw new ConvexError('Only text-based files are allowed')
-    }
     return { ...file, path }
   })
+  const publishFiles = sanitizedFiles.filter((file) => !isMacJunkPath(file.path))
+  if (publishFiles.some((file) => !isTextFile(file.path, file.contentType ?? undefined))) {
+    throw new ConvexError('Only text-based files are allowed')
+  }
 
-  const totalBytes = sanitizedFiles.reduce((sum, file) => sum + file.size, 0)
+  const totalBytes = publishFiles.reduce((sum, file) => sum + file.size, 0)
   if (totalBytes > MAX_TOTAL_BYTES) {
     throw new ConvexError('Soul bundle exceeds 50MB limit')
   }
 
   const isSoulFile = (path: string) => path.toLowerCase() === 'soul.md'
-  const readmeFile = sanitizedFiles.find((file) => isSoulFile(file.path))
+  const readmeFile = publishFiles.find((file) => isSoulFile(file.path))
   if (!readmeFile) throw new ConvexError('SOUL.md is required')
 
-  const nonSoulFiles = sanitizedFiles.filter((file) => !isSoulFile(file.path))
+  const nonSoulFiles = publishFiles.filter((file) => !isSoulFile(file.path))
   if (nonSoulFiles.length > 0) {
     throw new ConvexError('Only SOUL.md is allowed for soul bundles')
   }
@@ -132,8 +134,8 @@ export async function publishSoulVersionForUser(
   })
 
   const fingerprint = await hashSkillFiles(
-    sanitizedFiles.map((file) => ({
-      path: file.path ?? '',
+    publishFiles.map((file) => ({
+      path: file.path,
       sha256: file.sha256,
     })),
   )
@@ -145,7 +147,7 @@ export async function publishSoulVersionForUser(
           slug,
           version,
           readmeText,
-          files: sanitizedFiles.map((file) => ({ path: file.path ?? '', sha256: file.sha256 })),
+          files: publishFiles.map((file) => ({ path: file.path, sha256: file.sha256 })),
         })
 
   const embeddingPromise = generateEmbedding(embeddingText)
@@ -166,7 +168,7 @@ export async function publishSoulVersionForUser(
     changelogSource,
     tags: args.tags?.map((tag) => tag.trim()).filter(Boolean),
     fingerprint,
-    files: sanitizedFiles,
+    files: publishFiles,
     parsed: {
       frontmatter,
       metadata,
@@ -186,7 +188,7 @@ export async function publishSoulVersionForUser(
       version,
       displayName,
       ownerHandle,
-      files: sanitizedFiles,
+      files: publishFiles,
       publishedAt: Date.now(),
     })
     .catch((error) => {

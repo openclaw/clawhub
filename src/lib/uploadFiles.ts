@@ -18,32 +18,54 @@ const TEXT_TYPES = new Map([
   ['svg', 'image/svg+xml'],
 ])
 
-export async function expandFiles(selected: File[]) {
+export type ExpandFilesReport = {
+  files: File[]
+  ignoredMacJunkPaths: string[]
+}
+
+export async function expandFilesWithReport(selected: File[]): Promise<ExpandFilesReport> {
   const expanded: File[] = []
+  const ignoredMacJunkPaths: string[] = []
   for (const file of selected) {
     const lower = file.name.toLowerCase()
     if (lower.endsWith('.zip')) {
       const entries = unzipSync(new Uint8Array(await readArrayBuffer(file)))
       pushArchiveEntries(
         expanded,
+        ignoredMacJunkPaths,
         Object.entries(entries).map(([path, data]) => ({ path, data })),
       )
       continue
     }
     if (lower.endsWith('.tar.gz') || lower.endsWith('.tgz')) {
       const unpacked = gunzipSync(new Uint8Array(await readArrayBuffer(file)))
-      pushArchiveEntries(expanded, untar(unpacked))
+      pushArchiveEntries(expanded, ignoredMacJunkPaths, untar(unpacked))
       continue
     }
     if (lower.endsWith('.gz')) {
       const unpacked = gunzipSync(new Uint8Array(await readArrayBuffer(file)))
       const name = file.name.replace(/\.gz$/i, '')
+      const normalizedName = normalizePath(name)
+      if (isMacJunkPath(normalizedName)) {
+        ignoredMacJunkPaths.push(normalizedName || name)
+        continue
+      }
       expanded.push(new File([toArrayBuffer(unpacked)], name, { type: guessContentType(name) }))
+      continue
+    }
+    const path = getFilePath(file)
+    if (path && isMacJunkPath(path)) {
+      ignoredMacJunkPaths.push(path)
       continue
     }
     expanded.push(file)
   }
-  return expanded
+  return { files: expanded, ignoredMacJunkPaths }
+}
+
+export async function expandFiles(selected: File[]) {
+  const report = await expandFilesWithReport(selected)
+  return report.files
 }
 
 export async function expandDroppedItems(items: DataTransferItemList | null) {
@@ -104,12 +126,23 @@ async function readAllEntries(reader: FileSystemDirectoryReader) {
   return entries
 }
 
-function pushArchiveEntries(target: File[], entries: Array<{ path: string; data: Uint8Array }>) {
-  const normalized = entries
-    .map((entry) => ({ ...entry, path: normalizePath(entry.path) }))
-    .filter((entry) => entry.path && !entry.path.endsWith('/'))
-    .filter((entry) => !isJunkPath(entry.path))
-    .filter((entry) => isTextPath(entry.path))
+function pushArchiveEntries(
+  target: File[],
+  ignoredMacJunkPaths: string[],
+  entries: Array<{ path: string; data: Uint8Array }>,
+) {
+  const normalized: Array<{ path: string; data: Uint8Array }> = []
+
+  for (const entry of entries) {
+    const path = normalizePath(entry.path)
+    if (!path || path.endsWith('/')) continue
+    if (isMacJunkPath(path)) {
+      ignoredMacJunkPaths.push(path)
+      continue
+    }
+    if (!isTextPath(path)) continue
+    normalized.push({ path, data: entry.data })
+  }
 
   const unwrapped = unwrapSingleTopLevelFolder(normalized)
 
@@ -167,6 +200,11 @@ function normalizePath(path: string) {
     .replace(/^\/+/, '')
 }
 
+function getFilePath(file: File) {
+  const rawPath = file.webkitRelativePath?.trim() ? file.webkitRelativePath : file.name
+  return normalizePath(rawPath)
+}
+
 function untar(bytes: Uint8Array) {
   const entries: Array<{ path: string; data: Uint8Array }> = []
   let offset = 0
@@ -212,11 +250,14 @@ function unwrapSingleTopLevelFolder<T extends { path: string }>(entries: T[]) {
   }))
 }
 
-function isJunkPath(path: string) {
-  const normalized = path.toLowerCase()
-  if (normalized.startsWith('__macosx/')) return true
-  if (normalized.endsWith('/.ds_store')) return true
-  if (normalized === '.ds_store') return true
+function isMacJunkPath(path: string) {
+  const normalized = normalizePath(path).toLowerCase()
+  if (!normalized) return false
+  const segments = normalized.split('/').filter(Boolean)
+  if (segments.includes('__macosx')) return true
+  const basename = segments.at(-1) ?? ''
+  if (basename === '.ds_store') return true
+  if (basename.startsWith('._')) return true
   return false
 }
 

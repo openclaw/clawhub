@@ -872,6 +872,50 @@ describe('httpApiV1 handlers', () => {
     }
   })
 
+  it('publish multipart ignores mac junk files', async () => {
+    vi.mocked(requireApiTokenUser).mockResolvedValueOnce({
+      userId: 'users:1',
+      user: { handle: 'p' },
+    } as never)
+    vi.mocked(publishVersionForUser).mockResolvedValueOnce({
+      skillId: 's',
+      versionId: 'v',
+      embeddingId: 'e',
+    } as never)
+    const runMutation = vi.fn().mockResolvedValue(okRate())
+    const store = vi.fn().mockResolvedValue('storage:1')
+    const form = new FormData()
+    form.set(
+      'payload',
+      JSON.stringify({
+        slug: 'demo',
+        displayName: 'Demo',
+        version: '1.0.0',
+        changelog: '',
+        tags: ['latest'],
+      }),
+    )
+    form.append('files', new Blob(['hello'], { type: 'text/plain' }), 'SKILL.md')
+    form.append('files', new Blob(['junk'], { type: 'application/octet-stream' }), '.DS_Store')
+    const response = await __handlers.publishSkillV1Handler(
+      makeCtx({ runMutation, storage: { store } }),
+      new Request('https://example.com/api/v1/skills', {
+        method: 'POST',
+        headers: { Authorization: 'Bearer clh_test' },
+        body: form,
+      }),
+    )
+    if (response.status !== 200) {
+      throw new Error(await response.text())
+    }
+
+    expect(store).toHaveBeenCalledTimes(1)
+    const publishArgs = vi.mocked(publishVersionForUser).mock.calls[0]?.[2] as
+      | { files?: Array<{ path: string }> }
+      | undefined
+    expect(publishArgs?.files?.map((file) => file.path)).toEqual(['SKILL.md'])
+  })
+
   it('publish rejects missing token', async () => {
     const runMutation = vi.fn().mockResolvedValue(okRate())
     const response = await __handlers.publishSkillV1Handler(

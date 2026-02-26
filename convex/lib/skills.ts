@@ -140,6 +140,22 @@ export function isTextFile(path: string, contentType?: string | null) {
   return false
 }
 
+export function isMacJunkPath(path: string) {
+  const normalized = path
+    .trim()
+    .replaceAll('\\', '/')
+    .replace(/^\/+/, '')
+    .toLowerCase()
+  if (!normalized) return false
+  const segments = normalized.split('/').filter(Boolean)
+  if (segments.length === 0) return false
+  if (segments.includes('__macosx')) return true
+  const basename = segments.at(-1) ?? ''
+  if (basename === '.ds_store') return true
+  if (basename.startsWith('._')) return true
+  return false
+}
+
 export function sanitizePath(path: string) {
   const trimmed = path.trim().replace(/^\/+/, '')
   if (!trimmed || trimmed.includes('..') || trimmed.includes('\\')) {

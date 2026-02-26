@@ -21,6 +21,7 @@ import {
   getFrontmatterMetadata,
   getFrontmatterValue,
   hashSkillFiles,
+  isMacJunkPath,
   isTextFile,
   parseClawdisMetadata,
   parseFrontmatter,
@@ -111,16 +112,17 @@ export async function publishVersionForUser(
     ...file,
     path: file.path as string,
   }))
-  if (safeFiles.some((file) => !isTextFile(file.path, file.contentType ?? undefined))) {
+  const publishFiles = safeFiles.filter((file) => !isMacJunkPath(file.path))
+  if (publishFiles.some((file) => !isTextFile(file.path, file.contentType ?? undefined))) {
     throw new ConvexError('Only text-based files are allowed')
   }
 
-  const totalBytes = safeFiles.reduce((sum, file) => sum + file.size, 0)
+  const totalBytes = publishFiles.reduce((sum, file) => sum + file.size, 0)
   if (totalBytes > MAX_TOTAL_BYTES) {
     throw new ConvexError('Skill bundle exceeds 50MB limit')
   }
 
-  const readmeFile = safeFiles.find(
+  const readmeFile = publishFiles.find(
     (file) => file.path?.toLowerCase() === 'skill.md' || file.path?.toLowerCase() === 'skills.md',
   )
   if (!readmeFile) throw new ConvexError('SKILL.md is required')
@@ -204,7 +206,7 @@ export async function publishVersionForUser(
   const metadata = mergeSourceIntoMetadata(frontmatterMetadata, args.source, qualityAssessment)
 
   const otherFiles = [] as Array<{ path: string; content: string }>
-  for (const file of safeFiles) {
+  for (const file of publishFiles) {
     if (!file.path || file.path.toLowerCase().endsWith('.md')) continue
     if (!isTextFile(file.path, file.contentType ?? undefined)) continue
     const content = await fetchText(ctx, file.storageId)
@@ -219,7 +221,7 @@ export async function publishVersionForUser(
   })
 
   const fingerprintPromise = hashSkillFiles(
-    safeFiles.map((file) => ({ path: file.path, sha256: file.sha256 })),
+    publishFiles.map((file) => ({ path: file.path, sha256: file.sha256 })),
   )
 
   const changelogPromise =
@@ -229,7 +231,7 @@ export async function publishVersionForUser(
           slug,
           version,
           readmeText,
-          files: safeFiles.map((file) => ({ path: file.path, sha256: file.sha256 })),
+          files: publishFiles.map((file) => ({ path: file.path, sha256: file.sha256 })),
         })
 
   const embeddingPromise = generateEmbedding(embeddingText)
@@ -258,7 +260,7 @@ export async function publishVersionForUser(
         }
       : undefined,
     bypassNewSkillRateLimit: options.bypassNewSkillRateLimit || undefined,
-    files: safeFiles.map((file) => ({
+    files: publishFiles.map((file) => ({
       ...file,
       path: file.path,
     })),
@@ -298,7 +300,7 @@ export async function publishVersionForUser(
         version,
         displayName,
         ownerHandle,
-        files: safeFiles,
+        files: publishFiles,
         publishedAt: Date.now(),
       })
       .catch((error) => {

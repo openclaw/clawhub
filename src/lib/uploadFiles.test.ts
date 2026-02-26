@@ -1,7 +1,7 @@
 /* @vitest-environment node */
 import { gzipSync, strToU8, zipSync } from 'fflate'
 import { describe, expect, it } from 'vitest'
-import { expandFiles } from './uploadFiles'
+import { expandFiles, expandFilesWithReport } from './uploadFiles'
 
 if (typeof File === 'undefined') {
   class NodeFile extends Blob {
@@ -76,6 +76,7 @@ describe('expandFiles', () => {
       'hetzner-cloud-skill/SKILL.md': strToU8('hello'),
       'hetzner-cloud-skill/docs/readme.txt': strToU8('doc'),
       '__MACOSX/._SKILL.md': strToU8('junk'),
+      'hetzner-cloud-skill/._notes.txt': strToU8('junk3'),
       'hetzner-cloud-skill/.DS_Store': strToU8('junk2'),
       'hetzner-cloud-skill/screenshot.png': strToU8('not-really-a-png'),
     })
@@ -84,6 +85,17 @@ describe('expandFiles', () => {
     expect(result.map((file) => file.name)).toEqual(['SKILL.md', 'docs/readme.txt'])
     const png = result.find((file) => file.name.endsWith('.png'))
     expect(png).toBeUndefined()
+  })
+
+  it('filters mac junk files and reports ignored paths', async () => {
+    const report = await expandFilesWithReport([
+      new File(['hello'], 'SKILL.md', { type: 'text/markdown' }),
+      new File(['junk'], '.DS_Store', { type: 'application/octet-stream' }),
+      new File(['junk'], '._notes.md', { type: 'text/plain' }),
+    ])
+
+    expect(report.files.map((file) => file.name)).toEqual(['SKILL.md'])
+    expect(report.ignoredMacJunkPaths).toEqual(['.DS_Store', '._notes.md'])
   })
 
   it('expands gzipped tar archives into files', async () => {

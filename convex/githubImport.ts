@@ -20,7 +20,7 @@ import {
   suggestVersion,
 } from './lib/githubImport'
 import { publishVersionForUser } from './lib/skillPublish'
-import { sanitizePath } from './lib/skills'
+import { isMacJunkPath, sanitizePath } from './lib/skills'
 
 const MAX_SELECTED_BYTES = 50 * 1024 * 1024
 const MAX_UNZIPPED_BYTES = 80 * 1024 * 1024
@@ -244,7 +244,7 @@ function unzipToEntries(zipBytes: Uint8Array) {
   for (const [rawPath, bytes] of Object.entries(entries)) {
     const normalizedPath = normalizeZipPath(rawPath)
     if (!normalizedPath) continue
-    if (isJunkPath(normalizedPath)) continue
+    if (isMacJunkPath(normalizedPath)) continue
     if (!bytes) continue
     if (bytes.byteLength > MAX_SINGLE_FILE_BYTES) continue
     totalBytes += bytes.byteLength
@@ -308,10 +308,6 @@ function normalizeZipPath(path: string) {
   return normalized
 }
 
-function isJunkPath(path: string) {
-  const normalized = path.toLowerCase()
-  if (normalized.startsWith('__macosx/')) return true
-  if (normalized.endsWith('/.ds_store')) return true
-  if (normalized === '.ds_store') return true
-  return false
+export const __test = {
+  unzipToEntries,
 }

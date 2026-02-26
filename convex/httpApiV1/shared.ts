@@ -5,6 +5,7 @@ import type { ActionCtx } from '../_generated/server'
 import { assertAdmin } from '../lib/access'
 import { requireApiTokenUser } from '../lib/apiTokenAuth'
 import { corsHeaders, mergeHeaders } from '../lib/httpHeaders'
+import { isMacJunkPath } from '../lib/skills'
 
 export const MAX_RAW_FILE_BYTES = 200 * 1024
 
@@ -259,6 +260,7 @@ export async function parseMultipartPublish(
     const file = toFileLike(entry)
     if (!file) continue
     const path = file.name
+    if (isMacJunkPath(path)) continue
     const size = file.size
     const contentType = file.type || undefined
     const buffer = new Uint8Array(await file.arrayBuffer())

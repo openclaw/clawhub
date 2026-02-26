@@ -1,7 +1,7 @@
 import { strToU8, unzipSync, zipSync } from 'fflate'
 import { describe, expect, it } from 'vitest'
 
-import { expandDroppedItems, expandFiles } from './uploadFiles'
+import { expandDroppedItems, expandFiles, expandFilesWithReport } from './uploadFiles'
 
 function readWithFileReader(blob: Blob) {
   return new Promise<ArrayBuffer>((resolve, reject) => {
@@ -33,6 +33,16 @@ describe('expandFiles (jsdom)', () => {
 
     const expanded = await expandFiles([zipFile])
     expect(expanded.map((file) => file.name)).toEqual(['SKILL.md', 'notes.txt'])
+  })
+
+  it('filters mac junk files and returns ignored paths', async () => {
+    const report = await expandFilesWithReport([
+      new File(['hello'], 'SKILL.md', { type: 'text/markdown' }),
+      new File(['junk'], '.DS_Store', { type: 'application/octet-stream' }),
+    ])
+
+    expect(report.files.map((file) => file.name)).toEqual(['SKILL.md'])
+    expect(report.ignoredMacJunkPaths).toEqual(['.DS_Store'])
   })
 })
 

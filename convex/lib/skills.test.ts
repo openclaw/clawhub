@@ -4,6 +4,7 @@ import {
   getFrontmatterMetadata,
   getFrontmatterValue,
   hashSkillFiles,
+  isMacJunkPath,
   isTextFile,
   parseClawdisMetadata,
   parseFrontmatter,
@@ -150,6 +151,15 @@ describe('skills utils', () => {
     expect(isTextFile('note.txt', 'text/plain')).toBe(true)
     expect(isTextFile('data.any', 'application/json')).toBe(true)
     expect(isTextFile('data.json')).toBe(true)
+  })
+
+  it('detects mac junk paths', () => {
+    expect(isMacJunkPath('.DS_Store')).toBe(true)
+    expect(isMacJunkPath('folder/.DS_Store')).toBe(true)
+    expect(isMacJunkPath('folder/._config.md')).toBe(true)
+    expect(isMacJunkPath('__MACOSX/._SKILL.md')).toBe(true)
+    expect(isMacJunkPath('docs/SKILL.md')).toBe(false)
+    expect(isMacJunkPath('notes.md')).toBe(false)
   })
 
   it('builds embedding text', () => {
