@@ -196,10 +196,7 @@ export const importGitHubSkill = action({
       try {
         storageId = await ctx.storage.store(new Blob([safeBytes], { type: 'text/plain' }))
       } catch (error) {
-        const errorMsg = error instanceof Error ? error.message : String(error)
-        throw new ConvexError(
-          `Failed to store file "${sanitized}" (${bytes.byteLength} bytes). ${errorMsg}`,
-        )
+        throw new ConvexError(buildStoreFailureMessage(sanitized, bytes.byteLength, error))
       }
       storedFiles.push({
         path: sanitized,
@@ -241,10 +238,7 @@ export const importGitHubSkill = action({
         },
       })
     } catch (error) {
-      const errorMsg = error instanceof Error ? error.message : String(error)
-      throw new ConvexError(
-        `Import failed during publish: ${errorMsg}. Check skill format, slug availability, and try again.`,
-      )
+      throw new ConvexError(buildPublishFailureMessage(error))
     }
 
     return { ok: true, slug: slugBase, version, ...result }
@@ -324,6 +318,20 @@ function normalizeZipPath(path: string) {
   return normalized
 }
 
+function toErrorMessage(error: unknown) {
+  return error instanceof Error ? error.message : String(error)
+}
+
+function buildStoreFailureMessage(path: string, sizeBytes: number, error: unknown) {
+  return `Failed to store file "${path}" (${sizeBytes} bytes). ${toErrorMessage(error)}`
+}
+
+function buildPublishFailureMessage(error: unknown) {
+  return `Import failed during publish: ${toErrorMessage(error)}. Check skill format, slug availability, and try again.`
+}
+
 export const __test = {
+  buildPublishFailureMessage,
+  buildStoreFailureMessage,
   unzipToEntries,
 }
