@@ -49,6 +49,7 @@ describe('httpApi handlers', () => {
       query: 'test',
       limit: 5,
       highlightedOnly: true,
+      nonSuspiciousOnly: undefined,
     })
     expect(response.status).toBe(200)
     const json = await response.json()
@@ -65,6 +66,7 @@ describe('httpApi handlers', () => {
       query: 'test',
       limit: undefined,
       highlightedOnly: true,
+      nonSuspiciousOnly: undefined,
     })
   })
 
@@ -78,6 +80,21 @@ describe('httpApi handlers', () => {
       query: 'test',
       limit: undefined,
       highlightedOnly: undefined,
+      nonSuspiciousOnly: undefined,
+    })
+  })
+
+  it('searchSkillsHttp forwards nonSuspiciousOnly', async () => {
+    const runAction = vi.fn().mockResolvedValue([])
+    await __handlers.searchSkillsHandler(
+      makeCtx({ runAction }),
+      new Request('https://example.com/api/search?q=test&nonSuspiciousOnly=1'),
+    )
+    expect(runAction).toHaveBeenCalledWith(expect.anything(), {
+      query: 'test',
+      limit: undefined,
+      highlightedOnly: undefined,
+      nonSuspiciousOnly: true,
     })
   })
 

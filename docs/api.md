@@ -59,12 +59,15 @@ Client handling:
 Public read:
 
 - `GET /api/v1/search?q=...`
+  - Optional filters: `highlightedOnly=true`, `nonSuspiciousOnly=true`
 - `GET /api/v1/skills?limit=&cursor=&sort=`
   - `sort`: `updated` (default), `downloads`, `stars` (`rating`), `installsCurrent` (`installs`), `installsAllTime`, `trending`
+  - Optional filter: `nonSuspiciousOnly=true`
 - `GET /api/v1/skills/{slug}`
 - `GET /api/v1/skills/{slug}/moderation`
 - `GET /api/v1/skills/{slug}/versions?limit=&cursor=`
 - `GET /api/v1/skills/{slug}/versions/{version}`
+- `GET /api/v1/skills/{slug}/scan?version=&tag=`
 - `GET /api/v1/skills/{slug}/file?path=&version=&tag=`
 - `GET /api/v1/resolve?slug=&hash=`
 - `GET /api/v1/download?slug=&version=&tag=`

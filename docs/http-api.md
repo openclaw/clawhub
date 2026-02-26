@@ -74,6 +74,7 @@ Query params:
 - `q` (required): query string
 - `limit` (optional): integer
 - `highlightedOnly` (optional): `true` to filter to highlighted skills
+- `nonSuspiciousOnly` (optional): `true` to hide suspicious (`flagged.suspicious`) skills
 
 Response:
 
@@ -92,6 +93,7 @@ Query params:
 - `limit` (optional): integer (1–200)
 - `cursor` (optional): pagination cursor (only for `sort=updated`)
 - `sort` (optional): `updated` (default), `downloads`, `stars` (alias: `rating`), `installsCurrent` (alias: `installs`), `installsAllTime`, `trending`
+- `nonSuspiciousOnly` (optional): `true` to hide suspicious (`flagged.suspicious`) skills
 
 Notes:
 
@@ -144,6 +146,23 @@ Query params:
 ### `GET /api/v1/skills/{slug}/versions/{version}`
 
 Returns version metadata + files list.
+
+- `version.security` includes normalized scan verification status and scanner details
+  (VirusTotal + LLM), when available.
+
+### `GET /api/v1/skills/{slug}/scan`
+
+Returns security scan verification details for a skill version.
+
+Query params:
+
+- `version` (optional): specific version string.
+- `tag` (optional): resolve a tagged version (for example `latest`).
+
+Notes:
+
+- If neither `version` nor `tag` is provided, uses the latest version.
+- Includes normalized verification status plus scanner-specific details.
 
 ### `GET /api/v1/skills/{slug}/file`
 
