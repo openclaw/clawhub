@@ -1627,9 +1627,7 @@ export const listPublicPageV2 = query({
           })
         : result.page
 
-    // Build the public skill entries — skip version doc reads to reduce bandwidth.
-    // Version data is only needed for detail pages, not the listing.
-    const items = await buildPublicSkillEntries(ctx, filteredPage, { includeVersion: false })
+    const items = await buildPublicSkillEntries(ctx, filteredPage)
     return { ...result, page: items }
   },
 })
