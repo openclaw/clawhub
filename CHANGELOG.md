@@ -17,6 +17,7 @@
 - Security/docs: document comment reporting/auto-hide behavior alongside existing skill reporting rules.
 - Security/moderation: add bounded explainable auto-ban reasons for scam comments and protect moderator/admin accounts from automated bans.
 - Moderation: banning users now also soft-deletes their authored comments (skill + soul), including legacy cleanup on re-ban.
+- Skill metadata: support env vars, dependency declarations, author, and links in parsed manifest metadata + install UI (#360) (thanks @mahsumaktas).
 - Quality gate: language-aware word counting (`Intl.Segmenter`) and new `cjkChars` signal to reduce false rejects for non-Latin docs.
 - Jobs: run skill stat event processing every 5 minutes (was 15).
 - API performance: batch resolve skill/soul tags in v1 list/get endpoints (fewer action->query round-trips) (#112) (thanks @mkrokosz).
