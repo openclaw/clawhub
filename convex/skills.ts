@@ -2285,20 +2285,21 @@ export const listPublicPage = query({
     }
 
     if (sort === 'trending') {
-      const entries = await getTrendingEntries(ctx, limit)
+      const entries = await getTrendingEntries(
+        ctx,
+        args.nonSuspiciousOnly ? MAX_PUBLIC_LIST_LIMIT : limit,
+      )
       const skills: Doc<'skills'>[] = []
 
       for (const entry of entries) {
         const skill = await ctx.db.get(entry.skillId)
         if (!skill || skill.softDeletedAt) continue
+        if (args.nonSuspiciousOnly && isSkillSuspicious(skill)) continue
         skills.push(skill)
         if (skills.length >= limit) break
       }
 
-      const items = await buildPublicSkillEntries(
-        ctx,
-        filterPublicSkillPage(skills, { nonSuspiciousOnly: args.nonSuspiciousOnly }),
-      )
+      const items = await buildPublicSkillEntries(ctx, skills)
       return { items, nextCursor: null }
     }
 

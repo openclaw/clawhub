@@ -12,6 +12,7 @@ import type { ActionCtx } from './_generated/server'
 import { httpAction } from './functions'
 import { requireApiTokenUser } from './lib/apiTokenAuth'
 import { corsHeaders, mergeHeaders } from './lib/httpHeaders'
+import { parseBooleanQueryParam } from './lib/httpUtils'
 import { publishVersionForUser } from './skills'
 
 type SearchSkillEntry = {
@@ -276,12 +277,6 @@ function toOptionalNumber(value: string | null) {
   if (!value) return undefined
   const parsed = Number.parseInt(value, 10)
   return Number.isFinite(parsed) ? parsed : undefined
-}
-
-function parseBooleanQueryParam(value: string | null) {
-  if (!value) return false
-  const normalized = value.trim().toLowerCase()
-  return normalized === 'true' || normalized === '1'
 }
 
 function parsePublishBody(body: unknown) {
