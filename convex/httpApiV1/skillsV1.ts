@@ -240,6 +240,17 @@ function mergeSecurityStatuses(statuses: NormalizedSecurityStatus[]) {
   )
 }
 
+function hasLlmDimensionWarnings(
+  dimensions: NonNullable<Doc<'skillVersions'>['llmAnalysis']>['dimensions'] | undefined,
+) {
+  if (!Array.isArray(dimensions)) return false
+  return dimensions.some((dimension) => {
+    if (!dimension || typeof dimension !== 'object') return false
+    const rating = (dimension as { rating?: unknown }).rating
+    return typeof rating === 'string' && rating !== 'ok'
+  })
+}
+
 function buildSkillSecuritySnapshot(version: Doc<'skillVersions'>): SkillSecuritySnapshot | null {
   const sha256hash = version.sha256hash ?? null
   const vt = version.vtAnalysis
@@ -255,7 +266,8 @@ function buildSkillSecuritySnapshot(version: Doc<'skillVersions'>): SkillSecurit
   if (llmStatus) statuses.push(llmStatus)
   if (statuses.length === 0 && sha256hash) statuses.push('pending')
   const status = mergeSecurityStatuses(statuses)
-  const hasWarnings = status === 'suspicious' || status === 'malicious'
+  const hasWarnings =
+    status === 'suspicious' || status === 'malicious' || hasLlmDimensionWarnings(llm?.dimensions)
 
   const checkedAtCandidates = [vt?.checkedAt, llm?.checkedAt].filter(
     (value): value is number => typeof value === 'number',
