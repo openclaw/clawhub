@@ -9,6 +9,8 @@ import { ApiRoutes, parseArk } from './schema/index.js'
 
 const REQUEST_TIMEOUT_MS = 15_000
 const REQUEST_TIMEOUT_SECONDS = Math.ceil(REQUEST_TIMEOUT_MS / 1000)
+const UPLOAD_TIMEOUT_MS = 120_000
+const UPLOAD_TIMEOUT_SECONDS = Math.ceil(UPLOAD_TIMEOUT_MS / 1000)
 const RETRY_COUNT = 2
 const RETRY_BACKOFF_BASE_MS = 300
 const RETRY_BACKOFF_MAX_MS = 5_000
@@ -143,11 +145,11 @@ export async function apiRequestForm<T>(
 
       const headers: Record<string, string> = { Accept: 'application/json' }
       if (args.token) headers.Authorization = `Bearer ${args.token}`
-      const response = await fetchWithTimeout(url, {
-        method: args.method,
-        headers,
-        body: args.form,
-      })
+      const response = await fetchWithTimeout(
+        url,
+        { method: args.method, headers, body: args.form },
+        UPLOAD_TIMEOUT_MS,
+      )
       if (!response.ok) {
         throwHttpStatusError(response.status, await readResponseTextSafe(response), response.headers)
       }
@@ -205,11 +207,24 @@ export async function downloadZip(
   )
 }
 
-async function fetchWithTimeout(url: string, init: RequestInit): Promise<Response> {
+async function fetchWithTimeout(
+  url: string,
+  init: RequestInit,
+  timeoutMs: number = REQUEST_TIMEOUT_MS,
+): Promise<Response> {
   const controller = new AbortController()
-  const timeout = setTimeout(() => controller.abort(new Error('Timeout')), REQUEST_TIMEOUT_MS)
+  const timeout = setTimeout(() => {
+    // Ensure we always throw a proper Error instance. Some Node/undici versions
+    // propagate the abort reason as-is; if it is not an Error, pRetry will
+    // surface "Non-error was thrown" instead of a meaningful message.
+    controller.abort(new Error(`Request timed out after ${timeoutMs}ms`))
+  }, timeoutMs)
   try {
     return await fetch(url, { ...init, signal: controller.signal })
+  } catch (err) {
+    // Re-wrap non-Error rejections so pRetry always receives an Error instance.
+    if (err instanceof Error) throw err
+    throw new Error(String(err))
   } finally {
     clearTimeout(timeout)
   }
@@ -425,7 +440,7 @@ async function fetchJsonFormViaCurl(url: string, args: FormRequestArgs) {
       '--show-error',
       '--location',
       '--max-time',
-      String(REQUEST_TIMEOUT_SECONDS),
+      String(UPLOAD_TIMEOUT_SECONDS),
       '--write-out',
       CURL_WRITE_OUT_FORMAT,
       '-X',
