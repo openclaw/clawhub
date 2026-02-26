@@ -977,6 +977,47 @@ describe('httpApiV1 handlers', () => {
     expect(json.version.security.virustotalUrl).toContain('virustotal.com/gui/file/')
   })
 
+  it('keeps hasWarnings true when llm dimensions include non-ok ratings', async () => {
+    const runQuery = vi.fn(async (_query: unknown, args: Record<string, unknown>) => {
+      if ('slug' in args) {
+        return { _id: 'skills:1', slug: 'demo', displayName: 'Demo' }
+      }
+      if ('skillId' in args && 'version' in args) {
+        return {
+          version: '1.0.0',
+          createdAt: 1,
+          changelog: 'c',
+          changelogSource: 'auto',
+          sha256hash: 'a'.repeat(64),
+          llmAnalysis: {
+            status: 'completed',
+            verdict: 'benign',
+            checkedAt: 123,
+            dimensions: [
+              {
+                name: 'scope_alignment',
+                rating: 'warn',
+                rationale: 'broad install footprint',
+                evidence: '',
+              },
+            ],
+          },
+          files: [],
+        }
+      }
+      return null
+    })
+    const runMutation = vi.fn().mockResolvedValue(okRate())
+    const response = await __handlers.skillsGetRouterV1Handler(
+      makeCtx({ runQuery, runMutation }),
+      new Request('https://example.com/api/v1/skills/demo/versions/1.0.0'),
+    )
+    expect(response.status).toBe(200)
+    const json = await response.json()
+    expect(json.version.security.status).toBe('clean')
+    expect(json.version.security.hasWarnings).toBe(true)
+  })
+
   it('returns scan payload for latest version', async () => {
     const runQuery = vi.fn(async (_query: unknown, args: Record<string, unknown>) => {
       if ('slug' in args) {
