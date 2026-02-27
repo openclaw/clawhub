@@ -234,6 +234,64 @@ describe('search helpers', () => {
     expect(result).toHaveLength(0)
   })
 
+  it('excludes soft-deleted skills from vector search results (#29)', async () => {
+    const result = await hydrateResultsHandler(
+      {
+        db: {
+          get: vi.fn(async (id: string) => {
+            if (id === 'skillEmbeddings:1') {
+              return { _id: 'skillEmbeddings:1', skillId: 'skills:1', versionId: 'skillVersions:1' }
+            }
+            if (id === 'skillEmbeddings:2') {
+              return { _id: 'skillEmbeddings:2', skillId: 'skills:2', versionId: 'skillVersions:2' }
+            }
+            if (id === 'skills:1') {
+              return {
+                ...makeSkillDoc({ id: 'skills:1', slug: 'active-skill', displayName: 'Active' }),
+                softDeletedAt: undefined,
+              }
+            }
+            if (id === 'skills:2') {
+              return {
+                ...makeSkillDoc({ id: 'skills:2', slug: 'deleted-skill', displayName: 'Deleted' }),
+                softDeletedAt: 1700000000000,
+              }
+            }
+            if (id === 'users:owner') return { _id: 'users:owner', handle: 'owner' }
+            if (id.startsWith('skillVersions:')) return { _id: id, version: '1.0.0' }
+            return null
+          }),
+          query: vi.fn(() => ({
+            withIndex: () => ({ unique: vi.fn().mockResolvedValue(null) }),
+          })),
+        },
+      },
+      { embeddingIds: ['skillEmbeddings:1', 'skillEmbeddings:2'] },
+    )
+
+    expect(result).toHaveLength(1)
+    expect(result[0].skill.slug).toBe('active-skill')
+  })
+
+  it('excludes soft-deleted exact slug match from lexical fallback (#29)', async () => {
+    const deletedSkill = {
+      ...makeSkillDoc({ id: 'skills:deleted', slug: 'orf', displayName: 'ORF' }),
+      softDeletedAt: 1700000000000,
+    }
+    const ctx = makeLexicalCtx({
+      exactSlugSkill: deletedSkill,
+      recentSkills: [],
+    })
+
+    const result = await lexicalFallbackSkillsHandler(ctx, {
+      query: 'orf',
+      queryTokens: ['orf'],
+      limit: 10,
+    })
+
+    expect(result).toHaveLength(0)
+  })
+
   it('advances candidate limit until max', () => {
     expect(__test.getNextCandidateLimit(50, 1000)).toBe(100)
     expect(__test.getNextCandidateLimit(800, 1000)).toBe(1000)
