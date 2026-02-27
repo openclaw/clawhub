@@ -8,7 +8,9 @@ import type { ArkValidator } from './schema/index.js'
 import { ApiRoutes, parseArk } from './schema/index.js'
 
 const REQUEST_TIMEOUT_MS = 15_000
+const UPLOAD_TIMEOUT_MS = 120_000
 const REQUEST_TIMEOUT_SECONDS = Math.ceil(REQUEST_TIMEOUT_MS / 1000)
+const UPLOAD_TIMEOUT_SECONDS = Math.ceil(UPLOAD_TIMEOUT_MS / 1000)
 const RETRY_COUNT = 2
 const RETRY_BACKOFF_BASE_MS = 300
 const RETRY_BACKOFF_MAX_MS = 5_000
@@ -147,7 +149,7 @@ export async function apiRequestForm<T>(
         method: args.method,
         headers,
         body: args.form,
-      })
+      }, UPLOAD_TIMEOUT_MS)
       if (!response.ok) {
         throwHttpStatusError(response.status, await readResponseTextSafe(response), response.headers)
       }
@@ -205,11 +207,22 @@ export async function downloadZip(
   )
 }
 
-async function fetchWithTimeout(url: string, init: RequestInit): Promise<Response> {
+async function fetchWithTimeout(url: string, init: RequestInit, timeoutMs = REQUEST_TIMEOUT_MS): Promise<Response> {
   const controller = new AbortController()
-  const timeout = setTimeout(() => controller.abort(new Error('Timeout')), REQUEST_TIMEOUT_MS)
+  const timeoutSeconds = Math.ceil(timeoutMs / 1000)
+  const timeout = setTimeout(
+    () => controller.abort(new Error(`Request timed out after ${timeoutSeconds}s`)),
+    timeoutMs,
+  )
   try {
     return await fetch(url, { ...init, signal: controller.signal })
+  } catch (error) {
+    if (error instanceof Error) throw error
+    // Normalize non-Error throws (e.g. DOMException from AbortController) into proper Errors
+    const message = typeof error === 'object' && error !== null && 'message' in error
+      ? String((error as { message: unknown }).message)
+      : String(error)
+    throw new Error(message, { cause: error })
   } finally {
     clearTimeout(timeout)
   }
@@ -425,7 +438,7 @@ async function fetchJsonFormViaCurl(url: string, args: FormRequestArgs) {
       '--show-error',
       '--location',
       '--max-time',
-      String(REQUEST_TIMEOUT_SECONDS),
+      String(UPLOAD_TIMEOUT_SECONDS),
       '--write-out',
       CURL_WRITE_OUT_FORMAT,
       '-X',
