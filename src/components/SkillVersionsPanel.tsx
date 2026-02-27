@@ -1,5 +1,5 @@
 import type { Doc } from '../../convex/_generated/dataModel'
-import { type LlmAnalysis, SecurityScanResults } from './SkillSecurityScanResults'
+import { type LlmAnalysis, type OatheAnalysis, SecurityScanResults } from './SkillSecurityScanResults'
 
 type SkillVersionsPanelProps = {
   versions: Doc<'skillVersions'>[] | undefined
@@ -33,11 +33,12 @@ export function SkillVersionsPanel({ versions, nixPlugin, skillSlug }: SkillVers
                 </div>
                 <div style={{ color: '#5c554e', whiteSpace: 'pre-wrap' }}>{version.changelog}</div>
                 <div className="version-scan-results">
-                  {version.sha256hash || version.llmAnalysis ? (
+                  {version.sha256hash || version.llmAnalysis || version.oatheAnalysis ? (
                     <SecurityScanResults
                       sha256hash={version.sha256hash}
                       vtAnalysis={version.vtAnalysis}
                       llmAnalysis={version.llmAnalysis as LlmAnalysis | undefined}
+                      oatheAnalysis={version.oatheAnalysis as OatheAnalysis | undefined}
                       variant="badge"
                     />
                   ) : null}

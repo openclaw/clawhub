@@ -76,6 +76,7 @@ import type * as lib_userSearch from "../lib/userSearch.js";
 import type * as lib_webhooks from "../lib/webhooks.js";
 import type * as llmEval from "../llmEval.js";
 import type * as maintenance from "../maintenance.js";
+import type * as oathe from "../oathe.js";
 import type * as rateLimits from "../rateLimits.js";
 import type * as search from "../search.js";
 import type * as seed from "../seed.js";
@@ -170,6 +171,7 @@ declare const fullApi: ApiFromModules<{
   "lib/webhooks": typeof lib_webhooks;
   llmEval: typeof llmEval;
   maintenance: typeof maintenance;
+  oathe: typeof oathe;
   rateLimits: typeof rateLimits;
   search: typeof search;
   seed: typeof seed;

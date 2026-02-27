@@ -27,10 +27,28 @@ export type LlmAnalysis = {
   checkedAt: number
 }
 
+type OatheAnalysisDimension = {
+  name: string
+  label: string
+  rating: string
+  detail: string
+}
+
+export type OatheAnalysis = {
+  status: string
+  score?: number
+  verdict?: string
+  summary?: string
+  dimensions?: OatheAnalysisDimension[]
+  reportUrl?: string
+  checkedAt: number
+}
+
 type SecurityScanResultsProps = {
   sha256hash?: string
   vtAnalysis?: VtAnalysis | null
   llmAnalysis?: LlmAnalysis | null
+  oatheAnalysis?: OatheAnalysis | null
   variant?: 'panel' | 'badge'
 }
 
@@ -83,6 +101,25 @@ function OpenClawIcon({ className }: { className?: string }) {
   )
 }
 
+function OatheIcon({ className }: { className?: string }) {
+  return (
+    <svg
+      className={className}
+      width="1em"
+      height="1em"
+      viewBox="0 0 24 24"
+      fill="none"
+      aria-label="Oathe"
+    >
+      <title>Oathe</title>
+      <path
+        d="M12 2C9.24 2 7 4.24 7 7v3H6c-1.1 0-2 .9-2 2v8c0 1.1.9 2 2 2h12c1.1 0 2-.9 2-2v-8c0-1.1-.9-2-2-2h-1V7c0-2.76-2.24-5-5-5zm3 10H9V7c0-1.66 1.34-3 3-3s3 1.34 3 3v3z"
+        fill="currentColor"
+      />
+    </svg>
+  )
+}
+
 function getScanStatusInfo(status: string) {
   switch (status.toLowerCase()) {
     case 'benign':
@@ -99,6 +136,25 @@ function getScanStatusInfo(status: string) {
       return { label: 'Pending', className: 'scan-status-pending' }
     case 'error':
     case 'failed':
+      return { label: 'Error', className: 'scan-status-error' }
+    default:
+      return { label: status, className: 'scan-status-unknown' }
+  }
+}
+
+function getOatheStatusInfo(status: string) {
+  switch (status.toLowerCase()) {
+    case 'safe':
+      return { label: 'Safe', className: 'scan-status-clean' }
+    case 'caution':
+      return { label: 'Caution', className: 'scan-status-suspicious' }
+    case 'dangerous':
+      return { label: 'Dangerous', className: 'scan-status-malicious' }
+    case 'malicious':
+      return { label: 'Malicious', className: 'scan-status-malicious' }
+    case 'pending':
+      return { label: 'Pending', className: 'scan-status-pending' }
+    case 'error':
       return { label: 'Error', className: 'scan-status-error' }
     default:
       return { label: status, className: 'scan-status-unknown' }
@@ -193,13 +249,56 @@ function LlmAnalysisDetail({ analysis }: { analysis: LlmAnalysis }) {
   )
 }
 
+function OatheAnalysisDetail({ analysis }: { analysis: OatheAnalysis }) {
+  const [isOpen, setIsOpen] = useState(false)
+
+  return (
+    <div className={`analysis-detail${isOpen ? ' is-open' : ''}`}>
+      <button
+        type="button"
+        className="analysis-detail-header"
+        onClick={() => {
+          const selection = window.getSelection()
+          if (selection && !selection.isCollapsed) return
+          setIsOpen((prev) => !prev)
+        }}
+        aria-expanded={isOpen}
+      >
+        <span className="analysis-summary-text">{analysis.summary}</span>
+        <span className="analysis-detail-toggle">
+          Details <span className="chevron">{'\u25BE'}</span>
+        </span>
+      </button>
+      <div className="analysis-body">
+        {analysis.dimensions && analysis.dimensions.length > 0 ? (
+          <div className="analysis-dimensions">
+            {analysis.dimensions.map((dim) => {
+              const icon = getDimensionIcon(dim.rating)
+              return (
+                <div key={dim.name} className="dimension-row">
+                  <div className={`dimension-icon ${icon.className}`}>{icon.symbol}</div>
+                  <div className="dimension-content">
+                    <div className="dimension-label">{dim.label}</div>
+                    <div className="dimension-detail">{dim.detail}</div>
+                  </div>
+                </div>
+              )
+            })}
+          </div>
+        ) : null}
+      </div>
+    </div>
+  )
+}
+
 export function SecurityScanResults({
   sha256hash,
   vtAnalysis,
   llmAnalysis,
+  oatheAnalysis,
   variant = 'panel',
 }: SecurityScanResultsProps) {
-  if (!sha256hash && !llmAnalysis) return null
+  if (!sha256hash && !llmAnalysis && !oatheAnalysis) return null
 
   const vtStatus = vtAnalysis?.status ?? 'pending'
   const vtUrl = sha256hash ? `https://www.virustotal.com/gui/file/${sha256hash}` : null
@@ -209,6 +308,8 @@ export function SecurityScanResults({
 
   const llmVerdict = llmAnalysis?.verdict ?? llmAnalysis?.status
   const llmStatusInfo = llmVerdict ? getScanStatusInfo(llmVerdict) : null
+
+  const oatheStatusInfo = oatheAnalysis ? getOatheStatusInfo(oatheAnalysis.status) : null
 
   if (variant === 'badge') {
     return (
@@ -234,6 +335,26 @@ export function SecurityScanResults({
           <div className="version-scan-badge">
             <OpenClawIcon className="version-scan-icon version-scan-icon-oc" />
             <span className={llmStatusInfo.className}>{llmStatusInfo.label}</span>
+          </div>
+        ) : null}
+        {oatheStatusInfo && oatheAnalysis ? (
+          <div className="version-scan-badge">
+            <OatheIcon className="version-scan-icon version-scan-icon-oathe" />
+            <span className={oatheStatusInfo.className}>
+              {oatheAnalysis.score != null ? `${oatheAnalysis.score} ` : ''}
+              {oatheStatusInfo.label}
+            </span>
+            {oatheAnalysis.reportUrl ? (
+              <a
+                href={oatheAnalysis.reportUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="version-scan-link"
+                onClick={(event) => event.stopPropagation()}
+              >
+                ↗
+              </a>
+            ) : null}
           </div>
         ) : null}
       </>
@@ -286,6 +407,36 @@ export function SecurityScanResults({
         llmAnalysis.status !== 'pending' &&
         llmAnalysis.summary ? (
           <LlmAnalysisDetail analysis={llmAnalysis} />
+        ) : null}
+        {oatheStatusInfo && oatheAnalysis ? (
+          <div className="scan-result-row">
+            <div className="scan-result-scanner">
+              <OatheIcon className="scan-result-icon scan-result-icon-oathe" />
+              <span className="scan-result-scanner-name">Oathe</span>
+            </div>
+            <div className={`scan-result-status ${oatheStatusInfo.className}`}>
+              {oatheStatusInfo.label}
+            </div>
+            {oatheAnalysis.score != null ? (
+              <span className="scan-result-confidence">{oatheAnalysis.score}/100</span>
+            ) : null}
+            {oatheAnalysis.reportUrl ? (
+              <a
+                href={oatheAnalysis.reportUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="scan-result-link"
+              >
+                View full report →
+              </a>
+            ) : null}
+          </div>
+        ) : null}
+        {oatheAnalysis &&
+        oatheAnalysis.status !== 'error' &&
+        oatheAnalysis.status !== 'pending' &&
+        oatheAnalysis.summary ? (
+          <OatheAnalysisDetail analysis={oatheAnalysis} />
         ) : null}
       </div>
     </div>

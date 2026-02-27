@@ -291,6 +291,10 @@ export async function publishVersionForUser(
     versionId: publishResult.versionId,
   })
 
+  await ctx.scheduler.runAfter(0, internal.oathe.notifyOathe, {
+    versionId: publishResult.versionId,
+  })
+
   const ownerHandle = owner?.handle ?? owner?.displayName ?? owner?.name ?? 'unknown'
 
   if (!options.skipBackup) {

@@ -5,7 +5,7 @@ import type { Doc, Id } from '../../convex/_generated/dataModel'
 import { getSkillBadges } from '../lib/badges'
 import { formatCompactStat, formatSkillStatsTriplet } from '../lib/numberFormat'
 import type { PublicSkill, PublicUser } from '../lib/publicUser'
-import { type LlmAnalysis, SecurityScanResults } from './SkillSecurityScanResults'
+import { type LlmAnalysis, type OatheAnalysis, SecurityScanResults } from './SkillSecurityScanResults'
 import { SkillInstallCard } from './SkillInstallCard'
 import { UserBadge } from './UserBadge'
 
@@ -251,8 +251,9 @@ export function SkillHeader({
                 sha256hash={latestVersion?.sha256hash}
                 vtAnalysis={latestVersion?.vtAnalysis}
                 llmAnalysis={latestVersion?.llmAnalysis as LlmAnalysis | undefined}
+                oatheAnalysis={latestVersion?.oatheAnalysis as OatheAnalysis | undefined}
               />
-              {latestVersion?.sha256hash || latestVersion?.llmAnalysis ? (
+              {latestVersion?.sha256hash || latestVersion?.llmAnalysis || latestVersion?.oatheAnalysis ? (
                 <p className="scan-disclaimer">
                   Like a lobster shell, security has layers — review code before you run it.
                 </p>

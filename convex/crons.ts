@@ -60,6 +60,13 @@ crons.interval('vt-cache-backfill', { minutes: 30 }, internal.vt.backfillActiveS
 crons.daily('vt-daily-rescan', { hourUTC: 3, minuteUTC: 0 }, internal.vt.rescanActiveSkills, {})
 
 crons.interval(
+  'oathe-pending-results',
+  { minutes: 10 },
+  internal.oathe.fetchPendingOatheResults,
+  { batchSize: 50 },
+)
+
+crons.interval(
   'download-dedupe-prune',
   { hours: 24 },
   internal.downloads.pruneDownloadDedupesInternal,

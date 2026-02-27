@@ -224,6 +224,26 @@ const skillVersions = defineTable({
       checkedAt: v.number(),
     }),
   ),
+  oatheAnalysis: v.optional(
+    v.object({
+      status: v.string(),
+      score: v.optional(v.number()),
+      verdict: v.optional(v.string()),
+      summary: v.optional(v.string()),
+      dimensions: v.optional(
+        v.array(
+          v.object({
+            name: v.string(),
+            label: v.string(),
+            rating: v.string(),
+            detail: v.string(),
+          }),
+        ),
+      ),
+      reportUrl: v.optional(v.string()),
+      checkedAt: v.number(),
+    }),
+  ),
 })
   .index('by_skill', ['skillId'])
   .index('by_skill_version', ['skillId', 'version'])
