@@ -76,6 +76,13 @@ export function Upload() {
   const [error, setError] = useState<string | null>(null)
   const [isDragging, setIsDragging] = useState(false)
   const fileInputRef = useRef<HTMLInputElement | null>(null)
+  const setFileInputRef = (node: HTMLInputElement | null) => {
+    fileInputRef.current = node
+    if (node) {
+      node.setAttribute('webkitdirectory', '')
+      node.setAttribute('directory', '')
+    }
+  }
   const validationRef = useRef<HTMLDivElement | null>(null)
   const navigate = useNavigate()
   const maxBytes = 50 * 1024 * 1024
@@ -244,11 +251,8 @@ export function Upload() {
     requiredFileLabel,
   ])
 
-  useEffect(() => {
-    if (!fileInputRef.current) return
-    fileInputRef.current.setAttribute('webkitdirectory', '')
-    fileInputRef.current.setAttribute('directory', '')
-  }, [])
+  // webkitdirectory/directory attributes are set via the ref callback (setFileInputRef)
+  // to ensure they persist across hydration and re-renders (#58)
 
   if (!isAuthenticated) {
     return (
@@ -416,15 +420,12 @@ export function Upload() {
             }}
           >
             <input
-              ref={fileInputRef}
+              ref={setFileInputRef}
               className="upload-file-input"
               id="upload-files"
               data-testid="upload-input"
               type="file"
               multiple
-              // @ts-expect-error - non-standard attribute to allow folder selection
-              webkitdirectory=""
-              directory=""
               onChange={(event) => {
                 const picked = Array.from(event.target.files ?? [])
                 void applyExpandedFiles(picked)
