@@ -320,4 +320,46 @@ description: A simple skill
     const meta = parseClawdisMetadata(frontmatter)
     expect(meta).toBeUndefined()
   })
+
+  it('parses requires.env from top-level frontmatter (no clawdis block) (#522)', () => {
+    const frontmatter = parseFrontmatter(`---
+name: sigil-security
+description: Secure AI agent wallets.
+homepage: https://sigil.codes
+requires:
+  env:
+    - SIGIL_API_KEY
+    - SIGIL_ACCOUNT_ADDRESS
+    - SIGIL_AGENT_PRIVATE_KEY
+---`)
+    const meta = parseClawdisMetadata(frontmatter)
+    expect(meta?.requires?.env).toEqual([
+      'SIGIL_API_KEY',
+      'SIGIL_ACCOUNT_ADDRESS',
+      'SIGIL_AGENT_PRIVATE_KEY',
+    ])
+    expect(meta?.homepage).toBe('https://sigil.codes')
+  })
+
+  it('parses requires.bins and requires.anyBins from top-level frontmatter (#522)', () => {
+    const frontmatter = parseFrontmatter(`---
+name: my-tool
+description: A tool skill.
+requires:
+  bins:
+    - curl
+    - jq
+  anyBins:
+    - rg
+    - fd
+  config:
+    - ~/.config/mytool.json
+primaryEnv: MY_API_KEY
+---`)
+    const meta = parseClawdisMetadata(frontmatter)
+    expect(meta?.requires?.bins).toEqual(['curl', 'jq'])
+    expect(meta?.requires?.anyBins).toEqual(['rg', 'fd'])
+    expect(meta?.requires?.config).toEqual(['~/.config/mytool.json'])
+    expect(meta?.primaryEnv).toBe('MY_API_KEY')
+  })
 })

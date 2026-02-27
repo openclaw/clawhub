@@ -399,6 +399,28 @@ function parseSkillLinks(input: unknown): { homepage?: string; repository?: stri
 function parseFrontmatterLevelDeclarations(frontmatter: ParsedSkillFrontmatter): ClawdisSkillMetadata | undefined {
   const metadata: ClawdisSkillMetadata = {}
 
+  // Parse requires block (env, bins, anyBins, config) from top-level frontmatter (#522)
+  const requiresRaw = frontmatter.requires
+  if (requiresRaw && typeof requiresRaw === 'object' && !Array.isArray(requiresRaw)) {
+    const req = requiresRaw as Record<string, unknown>
+    const bins = normalizeStringList(req.bins)
+    const anyBins = normalizeStringList(req.anyBins)
+    const env = normalizeStringList(req.env)
+    const config = normalizeStringList(req.config)
+    if (bins.length || anyBins.length || env.length || config.length) {
+      metadata.requires = {}
+      if (bins.length) metadata.requires.bins = bins
+      if (anyBins.length) metadata.requires.anyBins = anyBins
+      if (env.length) metadata.requires.env = env
+      if (config.length) metadata.requires.config = config
+    }
+  }
+
+  // Parse primaryEnv from top-level frontmatter
+  if (typeof frontmatter.primaryEnv === 'string') {
+    metadata.primaryEnv = String(frontmatter.primaryEnv).trim()
+  }
+
   const envVars = parseEnvVarDeclarations(frontmatter.env)
   if (envVars.length > 0) metadata.envVars = envVars
 

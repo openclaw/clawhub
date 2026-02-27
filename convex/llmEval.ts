@@ -129,6 +129,8 @@ export const evaluateWithLlm = internalAction({
     // 6. Build eval context
     const parsed = version.parsed as SkillEvalContext['parsed']
     const fm = parsed.frontmatter ?? {}
+    const clawdisRecord = (parsed.clawdis ?? {}) as Record<string, unknown>
+    const clawdisLinks = (clawdisRecord.links ?? {}) as Record<string, unknown>
 
     const evalCtx: SkillEvalContext = {
       slug: skill.slug,
@@ -138,7 +140,11 @@ export const evaluateWithLlm = internalAction({
       createdAt: version.createdAt,
       summary: (skill.summary as string | undefined) ?? undefined,
       source: (fm.source as string | undefined) ?? undefined,
-      homepage: (fm.homepage as string | undefined) ?? undefined,
+      homepage:
+        (fm.homepage as string | undefined) ??
+        (clawdisRecord.homepage as string | undefined) ??
+        (clawdisLinks.homepage as string | undefined) ??
+        undefined,
       parsed,
       files: version.files.map((f) => ({ path: f.path, size: f.size })),
       skillMdContent,
