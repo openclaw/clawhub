@@ -12,7 +12,11 @@ export function Footer() {
             <a href="https://openclaw.ai" target="_blank" rel="noreferrer">
               OpenClaw
             </a>{' '}
-            project ·{' '}
+            project · Powered by{' '}
+            <a href="https://www.convex.dev" target="_blank" rel="noreferrer">
+              Convex
+            </a>{' '}
+            ·{' '}
             <a href="https://github.com/openclaw/clawhub" target="_blank" rel="noreferrer">
               Open source (MIT)
             </a>{' '}

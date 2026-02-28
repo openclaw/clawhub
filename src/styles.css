@@ -3497,6 +3497,10 @@ html.theme-transition::view-transition-new(theme) {
   color: var(--accent);
 }
 
+.scan-result-icon-oathe {
+  color: var(--seafoam);
+}
+
 .scan-result-status {
   padding: 2px 8px;
   border-radius: var(--radius-pill);
@@ -3528,6 +3532,11 @@ html.theme-transition::view-transition-new(theme) {
 .scan-status-error {
   background: rgba(239, 68, 68, 0.1);
   color: #dc2626;
+}
+
+.scan-status-unknown {
+  background: rgba(107, 114, 128, 0.1);
+  color: #6b7280;
 }
 
 .scan-result-link {
@@ -3644,6 +3653,10 @@ html.theme-transition::view-transition-new(theme) {
 
 .version-scan-icon-oc {
   color: var(--accent);
+}
+
+.version-scan-icon-oathe {
+  color: var(--seafoam);
 }
 
 .version-scan-link {
