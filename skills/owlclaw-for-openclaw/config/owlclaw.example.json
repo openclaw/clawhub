@@ -1,0 +1,9 @@
+{
+  "mcpServers": {
+    "owlclaw": {
+      "transport": "http",
+      "url": "${OWLCLAW_MCP_ENDPOINT}",
+      "agentCardUrl": "http://127.0.0.1:8080/.well-known/agent.json"
+    }
+  }
+}
