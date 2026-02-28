@@ -12,7 +12,11 @@ export function Footer() {
             <a href="https://openclaw.ai" target="_blank" rel="noreferrer">
               OpenClaw
             </a>{' '}
-            project · Powered by{' '}
+            project · Deployed on{' '}
+            <a href="https://vercel.com" target="_blank" rel="noreferrer">
+              Vercel
+            </a>{' '}
+            · Powered by{' '}
             <a href="https://www.convex.dev" target="_blank" rel="noreferrer">
               Convex
             </a>{' '}
