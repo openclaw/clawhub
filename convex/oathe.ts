@@ -100,7 +100,6 @@ type OatheSkillLatestResponse = {
 function mapReportToAnalysis(
   report: OatheReport,
   slug: string,
-  apiUrl: string,
 ): {
   status: string
   score: number
@@ -126,7 +125,7 @@ function mapReportToAnalysis(
     verdict: report.verdict,
     summary: report.summary,
     dimensions,
-    reportUrl: `${apiUrl}/api/skill/${slug}/latest`,
+    reportUrl: `https://oathe.ai/report/${slug}`,
     checkedAt: Date.now(),
   }
 }
@@ -267,7 +266,7 @@ export const fetchPendingOatheResults = internalAction({
           const data = (await response.json()) as OatheSkillLatestResponse
 
           if (data.status === 'complete' && data.report) {
-            const analysis = mapReportToAnalysis(data.report, slug, apiUrl)
+            const analysis = mapReportToAnalysis(data.report, slug)
             await ctx.runMutation(internal.skills.updateVersionOatheAnalysisInternal, {
               versionId,
               oatheAnalysis: analysis,
