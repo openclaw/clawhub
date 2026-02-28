@@ -2669,6 +2669,7 @@ export const updateVersionOatheAnalysisInternal = internalMutation({
         ),
       ),
       reportUrl: v.optional(v.string()),
+      submittedAt: v.optional(v.number()),
       checkedAt: v.number(),
     }),
   },
@@ -2713,7 +2714,7 @@ export const getSkillsPendingOatheInternal = internalQuery({
 
       // Only include versions with pending oatheAnalysis
       const oathe = version.oatheAnalysis as
-        | { status: string; checkedAt: number }
+        | { status: string; checkedAt: number; submittedAt?: number }
         | undefined
       if (!oathe || oathe.status !== 'pending') continue
 
@@ -2724,7 +2725,7 @@ export const getSkillsPendingOatheInternal = internalQuery({
         skillId: skill._id,
         versionId: version._id,
         slug: skill.slug,
-        pendingSince: oathe.checkedAt,
+        pendingSince: oathe.submittedAt ?? oathe.checkedAt,
       })
     }
 

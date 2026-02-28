@@ -291,6 +291,10 @@ function OatheAnalysisDetail({ analysis }: { analysis: OatheAnalysis }) {
   )
 }
 
+function isSafeUrl(url: string): boolean {
+  return url.startsWith('https://') || url.startsWith('http://')
+}
+
 export function SecurityScanResults({
   sha256hash,
   vtAnalysis,
@@ -344,7 +348,7 @@ export function SecurityScanResults({
               {oatheAnalysis.score != null ? `${oatheAnalysis.score} ` : ''}
               {oatheStatusInfo.label}
             </span>
-            {oatheAnalysis.reportUrl ? (
+            {oatheAnalysis.reportUrl && isSafeUrl(oatheAnalysis.reportUrl) ? (
               <a
                 href={oatheAnalysis.reportUrl}
                 target="_blank"
@@ -420,7 +424,7 @@ export function SecurityScanResults({
             {oatheAnalysis.score != null ? (
               <span className="scan-result-confidence">{oatheAnalysis.score}/100</span>
             ) : null}
-            {oatheAnalysis.reportUrl ? (
+            {oatheAnalysis.reportUrl && isSafeUrl(oatheAnalysis.reportUrl) ? (
               <a
                 href={oatheAnalysis.reportUrl}
                 target="_blank"

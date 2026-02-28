@@ -97,7 +97,7 @@ type OatheSkillLatestResponse = {
 // Helpers
 // ---------------------------------------------------------------------------
 
-function mapReportToAnalysis(
+export function mapReportToAnalysis(
   report: OatheReport,
   slug: string,
 ): {
@@ -182,11 +182,13 @@ export const notifyOathe = internalAction({
           console.warn(`[oathe] Rate-limited submitting ${skill.slug}, setting pending for cron`)
         }
 
+        const now = Date.now()
         await ctx.runMutation(internal.skills.updateVersionOatheAnalysisInternal, {
           versionId: args.versionId,
           oatheAnalysis: {
             status: 'pending',
-            checkedAt: Date.now(),
+            submittedAt: now,
+            checkedAt: now,
           },
         })
         return
@@ -314,21 +316,23 @@ export const fetchPendingOatheResults = internalAction({
             console.error(`[oathe:cron] Re-submit error for ${slug}:`, resubmitError)
           }
 
-          // Reset checkedAt so we don't re-submit every cycle
+          // Reset checkedAt so we don't re-submit every cycle; preserve submittedAt
           await ctx.runMutation(internal.skills.updateVersionOatheAnalysisInternal, {
             versionId,
             oatheAnalysis: {
               status: 'pending',
+              submittedAt: pendingSince,
               checkedAt: Date.now(),
             },
           })
           resubmitted++
         } else {
-          // < 1h: just update checkedAt, wait for next cycle
+          // < 1h: just update checkedAt, wait for next cycle; preserve submittedAt
           await ctx.runMutation(internal.skills.updateVersionOatheAnalysisInternal, {
             versionId,
             oatheAnalysis: {
               status: 'pending',
+              submittedAt: pendingSince,
               checkedAt: Date.now(),
             },
           })
@@ -345,3 +349,9 @@ export const fetchPendingOatheResults = internalAction({
     return { processed: pendingSkills.length, resolved, resubmitted, errors }
   },
 })
+
+// ---------------------------------------------------------------------------
+// Test exports
+// ---------------------------------------------------------------------------
+
+export const __test = { scoreToRating, verdictToStatus, mapReportToAnalysis, DIMENSION_LABELS }

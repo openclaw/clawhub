@@ -241,6 +241,7 @@ const skillVersions = defineTable({
         ),
       ),
       reportUrl: v.optional(v.string()),
+      submittedAt: v.optional(v.number()),
       checkedAt: v.number(),
     }),
   ),
