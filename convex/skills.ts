@@ -2670,6 +2670,7 @@ export const updateVersionOatheAnalysisInternal = internalMutation({
       ),
       reportUrl: v.optional(v.string()),
       submittedAt: v.optional(v.number()),
+      rescanAt: v.optional(v.number()),
       checkedAt: v.number(),
     }),
   },
@@ -2698,23 +2699,30 @@ export const getSkillsPendingOatheInternal = internalQuery({
       .order('desc')
       .take(poolSize)
 
+    // Batch-read all versions in parallel to avoid N+1 sequential reads
+    const skillsWithVersions = allSkills.filter((s) => s.latestVersionId)
+    const versions = await Promise.all(
+      skillsWithVersions.map((s) => ctx.db.get(s.latestVersionId!)),
+    )
+
     const results: Array<{
       skillId: Id<'skills'>
       versionId: Id<'skillVersions'>
       slug: string
       pendingSince: number
+      rescanAt: number | undefined
     }> = []
 
-    for (const skill of allSkills) {
+    for (let i = 0; i < skillsWithVersions.length; i++) {
       if (results.length >= limit) break
-      if (!skill.latestVersionId) continue
 
-      const version = await ctx.db.get(skill.latestVersionId)
+      const skill = skillsWithVersions[i]
+      const version = versions[i]
       if (!version) continue
 
       // Only include versions with pending oatheAnalysis
       const oathe = version.oatheAnalysis as
-        | { status: string; checkedAt: number; submittedAt?: number }
+        | { status: string; checkedAt: number; submittedAt?: number; rescanAt?: number }
         | undefined
       if (!oathe || oathe.status !== 'pending') continue
 
@@ -2726,6 +2734,7 @@ export const getSkillsPendingOatheInternal = internalQuery({
         versionId: version._id,
         slug: skill.slug,
         pendingSince: oathe.submittedAt ?? oathe.checkedAt,
+        rescanAt: oathe.rescanAt,
       })
     }
 

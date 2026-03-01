@@ -292,7 +292,7 @@ function OatheAnalysisDetail({ analysis }: { analysis: OatheAnalysis }) {
 }
 
 function isSafeUrl(url: string): boolean {
-  return url.startsWith('https://') || url.startsWith('http://')
+  return url.startsWith('https://')
 }
 
 export function SecurityScanResults({

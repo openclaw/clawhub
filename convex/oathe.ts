@@ -163,7 +163,8 @@ export const notifyOathe = internalAction({
       return
     }
 
-    const skillUrl = `https://clawhub.ai/${skill.slug}`
+    const siteUrl = (process.env.SITE_URL ?? 'https://clawhub.ai').replace(/\/+$/, '')
+    const skillUrl = `${siteUrl}/${skill.slug}`
 
     try {
       const response = await fetch(`${apiUrl}/api/submit`, {
@@ -246,6 +247,7 @@ export const fetchPendingOatheResults = internalAction({
       versionId: Id<'skillVersions'>
       slug: string
       pendingSince: number
+      rescanAt: number | undefined
     }>
 
     if (pendingSkills.length === 0) {
@@ -258,8 +260,10 @@ export const fetchPendingOatheResults = internalAction({
     let resubmitted = 0
     let errors = 0
 
-    for (const { versionId, slug, pendingSince } of pendingSkills) {
-      const pendingAge = Date.now() - pendingSince
+    const siteUrl = (process.env.SITE_URL ?? 'https://clawhub.ai').replace(/\/+$/, '')
+
+    for (const { versionId, slug, pendingSince, rescanAt } of pendingSkills) {
+      const totalAge = Date.now() - pendingSince
 
       try {
         const response = await fetch(`${apiUrl}/api/skill/${slug}/latest`)
@@ -282,7 +286,7 @@ export const fetchPendingOatheResults = internalAction({
         }
 
         // 404 or non-complete response — escalate by age
-        if (pendingAge > TWENTY_FOUR_HOURS_MS) {
+        if (totalAge > TWENTY_FOUR_HOURS_MS) {
           // > 24h: give up
           await ctx.runMutation(internal.skills.updateVersionOatheAnalysisInternal, {
             versionId,
@@ -294,14 +298,14 @@ export const fetchPendingOatheResults = internalAction({
           })
           console.warn(`[oathe:cron] Timed out ${slug} after 24h`)
           errors++
-        } else if (pendingAge > ONE_HOUR_MS) {
-          // 1–24h: re-submit with force_rescan to bypass dedup
+        } else if (totalAge > ONE_HOUR_MS && (!rescanAt || Date.now() - rescanAt > ONE_HOUR_MS)) {
+          // 1–24h and no rescan within the last hour: re-submit with force_rescan
           try {
             const resubmitResponse = await fetch(`${apiUrl}/api/submit`, {
               method: 'POST',
               headers: { 'Content-Type': 'application/json' },
               body: JSON.stringify({
-                skill_url: `https://clawhub.ai/${slug}`,
+                skill_url: `${siteUrl}/${slug}`,
                 force_rescan: true,
               }),
             })
@@ -316,23 +320,25 @@ export const fetchPendingOatheResults = internalAction({
             console.error(`[oathe:cron] Re-submit error for ${slug}:`, resubmitError)
           }
 
-          // Reset checkedAt so we don't re-submit every cycle; preserve submittedAt
+          // Set rescanAt so we don't re-submit every cycle; preserve submittedAt
           await ctx.runMutation(internal.skills.updateVersionOatheAnalysisInternal, {
             versionId,
             oatheAnalysis: {
               status: 'pending',
               submittedAt: pendingSince,
+              rescanAt: Date.now(),
               checkedAt: Date.now(),
             },
           })
           resubmitted++
         } else {
-          // < 1h: just update checkedAt, wait for next cycle; preserve submittedAt
+          // < 1h or recently rescanned: just update checkedAt, wait for next cycle
           await ctx.runMutation(internal.skills.updateVersionOatheAnalysisInternal, {
             versionId,
             oatheAnalysis: {
               status: 'pending',
               submittedAt: pendingSince,
+              rescanAt,
               checkedAt: Date.now(),
             },
           })
