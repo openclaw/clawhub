@@ -71,7 +71,7 @@ describe('verdictToStatus', () => {
 describe('mapReportToAnalysis', () => {
   const baseReport = {
     audit_id: 'audit-123',
-    skill_url: 'https://clawhub.ai/test-skill',
+    skill_url: 'https://clawhub.ai/test-owner/test-skill',
     skill_slug: 'test-skill',
     summary: 'No significant threats detected.',
     recommendation: 'Safe to use.',
@@ -93,18 +93,18 @@ describe('mapReportToAnalysis', () => {
   }
 
   it('maps a complete report to analysis object', () => {
-    const result = mapReportToAnalysis(baseReport, 'test-skill')
+    const result = mapReportToAnalysis(baseReport, 'test-owner/test-skill')
 
     expect(result.status).toBe('safe')
     expect(result.score).toBe(92)
     expect(result.verdict).toBe('SAFE')
     expect(result.summary).toBe('No significant threats detected.')
-    expect(result.reportUrl).toBe('https://oathe.ai/report/test-skill')
+    expect(result.reportUrl).toBe('https://oathe.ai/report/test-owner/test-skill')
     expect(result.checkedAt).toBeGreaterThan(0)
   })
 
   it('maps dimensions with correct labels and ratings', () => {
-    const result = mapReportToAnalysis(baseReport, 'test-skill')
+    const result = mapReportToAnalysis(baseReport, 'test-owner/test-skill')
 
     expect(result.dimensions).toHaveLength(2)
 
@@ -128,7 +128,7 @@ describe('mapReportToAnalysis', () => {
         custom_dimension: { score: 60, weight: 1, findings: [] },
       },
     }
-    const result = mapReportToAnalysis(report, 'test-skill')
+    const result = mapReportToAnalysis(report, 'test-owner/test-skill')
 
     const dim = result.dimensions.find((d) => d.name === 'custom_dimension')
     expect(dim!.label).toBe('custom_dimension')
@@ -136,7 +136,7 @@ describe('mapReportToAnalysis', () => {
 
   it('maps CAUTION verdict correctly', () => {
     const report = { ...baseReport, verdict: 'CAUTION', trust_score: 54 }
-    const result = mapReportToAnalysis(report, 'test-skill')
+    const result = mapReportToAnalysis(report, 'test-owner/test-skill')
 
     expect(result.status).toBe('caution')
     expect(result.score).toBe(54)
@@ -144,7 +144,7 @@ describe('mapReportToAnalysis', () => {
 
   it('maps MALICIOUS verdict correctly', () => {
     const report = { ...baseReport, verdict: 'MALICIOUS', trust_score: 12 }
-    const result = mapReportToAnalysis(report, 'test-skill')
+    const result = mapReportToAnalysis(report, 'test-owner/test-skill')
 
     expect(result.status).toBe('malicious')
     expect(result.score).toBe(12)
@@ -161,7 +161,7 @@ describe('mapReportToAnalysis', () => {
         },
       },
     }
-    const result = mapReportToAnalysis(report, 'test-skill')
+    const result = mapReportToAnalysis(report, 'test-owner/test-skill')
 
     const dim = result.dimensions.find((d) => d.name === 'code_execution')
     expect(dim!.detail).toBe('Subprocess spawned')

@@ -1799,6 +1799,11 @@ export const getSkillByIdInternal = internalQuery({
   handler: async (ctx, args) => ctx.db.get(args.skillId),
 })
 
+export const getUserByIdInternal = internalQuery({
+  args: { userId: v.id('users') },
+  handler: async (ctx, args) => ctx.db.get(args.userId),
+})
+
 export const getPendingScanSkillsInternal = internalQuery({
   args: {
     limit: v.optional(v.number()),
@@ -2705,10 +2710,18 @@ export const getSkillsPendingOatheInternal = internalQuery({
       skillsWithVersions.map((s) => ctx.db.get(s.latestVersionId!)),
     )
 
+    // Batch-read owner users to avoid N+1 sequential reads
+    const ownerIds = [...new Set(skillsWithVersions.map((s) => s.ownerUserId).filter(Boolean))] as Id<'users'>[]
+    const owners = await Promise.all(ownerIds.map((id) => ctx.db.get(id)))
+    const ownerMap = new Map(
+      owners.filter(Boolean).map((o) => [o!._id, o!]),
+    )
+
     const results: Array<{
       skillId: Id<'skills'>
       versionId: Id<'skillVersions'>
       slug: string
+      ownerHandle: string | null
       pendingSince: number
       rescanAt: number | undefined
     }> = []
@@ -2729,10 +2742,13 @@ export const getSkillsPendingOatheInternal = internalQuery({
       // Skip recently checked (within skipRecentMinutes)
       if (oathe.checkedAt && oathe.checkedAt >= skipThreshold) continue
 
+      const owner = skill.ownerUserId ? ownerMap.get(skill.ownerUserId) : null
+
       results.push({
         skillId: skill._id,
         versionId: version._id,
         slug: skill.slug,
+        ownerHandle: (owner as { handle?: string } | null)?.handle ?? null,
         pendingSince: oathe.submittedAt ?? oathe.checkedAt,
         rescanAt: oathe.rescanAt,
       })

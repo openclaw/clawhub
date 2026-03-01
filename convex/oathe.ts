@@ -99,7 +99,7 @@ type OatheSkillLatestResponse = {
 
 export function mapReportToAnalysis(
   report: OatheReport,
-  slug: string,
+  ownerSlug: string,
 ): {
   status: string
   score: number
@@ -125,7 +125,7 @@ export function mapReportToAnalysis(
     verdict: report.verdict,
     summary: report.summary,
     dimensions,
-    reportUrl: `https://oathe.ai/report/${slug}`,
+    reportUrl: `https://oathe.ai/report/${ownerSlug}`,
     checkedAt: Date.now(),
   }
 }
@@ -163,8 +163,20 @@ export const notifyOathe = internalAction({
       return
     }
 
+    const owner = skill.ownerUserId
+      ? ((await ctx.runQuery(internal.skills.getUserByIdInternal, {
+          userId: skill.ownerUserId,
+        })) as { handle?: string } | null)
+      : null
+    const ownerHandle = owner?.handle?.trim()
+
+    if (!ownerHandle) {
+      console.warn(`[oathe] Skipping ${skill.slug}: owner has no handle`)
+      return
+    }
+
     const siteUrl = (process.env.SITE_URL ?? 'https://clawhub.ai').replace(/\/+$/, '')
-    const skillUrl = `${siteUrl}/${skill.slug}`
+    const skillUrl = `${siteUrl}/${ownerHandle}/${skill.slug}`
 
     try {
       const response = await fetch(`${apiUrl}/api/submit`, {
@@ -246,6 +258,7 @@ export const fetchPendingOatheResults = internalAction({
       skillId: Id<'skills'>
       versionId: Id<'skillVersions'>
       slug: string
+      ownerHandle: string | null
       pendingSince: number
       rescanAt: number | undefined
     }>
@@ -262,17 +275,25 @@ export const fetchPendingOatheResults = internalAction({
 
     const siteUrl = (process.env.SITE_URL ?? 'https://clawhub.ai').replace(/\/+$/, '')
 
-    for (const { versionId, slug, pendingSince, rescanAt } of pendingSkills) {
+    for (const { versionId, slug, ownerHandle, pendingSince, rescanAt } of pendingSkills) {
+      const ownerSlug = ownerHandle ? `${ownerHandle}/${slug}` : null
+
+      // Skip if no owner handle — can't construct valid two-segment API path
+      if (!ownerSlug) {
+        console.warn(`[oathe:cron] Skipping ${slug}: no owner handle`)
+        continue
+      }
+
       const totalAge = Date.now() - pendingSince
 
       try {
-        const response = await fetch(`${apiUrl}/api/skill/${slug}/latest`)
+        const response = await fetch(`${apiUrl}/api/skill/${ownerSlug}/latest`)
 
         if (response.ok) {
           const data = (await response.json()) as OatheSkillLatestResponse
 
           if (data.status === 'complete' && data.report) {
-            const analysis = mapReportToAnalysis(data.report, slug)
+            const analysis = mapReportToAnalysis(data.report, ownerSlug)
             await ctx.runMutation(internal.skills.updateVersionOatheAnalysisInternal, {
               versionId,
               oatheAnalysis: analysis,
@@ -305,7 +326,7 @@ export const fetchPendingOatheResults = internalAction({
               method: 'POST',
               headers: { 'Content-Type': 'application/json' },
               body: JSON.stringify({
-                skill_url: `${siteUrl}/${slug}`,
+                skill_url: `${siteUrl}/${ownerSlug}`,
                 force_rescan: true,
               }),
             })
