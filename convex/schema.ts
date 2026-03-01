@@ -46,6 +46,15 @@ const skills = defineTable({
     }),
   ),
   latestVersionId: v.optional(v.id('skillVersions')),
+  latestVersionSummary: v.optional(
+    v.object({
+      version: v.string(),
+      createdAt: v.number(),
+      changelog: v.string(),
+      changelogSource: v.optional(v.union(v.literal('auto'), v.literal('user'))),
+      clawdis: v.optional(v.any()),
+    }),
+  ),
   tags: v.record(v.string(), v.id('skillVersions')),
   softDeletedAt: v.optional(v.number()),
   badges: v.optional(
@@ -101,6 +110,7 @@ const skills = defineTable({
       evaluatedAt: v.number(),
     }),
   ),
+  isSuspicious: v.optional(v.boolean()),
   moderationFlags: v.optional(v.array(v.string())),
   lastReviewedAt: v.optional(v.number()),
   // VT scan tracking
@@ -146,6 +156,23 @@ const skills = defineTable({
   ])
   .index('by_canonical', ['canonicalSkillId'])
   .index('by_fork_of', ['forkOf.skillId'])
+  .index('by_moderation', ['moderationStatus', 'moderationReason'])
+  .index('by_nonsuspicious_updated', ['softDeletedAt', 'isSuspicious', 'updatedAt'])
+  .index('by_nonsuspicious_created', ['softDeletedAt', 'isSuspicious', 'createdAt'])
+  .index('by_nonsuspicious_name', ['softDeletedAt', 'isSuspicious', 'displayName'])
+  .index('by_nonsuspicious_downloads', [
+    'softDeletedAt',
+    'isSuspicious',
+    'statsDownloads',
+    'updatedAt',
+  ])
+  .index('by_nonsuspicious_stars', ['softDeletedAt', 'isSuspicious', 'statsStars', 'updatedAt'])
+  .index('by_nonsuspicious_installs', [
+    'softDeletedAt',
+    'isSuspicious',
+    'statsInstallsAllTime',
+    'updatedAt',
+  ])
 
 const souls = defineTable({
   slug: v.string(),

@@ -54,7 +54,7 @@ import {
   publishVersionForUser,
   queueHighlightedWebhook,
 } from './lib/skillPublish'
-import { isSkillSuspicious } from './lib/skillSafety'
+import { computeIsSuspicious, isSkillSuspicious } from './lib/skillSafety'
 import { getFrontmatterValue, hashSkillFiles } from './lib/skills'
 
 export { publishVersionForUser } from './lib/skillPublish'
@@ -92,6 +92,15 @@ const SORT_INDEXES = {
   downloads: 'by_active_stats_downloads',
   stars: 'by_active_stats_stars',
   installs: 'by_active_stats_installs_all_time',
+} as const
+
+const NONSUSPICIOUS_SORT_INDEXES = {
+  newest: 'by_nonsuspicious_created',
+  updated: 'by_nonsuspicious_updated',
+  name: 'by_nonsuspicious_name',
+  downloads: 'by_nonsuspicious_downloads',
+  stars: 'by_nonsuspicious_stars',
+  installs: 'by_nonsuspicious_installs',
 } as const
 
 function isSkillVersionId(
@@ -574,13 +583,19 @@ async function buildPublicSkillEntries(
 
   const entries = await Promise.all(
     skills.map(async (skill) => {
+      // Use denormalized summary when available to avoid reading the full ~6KB version doc
+      const hasSummary = includeVersion && skill.latestVersionSummary
       const [latestVersionDoc, ownerInfo] = await Promise.all([
-        includeVersion && skill.latestVersionId ? ctx.db.get(skill.latestVersionId) : null,
+        includeVersion && !hasSummary && skill.latestVersionId
+          ? ctx.db.get(skill.latestVersionId)
+          : null,
         getOwnerInfo(skill.ownerUserId),
       ])
       const publicSkill = toPublicSkill(skill)
       if (!publicSkill) return null
-      const latestVersion = toPublicSkillListVersion(latestVersionDoc)
+      const latestVersion = hasSummary
+        ? toPublicSkillListVersionFromSummary(skill.latestVersionSummary!, skill.latestVersionId)
+        : toPublicSkillListVersion(latestVersionDoc)
       return {
         skill: publicSkill,
         latestVersion,
@@ -605,6 +620,22 @@ function toPublicSkillListVersion(
     changelog: version.changelog,
     changelogSource: version.changelogSource,
     parsed: version.parsed?.clawdis ? { clawdis: version.parsed.clawdis } : undefined,
+  }
+}
+
+function toPublicSkillListVersionFromSummary(
+  summary: NonNullable<Doc<'skills'>['latestVersionSummary']>,
+  latestVersionId: Id<'skillVersions'> | undefined,
+): PublicSkillListVersion | null {
+  if (!latestVersionId) return null
+  return {
+    _id: latestVersionId,
+    _creationTime: summary.createdAt,
+    version: summary.version,
+    createdAt: summary.createdAt,
+    changelog: summary.changelog,
+    changelogSource: summary.changelogSource,
+    parsed: summary.clawdis ? { clawdis: summary.clawdis } : undefined,
   }
 }
 
@@ -1046,6 +1077,10 @@ export const clearOwnerSuspiciousFlagsInternal = internalMutation({
       ) {
         patch.moderationStatus = 'active'
       }
+      patch.isSuspicious = computeIsSuspicious({
+        moderationFlags: patch.moderationFlags,
+        moderationReason: (patch.moderationReason ?? skill.moderationReason) as string | undefined,
+      })
 
       const nextSkill = { ...skill, ...patch }
       await ctx.db.patch(skill._id, patch)
@@ -1619,6 +1654,10 @@ export const report = mutation({
         moderationStatus: 'hidden',
         moderationReason: 'auto.reports',
         moderationNotes: 'Auto-hidden after 4 unique reports.',
+        isSuspicious: computeIsSuspicious({
+          moderationFlags: skill.moderationFlags,
+          moderationReason: 'auto.reports',
+        }),
         hiddenAt: now,
         lastReviewedAt: now,
       })
@@ -1735,23 +1774,60 @@ export const listPublicPageV2 = query({
     const dir = args.dir ?? (sort === 'name' ? 'asc' : 'desc')
     const { numItems, cursor: initialCursor } = normalizePublicListPagination(args.paginationOpts)
 
-    const runPaginate = (cursor: string | null) =>
-      ctx.db
+    // When nonSuspiciousOnly is set (and highlightedOnly is NOT), use the nonsuspicious
+    // compound index to avoid scanning the entire table.
+    const useNonsuspiciousIndex = args.nonSuspiciousOnly && !args.highlightedOnly
+
+    const runPaginate = (cursor: string | null) => {
+      if (useNonsuspiciousIndex) {
+        return ctx.db
+          .query('skills')
+          .withIndex(NONSUSPICIOUS_SORT_INDEXES[sort], (q) =>
+            q.eq('softDeletedAt', undefined).eq('isSuspicious', false),
+          )
+          .order(dir)
+          .paginate({ cursor, numItems })
+      }
+      return ctx.db
         .query('skills')
         .withIndex(SORT_INDEXES[sort], (q) => q.eq('softDeletedAt', undefined))
         .order(dir)
         .paginate({ cursor, numItems })
+    }
 
     // Use the index to filter out soft-deleted skills at query time.
     // softDeletedAt === undefined means active (non-deleted) skills only.
     // When post-pagination filters are active, skip empty filtered pages so clients
     // don't bounce between CanLoadMore/LoadingMore with no visible new rows.
     let result = await paginateWithStaleCursorRecovery(runPaginate, initialCursor)
-    let filteredPage = filterPublicSkillPage(result.page, args)
+    let filteredPage = useNonsuspiciousIndex
+      ? filterPublicSkillPage(result.page, { highlightedOnly: args.highlightedOnly })
+      : filterPublicSkillPage(result.page, args)
 
-    while ((args.nonSuspiciousOnly || args.highlightedOnly) && filteredPage.length === 0 && !result.isDone) {
-      result = await runPaginate(result.continueCursor)
+    // Graceful backfill handling: during backfill, isSuspicious is undefined for
+    // un-patched docs, which won't match eq('isSuspicious', false). If the indexed
+    // query returns an unexpectedly empty first page, retry with the old path + JS filter.
+    if (useNonsuspiciousIndex && filteredPage.length === 0 && !result.isDone && !initialCursor) {
+      const fallbackPaginate = (cursor: string | null) =>
+        ctx.db
+          .query('skills')
+          .withIndex(SORT_INDEXES[sort], (q) => q.eq('softDeletedAt', undefined))
+          .order(dir)
+          .paginate({ cursor, numItems })
+      result = await fallbackPaginate(null)
       filteredPage = filterPublicSkillPage(result.page, args)
+      while (filteredPage.length === 0 && !result.isDone) {
+        result = await fallbackPaginate(result.continueCursor)
+        filteredPage = filterPublicSkillPage(result.page, args)
+      }
+    } else {
+      // Keep the existing while-loop fallback for highlightedOnly (rare)
+      while ((args.nonSuspiciousOnly || args.highlightedOnly) && filteredPage.length === 0 && !result.isDone) {
+        result = await runPaginate(result.continueCursor)
+        filteredPage = useNonsuspiciousIndex
+          ? filterPublicSkillPage(result.page, { highlightedOnly: args.highlightedOnly })
+          : filterPublicSkillPage(result.page, args)
+      }
     }
 
     const items = await buildPublicSkillEntries(ctx, filteredPage)
@@ -2011,11 +2087,8 @@ export const getScanQueueHealthInternal = internalQuery({
   handler: async (ctx) => {
     const pending = await ctx.db
       .query('skills')
-      .filter((q) =>
-        q.and(
-          q.eq(q.field('moderationStatus'), 'hidden'),
-          q.eq(q.field('moderationReason'), 'pending.scan'),
-        ),
+      .withIndex('by_moderation', (q) =>
+        q.eq('moderationStatus', 'hidden').eq('moderationReason', 'pending.scan'),
       )
       .collect()
 
@@ -2057,23 +2130,31 @@ export const getActiveSkillsMissingVTCacheInternal = internalQuery({
     // Skills waiting for VT + LLM-evaluated skills that still need VT cache
     const vtPending = await ctx.db
       .query('skills')
-      .filter((q) =>
-        q.and(
-          q.eq(q.field('moderationStatus'), 'active'),
-          q.eq(q.field('moderationReason'), 'scanner.vt.pending'),
-        ),
+      .withIndex('by_moderation', (q) =>
+        q.eq('moderationStatus', 'active').eq('moderationReason', 'scanner.vt.pending'),
       )
       .take(poolSize)
-    const llmEvaluated = await ctx.db
-      .query('skills')
-      .filter((q) =>
-        q.or(
-          q.eq(q.field('moderationReason'), 'scanner.llm.clean'),
-          q.eq(q.field('moderationReason'), 'scanner.llm.suspicious'),
-          q.eq(q.field('moderationReason'), 'scanner.llm.malicious'),
-        ),
-      )
-      .take(poolSize)
+    const [llmClean, llmSuspicious, llmMalicious] = await Promise.all([
+      ctx.db
+        .query('skills')
+        .withIndex('by_moderation', (q) =>
+          q.eq('moderationStatus', 'active').eq('moderationReason', 'scanner.llm.clean'),
+        )
+        .take(poolSize),
+      ctx.db
+        .query('skills')
+        .withIndex('by_moderation', (q) =>
+          q.eq('moderationStatus', 'active').eq('moderationReason', 'scanner.llm.suspicious'),
+        )
+        .take(poolSize),
+      ctx.db
+        .query('skills')
+        .withIndex('by_moderation', (q) =>
+          q.eq('moderationStatus', 'active').eq('moderationReason', 'scanner.llm.malicious'),
+        )
+        .take(poolSize),
+    ])
+    const llmEvaluated = [...llmClean, ...llmSuspicious, ...llmMalicious]
 
     // Dedup across pools
     const seen = new Set<string>()
@@ -2120,7 +2201,7 @@ export const getAllActiveSkillsForRescanInternal = internalQuery({
   handler: async (ctx) => {
     const activeSkills = await ctx.db
       .query('skills')
-      .filter((q) => q.eq(q.field('moderationStatus'), 'active'))
+      .withIndex('by_moderation', (q) => q.eq('moderationStatus', 'active'))
       .collect()
 
     const results: Array<{
@@ -2160,10 +2241,10 @@ export const getActiveSkillBatchForRescanInternal = internalQuery({
     const batchSize = args.batchSize ?? 100
     const cursor = args.cursor ?? 0
 
-    // Query skills created after the cursor, ordered by _creationTime (ascending for stable pagination)
+    // Use built-in by_creation_time index for stable cursor-based pagination
     const candidates = await ctx.db
       .query('skills')
-      .filter((q) => q.gt(q.field('_creationTime'), cursor))
+      .withIndex('by_creation_time', (q) => q.gt('_creationTime', cursor))
       .order('asc')
       .take(batchSize * 3) // Over-fetch to account for filtering
 
@@ -2218,9 +2299,10 @@ export const getActiveSkillBatchForLlmBackfillInternal = internalQuery({
     const batchSize = args.batchSize ?? 10
     const cursor = args.cursor ?? 0
 
+    // Use built-in by_creation_time index for stable cursor-based pagination
     const candidates = await ctx.db
       .query('skills')
-      .filter((q) => q.gt(q.field('_creationTime'), cursor))
+      .withIndex('by_creation_time', (q) => q.gt('_creationTime', cursor))
       .order('asc')
       .take(batchSize * 3)
 
@@ -2266,12 +2348,21 @@ export const getSkillsWithStaleModerationReasonInternal = internalQuery({
   handler: async (ctx, args) => {
     const limit = args.limit ?? 100
 
-    // Find skills with pending-like moderationReason
-    const staleReasons = new Set(['scanner.vt.pending', 'pending.scan'])
-    const allSkills = await ctx.db
-      .query('skills')
-      .filter((q) => q.eq(q.field('moderationStatus'), 'active'))
-      .collect()
+    // Find skills with pending-like moderationReason using indexed queries
+    const [vtPending, pendingScan] = await Promise.all([
+      ctx.db
+        .query('skills')
+        .withIndex('by_moderation', (q) =>
+          q.eq('moderationStatus', 'active').eq('moderationReason', 'scanner.vt.pending'),
+        )
+        .take(limit),
+      ctx.db
+        .query('skills')
+        .withIndex('by_moderation', (q) =>
+          q.eq('moderationStatus', 'active').eq('moderationReason', 'pending.scan'),
+        )
+        .take(limit),
+    ])
 
     const results: Array<{
       skillId: Id<'skills'>
@@ -2281,8 +2372,9 @@ export const getSkillsWithStaleModerationReasonInternal = internalQuery({
       vtStatus: string | null
     }> = []
 
-    for (const skill of allSkills) {
-      if (!skill.moderationReason || !staleReasons.has(skill.moderationReason)) continue
+    for (const skill of [...vtPending, ...pendingScan]) {
+      if (results.length >= limit) break
+      if (!skill.moderationReason) continue
       if (!skill.latestVersionId) continue
 
       const version = await ctx.db.get(skill.latestVersionId)
@@ -2295,8 +2387,6 @@ export const getSkillsWithStaleModerationReasonInternal = internalQuery({
         currentReason: skill.moderationReason,
         vtStatus: version.vtAnalysis.status,
       })
-
-      if (results.length >= limit) break
     }
 
     return results
@@ -2314,11 +2404,8 @@ export const getPendingVTSkillsInternal = internalQuery({
 
     const skills = await ctx.db
       .query('skills')
-      .filter((q) =>
-        q.and(
-          q.eq(q.field('moderationStatus'), 'active'),
-          q.eq(q.field('moderationReason'), 'scanner.vt.pending'),
-        ),
+      .withIndex('by_moderation', (q) =>
+        q.eq('moderationStatus', 'active').eq('moderationReason', 'scanner.vt.pending'),
       )
       .take(limit)
 
@@ -2355,8 +2442,13 @@ export const updateSkillModerationReasonInternal = internalMutation({
     moderationReason: v.string(),
   },
   handler: async (ctx, args) => {
+    const skill = await ctx.db.get(args.skillId)
     await ctx.db.patch(args.skillId, {
       moderationReason: args.moderationReason,
+      isSuspicious: computeIsSuspicious({
+        moderationFlags: skill?.moderationFlags,
+        moderationReason: args.moderationReason,
+      }),
     })
   },
 })
@@ -2501,6 +2593,10 @@ export const applyBanToOwnedSkillsBatchInternal = internalMutation({
         patch.hiddenAt = args.bannedAt
         patch.hiddenBy = args.hiddenBy
         patch.lastReviewedAt = args.bannedAt
+        patch.isSuspicious = computeIsSuspicious({
+          moderationFlags: skill.moderationFlags,
+          moderationReason: 'user.banned',
+        })
         hiddenCount += 1
       }
 
@@ -2550,6 +2646,10 @@ export const restoreOwnedSkillsForUnbanBatchInternal = internalMutation({
         softDeletedAt: undefined,
         moderationStatus: 'active',
         moderationReason: 'restored.unban',
+        isSuspicious: computeIsSuspicious({
+          moderationFlags: skill.moderationFlags,
+          moderationReason: 'restored.unban',
+        }),
         hiddenAt: undefined,
         hiddenBy: undefined,
         lastReviewedAt: now,
@@ -2585,11 +2685,8 @@ export const getLegacyPendingScanSkillsInternal = internalQuery({
     const limit = args.limit ?? 1000
     const skills = await ctx.db
       .query('skills')
-      .filter((q) =>
-        q.and(
-          q.eq(q.field('moderationStatus'), 'active'),
-          q.eq(q.field('moderationReason'), 'pending.scan'),
-        ),
+      .withIndex('by_moderation', (q) =>
+        q.eq('moderationStatus', 'active').eq('moderationReason', 'pending.scan'),
       )
       .take(limit)
 
@@ -2624,11 +2721,8 @@ export const getUnscannedActiveSkillsInternal = internalQuery({
     const limit = args.limit ?? 1000
     const skills = await ctx.db
       .query('skills')
-      .filter((q) =>
-        q.and(
-          q.eq(q.field('moderationStatus'), 'active'),
-          q.eq(q.field('moderationReason'), undefined),
-        ),
+      .withIndex('by_moderation', (q) =>
+        q.eq('moderationStatus', 'active').eq('moderationReason', undefined),
       )
       .take(limit)
 
@@ -2681,6 +2775,10 @@ export const markScanStaleInternal = internalMutation({
 
     await ctx.db.patch(args.skillId, {
       moderationReason: 'pending.scan.stale',
+      isSuspicious: computeIsSuspicious({
+        moderationFlags: skill.moderationFlags,
+        moderationReason: 'pending.scan.stale',
+      }),
       updatedAt: Date.now(),
     })
   },
@@ -2829,6 +2927,10 @@ export const approveSkillByHashInternal = internalMutation({
         moderationReason: nextModerationReason,
         moderationFlags: newFlags,
         moderationNotes: nextModerationNotes,
+        isSuspicious: computeIsSuspicious({
+          moderationFlags: newFlags,
+          moderationReason: nextModerationReason,
+        }),
         hiddenAt: nextModerationStatus === 'hidden' ? now : undefined,
         hiddenBy: undefined,
         lastReviewedAt: nextModerationStatus === 'hidden' ? now : undefined,
@@ -2889,8 +2991,9 @@ export const escalateByVtInternal = internalMutation({
       newFlags = ['flagged.suspicious']
     }
 
+    const nextModerationFlags = newFlags.length ? newFlags : undefined
     const patch: Partial<Doc<'skills'>> = {
-      moderationFlags: newFlags.length ? newFlags : undefined,
+      moderationFlags: nextModerationFlags,
       updatedAt: Date.now(),
     }
     if (bypassSuspicious) {
@@ -2903,6 +3006,11 @@ export const escalateByVtInternal = internalMutation({
     if (isMalicious) {
       patch.moderationStatus = 'hidden'
     }
+
+    patch.isSuspicious = computeIsSuspicious({
+      moderationFlags: nextModerationFlags,
+      moderationReason: (patch.moderationReason ?? skill.moderationReason) as string | undefined,
+    })
 
     const nextSkill = { ...skill, ...patch }
     await ctx.db.patch(skill._id, patch)
@@ -3815,6 +3923,7 @@ export const insertVersion = internalMutation({
         parsed: args.parsed,
         files: args.files,
       })
+      const newSkillFlags = moderationFlags.length ? moderationFlags : undefined
       const skillId = await ctx.db.insert('skills', {
         slug: args.slug,
         displayName: args.displayName,
@@ -3835,7 +3944,11 @@ export const insertVersion = internalMutation({
         moderationReason,
         moderationNotes,
         quality: qualityRecord,
-        moderationFlags: moderationFlags.length ? moderationFlags : undefined,
+        moderationFlags: newSkillFlags,
+        isSuspicious: computeIsSuspicious({
+          moderationFlags: newSkillFlags,
+          moderationReason: moderationReason,
+        }),
         reportCount: 0,
         lastReportedAt: undefined,
         statsDownloads: 0,
@@ -3898,10 +4011,18 @@ export const insertVersion = internalMutation({
       files: args.files,
     })
 
+    const nextFlags = moderationFlags.length ? moderationFlags : undefined
     const patch: Partial<Doc<'skills'>> = {
       displayName: args.displayName,
       summary: nextSummary ?? undefined,
       latestVersionId: versionId,
+      latestVersionSummary: {
+        version: args.version,
+        createdAt: now,
+        changelog: args.changelog,
+        changelogSource: args.changelogSource,
+        clawdis: args.parsed.clawdis,
+      },
       tags: nextTags,
       stats: { ...skill.stats, versions: skill.stats.versions + 1 },
       softDeletedAt: undefined,
@@ -3909,7 +4030,11 @@ export const insertVersion = internalMutation({
       moderationReason,
       moderationNotes,
       quality: qualityRecord ?? skill.quality,
-      moderationFlags: moderationFlags.length ? moderationFlags : undefined,
+      moderationFlags: nextFlags,
+      isSuspicious: computeIsSuspicious({
+        moderationFlags: nextFlags,
+        moderationReason: moderationReason,
+      }),
       updatedAt: now,
     }
     const nextSkill = { ...skill, ...patch }

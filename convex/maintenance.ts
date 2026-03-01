@@ -12,6 +12,7 @@ import {
   type TrustTier,
 } from './lib/skillQuality'
 import { generateSkillSummary } from './lib/skillSummary'
+import { computeIsSuspicious } from './lib/skillSafety'
 import { hashSkillFiles } from './lib/skills'
 
 const DEFAULT_BATCH_SIZE = 50
@@ -1520,6 +1521,91 @@ export const backfillDenormalizedBadgesInternal = internalMutation({
 
     if (!isDone) {
       await ctx.scheduler.runAfter(0, internal.maintenance.backfillDenormalizedBadgesInternal, {
+        cursor: continueCursor,
+        batchSize: args.batchSize,
+      })
+    }
+
+    return { patched, isDone, scanned: page.length }
+  },
+})
+
+/**
+ * Backfill `latestVersionSummary` on all skills. Cursor-based paginated mutation
+ * that self-schedules until done. Reads each skill's latestVersionId, extracts
+ * the summary fields, and patches the skill.
+ */
+export const backfillLatestVersionSummaryInternal = internalMutation({
+  args: {
+    cursor: v.optional(v.string()),
+    batchSize: v.optional(v.number()),
+  },
+  handler: async (ctx, args) => {
+    const batchSize = clampInt(args.batchSize ?? 50, 10, 200)
+    const { page, continueCursor, isDone } = await ctx.db
+      .query('skills')
+      .paginate({ cursor: args.cursor ?? null, numItems: batchSize })
+
+    let patched = 0
+    for (const skill of page) {
+      if (skill.latestVersionSummary) continue
+      if (!skill.latestVersionId) continue
+      const version = await ctx.db.get(skill.latestVersionId)
+      if (!version) continue
+
+      await ctx.db.patch(skill._id, {
+        latestVersionSummary: {
+          version: version.version,
+          createdAt: version.createdAt,
+          changelog: version.changelog,
+          changelogSource: version.changelogSource,
+          clawdis: version.parsed?.clawdis,
+        },
+      })
+      patched++
+    }
+
+    if (!isDone) {
+      await ctx.scheduler.runAfter(
+        0,
+        internal.maintenance.backfillLatestVersionSummaryInternal,
+        {
+          cursor: continueCursor,
+          batchSize: args.batchSize,
+        },
+      )
+    }
+
+    return { patched, isDone, scanned: page.length }
+  },
+})
+
+/**
+ * Backfill `isSuspicious` on all skills. Cursor-based paginated mutation
+ * that self-schedules until done.
+ */
+export const backfillIsSuspiciousInternal = internalMutation({
+  args: {
+    cursor: v.optional(v.string()),
+    batchSize: v.optional(v.number()),
+  },
+  handler: async (ctx, args) => {
+    const batchSize = clampInt(args.batchSize ?? 100, 10, 200)
+    const { page, continueCursor, isDone } = await ctx.db
+      .query('skills')
+      .paginate({ cursor: args.cursor ?? null, numItems: batchSize })
+
+    let patched = 0
+    for (const skill of page) {
+      const expected = computeIsSuspicious(skill)
+      if (skill.isSuspicious !== expected) {
+        await ctx.db.patch(skill._id, { isSuspicious: expected })
+        patched++
+      }
+    }
+
+    if (!isDone) {
+      await ctx.scheduler.runAfter(0, internal.maintenance.backfillIsSuspiciousInternal, {
         cursor: continueCursor,
         batchSize: args.batchSize,
       })

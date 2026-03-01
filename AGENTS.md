@@ -47,3 +47,11 @@
 - New Convex functions must be pushed before `convex run`: use `bunx convex dev --once` (dev) or `bunx convex deploy` (prod).
 - For non-interactive prod deploys, use `bunx convex deploy -y` to skip confirmation.
 - If `bunx convex run --env-file .env.local ...` returns `401 MissingAccessToken` despite `bunx convex login`, workaround: omit `--env-file` and use `--deployment-name <name>` / `--prod`.
+
+## Convex Query & Bandwidth Rules
+- **Always use `.withIndex()` instead of `.filter()` for fields that can be indexed.** `.filter()` causes full table scans — every doc is read and billed. Even a single `.filter()` on a 16K-row table reads ~16 MB per call.
+- **Convex reads entire documents** — no field projections. If you only need a few fields from large docs (~6 KB+), denormalize a lightweight summary onto the parent doc or use a lookup table (see `embeddingSkillMap`, `skill.latestVersionSummary`, `skill.badges` for examples).
+- **Denormalization pattern**: persist computed fields so they can be indexed. Every mutation that updates source fields must also update the denormalized field. Always write a cursor-based backfill for new fields (see `backfillIsSuspiciousInternal`, `backfillLatestVersionSummaryInternal`, `backfillDenormalizedBadgesInternal` for examples).
+- **Cron jobs must never scan entire tables.** Use indexed queries with equality filters. Use cursor-based pagination for large datasets. Prefer incremental/delta tracking over full recounts.
+- **32K document limit per query.** Split `.collect()` calls by a partition field (e.g., one day at a time instead of a 7-day range). See `buildTrendingLeaderboard` for an example.
+- **Common mistakes**: `.filter().collect()` without an index; `ctx.db.get()` on large docs in a loop for list views; while loops that paginate the whole table to find filtered results.

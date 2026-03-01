@@ -27,17 +27,21 @@ export async function buildTrendingLeaderboard(
 ) {
   const now = params.now ?? Date.now()
   const { startDay, endDay } = getTrendingRange(now)
-  const rows = await ctx.db
-    .query('skillDailyStats')
-    .withIndex('by_day', (q) => q.gte('day', startDay).lte('day', endDay))
-    .collect()
 
+  // Query one day at a time to stay well under the 32K document limit.
+  // Each daily query reads ~4,500 docs instead of 32K for the full 7-day range.
   const totals = new Map<Id<'skills'>, { installs: number; downloads: number }>()
-  for (const row of rows) {
-    const current = totals.get(row.skillId) ?? { installs: 0, downloads: 0 }
-    current.installs += row.installs
-    current.downloads += row.downloads
-    totals.set(row.skillId, current)
+  for (let day = startDay; day <= endDay; day++) {
+    const rows = await ctx.db
+      .query('skillDailyStats')
+      .withIndex('by_day', (q) => q.eq('day', day))
+      .collect()
+    for (const row of rows) {
+      const current = totals.get(row.skillId) ?? { installs: 0, downloads: 0 }
+      current.installs += row.installs
+      current.downloads += row.downloads
+      totals.set(row.skillId, current)
+    }
   }
 
   const entries = Array.from(totals, ([skillId, totalsEntry]) => ({

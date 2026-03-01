@@ -45,7 +45,7 @@ crons.interval(
 
 crons.interval(
   'global-stats-update',
-  { minutes: 60 },
+  { hours: 24 },
   internal.statsMaintenance.updateGlobalStatsInternal,
   {},
 )
