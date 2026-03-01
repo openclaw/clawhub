@@ -1806,18 +1806,19 @@ export const listPublicPageV2 = query({
       : filterPublicSkillPage(result.page, args)
 
     // Graceful backfill handling: during backfill, isSuspicious is undefined for
-    // un-patched docs, which won't match eq('isSuspicious', false). If the indexed
-    // query returns an unexpectedly empty first page, retry with the old path + JS filter.
-    // Note: when the index has no matching rows, Convex returns isDone=true, so we
-    // intentionally omit the !result.isDone guard here to ensure the fallback fires.
-    if (useNonsuspiciousIndex && filteredPage.length === 0 && !initialCursor) {
+    // un-patched docs, which won't match eq('isSuspicious', false). Fall back to
+    // SORT_INDEXES + JS filter. This fires on ANY page (not just the first) so that
+    // cursors stay on the same index path across client paginations.
+    if (useNonsuspiciousIndex && filteredPage.length === 0) {
       const fallbackPaginate = (cursor: string | null) =>
         ctx.db
           .query('skills')
           .withIndex(SORT_INDEXES[sort], (q) => q.eq('softDeletedAt', undefined))
           .order(dir)
           .paginate({ cursor, numItems })
-      result = await fallbackPaginate(null)
+      // On page 2+, the client's cursor is likely from a previous fallback
+      // invocation (SORT_INDEXES), so try it first via stale-cursor recovery.
+      result = await paginateWithStaleCursorRecovery(fallbackPaginate, initialCursor)
       filteredPage = filterPublicSkillPage(result.page, args)
       while (filteredPage.length === 0 && !result.isDone) {
         result = await fallbackPaginate(result.continueCursor)
