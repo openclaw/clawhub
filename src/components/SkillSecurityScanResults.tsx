@@ -156,6 +156,10 @@ function getOatheStatusInfo(status: string) {
       return { label: 'Pending', className: 'scan-status-pending' }
     case 'error':
       return { label: 'Error', className: 'scan-status-error' }
+    case 'unknown':
+      return { label: 'Inconclusive', className: 'scan-status-pending' }
+    case 'superseded':
+      return { label: 'Superseded', className: 'scan-status-pending' }
     default:
       return { label: status, className: 'scan-status-unknown' }
   }
@@ -439,6 +443,7 @@ export function SecurityScanResults({
         {oatheAnalysis &&
         oatheAnalysis.status !== 'error' &&
         oatheAnalysis.status !== 'pending' &&
+        oatheAnalysis.status !== 'superseded' &&
         oatheAnalysis.summary ? (
           <OatheAnalysisDetail analysis={oatheAnalysis} />
         ) : null}

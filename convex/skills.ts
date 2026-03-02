@@ -3944,6 +3944,19 @@ export const insertVersion = internalMutation({
           updatedAt: now,
         })
       }
+
+      const prevVersion = await ctx.db.get(latestBefore)
+      const prevOathe = prevVersion?.oatheAnalysis as { status?: string } | undefined
+      if (prevOathe?.status === 'pending') {
+        await ctx.db.patch(latestBefore, {
+          oatheAnalysis: {
+            ...(prevVersion?.oatheAnalysis as Record<string, unknown>),
+            status: 'superseded',
+            summary: 'Superseded by newer version',
+            checkedAt: Date.now(),
+          },
+        })
+      }
     }
 
     await ctx.db.insert('skillVersionFingerprints', {

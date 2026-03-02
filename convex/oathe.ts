@@ -42,7 +42,7 @@ function verdictToStatus(verdict: string): string {
     case 'MALICIOUS':
       return 'malicious'
     default:
-      return 'pending'
+      return 'unknown'
   }
 }
 
@@ -297,6 +297,9 @@ export const fetchPendingOatheResults = internalAction({
 
           if (data.status === 'complete' && data.report) {
             const analysis = mapReportToAnalysis(data.report, ownerSlug)
+            if (analysis.status === 'unknown') {
+              console.warn(`[oathe:cron] Unrecognized verdict "${data.report.verdict}" for ${slug}`)
+            }
             await ctx.runMutation(internal.skills.updateVersionOatheAnalysisInternal, {
               versionId,
               oatheAnalysis: analysis,

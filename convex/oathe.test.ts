@@ -61,10 +61,10 @@ describe('verdictToStatus', () => {
     expect(verdictToStatus('malicious')).toBe('malicious')
   })
 
-  it('returns pending for unknown verdicts', () => {
-    expect(verdictToStatus('UNKNOWN')).toBe('pending')
-    expect(verdictToStatus('')).toBe('pending')
-    expect(verdictToStatus('something-else')).toBe('pending')
+  it('returns unknown for unrecognized verdicts', () => {
+    expect(verdictToStatus('UNKNOWN')).toBe('unknown')
+    expect(verdictToStatus('')).toBe('unknown')
+    expect(verdictToStatus('something-else')).toBe('unknown')
   })
 })
 
