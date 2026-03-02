@@ -11,6 +11,7 @@ Welcome! ClawHub is the public skill registry for [OpenClaw](https://github.com/
 ### Prerequisites
 
 - [Bun](https://bun.sh/) (Convex CLI runs via `bunx`, no global install needed)
+- [Node.js](https://nodejs.org/) v18, 20, 22, or 24 (required by the local Convex backend; v25+ is not yet supported)
 
 ### Install and configure
 
@@ -26,7 +27,6 @@ Edit `.env.local` with the following values for **local Convex**:
 VITE_CONVEX_URL=http://127.0.0.1:3210
 VITE_CONVEX_SITE_URL=http://127.0.0.1:3210
 SITE_URL=http://localhost:3000
-CONVEX_SITE_URL=http://127.0.0.1:3210
 
 # Deployment used by `bunx convex dev`
 CONVEX_DEPLOYMENT=anonymous:anonymous-clawhub
@@ -37,32 +37,43 @@ CONVEX_DEPLOYMENT=anonymous:anonymous-clawhub
 1. Go to [github.com/settings/developers](https://github.com/settings/developers) and create a new OAuth App.
 2. Set **Homepage URL** to `http://localhost:3000`.
 3. Set **Authorization callback URL** to `http://127.0.0.1:3210/api/auth/callback/github`.
-4. Copy the Client ID and generate a Client Secret, then add them to `.env.local`:
+4. Copy the Client ID and generate a Client Secret.
+
+### Run the Convex backend
+
+Start the local Convex backend first — other setup steps depend on it:
 
 ```bash
-AUTH_GITHUB_ID=<your-client-id>
-AUTH_GITHUB_SECRET=<your-client-secret>
+bunx convex dev --typecheck=disable
+```
+
+### Set backend environment variables
+
+The Convex backend has its own env var store separate from `.env.local`. With the backend running, open a new terminal and set the required variables:
+
+```bash
+bunx convex env set AUTH_GITHUB_ID <your-client-id>
+bunx convex env set AUTH_GITHUB_SECRET <your-client-secret>
+bunx convex env set SITE_URL http://localhost:3000
 ```
 
 ### JWT keys (for Convex Auth)
 
-Generate the signing keys:
+With the backend still running, generate the signing keys:
 
 ```bash
 bunx @convex-dev/auth
 ```
 
-This outputs `JWT_PRIVATE_KEY` and `JWKS` values — paste them into `.env.local`.
+This sets `JWT_PRIVATE_KEY` and `JWKS` on the Convex backend and outputs values you can also save to `.env.local` for reference.
 
-### Run the app
+### Run the frontend
 
 ```bash
-# Terminal A: local Convex backend
-bunx convex dev
-
-# Terminal B: frontend (port 3000)
-bun run dev
+bun run dev -- --port 3000
 ```
+
+Change the port if 3000 is already in use, and update `SITE_URL` in both `.env.local` and the Convex backend (`bunx convex env set SITE_URL ...`) to match.
 
 ### Seed the database
 
@@ -74,6 +85,9 @@ bunx convex run --no-push devSeed:seedNixSkills
 
 # 50 extra skills for pagination testing (optional)
 bunx convex run --no-push devSeedExtra:seedExtraSkillsInternal
+
+# Refresh the cached skills count (required after seeding)
+bunx convex run --no-push statsMaintenance:updateGlobalStatsInternal
 ```
 
 To reset and re-seed:
