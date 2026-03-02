@@ -166,17 +166,18 @@ export const notifyOathe = internalAction({
     const owner = skill.ownerUserId
       ? ((await ctx.runQuery(internal.skills.getUserByIdInternal, {
           userId: skill.ownerUserId,
-        })) as { handle?: string } | null)
+        })) as { handle?: string; _id?: string } | null)
       : null
     const ownerHandle = owner?.handle?.trim()
+    const ownerSegment = ownerHandle || (owner?._id ? String(owner._id) : null)
 
-    if (!ownerHandle) {
-      console.warn(`[oathe] Skipping ${skill.slug}: owner has no handle`)
+    if (!ownerSegment) {
+      console.warn(`[oathe] Skipping ${skill.slug}: no owner identifier`)
       return
     }
 
     const siteUrl = (process.env.SITE_URL ?? 'https://clawhub.ai').replace(/\/+$/, '')
-    const skillUrl = `${siteUrl}/${ownerHandle}/${skill.slug}`
+    const skillUrl = `${siteUrl}/${ownerSegment}/${skill.slug}`
 
     try {
       const response = await fetch(`${apiUrl}/api/submit`, {
@@ -259,6 +260,7 @@ export const fetchPendingOatheResults = internalAction({
       versionId: Id<'skillVersions'>
       slug: string
       ownerHandle: string | null
+      ownerUserId: string | null
       pendingSince: number
       rescanAt: number | undefined
     }>
@@ -275,12 +277,13 @@ export const fetchPendingOatheResults = internalAction({
 
     const siteUrl = (process.env.SITE_URL ?? 'https://clawhub.ai').replace(/\/+$/, '')
 
-    for (const { versionId, slug, ownerHandle, pendingSince, rescanAt } of pendingSkills) {
-      const ownerSlug = ownerHandle ? `${ownerHandle}/${slug}` : null
+    for (const { versionId, slug, ownerHandle, ownerUserId, pendingSince, rescanAt } of pendingSkills) {
+      const ownerSegment = ownerHandle || (ownerUserId ? String(ownerUserId) : null)
+      const ownerSlug = ownerSegment ? `${ownerSegment}/${slug}` : null
 
-      // Skip if no owner handle — can't construct valid two-segment API path
+      // Skip if no owner identifier — can't construct valid two-segment API path
       if (!ownerSlug) {
-        console.warn(`[oathe:cron] Skipping ${slug}: no owner handle`)
+        console.warn(`[oathe:cron] Skipping ${slug}: no owner identifier`)
         continue
       }
 

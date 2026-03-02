@@ -2697,7 +2697,7 @@ export const getSkillsPendingOatheInternal = internalQuery({
     const skipThreshold = Date.now() - skipRecentMinutes * 60 * 1000
 
     // Bounded pool from skills table via by_active_updated index, order desc
-    const poolSize = Math.min(Math.max(limit * 20, 200), 1000)
+    const poolSize = Math.min(Math.max(limit * 5, 100), 500)
     const allSkills = await ctx.db
       .query('skills')
       .withIndex('by_active_updated', (q) => q.eq('softDeletedAt', undefined))
@@ -2722,6 +2722,7 @@ export const getSkillsPendingOatheInternal = internalQuery({
       versionId: Id<'skillVersions'>
       slug: string
       ownerHandle: string | null
+      ownerUserId: string | null
       pendingSince: number
       rescanAt: number | undefined
     }> = []
@@ -2749,6 +2750,7 @@ export const getSkillsPendingOatheInternal = internalQuery({
         versionId: version._id,
         slug: skill.slug,
         ownerHandle: (owner as { handle?: string } | null)?.handle ?? null,
+        ownerUserId: skill.ownerUserId ? String(skill.ownerUserId) : null,
         pendingSince: oathe.submittedAt ?? oathe.checkedAt,
         rescanAt: oathe.rescanAt,
       })
