@@ -1993,6 +1993,58 @@ code {
   color: var(--ink-soft);
 }
 
+.skill-install-snippet {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 8px 12px;
+  border-radius: var(--radius-sm);
+  border: 1px solid color-mix(in srgb, var(--accent) 45%, var(--line));
+  background: var(--surface-muted);
+  font-size: 0.85rem;
+}
+
+.skill-install-snippet code {
+  flex: 1;
+  min-width: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.skill-install-copy {
+  flex-shrink: 0;
+  display: grid;
+  place-items: center;
+  min-height: 38px;
+  min-width: 38px;
+  padding: 0 6px;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--ink-soft);
+  cursor: pointer;
+  transition: background 0.15s ease, color 0.15s ease;
+}
+
+.skill-install-copy:hover {
+  background: var(--line);
+  color: var(--ink);
+}
+
+.skill-install-copy:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.skill-install-copied {
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: var(--seafoam);
+  white-space: nowrap;
+}
+
 .skill-tag-row {
   display: flex;
   flex-wrap: wrap;

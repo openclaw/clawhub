@@ -1,6 +1,7 @@
 import { useNavigate } from '@tanstack/react-router'
 import type { ClawdisSkillMetadata } from 'clawhub-schema'
 import { useAction, useMutation, useQuery } from 'convex/react'
+import { Copy } from 'lucide-react'
 import { useEffect, useMemo, useState } from 'react'
 import { api } from '../../convex/_generated/api'
 import type { Doc, Id } from '../../convex/_generated/dataModel'
@@ -44,6 +45,45 @@ type SkillBySlugResult = {
 } | null
 
 type SkillFile = Doc<'skillVersions'>['files'][number]
+
+function InstallViaClawhubCard({ slug }: { slug: string }) {
+  const [copied, setCopied] = useState(false)
+  const installCmd = `clawhub install ${slug}`
+
+  const copyInstall = async () => {
+    try {
+      await navigator.clipboard.writeText(installCmd)
+      setCopied(true)
+      setTimeout(() => setCopied(false), 1500)
+    } catch {
+      /* clipboard api unavailable */
+    }
+  }
+
+  return (
+    <div className="card">
+      <h2 className="section-title" style={{ fontSize: '1.2rem', margin: 0 }}>
+        Install via clawhub
+      </h2>
+      <div className="skill-install-snippet" style={{ marginTop: 12 }}>
+        <code className="mono">{installCmd}</code>
+        <button
+          type="button"
+          className="skill-install-copy"
+          onClick={copyInstall}
+          aria-label="Copy install command"
+          title="Copy install command"
+        >
+          {copied ? (
+            <span className="skill-install-copied">Copied!</span>
+          ) : (
+            <Copy size={14} aria-hidden="true" />
+          )}
+        </button>
+      </div>
+    </div>
+  )
+}
 
 function formatReportError(error: unknown) {
   if (error && typeof error === 'object' && 'data' in error) {
@@ -343,6 +383,10 @@ export function SkillDetailPage({
           clawdis={clawdis}
           osLabels={osLabels}
         />
+
+        {!modInfo?.isMalwareBlocked && !modInfo?.isRemoved ? (
+          <InstallViaClawhubCard slug={skill.slug} />
+        ) : null}
 
         {nixSnippet ? (
           <div className="card">
