@@ -566,9 +566,51 @@ export const pollPendingScans = internalAction({
         )
 
         if (!aiResult) {
-          // No Code Insight - trigger a rescan to get it
+          // No Code Insight - check AV engine stats as fallback
+          const stats = vtResult.data.attributes.last_analysis_stats
+          let status: string | null = null
+          let source = 'engines'
+
+          if (stats) {
+            if (stats.malicious > 0) {
+              status = 'malicious'
+            } else if (stats.suspicious > 0) {
+              status = 'suspicious'
+            } else if (stats.harmless > 0 || stats.undetected > 0) {
+              // No detections and some harmless/undetected engines = clean
+              status = 'clean'
+            }
+          }
+
+          if (status) {
+            // We have a verdict from AV engines - update the skill
+            console.log(
+              `[vt:pollPendingScans] Hash ${sha256hash} verdict from AV engines: ${status}`,
+            )
+
+            // Cache VT analysis in version
+            await ctx.runMutation(internal.skills.updateVersionScanResultsInternal, {
+              versionId,
+              vtAnalysis: {
+                status,
+                source,
+                checkedAt: Date.now(),
+              },
+            })
+
+            // VT finalizes moderation visibility for newly published versions.
+            await ctx.runMutation(internal.skills.approveSkillByHashInternal, {
+              sha256hash,
+              scanner: 'vt',
+              status,
+            })
+            updated++
+            continue
+          }
+
+          // No verdict from engines either - trigger a rescan to get Code Insight
           console.log(
-            `[vt:pollPendingScans] Hash ${sha256hash} has no Code Insight, requesting rescan`,
+            `[vt:pollPendingScans] Hash ${sha256hash} has no Code Insight or engine stats, requesting rescan`,
           )
           await requestRescan(apiKey, sha256hash)
           // Check if we've exceeded max attempts — write stale vtAnalysis so it
@@ -741,7 +783,36 @@ export const backfillPendingScans = internalAction({
         )
 
         if (!aiResult) {
+          // No Code Insight - check AV engine stats as fallback
+          const stats = vtResult.data.attributes.last_analysis_stats
+          let status: string | null = null
+
+          if (stats) {
+            if (stats.malicious > 0) {
+              status = 'malicious'
+            } else if (stats.suspicious > 0) {
+              status = 'suspicious'
+            } else if (stats.harmless > 0 || stats.undetected > 0) {
+              // No detections and some harmless/undetected engines = clean
+              status = 'clean'
+            }
+          }
+
+          if (status) {
+            // We have a verdict from AV engines - update the skill
+            console.log(`[vt:backfill] Hash ${sha256hash} verdict from AV engines: ${status}`)
+            await ctx.runMutation(internal.skills.approveSkillByHashInternal, {
+              sha256hash,
+              scanner: 'vt',
+              status,
+            })
+            updated++
+            continue
+          }
+
+          // No verdict from engines either - trigger a rescan
           if (triggerRescans) {
+            console.log(`[vt:backfill] Hash ${sha256hash} has no Code Insight or engine stats, requesting rescan`)
             await requestRescan(apiKey, sha256hash)
             rescansRequested++
           }
@@ -840,14 +911,67 @@ export const rescanActiveSkills = internalAction({
         )
 
         if (!aiResult) {
+          // No Code Insight - check AV engine stats as fallback
+          const stats = vtResult.data.attributes.last_analysis_stats
+          let status: string | null = null
+          let source = 'engines'
+
+          if (stats) {
+            if (stats.malicious > 0) {
+              status = 'malicious'
+            } else if (stats.suspicious > 0) {
+              status = 'suspicious'
+            } else if (stats.harmless > 0 || stats.undetected > 0) {
+              // No detections and some harmless/undetected engines = clean
+              status = 'clean'
+            }
+          }
+
+          if (!status) {
+            // No verdict from engines either - keep as pending
+            await ctx.runMutation(internal.skills.updateVersionScanResultsInternal, {
+              versionId,
+              vtAnalysis: {
+                status: 'pending',
+                checkedAt: Date.now(),
+              },
+            })
+            accUnchanged++
+            continue
+          }
+
+          // We have a verdict from AV engines - continue with normal flow
+          console.log(`[vt:rescan] ${slug} verdict from AV engines: ${status}`)
+
           await ctx.runMutation(internal.skills.updateVersionScanResultsInternal, {
             versionId,
             vtAnalysis: {
-              status: 'pending',
+              status,
+              source,
               checkedAt: Date.now(),
             },
           })
-          accUnchanged++
+
+          if (status === 'malicious' || status === 'suspicious') {
+            console.warn(`[vt:rescan] ${slug}: verdict changed to ${status}!`)
+            accFlaggedSkills.push({ slug, status })
+            await ctx.runMutation(internal.skills.escalateByVtInternal, {
+              sha256hash,
+              status,
+            })
+            accUpdated++
+          } else if (wasFlagged && status === 'clean') {
+            // Verdict improved from suspicious → clean: clear the stale moderation flag
+            console.log(`[vt:rescan] ${slug}: verdict improved to clean, clearing suspicious flag`)
+            await ctx.runMutation(internal.skills.approveSkillByHashInternal, {
+              sha256hash,
+              scanner: 'vt',
+              status,
+            })
+            accUpdated++
+          } else {
+            accUnchanged++
+          }
           continue
         }
 
@@ -1121,8 +1245,41 @@ export const backfillActiveSkillsVTCache = internalAction({
         )
 
         if (!aiResult) {
-          console.log(`[vt:backfillActive] ${slug}: no Code Insight yet`)
-          noResults++
+          // No Code Insight - check AV engine stats as fallback
+          const stats = vtResult.data.attributes.last_analysis_stats
+          let status: string | null = null
+          let source = 'engines'
+
+          if (stats) {
+            if (stats.malicious > 0) {
+              status = 'malicious'
+            } else if (stats.suspicious > 0) {
+              status = 'suspicious'
+            } else if (stats.harmless > 0 || stats.undetected > 0) {
+              // No detections and some harmless/undetected engines = clean
+              status = 'clean'
+            }
+          }
+
+          if (!status) {
+            console.log(`[vt:backfillActive] ${slug}: no Code Insight or engine stats yet`)
+            noResults++
+            continue
+          }
+
+          // We have a verdict from AV engines - update the version
+          console.log(`[vt:backfillActive] ${slug}: updated with ${status} (from AV engines)`)
+
+          await ctx.runMutation(internal.skills.updateVersionScanResultsInternal, {
+            versionId,
+            sha256hash,
+            vtAnalysis: {
+              status,
+              source,
+              checkedAt: Date.now(),
+            },
+          })
+          updated++
           continue
         }
 
