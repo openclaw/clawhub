@@ -39,6 +39,7 @@ export function useSkillsBrowseModel({
   const searchRequest = useRef(0)
   const loadMoreRef = useRef<HTMLDivElement | null>(null)
   const loadMoreInFlightRef = useRef(false)
+  const navigateTimer = useRef<number>(0)
 
   const view: SkillsView = search.view ?? 'list'
   const highlightedOnly = search.highlighted ?? false
@@ -74,6 +75,7 @@ export function useSkillsBrowseModel({
   const isLoadingMoreList = paginationStatus === 'LoadingMore'
 
   useEffect(() => {
+    window.clearTimeout(navigateTimer.current)
     setQuery(search.q ?? '')
   }, [search.q])
 
@@ -216,14 +218,21 @@ export function useSkillsBrowseModel({
     return () => observer.disconnect()
   }, [canLoadMore, loadMore])
 
+  useEffect(() => {
+    return () => window.clearTimeout(navigateTimer.current)
+  }, [])
+
   const onQueryChange = useCallback(
     (next: string) => {
-      const trimmed = next.trim()
       setQuery(next)
-      void navigate({
-        search: (prev) => ({ ...prev, q: trimmed ? next : undefined }),
-        replace: true,
-      })
+      window.clearTimeout(navigateTimer.current)
+      const trimmed = next.trim()
+      navigateTimer.current = window.setTimeout(() => {
+        void navigate({
+          search: (prev) => ({ ...prev, q: trimmed ? next : undefined }),
+          replace: true,
+        })
+      }, 220)
     },
     [navigate],
   )
