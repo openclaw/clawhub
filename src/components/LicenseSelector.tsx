@@ -191,6 +191,7 @@ export function LicenseSelector({ value, onChange, disabled }: LicenseSelectorPr
     onChange(license)
   }
 
+  const isUnknownSpdx = !!selectedSpdx && !DROPDOWN_SPDX.has(selectedSpdx)
   const selectValue = showAdvanced ? '__custom__' : (selectedSpdx || '')
 
   return (
@@ -208,6 +209,9 @@ export function LicenseSelector({ value, onChange, disabled }: LicenseSelectorPr
           onChange={(e) => handleSelectChange(e.target.value)}
         >
           <option value="">No license declaration</option>
+          {isUnknownSpdx && !showAdvanced ? (
+            <option value={selectedSpdx}>{selectedSpdx}</option>
+          ) : null}
           {LICENSE_GROUPS.map((group) => (
             <optgroup key={group.label} label={group.label}>
               {group.options.map((opt) => (

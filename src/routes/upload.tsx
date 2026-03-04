@@ -74,6 +74,7 @@ export function Upload() {
   const changelogTouchedRef = useRef(false)
   const changelogRequestRef = useRef(0)
   const changelogKeyRef = useRef<string | null>(null)
+  const licenseRequestRef = useRef(0)
   const [license, setLicense] = useState<SkillLicense | undefined>(undefined)
   const [frontmatterLicense, setFrontmatterLicense] = useState<SkillLicense | undefined>(undefined)
   const [status, setStatus] = useState<string | null>(null)
@@ -126,7 +127,9 @@ export function Upload() {
       setLicense(undefined)
       return
     }
+    const requestId = ++licenseRequestRef.current
     void readText(files[requiredIndex]).then((text) => {
+      if (licenseRequestRef.current !== requestId) return
       const fmMatch = text.match(/^---\r?\n([\s\S]*?)\r?\n---/)
       if (!fmMatch?.[1]) {
         setFrontmatterLicense(undefined)
@@ -162,6 +165,7 @@ export function Upload() {
         setLicense(undefined)
       }
     }).catch(() => {
+      if (licenseRequestRef.current !== requestId) return
       setFrontmatterLicense(undefined)
       setLicense(undefined)
     })
