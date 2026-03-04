@@ -124,23 +124,23 @@ export function Upload() {
       return lower === 'skill.md' || lower === 'skills.md'
     })
     if (requiredIndex < 0 || !files[requiredIndex]) {
+      if (!license || license === frontmatterLicense) setLicense(undefined)
       setFrontmatterLicense(undefined)
-      setLicense(undefined)
       return
     }
     void readText(files[requiredIndex]).then((text) => {
       if (licenseRequestRef.current !== requestId) return
       const fmMatch = text.match(/^---\r?\n([\s\S]*?)\r?\n---/)
       if (!fmMatch?.[1]) {
+        if (!license || license === frontmatterLicense) setLicense(undefined)
         setFrontmatterLicense(undefined)
-        setLicense(undefined)
         return
       }
       try {
         const frontmatter = parseYaml(fmMatch[1])
         if (!frontmatter || typeof frontmatter !== 'object') {
+          if (!license || license === frontmatterLicense) setLicense(undefined)
           setFrontmatterLicense(undefined)
-          setLicense(undefined)
           return
         }
         const raw = (frontmatter as Record<string, unknown>).license
@@ -171,18 +171,18 @@ export function Upload() {
           setFrontmatterLicense(detected)
           setLicense(detected)
         } else {
+          if (!license || license === frontmatterLicense) setLicense(undefined)
           setFrontmatterLicense(undefined)
-          setLicense(undefined)
         }
       } catch {
         // invalid YAML — ignore
+        if (!license || license === frontmatterLicense) setLicense(undefined)
         setFrontmatterLicense(undefined)
-        setLicense(undefined)
       }
     }).catch(() => {
       if (licenseRequestRef.current !== requestId) return
+      if (!license || license === frontmatterLicense) setLicense(undefined)
       setFrontmatterLicense(undefined)
-      setLicense(undefined)
     })
   }, [files, isSoulMode, normalizedPaths])
 
