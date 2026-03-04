@@ -191,7 +191,7 @@ export function SkillInstallCard({ clawdis, osLabels, license }: SkillInstallCar
               <div className="stat">
                 <strong>{license.spdx}</strong>
                 {license.uri ? (
-                  <a href={license.uri} target="_blank" rel="noopener noreferrer">View license</a>
+                  <>{' '}<a href={license.uri} target="_blank" rel="noopener noreferrer">View license</a></>
                 ) : null}
               </div>
               {preset?.summary ? (

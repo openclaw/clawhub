@@ -124,7 +124,6 @@ export function Upload() {
     })
     if (requiredIndex < 0 || !files[requiredIndex]) {
       setFrontmatterLicense(undefined)
-      setLicense(undefined)
       return
     }
     const requestId = ++licenseRequestRef.current
@@ -133,14 +132,12 @@ export function Upload() {
       const fmMatch = text.match(/^---\r?\n([\s\S]*?)\r?\n---/)
       if (!fmMatch?.[1]) {
         setFrontmatterLicense(undefined)
-        setLicense(undefined)
         return
       }
       try {
         const frontmatter = parseYaml(fmMatch[1])
         if (!frontmatter || typeof frontmatter !== 'object') {
           setFrontmatterLicense(undefined)
-          setLicense(undefined)
           return
         }
         const raw = (frontmatter as Record<string, unknown>).license
@@ -157,17 +154,14 @@ export function Upload() {
           setLicense(detected)
         } else {
           setFrontmatterLicense(undefined)
-          setLicense(undefined)
         }
       } catch {
         // invalid YAML — ignore
         setFrontmatterLicense(undefined)
-        setLicense(undefined)
       }
     }).catch(() => {
       if (licenseRequestRef.current !== requestId) return
       setFrontmatterLicense(undefined)
-      setLicense(undefined)
     })
   }, [files, isSoulMode, normalizedPaths])
 

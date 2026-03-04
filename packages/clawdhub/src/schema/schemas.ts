@@ -1,4 +1,5 @@
 import { type inferred, type } from 'arktype'
+import { SkillLicenseSchema } from 'clawhub-schema'
 
 export const GlobalConfigSchema = type({
   registry: 'string',
@@ -165,17 +166,6 @@ export const ApiV1SkillListResponseSchema = type({
   nextCursor: 'string|null',
 })
 
-const SkillLicenseSchema = type({
-  spdx: 'string',
-  transferable: 'boolean?',
-  commercialUse: 'boolean?',
-  commercialAttribution: 'boolean?',
-  derivativesAllowed: 'boolean?',
-  derivativesAttribution: 'boolean?',
-  derivativesApproval: 'boolean?',
-  derivativesReciprocal: 'boolean?',
-  uri: 'string?',
-})
 
 export const ApiV1SkillResponseSchema = type({
   skill: type({

@@ -13,6 +13,7 @@ const LICENSE_GROUPS = [
     options: [
       { value: 'MIT', label: 'MIT', hint: '' },
       { value: 'Apache-2.0', label: 'Apache 2.0', hint: '' },
+      { value: 'BSD-2-Clause', label: 'BSD 2-Clause', hint: '' },
       { value: 'BSD-3-Clause', label: 'BSD 3-Clause', hint: '' },
       { value: 'ISC', label: 'ISC', hint: '' },
     ],
@@ -20,7 +21,10 @@ const LICENSE_GROUPS = [
   {
     label: 'Copyleft',
     options: [
+      { value: 'GPL-2.0-only', label: 'GPL 2.0', hint: '' },
       { value: 'GPL-3.0-only', label: 'GPL 3.0', hint: '' },
+      { value: 'LGPL-2.1-only', label: 'LGPL 2.1', hint: 'linking exception' },
+      { value: 'LGPL-3.0-only', label: 'LGPL 3.0', hint: 'linking exception' },
       { value: 'AGPL-3.0-only', label: 'AGPL 3.0', hint: 'network copyleft' },
       { value: 'MPL-2.0', label: 'MPL 2.0', hint: 'file-level copyleft' },
     ],
