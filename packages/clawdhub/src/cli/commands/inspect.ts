@@ -204,7 +204,7 @@ function printSkillSummary(result: {
   if (tagEntries.length > 0) {
     console.log(`Tags: ${tagEntries.map(([tag, version]) => `${tag}=${version}`).join(', ')}`)
   }
-  const license = (result as { license?: { spdx?: string; uri?: string; commercialUse?: boolean; derivativesAllowed?: boolean; transferable?: boolean } | null }).license
+  const license = (result.skill as { license?: { spdx?: string; uri?: string; commercialUse?: boolean; derivativesAllowed?: boolean; transferable?: boolean } | null }).license
   if (license?.spdx) {
     const terms: string[] = []
     if (license.commercialUse !== undefined) terms.push(`commercial: ${license.commercialUse ? 'yes' : 'no'}`)

@@ -266,7 +266,7 @@ export function Upload() {
       issues.push('Total file size exceeds 50MB.')
     }
     const warnings: string[] = []
-    if (!license) {
+    if (!license && !frontmatterLicense) {
       warnings.push('No license declared \u26A0 (Consider adding one)')
     }
     return {
@@ -283,6 +283,7 @@ export function Upload() {
     hasRequiredFile,
     totalBytes,
     license,
+    frontmatterLicense,
     requiredFileLabel,
   ])
 
