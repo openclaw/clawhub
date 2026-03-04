@@ -45,7 +45,7 @@ type ListSkillsResult = {
       version: string
       createdAt: number
       changelog: string
-      parsed?: { clawdis?: { os?: string[]; nix?: { plugin?: boolean; systems?: string[] } } }
+      parsed?: { clawdis?: { os?: string[]; nix?: { plugin?: boolean; systems?: string[] } }; license?: { spdx: string; uri?: string } }
     } | null
   }>
   nextCursor: string | null
@@ -213,6 +213,7 @@ export async function listSkillsV1Handler(ctx: ActionCtx, request: Request) {
           systems: item.latestVersion.parsed.clawdis.nix?.systems ?? null,
         }
       : null,
+    license: item.latestVersion?.parsed?.license ?? null,
   }))
 
   return json({ items, nextCursor: result.nextCursor ?? null }, 200, rate.headers)
@@ -309,6 +310,7 @@ export async function skillsGetRouterV1Handler(ctx: ActionCtx, request: Request)
               systems: result.latestVersion.parsed.clawdis.nix?.systems ?? null,
             }
           : null,
+        license: result.latestVersion?.parsed?.license ?? null,
         owner: result.owner
           ? {
               handle: result.owner.handle ?? null,
@@ -417,6 +419,7 @@ export async function skillsGetRouterV1Handler(ctx: ActionCtx, request: Request)
             contentType: file.contentType ?? null,
           })),
           security,
+          license: version.parsed?.license ?? null,
         },
       },
       200,

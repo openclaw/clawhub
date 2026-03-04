@@ -4,10 +4,12 @@ import {
   getFrontmatterMetadata,
   getFrontmatterValue,
   hashSkillFiles,
+  isKnownSpdx,
   isMacJunkPath,
   isTextFile,
   parseClawdisMetadata,
   parseFrontmatter,
+  parseLicenseField,
   sanitizePath,
 } from './skills'
 
@@ -319,5 +321,345 @@ description: A simple skill
 ---`)
     const meta = parseClawdisMetadata(frontmatter)
     expect(meta).toBeUndefined()
+  })
+})
+
+describe('parseLicenseField', () => {
+  it('parses simple SPDX string', () => {
+    const frontmatter = parseFrontmatter(`---\nlicense: MIT\n---\nBody`)
+    const license = parseLicenseField(frontmatter)
+    expect(license).toEqual({ spdx: 'MIT' })
+  })
+
+  it('trims whitespace from SPDX string', () => {
+    const frontmatter = parseFrontmatter(`---\nlicense: "  Apache-2.0  "\n---\nBody`)
+    const license = parseLicenseField(frontmatter)
+    expect(license).toEqual({ spdx: 'Apache-2.0' })
+  })
+
+  it('returns undefined for empty string', () => {
+    const frontmatter = parseFrontmatter(`---\nlicense: ""\n---\nBody`)
+    expect(parseLicenseField(frontmatter)).toBeUndefined()
+  })
+
+  it('parses PIL-aligned structured license object', () => {
+    const frontmatter = parseFrontmatter(`---
+license:
+  spdx: Apache-2.0
+  transferable: true
+  commercialUse: true
+  commercialAttribution: true
+  derivativesAllowed: true
+  derivativesAttribution: true
+  derivativesApproval: false
+  derivativesReciprocal: false
+  uri: https://example.com/license
+---
+Body`)
+    const license = parseLicenseField(frontmatter)
+    expect(license).toEqual({
+      spdx: 'Apache-2.0',
+      transferable: true,
+      commercialUse: true,
+      commercialAttribution: true,
+      derivativesAllowed: true,
+      derivativesAttribution: true,
+      derivativesApproval: false,
+      derivativesReciprocal: false,
+      uri: 'https://example.com/license',
+    })
+  })
+
+  it('normalizes old "commercial" field to "commercialUse"', () => {
+    const frontmatter = parseFrontmatter(`---
+license:
+  spdx: MIT
+  commercial: true
+---
+Body`)
+    const license = parseLicenseField(frontmatter)
+    expect(license?.commercialUse).toBe(true)
+    expect((license as Record<string, unknown>).commercial).toBeUndefined()
+  })
+
+  it('normalizes old "attribution: required" to split booleans', () => {
+    const frontmatter = parseFrontmatter(`---
+license:
+  spdx: MIT
+  attribution: required
+---
+Body`)
+    const license = parseLicenseField(frontmatter)
+    expect(license?.commercialAttribution).toBe(true)
+    expect(license?.derivativesAttribution).toBe(true)
+  })
+
+  it('normalizes old "attribution: none" to false booleans', () => {
+    const frontmatter = parseFrontmatter(`---
+license:
+  spdx: CC0-1.0
+  attribution: none
+---
+Body`)
+    const license = parseLicenseField(frontmatter)
+    expect(license?.commercialAttribution).toBe(false)
+    expect(license?.derivativesAttribution).toBe(false)
+  })
+
+  it('normalizes old "derivatives: allowed" to booleans', () => {
+    const frontmatter = parseFrontmatter(`---
+license:
+  spdx: MIT
+  derivatives: allowed
+---
+Body`)
+    const license = parseLicenseField(frontmatter)
+    expect(license?.derivativesAllowed).toBe(true)
+    expect(license?.derivativesReciprocal).toBe(false)
+  })
+
+  it('normalizes old "derivatives: allowed-same-license" to reciprocal', () => {
+    const frontmatter = parseFrontmatter(`---
+license:
+  spdx: GPL-3.0-only
+  derivatives: allowed-same-license
+---
+Body`)
+    const license = parseLicenseField(frontmatter)
+    expect(license?.derivativesAllowed).toBe(true)
+    expect(license?.derivativesReciprocal).toBe(true)
+  })
+
+  it('normalizes old "derivatives: not-allowed"', () => {
+    const frontmatter = parseFrontmatter(`---
+license:
+  spdx: proprietary
+  derivatives: not-allowed
+---
+Body`)
+    const license = parseLicenseField(frontmatter)
+    expect(license?.derivativesAllowed).toBe(false)
+  })
+
+  it('normalizes old "url" to "uri"', () => {
+    const frontmatter = parseFrontmatter(`---
+license:
+  spdx: MIT
+  url: https://example.com/license
+---
+Body`)
+    const license = parseLicenseField(frontmatter)
+    expect(license?.uri).toBe('https://example.com/license')
+    expect((license as Record<string, unknown>).url).toBeUndefined()
+  })
+
+  it('prefers new PIL field names over old when both present', () => {
+    const frontmatter = parseFrontmatter(`---
+license:
+  spdx: MIT
+  commercial: false
+  commercialUse: true
+---
+Body`)
+    const license = parseLicenseField(frontmatter)
+    expect(license?.commercialUse).toBe(true)
+  })
+
+  it('normalizes old structured license with all legacy fields', () => {
+    const frontmatter = parseFrontmatter(`---
+license:
+  spdx: Apache-2.0
+  commercial: true
+  attribution: required
+  derivatives: allowed
+  url: https://example.com/license
+---
+Body`)
+    const license = parseLicenseField(frontmatter)
+    expect(license).toEqual({
+      spdx: 'Apache-2.0',
+      commercialUse: true,
+      commercialAttribution: true,
+      derivativesAttribution: true,
+      derivativesAllowed: true,
+      derivativesReciprocal: false,
+      uri: 'https://example.com/license',
+    })
+  })
+
+  it('parses object with only spdx field', () => {
+    const frontmatter = parseFrontmatter(`---
+license:
+  spdx: GPL-3.0-only
+---
+Body`)
+    const license = parseLicenseField(frontmatter)
+    expect(license).toEqual({ spdx: 'GPL-3.0-only' })
+  })
+
+  it('returns undefined when license is absent', () => {
+    const frontmatter = parseFrontmatter(`---\nname: demo\n---\nBody`)
+    expect(parseLicenseField(frontmatter)).toBeUndefined()
+  })
+
+  it('returns undefined for object missing spdx', () => {
+    const frontmatter = parseFrontmatter(`---
+license:
+  commercial: true
+---
+Body`)
+    expect(parseLicenseField(frontmatter)).toBeUndefined()
+  })
+
+  it('returns undefined for boolean license', () => {
+    const frontmatter = parseFrontmatter(`---\nlicense: true\n---\nBody`)
+    expect(parseLicenseField(frontmatter)).toBeUndefined()
+  })
+
+  it('returns undefined for numeric license', () => {
+    const frontmatter = parseFrontmatter(`---\nlicense: 42\n---\nBody`)
+    expect(parseLicenseField(frontmatter)).toBeUndefined()
+  })
+
+  it('returns undefined for array license', () => {
+    const frontmatter = parseFrontmatter(`---\nlicense: [MIT, Apache-2.0]\n---\nBody`)
+    expect(parseLicenseField(frontmatter)).toBeUndefined()
+  })
+
+  it('drops non-https URI', () => {
+    const frontmatter = parseFrontmatter(`---
+license:
+  spdx: MIT
+  uri: http://example.com/license
+---
+Body`)
+    const license = parseLicenseField(frontmatter)
+    expect(license?.spdx).toBe('MIT')
+    expect(license?.uri).toBeUndefined()
+  })
+
+  it('drops javascript: URI', () => {
+    const frontmatter = parseFrontmatter(`---
+license:
+  spdx: MIT
+  uri: "javascript:alert(1)"
+---
+Body`)
+    const license = parseLicenseField(frontmatter)
+    expect(license?.spdx).toBe('MIT')
+    expect(license?.uri).toBeUndefined()
+  })
+
+  it('drops URI exceeding max length', () => {
+    const longUri = `https://example.com/${'a'.repeat(2048)}`
+    const frontmatter = parseFrontmatter(`---
+license:
+  spdx: MIT
+  uri: "${longUri}"
+---
+Body`)
+    const license = parseLicenseField(frontmatter)
+    expect(license?.uri).toBeUndefined()
+  })
+
+  it('drops non-https URL via old field name', () => {
+    const frontmatter = parseFrontmatter(`---
+license:
+  spdx: MIT
+  url: http://example.com/license
+---
+Body`)
+    const license = parseLicenseField(frontmatter)
+    expect(license?.spdx).toBe('MIT')
+    expect(license?.uri).toBeUndefined()
+  })
+
+  it('rejects SPDX string exceeding max length', () => {
+    const longSpdx = 'A'.repeat(65)
+    const frontmatter = parseFrontmatter(`---\nlicense: ${longSpdx}\n---\nBody`)
+    expect(parseLicenseField(frontmatter)).toBeUndefined()
+  })
+
+  it('drops invalid old attribution value', () => {
+    const frontmatter = parseFrontmatter(`---
+license:
+  spdx: MIT
+  attribution: sometimes
+---
+Body`)
+    const license = parseLicenseField(frontmatter)
+    expect(license?.spdx).toBe('MIT')
+    expect(license?.commercialAttribution).toBeUndefined()
+    expect(license?.derivativesAttribution).toBeUndefined()
+  })
+
+  it('drops old "attribution: optional" (no PIL mapping)', () => {
+    const frontmatter = parseFrontmatter(`---
+license:
+  spdx: MIT
+  attribution: optional
+---
+Body`)
+    const license = parseLicenseField(frontmatter)
+    expect(license?.spdx).toBe('MIT')
+    expect(license?.commercialAttribution).toBeUndefined()
+    expect(license?.derivativesAttribution).toBeUndefined()
+  })
+
+  it('drops invalid old derivatives value', () => {
+    const frontmatter = parseFrontmatter(`---
+license:
+  spdx: MIT
+  derivatives: maybe
+---
+Body`)
+    const license = parseLicenseField(frontmatter)
+    expect(license?.spdx).toBe('MIT')
+    expect(license?.derivativesAllowed).toBeUndefined()
+  })
+
+  it('drops non-boolean commercialUse value', () => {
+    const frontmatter = parseFrontmatter(`---
+license:
+  spdx: MIT
+  commercialUse: "yes"
+---
+Body`)
+    const license = parseLicenseField(frontmatter)
+    expect(license?.spdx).toBe('MIT')
+    expect(license?.commercialUse).toBeUndefined()
+  })
+
+  it('drops non-boolean old commercial value', () => {
+    const frontmatter = parseFrontmatter(`---
+license:
+  spdx: MIT
+  commercial: "yes"
+---
+Body`)
+    const license = parseLicenseField(frontmatter)
+    expect(license?.spdx).toBe('MIT')
+    expect(license?.commercialUse).toBeUndefined()
+  })
+
+  it('stores unknown SPDX identifiers as-is', () => {
+    const frontmatter = parseFrontmatter(`---\nlicense: WTFPL\n---\nBody`)
+    const license = parseLicenseField(frontmatter)
+    expect(license).toEqual({ spdx: 'WTFPL' })
+  })
+})
+
+describe('isKnownSpdx', () => {
+  it('recognizes known identifiers', () => {
+    expect(isKnownSpdx('MIT')).toBe(true)
+    expect(isKnownSpdx('Apache-2.0')).toBe(true)
+    expect(isKnownSpdx('GPL-3.0-only')).toBe(true)
+    expect(isKnownSpdx('proprietary')).toBe(true)
+  })
+
+  it('rejects unknown identifiers', () => {
+    expect(isKnownSpdx('WTFPL')).toBe(false)
+    expect(isKnownSpdx('mit')).toBe(false)
+    expect(isKnownSpdx('')).toBe(false)
   })
 })

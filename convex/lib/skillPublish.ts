@@ -25,6 +25,7 @@ import {
   isTextFile,
   parseClawdisMetadata,
   parseFrontmatter,
+  parseLicenseField,
   sanitizePath,
 } from './skills'
 import type { WebhookSkillPayload } from './webhooks'
@@ -46,6 +47,7 @@ export type PublishVersionArgs = {
   version: string
   changelog: string
   tags?: string[]
+  license?: unknown
   forkOf?: { slug: string; version?: string }
   source?: {
     kind: 'github'
@@ -130,6 +132,7 @@ export async function publishVersionForUser(
   const readmeText = await fetchText(ctx, readmeFile.storageId)
   const frontmatter = parseFrontmatter(readmeText)
   const clawdis = parseClawdisMetadata(frontmatter)
+  const license = args.license != null ? parseLicenseField({ license: args.license }) : parseLicenseField(frontmatter)
   const owner = (await ctx.runQuery(internal.users.getByIdInternal, {
     userId,
   })) as Doc<'users'> | null
@@ -268,6 +271,7 @@ export async function publishVersionForUser(
       frontmatter,
       metadata,
       clawdis,
+      license,
     },
     summary,
     embedding,

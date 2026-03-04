@@ -2,16 +2,19 @@ import {
   type ClawdbotConfigSpec,
   type ClawdisSkillMetadata,
   ClawdisSkillMetadataSchema,
+  isKnownSpdx,
   isTextContentType,
   type NixPluginSpec,
   parseArk,
   type SkillInstallSpec,
+  type SkillLicense,
   TEXT_FILE_EXTENSION_SET,
 } from 'clawhub-schema'
 import { parse as parseYaml } from 'yaml'
 
 export type ParsedSkillFrontmatter = Record<string, unknown>
-export type { ClawdisSkillMetadata, SkillInstallSpec }
+export type { ClawdisSkillMetadata, SkillInstallSpec, SkillLicense }
+export { isKnownSpdx }
 
 const FRONTMATTER_START = '---'
 const DEFAULT_EMBEDDING_MAX_CHARS = 12_000
@@ -144,6 +147,105 @@ export function parseClawdisMetadata(frontmatter: ParsedSkillFrontmatter) {
   } catch {
     return undefined
   }
+}
+
+const MAX_SPDX_LENGTH = 64
+const MAX_LICENSE_URI_LENGTH = 2048
+
+export function parseLicenseField(
+  frontmatter: ParsedSkillFrontmatter,
+): SkillLicense | undefined {
+  const raw = frontmatter.license
+  if (raw === undefined || raw === null) return undefined
+
+  // String form — simple SPDX identifier
+  if (typeof raw === 'string') {
+    const trimmed = raw.trim()
+    if (!trimmed || trimmed.length > MAX_SPDX_LENGTH) return undefined
+    return { spdx: trimmed }
+  }
+
+  // Object form — structured license (PIL-aligned with backward compat)
+  if (typeof raw === 'object' && !Array.isArray(raw)) {
+    const obj = raw as Record<string, unknown>
+
+    const spdx = typeof obj.spdx === 'string' ? obj.spdx.trim() : ''
+    if (!spdx || spdx.length > MAX_SPDX_LENGTH) return undefined
+
+    const license: SkillLicense = { spdx }
+
+    // --- transferable (PIL field, new) ---
+    if (typeof obj.transferable === 'boolean') {
+      license.transferable = obj.transferable
+    }
+
+    // --- commercialUse: accept new name, fall back to old "commercial" ---
+    if (typeof obj.commercialUse === 'boolean') {
+      license.commercialUse = obj.commercialUse
+    } else if (typeof obj.commercial === 'boolean') {
+      license.commercialUse = obj.commercial
+    }
+
+    // --- commercialAttribution / derivativesAttribution ---
+    if (typeof obj.commercialAttribution === 'boolean') {
+      license.commercialAttribution = obj.commercialAttribution
+    }
+    if (typeof obj.derivativesAttribution === 'boolean') {
+      license.derivativesAttribution = obj.derivativesAttribution
+    }
+    // Backward compat: expand old "attribution" enum into both booleans
+    if (
+      license.commercialAttribution === undefined &&
+      license.derivativesAttribution === undefined &&
+      typeof obj.attribution === 'string'
+    ) {
+      if (obj.attribution === 'required') {
+        license.commercialAttribution = true
+        license.derivativesAttribution = true
+      } else if (obj.attribution === 'none') {
+        license.commercialAttribution = false
+        license.derivativesAttribution = false
+      }
+      // 'optional' has no PIL mapping — dropped silently
+    }
+
+    // --- derivativesAllowed / derivativesReciprocal / derivativesApproval ---
+    if (typeof obj.derivativesAllowed === 'boolean') {
+      license.derivativesAllowed = obj.derivativesAllowed
+    }
+    if (typeof obj.derivativesReciprocal === 'boolean') {
+      license.derivativesReciprocal = obj.derivativesReciprocal
+    }
+    if (typeof obj.derivativesApproval === 'boolean') {
+      license.derivativesApproval = obj.derivativesApproval
+    }
+    // Backward compat: expand old "derivatives" enum into booleans
+    if (license.derivativesAllowed === undefined && typeof obj.derivatives === 'string') {
+      if (obj.derivatives === 'allowed') {
+        license.derivativesAllowed = true
+        license.derivativesReciprocal = false
+      } else if (obj.derivatives === 'allowed-same-license') {
+        license.derivativesAllowed = true
+        license.derivativesReciprocal = true
+      } else if (obj.derivatives === 'not-allowed') {
+        license.derivativesAllowed = false
+      }
+    }
+
+    // --- uri: accept new name, fall back to old "url" ---
+    const uriRaw = typeof obj.uri === 'string' ? obj.uri : typeof obj.url === 'string' ? obj.url : undefined
+    if (uriRaw) {
+      const trimmed = uriRaw.trim()
+      if (trimmed.startsWith('https://') && trimmed.length <= MAX_LICENSE_URI_LENGTH) {
+        license.uri = trimmed
+      }
+    }
+
+    return license
+  }
+
+  // Any other type (boolean, number, array) — invalid
+  return undefined
 }
 
 export function isTextFile(path: string, contentType?: string | null) {

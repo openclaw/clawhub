@@ -135,6 +135,16 @@ export declare const ApiV1WhoamiResponseSchema: import("arktype/internal/variant
         image?: string | null | undefined;
     };
 }, {}>;
+export declare const ApiV1UserSearchResponseSchema: import("arktype/internal/variants/object.ts").ObjectType<{
+    items: {
+        userId: string;
+        handle: string | null;
+        displayName?: string | null | undefined;
+        name?: string | null | undefined;
+        role?: "user" | "admin" | "moderator" | null | undefined;
+    }[];
+    total: number;
+}, {}>;
 export declare const ApiV1SearchResponseSchema: import("arktype/internal/variants/object.ts").ObjectType<{
     results: {
         score: number;
@@ -192,6 +202,12 @@ export declare const ApiV1SkillVersionListResponseSchema: import("arktype/intern
     }[];
     nextCursor: string | null;
 }, {}>;
+export declare const SecurityStatusSchema: import("arktype/internal/variants/object.ts").ObjectType<{
+    status: "clean" | "suspicious" | "malicious" | "pending" | "error";
+    hasWarnings: boolean;
+    checkedAt: number | null;
+    model: string | null;
+}, {}>;
 export declare const ApiV1SkillVersionResponseSchema: import("arktype/internal/variants/object.ts").ObjectType<{
     version: {
         version: string;
@@ -199,6 +215,12 @@ export declare const ApiV1SkillVersionResponseSchema: import("arktype/internal/v
         changelog: string;
         changelogSource?: "user" | "auto" | null | undefined;
         files?: unknown;
+        security?: {
+            status: "clean" | "suspicious" | "malicious" | "pending" | "error";
+            hasWarnings: boolean;
+            checkedAt: number | null;
+            model: string | null;
+        } | undefined;
     } | null;
     skill: {
         slug: string;
@@ -264,6 +286,27 @@ export declare const ClawdisRequiresSchema: import("arktype/internal/variants/ob
     config?: string[] | undefined;
 }, {}>;
 export type ClawdisRequires = (typeof ClawdisRequiresSchema)[inferred];
+export declare const EnvVarDeclarationSchema: import("arktype/internal/variants/object.ts").ObjectType<{
+    name: string;
+    required?: boolean | undefined;
+    description?: string | undefined;
+}, {}>;
+export type EnvVarDeclaration = (typeof EnvVarDeclarationSchema)[inferred];
+export declare const DependencyDeclarationSchema: import("arktype/internal/variants/object.ts").ObjectType<{
+    name: string;
+    type: "brew" | "go" | "pip" | "npm" | "cargo" | "apt" | "other";
+    version?: string | undefined;
+    url?: string | undefined;
+    repository?: string | undefined;
+}, {}>;
+export type DependencyDeclaration = (typeof DependencyDeclarationSchema)[inferred];
+export declare const SkillLinksSchema: import("arktype/internal/variants/object.ts").ObjectType<{
+    homepage?: string | undefined;
+    repository?: string | undefined;
+    documentation?: string | undefined;
+    changelog?: string | undefined;
+}, {}>;
+export type SkillLinks = (typeof SkillLinksSchema)[inferred];
 export declare const ClawdisSkillMetadataSchema: import("arktype/internal/variants/object.ts").ObjectType<{
     always?: boolean | undefined;
     skillKey?: string | undefined;
@@ -297,5 +340,213 @@ export declare const ClawdisSkillMetadataSchema: import("arktype/internal/varian
         stateDirs?: string[] | undefined;
         example?: string | undefined;
     } | undefined;
+    envVars?: {
+        name: string;
+        required?: boolean | undefined;
+        description?: string | undefined;
+    }[] | undefined;
+    dependencies?: {
+        name: string;
+        type: "brew" | "go" | "pip" | "npm" | "cargo" | "apt" | "other";
+        version?: string | undefined;
+        url?: string | undefined;
+        repository?: string | undefined;
+    }[] | undefined;
+    author?: string | undefined;
+    links?: {
+        homepage?: string | undefined;
+        repository?: string | undefined;
+        documentation?: string | undefined;
+        changelog?: string | undefined;
+    } | undefined;
 }, {}>;
 export type ClawdisSkillMetadata = (typeof ClawdisSkillMetadataSchema)[inferred];
+export declare const SkillLicenseSchema: import("arktype/internal/variants/object.ts").ObjectType<{
+    spdx: string;
+    transferable?: boolean | undefined;
+    commercialUse?: boolean | undefined;
+    commercialAttribution?: boolean | undefined;
+    derivativesAllowed?: boolean | undefined;
+    derivativesAttribution?: boolean | undefined;
+    derivativesApproval?: boolean | undefined;
+    derivativesReciprocal?: boolean | undefined;
+    uri?: string | undefined;
+}, {}>;
+export declare const SkillFrontmatterSchema: import("arktype/internal/variants/object.ts").ObjectType<{
+    name?: string | undefined;
+    description?: string | undefined;
+    version?: string | undefined;
+    license?: string | {
+        spdx: string;
+        transferable?: boolean | undefined;
+        commercialUse?: boolean | undefined;
+        commercialAttribution?: boolean | undefined;
+        derivativesAllowed?: boolean | undefined;
+        derivativesAttribution?: boolean | undefined;
+        derivativesApproval?: boolean | undefined;
+        derivativesReciprocal?: boolean | undefined;
+        uri?: string | undefined;
+    } | undefined;
+    metadata?: {
+        openclaw?: {
+            always?: boolean | undefined;
+            skillKey?: string | undefined;
+            primaryEnv?: string | undefined;
+            emoji?: string | undefined;
+            homepage?: string | undefined;
+            os?: string[] | undefined;
+            cliHelp?: string | undefined;
+            requires?: {
+                bins?: string[] | undefined;
+                anyBins?: string[] | undefined;
+                env?: string[] | undefined;
+                config?: string[] | undefined;
+            } | undefined;
+            install?: {
+                kind: "brew" | "node" | "go" | "uv";
+                id?: string | undefined;
+                label?: string | undefined;
+                bins?: string[] | undefined;
+                formula?: string | undefined;
+                tap?: string | undefined;
+                package?: string | undefined;
+                module?: string | undefined;
+            }[] | undefined;
+            nix?: {
+                plugin: string;
+                systems?: string[] | undefined;
+            } | undefined;
+            config?: {
+                requiredEnv?: string[] | undefined;
+                stateDirs?: string[] | undefined;
+                example?: string | undefined;
+            } | undefined;
+            envVars?: {
+                name: string;
+                required?: boolean | undefined;
+                description?: string | undefined;
+            }[] | undefined;
+            dependencies?: {
+                name: string;
+                type: "brew" | "go" | "pip" | "npm" | "cargo" | "apt" | "other";
+                version?: string | undefined;
+                url?: string | undefined;
+                repository?: string | undefined;
+            }[] | undefined;
+            author?: string | undefined;
+            links?: {
+                homepage?: string | undefined;
+                repository?: string | undefined;
+                documentation?: string | undefined;
+                changelog?: string | undefined;
+            } | undefined;
+        } | undefined;
+        clawdis?: {
+            always?: boolean | undefined;
+            skillKey?: string | undefined;
+            primaryEnv?: string | undefined;
+            emoji?: string | undefined;
+            homepage?: string | undefined;
+            os?: string[] | undefined;
+            cliHelp?: string | undefined;
+            requires?: {
+                bins?: string[] | undefined;
+                anyBins?: string[] | undefined;
+                env?: string[] | undefined;
+                config?: string[] | undefined;
+            } | undefined;
+            install?: {
+                kind: "brew" | "node" | "go" | "uv";
+                id?: string | undefined;
+                label?: string | undefined;
+                bins?: string[] | undefined;
+                formula?: string | undefined;
+                tap?: string | undefined;
+                package?: string | undefined;
+                module?: string | undefined;
+            }[] | undefined;
+            nix?: {
+                plugin: string;
+                systems?: string[] | undefined;
+            } | undefined;
+            config?: {
+                requiredEnv?: string[] | undefined;
+                stateDirs?: string[] | undefined;
+                example?: string | undefined;
+            } | undefined;
+            envVars?: {
+                name: string;
+                required?: boolean | undefined;
+                description?: string | undefined;
+            }[] | undefined;
+            dependencies?: {
+                name: string;
+                type: "brew" | "go" | "pip" | "npm" | "cargo" | "apt" | "other";
+                version?: string | undefined;
+                url?: string | undefined;
+                repository?: string | undefined;
+            }[] | undefined;
+            author?: string | undefined;
+            links?: {
+                homepage?: string | undefined;
+                repository?: string | undefined;
+                documentation?: string | undefined;
+                changelog?: string | undefined;
+            } | undefined;
+        } | undefined;
+        clawdbot?: {
+            always?: boolean | undefined;
+            skillKey?: string | undefined;
+            primaryEnv?: string | undefined;
+            emoji?: string | undefined;
+            homepage?: string | undefined;
+            os?: string[] | undefined;
+            cliHelp?: string | undefined;
+            requires?: {
+                bins?: string[] | undefined;
+                anyBins?: string[] | undefined;
+                env?: string[] | undefined;
+                config?: string[] | undefined;
+            } | undefined;
+            install?: {
+                kind: "brew" | "node" | "go" | "uv";
+                id?: string | undefined;
+                label?: string | undefined;
+                bins?: string[] | undefined;
+                formula?: string | undefined;
+                tap?: string | undefined;
+                package?: string | undefined;
+                module?: string | undefined;
+            }[] | undefined;
+            nix?: {
+                plugin: string;
+                systems?: string[] | undefined;
+            } | undefined;
+            config?: {
+                requiredEnv?: string[] | undefined;
+                stateDirs?: string[] | undefined;
+                example?: string | undefined;
+            } | undefined;
+            envVars?: {
+                name: string;
+                required?: boolean | undefined;
+                description?: string | undefined;
+            }[] | undefined;
+            dependencies?: {
+                name: string;
+                type: "brew" | "go" | "pip" | "npm" | "cargo" | "apt" | "other";
+                version?: string | undefined;
+                url?: string | undefined;
+                repository?: string | undefined;
+            }[] | undefined;
+            author?: string | undefined;
+            links?: {
+                homepage?: string | undefined;
+                repository?: string | undefined;
+                documentation?: string | undefined;
+                changelog?: string | undefined;
+            } | undefined;
+        } | undefined;
+    } | undefined;
+}, {}>;
+export type SkillFrontmatter = (typeof SkillFrontmatterSchema)[inferred];

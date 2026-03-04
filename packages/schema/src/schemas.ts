@@ -337,3 +337,28 @@ export const ClawdisSkillMetadataSchema = type({
   links: SkillLinksSchema.optional(),
 })
 export type ClawdisSkillMetadata = (typeof ClawdisSkillMetadataSchema)[inferred]
+
+export const SkillLicenseSchema = type({
+  spdx: 'string',
+  transferable: 'boolean?',
+  commercialUse: 'boolean?',
+  commercialAttribution: 'boolean?',
+  derivativesAllowed: 'boolean?',
+  derivativesAttribution: 'boolean?',
+  derivativesApproval: 'boolean?',
+  derivativesReciprocal: 'boolean?',
+  uri: 'string?',
+})
+
+export const SkillFrontmatterSchema = type({
+  name: 'string?',
+  description: 'string?',
+  version: 'string?',
+  license: SkillLicenseSchema.or('string').optional(),
+  metadata: type({
+    openclaw: ClawdisSkillMetadataSchema.optional(),
+    clawdis: ClawdisSkillMetadataSchema.optional(),
+    clawdbot: ClawdisSkillMetadataSchema.optional(),
+  }).optional(),
+})
+export type SkillFrontmatter = (typeof SkillFrontmatterSchema)[inferred]

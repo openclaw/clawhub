@@ -2831,6 +2831,7 @@ export const publishVersion: ReturnType<typeof action> = action({
     version: v.string(),
     changelog: v.string(),
     tags: v.optional(v.array(v.string())),
+    license: v.optional(v.any()),
     forkOf: v.optional(
       v.object({
         slug: v.string(),
@@ -3561,6 +3562,7 @@ export const insertVersion = internalMutation({
       frontmatter: v.record(v.string(), v.any()),
       metadata: v.optional(v.any()),
       clawdis: v.optional(v.any()),
+      license: v.optional(v.any()),
     }),
     summary: v.optional(v.string()),
     qualityAssessment: v.optional(

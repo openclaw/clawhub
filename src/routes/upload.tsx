@@ -1,8 +1,10 @@
 import { createFileRoute, useNavigate, useSearch } from '@tanstack/react-router'
+import type { SkillLicense } from 'clawhub-schema'
 import { useAction, useMutation, useQuery } from 'convex/react'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import semver from 'semver'
 import { api } from '../../convex/_generated/api'
+import { LicenseSelector } from '../components/LicenseSelector'
 import { getSiteMode } from '../lib/site'
 import { expandDroppedItems, expandFilesWithReport } from '../lib/uploadFiles'
 import { useAuthStatus } from '../lib/useAuthStatus'
@@ -71,6 +73,8 @@ export function Upload() {
   const changelogTouchedRef = useRef(false)
   const changelogRequestRef = useRef(0)
   const changelogKeyRef = useRef<string | null>(null)
+  const [license, setLicense] = useState<SkillLicense | undefined>(undefined)
+  const [frontmatterLicense, setFrontmatterLicense] = useState<SkillLicense | undefined>(undefined)
   const [status, setStatus] = useState<string | null>(null)
   const isSubmitting = status !== null
   const [error, setError] = useState<string | null>(null)
@@ -108,6 +112,38 @@ export function Upload() {
       }),
     [isSoulMode, normalizedPaths],
   )
+  // Detect license from uploaded SKILL.md frontmatter
+  useEffect(() => {
+    if (isSoulMode) return
+    const requiredIndex = normalizedPaths.findIndex((path) => {
+      const lower = path.trim().toLowerCase()
+      return lower === 'skill.md' || lower === 'skills.md'
+    })
+    if (requiredIndex < 0 || !files[requiredIndex]) {
+      setFrontmatterLicense(undefined)
+      return
+    }
+    void readText(files[requiredIndex]).then((text) => {
+      const match = text.match(/^---\n([\s\S]*?)\n---/)
+      if (!match?.[1]) {
+        setFrontmatterLicense(undefined)
+        return
+      }
+      // Simple extraction of license field from YAML frontmatter
+      const licenseMatch = match[1].match(/^license:\s*(.+)$/m)
+      if (licenseMatch?.[1]) {
+        const value = licenseMatch[1].trim().replace(/^["']|["']$/g, '')
+        if (value) {
+          setFrontmatterLicense({ spdx: value })
+          return
+        }
+      }
+      setFrontmatterLicense(undefined)
+    }).catch(() => {
+      setFrontmatterLicense(undefined)
+    })
+  }, [files, isSoulMode, normalizedPaths])
+
   const sizeLabel = totalBytes ? formatBytes(totalBytes) : '0 B'
   const ignoredMacJunkNote = useMemo(() => {
     if (ignoredMacJunkPaths.length === 0) return null
@@ -229,8 +265,13 @@ export function Upload() {
     if (totalBytes > maxBytes) {
       issues.push('Total file size exceeds 50MB.')
     }
+    const warnings: string[] = []
+    if (!license) {
+      warnings.push('No license declared \u26A0 (Consider adding one)')
+    }
     return {
       issues,
+      warnings,
       ready: issues.length === 0,
     }
   }, [
@@ -241,6 +282,7 @@ export function Upload() {
     files,
     hasRequiredFile,
     totalBytes,
+    license,
     requiredFileLabel,
   ])
 
@@ -318,6 +360,7 @@ export function Upload() {
         version,
         changelog: trimmedChangelog,
         tags: parsedTags,
+        license: license ?? undefined,
         files: uploaded,
       })
       setStatus(null)
@@ -393,6 +436,14 @@ export function Upload() {
             onChange={(event) => setTags(event.target.value)}
             placeholder="latest, stable"
           />
+
+          {!isSoulMode ? (
+            <LicenseSelector
+              value={license}
+              onChange={setLicense}
+              frontmatterLicense={frontmatterLicense}
+            />
+          ) : null}
         </div>
 
         <div className="card upload-panel">
@@ -466,12 +517,15 @@ export function Upload() {
 
         <div className="card upload-panel" ref={validationRef}>
           <h2 className="upload-panel-title">Validation</h2>
-          {validation.issues.length === 0 ? (
+          {validation.issues.length === 0 && validation.warnings.length === 0 ? (
             <div className="stat">All checks passed.</div>
           ) : (
             <ul className="validation-list">
               {validation.issues.map((issue) => (
                 <li key={issue}>{issue}</li>
+              ))}
+              {validation.warnings.map((warning) => (
+                <li key={warning}>{warning}</li>
               ))}
             </ul>
           )}

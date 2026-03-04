@@ -178,6 +178,7 @@ export function SkillDetailPage({
   )
 
   const clawdis = (latestVersion?.parsed as { clawdis?: ClawdisSkillMetadata } | undefined)?.clawdis
+  const license = (latestVersion?.parsed as { license?: { spdx: string; uri?: string } } | undefined)?.license ?? null
   const osLabels = useMemo(() => formatOsList(clawdis?.os), [clawdis?.os])
   const nixPlugin = clawdis?.nix?.plugin
   const nixSystems = clawdis?.nix?.systems ?? []
@@ -342,6 +343,7 @@ export function SkillDetailPage({
           tagVersions={versions ?? []}
           clawdis={clawdis}
           osLabels={osLabels}
+          license={license}
         />
 
         {nixSnippet ? (

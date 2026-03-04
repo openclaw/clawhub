@@ -204,6 +204,18 @@ function printSkillSummary(result: {
   if (tagEntries.length > 0) {
     console.log(`Tags: ${tagEntries.map(([tag, version]) => `${tag}=${version}`).join(', ')}`)
   }
+  const license = (result as { license?: { spdx?: string; uri?: string; commercialUse?: boolean; derivativesAllowed?: boolean; transferable?: boolean } | null }).license
+  if (license?.spdx) {
+    const terms: string[] = []
+    if (license.commercialUse !== undefined) terms.push(`commercial: ${license.commercialUse ? 'yes' : 'no'}`)
+    if (license.derivativesAllowed !== undefined) terms.push(`derivatives: ${license.derivativesAllowed ? 'yes' : 'no'}`)
+    if (license.transferable !== undefined) terms.push(`transferable: ${license.transferable ? 'yes' : 'no'}`)
+    const suffix = terms.length > 0 ? ` (${terms.join(', ')})` : ''
+    console.log(`License: ${license.spdx}${suffix}`)
+    if (license.uri) console.log(`License URI: ${license.uri}`)
+  } else {
+    console.log('License: not declared')
+  }
 }
 
 function printVersionSummary(version: unknown) {

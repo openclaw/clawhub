@@ -86,6 +86,67 @@ metadata:
 | `nix` | `object` | Nix plugin spec (see README). |
 | `config` | `object` | Clawdbot config spec (see README). |
 
+### License
+
+Declare the license for your skill using the optional `license` frontmatter field. Use an [SPDX identifier](https://spdx.org/licenses/) when possible.
+
+#### Simple (SPDX string)
+
+```yaml
+---
+name: my-skill
+license: MIT
+---
+```
+
+#### Structured (PIL-aligned terms)
+
+Field names align with [Story Protocol's Programmable IP License (PIL)](https://docs.story.foundation/) for future on-chain compatibility.
+
+```yaml
+---
+name: my-skill
+license:
+  spdx: Apache-2.0
+  transferable: true
+  commercialUse: true
+  commercialAttribution: true
+  derivativesAllowed: true
+  derivativesAttribution: true
+  derivativesApproval: false
+  derivativesReciprocal: false
+  uri: https://example.com/LICENSE
+---
+```
+
+| Field | Type | PIL field | Description |
+|-------|------|-----------|-------------|
+| `spdx` | `string` | — | SPDX license identifier (required if using object form, max 64 chars). |
+| `transferable` | `boolean` | `transferable` | Whether the license can be transferred to another party. |
+| `commercialUse` | `boolean` | `commercialUse` | Whether commercial use is permitted. |
+| `commercialAttribution` | `boolean` | `commercialAttribution` | Whether attribution is required for commercial use. |
+| `derivativesAllowed` | `boolean` | `derivativesAllowed` | Whether derivative works are permitted. |
+| `derivativesAttribution` | `boolean` | `derivativesAttribution` | Whether attribution is required for derivative works. |
+| `derivativesApproval` | `boolean` | `derivativesApproval` | Whether derivative works need explicit approval from the licensor. |
+| `derivativesReciprocal` | `boolean` | `derivativesReciprocal` | Whether derivative works must use the same license (copyleft). |
+| `uri` | `string` | `uri` | URL to the full license text (must be `https://`, max 2048 chars). |
+
+**Deprecated fields** (still accepted in frontmatter, normalized automatically):
+
+| Old field | Normalized to |
+|-----------|---------------|
+| `commercial` | `commercialUse` |
+| `attribution: 'required'` | `commercialAttribution: true` + `derivativesAttribution: true` |
+| `attribution: 'none'` | `commercialAttribution: false` + `derivativesAttribution: false` |
+| `derivatives: 'allowed'` | `derivativesAllowed: true` + `derivativesReciprocal: false` |
+| `derivatives: 'allowed-same-license'` | `derivativesAllowed: true` + `derivativesReciprocal: true` |
+| `derivatives: 'not-allowed'` | `derivativesAllowed: false` |
+| `url` | `uri` |
+
+**Recognized SPDX identifiers:** MIT, Apache-2.0, GPL-2.0-only, GPL-3.0-only, LGPL-2.1-only, LGPL-3.0-only, BSD-2-Clause, BSD-3-Clause, ISC, MPL-2.0, AGPL-3.0-only, Unlicense, CC-BY-4.0, CC-BY-SA-4.0, CC-BY-NC-4.0, CC-BY-NC-SA-4.0, CC0-1.0, proprietary.
+
+Custom identifiers are accepted but will show a warning during `clawhub publish`. When no license is declared, the skill page displays "No license declared."
+
 ### Install specs
 
 If your skill needs dependencies installed, declare them in the `install` array:
