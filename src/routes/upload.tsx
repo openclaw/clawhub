@@ -3,6 +3,7 @@ import type { SkillLicense } from 'clawhub-schema'
 import { useAction, useMutation, useQuery } from 'convex/react'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import semver from 'semver'
+import { parse as parseYaml } from 'yaml'
 import { api } from '../../convex/_generated/api'
 import { LicenseSelector } from '../components/LicenseSelector'
 import { getSiteMode } from '../lib/site'
@@ -129,23 +130,26 @@ export function Upload() {
         setFrontmatterLicense(undefined)
         return
       }
-      // Simple extraction of license field from YAML frontmatter
-      // Handles both `license: MIT` and multi-line `license:\n  spdx: ...`
-      const licenseMatch = match[1].match(/^license:[ \t]*(.+)$/m)
-      if (licenseMatch?.[1]) {
-        const value = licenseMatch[1].trim().replace(/^["']|["']$/g, '')
-        if (value) {
-          setFrontmatterLicense({ spdx: value })
+      try {
+        const frontmatter = parseYaml(match[1])
+        if (!frontmatter || typeof frontmatter !== 'object') {
+          setFrontmatterLicense(undefined)
           return
         }
-      }
-      const spdxMatch = match[1].match(/^license:\s*$[\s\S]*?^\s+spdx:\s*(.+)$/m)
-      if (spdxMatch?.[1]) {
-        const value = spdxMatch[1].trim().replace(/^["']|["']$/g, '')
-        if (value) {
-          setFrontmatterLicense({ spdx: value })
+        const raw = (frontmatter as Record<string, unknown>).license
+        if (typeof raw === 'string' && raw.trim()) {
+          setFrontmatterLicense({ spdx: raw.trim() })
           return
         }
+        if (raw && typeof raw === 'object' && !Array.isArray(raw)) {
+          const spdx = (raw as Record<string, unknown>).spdx
+          if (typeof spdx === 'string' && spdx.trim()) {
+            setFrontmatterLicense({ spdx: spdx.trim() })
+            return
+          }
+        }
+      } catch {
+        // invalid YAML — ignore
       }
       setFrontmatterLicense(undefined)
     }).catch(() => {

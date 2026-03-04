@@ -145,7 +145,7 @@ license:
 
 **Recognized SPDX identifiers:** MIT, Apache-2.0, GPL-2.0-only, GPL-3.0-only, LGPL-2.1-only, LGPL-3.0-only, BSD-2-Clause, BSD-3-Clause, ISC, MPL-2.0, AGPL-3.0-only, Unlicense, CC-BY-4.0, CC-BY-SA-4.0, CC-BY-NC-4.0, CC-BY-NC-SA-4.0, CC0-1.0, proprietary.
 
-Custom identifiers are accepted but will show a warning during `clawhub publish`. When no license is declared, the skill page displays "No license declared."
+Custom identifiers are accepted. When no license is declared, the skill page displays "No license declared."
 
 ### Install specs
 
