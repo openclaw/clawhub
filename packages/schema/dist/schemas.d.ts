@@ -172,6 +172,17 @@ export declare const ApiV1SkillListResponseSchema: import("arktype/internal/vari
     }[];
     nextCursor: string | null;
 }, {}>;
+export declare const SkillLicenseSchema: import("arktype/internal/variants/object.ts").ObjectType<{
+    spdx: string;
+    transferable?: boolean | undefined;
+    commercialUse?: boolean | undefined;
+    commercialAttribution?: boolean | undefined;
+    derivativesAllowed?: boolean | undefined;
+    derivativesAttribution?: boolean | undefined;
+    derivativesApproval?: boolean | undefined;
+    derivativesReciprocal?: boolean | undefined;
+    uri?: string | undefined;
+}, {}>;
 export declare const ApiV1SkillResponseSchema: import("arktype/internal/variants/object.ts").ObjectType<{
     skill: {
         slug: string;
@@ -194,10 +205,14 @@ export declare const ApiV1SkillResponseSchema: import("arktype/internal/variants
     } | null;
     license?: {
         spdx: string;
-        uri?: string | undefined;
-        commercialUse?: boolean | undefined;
-        derivativesAllowed?: boolean | undefined;
         transferable?: boolean | undefined;
+        commercialUse?: boolean | undefined;
+        commercialAttribution?: boolean | undefined;
+        derivativesAllowed?: boolean | undefined;
+        derivativesAttribution?: boolean | undefined;
+        derivativesApproval?: boolean | undefined;
+        derivativesReciprocal?: boolean | undefined;
+        uri?: string | undefined;
     } | null | undefined;
 }, {}>;
 export declare const ApiV1SkillVersionListResponseSchema: import("arktype/internal/variants/object.ts").ObjectType<{
@@ -230,10 +245,14 @@ export declare const ApiV1SkillVersionResponseSchema: import("arktype/internal/v
         } | undefined;
         license?: {
             spdx: string;
-            uri?: string | undefined;
-            commercialUse?: boolean | undefined;
-            derivativesAllowed?: boolean | undefined;
             transferable?: boolean | undefined;
+            commercialUse?: boolean | undefined;
+            commercialAttribution?: boolean | undefined;
+            derivativesAllowed?: boolean | undefined;
+            derivativesAttribution?: boolean | undefined;
+            derivativesApproval?: boolean | undefined;
+            derivativesReciprocal?: boolean | undefined;
+            uri?: string | undefined;
         } | null | undefined;
     } | null;
     skill: {
@@ -375,17 +394,6 @@ export declare const ClawdisSkillMetadataSchema: import("arktype/internal/varian
     } | undefined;
 }, {}>;
 export type ClawdisSkillMetadata = (typeof ClawdisSkillMetadataSchema)[inferred];
-export declare const SkillLicenseSchema: import("arktype/internal/variants/object.ts").ObjectType<{
-    spdx: string;
-    transferable?: boolean | undefined;
-    commercialUse?: boolean | undefined;
-    commercialAttribution?: boolean | undefined;
-    derivativesAllowed?: boolean | undefined;
-    derivativesAttribution?: boolean | undefined;
-    derivativesApproval?: boolean | undefined;
-    derivativesReciprocal?: boolean | undefined;
-    uri?: string | undefined;
-}, {}>;
 export declare const SkillFrontmatterSchema: import("arktype/internal/variants/object.ts").ObjectType<{
     name?: string | undefined;
     description?: string | undefined;

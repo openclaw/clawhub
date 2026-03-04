@@ -147,6 +147,17 @@ export const ApiV1SkillListResponseSchema = type({
     }).array(),
     nextCursor: 'string|null',
 });
+export const SkillLicenseSchema = type({
+    spdx: 'string',
+    transferable: 'boolean?',
+    commercialUse: 'boolean?',
+    commercialAttribution: 'boolean?',
+    derivativesAllowed: 'boolean?',
+    derivativesAttribution: 'boolean?',
+    derivativesApproval: 'boolean?',
+    derivativesReciprocal: 'boolean?',
+    uri: 'string?',
+});
 export const ApiV1SkillResponseSchema = type({
     skill: type({
         slug: 'string',
@@ -167,13 +178,7 @@ export const ApiV1SkillResponseSchema = type({
         displayName: 'string|null?',
         image: 'string|null?',
     }).or('null'),
-    license: type({
-        spdx: 'string',
-        uri: 'string?',
-        commercialUse: 'boolean?',
-        derivativesAllowed: 'boolean?',
-        transferable: 'boolean?',
-    }).or('null').optional(),
+    license: SkillLicenseSchema.or('null').optional(),
 });
 export const ApiV1SkillVersionListResponseSchema = type({
     items: type({
@@ -198,15 +203,7 @@ export const ApiV1SkillVersionResponseSchema = type({
         changelogSource: '"auto"|"user"|null?',
         files: 'unknown?',
         security: SecurityStatusSchema.optional(),
-        license: type({
-            spdx: 'string',
-            uri: 'string?',
-            commercialUse: 'boolean?',
-            derivativesAllowed: 'boolean?',
-            transferable: 'boolean?',
-        })
-            .or('null')
-            .optional(),
+        license: SkillLicenseSchema.or('null').optional(),
     }).or('null'),
     skill: type({
         slug: 'string',
@@ -298,17 +295,6 @@ export const ClawdisSkillMetadataSchema = type({
     dependencies: DependencyDeclarationSchema.array().optional(),
     author: 'string?',
     links: SkillLinksSchema.optional(),
-});
-export const SkillLicenseSchema = type({
-    spdx: 'string',
-    transferable: 'boolean?',
-    commercialUse: 'boolean?',
-    commercialAttribution: 'boolean?',
-    derivativesAllowed: 'boolean?',
-    derivativesAttribution: 'boolean?',
-    derivativesApproval: 'boolean?',
-    derivativesReciprocal: 'boolean?',
-    uri: 'string?',
 });
 export const SkillFrontmatterSchema = type({
     name: 'string?',
