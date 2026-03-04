@@ -150,6 +150,21 @@ export function Upload() {
         }
         if (spdx) {
           const detected: SkillLicense = { spdx }
+          if (raw && typeof raw === 'object' && !Array.isArray(raw)) {
+            const obj = raw as Record<string, unknown>
+            for (const key of [
+              'transferable',
+              'commercialUse',
+              'commercialAttribution',
+              'derivativesAllowed',
+              'derivativesAttribution',
+              'derivativesApproval',
+              'derivativesReciprocal',
+            ] as const) {
+              if (typeof obj[key] === 'boolean') detected[key] = obj[key]
+            }
+            if (typeof obj.uri === 'string' && obj.uri.trim()) detected.uri = obj.uri.trim()
+          }
           setFrontmatterLicense(detected)
           setLicense(detected)
         } else {
@@ -383,18 +398,15 @@ export function Upload() {
 
     setStatus('Publishing…')
     try {
-      const payload: Record<string, unknown> = {
+      const result = await publishVersion({
         slug: trimmedSlug,
         displayName: trimmedName,
         version,
         changelog: trimmedChangelog,
         tags: parsedTags,
         files: uploaded,
-      }
-      if (!isSoulMode && !frontmatterLicense && license) {
-        payload.license = license
-      }
-      const result = await publishVersion(payload as never)
+        ...(!isSoulMode && !frontmatterLicense && license ? { license } : {}),
+      })
       setStatus(null)
       setError(null)
       setHasAttempted(false)

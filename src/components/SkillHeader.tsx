@@ -1,5 +1,5 @@
 import { Link } from '@tanstack/react-router'
-import type { ClawdisSkillMetadata } from 'clawhub-schema'
+import type { ClawdisSkillMetadata, SkillLicense } from 'clawhub-schema'
 import { Package } from 'lucide-react'
 import type { Doc, Id } from '../../convex/_generated/dataModel'
 import { getSkillBadges } from '../lib/badges'
@@ -67,7 +67,7 @@ type SkillHeaderProps = {
   tagVersions: Doc<'skillVersions'>[]
   clawdis: ClawdisSkillMetadata | undefined
   osLabels: string[]
-  license: { spdx: string; uri?: string } | null
+  license: SkillLicense | null
 }
 
 export function SkillHeader({
