@@ -68,28 +68,18 @@ describe('LicenseSelector', () => {
     expect(lastCall).not.toHaveProperty('derivatives')
   })
 
-  it('shows frontmatter conflict note when licenses differ', () => {
+  it('disables select and hides summary when disabled by frontmatter', () => {
     const onChange = vi.fn()
     render(
       <LicenseSelector
         value={{ spdx: 'MIT' }}
         onChange={onChange}
-        frontmatterLicense={{ spdx: 'Apache-2.0' }}
+        disabled
       />,
     )
-    expect(screen.getByText(/Your SKILL.md declares license: Apache-2.0/)).toBeTruthy()
-  })
-
-  it('does not show conflict note when licenses match', () => {
-    const onChange = vi.fn()
-    render(
-      <LicenseSelector
-        value={{ spdx: 'MIT' }}
-        onChange={onChange}
-        frontmatterLicense={{ spdx: 'MIT' }}
-      />,
-    )
-    expect(screen.queryByText(/Your SKILL.md declares license/)).toBeNull()
+    const select = screen.getByLabelText('License') as HTMLSelectElement
+    expect(select.disabled).toBe(true)
+    expect(screen.queryByText(/Permits commercial use/)).toBeNull()
   })
 
   it('shows URI validation warning for non-https URIs', () => {

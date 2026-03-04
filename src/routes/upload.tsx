@@ -75,7 +75,6 @@ export function Upload() {
   const changelogRequestRef = useRef(0)
   const changelogKeyRef = useRef<string | null>(null)
   const [license, setLicense] = useState<SkillLicense | undefined>(undefined)
-  const licenseTouchedRef = useRef(false)
   const [frontmatterLicense, setFrontmatterLicense] = useState<SkillLicense | undefined>(undefined)
   const [status, setStatus] = useState<string | null>(null)
   const isSubmitting = status !== null
@@ -114,7 +113,8 @@ export function Upload() {
       }),
     [isSoulMode, normalizedPaths],
   )
-  // Detect license from uploaded SKILL.md frontmatter
+  // Detect license from uploaded SKILL.md frontmatter — extract SPDX for display only;
+  // the backend's parseLicenseField is the canonical parser for the full structure.
   useEffect(() => {
     if (isSoulMode) return
     const requiredIndex = normalizedPaths.findIndex((path) => {
@@ -123,48 +123,47 @@ export function Upload() {
     })
     if (requiredIndex < 0 || !files[requiredIndex]) {
       setFrontmatterLicense(undefined)
+      setLicense(undefined)
       return
     }
     void readText(files[requiredIndex]).then((text) => {
-      const match = text.match(/^---\r?\n([\s\S]*?)\r?\n---/)
-      if (!match?.[1]) {
+      const fmMatch = text.match(/^---\r?\n([\s\S]*?)\r?\n---/)
+      if (!fmMatch?.[1]) {
         setFrontmatterLicense(undefined)
+        setLicense(undefined)
         return
       }
       try {
-        const frontmatter = parseYaml(match[1])
+        const frontmatter = parseYaml(fmMatch[1])
         if (!frontmatter || typeof frontmatter !== 'object') {
           setFrontmatterLicense(undefined)
+          setLicense(undefined)
           return
         }
         const raw = (frontmatter as Record<string, unknown>).license
+        let spdx: string | undefined
         if (typeof raw === 'string' && raw.trim()) {
-          setFrontmatterLicense({ spdx: raw.trim() })
-          return
+          spdx = raw.trim()
+        } else if (raw && typeof raw === 'object' && !Array.isArray(raw)) {
+          const s = (raw as Record<string, unknown>).spdx
+          if (typeof s === 'string' && s.trim()) spdx = s.trim()
         }
-        if (raw && typeof raw === 'object' && !Array.isArray(raw)) {
-          const obj = raw as Record<string, unknown>
-          const spdx = typeof obj.spdx === 'string' ? obj.spdx.trim() : ''
-          if (spdx) {
-            const parsed: SkillLicense = { spdx }
-            if (typeof obj.transferable === 'boolean') parsed.transferable = obj.transferable
-            if (typeof obj.commercialUse === 'boolean') parsed.commercialUse = obj.commercialUse
-            if (typeof obj.commercialAttribution === 'boolean') parsed.commercialAttribution = obj.commercialAttribution
-            if (typeof obj.derivativesAllowed === 'boolean') parsed.derivativesAllowed = obj.derivativesAllowed
-            if (typeof obj.derivativesAttribution === 'boolean') parsed.derivativesAttribution = obj.derivativesAttribution
-            if (typeof obj.derivativesApproval === 'boolean') parsed.derivativesApproval = obj.derivativesApproval
-            if (typeof obj.derivativesReciprocal === 'boolean') parsed.derivativesReciprocal = obj.derivativesReciprocal
-            if (typeof obj.uri === 'string') parsed.uri = obj.uri
-            setFrontmatterLicense(parsed)
-            return
-          }
+        if (spdx) {
+          const detected: SkillLicense = { spdx }
+          setFrontmatterLicense(detected)
+          setLicense(detected)
+        } else {
+          setFrontmatterLicense(undefined)
+          setLicense(undefined)
         }
       } catch {
         // invalid YAML — ignore
+        setFrontmatterLicense(undefined)
+        setLicense(undefined)
       }
-      setFrontmatterLicense(undefined)
     }).catch(() => {
       setFrontmatterLicense(undefined)
+      setLicense(undefined)
     })
   }, [files, isSoulMode, normalizedPaths])
 
@@ -289,8 +288,18 @@ export function Upload() {
     if (totalBytes > maxBytes) {
       issues.push('Total file size exceeds 50MB.')
     }
+    const hints: string[] = []
+    if (!isSoulMode && license && !frontmatterLicense) {
+      const hasCustomTerms = license.transferable !== undefined || license.commercialUse !== undefined
+      if (hasCustomTerms) {
+        hints.push(`Consider adding your custom license terms to your SKILL.md frontmatter.`)
+      } else {
+        hints.push(`Consider adding "license: ${license.spdx}" to your SKILL.md frontmatter.`)
+      }
+    }
     return {
       issues,
+      hints,
       ready: issues.length === 0,
     }
   }, [
@@ -302,6 +311,9 @@ export function Upload() {
     hasRequiredFile,
     totalBytes,
     requiredFileLabel,
+    isSoulMode,
+    license,
+    frontmatterLicense,
   ])
 
   useEffect(() => {
@@ -380,8 +392,8 @@ export function Upload() {
         tags: parsedTags,
         files: uploaded,
       }
-      if (!isSoulMode && licenseTouchedRef.current) {
-        payload.license = license ?? null
+      if (!isSoulMode && !frontmatterLicense && license) {
+        payload.license = license
       }
       const result = await publishVersion(payload as never)
       setStatus(null)
@@ -461,8 +473,8 @@ export function Upload() {
           {!isSoulMode ? (
             <LicenseSelector
               value={license}
-              onChange={(v) => { licenseTouchedRef.current = true; setLicense(v) }}
-              frontmatterLicense={frontmatterLicense}
+              onChange={setLicense}
+              disabled={!!frontmatterLicense}
             />
           ) : null}
         </div>
@@ -547,6 +559,9 @@ export function Upload() {
               ))}
             </ul>
           )}
+          {validation.hints.map((hint) => (
+            <div className="stat" key={hint} style={{ opacity: 0.7 }}>{hint}</div>
+          ))}
         </div>
 
         <div className="card upload-panel">

@@ -4,7 +4,7 @@ import { LICENSE_PRESETS, type SkillLicense } from 'clawhub-schema'
 type LicenseSelectorProps = {
   value: SkillLicense | undefined
   onChange: (license: SkillLicense | undefined) => void
-  frontmatterLicense?: SkillLicense | undefined
+  disabled?: boolean
 }
 
 const LICENSE_GROUPS = [
@@ -48,7 +48,7 @@ const LICENSE_GROUPS = [
 const MAX_SPDX_LENGTH = 64
 const MAX_URI_LENGTH = 2048
 
-export function LicenseSelector({ value, onChange, frontmatterLicense }: LicenseSelectorProps) {
+export function LicenseSelector({ value, onChange, disabled }: LicenseSelectorProps) {
   const [showAdvanced, setShowAdvanced] = useState(false)
   const [customSpdx, setCustomSpdx] = useState('')
   const [transferable, setTransferable] = useState(true)
@@ -61,10 +61,7 @@ export function LicenseSelector({ value, onChange, frontmatterLicense }: License
   const [licenseUri, setLicenseUri] = useState('')
 
   const selectedSpdx = value?.spdx ?? ''
-  const isStandardLicense = selectedSpdx && selectedSpdx !== '__custom__' && LICENSE_PRESETS[selectedSpdx]
   const preset = selectedSpdx ? LICENSE_PRESETS[selectedSpdx] : undefined
-  const showConflict = frontmatterLicense && value &&
-    JSON.stringify(frontmatterLicense) !== JSON.stringify(value)
 
   function handleSelectChange(spdxValue: string) {
     if (spdxValue === '') {
@@ -84,7 +81,7 @@ export function LicenseSelector({ value, onChange, frontmatterLicense }: License
       setDerivativesApproval(false)
       setDerivativesReciprocal(false)
       setLicenseUri('')
-      onChange(undefined)
+      onChange({ spdx: '', transferable: true, commercialUse: true, commercialAttribution: true, derivativesAllowed: true, derivativesAttribution: true, derivativesApproval: false, derivativesReciprocal: false })
       return
     }
 
@@ -95,6 +92,8 @@ export function LicenseSelector({ value, onChange, frontmatterLicense }: License
   function handleAdvancedToggle() {
     if (showAdvanced) {
       setShowAdvanced(false)
+      onChange(undefined)
+      return
     } else {
       if (preset) {
         setCustomSpdx(selectedSpdx)
@@ -106,6 +105,17 @@ export function LicenseSelector({ value, onChange, frontmatterLicense }: License
         setDerivativesApproval(value?.derivativesApproval ?? preset.derivativesApproval)
         setDerivativesReciprocal(value?.derivativesReciprocal ?? preset.derivativesReciprocal)
         setLicenseUri(value?.uri ?? '')
+      } else {
+        setCustomSpdx('')
+        setTransferable(true)
+        setCommercialUse(true)
+        setCommercialAttribution(true)
+        setDerivativesAllowed(true)
+        setDerivativesAttribution(true)
+        setDerivativesApproval(false)
+        setDerivativesReciprocal(false)
+        setLicenseUri('')
+        onChange({ spdx: '', transferable: true, commercialUse: true, commercialAttribution: true, derivativesAllowed: true, derivativesAttribution: true, derivativesApproval: false, derivativesReciprocal: false })
       }
       setShowAdvanced(true)
     }
@@ -168,49 +178,45 @@ export function LicenseSelector({ value, onChange, frontmatterLicense }: License
   const selectValue = showAdvanced ? '__custom__' : (selectedSpdx || '')
 
   return (
-    <div>
+    <div style={disabled ? { opacity: 0.55 } : undefined}>
       <label className="form-label" htmlFor="license">
         License
       </label>
-      <select
-        className="form-input"
-        id="license"
-        value={selectValue}
-        onChange={(e) => handleSelectChange(e.target.value)}
-      >
-        <option value="">No license declaration</option>
-        {LICENSE_GROUPS.map((group) => (
-          <optgroup key={group.label} label={group.label}>
-            {group.options.map((opt) => (
-              <option key={opt.value} value={opt.value}>
-                {opt.label}{opt.hint ? ` (${opt.hint})` : ''}
-              </option>
-            ))}
-          </optgroup>
-        ))}
-      </select>
+      <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+        <select
+          className="form-input"
+          id="license"
+          style={{ flex: 1 }}
+          value={selectValue}
+          disabled={disabled}
+          onChange={(e) => handleSelectChange(e.target.value)}
+        >
+          <option value="">No license declaration</option>
+          {LICENSE_GROUPS.map((group) => (
+            <optgroup key={group.label} label={group.label}>
+              {group.options.map((opt) => (
+                <option key={opt.value} value={opt.value}>
+                  {opt.label}{opt.hint ? ` — ${opt.hint}` : ''}
+                </option>
+              ))}
+            </optgroup>
+          ))}
+        </select>
+        {!disabled ? (
+          <button
+            className="btn btn-ghost"
+            type="button"
+            onClick={handleAdvancedToggle}
+            style={{ fontSize: '0.82rem', whiteSpace: 'nowrap' }}
+          >
+            {showAdvanced ? 'Remove' : 'Customize'}
+          </button>
+        ) : null}
+      </div>
 
-      {preset && !showAdvanced ? (
+      {preset && !showAdvanced && !disabled ? (
         <div className="stat" style={{ marginTop: 4 }}>
           {preset.summary}
-        </div>
-      ) : null}
-
-      {isStandardLicense ? (
-        <button
-          className="btn btn-ghost"
-          type="button"
-          onClick={handleAdvancedToggle}
-          style={{ marginTop: 4, fontSize: '0.82rem' }}
-        >
-          {showAdvanced ? 'Hide advanced terms' : 'Advanced terms'}
-        </button>
-      ) : null}
-
-      {showConflict ? (
-        <div className="stat" role="status" style={{ marginTop: 4 }}>
-          Your SKILL.md declares license: {frontmatterLicense.spdx}. The form selection will
-          override it.
         </div>
       ) : null}
 
