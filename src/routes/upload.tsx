@@ -177,6 +177,14 @@ export function Upload() {
     const count = ignoredMacJunkPaths.length
     return `Ignored ${count} macOS junk file${count === 1 ? '' : 's'} (${labels.join(', ')}${suffix})`
   }, [ignoredMacJunkPaths])
+
+  const licenseHint = useMemo(() => {
+    if (isSoulMode || !license || frontmatterLicense) return null
+    const hasCustomTerms = license.transferable !== undefined || license.commercialUse !== undefined
+    if (hasCustomTerms) return 'Consider adding your custom license terms to your SKILL.md frontmatter.'
+    return `Consider adding "license: ${license.spdx}" to your SKILL.md frontmatter.`
+  }, [isSoulMode, license, frontmatterLicense])
+
   const trimmedSlug = slug.trim()
   const trimmedName = displayName.trim()
   const trimmedChangelog = changelog.trim()
@@ -288,18 +296,11 @@ export function Upload() {
     if (totalBytes > maxBytes) {
       issues.push('Total file size exceeds 50MB.')
     }
-    const hints: string[] = []
-    if (!isSoulMode && license && !frontmatterLicense) {
-      const hasCustomTerms = license.transferable !== undefined || license.commercialUse !== undefined
-      if (hasCustomTerms) {
-        hints.push(`Consider adding your custom license terms to your SKILL.md frontmatter.`)
-      } else {
-        hints.push(`Consider adding "license: ${license.spdx}" to your SKILL.md frontmatter.`)
-      }
+    if (!isSoulMode && license && !frontmatterLicense && !license.spdx?.trim()) {
+      issues.push('Custom license requires an SPDX identifier.')
     }
     return {
       issues,
-      hints,
       ready: issues.length === 0,
     }
   }, [
@@ -546,6 +547,7 @@ export function Upload() {
             )}
           </div>
           {ignoredMacJunkNote ? <div className="stat">{ignoredMacJunkNote}</div> : null}
+          {licenseHint ? <div className="stat">{licenseHint}</div> : null}
         </div>
 
         <div className="card upload-panel" ref={validationRef}>
@@ -559,9 +561,6 @@ export function Upload() {
               ))}
             </ul>
           )}
-          {validation.hints.map((hint) => (
-            <div className="stat" key={hint} style={{ opacity: 0.7 }}>{hint}</div>
-          ))}
         </div>
 
         <div className="card upload-panel">

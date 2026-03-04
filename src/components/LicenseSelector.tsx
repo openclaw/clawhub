@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { LICENSE_PRESETS, type SkillLicense } from 'clawhub-schema'
 
 type LicenseSelectorProps = {
@@ -45,6 +45,10 @@ const LICENSE_GROUPS = [
   },
 ] as const
 
+const DROPDOWN_SPDX: Set<string> = new Set(
+  LICENSE_GROUPS.flatMap((g) => g.options.map((o) => o.value)).filter((v) => v !== '__custom__'),
+)
+
 const MAX_SPDX_LENGTH = 64
 const MAX_URI_LENGTH = 2048
 
@@ -62,6 +66,19 @@ export function LicenseSelector({ value, onChange, disabled }: LicenseSelectorPr
 
   const selectedSpdx = value?.spdx ?? ''
   const preset = selectedSpdx ? LICENSE_PRESETS[selectedSpdx] : undefined
+
+  // When the value prop changes externally (e.g. frontmatter license from a newly
+  // selected folder), reset out of custom/advanced mode if the new SPDX matches a
+  // known dropdown option.
+  const prevSpdxRef = useRef(selectedSpdx)
+  useEffect(() => {
+    if (selectedSpdx !== prevSpdxRef.current) {
+      prevSpdxRef.current = selectedSpdx
+      if (DROPDOWN_SPDX.has(selectedSpdx)) {
+        setShowAdvanced(false)
+      }
+    }
+  }, [selectedSpdx])
 
   function handleSelectChange(spdxValue: string) {
     if (spdxValue === '') {
@@ -153,8 +170,7 @@ export function LicenseSelector({ value, onChange, disabled }: LicenseSelectorPr
     if (updates.uri !== undefined) setLicenseUri(updates.uri)
 
     const trimmedSpdx = spdx.trim()
-    if (!trimmedSpdx || trimmedSpdx.length > MAX_SPDX_LENGTH) {
-      onChange(undefined)
+    if (trimmedSpdx.length > MAX_SPDX_LENGTH) {
       return
     }
 
