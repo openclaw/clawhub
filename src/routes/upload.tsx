@@ -117,8 +117,8 @@ export function Upload() {
   // Detect license from uploaded SKILL.md frontmatter — extract SPDX for display only;
   // the backend's parseLicenseField is the canonical parser for the full structure.
   useEffect(() => {
-    if (isSoulMode) return
     const requestId = ++licenseRequestRef.current
+    if (isSoulMode) return
     const requiredIndex = normalizedPaths.findIndex((path) => {
       const lower = path.trim().toLowerCase()
       return lower === 'skill.md' || lower === 'skills.md'
