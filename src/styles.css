@@ -669,6 +669,11 @@ code {
   line-height: 1.45;
 }
 
+.validation-warning {
+  opacity: 0.7;
+  font-style: italic;
+}
+
 .upload-submit-row {
   grid-column: 1 / -1;
   display: flex;

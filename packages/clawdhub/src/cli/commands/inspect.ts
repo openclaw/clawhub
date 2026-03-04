@@ -116,6 +116,7 @@ export async function cmdInspect(opts: GlobalOpts, slug: string, options: Inspec
       skill: skillResult.skill,
       latestVersion: skillResult.latestVersion,
       owner: skillResult.owner,
+      license: skillResult.license ?? null,
       version: versionResult?.version ?? null,
       versions: versionsList?.items ?? null,
       file: options.file ? { path: options.file, content: fileContent } : null,
@@ -132,6 +133,7 @@ export async function cmdInspect(opts: GlobalOpts, slug: string, options: Inspec
         skill,
         latestVersion: skillResult.latestVersion,
         owner: skillResult.owner,
+        license: skillResult.license ?? null,
       })
     }
 
@@ -188,6 +190,7 @@ function printSkillSummary(result: {
   }
   latestVersion?: { version: string; createdAt: number; changelog: string } | null
   owner?: { handle?: string | null; displayName?: string | null; image?: string | null } | null
+  license?: { spdx?: string; uri?: string; commercialUse?: boolean; derivativesAllowed?: boolean; transferable?: boolean } | null
 }) {
   const { skill } = result
   console.log(`${skill.slug}  ${skill.displayName}`)
@@ -204,7 +207,7 @@ function printSkillSummary(result: {
   if (tagEntries.length > 0) {
     console.log(`Tags: ${tagEntries.map(([tag, version]) => `${tag}=${version}`).join(', ')}`)
   }
-  const license = (result.skill as { license?: { spdx?: string; uri?: string; commercialUse?: boolean; derivativesAllowed?: boolean; transferable?: boolean } | null }).license
+  const license = result.license
   if (license?.spdx) {
     const terms: string[] = []
     if (license.commercialUse !== undefined) terms.push(`commercial: ${license.commercialUse ? 'yes' : 'no'}`)

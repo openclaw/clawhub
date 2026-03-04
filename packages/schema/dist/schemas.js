@@ -167,6 +167,13 @@ export const ApiV1SkillResponseSchema = type({
         displayName: 'string|null?',
         image: 'string|null?',
     }).or('null'),
+    license: type({
+        spdx: 'string',
+        uri: 'string?',
+        commercialUse: 'boolean?',
+        derivativesAllowed: 'boolean?',
+        transferable: 'boolean?',
+    }).or('null').optional(),
 });
 export const ApiV1SkillVersionListResponseSchema = type({
     items: type({

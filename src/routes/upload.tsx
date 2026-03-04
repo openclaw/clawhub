@@ -131,7 +131,7 @@ export function Upload() {
       }
       // Simple extraction of license field from YAML frontmatter
       // Handles both `license: MIT` and multi-line `license:\n  spdx: ...`
-      const licenseMatch = match[1].match(/^license:\s*(.+)$/m)
+      const licenseMatch = match[1].match(/^license:[ \t]*(.+)$/m)
       if (licenseMatch?.[1]) {
         const value = licenseMatch[1].trim().replace(/^["']|["']$/g, '')
         if (value) {
@@ -532,10 +532,10 @@ export function Upload() {
           ) : (
             <ul className="validation-list">
               {validation.issues.map((issue) => (
-                <li key={issue}>{issue}</li>
+                <li key={issue} className="validation-error">{issue}</li>
               ))}
               {validation.warnings.map((warning) => (
-                <li key={warning}>{warning}</li>
+                <li key={warning} className="validation-warning">{warning}</li>
               ))}
             </ul>
           )}

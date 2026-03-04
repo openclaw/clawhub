@@ -192,6 +192,13 @@ export declare const ApiV1SkillResponseSchema: import("arktype/internal/variants
         displayName?: string | null | undefined;
         image?: string | null | undefined;
     } | null;
+    license?: {
+        spdx: string;
+        uri?: string | undefined;
+        commercialUse?: boolean | undefined;
+        derivativesAllowed?: boolean | undefined;
+        transferable?: boolean | undefined;
+    } | null | undefined;
 }, {}>;
 export declare const ApiV1SkillVersionListResponseSchema: import("arktype/internal/variants/object.ts").ObjectType<{
     items: {
