@@ -518,6 +518,7 @@ type PublicSkillListVersion = Pick<
         systems?: string[]
       }
     }
+    license?: { spdx: string; uri?: string }
   }
 }
 
@@ -588,7 +589,12 @@ function toPublicSkillListVersion(
     createdAt: version.createdAt,
     changelog: version.changelog,
     changelogSource: version.changelogSource,
-    parsed: version.parsed?.clawdis ? { clawdis: version.parsed.clawdis } : undefined,
+    parsed: version.parsed?.clawdis || version.parsed?.license
+      ? {
+          ...(version.parsed?.clawdis ? { clawdis: version.parsed.clawdis } : {}),
+          ...(version.parsed?.license ? { license: version.parsed.license } : {}),
+        }
+      : undefined,
   }
 }
 

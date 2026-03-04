@@ -124,7 +124,7 @@ export function Upload() {
       return
     }
     void readText(files[requiredIndex]).then((text) => {
-      const match = text.match(/^---\n([\s\S]*?)\n---/)
+      const match = text.match(/^---\r?\n([\s\S]*?)\r?\n---/)
       if (!match?.[1]) {
         setFrontmatterLicense(undefined)
         return
