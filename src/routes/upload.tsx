@@ -118,6 +118,7 @@ export function Upload() {
   // the backend's parseLicenseField is the canonical parser for the full structure.
   useEffect(() => {
     if (isSoulMode) return
+    const requestId = ++licenseRequestRef.current
     const requiredIndex = normalizedPaths.findIndex((path) => {
       const lower = path.trim().toLowerCase()
       return lower === 'skill.md' || lower === 'skills.md'
@@ -126,7 +127,6 @@ export function Upload() {
       setFrontmatterLicense(undefined)
       return
     }
-    const requestId = ++licenseRequestRef.current
     void readText(files[requiredIndex]).then((text) => {
       if (licenseRequestRef.current !== requestId) return
       const fmMatch = text.match(/^---\r?\n([\s\S]*?)\r?\n---/)
