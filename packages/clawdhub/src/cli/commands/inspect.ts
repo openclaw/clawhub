@@ -113,7 +113,7 @@ export async function cmdInspect(opts: GlobalOpts, slug: string, options: Inspec
     spinner.stop()
 
     const versionLicense = (versionResult?.version as { license?: { spdx?: string; uri?: string; commercialUse?: boolean; derivativesAllowed?: boolean; transferable?: boolean } | null } | null)?.license
-    const license = versionLicense ?? skillResult.license ?? null
+    const license = versionResult ? (versionLicense ?? null) : (skillResult.license ?? null)
 
     const output = {
       skill: skillResult.skill,
