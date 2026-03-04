@@ -97,14 +97,14 @@ export function LicenseSelector({ value, onChange, frontmatterLicense }: License
     } else {
       if (preset) {
         setCustomSpdx(selectedSpdx)
-        setTransferable(preset.transferable)
-        setCommercialUse(preset.commercialUse)
-        setCommercialAttribution(preset.commercialAttribution)
-        setDerivativesAllowed(preset.derivativesAllowed)
-        setDerivativesAttribution(preset.derivativesAttribution)
-        setDerivativesApproval(preset.derivativesApproval)
-        setDerivativesReciprocal(preset.derivativesReciprocal)
-        setLicenseUri('')
+        setTransferable(value?.transferable ?? preset.transferable)
+        setCommercialUse(value?.commercialUse ?? preset.commercialUse)
+        setCommercialAttribution(value?.commercialAttribution ?? preset.commercialAttribution)
+        setDerivativesAllowed(value?.derivativesAllowed ?? preset.derivativesAllowed)
+        setDerivativesAttribution(value?.derivativesAttribution ?? preset.derivativesAttribution)
+        setDerivativesApproval(value?.derivativesApproval ?? preset.derivativesApproval)
+        setDerivativesReciprocal(value?.derivativesReciprocal ?? preset.derivativesReciprocal)
+        setLicenseUri(value?.uri ?? '')
       }
       setShowAdvanced(true)
     }

@@ -362,15 +362,18 @@ export function Upload() {
 
     setStatus('Publishing…')
     try {
-      const result = await publishVersion({
+      const payload: Record<string, unknown> = {
         slug: trimmedSlug,
         displayName: trimmedName,
         version,
         changelog: trimmedChangelog,
         tags: parsedTags,
-        license: licenseTouchedRef.current ? (license ?? undefined) : undefined,
         files: uploaded,
-      })
+      }
+      if (!isSoulMode && licenseTouchedRef.current && license) {
+        payload.license = license
+      }
+      const result = await publishVersion(payload as never)
       setStatus(null)
       setError(null)
       setHasAttempted(false)
