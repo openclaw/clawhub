@@ -225,7 +225,7 @@ export function LicenseSelector({ value, onChange, disabled }: LicenseSelectorPr
             onClick={handleAdvancedToggle}
             style={{ fontSize: '0.82rem', whiteSpace: 'nowrap' }}
           >
-            {showAdvanced ? 'Remove' : 'Customize'}
+            {showAdvanced ? 'Clear license' : 'Customize'}
           </button>
         ) : null}
       </div>
