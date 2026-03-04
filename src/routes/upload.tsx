@@ -370,8 +370,8 @@ export function Upload() {
         tags: parsedTags,
         files: uploaded,
       }
-      if (!isSoulMode && licenseTouchedRef.current && license) {
-        payload.license = license
+      if (!isSoulMode && licenseTouchedRef.current) {
+        payload.license = license ?? null
       }
       const result = await publishVersion(payload as never)
       setStatus(null)

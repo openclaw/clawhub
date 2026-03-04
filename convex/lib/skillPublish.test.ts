@@ -109,9 +109,14 @@ description: Expert guidance for sushi-rolls.
       expect(license).toEqual(expect.objectContaining({ spdx: 'Apache-2.0' }))
     })
 
-    it('falls back to frontmatter when args.license is null', () => {
-      const license = __test.resolveLicense(null, { license: 'MIT' })
+    it('falls back to frontmatter when args.license is undefined', () => {
+      const license = __test.resolveLicense(undefined, { license: 'MIT' })
       expect(license).toEqual(expect.objectContaining({ spdx: 'MIT' }))
+    })
+
+    it('clears license when args.license is explicitly null', () => {
+      const license = __test.resolveLicense(null, { license: 'MIT' })
+      expect(license).toBeUndefined()
     })
 
     it('falls back to frontmatter when args.license is invalid', () => {

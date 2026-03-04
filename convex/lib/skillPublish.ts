@@ -361,7 +361,9 @@ function mergeSourceIntoMetadata(
 }
 
 function resolveLicense(argsLicense: unknown, frontmatter: Record<string, unknown>) {
-  return (argsLicense != null ? parseLicenseField({ license: argsLicense }) : undefined) ?? parseLicenseField(frontmatter)
+  if (argsLicense === undefined) return parseLicenseField(frontmatter)
+  if (argsLicense === null) return undefined
+  return parseLicenseField({ license: argsLicense }) ?? parseLicenseField(frontmatter)
 }
 
 export const __test = {
