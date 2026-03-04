@@ -531,18 +531,22 @@ export function Upload() {
 
         <div className="card upload-panel" ref={validationRef}>
           <h2 className="upload-panel-title">Validation</h2>
-          {validation.issues.length === 0 && validation.warnings.length === 0 ? (
+          {validation.issues.length === 0 ? (
             <div className="stat">All checks passed.</div>
           ) : (
             <ul className="validation-list">
               {validation.issues.map((issue) => (
                 <li key={issue} className="validation-error">{issue}</li>
               ))}
+            </ul>
+          )}
+          {validation.warnings.length > 0 ? (
+            <ul className="validation-list">
               {validation.warnings.map((warning) => (
                 <li key={warning} className="validation-warning">{warning}</li>
               ))}
             </ul>
-          )}
+          ) : null}
         </div>
 
         <div className="card upload-panel">
