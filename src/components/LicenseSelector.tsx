@@ -198,14 +198,14 @@ export function LicenseSelector({ value, onChange, frontmatterLicense }: License
         </div>
       ) : null}
 
-      {isStandardLicense && !showAdvanced ? (
+      {isStandardLicense ? (
         <button
           className="btn btn-ghost"
           type="button"
           onClick={handleAdvancedToggle}
           style={{ marginTop: 4, fontSize: '0.82rem' }}
         >
-          Advanced terms
+          {showAdvanced ? 'Hide advanced terms' : 'Advanced terms'}
         </button>
       ) : null}
 

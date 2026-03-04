@@ -130,9 +130,18 @@ export function Upload() {
         return
       }
       // Simple extraction of license field from YAML frontmatter
+      // Handles both `license: MIT` and multi-line `license:\n  spdx: ...`
       const licenseMatch = match[1].match(/^license:\s*(.+)$/m)
       if (licenseMatch?.[1]) {
         const value = licenseMatch[1].trim().replace(/^["']|["']$/g, '')
+        if (value) {
+          setFrontmatterLicense({ spdx: value })
+          return
+        }
+      }
+      const spdxMatch = match[1].match(/^license:\s*$[\s\S]*?^\s+spdx:\s*(.+)$/m)
+      if (spdxMatch?.[1]) {
+        const value = spdxMatch[1].trim().replace(/^["']|["']$/g, '')
         if (value) {
           setFrontmatterLicense({ spdx: value })
           return
