@@ -112,11 +112,14 @@ export async function cmdInspect(opts: GlobalOpts, slug: string, options: Inspec
 
     spinner.stop()
 
+    const versionLicense = (versionResult?.version as { license?: { spdx?: string; uri?: string; commercialUse?: boolean; derivativesAllowed?: boolean; transferable?: boolean } | null } | null)?.license
+    const license = versionLicense ?? skillResult.license ?? null
+
     const output = {
       skill: skillResult.skill,
       latestVersion: skillResult.latestVersion,
       owner: skillResult.owner,
-      license: skillResult.license ?? null,
+      license,
       version: versionResult?.version ?? null,
       versions: versionsList?.items ?? null,
       file: options.file ? { path: options.file, content: fileContent } : null,
@@ -133,7 +136,7 @@ export async function cmdInspect(opts: GlobalOpts, slug: string, options: Inspec
         skill,
         latestVersion: skillResult.latestVersion,
         owner: skillResult.owner,
-        license: skillResult.license ?? null,
+        license,
       })
     }
 

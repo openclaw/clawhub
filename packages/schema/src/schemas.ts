@@ -230,6 +230,15 @@ export const ApiV1SkillVersionResponseSchema = type({
     changelogSource: '"auto"|"user"|null?',
     files: 'unknown?',
     security: SecurityStatusSchema.optional(),
+    license: type({
+      spdx: 'string',
+      uri: 'string?',
+      commercialUse: 'boolean?',
+      derivativesAllowed: 'boolean?',
+      transferable: 'boolean?',
+    })
+      .or('null')
+      .optional(),
   }).or('null'),
   skill: type({
     slug: 'string',

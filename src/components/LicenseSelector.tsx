@@ -93,9 +93,6 @@ export function LicenseSelector({ value, onChange, frontmatterLicense }: License
 
   function handleAdvancedToggle() {
     if (showAdvanced) {
-      if (isStandardLicense) {
-        onChange({ spdx: selectedSpdx })
-      }
       setShowAdvanced(false)
     } else {
       if (preset) {

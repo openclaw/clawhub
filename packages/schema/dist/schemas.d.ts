@@ -228,6 +228,13 @@ export declare const ApiV1SkillVersionResponseSchema: import("arktype/internal/v
             checkedAt: number | null;
             model: string | null;
         } | undefined;
+        license?: {
+            spdx: string;
+            uri?: string | undefined;
+            commercialUse?: boolean | undefined;
+            derivativesAllowed?: boolean | undefined;
+            transferable?: boolean | undefined;
+        } | null | undefined;
     } | null;
     skill: {
         slug: string;
