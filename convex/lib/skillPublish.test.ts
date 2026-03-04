@@ -102,4 +102,26 @@ description: Expert guidance for sushi-rolls.
     expect(signals.bodyWords).toBeGreaterThanOrEqual(45)
     expect(quality.decision).toBe('pass')
   })
+
+  describe('resolveLicense', () => {
+    it('uses explicit args.license when valid', () => {
+      const license = __test.resolveLicense({ spdx: 'Apache-2.0' }, { license: 'MIT' })
+      expect(license).toEqual(expect.objectContaining({ spdx: 'Apache-2.0' }))
+    })
+
+    it('falls back to frontmatter when args.license is null', () => {
+      const license = __test.resolveLicense(null, { license: 'MIT' })
+      expect(license).toEqual(expect.objectContaining({ spdx: 'MIT' }))
+    })
+
+    it('falls back to frontmatter when args.license is invalid', () => {
+      const license = __test.resolveLicense({ bad: 'data' }, { license: 'MIT' })
+      expect(license).toEqual(expect.objectContaining({ spdx: 'MIT' }))
+    })
+
+    it('returns undefined when both are invalid', () => {
+      const license = __test.resolveLicense({ bad: 'data' }, {})
+      expect(license).toBeUndefined()
+    })
+  })
 })

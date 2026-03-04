@@ -132,7 +132,7 @@ export async function publishVersionForUser(
   const readmeText = await fetchText(ctx, readmeFile.storageId)
   const frontmatter = parseFrontmatter(readmeText)
   const clawdis = parseClawdisMetadata(frontmatter)
-  const license = args.license != null ? parseLicenseField({ license: args.license }) : parseLicenseField(frontmatter)
+  const license = resolveLicense(args.license, frontmatter)
   const owner = (await ctx.runQuery(internal.users.getByIdInternal, {
     userId,
   })) as Doc<'users'> | null
@@ -360,11 +360,16 @@ function mergeSourceIntoMetadata(
   return Object.keys(base).length ? base : undefined
 }
 
+function resolveLicense(argsLicense: unknown, frontmatter: Record<string, unknown>) {
+  return (argsLicense != null ? parseLicenseField({ license: argsLicense }) : undefined) ?? parseLicenseField(frontmatter)
+}
+
 export const __test = {
   mergeSourceIntoMetadata,
   computeQualitySignals,
   evaluateQuality,
   toStructuralFingerprint,
+  resolveLicense,
 }
 
 export async function queueHighlightedWebhook(ctx: MutationCtx, skillId: Id<'skills'>) {
