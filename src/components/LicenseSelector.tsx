@@ -63,7 +63,8 @@ export function LicenseSelector({ value, onChange, frontmatterLicense }: License
   const selectedSpdx = value?.spdx ?? ''
   const isStandardLicense = selectedSpdx && selectedSpdx !== '__custom__' && LICENSE_PRESETS[selectedSpdx]
   const preset = selectedSpdx ? LICENSE_PRESETS[selectedSpdx] : undefined
-  const showConflict = frontmatterLicense && value && frontmatterLicense.spdx !== value.spdx
+  const showConflict = frontmatterLicense && value &&
+    JSON.stringify(frontmatterLicense) !== JSON.stringify(value)
 
   function handleSelectChange(spdxValue: string) {
     if (spdxValue === '') {

@@ -143,9 +143,19 @@ export function Upload() {
           return
         }
         if (raw && typeof raw === 'object' && !Array.isArray(raw)) {
-          const spdx = (raw as Record<string, unknown>).spdx
-          if (typeof spdx === 'string' && spdx.trim()) {
-            setFrontmatterLicense({ spdx: spdx.trim() })
+          const obj = raw as Record<string, unknown>
+          const spdx = typeof obj.spdx === 'string' ? obj.spdx.trim() : ''
+          if (spdx) {
+            const parsed: SkillLicense = { spdx }
+            if (typeof obj.transferable === 'boolean') parsed.transferable = obj.transferable
+            if (typeof obj.commercialUse === 'boolean') parsed.commercialUse = obj.commercialUse
+            if (typeof obj.commercialAttribution === 'boolean') parsed.commercialAttribution = obj.commercialAttribution
+            if (typeof obj.derivativesAllowed === 'boolean') parsed.derivativesAllowed = obj.derivativesAllowed
+            if (typeof obj.derivativesAttribution === 'boolean') parsed.derivativesAttribution = obj.derivativesAttribution
+            if (typeof obj.derivativesApproval === 'boolean') parsed.derivativesApproval = obj.derivativesApproval
+            if (typeof obj.derivativesReciprocal === 'boolean') parsed.derivativesReciprocal = obj.derivativesReciprocal
+            if (typeof obj.uri === 'string') parsed.uri = obj.uri
+            setFrontmatterLicense(parsed)
             return
           }
         }
