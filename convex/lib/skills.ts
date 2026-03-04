@@ -220,7 +220,11 @@ export function parseLicenseField(
       license.derivativesApproval = obj.derivativesApproval
     }
     // Backward compat: expand old "derivatives" enum into booleans
-    if (license.derivativesAllowed === undefined && typeof obj.derivatives === 'string') {
+    if (
+      license.derivativesAllowed === undefined &&
+      license.derivativesReciprocal === undefined &&
+      typeof obj.derivatives === 'string'
+    ) {
       if (obj.derivatives === 'allowed') {
         license.derivativesAllowed = true
         license.derivativesReciprocal = false

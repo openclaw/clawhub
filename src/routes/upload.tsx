@@ -74,7 +74,8 @@ export function Upload() {
   const changelogTouchedRef = useRef(false)
   const changelogRequestRef = useRef(0)
   const changelogKeyRef = useRef<string | null>(null)
-  const [license, setLicense] = useState<SkillLicense | undefined>({ spdx: 'MIT' })
+  const [license, setLicense] = useState<SkillLicense | undefined>(undefined)
+  const licenseTouchedRef = useRef(false)
   const [frontmatterLicense, setFrontmatterLicense] = useState<SkillLicense | undefined>(undefined)
   const [status, setStatus] = useState<string | null>(null)
   const isSubmitting = status !== null
@@ -367,7 +368,7 @@ export function Upload() {
         version,
         changelog: trimmedChangelog,
         tags: parsedTags,
-        license: license ?? undefined,
+        license: licenseTouchedRef.current ? (license ?? undefined) : undefined,
         files: uploaded,
       })
       setStatus(null)
@@ -447,7 +448,7 @@ export function Upload() {
           {!isSoulMode ? (
             <LicenseSelector
               value={license}
-              onChange={setLicense}
+              onChange={(v) => { licenseTouchedRef.current = true; setLicense(v) }}
               frontmatterLicense={frontmatterLicense}
             />
           ) : null}
