@@ -75,6 +75,7 @@ export function Upload() {
   const changelogRequestRef = useRef(0)
   const changelogKeyRef = useRef<string | null>(null)
   const licenseRequestRef = useRef(0)
+  const licenseTouchedRef = useRef(false)
   const [license, setLicense] = useState<SkillLicense | undefined>(undefined)
   const [frontmatterLicense, setFrontmatterLicense] = useState<SkillLicense | undefined>(undefined)
   const [status, setStatus] = useState<string | null>(null)
@@ -118,28 +119,30 @@ export function Upload() {
   // the backend's parseLicenseField is the canonical parser for the full structure.
   useEffect(() => {
     const requestId = ++licenseRequestRef.current
+    licenseTouchedRef.current = false
     if (isSoulMode) return
     const requiredIndex = normalizedPaths.findIndex((path) => {
       const lower = path.trim().toLowerCase()
       return lower === 'skill.md' || lower === 'skills.md'
     })
     if (requiredIndex < 0 || !files[requiredIndex]) {
-      if (!license || license === frontmatterLicense) setLicense(undefined)
+      setLicense(undefined)
       setFrontmatterLicense(undefined)
       return
     }
     void readText(files[requiredIndex]).then((text) => {
       if (licenseRequestRef.current !== requestId) return
+      const touched = licenseTouchedRef.current
       const fmMatch = text.match(/^---\r?\n([\s\S]*?)\r?\n---/)
       if (!fmMatch?.[1]) {
-        if (!license || license === frontmatterLicense) setLicense(undefined)
+        if (!touched) setLicense(undefined)
         setFrontmatterLicense(undefined)
         return
       }
       try {
         const frontmatter = parseYaml(fmMatch[1])
         if (!frontmatter || typeof frontmatter !== 'object') {
-          if (!license || license === frontmatterLicense) setLicense(undefined)
+          if (!touched) setLicense(undefined)
           setFrontmatterLicense(undefined)
           return
         }
@@ -169,19 +172,19 @@ export function Upload() {
             if (typeof obj.uri === 'string' && obj.uri.trim()) detected.uri = obj.uri.trim()
           }
           setFrontmatterLicense(detected)
-          setLicense(detected)
+          if (!touched) setLicense(detected)
         } else {
-          if (!license || license === frontmatterLicense) setLicense(undefined)
+          if (!touched) setLicense(undefined)
           setFrontmatterLicense(undefined)
         }
       } catch {
         // invalid YAML — ignore
-        if (!license || license === frontmatterLicense) setLicense(undefined)
+        if (!touched) setLicense(undefined)
         setFrontmatterLicense(undefined)
       }
     }).catch(() => {
       if (licenseRequestRef.current !== requestId) return
-      if (!license || license === frontmatterLicense) setLicense(undefined)
+      if (!licenseTouchedRef.current) setLicense(undefined)
       setFrontmatterLicense(undefined)
     })
   }, [files, isSoulMode, normalizedPaths])
@@ -490,7 +493,10 @@ export function Upload() {
           {!isSoulMode ? (
             <LicenseSelector
               value={license}
-              onChange={setLicense}
+              onChange={(v) => {
+                licenseTouchedRef.current = true
+                setLicense(v)
+              }}
               disabled={!!frontmatterLicense}
             />
           ) : null}
