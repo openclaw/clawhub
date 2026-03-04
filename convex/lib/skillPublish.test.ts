@@ -119,9 +119,9 @@ description: Expert guidance for sushi-rolls.
       expect(license).toBeUndefined()
     })
 
-    it('falls back to frontmatter when args.license is invalid', () => {
+    it('returns undefined when args.license is invalid (no frontmatter fallback)', () => {
       const license = __test.resolveLicense({ bad: 'data' }, { license: 'MIT' })
-      expect(license).toEqual(expect.objectContaining({ spdx: 'MIT' }))
+      expect(license).toBeUndefined()
     })
 
     it('returns undefined when both are invalid', () => {
