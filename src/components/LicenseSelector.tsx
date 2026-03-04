@@ -81,7 +81,7 @@ export function LicenseSelector({ value, onChange, disabled }: LicenseSelectorPr
       setDerivativesApproval(false)
       setDerivativesReciprocal(false)
       setLicenseUri('')
-      onChange(undefined)
+      onChange({ spdx: '', transferable: true, commercialUse: true, commercialAttribution: true, derivativesAllowed: true, derivativesAttribution: true, derivativesApproval: false, derivativesReciprocal: false })
       return
     }
 
@@ -115,7 +115,7 @@ export function LicenseSelector({ value, onChange, disabled }: LicenseSelectorPr
         setDerivativesApproval(false)
         setDerivativesReciprocal(false)
         setLicenseUri('')
-        onChange(undefined)
+        onChange({ spdx: '', transferable: true, commercialUse: true, commercialAttribution: true, derivativesAllowed: true, derivativesAttribution: true, derivativesApproval: false, derivativesReciprocal: false })
       }
       setShowAdvanced(true)
     }
