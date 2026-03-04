@@ -1,6 +1,7 @@
 import { api, internal } from '../_generated/api'
 import type { Doc, Id } from '../_generated/dataModel'
 import type { ActionCtx } from '../_generated/server'
+import type { SkillLicense } from '../lib/skills'
 import { getOptionalApiTokenUserId, requireApiTokenUser } from '../lib/apiTokenAuth'
 import { applyRateLimit, parseBearerToken } from '../lib/httpRateLimit'
 import { publishVersionForUser } from '../skills'
@@ -45,7 +46,7 @@ type ListSkillsResult = {
       version: string
       createdAt: number
       changelog: string
-      parsed?: { clawdis?: { os?: string[]; nix?: { plugin?: boolean; systems?: string[] } }; license?: { spdx: string; uri?: string } }
+      parsed?: { clawdis?: { os?: string[]; nix?: { plugin?: boolean; systems?: string[] } }; license?: SkillLicense }
     } | null
   }>
   nextCursor: string | null
