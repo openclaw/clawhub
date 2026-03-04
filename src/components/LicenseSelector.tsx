@@ -11,8 +11,8 @@ const LICENSE_GROUPS = [
   {
     label: 'Permissive',
     options: [
-      { value: 'MIT', label: 'MIT', hint: 'most popular' },
-      { value: 'Apache-2.0', label: 'Apache 2.0', hint: 'with patent grant' },
+      { value: 'MIT', label: 'MIT', hint: '' },
+      { value: 'Apache-2.0', label: 'Apache 2.0', hint: '' },
       { value: 'BSD-3-Clause', label: 'BSD 3-Clause', hint: '' },
       { value: 'ISC', label: 'ISC', hint: '' },
     ],

@@ -74,7 +74,7 @@ export function Upload() {
   const changelogTouchedRef = useRef(false)
   const changelogRequestRef = useRef(0)
   const changelogKeyRef = useRef<string | null>(null)
-  const [license, setLicense] = useState<SkillLicense | undefined>(undefined)
+  const [license, setLicense] = useState<SkillLicense | undefined>({ spdx: 'MIT' })
   const [frontmatterLicense, setFrontmatterLicense] = useState<SkillLicense | undefined>(undefined)
   const [status, setStatus] = useState<string | null>(null)
   const isSubmitting = status !== null
@@ -278,13 +278,8 @@ export function Upload() {
     if (totalBytes > maxBytes) {
       issues.push('Total file size exceeds 50MB.')
     }
-    const warnings: string[] = []
-    if (!license && !frontmatterLicense) {
-      warnings.push('No license declared \u26A0 (Consider adding one)')
-    }
     return {
       issues,
-      warnings,
       ready: issues.length === 0,
     }
   }, [
@@ -295,8 +290,6 @@ export function Upload() {
     files,
     hasRequiredFile,
     totalBytes,
-    license,
-    frontmatterLicense,
     requiredFileLabel,
   ])
 
@@ -536,17 +529,10 @@ export function Upload() {
           ) : (
             <ul className="validation-list">
               {validation.issues.map((issue) => (
-                <li key={issue} className="validation-error">{issue}</li>
+                <li key={issue}>{issue}</li>
               ))}
             </ul>
           )}
-          {validation.warnings.length > 0 ? (
-            <ul className="validation-list">
-              {validation.warnings.map((warning) => (
-                <li key={warning} className="validation-warning">{warning}</li>
-              ))}
-            </ul>
-          ) : null}
         </div>
 
         <div className="card upload-panel">
