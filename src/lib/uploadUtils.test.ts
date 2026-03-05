@@ -20,6 +20,9 @@ describe('uploadUtils', () => {
   it('formats publish errors from Convex-like payloads', () => {
     expect(formatPublishError({ data: '  whoops  ' })).toBe('whoops')
     expect(formatPublishError({ data: { message: '  nope ' } })).toBe('nope')
+    expect(formatPublishError({ data: 'Server Error Called by client' })).toBe(
+      'Publish failed. Please try again.',
+    )
   })
 
   it('cleans up Error messages and provides a fallback', () => {

@@ -3,6 +3,8 @@ import { useAction, useMutation, useQuery } from 'convex/react'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import semver from 'semver'
 import { api } from '../../convex/_generated/api'
+import type { Id } from '../../convex/_generated/dataModel'
+import { getPublicSlugCollision } from '../lib/slugCollision'
 import { getSiteMode } from '../lib/site'
 import { expandDroppedItems, expandFilesWithReport } from '../lib/uploadFiles'
 import { useAuthStatus } from '../lib/useAuthStatus'
@@ -121,6 +123,43 @@ export function Upload() {
   const trimmedSlug = slug.trim()
   const trimmedName = displayName.trim()
   const trimmedChangelog = changelog.trim()
+  const slugLookup = useQuery(
+    api.skills.getBySlug,
+    !isSoulMode && trimmedSlug && SLUG_PATTERN.test(trimmedSlug)
+      ? { slug: trimmedSlug.toLowerCase() }
+      : 'skip',
+  ) as
+    | {
+        skill: { slug: string; ownerUserId: Id<'users'> } | null
+        owner: { handle?: string | null; _id: Id<'users'> } | null
+      }
+    | null
+    | undefined
+  const slugCollision = useMemo(
+    () =>
+      getPublicSlugCollision({
+        isSoulMode,
+        slug: trimmedSlug,
+        meUserId: me?._id ? String(me._id) : null,
+        result: slugLookup
+          ? {
+              skill: slugLookup.skill
+                ? {
+                    slug: slugLookup.skill.slug,
+                    ownerUserId: String(slugLookup.skill.ownerUserId),
+                  }
+                : null,
+              owner: slugLookup.owner
+                ? {
+                    handle: slugLookup.owner.handle ?? null,
+                    _id: String(slugLookup.owner._id),
+                  }
+                : null,
+            }
+          : slugLookup,
+      }),
+    [isSoulMode, me?._id, slugLookup, trimmedSlug],
+  )
 
   useEffect(() => {
     if (!existing?.latestVersion || (!existing?.skill && !existing?.soul)) return
@@ -229,6 +268,9 @@ export function Upload() {
     if (totalBytes > maxBytes) {
       issues.push('Total file size exceeds 50MB.')
     }
+    if (slugCollision) {
+      issues.push(slugCollision.message)
+    }
     return {
       issues,
       ready: issues.length === 0,
@@ -242,6 +284,7 @@ export function Upload() {
     hasRequiredFile,
     totalBytes,
     requiredFileLabel,
+    slugCollision,
   ])
 
   useEffect(() => {
@@ -271,6 +314,10 @@ export function Upload() {
       if (validationRef.current && 'scrollIntoView' in validationRef.current) {
         validationRef.current.scrollIntoView({ behavior: 'smooth', block: 'center' })
       }
+      return
+    }
+    if (slugCollision) {
+      setError(slugCollision.message)
       return
     }
     setError(null)
@@ -475,6 +522,14 @@ export function Upload() {
               ))}
             </ul>
           )}
+          {slugCollision?.url ? (
+            <div className="stat">
+              Existing skill:{' '}
+              <a href={slugCollision.url} className="upload-link">
+                {slugCollision.url}
+              </a>
+            </div>
+          ) : null}
         </div>
 
         <div className="card upload-panel">

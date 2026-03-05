@@ -1,7 +1,9 @@
 import { createFileRoute, useNavigate } from '@tanstack/react-router'
-import { useAction } from 'convex/react'
+import { useAction, useQuery } from 'convex/react'
 import { useMemo, useState } from 'react'
 import { api } from '../../convex/_generated/api'
+import { getUserFacingConvexError } from '../lib/convexError'
+import { getPublicSlugCollision } from '../lib/slugCollision'
 import { formatBytes } from '../lib/uploadUtils'
 import { useAuthStatus } from '../lib/useAuthStatus'
 
@@ -37,6 +39,8 @@ type CandidatePreview = {
   files: Array<{ path: string; size: number; defaultSelected: boolean }>
 }
 
+const SLUG_PATTERN = /^[a-z0-9]+(?:-[a-z0-9]+)*$/
+
 function ImportGitHub() {
   const { isAuthenticated, isLoading, me } = useAuthStatus()
   const previewImport = useAction(api.githubImport.previewGitHubImport)
@@ -58,6 +62,42 @@ function ImportGitHub() {
   const [status, setStatus] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [isBusy, setIsBusy] = useState(false)
+  const trimmedSlug = slug.trim()
+  const slugLookup = useQuery(
+    api.skills.getBySlug,
+    trimmedSlug && SLUG_PATTERN.test(trimmedSlug) ? { slug: trimmedSlug.toLowerCase() } : 'skip',
+  ) as
+    | {
+        skill: { slug: string; ownerUserId: string } | null
+        owner: { handle?: string | null; _id: string } | null
+      }
+    | null
+    | undefined
+  const slugCollision = useMemo(
+    () =>
+      getPublicSlugCollision({
+        isSoulMode: false,
+        slug: trimmedSlug,
+        meUserId: me?._id ? String(me._id) : null,
+        result: slugLookup
+          ? {
+              skill: slugLookup.skill
+                ? {
+                    slug: slugLookup.skill.slug,
+                    ownerUserId: String(slugLookup.skill.ownerUserId),
+                  }
+                : null,
+              owner: slugLookup.owner
+                ? {
+                    handle: slugLookup.owner.handle ?? null,
+                    _id: String(slugLookup.owner._id),
+                  }
+                : null,
+            }
+          : slugLookup,
+      }),
+    [me?._id, slugLookup, trimmedSlug],
+  )
 
   const selectedCount = useMemo(() => Object.values(selected).filter(Boolean).length, [selected])
   const selectedBytes = useMemo(() => {
@@ -88,7 +128,7 @@ function ImportGitHub() {
         setStatus(`Found ${items.length} skills. Pick one.`)
       }
     } catch (e) {
-      setError(e instanceof Error ? e.message : 'Preview failed')
+      setError(getUserFacingConvexError(e, 'Preview failed'))
     } finally {
       setIsBusy(false)
     }
@@ -116,7 +156,7 @@ function ImportGitHub() {
       setSelected(nextSelected)
       setStatus('Ready to import.')
     } catch (e) {
-      setError(e instanceof Error ? e.message : 'Preview failed')
+      setError(getUserFacingConvexError(e, 'Preview failed'))
     } finally {
       setIsBusy(false)
     }
@@ -146,6 +186,10 @@ function ImportGitHub() {
 
   const doImport = async () => {
     if (!preview) return
+    if (slugCollision) {
+      setError(slugCollision.message)
+      return
+    }
     setIsBusy(true)
     setError(null)
     setStatus('Importing…')
@@ -170,7 +214,7 @@ function ImportGitHub() {
       const ownerParam = me?.handle ?? (me?._id ? String(me._id) : 'unknown')
       await navigate({ to: '/$owner/$slug', params: { owner: ownerParam, slug: nextSlug } })
     } catch (e) {
-      setError(e instanceof Error ? e.message : 'Import failed')
+      setError(getUserFacingConvexError(e, 'Import failed'))
       setStatus(null)
     } finally {
       setIsBusy(false)
@@ -400,12 +444,26 @@ function ImportGitHub() {
                   !slug.trim() ||
                   !displayName.trim() ||
                   !version.trim() ||
-                  selectedCount === 0
+                  selectedCount === 0 ||
+                  Boolean(slugCollision)
                 }
                 onClick={() => void doImport()}
               >
                 Import + publish
               </button>
+              {slugCollision ? (
+                <div className="upload-muted">
+                  {slugCollision.message}
+                  {slugCollision.url ? (
+                    <>
+                      {' '}
+                      <a href={slugCollision.url} className="upload-link">
+                        {slugCollision.url}
+                      </a>
+                    </>
+                  ) : null}
+                </div>
+              ) : null}
             </div>
           </div>
         </>

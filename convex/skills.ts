@@ -27,6 +27,7 @@ import {
   adjustGlobalPublicSkillsCount,
   countPublicSkillsForGlobalStats,
   getPublicSkillVisibilityDelta,
+  isPublicSkillDoc,
   readGlobalPublicSkillsCount,
 } from './lib/globalStats'
 import { buildTrendingLeaderboard } from './lib/leaderboards'
@@ -117,6 +118,20 @@ function stripSuspiciousFlag(flags: string[] | undefined) {
   if (!flags?.length) return undefined
   const next = flags.filter((flag) => flag !== 'flagged.suspicious')
   return next.length ? next : undefined
+}
+
+function buildConflictingSkillUrl(skill: Doc<'skills'>, owner: Doc<'users'> | null | undefined) {
+  if (!owner || !isPublicSkillDoc(skill)) return null
+  const ownerParam = owner.handle?.trim() || String(owner._id)
+  if (!ownerParam) return null
+  return `/${encodeURIComponent(ownerParam)}/${encodeURIComponent(skill.slug)}`
+}
+
+function buildSlugTakenErrorMessage(skill: Doc<'skills'>, owner: Doc<'users'> | null | undefined) {
+  const base = 'Slug is already taken. Choose a different slug.'
+  const url = buildConflictingSkillUrl(skill, owner)
+  if (!url) return base
+  return `${base} Existing skill: ${url}`
 }
 
 function normalizeScannerSuspiciousReason(reason: string | undefined) {
@@ -3600,8 +3615,9 @@ export const insertVersion = internalMutation({
       // Fallback: Convex Auth can create duplicate `users` records. Heal ownership ONLY
       // when the underlying GitHub identity matches (authAccounts.providerAccountId).
       const owner = await ctx.db.get(skill.ownerUserId)
+      const slugTakenMessage = buildSlugTakenErrorMessage(skill, owner)
       if (!owner || owner.deletedAt || owner.deactivatedAt) {
-        throw new Error('Only the owner can publish updates')
+        throw new ConvexError(slugTakenMessage)
       }
 
       const [ownerProviderAccountId, callerProviderAccountId] = await Promise.all([
@@ -3616,7 +3632,7 @@ export const insertVersion = internalMutation({
           callerProviderAccountId,
         )
       ) {
-        throw new Error('Only the owner can publish updates')
+        throw new ConvexError(slugTakenMessage)
       }
 
       await ctx.db.patch(skill._id, { ownerUserId: userId, updatedAt: now })
@@ -3756,7 +3772,7 @@ export const insertVersion = internalMutation({
       .withIndex('by_skill_version', (q) => q.eq('skillId', skill._id).eq('version', args.version))
       .unique()
     if (existingVersion) {
-      throw new Error('Version already exists')
+      throw new ConvexError('Version already exists')
     }
 
     const versionId = await ctx.db.insert('skillVersions', {
