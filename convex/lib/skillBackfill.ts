@@ -4,12 +4,14 @@ import {
   type ParsedSkillFrontmatter,
   parseClawdisMetadata,
   parseFrontmatter,
+  parseLicenseField,
 } from './skills'
 
 export type ParsedSkillData = {
   frontmatter: ParsedSkillFrontmatter
   metadata?: unknown
   clawdis?: unknown
+  license?: unknown
 }
 
 export type SkillSummaryBackfillPatch = {
@@ -26,7 +28,8 @@ export function buildSkillSummaryBackfillPatch(args: {
   const summary = getFrontmatterValue(frontmatter, 'description') ?? undefined
   const metadata = getFrontmatterMetadata(frontmatter)
   const clawdis = parseClawdisMetadata(frontmatter)
-  const parsed: ParsedSkillData = { frontmatter, metadata, clawdis }
+  const license = parseLicenseField(frontmatter) ?? args.currentParsed?.license ?? undefined
+  const parsed: ParsedSkillData = { frontmatter, metadata, clawdis, license }
 
   const patch: SkillSummaryBackfillPatch = {}
   if (summary && summary !== args.currentSummary) {

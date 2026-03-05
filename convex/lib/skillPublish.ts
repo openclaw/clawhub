@@ -25,6 +25,7 @@ import {
   isTextFile,
   parseClawdisMetadata,
   parseFrontmatter,
+  parseLicenseField,
   sanitizePath,
 } from './skills'
 import type { WebhookSkillPayload } from './webhooks'
@@ -46,6 +47,7 @@ export type PublishVersionArgs = {
   version: string
   changelog: string
   tags?: string[]
+  license?: unknown
   forkOf?: { slug: string; version?: string }
   source?: {
     kind: 'github'
@@ -130,6 +132,7 @@ export async function publishVersionForUser(
   const readmeText = await fetchText(ctx, readmeFile.storageId)
   const frontmatter = parseFrontmatter(readmeText)
   const clawdis = parseClawdisMetadata(frontmatter)
+  const license = resolveLicense(args.license, frontmatter)
   const owner = (await ctx.runQuery(internal.users.getByIdInternal, {
     userId,
   })) as Doc<'users'> | null
@@ -268,6 +271,7 @@ export async function publishVersionForUser(
       frontmatter,
       metadata,
       clawdis,
+      license,
     },
     summary,
     embedding,
@@ -356,11 +360,22 @@ function mergeSourceIntoMetadata(
   return Object.keys(base).length ? base : undefined
 }
 
+function resolveLicense(argsLicense: unknown, frontmatter: Record<string, unknown>) {
+  // 1. Frontmatter always wins — file may have changed between folder select and publish
+  const fromFrontmatter = parseLicenseField(frontmatter)
+  if (fromFrontmatter) return fromFrontmatter
+
+  // 2. No frontmatter license — fall back to what the UI sent
+  if (argsLicense === undefined || argsLicense === null) return undefined
+  return parseLicenseField({ license: argsLicense }) ?? undefined
+}
+
 export const __test = {
   mergeSourceIntoMetadata,
   computeQualitySignals,
   evaluateQuality,
   toStructuralFingerprint,
+  resolveLicense,
 }
 
 export async function queueHighlightedWebhook(ctx: MutationCtx, skillId: Id<'skills'>) {

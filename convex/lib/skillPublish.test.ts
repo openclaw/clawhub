@@ -102,4 +102,41 @@ description: Expert guidance for sushi-rolls.
     expect(signals.bodyWords).toBeGreaterThanOrEqual(45)
     expect(quality.decision).toBe('pass')
   })
+
+  describe('resolveLicense', () => {
+    it('frontmatter wins when both sources have a valid license', () => {
+      const license = __test.resolveLicense({ spdx: 'Apache-2.0' }, { license: 'MIT' })
+      expect(license).toEqual(expect.objectContaining({ spdx: 'MIT' }))
+    })
+
+    it('falls back to argsLicense when frontmatter has no license', () => {
+      const license = __test.resolveLicense({ spdx: 'Apache-2.0' }, {})
+      expect(license).toEqual(expect.objectContaining({ spdx: 'Apache-2.0' }))
+    })
+
+    it('uses frontmatter when args.license is undefined', () => {
+      const license = __test.resolveLicense(undefined, { license: 'MIT' })
+      expect(license).toEqual(expect.objectContaining({ spdx: 'MIT' }))
+    })
+
+    it('frontmatter wins even when args.license is null', () => {
+      const license = __test.resolveLicense(null, { license: 'MIT' })
+      expect(license).toEqual(expect.objectContaining({ spdx: 'MIT' }))
+    })
+
+    it('returns undefined when args.license is null and no frontmatter license', () => {
+      const license = __test.resolveLicense(null, {})
+      expect(license).toBeUndefined()
+    })
+
+    it('returns undefined when args.license is invalid and no frontmatter', () => {
+      const license = __test.resolveLicense({ bad: 'data' }, {})
+      expect(license).toBeUndefined()
+    })
+
+    it('returns undefined when both are absent', () => {
+      const license = __test.resolveLicense(undefined, {})
+      expect(license).toBeUndefined()
+    })
+  })
 })

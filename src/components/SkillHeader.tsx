@@ -1,5 +1,5 @@
 import { Link } from '@tanstack/react-router'
-import type { ClawdisSkillMetadata } from 'clawhub-schema'
+import type { ClawdisSkillMetadata, SkillLicense } from 'clawhub-schema'
 import { Package } from 'lucide-react'
 import type { Doc, Id } from '../../convex/_generated/dataModel'
 import { getSkillBadges } from '../lib/badges'
@@ -67,6 +67,7 @@ type SkillHeaderProps = {
   tagVersions: Doc<'skillVersions'>[]
   clawdis: ClawdisSkillMetadata | undefined
   osLabels: string[]
+  license: SkillLicense | null
 }
 
 export function SkillHeader({
@@ -106,6 +107,7 @@ export function SkillHeader({
   tagVersions,
   clawdis,
   osLabels,
+  license,
 }: SkillHeaderProps) {
   const formattedStats = formatSkillStatsTriplet(skill.stats)
 
@@ -225,6 +227,21 @@ export function SkillHeader({
                   {staffVisibilityTag}
                 </div>
               ) : null}
+              {license ? (
+                <div className="tag">
+                  {license.uri ? (
+                    <a href={license.uri} target="_blank" rel="noopener noreferrer">
+                      {license.spdx}
+                    </a>
+                  ) : (
+                    license.spdx
+                  )}
+                </div>
+              ) : (
+                <div className="tag" style={{ opacity: 0.5 }}>
+                  No license declared
+                </div>
+              )}
               <div className="skill-actions">
                 {isAuthenticated ? (
                   <button
@@ -359,7 +376,7 @@ export function SkillHeader({
           </form>
         ) : null}
 
-        <SkillInstallCard clawdis={clawdis} osLabels={osLabels} />
+        <SkillInstallCard clawdis={clawdis} osLabels={osLabels} license={license} />
       </div>
     </>
   )

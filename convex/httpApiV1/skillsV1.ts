@@ -1,6 +1,7 @@
 import { api, internal } from '../_generated/api'
 import type { Doc, Id } from '../_generated/dataModel'
 import type { ActionCtx } from '../_generated/server'
+import type { SkillLicense } from '../lib/skills'
 import { getOptionalApiTokenUserId, requireApiTokenUser } from '../lib/apiTokenAuth'
 import { applyRateLimit, parseBearerToken } from '../lib/httpRateLimit'
 import { publishVersionForUser } from '../skills'
@@ -45,7 +46,7 @@ type ListSkillsResult = {
       version: string
       createdAt: number
       changelog: string
-      parsed?: { clawdis?: { os?: string[]; nix?: { plugin?: boolean; systems?: string[] } } }
+      parsed?: { clawdis?: { os?: string[]; nix?: { plugin?: boolean; systems?: string[] } }; license?: SkillLicense }
     } | null
   }>
   nextCursor: string | null
@@ -213,6 +214,7 @@ export async function listSkillsV1Handler(ctx: ActionCtx, request: Request) {
           systems: item.latestVersion.parsed.clawdis.nix?.systems ?? null,
         }
       : null,
+    license: item.latestVersion?.parsed?.license ?? null,
   }))
 
   return json({ items, nextCursor: result.nextCursor ?? null }, 200, rate.headers)
@@ -309,6 +311,7 @@ export async function skillsGetRouterV1Handler(ctx: ActionCtx, request: Request)
               systems: result.latestVersion.parsed.clawdis.nix?.systems ?? null,
             }
           : null,
+        license: result.latestVersion?.parsed?.license ?? null,
         owner: result.owner
           ? {
               handle: result.owner.handle ?? null,
@@ -417,6 +420,7 @@ export async function skillsGetRouterV1Handler(ctx: ActionCtx, request: Request)
             contentType: file.contentType ?? null,
           })),
           security,
+          license: version.parsed?.license ?? null,
         },
       },
       200,

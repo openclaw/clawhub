@@ -53,7 +53,7 @@ import {
   queueHighlightedWebhook,
 } from './lib/skillPublish'
 import { isSkillSuspicious } from './lib/skillSafety'
-import { getFrontmatterValue, hashSkillFiles } from './lib/skills'
+import { type SkillLicense, getFrontmatterValue, hashSkillFiles } from './lib/skills'
 
 export { publishVersionForUser } from './lib/skillPublish'
 
@@ -518,6 +518,7 @@ type PublicSkillListVersion = Pick<
         systems?: string[]
       }
     }
+    license?: SkillLicense
   }
 }
 
@@ -588,7 +589,12 @@ function toPublicSkillListVersion(
     createdAt: version.createdAt,
     changelog: version.changelog,
     changelogSource: version.changelogSource,
-    parsed: version.parsed?.clawdis ? { clawdis: version.parsed.clawdis } : undefined,
+    parsed: version.parsed?.clawdis || version.parsed?.license
+      ? {
+          ...(version.parsed?.clawdis ? { clawdis: version.parsed.clawdis } : {}),
+          ...(version.parsed?.license ? { license: version.parsed.license } : {}),
+        }
+      : undefined,
   }
 }
 
@@ -2831,6 +2837,7 @@ export const publishVersion: ReturnType<typeof action> = action({
     version: v.string(),
     changelog: v.string(),
     tags: v.optional(v.array(v.string())),
+    license: v.optional(v.any()),
     forkOf: v.optional(
       v.object({
         slug: v.string(),
@@ -3561,6 +3568,7 @@ export const insertVersion = internalMutation({
       frontmatter: v.record(v.string(), v.any()),
       metadata: v.optional(v.any()),
       clawdis: v.optional(v.any()),
+      license: v.optional(v.any()),
     }),
     summary: v.optional(v.string()),
     qualityAssessment: v.optional(

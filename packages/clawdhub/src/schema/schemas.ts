@@ -1,5 +1,23 @@
 import { type inferred, type } from 'arktype'
 
+/**
+ * Inlined from packages/schema/src/schemas.ts — clawhub-schema is a private
+ * workspace package that can't be resolved by npm for global CLI installs.
+ * Keep in sync manually. Last synced: 2026-03-05.
+ */
+export const SkillLicenseSchema = type({
+  spdx: 'string > 0',
+  transferable: 'boolean?',
+  commercialUse: 'boolean?',
+  commercialAttribution: 'boolean?',
+  derivativesAllowed: 'boolean?',
+  derivativesAttribution: 'boolean?',
+  derivativesApproval: 'boolean?',
+  derivativesReciprocal: 'boolean?',
+  uri: 'string?',
+})
+export type SkillLicense = (typeof SkillLicenseSchema)[inferred]
+
 export const GlobalConfigSchema = type({
   registry: 'string',
   token: 'string?',
@@ -165,6 +183,7 @@ export const ApiV1SkillListResponseSchema = type({
   nextCursor: 'string|null',
 })
 
+
 export const ApiV1SkillResponseSchema = type({
   skill: type({
     slug: 'string',
@@ -185,6 +204,7 @@ export const ApiV1SkillResponseSchema = type({
     displayName: 'string|null?',
     image: 'string|null?',
   }).or('null'),
+  license: SkillLicenseSchema.or('null').optional(),
   moderation: type({
     isSuspicious: 'boolean',
     isMalwareBlocked: 'boolean',
@@ -210,6 +230,7 @@ export const ApiV1SkillVersionResponseSchema = type({
     changelog: 'string',
     changelogSource: '"auto"|"user"|null?',
     files: 'unknown?',
+    license: SkillLicenseSchema.or('null').optional(),
   }).or('null'),
   skill: type({
     slug: 'string',

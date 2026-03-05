@@ -1,8 +1,11 @@
 import { createFileRoute, useNavigate, useSearch } from '@tanstack/react-router'
+import { MAX_SPDX_LENGTH, SPDX_TOKEN_RE, type SkillLicense } from 'clawhub-schema'
 import { useAction, useMutation, useQuery } from 'convex/react'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import semver from 'semver'
+import { parse as parseYaml } from 'yaml'
 import { api } from '../../convex/_generated/api'
+import { LicenseSelector } from '../components/LicenseSelector'
 import { getSiteMode } from '../lib/site'
 import { expandDroppedItems, expandFilesWithReport } from '../lib/uploadFiles'
 import { useAuthStatus } from '../lib/useAuthStatus'
@@ -71,6 +74,12 @@ export function Upload() {
   const changelogTouchedRef = useRef(false)
   const changelogRequestRef = useRef(0)
   const changelogKeyRef = useRef<string | null>(null)
+  const licenseRequestRef = useRef(0)
+  const licenseTouchedRef = useRef(false)
+  const licenseSkillFileRef = useRef<File | null>(null)
+  const [license, setLicense] = useState<SkillLicense | undefined>(undefined)
+  const [frontmatterLicense, setFrontmatterLicense] = useState<SkillLicense | undefined>(undefined)
+  const [detectingLicense, setDetectingLicense] = useState(false)
   const [status, setStatus] = useState<string | null>(null)
   const isSubmitting = status !== null
   const [error, setError] = useState<string | null>(null)
@@ -108,6 +117,89 @@ export function Upload() {
       }),
     [isSoulMode, normalizedPaths],
   )
+  // Detect license from uploaded SKILL.md frontmatter — extract SPDX for display only;
+  // the backend's parseLicenseField is the canonical parser for the full structure.
+  useEffect(() => {
+    const requestId = ++licenseRequestRef.current
+    if (isSoulMode) return
+    const requiredIndex = normalizedPaths.findIndex((path) => {
+      const lower = path.trim().toLowerCase()
+      return lower === 'skill.md' || lower === 'skills.md'
+    })
+    const skillFile = (requiredIndex >= 0 ? files[requiredIndex] : null) ?? null
+    if (skillFile !== licenseSkillFileRef.current) {
+      licenseSkillFileRef.current = skillFile
+      licenseTouchedRef.current = false
+    }
+    if (!skillFile) {
+      setLicense(undefined)
+      setFrontmatterLicense(undefined)
+      setDetectingLicense(false)
+      return
+    }
+    setDetectingLicense(true)
+    void readText(skillFile).then((text) => {
+      if (licenseRequestRef.current !== requestId) return
+      const touched = licenseTouchedRef.current
+      const fmMatch = text.match(/^---\r?\n([\s\S]*?)\r?\n---/)
+      if (!fmMatch?.[1]) {
+        if (!touched) setLicense(undefined)
+        setFrontmatterLicense(undefined)
+        return
+      }
+      try {
+        const frontmatter = parseYaml(fmMatch[1])
+        if (!frontmatter || typeof frontmatter !== 'object') {
+          if (!touched) setLicense(undefined)
+          setFrontmatterLicense(undefined)
+          return
+        }
+        const raw = (frontmatter as Record<string, unknown>).license
+        const isValidSpdx = (s: string) => SPDX_TOKEN_RE.test(s) && s.length <= MAX_SPDX_LENGTH
+        let spdx: string | undefined
+        if (typeof raw === 'string' && raw.trim() && isValidSpdx(raw.trim())) {
+          spdx = raw.trim()
+        } else if (raw && typeof raw === 'object' && !Array.isArray(raw)) {
+          const s = (raw as Record<string, unknown>).spdx
+          if (typeof s === 'string' && s.trim() && isValidSpdx(s.trim())) spdx = s.trim()
+        }
+        if (spdx) {
+          const detected: SkillLicense = { spdx }
+          if (raw && typeof raw === 'object' && !Array.isArray(raw)) {
+            const obj = raw as Record<string, unknown>
+            for (const key of [
+              'transferable',
+              'commercialUse',
+              'commercialAttribution',
+              'derivativesAllowed',
+              'derivativesAttribution',
+              'derivativesApproval',
+              'derivativesReciprocal',
+            ] as const) {
+              if (typeof obj[key] === 'boolean') detected[key] = obj[key]
+            }
+            if (typeof obj.uri === 'string' && obj.uri.trim()) detected.uri = obj.uri.trim()
+          }
+          setFrontmatterLicense(detected)
+          if (!touched) setLicense(detected)
+        } else {
+          if (!touched) setLicense(undefined)
+          setFrontmatterLicense(undefined)
+        }
+      } catch {
+        // invalid YAML — ignore
+        if (!touched) setLicense(undefined)
+        setFrontmatterLicense(undefined)
+      }
+    }).catch(() => {
+      if (licenseRequestRef.current !== requestId) return
+      if (!licenseTouchedRef.current) setLicense(undefined)
+      setFrontmatterLicense(undefined)
+    }).finally(() => {
+      if (licenseRequestRef.current === requestId) setDetectingLicense(false)
+    })
+  }, [files, isSoulMode, normalizedPaths])
+
   const sizeLabel = totalBytes ? formatBytes(totalBytes) : '0 B'
   const ignoredMacJunkNote = useMemo(() => {
     if (ignoredMacJunkPaths.length === 0) return null
@@ -118,6 +210,14 @@ export function Upload() {
     const count = ignoredMacJunkPaths.length
     return `Ignored ${count} macOS junk file${count === 1 ? '' : 's'} (${labels.join(', ')}${suffix})`
   }, [ignoredMacJunkPaths])
+
+  const licenseHint = useMemo(() => {
+    if (isSoulMode || !license || !license.spdx?.trim() || frontmatterLicense) return null
+    const hasCustomTerms = license.transferable !== undefined || license.commercialUse !== undefined
+    if (hasCustomTerms) return 'Consider adding your custom license terms to your SKILL.md frontmatter.'
+    return `Consider adding "license: ${license.spdx}" to your SKILL.md frontmatter.`
+  }, [isSoulMode, license, frontmatterLicense])
+
   const trimmedSlug = slug.trim()
   const trimmedName = displayName.trim()
   const trimmedChangelog = changelog.trim()
@@ -229,6 +329,12 @@ export function Upload() {
     if (totalBytes > maxBytes) {
       issues.push('Total file size exceeds 50MB.')
     }
+    if (!isSoulMode && license && !frontmatterLicense && !license.spdx?.trim()) {
+      issues.push('Custom license requires an SPDX identifier.')
+    }
+    if (detectingLicense) {
+      issues.push('Detecting license from uploaded files…')
+    }
     return {
       issues,
       ready: issues.length === 0,
@@ -242,6 +348,10 @@ export function Upload() {
     hasRequiredFile,
     totalBytes,
     requiredFileLabel,
+    isSoulMode,
+    license,
+    frontmatterLicense,
+    detectingLicense,
   ])
 
   useEffect(() => {
@@ -319,6 +429,7 @@ export function Upload() {
         changelog: trimmedChangelog,
         tags: parsedTags,
         files: uploaded,
+        ...(!isSoulMode && !frontmatterLicense && license ? { license } : {}),
       })
       setStatus(null)
       setError(null)
@@ -393,6 +504,17 @@ export function Upload() {
             onChange={(event) => setTags(event.target.value)}
             placeholder="latest, stable"
           />
+
+          {!isSoulMode ? (
+            <LicenseSelector
+              value={license}
+              onChange={(v) => {
+                licenseTouchedRef.current = true
+                setLicense(v)
+              }}
+              disabled={!!frontmatterLicense}
+            />
+          ) : null}
         </div>
 
         <div className="card upload-panel">
@@ -462,6 +584,7 @@ export function Upload() {
             )}
           </div>
           {ignoredMacJunkNote ? <div className="stat">{ignoredMacJunkNote}</div> : null}
+          {licenseHint ? <div className="stat">{licenseHint}</div> : null}
         </div>
 
         <div className="card upload-panel" ref={validationRef}>

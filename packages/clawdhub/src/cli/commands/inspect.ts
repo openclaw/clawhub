@@ -4,6 +4,7 @@ import {
   ApiV1SkillResponseSchema,
   ApiV1SkillVersionListResponseSchema,
   ApiV1SkillVersionResponseSchema,
+  type SkillLicense,
 } from '../../schema/index.js'
 import { getOptionalAuthToken } from '../authToken.js'
 import { getRegistry } from '../registry.js'
@@ -112,10 +113,14 @@ export async function cmdInspect(opts: GlobalOpts, slug: string, options: Inspec
 
     spinner.stop()
 
+    const versionLicense = (versionResult?.version as { license?: SkillLicense | null } | null)?.license
+    const license = versionResult ? (versionLicense ?? null) : (skillResult.license ?? null)
+
     const output = {
       skill: skillResult.skill,
       latestVersion: skillResult.latestVersion,
       owner: skillResult.owner,
+      license,
       version: versionResult?.version ?? null,
       versions: versionsList?.items ?? null,
       file: options.file ? { path: options.file, content: fileContent } : null,
@@ -132,6 +137,7 @@ export async function cmdInspect(opts: GlobalOpts, slug: string, options: Inspec
         skill,
         latestVersion: skillResult.latestVersion,
         owner: skillResult.owner,
+        license,
       })
     }
 
@@ -188,6 +194,7 @@ function printSkillSummary(result: {
   }
   latestVersion?: { version: string; createdAt: number; changelog: string } | null
   owner?: { handle?: string | null; displayName?: string | null; image?: string | null } | null
+  license?: SkillLicense | null
 }) {
   const { skill } = result
   console.log(`${skill.slug}  ${skill.displayName}`)
@@ -203,6 +210,22 @@ function printSkillSummary(result: {
   const tagEntries = Object.entries(tags)
   if (tagEntries.length > 0) {
     console.log(`Tags: ${tagEntries.map(([tag, version]) => `${tag}=${version}`).join(', ')}`)
+  }
+  const license = result.license
+  if (license?.spdx) {
+    const terms: string[] = []
+    if (license.commercialUse !== undefined) terms.push(`commercial: ${license.commercialUse ? 'yes' : 'no'}`)
+    if (license.commercialAttribution !== undefined) terms.push(`commercial-attribution: ${license.commercialAttribution ? 'yes' : 'no'}`)
+    if (license.derivativesAllowed !== undefined) terms.push(`derivatives: ${license.derivativesAllowed ? 'yes' : 'no'}`)
+    if (license.derivativesAttribution !== undefined) terms.push(`derivatives-attribution: ${license.derivativesAttribution ? 'yes' : 'no'}`)
+    if (license.derivativesApproval !== undefined) terms.push(`derivatives-approval: ${license.derivativesApproval ? 'yes' : 'no'}`)
+    if (license.derivativesReciprocal !== undefined) terms.push(`derivatives-reciprocal: ${license.derivativesReciprocal ? 'yes' : 'no'}`)
+    if (license.transferable !== undefined) terms.push(`transferable: ${license.transferable ? 'yes' : 'no'}`)
+    const suffix = terms.length > 0 ? ` (${terms.join(', ')})` : ''
+    console.log(`License: ${license.spdx}${suffix}`)
+    if (license.uri) console.log(`License URI: ${license.uri}`)
+  } else {
+    console.log('License: not declared')
   }
 }
 

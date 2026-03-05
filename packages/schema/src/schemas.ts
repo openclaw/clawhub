@@ -176,6 +176,18 @@ export const ApiV1SkillListResponseSchema = type({
   nextCursor: 'string|null',
 })
 
+export const SkillLicenseSchema = type({
+  spdx: 'string > 0',
+  transferable: 'boolean?',
+  commercialUse: 'boolean?',
+  commercialAttribution: 'boolean?',
+  derivativesAllowed: 'boolean?',
+  derivativesAttribution: 'boolean?',
+  derivativesApproval: 'boolean?',
+  derivativesReciprocal: 'boolean?',
+  uri: 'string?',
+})
+
 export const ApiV1SkillResponseSchema = type({
   skill: type({
     slug: 'string',
@@ -196,6 +208,7 @@ export const ApiV1SkillResponseSchema = type({
     displayName: 'string|null?',
     image: 'string|null?',
   }).or('null'),
+  license: SkillLicenseSchema.or('null').optional(),
 })
 
 export const ApiV1SkillVersionListResponseSchema = type({
@@ -223,6 +236,7 @@ export const ApiV1SkillVersionResponseSchema = type({
     changelogSource: '"auto"|"user"|null?',
     files: 'unknown?',
     security: SecurityStatusSchema.optional(),
+    license: SkillLicenseSchema.or('null').optional(),
   }).or('null'),
   skill: type({
     slug: 'string',
@@ -337,3 +351,16 @@ export const ClawdisSkillMetadataSchema = type({
   links: SkillLinksSchema.optional(),
 })
 export type ClawdisSkillMetadata = (typeof ClawdisSkillMetadataSchema)[inferred]
+
+export const SkillFrontmatterSchema = type({
+  name: 'string?',
+  description: 'string?',
+  version: 'string?',
+  license: SkillLicenseSchema.or('string > 0').optional(),
+  metadata: type({
+    openclaw: ClawdisSkillMetadataSchema.optional(),
+    clawdis: ClawdisSkillMetadataSchema.optional(),
+    clawdbot: ClawdisSkillMetadataSchema.optional(),
+  }).optional(),
+})
+export type SkillFrontmatter = (typeof SkillFrontmatterSchema)[inferred]

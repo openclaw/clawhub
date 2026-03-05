@@ -1,12 +1,14 @@
-import type { ClawdisSkillMetadata } from 'clawhub-schema'
+import type { ClawdisSkillMetadata, SkillLicense } from 'clawhub-schema'
+import { LICENSE_PRESETS } from 'clawhub-schema'
 import { formatInstallCommand, formatInstallLabel } from './skillDetailUtils'
 
 type SkillInstallCardProps = {
   clawdis: ClawdisSkillMetadata | undefined
   osLabels: string[]
+  license: SkillLicense | null
 }
 
-export function SkillInstallCard({ clawdis, osLabels }: SkillInstallCardProps) {
+export function SkillInstallCard({ clawdis, osLabels, license }: SkillInstallCardProps) {
   const requirements = clawdis?.requires
   const installSpecs = clawdis?.install ?? []
   const envVars = clawdis?.envVars ?? []
@@ -25,8 +27,10 @@ export function SkillInstallCard({ clawdis, osLabels }: SkillInstallCardProps) {
   const hasInstallSpecs = installSpecs.length > 0
   const hasDependencies = dependencies.length > 0
   const hasLinks = Boolean(links?.homepage || links?.repository || links?.documentation)
+  const hasLicense = license != null
+  const preset = license ? LICENSE_PRESETS[license.spdx] : undefined
 
-  if (!hasRuntimeRequirements && !hasInstallSpecs && !hasDependencies && !hasLinks) return null
+  if (!hasRuntimeRequirements && !hasInstallSpecs && !hasDependencies && !hasLinks && !hasLicense) return null
 
   return (
     <div className="skill-hero-content">
@@ -175,6 +179,43 @@ export function SkillInstallCard({ clawdis, osLabels }: SkillInstallCardProps) {
                   <a href={links.documentation} target="_blank" rel="noopener noreferrer">{links.documentation}</a>
                 </div>
               ) : null}
+            </div>
+          </div>
+        ) : null}
+        {hasLicense && license ? (
+          <div className="skill-panel">
+            <h3 className="section-title" style={{ fontSize: '1rem', margin: 0 }}>
+              License
+            </h3>
+            <div className="skill-panel-body">
+              <div className="stat">
+                <strong>{license.spdx}</strong>
+                {license.uri ? (
+                  <>{' '}<a href={license.uri} target="_blank" rel="noopener noreferrer">View license</a></>
+                ) : null}
+              </div>
+              {preset?.summary ? (
+                <div className="stat" style={{ color: 'var(--ink-soft)' }}>
+                  {preset.summary}
+                </div>
+              ) : null}
+              <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap', marginTop: '0.25rem' }}>
+                {(license.commercialUse ?? preset?.commercialUse) !== undefined ? (
+                  <span className="tag tag-compact">
+                    {(license.commercialUse ?? preset?.commercialUse) ? 'Commercial OK' : 'Non-commercial'}
+                  </span>
+                ) : null}
+                {(license.derivativesAllowed ?? preset?.derivativesAllowed) !== undefined ? (
+                  <span className="tag tag-compact">
+                    Derivatives: {(license.derivativesAllowed ?? preset?.derivativesAllowed) ? ((license.derivativesReciprocal ?? preset?.derivativesReciprocal) ? 'same license' : 'allowed') : 'not allowed'}
+                  </span>
+                ) : null}
+                {(license.transferable ?? preset?.transferable) !== undefined ? (
+                  <span className="tag tag-compact">
+                    {(license.transferable ?? preset?.transferable) ? 'Transferable' : 'Non-transferable'}
+                  </span>
+                ) : null}
+              </div>
             </div>
           </div>
         ) : null}
