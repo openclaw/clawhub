@@ -28,7 +28,7 @@ export function buildSkillSummaryBackfillPatch(args: {
   const summary = getFrontmatterValue(frontmatter, 'description') ?? undefined
   const metadata = getFrontmatterMetadata(frontmatter)
   const clawdis = parseClawdisMetadata(frontmatter)
-  const license = parseLicenseField(frontmatter) ?? undefined
+  const license = parseLicenseField(frontmatter) ?? args.currentParsed?.license ?? undefined
   const parsed: ParsedSkillData = { frontmatter, metadata, clawdis, license }
 
   const patch: SkillSummaryBackfillPatch = {}

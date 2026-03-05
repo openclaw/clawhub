@@ -76,6 +76,7 @@ export function Upload() {
   const changelogKeyRef = useRef<string | null>(null)
   const licenseRequestRef = useRef(0)
   const licenseTouchedRef = useRef(false)
+  const licenseSkillFileRef = useRef<File | null>(null)
   const [license, setLicense] = useState<SkillLicense | undefined>(undefined)
   const [frontmatterLicense, setFrontmatterLicense] = useState<SkillLicense | undefined>(undefined)
   const [status, setStatus] = useState<string | null>(null)
@@ -119,18 +120,22 @@ export function Upload() {
   // the backend's parseLicenseField is the canonical parser for the full structure.
   useEffect(() => {
     const requestId = ++licenseRequestRef.current
-    licenseTouchedRef.current = false
     if (isSoulMode) return
     const requiredIndex = normalizedPaths.findIndex((path) => {
       const lower = path.trim().toLowerCase()
       return lower === 'skill.md' || lower === 'skills.md'
     })
-    if (requiredIndex < 0 || !files[requiredIndex]) {
+    const skillFile = (requiredIndex >= 0 ? files[requiredIndex] : null) ?? null
+    if (skillFile !== licenseSkillFileRef.current) {
+      licenseSkillFileRef.current = skillFile
+      licenseTouchedRef.current = false
+    }
+    if (!skillFile) {
       setLicense(undefined)
       setFrontmatterLicense(undefined)
       return
     }
-    void readText(files[requiredIndex]).then((text) => {
+    void readText(skillFile).then((text) => {
       if (licenseRequestRef.current !== requestId) return
       const touched = licenseTouchedRef.current
       const fmMatch = text.match(/^---\r?\n([\s\S]*?)\r?\n---/)

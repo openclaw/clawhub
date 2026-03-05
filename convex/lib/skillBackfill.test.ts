@@ -31,4 +31,24 @@ describe('skill backfill', () => {
     expect(patch.summary).toBeUndefined()
     expect(patch.parsed?.frontmatter.description).toBe('Hello')
   })
+
+  it('preserves existing license when frontmatter has no license field', () => {
+    const existingLicense = { spdx: 'MIT', commercialUse: true, transferable: true }
+    const patch = buildSkillSummaryBackfillPatch({
+      readmeText: `---\ndescription: Hello\n---\nBody`,
+      currentSummary: 'Hello',
+      currentParsed: { frontmatter: { description: 'Hello' }, license: existingLicense },
+    })
+    expect(patch.parsed?.license).toEqual(existingLicense)
+  })
+
+  it('uses frontmatter license over existing when present', () => {
+    const existingLicense = { spdx: 'MIT', commercialUse: true }
+    const patch = buildSkillSummaryBackfillPatch({
+      readmeText: `---\ndescription: Hello\nlicense: Apache-2.0\n---\nBody`,
+      currentSummary: 'Hello',
+      currentParsed: { frontmatter: { description: 'Hello' }, license: existingLicense },
+    })
+    expect(patch.parsed?.license).toHaveProperty('spdx', 'Apache-2.0')
+  })
 })
