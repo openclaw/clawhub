@@ -41,7 +41,7 @@ type CandidatePreview = {
 
 const SLUG_PATTERN = /^[a-z0-9]+(?:-[a-z0-9]+)*$/
 
-function ImportGitHub() {
+export function ImportGitHub() {
   const { isAuthenticated, isLoading, me } = useAuthStatus()
   const previewImport = useAction(api.githubImport.previewGitHubImport)
   const previewCandidate = useAction(api.githubImport.previewGitHubImportCandidate)
@@ -63,13 +63,17 @@ function ImportGitHub() {
   const [error, setError] = useState<string | null>(null)
   const [isBusy, setIsBusy] = useState(false)
   const trimmedSlug = slug.trim()
-  const slugLookup = useQuery(
-    api.skills.getBySlug,
-    trimmedSlug && SLUG_PATTERN.test(trimmedSlug) ? { slug: trimmedSlug.toLowerCase() } : 'skip',
+  const slugAvailability = useQuery(
+    api.skills.checkSlugAvailability,
+    isAuthenticated && trimmedSlug && SLUG_PATTERN.test(trimmedSlug)
+      ? { slug: trimmedSlug.toLowerCase() }
+      : 'skip',
   ) as
     | {
-        skill: { slug: string; ownerUserId: string } | null
-        owner: { handle?: string | null; _id: string } | null
+        available: boolean
+        reason: 'available' | 'taken' | 'reserved'
+        message: string | null
+        url: string | null
       }
     | null
     | undefined
@@ -78,25 +82,9 @@ function ImportGitHub() {
       getPublicSlugCollision({
         isSoulMode: false,
         slug: trimmedSlug,
-        meUserId: me?._id ? String(me._id) : null,
-        result: slugLookup
-          ? {
-              skill: slugLookup.skill
-                ? {
-                    slug: slugLookup.skill.slug,
-                    ownerUserId: String(slugLookup.skill.ownerUserId),
-                  }
-                : null,
-              owner: slugLookup.owner
-                ? {
-                    handle: slugLookup.owner.handle ?? null,
-                    _id: String(slugLookup.owner._id),
-                  }
-                : null,
-            }
-          : slugLookup,
+        result: slugAvailability,
       }),
-    [me?._id, slugLookup, trimmedSlug],
+    [slugAvailability, trimmedSlug],
   )
 
   const selectedCount = useMemo(() => Object.values(selected).filter(Boolean).length, [selected])

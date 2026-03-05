@@ -251,4 +251,48 @@ describe('Upload route', () => {
     fireEvent.click(publishButton)
     expect(await screen.findByText(/Changelog is required/i)).toBeTruthy()
   })
+
+  it('blocks publish in preflight when slug availability reports a collision', async () => {
+    useQueryMock.mockImplementation((_fn: unknown, args: unknown) => {
+      if (args === 'skip') return undefined
+      if (
+        args &&
+        typeof args === 'object' &&
+        'slug' in (args as Record<string, unknown>) &&
+        (args as Record<string, unknown>).slug === 'taken-skill'
+      ) {
+        return {
+          available: false,
+          reason: 'taken',
+          message: 'Slug is already taken. Choose a different slug.',
+          url: '/alice/taken-skill',
+        }
+      }
+      return null
+    })
+
+    render(<Upload />)
+    fireEvent.change(screen.getByPlaceholderText('skill-name'), {
+      target: { value: 'taken-skill' },
+    })
+    fireEvent.change(screen.getByPlaceholderText('My skill'), {
+      target: { value: 'Taken Skill' },
+    })
+    fireEvent.change(screen.getByPlaceholderText('1.0.0'), {
+      target: { value: '1.2.3' },
+    })
+    fireEvent.change(screen.getByPlaceholderText('latest, stable'), {
+      target: { value: 'latest' },
+    })
+    fireEvent.change(screen.getByPlaceholderText('Describe what changed in this skill...'), {
+      target: { value: 'Initial drop.' },
+    })
+    const file = new File(['hello'], 'SKILL.md', { type: 'text/markdown' })
+    const input = screen.getByTestId('upload-input') as HTMLInputElement
+    fireEvent.change(input, { target: { files: [file] } })
+
+    expect(await screen.findByText(/Slug is already taken\. Choose a different slug\./i)).toBeTruthy()
+    expect(screen.getByRole('link', { name: '/alice/taken-skill' })).toBeTruthy()
+    expect(screen.getByRole('button', { name: /publish skill/i }).getAttribute('disabled')).not.toBeNull()
+  })
 })

@@ -42,6 +42,7 @@ import { embeddingVisibilityFor } from './lib/embeddingVisibility'
 import { scheduleNextBatchIfNeeded } from './lib/batching'
 import {
   enforceReservedSlugCooldownForNewSkill,
+  formatReservedSlugCooldownMessage,
   getLatestActiveReservedSlug,
   listActiveReservedSlugsForSlug,
   reserveSlugForHardDeleteFinalize,
@@ -811,6 +812,97 @@ export const getBySlug = query({
             },
           }
         : null,
+    }
+  },
+})
+
+export const checkSlugAvailability = query({
+  args: { slug: v.string() },
+  handler: async (ctx, args) => {
+    const { userId } = await requireUser(ctx)
+    const slug = args.slug.trim().toLowerCase()
+    if (!slug) {
+      return {
+        available: false,
+        reason: 'taken' as const,
+        message: 'Slug is required.',
+        url: null,
+      }
+    }
+
+    const skill = await ctx.db
+      .query('skills')
+      .withIndex('by_slug', (q) => q.eq('slug', slug))
+      .unique()
+
+    if (!skill) {
+      const reservation = await getLatestActiveReservedSlug(ctx, slug)
+      if (
+        reservation &&
+        reservation.expiresAt > Date.now() &&
+        reservation.originalOwnerUserId !== userId
+      ) {
+        return {
+          available: false,
+          reason: 'reserved' as const,
+          message: formatReservedSlugCooldownMessage(slug, reservation.expiresAt),
+          url: null,
+        }
+      }
+      return {
+        available: true,
+        reason: 'available' as const,
+        message: null,
+        url: null,
+      }
+    }
+
+    if (skill.ownerUserId === userId) {
+      return {
+        available: true,
+        reason: 'available' as const,
+        message: null,
+        url: null,
+      }
+    }
+
+    const owner = await ctx.db.get(skill.ownerUserId)
+    const url = buildConflictingSkillUrl(skill, owner)
+    const slugTakenMessage = buildSlugTakenErrorMessage(skill, owner)
+
+    if (!owner || owner.deletedAt || owner.deactivatedAt) {
+      return {
+        available: false,
+        reason: 'taken' as const,
+        message: slugTakenMessage,
+        url,
+      }
+    }
+
+    const [ownerProviderAccountId, callerProviderAccountId] = await Promise.all([
+      getGitHubProviderAccountId(ctx, skill.ownerUserId),
+      getGitHubProviderAccountId(ctx, userId),
+    ])
+
+    if (
+      canHealSkillOwnershipByGitHubProviderAccountId(
+        ownerProviderAccountId,
+        callerProviderAccountId,
+      )
+    ) {
+      return {
+        available: true,
+        reason: 'available' as const,
+        message: null,
+        url: null,
+      }
+    }
+
+    return {
+      available: false,
+      reason: 'taken' as const,
+      message: slugTakenMessage,
+      url,
     }
   },
 })

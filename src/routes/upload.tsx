@@ -3,7 +3,6 @@ import { useAction, useMutation, useQuery } from 'convex/react'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import semver from 'semver'
 import { api } from '../../convex/_generated/api'
-import type { Id } from '../../convex/_generated/dataModel'
 import { getPublicSlugCollision } from '../lib/slugCollision'
 import { getSiteMode } from '../lib/site'
 import { expandDroppedItems, expandFilesWithReport } from '../lib/uploadFiles'
@@ -123,15 +122,17 @@ export function Upload() {
   const trimmedSlug = slug.trim()
   const trimmedName = displayName.trim()
   const trimmedChangelog = changelog.trim()
-  const slugLookup = useQuery(
-    api.skills.getBySlug,
-    !isSoulMode && trimmedSlug && SLUG_PATTERN.test(trimmedSlug)
+  const slugAvailability = useQuery(
+    api.skills.checkSlugAvailability,
+    !isSoulMode && isAuthenticated && trimmedSlug && SLUG_PATTERN.test(trimmedSlug)
       ? { slug: trimmedSlug.toLowerCase() }
       : 'skip',
   ) as
     | {
-        skill: { slug: string; ownerUserId: Id<'users'> } | null
-        owner: { handle?: string | null; _id: Id<'users'> } | null
+        available: boolean
+        reason: 'available' | 'taken' | 'reserved'
+        message: string | null
+        url: string | null
       }
     | null
     | undefined
@@ -140,25 +141,9 @@ export function Upload() {
       getPublicSlugCollision({
         isSoulMode,
         slug: trimmedSlug,
-        meUserId: me?._id ? String(me._id) : null,
-        result: slugLookup
-          ? {
-              skill: slugLookup.skill
-                ? {
-                    slug: slugLookup.skill.slug,
-                    ownerUserId: String(slugLookup.skill.ownerUserId),
-                  }
-                : null,
-              owner: slugLookup.owner
-                ? {
-                    handle: slugLookup.owner.handle ?? null,
-                    _id: String(slugLookup.owner._id),
-                  }
-                : null,
-            }
-          : slugLookup,
+        result: slugAvailability,
       }),
-    [isSoulMode, me?._id, slugLookup, trimmedSlug],
+    [isSoulMode, slugAvailability, trimmedSlug],
   )
 
   useEffect(() => {

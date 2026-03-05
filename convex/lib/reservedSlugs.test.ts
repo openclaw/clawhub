@@ -1,5 +1,8 @@
 import { describe, expect, it, vi } from 'vitest'
-import { enforceReservedSlugCooldownForNewSkill } from './reservedSlugs'
+import {
+  enforceReservedSlugCooldownForNewSkill,
+  formatReservedSlugCooldownMessage,
+} from './reservedSlugs'
 
 describe('reservedSlugs', () => {
   it('throws a user-facing error when slug is actively reserved by another user', async () => {
@@ -37,6 +40,6 @@ describe('reservedSlugs', () => {
         { db } as never,
         { slug: 'taken-skill', userId: 'users:caller' as never, now },
       ),
-    ).rejects.toThrow('Slug "taken-skill" is reserved for its previous owner')
+    ).rejects.toThrow(formatReservedSlugCooldownMessage('taken-skill', now + 60_000))
   })
 })
