@@ -18,10 +18,14 @@ class I18nManager {
   }
 
   private detectLocale(): Locale {
-    const stored = localStorage.getItem("clawhub.locale");
-    if (stored === "en" || stored === "zh-CN") return stored;
-    const nav = navigator.language;
-    return nav.startsWith("zh") ? "zh-CN" : "en";
+    if (typeof globalThis.localStorage !== "undefined") {
+      const stored = localStorage.getItem("clawhub.locale");
+      if (stored === "en" || stored === "zh-CN") return stored;
+    }
+    if (typeof globalThis.navigator !== "undefined" && typeof navigator.language === "string") {
+      return navigator.language.startsWith("zh") ? "zh-CN" : "en";
+    }
+    return "en";
   }
 
   getLocale(): Locale {
@@ -31,7 +35,9 @@ class I18nManager {
   setLocale(locale: Locale) {
     if (this.locale === locale) return;
     this.locale = locale;
-    localStorage.setItem("clawhub.locale", locale);
+    if (typeof globalThis.localStorage !== "undefined") {
+      localStorage.setItem("clawhub.locale", locale);
+    }
     this.subscribers.forEach((fn) => fn());
   }
 
