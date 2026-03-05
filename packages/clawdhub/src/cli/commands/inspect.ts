@@ -215,7 +215,11 @@ function printSkillSummary(result: {
   if (license?.spdx) {
     const terms: string[] = []
     if (license.commercialUse !== undefined) terms.push(`commercial: ${license.commercialUse ? 'yes' : 'no'}`)
+    if (license.commercialAttribution !== undefined) terms.push(`commercial-attribution: ${license.commercialAttribution ? 'yes' : 'no'}`)
     if (license.derivativesAllowed !== undefined) terms.push(`derivatives: ${license.derivativesAllowed ? 'yes' : 'no'}`)
+    if (license.derivativesAttribution !== undefined) terms.push(`derivatives-attribution: ${license.derivativesAttribution ? 'yes' : 'no'}`)
+    if (license.derivativesApproval !== undefined) terms.push(`derivatives-approval: ${license.derivativesApproval ? 'yes' : 'no'}`)
+    if (license.derivativesReciprocal !== undefined) terms.push(`derivatives-reciprocal: ${license.derivativesReciprocal ? 'yes' : 'no'}`)
     if (license.transferable !== undefined) terms.push(`transferable: ${license.transferable ? 'yes' : 'no'}`)
     const suffix = terms.length > 0 ? ` (${terms.join(', ')})` : ''
     console.log(`License: ${license.spdx}${suffix}`)
