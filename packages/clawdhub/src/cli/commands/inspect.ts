@@ -65,7 +65,7 @@ export async function cmdInspect(opts: GlobalOpts, slug: string, options: Inspec
     }
     const requestedVersion = options.version ?? taggedVersion ?? null
 
-    let versionResult: { version: unknown; skill: unknown } | null = null
+    let versionResult: { version: { license?: SkillLicense | null; files?: unknown; [k: string]: unknown } | null; skill: unknown } | null = null
     if (options.files || options.file || options.version || options.tag) {
       const targetVersion = requestedVersion ?? latestVersion
       if (!targetVersion) fail('Could not resolve latest version')
@@ -113,7 +113,7 @@ export async function cmdInspect(opts: GlobalOpts, slug: string, options: Inspec
 
     spinner.stop()
 
-    const versionLicense = (versionResult?.version as { license?: SkillLicense | null } | null)?.license
+    const versionLicense = versionResult?.version?.license
     const license = versionResult ? (versionLicense ?? null) : (skillResult.license ?? null)
 
     const output = {
@@ -158,7 +158,7 @@ export async function cmdInspect(opts: GlobalOpts, slug: string, options: Inspec
     }
 
     if (versionResult?.version) {
-      const files = normalizeFiles((versionResult.version as { files?: unknown }).files)
+      const files = normalizeFiles(versionResult.version.files)
       if (options.files) {
         if (files.length === 0) {
           console.log('No files found.')
