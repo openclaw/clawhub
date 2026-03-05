@@ -20,13 +20,6 @@ function cleanupConvexMessage(message: string) {
     .trim()
 }
 
-function mapLegacyMessage(message: string) {
-  if (/^only the owner can publish updates$/i.test(message)) {
-    return 'Slug is already taken. Choose a different slug.'
-  }
-  return message
-}
-
 export function getUserFacingConvexError(error: unknown, fallback: string) {
   const candidates: string[] = []
   const maybe = error as ConvexLikeError
@@ -45,7 +38,7 @@ export function getUserFacingConvexError(error: unknown, fallback: string) {
   }
 
   for (const raw of candidates) {
-    const cleaned = mapLegacyMessage(cleanupConvexMessage(raw))
+    const cleaned = cleanupConvexMessage(raw)
     if (!cleaned) continue
     if (/^server error$/i.test(cleaned)) continue
     if (/^internal server error$/i.test(cleaned)) continue

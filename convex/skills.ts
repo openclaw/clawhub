@@ -121,7 +121,7 @@ function stripSuspiciousFlag(flags: string[] | undefined) {
 }
 
 function buildConflictingSkillUrl(skill: Doc<'skills'>, owner: Doc<'users'> | null | undefined) {
-  if (!owner || !isPublicSkillDoc(skill)) return null
+  if (!owner || owner.deletedAt || owner.deactivatedAt || !isPublicSkillDoc(skill)) return null
   const ownerParam = owner.handle?.trim() || String(owner._id)
   if (!ownerParam) return null
   return `/${encodeURIComponent(ownerParam)}/${encodeURIComponent(skill.slug)}`

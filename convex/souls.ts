@@ -405,7 +405,7 @@ export const insertVersion = internalMutation({
     let soul: Doc<'souls'> | null = soulMatches[0] ?? null
 
     if (soul && soul.ownerUserId !== userId) {
-      throw new Error('Only the owner can publish updates')
+      throw new ConvexError('Only the owner can publish soul updates')
     }
 
     const now = Date.now()

@@ -17,10 +17,10 @@ describe('getUserFacingConvexError', () => {
     ).toBe('Bad input')
   })
 
-  it('maps legacy ownership error to slug-taken message', () => {
-    expect(getUserFacingConvexError(new Error('Only the owner can publish updates'), 'fallback')).toBe(
-      'Slug is already taken. Choose a different slug.',
-    )
+  it('preserves ownership errors as-is after cleanup', () => {
+    expect(
+      getUserFacingConvexError(new Error('Only the owner can publish soul updates'), 'fallback'),
+    ).toBe('Only the owner can publish soul updates')
   })
 
   it('returns fallback for unknown errors', () => {

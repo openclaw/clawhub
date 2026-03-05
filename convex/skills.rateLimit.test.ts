@@ -183,6 +183,69 @@ describe('skills anti-spam guards', () => {
     ).rejects.toThrow('Slug is already taken. Choose a different slug. Existing skill: /alice/taken-skill')
   })
 
+  it('does not include a URL in slug-taken message when conflicting owner is deleted', async () => {
+    let authAccountLookupCount = 0
+    const db = {
+      get: vi.fn(async (id: string) => {
+        if (id === 'users:caller') return { _id: 'users:caller', deletedAt: undefined }
+        if (id === 'users:owner') {
+          return {
+            _id: 'users:owner',
+            handle: 'alice',
+            deletedAt: Date.now(),
+            deactivatedAt: undefined,
+          }
+        }
+        return null
+      }),
+      query: vi.fn((table: string) => {
+        if (table === 'skills') {
+          return {
+            withIndex: (name: string) => {
+              if (name !== 'by_slug') throw new Error(`unexpected skills index ${name}`)
+              return {
+                unique: async () => ({
+                  _id: 'skills:1',
+                  slug: 'taken-skill',
+                  ownerUserId: 'users:owner',
+                  softDeletedAt: undefined,
+                  moderationStatus: 'active',
+                  moderationFlags: undefined,
+                }),
+              }
+            },
+          }
+        }
+        if (table === 'authAccounts') {
+          return {
+            withIndex: (name: string) => {
+              if (name !== 'userIdAndProvider') throw new Error(`unexpected auth index ${name}`)
+              return {
+                unique: async () => {
+                  authAccountLookupCount += 1
+                  return authAccountLookupCount === 1
+                    ? { providerAccountId: 'owner-gh' }
+                    : { providerAccountId: 'caller-gh' }
+                },
+              }
+            },
+          }
+        }
+        throw new Error(`unexpected table ${table}`)
+      }),
+    }
+
+    await expect(
+      insertVersionHandler(
+        { db } as never,
+        createPublishArgs({
+          userId: 'users:caller',
+          slug: 'taken-skill',
+        }) as never,
+      ),
+    ).rejects.toThrow('Slug is already taken. Choose a different slug.')
+  })
+
   it('keeps suspicious skills visible for low-trust publishers', async () => {
     const patch = vi.fn(async () => {})
     const version = { _id: 'skillVersions:1', skillId: 'skills:1' }
