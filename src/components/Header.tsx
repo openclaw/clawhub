@@ -1,7 +1,9 @@
 import { useAuthActions } from '@convex-dev/auth/react'
 import { Link } from '@tanstack/react-router'
-import { Menu, Monitor, Moon, Sun } from 'lucide-react'
+import { Globe, Menu, Monitor, Moon, Sun } from 'lucide-react'
 import { useMemo, useRef } from 'react'
+import { useI18n } from '../i18n'
+import type { Locale } from '../i18n'
 import { gravatarUrl } from '../lib/gravatar'
 import { isModerator } from '../lib/roles'
 import { getClawHubSiteUrl, getSiteMode, getSiteName } from '../lib/site'
@@ -17,10 +19,16 @@ import {
 } from './ui/dropdown-menu'
 import { ToggleGroup, ToggleGroupItem } from './ui/toggle-group'
 
+const localeLabels: Record<Locale, string> = {
+  en: 'EN',
+  'zh-CN': '中文',
+}
+
 export default function Header() {
   const { isAuthenticated, isLoading, me } = useAuthStatus()
   const { signIn, signOut } = useAuthActions()
   const { mode, setMode } = useThemeMode()
+  const { t, locale, setLocale } = useI18n()
   const toggleRef = useRef<HTMLDivElement | null>(null)
   const siteMode = getSiteMode()
   const siteName = useMemo(() => getSiteName(siteMode), [siteMode])
@@ -72,7 +80,7 @@ export default function Header() {
                 focus: undefined,
               }}
             >
-              Souls
+              {t('header.souls')}
             </Link>
           ) : (
             <Link
@@ -87,13 +95,13 @@ export default function Header() {
                 focus: undefined,
               }}
             >
-              Skills
+              {t('header.skills')}
             </Link>
           )}
           <Link to="/upload" search={{ updateSlug: undefined }}>
-            Upload
+            {t('header.upload')}
           </Link>
-          {isSoulMode ? null : <Link to="/import">Import</Link>}
+          {isSoulMode ? null : <Link to="/import">{t('header.import')}</Link>}
           <Link
             to={isSoulMode ? '/souls' : '/skills'}
             search={
@@ -116,12 +124,12 @@ export default function Header() {
                   }
             }
           >
-            Search
+            {t('header.search')}
           </Link>
-          {me ? <Link to="/stars">Stars</Link> : null}
+          {me ? <Link to="/stars">{t('header.stars')}</Link> : null}
           {isStaff ? (
             <Link to="/management" search={{ skill: undefined }}>
-              Management
+              {t('header.management')}
             </Link>
           ) : null}
         </nav>
@@ -129,7 +137,7 @@ export default function Header() {
           <div className="nav-mobile">
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
-                <button className="nav-mobile-trigger" type="button" aria-label="Open menu">
+                <button className="nav-mobile-trigger" type="button" aria-label={t('header.openMenu')}>
                   <Menu className="h-4 w-4" aria-hidden="true" />
                 </button>
               </DropdownMenuTrigger>
@@ -151,7 +159,7 @@ export default function Header() {
                         focus: undefined,
                       }}
                     >
-                      Souls
+                      {t('header.souls')}
                     </Link>
                   ) : (
                     <Link
@@ -166,18 +174,18 @@ export default function Header() {
                         focus: undefined,
                       }}
                     >
-                      Skills
+                      {t('header.skills')}
                     </Link>
                   )}
                 </DropdownMenuItem>
                 <DropdownMenuItem asChild>
                   <Link to="/upload" search={{ updateSlug: undefined }}>
-                    Upload
+                    {t('header.upload')}
                   </Link>
                 </DropdownMenuItem>
                 {isSoulMode ? null : (
                   <DropdownMenuItem asChild>
-                    <Link to="/import">Import</Link>
+                    <Link to="/import">{t('header.import')}</Link>
                   </DropdownMenuItem>
                 )}
                 <DropdownMenuItem asChild>
@@ -203,33 +211,40 @@ export default function Header() {
                           }
                     }
                   >
-                    Search
+                    {t('header.search')}
                   </Link>
                 </DropdownMenuItem>
                 {me ? (
                   <DropdownMenuItem asChild>
-                    <Link to="/stars">Stars</Link>
+                    <Link to="/stars">{t('header.stars')}</Link>
                   </DropdownMenuItem>
                 ) : null}
                 {isStaff ? (
                   <DropdownMenuItem asChild>
                     <Link to="/management" search={{ skill: undefined }}>
-                      Management
+                      {t('header.management')}
                     </Link>
                   </DropdownMenuItem>
                 ) : null}
                 <DropdownMenuSeparator />
                 <DropdownMenuItem onClick={() => setTheme('system')}>
                   <Monitor className="h-4 w-4" aria-hidden="true" />
-                  System
+                  {t('header.system')}
                 </DropdownMenuItem>
                 <DropdownMenuItem onClick={() => setTheme('light')}>
                   <Sun className="h-4 w-4" aria-hidden="true" />
-                  Light
+                  {t('header.light')}
                 </DropdownMenuItem>
                 <DropdownMenuItem onClick={() => setTheme('dark')}>
                   <Moon className="h-4 w-4" aria-hidden="true" />
-                  Dark
+                  {t('header.dark')}
+                </DropdownMenuItem>
+                <DropdownMenuSeparator />
+                <DropdownMenuItem
+                  onClick={() => setLocale(locale === 'en' ? 'zh-CN' : 'en')}
+                >
+                  <Globe className="h-4 w-4" aria-hidden="true" />
+                  {locale === 'en' ? '中文' : 'EN'}
                 </DropdownMenuItem>
               </DropdownMenuContent>
             </DropdownMenu>
@@ -244,20 +259,36 @@ export default function Header() {
               }}
               aria-label="Theme mode"
             >
-              <ToggleGroupItem value="system" aria-label="System theme">
+              <ToggleGroupItem value="system" aria-label={t('header.systemTheme')}>
                 <Monitor className="h-4 w-4" aria-hidden="true" />
-                <span className="sr-only">System</span>
+                <span className="sr-only">{t('header.system')}</span>
               </ToggleGroupItem>
-              <ToggleGroupItem value="light" aria-label="Light theme">
+              <ToggleGroupItem value="light" aria-label={t('header.lightTheme')}>
                 <Sun className="h-4 w-4" aria-hidden="true" />
-                <span className="sr-only">Light</span>
+                <span className="sr-only">{t('header.light')}</span>
               </ToggleGroupItem>
-              <ToggleGroupItem value="dark" aria-label="Dark theme">
+              <ToggleGroupItem value="dark" aria-label={t('header.darkTheme')}>
                 <Moon className="h-4 w-4" aria-hidden="true" />
-                <span className="sr-only">Dark</span>
+                <span className="sr-only">{t('header.dark')}</span>
               </ToggleGroupItem>
             </ToggleGroup>
           </div>
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <button className="btn btn-ghost btn-sm" type="button" aria-label={t('header.language')}>
+                <Globe className="h-4 w-4" />
+                <span>{localeLabels[locale]}</span>
+              </button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end">
+              <DropdownMenuItem onClick={() => setLocale('en')}>
+                EN
+              </DropdownMenuItem>
+              <DropdownMenuItem onClick={() => setLocale('zh-CN')}>
+                中文
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
           {isAuthenticated && me ? (
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
@@ -273,13 +304,13 @@ export default function Header() {
               </DropdownMenuTrigger>
               <DropdownMenuContent align="end">
                 <DropdownMenuItem asChild>
-                  <Link to="/dashboard">Dashboard</Link>
+                  <Link to="/dashboard">{t('header.dashboard')}</Link>
                 </DropdownMenuItem>
                 <DropdownMenuItem asChild>
-                  <Link to="/settings">Settings</Link>
+                  <Link to="/settings">{t('header.settings')}</Link>
                 </DropdownMenuItem>
                 <DropdownMenuSeparator />
-                <DropdownMenuItem onClick={() => void signOut()}>Sign out</DropdownMenuItem>
+                <DropdownMenuItem onClick={() => void signOut()}>{t('header.signOut')}</DropdownMenuItem>
               </DropdownMenuContent>
             </DropdownMenu>
           ) : (
@@ -294,8 +325,8 @@ export default function Header() {
                 )
               }
             >
-              <span className="sign-in-label">Sign in</span>
-              <span className="sign-in-provider">with GitHub</span>
+              <span className="sign-in-label">{t('header.signIn')}</span>
+              <span className="sign-in-provider">{t('header.withGitHub')}</span>
             </button>
           )}
         </div>
