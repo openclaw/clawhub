@@ -152,14 +152,16 @@ export function Upload() {
           return
         }
         const raw = (frontmatter as Record<string, unknown>).license
-        /** Must match SPDX_TOKEN_RE in convex/lib/skills.ts */
+        /** Must match SPDX_TOKEN_RE and MAX_SPDX_LENGTH in convex/lib/skills.ts */
         const SPDX_RE = /^[A-Za-z0-9][A-Za-z0-9.\-+]*$/
+        const MAX_SPDX = 64
+        const isValidSpdx = (s: string) => SPDX_RE.test(s) && s.length <= MAX_SPDX
         let spdx: string | undefined
-        if (typeof raw === 'string' && raw.trim() && SPDX_RE.test(raw.trim())) {
+        if (typeof raw === 'string' && raw.trim() && isValidSpdx(raw.trim())) {
           spdx = raw.trim()
         } else if (raw && typeof raw === 'object' && !Array.isArray(raw)) {
           const s = (raw as Record<string, unknown>).spdx
-          if (typeof s === 'string' && s.trim() && SPDX_RE.test(s.trim())) spdx = s.trim()
+          if (typeof s === 'string' && s.trim() && isValidSpdx(s.trim())) spdx = s.trim()
         }
         if (spdx) {
           const detected: SkillLicense = { spdx }
