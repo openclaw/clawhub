@@ -177,6 +177,7 @@ export function LicenseSelector({ value, onChange, disabled }: LicenseSelectorPr
 
     const trimmedSpdx = spdx.trim()
     if (!trimmedSpdx || trimmedSpdx.length > MAX_SPDX_LENGTH || !SPDX_TOKEN_RE.test(trimmedSpdx)) {
+      onChange(undefined)
       return
     }
 
