@@ -3,6 +3,7 @@ import type { RefObject } from 'react'
 import { SkillCard } from '../../components/SkillCard'
 import { SkillMetricsRow, SkillStatsTripletLine } from '../../components/SkillStats'
 import { UserBadge } from '../../components/UserBadge'
+import { useI18n } from '../../i18n'
 import { getPlatformLabels } from '../../components/skillDetailUtils'
 import { getSkillBadges } from '../../lib/badges'
 import { buildSkillHref, type SkillListEntry } from './-types'
@@ -32,17 +33,18 @@ export function SkillsResults({
   loadMoreRef,
   loadMore,
 }: SkillsResultsProps) {
+  const { t } = useI18n()
   return (
     <>
       {isLoadingSkills ? (
         <div className="card">
-          <div className="loading-indicator">Loading skills…</div>
+          <div className="loading-indicator">{t('skillsResults.loading')}</div>
         </div>
       ) : sorted.length === 0 ? (
         <div className="card">
           {paginationStatus === 'Exhausted' || hasQuery
-            ? 'No skills match that filter.'
-            : 'Loading skills…'}
+            ? t('skillsResults.noMatch')
+            : t('skillsResults.loading')}
         </div>
       ) : view === 'cards' ? (
         <div className="grid">
@@ -59,12 +61,12 @@ export function SkillsResults({
                 skill={skill}
                 href={skillHref}
                 badge={getSkillBadges(skill)}
-                chip={isPlugin ? 'Plugin bundle (nix)' : undefined}
+                chip={isPlugin ? t('skillsResults.pluginBundle') : undefined}
                 platformLabels={platforms.length ? platforms : undefined}
-                summaryFallback="Agent-ready skill pack."
+                summaryFallback={t('skillsResults.agentReady')}
                 meta={
                   <div className="skill-card-footer-rows">
-                    <UserBadge user={entry.owner} fallbackHandle={ownerHandle} prefix="by" link={false} />
+                    <UserBadge user={entry.owner} fallbackHandle={ownerHandle} prefix={t('userBadge.by')} link={false} />
                     <div className="stat">
                       <SkillStatsTripletLine stats={skill.stats} />
                     </div>
@@ -94,14 +96,14 @@ export function SkillsResults({
                         {badge}
                       </span>
                     ))}
-                    {isPlugin ? <span className="tag tag-accent tag-compact">Plugin bundle (nix)</span> : null}
+                    {isPlugin ? <span className="tag tag-accent tag-compact">{t('skillsResults.pluginBundle')}</span> : null}
                     {platforms.map((label) => (
                       <span key={label} className="tag tag-compact">{label}</span>
                     ))}
                   </div>
-                  <div className="skills-row-summary">{skill.summary ?? 'No summary provided.'}</div>
+                  <div className="skills-row-summary">{skill.summary ?? t('skillsResults.noSummary')}</div>
                   <div className="skills-row-owner">
-                    <UserBadge user={entry.owner} fallbackHandle={ownerHandle} prefix="by" link={false} />
+                    <UserBadge user={entry.owner} fallbackHandle={ownerHandle} prefix={t('userBadge.by')} link={false} />
                   </div>
                 </div>
                 <div className="skills-row-metrics">
@@ -121,13 +123,13 @@ export function SkillsResults({
         >
           {canAutoLoad ? (
             isLoadingMore ? (
-              'Loading more…'
+              t('skillsResults.loadingMore')
             ) : (
-              'Scroll to load more'
+              t('skillsResults.scrollToLoad')
             )
           ) : (
             <button className="btn" type="button" onClick={loadMore} disabled={isLoadingMore}>
-              {isLoadingMore ? 'Loading…' : 'Load more'}
+              {isLoadingMore ? t('skillsResults.loadingEllipsis') : t('skillsResults.loadMore')}
             </button>
           )}
         </div>

@@ -1,6 +1,8 @@
+import { useI18n } from '../i18n'
 import { getSiteName } from '../lib/site'
 
 export function Footer() {
+  const { t } = useI18n()
   const siteName = getSiteName()
   return (
     <footer className="site-footer">
@@ -8,21 +10,21 @@ export function Footer() {
         <div className="site-footer-divider" aria-hidden="true" />
         <div className="site-footer-row">
           <div className="site-footer-copy">
-            {siteName} · An{' '}
+            {siteName} · {t('footer.an')}{t('footer.an') ? ' ' : ''}
             <a href="https://openclaw.ai" target="_blank" rel="noreferrer">
-              OpenClaw
+              {t('footer.openClaw')}
             </a>{' '}
-            project · Deployed on{' '}
+            {t('footer.project')} · {t('footer.deployedOn')}{' '}
             <a href="https://vercel.com" target="_blank" rel="noreferrer">
               Vercel
             </a>{' '}
-            · Powered by{' '}
+            · {t('footer.poweredBy')}{' '}
             <a href="https://www.convex.dev" target="_blank" rel="noreferrer">
               Convex
             </a>{' '}
             ·{' '}
             <a href="https://github.com/openclaw/clawhub" target="_blank" rel="noreferrer">
-              Open source (MIT)
+              {t('footer.openSourceMIT')}
             </a>{' '}
             ·{' '}
             <a href="https://steipete.me" target="_blank" rel="noreferrer">

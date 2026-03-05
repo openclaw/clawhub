@@ -8,6 +8,7 @@ import { SkillStatsTripletLine } from '../components/SkillStats'
 import { SoulCard } from '../components/SoulCard'
 import { SoulStatsTripletLine } from '../components/SoulStats'
 import { UserBadge } from '../components/UserBadge'
+import { useI18n } from '../i18n'
 import { getSkillBadges } from '../lib/badges'
 import type { PublicSkill, PublicSoul, PublicUser } from '../lib/publicUser'
 import { getSiteMode } from '../lib/site'
@@ -22,6 +23,7 @@ function Home() {
 }
 
 function SkillsHome() {
+  const { t } = useI18n()
   type SkillPageEntry = {
     skill: PublicSkill
     ownerHandle?: string | null
@@ -44,15 +46,14 @@ function SkillsHome() {
       <section className="hero">
         <div className="hero-inner">
           <div className="hero-copy fade-up" data-delay="1">
-            <span className="hero-badge">Lobster-light. Agent-right.</span>
-            <h1 className="hero-title">ClawHub, the skill dock for sharp agents.</h1>
+            <span className="hero-badge">{t('home.skills.badge')}</span>
+            <h1 className="hero-title">{t('home.skills.title')}</h1>
             <p className="hero-subtitle">
-              Upload AgentSkills bundles, version them like npm, and make them searchable with
-              vectors. No gatekeeping, just signal.
+              {t('home.skills.subtitle')}
             </p>
             <div style={{ display: 'flex', gap: 12, marginTop: 20 }}>
               <Link to="/upload" search={{ updateSlug: undefined }} className="btn btn-primary">
-                Publish a skill
+                {t('home.skills.publishSkill')}
               </Link>
               <Link
                 to="/skills"
@@ -67,13 +68,13 @@ function SkillsHome() {
                 }}
                 className="btn"
               >
-                Browse skills
+                {t('home.skills.browseSkills')}
               </Link>
             </div>
           </div>
           <div className="hero-card hero-search-card fade-up" data-delay="2">
             <div className="hero-install" style={{ marginTop: 18 }}>
-              <div className="stat">Search skills. Versioned, rollback-ready.</div>
+              <div className="stat">{t('home.skills.searchStat')}</div>
               <InstallSwitcher exampleSlug="sonoscli" />
             </div>
           </div>
@@ -81,24 +82,24 @@ function SkillsHome() {
       </section>
 
       <section className="section">
-        <h2 className="section-title">Highlighted skills</h2>
-        <p className="section-subtitle">Curated signal — highlighted for quick trust.</p>
+        <h2 className="section-title">{t('home.skills.highlightedSkills')}</h2>
+        <p className="section-subtitle">{t('home.skills.highlightedSubtitle')}</p>
         <div className="grid">
           {highlighted.length === 0 ? (
-            <div className="card">No highlighted skills yet.</div>
+            <div className="card">{t('home.skills.noHighlighted')}</div>
           ) : (
             highlighted.map((entry) => (
               <SkillCard
                 key={entry.skill._id}
                 skill={entry.skill}
                 badge={getSkillBadges(entry.skill)}
-                summaryFallback="A fresh skill bundle."
+                summaryFallback={t('home.skills.freshBundle')}
                 meta={
                   <div className="skill-card-footer-rows">
                     <UserBadge
                       user={entry.owner}
                       fallbackHandle={entry.ownerHandle ?? null}
-                      prefix="by"
+                      prefix={t('userBadge.by')}
                       link={false}
                     />
                     <div className="stat">
@@ -113,23 +114,23 @@ function SkillsHome() {
       </section>
 
       <section className="section">
-        <h2 className="section-title">Popular skills</h2>
-        <p className="section-subtitle">Most-downloaded, non-suspicious picks.</p>
+        <h2 className="section-title">{t('home.skills.popularSkills')}</h2>
+        <p className="section-subtitle">{t('home.skills.popularSubtitle')}</p>
         <div className="grid">
           {popular.length === 0 ? (
-            <div className="card">No skills yet. Be the first.</div>
+            <div className="card">{t('home.skills.noSkills')}</div>
           ) : (
             popular.map((entry) => (
               <SkillCard
                 key={entry.skill._id}
                 skill={entry.skill}
-                summaryFallback="Agent-ready skill pack."
+                summaryFallback={t('home.skills.agentReady')}
                 meta={
                   <div className="skill-card-footer-rows">
                     <UserBadge
                       user={entry.owner}
                       fallbackHandle={entry.ownerHandle ?? null}
-                      prefix="by"
+                      prefix={t('userBadge.by')}
                       link={false}
                     />
                     <div className="stat">
@@ -155,7 +156,7 @@ function SkillsHome() {
             }}
             className="btn"
           >
-            See all skills
+            {t('home.skills.seeAllSkills')}
           </Link>
         </div>
       </section>
@@ -164,6 +165,7 @@ function SkillsHome() {
 }
 
 function OnlyCrabsHome() {
+  const { t } = useI18n()
   const navigate = Route.useNavigate()
   const ensureSoulSeeds = useAction(api.seed.ensureSoulSeeds)
   const latest = (useQuery(api.souls.list, { limit: 12 }) as PublicSoul[]) ?? []
@@ -182,15 +184,14 @@ function OnlyCrabsHome() {
       <section className="hero">
         <div className="hero-inner">
           <div className="hero-copy fade-up" data-delay="1">
-            <span className="hero-badge">SOUL.md, shared.</span>
-            <h1 className="hero-title">SoulHub, where system lore lives.</h1>
+            <span className="hero-badge">{t('home.souls.badge')}</span>
+            <h1 className="hero-title">{t('home.souls.title')}</h1>
             <p className="hero-subtitle">
-              Share SOUL.md bundles, version them like docs, and keep personal system lore in one
-              public place.
+              {t('home.souls.subtitle')}
             </p>
             <div style={{ display: 'flex', gap: 12, marginTop: 20 }}>
               <Link to="/upload" search={{ updateSlug: undefined }} className="btn btn-primary">
-                Publish a soul
+                {t('home.souls.publishSoul')}
               </Link>
               <Link
                 to="/souls"
@@ -203,7 +204,7 @@ function OnlyCrabsHome() {
                 }}
                 className="btn"
               >
-                Browse souls
+                {t('home.souls.browseSouls')}
               </Link>
             </div>
           </div>
@@ -227,30 +228,30 @@ function OnlyCrabsHome() {
               <span className="mono">/</span>
               <input
                 className="search-input"
-                placeholder="Search souls, prompts, or lore"
+                placeholder={t('home.souls.searchPlaceholder')}
                 value={query}
                 onChange={(event) => setQuery(event.target.value)}
               />
             </form>
             <div className="hero-install" style={{ marginTop: 18 }}>
-              <div className="stat">Search souls. Versioned, readable, easy to remix.</div>
+              <div className="stat">{t('home.souls.searchStat')}</div>
             </div>
           </div>
         </div>
       </section>
 
       <section className="section">
-        <h2 className="section-title">Latest souls</h2>
-        <p className="section-subtitle">Newest SOUL.md bundles across the hub.</p>
+        <h2 className="section-title">{t('home.souls.latestSouls')}</h2>
+        <p className="section-subtitle">{t('home.souls.latestSubtitle')}</p>
         <div className="grid">
           {latest.length === 0 ? (
-            <div className="card">No souls yet. Be the first.</div>
+            <div className="card">{t('home.souls.noSouls')}</div>
           ) : (
             latest.map((soul) => (
               <SoulCard
                 key={soul._id}
                 soul={soul}
-                summaryFallback="A SOUL.md bundle."
+                summaryFallback={t('home.souls.soulBundle')}
                 meta={
                   <div className="stat">
                     <SoulStatsTripletLine stats={soul.stats} />
@@ -272,7 +273,7 @@ function OnlyCrabsHome() {
             }}
             className="btn"
           >
-            See all souls
+            {t('home.souls.seeAllSouls')}
           </Link>
         </div>
       </section>
