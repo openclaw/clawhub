@@ -79,6 +79,7 @@ export function Upload() {
   const licenseSkillFileRef = useRef<File | null>(null)
   const [license, setLicense] = useState<SkillLicense | undefined>(undefined)
   const [frontmatterLicense, setFrontmatterLicense] = useState<SkillLicense | undefined>(undefined)
+  const [detectingLicense, setDetectingLicense] = useState(false)
   const [status, setStatus] = useState<string | null>(null)
   const isSubmitting = status !== null
   const [error, setError] = useState<string | null>(null)
@@ -133,8 +134,10 @@ export function Upload() {
     if (!skillFile) {
       setLicense(undefined)
       setFrontmatterLicense(undefined)
+      setDetectingLicense(false)
       return
     }
+    setDetectingLicense(true)
     void readText(skillFile).then((text) => {
       if (licenseRequestRef.current !== requestId) return
       const touched = licenseTouchedRef.current
@@ -195,6 +198,8 @@ export function Upload() {
       if (licenseRequestRef.current !== requestId) return
       if (!licenseTouchedRef.current) setLicense(undefined)
       setFrontmatterLicense(undefined)
+    }).finally(() => {
+      if (licenseRequestRef.current === requestId) setDetectingLicense(false)
     })
   }, [files, isSoulMode, normalizedPaths])
 
@@ -330,6 +335,9 @@ export function Upload() {
     if (!isSoulMode && license && !frontmatterLicense && !license.spdx?.trim()) {
       issues.push('Custom license requires an SPDX identifier.')
     }
+    if (detectingLicense) {
+      issues.push('Detecting license from uploaded files…')
+    }
     return {
       issues,
       ready: issues.length === 0,
@@ -346,6 +354,7 @@ export function Upload() {
     isSoulMode,
     license,
     frontmatterLicense,
+    detectingLicense,
   ])
 
   useEffect(() => {
