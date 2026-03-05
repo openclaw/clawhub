@@ -121,7 +121,11 @@ export function Upload() {
   // the backend's parseLicenseField is the canonical parser for the full structure.
   useEffect(() => {
     const requestId = ++licenseRequestRef.current
-    if (isSoulMode) return
+    if (isSoulMode) {
+      setDetectingLicense(false)
+      setFrontmatterLicense(undefined)
+      return
+    }
     const requiredIndex = normalizedPaths.findIndex((path) => {
       const lower = path.trim().toLowerCase()
       return lower === 'skill.md' || lower === 'skills.md'
