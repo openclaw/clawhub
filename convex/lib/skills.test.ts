@@ -526,6 +526,22 @@ Body`)
     expect(parseLicenseField(frontmatter)).toBeUndefined()
   })
 
+  it('rejects spdx string with embedded newlines', () => {
+    expect(parseLicenseField({ license: 'MIT\nmalicious-line' })).toBeUndefined()
+  })
+
+  it('rejects spdx string with control characters', () => {
+    expect(parseLicenseField({ license: 'MIT\x00' })).toBeUndefined()
+  })
+
+  it('rejects spdx string with spaces', () => {
+    expect(parseLicenseField({ license: 'MIT License' })).toBeUndefined()
+  })
+
+  it('rejects object spdx with control characters', () => {
+    expect(parseLicenseField({ license: { spdx: 'MIT\ninjected' } })).toBeUndefined()
+  })
+
   it('drops non-https URI', () => {
     const frontmatter = parseFrontmatter(`---
 license:

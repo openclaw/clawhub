@@ -151,6 +151,8 @@ export function parseClawdisMetadata(frontmatter: ParsedSkillFrontmatter) {
 
 const MAX_SPDX_LENGTH = 64
 const MAX_LICENSE_URI_LENGTH = 2048
+/** SPDX identifiers are printable ASCII tokens: letters, digits, dots, hyphens, plus signs. */
+const SPDX_TOKEN_RE = /^[A-Za-z0-9][A-Za-z0-9.\-+]*$/
 
 export function parseLicenseField(
   frontmatter: ParsedSkillFrontmatter,
@@ -161,7 +163,7 @@ export function parseLicenseField(
   // String form — simple SPDX identifier
   if (typeof raw === 'string') {
     const trimmed = raw.trim()
-    if (!trimmed || trimmed.length > MAX_SPDX_LENGTH) return undefined
+    if (!trimmed || trimmed.length > MAX_SPDX_LENGTH || !SPDX_TOKEN_RE.test(trimmed)) return undefined
     return { spdx: trimmed }
   }
 
@@ -170,7 +172,7 @@ export function parseLicenseField(
     const obj = raw as Record<string, unknown>
 
     const spdx = typeof obj.spdx === 'string' ? obj.spdx.trim() : ''
-    if (!spdx || spdx.length > MAX_SPDX_LENGTH) return undefined
+    if (!spdx || spdx.length > MAX_SPDX_LENGTH || !SPDX_TOKEN_RE.test(spdx)) return undefined
 
     const license: SkillLicense = { spdx }
 
