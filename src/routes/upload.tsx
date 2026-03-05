@@ -201,7 +201,7 @@ export function Upload() {
   }, [ignoredMacJunkPaths])
 
   const licenseHint = useMemo(() => {
-    if (isSoulMode || !license || frontmatterLicense) return null
+    if (isSoulMode || !license || !license.spdx?.trim() || frontmatterLicense) return null
     const hasCustomTerms = license.transferable !== undefined || license.commercialUse !== undefined
     if (hasCustomTerms) return 'Consider adding your custom license terms to your SKILL.md frontmatter.'
     return `Consider adding "license: ${license.spdx}" to your SKILL.md frontmatter.`

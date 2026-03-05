@@ -356,7 +356,7 @@ export const SkillFrontmatterSchema = type({
   name: 'string?',
   description: 'string?',
   version: 'string?',
-  license: SkillLicenseSchema.or('string').optional(),
+  license: SkillLicenseSchema.or('string > 0').optional(),
   metadata: type({
     openclaw: ClawdisSkillMetadataSchema.optional(),
     clawdis: ClawdisSkillMetadataSchema.optional(),
