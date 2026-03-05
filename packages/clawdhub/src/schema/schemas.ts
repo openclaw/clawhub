@@ -179,6 +179,7 @@ export const ApiV1SkillListResponseSchema = type({
       createdAt: 'number',
       changelog: 'string',
     }).optional(),
+    license: SkillLicenseSchema.or('null').optional(),
   }).array(),
   nextCursor: 'string|null',
 })
