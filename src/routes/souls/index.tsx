@@ -4,6 +4,7 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import { api } from '../../../convex/_generated/api'
 import { SoulMetricsRow, SoulStatsTripletLine } from '../../components/SoulStats'
 import { SoulCard } from '../../components/SoulCard'
+import { useI18n } from '../../i18n/useI18n'
 import type { PublicSoul } from '../../lib/publicUser'
 
 const sortKeys = ['newest', 'downloads', 'stars', 'name', 'updated'] as const
@@ -35,6 +36,7 @@ export const Route = createFileRoute('/souls/')({
 })
 
 function SoulsIndex() {
+  const { t } = useI18n()
   const navigate = Route.useNavigate()
   const search = Route.useSearch()
   const sort = search.sort ?? 'newest'
@@ -109,12 +111,12 @@ function SoulsIndex() {
       <header className="skills-header">
         <div>
           <h1 className="section-title" style={{ marginBottom: 8 }}>
-            Souls
+            {t('soulsIndex.title')}
           </h1>
           <p className="section-subtitle" style={{ marginBottom: 0 }}>
             {isLoadingSouls
-              ? 'Loading souls…'
-              : `${showing}${typeof total === 'number' ? ` of ${total}` : ''} souls.`}
+              ? t('soulsIndex.loadingSubtitle')
+              : t('soulsIndex.showingCount', { showing: String(showing), total: String(total ?? '') })}
           </p>
         </div>
         <div className="skills-toolbar">
@@ -132,7 +134,7 @@ function SoulsIndex() {
                   replace: true,
                 })
               }}
-              placeholder="Filter by name, slug, or summary…"
+              placeholder={t('soulsIndex.filterPlaceholder')}
             />
           </div>
           <div className="skills-toolbar-row">
@@ -150,18 +152,18 @@ function SoulsIndex() {
                   replace: true,
                 })
               }}
-              aria-label="Sort souls"
+              aria-label={t('soulsIndex.sortSouls')}
             >
-              <option value="newest">Newest</option>
-              <option value="updated">Recently updated</option>
-              <option value="downloads">Downloads</option>
-              <option value="stars">Stars</option>
-              <option value="name">Name</option>
+              <option value="newest">{t('soulsIndex.newest')}</option>
+              <option value="updated">{t('soulsIndex.recentlyUpdated')}</option>
+              <option value="downloads">{t('soulsIndex.downloads')}</option>
+              <option value="stars">{t('soulsIndex.stars')}</option>
+              <option value="name">{t('soulsIndex.name')}</option>
             </select>
             <button
               className="skills-dir"
               type="button"
-              aria-label={`Sort direction ${dir}`}
+              aria-label={t('soulsIndex.sortDirection', { dir })}
               onClick={() => {
                 void navigate({
                   search: (prev) => ({
@@ -187,7 +189,7 @@ function SoulsIndex() {
                 })
               }}
             >
-              {view === 'cards' ? 'List' : 'Cards'}
+              {view === 'cards' ? t('soulsIndex.list') : t('soulsIndex.cards')}
             </button>
           </div>
         </div>
@@ -195,17 +197,17 @@ function SoulsIndex() {
 
       {isLoadingSouls ? (
         <div className="card">
-          <div className="loading-indicator">Loading souls…</div>
+          <div className="loading-indicator">{t('soulsIndex.loadingSubtitle')}</div>
         </div>
       ) : showing === 0 ? (
-        <div className="card">No souls match that filter.</div>
+        <div className="card">{t('soulsIndex.noMatch')}</div>
       ) : view === 'cards' ? (
         <div className="grid">
           {sorted.map((soul) => (
             <SoulCard
               key={soul._id}
               soul={soul}
-              summaryFallback="A SOUL.md bundle."
+              summaryFallback={t('soulsIndex.soulBundle')}
               meta={
                 <div className="stat">
                   <SoulStatsTripletLine stats={soul.stats} />
@@ -228,7 +230,7 @@ function SoulsIndex() {
                   <span>{soul.displayName}</span>
                   <span className="skills-row-slug">/{soul.slug}</span>
                 </div>
-                <div className="skills-row-summary">{soul.summary ?? 'SOUL.md bundle.'}</div>
+                <div className="skills-row-summary">{soul.summary ?? t('soulsIndex.soulBundleAlt')}</div>
               </div>
               <div className="skills-row-metrics">
                 <SoulMetricsRow stats={soul.stats} />

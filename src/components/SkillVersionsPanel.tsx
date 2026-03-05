@@ -1,4 +1,5 @@
 import type { Doc } from '../../convex/_generated/dataModel'
+import { useI18n } from '../i18n/useI18n'
 import { type LlmAnalysis, SecurityScanResults } from './SkillSecurityScanResults'
 
 type SkillVersionsPanelProps = {
@@ -8,16 +9,17 @@ type SkillVersionsPanelProps = {
 }
 
 export function SkillVersionsPanel({ versions, nixPlugin, skillSlug }: SkillVersionsPanelProps) {
+  const { t } = useI18n()
   return (
     <div className="tab-body">
       <div>
         <h2 className="section-title" style={{ fontSize: '1.2rem', margin: 0 }}>
-          Versions
+          {t('skillVersions.title')}
         </h2>
         <p className="section-subtitle" style={{ margin: 0 }}>
           {nixPlugin
-            ? 'Review release history and changelog.'
-            : 'Download older releases or scan the changelog.'}
+            ? t('skillVersions.subtitlePlugin')
+            : t('skillVersions.subtitleNonPlugin')}
         </p>
       </div>
       <div className="version-scroll">
@@ -28,7 +30,7 @@ export function SkillVersionsPanel({ versions, nixPlugin, skillSlug }: SkillVers
                 <div>
                   v{version.version} · {new Date(version.createdAt).toLocaleDateString()}
                   {version.changelogSource === 'auto' ? (
-                    <span style={{ color: 'var(--ink-soft)' }}> · auto</span>
+                    <span style={{ color: 'var(--ink-soft)' }}> · {t('skillVersions.auto')}</span>
                   ) : null}
                 </div>
                 <div style={{ color: '#5c554e', whiteSpace: 'pre-wrap' }}>{version.changelog}</div>
@@ -49,7 +51,7 @@ export function SkillVersionsPanel({ versions, nixPlugin, skillSlug }: SkillVers
                     className="btn version-zip"
                     href={`${import.meta.env.VITE_CONVEX_SITE_URL}/api/v1/download?slug=${skillSlug}&version=${version.version}`}
                   >
-                    Zip
+                    {t('skillVersions.zip')}
                   </a>
                 </div>
               ) : null}

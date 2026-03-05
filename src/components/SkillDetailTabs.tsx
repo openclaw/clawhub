@@ -1,5 +1,6 @@
 import { lazy, Suspense } from 'react'
 import type { Doc, Id } from '../../convex/_generated/dataModel'
+import { useI18n } from '../i18n/useI18n'
 import { SkillVersionsPanel } from './SkillVersionsPanel'
 
 const SkillDiffCard = lazy(() =>
@@ -39,6 +40,7 @@ export function SkillDetailTabs({
   versions,
   nixPlugin,
 }: SkillDetailTabsProps) {
+  const { t } = useI18n()
   return (
     <div className="card tab-card">
       <div className="tab-header">
@@ -47,7 +49,7 @@ export function SkillDetailTabs({
           type="button"
           onClick={() => setActiveTab('files')}
         >
-          Files
+          {t('skillTabs.files')}
         </button>
         <button
           className={`tab-button${activeTab === 'compare' ? ' is-active' : ''}`}
@@ -62,19 +64,19 @@ export function SkillDetailTabs({
             void import('./SkillDiffCard')
           }}
         >
-          Compare
+          {t('skillTabs.compare')}
         </button>
         <button
           className={`tab-button${activeTab === 'versions' ? ' is-active' : ''}`}
           type="button"
           onClick={() => setActiveTab('versions')}
         >
-          Versions
+          {t('skillTabs.versions')}
         </button>
       </div>
 
       {activeTab === 'files' ? (
-        <Suspense fallback={<div className="tab-body stat">Loading file viewer…</div>}>
+        <Suspense fallback={<div className="tab-body stat">{t('skillTabs.loadingFileViewer')}</div>}>
           <SkillFilesPanel
             versionId={latestVersionId}
             readmeContent={readmeContent}
@@ -86,7 +88,7 @@ export function SkillDetailTabs({
 
       {activeTab === 'compare' ? (
         <div className="tab-body">
-          <Suspense fallback={<div className="stat">Loading diff viewer…</div>}>
+          <Suspense fallback={<div className="stat">{t('skillTabs.loadingDiffViewer')}</div>}>
             <SkillDiffCard skill={skill} versions={diffVersions ?? []} variant="embedded" />
           </Suspense>
         </div>

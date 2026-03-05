@@ -8,6 +8,7 @@ import { SoulStatsTripletLine } from './SoulStats'
 import type { PublicSoul, PublicUser } from '../lib/publicUser'
 import { isModerator } from '../lib/roles'
 import { useAuthStatus } from '../lib/useAuthStatus'
+import { useI18n } from '../i18n/useI18n'
 import { stripFrontmatter } from './skillDetailUtils'
 
 type SoulDetailPageProps = {
@@ -22,6 +23,7 @@ type SoulBySlugResult = {
 
 export function SoulDetailPage({ slug }: SoulDetailPageProps) {
   const { isAuthenticated, me } = useAuthStatus()
+  const { t } = useI18n()
   const result = useQuery(api.souls.getBySlug, { slug }) as SoulBySlugResult | undefined
   const toggleStar = useMutation(api.soulStars.toggle)
   const addComment = useMutation(api.soulComments.add)
@@ -87,7 +89,7 @@ export function SoulDetailPage({ slug }: SoulDetailPageProps) {
     return (
       <main className="section">
         <div className="card">
-          <div className="loading-indicator">Loading soul…</div>
+          <div className="loading-indicator">{t('soulDetail.loading')}</div>
         </div>
       </main>
     )
@@ -96,7 +98,7 @@ export function SoulDetailPage({ slug }: SoulDetailPageProps) {
   if (result === null || !soul) {
     return (
       <main className="section">
-        <div className="card">Soul not found.</div>
+        <div className="card">{t('soulDetail.notFound')}</div>
       </main>
     )
   }
@@ -113,7 +115,7 @@ export function SoulDetailPage({ slug }: SoulDetailPageProps) {
               <h1 className="section-title" style={{ margin: 0 }}>
                 {soul.displayName}
               </h1>
-              <p className="section-subtitle">{soul.summary ?? 'No summary provided.'}</p>
+              <p className="section-subtitle">{soul.summary ?? t('soulDetail.noSummary')}</p>
               <div className="stat">
                 <SoulStatsTripletLine stats={soul.stats} versionSuffix="versions" />
               </div>
@@ -137,15 +139,15 @@ export function SoulDetailPage({ slug }: SoulDetailPageProps) {
             </div>
             <div className="skill-hero-cta">
               <div className="skill-version-pill">
-                <span className="skill-version-label">Current version</span>
+                <span className="skill-version-label">{t('soulDetail.currentVersion')}</span>
                 <strong>v{latestVersion?.version ?? '—'}</strong>
               </div>
               <a
                 className="btn btn-primary"
                 href={`${downloadBase}?path=SOUL.md`}
-                aria-label="Download SOUL.md"
+                aria-label={t('soulDetail.downloadSoul')}
               >
-                Download SOUL.md
+                {t('soulDetail.downloadSoul')}
               </a>
             </div>
           </div>
@@ -156,16 +158,16 @@ export function SoulDetailPage({ slug }: SoulDetailPageProps) {
             {readmeContent ? (
               <ReactMarkdown remarkPlugins={[remarkGfm]}>{readmeContent}</ReactMarkdown>
             ) : readmeError ? (
-              <div className="stat">Failed to load SOUL.md: {readmeError}</div>
+              <div className="stat">{t('soulDetail.loadFailed', { error: readmeError ?? '' })}</div>
             ) : (
-              <div className="loading-indicator">Loading SOUL.md…</div>
+              <div className="loading-indicator">{t('soulDetail.loadingSoul')}</div>
             )}
           </div>
         </div>
 
         <div className="card">
           <h2 className="section-title" style={{ fontSize: '1.2rem', marginBottom: 8 }}>
-            Versions
+            {t('soulDetail.versions')}
           </h2>
           <div className="version-scroll">
             <div className="version-list">
@@ -175,7 +177,7 @@ export function SoulDetailPage({ slug }: SoulDetailPageProps) {
                     <div>
                       v{version.version} · {new Date(version.createdAt).toLocaleDateString()}
                       {version.changelogSource === 'auto' ? (
-                        <span style={{ color: 'var(--ink-soft)' }}> · auto</span>
+                        <span style={{ color: 'var(--ink-soft)' }}> · {t('soulDetail.auto')}</span>
                       ) : null}
                     </div>
                     <div style={{ color: '#5c554e', whiteSpace: 'pre-wrap' }}>
@@ -189,7 +191,7 @@ export function SoulDetailPage({ slug }: SoulDetailPageProps) {
                         version.version,
                       )}`}
                     >
-                      SOUL.md
+                      {t('soulDetail.soulMd')}
                     </a>
                   </div>
                 </div>
@@ -200,7 +202,7 @@ export function SoulDetailPage({ slug }: SoulDetailPageProps) {
 
         <div className="card">
           <h2 className="section-title" style={{ fontSize: '1.2rem', margin: 0 }}>
-            Comments
+            {t('soulDetail.comments')}
           </h2>
           {isAuthenticated ? (
             <form
@@ -218,18 +220,18 @@ export function SoulDetailPage({ slug }: SoulDetailPageProps) {
                 rows={4}
                 value={comment}
                 onChange={(event) => setComment(event.target.value)}
-                placeholder="Leave a note…"
+                placeholder={t('soulDetail.placeholder')}
               />
               <button className="btn comment-submit" type="submit">
-                Post comment
+                {t('soulDetail.postComment')}
               </button>
             </form>
           ) : (
-            <p className="section-subtitle">Sign in to comment.</p>
+            <p className="section-subtitle">{t('soulDetail.signInToComment')}</p>
           )}
           <div style={{ display: 'grid', gap: 12, marginTop: 16 }}>
             {(comments ?? []).length === 0 ? (
-              <div className="stat">No comments yet.</div>
+              <div className="stat">{t('soulDetail.noComments')}</div>
             ) : (
               (comments ?? []).map((entry) => (
                 <div key={entry.comment._id} className="comment-item">
@@ -243,7 +245,7 @@ export function SoulDetailPage({ slug }: SoulDetailPageProps) {
                       type="button"
                       onClick={() => void removeComment({ commentId: entry.comment._id })}
                     >
-                      Delete
+                      {t('soulDetail.delete')}
                     </button>
                   ) : null}
                 </div>

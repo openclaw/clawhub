@@ -4,6 +4,7 @@ import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import { api } from '../../convex/_generated/api'
 import type { Doc, Id } from '../../convex/_generated/dataModel'
+import { useI18n } from '../i18n/useI18n'
 import { formatBytes } from './skillDetailUtils'
 
 type SkillFile = Doc<'skillVersions'>['files'][number]
@@ -21,6 +22,7 @@ export function SkillFilesPanel({
   readmeError,
   latestFiles,
 }: SkillFilesPanelProps) {
+  const { t } = useI18n()
   const getFileText = useAction(api.skills.getFileText)
   const [selectedPath, setSelectedPath] = useState<string | null>(null)
   const [fileContent, setFileContent] = useState<string | null>(null)
@@ -94,15 +96,15 @@ export function SkillFilesPanel({
     <div className="tab-body">
       <div>
         <h2 className="section-title" style={{ fontSize: '1.2rem', margin: 0 }}>
-          SKILL.md
+          {t('skillFiles.skillMd')}
         </h2>
         <div className="markdown">
           {readmeContent ? (
             <ReactMarkdown remarkPlugins={[remarkGfm]}>{readmeContent}</ReactMarkdown>
           ) : readmeError ? (
-            <div className="stat">Failed to load SKILL.md: {readmeError}</div>
+            <div className="stat">{t('skillFiles.loadFailed', { error: readmeError ?? '' })}</div>
           ) : (
-            <div>Loading…</div>
+            <div>{t('skillFiles.loading')}</div>
           )}
         </div>
       </div>
@@ -110,15 +112,15 @@ export function SkillFilesPanel({
         <div className="file-list">
           <div className="file-list-header">
             <h3 className="section-title" style={{ fontSize: '1.05rem', margin: 0 }}>
-              Files
+              {t('skillFiles.files')}
             </h3>
             <span className="section-subtitle" style={{ margin: 0 }}>
-              {latestFiles.length} total
+              {t('skillFiles.totalCount', { count: String(latestFiles.length) })}
             </span>
           </div>
           <div className="file-list-body">
             {latestFiles.length === 0 ? (
-              <div className="stat">No files available.</div>
+              <div className="stat">{t('skillFiles.noFiles')}</div>
             ) : (
               latestFiles.map((file) => (
                 <button
@@ -139,7 +141,7 @@ export function SkillFilesPanel({
         </div>
         <div className="file-viewer">
           <div className="file-viewer-header">
-            <div className="file-path">{selectedPath ?? 'Select a file'}</div>
+            <div className="file-path">{selectedPath ?? t('skillFiles.selectFile')}</div>
             {fileMeta ? (
               <span className="file-meta">
                 {formatBytes(fileMeta.size)} · {fileMeta.sha256.slice(0, 12)}…
@@ -148,13 +150,13 @@ export function SkillFilesPanel({
           </div>
           <div className="file-viewer-body">
             {isLoading ? (
-              <div className="stat">Loading…</div>
+              <div className="stat">{t('skillFiles.loading')}</div>
             ) : fileError ? (
-              <div className="stat">Failed to load file: {fileError}</div>
+              <div className="stat">{t('skillFiles.fileLoadFailed', { error: fileError ?? '' })}</div>
             ) : fileContent ? (
               <pre className="file-viewer-code">{fileContent}</pre>
             ) : (
-              <div className="stat">Select a file to preview.</div>
+              <div className="stat">{t('skillFiles.selectFilePreview')}</div>
             )}
           </div>
         </div>

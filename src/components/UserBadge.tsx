@@ -1,4 +1,5 @@
 import type { PublicUser } from '../lib/publicUser'
+import { useI18n } from '../i18n/useI18n'
 
 type UserBadgeProps = {
   user: PublicUser | null | undefined
@@ -17,9 +18,10 @@ export function UserBadge({
   link = true,
   showName = false,
 }: UserBadgeProps) {
+  const { t } = useI18n()
   const handle = user?.handle ?? user?.name ?? fallbackHandle ?? null
   const href = user?.handle ? `/u/${encodeURIComponent(user.handle)}` : null
-  const label = handle ? `@${handle}` : 'user'
+  const label = handle ? `@${handle}` : t('userBadge.user')
   const image = user?.image ?? null
   const displayName = user?.displayName?.trim() || null
   const hasUsefulName =

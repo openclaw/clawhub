@@ -12,9 +12,9 @@ export const Route = createFileRoute('/stars')({
 
 function Stars() {
   const { t } = useI18n()
-  const me = useQuery(api.users.me) as Doc<’users’> | null | undefined
+  const me = useQuery(api.users.me) as Doc<'users'> | null | undefined
   const skills =
-    (useQuery(api.stars.listByUser, me ? { userId: me._id, limit: 50 } : ‘skip’) as
+    (useQuery(api.stars.listByUser, me ? { userId: me._id, limit: 50 } : 'skip') as
       | PublicSkill[]
       | undefined) ?? []
 
@@ -23,18 +23,18 @@ function Stars() {
   if (!me) {
     return (
       <main className="section">
-        <div className="card">{t(‘stars.signInRequired’)}</div>
+        <div className="card">{t('stars.signInRequired')}</div>
       </main>
     )
   }
 
   return (
     <main className="section">
-      <h1 className="section-title">{t(‘stars.title’)}</h1>
-      <p className="section-subtitle">{t(‘stars.subtitle’)}</p>
+      <h1 className="section-title">{t('stars.title')}</h1>
+      <p className="section-subtitle">{t('stars.subtitle')}</p>
       <div className="grid">
         {skills.length === 0 ? (
-          <div className="card">{t(‘stars.noStars’)}</div>
+          <div className="card">{t('stars.noStars')}</div>
         ) : (
           skills.map((skill) => {
             const owner = encodeURIComponent(String(skill.ownerUserId))

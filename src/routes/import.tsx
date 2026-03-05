@@ -5,6 +5,7 @@ import { api } from '../../convex/_generated/api'
 import { getUserFacingConvexError } from '../lib/convexError'
 import { getPublicSlugCollision } from '../lib/slugCollision'
 import { formatBytes } from '../lib/uploadUtils'
+import { useI18n } from '../i18n/useI18n'
 import { useAuthStatus } from '../lib/useAuthStatus'
 
 export const Route = createFileRoute('/import')({
@@ -47,6 +48,7 @@ export function ImportGitHub() {
   const previewCandidate = useAction(api.githubImport.previewGitHubImportCandidate)
   const importSkill = useAction(api.githubImport.importGitHubSkill)
   const navigate = useNavigate()
+  const { t } = useI18n()
 
   const [url, setUrl] = useState('')
   const [candidates, setCandidates] = useState<Candidate[]>([])
@@ -113,10 +115,12 @@ export function ImportGitHub() {
         const only = items[0]
         if (only) await loadCandidate(only.path)
       } else {
-        setStatus(`Found ${items.length} skills. Pick one.`)
+        setStatus(t('import.foundSkills', { count: String(items.length) }))
       }
     } catch (e) {
-      setError(getUserFacingConvexError(e, 'Preview failed'))
+
+      setError(getUserFacingConvexError(e, t('import.previewFailed')))
+
     } finally {
       setIsBusy(false)
     }
@@ -142,9 +146,11 @@ export function ImportGitHub() {
       const nextSelected: Record<string, boolean> = {}
       for (const file of result.files) nextSelected[file.path] = file.defaultSelected
       setSelected(nextSelected)
-      setStatus('Ready to import.')
+      setStatus(t('import.readyToImport'))
     } catch (e) {
-      setError(getUserFacingConvexError(e, 'Preview failed'))
+
+      setError(getUserFacingConvexError(e, t('import.previewFailed')))
+
     } finally {
       setIsBusy(false)
     }
@@ -180,7 +186,7 @@ export function ImportGitHub() {
     }
     setIsBusy(true)
     setError(null)
-    setStatus('Importing…')
+    setStatus(t('import.importing'))
     try {
       const selectedPaths = preview.files.map((file) => file.path).filter((path) => selected[path])
       const tagList = tags
@@ -198,11 +204,13 @@ export function ImportGitHub() {
         tags: tagList,
       })
       const nextSlug = result.slug
-      setStatus('Imported.')
+      setStatus(t('import.imported'))
       const ownerParam = me?.handle ?? (me?._id ? String(me._id) : 'unknown')
       await navigate({ to: '/$owner/$slug', params: { owner: ownerParam, slug: nextSlug } })
     } catch (e) {
-      setError(getUserFacingConvexError(e, 'Import failed'))
+
+      setError(getUserFacingConvexError(e, t('import.importFailed')))
+
       setStatus(null)
     } finally {
       setIsBusy(false)
@@ -213,7 +221,7 @@ export function ImportGitHub() {
     return (
       <main className="section">
         <div className="card">
-          {isLoading ? 'Loading…' : 'Sign in to import and publish skills.'}
+          {isLoading ? t('import.loading') : t('import.signInRequired')}
         </div>
       </main>
     )
@@ -223,13 +231,13 @@ export function ImportGitHub() {
     <main className="section upload-shell">
       <div className="upload-header">
         <div>
-          <div className="upload-kicker">GitHub import</div>
-          <h1 className="upload-title">Import from GitHub</h1>
-          <p className="upload-subtitle">Public repos only. Detects SKILL.md automatically.</p>
+          <div className="upload-kicker">{t('import.kicker')}</div>
+          <h1 className="upload-title">{t('import.title')}</h1>
+          <p className="upload-subtitle">{t('import.subtitle')}</p>
         </div>
         <div className="upload-badge">
-          <div>Public only</div>
-          <div className="upload-badge-sub">Commit pinned</div>
+          <div>{t('import.publicOnly')}</div>
+          <div className="upload-badge-sub">{t('import.commitPinned')}</div>
         </div>
       </div>
 
@@ -237,15 +245,15 @@ export function ImportGitHub() {
         <div className="upload-fields">
           <label className="upload-field" htmlFor="github-url">
             <div className="upload-field-header">
-              <strong>GitHub URL</strong>
-              <span className="upload-field-hint">Repo, tree path, or blob</span>
+              <strong>{t('import.githubUrl')}</strong>
+              <span className="upload-field-hint">{t('import.repoHint')}</span>
             </div>
             <input
               id="github-url"
               className="upload-input"
               value={url}
               onChange={(e) => setUrl(e.target.value)}
-              placeholder="https://github.com/owner/repo"
+              placeholder={t('import.placeholder')}
               autoCapitalize="none"
               autoCorrect="off"
               spellCheck={false}
@@ -260,7 +268,7 @@ export function ImportGitHub() {
             disabled={!url.trim() || isBusy}
             onClick={() => void detect()}
           >
-            Detect
+            {t('import.detect')}
           </button>
           {status ? <p className="upload-muted">{status}</p> : null}
         </div>
@@ -274,7 +282,7 @@ export function ImportGitHub() {
 
       {candidates.length > 1 ? (
         <div className="card">
-          <h2 style={{ margin: 0 }}>Pick a skill</h2>
+          <h2 style={{ margin: 0 }}>{t('import.pickSkill')}</h2>
           <div className="upload-filelist">
             {candidates.map((candidate) => (
               <label key={candidate.path} className="upload-file">
@@ -285,7 +293,7 @@ export function ImportGitHub() {
                   onChange={() => void loadCandidate(candidate.path)}
                   disabled={isBusy}
                 />
-                <span className="mono">{candidate.path || '(repo root)'}</span>
+                <span className="mono">{candidate.path || t('import.repoRoot')}</span>
                 <span>
                   {candidate.name
                     ? candidate.name
@@ -366,7 +374,7 @@ export function ImportGitHub() {
               </div>
               <aside className="upload-side">
                 <div className="upload-summary">
-                  <div className="upload-requirement ok">Commit pinned</div>
+                  <div className="upload-requirement ok">{t('import.commitPinned')}</div>
                   <div className="upload-muted">
                     {preview.resolved.owner}/{preview.resolved.repo}@
                     {preview.resolved.commit.slice(0, 7)}
@@ -394,18 +402,18 @@ export function ImportGitHub() {
                   disabled={isBusy}
                   onClick={applyDefaultSelection}
                 >
-                  Select referenced
+                  {t('import.selectReferenced')}
                 </button>
                 <button className="btn" type="button" disabled={isBusy} onClick={selectAll}>
-                  Select all
+                  {t('import.selectAll')}
                 </button>
                 <button className="btn" type="button" disabled={isBusy} onClick={clearAll}>
-                  Clear
+                  {t('import.clear')}
                 </button>
               </div>
             </div>
             <div className="upload-muted">
-              Selected: {selectedCount}/{preview.files.length} • {formatBytes(selectedBytes)}
+              {t('import.selected', { selectedCount: String(selectedCount), totalCount: String(preview.files.length), size: formatBytes(selectedBytes) })}
             </div>
             <div className="file-list">
               {preview.files.map((file) => (
@@ -437,7 +445,7 @@ export function ImportGitHub() {
                 }
                 onClick={() => void doImport()}
               >
-                Import + publish
+                {t('import.importPublish')}
               </button>
               {slugCollision ? (
                 <div className="upload-muted">
