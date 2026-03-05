@@ -158,6 +158,18 @@ export const ApiV1SearchResponseSchema = type({
   }).array(),
 })
 
+export const SkillLicenseSchema = type({
+  spdx: 'string > 0',
+  transferable: 'boolean?',
+  commercialUse: 'boolean?',
+  commercialAttribution: 'boolean?',
+  derivativesAllowed: 'boolean?',
+  derivativesAttribution: 'boolean?',
+  derivativesApproval: 'boolean?',
+  derivativesReciprocal: 'boolean?',
+  uri: 'string?',
+})
+
 export const ApiV1SkillListResponseSchema = type({
   items: type({
     slug: 'string',
@@ -175,18 +187,6 @@ export const ApiV1SkillListResponseSchema = type({
     }).optional(),
   }).array(),
   nextCursor: 'string|null',
-})
-
-export const SkillLicenseSchema = type({
-  spdx: 'string > 0',
-  transferable: 'boolean?',
-  commercialUse: 'boolean?',
-  commercialAttribution: 'boolean?',
-  derivativesAllowed: 'boolean?',
-  derivativesAttribution: 'boolean?',
-  derivativesApproval: 'boolean?',
-  derivativesReciprocal: 'boolean?',
-  uri: 'string?',
 })
 
 export const ApiV1SkillResponseSchema = type({
