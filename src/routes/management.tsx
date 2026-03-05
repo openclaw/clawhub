@@ -596,7 +596,7 @@ function Management() {
             recentVersions.map((entry) => (
               <div key={entry.version._id} className="management-item">
                 <div className="management-item-main">
-                  <strong>{entry.skill?.displayName ?? 'Unknown skill'}</strong>
+                  <strong>{entry.skill?.displayName ?? t('management.unknownSkill')}</strong>
                   <div className="section-subtitle" style={{ margin: 0 }}>
                     v{entry.version.version} · @{entry.owner?.handle ?? entry.owner?.name ?? 'user'}
                   </div>

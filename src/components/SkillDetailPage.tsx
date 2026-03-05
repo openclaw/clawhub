@@ -161,11 +161,11 @@ export function SkillDetailPage({
   const isRemoved = moderationStatus === 'removed'
   const isAutoHidden = isHidden && staffSkill?.moderationReason === 'auto.reports'
   const staffVisibilityTag = isRemoved
-    ? 'Removed'
+    ? t('skillDetail.tagRemoved')
     : isAutoHidden
-      ? 'Auto-hidden'
+      ? t('skillDetail.tagAutoHidden')
       : isHidden
-        ? 'Hidden'
+        ? t('skillDetail.tagHidden')
         : null
   const staffModerationNote = staffVisibilityTag
     ? isAutoHidden

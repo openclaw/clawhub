@@ -22,6 +22,7 @@ export const zhCN: TranslationMap = {
     lightTheme: "浅色主题",
     darkTheme: "深色主题",
     language: "语言",
+    userAvatar: "用户头像",
   },
   footer: {
     an: "",
@@ -65,6 +66,11 @@ export const zhCN: TranslationMap = {
       soulBundle: "一个 SOUL.md 包",
       seeAllSouls: "查看全部灵魂",
     },
+  },
+  skillsIndex: {
+    title: "技能",
+    loading: "加载技能中\u2026",
+    browseLibrary: "浏览技能库。",
   },
   skillsToolbar: {
     filterPlaceholder: "按名称、slug 或摘要筛选\u2026",
@@ -254,6 +260,7 @@ export const zhCN: TranslationMap = {
     banConfirm: "封禁 @{handle} 并删除其所有技能？",
     deleteTelemetryConfirm: "删除所有遥测数据？",
     banOnlyConfirm: "封禁 @{handle}？",
+    unknownSkill: "未知技能",
   },
   skillDetail: {
     loading: "加载技能中\u2026",
@@ -265,6 +272,9 @@ export const zhCN: TranslationMap = {
     autoHidden: "超过 4 次独立举报后自动隐藏。",
     removedFromView: "已从公开列表中移除。",
     hiddenFromView: "已从公开列表中隐藏。",
+    tagRemoved: "已移除",
+    tagAutoHidden: "自动隐藏",
+    tagHidden: "已隐藏",
   },
   skillHeader: {
     scanInProgress: "安全扫描进行中",

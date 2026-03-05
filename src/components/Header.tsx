@@ -294,7 +294,7 @@ export default function Header() {
               <DropdownMenuTrigger asChild>
                 <button className="user-trigger" type="button">
                   {avatar ? (
-                    <img src={avatar} alt={me.displayName ?? me.name ?? 'User avatar'} />
+                    <img src={avatar} alt={me.displayName ?? me.name ?? t('header.userAvatar')} />
                   ) : (
                     <span className="user-menu-fallback">{initial}</span>
                   )}

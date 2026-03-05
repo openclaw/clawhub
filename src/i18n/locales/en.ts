@@ -22,6 +22,7 @@ export const en: TranslationMap = {
     lightTheme: "Light theme",
     darkTheme: "Dark theme",
     language: "Language",
+    userAvatar: "User avatar",
   },
   footer: {
     an: "An",
@@ -66,6 +67,11 @@ export const en: TranslationMap = {
       soulBundle: "A SOUL.md bundle.",
       seeAllSouls: "See all souls",
     },
+  },
+  skillsIndex: {
+    title: "Skills",
+    loading: "Loading skills\u2026",
+    browseLibrary: "Browse the skill library.",
   },
   skillsToolbar: {
     filterPlaceholder: "Filter by name, slug, or summary\u2026",
@@ -258,6 +264,7 @@ export const en: TranslationMap = {
     banConfirm: "Ban @{handle} and delete their skills?",
     deleteTelemetryConfirm: "Delete all telemetry data?",
     banOnlyConfirm: "Ban @{handle}?",
+    unknownSkill: "Unknown skill",
   },
   skillDetail: {
     loading: "Loading skill\u2026",
@@ -269,6 +276,9 @@ export const en: TranslationMap = {
     autoHidden: "Auto-hidden after 4+ unique reports.",
     removedFromView: "Removed from public view.",
     hiddenFromView: "Hidden from public view.",
+    tagRemoved: "Removed",
+    tagAutoHidden: "Auto-hidden",
+    tagHidden: "Hidden",
   },
   skillHeader: {
     scanInProgress: "Security scan in progress",
