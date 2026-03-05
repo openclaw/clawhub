@@ -54,6 +54,8 @@ const DROPDOWN_SPDX: Set<string> = new Set(
 )
 
 const MAX_SPDX_LENGTH = 64
+/** Must match SPDX_TOKEN_RE in convex/lib/skills.ts */
+const SPDX_TOKEN_RE = /^[A-Za-z0-9][A-Za-z0-9.\-+]*$/
 const MAX_URI_LENGTH = 2048
 
 export function LicenseSelector({ value, onChange, disabled }: LicenseSelectorProps) {
@@ -174,7 +176,7 @@ export function LicenseSelector({ value, onChange, disabled }: LicenseSelectorPr
     if (updates.uri !== undefined) setLicenseUri(updates.uri)
 
     const trimmedSpdx = spdx.trim()
-    if (trimmedSpdx.length > MAX_SPDX_LENGTH) {
+    if (!trimmedSpdx || trimmedSpdx.length > MAX_SPDX_LENGTH || !SPDX_TOKEN_RE.test(trimmedSpdx)) {
       return
     }
 
@@ -259,6 +261,11 @@ export function LicenseSelector({ value, onChange, disabled }: LicenseSelectorPr
               onChange={(e) => updateAdvancedLicense({ spdx: e.target.value })}
               placeholder="e.g. MIT, Apache-2.0, or custom identifier"
             />
+            {customSpdx.trim() && !SPDX_TOKEN_RE.test(customSpdx.trim()) ? (
+              <div className="stat" style={{ marginTop: 2, color: 'var(--error, #c0392b)' }}>
+                SPDX identifier must contain only letters, digits, dots, hyphens, or plus signs.
+              </div>
+            ) : null}
           </div>
 
           <fieldset style={{ border: 'none', margin: 0, padding: 0 }}>
