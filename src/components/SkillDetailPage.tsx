@@ -18,6 +18,7 @@ import {
   formatOsList,
   stripFrontmatter,
 } from './skillDetailUtils'
+import { useI18n } from '../i18n/useI18n'
 
 type SkillDetailPageProps = {
   slug: string
@@ -70,7 +71,7 @@ function formatReportError(error: unknown) {
     if (cleaned && cleaned !== 'Server Error') return cleaned
   }
 
-  return 'Unable to submit report. Please try again.'
+  return null
 }
 
 export function SkillDetailPage({
@@ -80,6 +81,7 @@ export function SkillDetailPage({
 }: SkillDetailPageProps) {
   const navigate = useNavigate()
   const { isAuthenticated, me } = useAuthStatus()
+  const { t } = useI18n()
 
   const isStaff = isModerator(me)
   const staffResult = useQuery(api.skills.getBySlugForStaff, isStaff ? { slug } : 'skip') as
@@ -167,10 +169,10 @@ export function SkillDetailPage({
         : null
   const staffModerationNote = staffVisibilityTag
     ? isAutoHidden
-      ? 'Auto-hidden after 4+ unique reports.'
+      ? t('skillDetail.autoHidden')
       : isRemoved
-        ? 'Removed from public view.'
-        : 'Hidden from public view.'
+        ? t('skillDetail.removedFromView')
+        : t('skillDetail.hiddenFromView')
     : null
 
   const versionById = new Map<Id<'skillVersions'>, Doc<'skillVersions'>>(
@@ -261,7 +263,7 @@ export function SkillDetailPage({
 
     const trimmedReason = reportReason.trim()
     if (!trimmedReason) {
-      setReportError('Report reason required.')
+      setReportError(t('skillDetail.reportReasonRequired'))
       return
     }
 
@@ -271,13 +273,13 @@ export function SkillDetailPage({
       const submission = await reportSkill({ skillId: skill._id, reason: trimmedReason })
       closeReportDialog()
       if (submission.reported) {
-        window.alert('Thanks — your report has been submitted.')
+        window.alert(t('skillDetail.reportSubmitted'))
       } else {
-        window.alert('You have already reported this skill.')
+        window.alert(t('skillDetail.alreadyReported'))
       }
     } catch (error) {
       console.error('Failed to report skill', error)
-      setReportError(formatReportError(error))
+      setReportError(formatReportError(error) ?? t('skillDetail.reportError'))
       setIsSubmittingReport(false)
     }
   }
@@ -286,7 +288,7 @@ export function SkillDetailPage({
     return (
       <main className="section">
         <div className="card">
-          <div className="loading-indicator">Loading skill…</div>
+          <div className="loading-indicator">{t('skillDetail.loading')}</div>
         </div>
       </main>
     )
@@ -295,7 +297,7 @@ export function SkillDetailPage({
   if (result === null || !skill) {
     return (
       <main className="section">
-        <div className="card">Skill not found.</div>
+        <div className="card">{t('skillDetail.notFound')}</div>
       </main>
     )
   }

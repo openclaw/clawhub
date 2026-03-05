@@ -1,3 +1,5 @@
+import { useI18n } from '../i18n/useI18n'
+
 type SkillReportDialogProps = {
   isOpen: boolean
   isSubmitting: boolean
@@ -17,16 +19,17 @@ export function SkillReportDialog({
   onCancel,
   onSubmit,
 }: SkillReportDialogProps) {
+  const { t } = useI18n()
   if (!isOpen) return null
 
   return (
     <div className="report-dialog-backdrop">
       <div className="report-dialog" role="dialog" aria-modal="true" aria-labelledby="report-title">
         <h2 id="report-title" className="section-title" style={{ margin: 0, fontSize: '1.1rem' }}>
-          Report skill
+          {t('skillReport.title')}
         </h2>
         <p className="section-subtitle" style={{ margin: 0 }}>
-          Describe the issue so moderators can review it quickly.
+          {t('skillReport.subtitle')}
         </p>
         <form
           className="report-dialog-form"
@@ -37,8 +40,8 @@ export function SkillReportDialog({
         >
           <textarea
             className="report-dialog-textarea"
-            aria-label="Report reason"
-            placeholder="What should moderators know?"
+            aria-label={t('skillReport.ariaLabel')}
+            placeholder={t('skillReport.placeholder')}
             value={reportReason}
             onChange={(event) => onReasonChange(event.target.value)}
             rows={5}
@@ -54,10 +57,10 @@ export function SkillReportDialog({
               }}
               disabled={isSubmitting}
             >
-              Cancel
+              {t('skillReport.cancel')}
             </button>
             <button type="submit" className="btn" disabled={isSubmitting}>
-              {isSubmitting ? 'Submitting…' : 'Submit report'}
+              {isSubmitting ? t('skillReport.submitting') : t('skillReport.submit')}
             </button>
           </div>
         </form>

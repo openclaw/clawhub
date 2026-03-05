@@ -3,6 +3,7 @@ import { createFileRoute } from '@tanstack/react-router'
 import { useMutation } from 'convex/react'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { api } from '../../../convex/_generated/api'
+import { useI18n } from '../../i18n/useI18n'
 import { getClawHubSiteUrl, normalizeClawHubSiteOrigin } from '../../lib/site'
 import { useAuthStatus } from '../../lib/useAuthStatus'
 
@@ -11,6 +12,7 @@ export const Route = createFileRoute('/cli/auth')({
 })
 
 function CliAuth() {
+  const { t } = useI18n()
   const { isAuthenticated, isLoading, me } = useAuthStatus()
   const { signIn } = useAuthActions()
   const createToken = useMutation(api.tokens.create)
@@ -21,7 +23,7 @@ function CliAuth() {
     label_b64?: string
     state?: string
   }
-  const [status, setStatus] = useState<string>('Preparing…')
+  const [status, setStatus] = useState<string>(t('cliAuth.preparing'))
   const [token, setToken] = useState<string | null>(null)
   const hasRun = useRef(false)
 
@@ -46,10 +48,10 @@ function CliAuth() {
     hasRun.current = true
 
     const run = async () => {
-      setStatus('Creating token…')
+      setStatus(t('cliAuth.creatingToken'))
       const result = await createToken({ label })
       setToken(result.token)
-      setStatus('Redirecting to CLI…')
+      setStatus(t('cliAuth.redirecting'))
       const hash = new URLSearchParams()
       hash.set('token', result.token)
       hash.set('registry', registry)
@@ -58,7 +60,7 @@ function CliAuth() {
     }
 
     void run().catch((error) => {
-      const message = error instanceof Error ? error.message : 'Failed to create token'
+      const message = error instanceof Error ? error.message : t('cliAuth.tokenFailed')
       setStatus(message)
       setToken(null)
     })
@@ -69,11 +71,11 @@ function CliAuth() {
       <main className="section">
         <div className="card">
           <h1 className="section-title" style={{ marginTop: 0 }}>
-            CLI login
+            {t('cliAuth.title')}
           </h1>
-          <p className="section-subtitle">Invalid redirect URL.</p>
+          <p className="section-subtitle">{t('cliAuth.invalidRedirect')}</p>
           <p className="section-subtitle" style={{ marginBottom: 0 }}>
-            Run the CLI again to start a fresh login.
+            {t('cliAuth.runAgain')}
           </p>
         </div>
       </main>
@@ -85,11 +87,11 @@ function CliAuth() {
       <main className="section">
         <div className="card">
           <h1 className="section-title" style={{ marginTop: 0 }}>
-            CLI login
+            {t('cliAuth.title')}
           </h1>
-          <p className="section-subtitle">Missing state.</p>
+          <p className="section-subtitle">{t('cliAuth.missingState')}</p>
           <p className="section-subtitle" style={{ marginBottom: 0 }}>
-            Run the CLI again to start a fresh login.
+            {t('cliAuth.runAgain')}
           </p>
         </div>
       </main>
@@ -101,9 +103,9 @@ function CliAuth() {
       <main className="section">
         <div className="card">
           <h1 className="section-title" style={{ marginTop: 0 }}>
-            CLI login
+            {t('cliAuth.title')}
           </h1>
-          <p className="section-subtitle">Sign in to create an API token for the CLI.</p>
+          <p className="section-subtitle">{t('cliAuth.signInInstruction')}</p>
           <button
             className="btn btn-primary"
             type="button"
@@ -112,7 +114,7 @@ function CliAuth() {
               void signIn('github', signInRedirectTo ? { redirectTo: signInRedirectTo } : undefined)
             }
           >
-            Sign in with GitHub
+            {t('cliAuth.signInWithGitHub')}
           </button>
         </div>
       </main>
@@ -128,7 +130,7 @@ function CliAuth() {
         <p className="section-subtitle">{status}</p>
         {token ? (
           <div className="stat" style={{ overflowX: 'auto' }}>
-            <div style={{ marginBottom: 8 }}>If redirect fails, copy this token:</div>
+            <div style={{ marginBottom: 8 }}>{t('cliAuth.copyToken')}</div>
             <code>{token}</code>
           </div>
         ) : null}

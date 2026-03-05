@@ -9,6 +9,7 @@ import {
   isSkillHighlighted,
   isSkillOfficial,
 } from '../lib/badges'
+import { useI18n } from '../i18n/useI18n'
 import { isAdmin, isModerator } from '../lib/roles'
 import { useAuthStatus } from '../lib/useAuthStatus'
 
@@ -72,6 +73,7 @@ export const Route = createFileRoute('/management')({
 })
 
 function Management() {
+  const { t } = useI18n()
   const { me } = useAuthStatus()
   const search = Route.useSearch()
   const staff = isModerator(me)
@@ -139,7 +141,7 @@ function Management() {
   if (!staff) {
     return (
       <main className="section">
-        <div className="card">Management only.</div>
+        <div className="card">{t('management.accessRestricted')}</div>
       </main>
     )
   }
@@ -147,7 +149,7 @@ function Management() {
   if (!recentVersions || !reportedSkills || !duplicateCandidates) {
     return (
       <main className="section">
-        <div className="card">Loading management console…</div>
+        <div className="card">{t('management.loading')}</div>
       </main>
     )
   }
@@ -176,38 +178,38 @@ function Management() {
     : reportedSkills
   const reportCountLabel =
     filteredReportedSkills.length === 0 && reportedSkills.length > 0
-      ? 'No matching reports.'
-      : 'No reports yet.'
-  const reportSummary = `Showing ${filteredReportedSkills.length} of ${reportedSkills.length}`
+      ? t('management.noMatchingReports')
+      : t('management.noReports')
+  const reportSummary = t('management.showingCount', { count: String(filteredReportedSkills.length), total: String(reportedSkills.length) })
 
   const filteredUsers = userResult?.items ?? []
   const userTotal = userResult?.total ?? 0
   const userSummary = userResult
-    ? `Showing ${filteredUsers.length} of ${userTotal}`
-    : 'Loading users…'
+    ? t('management.showingCount', { count: String(filteredUsers.length), total: String(userTotal) })
+    : t('management.loadingUsers')
   const userEmptyLabel = userResult
     ? filteredUsers.length === 0
       ? userQuery
-        ? 'No matching users.'
-        : 'No users yet.'
+        ? t('management.noMatchingUsers')
+        : t('management.noUsers')
       : ''
     : 'Loading users…'
 
   return (
     <main className="section">
-      <h1 className="section-title">Management console</h1>
-      <p className="section-subtitle">Moderation, curation, and ownership tools.</p>
+      <h1 className="section-title">{t('management.title')}</h1>
+      <p className="section-subtitle">{t('management.subtitle')}</p>
 
       <div className="card">
         <h2 className="section-title" style={{ fontSize: '1.2rem', margin: 0 }}>
-          Reported skills
+          {t('management.reportedSkills')}
         </h2>
         <div className="management-controls">
           <div className="management-control management-search">
-            <span className="mono">Filter</span>
+            <span className="mono">{t('management.filter')}</span>
             <input
               type="search"
-              placeholder="Search reported skills"
+              placeholder={t('management.searchReported')}
               value={reportSearch}
               onChange={(event) => setReportSearch(event.target.value)}
             />
@@ -233,9 +235,9 @@ function Management() {
                     </Link>
                     <div className="section-subtitle" style={{ margin: 0 }}>
                       @{owner?.handle ?? owner?.name ?? 'user'} · v{latestVersion?.version ?? '—'} ·
-                      {skill.reportCount ?? 0} report{(skill.reportCount ?? 0) === 1 ? '' : 's'}
+                      {skill.reportCount ?? 0} {t('management.reports', { s: (skill.reportCount ?? 0) === 1 ? '' : 's' })}
                       {skill.lastReportedAt
-                        ? ` · last ${formatTimestamp(skill.lastReportedAt)}`
+                        ? ` · ${t('management.lastTime', { time: formatTimestamp(skill.lastReportedAt) })}`
                         : ''}
                     </div>
                     {reportEntries.length > 0 ? (
@@ -255,7 +257,7 @@ function Management() {
                       </div>
                     ) : (
                       <div className="section-subtitle" style={{ margin: 0 }}>
-                        No report reasons yet.
+                        {t('management.noReportReasons')}
                       </div>
                     )}
                   </div>
@@ -267,7 +269,7 @@ function Management() {
                         void setSoftDeleted({ skillId: skill._id, deleted: !skill.softDeletedAt })
                       }
                     >
-                      {skill.softDeletedAt ? 'Restore' : 'Hide'}
+                      {skill.softDeletedAt ? t('management.restore') : t('management.hide')}
                     </button>
                     {admin ? (
                       <button
@@ -278,7 +280,7 @@ function Management() {
                           void hardDelete({ skillId: skill._id })
                         }}
                       >
-                        Hard delete
+                        {t('management.hardDelete')}
                       </button>
                     ) : null}
                   </div>
@@ -291,23 +293,23 @@ function Management() {
 
       <div className="card" style={{ marginTop: 20 }}>
         <h2 className="section-title" style={{ fontSize: '1.2rem', margin: 0 }}>
-          Skill tools
+          {t('management.skillTools')}
         </h2>
         {selectedSlug ? (
           <div className="section-subtitle" style={{ marginTop: 8 }}>
-            Managing "{selectedSlug}" ·{' '}
+            {t('management.managing', { slug: selectedSlug ?? '' })} ·{' '}
             <Link to="/management" search={{ skill: undefined }}>
-              Clear selection
+              {t('management.clearSelection')}
             </Link>
           </div>
         ) : null}
         <div className="management-list">
           {!selectedSlug ? (
-            <div className="stat">Use the Manage button on a skill to open tooling here.</div>
+            <div className="stat">{t('management.useManageButton')}</div>
           ) : selectedSkill === undefined ? (
-            <div className="stat">Loading skill…</div>
+            <div className="stat">{t('management.loadingSkill')}</div>
           ) : !selectedSkill?.skill ? (
-            <div className="stat">No skill found for "{selectedSlug}".</div>
+            <div className="stat">{t('management.noSkillFound', { slug: selectedSlug ?? '' })}</div>
           ) : (
             (() => {
               const { skill, latestVersion, owner, canonical } = selectedSkill
@@ -349,7 +351,7 @@ function Management() {
                     ) : null}
                     <div className="management-controls">
                       <label className="management-control">
-                        <span className="mono">duplicate of</span>
+                        <span className="mono">{t('management.duplicateOf')}</span>
                         <input
                           className="search-input"
                           value={selectedDuplicate}
@@ -367,11 +369,11 @@ function Management() {
                           })
                         }
                       >
-                        Set duplicate
+                        {t('management.setDuplicate')}
                       </button>
                       {admin ? (
                         <label className="management-control">
-                          <span className="mono">owner</span>
+                          <span className="mono">{t('management.owner')}</span>
                           <select
                             value={selectedOwner}
                             onChange={(event) => setSelectedOwner(event.target.value)}
@@ -392,7 +394,7 @@ function Management() {
                               })
                             }
                           >
-                            Change owner
+                            {t('management.changeOwner')}
                           </button>
                         </label>
                       ) : null}
@@ -404,7 +406,7 @@ function Management() {
                       to="/$owner/$slug"
                       params={{ owner: ownerParam, slug: skill.slug }}
                     >
-                      View
+                      {t('management.view')}
                     </Link>
                     <button
                       className="btn"
@@ -413,7 +415,7 @@ function Management() {
                         void setSoftDeleted({ skillId: skill._id, deleted: !skill.softDeletedAt })
                       }
                     >
-                      {skill.softDeletedAt ? 'Restore' : 'Hide'}
+                      {skill.softDeletedAt ? t('management.restore') : t('management.hide')}
                     </button>
                     <button
                       className="btn"
@@ -425,7 +427,7 @@ function Management() {
                         })
                       }
                     >
-                      {isHighlighted ? 'Unhighlight' : 'Highlight'}
+                      {isHighlighted ? t('management.unhighlight') : t('management.highlight')}
                     </button>
                     {admin ? (
                       <button
@@ -446,7 +448,7 @@ function Management() {
                         disabled={!canBanOwner}
                         onClick={() => {
                           if (!ownerUserId || ownerUserId === me?._id) return
-                          if (!window.confirm(`Ban @${ownerHandle} and delete their skills?`)) {
+                          if (!window.confirm(t('management.banConfirm', { handle: ownerHandle }))) {
                             return
                           }
                           const reason = promptBanReason(`@${ownerHandle}`)
@@ -454,7 +456,7 @@ function Management() {
                           void banUser({ userId: ownerUserId, reason })
                         }}
                       >
-                        Ban user
+                        {t('management.banUser')}
                       </button>
                     ) : null}
                     {admin ? (
@@ -469,7 +471,7 @@ function Management() {
                             })
                           }
                         >
-                          {isOfficial ? 'Remove official' : 'Mark official'}
+                          {isOfficial ? t('management.removeOfficial') : t('management.markOfficial')}
                         </button>
                         <button
                           className="btn"
@@ -481,7 +483,7 @@ function Management() {
                             })
                           }
                         >
-                          {isDeprecated ? 'Remove deprecated' : 'Mark deprecated'}
+                          {isDeprecated ? t('management.removeDeprecated') : t('management.markDeprecated')}
                         </button>
                       </>
                     ) : null}
@@ -495,11 +497,11 @@ function Management() {
 
       <div className="card" style={{ marginTop: 20 }}>
         <h2 className="section-title" style={{ fontSize: '1.2rem', margin: 0 }}>
-          Duplicate candidates
+          {t('management.duplicateCandidates')}
         </h2>
         <div className="management-list">
           {duplicateCandidates.length === 0 ? (
-            <div className="stat">No duplicate candidates.</div>
+            <div className="stat">{t('management.noDuplicates')}</div>
           ) : (
             duplicateCandidates.map((entry) => (
               <div key={entry.skill._id} className="management-item">
@@ -543,7 +545,7 @@ function Management() {
                               slug: match.skill.slug,
                             }}
                           >
-                            View
+                            {t('management.view')}
                           </Link>
                           <button
                             className="btn"
@@ -555,7 +557,7 @@ function Management() {
                               })
                             }
                           >
-                            Mark duplicate
+                            {t('management.markDuplicate')}
                           </button>
                         </div>
                       </div>
@@ -574,7 +576,7 @@ function Management() {
                       slug: entry.skill.slug,
                     }}
                   >
-                    View
+                    {t('management.view')}
                   </Link>
                 </div>
               </div>
@@ -585,11 +587,11 @@ function Management() {
 
       <div className="card" style={{ marginTop: 20 }}>
         <h2 className="section-title" style={{ fontSize: '1.2rem', margin: 0 }}>
-          Recent pushes
+          {t('management.recentPushes')}
         </h2>
         <div className="management-list">
           {recentVersions.length === 0 ? (
-            <div className="stat">No recent versions.</div>
+            <div className="stat">{t('management.noRecentVersions')}</div>
           ) : (
             recentVersions.map((entry) => (
               <div key={entry.version._id} className="management-item">
@@ -612,7 +614,7 @@ function Management() {
                         slug: entry.skill.slug,
                       }}
                     >
-                      View
+                      {t('management.view')}
                     </Link>
                   ) : null}
                 </div>
@@ -625,14 +627,14 @@ function Management() {
       {admin ? (
         <div className="card" style={{ marginTop: 20 }}>
           <h2 className="section-title" style={{ fontSize: '1.2rem', margin: 0 }}>
-            Users
+            {t('management.users')}
           </h2>
           <div className="management-controls">
             <div className="management-control management-search">
-              <span className="mono">Filter</span>
+              <span className="mono">{t('management.filter')}</span>
               <input
                 type="search"
-                placeholder="Search users"
+                placeholder={t('management.searchUsers')}
                 value={userSearch}
                 onChange={(event) => setUserSearch(event.target.value)}
               />
@@ -665,9 +667,9 @@ function Management() {
                         }
                       }}
                     >
-                      <option value="user">User</option>
-                      <option value="moderator">Moderator</option>
-                      <option value="admin">Admin</option>
+                      <option value="user">{t('management.user')}</option>
+                      <option value="moderator">{t('management.moderator')}</option>
+                      <option value="admin">{t('management.admin')}</option>
                     </select>
                     <button
                       className="btn"
@@ -677,7 +679,7 @@ function Management() {
                         if (user._id === me?._id) return
                         if (
                           !window.confirm(
-                            `Ban @${user.handle ?? user.name ?? 'user'} and delete their skills?`,
+                            t('management.banConfirm', { handle: user.handle ?? user.name ?? 'user' }),
                           )
                         ) {
                           return
@@ -688,7 +690,7 @@ function Management() {
                         void banUser({ userId: user._id, reason })
                       }}
                     >
-                      Ban user
+                      {t('management.banUser')}
                     </button>
                   </div>
                 </div>

@@ -1,4 +1,5 @@
 import type { ClawdisSkillMetadata } from 'clawhub-schema'
+import { useI18n } from '../i18n/useI18n'
 import { formatInstallCommand, formatInstallLabel } from './skillDetailUtils'
 
 type SkillInstallCardProps = {
@@ -7,6 +8,7 @@ type SkillInstallCardProps = {
 }
 
 export function SkillInstallCard({ clawdis, osLabels }: SkillInstallCardProps) {
+  const { t } = useI18n()
   const requirements = clawdis?.requires
   const installSpecs = clawdis?.install ?? []
   const envVars = clawdis?.envVars ?? []
@@ -34,57 +36,57 @@ export function SkillInstallCard({ clawdis, osLabels }: SkillInstallCardProps) {
         {hasRuntimeRequirements ? (
           <div className="skill-panel">
             <h3 className="section-title" style={{ fontSize: '1rem', margin: 0 }}>
-              Runtime requirements
+              {t('skillInstall.runtimeRequirements')}
             </h3>
             <div className="skill-panel-body">
-              {clawdis?.emoji ? <div className="tag">{clawdis.emoji} Clawdis</div> : null}
+              {clawdis?.emoji ? <div className="tag">{clawdis.emoji} {t('skillInstall.clawdis')}</div> : null}
               {osLabels.length ? (
                 <div className="stat">
-                  <strong>OS</strong>
+                  <strong>{t('skillInstall.os')}</strong>
                   <span>{osLabels.join(' · ')}</span>
                 </div>
               ) : null}
               {requirements?.bins?.length ? (
                 <div className="stat">
-                  <strong>Bins</strong>
+                  <strong>{t('skillInstall.bins')}</strong>
                   <span>{requirements.bins.join(', ')}</span>
                 </div>
               ) : null}
               {requirements?.anyBins?.length ? (
                 <div className="stat">
-                  <strong>Any bin</strong>
+                  <strong>{t('skillInstall.anyBin')}</strong>
                   <span>{requirements.anyBins.join(', ')}</span>
                 </div>
               ) : null}
               {requirements?.env?.length ? (
                 <div className="stat">
-                  <strong>Env</strong>
+                  <strong>{t('skillInstall.env')}</strong>
                   <span>{requirements.env.join(', ')}</span>
                 </div>
               ) : null}
               {requirements?.config?.length ? (
                 <div className="stat">
-                  <strong>Config</strong>
+                  <strong>{t('skillInstall.config')}</strong>
                   <span>{requirements.config.join(', ')}</span>
                 </div>
               ) : null}
               {clawdis?.primaryEnv ? (
                 <div className="stat">
-                  <strong>Primary env</strong>
+                  <strong>{t('skillInstall.primaryEnv')}</strong>
                   <span>{clawdis.primaryEnv}</span>
                 </div>
               ) : null}
               {envVars.length > 0 ? (
                 <div className="stat">
-                  <strong>Environment variables</strong>
+                  <strong>{t('skillInstall.environmentVariables')}</strong>
                   <div style={{ display: 'flex', flexDirection: 'column', gap: '0.25rem', marginTop: '0.25rem' }}>
                     {envVars.map((env, index) => (
                       <div key={`${env.name}-${index}`} style={{ display: 'flex', alignItems: 'baseline', gap: '0.5rem' }}>
                         <code style={{ fontSize: '0.85rem' }}>{env.name}</code>
                         {env.required === false ? (
-                          <span style={{ color: 'var(--ink-soft)', fontSize: '0.75rem' }}>optional</span>
+                          <span style={{ color: 'var(--ink-soft)', fontSize: '0.75rem' }}>{t('skillInstall.optional')}</span>
                         ) : env.required === true ? (
-                          <span style={{ color: 'var(--ink-accent)', fontSize: '0.75rem' }}>required</span>
+                          <span style={{ color: 'var(--ink-accent)', fontSize: '0.75rem' }}>{t('skillInstall.required')}</span>
                         ) : null}
                         {env.description ? (
                           <span style={{ color: 'var(--ink-soft)', fontSize: '0.8rem' }}>— {env.description}</span>
@@ -100,7 +102,7 @@ export function SkillInstallCard({ clawdis, osLabels }: SkillInstallCardProps) {
         {hasDependencies ? (
           <div className="skill-panel">
             <h3 className="section-title" style={{ fontSize: '1rem', margin: 0 }}>
-              Dependencies
+              {t('skillInstall.dependencies')}
             </h3>
             <div className="skill-panel-body">
               {dependencies.map((dep, index) => (
@@ -117,7 +119,7 @@ export function SkillInstallCard({ clawdis, osLabels }: SkillInstallCardProps) {
                     ) : null}
                     {dep.repository && dep.repository !== dep.url ? (
                       <div style={{ fontSize: '0.8rem' }}>
-                        <a href={dep.repository} target="_blank" rel="noopener noreferrer">Source</a>
+                        <a href={dep.repository} target="_blank" rel="noopener noreferrer">{t('skillInstall.source')}</a>
                       </div>
                     ) : null}
                   </div>
@@ -129,7 +131,7 @@ export function SkillInstallCard({ clawdis, osLabels }: SkillInstallCardProps) {
         {hasInstallSpecs ? (
           <div className="skill-panel">
             <h3 className="section-title" style={{ fontSize: '1rem', margin: 0 }}>
-              Install
+              {t('skillInstall.install')}
             </h3>
             <div className="skill-panel-body">
               {installSpecs.map((spec, index) => {
@@ -140,7 +142,7 @@ export function SkillInstallCard({ clawdis, osLabels }: SkillInstallCardProps) {
                       <strong>{spec.label ?? formatInstallLabel(spec)}</strong>
                       {spec.bins?.length ? (
                         <div style={{ color: 'var(--ink-soft)', fontSize: '0.85rem' }}>
-                          Bins: {spec.bins.join(', ')}
+                          {t('skillInstall.binsLabel', { bins: spec.bins.join(', ') })}
                         </div>
                       ) : null}
                       {command ? <code>{command}</code> : null}
@@ -154,24 +156,24 @@ export function SkillInstallCard({ clawdis, osLabels }: SkillInstallCardProps) {
         {hasLinks ? (
           <div className="skill-panel">
             <h3 className="section-title" style={{ fontSize: '1rem', margin: 0 }}>
-              Links
+              {t('skillInstall.links')}
             </h3>
             <div className="skill-panel-body">
               {links?.homepage ? (
                 <div className="stat">
-                  <strong>Homepage</strong>
+                  <strong>{t('skillInstall.homepage')}</strong>
                   <a href={links.homepage} target="_blank" rel="noopener noreferrer">{links.homepage}</a>
                 </div>
               ) : null}
               {links?.repository ? (
                 <div className="stat">
-                  <strong>Repository</strong>
+                  <strong>{t('skillInstall.repository')}</strong>
                   <a href={links.repository} target="_blank" rel="noopener noreferrer">{links.repository}</a>
                 </div>
               ) : null}
               {links?.documentation ? (
                 <div className="stat">
-                  <strong>Docs</strong>
+                  <strong>{t('skillInstall.docs')}</strong>
                   <a href={links.documentation} target="_blank" rel="noopener noreferrer">{links.documentation}</a>
                 </div>
               ) : null}

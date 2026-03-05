@@ -5,6 +5,7 @@ import { api } from '../../../convex/_generated/api'
 import type { Doc } from '../../../convex/_generated/dataModel'
 import { SkillCard } from '../../components/SkillCard'
 import { SkillStatsTripletLine } from '../../components/SkillStats'
+import { useI18n } from '../../i18n/useI18n'
 import { getSkillBadges } from '../../lib/badges'
 import type { PublicSkill, PublicUser } from '../../lib/publicUser'
 
@@ -13,6 +14,7 @@ export const Route = createFileRoute('/u/$handle')({
 })
 
 function UserProfile() {
+  const { t } = useI18n()
   const { handle } = Route.useParams()
   const me = useQuery(api.users.me) as Doc<'users'> | null | undefined
   const user = useQuery(api.users.getByHandle, { handle }) as PublicUser | null | undefined
@@ -41,7 +43,7 @@ function UserProfile() {
     return (
       <main className="section">
         <div className="card">
-          <div className="loading-indicator">Loading user…</div>
+          <div className="loading-indicator">{t('userProfile.loading')}</div>
         </div>
       </main>
     )
@@ -50,7 +52,7 @@ function UserProfile() {
   if (user === null) {
     return (
       <main className="section">
-        <div className="card">User not found.</div>
+        <div className="card">{t('userProfile.notFound')}</div>
       </main>
     )
   }
@@ -77,7 +79,7 @@ function UserProfile() {
       </div>
 
       {isSelf ? (
-        <div className="profile-tabs" role="tablist" aria-label="Profile tabs">
+        <div className="profile-tabs" role="tablist" aria-label={t('userProfile.profileTabs')}>
           <button
             className={tab === 'stars' ? 'profile-tab is-active' : 'profile-tab'}
             type="button"
@@ -85,7 +87,7 @@ function UserProfile() {
             aria-selected={tab === 'stars'}
             onClick={() => setTab('stars')}
           >
-            Stars
+            {t('userProfile.starsTab')}
           </button>
           <button
             className={tab === 'installed' ? 'profile-tab is-active' : 'profile-tab'}
@@ -94,7 +96,7 @@ function UserProfile() {
             aria-selected={tab === 'installed'}
             onClick={() => setTab('installed')}
           >
-            Installed
+            {t('userProfile.installedTab')}
           </button>
         </div>
       ) : null}
@@ -108,13 +110,13 @@ function UserProfile() {
       ) : (
         <>
           <h2 className="section-title" style={{ fontSize: '1.3rem' }}>
-            Published
+            {t('userProfile.published')}
           </h2>
-          <p className="section-subtitle">Skills published by this user.</p>
+          <p className="section-subtitle">{t('userProfile.publishedSubtitle')}</p>
 
           {isLoadingPublished ? (
             <div className="card">
-              <div className="loading-indicator">Loading published skills…</div>
+              <div className="loading-indicator">{t('userProfile.loadingPublished')}</div>
             </div>
           ) : published.length > 0 ? (
             <div className="grid" style={{ marginBottom: 18 }}>
@@ -123,7 +125,7 @@ function UserProfile() {
                   key={skill._id}
                   skill={skill}
                   badge={getSkillBadges(skill)}
-                  summaryFallback="Agent-ready skill pack."
+                  summaryFallback={t('userProfile.agentReady')}
                   meta={
                     <div className="stat">
                       <SkillStatsTripletLine stats={skill.stats} />
@@ -135,16 +137,16 @@ function UserProfile() {
           ) : null}
 
           <h2 className="section-title" style={{ fontSize: '1.3rem' }}>
-            Stars
+            {t('userProfile.starsTitle')}
           </h2>
-          <p className="section-subtitle">Skills this user has starred.</p>
+          <p className="section-subtitle">{t('userProfile.starsSubtitle')}</p>
 
           {isLoadingSkills ? (
             <div className="card">
-              <div className="loading-indicator">Loading stars…</div>
+              <div className="loading-indicator">{t('userProfile.loadingStars')}</div>
             </div>
           ) : skills.length === 0 ? (
-            <div className="card">No stars yet.</div>
+            <div className="card">{t('userProfile.noStars')}</div>
           ) : (
             <div className="grid">
               {skills.map((skill) => (
@@ -152,7 +154,7 @@ function UserProfile() {
                   key={skill._id}
                   skill={skill}
                   badge={getSkillBadges(skill)}
-                  summaryFallback="Agent-ready skill pack."
+                  summaryFallback={t('userProfile.agentReady')}
                   meta={
                     <div className="stat">
                       <SkillStatsTripletLine stats={skill.stats} />
@@ -173,6 +175,7 @@ function InstalledSection(props: {
   onToggleRemoved: () => void
   data: TelemetryResponse | null | undefined
 }) {
+  const { t } = useI18n()
   const clearTelemetry = useMutation(api.telemetry.clearMyTelemetry)
   const [showRaw, setShowRaw] = useState(false)
   const data = props.data
@@ -180,7 +183,7 @@ function InstalledSection(props: {
     return (
       <>
         <h2 className="section-title" style={{ fontSize: '1.3rem' }}>
-          Installed
+          {t('userProfile.installed')}
         </h2>
         <div className="card">
           <div className="loading-indicator">Loading telemetry…</div>
@@ -193,7 +196,7 @@ function InstalledSection(props: {
     return (
       <>
         <h2 className="section-title" style={{ fontSize: '1.3rem' }}>
-          Installed
+          {t('userProfile.installed')}
         </h2>
         <div className="card">Sign in to view your installed skills.</div>
       </>
@@ -203,28 +206,27 @@ function InstalledSection(props: {
   return (
     <>
       <h2 className="section-title" style={{ fontSize: '1.3rem' }}>
-        Installed
+        {t('userProfile.installed')}
       </h2>
       <p className="section-subtitle" style={{ maxWidth: 760 }}>
-        Private view. Only you can see your folders/roots. Everyone else only sees aggregated
-        install counts per skill.
+        {t('userProfile.installedSubtitle')}
       </p>
       <div className="profile-actions">
         <button className="btn" type="button" onClick={props.onToggleRemoved}>
-          {props.includeRemoved ? 'Hide removed' : 'Show removed'}
+          {props.includeRemoved ? t('userProfile.hideRemoved') : t('userProfile.showRemoved')}
         </button>
         <button className="btn" type="button" onClick={() => setShowRaw((value) => !value)}>
-          {showRaw ? 'Hide JSON' : 'Show JSON'}
+          {showRaw ? t('userProfile.hideJson') : t('userProfile.showJson')}
         </button>
         <button
           className="btn"
           type="button"
           onClick={() => {
-            if (!window.confirm('Delete all telemetry data?')) return
+            if (!window.confirm(t('userProfile.deleteTelemetryConfirm'))) return
             void clearTelemetry()
           }}
         >
-          Delete telemetry
+          {t('userProfile.deleteTelemetry')}
         </button>
       </div>
 
@@ -237,7 +239,7 @@ function InstalledSection(props: {
       ) : null}
 
       {data.roots.length === 0 ? (
-        <div className="card">No telemetry yet. Run `clawhub sync` from the CLI.</div>
+        <div className="card">{t('userProfile.noTelemetry')}</div>
       ) : (
         <div style={{ display: 'grid', gap: 16 }}>
           {data.roots.map((root) => (
@@ -246,14 +248,14 @@ function InstalledSection(props: {
                 <div>
                   <div className="telemetry-root-title">{root.label}</div>
                   <div className="telemetry-root-meta">
-                    Last sync {new Date(root.lastSeenAt).toLocaleString()}
-                    {root.expiredAt ? ' · stale' : ''}
+                    {t('userProfile.lastSync', { date: new Date(root.lastSeenAt).toLocaleString() })}
+                    {root.expiredAt ? ` · ${t('userProfile.stale')}` : ''}
                   </div>
                 </div>
-                <div className="tag">{root.skills.length} skills</div>
+                <div className="tag">{t('userProfile.skillsCount', { count: String(root.skills.length) })}</div>
               </div>
               {root.skills.length === 0 ? (
-                <div className="stat">No skills found in this root.</div>
+                <div className="stat">{t('userProfile.noSkillsInRoot')}</div>
               ) : (
                 <div className="telemetry-skill-list">
                   {root.skills.map((entry) => (
@@ -267,7 +269,7 @@ function InstalledSection(props: {
                       </a>
                       <div className="telemetry-skill-meta mono">
                         {entry.lastVersion ? `v${entry.lastVersion}` : 'v?'}{' '}
-                        {entry.removedAt ? '· removed' : ''}
+                        {entry.removedAt ? `· ${t('userProfile.removed')}` : ''}
                       </div>
                     </div>
                   ))}
