@@ -40,6 +40,7 @@ function isSafeSkillSlug(slug: string) {
 export async function cmdSearch(opts: GlobalOpts, query: string, limit?: number) {
   if (!query) fail('Query required')
 
+  const token = await getOptionalAuthToken()
   const registry = await getRegistry(opts, { cache: true })
   const spinner = createSpinner('Searching')
   try {
@@ -50,7 +51,7 @@ export async function cmdSearch(opts: GlobalOpts, query: string, limit?: number)
     }
     const result = await apiRequest(
       registry,
-      { method: 'GET', url: url.toString() },
+      { method: 'GET', url: url.toString(), token },
       ApiV1SearchResponseSchema,
     )
 
@@ -360,6 +361,7 @@ export async function cmdExplore(
   opts: GlobalOpts,
   options: { limit?: number; sort?: string; json?: boolean } = {},
 ) {
+  const token = await getOptionalAuthToken()
   const registry = await getRegistry(opts, { cache: true })
   const spinner = createSpinner('Fetching latest skills')
   try {
@@ -370,7 +372,7 @@ export async function cmdExplore(
     if (apiSort !== 'updated') url.searchParams.set('sort', apiSort)
     const result = await apiRequest(
       registry,
-      { method: 'GET', url: url.toString() },
+      { method: 'GET', url: url.toString(), token },
       ApiV1SkillListResponseSchema,
     )
 
