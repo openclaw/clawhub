@@ -1,5 +1,22 @@
 import { type inferred, type } from 'arktype'
-import { SkillLicenseSchema } from 'clawhub-schema'
+
+/**
+ * Mirrors the canonical SkillLicenseSchema from clawhub-schema so the CLI has
+ * no runtime dependency on the private workspace package.  Keep in sync with
+ * packages/schema/src/schemas.ts.
+ */
+export const SkillLicenseSchema = type({
+  spdx: 'string',
+  transferable: 'boolean?',
+  commercialUse: 'boolean?',
+  commercialAttribution: 'boolean?',
+  derivativesAllowed: 'boolean?',
+  derivativesAttribution: 'boolean?',
+  derivativesApproval: 'boolean?',
+  derivativesReciprocal: 'boolean?',
+  uri: 'string?',
+})
+export type SkillLicense = (typeof SkillLicenseSchema)[inferred]
 
 export const GlobalConfigSchema = type({
   registry: 'string',

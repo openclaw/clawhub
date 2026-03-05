@@ -1,10 +1,10 @@
-import type { SkillLicense } from 'clawhub-schema'
 import { apiRequest, fetchText, registryUrl } from '../../http.js'
 import {
   ApiRoutes,
   ApiV1SkillResponseSchema,
   ApiV1SkillVersionListResponseSchema,
   ApiV1SkillVersionResponseSchema,
+  type SkillLicense,
 } from '../../schema/index.js'
 import { getOptionalAuthToken } from '../authToken.js'
 import { getRegistry } from '../registry.js'

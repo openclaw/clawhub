@@ -22,7 +22,6 @@
   "dependencies": {
     "@clack/prompts": "^0.11.0",
     "arktype": "^2.1.29",
-    "clawhub-schema": "workspace:*",
     "commander": "^14.0.2",
     "fflate": "^0.8.2",
     "ignore": "^7.0.5",
