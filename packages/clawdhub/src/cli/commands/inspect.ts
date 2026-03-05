@@ -1,3 +1,4 @@
+import type { SkillLicense } from 'clawhub-schema'
 import { apiRequest, fetchText, registryUrl } from '../../http.js'
 import {
   ApiRoutes,
@@ -112,7 +113,7 @@ export async function cmdInspect(opts: GlobalOpts, slug: string, options: Inspec
 
     spinner.stop()
 
-    const versionLicense = (versionResult?.version as { license?: { spdx?: string; uri?: string; commercialUse?: boolean; derivativesAllowed?: boolean; transferable?: boolean } | null } | null)?.license
+    const versionLicense = (versionResult?.version as { license?: SkillLicense | null } | null)?.license
     const license = versionResult ? (versionLicense ?? null) : (skillResult.license ?? null)
 
     const output = {
@@ -193,7 +194,7 @@ function printSkillSummary(result: {
   }
   latestVersion?: { version: string; createdAt: number; changelog: string } | null
   owner?: { handle?: string | null; displayName?: string | null; image?: string | null } | null
-  license?: { spdx?: string; uri?: string; commercialUse?: boolean; derivativesAllowed?: boolean; transferable?: boolean } | null
+  license?: SkillLicense | null
 }) {
   const { skill } = result
   console.log(`${skill.slug}  ${skill.displayName}`)
