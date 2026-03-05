@@ -177,7 +177,7 @@ export const ApiV1SkillListResponseSchema = type({
 })
 
 export const SkillLicenseSchema = type({
-  spdx: 'string',
+  spdx: 'string > 0',
   transferable: 'boolean?',
   commercialUse: 'boolean?',
   commercialAttribution: 'boolean?',

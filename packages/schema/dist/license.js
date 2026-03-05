@@ -1,3 +1,7 @@
+/** SPDX identifier: printable ASCII — letters, digits, dots, hyphens, plus signs. */
+export const SPDX_TOKEN_RE = /^[A-Za-z0-9][A-Za-z0-9.\-+]*$/;
+export const MAX_SPDX_LENGTH = 64;
+export const MAX_LICENSE_URI_LENGTH = 2048;
 export const KNOWN_SPDX_IDENTIFIERS = new Set([
     'MIT',
     'Apache-2.0',

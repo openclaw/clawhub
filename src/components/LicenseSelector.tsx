@@ -1,5 +1,11 @@
 import { useEffect, useRef, useState } from 'react'
-import { LICENSE_PRESETS, type SkillLicense } from 'clawhub-schema'
+import {
+  LICENSE_PRESETS,
+  MAX_LICENSE_URI_LENGTH,
+  MAX_SPDX_LENGTH,
+  type SkillLicense,
+  SPDX_TOKEN_RE,
+} from 'clawhub-schema'
 
 type LicenseSelectorProps = {
   value: SkillLicense | undefined
@@ -53,10 +59,6 @@ const DROPDOWN_SPDX: Set<string> = new Set(
   LICENSE_GROUPS.flatMap((g) => g.options.map((o) => o.value)).filter((v) => v !== '__custom__'),
 )
 
-const MAX_SPDX_LENGTH = 64
-/** Must match SPDX_TOKEN_RE in convex/lib/skills.ts */
-const SPDX_TOKEN_RE = /^[A-Za-z0-9][A-Za-z0-9.\-+]*$/
-const MAX_URI_LENGTH = 2048
 
 export function LicenseSelector({ value, onChange, disabled }: LicenseSelectorProps) {
   const [showAdvanced, setShowAdvanced] = useState(false)
@@ -198,7 +200,7 @@ export function LicenseSelector({ value, onChange, disabled }: LicenseSelectorPr
         : {}),
     }
     const trimmedUri = uri.trim()
-    if (trimmedUri && trimmedUri.startsWith('https://') && trimmedUri.length <= MAX_URI_LENGTH) {
+    if (trimmedUri && trimmedUri.startsWith('https://') && trimmedUri.length <= MAX_LICENSE_URI_LENGTH) {
       license.uri = trimmedUri
     }
     onChange(license)
@@ -351,7 +353,7 @@ export function LicenseSelector({ value, onChange, disabled }: LicenseSelectorPr
               className="form-input"
               id="license-uri"
               type="url"
-              maxLength={MAX_URI_LENGTH}
+              maxLength={MAX_LICENSE_URI_LENGTH}
               value={licenseUri}
               onChange={(e) => updateAdvancedLicense({ uri: e.target.value })}
               placeholder="https://example.com/LICENSE"

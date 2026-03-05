@@ -1,5 +1,5 @@
 import { createFileRoute, useNavigate, useSearch } from '@tanstack/react-router'
-import type { SkillLicense } from 'clawhub-schema'
+import { MAX_SPDX_LENGTH, SPDX_TOKEN_RE, type SkillLicense } from 'clawhub-schema'
 import { useAction, useMutation, useQuery } from 'convex/react'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import semver from 'semver'
@@ -155,10 +155,7 @@ export function Upload() {
           return
         }
         const raw = (frontmatter as Record<string, unknown>).license
-        /** Must match SPDX_TOKEN_RE and MAX_SPDX_LENGTH in convex/lib/skills.ts */
-        const SPDX_RE = /^[A-Za-z0-9][A-Za-z0-9.\-+]*$/
-        const MAX_SPDX = 64
-        const isValidSpdx = (s: string) => SPDX_RE.test(s) && s.length <= MAX_SPDX
+        const isValidSpdx = (s: string) => SPDX_TOKEN_RE.test(s) && s.length <= MAX_SPDX_LENGTH
         let spdx: string | undefined
         if (typeof raw === 'string' && raw.trim() && isValidSpdx(raw.trim())) {
           spdx = raw.trim()

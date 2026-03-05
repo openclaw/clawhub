@@ -1,12 +1,12 @@
 import { type inferred, type } from 'arktype'
 
 /**
- * Mirrors the canonical SkillLicenseSchema from clawhub-schema so the CLI has
- * no runtime dependency on the private workspace package.  Keep in sync with
- * packages/schema/src/schemas.ts.
+ * Inlined from packages/schema/src/schemas.ts — clawhub-schema is a private
+ * workspace package that can't be resolved by npm for global CLI installs.
+ * Keep in sync manually. Last synced: 2026-03-05.
  */
 export const SkillLicenseSchema = type({
-  spdx: 'string',
+  spdx: 'string > 0',
   transferable: 'boolean?',
   commercialUse: 'boolean?',
   commercialAttribution: 'boolean?',

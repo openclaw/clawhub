@@ -4,17 +4,20 @@ import {
   ClawdisSkillMetadataSchema,
   isKnownSpdx,
   isTextContentType,
+  MAX_LICENSE_URI_LENGTH,
+  MAX_SPDX_LENGTH,
   type NixPluginSpec,
   parseArk,
   type SkillInstallSpec,
   type SkillLicense,
+  SPDX_TOKEN_RE,
   TEXT_FILE_EXTENSION_SET,
 } from 'clawhub-schema'
 import { parse as parseYaml } from 'yaml'
 
 export type ParsedSkillFrontmatter = Record<string, unknown>
 export type { ClawdisSkillMetadata, SkillInstallSpec, SkillLicense }
-export { isKnownSpdx }
+export { isKnownSpdx, MAX_LICENSE_URI_LENGTH, MAX_SPDX_LENGTH, SPDX_TOKEN_RE }
 
 const FRONTMATTER_START = '---'
 const DEFAULT_EMBEDDING_MAX_CHARS = 12_000
@@ -148,11 +151,6 @@ export function parseClawdisMetadata(frontmatter: ParsedSkillFrontmatter) {
     return undefined
   }
 }
-
-const MAX_SPDX_LENGTH = 64
-const MAX_LICENSE_URI_LENGTH = 2048
-/** SPDX identifiers are printable ASCII tokens: letters, digits, dots, hyphens, plus signs. */
-const SPDX_TOKEN_RE = /^[A-Za-z0-9][A-Za-z0-9.\-+]*$/
 
 export function parseLicenseField(
   frontmatter: ParsedSkillFrontmatter,

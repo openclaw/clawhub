@@ -1,3 +1,7 @@
+/** SPDX identifier: printable ASCII — letters, digits, dots, hyphens, plus signs. */
+export declare const SPDX_TOKEN_RE: RegExp;
+export declare const MAX_SPDX_LENGTH = 64;
+export declare const MAX_LICENSE_URI_LENGTH = 2048;
 export type SkillLicense = {
     spdx: string;
     transferable?: boolean;

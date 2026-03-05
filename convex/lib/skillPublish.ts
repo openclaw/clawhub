@@ -361,8 +361,12 @@ function mergeSourceIntoMetadata(
 }
 
 function resolveLicense(argsLicense: unknown, frontmatter: Record<string, unknown>) {
-  if (argsLicense === undefined) return parseLicenseField(frontmatter)
-  if (argsLicense === null) return undefined
+  // 1. Frontmatter always wins — file may have changed between folder select and publish
+  const fromFrontmatter = parseLicenseField(frontmatter)
+  if (fromFrontmatter) return fromFrontmatter
+
+  // 2. No frontmatter license — fall back to what the UI sent
+  if (argsLicense === undefined || argsLicense === null) return undefined
   return parseLicenseField({ license: argsLicense }) ?? undefined
 }
 

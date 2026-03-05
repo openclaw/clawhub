@@ -104,28 +104,38 @@ description: Expert guidance for sushi-rolls.
   })
 
   describe('resolveLicense', () => {
-    it('uses explicit args.license when valid', () => {
+    it('frontmatter wins when both sources have a valid license', () => {
       const license = __test.resolveLicense({ spdx: 'Apache-2.0' }, { license: 'MIT' })
+      expect(license).toEqual(expect.objectContaining({ spdx: 'MIT' }))
+    })
+
+    it('falls back to argsLicense when frontmatter has no license', () => {
+      const license = __test.resolveLicense({ spdx: 'Apache-2.0' }, {})
       expect(license).toEqual(expect.objectContaining({ spdx: 'Apache-2.0' }))
     })
 
-    it('falls back to frontmatter when args.license is undefined', () => {
+    it('uses frontmatter when args.license is undefined', () => {
       const license = __test.resolveLicense(undefined, { license: 'MIT' })
       expect(license).toEqual(expect.objectContaining({ spdx: 'MIT' }))
     })
 
-    it('clears license when args.license is explicitly null', () => {
+    it('frontmatter wins even when args.license is null', () => {
       const license = __test.resolveLicense(null, { license: 'MIT' })
+      expect(license).toEqual(expect.objectContaining({ spdx: 'MIT' }))
+    })
+
+    it('returns undefined when args.license is null and no frontmatter license', () => {
+      const license = __test.resolveLicense(null, {})
       expect(license).toBeUndefined()
     })
 
-    it('returns undefined when args.license is invalid (no frontmatter fallback)', () => {
-      const license = __test.resolveLicense({ bad: 'data' }, { license: 'MIT' })
-      expect(license).toBeUndefined()
-    })
-
-    it('returns undefined when both are invalid', () => {
+    it('returns undefined when args.license is invalid and no frontmatter', () => {
       const license = __test.resolveLicense({ bad: 'data' }, {})
+      expect(license).toBeUndefined()
+    })
+
+    it('returns undefined when both are absent', () => {
+      const license = __test.resolveLicense(undefined, {})
       expect(license).toBeUndefined()
     })
   })

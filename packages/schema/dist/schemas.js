@@ -148,7 +148,7 @@ export const ApiV1SkillListResponseSchema = type({
     nextCursor: 'string|null',
 });
 export const SkillLicenseSchema = type({
-    spdx: 'string',
+    spdx: 'string > 0',
     transferable: 'boolean?',
     commercialUse: 'boolean?',
     commercialAttribution: 'boolean?',
@@ -300,7 +300,7 @@ export const SkillFrontmatterSchema = type({
     name: 'string?',
     description: 'string?',
     version: 'string?',
-    license: SkillLicenseSchema.or('string').optional(),
+    license: SkillLicenseSchema.or('string > 0').optional(),
     metadata: type({
         openclaw: ClawdisSkillMetadataSchema.optional(),
         clawdis: ClawdisSkillMetadataSchema.optional(),
