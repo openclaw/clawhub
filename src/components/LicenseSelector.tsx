@@ -185,11 +185,17 @@ export function LicenseSelector({ value, onChange, disabled }: LicenseSelectorPr
       spdx: trimmedSpdx,
       transferable: xfer,
       commercialUse: commUse,
-      commercialAttribution: commAttr,
+      // Only include commercial sub-flags when commercial use is enabled
+      ...(commUse ? { commercialAttribution: commAttr } : {}),
       derivativesAllowed: derivAllowed,
-      derivativesAttribution: derivAttr,
-      derivativesApproval: derivApproval,
-      derivativesReciprocal: derivReciprocal,
+      // Only include derivatives sub-flags when derivatives are allowed
+      ...(derivAllowed
+        ? {
+            derivativesAttribution: derivAttr,
+            derivativesApproval: derivApproval,
+            derivativesReciprocal: derivReciprocal,
+          }
+        : {}),
     }
     const trimmedUri = uri.trim()
     if (trimmedUri && trimmedUri.startsWith('https://') && trimmedUri.length <= MAX_URI_LENGTH) {
