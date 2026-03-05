@@ -53,7 +53,7 @@ import {
   queueHighlightedWebhook,
 } from './lib/skillPublish'
 import { isSkillSuspicious } from './lib/skillSafety'
-import { getFrontmatterValue, hashSkillFiles } from './lib/skills'
+import { type SkillLicense, getFrontmatterValue, hashSkillFiles } from './lib/skills'
 
 export { publishVersionForUser } from './lib/skillPublish'
 
@@ -518,7 +518,7 @@ type PublicSkillListVersion = Pick<
         systems?: string[]
       }
     }
-    license?: { spdx: string; uri?: string }
+    license?: SkillLicense
   }
 }
 
