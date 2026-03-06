@@ -240,11 +240,13 @@ export default function Header() {
                   {t('header.dark')}
                 </DropdownMenuItem>
                 <DropdownMenuSeparator />
-                <DropdownMenuItem
-                  onClick={() => setLocale(locale === 'en' ? 'zh-CN' : 'en')}
-                >
+                <DropdownMenuItem onClick={() => setLocale('en')}>
                   <Globe className="h-4 w-4" aria-hidden="true" />
-                  {locale === 'en' ? '中文' : 'EN'}
+                  EN
+                </DropdownMenuItem>
+                <DropdownMenuItem onClick={() => setLocale('zh-CN')}>
+                  <Globe className="h-4 w-4" aria-hidden="true" />
+                  中文
                 </DropdownMenuItem>
               </DropdownMenuContent>
             </DropdownMenu>
