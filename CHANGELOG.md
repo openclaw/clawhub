@@ -39,6 +39,7 @@
 - Skills/listing: keep non-suspicious browse pagination on one cursor family during `isSuspicious` backfill, and re-sync stale `latestVersionSummary` metadata fields (#572) (thanks @sethconvex).
 - PWA: update `manifest.json` branding so installed apps show the correct ClawHub name (#569) (thanks @Glucksberg).
 - Search/tests: cover soft-deleted skill filtering in vector hydration and lexical exact-slug fallback (#552) (thanks @MunemHashmi).
+- Docs/dev: fix local setup instructions for Node support, Convex env vars, frontend port, and post-seed stats refresh (#584) (thanks @jack-piplabs).
 - CLI publish: use a longer multipart upload timeout and normalize abort rejections into proper Errors (#550) (thanks @MunemHashmi).
 - CLI: forward optional auth tokens for `search` and `explore` against authenticated registries (#608) (thanks @artdaal).
 - Skill metadata: parse top-level `requires.*`, `primaryEnv`, and homepage fallbacks for security review accuracy (#548) (thanks @MunemHashmi).
