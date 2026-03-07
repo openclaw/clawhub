@@ -122,6 +122,8 @@ type VTFileResponse = {
   }
 }
 
+type VTAnalysisStats = NonNullable<VTFileResponse['data']['attributes']['last_analysis_stats']>
+
 type ScanQueueHealth = {
   queueSize: number
   staleCount: number
@@ -246,6 +248,15 @@ function shouldActivateWhenVtUnavailable(skill: SkillActivationCandidate | null 
   return typeof reason === 'string' && VT_PENDING_REASONS.has(reason)
 }
 
+function statusFromAvStats(stats?: VTAnalysisStats | null): 'malicious' | 'suspicious' | 'clean' | null {
+  if (!stats) return null
+  if (stats.malicious > 0) return 'malicious'
+  if (stats.suspicious > 0) return 'suspicious'
+  // Keep this aligned with fetchResults: undetected-only should stay pending.
+  if (stats.harmless > 0) return 'clean'
+  return null
+}
+
 async function activateSkillWhenVtUnavailable(ctx: ActionCtx, skillId: Id<'skills'>) {
   const skill = await ctx.runQuery(internal.skills.getSkillByIdInternal, { skillId })
   if (!shouldActivateWhenVtUnavailable(skill)) return
@@ -294,15 +305,8 @@ export const fetchResults = action({
       if (aiResult?.verdict) {
         // Prioritize AI Analysis (Code Insight)
         status = verdictToStatus(normalizeVerdict(aiResult.verdict))
-      } else if (stats) {
-        // Fallback to AV engines
-        if (stats.malicious > 0) {
-          status = 'malicious'
-        } else if (stats.suspicious > 0) {
-          status = 'suspicious'
-        } else if (stats.harmless > 0) {
-          status = 'clean'
-        }
+      } else {
+        status = statusFromAvStats(stats) ?? 'pending'
       }
 
       return {
@@ -568,19 +572,8 @@ export const pollPendingScans = internalAction({
         if (!aiResult) {
           // No Code Insight - check AV engine stats as fallback
           const stats = vtResult.data.attributes.last_analysis_stats
-          let status: string | null = null
+          const status = statusFromAvStats(stats)
           let source = 'engines'
-
-          if (stats) {
-            if (stats.malicious > 0) {
-              status = 'malicious'
-            } else if (stats.suspicious > 0) {
-              status = 'suspicious'
-            } else if (stats.harmless > 0 || stats.undetected > 0) {
-              // No detections and some harmless/undetected engines = clean
-              status = 'clean'
-            }
-          }
 
           if (status) {
             // We have a verdict from AV engines - update the skill
@@ -726,6 +719,7 @@ async function requestRescan(apiKey: string, sha256hash: string): Promise<boolea
 }
 
 export const __test = {
+  statusFromAvStats,
   shouldActivateWhenVtUnavailable,
 }
 
@@ -785,18 +779,7 @@ export const backfillPendingScans = internalAction({
         if (!aiResult) {
           // No Code Insight - check AV engine stats as fallback
           const stats = vtResult.data.attributes.last_analysis_stats
-          let status: string | null = null
-
-          if (stats) {
-            if (stats.malicious > 0) {
-              status = 'malicious'
-            } else if (stats.suspicious > 0) {
-              status = 'suspicious'
-            } else if (stats.harmless > 0 || stats.undetected > 0) {
-              // No detections and some harmless/undetected engines = clean
-              status = 'clean'
-            }
-          }
+          const status = statusFromAvStats(stats)
 
           if (status) {
             // We have a verdict from AV engines - update the skill
@@ -913,19 +896,8 @@ export const rescanActiveSkills = internalAction({
         if (!aiResult) {
           // No Code Insight - check AV engine stats as fallback
           const stats = vtResult.data.attributes.last_analysis_stats
-          let status: string | null = null
+          const status = statusFromAvStats(stats)
           let source = 'engines'
-
-          if (stats) {
-            if (stats.malicious > 0) {
-              status = 'malicious'
-            } else if (stats.suspicious > 0) {
-              status = 'suspicious'
-            } else if (stats.harmless > 0 || stats.undetected > 0) {
-              // No detections and some harmless/undetected engines = clean
-              status = 'clean'
-            }
-          }
 
           if (!status) {
             // No verdict from engines either - keep as pending
@@ -1247,19 +1219,8 @@ export const backfillActiveSkillsVTCache = internalAction({
         if (!aiResult) {
           // No Code Insight - check AV engine stats as fallback
           const stats = vtResult.data.attributes.last_analysis_stats
-          let status: string | null = null
+          const status = statusFromAvStats(stats)
           let source = 'engines'
-
-          if (stats) {
-            if (stats.malicious > 0) {
-              status = 'malicious'
-            } else if (stats.suspicious > 0) {
-              status = 'suspicious'
-            } else if (stats.harmless > 0 || stats.undetected > 0) {
-              // No detections and some harmless/undetected engines = clean
-              status = 'clean'
-            }
-          }
 
           if (!status) {
             console.log(`[vt:backfillActive] ${slug}: no Code Insight or engine stats yet`)

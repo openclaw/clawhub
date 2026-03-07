@@ -58,3 +58,45 @@ describe('vt activation fallback', () => {
     ).toBe(false)
   })
 })
+
+describe('vt AV engine fallback verdicts', () => {
+  it('maps engine verdicts in severity order', () => {
+    expect(
+      __test.statusFromAvStats({
+        malicious: 1,
+        suspicious: 2,
+        harmless: 10,
+        undetected: 40,
+      }),
+    ).toBe('malicious')
+
+    expect(
+      __test.statusFromAvStats({
+        malicious: 0,
+        suspicious: 1,
+        harmless: 10,
+        undetected: 40,
+      }),
+    ).toBe('suspicious')
+
+    expect(
+      __test.statusFromAvStats({
+        malicious: 0,
+        suspicious: 0,
+        harmless: 1,
+        undetected: 40,
+      }),
+    ).toBe('clean')
+  })
+
+  it('keeps undetected-only results pending', () => {
+    expect(
+      __test.statusFromAvStats({
+        malicious: 0,
+        suspicious: 0,
+        harmless: 0,
+        undetected: 40,
+      }),
+    ).toBeNull()
+  })
+})
