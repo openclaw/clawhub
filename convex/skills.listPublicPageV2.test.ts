@@ -189,6 +189,67 @@ describe('skills.listPublicPageV2', () => {
     expect(paginateMock).toHaveBeenCalledTimes(1)
   })
 
+  it('keeps nonSuspicious pagination on the base sort index while backfill is incomplete', async () => {
+    const suspicious = makeSkill(
+      'skills:suspicious',
+      'suspicious',
+      'users:1',
+      'skillVersions:1',
+      ['flagged.suspicious'],
+    )
+    const cleanWithoutBackfill = makeSkill('skills:clean', 'clean', 'users:2', 'skillVersions:2')
+    const paginateMock = vi
+      .fn()
+      .mockResolvedValueOnce({
+        page: [suspicious],
+        continueCursor: 'next-cursor',
+        isDone: false,
+        pageStatus: null,
+        splitCursor: null,
+      })
+      .mockResolvedValueOnce({
+        page: [cleanWithoutBackfill],
+        continueCursor: 'after-clean',
+        isDone: false,
+        pageStatus: null,
+        splitCursor: null,
+      })
+    const withIndexMock = vi.fn(() => ({
+      order: vi.fn(() => ({ paginate: paginateMock })),
+    }))
+    const ctx = {
+      db: {
+        query: vi.fn(() => ({
+          withIndex: withIndexMock,
+        })),
+        get: vi.fn(async (id: string) => {
+          if (id.startsWith('users:')) return makeUser(id)
+          if (id.startsWith('skillVersions:')) return makeVersion(id)
+          return null
+        }),
+      },
+    }
+
+    const result = await listPublicPageV2Handler(ctx, {
+      paginationOpts: { cursor: null, numItems: 25 },
+      sort: 'downloads',
+      dir: 'desc',
+      highlightedOnly: false,
+      nonSuspiciousOnly: true,
+    })
+
+    expect(result.page).toHaveLength(1)
+    expect(result.page[0]?.skill.slug).toBe('clean')
+    expect(result.continueCursor).toBe('after-clean')
+    expect(result.isDone).toBe(false)
+    expect(withIndexMock).toHaveBeenCalledTimes(2)
+    expect(withIndexMock).toHaveBeenNthCalledWith(1, 'by_active_stats_downloads', expect.any(Function))
+    expect(withIndexMock).toHaveBeenNthCalledWith(2, 'by_active_stats_downloads', expect.any(Function))
+    expect(withIndexMock).not.toHaveBeenCalledWith('by_nonsuspicious_downloads', expect.any(Function))
+    expect(paginateMock).toHaveBeenNthCalledWith(1, { cursor: null, numItems: 25 })
+    expect(paginateMock).toHaveBeenNthCalledWith(2, { cursor: 'next-cursor', numItems: 25 })
+  })
+
   it('restarts pagination from first page when cursor is stale', async () => {
     const plain = makeSkill('skills:plain', 'plain', 'users:1', 'skillVersions:1')
     const paginateMock = vi
@@ -339,6 +400,7 @@ function makeSkill(
     softDeletedAt: undefined,
     moderationStatus: 'active',
     moderationFlags,
+    moderationReason: undefined,
   }
 }
 

@@ -1570,7 +1570,9 @@ export const backfillLatestVersionSummaryInternal = internalMutation({
         existing &&
         existing.version === expected.version &&
         existing.createdAt === expected.createdAt &&
-        existing.changelog === expected.changelog
+        existing.changelog === expected.changelog &&
+        existing.changelogSource === expected.changelogSource &&
+        JSON.stringify(existing.clawdis ?? null) === JSON.stringify(expected.clawdis ?? null)
       ) {
         continue
       }

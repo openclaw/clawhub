@@ -94,15 +94,6 @@ const SORT_INDEXES = {
   installs: 'by_active_stats_installs_all_time',
 } as const
 
-const NONSUSPICIOUS_SORT_INDEXES = {
-  newest: 'by_nonsuspicious_created',
-  updated: 'by_nonsuspicious_updated',
-  name: 'by_nonsuspicious_name',
-  downloads: 'by_nonsuspicious_downloads',
-  stars: 'by_nonsuspicious_stars',
-  installs: 'by_nonsuspicious_installs',
-} as const
-
 function isSkillVersionId(
   value: Id<'skillVersions'> | null | undefined,
 ): value is Id<'skillVersions'> {
@@ -1775,20 +1766,7 @@ export const listPublicPageV2 = query({
     const dir = args.dir ?? (sort === 'name' ? 'asc' : 'desc')
     const { numItems, cursor: initialCursor } = normalizePublicListPagination(args.paginationOpts)
 
-    // When nonSuspiciousOnly is set (and highlightedOnly is NOT), use the nonsuspicious
-    // compound index to avoid scanning the entire table.
-    const useNonsuspiciousIndex = args.nonSuspiciousOnly && !args.highlightedOnly
-
     const runPaginate = (cursor: string | null) => {
-      if (useNonsuspiciousIndex) {
-        return ctx.db
-          .query('skills')
-          .withIndex(NONSUSPICIOUS_SORT_INDEXES[sort], (q) =>
-            q.eq('softDeletedAt', undefined).eq('isSuspicious', false),
-          )
-          .order(dir)
-          .paginate({ cursor, numItems })
-      }
       return ctx.db
         .query('skills')
         .withIndex(SORT_INDEXES[sort], (q) => q.eq('softDeletedAt', undefined))
@@ -1800,38 +1778,14 @@ export const listPublicPageV2 = query({
     // softDeletedAt === undefined means active (non-deleted) skills only.
     // When post-pagination filters are active, skip empty filtered pages so clients
     // don't bounce between CanLoadMore/LoadingMore with no visible new rows.
+    // `isSuspicious` is still backfilled on existing rows, so mixing cursor families
+    // (`by_nonsuspicious_*` vs base sort indexes) can skip rows or duplicate pages.
+    // Stay on the base sort index and filter in JS until the backfill is complete.
     let result = await paginateWithStaleCursorRecovery(runPaginate, initialCursor)
-    let filteredPage = useNonsuspiciousIndex
-      ? filterPublicSkillPage(result.page, { highlightedOnly: args.highlightedOnly })
-      : filterPublicSkillPage(result.page, args)
-
-    // Graceful backfill handling: during backfill, isSuspicious is undefined for
-    // un-patched docs, which won't match eq('isSuspicious', false). Fall back to
-    // SORT_INDEXES + JS filter. This fires on ANY page (not just the first) so that
-    // cursors stay on the same index path across client paginations.
-    if (useNonsuspiciousIndex && filteredPage.length === 0) {
-      const fallbackPaginate = (cursor: string | null) =>
-        ctx.db
-          .query('skills')
-          .withIndex(SORT_INDEXES[sort], (q) => q.eq('softDeletedAt', undefined))
-          .order(dir)
-          .paginate({ cursor, numItems })
-      // On page 2+, the client's cursor is likely from a previous fallback
-      // invocation (SORT_INDEXES), so try it first via stale-cursor recovery.
-      result = await paginateWithStaleCursorRecovery(fallbackPaginate, initialCursor)
+    let filteredPage = filterPublicSkillPage(result.page, args)
+    while ((args.nonSuspiciousOnly || args.highlightedOnly) && filteredPage.length === 0 && !result.isDone) {
+      result = await runPaginate(result.continueCursor)
       filteredPage = filterPublicSkillPage(result.page, args)
-      while (filteredPage.length === 0 && !result.isDone) {
-        result = await fallbackPaginate(result.continueCursor)
-        filteredPage = filterPublicSkillPage(result.page, args)
-      }
-    } else {
-      // Keep the existing while-loop fallback for highlightedOnly (rare)
-      while ((args.nonSuspiciousOnly || args.highlightedOnly) && filteredPage.length === 0 && !result.isDone) {
-        result = await runPaginate(result.continueCursor)
-        filteredPage = useNonsuspiciousIndex
-          ? filterPublicSkillPage(result.page, { highlightedOnly: args.highlightedOnly })
-          : filterPublicSkillPage(result.page, args)
-      }
     }
 
     const items = await buildPublicSkillEntries(ctx, filteredPage)

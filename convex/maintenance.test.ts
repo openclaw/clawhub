@@ -33,6 +33,7 @@ vi.mock('./lib/skillSummary', () => ({
 }))
 
 const {
+  backfillLatestVersionSummaryInternal,
   backfillSkillFingerprintsInternalHandler,
   backfillSkillSummariesInternalHandler,
   cleanupEmptySkillsInternalHandler,
@@ -194,6 +195,66 @@ describe('maintenance backfill', () => {
         clawdis: undefined,
       },
     })
+  })
+
+  it('re-syncs latestVersionSummary when changelogSource or clawdis drift', async () => {
+    const paginate = vi.fn().mockResolvedValue({
+      page: [
+        {
+          _id: 'skills:1',
+          latestVersionId: 'skillVersions:1',
+          latestVersionSummary: {
+            version: '1.0.0',
+            createdAt: 123,
+            changelog: 'Same changelog',
+            changelogSource: 'user',
+            clawdis: undefined,
+          },
+        },
+      ],
+      continueCursor: null,
+      isDone: true,
+    })
+    const get = vi.fn().mockResolvedValue({
+      _id: 'skillVersions:1',
+      version: '1.0.0',
+      createdAt: 123,
+      changelog: 'Same changelog',
+      changelogSource: 'auto',
+      parsed: { clawdis: { emoji: 'lobster' } },
+    })
+    const patch = vi.fn().mockResolvedValue(undefined)
+    const runAfter = vi.fn()
+
+    const ctx = {
+      db: {
+        query: vi.fn(() => ({ paginate })),
+        get,
+        patch,
+      },
+      scheduler: {
+        runAfter,
+      },
+    } as never
+
+    const result = await (
+      backfillLatestVersionSummaryInternal as unknown as { _handler: Function }
+    )._handler(ctx, {
+      batchSize: 10,
+    })
+
+    expect(result).toEqual({ patched: 1, isDone: true, scanned: 1 })
+    expect(paginate).toHaveBeenCalledWith({ cursor: null, numItems: 10 })
+    expect(patch).toHaveBeenCalledWith('skills:1', {
+      latestVersionSummary: {
+        version: '1.0.0',
+        createdAt: 123,
+        changelog: 'Same changelog',
+        changelogSource: 'auto',
+        clawdis: { emoji: 'lobster' },
+      },
+    })
+    expect(runAfter).not.toHaveBeenCalled()
   })
 })
 

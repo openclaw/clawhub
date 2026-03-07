@@ -36,6 +36,7 @@
 - Admin API: `POST /api/v1/users/reclaim` now performs non-destructive root-slug owner transfer
   (preserves existing skill versions/stats/metadata) and clears active slug reservations.
 - VirusTotal: use shared AV-engine fallback verdict mapping for pending/backfill flows and keep undetected-only results pending (#591) (thanks @Shuai-DaiDai).
+- Skills/listing: keep non-suspicious browse pagination on one cursor family during `isSuspicious` backfill, and re-sync stale `latestVersionSummary` metadata fields (#572) (thanks @sethconvex).
 - CLI publish: use a longer multipart upload timeout and normalize abort rejections into proper Errors (#550) (thanks @MunemHashmi).
 - CLI: forward optional auth tokens for `search` and `explore` against authenticated registries (#608) (thanks @artdaal).
 - Skill metadata: parse top-level `requires.*`, `primaryEnv`, and homepage fallbacks for security review accuracy (#548) (thanks @MunemHashmi).
