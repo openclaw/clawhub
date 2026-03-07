@@ -63,7 +63,8 @@ vi.mock('node:fs/promises', () => ({
   stat: vi.fn(),
 }))
 
-const { clampLimit, cmdExplore, cmdInstall, cmdUninstall, cmdUpdate, formatExploreLine } = await import('./skills')
+const { clampLimit, cmdExplore, cmdInstall, cmdSearch, cmdUninstall, cmdUpdate, formatExploreLine } =
+  await import('./skills')
 const {
   extractZipToDir,
   hashSkillFiles,
@@ -121,6 +122,16 @@ describe('explore helpers', () => {
 })
 
 describe('cmdExplore', () => {
+  it('passes optional auth token to apiRequest', async () => {
+    mockGetOptionalAuthToken.mockResolvedValue('tkn')
+    mockApiRequest.mockResolvedValue({ items: [] })
+
+    await cmdExplore(makeOpts(), { limit: 25 })
+
+    const [, requestArgs] = mockApiRequest.mock.calls[0] ?? []
+    expect(requestArgs?.token).toBe('tkn')
+  })
+
   it('clamps limit and handles empty results', async () => {
     mockApiRequest.mockResolvedValue({ items: [] })
 
@@ -175,6 +186,18 @@ describe('cmdExplore', () => {
     const second = new URL(String(mockApiRequest.mock.calls[1]?.[1]?.url))
     expect(first.searchParams.get('sort')).toBe('installsAllTime')
     expect(second.searchParams.get('sort')).toBe('trending')
+  })
+})
+
+describe('cmdSearch', () => {
+  it('passes optional auth token to apiRequest', async () => {
+    mockGetOptionalAuthToken.mockResolvedValue('tkn')
+    mockApiRequest.mockResolvedValue({ results: [] })
+
+    await cmdSearch(makeOpts(), 'demo')
+
+    const [, requestArgs] = mockApiRequest.mock.calls[0] ?? []
+    expect(requestArgs?.token).toBe('tkn')
   })
 })
 
