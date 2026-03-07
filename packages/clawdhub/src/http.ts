@@ -210,6 +210,12 @@ async function fetchWithTimeout(url: string, init: RequestInit): Promise<Respons
   const timeout = setTimeout(() => controller.abort(new Error('Timeout')), REQUEST_TIMEOUT_MS)
   try {
     return await fetch(url, { ...init, signal: controller.signal })
+  } catch (error) {
+    // AbortError may be a DOMException (not instanceof Error) in some runtimes
+    if (error instanceof Error && error.name === 'AbortError') {
+      throw new Error('Timeout')
+    }
+    throw error
   } finally {
     clearTimeout(timeout)
   }

@@ -29,18 +29,25 @@ function createAbortingFetchMock() {
       throw new Error('Missing abort signal')
     }
     if (signal.aborted) {
-      throw signal.reason
+      throw createAbortError()
     }
     return await new Promise<Response>((_resolve, reject) => {
       signal.addEventListener(
         'abort',
         () => {
-          reject(signal.reason)
+          reject(createAbortError())
         },
         { once: true },
       )
     })
   })
+}
+
+// Simulates the actual fetch API AbortError behavior (DOMException)
+function createAbortError() {
+  const error = new Error('The operation was aborted') as Error & { name: string }
+  error.name = 'AbortError'
+  return error
 }
 
 describe('shouldUseProxyFromEnv', () => {
