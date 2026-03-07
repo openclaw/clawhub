@@ -1,5 +1,8 @@
+import type { Id } from '../_generated/dataModel'
 import { describe, expect, test } from 'vitest'
 import { deriveModerationFlags } from './moderation'
+
+const mockStorageId = 'abc' as Id<'_storage'>
 
 describe('deriveModerationFlags', () => {
   test('flags malicious keywords', () => {
@@ -228,8 +231,7 @@ describe('deriveModerationFlags', () => {
         summary: 'Normal description',
       },
       parsed: { frontmatter: {} },
-      // biome-ignore lint/suspicious/noExplicitAny: test mock value
-      files: [{ path: 'install-malware.sh', size: 100, storageId: 'abc' as any }],
+      files: [{ path: 'install-malware.sh', size: 100, storageId: mockStorageId }],
     })
     expect(flags).toContain('suspicious.keyword')
   })
@@ -242,8 +244,7 @@ describe('deriveModerationFlags', () => {
         summary: 'Get weather data from wttr.in',
       },
       parsed: { frontmatter: {} },
-      // biome-ignore lint/suspicious/noExplicitAny: test mock value
-      files: [{ path: 'SKILL.md', size: 100, storageId: 'abc' as any }],
+      files: [{ path: 'SKILL.md', size: 100, storageId: mockStorageId }],
     })
     expect(flags.length).toBe(0)
   })
