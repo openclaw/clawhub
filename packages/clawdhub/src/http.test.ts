@@ -327,6 +327,31 @@ describe('apiRequestForm', () => {
     expect(fetchMock).toHaveBeenCalledTimes(1)
     vi.unstubAllGlobals()
   })
+
+  it('uses the longer upload timeout for multipart requests', async () => {
+    const { setTimeoutMock, clearTimeoutMock } = mockImmediateTimeouts()
+    const fetchMock = createAbortingFetchMock()
+    vi.stubGlobal('fetch', fetchMock)
+
+    let caught: unknown
+    try {
+      await apiRequestForm('https://example.com', {
+        method: 'POST',
+        path: '/upload',
+        form: new FormData(),
+      })
+    } catch (error) {
+      caught = error
+    }
+
+    expect(caught).toBeInstanceOf(Error)
+    expect((caught as Error).message).toMatch(/timed out after 120s/i)
+    expect(setTimeoutMock).toHaveBeenCalled()
+    expect(setTimeoutMock.mock.calls[0]?.[1]).toBe(120_000)
+    expect(fetchMock).toHaveBeenCalledTimes(3)
+    expect(clearTimeoutMock.mock.calls.length).toBeGreaterThanOrEqual(3)
+    vi.unstubAllGlobals()
+  })
 })
 
 describe('fetchText', () => {

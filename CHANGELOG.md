@@ -32,6 +32,7 @@
 - Comments: hide entries authored by deleted/deactivated users in `comments:listBySkill`.
 - Admin API: `POST /api/v1/users/reclaim` now performs non-destructive root-slug owner transfer
   (preserves existing skill versions/stats/metadata) and clears active slug reservations.
+- CLI publish: use a longer multipart upload timeout and normalize abort rejections into proper Errors (#550) (thanks @MunemHashmi).
 - CLI: forward optional auth tokens for `search` and `explore` against authenticated registries (#608) (thanks @artdaal).
 - Skill metadata: parse top-level `requires.*`, `primaryEnv`, and homepage fallbacks for security review accuracy (#548) (thanks @MunemHashmi).
 - Users: sync handle on ensure when GitHub login changes (#293) (thanks @christianhpoe).
