@@ -231,7 +231,7 @@ describe('deriveModerationFlags', () => {
         summary: 'Normal description',
       },
       parsed: { frontmatter: {} },
-      files: [{ path: 'install-malware.sh', size: 100, storageId: mockStorageId }],
+      files: [{ path: 'install-malware.sh', size: 100, storageId: mockStorageId, sha256: 'abc' }],
     })
     expect(flags).toContain('suspicious.keyword')
   })
@@ -244,7 +244,7 @@ describe('deriveModerationFlags', () => {
         summary: 'Get weather data from wttr.in',
       },
       parsed: { frontmatter: {} },
-      files: [{ path: 'SKILL.md', size: 100, storageId: mockStorageId }],
+      files: [{ path: 'SKILL.md', size: 100, storageId: mockStorageId, sha256: 'abc' }],
     })
     expect(flags.length).toBe(0)
   })

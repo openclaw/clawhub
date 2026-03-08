@@ -390,7 +390,7 @@ function makeSkillDoc(params: {
     moderationStatus: 'active',
     moderationFlags: params.moderationFlags ?? [],
     moderationReason: params.moderationReason,
-    softDeletedAt: undefined,
+    softDeletedAt: undefined as number | undefined,
   }
 }
 
