@@ -92,6 +92,26 @@ const skills = defineTable({
   ),
   moderationNotes: v.optional(v.string()),
   moderationReason: v.optional(v.string()),
+  moderationVerdict: v.optional(
+    v.union(v.literal('clean'), v.literal('suspicious'), v.literal('malicious')),
+  ),
+  moderationReasonCodes: v.optional(v.array(v.string())),
+  moderationEvidence: v.optional(
+    v.array(
+      v.object({
+        code: v.string(),
+        severity: v.union(v.literal('info'), v.literal('warn'), v.literal('critical')),
+        file: v.string(),
+        line: v.number(),
+        message: v.string(),
+        evidence: v.string(),
+      }),
+    ),
+  ),
+  moderationSummary: v.optional(v.string()),
+  moderationEngineVersion: v.optional(v.string()),
+  moderationEvaluatedAt: v.optional(v.number()),
+  moderationSourceVersionId: v.optional(v.id('skillVersions')),
   quality: v.optional(
     v.object({
       score: v.number(),
@@ -251,6 +271,25 @@ const skillVersions = defineTable({
       guidance: v.optional(v.string()),
       findings: v.optional(v.string()),
       model: v.optional(v.string()),
+      checkedAt: v.number(),
+    }),
+  ),
+  staticScan: v.optional(
+    v.object({
+      status: v.union(v.literal('clean'), v.literal('suspicious'), v.literal('malicious')),
+      reasonCodes: v.array(v.string()),
+      findings: v.array(
+        v.object({
+          code: v.string(),
+          severity: v.union(v.literal('info'), v.literal('warn'), v.literal('critical')),
+          file: v.string(),
+          line: v.number(),
+          message: v.string(),
+          evidence: v.string(),
+        }),
+      ),
+      summary: v.string(),
+      engineVersion: v.string(),
       checkedAt: v.number(),
     }),
   ),

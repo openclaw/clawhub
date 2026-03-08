@@ -56,6 +56,8 @@ import type * as lib_httpHeaders from "../lib/httpHeaders.js";
 import type * as lib_httpRateLimit from "../lib/httpRateLimit.js";
 import type * as lib_leaderboards from "../lib/leaderboards.js";
 import type * as lib_moderation from "../lib/moderation.js";
+import type * as lib_moderationEngine from "../lib/moderationEngine.js";
+import type * as lib_moderationReasonCodes from "../lib/moderationReasonCodes.js";
 import type * as lib_openaiResponse from "../lib/openaiResponse.js";
 import type * as lib_public from "../lib/public.js";
 import type * as lib_reporting from "../lib/reporting.js";
@@ -152,6 +154,8 @@ declare const fullApi: ApiFromModules<{
   "lib/httpRateLimit": typeof lib_httpRateLimit;
   "lib/leaderboards": typeof lib_leaderboards;
   "lib/moderation": typeof lib_moderation;
+  "lib/moderationEngine": typeof lib_moderationEngine;
+  "lib/moderationReasonCodes": typeof lib_moderationReasonCodes;
   "lib/openaiResponse": typeof lib_openaiResponse;
   "lib/public": typeof lib_public;
   "lib/reporting": typeof lib_reporting;

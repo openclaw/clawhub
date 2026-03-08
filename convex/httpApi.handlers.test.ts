@@ -343,6 +343,7 @@ describe('httpApi handlers', () => {
         displayName: 'Cool Skill',
         version: '1.2.3',
         changelog: 'c',
+        acceptLicenseTerms: true,
         files: [{ path: 'SKILL.md', size: 1, storageId: 'id', sha256: 'a' }],
       }),
     })
@@ -365,6 +366,7 @@ describe('httpApi handlers', () => {
         displayName: 'Cool Skill',
         version: '1.2.3',
         changelog: 'c',
+        acceptLicenseTerms: true,
         files: [{ path: 'SKILL.md', size: 1, storageId: 'id', sha256: 'a' }],
       }),
     })

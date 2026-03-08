@@ -31,7 +31,13 @@ import {
   readGlobalPublicSkillsCount,
 } from './lib/globalStats'
 import { buildTrendingLeaderboard } from './lib/leaderboards'
+import { buildModerationSnapshot } from './lib/moderationEngine'
 import { deriveModerationFlags } from './lib/moderation'
+import {
+  legacyFlagsFromVerdict,
+  summarizeReasonCodes,
+  verdictFromCodes,
+} from './lib/moderationReasonCodes'
 import { toPublicSkill, toPublicUser } from './lib/public'
 import {
   AUTO_HIDE_REPORT_THRESHOLD,
@@ -78,6 +84,57 @@ const RATE_LIMIT_DAY_MS = 24 * RATE_LIMIT_HOUR_MS
 const SLUG_RESERVATION_DAYS = 90
 const SLUG_RESERVATION_MS = SLUG_RESERVATION_DAYS * RATE_LIMIT_DAY_MS
 const LOW_TRUST_ACCOUNT_AGE_MS = 30 * RATE_LIMIT_DAY_MS
+
+function buildStructuredModerationPatch(params: {
+  staticScan?: Doc<'skillVersions'>['staticScan']
+  vtStatus?: string
+  llmStatus?: string
+  sourceVersionId?: Id<'skillVersions'>
+}): Pick<
+  Doc<'skills'>,
+  | 'moderationVerdict'
+  | 'moderationReasonCodes'
+  | 'moderationEvidence'
+  | 'moderationSummary'
+  | 'moderationEngineVersion'
+  | 'moderationEvaluatedAt'
+  | 'moderationSourceVersionId'
+> {
+  const snapshot = buildModerationSnapshot({
+    staticScan: params.staticScan,
+    vtStatus: params.vtStatus,
+    llmStatus: params.llmStatus,
+    sourceVersionId: params.sourceVersionId,
+  })
+
+  return {
+    moderationVerdict: snapshot.verdict,
+    moderationReasonCodes: snapshot.reasonCodes.length ? snapshot.reasonCodes : undefined,
+    moderationEvidence: snapshot.evidence.length ? snapshot.evidence : undefined,
+    moderationSummary: snapshot.summary,
+    moderationEngineVersion: snapshot.engineVersion,
+    moderationEvaluatedAt: snapshot.evaluatedAt,
+    moderationSourceVersionId: params.sourceVersionId,
+  }
+}
+
+async function patchStructuredModerationFromVersion(
+  ctx: MutationCtx,
+  skill: Doc<'skills'>,
+  version: Pick<Doc<'skillVersions'>, '_id' | 'staticScan' | 'vtAnalysis' | 'llmAnalysis'>,
+) {
+  const patch = buildStructuredModerationPatch({
+    staticScan: version.staticScan,
+    vtStatus: version.vtAnalysis?.status,
+    llmStatus: version.llmAnalysis?.status,
+    sourceVersionId: version._id,
+  })
+
+  await ctx.db.patch(skill._id, {
+    ...patch,
+    updatedAt: Date.now(),
+  })
+}
 const TRUSTED_PUBLISHER_SKILL_THRESHOLD = 10
 const LOW_TRUST_BURST_THRESHOLD_PER_HOUR = 8
 const OWNER_ACTIVITY_SCAN_LIMIT = 500
@@ -807,6 +864,11 @@ export const getBySlug = query({
           isSuspicious,
           isHiddenByMod,
           isRemoved,
+          verdict: skill.moderationVerdict,
+          reasonCodes: skill.moderationReasonCodes,
+          summary: skill.moderationSummary,
+          engineVersion: skill.moderationEngineVersion,
+          updatedAt: skill.moderationEvaluatedAt,
           reason: isOwner ? skill.moderationReason : undefined,
         }
       : null
@@ -2821,7 +2883,12 @@ export const updateVersionLlmAnalysisInternal = internalMutation({
   handler: async (ctx, args) => {
     const version = await ctx.db.get(args.versionId)
     if (!version) return
+    const nextVersion = { ...version, llmAnalysis: args.llmAnalysis }
     await ctx.db.patch(args.versionId, { llmAnalysis: args.llmAnalysis })
+
+    const skill = await ctx.db.get(version.skillId)
+    if (!skill || skill.latestVersionId !== version._id) return
+    await patchStructuredModerationFromVersion(ctx, skill, nextVersion)
   },
 })
 
@@ -2889,14 +2956,34 @@ export const approveSkillByHashInternal = internalMutation({
         ? (skill.moderationNotes ??
           'Quality gate quarantine is still active. Manual moderation review required.')
         : undefined
+      const scanner = args.scanner.trim().toLowerCase()
+      const snapshot = buildModerationSnapshot({
+        staticScan: version.staticScan,
+        vtStatus: scanner === 'vt' ? args.status : version.vtAnalysis?.status,
+        llmStatus: scanner === 'llm' ? args.status : version.llmAnalysis?.status,
+        sourceVersionId: version._id,
+      })
+      const nextReasonCodes =
+        bypassSuspicious && !isMalicious
+          ? snapshot.reasonCodes.filter((code) => !code.startsWith('suspicious.'))
+          : snapshot.reasonCodes
+      const nextVerdict = verdictFromCodes(nextReasonCodes)
+      const nextLegacyFlags = legacyFlagsFromVerdict(nextVerdict)
 
       const patch: Partial<Doc<'skills'>> = {
         moderationStatus: nextModerationStatus,
         moderationReason: nextModerationReason,
-        moderationFlags: newFlags,
+        moderationFlags: newFlags ?? nextLegacyFlags,
+        moderationVerdict: nextVerdict,
+        moderationReasonCodes: nextReasonCodes.length ? nextReasonCodes : undefined,
+        moderationEvidence: snapshot.evidence.length ? snapshot.evidence : undefined,
+        moderationSummary: summarizeReasonCodes(nextReasonCodes),
+        moderationEngineVersion: snapshot.engineVersion,
+        moderationEvaluatedAt: snapshot.evaluatedAt,
+        moderationSourceVersionId: version._id,
         moderationNotes: nextModerationNotes,
         isSuspicious: computeIsSuspicious({
-          moderationFlags: newFlags,
+          moderationFlags: (newFlags ?? nextLegacyFlags) as string[] | undefined,
           moderationReason: nextModerationReason,
         }),
         hiddenAt: nextModerationStatus === 'hidden' ? now : undefined,
@@ -2960,8 +3047,26 @@ export const escalateByVtInternal = internalMutation({
     }
 
     const nextModerationFlags = newFlags.length ? newFlags : undefined
+    const snapshot = buildModerationSnapshot({
+      staticScan: version.staticScan,
+      vtStatus: args.status,
+      llmStatus: version.llmAnalysis?.status,
+      sourceVersionId: version._id,
+    })
+    const nextReasonCodes =
+      bypassSuspicious && !isMalicious
+        ? snapshot.reasonCodes.filter((code) => !code.startsWith('suspicious.'))
+        : snapshot.reasonCodes
+    const nextVerdict = verdictFromCodes(nextReasonCodes)
     const patch: Partial<Doc<'skills'>> = {
       moderationFlags: nextModerationFlags,
+      moderationVerdict: nextVerdict,
+      moderationReasonCodes: nextReasonCodes.length ? nextReasonCodes : undefined,
+      moderationEvidence: snapshot.evidence.length ? snapshot.evidence : undefined,
+      moderationSummary: summarizeReasonCodes(nextReasonCodes),
+      moderationEngineVersion: snapshot.engineVersion,
+      moderationEvaluatedAt: snapshot.evaluatedAt,
+      moderationSourceVersionId: version._id,
       updatedAt: Date.now(),
     }
     if (bypassSuspicious) {
@@ -3788,6 +3893,23 @@ export const insertVersion = internalMutation({
         }),
       }),
     ),
+    staticScan: v.object({
+      status: v.union(v.literal('clean'), v.literal('suspicious'), v.literal('malicious')),
+      reasonCodes: v.array(v.string()),
+      findings: v.array(
+        v.object({
+          code: v.string(),
+          severity: v.union(v.literal('info'), v.literal('warn'), v.literal('critical')),
+          file: v.string(),
+          line: v.number(),
+          message: v.string(),
+          evidence: v.string(),
+        }),
+      ),
+      summary: v.string(),
+      engineVersion: v.string(),
+      checkedAt: v.number(),
+    }),
     embedding: v.array(v.number()),
   },
   handler: async (ctx, args) => {
@@ -3845,6 +3967,7 @@ export const insertVersion = internalMutation({
     const moderationNotes = isQualityQuarantine
       ? `Auto-quarantined by quality gate (score=${qualityAssessment.score}, tier=${qualityAssessment.trustTier}, similar=${qualityAssessment.similarRecentCount}).`
       : undefined
+    const staticSnapshot = buildModerationSnapshot({ staticScan: args.staticScan })
 
     const qualityRecord = qualityAssessment
       ? {
@@ -3907,12 +4030,14 @@ export const insertVersion = internalMutation({
 
       const summary = args.summary ?? getFrontmatterValue(args.parsed.frontmatter, 'description')
       const summaryValue = summary ?? undefined
-      const moderationFlags = deriveModerationFlags({
+      const derivedFlags = deriveModerationFlags({
         skill: { slug: args.slug, displayName: args.displayName, summary: summaryValue },
         parsed: args.parsed,
         files: args.files,
       })
-      const newSkillFlags = moderationFlags.length ? moderationFlags : undefined
+      const newSkillFlags = Array.from(
+        new Set([...(derivedFlags ?? []), ...(staticSnapshot.legacyFlags ?? [])]),
+      )
       const skillId = await ctx.db.insert('skills', {
         slug: args.slug,
         displayName: args.displayName,
@@ -3932,10 +4057,19 @@ export const insertVersion = internalMutation({
         moderationStatus: initialModerationStatus,
         moderationReason,
         moderationNotes,
+        moderationVerdict: staticSnapshot.verdict,
+        moderationReasonCodes: staticSnapshot.reasonCodes.length
+          ? staticSnapshot.reasonCodes
+          : undefined,
+        moderationEvidence: staticSnapshot.evidence.length ? staticSnapshot.evidence : undefined,
+        moderationSummary: staticSnapshot.summary,
+        moderationEngineVersion: staticSnapshot.engineVersion,
+        moderationEvaluatedAt: staticSnapshot.evaluatedAt,
+        moderationSourceVersionId: undefined,
         quality: qualityRecord,
-        moderationFlags: newSkillFlags,
+        moderationFlags: newSkillFlags.length ? newSkillFlags : undefined,
         isSuspicious: computeIsSuspicious({
-          moderationFlags: newSkillFlags,
+          moderationFlags: newSkillFlags.length ? newSkillFlags : undefined,
           moderationReason: moderationReason,
         }),
         reportCount: 0,
@@ -3979,6 +4113,7 @@ export const insertVersion = internalMutation({
       changelogSource: args.changelogSource,
       files: args.files,
       parsed: args.parsed,
+      staticScan: args.staticScan,
       createdBy: userId,
       createdAt: now,
       softDeletedAt: undefined,
@@ -3994,13 +4129,18 @@ export const insertVersion = internalMutation({
 
     const nextSummary =
       args.summary ?? getFrontmatterValue(args.parsed.frontmatter, 'description') ?? skill.summary
-    const moderationFlags = deriveModerationFlags({
+    const derivedFlags = deriveModerationFlags({
       skill: { slug: skill.slug, displayName: args.displayName, summary: nextSummary ?? undefined },
       parsed: args.parsed,
       files: args.files,
     })
-
-    const nextFlags = moderationFlags.length ? moderationFlags : undefined
+    const moderationSnapshot = buildModerationSnapshot({
+      staticScan: args.staticScan,
+      sourceVersionId: versionId,
+    })
+    const nextFlags = Array.from(
+      new Set([...(derivedFlags ?? []), ...(moderationSnapshot.legacyFlags ?? [])]),
+    )
     const patch: Partial<Doc<'skills'>> = {
       displayName: args.displayName,
       summary: nextSummary ?? undefined,
@@ -4018,10 +4158,21 @@ export const insertVersion = internalMutation({
       moderationStatus: initialModerationStatus,
       moderationReason,
       moderationNotes,
+      moderationVerdict: moderationSnapshot.verdict,
+      moderationReasonCodes: moderationSnapshot.reasonCodes.length
+        ? moderationSnapshot.reasonCodes
+        : undefined,
+      moderationEvidence: moderationSnapshot.evidence.length
+        ? moderationSnapshot.evidence
+        : undefined,
+      moderationSummary: moderationSnapshot.summary,
+      moderationEngineVersion: moderationSnapshot.engineVersion,
+      moderationEvaluatedAt: moderationSnapshot.evaluatedAt,
+      moderationSourceVersionId: versionId,
       quality: qualityRecord ?? skill.quality,
-      moderationFlags: nextFlags,
+      moderationFlags: nextFlags.length ? nextFlags : undefined,
       isSuspicious: computeIsSuspicious({
-        moderationFlags: nextFlags,
+        moderationFlags: nextFlags.length ? nextFlags : undefined,
         moderationReason: moderationReason,
       }),
       updatedAt: now,
