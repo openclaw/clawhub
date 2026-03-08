@@ -108,7 +108,7 @@ Response:
 Response:
 
 ```json
-{ "skill": { "slug": "gifgrep", "displayName": "GifGrep", "summary": "…", "tags": { "latest": "1.2.3" }, "stats": {}, "createdAt": 0, "updatedAt": 0 }, "latestVersion": { "version": "1.2.3", "createdAt": 0, "changelog": "…" }, "metadata": { "os": ["macos"], "systems": ["aarch64-darwin"] }, "owner": { "handle": "steipete", "displayName": "Peter", "image": null } }
+{ "skill": { "slug": "gifgrep", "displayName": "GifGrep", "summary": "…", "tags": { "latest": "1.2.3" }, "stats": {}, "createdAt": 0, "updatedAt": 0 }, "latestVersion": { "version": "1.2.3", "createdAt": 0, "changelog": "…" }, "metadata": { "os": ["macos"], "systems": ["aarch64-darwin"] }, "owner": { "handle": "steipete", "displayName": "Peter", "image": null }, "moderation": { "isSuspicious": false, "isMalwareBlocked": false, "verdict": "clean", "reasonCodes": [], "summary": null, "engineVersion": "v2.0.0", "updatedAt": 0 } }
 ```
 
 Notes:
@@ -116,6 +116,23 @@ Notes:
 - `metadata.os`: OS restrictions declared in skill frontmatter (e.g. `["macos"]`, `["linux"]`). `null` if not declared.
 - `metadata.systems`: Nix system targets (e.g. `["aarch64-darwin", "x86_64-linux"]`). `null` if not declared.
 - `metadata` is `null` if the skill has no platform metadata.
+- `moderation` is included only when the skill is flagged or the owner is viewing it.
+
+### `GET /api/v1/skills/{slug}/moderation`
+
+Returns structured moderation state.
+
+Response:
+
+```json
+{ "moderation": { "isSuspicious": true, "isMalwareBlocked": false, "verdict": "suspicious", "reasonCodes": ["suspicious.dynamic_code_execution"], "summary": "Detected: suspicious.dynamic_code_execution", "engineVersion": "v2.0.0", "updatedAt": 0, "legacyReason": null, "evidence": [{ "code": "suspicious.dynamic_code_execution", "severity": "critical", "file": "index.ts", "line": 3, "message": "Dynamic code execution detected.", "evidence": "" }] } }
+```
+
+Notes:
+
+- Owners and staff can access moderation details for hidden skills.
+- Public callers only get `200` for already-flagged visible skills.
+- Evidence is redacted for public callers and only includes raw snippets for owners/staff.
 
 ### `GET /api/v1/skills/{slug}/versions`
 

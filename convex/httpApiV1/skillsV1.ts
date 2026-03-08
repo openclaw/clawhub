@@ -58,6 +58,27 @@ type ListSkillsResult = {
 
 type SkillFile = Doc<'skillVersions'>['files'][number]
 
+type ModerationEvidence = {
+  code: string
+  severity: 'info' | 'warn' | 'critical'
+  file: string
+  line: number
+  message: string
+  evidence: string
+}
+
+type SkillModerationShape = {
+  moderationFlags?: string[]
+  moderationVerdict?: 'clean' | 'suspicious' | 'malicious'
+  moderationReasonCodes?: string[]
+  moderationSummary?: string
+  moderationEngineVersion?: string
+  moderationEvaluatedAt?: number
+  moderationReason?: string
+  moderationEvidence?: ModerationEvidence[]
+  updatedAt?: number
+}
+
 type GetBySlugResult = {
   skill: {
     _id: Id<'skills'>
@@ -77,6 +98,11 @@ type GetBySlugResult = {
     isSuspicious: boolean
     isHiddenByMod: boolean
     isRemoved: boolean
+    verdict?: 'clean' | 'suspicious' | 'malicious'
+    reasonCodes?: string[]
+    summary?: string
+    engineVersion?: string
+    updatedAt?: number
     reason?: string
   } | null
 } | null
@@ -97,6 +123,47 @@ type ListVersionsResult = {
     softDeletedAt?: number
   }>
   nextCursor: string | null
+}
+
+function sanitizeEvidence(
+  evidence: ModerationEvidence[],
+  allowSensitiveEvidence: boolean,
+): ModerationEvidence[] {
+  if (allowSensitiveEvidence) return evidence
+  return evidence.map((entry) => ({
+    code: entry.code,
+    severity: entry.severity,
+    file: entry.file,
+    line: entry.line,
+    message: entry.message,
+    evidence: '',
+  }))
+}
+
+function normalizeModerationFromSkill(skill: SkillModerationShape) {
+  const flags = Array.isArray(skill.moderationFlags) ? skill.moderationFlags : []
+  const verdict =
+    skill.moderationVerdict ??
+    (flags.includes('blocked.malware')
+      ? 'malicious'
+      : flags.includes('flagged.suspicious')
+        ? 'suspicious'
+        : 'clean')
+  const isMalwareBlocked = verdict === 'malicious' || flags.includes('blocked.malware')
+  const isSuspicious =
+    !isMalwareBlocked && (verdict === 'suspicious' || flags.includes('flagged.suspicious'))
+
+  return {
+    isMalwareBlocked,
+    isSuspicious,
+    verdict,
+    reasonCodes: Array.isArray(skill.moderationReasonCodes) ? skill.moderationReasonCodes : [],
+    summary: skill.moderationSummary ?? null,
+    engineVersion: skill.moderationEngineVersion ?? null,
+    updatedAt: skill.moderationEvaluatedAt ?? skill.updatedAt ?? null,
+    reason: skill.moderationReason ?? null,
+    evidence: Array.isArray(skill.moderationEvidence) ? skill.moderationEvidence : [],
+  }
 }
 
 export async function searchSkillsV1Handler(ctx: ActionCtx, request: Request) {
@@ -328,6 +395,92 @@ export async function skillsGetRouterV1Handler(ctx: ActionCtx, request: Request)
           ? {
               isSuspicious: result.moderationInfo.isSuspicious ?? false,
               isMalwareBlocked: result.moderationInfo.isMalwareBlocked ?? false,
+              verdict: result.moderationInfo.verdict ?? 'clean',
+              reasonCodes: result.moderationInfo.reasonCodes ?? [],
+              summary: result.moderationInfo.summary ?? null,
+              engineVersion: result.moderationInfo.engineVersion ?? null,
+              updatedAt: result.moderationInfo.updatedAt ?? null,
+            }
+          : null,
+      },
+      200,
+      rate.headers,
+    )
+  }
+
+  if (second === 'moderation' && segments.length === 2) {
+    const apiTokenUserId = await getOptionalApiTokenUserId(ctx, request)
+    let isStaff = false
+    if (apiTokenUserId) {
+      const caller = await ctx.runQuery(internal.users.getByIdInternal, { userId: apiTokenUserId })
+      if (caller?.role === 'admin' || caller?.role === 'moderator') {
+        isStaff = true
+      }
+    }
+
+    const hiddenSkill = await ctx.runQuery(internal.skills.getSkillBySlugInternal, { slug })
+    const isOwner = Boolean(apiTokenUserId && hiddenSkill && apiTokenUserId === hiddenSkill.ownerUserId)
+
+    const result = (await ctx.runQuery(api.skills.getBySlug, { slug })) as GetBySlugResult
+    if (!result?.skill) {
+      if (hiddenSkill && (isOwner || isStaff)) {
+        const mod = normalizeModerationFromSkill(hiddenSkill as SkillModerationShape)
+        return json(
+          {
+            moderation: {
+              isSuspicious: mod.isSuspicious,
+              isMalwareBlocked: mod.isMalwareBlocked,
+              verdict: mod.verdict,
+              reasonCodes: mod.reasonCodes,
+              summary: mod.summary,
+              engineVersion: mod.engineVersion,
+              updatedAt: mod.updatedAt,
+              evidence: sanitizeEvidence(mod.evidence, true),
+              legacyReason: mod.reason,
+            },
+          },
+          200,
+          rate.headers,
+        )
+      }
+
+      return text('Moderation details unavailable', 404, rate.headers)
+    }
+
+    const mod = hiddenSkill
+      ? normalizeModerationFromSkill(hiddenSkill as SkillModerationShape)
+      : result.moderationInfo
+        ? {
+            isSuspicious: result.moderationInfo.isSuspicious ?? false,
+            isMalwareBlocked: result.moderationInfo.isMalwareBlocked ?? false,
+            verdict: result.moderationInfo.verdict ?? 'clean',
+            reasonCodes: result.moderationInfo.reasonCodes ?? [],
+            summary: result.moderationInfo.summary ?? null,
+            engineVersion: result.moderationInfo.engineVersion ?? null,
+            updatedAt: result.moderationInfo.updatedAt ?? null,
+            reason: result.moderationInfo.reason ?? null,
+            evidence: [],
+          }
+        : null
+    const isFlagged = Boolean(mod?.isSuspicious || mod?.isMalwareBlocked)
+
+    if (!isOwner && !isStaff && !isFlagged) {
+      return text('Moderation details unavailable', 404, rate.headers)
+    }
+
+    return json(
+      {
+        moderation: mod
+          ? {
+              isSuspicious: mod.isSuspicious,
+              isMalwareBlocked: mod.isMalwareBlocked,
+              verdict: mod.verdict,
+              reasonCodes: mod.reasonCodes,
+              summary: mod.summary,
+              engineVersion: mod.engineVersion,
+              updatedAt: mod.updatedAt,
+              evidence: sanitizeEvidence(mod.evidence, Boolean(isOwner || isStaff)),
+              legacyReason: isOwner || isStaff ? mod.reason : null,
             }
           : null,
       },

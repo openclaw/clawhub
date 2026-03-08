@@ -171,6 +171,37 @@ export const ApiV1SkillResponseSchema = type({
         displayName: 'string|null?',
         image: 'string|null?',
     }).or('null'),
+    moderation: type({
+        isSuspicious: 'boolean',
+        isMalwareBlocked: 'boolean',
+        verdict: '"clean"|"suspicious"|"malicious"?',
+        reasonCodes: 'string[]?',
+        updatedAt: 'number|null?',
+        engineVersion: 'string|null?',
+        summary: 'string|null?',
+    })
+        .or('null')
+        .optional(),
+});
+export const ApiV1SkillModerationResponseSchema = type({
+    moderation: type({
+        isSuspicious: 'boolean',
+        isMalwareBlocked: 'boolean',
+        verdict: '"clean"|"suspicious"|"malicious"',
+        reasonCodes: 'string[]',
+        updatedAt: 'number|null?',
+        engineVersion: 'string|null?',
+        summary: 'string|null?',
+        legacyReason: 'string|null?',
+        evidence: type({
+            code: 'string',
+            severity: '"info"|"warn"|"critical"',
+            file: 'string',
+            line: 'number',
+            message: 'string',
+            evidence: 'string',
+        }).array(),
+    }).or('null'),
 });
 export const ApiV1SkillVersionListResponseSchema = type({
     items: type({

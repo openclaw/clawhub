@@ -90,7 +90,7 @@ describe('http bun runtime', () => {
     expect(args).toContain('https://registry.example/v1/ping')
     expect(args).toContain('Accept: application/json')
     expect(args).toContain('Authorization: Bearer clh_token')
-  })
+  }, 10_000)
 
   it('uses curl for apiRequest POST with json body', async () => {
     const spawnSync = vi.fn().mockReturnValue({

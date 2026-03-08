@@ -3,6 +3,7 @@
 ## Unreleased
 
 ### Added
+- API: add structured skill moderation responses plus `GET /api/v1/skills/{slug}/moderation` with redacted public evidence and full owner/staff detail (#334) (thanks @ArthurzKV).
 - Moderation: persist structured moderation snapshots (static scan + VT/LLM merged verdict, reason codes, and evidence) on skills and versions (#333) (thanks @ArthurzKV).
 - Moderation: add comment reporting with per-user active report caps, unique reporter/target enforcement, and auto-hide on the 4th unique report.
 - Moderation: add AI-driven comment scam backfill (`commentModeration:*`) with persisted verdict/confidence/explainer metadata and strict auto-ban for `certain_scam` + `high` confidence.

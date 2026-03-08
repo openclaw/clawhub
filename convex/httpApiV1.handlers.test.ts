@@ -631,6 +631,15 @@ describe('httpApiV1 handlers', () => {
             files: [],
           },
           owner: { handle: 'p', displayName: 'Peter', image: null },
+          moderationInfo: {
+            isSuspicious: true,
+            isMalwareBlocked: false,
+            verdict: 'suspicious',
+            reasonCodes: ['suspicious.dynamic_code_execution'],
+            summary: 'Detected: suspicious.dynamic_code_execution',
+            engineVersion: 'v2.0.0',
+            updatedAt: 4,
+          },
         }
       }
       // Batch query for tag resolution
@@ -648,6 +657,190 @@ describe('httpApiV1 handlers', () => {
     const json = await response.json()
     expect(json.skill.slug).toBe('demo')
     expect(json.latestVersion.version).toBe('1.0.0')
+    expect(json.moderation).toEqual({
+      isSuspicious: true,
+      isMalwareBlocked: false,
+      verdict: 'suspicious',
+      reasonCodes: ['suspicious.dynamic_code_execution'],
+      summary: 'Detected: suspicious.dynamic_code_execution',
+      engineVersion: 'v2.0.0',
+      updatedAt: 4,
+    })
+  })
+
+  it('get moderation returns redacted evidence for public flagged skill', async () => {
+    let slugCalls = 0
+    const runQuery = vi.fn(async (_query: unknown, args: Record<string, unknown>) => {
+      if ('slug' in args) {
+        slugCalls += 1
+        if (slugCalls === 1) {
+          return {
+            _id: 'skills:1',
+            slug: 'demo',
+            ownerUserId: 'users:owner',
+            moderationFlags: ['flagged.suspicious'],
+            moderationVerdict: 'suspicious',
+            moderationReasonCodes: ['suspicious.dynamic_code_execution'],
+            moderationSummary: 'Detected: suspicious.dynamic_code_execution',
+            moderationEngineVersion: 'v2.0.0',
+            moderationEvaluatedAt: 5,
+            moderationReason: 'scanner.llm.suspicious',
+            moderationEvidence: [
+              {
+                code: 'suspicious.dynamic_code_execution',
+                severity: 'critical',
+                file: 'index.ts',
+                line: 3,
+                message: 'Dynamic code execution detected.',
+                evidence: 'eval(payload)',
+              },
+            ],
+          }
+        }
+
+        return {
+          skill: {
+            _id: 'skills:1',
+            slug: 'demo',
+            displayName: 'Demo',
+            summary: 's',
+            ownerUserId: 'users:owner',
+            tags: { latest: 'versions:1' },
+            stats: { downloads: 0, stars: 0, versions: 1, comments: 0 },
+            createdAt: 1,
+            updatedAt: 2,
+          },
+          latestVersion: null,
+          owner: null,
+          moderationInfo: {
+            isSuspicious: true,
+            isMalwareBlocked: false,
+            verdict: 'suspicious',
+            reasonCodes: ['suspicious.dynamic_code_execution'],
+            summary: 'Detected: suspicious.dynamic_code_execution',
+            engineVersion: 'v2.0.0',
+            updatedAt: 5,
+          },
+        }
+      }
+      return null
+    })
+    const runMutation = vi.fn().mockResolvedValue(okRate())
+
+    const response = await __handlers.skillsGetRouterV1Handler(
+      makeCtx({ runQuery, runMutation }),
+      new Request('https://example.com/api/v1/skills/demo/moderation'),
+    )
+
+    expect(response.status).toBe(200)
+    const json = await response.json()
+    expect(json.moderation.legacyReason).toBeNull()
+    expect(json.moderation.evidence[0].evidence).toBe('')
+  })
+
+  it('get moderation returns full evidence for owner hidden skill', async () => {
+    vi.mocked(getOptionalApiTokenUserId).mockResolvedValue('users:owner' as never)
+    let slugCalls = 0
+    const runQuery = vi.fn(async (_query: unknown, args: Record<string, unknown>) => {
+      if ('userId' in args) {
+        return { _id: 'users:owner', role: 'user' }
+      }
+      if ('slug' in args) {
+        slugCalls += 1
+        if (slugCalls === 1) {
+          return {
+            _id: 'skills:1',
+            slug: 'demo',
+            ownerUserId: 'users:owner',
+            moderationStatus: 'hidden',
+            moderationReason: 'quality.low',
+            moderationFlags: ['flagged.suspicious'],
+            moderationVerdict: 'suspicious',
+            moderationReasonCodes: ['suspicious.dynamic_code_execution'],
+            moderationSummary: 'Detected: suspicious.dynamic_code_execution',
+            moderationEngineVersion: 'v2.0.0',
+            moderationEvaluatedAt: 5,
+            moderationEvidence: [
+              {
+                code: 'suspicious.dynamic_code_execution',
+                severity: 'critical',
+                file: 'index.ts',
+                line: 3,
+                message: 'Dynamic code execution detected.',
+                evidence: 'eval(payload)',
+              },
+            ],
+          }
+        }
+
+        return null
+      }
+      return null
+    })
+    const runMutation = vi.fn().mockResolvedValue(okRate())
+
+    const response = await __handlers.skillsGetRouterV1Handler(
+      makeCtx({ runQuery, runMutation }),
+      new Request('https://example.com/api/v1/skills/demo/moderation'),
+    )
+
+    expect(response.status).toBe(200)
+    const json = await response.json()
+    expect(json.moderation.legacyReason).toBe('quality.low')
+    expect(json.moderation.evidence[0].evidence).toBe('eval(payload)')
+  })
+
+  it('get moderation returns 404 for clean public skill', async () => {
+    let slugCalls = 0
+    const runQuery = vi.fn(async (_query: unknown, args: Record<string, unknown>) => {
+      if ('slug' in args) {
+        slugCalls += 1
+        if (slugCalls === 1) {
+          return {
+            _id: 'skills:1',
+            slug: 'demo',
+            ownerUserId: 'users:owner',
+            moderationVerdict: 'clean',
+            moderationReasonCodes: [],
+            moderationEvidence: [],
+          }
+        }
+
+        return {
+          skill: {
+            _id: 'skills:1',
+            slug: 'demo',
+            displayName: 'Demo',
+            summary: 's',
+            ownerUserId: 'users:owner',
+            tags: { latest: 'versions:1' },
+            stats: { downloads: 0, stars: 0, versions: 1, comments: 0 },
+            createdAt: 1,
+            updatedAt: 2,
+          },
+          latestVersion: null,
+          owner: null,
+          moderationInfo: {
+            isSuspicious: false,
+            isMalwareBlocked: false,
+            verdict: 'clean',
+            reasonCodes: [],
+            summary: null,
+            engineVersion: null,
+            updatedAt: null,
+          },
+        }
+      }
+      return null
+    })
+    const runMutation = vi.fn().mockResolvedValue(okRate())
+
+    const response = await __handlers.skillsGetRouterV1Handler(
+      makeCtx({ runQuery, runMutation }),
+      new Request('https://example.com/api/v1/skills/demo/moderation'),
+    )
+
+    expect(response.status).toBe(404)
   })
 
   it('lists versions', async () => {
