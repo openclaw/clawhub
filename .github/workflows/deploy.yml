@@ -85,11 +85,11 @@ jobs:
         run: bunx playwright install --with-deps chromium
 
       - name: Write authenticated storage state
-        if: ${{ secrets.PLAYWRIGHT_AUTH_STORAGE_STATE_JSON != '' }}
+        if: env.PLAYWRIGHT_AUTH_STORAGE_STATE_JSON != ''
+        env:
+          PLAYWRIGHT_AUTH_STORAGE_STATE_JSON: ${{ secrets.PLAYWRIGHT_AUTH_STORAGE_STATE_JSON }}
         run: |
-          cat > "$RUNNER_TEMP/playwright-auth.json" <<'EOF'
-          ${{ secrets.PLAYWRIGHT_AUTH_STORAGE_STATE_JSON }}
-          EOF
+          echo "$PLAYWRIGHT_AUTH_STORAGE_STATE_JSON" > "$RUNNER_TEMP/playwright-auth.json"
           echo "PLAYWRIGHT_AUTH_STORAGE_STATE=$RUNNER_TEMP/playwright-auth.json" >> "$GITHUB_ENV"
 
       - name: Smoke test production
