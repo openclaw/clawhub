@@ -7,8 +7,14 @@ function normalizeEnv(value: string | undefined) {
 
 export const getDeploymentInfo = query({
   args: {},
-  handler: async () => ({
-    appBuildSha: normalizeEnv(process.env.APP_BUILD_SHA),
-    deployedAt: normalizeEnv(process.env.APP_DEPLOYED_AT),
-  }),
+  handler: async () => {
+    try {
+      return {
+        appBuildSha: normalizeEnv(process.env.APP_BUILD_SHA),
+        deployedAt: normalizeEnv(process.env.APP_DEPLOYED_AT),
+      }
+    } catch {
+      return { appBuildSha: null, deployedAt: null }
+    }
+  },
 })
