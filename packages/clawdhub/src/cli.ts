@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 import { stat } from 'node:fs/promises'
-import { join, resolve } from 'node:path'
+import { basename, isAbsolute, join, resolve } from 'node:path'
 import { Command } from 'commander'
 import { getCliBuildLabel, getCliVersion } from './cli/buildInfo.js'
 import { resolveClawdbotDefaultWorkspace } from './cli/clawdbotConfig.js'
@@ -65,7 +65,7 @@ configureCommanderHelp(program)
 async function resolveGlobalOpts(): Promise<GlobalOpts> {
   const raw = program.opts<{ workdir?: string; dir?: string; site?: string; registry?: string }>()
   const workdir = await resolveWorkdir(raw.workdir)
-  const dir = resolve(workdir, raw.dir ?? 'skills')
+  const dir = resolveSkillsDir(workdir, raw.dir ?? 'skills')
   const site = raw.site ?? process.env.CLAWHUB_SITE ?? process.env.CLAWDHUB_SITE ?? DEFAULT_SITE
   const registrySource = raw.registry
     ? 'cli'
@@ -78,6 +78,14 @@ async function resolveGlobalOpts(): Promise<GlobalOpts> {
     process.env.CLAWDHUB_REGISTRY ??
     DEFAULT_REGISTRY
   return { workdir, dir, site, registry, registrySource }
+}
+
+function resolveSkillsDir(workdir: string, dirInput: string) {
+  const trimmed = dirInput.trim()
+  if (!trimmed) return resolve(workdir, 'skills')
+  if (isAbsolute(trimmed)) return resolve(trimmed)
+  if (basename(workdir) === trimmed) return workdir
+  return resolve(workdir, trimmed)
 }
 
 function isInputAllowed() {
