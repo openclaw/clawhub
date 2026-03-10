@@ -2,6 +2,7 @@ import { useAuthActions } from '@convex-dev/auth/react'
 import { Link } from '@tanstack/react-router'
 import { Menu, Monitor, Moon, Sun } from 'lucide-react'
 import { useMemo, useRef } from 'react'
+import { useAuthError } from '../lib/useAuthError'
 import { gravatarUrl } from '../lib/gravatar'
 import { isModerator } from '../lib/roles'
 import { getClawHubSiteUrl, getSiteMode, getSiteName } from '../lib/site'
@@ -31,6 +32,7 @@ export default function Header() {
   const handle = me?.handle ?? me?.displayName ?? 'user'
   const initial = (me?.displayName ?? me?.name ?? handle).charAt(0).toUpperCase()
   const isStaff = isModerator(me)
+  const { error: authError, clear: clearAuthError } = useAuthError()
   const signInRedirectTo = getCurrentRelativeUrl()
 
   const setTheme = (next: 'system' | 'light' | 'dark') => {
@@ -283,20 +285,44 @@ export default function Header() {
               </DropdownMenuContent>
             </DropdownMenu>
           ) : (
-            <button
-              className="btn btn-primary"
-              type="button"
-              disabled={isLoading}
-              onClick={() =>
-                void signIn(
-                  'github',
-                  signInRedirectTo ? { redirectTo: signInRedirectTo } : undefined,
-                )
-              }
-            >
-              <span className="sign-in-label">Sign in</span>
-              <span className="sign-in-provider">with GitHub</span>
-            </button>
+            <>
+              {authError ? (
+                <div className="error" role="alert" style={{ fontSize: '0.85rem', marginRight: 8 }}>
+                  {authError}{' '}
+                  <button
+                    type="button"
+                    onClick={clearAuthError}
+                    aria-label="Dismiss"
+                    style={{
+                      background: 'none',
+                      border: 'none',
+                      cursor: 'pointer',
+                      color: 'inherit',
+                      padding: '0 2px',
+                    }}
+                  >
+                    &times;
+                  </button>
+                </div>
+              ) : null}
+              <button
+                className="btn btn-primary"
+                type="button"
+                disabled={isLoading}
+                onClick={() => {
+                  clearAuthError()
+                  signIn(
+                    'github',
+                    signInRedirectTo ? { redirectTo: signInRedirectTo } : undefined,
+                  ).catch(() => {
+                    // OAuth errors surface via the callback URL hash, handled by AppProviders.
+                  })
+                }}
+              >
+                <span className="sign-in-label">Sign in</span>
+                <span className="sign-in-provider">with GitHub</span>
+              </button>
+            </>
           )}
         </div>
       </div>

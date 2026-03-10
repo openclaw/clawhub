@@ -3,6 +3,7 @@ import { createFileRoute } from '@tanstack/react-router'
 import { useMutation } from 'convex/react'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { api } from '../../../convex/_generated/api'
+import { useAuthError } from '../../lib/useAuthError'
 import { getClawHubSiteUrl, normalizeClawHubSiteOrigin } from '../../lib/site'
 import { useAuthStatus } from '../../lib/useAuthStatus'
 
@@ -13,6 +14,7 @@ export const Route = createFileRoute('/cli/auth')({
 function CliAuth() {
   const { isAuthenticated, isLoading, me } = useAuthStatus()
   const { signIn } = useAuthActions()
+  const { error: authError, clear: clearAuthError } = useAuthError()
   const createToken = useMutation(api.tokens.create)
 
   const search = Route.useSearch() as {
@@ -104,13 +106,38 @@ function CliAuth() {
             CLI login
           </h1>
           <p className="section-subtitle">Sign in to create an API token for the CLI.</p>
+          {authError ? (
+            <p className="error" role="alert">
+              {authError}{' '}
+              <button
+                type="button"
+                onClick={clearAuthError}
+                aria-label="Dismiss"
+                style={{
+                  background: 'none',
+                  border: 'none',
+                  cursor: 'pointer',
+                  color: 'inherit',
+                  padding: '0 2px',
+                }}
+              >
+                &times;
+              </button>
+            </p>
+          ) : null}
           <button
             className="btn btn-primary"
             type="button"
             disabled={isLoading}
-            onClick={() =>
-              void signIn('github', signInRedirectTo ? { redirectTo: signInRedirectTo } : undefined)
-            }
+            onClick={() => {
+              clearAuthError()
+              signIn(
+                'github',
+                signInRedirectTo ? { redirectTo: signInRedirectTo } : undefined,
+              ).catch(() => {
+                // OAuth errors surface via the callback URL hash, handled by AppProviders.
+              })
+            }}
           >
             Sign in with GitHub
           </button>
