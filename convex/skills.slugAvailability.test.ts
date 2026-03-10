@@ -357,6 +357,160 @@ describe('skills.checkSlugAvailability', () => {
     })
   })
 
+  it('returns available when owner is deleted but GitHub identity matches', async () => {
+    vi.mocked(getAuthUserId).mockResolvedValue('users:caller' as never)
+
+    const result = (await checkSlugAvailabilityHandler(
+      createCtx({
+        skill: {
+          _id: 'skills:1',
+          slug: 'taken-skill',
+          ownerUserId: 'users:owner',
+          softDeletedAt: undefined,
+          moderationStatus: 'active',
+          moderationFlags: undefined,
+        },
+        owner: {
+          _id: 'users:owner',
+          handle: 'alice',
+          deletedAt: 123,
+          deactivatedAt: undefined,
+        },
+        ownerProviderAccountId: 'shared-gh',
+        callerProviderAccountId: 'shared-gh',
+      }) as never,
+      { slug: 'taken-skill' } as never,
+    )) as {
+      available: boolean
+      reason: string
+      message: string | null
+      url: string | null
+    }
+
+    expect(result).toEqual({
+      available: true,
+      reason: 'available',
+      message: null,
+      url: null,
+    })
+  })
+
+  it('returns available when owner is deactivated but GitHub identity matches', async () => {
+    vi.mocked(getAuthUserId).mockResolvedValue('users:caller' as never)
+
+    const result = (await checkSlugAvailabilityHandler(
+      createCtx({
+        skill: {
+          _id: 'skills:1',
+          slug: 'taken-skill',
+          ownerUserId: 'users:owner',
+          softDeletedAt: undefined,
+          moderationStatus: 'active',
+          moderationFlags: undefined,
+        },
+        owner: {
+          _id: 'users:owner',
+          handle: 'alice',
+          deletedAt: undefined,
+          deactivatedAt: 123,
+        },
+        ownerProviderAccountId: 'shared-gh',
+        callerProviderAccountId: 'shared-gh',
+      }) as never,
+      { slug: 'taken-skill' } as never,
+    )) as {
+      available: boolean
+      reason: string
+      message: string | null
+      url: string | null
+    }
+
+    expect(result).toEqual({
+      available: true,
+      reason: 'available',
+      message: null,
+      url: null,
+    })
+  })
+
+  it('returns taken with contact message when owner is deleted and identity does not match', async () => {
+    vi.mocked(getAuthUserId).mockResolvedValue('users:caller' as never)
+
+    const result = (await checkSlugAvailabilityHandler(
+      createCtx({
+        skill: {
+          _id: 'skills:1',
+          slug: 'taken-skill',
+          ownerUserId: 'users:owner',
+          softDeletedAt: undefined,
+          moderationStatus: 'active',
+          moderationFlags: undefined,
+        },
+        owner: {
+          _id: 'users:owner',
+          handle: 'alice',
+          deletedAt: 123,
+          deactivatedAt: undefined,
+        },
+        ownerProviderAccountId: 'owner-gh',
+        callerProviderAccountId: 'caller-gh',
+      }) as never,
+      { slug: 'taken-skill' } as never,
+    )) as {
+      available: boolean
+      reason: string
+      message: string
+      url: string | null
+    }
+
+    expect(result).toEqual({
+      available: false,
+      reason: 'taken',
+      message:
+        'This slug is locked to a deleted or banned account. ' +
+        'If you believe you are the rightful owner, please contact security@openclaw.ai to reclaim it.',
+      url: null,
+    })
+  })
+
+  it('returns taken with contact message when owner is deleted and caller is unauthenticated', async () => {
+    vi.mocked(getAuthUserId).mockResolvedValue(null as never)
+
+    const result = (await checkSlugAvailabilityHandler(
+      createCtx({
+        skill: {
+          _id: 'skills:1',
+          slug: 'taken-skill',
+          ownerUserId: 'users:owner',
+          softDeletedAt: undefined,
+          moderationStatus: 'active',
+          moderationFlags: undefined,
+        },
+        owner: {
+          _id: 'users:owner',
+          handle: 'alice',
+          deletedAt: 123,
+          deactivatedAt: undefined,
+        },
+      }) as never,
+      { slug: 'taken-skill' } as never,
+    )) as {
+      available: boolean
+      reason: string
+      message: string
+      url: string | null
+    }
+
+    expect(result).toEqual({
+      available: false,
+      reason: 'taken',
+      message:
+        'This slug is locked to a deleted or banned account. ' +
+        'If you believe you are the rightful owner, please contact security@openclaw.ai to reclaim it.',
+      url: null,
+    })
+  })
+
   it('returns available when ownership can be healed via shared GitHub identity', async () => {
     vi.mocked(getAuthUserId).mockResolvedValue('users:caller' as never)
 

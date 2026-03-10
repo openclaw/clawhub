@@ -1337,15 +1337,9 @@ export const checkSlugAvailability = query({
     const url = buildConflictingSkillUrl(skill, owner)
     const slugTakenMessage = buildSlugTakenErrorMessage(skill, owner)
 
-    if (!owner || owner.deletedAt || owner.deactivatedAt) {
-      return {
-        available: false,
-        reason: 'taken' as const,
-        message: slugTakenMessage,
-        url,
-      }
-    }
-
+    // Check GitHub identity FIRST so healing works even when the previous
+    // owner record is deleted/deactivated (e.g. duplicate Convex Auth user
+    // where the old record was later banned).
     if (userId) {
       const [ownerProviderAccountId, callerProviderAccountId] =
         await Promise.all([
@@ -1365,6 +1359,17 @@ export const checkSlugAvailability = query({
           message: null,
           url: null,
         }
+      }
+    }
+
+    if (!owner || owner.deletedAt || owner.deactivatedAt) {
+      return {
+        available: false,
+        reason: 'taken' as const,
+        message:
+          'This slug is locked to a deleted or banned account. ' +
+          'If you believe you are the rightful owner, please contact security@openclaw.ai to reclaim it.',
+        url: null,
       }
     }
 
@@ -4832,28 +4837,31 @@ export const insertVersion = internalMutation({
       // when the underlying GitHub identity matches (authAccounts.providerAccountId).
       const owner = await ctx.db.get(skill.ownerUserId)
       const slugTakenMessage = buildSlugTakenErrorMessage(skill, owner)
-      if (!owner || owner.deletedAt || owner.deactivatedAt) {
-        throw new ConvexError(slugTakenMessage)
-      }
 
-      const [ownerProviderAccountId, callerProviderAccountId] =
-        await Promise.all([
-          getGitHubProviderAccountId(ctx, skill.ownerUserId),
-          getGitHubProviderAccountId(ctx, userId),
-        ])
+      // Check GitHub identity FIRST so ownership healing works even when the
+      // previous owner record is deleted/deactivated (e.g. duplicate Convex Auth
+      // user where the old record was later banned).
+      const [ownerProviderAccountId, callerProviderAccountId] = await Promise.all([
+        getGitHubProviderAccountId(ctx, skill.ownerUserId),
+        getGitHubProviderAccountId(ctx, userId),
+      ])
 
-      // Deny healing when GitHub identity isn't present/consistent.
       if (
-        !canHealSkillOwnershipByGitHubProviderAccountId(
+        canHealSkillOwnershipByGitHubProviderAccountId(
           ownerProviderAccountId,
           callerProviderAccountId,
         )
       ) {
+        await ctx.db.patch(skill._id, { ownerUserId: userId, updatedAt: now })
+        skill = { ...skill, ownerUserId: userId }
+      } else if (!owner || owner.deletedAt || owner.deactivatedAt) {
+        throw new ConvexError(
+          'This slug is locked to a deleted or banned account. ' +
+            'If you believe you are the rightful owner, please contact security@openclaw.ai to reclaim it.',
+        )
+      } else {
         throw new ConvexError(slugTakenMessage)
       }
-
-      await ctx.db.patch(skill._id, { ownerUserId: userId, updatedAt: now })
-      skill = { ...skill, ownerUserId: userId }
     }
 
     const qualityAssessment = args.qualityAssessment

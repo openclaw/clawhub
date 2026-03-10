@@ -261,7 +261,175 @@ describe('skills anti-spam guards', () => {
           slug: 'taken-skill',
         }) as never,
       ),
-    ).rejects.toThrow('Slug is already taken. Choose a different slug.')
+    ).rejects.toThrow(
+      'This slug is locked to a deleted or banned account. ' +
+        'If you believe you are the rightful owner, please contact security@openclaw.ai to reclaim it.',
+    )
+  })
+
+  it('heals ownership when conflicting owner is deleted but GitHub identity matches', async () => {
+    let authAccountLookupCount = 0
+    const patch = vi.fn(async () => {})
+    const insert = vi.fn(async (table: string) => {
+      if (table === 'skillVersions') return 'skillVersions:1'
+      if (table === 'skillEmbeddings') return 'skillEmbeddings:1'
+      if (table === 'embeddingSkillMap') return 'embeddingSkillMap:1'
+      if (table === 'skillVersionFingerprints') return 'skillVersionFingerprints:1'
+      throw new Error(`unexpected insert table ${table}`)
+    })
+    const db = {
+      get: vi.fn(async (id: string) => {
+        if (id === 'users:caller') {
+          return {
+            _id: 'users:caller',
+            deletedAt: undefined,
+            deactivatedAt: undefined,
+            trustedPublisher: false,
+            role: 'user',
+          }
+        }
+        if (id === 'users:owner') {
+          return {
+            _id: 'users:owner',
+            handle: 'alice',
+            deletedAt: Date.now(),
+            deactivatedAt: undefined,
+          }
+        }
+        return null
+      }),
+      query: vi.fn((table: string) => {
+        if (table === 'skills') {
+          return {
+            withIndex: (name: string) => {
+              if (name !== 'by_slug') throw new Error(`unexpected skills index ${name}`)
+              return {
+                unique: async () => ({
+                  _id: 'skills:1',
+                  slug: 'taken-skill',
+                  displayName: 'Taken Skill',
+                  summary: 'Existing summary',
+                  ownerUserId: 'users:owner',
+                  latestVersionId: undefined,
+                  tags: {},
+                  softDeletedAt: undefined,
+                  badges: {
+                    redactionApproved: undefined,
+                    highlighted: undefined,
+                    official: undefined,
+                    deprecated: undefined,
+                  },
+                  moderationStatus: 'active',
+                  moderationReason: 'pending.scan',
+                  moderationNotes: undefined,
+                  moderationVerdict: 'clean',
+                  moderationReasonCodes: undefined,
+                  moderationEvidence: undefined,
+                  moderationSummary: 'Clean',
+                  moderationEngineVersion: 'test',
+                  moderationEvaluatedAt: 1,
+                  moderationSourceVersionId: undefined,
+                  quality: undefined,
+                  moderationFlags: undefined,
+                  isSuspicious: false,
+                  reportCount: 0,
+                  lastReportedAt: undefined,
+                  statsDownloads: 0,
+                  statsStars: 0,
+                  statsInstallsCurrent: 0,
+                  statsInstallsAllTime: 0,
+                  stats: {
+                    downloads: 0,
+                    installsCurrent: 0,
+                    installsAllTime: 0,
+                    stars: 0,
+                    versions: 1,
+                    comments: 0,
+                  },
+                  createdAt: 1,
+                  updatedAt: 1,
+                  manualOverride: undefined,
+                }),
+              }
+            },
+          }
+        }
+        if (table === 'authAccounts') {
+          return {
+            withIndex: (name: string) => {
+              if (name !== 'userIdAndProvider') throw new Error(`unexpected auth index ${name}`)
+              return {
+                unique: async () => {
+                  authAccountLookupCount += 1
+                  return authAccountLookupCount <= 2
+                    ? { providerAccountId: 'shared-gh' }
+                    : null
+                },
+              }
+            },
+          }
+        }
+        if (table === 'skillVersions') {
+          return {
+            withIndex: (name: string) => {
+              if (name !== 'by_skill_version') {
+                throw new Error(`unexpected skillVersions index ${name}`)
+              }
+              return {
+                unique: async () => null,
+              }
+            },
+          }
+        }
+        if (table === 'skillBadges') {
+          return {
+            withIndex: (name: string) => {
+              if (name !== 'by_skill') throw new Error(`unexpected skillBadges index ${name}`)
+              return {
+                take: async () => [],
+              }
+            },
+          }
+        }
+        if (table === 'skillEmbeddings') {
+          return {
+            withIndex: (name: string) => {
+              if (name !== 'by_version') {
+                throw new Error(`unexpected skillEmbeddings index ${name}`)
+              }
+              return {
+                unique: async () => null,
+              }
+            },
+          }
+        }
+        throw new Error(`unexpected table ${table}`)
+      }),
+      patch,
+      insert,
+      normalizeId: vi.fn(),
+    }
+
+    const result = await insertVersionHandler(
+      { db } as never,
+      createPublishArgs({
+        userId: 'users:caller',
+        slug: 'taken-skill',
+      }) as never,
+    )
+
+    expect(patch).toHaveBeenNthCalledWith(
+      1,
+      'skills:1',
+      expect.objectContaining({
+        ownerUserId: 'users:caller',
+      }),
+    )
+    expect(result).toEqual({
+      skillId: 'skills:1',
+      versionId: 'skillVersions:1',
+      embeddingId: 'skillEmbeddings:1',
+    })
   })
 
   it('keeps suspicious skills visible for low-trust publishers', async () => {
