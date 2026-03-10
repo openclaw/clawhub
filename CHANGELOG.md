@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.7.1 - 2026-03-11
+
+### Fixed
+- CLI: include `acceptLicenseTerms: true` in publish payload to fix "acceptLicenseTerms: invalid value" error (fixes #644, #660, #671, #672). The server now requires this field for all skill publishes. The fix was already in commit 2687d67, but npm v0.7.0 was published before that commit.
+
 ## Unreleased
 
 ### Added
