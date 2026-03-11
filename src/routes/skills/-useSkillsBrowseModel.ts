@@ -34,7 +34,7 @@ export function useSkillsBrowseModel({
 }) {
   const [query, setQuery] = useState(search.q ?? '')
   const [searchResults, setSearchResults] = useState<Array<SkillSearchEntry>>([])
-  const [searchLimit, setSearchLimit] = useState(pageSize)
+  const [displayCount, setDisplayCount] = useState(pageSize)
   const [isSearching, setIsSearching] = useState(false)
   const searchRequest = useRef(0)
   const loadMoreRef = useRef<HTMLDivElement | null>(null)
@@ -93,7 +93,7 @@ export function useSkillsBrowseModel({
       return
     }
     setSearchResults([])
-    setSearchLimit(pageSize)
+    setDisplayCount(pageSize)
   }, [searchKey])
 
   useEffect(() => {
@@ -108,7 +108,7 @@ export function useSkillsBrowseModel({
             query: trimmedQuery,
             highlightedOnly,
             nonSuspiciousOnly,
-            limit: searchLimit,
+            limit: 200,
           })) as Array<SkillSearchEntry>
           if (requestId === searchRequest.current) {
             setSearchResults(data)
@@ -121,7 +121,7 @@ export function useSkillsBrowseModel({
       })()
     }, 220)
     return () => window.clearTimeout(handle)
-  }, [hasQuery, highlightedOnly, nonSuspiciousOnly, searchLimit, searchSkills, trimmedQuery])
+  }, [hasQuery, highlightedOnly, nonSuspiciousOnly, searchSkills, trimmedQuery])
 
   const baseItems = useMemo(() => {
     if (hasQuery) {
@@ -178,18 +178,24 @@ export function useSkillsBrowseModel({
     return results
   }, [baseItems, dir, hasQuery, sort])
 
+  const displayed = useMemo(() => {
+    if (!hasQuery) return sorted
+    return sorted.slice(0, displayCount)
+  }, [hasQuery, sorted, displayCount])
+
   const isLoadingSkills = hasQuery ? isSearching && searchResults.length === 0 : isLoadingList
   const canLoadMore = hasQuery
-    ? !isSearching && searchResults.length === searchLimit && searchResults.length > 0
+    ? !isSearching && displayCount < searchResults.length
     : canLoadMoreList
-  const isLoadingMore = hasQuery ? isSearching && searchResults.length > 0 : isLoadingMoreList
+  const isLoadingMore = hasQuery ? false : isLoadingMoreList
   const canAutoLoad = typeof IntersectionObserver !== 'undefined'
 
   const loadMore = useCallback(() => {
     if (loadMoreInFlightRef.current || isLoadingMore || !canLoadMore) return
     loadMoreInFlightRef.current = true
     if (hasQuery) {
-      setSearchLimit((value) => value + pageSize)
+      setDisplayCount((value) => value + pageSize)
+      loadMoreInFlightRef.current = false
     } else {
       loadMorePaginated(pageSize)
     }
@@ -317,7 +323,7 @@ export function useSkillsBrowseModel({
     paginationStatus,
     query,
     sort,
-    sorted,
+    sorted: displayed,
     view,
   }
 }

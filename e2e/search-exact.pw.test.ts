@@ -60,7 +60,7 @@ test('skills search paginates exact results', async ({ page }) => {
               type: 'ActionResponse',
               requestId: message.requestId,
               success: true,
-              result: makeSearchResults(limit),
+              result: makeSearchResults(50),
               logLines: [],
             }
             window.setTimeout(() => {
@@ -90,6 +90,7 @@ test('skills search paginates exact results', async ({ page }) => {
   await expect(page.getByText('Skill 0')).toBeVisible()
   await expect(page.getByText('Scroll to load more')).toBeVisible()
 
+  // Wait for the search call to arrive
   await expect
     .poll(
       () =>
@@ -99,16 +100,20 @@ test('skills search paginates exact results', async ({ page }) => {
       { timeout: 10_000 },
     )
     .toBeGreaterThan(0)
-  const initialLimit = await page.evaluate(
-    () => (window as typeof window & { __searchLimits: number[] }).__searchLimits[0] ?? 0,
-  )
-  expect(initialLimit).toBeGreaterThan(0)
 
-  await page.evaluate(() => window.scrollTo(0, document.body.scrollHeight))
-  await expect(page.getByText(`Skill ${initialLimit + 5}`)).toBeVisible()
-  const limits = await page.evaluate(
+  // Should have made exactly one call with limit 200
+  const limitsAfterSearch = await page.evaluate(
     () => (window as typeof window & { __searchLimits: number[] }).__searchLimits,
   )
-  expect(Math.max(...limits)).toBeGreaterThan(initialLimit)
+  expect(limitsAfterSearch).toEqual([200])
+
+  // Scroll to trigger "load more" — should reveal cached items without a second call
+  await page.evaluate(() => window.scrollTo(0, document.body.scrollHeight))
+  await expect(page.getByText('Skill 30')).toBeVisible()
+
+  const limitsAfterScroll = await page.evaluate(
+    () => (window as typeof window & { __searchLimits: number[] }).__searchLimits,
+  )
+  expect(limitsAfterScroll).toEqual([200])
   await expectHealthyPage(page, errors)
 })

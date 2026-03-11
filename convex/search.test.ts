@@ -91,24 +91,49 @@ describe('search helpers', () => {
   })
 
   it('applies nonSuspiciousOnly filtering in lexical fallback', async () => {
-    const suspicious = makeSkillDoc({
-      id: 'skills:suspicious',
-      slug: 'orf-suspicious',
-      displayName: 'ORF Suspicious',
-      moderationFlags: ['flagged.suspicious'],
-    })
     const clean = makeSkillDoc({ id: 'skills:clean', slug: 'orf-clean', displayName: 'ORF Clean' })
 
-    const result = await lexicalFallbackSkillsHandler(
-      makeLexicalCtx({
-        exactSlugSkill: null,
-        recentSkills: [suspicious, clean],
-      }),
-      { query: 'orf', queryTokens: ['orf'], nonSuspiciousOnly: true, limit: 10 },
-    )
+    const ctx = makeLexicalCtx({
+      exactSlugSkill: null,
+      recentSkills: [clean],
+    })
+
+    const result = await lexicalFallbackSkillsHandler(ctx, {
+      query: 'orf',
+      queryTokens: ['orf'],
+      nonSuspiciousOnly: true,
+      limit: 10,
+    })
 
     expect(result).toHaveLength(1)
     expect(result[0].skill.slug).toBe('orf-clean')
+    // Should use the nonsuspicious index to filter at the DB level
+    expect(ctx._withIndexFn).toHaveBeenCalledWith('by_nonsuspicious_updated', expect.any(Function))
+  })
+
+  it('uses by_active_updated index when nonSuspiciousOnly is not set and includes suspicious skills', async () => {
+    const clean = makeSkillDoc({ id: 'skills:clean', slug: 'orf-clean', displayName: 'ORF Clean' })
+    const suspicious = makeSkillDoc({
+      id: 'skills:sus',
+      slug: 'orf-sus',
+      displayName: 'ORF Sus',
+      moderationFlags: ['flagged.suspicious'],
+    })
+
+    const ctx = makeLexicalCtx({
+      exactSlugSkill: null,
+      recentSkills: [clean, suspicious],
+    })
+
+    const result = await lexicalFallbackSkillsHandler(ctx, {
+      query: 'orf',
+      queryTokens: ['orf'],
+      limit: 10,
+    })
+
+    // suspicious skills are NOT filtered when nonSuspiciousOnly is unset
+    expect(result).toHaveLength(2)
+    expect(ctx._withIndexFn).toHaveBeenCalledWith('by_active_updated', expect.any(Function))
   })
 
   it('includes exact slug match from by_slug even when recent scan is empty', async () => {
@@ -556,27 +581,35 @@ function makeLexicalCtx(params: {
   exactSlugSkill: ReturnType<typeof makeSkillDoc> | null
   recentSkills: Array<ReturnType<typeof makeSkillDoc>>
 }) {
+  const withIndexFn = vi.fn((index: string) => {
+    if (index === 'by_slug') {
+      return {
+        unique: vi.fn().mockResolvedValue(params.exactSlugSkill),
+      }
+    }
+    if (index === 'by_active_updated' || index === 'by_nonsuspicious_updated') {
+      return {
+        order: () => ({
+          take: vi.fn().mockResolvedValue(params.recentSkills),
+          [Symbol.asyncIterator]: () => {
+            let i = 0
+            return {
+              next: async () =>
+                i < params.recentSkills.length
+                  ? { value: params.recentSkills[i++], done: false }
+                  : { value: undefined, done: true },
+            }
+          },
+        }),
+      }
+    }
+    throw new Error(`Unexpected index ${index}`)
+  })
   return {
     db: {
       query: vi.fn((table: string) => {
         if (table !== 'skills') throw new Error(`Unexpected table ${table}`)
-        return {
-          withIndex: (index: string) => {
-            if (index === 'by_slug') {
-              return {
-                unique: vi.fn().mockResolvedValue(params.exactSlugSkill),
-              }
-            }
-            if (index === 'by_active_updated') {
-              return {
-                order: () => ({
-                  take: vi.fn().mockResolvedValue(params.recentSkills),
-                }),
-              }
-            }
-            throw new Error(`Unexpected index ${index}`)
-          },
-        }
+        return { withIndex: withIndexFn }
       }),
       get: vi.fn(async (id: string) => {
         if (id.startsWith('users:')) return { _id: id, handle: 'owner' }
@@ -584,5 +617,6 @@ function makeLexicalCtx(params: {
         return null
       }),
     },
+    _withIndexFn: withIndexFn,
   }
 }

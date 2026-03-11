@@ -165,7 +165,7 @@ describe('SkillsIndex', () => {
       query: 'remind',
       highlightedOnly: false,
       nonSuspiciousOnly: false,
-      limit: 25,
+      limit: 200,
     })
     await act(async () => {
       await vi.runAllTimersAsync()
@@ -174,17 +174,14 @@ describe('SkillsIndex', () => {
       query: 'remind',
       highlightedOnly: false,
       nonSuspiciousOnly: false,
-      limit: 25,
+      limit: 200,
     })
   })
 
   it('loads more results when search pagination is requested', async () => {
     searchMock = { q: 'remind' }
     vi.stubGlobal('IntersectionObserver', undefined)
-    const actionFn = vi
-      .fn()
-      .mockResolvedValueOnce(makeSearchResults(25))
-      .mockResolvedValueOnce(makeSearchResults(50))
+    const actionFn = vi.fn().mockResolvedValue(makeSearchResults(50))
     convexReactMocks.useAction.mockReturnValue(actionFn)
     vi.useFakeTimers()
 
@@ -193,18 +190,24 @@ describe('SkillsIndex', () => {
       await vi.runAllTimersAsync()
     })
 
+    // Only one server call with limit 200
+    expect(actionFn).toHaveBeenCalledTimes(1)
+    expect(actionFn).toHaveBeenCalledWith({
+      query: 'remind',
+      highlightedOnly: false,
+      nonSuspiciousOnly: false,
+      limit: 200,
+    })
+
+    // Initially shows 25 items; "Load more" reveals cached items without a second call
     const loadMoreButton = screen.getByRole('button', { name: 'Load more' })
     await act(async () => {
       fireEvent.click(loadMoreButton)
       await vi.runAllTimersAsync()
     })
 
-    expect(actionFn).toHaveBeenLastCalledWith({
-      query: 'remind',
-      highlightedOnly: false,
-      nonSuspiciousOnly: false,
-      limit: 50,
-    })
+    // No additional server call — pagination is client-side
+    expect(actionFn).toHaveBeenCalledTimes(1)
   })
 
   it('sorts search results by stars and breaks ties by updatedAt', async () => {
