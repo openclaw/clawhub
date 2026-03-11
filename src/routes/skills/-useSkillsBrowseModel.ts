@@ -195,6 +195,7 @@ export function useSkillsBrowseModel({
     loadMoreInFlightRef.current = true
     if (hasQuery) {
       setDisplayCount((value) => value + pageSize)
+      loadMoreInFlightRef.current = false
     } else {
       loadMorePaginated(pageSize)
     }
