@@ -111,12 +111,18 @@ describe('search helpers', () => {
     expect(ctx._withIndexFn).toHaveBeenCalledWith('by_nonsuspicious_updated', expect.any(Function))
   })
 
-  it('uses by_active_updated index when nonSuspiciousOnly is not set', async () => {
+  it('uses by_active_updated index when nonSuspiciousOnly is not set and includes suspicious skills', async () => {
     const clean = makeSkillDoc({ id: 'skills:clean', slug: 'orf-clean', displayName: 'ORF Clean' })
+    const suspicious = makeSkillDoc({
+      id: 'skills:sus',
+      slug: 'orf-sus',
+      displayName: 'ORF Sus',
+      moderationFlags: ['flagged.suspicious'],
+    })
 
     const ctx = makeLexicalCtx({
       exactSlugSkill: null,
-      recentSkills: [clean],
+      recentSkills: [clean, suspicious],
     })
 
     const result = await lexicalFallbackSkillsHandler(ctx, {
@@ -125,7 +131,8 @@ describe('search helpers', () => {
       limit: 10,
     })
 
-    expect(result).toHaveLength(1)
+    // suspicious skills are NOT filtered when nonSuspiciousOnly is unset
+    expect(result).toHaveLength(2)
     expect(ctx._withIndexFn).toHaveBeenCalledWith('by_active_updated', expect.any(Function))
   })
 

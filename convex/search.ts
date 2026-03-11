@@ -288,11 +288,10 @@ export const lexicalFallbackSkills = internalQuery({
     for await (const skill of recentSkillsQuery.order('desc')) {
       if (++scanned > FALLBACK_SCAN_LIMIT) break
       if (seenSkillIds.has(skill._id)) continue
-      if (!args.nonSuspiciousOnly && isSkillSuspicious(skill)) continue
+      if (args.nonSuspiciousOnly && isSkillSuspicious(skill)) continue
       if (!matchesExactTokens(args.queryTokens, [skill.displayName, skill.slug, skill.summary]))
         continue
       matched.push(skill)
-      if (matched.length >= limit) break
     }
     if (matched.length === 0) return []
 
