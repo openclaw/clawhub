@@ -1,4 +1,6 @@
 import { useState } from 'react'
+import type { TranslationKey } from '../i18n'
+import { useI18n } from '../i18n/useI18n'
 
 type LlmAnalysisDimension = {
   name: string
@@ -83,23 +85,23 @@ function OpenClawIcon({ className }: { className?: string }) {
   )
 }
 
-function getScanStatusInfo(status: string) {
+function getScanStatusInfo(status: string, t: (key: TranslationKey, params?: Record<string, string | number>) => string) {
   switch (status.toLowerCase()) {
     case 'benign':
     case 'clean':
-      return { label: 'Benign', className: 'scan-status-clean' }
+      return { label: t('skillSecurity.benign'), className: 'scan-status-clean' }
     case 'malicious':
-      return { label: 'Malicious', className: 'scan-status-malicious' }
+      return { label: t('skillSecurity.malicious'), className: 'scan-status-malicious' }
     case 'suspicious':
-      return { label: 'Suspicious', className: 'scan-status-suspicious' }
+      return { label: t('skillSecurity.suspicious'), className: 'scan-status-suspicious' }
     case 'loading':
-      return { label: 'Loading...', className: 'scan-status-pending' }
+      return { label: t('skillSecurity.loading'), className: 'scan-status-pending' }
     case 'pending':
     case 'not_found':
-      return { label: 'Pending', className: 'scan-status-pending' }
+      return { label: t('skillSecurity.pending'), className: 'scan-status-pending' }
     case 'error':
     case 'failed':
-      return { label: 'Error', className: 'scan-status-error' }
+      return { label: t('skillSecurity.error'), className: 'scan-status-error' }
     default:
       return { label: status, className: 'scan-status-unknown' }
   }
@@ -119,6 +121,7 @@ function getDimensionIcon(rating: string) {
 }
 
 function LlmAnalysisDetail({ analysis }: { analysis: LlmAnalysis }) {
+  const { t } = useI18n()
   const verdict = analysis.verdict ?? analysis.status
   const [isOpen, setIsOpen] = useState(false)
 
@@ -161,7 +164,7 @@ function LlmAnalysisDetail({ analysis }: { analysis: LlmAnalysis }) {
         ) : null}
         {analysis.findings ? (
           <div className="scan-findings-section">
-            <div className="scan-findings-title">Scan Findings in Context</div>
+            <div className="scan-findings-title">{t('skillSecurity.scanFindings')}</div>
             {(() => {
               const counts = new Map<string, number>()
               return analysis.findings.split('\n').map((line) => {
@@ -180,10 +183,10 @@ function LlmAnalysisDetail({ analysis }: { analysis: LlmAnalysis }) {
           <div className={`analysis-guidance ${guidanceClass}`}>
             <div className="analysis-guidance-label">
               {verdict === 'malicious'
-                ? 'Do not install this skill'
+                ? t('skillSecurity.doNotInstall')
                 : verdict === 'suspicious'
-                  ? 'What to consider before installing'
-                  : 'Assessment'}
+                  ? t('skillSecurity.whatToConsider')
+                  : t('skillSecurity.assessment')}
             </div>
             {analysis.guidance}
           </div>
@@ -199,16 +202,17 @@ export function SecurityScanResults({
   llmAnalysis,
   variant = 'panel',
 }: SecurityScanResultsProps) {
+  const { t } = useI18n()
   if (!sha256hash && !llmAnalysis) return null
 
   const vtStatus = vtAnalysis?.status ?? 'pending'
   const vtUrl = sha256hash ? `https://www.virustotal.com/gui/file/${sha256hash}` : null
-  const vtStatusInfo = getScanStatusInfo(vtStatus)
+  const vtStatusInfo = getScanStatusInfo(vtStatus, t)
   const isCodeInsight = vtAnalysis?.source === 'code_insight'
   const aiAnalysis = vtAnalysis?.analysis
 
   const llmVerdict = llmAnalysis?.verdict ?? llmAnalysis?.status
-  const llmStatusInfo = llmVerdict ? getScanStatusInfo(llmVerdict) : null
+  const llmStatusInfo = llmVerdict ? getScanStatusInfo(llmVerdict, t) : null
 
   if (variant === 'badge') {
     return (
@@ -242,7 +246,7 @@ export function SecurityScanResults({
 
   return (
     <div className="scan-results-panel">
-      <div className="scan-results-title">Security Scan</div>
+      <div className="scan-results-title">{t('skillSecurity.title')}</div>
       <div className="scan-results-list">
         {sha256hash ? (
           <div className="scan-result-row">
@@ -258,14 +262,14 @@ export function SecurityScanResults({
                 rel="noopener noreferrer"
                 className="scan-result-link"
               >
-                View report →
+                {t('skillSecurity.viewReport')}
               </a>
             ) : null}
           </div>
         ) : null}
         {isCodeInsight && aiAnalysis && (vtStatus === 'malicious' || vtStatus === 'suspicious') ? (
           <div className={`code-insight-analysis ${vtStatus}`}>
-            <div className="code-insight-label">Code Insight</div>
+            <div className="code-insight-label">{t('skillSecurity.codeInsight')}</div>
             <p className="code-insight-text">{aiAnalysis}</p>
           </div>
         ) : null}
@@ -277,7 +281,7 @@ export function SecurityScanResults({
             </div>
             <div className={`scan-result-status ${llmStatusInfo.className}`}>{llmStatusInfo.label}</div>
             {llmAnalysis.confidence ? (
-              <span className="scan-result-confidence">{llmAnalysis.confidence} confidence</span>
+              <span className="scan-result-confidence">{t('skillSecurity.confidence', { confidence: llmAnalysis.confidence })}</span>
             ) : null}
           </div>
         ) : null}

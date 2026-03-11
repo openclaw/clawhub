@@ -3,6 +3,7 @@ import { useMutation, useQuery } from 'convex/react'
 import { useEffect, useState } from 'react'
 import { api } from '../../convex/_generated/api'
 import type { Id } from '../../convex/_generated/dataModel'
+import { useI18n } from '../i18n'
 import { gravatarUrl } from '../lib/gravatar'
 
 export const Route = createFileRoute('/settings')({
@@ -10,6 +11,7 @@ export const Route = createFileRoute('/settings')({
 })
 
 function Settings() {
+  const { t } = useI18n()
   const me = useQuery(api.users.me)
   const updateProfile = useMutation(api.users.updateProfile)
   const deleteAccount = useMutation(api.users.deleteAccount)
@@ -40,7 +42,7 @@ function Settings() {
   if (!me) {
     return (
       <main className="section">
-        <div className="card">Sign in to access settings.</div>
+        <div className="card">{t('settings.signInRequired')}</div>
       </main>
     )
   }
@@ -52,7 +54,7 @@ function Settings() {
   async function onSave(event: React.FormEvent) {
     event.preventDefault()
     await updateProfile({ displayName, bio })
-    setStatus('Saved.')
+    setStatus(t('settings.saved'))
   }
 
   async function onDelete() {
@@ -65,14 +67,14 @@ function Settings() {
   }
 
   async function onCreateToken() {
-    const label = tokenLabel.trim() || 'CLI token'
+    const label = tokenLabel.trim() || t('settings.cliToken')
     const result = await createToken({ label })
     setNewToken(result.token)
   }
 
   return (
     <main className="section settings-shell">
-      <h1 className="section-title">Settings</h1>
+      <h1 className="section-title">{t('settings.title')}</h1>
       <div className="card settings-profile">
         <div className="settings-avatar">
           {avatar ? (
@@ -89,7 +91,7 @@ function Settings() {
       </div>
       <form className="card settings-card" onSubmit={onSave}>
         <label className="settings-field">
-          <span>Display name</span>
+          <span>{t('settings.displayName')}</span>
           <input
             className="settings-input"
             value={displayName}
@@ -97,18 +99,18 @@ function Settings() {
           />
         </label>
         <label className="settings-field">
-          <span>Bio</span>
+          <span>{t('settings.bio')}</span>
           <textarea
             className="settings-input"
             rows={5}
             value={bio}
             onChange={(event) => setBio(event.target.value)}
-            placeholder="Tell people what you're building."
+            placeholder={t('settings.bioPlaceholder')}
           />
         </label>
         <div className="settings-actions">
           <button className="btn btn-primary settings-save" type="submit">
-            Save
+            {t('settings.save')}
           </button>
           {status ? <div className="stat">{status}</div> : null}
         </div>
@@ -116,19 +118,19 @@ function Settings() {
 
       <div className="card settings-card">
         <h2 className="section-title danger-title" style={{ marginTop: 0 }}>
-          API tokens
+          {t('settings.apiTokens')}
         </h2>
         <p className="section-subtitle">
-          Use these tokens for the `clawhub` CLI. Tokens are shown once on creation.
+          {t('settings.apiTokensSubtitle')}
         </p>
 
         <div className="settings-field">
-          <span>Label</span>
+          <span>{t('settings.label')}</span>
           <input
             className="settings-input"
             value={tokenLabel}
             onChange={(event) => setTokenLabel(event.target.value)}
-            placeholder="CLI token"
+            placeholder={t('settings.cliToken')}
           />
         </div>
         <div className="settings-actions">
@@ -137,11 +139,11 @@ function Settings() {
             type="button"
             onClick={() => void onCreateToken()}
           >
-            Create token
+            {t('settings.createToken')}
           </button>
           {newToken ? (
             <div className="stat" style={{ overflowX: 'auto' }}>
-              <div style={{ marginBottom: 8 }}>Copy this token now:</div>
+              <div style={{ marginBottom: 8 }}>{t('settings.copyTokenNow')}</div>
               <code>{newToken}</code>
             </div>
           ) : null}
@@ -161,9 +163,9 @@ function Settings() {
                     <span style={{ opacity: 0.7 }}>({token.prefix}…)</span>
                   </div>
                   <div style={{ opacity: 0.7 }}>
-                    Created {formatDate(token.createdAt)}
-                    {token.lastUsedAt ? ` · Used ${formatDate(token.lastUsedAt)}` : ''}
-                    {token.revokedAt ? ` · Revoked ${formatDate(token.revokedAt)}` : ''}
+                    {t('settings.created')} {formatDate(token.createdAt)}
+                    {token.lastUsedAt ? ` · ${t('settings.used')} ${formatDate(token.lastUsedAt)}` : ''}
+                    {token.revokedAt ? ` · ${t('settings.revoked')} ${formatDate(token.revokedAt)}` : ''}
                   </div>
                 </div>
                 <div>
@@ -173,7 +175,7 @@ function Settings() {
                     disabled={Boolean(token.revokedAt)}
                     onClick={() => void revokeToken({ tokenId: token._id })}
                   >
-                    {token.revokedAt ? 'Revoked' : 'Revoke'}
+                    {token.revokedAt ? t('settings.revoked') : t('settings.revoke')}
                   </button>
                 </div>
               </div>
@@ -181,18 +183,18 @@ function Settings() {
           </div>
         ) : (
           <p className="section-subtitle" style={{ marginTop: 16 }}>
-            No tokens yet.
+            {t('settings.noTokens')}
           </p>
         )}
       </div>
 
       <div className="card danger-card">
-        <h2 className="section-title danger-title">Danger zone</h2>
+        <h2 className="section-title danger-title">{t('settings.dangerZone')}</h2>
         <p className="section-subtitle">
-          Delete your account permanently. This cannot be undone. Published skills remain public.
+          {t('settings.dangerText')}
         </p>
         <button className="btn btn-danger" type="button" onClick={() => void onDelete()}>
-          Delete account
+          {t('settings.deleteAccount')}
         </button>
       </div>
     </main>

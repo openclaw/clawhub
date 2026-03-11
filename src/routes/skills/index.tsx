@@ -1,6 +1,7 @@
 import { createFileRoute, redirect } from '@tanstack/react-router'
 import { useQuery } from 'convex/react'
 import { useRef } from 'react'
+import { useI18n } from '../../i18n/useI18n'
 import { api } from '../../../convex/_generated/api'
 import { parseSort } from './-params'
 import { SkillsResults } from './-SkillsResults'
@@ -48,6 +49,7 @@ export const Route = createFileRoute('/skills/')({
 })
 
 export function SkillsIndex() {
+  const { t } = useI18n()
   const navigate = Route.useNavigate()
   const search = Route.useSearch()
   const searchInputRef = useRef<HTMLInputElement>(null)
@@ -65,13 +67,13 @@ export function SkillsIndex() {
     <main className="section">
       <header className="skills-header-top">
         <h1 className="section-title" style={{ marginBottom: 8 }}>
-          Skills
+          {t('skillsIndex.title')}
           {totalSkillsText && <span style={{ opacity: 0.55 }}>{` (${totalSkillsText})`}</span>}
         </h1>
         <p className="section-subtitle" style={{ marginBottom: 0 }}>
           {model.isLoadingSkills
-            ? 'Loading skills…'
-            : `Browse the skill library${model.activeFilters.length ? ` (${model.activeFilters.join(', ')})` : ''}.`}
+            ? t('skillsIndex.loading')
+            : `${t('skillsIndex.browseLibrary')}${model.activeFilters.length ? ` (${model.activeFilters.join(', ')})` : ''}`}
         </p>
       </header>
       <div className="skills-container">

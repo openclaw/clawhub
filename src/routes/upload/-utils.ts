@@ -1,4 +1,5 @@
 import { isTextContentType, TEXT_FILE_EXTENSION_SET } from 'clawhub-schema'
+import { t } from '../../i18n'
 import { getUserFacingConvexError } from '../../lib/convexError'
 
 export async function uploadFile(uploadUrl: string, file: File) {
@@ -39,7 +40,7 @@ export function formatBytes(bytes: number) {
 }
 
 export function formatPublishError(error: unknown) {
-  return getUserFacingConvexError(error, 'Publish failed. Please try again.')
+  return getUserFacingConvexError(error, t('common.publishFailed'))
 }
 
 export function isTextFile(file: File) {

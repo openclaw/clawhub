@@ -2,6 +2,7 @@ import { createFileRoute, Link } from '@tanstack/react-router'
 import { useMutation, useQuery } from 'convex/react'
 import { api } from '../../convex/_generated/api'
 import type { Doc } from '../../convex/_generated/dataModel'
+import { useI18n } from '../i18n'
 import { formatCompactStat } from '../lib/numberFormat'
 import type { PublicSkill } from '../lib/publicUser'
 
@@ -10,6 +11,7 @@ export const Route = createFileRoute('/stars')({
 })
 
 function Stars() {
+  const { t } = useI18n()
   const me = useQuery(api.users.me) as Doc<'users'> | null | undefined
   const skills =
     (useQuery(api.stars.listByUser, me ? { userId: me._id, limit: 50 } : 'skip') as
@@ -21,18 +23,18 @@ function Stars() {
   if (!me) {
     return (
       <main className="section">
-        <div className="card">Sign in to see your highlights.</div>
+        <div className="card">{t('stars.signInRequired')}</div>
       </main>
     )
   }
 
   return (
     <main className="section">
-      <h1 className="section-title">Your highlights</h1>
-      <p className="section-subtitle">Skills you’ve starred for quick access.</p>
+      <h1 className="section-title">{t('stars.title')}</h1>
+      <p className="section-subtitle">{t('stars.subtitle')}</p>
       <div className="grid">
         {skills.length === 0 ? (
-          <div className="card">No stars yet.</div>
+          <div className="card">{t('stars.noStars')}</div>
         ) : (
           skills.map((skill) => {
             const owner = encodeURIComponent(String(skill.ownerUserId))

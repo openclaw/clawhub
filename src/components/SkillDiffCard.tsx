@@ -3,6 +3,7 @@ import { DiffEditor, useMonaco } from '@monaco-editor/react'
 import { useAction } from 'convex/react'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { api } from '../../convex/_generated/api'
+import { useI18n } from '../i18n/useI18n'
 import type { Doc, Id } from '../../convex/_generated/dataModel'
 import {
   buildFileDiffList,
@@ -39,6 +40,7 @@ const EMPTY_DIFF_TEXT = ''
 
 export function SkillDiffCard({ skill, versions, variant = 'card' }: SkillDiffCardProps) {
   const getFileText = useAction(api.skills.getFileText)
+  const { t } = useI18n()
   const monaco = useMonaco()
   const [viewMode, setViewMode] = useState<'split' | 'inline'>('split')
   const [leftVersionId, setLeftVersionId] = useState<Id<'skillVersions'> | null>(null)
@@ -248,34 +250,34 @@ export function SkillDiffCard({ skill, versions, variant = 'card' }: SkillDiffCa
       <div className="diff-header">
         <div>
           <h2 className="section-title" style={{ fontSize: '1.2rem', margin: 0 }}>
-            Compare versions
+            {t('skillDiff.title')}
           </h2>
           <p className="section-subtitle" style={{ margin: 0 }}>
-            Inline or side-by-side diff for any file.
+            {t('skillDiff.subtitle')}
           </p>
         </div>
         <fieldset className="diff-toggle-group">
-          <legend className="sr-only">Diff layout</legend>
+          <legend className="sr-only">{t('skillDiff.diffLayout')}</legend>
           <button
             className={`diff-toggle${viewMode === 'split' ? ' is-active' : ''}`}
             type="button"
             onClick={() => setViewMode('split')}
           >
-            Side-by-side
+            {t('skillDiff.sideBySide')}
           </button>
           <button
             className={`diff-toggle${viewMode === 'inline' ? ' is-active' : ''}`}
             type="button"
             onClick={() => setViewMode('inline')}
           >
-            Inline
+            {t('skillDiff.inline')}
           </button>
         </fieldset>
       </div>
 
       <div className="diff-controls">
         <div className="diff-select">
-          <label htmlFor="diff-left">Left</label>
+          <label htmlFor="diff-left">{t('skillDiff.left')}</label>
           <select
             id="diff-left"
             className="search-input"
@@ -283,7 +285,7 @@ export function SkillDiffCard({ skill, versions, variant = 'card' }: SkillDiffCa
             onChange={(event) => setLeftVersionId(event.target.value as Id<'skillVersions'>)}
           >
             <option value="" disabled>
-              Select version
+              {t('skillDiff.selectVersion')}
             </option>
             {renderOptions(versionOptions)}
           </select>
@@ -297,10 +299,10 @@ export function SkillDiffCard({ skill, versions, variant = 'card' }: SkillDiffCa
           }}
           disabled={!leftVersionId || !rightVersionId}
         >
-          Swap
+          {t('skillDiff.swap')}
         </button>
         <div className="diff-select">
-          <label htmlFor="diff-right">Right</label>
+          <label htmlFor="diff-right">{t('skillDiff.right')}</label>
           <select
             id="diff-right"
             className="search-input"
@@ -308,7 +310,7 @@ export function SkillDiffCard({ skill, versions, variant = 'card' }: SkillDiffCa
             onChange={(event) => setRightVersionId(event.target.value as Id<'skillVersions'>)}
           >
             <option value="" disabled>
-              Select version
+              {t('skillDiff.selectVersion')}
             </option>
             {renderOptions(versionOptions)}
           </select>
@@ -317,15 +319,15 @@ export function SkillDiffCard({ skill, versions, variant = 'card' }: SkillDiffCa
 
       <div className="diff-meta">
         <span>
-          Left {leftLabel} • Right {rightLabel}
+          {t('skillDiff.leftRight', { leftLabel, rightLabel })}
         </span>
-        {diffUnavailable ? <span>Need at least 2 versions.</span> : null}
+        {diffUnavailable ? <span>{t('skillDiff.needTwoVersions')}</span> : null}
       </div>
 
       <div className="diff-layout">
         <div className="diff-files">
           {fileDiffItems.length === 0 ? (
-            <div className="diff-empty">No files to compare.</div>
+            <div className="diff-empty">{t('skillDiff.noFilesToCompare')}</div>
           ) : (
             fileDiffItems.map((item) => (
               <button
@@ -345,26 +347,25 @@ export function SkillDiffCard({ skill, versions, variant = 'card' }: SkillDiffCa
             <div className="diff-empty">{error}</div>
           ) : sizeWarning ? (
             <div className="diff-empty">
-              {sizeWarning.side === 'left' ? 'Left' : 'Right'} file exceeds 200KB:{' '}
-              {sizeWarning.path}
+              {sizeWarning.side === 'left' ? t('skillDiff.leftExceeds', { name: sizeWarning.path }) : t('skillDiff.rightExceeds', { name: sizeWarning.path })}
             </div>
           ) : diffUnavailable ? (
-            <div className="diff-empty">Publish another version to compare.</div>
+            <div className="diff-empty">{t('skillDiff.publishAnother')}</div>
           ) : !selectionReady ? (
-            <div className="diff-empty">Select two versions to compare.</div>
+            <div className="diff-empty">{t('skillDiff.selectTwoVersions')}</div>
           ) : !fileSelected ? (
-            <div className="diff-empty">Select a file to compare.</div>
+            <div className="diff-empty">{t('skillDiff.selectFileToCompare')}</div>
           ) : (
-            <ClientOnly fallback={<div className="diff-empty">Preparing diff…</div>}>
+            <ClientOnly fallback={<div className="diff-empty">{t('skillDiff.preparingDiff')}</div>}>
               <DiffEditor
                 className="diff-monaco"
                 original={leftText}
                 modified={rightText}
                 theme={getMonacoThemeName()}
-                loading={<div className="diff-empty">Loading diff…</div>}
+                loading={<div className="diff-empty">{t('skillDiff.loadingDiff')}</div>}
                 options={buildDiffOptions(viewMode)}
               />
-              {isLoading ? <div className="diff-loading">Loading…</div> : null}
+              {isLoading ? <div className="diff-loading">{t('skillDiff.loadingDiff')}</div> : null}
             </ClientOnly>
           )}
         </div>

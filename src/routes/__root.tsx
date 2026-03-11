@@ -7,15 +7,17 @@ import { ClientOnly } from '../components/ClientOnly'
 import { DeploymentDriftBanner } from '../components/DeploymentDriftBanner'
 import { Footer } from '../components/Footer'
 import Header from '../components/Header'
-import { getSiteDescription, getSiteMode, getSiteName, getSiteUrlForMode } from '../lib/site'
+import { t, useI18n } from '../i18n'
+import { getSiteMode, getSiteUrlForMode } from '../lib/site'
 
 import appCss from '../styles.css?url'
 
 export const Route = createRootRoute({
   head: () => {
     const mode = getSiteMode()
-    const siteName = getSiteName(mode)
-    const siteDescription = getSiteDescription(mode)
+    const siteName = mode === 'souls' ? t('site.soulsName') : t('site.skillsName')
+    const siteDescription =
+      mode === 'souls' ? t('site.soulsDescription') : t('site.skillsDescription')
     const siteUrl = getSiteUrlForMode(mode)
     const ogImage = `${siteUrl}/og.png`
 
@@ -101,8 +103,9 @@ export const Route = createRootRoute({
 })
 
 function RootDocument({ children }: { children: React.ReactNode }) {
+  const { locale } = useI18n()
   return (
-    <html lang="en">
+    <html lang={locale}>
       <head>
         <HeadContent />
       </head>

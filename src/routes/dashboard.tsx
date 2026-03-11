@@ -3,6 +3,7 @@ import { useQuery } from 'convex/react'
 import { Clock, Package, Plus, Upload } from 'lucide-react'
 import { api } from '../../convex/_generated/api'
 import type { Doc } from '../../convex/_generated/dataModel'
+import { useI18n } from '../i18n'
 import { formatCompactStat } from '../lib/numberFormat'
 import type { PublicSkill } from '../lib/publicUser'
 
@@ -13,6 +14,7 @@ export const Route = createFileRoute('/dashboard')({
 })
 
 function Dashboard() {
+  const { t } = useI18n()
   const me = useQuery(api.users.me) as Doc<'users'> | null | undefined
   const mySkills = useQuery(
     api.skills.list,
@@ -22,7 +24,7 @@ function Dashboard() {
   if (!me) {
     return (
       <main className="section">
-        <div className="card">Sign in to access your dashboard.</div>
+        <div className="card">{t('dashboard.signInRequired')}</div>
       </main>
     )
   }
@@ -34,22 +36,22 @@ function Dashboard() {
     <main className="section">
       <div className="dashboard-header">
         <h1 className="section-title" style={{ margin: 0 }}>
-          My Skills
+          {t('dashboard.mySkills')}
         </h1>
         <Link to="/upload" search={{ updateSlug: undefined }} className="btn btn-primary">
           <Plus className="h-4 w-4" aria-hidden="true" />
-          Upload New Skill
+          {t('dashboard.uploadNew')}
         </Link>
       </div>
 
       {skills.length === 0 ? (
         <div className="card dashboard-empty">
           <Package className="dashboard-empty-icon" aria-hidden="true" />
-          <h2>No skills yet</h2>
-          <p>Upload your first skill to share it with the community.</p>
+          <h2>{t('dashboard.noSkillsTitle')}</h2>
+          <p>{t('dashboard.noSkillsText')}</p>
           <Link to="/upload" search={{ updateSlug: undefined }} className="btn btn-primary">
             <Upload className="h-4 w-4" aria-hidden="true" />
-            Upload a Skill
+            {t('dashboard.uploadSkill')}
           </Link>
         </div>
       ) : (
@@ -64,6 +66,7 @@ function Dashboard() {
 }
 
 function SkillCard({ skill, ownerHandle }: { skill: DashboardSkill; ownerHandle: string | null }) {
+  const { t } = useI18n()
   return (
     <div className="dashboard-skill-card">
       <div className="dashboard-skill-info">
@@ -79,7 +82,7 @@ function SkillCard({ skill, ownerHandle }: { skill: DashboardSkill; ownerHandle:
           {skill.pendingReview ? (
             <span className="tag tag-pending">
               <Clock className="h-3 w-3" aria-hidden="true" />
-              Scanning
+              {t('dashboard.scanning')}
             </span>
           ) : null}
         </div>
@@ -95,14 +98,14 @@ function SkillCard({ skill, ownerHandle }: { skill: DashboardSkill; ownerHandle:
       <div className="dashboard-skill-actions">
         <Link to="/upload" search={{ updateSlug: skill.slug }} className="btn btn-sm">
           <Upload className="h-3 w-3" aria-hidden="true" />
-          New Version
+          {t('dashboard.newVersion')}
         </Link>
         <Link
           to="/$owner/$slug"
           params={{ owner: ownerHandle ?? 'unknown', slug: skill.slug }}
           className="btn btn-ghost btn-sm"
         >
-          View
+          {t('dashboard.view')}
         </Link>
       </div>
     </div>

@@ -8,6 +8,7 @@ import { useAction, useMutation, useQuery } from 'convex/react'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import semver from 'semver'
 import { api } from '../../convex/_generated/api'
+import { useI18n } from '../i18n'
 import { getPublicSlugCollision } from '../lib/slugCollision'
 import { getSiteMode } from '../lib/site'
 import { expandDroppedItems, expandFilesWithReport } from '../lib/uploadFiles'
@@ -31,6 +32,7 @@ export const Route = createFileRoute('/upload')({
 })
 
 export function Upload() {
+  const { t } = useI18n()
   const { isAuthenticated, me } = useAuthStatus()
   const { updateSlug } = useSearch({ from: '/upload' })
   const siteMode = getSiteMode()
@@ -235,39 +237,39 @@ export function Upload() {
   const validation = useMemo(() => {
     const issues: string[] = []
     if (!trimmedSlug) {
-      issues.push('Slug is required.')
+      issues.push(t('upload.slugRequired'))
     } else if (!SLUG_PATTERN.test(trimmedSlug)) {
-      issues.push('Slug must be lowercase and use dashes only.')
+      issues.push(t('upload.slugFormat'))
     }
     if (!trimmedName) {
-      issues.push('Display name is required.')
+      issues.push(t('upload.displayNameRequired'))
     }
     if (!semver.valid(version)) {
-      issues.push('Version must be valid semver (e.g. 1.0.0).')
+      issues.push(t('upload.versionFormat'))
     }
     if (parsedTags.length === 0) {
-      issues.push('At least one tag is required.')
+      issues.push(t('upload.tagRequired'))
     }
     if (!isSoulMode && !acceptedLicenseTerms) {
-      issues.push('Accept the MIT-0 license terms to publish this skill.')
+      issues.push(t('common.acceptLicense'))
     }
     if (files.length === 0) {
-      issues.push('Add at least one file.')
+      issues.push(t('upload.addFile'))
     }
     if (!hasRequiredFile) {
-      issues.push(`${requiredFileLabel} is required.`)
+      issues.push(t('upload.requiredFile', { requiredFileLabel }))
     }
     const invalidFiles = files.filter((file) => !isTextFile(file))
     if (invalidFiles.length > 0) {
       issues.push(
-        `Remove non-text files: ${invalidFiles
+        t('upload.removeNonText', { files: invalidFiles
           .slice(0, 3)
           .map((file) => file.name)
-          .join(', ')}`,
+          .join(', ') }),
       )
     }
     if (totalBytes > maxBytes) {
-      issues.push('Total file size exceeds 50MB.')
+      issues.push(t('upload.totalSizeExceeds'))
     }
     if (slugCollision) {
       issues.push(slugCollision.message)
@@ -296,7 +298,7 @@ export function Upload() {
   if (!isAuthenticated) {
     return (
       <main className="section">
-        <div className="card">Sign in to upload a {contentLabel}.</div>
+        <div className="card">{t('upload.signInRequired', { contentLabel })}</div>
       </main>
     )
   }
@@ -321,19 +323,19 @@ export function Upload() {
       return
     }
     if (!isSoulMode && !acceptedLicenseTerms) {
-      setError('Accept the MIT-0 license terms to publish this skill.')
+      setError(t('common.acceptLicense'))
       return
     }
     setError(null)
     if (totalBytes > maxBytes) {
-      setError('Total size exceeds 50MB per version.')
+      setError(t('upload.totalSizeError'))
       return
     }
     if (!hasRequiredFile) {
-      setError(`${requiredFileLabel} is required.`)
+      setError(t('upload.requiredFile', { requiredFileLabel }))
       return
     }
-    setStatus('Uploading files…')
+    setStatus(t('upload.uploadingFiles'))
 
     const uploaded = [] as Array<{
       path: string
@@ -361,7 +363,7 @@ export function Upload() {
       })
     }
 
-    setStatus('Publishing…')
+    setStatus(t('upload.publishing'))
     try {
       const result = await publishVersion({
         slug: trimmedSlug,
@@ -393,9 +395,9 @@ export function Upload() {
     <main className="section upload-page">
       <header className="upload-page-header">
         <div>
-          <h1 className="upload-page-title">Publish a {contentLabel}</h1>
+          <h1 className="upload-page-title">{t('upload.publishTitle', { contentLabel })}</h1>
           <p className="upload-page-subtitle">
-            Drop a folder with {requiredFileLabel} and text files. We will handle the rest.
+            {t('upload.dropInstruction', { requiredFileLabel })}
           </p>
         </div>
       </header>
@@ -403,47 +405,47 @@ export function Upload() {
       <form onSubmit={handleSubmit} className="upload-grid">
         <div className="card upload-panel">
           <label className="form-label" htmlFor="slug">
-            Slug
+            {t('upload.slug')}
           </label>
           <input
             className="form-input"
             id="slug"
             value={slug}
             onChange={(event) => setSlug(event.target.value)}
-            placeholder={`${contentLabel}-name`}
+            placeholder={t('upload.slugPlaceholder', { contentLabel })}
           />
 
           <label className="form-label" htmlFor="displayName">
-            Display name
+            {t('upload.displayName')}
           </label>
           <input
             className="form-input"
             id="displayName"
             value={displayName}
             onChange={(event) => setDisplayName(event.target.value)}
-            placeholder={`My ${contentLabel}`}
+            placeholder={t('upload.displayNamePlaceholder', { contentLabel })}
           />
 
           <label className="form-label" htmlFor="version">
-            Version
+            {t('upload.version')}
           </label>
           <input
             className="form-input"
             id="version"
             value={version}
             onChange={(event) => setVersion(event.target.value)}
-            placeholder="1.0.0"
+            placeholder={t('upload.versionPlaceholder')}
           />
 
           <label className="form-label" htmlFor="tags">
-            Tags
+            {t('upload.tags')}
           </label>
           <input
             className="form-input"
             id="tags"
             value={tags}
             onChange={(event) => setTags(event.target.value)}
-            placeholder="latest, stable"
+            placeholder={t('upload.tagsPlaceholder')}
           />
         </div>
 
@@ -481,27 +483,27 @@ export function Upload() {
             />
             <div className="upload-dropzone-copy">
               <div className="upload-dropzone-title-row">
-                <strong>Drop a folder</strong>
+                <strong>{t('upload.dropFolder')}</strong>
                 <span className="upload-dropzone-count">
-                  {files.length} files · {sizeLabel}
+                  {t('upload.filesCount', { count: files.length, sizeLabel })}
                 </span>
               </div>
               <span className="upload-dropzone-hint">
-                We keep folder paths and flatten the outer wrapper automatically.
+                {t('upload.flattenHint')}
               </span>
               <button
                 className="btn upload-picker-btn"
                 type="button"
                 onClick={() => fileInputRef.current?.click()}
               >
-                Choose folder
+                {t('upload.chooseFolder')}
               </button>
             </div>
           </label>
 
           <div className="upload-file-list">
             {files.length === 0 ? (
-              <div className="stat">No files selected.</div>
+              <div className="stat">{t('upload.noFiles')}</div>
             ) : (
               normalizedPaths.map((path) => (
                 <div key={path} className="upload-file-row">
@@ -514,7 +516,7 @@ export function Upload() {
         </div>
 
         <div className="card upload-panel" ref={validationRef}>
-          <h2 className="upload-panel-title">Validation</h2>
+          <h2 className="upload-panel-title">{t('upload.validation')}</h2>
           {validation.issues.length === 0 ? (
             <div className="stat">All checks passed.</div>
           ) : (
