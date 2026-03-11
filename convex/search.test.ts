@@ -429,6 +429,15 @@ function makeLexicalCtx(params: {
       return {
         order: () => ({
           take: vi.fn().mockResolvedValue(params.recentSkills),
+          [Symbol.asyncIterator]: () => {
+            let i = 0
+            return {
+              next: async () =>
+                i < params.recentSkills.length
+                  ? { value: params.recentSkills[i++], done: false }
+                  : { value: undefined, done: true },
+            }
+          },
         }),
       }
     }
