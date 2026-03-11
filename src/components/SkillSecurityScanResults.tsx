@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import type { TranslationKey } from '../i18n'
 import { useI18n } from '../i18n/useI18n'
 
 type LlmAnalysisDimension = {
@@ -84,7 +85,7 @@ function OpenClawIcon({ className }: { className?: string }) {
   )
 }
 
-function getScanStatusInfo(status: string, t: (key: string, params?: Record<string, string | number>) => string) {
+function getScanStatusInfo(status: string, t: (key: TranslationKey, params?: Record<string, string | number>) => string) {
   switch (status.toLowerCase()) {
     case 'benign':
     case 'clean':

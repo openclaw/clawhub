@@ -1,6 +1,9 @@
-import type { Locale, TranslationMap } from "./types";
+import type { FlattenKeys, Locale, TranslationMap } from "./types";
 import { en } from "./locales/en";
 import { zhCN } from "./locales/zh-CN";
+
+/** Union of all valid dot-path translation keys, derived from en.ts */
+export type TranslationKey = FlattenKeys<typeof en>;
 
 const locales: Record<Locale, TranslationMap> = {
   en,
@@ -48,7 +51,7 @@ class I18nManager {
     };
   }
 
-  t(key: string, params?: Record<string, string | number>): string {
+  t(key: TranslationKey, params?: Record<string, string | number>): string {
     let value = this.resolve(locales[this.locale], key);
     if (value === undefined) {
       value = this.resolve(locales.en, key);
@@ -74,5 +77,5 @@ class I18nManager {
 }
 
 export const i18n = new I18nManager();
-export const t = (key: string, params?: Record<string, string | number>) =>
+export const t = (key: TranslationKey, params?: Record<string, string | number>) =>
   i18n.t(key, params);

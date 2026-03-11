@@ -1,5 +1,5 @@
 import { useSyncExternalStore, useCallback } from "react";
-import { i18n } from "./translate";
+import { i18n, type TranslationKey } from "./translate";
 import type { Locale } from "./types";
 
 export function useI18n() {
@@ -9,7 +9,7 @@ export function useI18n() {
   );
 
   const t = useCallback(
-    (key: string, params?: Record<string, string | number>) =>
+    (key: TranslationKey, params?: Record<string, string | number>) =>
       i18n.t(key, params),
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [locale],

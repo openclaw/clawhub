@@ -251,7 +251,7 @@ export function Upload() {
       issues.push(t('upload.tagRequired'))
     }
     if (!isSoulMode && !acceptedLicenseTerms) {
-      issues.push('Accept the MIT-0 license terms to publish this skill.')
+      issues.push(t('common.acceptLicense'))
     }
     if (files.length === 0) {
       issues.push(t('upload.addFile'))
@@ -323,7 +323,7 @@ export function Upload() {
       return
     }
     if (!isSoulMode && !acceptedLicenseTerms) {
-      setError('Accept the MIT-0 license terms to publish this skill.')
+      setError(t('common.acceptLicense'))
       return
     }
     setError(null)

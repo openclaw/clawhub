@@ -518,7 +518,18 @@ export const zhCN: TranslationMap = {
     tokenFailed: "创建令牌失败",
     copyToken: "如果重定向失败，请复制此令牌：",
   },
+  site: {
+    skillsName: "ClawHub",
+    skillsDescription:
+      "ClawHub \u2014 面向 Agent 的快速 Skill 注册中心，支持向量搜索。",
+    soulsName: "SoulHub",
+    soulsDescription:
+      "SoulHub \u2014 SOUL.md 包与个人系统人设的集散地。",
+  },
   common: {
     by: "by",
+    slugTaken: "此 Slug 已被占用，请选择其他 Slug。",
+    acceptLicense: "请接受 MIT-0 许可条款以发布此 Skill。",
+    publishFailed: "发布失败，请重试。",
   },
 };

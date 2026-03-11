@@ -1,6 +1,4 @@
-import type { TranslationMap } from "../types";
-
-export const en: TranslationMap = {
+export const en = {
   header: {
     skills: "Skills",
     souls: "Souls",
@@ -529,7 +527,18 @@ export const en: TranslationMap = {
     tokenFailed: "Failed to create token",
     copyToken: "If redirect fails, copy this token:",
   },
+  site: {
+    skillsName: "ClawHub",
+    skillsDescription:
+      "ClawHub \u2014 a fast skill registry for agents, with vector search.",
+    soulsName: "SoulHub",
+    soulsDescription:
+      "SoulHub \u2014 the home for SOUL.md bundles and personal system lore.",
+  },
   common: {
     by: "by",
+    slugTaken: "Slug is already taken. Choose a different slug.",
+    acceptLicense: "Accept the MIT-0 license terms to publish this skill.",
+    publishFailed: "Publish failed. Please try again.",
   },
-};
+} as const satisfies import("../types").TranslationMap;

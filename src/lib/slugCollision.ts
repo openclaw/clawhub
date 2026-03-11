@@ -1,3 +1,5 @@
+import { t } from '../i18n'
+
 type SlugAvailabilityResult =
   | {
       available: boolean
@@ -22,7 +24,7 @@ export function getPublicSlugCollision(params: {
   if (!normalizedSlug) return null
   if (!params.result || params.result.available) return null
   return {
-    message: params.result.message?.trim() || 'Slug is already taken. Choose a different slug.',
+    message: params.result.message?.trim() || t('common.slugTaken'),
     url: params.result.url ?? null,
   }
 }
