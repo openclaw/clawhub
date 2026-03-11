@@ -205,6 +205,7 @@ type StaleModerationReasonSkill = {
   slug: string
   currentReason: string
   vtStatus: string | null
+  sha256hash: string | null
 }
 
 type FixNullModerationReasonsResult = {
@@ -1376,7 +1377,8 @@ export const fixNullModerationStatus = internalAction({
 
 /**
  * Sync moderationReason for skills that have vtAnalysis cached but stale moderationReason.
- * This updates skills stuck at 'scanner.vt.pending' or 'pending.scan' to match their cached vtAnalysis.
+ * Uses the canonical approveSkillByHashInternal to keep all moderation fields in sync
+ * (moderationStatus, moderationFlags, moderationVerdict, moderationReasonCodes, isSuspicious).
  */
 export const syncModerationReasons = internalAction({
   args: { batchSize: v.optional(v.number()) },
@@ -1398,21 +1400,35 @@ export const syncModerationReasons = internalAction({
     let synced = 0
     let noVtAnalysis = 0
 
-    for (const { skillId, versionId: _versionId, slug, currentReason, vtStatus } of skills) {
+    for (const { skillId, slug, currentReason, vtStatus, sha256hash } of skills) {
       if (!vtStatus) {
         noVtAnalysis++
         continue
       }
 
-      // Map vtAnalysis.status to moderationReason
-      const newReason = `scanner.vt.${vtStatus}` as const
+      if (sha256hash) {
+        await ctx.runMutation(internal.skills.approveSkillByHashInternal, {
+          sha256hash,
+          scanner: 'vt',
+          status: vtStatus,
+        })
+      } else if (vtStatus === 'malicious') {
+        // Legacy no-hash + malicious: must hide immediately even without full reconciliation.
+        await ctx.runMutation(internal.skills.escalateSkillByIdInternal, {
+          skillId,
+          moderationReason: `scanner.vt.${vtStatus}`,
+          moderationFlags: ['blocked.malware'],
+          moderationStatus: 'hidden',
+        })
+      } else {
+        // Legacy no-hash + clean/suspicious: partial reason update unblocks stale rows.
+        await ctx.runMutation(internal.skills.updateSkillModerationReasonInternal, {
+          skillId,
+          moderationReason: `scanner.vt.${vtStatus}`,
+        })
+      }
 
-      await ctx.runMutation(internal.skills.updateSkillModerationReasonInternal, {
-        skillId,
-        moderationReason: newReason,
-      })
-
-      console.log(`[vt:syncModeration] ${slug}: ${currentReason} -> ${newReason}`)
+      console.log(`[vt:syncModeration] ${slug}: ${currentReason} -> scanner.vt.${vtStatus}`)
       synced++
     }
 

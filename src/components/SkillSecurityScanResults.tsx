@@ -27,10 +27,20 @@ export type LlmAnalysis = {
   checkedAt: number
 }
 
+export type StaticFinding = {
+  code: string
+  severity: string
+  file: string
+  line: number
+  message: string
+  evidence: string
+}
+
 type SecurityScanResultsProps = {
   sha256hash?: string
   vtAnalysis?: VtAnalysis | null
   llmAnalysis?: LlmAnalysis | null
+  staticFindings?: StaticFinding[]
   variant?: 'panel' | 'badge'
 }
 
@@ -193,13 +203,113 @@ function LlmAnalysisDetail({ analysis }: { analysis: LlmAnalysis }) {
   )
 }
 
+function isCleanStatus(status?: string) {
+  if (!status) return false
+  const s = status.toLowerCase()
+  return s === 'clean' || s === 'benign'
+}
+
+function getStaticGuidance(
+  findings: StaticFinding[],
+  vtStatus?: string,
+  llmStatus?: string,
+) {
+  const hasMaliciousCode = findings.some((f) => f.code.startsWith('malicious.'))
+  if (hasMaliciousCode) {
+    return {
+      className: 'malicious',
+      label: 'Critical security concern',
+      text: 'These patterns indicate potentially dangerous behavior. Exercise extreme caution and review the code thoroughly before installing.',
+    }
+  }
+  const externallyCleared = isCleanStatus(vtStatus) && isCleanStatus(llmStatus)
+  if (externallyCleared) {
+    return {
+      className: 'benign',
+      label: 'Confirmed safe by external scanners',
+      text: 'Static analysis detected these patterns, but both VirusTotal and OpenClaw confirmed this skill is safe. The patterns are typical for skills that integrate with external APIs.',
+    }
+  }
+  const hasCritical = findings.some((f) => f.severity === 'critical')
+  if (hasCritical) {
+    return {
+      className: 'suspicious',
+      label: 'Patterns worth reviewing',
+      text: 'These patterns may indicate risky behavior. Check the VirusTotal and OpenClaw results above for context-aware analysis before installing.',
+    }
+  }
+  return {
+    className: 'benign',
+    label: 'About static analysis',
+    text: 'These patterns were detected by automated regex scanning. They may be normal for skills that integrate with external APIs. Check the VirusTotal and OpenClaw results above for context-aware analysis.',
+  }
+}
+
+function StaticAnalysisDetail({
+  findings,
+  vtStatus,
+  llmStatus,
+}: { findings: StaticFinding[]; vtStatus?: string; llmStatus?: string }) {
+  const [isOpen, setIsOpen] = useState(false)
+  const guidance = getStaticGuidance(findings, vtStatus, llmStatus)
+
+  return (
+    <div className={`analysis-detail${isOpen ? ' is-open' : ''}`}>
+      <button
+        type="button"
+        className="analysis-detail-header"
+        onClick={() => {
+          const selection = window.getSelection()
+          if (selection && !selection.isCollapsed) return
+          setIsOpen((prev) => !prev)
+        }}
+        aria-expanded={isOpen}
+      >
+        <span className="analysis-summary-text">
+          Static analysis: {findings.length} pattern{findings.length !== 1 ? 's' : ''} detected
+        </span>
+        <span className="analysis-detail-toggle">
+          Details <span className="chevron">{'\u25BE'}</span>
+        </span>
+      </button>
+      <div className="analysis-body">
+        <div className="analysis-dimensions">
+          {findings.map((finding, i) => {
+            const icon =
+              finding.severity === 'critical'
+                ? { className: 'dimension-icon-danger', symbol: '\u2717' }
+                : { className: 'dimension-icon-concern', symbol: '!' }
+            return (
+              <div key={`${finding.code}-${finding.file}-${i}`} className="dimension-row">
+                <div className={`dimension-icon ${icon.className}`}>{icon.symbol}</div>
+                <div className="dimension-content">
+                  <div className="dimension-label">
+                    {finding.file}:{finding.line}
+                  </div>
+                  <div className="dimension-detail">{finding.message}</div>
+                </div>
+              </div>
+            )
+          })}
+        </div>
+        <div className={`analysis-guidance ${guidance.className}`}>
+          <div className="analysis-guidance-label">{guidance.label}</div>
+          {guidance.text}
+        </div>
+      </div>
+    </div>
+  )
+}
+
 export function SecurityScanResults({
   sha256hash,
   vtAnalysis,
   llmAnalysis,
+  staticFindings,
   variant = 'panel',
 }: SecurityScanResultsProps) {
-  if (!sha256hash && !llmAnalysis) return null
+  const hasStaticFindings = staticFindings && staticFindings.length > 0
+  if (!sha256hash && !llmAnalysis && !hasStaticFindings) return null
 
   const vtStatus = vtAnalysis?.status ?? 'pending'
   const vtUrl = sha256hash ? `https://www.virustotal.com/gui/file/${sha256hash}` : null
@@ -286,6 +396,9 @@ export function SecurityScanResults({
         llmAnalysis.status !== 'pending' &&
         llmAnalysis.summary ? (
           <LlmAnalysisDetail analysis={llmAnalysis} />
+        ) : null}
+        {staticFindings && staticFindings.length > 0 ? (
+          <StaticAnalysisDetail findings={staticFindings} vtStatus={vtStatus} llmStatus={llmVerdict} />
         ) : null}
       </div>
     </div>

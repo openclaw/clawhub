@@ -175,12 +175,11 @@ function scanMarkdownFile(path: string, content: string, findings: ModerationFin
 
   if (
     /ignore\s+(all\s+)?previous\s+instructions/i.test(content) ||
-    /system\s*prompt\s*[:=]/i.test(content) ||
-    /you\s+are\s+now\s+(a|an)\b/i.test(content)
+    /system\s*prompt\s*[:=]/i.test(content)
   ) {
     const match = findFirstLine(
       content,
-      /ignore\s+(all\s+)?previous\s+instructions|system\s*prompt\s*[:=]|you\s+are\s+now\s+(a|an)\b/i,
+      /ignore\s+(all\s+)?previous\s+instructions|system\s*prompt\s*[:=]/i,
     )
     addFinding(findings, {
       code: REASON_CODES.INJECTION_INSTRUCTIONS,
@@ -300,15 +299,31 @@ export function runStaticModerationScan(input: StaticScanInput): StaticScanResul
   }
 }
 
+function isExternalScannerClean(status: string | undefined): boolean {
+  const normalized = status?.trim().toLowerCase()
+  return normalized === 'clean' || normalized === 'benign'
+}
+
 export function buildModerationSnapshot(params: {
   staticScan?: StaticScanResult
   vtStatus?: string
   llmStatus?: string
   sourceVersionId?: Id<'skillVersions'>
 }): ModerationSnapshot {
-  const reasonCodes = [...(params.staticScan?.reasonCodes ?? [])]
+  let staticCodes = [...(params.staticScan?.reasonCodes ?? [])]
   const evidence = [...(params.staticScan?.findings ?? [])]
 
+  // When both external scanners (VT + LLM) explicitly report clean/benign,
+  // demote static suspicious-level findings from the verdict calculation.
+  // Malicious-level static findings (crypto mining, known signatures) are never demoted.
+  // The original findings are preserved in evidence for transparency.
+  const vtClean = isExternalScannerClean(params.vtStatus)
+  const llmClean = isExternalScannerClean(params.llmStatus)
+  if (vtClean && llmClean && staticCodes.length > 0) {
+    staticCodes = staticCodes.filter((code) => code.startsWith('malicious.'))
+  }
+
+  const reasonCodes = [...staticCodes]
   addScannerStatusReason(reasonCodes, 'vt', params.vtStatus)
   addScannerStatusReason(reasonCodes, 'llm', params.llmStatus)
 
