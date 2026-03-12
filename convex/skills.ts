@@ -319,15 +319,6 @@ const SORT_INDEXES = {
   installs: 'by_active_stats_installs_all_time',
 } as const
 
-const NONSUSPICIOUS_SORT_INDEXES = {
-  newest: 'by_nonsuspicious_created',
-  updated: 'by_nonsuspicious_updated',
-  name: 'by_nonsuspicious_name',
-  downloads: 'by_nonsuspicious_downloads',
-  stars: 'by_nonsuspicious_stars',
-  installs: 'by_nonsuspicious_installs',
-} as const
-
 function isSkillVersionId(
   value: Id<'skillVersions'> | null | undefined,
 ): value is Id<'skillVersions'> {

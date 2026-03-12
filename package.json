@@ -44,7 +44,7 @@
     "@vercel/analytics": "^1.6.1",
     "clawhub-schema": "workspace:*",
     "clsx": "^2.1.1",
-    "convex": "^1.31.7",
+    "convex": "^1.32.0",
     "convex-helpers": "^0.1.114",
     "fflate": "^0.8.2",
     "h3": "2.0.1-rc.11",
