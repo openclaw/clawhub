@@ -278,8 +278,8 @@
         "summary": "List skills",
         "parameters": [
           { "name": "limit", "in": "query", "required": false, "schema": { "type": "integer" } },
-          { "name": "cursor", "in": "query", "required": false, "schema": { "type": "string" } },
-          { "name": "nonSuspiciousOnly", "in": "query", "required": false, "schema": { "type": "boolean" } },
+          { "name": "cursor", "in": "query", "required": false, "schema": { "type": "string" }, "description": "Pagination cursor for any non-trending sort." },
+          { "name": "nonSuspiciousOnly", "in": "query", "required": false, "schema": { "type": "boolean" }, "description": "Hide suspicious skills. For cursor-based sorts, pages may contain fewer than limit items because filtering happens after page retrieval." },
           { "name": "nonSuspicious", "in": "query", "required": false, "schema": { "type": "boolean" }, "description": "Legacy alias for nonSuspiciousOnly." }
         ],
         "responses": {
