@@ -48,10 +48,9 @@ export function useSkillsBrowseModel({
 
   const trimmedQuery = useMemo(() => query.trim(), [query])
   const hasQuery = trimmedQuery.length > 0
-  const sort: SortKey =
-    search.sort === 'relevance' && !hasQuery
-      ? 'downloads'
-      : (search.sort ?? (hasQuery ? 'relevance' : 'downloads'))
+  const sort: SortKey = hasQuery
+    ? 'relevance'
+    : (search.sort === 'relevance' ? 'downloads' : (search.sort ?? 'downloads'))
   const listSort = toListSort(sort)
   const dir = parseDir(search.dir, sort)
   const searchKey = trimmedQuery
