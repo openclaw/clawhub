@@ -201,6 +201,12 @@ type SkillSecuritySnapshot = {
   }
 }
 
+function isDefinitiveSecurityStatus(
+  status: NormalizedSecurityStatus | null | undefined,
+): status is 'clean' | 'suspicious' | 'malicious' {
+  return status === 'clean' || status === 'suspicious' || status === 'malicious'
+}
+
 const SECURITY_STATUS_PRIORITY: Record<NormalizedSecurityStatus, number> = {
   clean: 0,
   error: 1,
@@ -267,6 +273,7 @@ function buildSkillSecuritySnapshot(version: Doc<'skillVersions'>): SkillSecurit
   if (llmStatus) statuses.push(llmStatus)
   if (statuses.length === 0 && sha256hash) statuses.push('pending')
   const status = mergeSecurityStatuses(statuses)
+  const hasScanResult = isDefinitiveSecurityStatus(vtStatus) || isDefinitiveSecurityStatus(llmStatus)
   const hasWarnings =
     status === 'suspicious' || status === 'malicious' || hasLlmDimensionWarnings(llm?.dimensions)
 
@@ -280,7 +287,7 @@ function buildSkillSecuritySnapshot(version: Doc<'skillVersions'>): SkillSecurit
     hasWarnings,
     checkedAt,
     model: llm?.model ?? null,
-    hasScanResult: status === 'clean' || status === 'suspicious' || status === 'malicious',
+    hasScanResult,
     sha256hash,
     virustotalUrl: sha256hash ? `https://www.virustotal.com/gui/file/${sha256hash}` : null,
     scanners: {
@@ -734,6 +741,9 @@ export async function skillsGetRouterV1Handler(ctx: ActionCtx, request: Request)
     if (version.softDeletedAt) return text('Version not available', 410, rate.headers)
 
     const security = buildSkillSecuritySnapshot(version)
+    const moderationMatchesRequestedVersion = Boolean(
+      result.latestVersion && result.latestVersion._id === version._id,
+    )
 
     return json(
       {
@@ -748,6 +758,14 @@ export async function skillsGetRouterV1Handler(ctx: ActionCtx, request: Request)
         },
         moderation: result.moderationInfo
           ? {
+              scope: 'skill',
+              sourceVersion: result.latestVersion
+                ? {
+                    version: result.latestVersion.version,
+                    createdAt: result.latestVersion.createdAt,
+                  }
+                : null,
+              matchesRequestedVersion: moderationMatchesRequestedVersion,
               isPendingScan: result.moderationInfo.isPendingScan ?? false,
               isMalwareBlocked: result.moderationInfo.isMalwareBlocked ?? false,
               isSuspicious: result.moderationInfo.isSuspicious ?? false,
