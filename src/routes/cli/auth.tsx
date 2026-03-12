@@ -3,7 +3,8 @@ import { createFileRoute } from '@tanstack/react-router'
 import { useMutation } from 'convex/react'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { api } from '../../../convex/_generated/api'
-import { useAuthError } from '../../lib/useAuthError'
+import { getUserFacingConvexError } from '../../lib/convexError'
+import { setAuthError, useAuthError } from '../../lib/useAuthError'
 import { getClawHubSiteUrl, normalizeClawHubSiteOrigin } from '../../lib/site'
 import { useAuthStatus } from '../../lib/useAuthStatus'
 
@@ -131,11 +132,11 @@ function CliAuth() {
             disabled={isLoading}
             onClick={() => {
               clearAuthError()
-              signIn(
+              void signIn(
                 'github',
                 signInRedirectTo ? { redirectTo: signInRedirectTo } : undefined,
-              ).catch(() => {
-                // OAuth errors surface via the callback URL hash, handled by AppProviders.
+              ).catch((error) => {
+                setAuthError(getUserFacingConvexError(error, 'Sign in failed. Please try again.'))
               })
             }}
           >

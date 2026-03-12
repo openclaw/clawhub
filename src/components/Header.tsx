@@ -2,7 +2,8 @@ import { useAuthActions } from '@convex-dev/auth/react'
 import { Link } from '@tanstack/react-router'
 import { Menu, Monitor, Moon, Sun } from 'lucide-react'
 import { useMemo, useRef } from 'react'
-import { useAuthError } from '../lib/useAuthError'
+import { getUserFacingConvexError } from '../lib/convexError'
+import { setAuthError, useAuthError } from '../lib/useAuthError'
 import { gravatarUrl } from '../lib/gravatar'
 import { isModerator } from '../lib/roles'
 import { getClawHubSiteUrl, getSiteMode, getSiteName } from '../lib/site'
@@ -311,11 +312,11 @@ export default function Header() {
                 disabled={isLoading}
                 onClick={() => {
                   clearAuthError()
-                  signIn(
+                  void signIn(
                     'github',
                     signInRedirectTo ? { redirectTo: signInRedirectTo } : undefined,
-                  ).catch(() => {
-                    // OAuth errors surface via the callback URL hash, handled by AppProviders.
+                  ).catch((error) => {
+                    setAuthError(getUserFacingConvexError(error, 'Sign in failed. Please try again.'))
                   })
                 }}
               >

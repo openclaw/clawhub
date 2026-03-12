@@ -1,41 +1,22 @@
-import { describe, expect, it } from 'vitest'
-import { clearAuthError, parseAuthErrorFromUrl, setAuthError } from './useAuthError'
+import { afterEach, describe, expect, it } from 'vitest'
+import { clearAuthError, getAuthErrorSnapshot, setAuthError } from './useAuthError'
 
-describe('parseAuthErrorFromUrl', () => {
-  it('returns null when URL has no hash', () => {
-    expect(parseAuthErrorFromUrl('/some/path')).toBeNull()
-  })
-
-  it('returns null when hash has no error params', () => {
-    expect(parseAuthErrorFromUrl('/path#token=abc')).toBeNull()
-  })
-
-  it('extracts error from hash', () => {
-    expect(parseAuthErrorFromUrl('/path#error=Something+went+wrong')).toBe('Something went wrong')
-  })
-
-  it('extracts error_description from hash', () => {
-    expect(parseAuthErrorFromUrl('/path#error_description=Account+banned')).toBe('Account banned')
-  })
-
-  it('prefers error_description over error', () => {
-    expect(
-      parseAuthErrorFromUrl('/path#error=generic&error_description=Specific+message'),
-    ).toBe('Specific message')
-  })
-
-  it('handles encoded characters', () => {
-    expect(parseAuthErrorFromUrl('/path#error=Your+account+has+been+banned')).toBe(
-      'Your account has been banned',
-    )
-  })
+afterEach(() => {
+  clearAuthError()
 })
 
-describe('setAuthError / clearAuthError', () => {
-  it('clears the error', () => {
+describe('auth error store', () => {
+  it('stores the latest auth error', () => {
     setAuthError('test error')
+
+    expect(getAuthErrorSnapshot()).toBe('test error')
+  })
+
+  it('clears the stored error', () => {
+    setAuthError('test error')
+
     clearAuthError()
-    // After clearing, parseAuthErrorFromUrl still works independently
-    expect(parseAuthErrorFromUrl('/path')).toBeNull()
+
+    expect(getAuthErrorSnapshot()).toBeNull()
   })
 })
