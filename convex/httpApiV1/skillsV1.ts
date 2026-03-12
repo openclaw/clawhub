@@ -174,7 +174,7 @@ type SkillSecuritySnapshot = {
   hasWarnings: boolean
   checkedAt: number | null
   model: string | null
-  isVerified: boolean
+  hasScanResult: boolean
   sha256hash: string | null
   virustotalUrl: string | null
   scanners: {
@@ -221,6 +221,7 @@ function normalizeSecurityStatus(value: string | null | undefined): NormalizedSe
       return 'malicious'
     case 'error':
     case 'failed':
+    case 'completed':
       return 'error'
     case 'pending':
     case 'loading':
@@ -279,7 +280,7 @@ function buildSkillSecuritySnapshot(version: Doc<'skillVersions'>): SkillSecurit
     hasWarnings,
     checkedAt,
     model: llm?.model ?? null,
-    isVerified: status === 'clean' || status === 'suspicious' || status === 'malicious',
+    hasScanResult: status === 'clean' || status === 'suspicious' || status === 'malicious',
     sha256hash,
     virustotalUrl: sha256hash ? `https://www.virustotal.com/gui/file/${sha256hash}` : null,
     scanners: {

@@ -75,6 +75,7 @@ Query params:
 - `limit` (optional): integer
 - `highlightedOnly` (optional): `true` to filter to highlighted skills
 - `nonSuspiciousOnly` (optional): `true` to hide suspicious (`flagged.suspicious`) skills
+- `nonSuspicious` (optional): legacy alias for `nonSuspiciousOnly`
 
 Response:
 
@@ -94,6 +95,7 @@ Query params:
 - `cursor` (optional): pagination cursor (only for `sort=updated`)
 - `sort` (optional): `updated` (default), `downloads`, `stars` (alias: `rating`), `installsCurrent` (alias: `installs`), `installsAllTime`, `trending`
 - `nonSuspiciousOnly` (optional): `true` to hide suspicious (`flagged.suspicious`) skills
+- `nonSuspicious` (optional): legacy alias for `nonSuspiciousOnly`
 
 Notes:
 
@@ -163,6 +165,7 @@ Notes:
 
 - If neither `version` nor `tag` is provided, uses the latest version.
 - Includes normalized verification status plus scanner-specific details.
+- `security.hasScanResult` is `true` only when a scanner produced a definitive verdict (`clean`, `suspicious`, or `malicious`).
 
 ### `GET /api/v1/skills/{slug}/file`
 

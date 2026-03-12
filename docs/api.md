@@ -60,9 +60,11 @@ Public read:
 
 - `GET /api/v1/search?q=...`
   - Optional filters: `highlightedOnly=true`, `nonSuspiciousOnly=true`
+  - Legacy alias: `nonSuspicious=true`
 - `GET /api/v1/skills?limit=&cursor=&sort=`
   - `sort`: `updated` (default), `downloads`, `stars` (`rating`), `installsCurrent` (`installs`), `installsAllTime`, `trending`
   - Optional filter: `nonSuspiciousOnly=true`
+  - Legacy alias: `nonSuspicious=true`
 - `GET /api/v1/skills/{slug}`
 - `GET /api/v1/skills/{slug}/moderation`
 - `GET /api/v1/skills/{slug}/versions?limit=&cursor=`
