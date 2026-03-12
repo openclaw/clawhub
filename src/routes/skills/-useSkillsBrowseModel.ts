@@ -49,7 +49,7 @@ export function useSkillsBrowseModel({
   const trimmedQuery = useMemo(() => query.trim(), [query])
   const hasQuery = trimmedQuery.length > 0
   const sort: SortKey = hasQuery
-    ? 'relevance'
+    ? (search.sort ?? 'relevance')
     : (search.sort === 'relevance' ? 'downloads' : (search.sort ?? 'downloads'))
   const listSort = toListSort(sort)
   const dir = parseDir(search.dir, sort)
@@ -228,7 +228,13 @@ export function useSkillsBrowseModel({
       const trimmed = next.trim()
       navigateTimer.current = window.setTimeout(() => {
         void navigate({
-          search: (prev) => ({ ...prev, q: trimmed ? next : undefined }),
+          search: (prev) => ({
+            ...prev,
+            q: trimmed ? next : undefined,
+            // When entering a search query, clear any injected sort so relevance
+            // becomes the default. Users can still pick a different sort manually.
+            sort: trimmed ? undefined : prev.sort,
+          }),
           replace: true,
         })
       }, 220)
