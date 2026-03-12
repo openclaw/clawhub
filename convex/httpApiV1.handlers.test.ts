@@ -1107,6 +1107,12 @@ describe('httpApiV1 handlers', () => {
     expect(json.security.status).toBe('suspicious')
     expect(json.security.hasScanResult).toBe(true)
     expect(json.security.scanners.llm.verdict).toBe('suspicious')
+    expect(json.moderation.scope).toBe('skill')
+    expect(json.moderation.sourceVersion).toEqual({
+      version: '1.0.0',
+      createdAt: 1,
+    })
+    expect(json.moderation.matchesRequestedVersion).toBe(true)
     expect(json.moderation.isSuspicious).toBe(true)
   })
 
@@ -1159,6 +1165,206 @@ describe('httpApiV1 handlers', () => {
     expect(json.security.status).toBe('error')
     expect(json.security.hasScanResult).toBe(false)
     expect(json.security.scanners.llm.normalizedStatus).toBe('error')
+  })
+
+  it('keeps hasScanResult true when one scanner returns a definitive verdict', async () => {
+    const runQuery = vi.fn(async (_query: unknown, args: Record<string, unknown>) => {
+      if ('slug' in args) {
+        return {
+          skill: {
+            _id: 'skills:1',
+            slug: 'demo',
+            displayName: 'Demo',
+            summary: 's',
+            tags: { latest: 'versions:2' },
+            stats: {},
+            createdAt: 1,
+            updatedAt: 2,
+          },
+          latestVersion: {
+            _id: 'skillVersions:2',
+            version: '2.0.0',
+            createdAt: 2,
+            changelog: 'c',
+            changelogSource: 'auto',
+            sha256hash: 'd'.repeat(64),
+            vtAnalysis: {
+              status: 'clean',
+              checkedAt: 111,
+            },
+            llmAnalysis: {
+              status: 'error',
+              summary: 'scanner failed',
+              checkedAt: 222,
+            },
+            files: [],
+          },
+          owner: { _id: 'users:1', handle: 'owner', displayName: 'Owner' },
+          moderationInfo: {
+            isPendingScan: false,
+            isMalwareBlocked: false,
+            isSuspicious: false,
+            isHiddenByMod: false,
+            isRemoved: false,
+          },
+        }
+      }
+      return null
+    })
+    const runMutation = vi.fn().mockResolvedValue(okRate())
+    const response = await __handlers.skillsGetRouterV1Handler(
+      makeCtx({ runQuery, runMutation }),
+      new Request('https://example.com/api/v1/skills/demo/scan'),
+    )
+    expect(response.status).toBe(200)
+    const json = await response.json()
+    expect(json.security.status).toBe('error')
+    expect(json.security.hasScanResult).toBe(true)
+    expect(json.security.scanners.vt.normalizedStatus).toBe('clean')
+    expect(json.security.scanners.llm.normalizedStatus).toBe('error')
+  })
+
+  it('marks moderation as a latest-version snapshot when querying a historical version', async () => {
+    const runQuery = vi.fn(async (_query: unknown, args: Record<string, unknown>) => {
+      if ('slug' in args) {
+        return {
+          skill: {
+            _id: 'skills:1',
+            slug: 'demo',
+            displayName: 'Demo',
+            summary: 's',
+            tags: { latest: 'skillVersions:2', old: 'skillVersions:1' },
+            stats: {},
+            createdAt: 1,
+            updatedAt: 2,
+          },
+          latestVersion: {
+            _id: 'skillVersions:2',
+            version: '2.0.0',
+            createdAt: 2,
+            changelog: 'c2',
+            changelogSource: 'auto',
+            sha256hash: 'e'.repeat(64),
+            vtAnalysis: {
+              status: 'clean',
+              checkedAt: 222,
+            },
+            files: [],
+          },
+          owner: { _id: 'users:1', handle: 'owner', displayName: 'Owner' },
+          moderationInfo: {
+            isPendingScan: false,
+            isMalwareBlocked: false,
+            isSuspicious: false,
+            isHiddenByMod: false,
+            isRemoved: false,
+          },
+        }
+      }
+      if ('skillId' in args && 'version' in args) {
+        return {
+          _id: 'skillVersions:1',
+          version: '1.0.0',
+          createdAt: 1,
+          changelog: 'c1',
+          changelogSource: 'auto',
+          sha256hash: 'f'.repeat(64),
+          llmAnalysis: {
+            status: 'completed',
+            verdict: 'suspicious',
+            checkedAt: 123,
+          },
+          files: [],
+        }
+      }
+      return null
+    })
+    const runMutation = vi.fn().mockResolvedValue(okRate())
+    const response = await __handlers.skillsGetRouterV1Handler(
+      makeCtx({ runQuery, runMutation }),
+      new Request('https://example.com/api/v1/skills/demo/scan?version=1.0.0'),
+    )
+    expect(response.status).toBe(200)
+    const json = await response.json()
+    expect(json.version.version).toBe('1.0.0')
+    expect(json.security.status).toBe('suspicious')
+    expect(json.moderation.scope).toBe('skill')
+    expect(json.moderation.sourceVersion).toEqual({
+      version: '2.0.0',
+      createdAt: 2,
+    })
+    expect(json.moderation.matchesRequestedVersion).toBe(false)
+    expect(json.moderation.isSuspicious).toBe(false)
+  })
+
+  it('resolves scan by tag and reports moderation context against latest version', async () => {
+    const runQuery = vi.fn(async (_query: unknown, args: Record<string, unknown>) => {
+      if ('slug' in args) {
+        return {
+          skill: {
+            _id: 'skills:1',
+            slug: 'demo',
+            displayName: 'Demo',
+            summary: 's',
+            tags: { latest: 'skillVersions:2', old: 'skillVersions:1' },
+            stats: {},
+            createdAt: 1,
+            updatedAt: 2,
+          },
+          latestVersion: {
+            _id: 'skillVersions:2',
+            version: '2.0.0',
+            createdAt: 2,
+            changelog: 'c2',
+            changelogSource: 'auto',
+            sha256hash: '1'.repeat(64),
+            vtAnalysis: {
+              status: 'clean',
+              checkedAt: 222,
+            },
+            files: [],
+          },
+          owner: { _id: 'users:1', handle: 'owner', displayName: 'Owner' },
+          moderationInfo: {
+            isPendingScan: false,
+            isMalwareBlocked: false,
+            isSuspicious: false,
+            isHiddenByMod: false,
+            isRemoved: false,
+          },
+        }
+      }
+      if ('versionId' in args) {
+        return {
+          _id: 'skillVersions:1',
+          version: '1.0.0',
+          createdAt: 1,
+          changelog: 'c1',
+          changelogSource: 'auto',
+          sha256hash: '2'.repeat(64),
+          vtAnalysis: {
+            status: 'malicious',
+            checkedAt: 123,
+          },
+          files: [],
+        }
+      }
+      return null
+    })
+    const runMutation = vi.fn().mockResolvedValue(okRate())
+    const response = await __handlers.skillsGetRouterV1Handler(
+      makeCtx({ runQuery, runMutation }),
+      new Request('https://example.com/api/v1/skills/demo/scan?tag=old'),
+    )
+    expect(response.status).toBe(200)
+    const json = await response.json()
+    expect(json.version.version).toBe('1.0.0')
+    expect(json.security.status).toBe('malicious')
+    expect(json.moderation.sourceVersion).toEqual({
+      version: '2.0.0',
+      createdAt: 2,
+    })
+    expect(json.moderation.matchesRequestedVersion).toBe(false)
   })
 
   it('returns raw file content', async () => {

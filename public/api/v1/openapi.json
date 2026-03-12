@@ -186,6 +186,15 @@
           "moderation": {
             "type": ["object", "null"],
             "properties": {
+              "scope": { "type": "string", "enum": ["skill"] },
+              "sourceVersion": {
+                "type": ["object", "null"],
+                "properties": {
+                  "version": { "type": "string" },
+                  "createdAt": { "type": "number" }
+                }
+              },
+              "matchesRequestedVersion": { "type": "boolean" },
               "isPendingScan": { "type": "boolean" },
               "isMalwareBlocked": { "type": "boolean" },
               "isSuspicious": { "type": "boolean" },
