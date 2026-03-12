@@ -98,6 +98,20 @@ describe('httpApi handlers', () => {
     })
   })
 
+  it('searchSkillsHttp forwards legacy nonSuspicious alias', async () => {
+    const runAction = vi.fn().mockResolvedValue([])
+    await __handlers.searchSkillsHandler(
+      makeCtx({ runAction }),
+      new Request('https://example.com/api/search?q=test&nonSuspicious=1'),
+    )
+    expect(runAction).toHaveBeenCalledWith(expect.anything(), {
+      query: 'test',
+      limit: undefined,
+      highlightedOnly: undefined,
+      nonSuspiciousOnly: true,
+    })
+  })
+
   it('getSkillHttp validates slug', async () => {
     const response = await __handlers.getSkillHandler(
       makeCtx({ runQuery: vi.fn() }),

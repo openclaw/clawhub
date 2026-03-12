@@ -125,7 +125,7 @@
           "hasWarnings": { "type": "boolean" },
           "checkedAt": { "type": ["number", "null"] },
           "model": { "type": ["string", "null"] },
-          "isVerified": { "type": "boolean" },
+          "hasScanResult": { "type": "boolean" },
           "sha256hash": { "type": ["string", "null"] },
           "virustotalUrl": { "type": ["string", "null"] },
           "scanners": { "type": "object", "additionalProperties": true }
@@ -240,7 +240,8 @@
           { "name": "q", "in": "query", "required": true, "schema": { "type": "string" } },
           { "name": "limit", "in": "query", "required": false, "schema": { "type": "integer" } },
           { "name": "highlightedOnly", "in": "query", "required": false, "schema": { "type": "boolean" } },
-          { "name": "nonSuspiciousOnly", "in": "query", "required": false, "schema": { "type": "boolean" } }
+          { "name": "nonSuspiciousOnly", "in": "query", "required": false, "schema": { "type": "boolean" } },
+          { "name": "nonSuspicious", "in": "query", "required": false, "schema": { "type": "boolean" }, "description": "Legacy alias for nonSuspiciousOnly." }
         ],
         "responses": {
           "200": {
@@ -269,7 +270,8 @@
         "parameters": [
           { "name": "limit", "in": "query", "required": false, "schema": { "type": "integer" } },
           { "name": "cursor", "in": "query", "required": false, "schema": { "type": "string" } },
-          { "name": "nonSuspiciousOnly", "in": "query", "required": false, "schema": { "type": "boolean" } }
+          { "name": "nonSuspiciousOnly", "in": "query", "required": false, "schema": { "type": "boolean" } },
+          { "name": "nonSuspicious", "in": "query", "required": false, "schema": { "type": "boolean" }, "description": "Legacy alias for nonSuspiciousOnly." }
         ],
         "responses": {
           "200": { "description": "Skills", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/SkillListResponse" } } } }
