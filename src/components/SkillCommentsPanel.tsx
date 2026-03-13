@@ -38,6 +38,10 @@ export function SkillCommentsPanel({ skillId, isAuthenticated, me }: SkillCommen
   const [reportNotice, setReportNotice] = useState<string | null>(null)
   const [isSubmittingReport, setIsSubmittingReport] = useState(false)
   const comments = useQuery(api.comments.listBySkill, { skillId, limit: 50 })
+  const commentEntries = (comments ?? []) as Array<{
+    comment: Doc<'comments'>
+    user: { handle?: string | null; name?: string | null } | null
+  }>
 
   const submitComment = async () => {
     const body = comment.trim()
@@ -137,10 +141,10 @@ export function SkillCommentsPanel({ skillId, isAuthenticated, me }: SkillCommen
       {deleteError ? <div className="report-dialog-error">{deleteError}</div> : null}
       {reportNotice ? <div className="stat">{reportNotice}</div> : null}
       <div style={{ display: 'grid', gap: 12, marginTop: 16 }}>
-        {(comments ?? []).length === 0 ? (
+        {commentEntries.length === 0 ? (
           <div className="stat">No comments yet.</div>
         ) : (
-          (comments ?? []).map((entry) => (
+          commentEntries.map((entry) => (
             <div key={entry.comment._id} className="comment-item">
               <div className="comment-body">
                 <strong>@{entry.user?.handle ?? entry.user?.name ?? 'user'}</strong>

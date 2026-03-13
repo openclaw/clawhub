@@ -1090,6 +1090,145 @@ describe('httpApiV1 handlers', () => {
     expect(json.version.security.hasWarnings).toBe(true)
   })
 
+  it('returns version detail security from static moderation signals before external scans', async () => {
+    const runQuery = vi.fn(async (_query: unknown, args: Record<string, unknown>) => {
+      if ('slug' in args) {
+        return { _id: 'skills:1', slug: 'demo', displayName: 'Demo' }
+      }
+      if ('skillId' in args && 'version' in args) {
+        return {
+          version: '1.0.0',
+          createdAt: 1,
+          changelog: 'c',
+          changelogSource: 'auto',
+          moderationSignals: {
+            staticScan: {
+              key: 'staticScan',
+              family: 'local',
+              state: 'ready',
+              verdict: 'suspicious',
+              contribution: 'corroborating',
+              reasonCodes: ['suspicious.dynamic_code_execution'],
+              checkedAt: 456,
+            },
+          },
+          files: [],
+        }
+      }
+      return null
+    })
+    const runMutation = vi.fn().mockResolvedValue(okRate())
+    const response = await __handlers.skillsGetRouterV1Handler(
+      makeCtx({ runQuery, runMutation }),
+      new Request('https://example.com/api/v1/skills/demo/versions/1.0.0'),
+    )
+    expect(response.status).toBe(200)
+    const json = await response.json()
+    expect(json.version.security.status).toBe('suspicious')
+    expect(json.version.security.hasScanResult).toBe(true)
+    expect(json.version.security.signals.staticScan.reasonCodes).toEqual([
+      'suspicious.dynamic_code_execution',
+    ])
+  })
+
+  it('does not expose version security signals for clean public versions', async () => {
+    const runQuery = vi.fn(async (_query: unknown, args: Record<string, unknown>) => {
+      if ('slug' in args) {
+        return { _id: 'skills:1', slug: 'demo', displayName: 'Demo' }
+      }
+      if ('skillId' in args && 'version' in args) {
+        return {
+          version: '1.0.0',
+          createdAt: 1,
+          changelog: 'c',
+          changelogSource: 'auto',
+          llmAnalysis: {
+            status: 'completed',
+            verdict: 'benign',
+            checkedAt: 123,
+          },
+          moderationSignals: {
+            llmScan: {
+              key: 'llmScan',
+              family: 'llm',
+              state: 'ready',
+              verdict: 'clean',
+              contribution: 'informational',
+              reasonCodes: [],
+              checkedAt: 123,
+              details: {
+                model: 'gpt-test',
+                guidance: 'internal only',
+              },
+            },
+          },
+          files: [],
+        }
+      }
+      return null
+    })
+    const runMutation = vi.fn().mockResolvedValue(okRate())
+    const response = await __handlers.skillsGetRouterV1Handler(
+      makeCtx({ runQuery, runMutation }),
+      new Request('https://example.com/api/v1/skills/demo/versions/1.0.0'),
+    )
+    expect(response.status).toBe(200)
+    const json = await response.json()
+    expect(json.version.security.status).toBe('clean')
+    expect(json.version.security.signals).toBeUndefined()
+  })
+
+  it('redacts version security signal details for public suspicious versions', async () => {
+    const runQuery = vi.fn(async (_query: unknown, args: Record<string, unknown>) => {
+      if ('slug' in args) {
+        return { _id: 'skills:1', slug: 'demo', displayName: 'Demo' }
+      }
+      if ('skillId' in args && 'version' in args) {
+        return {
+          version: '1.0.0',
+          createdAt: 1,
+          changelog: 'c',
+          changelogSource: 'auto',
+          llmAnalysis: {
+            status: 'completed',
+            verdict: 'suspicious',
+            checkedAt: 123,
+          },
+          moderationSignals: {
+            llmScan: {
+              key: 'llmScan',
+              family: 'llm',
+              state: 'ready',
+              verdict: 'suspicious',
+              contribution: 'corroborating',
+              reasonCodes: ['suspicious.llm_suspicious'],
+              checkedAt: 123,
+              details: {
+                model: 'gpt-test',
+                guidance: 'internal only',
+                findings: 'sensitive details',
+              },
+            },
+          },
+          files: [],
+        }
+      }
+      return null
+    })
+    const runMutation = vi.fn().mockResolvedValue(okRate())
+    const response = await __handlers.skillsGetRouterV1Handler(
+      makeCtx({ runQuery, runMutation }),
+      new Request('https://example.com/api/v1/skills/demo/versions/1.0.0'),
+    )
+    expect(response.status).toBe(200)
+    const json = await response.json()
+    expect(json.version.security.status).toBe('suspicious')
+    expect(json.version.security.signals.llmScan.reasonCodes).toEqual([
+      'suspicious.llm_suspicious',
+    ])
+    expect(json.version.security.signals.llmScan.details).toBeUndefined()
+  })
+
   it('returns scan payload for latest version', async () => {
     const runQuery = vi.fn(async (_query: unknown, args: Record<string, unknown>) => {
       if ('slug' in args) {

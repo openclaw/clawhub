@@ -434,7 +434,18 @@ describe('skills anti-spam guards', () => {
 
   it('keeps suspicious skills visible for low-trust publishers', async () => {
     const patch = vi.fn(async () => {})
-    const version = { _id: 'skillVersions:1', skillId: 'skills:1' }
+    const version = {
+      _id: 'skillVersions:1',
+      skillId: 'skills:1',
+      staticScan: {
+        status: 'suspicious',
+        reasonCodes: ['suspicious.dynamic_code_execution'],
+        findings: [],
+        summary: '',
+        engineVersion: 'v2.1.1',
+        checkedAt: Date.now(),
+      },
+    }
     const skill = {
       _id: 'skills:1',
       slug: 'spam-skill',
@@ -509,7 +520,18 @@ describe('skills anti-spam guards', () => {
 
   it('keeps admin-owned skills non-suspicious for suspicious scanner verdicts', async () => {
     const patch = vi.fn(async () => {})
-    const version = { _id: 'skillVersions:1', skillId: 'skills:1' }
+    const version = {
+      _id: 'skillVersions:1',
+      skillId: 'skills:1',
+      staticScan: {
+        status: 'suspicious',
+        reasonCodes: ['suspicious.dynamic_code_execution'],
+        findings: [],
+        summary: '',
+        engineVersion: 'v2.1.1',
+        checkedAt: Date.now(),
+      },
+    }
     const skill = {
       _id: 'skills:1',
       slug: 'trusted-skill',
@@ -680,7 +702,18 @@ describe('skills anti-spam guards', () => {
 
   it('vt suspicious escalation does not keep suspicious flags for admin owners', async () => {
     const patch = vi.fn(async () => {})
-    const version = { _id: 'skillVersions:1', skillId: 'skills:1' }
+    const version = {
+      _id: 'skillVersions:1',
+      skillId: 'skills:1',
+      staticScan: {
+        status: 'suspicious',
+        reasonCodes: ['suspicious.dynamic_code_execution'],
+        findings: [],
+        summary: '',
+        engineVersion: 'v2.1.1',
+        checkedAt: Date.now(),
+      },
+    }
     const skill = {
       _id: 'skills:1',
       slug: 'trusted-skill',
@@ -732,6 +765,141 @@ describe('skills anti-spam guards', () => {
       expect.objectContaining({
         moderationFlags: undefined,
         moderationReason: 'scanner.llm.clean',
+      }),
+    )
+  })
+
+  it('vt suspicious escalation does not leave stale suspicious flags when aggregate verdict is clean', async () => {
+    const patch = vi.fn(async () => {})
+    const version = {
+      _id: 'skillVersions:1',
+      skillId: 'skills:1',
+      staticScan: undefined,
+      llmAnalysis: undefined,
+    }
+    const skill = {
+      _id: 'skills:1',
+      slug: 'single-vt-signal',
+      ownerUserId: 'users:owner',
+      moderationFlags: ['flagged.suspicious'],
+      moderationReason: 'scanner.vt.suspicious',
+    }
+    const owner = {
+      _id: 'users:owner',
+      role: 'user',
+      deletedAt: undefined,
+    }
+
+    const db = {
+      get: vi.fn(async (id: string) => {
+        if (id === 'skills:1') return skill
+        if (id === 'users:owner') return owner
+        return null
+      }),
+      query: vi.fn((table: string) => {
+        const globalStatsQuery = buildGlobalStatsQuery(table)
+        if (globalStatsQuery) return globalStatsQuery
+        const digestQuery = buildDigestQuery(table)
+        if (digestQuery) return digestQuery
+        if (table === 'skillVersions') {
+          return {
+            withIndex: () => ({
+              unique: async () => version,
+            }),
+          }
+        }
+        throw new Error(`unexpected table ${table}`)
+      }),
+      patch,
+      insert: vi.fn(),
+      normalizeId: vi.fn(),
+    }
+
+    await escalateByVtHandler(
+      { db, scheduler: { runAfter: vi.fn() } } as never,
+      {
+        sha256hash: 'h'.repeat(64),
+        status: 'suspicious',
+      } as never,
+    )
+
+    expect(patch).toHaveBeenCalledWith(
+      'skills:1',
+      expect.objectContaining({
+        moderationVerdict: 'clean',
+        moderationFlags: undefined,
+        moderationReason: 'scanner.aggregate.clean',
+        isSuspicious: false,
+      }),
+    )
+  })
+
+  it('vt suspicious escalation keeps clean flags when vt is the only contributing family', async () => {
+    const patch = vi.fn(async () => {})
+    const version = {
+      _id: 'skillVersions:1',
+      skillId: 'skills:1',
+      staticScan: undefined,
+      vtAnalysis: {
+        status: 'suspicious',
+        source: 'engines',
+        checkedAt: Date.now(),
+      },
+      llmAnalysis: undefined,
+    }
+    const skill = {
+      _id: 'skills:1',
+      slug: 'single-family-vt',
+      ownerUserId: 'users:owner',
+      moderationFlags: undefined,
+      moderationReason: 'scanner.vt.pending',
+      moderationStatus: 'active',
+    }
+    const owner = {
+      _id: 'users:owner',
+      role: 'user',
+      deletedAt: undefined,
+    }
+
+    const db = {
+      get: vi.fn(async (id: string) => {
+        if (id === 'skills:1') return skill
+        if (id === 'users:owner') return owner
+        return null
+      }),
+      query: vi.fn((table: string) => {
+        const globalStatsQuery = buildGlobalStatsQuery(table)
+        if (globalStatsQuery) return globalStatsQuery
+        const digestQuery = buildDigestQuery(table)
+        if (digestQuery) return digestQuery
+        if (table === 'skillVersions') {
+          return {
+            withIndex: () => ({
+              unique: async () => version,
+            }),
+          }
+        }
+        throw new Error(`unexpected table ${table}`)
+      }),
+      patch,
+      insert: vi.fn(),
+      normalizeId: vi.fn(),
+    }
+
+    await escalateByVtHandler(
+      { db, scheduler: { runAfter: vi.fn() } } as never,
+      {
+        sha256hash: 'i'.repeat(64),
+        status: 'suspicious',
+      } as never,
+    )
+
+    expect(patch).toHaveBeenCalledWith(
+      'skills:1',
+      expect.objectContaining({
+        moderationVerdict: 'clean',
+        moderationFlags: undefined,
+        isSuspicious: false,
       }),
     )
   })
@@ -816,6 +984,152 @@ describe('skills anti-spam guards', () => {
       'globalStats:1',
       expect.objectContaining({
         activeSkillsCount: 99,
+      }),
+    )
+  })
+
+  it('legacy skillId escalation honors a forced clean scanner status over stale verdict payloads', async () => {
+    const patch = vi.fn(async () => {})
+    const version = {
+      _id: 'skillVersions:1',
+      skillId: 'skills:1',
+      staticScan: undefined,
+      vtAnalysis: {
+        status: 'suspicious',
+        verdict: 'malicious',
+        source: 'engines',
+        checkedAt: Date.now(),
+      },
+      llmAnalysis: undefined,
+    }
+    const skill = {
+      _id: 'skills:1',
+      slug: 'legacy-cleanup',
+      ownerUserId: 'users:owner',
+      latestVersionId: 'skillVersions:1',
+      moderationFlags: ['blocked.malware'],
+      moderationReason: 'scanner.vt.malicious',
+      moderationStatus: 'hidden',
+    }
+    const owner = {
+      _id: 'users:owner',
+      role: 'user',
+      _creationTime: Date.now() - 60 * 24 * 60 * 60 * 1000,
+      createdAt: Date.now() - 60 * 24 * 60 * 60 * 1000,
+      deletedAt: undefined,
+    }
+
+    const db = {
+      get: vi.fn(async (id: string) => {
+        if (id === 'skills:1') return skill
+        if (id === 'skillVersions:1') return version
+        if (id === 'users:owner') return owner
+        return null
+      }),
+      query: vi.fn((table: string) => {
+        const globalStatsQuery = buildGlobalStatsQuery(table)
+        if (globalStatsQuery) return globalStatsQuery
+        throw new Error(`unexpected table ${table}`)
+      }),
+      patch,
+      insert: vi.fn(),
+      normalizeId: vi.fn(),
+    }
+
+    await escalateSkillByIdHandler(
+      { db } as never,
+      {
+        skillId: 'skills:1',
+        moderationReason: 'scanner.vt.clean',
+        moderationFlags: [],
+        moderationStatus: 'active',
+      } as never,
+    )
+
+    expect(patch).toHaveBeenNthCalledWith(
+      1,
+      'skills:1',
+      expect.objectContaining({
+        moderationStatus: 'active',
+        moderationReason: 'scanner.vt.clean',
+        moderationFlags: undefined,
+        moderationVerdict: 'clean',
+        moderationReasonCodes: undefined,
+      }),
+    )
+  })
+
+  it('vt-only escalation keeps flags aligned with the Phase 2 aggregate verdict', async () => {
+    const patch = vi.fn(async () => {})
+    const version = {
+      _id: 'skillVersions:1',
+      skillId: 'skills:1',
+      staticScan: undefined,
+      vtAnalysis: {
+        status: 'clean',
+        source: 'engines',
+        checkedAt: Date.now(),
+      },
+      llmAnalysis: undefined,
+      sha256hash: 'a'.repeat(64),
+    }
+    const skill = {
+      _id: 'skills:1',
+      slug: 'vt-only-escalation',
+      ownerUserId: 'users:owner',
+      latestVersionId: 'skillVersions:1',
+      moderationFlags: undefined,
+      moderationReason: 'scanner.aggregate.clean',
+      moderationStatus: 'active',
+    }
+    const owner = {
+      _id: 'users:owner',
+      role: 'user',
+      _creationTime: Date.now() - 60 * 24 * 60 * 60 * 1000,
+      createdAt: Date.now() - 60 * 24 * 60 * 60 * 1000,
+      deletedAt: undefined,
+    }
+
+    const db = {
+      get: vi.fn(async (id: string) => {
+        if (id === 'skills:1') return skill
+        if (id === 'users:owner') return owner
+        return null
+      }),
+      query: vi.fn((table: string) => {
+        if (table === 'skillVersions') {
+          return {
+            withIndex: (name: string) => {
+              if (name !== 'by_sha256hash') {
+                throw new Error(`unexpected skillVersions index ${name}`)
+              }
+              return {
+                unique: async () => version,
+              }
+            },
+          }
+        }
+        throw new Error(`unexpected table ${table}`)
+      }),
+      patch,
+      normalizeId: vi.fn(),
+    }
+
+    await escalateByVtHandler(
+      { db } as never,
+      {
+        sha256hash: 'a'.repeat(64),
+        status: 'suspicious',
+      } as never,
+    )
+
+    expect(patch).toHaveBeenCalledWith(
+      'skills:1',
+      expect.objectContaining({
+        moderationFlags: undefined,
+        moderationVerdict: 'clean',
+        moderationReason: 'scanner.aggregate.clean',
+        isSuspicious: false,
       }),
     )
   })

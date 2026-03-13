@@ -12,6 +12,71 @@ const manualModerationOverride = v.object({
   updatedAt: v.number(),
 })
 
+const moderationSignalState = v.union(
+  v.literal('ready'),
+  v.literal('pending'),
+  v.literal('error'),
+  v.literal('not_applicable'),
+)
+
+const moderationSignalFamily = v.union(
+  v.literal('local'),
+  v.literal('vt'),
+  v.literal('llm'),
+  v.literal('behavioral'),
+  v.literal('trust'),
+  v.literal('manual'),
+)
+
+const moderationSignalContribution = v.union(
+  v.literal('decisive'),
+  v.literal('corroborating'),
+  v.literal('suppressed'),
+  v.literal('informational'),
+  v.literal('none'),
+)
+
+const moderationSignalSummary = v.object({
+  key: v.union(
+    v.literal('staticScan'),
+    v.literal('vtEngines'),
+    v.literal('vtCodeInsight'),
+    v.literal('llmScan'),
+    v.literal('behavioralScan'),
+    v.literal('publisherTrust'),
+    v.literal('manualOverride'),
+  ),
+  family: moderationSignalFamily,
+  state: moderationSignalState,
+  verdict: v.optional(
+    v.union(
+      v.literal('clean'),
+      v.literal('suspicious'),
+      v.literal('malicious'),
+    ),
+  ),
+  contribution: moderationSignalContribution,
+  reasonCodes: v.array(v.string()),
+  metadataCodes: v.optional(v.array(v.string())),
+  suppressedReasonCodes: v.optional(v.array(v.string())),
+  summary: v.optional(v.string()),
+  rationale: v.optional(v.string()),
+  checkedAt: v.optional(v.number()),
+  details: v.optional(v.any()),
+})
+
+const moderationSignalsValidator = v.optional(
+  v.object({
+    staticScan: v.optional(moderationSignalSummary),
+    vtEngines: v.optional(moderationSignalSummary),
+    vtCodeInsight: v.optional(moderationSignalSummary),
+    llmScan: v.optional(moderationSignalSummary),
+    behavioralScan: v.optional(moderationSignalSummary),
+    publisherTrust: v.optional(moderationSignalSummary),
+    manualOverride: v.optional(moderationSignalSummary),
+  }),
+)
+
 const users = defineTable({
   name: v.optional(v.string()),
   image: v.optional(v.string()),
@@ -127,6 +192,7 @@ const skills = defineTable({
       }),
     ),
   ),
+  moderationSignals: moderationSignalsValidator,
   moderationSummary: v.optional(v.string()),
   moderationEngineVersion: v.optional(v.string()),
   moderationEvaluatedAt: v.optional(v.number()),
@@ -316,6 +382,7 @@ const skillVersions = defineTable({
       checkedAt: v.number(),
     }),
   ),
+  moderationSignals: moderationSignalsValidator,
   staticScan: v.optional(
     v.object({
       status: v.union(
