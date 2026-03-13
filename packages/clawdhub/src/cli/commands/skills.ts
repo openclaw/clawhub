@@ -81,12 +81,6 @@ export async function cmdInstall(
   const registry = await getRegistry(opts, { cache: true })
   await mkdir(opts.dir, { recursive: true })
   const target = join(opts.dir, trimmed)
-  if (!force) {
-    const exists = await fileExists(target)
-    if (exists) fail(`Already installed: ${target} (use --force)`)
-  } else {
-    await rm(target, { recursive: true, force: true })
-  }
 
   const spinner = createSpinner(`Resolving ${trimmed}`)
   try {
@@ -121,6 +115,14 @@ export async function cmdInstall(
 
     const resolvedVersion = versionFlag ?? skillMeta.latestVersion?.version ?? null
     if (!resolvedVersion) fail('Could not resolve latest version')
+
+    // All checks passed. Now safe to remove existing directory (if --force)
+    if (force) {
+      await rm(target, { recursive: true, force: true })
+    } else {
+      const exists = await fileExists(target)
+      if (exists) fail(`Already installed: ${target} (use --force)`)
+    }
 
     spinner.text = `Downloading ${trimmed}@${resolvedVersion}`
     const zip = await downloadZip(registry, { slug: trimmed, version: resolvedVersion, token })
