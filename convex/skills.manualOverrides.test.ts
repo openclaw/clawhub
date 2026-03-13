@@ -181,7 +181,7 @@ describe('skills manual overrides', () => {
     )
   })
 
-  it('clears a skill-level override and restores scanner-derived suspicious state', async () => {
+  it('clears a skill-level override and restores scanner-derived aggregate state', async () => {
     const now = 1_700_000_100_000
     vi.spyOn(Date, 'now').mockReturnValue(now)
     vi.mocked(requireUser).mockResolvedValue({
@@ -227,10 +227,17 @@ describe('skills manual overrides', () => {
     expect(patch).toHaveBeenCalledWith(
       'skills:1',
       expect.objectContaining({
-        moderationReason: 'scanner.vt.suspicious',
-        moderationVerdict: 'suspicious',
-        moderationFlags: ['flagged.suspicious'],
-        isSuspicious: true,
+        moderationReason: 'scanner.aggregate.clean',
+        moderationVerdict: 'clean',
+        moderationFlags: undefined,
+        moderationReasonCodes: undefined,
+        isSuspicious: false,
+        moderationSignals: expect.objectContaining({
+          vtEngines: expect.objectContaining({
+            verdict: 'suspicious',
+            contribution: 'corroborating',
+          }),
+        }),
       }),
     )
     expect(insert).toHaveBeenCalledWith(
@@ -382,12 +389,25 @@ describe('skills manual overrides', () => {
     })
 
     expect(patch).toHaveBeenCalledTimes(1)
-    expect(patch).toHaveBeenCalledWith('skillVersions:7', {
-      llmAnalysis: {
-        status: 'clean',
-        checkedAt: 200,
-      },
-    })
+    expect(patch).toHaveBeenCalledWith(
+      'skillVersions:7',
+      expect.objectContaining({
+        llmAnalysis: {
+          status: 'clean',
+          checkedAt: 200,
+        },
+        moderationSignals: expect.objectContaining({
+          vtEngines: expect.objectContaining({
+            verdict: 'clean',
+            contribution: 'informational',
+          }),
+          llmScan: expect.objectContaining({
+            verdict: 'clean',
+            contribution: 'informational',
+          }),
+        }),
+      }),
+    )
   })
 
   it('updates global public count when llm scan sync restores a skill to active', async () => {
