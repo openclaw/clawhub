@@ -84,8 +84,6 @@ export async function cmdInstall(
   if (!force) {
     const exists = await fileExists(target)
     if (exists) fail(`Already installed: ${target} (use --force)`)
-  } else {
-    await rm(target, { recursive: true, force: true })
   }
 
   const spinner = createSpinner(`Resolving ${trimmed}`)
@@ -121,6 +119,10 @@ export async function cmdInstall(
 
     const resolvedVersion = versionFlag ?? skillMeta.latestVersion?.version ?? null
     if (!resolvedVersion) fail('Could not resolve latest version')
+
+    if (force) {
+      await rm(target, { recursive: true, force: true })
+    }
 
     spinner.text = `Downloading ${trimmed}@${resolvedVersion}`
     const zip = await downloadZip(registry, { slug: trimmed, version: resolvedVersion, token })
