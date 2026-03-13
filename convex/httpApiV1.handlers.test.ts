@@ -265,6 +265,26 @@ describe('httpApiV1 handlers', () => {
     })
   })
 
+  it('search prefers canonical nonSuspiciousOnly over legacy alias', async () => {
+    const runAction = vi.fn().mockResolvedValue([])
+    const runMutation = vi.fn().mockResolvedValue(okRate())
+    const response = await __handlers.searchSkillsV1Handler(
+      makeCtx({ runAction, runMutation }),
+      new Request(
+        'https://example.com/api/v1/search?q=test&nonSuspiciousOnly=false&nonSuspicious=1',
+      ),
+    )
+    if (response.status !== 200) {
+      throw new Error(await response.text())
+    }
+    expect(runAction).toHaveBeenCalledWith(expect.anything(), {
+      query: 'test',
+      limit: undefined,
+      highlightedOnly: undefined,
+      nonSuspiciousOnly: undefined,
+    })
+  })
+
   it('search rate limits', async () => {
     const runMutation = vi.fn().mockResolvedValue(blockedRate())
     const response = await __handlers.searchSkillsV1Handler(
@@ -619,6 +639,24 @@ describe('httpApiV1 handlers', () => {
     const response = await __handlers.listSkillsV1Handler(
       makeCtx({ runQuery, runMutation }),
       new Request('https://example.com/api/v1/skills?nonSuspicious=1'),
+    )
+    expect(response.status).toBe(200)
+  })
+
+  it('lists skills prefers canonical nonSuspiciousOnly over legacy alias', async () => {
+    const runQuery = vi.fn(async (_query: unknown, args: Record<string, unknown>) => {
+      if ('sort' in args || 'cursor' in args || 'limit' in args) {
+        expect(args.nonSuspiciousOnly).toBeUndefined()
+        return { items: [], nextCursor: null }
+      }
+      return null
+    })
+    const runMutation = vi.fn().mockResolvedValue(okRate())
+    const response = await __handlers.listSkillsV1Handler(
+      makeCtx({ runQuery, runMutation }),
+      new Request(
+        'https://example.com/api/v1/skills?nonSuspiciousOnly=false&nonSuspicious=1',
+      ),
     )
     expect(response.status).toBe(200)
   })

@@ -99,7 +99,19 @@
               "changelog": { "type": "string" }
             }
           },
-          "owner": { "$ref": "#/components/schemas/Owner" }
+          "owner": { "$ref": "#/components/schemas/Owner" },
+          "moderation": {
+            "type": ["object", "null"],
+            "properties": {
+              "isSuspicious": { "type": "boolean" },
+              "isMalwareBlocked": { "type": "boolean" },
+              "verdict": { "type": "string", "enum": ["clean", "suspicious", "malicious"] },
+              "reasonCodes": { "type": "array", "items": { "type": "string" } },
+              "summary": { "type": ["string", "null"] },
+              "engineVersion": { "type": ["string", "null"] },
+              "updatedAt": { "type": ["number", "null"] }
+            }
+          }
         }
       },
       "SkillVersion": {
@@ -358,6 +370,43 @@
         ],
         "responses": {
           "200": { "description": "Deleted", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/DeleteResponse" } } } }
+        }
+      }
+    },
+    "/api/v1/skills/{slug}/moderation": {
+      "get": {
+        "summary": "Get moderation details",
+        "parameters": [
+          { "name": "slug", "in": "path", "required": true, "schema": { "type": "string" } }
+        ],
+        "responses": {
+          "200": {
+            "description": "Moderation details",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "moderation": {
+                      "type": ["object", "null"],
+                      "properties": {
+                        "isSuspicious": { "type": "boolean" },
+                        "isMalwareBlocked": { "type": "boolean" },
+                        "verdict": { "type": "string", "enum": ["clean", "suspicious", "malicious"] },
+                        "reasonCodes": { "type": "array", "items": { "type": "string" } },
+                        "summary": { "type": ["string", "null"] },
+                        "engineVersion": { "type": ["string", "null"] },
+                        "updatedAt": { "type": ["number", "null"] },
+                        "legacyReason": { "type": ["string", "null"] },
+                        "evidence": { "type": "array", "items": { "type": "object", "additionalProperties": true } }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "404": { "description": "Moderation details unavailable" }
         }
       }
     },

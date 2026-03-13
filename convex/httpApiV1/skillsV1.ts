@@ -2,7 +2,7 @@ import { api, internal } from '../_generated/api'
 import type { Doc, Id } from '../_generated/dataModel'
 import type { ActionCtx } from '../_generated/server'
 import { getOptionalApiTokenUserId, requireApiTokenUser } from '../lib/apiTokenAuth'
-import { parseBooleanQueryParam } from '../lib/httpUtils'
+import { parseBooleanQueryParam, resolveBooleanQueryParam } from '../lib/httpUtils'
 import { applyRateLimit, parseBearerToken } from '../lib/httpRateLimit'
 import { publishVersionForUser } from '../skills'
 import {
@@ -327,9 +327,10 @@ export async function searchSkillsV1Handler(ctx: ActionCtx, request: Request) {
   const query = url.searchParams.get('q')?.trim() ?? ''
   const limit = toOptionalNumber(url.searchParams.get('limit'))
   const highlightedOnly = parseBooleanQueryParam(url.searchParams.get('highlightedOnly'))
-  const nonSuspiciousOnly =
-    parseBooleanQueryParam(url.searchParams.get('nonSuspiciousOnly')) ||
-    parseBooleanQueryParam(url.searchParams.get('nonSuspicious'))
+  const nonSuspiciousOnly = resolveBooleanQueryParam(
+    url.searchParams.get('nonSuspiciousOnly'),
+    url.searchParams.get('nonSuspicious'),
+  )
 
   if (!query) return json({ results: [] }, 200, rate.headers)
 
@@ -408,9 +409,10 @@ export async function listSkillsV1Handler(ctx: ActionCtx, request: Request) {
   const rawCursor = url.searchParams.get('cursor')?.trim() || undefined
   const sort = parseListSort(url.searchParams.get('sort'))
   const cursor = sort === 'trending' ? undefined : rawCursor
-  const nonSuspiciousOnly =
-    parseBooleanQueryParam(url.searchParams.get('nonSuspiciousOnly')) ||
-    parseBooleanQueryParam(url.searchParams.get('nonSuspicious'))
+  const nonSuspiciousOnly = resolveBooleanQueryParam(
+    url.searchParams.get('nonSuspiciousOnly'),
+    url.searchParams.get('nonSuspicious'),
+  )
 
   const result = (await ctx.runQuery(api.skills.listPublicPage, {
     limit,

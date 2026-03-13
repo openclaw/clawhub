@@ -112,6 +112,22 @@ describe('httpApi handlers', () => {
     })
   })
 
+  it('searchSkillsHttp prefers canonical nonSuspiciousOnly over legacy alias', async () => {
+    const runAction = vi.fn().mockResolvedValue([])
+    await __handlers.searchSkillsHandler(
+      makeCtx({ runAction }),
+      new Request(
+        'https://example.com/api/search?q=test&nonSuspiciousOnly=false&nonSuspicious=1',
+      ),
+    )
+    expect(runAction).toHaveBeenCalledWith(expect.anything(), {
+      query: 'test',
+      limit: undefined,
+      highlightedOnly: undefined,
+      nonSuspiciousOnly: undefined,
+    })
+  })
+
   it('getSkillHttp validates slug', async () => {
     const response = await __handlers.getSkillHandler(
       makeCtx({ runQuery: vi.fn() }),

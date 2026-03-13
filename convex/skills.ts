@@ -37,7 +37,12 @@ import {
   isPublicSkillDoc,
   readGlobalPublicSkillsCount,
 } from './lib/globalStats'
-import { buildTrendingLeaderboard } from './lib/leaderboards'
+import {
+  buildNonSuspiciousTrendingLeaderboard,
+  buildTrendingLeaderboard,
+  TRENDING_LEADERBOARD_KIND,
+  TRENDING_NON_SUSPICIOUS_LEADERBOARD_KIND,
+} from './lib/leaderboards'
 import {
   applyManualOverrideToSkillPatch,
   isManualOverrideReason,
@@ -2285,10 +2290,9 @@ export const listPublicPage = query({
     }
 
     if (sort === 'trending') {
-      const entries = await getTrendingEntries(
-        ctx,
-        args.nonSuspiciousOnly ? MAX_PUBLIC_LIST_LIMIT : limit,
-      )
+      const entries = await getTrendingEntries(ctx, limit, {
+        nonSuspiciousOnly: args.nonSuspiciousOnly,
+      })
       const skills: Doc<'skills'>[] = []
 
       for (const entry of entries) {
@@ -2457,12 +2461,19 @@ function sortToIndex(
   }
 }
 
-async function getTrendingEntries(ctx: QueryCtx, limit: number) {
+async function getTrendingEntries(
+  ctx: QueryCtx,
+  limit: number,
+  args?: { nonSuspiciousOnly?: boolean },
+) {
+  const kind = args?.nonSuspiciousOnly
+    ? TRENDING_NON_SUSPICIOUS_LEADERBOARD_KIND
+    : TRENDING_LEADERBOARD_KIND
   // Use the pre-computed leaderboard from the hourly cron job.
   // Avoid Date.now() here to keep the query deterministic and cacheable.
   const latest = await ctx.db
     .query('skillLeaderboards')
-    .withIndex('by_kind', (q) => q.eq('kind', 'trending'))
+    .withIndex('by_kind', (q) => q.eq('kind', kind))
     .order('desc')
     .take(1)
 
@@ -2471,10 +2482,15 @@ async function getTrendingEntries(ctx: QueryCtx, limit: number) {
   }
 
   // No leaderboard exists yet (cold start) - compute on the fly
-  const fallback = await buildTrendingLeaderboard(ctx, {
-    limit,
-    now: Date.now(),
-  })
+  const fallback = args?.nonSuspiciousOnly
+    ? await buildNonSuspiciousTrendingLeaderboard(ctx, {
+        limit,
+        now: Date.now(),
+      })
+    : await buildTrendingLeaderboard(ctx, {
+        limit,
+        now: Date.now(),
+      })
   return fallback.items
 }
 

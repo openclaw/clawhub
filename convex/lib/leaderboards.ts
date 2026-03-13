@@ -1,12 +1,21 @@
 import type { Id } from '../_generated/dataModel'
 import type { MutationCtx, QueryCtx } from '../_generated/server'
+import { isSkillSuspicious } from './skillSafety'
 
 const DAY_MS = 24 * 60 * 60 * 1000
 export const TRENDING_DAYS = 7
+export const TRENDING_LEADERBOARD_KIND = 'trending'
+export const TRENDING_NON_SUSPICIOUS_LEADERBOARD_KIND = 'trending_non_suspicious'
 
 export type LeaderboardEntry = {
   skillId: Id<'skills'>
   score: number
+  installs: number
+  downloads: number
+}
+
+type DailyTrendingRow = {
+  skillId: Id<'skills'>
   installs: number
   downloads: number
 }
@@ -32,7 +41,34 @@ export async function buildTrendingLeaderboard(
   ctx: QueryCtx | MutationCtx,
   params: { limit: number; now?: number },
 ) {
-  const now = params.now ?? Date.now()
+  const { startDay, endDay, entries } = await buildTrendingEntryCandidates(
+    ctx,
+    params.now,
+  )
+  return {
+    startDay,
+    endDay,
+    items: takeTopTrendingEntries(entries, params.limit),
+  }
+}
+
+export async function buildNonSuspiciousTrendingLeaderboard(
+  ctx: QueryCtx | MutationCtx,
+  params: { limit: number; now?: number },
+) {
+  const { startDay, endDay, entries } = await buildTrendingEntryCandidates(
+    ctx,
+    params.now,
+  )
+  const items = await takeTopNonSuspiciousTrendingEntries(ctx, entries, params.limit)
+
+  return { startDay, endDay, items }
+}
+
+export async function buildTrendingEntryCandidates(
+  ctx: QueryCtx | MutationCtx,
+  now = Date.now(),
+) {
   const { startDay, endDay } = getTrendingRange(now)
 
   // Query one day at a time to stay well under the 32K document limit.
@@ -47,6 +83,14 @@ export async function buildTrendingLeaderboard(
         .collect(),
     ),
   )
+  const entries = buildTrendingEntriesFromDailyRows(perDayRows)
+
+  return { startDay, endDay, entries }
+}
+
+export function buildTrendingEntriesFromDailyRows(
+  perDayRows: DailyTrendingRow[][],
+) {
   const totals = new Map<Id<'skills'>, { installs: number; downloads: number }>()
   for (const rows of perDayRows) {
     for (const row of rows) {
@@ -64,11 +108,35 @@ export async function buildTrendingLeaderboard(
     score: totalsEntry.installs,
   }))
 
-  const items = topN(entries, params.limit, compareTrendingEntries).sort((a, b) =>
+  entries.sort((a, b) => compareTrendingEntries(b, a))
+
+  return entries
+}
+
+export function takeTopTrendingEntries(
+  entries: LeaderboardEntry[],
+  limit: number,
+) {
+  return topN(entries, limit, compareTrendingEntries).sort((a, b) =>
     compareTrendingEntries(b, a),
   )
+}
 
-  return { startDay, endDay, items }
+export async function takeTopNonSuspiciousTrendingEntries(
+  ctx: QueryCtx | MutationCtx,
+  entries: LeaderboardEntry[],
+  limit: number,
+) {
+  const items: LeaderboardEntry[] = []
+
+  for (const entry of entries) {
+    const skill = await ctx.db.get(entry.skillId)
+    if (!skill || skill.softDeletedAt || isSkillSuspicious(skill)) continue
+    items.push(entry)
+    if (items.length >= limit) break
+  }
+
+  return items
 }
 
 export function compareTrendingEntries(a: LeaderboardEntry, b: LeaderboardEntry) {

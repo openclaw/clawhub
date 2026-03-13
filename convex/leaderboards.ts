@@ -1,13 +1,15 @@
 import { v } from 'convex/values'
 import { internal } from './_generated/api'
-import type { Id } from './_generated/dataModel'
 import { internalAction, internalMutation, internalQuery } from './functions'
 import {
-  buildTrendingLeaderboard,
-  compareTrendingEntries,
+  buildTrendingEntriesFromDailyRows,
+  buildTrendingEntryCandidates,
   getTrendingRange,
   queryDailyStats,
-  topN,
+  takeTopNonSuspiciousTrendingEntries,
+  takeTopTrendingEntries,
+  TRENDING_LEADERBOARD_KIND,
+  TRENDING_NON_SUSPICIOUS_LEADERBOARD_KIND,
 } from './lib/leaderboards'
 
 const MAX_TRENDING_LIMIT = 200
@@ -26,9 +28,27 @@ export const getDailyStats = internalQuery({
   },
 })
 
+export const filterTopNonSuspiciousTrendingEntries = internalQuery({
+  args: {
+    entries: v.array(
+      v.object({
+        skillId: v.id('skills'),
+        score: v.number(),
+        installs: v.number(),
+        downloads: v.number(),
+      }),
+    ),
+    limit: v.number(),
+  },
+  handler: async (ctx, { entries, limit }) => {
+    return takeTopNonSuspiciousTrendingEntries(ctx, entries, limit)
+  },
+})
+
 /** Writes the pre-computed leaderboard and prunes old entries. */
 export const writeTrendingLeaderboard = internalMutation({
   args: {
+    kind: v.string(),
     items: v.array(
       v.object({
         skillId: v.id('skills'),
@@ -40,11 +60,11 @@ export const writeTrendingLeaderboard = internalMutation({
     startDay: v.number(),
     endDay: v.number(),
   },
-  handler: async (ctx, { items, startDay, endDay }) => {
+  handler: async (ctx, { kind, items, startDay, endDay }) => {
     const now = Date.now()
 
     await ctx.db.insert('skillLeaderboards', {
-      kind: 'trending',
+      kind,
       generatedAt: now,
       rangeStartDay: startDay,
       rangeEndDay: endDay,
@@ -53,7 +73,7 @@ export const writeTrendingLeaderboard = internalMutation({
 
     const recent = await ctx.db
       .query('skillLeaderboards')
-      .withIndex('by_kind', (q) => q.eq('kind', 'trending'))
+      .withIndex('by_kind', (q) => q.eq('kind', kind))
       .order('desc')
       .take(KEEP_LEADERBOARD_ENTRIES + 5)
 
@@ -70,39 +90,32 @@ export const rebuildTrendingLeaderboardAction = internalAction({
   args: { limit: v.optional(v.number()) },
   handler: async (ctx, args): Promise<{ ok: true; count: number }> => {
     const limit = clampInt(args.limit ?? MAX_TRENDING_LIMIT, 1, MAX_TRENDING_LIMIT)
-    const { startDay, endDay } = getTrendingRange(Date.now())
-
+    const now = Date.now()
+    const { startDay, endDay } = getTrendingRange(now)
     const dayKeys = Array.from({ length: endDay - startDay + 1 }, (_, i) => startDay + i)
     const perDayRows = await Promise.all(
       dayKeys.map((day) => ctx.runQuery(internal.leaderboards.getDailyStats, { day })),
     )
-
-    const totals = new Map<string, { installs: number; downloads: number }>()
-    for (const rows of perDayRows) {
-      for (const row of rows) {
-        const current = totals.get(row.skillId) ?? { installs: 0, downloads: 0 }
-        current.installs += row.installs
-        current.downloads += row.downloads
-        totals.set(row.skillId, current)
-      }
-    }
-
-    const entries = Array.from(totals, ([skillId, t]) => ({
-      skillId: skillId as Id<'skills'>,
-      installs: t.installs,
-      downloads: t.downloads,
-      score: t.installs,
-    }))
-
-    const items = topN(entries, limit, compareTrendingEntries).sort((a, b) =>
-      compareTrendingEntries(b, a),
+    const entries = buildTrendingEntriesFromDailyRows(perDayRows)
+    const items = takeTopTrendingEntries(entries, limit)
+    const nonSuspicious = await ctx.runQuery(
+      internal.leaderboards.filterTopNonSuspiciousTrendingEntries,
+      { entries, limit },
     )
 
-    return await ctx.runMutation(internal.leaderboards.writeTrendingLeaderboard, {
+    await ctx.runMutation(internal.leaderboards.writeTrendingLeaderboard, {
+      kind: TRENDING_LEADERBOARD_KIND,
       items,
       startDay,
       endDay,
     })
+    await ctx.runMutation(internal.leaderboards.writeTrendingLeaderboard, {
+      kind: TRENDING_NON_SUSPICIOUS_LEADERBOARD_KIND,
+      items: nonSuspicious,
+      startDay,
+      endDay,
+    })
+    return { ok: true as const, count: items.length }
   },
 })
 
@@ -115,24 +128,37 @@ export const rebuildTrendingLeaderboardInternal = internalMutation({
   handler: async (ctx, args) => {
     const limit = clampInt(args.limit ?? MAX_TRENDING_LIMIT, 1, MAX_TRENDING_LIMIT)
     const now = Date.now()
-    const { startDay, endDay, items } = await buildTrendingLeaderboard(ctx, { limit, now })
+    const { startDay, endDay, entries } = await buildTrendingEntryCandidates(ctx, now)
+    const items = takeTopTrendingEntries(entries, limit)
+    const nonSuspicious = await takeTopNonSuspiciousTrendingEntries(ctx, entries, limit)
 
     await ctx.db.insert('skillLeaderboards', {
-      kind: 'trending',
+      kind: TRENDING_LEADERBOARD_KIND,
       generatedAt: now,
       rangeStartDay: startDay,
       rangeEndDay: endDay,
       items,
     })
+    await ctx.db.insert('skillLeaderboards', {
+      kind: TRENDING_NON_SUSPICIOUS_LEADERBOARD_KIND,
+      generatedAt: now,
+      rangeStartDay: startDay,
+      rangeEndDay: endDay,
+      items: nonSuspicious,
+    })
 
-    const recent = await ctx.db
-      .query('skillLeaderboards')
-      .withIndex('by_kind', (q) => q.eq('kind', 'trending'))
-      .order('desc')
-      .take(KEEP_LEADERBOARD_ENTRIES + 5)
-
-    for (const entry of recent.slice(KEEP_LEADERBOARD_ENTRIES)) {
-      await ctx.db.delete(entry._id)
+    for (const kind of [
+      TRENDING_LEADERBOARD_KIND,
+      TRENDING_NON_SUSPICIOUS_LEADERBOARD_KIND,
+    ]) {
+      const entriesForKind = await ctx.db
+        .query('skillLeaderboards')
+        .withIndex('by_kind', (q) => q.eq('kind', kind))
+        .order('desc')
+        .take(KEEP_LEADERBOARD_ENTRIES + 5)
+      for (const entry of entriesForKind.slice(KEEP_LEADERBOARD_ENTRIES)) {
+        await ctx.db.delete(entry._id)
+      }
     }
 
     return { ok: true as const, count: items.length }

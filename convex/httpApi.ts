@@ -12,7 +12,7 @@ import type { ActionCtx } from './_generated/server'
 import { httpAction } from './functions'
 import { requireApiTokenUser } from './lib/apiTokenAuth'
 import { corsHeaders, mergeHeaders } from './lib/httpHeaders'
-import { parseBooleanQueryParam } from './lib/httpUtils'
+import { parseBooleanQueryParam, resolveBooleanQueryParam } from './lib/httpUtils'
 import { publishVersionForUser } from './skills'
 
 type SearchSkillEntry = {
@@ -47,9 +47,10 @@ async function searchSkillsHandler(ctx: ActionCtx, request: Request) {
   const limit = toOptionalNumber(url.searchParams.get('limit'))
   const approvedOnly = parseBooleanQueryParam(url.searchParams.get('approvedOnly'))
   const highlightedOnly = parseBooleanQueryParam(url.searchParams.get('highlightedOnly')) || approvedOnly
-  const nonSuspiciousOnly =
-    parseBooleanQueryParam(url.searchParams.get('nonSuspiciousOnly')) ||
-    parseBooleanQueryParam(url.searchParams.get('nonSuspicious'))
+  const nonSuspiciousOnly = resolveBooleanQueryParam(
+    url.searchParams.get('nonSuspiciousOnly'),
+    url.searchParams.get('nonSuspicious'),
+  )
 
   if (!query) return json({ results: [] })
 

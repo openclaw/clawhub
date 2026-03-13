@@ -103,7 +103,10 @@ describe('skills.listPublicPage', () => {
     const clean = makeSkill('skills:clean', 'clean', 'users:3', 'skillVersions:3')
 
     const ctx = makeTrendingCtx({
-      leaderboardItems: [suspicious1._id, suspicious2._id, clean._id],
+      leaderboards: {
+        trending: [suspicious1._id, suspicious2._id],
+        trending_non_suspicious: [clean._id],
+      },
       skills: [suspicious1, suspicious2, clean],
       users: [makeUser('users:1'), makeUser('users:2'), makeUser('users:3')],
       versions: [
@@ -162,12 +165,12 @@ function makeCtx({
 }
 
 function makeTrendingCtx({
-  leaderboardItems,
+  leaderboards,
   skills,
   users,
   versions,
 }: {
-  leaderboardItems: string[]
+  leaderboards: Record<string, string[]>
   skills: Array<ReturnType<typeof makeSkill>>
   users: Array<ReturnType<typeof makeUser>>
   versions: Array<ReturnType<typeof makeVersion>>
@@ -181,19 +184,27 @@ function makeTrendingCtx({
       query: vi.fn((table: string) => {
         if (table !== 'skillLeaderboards') throw new Error(`unexpected table ${table}`)
         return {
-          withIndex: vi.fn((index: string, _builder: unknown) => {
+          withIndex: vi.fn((index: string, builder: (q: { eq: (field: string, value: string) => unknown }) => unknown) => {
             if (index !== 'by_kind') throw new Error(`unexpected index ${index}`)
+            let requestedKind = 'trending'
+            builder({
+              eq: (field: string, value: string) => {
+                if (field !== 'kind') throw new Error(`unexpected field ${field}`)
+                requestedKind = value
+                return {}
+              },
+            })
             return {
               order: vi.fn((dir: string) => {
                 if (dir !== 'desc') throw new Error(`unexpected order ${dir}`)
                 return {
                   take: vi.fn().mockResolvedValue([
                     {
-                      kind: 'trending',
+                      kind: requestedKind,
                       generatedAt: 1,
                       rangeStartDay: 1,
                       rangeEndDay: 1,
-                      items: leaderboardItems.map((skillId, idx) => ({
+                      items: (leaderboards[requestedKind] ?? []).map((skillId, idx) => ({
                         skillId,
                         score: 100 - idx,
                         installs: 10 - idx,
