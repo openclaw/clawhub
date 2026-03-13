@@ -178,6 +178,31 @@ describe('SkillsIndex', () => {
     })
   })
 
+  it('switches browse default sorting back to relevance when entering search', async () => {
+    searchMock = { sort: 'downloads' }
+    vi.useFakeTimers()
+
+    render(<SkillsIndex />)
+
+    const input = screen.getByPlaceholderText('Filter by name, slug, or summary…')
+    await act(async () => {
+      fireEvent.change(input, { target: { value: 'cli-design-framework' } })
+      await vi.runAllTimersAsync()
+    })
+
+    expect(navigateMock).toHaveBeenCalled()
+    const lastCall = navigateMock.mock.calls.at(-1)?.[0] as {
+      replace?: boolean
+      search: (prev: Record<string, unknown>) => Record<string, unknown>
+    }
+    expect(lastCall.replace).toBe(true)
+    expect(lastCall.search({ sort: 'downloads' })).toEqual({
+      q: 'cli-design-framework',
+      sort: undefined,
+      dir: undefined,
+    })
+  })
+
   it('loads more results when search pagination is requested', async () => {
     searchMock = { q: 'remind' }
     vi.stubGlobal('IntersectionObserver', undefined)

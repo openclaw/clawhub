@@ -229,7 +229,22 @@ export function useSkillsBrowseModel({
       const trimmed = next.trim()
       navigateTimer.current = window.setTimeout(() => {
         void navigate({
-          search: (prev) => ({ ...prev, q: trimmed ? next : undefined }),
+          search: (prev) => {
+            const hadQuery = typeof prev.q === 'string' && prev.q.trim().length > 0
+            const enteringSearch = Boolean(trimmed) && !hadQuery
+            const usesImplicitBrowseDefault = prev.sort === 'downloads' && prev.dir === undefined
+
+            return {
+              ...prev,
+              q: trimmed ? next : undefined,
+              ...(enteringSearch && usesImplicitBrowseDefault
+                ? {
+                    sort: undefined,
+                    dir: undefined,
+                  }
+                : null),
+            }
+          },
           replace: true,
         })
       }, 220)
