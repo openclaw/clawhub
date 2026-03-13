@@ -163,7 +163,7 @@ async function cliPublishHandler(ctx: ActionCtx, request: Request) {
   try {
     const { userId } = await requireApiTokenUser(ctx, request)
     const args = parsePublishBody(body)
-    if (args.acceptLicenseTerms !== true) {
+    if (!hasAcceptedLegacyLicenseTerms(args.acceptLicenseTerms)) {
       return text('MIT-0 license terms must be accepted to publish skills', 400)
     }
     const result = await publishVersionForUser(ctx, userId, args)
@@ -173,6 +173,10 @@ async function cliPublishHandler(ctx: ActionCtx, request: Request) {
     if (message.toLowerCase().includes('unauthorized')) return text('Unauthorized', 401)
     return text(message, 400)
   }
+}
+
+function hasAcceptedLegacyLicenseTerms(acceptLicenseTerms: boolean | undefined) {
+  return acceptLicenseTerms !== false
 }
 
 export const cliPublishHttp = httpAction(cliPublishHandler)

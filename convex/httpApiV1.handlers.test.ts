@@ -1030,6 +1030,43 @@ describe('httpApiV1 handlers', () => {
     expect(publishVersionForUser).toHaveBeenCalled()
   })
 
+  it('publish json accepts legacy clients that omit license terms', async () => {
+    vi.mocked(requireApiTokenUser).mockResolvedValueOnce({
+      userId: 'users:1',
+      user: { handle: 'p' },
+    } as never)
+    vi.mocked(publishVersionForUser).mockResolvedValueOnce({
+      skillId: 's',
+      versionId: 'v',
+      embeddingId: 'e',
+    } as never)
+    const runMutation = vi.fn().mockResolvedValue(okRate())
+    const body = JSON.stringify({
+      slug: 'demo',
+      displayName: 'Demo',
+      version: '1.0.0',
+      changelog: 'c',
+      files: [
+        {
+          path: 'SKILL.md',
+          size: 1,
+          storageId: 'storage:1',
+          sha256: 'abc',
+          contentType: 'text/plain',
+        },
+      ],
+    })
+    const response = await __handlers.publishSkillV1Handler(
+      makeCtx({ runMutation }),
+      new Request('https://example.com/api/v1/skills', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: 'Bearer clh_test' },
+        body,
+      }),
+    )
+    expect(response.status).toBe(200)
+  })
+
   it('publish multipart succeeds', async () => {
     vi.mocked(requireApiTokenUser).mockResolvedValueOnce({
       userId: 'users:1',
@@ -1065,6 +1102,74 @@ describe('httpApiV1 handlers', () => {
     if (response.status !== 200) {
       throw new Error(await response.text())
     }
+  })
+
+  it('publish multipart accepts legacy clients that omit license terms', async () => {
+    vi.mocked(requireApiTokenUser).mockResolvedValueOnce({
+      userId: 'users:1',
+      user: { handle: 'p' },
+    } as never)
+    vi.mocked(publishVersionForUser).mockResolvedValueOnce({
+      skillId: 's',
+      versionId: 'v',
+      embeddingId: 'e',
+    } as never)
+    const runMutation = vi.fn().mockResolvedValue(okRate())
+    const form = new FormData()
+    form.set(
+      'payload',
+      JSON.stringify({
+        slug: 'demo',
+        displayName: 'Demo',
+        version: '1.0.0',
+        changelog: '',
+        tags: ['latest'],
+      }),
+    )
+    form.append('files', new Blob(['hello'], { type: 'text/plain' }), 'SKILL.md')
+    const response = await __handlers.publishSkillV1Handler(
+      makeCtx({ runMutation, storage: { store: vi.fn().mockResolvedValue('storage:1') } }),
+      new Request('https://example.com/api/v1/skills', {
+        method: 'POST',
+        headers: { Authorization: 'Bearer clh_test' },
+        body: form,
+      }),
+    )
+    expect(response.status).toBe(200)
+  })
+
+  it('publish rejects explicit license refusal', async () => {
+    vi.mocked(requireApiTokenUser).mockResolvedValueOnce({
+      userId: 'users:1',
+      user: { handle: 'p' },
+    } as never)
+    const runMutation = vi.fn().mockResolvedValue(okRate())
+    const body = JSON.stringify({
+      slug: 'demo',
+      displayName: 'Demo',
+      version: '1.0.0',
+      changelog: 'c',
+      acceptLicenseTerms: false,
+      files: [
+        {
+          path: 'SKILL.md',
+          size: 1,
+          storageId: 'storage:1',
+          sha256: 'abc',
+          contentType: 'text/plain',
+        },
+      ],
+    })
+    const response = await __handlers.publishSkillV1Handler(
+      makeCtx({ runMutation }),
+      new Request('https://example.com/api/v1/skills', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: 'Bearer clh_test' },
+        body,
+      }),
+    )
+    expect(response.status).toBe(400)
+    expect(await response.text()).toMatch(/license terms must be accepted/i)
   })
 
   it('publish multipart ignores mac junk files', async () => {

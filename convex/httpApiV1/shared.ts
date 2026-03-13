@@ -271,13 +271,13 @@ export async function parseMultipartPublish(
   }
 
   const forkOf = payload.forkOf && typeof payload.forkOf === 'object' ? payload.forkOf : undefined
+  const hasAcceptLicenseTerms = Object.prototype.hasOwnProperty.call(payload, 'acceptLicenseTerms')
   const body = {
     slug: payload.slug,
     displayName: payload.displayName,
     version: payload.version,
     changelog: typeof payload.changelog === 'string' ? payload.changelog : '',
-    acceptLicenseTerms:
-      typeof payload.acceptLicenseTerms === 'boolean' ? payload.acceptLicenseTerms : undefined,
+    ...(hasAcceptLicenseTerms ? { acceptLicenseTerms: payload.acceptLicenseTerms } : {}),
     tags: Array.isArray(payload.tags) ? payload.tags : undefined,
     ...(payload.source ? { source: payload.source } : {}),
     files,

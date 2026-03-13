@@ -651,7 +651,7 @@ export async function publishSkillV1Handler(ctx: ActionCtx, request: Request) {
     if (contentType.includes('application/json')) {
       const body = await request.json()
       const payload = parsePublishBody(body)
-      if (payload.acceptLicenseTerms !== true) {
+      if (!hasAcceptedLegacyLicenseTerms(payload.acceptLicenseTerms)) {
         return text('MIT-0 license terms must be accepted to publish skills', 400, rate.headers)
       }
       const result = await publishVersionForUser(ctx, userId, payload)
@@ -660,7 +660,7 @@ export async function publishSkillV1Handler(ctx: ActionCtx, request: Request) {
 
     if (contentType.includes('multipart/form-data')) {
       const payload = await parseMultipartPublish(ctx, request)
-      if (payload.acceptLicenseTerms !== true) {
+      if (!hasAcceptedLegacyLicenseTerms(payload.acceptLicenseTerms)) {
         return text('MIT-0 license terms must be accepted to publish skills', 400, rate.headers)
       }
       const result = await publishVersionForUser(ctx, userId, payload)
@@ -672,6 +672,10 @@ export async function publishSkillV1Handler(ctx: ActionCtx, request: Request) {
   }
 
   return text('Unsupported content type', 415, rate.headers)
+}
+
+function hasAcceptedLegacyLicenseTerms(acceptLicenseTerms: boolean | undefined) {
+  return acceptLicenseTerms !== false
 }
 
 type TransferDecisionAction = 'accept' | 'reject' | 'cancel'

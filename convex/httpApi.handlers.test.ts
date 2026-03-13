@@ -377,6 +377,47 @@ describe('httpApi handlers', () => {
     expect(json.skillId).toBe('s')
   })
 
+  it('cliPublishHttp accepts legacy clients that omit license terms', async () => {
+    vi.mocked(requireApiTokenUser).mockResolvedValueOnce({ userId: 'user1' } as never)
+    vi.mocked(publishVersionForUser).mockResolvedValueOnce({
+      skillId: 's',
+      versionId: 'v',
+      embeddingId: 'e',
+    } as never)
+    const request = new Request('https://x/api/cli/publish', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        slug: 'cool-skill',
+        displayName: 'Cool Skill',
+        version: '1.2.3',
+        changelog: 'c',
+        files: [{ path: 'SKILL.md', size: 1, storageId: 'id', sha256: 'a' }],
+      }),
+    })
+    const response = await __handlers.cliPublishHandler(makeCtx({}), request)
+    expect(response.status).toBe(200)
+  })
+
+  it('cliPublishHttp rejects explicit license refusal', async () => {
+    vi.mocked(requireApiTokenUser).mockResolvedValueOnce({ userId: 'user1' } as never)
+    const request = new Request('https://x/api/cli/publish', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        slug: 'cool-skill',
+        displayName: 'Cool Skill',
+        version: '1.2.3',
+        changelog: 'c',
+        acceptLicenseTerms: false,
+        files: [{ path: 'SKILL.md', size: 1, storageId: 'id', sha256: 'a' }],
+      }),
+    })
+    const response = await __handlers.cliPublishHandler(makeCtx({}), request)
+    expect(response.status).toBe(400)
+    expect(await response.text()).toMatch(/license terms must be accepted/i)
+  })
+
   it('cliSkillDeleteHandler returns 401 when unauthorized', async () => {
     vi.mocked(requireApiTokenUser).mockRejectedValueOnce(new Error('Unauthorized'))
     const request = new Request('https://x/api/cli/skill/delete', {
