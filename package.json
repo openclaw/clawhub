@@ -21,6 +21,7 @@
     "test": "vitest run",
     "test:e2e": "vitest run -c vitest.e2e.config.ts",
     "test:e2e:local": "bash scripts/run-playwright-local.sh",
+    "test:security:malicious-corpus": "bun scripts/run-malicious-corpus.ts",
     "test:pw": "playwright test",
     "test:watch": "vitest",
     "verify:convex-contract": "bun scripts/verify-convex-contract.ts"

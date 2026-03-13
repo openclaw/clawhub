@@ -72,6 +72,7 @@ type SkillModerationShape = {
   moderationFlags?: string[]
   moderationVerdict?: 'clean' | 'suspicious' | 'malicious'
   moderationReasonCodes?: string[]
+  moderationSignals?: Doc<'skills'>['moderationSignals']
   moderationSummary?: string
   moderationEngineVersion?: string
   moderationEvaluatedAt?: number
@@ -101,6 +102,7 @@ type GetBySlugResult = {
     isRemoved: boolean
     verdict?: 'clean' | 'suspicious' | 'malicious'
     reasonCodes?: string[]
+    signals?: Doc<'skills'>['moderationSignals'] | null
     summary?: string
     engineVersion?: string
     updatedAt?: number
@@ -159,6 +161,7 @@ function normalizeModerationFromSkill(skill: SkillModerationShape) {
     isSuspicious,
     verdict,
     reasonCodes: Array.isArray(skill.moderationReasonCodes) ? skill.moderationReasonCodes : [],
+    signals: skill.moderationSignals ?? undefined,
     summary: skill.moderationSummary ?? null,
     engineVersion: skill.moderationEngineVersion ?? null,
     updatedAt: skill.moderationEvaluatedAt ?? skill.updatedAt ?? null,
@@ -177,6 +180,7 @@ type SkillSecuritySnapshot = {
   hasScanResult: boolean
   sha256hash: string | null
   virustotalUrl: string | null
+  signals?: Doc<'skillVersions'>['moderationSignals']
   scanners: {
     vt: {
       status: string
@@ -258,26 +262,58 @@ function hasLlmDimensionWarnings(
   })
 }
 
+function publicVersionSecuritySignals(
+  signals: Doc<'skillVersions'>['moderationSignals'],
+  status: NormalizedSecurityStatus,
+) {
+  if (!signals) return undefined
+  if (status !== 'suspicious' && status !== 'malicious') return undefined
+
+  return Object.fromEntries(
+    Object.entries(signals).flatMap(([key, signal]) =>
+      signal
+        ? [
+            [
+              key,
+              {
+                ...signal,
+                details: undefined,
+              },
+            ],
+          ]
+        : [],
+    ),
+  ) as Doc<'skillVersions'>['moderationSignals']
+}
+
 function buildSkillSecuritySnapshot(version: Doc<'skillVersions'>): SkillSecuritySnapshot | null {
   const sha256hash = version.sha256hash ?? null
   const vt = version.vtAnalysis
   const llm = version.llmAnalysis
+  const staticSignal = version.moderationSignals?.staticScan
 
-  if (!sha256hash && !vt && !llm) return null
+  if (!sha256hash && !vt && !llm && !staticSignal) return null
 
   const vtStatus = vt ? normalizeSecurityStatus(vt.verdict ?? vt.status) : null
   const llmStatus = llm ? normalizeSecurityStatus(llm.verdict ?? llm.status) : null
+  const staticStatus = staticSignal?.verdict
+    ? normalizeSecurityStatus(staticSignal.verdict)
+    : null
 
   const statuses: NormalizedSecurityStatus[] = []
   if (vtStatus) statuses.push(vtStatus)
   if (llmStatus) statuses.push(llmStatus)
+  if (staticStatus) statuses.push(staticStatus)
   if (statuses.length === 0 && sha256hash) statuses.push('pending')
   const status = mergeSecurityStatuses(statuses)
-  const hasScanResult = isDefinitiveSecurityStatus(vtStatus) || isDefinitiveSecurityStatus(llmStatus)
+  const hasScanResult =
+    isDefinitiveSecurityStatus(vtStatus) ||
+    isDefinitiveSecurityStatus(llmStatus) ||
+    Boolean(staticStatus)
   const hasWarnings =
     status === 'suspicious' || status === 'malicious' || hasLlmDimensionWarnings(llm?.dimensions)
 
-  const checkedAtCandidates = [vt?.checkedAt, llm?.checkedAt].filter(
+  const checkedAtCandidates = [vt?.checkedAt, llm?.checkedAt, staticSignal?.checkedAt].filter(
     (value): value is number => typeof value === 'number',
   )
   const checkedAt = checkedAtCandidates.length > 0 ? Math.max(...checkedAtCandidates) : null
@@ -290,6 +326,7 @@ function buildSkillSecuritySnapshot(version: Doc<'skillVersions'>): SkillSecurit
     hasScanResult,
     sha256hash,
     virustotalUrl: sha256hash ? `https://www.virustotal.com/gui/file/${sha256hash}` : null,
+    signals: publicVersionSecuritySignals(version.moderationSignals, status),
     scanners: {
       vt: vt
         ? {
@@ -560,6 +597,7 @@ export async function skillsGetRouterV1Handler(ctx: ActionCtx, request: Request)
               isMalwareBlocked: result.moderationInfo.isMalwareBlocked ?? false,
               verdict: result.moderationInfo.verdict ?? 'clean',
               reasonCodes: result.moderationInfo.reasonCodes ?? [],
+              signals: result.moderationInfo.signals ?? undefined,
               summary: result.moderationInfo.summary ?? null,
               engineVersion: result.moderationInfo.engineVersion ?? null,
               updatedAt: result.moderationInfo.updatedAt ?? null,
@@ -618,6 +656,7 @@ export async function skillsGetRouterV1Handler(ctx: ActionCtx, request: Request)
             isMalwareBlocked: result.moderationInfo.isMalwareBlocked ?? false,
             verdict: result.moderationInfo.verdict ?? 'clean',
             reasonCodes: result.moderationInfo.reasonCodes ?? [],
+            signals: result.moderationInfo.signals ?? undefined,
             summary: result.moderationInfo.summary ?? null,
             engineVersion: result.moderationInfo.engineVersion ?? null,
             updatedAt: result.moderationInfo.updatedAt ?? null,

@@ -55,6 +55,16 @@ function makeCtx() {
     moderationVerdict: 'clean',
     moderationFlags: undefined,
     moderationReasonCodes: ['suspicious.dynamic_code_execution'],
+    moderationSignals: {
+      staticScan: {
+        key: 'staticScan',
+        family: 'local',
+        state: 'ready',
+        verdict: 'suspicious',
+        contribution: 'corroborating',
+        reasonCodes: ['suspicious.dynamic_code_execution'],
+      },
+    },
     moderationSummary: 'Manual override (clean): internal staff note',
     moderationEngineVersion: 'v2.0.0',
     moderationEvaluatedAt: 30,
@@ -121,10 +131,12 @@ describe('getBySlug public moderation info', () => {
       moderationInfo: {
         overrideActive: boolean
         summary: string | null
+        signals?: unknown
       } | null
     }
 
     expect(result.moderationInfo?.overrideActive).toBe(true)
+    expect(result.moderationInfo?.signals).toBeUndefined()
     expect(result.moderationInfo?.summary).toBe(
       'Security findings were reviewed by staff and cleared for public use.',
     )
