@@ -1,10 +1,13 @@
 import { ConvexError, v } from 'convex/values'
-import { internal } from './_generated/api'
+import { unzipSync } from 'fflate'
+import { api, internal } from './_generated/api'
 import type { Doc, Id } from './_generated/dataModel'
 import type { ActionCtx } from './_generated/server'
 import { action, internalAction, internalMutation, internalQuery } from './functions'
+import { guessContentTypeForPath } from './lib/contentTypes'
 import { assertRole, requireUserFromAction } from './lib/access'
 import { buildSkillSummaryBackfillPatch, type ParsedSkillData } from './lib/skillBackfill'
+import { publishVersionForUser } from './lib/skillPublish'
 import {
   computeQualitySignals,
   evaluateQuality,
@@ -23,6 +26,11 @@ const MAX_MAX_BATCHES = 200
 const DEFAULT_EMPTY_SKILL_MAX_README_BYTES = 8000
 const DEFAULT_EMPTY_SKILL_NOMINATION_THRESHOLD = 3
 const PLATFORM_SKILL_LICENSE = 'MIT-0' as const
+const DEFAULT_CORPUS_SITE_URL = 'https://clawhub.ai'
+const DEFAULT_CORPUS_OWNER_HANDLE = 'security-phase2-corpus'
+const DEFAULT_CORPUS_OWNER_DISPLAY_NAME = 'Security Phase 2 Corpus'
+const DEFAULT_CORPUS_WAIT_TIMEOUT_MS = 10 * 60 * 1000
+const DEFAULT_CORPUS_POLL_INTERVAL_MS = 5000
 
 type BackfillStats = {
   skillsScanned: number
@@ -1671,8 +1679,445 @@ export const backfillSkillSearchDigestInternal = internalMutation({
   },
 })
 
+type CanonicalSkillSummary = {
+  slug: string
+  displayName: string
+  version: string
+  sourceOwnerHandle: string | null
+  sourceModeration: {
+    verdict: string | null
+    reasonCodes: string[]
+    summary: string | null
+    isSuspicious: boolean
+    isMalwareBlocked: boolean
+  }
+}
+
+type ImportedCorpusSkillResult = {
+  slug: string
+  status: 'imported' | 'already_present' | 'conflict' | 'error'
+  detail?: string
+  skillId?: Id<'skills'>
+  versionId?: Id<'skillVersions'>
+  source?: CanonicalSkillSummary
+}
+
+type CorpusModerationReportItem = {
+  slug: string
+  ownerHandle: string | null
+  displayName: string
+  version: string | null
+  moderationStatus: Doc<'skills'>['moderationStatus']
+  moderationReason: Doc<'skills'>['moderationReason']
+  moderationVerdict: Doc<'skills'>['moderationVerdict']
+  moderationReasonCodes: string[]
+  isSuspicious: boolean
+  moderationSignals: Doc<'skills'>['moderationSignals']
+  staticStatus: string | null
+  vtStatus: string | null
+  llmStatus: string | null
+}
+
+export const ensureSecurityCorpusOwnerInternal = internalMutation({
+  args: {
+    handle: v.optional(v.string()),
+    displayName: v.optional(v.string()),
+    role: v.optional(v.union(v.literal('admin'), v.literal('moderator'), v.literal('user'))),
+    trustedPublisher: v.optional(v.boolean()),
+  },
+  handler: async (ctx, args) => {
+    const handle = normalizeCorpusHandle(args.handle)
+    const displayName = normalizeNonEmpty(args.displayName) ?? DEFAULT_CORPUS_OWNER_DISPLAY_NAME
+    const now = Date.now()
+    const existing = await ctx.db
+      .query('users')
+      .withIndex('handle', (q) => q.eq('handle', handle))
+      .unique()
+
+    const patch: Partial<Doc<'users'>> = {}
+    if (existing) {
+      if (existing.displayName !== displayName) patch.displayName = displayName
+      if (existing.name !== handle) patch.name = handle
+      if ((existing.role ?? 'user') !== (args.role ?? existing.role ?? 'user')) {
+        patch.role = args.role ?? existing.role ?? 'user'
+      }
+      if (args.trustedPublisher !== undefined && existing.trustedPublisher !== args.trustedPublisher) {
+        patch.trustedPublisher = args.trustedPublisher
+      }
+      if (!existing.createdAt) patch.createdAt = existing._creationTime
+      if (Object.keys(patch).length > 0) {
+        patch.updatedAt = now
+        await ctx.db.patch(existing._id, patch)
+      }
+      return existing._id
+    }
+
+    return ctx.db.insert('users', {
+      handle,
+      name: handle,
+      displayName,
+      role: args.role ?? 'user',
+      trustedPublisher: args.trustedPublisher ?? false,
+      createdAt: now,
+      updatedAt: now,
+    })
+  },
+})
+
+export const getSecurityCorpusReportInternal = internalQuery({
+  args: {
+    slugs: v.optional(v.array(v.string())),
+    ownerHandle: v.optional(v.string()),
+  },
+  handler: async (ctx, args): Promise<CorpusModerationReportItem[]> => {
+    const ownerHandle = normalizeNonEmpty(args.ownerHandle)
+    const items: Doc<'skills'>[] = []
+
+    if (args.slugs?.length) {
+      for (const rawSlug of args.slugs) {
+        const slug = rawSlug.trim().toLowerCase()
+        if (!slug) continue
+        const skill = await ctx.db
+          .query('skills')
+          .withIndex('by_slug', (q) => q.eq('slug', slug))
+          .unique()
+        if (!skill) continue
+        items.push(skill)
+      }
+    } else if (ownerHandle) {
+      const owner = await ctx.db
+        .query('users')
+        .withIndex('handle', (q) => q.eq('handle', ownerHandle))
+        .unique()
+      if (!owner) return []
+      const owned = await ctx.db
+        .query('skills')
+        .withIndex('by_owner', (q) => q.eq('ownerUserId', owner._id))
+        .collect()
+      items.push(...owned)
+    } else {
+      return []
+    }
+
+    const ownerIds = [...new Set(items.map((item) => item.ownerUserId))]
+    const owners = new Map<Id<'users'>, Doc<'users'>>()
+    for (const ownerId of ownerIds) {
+      const owner = await ctx.db.get(ownerId)
+      if (owner) owners.set(ownerId, owner)
+    }
+
+    const results: CorpusModerationReportItem[] = []
+    for (const skill of items) {
+      const version = skill.latestVersionId ? await ctx.db.get(skill.latestVersionId) : null
+      const owner = owners.get(skill.ownerUserId) ?? null
+      results.push({
+        slug: skill.slug,
+        ownerHandle: owner?.handle ?? null,
+        displayName: skill.displayName,
+        version: version?.version ?? null,
+        moderationStatus: skill.moderationStatus,
+        moderationReason: skill.moderationReason,
+        moderationVerdict: skill.moderationVerdict,
+        moderationReasonCodes: skill.moderationReasonCodes ?? [],
+        isSuspicious: Boolean(skill.isSuspicious),
+        moderationSignals: skill.moderationSignals,
+        staticStatus: version?.staticScan?.status ?? null,
+        vtStatus: version?.vtAnalysis?.status ?? null,
+        llmStatus: version?.llmAnalysis?.status ?? null,
+      })
+    }
+
+    return results.sort((a, b) => a.slug.localeCompare(b.slug))
+  },
+})
+
+export const importCanonicalSkillCorpusInternal = internalAction({
+  args: {
+    items: v.array(
+      v.object({
+        slug: v.string(),
+        version: v.optional(v.string()),
+      }),
+    ),
+    siteUrl: v.optional(v.string()),
+    ownerHandle: v.optional(v.string()),
+    ownerDisplayName: v.optional(v.string()),
+    ownerRole: v.optional(v.union(v.literal('admin'), v.literal('moderator'), v.literal('user'))),
+    ownerTrustedPublisher: v.optional(v.boolean()),
+  },
+  handler: async (ctx, args): Promise<{ ownerId: Id<'users'>; results: ImportedCorpusSkillResult[] }> => {
+    const siteUrl = normalizeSiteUrl(args.siteUrl)
+    const ownerId = (await ctx.runMutation(internal.maintenance.ensureSecurityCorpusOwnerInternal, {
+      handle: args.ownerHandle,
+      displayName: args.ownerDisplayName,
+      role: args.ownerRole,
+      trustedPublisher: args.ownerTrustedPublisher,
+    })) as Id<'users'>
+
+    const results: ImportedCorpusSkillResult[] = []
+    for (const item of args.items) {
+      const slug = item.slug.trim().toLowerCase()
+      if (!slug) {
+        results.push({ slug: item.slug, status: 'error', detail: 'Slug is required' })
+        continue
+      }
+
+      try {
+        const source = await fetchCanonicalSkillSummary(siteUrl, slug, item.version)
+        const existing = (await ctx.runQuery(internal.skills.getSkillBySlugInternal, {
+          slug,
+        })) as Doc<'skills'> | null
+
+        if (existing && existing.ownerUserId !== ownerId) {
+          results.push({
+            slug,
+            status: 'conflict',
+            detail: `Slug is already owned by ${String(existing.ownerUserId)} in dev`,
+            source,
+          })
+          continue
+        }
+
+        if (existing) {
+          const existingVersion = await ctx.runQuery(api.skills.getVersionBySkillAndVersion, {
+            skillId: existing._id,
+            version: source.version,
+          })
+          if (existingVersion) {
+            results.push({
+              slug,
+              status: 'already_present',
+              skillId: existing._id,
+              versionId: existingVersion._id,
+              source,
+            })
+            continue
+          }
+        }
+
+        const files = await fetchCanonicalSkillFiles(ctx, siteUrl, slug, source.version)
+        if (files.length === 0) {
+          results.push({
+            slug,
+            status: 'error',
+            detail: 'Downloaded corpus zip did not contain any files',
+            source,
+          })
+          continue
+        }
+
+        const publishResult = await publishVersionForUser(
+          ctx,
+          ownerId,
+          {
+            slug,
+            displayName: source.displayName,
+            version: source.version,
+            changelog: 'Imported from production corpus for security arbitration testing',
+            files,
+          },
+          {
+            bypassGitHubAccountAge: true,
+            bypassNewSkillRateLimit: true,
+            bypassQualityGate: true,
+            skipBackup: true,
+            skipWebhook: true,
+          },
+        )
+
+        results.push({
+          slug,
+          status: 'imported',
+          skillId: publishResult.skillId,
+          versionId: publishResult.versionId,
+          source,
+        })
+      } catch (error) {
+        results.push({
+          slug,
+          status: 'error',
+          detail: error instanceof Error ? error.message : String(error),
+        })
+      }
+    }
+
+    return { ownerId, results }
+  },
+})
+
+export const waitForSecurityCorpusScansInternal = internalAction({
+  args: {
+    slugs: v.array(v.string()),
+    timeoutMs: v.optional(v.number()),
+    pollIntervalMs: v.optional(v.number()),
+  },
+  handler: async (ctx, args) => {
+    const timeoutMs = clampInt(args.timeoutMs ?? DEFAULT_CORPUS_WAIT_TIMEOUT_MS, 1000, 60 * 60 * 1000)
+    const pollIntervalMs = clampInt(
+      args.pollIntervalMs ?? DEFAULT_CORPUS_POLL_INTERVAL_MS,
+      250,
+      60_000,
+    )
+    const deadline = Date.now() + timeoutMs
+
+    let lastReport: CorpusModerationReportItem[] = []
+    while (Date.now() <= deadline) {
+      lastReport = (await ctx.runQuery(internal.maintenance.getSecurityCorpusReportInternal, {
+        slugs: args.slugs,
+      })) as CorpusModerationReportItem[]
+
+      const allReady =
+        lastReport.length === args.slugs.length &&
+        lastReport.every(
+          (item) =>
+            item.vtStatus !== null &&
+            item.llmStatus !== null &&
+            item.vtStatus !== 'pending' &&
+            item.llmStatus !== 'pending',
+        )
+
+      if (allReady) {
+        return {
+          done: true as const,
+          timedOut: false as const,
+          items: lastReport,
+        }
+      }
+
+      await delay(pollIntervalMs)
+    }
+
+    lastReport = (await ctx.runQuery(internal.maintenance.getSecurityCorpusReportInternal, {
+      slugs: args.slugs,
+    })) as CorpusModerationReportItem[]
+
+    return {
+      done: false as const,
+      timedOut: true as const,
+      items: lastReport,
+    }
+  },
+})
+
 function clampInt(value: number, min: number, max: number) {
   const rounded = Math.trunc(value)
   if (!Number.isFinite(rounded)) return min
   return Math.min(max, Math.max(min, rounded))
+}
+
+function normalizeNonEmpty(value: string | undefined) {
+  const trimmed = value?.trim()
+  return trimmed ? trimmed : undefined
+}
+
+function normalizeCorpusHandle(value: string | undefined) {
+  return (normalizeNonEmpty(value) ?? DEFAULT_CORPUS_OWNER_HANDLE).toLowerCase()
+}
+
+function normalizeSiteUrl(value: string | undefined) {
+  return (normalizeNonEmpty(value) ?? DEFAULT_CORPUS_SITE_URL).replace(/\/+$/, '')
+}
+
+async function fetchCanonicalSkillSummary(
+  siteUrl: string,
+  slug: string,
+  versionOverride?: string,
+): Promise<CanonicalSkillSummary> {
+  const response = await fetch(`${siteUrl}/api/v1/skills/${encodeURIComponent(slug)}`)
+  if (!response.ok) {
+    throw new Error(`Failed to fetch canonical skill metadata (${response.status})`)
+  }
+
+  const payload = (await response.json()) as Record<string, unknown>
+  const skill = asRecord(payload.skill)
+  const latestVersion = asRecord(payload.latestVersion)
+  const owner = asRecord(payload.owner)
+  const moderation = asRecord(payload.moderation)
+
+  const displayName = asString(skill?.displayName)
+  const version = normalizeNonEmpty(versionOverride) ?? asString(latestVersion?.version)
+  if (!displayName || !version) {
+    throw new Error('Canonical skill response is missing displayName or version')
+  }
+
+  return {
+    slug,
+    displayName,
+    version,
+    sourceOwnerHandle: asString(owner?.handle) ?? null,
+    sourceModeration: {
+      verdict: asString(moderation?.verdict) ?? null,
+      reasonCodes: asStringArray(moderation?.reasonCodes),
+      summary: asString(moderation?.summary) ?? null,
+      isSuspicious: Boolean(moderation?.isSuspicious),
+      isMalwareBlocked: Boolean(moderation?.isMalwareBlocked),
+    },
+  }
+}
+
+async function fetchCanonicalSkillFiles(
+  ctx: ActionCtx,
+  siteUrl: string,
+  slug: string,
+  version: string,
+) {
+  const response = await fetch(
+    `${siteUrl}/api/v1/download?slug=${encodeURIComponent(slug)}&version=${encodeURIComponent(version)}`,
+  )
+  if (!response.ok) {
+    throw new Error(`Failed to download canonical zip (${response.status})`)
+  }
+
+  const zipBytes = new Uint8Array(await response.arrayBuffer())
+  const archive = unzipSync(zipBytes)
+  const files: Array<{
+    path: string
+    size: number
+    storageId: Id<'_storage'>
+    sha256: string
+    contentType?: string
+  }> = []
+
+  for (const [path, bytes] of Object.entries(archive)) {
+    if (path === '_meta.json') continue
+    const normalizedBytes = Uint8Array.from(bytes)
+    const contentType = guessContentTypeForPath(path)
+    const storageId = await ctx.storage.store(new Blob([normalizedBytes], { type: contentType }))
+    files.push({
+      path,
+      size: normalizedBytes.byteLength,
+      storageId,
+      sha256: await sha256Hex(normalizedBytes),
+      contentType,
+    })
+  }
+
+  files.sort((a, b) => a.path.localeCompare(b.path))
+  return files
+}
+
+function asRecord(value: unknown) {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return null
+  return value as Record<string, unknown>
+}
+
+function asString(value: unknown) {
+  return typeof value === 'string' ? value : undefined
+}
+
+function asStringArray(value: unknown) {
+  return Array.isArray(value) ? value.filter((item): item is string => typeof item === 'string') : []
+}
+
+async function sha256Hex(bytes: Uint8Array) {
+  const arrayBuffer = new ArrayBuffer(bytes.byteLength)
+  new Uint8Array(arrayBuffer).set(bytes)
+  const hashBuffer = await crypto.subtle.digest('SHA-256', arrayBuffer)
+  return Array.from(new Uint8Array(hashBuffer))
+    .map((byte) => byte.toString(16).padStart(2, '0'))
+    .join('')
+}
+
+async function delay(ms: number) {
+  await new Promise((resolve) => setTimeout(resolve, ms))
 }

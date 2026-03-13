@@ -205,6 +205,7 @@ export const ApiV1SkillResponseSchema = type({
     isMalwareBlocked: 'boolean',
     verdict: '"clean"|"suspicious"|"malicious"?',
     reasonCodes: 'string[]?',
+    signals: 'unknown|null?',
     updatedAt: 'number|null?',
     engineVersion: 'string|null?',
     summary: 'string|null?',
@@ -219,6 +220,7 @@ export const ApiV1SkillModerationResponseSchema = type({
     isMalwareBlocked: 'boolean',
     verdict: '"clean"|"suspicious"|"malicious"',
     reasonCodes: 'string[]',
+    signals: 'unknown|null?',
     updatedAt: 'number|null?',
     engineVersion: 'string|null?',
     summary: 'string|null?',
@@ -249,6 +251,7 @@ export const SecurityStatusSchema = type({
   hasWarnings: 'boolean',
   checkedAt: 'number|null',
   model: 'string|null',
+  signals: 'unknown|null?',
 })
 
 export const ApiV1SkillVersionResponseSchema = type({
