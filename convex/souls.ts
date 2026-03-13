@@ -1,6 +1,7 @@
 import { ConvexError, v } from 'convex/values'
 import { internal } from './_generated/api'
 import type { Doc, Id } from './_generated/dataModel'
+import type { ActionCtx } from './_generated/server'
 import { action, internalMutation, internalQuery, mutation, query } from './functions'
 import { assertModerator, requireUser, requireUserFromAction } from './lib/access'
 import { embeddingVisibilityFor } from './lib/embeddingVisibility'
@@ -174,7 +175,9 @@ export const listVersions = query({
       .withIndex('by_soul', (q) => q.eq('soulId', args.soulId))
       .order('desc')
       .take(limit)
-    return versions.map((version) => toPublicSoulVersion(version)!)
+    return versions
+      .filter((version) => !version.softDeletedAt)
+      .map((version) => toPublicSoulVersion(version)!)
   },
 })
 
@@ -223,6 +226,11 @@ export const getVersionBySoulAndVersionInternal = internalQuery({
       .query('soulVersions')
       .withIndex('by_soul_version', (q) => q.eq('soulId', args.soulId).eq('version', args.version))
       .unique(),
+})
+
+export const getSoulByIdInternal = internalQuery({
+  args: { soulId: v.id('souls') },
+  handler: async (ctx, args) => ctx.db.get(args.soulId),
 })
 
 export const getVersionBySoulAndVersion = query({
@@ -289,6 +297,16 @@ export const generateChangelogPreview = action({
   },
 })
 
+async function canReadSoulVersionFiles(
+  ctx: ActionCtx,
+  version: Doc<'soulVersions'>,
+) {
+  const soul = (await ctx.runQuery(internal.souls.getSoulByIdInternal, {
+    soulId: version.soulId,
+  })) as Doc<'souls'> | null
+  return Boolean(soul && !soul.softDeletedAt && !version.softDeletedAt)
+}
+
 export const getReadme: ReturnType<typeof action> = action({
   args: { versionId: v.id('soulVersions') },
   handler: async (ctx, args): Promise<ReadmeResult> => {
@@ -296,6 +314,9 @@ export const getReadme: ReturnType<typeof action> = action({
       versionId: args.versionId,
     })) as Doc<'soulVersions'> | null
     if (!version) throw new ConvexError('Version not found')
+    if (!(await canReadSoulVersionFiles(ctx, version))) {
+      throw new ConvexError('Version not available')
+    }
     const readmeFile = version.files.find((file) => file.path.toLowerCase() === 'soul.md')
     if (!readmeFile) throw new ConvexError('SOUL.md not found')
     const text = await fetchText(ctx, readmeFile.storageId)
@@ -310,6 +331,9 @@ export const getFileText: ReturnType<typeof action> = action({
       versionId: args.versionId,
     })) as Doc<'soulVersions'> | null
     if (!version) throw new ConvexError('Version not found')
+    if (!(await canReadSoulVersionFiles(ctx, version))) {
+      throw new ConvexError('Version not available')
+    }
 
     const normalizedPath = args.path.trim()
     const normalizedLower = normalizedPath.toLowerCase()
