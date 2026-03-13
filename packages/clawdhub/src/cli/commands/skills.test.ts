@@ -250,6 +250,53 @@ describe('cmdInstall', () => {
     const [, zipArgs] = mockDownloadZip.mock.calls[0] ?? []
     expect(zipArgs?.token).toBe('tkn')
   })
+
+  it('does not rm local directory when skill is malware-blocked (--force)', async () => {
+    vi.mocked(stat).mockResolvedValue({} as unknown as Awaited<ReturnType<typeof stat>>) // target exists
+    mockApiRequest.mockResolvedValue({
+      skill: { slug: 'demo', displayName: 'Demo', summary: null, tags: {}, stats: {}, createdAt: 0, updatedAt: 0 },
+      latestVersion: { version: '1.0.0' },
+      owner: null,
+      moderation: { isMalwareBlocked: true, isSuspicious: false },
+    })
+
+    await expect(cmdInstall(makeOpts(), 'demo', undefined, true)).rejects.toThrow(/malware/i)
+
+    expect(rm).not.toHaveBeenCalled()
+  })
+
+  it('does not rm local directory when API fetch fails (--force)', async () => {
+    vi.mocked(stat).mockResolvedValue({} as unknown as Awaited<ReturnType<typeof stat>>) // target exists
+    mockApiRequest.mockRejectedValue(new Error('Skill not found'))
+
+    await expect(cmdInstall(makeOpts(), 'demo', undefined, true)).rejects.toThrow(/not found/i)
+
+    expect(rm).not.toHaveBeenCalled()
+  })
+
+  it('calls rm before download when all checks pass (--force)', async () => {
+    vi.mocked(stat).mockResolvedValue({} as unknown as Awaited<ReturnType<typeof stat>>) // target exists
+    mockApiRequest.mockResolvedValue({
+      skill: { slug: 'demo', displayName: 'Demo', summary: null, tags: {}, stats: {}, createdAt: 0, updatedAt: 0 },
+      latestVersion: { version: '1.0.0' },
+      owner: null,
+      moderation: null,
+    })
+    mockDownloadZip.mockResolvedValue(new Uint8Array([1, 2, 3]))
+    vi.mocked(readLockfile).mockResolvedValue({ version: 1, skills: {} })
+    vi.mocked(writeLockfile).mockResolvedValue()
+    vi.mocked(writeSkillOrigin).mockResolvedValue()
+    vi.mocked(extractZipToDir).mockResolvedValue()
+    vi.mocked(rm).mockResolvedValue()
+
+    await cmdInstall(makeOpts(), 'demo', undefined, true)
+
+    expect(rm).toHaveBeenCalledWith('/work/skills/demo', { recursive: true, force: true })
+    expect(mockDownloadZip).toHaveBeenCalled()
+    const rmOrder = vi.mocked(rm).mock.invocationCallOrder[0]
+    const downloadOrder = mockDownloadZip.mock.invocationCallOrder[0]
+    expect(rmOrder).toBeLessThan(downloadOrder)
+  })
 })
 
 describe('cmdUninstall', () => {
