@@ -18,6 +18,35 @@ type FileTextResult = { path: string; text: string; size: number; sha256: string
 const MAX_DIFF_FILE_BYTES = 200 * 1024
 const MAX_LIST_LIMIT = 50
 
+function toPublicSoulVersion(
+  version: Doc<'soulVersions'> | null | undefined,
+): Doc<'soulVersions'> | null {
+  if (!version) return null
+  return {
+    _id: version._id,
+    _creationTime: version._creationTime,
+    soulId: version.soulId,
+    version: version.version,
+    fingerprint: version.fingerprint,
+    changelog: version.changelog,
+    changelogSource: version.changelogSource,
+    files: version.files.map((file) => ({
+      path: file.path,
+      size: file.size,
+      sha256: file.sha256,
+      contentType: file.contentType,
+    })),
+    parsed: version.parsed
+      ? {
+          clawdis: version.parsed.clawdis,
+        }
+      : undefined,
+    createdBy: version.createdBy,
+    createdAt: version.createdAt,
+    softDeletedAt: version.softDeletedAt,
+  } as Doc<'soulVersions'>
+}
+
 export const getBySlug = query({
   args: { slug: v.string() },
   handler: async (ctx, args) => {
@@ -28,7 +57,9 @@ export const getBySlug = query({
       .take(2)
     const soul = matches[0] ?? null
     if (!soul || soul.softDeletedAt) return null
-    const latestVersion = soul.latestVersionId ? await ctx.db.get(soul.latestVersionId) : null
+    const latestVersion = toPublicSoulVersion(
+      soul.latestVersionId ? await ctx.db.get(soul.latestVersionId) : null,
+    )
     const owner = toPublicUser(await ctx.db.get(soul.ownerUserId))
     const publicSoul = toPublicSoul(soul)
     if (!publicSoul) return null
@@ -101,7 +132,9 @@ export const listPublicPage = query({
 
     for (const soul of page) {
       if (soul.softDeletedAt) continue
-      const latestVersion = soul.latestVersionId ? await ctx.db.get(soul.latestVersionId) : null
+      const latestVersion = toPublicSoulVersion(
+        soul.latestVersionId ? await ctx.db.get(soul.latestVersionId) : null,
+      )
       const publicSoul = toPublicSoul(soul)
       if (!publicSoul) continue
       items.push({ soul: publicSoul, latestVersion })
@@ -115,11 +148,12 @@ export const listVersions = query({
   args: { soulId: v.id('souls'), limit: v.optional(v.number()) },
   handler: async (ctx, args) => {
     const limit = args.limit ?? 20
-    return ctx.db
+    const versions = await ctx.db
       .query('soulVersions')
       .withIndex('by_soul', (q) => q.eq('soulId', args.soulId))
       .order('desc')
       .take(limit)
+    return versions.map((version) => toPublicSoulVersion(version)!)
   },
 })
 
@@ -136,14 +170,16 @@ export const listVersionsPage = query({
       .withIndex('by_soul', (q) => q.eq('soulId', args.soulId))
       .order('desc')
       .paginate({ cursor: args.cursor ?? null, numItems: limit })
-    const items = page.filter((version) => !version.softDeletedAt)
+    const items = page
+      .filter((version) => !version.softDeletedAt)
+      .map((version) => toPublicSoulVersion(version)!)
     return { items, nextCursor: isDone ? null : continueCursor }
   },
 })
 
 export const getVersionById = query({
   args: { versionId: v.id('soulVersions') },
-  handler: async (ctx, args) => ctx.db.get(args.versionId),
+  handler: async (ctx, args) => toPublicSoulVersion(await ctx.db.get(args.versionId)),
 })
 
 export const getVersionsByIdsInternal = internalQuery({
@@ -162,10 +198,11 @@ export const getVersionByIdInternal = internalQuery({
 export const getVersionBySoulAndVersion = query({
   args: { soulId: v.id('souls'), version: v.string() },
   handler: async (ctx, args) => {
-    return ctx.db
+    const version = await ctx.db
       .query('soulVersions')
       .withIndex('by_soul_version', (q) => q.eq('soulId', args.soulId).eq('version', args.version))
       .unique()
+    return toPublicSoulVersion(version)
   },
 })
 
