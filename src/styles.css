@@ -17,6 +17,12 @@
   --accent: #e65c46;
   --accent-deep: #bf3f30;
   --seafoam: #209e92;
+  --diff-added: #9bb955;
+  --diff-added-strong: #6f8f2b;
+  --diff-removed: #e47866;
+  --diff-removed-strong: #b74434;
+  --diff-diagonal: #22222233;
+  --diff-scrollbar-rgb: 107, 95, 86;
   --gold: #e7bb67;
   --line: rgba(42, 31, 25, 0.14);
   --border-ui: rgba(191, 63, 48, 0.28);
@@ -48,6 +54,12 @@
   --accent: #ff7357;
   --accent-deep: #e25640;
   --seafoam: #47c3b8;
+  --diff-added: #9ccc2c;
+  --diff-added-strong: #b7e05a;
+  --diff-removed: #ff7b72;
+  --diff-removed-strong: #ff5f56;
+  --diff-diagonal: #cccccc33;
+  --diff-scrollbar-rgb: 200, 179, 166;
   --gold: #f3c97a;
   --line: rgba(247, 235, 225, 0.16);
   --border-ui: rgba(255, 115, 87, 0.4);
@@ -2268,6 +2280,76 @@ code {
   border: 1px solid var(--line);
   overflow: hidden;
   background: var(--surface);
+}
+
+.diff-monaco .monaco-editor .line-insert,
+.diff-monaco .monaco-editor .char-insert,
+.diff-monaco .monaco-editor .line-delete,
+.diff-monaco .monaco-editor .char-delete,
+.diff-monaco .monaco-diff-editor .line-insert,
+.diff-monaco .monaco-diff-editor .char-insert,
+.diff-monaco .monaco-diff-editor .line-delete,
+.diff-monaco .monaco-diff-editor .char-delete {
+  border: none !important;
+  box-shadow: none !important;
+}
+
+.diff-monaco .monaco-diff-editor .diffOverview {
+  background: rgba(var(--diff-scrollbar-rgb), 0.12) !important;
+}
+
+.diff-monaco .monaco-diff-editor .diffOverview .diffViewport,
+.diff-monaco .monaco-diff-editor .diffViewport {
+  background: rgba(var(--diff-scrollbar-rgb), 0.26) !important;
+  background-color: rgba(var(--diff-scrollbar-rgb), 0.26) !important;
+}
+
+.diff-monaco .monaco-diff-editor .diffOverview .diffViewport:hover,
+.diff-monaco .monaco-diff-editor .diffViewport:hover {
+  background: rgba(var(--diff-scrollbar-rgb), 0.34) !important;
+  background-color: rgba(var(--diff-scrollbar-rgb), 0.34) !important;
+}
+
+.diff-monaco .monaco-diff-editor .diffOverview .diffViewport:active,
+.diff-monaco .monaco-diff-editor .diffViewport:active {
+  background: rgba(var(--diff-scrollbar-rgb), 0.42) !important;
+  background-color: rgba(var(--diff-scrollbar-rgb), 0.42) !important;
+}
+
+.diff-monaco .monaco-scrollable-element.modified-in-monaco-diff-editor .slider,
+.diff-monaco .monaco-scrollable-element.modified-in-monaco-diff-editor .slider.active {
+  background: rgba(var(--diff-scrollbar-rgb), 0.3) !important;
+  background-color: rgba(var(--diff-scrollbar-rgb), 0.3) !important;
+}
+
+.diff-monaco .monaco-scrollable-element.modified-in-monaco-diff-editor .slider:hover {
+  background: rgba(var(--diff-scrollbar-rgb), 0.38) !important;
+  background-color: rgba(var(--diff-scrollbar-rgb), 0.38) !important;
+}
+
+.diff-monaco .scrollbar.vertical,
+.diff-monaco .monaco-scrollable-element .scrollbar.vertical,
+.diff-monaco .invisible.scrollbar.vertical.fade {
+  background: transparent !important;
+}
+
+.diff-monaco .scrollbar.vertical > .slider,
+.diff-monaco .monaco-scrollable-element .scrollbar.vertical > .slider,
+.diff-monaco .invisible.scrollbar.vertical.fade > .slider,
+.diff-monaco .scrollbar.vertical > .slider:hover,
+.diff-monaco .monaco-scrollable-element .scrollbar.vertical > .slider:hover,
+.diff-monaco .invisible.scrollbar.vertical.fade > .slider:hover,
+.diff-monaco .scrollbar.vertical > .slider.active,
+.diff-monaco .monaco-scrollable-element .scrollbar.vertical > .slider.active,
+.diff-monaco .invisible.scrollbar.vertical.fade > .slider.active {
+  background: rgba(var(--diff-scrollbar-rgb), 0.32) !important;
+  background-color: rgba(var(--diff-scrollbar-rgb), 0.32) !important;
+}
+
+.diff-monaco .monaco-diff-editor .diffOverview canvas.diffOverviewRuler,
+.diff-monaco .monaco-diff-editor .diffOverview canvas.original.diffOverviewRuler,
+.diff-monaco .monaco-diff-editor .diffOverview canvas.modified.diffOverviewRuler {
+  opacity: 1 !important;
 }
 
 .diff-empty {
