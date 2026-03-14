@@ -16,7 +16,11 @@ vi.mock('./lib/soulPublish', () => ({
 
 const { getAuthUserId } = await import('@convex-dev/auth/server')
 const { getReadme: getSkillReadme, getFileText: getSkillFileText } = await import('./skills')
-const { getReadme: getSoulReadme } = await import('./souls')
+const { getReadme: getSoulReadme, getFileText: getSoulFileText } = await import('./souls')
+const getSkillReadmeHandler = getSkillReadme as unknown as { _handler: Function }
+const getSkillFileTextHandler = getSkillFileText as unknown as { _handler: Function }
+const getSoulReadmeHandler = getSoulReadme as unknown as { _handler: Function }
+const getSoulFileTextHandler = getSoulFileText as unknown as { _handler: Function }
 
 function makeSkillVersion() {
   return {
@@ -44,7 +48,7 @@ function makeActionCtx(args: {
   actor?: Record<string, unknown> | null
 }) {
   return {
-    runQuery: vi.fn(async (endpoint: unknown, payload: Record<string, unknown>) => {
+    runQuery: vi.fn(async (_endpoint: unknown, payload: Record<string, unknown>) => {
       if (payload.versionId && args.version) return args.version ?? null
       if (payload.skillId && args.skill) return args.skill ?? null
       if (payload.soulId && args.soul) return args.soul ?? null
@@ -76,7 +80,7 @@ describe('version file access actions', () => {
     })
 
     await expect(
-      getSkillReadme._handler(ctx, { versionId: 'skillVersions:1' } as never),
+      getSkillReadmeHandler._handler(ctx, { versionId: 'skillVersions:1' } as never),
     ).rejects.toThrow('Version not available')
   })
 
@@ -95,8 +99,72 @@ describe('version file access actions', () => {
     })
 
     await expect(
-      getSkillReadme._handler(ctx, { versionId: 'skillVersions:1' } as never),
+      getSkillReadmeHandler._handler(ctx, { versionId: 'skillVersions:1' } as never),
     ).resolves.toEqual({ path: 'SKILL.md', text: '# skill' })
+  })
+
+  it('allows owners to read hidden skill files', async () => {
+    vi.mocked(getAuthUserId).mockResolvedValue('users:owner' as never)
+    const ctx = makeActionCtx({
+      version: makeSkillVersion(),
+      skill: {
+        _id: 'skills:1',
+        ownerUserId: 'users:owner',
+        softDeletedAt: undefined,
+        moderationStatus: 'hidden',
+        moderationReason: 'pending.scan',
+        moderationFlags: [],
+      },
+    })
+
+    await expect(
+      getSkillFileTextHandler._handler(
+        ctx,
+        { versionId: 'skillVersions:1', path: 'SKILL.md' } as never,
+      ),
+    ).resolves.toMatchObject({ path: 'SKILL.md', text: '# skill' })
+  })
+
+  it('blocks unauthenticated file reads from hidden skill versions', async () => {
+    const ctx = makeActionCtx({
+      version: makeSkillVersion(),
+      skill: {
+        _id: 'skills:1',
+        ownerUserId: 'users:owner',
+        softDeletedAt: undefined,
+        moderationStatus: 'hidden',
+        moderationReason: 'pending.scan',
+        moderationFlags: [],
+      },
+    })
+
+    await expect(
+      getSkillFileTextHandler._handler(
+        ctx,
+        { versionId: 'skillVersions:1', path: 'SKILL.md' } as never,
+      ),
+    ).rejects.toThrow('Version not available')
+  })
+
+  it('keeps malware-blocked skill files readable to public callers', async () => {
+    const ctx = makeActionCtx({
+      version: makeSkillVersion(),
+      skill: {
+        _id: 'skills:1',
+        ownerUserId: 'users:owner',
+        softDeletedAt: undefined,
+        moderationStatus: 'hidden',
+        moderationReason: 'scanner.vt.malicious',
+        moderationFlags: ['blocked.malware'],
+      },
+    })
+
+    await expect(
+      getSkillFileTextHandler._handler(
+        ctx,
+        { versionId: 'skillVersions:1', path: 'SKILL.md' } as never,
+      ),
+    ).resolves.toMatchObject({ path: 'SKILL.md', text: '# skill' })
   })
 
   it('still allows public access to visible skill files', async () => {
@@ -132,7 +200,7 @@ describe('version file access actions', () => {
     })
 
     await expect(
-      getSkillFileText._handler(
+      getSkillFileTextHandler._handler(
         ctx,
         { versionId: 'skillVersions:1', path: 'SKILL.md' } as never,
       ),
@@ -165,7 +233,40 @@ describe('version file access actions', () => {
     })
 
     await expect(
-      getSoulReadme._handler(ctx, { versionId: 'soulVersions:1' } as never),
+      getSoulReadmeHandler._handler(ctx, { versionId: 'soulVersions:1' } as never),
+    ).rejects.toThrow('Version not available')
+  })
+
+  it('blocks file reads from deleted soul versions', async () => {
+    const ctx = makeActionCtx({
+      version: {
+        _id: 'soulVersions:1',
+        _creationTime: 1,
+        soulId: 'souls:1',
+        version: '1.0.0',
+        changelog: 'init',
+        files: [
+          {
+            path: 'SOUL.md',
+            size: 10,
+            storageId: '_storage:1',
+            sha256: 'abc',
+            contentType: 'text/markdown',
+          },
+        ],
+      },
+      soul: {
+        _id: 'souls:1',
+        ownerUserId: 'users:owner',
+        softDeletedAt: 123,
+      },
+    })
+
+    await expect(
+      getSoulFileTextHandler._handler(
+        ctx,
+        { versionId: 'soulVersions:1', path: 'SOUL.md' } as never,
+      ),
     ).rejects.toThrow('Version not available')
   })
 })
