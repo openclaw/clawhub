@@ -46,29 +46,40 @@ type GetSoulBySlugResult = {
     createdAt: number
     updatedAt: number
   } | null
-  latestVersion: Doc<'soulVersions'> | null
+  latestVersion: PublicSoulVersion | null
   owner: { handle?: string; displayName?: string; image?: string } | null
 } | null
 
 type ListSoulVersionsResult = {
-  items: Array<{
-    version: string
-    createdAt: number
-    changelog: string
-    changelogSource?: 'auto' | 'user'
-    files: Array<{
-      path: string
-      size: number
-      storageId: Id<'_storage'>
-      sha256: string
-      contentType?: string
-    }>
-    softDeletedAt?: number
-  }>
+  items: PublicSoulVersion[]
   nextCursor: string | null
 }
 
-type SoulFile = Doc<'soulVersions'>['files'][number]
+type PublicSoulVersion = Pick<
+  Doc<'soulVersions'>,
+  | '_id'
+  | '_creationTime'
+  | 'soulId'
+  | 'version'
+  | 'fingerprint'
+  | 'changelog'
+  | 'changelogSource'
+  | 'createdBy'
+  | 'createdAt'
+  | 'softDeletedAt'
+> & {
+  files: Array<{
+    path: string
+    size: number
+    sha256: string
+    contentType?: string
+  }>
+  parsed?: {
+    clawdis?: Doc<'soulVersions'>['parsed']['clawdis']
+  }
+}
+
+type SoulFile = PublicSoulVersion['files'][number]
 
 export async function listSoulsV1Handler(ctx: ActionCtx, request: Request) {
   const rate = await applyRateLimit(ctx, request, 'read')
@@ -219,19 +230,23 @@ export async function soulsGetRouterV1Handler(ctx: ActionCtx, request: Request) 
     const versionParam = url.searchParams.get('version')?.trim()
     const tagParam = url.searchParams.get('tag')?.trim()
 
-    const soulResult = (await ctx.runQuery(api.souls.getBySlug, { slug })) as GetSoulBySlugResult
-    if (!soulResult?.soul) return text('Soul not found', 404, rate.headers)
+    const soul = await ctx.runQuery(internal.souls.getSoulBySlugInternal, { slug })
+    if (!soul || soul.softDeletedAt) return text('Soul not found', 404, rate.headers)
 
-    let version = soulResult.latestVersion
+    let version = soul.latestVersionId
+      ? await ctx.runQuery(internal.souls.getVersionByIdInternal, {
+          versionId: soul.latestVersionId,
+        })
+      : null
     if (versionParam) {
-      version = await ctx.runQuery(api.souls.getVersionBySoulAndVersion, {
-        soulId: soulResult.soul._id,
+      version = await ctx.runQuery(internal.souls.getVersionBySoulAndVersionInternal, {
+        soulId: soul._id,
         version: versionParam,
       })
     } else if (tagParam) {
-      const versionId = soulResult.soul.tags[tagParam]
+      const versionId = soul.tags[tagParam]
       if (versionId) {
-        version = await ctx.runQuery(api.souls.getVersionById, { versionId })
+        version = await ctx.runQuery(internal.souls.getVersionByIdInternal, { versionId })
       }
     }
 
@@ -250,7 +265,7 @@ export async function soulsGetRouterV1Handler(ctx: ActionCtx, request: Request) 
     if (!blob) return text('File missing in storage', 410, rate.headers)
     const textContent = await blob.text()
 
-    void ctx.runMutation(api.soulDownloads.increment, { soulId: soulResult.soul._id })
+    void ctx.runMutation(api.soulDownloads.increment, { soulId: soul._id })
     return safeTextFileResponse({
       textContent,
       path: file.path,

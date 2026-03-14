@@ -4,6 +4,50 @@ import { describe, expect, it, vi } from 'vitest'
 const { getBySlug, getVersionById, getVersionBySoulAndVersion, listVersions } =
   await import('./souls')
 
+type WrappedHandler<TArgs, TResult = unknown> = {
+  _handler: (ctx: unknown, args: TArgs) => Promise<TResult>
+}
+
+type PublicSoulVersionResult = {
+  files: Array<{
+    path: string
+    size: number
+    sha256: string
+    contentType?: string
+  }>
+  parsed?: {
+    clawdis?: unknown
+  }
+}
+
+const getBySlugHandler = (
+  getBySlug as unknown as WrappedHandler<{
+    slug: string
+  }, {
+    latestVersion: PublicSoulVersionResult | null
+  } | null>
+)._handler
+
+const getVersionByIdHandler = (
+  getVersionById as unknown as WrappedHandler<{
+    versionId: string
+  }, PublicSoulVersionResult | null>
+)._handler
+
+const getVersionBySoulAndVersionHandler = (
+  getVersionBySoulAndVersion as unknown as WrappedHandler<{
+    soulId: string
+    version: string
+  }, PublicSoulVersionResult | null>
+)._handler
+
+const listVersionsHandler = (
+  listVersions as unknown as WrappedHandler<{
+    soulId: string
+    limit?: number
+  }, PublicSoulVersionResult[]>
+)._handler
+
 function makeVersion() {
   return {
     _id: 'soulVersions:1',
@@ -87,7 +131,7 @@ describe('public soul version queries', () => {
       },
     } as never
 
-    const result = await getBySlug._handler(ctx, { slug: 'demo-soul' } as never)
+    const result = await getBySlugHandler(ctx, { slug: 'demo-soul' } as never)
 
     expect(result?.latestVersion?.files[0]).not.toHaveProperty('storageId')
     expect(result?.latestVersion?.parsed).toEqual({
@@ -114,12 +158,12 @@ describe('public soul version queries', () => {
       },
     } as never
 
-    const byId = await getVersionById._handler(ctx, { versionId: version._id } as never)
-    const byVersion = await getVersionBySoulAndVersion._handler(
+    const byId = await getVersionByIdHandler(ctx, { versionId: version._id } as never)
+    const byVersion = await getVersionBySoulAndVersionHandler(
       ctx,
       { soulId: 'souls:1', version: '1.0.0' } as never,
     )
-    const list = await listVersions._handler(ctx, { soulId: 'souls:1', limit: 5 } as never)
+    const list = await listVersionsHandler(ctx, { soulId: 'souls:1', limit: 5 } as never)
 
     for (const result of [byId, byVersion, list[0]]) {
       expect(result?.files[0]).not.toHaveProperty('storageId')

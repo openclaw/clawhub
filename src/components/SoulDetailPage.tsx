@@ -14,9 +14,33 @@ type SoulDetailPageProps = {
   slug: string
 }
 
+type PublicSoulVersion = Pick<
+  Doc<'soulVersions'>,
+  | '_id'
+  | '_creationTime'
+  | 'soulId'
+  | 'version'
+  | 'fingerprint'
+  | 'changelog'
+  | 'changelogSource'
+  | 'createdBy'
+  | 'createdAt'
+  | 'softDeletedAt'
+> & {
+  files: Array<{
+    path: string
+    size: number
+    sha256: string
+    contentType?: string
+  }>
+  parsed?: {
+    clawdis?: Doc<'soulVersions'>['parsed']['clawdis']
+  }
+}
+
 type SoulBySlugResult = {
   soul: PublicSoul
-  latestVersion: Doc<'soulVersions'> | null
+  latestVersion: PublicSoulVersion | null
   owner: PublicUser | null
 } | null
 
@@ -40,7 +64,7 @@ export function SoulDetailPage({ slug }: SoulDetailPageProps) {
   const versions = useQuery(
     api.souls.listVersions,
     soul ? { soulId: soul._id, limit: 50 } : 'skip',
-  ) as Doc<'soulVersions'>[] | undefined
+  ) as PublicSoulVersion[] | undefined
 
   const isStarred = useQuery(
     api.soulStars.isStarred,

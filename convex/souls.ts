@@ -18,9 +18,30 @@ type FileTextResult = { path: string; text: string; size: number; sha256: string
 const MAX_DIFF_FILE_BYTES = 200 * 1024
 const MAX_LIST_LIMIT = 50
 
+type PublicSoulVersion = Pick<
+  Doc<'soulVersions'>,
+  | '_id'
+  | '_creationTime'
+  | 'soulId'
+  | 'version'
+  | 'fingerprint'
+  | 'changelog'
+  | 'changelogSource'
+  | 'createdBy'
+  | 'createdAt'
+  | 'softDeletedAt'
+> & {
+  files: Array<
+    Pick<Doc<'soulVersions'>['files'][number], 'path' | 'size' | 'sha256' | 'contentType'>
+  >
+  parsed?: {
+    clawdis?: Doc<'soulVersions'>['parsed']['clawdis']
+  }
+}
+
 function toPublicSoulVersion(
   version: Doc<'soulVersions'> | null | undefined,
-): Doc<'soulVersions'> | null {
+): PublicSoulVersion | null {
   if (!version) return null
   return {
     _id: version._id,
@@ -44,7 +65,7 @@ function toPublicSoulVersion(
     createdBy: version.createdBy,
     createdAt: version.createdAt,
     softDeletedAt: version.softDeletedAt,
-  } as Doc<'soulVersions'>
+  }
 }
 
 export const getBySlug = query({
@@ -127,7 +148,7 @@ export const listPublicPage = query({
 
     const items: Array<{
       soul: NonNullable<ReturnType<typeof toPublicSoul>>
-      latestVersion: Doc<'soulVersions'> | null
+      latestVersion: PublicSoulVersion | null
     }> = []
 
     for (const soul of page) {
@@ -193,6 +214,15 @@ export const getVersionsByIdsInternal = internalQuery({
 export const getVersionByIdInternal = internalQuery({
   args: { versionId: v.id('soulVersions') },
   handler: async (ctx, args) => ctx.db.get(args.versionId),
+})
+
+export const getVersionBySoulAndVersionInternal = internalQuery({
+  args: { soulId: v.id('souls'), version: v.string() },
+  handler: async (ctx, args) =>
+    ctx.db
+      .query('soulVersions')
+      .withIndex('by_soul_version', (q) => q.eq('soulId', args.soulId).eq('version', args.version))
+      .unique(),
 })
 
 export const getVersionBySoulAndVersion = query({

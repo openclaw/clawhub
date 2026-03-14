@@ -586,6 +586,56 @@ describe('httpApiV1 handlers', () => {
     expect(json.soul.tags.latest).toBe('1.0.0')
   })
 
+  it('souls file download loads storage from internal version docs', async () => {
+    const runQuery = vi.fn(async (_query: unknown, args: Record<string, unknown>) => {
+      if ('slug' in args) {
+        return {
+          _id: 'souls:1',
+          slug: 'demo-soul',
+          displayName: 'Demo Soul',
+          tags: { latest: 'soulVersions:1' },
+          latestVersionId: 'soulVersions:1',
+          softDeletedAt: undefined,
+        }
+      }
+      if ('versionId' in args) {
+        return {
+          _id: 'soulVersions:1',
+          version: '1.0.0',
+          createdAt: 3,
+          changelog: 'c',
+          files: [
+            {
+              path: 'SOUL.md',
+              size: 5,
+              storageId: '_storage:1',
+              sha256: 'abc123',
+              contentType: 'text/markdown',
+            },
+          ],
+          softDeletedAt: undefined,
+        }
+      }
+      return null
+    })
+    const runMutation = vi.fn().mockResolvedValue(okRate())
+    const storageGet = vi.fn().mockResolvedValue({
+      text: vi.fn().mockResolvedValue('hello'),
+    })
+    const response = await __handlers.soulsGetRouterV1Handler(
+      makeCtx({
+        runQuery,
+        runMutation,
+        storage: { get: storageGet },
+      }),
+      new Request('https://example.com/api/v1/souls/demo-soul/file?path=SOUL.md'),
+    )
+
+    expect(response.status).toBe(200)
+    expect(await response.text()).toBe('hello')
+    expect(storageGet).toHaveBeenCalledWith('_storage:1')
+  })
+
   it('lists skills supports sort aliases', async () => {
     const checks: Array<[string, string]> = [
       ['rating', 'stars'],
