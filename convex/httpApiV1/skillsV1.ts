@@ -78,6 +78,8 @@ type PublicSkillVersionResponse = {
   files: PublicSkillVersionFile[]
   parsed?: PublicSkillVersionParsed
   softDeletedAt?: number
+  sha256hash?: string
+  vtAnalysis?: Doc<'skillVersions'>['vtAnalysis']
   llmAnalysis?: Doc<'skillVersions'>['llmAnalysis']
 }
 
@@ -114,10 +116,7 @@ type GetBySlugResult = {
     updatedAt: number
     latestVersionId?: Id<'skillVersions'>
   } | null
-  latestVersion: Pick<
-    PublicSkillVersionResponse,
-    '_id' | 'version' | 'createdAt' | 'changelog' | 'parsed'
-  > | null
+  latestVersion: PublicSkillVersionResponse | null
   owner: { _id: Id<'users'>; handle?: string; displayName?: string; image?: string } | null
   moderationInfo?: {
     isPendingScan: boolean
@@ -271,7 +270,12 @@ function hasLlmDimensionWarnings(
   })
 }
 
-function buildSkillSecuritySnapshot(version: Doc<'skillVersions'>): SkillSecuritySnapshot | null {
+function buildSkillSecuritySnapshot(
+  version: Pick<
+    PublicSkillVersionResponse,
+    'sha256hash' | 'vtAnalysis' | 'llmAnalysis'
+  >,
+): SkillSecuritySnapshot | null {
   const sha256hash = version.sha256hash ?? null
   const vt = version.vtAnalysis
   const llm = version.llmAnalysis
