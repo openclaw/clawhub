@@ -4,7 +4,7 @@
 @import "@fontsource/ibm-plex-mono/latin.css";
 
 :root {
-  color-scheme: light dark;
+  color-scheme: light;
   --bg: #f8f2ed;
   --bg-soft: #fdf7f2;
   --bg-glow-1: #ffe1d4;
@@ -17,6 +17,7 @@
   --accent: #e65c46;
   --accent-deep: #bf3f30;
   --seafoam: #209e92;
+  --file-browser-pane-max-height: 360px;
   --gold: #e7bb67;
   --line: rgba(42, 31, 25, 0.14);
   --border-ui: rgba(191, 63, 48, 0.28);
@@ -2349,7 +2350,7 @@ code {
 .file-list-body {
   display: grid;
   gap: 8px;
-  max-height: 260px;
+  max-height: var(--file-browser-pane-max-height);
   max-width: 100%;
   overflow: auto;
   padding-right: 4px;
@@ -2402,7 +2403,7 @@ code {
 }
 
 .file-viewer-body {
-  max-height: 320px;
+  max-height: var(--file-browser-pane-max-height);
   overflow: auto;
   padding-right: 4px;
 }
