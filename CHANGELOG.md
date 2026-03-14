@@ -45,6 +45,7 @@
 - API: accept legacy CLI publish payloads during the v1 migration (#815).
 - Auth/UI: surface OAuth callback failures in the web UI instead of swallowing them (#688).
 - Skills: allow ownership healing when the previous owner was deleted/banned, and sanitize owner data in public payloads (#689, #793).
+- CLI: validate explicit `install --force --version` targets before removing an existing local skill, preventing data loss when the requested version does not exist (#825) (thanks @jonathandeamer).
 - Skills/Web: debounce search URL updates on `/skills` to keep typing responsive, and cancel stale pending navigations on external query changes (#587) (thanks @neeravmakwana).
 - Upload: keep folder-picking enabled after page refresh by reapplying `webkitdirectory`/`directory` on the file input ref (#551) (thanks @MunemHashmi).
 - CLI publish: use a longer multipart upload timeout and normalize abort rejections into proper Errors (#550) (thanks @MunemHashmi).
