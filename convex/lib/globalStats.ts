@@ -52,18 +52,6 @@ export function isGlobalStatsStorageNotReadyError(error: unknown) {
   )
 }
 
-export async function countPublicSkillsForGlobalStats(ctx: GlobalStatsReadCtx) {
-  const digests = await ctx.db
-    .query('skillSearchDigest')
-    .withIndex('by_active_updated', (q) => q.eq('softDeletedAt', undefined))
-    .collect()
-  let count = 0
-  for (const digest of digests) {
-    if (isPublicSkillDoc(digest)) count += 1
-  }
-  return count
-}
-
 export async function setGlobalPublicSkillsCount(
   ctx: GlobalStatsWriteCtx,
   count: number,
@@ -117,9 +105,8 @@ export async function adjustGlobalPublicSkillsCount(
   }
 
   if (!existing) {
-    // No baseline yet (e.g. fresh deploy). Initialize via full recount once.
-    const count = await countPublicSkillsForGlobalStats(ctx)
-    await setGlobalPublicSkillsCount(ctx, count, now)
+    // No baseline yet — initialize with delta (clamped to 0). The daily cron reconciles.
+    await setGlobalPublicSkillsCount(ctx, Math.max(0, normalizedDelta), now)
     return
   }
 

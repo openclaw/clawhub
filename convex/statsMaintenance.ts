@@ -4,7 +4,6 @@ import type { Doc } from './_generated/dataModel'
 import type { ActionCtx } from './_generated/server'
 import { internalAction, internalMutation, internalQuery } from './functions'
 import {
-  countPublicSkillsForGlobalStats,
   isPublicSkillDoc,
   setGlobalPublicSkillsCount,
 } from './lib/globalStats'
@@ -364,14 +363,3 @@ export const updateGlobalStatsAction = internalAction({
   },
 })
 
-/**
- * @deprecated Use updateGlobalStatsAction instead.
- * Kept as a manual emergency fallback only — do not re-add to crons.
- */
-export const updateGlobalStatsInternal = internalMutation({
-  args: {},
-  handler: async (ctx) => {
-    const count = await countPublicSkillsForGlobalStats(ctx)
-    await setGlobalPublicSkillsCount(ctx, count)
-  },
-})
