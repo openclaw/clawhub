@@ -145,6 +145,9 @@ export const ApiV1SearchResponseSchema = type({
     version: 'string|null?',
     score: 'number',
     updatedAt: 'number?',
+    owner: type({
+      handle: 'string|null',
+    }).or('null').optional(),
   }).array(),
 })
 

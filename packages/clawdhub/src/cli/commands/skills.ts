@@ -61,7 +61,8 @@ export async function cmdSearch(opts: GlobalOpts, query: string, limit?: number)
       const slug = entry.slug ?? 'unknown'
       const name = entry.displayName ?? slug
       const version = entry.version ? ` v${entry.version}` : ''
-      console.log(`${slug}${version}  ${name}  (${entry.score.toFixed(3)})`)
+      const maintainer = entry.owner?.handle ?? 'N/A'
+      console.log(`${slug}${version}  ${name} by ${maintainer} (${entry.score.toFixed(3)})`)
     }
   } catch (error) {
     spinner.fail(formatError(error))
