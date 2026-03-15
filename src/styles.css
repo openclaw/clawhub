@@ -2754,12 +2754,20 @@ code {
     grid-template-columns: 1fr;
   }
 
+  .diff-view {
+    overflow-x: auto;
+  }
+
   .diff-files {
     grid-auto-flow: column;
     grid-auto-columns: minmax(180px, 1fr);
     overflow-x: auto;
     padding-bottom: 6px;
     max-height: none;
+  }
+
+  .diff-monaco.diff-monaco-split {
+    min-width: 560px;
   }
 
   .skills-row {

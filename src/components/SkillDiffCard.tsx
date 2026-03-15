@@ -36,11 +36,19 @@ type SizeWarning = {
 }
 
 const EMPTY_DIFF_TEXT = ''
+const MOBILE_DIFF_BREAKPOINT = 860
+
+function getDefaultViewMode() {
+  if (typeof window === 'undefined') return 'split'
+  return window.matchMedia(`(max-width: ${MOBILE_DIFF_BREAKPOINT}px)`).matches
+    ? 'inline'
+    : 'split'
+}
 
 export function SkillDiffCard({ skill, versions, variant = 'card' }: SkillDiffCardProps) {
   const getFileText = useAction(api.skills.getFileText)
   const monaco = useMonaco()
-  const [viewMode, setViewMode] = useState<'split' | 'inline'>('split')
+  const [viewMode, setViewMode] = useState<'split' | 'inline'>(getDefaultViewMode)
   const [leftVersionId, setLeftVersionId] = useState<Id<'skillVersions'> | null>(null)
   const [rightVersionId, setRightVersionId] = useState<Id<'skillVersions'> | null>(null)
   const [selectedPath, setSelectedPath] = useState<string | null>(null)
@@ -50,6 +58,7 @@ export function SkillDiffCard({ skill, versions, variant = 'card' }: SkillDiffCa
   const [error, setError] = useState<string | null>(null)
   const [sizeWarning, setSizeWarning] = useState<SizeWarning | null>(null)
   const cacheRef = useRef(new Map<string, string>())
+  const userSelectedViewModeRef = useRef(false)
 
   const versionEntries = useMemo(
     () => versions.map((entry) => ({ id: entry._id, version: entry.version })),
@@ -235,6 +244,29 @@ export function SkillDiffCard({ skill, versions, variant = 'card' }: SkillDiffCa
     return () => observer.disconnect()
   }, [monaco])
 
+  useEffect(() => {
+    if (typeof window === 'undefined') return
+    const mediaQuery = window.matchMedia(`(max-width: ${MOBILE_DIFF_BREAKPOINT}px)`)
+    const syncViewMode = () => {
+      if (!userSelectedViewModeRef.current) {
+        setViewMode(mediaQuery.matches ? 'inline' : 'split')
+      }
+    }
+
+    if (typeof mediaQuery.addEventListener === 'function') {
+      mediaQuery.addEventListener('change', syncViewMode)
+      return () => mediaQuery.removeEventListener('change', syncViewMode)
+    }
+
+    mediaQuery.addListener(syncViewMode)
+    return () => mediaQuery.removeListener(syncViewMode)
+  }, [])
+
+  function updateViewMode(nextViewMode: 'split' | 'inline') {
+    userSelectedViewModeRef.current = true
+    setViewMode(nextViewMode)
+  }
+
   const leftLabel = leftVersion ? `v${leftVersion.version}` : '—'
   const rightLabel = rightVersion ? `v${rightVersion.version}` : '—'
   const diffUnavailable = versions.length < 2
@@ -260,14 +292,14 @@ export function SkillDiffCard({ skill, versions, variant = 'card' }: SkillDiffCa
           <button
             className={`diff-toggle${viewMode === 'split' ? ' is-active' : ''}`}
             type="button"
-            onClick={() => setViewMode('split')}
+            onClick={() => updateViewMode('split')}
           >
             Side-by-side
           </button>
           <button
             className={`diff-toggle${viewMode === 'inline' ? ' is-active' : ''}`}
             type="button"
-            onClick={() => setViewMode('inline')}
+            onClick={() => updateViewMode('inline')}
           >
             Inline
           </button>
@@ -359,7 +391,7 @@ export function SkillDiffCard({ skill, versions, variant = 'card' }: SkillDiffCa
             <ClientOnly fallback={<div className="diff-empty">Preparing diff…</div>}>
               <DiffEditor
                 key={`diff-${viewMode}`}
-                className="diff-monaco"
+                className={`diff-monaco diff-monaco-${viewMode}`}
                 original={leftText}
                 modified={rightText}
                 theme={getMonacoThemeName()}

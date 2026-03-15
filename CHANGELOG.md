@@ -4,6 +4,7 @@
 
 ### Fixed
 - Visibility/API: prevent skills owned by deleted/banned users from showing up in public detail pages, browse/search results, or version API routes.
+- Skills/Web: keep Monaco compare layout toggles reliable while defaulting narrow screens to inline mode (#828) (thanks @geoffrey-xiao).
 
 ## 0.8.0 - 2026-03-13
 
