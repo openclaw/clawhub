@@ -87,7 +87,7 @@ bunx convex run --no-push devSeed:seedNixSkills
 bunx convex run --no-push devSeedExtra:seedExtraSkillsInternal
 
 # Refresh the cached skills count (required after seeding)
-bunx convex run --no-push statsMaintenance:updateGlobalStatsInternal
+bunx convex run --no-push statsMaintenance:updateGlobalStatsAction
 ```
 
 To reset and re-seed:
