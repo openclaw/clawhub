@@ -552,3 +552,174 @@ export const processSkillStatEventsAction = internalAction({
     }
   },
 })
+
+// ============================================================================
+// Skill doc stat sync — action-based to minimize cache invalidation
+// ============================================================================
+
+const SKILL_DOC_SYNC_CHUNK_SIZE = 500
+
+/** Read a batch of events where processedAt is undefined. */
+export const getUnprocessedStatEventsBatch = internalQuery({
+  args: { limit: v.optional(v.number()) },
+  handler: async (ctx, args) => {
+    return ctx.db
+      .query('skillStatEvents')
+      .withIndex('by_unprocessed', (q) => q.eq('processedAt', undefined))
+      .take(args.limit ?? 500)
+  },
+})
+
+const skillDocDeltaValidator = v.object({
+  skillId: v.id('skills'),
+  downloads: v.number(),
+  stars: v.number(),
+  comments: v.number(),
+  installsAllTime: v.number(),
+  installsCurrent: v.number(),
+})
+
+/**
+ * Patch skill documents with aggregated stat deltas.
+ * Each call = one transaction = one cache invalidation for skillSearchDigest.
+ * Chunk size of 500 keeps reads well under the 8 MB limit (~1.4 MB).
+ */
+export const applySkillDocStatDeltas = internalMutation({
+  args: { skillDeltas: v.array(skillDocDeltaValidator) },
+  handler: async (ctx, args) => {
+    let patched = 0
+    for (const delta of args.skillDeltas) {
+      if (
+        delta.downloads === 0 &&
+        delta.stars === 0 &&
+        delta.comments === 0 &&
+        delta.installsAllTime === 0 &&
+        delta.installsCurrent === 0
+      ) {
+        continue
+      }
+      const skill = await ctx.db.get(delta.skillId)
+      if (!skill) continue
+      const patch = applySkillStatDeltas(skill, {
+        downloads: delta.downloads,
+        stars: delta.stars,
+        comments: delta.comments,
+        installsAllTime: delta.installsAllTime,
+        installsCurrent: delta.installsCurrent,
+      })
+      await ctx.db.patch(skill._id, patch)
+      patched += 1
+    }
+    return { patched }
+  },
+})
+
+/**
+ * Mark events as processed. No subscribers on skillStatEvents, so this
+ * causes zero cache invalidation regardless of batch size.
+ */
+export const markEventsProcessed = internalMutation({
+  args: { eventIds: v.array(v.id('skillStatEvents')) },
+  handler: async (ctx, args) => {
+    const now = Date.now()
+    for (const id of args.eventIds) {
+      await ctx.db.patch(id, { processedAt: now })
+    }
+    return { marked: args.eventIds.length }
+  },
+})
+
+/**
+ * Action-based skill doc stat sync. Replaces processSkillStatEventsInternal.
+ *
+ * Reads ALL unprocessed events via queries (no cache impact), aggregates
+ * deltas in memory, then applies to skill docs in chunks of 500 skills.
+ * Each chunk = one mutation = one cache invalidation.
+ *
+ * For ~3000 skills this produces ~6 invalidations instead of ~200.
+ */
+export const syncSkillDocStatsAction = internalAction({
+  args: { batchSize: v.optional(v.number()) },
+  handler: async (ctx, args) => {
+    const queryBatchSize = args.batchSize ?? 500
+
+    // Phase 1: Read all unprocessed events and aggregate in memory.
+    // We mark events processed in batches as we read them so subsequent
+    // query calls return the next page of unprocessed events.
+    const aggregatedBySkill = new Map<
+      Id<'skills'>,
+      { downloads: number; stars: number; comments: number; installsAllTime: number; installsCurrent: number }
+    >()
+    let totalEvents = 0
+
+    // eslint-disable-next-line no-constant-condition
+    while (true) {
+      const events = (await ctx.runQuery(
+        internal.skillStatEvents.getUnprocessedStatEventsBatch,
+        { limit: queryBatchSize },
+      )) as Doc<'skillStatEvents'>[]
+
+      if (events.length === 0) break
+
+      // Mark this batch as processed immediately so the next query
+      // returns the next page. This writes to skillStatEvents only
+      // (no subscribers = zero cache invalidation).
+      const eventIds = events.map((e) => e._id)
+      await ctx.runMutation(internal.skillStatEvents.markEventsProcessed, {
+        eventIds,
+      })
+
+      for (const event of events) {
+        const deltas = aggregateEvents([event])
+        let existing = aggregatedBySkill.get(event.skillId)
+        if (!existing) {
+          existing = { downloads: 0, stars: 0, comments: 0, installsAllTime: 0, installsCurrent: 0 }
+          aggregatedBySkill.set(event.skillId, existing)
+        }
+        existing.downloads += deltas.downloads
+        existing.stars += deltas.stars
+        existing.comments += deltas.comments
+        existing.installsAllTime += deltas.installsAllTime
+        existing.installsCurrent += deltas.installsCurrent
+      }
+
+      totalEvents += events.length
+
+      // If we got fewer than requested, we've exhausted unprocessed events
+      if (events.length < queryBatchSize) break
+    }
+
+    if (totalEvents === 0) {
+      console.log('[SKILL-DOC-SYNC] No unprocessed events')
+      return { totalEvents: 0, uniqueSkills: 0, chunks: 0 }
+    }
+
+    console.log(
+      `[SKILL-DOC-SYNC] Aggregated ${totalEvents} events across ${aggregatedBySkill.size} skills`,
+    )
+
+    // Phase 2: Apply skill doc patches in chunks (each chunk = one invalidation)
+    const allDeltas = Array.from(aggregatedBySkill.entries()).map(([skillId, d]) => ({
+      skillId,
+      ...d,
+    }))
+
+    let chunks = 0
+    for (let i = 0; i < allDeltas.length; i += SKILL_DOC_SYNC_CHUNK_SIZE) {
+      const chunk = allDeltas.slice(i, i + SKILL_DOC_SYNC_CHUNK_SIZE)
+      await ctx.runMutation(internal.skillStatEvents.applySkillDocStatDeltas, {
+        skillDeltas: chunk,
+      })
+      chunks += 1
+      console.log(
+        `[SKILL-DOC-SYNC] Applied chunk ${chunks} (${chunk.length} skills)`,
+      )
+    }
+
+    console.log(
+      `[SKILL-DOC-SYNC] Done: ${totalEvents} events, ${aggregatedBySkill.size} skills, ${chunks} chunks`,
+    )
+
+    return { totalEvents, uniqueSkills: aggregatedBySkill.size, chunks }
+  },
+})

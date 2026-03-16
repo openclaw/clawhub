@@ -34,13 +34,13 @@ crons.interval(
 )
 
 // Syncs accumulated stat deltas to skill documents every 6 hours.
-// Runs infrequently to avoid thundering-herd reactive query invalidation.
-// Uses processedAt field to track progress (independent of the action cursor).
+// Uses action pattern: reads via queries (no cache impact), then applies
+// all skill doc patches in chunks of 500 (~6 invalidations instead of ~200).
 crons.interval(
   'skill-doc-stat-sync',
   { hours: 6 },
-  internal.skillStatEvents.processSkillStatEventsInternal,
-  { batchSize: 500 },
+  internal.skillStatEvents.syncSkillDocStatsAction,
+  {},
 )
 
 crons.interval(
