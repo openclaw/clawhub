@@ -10,6 +10,11 @@
   <a href="LICENSE"><img src="https://img.shields.io/badge/License-MIT-blue.svg?style=for-the-badge" alt="MIT License"></a>
 </p>
 
+<p align="center">
+  <strong>English</strong> ·
+  <a href="README.zh.md">中文</a>
+</p>
+
 ClawHub is the **public skill registry for Clawdbot**: publish, version, and search text-based agent skills (a `SKILL.md` plus supporting files).
 It's designed for fast browsing + a CLI-friendly API, with moderation hooks and vector search.
 
