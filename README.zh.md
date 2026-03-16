@@ -150,3 +150,58 @@ programs.clawdbot.plugins = [
   { source = "github:clawdbot/nix-steipete-tools?dir=tools/peekaboo"; }
 ];
 ```
+
+你也可以声明配置要求并提供一个示例片段：
+
+```yaml
+---
+name: padel
+description: Check padel court availability and manage bookings via Playtomic.
+metadata: {"clawdbot":{"config":{"requiredEnv":["PADEL_AUTH_FILE"],"stateDirs":[".config/padel"],"example":"config = { env = { PADEL_AUTH_FILE = \\\"/run/agenix/padel-auth\\\"; }; };"}}}
+---
+```
+
+要显示 CLI 的帮助信息（对于 nix 插件推荐使用），可以包含 `cli --help` 的输出：
+
+```yaml
+---
+name: padel
+description: Check padel court availability and manage bookings via Playtomic.
+metadata: {"clawdbot":{"cliHelp":"padel --help\\nUsage: padel [command]\\n"}}
+---
+```
+
+建议使用 `metadata.clawdbot`，但同时也接受 `metadata.clawdis` 和 `metadata.openclaw` 作为别名。
+
+## 技能元数据 (Skill metadata)
+
+技能在 `SKILL.md` 的前言元数据 (frontmatter) 中声明其运行时的环境要求（如环境变量、二进制文件、安装规范）。ClawHub 的安全分析机制会根据这些声明来核对技能的实际行为。
+
+完整参考文档：[`docs/skill-format.md`](docs/skill-format.md#frontmatter-metadata)
+
+快速示例：
+
+```yaml
+---
+name: my-skill
+description: Does a thing with an API.
+metadata:
+  openclaw:
+    requires:
+      env:
+        - MY_API_KEY
+      bins:
+        - curl
+    primaryEnv: MY_API_KEY
+---
+```
+
+## 脚本 (Scripts)
+
+```bash
+bun run dev
+bun run build
+bun run test
+bun run coverage
+bun run lint
+```
