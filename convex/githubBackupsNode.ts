@@ -22,19 +22,15 @@ const MAX_MAX_BATCHES = 200
 const DEFAULT_PRUNE_BATCH_SIZE = 10
 const MAX_PRUNE_BATCH_SIZE = 100
 
-type BackupPageItem =
-  | {
-      kind: 'ok'
-      slug: string
-      version: string
-      displayName: string
-      ownerHandle: string
-      files: Doc<'skillVersions'>['files']
-      publishedAt: number
-    }
-  | { kind: 'missingLatestVersion' }
-  | { kind: 'missingVersionDoc' }
-  | { kind: 'missingOwner' }
+type BackupPageItem = {
+  kind: 'ok'
+  versionId: string
+  slug: string
+  version: string
+  displayName: string
+  ownerHandle: string
+  publishedAt: number
+}
 
 export type GitHubBackupSyncStats = {
   skillsScanned: number
@@ -135,15 +131,6 @@ export async function syncGitHubBackupsInternalHandler(
     isDone = page.isDone
 
     for (const item of page.items) {
-      if (item.kind !== 'ok') {
-        if (item.kind === 'missingLatestVersion' || item.kind === 'missingVersionDoc') {
-          stats.skillsMissingVersion += 1
-        } else if (item.kind === 'missingOwner') {
-          stats.skillsMissingOwner += 1
-        }
-        continue
-      }
-
       stats.skillsScanned += 1
       try {
         const meta = await fetchGitHubSkillMeta(context, item.ownerHandle, item.slug)
@@ -153,6 +140,13 @@ export async function syncGitHubBackupsInternalHandler(
         }
 
         if (!dryRun) {
+          const version = (await ctx.runQuery(internal.skills.getVersionByIdInternal, {
+            versionId: item.versionId as Doc<'skillVersions'>['_id'],
+          })) as Doc<'skillVersions'> | null
+          if (!version) {
+            stats.skillsMissingVersion += 1
+            continue
+          }
           await backupSkillToGitHub(
             ctx,
             {
@@ -160,7 +154,7 @@ export async function syncGitHubBackupsInternalHandler(
               version: item.version,
               displayName: item.displayName,
               ownerHandle: item.ownerHandle,
-              files: item.files,
+              files: version.files,
               publishedAt: item.publishedAt,
             },
             context,
