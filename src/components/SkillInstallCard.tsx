@@ -160,15 +160,15 @@ export function SkillInstallCard({ clawdis, osLabels }: SkillInstallCardProps) {
               {installSpecs.map((spec, index) => {
                 const command = formatInstallCommand(spec)
                 return (
-                  <div key={`${spec.id ?? spec.kind}-${index}`} className="stat">
-                    <div>
+                  <div key={`${spec.id ?? spec.kind}-${index}`} className="skill-install-entry">
+                    <div className="skill-install-entry-body">
                       <strong>{spec.label ?? formatInstallLabel(spec)}</strong>
                       {spec.bins?.length ? (
-                        <div style={{ color: 'var(--ink-soft)', fontSize: '0.85rem' }}>
+                        <div className="skill-install-meta">
                           Bins: {spec.bins.join(', ')}
                         </div>
                       ) : null}
-                      {command ? <code>{command}</code> : null}
+                      {command ? <code className="skill-install-command">{command}</code> : null}
                     </div>
                   </div>
                 )
