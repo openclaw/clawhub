@@ -2071,6 +2071,7 @@ code {
 
 .skill-panel {
   display: grid;
+  align-content: start;
   gap: 10px;
   padding: 14px;
   border-radius: 16px;
@@ -2081,6 +2082,43 @@ code {
 .skill-panel-body {
   display: grid;
   gap: 8px;
+  align-content: start;
+}
+
+.skill-install-entry {
+  min-width: 0;
+}
+
+.skill-install-entry-body {
+  color: var(--ink-soft);
+  display: grid;
+  gap: 8px;
+  min-width: 0;
+  width: 100%;
+  font-size: 0.9rem;
+}
+
+.skill-install-entry-body strong {
+  color: inherit;
+  font-size: inherit;
+  line-height: 1.45;
+}
+
+.skill-install-meta {
+  color: var(--ink-soft);
+  font-size: inherit;
+}
+
+.skill-install-command {
+  display: block;
+  max-width: 100%;
+  color: var(--ink-soft);
+  overflow-wrap: anywhere;
+  word-break: break-word;
+  white-space: pre-wrap;
+  font-size: inherit;
+  line-height: 1.55;
+  font-family: var(--font-mono);
 }
 
 .diff-card {
