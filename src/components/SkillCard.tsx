@@ -20,6 +20,7 @@ export function SkillCard({ skill, badge, chip, platformLabels, summaryFallback,
 
   return (
     <Link to={link} className="card skill-card">
+      <h3 className="skill-card-title">{skill.displayName}</h3>
       {hasTags ? (
         <div className="skill-card-tags">
           {badges.map((label) => (
@@ -33,7 +34,6 @@ export function SkillCard({ skill, badge, chip, platformLabels, summaryFallback,
           ))}
         </div>
       ) : null}
-      <h3 className="skill-card-title">{skill.displayName}</h3>
       <p className="skill-card-summary">{skill.summary ?? summaryFallback}</p>
       <div className="skill-card-footer">{meta}</div>
     </Link>
