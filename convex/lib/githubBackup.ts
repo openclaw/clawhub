@@ -154,63 +154,78 @@ export async function deleteGitHubSkillBackup(
   slug: string,
 ) {
   const skillRoot = buildSkillRoot(context.root, ownerHandle, slug)
-  const ref = await githubGet<GitRef>(
-    context.token,
-    `/repos/${context.repoOwner}/${context.repoName}/git/ref/heads/${context.branch}`,
-  )
-  const baseCommitSha = ref.object.sha
-  const baseCommit = await githubGet<GitCommit>(
-    context.token,
-    `/repos/${context.repoOwner}/${context.repoName}/git/commits/${baseCommitSha}`,
-  )
-  const baseTreeSha = baseCommit.tree.sha
-  const existingTree = await githubGet<GitTree>(
-    context.token,
-    `/repos/${context.repoOwner}/${context.repoName}/git/trees/${baseTreeSha}?recursive=1`,
-  )
 
-  const prefix = `${skillRoot}/`
-  const pathsToDelete = (existingTree.tree ?? [])
-    .filter((entry) => entry.type === 'blob' && entry.path?.startsWith(prefix))
-    .map((entry) => entry.path ?? '')
-    .filter(Boolean)
+  for (let attempt = 0; attempt < MAX_PUSH_RETRIES; attempt++) {
+    const ref = await githubGet<GitRef>(
+      context.token,
+      `/repos/${context.repoOwner}/${context.repoName}/git/ref/heads/${context.branch}`,
+    )
+    const baseCommitSha = ref.object.sha
+    const baseCommit = await githubGet<GitCommit>(
+      context.token,
+      `/repos/${context.repoOwner}/${context.repoName}/git/commits/${baseCommitSha}`,
+    )
+    const baseTreeSha = baseCommit.tree.sha
+    const existingTree = await githubGet<GitTree>(
+      context.token,
+      `/repos/${context.repoOwner}/${context.repoName}/git/trees/${baseTreeSha}?recursive=1`,
+    )
 
-  if (!pathsToDelete.length) return { deleted: false as const }
+    const prefix = `${skillRoot}/`
+    const pathsToDelete = (existingTree.tree ?? [])
+      .filter((entry) => entry.type === 'blob' && entry.path?.startsWith(prefix))
+      .map((entry) => entry.path ?? '')
+      .filter(Boolean)
 
-  const treeEntries = pathsToDelete.map((path) => ({
-    path,
-    mode: '100644' as const,
-    type: 'blob' as const,
-    sha: null,
-  }))
+    if (!pathsToDelete.length) return { deleted: false as const }
 
-  const newTree = await githubPost<{ sha: string }>(
-    context.token,
-    `/repos/${context.repoOwner}/${context.repoName}/git/trees`,
-    {
-      base_tree: baseTreeSha,
-      tree: treeEntries,
-    },
-  )
+    const treeEntries = pathsToDelete.map((path) => ({
+      path,
+      mode: '100644' as const,
+      type: 'blob' as const,
+      sha: null,
+    }))
 
-  const commit = await githubPost<GitCommit>(
-    context.token,
-    `/repos/${context.repoOwner}/${context.repoName}/git/commits`,
-    {
-      message: `delete: ${skillRoot}`,
-      tree: newTree.sha,
-      parents: [baseCommitSha],
-    },
-  )
+    const newTree = await githubPost<{ sha: string }>(
+      context.token,
+      `/repos/${context.repoOwner}/${context.repoName}/git/trees`,
+      {
+        base_tree: baseTreeSha,
+        tree: treeEntries,
+      },
+    )
 
-  await githubPatch(
-    context.token,
-    `/repos/${context.repoOwner}/${context.repoName}/git/refs/heads/${context.branch}`,
-    { sha: commit.sha },
-  )
+    const commit = await githubPost<GitCommit>(
+      context.token,
+      `/repos/${context.repoOwner}/${context.repoName}/git/commits`,
+      {
+        message: `delete: ${skillRoot}`,
+        tree: newTree.sha,
+        parents: [baseCommitSha],
+      },
+    )
 
-  return { deleted: true as const }
+    try {
+      await githubPatch(
+        context.token,
+        `/repos/${context.repoOwner}/${context.repoName}/git/refs/heads/${context.branch}`,
+        { sha: commit.sha },
+      )
+      return { deleted: true as const }
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err)
+      if (msg.includes('not a fast forward') && attempt < MAX_PUSH_RETRIES - 1) {
+        console.warn(`GitHub backup delete push conflict for ${skillRoot}, retrying (attempt ${attempt + 1})`)
+        continue
+      }
+      throw err
+    }
+  }
+
+  return { deleted: false as const }
 }
+
+const MAX_PUSH_RETRIES = 3
 
 export async function backupSkillToGitHub(
   ctx: ActionCtx,
@@ -221,120 +236,139 @@ export async function backupSkillToGitHub(
 
   const resolved = context ?? (await getGitHubBackupContext())
   const skillRoot = buildSkillRoot(resolved.root, params.ownerHandle, params.slug)
-  const ref = await githubGet<GitRef>(
-    resolved.token,
-    `/repos/${resolved.repoOwner}/${resolved.repoName}/git/ref/heads/${resolved.branch}`,
-  )
-  const baseCommitSha = ref.object.sha
-  const baseCommit = await githubGet<GitCommit>(
-    resolved.token,
-    `/repos/${resolved.repoOwner}/${resolved.repoName}/git/commits/${baseCommitSha}`,
-  )
-  const baseTreeSha = baseCommit.tree.sha
-  const existingTree = await githubGet<GitTree>(
-    resolved.token,
-    `/repos/${resolved.repoOwner}/${resolved.repoName}/git/trees/${baseTreeSha}?recursive=1`,
-  )
+  const metaPath = `${skillRoot}/${META_FILENAME}`
 
-  const prefix = `${skillRoot}/`
-  const existingPaths = new Set(
-    (existingTree.tree ?? [])
-      .filter((entry) => entry.type === 'blob' && entry.path?.startsWith(prefix))
-      .map((entry) => entry.path ?? ''),
-  )
-
-  const newPaths = new Set<string>()
-  const treeEntries: Array<{
-    path: string
-    mode: '100644'
-    type: 'blob'
-    sha: string | null
-  }> = []
-
+  // Phase 1: Create blobs (content-addressed, only needs to happen once).
+  // This is the expensive part — downloads files from Convex storage.
+  const fileBlobs: Array<{ path: string; blobSha: string }> = []
   for (const file of params.files) {
     const content = await fetchStorageBase64(ctx, file.storageId)
     const blobSha = await createBlob(resolved.token, resolved.repoOwner, resolved.repoName, content)
-    const path = `${skillRoot}/${file.path}`
-    newPaths.add(path)
-    treeEntries.push({ path, mode: '100644', type: 'blob', sha: blobSha })
+    fileBlobs.push({ path: `${skillRoot}/${file.path}`, blobSha })
   }
 
-  const existingMeta = await fetchMetaFile(
-    resolved.token,
-    resolved.repoOwner,
-    resolved.repoName,
-    `${skillRoot}/${META_FILENAME}`,
-    resolved.branch,
-  )
-  const metaPath = `${skillRoot}/${META_FILENAME}`
-  const metaDraft = buildMetaFile(params, existingMeta, resolved.repo, baseCommitSha, null)
-  const metaDraftContent = `${JSON.stringify(metaDraft, null, 2)}\n`
-  const metaDraftSha = await createBlob(
-    resolved.token,
-    resolved.repoOwner,
-    resolved.repoName,
-    toBase64(metaDraftContent),
-  )
-  newPaths.add(metaPath)
-  treeEntries.push({ path: metaPath, mode: '100644', type: 'blob', sha: metaDraftSha })
+  // Phase 2: Build tree, commit, and push. Retry on conflict since
+  // another concurrent push may have advanced the branch.
+  for (let attempt = 0; attempt < MAX_PUSH_RETRIES; attempt++) {
+    const ref = await githubGet<GitRef>(
+      resolved.token,
+      `/repos/${resolved.repoOwner}/${resolved.repoName}/git/ref/heads/${resolved.branch}`,
+    )
+    const baseCommitSha = ref.object.sha
+    const baseCommit = await githubGet<GitCommit>(
+      resolved.token,
+      `/repos/${resolved.repoOwner}/${resolved.repoName}/git/commits/${baseCommitSha}`,
+    )
+    const baseTreeSha = baseCommit.tree.sha
+    const existingTree = await githubGet<GitTree>(
+      resolved.token,
+      `/repos/${resolved.repoOwner}/${resolved.repoName}/git/trees/${baseTreeSha}?recursive=1`,
+    )
 
-  for (const path of existingPaths) {
-    if (newPaths.has(path)) continue
-    treeEntries.push({ path, mode: '100644', type: 'blob', sha: null })
+    const prefix = `${skillRoot}/`
+    const existingPaths = new Set(
+      (existingTree.tree ?? [])
+        .filter((entry) => entry.type === 'blob' && entry.path?.startsWith(prefix))
+        .map((entry) => entry.path ?? ''),
+    )
+
+    const newPaths = new Set<string>()
+    const treeEntries: Array<{
+      path: string
+      mode: '100644'
+      type: 'blob'
+      sha: string | null
+    }> = []
+
+    for (const { path, blobSha } of fileBlobs) {
+      newPaths.add(path)
+      treeEntries.push({ path, mode: '100644', type: 'blob', sha: blobSha })
+    }
+
+    const existingMeta = await fetchMetaFile(
+      resolved.token,
+      resolved.repoOwner,
+      resolved.repoName,
+      metaPath,
+      resolved.branch,
+    )
+    const metaDraft = buildMetaFile(params, existingMeta, resolved.repo, baseCommitSha, null)
+    const metaDraftContent = `${JSON.stringify(metaDraft, null, 2)}\n`
+    const metaDraftSha = await createBlob(
+      resolved.token,
+      resolved.repoOwner,
+      resolved.repoName,
+      toBase64(metaDraftContent),
+    )
+    newPaths.add(metaPath)
+    treeEntries.push({ path: metaPath, mode: '100644', type: 'blob', sha: metaDraftSha })
+
+    for (const path of existingPaths) {
+      if (newPaths.has(path)) continue
+      treeEntries.push({ path, mode: '100644', type: 'blob', sha: null })
+    }
+
+    const newTree = await githubPost<{ sha: string }>(
+      resolved.token,
+      `/repos/${resolved.repoOwner}/${resolved.repoName}/git/trees`,
+      {
+        base_tree: baseTreeSha,
+        tree: treeEntries,
+      },
+    )
+
+    const commit = await githubPost<GitCommit>(
+      resolved.token,
+      `/repos/${resolved.repoOwner}/${resolved.repoName}/git/commits`,
+      {
+        message: `skill: ${params.slug} v${params.version}`,
+        tree: newTree.sha,
+        parents: [baseCommitSha],
+      },
+    )
+
+    const metaFinal = buildMetaFile(params, existingMeta, resolved.repo, baseCommitSha, commit.sha)
+    const metaFinalContent = `${JSON.stringify(metaFinal, null, 2)}\n`
+    const metaFinalSha = await createBlob(
+      resolved.token,
+      resolved.repoOwner,
+      resolved.repoName,
+      toBase64(metaFinalContent),
+    )
+    const metaTree = await githubPost<{ sha: string }>(
+      resolved.token,
+      `/repos/${resolved.repoOwner}/${resolved.repoName}/git/trees`,
+      {
+        base_tree: commit.tree.sha,
+        tree: [{ path: metaPath, mode: '100644', type: 'blob', sha: metaFinalSha }],
+      },
+    )
+    const metaCommit = await githubPost<GitCommit>(
+      resolved.token,
+      `/repos/${resolved.repoOwner}/${resolved.repoName}/git/commits`,
+      {
+        message: `meta: ${params.slug} v${params.version}`,
+        tree: metaTree.sha,
+        parents: [commit.sha],
+      },
+    )
+
+    try {
+      await githubPatch(
+        resolved.token,
+        `/repos/${resolved.repoOwner}/${resolved.repoName}/git/refs/heads/${resolved.branch}`,
+        { sha: metaCommit.sha },
+      )
+      return // Success
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err)
+      if (msg.includes('not a fast forward') && attempt < MAX_PUSH_RETRIES - 1) {
+        console.warn(`GitHub backup push conflict for ${params.slug}, retrying (attempt ${attempt + 1})`)
+        continue
+      }
+      throw err
+    }
   }
-
-  const newTree = await githubPost<{ sha: string }>(
-    resolved.token,
-    `/repos/${resolved.repoOwner}/${resolved.repoName}/git/trees`,
-    {
-      base_tree: baseTreeSha,
-      tree: treeEntries,
-    },
-  )
-
-  const commit = await githubPost<GitCommit>(
-    resolved.token,
-    `/repos/${resolved.repoOwner}/${resolved.repoName}/git/commits`,
-    {
-      message: `skill: ${params.slug} v${params.version}`,
-      tree: newTree.sha,
-      parents: [baseCommitSha],
-    },
-  )
-
-  const metaFinal = buildMetaFile(params, existingMeta, resolved.repo, baseCommitSha, commit.sha)
-  const metaFinalContent = `${JSON.stringify(metaFinal, null, 2)}\n`
-  const metaFinalSha = await createBlob(
-    resolved.token,
-    resolved.repoOwner,
-    resolved.repoName,
-    toBase64(metaFinalContent),
-  )
-  const metaTree = await githubPost<{ sha: string }>(
-    resolved.token,
-    `/repos/${resolved.repoOwner}/${resolved.repoName}/git/trees`,
-    {
-      base_tree: commit.tree.sha,
-      tree: [{ path: metaPath, mode: '100644', type: 'blob', sha: metaFinalSha }],
-    },
-  )
-  const metaCommit = await githubPost<GitCommit>(
-    resolved.token,
-    `/repos/${resolved.repoOwner}/${resolved.repoName}/git/commits`,
-    {
-      message: `meta: ${params.slug} v${params.version}`,
-      tree: metaTree.sha,
-      parents: [commit.sha],
-    },
-  )
-
-  await githubPatch(
-    resolved.token,
-    `/repos/${resolved.repoOwner}/${resolved.repoName}/git/refs/heads/${resolved.branch}`,
-    {
-      sha: metaCommit.sha,
-    },
-  )
 }
 
 function buildMetaFile(
