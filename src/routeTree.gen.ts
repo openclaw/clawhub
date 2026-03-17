@@ -10,7 +10,9 @@
 
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as UploadRouteImport } from './routes/upload'
+import { Route as TestV4RouteImport } from './routes/test-v4'
 import { Route as StarsRouteImport } from './routes/stars'
+import { Route as Skillsv4RouteImport } from './routes/skillsv4'
 import { Route as SettingsRouteImport } from './routes/settings'
 import { Route as SearchRouteImport } from './routes/search'
 import { Route as ManagementRouteImport } from './routes/management'
@@ -30,9 +32,19 @@ const UploadRoute = UploadRouteImport.update({
   path: '/upload',
   getParentRoute: () => rootRouteImport,
 } as any)
+const TestV4Route = TestV4RouteImport.update({
+  id: '/test-v4',
+  path: '/test-v4',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const StarsRoute = StarsRouteImport.update({
   id: '/stars',
   path: '/stars',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const Skillsv4Route = Skillsv4RouteImport.update({
+  id: '/skillsv4',
+  path: '/skillsv4',
   getParentRoute: () => rootRouteImport,
 } as any)
 const SettingsRoute = SettingsRouteImport.update({
@@ -109,7 +121,9 @@ export interface FileRoutesByFullPath {
   '/management': typeof ManagementRoute
   '/search': typeof SearchRoute
   '/settings': typeof SettingsRoute
+  '/skillsv4': typeof Skillsv4Route
   '/stars': typeof StarsRoute
+  '/test-v4': typeof TestV4Route
   '/upload': typeof UploadRoute
   '/$owner/$slug': typeof OwnerSlugRoute
   '/cli/auth': typeof CliAuthRoute
@@ -126,7 +140,9 @@ export interface FileRoutesByTo {
   '/management': typeof ManagementRoute
   '/search': typeof SearchRoute
   '/settings': typeof SettingsRoute
+  '/skillsv4': typeof Skillsv4Route
   '/stars': typeof StarsRoute
+  '/test-v4': typeof TestV4Route
   '/upload': typeof UploadRoute
   '/$owner/$slug': typeof OwnerSlugRoute
   '/cli/auth': typeof CliAuthRoute
@@ -144,7 +160,9 @@ export interface FileRoutesById {
   '/management': typeof ManagementRoute
   '/search': typeof SearchRoute
   '/settings': typeof SettingsRoute
+  '/skillsv4': typeof Skillsv4Route
   '/stars': typeof StarsRoute
+  '/test-v4': typeof TestV4Route
   '/upload': typeof UploadRoute
   '/$owner/$slug': typeof OwnerSlugRoute
   '/cli/auth': typeof CliAuthRoute
@@ -163,7 +181,9 @@ export interface FileRouteTypes {
     | '/management'
     | '/search'
     | '/settings'
+    | '/skillsv4'
     | '/stars'
+    | '/test-v4'
     | '/upload'
     | '/$owner/$slug'
     | '/cli/auth'
@@ -180,7 +200,9 @@ export interface FileRouteTypes {
     | '/management'
     | '/search'
     | '/settings'
+    | '/skillsv4'
     | '/stars'
+    | '/test-v4'
     | '/upload'
     | '/$owner/$slug'
     | '/cli/auth'
@@ -197,7 +219,9 @@ export interface FileRouteTypes {
     | '/management'
     | '/search'
     | '/settings'
+    | '/skillsv4'
     | '/stars'
+    | '/test-v4'
     | '/upload'
     | '/$owner/$slug'
     | '/cli/auth'
@@ -215,7 +239,9 @@ export interface RootRouteChildren {
   ManagementRoute: typeof ManagementRoute
   SearchRoute: typeof SearchRoute
   SettingsRoute: typeof SettingsRoute
+  Skillsv4Route: typeof Skillsv4Route
   StarsRoute: typeof StarsRoute
+  TestV4Route: typeof TestV4Route
   UploadRoute: typeof UploadRoute
   OwnerSlugRoute: typeof OwnerSlugRoute
   CliAuthRoute: typeof CliAuthRoute
@@ -234,11 +260,25 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof UploadRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/test-v4': {
+      id: '/test-v4'
+      path: '/test-v4'
+      fullPath: '/test-v4'
+      preLoaderRoute: typeof TestV4RouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/stars': {
       id: '/stars'
       path: '/stars'
       fullPath: '/stars'
       preLoaderRoute: typeof StarsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/skillsv4': {
+      id: '/skillsv4'
+      path: '/skillsv4'
+      fullPath: '/skillsv4'
+      preLoaderRoute: typeof Skillsv4RouteImport
       parentRoute: typeof rootRouteImport
     }
     '/settings': {
@@ -343,7 +383,9 @@ const rootRouteChildren: RootRouteChildren = {
   ManagementRoute: ManagementRoute,
   SearchRoute: SearchRoute,
   SettingsRoute: SettingsRoute,
+  Skillsv4Route: Skillsv4Route,
   StarsRoute: StarsRoute,
+  TestV4Route: TestV4Route,
   UploadRoute: UploadRoute,
   OwnerSlugRoute: OwnerSlugRoute,
   CliAuthRoute: CliAuthRoute,
