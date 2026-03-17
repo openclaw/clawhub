@@ -2952,20 +2952,25 @@ async function getTrendingEntries(
   limit: number,
   args?: { nonSuspiciousOnly?: boolean },
 ) {
-  const kind = args?.nonSuspiciousOnly
-    ? TRENDING_NON_SUSPICIOUS_LEADERBOARD_KIND
-    : TRENDING_LEADERBOARD_KIND
+  if (args?.nonSuspiciousOnly) {
+    const nonSuspicious = await ctx.db
+      .query('skillLeaderboards')
+      .withIndex('by_kind', (q) => q.eq('kind', TRENDING_NON_SUSPICIOUS_LEADERBOARD_KIND))
+      .order('desc')
+      .take(1)
+
+    if (nonSuspicious[0]) {
+      return nonSuspicious[0].items.slice(0, limit)
+    }
+  }
+
   const latest = await ctx.db
     .query('skillLeaderboards')
-    .withIndex('by_kind', (q) => q.eq('kind', kind))
+    .withIndex('by_kind', (q) => q.eq('kind', TRENDING_LEADERBOARD_KIND))
     .order('desc')
     .take(1)
 
-  if (latest[0]) {
-    return latest[0].items.slice(0, limit)
-  }
-
-  return []
+  return latest[0] ? latest[0].items.slice(0, limit) : []
 }
 
 function normalizePublicListPagination(paginationOpts: {
