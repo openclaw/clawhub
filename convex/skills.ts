@@ -74,6 +74,10 @@ import {
 } from './lib/skillPublish'
 import { getFrontmatterValue, hashSkillFiles } from './lib/skills'
 import { computeIsSuspicious, isSkillSuspicious } from './lib/skillSafety'
+import {
+  TRENDING_LEADERBOARD_KIND,
+  TRENDING_NON_SUSPICIOUS_LEADERBOARD_KIND,
+} from './lib/leaderboards'
 
 export { publishVersionForUser } from './lib/skillPublish'
 
@@ -2537,7 +2541,7 @@ export const report = mutation({
   },
 })
 
-/** @deprecated V1 is gutted — returns empty results with no DB reads. */
+/** Compatibility shim for HTTP API v1 and older CLI consumers. */
 export const listPublicPage = query({
   args: {
     cursor: v.optional(v.string()),
@@ -2554,8 +2558,57 @@ export const listPublicPage = query({
       ),
     ),
   },
-  handler: async () => {
-    return { items: [], nextCursor: null }
+  handler: async (ctx, args) => {
+    const sort = args.sort ?? 'updated'
+    const limit = clampInt(args.limit ?? 24, 1, MAX_PUBLIC_LIST_LIMIT)
+
+    if (sort === 'updated') {
+      const { page, isDone, continueCursor } = await ctx.db
+        .query('skills')
+        .withIndex('by_updated', (q) => q)
+        .order('desc')
+        .paginate({ cursor: args.cursor ?? null, numItems: limit })
+
+      const skills = page.filter((skill) => !skill.softDeletedAt)
+      const items = await buildPublicSkillEntries(
+        ctx,
+        filterPublicSkillPage(skills, { nonSuspiciousOnly: args.nonSuspiciousOnly }),
+      )
+
+      return { items, nextCursor: isDone ? null : continueCursor }
+    }
+
+    if (sort === 'trending') {
+      const entries = await getTrendingEntries(ctx, limit, {
+        nonSuspiciousOnly: args.nonSuspiciousOnly,
+      })
+      const skills: Doc<'skills'>[] = []
+
+      for (const entry of entries) {
+        const skill = await ctx.db.get(entry.skillId)
+        if (!skill || skill.softDeletedAt) continue
+        if (args.nonSuspiciousOnly && isSkillSuspicious(skill)) continue
+        skills.push(skill)
+        if (skills.length >= limit) break
+      }
+
+      const items = await buildPublicSkillEntries(ctx, skills)
+      return { items, nextCursor: null }
+    }
+
+    const index = sortToIndex(sort)
+    const { page, isDone, continueCursor } = await ctx.db
+      .query('skills')
+      .withIndex(index, (q) => q)
+      .order('desc')
+      .paginate({ cursor: args.cursor ?? null, numItems: limit })
+
+    const filtered = filterPublicSkillPage(
+      page.filter((skill) => !skill.softDeletedAt),
+      { nonSuspiciousOnly: args.nonSuspiciousOnly },
+    )
+    const items = await buildPublicSkillEntries(ctx, filtered)
+    return { items, nextCursor: isDone ? null : continueCursor }
   },
 })
 
@@ -2873,6 +2926,46 @@ function filterPublicSkillPage(
     if (args.highlightedOnly && !isSkillHighlighted(skill)) return false
     return true
   })
+}
+
+function sortToIndex(
+  sort: 'downloads' | 'stars' | 'installsCurrent' | 'installsAllTime',
+):
+  | 'by_stats_downloads'
+  | 'by_stats_stars'
+  | 'by_stats_installs_current'
+  | 'by_stats_installs_all_time' {
+  switch (sort) {
+    case 'downloads':
+      return 'by_stats_downloads'
+    case 'stars':
+      return 'by_stats_stars'
+    case 'installsCurrent':
+      return 'by_stats_installs_current'
+    case 'installsAllTime':
+      return 'by_stats_installs_all_time'
+  }
+}
+
+async function getTrendingEntries(
+  ctx: QueryCtx,
+  limit: number,
+  args?: { nonSuspiciousOnly?: boolean },
+) {
+  const kind = args?.nonSuspiciousOnly
+    ? TRENDING_NON_SUSPICIOUS_LEADERBOARD_KIND
+    : TRENDING_LEADERBOARD_KIND
+  const latest = await ctx.db
+    .query('skillLeaderboards')
+    .withIndex('by_kind', (q) => q.eq('kind', kind))
+    .order('desc')
+    .take(1)
+
+  if (latest[0]) {
+    return latest[0].items.slice(0, limit)
+  }
+
+  return []
 }
 
 function normalizePublicListPagination(paginationOpts: {
