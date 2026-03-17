@@ -1,6 +1,6 @@
 import { v } from 'convex/values'
 import { internal } from './_generated/api'
-import type { Doc, Id } from './_generated/dataModel'
+import type { Id } from './_generated/dataModel'
 import { action, internalMutation, internalQuery } from './functions'
 import { assertRole, requireUserFromAction } from './lib/access'
 
@@ -8,21 +8,16 @@ const DEFAULT_BATCH_SIZE = 50
 const MAX_BATCH_SIZE = 200
 const SYNC_STATE_KEY = 'default'
 
-type BackupPageItem =
-  | {
-      kind: 'ok'
-      skillId: Id<'skills'>
-      versionId: Id<'skillVersions'>
-      slug: string
-      displayName: string
-      version: string
-      ownerHandle: string
-      files: Doc<'skillVersions'>['files']
-      publishedAt: number
-    }
-  | { kind: 'missingLatestVersion'; skillId: Id<'skills'> }
-  | { kind: 'missingVersionDoc'; skillId: Id<'skills'>; versionId: Id<'skillVersions'> }
-  | { kind: 'missingOwner'; skillId: Id<'skills'>; ownerUserId: Id<'users'> }
+type BackupPageItem = {
+  kind: 'ok'
+  skillId: Id<'skills'>
+  versionId: Id<'skillVersions'>
+  slug: string
+  displayName: string
+  version: string
+  ownerHandle: string
+  publishedAt: number
+}
 
 type BackupPageResult = {
   items: BackupPageItem[]
@@ -42,7 +37,6 @@ export type SyncGitHubBackupsResult = {
     skillsBackedUp: number
     skillsDeleted: number
     skillsMissingVersion: number
-    skillsMissingOwner: number
     errors: number
   }
   cursor: string | null
@@ -57,56 +51,44 @@ export const getGitHubBackupPageInternal = internalQuery({
   },
   handler: async (ctx, args): Promise<BackupPageResult> => {
     const batchSize = clampInt(args.batchSize ?? DEFAULT_BATCH_SIZE, 1, MAX_BATCH_SIZE)
-    const { page, isDone, continueCursor } = await ctx.db
-      .query('skills')
-      .order('asc')
-      .paginate({ cursor: args.cursor ?? null, numItems: batchSize })
+    let result
+    try {
+      result = await ctx.db
+        .query('skillSearchDigest')
+        .order('asc')
+        .paginate({ cursor: args.cursor ?? null, numItems: batchSize })
+    } catch (err) {
+      // Cursor from a previous table (skills) — restart from beginning
+      console.warn('GitHub backup page cursor reset (possibly stale table cursor):', err)
+      result = await ctx.db
+        .query('skillSearchDigest')
+        .order('asc')
+        .paginate({ cursor: null, numItems: batchSize })
+    }
+    const { page, isDone, continueCursor } = result
 
     const items: BackupPageItem[] = []
-    for (const skill of page) {
-      if (!isPubliclyAvailableSkill(skill)) continue
-      if (!skill.latestVersionId) {
-        items.push({ kind: 'missingLatestVersion', skillId: skill._id })
-        continue
-      }
-
-      const version = await ctx.db.get(skill.latestVersionId)
-      if (!version) {
-        items.push({
-          kind: 'missingVersionDoc',
-          skillId: skill._id,
-          versionId: skill.latestVersionId,
-        })
-        continue
-      }
-
-      const owner = await ctx.db.get(skill.ownerUserId)
-      if (!owner || owner.deletedAt || owner.deactivatedAt) {
-        items.push({ kind: 'missingOwner', skillId: skill._id, ownerUserId: skill.ownerUserId })
-        continue
-      }
+    for (const digest of page) {
+      if (digest.softDeletedAt) continue
+      if (digest.moderationStatus && digest.moderationStatus !== 'active') continue
+      if (!digest.latestVersionId || !digest.latestVersionSummary) continue
+      if (!digest.ownerHandle) continue
 
       items.push({
         kind: 'ok',
-        skillId: skill._id,
-        versionId: version._id,
-        slug: skill.slug,
-        displayName: skill.displayName,
-        version: version.version,
-        ownerHandle: owner.handle ?? owner._id,
-        files: version.files,
-        publishedAt: version.createdAt,
+        skillId: digest.skillId,
+        versionId: digest.latestVersionId,
+        slug: digest.slug,
+        displayName: digest.displayName,
+        version: digest.latestVersionSummary.version,
+        ownerHandle: digest.ownerHandle,
+        publishedAt: digest.latestVersionSummary.createdAt,
       })
     }
 
     return { items, cursor: continueCursor, isDone }
   },
 })
-
-function isPubliclyAvailableSkill(skill: { softDeletedAt?: number; moderationStatus?: string | null }) {
-  if (skill.softDeletedAt) return false
-  return skill.moderationStatus === undefined || skill.moderationStatus === null || skill.moderationStatus === 'active'
-}
 
 export const getGitHubBackupSyncStateInternal = internalQuery({
   args: {},
