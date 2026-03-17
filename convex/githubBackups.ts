@@ -37,7 +37,6 @@ export type SyncGitHubBackupsResult = {
     skillsBackedUp: number
     skillsDeleted: number
     skillsMissingVersion: number
-    skillsMissingOwner: number
     errors: number
   }
   cursor: string | null
@@ -58,8 +57,9 @@ export const getGitHubBackupPageInternal = internalQuery({
         .query('skillSearchDigest')
         .order('asc')
         .paginate({ cursor: args.cursor ?? null, numItems: batchSize })
-    } catch {
+    } catch (err) {
       // Cursor from a previous table (skills) — restart from beginning
+      console.warn('GitHub backup page cursor reset (possibly stale table cursor):', err)
       result = await ctx.db
         .query('skillSearchDigest')
         .order('asc')

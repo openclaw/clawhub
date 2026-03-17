@@ -38,7 +38,6 @@ export type GitHubBackupSyncStats = {
   skillsBackedUp: number
   skillsDeleted: number
   skillsMissingVersion: number
-  skillsMissingOwner: number
   errors: number
 }
 
@@ -93,7 +92,6 @@ export async function syncGitHubBackupsInternalHandler(
     skillsBackedUp: 0,
     skillsDeleted: 0,
     skillsMissingVersion: 0,
-    skillsMissingOwner: 0,
     errors: 0,
   }
 
