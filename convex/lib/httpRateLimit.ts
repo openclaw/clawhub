@@ -152,7 +152,9 @@ async function checkRateLimit(
 
   return {
     allowed: result.allowed,
-    remaining: result.remaining,
+    // Use the query's cross-shard total (accurate) minus 1 for the token we just consumed.
+    // The mutation's remaining is per-shard and would be misleading in response headers.
+    remaining: Math.max(0, status.remaining - 1),
     limit: status.limit,
     resetAt: status.resetAt,
   }
