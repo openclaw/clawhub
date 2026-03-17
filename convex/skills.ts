@@ -108,14 +108,15 @@ const USER_MODERATION_REASON = 'user.moderation'
 
 function buildStructuredModerationPatch(params: {
   staticScan?: Doc<'skillVersions'>['staticScan']
-  vtStatus?: string
-  llmStatus?: string
+  vtAnalysis?: Doc<'skillVersions'>['vtAnalysis']
+  llmAnalysis?: Doc<'skillVersions'>['llmAnalysis']
   sourceVersionId?: Id<'skillVersions'>
 }): Pick<
   Doc<'skills'>,
   | 'moderationVerdict'
   | 'moderationReasonCodes'
   | 'moderationEvidence'
+  | 'moderationSignals'
   | 'moderationSummary'
   | 'moderationEngineVersion'
   | 'moderationEvaluatedAt'
@@ -123,8 +124,8 @@ function buildStructuredModerationPatch(params: {
 > {
   const snapshot = buildModerationSnapshot({
     staticScan: params.staticScan,
-    vtStatus: params.vtStatus,
-    llmStatus: params.llmStatus,
+    vtAnalysis: params.vtAnalysis,
+    llmAnalysis: params.llmAnalysis,
     sourceVersionId: params.sourceVersionId,
   })
 
@@ -136,6 +137,8 @@ function buildStructuredModerationPatch(params: {
     moderationEvidence: snapshot.evidence.length
       ? snapshot.evidence
       : undefined,
+    moderationSignals:
+      Object.keys(snapshot.signals).length > 0 ? snapshot.signals : undefined,
     moderationSummary: snapshot.summary,
     moderationEngineVersion: snapshot.engineVersion,
     moderationEvaluatedAt: snapshot.evaluatedAt,
@@ -172,8 +175,10 @@ function resolveScannerModerationReason(params: {
 
   if (vtStatus === 'malicious') return 'scanner.vt.malicious'
   if (llmStatus === 'malicious') return 'scanner.llm.malicious'
-  if (vtStatus === 'suspicious') return 'scanner.vt.suspicious'
-  if (llmStatus === 'suspicious') return 'scanner.llm.suspicious'
+  if (params.verdict === 'suspicious') {
+    if (vtStatus === 'suspicious') return 'scanner.vt.suspicious'
+    if (llmStatus === 'suspicious') return 'scanner.llm.suspicious'
+  }
   if (
     vtStatus === 'pending' ||
     vtStatus === 'loading' ||
@@ -190,6 +195,58 @@ function resolveScannerModerationReason(params: {
   return 'scanner.aggregate.clean'
 }
 
+function overrideVtAnalysisStatus(
+  vtAnalysis: Doc<'skillVersions'>['vtAnalysis'] | undefined,
+  status: string,
+  checkedAt: number,
+): Doc<'skillVersions'>['vtAnalysis'] {
+  const normalizedStatus = status.trim().toLowerCase()
+  return {
+    status,
+    verdict:
+      normalizedStatus === 'malicious' || normalizedStatus === 'suspicious'
+        ? normalizedStatus
+        : undefined,
+    analysis:
+      normalizedStatus === 'malicious' || normalizedStatus === 'suspicious'
+        ? vtAnalysis?.analysis
+        : undefined,
+    source: vtAnalysis?.source,
+    checkedAt: vtAnalysis?.checkedAt ?? checkedAt,
+  }
+}
+
+function overrideLlmAnalysisStatus(
+  llmAnalysis: Doc<'skillVersions'>['llmAnalysis'] | undefined,
+  status: string,
+  checkedAt: number,
+): Doc<'skillVersions'>['llmAnalysis'] {
+  const normalizedStatus = status.trim().toLowerCase()
+  return {
+    status,
+    verdict:
+      normalizedStatus === 'malicious' || normalizedStatus === 'suspicious'
+        ? normalizedStatus
+        : undefined,
+    confidence:
+      normalizedStatus === 'malicious' || normalizedStatus === 'suspicious'
+        ? llmAnalysis?.confidence
+        : undefined,
+    summary: llmAnalysis?.summary,
+    dimensions: llmAnalysis?.dimensions,
+    guidance:
+      normalizedStatus === 'malicious' || normalizedStatus === 'suspicious'
+        ? llmAnalysis?.guidance
+        : undefined,
+    findings:
+      normalizedStatus === 'malicious' || normalizedStatus === 'suspicious'
+        ? llmAnalysis?.findings
+        : undefined,
+    model: llmAnalysis?.model,
+    checkedAt: llmAnalysis?.checkedAt ?? checkedAt,
+  }
+}
+
 function buildScannerModerationPatchFromVersion(params: {
   owner: Doc<'users'> | null | undefined
   version: Pick<
@@ -200,8 +257,8 @@ function buildScannerModerationPatchFromVersion(params: {
 }): SkillModerationPatch {
   const structuredPatch = buildStructuredModerationPatch({
     staticScan: params.version.staticScan,
-    vtStatus: params.version.vtAnalysis?.status,
-    llmStatus: params.version.llmAnalysis?.status,
+    vtAnalysis: params.version.vtAnalysis,
+    llmAnalysis: params.version.llmAnalysis,
     sourceVersionId: params.version._id,
   })
 
@@ -234,6 +291,7 @@ function buildScannerModerationPatchFromVersion(params: {
       ? moderationReasonCodes
       : undefined,
     moderationEvidence: structuredPatch.moderationEvidence,
+    moderationSignals: structuredPatch.moderationSignals,
     moderationSummary: summarizeReasonCodes(moderationReasonCodes),
     moderationEngineVersion: structuredPatch.moderationEngineVersion,
     moderationEvaluatedAt: structuredPatch.moderationEvaluatedAt,
@@ -256,6 +314,7 @@ function buildPreservedSkillModerationPatch(
   return {
     moderationReasonCodes: skill.moderationReasonCodes,
     moderationEvidence: skill.moderationEvidence,
+    moderationSignals: skill.moderationSignals,
     moderationEngineVersion: skill.moderationEngineVersion,
     moderationSourceVersionId: skill.moderationSourceVersionId,
   }
@@ -636,6 +695,34 @@ function normalizeScannerSuspiciousReason(reason: string | undefined) {
   if (!reason.startsWith('scanner.') || !reason.endsWith('.suspicious'))
     return reason
   return `${reason.slice(0, -'.suspicious'.length)}.clean`
+}
+
+function publicModerationSignals(params: {
+  isOwner: boolean
+  isMalwareBlocked: boolean
+  isSuspicious: boolean
+  signals: Doc<'skills'>['moderationSignals']
+}) {
+  if (params.isOwner) return params.signals
+  if (params.isMalwareBlocked || params.isSuspicious) {
+    if (!params.signals) return undefined
+    return Object.fromEntries(
+      Object.entries(params.signals).flatMap(([key, signal]) =>
+        signal
+          ? [
+              [
+                key,
+                {
+                  ...signal,
+                  details: undefined,
+                },
+              ],
+            ]
+          : [],
+      ),
+    ) as Doc<'skills'>['moderationSignals']
+  }
+  return undefined
 }
 
 async function adjustGlobalPublicCountForSkillChange(
@@ -1073,6 +1160,7 @@ type PublicSkillVersion = {
   sha256hash?: string
   vtAnalysis?: Doc<'skillVersions'>['vtAnalysis']
   llmAnalysis?: Doc<'skillVersions'>['llmAnalysis']
+  moderationSignals?: Doc<'skillVersions'>['moderationSignals']
   staticScan?: {
     status: NonNullable<Doc<'skillVersions'>['staticScan']>['status']
     reasonCodes: NonNullable<Doc<'skillVersions'>['staticScan']>['reasonCodes']
@@ -1254,6 +1342,7 @@ function toPublicSkillVersion(
     sha256hash: version.sha256hash,
     vtAnalysis: version.vtAnalysis,
     llmAnalysis: version.llmAnalysis,
+    moderationSignals: version.moderationSignals,
     staticScan: version.staticScan
       ? {
           status: version.staticScan.status,
@@ -1495,6 +1584,12 @@ export const getBySlug = query({
           overrideActive,
           verdict: skill.moderationVerdict,
           reasonCodes: skill.moderationReasonCodes,
+          signals: publicModerationSignals({
+            isOwner,
+            isMalwareBlocked,
+            isSuspicious,
+            signals: skill.moderationSignals,
+          }),
           summary: publicModerationSummary,
           engineVersion: skill.moderationEngineVersion,
           updatedAt: skill.moderationEvaluatedAt,
@@ -3500,10 +3595,10 @@ export const escalateSkillByIdInternal = internalMutation({
     if (!skill) return
 
     const now = Date.now()
+    const owner = skill.ownerUserId ? await ctx.db.get(skill.ownerUserId) : null
     const version = skill.latestVersionId
       ? await ctx.db.get(skill.latestVersionId)
       : null
-    const owner = skill.ownerUserId ? await ctx.db.get(skill.ownerUserId) : null
     const normalizedReason = args.moderationReason.trim().toLowerCase()
     const reasonMatch = /^scanner\.(vt|llm)\.([^.]+)$/.exec(normalizedReason)
     const vtStatus =
@@ -3516,8 +3611,22 @@ export const escalateSkillByIdInternal = internalMutation({
         : version?.llmAnalysis?.status
     const snapshot = buildModerationSnapshot({
       staticScan: version?.staticScan,
-      vtStatus,
-      llmStatus,
+      vtAnalysis:
+        reasonMatch?.[1] === 'vt'
+          ? overrideVtAnalysisStatus(
+              version?.vtAnalysis,
+              vtStatus ?? version?.vtAnalysis?.status ?? 'pending',
+              now,
+            )
+          : version?.vtAnalysis,
+      llmAnalysis:
+        reasonMatch?.[1] === 'llm'
+          ? overrideLlmAnalysisStatus(
+              version?.llmAnalysis,
+              llmStatus ?? version?.llmAnalysis?.status ?? 'pending',
+              now,
+            )
+          : version?.llmAnalysis,
       sourceVersionId: version?._id,
     })
     const sourceReasonCodes = snapshot.reasonCodes
@@ -3551,6 +3660,8 @@ export const escalateSkillByIdInternal = internalMutation({
       moderationEvidence: snapshot.evidence.length
         ? snapshot.evidence
         : undefined,
+      moderationSignals:
+        Object.keys(snapshot.signals).length > 0 ? snapshot.signals : undefined,
       moderationSummary: summarizeReasonCodes(moderationReasonCodes),
       moderationEngineVersion: snapshot.engineVersion,
       moderationEvaluatedAt: snapshot.evaluatedAt,
@@ -4042,6 +4153,18 @@ export const updateVersionScanResultsInternal = internalMutation({
       patch.vtAnalysis = args.vtAnalysis
     }
 
+    const nextVersion = { ...version, ...patch }
+    const moderationSnapshot = buildModerationSnapshot({
+      staticScan: nextVersion.staticScan,
+      vtAnalysis: nextVersion.vtAnalysis,
+      llmAnalysis: nextVersion.llmAnalysis,
+      sourceVersionId: nextVersion._id,
+    })
+    patch.moderationSignals =
+      Object.keys(moderationSnapshot.signals).length > 0
+        ? moderationSnapshot.signals
+        : undefined
+
     if (Object.keys(patch).length > 0) {
       await ctx.db.patch(args.versionId, patch)
     }
@@ -4076,7 +4199,19 @@ export const updateVersionLlmAnalysisInternal = internalMutation({
     const version = await ctx.db.get(args.versionId)
     if (!version) return
     const nextVersion = { ...version, llmAnalysis: args.llmAnalysis }
-    await ctx.db.patch(args.versionId, { llmAnalysis: args.llmAnalysis })
+    const moderationSnapshot = buildModerationSnapshot({
+      staticScan: nextVersion.staticScan,
+      vtAnalysis: nextVersion.vtAnalysis,
+      llmAnalysis: nextVersion.llmAnalysis,
+      sourceVersionId: nextVersion._id,
+    })
+    await ctx.db.patch(args.versionId, {
+      llmAnalysis: args.llmAnalysis,
+      moderationSignals:
+        Object.keys(moderationSnapshot.signals).length > 0
+          ? moderationSnapshot.signals
+          : undefined,
+    })
 
     const skill = await ctx.db.get(version.skillId)
     if (!skill || skill.latestVersionId !== version._id) return
@@ -4108,50 +4243,9 @@ export const approveSkillByHashInternal = internalMutation({
         ? await ctx.db.get(skill.ownerUserId)
         : null
       const isMalicious = args.status === 'malicious'
-      const isSuspicious = args.status === 'suspicious'
-      const isClean = !isMalicious && !isSuspicious
-
-      // Defense-in-depth: read existing flags to merge scanner results.
-      // The stricter verdict always wins across scanners.
-      const existingFlags: string[] =
-        (skill.moderationFlags as string[] | undefined) ?? []
-      const existingReason: string | undefined = skill.moderationReason as
-        | string
-        | undefined
-      const alreadyBlocked = existingFlags.includes('blocked.malware')
-      const bypassSuspicious =
-        isSuspicious &&
-        !alreadyBlocked &&
-        isPrivilegedOwnerForSuspiciousBypass(owner)
-
-      // Determine new flags based on multi-scanner merge
-      let newFlags: string[] | undefined
-      if (isMalicious || alreadyBlocked) {
-        // Malicious from ANY scanner → blocked.malware (upgrade from suspicious)
-        newFlags = ['blocked.malware']
-      } else if (isSuspicious && !bypassSuspicious) {
-        // Suspicious from this scanner → flagged.suspicious
-        newFlags = ['flagged.suspicious']
-      } else if (isClean) {
-        // Clean from this scanner — only clear if no other scanner has flagged
-        const otherScannerFlagged =
-          existingReason?.startsWith('scanner.') &&
-          !existingReason.startsWith(`scanner.${args.scanner}.`) &&
-          !existingReason.endsWith('.clean') &&
-          !existingReason.endsWith('.pending')
-        newFlags = otherScannerFlagged ? existingFlags : undefined
-      }
-      if (!alreadyBlocked && isPrivilegedOwnerForSuspiciousBypass(owner)) {
-        newFlags = stripSuspiciousFlag(newFlags ?? existingFlags)
-      }
 
       const now = Date.now()
       const qualityLocked = skill.moderationReason === 'quality.low' && !isMalicious
-      const nextModerationReason = qualityLocked
-        ? 'quality.low'
-        : bypassSuspicious
-          ? `scanner.${args.scanner}.clean`
-          : `scanner.${args.scanner}.${args.status}`
       const nextModerationNotes = qualityLocked
         ? (skill.moderationNotes ??
           'Quality gate quarantine is still active. Manual moderation review required.')
@@ -4159,42 +4253,59 @@ export const approveSkillByHashInternal = internalMutation({
       const scanner = args.scanner.trim().toLowerCase()
       const snapshot = buildModerationSnapshot({
         staticScan: version.staticScan,
-        vtStatus: scanner === 'vt' ? args.status : version.vtAnalysis?.status,
-        llmStatus:
-          scanner === 'llm' ? args.status : version.llmAnalysis?.status,
+        vtAnalysis:
+          scanner === 'vt'
+            ? overrideVtAnalysisStatus(version.vtAnalysis, args.status, now)
+            : version.vtAnalysis,
+        llmAnalysis:
+          scanner === 'llm'
+            ? overrideLlmAnalysisStatus(version.llmAnalysis, args.status, now)
+            : version.llmAnalysis,
         sourceVersionId: version._id,
       })
-      const nextReasonCodes =
-        bypassSuspicious && !isMalicious
-          ? snapshot.reasonCodes.filter(
-              (code) => !code.startsWith('suspicious.'),
-            )
-          : snapshot.reasonCodes
+      const nextReasonCodes = snapshot.reasonCodes
       const nextVerdict = verdictFromCodes(nextReasonCodes)
-      const nextLegacyFlags = legacyFlagsFromVerdict(nextVerdict)
+      const sourceReason = resolveScannerModerationReason({
+        vtStatus: scanner === 'vt' ? args.status : version.vtAnalysis?.status,
+        llmStatus: scanner === 'llm' ? args.status : version.llmAnalysis?.status,
+        verdict: nextVerdict,
+      })
+      const bypassSuspicious =
+        nextVerdict === 'suspicious' &&
+        isPrivilegedOwnerForSuspiciousBypass(owner)
+      const effectiveReasonCodes = bypassSuspicious
+        ? nextReasonCodes.filter((code) => !code.startsWith('suspicious.'))
+        : nextReasonCodes
+      const effectiveVerdict = verdictFromCodes(effectiveReasonCodes)
+      const effectiveLegacyFlags = legacyFlagsFromVerdict(effectiveVerdict)
+      const nextModerationReason = qualityLocked
+        ? 'quality.low'
+        : bypassSuspicious
+          ? normalizeScannerSuspiciousReason(sourceReason)
+          : sourceReason
       const nextModerationStatus =
-        nextVerdict === 'malicious' || qualityLocked ? 'hidden' : 'active'
+        effectiveVerdict === 'malicious' || qualityLocked ? 'hidden' : 'active'
 
       const basePatch: SkillModerationPatch = {
         moderationStatus: nextModerationStatus,
         moderationReason: nextModerationReason,
-        moderationFlags: newFlags ?? nextLegacyFlags,
-        moderationVerdict: nextVerdict,
-        moderationReasonCodes: nextReasonCodes.length
-          ? nextReasonCodes
+        moderationFlags: effectiveLegacyFlags,
+        moderationVerdict: effectiveVerdict,
+        moderationReasonCodes: effectiveReasonCodes.length
+          ? effectiveReasonCodes
           : undefined,
         moderationEvidence: snapshot.evidence.length
           ? snapshot.evidence
           : undefined,
-        moderationSummary: summarizeReasonCodes(nextReasonCodes),
+        moderationSignals:
+          Object.keys(snapshot.signals).length > 0 ? snapshot.signals : undefined,
+        moderationSummary: summarizeReasonCodes(effectiveReasonCodes),
         moderationEngineVersion: snapshot.engineVersion,
         moderationEvaluatedAt: snapshot.evaluatedAt,
         moderationSourceVersionId: version._id,
         moderationNotes: nextModerationNotes,
         isSuspicious: computeIsSuspicious({
-          moderationFlags: (newFlags ?? nextLegacyFlags) as
-            | string[]
-            | undefined,
+          moderationFlags: effectiveLegacyFlags as string[] | undefined,
           moderationReason: nextModerationReason,
         }),
         hiddenAt: nextModerationStatus === 'hidden' ? now : undefined,
@@ -4250,48 +4361,42 @@ export const escalateByVtInternal = internalMutation({
     if (!skill) return
 
     const isMalicious = args.status === 'malicious'
-    const existingFlags: string[] =
-      (skill.moderationFlags as string[] | undefined) ?? []
-    const alreadyBlocked = existingFlags.includes('blocked.malware')
     const owner = skill.ownerUserId ? await ctx.db.get(skill.ownerUserId) : null
-    const bypassSuspicious =
-      !isMalicious &&
-      !alreadyBlocked &&
-      isPrivilegedOwnerForSuspiciousBypass(owner)
 
-    // Determine new flags — stricter verdict always wins
-    let newFlags: string[]
-    if (isMalicious || alreadyBlocked) {
-      newFlags = ['blocked.malware']
-    } else if (bypassSuspicious) {
-      newFlags = stripSuspiciousFlag(existingFlags) ?? []
-    } else {
-      newFlags = ['flagged.suspicious']
-    }
-
-    const nextModerationFlags = newFlags.length ? newFlags : undefined
     const snapshot = buildModerationSnapshot({
       staticScan: version.staticScan,
-      vtStatus: args.status,
-      llmStatus: version.llmAnalysis?.status,
+      vtAnalysis: overrideVtAnalysisStatus(version.vtAnalysis, args.status, Date.now()),
+      llmAnalysis: version.llmAnalysis,
       sourceVersionId: version._id,
     })
-    const nextReasonCodes =
-      bypassSuspicious && !isMalicious
-        ? snapshot.reasonCodes.filter((code) => !code.startsWith('suspicious.'))
-        : snapshot.reasonCodes
+    const nextReasonCodes = snapshot.reasonCodes
     const nextVerdict = verdictFromCodes(nextReasonCodes)
+    const bypassSuspicious =
+      nextVerdict === 'suspicious' &&
+      isPrivilegedOwnerForSuspiciousBypass(owner)
+    const effectiveReasonCodes = bypassSuspicious
+      ? nextReasonCodes.filter((code) => !code.startsWith('suspicious.'))
+      : nextReasonCodes
+    const effectiveVerdict = verdictFromCodes(effectiveReasonCodes)
+    const effectiveLegacyFlags = legacyFlagsFromVerdict(effectiveVerdict)
     const now = Date.now()
     const basePatch: SkillModerationPatch = {
-      moderationFlags: nextModerationFlags,
-      moderationVerdict: nextVerdict,
-      moderationReasonCodes: nextReasonCodes.length
-        ? nextReasonCodes
+      moderationFlags: effectiveLegacyFlags,
+      moderationReason: resolveScannerModerationReason({
+        vtStatus: args.status,
+        llmStatus: version.llmAnalysis?.status,
+        verdict: effectiveVerdict,
+      }),
+      moderationVerdict: effectiveVerdict,
+      moderationReasonCodes: effectiveReasonCodes.length
+        ? effectiveReasonCodes
         : undefined,
       moderationEvidence: snapshot.evidence.length
         ? snapshot.evidence
         : undefined,
-      moderationSummary: summarizeReasonCodes(nextReasonCodes),
+      moderationSignals:
+        Object.keys(snapshot.signals).length > 0 ? snapshot.signals : undefined,
+      moderationSummary: summarizeReasonCodes(effectiveReasonCodes),
       moderationEngineVersion: snapshot.engineVersion,
       moderationEvaluatedAt: snapshot.evaluatedAt,
       moderationSourceVersionId: version._id,
@@ -4302,14 +4407,13 @@ export const escalateByVtInternal = internalMutation({
         skill.moderationReason as string | undefined,
       )
     }
-
     // Only hide for malicious — suspicious stays visible with a flag
     if (isMalicious) {
       basePatch.moderationStatus = 'hidden'
     }
 
     basePatch.isSuspicious = computeIsSuspicious({
-      moderationFlags: nextModerationFlags,
+      moderationFlags: (basePatch.moderationFlags ?? undefined) as string[] | undefined,
       moderationReason: (basePatch.moderationReason ??
         skill.moderationReason) as string | undefined,
     })
@@ -5871,6 +5975,10 @@ export const insertVersion = internalMutation({
         moderationEvidence: staticSnapshot.evidence.length
           ? staticSnapshot.evidence
           : undefined,
+        moderationSignals:
+          Object.keys(staticSnapshot.signals).length > 0
+            ? staticSnapshot.signals
+            : undefined,
         moderationSummary: staticSnapshot.summary,
         moderationEngineVersion: staticSnapshot.engineVersion,
         moderationEvaluatedAt: staticSnapshot.evaluatedAt,
@@ -5927,6 +6035,10 @@ export const insertVersion = internalMutation({
       files: args.files,
       parsed: args.parsed,
       staticScan: args.staticScan,
+      moderationSignals:
+        Object.keys(staticSnapshot.signals).length > 0
+          ? staticSnapshot.signals
+          : undefined,
       createdBy: userId,
       createdAt: now,
       softDeletedAt: undefined,
@@ -5955,6 +6067,8 @@ export const insertVersion = internalMutation({
     })
     const moderationSnapshot = buildModerationSnapshot({
       staticScan: args.staticScan,
+      vtAnalysis: undefined,
+      llmAnalysis: undefined,
       sourceVersionId: versionId,
     })
     const nextFlags = Array.from(
@@ -5987,6 +6101,10 @@ export const insertVersion = internalMutation({
       moderationEvidence: moderationSnapshot.evidence.length
         ? moderationSnapshot.evidence
         : undefined,
+      moderationSignals:
+        Object.keys(moderationSnapshot.signals).length > 0
+          ? moderationSnapshot.signals
+          : undefined,
       moderationSummary: moderationSnapshot.summary,
       moderationEngineVersion: moderationSnapshot.engineVersion,
       moderationEvaluatedAt: moderationSnapshot.evaluatedAt,

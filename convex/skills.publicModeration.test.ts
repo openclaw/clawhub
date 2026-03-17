@@ -27,7 +27,9 @@ const getBySlugHandler = (
   }>
 )._handler
 
-function makeCtx() {
+function makeCtx(overrides?: {
+  skill?: Partial<Record<string, unknown>>
+}) {
   const skill = {
     _id: 'skills:1',
     _creationTime: 1,
@@ -56,6 +58,29 @@ function makeCtx() {
     moderationVerdict: 'clean',
     moderationFlags: undefined,
     moderationReasonCodes: ['suspicious.dynamic_code_execution'],
+    moderationSignals: {
+      staticScan: {
+        key: 'staticScan',
+        family: 'local',
+        state: 'ready',
+        verdict: 'suspicious',
+        contribution: 'corroborating',
+        reasonCodes: ['suspicious.dynamic_code_execution'],
+      },
+      llmScan: {
+        key: 'llmScan',
+        family: 'llm',
+        state: 'ready',
+        verdict: 'suspicious',
+        contribution: 'corroborating',
+        reasonCodes: ['suspicious.llm_suspicious'],
+        details: {
+          guidance: 'internal guidance',
+          findings: 'internal findings',
+          model: 'gpt-test',
+        },
+      },
+    },
     moderationSummary: 'Manual override (clean): internal staff note',
     moderationEngineVersion: 'v2.0.0',
     moderationEvaluatedAt: 30,
@@ -65,6 +90,7 @@ function makeCtx() {
       reviewerUserId: 'users:moderator',
       updatedAt: 30,
     },
+    ...overrides?.skill,
   }
 
   const latestVersion = {
@@ -122,12 +148,43 @@ describe('getBySlug public moderation info', () => {
       moderationInfo: {
         overrideActive: boolean
         summary: string | null
+        signals?: unknown
       } | null
     }
 
     expect(result.moderationInfo?.overrideActive).toBe(true)
+    expect(result.moderationInfo?.signals).toBeUndefined()
     expect(result.moderationInfo?.summary).toBe(
       'Security findings were reviewed by staff and cleared for public use.',
     )
+  })
+
+  it('redacts moderation signal details for non-owner suspicious views', async () => {
+    vi.mocked(getAuthUserId).mockResolvedValue(null)
+
+    const { ctx } = makeCtx({
+      skill: {
+        moderationReason: 'scanner.llm.suspicious',
+        moderationVerdict: 'suspicious',
+        moderationFlags: ['flagged.suspicious'],
+        moderationSummary: 'Suspicious behavior detected.',
+        manualOverride: undefined,
+      },
+    })
+    const result = (await getBySlugHandler(ctx, {
+      slug: 'padel',
+    })) as {
+      moderationInfo: {
+        signals?: {
+          llmScan?: {
+            details?: unknown
+            verdict?: string
+          }
+        }
+      } | null
+    }
+
+    expect(result.moderationInfo?.signals?.llmScan?.verdict).toBe('suspicious')
+    expect(result.moderationInfo?.signals?.llmScan?.details).toBeUndefined()
   })
 })

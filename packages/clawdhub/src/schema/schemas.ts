@@ -193,6 +193,7 @@ export const ApiV1SkillResponseSchema = type({
     isMalwareBlocked: 'boolean',
     verdict: '"clean"|"suspicious"|"malicious"?',
     reasonCodes: 'string[]?',
+    signals: 'unknown|null?',
     updatedAt: 'number|null?',
     engineVersion: 'string|null?',
     summary: 'string|null?',
@@ -207,6 +208,7 @@ export const ApiV1SkillModerationResponseSchema = type({
     isMalwareBlocked: 'boolean',
     verdict: '"clean"|"suspicious"|"malicious"',
     reasonCodes: 'string[]',
+    signals: 'unknown|null?',
     updatedAt: 'number|null?',
     engineVersion: 'string|null?',
     summary: 'string|null?',
@@ -240,6 +242,7 @@ export const ApiV1SkillVersionResponseSchema = type({
     changelogSource: '"auto"|"user"|null?',
     license: '"MIT-0"|null?',
     files: 'unknown?',
+    security: 'unknown?',
   }).or('null'),
   skill: type({
     slug: 'string',

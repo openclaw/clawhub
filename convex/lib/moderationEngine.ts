@@ -37,12 +37,48 @@ export type ModerationSnapshot = {
   verdict: ScannerModerationVerdict
   reasonCodes: string[]
   evidence: ModerationFinding[]
+  metadataCodes: string[]
+  signals: ModerationSignals
   summary: string
   engineVersion: string
   evaluatedAt: number
   sourceVersionId?: Id<'skillVersions'>
   legacyFlags?: string[]
 }
+
+export type ModerationSignalState = 'ready' | 'pending' | 'error' | 'not_applicable'
+export type ModerationSignalFamily = 'local' | 'vt' | 'llm' | 'behavioral' | 'trust' | 'manual'
+export type ModerationSignalContribution =
+  | 'decisive'
+  | 'corroborating'
+  | 'suppressed'
+  | 'informational'
+  | 'none'
+export type ModerationSignalKey =
+  | 'staticScan'
+  | 'vtEngines'
+  | 'vtCodeInsight'
+  | 'llmScan'
+  | 'behavioralScan'
+  | 'publisherTrust'
+  | 'manualOverride'
+
+export type ModerationSignalSummary = {
+  key: ModerationSignalKey
+  family: ModerationSignalFamily
+  state: ModerationSignalState
+  verdict?: ModerationVerdict
+  contribution: ModerationSignalContribution
+  reasonCodes: string[]
+  metadataCodes?: string[]
+  suppressedReasonCodes?: string[]
+  summary?: string
+  rationale?: string
+  checkedAt?: number
+  details?: unknown
+}
+
+export type ModerationSignals = Partial<Record<ModerationSignalKey, ModerationSignalSummary>>
 
 const MANIFEST_EXTENSION = /\.(json|yaml|yml|toml)$/i
 const MARKDOWN_EXTENSION = /\.(md|markdown|mdx)$/i
@@ -70,6 +106,80 @@ function hasMaliciousInstallPrompt(content: string) {
 
   return hasBase64Exec || (hasCurlPipe && (hasRawIpUrl || hasInstallerPackage))
 }
+const HTTP_URL_PATTERN = /https?:\/\/([a-z0-9.-]+\.[a-z]{2,})(?::\d+)?/gi
+const SECRET_ENV_PATTERN =
+  /process\.env\.([A-Z0-9_]+)|os\.getenv\(\s*["']([A-Z0-9_]+)["']\s*\)|os\.environ(?:\.get)?\(\s*["']([A-Z0-9_]+)["']\s*\)/g
+const GENERIC_HOST_TOKENS = new Set([
+  'api',
+  'app',
+  'cdn',
+  'com',
+  'co',
+  'dev',
+  'io',
+  'net',
+  'openapi',
+  'org',
+  'stage',
+  'staging',
+  'test',
+  'v1',
+  'v2',
+  'v3',
+  'www',
+])
+const SECRET_ENV_SUFFIXES = [
+  '_API_KEY',
+  '_ACCESS_TOKEN',
+  '_AUTH_TOKEN',
+  '_TOKEN',
+  '_SECRET',
+  '_PASSWORD',
+  '_PASS',
+  '_CREDENTIALS',
+]
+const NON_SECRET_ENV_NAMES = new Set([
+  'HOME',
+  'PATH',
+  'PWD',
+  'SHELL',
+  'BASE_URL',
+  'API_BASE',
+  'API_BASE_URL',
+  'HOST',
+  'PORT',
+  'NODE_ENV',
+])
+const GENERIC_BRAND_TOKENS = new Set([
+  'api',
+  'access',
+  'auth',
+  'bearer',
+  'client',
+  'key',
+  'password',
+  'secret',
+  'service',
+  'session',
+  'token',
+])
+
+type SecretEnvHit = {
+  file: string
+  envName: string
+  brandToken: string
+}
+
+type HostHit = {
+  file: string
+  line: number
+  host: string
+  evidence: string
+  hasCredentialSendContext: boolean
+}
+
+const CREDENTIAL_SEND_CONTEXT_PATTERN =
+  /\b(authorization|bearer|x-api-key|api[_-]?key|access[_-]?token|auth[_-]?token|password|secret)\b/i
 
 function truncateEvidence(evidence: string, maxLen = 160) {
   if (evidence.length <= maxLen) return evidence
@@ -252,6 +362,148 @@ function scanManifestFile(path: string, content: string, findings: ModerationFin
   }
 }
 
+function normalizeBrandToken(value: string) {
+  return value.toLowerCase().replace(/[^a-z0-9]/g, '')
+}
+
+function tokenizeHost(host: string) {
+  return host
+    .toLowerCase()
+    .split('.')
+    .flatMap((segment) => segment.split(/[^a-z0-9]+/))
+    .map((token) => token.trim())
+    .filter((token) => token.length >= 3 && !GENERIC_HOST_TOKENS.has(token))
+}
+
+function extractHosts(path: string, content: string): HostHit[] {
+  const hits: HostHit[] = []
+  const lines = content.split('\n')
+  for (let index = 0; index < lines.length; index += 1) {
+    const line = lines[index]
+    let match: RegExpExecArray | null
+    HTTP_URL_PATTERN.lastIndex = 0
+    while ((match = HTTP_URL_PATTERN.exec(line)) !== null) {
+      hits.push({
+        file: path,
+        line: index + 1,
+        host: match[1].toLowerCase(),
+        evidence: line,
+        hasCredentialSendContext: hasCredentialSendContext(lines, index),
+      })
+    }
+  }
+  return hits
+}
+
+function hasCredentialSendContext(lines: string[], lineIndex: number) {
+  const sameLine = lines[lineIndex] ?? ''
+  if (CREDENTIAL_SEND_CONTEXT_PATTERN.test(sameLine)) return true
+
+  const nextLine = lines[lineIndex + 1] ?? ''
+  if (CREDENTIAL_SEND_CONTEXT_PATTERN.test(nextLine)) return true
+
+  return false
+}
+
+function extractSecretEnvHits(path: string, content: string): SecretEnvHit[] {
+  const hits: SecretEnvHit[] = []
+  let match: RegExpExecArray | null
+  SECRET_ENV_PATTERN.lastIndex = 0
+  while ((match = SECRET_ENV_PATTERN.exec(content)) !== null) {
+    const envName = (match[1] ?? match[2] ?? match[3] ?? '').trim()
+    if (!envName || NON_SECRET_ENV_NAMES.has(envName)) continue
+    const suffix = SECRET_ENV_SUFFIXES.find((value) => envName.endsWith(value))
+    if (!suffix) continue
+    const brandToken = normalizeBrandToken(envName.slice(0, -suffix.length))
+    if (!brandToken) continue
+    if (GENERIC_BRAND_TOKENS.has(brandToken)) continue
+    hits.push({ file: path, envName, brandToken })
+  }
+  return hits
+}
+
+function hostMatchesBrand(host: string, brandToken: string) {
+  if (!brandToken) return false
+  return tokenizeHost(host).some((token) => token.includes(brandToken) || brandToken.includes(token))
+}
+
+function findCredentialEndpointMismatch(input: StaticScanInput): HostHit | null {
+  const codeHosts: HostHit[] = []
+  const advertisedHosts = new Set<string>()
+  const secretEnvHitsByFile = new Map<string, SecretEnvHit[]>()
+  const codeHostCountsByFile = new Map<string, Set<string>>()
+
+  for (const file of input.fileContents) {
+    if (CODE_EXTENSION.test(file.path)) {
+      const fileHosts = extractHosts(file.path, file.content)
+      codeHosts.push(...fileHosts)
+      const secretEnvHits = extractSecretEnvHits(file.path, file.content)
+      codeHostCountsByFile.set(
+        file.path,
+        new Set(fileHosts.map((hit) => hit.host)),
+      )
+      if (secretEnvHits.length > 0) {
+        secretEnvHitsByFile.set(file.path, secretEnvHits)
+      }
+      continue
+    }
+
+    for (const hit of extractHosts(file.path, file.content)) {
+      advertisedHosts.add(hit.host)
+    }
+  }
+
+  const homepage = typeof input.frontmatter.homepage === 'string' ? input.frontmatter.homepage : undefined
+  if (homepage) {
+    for (const hit of extractHosts('frontmatter', homepage)) {
+      advertisedHosts.add(hit.host)
+    }
+  }
+
+  if (secretEnvHitsByFile.size === 0 || codeHosts.length === 0) return null
+  const bundleHostCount = new Set(codeHosts.map((hit) => hit.host)).size
+
+  for (const endpoint of codeHosts) {
+    const fileHostCount = codeHostCountsByFile.get(endpoint.file)?.size ?? 0
+    if (!endpoint.hasCredentialSendContext || fileHostCount > 1) continue
+    const sameFileSecretEnvHits = secretEnvHitsByFile.get(endpoint.file) ?? []
+    const secretEnvHits =
+      sameFileSecretEnvHits.length > 0
+        ? sameFileSecretEnvHits
+        : bundleHostCount === 1
+          ? [...secretEnvHitsByFile.values()].flat().filter((secretEnv) =>
+              normalizeBrandToken(endpoint.file).includes(secretEnv.brandToken),
+            )
+          : []
+    if (secretEnvHits.length === 0) continue
+
+    for (const secretEnv of secretEnvHits) {
+      if (hostMatchesBrand(endpoint.host, secretEnv.brandToken)) continue
+
+      const codebaseContainsBrandHost = codeHosts.some((hostHit) =>
+        hostMatchesBrand(hostHit.host, secretEnv.brandToken),
+      )
+      if (codebaseContainsBrandHost) continue
+
+      const hasAdvertisedMatch =
+        Array.from(advertisedHosts).some((host) => hostMatchesBrand(host, secretEnv.brandToken)) ||
+        normalizeBrandToken(input.slug).includes(secretEnv.brandToken) ||
+        normalizeBrandToken(input.displayName).includes(secretEnv.brandToken)
+
+      if (!hasAdvertisedMatch) continue
+
+      const endpointMatchesAdvertised = Array.from(advertisedHosts).some(
+        (host) => host === endpoint.host || tokenizeHost(host).some((token) => endpoint.host.includes(token)),
+      )
+
+      if (endpointMatchesAdvertised) continue
+      return endpoint
+    }
+  }
+
+  return null
+}
+
 function dedupeEvidence(evidence: ModerationFinding[]) {
   const seen = new Set<string>()
   const out: ModerationFinding[] = []
@@ -264,13 +516,15 @@ function dedupeEvidence(evidence: ModerationFinding[]) {
   return out.slice(0, 40)
 }
 
-function addScannerStatusReason(reasonCodes: string[], scanner: 'vt' | 'llm', status?: string) {
+function buildScannerStatusReason(scanner: 'vt' | 'llm', status?: string) {
   const normalized = status?.trim().toLowerCase()
   if (normalized === 'malicious') {
-    reasonCodes.push(`malicious.${scanner}_malicious`)
-  } else if (normalized === 'suspicious') {
-    reasonCodes.push(`suspicious.${scanner}_suspicious`)
+    return `malicious.${scanner}_malicious`
   }
+  if (normalized === 'suspicious') {
+    return `suspicious.${scanner}_suspicious`
+  }
+  return null
 }
 
 export function runStaticModerationScan(input: StaticScanInput): StaticScanResult {
@@ -292,6 +546,18 @@ export function runStaticModerationScan(input: StaticScanInput): StaticScanResul
       line: 1,
       message: 'Install metadata references shortener URL.',
       evidence: installJson,
+    })
+  }
+
+  const credentialEndpointMismatch = findCredentialEndpointMismatch(input)
+  if (credentialEndpointMismatch) {
+    addFinding(findings, {
+      code: REASON_CODES.CREDENTIAL_ENDPOINT_MISMATCH,
+      severity: 'critical',
+      file: credentialEndpointMismatch.file,
+      line: credentialEndpointMismatch.line,
+      message: 'Credential for one provider is sent to an unrelated host.',
+      evidence: credentialEndpointMismatch.evidence,
     })
   }
 
@@ -337,41 +603,225 @@ export function runStaticModerationScan(input: StaticScanInput): StaticScanResul
   }
 }
 
+function normalizeSignalVerdict(status?: string | null): ModerationVerdict | null {
+  const normalized = status?.trim().toLowerCase()
+  if (normalized === 'clean' || normalized === 'benign') return 'clean'
+  if (normalized === 'suspicious') return 'suspicious'
+  if (normalized === 'malicious') return 'malicious'
+  return null
+}
+
+function normalizeSignalState(status?: string | null): ModerationSignalState {
+  const normalized = status?.trim().toLowerCase()
+  if (normalized === 'clean' || normalized === 'benign') return 'ready'
+  if (normalized === 'suspicious' || normalized === 'malicious') return 'ready'
+  if (normalized === 'completed') return 'ready'
+  if (normalized === 'error' || normalized === 'failed') {
+    return 'error'
+  }
+  if (
+    normalized === 'pending' ||
+    normalized === 'loading' ||
+    normalized === 'not_found' ||
+    normalized === 'not-found' ||
+    normalized === 'stale'
+  ) {
+    return 'pending'
+  }
+  return 'not_applicable'
+}
+
 function isExternalScannerClean(status: string | undefined): boolean {
   const normalized = status?.trim().toLowerCase()
   return normalized === 'clean' || normalized === 'benign'
 }
 
-export function buildModerationSnapshot(params: {
+function buildStaticSignal(params: {
   staticScan?: StaticScanResult
   vtStatus?: string
   llmStatus?: string
-  sourceVersionId?: Id<'skillVersions'>
-}): ModerationSnapshot {
-  let staticCodes = [...(params.staticScan?.reasonCodes ?? [])]
-  const evidence = [...(params.staticScan?.findings ?? [])]
+}): ModerationSignalSummary | undefined {
+  if (!params.staticScan) return undefined
 
-  // When both external scanners (VT + LLM) explicitly report clean/benign,
-  // only suppress allowlisted false-positive static codes from the verdict calculation.
-  // Everything else remains part of the moderation decision.
   const vtClean = isExternalScannerClean(params.vtStatus)
   const llmClean = isExternalScannerClean(params.llmStatus)
-  if (vtClean && llmClean && staticCodes.length > 0) {
-    staticCodes = staticCodes.filter(
+  const originalCodes = [...params.staticScan.reasonCodes]
+  let securityCodes = [...originalCodes]
+  let suppressedReasonCodes: string[] = []
+
+  if (vtClean && llmClean && securityCodes.length > 0) {
+    suppressedReasonCodes = securityCodes.filter((code) =>
+      isExternallyClearableSuspiciousCode(code),
+    )
+    securityCodes = securityCodes.filter(
       (code) => !isExternallyClearableSuspiciousCode(code),
     )
   }
 
-  const reasonCodes = [...staticCodes]
-  addScannerStatusReason(reasonCodes, 'vt', params.vtStatus)
-  addScannerStatusReason(reasonCodes, 'llm', params.llmStatus)
+  const verdict = verdictFromCodes(securityCodes)
+  const contribution =
+    securityCodes.length === 0
+      ? suppressedReasonCodes.length > 0
+        ? 'suppressed'
+        : 'informational'
+      : verdict === 'malicious'
+        ? 'decisive'
+        : 'corroborating'
 
-  const normalizedCodes = normalizeReasonCodes(reasonCodes)
-  const verdict = verdictFromCodes(normalizedCodes)
+  return {
+    key: 'staticScan',
+    family: 'local',
+    state: 'ready',
+    verdict,
+    contribution,
+    reasonCodes: securityCodes,
+    suppressedReasonCodes: suppressedReasonCodes.length ? suppressedReasonCodes : undefined,
+    summary: summarizeReasonCodes(securityCodes),
+    checkedAt: params.staticScan.checkedAt,
+  }
+}
+
+function buildVtSignals(
+  vtAnalysis?: Doc<'skillVersions'>['vtAnalysis'],
+): Pick<ModerationSignals, 'vtEngines' | 'vtCodeInsight'> {
+  if (!vtAnalysis) return {}
+
+  const isCodeInsight =
+    vtAnalysis.source === 'code_insight' ||
+    (!vtAnalysis.source && Boolean(vtAnalysis.analysis || vtAnalysis.verdict))
+  const key = isCodeInsight ? 'vtCodeInsight' : 'vtEngines'
+  const verdict = normalizeSignalVerdict(vtAnalysis.verdict ?? vtAnalysis.status)
+  const state = normalizeSignalState(vtAnalysis.verdict ?? vtAnalysis.status)
+  const reasonCode = buildScannerStatusReason('vt', verdict ?? undefined)
+
+  const signal: ModerationSignalSummary = {
+    key,
+    family: 'vt',
+    state,
+    verdict: verdict ?? undefined,
+    contribution:
+      state !== 'ready'
+        ? 'none'
+        : verdict === 'malicious'
+          ? 'decisive'
+          : verdict === 'suspicious'
+            ? 'corroborating'
+            : 'informational',
+    reasonCodes: reasonCode ? [reasonCode] : [],
+    summary:
+      verdict === 'clean'
+        ? 'VirusTotal reported clean.'
+        : verdict === 'suspicious'
+          ? 'VirusTotal reported suspicious behavior.'
+          : verdict === 'malicious'
+            ? 'VirusTotal reported malicious behavior.'
+            : undefined,
+    checkedAt: vtAnalysis.checkedAt,
+    details: {
+      source: vtAnalysis.source,
+      analysis: vtAnalysis.analysis,
+      status: vtAnalysis.status,
+      verdict: vtAnalysis.verdict,
+    },
+  }
+
+  return key === 'vtCodeInsight' ? { vtCodeInsight: signal } : { vtEngines: signal }
+}
+
+function buildLlmSignal(llmAnalysis?: Doc<'skillVersions'>['llmAnalysis']): ModerationSignalSummary | undefined {
+  if (!llmAnalysis) return undefined
+
+  const verdict = normalizeSignalVerdict(llmAnalysis.verdict ?? llmAnalysis.status)
+  const state = normalizeSignalState(llmAnalysis.verdict ?? llmAnalysis.status)
+  const reasonCode = buildScannerStatusReason('llm', verdict ?? undefined)
+  const normalizedConfidence = llmAnalysis.confidence?.trim().toLowerCase()
+
+  let contribution: ModerationSignalContribution = 'none'
+  if (state === 'ready') {
+    if (verdict === 'malicious') {
+      contribution = 'decisive'
+    } else if (verdict === 'suspicious') {
+      contribution =
+        normalizedConfidence === 'low'
+          ? 'informational'
+          : 'corroborating'
+    } else if (verdict === 'clean') {
+      contribution = 'informational'
+    }
+  }
+
+  return {
+    key: 'llmScan',
+    family: 'llm',
+    state,
+    verdict: verdict ?? undefined,
+    contribution,
+    reasonCodes: reasonCode ? [reasonCode] : [],
+    summary: llmAnalysis.summary ?? undefined,
+    checkedAt: llmAnalysis.checkedAt,
+    details: {
+      confidence: llmAnalysis.confidence,
+      dimensions: llmAnalysis.dimensions,
+      guidance: llmAnalysis.guidance,
+      findings: llmAnalysis.findings,
+      model: llmAnalysis.model,
+      status: llmAnalysis.status,
+      verdict: llmAnalysis.verdict,
+    },
+  }
+}
+
+function collectContributingSignals(signals: ModerationSignals) {
+  return Object.values(signals).filter(
+    (signal): signal is ModerationSignalSummary =>
+      Boolean(signal) &&
+      signal.state === 'ready' &&
+      (signal.contribution === 'decisive' || signal.contribution === 'corroborating') &&
+      (signal.verdict === 'suspicious' || signal.verdict === 'malicious'),
+  )
+}
+
+export function buildModerationSnapshot(params: {
+  staticScan?: StaticScanResult
+  vtAnalysis?: Doc<'skillVersions'>['vtAnalysis']
+  llmAnalysis?: Doc<'skillVersions'>['llmAnalysis']
+  sourceVersionId?: Id<'skillVersions'>
+}): ModerationSnapshot {
+  const evidence = [...(params.staticScan?.findings ?? [])]
+  const signals: ModerationSignals = {
+    staticScan: buildStaticSignal({
+      staticScan: params.staticScan,
+      vtStatus: params.vtAnalysis?.verdict ?? params.vtAnalysis?.status,
+      llmStatus: params.llmAnalysis?.verdict ?? params.llmAnalysis?.status,
+    }),
+    ...buildVtSignals(params.vtAnalysis),
+    llmScan: buildLlmSignal(params.llmAnalysis),
+  }
+
+  const contributingSignals = collectContributingSignals(signals)
+  const contributorFamilies = new Set(contributingSignals.map((signal) => signal.family))
+  const hasDecisiveMaliciousSignal = contributingSignals.some(
+    (signal) => signal.verdict === 'malicious' && signal.contribution === 'decisive',
+  )
+  const contributingReasonCodes = normalizeReasonCodes(
+    contributingSignals.flatMap((signal) => signal.reasonCodes),
+  )
+  const metadataCodes = normalizeReasonCodes(
+    Object.values(signals).flatMap((signal) => signal?.metadataCodes ?? []),
+  )
+  const verdict: ScannerModerationVerdict = hasDecisiveMaliciousSignal
+    ? 'malicious'
+    : contributorFamilies.size >= 2
+      ? 'suspicious'
+      : 'clean'
+  const normalizedCodes = verdict === 'clean' ? [] : contributingReasonCodes
+
   return {
     verdict,
     reasonCodes: normalizedCodes,
     evidence: dedupeEvidence(evidence),
+    metadataCodes,
+    signals,
     summary: summarizeReasonCodes(normalizedCodes),
     engineVersion: MODERATION_ENGINE_VERSION,
     evaluatedAt: Date.now(),
