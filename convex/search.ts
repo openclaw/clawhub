@@ -200,7 +200,25 @@ export const searchSkills: ReturnType<typeof action> = action({
             nonSuspiciousOnly: args.nonSuspiciousOnly,
           })) as SkillSearchEntry[])
 
-    const mergedMatches = mergeUniqueBySkillId(exactMatches, fallbackMatches)
+    let mergedMatches = mergeUniqueBySkillId(exactMatches, fallbackMatches)
+
+    // Ensure an exact slug match is always recalled, even when the vector
+    // candidate pool and lexical fallback both missed it.  The candidate
+    // slug is reconstructed from query tokens (e.g. "ima all ai" → "ima-all-ai").
+    const candidateSlug = queryTokens.join('-')
+    if (
+      /^[a-z0-9][a-z0-9-]*$/.test(candidateSlug) &&
+      !mergedMatches.some((e) => e.skill.slug === candidateSlug)
+    ) {
+      const exactSlugEntry = (await ctx.runQuery(internal.search.lookupExactSlug, {
+        slug: candidateSlug,
+        highlightedOnly: args.highlightedOnly,
+        nonSuspiciousOnly: args.nonSuspiciousOnly,
+      })) as SkillSearchEntry | null
+      if (exactSlugEntry) {
+        mergedMatches = [exactSlugEntry, ...mergedMatches]
+      }
+    }
 
     return mergedMatches
       .map((entry) => {
@@ -271,6 +289,36 @@ export const hydrateResults = internalQuery({
     )
 
     return entries.filter((entry): entry is SkillSearchEntry => entry !== null)
+  },
+})
+
+export const lookupExactSlug = internalQuery({
+  args: {
+    slug: v.string(),
+    highlightedOnly: v.optional(v.boolean()),
+    nonSuspiciousOnly: v.optional(v.boolean()),
+  },
+  handler: async (ctx, args): Promise<SkillSearchEntry | null> => {
+    const slug = args.slug.trim().toLowerCase()
+    if (!/^[a-z0-9][a-z0-9-]*$/.test(slug)) return null
+    const skill = await ctx.db
+      .query('skills')
+      .withIndex('by_slug', (q) => q.eq('slug', slug))
+      .unique()
+    if (!skill || skill.softDeletedAt) return null
+    if (args.nonSuspiciousOnly && isSkillSuspicious(skill)) return null
+    if (args.highlightedOnly && !isSkillHighlighted(skill)) return null
+    const publicSkill = toPublicSkill(skill)
+    if (!publicSkill) return null
+    const getOwnerInfo = makeOwnerInfoGetter(ctx)
+    const resolved = await getOwnerInfo(skill.ownerUserId)
+    if (!resolved.owner) return null
+    return {
+      skill: publicSkill,
+      version: null as Doc<'skillVersions'> | null,
+      ownerHandle: resolved.ownerHandle,
+      owner: resolved.owner,
+    }
   },
 })
 
