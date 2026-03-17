@@ -91,6 +91,45 @@ describe('skills.listPublicPage', () => {
     expect(result.items.map((entry) => entry.skill.slug)).toEqual(['clean', 'suspicious'])
   })
 
+  it.each([
+    ['downloads', 'by_stats_downloads'],
+    ['stars', 'by_stats_stars'],
+    ['installsCurrent', 'by_stats_installs_current'],
+    ['installsAllTime', 'by_stats_installs_all_time'],
+  ] as const)('uses %s compatibility index', async (sort, index) => {
+    const clean = makeSkill('skills:clean', 'clean', 'users:1', 'skillVersions:1')
+    const suspicious = makeSkill(
+      'skills:suspicious',
+      'suspicious',
+      'users:2',
+      'skillVersions:2',
+      ['flagged.suspicious'],
+    )
+
+    const paginateMock = vi.fn().mockResolvedValue({
+      page: [clean, suspicious],
+      continueCursor: 'next',
+      isDone: false,
+    })
+    const ctx = makeCtx({
+      by_updated: vi.fn(),
+      by_index: { [index]: paginateMock },
+      users: [makeUser('users:1'), makeUser('users:2')],
+      versions: [makeVersion('skillVersions:1'), makeVersion('skillVersions:2')],
+    })
+
+    const result = await listPublicPageHandler(ctx, {
+      sort,
+      limit: 10,
+      nonSuspiciousOnly: true,
+    })
+
+    expect(result.items).toHaveLength(1)
+    expect(result.items[0]?.skill.slug).toBe('clean')
+    expect(result.nextCursor).toBe('next')
+    expect(paginateMock).toHaveBeenCalledWith({ cursor: null, numItems: 10 })
+  })
+
   it('backfills clean trending skills when nonSuspiciousOnly is enabled', async () => {
     const suspicious1 = makeSkill(
       'skills:suspicious1',
@@ -133,6 +172,36 @@ describe('skills.listPublicPage', () => {
     expect(result.nextCursor).toBeNull()
   })
 
+  it('falls back to the general trending leaderboard when the non-suspicious cache is missing', async () => {
+    const suspicious = makeSkill(
+      'skills:suspicious',
+      'suspicious',
+      'users:1',
+      'skillVersions:1',
+      ['flagged.suspicious'],
+    )
+    const clean = makeSkill('skills:clean', 'clean', 'users:2', 'skillVersions:2')
+
+    const ctx = makeTrendingCtx({
+      leaderboards: {
+        trending: [suspicious._id, clean._id],
+      },
+      skills: [suspicious, clean],
+      users: [makeUser('users:1'), makeUser('users:2')],
+      versions: [makeVersion('skillVersions:1'), makeVersion('skillVersions:2')],
+    })
+
+    const result = await listPublicPageHandler(ctx, {
+      sort: 'trending',
+      limit: 1,
+      nonSuspiciousOnly: true,
+    })
+
+    expect(result.items).toHaveLength(1)
+    expect(result.items[0]?.skill.slug).toBe('clean')
+    expect(result.nextCursor).toBeNull()
+  })
+
   it('returns an empty trending page when no cached leaderboard exists yet', async () => {
     const ctx = makeTrendingCtx({
       leaderboards: {},
@@ -154,10 +223,12 @@ describe('skills.listPublicPage', () => {
 
 function makeCtx({
   by_updated,
+  by_index,
   users,
   versions,
 }: {
   by_updated: ReturnType<typeof vi.fn>
+  by_index?: Record<string, ReturnType<typeof vi.fn>>
   users: Array<ReturnType<typeof makeUser>>
   versions: Array<ReturnType<typeof makeVersion>>
 }) {
@@ -169,11 +240,12 @@ function makeCtx({
         if (table !== 'skills') throw new Error(`unexpected table ${table}`)
         return {
           withIndex: vi.fn((index: string, _builder: unknown) => {
-            if (index !== 'by_updated') throw new Error(`unexpected index ${index}`)
+            const paginate = index === 'by_updated' ? by_updated : by_index?.[index]
+            if (!paginate) throw new Error(`unexpected index ${index}`)
             return {
               order: vi.fn((dir: string) => {
                 if (dir !== 'desc') throw new Error(`unexpected order ${dir}`)
-                return { paginate: by_updated }
+                return { paginate }
               }),
             }
           }),
