@@ -60,7 +60,8 @@
     "tailwind-merge": "^3.5.0",
     "tailwindcss": "^4.2.1",
     "vite-tsconfig-paths": "^6.1.1",
-    "yaml": "^2.8.2"
+    "yaml": "^2.8.2",
+    "undici": "^7.24.3"
   },
   "devDependencies": {
     "@playwright/test": "^1.58.2",
@@ -79,7 +80,6 @@
     "oxlint": "^1.55.0",
     "oxlint-tsgolint": "^0.17.0",
     "typescript": "^5.9.3",
-    "undici": "^7.24.3",
     "vite": "7.3.1",
     "vitest": "^4.1.0"
   }
