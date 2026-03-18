@@ -3449,10 +3449,28 @@ html.theme-transition::view-transition-new(theme) {
 
 .dashboard-skill-stats {
   display: flex;
-  gap: 12px;
-  margin-top: 8px;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-top: 14px;
+}
+
+.dashboard-skill-stat {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 10px;
+  border-radius: 999px;
+  border: 1px solid var(--line);
+  background: color-mix(in srgb, var(--surface) 82%, var(--bg-glow-1));
+  color: var(--ink-soft);
   font-size: 0.8rem;
-  color: var(--color-muted);
+  line-height: 1;
+  white-space: nowrap;
+}
+
+.dashboard-skill-stat-icon {
+  flex: 0 0 auto;
+  color: var(--accent);
 }
 
 .dashboard-skill-actions {

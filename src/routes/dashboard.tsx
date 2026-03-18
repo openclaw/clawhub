@@ -1,6 +1,6 @@
 import { createFileRoute, Link } from '@tanstack/react-router'
 import { useQuery } from 'convex/react'
-import { Clock, Package, Plus, Upload } from 'lucide-react'
+import { Clock, Layers3, Package, Plus, Star, Upload } from 'lucide-react'
 import { api } from '../../convex/_generated/api'
 import type { Doc } from '../../convex/_generated/dataModel'
 import { formatCompactStat } from '../lib/numberFormat'
@@ -85,11 +85,18 @@ function SkillCard({ skill, ownerHandle }: { skill: DashboardSkill; ownerHandle:
         </div>
         {skill.summary && <p className="dashboard-skill-description">{skill.summary}</p>}
         <div className="dashboard-skill-stats">
-          <span>
-            <Package size={13} aria-hidden="true" /> {formatCompactStat(skill.stats.downloads)}
+          <span className="dashboard-skill-stat">
+            <Package className="dashboard-skill-stat-icon" size={13} aria-hidden="true" />
+            <span>{formatCompactStat(skill.stats.downloads)}</span>
           </span>
-          <span>★ {formatCompactStat(skill.stats.stars)}</span>
-          <span>{skill.stats.versions} v</span>
+          <span className="dashboard-skill-stat">
+            <Star className="dashboard-skill-stat-icon" size={13} aria-hidden="true" />
+            <span>{formatCompactStat(skill.stats.stars)}</span>
+          </span>
+          <span className="dashboard-skill-stat">
+            <Layers3 className="dashboard-skill-stat-icon" size={13} aria-hidden="true" />
+            <span>{skill.stats.versions} v</span>
+          </span>
         </div>
       </div>
       <div className="dashboard-skill-actions">
