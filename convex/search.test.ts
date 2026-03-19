@@ -469,6 +469,25 @@ describe("search helpers", () => {
     expect(result[0].skill.slug).toBe("video-gen");
   });
 
+  it("lexical fallback matches CJK tokens in skill metadata", async () => {
+    const cjkSkill = makeSkillDoc({
+      id: "skills:cjk",
+      slug: "video-gen-tool",
+      displayName: "视频生成工具",
+    });
+
+    const result = await lexicalFallbackSkillsHandler(
+      makeLexicalCtx({
+        exactSlugSkill: null,
+        recentSkills: [cjkSkill],
+      }),
+      { query: "视频生成", queryTokens: tokenize("视频生成"), limit: 10 },
+    );
+
+    expect(result).toHaveLength(1);
+    expect(result[0].skill.slug).toBe("video-gen-tool");
+  });
+
   it("advances candidate limit until max", () => {
     expect(__test.getNextCandidateLimit(50, 1000)).toBe(100);
     expect(__test.getNextCandidateLimit(800, 1000)).toBe(1000);

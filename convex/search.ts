@@ -187,6 +187,23 @@ export const searchSkills: ReturnType<typeof action> = action({
         vectorScoreThreshold = Math.max(0.2, topVectorScore * 0.5);
       }
 
+      // Cache tokenized metadata per entry to avoid redundant Intl.Segmenter calls
+      // across loop iterations (hydrated accumulates entries from prior passes).
+      const textTokenCache = new Map<string, string[]>();
+      const getTextTokens = (entry: SkillSearchEntry): string[] => {
+        const key = entry.skill._id;
+        let cached = textTokenCache.get(key);
+        if (!cached) {
+          cached = tokenize(
+            [entry.skill.displayName, entry.skill.slug, entry.skill.summary]
+              .filter(Boolean)
+              .join(" "),
+          );
+          textTokenCache.set(key, cached);
+        }
+        return cached;
+      };
+
       exactMatches = filtered.filter((entry) => {
         // Standard ASCII token prefix matching (unchanged behavior for Latin queries)
         if (filterTokens.length > 0) {
@@ -202,11 +219,7 @@ export const searchSkills: ReturnType<typeof action> = action({
         }
         // Non-ASCII token matching: check if skill metadata contains matching non-ASCII tokens
         if (hasNonAsciiTokens) {
-          const textTokens = tokenize(
-            [entry.skill.displayName, entry.skill.slug, entry.skill.summary]
-              .filter(Boolean)
-              .join(" "),
-          );
+          const textTokens = getTextTokens(entry);
           const hasNonAsciiMatch = nonAsciiQueryTokens.some((qt) =>
             textTokens.some((tt) => tt.startsWith(qt)),
           );
@@ -233,7 +246,7 @@ export const searchSkills: ReturnType<typeof action> = action({
         ? []
         : ((await ctx.runQuery(internal.search.lexicalFallbackSkills, {
             query,
-            queryTokens: filterTokens,
+            queryTokens,
             limit: Math.min(Math.max(limit * 4, 200), FALLBACK_SCAN_LIMIT),
             highlightedOnly: args.highlightedOnly,
             nonSuspiciousOnly: args.nonSuspiciousOnly,
@@ -458,6 +471,22 @@ export const searchSouls: ReturnType<typeof action> = action({
         vectorScoreThreshold = Math.max(0.2, topVectorScore * 0.5);
       }
 
+      // Cache tokenized metadata to avoid redundant Segmenter calls across iterations.
+      const soulTextTokenCache = new Map<string, string[]>();
+      const getSoulTextTokens = (entry: HydratedSoulEntry): string[] => {
+        const key = entry.embeddingId;
+        let cached = soulTextTokenCache.get(key);
+        if (!cached) {
+          cached = tokenize(
+            [entry.soul.displayName, entry.soul.slug, entry.soul.summary]
+              .filter(Boolean)
+              .join(" "),
+          );
+          soulTextTokenCache.set(key, cached);
+        }
+        return cached;
+      };
+
       exactMatches = hydrated.filter((entry) => {
         if (filterTokens.length > 0) {
           if (
@@ -471,11 +500,7 @@ export const searchSouls: ReturnType<typeof action> = action({
           }
         }
         if (hasNonAsciiTokens) {
-          const textTokens = tokenize(
-            [entry.soul.displayName, entry.soul.slug, entry.soul.summary]
-              .filter(Boolean)
-              .join(" "),
-          );
+          const textTokens = getSoulTextTokens(entry);
           const hasNonAsciiMatch = nonAsciiQueryTokens.some((qt) =>
             textTokens.some((tt) => tt.startsWith(qt)),
           );

@@ -13,6 +13,12 @@ describe("searchText", () => {
     ]);
   });
 
+  it("tokenize splits ASCII tokens on underscores and dots like legacy regex", () => {
+    expect(tokenize("hello_world")).toEqual(["hello", "world"]);
+    expect(tokenize("foo.bar")).toEqual(["foo", "bar"]);
+    expect(tokenize("SKILL.md")).toEqual(["skill", "md"]);
+  });
+
   it("tokenize handles CJK characters with Intl.Segmenter", () => {
     const tokens = tokenize("视频生成");
     expect(tokens.length).toBeGreaterThan(0);

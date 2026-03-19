@@ -14,24 +14,45 @@ export function tokenizeAscii(value: string): string[] {
 }
 
 // Intl.Segmenter for multi-language word segmentation (CJK, Arabic, Thai, etc.).
-// Falls back to ASCII-only tokenization when Intl.Segmenter is unavailable.
+// Use `undefined` locale (runtime default) instead of a specific locale like "en",
+// because a fixed locale applies language-specific word-break tailoring that may
+// not correctly segment other scripts (CJK dictionary-based breaking under "en"
+// is a V8/ICU implementation detail, not a spec guarantee).
 const segmenter =
   typeof Intl !== "undefined" && typeof Intl.Segmenter === "function"
-    ? new Intl.Segmenter("en", { granularity: "word" })
+    ? new Intl.Segmenter(undefined, { granularity: "word" })
     : null;
 
 /**
  * Tokenize text with full Unicode support.
  * Uses Intl.Segmenter for word-level segmentation (handles CJK, Arabic, Thai, etc.)
  * and falls back to ASCII regex when Segmenter is unavailable.
+ *
+ * Post-processes Segmenter output: tokens that contain only ASCII alphanumeric
+ * characters plus connectors (underscore, dot, etc.) are re-split with the ASCII
+ * regex to preserve the original `/[a-z0-9]+/g` boundaries. This ensures that
+ * e.g. "hello_world" → ["hello", "world"] and "foo.bar" → ["foo", "bar"],
+ * matching the legacy tokenizer behavior for Latin text.
  */
 export function tokenize(value: string): string[] {
   if (!value) return [];
   const normalized = normalize(value);
   if (!segmenter) return normalized.match(ASCII_WORD_RE) ?? [];
-  return [...segmenter.segment(normalized)]
+  const segments = [...segmenter.segment(normalized)]
     .filter((s) => s.isWordLike)
     .map((s) => s.segment);
+  // Re-split ASCII-ish tokens that Segmenter kept whole (e.g. "hello_world", "foo.bar")
+  const result: string[] = [];
+  for (const token of segments) {
+    if (/^[\x00-\x7f]+$/.test(token)) {
+      // Pure ASCII token — apply legacy regex to split on non-alnum chars
+      const parts = token.match(ASCII_WORD_RE);
+      if (parts) result.push(...parts);
+    } else {
+      result.push(token);
+    }
+  }
+  return result;
 }
 
 /**
