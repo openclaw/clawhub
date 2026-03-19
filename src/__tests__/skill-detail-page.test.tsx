@@ -5,6 +5,7 @@ import { SkillDetailPage } from '../components/SkillDetailPage'
 
 const navigateMock = vi.fn()
 const useAuthStatusMock = vi.fn()
+const mutationFnMock = vi.fn()
 
 vi.mock('@tanstack/react-router', () => ({
   useNavigate: () => navigateMock,
@@ -15,7 +16,7 @@ const getReadmeMock = vi.fn()
 
 vi.mock('convex/react', () => ({
   useQuery: (...args: unknown[]) => useQueryMock(...args),
-  useMutation: () => vi.fn(),
+  useMutation: () => mutationFnMock,
   useAction: () => getReadmeMock,
 }))
 
@@ -34,6 +35,7 @@ describe('SkillDetailPage', () => {
     getReadmeMock.mockReset()
     navigateMock.mockReset()
     useAuthStatusMock.mockReset()
+    mutationFnMock.mockReset()
     getReadmeMock.mockResolvedValue({ text: '' })
     useAuthStatusMock.mockReturnValue({
       isAuthenticated: false,
@@ -325,6 +327,26 @@ describe('SkillDetailPage', () => {
     expect(await screen.findByText(/Owner tools/i)).toBeTruthy()
     expect(screen.getByRole('button', { name: /Rename and redirect/i })).toBeTruthy()
     expect(screen.getByRole('button', { name: /Merge into target/i })).toBeTruthy()
+    expect(screen.getByRole('button', { name: /Delete skill/i })).toBeTruthy()
+
+    fireEvent.click(screen.getByRole('button', { name: /Delete skill/i }))
+
+    const confirmButton = screen.getByRole('button', { name: /Confirm delete/i }) as HTMLButtonElement
+    expect(confirmButton.disabled).toBe(true)
+
+    fireEvent.change(screen.getByPlaceholderText(/type "delete"/i), {
+      target: { value: 'delete' },
+    })
+    expect(confirmButton.disabled).toBe(false)
+
+    fireEvent.click(confirmButton)
+
+    await waitFor(() => {
+      expect(mutationFnMock).toHaveBeenCalledWith({ slug: 'weather' })
+    })
+    await waitFor(() => {
+      expect(navigateMock).toHaveBeenCalledWith({ to: '/dashboard' })
+    })
   })
 
   it('defers compare version query until compare tab is requested', async () => {

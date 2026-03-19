@@ -1856,6 +1856,15 @@ code {
   grid-template-columns: minmax(0, 2fr) minmax(220px, 1fr);
 }
 
+.skill-owner-delete-panel {
+  align-self: stretch;
+}
+
+.skill-owner-delete-actions {
+  display: grid;
+  gap: 10px;
+}
+
 @media (max-width: 820px) {
   .skill-owner-tools-grid {
     grid-template-columns: 1fr;
