@@ -345,7 +345,7 @@ describe('SkillDetailPage', () => {
       expect(mutationFnMock).toHaveBeenCalledWith({ slug: 'weather' })
     })
     await waitFor(() => {
-      expect(navigateMock).toHaveBeenCalledWith({ to: '/dashboard' })
+      expect(navigateMock).toHaveBeenCalledWith({ to: '/dashboard', replace: true })
     })
   })
 

@@ -114,7 +114,7 @@ export function SkillOwnershipPanel({
     setError(null)
     try {
       await deleteOwnedSkill({ slug })
-      await navigate({ to: '/dashboard' })
+      await navigate({ to: '/dashboard', replace: true })
     } catch (deleteError) {
       setError(formatMutationError(deleteError))
     } finally {
@@ -213,7 +213,6 @@ export function SkillOwnershipPanel({
                 className="btn btn-ghost"
                 type="button"
                 onClick={() => {
-                  if (isSubmitting) return
                   setDeleteConfirmation('')
                   setShowDeleteConfirmation(false)
                 }}
