@@ -488,6 +488,55 @@ describe("search helpers", () => {
     expect(result[0].skill.slug).toBe("video-gen-tool");
   });
 
+  it("mixed-script query requires ASCII tokens to match even with high vector score", async () => {
+    generateEmbeddingMock.mockResolvedValueOnce([0, 1, 2]);
+    const vectorEntries = [
+      {
+        embeddingId: "skillEmbeddings:mix1",
+        skill: makePublicSkill({
+          id: "skills:mix1",
+          slug: "openai-tools",
+          displayName: "OpenAI Tools",
+          downloads: 50,
+        }),
+        version: null,
+        ownerHandle: "owner",
+        owner: null,
+      },
+      {
+        embeddingId: "skillEmbeddings:mix2",
+        skill: makePublicSkill({
+          id: "skills:mix2",
+          slug: "unrelated-video",
+          displayName: "Unrelated Video",
+          downloads: 50,
+        }),
+        version: null,
+        ownerHandle: "owner",
+        owner: null,
+      },
+    ];
+
+    const runQuery = vi.fn().mockResolvedValueOnce(vectorEntries).mockResolvedValueOnce([]);
+
+    // "openai 视频" → ascii=["openai"], nonAscii=["视频"]
+    const result = await searchSkillsHandler(
+      {
+        vectorSearch: vi.fn().mockResolvedValue([
+          { _id: "skillEmbeddings:mix1", _score: 0.4 },
+          { _id: "skillEmbeddings:mix2", _score: 0.4 },
+        ]),
+        runQuery,
+      },
+      { query: "openai 视频", limit: 10 },
+    );
+
+    // "OpenAI Tools" has "openai" in slug → ASCII match passes → included
+    // "Unrelated Video" lacks "openai" → ASCII match fails → excluded despite high vector score
+    expect(result).toHaveLength(1);
+    expect(result[0].skill.slug).toBe("openai-tools");
+  });
+
   it("advances candidate limit until max", () => {
     expect(__test.getNextCandidateLimit(50, 1000)).toBe(100);
     expect(__test.getNextCandidateLimit(800, 1000)).toBe(1000);

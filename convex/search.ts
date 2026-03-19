@@ -224,9 +224,21 @@ export const searchSkills: ReturnType<typeof action> = action({
           );
           if (hasNonAsciiMatch) return true;
           // Vector-score gating: allow semantically relevant results through
-          // even when no token match exists (cross-language scenario)
+          // even when no non-ASCII token match exists (cross-language scenario).
+          // If the query also has ASCII tokens, require those to match first —
+          // vector bypass only exempts non-ASCII tokens, not the whole query.
           const vectorScore = entry.embeddingId ? (scoreById.get(entry.embeddingId) ?? 0) : 0;
-          if (vectorScore >= vectorScoreThreshold) return true;
+          if (vectorScore >= vectorScoreThreshold) {
+            if (filterTokens.length === 0) return true;
+            if (
+              matchesExactTokens(filterTokens, [
+                entry.skill.displayName,
+                entry.skill.slug,
+                entry.skill.summary,
+              ])
+            )
+              return true;
+          }
         }
         return false;
       });
@@ -504,7 +516,17 @@ export const searchSouls: ReturnType<typeof action> = action({
           );
           if (hasNonAsciiMatch) return true;
           const vectorScore = scoreById.get(entry.embeddingId) ?? 0;
-          if (vectorScore >= vectorScoreThreshold) return true;
+          if (vectorScore >= vectorScoreThreshold) {
+            if (filterTokens.length === 0) return true;
+            if (
+              matchesExactTokens(filterTokens, [
+                entry.soul.displayName,
+                entry.soul.slug,
+                entry.soul.summary,
+              ])
+            )
+              return true;
+          }
         }
         return false;
       });
