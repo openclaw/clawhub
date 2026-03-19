@@ -1,156 +1,154 @@
 /* @vitest-environment node */
-import { afterEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, describe, expect, it, vi } from "vitest";
 
-vi.mock('./lib/apiTokenAuth', () => ({
+vi.mock("./lib/apiTokenAuth", () => ({
   requireApiTokenUser: vi.fn(),
-}))
+}));
 
-vi.mock('./skills', () => ({
+vi.mock("./skills", () => ({
   publishVersionForUser: vi.fn(),
-}))
+}));
 
-const { requireApiTokenUser } = await import('./lib/apiTokenAuth')
-const { publishVersionForUser } = await import('./skills')
-const { __handlers } = await import('./httpApi')
-const { hashSkillFiles } = await import('./lib/skills')
+const { requireApiTokenUser } = await import("./lib/apiTokenAuth");
+const { publishVersionForUser } = await import("./skills");
+const { __handlers } = await import("./httpApi");
+const { hashSkillFiles } = await import("./lib/skills");
 
 function makeCtx(partial: Record<string, unknown>) {
-  return partial as unknown as import('./_generated/server').ActionCtx
+  return partial as unknown as import("./_generated/server").ActionCtx;
 }
 
-describe('httpApi handlers', () => {
+describe("httpApi handlers", () => {
   afterEach(() => {
-    vi.mocked(requireApiTokenUser).mockReset()
-    vi.mocked(publishVersionForUser).mockReset()
-  })
+    vi.mocked(requireApiTokenUser).mockReset();
+    vi.mocked(publishVersionForUser).mockReset();
+  });
 
-  it('searchSkillsHttp returns empty results for empty query', async () => {
+  it("searchSkillsHttp returns empty results for empty query", async () => {
     const response = await __handlers.searchSkillsHandler(
       makeCtx({ runAction: vi.fn() }),
-      new Request('https://example.com/api/search?q=%20%20'),
-    )
-    expect(response.status).toBe(200)
-    expect(await response.json()).toEqual({ results: [] })
-  })
+      new Request("https://example.com/api/search?q=%20%20"),
+    );
+    expect(response.status).toBe(200);
+    expect(await response.json()).toEqual({ results: [] });
+  });
 
-  it('searchSkillsHttp forwards args (approvedOnly alias)', async () => {
+  it("searchSkillsHttp forwards args (approvedOnly alias)", async () => {
     const runAction = vi.fn().mockResolvedValue([
       {
         score: 1,
-        skill: { slug: 'a', displayName: 'A', summary: null, updatedAt: 1 },
+        skill: { slug: "a", displayName: "A", summary: null, updatedAt: 1 },
         version: null,
       },
-    ])
+    ]);
     const response = await __handlers.searchSkillsHandler(
       makeCtx({ runAction }),
-      new Request('https://example.com/api/search?q=test&approvedOnly=true&limit=5'),
-    )
+      new Request("https://example.com/api/search?q=test&approvedOnly=true&limit=5"),
+    );
     expect(runAction).toHaveBeenCalledWith(expect.anything(), {
-      query: 'test',
+      query: "test",
       limit: 5,
       highlightedOnly: true,
       nonSuspiciousOnly: undefined,
-    })
-    expect(response.status).toBe(200)
-    const json = await response.json()
-    expect(json.results[0].slug).toBe('a')
-  })
+    });
+    expect(response.status).toBe(200);
+    const json = await response.json();
+    expect(json.results[0].slug).toBe("a");
+  });
 
-  it('searchSkillsHttp forwards highlightedOnly', async () => {
-    const runAction = vi.fn().mockResolvedValue([])
+  it("searchSkillsHttp forwards highlightedOnly", async () => {
+    const runAction = vi.fn().mockResolvedValue([]);
     await __handlers.searchSkillsHandler(
       makeCtx({ runAction }),
-      new Request('https://example.com/api/search?q=test&highlightedOnly=true'),
-    )
+      new Request("https://example.com/api/search?q=test&highlightedOnly=true"),
+    );
     expect(runAction).toHaveBeenCalledWith(expect.anything(), {
-      query: 'test',
+      query: "test",
       limit: undefined,
       highlightedOnly: true,
       nonSuspiciousOnly: undefined,
-    })
-  })
+    });
+  });
 
-  it('searchSkillsHttp omits highlightedOnly when approvedOnly is false', async () => {
-    const runAction = vi.fn().mockResolvedValue([])
+  it("searchSkillsHttp omits highlightedOnly when approvedOnly is false", async () => {
+    const runAction = vi.fn().mockResolvedValue([]);
     await __handlers.searchSkillsHandler(
       makeCtx({ runAction }),
-      new Request('https://example.com/api/search?q=test&approvedOnly=false'),
-    )
+      new Request("https://example.com/api/search?q=test&approvedOnly=false"),
+    );
     expect(runAction).toHaveBeenCalledWith(expect.anything(), {
-      query: 'test',
+      query: "test",
       limit: undefined,
       highlightedOnly: undefined,
       nonSuspiciousOnly: undefined,
-    })
-  })
+    });
+  });
 
-  it('searchSkillsHttp forwards nonSuspiciousOnly', async () => {
-    const runAction = vi.fn().mockResolvedValue([])
+  it("searchSkillsHttp forwards nonSuspiciousOnly", async () => {
+    const runAction = vi.fn().mockResolvedValue([]);
     await __handlers.searchSkillsHandler(
       makeCtx({ runAction }),
-      new Request('https://example.com/api/search?q=test&nonSuspiciousOnly=1'),
-    )
+      new Request("https://example.com/api/search?q=test&nonSuspiciousOnly=1"),
+    );
     expect(runAction).toHaveBeenCalledWith(expect.anything(), {
-      query: 'test',
+      query: "test",
       limit: undefined,
       highlightedOnly: undefined,
       nonSuspiciousOnly: true,
-    })
-  })
+    });
+  });
 
-  it('searchSkillsHttp forwards legacy nonSuspicious alias', async () => {
-    const runAction = vi.fn().mockResolvedValue([])
+  it("searchSkillsHttp forwards legacy nonSuspicious alias", async () => {
+    const runAction = vi.fn().mockResolvedValue([]);
     await __handlers.searchSkillsHandler(
       makeCtx({ runAction }),
-      new Request('https://example.com/api/search?q=test&nonSuspicious=1'),
-    )
+      new Request("https://example.com/api/search?q=test&nonSuspicious=1"),
+    );
     expect(runAction).toHaveBeenCalledWith(expect.anything(), {
-      query: 'test',
+      query: "test",
       limit: undefined,
       highlightedOnly: undefined,
       nonSuspiciousOnly: true,
-    })
-  })
+    });
+  });
 
-  it('searchSkillsHttp prefers canonical nonSuspiciousOnly over legacy alias', async () => {
-    const runAction = vi.fn().mockResolvedValue([])
+  it("searchSkillsHttp prefers canonical nonSuspiciousOnly over legacy alias", async () => {
+    const runAction = vi.fn().mockResolvedValue([]);
     await __handlers.searchSkillsHandler(
       makeCtx({ runAction }),
-      new Request(
-        'https://example.com/api/search?q=test&nonSuspiciousOnly=false&nonSuspicious=1',
-      ),
-    )
+      new Request("https://example.com/api/search?q=test&nonSuspiciousOnly=false&nonSuspicious=1"),
+    );
     expect(runAction).toHaveBeenCalledWith(expect.anything(), {
-      query: 'test',
+      query: "test",
       limit: undefined,
       highlightedOnly: undefined,
       nonSuspiciousOnly: undefined,
-    })
-  })
+    });
+  });
 
-  it('getSkillHttp validates slug', async () => {
+  it("getSkillHttp validates slug", async () => {
     const response = await __handlers.getSkillHandler(
       makeCtx({ runQuery: vi.fn() }),
-      new Request('https://example.com/api/skill'),
-    )
-    expect(response.status).toBe(400)
-  })
+      new Request("https://example.com/api/skill"),
+    );
+    expect(response.status).toBe(400);
+  });
 
-  it('getSkillHttp returns 404 when missing', async () => {
-    const runQuery = vi.fn().mockResolvedValue(null)
+  it("getSkillHttp returns 404 when missing", async () => {
+    const runQuery = vi.fn().mockResolvedValue(null);
     const response = await __handlers.getSkillHandler(
       makeCtx({ runQuery }),
-      new Request('https://example.com/api/skill?slug=missing'),
-    )
-    expect(response.status).toBe(404)
-  })
+      new Request("https://example.com/api/skill?slug=missing"),
+    );
+    expect(response.status).toBe(404);
+  });
 
-  it('getSkillHttp returns payload with owner and latestVersion', async () => {
+  it("getSkillHttp returns payload with owner and latestVersion", async () => {
     const runQuery = vi.fn().mockResolvedValue({
       skill: {
-        slug: 'demo',
-        displayName: 'Demo',
-        summary: 'x',
+        slug: "demo",
+        displayName: "Demo",
+        summary: "x",
         tags: {},
         stats: {
           downloads: 0,
@@ -163,25 +161,25 @@ describe('httpApi handlers', () => {
         createdAt: 1,
         updatedAt: 2,
       },
-      latestVersion: { version: '1.0.0', createdAt: 3, changelog: 'c' },
-      owner: { handle: 'p', displayName: 'Peter', image: null },
-    })
+      latestVersion: { version: "1.0.0", createdAt: 3, changelog: "c" },
+      owner: { handle: "p", displayName: "Peter", image: null },
+    });
     const response = await __handlers.getSkillHandler(
       makeCtx({ runQuery }),
-      new Request('https://example.com/api/skill?slug=demo'),
-    )
-    expect(response.status).toBe(200)
-    const json = await response.json()
-    expect(json.skill.slug).toBe('demo')
-    expect(json.latestVersion.version).toBe('1.0.0')
-    expect(json.owner.handle).toBe('p')
-  })
+      new Request("https://example.com/api/skill?slug=demo"),
+    );
+    expect(response.status).toBe(200);
+    const json = await response.json();
+    expect(json.skill.slug).toBe("demo");
+    expect(json.latestVersion.version).toBe("1.0.0");
+    expect(json.owner.handle).toBe("p");
+  });
 
-  it('getSkillHttp returns payload with null owner/latestVersion', async () => {
+  it("getSkillHttp returns payload with null owner/latestVersion", async () => {
     const runQuery = vi.fn().mockResolvedValue({
       skill: {
-        slug: 'demo',
-        displayName: 'Demo',
+        slug: "demo",
+        displayName: "Demo",
         summary: null,
         tags: {},
         stats: {},
@@ -190,389 +188,393 @@ describe('httpApi handlers', () => {
       },
       latestVersion: null,
       owner: null,
-    })
+    });
     const response = await __handlers.getSkillHandler(
       makeCtx({ runQuery }),
-      new Request('https://example.com/api/skill?slug=demo'),
-    )
-    expect(response.status).toBe(200)
-    const json = await response.json()
-    expect(json.latestVersion).toBeNull()
-    expect(json.owner).toBeNull()
-  })
+      new Request("https://example.com/api/skill?slug=demo"),
+    );
+    expect(response.status).toBe(200);
+    const json = await response.json();
+    expect(json.latestVersion).toBeNull();
+    expect(json.owner).toBeNull();
+  });
 
-  it('resolveSkillVersionHttp validates hash', async () => {
+  it("resolveSkillVersionHttp validates hash", async () => {
     const response = await __handlers.resolveSkillVersionHandler(
       makeCtx({ runQuery: vi.fn() }),
-      new Request('https://example.com/api/skill/resolve?slug=demo&hash=bad'),
-    )
-    expect(response.status).toBe(400)
-  })
+      new Request("https://example.com/api/skill/resolve?slug=demo&hash=bad"),
+    );
+    expect(response.status).toBe(400);
+  });
 
-  it('resolveSkillVersionHttp returns 404 when missing', async () => {
-    const runQuery = vi.fn().mockResolvedValue(null)
+  it("resolveSkillVersionHttp returns 404 when missing", async () => {
+    const runQuery = vi.fn().mockResolvedValue(null);
     const response = await __handlers.resolveSkillVersionHandler(
       makeCtx({ runQuery }),
       new Request(
-        'https://example.com/api/skill/resolve?slug=missing&hash=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
+        "https://example.com/api/skill/resolve?slug=missing&hash=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
       ),
-    )
-    expect(response.status).toBe(404)
-  })
+    );
+    expect(response.status).toBe(404);
+  });
 
-  it('resolveSkillVersionHttp returns match and latestVersion', async () => {
-    const matchHash = await hashSkillFiles([{ path: 'SKILL.md', sha256: 'abc' }])
+  it("resolveSkillVersionHttp returns match and latestVersion", async () => {
+    const matchHash = await hashSkillFiles([{ path: "SKILL.md", sha256: "abc" }]);
     const runQuery = vi.fn().mockResolvedValueOnce({
-      match: { version: '1.0.0' },
-      latestVersion: { version: '2.0.0' },
-    })
+      match: { version: "1.0.0" },
+      latestVersion: { version: "2.0.0" },
+    });
 
     const response = await __handlers.resolveSkillVersionHandler(
       makeCtx({ runQuery }),
       new Request(`https://example.com/api/skill/resolve?slug=demo&hash=${matchHash}`),
-    )
-    expect(response.status).toBe(200)
-    const json = await response.json()
-    expect(json.match.version).toBe('1.0.0')
-    expect(json.latestVersion.version).toBe('2.0.0')
-  })
+    );
+    expect(response.status).toBe(200);
+    const json = await response.json();
+    expect(json.match.version).toBe("1.0.0");
+    expect(json.latestVersion.version).toBe("2.0.0");
+  });
 
-  it('cliWhoamiHttp returns 401 on auth failure', async () => {
-    vi.mocked(requireApiTokenUser).mockRejectedValueOnce(new Error('Unauthorized'))
+  it("cliWhoamiHttp returns 401 on auth failure", async () => {
+    vi.mocked(requireApiTokenUser).mockRejectedValueOnce(new Error("Unauthorized"));
     const response = await __handlers.cliWhoamiHandler(
       makeCtx({}),
-      new Request('https://x/api/cli/whoami'),
-    )
-    expect(response.status).toBe(401)
-  })
+      new Request("https://x/api/cli/whoami"),
+    );
+    expect(response.status).toBe(401);
+  });
 
-  it('cliWhoamiHttp returns user payload on success', async () => {
+  it("cliWhoamiHttp returns user payload on success", async () => {
     vi.mocked(requireApiTokenUser).mockResolvedValueOnce({
-      user: { handle: 'p', displayName: 'Peter', image: 'x' },
-    } as never)
+      user: { handle: "p", displayName: "Peter", image: "x" },
+    } as never);
     const response = await __handlers.cliWhoamiHandler(
       makeCtx({}),
-      new Request('https://x/api/cli/whoami'),
-    )
-    expect(response.status).toBe(200)
-    const json = await response.json()
-    expect(json.user.handle).toBe('p')
-  })
+      new Request("https://x/api/cli/whoami"),
+    );
+    expect(response.status).toBe(200);
+    const json = await response.json();
+    expect(json.user.handle).toBe("p");
+  });
 
-  it('cliTelemetrySyncHttp forwards roots and returns ok', async () => {
-    vi.mocked(requireApiTokenUser).mockResolvedValueOnce({ userId: 'users:1' } as never)
-    const runMutation = vi.fn().mockResolvedValue(null)
+  it("cliTelemetrySyncHttp forwards roots and returns ok", async () => {
+    vi.mocked(requireApiTokenUser).mockResolvedValueOnce({ userId: "users:1" } as never);
+    const runMutation = vi.fn().mockResolvedValue(null);
     const response = await __handlers.cliTelemetrySyncHandler(
       makeCtx({ runMutation }),
-      new Request('https://x/api/cli/telemetry/sync', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+      new Request("https://x/api/cli/telemetry/sync", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           roots: [
             {
-              rootId: 'abc',
-              label: '~/skills',
-              skills: [{ slug: 'weather', version: null }],
+              rootId: "abc",
+              label: "~/skills",
+              skills: [{ slug: "weather", version: null }],
             },
           ],
         }),
       }),
-    )
-    expect(response.status).toBe(200)
-    expect(await response.json()).toEqual({ ok: true })
-    expect(runMutation).toHaveBeenCalledTimes(1)
-  })
+    );
+    expect(response.status).toBe(200);
+    expect(await response.json()).toEqual({ ok: true });
+    expect(runMutation).toHaveBeenCalledTimes(1);
+  });
 
-  it('cliTelemetrySyncHttp returns 400 on invalid payload', async () => {
-    vi.mocked(requireApiTokenUser).mockResolvedValueOnce({ userId: 'users:1' } as never)
+  it("cliTelemetrySyncHttp returns 400 on invalid payload", async () => {
+    vi.mocked(requireApiTokenUser).mockResolvedValueOnce({ userId: "users:1" } as never);
     const response = await __handlers.cliTelemetrySyncHandler(
       makeCtx({ runMutation: vi.fn() }),
-      new Request('https://x/api/cli/telemetry/sync', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ roots: 'nope' }),
+      new Request("https://x/api/cli/telemetry/sync", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ roots: "nope" }),
       }),
-    )
-    expect(response.status).toBe(400)
-  })
+    );
+    expect(response.status).toBe(400);
+  });
 
-  it('cliTelemetrySyncHttp forwards skill versions when provided', async () => {
-    vi.mocked(requireApiTokenUser).mockResolvedValueOnce({ userId: 'users:1' } as never)
-    const runMutation = vi.fn().mockResolvedValue(null)
+  it("cliTelemetrySyncHttp forwards skill versions when provided", async () => {
+    vi.mocked(requireApiTokenUser).mockResolvedValueOnce({ userId: "users:1" } as never);
+    const runMutation = vi.fn().mockResolvedValue(null);
     await __handlers.cliTelemetrySyncHandler(
       makeCtx({ runMutation }),
-      new Request('https://x/api/cli/telemetry/sync', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+      new Request("https://x/api/cli/telemetry/sync", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           roots: [
             {
-              rootId: 'abc',
-              label: '~/skills',
-              skills: [{ slug: 'weather', version: '1.0.0' }],
+              rootId: "abc",
+              label: "~/skills",
+              skills: [{ slug: "weather", version: "1.0.0" }],
             },
           ],
         }),
       }),
-    )
+    );
     expect(runMutation).toHaveBeenCalledWith(expect.anything(), {
-      userId: 'users:1',
+      userId: "users:1",
       roots: [
-        { rootId: 'abc', label: '~/skills', skills: [{ slug: 'weather', version: '1.0.0' }] },
+        { rootId: "abc", label: "~/skills", skills: [{ slug: "weather", version: "1.0.0" }] },
       ],
-    })
-  })
+    });
+  });
 
-  it('cliTelemetrySyncHttp returns 400 on invalid json', async () => {
-    const request = new Request('https://x/api/cli/telemetry/sync', { method: 'POST', body: '{' })
-    const response = await __handlers.cliTelemetrySyncHandler(makeCtx({}), request)
-    expect(response.status).toBe(400)
-  })
+  it("cliTelemetrySyncHttp returns 400 on invalid json", async () => {
+    const request = new Request("https://x/api/cli/telemetry/sync", { method: "POST", body: "{" });
+    const response = await __handlers.cliTelemetrySyncHandler(makeCtx({}), request);
+    expect(response.status).toBe(400);
+  });
 
-  it('cliTelemetrySyncHttp returns 401 when unauthorized', async () => {
-    vi.mocked(requireApiTokenUser).mockRejectedValueOnce(new Error('Unauthorized'))
+  it("cliTelemetrySyncHttp returns 401 when unauthorized", async () => {
+    vi.mocked(requireApiTokenUser).mockRejectedValueOnce(new Error("Unauthorized"));
     const response = await __handlers.cliTelemetrySyncHandler(
       makeCtx({}),
-      new Request('https://x/api/cli/telemetry/sync', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+      new Request("https://x/api/cli/telemetry/sync", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ roots: [] }),
       }),
-    )
-    expect(response.status).toBe(401)
-  })
+    );
+    expect(response.status).toBe(401);
+  });
 
-  it('cliUploadUrlHttp returns uploadUrl', async () => {
-    vi.mocked(requireApiTokenUser).mockResolvedValueOnce({ userId: 'user1' } as never)
-    const runMutation = vi.fn().mockResolvedValue('https://upload.local')
+  it("cliUploadUrlHttp returns uploadUrl", async () => {
+    vi.mocked(requireApiTokenUser).mockResolvedValueOnce({ userId: "user1" } as never);
+    const runMutation = vi.fn().mockResolvedValue("https://upload.local");
     const response = await __handlers.cliUploadUrlHandler(
       makeCtx({ runMutation }),
-      new Request('https://x/api/cli/upload-url', { method: 'POST' }),
-    )
-    expect(response.status).toBe(200)
-    expect(await response.json()).toEqual({ uploadUrl: 'https://upload.local' })
-  })
+      new Request("https://x/api/cli/upload-url", { method: "POST" }),
+    );
+    expect(response.status).toBe(200);
+    expect(await response.json()).toEqual({ uploadUrl: "https://upload.local" });
+  });
 
-  it('cliUploadUrlHttp returns 401 when unauthorized', async () => {
-    vi.mocked(requireApiTokenUser).mockRejectedValueOnce(new Error('Unauthorized'))
+  it("cliUploadUrlHttp returns 401 when unauthorized", async () => {
+    vi.mocked(requireApiTokenUser).mockRejectedValueOnce(new Error("Unauthorized"));
     const response = await __handlers.cliUploadUrlHandler(
       makeCtx({}),
-      new Request('https://x/api/cli/upload-url', { method: 'POST' }),
-    )
-    expect(response.status).toBe(401)
-  })
+      new Request("https://x/api/cli/upload-url", { method: "POST" }),
+    );
+    expect(response.status).toBe(401);
+  });
 
-  it('cliPublishHttp returns 400 on invalid json', async () => {
-    const request = new Request('https://x/api/cli/publish', { method: 'POST', body: '{' })
-    const response = await __handlers.cliPublishHandler(makeCtx({}), request)
-    expect(response.status).toBe(400)
-  })
+  it("cliPublishHttp returns 400 on invalid json", async () => {
+    const request = new Request("https://x/api/cli/publish", { method: "POST", body: "{" });
+    const response = await __handlers.cliPublishHandler(makeCtx({}), request);
+    expect(response.status).toBe(400);
+  });
 
-  it('cliPublishHttp returns 401 when unauthorized', async () => {
-    vi.mocked(requireApiTokenUser).mockRejectedValueOnce(new Error('Unauthorized'))
-    const request = new Request('https://x/api/cli/publish', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+  it("cliPublishHttp returns 401 when unauthorized", async () => {
+    vi.mocked(requireApiTokenUser).mockRejectedValueOnce(new Error("Unauthorized"));
+    const request = new Request("https://x/api/cli/publish", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
       body: JSON.stringify({}),
-    })
-    const response = await __handlers.cliPublishHandler(makeCtx({}), request)
-    expect(response.status).toBe(401)
-  })
+    });
+    const response = await __handlers.cliPublishHandler(makeCtx({}), request);
+    expect(response.status).toBe(401);
+  });
 
-  it('cliPublishHttp returns 400 on publish error', async () => {
-    vi.mocked(requireApiTokenUser).mockResolvedValueOnce({ userId: 'user1' } as never)
-    vi.mocked(publishVersionForUser).mockRejectedValueOnce(new Error('Nope'))
-    const request = new Request('https://x/api/cli/publish', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+  it("cliPublishHttp returns 400 on publish error", async () => {
+    vi.mocked(requireApiTokenUser).mockResolvedValueOnce({ userId: "user1" } as never);
+    vi.mocked(publishVersionForUser).mockRejectedValueOnce(new Error("Nope"));
+    const request = new Request("https://x/api/cli/publish", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
-        slug: 'cool-skill',
-        displayName: 'Cool Skill',
-        version: '1.2.3',
-        changelog: 'c',
+        slug: "cool-skill",
+        displayName: "Cool Skill",
+        version: "1.2.3",
+        changelog: "c",
         acceptLicenseTerms: true,
-        files: [{ path: 'SKILL.md', size: 1, storageId: 'id', sha256: 'a' }],
+        files: [{ path: "SKILL.md", size: 1, storageId: "id", sha256: "a" }],
       }),
-    })
-    const response = await __handlers.cliPublishHandler(makeCtx({}), request)
-    expect(response.status).toBe(400)
-  })
+    });
+    const response = await __handlers.cliPublishHandler(makeCtx({}), request);
+    expect(response.status).toBe(400);
+  });
 
-  it('cliPublishHttp returns 200 on success', async () => {
-    vi.mocked(requireApiTokenUser).mockResolvedValueOnce({ userId: 'user1' } as never)
+  it("cliPublishHttp returns 200 on success", async () => {
+    vi.mocked(requireApiTokenUser).mockResolvedValueOnce({ userId: "user1" } as never);
     vi.mocked(publishVersionForUser).mockResolvedValueOnce({
-      skillId: 's',
-      versionId: 'v',
-      embeddingId: 'e',
-    } as never)
-    const request = new Request('https://x/api/cli/publish', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      skillId: "s",
+      versionId: "v",
+      embeddingId: "e",
+    } as never);
+    const request = new Request("https://x/api/cli/publish", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
-        slug: 'cool-skill',
-        displayName: 'Cool Skill',
-        version: '1.2.3',
-        changelog: 'c',
+        slug: "cool-skill",
+        displayName: "Cool Skill",
+        version: "1.2.3",
+        changelog: "c",
         acceptLicenseTerms: true,
-        files: [{ path: 'SKILL.md', size: 1, storageId: 'id', sha256: 'a' }],
+        files: [{ path: "SKILL.md", size: 1, storageId: "id", sha256: "a" }],
       }),
-    })
-    const response = await __handlers.cliPublishHandler(makeCtx({}), request)
-    expect(response.status).toBe(200)
-    const json = await response.json()
-    expect(json.ok).toBe(true)
-    expect(json.skillId).toBe('s')
-  })
+    });
+    const response = await __handlers.cliPublishHandler(makeCtx({}), request);
+    expect(response.status).toBe(200);
+    const json = await response.json();
+    expect(json.ok).toBe(true);
+    expect(json.skillId).toBe("s");
+  });
 
-  it('cliPublishHttp accepts legacy clients that omit license terms', async () => {
-    vi.mocked(requireApiTokenUser).mockResolvedValueOnce({ userId: 'user1' } as never)
+  it("cliPublishHttp accepts legacy clients that omit license terms", async () => {
+    vi.mocked(requireApiTokenUser).mockResolvedValueOnce({ userId: "user1" } as never);
     vi.mocked(publishVersionForUser).mockResolvedValueOnce({
-      skillId: 's',
-      versionId: 'v',
-      embeddingId: 'e',
-    } as never)
-    const request = new Request('https://x/api/cli/publish', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      skillId: "s",
+      versionId: "v",
+      embeddingId: "e",
+    } as never);
+    const request = new Request("https://x/api/cli/publish", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
-        slug: 'cool-skill',
-        displayName: 'Cool Skill',
-        version: '1.2.3',
-        changelog: 'c',
-        files: [{ path: 'SKILL.md', size: 1, storageId: 'id', sha256: 'a' }],
+        slug: "cool-skill",
+        displayName: "Cool Skill",
+        version: "1.2.3",
+        changelog: "c",
+        files: [{ path: "SKILL.md", size: 1, storageId: "id", sha256: "a" }],
       }),
-    })
-    const response = await __handlers.cliPublishHandler(makeCtx({}), request)
-    expect(response.status).toBe(200)
-  })
+    });
+    const response = await __handlers.cliPublishHandler(makeCtx({}), request);
+    expect(response.status).toBe(200);
+  });
 
-  it('cliPublishHttp rejects explicit license refusal', async () => {
-    vi.mocked(requireApiTokenUser).mockResolvedValueOnce({ userId: 'user1' } as never)
-    const request = new Request('https://x/api/cli/publish', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+  it("cliPublishHttp rejects explicit license refusal", async () => {
+    vi.mocked(requireApiTokenUser).mockResolvedValueOnce({ userId: "user1" } as never);
+    const request = new Request("https://x/api/cli/publish", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
-        slug: 'cool-skill',
-        displayName: 'Cool Skill',
-        version: '1.2.3',
-        changelog: 'c',
+        slug: "cool-skill",
+        displayName: "Cool Skill",
+        version: "1.2.3",
+        changelog: "c",
         acceptLicenseTerms: false,
-        files: [{ path: 'SKILL.md', size: 1, storageId: 'id', sha256: 'a' }],
+        files: [{ path: "SKILL.md", size: 1, storageId: "id", sha256: "a" }],
       }),
-    })
-    const response = await __handlers.cliPublishHandler(makeCtx({}), request)
-    expect(response.status).toBe(400)
-    expect(await response.text()).toMatch(/license terms must be accepted/i)
-  })
+    });
+    const response = await __handlers.cliPublishHandler(makeCtx({}), request);
+    expect(response.status).toBe(400);
+    expect(await response.text()).toMatch(/license terms must be accepted/i);
+  });
 
-  it('cliSkillDeleteHandler returns 401 when unauthorized', async () => {
-    vi.mocked(requireApiTokenUser).mockRejectedValueOnce(new Error('Unauthorized'))
-    const request = new Request('https://x/api/cli/skill/delete', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ slug: 'demo' }),
-    })
-    const response = await __handlers.cliSkillDeleteHandler(makeCtx({}), request, true)
-    expect(response.status).toBe(401)
-  })
+  it("cliSkillDeleteHandler returns 401 when unauthorized", async () => {
+    vi.mocked(requireApiTokenUser).mockRejectedValueOnce(new Error("Unauthorized"));
+    const request = new Request("https://x/api/cli/skill/delete", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ slug: "demo" }),
+    });
+    const response = await __handlers.cliSkillDeleteHandler(makeCtx({}), request, true);
+    expect(response.status).toBe(401);
+  });
 
-  it('cliSkillDeleteHandler calls mutation and returns ok', async () => {
-    vi.mocked(requireApiTokenUser).mockResolvedValueOnce({ userId: 'user1' } as never)
-    const runMutation = vi.fn().mockResolvedValue({ ok: true })
-    const request = new Request('https://x/api/cli/skill/delete', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ slug: 'demo' }),
-    })
-    const response = await __handlers.cliSkillDeleteHandler(makeCtx({ runMutation }), request, true)
-    expect(response.status).toBe(200)
+  it("cliSkillDeleteHandler calls mutation and returns ok", async () => {
+    vi.mocked(requireApiTokenUser).mockResolvedValueOnce({ userId: "user1" } as never);
+    const runMutation = vi.fn().mockResolvedValue({ ok: true });
+    const request = new Request("https://x/api/cli/skill/delete", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ slug: "demo" }),
+    });
+    const response = await __handlers.cliSkillDeleteHandler(
+      makeCtx({ runMutation }),
+      request,
+      true,
+    );
+    expect(response.status).toBe(200);
     expect(runMutation).toHaveBeenCalledWith(expect.anything(), {
-      userId: 'user1',
-      slug: 'demo',
+      userId: "user1",
+      slug: "demo",
       deleted: true,
-    })
-    expect(await response.json()).toEqual({ ok: true })
-  })
+    });
+    expect(await response.json()).toEqual({ ok: true });
+  });
 
-  it('cliSkillDeleteHandler supports undelete', async () => {
-    vi.mocked(requireApiTokenUser).mockResolvedValueOnce({ userId: 'user1' } as never)
-    const runMutation = vi.fn().mockResolvedValue({ ok: true })
-    const request = new Request('https://x/api/cli/skill/undelete', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ slug: 'demo' }),
-    })
+  it("cliSkillDeleteHandler supports undelete", async () => {
+    vi.mocked(requireApiTokenUser).mockResolvedValueOnce({ userId: "user1" } as never);
+    const runMutation = vi.fn().mockResolvedValue({ ok: true });
+    const request = new Request("https://x/api/cli/skill/undelete", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ slug: "demo" }),
+    });
     const response = await __handlers.cliSkillDeleteHandler(
       makeCtx({ runMutation }),
       request,
       false,
-    )
-    expect(response.status).toBe(200)
+    );
+    expect(response.status).toBe(200);
     expect(runMutation).toHaveBeenCalledWith(expect.anything(), {
-      userId: 'user1',
-      slug: 'demo',
+      userId: "user1",
+      slug: "demo",
       deleted: false,
-    })
-  })
+    });
+  });
 
-  it('cliSkillUndeleteHttp calls delete handler with deleted=false', async () => {
-    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {})
-    vi.mocked(requireApiTokenUser).mockResolvedValueOnce({ userId: 'user1' } as never)
-    const runMutation = vi.fn().mockResolvedValue({ ok: true })
+  it("cliSkillUndeleteHttp calls delete handler with deleted=false", async () => {
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+    vi.mocked(requireApiTokenUser).mockResolvedValueOnce({ userId: "user1" } as never);
+    const runMutation = vi.fn().mockResolvedValue({ ok: true });
     const response = await __handlers.cliSkillDeleteHandler(
       makeCtx({ runMutation }),
-      new Request('https://x/api/cli/skill/undelete', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ slug: 'demo' }),
+      new Request("https://x/api/cli/skill/undelete", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ slug: "demo" }),
       }),
       false,
-    )
-    expect(response.status).toBe(200)
+    );
+    expect(response.status).toBe(200);
     expect(runMutation).toHaveBeenCalledWith(expect.anything(), {
-      userId: 'user1',
-      slug: 'demo',
+      userId: "user1",
+      slug: "demo",
       deleted: false,
-    })
-    warnSpy.mockRestore()
-  })
+    });
+    warnSpy.mockRestore();
+  });
 
-  it('cliSkillDeleteHttp calls delete handler with deleted=true', async () => {
-    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {})
-    vi.mocked(requireApiTokenUser).mockResolvedValueOnce({ userId: 'user1' } as never)
-    const runMutation = vi.fn().mockResolvedValue({ ok: true })
+  it("cliSkillDeleteHttp calls delete handler with deleted=true", async () => {
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+    vi.mocked(requireApiTokenUser).mockResolvedValueOnce({ userId: "user1" } as never);
+    const runMutation = vi.fn().mockResolvedValue({ ok: true });
     const response = await __handlers.cliSkillDeleteHandler(
       makeCtx({ runMutation }),
-      new Request('https://x/api/cli/skill/delete', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ slug: 'demo' }),
+      new Request("https://x/api/cli/skill/delete", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ slug: "demo" }),
       }),
       true,
-    )
-    expect(response.status).toBe(200)
+    );
+    expect(response.status).toBe(200);
     expect(runMutation).toHaveBeenCalledWith(expect.anything(), {
-      userId: 'user1',
-      slug: 'demo',
+      userId: "user1",
+      slug: "demo",
       deleted: true,
-    })
-    warnSpy.mockRestore()
-  })
+    });
+    warnSpy.mockRestore();
+  });
 
-  it('cliSkillDeleteHandler returns 400 on invalid json', async () => {
-    const request = new Request('https://x/api/cli/skill/delete', { method: 'POST', body: '{' })
-    const response = await __handlers.cliSkillDeleteHandler(makeCtx({}), request, true)
-    expect(response.status).toBe(400)
-  })
+  it("cliSkillDeleteHandler returns 400 on invalid json", async () => {
+    const request = new Request("https://x/api/cli/skill/delete", { method: "POST", body: "{" });
+    const response = await __handlers.cliSkillDeleteHandler(makeCtx({}), request, true);
+    expect(response.status).toBe(400);
+  });
 
-  it('cliSkillDeleteHandler returns 400 on invalid payload', async () => {
-    vi.mocked(requireApiTokenUser).mockResolvedValueOnce({ userId: 'user1' } as never)
-    const request = new Request('https://x/api/cli/skill/delete', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+  it("cliSkillDeleteHandler returns 400 on invalid payload", async () => {
+    vi.mocked(requireApiTokenUser).mockResolvedValueOnce({ userId: "user1" } as never);
+    const request = new Request("https://x/api/cli/skill/delete", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
       body: JSON.stringify({}),
-    })
-    const response = await __handlers.cliSkillDeleteHandler(makeCtx({}), request, true)
-    expect(response.status).toBe(400)
-  })
-})
+    });
+    const response = await __handlers.cliSkillDeleteHandler(makeCtx({}), request, true);
+    expect(response.status).toBe(400);
+  });
+});

@@ -1,36 +1,36 @@
 /* @vitest-environment node */
-import { describe, expect, it, vi } from 'vitest'
+import { describe, expect, it, vi } from "vitest";
 
-vi.mock('./_generated/api', () => ({
+vi.mock("./_generated/api", () => ({
   internal: {
     maintenance: {
-      getSkillBackfillPageInternal: Symbol('getSkillBackfillPageInternal'),
-      applySkillBackfillPatchInternal: Symbol('applySkillBackfillPatchInternal'),
-      backfillSkillSummariesInternal: Symbol('backfillSkillSummariesInternal'),
-      getSkillFingerprintBackfillPageInternal: Symbol('getSkillFingerprintBackfillPageInternal'),
+      getSkillBackfillPageInternal: Symbol("getSkillBackfillPageInternal"),
+      applySkillBackfillPatchInternal: Symbol("applySkillBackfillPatchInternal"),
+      backfillSkillSummariesInternal: Symbol("backfillSkillSummariesInternal"),
+      getSkillFingerprintBackfillPageInternal: Symbol("getSkillFingerprintBackfillPageInternal"),
       applySkillFingerprintBackfillPatchInternal: Symbol(
-        'applySkillFingerprintBackfillPatchInternal',
+        "applySkillFingerprintBackfillPatchInternal",
       ),
-      backfillSkillFingerprintsInternal: Symbol('backfillSkillFingerprintsInternal'),
-      getEmptySkillCleanupPageInternal: Symbol('getEmptySkillCleanupPageInternal'),
-      applyEmptySkillCleanupInternal: Symbol('applyEmptySkillCleanupInternal'),
-      nominateUserForEmptySkillSpamInternal: Symbol('nominateUserForEmptySkillSpamInternal'),
-      cleanupEmptySkillsInternal: Symbol('cleanupEmptySkillsInternal'),
-      nominateEmptySkillSpammersInternal: Symbol('nominateEmptySkillSpammersInternal'),
+      backfillSkillFingerprintsInternal: Symbol("backfillSkillFingerprintsInternal"),
+      getEmptySkillCleanupPageInternal: Symbol("getEmptySkillCleanupPageInternal"),
+      applyEmptySkillCleanupInternal: Symbol("applyEmptySkillCleanupInternal"),
+      nominateUserForEmptySkillSpamInternal: Symbol("nominateUserForEmptySkillSpamInternal"),
+      cleanupEmptySkillsInternal: Symbol("cleanupEmptySkillsInternal"),
+      nominateEmptySkillSpammersInternal: Symbol("nominateEmptySkillSpammersInternal"),
     },
     skills: {
-      getVersionByIdInternal: Symbol('skills.getVersionByIdInternal'),
-      getOwnerSkillActivityInternal: Symbol('skills.getOwnerSkillActivityInternal'),
+      getVersionByIdInternal: Symbol("skills.getVersionByIdInternal"),
+      getOwnerSkillActivityInternal: Symbol("skills.getOwnerSkillActivityInternal"),
     },
     users: {
-      getByIdInternal: Symbol('users.getByIdInternal'),
+      getByIdInternal: Symbol("users.getByIdInternal"),
     },
   },
-}))
+}));
 
-vi.mock('./lib/skillSummary', () => ({
+vi.mock("./lib/skillSummary", () => ({
   generateSkillSummary: vi.fn(),
-}))
+}));
 
 const {
   backfillLatestVersionSummaryInternal,
@@ -39,194 +39,194 @@ const {
   cleanupEmptySkillsInternalHandler,
   nominateEmptySkillSpammersInternalHandler,
   upsertSkillBadgeRecordInternal,
-} = await import('./maintenance')
-const { internal } = await import('./_generated/api')
-const { generateSkillSummary } = await import('./lib/skillSummary')
+} = await import("./maintenance");
+const { internal } = await import("./_generated/api");
+const { generateSkillSummary } = await import("./lib/skillSummary");
 
 function makeBlob(text: string) {
-  return { text: () => Promise.resolve(text) } as unknown as Blob
+  return { text: () => Promise.resolve(text) } as unknown as Blob;
 }
 
-describe('maintenance backfill', () => {
-  it('repairs summary + parsed by reparsing SKILL.md', async () => {
+describe("maintenance backfill", () => {
+  it("repairs summary + parsed by reparsing SKILL.md", async () => {
     const runQuery = vi.fn().mockResolvedValue({
       items: [
         {
-          kind: 'ok',
-          skillId: 'skills:1',
-          skillSlug: 'skill-1',
-          skillDisplayName: 'Skill 1',
-          versionId: 'skillVersions:1',
-          skillSummary: '>',
-          versionParsed: { frontmatter: { description: '>' } },
-          readmeStorageId: 'storage:1',
+          kind: "ok",
+          skillId: "skills:1",
+          skillSlug: "skill-1",
+          skillDisplayName: "Skill 1",
+          versionId: "skillVersions:1",
+          skillSummary: ">",
+          versionParsed: { frontmatter: { description: ">" } },
+          readmeStorageId: "storage:1",
         },
       ],
       cursor: null,
       isDone: true,
-    })
+    });
 
-    const runMutation = vi.fn().mockResolvedValue({ ok: true })
+    const runMutation = vi.fn().mockResolvedValue({ ok: true });
     const storageGet = vi
       .fn()
-      .mockResolvedValue(makeBlob(`---\ndescription: >\n  Hello\n  world.\n---\nBody`))
+      .mockResolvedValue(makeBlob(`---\ndescription: >\n  Hello\n  world.\n---\nBody`));
 
     const result = await backfillSkillSummariesInternalHandler(
       { runQuery, runMutation, storage: { get: storageGet } } as never,
       { dryRun: false, batchSize: 10, maxBatches: 1 },
-    )
+    );
 
-    expect(result.ok).toBe(true)
-    expect(result.stats.skillsScanned).toBe(1)
-    expect(result.stats.skillsPatched).toBe(1)
-    expect(result.stats.versionsPatched).toBe(1)
-    expect(runMutation).toHaveBeenCalledTimes(1)
+    expect(result.ok).toBe(true);
+    expect(result.stats.skillsScanned).toBe(1);
+    expect(result.stats.skillsPatched).toBe(1);
+    expect(result.stats.versionsPatched).toBe(1);
+    expect(runMutation).toHaveBeenCalledTimes(1);
     expect(runMutation).toHaveBeenCalledWith(expect.anything(), {
-      skillId: 'skills:1',
-      versionId: 'skillVersions:1',
-      summary: 'Hello world.',
+      skillId: "skills:1",
+      versionId: "skillVersions:1",
+      summary: "Hello world.",
       parsed: {
-        frontmatter: { description: 'Hello world.' },
+        frontmatter: { description: "Hello world." },
         metadata: undefined,
         clawdis: undefined,
-        license: 'MIT-0',
+        license: "MIT-0",
       },
-    })
-  })
+    });
+  });
 
-  it('dryRun does not patch', async () => {
+  it("dryRun does not patch", async () => {
     const runQuery = vi.fn().mockResolvedValue({
       items: [
         {
-          kind: 'ok',
-          skillId: 'skills:1',
-          skillSlug: 'skill-1',
-          skillDisplayName: 'Skill 1',
-          versionId: 'skillVersions:1',
-          skillSummary: '>',
-          versionParsed: { frontmatter: { description: '>' } },
-          readmeStorageId: 'storage:1',
+          kind: "ok",
+          skillId: "skills:1",
+          skillSlug: "skill-1",
+          skillDisplayName: "Skill 1",
+          versionId: "skillVersions:1",
+          skillSummary: ">",
+          versionParsed: { frontmatter: { description: ">" } },
+          readmeStorageId: "storage:1",
         },
       ],
       cursor: null,
       isDone: true,
-    })
+    });
 
-    const runMutation = vi.fn()
-    const storageGet = vi.fn().mockResolvedValue(makeBlob(`---\ndescription: Hello\n---\nBody`))
+    const runMutation = vi.fn();
+    const storageGet = vi.fn().mockResolvedValue(makeBlob(`---\ndescription: Hello\n---\nBody`));
 
     const result = await backfillSkillSummariesInternalHandler(
       { runQuery, runMutation, storage: { get: storageGet } } as never,
       { dryRun: true, batchSize: 10, maxBatches: 1 },
-    )
+    );
 
-    expect(result.ok).toBe(true)
-    expect(result.stats.skillsPatched).toBe(1)
-    expect(runMutation).not.toHaveBeenCalled()
-  })
+    expect(result.ok).toBe(true);
+    expect(result.stats.skillsPatched).toBe(1);
+    expect(runMutation).not.toHaveBeenCalled();
+  });
 
-  it('counts missing storage blob', async () => {
+  it("counts missing storage blob", async () => {
     const runQuery = vi.fn().mockResolvedValue({
       items: [
         {
-          kind: 'ok',
-          skillId: 'skills:1',
-          skillSlug: 'skill-1',
-          skillDisplayName: 'Skill 1',
-          versionId: 'skillVersions:1',
+          kind: "ok",
+          skillId: "skills:1",
+          skillSlug: "skill-1",
+          skillDisplayName: "Skill 1",
+          versionId: "skillVersions:1",
           skillSummary: null,
           versionParsed: { frontmatter: {} },
-          readmeStorageId: 'storage:missing',
+          readmeStorageId: "storage:missing",
         },
       ],
       cursor: null,
       isDone: true,
-    })
+    });
 
-    const runMutation = vi.fn()
-    const storageGet = vi.fn().mockResolvedValue(null)
+    const runMutation = vi.fn();
+    const storageGet = vi.fn().mockResolvedValue(null);
 
     const result = await backfillSkillSummariesInternalHandler(
       { runQuery, runMutation, storage: { get: storageGet } } as never,
       { dryRun: false, batchSize: 10, maxBatches: 1 },
-    )
+    );
 
-    expect(result.stats.missingStorageBlob).toBe(1)
-    expect(runMutation).not.toHaveBeenCalled()
-  })
+    expect(result.stats.missingStorageBlob).toBe(1);
+    expect(runMutation).not.toHaveBeenCalled();
+  });
 
-  it('fills empty summary via AI when useAi is enabled', async () => {
-    vi.mocked(generateSkillSummary).mockResolvedValue('AI generated summary.')
+  it("fills empty summary via AI when useAi is enabled", async () => {
+    vi.mocked(generateSkillSummary).mockResolvedValue("AI generated summary.");
 
     const runQuery = vi.fn().mockResolvedValue({
       items: [
         {
-          kind: 'ok',
-          skillId: 'skills:1',
-          skillSlug: 'ai-skill',
-          skillDisplayName: 'AI Skill',
-          versionId: 'skillVersions:1',
+          kind: "ok",
+          skillId: "skills:1",
+          skillSlug: "ai-skill",
+          skillDisplayName: "AI Skill",
+          versionId: "skillVersions:1",
           skillSummary: null,
           versionParsed: { frontmatter: {} },
-          readmeStorageId: 'storage:1',
+          readmeStorageId: "storage:1",
         },
       ],
       cursor: null,
       isDone: true,
-    })
+    });
 
-    const runMutation = vi.fn().mockResolvedValue({ ok: true })
-    const storageGet = vi.fn().mockResolvedValue(makeBlob('# AI Skill\n\nUseful automation.'))
+    const runMutation = vi.fn().mockResolvedValue({ ok: true });
+    const storageGet = vi.fn().mockResolvedValue(makeBlob("# AI Skill\n\nUseful automation."));
 
     const result = await backfillSkillSummariesInternalHandler(
       { runQuery, runMutation, storage: { get: storageGet } } as never,
       { dryRun: false, batchSize: 10, maxBatches: 1, useAi: true },
-    )
+    );
 
-    expect(result.ok).toBe(true)
-    expect(result.stats.skillsPatched).toBe(1)
-    expect(result.stats.aiSummariesPatched).toBe(1)
+    expect(result.ok).toBe(true);
+    expect(result.stats.skillsPatched).toBe(1);
+    expect(result.stats.aiSummariesPatched).toBe(1);
     expect(runMutation).toHaveBeenCalledWith(expect.anything(), {
-      skillId: 'skills:1',
-      versionId: 'skillVersions:1',
-      summary: 'AI generated summary.',
+      skillId: "skills:1",
+      versionId: "skillVersions:1",
+      summary: "AI generated summary.",
       parsed: {
         frontmatter: {},
         metadata: undefined,
         clawdis: undefined,
-        license: 'MIT-0',
+        license: "MIT-0",
       },
-    })
-  })
+    });
+  });
 
-  it('re-syncs latestVersionSummary when changelogSource or clawdis drift', async () => {
+  it("re-syncs latestVersionSummary when changelogSource or clawdis drift", async () => {
     const paginate = vi.fn().mockResolvedValue({
       page: [
         {
-          _id: 'skills:1',
-          latestVersionId: 'skillVersions:1',
+          _id: "skills:1",
+          latestVersionId: "skillVersions:1",
           latestVersionSummary: {
-            version: '1.0.0',
+            version: "1.0.0",
             createdAt: 123,
-            changelog: 'Same changelog',
-            changelogSource: 'user',
+            changelog: "Same changelog",
+            changelogSource: "user",
             clawdis: undefined,
           },
         },
       ],
       continueCursor: null,
       isDone: true,
-    })
+    });
     const get = vi.fn().mockResolvedValue({
-      _id: 'skillVersions:1',
-      version: '1.0.0',
+      _id: "skillVersions:1",
+      version: "1.0.0",
       createdAt: 123,
-      changelog: 'Same changelog',
-      changelogSource: 'auto',
-      parsed: { clawdis: { emoji: 'lobster' } },
-    })
-    const patch = vi.fn().mockResolvedValue(undefined)
-    const runAfter = vi.fn()
+      changelog: "Same changelog",
+      changelogSource: "auto",
+      parsed: { clawdis: { emoji: "lobster" } },
+    });
+    const patch = vi.fn().mockResolvedValue(undefined);
+    const runAfter = vi.fn();
 
     const ctx = {
       db: {
@@ -238,38 +238,38 @@ describe('maintenance backfill', () => {
       scheduler: {
         runAfter,
       },
-    } as never
+    } as never;
 
     const result = await (
       backfillLatestVersionSummaryInternal as unknown as { _handler: Function }
     )._handler(ctx, {
       batchSize: 10,
-    })
+    });
 
-    expect(result).toEqual({ patched: 1, isDone: true, scanned: 1 })
-    expect(paginate).toHaveBeenCalledWith({ cursor: null, numItems: 10 })
-    expect(patch).toHaveBeenCalledWith('skills:1', {
+    expect(result).toEqual({ patched: 1, isDone: true, scanned: 1 });
+    expect(paginate).toHaveBeenCalledWith({ cursor: null, numItems: 10 });
+    expect(patch).toHaveBeenCalledWith("skills:1", {
       latestVersionSummary: {
-        version: '1.0.0',
+        version: "1.0.0",
         createdAt: 123,
-        changelog: 'Same changelog',
-        changelogSource: 'auto',
-        clawdis: { emoji: 'lobster' },
+        changelog: "Same changelog",
+        changelogSource: "auto",
+        clawdis: { emoji: "lobster" },
       },
-    })
-    expect(runAfter).not.toHaveBeenCalled()
-  })
-})
+    });
+    expect(runAfter).not.toHaveBeenCalled();
+  });
+});
 
-describe('maintenance badge denormalization', () => {
-  it('upserts table badge and keeps skill.badges in sync', async () => {
-    const unique = vi.fn().mockResolvedValue(null)
+describe("maintenance badge denormalization", () => {
+  it("upserts table badge and keeps skill.badges in sync", async () => {
+    const unique = vi.fn().mockResolvedValue(null);
     const query = vi.fn().mockReturnValue({
       withIndex: () => ({ unique }),
-    })
-    const insert = vi.fn().mockResolvedValue('skillBadges:1')
-    const get = vi.fn().mockResolvedValue({ _id: 'skills:1', badges: undefined })
-    const patch = vi.fn().mockResolvedValue(undefined)
+    });
+    const insert = vi.fn().mockResolvedValue("skillBadges:1");
+    const get = vi.fn().mockResolvedValue({ _id: "skills:1", badges: undefined });
+    const patch = vi.fn().mockResolvedValue(undefined);
 
     const ctx = {
       db: {
@@ -279,39 +279,39 @@ describe('maintenance badge denormalization', () => {
         patch,
         normalizeId: vi.fn(),
       },
-    } as never
+    } as never;
 
     const result = await (
       upsertSkillBadgeRecordInternal as unknown as { _handler: Function }
     )._handler(ctx, {
-      skillId: 'skills:1',
-      kind: 'highlighted',
-      byUserId: 'users:1',
+      skillId: "skills:1",
+      kind: "highlighted",
+      byUserId: "users:1",
       at: 123,
-    })
+    });
 
-    expect(result).toEqual({ inserted: true })
-    expect(insert).toHaveBeenCalledWith('skillBadges', {
-      skillId: 'skills:1',
-      kind: 'highlighted',
-      byUserId: 'users:1',
+    expect(result).toEqual({ inserted: true });
+    expect(insert).toHaveBeenCalledWith("skillBadges", {
+      skillId: "skills:1",
+      kind: "highlighted",
+      byUserId: "users:1",
       at: 123,
-    })
-    expect(patch).toHaveBeenCalledWith('skills:1', {
+    });
+    expect(patch).toHaveBeenCalledWith("skills:1", {
       badges: {
-        highlighted: { byUserId: 'users:1', at: 123 },
+        highlighted: { byUserId: "users:1", at: 123 },
       },
-    })
-  })
+    });
+  });
 
-  it('resyncs denormalized badge even when table record already exists', async () => {
-    const unique = vi.fn().mockResolvedValue({ _id: 'skillBadges:existing' })
+  it("resyncs denormalized badge even when table record already exists", async () => {
+    const unique = vi.fn().mockResolvedValue({ _id: "skillBadges:existing" });
     const query = vi.fn().mockReturnValue({
       withIndex: () => ({ unique }),
-    })
-    const insert = vi.fn()
-    const get = vi.fn().mockResolvedValue({ _id: 'skills:1', badges: {} })
-    const patch = vi.fn().mockResolvedValue(undefined)
+    });
+    const insert = vi.fn();
+    const get = vi.fn().mockResolvedValue({ _id: "skills:1", badges: {} });
+    const patch = vi.fn().mockResolvedValue(undefined);
 
     const ctx = {
       db: {
@@ -321,376 +321,376 @@ describe('maintenance badge denormalization', () => {
         patch,
         normalizeId: vi.fn(),
       },
-    } as never
+    } as never;
 
     const result = await (
       upsertSkillBadgeRecordInternal as unknown as { _handler: Function }
     )._handler(ctx, {
-      skillId: 'skills:1',
-      kind: 'official',
-      byUserId: 'users:2',
+      skillId: "skills:1",
+      kind: "official",
+      byUserId: "users:2",
       at: 456,
-    })
+    });
 
-    expect(result).toEqual({ inserted: false })
-    expect(insert).not.toHaveBeenCalled()
-    expect(patch).toHaveBeenCalledWith('skills:1', {
+    expect(result).toEqual({ inserted: false });
+    expect(insert).not.toHaveBeenCalled();
+    expect(patch).toHaveBeenCalledWith("skills:1", {
       badges: {
-        official: { byUserId: 'users:2', at: 456 },
+        official: { byUserId: "users:2", at: 456 },
       },
-    })
-  })
-})
+    });
+  });
+});
 
-describe('maintenance fingerprint backfill', () => {
-  it('backfills fingerprint field and inserts index entry', async () => {
-    const { hashSkillFiles } = await import('./lib/skills')
-    const expected = await hashSkillFiles([{ path: 'SKILL.md', sha256: 'abc' }])
+describe("maintenance fingerprint backfill", () => {
+  it("backfills fingerprint field and inserts index entry", async () => {
+    const { hashSkillFiles } = await import("./lib/skills");
+    const expected = await hashSkillFiles([{ path: "SKILL.md", sha256: "abc" }]);
 
     const runQuery = vi.fn().mockResolvedValue({
       items: [
         {
-          skillId: 'skills:1',
-          versionId: 'skillVersions:1',
+          skillId: "skills:1",
+          versionId: "skillVersions:1",
           versionFingerprint: undefined,
-          files: [{ path: 'SKILL.md', sha256: 'abc' }],
+          files: [{ path: "SKILL.md", sha256: "abc" }],
           existingEntries: [],
         },
       ],
       cursor: null,
       isDone: true,
-    })
+    });
 
-    const runMutation = vi.fn().mockResolvedValue({ ok: true })
+    const runMutation = vi.fn().mockResolvedValue({ ok: true });
 
     const result = await backfillSkillFingerprintsInternalHandler(
       { runQuery, runMutation } as never,
       { dryRun: false, batchSize: 10, maxBatches: 1 },
-    )
+    );
 
-    expect(result.ok).toBe(true)
-    expect(result.stats.versionsScanned).toBe(1)
-    expect(result.stats.versionsPatched).toBe(1)
-    expect(result.stats.fingerprintsInserted).toBe(1)
-    expect(result.stats.fingerprintMismatches).toBe(0)
-    expect(runMutation).toHaveBeenCalledTimes(1)
+    expect(result.ok).toBe(true);
+    expect(result.stats.versionsScanned).toBe(1);
+    expect(result.stats.versionsPatched).toBe(1);
+    expect(result.stats.fingerprintsInserted).toBe(1);
+    expect(result.stats.fingerprintMismatches).toBe(0);
+    expect(runMutation).toHaveBeenCalledTimes(1);
     expect(runMutation).toHaveBeenCalledWith(expect.anything(), {
-      versionId: 'skillVersions:1',
+      versionId: "skillVersions:1",
       fingerprint: expected,
       patchVersion: true,
       replaceEntries: true,
       existingEntryIds: [],
-    })
-  })
+    });
+  });
 
-  it('dryRun does not patch', async () => {
+  it("dryRun does not patch", async () => {
     const runQuery = vi.fn().mockResolvedValue({
       items: [
         {
-          skillId: 'skills:1',
-          versionId: 'skillVersions:1',
+          skillId: "skills:1",
+          versionId: "skillVersions:1",
           versionFingerprint: undefined,
-          files: [{ path: 'SKILL.md', sha256: 'abc' }],
+          files: [{ path: "SKILL.md", sha256: "abc" }],
           existingEntries: [],
         },
       ],
       cursor: null,
       isDone: true,
-    })
+    });
 
-    const runMutation = vi.fn()
+    const runMutation = vi.fn();
 
     const result = await backfillSkillFingerprintsInternalHandler(
       { runQuery, runMutation } as never,
       { dryRun: true, batchSize: 10, maxBatches: 1 },
-    )
+    );
 
-    expect(result.ok).toBe(true)
-    expect(result.stats.versionsPatched).toBe(1)
-    expect(result.stats.fingerprintsInserted).toBe(1)
-    expect(runMutation).not.toHaveBeenCalled()
-  })
+    expect(result.ok).toBe(true);
+    expect(result.stats.versionsPatched).toBe(1);
+    expect(result.stats.fingerprintsInserted).toBe(1);
+    expect(runMutation).not.toHaveBeenCalled();
+  });
 
-  it('patches missing version fingerprint without touching correct entries', async () => {
-    const { hashSkillFiles } = await import('./lib/skills')
-    const expected = await hashSkillFiles([{ path: 'SKILL.md', sha256: 'abc' }])
+  it("patches missing version fingerprint without touching correct entries", async () => {
+    const { hashSkillFiles } = await import("./lib/skills");
+    const expected = await hashSkillFiles([{ path: "SKILL.md", sha256: "abc" }]);
 
     const runQuery = vi.fn().mockResolvedValue({
       items: [
         {
-          skillId: 'skills:1',
-          versionId: 'skillVersions:1',
+          skillId: "skills:1",
+          versionId: "skillVersions:1",
           versionFingerprint: undefined,
-          files: [{ path: 'SKILL.md', sha256: 'abc' }],
-          existingEntries: [{ id: 'skillVersionFingerprints:1', fingerprint: expected }],
+          files: [{ path: "SKILL.md", sha256: "abc" }],
+          existingEntries: [{ id: "skillVersionFingerprints:1", fingerprint: expected }],
         },
       ],
       cursor: null,
       isDone: true,
-    })
+    });
 
-    const runMutation = vi.fn().mockResolvedValue({ ok: true })
+    const runMutation = vi.fn().mockResolvedValue({ ok: true });
 
     const result = await backfillSkillFingerprintsInternalHandler(
       { runQuery, runMutation } as never,
       { dryRun: false, batchSize: 10, maxBatches: 1 },
-    )
+    );
 
-    expect(result.ok).toBe(true)
-    expect(result.stats.versionsPatched).toBe(1)
-    expect(result.stats.fingerprintsInserted).toBe(0)
-    expect(result.stats.fingerprintMismatches).toBe(0)
+    expect(result.ok).toBe(true);
+    expect(result.stats.versionsPatched).toBe(1);
+    expect(result.stats.fingerprintsInserted).toBe(0);
+    expect(result.stats.fingerprintMismatches).toBe(0);
     expect(runMutation).toHaveBeenCalledWith(expect.anything(), {
-      versionId: 'skillVersions:1',
+      versionId: "skillVersions:1",
       fingerprint: expected,
       patchVersion: true,
       replaceEntries: false,
       existingEntryIds: [],
-    })
-  })
+    });
+  });
 
-  it('replaces mismatched fingerprint entries', async () => {
-    const { hashSkillFiles } = await import('./lib/skills')
-    const expected = await hashSkillFiles([{ path: 'SKILL.md', sha256: 'abc' }])
+  it("replaces mismatched fingerprint entries", async () => {
+    const { hashSkillFiles } = await import("./lib/skills");
+    const expected = await hashSkillFiles([{ path: "SKILL.md", sha256: "abc" }]);
 
     const runQuery = vi.fn().mockResolvedValue({
       items: [
         {
-          skillId: 'skills:1',
-          versionId: 'skillVersions:1',
-          versionFingerprint: 'wrong',
-          files: [{ path: 'SKILL.md', sha256: 'abc' }],
-          existingEntries: [{ id: 'skillVersionFingerprints:1', fingerprint: 'wrong' }],
+          skillId: "skills:1",
+          versionId: "skillVersions:1",
+          versionFingerprint: "wrong",
+          files: [{ path: "SKILL.md", sha256: "abc" }],
+          existingEntries: [{ id: "skillVersionFingerprints:1", fingerprint: "wrong" }],
         },
       ],
       cursor: null,
       isDone: true,
-    })
+    });
 
-    const runMutation = vi.fn().mockResolvedValue({ ok: true })
+    const runMutation = vi.fn().mockResolvedValue({ ok: true });
 
     const result = await backfillSkillFingerprintsInternalHandler(
       { runQuery, runMutation } as never,
       { dryRun: false, batchSize: 10, maxBatches: 1 },
-    )
+    );
 
-    expect(result.ok).toBe(true)
-    expect(result.stats.fingerprintMismatches).toBe(1)
+    expect(result.ok).toBe(true);
+    expect(result.stats.fingerprintMismatches).toBe(1);
     expect(runMutation).toHaveBeenCalledWith(expect.anything(), {
-      versionId: 'skillVersions:1',
+      versionId: "skillVersions:1",
       fingerprint: expected,
       patchVersion: true,
       replaceEntries: true,
-      existingEntryIds: ['skillVersionFingerprints:1'],
-    })
-  })
-})
+      existingEntryIds: ["skillVersionFingerprints:1"],
+    });
+  });
+});
 
-describe('maintenance empty skill cleanup', () => {
-  it('dryRun detects empty skills and returns nominations', async () => {
+describe("maintenance empty skill cleanup", () => {
+  it("dryRun detects empty skills and returns nominations", async () => {
     const runQuery = vi.fn().mockImplementation(async (endpoint: unknown) => {
       if (endpoint === internal.maintenance.getEmptySkillCleanupPageInternal) {
         return {
           items: [
             {
-              skillId: 'skills:1',
-              slug: 'spam-skill',
-              ownerUserId: 'users:1',
-              latestVersionId: 'skillVersions:1',
+              skillId: "skills:1",
+              slug: "spam-skill",
+              ownerUserId: "users:1",
+              latestVersionId: "skillVersions:1",
               softDeletedAt: undefined,
-              summary: 'Expert guidance for spam-skill.',
+              summary: "Expert guidance for spam-skill.",
             },
           ],
           cursor: null,
           isDone: true,
-        }
+        };
       }
       if (endpoint === internal.skills.getVersionByIdInternal) {
         return {
-          _id: 'skillVersions:1',
-          files: [{ path: 'SKILL.md', size: 120, storageId: 'storage:1' }],
-        }
+          _id: "skillVersions:1",
+          files: [{ path: "SKILL.md", size: 120, storageId: "storage:1" }],
+        };
       }
       if (endpoint === internal.users.getByIdInternal) {
-        return { _id: 'users:1', handle: 'spammer', _creationTime: Date.now() }
+        return { _id: "users:1", handle: "spammer", _creationTime: Date.now() };
       }
       if (endpoint === internal.skills.getOwnerSkillActivityInternal) {
-        return []
+        return [];
       }
-      throw new Error(`Unexpected endpoint: ${String(endpoint)}`)
-    })
+      throw new Error(`Unexpected endpoint: ${String(endpoint)}`);
+    });
 
-    const runMutation = vi.fn()
+    const runMutation = vi.fn();
     const storageGet = vi
       .fn()
       .mockResolvedValue(
         makeBlob(`# Demo\n- Step-by-step tutorials\n- Tips and techniques\n- Project ideas`),
-      )
+      );
 
     const result = await cleanupEmptySkillsInternalHandler(
       { runQuery, runMutation, storage: { get: storageGet } } as never,
       { dryRun: true, batchSize: 10, maxBatches: 1, nominationThreshold: 1 },
-    )
+    );
 
-    expect(result.ok).toBe(true)
-    expect(result.isDone).toBe(true)
-    expect(result.cursor).toBeNull()
-    expect(result.stats.emptyDetected).toBe(1)
-    expect(result.stats.skillsDeleted).toBe(0)
+    expect(result.ok).toBe(true);
+    expect(result.isDone).toBe(true);
+    expect(result.cursor).toBeNull();
+    expect(result.stats.emptyDetected).toBe(1);
+    expect(result.stats.skillsDeleted).toBe(0);
     expect(result.nominations).toEqual([
       {
-        userId: 'users:1',
-        handle: 'spammer',
+        userId: "users:1",
+        handle: "spammer",
         emptySkillCount: 1,
-        sampleSlugs: ['spam-skill'],
+        sampleSlugs: ["spam-skill"],
       },
-    ])
-    expect(runMutation).not.toHaveBeenCalled()
-  })
+    ]);
+    expect(runMutation).not.toHaveBeenCalled();
+  });
 
-  it('apply mode deletes empty skills', async () => {
+  it("apply mode deletes empty skills", async () => {
     const runQuery = vi.fn().mockImplementation(async (endpoint: unknown) => {
       if (endpoint === internal.maintenance.getEmptySkillCleanupPageInternal) {
         return {
           items: [
             {
-              skillId: 'skills:1',
-              slug: 'spam-a',
-              ownerUserId: 'users:1',
-              latestVersionId: 'skillVersions:1',
-              summary: 'Expert guidance for spam-a.',
+              skillId: "skills:1",
+              slug: "spam-a",
+              ownerUserId: "users:1",
+              latestVersionId: "skillVersions:1",
+              summary: "Expert guidance for spam-a.",
             },
             {
-              skillId: 'skills:2',
-              slug: 'spam-b',
-              ownerUserId: 'users:1',
-              latestVersionId: 'skillVersions:2',
-              summary: 'Expert guidance for spam-b.',
+              skillId: "skills:2",
+              slug: "spam-b",
+              ownerUserId: "users:1",
+              latestVersionId: "skillVersions:2",
+              summary: "Expert guidance for spam-b.",
             },
           ],
           cursor: null,
           isDone: true,
-        }
+        };
       }
       if (endpoint === internal.skills.getVersionByIdInternal) {
         return {
-          files: [{ path: 'SKILL.md', size: 120, storageId: 'storage:1' }],
-        }
+          files: [{ path: "SKILL.md", size: 120, storageId: "storage:1" }],
+        };
       }
       if (endpoint === internal.users.getByIdInternal) {
-        return { _id: 'users:1', handle: 'spammer', _creationTime: Date.now() }
+        return { _id: "users:1", handle: "spammer", _creationTime: Date.now() };
       }
       if (endpoint === internal.skills.getOwnerSkillActivityInternal) {
-        return []
+        return [];
       }
-      throw new Error(`Unexpected endpoint: ${String(endpoint)}`)
-    })
+      throw new Error(`Unexpected endpoint: ${String(endpoint)}`);
+    });
 
     const runMutation = vi.fn().mockImplementation(async (endpoint: unknown) => {
       if (endpoint === internal.maintenance.applyEmptySkillCleanupInternal) {
-        return { deleted: true }
+        return { deleted: true };
       }
-      throw new Error(`Unexpected mutation endpoint: ${String(endpoint)}`)
-    })
+      throw new Error(`Unexpected mutation endpoint: ${String(endpoint)}`);
+    });
 
     const storageGet = vi
       .fn()
       .mockResolvedValue(
         makeBlob(`# Demo\n- Step-by-step tutorials\n- Tips and techniques\n- Project ideas`),
-      )
+      );
 
     const result = await cleanupEmptySkillsInternalHandler(
       { runQuery, runMutation, storage: { get: storageGet } } as never,
       { dryRun: false, batchSize: 10, maxBatches: 1, nominationThreshold: 2 },
-    )
+    );
 
-    expect(result.ok).toBe(true)
-    expect(result.isDone).toBe(true)
-    expect(result.cursor).toBeNull()
-    expect(result.stats.emptyDetected).toBe(2)
-    expect(result.stats.skillsDeleted).toBe(2)
+    expect(result.ok).toBe(true);
+    expect(result.isDone).toBe(true);
+    expect(result.cursor).toBeNull();
+    expect(result.stats.emptyDetected).toBe(2);
+    expect(result.stats.skillsDeleted).toBe(2);
     expect(result.nominations).toEqual([
       {
-        userId: 'users:1',
-        handle: 'spammer',
+        userId: "users:1",
+        handle: "spammer",
         emptySkillCount: 2,
-        sampleSlugs: ['spam-a', 'spam-b'],
+        sampleSlugs: ["spam-a", "spam-b"],
       },
-    ])
-  })
-})
+    ]);
+  });
+});
 
-describe('maintenance empty skill nominations', () => {
-  it('creates ban nominations from backfilled empty deletions', async () => {
+describe("maintenance empty skill nominations", () => {
+  it("creates ban nominations from backfilled empty deletions", async () => {
     const runQuery = vi.fn().mockImplementation(async (endpoint: unknown, args: unknown) => {
       if (endpoint === internal.maintenance.getEmptySkillCleanupPageInternal) {
-        const cursor = (args as { cursor?: string | undefined }).cursor
+        const cursor = (args as { cursor?: string | undefined }).cursor;
         if (!cursor) {
           return {
             items: [
               {
-                skillId: 'skills:1',
-                slug: 'spam-a',
-                ownerUserId: 'users:1',
+                skillId: "skills:1",
+                slug: "spam-a",
+                ownerUserId: "users:1",
                 softDeletedAt: 1,
-                moderationReason: 'quality.empty.backfill',
+                moderationReason: "quality.empty.backfill",
               },
               {
-                skillId: 'skills:2',
-                slug: 'spam-b',
-                ownerUserId: 'users:1',
+                skillId: "skills:2",
+                slug: "spam-b",
+                ownerUserId: "users:1",
                 softDeletedAt: 1,
-                moderationReason: 'quality.empty.backfill',
+                moderationReason: "quality.empty.backfill",
               },
             ],
-            cursor: 'next',
+            cursor: "next",
             isDone: false,
-          }
+          };
         }
         return {
           items: [
             {
-              skillId: 'skills:3',
-              slug: 'valid-hidden',
-              ownerUserId: 'users:2',
+              skillId: "skills:3",
+              slug: "valid-hidden",
+              ownerUserId: "users:2",
               softDeletedAt: 1,
-              moderationReason: 'scanner.vt.suspicious',
+              moderationReason: "scanner.vt.suspicious",
             },
           ],
           cursor: null,
           isDone: true,
-        }
+        };
       }
       if (endpoint === internal.users.getByIdInternal) {
-        return { _id: 'users:1', handle: 'spammer' }
+        return { _id: "users:1", handle: "spammer" };
       }
-      throw new Error(`Unexpected query endpoint: ${String(endpoint)}`)
-    })
+      throw new Error(`Unexpected query endpoint: ${String(endpoint)}`);
+    });
 
     const runMutation = vi.fn().mockImplementation(async (endpoint: unknown) => {
       if (endpoint === internal.maintenance.nominateUserForEmptySkillSpamInternal) {
-        return { created: true }
+        return { created: true };
       }
-      throw new Error(`Unexpected mutation endpoint: ${String(endpoint)}`)
-    })
+      throw new Error(`Unexpected mutation endpoint: ${String(endpoint)}`);
+    });
 
     const result = await nominateEmptySkillSpammersInternalHandler(
       { runQuery, runMutation } as never,
       { batchSize: 10, maxBatches: 2, nominationThreshold: 2 },
-    )
+    );
 
-    expect(result.ok).toBe(true)
-    expect(result.isDone).toBe(true)
-    expect(result.stats.usersFlagged).toBe(1)
-    expect(result.stats.nominationsCreated).toBe(1)
-    expect(result.stats.nominationsExisting).toBe(0)
+    expect(result.ok).toBe(true);
+    expect(result.isDone).toBe(true);
+    expect(result.stats.usersFlagged).toBe(1);
+    expect(result.stats.nominationsCreated).toBe(1);
+    expect(result.stats.nominationsExisting).toBe(0);
     expect(result.nominations).toEqual([
       {
-        userId: 'users:1',
-        handle: 'spammer',
+        userId: "users:1",
+        handle: "spammer",
         emptySkillCount: 2,
-        sampleSlugs: ['spam-a', 'spam-b'],
+        sampleSlugs: ["spam-a", "spam-b"],
       },
-    ])
-  })
-})
+    ]);
+  });
+});

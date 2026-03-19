@@ -16,11 +16,13 @@ The goal? A personal assistant that's easy to use, supports a wide range of plat
 The current focus is:
 
 Priority:
+
 - Security and safe defaults
 - Bug fixes and stability
 - Setup reliability and first-run UX
 
 Next priorities:
+
 - Supporting all major model providers
 - Improving support for major messaging channels (and adding a few high-demand ones)
 - Performance and test infrastructure
@@ -34,6 +36,7 @@ Security in OpenClaw is a deliberate tradeoff: strong defaults without killing c
 The goal is to stay powerful for real work while making risky paths explicit and operator-controlled.
 
 Canonical security policy and reporting:
+
 - https://github.com/openclaw/openclaw/blob/main/SECURITY.md
 
 We prioritize secure defaults, but we also expose clear knobs for trusted high-power workflows.
@@ -61,6 +64,7 @@ Core skill additions should be rare and require a strong product or security rea
 OpenClaw supports MCP through `mcporter`: https://github.com/steipete/mcporter
 
 This keeps MCP integration flexible and decoupled from core runtime:
+
 - add or change MCP servers without restarting the gateway
 - keep core tool/context surface lean
 - reduce MCP churn impact on core stability and security

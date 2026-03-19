@@ -1,55 +1,61 @@
-import { createFileRoute, Link } from '@tanstack/react-router'
-import { useAction, useQuery } from 'convex/react'
-import { useEffect, useMemo, useRef, useState } from 'react'
-import { api } from '../../convex/_generated/api'
-import { convexHttp } from '../convex/client'
-import { InstallSwitcher } from '../components/InstallSwitcher'
-import { SkillCard } from '../components/SkillCard'
-import { SkillStatsTripletLine } from '../components/SkillStats'
-import { SoulCard } from '../components/SoulCard'
-import { SoulStatsTripletLine } from '../components/SoulStats'
-import { UserBadge } from '../components/UserBadge'
-import { getSkillBadges } from '../lib/badges'
-import type { PublicSkill, PublicSoul, PublicUser } from '../lib/publicUser'
-import { getSiteMode } from '../lib/site'
+import { createFileRoute, Link } from "@tanstack/react-router";
+import { useAction, useQuery } from "convex/react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { api } from "../../convex/_generated/api";
+import { InstallSwitcher } from "../components/InstallSwitcher";
+import { SkillCard } from "../components/SkillCard";
+import { SkillStatsTripletLine } from "../components/SkillStats";
+import { SoulCard } from "../components/SoulCard";
+import { SoulStatsTripletLine } from "../components/SoulStats";
+import { UserBadge } from "../components/UserBadge";
+import { convexHttp } from "../convex/client";
+import { getSkillBadges } from "../lib/badges";
+import type { PublicSkill, PublicSoul, PublicUser } from "../lib/publicUser";
+import { getSiteMode } from "../lib/site";
 
-export const Route = createFileRoute('/')({
+export const Route = createFileRoute("/")({
   component: Home,
-})
+});
 
 function Home() {
-  const mode = getSiteMode()
-  return mode === 'souls' ? <OnlyCrabsHome /> : <SkillsHome />
+  const mode = getSiteMode();
+  return mode === "souls" ? <OnlyCrabsHome /> : <SkillsHome />;
 }
 
 function SkillsHome() {
   type SkillPageEntry = {
-    skill: PublicSkill
-    ownerHandle?: string | null
-    owner?: PublicUser | null
-    latestVersion?: unknown
-  }
+    skill: PublicSkill;
+    ownerHandle?: string | null;
+    owner?: PublicUser | null;
+    latestVersion?: unknown;
+  };
 
-  const [highlighted, setHighlighted] = useState<SkillPageEntry[]>([])
-  const [popular, setPopular] = useState<SkillPageEntry[]>([])
+  const [highlighted, setHighlighted] = useState<SkillPageEntry[]>([]);
+  const [popular, setPopular] = useState<SkillPageEntry[]>([]);
 
   useEffect(() => {
-    let cancelled = false
+    let cancelled = false;
     convexHttp
       .query(api.skills.listHighlightedPublic, { limit: 6 })
-      .then((r) => { if (!cancelled) setHighlighted(r as SkillPageEntry[]) })
-      .catch(() => {})
+      .then((r) => {
+        if (!cancelled) setHighlighted(r as SkillPageEntry[]);
+      })
+      .catch(() => {});
     convexHttp
       .query(api.skills.listPublicPageV4, {
         numItems: 12,
-        sort: 'downloads',
-        dir: 'desc',
+        sort: "downloads",
+        dir: "desc",
         nonSuspiciousOnly: true,
       })
-      .then((r) => { if (!cancelled) setPopular((r as { page: SkillPageEntry[] }).page) })
-      .catch(() => {})
-    return () => { cancelled = true }
-  }, [])
+      .then((r) => {
+        if (!cancelled) setPopular((r as { page: SkillPageEntry[] }).page);
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   return (
     <main>
@@ -62,7 +68,7 @@ function SkillsHome() {
               Upload AgentSkills bundles, version them like npm, and make them searchable with
               vectors. No gatekeeping, just signal.
             </p>
-            <div style={{ display: 'flex', gap: 12, marginTop: 20 }}>
+            <div style={{ display: "flex", gap: 12, marginTop: 20 }}>
               <Link to="/upload" search={{ updateSlug: undefined }} className="btn btn-primary">
                 Publish a skill
               </Link>
@@ -172,22 +178,22 @@ function SkillsHome() {
         </div>
       </section>
     </main>
-  )
+  );
 }
 
 function OnlyCrabsHome() {
-  const navigate = Route.useNavigate()
-  const ensureSoulSeeds = useAction(api.seed.ensureSoulSeeds)
-  const latest = (useQuery(api.souls.list, { limit: 12 }) as PublicSoul[]) ?? []
-  const [query, setQuery] = useState('')
-  const seedEnsuredRef = useRef(false)
-  const trimmedQuery = useMemo(() => query.trim(), [query])
+  const navigate = Route.useNavigate();
+  const ensureSoulSeeds = useAction(api.seed.ensureSoulSeeds);
+  const latest = (useQuery(api.souls.list, { limit: 12 }) as PublicSoul[]) ?? [];
+  const [query, setQuery] = useState("");
+  const seedEnsuredRef = useRef(false);
+  const trimmedQuery = useMemo(() => query.trim(), [query]);
 
   useEffect(() => {
-    if (seedEnsuredRef.current) return
-    seedEnsuredRef.current = true
-    void ensureSoulSeeds({})
-  }, [ensureSoulSeeds])
+    if (seedEnsuredRef.current) return;
+    seedEnsuredRef.current = true;
+    void ensureSoulSeeds({});
+  }, [ensureSoulSeeds]);
 
   return (
     <main>
@@ -200,7 +206,7 @@ function OnlyCrabsHome() {
               Share SOUL.md bundles, version them like docs, and keep personal system lore in one
               public place.
             </p>
-            <div style={{ display: 'flex', gap: 12, marginTop: 20 }}>
+            <div style={{ display: "flex", gap: 12, marginTop: 20 }}>
               <Link to="/upload" search={{ updateSlug: undefined }} className="btn btn-primary">
                 Publish a soul
               </Link>
@@ -223,9 +229,9 @@ function OnlyCrabsHome() {
             <form
               className="search-bar"
               onSubmit={(event) => {
-                event.preventDefault()
+                event.preventDefault();
                 void navigate({
-                  to: '/souls',
+                  to: "/souls",
                   search: {
                     q: trimmedQuery || undefined,
                     sort: undefined,
@@ -233,7 +239,7 @@ function OnlyCrabsHome() {
                     view: undefined,
                     focus: undefined,
                   },
-                })
+                });
               }}
             >
               <span className="mono">/</span>
@@ -289,5 +295,5 @@ function OnlyCrabsHome() {
         </div>
       </section>
     </main>
-  )
+  );
 }

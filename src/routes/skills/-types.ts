@@ -1,37 +1,37 @@
-import type { Doc } from '../../../convex/_generated/dataModel'
-import type { PublicSkill, PublicUser } from '../../lib/publicUser'
+import type { Doc } from "../../../convex/_generated/dataModel";
+import type { PublicSkill, PublicUser } from "../../lib/publicUser";
 
 export type SkillListEntry = {
-  skill: PublicSkill
+  skill: PublicSkill;
   latestVersion: {
-    version: string
-    createdAt: number
-    changelog: string
-    changelogSource?: 'auto' | 'user'
+    version: string;
+    createdAt: number;
+    changelog: string;
+    changelogSource?: "auto" | "user";
     parsed?: {
       clawdis?: {
-        os?: string[]
+        os?: string[];
         nix?: {
-          plugin?: boolean
-          systems?: string[]
-        }
-      }
-    }
-  } | null
-  ownerHandle?: string | null
-  owner?: PublicUser | null
-  searchScore?: number
-}
+          plugin?: boolean;
+          systems?: string[];
+        };
+      };
+    };
+  } | null;
+  ownerHandle?: string | null;
+  owner?: PublicUser | null;
+  searchScore?: number;
+};
 
 export type SkillSearchEntry = {
-  skill: PublicSkill
-  version: Doc<'skillVersions'> | null
-  score: number
-  ownerHandle?: string | null
-  owner?: PublicUser | null
-}
+  skill: PublicSkill;
+  version: Doc<"skillVersions"> | null;
+  score: number;
+  ownerHandle?: string | null;
+  owner?: PublicUser | null;
+};
 
 export function buildSkillHref(skill: PublicSkill, ownerHandle?: string | null) {
-  const owner = ownerHandle?.trim() || String(skill.ownerUserId)
-  return `/${encodeURIComponent(owner)}/${encodeURIComponent(skill.slug)}`
+  const owner = ownerHandle?.trim() || String(skill.ownerUserId);
+  return `/${encodeURIComponent(owner)}/${encodeURIComponent(skill.slug)}`;
 }

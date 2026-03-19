@@ -1,5 +1,5 @@
 ---
-summary: 'Security + moderation controls (reports, bans, upload gating).'
+summary: "Security + moderation controls (reports, bans, upload gating)."
 read_when:
   - Working on moderation or abuse controls
   - Reviewing upload restrictions

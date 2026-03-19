@@ -1,17 +1,17 @@
-import { createFileRoute, useNavigate, useSearch } from '@tanstack/react-router'
+import { createFileRoute, useNavigate, useSearch } from "@tanstack/react-router";
 import {
   PLATFORM_SKILL_LICENSE,
   PLATFORM_SKILL_LICENSE_NAME,
   PLATFORM_SKILL_LICENSE_SUMMARY,
-} from 'clawhub-schema'
-import { useAction, useMutation, useQuery } from 'convex/react'
-import { useEffect, useMemo, useRef, useState } from 'react'
-import semver from 'semver'
-import { api } from '../../convex/_generated/api'
-import { getPublicSlugCollision } from '../lib/slugCollision'
-import { getSiteMode } from '../lib/site'
-import { expandDroppedItems, expandFilesWithReport } from '../lib/uploadFiles'
-import { useAuthStatus } from '../lib/useAuthStatus'
+} from "clawhub-schema";
+import { useAction, useMutation, useQuery } from "convex/react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import semver from "semver";
+import { api } from "../../convex/_generated/api";
+import { getSiteMode } from "../lib/site";
+import { getPublicSlugCollision } from "../lib/slugCollision";
+import { expandDroppedItems, expandFilesWithReport } from "../lib/uploadFiles";
+import { useAuthStatus } from "../lib/useAuthStatus";
 import {
   formatBytes,
   formatPublishError,
@@ -19,136 +19,136 @@ import {
   isTextFile,
   readText,
   uploadFile,
-} from './upload/-utils'
+} from "./upload/-utils";
 
-const SLUG_PATTERN = /^[a-z0-9]+(?:-[a-z0-9]+)*$/
+const SLUG_PATTERN = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
 
-export const Route = createFileRoute('/upload')({
+export const Route = createFileRoute("/upload")({
   validateSearch: (search) => ({
-    updateSlug: typeof search.updateSlug === 'string' ? search.updateSlug : undefined,
+    updateSlug: typeof search.updateSlug === "string" ? search.updateSlug : undefined,
   }),
   component: Upload,
-})
+});
 
 export function Upload() {
-  const { isAuthenticated, me } = useAuthStatus()
-  const { updateSlug } = useSearch({ from: '/upload' })
-  const siteMode = getSiteMode()
-  const isSoulMode = siteMode === 'souls'
-  const requiredFileLabel = isSoulMode ? 'SOUL.md' : 'SKILL.md'
-  const contentLabel = isSoulMode ? 'soul' : 'skill'
+  const { isAuthenticated, me } = useAuthStatus();
+  const { updateSlug } = useSearch({ from: "/upload" });
+  const siteMode = getSiteMode();
+  const isSoulMode = siteMode === "souls";
+  const requiredFileLabel = isSoulMode ? "SOUL.md" : "SKILL.md";
+  const contentLabel = isSoulMode ? "soul" : "skill";
 
-  const generateUploadUrl = useMutation(api.uploads.generateUploadUrl)
+  const generateUploadUrl = useMutation(api.uploads.generateUploadUrl);
   const publishVersion = useAction(
     isSoulMode ? api.souls.publishVersion : api.skills.publishVersion,
-  )
+  );
   const generateChangelogPreview = useAction(
     isSoulMode ? api.souls.generateChangelogPreview : api.skills.generateChangelogPreview,
-  )
+  );
   const existingSkill = useQuery(
     api.skills.getBySlug,
-    !isSoulMode && updateSlug ? { slug: updateSlug } : 'skip',
-  )
+    !isSoulMode && updateSlug ? { slug: updateSlug } : "skip",
+  );
   const existingSoul = useQuery(
     api.souls.getBySlug,
-    isSoulMode && updateSlug ? { slug: updateSlug } : 'skip',
-  )
+    isSoulMode && updateSlug ? { slug: updateSlug } : "skip",
+  );
   const existing = (isSoulMode ? existingSoul : existingSkill) as
     | {
-        skill?: { slug: string; displayName: string }
-        soul?: { slug: string; displayName: string }
-        latestVersion?: { version: string }
+        skill?: { slug: string; displayName: string };
+        soul?: { slug: string; displayName: string };
+        latestVersion?: { version: string };
       }
     | null
-    | undefined
+    | undefined;
 
-  const [hasAttempted, setHasAttempted] = useState(false)
-  const [files, setFiles] = useState<File[]>([])
-  const [ignoredMacJunkPaths, setIgnoredMacJunkPaths] = useState<string[]>([])
-  const [slug, setSlug] = useState(updateSlug ?? '')
-  const [displayName, setDisplayName] = useState('')
-  const [version, setVersion] = useState('1.0.0')
-  const [tags, setTags] = useState('latest')
-  const [acceptedLicenseTerms, setAcceptedLicenseTerms] = useState(false)
-  const [changelog, setChangelog] = useState('')
-  const [changelogStatus, setChangelogStatus] = useState<'idle' | 'loading' | 'ready' | 'error'>(
-    'idle',
-  )
-  const [changelogSource, setChangelogSource] = useState<'auto' | 'user' | null>(null)
-  const changelogTouchedRef = useRef(false)
-  const changelogRequestRef = useRef(0)
-  const changelogKeyRef = useRef<string | null>(null)
-  const [status, setStatus] = useState<string | null>(null)
-  const isSubmitting = status !== null
-  const [error, setError] = useState<string | null>(null)
-  const [isDragging, setIsDragging] = useState(false)
-  const fileInputRef = useRef<HTMLInputElement | null>(null)
+  const [hasAttempted, setHasAttempted] = useState(false);
+  const [files, setFiles] = useState<File[]>([]);
+  const [ignoredMacJunkPaths, setIgnoredMacJunkPaths] = useState<string[]>([]);
+  const [slug, setSlug] = useState(updateSlug ?? "");
+  const [displayName, setDisplayName] = useState("");
+  const [version, setVersion] = useState("1.0.0");
+  const [tags, setTags] = useState("latest");
+  const [acceptedLicenseTerms, setAcceptedLicenseTerms] = useState(false);
+  const [changelog, setChangelog] = useState("");
+  const [changelogStatus, setChangelogStatus] = useState<"idle" | "loading" | "ready" | "error">(
+    "idle",
+  );
+  const [changelogSource, setChangelogSource] = useState<"auto" | "user" | null>(null);
+  const changelogTouchedRef = useRef(false);
+  const changelogRequestRef = useRef(0);
+  const changelogKeyRef = useRef<string | null>(null);
+  const [status, setStatus] = useState<string | null>(null);
+  const isSubmitting = status !== null;
+  const [error, setError] = useState<string | null>(null);
+  const [isDragging, setIsDragging] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement | null>(null);
   const setFileInputRef = (node: HTMLInputElement | null) => {
-    fileInputRef.current = node
+    fileInputRef.current = node;
     if (node) {
-      node.setAttribute('webkitdirectory', '')
-      node.setAttribute('directory', '')
+      node.setAttribute("webkitdirectory", "");
+      node.setAttribute("directory", "");
     }
-  }
-  const validationRef = useRef<HTMLDivElement | null>(null)
-  const navigate = useNavigate()
-  const maxBytes = 50 * 1024 * 1024
-  const totalBytes = useMemo(() => files.reduce((sum, file) => sum + file.size, 0), [files])
+  };
+  const validationRef = useRef<HTMLDivElement | null>(null);
+  const navigate = useNavigate();
+  const maxBytes = 50 * 1024 * 1024;
+  const totalBytes = useMemo(() => files.reduce((sum, file) => sum + file.size, 0), [files]);
   const stripRoot = useMemo(() => {
-    if (files.length === 0) return null
-    const paths = files.map((file) => (file.webkitRelativePath || file.name).replace(/^\.\//, ''))
-    if (!paths.every((path) => path.includes('/'))) return null
-    const firstSegment = paths[0]?.split('/')[0]
-    if (!firstSegment) return null
-    if (!paths.every((path) => path.startsWith(`${firstSegment}/`))) return null
-    return firstSegment
-  }, [files])
+    if (files.length === 0) return null;
+    const paths = files.map((file) => (file.webkitRelativePath || file.name).replace(/^\.\//, ""));
+    if (!paths.every((path) => path.includes("/"))) return null;
+    const firstSegment = paths[0]?.split("/")[0];
+    if (!firstSegment) return null;
+    if (!paths.every((path) => path.startsWith(`${firstSegment}/`))) return null;
+    return firstSegment;
+  }, [files]);
   const normalizedPaths = useMemo(
     () =>
       files.map((file) => {
-        const raw = (file.webkitRelativePath || file.name).replace(/^\.\//, '')
+        const raw = (file.webkitRelativePath || file.name).replace(/^\.\//, "");
         if (stripRoot && raw.startsWith(`${stripRoot}/`)) {
-          return raw.slice(stripRoot.length + 1)
+          return raw.slice(stripRoot.length + 1);
         }
-        return raw
+        return raw;
       }),
     [files, stripRoot],
-  )
+  );
   const hasRequiredFile = useMemo(
     () =>
       normalizedPaths.some((path) => {
-        const lower = path.trim().toLowerCase()
-        return isSoulMode ? lower === 'soul.md' : lower === 'skill.md' || lower === 'skills.md'
+        const lower = path.trim().toLowerCase();
+        return isSoulMode ? lower === "soul.md" : lower === "skill.md" || lower === "skills.md";
       }),
     [isSoulMode, normalizedPaths],
-  )
-  const sizeLabel = totalBytes ? formatBytes(totalBytes) : '0 B'
+  );
+  const sizeLabel = totalBytes ? formatBytes(totalBytes) : "0 B";
   const ignoredMacJunkNote = useMemo(() => {
-    if (ignoredMacJunkPaths.length === 0) return null
+    if (ignoredMacJunkPaths.length === 0) return null;
     const labels = Array.from(
-      new Set(ignoredMacJunkPaths.map((path) => path.split('/').at(-1) ?? path)),
-    ).slice(0, 3)
-    const suffix = ignoredMacJunkPaths.length > 3 ? ', ...' : ''
-    const count = ignoredMacJunkPaths.length
-    return `Ignored ${count} macOS junk file${count === 1 ? '' : 's'} (${labels.join(', ')}${suffix})`
-  }, [ignoredMacJunkPaths])
-  const trimmedSlug = slug.trim()
-  const trimmedName = displayName.trim()
-  const trimmedChangelog = changelog.trim()
+      new Set(ignoredMacJunkPaths.map((path) => path.split("/").at(-1) ?? path)),
+    ).slice(0, 3);
+    const suffix = ignoredMacJunkPaths.length > 3 ? ", ..." : "";
+    const count = ignoredMacJunkPaths.length;
+    return `Ignored ${count} macOS junk file${count === 1 ? "" : "s"} (${labels.join(", ")}${suffix})`;
+  }, [ignoredMacJunkPaths]);
+  const trimmedSlug = slug.trim();
+  const trimmedName = displayName.trim();
+  const trimmedChangelog = changelog.trim();
   const slugAvailability = useQuery(
     api.skills.checkSlugAvailability,
     !isSoulMode && isAuthenticated && trimmedSlug && SLUG_PATTERN.test(trimmedSlug)
       ? { slug: trimmedSlug.toLowerCase() }
-      : 'skip',
+      : "skip",
   ) as
     | {
-        available: boolean
-        reason: 'available' | 'taken' | 'reserved'
-        message: string | null
-        url: string | null
+        available: boolean;
+        reason: "available" | "taken" | "reserved";
+        message: string | null;
+        url: string | null;
       }
     | null
-    | undefined
+    | undefined;
   const slugCollision = useMemo(
     () =>
       getPublicSlugCollision({
@@ -157,63 +157,63 @@ export function Upload() {
         result: slugAvailability,
       }),
     [isSoulMode, slugAvailability, trimmedSlug],
-  )
+  );
 
   useEffect(() => {
-    if (!existing?.latestVersion || (!existing?.skill && !existing?.soul)) return
-    const name = existing.skill?.displayName ?? existing.soul?.displayName
-    const nextSlug = existing.skill?.slug ?? existing.soul?.slug
-    if (nextSlug) setSlug(nextSlug)
-    if (name) setDisplayName(name)
-    const nextVersion = semver.inc(existing.latestVersion.version, 'patch')
-    if (nextVersion) setVersion(nextVersion)
-  }, [existing])
+    if (!existing?.latestVersion || (!existing?.skill && !existing?.soul)) return;
+    const name = existing.skill?.displayName ?? existing.soul?.displayName;
+    const nextSlug = existing.skill?.slug ?? existing.soul?.slug;
+    if (nextSlug) setSlug(nextSlug);
+    if (name) setDisplayName(name);
+    const nextVersion = semver.inc(existing.latestVersion.version, "patch");
+    if (nextVersion) setVersion(nextVersion);
+  }, [existing]);
 
   useEffect(() => {
-    if (changelogTouchedRef.current) return
-    if (trimmedChangelog) return
-    if (!trimmedSlug || !SLUG_PATTERN.test(trimmedSlug)) return
-    if (!semver.valid(version)) return
-    if (!hasRequiredFile) return
-    if (files.length === 0) return
+    if (changelogTouchedRef.current) return;
+    if (trimmedChangelog) return;
+    if (!trimmedSlug || !SLUG_PATTERN.test(trimmedSlug)) return;
+    if (!semver.valid(version)) return;
+    if (!hasRequiredFile) return;
+    if (files.length === 0) return;
 
     const requiredIndex = normalizedPaths.findIndex((path) => {
-      const lower = path.trim().toLowerCase()
-      return isSoulMode ? lower === 'soul.md' : lower === 'skill.md' || lower === 'skills.md'
-    })
-    if (requiredIndex < 0) return
+      const lower = path.trim().toLowerCase();
+      return isSoulMode ? lower === "soul.md" : lower === "skill.md" || lower === "skills.md";
+    });
+    if (requiredIndex < 0) return;
 
-    const requiredFile = files[requiredIndex]
-    if (!requiredFile) return
+    const requiredFile = files[requiredIndex];
+    if (!requiredFile) return;
 
-    const key = `${trimmedSlug}:${version}:${requiredFile.size}:${requiredFile.lastModified}:${normalizedPaths.length}`
-    if (changelogKeyRef.current === key) return
-    changelogKeyRef.current = key
+    const key = `${trimmedSlug}:${version}:${requiredFile.size}:${requiredFile.lastModified}:${normalizedPaths.length}`;
+    if (changelogKeyRef.current === key) return;
+    changelogKeyRef.current = key;
 
-    const requestId = ++changelogRequestRef.current
-    setChangelogStatus('loading')
+    const requestId = ++changelogRequestRef.current;
+    setChangelogStatus("loading");
 
     void readText(requiredFile)
       .then((text) => {
-        if (changelogRequestRef.current !== requestId) return null
+        if (changelogRequestRef.current !== requestId) return null;
         return generateChangelogPreview({
           slug: trimmedSlug,
           version,
           readmeText: text.slice(0, 20_000),
           filePaths: normalizedPaths,
-        })
+        });
       })
       .then((result) => {
-        if (!result) return
-        if (changelogRequestRef.current !== requestId) return
-        setChangelog(result.changelog)
-        setChangelogSource('auto')
-        setChangelogStatus('ready')
+        if (!result) return;
+        if (changelogRequestRef.current !== requestId) return;
+        setChangelog(result.changelog);
+        setChangelogSource("auto");
+        setChangelogStatus("ready");
       })
       .catch(() => {
-        if (changelogRequestRef.current !== requestId) return
-        setChangelogStatus('error')
-      })
+        if (changelogRequestRef.current !== requestId) return;
+        setChangelogStatus("error");
+      });
   }, [
     files,
     generateChangelogPreview,
@@ -223,59 +223,59 @@ export function Upload() {
     trimmedChangelog,
     trimmedSlug,
     version,
-  ])
+  ]);
   const parsedTags = useMemo(
     () =>
       tags
-        .split(',')
+        .split(",")
         .map((tag) => tag.trim())
         .filter(Boolean),
     [tags],
-  )
+  );
   const validation = useMemo(() => {
-    const issues: string[] = []
+    const issues: string[] = [];
     if (!trimmedSlug) {
-      issues.push('Slug is required.')
+      issues.push("Slug is required.");
     } else if (!SLUG_PATTERN.test(trimmedSlug)) {
-      issues.push('Slug must be lowercase and use dashes only.')
+      issues.push("Slug must be lowercase and use dashes only.");
     }
     if (!trimmedName) {
-      issues.push('Display name is required.')
+      issues.push("Display name is required.");
     }
     if (!semver.valid(version)) {
-      issues.push('Version must be valid semver (e.g. 1.0.0).')
+      issues.push("Version must be valid semver (e.g. 1.0.0).");
     }
     if (parsedTags.length === 0) {
-      issues.push('At least one tag is required.')
+      issues.push("At least one tag is required.");
     }
     if (!isSoulMode && !acceptedLicenseTerms) {
-      issues.push('Accept the MIT-0 license terms to publish this skill.')
+      issues.push("Accept the MIT-0 license terms to publish this skill.");
     }
     if (files.length === 0) {
-      issues.push('Add at least one file.')
+      issues.push("Add at least one file.");
     }
     if (!hasRequiredFile) {
-      issues.push(`${requiredFileLabel} is required.`)
+      issues.push(`${requiredFileLabel} is required.`);
     }
-    const invalidFiles = files.filter((file) => !isTextFile(file))
+    const invalidFiles = files.filter((file) => !isTextFile(file));
     if (invalidFiles.length > 0) {
       issues.push(
         `Remove non-text files: ${invalidFiles
           .slice(0, 3)
           .map((file) => file.name)
-          .join(', ')}`,
-      )
+          .join(", ")}`,
+      );
     }
     if (totalBytes > maxBytes) {
-      issues.push('Total file size exceeds 50MB.')
+      issues.push("Total file size exceeds 50MB.");
     }
     if (slugCollision) {
-      issues.push(slugCollision.message)
+      issues.push(slugCollision.message);
     }
     return {
       issues,
       ready: issues.length === 0,
-    }
+    };
   }, [
     trimmedSlug,
     trimmedName,
@@ -288,7 +288,7 @@ export function Upload() {
     totalBytes,
     requiredFileLabel,
     slugCollision,
-  ])
+  ]);
 
   // webkitdirectory/directory attributes are set via the ref callback (setFileInputRef)
   // to ensure they persist across hydration and re-renders (#58)
@@ -298,70 +298,70 @@ export function Upload() {
       <main className="section">
         <div className="card">Sign in to upload a {contentLabel}.</div>
       </main>
-    )
+    );
   }
 
   async function applyExpandedFiles(selected: File[]) {
-    const report = await expandFilesWithReport(selected)
-    setFiles(report.files)
-    setIgnoredMacJunkPaths(report.ignoredMacJunkPaths)
+    const report = await expandFilesWithReport(selected);
+    setFiles(report.files);
+    setIgnoredMacJunkPaths(report.ignoredMacJunkPaths);
   }
 
   async function handleSubmit(event: React.FormEvent) {
-    event.preventDefault()
-    setHasAttempted(true)
+    event.preventDefault();
+    setHasAttempted(true);
     if (!validation.ready) {
-      if (validationRef.current && 'scrollIntoView' in validationRef.current) {
-        validationRef.current.scrollIntoView({ behavior: 'smooth', block: 'center' })
+      if (validationRef.current && "scrollIntoView" in validationRef.current) {
+        validationRef.current.scrollIntoView({ behavior: "smooth", block: "center" });
       }
-      return
+      return;
     }
     if (slugCollision) {
-      setError(slugCollision.message)
-      return
+      setError(slugCollision.message);
+      return;
     }
     if (!isSoulMode && !acceptedLicenseTerms) {
-      setError('Accept the MIT-0 license terms to publish this skill.')
-      return
+      setError("Accept the MIT-0 license terms to publish this skill.");
+      return;
     }
-    setError(null)
+    setError(null);
     if (totalBytes > maxBytes) {
-      setError('Total size exceeds 50MB per version.')
-      return
+      setError("Total size exceeds 50MB per version.");
+      return;
     }
     if (!hasRequiredFile) {
-      setError(`${requiredFileLabel} is required.`)
-      return
+      setError(`${requiredFileLabel} is required.`);
+      return;
     }
-    setStatus('Uploading files…')
+    setStatus("Uploading files…");
 
     const uploaded = [] as Array<{
-      path: string
-      size: number
-      storageId: string
-      sha256: string
-      contentType?: string
-    }>
+      path: string;
+      size: number;
+      storageId: string;
+      sha256: string;
+      contentType?: string;
+    }>;
 
     for (const file of files) {
-      const uploadUrl = await generateUploadUrl()
-      const rawPath = (file.webkitRelativePath || file.name).replace(/^\.\//, '')
+      const uploadUrl = await generateUploadUrl();
+      const rawPath = (file.webkitRelativePath || file.name).replace(/^\.\//, "");
       const path =
         stripRoot && rawPath.startsWith(`${stripRoot}/`)
           ? rawPath.slice(stripRoot.length + 1)
-          : rawPath
-      const sha256 = await hashFile(file)
-      const storageId = await uploadFile(uploadUrl, file)
+          : rawPath;
+      const sha256 = await hashFile(file);
+      const storageId = await uploadFile(uploadUrl, file);
       uploaded.push({
         path,
         size: file.size,
         storageId,
         sha256,
         contentType: file.type || undefined,
-      })
+      });
     }
 
-    setStatus('Publishing…')
+    setStatus("Publishing…");
     try {
       const result = await publishVersion({
         slug: trimmedSlug,
@@ -371,21 +371,21 @@ export function Upload() {
         acceptLicenseTerms: isSoulMode ? undefined : acceptedLicenseTerms,
         tags: parsedTags,
         files: uploaded,
-      })
-      setStatus(null)
-      setError(null)
-      setHasAttempted(false)
-      setChangelogSource('user')
+      });
+      setStatus(null);
+      setError(null);
+      setHasAttempted(false);
+      setChangelogSource("user");
       if (result) {
-        const ownerParam = me?.handle ?? (me?._id ? String(me._id) : 'unknown')
+        const ownerParam = me?.handle ?? (me?._id ? String(me._id) : "unknown");
         void navigate({
-          to: isSoulMode ? '/souls/$slug' : '/$owner/$slug',
+          to: isSoulMode ? "/souls/$slug" : "/$owner/$slug",
           params: isSoulMode ? { slug: trimmedSlug } : { owner: ownerParam, slug: trimmedSlug },
-        })
+        });
       }
     } catch (publishError) {
-      setStatus(null)
-      setError(formatPublishError(publishError))
+      setStatus(null);
+      setError(formatPublishError(publishError));
     }
   }
 
@@ -449,22 +449,22 @@ export function Upload() {
 
         <div className="card upload-panel">
           <label
-            className={`upload-dropzone${isDragging ? ' is-dragging' : ''}`}
+            className={`upload-dropzone${isDragging ? " is-dragging" : ""}`}
             onDragOver={(event) => {
-              event.preventDefault()
-              setIsDragging(true)
+              event.preventDefault();
+              setIsDragging(true);
             }}
             onDragLeave={() => setIsDragging(false)}
             onDrop={(event) => {
-              event.preventDefault()
-              setIsDragging(false)
-              const items = event.dataTransfer.items
+              event.preventDefault();
+              setIsDragging(false);
+              const items = event.dataTransfer.items;
               void (async () => {
                 const dropped = items?.length
                   ? await expandDroppedItems(items)
-                  : Array.from(event.dataTransfer.files)
-                await applyExpandedFiles(dropped)
-              })()
+                  : Array.from(event.dataTransfer.files);
+                await applyExpandedFiles(dropped);
+              })();
             }}
           >
             <input
@@ -475,8 +475,8 @@ export function Upload() {
               type="file"
               multiple
               onChange={(event) => {
-                const picked = Array.from(event.target.files ?? [])
-                void applyExpandedFiles(picked)
+                const picked = Array.from(event.target.files ?? []);
+                void applyExpandedFiles(picked);
               }}
             />
             <div className="upload-dropzone-copy">
@@ -526,7 +526,7 @@ export function Upload() {
           )}
           {slugCollision?.url ? (
             <div className="stat">
-              Existing skill:{' '}
+              Existing skill:{" "}
               <a href={slugCollision.url} className="upload-link">
                 {slugCollision.url}
               </a>
@@ -543,7 +543,7 @@ export function Upload() {
                   {PLATFORM_SKILL_LICENSE} · {PLATFORM_SKILL_LICENSE_NAME}
                 </div>
                 <p className="upload-license-copy">
-                  All skills published on ClawHub are licensed under {PLATFORM_SKILL_LICENSE}.{' '}
+                  All skills published on ClawHub are licensed under {PLATFORM_SKILL_LICENSE}.{" "}
                   {PLATFORM_SKILL_LICENSE_SUMMARY}
                 </p>
                 <label className="upload-license-check">
@@ -553,7 +553,7 @@ export function Upload() {
                     onChange={(event) => setAcceptedLicenseTerms(event.target.checked)}
                   />
                   <span>
-                    I have the rights to this skill and agree to publish it under{' '}
+                    I have the rights to this skill and agree to publish it under{" "}
                     {PLATFORM_SKILL_LICENSE}.
                   </span>
                 </label>
@@ -569,17 +569,17 @@ export function Upload() {
             rows={6}
             value={changelog}
             onChange={(event) => {
-              changelogTouchedRef.current = true
-              setChangelogSource('user')
-              setChangelog(event.target.value)
+              changelogTouchedRef.current = true;
+              setChangelogSource("user");
+              setChangelog(event.target.value);
             }}
             placeholder={`Describe what changed in this ${contentLabel}...`}
           />
-          {changelogStatus === 'loading' ? <div className="stat">Generating changelog…</div> : null}
-          {changelogStatus === 'error' ? (
+          {changelogStatus === "loading" ? <div className="stat">Generating changelog…</div> : null}
+          {changelogStatus === "error" ? (
             <div className="stat">Could not auto-generate changelog.</div>
           ) : null}
-          {changelogSource === 'auto' && changelog ? (
+          {changelogSource === "auto" && changelog ? (
             <div className="stat">Auto-generated changelog (edit as needed).</div>
           ) : null}
         </div>
@@ -606,5 +606,5 @@ export function Upload() {
         </div>
       </form>
     </main>
-  )
+  );
 }

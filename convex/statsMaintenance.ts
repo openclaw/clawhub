@@ -1,19 +1,19 @@
-import { v } from 'convex/values'
-import { internal } from './_generated/api'
-import type { Doc } from './_generated/dataModel'
-import type { ActionCtx } from './_generated/server'
-import { internalAction, internalMutation, internalQuery } from './functions'
+import { v } from "convex/values";
+import { internal } from "./_generated/api";
+import type { Doc } from "./_generated/dataModel";
+import type { ActionCtx } from "./_generated/server";
+import { internalAction, internalMutation, internalQuery } from "./functions";
 import {
   countPublicSkillsForGlobalStats,
   isPublicSkillDoc,
   setGlobalPublicSkillsCount,
-} from './lib/globalStats'
+} from "./lib/globalStats";
 
-const DEFAULT_BATCH_SIZE = 200
-const MAX_BATCH_SIZE = 1000
-const DEFAULT_MAX_BATCHES = 5
-const MAX_MAX_BATCHES = 50
-const BACKFILL_STATE_KEY = 'default'
+const DEFAULT_BATCH_SIZE = 200;
+const MAX_BATCH_SIZE = 1000;
+const DEFAULT_MAX_BATCHES = 5;
+const MAX_MAX_BATCHES = 50;
+const BACKFILL_STATE_KEY = "default";
 
 export const backfillSkillStatFieldsInternal = internalMutation({
   args: {
@@ -21,18 +21,18 @@ export const backfillSkillStatFieldsInternal = internalMutation({
     batchSize: v.optional(v.number()),
   },
   handler: async (ctx, args) => {
-    const batchSize = clampInt(args.batchSize ?? DEFAULT_BATCH_SIZE, 1, MAX_BATCH_SIZE)
+    const batchSize = clampInt(args.batchSize ?? DEFAULT_BATCH_SIZE, 1, MAX_BATCH_SIZE);
     const { page, isDone, continueCursor } = await ctx.db
-      .query('skills')
-      .order('asc')
-      .paginate({ cursor: args.cursor ?? null, numItems: batchSize })
+      .query("skills")
+      .order("asc")
+      .paginate({ cursor: args.cursor ?? null, numItems: batchSize });
 
-    let patched = 0
+    let patched = 0;
     for (const skill of page) {
-      const next = buildSkillStatPatch(skill)
-      if (!next) continue
-      await ctx.db.patch(skill._id, next)
-      patched += 1
+      const next = buildSkillStatPatch(skill);
+      if (!next) continue;
+      await ctx.db.patch(skill._id, next);
+      patched += 1;
     }
 
     return {
@@ -41,44 +41,44 @@ export const backfillSkillStatFieldsInternal = internalMutation({
       patched,
       cursor: isDone ? null : continueCursor,
       isDone,
-    }
+    };
   },
-})
+});
 
 type BackfillState = {
-  cursor: string | null
-  doneAt?: number
-}
+  cursor: string | null;
+  doneAt?: number;
+};
 
 type BackfillActionArgs = {
-  batchSize?: number
-  maxBatches?: number
-  resetCursor?: boolean
-}
+  batchSize?: number;
+  maxBatches?: number;
+  resetCursor?: boolean;
+};
 
 type BackfillStats = {
-  scanned: number
-  patched: number
-  batches: number
-}
+  scanned: number;
+  patched: number;
+  batches: number;
+};
 
 type BackfillActionResult = {
-  ok: true
-  isDone: boolean
-  cursor: string | null
-  stats: BackfillStats
-}
+  ok: true;
+  isDone: boolean;
+  cursor: string | null;
+  stats: BackfillStats;
+};
 
 export const getSkillStatBackfillStateInternal = internalQuery({
   args: {},
   handler: async (ctx): Promise<BackfillState> => {
     const state = await ctx.db
-      .query('skillStatBackfillState')
-      .withIndex('by_key', (q) => q.eq('key', BACKFILL_STATE_KEY))
-      .unique()
-    return { cursor: state?.cursor ?? null, doneAt: state?.doneAt }
+      .query("skillStatBackfillState")
+      .withIndex("by_key", (q) => q.eq("key", BACKFILL_STATE_KEY))
+      .unique();
+    return { cursor: state?.cursor ?? null, doneAt: state?.doneAt };
   },
-})
+});
 
 export const setSkillStatBackfillStateInternal = internalMutation({
   args: {
@@ -86,61 +86,61 @@ export const setSkillStatBackfillStateInternal = internalMutation({
     doneAt: v.optional(v.number()),
   },
   handler: async (ctx, args) => {
-    const now = Date.now()
+    const now = Date.now();
     const state = await ctx.db
-      .query('skillStatBackfillState')
-      .withIndex('by_key', (q) => q.eq('key', BACKFILL_STATE_KEY))
-      .unique()
+      .query("skillStatBackfillState")
+      .withIndex("by_key", (q) => q.eq("key", BACKFILL_STATE_KEY))
+      .unique();
 
     if (!state) {
-      await ctx.db.insert('skillStatBackfillState', {
+      await ctx.db.insert("skillStatBackfillState", {
         key: BACKFILL_STATE_KEY,
         cursor: args.cursor,
         doneAt: args.doneAt,
         updatedAt: now,
-      })
-      return { ok: true as const }
+      });
+      return { ok: true as const };
     }
 
     await ctx.db.patch(state._id, {
       cursor: args.cursor,
       doneAt: args.doneAt,
       updatedAt: now,
-    })
+    });
 
-    return { ok: true as const }
+    return { ok: true as const };
   },
-})
+});
 
 async function runSkillStatBackfillInternalHandler(
   ctx: ActionCtx,
   args: BackfillActionArgs,
 ): Promise<BackfillActionResult> {
-  const batchSize = clampInt(args.batchSize ?? DEFAULT_BATCH_SIZE, 1, MAX_BATCH_SIZE)
-  const maxBatches = clampInt(args.maxBatches ?? DEFAULT_MAX_BATCHES, 1, MAX_MAX_BATCHES)
+  const batchSize = clampInt(args.batchSize ?? DEFAULT_BATCH_SIZE, 1, MAX_BATCH_SIZE);
+  const maxBatches = clampInt(args.maxBatches ?? DEFAULT_MAX_BATCHES, 1, MAX_MAX_BATCHES);
 
   if (args.resetCursor) {
     await ctx.runMutation(internal.statsMaintenance.setSkillStatBackfillStateInternal, {
       cursor: undefined,
       doneAt: undefined,
-    })
+    });
   }
 
   const state = (await ctx.runQuery(
     internal.statsMaintenance.getSkillStatBackfillStateInternal,
     {},
-  )) as BackfillState
+  )) as BackfillState;
   if (state.doneAt && !args.resetCursor) {
     return {
       ok: true,
       isDone: true,
       cursor: null,
       stats: { scanned: 0, patched: 0, batches: 0 },
-    }
+    };
   }
 
-  let cursor: string | null = state.cursor ?? null
-  const stats: BackfillStats = { scanned: 0, patched: 0, batches: 0 }
+  let cursor: string | null = state.cursor ?? null;
+  const stats: BackfillStats = { scanned: 0, patched: 0, batches: 0 };
 
   for (let i = 0; i < maxBatches; i += 1) {
     const result = (await ctx.runMutation(
@@ -149,27 +149,27 @@ async function runSkillStatBackfillInternalHandler(
         cursor: cursor ?? undefined,
         batchSize,
       },
-    )) as { scanned: number; patched: number; cursor: string | null; isDone: boolean }
-    stats.scanned += result.scanned
-    stats.patched += result.patched
-    stats.batches += 1
-    cursor = result.cursor
+    )) as { scanned: number; patched: number; cursor: string | null; isDone: boolean };
+    stats.scanned += result.scanned;
+    stats.patched += result.patched;
+    stats.batches += 1;
+    cursor = result.cursor;
 
     if (result.isDone) {
       await ctx.runMutation(internal.statsMaintenance.setSkillStatBackfillStateInternal, {
         cursor: undefined,
         doneAt: Date.now(),
-      })
-      return { ok: true, isDone: true, cursor: null, stats }
+      });
+      return { ok: true, isDone: true, cursor: null, stats };
     }
 
     await ctx.runMutation(internal.statsMaintenance.setSkillStatBackfillStateInternal, {
       cursor: cursor ?? undefined,
       doneAt: undefined,
-    })
+    });
   }
 
-  return { ok: true, isDone: false, cursor, stats }
+  return { ok: true, isDone: false, cursor, stats };
 }
 
 export const runSkillStatBackfillInternal: ReturnType<typeof internalAction> = internalAction({
@@ -179,14 +179,14 @@ export const runSkillStatBackfillInternal: ReturnType<typeof internalAction> = i
     resetCursor: v.optional(v.boolean()),
   },
   handler: runSkillStatBackfillInternalHandler,
-})
+});
 
-function buildSkillStatPatch(skill: Doc<'skills'>) {
-  const stats = skill.stats
-  const nextDownloads = stats.downloads
-  const nextStars = stats.stars
-  const nextInstallsCurrent = stats.installsCurrent ?? 0
-  const nextInstallsAllTime = stats.installsAllTime ?? 0
+function buildSkillStatPatch(skill: Doc<"skills">) {
+  const stats = skill.stats;
+  const nextDownloads = stats.downloads;
+  const nextStars = stats.stars;
+  const nextInstallsCurrent = stats.installsCurrent ?? 0;
+  const nextInstallsAllTime = stats.installsAllTime ?? 0;
 
   if (
     skill.statsDownloads === nextDownloads &&
@@ -194,7 +194,7 @@ function buildSkillStatPatch(skill: Doc<'skills'>) {
     skill.statsInstallsCurrent === nextInstallsCurrent &&
     skill.statsInstallsAllTime === nextInstallsAllTime
   ) {
-    return null
+    return null;
   }
 
   return {
@@ -202,7 +202,7 @@ function buildSkillStatPatch(skill: Doc<'skills'>) {
     statsStars: nextStars,
     statsInstallsCurrent: nextInstallsCurrent,
     statsInstallsAllTime: nextInstallsAllTime,
-  }
+  };
 }
 
 /**
@@ -222,29 +222,29 @@ export const reconcileSkillStarCounts = internalMutation({
     batchSize: v.optional(v.number()),
   },
   handler: async (ctx, args) => {
-    const batchSize = clampInt(args.batchSize ?? 50, 1, 200)
-    const now = Date.now()
+    const batchSize = clampInt(args.batchSize ?? 50, 1, 200);
+    const now = Date.now();
 
     const { page, isDone, continueCursor } = await ctx.db
-      .query('skills')
-      .order('asc')
-      .paginate({ cursor: args.cursor ?? null, numItems: batchSize })
+      .query("skills")
+      .order("asc")
+      .paginate({ cursor: args.cursor ?? null, numItems: batchSize });
 
-    let patched = 0
+    let patched = 0;
     for (const skill of page) {
       // Count actual star records for this skill
       const starRecords = await ctx.db
-        .query('stars')
-        .withIndex('by_skill_user', (q) => q.eq('skillId', skill._id))
-        .collect()
-      const actualStars = starRecords.length
+        .query("stars")
+        .withIndex("by_skill_user", (q) => q.eq("skillId", skill._id))
+        .collect();
+      const actualStars = starRecords.length;
 
       // Count actual comment records for this skill
       const commentRecords = await ctx.db
-        .query('comments')
-        .withIndex('by_skill', (q) => q.eq('skillId', skill._id))
-        .collect()
-      const actualComments = commentRecords.filter((c) => !c.softDeletedAt).length
+        .query("comments")
+        .withIndex("by_skill", (q) => q.eq("skillId", skill._id))
+        .collect();
+      const actualComments = commentRecords.filter((c) => !c.softDeletedAt).length;
 
       // Check if stats are out of sync
       if (skill.stats.stars !== actualStars || skill.stats.comments !== actualComments) {
@@ -252,13 +252,13 @@ export const reconcileSkillStarCounts = internalMutation({
           ...skill.stats,
           stars: actualStars,
           comments: actualComments,
-        }
+        };
         await ctx.db.patch(skill._id, {
           statsStars: actualStars,
           stats: updatedStats,
           updatedAt: now,
-        })
-        patched += 1
+        });
+        patched += 1;
       }
     }
 
@@ -267,9 +267,9 @@ export const reconcileSkillStarCounts = internalMutation({
       patched,
       cursor: isDone ? null : continueCursor,
       isDone,
-    }
+    };
   },
-})
+});
 
 export const runReconcileSkillStarCountsInternal = internalAction({
   args: {
@@ -277,32 +277,32 @@ export const runReconcileSkillStarCountsInternal = internalAction({
     maxBatches: v.optional(v.number()),
   },
   handler: async (ctx, args) => {
-    const batchSize = clampInt(args.batchSize ?? 50, 1, 200)
-    const maxBatches = clampInt(args.maxBatches ?? 10, 1, 50)
+    const batchSize = clampInt(args.batchSize ?? 50, 1, 200);
+    const maxBatches = clampInt(args.maxBatches ?? 10, 1, 50);
 
-    let cursor: string | undefined
-    let totalScanned = 0
-    let totalPatched = 0
+    let cursor: string | undefined;
+    let totalScanned = 0;
+    let totalPatched = 0;
 
     for (let i = 0; i < maxBatches; i++) {
       const result = (await ctx.runMutation(internal.statsMaintenance.reconcileSkillStarCounts, {
         cursor,
         batchSize,
-      })) as { scanned: number; patched: number; cursor: string | null; isDone: boolean }
+      })) as { scanned: number; patched: number; cursor: string | null; isDone: boolean };
 
-      totalScanned += result.scanned
-      totalPatched += result.patched
+      totalScanned += result.scanned;
+      totalPatched += result.patched;
 
-      if (result.isDone) break
-      cursor = result.cursor ?? undefined
+      if (result.isDone) break;
+      cursor = result.cursor ?? undefined;
     }
 
-    return { scanned: totalScanned, patched: totalPatched }
+    return { scanned: totalScanned, patched: totalPatched };
   },
-})
+});
 
 function clampInt(value: number, min: number, max: number) {
-  return Math.min(Math.max(value, min), max)
+  return Math.min(Math.max(value, min), max);
 }
 
 /**
@@ -315,26 +315,26 @@ function clampInt(value: number, min: number, max: number) {
 export const countPublicDigestPageInternal = internalQuery({
   args: { cursor: v.optional(v.string()), pageSize: v.optional(v.number()) },
   handler: async (ctx, args) => {
-    const pageSize = clampInt(args.pageSize ?? 1000, 100, 2000)
+    const pageSize = clampInt(args.pageSize ?? 1000, 100, 2000);
     const { page, isDone, continueCursor } = await ctx.db
-      .query('skillSearchDigest')
-      .paginate({ cursor: args.cursor ?? null, numItems: pageSize })
+      .query("skillSearchDigest")
+      .paginate({ cursor: args.cursor ?? null, numItems: pageSize });
 
-    let count = 0
+    let count = 0;
     for (const digest of page) {
-      if (isPublicSkillDoc(digest)) count++
+      if (isPublicSkillDoc(digest)) count++;
     }
-    return { count, isDone, cursor: continueCursor }
+    return { count, isDone, cursor: continueCursor };
   },
-})
+});
 
 /** Write the reconciled global stats count. */
 export const writeGlobalStatsInternal = internalMutation({
   args: { count: v.number() },
   handler: async (ctx, args) => {
-    await setGlobalPublicSkillsCount(ctx, args.count)
+    await setGlobalPublicSkillsCount(ctx, args.count);
   },
-})
+});
 
 /**
  * Action-based global stats update that splits the full table scan across
@@ -344,25 +344,25 @@ export const writeGlobalStatsInternal = internalMutation({
 export const updateGlobalStatsAction = internalAction({
   args: {},
   handler: async (ctx) => {
-    let total = 0
-    let cursor: string | undefined
+    let total = 0;
+    let cursor: string | undefined;
 
     // eslint-disable-next-line no-constant-condition
     while (true) {
-      const result = (await ctx.runQuery(
-        internal.statsMaintenance.countPublicDigestPageInternal,
-        { cursor, pageSize: 1000 },
-      )) as { count: number; isDone: boolean; cursor: string }
+      const result = (await ctx.runQuery(internal.statsMaintenance.countPublicDigestPageInternal, {
+        cursor,
+        pageSize: 1000,
+      })) as { count: number; isDone: boolean; cursor: string };
 
-      total += result.count
-      if (result.isDone) break
-      cursor = result.cursor
+      total += result.count;
+      if (result.isDone) break;
+      cursor = result.cursor;
     }
 
-    await ctx.runMutation(internal.statsMaintenance.writeGlobalStatsInternal, { count: total })
-    return { count: total }
+    await ctx.runMutation(internal.statsMaintenance.writeGlobalStatsInternal, { count: total });
+    return { count: total };
   },
-})
+});
 
 /**
  * @deprecated Use updateGlobalStatsAction instead.
@@ -371,7 +371,7 @@ export const updateGlobalStatsAction = internalAction({
 export const updateGlobalStatsInternal = internalMutation({
   args: {},
   handler: async (ctx) => {
-    const count = await countPublicSkillsForGlobalStats(ctx)
-    await setGlobalPublicSkillsCount(ctx, count)
+    const count = await countPublicSkillsForGlobalStats(ctx);
+    await setGlobalPublicSkillsCount(ctx, count);
   },
-})
+});

@@ -1,71 +1,71 @@
-import { useAction } from 'convex/react'
-import { useCallback, useEffect, useMemo, useRef, useState, type RefObject } from 'react'
-import { api } from '../../../convex/_generated/api'
-import { convexHttp } from '../../convex/client'
-import { parseDir, parseSort, toListSort, type SortDir, type SortKey } from './-params'
-import type { SkillListEntry, SkillSearchEntry } from './-types'
+import { useAction } from "convex/react";
+import { useCallback, useEffect, useMemo, useRef, useState, type RefObject } from "react";
+import { api } from "../../../convex/_generated/api";
+import { convexHttp } from "../../convex/client";
+import { parseDir, parseSort, toListSort, type SortDir, type SortKey } from "./-params";
+import type { SkillListEntry, SkillSearchEntry } from "./-types";
 
-const pageSize = 25
+const pageSize = 25;
 
-type SkillsView = 'cards' | 'list'
+type SkillsView = "cards" | "list";
 
 export type SkillsSearchState = {
-  q?: string
-  sort?: SortKey
-  dir?: SortDir
-  highlighted?: boolean
-  nonSuspicious?: boolean
-  view?: SkillsView
-  focus?: 'search'
-}
+  q?: string;
+  sort?: SortKey;
+  dir?: SortDir;
+  highlighted?: boolean;
+  nonSuspicious?: boolean;
+  view?: SkillsView;
+  focus?: "search";
+};
 
 type SkillsNavigate = (options: {
-  search: (prev: SkillsSearchState) => SkillsSearchState
-  replace?: boolean
-}) => void | Promise<void>
+  search: (prev: SkillsSearchState) => SkillsSearchState;
+  replace?: boolean;
+}) => void | Promise<void>;
 
-type ListStatus = 'loading' | 'idle' | 'loadingMore' | 'done'
+type ListStatus = "loading" | "idle" | "loadingMore" | "done";
 
 export function useSkillsBrowseModel({
   search,
   navigate,
   searchInputRef,
 }: {
-  search: SkillsSearchState
-  navigate: SkillsNavigate
-  searchInputRef: RefObject<HTMLInputElement | null>
+  search: SkillsSearchState;
+  navigate: SkillsNavigate;
+  searchInputRef: RefObject<HTMLInputElement | null>;
 }) {
-  const [query, setQuery] = useState(search.q ?? '')
-  const [searchResults, setSearchResults] = useState<Array<SkillSearchEntry>>([])
-  const [searchLimit, setSearchLimit] = useState(pageSize)
-  const [isSearching, setIsSearching] = useState(false)
-  const searchRequest = useRef(0)
-  const loadMoreRef = useRef<HTMLDivElement | null>(null)
-  const loadMoreInFlightRef = useRef(false)
-  const navigateTimer = useRef<number>(0)
+  const [query, setQuery] = useState(search.q ?? "");
+  const [searchResults, setSearchResults] = useState<Array<SkillSearchEntry>>([]);
+  const [searchLimit, setSearchLimit] = useState(pageSize);
+  const [isSearching, setIsSearching] = useState(false);
+  const searchRequest = useRef(0);
+  const loadMoreRef = useRef<HTMLDivElement | null>(null);
+  const loadMoreInFlightRef = useRef(false);
+  const navigateTimer = useRef<number>(0);
 
-  const view: SkillsView = search.view ?? 'list'
-  const highlightedOnly = search.highlighted ?? false
-  const nonSuspiciousOnly = search.nonSuspicious ?? false
-  const searchSkills = useAction(api.search.searchSkills)
+  const view: SkillsView = search.view ?? "list";
+  const highlightedOnly = search.highlighted ?? false;
+  const nonSuspiciousOnly = search.nonSuspicious ?? false;
+  const searchSkills = useAction(api.search.searchSkills);
 
-  const trimmedQuery = useMemo(() => query.trim(), [query])
-  const hasQuery = trimmedQuery.length > 0
+  const trimmedQuery = useMemo(() => query.trim(), [query]);
+  const hasQuery = trimmedQuery.length > 0;
   const sort: SortKey =
-    search.sort === 'relevance' && !hasQuery
-      ? 'downloads'
-      : (search.sort ?? (hasQuery ? 'relevance' : 'downloads'))
-  const listSort = toListSort(sort)
-  const dir = parseDir(search.dir, sort)
+    search.sort === "relevance" && !hasQuery
+      ? "downloads"
+      : (search.sort ?? (hasQuery ? "relevance" : "downloads"));
+  const listSort = toListSort(sort);
+  const dir = parseDir(search.dir, sort);
   const searchKey = trimmedQuery
-    ? `${trimmedQuery}::${highlightedOnly ? '1' : '0'}::${nonSuspiciousOnly ? '1' : '0'}`
-    : ''
+    ? `${trimmedQuery}::${highlightedOnly ? "1" : "0"}::${nonSuspiciousOnly ? "1" : "0"}`
+    : "";
 
   // One-shot paginated fetches (no reactive subscription)
-  const [listResults, setListResults] = useState<SkillListEntry[]>([])
-  const [listCursor, setListCursor] = useState<string | null>(null)
-  const [listStatus, setListStatus] = useState<ListStatus>('loading')
-  const fetchGeneration = useRef(0)
+  const [listResults, setListResults] = useState<SkillListEntry[]>([]);
+  const [listCursor, setListCursor] = useState<string | null>(null);
+  const [listStatus, setListStatus] = useState<ListStatus>("loading");
+  const fetchGeneration = useRef(0);
 
   const fetchPage = useCallback(
     async (cursor: string | null, generation: number) => {
@@ -77,64 +77,64 @@ export function useSkillsBrowseModel({
           dir,
           highlightedOnly,
           nonSuspiciousOnly,
-        })
-        if (generation !== fetchGeneration.current) return
-        setListResults((prev) => (cursor ? [...prev, ...result.page] : result.page))
-        const canAdvance = result.hasMore && result.nextCursor != null
-        setListCursor(canAdvance ? result.nextCursor : null)
-        setListStatus(canAdvance ? 'idle' : 'done')
+        });
+        if (generation !== fetchGeneration.current) return;
+        setListResults((prev) => (cursor ? [...prev, ...result.page] : result.page));
+        const canAdvance = result.hasMore && result.nextCursor != null;
+        setListCursor(canAdvance ? result.nextCursor : null);
+        setListStatus(canAdvance ? "idle" : "done");
       } catch (err) {
-        if (generation !== fetchGeneration.current) return
-        console.error('Failed to fetch skills page:', err)
+        if (generation !== fetchGeneration.current) return;
+        console.error("Failed to fetch skills page:", err);
         // Reset to idle so the user can retry via "Load more"
-        setListStatus(cursor ? 'idle' : 'done')
+        setListStatus(cursor ? "idle" : "done");
       }
     },
     [listSort, dir, highlightedOnly, nonSuspiciousOnly],
-  )
+  );
 
   // Reset and fetch first page when sort/dir/filters change
   useEffect(() => {
-    if (hasQuery) return
-    fetchGeneration.current += 1
-    const generation = fetchGeneration.current
-    setListResults([])
-    setListCursor(null)
-    setListStatus('loading')
-    void fetchPage(null, generation)
-  }, [hasQuery, fetchPage])
+    if (hasQuery) return;
+    fetchGeneration.current += 1;
+    const generation = fetchGeneration.current;
+    setListResults([]);
+    setListCursor(null);
+    setListStatus("loading");
+    void fetchPage(null, generation);
+  }, [hasQuery, fetchPage]);
 
-  const isLoadingList = listStatus === 'loading'
-  const canLoadMoreList = listStatus === 'idle'
-  const isLoadingMoreList = listStatus === 'loadingMore'
-
-  useEffect(() => {
-    window.clearTimeout(navigateTimer.current)
-    setQuery(search.q ?? '')
-  }, [search.q])
+  const isLoadingList = listStatus === "loading";
+  const canLoadMoreList = listStatus === "idle";
+  const isLoadingMoreList = listStatus === "loadingMore";
 
   useEffect(() => {
-    if (search.focus === 'search' && searchInputRef.current) {
-      searchInputRef.current.focus()
-      void navigate({ search: (prev) => ({ ...prev, focus: undefined }), replace: true })
+    window.clearTimeout(navigateTimer.current);
+    setQuery(search.q ?? "");
+  }, [search.q]);
+
+  useEffect(() => {
+    if (search.focus === "search" && searchInputRef.current) {
+      searchInputRef.current.focus();
+      void navigate({ search: (prev) => ({ ...prev, focus: undefined }), replace: true });
     }
-  }, [navigate, search.focus, searchInputRef])
+  }, [navigate, search.focus, searchInputRef]);
 
   useEffect(() => {
     if (!searchKey) {
-      setSearchResults([])
-      setIsSearching(false)
-      return
+      setSearchResults([]);
+      setIsSearching(false);
+      return;
     }
-    setSearchResults([])
-    setSearchLimit(pageSize)
-  }, [searchKey])
+    setSearchResults([]);
+    setSearchLimit(pageSize);
+  }, [searchKey]);
 
   useEffect(() => {
-    if (!hasQuery) return
-    searchRequest.current += 1
-    const requestId = searchRequest.current
-    setIsSearching(true)
+    if (!hasQuery) return;
+    searchRequest.current += 1;
+    const requestId = searchRequest.current;
+    setIsSearching(true);
     const handle = window.setTimeout(() => {
       void (async () => {
         try {
@@ -143,19 +143,19 @@ export function useSkillsBrowseModel({
             highlightedOnly,
             nonSuspiciousOnly,
             limit: searchLimit,
-          })) as Array<SkillSearchEntry>
+          })) as Array<SkillSearchEntry>;
           if (requestId === searchRequest.current) {
-            setSearchResults(data)
+            setSearchResults(data);
           }
         } finally {
           if (requestId === searchRequest.current) {
-            setIsSearching(false)
+            setIsSearching(false);
           }
         }
-      })()
-    }, 220)
-    return () => window.clearTimeout(handle)
-  }, [hasQuery, highlightedOnly, nonSuspiciousOnly, searchLimit, searchSkills, trimmedQuery])
+      })();
+    }, 220);
+    return () => window.clearTimeout(handle);
+  }, [hasQuery, highlightedOnly, nonSuspiciousOnly, searchLimit, searchSkills, trimmedQuery]);
 
   const baseItems = useMemo(() => {
     if (hasQuery) {
@@ -165,109 +165,111 @@ export function useSkillsBrowseModel({
         ownerHandle: entry.ownerHandle ?? null,
         owner: entry.owner ?? null,
         searchScore: entry.score,
-      }))
+      }));
     }
-    return listResults
-  }, [hasQuery, listResults, searchResults])
+    return listResults;
+  }, [hasQuery, listResults, searchResults]);
 
   const sorted = useMemo(() => {
     if (!hasQuery) {
-      return baseItems
+      return baseItems;
     }
-    const multiplier = dir === 'asc' ? 1 : -1
-    const results = [...baseItems]
+    const multiplier = dir === "asc" ? 1 : -1;
+    const results = [...baseItems];
     results.sort((a, b) => {
       const tieBreak = () => {
-        const updated = (a.skill.updatedAt - b.skill.updatedAt) * multiplier
-        if (updated !== 0) return updated
-        return a.skill.slug.localeCompare(b.skill.slug)
-      }
+        const updated = (a.skill.updatedAt - b.skill.updatedAt) * multiplier;
+        if (updated !== 0) return updated;
+        return a.skill.slug.localeCompare(b.skill.slug);
+      };
       switch (sort) {
-        case 'relevance':
-          return ((a.searchScore ?? 0) - (b.searchScore ?? 0)) * multiplier
-        case 'downloads':
-          return (a.skill.stats.downloads - b.skill.stats.downloads) * multiplier || tieBreak()
-        case 'installs':
+        case "relevance":
+          return ((a.searchScore ?? 0) - (b.searchScore ?? 0)) * multiplier;
+        case "downloads":
+          return (a.skill.stats.downloads - b.skill.stats.downloads) * multiplier || tieBreak();
+        case "installs":
           return (
-            ((a.skill.stats.installsAllTime ?? 0) - (b.skill.stats.installsAllTime ?? 0)) * multiplier ||
-            tieBreak()
-          )
-        case 'stars':
-          return (a.skill.stats.stars - b.skill.stats.stars) * multiplier || tieBreak()
-        case 'updated':
+            ((a.skill.stats.installsAllTime ?? 0) - (b.skill.stats.installsAllTime ?? 0)) *
+              multiplier || tieBreak()
+          );
+        case "stars":
+          return (a.skill.stats.stars - b.skill.stats.stars) * multiplier || tieBreak();
+        case "updated":
           return (
-            (a.skill.updatedAt - b.skill.updatedAt) * multiplier || a.skill.slug.localeCompare(b.skill.slug)
-          )
-        case 'name':
+            (a.skill.updatedAt - b.skill.updatedAt) * multiplier ||
+            a.skill.slug.localeCompare(b.skill.slug)
+          );
+        case "name":
           return (
             (a.skill.displayName.localeCompare(b.skill.displayName) ||
               a.skill.slug.localeCompare(b.skill.slug)) * multiplier
-          )
+          );
         default:
           return (
-            (a.skill.createdAt - b.skill.createdAt) * multiplier || a.skill.slug.localeCompare(b.skill.slug)
-          )
+            (a.skill.createdAt - b.skill.createdAt) * multiplier ||
+            a.skill.slug.localeCompare(b.skill.slug)
+          );
       }
-    })
-    return results
-  }, [baseItems, dir, hasQuery, sort])
+    });
+    return results;
+  }, [baseItems, dir, hasQuery, sort]);
 
-  const isLoadingSkills = hasQuery ? isSearching && searchResults.length === 0 : isLoadingList
+  const isLoadingSkills = hasQuery ? isSearching && searchResults.length === 0 : isLoadingList;
   const canLoadMore = hasQuery
     ? !isSearching && searchResults.length === searchLimit && searchResults.length > 0
-    : canLoadMoreList
-  const isLoadingMore = hasQuery ? isSearching && searchResults.length > 0 : isLoadingMoreList
-  const canAutoLoad = typeof IntersectionObserver !== 'undefined'
+    : canLoadMoreList;
+  const isLoadingMore = hasQuery ? isSearching && searchResults.length > 0 : isLoadingMoreList;
+  const canAutoLoad = typeof IntersectionObserver !== "undefined";
 
   const loadMore = useCallback(() => {
-    if (loadMoreInFlightRef.current || isLoadingMore || !canLoadMore) return
-    loadMoreInFlightRef.current = true
+    if (loadMoreInFlightRef.current || isLoadingMore || !canLoadMore) return;
+    loadMoreInFlightRef.current = true;
     if (hasQuery) {
-      setSearchLimit((value) => value + pageSize)
+      setSearchLimit((value) => value + pageSize);
     } else {
-      setListStatus('loadingMore')
-      void fetchPage(listCursor, fetchGeneration.current)
+      setListStatus("loadingMore");
+      void fetchPage(listCursor, fetchGeneration.current);
     }
-  }, [canLoadMore, fetchPage, hasQuery, isLoadingMore, listCursor])
+  }, [canLoadMore, fetchPage, hasQuery, isLoadingMore, listCursor]);
 
   useEffect(() => {
     if (!isLoadingMore) {
-      loadMoreInFlightRef.current = false
+      loadMoreInFlightRef.current = false;
     }
-  }, [isLoadingMore])
+  }, [isLoadingMore]);
 
   useEffect(() => {
-    if (!canLoadMore || typeof IntersectionObserver === 'undefined') return
-    const target = loadMoreRef.current
-    if (!target) return
+    if (!canLoadMore || typeof IntersectionObserver === "undefined") return;
+    const target = loadMoreRef.current;
+    if (!target) return;
     const observer = new IntersectionObserver(
       (entries) => {
         if (entries.some((entry) => entry.isIntersecting)) {
-          observer.disconnect()
-          loadMore()
+          observer.disconnect();
+          loadMore();
         }
       },
-      { rootMargin: '200px' },
-    )
-    observer.observe(target)
-    return () => observer.disconnect()
-  }, [canLoadMore, loadMore])
+      { rootMargin: "200px" },
+    );
+    observer.observe(target);
+    return () => observer.disconnect();
+  }, [canLoadMore, loadMore]);
 
   useEffect(() => {
-    return () => window.clearTimeout(navigateTimer.current)
-  }, [])
+    return () => window.clearTimeout(navigateTimer.current);
+  }, []);
 
   const onQueryChange = useCallback(
     (next: string) => {
-      setQuery(next)
-      window.clearTimeout(navigateTimer.current)
-      const trimmed = next.trim()
+      setQuery(next);
+      window.clearTimeout(navigateTimer.current);
+      const trimmed = next.trim();
       navigateTimer.current = window.setTimeout(() => {
         void navigate({
           search: (prev) => {
-            const hadQuery = typeof prev.q === 'string' && prev.q.trim().length > 0
-            const enteringSearch = Boolean(trimmed) && !hadQuery
-            const usesImplicitBrowseDefault = prev.sort === 'downloads' && prev.dir === undefined
+            const hadQuery = typeof prev.q === "string" && prev.q.trim().length > 0;
+            const enteringSearch = Boolean(trimmed) && !hadQuery;
+            const usesImplicitBrowseDefault = prev.sort === "downloads" && prev.dir === undefined;
 
             return {
               ...prev,
@@ -278,14 +280,14 @@ export function useSkillsBrowseModel({
                     dir: undefined,
                   }
                 : null),
-            }
+            };
           },
           replace: true,
-        })
-      }, 220)
+        });
+      }, 220);
     },
     [navigate],
-  )
+  );
 
   const onToggleHighlighted = useCallback(() => {
     void navigate({
@@ -294,8 +296,8 @@ export function useSkillsBrowseModel({
         highlighted: prev.highlighted ? undefined : true,
       }),
       replace: true,
-    })
-  }, [navigate])
+    });
+  }, [navigate]);
 
   const onToggleNonSuspicious = useCallback(() => {
     void navigate({
@@ -304,12 +306,12 @@ export function useSkillsBrowseModel({
         nonSuspicious: prev.nonSuspicious ? undefined : true,
       }),
       replace: true,
-    })
-  }, [navigate])
+    });
+  }, [navigate]);
 
   const onSortChange = useCallback(
     (value: string) => {
-      const nextSort = parseSort(value)
+      const nextSort = parseSort(value);
       void navigate({
         search: (prev) => ({
           ...prev,
@@ -317,34 +319,34 @@ export function useSkillsBrowseModel({
           dir: parseDir(prev.dir, nextSort),
         }),
         replace: true,
-      })
+      });
     },
     [navigate],
-  )
+  );
 
   const onToggleDir = useCallback(() => {
     void navigate({
       search: (prev) => ({
         ...prev,
-        dir: parseDir(prev.dir, sort) === 'asc' ? 'desc' : 'asc',
+        dir: parseDir(prev.dir, sort) === "asc" ? "desc" : "asc",
       }),
       replace: true,
-    })
-  }, [navigate, sort])
+    });
+  }, [navigate, sort]);
 
   const onToggleView = useCallback(() => {
     void navigate({
       search: (prev) => ({
         ...prev,
-        view: prev.view === 'cards' ? undefined : 'cards',
+        view: prev.view === "cards" ? undefined : "cards",
       }),
       replace: true,
-    })
-  }, [navigate])
+    });
+  }, [navigate]);
 
-  const activeFilters: string[] = []
-  if (highlightedOnly) activeFilters.push('highlighted')
-  if (nonSuspiciousOnly) activeFilters.push('non-suspicious')
+  const activeFilters: string[] = [];
+  if (highlightedOnly) activeFilters.push("highlighted");
+  if (nonSuspiciousOnly) activeFilters.push("non-suspicious");
 
   return {
     activeFilters,
@@ -368,5 +370,5 @@ export function useSkillsBrowseModel({
     sort,
     sorted,
     view,
-  }
+  };
 }

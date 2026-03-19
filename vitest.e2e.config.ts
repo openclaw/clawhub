@@ -1,11 +1,11 @@
-import { defineConfig } from 'vitest/config'
+import { defineConfig } from "vitest/config";
 
 export default defineConfig({
   test: {
-    environment: 'node',
-    include: ['e2e/**/*.e2e.test.ts'],
-    exclude: ['**/node_modules/**', '**/dist/**', '**/coverage/**', '**/convex/_generated/**'],
+    environment: "node",
+    include: ["e2e/**/*.e2e.test.ts"],
+    exclude: ["**/node_modules/**", "**/dist/**", "**/coverage/**", "**/convex/_generated/**"],
     testTimeout: 60_000,
     hookTimeout: 60_000,
   },
-})
+});

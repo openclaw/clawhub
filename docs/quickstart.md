@@ -1,5 +1,5 @@
 ---
-summary: 'Local setup + CLI smoke: login, search, install, publish, sync.'
+summary: "Local setup + CLI smoke: login, search, install, publish, sync."
 read_when:
   - First run / local dev setup
   - Verifying end-to-end flows

@@ -3,10 +3,9 @@
   "version": "0.8.0",
   "description": "ClawHub CLI \\u2014 install, update, search, and publish agent skills.",
   "license": "MIT",
-  "type": "module",
   "bin": {
-    "clawhub": "bin/clawdhub.js",
-    "clawdhub": "bin/clawdhub.js"
+    "clawdhub": "bin/clawdhub.js",
+    "clawhub": "bin/clawdhub.js"
   },
   "files": [
     "bin",
@@ -14,6 +13,7 @@
     "README.md",
     "LICENSE"
   ],
+  "type": "module",
   "scripts": {
     "build": "tsc -p tsconfig.json",
     "dev": "node --enable-source-maps dist/cli.js",

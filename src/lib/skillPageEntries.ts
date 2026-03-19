@@ -1,11 +1,11 @@
-import type { PublicSkill } from './publicUser'
+import type { PublicSkill } from "./publicUser";
 
 type SkillPageEntry = {
-  skill?: PublicSkill | null
-}
+  skill?: PublicSkill | null;
+};
 
 function normalizeSkillStats(skill: PublicSkill): PublicSkill {
-  const stats = skill.stats
+  const stats = skill.stats;
   return {
     ...skill,
     stats: {
@@ -16,13 +16,13 @@ function normalizeSkillStats(skill: PublicSkill): PublicSkill {
       versions: stats?.versions ?? 0,
       comments: stats?.comments ?? 0,
     },
-  }
+  };
 }
 
 export function mapPublicSkillPageEntries(page: SkillPageEntry[] | undefined): PublicSkill[] {
-  if (!page?.length) return []
+  if (!page?.length) return [];
   return page
     .map((entry) => entry.skill ?? null)
     .filter((skill): skill is PublicSkill => skill !== null)
-    .map(normalizeSkillStats)
+    .map(normalizeSkillStats);
 }

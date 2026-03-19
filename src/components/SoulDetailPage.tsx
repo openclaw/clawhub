@@ -1,112 +1,112 @@
-import { useAction, useMutation, useQuery } from 'convex/react'
-import { useEffect, useMemo, useRef, useState } from 'react'
-import ReactMarkdown from 'react-markdown'
-import remarkGfm from 'remark-gfm'
-import { api } from '../../convex/_generated/api'
-import type { Doc } from '../../convex/_generated/dataModel'
-import { SoulStatsTripletLine } from './SoulStats'
-import type { PublicSoul, PublicUser } from '../lib/publicUser'
-import { isModerator } from '../lib/roles'
-import { getRuntimeEnv } from '../lib/runtimeEnv'
-import { useAuthStatus } from '../lib/useAuthStatus'
-import { stripFrontmatter } from './skillDetailUtils'
+import { useAction, useMutation, useQuery } from "convex/react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import ReactMarkdown from "react-markdown";
+import remarkGfm from "remark-gfm";
+import { api } from "../../convex/_generated/api";
+import type { Doc } from "../../convex/_generated/dataModel";
+import type { PublicSoul, PublicUser } from "../lib/publicUser";
+import { isModerator } from "../lib/roles";
+import { getRuntimeEnv } from "../lib/runtimeEnv";
+import { useAuthStatus } from "../lib/useAuthStatus";
+import { stripFrontmatter } from "./skillDetailUtils";
+import { SoulStatsTripletLine } from "./SoulStats";
 
 type SoulDetailPageProps = {
-  slug: string
-}
+  slug: string;
+};
 
 type PublicSoulVersion = Pick<
-  Doc<'soulVersions'>,
-  | '_id'
-  | '_creationTime'
-  | 'soulId'
-  | 'version'
-  | 'fingerprint'
-  | 'changelog'
-  | 'changelogSource'
-  | 'createdBy'
-  | 'createdAt'
-  | 'softDeletedAt'
+  Doc<"soulVersions">,
+  | "_id"
+  | "_creationTime"
+  | "soulId"
+  | "version"
+  | "fingerprint"
+  | "changelog"
+  | "changelogSource"
+  | "createdBy"
+  | "createdAt"
+  | "softDeletedAt"
 > & {
   files: Array<{
-    path: string
-    size: number
-    sha256: string
-    contentType?: string
-  }>
+    path: string;
+    size: number;
+    sha256: string;
+    contentType?: string;
+  }>;
   parsed?: {
-    clawdis?: Doc<'soulVersions'>['parsed']['clawdis']
-  }
-}
+    clawdis?: Doc<"soulVersions">["parsed"]["clawdis"];
+  };
+};
 
 type SoulBySlugResult = {
-  soul: PublicSoul
-  latestVersion: PublicSoulVersion | null
-  owner: PublicUser | null
-} | null
+  soul: PublicSoul;
+  latestVersion: PublicSoulVersion | null;
+  owner: PublicUser | null;
+} | null;
 
 export function SoulDetailPage({ slug }: SoulDetailPageProps) {
-  const { isAuthenticated, me } = useAuthStatus()
-  const result = useQuery(api.souls.getBySlug, { slug }) as SoulBySlugResult | undefined
-  const toggleStar = useMutation(api.soulStars.toggle)
-  const addComment = useMutation(api.soulComments.add)
-  const removeComment = useMutation(api.soulComments.remove)
-  const getReadme = useAction(api.souls.getReadme)
-  const ensureSoulSeeds = useAction(api.seed.ensureSoulSeeds)
-  const seedEnsuredRef = useRef(false)
-  const [readme, setReadme] = useState<string | null>(null)
-  const [readmeError, setReadmeError] = useState<string | null>(null)
-  const [comment, setComment] = useState('')
+  const { isAuthenticated, me } = useAuthStatus();
+  const result = useQuery(api.souls.getBySlug, { slug }) as SoulBySlugResult | undefined;
+  const toggleStar = useMutation(api.soulStars.toggle);
+  const addComment = useMutation(api.soulComments.add);
+  const removeComment = useMutation(api.soulComments.remove);
+  const getReadme = useAction(api.souls.getReadme);
+  const ensureSoulSeeds = useAction(api.seed.ensureSoulSeeds);
+  const seedEnsuredRef = useRef(false);
+  const [readme, setReadme] = useState<string | null>(null);
+  const [readmeError, setReadmeError] = useState<string | null>(null);
+  const [comment, setComment] = useState("");
 
-  const isLoadingSoul = result === undefined
-  const soul = result?.soul
-  const owner = result?.owner
-  const latestVersion = result?.latestVersion
+  const isLoadingSoul = result === undefined;
+  const soul = result?.soul;
+  const owner = result?.owner;
+  const latestVersion = result?.latestVersion;
   const versions = useQuery(
     api.souls.listVersions,
-    soul ? { soulId: soul._id, limit: 50 } : 'skip',
-  ) as PublicSoulVersion[] | undefined
+    soul ? { soulId: soul._id, limit: 50 } : "skip",
+  ) as PublicSoulVersion[] | undefined;
 
   const isStarred = useQuery(
     api.soulStars.isStarred,
-    isAuthenticated && soul ? { soulId: soul._id } : 'skip',
-  )
+    isAuthenticated && soul ? { soulId: soul._id } : "skip",
+  );
 
   const comments = useQuery(
     api.soulComments.listBySoul,
-    soul ? { soulId: soul._id, limit: 50 } : 'skip',
-  ) as Array<{ comment: Doc<'soulComments'>; user: PublicUser | null }> | undefined
+    soul ? { soulId: soul._id, limit: 50 } : "skip",
+  ) as Array<{ comment: Doc<"soulComments">; user: PublicUser | null }> | undefined;
 
   const readmeContent = useMemo(() => {
-    if (!readme) return null
-    return stripFrontmatter(readme)
-  }, [readme])
+    if (!readme) return null;
+    return stripFrontmatter(readme);
+  }, [readme]);
 
   useEffect(() => {
-    if (seedEnsuredRef.current) return
-    seedEnsuredRef.current = true
-    void ensureSoulSeeds({})
-  }, [ensureSoulSeeds])
+    if (seedEnsuredRef.current) return;
+    seedEnsuredRef.current = true;
+    void ensureSoulSeeds({});
+  }, [ensureSoulSeeds]);
 
   useEffect(() => {
-    if (!latestVersion) return
-    setReadme(null)
-    setReadmeError(null)
-    let cancelled = false
+    if (!latestVersion) return;
+    setReadme(null);
+    setReadmeError(null);
+    let cancelled = false;
     void getReadme({ versionId: latestVersion._id })
       .then((data) => {
-        if (cancelled) return
-        setReadme(data.text)
+        if (cancelled) return;
+        setReadme(data.text);
       })
       .catch((error) => {
-        if (cancelled) return
-        setReadmeError(error instanceof Error ? error.message : 'Failed to load SOUL.md')
-        setReadme(null)
-      })
+        if (cancelled) return;
+        setReadmeError(error instanceof Error ? error.message : "Failed to load SOUL.md");
+        setReadme(null);
+      });
     return () => {
-      cancelled = true
-    }
-  }, [latestVersion, getReadme])
+      cancelled = true;
+    };
+  }, [latestVersion, getReadme]);
 
   if (isLoadingSoul) {
     return (
@@ -115,7 +115,7 @@ export function SoulDetailPage({ slug }: SoulDetailPageProps) {
           <div className="loading-indicator">Loading soul…</div>
         </div>
       </main>
-    )
+    );
   }
 
   if (result === null || !soul) {
@@ -123,12 +123,12 @@ export function SoulDetailPage({ slug }: SoulDetailPageProps) {
       <main className="section">
         <div className="card">Soul not found.</div>
       </main>
-    )
+    );
   }
 
-  const ownerHandle = owner?.handle ?? owner?.name ?? null
-  const convexSiteUrl = getRuntimeEnv('VITE_CONVEX_SITE_URL') ?? 'https://clawhub.ai'
-  const downloadBase = `${convexSiteUrl}/api/v1/souls/${soul.slug}/file`
+  const ownerHandle = owner?.handle ?? owner?.name ?? null;
+  const convexSiteUrl = getRuntimeEnv("VITE_CONVEX_SITE_URL") ?? "https://clawhub.ai";
+  const downloadBase = `${convexSiteUrl}/api/v1/souls/${soul.slug}/file`;
 
   return (
     <main className="section">
@@ -139,7 +139,7 @@ export function SoulDetailPage({ slug }: SoulDetailPageProps) {
               <h1 className="section-title" style={{ margin: 0 }}>
                 {soul.displayName}
               </h1>
-              <p className="section-subtitle">{soul.summary ?? 'No summary provided.'}</p>
+              <p className="section-subtitle">{soul.summary ?? "No summary provided."}</p>
               <div className="stat">
                 <SoulStatsTripletLine stats={soul.stats} versionSuffix="versions" />
               </div>
@@ -151,10 +151,10 @@ export function SoulDetailPage({ slug }: SoulDetailPageProps) {
               <div className="skill-actions">
                 {isAuthenticated ? (
                   <button
-                    className={`star-toggle${isStarred ? ' is-active' : ''}`}
+                    className={`star-toggle${isStarred ? " is-active" : ""}`}
                     type="button"
                     onClick={() => void toggleStar({ soulId: soul._id })}
-                    aria-label={isStarred ? 'Unstar soul' : 'Star soul'}
+                    aria-label={isStarred ? "Unstar soul" : "Star soul"}
                   >
                     <span aria-hidden="true">★</span>
                   </button>
@@ -164,7 +164,7 @@ export function SoulDetailPage({ slug }: SoulDetailPageProps) {
             <div className="skill-hero-cta">
               <div className="skill-version-pill">
                 <span className="skill-version-label">Current version</span>
-                <strong>v{latestVersion?.version ?? '—'}</strong>
+                <strong>v{latestVersion?.version ?? "—"}</strong>
               </div>
               <a
                 className="btn btn-primary"
@@ -190,7 +190,7 @@ export function SoulDetailPage({ slug }: SoulDetailPageProps) {
         </div>
 
         <div className="card">
-          <h2 className="section-title" style={{ fontSize: '1.2rem', marginBottom: 8 }}>
+          <h2 className="section-title" style={{ fontSize: "1.2rem", marginBottom: 8 }}>
             Versions
           </h2>
           <div className="version-scroll">
@@ -200,11 +200,11 @@ export function SoulDetailPage({ slug }: SoulDetailPageProps) {
                   <div className="version-info">
                     <div>
                       v{version.version} · {new Date(version.createdAt).toLocaleDateString()}
-                      {version.changelogSource === 'auto' ? (
-                        <span style={{ color: 'var(--ink-soft)' }}> · auto</span>
+                      {version.changelogSource === "auto" ? (
+                        <span style={{ color: "var(--ink-soft)" }}> · auto</span>
                       ) : null}
                     </div>
-                    <div style={{ color: '#5c554e', whiteSpace: 'pre-wrap' }}>
+                    <div style={{ color: "#5c554e", whiteSpace: "pre-wrap" }}>
                       {version.changelog}
                     </div>
                   </div>
@@ -225,17 +225,17 @@ export function SoulDetailPage({ slug }: SoulDetailPageProps) {
         </div>
 
         <div className="card">
-          <h2 className="section-title" style={{ fontSize: '1.2rem', margin: 0 }}>
+          <h2 className="section-title" style={{ fontSize: "1.2rem", margin: 0 }}>
             Comments
           </h2>
           {isAuthenticated ? (
             <form
               onSubmit={(event) => {
-                event.preventDefault()
-                if (!comment.trim()) return
+                event.preventDefault();
+                if (!comment.trim()) return;
                 void addComment({ soulId: soul._id, body: comment.trim() }).then(() =>
-                  setComment(''),
-                )
+                  setComment(""),
+                );
               }}
               className="comment-form"
             >
@@ -253,14 +253,14 @@ export function SoulDetailPage({ slug }: SoulDetailPageProps) {
           ) : (
             <p className="section-subtitle">Sign in to comment.</p>
           )}
-          <div style={{ display: 'grid', gap: 12, marginTop: 16 }}>
+          <div style={{ display: "grid", gap: 12, marginTop: 16 }}>
             {(comments ?? []).length === 0 ? (
               <div className="stat">No comments yet.</div>
             ) : (
               (comments ?? []).map((entry) => (
                 <div key={entry.comment._id} className="comment-item">
                   <div className="comment-body">
-                    <strong>@{entry.user?.handle ?? entry.user?.name ?? 'user'}</strong>
+                    <strong>@{entry.user?.handle ?? entry.user?.name ?? "user"}</strong>
                     <div className="comment-body-text">{entry.comment.body}</div>
                   </div>
                   {isAuthenticated && me && (me._id === entry.comment.userId || isModerator(me)) ? (
@@ -279,5 +279,5 @@ export function SoulDetailPage({ slug }: SoulDetailPageProps) {
         </div>
       </div>
     </main>
-  )
+  );
 }

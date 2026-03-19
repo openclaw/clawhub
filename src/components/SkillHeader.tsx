@@ -1,80 +1,80 @@
-import { Link } from '@tanstack/react-router'
+import { Link } from "@tanstack/react-router";
 import {
   type ClawdisSkillMetadata,
   PLATFORM_SKILL_LICENSE,
   PLATFORM_SKILL_LICENSE_SUMMARY,
-} from 'clawhub-schema'
-import { Package } from 'lucide-react'
-import type { Doc, Id } from '../../convex/_generated/dataModel'
-import { getSkillBadges } from '../lib/badges'
-import { formatCompactStat, formatSkillStatsTriplet } from '../lib/numberFormat'
-import type { PublicSkill, PublicUser } from '../lib/publicUser'
-import { getRuntimeEnv } from '../lib/runtimeEnv'
-import { type LlmAnalysis, SecurityScanResults } from './SkillSecurityScanResults'
-import { SkillInstallCard } from './SkillInstallCard'
-import { UserBadge } from './UserBadge'
+} from "clawhub-schema";
+import { Package } from "lucide-react";
+import type { Doc, Id } from "../../convex/_generated/dataModel";
+import { getSkillBadges } from "../lib/badges";
+import { formatCompactStat, formatSkillStatsTriplet } from "../lib/numberFormat";
+import type { PublicSkill, PublicUser } from "../lib/publicUser";
+import { getRuntimeEnv } from "../lib/runtimeEnv";
+import { SkillInstallCard } from "./SkillInstallCard";
+import { type LlmAnalysis, SecurityScanResults } from "./SkillSecurityScanResults";
+import { UserBadge } from "./UserBadge";
 
 export type SkillModerationInfo = {
-  isPendingScan: boolean
-  isMalwareBlocked: boolean
-  isSuspicious: boolean
-  isHiddenByMod: boolean
-  isRemoved: boolean
-  overrideActive?: boolean
-  verdict?: 'clean' | 'suspicious' | 'malicious'
-  reason?: string
-}
+  isPendingScan: boolean;
+  isMalwareBlocked: boolean;
+  isSuspicious: boolean;
+  isHiddenByMod: boolean;
+  isRemoved: boolean;
+  overrideActive?: boolean;
+  verdict?: "clean" | "suspicious" | "malicious";
+  reason?: string;
+};
 
 type SkillFork = {
-  kind: 'fork' | 'duplicate'
-  version: string | null
-  skill: { slug: string; displayName: string }
-  owner: { handle: string | null; userId: Id<'users'> | null }
-}
+  kind: "fork" | "duplicate";
+  version: string | null;
+  skill: { slug: string; displayName: string };
+  owner: { handle: string | null; userId: Id<"users"> | null };
+};
 
 type SkillCanonical = {
-  skill: { slug: string; displayName: string }
-  owner: { handle: string | null; userId: Id<'users'> | null }
-}
+  skill: { slug: string; displayName: string };
+  owner: { handle: string | null; userId: Id<"users"> | null };
+};
 
 type SkillHeaderProps = {
-  skill: Doc<'skills'> | PublicSkill
-  owner: Doc<'users'> | PublicUser | null
-  ownerHandle: string | null
-  latestVersion: Doc<'skillVersions'> | null
-  modInfo: SkillModerationInfo | null
-  canManage: boolean
-  isAuthenticated: boolean
-  isStaff: boolean
-  isStarred: boolean | undefined
-  onToggleStar: () => void
-  onOpenReport: () => void
-  forkOf: SkillFork | null
-  forkOfLabel: string
-  forkOfHref: string | null
-  forkOfOwnerHandle: string | null
-  canonical: SkillCanonical | null
-  canonicalHref: string | null
-  canonicalOwnerHandle: string | null
-  staffModerationNote: string | null
-  staffVisibilityTag: string | null
-  isAutoHidden: boolean
-  isRemoved: boolean
-  nixPlugin: string | undefined
-  hasPluginBundle: boolean
-  configRequirements: ClawdisSkillMetadata['config'] | undefined
-  cliHelp: string | undefined
-  tagEntries: Array<[string, Id<'skillVersions'>]>
-  versionById: Map<Id<'skillVersions'>, Doc<'skillVersions'>>
-  tagName: string
-  onTagNameChange: (value: string) => void
-  tagVersionId: Id<'skillVersions'> | ''
-  onTagVersionChange: (value: Id<'skillVersions'> | '') => void
-  onTagSubmit: () => void
-  tagVersions: Doc<'skillVersions'>[]
-  clawdis: ClawdisSkillMetadata | undefined
-  osLabels: string[]
-}
+  skill: Doc<"skills"> | PublicSkill;
+  owner: Doc<"users"> | PublicUser | null;
+  ownerHandle: string | null;
+  latestVersion: Doc<"skillVersions"> | null;
+  modInfo: SkillModerationInfo | null;
+  canManage: boolean;
+  isAuthenticated: boolean;
+  isStaff: boolean;
+  isStarred: boolean | undefined;
+  onToggleStar: () => void;
+  onOpenReport: () => void;
+  forkOf: SkillFork | null;
+  forkOfLabel: string;
+  forkOfHref: string | null;
+  forkOfOwnerHandle: string | null;
+  canonical: SkillCanonical | null;
+  canonicalHref: string | null;
+  canonicalOwnerHandle: string | null;
+  staffModerationNote: string | null;
+  staffVisibilityTag: string | null;
+  isAutoHidden: boolean;
+  isRemoved: boolean;
+  nixPlugin: string | undefined;
+  hasPluginBundle: boolean;
+  configRequirements: ClawdisSkillMetadata["config"] | undefined;
+  cliHelp: string | undefined;
+  tagEntries: Array<[string, Id<"skillVersions">]>;
+  versionById: Map<Id<"skillVersions">, Doc<"skillVersions">>;
+  tagName: string;
+  onTagNameChange: (value: string) => void;
+  tagVersionId: Id<"skillVersions"> | "";
+  onTagVersionChange: (value: Id<"skillVersions"> | "") => void;
+  onTagSubmit: () => void;
+  tagVersions: Doc<"skillVersions">[];
+  clawdis: ClawdisSkillMetadata | undefined;
+  osLabels: string[];
+};
 
 export function SkillHeader({
   skill,
@@ -114,17 +114,16 @@ export function SkillHeader({
   clawdis,
   osLabels,
 }: SkillHeaderProps) {
-  const convexSiteUrl = getRuntimeEnv('VITE_CONVEX_SITE_URL') ?? 'https://clawhub.ai'
-  const formattedStats = formatSkillStatsTriplet(skill.stats)
+  const convexSiteUrl = getRuntimeEnv("VITE_CONVEX_SITE_URL") ?? "https://clawhub.ai";
+  const formattedStats = formatSkillStatsTriplet(skill.stats);
   const suppressScanResults =
     !isStaff &&
     Boolean(modInfo?.overrideActive) &&
     !modInfo?.isMalwareBlocked &&
-    !modInfo?.isSuspicious
-  const overrideScanMessage =
-    suppressScanResults
-      ? 'Security findings were reviewed by staff and cleared for public use.'
-      : null
+    !modInfo?.isSuspicious;
+  const overrideScanMessage = suppressScanResults
+    ? "Security findings were reviewed by staff and cleared for public use."
+    : null;
 
   return (
     <>
@@ -153,17 +152,20 @@ export function SkillHeader({
         <div className="pending-banner pending-banner-warning">
           <div className="pending-banner-content">
             <strong>Skill flagged — suspicious patterns detected</strong>
-            <p>ClawHub Security flagged this skill as suspicious. Review the scan results before using.</p>
+            <p>
+              ClawHub Security flagged this skill as suspicious. Review the scan results before
+              using.
+            </p>
             {canManage ? (
               <p className="pending-banner-appeal">
-                If you believe this skill has been incorrectly flagged, please{' '}
+                If you believe this skill has been incorrectly flagged, please{" "}
                 <a
                   href="https://github.com/openclaw/clawhub/issues"
                   target="_blank"
                   rel="noopener noreferrer"
                 >
                   submit an issue on GitHub
-                </a>{' '}
+                </a>{" "}
                 and we'll break down why it was flagged and what you can do.
               </p>
             ) : null}
@@ -186,7 +188,7 @@ export function SkillHeader({
       ) : null}
 
       <div className="card skill-hero">
-        <div className={`skill-hero-top${hasPluginBundle ? ' has-plugin' : ''}`}>
+        <div className={`skill-hero-top${hasPluginBundle ? " has-plugin" : ""}`}>
           <div className="skill-hero-header">
             <div className="skill-hero-title">
               <div className="skill-hero-title-row">
@@ -195,7 +197,7 @@ export function SkillHeader({
                 </h1>
                 {nixPlugin ? <span className="tag tag-accent">Plugin bundle (nix)</span> : null}
               </div>
-              <p className="section-subtitle">{skill.summary ?? 'No summary provided.'}</p>
+              <p className="section-subtitle">{skill.summary ?? "No summary provided."}</p>
 
               {isStaff && staffModerationNote ? (
                 <div className="skill-hero-note">{staffModerationNote}</div>
@@ -209,18 +211,24 @@ export function SkillHeader({
                 <strong>{PLATFORM_SKILL_LICENSE}</strong> · {PLATFORM_SKILL_LICENSE_SUMMARY}
               </div>
               <div className="stat">
-                ⭐ {formattedStats.stars} · <Package size={14} aria-hidden="true" />{' '}
-                {formattedStats.downloads} · {formatCompactStat(skill.stats.installsCurrent ?? 0)} current
-                installs · {formattedStats.installsAllTime} all-time installs
+                ⭐ {formattedStats.stars} · <Package size={14} aria-hidden="true" />{" "}
+                {formattedStats.downloads} · {formatCompactStat(skill.stats.installsCurrent ?? 0)}{" "}
+                current installs · {formattedStats.installsAllTime} all-time installs
               </div>
               <div className="stat">
-                <UserBadge user={owner} fallbackHandle={ownerHandle} prefix="by" size="md" showName />
+                <UserBadge
+                  user={owner}
+                  fallbackHandle={ownerHandle}
+                  prefix="by"
+                  size="md"
+                  showName
+                />
               </div>
               {forkOf && forkOfHref ? (
                 <div className="stat">
-                  {forkOfLabel}{' '}
+                  {forkOfLabel}{" "}
                   <a href={forkOfHref}>
-                    {forkOfOwnerHandle ? `@${forkOfOwnerHandle}/` : ''}
+                    {forkOfOwnerHandle ? `@${forkOfOwnerHandle}/` : ""}
                     {forkOf.skill.slug}
                   </a>
                   {forkOf.version ? ` (based on ${forkOf.version})` : null}
@@ -228,9 +236,9 @@ export function SkillHeader({
               ) : null}
               {canonicalHref ? (
                 <div className="stat">
-                  canonical:{' '}
+                  canonical:{" "}
                   <a href={canonicalHref}>
-                    {canonicalOwnerHandle ? `@${canonicalOwnerHandle}/` : ''}
+                    {canonicalOwnerHandle ? `@${canonicalOwnerHandle}/` : ""}
                     {canonical?.skill?.slug}
                   </a>
                 </div>
@@ -242,17 +250,17 @@ export function SkillHeader({
               ))}
               <div className="tag tag-accent">{PLATFORM_SKILL_LICENSE}</div>
               {isStaff && staffVisibilityTag ? (
-                <div className={`tag${isAutoHidden || isRemoved ? ' tag-accent' : ''}`}>
+                <div className={`tag${isAutoHidden || isRemoved ? " tag-accent" : ""}`}>
                   {staffVisibilityTag}
                 </div>
               ) : null}
               <div className="skill-actions">
                 {isAuthenticated ? (
                   <button
-                    className={`star-toggle${isStarred ? ' is-active' : ''}`}
+                    className={`star-toggle${isStarred ? " is-active" : ""}`}
                     type="button"
                     onClick={onToggleStar}
-                    aria-label={isStarred ? 'Unstar skill' : 'Star skill'}
+                    aria-label={isStarred ? "Unstar skill" : "Star skill"}
                   >
                     <span aria-hidden="true">★</span>
                   </button>
@@ -270,7 +278,9 @@ export function SkillHeader({
               </div>
               {suppressScanResults ? (
                 <div className="skill-hero-note">{overrideScanMessage}</div>
-              ) : latestVersion?.sha256hash || latestVersion?.llmAnalysis || (latestVersion?.staticScan?.findings?.length ?? 0) > 0 ? (
+              ) : latestVersion?.sha256hash ||
+                latestVersion?.llmAnalysis ||
+                (latestVersion?.staticScan?.findings?.length ?? 0) > 0 ? (
                 <SecurityScanResults
                   sha256hash={latestVersion?.sha256hash}
                   vtAnalysis={latestVersion?.vtAnalysis}
@@ -278,7 +288,10 @@ export function SkillHeader({
                   staticFindings={latestVersion?.staticScan?.findings}
                 />
               ) : null}
-              {!suppressScanResults && (latestVersion?.sha256hash || latestVersion?.llmAnalysis || (latestVersion?.staticScan?.findings?.length ?? 0) > 0) ? (
+              {!suppressScanResults &&
+              (latestVersion?.sha256hash ||
+                latestVersion?.llmAnalysis ||
+                (latestVersion?.staticScan?.findings?.length ?? 0) > 0) ? (
                 <p className="scan-disclaimer">
                   Like a lobster shell, security has layers — review code before you run it.
                 </p>
@@ -287,7 +300,7 @@ export function SkillHeader({
             <div className="skill-hero-cta">
               <div className="skill-version-pill">
                 <span className="skill-version-label">Current version</span>
-                <strong>v{latestVersion?.version ?? '—'}</strong>
+                <strong>v{latestVersion?.version ?? "—"}</strong>
               </div>
               {!nixPlugin && !modInfo?.isMalwareBlocked && !modInfo?.isRemoved ? (
                 <a
@@ -317,13 +330,13 @@ export function SkillHeader({
                     {configRequirements.requiredEnv?.length ? (
                       <div className="stat">
                         <strong>Required env</strong>
-                        <span>{configRequirements.requiredEnv.join(', ')}</span>
+                        <span>{configRequirements.requiredEnv.join(", ")}</span>
                       </div>
                     ) : null}
                     {configRequirements.stateDirs?.length ? (
                       <div className="stat">
                         <strong>State dirs</strong>
-                        <span>{configRequirements.stateDirs.join(', ')}</span>
+                        <span>{configRequirements.stateDirs.join(", ")}</span>
                       </div>
                     ) : null}
                   </div>
@@ -348,7 +361,9 @@ export function SkillHeader({
             tagEntries.map(([tag, versionId]) => (
               <span key={tag} className="tag">
                 {tag}
-                <span className="tag-meta">v{versionById.get(versionId)?.version ?? versionId}</span>
+                <span className="tag-meta">
+                  v{versionById.get(versionId)?.version ?? versionId}
+                </span>
               </span>
             ))
           )}
@@ -357,8 +372,8 @@ export function SkillHeader({
         {canManage ? (
           <form
             onSubmit={(event) => {
-              event.preventDefault()
-              onTagSubmit()
+              event.preventDefault();
+              onTagSubmit();
             }}
             className="tag-form"
           >
@@ -370,8 +385,8 @@ export function SkillHeader({
             />
             <select
               className="search-input"
-              value={tagVersionId ?? ''}
-              onChange={(event) => onTagVersionChange(event.target.value as Id<'skillVersions'>)}
+              value={tagVersionId ?? ""}
+              onChange={(event) => onTagVersionChange(event.target.value as Id<"skillVersions">)}
             >
               {tagVersions.map((version) => (
                 <option key={version._id} value={version._id}>
@@ -388,5 +403,5 @@ export function SkillHeader({
         <SkillInstallCard clawdis={clawdis} osLabels={osLabels} />
       </div>
     </>
-  )
+  );
 }

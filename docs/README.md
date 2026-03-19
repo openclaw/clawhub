@@ -1,5 +1,5 @@
 ---
-summary: 'Documentation index + reading order.'
+summary: "Documentation index + reading order."
 read_when:
   - New contributor onboarding
   - Looking for the right doc

@@ -1,5 +1,5 @@
 ---
-summary: 'System overview: web app + Convex backend + CLI + shared schema.'
+summary: "System overview: web app + Convex backend + CLI + shared schema."
 read_when:
   - Orienting in codebase
   - Tracing a user flow across layers

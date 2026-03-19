@@ -1,65 +1,65 @@
-import { describe, expect, it } from 'vitest'
-import { getPublicSlugCollision } from './slugCollision'
+import { describe, expect, it } from "vitest";
+import { getPublicSlugCollision } from "./slugCollision";
 
-describe('getPublicSlugCollision', () => {
-  it('returns null when availability result is missing', () => {
+describe("getPublicSlugCollision", () => {
+  it("returns null when availability result is missing", () => {
     expect(
       getPublicSlugCollision({
         isSoulMode: false,
-        slug: 'demo',
+        slug: "demo",
         result: undefined,
       }),
-    ).toBeNull()
-  })
+    ).toBeNull();
+  });
 
-  it('returns null when slug is available', () => {
+  it("returns null when slug is available", () => {
     expect(
       getPublicSlugCollision({
         isSoulMode: false,
-        slug: 'demo',
+        slug: "demo",
         result: {
           available: true,
-          reason: 'available',
+          reason: "available",
           message: null,
           url: null,
         },
       }),
-    ).toBeNull()
-  })
+    ).toBeNull();
+  });
 
-  it('returns collision with link when query reports unavailable with URL', () => {
+  it("returns collision with link when query reports unavailable with URL", () => {
     expect(
       getPublicSlugCollision({
         isSoulMode: false,
-        slug: 'demo',
+        slug: "demo",
         result: {
           available: false,
-          reason: 'taken',
-          message: 'Slug is already taken. Choose a different slug.',
-          url: '/alice/demo',
+          reason: "taken",
+          message: "Slug is already taken. Choose a different slug.",
+          url: "/alice/demo",
         },
       }),
     ).toEqual({
-      message: 'Slug is already taken. Choose a different slug.',
-      url: '/alice/demo',
-    })
-  })
+      message: "Slug is already taken. Choose a different slug.",
+      url: "/alice/demo",
+    });
+  });
 
-  it('returns generic collision message when backend message is empty', () => {
+  it("returns generic collision message when backend message is empty", () => {
     expect(
       getPublicSlugCollision({
         isSoulMode: false,
-        slug: 'demo',
+        slug: "demo",
         result: {
           available: false,
-          reason: 'reserved',
-          message: '   ',
+          reason: "reserved",
+          message: "   ",
           url: null,
         },
       }),
     ).toEqual({
-      message: 'Slug is already taken. Choose a different slug.',
+      message: "Slug is already taken. Choose a different slug.",
       url: null,
-    })
-  })
-})
+    });
+  });
+});

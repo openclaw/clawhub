@@ -1,85 +1,91 @@
-import { spawnSync } from 'node:child_process'
-import { readFileSync, readdirSync } from 'node:fs'
-import { join, relative } from 'node:path'
-import ts from 'typescript'
+import { spawnSync } from "node:child_process";
+import { readFileSync, readdirSync } from "node:fs";
+import { join, relative } from "node:path";
+import ts from "typescript";
 
-const root = process.cwd()
-const convexDir = join(root, 'convex')
+const root = process.cwd();
+const convexDir = join(root, "convex");
 const FUNCTION_FACTORIES = new Set([
-  'query',
-  'mutation',
-  'action',
-  'internalQuery',
-  'internalMutation',
-  'internalAction',
-])
+  "query",
+  "mutation",
+  "action",
+  "internalQuery",
+  "internalMutation",
+  "internalAction",
+]);
 
 function walkTsFiles(dir: string): string[] {
-  const files: string[] = []
+  const files: string[] = [];
   for (const entry of readdirSync(dir, { withFileTypes: true })) {
-    if (entry.name.startsWith('_generated')) continue
-    const fullPath = join(dir, entry.name)
+    if (entry.name.startsWith("_generated")) continue;
+    const fullPath = join(dir, entry.name);
     if (entry.isDirectory()) {
-      files.push(...walkTsFiles(fullPath))
-      continue
+      files.push(...walkTsFiles(fullPath));
+      continue;
     }
-    if (!entry.isFile() || !entry.name.endsWith('.ts')) continue
-    files.push(fullPath)
+    if (!entry.isFile() || !entry.name.endsWith(".ts")) continue;
+    files.push(fullPath);
   }
-  return files
+  return files;
 }
 
 function getExpectedIdentifiers() {
-  const identifiers = new Set<string>()
+  const identifiers = new Set<string>();
   for (const filePath of walkTsFiles(convexDir)) {
-    const source = readFileSync(filePath, 'utf8')
-    const modulePath = relative(convexDir, filePath).replace(/\\/g, '/').replace(/\.ts$/, '.js')
-    const sourceFile = ts.createSourceFile(filePath, source, ts.ScriptTarget.Latest, true)
+    const source = readFileSync(filePath, "utf8");
+    const modulePath = relative(convexDir, filePath).replace(/\\/g, "/").replace(/\.ts$/, ".js");
+    const sourceFile = ts.createSourceFile(filePath, source, ts.ScriptTarget.Latest, true);
     ts.forEachChild(sourceFile, (node) => {
-      if (!ts.isVariableStatement(node)) return
-      const isExported = node.modifiers?.some((modifier) => modifier.kind === ts.SyntaxKind.ExportKeyword)
-      if (!isExported) return
+      if (!ts.isVariableStatement(node)) return;
+      const isExported = node.modifiers?.some(
+        (modifier) => modifier.kind === ts.SyntaxKind.ExportKeyword,
+      );
+      if (!isExported) return;
 
       for (const declaration of node.declarationList.declarations) {
-        if (!ts.isIdentifier(declaration.name) || !declaration.initializer) continue
-        if (!ts.isCallExpression(declaration.initializer)) continue
-        const callee = declaration.initializer.expression
-        if (!ts.isIdentifier(callee) || !FUNCTION_FACTORIES.has(callee.text)) continue
-        identifiers.add(`${modulePath}:${declaration.name.text}`)
+        if (!ts.isIdentifier(declaration.name) || !declaration.initializer) continue;
+        if (!ts.isCallExpression(declaration.initializer)) continue;
+        const callee = declaration.initializer.expression;
+        if (!ts.isIdentifier(callee) || !FUNCTION_FACTORIES.has(callee.text)) continue;
+        identifiers.add(`${modulePath}:${declaration.name.text}`);
       }
-    })
+    });
   }
-  return identifiers
+  return identifiers;
 }
 
 function getRemoteIdentifiers(cliArgs: string[]) {
-  const result = spawnSync('bunx', ['convex', 'function-spec', ...cliArgs], {
+  const result = spawnSync("bunx", ["convex", "function-spec", ...cliArgs], {
     cwd: root,
-    encoding: 'utf8',
-  })
+    encoding: "utf8",
+  });
   if (result.status !== 0) {
-    process.stderr.write(result.stderr || result.stdout)
-    process.exit(result.status ?? 1)
+    process.stderr.write(result.stderr || result.stdout);
+    process.exit(result.status ?? 1);
   }
 
   const parsed = JSON.parse(result.stdout) as {
-    functions?: Array<{ identifier?: string }>
-  }
-  return new Set((parsed.functions ?? []).flatMap((entry) => (entry.identifier ? [entry.identifier] : [])))
+    functions?: Array<{ identifier?: string }>;
+  };
+  return new Set(
+    (parsed.functions ?? []).flatMap((entry) => (entry.identifier ? [entry.identifier] : [])),
+  );
 }
 
-const cliArgs = process.argv.slice(2)
-const expected = getExpectedIdentifiers()
-const remote = getRemoteIdentifiers(cliArgs)
+const cliArgs = process.argv.slice(2);
+const expected = getExpectedIdentifiers();
+const remote = getRemoteIdentifiers(cliArgs);
 
-const missing = Array.from(expected).filter((identifier) => !remote.has(identifier)).sort()
+const missing = Array.from(expected)
+  .filter((identifier) => !remote.has(identifier))
+  .sort();
 
 if (missing.length > 0) {
-  console.error('Convex contract mismatch. Missing remote identifiers:')
+  console.error("Convex contract mismatch. Missing remote identifiers:");
   for (const identifier of missing) {
-    console.error(`- ${identifier}`)
+    console.error(`- ${identifier}`);
   }
-  process.exit(1)
+  process.exit(1);
 }
 
-console.log(`Convex contract ok: ${expected.size} identifiers matched remote deployment.`)
+console.log(`Convex contract ok: ${expected.size} identifiers matched remote deployment.`);

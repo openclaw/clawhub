@@ -1,15 +1,15 @@
-import type { Doc } from '../_generated/dataModel'
+import type { Doc } from "../_generated/dataModel";
 
 function isScannerSuspiciousReason(reason: string | undefined) {
-  if (!reason) return false
-  return reason.startsWith('scanner.') && reason.endsWith('.suspicious')
+  if (!reason) return false;
+  return reason.startsWith("scanner.") && reason.endsWith(".suspicious");
 }
 
 export function isSkillSuspicious(
-  skill: Pick<Doc<'skills'>, 'moderationFlags' | 'moderationReason'>,
+  skill: Pick<Doc<"skills">, "moderationFlags" | "moderationReason">,
 ) {
-  if (skill.moderationFlags?.includes('flagged.suspicious')) return true
-  return isScannerSuspiciousReason(skill.moderationReason)
+  if (skill.moderationFlags?.includes("flagged.suspicious")) return true;
+  return isScannerSuspiciousReason(skill.moderationReason);
 }
 
 /**
@@ -17,7 +17,7 @@ export function isSkillSuspicious(
  * Use at every mutation site that writes `moderationFlags` or `moderationReason`.
  */
 export function computeIsSuspicious(
-  skill: Pick<Doc<'skills'>, 'moderationFlags' | 'moderationReason'>,
+  skill: Pick<Doc<"skills">, "moderationFlags" | "moderationReason">,
 ): boolean {
-  return isSkillSuspicious(skill)
+  return isSkillSuspicious(skill);
 }

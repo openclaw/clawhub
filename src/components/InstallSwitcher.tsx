@@ -1,30 +1,30 @@
-import { useMemo, useState } from 'react'
+import { useMemo, useState } from "react";
 
-type PackageManager = 'npm' | 'pnpm' | 'bun'
+type PackageManager = "npm" | "pnpm" | "bun";
 
 type InstallSwitcherProps = {
-  exampleSlug?: string
-}
+  exampleSlug?: string;
+};
 
 const PACKAGE_MANAGERS: Array<{ id: PackageManager; label: string }> = [
-  { id: 'npm', label: 'npm' },
-  { id: 'pnpm', label: 'pnpm' },
-  { id: 'bun', label: 'bun' },
-]
+  { id: "npm", label: "npm" },
+  { id: "pnpm", label: "pnpm" },
+  { id: "bun", label: "bun" },
+];
 
-export function InstallSwitcher({ exampleSlug = 'sonoscli' }: InstallSwitcherProps) {
-  const [pm, setPm] = useState<PackageManager>('npm')
+export function InstallSwitcher({ exampleSlug = "sonoscli" }: InstallSwitcherProps) {
+  const [pm, setPm] = useState<PackageManager>("npm");
 
   const command = useMemo(() => {
     switch (pm) {
-      case 'npm':
-        return `npx clawhub@latest install ${exampleSlug}`
-      case 'pnpm':
-        return `pnpm dlx clawhub@latest install ${exampleSlug}`
-      case 'bun':
-        return `bunx clawhub@latest install ${exampleSlug}`
+      case "npm":
+        return `npx clawhub@latest install ${exampleSlug}`;
+      case "pnpm":
+        return `pnpm dlx clawhub@latest install ${exampleSlug}`;
+      case "bun":
+        return `bunx clawhub@latest install ${exampleSlug}`;
     }
-  }, [exampleSlug, pm])
+  }, [exampleSlug, pm]);
 
   return (
     <div className="install-switcher">
@@ -36,7 +36,7 @@ export function InstallSwitcher({ exampleSlug = 'sonoscli' }: InstallSwitcherPro
               key={entry.id}
               type="button"
               className={
-                pm === entry.id ? 'install-switcher-pill is-active' : 'install-switcher-pill'
+                pm === entry.id ? "install-switcher-pill is-active" : "install-switcher-pill"
               }
               role="tab"
               aria-selected={pm === entry.id}
@@ -49,5 +49,5 @@ export function InstallSwitcher({ exampleSlug = 'sonoscli' }: InstallSwitcherPro
       </div>
       <div className="hero-install-code mono">{command}</div>
     </div>
-  )
+  );
 }

@@ -1,82 +1,82 @@
-import { createFileRoute, useNavigate } from '@tanstack/react-router'
-import { useAction, useQuery } from 'convex/react'
-import { useMemo, useState } from 'react'
-import { api } from '../../convex/_generated/api'
-import { getUserFacingConvexError } from '../lib/convexError'
-import { getPublicSlugCollision } from '../lib/slugCollision'
-import { formatBytes } from '../lib/uploadUtils'
-import { useAuthStatus } from '../lib/useAuthStatus'
+import { createFileRoute, useNavigate } from "@tanstack/react-router";
+import { useAction, useQuery } from "convex/react";
+import { useMemo, useState } from "react";
+import { api } from "../../convex/_generated/api";
+import { getUserFacingConvexError } from "../lib/convexError";
+import { getPublicSlugCollision } from "../lib/slugCollision";
+import { formatBytes } from "../lib/uploadUtils";
+import { useAuthStatus } from "../lib/useAuthStatus";
 
-export const Route = createFileRoute('/import')({
+export const Route = createFileRoute("/import")({
   component: ImportGitHub,
-})
+});
 
 type Candidate = {
-  path: string
-  readmePath: string
-  name: string | null
-  description: string | null
-}
+  path: string;
+  readmePath: string;
+  name: string | null;
+  description: string | null;
+};
 
 type CandidatePreview = {
   resolved: {
-    owner: string
-    repo: string
-    ref: string
-    commit: string
-    path: string
-    repoUrl: string
-    originalUrl: string
-  }
-  candidate: Candidate
+    owner: string;
+    repo: string;
+    ref: string;
+    commit: string;
+    path: string;
+    repoUrl: string;
+    originalUrl: string;
+  };
+  candidate: Candidate;
   defaults: {
-    selectedPaths: string[]
-    slug: string
-    displayName: string
-    version: string
-    tags: string[]
-  }
-  files: Array<{ path: string; size: number; defaultSelected: boolean }>
-}
+    selectedPaths: string[];
+    slug: string;
+    displayName: string;
+    version: string;
+    tags: string[];
+  };
+  files: Array<{ path: string; size: number; defaultSelected: boolean }>;
+};
 
-const SLUG_PATTERN = /^[a-z0-9]+(?:-[a-z0-9]+)*$/
+const SLUG_PATTERN = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
 
 export function ImportGitHub() {
-  const { isAuthenticated, isLoading, me } = useAuthStatus()
-  const previewImport = useAction(api.githubImport.previewGitHubImport)
-  const previewCandidate = useAction(api.githubImport.previewGitHubImportCandidate)
-  const importSkill = useAction(api.githubImport.importGitHubSkill)
-  const navigate = useNavigate()
+  const { isAuthenticated, isLoading, me } = useAuthStatus();
+  const previewImport = useAction(api.githubImport.previewGitHubImport);
+  const previewCandidate = useAction(api.githubImport.previewGitHubImportCandidate);
+  const importSkill = useAction(api.githubImport.importGitHubSkill);
+  const navigate = useNavigate();
 
-  const [url, setUrl] = useState('')
-  const [candidates, setCandidates] = useState<Candidate[]>([])
-  const [selectedCandidatePath, setSelectedCandidatePath] = useState<string | null>(null)
-  const [preview, setPreview] = useState<CandidatePreview | null>(null)
-  const [selected, setSelected] = useState<Record<string, boolean>>({})
+  const [url, setUrl] = useState("");
+  const [candidates, setCandidates] = useState<Candidate[]>([]);
+  const [selectedCandidatePath, setSelectedCandidatePath] = useState<string | null>(null);
+  const [preview, setPreview] = useState<CandidatePreview | null>(null);
+  const [selected, setSelected] = useState<Record<string, boolean>>({});
 
-  const [slug, setSlug] = useState('')
-  const [displayName, setDisplayName] = useState('')
-  const [version, setVersion] = useState('0.1.0')
-  const [tags, setTags] = useState('latest')
+  const [slug, setSlug] = useState("");
+  const [displayName, setDisplayName] = useState("");
+  const [version, setVersion] = useState("0.1.0");
+  const [tags, setTags] = useState("latest");
 
-  const [status, setStatus] = useState<string | null>(null)
-  const [error, setError] = useState<string | null>(null)
-  const [isBusy, setIsBusy] = useState(false)
-  const trimmedSlug = slug.trim()
+  const [status, setStatus] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [isBusy, setIsBusy] = useState(false);
+  const trimmedSlug = slug.trim();
   const slugAvailability = useQuery(
     api.skills.checkSlugAvailability,
     isAuthenticated && trimmedSlug && SLUG_PATTERN.test(trimmedSlug)
       ? { slug: trimmedSlug.toLowerCase() }
-      : 'skip',
+      : "skip",
   ) as
     | {
-        available: boolean
-        reason: 'available' | 'taken' | 'reserved'
-        message: string | null
-        url: string | null
+        available: boolean;
+        reason: "available" | "taken" | "reserved";
+        message: string | null;
+        url: string | null;
       }
     | null
-    | undefined
+    | undefined;
   const slugCollision = useMemo(
     () =>
       getPublicSlugCollision({
@@ -85,108 +85,108 @@ export function ImportGitHub() {
         result: slugAvailability,
       }),
     [slugAvailability, trimmedSlug],
-  )
+  );
 
-  const selectedCount = useMemo(() => Object.values(selected).filter(Boolean).length, [selected])
+  const selectedCount = useMemo(() => Object.values(selected).filter(Boolean).length, [selected]);
   const selectedBytes = useMemo(() => {
-    if (!preview) return 0
-    let total = 0
+    if (!preview) return 0;
+    let total = 0;
     for (const file of preview.files) {
-      if (selected[file.path]) total += file.size
+      if (selected[file.path]) total += file.size;
     }
-    return total
-  }, [preview, selected])
+    return total;
+  }, [preview, selected]);
 
   const detect = async () => {
-    setError(null)
-    setStatus(null)
-    setPreview(null)
-    setCandidates([])
-    setSelectedCandidatePath(null)
-    setSelected({})
-    setIsBusy(true)
+    setError(null);
+    setStatus(null);
+    setPreview(null);
+    setCandidates([]);
+    setSelectedCandidatePath(null);
+    setSelected({});
+    setIsBusy(true);
     try {
-      const result = await previewImport({ url: url.trim() })
-      const items = (result.candidates ?? []) as Candidate[]
-      setCandidates(items)
+      const result = await previewImport({ url: url.trim() });
+      const items = (result.candidates ?? []) as Candidate[];
+      setCandidates(items);
       if (items.length === 1) {
-        const only = items[0]
-        if (only) await loadCandidate(only.path)
+        const only = items[0];
+        if (only) await loadCandidate(only.path);
       } else {
-        setStatus(`Found ${items.length} skills. Pick one.`)
+        setStatus(`Found ${items.length} skills. Pick one.`);
       }
     } catch (e) {
-      setError(getUserFacingConvexError(e, 'Preview failed'))
+      setError(getUserFacingConvexError(e, "Preview failed"));
     } finally {
-      setIsBusy(false)
+      setIsBusy(false);
     }
-  }
+  };
 
   const loadCandidate = async (candidatePath: string) => {
-    setError(null)
-    setStatus(null)
-    setPreview(null)
-    setSelected({})
-    setSelectedCandidatePath(candidatePath)
-    setIsBusy(true)
+    setError(null);
+    setStatus(null);
+    setPreview(null);
+    setSelected({});
+    setSelectedCandidatePath(candidatePath);
+    setIsBusy(true);
     try {
       const result = (await previewCandidate({
         url: url.trim(),
         candidatePath,
-      })) as CandidatePreview
-      setPreview(result)
-      setSlug(result.defaults.slug)
-      setDisplayName(result.defaults.displayName)
-      setVersion(result.defaults.version)
-      setTags((result.defaults.tags ?? ['latest']).join(','))
-      const nextSelected: Record<string, boolean> = {}
-      for (const file of result.files) nextSelected[file.path] = file.defaultSelected
-      setSelected(nextSelected)
-      setStatus('Ready to import.')
+      })) as CandidatePreview;
+      setPreview(result);
+      setSlug(result.defaults.slug);
+      setDisplayName(result.defaults.displayName);
+      setVersion(result.defaults.version);
+      setTags((result.defaults.tags ?? ["latest"]).join(","));
+      const nextSelected: Record<string, boolean> = {};
+      for (const file of result.files) nextSelected[file.path] = file.defaultSelected;
+      setSelected(nextSelected);
+      setStatus("Ready to import.");
     } catch (e) {
-      setError(getUserFacingConvexError(e, 'Preview failed'))
+      setError(getUserFacingConvexError(e, "Preview failed"));
     } finally {
-      setIsBusy(false)
+      setIsBusy(false);
     }
-  }
+  };
 
   const applyDefaultSelection = () => {
-    if (!preview) return
-    const set = new Set(preview.defaults.selectedPaths)
-    const next: Record<string, boolean> = {}
-    for (const file of preview.files) next[file.path] = set.has(file.path)
-    setSelected(next)
-  }
+    if (!preview) return;
+    const set = new Set(preview.defaults.selectedPaths);
+    const next: Record<string, boolean> = {};
+    for (const file of preview.files) next[file.path] = set.has(file.path);
+    setSelected(next);
+  };
 
   const selectAll = () => {
-    if (!preview) return
-    const next: Record<string, boolean> = {}
-    for (const file of preview.files) next[file.path] = true
-    setSelected(next)
-  }
+    if (!preview) return;
+    const next: Record<string, boolean> = {};
+    for (const file of preview.files) next[file.path] = true;
+    setSelected(next);
+  };
 
   const clearAll = () => {
-    if (!preview) return
-    const next: Record<string, boolean> = {}
-    for (const file of preview.files) next[file.path] = false
-    setSelected(next)
-  }
+    if (!preview) return;
+    const next: Record<string, boolean> = {};
+    for (const file of preview.files) next[file.path] = false;
+    setSelected(next);
+  };
 
   const doImport = async () => {
-    if (!preview) return
+    if (!preview) return;
     if (slugCollision) {
-      setError(slugCollision.message)
-      return
+      setError(slugCollision.message);
+      return;
     }
-    setIsBusy(true)
-    setError(null)
-    setStatus('Importing…')
+    setIsBusy(true);
+    setError(null);
+    setStatus("Importing…");
     try {
-      const selectedPaths = preview.files.map((file) => file.path).filter((path) => selected[path])
+      const selectedPaths = preview.files.map((file) => file.path).filter((path) => selected[path]);
       const tagList = tags
-        .split(',')
+        .split(",")
         .map((tag) => tag.trim())
-        .filter(Boolean)
+        .filter(Boolean);
       const result = await importSkill({
         url: url.trim(),
         commit: preview.resolved.commit,
@@ -196,27 +196,27 @@ export function ImportGitHub() {
         displayName: displayName.trim(),
         version: version.trim(),
         tags: tagList,
-      })
-      const nextSlug = result.slug
-      setStatus('Imported.')
-      const ownerParam = me?.handle ?? (me?._id ? String(me._id) : 'unknown')
-      await navigate({ to: '/$owner/$slug', params: { owner: ownerParam, slug: nextSlug } })
+      });
+      const nextSlug = result.slug;
+      setStatus("Imported.");
+      const ownerParam = me?.handle ?? (me?._id ? String(me._id) : "unknown");
+      await navigate({ to: "/$owner/$slug", params: { owner: ownerParam, slug: nextSlug } });
     } catch (e) {
-      setError(getUserFacingConvexError(e, 'Import failed'))
-      setStatus(null)
+      setError(getUserFacingConvexError(e, "Import failed"));
+      setStatus(null);
     } finally {
-      setIsBusy(false)
+      setIsBusy(false);
     }
-  }
+  };
 
   if (!isAuthenticated) {
     return (
       <main className="section">
         <div className="card">
-          {isLoading ? 'Loading…' : 'Sign in to import and publish skills.'}
+          {isLoading ? "Loading…" : "Sign in to import and publish skills."}
         </div>
       </main>
-    )
+    );
   }
 
   return (
@@ -285,13 +285,13 @@ export function ImportGitHub() {
                   onChange={() => void loadCandidate(candidate.path)}
                   disabled={isBusy}
                 />
-                <span className="mono">{candidate.path || '(repo root)'}</span>
+                <span className="mono">{candidate.path || "(repo root)"}</span>
                 <span>
                   {candidate.name
                     ? candidate.name
                     : candidate.description
                       ? candidate.description
-                      : ''}
+                      : ""}
                 </span>
               </label>
             ))}
@@ -371,7 +371,7 @@ export function ImportGitHub() {
                     {preview.resolved.owner}/{preview.resolved.repo}@
                     {preview.resolved.commit.slice(0, 7)}
                   </div>
-                  <div className="upload-muted mono">{preview.candidate.path || 'repo root'}</div>
+                  <div className="upload-muted mono">{preview.candidate.path || "repo root"}</div>
                 </div>
               </aside>
             </div>
@@ -380,14 +380,14 @@ export function ImportGitHub() {
           <div className="card">
             <div
               style={{
-                display: 'flex',
-                justifyContent: 'space-between',
+                display: "flex",
+                justifyContent: "space-between",
                 gap: 12,
-                flexWrap: 'wrap',
+                flexWrap: "wrap",
               }}
             >
               <h2 style={{ margin: 0 }}>Files</h2>
-              <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
+              <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
                 <button
                   className="btn"
                   type="button"
@@ -444,7 +444,7 @@ export function ImportGitHub() {
                   {slugCollision.message}
                   {slugCollision.url ? (
                     <>
-                      {' '}
+                      {" "}
                       <a href={slugCollision.url} className="upload-link">
                         {slugCollision.url}
                       </a>
@@ -457,5 +457,5 @@ export function ImportGitHub() {
         </>
       ) : null}
     </main>
-  )
+  );
 }

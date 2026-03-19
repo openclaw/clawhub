@@ -1,45 +1,45 @@
-import { v } from 'convex/values'
-import { internal } from './_generated/api'
-import type { ActionCtx } from './_generated/server'
-import { internalAction, internalMutation } from './functions'
-import { EMBEDDING_DIMENSIONS } from './lib/embeddings'
-import { parseClawdisMetadata, parseFrontmatter } from './lib/skills'
+import { v } from "convex/values";
+import { internal } from "./_generated/api";
+import type { ActionCtx } from "./_generated/server";
+import { internalAction, internalMutation } from "./functions";
+import { EMBEDDING_DIMENSIONS } from "./lib/embeddings";
+import { parseClawdisMetadata, parseFrontmatter } from "./lib/skills";
 
 type SeedSkillSpec = {
-  slug: string
-  displayName: string
-  summary: string
-  version: string
-  metadata: Record<string, unknown>
-  rawSkillMd: string
-}
+  slug: string;
+  displayName: string;
+  summary: string;
+  version: string;
+  metadata: Record<string, unknown>;
+  rawSkillMd: string;
+};
 
 type SeedActionArgs = {
-  reset?: boolean
-}
+  reset?: boolean;
+};
 
 type SeedActionResult = {
-  ok: true
-  results: Array<Record<string, unknown> & { slug: string }>
-}
+  ok: true;
+  results: Array<Record<string, unknown> & { slug: string }>;
+};
 
-type SeedMutationResult = Record<string, unknown>
+type SeedMutationResult = Record<string, unknown>;
 
 const SEED_SKILLS: SeedSkillSpec[] = [
   {
-    slug: 'padel',
-    displayName: 'Padel',
-    summary: 'Check padel court availability and manage bookings via Playtomic.',
-    version: '0.1.0',
+    slug: "padel",
+    displayName: "Padel",
+    summary: "Check padel court availability and manage bookings via Playtomic.",
+    version: "0.1.0",
     metadata: {
       clawdbot: {
         nix: {
-          plugin: 'github:joshp123/padel-cli',
-          systems: ['aarch64-darwin', 'x86_64-linux'],
+          plugin: "github:joshp123/padel-cli",
+          systems: ["aarch64-darwin", "x86_64-linux"],
         },
         config: {
-          requiredEnv: ['PADEL_AUTH_FILE'],
-          stateDirs: ['.config/padel'],
+          requiredEnv: ["PADEL_AUTH_FILE"],
+          stateDirs: [".config/padel"],
           example:
             'config = { env = { PADEL_AUTH_FILE = "/run/agenix/padel-auth"; }; stateDirs = [ ".config/padel" ]; };',
         },
@@ -105,18 +105,18 @@ Only the authorized booker can confirm bookings. If the requester is not authori
 `,
   },
   {
-    slug: 'gohome',
-    displayName: 'GoHome',
-    summary: 'Operate GoHome via gRPC discovery, metrics, and Grafana dashboards.',
-    version: '0.1.0',
+    slug: "gohome",
+    displayName: "GoHome",
+    summary: "Operate GoHome via gRPC discovery, metrics, and Grafana dashboards.",
+    version: "0.1.0",
     metadata: {
       clawdbot: {
         nix: {
-          plugin: 'github:joshp123/gohome',
-          systems: ['x86_64-linux', 'aarch64-linux'],
+          plugin: "github:joshp123/gohome",
+          systems: ["x86_64-linux", "aarch64-linux"],
         },
         config: {
-          requiredEnv: ['GOHOME_GRPC_ADDR', 'GOHOME_HTTP_BASE'],
+          requiredEnv: ["GOHOME_GRPC_ADDR", "GOHOME_HTTP_BASE"],
           example:
             'config = { env = { GOHOME_GRPC_ADDR = "gohome:9000"; GOHOME_HTTP_BASE = "http://gohome:8080"; }; };',
         },
@@ -178,19 +178,19 @@ Only call write RPCs after explicit user approval.
 `,
   },
   {
-    slug: 'xuezh',
-    displayName: 'Xuezh',
-    summary: 'Teach Mandarin with the xuezh engine for review, speaking, and audits.',
-    version: '0.1.0',
+    slug: "xuezh",
+    displayName: "Xuezh",
+    summary: "Teach Mandarin with the xuezh engine for review, speaking, and audits.",
+    version: "0.1.0",
     metadata: {
       clawdbot: {
         nix: {
-          plugin: 'github:joshp123/xuezh',
-          systems: ['aarch64-darwin', 'x86_64-linux'],
+          plugin: "github:joshp123/xuezh",
+          systems: ["aarch64-darwin", "x86_64-linux"],
         },
         config: {
-          requiredEnv: ['XUEZH_AZURE_SPEECH_KEY_FILE', 'XUEZH_AZURE_SPEECH_REGION'],
-          stateDirs: ['.config/xuezh'],
+          requiredEnv: ["XUEZH_AZURE_SPEECH_KEY_FILE", "XUEZH_AZURE_SPEECH_REGION"],
+          stateDirs: [".config/xuezh"],
           example:
             'config = { env = { XUEZH_AZURE_SPEECH_KEY_FILE = "/run/agenix/xuezh-azure-speech-key"; XUEZH_AZURE_SPEECH_REGION = "westeurope"; }; stateDirs = [ ".config/xuezh" ]; };',
         },
@@ -239,27 +239,27 @@ xuezh audio process-voice --file ./utterance.wav
 \`\`\`
 `,
   },
-]
+];
 
 function injectMetadata(rawSkillMd: string, metadata: Record<string, unknown>) {
-  const frontmatterEnd = rawSkillMd.indexOf('\n---', 3)
-  if (frontmatterEnd === -1) return rawSkillMd
+  const frontmatterEnd = rawSkillMd.indexOf("\n---", 3);
+  if (frontmatterEnd === -1) return rawSkillMd;
   return `${rawSkillMd.slice(0, frontmatterEnd)}\nmetadata: ${JSON.stringify(
     metadata,
-  )}${rawSkillMd.slice(frontmatterEnd)}`
+  )}${rawSkillMd.slice(frontmatterEnd)}`;
 }
 
 async function seedNixSkillsHandler(
   ctx: ActionCtx,
   args: SeedActionArgs,
 ): Promise<SeedActionResult> {
-  const results: Array<Record<string, unknown> & { slug: string }> = []
+  const results: Array<Record<string, unknown> & { slug: string }> = [];
 
   for (const spec of SEED_SKILLS) {
-    const skillMd = injectMetadata(spec.rawSkillMd, spec.metadata)
-    const frontmatter = parseFrontmatter(skillMd)
-    const clawdis = parseClawdisMetadata(frontmatter)
-    const storageId = await ctx.storage.store(new Blob([skillMd], { type: 'text/markdown' }))
+    const skillMd = injectMetadata(spec.rawSkillMd, spec.metadata);
+    const frontmatter = parseFrontmatter(skillMd);
+    const clawdis = parseClawdisMetadata(frontmatter);
+    const storageId = await ctx.storage.store(new Blob([skillMd], { type: "text/markdown" }));
 
     const result: SeedMutationResult = await ctx.runMutation(internal.devSeed.seedSkillMutation, {
       reset: args.reset,
@@ -272,12 +272,12 @@ async function seedNixSkillsHandler(
       displayName: spec.displayName,
       summary: spec.summary,
       version: spec.version,
-    })
+    });
 
-    results.push({ slug: spec.slug, ...result })
+    results.push({ slug: spec.slug, ...result });
   }
 
-  return { ok: true, results }
+  return { ok: true, results };
 }
 
 export const seedNixSkills: ReturnType<typeof internalAction> = internalAction({
@@ -285,19 +285,19 @@ export const seedNixSkills: ReturnType<typeof internalAction> = internalAction({
     reset: v.optional(v.boolean()),
   },
   handler: seedNixSkillsHandler,
-})
+});
 
 async function seedPadelSkillHandler(
   ctx: ActionCtx,
   args: SeedActionArgs,
 ): Promise<SeedMutationResult> {
-  const spec = SEED_SKILLS.find((entry) => entry.slug === 'padel')
-  if (!spec) throw new Error('padel seed spec missing')
+  const spec = SEED_SKILLS.find((entry) => entry.slug === "padel");
+  if (!spec) throw new Error("padel seed spec missing");
 
-  const skillMd = injectMetadata(spec.rawSkillMd, spec.metadata)
-  const frontmatter = parseFrontmatter(skillMd)
-  const clawdis = parseClawdisMetadata(frontmatter)
-  const storageId = await ctx.storage.store(new Blob([skillMd], { type: 'text/markdown' }))
+  const skillMd = injectMetadata(spec.rawSkillMd, spec.metadata);
+  const frontmatter = parseFrontmatter(skillMd);
+  const clawdis = parseClawdisMetadata(frontmatter);
+  const storageId = await ctx.storage.store(new Blob([skillMd], { type: "text/markdown" }));
 
   return (await ctx.runMutation(internal.devSeed.seedSkillMutation, {
     reset: args.reset,
@@ -310,7 +310,7 @@ async function seedPadelSkillHandler(
     displayName: spec.displayName,
     summary: spec.summary,
     version: spec.version,
-  })) as SeedMutationResult
+  })) as SeedMutationResult;
 }
 
 export const seedPadelSkill: ReturnType<typeof internalAction> = internalAction({
@@ -318,12 +318,12 @@ export const seedPadelSkill: ReturnType<typeof internalAction> = internalAction(
     reset: v.optional(v.boolean()),
   },
   handler: seedPadelSkillHandler,
-})
+});
 
 export const seedSkillMutation = internalMutation({
   args: {
     reset: v.optional(v.boolean()),
-    storageId: v.id('_storage'),
+    storageId: v.id("_storage"),
     metadata: v.any(),
     frontmatter: v.any(),
     clawdis: v.any(),
@@ -335,49 +335,49 @@ export const seedSkillMutation = internalMutation({
   },
   handler: async (ctx, args) => {
     const existing = await ctx.db
-      .query('skills')
-      .withIndex('by_slug', (q) => q.eq('slug', args.slug))
-      .unique()
+      .query("skills")
+      .withIndex("by_slug", (q) => q.eq("slug", args.slug))
+      .unique();
 
     if (existing && !args.reset) {
-      return { ok: true, skipped: true, skillId: existing._id }
+      return { ok: true, skipped: true, skillId: existing._id };
     }
 
     if (existing && args.reset) {
       const versions = await ctx.db
-        .query('skillVersions')
-        .withIndex('by_skill', (q) => q.eq('skillId', existing._id))
-        .collect()
+        .query("skillVersions")
+        .withIndex("by_skill", (q) => q.eq("skillId", existing._id))
+        .collect();
       for (const version of versions) {
-        await ctx.db.delete(version._id)
+        await ctx.db.delete(version._id);
       }
       const embeddings = await ctx.db
-        .query('skillEmbeddings')
-        .withIndex('by_skill', (q) => q.eq('skillId', existing._id))
-        .collect()
+        .query("skillEmbeddings")
+        .withIndex("by_skill", (q) => q.eq("skillId", existing._id))
+        .collect();
       for (const embedding of embeddings) {
-        await ctx.db.delete(embedding._id)
+        await ctx.db.delete(embedding._id);
       }
-      await ctx.db.delete(existing._id)
+      await ctx.db.delete(existing._id);
     }
 
-    const now = Date.now()
+    const now = Date.now();
     const existingUsers = await ctx.db
-      .query('users')
-      .withIndex('handle', (q) => q.eq('handle', 'local'))
-      .collect()
+      .query("users")
+      .withIndex("handle", (q) => q.eq("handle", "local"))
+      .collect();
 
     const userId =
       existingUsers[0]?._id ??
-      (await ctx.db.insert('users', {
-        handle: 'local',
-        displayName: 'Local Dev',
-        role: 'admin',
+      (await ctx.db.insert("users", {
+        handle: "local",
+        displayName: "Local Dev",
+        role: "admin",
         createdAt: now,
         updatedAt: now,
-      }))
+      }));
 
-    const skillId = await ctx.db.insert('skills', {
+    const skillId = await ctx.db.insert("skills", {
       slug: args.slug,
       displayName: args.displayName,
       summary: args.summary,
@@ -400,19 +400,19 @@ export const seedSkillMutation = internalMutation({
       },
       createdAt: now,
       updatedAt: now,
-    })
+    });
 
-    const versionId = await ctx.db.insert('skillVersions', {
+    const versionId = await ctx.db.insert("skillVersions", {
       skillId,
       version: args.version,
-      changelog: 'Seeded local version for screenshots.',
+      changelog: "Seeded local version for screenshots.",
       files: [
         {
-          path: 'SKILL.md',
+          path: "SKILL.md",
           size: args.skillMd.length,
           storageId: args.storageId,
-          sha256: 'seeded',
-          contentType: 'text/markdown',
+          sha256: "seeded",
+          contentType: "text/markdown",
         },
       ],
       parsed: {
@@ -423,19 +423,19 @@ export const seedSkillMutation = internalMutation({
       createdBy: userId,
       createdAt: now,
       softDeletedAt: undefined,
-    })
+    });
 
-    const embeddingId = await ctx.db.insert('skillEmbeddings', {
+    const embeddingId = await ctx.db.insert("skillEmbeddings", {
       skillId,
       versionId,
       ownerId: userId,
       embedding: Array.from({ length: EMBEDDING_DIMENSIONS }, () => 0),
       isLatest: true,
       isApproved: true,
-      visibility: 'latest-approved',
+      visibility: "latest-approved",
       updatedAt: now,
-    })
-    await ctx.db.insert('embeddingSkillMap', { embeddingId, skillId })
+    });
+    await ctx.db.insert("embeddingSkillMap", { embeddingId, skillId });
 
     await ctx.db.patch(skillId, {
       latestVersionId: versionId,
@@ -453,8 +453,8 @@ export const seedSkillMutation = internalMutation({
         comments: 0,
       },
       updatedAt: now,
-    })
+    });
 
-    return { ok: true, skillId, versionId, embeddingId }
+    return { ok: true, skillId, versionId, embeddingId };
   },
-})
+});

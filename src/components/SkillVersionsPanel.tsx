@@ -1,14 +1,14 @@
-import type { Doc } from '../../convex/_generated/dataModel'
-import { getRuntimeEnv } from '../lib/runtimeEnv'
-import { type LlmAnalysis, SecurityScanResults } from './SkillSecurityScanResults'
+import type { Doc } from "../../convex/_generated/dataModel";
+import { getRuntimeEnv } from "../lib/runtimeEnv";
+import { type LlmAnalysis, SecurityScanResults } from "./SkillSecurityScanResults";
 
 type SkillVersionsPanelProps = {
-  versions: Doc<'skillVersions'>[] | undefined
-  nixPlugin: boolean
-  skillSlug: string
-  suppressScanResults: boolean
-  suppressedMessage: string | null
-}
+  versions: Doc<"skillVersions">[] | undefined;
+  nixPlugin: boolean;
+  skillSlug: string;
+  suppressScanResults: boolean;
+  suppressedMessage: string | null;
+};
 
 export function SkillVersionsPanel({
   versions,
@@ -17,17 +17,17 @@ export function SkillVersionsPanel({
   suppressScanResults,
   suppressedMessage,
 }: SkillVersionsPanelProps) {
-  const convexSiteUrl = getRuntimeEnv('VITE_CONVEX_SITE_URL') ?? 'https://clawhub.ai'
+  const convexSiteUrl = getRuntimeEnv("VITE_CONVEX_SITE_URL") ?? "https://clawhub.ai";
   return (
     <div className="tab-body">
       <div>
-        <h2 className="section-title" style={{ fontSize: '1.2rem', margin: 0 }}>
+        <h2 className="section-title" style={{ fontSize: "1.2rem", margin: 0 }}>
           Versions
         </h2>
         <p className="section-subtitle" style={{ margin: 0 }}>
           {nixPlugin
-            ? 'Review release history and changelog.'
-            : 'Download older releases or scan the changelog.'}
+            ? "Review release history and changelog."
+            : "Download older releases or scan the changelog."}
         </p>
         {suppressedMessage ? <p className="section-subtitle">{suppressedMessage}</p> : null}
       </div>
@@ -38,11 +38,11 @@ export function SkillVersionsPanel({
               <div className="version-info">
                 <div>
                   v{version.version} · {new Date(version.createdAt).toLocaleDateString()}
-                  {version.changelogSource === 'auto' ? (
-                    <span style={{ color: 'var(--ink-soft)' }}> · auto</span>
+                  {version.changelogSource === "auto" ? (
+                    <span style={{ color: "var(--ink-soft)" }}> · auto</span>
                   ) : null}
                 </div>
-                <div style={{ color: '#5c554e', whiteSpace: 'pre-wrap' }}>{version.changelog}</div>
+                <div style={{ color: "#5c554e", whiteSpace: "pre-wrap" }}>{version.changelog}</div>
                 <div className="version-scan-results">
                   {!suppressScanResults && (version.sha256hash || version.llmAnalysis) ? (
                     <SecurityScanResults
@@ -69,5 +69,5 @@ export function SkillVersionsPanel({
         </div>
       </div>
     </div>
-  )
+  );
 }

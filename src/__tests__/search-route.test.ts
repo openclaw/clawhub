@@ -1,46 +1,46 @@
-import { describe, expect, it, vi } from 'vitest'
+import { describe, expect, it, vi } from "vitest";
 
-vi.mock('@tanstack/react-router', () => ({
+vi.mock("@tanstack/react-router", () => ({
   createFileRoute: () => (config: { beforeLoad?: unknown }) => ({ __config: config }),
   redirect: (options: unknown) => ({ redirect: options }),
-}))
+}));
 
-import { Route } from '../routes/search'
+import { Route } from "../routes/search";
 
 function runBeforeLoad(
   search: { q?: string; highlighted?: boolean; nonSuspicious?: boolean },
-  hostname = 'clawdhub.com',
+  hostname = "clawdhub.com",
 ) {
   const route = Route as unknown as {
     __config: {
       beforeLoad?: (args: {
-        search: { q?: string; highlighted?: boolean; nonSuspicious?: boolean }
-        location: { url: URL }
-      }) => void
-    }
-  }
+        search: { q?: string; highlighted?: boolean; nonSuspicious?: boolean };
+        location: { url: URL };
+      }) => void;
+    };
+  };
   const beforeLoad = route.__config.beforeLoad as (args: {
-    search: { q?: string; highlighted?: boolean; nonSuspicious?: boolean }
-    location: { url: URL }
-  }) => void
-  let thrown: unknown
+    search: { q?: string; highlighted?: boolean; nonSuspicious?: boolean };
+    location: { url: URL };
+  }) => void;
+  let thrown: unknown;
 
   try {
-    beforeLoad({ search, location: { url: new URL(`https://${hostname}/search`) } })
+    beforeLoad({ search, location: { url: new URL(`https://${hostname}/search`) } });
   } catch (error) {
-    thrown = error
+    thrown = error;
   }
 
-  return thrown
+  return thrown;
 }
 
-describe('search route', () => {
-  it('redirects skills host to the skills index', () => {
-    expect(runBeforeLoad({ q: 'crab', highlighted: true }, 'clawdhub.com')).toEqual({
+describe("search route", () => {
+  it("redirects skills host to the skills index", () => {
+    expect(runBeforeLoad({ q: "crab", highlighted: true }, "clawdhub.com")).toEqual({
       redirect: {
-        to: '/skills',
+        to: "/skills",
         search: {
-          q: 'crab',
+          q: "crab",
           sort: undefined,
           dir: undefined,
           highlighted: true,
@@ -49,15 +49,15 @@ describe('search route', () => {
         },
         replace: true,
       },
-    })
-  })
+    });
+  });
 
-  it('forwards nonSuspicious filter to skills index', () => {
-    expect(runBeforeLoad({ q: 'crab', nonSuspicious: true }, 'clawdhub.com')).toEqual({
+  it("forwards nonSuspicious filter to skills index", () => {
+    expect(runBeforeLoad({ q: "crab", nonSuspicious: true }, "clawdhub.com")).toEqual({
       redirect: {
-        to: '/skills',
+        to: "/skills",
         search: {
-          q: 'crab',
+          q: "crab",
           sort: undefined,
           dir: undefined,
           highlighted: undefined,
@@ -66,27 +66,27 @@ describe('search route', () => {
         },
         replace: true,
       },
-    })
-  })
+    });
+  });
 
-  it('redirects souls host with query to home search', () => {
-    expect(runBeforeLoad({ q: 'crab', highlighted: true }, 'onlycrabs.ai')).toEqual({
+  it("redirects souls host with query to home search", () => {
+    expect(runBeforeLoad({ q: "crab", highlighted: true }, "onlycrabs.ai")).toEqual({
       redirect: {
-        to: '/',
+        to: "/",
         search: {
-          q: 'crab',
+          q: "crab",
           highlighted: undefined,
           search: undefined,
         },
         replace: true,
       },
-    })
-  })
+    });
+  });
 
-  it('redirects souls host without query to home with search mode', () => {
-    expect(runBeforeLoad({}, 'onlycrabs.ai')).toEqual({
+  it("redirects souls host without query to home with search mode", () => {
+    expect(runBeforeLoad({}, "onlycrabs.ai")).toEqual({
       redirect: {
-        to: '/',
+        to: "/",
         search: {
           q: undefined,
           highlighted: undefined,
@@ -94,6 +94,6 @@ describe('search route', () => {
         },
         replace: true,
       },
-    })
-  })
-})
+    });
+  });
+});

@@ -1,5 +1,5 @@
 ---
-summary: 'Skill folder format, required files, allowed file types, limits.'
+summary: "Skill folder format, required files, allowed file types, limits."
 read_when:
   - Publishing skills
   - Debugging publish/sync failures
@@ -17,7 +17,7 @@ Required:
 
 Optional:
 
-- any supporting *text-based* files (see “Allowed files”)
+- any supporting _text-based_ files (see “Allowed files”)
 - `.clawhubignore` (ignore patterns for publish/sync, legacy `.clawdhubignore`)
 - `.gitignore` (also honored)
 
@@ -70,21 +70,21 @@ metadata:
 
 ### Full field reference
 
-| Field | Type | Description |
-|-------|------|-------------|
-| `requires.env` | `string[]` | Environment variables your skill expects. |
-| `requires.bins` | `string[]` | CLI binaries that must all be installed. |
-| `requires.anyBins` | `string[]` | CLI binaries where at least one must exist. |
-| `requires.config` | `string[]` | Config file paths your skill reads. |
-| `primaryEnv` | `string` | The main credential env var for your skill. |
-| `always` | `boolean` | If `true`, skill is always active (no explicit install needed). |
-| `skillKey` | `string` | Override the skill's invocation key. |
-| `emoji` | `string` | Display emoji for the skill. |
-| `homepage` | `string` | URL to the skill's homepage or docs. |
-| `os` | `string[]` | OS restrictions (e.g. `["macos"]`, `["linux"]`). |
-| `install` | `array` | Install specs for dependencies (see below). |
-| `nix` | `object` | Nix plugin spec (see README). |
-| `config` | `object` | Clawdbot config spec (see README). |
+| Field              | Type       | Description                                                     |
+| ------------------ | ---------- | --------------------------------------------------------------- |
+| `requires.env`     | `string[]` | Environment variables your skill expects.                       |
+| `requires.bins`    | `string[]` | CLI binaries that must all be installed.                        |
+| `requires.anyBins` | `string[]` | CLI binaries where at least one must exist.                     |
+| `requires.config`  | `string[]` | Config file paths your skill reads.                             |
+| `primaryEnv`       | `string`   | The main credential env var for your skill.                     |
+| `always`           | `boolean`  | If `true`, skill is always active (no explicit install needed). |
+| `skillKey`         | `string`   | Override the skill's invocation key.                            |
+| `emoji`            | `string`   | Display emoji for the skill.                                    |
+| `homepage`         | `string`   | URL to the skill's homepage or docs.                            |
+| `os`               | `string[]` | OS restrictions (e.g. `["macos"]`, `["linux"]`).                |
+| `install`          | `array`    | Install specs for dependencies (see below).                     |
+| `nix`              | `object`   | Nix plugin spec (see README).                                   |
+| `config`           | `object`   | Clawdbot config spec (see README).                              |
 
 ### Install specs
 

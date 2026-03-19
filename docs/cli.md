@@ -1,5 +1,5 @@
 ---
-summary: 'CLI reference: commands, flags, config, lockfile, sync behavior.'
+summary: "CLI reference: commands, flags, config, lockfile, sync behavior."
 read_when:
   - Working on CLI behavior
   - Debugging install/update/sync

@@ -1,5 +1,5 @@
 ---
-summary: 'Public REST API (v1) overview and conventions.'
+summary: "Public REST API (v1) overview and conventions."
 read_when:
   - Building API clients
   - Adding endpoints or schemas

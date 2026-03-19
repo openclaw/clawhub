@@ -1,5 +1,5 @@
 ---
-summary: 'Mintlify setup notes for publishing docs/.'
+summary: "Mintlify setup notes for publishing docs/."
 read_when:
   - Setting up docs site
 ---
@@ -12,9 +12,9 @@ This repo does **not** include Mintlify config yet (`mint.json` missing).
 
 ## Minimal setup
 
-1) Install Mintlify CLI (per Mintlify docs).
+1. Install Mintlify CLI (per Mintlify docs).
 
-2) Add a `mint.json` at repo root that points to `docs/` pages.
+2. Add a `mint.json` at repo root that points to `docs/` pages.
 
 Example (starter):
 

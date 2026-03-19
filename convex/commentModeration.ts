@@ -1,76 +1,76 @@
-import { ConvexError, v } from 'convex/values'
-import { internal } from './_generated/api'
-import type { Id } from './_generated/dataModel'
-import type { ActionCtx, MutationCtx } from './_generated/server'
-import { action, internalAction, internalMutation, internalQuery } from './functions'
-import { assertRole, requireUserFromAction } from './lib/access'
+import { ConvexError, v } from "convex/values";
+import { internal } from "./_generated/api";
+import type { Id } from "./_generated/dataModel";
+import type { ActionCtx, MutationCtx } from "./_generated/server";
+import { action, internalAction, internalMutation, internalQuery } from "./functions";
+import { assertRole, requireUserFromAction } from "./lib/access";
 import {
   buildCommentScamBanReason,
   isCertainScam,
   type CommentScamConfidence,
   type CommentScamVerdict,
-} from './lib/commentScamPrompt'
+} from "./lib/commentScamPrompt";
 
-const DEFAULT_BATCH_SIZE = 25
-const MAX_BATCH_SIZE = 100
-const DEFAULT_MAX_BATCHES = 10
-const MAX_MAX_BATCHES = 200
+const DEFAULT_BATCH_SIZE = 25;
+const MAX_BATCH_SIZE = 100;
+const DEFAULT_MAX_BATCHES = 10;
+const MAX_MAX_BATCHES = 200;
 
 type CommentBackfillPageItem = {
-  commentId: Id<'comments'>
-  skillId: Id<'skills'>
-  userId: Id<'users'>
-  body: string
-  softDeletedAt?: number
-  scamScanCheckedAt?: number
-}
+  commentId: Id<"comments">;
+  skillId: Id<"skills">;
+  userId: Id<"users">;
+  body: string;
+  softDeletedAt?: number;
+  scamScanCheckedAt?: number;
+};
 
 type CommentBackfillPageResult = {
-  items: CommentBackfillPageItem[]
-  cursor: string | null
-  isDone: boolean
-}
+  items: CommentBackfillPageItem[];
+  cursor: string | null;
+  isDone: boolean;
+};
 
 type ApplyCommentScamResult = {
-  ok: true
-  shouldBan: boolean
-  banned: boolean
-  alreadyBanned: boolean
-  protectedRole: boolean
-  wouldBan: boolean
-}
+  ok: true;
+  shouldBan: boolean;
+  banned: boolean;
+  alreadyBanned: boolean;
+  protectedRole: boolean;
+  wouldBan: boolean;
+};
 
 export type CommentScamBackfillStats = {
-  commentsScanned: number
-  commentsEvaluated: number
-  certainScams: number
-  banCandidates: number
-  usersBanned: number
-  usersAlreadyBanned: number
-  usersWouldBeBanned: number
-  protectedRoleSkips: number
-  skippedSoftDeleted: number
-  skippedAlreadyScanned: number
-  skippedEmptyBody: number
-  evalErrors: number
-}
+  commentsScanned: number;
+  commentsEvaluated: number;
+  certainScams: number;
+  banCandidates: number;
+  usersBanned: number;
+  usersAlreadyBanned: number;
+  usersWouldBeBanned: number;
+  protectedRoleSkips: number;
+  skippedSoftDeleted: number;
+  skippedAlreadyScanned: number;
+  skippedEmptyBody: number;
+  evalErrors: number;
+};
 
 export type CommentScamBackfillActionArgs = {
-  actorUserId: Id<'users'>
-  dryRun?: boolean
-  batchSize?: number
-  maxBatches?: number
-  cursor?: string
-  rescan?: boolean
-  includeSoftDeleted?: boolean
-}
+  actorUserId: Id<"users">;
+  dryRun?: boolean;
+  batchSize?: number;
+  maxBatches?: number;
+  cursor?: string;
+  rescan?: boolean;
+  includeSoftDeleted?: boolean;
+};
 
 export type CommentScamBackfillActionResult = {
-  ok: true
-  stats: CommentScamBackfillStats
-  isDone: boolean
-  cursor: string | null
-}
+  ok: true;
+  stats: CommentScamBackfillStats;
+  isDone: boolean;
+  cursor: string | null;
+};
 
 export const getCommentScamBackfillPageInternal = internalQuery({
   args: {
@@ -78,11 +78,11 @@ export const getCommentScamBackfillPageInternal = internalQuery({
     batchSize: v.optional(v.number()),
   },
   handler: async (ctx, args): Promise<CommentBackfillPageResult> => {
-    const batchSize = clampInt(args.batchSize ?? DEFAULT_BATCH_SIZE, 1, MAX_BATCH_SIZE)
+    const batchSize = clampInt(args.batchSize ?? DEFAULT_BATCH_SIZE, 1, MAX_BATCH_SIZE);
     const { page, isDone, continueCursor } = await ctx.db
-      .query('comments')
-      .order('asc')
-      .paginate({ cursor: args.cursor ?? null, numItems: batchSize })
+      .query("comments")
+      .order("asc")
+      .paginate({ cursor: args.cursor ?? null, numItems: batchSize });
 
     return {
       items: page.map((comment) => ({
@@ -95,45 +95,45 @@ export const getCommentScamBackfillPageInternal = internalQuery({
       })),
       cursor: continueCursor,
       isDone,
-    }
+    };
   },
-})
+});
 
 export async function applyCommentScamResultInternalHandler(
   ctx: MutationCtx,
   args: {
-    actorUserId: Id<'users'>
-    commentId: Id<'comments'>
-    verdict: CommentScamVerdict
-    confidence: CommentScamConfidence
-    explanation: string
-    evidence: string[]
-    model: string
-    checkedAt: number
-    dryRun?: boolean
+    actorUserId: Id<"users">;
+    commentId: Id<"comments">;
+    verdict: CommentScamVerdict;
+    confidence: CommentScamConfidence;
+    explanation: string;
+    evidence: string[];
+    model: string;
+    checkedAt: number;
+    dryRun?: boolean;
   },
 ): Promise<ApplyCommentScamResult> {
-  const comment = await ctx.db.get(args.commentId)
+  const comment = await ctx.db.get(args.commentId);
   if (!comment) {
-    throw new ConvexError('Comment not found')
+    throw new ConvexError("Comment not found");
   }
 
-  const user = await ctx.db.get(comment.userId)
+  const user = await ctx.db.get(comment.userId);
   if (!user) {
-    throw new ConvexError('Comment author not found')
+    throw new ConvexError("Comment author not found");
   }
 
-  const dryRun = Boolean(args.dryRun)
+  const dryRun = Boolean(args.dryRun);
   const shouldBan = isCertainScam({
     verdict: args.verdict,
     confidence: args.confidence,
-  })
+  });
 
-  const explanation = args.explanation.trim().slice(0, 1200)
+  const explanation = args.explanation.trim().slice(0, 1200);
   const evidence = args.evidence
     .map((item) => item.trim())
     .filter(Boolean)
-    .slice(0, 5)
+    .slice(0, 5);
 
   if (!dryRun) {
     await ctx.db.patch(comment._id, {
@@ -143,12 +143,12 @@ export async function applyCommentScamResultInternalHandler(
       scamScanEvidence: evidence,
       scamScanModel: args.model,
       scamScanCheckedAt: args.checkedAt,
-    })
+    });
 
-    await ctx.db.insert('auditLogs', {
+    await ctx.db.insert("auditLogs", {
       actorUserId: args.actorUserId,
-      action: 'comment.scam_scan',
-      targetType: 'comment',
+      action: "comment.scam_scan",
+      targetType: "comment",
       targetId: comment._id,
       metadata: {
         skillId: comment.skillId,
@@ -159,7 +159,7 @@ export async function applyCommentScamResultInternalHandler(
         model: args.model,
       },
       createdAt: args.checkedAt,
-    })
+    });
   }
 
   if (!shouldBan) {
@@ -170,10 +170,10 @@ export async function applyCommentScamResultInternalHandler(
       alreadyBanned: false,
       protectedRole: false,
       wouldBan: false,
-    }
+    };
   }
 
-  if (user.role === 'admin' || user.role === 'moderator') {
+  if (user.role === "admin" || user.role === "moderator") {
     return {
       ok: true,
       shouldBan,
@@ -181,7 +181,7 @@ export async function applyCommentScamResultInternalHandler(
       alreadyBanned: false,
       protectedRole: true,
       wouldBan: false,
-    }
+    };
   }
 
   if (user.deletedAt || user.deactivatedAt) {
@@ -192,7 +192,7 @@ export async function applyCommentScamResultInternalHandler(
       alreadyBanned: true,
       protectedRole: false,
       wouldBan: false,
-    }
+    };
   }
 
   if (dryRun) {
@@ -203,7 +203,7 @@ export async function applyCommentScamResultInternalHandler(
       alreadyBanned: false,
       protectedRole: false,
       wouldBan: true,
-    }
+    };
   }
 
   const reason = buildCommentScamBanReason({
@@ -211,18 +211,18 @@ export async function applyCommentScamResultInternalHandler(
     skillId: String(comment.skillId),
     explanation,
     evidence,
-  })
+  });
 
   const banResult = await ctx.runMutation(internal.users.banUserInternal, {
     actorUserId: args.actorUserId,
     targetUserId: comment.userId,
     reason,
-  })
+  });
 
   if (!banResult.alreadyBanned) {
     await ctx.db.patch(comment._id, {
       scamBanTriggeredAt: args.checkedAt,
-    })
+    });
   }
 
   return {
@@ -232,15 +232,15 @@ export async function applyCommentScamResultInternalHandler(
     alreadyBanned: Boolean(banResult.alreadyBanned),
     protectedRole: false,
     wouldBan: false,
-  }
+  };
 }
 
 export const applyCommentScamResultInternal = internalMutation({
   args: {
-    actorUserId: v.id('users'),
-    commentId: v.id('comments'),
-    verdict: v.union(v.literal('not_scam'), v.literal('likely_scam'), v.literal('certain_scam')),
-    confidence: v.union(v.literal('low'), v.literal('medium'), v.literal('high')),
+    actorUserId: v.id("users"),
+    commentId: v.id("comments"),
+    verdict: v.union(v.literal("not_scam"), v.literal("likely_scam"), v.literal("certain_scam")),
+    confidence: v.union(v.literal("low"), v.literal("medium"), v.literal("high")),
     explanation: v.string(),
     evidence: v.array(v.string()),
     model: v.string(),
@@ -248,24 +248,24 @@ export const applyCommentScamResultInternal = internalMutation({
     dryRun: v.optional(v.boolean()),
   },
   handler: applyCommentScamResultInternalHandler,
-})
+});
 
 export async function backfillCommentScamModerationInternalHandler(
   ctx: ActionCtx,
   args: CommentScamBackfillActionArgs,
 ): Promise<CommentScamBackfillActionResult> {
   if (!process.env.OPENAI_API_KEY) {
-    throw new ConvexError('OPENAI_API_KEY not configured')
+    throw new ConvexError("OPENAI_API_KEY not configured");
   }
 
-  const dryRun = Boolean(args.dryRun)
-  const rescan = Boolean(args.rescan)
-  const includeSoftDeleted = Boolean(args.includeSoftDeleted)
-  const batchSize = clampInt(args.batchSize ?? DEFAULT_BATCH_SIZE, 1, MAX_BATCH_SIZE)
-  const maxBatches = clampInt(args.maxBatches ?? DEFAULT_MAX_BATCHES, 1, MAX_MAX_BATCHES)
+  const dryRun = Boolean(args.dryRun);
+  const rescan = Boolean(args.rescan);
+  const includeSoftDeleted = Boolean(args.includeSoftDeleted);
+  const batchSize = clampInt(args.batchSize ?? DEFAULT_BATCH_SIZE, 1, MAX_BATCH_SIZE);
+  const maxBatches = clampInt(args.maxBatches ?? DEFAULT_MAX_BATCHES, 1, MAX_MAX_BATCHES);
 
-  let cursor: string | null = args.cursor ?? null
-  let isDone = false
+  let cursor: string | null = args.cursor ?? null;
+  let isDone = false;
 
   const stats: CommentScamBackfillStats = {
     commentsScanned: 0,
@@ -280,33 +280,36 @@ export async function backfillCommentScamModerationInternalHandler(
     skippedAlreadyScanned: 0,
     skippedEmptyBody: 0,
     evalErrors: 0,
-  }
+  };
 
   for (let i = 0; i < maxBatches; i++) {
-    const page = (await ctx.runQuery(internal.commentModeration.getCommentScamBackfillPageInternal, {
-      cursor: cursor ?? undefined,
-      batchSize,
-    })) as CommentBackfillPageResult
+    const page = (await ctx.runQuery(
+      internal.commentModeration.getCommentScamBackfillPageInternal,
+      {
+        cursor: cursor ?? undefined,
+        batchSize,
+      },
+    )) as CommentBackfillPageResult;
 
-    cursor = page.cursor
-    isDone = page.isDone
+    cursor = page.cursor;
+    isDone = page.isDone;
 
     for (const comment of page.items) {
-      stats.commentsScanned++
+      stats.commentsScanned++;
 
       if (!includeSoftDeleted && comment.softDeletedAt) {
-        stats.skippedSoftDeleted++
-        continue
+        stats.skippedSoftDeleted++;
+        continue;
       }
       if (!rescan && comment.scamScanCheckedAt) {
-        stats.skippedAlreadyScanned++
-        continue
+        stats.skippedAlreadyScanned++;
+        continue;
       }
 
-      const body = comment.body.trim()
+      const body = comment.body.trim();
       if (!body) {
-        stats.skippedEmptyBody++
-        continue
+        stats.skippedEmptyBody++;
+        continue;
       }
 
       const evalResult = (await ctx.runAction(internal.llmEval.evaluateCommentForScam, {
@@ -316,48 +319,51 @@ export async function backfillCommentScamModerationInternalHandler(
         body,
       })) as
         | {
-            ok: true
-            model: string
-            verdict: CommentScamVerdict
-            confidence: CommentScamConfidence
-            explanation: string
-            evidence: string[]
+            ok: true;
+            model: string;
+            verdict: CommentScamVerdict;
+            confidence: CommentScamConfidence;
+            explanation: string;
+            evidence: string[];
           }
-        | { ok: false; error: string }
+        | { ok: false; error: string };
 
       if (!evalResult.ok) {
-        stats.evalErrors++
-        continue
+        stats.evalErrors++;
+        continue;
       }
 
-      stats.commentsEvaluated++
-      const shouldBan = isCertainScam(evalResult)
-      if (evalResult.verdict === 'certain_scam') {
-        stats.certainScams++
+      stats.commentsEvaluated++;
+      const shouldBan = isCertainScam(evalResult);
+      if (evalResult.verdict === "certain_scam") {
+        stats.certainScams++;
       }
       if (shouldBan) {
-        stats.banCandidates++
+        stats.banCandidates++;
       }
 
-      const applyResult = (await ctx.runMutation(internal.commentModeration.applyCommentScamResultInternal, {
-        actorUserId: args.actorUserId,
-        commentId: comment.commentId,
-        verdict: evalResult.verdict,
-        confidence: evalResult.confidence,
-        explanation: evalResult.explanation,
-        evidence: evalResult.evidence,
-        model: evalResult.model,
-        checkedAt: Date.now(),
-        dryRun,
-      })) as ApplyCommentScamResult
+      const applyResult = (await ctx.runMutation(
+        internal.commentModeration.applyCommentScamResultInternal,
+        {
+          actorUserId: args.actorUserId,
+          commentId: comment.commentId,
+          verdict: evalResult.verdict,
+          confidence: evalResult.confidence,
+          explanation: evalResult.explanation,
+          evidence: evalResult.evidence,
+          model: evalResult.model,
+          checkedAt: Date.now(),
+          dryRun,
+        },
+      )) as ApplyCommentScamResult;
 
-      if (applyResult.banned) stats.usersBanned++
-      if (applyResult.alreadyBanned) stats.usersAlreadyBanned++
-      if (applyResult.wouldBan) stats.usersWouldBeBanned++
-      if (applyResult.protectedRole) stats.protectedRoleSkips++
+      if (applyResult.banned) stats.usersBanned++;
+      if (applyResult.alreadyBanned) stats.usersAlreadyBanned++;
+      if (applyResult.wouldBan) stats.usersWouldBeBanned++;
+      if (applyResult.protectedRole) stats.protectedRoleSkips++;
     }
 
-    if (isDone) break
+    if (isDone) break;
   }
 
   return {
@@ -365,12 +371,12 @@ export async function backfillCommentScamModerationInternalHandler(
     stats,
     isDone,
     cursor,
-  }
+  };
 }
 
 export const backfillCommentScamModerationInternal = internalAction({
   args: {
-    actorUserId: v.id('users'),
+    actorUserId: v.id("users"),
     dryRun: v.optional(v.boolean()),
     batchSize: v.optional(v.number()),
     maxBatches: v.optional(v.number()),
@@ -379,7 +385,7 @@ export const backfillCommentScamModerationInternal = internalAction({
     includeSoftDeleted: v.optional(v.boolean()),
   },
   handler: backfillCommentScamModerationInternalHandler,
-})
+});
 
 export const backfillCommentScamModeration: ReturnType<typeof action> = action({
   args: {
@@ -391,19 +397,19 @@ export const backfillCommentScamModeration: ReturnType<typeof action> = action({
     includeSoftDeleted: v.optional(v.boolean()),
   },
   handler: async (ctx, args): Promise<CommentScamBackfillActionResult> => {
-    const { user } = await requireUserFromAction(ctx)
-    assertRole(user, ['admin', 'moderator'])
+    const { user } = await requireUserFromAction(ctx);
+    assertRole(user, ["admin", "moderator"]);
 
     return ctx.runAction(internal.commentModeration.backfillCommentScamModerationInternal, {
       actorUserId: user._id,
       ...args,
-    }) as Promise<CommentScamBackfillActionResult>
+    }) as Promise<CommentScamBackfillActionResult>;
   },
-})
+});
 
 export const continueCommentScamModerationJobInternal = internalAction({
   args: {
-    actorUserId: v.id('users'),
+    actorUserId: v.id("users"),
     dryRun: v.optional(v.boolean()),
     batchSize: v.optional(v.number()),
     cursor: v.optional(v.string()),
@@ -419,22 +425,26 @@ export const continueCommentScamModerationJobInternal = internalAction({
       maxBatches: 1,
       rescan: args.rescan,
       includeSoftDeleted: args.includeSoftDeleted,
-    })
+    });
 
     if (!result.isDone && result.cursor) {
-      await ctx.scheduler.runAfter(2_000, internal.commentModeration.continueCommentScamModerationJobInternal, {
-        actorUserId: args.actorUserId,
-        dryRun: Boolean(args.dryRun),
-        batchSize: args.batchSize ?? DEFAULT_BATCH_SIZE,
-        cursor: result.cursor,
-        rescan: Boolean(args.rescan),
-        includeSoftDeleted: Boolean(args.includeSoftDeleted),
-      })
+      await ctx.scheduler.runAfter(
+        2_000,
+        internal.commentModeration.continueCommentScamModerationJobInternal,
+        {
+          actorUserId: args.actorUserId,
+          dryRun: Boolean(args.dryRun),
+          batchSize: args.batchSize ?? DEFAULT_BATCH_SIZE,
+          cursor: result.cursor,
+          rescan: Boolean(args.rescan),
+          includeSoftDeleted: Boolean(args.includeSoftDeleted),
+        },
+      );
     }
 
-    return result
+    return result;
   },
-})
+});
 
 export const scheduleCommentScamModeration: ReturnType<typeof action> = action({
   args: {
@@ -444,22 +454,26 @@ export const scheduleCommentScamModeration: ReturnType<typeof action> = action({
     includeSoftDeleted: v.optional(v.boolean()),
   },
   handler: async (ctx, args): Promise<{ ok: true }> => {
-    const { user } = await requireUserFromAction(ctx)
-    assertRole(user, ['admin', 'moderator'])
+    const { user } = await requireUserFromAction(ctx);
+    assertRole(user, ["admin", "moderator"]);
 
-    await ctx.scheduler.runAfter(0, internal.commentModeration.continueCommentScamModerationJobInternal, {
-      actorUserId: user._id,
-      dryRun: Boolean(args.dryRun),
-      batchSize: clampInt(args.batchSize ?? DEFAULT_BATCH_SIZE, 1, MAX_BATCH_SIZE),
-      cursor: undefined,
-      rescan: Boolean(args.rescan),
-      includeSoftDeleted: Boolean(args.includeSoftDeleted),
-    })
+    await ctx.scheduler.runAfter(
+      0,
+      internal.commentModeration.continueCommentScamModerationJobInternal,
+      {
+        actorUserId: user._id,
+        dryRun: Boolean(args.dryRun),
+        batchSize: clampInt(args.batchSize ?? DEFAULT_BATCH_SIZE, 1, MAX_BATCH_SIZE),
+        cursor: undefined,
+        rescan: Boolean(args.rescan),
+        includeSoftDeleted: Boolean(args.includeSoftDeleted),
+      },
+    );
 
-    return { ok: true as const }
+    return { ok: true as const };
   },
-})
+});
 
 function clampInt(value: number, min: number, max: number) {
-  return Math.min(Math.max(Math.trunc(value), min), max)
+  return Math.min(Math.max(Math.trunc(value), min), max);
 }
