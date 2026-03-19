@@ -89,8 +89,23 @@ describe("searchText", () => {
     ).toBe(false);
   });
 
-  it("normalize uses lowercase", () => {
+  it("normalize strips accents", () => {
+    expect(__test.normalize("Café")).toBe("cafe");
+    expect(__test.normalize("Pokémon")).toBe("pokemon");
     expect(__test.normalize("AbC")).toBe("abc");
+  });
+
+  it("tokenize handles accented Latin as ASCII after normalization", () => {
+    expect(tokenize("café")).toEqual(["cafe"]);
+    expect(tokenize("pokémon")).toEqual(["pokemon"]);
+    // Should match ASCII metadata via prefix
+    expect(matchesExactTokens(tokenize("pokémon"), ["Pokemon Helper", "pokemon-helper"])).toBe(true);
+  });
+
+  it("tokenize splits mixed-script tokens into ASCII and non-ASCII parts", () => {
+    const tokens = tokenize("AI绘画");
+    expect(tokens).toContain("ai");
+    expect(tokens.some((t) => /[\u4e00-\u9fff]/.test(t))).toBe(true);
   });
 
   it("isAsciiToken correctly identifies ASCII-only tokens", () => {
@@ -98,7 +113,7 @@ describe("searchText", () => {
     expect(__test.isAsciiToken("abc123")).toBe(true);
     expect(__test.isAsciiToken("视频")).toBe(false);
     expect(__test.isAsciiToken("ai视频")).toBe(false);
-    expect(__test.isAsciiToken("café")).toBe(false);
+    expect(__test.isAsciiToken("café")).toBe(false); // raw, pre-normalize
   });
 
   it("partitionQueryTokens separates ASCII and non-ASCII tokens", () => {
