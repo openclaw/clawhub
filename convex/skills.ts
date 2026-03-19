@@ -4911,6 +4911,16 @@ export const mergeOwnedSkillIntoCanonical = mutation({
   },
 })
 
+export const deleteOwnedSkill = mutation({
+  args: {
+    slug: v.string(),
+  },
+  handler: async (ctx, args) => {
+    const { user } = await requireUser(ctx)
+    return setSkillSoftDeletedByActor(ctx, user._id, args.slug, true)
+  },
+})
+
 export const renameOwnedSkillInternal = internalMutation({
   args: {
     actorUserId: v.id('users'),
@@ -6072,50 +6082,66 @@ export const setSkillSoftDeletedInternal = internalMutation({
     deleted: v.boolean(),
   },
   handler: async (ctx, args) => {
-    const user = await ctx.db.get(args.userId)
-    if (!user || user.deletedAt || user.deactivatedAt)
-      throw new Error('User not found')
-
-    const slug = args.slug.trim().toLowerCase()
-    if (!slug) throw new Error('Slug required')
-
-    const skill = await ctx.db
-      .query('skills')
-      .withIndex('by_slug', (q) => q.eq('slug', slug))
-      .unique()
-    if (!skill) throw new Error('Skill not found')
-
-    if (skill.ownerUserId !== args.userId) {
-      assertModerator(user)
-    }
-
-    const now = Date.now()
-    const patch: Partial<Doc<'skills'>> = {
-      softDeletedAt: args.deleted ? now : undefined,
-      moderationStatus: args.deleted ? 'hidden' : 'active',
-      hiddenAt: args.deleted ? now : undefined,
-      hiddenBy: args.deleted ? args.userId : undefined,
-      lastReviewedAt: now,
-      updatedAt: now,
-    }
-    const nextSkill = { ...skill, ...patch }
-    await ctx.db.patch(skill._id, patch)
-    await adjustGlobalPublicCountForSkillChange(ctx, skill, nextSkill)
-
-    await setSkillEmbeddingsSoftDeleted(ctx, skill._id, args.deleted, now)
-
-    await ctx.db.insert('auditLogs', {
-      actorUserId: args.userId,
-      action: args.deleted ? 'skill.delete' : 'skill.undelete',
-      targetType: 'skill',
-      targetId: skill._id,
-      metadata: { slug, softDeletedAt: args.deleted ? now : null },
-      createdAt: now,
+    return setSkillSoftDeletedByActor(ctx, args.userId, args.slug, args.deleted, {
+      allowModerator: true,
     })
-
-    return { ok: true as const }
   },
 })
+
+async function setSkillSoftDeletedByActor(
+  ctx: MutationCtx,
+  actorUserId: Id<'users'>,
+  slugArg: string,
+  deleted: boolean,
+  options?: { allowModerator?: boolean },
+) {
+  const user = await ctx.db.get(actorUserId)
+  if (!user || user.deletedAt || user.deactivatedAt) {
+    throw new ConvexError('Forbidden')
+  }
+
+  const slug = slugArg.trim().toLowerCase()
+  if (!slug) throw new ConvexError('Slug required')
+
+  const skill = await ctx.db
+    .query('skills')
+    .withIndex('by_slug', (q) => q.eq('slug', slug))
+    .unique()
+  if (!skill) throw new ConvexError('Skill not found')
+
+  if (skill.ownerUserId !== actorUserId) {
+    if (!options?.allowModerator) {
+      throw new ConvexError('Forbidden')
+    }
+    assertModerator(user)
+  }
+
+  const now = Date.now()
+  const patch: Partial<Doc<'skills'>> = {
+    softDeletedAt: deleted ? now : undefined,
+    moderationStatus: deleted ? 'hidden' : 'active',
+    hiddenAt: deleted ? now : undefined,
+    hiddenBy: deleted ? actorUserId : undefined,
+    lastReviewedAt: now,
+    updatedAt: now,
+  }
+  const nextSkill = { ...skill, ...patch }
+  await ctx.db.patch(skill._id, patch)
+  await adjustGlobalPublicCountForSkillChange(ctx, skill, nextSkill)
+
+  await setSkillEmbeddingsSoftDeleted(ctx, skill._id, deleted, now)
+
+  await ctx.db.insert('auditLogs', {
+    actorUserId,
+    action: deleted ? 'skill.delete' : 'skill.undelete',
+    targetType: 'skill',
+    targetId: skill._id,
+    metadata: { slug, softDeletedAt: deleted ? now : null },
+    createdAt: now,
+  })
+
+  return { ok: true as const }
+}
 
 function clampInt(value: number, min: number, max: number) {
   const rounded = Number.isFinite(value) ? Math.round(value) : min

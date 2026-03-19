@@ -41,13 +41,17 @@ export function SkillOwnershipPanel({
   const navigate = useNavigate()
   const renameOwnedSkill = useMutation(api.skills.renameOwnedSkill)
   const mergeOwnedSkillIntoCanonical = useMutation(api.skills.mergeOwnedSkillIntoCanonical)
+  const deleteOwnedSkill = useMutation(api.skills.deleteOwnedSkill)
 
   const [renameSlug, setRenameSlug] = useState(slug)
   const [mergeTargetSlug, setMergeTargetSlug] = useState(ownedSkills[0]?.slug ?? '')
+  const [deleteConfirmation, setDeleteConfirmation] = useState('')
+  const [showDeleteConfirmation, setShowDeleteConfirmation] = useState(false)
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
   const ownerHref = (nextSlug: string) => buildSkillHref(ownerHandle, ownerId, nextSlug)
+  const isDeleteConfirmed = deleteConfirmation.trim().toLowerCase() === 'delete'
 
   const handleRename = async () => {
     const nextSlug = renameSlug.trim().toLowerCase()
@@ -104,14 +108,28 @@ export function SkillOwnershipPanel({
     }
   }
 
+  const handleDelete = async () => {
+    if (!isDeleteConfirmed) return
+    setIsSubmitting(true)
+    setError(null)
+    try {
+      await deleteOwnedSkill({ slug })
+      await navigate({ to: '/dashboard', replace: true })
+    } catch (deleteError) {
+      setError(formatMutationError(deleteError))
+    } finally {
+      setIsSubmitting(false)
+    }
+  }
+
   return (
     <div className="card skill-owner-tools" data-skill-id={skillId}>
       <h2 className="section-title" style={{ marginTop: 0 }}>
         Owner tools
       </h2>
       <p className="section-subtitle">
-        Rename the canonical slug or fold this listing into another one you own. Old slugs stay as
-        redirects and stop polluting search/list views.
+        Rename the canonical slug, fold this listing into another one you own, or remove it from
+        public listings. Old slugs stay as redirects and stop polluting search/list views.
       </p>
 
       <div className="skill-owner-tools-grid">
@@ -165,12 +183,73 @@ export function SkillOwnershipPanel({
             Merge into target
           </button>
         </div>
+        <div className="management-control management-control-stack skill-owner-delete-panel">
+          <span className="mono">delete skill</span>
+          <span className="section-subtitle">
+            Soft delete hides this skill from public view. Type <span className="mono">delete</span>{' '}
+            before confirming.
+          </span>
+          {showDeleteConfirmation ? (
+            <input
+              className="management-field"
+              value={deleteConfirmation}
+              onChange={(event) => setDeleteConfirmation(event.target.value)}
+              placeholder='type "delete"'
+              autoComplete="off"
+              spellCheck={false}
+              disabled={isSubmitting}
+            />
+          ) : (
+            <span className="section-subtitle">
+              This removes the current skill listing and returns you to your dashboard.
+            </span>
+          )}
+        </div>
+        <div className="management-control management-control-stack">
+          <span className="mono">delete action</span>
+          {showDeleteConfirmation ? (
+            <div className="skill-owner-delete-actions">
+              <button
+                className="btn btn-ghost"
+                type="button"
+                onClick={() => {
+                  setDeleteConfirmation('')
+                  setShowDeleteConfirmation(false)
+                }}
+                disabled={isSubmitting}
+              >
+                Cancel
+              </button>
+              <button
+                className="btn btn-danger management-action-btn"
+                type="button"
+                onClick={() => void handleDelete()}
+                disabled={isSubmitting || !isDeleteConfirmed}
+              >
+                {isSubmitting ? 'Deleting…' : 'Confirm delete'}
+              </button>
+            </div>
+          ) : (
+            <button
+              className="btn btn-danger management-action-btn"
+              type="button"
+              onClick={() => {
+                setDeleteConfirmation('')
+                setShowDeleteConfirmation(true)
+                setError(null)
+              }}
+              disabled={isSubmitting}
+            >
+              Delete skill
+            </button>
+          )}
+        </div>
       </div>
 
       {error ? <div className="stat" style={{ color: 'var(--danger)' }}>{error}</div> : null}
       <div className="section-subtitle">
-        Merge keeps the target live and hides this row. Versions and stats stay on the original
-        records for now.
+        Merge keeps the target live and hides this row. Delete is a soft delete and restore remains
+        CLI-only for now.
       </div>
     </div>
   )
