@@ -1,11 +1,11 @@
-import { ConvexError, v } from 'convex/values'
-import { unzipSync } from 'fflate'
-import semver from 'semver'
-import { api, internal } from './_generated/api'
-import type { Id } from './_generated/dataModel'
-import type { ActionCtx } from './_generated/server'
-import { action } from './functions'
-import { requireUserFromAction } from './lib/access'
+import { ConvexError, v } from "convex/values";
+import { unzipSync } from "fflate";
+import semver from "semver";
+import { api, internal } from "./_generated/api";
+import type { Id } from "./_generated/dataModel";
+import type { ActionCtx } from "./_generated/server";
+import { action } from "./functions";
+import { requireUserFromAction } from "./lib/access";
 import {
   buildGitHubImportFileList,
   computeDefaultSelectedPaths,
@@ -18,29 +18,29 @@ import {
   stripGitHubZipRoot,
   suggestDisplayName,
   suggestVersion,
-} from './lib/githubImport'
-import { publishVersionForUser } from './lib/skillPublish'
-import { isMacJunkPath, sanitizePath } from './lib/skills'
+} from "./lib/githubImport";
+import { publishVersionForUser } from "./lib/skillPublish";
+import { isMacJunkPath, sanitizePath } from "./lib/skills";
 
-const MAX_SELECTED_BYTES = 50 * 1024 * 1024
-const MAX_UNZIPPED_BYTES = 80 * 1024 * 1024
-const MAX_FILE_COUNT = 7_500
-const MAX_SINGLE_FILE_BYTES = 10 * 1024 * 1024
+const MAX_SELECTED_BYTES = 50 * 1024 * 1024;
+const MAX_UNZIPPED_BYTES = 80 * 1024 * 1024;
+const MAX_FILE_COUNT = 7_500;
+const MAX_SINGLE_FILE_BYTES = 10 * 1024 * 1024;
 
 export const previewGitHubImport = action({
   args: { url: v.string() },
   handler: async (ctx, args) => {
-    await requireUserFromAction(ctx)
+    await requireUserFromAction(ctx);
 
-    const parsed = parseGitHubImportUrl(args.url)
-    const resolved = await resolveGitHubCommit(parsed, fetch)
-    const zipBytes = await fetchGitHubZipBytes(resolved, fetch)
-    const entries = unzipToEntries(zipBytes)
-    const stripped = stripGitHubZipRoot(entries)
+    const parsed = parseGitHubImportUrl(args.url);
+    const resolved = await resolveGitHubCommit(parsed, fetch);
+    const zipBytes = await fetchGitHubZipBytes(resolved, fetch);
+    const entries = unzipToEntries(zipBytes);
+    const stripped = stripGitHubZipRoot(entries);
     const candidates = detectGitHubImportCandidates(stripped).filter((candidate) =>
       isCandidateUnderResolvedPath(candidate.path, resolved.path),
-    )
-    if (candidates.length === 0) throw new ConvexError('No SKILL.md found in this repo')
+    );
+    if (candidates.length === 0) throw new ConvexError("No SKILL.md found in this repo");
 
     return {
       resolved,
@@ -50,53 +50,53 @@ export const previewGitHubImport = action({
         name: candidate.name ?? null,
         description: candidate.description ?? null,
       })),
-    }
+    };
   },
-})
+});
 
 export const previewGitHubImportCandidate = action({
   args: { url: v.string(), candidatePath: v.string() },
   handler: async (ctx, args) => {
-    const { userId } = await requireUserFromAction(ctx)
+    const { userId } = await requireUserFromAction(ctx);
 
-    const parsed = parseGitHubImportUrl(args.url)
-    const resolved = await resolveGitHubCommit(parsed, fetch)
-    const zipBytes = await fetchGitHubZipBytes(resolved, fetch)
-    const entries = unzipToEntries(zipBytes)
-    const stripped = stripGitHubZipRoot(entries)
+    const parsed = parseGitHubImportUrl(args.url);
+    const resolved = await resolveGitHubCommit(parsed, fetch);
+    const zipBytes = await fetchGitHubZipBytes(resolved, fetch);
+    const entries = unzipToEntries(zipBytes);
+    const stripped = stripGitHubZipRoot(entries);
 
-    const normalizedCandidatePath = normalizeRepoPath(args.candidatePath)
+    const normalizedCandidatePath = normalizeRepoPath(args.candidatePath);
     if (!isCandidateUnderResolvedPath(normalizedCandidatePath, resolved.path)) {
-      throw new ConvexError('Candidate path is outside the requested import scope')
+      throw new ConvexError("Candidate path is outside the requested import scope");
     }
 
     const candidates = detectGitHubImportCandidates(stripped).filter((candidate) =>
       isCandidateUnderResolvedPath(candidate.path, resolved.path),
-    )
+    );
 
-    const candidate = candidates.find((item) => item.path === normalizedCandidatePath)
-    if (!candidate) throw new ConvexError('Candidate not found')
+    const candidate = candidates.find((item) => item.path === normalizedCandidatePath);
+    if (!candidate) throw new ConvexError("Candidate not found");
 
-    const files = listTextFilesUnderCandidate(stripped, candidate.path)
-    const defaultSelectedPaths = computeDefaultSelectedPaths({ candidate, files })
+    const files = listTextFilesUnderCandidate(stripped, candidate.path);
+    const defaultSelectedPaths = computeDefaultSelectedPaths({ candidate, files });
     const fileList = buildGitHubImportFileList({
       candidate,
       files,
       defaultSelectedPaths,
-    })
+    });
 
-    const baseForNaming = candidate.path ? (candidate.path.split('/').at(-1) ?? '') : resolved.repo
-    const suggestedDisplayName = suggestDisplayName(candidate, baseForNaming)
+    const baseForNaming = candidate.path ? (candidate.path.split("/").at(-1) ?? "") : resolved.repo;
+    const suggestedDisplayName = suggestDisplayName(candidate, baseForNaming);
 
-    const rawSlugBase = sanitizeSlug(candidate.path ? baseForNaming : resolved.repo)
-    const suggestedSlug = await suggestAvailableSlug(ctx, userId, rawSlugBase)
+    const rawSlugBase = sanitizeSlug(candidate.path ? baseForNaming : resolved.repo);
+    const suggestedSlug = await suggestAvailableSlug(ctx, userId, rawSlugBase);
 
-    const existing = await ctx.runQuery(api.skills.getBySlug, { slug: suggestedSlug })
+    const existing = await ctx.runQuery(api.skills.getBySlug, { slug: suggestedSlug });
     const existingLatest =
       existing?.skill && existing.skill.ownerUserId === userId
         ? (existing.latestVersion?.version ?? null)
-        : null
-    const suggestedVersion = suggestVersion(existingLatest)
+        : null;
+    const suggestedVersion = suggestVersion(existingLatest);
 
     return {
       resolved,
@@ -111,12 +111,12 @@ export const previewGitHubImportCandidate = action({
         slug: suggestedSlug,
         displayName: suggestedDisplayName,
         version: suggestedVersion,
-        tags: ['latest'],
+        tags: ["latest"],
       },
       files: fileList,
-    }
+    };
   },
-})
+});
 
 export const importGitHubSkill = action({
   args: {
@@ -130,105 +130,106 @@ export const importGitHubSkill = action({
     tags: v.optional(v.array(v.string())),
   },
   handler: async (ctx, args) => {
-    const { userId } = await requireUserFromAction(ctx)
+    const { userId } = await requireUserFromAction(ctx);
 
-    const parsed = parseGitHubImportUrl(args.url)
-    const resolved = await resolveGitHubCommit(parsed, fetch)
-    if (!/^[a-f0-9]{40}$/i.test(args.commit)) throw new ConvexError('Invalid commit')
+    const parsed = parseGitHubImportUrl(args.url);
+    const resolved = await resolveGitHubCommit(parsed, fetch);
+    if (!/^[a-f0-9]{40}$/i.test(args.commit)) throw new ConvexError("Invalid commit");
     if (args.commit.toLowerCase() !== resolved.commit.toLowerCase()) {
-      throw new ConvexError('Import is out of date. Re-run preview.')
+      throw new ConvexError("Import is out of date. Re-run preview.");
     }
 
-    const normalizedCandidatePath = normalizeRepoPath(args.candidatePath)
+    const normalizedCandidatePath = normalizeRepoPath(args.candidatePath);
     if (!isCandidateUnderResolvedPath(normalizedCandidatePath, resolved.path)) {
-      throw new ConvexError('Candidate path is outside the requested import scope')
+      throw new ConvexError("Candidate path is outside the requested import scope");
     }
 
-    const zipBytes = await fetchGitHubZipBytes(resolved, fetch)
-    const entries = stripGitHubZipRoot(unzipToEntries(zipBytes))
+    const zipBytes = await fetchGitHubZipBytes(resolved, fetch);
+    const entries = stripGitHubZipRoot(unzipToEntries(zipBytes));
 
     const candidates = detectGitHubImportCandidates(entries).filter((candidate) =>
       isCandidateUnderResolvedPath(candidate.path, resolved.path),
-    )
-    const candidate = candidates.find((item) => item.path === normalizedCandidatePath)
-    if (!candidate) throw new ConvexError('Candidate not found')
+    );
+    const candidate = candidates.find((item) => item.path === normalizedCandidatePath);
+    if (!candidate) throw new ConvexError("Candidate not found");
 
-    const filesUnderCandidate = listTextFilesUnderCandidate(entries, candidate.path)
-    const byPath = new Map(filesUnderCandidate.map((file) => [file.path, file.bytes]))
+    const filesUnderCandidate = listTextFilesUnderCandidate(entries, candidate.path);
+    const byPath = new Map(filesUnderCandidate.map((file) => [file.path, file.bytes]));
 
     const selected = Array.from(
       new Set(args.selectedPaths.map((path) => normalizeRepoPath(path)).filter(Boolean)),
-    )
-    if (selected.length === 0) throw new ConvexError('No files selected')
+    );
+    if (selected.length === 0) throw new ConvexError("No files selected");
 
-    const candidateRoot = candidate.path ? `${candidate.path}/` : ''
-    const normalizedReadmePath = normalizeRepoPath(candidate.readmePath)
+    const candidateRoot = candidate.path ? `${candidate.path}/` : "";
+    const normalizedReadmePath = normalizeRepoPath(candidate.readmePath);
     if (!selected.includes(normalizedReadmePath)) {
-      throw new ConvexError('SKILL.md must be selected')
+      throw new ConvexError("SKILL.md must be selected");
     }
 
-    let totalBytes = 0
+    let totalBytes = 0;
     const storedFiles: Array<{
-      path: string
-      size: number
-      storageId: Id<'_storage'>
-      sha256: string
-      contentType?: string
-    }> = []
+      path: string;
+      size: number;
+      storageId: Id<"_storage">;
+      sha256: string;
+      contentType?: string;
+    }> = [];
 
     for (const path of selected.sort()) {
       if (candidateRoot && !path.startsWith(candidateRoot)) {
-        throw new ConvexError('Selected file is outside the chosen skill folder')
+        throw new ConvexError("Selected file is outside the chosen skill folder");
       }
 
-      const bytes = byPath.get(path)
-      if (!bytes) continue
-      totalBytes += bytes.byteLength
-      if (totalBytes > MAX_SELECTED_BYTES) throw new ConvexError('Selected files exceed 50MB limit')
+      const bytes = byPath.get(path);
+      if (!bytes) continue;
+      totalBytes += bytes.byteLength;
+      if (totalBytes > MAX_SELECTED_BYTES)
+        throw new ConvexError("Selected files exceed 50MB limit");
 
-      const relPath = candidateRoot ? path.slice(candidateRoot.length) : path
-      const sanitized = sanitizePath(relPath)
-      if (!sanitized) throw new ConvexError('Invalid file paths')
+      const relPath = candidateRoot ? path.slice(candidateRoot.length) : path;
+      const sanitized = sanitizePath(relPath);
+      if (!sanitized) throw new ConvexError("Invalid file paths");
 
-      const sha256 = await sha256Hex(bytes)
-      const safeBytes = new Uint8Array(bytes)
-      let storageId: Id<'_storage'>
+      const sha256 = await sha256Hex(bytes);
+      const safeBytes = new Uint8Array(bytes);
+      let storageId: Id<"_storage">;
       try {
-        storageId = await ctx.storage.store(new Blob([safeBytes], { type: 'text/plain' }))
+        storageId = await ctx.storage.store(new Blob([safeBytes], { type: "text/plain" }));
       } catch (error) {
-        throw new ConvexError(buildStoreFailureMessage(sanitized, bytes.byteLength, error))
+        throw new ConvexError(buildStoreFailureMessage(sanitized, bytes.byteLength, error));
       }
       storedFiles.push({
         path: sanitized,
         size: bytes.byteLength,
         storageId,
         sha256,
-        contentType: 'text/plain',
-      })
+        contentType: "text/plain",
+      });
     }
 
-    if (storedFiles.length === 0) throw new ConvexError('No files selected')
+    if (storedFiles.length === 0) throw new ConvexError("No files selected");
 
-    const slugBase = (args.slug ?? '').trim().toLowerCase()
-    const displayName = (args.displayName ?? '').trim()
-    const tags = (args.tags ?? ['latest']).map((tag) => tag.trim()).filter(Boolean)
-    const version = (args.version ?? '').trim()
+    const slugBase = (args.slug ?? "").trim().toLowerCase();
+    const displayName = (args.displayName ?? "").trim();
+    const tags = (args.tags ?? ["latest"]).map((tag) => tag.trim()).filter(Boolean);
+    const version = (args.version ?? "").trim();
 
-    if (!slugBase) throw new ConvexError('Slug required')
-    if (!displayName) throw new ConvexError('Display name required')
-    if (!version || !semver.valid(version)) throw new ConvexError('Version must be valid semver')
+    if (!slugBase) throw new ConvexError("Slug required");
+    if (!displayName) throw new ConvexError("Display name required");
+    if (!version || !semver.valid(version)) throw new ConvexError("Version must be valid semver");
 
-    let result: Awaited<ReturnType<typeof publishVersionForUser>>
+    let result: Awaited<ReturnType<typeof publishVersionForUser>>;
     try {
       result = await publishVersionForUser(ctx, userId, {
         slug: slugBase,
         displayName,
         version,
-        changelog: '',
+        changelog: "",
         tags,
         files: storedFiles,
         source: {
-          kind: 'github',
+          kind: "github",
           url: resolved.originalUrl,
           repo: `${resolved.owner}/${resolved.repo}`,
           ref: resolved.ref,
@@ -236,102 +237,104 @@ export const importGitHubSkill = action({
           path: candidate.path,
           importedAt: Date.now(),
         },
-      })
+      });
     } catch (error) {
-      throw new ConvexError(buildPublishFailureMessage(error))
+      throw new ConvexError(buildPublishFailureMessage(error));
     }
 
-    return { ok: true, slug: slugBase, version, ...result }
+    return { ok: true, slug: slugBase, version, ...result };
   },
-})
+});
 
 function unzipToEntries(zipBytes: Uint8Array) {
-  const entries = unzipSync(zipBytes)
-  const out: Record<string, Uint8Array> = {}
-  const rawPaths = Object.keys(entries)
-  if (rawPaths.length > MAX_FILE_COUNT) throw new ConvexError('Repo archive has too many files')
-  let totalBytes = 0
+  const entries = unzipSync(zipBytes);
+  const out: Record<string, Uint8Array> = {};
+  const rawPaths = Object.keys(entries);
+  if (rawPaths.length > MAX_FILE_COUNT) throw new ConvexError("Repo archive has too many files");
+  let totalBytes = 0;
   for (const [rawPath, bytes] of Object.entries(entries)) {
-    const normalizedPath = normalizeZipPath(rawPath)
-    if (!normalizedPath) continue
-    if (isMacJunkPath(normalizedPath)) continue
-    if (!bytes) continue
-    if (bytes.byteLength > MAX_SINGLE_FILE_BYTES) continue
-    totalBytes += bytes.byteLength
-    if (totalBytes > MAX_UNZIPPED_BYTES) throw new ConvexError('Repo archive is too large')
-    out[normalizedPath] = bytes
+    const normalizedPath = normalizeZipPath(rawPath);
+    if (!normalizedPath) continue;
+    if (isMacJunkPath(normalizedPath)) continue;
+    if (!bytes) continue;
+    if (bytes.byteLength > MAX_SINGLE_FILE_BYTES) continue;
+    totalBytes += bytes.byteLength;
+    if (totalBytes > MAX_UNZIPPED_BYTES) throw new ConvexError("Repo archive is too large");
+    out[normalizedPath] = bytes;
   }
-  return out
+  return out;
 }
 
 function isCandidateUnderResolvedPath(candidatePath: string, resolvedPath: string) {
-  const root = normalizeRepoPath(resolvedPath)
-  if (!root) return true
-  if (!candidatePath) return false
-  if (candidatePath === root) return true
-  return candidatePath.startsWith(`${root}/`)
+  const root = normalizeRepoPath(resolvedPath);
+  if (!root) return true;
+  if (!candidatePath) return false;
+  if (candidatePath === root) return true;
+  return candidatePath.startsWith(`${root}/`);
 }
 
 function sanitizeSlug(value: string) {
   return value
     .trim()
     .toLowerCase()
-    .replace(/[^a-z0-9-]+/g, '-')
-    .replace(/^-+/, '')
-    .replace(/-+$/, '')
-    .replace(/--+/g, '-')
+    .replace(/[^a-z0-9-]+/g, "-")
+    .replace(/^-+/, "")
+    .replace(/-+$/, "")
+    .replace(/--+/g, "-");
 }
 
-async function suggestAvailableSlug(ctx: ActionCtx, userId: Id<'users'>, base: string) {
-  const cleaned = sanitizeSlug(base)
-  if (!cleaned) throw new ConvexError('Could not derive slug')
+async function suggestAvailableSlug(ctx: ActionCtx, userId: Id<"users">, base: string) {
+  const cleaned = sanitizeSlug(base);
+  if (!cleaned) throw new ConvexError("Could not derive slug");
   for (let i = 0; i < 50; i += 1) {
-    const candidate = i === 0 ? cleaned : `${cleaned}-${i + 1}`
-    const existing = await ctx.runQuery(internal.skills.getSkillBySlugInternal, { slug: candidate })
-    if (!existing) return candidate
-    if (existing.ownerUserId === userId) return candidate
+    const candidate = i === 0 ? cleaned : `${cleaned}-${i + 1}`;
+    const existing = await ctx.runQuery(internal.skills.getSkillBySlugInternal, {
+      slug: candidate,
+    });
+    if (!existing) return candidate;
+    if (existing.ownerUserId === userId) return candidate;
   }
-  throw new ConvexError('Could not find an available slug')
+  throw new ConvexError("Could not find an available slug");
 }
 
 async function sha256Hex(bytes: Uint8Array) {
-  const normalized = new Uint8Array(bytes)
-  const digest = await crypto.subtle.digest('SHA-256', normalized.buffer)
-  return toHex(new Uint8Array(digest))
+  const normalized = new Uint8Array(bytes);
+  const digest = await crypto.subtle.digest("SHA-256", normalized.buffer);
+  return toHex(new Uint8Array(digest));
 }
 
 function toHex(bytes: Uint8Array) {
-  let out = ''
-  for (const byte of bytes) out += byte.toString(16).padStart(2, '0')
-  return out
+  let out = "";
+  for (const byte of bytes) out += byte.toString(16).padStart(2, "0");
+  return out;
 }
 
 function normalizeZipPath(path: string) {
   const normalized = path
-    .replaceAll('\u0000', '')
-    .replaceAll('\\', '/')
+    .replaceAll("\u0000", "")
+    .replaceAll("\\", "/")
     .trim()
-    .replace(/^\.\/+/, '')
-    .replace(/^\/+/, '')
-  if (!normalized) return ''
-  if (normalized.includes('..')) return ''
-  return normalized
+    .replace(/^\.\/+/, "")
+    .replace(/^\/+/, "");
+  if (!normalized) return "";
+  if (normalized.includes("..")) return "";
+  return normalized;
 }
 
 function toErrorMessage(error: unknown) {
-  return error instanceof Error ? error.message : String(error)
+  return error instanceof Error ? error.message : String(error);
 }
 
 function buildStoreFailureMessage(path: string, sizeBytes: number, error: unknown) {
-  return `Failed to store file "${path}" (${sizeBytes} bytes). ${toErrorMessage(error)}`
+  return `Failed to store file "${path}" (${sizeBytes} bytes). ${toErrorMessage(error)}`;
 }
 
 function buildPublishFailureMessage(error: unknown) {
-  return `Import failed during publish: ${toErrorMessage(error)}. Check skill format, slug availability, and try again.`
+  return `Import failed during publish: ${toErrorMessage(error)}. Check skill format, slug availability, and try again.`;
 }
 
 export const __test = {
   buildPublishFailureMessage,
   buildStoreFailureMessage,
   unzipToEntries,
-}
+};

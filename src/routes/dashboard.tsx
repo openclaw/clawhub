@@ -1,34 +1,34 @@
-import { createFileRoute, Link } from '@tanstack/react-router'
-import { useQuery } from 'convex/react'
-import { Clock, Package, Plus, Upload } from 'lucide-react'
-import { api } from '../../convex/_generated/api'
-import type { Doc } from '../../convex/_generated/dataModel'
-import { formatCompactStat } from '../lib/numberFormat'
-import type { PublicSkill } from '../lib/publicUser'
+import { createFileRoute, Link } from "@tanstack/react-router";
+import { useQuery } from "convex/react";
+import { Clock, Package, Plus, Upload } from "lucide-react";
+import { api } from "../../convex/_generated/api";
+import type { Doc } from "../../convex/_generated/dataModel";
+import { formatCompactStat } from "../lib/numberFormat";
+import type { PublicSkill } from "../lib/publicUser";
 
-type DashboardSkill = PublicSkill & { pendingReview?: boolean }
+type DashboardSkill = PublicSkill & { pendingReview?: boolean };
 
-export const Route = createFileRoute('/dashboard')({
+export const Route = createFileRoute("/dashboard")({
   component: Dashboard,
-})
+});
 
 function Dashboard() {
-  const me = useQuery(api.users.me) as Doc<'users'> | null | undefined
+  const me = useQuery(api.users.me) as Doc<"users"> | null | undefined;
   const mySkills = useQuery(
     api.skills.list,
-    me?._id ? { ownerUserId: me._id, limit: 100 } : 'skip',
-  ) as DashboardSkill[] | undefined
+    me?._id ? { ownerUserId: me._id, limit: 100 } : "skip",
+  ) as DashboardSkill[] | undefined;
 
   if (!me) {
     return (
       <main className="section">
         <div className="card">Sign in to access your dashboard.</div>
       </main>
-    )
+    );
   }
 
-  const skills = mySkills ?? []
-  const ownerHandle = me.handle ?? me.name ?? me.displayName ?? me._id
+  const skills = mySkills ?? [];
+  const ownerHandle = me.handle ?? me.name ?? me.displayName ?? me._id;
 
   return (
     <main className="section">
@@ -60,17 +60,17 @@ function Dashboard() {
         </div>
       )}
     </main>
-  )
+  );
 }
 
 function SkillCard({ skill, ownerHandle }: { skill: DashboardSkill; ownerHandle: string | null }) {
   return (
     <div className="dashboard-skill-card">
       <div className="dashboard-skill-info">
-        <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
+        <div style={{ display: "flex", alignItems: "center", gap: "8px", flexWrap: "wrap" }}>
           <Link
             to="/$owner/$slug"
-            params={{ owner: ownerHandle ?? 'unknown', slug: skill.slug }}
+            params={{ owner: ownerHandle ?? "unknown", slug: skill.slug }}
             className="dashboard-skill-name"
           >
             {skill.displayName}
@@ -99,12 +99,12 @@ function SkillCard({ skill, ownerHandle }: { skill: DashboardSkill; ownerHandle:
         </Link>
         <Link
           to="/$owner/$slug"
-          params={{ owner: ownerHandle ?? 'unknown', slug: skill.slug }}
+          params={{ owner: ownerHandle ?? "unknown", slug: skill.slug }}
           className="btn btn-ghost btn-sm"
         >
           View
         </Link>
       </div>
     </div>
-  )
+  );
 }

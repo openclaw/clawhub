@@ -1,67 +1,67 @@
-import type { Doc } from '../_generated/dataModel'
-import type { MutationCtx, QueryCtx } from '../_generated/server'
+import type { Doc } from "../_generated/dataModel";
+import type { MutationCtx, QueryCtx } from "../_generated/server";
 
-export const GLOBAL_STATS_KEY = 'default'
+export const GLOBAL_STATS_KEY = "default";
 
 type SkillVisibilityFields = Pick<
-  Doc<'skills'>,
-  'softDeletedAt' | 'moderationStatus' | 'moderationFlags'
->
+  Doc<"skills">,
+  "softDeletedAt" | "moderationStatus" | "moderationFlags"
+>;
 
-type GlobalStatsReadCtx = Pick<MutationCtx | QueryCtx, 'db'>
-type GlobalStatsWriteCtx = Pick<MutationCtx, 'db'>
+type GlobalStatsReadCtx = Pick<MutationCtx | QueryCtx, "db">;
+type GlobalStatsWriteCtx = Pick<MutationCtx, "db">;
 
 export function isPublicSkillDoc(skill: SkillVisibilityFields | null | undefined) {
-  if (!skill || skill.softDeletedAt) return false
-  if (skill.moderationStatus && skill.moderationStatus !== 'active') return false
-  if (skill.moderationFlags?.includes('blocked.malware')) return false
-  return true
+  if (!skill || skill.softDeletedAt) return false;
+  if (skill.moderationStatus && skill.moderationStatus !== "active") return false;
+  if (skill.moderationFlags?.includes("blocked.malware")) return false;
+  return true;
 }
 
 export function getPublicSkillVisibilityDelta(
   before: SkillVisibilityFields | null | undefined,
   after: SkillVisibilityFields | null | undefined,
 ) {
-  const beforePublic = isPublicSkillDoc(before)
-  const afterPublic = isPublicSkillDoc(after)
-  if (beforePublic === afterPublic) return 0
-  return afterPublic ? 1 : -1
+  const beforePublic = isPublicSkillDoc(before);
+  const afterPublic = isPublicSkillDoc(after);
+  if (beforePublic === afterPublic) return 0;
+  return afterPublic ? 1 : -1;
 }
 
 function getErrorMessage(error: unknown) {
-  if (typeof error === 'string') return error
-  if (error && typeof error === 'object' && 'message' in error) {
-    const message = (error as { message?: unknown }).message
-    if (typeof message === 'string') return message
+  if (typeof error === "string") return error;
+  if (error && typeof error === "object" && "message" in error) {
+    const message = (error as { message?: unknown }).message;
+    if (typeof message === "string") return message;
   }
-  return ''
+  return "";
 }
 
 export function isGlobalStatsStorageNotReadyError(error: unknown) {
-  const message = getErrorMessage(error).toLowerCase()
-  if (!message) return false
-  const referencesGlobalStats = message.includes('globalstats') || message.includes('by_key')
-  if (!referencesGlobalStats) return false
+  const message = getErrorMessage(error).toLowerCase();
+  if (!message) return false;
+  const referencesGlobalStats = message.includes("globalstats") || message.includes("by_key");
+  if (!referencesGlobalStats) return false;
   return (
-    message.includes('table') ||
-    message.includes('index') ||
-    message.includes('schema') ||
-    message.includes('not found') ||
-    message.includes('does not exist') ||
-    message.includes('unknown')
-  )
+    message.includes("table") ||
+    message.includes("index") ||
+    message.includes("schema") ||
+    message.includes("not found") ||
+    message.includes("does not exist") ||
+    message.includes("unknown")
+  );
 }
 
 export async function countPublicSkillsForGlobalStats(ctx: GlobalStatsReadCtx) {
   const digests = await ctx.db
-    .query('skillSearchDigest')
-    .withIndex('by_active_updated', (q) => q.eq('softDeletedAt', undefined))
-    .collect()
-  let count = 0
+    .query("skillSearchDigest")
+    .withIndex("by_active_updated", (q) => q.eq("softDeletedAt", undefined))
+    .collect();
+  let count = 0;
   for (const digest of digests) {
-    if (isPublicSkillDoc(digest)) count += 1
+    if (isPublicSkillDoc(digest)) count += 1;
   }
-  return count
+  return count;
 }
 
 export async function setGlobalPublicSkillsCount(
@@ -69,25 +69,25 @@ export async function setGlobalPublicSkillsCount(
   count: number,
   now = Date.now(),
 ) {
-  const normalizedCount = Math.max(0, Math.trunc(Number.isFinite(count) ? count : 0))
+  const normalizedCount = Math.max(0, Math.trunc(Number.isFinite(count) ? count : 0));
   try {
     const existing = await ctx.db
-      .query('globalStats')
-      .withIndex('by_key', (q) => q.eq('key', GLOBAL_STATS_KEY))
-      .unique()
+      .query("globalStats")
+      .withIndex("by_key", (q) => q.eq("key", GLOBAL_STATS_KEY))
+      .unique();
 
     if (existing) {
-      await ctx.db.patch(existing._id, { activeSkillsCount: normalizedCount, updatedAt: now })
+      await ctx.db.patch(existing._id, { activeSkillsCount: normalizedCount, updatedAt: now });
     } else {
-      await ctx.db.insert('globalStats', {
+      await ctx.db.insert("globalStats", {
         key: GLOBAL_STATS_KEY,
         activeSkillsCount: normalizedCount,
         updatedAt: now,
-      })
+      });
     }
   } catch (error) {
-    if (isGlobalStatsStorageNotReadyError(error)) return
-    throw error
+    if (isGlobalStatsStorageNotReadyError(error)) return;
+    throw error;
   }
 }
 
@@ -96,46 +96,46 @@ export async function adjustGlobalPublicSkillsCount(
   delta: number,
   now = Date.now(),
 ) {
-  const normalizedDelta = Math.trunc(Number.isFinite(delta) ? delta : 0)
-  if (normalizedDelta === 0) return
+  const normalizedDelta = Math.trunc(Number.isFinite(delta) ? delta : 0);
+  if (normalizedDelta === 0) return;
 
   let existing:
     | {
-        _id: Doc<'globalStats'>['_id']
-        activeSkillsCount: number
+        _id: Doc<"globalStats">["_id"];
+        activeSkillsCount: number;
       }
     | null
-    | undefined
+    | undefined;
   try {
     existing = await ctx.db
-      .query('globalStats')
-      .withIndex('by_key', (q) => q.eq('key', GLOBAL_STATS_KEY))
-      .unique()
+      .query("globalStats")
+      .withIndex("by_key", (q) => q.eq("key", GLOBAL_STATS_KEY))
+      .unique();
   } catch (error) {
-    if (isGlobalStatsStorageNotReadyError(error)) return
-    throw error
+    if (isGlobalStatsStorageNotReadyError(error)) return;
+    throw error;
   }
 
   if (!existing) {
     // No baseline yet (e.g. fresh deploy). Initialize via full recount once.
-    const count = await countPublicSkillsForGlobalStats(ctx)
-    await setGlobalPublicSkillsCount(ctx, count, now)
-    return
+    const count = await countPublicSkillsForGlobalStats(ctx);
+    await setGlobalPublicSkillsCount(ctx, count, now);
+    return;
   }
 
-  const nextCount = Math.max(0, existing.activeSkillsCount + normalizedDelta)
-  await ctx.db.patch(existing._id, { activeSkillsCount: nextCount, updatedAt: now })
+  const nextCount = Math.max(0, existing.activeSkillsCount + normalizedDelta);
+  await ctx.db.patch(existing._id, { activeSkillsCount: nextCount, updatedAt: now });
 }
 
 export async function readGlobalPublicSkillsCount(ctx: GlobalStatsReadCtx) {
   try {
     const stats = await ctx.db
-      .query('globalStats')
-      .withIndex('by_key', (q) => q.eq('key', GLOBAL_STATS_KEY))
-      .unique()
-    return stats?.activeSkillsCount ?? null
+      .query("globalStats")
+      .withIndex("by_key", (q) => q.eq("key", GLOBAL_STATS_KEY))
+      .unique();
+    return stats?.activeSkillsCount ?? null;
   } catch (error) {
-    if (isGlobalStatsStorageNotReadyError(error)) return null
-    throw error
+    if (isGlobalStatsStorageNotReadyError(error)) return null;
+    throw error;
   }
 }

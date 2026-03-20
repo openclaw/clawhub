@@ -1,7 +1,7 @@
-import { ApiRoutes, LegacyApiRoutes } from 'clawhub-schema'
-import { httpRouter } from 'convex/server'
-import { auth } from './auth'
-import { downloadZip } from './downloads'
+import { ApiRoutes, LegacyApiRoutes } from "clawhub-schema";
+import { httpRouter } from "convex/server";
+import { auth } from "./auth";
+import { downloadZip } from "./downloads";
 import {
   cliPublishHttp,
   cliSkillDeleteHttp,
@@ -12,7 +12,7 @@ import {
   getSkillHttp,
   resolveSkillVersionHttp,
   searchSkillsHttp,
-} from './httpApi'
+} from "./httpApi";
 import {
   listSkillsV1Http,
   listSoulsV1Http,
@@ -32,191 +32,191 @@ import {
   usersListV1Http,
   usersPostRouterV1Http,
   whoamiV1Http,
-} from './httpApiV1'
-import { preflightHandler } from './httpPreflight'
+} from "./httpApiV1";
+import { preflightHandler } from "./httpPreflight";
 
-const http = httpRouter()
+const http = httpRouter();
 
-auth.addHttpRoutes(http)
+auth.addHttpRoutes(http);
 
 http.route({
   path: ApiRoutes.download,
-  method: 'GET',
+  method: "GET",
   handler: downloadZip,
-})
+});
 
 http.route({
   path: ApiRoutes.search,
-  method: 'GET',
+  method: "GET",
   handler: searchSkillsV1Http,
-})
+});
 
 http.route({
   path: ApiRoutes.resolve,
-  method: 'GET',
+  method: "GET",
   handler: resolveSkillVersionV1Http,
-})
+});
 
 http.route({
   path: ApiRoutes.skills,
-  method: 'GET',
+  method: "GET",
   handler: listSkillsV1Http,
-})
+});
 
 http.route({
   pathPrefix: `${ApiRoutes.skills}/`,
-  method: 'GET',
+  method: "GET",
   handler: skillsGetRouterV1Http,
-})
+});
 
 http.route({
   path: ApiRoutes.skills,
-  method: 'POST',
+  method: "POST",
   handler: publishSkillV1Http,
-})
+});
 
 http.route({
   pathPrefix: `${ApiRoutes.skills}/`,
-  method: 'POST',
+  method: "POST",
   handler: skillsPostRouterV1Http,
-})
+});
 
 http.route({
   pathPrefix: `${ApiRoutes.skills}/`,
-  method: 'DELETE',
+  method: "DELETE",
   handler: skillsDeleteRouterV1Http,
-})
+});
 
 http.route({
   pathPrefix: `${ApiRoutes.stars}/`,
-  method: 'POST',
+  method: "POST",
   handler: starsPostRouterV1Http,
-})
+});
 
 http.route({
   pathPrefix: `${ApiRoutes.stars}/`,
-  method: 'DELETE',
+  method: "DELETE",
   handler: starsDeleteRouterV1Http,
-})
+});
 
 http.route({
   pathPrefix: `${ApiRoutes.transfers}/`,
-  method: 'GET',
+  method: "GET",
   handler: transfersGetRouterV1Http,
-})
+});
 
 http.route({
   path: ApiRoutes.whoami,
-  method: 'GET',
+  method: "GET",
   handler: whoamiV1Http,
-})
+});
 
 http.route({
   pathPrefix: `${ApiRoutes.users}/`,
-  method: 'POST',
+  method: "POST",
   handler: usersPostRouterV1Http,
-})
+});
 
 http.route({
   path: ApiRoutes.users,
-  method: 'GET',
+  method: "GET",
   handler: usersListV1Http,
-})
+});
 
 http.route({
   path: ApiRoutes.souls,
-  method: 'GET',
+  method: "GET",
   handler: listSoulsV1Http,
-})
+});
 
 http.route({
   pathPrefix: `${ApiRoutes.souls}/`,
-  method: 'GET',
+  method: "GET",
   handler: soulsGetRouterV1Http,
-})
+});
 
 http.route({
   path: ApiRoutes.souls,
-  method: 'POST',
+  method: "POST",
   handler: publishSoulV1Http,
-})
+});
 
 http.route({
   pathPrefix: `${ApiRoutes.souls}/`,
-  method: 'POST',
+  method: "POST",
   handler: soulsPostRouterV1Http,
-})
+});
 
 http.route({
   pathPrefix: `${ApiRoutes.souls}/`,
-  method: 'DELETE',
+  method: "DELETE",
   handler: soulsDeleteRouterV1Http,
-})
+});
 
 http.route({
-  pathPrefix: '/api/',
-  method: 'OPTIONS',
+  pathPrefix: "/api/",
+  method: "OPTIONS",
   handler: preflightHandler,
-})
+});
 
 // TODO: remove legacy /api routes after deprecation window.
 http.route({
   path: LegacyApiRoutes.download,
-  method: 'GET',
+  method: "GET",
   handler: downloadZip,
-})
+});
 http.route({
   path: LegacyApiRoutes.search,
-  method: 'GET',
+  method: "GET",
   handler: searchSkillsHttp,
-})
+});
 
 http.route({
   path: LegacyApiRoutes.skill,
-  method: 'GET',
+  method: "GET",
   handler: getSkillHttp,
-})
+});
 
 http.route({
   path: LegacyApiRoutes.skillResolve,
-  method: 'GET',
+  method: "GET",
   handler: resolveSkillVersionHttp,
-})
+});
 
 http.route({
   path: LegacyApiRoutes.cliWhoami,
-  method: 'GET',
+  method: "GET",
   handler: cliWhoamiHttp,
-})
+});
 
 http.route({
   path: LegacyApiRoutes.cliUploadUrl,
-  method: 'POST',
+  method: "POST",
   handler: cliUploadUrlHttp,
-})
+});
 
 http.route({
   path: LegacyApiRoutes.cliPublish,
-  method: 'POST',
+  method: "POST",
   handler: cliPublishHttp,
-})
+});
 
 http.route({
   path: LegacyApiRoutes.cliTelemetrySync,
-  method: 'POST',
+  method: "POST",
   handler: cliTelemetrySyncHttp,
-})
+});
 
 http.route({
   path: LegacyApiRoutes.cliSkillDelete,
-  method: 'POST',
+  method: "POST",
   handler: cliSkillDeleteHttp,
-})
+});
 
 http.route({
   path: LegacyApiRoutes.cliSkillUndelete,
-  method: 'POST',
+  method: "POST",
   handler: cliSkillUndeleteHttp,
-})
+});
 
-export default http
+export default http;

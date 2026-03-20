@@ -9,6 +9,7 @@ read_when:
 # ClawHub — product + implementation spec (v1)
 
 ## Goals
+
 - onlycrabs.ai mode for sharing `SOUL.md` bundles (host-based entry point).
 - Minimal, fast SPA for browsing and publishing agent skills.
 - Skills stored in Convex (files + metadata + versions + stats).
@@ -19,12 +20,14 @@ read_when:
 - Moderation: badges + comment delete; audit everything.
 
 ## Non-goals (v1)
+
 - Paid features, private skills, or binary assets.
 - GitHub App sync beyond backups (future phase).
 
 ## Core objects
 
 ### User
+
 - `authId` (from Convex Auth provider)
 - `handle` (GitHub login)
 - `name`, `bio`
@@ -33,6 +36,7 @@ read_when:
 - `createdAt`, `updatedAt`
 
 ### Skill
+
 - `slug` (unique)
 - `displayName`
 - `ownerUserId`
@@ -51,6 +55,7 @@ read_when:
 - `createdAt`, `updatedAt`
 
 ### SkillVersion
+
 - `skillId`
 - `version` (semver string)
 - `tag` (string, optional; `latest` always maintained separately)
@@ -63,7 +68,9 @@ read_when:
 - `softDeletedAt` (nullable)
 
 ### Parsed Skill Metadata
+
 From SKILL.md frontmatter + AgentSkills + Clawdis extensions:
+
 - `name`, `description`, `homepage`, `website`, `url`, `emoji`
 - `metadata.clawdis`: `always`, `skillKey`, `primaryEnv`, `emoji`, `homepage`, `os`,
   `requires` (`bins`, `anyBins`, `env`, `config`), `install[]`, `nix` (`plugin`, `systems`),
@@ -72,9 +79,8 @@ From SKILL.md frontmatter + AgentSkills + Clawdis extensions:
   - Nix plugins are different from regular skills; they bundle the skill pack, the CLI binary, and config flags/requirements together.
   - `metadata` in frontmatter is YAML (object) preferred; legacy JSON-string accepted.
 
-
-
 ### Soul
+
 - `slug` (unique)
 - `displayName`
 - `ownerUserId`
@@ -86,6 +92,7 @@ From SKILL.md frontmatter + AgentSkills + Clawdis extensions:
 - `createdAt`, `updatedAt`
 
 ### SoulVersion
+
 - `soulId`
 - `version` (semver string)
 - `tag` (string, optional; `latest` always maintained separately)
@@ -98,22 +105,27 @@ From SKILL.md frontmatter + AgentSkills + Clawdis extensions:
 - `softDeletedAt` (nullable)
 
 ### SoulComment
+
 - `soulId`, `userId`, `body`
 - `softDeletedAt`, `deletedBy`
 - `createdAt`
 
 ### SoulStar
+
 - `soulId`, `userId`, `createdAt`
 
 ### Comment
+
 - `skillId`, `userId`, `body`
 - `softDeletedAt`, `deletedBy`
 - `createdAt`
 
 ### Star
+
 - `skillId`, `userId`, `createdAt`
 
 ### AuditLog
+
 - `actorUserId`
 - `action` (enum: `badge.set`, `badge.unset`, `comment.delete`, `role.change`)
 - `targetType` / `targetId`
@@ -121,6 +133,7 @@ From SKILL.md frontmatter + AgentSkills + Clawdis extensions:
 - `createdAt`
 
 ## Auth + roles
+
 - Convex Auth with GitHub OAuth App.
 - Default role `user`; bootstrap `steipete` to `admin` on first login.
 - Management console: moderators can hide/restore skills + mark duplicates + ban users; admins can change owners, approve badges, hard-delete skills, and ban users (deletes owned skills).
@@ -129,37 +142,42 @@ From SKILL.md frontmatter + AgentSkills + Clawdis extensions:
 - Commenting (skills + souls) requires GitHub account age ≥ 14 days.
 
 ## Upload flow (50MB per version)
-1) Client requests upload session.
-2) Client uploads each file via Convex upload URLs (no binaries, text only).
-3) Client submits metadata + file list + changelog + version + tags.
-4) Server validates:
+
+1. Client requests upload session.
+2. Client uploads each file via Convex upload URLs (no binaries, text only).
+3. Client submits metadata + file list + changelog + version + tags.
+4. Server validates:
    - total size ≤ 50MB
    - file extensions/text content
    - SKILL.md exists and frontmatter parseable
    - version uniqueness
    - GitHub account age ≥ 14 days
-5) Server stores files + metadata, sets `latest` tag, updates stats.
+5. Server stores files + metadata, sets `latest` tag, updates stats.
 
 Soul upload flow: same as skills (including GitHub account age checks), but only `SOUL.md` is allowed.
 Seed data lives in `convex/seed.ts` for local dev.
 
 ## Versioning + tags
+
 - Each upload is a new `SkillVersion`.
 - `latest` tag always points to most recent version unless user re-tags.
 - Rollback: move `latest` (and optionally other tags) to an older version.
 - Changelog is optional.
 
 ## Search
+
 - Vector search over: SKILL.md + other text files + metadata summary (souls index SOUL.md).
 - Convex embeddings + vector index.
 - Filters: tag, owner, `redactionApproved` only, min stars, updatedAt.
 
 ## Download API
+
 - JSON API for skill metadata + versions.
 - Download endpoint returns zip of a version (HTTP action).
 - Soft-delete versions; downloads remain for non-deleted versions only.
 
 ## UI (SPA)
+
 - Home: search + filters + trending/featured + “Highlighted” badge.
 - Skill detail: README render, files list, version history, tags, stats, badges.
 - Upload/edit: file picker + version + tag + changelog.
@@ -167,14 +185,17 @@ Seed data lives in `convex/seed.ts` for local dev.
 - Admin: user role management + badge approvals + audit log.
 
 ## Testing + quality
+
 - Vitest 4 with >=70% global coverage.
 - Lint: Biome + Oxlint (type-aware).
 
 ## Vercel
+
 - Env vars: Convex deployment URLs + GitHub OAuth client + OpenAI key (if used) + GitHub App backup credentials.
 - SPA feel: client-side transitions, prefetching, optimistic UI.
 
 ## Open questions (carry forward)
+
 - Embeddings provider key + rate limits.
 - Zip generation memory limits (optimize with streaming if needed).
 - GitHub App repo sync (phase 2).

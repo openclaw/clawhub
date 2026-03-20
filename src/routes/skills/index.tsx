@@ -1,40 +1,40 @@
-import { createFileRoute, redirect } from '@tanstack/react-router'
-import { useQuery } from 'convex/react'
-import { useRef } from 'react'
-import { api } from '../../../convex/_generated/api'
-import { parseSort } from './-params'
-import { SkillsResults } from './-SkillsResults'
-import { SkillsToolbar } from './-SkillsToolbar'
-import { useSkillsBrowseModel, type SkillsSearchState } from './-useSkillsBrowseModel'
+import { createFileRoute, redirect } from "@tanstack/react-router";
+import { useQuery } from "convex/react";
+import { useRef } from "react";
+import { api } from "../../../convex/_generated/api";
+import { parseSort } from "./-params";
+import { SkillsResults } from "./-SkillsResults";
+import { SkillsToolbar } from "./-SkillsToolbar";
+import { useSkillsBrowseModel, type SkillsSearchState } from "./-useSkillsBrowseModel";
 
-export const Route = createFileRoute('/skills/')({
+export const Route = createFileRoute("/skills/")({
   validateSearch: (search): SkillsSearchState => {
     return {
-      q: typeof search.q === 'string' && search.q.trim() ? search.q : undefined,
-      sort: typeof search.sort === 'string' ? parseSort(search.sort) : undefined,
-      dir: search.dir === 'asc' || search.dir === 'desc' ? search.dir : undefined,
+      q: typeof search.q === "string" && search.q.trim() ? search.q : undefined,
+      sort: typeof search.sort === "string" ? parseSort(search.sort) : undefined,
+      dir: search.dir === "asc" || search.dir === "desc" ? search.dir : undefined,
       highlighted:
-        search.highlighted === '1' || search.highlighted === 'true' || search.highlighted === true
+        search.highlighted === "1" || search.highlighted === "true" || search.highlighted === true
           ? true
           : undefined,
       nonSuspicious:
-        search.nonSuspicious === '1' ||
-        search.nonSuspicious === 'true' ||
+        search.nonSuspicious === "1" ||
+        search.nonSuspicious === "true" ||
         search.nonSuspicious === true
           ? true
           : undefined,
-      view: search.view === 'cards' || search.view === 'list' ? search.view : undefined,
-      focus: search.focus === 'search' ? 'search' : undefined,
-    }
+      view: search.view === "cards" || search.view === "list" ? search.view : undefined,
+      focus: search.focus === "search" ? "search" : undefined,
+    };
   },
   beforeLoad: ({ search }) => {
-    const hasQuery = Boolean(search.q?.trim())
-    if (hasQuery || search.sort) return
+    const hasQuery = Boolean(search.q?.trim());
+    if (hasQuery || search.sort) return;
     throw redirect({
-      to: '/skills',
+      to: "/skills",
       search: {
         q: search.q || undefined,
-        sort: 'downloads',
+        sort: "downloads",
         dir: search.dir || undefined,
         highlighted: search.highlighted || undefined,
         nonSuspicious: search.nonSuspicious || undefined,
@@ -42,24 +42,24 @@ export const Route = createFileRoute('/skills/')({
         focus: search.focus || undefined,
       },
       replace: true,
-    })
+    });
   },
   component: SkillsIndex,
-})
+});
 
 export function SkillsIndex() {
-  const navigate = Route.useNavigate()
-  const search = Route.useSearch()
-  const searchInputRef = useRef<HTMLInputElement>(null)
-  const totalSkills = useQuery(api.skills.countPublicSkills)
+  const navigate = Route.useNavigate();
+  const search = Route.useSearch();
+  const searchInputRef = useRef<HTMLInputElement>(null);
+  const totalSkills = useQuery(api.skills.countPublicSkills);
   const totalSkillsText =
-    typeof totalSkills === 'number' ? totalSkills.toLocaleString('en-US') : null
+    typeof totalSkills === "number" ? totalSkills.toLocaleString("en-US") : null;
 
   const model = useSkillsBrowseModel({
     navigate,
     search,
     searchInputRef,
-  })
+  });
 
   return (
     <main className="section">
@@ -70,8 +70,8 @@ export function SkillsIndex() {
         </h1>
         <p className="section-subtitle" style={{ marginBottom: 0 }}>
           {model.isLoadingSkills
-            ? 'Loading skills…'
-            : `Browse the skill library${model.activeFilters.length ? ` (${model.activeFilters.join(', ')})` : ''}.`}
+            ? "Loading skills…"
+            : `Browse the skill library${model.activeFilters.length ? ` (${model.activeFilters.join(", ")})` : ""}.`}
         </p>
       </header>
       <div className="skills-container">
@@ -105,5 +105,5 @@ export function SkillsIndex() {
         />
       </div>
     </main>
-  )
+  );
 }

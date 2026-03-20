@@ -1,73 +1,73 @@
-import { createFileRoute } from '@tanstack/react-router'
-import { useMutation, useQuery } from 'convex/react'
-import { useEffect, useState } from 'react'
-import { api } from '../../convex/_generated/api'
-import type { Id } from '../../convex/_generated/dataModel'
-import { gravatarUrl } from '../lib/gravatar'
+import { createFileRoute } from "@tanstack/react-router";
+import { useMutation, useQuery } from "convex/react";
+import { useEffect, useState } from "react";
+import { api } from "../../convex/_generated/api";
+import type { Id } from "../../convex/_generated/dataModel";
+import { gravatarUrl } from "../lib/gravatar";
 
-export const Route = createFileRoute('/settings')({
+export const Route = createFileRoute("/settings")({
   component: Settings,
-})
+});
 
 function Settings() {
-  const me = useQuery(api.users.me)
-  const updateProfile = useMutation(api.users.updateProfile)
-  const deleteAccount = useMutation(api.users.deleteAccount)
+  const me = useQuery(api.users.me);
+  const updateProfile = useMutation(api.users.updateProfile);
+  const deleteAccount = useMutation(api.users.deleteAccount);
   const tokens = useQuery(api.tokens.listMine) as
     | Array<{
-        _id: Id<'apiTokens'>
-        label: string
-        prefix: string
-        createdAt: number
-        lastUsedAt?: number
-        revokedAt?: number
+        _id: Id<"apiTokens">;
+        label: string;
+        prefix: string;
+        createdAt: number;
+        lastUsedAt?: number;
+        revokedAt?: number;
       }>
-    | undefined
-  const createToken = useMutation(api.tokens.create)
-  const revokeToken = useMutation(api.tokens.revoke)
-  const [displayName, setDisplayName] = useState('')
-  const [bio, setBio] = useState('')
-  const [status, setStatus] = useState<string | null>(null)
-  const [tokenLabel, setTokenLabel] = useState('CLI token')
-  const [newToken, setNewToken] = useState<string | null>(null)
+    | undefined;
+  const createToken = useMutation(api.tokens.create);
+  const revokeToken = useMutation(api.tokens.revoke);
+  const [displayName, setDisplayName] = useState("");
+  const [bio, setBio] = useState("");
+  const [status, setStatus] = useState<string | null>(null);
+  const [tokenLabel, setTokenLabel] = useState("CLI token");
+  const [newToken, setNewToken] = useState<string | null>(null);
 
   useEffect(() => {
-    if (!me) return
-    setDisplayName(me.displayName ?? '')
-    setBio(me.bio ?? '')
-  }, [me])
+    if (!me) return;
+    setDisplayName(me.displayName ?? "");
+    setBio(me.bio ?? "");
+  }, [me]);
 
   if (!me) {
     return (
       <main className="section">
         <div className="card">Sign in to access settings.</div>
       </main>
-    )
+    );
   }
 
-  const avatar = me.image ?? (me.email ? gravatarUrl(me.email, 160) : undefined)
-  const identityName = me.displayName ?? me.name ?? me.handle ?? 'Profile'
-  const handle = me.handle ?? (me.email ? me.email.split('@')[0] : undefined)
+  const avatar = me.image ?? (me.email ? gravatarUrl(me.email, 160) : undefined);
+  const identityName = me.displayName ?? me.name ?? me.handle ?? "Profile";
+  const handle = me.handle ?? (me.email ? me.email.split("@")[0] : undefined);
 
   async function onSave(event: React.FormEvent) {
-    event.preventDefault()
-    await updateProfile({ displayName, bio })
-    setStatus('Saved.')
+    event.preventDefault();
+    await updateProfile({ displayName, bio });
+    setStatus("Saved.");
   }
 
   async function onDelete() {
     const ok = window.confirm(
-      'Delete your account permanently? This cannot be undone.\n\n' +
-        'Published skills will remain public.',
-    )
-    if (!ok) return
-    await deleteAccount()
+      "Delete your account permanently? This cannot be undone.\n\n" +
+        "Published skills will remain public.",
+    );
+    if (!ok) return;
+    await deleteAccount();
   }
 
   async function onCreateToken() {
-    const label = tokenLabel.trim() || 'CLI token'
-    const result = await createToken({ label })
-    setNewToken(result.token)
+    const label = tokenLabel.trim() || "CLI token";
+    const result = await createToken({ label });
+    setNewToken(result.token);
   }
 
   return (
@@ -78,7 +78,7 @@ function Settings() {
           {avatar ? (
             <img src={avatar} alt={identityName} />
           ) : (
-            <span>{identityName[0]?.toUpperCase() ?? 'U'}</span>
+            <span>{identityName[0]?.toUpperCase() ?? "U"}</span>
           )}
         </div>
         <div className="settings-profile-body">
@@ -140,7 +140,7 @@ function Settings() {
             Create token
           </button>
           {newToken ? (
-            <div className="stat" style={{ overflowX: 'auto' }}>
+            <div className="stat" style={{ overflowX: "auto" }}>
               <div style={{ marginBottom: 8 }}>Copy this token now:</div>
               <code>{newToken}</code>
             </div>
@@ -148,22 +148,22 @@ function Settings() {
         </div>
 
         {(tokens ?? []).length ? (
-          <div style={{ display: 'grid', gap: 10, marginTop: 16 }}>
+          <div style={{ display: "grid", gap: 10, marginTop: 16 }}>
             {(tokens ?? []).map((token) => (
               <div
                 key={token._id}
                 className="stat"
-                style={{ display: 'flex', justifyContent: 'space-between', gap: 12 }}
+                style={{ display: "flex", justifyContent: "space-between", gap: 12 }}
               >
                 <div>
                   <div>
-                    <strong>{token.label}</strong>{' '}
+                    <strong>{token.label}</strong>{" "}
                     <span style={{ opacity: 0.7 }}>({token.prefix}…)</span>
                   </div>
                   <div style={{ opacity: 0.7 }}>
                     Created {formatDate(token.createdAt)}
-                    {token.lastUsedAt ? ` · Used ${formatDate(token.lastUsedAt)}` : ''}
-                    {token.revokedAt ? ` · Revoked ${formatDate(token.revokedAt)}` : ''}
+                    {token.lastUsedAt ? ` · Used ${formatDate(token.lastUsedAt)}` : ""}
+                    {token.revokedAt ? ` · Revoked ${formatDate(token.revokedAt)}` : ""}
                   </div>
                 </div>
                 <div>
@@ -173,7 +173,7 @@ function Settings() {
                     disabled={Boolean(token.revokedAt)}
                     onClick={() => void revokeToken({ tokenId: token._id })}
                   >
-                    {token.revokedAt ? 'Revoked' : 'Revoke'}
+                    {token.revokedAt ? "Revoked" : "Revoke"}
                   </button>
                 </div>
               </div>
@@ -196,13 +196,13 @@ function Settings() {
         </button>
       </div>
     </main>
-  )
+  );
 }
 
 function formatDate(value: number) {
   try {
-    return new Date(value).toLocaleString()
+    return new Date(value).toLocaleString();
   } catch {
-    return String(value)
+    return String(value);
   }
 }

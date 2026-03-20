@@ -1,117 +1,117 @@
-import { internal } from '../_generated/api'
-import type { ActionCtx } from '../_generated/server'
-import { getOptionalApiTokenUserId } from './apiTokenAuth'
-import { corsHeaders, mergeHeaders } from './httpHeaders'
+import { internal } from "../_generated/api";
+import type { ActionCtx } from "../_generated/server";
+import { getOptionalApiTokenUserId } from "./apiTokenAuth";
+import { corsHeaders, mergeHeaders } from "./httpHeaders";
 
-const RATE_LIMIT_WINDOW_MS = 60_000
+const RATE_LIMIT_WINDOW_MS = 60_000;
 export const RATE_LIMITS = {
   read: { ip: 120, key: 600 },
   write: { ip: 30, key: 120 },
   download: { ip: 20, key: 120 },
-} as const
+} as const;
 
 type RateLimitResult = {
-  allowed: boolean
-  remaining: number
-  limit: number
-  resetAt: number
-}
+  allowed: boolean;
+  remaining: number;
+  limit: number;
+  resetAt: number;
+};
 
 export async function applyRateLimit(
   ctx: ActionCtx,
   request: Request,
   kind: keyof typeof RATE_LIMITS,
 ): Promise<{ ok: true; headers: HeadersInit } | { ok: false; response: Response }> {
-  const userId = await getOptionalApiTokenUserId(ctx, request)
-  const ip = getClientIp(request) ?? 'unknown'
-  const ipSource = getClientIpSource(request)
-  const hasClientIp = ip !== 'unknown'
+  const userId = await getOptionalApiTokenUserId(ctx, request);
+  const ip = getClientIp(request) ?? "unknown";
+  const ipSource = getClientIpSource(request);
+  const hasClientIp = ip !== "unknown";
 
   // Authenticated requests are enforced and consumed by user bucket only to
   // avoid draining shared IP quota.
   if (userId) {
-    const userResult = await checkRateLimit(ctx, `user:${userId}`, RATE_LIMITS[kind].key)
-    const headers = rateHeaders(userResult)
+    const userResult = await checkRateLimit(ctx, `user:${userId}`, RATE_LIMITS[kind].key);
+    const headers = rateHeaders(userResult);
     if (!userResult.allowed) {
-      console.info('rate_limit_denied', {
+      console.info("rate_limit_denied", {
         kind,
         auth: true,
         userAllowed: false,
         ipAllowed: null,
         ipSource,
         hasClientIp,
-      })
+      });
       return {
         ok: false,
-        response: new Response('Rate limit exceeded', {
+        response: new Response("Rate limit exceeded", {
           status: 429,
           headers: mergeHeaders(
             {
-              'Content-Type': 'text/plain; charset=utf-8',
-              'Cache-Control': 'no-store',
+              "Content-Type": "text/plain; charset=utf-8",
+              "Cache-Control": "no-store",
             },
             headers,
             corsHeaders(),
           ),
         }),
-      }
+      };
     }
-    return { ok: true, headers }
+    return { ok: true, headers };
   }
 
   // Anonymous requests remain IP-enforced.
-  const ipResult = await checkRateLimit(ctx, `ip:${ip}`, RATE_LIMITS[kind].ip)
-  const headers = rateHeaders(ipResult)
+  const ipResult = await checkRateLimit(ctx, `ip:${ip}`, RATE_LIMITS[kind].ip);
+  const headers = rateHeaders(ipResult);
 
   if (!ipResult.allowed) {
-    console.info('rate_limit_denied', {
+    console.info("rate_limit_denied", {
       kind,
       auth: false,
       userAllowed: null,
       ipAllowed: ipResult.allowed,
       ipSource,
       hasClientIp,
-    })
+    });
     return {
       ok: false,
-      response: new Response('Rate limit exceeded', {
+      response: new Response("Rate limit exceeded", {
         status: 429,
         headers: mergeHeaders(
           {
-            'Content-Type': 'text/plain; charset=utf-8',
-            'Cache-Control': 'no-store',
+            "Content-Type": "text/plain; charset=utf-8",
+            "Cache-Control": "no-store",
           },
           headers,
           corsHeaders(),
         ),
       }),
-    }
+    };
   }
 
-  return { ok: true, headers }
+  return { ok: true, headers };
 }
 
 export function getClientIp(request: Request) {
-  const cfHeader = request.headers.get('cf-connecting-ip')
-  if (cfHeader) return splitFirstIp(cfHeader)
+  const cfHeader = request.headers.get("cf-connecting-ip");
+  if (cfHeader) return splitFirstIp(cfHeader);
 
-  if (!shouldTrustForwardedIps()) return null
+  if (!shouldTrustForwardedIps()) return null;
 
   const forwarded =
-    request.headers.get('x-forwarded-for') ??
-    request.headers.get('x-real-ip') ??
-    request.headers.get('fly-client-ip')
+    request.headers.get("x-forwarded-for") ??
+    request.headers.get("x-real-ip") ??
+    request.headers.get("fly-client-ip");
 
-  return splitFirstIp(forwarded)
+  return splitFirstIp(forwarded);
 }
 
 function getClientIpSource(request: Request) {
-  if (request.headers.get('cf-connecting-ip')) return 'cf-connecting-ip'
-  if (!shouldTrustForwardedIps()) return 'none'
-  if (request.headers.get('x-forwarded-for')) return 'x-forwarded-for'
-  if (request.headers.get('x-real-ip')) return 'x-real-ip'
-  if (request.headers.get('fly-client-ip')) return 'fly-client-ip'
-  return 'none'
+  if (request.headers.get("cf-connecting-ip")) return "cf-connecting-ip";
+  if (!shouldTrustForwardedIps()) return "none";
+  if (request.headers.get("x-forwarded-for")) return "x-forwarded-for";
+  if (request.headers.get("x-real-ip")) return "x-real-ip";
+  if (request.headers.get("fly-client-ip")) return "fly-client-ip";
+  return "none";
 }
 
 async function checkRateLimit(
@@ -124,20 +124,20 @@ async function checkRateLimit(
     key,
     limit,
     windowMs: RATE_LIMIT_WINDOW_MS,
-  })) as RateLimitResult
+  })) as RateLimitResult;
 
   if (!status.allowed) {
-    return status
+    return status;
   }
 
   // Step 2: Consume with a mutation only when still allowed.
-  let result: { allowed: boolean; remaining: number }
+  let result: { allowed: boolean; remaining: number };
   try {
     result = (await ctx.runMutation(internal.rateLimits.consumeRateLimitInternal, {
       key,
       limit,
       windowMs: RATE_LIMIT_WINDOW_MS,
-    })) as { allowed: boolean; remaining: number }
+    })) as { allowed: boolean; remaining: number };
   } catch (error) {
     if (isRateLimitWriteConflict(error)) {
       return {
@@ -145,9 +145,9 @@ async function checkRateLimit(
         remaining: 0,
         limit: status.limit,
         resetAt: status.resetAt,
-      }
+      };
     }
-    throw error
+    throw error;
   }
 
   return {
@@ -155,55 +155,55 @@ async function checkRateLimit(
     remaining: result.remaining,
     limit: status.limit,
     resetAt: status.resetAt,
-  }
+  };
 }
 
 function rateHeaders(result: RateLimitResult): HeadersInit {
-  const nowMs = Date.now()
-  const resetSeconds = Math.ceil(result.resetAt / 1000)
-  const resetDelaySeconds = Math.max(1, Math.ceil((result.resetAt - nowMs) / 1000))
+  const nowMs = Date.now();
+  const resetSeconds = Math.ceil(result.resetAt / 1000);
+  const resetDelaySeconds = Math.max(1, Math.ceil((result.resetAt - nowMs) / 1000));
   return {
-    'X-RateLimit-Limit': String(result.limit),
-    'X-RateLimit-Remaining': String(result.remaining),
-    'X-RateLimit-Reset': String(resetSeconds),
-    'RateLimit-Limit': String(result.limit),
-    'RateLimit-Remaining': String(result.remaining),
-    'RateLimit-Reset': String(resetDelaySeconds),
-    ...(result.allowed ? {} : { 'Retry-After': String(resetDelaySeconds) }),
-  }
+    "X-RateLimit-Limit": String(result.limit),
+    "X-RateLimit-Remaining": String(result.remaining),
+    "X-RateLimit-Reset": String(resetSeconds),
+    "RateLimit-Limit": String(result.limit),
+    "RateLimit-Remaining": String(result.remaining),
+    "RateLimit-Reset": String(resetDelaySeconds),
+    ...(result.allowed ? {} : { "Retry-After": String(resetDelaySeconds) }),
+  };
 }
 
 export function parseBearerToken(request: Request) {
-  const header = request.headers.get('authorization') ?? request.headers.get('Authorization')
-  if (!header) return null
-  const trimmed = header.trim()
-  if (!trimmed.toLowerCase().startsWith('bearer ')) return null
-  const token = trimmed.slice(7).trim()
-  return token || null
+  const header = request.headers.get("authorization") ?? request.headers.get("Authorization");
+  if (!header) return null;
+  const trimmed = header.trim();
+  if (!trimmed.toLowerCase().startsWith("bearer ")) return null;
+  const token = trimmed.slice(7).trim();
+  return token || null;
 }
 
 function splitFirstIp(header: string | null) {
-  if (!header) return null
-  if (header.includes(',')) return header.split(',')[0]?.trim() || null
-  const trimmed = header.trim()
-  return trimmed || null
+  if (!header) return null;
+  if (header.includes(",")) return header.split(",")[0]?.trim() || null;
+  const trimmed = header.trim();
+  return trimmed || null;
 }
 
 function shouldTrustForwardedIps() {
-  const value = String(process.env.TRUST_FORWARDED_IPS ?? '')
+  const value = String(process.env.TRUST_FORWARDED_IPS ?? "")
     .trim()
-    .toLowerCase()
+    .toLowerCase();
   // Hardening default: CF-only. Forwarded headers are trivial to spoof unless you
   // control the trusted proxy layer.
-  if (!value) return false
-  if (value === '1' || value === 'true' || value === 'yes') return true
-  return false
+  if (!value) return false;
+  if (value === "1" || value === "true" || value === "yes") return true;
+  return false;
 }
 
 function isRateLimitWriteConflict(error: unknown) {
-  if (!(error instanceof Error)) return false
+  if (!(error instanceof Error)) return false;
   return (
-    error.message.includes('rateLimits') &&
-    error.message.includes('changed while this mutation was being run')
-  )
+    error.message.includes("rateLimits") &&
+    error.message.includes("changed while this mutation was being run")
+  );
 }

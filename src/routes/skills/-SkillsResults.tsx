@@ -1,24 +1,24 @@
-import { Link } from '@tanstack/react-router'
-import type { RefObject } from 'react'
-import { SkillCard } from '../../components/SkillCard'
-import { SkillMetricsRow, SkillStatsTripletLine } from '../../components/SkillStats'
-import { UserBadge } from '../../components/UserBadge'
-import { getPlatformLabels } from '../../components/skillDetailUtils'
-import { getSkillBadges } from '../../lib/badges'
-import { buildSkillHref, type SkillListEntry } from './-types'
+import { Link } from "@tanstack/react-router";
+import type { RefObject } from "react";
+import { SkillCard } from "../../components/SkillCard";
+import { getPlatformLabels } from "../../components/skillDetailUtils";
+import { SkillMetricsRow, SkillStatsTripletLine } from "../../components/SkillStats";
+import { UserBadge } from "../../components/UserBadge";
+import { getSkillBadges } from "../../lib/badges";
+import { buildSkillHref, type SkillListEntry } from "./-types";
 
 type SkillsResultsProps = {
-  isLoadingSkills: boolean
-  sorted: SkillListEntry[]
-  view: 'cards' | 'list'
-  listDoneLoading: boolean
-  hasQuery: boolean
-  canLoadMore: boolean
-  isLoadingMore: boolean
-  canAutoLoad: boolean
-  loadMoreRef: RefObject<HTMLDivElement | null>
-  loadMore: () => void
-}
+  isLoadingSkills: boolean;
+  sorted: SkillListEntry[];
+  view: "cards" | "list";
+  listDoneLoading: boolean;
+  hasQuery: boolean;
+  canLoadMore: boolean;
+  isLoadingMore: boolean;
+  canAutoLoad: boolean;
+  loadMoreRef: RefObject<HTMLDivElement | null>;
+  loadMore: () => void;
+};
 
 export function SkillsResults({
   isLoadingSkills,
@@ -40,49 +40,54 @@ export function SkillsResults({
         </div>
       ) : sorted.length === 0 ? (
         <div className="card">
-          {listDoneLoading || hasQuery
-            ? 'No skills match that filter.'
-            : 'Loading skills…'}
+          {listDoneLoading || hasQuery ? "No skills match that filter." : "Loading skills…"}
         </div>
-      ) : view === 'cards' ? (
+      ) : view === "cards" ? (
         <div className="grid">
           {sorted.map((entry) => {
-            const skill = entry.skill
-            const clawdis = entry.latestVersion?.parsed?.clawdis
-            const isPlugin = Boolean(clawdis?.nix?.plugin)
-            const platforms = getPlatformLabels(clawdis?.os, clawdis?.nix?.systems)
-            const ownerHandle = entry.owner?.handle ?? entry.owner?.name ?? entry.ownerHandle ?? null
-            const skillHref = buildSkillHref(skill, ownerHandle)
+            const skill = entry.skill;
+            const clawdis = entry.latestVersion?.parsed?.clawdis;
+            const isPlugin = Boolean(clawdis?.nix?.plugin);
+            const platforms = getPlatformLabels(clawdis?.os, clawdis?.nix?.systems);
+            const ownerHandle =
+              entry.owner?.handle ?? entry.owner?.name ?? entry.ownerHandle ?? null;
+            const skillHref = buildSkillHref(skill, ownerHandle);
             return (
               <SkillCard
                 key={skill._id}
                 skill={skill}
                 href={skillHref}
                 badge={getSkillBadges(skill)}
-                chip={isPlugin ? 'Plugin bundle (nix)' : undefined}
+                chip={isPlugin ? "Plugin bundle (nix)" : undefined}
                 platformLabels={platforms.length ? platforms : undefined}
                 summaryFallback="Agent-ready skill pack."
                 meta={
                   <div className="skill-card-footer-rows">
-                    <UserBadge user={entry.owner} fallbackHandle={ownerHandle} prefix="by" link={false} />
+                    <UserBadge
+                      user={entry.owner}
+                      fallbackHandle={ownerHandle}
+                      prefix="by"
+                      link={false}
+                    />
                     <div className="stat">
                       <SkillStatsTripletLine stats={skill.stats} />
                     </div>
                   </div>
                 }
               />
-            )
+            );
           })}
         </div>
       ) : (
         <div className="skills-list">
           {sorted.map((entry) => {
-            const skill = entry.skill
-            const clawdis = entry.latestVersion?.parsed?.clawdis
-            const isPlugin = Boolean(clawdis?.nix?.plugin)
-            const platforms = getPlatformLabels(clawdis?.os, clawdis?.nix?.systems)
-            const ownerHandle = entry.owner?.handle ?? entry.owner?.name ?? entry.ownerHandle ?? null
-            const skillHref = buildSkillHref(skill, ownerHandle)
+            const skill = entry.skill;
+            const clawdis = entry.latestVersion?.parsed?.clawdis;
+            const isPlugin = Boolean(clawdis?.nix?.plugin);
+            const platforms = getPlatformLabels(clawdis?.os, clawdis?.nix?.systems);
+            const ownerHandle =
+              entry.owner?.handle ?? entry.owner?.name ?? entry.ownerHandle ?? null;
+            const skillHref = buildSkillHref(skill, ownerHandle);
             return (
               <Link key={skill._id} className="skills-row" to={skillHref}>
                 <div className="skills-row-main">
@@ -94,21 +99,32 @@ export function SkillsResults({
                         {badge}
                       </span>
                     ))}
-                    {isPlugin ? <span className="tag tag-accent tag-compact">Plugin bundle (nix)</span> : null}
+                    {isPlugin ? (
+                      <span className="tag tag-accent tag-compact">Plugin bundle (nix)</span>
+                    ) : null}
                     {platforms.map((label) => (
-                      <span key={label} className="tag tag-compact">{label}</span>
+                      <span key={label} className="tag tag-compact">
+                        {label}
+                      </span>
                     ))}
                   </div>
-                  <div className="skills-row-summary">{skill.summary ?? 'No summary provided.'}</div>
+                  <div className="skills-row-summary">
+                    {skill.summary ?? "No summary provided."}
+                  </div>
                   <div className="skills-row-owner">
-                    <UserBadge user={entry.owner} fallbackHandle={ownerHandle} prefix="by" link={false} />
+                    <UserBadge
+                      user={entry.owner}
+                      fallbackHandle={ownerHandle}
+                      prefix="by"
+                      link={false}
+                    />
                   </div>
                 </div>
                 <div className="skills-row-metrics">
                   <SkillMetricsRow stats={skill.stats} />
                 </div>
               </Link>
-            )
+            );
           })}
         </div>
       )}
@@ -117,21 +133,21 @@ export function SkillsResults({
         <div
           ref={canAutoLoad ? loadMoreRef : null}
           className="card"
-          style={{ marginTop: 16, display: 'flex', justifyContent: 'center' }}
+          style={{ marginTop: 16, display: "flex", justifyContent: "center" }}
         >
           {canAutoLoad ? (
             isLoadingMore ? (
-              'Loading more…'
+              "Loading more…"
             ) : (
-              'Scroll to load more'
+              "Scroll to load more"
             )
           ) : (
             <button className="btn" type="button" onClick={loadMore} disabled={isLoadingMore}>
-              {isLoadingMore ? 'Loading…' : 'Load more'}
+              {isLoadingMore ? "Loading…" : "Load more"}
             </button>
           )}
         </div>
       ) : null}
     </>
-  )
+  );
 }

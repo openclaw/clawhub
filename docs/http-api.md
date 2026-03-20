@@ -1,5 +1,5 @@
 ---
-summary: 'HTTP API reference (public + CLI endpoints + auth).'
+summary: "HTTP API reference (public + CLI endpoints + auth)."
 read_when:
   - Adding/changing endpoints
   - Debugging CLI ↔ registry requests
@@ -80,7 +80,18 @@ Query params:
 Response:
 
 ```json
-{ "results": [{ "score": 0.123, "slug": "gifgrep", "displayName": "GifGrep", "summary": "…", "version": "1.2.3", "updatedAt": 1730000000000 }] }
+{
+  "results": [
+    {
+      "score": 0.123,
+      "slug": "gifgrep",
+      "displayName": "GifGrep",
+      "summary": "…",
+      "version": "1.2.3",
+      "updatedAt": 1730000000000
+    }
+  ]
+}
 ```
 
 Notes:
@@ -106,7 +117,22 @@ Notes:
 Response:
 
 ```json
-{ "items": [{ "slug": "gifgrep", "displayName": "GifGrep", "summary": "…", "tags": { "latest": "1.2.3" }, "stats": {}, "createdAt": 0, "updatedAt": 0, "latestVersion": { "version": "1.2.3", "createdAt": 0, "changelog": "…" }, "metadata": { "os": ["macos"], "systems": ["aarch64-darwin"] } }], "nextCursor": null }
+{
+  "items": [
+    {
+      "slug": "gifgrep",
+      "displayName": "GifGrep",
+      "summary": "…",
+      "tags": { "latest": "1.2.3" },
+      "stats": {},
+      "createdAt": 0,
+      "updatedAt": 0,
+      "latestVersion": { "version": "1.2.3", "createdAt": 0, "changelog": "…" },
+      "metadata": { "os": ["macos"], "systems": ["aarch64-darwin"] }
+    }
+  ],
+  "nextCursor": null
+}
 ```
 
 ### `GET /api/v1/skills/{slug}`
@@ -114,7 +140,29 @@ Response:
 Response:
 
 ```json
-{ "skill": { "slug": "gifgrep", "displayName": "GifGrep", "summary": "…", "tags": { "latest": "1.2.3" }, "stats": {}, "createdAt": 0, "updatedAt": 0 }, "latestVersion": { "version": "1.2.3", "createdAt": 0, "changelog": "…" }, "metadata": { "os": ["macos"], "systems": ["aarch64-darwin"] }, "owner": { "handle": "steipete", "displayName": "Peter", "image": null }, "moderation": { "isSuspicious": false, "isMalwareBlocked": false, "verdict": "clean", "reasonCodes": [], "summary": null, "engineVersion": "v2.0.0", "updatedAt": 0 } }
+{
+  "skill": {
+    "slug": "gifgrep",
+    "displayName": "GifGrep",
+    "summary": "…",
+    "tags": { "latest": "1.2.3" },
+    "stats": {},
+    "createdAt": 0,
+    "updatedAt": 0
+  },
+  "latestVersion": { "version": "1.2.3", "createdAt": 0, "changelog": "…" },
+  "metadata": { "os": ["macos"], "systems": ["aarch64-darwin"] },
+  "owner": { "handle": "steipete", "displayName": "Peter", "image": null },
+  "moderation": {
+    "isSuspicious": false,
+    "isMalwareBlocked": false,
+    "verdict": "clean",
+    "reasonCodes": [],
+    "summary": null,
+    "engineVersion": "v2.0.0",
+    "updatedAt": 0
+  }
+}
 ```
 
 Notes:
@@ -132,7 +180,28 @@ Returns structured moderation state.
 Response:
 
 ```json
-{ "moderation": { "isSuspicious": true, "isMalwareBlocked": false, "verdict": "suspicious", "reasonCodes": ["suspicious.dynamic_code_execution"], "summary": "Detected: suspicious.dynamic_code_execution", "engineVersion": "v2.0.0", "updatedAt": 0, "legacyReason": null, "evidence": [{ "code": "suspicious.dynamic_code_execution", "severity": "critical", "file": "index.ts", "line": 3, "message": "Dynamic code execution detected.", "evidence": "" }] } }
+{
+  "moderation": {
+    "isSuspicious": true,
+    "isMalwareBlocked": false,
+    "verdict": "suspicious",
+    "reasonCodes": ["suspicious.dynamic_code_execution"],
+    "summary": "Detected: suspicious.dynamic_code_execution",
+    "engineVersion": "v2.0.0",
+    "updatedAt": 0,
+    "legacyReason": null,
+    "evidence": [
+      {
+        "code": "suspicious.dynamic_code_execution",
+        "severity": "critical",
+        "file": "index.ts",
+        "line": 3,
+        "message": "Dynamic code execution detected.",
+        "evidence": ""
+      }
+    ]
+  }
+}
 ```
 
 Notes:

@@ -1,66 +1,66 @@
-import { describe, expect, it } from 'vitest'
-import { __test } from './vt'
+import { describe, expect, it } from "vitest";
+import { __test } from "./vt";
 
-describe('vt activation fallback', () => {
-  it('activates only VT-pending hidden skills', () => {
+describe("vt activation fallback", () => {
+  it("activates only VT-pending hidden skills", () => {
     expect(
       __test.shouldActivateWhenVtUnavailable({
-        moderationStatus: 'hidden',
-        moderationReason: 'pending.scan',
+        moderationStatus: "hidden",
+        moderationReason: "pending.scan",
       }),
-    ).toBe(true)
-
-    expect(
-      __test.shouldActivateWhenVtUnavailable({
-        moderationStatus: 'hidden',
-        moderationReason: 'scanner.vt.pending',
-      }),
-    ).toBe(true)
+    ).toBe(true);
 
     expect(
       __test.shouldActivateWhenVtUnavailable({
-        moderationStatus: 'hidden',
-        moderationReason: 'pending.scan.stale',
+        moderationStatus: "hidden",
+        moderationReason: "scanner.vt.pending",
       }),
-    ).toBe(true)
-  })
-
-  it('does not activate quality or scanner-hidden skills', () => {
-    expect(
-      __test.shouldActivateWhenVtUnavailable({
-        moderationStatus: 'hidden',
-        moderationReason: 'quality.low',
-      }),
-    ).toBe(false)
+    ).toBe(true);
 
     expect(
       __test.shouldActivateWhenVtUnavailable({
-        moderationStatus: 'hidden',
-        moderationReason: 'scanner.llm.malicious',
+        moderationStatus: "hidden",
+        moderationReason: "pending.scan.stale",
       }),
-    ).toBe(false)
-  })
+    ).toBe(true);
+  });
 
-  it('does not activate blocked or already-active skills', () => {
+  it("does not activate quality or scanner-hidden skills", () => {
     expect(
       __test.shouldActivateWhenVtUnavailable({
-        moderationStatus: 'hidden',
-        moderationReason: 'pending.scan',
-        moderationFlags: ['blocked.malware'],
+        moderationStatus: "hidden",
+        moderationReason: "quality.low",
       }),
-    ).toBe(false)
+    ).toBe(false);
 
     expect(
       __test.shouldActivateWhenVtUnavailable({
-        moderationStatus: 'active',
-        moderationReason: 'pending.scan',
+        moderationStatus: "hidden",
+        moderationReason: "scanner.llm.malicious",
       }),
-    ).toBe(false)
-  })
-})
+    ).toBe(false);
+  });
 
-describe('vt AV engine fallback verdicts', () => {
-  it('maps engine verdicts in severity order', () => {
+  it("does not activate blocked or already-active skills", () => {
+    expect(
+      __test.shouldActivateWhenVtUnavailable({
+        moderationStatus: "hidden",
+        moderationReason: "pending.scan",
+        moderationFlags: ["blocked.malware"],
+      }),
+    ).toBe(false);
+
+    expect(
+      __test.shouldActivateWhenVtUnavailable({
+        moderationStatus: "active",
+        moderationReason: "pending.scan",
+      }),
+    ).toBe(false);
+  });
+});
+
+describe("vt AV engine fallback verdicts", () => {
+  it("maps engine verdicts in severity order", () => {
     expect(
       __test.statusFromAvStats({
         malicious: 1,
@@ -68,7 +68,7 @@ describe('vt AV engine fallback verdicts', () => {
         harmless: 10,
         undetected: 40,
       }),
-    ).toBe('malicious')
+    ).toBe("malicious");
 
     expect(
       __test.statusFromAvStats({
@@ -77,7 +77,7 @@ describe('vt AV engine fallback verdicts', () => {
         harmless: 10,
         undetected: 40,
       }),
-    ).toBe('suspicious')
+    ).toBe("suspicious");
 
     expect(
       __test.statusFromAvStats({
@@ -86,10 +86,10 @@ describe('vt AV engine fallback verdicts', () => {
         harmless: 1,
         undetected: 40,
       }),
-    ).toBe('clean')
-  })
+    ).toBe("clean");
+  });
 
-  it('keeps undetected-only results pending', () => {
+  it("keeps undetected-only results pending", () => {
     expect(
       __test.statusFromAvStats({
         malicious: 0,
@@ -97,6 +97,6 @@ describe('vt AV engine fallback verdicts', () => {
         harmless: 0,
         undetected: 40,
       }),
-    ).toBeNull()
-  })
-})
+    ).toBeNull();
+  });
+});

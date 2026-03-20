@@ -1,5 +1,5 @@
 ---
-summary: 'Deploy checklist: Convex backend + Vercel web app + /api rewrites.'
+summary: "Deploy checklist: Convex backend + Vercel web app + /api rewrites."
 read_when:
   - Shipping to production
   - Debugging /api routing

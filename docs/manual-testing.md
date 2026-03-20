@@ -1,5 +1,5 @@
 ---
-summary: 'Copy/paste CLI smoke checklist for local verification.'
+summary: "Copy/paste CLI smoke checklist for local verification."
 read_when:
   - Pre-merge validation
   - Reproducing a reported CLI bug
@@ -8,20 +8,24 @@ read_when:
 # Manual testing (CLI)
 
 ## Setup
+
 - Ensure logged in: `bun clawhub whoami` (or `bun clawhub login`).
 - Optional: set env
   - `CLAWHUB_SITE=https://clawhub.ai`
   - `CLAWHUB_REGISTRY=https://clawhub.ai`
 
 ## Smoke
+
 - `bun clawhub --help`
 - `bun clawhub --cli-version`
 - `bun clawhub whoami`
 
 ## Search
+
 - `bun clawhub search gif --limit 5`
 
 ## Prod HTTP smoke
+
 - Public prod smoke via Vitest:
   - `bun run test:e2e:prod-http`
 - Optional overrides:
@@ -30,12 +34,14 @@ read_when:
   - `CLAWHUB_E2E_SKILL_SLUG=gifgrep`
 
 ## Install / list / update
+
 - `mkdir -p /tmp/clawhub-manual && cd /tmp/clawhub-manual`
 - `bunx clawhub@beta install gifgrep --force`
 - `bunx clawhub@beta list`
 - `bunx clawhub@beta update gifgrep --force`
 
 ## Publish (changelog optional)
+
 - `mkdir -p /tmp/clawhub-skill-demo/SKILL && cd /tmp/clawhub-skill-demo`
 - Create files:
   - `SKILL.md`
@@ -46,6 +52,7 @@ read_when:
   - `bun clawhub publish . --slug clawhub-manual-<ts> --name "Manual <ts>" --version 1.0.1 --tags latest`
 
 ## Delete / undelete (owner/admin)
+
 - `bun clawhub delete clawhub-manual-<ts> --yes`
 - Verify hidden:
 - `curl -i "https://clawhub.ai/api/v1/skills/clawhub-manual-<ts>"`
@@ -55,6 +62,7 @@ read_when:
   - `bun clawhub delete clawhub-manual-<ts> --yes`
 
 ## Sync
+
 - `bun clawhub sync --dry-run --all`
 
 ## Playwright (menu smoke)

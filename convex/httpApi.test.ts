@@ -1,70 +1,70 @@
 /* @vitest-environment node */
-import { describe, expect, it } from 'vitest'
-import { __test } from './httpApi'
+import { describe, expect, it } from "vitest";
+import { __test } from "./httpApi";
 
-describe('httpApi', () => {
-  it('parses publish payload', () => {
+describe("httpApi", () => {
+  it("parses publish payload", () => {
     const parsed = __test.parsePublishBody({
-      slug: 'cool-skill',
-      displayName: 'Cool Skill',
-      version: '1.2.3',
-      changelog: 'stuff',
-      tags: ['latest', 'beta'],
+      slug: "cool-skill",
+      displayName: "Cool Skill",
+      version: "1.2.3",
+      changelog: "stuff",
+      tags: ["latest", "beta"],
       files: [
         {
-          path: 'SKILL.md',
+          path: "SKILL.md",
           size: 5,
-          storageId: 'fakeStorageId',
-          sha256: 'abcd',
-          contentType: 'text/markdown',
+          storageId: "fakeStorageId",
+          sha256: "abcd",
+          contentType: "text/markdown",
         },
       ],
-    })
-    expect(parsed.slug).toBe('cool-skill')
-    expect(parsed.tags).toEqual(['latest', 'beta'])
-    expect(parsed.files[0]?.path).toBe('SKILL.md')
-  })
+    });
+    expect(parsed.slug).toBe("cool-skill");
+    expect(parsed.tags).toEqual(["latest", "beta"]);
+    expect(parsed.files[0]?.path).toBe("SKILL.md");
+  });
 
-  it('normalizes optional fields in publish payload', () => {
+  it("normalizes optional fields in publish payload", () => {
     const parsed = __test.parsePublishBody({
-      slug: 'cool-skill',
-      displayName: 'Cool Skill',
-      version: '1.2.3',
-      changelog: '',
+      slug: "cool-skill",
+      displayName: "Cool Skill",
+      version: "1.2.3",
+      changelog: "",
       tags: [],
-      forkOf: { slug: 'base-skill' },
+      forkOf: { slug: "base-skill" },
       files: [
         {
-          path: 'SKILL.md',
+          path: "SKILL.md",
           size: 5,
-          storageId: 'fakeStorageId',
-          sha256: 'abcd',
-          contentType: 'text/markdown',
+          storageId: "fakeStorageId",
+          sha256: "abcd",
+          contentType: "text/markdown",
         },
       ],
-    })
-    expect(parsed.tags).toBeUndefined()
-    expect(parsed.source).toBeUndefined()
-    expect(parsed.forkOf).toEqual({ slug: 'base-skill', version: undefined })
-  })
+    });
+    expect(parsed.tags).toBeUndefined();
+    expect(parsed.source).toBeUndefined();
+    expect(parsed.forkOf).toEqual({ slug: "base-skill", version: undefined });
+  });
 
-  it('rejects invalid publish payloads', () => {
-    expect(() => __test.parsePublishBody(null)).toThrow(/Publish payload/i)
+  it("rejects invalid publish payloads", () => {
+    expect(() => __test.parsePublishBody(null)).toThrow(/Publish payload/i);
     expect(() =>
       __test.parsePublishBody({
-        slug: 'x',
-        displayName: 'X',
-        version: '1.0.0',
-        changelog: 'c',
+        slug: "x",
+        displayName: "X",
+        version: "1.0.0",
+        changelog: "c",
         files: [],
       }),
-    ).toThrow(/files required/i)
-  })
+    ).toThrow(/files required/i);
+  });
 
-  it('parses optional numbers', () => {
-    expect(__test.toOptionalNumber(null)).toBeUndefined()
-    expect(__test.toOptionalNumber('')).toBeUndefined()
-    expect(__test.toOptionalNumber('10')).toBe(10)
-    expect(__test.toOptionalNumber('nope')).toBeUndefined()
-  })
-})
+  it("parses optional numbers", () => {
+    expect(__test.toOptionalNumber(null)).toBeUndefined();
+    expect(__test.toOptionalNumber("")).toBeUndefined();
+    expect(__test.toOptionalNumber("10")).toBe(10);
+    expect(__test.toOptionalNumber("nope")).toBeUndefined();
+  });
+});

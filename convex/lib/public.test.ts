@@ -1,21 +1,21 @@
-import { describe, expect, it } from 'vitest'
-import type { Doc } from '../_generated/dataModel'
-import { toPublicSkill } from './public'
+import { describe, expect, it } from "vitest";
+import type { Doc } from "../_generated/dataModel";
+import { toPublicSkill } from "./public";
 
-function makeSkill(overrides: Partial<Doc<'skills'>> = {}): Doc<'skills'> {
+function makeSkill(overrides: Partial<Doc<"skills">> = {}): Doc<"skills"> {
   return {
-    _id: 'skills:1' as Doc<'skills'>['_id'],
+    _id: "skills:1" as Doc<"skills">["_id"],
     _creationTime: 1,
-    slug: 'demo',
-    displayName: 'Demo',
-    summary: 'Demo summary',
-    ownerUserId: 'users:1' as Doc<'skills'>['ownerUserId'],
+    slug: "demo",
+    displayName: "Demo",
+    summary: "Demo summary",
+    ownerUserId: "users:1" as Doc<"skills">["ownerUserId"],
     canonicalSkillId: undefined,
     forkOf: undefined,
     latestVersionId: undefined,
     tags: {},
     badges: {},
-    moderationStatus: 'active',
+    moderationStatus: "active",
     moderationReason: undefined,
     moderationNotes: undefined,
     moderationFlags: undefined,
@@ -40,22 +40,22 @@ function makeSkill(overrides: Partial<Doc<'skills'>> = {}): Doc<'skills'> {
     createdAt: 1,
     updatedAt: 1,
     ...overrides,
-  } as Doc<'skills'>
+  } as Doc<"skills">;
 }
 
-describe('public skill mapping', () => {
-  it('normalizes stats when legacy skill record is missing stats object', () => {
+describe("public skill mapping", () => {
+  it("normalizes stats when legacy skill record is missing stats object", () => {
     const legacySkill = makeSkill({
-      stats: undefined as unknown as Doc<'skills'>['stats'],
+      stats: undefined as unknown as Doc<"skills">["stats"],
       statsDownloads: 12,
       statsStars: 3,
       statsInstallsCurrent: 5,
       statsInstallsAllTime: 7,
-    })
+    });
 
-    const mapped = toPublicSkill(legacySkill)
+    const mapped = toPublicSkill(legacySkill);
 
-    expect(mapped).not.toBeNull()
+    expect(mapped).not.toBeNull();
     expect(mapped?.stats).toEqual({
       downloads: 12,
       stars: 3,
@@ -63,34 +63,34 @@ describe('public skill mapping', () => {
       installsAllTime: 7,
       versions: 0,
       comments: 0,
-    })
-  })
+    });
+  });
 
-  it('returns skill when moderationStatus is active', () => {
-    const skill = makeSkill({ moderationStatus: 'active' })
-    expect(toPublicSkill(skill)).not.toBeNull()
-  })
+  it("returns skill when moderationStatus is active", () => {
+    const skill = makeSkill({ moderationStatus: "active" });
+    expect(toPublicSkill(skill)).not.toBeNull();
+  });
 
-  it('filters out skill when moderationStatus is hidden', () => {
-    const skill = makeSkill({ moderationStatus: 'hidden' })
-    expect(toPublicSkill(skill)).toBeNull()
-  })
+  it("filters out skill when moderationStatus is hidden", () => {
+    const skill = makeSkill({ moderationStatus: "hidden" });
+    expect(toPublicSkill(skill)).toBeNull();
+  });
 
-  it('returns skill when moderationStatus is undefined (legacy)', () => {
-    const skill = makeSkill({ moderationStatus: undefined })
-    expect(toPublicSkill(skill)).not.toBeNull()
-  })
+  it("returns skill when moderationStatus is undefined (legacy)", () => {
+    const skill = makeSkill({ moderationStatus: undefined });
+    expect(toPublicSkill(skill)).not.toBeNull();
+  });
 
-  it('filters out soft-deleted skills', () => {
-    const skill = makeSkill({ softDeletedAt: Date.now() })
-    expect(toPublicSkill(skill)).toBeNull()
-  })
+  it("filters out soft-deleted skills", () => {
+    const skill = makeSkill({ softDeletedAt: Date.now() });
+    expect(toPublicSkill(skill)).toBeNull();
+  });
 
-  it('filters out skills with blocked.malware flag', () => {
+  it("filters out skills with blocked.malware flag", () => {
     const skill = makeSkill({
-      moderationStatus: 'active',
-      moderationFlags: ['blocked.malware'],
-    })
-    expect(toPublicSkill(skill)).toBeNull()
-  })
-})
+      moderationStatus: "active",
+      moderationFlags: ["blocked.malware"],
+    });
+    expect(toPublicSkill(skill)).toBeNull();
+  });
+});

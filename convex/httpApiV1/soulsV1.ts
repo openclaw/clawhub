@@ -1,9 +1,9 @@
-import { api, internal } from '../_generated/api'
-import type { Doc, Id } from '../_generated/dataModel'
-import type { ActionCtx } from '../_generated/server'
-import { requireApiTokenUser } from '../lib/apiTokenAuth'
-import { applyRateLimit, parseBearerToken } from '../lib/httpRateLimit'
-import { publishSoulVersionForUser } from '../souls'
+import { api, internal } from "../_generated/api";
+import type { Doc, Id } from "../_generated/dataModel";
+import type { ActionCtx } from "../_generated/server";
+import { requireApiTokenUser } from "../lib/apiTokenAuth";
+import { applyRateLimit, parseBearerToken } from "../lib/httpRateLimit";
+import { publishSoulVersionForUser } from "../souls";
 import {
   MAX_RAW_FILE_BYTES,
   getPathSegments,
@@ -15,90 +15,90 @@ import {
   softDeleteErrorToResponse,
   text,
   toOptionalNumber,
-} from './shared'
+} from "./shared";
 
 type ListSoulsResult = {
   items: Array<{
     soul: {
-      _id: Id<'souls'>
-      slug: string
-      displayName: string
-      summary?: string
-      tags: Record<string, Id<'soulVersions'>>
-      stats: unknown
-      createdAt: number
-      updatedAt: number
-      latestVersionId?: Id<'soulVersions'>
-    }
-    latestVersion: { version: string; createdAt: number; changelog: string } | null
-  }>
-  nextCursor: string | null
-}
+      _id: Id<"souls">;
+      slug: string;
+      displayName: string;
+      summary?: string;
+      tags: Record<string, Id<"soulVersions">>;
+      stats: unknown;
+      createdAt: number;
+      updatedAt: number;
+      latestVersionId?: Id<"soulVersions">;
+    };
+    latestVersion: { version: string; createdAt: number; changelog: string } | null;
+  }>;
+  nextCursor: string | null;
+};
 
 type GetSoulBySlugResult = {
   soul: {
-    _id: Id<'souls'>
-    slug: string
-    displayName: string
-    summary?: string
-    tags: Record<string, Id<'soulVersions'>>
-    stats: unknown
-    createdAt: number
-    updatedAt: number
-  } | null
-  latestVersion: PublicSoulVersion | null
-  owner: { handle?: string; displayName?: string; image?: string } | null
-} | null
+    _id: Id<"souls">;
+    slug: string;
+    displayName: string;
+    summary?: string;
+    tags: Record<string, Id<"soulVersions">>;
+    stats: unknown;
+    createdAt: number;
+    updatedAt: number;
+  } | null;
+  latestVersion: PublicSoulVersion | null;
+  owner: { handle?: string; displayName?: string; image?: string } | null;
+} | null;
 
 type ListSoulVersionsResult = {
-  items: PublicSoulVersion[]
-  nextCursor: string | null
-}
+  items: PublicSoulVersion[];
+  nextCursor: string | null;
+};
 
 type PublicSoulVersion = Pick<
-  Doc<'soulVersions'>,
-  | '_id'
-  | '_creationTime'
-  | 'soulId'
-  | 'version'
-  | 'fingerprint'
-  | 'changelog'
-  | 'changelogSource'
-  | 'createdBy'
-  | 'createdAt'
-  | 'softDeletedAt'
+  Doc<"soulVersions">,
+  | "_id"
+  | "_creationTime"
+  | "soulId"
+  | "version"
+  | "fingerprint"
+  | "changelog"
+  | "changelogSource"
+  | "createdBy"
+  | "createdAt"
+  | "softDeletedAt"
 > & {
   files: Array<{
-    path: string
-    size: number
-    sha256: string
-    contentType?: string
-  }>
+    path: string;
+    size: number;
+    sha256: string;
+    contentType?: string;
+  }>;
   parsed?: {
-    clawdis?: Doc<'soulVersions'>['parsed']['clawdis']
-  }
-}
+    clawdis?: Doc<"soulVersions">["parsed"]["clawdis"];
+  };
+};
 
-type SoulFile = PublicSoulVersion['files'][number]
+type SoulFile = PublicSoulVersion["files"][number];
 
 export async function listSoulsV1Handler(ctx: ActionCtx, request: Request) {
-  const rate = await applyRateLimit(ctx, request, 'read')
-  if (!rate.ok) return rate.response
+  const rate = await applyRateLimit(ctx, request, "read");
+  if (!rate.ok) return rate.response;
 
-  const url = new URL(request.url)
-  const limit = toOptionalNumber(url.searchParams.get('limit'))
-  const cursor = url.searchParams.get('cursor')?.trim() || undefined
+  const url = new URL(request.url);
+  const limit = toOptionalNumber(url.searchParams.get("limit"));
+  const cursor = url.searchParams.get("cursor")?.trim() || undefined;
 
   const result = (await ctx.runQuery(api.souls.listPublicPage, {
     limit,
     cursor,
-  })) as ListSoulsResult
+  })) as ListSoulsResult;
 
   // Batch resolve all tags in a single query instead of N queries
   const resolvedTagsList = await resolveSoulTagsBatch(
     ctx,
     result.items.map((item) => item.soul.tags),
-  )
+  );
 
   const items = result.items.map((item, idx) => ({
     slug: item.soul.slug,
@@ -115,26 +115,26 @@ export async function listSoulsV1Handler(ctx: ActionCtx, request: Request) {
           changelog: item.latestVersion.changelog,
         }
       : null,
-  }))
+  }));
 
-  return json({ items, nextCursor: result.nextCursor ?? null }, 200, rate.headers)
+  return json({ items, nextCursor: result.nextCursor ?? null }, 200, rate.headers);
 }
 
 export async function soulsGetRouterV1Handler(ctx: ActionCtx, request: Request) {
-  const rate = await applyRateLimit(ctx, request, 'read')
-  if (!rate.ok) return rate.response
+  const rate = await applyRateLimit(ctx, request, "read");
+  if (!rate.ok) return rate.response;
 
-  const segments = getPathSegments(request, '/api/v1/souls/')
-  if (segments.length === 0) return text('Missing slug', 400, rate.headers)
-  const slug = segments[0]?.trim().toLowerCase() ?? ''
-  const second = segments[1]
-  const third = segments[2]
+  const segments = getPathSegments(request, "/api/v1/souls/");
+  if (segments.length === 0) return text("Missing slug", 400, rate.headers);
+  const slug = segments[0]?.trim().toLowerCase() ?? "";
+  const second = segments[1];
+  const third = segments[2];
 
   if (segments.length === 1) {
-    const result = (await ctx.runQuery(api.souls.getBySlug, { slug })) as GetSoulBySlugResult
-    if (!result?.soul) return text('Soul not found', 404, rate.headers)
+    const result = (await ctx.runQuery(api.souls.getBySlug, { slug })) as GetSoulBySlugResult;
+    if (!result?.soul) return text("Soul not found", 404, rate.headers);
 
-    const [tags] = await resolveSoulTagsBatch(ctx, [result.soul.tags])
+    const [tags] = await resolveSoulTagsBatch(ctx, [result.soul.tags]);
     return json(
       {
         soul: {
@@ -163,21 +163,21 @@ export async function soulsGetRouterV1Handler(ctx: ActionCtx, request: Request) 
       },
       200,
       rate.headers,
-    )
+    );
   }
 
-  if (second === 'versions' && segments.length === 2) {
-    const soul = await ctx.runQuery(internal.souls.getSoulBySlugInternal, { slug })
-    if (!soul || soul.softDeletedAt) return text('Soul not found', 404, rate.headers)
+  if (second === "versions" && segments.length === 2) {
+    const soul = await ctx.runQuery(internal.souls.getSoulBySlugInternal, { slug });
+    if (!soul || soul.softDeletedAt) return text("Soul not found", 404, rate.headers);
 
-    const url = new URL(request.url)
-    const limit = toOptionalNumber(url.searchParams.get('limit'))
-    const cursor = url.searchParams.get('cursor')?.trim() || undefined
+    const url = new URL(request.url);
+    const limit = toOptionalNumber(url.searchParams.get("limit"));
+    const cursor = url.searchParams.get("cursor")?.trim() || undefined;
     const result = (await ctx.runQuery(api.souls.listVersionsPage, {
       soulId: soul._id,
       limit,
       cursor,
-    })) as ListSoulVersionsResult
+    })) as ListSoulVersionsResult;
 
     const items = result.items
       .filter((version) => !version.softDeletedAt)
@@ -186,21 +186,21 @@ export async function soulsGetRouterV1Handler(ctx: ActionCtx, request: Request) 
         createdAt: version.createdAt,
         changelog: version.changelog,
         changelogSource: version.changelogSource ?? null,
-      }))
+      }));
 
-    return json({ items, nextCursor: result.nextCursor ?? null }, 200, rate.headers)
+    return json({ items, nextCursor: result.nextCursor ?? null }, 200, rate.headers);
   }
 
-  if (second === 'versions' && third && segments.length === 3) {
-    const soul = await ctx.runQuery(internal.souls.getSoulBySlugInternal, { slug })
-    if (!soul || soul.softDeletedAt) return text('Soul not found', 404, rate.headers)
+  if (second === "versions" && third && segments.length === 3) {
+    const soul = await ctx.runQuery(internal.souls.getSoulBySlugInternal, { slug });
+    if (!soul || soul.softDeletedAt) return text("Soul not found", 404, rate.headers);
 
     const version = await ctx.runQuery(api.souls.getVersionBySoulAndVersion, {
       soulId: soul._id,
       version: third,
-    })
-    if (!version) return text('Version not found', 404, rate.headers)
-    if (version.softDeletedAt) return text('Version not available', 410, rate.headers)
+    });
+    if (!version) return text("Version not found", 404, rate.headers);
+    if (version.softDeletedAt) return text("Version not available", 410, rate.headers);
 
     return json(
       {
@@ -220,52 +220,52 @@ export async function soulsGetRouterV1Handler(ctx: ActionCtx, request: Request) 
       },
       200,
       rate.headers,
-    )
+    );
   }
 
-  if (second === 'file' && segments.length === 2) {
-    const url = new URL(request.url)
-    const path = url.searchParams.get('path')?.trim()
-    if (!path) return text('Missing path', 400, rate.headers)
-    const versionParam = url.searchParams.get('version')?.trim()
-    const tagParam = url.searchParams.get('tag')?.trim()
+  if (second === "file" && segments.length === 2) {
+    const url = new URL(request.url);
+    const path = url.searchParams.get("path")?.trim();
+    if (!path) return text("Missing path", 400, rate.headers);
+    const versionParam = url.searchParams.get("version")?.trim();
+    const tagParam = url.searchParams.get("tag")?.trim();
 
-    const soul = await ctx.runQuery(internal.souls.getSoulBySlugInternal, { slug })
-    if (!soul || soul.softDeletedAt) return text('Soul not found', 404, rate.headers)
+    const soul = await ctx.runQuery(internal.souls.getSoulBySlugInternal, { slug });
+    if (!soul || soul.softDeletedAt) return text("Soul not found", 404, rate.headers);
 
     let version = soul.latestVersionId
       ? await ctx.runQuery(internal.souls.getVersionByIdInternal, {
           versionId: soul.latestVersionId,
         })
-      : null
+      : null;
     if (versionParam) {
       version = await ctx.runQuery(internal.souls.getVersionBySoulAndVersionInternal, {
         soulId: soul._id,
         version: versionParam,
-      })
+      });
     } else if (tagParam) {
-      const versionId = soul.tags[tagParam]
+      const versionId = soul.tags[tagParam];
       if (versionId) {
-        version = await ctx.runQuery(internal.souls.getVersionByIdInternal, { versionId })
+        version = await ctx.runQuery(internal.souls.getVersionByIdInternal, { versionId });
       }
     }
 
-    if (!version) return text('Version not found', 404, rate.headers)
-    if (version.softDeletedAt) return text('Version not available', 410, rate.headers)
+    if (!version) return text("Version not found", 404, rate.headers);
+    if (version.softDeletedAt) return text("Version not available", 410, rate.headers);
 
-    const normalized = path.trim()
-    const normalizedLower = normalized.toLowerCase()
+    const normalized = path.trim();
+    const normalizedLower = normalized.toLowerCase();
     const file =
       version.files.find((entry) => entry.path === normalized) ??
-      version.files.find((entry) => entry.path.toLowerCase() === normalizedLower)
-    if (!file) return text('File not found', 404, rate.headers)
-    if (file.size > MAX_RAW_FILE_BYTES) return text('File exceeds 200KB limit', 413, rate.headers)
+      version.files.find((entry) => entry.path.toLowerCase() === normalizedLower);
+    if (!file) return text("File not found", 404, rate.headers);
+    if (file.size > MAX_RAW_FILE_BYTES) return text("File exceeds 200KB limit", 413, rate.headers);
 
-    const blob = await ctx.storage.get(file.storageId)
-    if (!blob) return text('File missing in storage', 410, rate.headers)
-    const textContent = await blob.text()
+    const blob = await ctx.storage.get(file.storageId);
+    if (!blob) return text("File missing in storage", 410, rate.headers);
+    const textContent = await blob.text();
 
-    void ctx.runMutation(api.soulDownloads.increment, { soulId: soul._id })
+    void ctx.runMutation(internal.soulDownloads.incrementInternal, { soulId: soul._id });
     return safeTextFileResponse({
       textContent,
       path: file.path,
@@ -273,83 +273,83 @@ export async function soulsGetRouterV1Handler(ctx: ActionCtx, request: Request) 
       sha256: file.sha256,
       size: file.size,
       headers: rate.headers,
-    })
+    });
   }
 
-  return text('Not found', 404, rate.headers)
+  return text("Not found", 404, rate.headers);
 }
 
 export async function publishSoulV1Handler(ctx: ActionCtx, request: Request) {
-  const rate = await applyRateLimit(ctx, request, 'write')
-  if (!rate.ok) return rate.response
+  const rate = await applyRateLimit(ctx, request, "write");
+  if (!rate.ok) return rate.response;
 
   try {
-    if (!parseBearerToken(request)) return text('Unauthorized', 401, rate.headers)
+    if (!parseBearerToken(request)) return text("Unauthorized", 401, rate.headers);
   } catch {
-    return text('Unauthorized', 401, rate.headers)
+    return text("Unauthorized", 401, rate.headers);
   }
-  const { userId } = await requireApiTokenUser(ctx, request)
+  const { userId } = await requireApiTokenUser(ctx, request);
 
-  const contentType = request.headers.get('content-type') ?? ''
+  const contentType = request.headers.get("content-type") ?? "";
   try {
-    if (contentType.includes('application/json')) {
-      const body = await request.json()
-      const payload = parsePublishBody(body)
-      const result = await publishSoulVersionForUser(ctx, userId, payload)
-      return json({ ok: true, ...result }, 200, rate.headers)
+    if (contentType.includes("application/json")) {
+      const body = await request.json();
+      const payload = parsePublishBody(body);
+      const result = await publishSoulVersionForUser(ctx, userId, payload);
+      return json({ ok: true, ...result }, 200, rate.headers);
     }
 
-    if (contentType.includes('multipart/form-data')) {
-      const payload = await parseMultipartPublish(ctx, request)
-      const result = await publishSoulVersionForUser(ctx, userId, payload)
-      return json({ ok: true, ...result }, 200, rate.headers)
+    if (contentType.includes("multipart/form-data")) {
+      const payload = await parseMultipartPublish(ctx, request);
+      const result = await publishSoulVersionForUser(ctx, userId, payload);
+      return json({ ok: true, ...result }, 200, rate.headers);
     }
   } catch (error) {
-    const message = error instanceof Error ? error.message : 'Publish failed'
-    return text(message, 400, rate.headers)
+    const message = error instanceof Error ? error.message : "Publish failed";
+    return text(message, 400, rate.headers);
   }
 
-  return text('Unsupported content type', 415, rate.headers)
+  return text("Unsupported content type", 415, rate.headers);
 }
 
 export async function soulsPostRouterV1Handler(ctx: ActionCtx, request: Request) {
-  const rate = await applyRateLimit(ctx, request, 'write')
-  if (!rate.ok) return rate.response
+  const rate = await applyRateLimit(ctx, request, "write");
+  if (!rate.ok) return rate.response;
 
-  const segments = getPathSegments(request, '/api/v1/souls/')
-  if (segments.length !== 2 || segments[1] !== 'undelete') {
-    return text('Not found', 404, rate.headers)
+  const segments = getPathSegments(request, "/api/v1/souls/");
+  if (segments.length !== 2 || segments[1] !== "undelete") {
+    return text("Not found", 404, rate.headers);
   }
-  const slug = segments[0]?.trim().toLowerCase() ?? ''
+  const slug = segments[0]?.trim().toLowerCase() ?? "";
   try {
-    const { userId } = await requireApiTokenUser(ctx, request)
+    const { userId } = await requireApiTokenUser(ctx, request);
     await ctx.runMutation(internal.souls.setSoulSoftDeletedInternal, {
       userId,
       slug,
       deleted: false,
-    })
-    return json({ ok: true }, 200, rate.headers)
+    });
+    return json({ ok: true }, 200, rate.headers);
   } catch (error) {
-    return softDeleteErrorToResponse('soul', error, rate.headers)
+    return softDeleteErrorToResponse("soul", error, rate.headers);
   }
 }
 
 export async function soulsDeleteRouterV1Handler(ctx: ActionCtx, request: Request) {
-  const rate = await applyRateLimit(ctx, request, 'write')
-  if (!rate.ok) return rate.response
+  const rate = await applyRateLimit(ctx, request, "write");
+  if (!rate.ok) return rate.response;
 
-  const segments = getPathSegments(request, '/api/v1/souls/')
-  if (segments.length !== 1) return text('Not found', 404, rate.headers)
-  const slug = segments[0]?.trim().toLowerCase() ?? ''
+  const segments = getPathSegments(request, "/api/v1/souls/");
+  if (segments.length !== 1) return text("Not found", 404, rate.headers);
+  const slug = segments[0]?.trim().toLowerCase() ?? "";
   try {
-    const { userId } = await requireApiTokenUser(ctx, request)
+    const { userId } = await requireApiTokenUser(ctx, request);
     await ctx.runMutation(internal.souls.setSoulSoftDeletedInternal, {
       userId,
       slug,
       deleted: true,
-    })
-    return json({ ok: true }, 200, rate.headers)
+    });
+    return json({ ok: true }, 200, rate.headers);
   } catch (error) {
-    return softDeleteErrorToResponse('soul', error, rate.headers)
+    return softDeleteErrorToResponse("soul", error, rate.headers);
   }
 }

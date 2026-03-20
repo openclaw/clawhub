@@ -1,67 +1,67 @@
-import { getAuthUserId } from '@convex-dev/auth/server'
-import { v } from 'convex/values'
-import { internal } from './_generated/api'
-import type { Doc, Id } from './_generated/dataModel'
-import type { ActionCtx, MutationCtx } from './_generated/server'
-import { internalAction, internalMutation, internalQuery, mutation, query } from './functions'
-import { assertAdmin, assertModerator, requireUser } from './lib/access'
-import { syncGitHubProfile } from './lib/githubAccount'
-import { toPublicUser } from './lib/public'
-import { buildUserSearchResults } from './lib/userSearch'
-import { insertStatEvent } from './skillStatEvents'
+import { getAuthUserId } from "@convex-dev/auth/server";
+import { v } from "convex/values";
+import { internal } from "./_generated/api";
+import type { Doc, Id } from "./_generated/dataModel";
+import type { ActionCtx, MutationCtx } from "./_generated/server";
+import { internalAction, internalMutation, internalQuery, mutation, query } from "./functions";
+import { assertAdmin, assertModerator, requireUser } from "./lib/access";
+import { syncGitHubProfile } from "./lib/githubAccount";
+import { toPublicUser } from "./lib/public";
+import { buildUserSearchResults } from "./lib/userSearch";
+import { insertStatEvent } from "./skillStatEvents";
 
-const DEFAULT_ROLE = 'user'
-const ADMIN_HANDLE = 'steipete'
-const MAX_USER_LIST_LIMIT = 200
-const MAX_USER_SEARCH_SCAN = 5_000
-const MIN_USER_SEARCH_SCAN = 500
+const DEFAULT_ROLE = "user";
+const ADMIN_HANDLE = "steipete";
+const MAX_USER_LIST_LIMIT = 200;
+const MAX_USER_SEARCH_SCAN = 5_000;
+const MIN_USER_SEARCH_SCAN = 500;
 
 export const getById = query({
-  args: { userId: v.id('users') },
+  args: { userId: v.id("users") },
   handler: async (ctx, args) => toPublicUser(await ctx.db.get(args.userId)),
-})
+});
 
 export const getByIdInternal = internalQuery({
-  args: { userId: v.id('users') },
+  args: { userId: v.id("users") },
   handler: async (ctx, args) => ctx.db.get(args.userId),
-})
+});
 
 export const searchInternal = internalQuery({
   args: {
-    actorUserId: v.id('users'),
+    actorUserId: v.id("users"),
     query: v.optional(v.string()),
     limit: v.optional(v.number()),
   },
   handler: async (ctx, args) => {
-    const actor = await ctx.db.get(args.actorUserId)
-    if (!actor || actor.deletedAt || actor.deactivatedAt) throw new Error('Unauthorized')
-    assertAdmin(actor)
+    const actor = await ctx.db.get(args.actorUserId);
+    if (!actor || actor.deletedAt || actor.deactivatedAt) throw new Error("Unauthorized");
+    assertAdmin(actor);
 
-    const limit = clampInt(args.limit ?? 20, 1, MAX_USER_LIST_LIMIT)
-    const result = await queryUsersForAdminList(ctx, { limit, search: args.query })
+    const limit = clampInt(args.limit ?? 20, 1, MAX_USER_LIST_LIMIT);
+    const result = await queryUsersForAdminList(ctx, { limit, search: args.query });
     const items = result.items.map((user) => ({
       userId: user._id,
       handle: user.handle ?? null,
       displayName: user.displayName ?? null,
       name: user.name ?? null,
       role: user.role ?? null,
-    }))
-    return { items, total: result.total }
+    }));
+    return { items, total: result.total };
   },
-})
+});
 
 export const setGitHubCreatedAtInternal = internalMutation({
   args: {
-    userId: v.id('users'),
+    userId: v.id("users"),
     githubCreatedAt: v.number(),
   },
   handler: async (ctx, args) => {
     await ctx.db.patch(args.userId, {
       githubCreatedAt: args.githubCreatedAt,
       updatedAt: Date.now(),
-    })
+    });
   },
-})
+});
 
 /**
  * Sync the user's GitHub profile (username, avatar) when it changes.
@@ -69,28 +69,28 @@ export const setGitHubCreatedAtInternal = internalMutation({
  */
 export const syncGitHubProfileInternal = internalMutation({
   args: {
-    userId: v.id('users'),
+    userId: v.id("users"),
     name: v.string(),
     image: v.optional(v.string()),
     profileName: v.optional(v.string()),
     syncedAt: v.number(),
   },
   handler: async (ctx, args) => {
-    const user = await ctx.db.get(args.userId)
-    if (!user || user.deletedAt || user.deactivatedAt) return
+    const user = await ctx.db.get(args.userId);
+    if (!user || user.deletedAt || user.deactivatedAt) return;
 
-    const updates: Partial<Doc<'users'>> = { githubProfileSyncedAt: args.syncedAt }
-    let didChangeProfile = false
+    const updates: Partial<Doc<"users">> = { githubProfileSyncedAt: args.syncedAt };
+    let didChangeProfile = false;
 
     if (user.name !== args.name) {
-      updates.name = args.name
-      didChangeProfile = true
+      updates.name = args.name;
+      didChangeProfile = true;
     }
 
     // Update handle if it was derived from the old username
     if (user.handle === user.name && user.name !== args.name) {
-      updates.handle = args.name
-      didChangeProfile = true
+      updates.handle = args.name;
+      didChangeProfile = true;
     }
 
     // Update displayName if it was derived from the old username
@@ -98,118 +98,118 @@ export const syncGitHubProfileInternal = internalMutation({
       (user.displayName === user.name || user.displayName === user.handle) &&
       user.name !== args.name
     ) {
-      updates.displayName = args.name
-      didChangeProfile = true
+      updates.displayName = args.name;
+      didChangeProfile = true;
     }
 
     // If displayName is derived/missing, prefer the GitHub profile "name" (full name).
-    const profileName = args.profileName?.trim()
+    const profileName = args.profileName?.trim();
     if (profileName && profileName !== args.name) {
-      const currentDisplay = user.displayName?.trim()
-      const currentHandle = user.handle?.trim()
-      const currentLogin = user.name?.trim()
+      const currentDisplay = user.displayName?.trim();
+      const currentHandle = user.handle?.trim();
+      const currentLogin = user.name?.trim();
       const isDerivedOrMissing =
-        !currentDisplay || currentDisplay === currentHandle || currentDisplay === currentLogin
+        !currentDisplay || currentDisplay === currentHandle || currentDisplay === currentLogin;
       if (isDerivedOrMissing && currentDisplay !== profileName) {
-        updates.displayName = profileName
-        didChangeProfile = true
+        updates.displayName = profileName;
+        didChangeProfile = true;
       }
     }
 
     // Update avatar if provided
     if (args.image && args.image !== user.image) {
-      updates.image = args.image
-      didChangeProfile = true
+      updates.image = args.image;
+      didChangeProfile = true;
     }
 
     if (didChangeProfile) {
-      updates.updatedAt = Date.now()
+      updates.updatedAt = Date.now();
     }
-    await ctx.db.patch(args.userId, updates)
+    await ctx.db.patch(args.userId, updates);
   },
-})
+});
 
 /**
  * Internal action to sync GitHub profile from the GitHub API.
  * This is called after login to ensure the username is up-to-date.
  */
 export const syncGitHubProfileAction = internalAction({
-  args: { userId: v.id('users') },
+  args: { userId: v.id("users") },
   handler: async (ctx: ActionCtx, args) => {
-    await syncGitHubProfile(ctx, args.userId)
+    await syncGitHubProfile(ctx, args.userId);
   },
-})
+});
 
 export const me = query({
   args: {},
   handler: async (ctx) => {
-    const userId = await getAuthUserId(ctx)
-    if (!userId) return null
-    const user = await ctx.db.get(userId)
-    if (!user || user.deletedAt || user.deactivatedAt) return null
-    return user
+    const userId = await getAuthUserId(ctx);
+    if (!userId) return null;
+    const user = await ctx.db.get(userId);
+    if (!user || user.deletedAt || user.deactivatedAt) return null;
+    return user;
   },
-})
+});
 
 export const ensure = mutation({
   args: {},
   handler: ensureHandler,
-})
+});
 
 function normalizeHandle(handle: string | undefined) {
-  const normalized = handle?.trim()
-  return normalized ? normalized : undefined
+  const normalized = handle?.trim();
+  return normalized ? normalized : undefined;
 }
 
 function deriveHandle(args: { existingHandle?: string; githubLogin?: string; email?: string }) {
   // Prefer the GitHub login; only fall back to email-derived handle when we don't already have one.
-  if (args.githubLogin) return args.githubLogin
-  if (!args.existingHandle && args.email) return args.email.split('@')[0]?.trim() || undefined
-  return undefined
+  if (args.githubLogin) return args.githubLogin;
+  if (!args.existingHandle && args.email) return args.email.split("@")[0]?.trim() || undefined;
+  return undefined;
 }
 
-function computeEnsureUpdates(user: Doc<'users'>) {
-  const updates: Record<string, unknown> = {}
+function computeEnsureUpdates(user: Doc<"users">) {
+  const updates: Record<string, unknown> = {};
 
-  const existingHandle = normalizeHandle(user.handle)
-  const githubLogin = normalizeHandle(user.name)
+  const existingHandle = normalizeHandle(user.handle);
+  const githubLogin = normalizeHandle(user.name);
   const derivedHandle = deriveHandle({
     existingHandle,
     githubLogin,
     email: user.email,
-  })
-  const baseHandle = derivedHandle ?? existingHandle
+  });
+  const baseHandle = derivedHandle ?? existingHandle;
 
   if (derivedHandle && existingHandle !== derivedHandle) {
-    updates.handle = derivedHandle
+    updates.handle = derivedHandle;
   }
 
-  const displayName = normalizeHandle(user.displayName)
+  const displayName = normalizeHandle(user.displayName);
   if (!displayName && baseHandle) {
-    updates.displayName = baseHandle
+    updates.displayName = baseHandle;
   } else if (derivedHandle && displayName === existingHandle) {
-    updates.displayName = derivedHandle
+    updates.displayName = derivedHandle;
   }
 
   if (!user.role) {
-    updates.role = baseHandle === ADMIN_HANDLE ? 'admin' : DEFAULT_ROLE
+    updates.role = baseHandle === ADMIN_HANDLE ? "admin" : DEFAULT_ROLE;
   }
 
-  if (!user.createdAt) updates.createdAt = user._creationTime
+  if (!user.createdAt) updates.createdAt = user._creationTime;
 
-  return updates
+  return updates;
 }
 
 export async function ensureHandler(ctx: MutationCtx) {
-  const { userId, user } = await requireUser(ctx)
-  const updates = computeEnsureUpdates(user)
+  const { userId, user } = await requireUser(ctx);
+  const updates = computeEnsureUpdates(user);
 
   if (Object.keys(updates).length > 0) {
-    updates.updatedAt = Date.now()
-    await ctx.db.patch(userId, updates)
+    updates.updatedAt = Date.now();
+    await ctx.db.patch(userId, updates);
   }
 
-  return ctx.db.get(userId)
+  return ctx.db.get(userId);
 }
 
 export const updateProfile = mutation({
@@ -218,28 +218,28 @@ export const updateProfile = mutation({
     bio: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
-    const { userId } = await requireUser(ctx)
+    const { userId } = await requireUser(ctx);
     await ctx.db.patch(userId, {
       displayName: args.displayName.trim(),
       bio: args.bio?.trim(),
       updatedAt: Date.now(),
-    })
+    });
   },
-})
+});
 
 export const deleteAccount = mutation({
   args: {},
   handler: async (ctx) => {
-    const { userId } = await requireUser(ctx)
-    const now = Date.now()
+    const { userId } = await requireUser(ctx);
+    const now = Date.now();
 
     const tokens = await ctx.db
-      .query('apiTokens')
-      .withIndex('by_user', (q) => q.eq('userId', userId))
-      .collect()
+      .query("apiTokens")
+      .withIndex("by_user", (q) => q.eq("userId", userId))
+      .collect();
     for (const token of tokens) {
       if (!token.revokedAt) {
-        await ctx.db.patch(token._id, { revokedAt: now })
+        await ctx.db.patch(token._id, { revokedAt: now });
       }
     }
 
@@ -248,7 +248,7 @@ export const deleteAccount = mutation({
       purgedAt: now,
       deletedAt: undefined,
       banReason: undefined,
-      role: 'user',
+      role: "user",
       handle: undefined,
       displayName: undefined,
       name: undefined,
@@ -261,181 +261,192 @@ export const deleteAccount = mutation({
       bio: undefined,
       githubCreatedAt: undefined,
       updatedAt: now,
-    })
-    await ctx.runMutation(internal.telemetry.clearUserTelemetryInternal, { userId })
+    });
+    await ctx.runMutation(internal.telemetry.clearUserTelemetryInternal, { userId });
   },
-})
+});
 
 export const list = query({
   args: { limit: v.optional(v.number()), search: v.optional(v.string()) },
   handler: async (ctx, args) => {
-    const { user } = await requireUser(ctx)
-    assertAdmin(user)
-    const limit = clampInt(args.limit ?? 50, 1, MAX_USER_LIST_LIMIT)
-    return queryUsersForAdminList(ctx, { limit, search: args.search })
+    const { user } = await requireUser(ctx);
+    assertAdmin(user);
+    const limit = clampInt(args.limit ?? 50, 1, MAX_USER_LIST_LIMIT);
+    return queryUsersForAdminList(ctx, { limit, search: args.search });
   },
-})
+});
 
 function normalizeSearchQuery(search?: string) {
-  const trimmed = search?.trim().toLowerCase()
-  return trimmed ? trimmed : undefined
+  const trimmed = search?.trim().toLowerCase();
+  return trimmed ? trimmed : undefined;
 }
 
 function computeUserSearchScanLimit(limit: number) {
-  return clampInt(limit * 10, MIN_USER_SEARCH_SCAN, MAX_USER_SEARCH_SCAN)
+  return clampInt(limit * 10, MIN_USER_SEARCH_SCAN, MAX_USER_SEARCH_SCAN);
 }
 
 async function queryUsersForAdminList(
-  ctx: { db: { query: (table: 'users') => { order: (order: 'desc') => { take: (n: number) => Promise<Doc<'users'>[]> } } } },
+  ctx: {
+    db: {
+      query: (table: "users") => {
+        order: (order: "desc") => { take: (n: number) => Promise<Doc<"users">[]> };
+      };
+    };
+  },
   args: { limit: number; search?: string },
 ) {
-  const normalizedSearch = normalizeSearchQuery(args.search)
-  const orderedUsers = ctx.db.query('users').order('desc')
+  const normalizedSearch = normalizeSearchQuery(args.search);
+  const orderedUsers = ctx.db.query("users").order("desc");
 
   if (!normalizedSearch) {
-    const items = await orderedUsers.take(args.limit)
-    return { items, total: items.length }
+    const items = await orderedUsers.take(args.limit);
+    return { items, total: items.length };
   }
 
-  const scannedUsers = await orderedUsers.take(computeUserSearchScanLimit(args.limit))
-  const result = buildUserSearchResults(scannedUsers, normalizedSearch)
-  return { items: result.items.slice(0, args.limit), total: result.total }
+  const scannedUsers = await orderedUsers.take(computeUserSearchScanLimit(args.limit));
+  const result = buildUserSearchResults(scannedUsers, normalizedSearch);
+  return { items: result.items.slice(0, args.limit), total: result.total };
 }
 
 function clampInt(value: number, min: number, max: number) {
-  return Math.min(Math.max(Math.trunc(value), min), max)
+  return Math.min(Math.max(Math.trunc(value), min), max);
 }
 
 export const getByHandle = query({
   args: { handle: v.string() },
   handler: async (ctx, args) => {
     const user = await ctx.db
-      .query('users')
-      .withIndex('handle', (q) => q.eq('handle', args.handle))
-      .unique()
-    return toPublicUser(user)
+      .query("users")
+      .withIndex("handle", (q) => q.eq("handle", args.handle))
+      .unique();
+    return toPublicUser(user);
   },
-})
+});
 
 export const setRole = mutation({
   args: {
-    userId: v.id('users'),
-    role: v.union(v.literal('admin'), v.literal('moderator'), v.literal('user')),
+    userId: v.id("users"),
+    role: v.union(v.literal("admin"), v.literal("moderator"), v.literal("user")),
   },
   handler: async (ctx, args) => {
-    const { user } = await requireUser(ctx)
-    return setRoleWithActor(ctx, user, args.userId, args.role)
+    const { user } = await requireUser(ctx);
+    return setRoleWithActor(ctx, user, args.userId, args.role);
   },
-})
+});
 
 export const setRoleInternal = internalMutation({
   args: {
-    actorUserId: v.id('users'),
-    targetUserId: v.id('users'),
-    role: v.union(v.literal('admin'), v.literal('moderator'), v.literal('user')),
+    actorUserId: v.id("users"),
+    targetUserId: v.id("users"),
+    role: v.union(v.literal("admin"), v.literal("moderator"), v.literal("user")),
   },
   handler: async (ctx, args) => {
-    const actor = await ctx.db.get(args.actorUserId)
-    if (!actor || actor.deletedAt || actor.deactivatedAt) throw new Error('User not found')
-    return setRoleWithActor(ctx, actor, args.targetUserId, args.role)
+    const actor = await ctx.db.get(args.actorUserId);
+    if (!actor || actor.deletedAt || actor.deactivatedAt) throw new Error("User not found");
+    return setRoleWithActor(ctx, actor, args.targetUserId, args.role);
   },
-})
+});
 
 async function setRoleWithActor(
   ctx: MutationCtx,
-  actor: Doc<'users'>,
-  targetUserId: Id<'users'>,
-  role: 'admin' | 'moderator' | 'user',
+  actor: Doc<"users">,
+  targetUserId: Id<"users">,
+  role: "admin" | "moderator" | "user",
 ) {
-  assertAdmin(actor)
-  const target = await ctx.db.get(targetUserId)
-  if (!target) throw new Error('User not found')
-  const now = Date.now()
-  await ctx.db.patch(targetUserId, { role, updatedAt: now })
-  await ctx.db.insert('auditLogs', {
+  assertAdmin(actor);
+  const target = await ctx.db.get(targetUserId);
+  if (!target) throw new Error("User not found");
+  const now = Date.now();
+  await ctx.db.patch(targetUserId, { role, updatedAt: now });
+  await ctx.db.insert("auditLogs", {
     actorUserId: actor._id,
-    action: 'role.change',
-    targetType: 'user',
+    action: "role.change",
+    targetType: "user",
     targetId: targetUserId,
     metadata: { role },
     createdAt: now,
-  })
-  return { ok: true as const, role }
+  });
+  return { ok: true as const, role };
 }
 
 export const banUser = mutation({
-  args: { userId: v.id('users'), reason: v.optional(v.string()) },
+  args: { userId: v.id("users"), reason: v.optional(v.string()) },
   handler: async (ctx, args) => {
-    const { user } = await requireUser(ctx)
-    return banUserWithActor(ctx, user, args.userId, args.reason)
+    const { user } = await requireUser(ctx);
+    return banUserWithActor(ctx, user, args.userId, args.reason);
   },
-})
+});
 
 export const banUserInternal = internalMutation({
   args: {
-    actorUserId: v.id('users'),
-    targetUserId: v.id('users'),
+    actorUserId: v.id("users"),
+    targetUserId: v.id("users"),
     reason: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
-    const actor = await ctx.db.get(args.actorUserId)
-    if (!actor || actor.deletedAt || actor.deactivatedAt) throw new Error('User not found')
-    return banUserWithActor(ctx, actor, args.targetUserId, args.reason)
+    const actor = await ctx.db.get(args.actorUserId);
+    if (!actor || actor.deletedAt || actor.deactivatedAt) throw new Error("User not found");
+    return banUserWithActor(ctx, actor, args.targetUserId, args.reason);
   },
-})
+});
 
 export const unbanUser = mutation({
-  args: { userId: v.id('users'), reason: v.optional(v.string()) },
+  args: { userId: v.id("users"), reason: v.optional(v.string()) },
   handler: async (ctx, args) => {
-    const { user } = await requireUser(ctx)
-    return unbanUserWithActor(ctx, user, args.userId, args.reason)
+    const { user } = await requireUser(ctx);
+    return unbanUserWithActor(ctx, user, args.userId, args.reason);
   },
-})
+});
 
 export const unbanUserInternal = internalMutation({
   args: {
-    actorUserId: v.id('users'),
-    targetUserId: v.id('users'),
+    actorUserId: v.id("users"),
+    targetUserId: v.id("users"),
     reason: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
-    const actor = await ctx.db.get(args.actorUserId)
-    if (!actor || actor.deletedAt || actor.deactivatedAt) throw new Error('User not found')
-    return unbanUserWithActor(ctx, actor, args.targetUserId, args.reason)
+    const actor = await ctx.db.get(args.actorUserId);
+    if (!actor || actor.deletedAt || actor.deactivatedAt) throw new Error("User not found");
+    return unbanUserWithActor(ctx, actor, args.targetUserId, args.reason);
   },
-})
+});
 
 async function banUserWithActor(
   ctx: MutationCtx,
-  actor: Doc<'users'>,
-  targetUserId: Id<'users'>,
+  actor: Doc<"users">,
+  targetUserId: Id<"users">,
   reasonRaw?: string,
 ) {
-  assertModerator(actor)
+  assertModerator(actor);
 
-  if (targetUserId === actor._id) throw new Error('Cannot ban yourself')
+  if (targetUserId === actor._id) throw new Error("Cannot ban yourself");
 
-  const target = await ctx.db.get(targetUserId)
-  if (!target) throw new Error('User not found')
-  if (target.role === 'admin' && actor.role !== 'admin') {
-    throw new Error('Forbidden')
+  const target = await ctx.db.get(targetUserId);
+  if (!target) throw new Error("User not found");
+  if (target.role === "admin" && actor.role !== "admin") {
+    throw new Error("Forbidden");
   }
 
-  const now = Date.now()
-  const reason = reasonRaw?.trim()
+  const now = Date.now();
+  const reason = reasonRaw?.trim();
   if (reason && reason.length > 500) {
-    throw new Error('Reason too long (max 500 chars)')
+    throw new Error("Reason too long (max 500 chars)");
   }
   if (target.deactivatedAt) {
-    return { ok: true as const, alreadyBanned: true, deletedSkills: 0, deletedComments: { skillComments: 0, soulComments: 0 } }
+    return {
+      ok: true as const,
+      alreadyBanned: true,
+      deletedSkills: 0,
+      deletedComments: { skillComments: 0, soulComments: 0 },
+    };
   }
   if (target.deletedAt) {
     const deletedComments = await softDeleteUserCommentsForBan(ctx, {
       userId: targetUserId,
       deletedBy: actor._id,
       deletedAt: target.deletedAt,
-    })
-    return { ok: true as const, alreadyBanned: true, deletedSkills: 0, deletedComments }
+    });
+    return { ok: true as const, alreadyBanned: true, deletedSkills: 0, deletedComments };
   }
 
   const banSkillsResult = (await ctx.runMutation(
@@ -446,17 +457,17 @@ async function banUserWithActor(
       hiddenBy: actor._id,
       cursor: undefined,
     },
-  )) as { hiddenCount?: number; scheduled?: boolean }
-  const hiddenCount = banSkillsResult.hiddenCount ?? 0
-  const scheduledSkills = banSkillsResult.scheduled ?? false
+  )) as { hiddenCount?: number; scheduled?: boolean };
+  const hiddenCount = banSkillsResult.hiddenCount ?? 0;
+  const scheduledSkills = banSkillsResult.scheduled ?? false;
 
   const tokens = await ctx.db
-    .query('apiTokens')
-    .withIndex('by_user', (q) => q.eq('userId', targetUserId))
-    .collect()
+    .query("apiTokens")
+    .withIndex("by_user", (q) => q.eq("userId", targetUserId))
+    .collect();
   for (const token of tokens) {
     if (!token.revokedAt) {
-      await ctx.db.patch(token._id, { revokedAt: now })
+      await ctx.db.patch(token._id, { revokedAt: now });
     }
   }
 
@@ -464,21 +475,21 @@ async function banUserWithActor(
     userId: targetUserId,
     deletedBy: actor._id,
     deletedAt: now,
-  })
+  });
 
   await ctx.db.patch(targetUserId, {
     deletedAt: now,
-    role: 'user',
+    role: "user",
     updatedAt: now,
     banReason: reason || undefined,
-  })
+  });
 
-  await ctx.runMutation(internal.telemetry.clearUserTelemetryInternal, { userId: targetUserId })
+  await ctx.runMutation(internal.telemetry.clearUserTelemetryInternal, { userId: targetUserId });
 
-  await ctx.db.insert('auditLogs', {
+  await ctx.db.insert("auditLogs", {
     actorUserId: actor._id,
-    action: 'user.ban',
-    targetType: 'user',
+    action: "user.ban",
+    targetType: "user",
     targetId: targetUserId,
     metadata: {
       hiddenSkills: hiddenCount,
@@ -487,7 +498,7 @@ async function banUserWithActor(
       reason: reason || undefined,
     },
     createdAt: now,
-  })
+  });
 
   return {
     ok: true as const,
@@ -495,40 +506,40 @@ async function banUserWithActor(
     deletedSkills: hiddenCount,
     deletedComments,
     scheduledSkills,
-  }
+  };
 }
 
 async function unbanUserWithActor(
   ctx: MutationCtx,
-  actor: Doc<'users'>,
-  targetUserId: Id<'users'>,
+  actor: Doc<"users">,
+  targetUserId: Id<"users">,
   reasonRaw?: string,
 ) {
-  assertAdmin(actor)
-  if (targetUserId === actor._id) throw new Error('Cannot unban yourself')
+  assertAdmin(actor);
+  if (targetUserId === actor._id) throw new Error("Cannot unban yourself");
 
-  const target = await ctx.db.get(targetUserId)
-  if (!target) throw new Error('User not found')
+  const target = await ctx.db.get(targetUserId);
+  if (!target) throw new Error("User not found");
   if (target.deactivatedAt) {
-    throw new Error('Cannot unban a permanently deleted account')
+    throw new Error("Cannot unban a permanently deleted account");
   }
   if (!target.deletedAt) {
-    return { ok: true as const, alreadyUnbanned: true }
+    return { ok: true as const, alreadyUnbanned: true };
   }
 
-  const reason = reasonRaw?.trim()
+  const reason = reasonRaw?.trim();
   if (reason && reason.length > 500) {
-    throw new Error('Reason too long (max 500 chars)')
+    throw new Error("Reason too long (max 500 chars)");
   }
 
-  const now = Date.now()
-  const bannedAt = target.deletedAt
+  const now = Date.now();
+  const bannedAt = target.deletedAt;
   await ctx.db.patch(targetUserId, {
     deletedAt: undefined,
     banReason: undefined,
-    role: 'user',
+    role: "user",
     updatedAt: now,
-  })
+  });
 
   const restoreSkillsResult = (await ctx.runMutation(
     internal.skills.restoreOwnedSkillsForUnbanBatchInternal,
@@ -537,20 +548,25 @@ async function unbanUserWithActor(
       bannedAt,
       cursor: undefined,
     },
-  )) as { restoredCount?: number; scheduled?: boolean }
-  const restoredCount = restoreSkillsResult.restoredCount ?? 0
-  const scheduledSkills = restoreSkillsResult.scheduled ?? false
+  )) as { restoredCount?: number; scheduled?: boolean };
+  const restoredCount = restoreSkillsResult.restoredCount ?? 0;
+  const scheduledSkills = restoreSkillsResult.scheduled ?? false;
 
-  await ctx.db.insert('auditLogs', {
+  await ctx.db.insert("auditLogs", {
     actorUserId: actor._id,
-    action: 'user.unban',
-    targetType: 'user',
+    action: "user.unban",
+    targetType: "user",
     targetId: targetUserId,
     metadata: { reason: reason || undefined, restoredSkills: restoredCount },
     createdAt: now,
-  })
+  });
 
-  return { ok: true as const, alreadyUnbanned: false, restoredSkills: restoredCount, scheduledSkills }
+  return {
+    ok: true as const,
+    alreadyUnbanned: false,
+    restoredSkills: restoredCount,
+    scheduledSkills,
+  };
 }
 
 /**
@@ -559,67 +575,67 @@ async function unbanUserWithActor(
  */
 export const setTrustedPublisher = mutation({
   args: {
-    userId: v.id('users'),
+    userId: v.id("users"),
     trusted: v.boolean(),
   },
   handler: async (ctx, args) => {
-    const { user } = await requireUser(ctx)
-    assertAdmin(user)
+    const { user } = await requireUser(ctx);
+    assertAdmin(user);
 
-    const target = await ctx.db.get(args.userId)
-    if (!target) throw new Error('User not found')
+    const target = await ctx.db.get(args.userId);
+    if (!target) throw new Error("User not found");
 
-    const now = Date.now()
+    const now = Date.now();
     await ctx.db.patch(args.userId, {
       trustedPublisher: args.trusted || undefined,
       updatedAt: now,
-    })
+    });
 
-    await ctx.db.insert('auditLogs', {
+    await ctx.db.insert("auditLogs", {
       actorUserId: user._id,
-      action: args.trusted ? 'user.trusted.set' : 'user.trusted.unset',
-      targetType: 'user',
+      action: args.trusted ? "user.trusted.set" : "user.trusted.unset",
+      targetType: "user",
       targetId: args.userId,
       metadata: { trusted: args.trusted },
       createdAt: now,
-    })
+    });
 
-    return { ok: true as const, trusted: args.trusted }
+    return { ok: true as const, trusted: args.trusted };
   },
-})
+});
 
 export const setTrustedPublisherInternal = internalMutation({
   args: {
-    actorUserId: v.id('users'),
-    targetUserId: v.id('users'),
+    actorUserId: v.id("users"),
+    targetUserId: v.id("users"),
     trusted: v.boolean(),
   },
   handler: async (ctx, args) => {
-    const actor = await ctx.db.get(args.actorUserId)
-    if (!actor || actor.deletedAt || actor.deactivatedAt) throw new Error('User not found')
-    assertAdmin(actor)
+    const actor = await ctx.db.get(args.actorUserId);
+    if (!actor || actor.deletedAt || actor.deactivatedAt) throw new Error("User not found");
+    assertAdmin(actor);
 
-    const target = await ctx.db.get(args.targetUserId)
-    if (!target) throw new Error('User not found')
+    const target = await ctx.db.get(args.targetUserId);
+    if (!target) throw new Error("User not found");
 
-    const now = Date.now()
+    const now = Date.now();
     await ctx.db.patch(args.targetUserId, {
       trustedPublisher: args.trusted || undefined,
       updatedAt: now,
-    })
+    });
 
-    await ctx.db.insert('auditLogs', {
+    await ctx.db.insert("auditLogs", {
       actorUserId: args.actorUserId,
-      action: args.trusted ? 'user.trusted.set' : 'user.trusted.unset',
-      targetType: 'user',
+      action: args.trusted ? "user.trusted.set" : "user.trusted.unset",
+      targetType: "user",
       targetId: args.targetUserId,
       metadata: { trusted: args.trusted },
       createdAt: now,
-    })
+    });
 
-    return { ok: true as const, trusted: args.trusted }
+    return { ok: true as const, trusted: args.trusted };
   },
-})
+});
 
 /**
  * Auto-ban a user whose skill was flagged malicious by VT.
@@ -627,22 +643,22 @@ export const setTrustedPublisherInternal = internalMutation({
  */
 export const autobanMalwareAuthorInternal = internalMutation({
   args: {
-    ownerUserId: v.id('users'),
+    ownerUserId: v.id("users"),
     sha256hash: v.string(),
     slug: v.string(),
   },
   handler: async (ctx, args) => {
-    const target = await ctx.db.get(args.ownerUserId)
-    if (!target) return { ok: false, reason: 'user_not_found' }
-    if (target.deletedAt || target.deactivatedAt) return { ok: true, alreadyBanned: true }
+    const target = await ctx.db.get(args.ownerUserId);
+    if (!target) return { ok: false, reason: "user_not_found" };
+    if (target.deletedAt || target.deactivatedAt) return { ok: true, alreadyBanned: true };
 
     // Never auto-ban moderators or admins
-    if (target.role === 'admin' || target.role === 'moderator') {
-      console.log(`[autoban] Skipping ${target.handle ?? args.ownerUserId}: role=${target.role}`)
-      return { ok: false, reason: 'protected_role' }
+    if (target.role === "admin" || target.role === "moderator") {
+      console.log(`[autoban] Skipping ${target.handle ?? args.ownerUserId}: role=${target.role}`);
+      return { ok: false, reason: "protected_role" };
     }
 
-    const now = Date.now()
+    const now = Date.now();
 
     const banSkillsResult = (await ctx.runMutation(
       internal.skills.applyBanToOwnedSkillsBatchInternal,
@@ -651,18 +667,18 @@ export const autobanMalwareAuthorInternal = internalMutation({
         bannedAt: now,
         cursor: undefined,
       },
-    )) as { hiddenCount?: number; scheduled?: boolean }
-    const hiddenCount = banSkillsResult.hiddenCount ?? 0
-    const scheduledSkills = banSkillsResult.scheduled ?? false
+    )) as { hiddenCount?: number; scheduled?: boolean };
+    const hiddenCount = banSkillsResult.hiddenCount ?? 0;
+    const scheduledSkills = banSkillsResult.scheduled ?? false;
 
     // Revoke all API tokens
     const tokens = await ctx.db
-      .query('apiTokens')
-      .withIndex('by_user', (q) => q.eq('userId', args.ownerUserId))
-      .collect()
+      .query("apiTokens")
+      .withIndex("by_user", (q) => q.eq("userId", args.ownerUserId))
+      .collect();
     for (const token of tokens) {
       if (!token.revokedAt) {
-        await ctx.db.patch(token._id, { revokedAt: now })
+        await ctx.db.patch(token._id, { revokedAt: now });
       }
     }
 
@@ -670,28 +686,28 @@ export const autobanMalwareAuthorInternal = internalMutation({
       userId: args.ownerUserId,
       deletedBy: args.ownerUserId,
       deletedAt: now,
-    })
+    });
 
     // Ban the user
     await ctx.db.patch(args.ownerUserId, {
       deletedAt: now,
-      role: 'user',
+      role: "user",
       updatedAt: now,
-      banReason: 'malware auto-ban',
-    })
+      banReason: "malware auto-ban",
+    });
 
     await ctx.runMutation(internal.telemetry.clearUserTelemetryInternal, {
       userId: args.ownerUserId,
-    })
+    });
 
     // Audit log -- use the target as actor since there's no human actor
-    await ctx.db.insert('auditLogs', {
+    await ctx.db.insert("auditLogs", {
       actorUserId: args.ownerUserId,
-      action: 'user.autoban.malware',
-      targetType: 'user',
+      action: "user.autoban.malware",
+      targetType: "user",
       targetId: args.ownerUserId,
       metadata: {
-        trigger: 'vt.malicious',
+        trigger: "vt.malicious",
         sha256hash: args.sha256hash,
         slug: args.slug,
         hiddenSkills: hiddenCount,
@@ -699,11 +715,11 @@ export const autobanMalwareAuthorInternal = internalMutation({
         deletedSoulComments: deletedComments.soulComments,
       },
       createdAt: now,
-    })
+    });
 
     console.warn(
       `[autoban] Banned ${target.handle ?? args.ownerUserId} — malicious skill: ${args.slug}`,
-    )
+    );
 
     return {
       ok: true,
@@ -711,37 +727,39 @@ export const autobanMalwareAuthorInternal = internalMutation({
       deletedSkills: hiddenCount,
       deletedComments,
       scheduledSkills,
-    }
+    };
   },
-})
+});
 
 export const placeUserUnderModerationInternal = internalMutation({
   args: {
-    ownerUserId: v.id('users'),
+    ownerUserId: v.id("users"),
     slug: v.string(),
     reason: v.string(),
   },
   handler: async (ctx, args) => {
-    const target = await ctx.db.get(args.ownerUserId)
-    if (!target) return { ok: false, reason: 'user_not_found' as const }
+    const target = await ctx.db.get(args.ownerUserId);
+    if (!target) return { ok: false, reason: "user_not_found" as const };
     if (target.deletedAt || target.deactivatedAt) {
-      return { ok: true, alreadyModerated: true as const, hiddenSkills: 0 }
+      return { ok: true, alreadyModerated: true as const, hiddenSkills: 0 };
     }
-    if (target.role === 'admin' || target.role === 'moderator') {
-      console.log(`[moderation] Skipping ${target.handle ?? args.ownerUserId}: role=${target.role}`)
-      return { ok: false, reason: 'protected_role' as const }
+    if (target.role === "admin" || target.role === "moderator") {
+      console.log(
+        `[moderation] Skipping ${target.handle ?? args.ownerUserId}: role=${target.role}`,
+      );
+      return { ok: false, reason: "protected_role" as const };
     }
 
-    const now = Date.now()
-    const alreadyModerated = Boolean(target.requiresModerationAt)
-    const moderationReason = `Auto-held for moderation after malicious upload (${args.reason})`
+    const now = Date.now();
+    const alreadyModerated = Boolean(target.requiresModerationAt);
+    const moderationReason = `Auto-held for moderation after malicious upload (${args.reason})`;
 
     if (!alreadyModerated) {
       await ctx.db.patch(args.ownerUserId, {
         requiresModerationAt: now,
         requiresModerationReason: moderationReason,
         updatedAt: now,
-      })
+      });
     }
 
     const hideSkillsResult = (await ctx.runMutation(
@@ -751,75 +769,75 @@ export const placeUserUnderModerationInternal = internalMutation({
         hiddenAt: now,
         cursor: undefined,
       },
-    )) as { hiddenCount?: number; scheduled?: boolean }
+    )) as { hiddenCount?: number; scheduled?: boolean };
 
-    await ctx.db.insert('auditLogs', {
+    await ctx.db.insert("auditLogs", {
       actorUserId: args.ownerUserId,
-      action: 'user.moderation.auto',
-      targetType: 'user',
+      action: "user.moderation.auto",
+      targetType: "user",
       targetId: args.ownerUserId,
       metadata: {
-        trigger: 'static.malicious',
+        trigger: "static.malicious",
         slug: args.slug,
         reason: args.reason,
         hiddenSkills: hideSkillsResult.hiddenCount ?? 0,
       },
       createdAt: now,
-    })
+    });
 
     return {
       ok: true as const,
       alreadyModerated,
       hiddenSkills: hideSkillsResult.hiddenCount ?? 0,
       scheduledSkills: hideSkillsResult.scheduled ?? false,
-    }
+    };
   },
-})
+});
 
 async function softDeleteUserCommentsForBan(
   ctx: MutationCtx,
-  args: { userId: Id<'users'>; deletedBy: Id<'users'>; deletedAt: number },
+  args: { userId: Id<"users">; deletedBy: Id<"users">; deletedAt: number },
 ) {
-  let skillComments = 0
-  let soulComments = 0
+  let skillComments = 0;
+  let soulComments = 0;
 
   const comments = await ctx.db
-    .query('comments')
-    .withIndex('by_user', (q) => q.eq('userId', args.userId))
-    .collect()
+    .query("comments")
+    .withIndex("by_user", (q) => q.eq("userId", args.userId))
+    .collect();
   for (const comment of comments) {
-    if (comment.softDeletedAt) continue
+    if (comment.softDeletedAt) continue;
     await ctx.db.patch(comment._id, {
       softDeletedAt: args.deletedAt,
       deletedBy: args.deletedBy,
-    })
-    await insertStatEvent(ctx, { skillId: comment.skillId, kind: 'uncomment' })
-    skillComments += 1
+    });
+    await insertStatEvent(ctx, { skillId: comment.skillId, kind: "uncomment" });
+    skillComments += 1;
   }
 
   const soulCommentDocs = await ctx.db
-    .query('soulComments')
-    .withIndex('by_user', (q) => q.eq('userId', args.userId))
-    .collect()
-  const soulCommentCounts = new Map<Id<'souls'>, number>()
+    .query("soulComments")
+    .withIndex("by_user", (q) => q.eq("userId", args.userId))
+    .collect();
+  const soulCommentCounts = new Map<Id<"souls">, number>();
   for (const comment of soulCommentDocs) {
-    if (comment.softDeletedAt) continue
+    if (comment.softDeletedAt) continue;
     await ctx.db.patch(comment._id, {
       softDeletedAt: args.deletedAt,
       deletedBy: args.deletedBy,
-    })
-    soulCommentCounts.set(comment.soulId, (soulCommentCounts.get(comment.soulId) ?? 0) + 1)
-    soulComments += 1
+    });
+    soulCommentCounts.set(comment.soulId, (soulCommentCounts.get(comment.soulId) ?? 0) + 1);
+    soulComments += 1;
   }
 
   for (const [soulId, count] of soulCommentCounts.entries()) {
-    const soul = await ctx.db.get(soulId)
-    if (!soul) continue
+    const soul = await ctx.db.get(soulId);
+    if (!soul) continue;
     await ctx.db.patch(soulId, {
       stats: { ...soul.stats, comments: Math.max(0, soul.stats.comments - count) },
       updatedAt: args.deletedAt,
-    })
+    });
   }
 
-  return { skillComments, soulComments }
+  return { skillComments, soulComments };
 }

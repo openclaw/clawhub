@@ -71,7 +71,6 @@ Docs: [`docs/quickstart.md`](docs/quickstart.md), [`docs/cli.md`](docs/cli.md).
 - Owner rename keeps the old slug as a redirect alias.
 - Owner merge hides the source listing and redirects the old slug to the canonical target.
 
-
 ## Telemetry
 
 ClawHub tracks minimal **install telemetry** (to compute install counts) when you run `clawhub sync` while logged in.
@@ -137,7 +136,17 @@ Add this to `SKILL.md`:
 ---
 name: peekaboo
 description: Capture and automate macOS UI with the Peekaboo CLI.
-metadata: {"clawdbot":{"nix":{"plugin":"github:clawdbot/nix-steipete-tools?dir=tools/peekaboo","systems":["aarch64-darwin"]}}}
+metadata:
+  {
+    "clawdbot":
+      {
+        "nix":
+          {
+            "plugin": "github:clawdbot/nix-steipete-tools?dir=tools/peekaboo",
+            "systems": ["aarch64-darwin"],
+          },
+      },
+  }
 ---
 ```
 
@@ -155,7 +164,18 @@ You can also declare config requirements + an example snippet:
 ---
 name: padel
 description: Check padel court availability and manage bookings via Playtomic.
-metadata: {"clawdbot":{"config":{"requiredEnv":["PADEL_AUTH_FILE"],"stateDirs":[".config/padel"],"example":"config = { env = { PADEL_AUTH_FILE = \\\"/run/agenix/padel-auth\\\"; }; };"}}}
+metadata:
+  {
+    "clawdbot":
+      {
+        "config":
+          {
+            "requiredEnv": ["PADEL_AUTH_FILE"],
+            "stateDirs": [".config/padel"],
+            "example": "config = { env = { PADEL_AUTH_FILE = \\\"/run/agenix/padel-auth\\\"; }; };",
+          },
+      },
+  }
 ---
 ```
 
@@ -165,7 +185,7 @@ To show CLI help (recommended for nix plugins), include the `cli --help` output:
 ---
 name: padel
 description: Check padel court availability and manage bookings via Playtomic.
-metadata: {"clawdbot":{"cliHelp":"padel --help\\nUsage: padel [command]\\n"}}
+metadata: { "clawdbot": { "cliHelp": "padel --help\\nUsage: padel [command]\\n" } }
 ---
 ```
 

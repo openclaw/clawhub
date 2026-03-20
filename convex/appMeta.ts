@@ -1,8 +1,8 @@
-import { query } from './functions'
+import { query } from "./functions";
 
 function normalizeEnv(value: string | undefined) {
-  const normalized = value?.trim()
-  return normalized ? normalized : null
+  const normalized = value?.trim();
+  return normalized ? normalized : null;
 }
 
 export const getDeploymentInfo = query({
@@ -11,4 +11,4 @@ export const getDeploymentInfo = query({
     appBuildSha: normalizeEnv(process.env.APP_BUILD_SHA),
     deployedAt: normalizeEnv(process.env.APP_DEPLOYED_AT),
   }),
-})
+});
