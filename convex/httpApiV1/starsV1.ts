@@ -52,3 +52,20 @@ export async function starsDeleteRouterV1Handler(ctx: ActionCtx, request: Reques
     return text("Unauthorized", 401, rate.headers);
   }
 }
+
+export async function starsGetRouterV1Handler(ctx: ActionCtx, request: Request) {
+  const rate = await applyRateLimit(ctx, request, "read");
+  if (!rate.ok) return rate.response;
+
+  try {
+    const { userId } = await requireApiTokenUser(ctx, request);
+
+    const stars = await ctx.runQuery(internal.stars.listStarsByUserInternal, {
+      userId,
+    });
+
+    return json(stars, 200, rate.headers);
+  } catch {
+    return text("Unauthorized", 401, rate.headers);
+  }
+}
