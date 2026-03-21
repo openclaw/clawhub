@@ -1,4 +1,4 @@
-import { apiRequest } from "../../http.js";
+import { apiRequest, registryUrl } from "../../http.js";
 import { ApiRoutes, ApiV1StarsListResponseSchema } from "../../schema/index.js";
 import { requireAuthToken } from "../authToken.js";
 import { getRegistry } from "../registry.js";
@@ -10,7 +10,7 @@ export async function cmdListStars(opts: GlobalOpts, options: { limit?: number }
     const registry = await getRegistry(opts, { cache: true });
     const spinner = createSpinner("Fetching starred skills from your highlights");
     try {
-        const url = new URL(`${registry}${ApiRoutes.stars}`);
+        const url = registryUrl(ApiRoutes.stars, registry);
         if (typeof options.limit === "number" && Number.isFinite(options.limit)) {
             url.searchParams.set("limit", String(options.limit));
         }
