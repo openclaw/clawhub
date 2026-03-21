@@ -61,7 +61,8 @@ export async function starsGetRouterV1Handler(ctx: ActionCtx, request: Request) 
     const { userId } = await requireApiTokenUser(ctx, request);
 
     const url = new URL(request.url);
-    const limit = toOptionalNumber(url.searchParams.get("limit"));
+    const rawLimit = toOptionalNumber(url.searchParams.get("limit"));
+    const limit = rawLimit !== undefined ? Math.min(Math.max(1, rawLimit), 200) : undefined;
 
     const result = await ctx.runQuery(internal.stars.listStarsByUserInternal, {
       userId,
