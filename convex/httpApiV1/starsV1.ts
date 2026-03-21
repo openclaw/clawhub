@@ -2,7 +2,7 @@ import { internal } from "../_generated/api";
 import type { ActionCtx } from "../_generated/server";
 import { requireApiTokenUser } from "../lib/apiTokenAuth";
 import { applyRateLimit } from "../lib/httpRateLimit";
-import { getPathSegments, json, text, toOptionalNumber } from "./shared";
+import { getPathSegments, json, resolveTagsBatch, text, toOptionalNumber } from "./shared";
 
 export async function starsPostRouterV1Handler(ctx: ActionCtx, request: Request) {
   const rate = await applyRateLimit(ctx, request, "write");
@@ -69,7 +69,22 @@ export async function starsGetRouterV1Handler(ctx: ActionCtx, request: Request) 
       limit,
     });
 
-    return json(result, 200, rate.headers);
+    const resolvedTagsList = await resolveTagsBatch(
+      ctx,
+      result.items.map((item) => item.tags),
+    );
+
+    const items = result.items.map((item, idx) => ({
+      slug: item.slug,
+      displayName: item.displayName,
+      summary: item.summary ?? null,
+      tags: resolvedTagsList[idx],
+      stats: item.stats,
+      createdAt: item.createdAt,
+      updatedAt: item.updatedAt,
+    }));
+
+    return json({ items }, 200, rate.headers);
   } catch {
     return text("Unauthorized", 401, rate.headers);
   }
