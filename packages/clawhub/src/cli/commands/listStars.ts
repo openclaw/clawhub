@@ -15,7 +15,7 @@ export async function cmdListStars(opts: GlobalOpts) {
             { method: "GET", path: ApiRoutes.stars, token },
             ApiV1StarsListResponseSchema,
         );
-        spinner.succeed(`Found ${result.items.length} starred skill${result.items.length === 1 ? "" : "s"}`);
+        spinner.succeed(`Found ${result.items.length} starred skill${result.items.length === 1 ? "" : "s"} from highlights`);
         return result;
     } catch (error) {
         spinner.fail(formatError(error));

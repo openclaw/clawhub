@@ -65,7 +65,7 @@ describe("cmdListStars", () => {
 
         await cmdListStars(makeOpts());
 
-        expect(mockSpinnerSucceed).toHaveBeenCalledWith("Found 0 starred skills");
+        expect(mockSpinnerSucceed).toHaveBeenCalledWith("Found 0 starred skills from highlights");
     });
 
     it("shows singular form for one starred skill", async () => {
@@ -84,7 +84,7 @@ describe("cmdListStars", () => {
 
         await cmdListStars(makeOpts());
 
-        expect(mockSpinnerSucceed).toHaveBeenCalledWith("Found 1 starred skill");
+        expect(mockSpinnerSucceed).toHaveBeenCalledWith("Found 1 starred skill from highlights");
     });
 
     it("shows plural form for multiple starred skills", async () => {
@@ -111,7 +111,7 @@ describe("cmdListStars", () => {
 
         await cmdListStars(makeOpts());
 
-        expect(mockSpinnerSucceed).toHaveBeenCalledWith("Found 2 starred skills");
+        expect(mockSpinnerSucceed).toHaveBeenCalledWith("Found 2 starred skills from highlights");
     });
 
     it("calls spinner fail and rethrows on API error", async () => {
