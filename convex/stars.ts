@@ -1,5 +1,5 @@
 import { v } from "convex/values";
-import { internalMutation, mutation, query } from "./functions";
+import { internalMutation, mutation, internalQuery, query } from "./functions";
 import { requireUser } from "./lib/access";
 import { toPublicSkill } from "./lib/public";
 import { insertStatEvent } from "./skillStatEvents";
