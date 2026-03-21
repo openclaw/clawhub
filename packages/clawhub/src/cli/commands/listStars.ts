@@ -8,7 +8,7 @@ import { createSpinner, formatError } from "../ui.js";
 export async function cmdListStars(opts: GlobalOpts) {
     const token = await requireAuthToken();
     const registry = await getRegistry(opts, { cache: true });
-    const spinner = createSpinner("Fetching starred skills");
+    const spinner = createSpinner("Fetching starred skills from highlights");
     try {
         const result = await apiRequest(
             registry,
