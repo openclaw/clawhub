@@ -113,18 +113,28 @@ export const listStarsByUserInternal = internalQuery({
   args: { userId: v.id("users"), limit: v.optional(v.number()) },
   handler: async (ctx, args) => {
     const limit = args.limit ?? 50;
-    const stars = await ctx.db
-      .query("stars")
-      .withIndex("by_user", (q) => q.eq("userId", args.userId))
-      .order("desc")
-      .take(limit);
-
     const skills: NonNullable<ReturnType<typeof toPublicSkill>>[] = [];
-    for (const star of stars) {
-      const skill = await ctx.db.get(star.skillId);
-      const publicSkill = toPublicSkill(skill);
-      if (!publicSkill) continue;
-      skills.push(publicSkill);
+
+    let cursor = null;
+    const BATCH_SIZE = 20;
+
+    while (skills.length < limit) {
+      const batch = await ctx.db
+        .query("stars")
+        .withIndex("by_user", (q) => q.eq("userId", args.userId))
+        .order("desc")
+        .paginate({ numItems: BATCH_SIZE, cursor });
+
+      for (const star of batch.page) {
+        if (skills.length >= limit) break;
+        const skill = await ctx.db.get(star.skillId);
+        const publicSkill = toPublicSkill(skill);
+        if (!publicSkill) continue;
+        skills.push(publicSkill);
+      }
+
+      if (batch.isDone) break;
+      cursor = batch.continueCursor;
     }
 
     return { items: skills };
