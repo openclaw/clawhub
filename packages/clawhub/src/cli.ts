@@ -575,7 +575,7 @@ program
 
 program
   .command("list-stars")
-  .description("List your starred skills from highlights")
+  .description("List your starred skills from your highlights")
   .action(async () => {
     const opts = await resolveGlobalOpts();
     await cmdListStars(opts);

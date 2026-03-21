@@ -86,7 +86,7 @@ Stores your API token + cached registry URL.
 
 ### `list-stars`
 
-- Lists starred skills from highlights.
+- Lists starred skills from your highlights.
 - Calls `GET /api/v1/stars`.
 
 ### `search <query...>`
