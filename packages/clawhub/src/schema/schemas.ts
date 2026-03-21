@@ -344,6 +344,18 @@ export const ApiV1UnstarResponseSchema = type({
   alreadyUnstarred: "boolean",
 });
 
+export const ApiV1StarsListResponseSchema = type({
+  items: type({
+    slug: "string",
+    displayName: "string",
+    summary: "string|null?",
+    tags: "unknown",
+    stats: "unknown",
+    createdAt: "number",
+    updatedAt: "number",
+  }).array(),
+});
+
 export const SkillInstallSpecSchema = type({
   id: "string?",
   kind: '"brew"|"node"|"go"|"uv"',
