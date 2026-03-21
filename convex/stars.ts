@@ -108,3 +108,13 @@ export const removeStarInternal = internalMutation({
     return { ok: true as const, unstarred: true, alreadyUnstarred: false };
   },
 });
+
+export const listStarsByUserInternal = internalQuery({
+  args: { userId: v.id("users") },
+  handler: async (ctx, { userId }) => {
+    return await ctx.db
+      .query("stars")
+      .withIndex("by_userId", (q) => q.eq("userId", userId))
+      .collect();
+  },
+});
