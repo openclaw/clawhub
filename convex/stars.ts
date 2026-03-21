@@ -110,29 +110,23 @@ export const removeStarInternal = internalMutation({
 });
 
 export const listStarsByUserInternal = internalQuery({
-  args: { userId: v.id("users") },
-  handler: async (ctx, { userId }) => {
+  args: { userId: v.id("users"), limit: v.optional(v.number()) },
+  handler: async (ctx, args) => {
+    const limit = args.limit ?? 50;
     const stars = await ctx.db
       .query("stars")
-      .withIndex("by_user", (q) => q.eq("userId", userId))
-      .collect();
+      .withIndex("by_user", (q) => q.eq("userId", args.userId))
+      .order("desc")
+      .take(limit);
 
-    const skills = await Promise.all(
-      stars.map(async (star) => {
-        const skill = await ctx.db.get(star.skillId);
-        if (!skill || skill.softDeletedAt) return null;
-        return {
-          slug: skill.slug,
-          displayName: skill.displayName,
-          summary: skill.summary ?? null,
-          tags: skill.tags,
-          stats: skill.stats,
-          createdAt: skill.createdAt,
-          updatedAt: skill.updatedAt,
-        };
-      }),
-    );
+    const skills: NonNullable<ReturnType<typeof toPublicSkill>>[] = [];
+    for (const star of stars) {
+      const skill = await ctx.db.get(star.skillId);
+      const publicSkill = toPublicSkill(skill);
+      if (!publicSkill) continue;
+      skills.push(publicSkill);
+    }
 
-    return { items: skills.filter((s): s is NonNullable<typeof s> => s !== null) };
+    return { items: skills };
   },
 });
