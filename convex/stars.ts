@@ -114,13 +114,13 @@ export const listStarsByUserInternal = internalQuery({
   handler: async (ctx, { userId }) => {
     const stars = await ctx.db
       .query("stars")
-      .withIndex("by_userId", (q) => q.eq("userId", userId))
+      .withIndex("by_user", (q) => q.eq("userId", userId))
       .collect();
 
     const skills = await Promise.all(
       stars.map(async (star) => {
         const skill = await ctx.db.get(star.skillId);
-        if (!skill) return null;
+        if (!skill || skill.softDeletedAt) return null;
         return {
           slug: skill.slug,
           displayName: skill.displayName,
@@ -133,6 +133,6 @@ export const listStarsByUserInternal = internalQuery({
       }),
     );
 
-    return { items: skills.filter(Boolean) };
+    return { items: skills.filter((s): s is NonNullable<typeof s> => s !== null) };
   },
 });
