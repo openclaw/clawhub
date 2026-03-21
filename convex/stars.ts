@@ -112,9 +112,27 @@ export const removeStarInternal = internalMutation({
 export const listStarsByUserInternal = internalQuery({
   args: { userId: v.id("users") },
   handler: async (ctx, { userId }) => {
-    return await ctx.db
+    const stars = await ctx.db
       .query("stars")
       .withIndex("by_userId", (q) => q.eq("userId", userId))
       .collect();
+
+    const skills = await Promise.all(
+      stars.map(async (star) => {
+        const skill = await ctx.db.get(star.skillId);
+        if (!skill) return null;
+        return {
+          slug: skill.slug,
+          displayName: skill.displayName,
+          summary: skill.summary ?? null,
+          tags: skill.tags,
+          stats: skill.stats,
+          createdAt: skill.createdAt,
+          updatedAt: skill.updatedAt,
+        };
+      }),
+    );
+
+    return { items: skills.filter(Boolean) };
   },
 });

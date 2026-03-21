@@ -60,11 +60,11 @@ export async function starsGetRouterV1Handler(ctx: ActionCtx, request: Request) 
   try {
     const { userId } = await requireApiTokenUser(ctx, request);
 
-    const stars = await ctx.runQuery(internal.stars.listStarsByUserInternal, {
+    const result = await ctx.runQuery(internal.stars.listStarsByUserInternal, {
       userId,
     });
 
-    return json(stars, 200, rate.headers);
+    return json(result, 200, rate.headers);
   } catch {
     return text("Unauthorized", 401, rate.headers);
   }
