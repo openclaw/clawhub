@@ -55,11 +55,11 @@ describe("cmdListStars", () => {
 
         await cmdListStars(makeOpts());
 
-        expect(mockApiRequest).toHaveBeenCalledWith(
-            "https://clawhub.ai",
-            expect.objectContaining({ method: "GET", path: ApiRoutes.stars, token: "tkn" }),
-            expect.anything(),
-        );
+        const [, requestArgs] = mockApiRequest.mock.calls[0] ?? [];
+        const url = new URL(String(requestArgs?.url));
+        expect(requestArgs?.method).toBe("GET");
+        expect(url.pathname).toBe(ApiRoutes.stars);
+        expect(requestArgs?.token).toBe("tkn");
     });
 
     it("shows success message with correct count for empty list", async () => {
@@ -143,5 +143,25 @@ describe("cmdListStars", () => {
         await cmdListStars(makeOpts());
 
         expect(mockLog).not.toHaveBeenCalled();
+    });
+
+    it("passes limit query param when provided", async () => {
+        mockApiRequest.mockResolvedValue({ items: [] });
+
+        await cmdListStars(makeOpts(), { limit: 10 });
+
+        const [, requestArgs] = mockApiRequest.mock.calls[0] ?? [];
+        const url = new URL(String(requestArgs?.url));
+        expect(url.searchParams.get("limit")).toBe("10");
+    });
+
+    it("does not pass limit query param when not provided", async () => {
+        mockApiRequest.mockResolvedValue({ items: [] });
+
+        await cmdListStars(makeOpts());
+
+        const [, requestArgs] = mockApiRequest.mock.calls[0] ?? [];
+        const url = new URL(String(requestArgs?.url));
+        expect(url.searchParams.get("limit")).toBeNull();
     });
 });

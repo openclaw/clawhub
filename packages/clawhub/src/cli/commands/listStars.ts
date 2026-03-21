@@ -5,14 +5,18 @@ import { getRegistry } from "../registry.js";
 import type { GlobalOpts } from "../types.js";
 import { createSpinner, formatError } from "../ui.js";
 
-export async function cmdListStars(opts: GlobalOpts) {
+export async function cmdListStars(opts: GlobalOpts, options: { limit?: number } = {}) {
     const token = await requireAuthToken();
     const registry = await getRegistry(opts, { cache: true });
     const spinner = createSpinner("Fetching starred skills from your highlights");
     try {
+        const url = new URL(`${registry}${ApiRoutes.stars}`);
+        if (typeof options.limit === "number" && Number.isFinite(options.limit)) {
+            url.searchParams.set("limit", String(options.limit));
+        }
         const result = await apiRequest(
             registry,
-            { method: "GET", path: ApiRoutes.stars, token },
+            { method: "GET", url: url.toString(), token },
             ApiV1StarsListResponseSchema,
         );
         spinner.succeed(`Found ${result.items.length} starred skill${result.items.length === 1 ? "" : "s"} in your highlights`);
