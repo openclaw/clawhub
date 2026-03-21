@@ -576,9 +576,10 @@ program
 program
   .command("list-stars")
   .description("List your starred skills from your highlights")
-  .action(async () => {
+  .option("--limit <n>", "Max results (default: 50, max: 200)", (value) => Number.parseInt(value, 10))
+  .action(async (options) => {
     const opts = await resolveGlobalOpts();
-    await cmdListStars(opts);
+    await cmdListStars(opts, { limit: options.limit });
   });
 
 program

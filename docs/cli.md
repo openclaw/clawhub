@@ -88,6 +88,8 @@ Stores your API token + cached registry URL.
 
 - Lists starred skills from your highlights.
 - Calls `GET /api/v1/stars`.
+- Max results (default: 50, max: 200)
+- `--limit <n>`
 
 ### `search <query...>`
 
