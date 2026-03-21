@@ -16,6 +16,9 @@ export async function cmdListStars(opts: GlobalOpts) {
             ApiV1StarsListResponseSchema,
         );
         spinner.succeed(`Found ${result.items.length} starred skill${result.items.length === 1 ? "" : "s"} from highlights`);
+        for (const item of result.items) {
+            console.log(`${item.slug}  ${item.displayName}`);
+        }
         return result;
     } catch (error) {
         spinner.fail(formatError(error));

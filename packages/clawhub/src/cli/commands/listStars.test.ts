@@ -22,6 +22,8 @@ const mockFail = vi.fn((message: string) => {
     throw new Error(message);
 });
 
+const mockLog = vi.spyOn(console, "log").mockImplementation(() => { });
+
 const mockSpinnerSucceed = vi.fn();
 const mockSpinnerFail = vi.fn();
 
@@ -119,5 +121,27 @@ describe("cmdListStars", () => {
 
         await expect(cmdListStars(makeOpts())).rejects.toThrow("Unauthorized");
         expect(mockSpinnerFail).toHaveBeenCalledWith("Unauthorized");
+    });
+    
+    it("prints each starred skill with slug and display name", async () => {
+        mockApiRequest.mockResolvedValue({
+            items: [
+                { slug: "skill-one", displayName: "Skill One", tags: [], stats: {}, createdAt: 0, updatedAt: 0 },
+                { slug: "skill-two", displayName: "Skill Two", tags: [], stats: {}, createdAt: 0, updatedAt: 0 },
+            ],
+        });
+
+        await cmdListStars(makeOpts());
+
+        expect(mockLog).toHaveBeenCalledWith("skill-one  Skill One");
+        expect(mockLog).toHaveBeenCalledWith("skill-two  Skill Two");
+    });
+
+    it("prints nothing extra for empty list", async () => {
+        mockApiRequest.mockResolvedValue({ items: [] });
+
+        await cmdListStars(makeOpts());
+
+        expect(mockLog).not.toHaveBeenCalled();
     });
 });
