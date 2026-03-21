@@ -33,6 +33,18 @@ vi.mock("../ui.js", () => ({
     formatError: (error: unknown) => (error instanceof Error ? error.message : String(error)),
 }));
 
+const mockRegistryUrl = vi.fn((path: string, registry: string) => {
+    const base = registry.endsWith("/") ? registry : `${registry}/`;
+    const relative = path.startsWith("/") ? path.slice(1) : path;
+    return new URL(relative, base);
+});
+
+vi.mock("../../http.js", () => ({
+    apiRequest: (registry: unknown, args: unknown, schema?: unknown) =>
+        mockApiRequest(registry, args, schema),
+    registryUrl: (...args: [string, string]) => mockRegistryUrl(...args),
+}));
+
 const { cmdListStars } = await import("./listStars.js");
 
 function makeOpts(): GlobalOpts {
