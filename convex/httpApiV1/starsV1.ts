@@ -2,7 +2,7 @@ import { internal } from "../_generated/api";
 import type { ActionCtx } from "../_generated/server";
 import { requireApiTokenUser } from "../lib/apiTokenAuth";
 import { applyRateLimit } from "../lib/httpRateLimit";
-import { getPathSegments, json, text } from "./shared";
+import { getPathSegments, json, text, toOptionalNumber } from "./shared";
 
 export async function starsPostRouterV1Handler(ctx: ActionCtx, request: Request) {
   const rate = await applyRateLimit(ctx, request, "write");
@@ -61,8 +61,7 @@ export async function starsGetRouterV1Handler(ctx: ActionCtx, request: Request) 
     const { userId } = await requireApiTokenUser(ctx, request);
 
     const url = new URL(request.url);
-    const limitParam = url.searchParams.get("limit");
-    const limit = limitParam ? Math.min(Math.max(1, parseInt(limitParam, 10)), 200) : undefined;
+    const limit = toOptionalNumber(url.searchParams.get("limit"));
 
     const result = await ctx.runQuery(internal.stars.listStarsByUserInternal, {
       userId,
