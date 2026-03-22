@@ -45,6 +45,7 @@ export type SkillEvalContext = {
     metadata?: unknown;
     clawdis?: unknown;
   };
+  category?: string;
   files: Array<{ path: string; size: number }>;
   skillMdContent: string;
   fileContents: Array<{ path: string; content: string }>;
@@ -170,6 +171,25 @@ The skill has already been scanned by a regex-based pattern detector. Those find
 - If scan findings exist, incorporate them into your reasoning but evaluate whether they make sense in context. A "deployment" skill with child_process exec is expected. A "markdown-formatter" with child_process exec is not.
 - If no scan findings exist, that does NOT mean the skill is safe. Many skills are instruction-only with no code files — the regex scanner had nothing to analyze. For these skills, your assessment of the SKILL.md instructions is the primary security signal.
 - Never downgrade a scan finding's severity. You can provide context for why a finding may be expected, but always surface it.
+
+## Evaluating security tools
+
+Skills may declare a \`category\` in their frontmatter metadata. When \`category: security\` is declared, the skill claims to be a security scanner, audit tool, threat detector, or similar defensive tool. Evaluate these skills through a security-tool lens:
+
+Security tools **legitimately contain patterns that look malicious in other contexts**:
+- **IOC databases and malware signatures** — hash lists, encoded payloads, regex patterns matching known threats. These are detection references, not payloads.
+- **Shell command execution** — security scanners run system commands to audit configurations, check file integrity, enumerate processes, or inspect network state.
+- **Credential scanning** — tools that check for exposed secrets read environment variables and config files specifically to detect leaked credentials.
+- **File read combined with network send** — reporting scan results to the user or to a dashboard is core functionality for a security tool.
+- **Obfuscated code patterns** — IOC databases may contain hex-encoded signatures, base64-encoded samples, or regex patterns that trigger obfuscation detectors.
+
+When evaluating a skill with \`category: security\`:
+1. **Does the skill analyse/detect threats (coherent) or deploy them (incoherent)?** A security scanner reading \`process.env\` to check for exposed credentials is fundamentally different from a weather app reading \`process.env\` to steal them.
+2. **Do the patterns serve the stated detection purpose?** IOC hashes in a threat-detection skill are coherent. IOC hashes in a recipe manager are not.
+3. **Does the skill report findings to the user/operator vs. exfiltrate to unrelated endpoints?** Sending scan results to a local file, stdout, or a declared reporting endpoint is expected. Sending data to an unrelated third-party server is suspicious regardless of category.
+4. **Are malicious behaviours still malicious.** The category declaration does NOT excuse crypto mining, obfuscated install payloads designed to compromise the host, or known blocked signatures. These are incoherent with any legitimate security tool.
+
+If the skill declares \`category: security\` but its actual content is inconsistent with being a security tool, the category declaration itself becomes evidence of misdirection. Treat it as a signal of potential abuse — a non-security skill claiming to be a security tool to bypass scanning is more suspicious, not less.
 
 ## Verdict definitions
 
@@ -305,7 +325,8 @@ export function assembleEvalUserMessage(ctx: SkillEvalContext): string {
 - Owner ID: ${ctx.ownerUserId}
 - Slug: ${ctx.slug}
 - Version: ${ctx.version}
-- Published: ${new Date(ctx.createdAt).toISOString()}`);
+- Published: ${new Date(ctx.createdAt).toISOString()}
+- Category: ${ctx.category ?? "none (default)"}`);
 
   // Flags
   const always = fm.always ?? clawdis.always;
