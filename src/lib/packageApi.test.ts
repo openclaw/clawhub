@@ -1,10 +1,16 @@
 /* @vitest-environment node */
 
 import { afterEach, describe, expect, it, vi } from "vitest";
+const getRequestHeadersMock = vi.fn();
+vi.mock("@tanstack/react-start/server", () => ({
+  getRequestHeaders: () => getRequestHeadersMock(),
+}));
+
 import { fetchPackageDetail, fetchPackageReadme, fetchPackages } from "./packageApi";
 
 describe("fetchPackages", () => {
   afterEach(() => {
+    getRequestHeadersMock.mockReset();
     vi.restoreAllMocks();
     vi.unstubAllEnvs();
   });
@@ -89,5 +95,26 @@ describe("fetchPackages", () => {
       package: null,
       owner: null,
     });
+  });
+
+  it("forwards request cookies and includes credentials for package detail fetches", async () => {
+    vi.stubEnv("VITE_CONVEX_URL", "https://registry.example");
+    getRequestHeadersMock.mockReturnValue(new Headers({ cookie: "session=abc" }));
+    const fetchMock = vi.spyOn(globalThis, "fetch").mockResolvedValue(
+      new Response(JSON.stringify({ package: null, owner: null }), { status: 200 }),
+    );
+
+    await fetchPackageDetail("private-plugin");
+
+    const [, requestInit] = fetchMock.mock.calls[0] ?? [];
+    expect(requestInit).toEqual(
+      expect.objectContaining({
+        credentials: "include",
+        headers: expect.objectContaining({
+          Accept: "application/json",
+          cookie: "session=abc",
+        }),
+      }),
+    );
   });
 });

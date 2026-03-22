@@ -1,3 +1,4 @@
+import { getAuthUserId } from "@convex-dev/auth/server";
 import { PackagePublishRequestSchema, parseArk } from "clawhub-schema";
 import { api, internal } from "../_generated/api";
 import type { Doc, Id } from "../_generated/dataModel";
@@ -311,7 +312,7 @@ export async function packagesGetRouterV1Handler(ctx: ActionCtx, request: Reques
   }
 
   const packageName = segments[0] ?? "";
-  const viewerUserId = await getOptionalApiTokenUserId(ctx, request);
+  const viewerUserId = (await getOptionalApiTokenUserId(ctx, request)) ?? (await getAuthUserId(ctx));
   const detail = (await runQueryRef(
     ctx,
     apiRefs.packages.getByName,
@@ -323,7 +324,7 @@ export async function packagesGetRouterV1Handler(ctx: ActionCtx, request: Reques
     | {
         package: PublicPackageDocLike | null;
         latestRelease: ReleaseLike | null;
-        owner: { handle?: string; displayName?: string; image?: string } | null;
+        owner: { _id: Id<"users">; handle?: string; displayName?: string; image?: string } | null;
       }
     | null;
 
@@ -440,7 +441,7 @@ export async function packagesGetRouterV1Handler(ctx: ActionCtx, request: Reques
       });
     }
     const zip = buildDeterministicZip(entries, {
-      ownerId: String(detail.package._id),
+      ownerId: String(detail.owner?._id ?? ""),
       slug: detail.package.name.replaceAll("/", "-"),
       version: release.version,
       publishedAt: release.createdAt,

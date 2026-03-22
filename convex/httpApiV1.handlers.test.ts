@@ -1,6 +1,11 @@
 /* @vitest-environment node */
+import { unzipSync } from "fflate";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { internal } from "./_generated/api";
+
+vi.mock("@convex-dev/auth/server", () => ({
+  getAuthUserId: vi.fn(),
+}));
 
 vi.mock("./lib/apiTokenAuth", () => ({
   requireApiTokenUser: vi.fn(),
@@ -11,6 +16,7 @@ vi.mock("./skills", () => ({
   publishVersionForUser: vi.fn(),
 }));
 
+const { getAuthUserId } = await import("@convex-dev/auth/server");
 const { getOptionalApiTokenUserId, requireApiTokenUser } = await import("./lib/apiTokenAuth");
 const { publishVersionForUser } = await import("./skills");
 const { __handlers } = await import("./httpApiV1");
@@ -67,6 +73,8 @@ const blockedRate = () => ({
 });
 
 beforeEach(() => {
+  vi.mocked(getAuthUserId).mockReset();
+  vi.mocked(getAuthUserId).mockResolvedValue(null);
   vi.mocked(getOptionalApiTokenUserId).mockReset();
   vi.mocked(getOptionalApiTokenUserId).mockResolvedValue(null);
   vi.mocked(requireApiTokenUser).mockReset();
@@ -2298,6 +2306,41 @@ describe("httpApiV1 handlers", () => {
     );
   });
 
+  it("packages detail allows private packages for browser-session owners", async () => {
+    vi.mocked(getAuthUserId).mockResolvedValue("users:owner" as never);
+    const runQuery = vi.fn().mockResolvedValue({
+      package: {
+        _id: "packages:private",
+        name: "private-plugin",
+        displayName: "Private Plugin",
+        family: "code-plugin",
+        tags: {},
+        latestReleaseId: "packageReleases:1",
+        channel: "private",
+        isOfficial: false,
+        createdAt: 1,
+        updatedAt: 1,
+      },
+      latestRelease: null,
+      owner: { _id: "users:owner", handle: "owner" },
+    });
+    const runMutation = vi.fn().mockResolvedValue(okRate());
+
+    const response = await __handlers.packagesGetRouterV1Handler(
+      makeCtx({ runQuery, runMutation }),
+      new Request("https://example.com/api/v1/packages/private-plugin"),
+    );
+
+    expect(response.status).toBe(200);
+    expect(runQuery).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({
+        name: "private-plugin",
+        viewerUserId: "users:owner",
+      }),
+    );
+  });
+
   it("treats /packages/search without q as a package detail route", async () => {
     const runMutation = vi.fn().mockResolvedValue(okRate());
     const runQuery = vi.fn(async (_query: unknown, args: Record<string, unknown>) => {
@@ -2403,6 +2446,63 @@ describe("httpApiV1 handlers", () => {
         limit: 20,
       }),
     );
+  });
+
+  it("package download metadata uses the owner user id", async () => {
+    const runMutation = vi.fn().mockResolvedValue(okRate());
+    const runQuery = vi.fn(async (_query: unknown, args: Record<string, unknown>) => {
+      if ("name" in args) {
+        return {
+          package: {
+            _id: "packages:1",
+            name: "demo-plugin",
+            displayName: "Demo Plugin",
+            family: "code-plugin",
+            tags: {},
+            latestReleaseId: "packageReleases:1",
+            channel: "community",
+            isOfficial: false,
+            createdAt: 1,
+            updatedAt: 1,
+          },
+          latestRelease: null,
+          owner: { _id: "users:owner", handle: "owner" },
+        };
+      }
+      if ("releaseId" in args) {
+        return {
+          _id: "packageReleases:1",
+          version: "1.0.0",
+          createdAt: 1,
+          changelog: "init",
+          files: [
+            {
+              path: "package.json",
+              size: 2,
+              sha256: "a".repeat(64),
+              storageId: "storage:1",
+              contentType: "application/json",
+            },
+          ],
+        };
+      }
+      return null;
+    });
+
+    const response = await __handlers.packagesGetRouterV1Handler(
+      makeCtx({
+        runQuery,
+        runMutation,
+        storage: {
+          get: vi.fn().mockResolvedValue(new Blob(["{}"], { type: "application/json" })),
+        },
+      }),
+      new Request("https://example.com/api/v1/packages/demo-plugin/download"),
+    );
+
+    const zipEntries = unzipSync(new Uint8Array(await response.arrayBuffer()));
+    const meta = JSON.parse(new TextDecoder().decode(zipEntries["_meta.json"]));
+    expect(meta.ownerId).toBe("users:owner");
   });
 
   it("blocks file and download access to soft-deleted package releases", async () => {

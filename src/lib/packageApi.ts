@@ -76,11 +76,41 @@ function packageApiUrl(path: string) {
   return new URL(path.startsWith("/") ? path : `/${path}`, base);
 }
 
-async function fetchJson<T>(url: URL): Promise<T> {
-  const response = await fetch(url.toString(), {
+async function getForwardedHeaders() {
+  if (typeof window !== "undefined" || !import.meta.env.SSR) return {};
+  try {
+    const serverRuntimeModule = "@tanstack/react-start/server";
+    const { getRequestHeaders } = (await import(
+      /* @vite-ignore */ serverRuntimeModule
+    )) as {
+      getRequestHeaders: () => Headers;
+    };
+    const requestHeaders = getRequestHeaders();
+    const headers: Record<string, string> = {};
+    const cookie = requestHeaders.get("cookie");
+    const authorization = requestHeaders.get("authorization");
+    if (cookie) headers.cookie = cookie;
+    if (authorization) headers.authorization = authorization;
+    return headers;
+  } catch {
+    return {};
+  }
+}
+
+async function packageFetch(url: URL, accept: string) {
+  const forwarded = await getForwardedHeaders();
+  return await fetch(url.toString(), {
     method: "GET",
-    headers: { Accept: "application/json" },
+    credentials: "include",
+    headers: {
+      Accept: accept,
+      ...forwarded,
+    },
   });
+}
+
+async function fetchJson<T>(url: URL): Promise<T> {
+  const response = await packageFetch(url, "application/json");
   if (!response.ok) throw new Error(await response.text());
   return (await response.json()) as T;
 }
@@ -129,10 +159,7 @@ export async function fetchPackages(params: {
 
 export async function fetchPackageDetail(name: string) {
   const url = packageApiUrl(`${ApiRoutes.packages}/${encodeURIComponent(name)}`);
-  const response = await fetch(url.toString(), {
-    method: "GET",
-    headers: { Accept: "application/json" },
-  });
+  const response = await packageFetch(url, "application/json");
   if (response.status === 404) {
     return {
       package: null,
@@ -156,10 +183,7 @@ export async function fetchPackageReadme(name: string, version?: string | null) 
     const url = packageApiUrl(`${ApiRoutes.packages}/${encodeURIComponent(name)}/file`);
     url.searchParams.set("path", path);
     if (version) url.searchParams.set("version", version);
-    const response = await fetch(url.toString(), {
-      method: "GET",
-      headers: { Accept: "text/plain" },
-    });
+    const response = await packageFetch(url, "text/plain");
     if (response.ok) return await response.text();
   }
   return null;
