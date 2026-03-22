@@ -40,7 +40,8 @@ type SkillSearchEntry = {
 
 type SearchResult = SkillSearchEntry & { score: number };
 
-const SLUG_EXACT_BOOST = 1.4;
+const EXACT_SLUG_BOOST = 2.5;
+const SLUG_TOKEN_BOOST = 1.4;
 const SLUG_PREFIX_BOOST = 0.8;
 const NAME_EXACT_BOOST = 1.1;
 const NAME_PREFIX_BOOST = 0.6;
@@ -68,8 +69,15 @@ function getLexicalBoost(queryTokens: string[], displayName: string, slug: strin
   const nameTokens = tokenize(displayName);
 
   let boost = 0;
-  if (matchesAllTokens(queryTokens, slugTokens, (candidate, query) => candidate === query)) {
-    boost += SLUG_EXACT_BOOST;
+
+  // Exact slug match: "self-improving-agent" query → "self-improving-agent" slug
+  // Must be checked before token-based matching to distinguish from
+  // slugs that merely contain all query tokens (e.g., "xiucheng-self-improving-agent")
+  const normalizedQuery = queryTokens.join("-");
+  if (normalizedQuery === slug) {
+    boost += EXACT_SLUG_BOOST;
+  } else if (matchesAllTokens(queryTokens, slugTokens, (candidate, query) => candidate === query)) {
+    boost += SLUG_TOKEN_BOOST;
   } else if (
     matchesAllTokens(queryTokens, slugTokens, (candidate, query) => candidate.startsWith(query))
   ) {
