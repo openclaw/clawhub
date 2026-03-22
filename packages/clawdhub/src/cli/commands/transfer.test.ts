@@ -81,10 +81,11 @@ describe("transfer commands", () => {
         path: "/api/v1/skills/demo/transfer",
       }),
       expect.anything(),
-    );
-    const requestArgs = mockApiRequest.mock.calls[0]?.[1] as { body?: string };
-    expect(requestArgs.body).toContain('"toUserHandle":"alice"');
-  });
+    )
+    const requestArgs = mockApiRequest.mock.calls[0]?.[1] as { body?: unknown }
+    expect(typeof requestArgs.body).toBe('object')
+    expect(requestArgs.body).toEqual({ toUserHandle: 'alice', message: 'Please take over' })
+  })
 
   it("list calls incoming transfers endpoint", async () => {
     mockApiRequest.mockResolvedValueOnce({

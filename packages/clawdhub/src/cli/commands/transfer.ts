@@ -88,10 +88,10 @@ export async function cmdTransferRequest(
         method: "POST",
         path: `${ApiRoutes.skills}/${encodeURIComponent(slug)}/transfer`,
         token,
-        body: JSON.stringify({
+        body: {
           toUserHandle: toHandle,
           message: options.message,
-        }),
+        },
       },
       ApiV1TransferRequestResponseSchema,
     );
