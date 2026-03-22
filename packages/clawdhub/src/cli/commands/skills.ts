@@ -23,6 +23,7 @@ import { getOptionalAuthToken } from "../authToken.js";
 import { getRegistry } from "../registry.js";
 import type { GlobalOpts, ResolveResult } from "../types.js";
 import { createSpinner, fail, formatError, isInteractive, promptConfirm } from "../ui.js";
+import { platform } from "node:os";
 
 function normalizeSkillSlugOrFail(raw: string) {
   const slug = raw.trim();
@@ -95,6 +96,13 @@ export async function cmdInstall(
       { method: "GET", path: `${ApiRoutes.skills}/${encodeURIComponent(trimmed)}`, token },
       ApiV1SkillResponseSchema,
     );
+
+    // Check system requirements before proceeding
+    const currentPlatform = platform();
+    if (skillMeta.metadata?.os && !skillMeta.metadata.os.includes(currentPlatform)) {
+      spinner.fail(`Incompatible system: ${trimmed} is not supported on ${currentPlatform}`);
+      fail("This skill is not compatible with your system.");
+    }
 
     // Check moderation status before proceeding
     if (skillMeta.moderation?.isMalwareBlocked) {
