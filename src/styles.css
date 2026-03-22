@@ -3973,9 +3973,11 @@ html.theme-transition::view-transition-new(theme) {
   align-items: center;
   justify-content: space-between;
   gap: 12px;
+  width: 100%;
   padding: 10px 14px;
   cursor: pointer;
   user-select: text;
+  text-align: left;
   border-radius: 12px;
   transition: background 0.15s ease;
 }
@@ -4014,6 +4016,7 @@ html.theme-transition::view-transition-new(theme) {
   flex: 1;
   cursor: text;
   user-select: text;
+  text-align: left;
 }
 
 .analysis-body {
