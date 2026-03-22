@@ -29,6 +29,7 @@ import {
   cmdUpdate,
 } from "./cli/commands/skills.js";
 import { cmdStarSkill } from "./cli/commands/star.js";
+import { cmdListStars } from "./cli/commands/listStars.js";
 import { cmdSync } from "./cli/commands/sync.js";
 import {
   cmdTransferAccept,
@@ -510,6 +511,15 @@ program
   .action(async (slug, options) => {
     const opts = await resolveGlobalOpts();
     await cmdUnstarSkill(opts, slug, options, isInputAllowed());
+  });
+
+program
+  .command("list-stars")
+  .description("List your starred skills from your highlights")
+  .option("--limit <n>", "Max results (default: 50, max: 200)", (value) => Number.parseInt(value, 10))
+  .action(async (options) => {
+    const opts = await resolveGlobalOpts();
+    await cmdListStars(opts, { limit: options.limit });
   });
 
 program

@@ -1,5 +1,5 @@
 import { v } from "convex/values";
-import { internalMutation, mutation, query } from "./functions";
+import { internalMutation, mutation, internalQuery, query } from "./functions";
 import { requireUser } from "./lib/access";
 import { toPublicSkill } from "./lib/public";
 import { insertStatEvent } from "./skillStatEvents";
@@ -104,5 +104,37 @@ export const removeStarInternal = internalMutation({
     await insertStatEvent(ctx, { skillId: skill._id, kind: "unstar" });
 
     return { ok: true as const, unstarred: true, alreadyUnstarred: false };
+  },
+});
+
+export const listStarsByUserInternal = internalQuery({
+  args: { userId: v.id("users"), limit: v.optional(v.number()) },
+  handler: async (ctx, args) => {
+    const limit = args.limit ?? 50;
+    const skills: NonNullable<ReturnType<typeof toPublicSkill>>[] = [];
+
+    let cursor = null;
+    const BATCH_SIZE = 20;
+
+    while (skills.length < limit) {
+      const batch = await ctx.db
+        .query("stars")
+        .withIndex("by_user", (q) => q.eq("userId", args.userId))
+        .order("desc")
+        .paginate({ numItems: BATCH_SIZE, cursor });
+
+      for (const star of batch.page) {
+        if (skills.length >= limit) break;
+        const skill = await ctx.db.get(star.skillId);
+        const publicSkill = toPublicSkill(skill);
+        if (!publicSkill) continue;
+        skills.push(publicSkill);
+      }
+
+      if (batch.isDone) break;
+      cursor = batch.continueCursor;
+    }
+
+    return { items: skills };
   },
 });

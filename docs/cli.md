@@ -81,6 +81,13 @@ Stores your API token + cached registry URL.
 - Calls `POST /api/v1/stars/<slug>` and `DELETE /api/v1/stars/<slug>`.
 - `--yes` skips confirmation.
 
+### `list-stars`
+
+- Lists starred skills from your highlights.
+- Calls `GET /api/v1/stars`.
+- Max results (default: 50, max: 200)
+- `--limit <n>`
+
 ### `search <query...>`
 
 - Calls `/api/v1/search?q=...`.
