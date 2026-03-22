@@ -9,6 +9,7 @@ import {
   getCommentScamEvalModel,
   parseCommentScamEvalResponse,
 } from "./lib/commentScamPrompt";
+import { extractSkillCategory } from "./lib/moderationEngine";
 import { extractResponseText } from "./lib/openaiResponse";
 import type { SkillEvalContext } from "./lib/securityPrompt";
 import {
@@ -146,6 +147,7 @@ export const evaluateWithLlm = internalAction({
         (clawdisLinks.homepage as string | undefined) ??
         undefined,
       parsed,
+      category: extractSkillCategory(fm, parsed.metadata),
       files: version.files.map((f) => ({ path: f.path, size: f.size })),
       skillMdContent,
       fileContents,
