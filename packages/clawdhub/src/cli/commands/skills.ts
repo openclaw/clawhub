@@ -98,8 +98,9 @@ export async function cmdInstall(
     );
 
     // Check system requirements before proceeding
-    if (skillMeta.metadata?.os && !skillMeta.metadata.os.includes(platform())) {
-      spinner.fail(`Incompatible system: ${trimmed} is not supported on ${platform()}`);
+    const currentPlatform = platform();
+    if (skillMeta.metadata?.os && !skillMeta.metadata.os.includes(currentPlatform)) {
+      spinner.fail(`Incompatible system: ${trimmed} is not supported on ${currentPlatform}`);
       fail("This skill is not compatible with your system.");
     }
 
