@@ -346,6 +346,197 @@ describe("search helpers", () => {
     expect(result).toHaveLength(0);
   });
 
+  it("returns results for non-Latin queries via vector-score gating", async () => {
+    generateEmbeddingMock.mockResolvedValueOnce([0, 1, 2]);
+    const vectorEntries = [
+      {
+        embeddingId: "skillEmbeddings:cn1",
+        skill: makePublicSkill({
+          id: "skills:cn1",
+          slug: "video-generation-tool",
+          displayName: "Video Generation Tool",
+          downloads: 100,
+        }),
+        version: null,
+        ownerHandle: "owner",
+        owner: null,
+      },
+    ];
+
+    const runQuery = vi
+      .fn()
+      .mockResolvedValueOnce(vectorEntries) // hydrateResults
+      .mockResolvedValueOnce([]); // lexicalFallbackSkills
+
+    const result = await searchSkillsHandler(
+      {
+        vectorSearch: vi.fn().mockResolvedValue([
+          { _id: "skillEmbeddings:cn1", _score: 0.35 },
+        ]),
+        runQuery,
+      },
+      // Chinese query "视频生成" — should not return empty
+      { query: "视频生成", limit: 10 },
+    );
+
+    // With vector-score gating, the skill should be included
+    // because its vector score (0.35) exceeds the threshold max(0.2, 0.35*0.5=0.175) = 0.2
+    expect(result).toHaveLength(1);
+    expect(result[0].skill.slug).toBe("video-generation-tool");
+  });
+
+  it("filters low-scoring results even for non-Latin queries", async () => {
+    generateEmbeddingMock.mockResolvedValueOnce([0, 1, 2]);
+    const vectorEntries = [
+      {
+        embeddingId: "skillEmbeddings:low",
+        skill: makePublicSkill({
+          id: "skills:low",
+          slug: "unrelated-tool",
+          displayName: "Unrelated Tool",
+          downloads: 5,
+        }),
+        version: null,
+        ownerHandle: "owner",
+        owner: null,
+      },
+    ];
+
+    const runQuery = vi
+      .fn()
+      .mockResolvedValueOnce(vectorEntries)
+      .mockResolvedValueOnce([]);
+
+    const result = await searchSkillsHandler(
+      {
+        vectorSearch: vi.fn().mockResolvedValue([
+          { _id: "skillEmbeddings:low", _score: 0.1 },
+        ]),
+        runQuery,
+      },
+      { query: "视频生成", limit: 10 },
+    );
+
+    // Vector score 0.1 is below threshold max(0.2, 0.1*0.5) = 0.2 → filtered out
+    expect(result).toHaveLength(0);
+  });
+
+  it("English queries are unaffected by non-Latin changes", async () => {
+    generateEmbeddingMock.mockResolvedValueOnce([0, 1, 2]);
+    const vectorEntries = [
+      {
+        embeddingId: "skillEmbeddings:en1",
+        skill: makePublicSkill({
+          id: "skills:en1",
+          slug: "video-gen",
+          displayName: "Video Generation",
+          downloads: 50,
+        }),
+        version: null,
+        ownerHandle: "owner",
+        owner: null,
+      },
+      {
+        embeddingId: "skillEmbeddings:en2",
+        skill: makePublicSkill({
+          id: "skills:en2",
+          slug: "music-tool",
+          displayName: "Music Tool",
+          downloads: 50,
+        }),
+        version: null,
+        ownerHandle: "owner",
+        owner: null,
+      },
+    ];
+
+    const runQuery = vi.fn().mockResolvedValueOnce(vectorEntries).mockResolvedValueOnce([]);
+
+    const result = await searchSkillsHandler(
+      {
+        vectorSearch: vi.fn().mockResolvedValue([
+          { _id: "skillEmbeddings:en1", _score: 0.5 },
+          { _id: "skillEmbeddings:en2", _score: 0.4 },
+        ]),
+        runQuery,
+      },
+      { query: "video generation", limit: 10 },
+    );
+
+    // Only "Video Generation" should match (token filter: "video" prefix-matches)
+    // "Music Tool" should be filtered out (no matching ASCII tokens)
+    expect(result).toHaveLength(1);
+    expect(result[0].skill.slug).toBe("video-gen");
+  });
+
+  it("lexical fallback matches CJK tokens in skill metadata", async () => {
+    const cjkSkill = makeSkillDoc({
+      id: "skills:cjk",
+      slug: "video-gen-tool",
+      displayName: "视频生成工具",
+    });
+
+    const result = await lexicalFallbackSkillsHandler(
+      makeLexicalCtx({
+        exactSlugSkill: null,
+        recentSkills: [cjkSkill],
+      }),
+      { query: "视频生成", queryTokens: tokenize("视频生成"), limit: 10 },
+    );
+
+    expect(result).toHaveLength(1);
+    expect(result[0].skill.slug).toBe("video-gen-tool");
+  });
+
+  it("mixed-script query requires ASCII tokens to match even with high vector score", async () => {
+    generateEmbeddingMock.mockResolvedValueOnce([0, 1, 2]);
+    const vectorEntries = [
+      {
+        embeddingId: "skillEmbeddings:mix1",
+        skill: makePublicSkill({
+          id: "skills:mix1",
+          slug: "openai-tools",
+          displayName: "OpenAI Tools",
+          downloads: 50,
+        }),
+        version: null,
+        ownerHandle: "owner",
+        owner: null,
+      },
+      {
+        embeddingId: "skillEmbeddings:mix2",
+        skill: makePublicSkill({
+          id: "skills:mix2",
+          slug: "unrelated-video",
+          displayName: "Unrelated Video",
+          downloads: 50,
+        }),
+        version: null,
+        ownerHandle: "owner",
+        owner: null,
+      },
+    ];
+
+    const runQuery = vi.fn().mockResolvedValueOnce(vectorEntries).mockResolvedValueOnce([]);
+
+    // "openai 视频" → ascii=["openai"], nonAscii=["视频"]
+    const result = await searchSkillsHandler(
+      {
+        vectorSearch: vi.fn().mockResolvedValue([
+          { _id: "skillEmbeddings:mix1", _score: 0.4 },
+          { _id: "skillEmbeddings:mix2", _score: 0.4 },
+        ]),
+        runQuery,
+      },
+      { query: "openai 视频", limit: 10 },
+    );
+
+    // "OpenAI Tools" has "openai" in slug → ASCII match passes → included
+    // "Unrelated Video" lacks "openai" → ASCII match fails → excluded despite high vector score
+    expect(result).toHaveLength(1);
+    expect(result[0].skill.slug).toBe("openai-tools");
+  });
+
   it("advances candidate limit until max", () => {
     expect(__test.getNextCandidateLimit(50, 1000)).toBe(100);
     expect(__test.getNextCandidateLimit(800, 1000)).toBe(1000);

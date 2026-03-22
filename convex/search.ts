@@ -7,7 +7,7 @@ import { isSkillHighlighted } from "./lib/badges";
 import { generateEmbedding } from "./lib/embeddings";
 import type { HydratableSkill } from "./lib/public";
 import { toPublicSkill, toPublicSoul, toPublicUser } from "./lib/public";
-import { matchesExactTokens, tokenize } from "./lib/searchText";
+import { matchesExactTokens, partitionQueryTokens, tokenize } from "./lib/searchText";
 import { isSkillSuspicious } from "./lib/skillSafety";
 import { digestToHydratableSkill, digestToOwnerInfo } from "./lib/skillSearchDigest";
 
@@ -123,6 +123,10 @@ export const searchSkills: ReturnType<typeof action> = action({
     if (!query) return [];
     const queryTokens = tokenize(query);
     if (queryTokens.length === 0) return [];
+    const { ascii: asciiQueryTokens, nonAscii: nonAsciiQueryTokens } =
+      partitionQueryTokens(queryTokens);
+    // For token matching, use only ASCII tokens (non-ASCII tokens bypass via vector gating).
+    const filterTokens = asciiQueryTokens;
     let vector: number[];
     try {
       vector = await generateEmbedding(query);
@@ -138,6 +142,22 @@ export const searchSkills: ReturnType<typeof action> = action({
     const seenEmbeddingIds = new Set<Id<"skillEmbeddings">>();
     let scoreById = new Map<Id<"skillEmbeddings">, number>();
     let exactMatches: SkillSearchEntry[] = [];
+    // Cache tokenized metadata per entry to avoid redundant Intl.Segmenter calls
+    // across loop iterations (hydrated accumulates entries from prior passes).
+    const textTokenCache = new Map<string, string[]>();
+    const getTextTokens = (entry: SkillSearchEntry): string[] => {
+      const key = entry.skill._id;
+      let cached = textTokenCache.get(key);
+      if (!cached) {
+        cached = tokenize(
+          [entry.skill.displayName, entry.skill.slug, entry.skill.summary]
+            .filter(Boolean)
+            .join(" "),
+        );
+        textTokenCache.set(key, cached);
+      }
+      return cached;
+    };
 
     while (candidateLimit <= maxCandidate) {
       const results = await ctx.vectorSearch("skillEmbeddings", "by_embedding", {
@@ -170,13 +190,58 @@ export const searchSkills: ReturnType<typeof action> = action({
         ? hydrated.filter((entry) => isSkillHighlighted(entry.skill))
         : hydrated;
 
-      exactMatches = filtered.filter((entry) =>
-        matchesExactTokens(queryTokens, [
-          entry.skill.displayName,
-          entry.skill.slug,
-          entry.skill.summary,
-        ]),
-      );
+      // When the query contains non-ASCII tokens (CJK, Arabic, etc.), ASCII prefix matching
+      // cannot work across languages. Use a vector-score threshold to allow semantically
+      // relevant results to bypass the token filter.
+      const hasNonAsciiTokens = nonAsciiQueryTokens.length > 0;
+      let vectorScoreThreshold = 0;
+      if (hasNonAsciiTokens) {
+        const topVectorScore = Math.max(
+          ...filtered.map((e) => (e.embeddingId ? (scoreById.get(e.embeddingId) ?? 0) : 0)),
+          0,
+        );
+        vectorScoreThreshold = Math.max(0.2, topVectorScore * 0.5);
+      }
+
+      exactMatches = filtered.filter((entry) => {
+        // Standard ASCII token prefix matching (unchanged behavior for Latin queries)
+        if (filterTokens.length > 0) {
+          if (
+            matchesExactTokens(filterTokens, [
+              entry.skill.displayName,
+              entry.skill.slug,
+              entry.skill.summary,
+            ])
+          ) {
+            return true;
+          }
+        }
+        // Non-ASCII token matching: check if skill metadata contains matching non-ASCII tokens
+        if (hasNonAsciiTokens) {
+          const textTokens = getTextTokens(entry);
+          const hasNonAsciiMatch = nonAsciiQueryTokens.some((qt) =>
+            textTokens.some((tt) => tt.startsWith(qt)),
+          );
+          if (hasNonAsciiMatch) return true;
+          // Vector-score gating: allow semantically relevant results through
+          // even when no non-ASCII token match exists (cross-language scenario).
+          // If the query also has ASCII tokens, require those to match first —
+          // vector bypass only exempts non-ASCII tokens, not the whole query.
+          const vectorScore = entry.embeddingId ? (scoreById.get(entry.embeddingId) ?? 0) : 0;
+          if (vectorScore >= vectorScoreThreshold) {
+            if (filterTokens.length === 0) return true;
+            if (
+              matchesExactTokens(filterTokens, [
+                entry.skill.displayName,
+                entry.skill.slug,
+                entry.skill.summary,
+              ])
+            )
+              return true;
+          }
+        }
+        return false;
+      });
 
       if (exactMatches.length >= limit || results.length < candidateLimit) {
         break;
@@ -374,6 +439,9 @@ export const searchSouls: ReturnType<typeof action> = action({
     if (!query) return [];
     const queryTokens = tokenize(query);
     if (queryTokens.length === 0) return [];
+    const { ascii: asciiQueryTokens, nonAscii: nonAsciiQueryTokens } =
+      partitionQueryTokens(queryTokens);
+    const filterTokens = asciiQueryTokens;
     let vector: number[];
     try {
       vector = await generateEmbedding(query);
@@ -388,6 +456,21 @@ export const searchSouls: ReturnType<typeof action> = action({
     let hydrated: HydratedSoulEntry[] = [];
     let scoreById = new Map<Id<"soulEmbeddings">, number>();
     let exactMatches: HydratedSoulEntry[] = [];
+    // Cache tokenized metadata to avoid redundant Segmenter calls across iterations.
+    const soulTextTokenCache = new Map<string, string[]>();
+    const getSoulTextTokens = (entry: HydratedSoulEntry): string[] => {
+      const key = entry.embeddingId;
+      let cached = soulTextTokenCache.get(key);
+      if (!cached) {
+        cached = tokenize(
+          [entry.soul.displayName, entry.soul.slug, entry.soul.summary]
+            .filter(Boolean)
+            .join(" "),
+        );
+        soulTextTokenCache.set(key, cached);
+      }
+      return cached;
+    };
 
     while (candidateLimit <= maxCandidate) {
       const results = await ctx.vectorSearch("soulEmbeddings", "by_embedding", {
@@ -404,13 +487,49 @@ export const searchSouls: ReturnType<typeof action> = action({
         results.map((result) => [result._id, result._score]),
       );
 
-      exactMatches = hydrated.filter((entry) =>
-        matchesExactTokens(queryTokens, [
-          entry.soul.displayName,
-          entry.soul.slug,
-          entry.soul.summary,
-        ]),
-      );
+      const hasNonAsciiTokens = nonAsciiQueryTokens.length > 0;
+      let vectorScoreThreshold = 0;
+      if (hasNonAsciiTokens) {
+        const topVectorScore = Math.max(
+          ...hydrated.map((e) => scoreById.get(e.embeddingId) ?? 0),
+          0,
+        );
+        vectorScoreThreshold = Math.max(0.2, topVectorScore * 0.5);
+      }
+
+      exactMatches = hydrated.filter((entry) => {
+        if (filterTokens.length > 0) {
+          if (
+            matchesExactTokens(filterTokens, [
+              entry.soul.displayName,
+              entry.soul.slug,
+              entry.soul.summary,
+            ])
+          ) {
+            return true;
+          }
+        }
+        if (hasNonAsciiTokens) {
+          const textTokens = getSoulTextTokens(entry);
+          const hasNonAsciiMatch = nonAsciiQueryTokens.some((qt) =>
+            textTokens.some((tt) => tt.startsWith(qt)),
+          );
+          if (hasNonAsciiMatch) return true;
+          const vectorScore = scoreById.get(entry.embeddingId) ?? 0;
+          if (vectorScore >= vectorScoreThreshold) {
+            if (filterTokens.length === 0) return true;
+            if (
+              matchesExactTokens(filterTokens, [
+                entry.soul.displayName,
+                entry.soul.slug,
+                entry.soul.summary,
+              ])
+            )
+              return true;
+          }
+        }
+        return false;
+      });
 
       if (exactMatches.length >= limit || results.length < candidateLimit) {
         break;

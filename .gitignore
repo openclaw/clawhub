@@ -24,3 +24,4 @@ coverage
 playwright-report
 test-results
 .playwright
+package-lock.json
