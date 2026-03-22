@@ -1,12 +1,15 @@
 import type { Doc, Id } from "../_generated/dataModel";
 import {
+  contextualizeReasonCode,
   isExternallyClearableSuspiciousCode,
+  isValidSkillCategory,
   legacyFlagsFromVerdict,
   MODERATION_ENGINE_VERSION,
   normalizeReasonCodes,
   type ModerationFinding,
   REASON_CODES,
   type ScannerModerationVerdict,
+  type SkillCategory,
   summarizeReasonCodes,
   type ModerationVerdict,
   verdictFromCodes,
@@ -272,6 +275,55 @@ function addScannerStatusReason(reasonCodes: string[], scanner: "vt" | "llm", st
   }
 }
 
+// ---------------------------------------------------------------------------
+// Category extraction
+// ---------------------------------------------------------------------------
+
+/**
+ * Extract the skill category from frontmatter metadata.
+ * Checks `metadata.openclaw.category`, `metadata.clawdis.category`,
+ * `metadata.clawdbot.category`, and top-level `frontmatter.category`.
+ */
+export function extractSkillCategory(
+  frontmatter: Record<string, unknown>,
+  metadata?: unknown,
+): SkillCategory | undefined {
+  const getCategoryFromObject = (obj: unknown): SkillCategory | undefined => {
+    if (obj && typeof obj === "object" && !Array.isArray(obj)) {
+      const castObj = obj as Record<string, unknown>;
+      // Match parseClawdisMetadata source-selection: the first namespace that
+      // exists as an object wins entirely. We do NOT fall through to
+      // lower-priority namespaces if the winning one omits category.
+      // Order: clawdbot -> clawdis -> openclaw
+      for (const ns of ["clawdbot", "clawdis", "openclaw"]) {
+        const nsObj = castObj[ns];
+        if (nsObj && typeof nsObj === "object" && !Array.isArray(nsObj)) {
+          const cat = (nsObj as Record<string, unknown>).category;
+          return isValidSkillCategory(cat) ? cat : undefined;
+        }
+      }
+      // Check metadata.category directly
+      if (isValidSkillCategory(castObj.category)) return castObj.category;
+    }
+    return undefined;
+  };
+
+  // 1. Check the 'metadata' argument first
+  let category = getCategoryFromObject(metadata);
+  if (category) return category;
+
+  // 2. If no category found, check 'frontmatter.metadata'
+  if (frontmatter.metadata) {
+    category = getCategoryFromObject(frontmatter.metadata);
+    if (category) return category;
+  }
+
+  // 3. Finally, check top-level frontmatter.category
+  if (isValidSkillCategory(frontmatter.category)) return frontmatter.category;
+
+  return undefined;
+}
+
 export function runStaticModerationScan(input: StaticScanInput): StaticScanResult {
   const findings: ModerationFinding[] = [];
   const files = [...input.fileContents].sort((a, b) => a.path.localeCompare(b.path));
@@ -324,7 +376,13 @@ export function runStaticModerationScan(input: StaticScanInput): StaticScanResul
     ),
   );
 
-  const reasonCodes = normalizeReasonCodes(findings.map((finding) => finding.code));
+  // Contextualise reason codes based on declared skill category.
+  // Findings retain their original codes for transparency; only the
+  // reason codes used for verdict calculation are adjusted.
+  const category = extractSkillCategory(input.frontmatter, input.metadata);
+  const reasonCodes = normalizeReasonCodes(
+    findings.map((finding) => contextualizeReasonCode(finding.code, category)),
+  );
   const status = verdictFromCodes(reasonCodes);
   return {
     status,
@@ -401,6 +459,11 @@ export function resolveSkillVerdict(
   if ((skill.moderationReasonCodes ?? []).some((code) => code.startsWith("malicious."))) {
     return "malicious";
   }
-  if ((skill.moderationReasonCodes ?? []).length > 0) return "suspicious";
+  if (
+    (skill.moderationReasonCodes ?? []).some(
+      (code) => !code.startsWith("info.") && code.length > 0,
+    )
+  )
+    return "suspicious";
   return "clean";
 }
