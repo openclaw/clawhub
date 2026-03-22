@@ -569,6 +569,114 @@ async function unbanUserWithActor(
   };
 }
 
+// ---------------------------------------------------------------------------
+// Moderation hold management
+// ---------------------------------------------------------------------------
+
+/**
+ * Admin-only: lift the moderation hold placed on a user after a false-positive
+ * malicious upload detection.
+ *
+ * When the static scanner flags a skill as malicious, the publisher is placed
+ * under a moderation hold (`requiresModerationAt` set). This hides all their
+ * skills and causes all future publishes to start hidden. The hold has no
+ * self-service release path -- only an admin can lift it.
+ *
+ * This mutation:
+ * 1. Clears `requiresModerationAt` and `requiresModerationReason` on the user
+ * 2. Restores skills that were hidden due to the moderation hold
+ * 3. Creates an audit log entry
+ */
+export const liftModerationHold = mutation({
+  args: {
+    userId: v.id("users"),
+    reason: v.optional(v.string()),
+  },
+  handler: async (ctx, args) => {
+    const { user } = await requireUser(ctx);
+    return liftModerationHoldWithActor(ctx, user, args.userId, args.reason);
+  },
+});
+
+export const liftModerationHoldInternal = internalMutation({
+  args: {
+    actorUserId: v.id("users"),
+    targetUserId: v.id("users"),
+    reason: v.optional(v.string()),
+  },
+  handler: async (ctx, args) => {
+    const actor = await ctx.db.get(args.actorUserId);
+    if (!actor || actor.deletedAt || actor.deactivatedAt) throw new Error("User not found");
+    return liftModerationHoldWithActor(ctx, actor, args.targetUserId, args.reason);
+  },
+});
+
+async function liftModerationHoldWithActor(
+  ctx: MutationCtx,
+  actor: Doc<"users">,
+  targetUserId: Id<"users">,
+  reasonRaw?: string,
+) {
+  assertAdmin(actor);
+
+  const target = await ctx.db.get(targetUserId);
+  if (!target) throw new Error("User not found");
+  if (target.deletedAt || target.deactivatedAt) {
+    throw new Error("Cannot lift hold on a deleted or deactivated account");
+  }
+  if (!target.requiresModerationAt) {
+    return { ok: true as const, alreadyCleared: true, restoredSkills: 0, scheduledSkills: false };
+  }
+
+  const reason = reasonRaw?.trim();
+  if (reason && reason.length > 500) {
+    throw new Error("Reason too long (max 500 chars)");
+  }
+
+  const holdPlacedAt = target.requiresModerationAt;
+  const now = Date.now();
+
+  // Clear the moderation hold on the user
+  await ctx.db.patch(targetUserId, {
+    requiresModerationAt: undefined,
+    requiresModerationReason: undefined,
+    updatedAt: now,
+  });
+
+  // Restore skills that were hidden due to the moderation hold.
+  // The batch handler checks if the user has been re-held between pages
+  // and aborts if so (race condition safety).
+  const restoreResult = (await ctx.runMutation(
+    internal.skills.restoreOwnedSkillsForModerationLiftBatchInternal,
+    {
+      ownerUserId: targetUserId,
+      cursor: undefined,
+    },
+  )) as { restoredCount?: number; scheduled?: boolean };
+  const restoredCount = restoreResult.restoredCount ?? 0;
+  const scheduledSkills = restoreResult.scheduled ?? false;
+
+  await ctx.db.insert("auditLogs", {
+    actorUserId: actor._id,
+    action: "user.moderation.lift",
+    targetType: "user",
+    targetId: targetUserId,
+    metadata: {
+      reason: reason || undefined,
+      holdPlacedAt,
+      restoredSkills: restoredCount,
+    },
+    createdAt: now,
+  });
+
+  return {
+    ok: true as const,
+    alreadyCleared: false,
+    restoredSkills: restoredCount,
+    scheduledSkills,
+  };
+}
+
 /**
  * Admin-only: set or unset the trustedPublisher flag for a user.
  * Trusted publishers bypass the pending.scan auto-hide for new skill publishes.
