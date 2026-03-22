@@ -3539,6 +3539,15 @@ export const applyUserModerationToOwnedSkillsBatchInternal = internalMutation({
     cursor: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
+    // Stale batch guard: if the hold was lifted between batch pages,
+    // stop hiding skills. Without this, a liftModerationHold call that
+    // races with a multi-page hide chain can leave late-hidden skills
+    // permanently stuck (the restore may have already paged past them).
+    const user = await ctx.db.get(args.ownerUserId);
+    if (user && !user.requiresModerationAt) {
+      return { ok: true as const, hiddenCount: 0, scheduled: false, aborted: true };
+    }
+
     const { page, isDone, continueCursor } = await ctx.db
       .query("skills")
       .withIndex("by_owner", (q) => q.eq("ownerUserId", args.ownerUserId))
@@ -3635,6 +3644,92 @@ export const restoreOwnedSkillsForUnbanBatchInternal = internalMutation({
     scheduleNextBatchIfNeeded(
       ctx.scheduler,
       internal.skills.restoreOwnedSkillsForUnbanBatchInternal,
+      args,
+      isDone,
+      continueCursor,
+    );
+
+    return { ok: true as const, restoredCount, scheduled: !isDone };
+  },
+});
+
+/**
+ * Batch restore skills hidden by a moderation hold.
+ * Only restores skills where moderationReason is "user.moderation"
+ * and moderationStatus is "hidden".
+ *
+ * Race condition safety: before processing each page, verifies the user
+ * has not been placed under a new moderation hold. If requiresModerationAt
+ * is set again (new hold placed between batch pages), the batch aborts
+ * to avoid restoring skills that should remain hidden.
+ *
+ * Skills published while under hold also get moderationReason "user.moderation"
+ * and are included in the restore. Skills hidden for other reasons (manual
+ * moderator action, community reports) are not affected.
+ */
+export const restoreOwnedSkillsForModerationLiftBatchInternal = internalMutation({
+  args: {
+    ownerUserId: v.id("users"),
+    cursor: v.optional(v.string()),
+  },
+  handler: async (ctx, args) => {
+    // Race condition guard: if the user has been re-held between batch pages,
+    // abort to avoid restoring skills that should stay hidden under the new hold.
+    const user = await ctx.db.get(args.ownerUserId);
+    if (user?.requiresModerationAt) {
+      return { ok: true as const, restoredCount: 0, scheduled: false, aborted: true };
+    }
+
+    const now = Date.now();
+    const { page, isDone, continueCursor } = await ctx.db
+      .query("skills")
+      .withIndex("by_owner", (q) => q.eq("ownerUserId", args.ownerUserId))
+      .order("desc")
+      .paginate({
+        cursor: args.cursor ?? null,
+        numItems: BAN_USER_SKILLS_BATCH_SIZE,
+      });
+
+    let restoredCount = 0;
+    for (const skill of page) {
+      // Only restore skills hidden by the moderation hold.
+      // Skip soft-deleted skills: if a ban raced with this batch, those
+      // rows need their moderationReason intact for unban recovery.
+      if (skill.softDeletedAt) continue;
+      if (skill.moderationReason !== USER_MODERATION_REASON) continue;
+      if (skill.moderationStatus !== "hidden") continue;
+
+      // Re-evaluate based on the skill's own scan data rather than blindly
+      // setting to active. If the skill's own static scan was malicious,
+      // keep it hidden -- only the user-level hold should be lifted.
+      const latestVersion = skill.latestVersionId
+        ? await ctx.db.get(skill.latestVersionId)
+        : null;
+      const ownStaticVerdict = latestVersion?.staticScan?.status;
+      if (ownStaticVerdict === "malicious") continue;
+
+      const nextReason = "restored.moderation_lift";
+      const patch: Partial<Doc<"skills">> = {
+        moderationStatus: "active",
+        moderationReason: nextReason,
+        isSuspicious: computeIsSuspicious({
+          moderationFlags: skill.moderationFlags,
+          moderationReason: nextReason,
+        }),
+        hiddenAt: undefined,
+        hiddenBy: undefined,
+        lastReviewedAt: now,
+        updatedAt: now,
+      };
+      const nextSkill = { ...skill, ...patch };
+      await ctx.db.patch(skill._id, patch);
+      await adjustGlobalPublicCountForSkillChange(ctx, skill, nextSkill);
+      restoredCount += 1;
+    }
+
+    scheduleNextBatchIfNeeded(
+      ctx.scheduler,
+      internal.skills.restoreOwnedSkillsForModerationLiftBatchInternal,
       args,
       isDone,
       continueCursor,
