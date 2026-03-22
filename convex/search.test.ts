@@ -17,6 +17,13 @@ vi.mock("./lib/badges", () => ({
     Boolean(skill.badges?.highlighted),
 }));
 
+type SkillSearchEntry = {
+  skill: { slug: string; _id: string }
+  version: unknown
+  ownerHandle: string | null
+  owner: unknown
+}
+
 type WrappedHandler = {
   _handler: (
     ctx: unknown,
@@ -184,7 +191,8 @@ describe("search helpers", () => {
     const runQuery = vi
       .fn()
       .mockResolvedValueOnce(vectorEntries) // hydrateResults
-      .mockResolvedValueOnce(fallbackEntries); // lexicalFallbackSkills
+      .mockResolvedValueOnce(fallbackEntries) // lexicalFallbackSkills (triggered because exactMatches=2 < limit=5)
+      .mockResolvedValueOnce(null); // lookupExactSlug (no exact slug "foo")
 
     const result = await searchSkillsHandler(
       {
@@ -194,14 +202,14 @@ describe("search helpers", () => {
         ]),
         runQuery,
       },
-      { query: "foo", limit: 2 },
+      { query: "foo", limit: 5 },
     );
 
-    expect(result).toHaveLength(2);
+    expect(result).toHaveLength(3);
     expect(result[0].skill.slug).toBe("foo-b");
-    expect(new Set(result.map((entry: { skill: { _id: string } }) => entry.skill._id)).size).toBe(
-      2,
-    );
+    expect(
+      new Set(result.map((entry: { skill: { _id: string } }) => entry.skill._id)).size,
+    ).toBe(3);
   });
 
   it("filters suspicious vector results in hydrateResults when requested", async () => {
@@ -540,6 +548,7 @@ describe("search helpers", () => {
             owner: null,
           }));
         }
+        if ("slug" in args) return null; // lookupExactSlug
         return []; // lexicalFallbackSkills
       },
     );
@@ -557,6 +566,98 @@ describe("search helpers", () => {
     const firstSet = new Set(hydrateCalls[0]);
     const overlap = hydrateCalls[1].filter((id) => firstSet.has(id));
     expect(overlap).toHaveLength(0);
+  });
+
+  it("recalls exact slug match even when vector search and lexical fallback both miss it", async () => {
+    generateEmbeddingMock.mockResolvedValueOnce([0, 1, 2]);
+
+    const vectorEntries = Array.from({ length: 12 }, (_, i) => ({
+      embeddingId: `skillEmbeddings:e${i}`,
+      skill: makePublicSkill({
+        id: `skills:other${i}`,
+        slug: `other-ai-skill-${i}`,
+        displayName: `Other AI Skill ${i}`,
+      }),
+      version: null,
+      ownerHandle: "owner",
+      owner: { _id: "users:owner", handle: "owner", name: "Owner" },
+    }));
+
+    const exactSlugSkill = {
+      skill: makePublicSkill({
+        id: "skills:ima",
+        slug: "ima-all-ai",
+        displayName: "IMA All AI",
+        downloads: 100,
+      }),
+      version: null,
+      ownerHandle: "owner",
+      owner: { _id: "users:owner", handle: "owner", name: "Owner" },
+    };
+
+    let lookupSlugCalled = false;
+    const runQuery = vi.fn(async (_ref: unknown, args: Record<string, unknown>) => {
+      if ("embeddingIds" in args) return vectorEntries;
+      if ("slug" in args) {
+        lookupSlugCalled = true;
+        return args.slug === "ima-all-ai" ? exactSlugSkill : null;
+      }
+      return [];
+    });
+
+    const result = await searchSkillsHandler(
+      {
+        vectorSearch: vi
+          .fn()
+          .mockResolvedValue(
+            vectorEntries.map((e) => ({ _id: e.embeddingId, _score: 0.5 })),
+          ),
+        runQuery,
+      },
+      { query: "ima-all-ai", limit: 10 },
+    );
+
+    expect(lookupSlugCalled).toBe(true);
+    expect(
+      result.some((e: { skill: { slug: string } }) => e.skill.slug === "ima-all-ai"),
+    ).toBe(true);
+    expect(result[0].skill.slug).toBe("ima-all-ai");
+  });
+
+  it("skips exact slug lookup when slug is already in merged results", async () => {
+    generateEmbeddingMock.mockResolvedValueOnce([0, 1, 2]);
+
+    const imaEntry = {
+      embeddingId: "skillEmbeddings:ima",
+      skill: makePublicSkill({
+        id: "skills:ima",
+        slug: "ima-all-ai",
+        displayName: "IMA All AI",
+      }),
+      version: null,
+      ownerHandle: "owner",
+      owner: null,
+    };
+
+    let lookupSlugCalled = false;
+    const runQuery = vi.fn(async (_ref: unknown, args: Record<string, unknown>) => {
+      if ("embeddingIds" in args) return [imaEntry];
+      if ("slug" in args) {
+        lookupSlugCalled = true;
+        return null;
+      }
+      return [];
+    });
+
+    await searchSkillsHandler(
+      {
+        vectorSearch: vi.fn().mockResolvedValue([{ _id: "skillEmbeddings:ima", _score: 0.9 }]),
+        runQuery,
+      },
+      { query: "ima-all-ai", limit: 10 },
+    );
+
+    expect(lookupSlugCalled).toBe(false);
   });
 
   it("merges fallback matches without duplicate skill ids", () => {
