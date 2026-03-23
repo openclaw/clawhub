@@ -12,6 +12,7 @@ const internalRefs = internal as unknown as {
     updateReleaseScanResultsInternal: unknown;
   };
   vt: {
+    scanPackageReleaseWithVirusTotal: unknown;
     pollPackageReleaseScanResults: unknown;
   };
 };
@@ -526,6 +527,7 @@ const PACKAGE_SCAN_MAX_ATTEMPTS = 10;
 export const scanPackageReleaseWithVirusTotal = internalAction({
   args: {
     releaseId: v.id("packageReleases"),
+    attempt: v.optional(v.number()),
   },
   handler: async (ctx, args) => {
     const apiKey = process.env.VT_API_KEY;
@@ -569,6 +571,7 @@ export const scanPackageReleaseWithVirusTotal = internalAction({
     const sha256hash = Array.from(new Uint8Array(hashBuffer))
       .map((b) => b.toString(16).padStart(2, "0"))
       .join("");
+    const attempt = args.attempt ?? 1;
 
     await runMutationRef(ctx, internalRefs.packages.updateReleaseScanResultsInternal, {
       releaseId: args.releaseId,
@@ -613,6 +616,12 @@ export const scanPackageReleaseWithVirusTotal = internalAction({
       if (!response.ok) {
         const error = await response.text();
         console.error("[vt:package] VirusTotal upload error:", error);
+        if (attempt < PACKAGE_SCAN_MAX_ATTEMPTS) {
+          await runAfterRef(ctx, PACKAGE_SCAN_RETRY_DELAY_MS, internalRefs.vt.scanPackageReleaseWithVirusTotal, {
+            releaseId: args.releaseId,
+            attempt: attempt + 1,
+          });
+        }
         return;
       }
 
@@ -626,6 +635,12 @@ export const scanPackageReleaseWithVirusTotal = internalAction({
       );
     } catch (error) {
       console.error("[vt:package] Failed to upload to VirusTotal:", error);
+      if (attempt < PACKAGE_SCAN_MAX_ATTEMPTS) {
+        await runAfterRef(ctx, PACKAGE_SCAN_RETRY_DELAY_MS, internalRefs.vt.scanPackageReleaseWithVirusTotal, {
+          releaseId: args.releaseId,
+          attempt: attempt + 1,
+        });
+      }
     }
   },
 });
@@ -697,6 +712,12 @@ export const pollPackageReleaseScanResults = internalAction({
       }
     } catch (error) {
       console.error(`[vt:package] Error polling ${release.sha256hash}:`, error);
+      if (attempt < PACKAGE_SCAN_MAX_ATTEMPTS) {
+        await runAfterRef(ctx, PACKAGE_SCAN_RETRY_DELAY_MS, internalRefs.vt.pollPackageReleaseScanResults, {
+          releaseId: args.releaseId,
+          attempt: attempt + 1,
+        });
+      }
     }
   },
 });

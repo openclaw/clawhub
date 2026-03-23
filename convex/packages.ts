@@ -1256,7 +1256,12 @@ export const getPackageReleaseScanBackfillBatchInternal = internalQuery({
       .order("asc")
       .take(batchSize * 3);
 
-    const results: Array<{ releaseId: Id<"packageReleases">; packageId: Id<"packages"> }> = [];
+    const results: Array<{
+      releaseId: Id<"packageReleases">;
+      packageId: Id<"packages">;
+      needsVt: boolean;
+      needsLlm: boolean;
+    }> = [];
     let nextCursor = cursor;
 
     for (const release of releases) {
@@ -1274,6 +1279,8 @@ export const getPackageReleaseScanBackfillBatchInternal = internalQuery({
       results.push({
         releaseId: release._id,
         packageId: release.packageId,
+        needsVt,
+        needsLlm,
       });
     }
 
@@ -1818,19 +1825,28 @@ export const backfillPackageReleaseScansInternal = internalAction({
       cursor: args.cursor,
       batchSize,
     })) as {
-      releases: Array<{ releaseId: Id<"packageReleases"> }>;
+      releases: Array<{
+        releaseId: Id<"packageReleases">;
+        needsVt: boolean;
+        needsLlm: boolean;
+      }>;
       nextCursor: number;
       done: boolean;
     };
 
     let scheduled = args.scheduled ?? 0;
+    const vtEnabled = Boolean(process.env.VT_API_KEY);
     for (const release of batch.releases) {
-      await runAfterRef(ctx, 0, internalRefs.vt.scanPackageReleaseWithVirusTotal, {
-        releaseId: release.releaseId,
-      });
-      await runAfterRef(ctx, 0, internalRefs.llmEval.evaluatePackageReleaseWithLlm, {
-        releaseId: release.releaseId,
-      });
+      if (release.needsVt && vtEnabled) {
+        await runAfterRef(ctx, 0, internalRefs.vt.scanPackageReleaseWithVirusTotal, {
+          releaseId: release.releaseId,
+        });
+      }
+      if (release.needsLlm) {
+        await runAfterRef(ctx, 0, internalRefs.llmEval.evaluatePackageReleaseWithLlm, {
+          releaseId: release.releaseId,
+        });
+      }
       scheduled += 1;
     }
 
