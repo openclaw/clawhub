@@ -232,25 +232,10 @@ export async function syncSkillSearchDigestsForOwnerPublisherId(
   }
 }
 
+// rawInternalMutation is used instead of the custom internalMutation to avoid a
+// Temporal Dead Zone: the custom wrapper (line ~366) is declared after this const.
+// skillSearchDigest has no registered triggers so wrapDB is not needed here.
 export const syncSkillSearchDigestsForOwnerPublisherIdInternal = rawInternalMutation({
-  args: {
-    ownerPublisherId: v.id("publishers"),
-    cursor: v.optional(v.string()),
-  },
-  handler: async (ctx, args) => {
-    const page = await syncSkillSearchDigestsForOwnerPublisherId(
-      ctx,
-      args.ownerPublisherId,
-      args.cursor ?? null,
-    );
-    if (!page || page.isDone) return { done: true as const };
-    await ctx.scheduler.runAfter(0, internal.functions.syncSkillSearchDigestsForOwnerPublisherIdInternal, {
-      ownerPublisherId: args.ownerPublisherId,
-      cursor: page.continueCursor,
-    });
-    return { done: false as const, cursor: page.continueCursor };
-  },
-});
 
 export async function repointPackageLatestRelease(
   ctx: PackageDigestSyncCtx,
