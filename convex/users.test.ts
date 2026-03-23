@@ -1,5 +1,9 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 
+vi.mock("@convex-dev/auth/server", () => ({
+  getAuthUserId: vi.fn(),
+}));
+
 vi.mock("./lib/access", async () => {
   const actual = await vi.importActual<typeof import("./lib/access")>("./lib/access");
   return { ...actual, requireUser: vi.fn() };
@@ -10,16 +14,24 @@ vi.mock("./skillStatEvents", () => ({
 }));
 
 const { requireUser } = await import("./lib/access");
+const { getAuthUserId } = await import("@convex-dev/auth/server");
 const { insertStatEvent } = await import("./skillStatEvents");
 const {
   ensureHandler,
   list,
   searchInternal,
   banUserInternal,
+  me,
   placeUserUnderModerationInternal,
   reserveHandleInternal,
   syncGitHubProfileInternal,
 } = await import("./users");
+
+type WrappedHandler<TArgs, TResult> = {
+  _handler: (ctx: unknown, args: TArgs) => Promise<TResult>;
+};
+
+const meHandler = (me as unknown as WrappedHandler<Record<string, never>, unknown>)._handler;
 
 function makeCtx() {
   const patch = vi.fn();
@@ -116,6 +128,7 @@ function makeBanCtx() {
 describe("ensureHandler", () => {
   afterEach(() => {
     vi.mocked(requireUser).mockReset();
+    vi.mocked(getAuthUserId).mockReset();
   });
 
   it("updates handle and display name when GitHub login changes", async () => {
@@ -309,6 +322,22 @@ describe("ensureHandler", () => {
     await ensureHandler(ctx);
 
     expect(patch).not.toHaveBeenCalled();
+  });
+});
+
+describe("me", () => {
+  afterEach(() => {
+    vi.mocked(getAuthUserId).mockReset();
+  });
+
+  it("returns null when auth resolution throws", async () => {
+    vi.mocked(getAuthUserId).mockRejectedValue(new Error("stale session"));
+    const get = vi.fn();
+
+    const result = await meHandler({ db: { get } } as never, {});
+
+    expect(result).toBeNull();
+    expect(get).not.toHaveBeenCalled();
   });
 });
 

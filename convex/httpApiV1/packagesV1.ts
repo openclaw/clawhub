@@ -58,6 +58,17 @@ async function runActionRef<T>(ctx: ActionCtx, ref: unknown, args: unknown): Pro
   return (await ctx.runAction(ref as never, args as never)) as T;
 }
 
+async function getOptionalViewerUserIdForRequest(ctx: ActionCtx, request: Request) {
+  const apiTokenUserId = await getOptionalApiTokenUserId(ctx, request);
+  if (apiTokenUserId) return apiTokenUserId;
+  try {
+    return (await getAuthUserId(ctx)) ?? null;
+  } catch {
+    // Public package reads should degrade to anonymous when cookie-backed auth is stale.
+    return null;
+  }
+}
+
 type PackageListQueryArgs = {
   family?: "skill" | "code-plugin" | "bundle-plugin";
   channel?: "official" | "community" | "private";
@@ -408,7 +419,7 @@ async function listPackages(ctx: ActionCtx, request: Request, family?: PackageLi
   if (!rate.ok) return rate.response;
 
   const url = new URL(request.url);
-  const viewerUserId = (await getOptionalApiTokenUserId(ctx, request)) ?? (await getAuthUserId(ctx));
+  const viewerUserId = await getOptionalViewerUserIdForRequest(ctx, request);
   const limit = Math.max(1, Math.min(toOptionalNumber(url.searchParams.get("limit")) ?? 25, 100));
   const cursor = url.searchParams.get("cursor");
   const familyRaw = url.searchParams.get("family");
@@ -693,7 +704,7 @@ export async function packagesGetRouterV1Handler(ctx: ActionCtx, request: Reques
 
   if (segments[0] === "search" && new URL(request.url).searchParams.has("q")) {
     const url = new URL(request.url);
-    const viewerUserId = (await getOptionalApiTokenUserId(ctx, request)) ?? (await getAuthUserId(ctx));
+    const viewerUserId = await getOptionalViewerUserIdForRequest(ctx, request);
     const queryText = url.searchParams.get("q")?.trim() ?? "";
     const limit = Math.max(1, Math.min(toOptionalNumber(url.searchParams.get("limit")) ?? 20, 100));
     const familyRaw = url.searchParams.get("family");
@@ -775,7 +786,7 @@ export async function packagesGetRouterV1Handler(ctx: ActionCtx, request: Reques
   }
 
   const packageName = segments[0] ?? "";
-  const viewerUserId = (await getOptionalApiTokenUserId(ctx, request)) ?? (await getAuthUserId(ctx));
+  const viewerUserId = await getOptionalViewerUserIdForRequest(ctx, request);
   const detail = (await runQueryRef(
     ctx,
     internalRefs.packages.getByNameForViewerInternal,

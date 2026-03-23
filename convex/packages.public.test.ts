@@ -1017,6 +1017,19 @@ describe("packages public queries", () => {
     expect(version?.version.version).toBe("1.0.0");
   });
 
+  it("treats auth resolution failures as anonymous for public package detail", async () => {
+    vi.mocked(getAuthUserId).mockRejectedValue(new Error("stale session"));
+    const { ctx } = makePackageCtx({
+      pkg: makePackageDoc({ channel: "community" }),
+    });
+
+    const detail = await getByNameHandler(ctx, {
+      name: "demo-plugin",
+    });
+
+    expect(detail?.package.name).toBe("demo-plugin");
+  });
+
   it("does not expose a soft-deleted latest release as latestVersion", async () => {
     const { ctx } = makePackageCtx({
       latestRelease: makeReleaseDoc({ softDeletedAt: 10 }),

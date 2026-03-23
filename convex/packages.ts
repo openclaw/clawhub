@@ -222,6 +222,15 @@ function decodePublicPageCursor(raw: string | null | undefined): PublicPageCurso
   }
 }
 
+async function getOptionalViewerUserId(ctx: Parameters<typeof getAuthUserId>[0]) {
+  try {
+    return (await getAuthUserId(ctx)) ?? undefined;
+  } catch {
+    // Public package reads should degrade to anonymous when session resolution fails.
+    return undefined;
+  }
+}
+
 function packageSearchScore(digest: PackageDigestLike, queryText: string) {
   const needle = queryText.toLowerCase();
   const normalized = digest.normalizedName.toLowerCase();
@@ -485,7 +494,7 @@ async function getReadablePackageByName(
 export const getByName = query({
   args: { name: v.string() },
   handler: async (ctx, args) => {
-    const viewerUserId = (await getAuthUserId(ctx)) ?? undefined;
+    const viewerUserId = await getOptionalViewerUserId(ctx);
     const pkg = await getReadablePackageByName(ctx, args.name, viewerUserId);
     if (!pkg) return null;
     const latestRelease = pkg.latestReleaseId ? await ctx.db.get(pkg.latestReleaseId) : null;
@@ -526,7 +535,7 @@ export const listVersions = query({
     paginationOpts: paginationOptsValidator,
   },
   handler: async (ctx, args) => {
-    const viewerUserId = (await getAuthUserId(ctx)) ?? undefined;
+    const viewerUserId = await getOptionalViewerUserId(ctx);
     const pkg = await getReadablePackageByName(ctx, args.name, viewerUserId);
     if (!pkg) return { page: [], isDone: true, continueCursor: "" };
     return await ctx.db
@@ -564,7 +573,7 @@ export const getVersionByName = query({
     version: v.string(),
   },
   handler: async (ctx, args) => {
-    const viewerUserId = (await getAuthUserId(ctx)) ?? undefined;
+    const viewerUserId = await getOptionalViewerUserId(ctx);
     const pkg = await getReadablePackageByName(ctx, args.name, viewerUserId);
     if (!pkg) return null;
     const publicPackage = toPublicPackage(pkg);

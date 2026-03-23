@@ -151,7 +151,13 @@ export const syncGitHubProfileAction = internalAction({
 export const me = query({
   args: {},
   handler: async (ctx) => {
-    const userId = await getAuthUserId(ctx);
+    let userId: Awaited<ReturnType<typeof getAuthUserId>>;
+    try {
+      userId = await getAuthUserId(ctx);
+    } catch {
+      // Public pages should treat broken/stale auth as anonymous instead of crashing SSR.
+      return null;
+    }
     if (!userId) return null;
     const user = await ctx.db.get(userId);
     if (!user || user.deletedAt || user.deactivatedAt) return null;

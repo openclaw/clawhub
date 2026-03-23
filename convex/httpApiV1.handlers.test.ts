@@ -2345,6 +2345,27 @@ describe("httpApiV1 handlers", () => {
     );
   });
 
+  it("packages list falls back to anonymous when cookie auth resolution fails", async () => {
+    vi.mocked(getAuthUserId).mockRejectedValue(new Error("stale session"));
+    const runQuery = vi.fn().mockResolvedValue({ page: [], isDone: true, continueCursor: "" });
+    const runMutation = vi.fn().mockResolvedValue(okRate());
+
+    const response = await __handlers.listPackagesV1Handler(
+      makeCtx({ runQuery, runMutation }),
+      new Request("https://example.com/api/v1/packages?isOfficial=true&limit=7"),
+    );
+
+    expect(response.status).toBe(200);
+    expect(runQuery).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({
+        isOfficial: true,
+        viewerUserId: undefined,
+        paginationOpts: { cursor: null, numItems: 7 },
+      }),
+    );
+  });
+
   it("packages detail falls back to public skills", async () => {
     const runQuery = vi.fn(async (_query: unknown, args: Record<string, unknown>) => {
       if ("name" in args) return null;
