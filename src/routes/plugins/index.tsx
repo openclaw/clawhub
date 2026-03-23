@@ -44,7 +44,7 @@ export const Route = createFileRoute("/plugins/")({
       family: deps.family,
       isOfficial: deps.verified,
       executesCode: deps.executesCode,
-      limit: 50,
+      limit: deps.verified ? 10 : 50,
     });
     const allItems = "results" in data ? data.results.map((entry) => entry.package) : data.items;
     const items = allItems.filter((item) => item.family !== "skill");
