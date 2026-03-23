@@ -1,6 +1,6 @@
 ---
 name: aivi-engagement
-description: Score leads and launch AI voice and SMS engagement sequences for real estate, debt collection, healthcare, and home services. Includes RRDB enrichment, ML-driven sequencing, and premium Supercharged campaigns.
+description: AIVI is the AI engagement layer for lead generation, contact centers, and customer re-activation. Every conversation is analyzed in real-time, building Conversational Intelligence that makes every future interaction smarter.
 version: 1.0.0
 author: AIVI
 url: https://aivi.io
@@ -62,6 +62,28 @@ Example prompts:
 - "What happened on that call?"
 - "Did the sequence convert?"
 - "Show me the topics from the last call"
+
+## Conversational Intelligence
+
+Every call processed by AIVI generates:
+- Topics discussed (automatically extracted)
+- Key moments (objections, callbacks, compliance, escalations)
+- Sentiment arc (positive, negative, neutral)
+- Outcome classification
+
+773 calls analyzed. 494 moments detected:
+- 140 objections raised
+- 117 callback promises
+- 24 compliance misses
+- 12 escalation requests
+
+Works across:
+- Lead generation (new prospects)
+- Contact center (inbound + outbound)
+- Customer re-activation (lapsed base)
+- Ongoing care (existing customers)
+
+Every call makes the next one smarter.
 
 ## Billing
 All skills require AIVI credits. Add credits at app.aivi.io → Billing.
