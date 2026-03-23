@@ -232,7 +232,7 @@ export async function syncSkillSearchDigestsForOwnerPublisherId(
   }
 }
 
-export const syncSkillSearchDigestsForOwnerPublisherIdInternal = internalMutation({
+export const syncSkillSearchDigestsForOwnerPublisherIdInternal = rawInternalMutation({
   args: {
     ownerPublisherId: v.id("publishers"),
     cursor: v.optional(v.string()),
