@@ -117,6 +117,24 @@ For moderated content, owners may be able to submit an appeal from the
 owner-visible ClawHub surfaces. Appeals should explain what changed or why the
 flag is incorrect.
 
+## Moderation Holds
+
+When the static scanner flags an uploaded skill as malicious, the publisher is
+automatically placed under a moderation hold (`requiresModerationAt` set on the
+user). This hides all of the publisher's skills, causes future publishes to
+start hidden, and creates a `user.moderation.auto` audit log entry.
+
+Admins can lift a false-positive hold:
+
+```bash
+npx convex run users:liftModerationHold '{"userId": "<user-id>", "reason": "False positive from security tool scanning"}'
+```
+
+This clears `requiresModerationAt` and `requiresModerationReason`, restores
+skills hidden by the user-level hold, and writes a `user.moderation.lift` audit
+log entry. Skills hidden for other reasons, or whose own static scan remains
+malicious, stay hidden.
+
 ## Bans and account standing
 
 Accounts that violate ClawHub policy may lose publishing access. Severe abuse
