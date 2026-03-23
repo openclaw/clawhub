@@ -211,7 +211,11 @@ async function syncSkillSearchDigestForSkill(
   });
 }
 
-export async function syncSkillSearchDigestsForOwnerPublisherId(
+/**
+ * Sync exactly one page of skill digests for a publisher and return pagination state.
+ * Callers that need full coverage must continue via continueCursor (see internal worker below).
+ */
+export async function syncSkillSearchDigestsPageForOwnerPublisherId(
   ctx: PackageDigestSyncCtx,
   ownerPublisherId: Id<"publishers"> | null | undefined,
   cursor: string | null = null,
@@ -236,6 +240,26 @@ export async function syncSkillSearchDigestsForOwnerPublisherId(
 // Temporal Dead Zone: the custom wrapper (line ~366) is declared after this const.
 // skillSearchDigest has no registered triggers so wrapDB is not needed here.
 export const syncSkillSearchDigestsForOwnerPublisherIdInternal = rawInternalMutation({
+  args: {
+    ownerPublisherId: v.id("publishers"),
+    cursor: v.optional(v.string()),
+  },
+  handler: async (ctx, args) => {
+    const page = await syncSkillSearchDigestsPageForOwnerPublisherId(
+      ctx,
+      args.ownerPublisherId,
+      args.cursor ?? null,
+    );
+    if (!page || page.isDone) return { done: true as const };
+    // Continue via scheduler so each execution performs only one paginated query
+    // (Convex enforces one paginated query per function execution).
+    await ctx.scheduler.runAfter(0, internal.functions.syncSkillSearchDigestsForOwnerPublisherIdInternal, {
+      ownerPublisherId: args.ownerPublisherId,
+      cursor: page.continueCursor,
+    });
+    return { done: false as const, cursor: page.continueCursor };
+  },
+});
 
 export async function repointPackageLatestRelease(
   ctx: PackageDigestSyncCtx,
