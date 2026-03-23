@@ -77,6 +77,12 @@ function normalizeApiPath(path: string) {
 
 async function packageApiUrl(path: string) {
   const normalizedPath = normalizeApiPath(path);
+  // When VITE_CONVEX_SITE_URL is set, go directly to Convex site.
+  // In production the Vercel rewrite handles this; locally there is no rewrite.
+  const siteUrl = getRuntimeEnv("VITE_CONVEX_SITE_URL");
+  if (siteUrl) {
+    return new URL(normalizedPath, siteUrl);
+  }
   if (typeof window !== "undefined") {
     return new URL(normalizedPath, window.location.origin);
   }
@@ -93,8 +99,7 @@ async function packageApiUrl(path: string) {
       // Fall through to env-based base URL when no request context exists.
     }
   }
-  const base =
-    getRuntimeEnv("VITE_CONVEX_SITE_URL") ?? getRequiredRuntimeEnv("VITE_CONVEX_URL");
+  const base = getRequiredRuntimeEnv("VITE_CONVEX_URL");
   return new URL(normalizedPath, base);
 }
 
@@ -127,9 +132,11 @@ async function getForwardedHeaders() {
 
 async function packageFetch(url: URL, accept: string) {
   const forwarded = await getForwardedHeaders();
+  const isSameOrigin =
+    typeof window !== "undefined" && url.origin === window.location.origin;
   return await fetch(url.toString(), {
     method: "GET",
-    credentials: "include",
+    ...(isSameOrigin ? { credentials: "include" as const } : {}),
     headers: {
       Accept: accept,
       ...forwarded,
