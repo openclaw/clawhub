@@ -81,6 +81,9 @@ export function SkillDetailPage({
   const reportSkill = useMutation(api.skills.report);
   const updateTags = useMutation(api.skills.updateTags);
   const getReadme = useAction(api.skills.getReadme);
+  const myPublishers = useQuery(api.publishers.listMine) as
+    | Array<{ publisher: { _id: Id<"publishers"> }; role: string }>
+    | undefined;
 
   const [readme, setReadme] = useState<string | null>(initialData?.readme ?? null);
   const [readmeError, setReadmeError] = useState<string | null>(initialData?.readmeError ?? null);
@@ -118,14 +121,29 @@ export function SkillDetailPage({
     isAuthenticated && skill ? { skillId: skill._id } : "skip",
   );
 
-  const canManage = canManageSkill(me, skill);
-  const isOwner = Boolean(me && skill && me._id === skill.ownerUserId);
+  const myPublisherIds = useMemo(
+    () =>
+      new Set(
+        (Array.isArray(myPublishers) ? myPublishers : []).map((entry) => entry.publisher._id),
+      ),
+    [myPublishers],
+  );
+  const canManage =
+    canManageSkill(me, skill) ||
+    Boolean(skill?.ownerPublisherId && myPublisherIds.has(skill.ownerPublisherId));
+  const isOwner =
+    Boolean(me && skill && me._id === skill.ownerUserId) ||
+    Boolean(skill?.ownerPublisherId && myPublisherIds.has(skill.ownerPublisherId));
   const ownedSkills = useQuery(
     api.skills.list,
-    isOwner && skill ? { ownerUserId: skill.ownerUserId, limit: 100 } : "skip",
+    isOwner && skill
+      ? skill.ownerPublisherId
+        ? { ownerPublisherId: skill.ownerPublisherId, limit: 100 }
+        : { ownerUserId: skill.ownerUserId, limit: 100 }
+      : "skip",
   ) as Array<{ _id: Id<"skills">; slug: string; displayName: string }> | undefined;
 
-  const ownerHandle = owner?.handle ?? owner?.name ?? null;
+  const ownerHandle = owner?.handle ?? null;
   const ownerParam = ownerHandle ?? (owner?._id ? String(owner._id) : null);
   const wantsCanonicalRedirect = Boolean(
     ownerParam &&

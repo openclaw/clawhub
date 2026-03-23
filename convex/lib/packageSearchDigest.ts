@@ -13,10 +13,12 @@ const SHARED_KEYS = [
   "channel",
   "isOfficial",
   "ownerUserId",
+  "ownerPublisherId",
   "summary",
   "capabilityTags",
   "executesCode",
   "runtimeId",
+  "scanStatus",
   "softDeletedAt",
   "createdAt",
   "updatedAt",
@@ -31,13 +33,16 @@ const CAPABILITY_SHARED_KEYS = [
   "channel",
   "isOfficial",
   "ownerUserId",
+  "ownerPublisherId",
   "ownerHandle",
+  "ownerKind",
   "summary",
   "latestVersion",
   "runtimeId",
   "capabilityTags",
   "executesCode",
   "verificationTier",
+  "scanStatus",
   "softDeletedAt",
   "createdAt",
   "updatedAt",
@@ -47,6 +52,7 @@ export type PackageSearchDigestFields = Pick<Doc<"packages">, (typeof SHARED_KEY
   packageId: Id<"packages">;
   latestVersion?: string;
   ownerHandle?: string;
+  ownerKind?: "user" | "org";
   verificationTier?: Doc<"packageSearchDigest">["verificationTier"];
 };
 

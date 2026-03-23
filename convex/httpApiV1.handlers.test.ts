@@ -214,6 +214,43 @@ describe("httpApiV1 handlers", () => {
     });
   });
 
+  it("users/publisher ensures an org publisher handle for admin", async () => {
+    const runMutation = vi.fn(async (_mutation: unknown, args: Record<string, unknown>) => {
+      if (isRateLimitArgs(args)) return okRate();
+      return {
+        ok: true,
+        publisherId: "publishers:openclaw",
+        handle: "openclaw",
+        created: true,
+        migrated: false,
+        trusted: true,
+      };
+    });
+    vi.mocked(requireApiTokenUser).mockResolvedValue({
+      userId: "users:admin",
+      user: { _id: "users:admin", role: "admin" },
+    } as never);
+
+    const response = await __handlers.usersPostRouterV1Handler(
+      makeCtx({ runQuery: vi.fn(), runAction: vi.fn(), runMutation }),
+      new Request("https://example.com/api/v1/users/publisher", {
+        method: "POST",
+        body: JSON.stringify({ handle: "OpenClaw", displayName: "OpenClaw", trusted: true }),
+      }),
+    );
+    if (response.status !== 200) throw new Error(await response.text());
+
+    expect(runMutation).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({
+        actorUserId: "users:admin",
+        handle: "openclaw",
+        displayName: "OpenClaw",
+        trusted: true,
+      }),
+    );
+  });
+
   it("search forwards limit and highlightedOnly", async () => {
     const runAction = vi.fn().mockResolvedValue([
       {
@@ -2868,6 +2905,100 @@ describe("httpApiV1 handlers", () => {
     expect(await response.text()).toBe("Missing stored file: dist/index.js");
   });
 
+  it("blocks package downloads while VT scan is pending", async () => {
+    const runMutation = vi.fn().mockResolvedValue(okRate());
+    const runQuery = vi.fn(async (_query: unknown, args: Record<string, unknown>) => {
+      if ("name" in args) {
+        return {
+          package: {
+            _id: "packages:1",
+            name: "demo-plugin",
+            displayName: "Demo Plugin",
+            family: "code-plugin",
+            tags: {},
+            latestReleaseId: "packageReleases:1",
+            channel: "community",
+            isOfficial: false,
+            createdAt: 1,
+            updatedAt: 1,
+          },
+          latestRelease: null,
+          owner: null,
+        };
+      }
+      if ("releaseId" in args) {
+        return {
+          _id: "packageReleases:1",
+          version: "1.0.0",
+          createdAt: 1,
+          changelog: "init",
+          sha256hash: "a".repeat(64),
+          files: [],
+        };
+      }
+      return null;
+    });
+
+    const response = await __handlers.packagesGetRouterV1Handler(
+      makeCtx({ runQuery, runMutation, storage: { get: vi.fn() } }),
+      new Request("https://example.com/api/v1/packages/demo-plugin/download"),
+    );
+
+    expect(response.status).toBe(423);
+    expect(await response.text()).toContain("pending a security scan");
+  });
+
+  it("blocks package file access when release is malicious", async () => {
+    const runMutation = vi.fn().mockResolvedValue(okRate());
+    const runQuery = vi.fn(async (_query: unknown, args: Record<string, unknown>) => {
+      if ("name" in args) {
+        return {
+          package: {
+            _id: "packages:1",
+            name: "demo-plugin",
+            displayName: "Demo Plugin",
+            family: "code-plugin",
+            tags: {},
+            latestReleaseId: "packageReleases:1",
+            channel: "community",
+            isOfficial: false,
+            createdAt: 1,
+            updatedAt: 1,
+          },
+          latestRelease: null,
+          owner: null,
+        };
+      }
+      if ("releaseId" in args) {
+        return {
+          _id: "packageReleases:1",
+          version: "1.0.0",
+          createdAt: 1,
+          changelog: "init",
+          verification: { scanStatus: "malicious" },
+          files: [
+            {
+              path: "README.md",
+              size: 2,
+              sha256: "a".repeat(64),
+              storageId: "storage:1",
+              contentType: "text/markdown",
+            },
+          ],
+        };
+      }
+      return null;
+    });
+
+    const response = await __handlers.packagesGetRouterV1Handler(
+      makeCtx({ runQuery, runMutation, storage: { get: vi.fn() } }),
+      new Request("https://example.com/api/v1/packages/demo-plugin/file?path=README.md"),
+    );
+
+    expect(response.status).toBe(403);
+    expect(await response.text()).toContain("flagged as malicious");
+  });
+
   it("blocks file and download access to soft-deleted package releases", async () => {
     const runMutation = vi.fn().mockResolvedValue(okRate());
     const runQuery = vi.fn(async (_query: unknown, args: Record<string, unknown>) => {
@@ -2945,6 +3076,7 @@ describe("httpApiV1 handlers", () => {
         },
         body: JSON.stringify({
           name: "demo-plugin",
+          ownerHandle: "openclaw",
           family: "bundle-plugin",
           version: "1.0.0",
           changelog: "init",
@@ -2968,6 +3100,13 @@ describe("httpApiV1 handlers", () => {
       expect.objectContaining({
         key: "user:users:1",
         limit: 120,
+      }),
+    );
+    expect(runAction).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({
+        actorUserId: "users:1",
+        payload: expect.objectContaining({ ownerHandle: "openclaw" }),
       }),
     );
   });

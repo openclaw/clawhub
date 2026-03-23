@@ -49,8 +49,7 @@ export function SkillsResults({
             const clawdis = entry.latestVersion?.parsed?.clawdis;
             const isPlugin = Boolean(clawdis?.nix?.plugin);
             const platforms = getPlatformLabels(clawdis?.os, clawdis?.nix?.systems);
-            const ownerHandle =
-              entry.owner?.handle ?? entry.owner?.name ?? entry.ownerHandle ?? null;
+            const ownerHandle = entry.owner?.handle ?? entry.ownerHandle ?? null;
             const skillHref = buildSkillHref(skill, ownerHandle);
             return (
               <SkillCard
@@ -88,8 +87,7 @@ export function SkillsResults({
           </div>
           {sorted.map((entry) => {
             const skill = entry.skill;
-            const ownerHandle =
-              entry.owner?.handle ?? entry.owner?.name ?? entry.ownerHandle ?? null;
+            const ownerHandle = entry.owner?.handle ?? entry.ownerHandle ?? null;
             const skillHref = buildSkillHref(skill, ownerHandle);
             return (
               <Link key={skill._id} className="skills-table-row" to={skillHref}>

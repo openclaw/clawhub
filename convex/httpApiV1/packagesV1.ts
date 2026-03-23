@@ -5,6 +5,7 @@ import type { Doc, Id } from "../_generated/dataModel";
 import type { ActionCtx } from "../_generated/server";
 import { getOptionalApiTokenUserId } from "../lib/apiTokenAuth";
 import { corsHeaders, mergeHeaders } from "../lib/httpHeaders";
+import { getPublishFileSizeError, MAX_PUBLISH_FILE_BYTES } from "../lib/publishLimits";
 import { applyRateLimit } from "../lib/httpRateLimit";
 import { buildDeterministicPackageZip } from "../lib/skillZip";
 import { isMacJunkPath, isTextFile } from "../lib/skills";
@@ -124,6 +125,10 @@ type ReleaseLike = {
   compatibility?: Doc<"packageReleases">["compatibility"];
   capabilities?: Doc<"packageReleases">["capabilities"];
   verification?: Doc<"packageReleases">["verification"];
+  sha256hash?: string;
+  vtAnalysis?: Doc<"packageReleases">["vtAnalysis"];
+  llmAnalysis?: Doc<"packageReleases">["llmAnalysis"];
+  staticScan?: Doc<"packageReleases">["staticScan"];
   integritySha256?: string;
   softDeletedAt?: number;
 };
@@ -131,6 +136,27 @@ type ReleaseLike = {
 function toVisibleRelease(release: ReleaseLike | null) {
   if (!release || ("softDeletedAt" in release && release.softDeletedAt !== undefined)) return null;
   return release;
+}
+
+function getReleaseSecurityBlock(release: ReleaseLike) {
+  if (
+    release.vtAnalysis?.status === "malicious" ||
+    release.verification?.scanStatus === "malicious" ||
+    release.staticScan?.status === "malicious"
+  ) {
+    return {
+      status: 403,
+      message: "Blocked: this package release has been flagged as malicious and cannot be downloaded.",
+    };
+  }
+  const vtStatus = release.vtAnalysis?.status?.trim().toLowerCase();
+  if (release.sha256hash && (!vtStatus || vtStatus === "pending")) {
+    return {
+      status: 423,
+      message: "This package release is pending a security scan by VirusTotal. Please try again in a few minutes.",
+    };
+  }
+  return null;
 }
 
 async function resolvePackageTags(
@@ -351,6 +377,7 @@ function parsePackagePublishBody(body: unknown) {
   const parsed = parseArk(PackagePublishRequestSchema, body, "Package publish payload") as {
     name: string;
     displayName?: string;
+    ownerHandle?: string;
     family: "skill" | "code-plugin" | "bundle-plugin";
     version: string;
     changelog: string;
@@ -370,6 +397,7 @@ function parsePackagePublishBody(body: unknown) {
   return {
     name: parsed.name,
     displayName: parsed.displayName ?? undefined,
+    ownerHandle: parsed.ownerHandle?.trim().replace(/^@+/, "") || undefined,
     family: parsed.family,
     version: parsed.version,
     changelog: parsed.changelog,
@@ -399,6 +427,9 @@ async function parseMultipartPackagePublish(ctx: ActionCtx, request: Request) {
   for (const entry of form.getAll("files")) {
     if (typeof entry === "string") continue;
     if (isMacJunkPath(entry.name)) continue;
+    if (entry.size > MAX_PUBLISH_FILE_BYTES) {
+      throw new Error(getPublishFileSizeError(entry.name));
+    }
     const buffer = new Uint8Array(await entry.arrayBuffer());
     const digest = await crypto.subtle.digest("SHA-256", buffer);
     const sha256 = Array.from(new Uint8Array(digest), (byte) => byte.toString(16).padStart(2, "0")).join("");
@@ -581,7 +612,7 @@ export async function publishPackageV1Handler(ctx: ActionCtx, request: Request) 
       ? await parseMultipartPackagePublish(ctx, request)
       : parsePackagePublishBody(await request.json());
     const result = await runActionRef(ctx, internalRefs.packages.publishPackageForUserInternal, {
-      userId: auth.userId,
+      actorUserId: auth.userId,
       payload,
     });
     return json(result, 200, rate.headers);
@@ -969,6 +1000,8 @@ export async function packagesGetRouterV1Handler(ctx: ActionCtx, request: Reques
     }
     const release = await getReleaseForRequest(ctx, publicPackage!, request);
     if (!release) return text("Version not found", 404, rate.headers);
+    const securityBlock = getReleaseSecurityBlock(release);
+    if (securityBlock) return text(securityBlock.message, securityBlock.status, rate.headers);
     const file = release.files.find((entry) => entry.path === path);
     if (!file) return text("File not found", 404, rate.headers);
     if (!isTextFile(file.path, file.contentType)) {
@@ -1004,6 +1037,8 @@ export async function packagesGetRouterV1Handler(ctx: ActionCtx, request: Reques
     }
     const release = await getReleaseForRequest(ctx, publicPackage!, request);
     if (!release) return text("Version not found", 404, rate.headers);
+    const securityBlock = getReleaseSecurityBlock(release);
+    if (securityBlock) return text(securityBlock.message, securityBlock.status, rate.headers);
     const entries: Array<{ path: string; bytes: Uint8Array }> = [];
     for (const file of release.files) {
       const blob = await ctx.storage.get(file.storageId);

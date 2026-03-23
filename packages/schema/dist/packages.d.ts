@@ -65,6 +65,7 @@ export declare const PackagePublishRequestSchema: import("arktype/internal/varia
         contentType?: string | undefined;
     }[];
     displayName?: string | undefined;
+    ownerHandle?: string | undefined;
     channel?: "official" | "community" | "private" | undefined;
     tags?: string[] | undefined;
     source?: {

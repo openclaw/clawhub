@@ -40,7 +40,7 @@ clawhub publish ./my-skill-pack --slug my-skill-pack --name "My Skill Pack" --ve
 clawhub package explore --family skill
 clawhub package explore --family code-plugin
 clawhub package inspect @openclaw/example-plugin
-clawhub package publish ./example-plugin --source-repo openclaw/example-plugin --source-commit abc123
+clawhub package publish ./example-plugin --owner openclaw --source-repo openclaw/example-plugin --source-commit abc123
 ```
 
 ## Sync (upload local skills)

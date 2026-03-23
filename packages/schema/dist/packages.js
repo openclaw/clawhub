@@ -48,6 +48,7 @@ export const BundlePublishMetadataSchema = type({
 export const PackagePublishRequestSchema = type({
     name: "string",
     displayName: "string?",
+    ownerHandle: "string?",
     family: PackageFamilySchema,
     version: "string",
     changelog: "string",

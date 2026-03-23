@@ -67,6 +67,7 @@ export type BundlePublishMetadata = (typeof BundlePublishMetadataSchema)[inferre
 export const PackagePublishRequestSchema = type({
   name: "string",
   displayName: "string?",
+  ownerHandle: "string?",
   family: PackageFamilySchema,
   version: "string",
   changelog: "string",

@@ -26,6 +26,7 @@ vi.mock("../lib/useAuthStatus", () => ({
 describe("SkillDetailPage", () => {
   const skillId = "skills:1" as Id<"skills">;
   const ownerId = "users:1" as Id<"users">;
+  const ownerPublisherId = "publishers:steipete" as Id<"publishers">;
   const versionId = "skillVersions:1" as Id<"skillVersions">;
   const storageId = "storage:1" as Id<"_storage">;
 
@@ -75,6 +76,7 @@ describe("SkillDetailPage", () => {
               displayName: "Weather",
               summary: "Get current weather.",
               ownerUserId: ownerId,
+              ownerPublisherId,
               tags: {},
               badges: {},
               stats: {
@@ -89,10 +91,12 @@ describe("SkillDetailPage", () => {
               updatedAt: 0,
             },
             owner: {
-              _id: ownerId,
+              _id: ownerPublisherId,
               _creationTime: 0,
+              kind: "user",
               handle: "steipete",
-              name: "Peter",
+              displayName: "Peter",
+              linkedUserId: ownerId,
             },
             latestVersion: {
               _id: versionId,
@@ -148,6 +152,7 @@ describe("SkillDetailPage", () => {
               displayName: "Weather",
               summary: "Get current weather.",
               ownerUserId: ownerId,
+              ownerPublisherId,
               tags: {},
               badges: {},
               stats: {
@@ -162,10 +167,12 @@ describe("SkillDetailPage", () => {
               updatedAt: 0,
             },
             owner: {
-              _id: ownerId,
+              _id: ownerPublisherId,
               _creationTime: 0,
+              kind: "user",
               handle: "steipete",
-              name: "Peter",
+              displayName: "Peter",
+              linkedUserId: ownerId,
             },
             latestVersion: {
               _id: versionId,
@@ -215,17 +222,25 @@ describe("SkillDetailPage", () => {
     useQueryMock.mockImplementation((_fn: unknown, args: unknown) => {
       if (args === "skip") return undefined;
       if (args && typeof args === "object" && "skillId" in args) return [];
-      return {
-        skill: {
-          _id: "skills:1",
-          slug: "weather",
-          displayName: "Weather",
-          summary: "Get current weather.",
-          ownerUserId: "users:1",
-          tags: {},
-          stats: { stars: 0, downloads: 0 },
+        return {
+          skill: {
+            _id: "skills:1",
+            slug: "weather",
+            displayName: "Weather",
+            summary: "Get current weather.",
+            ownerUserId: "users:1",
+            ownerPublisherId: "publishers:steipete",
+            tags: {},
+            stats: { stars: 0, downloads: 0 },
+          },
+        owner: {
+          _id: "publishers:steipete",
+          _creationTime: 0,
+          kind: "user",
+          handle: "steipete",
+          displayName: "Peter",
+          linkedUserId: "users:1",
         },
-        owner: { handle: "steipete", name: "Peter" },
         latestVersion: { _id: "skillVersions:1", version: "1.0.0", parsed: {} },
       };
     });
@@ -260,10 +275,18 @@ describe("SkillDetailPage", () => {
             displayName: "Weather",
             summary: "Get current weather.",
             ownerUserId: "users:1",
+            ownerPublisherId: "publishers:steipete",
             tags: {},
             stats: { stars: 0, downloads: 0 },
           },
-          owner: { handle: "steipete", name: "Peter" },
+          owner: {
+            _id: "publishers:steipete",
+            _creationTime: 0,
+            kind: "user",
+            handle: "steipete",
+            displayName: "Peter",
+            linkedUserId: "users:1",
+          },
           latestVersion: { _id: "skillVersions:1", version: "1.0.0", parsed: {}, files: [] },
         };
       }
@@ -312,10 +335,18 @@ describe("SkillDetailPage", () => {
             displayName: "Weather",
             summary: "Get current weather.",
             ownerUserId: "users:1",
+            ownerPublisherId: "publishers:steipete",
             tags: {},
             stats: { stars: 0, downloads: 0 },
           },
-          owner: { _id: "users:1", handle: "steipete", name: "Peter" },
+          owner: {
+            _id: "publishers:steipete",
+            _creationTime: 0,
+            kind: "user",
+            handle: "steipete",
+            displayName: "Peter",
+            linkedUserId: "users:1",
+          },
           latestVersion: { _id: "skillVersions:1", version: "1.0.0", parsed: {}, files: [] },
         };
       }
@@ -344,10 +375,18 @@ describe("SkillDetailPage", () => {
             displayName: "Weather",
             summary: "Get current weather.",
             ownerUserId: "users:1",
+            ownerPublisherId: "publishers:steipete",
             tags: {},
             stats: { stars: 0, downloads: 0 },
           },
-          owner: { handle: "steipete", name: "Peter" },
+          owner: {
+            _id: "publishers:steipete",
+            _creationTime: 0,
+            kind: "user",
+            handle: "steipete",
+            displayName: "Peter",
+            linkedUserId: "users:1",
+          },
           latestVersion: { _id: "skillVersions:1", version: "1.0.0", parsed: {}, files: [] },
         };
       }

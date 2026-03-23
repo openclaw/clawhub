@@ -1,14 +1,14 @@
 import { api } from "../../convex/_generated/api";
 import type { Doc, Id } from "../../convex/_generated/dataModel";
 import { convexHttp } from "../convex/client";
-import type { PublicSkill, PublicUser } from "./publicUser";
+import type { PublicPublisher, PublicSkill } from "./publicUser";
 
 export type SkillBySlugResult = {
   requestedSlug?: string | null;
   resolvedSlug?: string | null;
   skill: Doc<"skills"> | PublicSkill;
   latestVersion: Doc<"skillVersions"> | null;
-  owner: Doc<"users"> | PublicUser | null;
+  owner: PublicPublisher | null;
   pendingReview?: boolean;
   moderationInfo?: {
     isPendingScan: boolean;
@@ -81,7 +81,10 @@ export async function fetchSkillPageData(slug: string): Promise<SkillPageLoaderD
     }
 
     return {
-      owner: result.owner?.handle ?? result.owner?.name ?? null,
+      owner:
+        result.owner?.handle ??
+        result.owner?.displayName ??
+        ((result.owner as { name?: string | null } | null)?.name ?? null),
       displayName: result.skill.displayName ?? null,
       summary: result.skill.summary ?? null,
       version: result.latestVersion?.version ?? null,

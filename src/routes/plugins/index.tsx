@@ -132,6 +132,7 @@ export function PluginsIndex() {
                 search: (prev) => ({
                   ...prev,
                   cursor: undefined,
+                  q: query.trim() || undefined,
                   family: value || undefined,
                 }),
               });
@@ -143,7 +144,7 @@ export function PluginsIndex() {
             <option value="bundle-plugin">Bundle plugins</option>
           </select>
           <button
-            className={`search-filter-button${search.verified ? " is-active" : ""}`}
+            className="search-filter-button"
             type="button"
             aria-pressed={search.verified ?? false}
             onClick={() => {
@@ -151,6 +152,7 @@ export function PluginsIndex() {
                 search: (prev) => ({
                   ...prev,
                   cursor: undefined,
+                  q: query.trim() || undefined,
                   verified: prev.verified ? undefined : true,
                 }),
               });
@@ -159,7 +161,7 @@ export function PluginsIndex() {
             Verified
           </button>
           <button
-            className={`search-filter-button${search.executesCode ? " is-active" : ""}`}
+            className="search-filter-button"
             type="button"
             aria-pressed={search.executesCode ?? false}
             onClick={() => {
@@ -167,6 +169,7 @@ export function PluginsIndex() {
                 search: (prev) => ({
                   ...prev,
                   cursor: undefined,
+                  q: query.trim() || undefined,
                   executesCode: prev.executesCode ? undefined : true,
                 }),
               });

@@ -1,6 +1,7 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useQuery } from "convex/react";
 import { Clock, Package, Plus, Upload } from "lucide-react";
+import { useEffect, useState } from "react";
 import { api } from "../../convex/_generated/api";
 import type { Doc } from "../../convex/_generated/dataModel";
 import { formatCompactStat } from "../lib/numberFormat";
@@ -14,10 +15,37 @@ export const Route = createFileRoute("/dashboard")({
 
 function Dashboard() {
   const me = useQuery(api.users.me) as Doc<"users"> | null | undefined;
+  const publishers = useQuery(api.publishers.listMine) as
+    | Array<{
+        publisher: {
+          _id: string;
+          handle: string;
+          displayName: string;
+          kind: "user" | "org";
+        };
+        role: "owner" | "admin" | "publisher";
+      }>
+    | undefined;
+  const [selectedPublisherId, setSelectedPublisherId] = useState<string>("");
+  const selectedPublisher = publishers?.find((entry) => entry.publisher._id === selectedPublisherId) ?? null;
   const mySkills = useQuery(
     api.skills.list,
-    me?._id ? { ownerUserId: me._id, limit: 100 } : "skip",
+    selectedPublisher?.publisher.kind === "user" && me?._id
+      ? { ownerUserId: me._id, limit: 100 }
+      : selectedPublisherId
+        ? { ownerPublisherId: selectedPublisherId as Doc<"publishers">["_id"], limit: 100 }
+        : me?._id
+        ? { ownerUserId: me._id, limit: 100 }
+        : "skip",
   ) as DashboardSkill[] | undefined;
+
+  useEffect(() => {
+    if (selectedPublisherId) return;
+    const personal = publishers?.find((entry) => entry.publisher.kind === "user") ?? publishers?.[0];
+    if (personal?.publisher._id) {
+      setSelectedPublisherId(personal.publisher._id);
+    }
+  }, [publishers, selectedPublisherId]);
 
   if (!me) {
     return (
@@ -28,14 +56,33 @@ function Dashboard() {
   }
 
   const skills = mySkills ?? [];
-  const ownerHandle = me.handle ?? me.name ?? me.displayName ?? me._id;
+  const ownerHandle =
+    selectedPublisher?.publisher.handle ?? me.handle ?? me.name ?? me.displayName ?? me._id;
 
   return (
     <main className="section">
       <div className="dashboard-header">
-        <h1 className="section-title" style={{ margin: 0 }}>
-          My Skills
-        </h1>
+        <div style={{ display: "grid", gap: "6px" }}>
+          <h1 className="section-title" style={{ margin: 0 }}>
+            Publisher Skills
+          </h1>
+          <p className="section-subtitle" style={{ margin: 0 }}>
+            New skill versions stay private until automated security checks and verification finish.
+          </p>
+        </div>
+        {publishers && publishers.length > 0 ? (
+          <select
+            className="input"
+            value={selectedPublisherId}
+            onChange={(event) => setSelectedPublisherId(event.target.value)}
+          >
+            {publishers.map((entry) => (
+              <option key={entry.publisher._id} value={entry.publisher._id}>
+                @{entry.publisher.handle} · {entry.role}
+              </option>
+            ))}
+          </select>
+        ) : null}
         <Link to="/upload" search={{ updateSlug: undefined }} className="btn btn-primary">
           <Plus className="h-4 w-4" aria-hidden="true" />
           Upload New Skill
@@ -79,11 +126,16 @@ function SkillCard({ skill, ownerHandle }: { skill: DashboardSkill; ownerHandle:
           {skill.pendingReview ? (
             <span className="tag tag-pending">
               <Clock className="h-3 w-3" aria-hidden="true" />
-              Scanning
+              Pending checks
             </span>
           ) : null}
         </div>
         {skill.summary && <p className="dashboard-skill-description">{skill.summary}</p>}
+        {skill.pendingReview ? (
+          <p className="dashboard-skill-description">
+            Hidden until VirusTotal and verification checks finish.
+          </p>
+        ) : null}
         <div className="dashboard-skill-stats">
           <span>
             <Package size={13} aria-hidden="true" /> {formatCompactStat(skill.stats.downloads)}

@@ -5,6 +5,11 @@ export type PublicUser = Pick<
   "_id" | "_creationTime" | "handle" | "name" | "displayName" | "image" | "bio"
 >;
 
+export type PublicPublisher = Pick<
+  Doc<"publishers">,
+  "_id" | "_creationTime" | "kind" | "handle" | "displayName" | "image" | "bio" | "linkedUserId"
+>;
+
 export type PublicSkill = Pick<
   Doc<"skills">,
   | "_id"
@@ -13,6 +18,7 @@ export type PublicSkill = Pick<
   | "displayName"
   | "summary"
   | "ownerUserId"
+  | "ownerPublisherId"
   | "canonicalSkillId"
   | "forkOf"
   | "latestVersionId"
@@ -31,6 +37,7 @@ export type PublicSoul = Pick<
   | "displayName"
   | "summary"
   | "ownerUserId"
+  | "ownerPublisherId"
   | "latestVersionId"
   | "tags"
   | "stats"

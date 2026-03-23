@@ -50,6 +50,7 @@ type PackagePublishOptions = {
   family?: "code-plugin" | "bundle-plugin";
   name?: string;
   displayName?: string;
+  owner?: string;
   version?: string;
   changelog?: string;
   tags?: string;
@@ -303,6 +304,7 @@ export async function cmdPublishPackage(
     options.displayName?.trim() ||
     packageJsonString(packageJson, "displayName") ||
     titleCase(basename(folder));
+  const ownerHandle = options.owner?.trim().replace(/^@+/, "");
   const version = options.version?.trim() || packageJsonString(packageJson, "version");
   const changelog = options.changelog ?? "";
   const tags = parseTags(options.tags ?? "latest");
@@ -334,6 +336,7 @@ export async function cmdPublishPackage(
       JSON.stringify({
         name,
         displayName,
+        ...(ownerHandle ? { ownerHandle } : {}),
         family,
         version,
         changelog,

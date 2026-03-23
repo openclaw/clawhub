@@ -176,14 +176,36 @@ function extractOpenClawBlock(packageJson: JsonRecord | undefined) {
 }
 
 function extractCompatibility(packageJson: JsonRecord | undefined): PackageCompatibility | undefined {
-  const { compat, build } = extractOpenClawBlock(packageJson);
+  const { openclaw, compat, build } = extractOpenClawBlock(packageJson);
+  const install = isRecord(openclaw?.install) ? openclaw.install : undefined;
+  const peerDependencies = isRecord(packageJson?.peerDependencies)
+    ? packageJson.peerDependencies
+    : undefined;
+  const version =
+    typeof packageJson?.version === "string" ? packageJson.version.trim() : undefined;
+  const peerOpenClaw =
+    typeof peerDependencies?.openclaw === "string" ? peerDependencies.openclaw.trim() : undefined;
+  const minHostVersion =
+    typeof install?.minHostVersion === "string" ? install.minHostVersion.trim() : undefined;
   const compatibility: PackageCompatibility = {};
-  if (typeof compat?.pluginApi === "string") compatibility.pluginApiRange = compat.pluginApi.trim();
+  if (typeof compat?.pluginApi === "string") {
+    compatibility.pluginApiRange = compat.pluginApi.trim();
+  } else if (peerOpenClaw) {
+    compatibility.pluginApiRange = peerOpenClaw;
+  } else if (minHostVersion) {
+    compatibility.pluginApiRange = minHostVersion;
+  } else if (version) {
+    compatibility.pluginApiRange = `>=${version}`;
+  }
   if (typeof compat?.minGatewayVersion === "string") {
     compatibility.minGatewayVersion = compat.minGatewayVersion.trim();
+  } else if (minHostVersion) {
+    compatibility.minGatewayVersion = minHostVersion;
   }
   if (typeof build?.openclawVersion === "string") {
     compatibility.builtWithOpenClawVersion = build.openclawVersion.trim();
+  } else if (version) {
+    compatibility.builtWithOpenClawVersion = version;
   }
   if (typeof build?.pluginSdkVersion === "string") {
     compatibility.pluginSdkVersion = build.pluginSdkVersion.trim();

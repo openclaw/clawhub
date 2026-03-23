@@ -28,6 +28,7 @@ const users = defineTable({
   githubFetchedAt: v.optional(v.number()),
   githubProfileSyncedAt: v.optional(v.number()),
   trustedPublisher: v.optional(v.boolean()),
+  personalPublisherId: v.optional(v.id("publishers")),
   requiresModerationAt: v.optional(v.number()),
   requiresModerationReason: v.optional(v.string()),
   deactivatedAt: v.optional(v.number()),
@@ -40,6 +41,34 @@ const users = defineTable({
   .index("email", ["email"])
   .index("phone", ["phone"])
   .index("handle", ["handle"]);
+
+const publishers = defineTable({
+  kind: v.union(v.literal("user"), v.literal("org")),
+  handle: v.string(),
+  displayName: v.string(),
+  bio: v.optional(v.string()),
+  image: v.optional(v.string()),
+  linkedUserId: v.optional(v.id("users")),
+  trustedPublisher: v.optional(v.boolean()),
+  deactivatedAt: v.optional(v.number()),
+  deletedAt: v.optional(v.number()),
+  createdAt: v.number(),
+  updatedAt: v.number(),
+})
+  .index("by_handle", ["handle"])
+  .index("by_linked_user", ["linkedUserId"])
+  .index("by_kind_handle", ["kind", "handle"]);
+
+const publisherMembers = defineTable({
+  publisherId: v.id("publishers"),
+  userId: v.id("users"),
+  role: v.union(v.literal("owner"), v.literal("admin"), v.literal("publisher")),
+  createdAt: v.number(),
+  updatedAt: v.number(),
+})
+  .index("by_publisher", ["publisherId"])
+  .index("by_user", ["userId"])
+  .index("by_publisher_user", ["publisherId", "userId"]);
 
 // Shared validator fragments used by both `skills` and `skillSearchDigest`.
 const forkOfValidator = v.optional(
@@ -159,6 +188,16 @@ const packageVerificationValidator = v.optional(
   }),
 );
 
+const packageScanStatusValidator = v.optional(
+  v.union(
+    v.literal("clean"),
+    v.literal("suspicious"),
+    v.literal("malicious"),
+    v.literal("pending"),
+    v.literal("not-run"),
+  ),
+);
+
 const packageFilesValidator = v.array(
   v.object({
     path: v.string(),
@@ -175,6 +214,7 @@ const skills = defineTable({
   summary: v.optional(v.string()),
   resourceId: v.optional(v.string()),
   ownerUserId: v.id("users"),
+  ownerPublisherId: v.optional(v.id("publishers")),
   canonicalSkillId: v.optional(v.id("skills")),
   forkOf: forkOfValidator,
   latestVersionId: v.optional(v.id("skillVersions")),
@@ -255,6 +295,7 @@ const skills = defineTable({
 })
   .index("by_slug", ["slug"])
   .index("by_owner", ["ownerUserId"])
+  .index("by_owner_publisher", ["ownerPublisherId"])
   .index("by_updated", ["updatedAt"])
   .index("by_stats_downloads", ["statsDownloads", "updatedAt"])
   .index("by_stats_stars", ["statsStars", "updatedAt"])
@@ -295,18 +336,21 @@ const skillSlugAliases = defineTable({
   slug: v.string(),
   skillId: v.id("skills"),
   ownerUserId: v.id("users"),
+  ownerPublisherId: v.optional(v.id("publishers")),
   createdAt: v.number(),
   updatedAt: v.number(),
 })
   .index("by_slug", ["slug"])
   .index("by_skill", ["skillId"])
-  .index("by_owner", ["ownerUserId"]);
+  .index("by_owner", ["ownerUserId"])
+  .index("by_owner_publisher", ["ownerPublisherId"]);
 
 const souls = defineTable({
   slug: v.string(),
   displayName: v.string(),
   summary: v.optional(v.string()),
   ownerUserId: v.id("users"),
+  ownerPublisherId: v.optional(v.id("publishers")),
   latestVersionId: v.optional(v.id("soulVersions")),
   tags: v.record(v.string(), v.id("soulVersions")),
   softDeletedAt: v.optional(v.number()),
@@ -321,6 +365,7 @@ const souls = defineTable({
 })
   .index("by_slug", ["slug"])
   .index("by_owner", ["ownerUserId"])
+  .index("by_owner_publisher", ["ownerPublisherId"])
   .index("by_updated", ["updatedAt"]);
 
 const skillVersions = defineTable({
@@ -471,6 +516,7 @@ const skillEmbeddings = defineTable({
   skillId: v.id("skills"),
   versionId: v.id("skillVersions"),
   ownerId: v.id("users"),
+  ownerPublisherId: v.optional(v.id("publishers")),
   embedding: v.array(v.number()),
   isLatest: v.boolean(),
   isApproved: v.boolean(),
@@ -501,7 +547,9 @@ const skillSearchDigest = defineTable({
   displayName: v.string(),
   summary: v.optional(v.string()),
   ownerUserId: v.id("users"),
+  ownerPublisherId: v.optional(v.id("publishers")),
   ownerHandle: v.optional(v.string()),
+  ownerKind: v.optional(v.union(v.literal("user"), v.literal("org"))),
   ownerName: v.optional(v.string()),
   ownerDisplayName: v.optional(v.string()),
   ownerImage: v.optional(v.string()),
@@ -566,6 +614,7 @@ const packages = defineTable({
   displayName: v.string(),
   summary: v.optional(v.string()),
   ownerUserId: v.id("users"),
+  ownerPublisherId: v.optional(v.id("publishers")),
   family: packageFamilyValidator,
   channel: packageChannelValidator,
   isOfficial: v.boolean(),
@@ -588,6 +637,7 @@ const packages = defineTable({
   compatibility: packageCompatibilityValidator,
   capabilities: packageCapabilitiesValidator,
   verification: packageVerificationValidator,
+  scanStatus: packageScanStatusValidator,
   stats: packageStatsValidator,
   softDeletedAt: v.optional(v.number()),
   createdAt: v.number(),
@@ -595,6 +645,7 @@ const packages = defineTable({
 })
   .index("by_name", ["normalizedName"])
   .index("by_owner", ["ownerUserId"])
+  .index("by_owner_publisher", ["ownerPublisherId"])
   .index("by_family_updated", ["family", "updatedAt"])
   .index("by_family_channel_updated", ["family", "channel", "updatedAt"])
   .index("by_family_official_updated", ["family", "isOfficial", "updatedAt"])
@@ -615,6 +666,57 @@ const packageReleases = defineTable({
   compatibility: packageCompatibilityValidator,
   capabilities: packageCapabilitiesValidator,
   verification: packageVerificationValidator,
+  sha256hash: v.optional(v.string()),
+  vtAnalysis: v.optional(
+    v.object({
+      status: v.string(),
+      verdict: v.optional(v.string()),
+      analysis: v.optional(v.string()),
+      source: v.optional(v.string()),
+      checkedAt: v.number(),
+    }),
+  ),
+  llmAnalysis: v.optional(
+    v.object({
+      status: v.string(),
+      verdict: v.optional(v.string()),
+      confidence: v.optional(v.string()),
+      summary: v.optional(v.string()),
+      dimensions: v.optional(
+        v.array(
+          v.object({
+            name: v.string(),
+            label: v.string(),
+            rating: v.string(),
+            detail: v.string(),
+          }),
+        ),
+      ),
+      guidance: v.optional(v.string()),
+      findings: v.optional(v.string()),
+      model: v.optional(v.string()),
+      checkedAt: v.number(),
+    }),
+  ),
+  staticScan: v.optional(
+    v.object({
+      status: v.union(v.literal("clean"), v.literal("suspicious"), v.literal("malicious")),
+      reasonCodes: v.array(v.string()),
+      findings: v.array(
+        v.object({
+          code: v.string(),
+          severity: v.union(v.literal("info"), v.literal("warn"), v.literal("critical")),
+          file: v.string(),
+          line: v.number(),
+          message: v.string(),
+          evidence: v.string(),
+        }),
+      ),
+      summary: v.string(),
+      engineVersion: v.string(),
+      checkedAt: v.number(),
+    }),
+  ),
   source: v.optional(v.any()),
   createdBy: v.id("users"),
   createdAt: v.number(),
@@ -622,7 +724,8 @@ const packageReleases = defineTable({
 })
   .index("by_package", ["packageId"])
   .index("by_package_active_created", ["packageId", "softDeletedAt", "createdAt"])
-  .index("by_package_version", ["packageId", "version"]);
+  .index("by_package_version", ["packageId", "version"])
+  .index("by_sha256hash", ["sha256hash"]);
 
 const packageSearchDigest = defineTable({
   packageId: v.id("packages"),
@@ -633,13 +736,16 @@ const packageSearchDigest = defineTable({
   channel: packageChannelValidator,
   isOfficial: v.boolean(),
   ownerUserId: v.id("users"),
+  ownerPublisherId: v.optional(v.id("publishers")),
   ownerHandle: v.optional(v.string()),
+  ownerKind: v.optional(v.union(v.literal("user"), v.literal("org"))),
   summary: v.optional(v.string()),
   latestVersion: v.optional(v.string()),
   runtimeId: v.optional(v.string()),
   capabilityTags: v.optional(v.array(v.string())),
   executesCode: v.optional(v.boolean()),
   verificationTier: v.optional(packageVerificationTierValidator),
+  scanStatus: packageScanStatusValidator,
   softDeletedAt: v.optional(v.number()),
   createdAt: v.number(),
   updatedAt: v.number(),
@@ -713,7 +819,9 @@ const packageCapabilitySearchDigest = defineTable({
   channel: packageChannelValidator,
   isOfficial: v.boolean(),
   ownerUserId: v.id("users"),
+  ownerPublisherId: v.optional(v.id("publishers")),
   ownerHandle: v.optional(v.string()),
+  ownerKind: v.optional(v.union(v.literal("user"), v.literal("org"))),
   summary: v.optional(v.string()),
   latestVersion: v.optional(v.string()),
   runtimeId: v.optional(v.string()),
@@ -721,6 +829,7 @@ const packageCapabilitySearchDigest = defineTable({
   capabilityTag: v.string(),
   executesCode: v.optional(v.boolean()),
   verificationTier: v.optional(packageVerificationTierValidator),
+  scanStatus: packageScanStatusValidator,
   softDeletedAt: v.optional(v.number()),
   createdAt: v.number(),
   updatedAt: v.number(),
@@ -1138,6 +1247,8 @@ const skillOwnershipTransfers = defineTable({
 export default defineSchema({
   ...authTables,
   users,
+  publishers,
+  publisherMembers,
   skills,
   skillSlugAliases,
   packages,

@@ -8,6 +8,10 @@ import { useAction, useMutation, useQuery } from "convex/react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import semver from "semver";
 import { api } from "../../convex/_generated/api";
+import {
+  MAX_PUBLISH_FILE_BYTES,
+  MAX_PUBLISH_TOTAL_BYTES,
+} from "../../convex/lib/publishLimits";
 import { getSiteMode } from "../lib/site";
 import { getPublicSlugCollision } from "../lib/slugCollision";
 import { expandDroppedItems, expandFilesWithReport } from "../lib/uploadFiles";
@@ -81,6 +85,18 @@ export function Upload() {
   const [status, setStatus] = useState<string | null>(null);
   const isSubmitting = status !== null;
   const [error, setError] = useState<string | null>(null);
+  const publisherMemberships = useQuery(api.publishers.listMine) as
+    | Array<{
+        publisher: {
+          _id: string;
+          handle: string;
+          displayName: string;
+          kind: "user" | "org";
+        };
+        role: "owner" | "admin" | "publisher";
+      }>
+    | undefined;
+  const [ownerHandle, setOwnerHandle] = useState("");
   const [isDragging, setIsDragging] = useState(false);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const setFileInputRef = (node: HTMLInputElement | null) => {
@@ -92,7 +108,6 @@ export function Upload() {
   };
   const validationRef = useRef<HTMLDivElement | null>(null);
   const navigate = useNavigate();
-  const maxBytes = 50 * 1024 * 1024;
   const totalBytes = useMemo(() => files.reduce((sum, file) => sum + file.size, 0), [files]);
   const stripRoot = useMemo(() => {
     if (files.length === 0) return null;
@@ -123,6 +138,14 @@ export function Upload() {
     [isSoulMode, normalizedPaths],
   );
   const sizeLabel = totalBytes ? formatBytes(totalBytes) : "0 B";
+  const oversizedFiles = useMemo(
+    () => files.filter((file) => file.size > MAX_PUBLISH_FILE_BYTES),
+    [files],
+  );
+  const oversizedFileNames = useMemo(
+    () => oversizedFiles.slice(0, 3).map((file) => file.name),
+    [oversizedFiles],
+  );
   const ignoredMacJunkNote = useMemo(() => {
     if (ignoredMacJunkPaths.length === 0) return null;
     const labels = Array.from(
@@ -168,6 +191,14 @@ export function Upload() {
     const nextVersion = semver.inc(existing.latestVersion.version, "patch");
     if (nextVersion) setVersion(nextVersion);
   }, [existing]);
+
+  useEffect(() => {
+    if (ownerHandle) return;
+    const personalPublisher = publisherMemberships?.find((entry) => entry.publisher.kind === "user");
+    if (personalPublisher?.publisher.handle) {
+      setOwnerHandle(personalPublisher.publisher.handle);
+    }
+  }, [ownerHandle, publisherMemberships]);
 
   useEffect(() => {
     if (changelogTouchedRef.current) return;
@@ -266,7 +297,10 @@ export function Upload() {
           .join(", ")}`,
       );
     }
-    if (totalBytes > maxBytes) {
+    if (oversizedFiles.length > 0) {
+      issues.push(`Each file must be 10MB or smaller: ${oversizedFileNames.join(", ")}`);
+    }
+    if (totalBytes > MAX_PUBLISH_TOTAL_BYTES) {
       issues.push("Total file size exceeds 50MB.");
     }
     if (slugCollision) {
@@ -286,6 +320,8 @@ export function Upload() {
     hasRequiredFile,
     isSoulMode,
     totalBytes,
+    oversizedFiles.length,
+    oversizedFileNames,
     requiredFileLabel,
     slugCollision,
   ]);
@@ -325,7 +361,11 @@ export function Upload() {
       return;
     }
     setError(null);
-    if (totalBytes > maxBytes) {
+    if (oversizedFiles.length > 0) {
+      setError(`Each file must be 10MB or smaller: ${oversizedFileNames.join(", ")}`);
+      return;
+    }
+    if (totalBytes > MAX_PUBLISH_TOTAL_BYTES) {
       setError("Total size exceeds 50MB per version.");
       return;
     }
@@ -364,6 +404,7 @@ export function Upload() {
     setStatus("Publishing…");
     try {
       const result = await publishVersion({
+        ownerHandle: isSoulMode ? undefined : ownerHandle || undefined,
         slug: trimmedSlug,
         displayName: trimmedName,
         version,
@@ -377,7 +418,8 @@ export function Upload() {
       setHasAttempted(false);
       setChangelogSource("user");
       if (result) {
-        const ownerParam = me?.handle ?? (me?._id ? String(me._id) : "unknown");
+        const ownerParam =
+          ownerHandle || me?.handle || (me?._id ? String(me._id) : "unknown");
         void navigate({
           to: isSoulMode ? "/souls/$slug" : "/$owner/$slug",
           params: isSoulMode ? { slug: trimmedSlug } : { owner: ownerParam, slug: trimmedSlug },
@@ -423,6 +465,26 @@ export function Upload() {
             onChange={(event) => setDisplayName(event.target.value)}
             placeholder={`My ${contentLabel}`}
           />
+
+          {!isSoulMode ? (
+            <>
+              <label className="form-label" htmlFor="ownerHandle">
+                Owner
+              </label>
+              <select
+                className="form-input"
+                id="ownerHandle"
+                value={ownerHandle}
+                onChange={(event) => setOwnerHandle(event.target.value)}
+              >
+                {(publisherMemberships ?? []).map((entry) => (
+                  <option key={entry.publisher._id} value={entry.publisher.handle}>
+                    @{entry.publisher.handle} · {entry.publisher.displayName}
+                  </option>
+                ))}
+              </select>
+            </>
+          ) : null}
 
           <label className="form-label" htmlFor="version">
             Version

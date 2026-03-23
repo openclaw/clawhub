@@ -1,6 +1,6 @@
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { strToU8, zipSync } from "fflate";
-import { vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { Upload } from "../routes/upload";
 
 vi.mock("@tanstack/react-router", () => ({
@@ -210,6 +210,37 @@ describe("Upload route", () => {
     fireEvent.click(screen.getByRole("button", { name: /publish/i }));
     expect(await screen.findByText(/Remove non-text files: screenshot\.png/i)).toBeTruthy();
     expect(screen.getByText("screenshot.png")).toBeTruthy();
+  });
+
+  it("shows a validation error when a skill file exceeds 10MB", async () => {
+    render(<Upload />);
+    fireEvent.change(screen.getByPlaceholderText("skill-name"), {
+      target: { value: "cool-skill" },
+    });
+    fireEvent.change(screen.getByPlaceholderText("My skill"), {
+      target: { value: "Cool Skill" },
+    });
+    fireEvent.change(screen.getByPlaceholderText("1.0.0"), {
+      target: { value: "1.2.3" },
+    });
+    fireEvent.change(screen.getByPlaceholderText("latest, stable"), {
+      target: { value: "latest" },
+    });
+
+    const skill = new File(["hello"], "SKILL.md", { type: "text/markdown" });
+    const huge = new File(["x"], "notes.md", { type: "text/markdown" });
+    Object.defineProperty(huge, "size", {
+      value: 10 * 1024 * 1024 + 1,
+      configurable: true,
+    });
+
+    const input = screen.getByTestId("upload-input") as HTMLInputElement;
+    fireEvent.change(input, { target: { files: [skill, huge] } });
+
+    expect(await screen.findByText(/Each file must be 10MB or smaller: notes\.md/i)).toBeTruthy();
+    expect(
+      screen.getByRole("button", { name: /publish skill/i }).getAttribute("disabled"),
+    ).not.toBeNull();
   });
 
   it("shows an informational note when mac junk files are ignored", async () => {

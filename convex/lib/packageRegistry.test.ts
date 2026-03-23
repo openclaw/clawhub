@@ -49,6 +49,7 @@ describe("packageRegistry", () => {
     expect(result.capabilities.executesCode).toBe(true);
     expect(result.capabilities.toolNames).toContain("demoTool");
     expect(result.verification.tier).toBe("source-linked");
+    expect(result.verification.scanStatus).toBe("not-run");
   });
 
   it("requires source metadata for code plugins", () => {
@@ -67,6 +68,41 @@ describe("packageRegistry", () => {
         pluginManifest: { id: "demo.plugin" },
       }),
     ).toThrow("source repo and commit");
+  });
+
+  it("infers compatibility for legacy openclaw extension manifests", () => {
+    const result = extractCodePluginArtifacts({
+      packageName: "@openclaw/matrix",
+      packageJson: {
+        name: "@openclaw/matrix",
+        version: "2026.3.13",
+        openclaw: {
+          extensions: ["./index.ts"],
+          install: {
+            npmSpec: "@openclaw/matrix",
+            localPath: "extensions/matrix",
+            defaultChoice: "npm",
+          },
+        },
+      },
+      pluginManifest: {
+        id: "matrix",
+        channels: ["matrix"],
+        configSchema: { type: "object" },
+      },
+      source: {
+        kind: "github",
+        url: "https://github.com/openclaw/openclaw",
+        repo: "openclaw/openclaw",
+        ref: "refs/tags/v2026.3.13",
+        commit: "abc123",
+        path: "extensions/matrix",
+        importedAt: Date.now(),
+      },
+    });
+
+    expect(result.compatibility?.pluginApiRange).toBe(">=2026.3.13");
+    expect(result.compatibility?.builtWithOpenClawVersion).toBe("2026.3.13");
   });
 
   it("requires host targets for bundle plugins", () => {

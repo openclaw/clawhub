@@ -35,8 +35,24 @@ const meHandler = (me as unknown as WrappedHandler<Record<string, never>, unknow
 
 function makeCtx() {
   const patch = vi.fn();
-  const get = vi.fn();
-  const insert = vi.fn();
+  const publisherRows = new Map<string, Record<string, unknown>>();
+  const publisherMembers: Array<Record<string, unknown>> = [];
+  const get = vi.fn(async (id: string) => publisherRows.get(id) ?? null);
+  const insert = vi.fn(async (table: string, value: Record<string, unknown>) => {
+    if (table === "publishers") {
+      const handle = typeof value.handle === "string" ? value.handle : "user";
+      const id = `publishers:${handle}`;
+      publisherRows.set(id, { _id: id, _creationTime: 1, ...value });
+      return id;
+    }
+    if (table === "publisherMembers") {
+      const id = `publisherMembers:${publisherMembers.length + 1}`;
+      publisherMembers.push({ _id: id, ...value });
+      return id;
+    }
+    if (table === "auditLogs") return "auditLogs:1";
+    return `${table}:1`;
+  });
   const query = vi.fn((table: string) => {
     if (table === "reservedHandles") {
       return {
@@ -53,6 +69,39 @@ function makeCtx() {
         withIndex: (name: string) => {
           if (name !== "handle") throw new Error(`Unexpected users index ${name}`);
           return { unique: vi.fn(async () => null) };
+        },
+      };
+    }
+    if (table === "publishers") {
+      return {
+        withIndex: (name: string) => {
+          if (name === "by_handle") {
+            return { unique: vi.fn(async () => null) };
+          }
+          if (name === "by_linked_user") {
+            return { unique: vi.fn(async () => null) };
+          }
+          throw new Error(`Unexpected publishers index ${name}`);
+        },
+      };
+    }
+    if (table === "publisherMembers") {
+      return {
+        withIndex: (name: string) => {
+          if (name !== "by_publisher_user") {
+            throw new Error(`Unexpected publisherMembers index ${name}`);
+          }
+          return { unique: vi.fn(async () => null) };
+        },
+      };
+    }
+    if (table === "packages" || table === "skills") {
+      return {
+        withIndex: (name: string) => {
+          if (name !== "by_owner_publisher") {
+            throw new Error(`Unexpected ${table} index ${name}`);
+          }
+          return { collect: vi.fn(async () => []) };
         },
       };
     }
@@ -225,7 +274,14 @@ describe("ensureHandler", () => {
 
     const result = await ensureHandler(ctx);
 
-    expect(patch).not.toHaveBeenCalled();
+    expect(patch).not.toHaveBeenCalledWith(
+      "users:4",
+      expect.objectContaining({
+        handle: expect.anything(),
+        displayName: expect.anything(),
+        role: expect.anything(),
+      }),
+    );
     expect(get).toHaveBeenCalledWith("users:4");
     expect(result).toMatchObject({ _id: "users:4" });
   });
@@ -323,6 +379,109 @@ describe("ensureHandler", () => {
 
     expect(patch).not.toHaveBeenCalled();
   });
+
+  it("does not auto-claim a handle already owned by an org publisher", async () => {
+    const { ctx, patch, query } = makeCtx();
+    query.mockImplementation(((table: string) => {
+      if (table === "reservedHandles") {
+        return {
+          withIndex: (name: string) => {
+            if (name !== "by_handle_active_updatedAt") {
+              throw new Error(`Unexpected reservedHandles index ${name}`);
+            }
+            return { order: () => ({ take: async () => [] }) };
+          },
+        };
+      }
+      if (table === "publishers") {
+        return {
+          withIndex: (name: string, builder?: (q: { eq: (field: string, value: string) => unknown }) => unknown) => {
+            let handle = "";
+            let linkedUserId = "";
+            const q = {
+              eq: (field: string, value: string) => {
+                if (field === "handle") handle = value;
+                if (field === "linkedUserId") linkedUserId = value;
+                return q;
+              },
+            };
+            builder?.(q);
+            if (name === "by_handle") {
+              return {
+                unique: vi.fn(async () =>
+                  handle === "openclaw"
+                    ? {
+                        _id: "publishers:openclaw",
+                        kind: "org",
+                        handle: "openclaw",
+                        displayName: "OpenClaw",
+                      }
+                    : null,
+                ),
+              };
+            }
+            if (name === "by_linked_user") {
+              return {
+                unique: vi.fn(async () =>
+                  linkedUserId === "users:other"
+                    ? {
+                        _id: "publishers:openclaw-user",
+                        kind: "user",
+                        handle: "openclaw-user",
+                        linkedUserId: "users:other",
+                        displayName: "OpenClaw User",
+                      }
+                    : null,
+                ),
+              };
+            }
+            throw new Error(`Unexpected publishers index ${name}`);
+          },
+        };
+      }
+      if (table === "publisherMembers") {
+        return {
+          withIndex: (name: string) => {
+            if (name !== "by_publisher_user") {
+              throw new Error(`Unexpected publisherMembers index ${name}`);
+            }
+            return { unique: vi.fn(async () => null) };
+          },
+        };
+      }
+      if (table === "packages" || table === "skills") {
+        return {
+          withIndex: (name: string) => {
+            if (name !== "by_owner_publisher") {
+              throw new Error(`Unexpected ${table} index ${name}`);
+            }
+            return { collect: vi.fn(async () => []) };
+          },
+        };
+      }
+      throw new Error(`Unexpected table ${table}`);
+    }) as never);
+    vi.mocked(requireUser).mockResolvedValue({
+      userId: "users:other",
+      user: {
+        _id: "users:other",
+        _creationTime: 1,
+        handle: undefined,
+        displayName: undefined,
+        name: "openclaw",
+        email: undefined,
+        role: "user",
+        createdAt: 1,
+      },
+    } as never);
+
+    await ensureHandler(ctx);
+
+    expect(patch).not.toHaveBeenCalledWith(
+      "users:other",
+      expect.objectContaining({ handle: "openclaw" }),
+    );
+  });
 });
 
 describe("me", () => {
@@ -373,6 +532,119 @@ describe("users.syncGitHubProfileInternal", () => {
           };
         },
       };
+    }) as never);
+
+    const handler = (
+      syncGitHubProfileInternal as unknown as {
+        _handler: (ctx: unknown, args: unknown) => Promise<void>;
+      }
+    )._handler;
+
+    await handler(ctx, {
+      userId: "users:other",
+      name: "openclaw",
+      syncedAt: 10,
+    });
+
+    expect(patch).toHaveBeenCalledWith(
+      "users:other",
+      expect.objectContaining({
+        githubProfileSyncedAt: 10,
+        name: "openclaw",
+      }),
+    );
+    expect(patch).not.toHaveBeenCalledWith(
+      "users:other",
+      expect.objectContaining({ handle: "openclaw" }),
+    );
+  });
+
+  it("keeps a derived handle unchanged when the new login belongs to an org publisher", async () => {
+    const { ctx, get, patch, query } = makeCtx();
+    get.mockResolvedValue({
+      _id: "users:other",
+      handle: "old-handle",
+      displayName: "old-handle",
+      name: "old-handle",
+    });
+    query.mockImplementation(((table: string) => {
+      if (table === "reservedHandles") {
+        return {
+          withIndex: (name: string) => {
+            if (name !== "by_handle_active_updatedAt") {
+              throw new Error(`Unexpected reservedHandles index ${name}`);
+            }
+            return { order: () => ({ take: async () => [] }) };
+          },
+        };
+      }
+      if (table === "publishers") {
+        return {
+          withIndex: (name: string, builder?: (q: { eq: (field: string, value: string) => unknown }) => unknown) => {
+            let handle = "";
+            let linkedUserId = "";
+            const q = {
+              eq: (field: string, value: string) => {
+                if (field === "handle") handle = value;
+                if (field === "linkedUserId") linkedUserId = value;
+                return q;
+              },
+            };
+            builder?.(q);
+            if (name === "by_handle") {
+              return {
+                unique: vi.fn(async () =>
+                  handle === "openclaw"
+                    ? {
+                        _id: "publishers:openclaw",
+                        kind: "org",
+                        handle: "openclaw",
+                        displayName: "OpenClaw",
+                      }
+                    : null,
+                ),
+              };
+            }
+            if (name === "by_linked_user") {
+              return {
+                unique: vi.fn(async () =>
+                  linkedUserId === "users:other"
+                    ? {
+                        _id: "publishers:old-handle",
+                        kind: "user",
+                        handle: "old-handle",
+                        linkedUserId: "users:other",
+                        displayName: "Old Handle",
+                      }
+                    : null,
+                ),
+              };
+            }
+            throw new Error(`Unexpected publishers index ${name}`);
+          },
+        };
+      }
+      if (table === "publisherMembers") {
+        return {
+          withIndex: (name: string) => {
+            if (name !== "by_publisher_user") {
+              throw new Error(`Unexpected publisherMembers index ${name}`);
+            }
+            return { unique: vi.fn(async () => null) };
+          },
+        };
+      }
+      if (table === "packages" || table === "skills") {
+        return {
+          withIndex: (name: string) => {
+            if (name !== "by_owner_publisher") {
+              throw new Error(`Unexpected ${table} index ${name}`);
+            }
+            return { collect: vi.fn(async () => []) };
+          },
+        };
+      }
+      throw new Error(`Unexpected table ${table}`);
     }) as never);
 
     const handler = (

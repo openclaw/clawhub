@@ -41,7 +41,18 @@ import {
   summarizeReasonCodes,
   verdictFromCodes,
 } from "./lib/moderationReasonCodes";
-import { type HydratableSkill, toPublicSkill, toPublicUser } from "./lib/public";
+import {
+  type HydratableSkill,
+  type PublicPublisher,
+  toPublicPublisher,
+  toPublicSkill,
+  toPublicUser,
+} from "./lib/public";
+import {
+  ensurePersonalPublisherForUser,
+  getOwnerPublisher,
+  requirePublisherRole,
+} from "./lib/publishers";
 import {
   AUTO_HIDE_REPORT_THRESHOLD,
   MAX_ACTIVE_REPORTS_PER_USER,
@@ -437,21 +448,36 @@ async function syncSkillModerationFromLatestVersion(
   await adjustGlobalPublicCountForSkillChange(ctx, skill, nextSkill);
 }
 
-function buildConflictingSkillUrl(skill: Doc<"skills">, owner: Doc<"users"> | null | undefined) {
+function buildConflictingSkillUrl(
+  skill: Doc<"skills">,
+  owner: Doc<"users"> | Doc<"publishers"> | null | undefined,
+) {
   if (!owner || owner.deletedAt || owner.deactivatedAt || !isPublicSkillDoc(skill)) return null;
   const ownerParam = owner.handle?.trim() || String(owner._id);
   if (!ownerParam) return null;
   return `/${encodeURIComponent(ownerParam)}/${encodeURIComponent(skill.slug)}`;
 }
 
-function buildSlugTakenErrorMessage(skill: Doc<"skills">, owner: Doc<"users"> | null | undefined) {
+function buildSlugTakenErrorMessage(
+  skill: Doc<"skills">,
+  owner: Doc<"users"> | Doc<"publishers"> | null | undefined,
+) {
+  if (!owner || owner.deletedAt || owner.deactivatedAt) {
+    return (
+      "This slug is locked to a deleted or banned account. " +
+      "If you believe you are the rightful owner, please contact security@openclaw.ai to reclaim it."
+    );
+  }
   const base = "Slug is already taken. Choose a different slug.";
   const url = buildConflictingSkillUrl(skill, owner);
   if (!url) return base;
   return `${base} Existing skill: ${url}`;
 }
 
-function buildAliasTakenErrorMessage(skill: Doc<"skills">, owner: Doc<"users"> | null | undefined) {
+function buildAliasTakenErrorMessage(
+  skill: Doc<"skills">,
+  owner: Doc<"users"> | Doc<"publishers"> | null | undefined,
+) {
   const base = "Slug redirects to an existing skill. Choose a different slug.";
   const url = buildConflictingSkillUrl(skill, owner);
   if (!url) return base;
@@ -972,7 +998,7 @@ type PublicSkillEntry = {
   skill: NonNullable<ReturnType<typeof toPublicSkill>>;
   latestVersion: PublicSkillListVersion | null;
   ownerHandle: string | null;
-  owner: ReturnType<typeof toPublicUser> | null;
+  owner: PublicPublisher | null;
 };
 
 type StaffSkillAuditLogEntry = Doc<"auditLogs"> & {
@@ -1050,30 +1076,38 @@ async function buildPublicSkillEntries(
     includeVersion?: boolean;
     preResolvedOwners?: Map<
       Id<"skills">,
-      { ownerHandle: string | null; owner: ReturnType<typeof toPublicUser> | null }
+      { ownerHandle: string | null; owner: PublicPublisher | null }
     >;
   },
 ) {
   const includeVersion = opts?.includeVersion ?? true;
   const ownerInfoCache = new Map<
-    Id<"users">,
+    string,
     Promise<{
       ownerHandle: string | null;
-      owner: ReturnType<typeof toPublicUser> | null;
+      owner: PublicPublisher | null;
     }>
   >();
 
-  const getOwnerInfo = (skillId: Id<"skills">, ownerUserId: Id<"users">) => {
+  const getOwnerInfo = (
+    skillId: Id<"skills">,
+    ownerUserId: Id<"users">,
+    ownerPublisherId?: Id<"publishers"> | null,
+  ) => {
     // Use pre-resolved owner from digest when available to avoid adding the
     // users table to the reactive read set (which causes thundering-herd
     // invalidation on every user-doc write).
     const preResolved = opts?.preResolvedOwners?.get(skillId);
     if (preResolved?.owner) return Promise.resolve(preResolved);
 
-    const cached = ownerInfoCache.get(ownerUserId);
+    const cacheKey = String(ownerPublisherId ?? ownerUserId);
+    const cached = ownerInfoCache.get(cacheKey);
     if (cached) return cached;
-    const ownerPromise = ctx.db.get(ownerUserId).then((ownerDoc) => {
-      const publicOwner = toPublicUser(ownerDoc);
+    const ownerPromise = getOwnerPublisher(ctx, {
+      ownerPublisherId,
+      ownerUserId,
+    }).then((ownerDoc) => {
+      const publicOwner = toPublicPublisher(ownerDoc);
       if (!publicOwner) {
         return { ownerHandle: null, owner: null };
       }
@@ -1082,7 +1116,7 @@ async function buildPublicSkillEntries(
         owner: publicOwner,
       };
     });
-    ownerInfoCache.set(ownerUserId, ownerPromise);
+    ownerInfoCache.set(cacheKey, ownerPromise);
     return ownerPromise;
   };
 
@@ -1095,7 +1129,7 @@ async function buildPublicSkillEntries(
         includeVersion && !hasSummary && skill.latestVersionId
           ? ctx.db.get(skill.latestVersionId)
           : null,
-        getOwnerInfo(skill._id, skill.ownerUserId),
+        getOwnerInfo(skill._id, skill.ownerUserId, skill.ownerPublisherId),
       ]);
       const publicSkill = toPublicSkill(skill);
       if (!publicSkill || !ownerInfo.owner) return null;
@@ -1337,20 +1371,43 @@ export const getBySlug = query({
     if (!skill) return null;
 
     const userId = await getAuthUserId(ctx);
-    const isOwner = Boolean(userId && userId === skill.ownerUserId);
+    const ownerPublisher = await getOwnerPublisher(ctx, {
+      ownerPublisherId: skill.ownerPublisherId,
+      ownerUserId: skill.ownerUserId,
+    });
+    const membership =
+      userId && skill.ownerPublisherId
+        ? await ctx.db
+            .query("publisherMembers")
+            .withIndex("by_publisher_user", (q) =>
+              q.eq("publisherId", skill.ownerPublisherId!).eq("userId", userId),
+            )
+            .unique()
+        : null;
+    const isOwner = Boolean(userId && (userId === skill.ownerUserId || membership));
 
     const latestVersion = toPublicSkillVersion(
       skill.latestVersionId ? await ctx.db.get(skill.latestVersionId) : null,
     );
-    const owner = toPublicUser(await ctx.db.get(skill.ownerUserId));
+    const owner = toPublicPublisher(ownerPublisher);
     if (!owner) return null;
     const badges = await getSkillBadgeMap(ctx, skill._id);
 
     const forkOfSkill = skill.forkOf?.skillId ? await ctx.db.get(skill.forkOf.skillId) : null;
-    const forkOfOwner = forkOfSkill ? await ctx.db.get(forkOfSkill.ownerUserId) : null;
+    const forkOfOwner = forkOfSkill
+      ? await getOwnerPublisher(ctx, {
+          ownerPublisherId: forkOfSkill.ownerPublisherId,
+          ownerUserId: forkOfSkill.ownerUserId,
+        })
+      : null;
 
     const canonicalSkill = skill.canonicalSkillId ? await ctx.db.get(skill.canonicalSkillId) : null;
-    const canonicalOwner = canonicalSkill ? await ctx.db.get(canonicalSkill.ownerUserId) : null;
+    const canonicalOwner = canonicalSkill
+      ? await getOwnerPublisher(ctx, {
+          ownerPublisherId: canonicalSkill.ownerPublisherId,
+          ownerUserId: canonicalSkill.ownerUserId,
+        })
+      : null;
 
     const publicSkill = toPublicSkill({ ...skill, badges });
 
@@ -1426,8 +1483,8 @@ export const getBySlug = query({
               displayName: forkOfSkill.displayName,
             },
             owner: {
-              handle: forkOfOwner?.handle ?? forkOfOwner?.name ?? null,
-              userId: forkOfOwner?._id ?? null,
+              handle: forkOfOwner?.handle ?? null,
+              userId: forkOfOwner?.linkedUserId ?? null,
             },
           }
         : null,
@@ -1438,8 +1495,8 @@ export const getBySlug = query({
               displayName: canonicalSkill.displayName,
             },
             owner: {
-              handle: canonicalOwner?.handle ?? canonicalOwner?.name ?? null,
-              userId: canonicalOwner?._id ?? null,
+              handle: canonicalOwner?.handle ?? null,
+              userId: canonicalOwner?.linkedUserId ?? null,
             },
           }
         : null,
@@ -1958,6 +2015,7 @@ export const list = query({
   args: {
     batch: v.optional(v.string()),
     ownerUserId: v.optional(v.id("users")),
+    ownerPublisherId: v.optional(v.id("publishers")),
     limit: v.optional(v.number()),
   },
   handler: async (ctx, args) => {
@@ -1979,6 +2037,81 @@ export const list = query({
         .take(takeLimit);
       const filtered = entries.filter((skill) => !skill.softDeletedAt).slice(0, limit);
       const withBadges = await attachBadgesToSkills(ctx, filtered);
+      const visibleSkills = await filterSkillsByActiveOwner(ctx, withBadges);
+      return visibleSkills
+        .map((skill) => toPublicSkill(skill))
+        .filter((skill): skill is NonNullable<typeof skill> => Boolean(skill));
+    }
+    const ownerPublisherId = args.ownerPublisherId;
+    if (ownerPublisherId) {
+      const userId = await getAuthUserId(ctx);
+      const ownerPublisher = await ctx.db.get(ownerPublisherId);
+      const membership =
+        userId &&
+        (await ctx.db
+          .query("publisherMembers")
+          .withIndex("by_publisher_user", (q) =>
+            q.eq("publisherId", ownerPublisherId).eq("userId", userId),
+          )
+          .unique());
+      const isOwnDashboard = Boolean(
+        membership || (userId && ownerPublisher?.kind === "user" && ownerPublisher.linkedUserId === userId),
+      );
+      const scopedEntries = await ctx.db
+        .query("skills")
+        .withIndex("by_owner_publisher", (q) => q.eq("ownerPublisherId", ownerPublisherId))
+        .order("desc")
+        .take(takeLimit);
+      const legacyEntries =
+        ownerPublisher?.kind === "user" && ownerPublisher.linkedUserId
+          ? await ctx.db
+              .query("skills")
+              .withIndex("by_owner", (q) => q.eq("ownerUserId", ownerPublisher.linkedUserId!))
+              .order("desc")
+              .take(takeLimit)
+          : [];
+      const combined = [...scopedEntries, ...legacyEntries].filter(
+        (skill, index, all) =>
+          !skill.softDeletedAt &&
+          (!skill.ownerPublisherId || skill.ownerPublisherId === ownerPublisherId) &&
+          all.findIndex((candidate) => candidate._id === skill._id) === index,
+      );
+      const filtered = combined.slice(0, limit);
+      const withBadges = await attachBadgesToSkills(ctx, filtered);
+
+      if (isOwnDashboard) {
+        return withBadges
+          .map((skill) => {
+            const publicSkill = toPublicSkill(skill);
+            if (publicSkill) return publicSkill;
+            const isPending =
+              skill.moderationStatus === "hidden" && skill.moderationReason === "pending.scan";
+            if (isPending) {
+              const { badges } = skill;
+              return {
+                _id: skill._id,
+                _creationTime: skill._creationTime,
+                slug: skill.slug,
+                displayName: skill.displayName,
+                summary: skill.summary,
+                ownerUserId: skill.ownerUserId,
+                ownerPublisherId: skill.ownerPublisherId,
+                canonicalSkillId: skill.canonicalSkillId,
+                forkOf: skill.forkOf,
+                latestVersionId: skill.latestVersionId,
+                tags: skill.tags,
+                badges,
+                stats: skill.stats,
+                createdAt: skill.createdAt,
+                updatedAt: skill.updatedAt,
+                pendingReview: true as const,
+              };
+            }
+            return null;
+          })
+          .filter((skill): skill is NonNullable<typeof skill> => Boolean(skill));
+      }
+
       const visibleSkills = await filterSkillsByActiveOwner(ctx, withBadges);
       return visibleSkills
         .map((skill) => toPublicSkill(skill))
@@ -4358,6 +4491,7 @@ export const getVersionBySkillAndVersion = query({
 
 export const publishVersion: ReturnType<typeof action> = action({
   args: {
+    ownerHandle: v.optional(v.string()),
     slug: v.string(),
     displayName: v.string(),
     version: v.string(),
@@ -4385,7 +4519,14 @@ export const publishVersion: ReturnType<typeof action> = action({
       throw new ConvexError("MIT-0 license terms must be accepted to publish skills");
     }
     const { userId } = await requireUserFromAction(ctx);
-    return publishVersionForUser(ctx, userId, args);
+    const target = (await ctx.runQuery(internal.publishers.resolvePublishTargetForUserInternal, {
+      actorUserId: userId,
+      ownerHandle: args.ownerHandle,
+      minimumRole: "publisher",
+    })) as { publisherId: Id<"publishers"> };
+    return publishVersionForUser(ctx, userId, args, {
+      ownerPublisherId: target.publisherId,
+    });
   },
 });
 
@@ -4418,6 +4559,15 @@ async function canReadSkillVersionFiles(ctx: ActionCtx, version: Doc<"skillVersi
   if (authUserId) {
     if (authUserId === skill.ownerUserId && !skill.softDeletedAt && !version.softDeletedAt) {
       return true;
+    }
+    if (skill.ownerPublisherId && !skill.softDeletedAt && !version.softDeletedAt) {
+      const memberRole = (await ctx.runQuery(internal.publishers.getMemberRoleInternal, {
+        publisherId: skill.ownerPublisherId,
+        userId: authUserId,
+      })) as "owner" | "admin" | "publisher" | null;
+      if (memberRole) {
+        return true;
+      }
     }
     const actor = (await ctx.runQuery(internal.users.getByIdInternal, {
       userId: authUserId,
@@ -5511,6 +5661,7 @@ export const hardDeleteInternal = internalMutation({
 export const insertVersion = internalMutation({
   args: {
     userId: v.id("users"),
+    ownerPublisherId: v.optional(v.id("publishers")),
     slug: v.string(),
     displayName: v.string(),
     version: v.string(),
@@ -5584,6 +5735,16 @@ export const insertVersion = internalMutation({
     const slug = normalizeSkillSlugForWrite(args.slug);
     const user = await ctx.db.get(userId);
     if (!user || user.deletedAt || user.deactivatedAt) throw new Error("User not found");
+    const personalPublisher = await ensurePersonalPublisherForUser(ctx, user);
+    if (!personalPublisher) throw new ConvexError("Personal publisher not found");
+    const ownerPublisherId = args.ownerPublisherId ?? personalPublisher._id;
+    if (ownerPublisherId !== personalPublisher._id) {
+      await requirePublisherRole(ctx, {
+        publisherId: ownerPublisherId,
+        userId,
+        allowed: ["publisher"],
+      });
+    }
 
     const now = Date.now();
 
@@ -5596,7 +5757,12 @@ export const insertVersion = internalMutation({
       const alias = await getSkillSlugAliasBySlug(ctx, slug);
       if (alias) {
         const aliasedSkill = await ctx.db.get(alias.skillId);
-        const owner = aliasedSkill ? await ctx.db.get(aliasedSkill.ownerUserId) : null;
+        const owner = aliasedSkill
+          ? await getOwnerPublisher(ctx, {
+              ownerPublisherId: aliasedSkill.ownerPublisherId,
+              ownerUserId: aliasedSkill.ownerUserId,
+            })
+          : null;
         throw new ConvexError(
           aliasedSkill
             ? buildAliasTakenErrorMessage(aliasedSkill, owner)
@@ -5605,10 +5771,21 @@ export const insertVersion = internalMutation({
       }
     }
 
-    if (skill && skill.ownerUserId !== userId) {
+    if (skill && skill.ownerPublisherId && skill.ownerPublisherId !== ownerPublisherId) {
+      const owner = await getOwnerPublisher(ctx, {
+        ownerPublisherId: skill.ownerPublisherId,
+        ownerUserId: skill.ownerUserId,
+      });
+      throw new ConvexError(buildSlugTakenErrorMessage(skill, owner));
+    }
+
+    if (skill && !skill.ownerPublisherId && skill.ownerUserId !== userId) {
       // Fallback: Convex Auth can create duplicate `users` records. Heal ownership ONLY
       // when the underlying GitHub identity matches (authAccounts.providerAccountId).
-      const owner = await ctx.db.get(skill.ownerUserId);
+      const owner = await getOwnerPublisher(ctx, {
+        ownerPublisherId: skill.ownerPublisherId,
+        ownerUserId: skill.ownerUserId,
+      });
       const slugTakenMessage = buildSlugTakenErrorMessage(skill, owner);
 
       // Check GitHub identity FIRST so ownership healing works even when the
@@ -5625,16 +5802,21 @@ export const insertVersion = internalMutation({
           callerProviderAccountId,
         )
       ) {
-        await ctx.db.patch(skill._id, { ownerUserId: userId, updatedAt: now });
-        skill = { ...skill, ownerUserId: userId };
-      } else if (!owner || owner.deletedAt || owner.deactivatedAt) {
-        throw new ConvexError(
-          "This slug is locked to a deleted or banned account. " +
-            "If you believe you are the rightful owner, please contact security@openclaw.ai to reclaim it.",
-        );
+        await ctx.db.patch(skill._id, {
+          ownerUserId: userId,
+          ownerPublisherId,
+          updatedAt: now,
+        });
+        skill = { ...skill, ownerUserId: userId, ownerPublisherId };
       } else {
         throw new ConvexError(slugTakenMessage);
       }
+    } else if (skill && !skill.ownerPublisherId) {
+      await ctx.db.patch(skill._id, {
+        ownerPublisherId,
+        updatedAt: now,
+      });
+      skill = { ...skill, ownerPublisherId };
     }
 
     const qualityAssessment = args.qualityAssessment;
@@ -5755,6 +5937,7 @@ export const insertVersion = internalMutation({
         displayName: args.displayName,
         summary: summaryValue,
         ownerUserId: userId,
+        ownerPublisherId,
         canonicalSkillId,
         forkOf,
         latestVersionId: undefined,
@@ -5862,6 +6045,7 @@ export const insertVersion = internalMutation({
     const basePatch: SkillModerationPatch = {
       displayName: args.displayName,
       summary: nextSummary ?? undefined,
+      ownerPublisherId: skill.ownerPublisherId ?? ownerPublisherId,
       latestVersionId: versionId,
       latestVersionSummary: {
         version: args.version,

@@ -377,6 +377,7 @@ packageCmd
   .option("--family <family>", "code-plugin|bundle-plugin")
   .option("--name <name>", "Package name")
   .option("--display-name <name>", "Display name")
+  .option("--owner <handle>", "Publish under this owner handle (admin only)")
   .option("--version <version>", "Version")
   .option("--changelog <text>", "Changelog text")
   .option("--tags <tags>", "Comma-separated tags", "latest")

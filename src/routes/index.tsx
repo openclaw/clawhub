@@ -10,7 +10,7 @@ import { SoulStatsTripletLine } from "../components/SoulStats";
 import { UserBadge } from "../components/UserBadge";
 import { convexHttp } from "../convex/client";
 import { getSkillBadges } from "../lib/badges";
-import type { PublicSkill, PublicSoul, PublicUser } from "../lib/publicUser";
+import type { PublicPublisher, PublicSkill, PublicSoul } from "../lib/publicUser";
 import { getSiteMode } from "../lib/site";
 
 export const Route = createFileRoute("/")({
@@ -26,7 +26,7 @@ function SkillsHome() {
   type SkillPageEntry = {
     skill: PublicSkill;
     ownerHandle?: string | null;
-    owner?: PublicUser | null;
+    owner?: PublicPublisher | null;
     latestVersion?: unknown;
   };
 

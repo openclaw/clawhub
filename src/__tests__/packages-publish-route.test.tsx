@@ -1,6 +1,6 @@
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { createElement } from "react";
-import { vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 vi.mock("@tanstack/react-router", () => ({
   createFileRoute:
@@ -16,6 +16,7 @@ const useAuthStatusMock = vi.fn();
 vi.mock("convex/react", () => ({
   useMutation: () => generateUploadUrl,
   useAction: () => publishRelease,
+  useQuery: () => undefined,
 }));
 
 vi.mock("../lib/useAuthStatus", () => ({
@@ -164,7 +165,7 @@ describe("plugins publish route", () => {
   it("publishes a bundle plugin folder with bundle metadata", async () => {
     renderPublishRoute();
 
-    fireEvent.change(screen.getByRole("combobox"), {
+    fireEvent.change(screen.getAllByRole("combobox")[0], {
       target: { value: "bundle-plugin" },
     });
 
@@ -301,5 +302,75 @@ describe("plugins publish route", () => {
       "package.json",
       "src/index.js",
     ]);
+  });
+
+  it("blocks plugin publish when a file exceeds 10MB", async () => {
+    renderPublishRoute();
+
+    const packageJson = withRelativePath(
+      new File([JSON.stringify({ name: "demo-plugin", version: "1.0.0" })], "package.json", {
+        type: "application/json",
+      }),
+      "demo-plugin/package.json",
+    );
+    const manifest = withRelativePath(
+      new File(['{"id":"demo.plugin"}'], "openclaw.plugin.json", { type: "application/json" }),
+      "demo-plugin/openclaw.plugin.json",
+    );
+    const huge = withRelativePath(
+      new File(["x"], "plugin.wasm", { type: "application/wasm" }),
+      "demo-plugin/dist/plugin.wasm",
+    );
+    Object.defineProperty(huge, "size", {
+      value: 10 * 1024 * 1024 + 1,
+      configurable: true,
+    });
+
+    fireEvent.change(getFileInput(), { target: { files: [packageJson, manifest, huge] } });
+
+    await waitFor(() => {
+      expect(screen.getByText(/Each file must be 10MB or smaller: plugin\.wasm/i)).toBeTruthy();
+    });
+    expect(screen.getByRole("button", { name: "Publish" }).getAttribute("disabled")).not.toBeNull();
+    expect(publishRelease).not.toHaveBeenCalled();
+  });
+
+  it("shows pending verification messaging after plugin publish", async () => {
+    renderPublishRoute();
+
+    const packageJson = withRelativePath(
+      new File([JSON.stringify({ name: "demo-plugin", version: "1.0.0" })], "package.json", {
+        type: "application/json",
+      }),
+      "demo-plugin/package.json",
+    );
+    const manifest = withRelativePath(
+      new File(['{"id":"demo.plugin"}'], "openclaw.plugin.json", { type: "application/json" }),
+      "demo-plugin/openclaw.plugin.json",
+    );
+    const dist = withRelativePath(
+      new File(["export const demo = true;\n"], "index.js", { type: "text/javascript" }),
+      "demo-plugin/dist/index.js",
+    );
+
+    fireEvent.change(getFileInput(), { target: { files: [packageJson, manifest, dist] } });
+    await waitFor(() => {
+      expect(screen.getByDisplayValue("demo-plugin")).toBeTruthy();
+    });
+    fireEvent.change(screen.getByPlaceholderText("Changelog"), {
+      target: { value: "Initial release" },
+    });
+    fireEvent.change(screen.getByPlaceholderText("Source repo (owner/repo)"), {
+      target: { value: "openclaw/demo-plugin" },
+    });
+    fireEvent.change(screen.getByPlaceholderText("Source commit"), {
+      target: { value: "abc123" },
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: "Publish" }));
+
+    expect(
+      await screen.findByText(/Pending security checks and verification before public listing\./i),
+    ).toBeTruthy();
   });
 });

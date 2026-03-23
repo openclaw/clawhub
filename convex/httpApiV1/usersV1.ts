@@ -22,7 +22,13 @@ export async function usersPostRouterV1Handler(ctx: ActionCtx, request: Request)
     return text("Not found", 404, rate.headers);
   }
   const action = segments[0];
-  if (action !== "ban" && action !== "role" && action !== "restore" && action !== "reclaim") {
+  if (
+    action !== "ban" &&
+    action !== "role" &&
+    action !== "restore" &&
+    action !== "reclaim" &&
+    action !== "publisher"
+  ) {
     return text("Not found", 404, rate.headers);
   }
 
@@ -46,6 +52,12 @@ export async function usersPostRouterV1Handler(ctx: ActionCtx, request: Request)
     const admin = requireAdminOrResponse(actorUser, rate.headers);
     if (!admin.ok) return admin.response;
     return handleAdminReclaim(ctx, request, payload, actorUserId, rate.headers);
+  }
+
+  if (action === "publisher") {
+    const admin = requireAdminOrResponse(actorUser, rate.headers);
+    if (!admin.ok) return admin.response;
+    return handleAdminEnsurePublisher(ctx, payload, actorUserId, rate.headers);
   }
 
   const handleRaw = typeof payload.handle === "string" ? payload.handle.trim() : "";
@@ -213,6 +225,39 @@ async function handleAdminReclaim(
   const failed = results.filter((r) => !r.ok).length;
 
   return json({ ok: true, results, succeeded, failed }, 200, headers);
+}
+
+async function handleAdminEnsurePublisher(
+  ctx: ActionCtx,
+  payload: Record<string, unknown>,
+  actorUserId: Id<"users">,
+  headers: HeadersInit,
+) {
+  const handle = typeof payload.handle === "string" ? payload.handle.trim().toLowerCase() : "";
+  if (!handle) return text("Missing handle", 400, headers);
+
+  const displayName = typeof payload.displayName === "string" ? payload.displayName.trim() : undefined;
+  const trusted =
+    typeof payload.trusted === "boolean" ? payload.trusted : true;
+
+  try {
+    const result = await ctx.runMutation(internal.publishers.ensureOrgPublisherHandleInternal, {
+      actorUserId,
+      handle,
+      displayName,
+      trusted,
+    });
+    return json(result, 200, headers);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "Publisher ensure failed";
+    if (message.toLowerCase().includes("forbidden")) {
+      return text("Forbidden", 403, headers);
+    }
+    if (message.toLowerCase().includes("not found")) {
+      return text(message, 404, headers);
+    }
+    return text(message, 400, headers);
+  }
 }
 
 export async function usersListV1Handler(ctx: ActionCtx, request: Request) {
