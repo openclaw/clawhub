@@ -146,18 +146,13 @@ export async function syncPackageSearchDigestsForOwnerUserId(
   ownerUserId: Id<"users"> | null | undefined,
 ) {
   if (!ownerUserId) return;
-  let cursor: string | null = null;
   try {
-    while (true) {
-      const page = await ctx.db
-        .query("packages")
-        .withIndex("by_owner", (q) => q.eq("ownerUserId", ownerUserId))
-        .paginate({ cursor, numItems: 100 });
-      for (const pkg of page.page) {
-        await syncPackageSearchDigest(ctx, pkg);
-      }
-      if (page.isDone) break;
-      cursor = page.continueCursor;
+    const packages = await ctx.db
+      .query("packages")
+      .withIndex("by_owner", (q) => q.eq("ownerUserId", ownerUserId))
+      .collect();
+    for (const pkg of packages) {
+      await syncPackageSearchDigest(ctx, pkg);
     }
   } catch (error) {
     if (isMissingTableError(error, "packages")) return;
@@ -170,18 +165,13 @@ export async function syncPackageSearchDigestsForOwnerPublisherId(
   ownerPublisherId: Id<"publishers"> | null | undefined,
 ) {
   if (!ownerPublisherId) return;
-  let cursor: string | null = null;
   try {
-    while (true) {
-      const page = await ctx.db
-        .query("packages")
-        .withIndex("by_owner_publisher", (q) => q.eq("ownerPublisherId", ownerPublisherId))
-        .paginate({ cursor, numItems: 100 });
-      for (const pkg of page.page) {
-        await syncPackageSearchDigest(ctx, pkg);
-      }
-      if (page.isDone) break;
-      cursor = page.continueCursor;
+    const packages = await ctx.db
+      .query("packages")
+      .withIndex("by_owner_publisher", (q) => q.eq("ownerPublisherId", ownerPublisherId))
+      .collect();
+    for (const pkg of packages) {
+      await syncPackageSearchDigest(ctx, pkg);
     }
   } catch (error) {
     if (isMissingTableError(error, "packages")) return;
@@ -214,18 +204,13 @@ export async function syncSkillSearchDigestsForOwnerPublisherId(
   ownerPublisherId: Id<"publishers"> | null | undefined,
 ) {
   if (!ownerPublisherId) return;
-  let cursor: string | null = null;
   try {
-    while (true) {
-      const page = await ctx.db
-        .query("skills")
-        .withIndex("by_owner_publisher", (q) => q.eq("ownerPublisherId", ownerPublisherId))
-        .paginate({ cursor, numItems: 100 });
-      for (const skill of page.page) {
-        await syncSkillSearchDigestForSkill(ctx, skill);
-      }
-      if (page.isDone) break;
-      cursor = page.continueCursor;
+    const skills = await ctx.db
+      .query("skills")
+      .withIndex("by_owner_publisher", (q) => q.eq("ownerPublisherId", ownerPublisherId))
+      .collect();
+    for (const skill of skills) {
+      await syncSkillSearchDigestForSkill(ctx, skill);
     }
   } catch (error) {
     if (isMissingTableError(error, "skills")) return;
