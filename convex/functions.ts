@@ -1,6 +1,8 @@
 import { customCtx, customMutation } from "convex-helpers/server/customFunctions";
 import { Triggers } from "convex-helpers/server/triggers";
+import { v } from "convex/values";
 import semver from "semver";
+import { internal } from "./_generated/api";
 import type { DataModel, Doc, Id } from "./_generated/dataModel";
 import {
   mutation as rawMutation,
@@ -165,29 +167,55 @@ export async function syncPackageSearchDigestsForOwnerUserId(
   }
 }
 
-export async function syncPackageSearchDigestsForOwnerPublisherId(
+/**
+ * Sync exactly one page of package digests for a publisher and return pagination state.
+ * Callers that need full coverage must continue via continueCursor (see internal worker below).
+ */
+export async function syncPackageSearchDigestsPageForOwnerPublisherId(
   ctx: PackageDigestSyncCtx,
   ownerPublisherId: Id<"publishers"> | null | undefined,
+  cursor: string | null = null,
 ) {
-  if (!ownerPublisherId) return;
-  let cursor: string | null = null;
+  if (!ownerPublisherId) return null;
   try {
-    while (true) {
-      const page = await ctx.db
-        .query("packages")
-        .withIndex("by_owner_publisher", (q) => q.eq("ownerPublisherId", ownerPublisherId))
-        .paginate({ cursor, numItems: 100 });
-      for (const pkg of page.page) {
-        await syncPackageSearchDigest(ctx, pkg);
-      }
-      if (page.isDone) break;
-      cursor = page.continueCursor;
+    const page = await ctx.db
+      .query("packages")
+      .withIndex("by_owner_publisher", (q) => q.eq("ownerPublisherId", ownerPublisherId))
+      .paginate({ cursor, numItems: 100 });
+    for (const pkg of page.page) {
+      await syncPackageSearchDigest(ctx, pkg);
     }
+    return page;
   } catch (error) {
-    if (isMissingTableError(error, "packages")) return;
+    if (isMissingTableError(error, "packages")) return null;
     throw error;
   }
 }
+
+// rawInternalMutation is used instead of the custom internalMutation to avoid a
+// Temporal Dead Zone: the custom wrapper is declared after this const.
+// packageSearchDigest has no registered triggers so wrapDB is not needed here.
+export const syncPackageSearchDigestsForOwnerPublisherIdInternal = rawInternalMutation({
+  args: {
+    ownerPublisherId: v.id("publishers"),
+    cursor: v.optional(v.string()),
+  },
+  handler: async (ctx, args) => {
+    const page = await syncPackageSearchDigestsPageForOwnerPublisherId(
+      ctx,
+      args.ownerPublisherId,
+      args.cursor ?? null,
+    );
+    if (!page || page.isDone) return { done: true as const };
+    // Continue via scheduler so each execution performs only one paginated query
+    // (Convex enforces one paginated query per function execution).
+    await ctx.scheduler.runAfter(0, internal.functions.syncPackageSearchDigestsForOwnerPublisherIdInternal, {
+      ownerPublisherId: args.ownerPublisherId,
+      cursor: page.continueCursor,
+    });
+    return { done: false as const, cursor: page.continueCursor };
+  },
+});
 
 async function syncSkillSearchDigestForSkill(
   ctx: PackageDigestSyncCtx,
@@ -209,29 +237,55 @@ async function syncSkillSearchDigestForSkill(
   });
 }
 
-export async function syncSkillSearchDigestsForOwnerPublisherId(
+/**
+ * Sync exactly one page of skill digests for a publisher and return pagination state.
+ * Callers that need full coverage must continue via continueCursor (see internal worker below).
+ */
+export async function syncSkillSearchDigestsPageForOwnerPublisherId(
   ctx: PackageDigestSyncCtx,
   ownerPublisherId: Id<"publishers"> | null | undefined,
+  cursor: string | null = null,
 ) {
-  if (!ownerPublisherId) return;
-  let cursor: string | null = null;
+  if (!ownerPublisherId) return null;
   try {
-    while (true) {
-      const page = await ctx.db
-        .query("skills")
-        .withIndex("by_owner_publisher", (q) => q.eq("ownerPublisherId", ownerPublisherId))
-        .paginate({ cursor, numItems: 100 });
-      for (const skill of page.page) {
-        await syncSkillSearchDigestForSkill(ctx, skill);
-      }
-      if (page.isDone) break;
-      cursor = page.continueCursor;
+    const page = await ctx.db
+      .query("skills")
+      .withIndex("by_owner_publisher", (q) => q.eq("ownerPublisherId", ownerPublisherId))
+      .paginate({ cursor, numItems: 100 });
+    for (const skill of page.page) {
+      await syncSkillSearchDigestForSkill(ctx, skill);
     }
+    return page;
   } catch (error) {
-    if (isMissingTableError(error, "skills")) return;
+    if (isMissingTableError(error, "skills")) return null;
     throw error;
   }
 }
+
+// rawInternalMutation is used instead of the custom internalMutation to avoid a
+// Temporal Dead Zone: the custom wrapper is declared after this const.
+// skillSearchDigest has no registered triggers so wrapDB is not needed here.
+export const syncSkillSearchDigestsForOwnerPublisherIdInternal = rawInternalMutation({
+  args: {
+    ownerPublisherId: v.id("publishers"),
+    cursor: v.optional(v.string()),
+  },
+  handler: async (ctx, args) => {
+    const page = await syncSkillSearchDigestsPageForOwnerPublisherId(
+      ctx,
+      args.ownerPublisherId,
+      args.cursor ?? null,
+    );
+    if (!page || page.isDone) return { done: true as const };
+    // Continue via scheduler so each execution performs only one paginated query
+    // (Convex enforces one paginated query per function execution).
+    await ctx.scheduler.runAfter(0, internal.functions.syncSkillSearchDigestsForOwnerPublisherIdInternal, {
+      ownerPublisherId: args.ownerPublisherId,
+      cursor: page.continueCursor,
+    });
+    return { done: false as const, cursor: page.continueCursor };
+  },
+});
 
 export async function repointPackageLatestRelease(
   ctx: PackageDigestSyncCtx,
@@ -335,8 +389,12 @@ triggers.register("users", async (ctx, change) => {
 
 triggers.register("publishers", async (ctx, change) => {
   const ownerPublisherId = change.operation === "delete" ? change.id : change.newDoc._id;
-  await syncPackageSearchDigestsForOwnerPublisherId(ctx, ownerPublisherId);
-  await syncSkillSearchDigestsForOwnerPublisherId(ctx, ownerPublisherId);
+  await ctx.scheduler.runAfter(0, internal.functions.syncPackageSearchDigestsForOwnerPublisherIdInternal, {
+    ownerPublisherId,
+  });
+  await ctx.scheduler.runAfter(0, internal.functions.syncSkillSearchDigestsForOwnerPublisherIdInternal, {
+    ownerPublisherId,
+  });
 });
 
 export const mutation = customMutation(rawMutation, customCtx(triggers.wrapDB));
