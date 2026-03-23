@@ -1,6 +1,8 @@
 import { customCtx, customMutation } from "convex-helpers/server/customFunctions";
 import { Triggers } from "convex-helpers/server/triggers";
+import { v } from "convex/values";
 import semver from "semver";
+import { internal } from "./_generated/api";
 import type { DataModel, Doc, Id } from "./_generated/dataModel";
 import {
   mutation as rawMutation,
@@ -212,26 +214,43 @@ async function syncSkillSearchDigestForSkill(
 export async function syncSkillSearchDigestsForOwnerPublisherId(
   ctx: PackageDigestSyncCtx,
   ownerPublisherId: Id<"publishers"> | null | undefined,
+  cursor: string | null = null,
 ) {
   if (!ownerPublisherId) return;
-  let cursor: string | null = null;
   try {
-    while (true) {
-      const page = await ctx.db
-        .query("skills")
-        .withIndex("by_owner_publisher", (q) => q.eq("ownerPublisherId", ownerPublisherId))
-        .paginate({ cursor, numItems: 100 });
-      for (const skill of page.page) {
-        await syncSkillSearchDigestForSkill(ctx, skill);
-      }
-      if (page.isDone) break;
-      cursor = page.continueCursor;
+    const page = await ctx.db
+      .query("skills")
+      .withIndex("by_owner_publisher", (q) => q.eq("ownerPublisherId", ownerPublisherId))
+      .paginate({ cursor, numItems: 100 });
+    for (const skill of page.page) {
+      await syncSkillSearchDigestForSkill(ctx, skill);
     }
+    return page;
   } catch (error) {
-    if (isMissingTableError(error, "skills")) return;
+    if (isMissingTableError(error, "skills")) return null;
     throw error;
   }
 }
+
+export const syncSkillSearchDigestsForOwnerPublisherIdInternal = internalMutation({
+  args: {
+    ownerPublisherId: v.id("publishers"),
+    cursor: v.optional(v.string()),
+  },
+  handler: async (ctx, args) => {
+    const page = await syncSkillSearchDigestsForOwnerPublisherId(
+      ctx,
+      args.ownerPublisherId,
+      args.cursor ?? null,
+    );
+    if (!page || page.isDone) return { done: true as const };
+    await ctx.scheduler.runAfter(0, internal.functions.syncSkillSearchDigestsForOwnerPublisherIdInternal, {
+      ownerPublisherId: args.ownerPublisherId,
+      cursor: page.continueCursor,
+    });
+    return { done: false as const, cursor: page.continueCursor };
+  },
+});
 
 export async function repointPackageLatestRelease(
   ctx: PackageDigestSyncCtx,
@@ -336,7 +355,11 @@ triggers.register("users", async (ctx, change) => {
 triggers.register("publishers", async (ctx, change) => {
   const ownerPublisherId = change.operation === "delete" ? change.id : change.newDoc._id;
   await syncPackageSearchDigestsForOwnerPublisherId(ctx, ownerPublisherId);
-  await syncSkillSearchDigestsForOwnerPublisherId(ctx, ownerPublisherId);
+  if (ownerPublisherId) {
+    await ctx.scheduler.runAfter(0, internal.functions.syncSkillSearchDigestsForOwnerPublisherIdInternal, {
+      ownerPublisherId,
+    });
+  }
 });
 
 export const mutation = customMutation(rawMutation, customCtx(triggers.wrapDB));
