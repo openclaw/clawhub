@@ -220,7 +220,7 @@ export async function syncSkillSearchDigestsPageForOwnerPublisherId(
   ownerPublisherId: Id<"publishers"> | null | undefined,
   cursor: string | null = null,
 ) {
-  if (!ownerPublisherId) return;
+  if (!ownerPublisherId) return null;
   try {
     const page = await ctx.db
       .query("skills")
@@ -364,11 +364,9 @@ triggers.register("users", async (ctx, change) => {
 triggers.register("publishers", async (ctx, change) => {
   const ownerPublisherId = change.operation === "delete" ? change.id : change.newDoc._id;
   await syncPackageSearchDigestsForOwnerPublisherId(ctx, ownerPublisherId);
-  if (ownerPublisherId) {
-    await ctx.scheduler.runAfter(0, internal.functions.syncSkillSearchDigestsForOwnerPublisherIdInternal, {
-      ownerPublisherId,
-    });
-  }
+  await ctx.scheduler.runAfter(0, internal.functions.syncSkillSearchDigestsForOwnerPublisherIdInternal, {
+    ownerPublisherId,
+  });
 });
 
 export const mutation = customMutation(rawMutation, customCtx(triggers.wrapDB));
