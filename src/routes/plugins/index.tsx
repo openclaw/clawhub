@@ -2,7 +2,7 @@ import { createFileRoute } from "@tanstack/react-router";
 import { Link } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
 import { fetchPluginCatalog, type PackageListItem } from "../../lib/packageApi";
-import { familyLabel, packageCapabilityLabel } from "../../lib/packageLabels";
+import { familyLabel } from "../../lib/packageLabels";
 
 type PluginSearchState = {
   q?: string;
@@ -97,87 +97,88 @@ export function PluginsIndex() {
           Plugins
         </h1>
         <p className="section-subtitle" style={{ marginBottom: 0 }}>
-          Code plugins and bundle plugins for OpenClaw.
+          Browse the plugin catalog.
         </p>
       </header>
 
-      <div className="card" style={{ display: "grid", gap: 12, marginBottom: 18 }}>
-        <form
-          onSubmit={(event) => {
-            event.preventDefault();
-            void navigate({
-              search: (prev) => ({
-                ...prev,
-                cursor: undefined,
-                q: query.trim() || undefined,
-              }),
-            });
-          }}
-          style={{ display: "grid", gap: 12 }}
-        >
+      <form
+        className="skills-toolbar"
+        onSubmit={(event) => {
+          event.preventDefault();
+          void navigate({
+            search: (prev) => ({
+              ...prev,
+              cursor: undefined,
+              q: query.trim() || undefined,
+            }),
+          });
+        }}
+      >
+        <div className="skills-search">
           <input
-            className="input"
-            placeholder="Search plugins"
+            className="skills-search-input"
+            placeholder="Search plugins…"
             value={query}
             onChange={(event) => setQuery(event.target.value)}
           />
-          <div style={{ display: "flex", gap: 12, flexWrap: "wrap" }}>
-            <select
-              className="input"
-              value={search.family ?? ""}
-              onChange={(event) => {
-                const value = event.target.value as PluginSearchState["family"] | "";
-                void navigate({
-                  search: (prev) => ({
-                    ...prev,
-                    cursor: undefined,
-                    family: value || undefined,
-                  }),
-                });
-              }}
-            >
-              <option value="">All plugins</option>
-              <option value="code-plugin">Code plugins</option>
-              <option value="bundle-plugin">Bundle plugins</option>
-            </select>
-            <label className="tag" style={{ display: "inline-flex", alignItems: "center", gap: 8 }}>
-              <input
-                type="checkbox"
-                checked={search.verified ?? false}
-                onChange={(event) => {
-                  void navigate({
-                    search: (prev) => ({
-                      ...prev,
-                      cursor: undefined,
-                      verified: event.target.checked || undefined,
-                    }),
-                  });
-                }}
-              />
-              Verified only
-            </label>
-            <label className="tag" style={{ display: "inline-flex", alignItems: "center", gap: 8 }}>
-              <input
-                type="checkbox"
-                checked={search.executesCode ?? false}
-                onChange={(event) => {
-                  void navigate({
-                    search: (prev) => ({
-                      ...prev,
-                      cursor: undefined,
-                      executesCode: event.target.checked || undefined,
-                    }),
-                  });
-                }}
-              />
-              Executes code
-            </label>
-            <Link className="btn" to="/plugins/new">
-              Publish Plugin
-            </Link>
-          </div>
-        </form>
-      </div>
+        </div>
+        <div className="skills-toolbar-row">
+          <select
+            className="skills-sort"
+            value={search.family ?? ""}
+            onChange={(event) => {
+              const value = event.target.value as PluginSearchState["family"] | "";
+              void navigate({
+                search: (prev) => ({
+                  ...prev,
+                  cursor: undefined,
+                  family: value || undefined,
+                }),
+              });
+            }}
+            aria-label="Filter by type"
+          >
+            <option value="">All plugins</option>
+            <option value="code-plugin">Code plugins</option>
+            <option value="bundle-plugin">Bundle plugins</option>
+          </select>
+          <button
+            className={`search-filter-button${search.verified ? " is-active" : ""}`}
+            type="button"
+            aria-pressed={search.verified ?? false}
+            onClick={() => {
+              void navigate({
+                search: (prev) => ({
+                  ...prev,
+                  cursor: undefined,
+                  verified: prev.verified ? undefined : true,
+                }),
+              });
+            }}
+          >
+            Verified
+          </button>
+          <button
+            className={`search-filter-button${search.executesCode ? " is-active" : ""}`}
+            type="button"
+            aria-pressed={search.executesCode ?? false}
+            onClick={() => {
+              void navigate({
+                search: (prev) => ({
+                  ...prev,
+                  cursor: undefined,
+                  executesCode: prev.executesCode ? undefined : true,
+                }),
+              });
+            }}
+          >
+            Executes code
+          </button>
+          <Link className="btn btn-primary" to="/plugins/new">
+            Publish
+          </Link>
+        </div>
+      </form>
 
       {items.length === 0 ? (
         <div className="card">No plugins match that filter.</div>
@@ -189,74 +190,67 @@ export function PluginsIndex() {
                 key={item.name}
                 to="/plugins/$name"
                 params={{ name: item.name }}
-                className="skill-card"
+                className="card skill-card"
               >
                 <div className="skill-card-tags">
-                  <span className="tag">{familyLabel(item.family)}</span>
-                  {item.executesCode ? (
-                    <span className="tag tag-accent">
-                      {packageCapabilityLabel(item.family, item.executesCode)}
+                  <span className="tag tag-compact">{familyLabel(item.family)}</span>
+                  {item.isOfficial ? (
+                    <span className="tag tag-compact tag-accent">
+                      <VerifiedBadge /> Verified
                     </span>
                   ) : null}
-                  {item.verificationTier ? <span className="tag">{item.verificationTier}</span> : null}
                 </div>
-                <div className="skill-card-title">{item.displayName}</div>
-                <div className="skills-row-slug">{item.name}</div>
-                <div className="skill-card-summary">
+                <h3 className="skill-card-title">{item.displayName}</h3>
+                <p className="skill-card-summary">
                   {item.summary ?? "No summary provided."}
-                </div>
-                <div className="skill-card-footer skill-card-footer-inline">
-                  <div className="stat">
-                    {item.ownerHandle ? `by ${item.ownerHandle}` : "community plugin"}
-                    {item.latestVersion ? ` · v${item.latestVersion}` : ""}
-                  </div>
-                  {item.isOfficial ? <VerifiedBadge /> : null}
+                </p>
+                <div className="skill-card-footer" style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                  <span className="stat">
+                    {item.ownerHandle ? `by ${item.ownerHandle}` : "community"}
+                  </span>
+                  {item.latestVersion ? (
+                    <span className="stat">v{item.latestVersion}</span>
+                  ) : null}
                 </div>
               </Link>
             ))}
           </div>
           {!search.q && (search.cursor || nextCursor) ? (
             <div
-              className="card"
-              style={{ display: "flex", gap: 12, flexWrap: "wrap", justifyContent: "space-between", marginTop: 18 }}
+              style={{ display: "flex", gap: 12, justifyContent: "center", marginTop: 22 }}
             >
-              <div className="section-subtitle" style={{ margin: 0 }}>
-                Browsing {items.length} plugin{items.length === 1 ? "" : "s"} per page.
-              </div>
-              <div style={{ display: "flex", gap: 12, flexWrap: "wrap" }}>
-                {search.cursor ? (
-                  <button
-                    className="btn"
-                    type="button"
-                    onClick={() => {
-                      void navigate({
-                        search: (prev) => ({
-                          ...prev,
-                          cursor: undefined,
-                        }),
-                      });
-                    }}
-                  >
-                    First page
-                  </button>
-                ) : null}
-                {nextCursor ? (
-                  <button
-                    className="btn btn-primary"
-                    type="button"
-                    onClick={() => {
-                      void navigate({
-                        search: (prev) => ({
-                          ...prev,
-                          cursor: nextCursor,
-                        }),
-                      });
-                    }}
-                  >
-                    Next page
-                  </button>
-                ) : null}
-              </div>
+              {search.cursor ? (
+                <button
+                  className="btn"
+                  type="button"
+                  onClick={() => {
+                    void navigate({
+                      search: (prev) => ({
+                        ...prev,
+                        cursor: undefined,
+                      }),
+                    });
+                  }}
+                >
+                  First page
+                </button>
+              ) : null}
+              {nextCursor ? (
+                <button
+                  className="btn btn-primary"
+                  type="button"
+                  onClick={() => {
+                    void navigate({
+                      search: (prev) => ({
+                        ...prev,
+                        cursor: nextCursor,
+                      }),
+                    });
+                  }}
+                >
+                  Next page
+                </button>
+              ) : null}
             </div>
           ) : null}
         </>
