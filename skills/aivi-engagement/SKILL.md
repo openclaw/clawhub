@@ -55,6 +55,24 @@ Example prompts:
 
 Returns: org_id, API key (shown once), AI agent config, $5 trial credits.
 
+### decide_next_action
+Use when: user wants the ML model to recommend the best next step.
+
+Example prompts:
+- "What should I do next with this lead?"
+- "Should I call or text +12065551234?"
+- "What's the ML recommendation for this contact?"
+
+Returns: recommended action, channel, timing, all 14 action scores, confidence, exploration flag. Free — no charge.
+
+### Prerequisites
+For best results, run in this order:
+1. score_lead ($0.75) — enriches the lead
+2. launch_sequence ($1.00-3.00) — starts engagement
+3. decide_next_action (free) — optimizes every step
+
+You can use decide_next_action standalone but it works best after at least one score_lead or launch_sequence has run.
+
 ### get_outcome
 Use when: user wants to know what happened on a call or sequence.
 
@@ -96,3 +114,4 @@ All skills require AIVI credits. Add credits at app.aivi.io → Billing.
 | launch_sequence (twelve_day) | $3.00 |
 | Booking add-on | +$1.00 |
 | onboard_organization | Free (includes $5 trial credits) |
+| decide_next_action | Free |
