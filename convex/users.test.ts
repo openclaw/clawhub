@@ -23,6 +23,7 @@ const {
   banUserInternal,
   me,
   placeUserUnderModerationInternal,
+  liftModerationHoldInternal,
   reserveHandleInternal,
   syncGitHubProfileInternal,
 } = await import("./users");
@@ -1186,6 +1187,41 @@ describe("users.reserveHandleInternal", () => {
             rightfulOwnerUserId: string;
             reason?: string;
           },
+describe("users.liftModerationHoldInternal", () => {
+  it("clears the moderation hold and restores skills", async () => {
+    vi.spyOn(Date, "now").mockReturnValue(1_700_000_100_000);
+    const patch = vi.fn();
+    const insert = vi.fn();
+    const get = vi.fn(async (id: string) => {
+      if (id === "users:admin") {
+        return {
+          _id: "users:admin",
+          role: "admin",
+          deletedAt: undefined,
+          deactivatedAt: undefined,
+        };
+      }
+      if (id === "users:target") {
+        return {
+          _id: "users:target",
+          role: "user",
+          handle: "security-researcher",
+          deletedAt: undefined,
+          deactivatedAt: undefined,
+          requiresModerationAt: 1_700_000_000_000,
+          requiresModerationReason:
+            "Auto-held for moderation after malicious upload (malicious.install_terminal_payload)",
+        };
+      }
+      return null;
+    });
+    const runMutation = vi.fn(async () => ({ restoredCount: 5, scheduled: false }));
+
+    const handler = (
+      liftModerationHoldInternal as unknown as {
+        _handler: (
+          ctx: unknown,
+          args: { actorUserId: string; targetUserId: string; reason?: string },
         ) => Promise<unknown>;
       }
     )._handler;
@@ -1217,5 +1253,166 @@ describe("users.reserveHandleInternal", () => {
         targetId: "openclaw",
       }),
     );
+  });
+    const result = (await handler(
+      {
+        db: {
+          get,
+          patch,
+          insert,
+          delete: vi.fn(),
+          replace: vi.fn(),
+          query: vi.fn(),
+          normalizeId: vi.fn(),
+        },
+        runMutation,
+      } as never,
+      {
+        actorUserId: "users:admin",
+        targetUserId: "users:target",
+        reason: "False positive from security tool scanning",
+      },
+    )) as {
+      ok: boolean;
+      alreadyCleared: boolean;
+      restoredSkills: number;
+      scheduledSkills: boolean;
+    };
+
+    expect(result).toEqual({
+      ok: true,
+      alreadyCleared: false,
+      restoredSkills: 5,
+      scheduledSkills: false,
+    });
+
+    // Verify hold was cleared
+    expect(patch).toHaveBeenCalledWith("users:target", {
+      requiresModerationAt: undefined,
+      requiresModerationReason: undefined,
+      updatedAt: 1_700_000_100_000,
+    });
+
+    // Verify skill restoration was triggered with holdPlacedAt for race-condition safety
+    expect(runMutation).toHaveBeenCalledWith(expect.anything(), {
+      ownerUserId: "users:target",
+      holdPlacedAt: 1_700_000_000_000,
+      cursor: undefined,
+    });
+
+    // Verify audit log
+    expect(insert).toHaveBeenCalledWith(
+      "auditLogs",
+      expect.objectContaining({
+        actorUserId: "users:admin",
+        action: "user.moderation.lift",
+        targetType: "user",
+        targetId: "users:target",
+        metadata: expect.objectContaining({
+          reason: "False positive from security tool scanning",
+          holdPlacedAt: 1_700_000_000_000,
+          restoredSkills: 5,
+        }),
+      }),
+    );
+  });
+
+  it("returns early when user has no moderation hold", async () => {
+    vi.spyOn(Date, "now").mockReturnValue(1_700_000_100_000);
+    const patch = vi.fn();
+    const get = vi.fn(async (id: string) => {
+      if (id === "users:admin") {
+        return { _id: "users:admin", role: "admin", deletedAt: undefined, deactivatedAt: undefined };
+      }
+      if (id === "users:target") {
+        return {
+          _id: "users:target",
+          role: "user",
+          deletedAt: undefined,
+          deactivatedAt: undefined,
+          requiresModerationAt: undefined,
+        };
+      }
+      return null;
+    });
+
+    const handler = (
+      liftModerationHoldInternal as unknown as {
+        _handler: (
+          ctx: unknown,
+          args: { actorUserId: string; targetUserId: string },
+        ) => Promise<unknown>;
+      }
+    )._handler;
+
+    const result = (await handler(
+      {
+        db: {
+          get,
+          patch,
+          insert: vi.fn(),
+          delete: vi.fn(),
+          replace: vi.fn(),
+          query: vi.fn(),
+          normalizeId: vi.fn(),
+        },
+        runMutation: vi.fn(),
+      } as never,
+      {
+        actorUserId: "users:admin",
+        targetUserId: "users:target",
+      },
+    )) as { ok: boolean; alreadyCleared: boolean };
+
+    expect(result).toEqual({
+      ok: true,
+      alreadyCleared: true,
+      restoredSkills: 0,
+      scheduledSkills: false,
+    });
+
+    // Verify no patches were made
+    expect(patch).not.toHaveBeenCalled();
+  });
+
+  it("throws when actor is not admin", async () => {
+    const get = vi.fn(async (id: string) => {
+      if (id === "users:mod") {
+        return {
+          _id: "users:mod",
+          role: "moderator",
+          deletedAt: undefined,
+          deactivatedAt: undefined,
+        };
+      }
+      return null;
+    });
+
+    const handler = (
+      liftModerationHoldInternal as unknown as {
+        _handler: (
+          ctx: unknown,
+          args: { actorUserId: string; targetUserId: string },
+        ) => Promise<unknown>;
+      }
+    )._handler;
+
+    await expect(
+      handler(
+        {
+          db: {
+            get,
+            patch: vi.fn(),
+            insert: vi.fn(),
+            delete: vi.fn(),
+            replace: vi.fn(),
+            query: vi.fn(),
+            normalizeId: vi.fn(),
+          },
+          runMutation: vi.fn(),
+        } as never,
+        { actorUserId: "users:mod", targetUserId: "users:target" },
+      ),
+    ).rejects.toThrow();
   });
 });
