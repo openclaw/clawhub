@@ -445,7 +445,11 @@ describe("package digest sync", () => {
       updatedAt: 2,
       verification: undefined,
     };
-    const take = vi.fn().mockResolvedValueOnce([pkg]);
+    const paginate = vi.fn().mockResolvedValueOnce({
+      page: [pkg],
+      isDone: true,
+      continueCursor: "",
+    });
     const ctx = {
       db: {
         get: vi.fn(async (id: string) => {
@@ -456,7 +460,7 @@ describe("package digest sync", () => {
           if (table === "packages") {
             return {
               withIndex: vi.fn(() => ({
-                take,
+                paginate,
               })),
             };
           }
@@ -489,7 +493,7 @@ describe("package digest sync", () => {
       "users:owner" as never,
     );
 
-    expect(take).toHaveBeenCalled();
+    expect(paginate).toHaveBeenCalled();
     expect(ctx.db.insert).toHaveBeenCalledWith(
       "packageSearchDigest",
       expect.objectContaining({
@@ -499,7 +503,7 @@ describe("package digest sync", () => {
     );
   });
 
-  it("publisher trigger can call both package and skill sync without pagination conflict (#1201)", async () => {
+  it("each sync function works independently with pagination (#1201)", async () => {
     const publisher = {
       _id: "publishers:pub1",
       handle: "testpub",
@@ -557,7 +561,9 @@ describe("package digest sync", () => {
       updatedAt: 2,
       isSuspicious: false,
     };
-    const ctx = {
+
+    // Test package sync independently
+    const pkgCtx = {
       db: {
         get: vi.fn(async (id: string) => {
           if (id === "publishers:pub1") return publisher;
@@ -567,14 +573,11 @@ describe("package digest sync", () => {
           if (table === "packages") {
             return {
               withIndex: vi.fn(() => ({
-                take: vi.fn().mockResolvedValue([pkg]),
-              })),
-            };
-          }
-          if (table === "skills") {
-            return {
-              withIndex: vi.fn(() => ({
-                take: vi.fn().mockResolvedValue([skill]),
+                paginate: vi.fn().mockResolvedValue({
+                  page: [pkg],
+                  isDone: true,
+                  continueCursor: "",
+                }),
               })),
             };
           }
@@ -583,6 +586,41 @@ describe("package digest sync", () => {
               withIndex: vi.fn(() => ({
                 unique: vi.fn().mockResolvedValue(null),
                 collect: vi.fn().mockResolvedValue([]),
+              })),
+            };
+          }
+          throw new Error(`Unexpected table ${table}`);
+        }),
+        patch: vi.fn(),
+        insert: vi.fn(),
+        delete: vi.fn(),
+      },
+    };
+    await syncPackageSearchDigestsForOwnerPublisherId(
+      pkgCtx as never,
+      "publishers:pub1" as never,
+    );
+    expect(pkgCtx.db.insert).toHaveBeenCalledWith(
+      "packageSearchDigest",
+      expect.objectContaining({ packageId: "packages:demo" }),
+    );
+
+    // Test skill sync independently
+    const skillCtx = {
+      db: {
+        get: vi.fn(async (id: string) => {
+          if (id === "publishers:pub1") return publisher;
+          return null;
+        }),
+        query: vi.fn((table: string) => {
+          if (table === "skills") {
+            return {
+              withIndex: vi.fn(() => ({
+                paginate: vi.fn().mockResolvedValue({
+                  page: [skill],
+                  isDone: true,
+                  continueCursor: "",
+                }),
               })),
             };
           }
@@ -600,24 +638,11 @@ describe("package digest sync", () => {
         delete: vi.fn(),
       },
     };
-
-    // This simulates what the publishers trigger does — calling both
-    // sync functions sequentially. With .paginate() this would fail
-    // because Convex only allows one paginated query per function.
-    await syncPackageSearchDigestsForOwnerPublisherId(
-      ctx as never,
-      "publishers:pub1" as never,
-    );
     await syncSkillSearchDigestsForOwnerPublisherId(
-      ctx as never,
+      skillCtx as never,
       "publishers:pub1" as never,
     );
-
-    expect(ctx.db.insert).toHaveBeenCalledWith(
-      "packageSearchDigest",
-      expect.objectContaining({ packageId: "packages:demo" }),
-    );
-    expect(ctx.db.insert).toHaveBeenCalledWith(
+    expect(skillCtx.db.insert).toHaveBeenCalledWith(
       "skillSearchDigest",
       expect.objectContaining({ skillId: "skills:skill1" }),
     );
