@@ -32,7 +32,7 @@ All crypto and Web3 related skills are placed on hold and require manual human r
 - Malicious skills are blocked instantly. Suspicious skills get a warning badge.
 - Any user can report a skill. After 4 unique reports, it's auto-hidden pending review.
 - Abusing reports or publishing malicious content will get you banned.
-- Your GitHub account must be at least 7 days old to publish.
+- Your GitHub account must be at least 14 days old to publish.
 
 If your skill gets incorrectly flagged, email security@openclaw.ai. If you want to become a moderator, ask in the OpenClaw Discord.
 
