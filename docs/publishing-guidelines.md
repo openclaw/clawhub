@@ -36,4 +36,4 @@ All crypto and Web3 related skills are placed on hold and require manual human r
 
 If your skill gets incorrectly flagged, email security@openclaw.ai. If you want to become a moderator, ask in the OpenClaw Discord.
 
-For full documentation on building and publishing skills, see the [Skills docs](./skill-format.md), ClawHub docs, and Plugins docs.
+For full documentation on building and publishing skills, see the [Skills docs](./skill-format.md), [ClawHub docs](./README.md), and [Plugins docs](./plans/plugins.md).
