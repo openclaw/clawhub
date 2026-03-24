@@ -42,8 +42,9 @@ clawhub install aivi/aivi-engagement
 ```
 
 ### Step 4 — Tell your agent your credentials
-"My AIVI API key is aivi_sk_xxxxx
- My org ID is [app.aivi.io → Settings → Organization]"
+"My AIVI API key is aivi_sk_xxxxx"
+
+That's it. AIVI looks up your organization automatically from the key.
 
 ---
 
