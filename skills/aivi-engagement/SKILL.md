@@ -9,6 +9,71 @@ requires:
     - AIVI_API_KEY
 ---
 
+## Getting Started
+
+### Step 1 — Create your AIVI account
+Go to app.aivi.io and sign up.
+Complete one-time setup (15-30 minutes):
+- Business profile and vertical
+- A2P 10DLC registration (SMS compliance)
+- Phone number purchase or port
+- AI agent voice and script configuration
+- Add billing credits ($100 minimum)
+
+### Step 2 — Get your API key
+app.aivi.io → Profile → Settings → API Keys → Generate API Key
+Copy it — shown once only.
+
+### Step 3 — Connect to your AI agent
+
+Claude Code:
+```
+claude mcp add --transport http aivi https://mcp.aivi.io/mcp
+```
+
+Claude Desktop — add to config:
+```json
+{"mcpServers":{"aivi":{"url":"https://mcp.aivi.io/mcp"}}}
+```
+
+OpenClaw:
+```
+clawhub install aivi/aivi-engagement
+```
+
+### Step 4 — Tell your agent your credentials
+"My AIVI API key is aivi_sk_xxxxx
+ My org ID is [app.aivi.io → Settings → Organization]"
+
+---
+
+## MCP Connection
+
+| | |
+|---|---|
+| Transport | HTTP (streamable-http) |
+| Endpoint | https://mcp.aivi.io/mcp |
+| Health | https://mcp.aivi.io/health |
+| Compatible | Claude Code, Claude Desktop, OpenClaw, NemoClaw, any MCP client |
+
+---
+
+## Agent Behavior Rules
+
+ALWAYS ask for API key before any skill call.
+NEVER proceed without a valid api_key.
+
+If user has no API key:
+> "Get your API key at app.aivi.io → Profile → Settings → API Keys"
+
+If skill returns invalid_api_key:
+> "That key didn't work. Verify at app.aivi.io → Settings → API Keys"
+
+If skill returns insufficient_funds:
+> "Add credits at app.aivi.io → Billing. Minimum $100 to activate campaigns"
+
+---
+
 # AIVI Lead Engagement
 
 Use this skill when the user wants to:
