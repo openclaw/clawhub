@@ -445,7 +445,7 @@ describe("package digest sync", () => {
       updatedAt: 2,
       verification: undefined,
     };
-    const collect = vi.fn().mockResolvedValueOnce([pkg]);
+    const take = vi.fn().mockResolvedValueOnce([pkg]);
     const ctx = {
       db: {
         get: vi.fn(async (id: string) => {
@@ -456,7 +456,7 @@ describe("package digest sync", () => {
           if (table === "packages") {
             return {
               withIndex: vi.fn(() => ({
-                collect,
+                take,
               })),
             };
           }
@@ -489,7 +489,7 @@ describe("package digest sync", () => {
       "users:owner" as never,
     );
 
-    expect(collect).toHaveBeenCalled();
+    expect(take).toHaveBeenCalled();
     expect(ctx.db.insert).toHaveBeenCalledWith(
       "packageSearchDigest",
       expect.objectContaining({
@@ -567,14 +567,14 @@ describe("package digest sync", () => {
           if (table === "packages") {
             return {
               withIndex: vi.fn(() => ({
-                collect: vi.fn().mockResolvedValue([pkg]),
+                take: vi.fn().mockResolvedValue([pkg]),
               })),
             };
           }
           if (table === "skills") {
             return {
               withIndex: vi.fn(() => ({
-                collect: vi.fn().mockResolvedValue([skill]),
+                take: vi.fn().mockResolvedValue([skill]),
               })),
             };
           }

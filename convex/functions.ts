@@ -153,7 +153,7 @@ export async function syncPackageSearchDigestsForOwnerUserId(
     const pkgs = await ctx.db
       .query("packages")
       .withIndex("by_owner", (q) => q.eq("ownerUserId", ownerUserId))
-      .collect();
+      .take(10_000);
     for (const pkg of pkgs) {
       await syncPackageSearchDigest(ctx, pkg);
     }
@@ -172,7 +172,7 @@ export async function syncPackageSearchDigestsForOwnerPublisherId(
     const pkgs = await ctx.db
       .query("packages")
       .withIndex("by_owner_publisher", (q) => q.eq("ownerPublisherId", ownerPublisherId))
-      .collect();
+      .take(10_000);
     for (const pkg of pkgs) {
       await syncPackageSearchDigest(ctx, pkg);
     }
@@ -211,7 +211,7 @@ export async function syncSkillSearchDigestsForOwnerPublisherId(
     const skills = await ctx.db
       .query("skills")
       .withIndex("by_owner_publisher", (q) => q.eq("ownerPublisherId", ownerPublisherId))
-      .collect();
+      .take(10_000);
     for (const skill of skills) {
       await syncSkillSearchDigestForSkill(ctx, skill);
     }
