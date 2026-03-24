@@ -24,6 +24,12 @@ Complete one-time setup (15-30 minutes):
 app.aivi.io → Profile → Settings → API Keys → Generate API Key
 Copy it — shown once only.
 
+### Pro Tip — Save your API key permanently
+Tell your AI agent once:
+"Remember my AIVI API key is aivi_sk_xxxxx"
+
+Claude will remember it across all future conversations. You will never need to type it again.
+
 ### Step 3 — Connect to your AI agent
 
 Claude Code:
@@ -72,6 +78,27 @@ If skill returns invalid_api_key:
 
 If skill returns insufficient_funds:
 > "Add credits at app.aivi.io → Billing. Minimum $100 to activate campaigns"
+
+---
+
+## Quick Start Prompts
+
+Copy and paste to get started immediately:
+
+1. Save your key (one time only):
+   "Remember my AIVI API key is aivi_sk_xxxxx"
+
+2. Score a lead:
+   "Score the lead at +12065551234"
+
+3. Launch a sequence:
+   "Launch a 3-day sequence for +12065551234"
+
+4. Check what happened:
+   "What happened on the last call with +12065551234?"
+
+5. Get ML recommendation:
+   "What should I do next with +12065551234?"
 
 ---
 
