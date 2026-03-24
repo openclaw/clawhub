@@ -1,10 +1,24 @@
 # Changelog
 
-## 0.9.0 - Unreleased
+## 0.9.0 - 2026-03-23
+
+### Added
+
+- Packages/Plugins: add a first-class OpenClaw package registry across the web app, CLI, and HTTP API. ClawHub now supports package browse/search/detail/version/file/download flows plus `clawhub package explore`, `clawhub package inspect`, and `clawhub package publish` for `skill`, `code-plugin`, and `bundle-plugin` packages. (#1093)
+- Packages/Install: package downloads now ship install-ready archives with a `package/` root, support nested files like `dist/index.js`, and work directly with OpenClaw plugin install flows.
+- Skills/Web: server-render public skill pages and OG assets for faster first loads, cleaner sharing previews, and better cache behavior.
+
+### Changed
+
+- Browse/Search: rebuild public browse/search around denormalized digests, one-shot HTTP fetches, and deterministic cursors so the homepage and `/skills` are faster, more cacheable, and less likely to hit stale-tab or pagination dead ends.
+- Search: default skill search to relevance, keep load-more retryable after fetch failures, and tighten package/skill catalog query paths to reduce inconsistent results under load.
 
 ### Fixed
 
+- Packages/Auth: authenticated owners can now list, search, inspect, download, and read files from their own private packages instead of private packages being direct-URL-only. (#1093)
+- Packages/API: stabilize package latest-version pointers, cursor pagination, publish outputs, fallback release resolution, and app-origin auth handling so package publish/search/install flows stay reliable.
 - Visibility/API: prevent skills owned by deleted/banned users from showing up in public detail pages, browse/search results, or version API routes.
+- Skills/API: sanitize public skill and soul version/file reads so hidden or invalid version data does not leak through direct API access.
 - Skills/Web: keep Monaco compare layout toggles reliable while defaulting narrow screens to inline mode (#828) (thanks @geoffrey-xiao).
 
 ## 0.8.0 - 2026-03-13

@@ -11,6 +11,7 @@ const bunRuntimeMocks = vi.hoisted(() => {
   return {
     originalBunVersion,
     spawnSync: vi.fn(),
+    mkdir: vi.fn(async () => undefined),
     mkdtemp: vi.fn(async () => "/tmp/clawhub-test"),
     rm: vi.fn(async () => undefined),
     writeFile: vi.fn(async () => undefined),
@@ -23,6 +24,7 @@ vi.mock("node:child_process", () => ({
 }));
 
 vi.mock("node:fs/promises", () => ({
+  mkdir: bunRuntimeMocks.mkdir,
   mkdtemp: bunRuntimeMocks.mkdtemp,
   rm: bunRuntimeMocks.rm,
   writeFile: bunRuntimeMocks.writeFile,
@@ -62,6 +64,7 @@ async function loadHttpModuleWithBunMocks(opts?: {
 }) {
   const spawnSync: SpawnImpl = opts?.spawnImpl ?? vi.fn();
   bunRuntimeMocks.spawnSync.mockImplementation((...args: unknown[]) => spawnSync(...args));
+  bunRuntimeMocks.mkdir.mockImplementation(async () => undefined);
   bunRuntimeMocks.mkdtemp.mockImplementation(async () => opts?.mkdtempValue ?? "/tmp/clawhub-test");
   bunRuntimeMocks.rm.mockImplementation(async () => undefined);
   bunRuntimeMocks.writeFile.mockImplementation(async () => undefined);
@@ -72,6 +75,7 @@ async function loadHttpModuleWithBunMocks(opts?: {
   return {
     http,
     spawnSync: bunRuntimeMocks.spawnSync,
+    mkdir: bunRuntimeMocks.mkdir,
     mkdtemp: bunRuntimeMocks.mkdtemp,
     rm: bunRuntimeMocks.rm,
     writeFile: bunRuntimeMocks.writeFile,
@@ -269,6 +273,7 @@ describe("http bun runtime", () => {
     });
     const {
       http: httpClient,
+      mkdir,
       writeFile,
       rm,
     } = await loadHttpModuleWithBunMocks({
@@ -278,7 +283,7 @@ describe("http bun runtime", () => {
 
     const form = new FormData();
     form.append("name", "demo");
-    form.append("file", new Blob(["abc"], { type: "text/plain" }), "demo.txt");
+    form.append("file", new Blob(["abc"], { type: "text/plain" }), "dist/demo.txt");
 
     const result = await httpClient.apiRequestForm<{ ok: boolean }>("https://registry.example", {
       method: "POST",
@@ -287,11 +292,12 @@ describe("http bun runtime", () => {
     });
 
     expect(result).toEqual({ ok: true });
+    expect(mkdir).toHaveBeenCalledWith("/tmp/clawhub-upload-abc/dist", { recursive: true });
     expect(writeFile).toHaveBeenCalled();
     expect(rm).toHaveBeenCalledWith("/tmp/clawhub-upload-abc", { recursive: true, force: true });
     const [, args] = spawnSync.mock.calls[0] as [string, string[]];
     expect(args).toContain("-F");
     expect(args.some((arg) => arg.includes("name=demo"))).toBe(true);
-    expect(args.some((arg) => arg.includes("file=@/tmp/clawhub-upload-abc/demo.txt"))).toBe(true);
+    expect(args.some((arg) => arg.includes("file=@/tmp/clawhub-upload-abc/dist/demo.txt"))).toBe(true);
   });
 });

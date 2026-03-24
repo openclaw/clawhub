@@ -20,6 +20,30 @@ import {
   SECURITY_EVALUATOR_SYSTEM_PROMPT,
 } from "./lib/securityPrompt";
 
+const internalRefs = internal as unknown as {
+  packages: {
+    getReleaseByIdInternal: unknown;
+    getPackageByIdInternal: unknown;
+    updateReleaseLlmAnalysisInternal: unknown;
+  };
+};
+
+async function runQueryRef<T>(
+  ctx: { runQuery: (ref: never, args: never) => Promise<unknown> },
+  ref: unknown,
+  args: unknown,
+): Promise<T> {
+  return (await ctx.runQuery(ref as never, args as never)) as T;
+}
+
+async function runMutationRef<T>(
+  ctx: { runMutation: (ref: never, args: never) => Promise<unknown> },
+  ref: unknown,
+  args: unknown,
+): Promise<T> {
+  return (await ctx.runMutation(ref as never, args as never)) as T;
+}
+
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
@@ -246,6 +270,176 @@ export const evaluateWithLlm = internalAction({
 
     // Moderation visibility is finalized by VT results.
     // LLM eval only stores analysis payload on the version.
+  },
+});
+
+export const evaluatePackageReleaseWithLlm = internalAction({
+  args: {
+    releaseId: v.id("packageReleases"),
+  },
+  handler: async (ctx, args) => {
+    const apiKey = process.env.OPENAI_API_KEY;
+    if (!apiKey) {
+      console.log("[llmEval] OPENAI_API_KEY not configured, skipping package evaluation");
+      return;
+    }
+
+    const model = getLlmEvalModel();
+    const storeError = async (message: string) => {
+      console.error(`[llmEval:package] ${message}`);
+      await runMutationRef(ctx, internalRefs.packages.updateReleaseLlmAnalysisInternal, {
+        releaseId: args.releaseId,
+        llmAnalysis: {
+          status: "error",
+          summary: message,
+          model,
+          checkedAt: Date.now(),
+        },
+      });
+    };
+
+    const release = (await runQueryRef(ctx, internalRefs.packages.getReleaseByIdInternal, {
+      releaseId: args.releaseId,
+    })) as Doc<"packageReleases"> | null;
+    if (!release || release.softDeletedAt) {
+      await storeError(`Release ${args.releaseId} not found`);
+      return;
+    }
+
+    const pkg = (await runQueryRef(ctx, internalRefs.packages.getPackageByIdInternal, {
+      packageId: release.packageId,
+    })) as Doc<"packages"> | null;
+    if (!pkg) {
+      await storeError(`Package ${release.packageId} not found`);
+      return;
+    }
+
+    let readmeContent = "";
+    const fileContents: Array<{ path: string; content: string }> = [];
+    for (const f of release.files) {
+      try {
+        const blob = await ctx.storage.get(f.storageId as Id<"_storage">);
+        if (!blob) continue;
+        const content = await blob.text();
+        fileContents.push({ path: f.path, content });
+        const lower = f.path.toLowerCase();
+        if (!readmeContent && (lower === "readme.md" || lower === "readme.mdx" || lower === "readme.markdown")) {
+          readmeContent = content;
+        }
+      } catch {
+        // Best-effort read.
+      }
+    }
+
+    if (!readmeContent) {
+      const packageJsonText = fileContents.find((entry) => entry.path.toLowerCase() === "package.json")?.content;
+      readmeContent = packageJsonText ?? `# ${pkg.displayName}\n\n${release.summary ?? pkg.summary ?? pkg.name}`;
+    }
+
+    const allContent = [readmeContent, ...fileContents.map((f) => f.content)].join("\n");
+    const injectionSignals = detectInjectionPatterns(allContent);
+
+    const evalCtx: SkillEvalContext = {
+      slug: pkg.name,
+      displayName: pkg.displayName,
+      ownerUserId: String(pkg.ownerUserId),
+      version: release.version,
+      createdAt: release.createdAt,
+      summary: release.summary ?? pkg.summary ?? undefined,
+      source: pkg.sourceRepo ?? undefined,
+      homepage: undefined,
+      parsed: {
+        frontmatter: {},
+        metadata: {
+          compatibility: release.compatibility,
+          capabilities: release.capabilities,
+          verification: release.verification,
+          staticScan: release.staticScan,
+        },
+      },
+      files: release.files.map((f) => ({ path: f.path, size: f.size })),
+      skillMdContent: readmeContent,
+      fileContents,
+      injectionSignals,
+    };
+
+    const userMessage = assembleEvalUserMessage(evalCtx);
+    const MAX_RETRIES = 3;
+    let raw: string | null = null;
+    try {
+      const body = JSON.stringify({
+        model,
+        instructions: SECURITY_EVALUATOR_SYSTEM_PROMPT,
+        input: userMessage,
+        max_output_tokens: LLM_EVAL_MAX_OUTPUT_TOKENS,
+        text: {
+          format: {
+            type: "json_object",
+          },
+        },
+      });
+
+      let response: Response | null = null;
+      for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
+        response = await fetch("https://api.openai.com/v1/responses", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${apiKey}`,
+          },
+          body,
+        });
+
+        if (response.status === 429 || response.status >= 500) {
+          if (attempt < MAX_RETRIES) {
+            const delay = 2 ** attempt * 2000 + Math.random() * 1000;
+            await new Promise((r) => setTimeout(r, delay));
+            continue;
+          }
+        }
+        break;
+      }
+
+      if (!response || !response.ok) {
+        const errorText = response ? await response.text() : "No response";
+        await storeError(`OpenAI API error (${response?.status}): ${errorText.slice(0, 200)}`);
+        return;
+      }
+
+      const payload = (await response.json()) as unknown;
+      raw = extractResponseText(payload);
+    } catch (error) {
+      await storeError(
+        `OpenAI API call failed: ${error instanceof Error ? error.message : String(error)}`,
+      );
+      return;
+    }
+
+    if (!raw) {
+      await storeError("Empty response from OpenAI");
+      return;
+    }
+
+    const result = parseLlmEvalResponse(raw);
+    if (!result) {
+      await storeError("Failed to parse LLM evaluation response");
+      return;
+    }
+
+    await runMutationRef(ctx, internalRefs.packages.updateReleaseLlmAnalysisInternal, {
+      releaseId: args.releaseId,
+      llmAnalysis: {
+        status: verdictToStatus(result.verdict),
+        verdict: result.verdict,
+        confidence: result.confidence,
+        summary: result.summary,
+        dimensions: result.dimensions,
+        guidance: result.guidance,
+        findings: result.findings || undefined,
+        model,
+        checkedAt: Date.now(),
+      },
+    });
   },
 });
 

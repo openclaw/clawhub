@@ -13,15 +13,11 @@ jobs:
   preflight-secrets:
     runs-on: ubuntu-latest
     timeout-minutes: 5
-    outputs:
-      can_deploy: ${{ steps.check.outputs.can_deploy }}
     env:
       CONVEX_DEPLOY_KEY: ${{ secrets.CONVEX_DEPLOY_KEY }}
-      VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
       PLAYWRIGHT_AUTH_STORAGE_STATE_JSON: ${{ secrets.PLAYWRIGHT_AUTH_STORAGE_STATE_JSON }}
     steps:
-      - id: check
-        name: Check deploy secrets
+      - name: Check deploy secrets
         run: |
           missing=()
 
@@ -29,15 +25,9 @@ jobs:
             missing+=("CONVEX_DEPLOY_KEY")
           fi
 
-          if [[ -z "$VERCEL_TOKEN" ]]; then
-            missing+=("VERCEL_TOKEN")
-          fi
-
           if (( ${#missing[@]} > 0 )); then
-            echo "can_deploy=false" >> "$GITHUB_OUTPUT"
-            echo "::warning::Skipping deploy; missing required GitHub Actions secrets: ${missing[*]}"
-          else
-            echo "can_deploy=true" >> "$GITHUB_OUTPUT"
+            echo "::error::Missing required GitHub Actions secrets: ${missing[*]}"
+            exit 1
           fi
 
           if [[ -z "$PLAYWRIGHT_AUTH_STORAGE_STATE_JSON" ]]; then
@@ -48,7 +38,6 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 20
     needs: preflight-secrets
-    if: needs.preflight-secrets.outputs.can_deploy == 'true'
     env:
       CONVEX_DEPLOY_KEY: ${{ secrets.CONVEX_DEPLOY_KEY }}
     steps:
@@ -73,34 +62,47 @@ jobs:
       - name: Verify Convex contract
         run: bun run verify:convex-contract -- --prod
 
-  deploy-web:
+  wait-vercel-production:
     runs-on: ubuntu-latest
     timeout-minutes: 20
     needs:
       - preflight-secrets
       - deploy-convex
-    if: needs.preflight-secrets.outputs.can_deploy == 'true'
-    env:
-      VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
-      VITE_APP_BUILD_SHA: ${{ github.sha }}
     steps:
-      - uses: actions/checkout@v6
+      - name: Wait for Vercel production deployment
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+          GITHUB_SHA: ${{ github.sha }}
+          VERCEL_STATUS_CONTEXT: Vercel – clawhub
+        run: |
+          for attempt in {1..90}; do
+            state="$(gh api "repos/$GITHUB_REPOSITORY/commits/$GITHUB_SHA/status" \
+              --jq '.statuses[] | select(.context == env.VERCEL_STATUS_CONTEXT) | .state' \
+              2>/dev/null | head -n1)"
 
-      - uses: oven-sh/setup-bun@e3914758a49697077f7bcd190d36582a61667aad
-        with:
-          bun-version: 1.3.10
+            case "$state" in
+              success)
+                echo "Vercel production deployment ready for $GITHUB_SHA"
+                exit 0
+                ;;
+              failure|error)
+                echo "::error::Vercel production deployment failed for $GITHUB_SHA"
+                exit 1
+                ;;
+              pending)
+                echo "Vercel deployment pending for $GITHUB_SHA; waiting..."
+                ;;
+              *)
+                echo "Vercel status for $GITHUB_SHA not published yet; waiting..."
+                ;;
+            esac
 
-      - name: Install
-        run: bun install --frozen-lockfile
+            sleep 10
+          done
 
-      - name: Pull Vercel config
-        run: bunx vercel pull --yes --environment=production --token "$VERCEL_TOKEN"
-
-      - name: Build Vercel app
-        run: bunx vercel build --prod --token "$VERCEL_TOKEN"
-
-      - name: Deploy Vercel app
-        run: bunx vercel deploy --prebuilt --prod --token "$VERCEL_TOKEN"
+          echo "::error::Timed out waiting for Vercel production deployment for $GITHUB_SHA"
+          exit 1
 
   smoke-production:
     runs-on: ubuntu-latest
@@ -108,8 +110,7 @@ jobs:
     needs:
       - preflight-secrets
       - deploy-convex
-      - deploy-web
-    if: needs.preflight-secrets.outputs.can_deploy == 'true'
+      - wait-vercel-production
     env:
       PLAYWRIGHT_BASE_URL: https://clawhub.ai
     steps:

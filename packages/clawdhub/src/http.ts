@@ -1,7 +1,7 @@
 import { spawnSync } from "node:child_process";
-import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import pRetry, { AbortError } from "p-retry";
 import { Agent, EnvHttpProxyAgent, setGlobalDispatcher } from "undici";
 import type { ArkValidator } from "./schema/index.js";
@@ -431,6 +431,7 @@ async function fetchJsonFormViaCurl(url: string, args: FormRequestArgs) {
         const filename = typeof (value as File).name === "string" ? (value as File).name : "file";
         const filePath = join(tempDir, filename);
         const bytes = new Uint8Array(await value.arrayBuffer());
+        await mkdir(dirname(filePath), { recursive: true });
         await writeFile(filePath, bytes);
         formArgs.push("-F", `${key}=@${filePath};filename=${filename}`);
       } else {

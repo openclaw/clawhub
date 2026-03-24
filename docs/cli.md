@@ -208,6 +208,12 @@ Stores your API token + cached registry URL.
 - `--fuzzy` resolves the handle via fuzzy user search (admin only).
 - `--yes` skips confirmation.
 
+### `package publish <path>`
+
+- Publishes a code plugin or bundle plugin via `POST /api/v1/packages`.
+- `--owner <handle>` lets admins publish under a shared owner account while keeping their own token as the actor.
+- Code plugins still require `--source-repo` and `--source-commit`.
+
 ### `sync`
 
 - Scans for local skill folders and publishes new/changed ones.

@@ -28,6 +28,7 @@ const users = defineTable({
   githubFetchedAt: v.optional(v.number()),
   githubProfileSyncedAt: v.optional(v.number()),
   trustedPublisher: v.optional(v.boolean()),
+  personalPublisherId: v.optional(v.id("publishers")),
   requiresModerationAt: v.optional(v.number()),
   requiresModerationReason: v.optional(v.string()),
   deactivatedAt: v.optional(v.number()),
@@ -40,6 +41,34 @@ const users = defineTable({
   .index("email", ["email"])
   .index("phone", ["phone"])
   .index("handle", ["handle"]);
+
+const publishers = defineTable({
+  kind: v.union(v.literal("user"), v.literal("org")),
+  handle: v.string(),
+  displayName: v.string(),
+  bio: v.optional(v.string()),
+  image: v.optional(v.string()),
+  linkedUserId: v.optional(v.id("users")),
+  trustedPublisher: v.optional(v.boolean()),
+  deactivatedAt: v.optional(v.number()),
+  deletedAt: v.optional(v.number()),
+  createdAt: v.number(),
+  updatedAt: v.number(),
+})
+  .index("by_handle", ["handle"])
+  .index("by_linked_user", ["linkedUserId"])
+  .index("by_kind_handle", ["kind", "handle"]);
+
+const publisherMembers = defineTable({
+  publisherId: v.id("publishers"),
+  userId: v.id("users"),
+  role: v.union(v.literal("owner"), v.literal("admin"), v.literal("publisher")),
+  createdAt: v.number(),
+  updatedAt: v.number(),
+})
+  .index("by_publisher", ["publisherId"])
+  .index("by_user", ["userId"])
+  .index("by_publisher_user", ["publisherId", "userId"]);
 
 // Shared validator fragments used by both `skills` and `skillSearchDigest`.
 const forkOfValidator = v.optional(
@@ -75,12 +104,117 @@ const moderationStatusValidator = v.optional(
   v.union(v.literal("active"), v.literal("hidden"), v.literal("removed")),
 );
 
+const packageFamilyValidator = v.union(
+  v.literal("skill"),
+  v.literal("code-plugin"),
+  v.literal("bundle-plugin"),
+);
+
+const packageChannelValidator = v.union(
+  v.literal("official"),
+  v.literal("community"),
+  v.literal("private"),
+);
+
+const packageVerificationTierValidator = v.union(
+  v.literal("structural"),
+  v.literal("source-linked"),
+  v.literal("provenance-verified"),
+  v.literal("rebuild-verified"),
+);
+
+const packageVerificationScopeValidator = v.union(
+  v.literal("artifact-only"),
+  v.literal("dependency-graph-aware"),
+);
+
+const packageStatsValidator = v.object({
+  downloads: v.number(),
+  installs: v.number(),
+  stars: v.number(),
+  versions: v.number(),
+});
+
+const packageCompatibilityValidator = v.optional(
+  v.object({
+    pluginApiRange: v.optional(v.string()),
+    builtWithOpenClawVersion: v.optional(v.string()),
+    pluginSdkVersion: v.optional(v.string()),
+    minGatewayVersion: v.optional(v.string()),
+  }),
+);
+
+const packageCapabilitiesValidator = v.optional(
+  v.object({
+    executesCode: v.boolean(),
+    runtimeId: v.optional(v.string()),
+    pluginKind: v.optional(v.string()),
+    channels: v.optional(v.array(v.string())),
+    providers: v.optional(v.array(v.string())),
+    hooks: v.optional(v.array(v.string())),
+    bundledSkills: v.optional(v.array(v.string())),
+    setupEntry: v.optional(v.boolean()),
+    configSchema: v.optional(v.boolean()),
+    configUiHints: v.optional(v.boolean()),
+    materializesDependencies: v.optional(v.boolean()),
+    toolNames: v.optional(v.array(v.string())),
+    commandNames: v.optional(v.array(v.string())),
+    serviceNames: v.optional(v.array(v.string())),
+    capabilityTags: v.optional(v.array(v.string())),
+    httpRouteCount: v.optional(v.number()),
+    bundleFormat: v.optional(v.string()),
+    hostTargets: v.optional(v.array(v.string())),
+  }),
+);
+
+const packageVerificationValidator = v.optional(
+  v.object({
+    tier: packageVerificationTierValidator,
+    scope: packageVerificationScopeValidator,
+    summary: v.optional(v.string()),
+    sourceRepo: v.optional(v.string()),
+    sourceCommit: v.optional(v.string()),
+    sourceTag: v.optional(v.string()),
+    hasProvenance: v.optional(v.boolean()),
+    scanStatus: v.optional(
+      v.union(
+        v.literal("clean"),
+        v.literal("suspicious"),
+        v.literal("malicious"),
+        v.literal("pending"),
+        v.literal("not-run"),
+      ),
+    ),
+  }),
+);
+
+const packageScanStatusValidator = v.optional(
+  v.union(
+    v.literal("clean"),
+    v.literal("suspicious"),
+    v.literal("malicious"),
+    v.literal("pending"),
+    v.literal("not-run"),
+  ),
+);
+
+const packageFilesValidator = v.array(
+  v.object({
+    path: v.string(),
+    size: v.number(),
+    storageId: v.id("_storage"),
+    sha256: v.string(),
+    contentType: v.optional(v.string()),
+  }),
+);
+
 const skills = defineTable({
   slug: v.string(),
   displayName: v.string(),
   summary: v.optional(v.string()),
   resourceId: v.optional(v.string()),
   ownerUserId: v.id("users"),
+  ownerPublisherId: v.optional(v.id("publishers")),
   canonicalSkillId: v.optional(v.id("skills")),
   forkOf: forkOfValidator,
   latestVersionId: v.optional(v.id("skillVersions")),
@@ -161,6 +295,7 @@ const skills = defineTable({
 })
   .index("by_slug", ["slug"])
   .index("by_owner", ["ownerUserId"])
+  .index("by_owner_publisher", ["ownerPublisherId"])
   .index("by_updated", ["updatedAt"])
   .index("by_stats_downloads", ["statsDownloads", "updatedAt"])
   .index("by_stats_stars", ["statsStars", "updatedAt"])
@@ -201,18 +336,21 @@ const skillSlugAliases = defineTable({
   slug: v.string(),
   skillId: v.id("skills"),
   ownerUserId: v.id("users"),
+  ownerPublisherId: v.optional(v.id("publishers")),
   createdAt: v.number(),
   updatedAt: v.number(),
 })
   .index("by_slug", ["slug"])
   .index("by_skill", ["skillId"])
-  .index("by_owner", ["ownerUserId"]);
+  .index("by_owner", ["ownerUserId"])
+  .index("by_owner_publisher", ["ownerPublisherId"]);
 
 const souls = defineTable({
   slug: v.string(),
   displayName: v.string(),
   summary: v.optional(v.string()),
   ownerUserId: v.id("users"),
+  ownerPublisherId: v.optional(v.id("publishers")),
   latestVersionId: v.optional(v.id("soulVersions")),
   tags: v.record(v.string(), v.id("soulVersions")),
   softDeletedAt: v.optional(v.number()),
@@ -227,6 +365,7 @@ const souls = defineTable({
 })
   .index("by_slug", ["slug"])
   .index("by_owner", ["ownerUserId"])
+  .index("by_owner_publisher", ["ownerPublisherId"])
   .index("by_updated", ["updatedAt"]);
 
 const skillVersions = defineTable({
@@ -377,6 +516,7 @@ const skillEmbeddings = defineTable({
   skillId: v.id("skills"),
   versionId: v.id("skillVersions"),
   ownerId: v.id("users"),
+  ownerPublisherId: v.optional(v.id("publishers")),
   embedding: v.array(v.number()),
   isLatest: v.boolean(),
   isApproved: v.boolean(),
@@ -407,7 +547,9 @@ const skillSearchDigest = defineTable({
   displayName: v.string(),
   summary: v.optional(v.string()),
   ownerUserId: v.id("users"),
+  ownerPublisherId: v.optional(v.id("publishers")),
   ownerHandle: v.optional(v.string()),
+  ownerKind: v.optional(v.union(v.literal("user"), v.literal("org"))),
   ownerName: v.optional(v.string()),
   ownerDisplayName: v.optional(v.string()),
   ownerImage: v.optional(v.string()),
@@ -463,6 +605,325 @@ const skillSearchDigest = defineTable({
     "softDeletedAt",
     "isSuspicious",
     "statsInstallsAllTime",
+    "updatedAt",
+  ]);
+
+const packages = defineTable({
+  name: v.string(),
+  normalizedName: v.string(),
+  displayName: v.string(),
+  summary: v.optional(v.string()),
+  ownerUserId: v.id("users"),
+  ownerPublisherId: v.optional(v.id("publishers")),
+  family: packageFamilyValidator,
+  channel: packageChannelValidator,
+  isOfficial: v.boolean(),
+  runtimeId: v.optional(v.string()),
+  sourceRepo: v.optional(v.string()),
+  latestReleaseId: v.optional(v.id("packageReleases")),
+  latestVersionSummary: v.optional(
+    v.object({
+      version: v.string(),
+      createdAt: v.number(),
+      changelog: v.string(),
+      compatibility: packageCompatibilityValidator,
+      capabilities: packageCapabilitiesValidator,
+      verification: packageVerificationValidator,
+    }),
+  ),
+  tags: v.record(v.string(), v.id("packageReleases")),
+  capabilityTags: v.optional(v.array(v.string())),
+  executesCode: v.optional(v.boolean()),
+  compatibility: packageCompatibilityValidator,
+  capabilities: packageCapabilitiesValidator,
+  verification: packageVerificationValidator,
+  scanStatus: packageScanStatusValidator,
+  stats: packageStatsValidator,
+  softDeletedAt: v.optional(v.number()),
+  createdAt: v.number(),
+  updatedAt: v.number(),
+})
+  .index("by_name", ["normalizedName"])
+  .index("by_owner", ["ownerUserId"])
+  .index("by_owner_publisher", ["ownerPublisherId"])
+  .index("by_family_updated", ["family", "updatedAt"])
+  .index("by_family_channel_updated", ["family", "channel", "updatedAt"])
+  .index("by_family_official_updated", ["family", "isOfficial", "updatedAt"])
+  .index("by_runtime_id", ["runtimeId"])
+  .index("by_active_updated", ["softDeletedAt", "updatedAt"]);
+
+const packageReleases = defineTable({
+  packageId: v.id("packages"),
+  version: v.string(),
+  changelog: v.string(),
+  summary: v.optional(v.string()),
+  distTags: v.array(v.string()),
+  files: packageFilesValidator,
+  integritySha256: v.string(),
+  extractedPackageJson: v.optional(v.any()),
+  extractedPluginManifest: v.optional(v.any()),
+  normalizedBundleManifest: v.optional(v.any()),
+  compatibility: packageCompatibilityValidator,
+  capabilities: packageCapabilitiesValidator,
+  verification: packageVerificationValidator,
+  sha256hash: v.optional(v.string()),
+  vtAnalysis: v.optional(
+    v.object({
+      status: v.string(),
+      verdict: v.optional(v.string()),
+      analysis: v.optional(v.string()),
+      source: v.optional(v.string()),
+      checkedAt: v.number(),
+    }),
+  ),
+  llmAnalysis: v.optional(
+    v.object({
+      status: v.string(),
+      verdict: v.optional(v.string()),
+      confidence: v.optional(v.string()),
+      summary: v.optional(v.string()),
+      dimensions: v.optional(
+        v.array(
+          v.object({
+            name: v.string(),
+            label: v.string(),
+            rating: v.string(),
+            detail: v.string(),
+          }),
+        ),
+      ),
+      guidance: v.optional(v.string()),
+      findings: v.optional(v.string()),
+      model: v.optional(v.string()),
+      checkedAt: v.number(),
+    }),
+  ),
+  staticScan: v.optional(
+    v.object({
+      status: v.union(v.literal("clean"), v.literal("suspicious"), v.literal("malicious")),
+      reasonCodes: v.array(v.string()),
+      findings: v.array(
+        v.object({
+          code: v.string(),
+          severity: v.union(v.literal("info"), v.literal("warn"), v.literal("critical")),
+          file: v.string(),
+          line: v.number(),
+          message: v.string(),
+          evidence: v.string(),
+        }),
+      ),
+      summary: v.string(),
+      engineVersion: v.string(),
+      checkedAt: v.number(),
+    }),
+  ),
+  source: v.optional(v.any()),
+  createdBy: v.id("users"),
+  createdAt: v.number(),
+  softDeletedAt: v.optional(v.number()),
+})
+  .index("by_package", ["packageId"])
+  .index("by_package_active_created", ["packageId", "softDeletedAt", "createdAt"])
+  .index("by_package_version", ["packageId", "version"])
+  .index("by_sha256hash", ["sha256hash"]);
+
+const packageSearchDigest = defineTable({
+  packageId: v.id("packages"),
+  name: v.string(),
+  normalizedName: v.string(),
+  displayName: v.string(),
+  family: packageFamilyValidator,
+  channel: packageChannelValidator,
+  isOfficial: v.boolean(),
+  ownerUserId: v.id("users"),
+  ownerPublisherId: v.optional(v.id("publishers")),
+  ownerHandle: v.optional(v.string()),
+  ownerKind: v.optional(v.union(v.literal("user"), v.literal("org"))),
+  summary: v.optional(v.string()),
+  latestVersion: v.optional(v.string()),
+  runtimeId: v.optional(v.string()),
+  capabilityTags: v.optional(v.array(v.string())),
+  executesCode: v.optional(v.boolean()),
+  verificationTier: v.optional(packageVerificationTierValidator),
+  scanStatus: packageScanStatusValidator,
+  softDeletedAt: v.optional(v.number()),
+  createdAt: v.number(),
+  updatedAt: v.number(),
+})
+  .index("by_package", ["packageId"])
+  .index("by_active_updated", ["softDeletedAt", "updatedAt"])
+  .index("by_active_channel_updated", ["softDeletedAt", "channel", "updatedAt"])
+  .index("by_active_official_updated", ["softDeletedAt", "isOfficial", "updatedAt"])
+  .index("by_active_channel_official_updated", [
+    "softDeletedAt",
+    "channel",
+    "isOfficial",
+    "updatedAt",
+  ])
+  .index("by_active_executes_updated", ["softDeletedAt", "executesCode", "updatedAt"])
+  .index("by_active_family_updated", ["softDeletedAt", "family", "updatedAt"])
+  .index("by_active_family_channel_updated", ["softDeletedAt", "family", "channel", "updatedAt"])
+  .index("by_active_family_channel_executes_updated", [
+    "softDeletedAt",
+    "family",
+    "channel",
+    "executesCode",
+    "updatedAt",
+  ])
+  .index("by_active_family_executes_updated", [
+    "softDeletedAt",
+    "family",
+    "executesCode",
+    "updatedAt",
+  ])
+  .index("by_active_family_official_updated", [
+    "softDeletedAt",
+    "family",
+    "isOfficial",
+    "updatedAt",
+  ])
+  .index("by_active_family_official_executes_updated", [
+    "softDeletedAt",
+    "family",
+    "isOfficial",
+    "executesCode",
+    "updatedAt",
+  ])
+  .index("by_active_channel_executes_updated", [
+    "softDeletedAt",
+    "channel",
+    "executesCode",
+    "updatedAt",
+  ])
+  .index("by_active_channel_official_executes_updated", [
+    "softDeletedAt",
+    "channel",
+    "isOfficial",
+    "executesCode",
+    "updatedAt",
+  ])
+  .index("by_active_official_executes_updated", [
+    "softDeletedAt",
+    "isOfficial",
+    "executesCode",
+    "updatedAt",
+  ])
+  .index("by_active_name", ["softDeletedAt", "displayName"]);
+
+const packageCapabilitySearchDigest = defineTable({
+  packageId: v.id("packages"),
+  name: v.string(),
+  normalizedName: v.string(),
+  displayName: v.string(),
+  family: packageFamilyValidator,
+  channel: packageChannelValidator,
+  isOfficial: v.boolean(),
+  ownerUserId: v.id("users"),
+  ownerPublisherId: v.optional(v.id("publishers")),
+  ownerHandle: v.optional(v.string()),
+  ownerKind: v.optional(v.union(v.literal("user"), v.literal("org"))),
+  summary: v.optional(v.string()),
+  latestVersion: v.optional(v.string()),
+  runtimeId: v.optional(v.string()),
+  capabilityTags: v.optional(v.array(v.string())),
+  capabilityTag: v.string(),
+  executesCode: v.optional(v.boolean()),
+  verificationTier: v.optional(packageVerificationTierValidator),
+  scanStatus: packageScanStatusValidator,
+  softDeletedAt: v.optional(v.number()),
+  createdAt: v.number(),
+  updatedAt: v.number(),
+})
+  .index("by_package", ["packageId", "capabilityTag"])
+  .index("by_active_tag_updated", ["softDeletedAt", "capabilityTag", "updatedAt"])
+  .index("by_active_tag_executes_updated", [
+    "softDeletedAt",
+    "capabilityTag",
+    "executesCode",
+    "updatedAt",
+  ])
+  .index("by_active_family_tag_updated", [
+    "softDeletedAt",
+    "family",
+    "capabilityTag",
+    "updatedAt",
+  ])
+  .index("by_active_family_tag_executes_updated", [
+    "softDeletedAt",
+    "family",
+    "capabilityTag",
+    "executesCode",
+    "updatedAt",
+  ])
+  .index("by_active_channel_tag_updated", [
+    "softDeletedAt",
+    "channel",
+    "capabilityTag",
+    "updatedAt",
+  ])
+  .index("by_active_channel_tag_executes_updated", [
+    "softDeletedAt",
+    "channel",
+    "capabilityTag",
+    "executesCode",
+    "updatedAt",
+  ])
+  .index("by_active_official_tag_updated", [
+    "softDeletedAt",
+    "isOfficial",
+    "capabilityTag",
+    "updatedAt",
+  ])
+  .index("by_active_official_tag_executes_updated", [
+    "softDeletedAt",
+    "isOfficial",
+    "capabilityTag",
+    "executesCode",
+    "updatedAt",
+  ])
+  .index("by_active_family_channel_tag_updated", [
+    "softDeletedAt",
+    "family",
+    "channel",
+    "capabilityTag",
+    "updatedAt",
+  ])
+  .index("by_active_family_channel_tag_executes_updated", [
+    "softDeletedAt",
+    "family",
+    "channel",
+    "capabilityTag",
+    "executesCode",
+    "updatedAt",
+  ])
+  .index("by_active_family_official_tag_updated", [
+    "softDeletedAt",
+    "family",
+    "isOfficial",
+    "capabilityTag",
+    "updatedAt",
+  ])
+  .index("by_active_family_official_tag_executes_updated", [
+    "softDeletedAt",
+    "family",
+    "isOfficial",
+    "capabilityTag",
+    "executesCode",
+    "updatedAt",
+  ])
+  .index("by_active_channel_official_tag_updated", [
+    "softDeletedAt",
+    "channel",
+    "isOfficial",
+    "capabilityTag",
+    "updatedAt",
+  ])
+  .index("by_active_channel_official_tag_executes_updated", [
+    "softDeletedAt",
+    "channel",
+    "isOfficial",
+    "capabilityTag",
+    "executesCode",
     "updatedAt",
   ]);
 
@@ -703,6 +1164,18 @@ const reservedSlugs = defineTable({
   .index("by_owner", ["originalOwnerUserId"])
   .index("by_expiry", ["expiresAt"]);
 
+const reservedHandles = defineTable({
+  handle: v.string(),
+  rightfulOwnerUserId: v.id("users"),
+  reason: v.optional(v.string()),
+  releasedAt: v.optional(v.number()),
+  createdAt: v.number(),
+  updatedAt: v.number(),
+})
+  .index("by_handle", ["handle"])
+  .index("by_handle_active_updatedAt", ["handle", "releasedAt", "updatedAt"])
+  .index("by_owner", ["rightfulOwnerUserId"]);
+
 const githubBackupSyncState = defineTable({
   key: v.string(),
   cursor: v.optional(v.string()),
@@ -774,8 +1247,14 @@ const skillOwnershipTransfers = defineTable({
 export default defineSchema({
   ...authTables,
   users,
+  publishers,
+  publisherMembers,
   skills,
   skillSlugAliases,
+  packages,
+  packageReleases,
+  packageSearchDigest,
+  packageCapabilitySearchDigest,
   souls,
   skillVersions,
   soulVersions,
@@ -804,6 +1283,7 @@ export default defineSchema({
   rateLimits,
   downloadDedupes,
   reservedSlugs,
+  reservedHandles,
   githubBackupSyncState,
   userSyncRoots,
   userSkillInstalls,

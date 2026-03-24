@@ -8,6 +8,8 @@ read_when:
 
 # Security + Moderation
 
+See also: [acceptable-usage.md](./acceptable-usage.md) for the marketplace policy on prohibited skill categories.
+
 ## Roles + permissions
 
 - user: upload skills/souls (subject to GitHub age gate), report skills/comments.
@@ -42,6 +44,8 @@ read_when:
 ## Skill moderation pipeline
 
 - New skill publishes now persist a deterministic static scan result on the version.
+- Package/plugin scan backfills now also recompute deterministic static scan results for older releases,
+  so legacy plugin versions can surface OpenClaw scan findings without republishing.
 - Skill moderation state stores a structured snapshot:
   - `moderationVerdict`: `clean | suspicious | malicious`
   - `moderationReasonCodes[]`: canonical machine-readable reasons

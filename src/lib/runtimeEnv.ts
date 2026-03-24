@@ -25,8 +25,9 @@ export function getRequiredRuntimeEnv(name: string) {
 }
 
 export function isDevRuntime() {
-  if (typeof window === "undefined") {
-    return process.env.NODE_ENV !== "production";
+  const nodeEnv = readProcessEnv("NODE_ENV");
+  if (nodeEnv) {
+    return nodeEnv !== "production";
   }
   return Boolean(import.meta.env.DEV);
 }

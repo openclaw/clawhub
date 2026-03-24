@@ -5,9 +5,9 @@ import { corsHeaders, mergeHeaders } from "./httpHeaders";
 
 const RATE_LIMIT_WINDOW_MS = 60_000;
 export const RATE_LIMITS = {
-  read: { ip: 120, key: 600 },
-  write: { ip: 30, key: 120 },
-  download: { ip: 20, key: 120 },
+  read: { ip: 180, key: 900 },
+  write: { ip: 45, key: 180 },
+  download: { ip: 30, key: 180 },
 } as const;
 
 type RateLimitResult = {

@@ -5,27 +5,32 @@ import type { QueryCtx } from "./_generated/server";
 import { action, internalQuery } from "./functions";
 import { isSkillHighlighted } from "./lib/badges";
 import { generateEmbedding } from "./lib/embeddings";
-import type { HydratableSkill } from "./lib/public";
-import { toPublicSkill, toPublicSoul, toPublicUser } from "./lib/public";
+import type { HydratableSkill, PublicPublisher } from "./lib/public";
+import { toPublicPublisher, toPublicSkill, toPublicSoul } from "./lib/public";
+import { getOwnerPublisher } from "./lib/publishers";
 import { matchesExactTokens, partitionQueryTokens, tokenize } from "./lib/searchText";
 import { isSkillSuspicious } from "./lib/skillSafety";
 import { digestToHydratableSkill, digestToOwnerInfo } from "./lib/skillSearchDigest";
 
-type OwnerInfo = { ownerHandle: string | null; owner: ReturnType<typeof toPublicUser> | null };
+type OwnerInfo = { ownerHandle: string | null; owner: PublicPublisher | null };
 
 function makeOwnerInfoGetter(ctx: Pick<QueryCtx, "db">) {
-  const ownerCache = new Map<Id<"users">, Promise<OwnerInfo>>();
-  return (ownerUserId: Id<"users">) => {
-    const cached = ownerCache.get(ownerUserId);
+  const ownerCache = new Map<string, Promise<OwnerInfo>>();
+  return (ownerUserId: Id<"users">, ownerPublisherId?: Id<"publishers"> | null) => {
+    const cacheKey = String(ownerPublisherId ?? ownerUserId);
+    const cached = ownerCache.get(cacheKey);
     if (cached) return cached;
-    const ownerPromise = ctx.db.get(ownerUserId).then((ownerDoc) => {
-      const owner = toPublicUser(ownerDoc);
+    const ownerPromise = getOwnerPublisher(ctx, {
+      ownerPublisherId,
+      ownerUserId,
+    }).then((ownerDoc) => {
+      const owner = toPublicPublisher(ownerDoc);
       return {
-        ownerHandle: owner?.handle ?? owner?.name ?? null,
+        ownerHandle: owner?.handle ?? null,
         owner,
       };
     });
-    ownerCache.set(ownerUserId, ownerPromise);
+    ownerCache.set(cacheKey, ownerPromise);
     return ownerPromise;
   };
 }
@@ -35,7 +40,7 @@ type SkillSearchEntry = {
   skill: NonNullable<ReturnType<typeof toPublicSkill>>;
   version: Doc<"skillVersions"> | null;
   ownerHandle: string | null;
-  owner: ReturnType<typeof toPublicUser> | null;
+  owner: PublicPublisher | null;
 };
 
 type SearchResult = SkillSearchEntry & { score: number };
@@ -319,7 +324,9 @@ export const hydrateResults = internalQuery({
         // Use pre-resolved owner from digest to avoid reading the users table.
         // Fall back to live lookup when digest owner is null (deactivated/deleted user).
         const preResolved = digest ? digestToOwnerInfo(digest) : null;
-        const resolved = preResolved?.owner ? preResolved : await getOwnerInfo(skill.ownerUserId);
+        const resolved = preResolved?.owner
+          ? preResolved
+          : await getOwnerInfo(skill.ownerUserId, skill.ownerPublisherId);
         const publicSkill = toPublicSkill(skill);
         if (!publicSkill || !resolved.owner) return null;
         return {
@@ -351,7 +358,7 @@ export const lexicalFallbackSkills = internalQuery({
     // Keep digest rows around so we can resolve owner info without hitting users table.
     const preResolvedOwners = new Map<
       Id<"skills">,
-      { ownerHandle: string | null; owner: ReturnType<typeof toPublicUser> | null }
+      { ownerHandle: string | null; owner: PublicPublisher | null }
     >();
 
     // Exact slug match via the skills table (only one row, cheap).
@@ -400,7 +407,9 @@ export const lexicalFallbackSkills = internalQuery({
     const entries = await Promise.all(
       matched.map(async (skill) => {
         const preResolved = preResolvedOwners.get(skill._id);
-        const resolved = preResolved?.owner ? preResolved : await getOwnerInfo(skill.ownerUserId);
+        const resolved = preResolved?.owner
+          ? preResolved
+          : await getOwnerInfo(skill.ownerUserId, skill.ownerPublisherId);
         const publicSkill = toPublicSkill(skill);
         if (!publicSkill || !resolved.owner) return null;
         return {

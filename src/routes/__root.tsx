@@ -1,13 +1,10 @@
-import { TanStackDevtools } from "@tanstack/react-devtools";
 import { createRootRoute, HeadContent, Scripts } from "@tanstack/react-router";
-import { TanStackRouterDevtoolsPanel } from "@tanstack/react-router-devtools";
 import { Analytics } from "@vercel/analytics/react";
 import { AppProviders } from "../components/AppProviders";
 import { ClientOnly } from "../components/ClientOnly";
 import { DeploymentDriftBanner } from "../components/DeploymentDriftBanner";
 import { Footer } from "../components/Footer";
 import Header from "../components/Header";
-import { isDevRuntime } from "../lib/runtimeEnv";
 import { getSiteDescription, getSiteMode, getSiteName, getSiteUrlForMode } from "../lib/site";
 import appCss from "../styles.css?url";
 
@@ -118,19 +115,6 @@ function RootDocument({ children }: { children: React.ReactNode }) {
           </div>
           <ClientOnly>
             <Analytics />
-            {isDevRuntime() ? (
-              <TanStackDevtools
-                config={{
-                  position: "bottom-right",
-                }}
-                plugins={[
-                  {
-                    name: "Tanstack Router",
-                    render: <TanStackRouterDevtoolsPanel />,
-                  },
-                ]}
-              />
-            ) : null}
           </ClientOnly>
         </AppProviders>
         <Scripts />

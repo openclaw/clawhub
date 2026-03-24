@@ -31,8 +31,15 @@ gh workflow run deploy.yml
 GitHub Actions secrets required for `deploy.yml`:
 
 - `CONVEX_DEPLOY_KEY`
-- `VERCEL_TOKEN`
 - Optional: `PLAYWRIGHT_AUTH_STORAGE_STATE_JSON` for authenticated smoke coverage
+
+`deploy.yml` now fails in preflight if `CONVEX_DEPLOY_KEY` is missing. Web deploy
+verification no longer depends on a separate Vercel token in GitHub Actions.
+
+That workflow assumes Vercel Git integration is enabled for this repo. It does
+not run `vercel deploy` directly; instead it waits for the GitHub commit status
+`Vercel – clawhub` for the pushed SHA, then runs smoke tests against
+production.
 
 Ensure Convex env is set (auth + embeddings):
 
@@ -60,10 +67,8 @@ Deploy order:
 
 1. Convex
 2. contract verify
-3. web
+3. wait for Vercel production deploy for the same Git SHA
 4. smoke
-
-Do not let Vercel auto-promote a newer web build before Convex is deployed.
 
 ## 3) Route `/api/*` to Convex
 
