@@ -113,5 +113,6 @@ All skills require AIVI credits. Add credits at app.aivi.io → Billing.
 | launch_sequence (three_day) | $1.50 |
 | launch_sequence (twelve_day) | $3.00 |
 | Booking add-on | +$1.00 |
-| onboard_organization | Free (includes $5 trial credits) |
 | decide_next_action | Free |
+| get_outcome | Free |
+| onboard_organization | Free (includes $5 trial credits) |
