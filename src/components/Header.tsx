@@ -236,24 +236,20 @@ export default function Header() {
             </DropdownMenu>
           </div>
           <div className="theme-toggle" ref={toggleRef}>
-            <ToggleGroup
-              type="single"
-              value={mode}
-              onValueChange={(value) => {
-                if (!value) return;
-                setTheme(value as "system" | "light" | "dark");
-              }}
-              aria-label="Theme mode"
-            >
-              <ToggleGroupItem value="system" aria-label="System theme">
+            {/* I wire onClick on each item directly rather than relying on
+                onValueChange, because Radix ToggleGroup sends an empty string
+                when you re-click the already-active pill — which quietly
+                swallows the event and makes the toggle feel broken. */}
+            <ToggleGroup type="single" value={mode} aria-label="Theme mode">
+              <ToggleGroupItem value="system" aria-label="System theme" onClick={() => setTheme("system")}>
                 <Monitor className="h-4 w-4" aria-hidden="true" />
                 <span className="sr-only">System</span>
               </ToggleGroupItem>
-              <ToggleGroupItem value="light" aria-label="Light theme">
+              <ToggleGroupItem value="light" aria-label="Light theme" onClick={() => setTheme("light")}>
                 <Sun className="h-4 w-4" aria-hidden="true" />
                 <span className="sr-only">Light</span>
               </ToggleGroupItem>
-              <ToggleGroupItem value="dark" aria-label="Dark theme">
+              <ToggleGroupItem value="dark" aria-label="Dark theme" onClick={() => setTheme("dark")}>
                 <Moon className="h-4 w-4" aria-hidden="true" />
                 <span className="sr-only">Dark</span>
               </ToggleGroupItem>

@@ -3,14 +3,13 @@ import { useEffect, useState } from "react";
 export type ThemeMode = "system" | "light" | "dark";
 
 const THEME_KEY = "clawhub-theme";
-const LEGACY_THEME_KEY = "clawdhub-theme";
 
 export function getStoredTheme(): ThemeMode {
   if (typeof window === "undefined") return "system";
   const stored = window.localStorage.getItem(THEME_KEY);
   if (stored === "light" || stored === "dark" || stored === "system") return stored;
-  const legacy = window.localStorage.getItem(LEGACY_THEME_KEY);
-  if (legacy === "light" || legacy === "dark" || legacy === "system") return legacy;
+  // Legacy "clawdhub-theme" key is intentionally dropped here — it could
+  // trick a first-time visitor into starting with "dark" from stale data.
   return "system";
 }
 

@@ -49,8 +49,13 @@ describe("theme", () => {
     expect(getStoredTheme()).toBe("dark");
     window.localStorage.setItem("clawhub-theme", "nope");
     expect(getStoredTheme()).toBe("system");
+  });
+
+  // The old "clawdhub-theme" key shouldn't affect anything anymore —
+  // I don't want stale data overriding a fresh visitor's default.
+  it("ignores the legacy clawdhub-theme storage key", () => {
     window.localStorage.setItem("clawdhub-theme", "dark");
-    expect(getStoredTheme()).toBe("dark");
+    expect(getStoredTheme()).toBe("system");
   });
 
   it("applies theme and toggles dark class", () => {
