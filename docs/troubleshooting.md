@@ -1,5 +1,5 @@
 ---
-summary: 'Common setup/runtime issues (CLI + backend) and fixes.'
+summary: "Common setup/runtime issues (CLI + backend) and fixes."
 read_when:
   - Something is broken and you need a fix-fast checklist
 ---
@@ -47,6 +47,7 @@ clawhub search "my query"
 ```
 
 The CLI respects `HTTPS_PROXY`, `HTTP_PROXY`, `https_proxy`, and `http_proxy`.
+
 ## `publish` fails with `OPENAI_API_KEY is not configured`
 
 - Set `OPENAI_API_KEY` in the Convex environment (not only locally).
@@ -89,4 +90,5 @@ clawhub sync --root /path/to/skills
   - `CONVEX_DEPLOY_KEY`
   - `VERCEL_TOKEN`
   - Optional: `PLAYWRIGHT_AUTH_STORAGE_STATE_JSON`
+- Missing required deploy secrets now fails the preflight job immediately.
 - If the optional Playwright auth secret is missing, authenticated smoke canaries will skip; deploy should still proceed.

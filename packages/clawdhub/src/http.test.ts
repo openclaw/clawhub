@@ -1,6 +1,6 @@
 /* @vitest-environment node */
 
-import { describe, expect, it, vi } from 'vitest'
+import { describe, expect, it, vi } from "vitest";
 import {
   apiRequest,
   apiRequestForm,
@@ -8,390 +8,390 @@ import {
   fetchText,
   registryUrl,
   shouldUseProxyFromEnv,
-} from './http'
-import { ApiV1WhoamiResponseSchema } from './schema/index.js'
+} from "./http";
+import { ApiV1WhoamiResponseSchema } from "./schema/index.js";
 
 function mockImmediateTimeouts() {
   const setTimeoutMock = vi.fn((callback: () => void, _ms?: number) => {
-    callback()
-    return 1 as unknown as ReturnType<typeof setTimeout>
-  })
-  const clearTimeoutMock = vi.fn()
-  vi.stubGlobal('setTimeout', setTimeoutMock as unknown as typeof setTimeout)
-  vi.stubGlobal('clearTimeout', clearTimeoutMock as typeof clearTimeout)
-  return { setTimeoutMock, clearTimeoutMock }
+    callback();
+    return 1 as unknown as ReturnType<typeof setTimeout>;
+  });
+  const clearTimeoutMock = vi.fn();
+  vi.stubGlobal("setTimeout", setTimeoutMock as unknown as typeof setTimeout);
+  vi.stubGlobal("clearTimeout", clearTimeoutMock as typeof clearTimeout);
+  return { setTimeoutMock, clearTimeoutMock };
 }
 
 function createAbortingFetchMock() {
   return vi.fn(async (_url: string, init?: RequestInit) => {
-    const signal = init?.signal
+    const signal = init?.signal;
     if (!signal || !(signal instanceof AbortSignal)) {
-      throw new Error('Missing abort signal')
+      throw new Error("Missing abort signal");
     }
     if (signal.aborted) {
-      throw signal.reason
+      throw signal.reason;
     }
     return await new Promise<Response>((_resolve, reject) => {
       signal.addEventListener(
-        'abort',
+        "abort",
         () => {
-          reject(signal.reason)
+          reject(signal.reason);
         },
         { once: true },
-      )
-    })
-  })
+      );
+    });
+  });
 }
 
-describe('shouldUseProxyFromEnv', () => {
-  it('detects standard proxy variables', () => {
+describe("shouldUseProxyFromEnv", () => {
+  it("detects standard proxy variables", () => {
     expect(
       shouldUseProxyFromEnv({
-        HTTPS_PROXY: 'http://proxy.example:3128',
+        HTTPS_PROXY: "http://proxy.example:3128",
       } as NodeJS.ProcessEnv),
-    ).toBe(true)
+    ).toBe(true);
     expect(
       shouldUseProxyFromEnv({
-        HTTP_PROXY: 'http://proxy.example:3128',
+        HTTP_PROXY: "http://proxy.example:3128",
       } as NodeJS.ProcessEnv),
-    ).toBe(true)
+    ).toBe(true);
     expect(
       shouldUseProxyFromEnv({
-        https_proxy: 'http://proxy.example:3128',
+        https_proxy: "http://proxy.example:3128",
       } as NodeJS.ProcessEnv),
-    ).toBe(true)
-  })
+    ).toBe(true);
+  });
 
-  it('ignores NO_PROXY-only configs', () => {
+  it("ignores NO_PROXY-only configs", () => {
     expect(
       shouldUseProxyFromEnv({
-        NO_PROXY: 'localhost,127.0.0.1',
+        NO_PROXY: "localhost,127.0.0.1",
       } as NodeJS.ProcessEnv),
-    ).toBe(false)
-    expect(shouldUseProxyFromEnv({} as NodeJS.ProcessEnv)).toBe(false)
-  })
-})
+    ).toBe(false);
+    expect(shouldUseProxyFromEnv({} as NodeJS.ProcessEnv)).toBe(false);
+  });
+});
 
-describe('registryUrl', () => {
-  it('works with a plain-origin registry (no base path)', () => {
-    expect(registryUrl('/api/v1/skills', 'https://clawhub.ai').toString()).toBe(
-      'https://clawhub.ai/api/v1/skills',
-    )
-  })
+describe("registryUrl", () => {
+  it("works with a plain-origin registry (no base path)", () => {
+    expect(registryUrl("/api/v1/skills", "https://clawhub.ai").toString()).toBe(
+      "https://clawhub.ai/api/v1/skills",
+    );
+  });
 
-  it('preserves the registry base path', () => {
-    const base = 'http://localhost:8081/custom/registry/path'
-    expect(registryUrl('/api/v1/skills', base).toString()).toBe(
-      'http://localhost:8081/custom/registry/path/api/v1/skills',
-    )
-  })
+  it("preserves the registry base path", () => {
+    const base = "http://localhost:8081/custom/registry/path";
+    expect(registryUrl("/api/v1/skills", base).toString()).toBe(
+      "http://localhost:8081/custom/registry/path/api/v1/skills",
+    );
+  });
 
-  it('handles a trailing slash on the registry', () => {
-    const base = 'http://localhost:8081/custom/registry/path/'
-    expect(registryUrl('/api/v1/skills', base).toString()).toBe(
-      'http://localhost:8081/custom/registry/path/api/v1/skills',
-    )
-  })
+  it("handles a trailing slash on the registry", () => {
+    const base = "http://localhost:8081/custom/registry/path/";
+    expect(registryUrl("/api/v1/skills", base).toString()).toBe(
+      "http://localhost:8081/custom/registry/path/api/v1/skills",
+    );
+  });
 
-  it('handles paths without a leading slash', () => {
-    expect(registryUrl('api/v1/skills', 'https://clawhub.ai').toString()).toBe(
-      'https://clawhub.ai/api/v1/skills',
-    )
-  })
+  it("handles paths without a leading slash", () => {
+    expect(registryUrl("api/v1/skills", "https://clawhub.ai").toString()).toBe(
+      "https://clawhub.ai/api/v1/skills",
+    );
+  });
 
-  it('handles compound paths with encoded segments', () => {
-    const base = 'http://localhost:8081/base'
-    const path = `/api/v1/skills/${encodeURIComponent('my-skill')}/versions`
+  it("handles compound paths with encoded segments", () => {
+    const base = "http://localhost:8081/base";
+    const path = `/api/v1/skills/${encodeURIComponent("my-skill")}/versions`;
     expect(registryUrl(path, base).toString()).toBe(
-      'http://localhost:8081/base/api/v1/skills/my-skill/versions',
-    )
-  })
-})
+      "http://localhost:8081/base/api/v1/skills/my-skill/versions",
+    );
+  });
+});
 
-describe('apiRequest', () => {
-  it('adds bearer token and parses json', async () => {
+describe("apiRequest", () => {
+  it("adds bearer token and parses json", async () => {
     const fetchMock = vi.fn().mockResolvedValue({
       ok: true,
       json: async () => ({ user: { handle: null } }),
-    })
-    vi.stubGlobal('fetch', fetchMock)
+    });
+    vi.stubGlobal("fetch", fetchMock);
     const result = await apiRequest(
-      'https://example.com',
-      { method: 'GET', path: '/x', token: 'clh_token' },
+      "https://example.com",
+      { method: "GET", path: "/x", token: "clh_token" },
       ApiV1WhoamiResponseSchema,
-    )
-    expect(result.user.handle).toBeNull()
-    expect(fetchMock).toHaveBeenCalledTimes(1)
-    const [, init] = fetchMock.mock.calls[0] as [string, RequestInit]
-    expect((init.headers as Record<string, string>).Authorization).toBe('Bearer clh_token')
-    vi.unstubAllGlobals()
-  })
+    );
+    expect(result.user.handle).toBeNull();
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    const [, init] = fetchMock.mock.calls[0] as [string, RequestInit];
+    expect((init.headers as Record<string, string>).Authorization).toBe("Bearer clh_token");
+    vi.unstubAllGlobals();
+  });
 
-  it('posts json body', async () => {
+  it("posts json body", async () => {
     const fetchMock = vi.fn().mockResolvedValue({
       ok: true,
       json: async () => ({ ok: true }),
-    })
-    vi.stubGlobal('fetch', fetchMock)
-    await apiRequest('https://example.com', {
-      method: 'POST',
-      path: '/x',
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    await apiRequest("https://example.com", {
+      method: "POST",
+      path: "/x",
       body: { a: 1 },
-    })
-    const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit]
-    expect(url).toBe('https://example.com/x')
-    expect(init.body).toBe(JSON.stringify({ a: 1 }))
-    expect((init.headers as Record<string, string>)['Content-Type']).toBe('application/json')
-    vi.unstubAllGlobals()
-  })
+    });
+    const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit];
+    expect(url).toBe("https://example.com/x");
+    expect(init.body).toBe(JSON.stringify({ a: 1 }));
+    expect((init.headers as Record<string, string>)["Content-Type"]).toBe("application/json");
+    vi.unstubAllGlobals();
+  });
 
-  it('throws text body on non-200', async () => {
+  it("throws text body on non-200", async () => {
     const fetchMock = vi.fn().mockResolvedValue({
       ok: false,
       status: 400,
-      text: async () => 'bad',
-    })
-    vi.stubGlobal('fetch', fetchMock)
-    await expect(apiRequest('https://example.com', { method: 'GET', path: '/x' })).rejects.toThrow(
-      'bad',
-    )
-    vi.unstubAllGlobals()
-  })
+      text: async () => "bad",
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    await expect(apiRequest("https://example.com", { method: "GET", path: "/x" })).rejects.toThrow(
+      "bad",
+    );
+    vi.unstubAllGlobals();
+  });
 
-  it('includes rate-limit guidance from headers on 429', async () => {
-    mockImmediateTimeouts()
+  it("includes rate-limit guidance from headers on 429", async () => {
+    mockImmediateTimeouts();
     const fetchMock = vi.fn().mockResolvedValue({
       ok: false,
       status: 429,
       headers: new Headers({
-        'Retry-After': '34',
-        'X-RateLimit-Limit': '20',
-        'X-RateLimit-Remaining': '0',
-        'X-RateLimit-Reset': '1771404540',
+        "Retry-After": "34",
+        "X-RateLimit-Limit": "20",
+        "X-RateLimit-Remaining": "0",
+        "X-RateLimit-Reset": "1771404540",
       }),
-      text: async () => 'Rate limit exceeded',
-    })
-    vi.stubGlobal('fetch', fetchMock)
+      text: async () => "Rate limit exceeded",
+    });
+    vi.stubGlobal("fetch", fetchMock);
 
-    await expect(apiRequest('https://example.com', { method: 'GET', path: '/x' })).rejects.toThrow(
+    await expect(apiRequest("https://example.com", { method: "GET", path: "/x" })).rejects.toThrow(
       /retry in 34s.*remaining: 0\/20.*reset in 34s/i,
-    )
-    expect(fetchMock).toHaveBeenCalledTimes(3)
-    vi.unstubAllGlobals()
-  })
+    );
+    expect(fetchMock).toHaveBeenCalledTimes(3);
+    vi.unstubAllGlobals();
+  });
 
-  it('interprets legacy epoch Retry-After values as reset delays', async () => {
-    mockImmediateTimeouts()
-    vi.spyOn(Date, 'now').mockReturnValue(1_771_404_500_000)
+  it("interprets legacy epoch Retry-After values as reset delays", async () => {
+    mockImmediateTimeouts();
+    vi.spyOn(Date, "now").mockReturnValue(1_771_404_500_000);
     const fetchMock = vi.fn().mockResolvedValue({
       ok: false,
       status: 429,
       headers: new Headers({
-        'Retry-After': '1771404540',
-        'X-RateLimit-Limit': '20',
-        'X-RateLimit-Remaining': '0',
+        "Retry-After": "1771404540",
+        "X-RateLimit-Limit": "20",
+        "X-RateLimit-Remaining": "0",
       }),
-      text: async () => 'Rate limit exceeded',
-    })
-    vi.stubGlobal('fetch', fetchMock)
+      text: async () => "Rate limit exceeded",
+    });
+    vi.stubGlobal("fetch", fetchMock);
 
-    await expect(apiRequest('https://example.com', { method: 'GET', path: '/x' })).rejects.toThrow(
+    await expect(apiRequest("https://example.com", { method: "GET", path: "/x" })).rejects.toThrow(
       /retry in 40s.*remaining: 0\/20/i,
-    )
-    vi.restoreAllMocks()
-    vi.unstubAllGlobals()
-  })
+    );
+    vi.restoreAllMocks();
+    vi.unstubAllGlobals();
+  });
 
-  it('falls back to HTTP status when body is empty', async () => {
-    mockImmediateTimeouts()
+  it("falls back to HTTP status when body is empty", async () => {
+    mockImmediateTimeouts();
     const fetchMock = vi.fn().mockResolvedValue({
       ok: false,
       status: 500,
-      text: async () => '',
-    })
-    vi.stubGlobal('fetch', fetchMock)
+      text: async () => "",
+    });
+    vi.stubGlobal("fetch", fetchMock);
     await expect(
-      apiRequest('https://example.com', { method: 'GET', url: 'https://example.com/x' }),
-    ).rejects.toThrow('HTTP 500')
-    expect(fetchMock).toHaveBeenCalledTimes(3)
-    vi.unstubAllGlobals()
-  })
+      apiRequest("https://example.com", { method: "GET", url: "https://example.com/x" }),
+    ).rejects.toThrow("HTTP 500");
+    expect(fetchMock).toHaveBeenCalledTimes(3);
+    vi.unstubAllGlobals();
+  });
 
-  it('downloads zip bytes', async () => {
+  it("downloads zip bytes", async () => {
     const fetchMock = vi.fn().mockResolvedValue({
       ok: true,
       arrayBuffer: async () => new Uint8Array([1, 2, 3]).buffer,
-    })
-    vi.stubGlobal('fetch', fetchMock)
-    const bytes = await downloadZip('https://example.com', {
-      slug: 'demo',
-      version: '1.0.0',
-      token: 'clh_token',
-    })
-    expect(Array.from(bytes)).toEqual([1, 2, 3])
-    const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit]
-    expect(url).toContain('slug=demo')
-    expect(url).toContain('version=1.0.0')
-    expect((init.headers as Record<string, string>).Authorization).toBe('Bearer clh_token')
-    vi.unstubAllGlobals()
-  })
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    const bytes = await downloadZip("https://example.com", {
+      slug: "demo",
+      version: "1.0.0",
+      token: "clh_token",
+    });
+    expect(Array.from(bytes)).toEqual([1, 2, 3]);
+    const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit];
+    expect(url).toContain("slug=demo");
+    expect(url).toContain("version=1.0.0");
+    expect((init.headers as Record<string, string>).Authorization).toBe("Bearer clh_token");
+    vi.unstubAllGlobals();
+  });
 
-  it('does not retry on non-retryable errors', async () => {
+  it("does not retry on non-retryable errors", async () => {
     const fetchMock = vi.fn().mockResolvedValue({
       ok: false,
       status: 404,
-      text: async () => 'nope',
-    })
-    vi.stubGlobal('fetch', fetchMock)
-    await expect(downloadZip('https://example.com', { slug: 'demo' })).rejects.toThrow('nope')
-    expect(fetchMock).toHaveBeenCalledTimes(1)
-    vi.unstubAllGlobals()
-  })
+      text: async () => "nope",
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    await expect(downloadZip("https://example.com", { slug: "demo" })).rejects.toThrow("nope");
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    vi.unstubAllGlobals();
+  });
 
-  it('aborts with Error timeouts and retries', async () => {
-    const { clearTimeoutMock } = mockImmediateTimeouts()
-    const fetchMock = createAbortingFetchMock()
-    vi.stubGlobal('fetch', fetchMock)
+  it("aborts with Error timeouts and retries", async () => {
+    const { clearTimeoutMock } = mockImmediateTimeouts();
+    const fetchMock = createAbortingFetchMock();
+    vi.stubGlobal("fetch", fetchMock);
 
-    let caught: unknown
+    let caught: unknown;
     try {
-      await apiRequest('https://example.com', { method: 'GET', path: '/x' })
+      await apiRequest("https://example.com", { method: "GET", path: "/x" });
     } catch (error) {
-      caught = error
+      caught = error;
     }
 
-    expect(caught).toBeInstanceOf(Error)
-    expect((caught as Error).message).toMatch(/timed out/)
-    expect(fetchMock).toHaveBeenCalledTimes(3)
-    expect(clearTimeoutMock.mock.calls.length).toBeGreaterThanOrEqual(3)
-    vi.unstubAllGlobals()
-  })
-})
+    expect(caught).toBeInstanceOf(Error);
+    expect((caught as Error).message).toMatch(/timed out/);
+    expect(fetchMock).toHaveBeenCalledTimes(3);
+    expect(clearTimeoutMock.mock.calls.length).toBeGreaterThanOrEqual(3);
+    vi.unstubAllGlobals();
+  });
+});
 
-describe('apiRequestForm', () => {
-  it('posts form data and returns json', async () => {
+describe("apiRequestForm", () => {
+  it("posts form data and returns json", async () => {
     const fetchMock = vi.fn().mockResolvedValue({
       ok: true,
       json: async () => ({ ok: true }),
-    })
-    vi.stubGlobal('fetch', fetchMock)
-    const form = new FormData()
-    form.append('x', '1')
-    const result = await apiRequestForm('https://example.com', {
-      method: 'POST',
-      path: '/upload',
-      token: 'clh_token',
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    const form = new FormData();
+    form.append("x", "1");
+    const result = await apiRequestForm("https://example.com", {
+      method: "POST",
+      path: "/upload",
+      token: "clh_token",
       form,
-    })
-    expect(result).toEqual({ ok: true })
-    const [, init] = fetchMock.mock.calls[0] as [string, RequestInit]
-    expect(init.body).toBe(form)
-    expect((init.headers as Record<string, string>).Authorization).toBe('Bearer clh_token')
-    vi.unstubAllGlobals()
-  })
+    });
+    expect(result).toEqual({ ok: true });
+    const [, init] = fetchMock.mock.calls[0] as [string, RequestInit];
+    expect(init.body).toBe(form);
+    expect((init.headers as Record<string, string>).Authorization).toBe("Bearer clh_token");
+    vi.unstubAllGlobals();
+  });
 
-  it('retries on 429', async () => {
+  it("retries on 429", async () => {
     const fetchMock = vi.fn().mockResolvedValue({
       ok: false,
       status: 429,
-      text: async () => 'rate limited',
-    })
-    vi.stubGlobal('fetch', fetchMock)
+      text: async () => "rate limited",
+    });
+    vi.stubGlobal("fetch", fetchMock);
     await expect(
-      apiRequestForm('https://example.com', {
-        method: 'POST',
-        path: '/upload',
+      apiRequestForm("https://example.com", {
+        method: "POST",
+        path: "/upload",
         form: new FormData(),
       }),
-    ).rejects.toThrow('rate limited')
-    expect(fetchMock).toHaveBeenCalledTimes(3)
-    vi.unstubAllGlobals()
-  })
+    ).rejects.toThrow("rate limited");
+    expect(fetchMock).toHaveBeenCalledTimes(3);
+    vi.unstubAllGlobals();
+  });
 
-  it('falls back to HTTP status when body cannot be read', async () => {
+  it("falls back to HTTP status when body cannot be read", async () => {
     const fetchMock = vi.fn().mockResolvedValue({
       ok: false,
       status: 400,
       text: async () => {
-        throw new Error('boom')
+        throw new Error("boom");
       },
-    })
-    vi.stubGlobal('fetch', fetchMock)
+    });
+    vi.stubGlobal("fetch", fetchMock);
     await expect(
-      apiRequestForm('https://example.com', {
-        method: 'POST',
-        path: '/upload',
+      apiRequestForm("https://example.com", {
+        method: "POST",
+        path: "/upload",
         form: new FormData(),
       }),
-    ).rejects.toThrow('HTTP 400')
-    expect(fetchMock).toHaveBeenCalledTimes(1)
-    vi.unstubAllGlobals()
-  })
+    ).rejects.toThrow("HTTP 400");
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    vi.unstubAllGlobals();
+  });
 
-  it('uses the longer upload timeout for multipart requests', async () => {
-    const { setTimeoutMock, clearTimeoutMock } = mockImmediateTimeouts()
-    const fetchMock = createAbortingFetchMock()
-    vi.stubGlobal('fetch', fetchMock)
+  it("uses the longer upload timeout for multipart requests", async () => {
+    const { setTimeoutMock, clearTimeoutMock } = mockImmediateTimeouts();
+    const fetchMock = createAbortingFetchMock();
+    vi.stubGlobal("fetch", fetchMock);
 
-    let caught: unknown
+    let caught: unknown;
     try {
-      await apiRequestForm('https://example.com', {
-        method: 'POST',
-        path: '/upload',
+      await apiRequestForm("https://example.com", {
+        method: "POST",
+        path: "/upload",
         form: new FormData(),
-      })
+      });
     } catch (error) {
-      caught = error
+      caught = error;
     }
 
-    expect(caught).toBeInstanceOf(Error)
-    expect((caught as Error).message).toMatch(/timed out after 120s/i)
-    expect(setTimeoutMock).toHaveBeenCalled()
-    expect(setTimeoutMock.mock.calls[0]?.[1]).toBe(120_000)
-    expect(fetchMock).toHaveBeenCalledTimes(3)
-    expect(clearTimeoutMock.mock.calls.length).toBeGreaterThanOrEqual(3)
-    vi.unstubAllGlobals()
-  })
-})
+    expect(caught).toBeInstanceOf(Error);
+    expect((caught as Error).message).toMatch(/timed out after 120s/i);
+    expect(setTimeoutMock).toHaveBeenCalled();
+    expect(setTimeoutMock.mock.calls[0]?.[1]).toBe(120_000);
+    expect(fetchMock).toHaveBeenCalledTimes(3);
+    expect(clearTimeoutMock.mock.calls.length).toBeGreaterThanOrEqual(3);
+    vi.unstubAllGlobals();
+  });
+});
 
-describe('fetchText', () => {
-  it('aborts with Error timeouts and retries', async () => {
-    const { clearTimeoutMock } = mockImmediateTimeouts()
-    const fetchMock = createAbortingFetchMock()
-    vi.stubGlobal('fetch', fetchMock)
+describe("fetchText", () => {
+  it("aborts with Error timeouts and retries", async () => {
+    const { clearTimeoutMock } = mockImmediateTimeouts();
+    const fetchMock = createAbortingFetchMock();
+    vi.stubGlobal("fetch", fetchMock);
 
-    let caught: unknown
+    let caught: unknown;
     try {
-      await fetchText('https://example.com', { path: '/x' })
+      await fetchText("https://example.com", { path: "/x" });
     } catch (error) {
-      caught = error
+      caught = error;
     }
 
-    expect(caught).toBeInstanceOf(Error)
-    expect((caught as Error).message).toMatch(/timed out/)
-    expect(fetchMock).toHaveBeenCalledTimes(3)
-    expect(clearTimeoutMock.mock.calls.length).toBeGreaterThanOrEqual(3)
-    vi.unstubAllGlobals()
-  })
-})
+    expect(caught).toBeInstanceOf(Error);
+    expect((caught as Error).message).toMatch(/timed out/);
+    expect(fetchMock).toHaveBeenCalledTimes(3);
+    expect(clearTimeoutMock.mock.calls.length).toBeGreaterThanOrEqual(3);
+    vi.unstubAllGlobals();
+  });
+});
 
-describe('fetchWithTimeout — non-Error normalization', () => {
-  it('wraps DOMException-like non-Error throws into proper Error instances', async () => {
+describe("fetchWithTimeout — non-Error normalization", () => {
+  it("wraps DOMException-like non-Error throws into proper Error instances", async () => {
     const fetchMock = vi.fn(async () => {
       // Simulate a runtime that throws a non-Error object on abort
-      throw { message: 'The operation was aborted', name: 'AbortError' }
-    })
-    vi.stubGlobal('fetch', fetchMock)
+      throw { message: "The operation was aborted", name: "AbortError" };
+    });
+    vi.stubGlobal("fetch", fetchMock);
 
-    let caught: unknown
+    let caught: unknown;
     try {
-      await apiRequest('https://example.com', { method: 'GET', path: '/x' })
+      await apiRequest("https://example.com", { method: "GET", path: "/x" });
     } catch (error) {
-      caught = error
+      caught = error;
     }
 
-    expect(caught).toBeInstanceOf(Error)
-    expect((caught as Error).message).toContain('The operation was aborted')
-    vi.unstubAllGlobals()
-  })
-})
+    expect(caught).toBeInstanceOf(Error);
+    expect((caught as Error).message).toContain("The operation was aborted");
+    vi.unstubAllGlobals();
+  });
+});

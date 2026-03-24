@@ -1,126 +1,126 @@
-import { createServer } from 'node:http'
-import type { AddressInfo } from 'node:net'
+import { createServer } from "node:http";
+import type { AddressInfo } from "node:net";
 
 export type LoopbackAuthResult = {
-  token: string
-  registry?: string
-  state?: string
-}
+  token: string;
+  registry?: string;
+  state?: string;
+};
 
 export function buildCliAuthUrl(params: {
-  siteUrl: string
-  redirectUri: string
-  label?: string
-  state: string
+  siteUrl: string;
+  redirectUri: string;
+  label?: string;
+  state: string;
 }) {
-  const url = new URL('/cli/auth', params.siteUrl)
-  url.searchParams.set('redirect_uri', params.redirectUri)
-  if (params.label) url.searchParams.set('label_b64', encodeBase64Url(params.label))
-  url.searchParams.set('state', params.state)
-  return url.toString()
+  const url = new URL("/cli/auth", params.siteUrl);
+  url.searchParams.set("redirect_uri", params.redirectUri);
+  if (params.label) url.searchParams.set("label_b64", encodeBase64Url(params.label));
+  url.searchParams.set("state", params.state);
+  return url.toString();
 }
 
 export function isAllowedLoopbackRedirectUri(value: string) {
-  let url: URL
+  let url: URL;
   try {
-    url = new URL(value)
+    url = new URL(value);
   } catch {
-    return false
+    return false;
   }
-  if (url.protocol !== 'http:') return false
-  const host = url.hostname.toLowerCase()
-  if (host !== '127.0.0.1' && host !== 'localhost' && host !== '::1' && host !== '[::1]') {
-    return false
+  if (url.protocol !== "http:") return false;
+  const host = url.hostname.toLowerCase();
+  if (host !== "127.0.0.1" && host !== "localhost" && host !== "::1" && host !== "[::1]") {
+    return false;
   }
-  return true
+  return true;
 }
 
 export async function startLoopbackAuthServer(params?: { timeoutMs?: number }) {
-  const timeoutMs = params?.timeoutMs ?? 5 * 60_000
-  const expectedState = generateState()
+  const timeoutMs = params?.timeoutMs ?? 5 * 60_000;
+  const expectedState = generateState();
 
-  let resolveToken: ((value: LoopbackAuthResult) => void) | null = null
-  let rejectToken: ((error: Error) => void) | null = null
+  let resolveToken: ((value: LoopbackAuthResult) => void) | null = null;
+  let rejectToken: ((error: Error) => void) | null = null;
   const tokenPromise = new Promise<LoopbackAuthResult>((resolve, reject) => {
-    resolveToken = resolve
-    rejectToken = reject
-  })
+    resolveToken = resolve;
+    rejectToken = reject;
+  });
 
   const server = createServer((req, res) => {
-    const method = req.method ?? 'GET'
-    const url = req.url ?? '/'
+    const method = req.method ?? "GET";
+    const url = req.url ?? "/";
 
-    if (method === 'GET' && (url === '/' || url.startsWith('/callback'))) {
-      res.statusCode = 200
-      res.setHeader('Content-Type', 'text/html; charset=utf-8')
-      res.end(CALLBACK_HTML)
-      return
+    if (method === "GET" && (url === "/" || url.startsWith("/callback"))) {
+      res.statusCode = 200;
+      res.setHeader("Content-Type", "text/html; charset=utf-8");
+      res.end(CALLBACK_HTML);
+      return;
     }
 
-    if (method === 'POST' && url === '/token') {
-      const chunks: Uint8Array[] = []
-      req.on('data', (chunk) => chunks.push(chunk as Uint8Array))
-      req.on('end', () => {
+    if (method === "POST" && url === "/token") {
+      const chunks: Uint8Array[] = [];
+      req.on("data", (chunk) => chunks.push(chunk as Uint8Array));
+      req.on("end", () => {
         try {
-          const raw = Buffer.concat(chunks).toString('utf8')
-          const parsed = JSON.parse(raw) as unknown
-          if (!parsed || typeof parsed !== 'object') throw new Error('invalid payload')
-          const token = (parsed as { token?: unknown }).token
-          const registry = (parsed as { registry?: unknown }).registry
-          const state = (parsed as { state?: unknown }).state
-          if (typeof token !== 'string' || !token.trim()) throw new Error('token required')
-          if (typeof state !== 'string' || state !== expectedState) {
-            throw new Error('state mismatch')
+          const raw = Buffer.concat(chunks).toString("utf8");
+          const parsed = JSON.parse(raw) as unknown;
+          if (!parsed || typeof parsed !== "object") throw new Error("invalid payload");
+          const token = (parsed as { token?: unknown }).token;
+          const registry = (parsed as { registry?: unknown }).registry;
+          const state = (parsed as { state?: unknown }).state;
+          if (typeof token !== "string" || !token.trim()) throw new Error("token required");
+          if (typeof state !== "string" || state !== expectedState) {
+            throw new Error("state mismatch");
           }
-          res.statusCode = 200
-          res.setHeader('Content-Type', 'application/json')
-          res.end(JSON.stringify({ ok: true }))
+          res.statusCode = 200;
+          res.setHeader("Content-Type", "application/json");
+          res.end(JSON.stringify({ ok: true }));
           resolveToken?.({
             token: token.trim(),
-            registry: typeof registry === 'string' ? registry : undefined,
+            registry: typeof registry === "string" ? registry : undefined,
             state,
-          })
+          });
         } catch (error) {
-          res.statusCode = 400
-          res.setHeader('Content-Type', 'application/json')
-          res.end(JSON.stringify({ ok: false }))
-          const message = error instanceof Error ? error.message : 'invalid payload'
-          rejectToken?.(new Error(message))
+          res.statusCode = 400;
+          res.setHeader("Content-Type", "application/json");
+          res.end(JSON.stringify({ ok: false }));
+          const message = error instanceof Error ? error.message : "invalid payload";
+          rejectToken?.(new Error(message));
         } finally {
-          server.close()
+          server.close();
         }
-      })
-      return
+      });
+      return;
     }
 
-    res.statusCode = 404
-    res.setHeader('Content-Type', 'text/plain; charset=utf-8')
-    res.end('Not found')
-  })
+    res.statusCode = 404;
+    res.setHeader("Content-Type", "text/plain; charset=utf-8");
+    res.end("Not found");
+  });
 
   await new Promise<void>((resolve, reject) => {
-    server.once('error', reject)
-    server.listen(0, '127.0.0.1', () => resolve())
-  })
-  const address = server.address() as AddressInfo | null
+    server.once("error", reject);
+    server.listen(0, "127.0.0.1", () => resolve());
+  });
+  const address = server.address() as AddressInfo | null;
   if (!address) {
-    server.close()
-    throw new Error('Failed to bind loopback server')
+    server.close();
+    throw new Error("Failed to bind loopback server");
   }
-  const redirectUri = `http://127.0.0.1:${address.port}/callback`
+  const redirectUri = `http://127.0.0.1:${address.port}/callback`;
 
   const timeout = setTimeout(() => {
-    server.close()
-    rejectToken?.(new Error('Timed out waiting for browser login'))
-  }, timeoutMs)
-  tokenPromise.finally(() => clearTimeout(timeout)).catch(() => {})
+    server.close();
+    rejectToken?.(new Error("Timed out waiting for browser login"));
+  }, timeoutMs);
+  tokenPromise.finally(() => clearTimeout(timeout)).catch(() => {});
 
   return {
     redirectUri,
     state: expectedState,
     waitForResult: () => tokenPromise,
     close: () => server.close(),
-  }
+  };
 }
 
 const CALLBACK_HTML = `<!doctype html>
@@ -163,12 +163,12 @@ const CALLBACK_HTML = `<!doctype html>
       }
     </script>
   </body>
-</html>`
+</html>`;
 
 function encodeBase64Url(value: string) {
-  return Buffer.from(value, 'utf8').toString('base64url')
+  return Buffer.from(value, "utf8").toString("base64url");
 }
 
 function generateState() {
-  return Buffer.from(crypto.getRandomValues(new Uint8Array(16))).toString('hex')
+  return Buffer.from(crypto.getRandomValues(new Uint8Array(16))).toString("hex");
 }

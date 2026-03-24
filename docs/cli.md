@@ -1,5 +1,5 @@
 ---
-summary: 'CLI reference: commands, flags, config, lockfile, sync behavior.'
+summary: "CLI reference: commands, flags, config, lockfile, sync behavior."
 read_when:
   - Working on CLI behavior
   - Debugging install/update/sync
@@ -161,6 +161,19 @@ Stores your API token + cached registry URL.
 - Unhide a skill (owner, moderator, or admin).
 - Alias for `undelete`.
 
+### `skill rename <slug> <new-slug>`
+
+- Rename an owned skill and keep the previous slug as a redirect alias.
+- Calls `POST /api/v1/skills/{slug}/rename`.
+- `--yes` skips confirmation.
+
+### `skill merge <source-slug> <target-slug>`
+
+- Merge one owned skill into another owned skill.
+- The source slug stops listing publicly and becomes a redirect alias to the target.
+- Calls `POST /api/v1/skills/{sourceSlug}/merge`.
+- `--yes` skips confirmation.
+
 ### `transfer`
 
 - Ownership transfer workflow.
@@ -194,6 +207,12 @@ Stores your API token + cached registry URL.
 - `--id` treats the argument as a user id instead of a handle.
 - `--fuzzy` resolves the handle via fuzzy user search (admin only).
 - `--yes` skips confirmation.
+
+### `package publish <path>`
+
+- Publishes a code plugin or bundle plugin via `POST /api/v1/packages`.
+- `--owner <handle>` lets admins publish under a shared owner account while keeping their own token as the actor.
+- Code plugins still require `--source-repo` and `--source-commit`.
 
 ### `sync`
 

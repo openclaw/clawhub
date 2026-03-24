@@ -1,22 +1,22 @@
-import type { RefObject } from 'react'
-import { type SortDir, type SortKey } from './-params'
+import type { RefObject } from "react";
+import { type SortDir, type SortKey } from "./-params";
 
 type SkillsToolbarProps = {
-  searchInputRef: RefObject<HTMLInputElement | null>
-  query: string
-  hasQuery: boolean
-  sort: SortKey
-  dir: SortDir
-  view: 'cards' | 'list'
-  highlightedOnly: boolean
-  nonSuspiciousOnly: boolean
-  onQueryChange: (next: string) => void
-  onToggleHighlighted: () => void
-  onToggleNonSuspicious: () => void
-  onSortChange: (value: string) => void
-  onToggleDir: () => void
-  onToggleView: () => void
-}
+  searchInputRef: RefObject<HTMLInputElement | null>;
+  query: string;
+  hasQuery: boolean;
+  sort: SortKey;
+  dir: SortDir;
+  view: "cards" | "list";
+  highlightedOnly: boolean;
+  nonSuspiciousOnly: boolean;
+  onQueryChange: (next: string) => void;
+  onToggleHighlighted: () => void;
+  onToggleNonSuspicious: () => void;
+  onSortChange: (value: string) => void;
+  onToggleDir: () => void;
+  onToggleView: () => void;
+};
 
 export function SkillsToolbar({
   searchInputRef,
@@ -47,7 +47,7 @@ export function SkillsToolbar({
       </div>
       <div className="skills-toolbar-row">
         <button
-          className={`search-filter-button${highlightedOnly ? ' is-active' : ''}`}
+          className={`search-filter-button${highlightedOnly ? " is-active" : ""}`}
           type="button"
           aria-pressed={highlightedOnly}
           onClick={onToggleHighlighted}
@@ -55,7 +55,7 @@ export function SkillsToolbar({
           Highlighted
         </button>
         <button
-          className={`search-filter-button${nonSuspiciousOnly ? ' is-active' : ''}`}
+          className={`search-filter-button${nonSuspiciousOnly ? " is-active" : ""}`}
           type="button"
           aria-pressed={nonSuspiciousOnly}
           onClick={onToggleNonSuspicious}
@@ -76,17 +76,22 @@ export function SkillsToolbar({
           <option value="stars">Stars</option>
           <option value="name">Name</option>
         </select>
-        <button className="skills-dir" type="button" aria-label={`Sort direction ${dir}`} onClick={onToggleDir}>
-          {dir === 'asc' ? '↑' : '↓'}
+        <button
+          className="skills-dir"
+          type="button"
+          aria-label={`Sort direction ${dir}`}
+          onClick={onToggleDir}
+        >
+          {dir === "asc" ? "↑" : "↓"}
         </button>
         <button
-          className={`skills-view${view === 'cards' ? ' is-active' : ''}`}
+          className={`skills-view${view === "cards" ? " is-active" : ""}`}
           type="button"
           onClick={onToggleView}
         >
-          {view === 'cards' ? 'List' : 'Cards'}
+          {view === "cards" ? "List" : "Cards"}
         </button>
       </div>
     </div>
-  )
+  );
 }

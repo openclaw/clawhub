@@ -1,5 +1,5 @@
 ---
-summary: 'Install telemetry collected via `clawhub sync` + opt-out.'
+summary: "Install telemetry collected via `clawhub sync` + opt-out."
 read_when:
   - Working on telemetry / privacy controls
   - Questions about what data is collected
@@ -37,7 +37,7 @@ For each skill found under a root we store:
 - `lastVersion` (best-effort; currently the registry-matched version if known).
 - optional `removedAt` when a previously-reported install disappears from a root.
 
-### What we do *not* collect
+### What we do _not_ collect
 
 - No raw absolute folder paths (only hashed `rootId` + a short display label).
 - No file contents.

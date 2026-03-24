@@ -1,50 +1,53 @@
-import { useAuthActions } from '@convex-dev/auth/react'
-import { Link } from '@tanstack/react-router'
-import { Menu, Monitor, Moon, Sun } from 'lucide-react'
-import { useMemo, useRef } from 'react'
-import { gravatarUrl } from '../lib/gravatar'
-import { isModerator } from '../lib/roles'
-import { getClawHubSiteUrl, getSiteMode, getSiteName } from '../lib/site'
-import { applyTheme, useThemeMode } from '../lib/theme'
-import { startThemeTransition } from '../lib/theme-transition'
-import { useAuthStatus } from '../lib/useAuthStatus'
+import { useAuthActions } from "@convex-dev/auth/react";
+import { Link } from "@tanstack/react-router";
+import { Menu, Monitor, Moon, Sun } from "lucide-react";
+import { useMemo, useRef } from "react";
+import { getUserFacingConvexError } from "../lib/convexError";
+import { gravatarUrl } from "../lib/gravatar";
+import { isModerator } from "../lib/roles";
+import { getClawHubSiteUrl, getSiteMode, getSiteName } from "../lib/site";
+import { applyTheme, useThemeMode } from "../lib/theme";
+import { startThemeTransition } from "../lib/theme-transition";
+import { setAuthError, useAuthError } from "../lib/useAuthError";
+import { useAuthStatus } from "../lib/useAuthStatus";
 import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuSeparator,
   DropdownMenuTrigger,
-} from './ui/dropdown-menu'
-import { ToggleGroup, ToggleGroupItem } from './ui/toggle-group'
+} from "./ui/dropdown-menu";
+import { ToggleGroup, ToggleGroupItem } from "./ui/toggle-group";
 
 export default function Header() {
-  const { isAuthenticated, isLoading, me } = useAuthStatus()
-  const { signIn, signOut } = useAuthActions()
-  const { mode, setMode } = useThemeMode()
-  const toggleRef = useRef<HTMLDivElement | null>(null)
-  const siteMode = getSiteMode()
-  const siteName = useMemo(() => getSiteName(siteMode), [siteMode])
-  const isSoulMode = siteMode === 'souls'
-  const clawHubUrl = getClawHubSiteUrl()
+  const { isAuthenticated, isLoading, me } = useAuthStatus();
+  const { signIn, signOut } = useAuthActions();
+  const { mode, setMode } = useThemeMode();
+  const toggleRef = useRef<HTMLDivElement | null>(null);
+  const siteMode = getSiteMode();
+  const siteName = useMemo(() => getSiteName(siteMode), [siteMode]);
+  const isSoulMode = siteMode === "souls";
+  const clawHubUrl = getClawHubSiteUrl();
 
-  const avatar = me?.image ?? (me?.email ? gravatarUrl(me.email) : undefined)
-  const handle = me?.handle ?? me?.displayName ?? 'user'
-  const initial = (me?.displayName ?? me?.name ?? handle).charAt(0).toUpperCase()
-  const isStaff = isModerator(me)
-  const signInRedirectTo = getCurrentRelativeUrl()
+  const avatar = me?.image ?? (me?.email ? gravatarUrl(me.email) : undefined);
+  const handle = me?.handle ?? me?.displayName ?? "user";
+  const initial = (me?.displayName ?? me?.name ?? handle).charAt(0).toUpperCase();
+  const isStaff = isModerator(me);
+  const { error: authError, clear: clearAuthError } = useAuthError();
+  const signInRedirectTo = getCurrentRelativeUrl();
 
-  const setTheme = (next: 'system' | 'light' | 'dark') => {
+  const setTheme = (next: "system" | "light" | "dark") => {
     startThemeTransition({
       nextTheme: next,
       currentTheme: mode,
       setTheme: (value) => {
-        const nextMode = value as 'system' | 'light' | 'dark'
-        applyTheme(nextMode)
-        setMode(nextMode)
+        const nextMode = value as "system" | "light" | "dark";
+        applyTheme(nextMode);
+        setMode(nextMode);
       },
       context: { element: toggleRef.current },
-    })
-  }
+    });
+  };
 
   return (
     <header className="navbar">
@@ -90,12 +93,9 @@ export default function Header() {
               Skills
             </Link>
           )}
-          <Link to="/upload" search={{ updateSlug: undefined }}>
-            Upload
-          </Link>
-          {isSoulMode ? null : <Link to="/import">Import</Link>}
+          {isSoulMode ? null : <Link to="/plugins">Plugins</Link>}
           <Link
-            to={isSoulMode ? '/souls' : '/skills'}
+            to={isSoulMode ? "/souls" : "/skills"}
             search={
               isSoulMode
                 ? {
@@ -103,7 +103,7 @@ export default function Header() {
                     sort: undefined,
                     dir: undefined,
                     view: undefined,
-                    focus: 'search',
+                    focus: "search",
                   }
                 : {
                     q: undefined,
@@ -112,12 +112,13 @@ export default function Header() {
                     highlighted: undefined,
                     nonSuspicious: undefined,
                     view: undefined,
-                    focus: 'search',
+                    focus: "search",
                   }
             }
           >
             Search
           </Link>
+          {isSoulMode ? null : <Link to="/about">About</Link>}
           {me ? <Link to="/stars">Stars</Link> : null}
           {isStaff ? (
             <Link to="/management" search={{ skill: undefined }}>
@@ -170,19 +171,14 @@ export default function Header() {
                     </Link>
                   )}
                 </DropdownMenuItem>
-                <DropdownMenuItem asChild>
-                  <Link to="/upload" search={{ updateSlug: undefined }}>
-                    Upload
-                  </Link>
-                </DropdownMenuItem>
                 {isSoulMode ? null : (
                   <DropdownMenuItem asChild>
-                    <Link to="/import">Import</Link>
+                    <Link to="/plugins">Plugins</Link>
                   </DropdownMenuItem>
                 )}
                 <DropdownMenuItem asChild>
                   <Link
-                    to={isSoulMode ? '/souls' : '/skills'}
+                    to={isSoulMode ? "/souls" : "/skills"}
                     search={
                       isSoulMode
                         ? {
@@ -190,7 +186,7 @@ export default function Header() {
                             sort: undefined,
                             dir: undefined,
                             view: undefined,
-                            focus: 'search',
+                            focus: "search",
                           }
                         : {
                             q: undefined,
@@ -199,13 +195,18 @@ export default function Header() {
                             highlighted: undefined,
                             nonSuspicious: undefined,
                             view: undefined,
-                            focus: 'search',
+                            focus: "search",
                           }
                     }
                   >
                     Search
                   </Link>
                 </DropdownMenuItem>
+                {isSoulMode ? null : (
+                  <DropdownMenuItem asChild>
+                    <Link to="/about">About</Link>
+                  </DropdownMenuItem>
+                )}
                 {me ? (
                   <DropdownMenuItem asChild>
                     <Link to="/stars">Stars</Link>
@@ -219,15 +220,15 @@ export default function Header() {
                   </DropdownMenuItem>
                 ) : null}
                 <DropdownMenuSeparator />
-                <DropdownMenuItem onClick={() => setTheme('system')}>
+                <DropdownMenuItem onClick={() => setTheme("system")}>
                   <Monitor className="h-4 w-4" aria-hidden="true" />
                   System
                 </DropdownMenuItem>
-                <DropdownMenuItem onClick={() => setTheme('light')}>
+                <DropdownMenuItem onClick={() => setTheme("light")}>
                   <Sun className="h-4 w-4" aria-hidden="true" />
                   Light
                 </DropdownMenuItem>
-                <DropdownMenuItem onClick={() => setTheme('dark')}>
+                <DropdownMenuItem onClick={() => setTheme("dark")}>
                   <Moon className="h-4 w-4" aria-hidden="true" />
                   Dark
                 </DropdownMenuItem>
@@ -239,8 +240,8 @@ export default function Header() {
               type="single"
               value={mode}
               onValueChange={(value) => {
-                if (!value) return
-                setTheme(value as 'system' | 'light' | 'dark')
+                if (!value) return;
+                setTheme(value as "system" | "light" | "dark");
               }}
               aria-label="Theme mode"
             >
@@ -263,7 +264,7 @@ export default function Header() {
               <DropdownMenuTrigger asChild>
                 <button className="user-trigger" type="button">
                   {avatar ? (
-                    <img src={avatar} alt={me.displayName ?? me.name ?? 'User avatar'} />
+                    <img src={avatar} alt={me.displayName ?? me.name ?? "User avatar"} />
                   ) : (
                     <span className="user-menu-fallback">{initial}</span>
                   )}
@@ -283,28 +284,54 @@ export default function Header() {
               </DropdownMenuContent>
             </DropdownMenu>
           ) : (
-            <button
-              className="btn btn-primary"
-              type="button"
-              disabled={isLoading}
-              onClick={() =>
-                void signIn(
-                  'github',
-                  signInRedirectTo ? { redirectTo: signInRedirectTo } : undefined,
-                )
-              }
-            >
-              <span className="sign-in-label">Sign in</span>
-              <span className="sign-in-provider">with GitHub</span>
-            </button>
+            <>
+              {authError ? (
+                <div className="error" role="alert" style={{ fontSize: "0.85rem", marginRight: 8 }}>
+                  {authError}{" "}
+                  <button
+                    type="button"
+                    onClick={clearAuthError}
+                    aria-label="Dismiss"
+                    style={{
+                      background: "none",
+                      border: "none",
+                      cursor: "pointer",
+                      color: "inherit",
+                      padding: "0 2px",
+                    }}
+                  >
+                    &times;
+                  </button>
+                </div>
+              ) : null}
+              <button
+                className="btn btn-primary"
+                type="button"
+                disabled={isLoading}
+                onClick={() => {
+                  clearAuthError();
+                  void signIn(
+                    "github",
+                    signInRedirectTo ? { redirectTo: signInRedirectTo } : undefined,
+                  ).catch((error) => {
+                    setAuthError(
+                      getUserFacingConvexError(error, "Sign in failed. Please try again."),
+                    );
+                  });
+                }}
+              >
+                <span className="sign-in-label">Sign in</span>
+                <span className="sign-in-provider">with GitHub</span>
+              </button>
+            </>
           )}
         </div>
       </div>
     </header>
-  )
+  );
 }
 
 function getCurrentRelativeUrl() {
-  if (typeof window === 'undefined') return '/'
-  return `${window.location.pathname}${window.location.search}${window.location.hash}`
+  if (typeof window === "undefined") return "/";
+  return `${window.location.pathname}${window.location.search}${window.location.hash}`;
 }

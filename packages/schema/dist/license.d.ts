@@ -1,4 +1,4 @@
-import { type inferred } from 'arktype';
+import { type inferred } from "arktype";
 export declare const PLATFORM_SKILL_LICENSE: "MIT-0";
 export declare const PLATFORM_SKILL_LICENSE_NAME: "MIT No Attribution";
 export declare const PLATFORM_SKILL_LICENSE_SUMMARY: "Free to use, modify, and redistribute. No attribution required.";

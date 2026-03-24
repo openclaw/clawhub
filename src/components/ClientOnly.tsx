@@ -1,18 +1,18 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useState } from "react";
 
 export function ClientOnly({
   children,
   fallback = null,
 }: {
-  children: React.ReactNode
-  fallback?: React.ReactNode
+  children: React.ReactNode;
+  fallback?: React.ReactNode;
 }) {
-  const [ready, setReady] = useState(false)
+  const [ready, setReady] = useState(false);
 
   useEffect(() => {
-    setReady(true)
-  }, [])
+    setReady(true);
+  }, []);
 
-  if (!ready) return <>{fallback}</>
-  return <>{children}</>
+  if (!ready) return <>{fallback}</>;
+  return <>{children}</>;
 }

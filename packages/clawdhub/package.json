@@ -1,12 +1,11 @@
 {
   "name": "clawhub",
-  "version": "0.7.0",
-  "description": "ClawHub CLI \\u2014 install, update, search, and publish agent skills.",
+  "version": "0.9.0",
+  "description": "ClawHub CLI \\u2014 install, update, search, and publish skills plus OpenClaw packages.",
   "license": "MIT",
-  "type": "module",
   "bin": {
-    "clawhub": "bin/clawdhub.js",
-    "clawdhub": "bin/clawdhub.js"
+    "clawdhub": "bin/clawdhub.js",
+    "clawhub": "bin/clawdhub.js"
   },
   "files": [
     "bin",
@@ -14,26 +13,27 @@
     "README.md",
     "LICENSE"
   ],
+  "type": "module",
   "scripts": {
     "build": "tsc -p tsconfig.json",
     "dev": "node --enable-source-maps dist/cli.js",
     "prepublishOnly": "npm run build"
   },
   "dependencies": {
-    "@clack/prompts": "^0.11.0",
-    "arktype": "^2.1.29",
-    "commander": "^14.0.2",
+    "@clack/prompts": "^1.1.0",
+    "arktype": "^2.2.0",
+    "commander": "^14.0.3",
     "fflate": "^0.8.2",
     "ignore": "^7.0.5",
     "json5": "^2.2.3",
     "mime": "^4.1.0",
-    "ora": "^9.0.0",
+    "ora": "^9.3.0",
     "p-retry": "^7.1.1",
-    "semver": "^7.7.3",
-    "undici": "^7.16.0"
+    "semver": "^7.7.4",
+    "undici": "^7.24.0"
   },
   "devDependencies": {
-    "@types/node": "^25.0.9",
+    "@types/node": "^25.5.0",
     "typescript": "^5.9.3"
   },
   "engines": {

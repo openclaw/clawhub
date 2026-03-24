@@ -1,14 +1,14 @@
-import { v } from 'convex/values'
-import { mutation } from './_generated/server'
+import { v } from "convex/values";
+import { internalMutation } from "./functions";
 
-export const increment = mutation({
-  args: { soulId: v.id('souls') },
+export const incrementInternal = internalMutation({
+  args: { soulId: v.id("souls") },
   handler: async (ctx, args) => {
-    const soul = await ctx.db.get(args.soulId)
-    if (!soul) return
+    const soul = await ctx.db.get(args.soulId);
+    if (!soul) return;
     await ctx.db.patch(soul._id, {
       stats: { ...soul.stats, downloads: soul.stats.downloads + 1 },
       updatedAt: Date.now(),
-    })
+    });
   },
-})
+});

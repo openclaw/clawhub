@@ -1,5 +1,5 @@
 ---
-summary: 'System overview: web app + Convex backend + CLI + shared schema.'
+summary: "System overview: web app + Convex backend + CLI + shared schema."
 read_when:
   - Orienting in codebase
   - Tracing a user flow across layers
@@ -24,7 +24,8 @@ read_when:
 
 ### Browse (web)
 
-- UI reads skill metadata + latest version from Convex queries/actions.
+- Public skill pages use TanStack Start SSR loaders for first paint, then hydrate into live Convex data.
+- The rest of the UI reads skill metadata + latest version from Convex queries/actions.
 - `SKILL.md` rendered as Markdown.
 
 ### Search (HTTP)

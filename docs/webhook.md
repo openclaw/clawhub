@@ -1,5 +1,5 @@
 ---
-summary: 'Discord webhook events/payloads for skill publish + highlight.'
+summary: "Discord webhook events/payloads for skill publish + highlight."
 read_when:
   - Working on webhooks/integrations
 ---

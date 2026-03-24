@@ -1,30 +1,30 @@
 export function getLlmEvalModel(): string {
-  return process.env.OPENAI_EVAL_MODEL ?? 'gpt-5-mini'
+  return process.env.OPENAI_EVAL_MODEL ?? "gpt-5-mini";
 }
-export const LLM_EVAL_MAX_OUTPUT_TOKENS = 16000
+export const LLM_EVAL_MAX_OUTPUT_TOKENS = 16000;
 
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
 
 function formatScalar(value: unknown): string {
-  if (value === undefined) return 'undefined'
-  if (value === null) return 'null'
-  if (typeof value === 'string') return value
-  if (typeof value === 'number' || typeof value === 'boolean' || typeof value === 'bigint') {
-    return String(value)
+  if (value === undefined) return "undefined";
+  if (value === null) return "null";
+  if (typeof value === "string") return value;
+  if (typeof value === "number" || typeof value === "boolean" || typeof value === "bigint") {
+    return String(value);
   }
   // Avoid throwing on circular structures; fall back to a safe representation.
   try {
-    return JSON.stringify(value)
+    return JSON.stringify(value);
   } catch {
-    return Object.prototype.toString.call(value)
+    return Object.prototype.toString.call(value);
   }
 }
 
 function formatWithDefault(value: unknown, defaultLabel: string): string {
-  if (value === undefined || value === null) return defaultLabel
-  return formatScalar(value)
+  if (value === undefined || value === null) return defaultLabel;
+  return formatScalar(value);
 }
 
 // ---------------------------------------------------------------------------
@@ -32,40 +32,40 @@ function formatWithDefault(value: unknown, defaultLabel: string): string {
 // ---------------------------------------------------------------------------
 
 export type SkillEvalContext = {
-  slug: string
-  displayName: string
-  ownerUserId: string
-  version: string
-  createdAt: number
-  summary?: string
-  source?: string
-  homepage?: string
+  slug: string;
+  displayName: string;
+  ownerUserId: string;
+  version: string;
+  createdAt: number;
+  summary?: string;
+  source?: string;
+  homepage?: string;
   parsed: {
-    frontmatter: Record<string, unknown>
-    metadata?: unknown
-    clawdis?: unknown
-  }
-  files: Array<{ path: string; size: number }>
-  skillMdContent: string
-  fileContents: Array<{ path: string; content: string }>
-  injectionSignals: string[]
-}
+    frontmatter: Record<string, unknown>;
+    metadata?: unknown;
+    clawdis?: unknown;
+  };
+  files: Array<{ path: string; size: number }>;
+  skillMdContent: string;
+  fileContents: Array<{ path: string; content: string }>;
+  injectionSignals: string[];
+};
 
 export type LlmEvalDimension = {
-  name: string
-  label: string
-  rating: string
-  detail: string
-}
+  name: string;
+  label: string;
+  rating: string;
+  detail: string;
+};
 
 export type LlmEvalResponse = {
-  verdict: 'benign' | 'suspicious' | 'malicious'
-  confidence: 'high' | 'medium' | 'low'
-  summary: string
-  dimensions: LlmEvalDimension[]
-  guidance: string
-  findings: string
-}
+  verdict: "benign" | "suspicious" | "malicious";
+  confidence: "high" | "medium" | "low";
+  summary: string;
+  dimensions: LlmEvalDimension[];
+  guidance: string;
+  findings: string;
+};
 
 // ---------------------------------------------------------------------------
 // System prompt (~3500 words)
@@ -207,30 +207,30 @@ Respond with a JSON object and nothing else:
     { "ruleId": "...", "expected_for_purpose": true | false, "note": "..." }
   ],
   "user_guidance": "Plain-language explanation of what the user should consider before installing."
-}`
+}`;
 
 // ---------------------------------------------------------------------------
 // Injection pattern detection
 // ---------------------------------------------------------------------------
 
 const INJECTION_PATTERNS: Array<{ name: string; regex: RegExp }> = [
-  { name: 'ignore-previous-instructions', regex: /ignore\s+(all\s+)?previous\s+instructions/i },
-  { name: 'you-are-now', regex: /you\s+are\s+now\s+(a|an)\b/i },
-  { name: 'system-prompt-override', regex: /system\s*prompt\s*[:=]/i },
-  { name: 'base64-block', regex: /[A-Za-z0-9+/=]{200,}/ },
+  { name: "ignore-previous-instructions", regex: /ignore\s+(all\s+)?previous\s+instructions/i },
+  { name: "you-are-now", regex: /you\s+are\s+now\s+(a|an)\b/i },
+  { name: "system-prompt-override", regex: /system\s*prompt\s*[:=]/i },
+  { name: "base64-block", regex: /[A-Za-z0-9+/=]{200,}/ },
   {
-    name: 'unicode-control-chars',
+    name: "unicode-control-chars",
     // eslint-disable-next-line no-control-regex
     regex: /[\u200B-\u200F\u202A-\u202E\u2060-\u2064\uFEFF]/,
   },
-]
+];
 
 export function detectInjectionPatterns(text: string): string[] {
-  const found: string[] = []
+  const found: string[] = [];
   for (const { name, regex } of INJECTION_PATTERNS) {
-    if (regex.test(text)) found.push(name)
+    if (regex.test(text)) found.push(name);
   }
-  return found
+  return found;
 }
 
 // ---------------------------------------------------------------------------
@@ -238,262 +238,262 @@ export function detectInjectionPatterns(text: string): string[] {
 // ---------------------------------------------------------------------------
 
 const DIMENSION_META: Record<string, string> = {
-  purpose_capability: 'Purpose & Capability',
-  instruction_scope: 'Instruction Scope',
-  install_mechanism: 'Install Mechanism',
-  environment_proportionality: 'Credentials',
-  persistence_privilege: 'Persistence & Privilege',
-}
+  purpose_capability: "Purpose & Capability",
+  instruction_scope: "Instruction Scope",
+  install_mechanism: "Install Mechanism",
+  environment_proportionality: "Credentials",
+  persistence_privilege: "Persistence & Privilege",
+};
 
 // ---------------------------------------------------------------------------
 // Assemble the user message from skill data
 // ---------------------------------------------------------------------------
 
-const MAX_SKILL_MD_CHARS = 6000
+const MAX_SKILL_MD_CHARS = 6000;
 
 export function assembleEvalUserMessage(ctx: SkillEvalContext): string {
-  const fm = ctx.parsed.frontmatter ?? {}
-  const rawClawdis = (ctx.parsed.clawdis ?? {}) as Record<string, unknown>
-  const meta = (ctx.parsed.metadata ?? {}) as Record<string, unknown>
+  const fm = ctx.parsed.frontmatter ?? {};
+  const rawClawdis = (ctx.parsed.clawdis ?? {}) as Record<string, unknown>;
+  const meta = (ctx.parsed.metadata ?? {}) as Record<string, unknown>;
   const openclawFallback =
-    meta.openclaw && typeof meta.openclaw === 'object' && !Array.isArray(meta.openclaw)
+    meta.openclaw && typeof meta.openclaw === "object" && !Array.isArray(meta.openclaw)
       ? (meta.openclaw as Record<string, unknown>)
-      : {}
-  const clawdis = Object.keys(rawClawdis).length > 0 ? rawClawdis : openclawFallback
-  const requires = (clawdis.requires ?? openclawFallback.requires ?? {}) as Record<string, unknown>
-  const install = (clawdis.install ?? []) as Array<Record<string, unknown>>
+      : {};
+  const clawdis = Object.keys(rawClawdis).length > 0 ? rawClawdis : openclawFallback;
+  const requires = (clawdis.requires ?? openclawFallback.requires ?? {}) as Record<string, unknown>;
+  const install = (clawdis.install ?? []) as Array<Record<string, unknown>>;
 
   const codeExtensions = new Set([
-    '.js',
-    '.ts',
-    '.mjs',
-    '.cjs',
-    '.jsx',
-    '.tsx',
-    '.py',
-    '.rb',
-    '.sh',
-    '.bash',
-    '.zsh',
-    '.go',
-    '.rs',
-    '.c',
-    '.cpp',
-    '.java',
-  ])
+    ".js",
+    ".ts",
+    ".mjs",
+    ".cjs",
+    ".jsx",
+    ".tsx",
+    ".py",
+    ".rb",
+    ".sh",
+    ".bash",
+    ".zsh",
+    ".go",
+    ".rs",
+    ".c",
+    ".cpp",
+    ".java",
+  ]);
   const codeFiles = ctx.files.filter((f) => {
-    const ext = f.path.slice(f.path.lastIndexOf('.')).toLowerCase()
-    return codeExtensions.has(ext)
-  })
+    const ext = f.path.slice(f.path.lastIndexOf(".")).toLowerCase();
+    return codeExtensions.has(ext);
+  });
 
   const skillMd =
     ctx.skillMdContent.length > MAX_SKILL_MD_CHARS
       ? `${ctx.skillMdContent.slice(0, MAX_SKILL_MD_CHARS)}\n…[truncated]`
-      : ctx.skillMdContent
+      : ctx.skillMdContent;
 
-  const sections: string[] = []
+  const sections: string[] = [];
 
   // Skill identity
   sections.push(`## Skill under evaluation
 
 **Name:** ${ctx.displayName}
-**Description:** ${ctx.summary ?? 'No description provided.'}
-**Source:** ${ctx.source ?? 'unknown'}
-**Homepage:** ${ctx.homepage ?? 'none'}
+**Description:** ${ctx.summary ?? "No description provided."}
+**Source:** ${ctx.source ?? "unknown"}
+**Homepage:** ${ctx.homepage ?? "none"}
 
 **Registry metadata:**
 - Owner ID: ${ctx.ownerUserId}
 - Slug: ${ctx.slug}
 - Version: ${ctx.version}
-- Published: ${new Date(ctx.createdAt).toISOString()}`)
+- Published: ${new Date(ctx.createdAt).toISOString()}`);
 
   // Flags
-  const always = fm.always ?? clawdis.always
-  const userInvocable = fm['user-invocable'] ?? clawdis.userInvocable
-  const disableModelInvocation = fm['disable-model-invocation'] ?? clawdis.disableModelInvocation
-  const os = clawdis.os
+  const always = fm.always ?? clawdis.always;
+  const userInvocable = fm["user-invocable"] ?? clawdis.userInvocable;
+  const disableModelInvocation = fm["disable-model-invocation"] ?? clawdis.disableModelInvocation;
+  const os = clawdis.os;
   sections.push(`**Flags:**
-- always: ${formatWithDefault(always, 'false (default)')}
-- user-invocable: ${formatWithDefault(userInvocable, 'true (default)')}
+- always: ${formatWithDefault(always, "false (default)")}
+- user-invocable: ${formatWithDefault(userInvocable, "true (default)")}
 - disable-model-invocation: ${formatWithDefault(
     disableModelInvocation,
-    'false (default — agent can invoke autonomously, this is normal)',
+    "false (default — agent can invoke autonomously, this is normal)",
   )}
-- OS restriction: ${Array.isArray(os) ? os.join(', ') : formatWithDefault(os, 'none')}`)
+- OS restriction: ${Array.isArray(os) ? os.join(", ") : formatWithDefault(os, "none")}`);
 
   // Requirements
-  const bins = (requires.bins as string[] | undefined) ?? []
-  const anyBins = (requires.anyBins as string[] | undefined) ?? []
-  const env = (requires.env as string[] | undefined) ?? []
-  const primaryEnv = (clawdis.primaryEnv as string | undefined) ?? 'none'
-  const config = (requires.config as string[] | undefined) ?? []
+  const bins = (requires.bins as string[] | undefined) ?? [];
+  const anyBins = (requires.anyBins as string[] | undefined) ?? [];
+  const env = (requires.env as string[] | undefined) ?? [];
+  const primaryEnv = (clawdis.primaryEnv as string | undefined) ?? "none";
+  const config = (requires.config as string[] | undefined) ?? [];
 
   sections.push(`### Requirements
-- Required binaries (all must exist): ${bins.length ? bins.join(', ') : 'none'}
-- Required binaries (at least one): ${anyBins.length ? anyBins.join(', ') : 'none'}
-- Required env vars: ${env.length ? env.join(', ') : 'none'}
+- Required binaries (all must exist): ${bins.length ? bins.join(", ") : "none"}
+- Required binaries (at least one): ${anyBins.length ? anyBins.join(", ") : "none"}
+- Required env vars: ${env.length ? env.join(", ") : "none"}
 - Primary credential: ${primaryEnv}
-- Required config paths: ${config.length ? config.join(', ') : 'none'}`)
+- Required config paths: ${config.length ? config.join(", ") : "none"}`);
 
   // Install specifications
   if (install.length > 0) {
     const specLines = install.map((spec, i) => {
-      const kind = spec.kind ?? 'unknown'
-      const parts = [`- **[${i}] ${formatScalar(kind)}**`]
-      if (spec.formula) parts.push(`formula: ${formatScalar(spec.formula)}`)
-      if (spec.package) parts.push(`package: ${formatScalar(spec.package)}`)
-      if (spec.module) parts.push(`module: ${formatScalar(spec.module)}`)
-      if (spec.url) parts.push(`url: ${formatScalar(spec.url)}`)
-      if (spec.archive) parts.push(`archive: ${formatScalar(spec.archive)}`)
-      if (spec.extract !== undefined) parts.push(`extract: ${formatScalar(spec.extract)}`)
-      if (spec.bins) parts.push(`creates binaries: ${(spec.bins as string[]).join(', ')}`)
-      return parts.join(' | ')
-    })
-    sections.push(`### Install specifications\n${specLines.join('\n')}`)
+      const kind = spec.kind ?? "unknown";
+      const parts = [`- **[${i}] ${formatScalar(kind)}**`];
+      if (spec.formula) parts.push(`formula: ${formatScalar(spec.formula)}`);
+      if (spec.package) parts.push(`package: ${formatScalar(spec.package)}`);
+      if (spec.module) parts.push(`module: ${formatScalar(spec.module)}`);
+      if (spec.url) parts.push(`url: ${formatScalar(spec.url)}`);
+      if (spec.archive) parts.push(`archive: ${formatScalar(spec.archive)}`);
+      if (spec.extract !== undefined) parts.push(`extract: ${formatScalar(spec.extract)}`);
+      if (spec.bins) parts.push(`creates binaries: ${(spec.bins as string[]).join(", ")}`);
+      return parts.join(" | ");
+    });
+    sections.push(`### Install specifications\n${specLines.join("\n")}`);
   } else {
     sections.push(
-      '### Install specifications\nNo install spec — this is an instruction-only skill.',
-    )
+      "### Install specifications\nNo install spec — this is an instruction-only skill.",
+    );
   }
 
   // Code file presence
   if (codeFiles.length > 0) {
-    const fileList = codeFiles.map((f) => `  ${f.path} (${f.size} bytes)`).join('\n')
-    sections.push(`### Code file presence\n${codeFiles.length} code file(s):\n${fileList}`)
+    const fileList = codeFiles.map((f) => `  ${f.path} (${f.size} bytes)`).join("\n");
+    sections.push(`### Code file presence\n${codeFiles.length} code file(s):\n${fileList}`);
   } else {
     sections.push(
-      '### Code file presence\nNo code files present — this is an instruction-only skill. The regex-based scanner had nothing to analyze.',
-    )
+      "### Code file presence\nNo code files present — this is an instruction-only skill. The regex-based scanner had nothing to analyze.",
+    );
   }
 
   // File manifest
-  const manifest = ctx.files.map((f) => `  ${f.path} (${f.size} bytes)`).join('\n')
-  sections.push(`### File manifest\n${ctx.files.length} file(s):\n${manifest}`)
+  const manifest = ctx.files.map((f) => `  ${f.path} (${f.size} bytes)`).join("\n");
+  sections.push(`### File manifest\n${ctx.files.length} file(s):\n${manifest}`);
 
   // Pre-scan injection signals
   if (ctx.injectionSignals.length > 0) {
     sections.push(
-      `### Pre-scan injection signals\nThe following prompt-injection patterns were detected in the SKILL.md content. The skill may be attempting to manipulate this evaluation:\n${ctx.injectionSignals.map((s) => `- ${s}`).join('\n')}`,
-    )
+      `### Pre-scan injection signals\nThe following prompt-injection patterns were detected in the SKILL.md content. The skill may be attempting to manipulate this evaluation:\n${ctx.injectionSignals.map((s) => `- ${s}`).join("\n")}`,
+    );
   } else {
-    sections.push('### Pre-scan injection signals\nNone detected.')
+    sections.push("### Pre-scan injection signals\nNone detected.");
   }
 
   // SKILL.md content
-  sections.push(`### SKILL.md content (runtime instructions)\n${skillMd}`)
+  sections.push(`### SKILL.md content (runtime instructions)\n${skillMd}`);
 
   // All file contents
   if (ctx.fileContents.length > 0) {
-    const MAX_FILE_CHARS = 10000
-    const MAX_TOTAL_CHARS = 50000
-    let totalChars = 0
-    const fileBlocks: string[] = []
+    const MAX_FILE_CHARS = 10000;
+    const MAX_TOTAL_CHARS = 50000;
+    let totalChars = 0;
+    const fileBlocks: string[] = [];
     for (const f of ctx.fileContents) {
       if (totalChars >= MAX_TOTAL_CHARS) {
         fileBlocks.push(
           `\n…[remaining files truncated, ${ctx.fileContents.length - fileBlocks.length} file(s) omitted]`,
-        )
-        break
+        );
+        break;
       }
       const content =
         f.content.length > MAX_FILE_CHARS
           ? `${f.content.slice(0, MAX_FILE_CHARS)}\n…[truncated]`
-          : f.content
-      fileBlocks.push(`#### ${f.path}\n\`\`\`\n${content}\n\`\`\``)
-      totalChars += content.length
+          : f.content;
+      fileBlocks.push(`#### ${f.path}\n\`\`\`\n${content}\n\`\`\``);
+      totalChars += content.length;
     }
     sections.push(
-      `### File contents\nFull source of all included files. Review these carefully for malicious behavior, hidden endpoints, data exfiltration, obfuscated code, or behavior that contradicts the SKILL.md.\n\n${fileBlocks.join('\n\n')}`,
-    )
+      `### File contents\nFull source of all included files. Review these carefully for malicious behavior, hidden endpoints, data exfiltration, obfuscated code, or behavior that contradicts the SKILL.md.\n\n${fileBlocks.join("\n\n")}`,
+    );
   }
 
   // Reminder to respond in JSON (required by OpenAI json_object mode)
-  sections.push('Respond with your evaluation as a single JSON object.')
+  sections.push("Respond with your evaluation as a single JSON object.");
 
-  return sections.join('\n\n')
+  return sections.join("\n\n");
 }
 
 // ---------------------------------------------------------------------------
 // Parse the LLM response
 // ---------------------------------------------------------------------------
 
-const VALID_VERDICTS = new Set(['benign', 'suspicious', 'malicious'])
-const VALID_CONFIDENCES = new Set(['high', 'medium', 'low'])
+const VALID_VERDICTS = new Set(["benign", "suspicious", "malicious"]);
+const VALID_CONFIDENCES = new Set(["high", "medium", "low"]);
 
 export function parseLlmEvalResponse(raw: string): LlmEvalResponse | null {
   // Strip markdown code fences if present
-  let text = raw.trim()
-  if (text.startsWith('```')) {
-    const firstNewline = text.indexOf('\n')
-    text = text.slice(firstNewline + 1)
-    const lastFence = text.lastIndexOf('```')
-    if (lastFence !== -1) text = text.slice(0, lastFence)
-    text = text.trim()
+  let text = raw.trim();
+  if (text.startsWith("```")) {
+    const firstNewline = text.indexOf("\n");
+    text = text.slice(firstNewline + 1);
+    const lastFence = text.lastIndexOf("```");
+    if (lastFence !== -1) text = text.slice(0, lastFence);
+    text = text.trim();
   }
 
-  let parsed: unknown
+  let parsed: unknown;
   try {
-    parsed = JSON.parse(text)
+    parsed = JSON.parse(text);
   } catch {
-    return null
+    return null;
   }
 
-  if (!parsed || typeof parsed !== 'object') return null
+  if (!parsed || typeof parsed !== "object") return null;
 
-  const obj = parsed as Record<string, unknown>
+  const obj = parsed as Record<string, unknown>;
 
   // Validate required fields
-  const verdict = typeof obj.verdict === 'string' ? obj.verdict.toLowerCase() : null
-  if (!verdict || !VALID_VERDICTS.has(verdict)) return null
+  const verdict = typeof obj.verdict === "string" ? obj.verdict.toLowerCase() : null;
+  if (!verdict || !VALID_VERDICTS.has(verdict)) return null;
 
-  const confidence = typeof obj.confidence === 'string' ? obj.confidence.toLowerCase() : null
-  if (!confidence || !VALID_CONFIDENCES.has(confidence)) return null
+  const confidence = typeof obj.confidence === "string" ? obj.confidence.toLowerCase() : null;
+  if (!confidence || !VALID_CONFIDENCES.has(confidence)) return null;
 
-  const summary = typeof obj.summary === 'string' ? obj.summary : ''
+  const summary = typeof obj.summary === "string" ? obj.summary : "";
 
   // Parse dimensions
-  const rawDims = obj.dimensions as Record<string, unknown> | undefined
-  const dimensions: LlmEvalDimension[] = []
-  if (rawDims && typeof rawDims === 'object') {
+  const rawDims = obj.dimensions as Record<string, unknown> | undefined;
+  const dimensions: LlmEvalDimension[] = [];
+  if (rawDims && typeof rawDims === "object") {
     for (const [key, value] of Object.entries(rawDims)) {
-      if (!value || typeof value !== 'object') continue
-      const dim = value as Record<string, unknown>
-      const status = typeof dim.status === 'string' ? dim.status : 'note'
-      const detail = typeof dim.detail === 'string' ? dim.detail : ''
+      if (!value || typeof value !== "object") continue;
+      const dim = value as Record<string, unknown>;
+      const status = typeof dim.status === "string" ? dim.status : "note";
+      const detail = typeof dim.detail === "string" ? dim.detail : "";
       dimensions.push({
         name: key,
         label: DIMENSION_META[key] ?? key,
         rating: status,
         detail,
-      })
+      });
     }
   }
 
   // Parse findings
-  const rawFindings = obj.scan_findings_in_context
-  let findings = ''
+  const rawFindings = obj.scan_findings_in_context;
+  let findings = "";
   if (Array.isArray(rawFindings) && rawFindings.length > 0) {
     findings = rawFindings
       .map((f: unknown) => {
-        if (!f || typeof f !== 'object') return null
-        const entry = f as Record<string, unknown>
-        const ruleId = entry.ruleId ?? 'unknown'
-        const expected = entry.expected_for_purpose ? 'expected' : 'unexpected'
-        const note = entry.note ?? ''
-        return `[${formatScalar(ruleId)}] ${expected}: ${formatScalar(note)}`
+        if (!f || typeof f !== "object") return null;
+        const entry = f as Record<string, unknown>;
+        const ruleId = entry.ruleId ?? "unknown";
+        const expected = entry.expected_for_purpose ? "expected" : "unexpected";
+        const note = entry.note ?? "";
+        return `[${formatScalar(ruleId)}] ${expected}: ${formatScalar(note)}`;
       })
       .filter(Boolean)
-      .join('\n')
+      .join("\n");
   }
 
-  const guidance = typeof obj.user_guidance === 'string' ? obj.user_guidance : ''
+  const guidance = typeof obj.user_guidance === "string" ? obj.user_guidance : "";
 
   return {
-    verdict: verdict as LlmEvalResponse['verdict'],
-    confidence: confidence as LlmEvalResponse['confidence'],
+    verdict: verdict as LlmEvalResponse["verdict"],
+    confidence: confidence as LlmEvalResponse["confidence"],
     summary,
     dimensions,
     guidance,
     findings,
-  }
+  };
 }

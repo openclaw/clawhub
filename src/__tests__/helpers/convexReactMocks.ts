@@ -1,18 +1,22 @@
-import { vi } from 'vitest'
+import { vi } from "vitest";
 
 export const convexReactMocks = {
   useAction: vi.fn(),
   useQuery: vi.fn(),
-  usePaginatedQuery: vi.fn(),
-}
+};
+
+export const convexHttpMock = {
+  query: vi.fn(),
+};
 
 export function resetConvexReactMocks() {
-  convexReactMocks.useAction.mockReset()
-  convexReactMocks.useQuery.mockReset()
-  convexReactMocks.usePaginatedQuery.mockReset()
+  convexReactMocks.useAction.mockReset();
+  convexReactMocks.useQuery.mockReset();
+  convexHttpMock.query.mockReset();
 }
 
 export function setupDefaultConvexReactMocks() {
-  convexReactMocks.useAction.mockReturnValue(() => Promise.resolve([]))
-  convexReactMocks.useQuery.mockReturnValue(null)
+  convexReactMocks.useAction.mockReturnValue(() => Promise.resolve([]));
+  convexReactMocks.useQuery.mockReturnValue(null);
+  convexHttpMock.query.mockResolvedValue({ page: [], hasMore: false, nextCursor: null });
 }

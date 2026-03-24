@@ -1,15 +1,16 @@
-import { v } from 'convex/values'
-import { internal } from './_generated/api'
-import type { Doc, Id } from './_generated/dataModel'
-import { internalAction } from './_generated/server'
+import { v } from "convex/values";
+import { internal } from "./_generated/api";
+import type { Doc, Id } from "./_generated/dataModel";
+import { internalAction } from "./functions";
 import {
   assembleCommentScamEvalUserMessage,
   COMMENT_SCAM_EVALUATOR_SYSTEM_PROMPT,
   COMMENT_SCAM_EVAL_MAX_OUTPUT_TOKENS,
   getCommentScamEvalModel,
   parseCommentScamEvalResponse,
-} from './lib/commentScamPrompt'
-import type { SkillEvalContext } from './lib/securityPrompt'
+} from "./lib/commentScamPrompt";
+import { extractResponseText } from "./lib/openaiResponse";
+import type { SkillEvalContext } from "./lib/securityPrompt";
 import {
   assembleEvalUserMessage,
   detectInjectionPatterns,
@@ -17,8 +18,31 @@ import {
   LLM_EVAL_MAX_OUTPUT_TOKENS,
   parseLlmEvalResponse,
   SECURITY_EVALUATOR_SYSTEM_PROMPT,
-} from './lib/securityPrompt'
-import { extractResponseText } from './lib/openaiResponse'
+} from "./lib/securityPrompt";
+
+const internalRefs = internal as unknown as {
+  packages: {
+    getReleaseByIdInternal: unknown;
+    getPackageByIdInternal: unknown;
+    updateReleaseLlmAnalysisInternal: unknown;
+  };
+};
+
+async function runQueryRef<T>(
+  ctx: { runQuery: (ref: never, args: never) => Promise<unknown> },
+  ref: unknown,
+  args: unknown,
+): Promise<T> {
+  return (await ctx.runQuery(ref as never, args as never)) as T;
+}
+
+async function runMutationRef<T>(
+  ctx: { runMutation: (ref: never, args: never) => Promise<unknown> },
+  ref: unknown,
+  args: unknown,
+): Promise<T> {
+  return (await ctx.runMutation(ref as never, args as never)) as T;
+}
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -26,14 +50,14 @@ import { extractResponseText } from './lib/openaiResponse'
 
 function verdictToStatus(verdict: string): string {
   switch (verdict) {
-    case 'benign':
-      return 'clean'
-    case 'malicious':
-      return 'malicious'
-    case 'suspicious':
-      return 'suspicious'
+    case "benign":
+      return "clean";
+    case "malicious":
+      return "malicious";
+    case "suspicious":
+      return "suspicious";
     default:
-      return 'pending'
+      return "pending";
   }
 }
 
@@ -43,79 +67,79 @@ function verdictToStatus(verdict: string): string {
 
 export const evaluateWithLlm = internalAction({
   args: {
-    versionId: v.id('skillVersions'),
+    versionId: v.id("skillVersions"),
   },
   handler: async (ctx, args) => {
-    const apiKey = process.env.OPENAI_API_KEY
+    const apiKey = process.env.OPENAI_API_KEY;
     if (!apiKey) {
-      console.log('[llmEval] OPENAI_API_KEY not configured, skipping evaluation')
-      return
+      console.log("[llmEval] OPENAI_API_KEY not configured, skipping evaluation");
+      return;
     }
 
-    const model = getLlmEvalModel()
+    const model = getLlmEvalModel();
 
     // Store error helper
     const storeError = async (message: string) => {
-      console.error(`[llmEval] ${message}`)
+      console.error(`[llmEval] ${message}`);
       await ctx.runMutation(internal.skills.updateVersionLlmAnalysisInternal, {
         versionId: args.versionId,
         llmAnalysis: {
-          status: 'error',
+          status: "error",
           summary: message,
           model,
           checkedAt: Date.now(),
         },
-      })
-    }
+      });
+    };
 
     // 1. Fetch version
     const version = (await ctx.runQuery(internal.skills.getVersionByIdInternal, {
       versionId: args.versionId,
-    })) as Doc<'skillVersions'> | null
+    })) as Doc<"skillVersions"> | null;
 
     if (!version) {
-      await storeError(`Version ${args.versionId} not found`)
-      return
+      await storeError(`Version ${args.versionId} not found`);
+      return;
     }
 
     // 2. Fetch skill
     const skill = (await ctx.runQuery(internal.skills.getSkillByIdInternal, {
       skillId: version.skillId,
-    })) as Doc<'skills'> | null
+    })) as Doc<"skills"> | null;
 
     if (!skill) {
-      await storeError(`Skill ${version.skillId} not found`)
-      return
+      await storeError(`Skill ${version.skillId} not found`);
+      return;
     }
 
     // 3. Read SKILL.md content
     const skillMdFile = version.files.find((f) => {
-      const lower = f.path.toLowerCase()
-      return lower === 'skill.md' || lower === 'skills.md'
-    })
+      const lower = f.path.toLowerCase();
+      return lower === "skill.md" || lower === "skills.md";
+    });
 
-    let skillMdContent = ''
+    let skillMdContent = "";
     if (skillMdFile) {
-      const blob = await ctx.storage.get(skillMdFile.storageId as Id<'_storage'>)
+      const blob = await ctx.storage.get(skillMdFile.storageId as Id<"_storage">);
       if (blob) {
-        skillMdContent = await blob.text()
+        skillMdContent = await blob.text();
       }
     }
 
     if (!skillMdContent) {
-      await storeError('No SKILL.md content found')
-      return
+      await storeError("No SKILL.md content found");
+      return;
     }
 
     // 4. Read all file contents
-    const fileContents: Array<{ path: string; content: string }> = []
+    const fileContents: Array<{ path: string; content: string }> = [];
     for (const f of version.files) {
-      const lower = f.path.toLowerCase()
-      if (lower === 'skill.md' || lower === 'skills.md') continue
+      const lower = f.path.toLowerCase();
+      if (lower === "skill.md" || lower === "skills.md") continue;
       try {
-        const blob = await ctx.storage.get(f.storageId as Id<'_storage'>)
+        const blob = await ctx.storage.get(f.storageId as Id<"_storage">);
         if (blob) {
-          fileContents.push({ path: f.path, content: await blob.text() })
+          fileContents.push({ path: f.path, content: await blob.text() });
         }
       } catch {
         // Skip files that can't be read
@@ -123,14 +147,14 @@ export const evaluateWithLlm = internalAction({
     }
 
     // 5. Detect injection patterns across ALL content
-    const allContent = [skillMdContent, ...fileContents.map((f) => f.content)].join('\n')
-    const injectionSignals = detectInjectionPatterns(allContent)
+    const allContent = [skillMdContent, ...fileContents.map((f) => f.content)].join("\n");
+    const injectionSignals = detectInjectionPatterns(allContent);
 
     // 6. Build eval context
-    const parsed = version.parsed as SkillEvalContext['parsed']
-    const fm = parsed.frontmatter ?? {}
-    const clawdisRecord = (parsed.clawdis ?? {}) as Record<string, unknown>
-    const clawdisLinks = (clawdisRecord.links ?? {}) as Record<string, unknown>
+    const parsed = version.parsed as SkillEvalContext["parsed"];
+    const fm = parsed.frontmatter ?? {};
+    const clawdisRecord = (parsed.clawdis ?? {}) as Record<string, unknown>;
+    const clawdisLinks = (clawdisRecord.links ?? {}) as Record<string, unknown>;
 
     const evalCtx: SkillEvalContext = {
       slug: skill.slug,
@@ -150,14 +174,14 @@ export const evaluateWithLlm = internalAction({
       skillMdContent,
       fileContents,
       injectionSignals,
-    }
+    };
 
     // 6. Assemble user message
-    const userMessage = assembleEvalUserMessage(evalCtx)
+    const userMessage = assembleEvalUserMessage(evalCtx);
 
     // 7. Call OpenAI Responses API (with retry for rate limits)
-    const MAX_RETRIES = 3
-    let raw: string | null = null
+    const MAX_RETRIES = 3;
+    let raw: string | null = null;
     try {
       const body = JSON.stringify({
         model,
@@ -166,62 +190,62 @@ export const evaluateWithLlm = internalAction({
         max_output_tokens: LLM_EVAL_MAX_OUTPUT_TOKENS,
         text: {
           format: {
-            type: 'json_object',
+            type: "json_object",
           },
         },
-      })
+      });
 
-      let response: Response | null = null
+      let response: Response | null = null;
       for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
-        response = await fetch('https://api.openai.com/v1/responses', {
-          method: 'POST',
+        response = await fetch("https://api.openai.com/v1/responses", {
+          method: "POST",
           headers: {
-            'Content-Type': 'application/json',
+            "Content-Type": "application/json",
             Authorization: `Bearer ${apiKey}`,
           },
           body,
-        })
+        });
 
         if (response.status === 429 || response.status >= 500) {
           if (attempt < MAX_RETRIES) {
-            const delay = 2 ** attempt * 2000 + Math.random() * 1000
+            const delay = 2 ** attempt * 2000 + Math.random() * 1000;
             console.log(
               `[llmEval] Rate limited (${response.status}), retrying in ${Math.round(delay)}ms (attempt ${attempt + 1}/${MAX_RETRIES})`,
-            )
-            await new Promise((r) => setTimeout(r, delay))
-            continue
+            );
+            await new Promise((r) => setTimeout(r, delay));
+            continue;
           }
         }
-        break
+        break;
       }
 
       if (!response || !response.ok) {
-        const errorText = response ? await response.text() : 'No response'
-        await storeError(`OpenAI API error (${response?.status}): ${errorText.slice(0, 200)}`)
-        return
+        const errorText = response ? await response.text() : "No response";
+        await storeError(`OpenAI API error (${response?.status}): ${errorText.slice(0, 200)}`);
+        return;
       }
 
-      const payload = (await response.json()) as unknown
-      raw = extractResponseText(payload)
+      const payload = (await response.json()) as unknown;
+      raw = extractResponseText(payload);
     } catch (error) {
       await storeError(
         `OpenAI API call failed: ${error instanceof Error ? error.message : String(error)}`,
-      )
-      return
+      );
+      return;
     }
 
     if (!raw) {
-      await storeError('Empty response from OpenAI')
-      return
+      await storeError("Empty response from OpenAI");
+      return;
     }
 
     // 8. Parse response
-    const result = parseLlmEvalResponse(raw)
+    const result = parseLlmEvalResponse(raw);
 
     if (!result) {
-      console.error(`[llmEval] Raw response (first 500 chars): ${raw.slice(0, 500)}`)
-      await storeError('Failed to parse LLM evaluation response')
-      return
+      console.error(`[llmEval] Raw response (first 500 chars): ${raw.slice(0, 500)}`);
+      await storeError("Failed to parse LLM evaluation response");
+      return;
     }
 
     // 9. Store result
@@ -238,16 +262,186 @@ export const evaluateWithLlm = internalAction({
         model,
         checkedAt: Date.now(),
       },
-    })
+    });
 
     console.log(
       `[llmEval] Evaluated ${skill.slug}@${version.version}: ${result.verdict} (${result.confidence} confidence)`,
-    )
+    );
 
     // Moderation visibility is finalized by VT results.
     // LLM eval only stores analysis payload on the version.
   },
-})
+});
+
+export const evaluatePackageReleaseWithLlm = internalAction({
+  args: {
+    releaseId: v.id("packageReleases"),
+  },
+  handler: async (ctx, args) => {
+    const apiKey = process.env.OPENAI_API_KEY;
+    if (!apiKey) {
+      console.log("[llmEval] OPENAI_API_KEY not configured, skipping package evaluation");
+      return;
+    }
+
+    const model = getLlmEvalModel();
+    const storeError = async (message: string) => {
+      console.error(`[llmEval:package] ${message}`);
+      await runMutationRef(ctx, internalRefs.packages.updateReleaseLlmAnalysisInternal, {
+        releaseId: args.releaseId,
+        llmAnalysis: {
+          status: "error",
+          summary: message,
+          model,
+          checkedAt: Date.now(),
+        },
+      });
+    };
+
+    const release = (await runQueryRef(ctx, internalRefs.packages.getReleaseByIdInternal, {
+      releaseId: args.releaseId,
+    })) as Doc<"packageReleases"> | null;
+    if (!release || release.softDeletedAt) {
+      await storeError(`Release ${args.releaseId} not found`);
+      return;
+    }
+
+    const pkg = (await runQueryRef(ctx, internalRefs.packages.getPackageByIdInternal, {
+      packageId: release.packageId,
+    })) as Doc<"packages"> | null;
+    if (!pkg) {
+      await storeError(`Package ${release.packageId} not found`);
+      return;
+    }
+
+    let readmeContent = "";
+    const fileContents: Array<{ path: string; content: string }> = [];
+    for (const f of release.files) {
+      try {
+        const blob = await ctx.storage.get(f.storageId as Id<"_storage">);
+        if (!blob) continue;
+        const content = await blob.text();
+        fileContents.push({ path: f.path, content });
+        const lower = f.path.toLowerCase();
+        if (!readmeContent && (lower === "readme.md" || lower === "readme.mdx" || lower === "readme.markdown")) {
+          readmeContent = content;
+        }
+      } catch {
+        // Best-effort read.
+      }
+    }
+
+    if (!readmeContent) {
+      const packageJsonText = fileContents.find((entry) => entry.path.toLowerCase() === "package.json")?.content;
+      readmeContent = packageJsonText ?? `# ${pkg.displayName}\n\n${release.summary ?? pkg.summary ?? pkg.name}`;
+    }
+
+    const allContent = [readmeContent, ...fileContents.map((f) => f.content)].join("\n");
+    const injectionSignals = detectInjectionPatterns(allContent);
+
+    const evalCtx: SkillEvalContext = {
+      slug: pkg.name,
+      displayName: pkg.displayName,
+      ownerUserId: String(pkg.ownerUserId),
+      version: release.version,
+      createdAt: release.createdAt,
+      summary: release.summary ?? pkg.summary ?? undefined,
+      source: pkg.sourceRepo ?? undefined,
+      homepage: undefined,
+      parsed: {
+        frontmatter: {},
+        metadata: {
+          compatibility: release.compatibility,
+          capabilities: release.capabilities,
+          verification: release.verification,
+          staticScan: release.staticScan,
+        },
+      },
+      files: release.files.map((f) => ({ path: f.path, size: f.size })),
+      skillMdContent: readmeContent,
+      fileContents,
+      injectionSignals,
+    };
+
+    const userMessage = assembleEvalUserMessage(evalCtx);
+    const MAX_RETRIES = 3;
+    let raw: string | null = null;
+    try {
+      const body = JSON.stringify({
+        model,
+        instructions: SECURITY_EVALUATOR_SYSTEM_PROMPT,
+        input: userMessage,
+        max_output_tokens: LLM_EVAL_MAX_OUTPUT_TOKENS,
+        text: {
+          format: {
+            type: "json_object",
+          },
+        },
+      });
+
+      let response: Response | null = null;
+      for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
+        response = await fetch("https://api.openai.com/v1/responses", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${apiKey}`,
+          },
+          body,
+        });
+
+        if (response.status === 429 || response.status >= 500) {
+          if (attempt < MAX_RETRIES) {
+            const delay = 2 ** attempt * 2000 + Math.random() * 1000;
+            await new Promise((r) => setTimeout(r, delay));
+            continue;
+          }
+        }
+        break;
+      }
+
+      if (!response || !response.ok) {
+        const errorText = response ? await response.text() : "No response";
+        await storeError(`OpenAI API error (${response?.status}): ${errorText.slice(0, 200)}`);
+        return;
+      }
+
+      const payload = (await response.json()) as unknown;
+      raw = extractResponseText(payload);
+    } catch (error) {
+      await storeError(
+        `OpenAI API call failed: ${error instanceof Error ? error.message : String(error)}`,
+      );
+      return;
+    }
+
+    if (!raw) {
+      await storeError("Empty response from OpenAI");
+      return;
+    }
+
+    const result = parseLlmEvalResponse(raw);
+    if (!result) {
+      await storeError("Failed to parse LLM evaluation response");
+      return;
+    }
+
+    await runMutationRef(ctx, internalRefs.packages.updateReleaseLlmAnalysisInternal, {
+      releaseId: args.releaseId,
+      llmAnalysis: {
+        status: verdictToStatus(result.verdict),
+        verdict: result.verdict,
+        confidence: result.confidence,
+        summary: result.summary,
+        dimensions: result.dimensions,
+        guidance: result.guidance,
+        findings: result.findings || undefined,
+        model,
+        checkedAt: Date.now(),
+      },
+    });
+  },
+});
 
 // ---------------------------------------------------------------------------
 // Convenience: evaluate a single skill by slug (for testing / manual runs)
@@ -261,27 +455,27 @@ export const evaluateBySlug = internalAction({
   handler: async (ctx, args) => {
     const skill = (await ctx.runQuery(internal.skills.getSkillBySlugInternal, {
       slug: args.slug,
-    })) as Doc<'skills'> | null
+    })) as Doc<"skills"> | null;
 
     if (!skill) {
-      console.error(`[llmEval:bySlug] Skill "${args.slug}" not found`)
-      return { error: 'Skill not found' }
+      console.error(`[llmEval:bySlug] Skill "${args.slug}" not found`);
+      return { error: "Skill not found" };
     }
 
     if (!skill.latestVersionId) {
-      console.error(`[llmEval:bySlug] Skill "${args.slug}" has no published version`)
-      return { error: 'No published version' }
+      console.error(`[llmEval:bySlug] Skill "${args.slug}" has no published version`);
+      return { error: "No published version" };
     }
 
-    console.log(`[llmEval:bySlug] Evaluating ${args.slug} (versionId: ${skill.latestVersionId})`)
+    console.log(`[llmEval:bySlug] Evaluating ${args.slug} (versionId: ${skill.latestVersionId})`);
 
     await ctx.scheduler.runAfter(0, internal.llmEval.evaluateWithLlm, {
       versionId: skill.latestVersionId,
-    })
+    });
 
-    return { ok: true, slug: args.slug, versionId: skill.latestVersionId }
+    return { ok: true, slug: args.slug, versionId: skill.latestVersionId };
   },
-})
+});
 
 // ---------------------------------------------------------------------------
 // Backfill action (Phase 2)
@@ -300,58 +494,58 @@ export const backfillLlmEval = internalAction({
     startTime: v.optional(v.number()),
   },
   handler: async (ctx, args) => {
-    const startTime = args.startTime ?? Date.now()
-    const apiKey = process.env.OPENAI_API_KEY
+    const startTime = args.startTime ?? Date.now();
+    const apiKey = process.env.OPENAI_API_KEY;
     if (!apiKey) {
-      console.log('[llmEval:backfill] OPENAI_API_KEY not configured')
-      return { error: 'OPENAI_API_KEY not configured' }
+      console.log("[llmEval:backfill] OPENAI_API_KEY not configured");
+      return { error: "OPENAI_API_KEY not configured" };
     }
 
-    const batchSize = args.batchSize ?? 25
-    const cursor = args.cursor ?? 0
-    let accTotal = args.accTotal ?? 0
-    let accScheduled = args.accScheduled ?? 0
-    let accSkipped = args.accSkipped ?? 0
+    const batchSize = args.batchSize ?? 25;
+    const cursor = args.cursor ?? 0;
+    let accTotal = args.accTotal ?? 0;
+    let accScheduled = args.accScheduled ?? 0;
+    let accSkipped = args.accSkipped ?? 0;
 
     const batch = await ctx.runQuery(internal.skills.getActiveSkillBatchForLlmBackfillInternal, {
       cursor,
       batchSize,
-    })
+    });
 
     if (batch.skills.length === 0 && batch.done) {
-      console.log('[llmEval:backfill] No more skills to evaluate')
-      return { total: accTotal, scheduled: accScheduled, skipped: accSkipped }
+      console.log("[llmEval:backfill] No more skills to evaluate");
+      return { total: accTotal, scheduled: accScheduled, skipped: accSkipped };
     }
 
     console.log(
       `[llmEval:backfill] Processing batch of ${batch.skills.length} skills (cursor=${cursor}, accumulated=${accTotal})`,
-    )
+    );
 
     for (const { versionId, slug } of batch.skills) {
       // Re-evaluate all (full file content reading upgrade)
       const version = (await ctx.runQuery(internal.skills.getVersionByIdInternal, {
         versionId,
-      })) as Doc<'skillVersions'> | null
+      })) as Doc<"skillVersions"> | null;
 
       if (!version) {
-        accSkipped++
-        continue
+        accSkipped++;
+        continue;
       }
 
       // Schedule each evaluation as a separate action invocation
-      await ctx.scheduler.runAfter(0, internal.llmEval.evaluateWithLlm, { versionId })
-      accScheduled++
-      console.log(`[llmEval:backfill] Scheduled eval for ${slug}`)
+      await ctx.scheduler.runAfter(0, internal.llmEval.evaluateWithLlm, { versionId });
+      accScheduled++;
+      console.log(`[llmEval:backfill] Scheduled eval for ${slug}`);
     }
 
-    accTotal += batch.skills.length
+    accTotal += batch.skills.length;
 
     if (!batch.done) {
       // Delay the next batch slightly to avoid overwhelming the scheduler
       // when all evals from this batch are also running
       console.log(
         `[llmEval:backfill] Scheduling next batch (cursor=${batch.nextCursor}, total so far=${accTotal})`,
-      )
+      );
       await ctx.scheduler.runAfter(5_000, internal.llmEval.backfillLlmEval, {
         cursor: batch.nextCursor,
         batchSize,
@@ -359,42 +553,42 @@ export const backfillLlmEval = internalAction({
         accScheduled,
         accSkipped,
         startTime,
-      })
-      return { status: 'continuing', totalSoFar: accTotal }
+      });
+      return { status: "continuing", totalSoFar: accTotal };
     }
 
-    const durationMs = Date.now() - startTime
+    const durationMs = Date.now() - startTime;
     const result = {
       total: accTotal,
       scheduled: accScheduled,
       skipped: accSkipped,
       durationMs,
-    }
-    console.log('[llmEval:backfill] Complete:', result)
-    return result
+    };
+    console.log("[llmEval:backfill] Complete:", result);
+    return result;
   },
-})
+});
 
 export const evaluateCommentForScam = internalAction({
   args: {
-    commentId: v.id('comments'),
-    skillId: v.id('skills'),
-    userId: v.id('users'),
+    commentId: v.id("comments"),
+    skillId: v.id("skills"),
+    userId: v.id("users"),
     body: v.string(),
   },
   handler: async (_ctx, args) => {
-    const apiKey = process.env.OPENAI_API_KEY
+    const apiKey = process.env.OPENAI_API_KEY;
     if (!apiKey) {
-      return { ok: false as const, error: 'OPENAI_API_KEY not configured' }
+      return { ok: false as const, error: "OPENAI_API_KEY not configured" };
     }
 
-    const model = getCommentScamEvalModel()
+    const model = getCommentScamEvalModel();
     const input = assembleCommentScamEvalUserMessage({
       commentId: String(args.commentId),
       skillId: String(args.skillId),
       userId: String(args.userId),
       body: args.body,
-    })
+    });
 
     const requestBody = JSON.stringify({
       model,
@@ -403,49 +597,49 @@ export const evaluateCommentForScam = internalAction({
       max_output_tokens: COMMENT_SCAM_EVAL_MAX_OUTPUT_TOKENS,
       text: {
         format: {
-          type: 'json_object',
+          type: "json_object",
         },
       },
-    })
+    });
 
-    const MAX_RETRIES = 3
-    let response: Response | null = null
+    const MAX_RETRIES = 3;
+    let response: Response | null = null;
     for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
-      response = await fetch('https://api.openai.com/v1/responses', {
-        method: 'POST',
+      response = await fetch("https://api.openai.com/v1/responses", {
+        method: "POST",
         headers: {
-          'Content-Type': 'application/json',
+          "Content-Type": "application/json",
           Authorization: `Bearer ${apiKey}`,
         },
         body: requestBody,
-      })
+      });
 
       if ((response.status === 429 || response.status >= 500) && attempt < MAX_RETRIES) {
-        const delay = 2 ** attempt * 2000 + Math.random() * 1000
-        await new Promise((resolve) => setTimeout(resolve, delay))
-        continue
+        const delay = 2 ** attempt * 2000 + Math.random() * 1000;
+        await new Promise((resolve) => setTimeout(resolve, delay));
+        continue;
       }
-      break
+      break;
     }
 
     if (!response || !response.ok) {
-      const errorText = response ? await response.text() : 'No response'
+      const errorText = response ? await response.text() : "No response";
       return {
         ok: false as const,
         error: `OpenAI API error (${response?.status}): ${errorText.slice(0, 200)}`,
-      }
+      };
     }
 
-    const payload = (await response.json()) as unknown
-    const raw = extractResponseText(payload)
+    const payload = (await response.json()) as unknown;
+    const raw = extractResponseText(payload);
     if (!raw) {
-      return { ok: false as const, error: 'Empty response from OpenAI' }
+      return { ok: false as const, error: "Empty response from OpenAI" };
     }
 
-    const parsed = parseCommentScamEvalResponse(raw)
+    const parsed = parseCommentScamEvalResponse(raw);
     if (!parsed) {
-      console.error(`[commentScam] Parse failure for ${args.commentId}: ${raw.slice(0, 400)}`)
-      return { ok: false as const, error: 'Failed to parse scam evaluation response' }
+      console.error(`[commentScam] Parse failure for ${args.commentId}: ${raw.slice(0, 400)}`);
+      return { ok: false as const, error: "Failed to parse scam evaluation response" };
     }
 
     return {
@@ -455,6 +649,6 @@ export const evaluateCommentForScam = internalAction({
       confidence: parsed.confidence,
       explanation: parsed.explanation,
       evidence: parsed.evidence,
-    }
+    };
   },
-})
+});

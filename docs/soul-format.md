@@ -1,5 +1,5 @@
 ---
-summary: 'Soul bundle format, required files, limits.'
+summary: "Soul bundle format, required files, limits."
 read_when:
   - Publishing souls
   - Debugging soul publish failures

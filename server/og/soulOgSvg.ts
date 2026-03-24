@@ -1,119 +1,119 @@
-import { FONT_MONO, FONT_SANS } from './ogAssets'
+import { FONT_MONO, FONT_SANS } from "./ogAssets";
 
 export type SoulOgSvgParams = {
-  markDataUrl: string
-  title: string
-  description: string
-  ownerLabel: string
-  versionLabel: string
-  footer: string
-}
+  markDataUrl: string;
+  title: string;
+  description: string;
+  ownerLabel: string;
+  versionLabel: string;
+  footer: string;
+};
 
 function escapeXml(value: string) {
   return value
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;')
-    .replace(/'/g, '&#39;')
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#39;");
 }
 
 function wrapText(value: string, maxChars: number, maxLines: number) {
-  const words = value.trim().split(/\s+/).filter(Boolean)
-  const lines: string[] = []
-  let current = ''
+  const words = value.trim().split(/\s+/).filter(Boolean);
+  const lines: string[] = [];
+  let current = "";
 
   function pushLine(line: string) {
-    if (!line) return
-    lines.push(line)
+    if (!line) return;
+    lines.push(line);
   }
 
   function splitLongWord(word: string) {
-    if (word.length <= maxChars) return [word]
-    const parts: string[] = []
-    let remaining = word
+    if (word.length <= maxChars) return [word];
+    const parts: string[] = [];
+    let remaining = word;
     while (remaining.length > maxChars) {
-      parts.push(`${remaining.slice(0, maxChars - 1)}…`)
-      remaining = remaining.slice(maxChars - 1)
+      parts.push(`${remaining.slice(0, maxChars - 1)}…`);
+      remaining = remaining.slice(maxChars - 1);
     }
-    if (remaining) parts.push(remaining)
-    return parts
+    if (remaining) parts.push(remaining);
+    return parts;
   }
 
   for (const word of words) {
     if (word.length > maxChars) {
       if (current) {
-        pushLine(current)
-        current = ''
-        if (lines.length >= maxLines - 1) break
+        pushLine(current);
+        current = "";
+        if (lines.length >= maxLines - 1) break;
       }
-      const parts = splitLongWord(word)
+      const parts = splitLongWord(word);
       for (const part of parts) {
-        pushLine(part)
-        if (lines.length >= maxLines) break
+        pushLine(part);
+        if (lines.length >= maxLines) break;
       }
-      current = ''
-      if (lines.length >= maxLines - 1) break
-      continue
+      current = "";
+      if (lines.length >= maxLines - 1) break;
+      continue;
     }
 
-    const next = current ? `${current} ${word}` : word
+    const next = current ? `${current} ${word}` : word;
     if (next.length <= maxChars) {
-      current = next
-      continue
+      current = next;
+      continue;
     }
-    pushLine(current)
-    current = word
-    if (lines.length >= maxLines - 1) break
+    pushLine(current);
+    current = word;
+    if (lines.length >= maxLines - 1) break;
   }
-  if (lines.length < maxLines && current) pushLine(current)
-  if (lines.length > maxLines) lines.length = maxLines
+  if (lines.length < maxLines && current) pushLine(current);
+  if (lines.length > maxLines) lines.length = maxLines;
 
-  const usedWords = lines.join(' ').split(/\s+/).filter(Boolean).length
+  const usedWords = lines.join(" ").split(/\s+/).filter(Boolean).length;
   if (usedWords < words.length) {
-    const last = lines.at(-1) ?? ''
-    const trimmed = last.length > maxChars ? last.slice(0, maxChars) : last
-    lines[lines.length - 1] = `${trimmed.replace(/\s+$/g, '').replace(/[.。,;:!?]+$/g, '')}…`
+    const last = lines.at(-1) ?? "";
+    const trimmed = last.length > maxChars ? last.slice(0, maxChars) : last;
+    lines[lines.length - 1] = `${trimmed.replace(/\s+$/g, "").replace(/[.。,;:!?]+$/g, "")}…`;
   }
-  return lines
+  return lines;
 }
 
 export function buildSoulOgSvg(params: SoulOgSvgParams) {
-  const rawTitle = params.title.trim() || 'SoulHub'
-  const rawDescription = params.description.trim() || 'SOUL.md bundle on SoulHub.'
+  const rawTitle = params.title.trim() || "SoulHub";
+  const rawDescription = params.description.trim() || "SOUL.md bundle on SoulHub.";
 
-  const cardX = 72
-  const cardY = 96
-  const cardW = 640
-  const cardH = 456
-  const cardR = 34
+  const cardX = 72;
+  const cardY = 96;
+  const cardW = 640;
+  const cardH = 456;
+  const cardR = 34;
 
-  const titleLines = wrapText(rawTitle, 22, 2)
-  const descLines = wrapText(rawDescription, 42, 3)
+  const titleLines = wrapText(rawTitle, 22, 2);
+  const descLines = wrapText(rawDescription, 42, 3);
 
-  const titleFontSize = titleLines.length > 1 || rawTitle.length > 24 ? 72 : 80
-  const titleY = titleLines.length > 1 ? 258 : 280
-  const titleLineHeight = 84
+  const titleFontSize = titleLines.length > 1 || rawTitle.length > 24 ? 72 : 80;
+  const titleY = titleLines.length > 1 ? 258 : 280;
+  const titleLineHeight = 84;
 
-  const descY = titleLines.length > 1 ? 395 : 380
-  const descLineHeight = 34
+  const descY = titleLines.length > 1 ? 395 : 380;
+  const descLineHeight = 34;
 
-  const pillText = `${params.ownerLabel} • ${params.versionLabel}`
-  const footerY = cardY + cardH - 18
+  const pillText = `${params.ownerLabel} • ${params.versionLabel}`;
+  const footerY = cardY + cardH - 18;
 
   const titleTspans = titleLines
     .map((line, index) => {
-      const dy = index === 0 ? 0 : titleLineHeight
-      return `<tspan x="114" dy="${dy}">${escapeXml(line)}</tspan>`
+      const dy = index === 0 ? 0 : titleLineHeight;
+      return `<tspan x="114" dy="${dy}">${escapeXml(line)}</tspan>`;
     })
-    .join('')
+    .join("");
 
   const descTspans = descLines
     .map((line, index) => {
-      const dy = index === 0 ? 0 : descLineHeight
-      return `<tspan x="114" dy="${dy}">${escapeXml(line)}</tspan>`
+      const dy = index === 0 ? 0 : descLineHeight;
+      return `<tspan x="114" dy="${dy}">${escapeXml(line)}</tspan>`;
     })
-    .join('')
+    .join("");
 
   return `<?xml version="1.0" encoding="UTF-8"?>
 <svg width="1200" height="630" viewBox="0 0 1200 630" fill="none" xmlns="http://www.w3.org/2000/svg">
@@ -205,5 +205,5 @@ export function buildSoulOgSvg(params: SoulOgSvgParams) {
       font-size="18"
       font-family="${FONT_MONO}, monospace">${escapeXml(params.footer)}</text>
   </g>
-</svg>`
+</svg>`;
 }

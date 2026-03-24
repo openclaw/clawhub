@@ -1,31 +1,31 @@
 /* @vitest-environment node */
 
-import { afterEach, describe, expect, it, vi } from 'vitest'
-import type { GlobalOpts } from '../types'
+import { afterEach, describe, expect, it, vi } from "vitest";
+import type { GlobalOpts } from "../types";
 
-vi.mock('../authToken.js', () => ({
-  requireAuthToken: vi.fn(async () => 'tkn'),
-}))
+vi.mock("../authToken.js", () => ({
+  requireAuthToken: vi.fn(async () => "tkn"),
+}));
 
-vi.mock('../registry.js', () => ({
-  getRegistry: vi.fn(async () => 'https://clawhub.ai'),
-}))
+vi.mock("../registry.js", () => ({
+  getRegistry: vi.fn(async () => "https://clawhub.ai"),
+}));
 
-const mockApiRequest = vi.fn()
-vi.mock('../../http.js', () => ({
+const mockApiRequest = vi.fn();
+vi.mock("../../http.js", () => ({
   apiRequest: (registry: unknown, args: unknown, schema?: unknown) =>
     mockApiRequest(registry, args, schema),
-}))
+}));
 
-vi.mock('../ui.js', () => ({
+vi.mock("../ui.js", () => ({
   createSpinner: vi.fn(() => ({ succeed: vi.fn(), fail: vi.fn(), stop: vi.fn() })),
   fail: (message: string) => {
-    throw new Error(message)
+    throw new Error(message);
   },
   formatError: (error: unknown) => (error instanceof Error ? error.message : String(error)),
   isInteractive: () => false,
   promptConfirm: vi.fn(async () => true),
-}))
+}));
 
 const {
   cmdTransferAccept,
@@ -33,107 +33,115 @@ const {
   cmdTransferList,
   cmdTransferReject,
   cmdTransferRequest,
-} = await import('./transfer')
+} = await import("./transfer");
 
 function makeOpts(): GlobalOpts {
   return {
-    workdir: '/work',
-    dir: '/work/skills',
-    site: 'https://clawhub.ai',
-    registry: 'https://clawhub.ai',
-    registrySource: 'default',
-  }
+    workdir: "/work",
+    dir: "/work/skills",
+    site: "https://clawhub.ai",
+    registry: "https://clawhub.ai",
+    registrySource: "default",
+  };
 }
 
-const consoleLog = vi.spyOn(console, 'log').mockImplementation(() => {})
+const consoleLog = vi.spyOn(console, "log").mockImplementation(() => {});
 
 afterEach(() => {
-  vi.clearAllMocks()
-})
+  vi.clearAllMocks();
+});
 
-describe('transfer commands', () => {
-  it('request requires --yes when input is disabled', async () => {
-    await expect(cmdTransferRequest(makeOpts(), 'demo', '@alice', {}, false)).rejects.toThrow(/--yes/i)
-  })
+describe("transfer commands", () => {
+  it("request requires --yes when input is disabled", async () => {
+    await expect(cmdTransferRequest(makeOpts(), "demo", "@alice", {}, false)).rejects.toThrow(
+      /--yes/i,
+    );
+  });
 
-  it('request calls transfer endpoint', async () => {
+  it("request calls transfer endpoint", async () => {
     mockApiRequest.mockResolvedValueOnce({
       ok: true,
-      transferId: 'skillOwnershipTransfers:1',
-      toUserHandle: 'alice',
+      transferId: "skillOwnershipTransfers:1",
+      toUserHandle: "alice",
       expiresAt: Date.now() + 10_000,
-    })
+    });
 
-    await cmdTransferRequest(makeOpts(), 'Demo', '@Alice', { yes: true, message: 'Please take over' }, false)
+    await cmdTransferRequest(
+      makeOpts(),
+      "Demo",
+      "@Alice",
+      { yes: true, message: "Please take over" },
+      false,
+    );
 
     expect(mockApiRequest).toHaveBeenCalledWith(
       expect.anything(),
       expect.objectContaining({
-        method: 'POST',
-        path: '/api/v1/skills/demo/transfer',
+        method: "POST",
+        path: "/api/v1/skills/demo/transfer",
       }),
       expect.anything(),
-    )
-    const requestArgs = mockApiRequest.mock.calls[0]?.[1] as { body?: string }
-    expect(requestArgs.body).toContain('"toUserHandle":"alice"')
-  })
+    );
+    const requestArgs = mockApiRequest.mock.calls[0]?.[1] as { body?: string };
+    expect(requestArgs.body).toContain('"toUserHandle":"alice"');
+  });
 
-  it('list calls incoming transfers endpoint', async () => {
+  it("list calls incoming transfers endpoint", async () => {
     mockApiRequest.mockResolvedValueOnce({
       transfers: [],
-    })
-    await cmdTransferList(makeOpts(), {})
+    });
+    await cmdTransferList(makeOpts(), {});
     expect(mockApiRequest).toHaveBeenCalledWith(
       expect.anything(),
       expect.objectContaining({
-        method: 'GET',
-        path: '/api/v1/transfers/incoming',
+        method: "GET",
+        path: "/api/v1/transfers/incoming",
       }),
       expect.anything(),
-    )
-    expect(consoleLog).toHaveBeenCalledWith('No incoming transfers.')
-  })
+    );
+    expect(consoleLog).toHaveBeenCalledWith("No incoming transfers.");
+  });
 
-  it('list supports outgoing endpoint', async () => {
+  it("list supports outgoing endpoint", async () => {
     mockApiRequest.mockResolvedValueOnce({
       transfers: [],
-    })
-    await cmdTransferList(makeOpts(), { outgoing: true })
+    });
+    await cmdTransferList(makeOpts(), { outgoing: true });
     expect(mockApiRequest).toHaveBeenCalledWith(
       expect.anything(),
       expect.objectContaining({
-        method: 'GET',
-        path: '/api/v1/transfers/outgoing',
+        method: "GET",
+        path: "/api/v1/transfers/outgoing",
       }),
       expect.anything(),
-    )
-    expect(consoleLog).toHaveBeenCalledWith('No outgoing transfers.')
-  })
+    );
+    expect(consoleLog).toHaveBeenCalledWith("No outgoing transfers.");
+  });
 
-  it('accept/reject/cancel call action endpoints', async () => {
+  it("accept/reject/cancel call action endpoints", async () => {
     mockApiRequest.mockResolvedValue({
       ok: true,
-      skillSlug: 'demo',
-    })
+      skillSlug: "demo",
+    });
 
-    await cmdTransferAccept(makeOpts(), 'demo', { yes: true }, false)
-    await cmdTransferReject(makeOpts(), 'demo', { yes: true }, false)
-    await cmdTransferCancel(makeOpts(), 'demo', { yes: true }, false)
+    await cmdTransferAccept(makeOpts(), "demo", { yes: true }, false);
+    await cmdTransferReject(makeOpts(), "demo", { yes: true }, false);
+    await cmdTransferCancel(makeOpts(), "demo", { yes: true }, false);
 
     expect(mockApiRequest).toHaveBeenCalledWith(
       expect.anything(),
-      expect.objectContaining({ method: 'POST', path: '/api/v1/skills/demo/transfer/accept' }),
+      expect.objectContaining({ method: "POST", path: "/api/v1/skills/demo/transfer/accept" }),
       expect.anything(),
-    )
+    );
     expect(mockApiRequest).toHaveBeenCalledWith(
       expect.anything(),
-      expect.objectContaining({ method: 'POST', path: '/api/v1/skills/demo/transfer/reject' }),
+      expect.objectContaining({ method: "POST", path: "/api/v1/skills/demo/transfer/reject" }),
       expect.anything(),
-    )
+    );
     expect(mockApiRequest).toHaveBeenCalledWith(
       expect.anything(),
-      expect.objectContaining({ method: 'POST', path: '/api/v1/skills/demo/transfer/cancel' }),
+      expect.objectContaining({ method: "POST", path: "/api/v1/skills/demo/transfer/cancel" }),
       expect.anything(),
-    )
-  })
-})
+    );
+  });
+});

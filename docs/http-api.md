@@ -1,5 +1,5 @@
 ---
-summary: 'HTTP API reference (public + CLI endpoints + auth).'
+summary: "HTTP API reference (public + CLI endpoints + auth)."
 read_when:
   - Adding/changing endpoints
   - Debugging CLI ↔ registry requests
@@ -21,9 +21,9 @@ Enforcement model:
 - Authenticated requests (valid Bearer token): enforced per user bucket.
 - If token is missing/invalid, behavior falls back to IP enforcement.
 
-- Read: 120/min per IP, 600/min per key
-- Write: 30/min per IP, 120/min per key
-- Download: 20/min per IP, 120/min per key (`/api/v1/download`)
+- Read: 180/min per IP, 900/min per key
+- Write: 45/min per IP, 180/min per key
+- Download: 30/min per IP, 180/min per key (`/api/v1/download`)
 
 Headers:
 
@@ -74,11 +74,24 @@ Query params:
 - `q` (required): query string
 - `limit` (optional): integer
 - `highlightedOnly` (optional): `true` to filter to highlighted skills
+- `nonSuspiciousOnly` (optional): `true` to hide suspicious (`flagged.suspicious`) skills
+- `nonSuspicious` (optional): legacy alias for `nonSuspiciousOnly`
 
 Response:
 
 ```json
-{ "results": [{ "score": 0.123, "slug": "gifgrep", "displayName": "GifGrep", "summary": "…", "version": "1.2.3", "updatedAt": 1730000000000 }] }
+{
+  "results": [
+    {
+      "score": 0.123,
+      "slug": "gifgrep",
+      "displayName": "GifGrep",
+      "summary": "…",
+      "version": "1.2.3",
+      "updatedAt": 1730000000000
+    }
+  ]
+}
 ```
 
 Notes:
@@ -90,17 +103,36 @@ Notes:
 Query params:
 
 - `limit` (optional): integer (1–200)
-- `cursor` (optional): pagination cursor (only for `sort=updated`)
+- `cursor` (optional): pagination cursor for any non-`trending` sort
 - `sort` (optional): `updated` (default), `downloads`, `stars` (alias: `rating`), `installsCurrent` (alias: `installs`), `installsAllTime`, `trending`
+- `nonSuspiciousOnly` (optional): `true` to hide suspicious (`flagged.suspicious`) skills
+- `nonSuspicious` (optional): legacy alias for `nonSuspiciousOnly`
 
 Notes:
 
 - `trending` ranks by installs in the last 7 days (telemetry-based).
+- When `nonSuspiciousOnly=true`, cursor-based sorts may return fewer than `limit` items on a page because suspicious skills are filtered after page retrieval.
+- Use `nextCursor` to continue pagination when present. A short page does not by itself mean end-of-results.
 
 Response:
 
 ```json
-{ "items": [{ "slug": "gifgrep", "displayName": "GifGrep", "summary": "…", "tags": { "latest": "1.2.3" }, "stats": {}, "createdAt": 0, "updatedAt": 0, "latestVersion": { "version": "1.2.3", "createdAt": 0, "changelog": "…" }, "metadata": { "os": ["macos"], "systems": ["aarch64-darwin"] } }], "nextCursor": null }
+{
+  "items": [
+    {
+      "slug": "gifgrep",
+      "displayName": "GifGrep",
+      "summary": "…",
+      "tags": { "latest": "1.2.3" },
+      "stats": {},
+      "createdAt": 0,
+      "updatedAt": 0,
+      "latestVersion": { "version": "1.2.3", "createdAt": 0, "changelog": "…" },
+      "metadata": { "os": ["macos"], "systems": ["aarch64-darwin"] }
+    }
+  ],
+  "nextCursor": null
+}
 ```
 
 ### `GET /api/v1/skills/{slug}`
@@ -108,11 +140,34 @@ Response:
 Response:
 
 ```json
-{ "skill": { "slug": "gifgrep", "displayName": "GifGrep", "summary": "…", "tags": { "latest": "1.2.3" }, "stats": {}, "createdAt": 0, "updatedAt": 0 }, "latestVersion": { "version": "1.2.3", "createdAt": 0, "changelog": "…" }, "metadata": { "os": ["macos"], "systems": ["aarch64-darwin"] }, "owner": { "handle": "steipete", "displayName": "Peter", "image": null }, "moderation": { "isSuspicious": false, "isMalwareBlocked": false, "verdict": "clean", "reasonCodes": [], "summary": null, "engineVersion": "v2.0.0", "updatedAt": 0 } }
+{
+  "skill": {
+    "slug": "gifgrep",
+    "displayName": "GifGrep",
+    "summary": "…",
+    "tags": { "latest": "1.2.3" },
+    "stats": {},
+    "createdAt": 0,
+    "updatedAt": 0
+  },
+  "latestVersion": { "version": "1.2.3", "createdAt": 0, "changelog": "…" },
+  "metadata": { "os": ["macos"], "systems": ["aarch64-darwin"] },
+  "owner": { "handle": "steipete", "displayName": "Peter", "image": null },
+  "moderation": {
+    "isSuspicious": false,
+    "isMalwareBlocked": false,
+    "verdict": "clean",
+    "reasonCodes": [],
+    "summary": null,
+    "engineVersion": "v2.0.0",
+    "updatedAt": 0
+  }
+}
 ```
 
 Notes:
 
+- Old slugs created by owner rename/merge flows resolve to the canonical skill.
 - `metadata.os`: OS restrictions declared in skill frontmatter (e.g. `["macos"]`, `["linux"]`). `null` if not declared.
 - `metadata.systems`: Nix system targets (e.g. `["aarch64-darwin", "x86_64-linux"]`). `null` if not declared.
 - `metadata` is `null` if the skill has no platform metadata.
@@ -125,7 +180,28 @@ Returns structured moderation state.
 Response:
 
 ```json
-{ "moderation": { "isSuspicious": true, "isMalwareBlocked": false, "verdict": "suspicious", "reasonCodes": ["suspicious.dynamic_code_execution"], "summary": "Detected: suspicious.dynamic_code_execution", "engineVersion": "v2.0.0", "updatedAt": 0, "legacyReason": null, "evidence": [{ "code": "suspicious.dynamic_code_execution", "severity": "critical", "file": "index.ts", "line": 3, "message": "Dynamic code execution detected.", "evidence": "" }] } }
+{
+  "moderation": {
+    "isSuspicious": true,
+    "isMalwareBlocked": false,
+    "verdict": "suspicious",
+    "reasonCodes": ["suspicious.dynamic_code_execution"],
+    "summary": "Detected: suspicious.dynamic_code_execution",
+    "engineVersion": "v2.0.0",
+    "updatedAt": 0,
+    "legacyReason": null,
+    "evidence": [
+      {
+        "code": "suspicious.dynamic_code_execution",
+        "severity": "critical",
+        "file": "index.ts",
+        "line": 3,
+        "message": "Dynamic code execution detected.",
+        "evidence": ""
+      }
+    ]
+  }
+}
 ```
 
 Notes:
@@ -145,6 +221,26 @@ Query params:
 
 Returns version metadata + files list.
 
+- `version.security` includes normalized scan verification status and scanner details
+  (VirusTotal + LLM), when available.
+
+### `GET /api/v1/skills/{slug}/scan`
+
+Returns security scan verification details for a skill version.
+
+Query params:
+
+- `version` (optional): specific version string.
+- `tag` (optional): resolve a tagged version (for example `latest`).
+
+Notes:
+
+- If neither `version` nor `tag` is provided, uses the latest version.
+- Includes normalized verification status plus scanner-specific details.
+- `security.hasScanResult` is `true` only when a scanner produced a definitive verdict (`clean`, `suspicious`, or `malicious`).
+- `moderation` is a current skill-level moderation snapshot derived from the latest version.
+- When querying a historical version, check `moderation.matchesRequestedVersion` and `moderation.sourceVersion` before treating `moderation` and `security` as the same version context.
+
 ### `GET /api/v1/skills/{slug}/file`
 
 Returns raw text content.
@@ -159,6 +255,119 @@ Notes:
 
 - Defaults to latest version.
 - File size limit: 200KB.
+
+### `GET /api/v1/packages`
+
+Unified catalog endpoint for:
+
+- skills
+- code plugins
+- bundle plugins
+
+Query params:
+
+- `limit` (optional): integer (1–100)
+- `cursor` (optional): pagination cursor
+- `family` (optional): `skill`, `code-plugin`, or `bundle-plugin`
+- `channel` (optional): `official`, `community`, or `private`
+- `isOfficial` (optional): `true` or `false`
+- `executesCode` (optional): `true` or `false`
+- `capabilityTag` (optional): capability filter for plugin packages
+
+Notes:
+
+- `GET /api/v1/code-plugins` and `GET /api/v1/bundle-plugins` remain fixed-family aliases.
+- Skill entries stay backed by the skill registry and can still be published only through `POST /api/v1/skills`.
+- `POST /api/v1/packages` is still only for code-plugin and bundle-plugin releases.
+- Anonymous callers only see public package channels.
+- Authenticated callers can see private packages for publishers they belong to in list/search results.
+- `channel=private` only returns packages the authenticated caller can read.
+
+### `GET /api/v1/packages/search`
+
+Unified catalog search across skills + plugin packages.
+
+Query params:
+
+- `q` (required): query string
+- `limit` (optional): integer (1–100)
+- `family` (optional): `skill`, `code-plugin`, or `bundle-plugin`
+- `channel` (optional): `official`, `community`, or `private`
+- `isOfficial` (optional): `true` or `false`
+- `executesCode` (optional): `true` or `false`
+- `capabilityTag` (optional): capability filter for plugin packages
+
+Notes:
+
+- Anonymous callers only see public package channels.
+- Authenticated callers can search private packages for publishers they belong to.
+- `channel=private` only returns packages the authenticated caller can read.
+
+### `GET /api/v1/packages/{name}`
+
+Returns package detail metadata.
+
+Notes:
+
+- Skills can also resolve through this route in the unified catalog.
+- Private packages return `404` unless the caller can read the owning publisher.
+
+### `GET /api/v1/packages/{name}/versions`
+
+Returns version history.
+
+Query params:
+
+- `limit` (optional): integer (1–100)
+- `cursor` (optional): pagination cursor
+
+Notes:
+
+- Private packages return `404` unless the caller can read the owning publisher.
+
+### `GET /api/v1/packages/{name}/versions/{version}`
+
+Returns one package version, including file metadata, compatibility, capabilities, verification, and scan data.
+
+Notes:
+
+- `version.sha256hash`, `version.vtAnalysis`, `version.llmAnalysis`, and `version.staticScan` are included when scan data exists.
+- Private packages return `404` unless the caller can read the owning publisher.
+
+### `GET /api/v1/packages/{name}/file`
+
+Returns raw text content for a package file.
+
+Query params:
+
+- `path` (required)
+- `version` (optional)
+- `tag` (optional)
+
+Notes:
+
+- Defaults to the latest release.
+- Uses the read rate bucket, not the download bucket.
+- Binary files return `415`.
+- File size limit: 200KB.
+- Private packages return `404` unless the caller can read the owning publisher.
+
+### `GET /api/v1/packages/{name}/download`
+
+Downloads a deterministic package archive for a package release.
+
+Query params:
+
+- `version` (optional)
+- `tag` (optional)
+
+Notes:
+
+- Defaults to the latest release.
+- Skills redirect to `GET /api/v1/download`.
+- Plugin/package archives are zip files with a `package/` root so they install directly in OpenClaw without repacking.
+- Registry-only metadata is not injected into the downloaded archive.
+- Private packages return `404` unless the caller is the owner.
 
 ### `GET /api/v1/resolve`
 
@@ -210,6 +419,23 @@ Publishes a new version.
 - Preferred: `multipart/form-data` with `payload` JSON + `files[]` blobs.
 - JSON body with `files` (storageId-based) is also accepted.
 
+### `POST /api/v1/packages`
+
+Publishes a code-plugin or bundle-plugin release.
+
+- Requires Bearer token auth.
+- Preferred: `multipart/form-data` with `payload` JSON + `files[]` blobs.
+- JSON body with `files` (storageId-based) is also accepted.
+- Optional payload field: `ownerHandle`. When present, only admins may publish on behalf of that owner.
+
+Validation highlights:
+
+- `family` must be `code-plugin` or `bundle-plugin`.
+- Code plugins require `package.json`, `openclaw.plugin.json`, source repo metadata, source commit metadata, and config schema metadata.
+- Bundle plugins require at least one host target.
+- Only trusted publishers may publish to the `official` channel.
+- On-behalf publishes still validate official-channel eligibility against the target owner account.
+
 ### `DELETE /api/v1/skills/{slug}` / `POST /api/v1/skills/{slug}/undelete`
 
 Soft-delete / restore a skill (owner, moderator, or admin).
@@ -221,6 +447,29 @@ Status codes:
 - `403`: forbidden
 - `404`: skill/user not found
 - `500`: internal server error
+
+### `POST /api/v1/users/publisher`
+
+Admin-only. Ensures an org publisher exists for a handle. If the handle still points at a
+legacy shared user/personal publisher, the endpoint migrates it into an org publisher first.
+
+- Body: `{ "handle": "openclaw", "displayName": "OpenClaw", "trusted": true }`
+- Response: `{ "ok": true, "publisherId": "...", "handle": "openclaw", "created": true, "migrated": false, "trusted": true }`
+
+### Owner slug management endpoints
+
+- `POST /api/v1/skills/{slug}/rename`
+  - Body: `{ "newSlug": "new-canonical-slug" }`
+  - Response: `{ "ok": true, "slug": "new-canonical-slug", "previousSlug": "old-slug" }`
+- `POST /api/v1/skills/{slug}/merge`
+  - Body: `{ "targetSlug": "canonical-target-slug" }`
+  - Response: `{ "ok": true, "sourceSlug": "old-slug", "targetSlug": "canonical-target-slug" }`
+
+Notes:
+
+- Both endpoints require API token auth and only work for the skill owner.
+- `rename` preserves the previous slug as a redirect alias.
+- `merge` hides the source listing and redirects the source slug to the target listing.
 
 ### Transfer ownership endpoints
 

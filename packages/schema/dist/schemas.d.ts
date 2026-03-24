@@ -1,4 +1,4 @@
-import { type inferred } from 'arktype';
+import { type inferred } from "arktype";
 export declare const GlobalConfigSchema: import("arktype/internal/variants/object.ts").ObjectType<{
     registry: string;
     token?: string | undefined;
@@ -275,6 +275,16 @@ export declare const ApiV1PublishResponseSchema: import("arktype/internal/varian
 }, {}>;
 export declare const ApiV1DeleteResponseSchema: import("arktype/internal/variants/object.ts").ObjectType<{
     ok: true;
+}, {}>;
+export declare const ApiV1SkillRenameResponseSchema: import("arktype/internal/variants/object.ts").ObjectType<{
+    ok: true;
+    slug: string;
+    previousSlug: string;
+}, {}>;
+export declare const ApiV1SkillMergeResponseSchema: import("arktype/internal/variants/object.ts").ObjectType<{
+    ok: true;
+    sourceSlug: string;
+    targetSlug: string;
 }, {}>;
 export declare const ApiV1TransferRequestResponseSchema: import("arktype/internal/variants/object.ts").ObjectType<{
     ok: true;

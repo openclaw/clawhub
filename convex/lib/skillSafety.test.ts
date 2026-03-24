@@ -1,31 +1,31 @@
-import { describe, expect, it } from 'vitest'
-import { isSkillSuspicious } from './skillSafety'
+import { describe, expect, it } from "vitest";
+import { isSkillSuspicious } from "./skillSafety";
 
-describe('isSkillSuspicious', () => {
-  it('returns true when suspicious flag is present', () => {
+describe("isSkillSuspicious", () => {
+  it("returns true when suspicious flag is present", () => {
     expect(
       isSkillSuspicious({
-        moderationFlags: ['flagged.suspicious'],
+        moderationFlags: ["flagged.suspicious"],
         moderationReason: undefined,
       }),
-    ).toBe(true)
-  })
+    ).toBe(true);
+  });
 
-  it('returns true for scanner suspicious reason', () => {
+  it("returns true for scanner suspicious reason", () => {
     expect(
       isSkillSuspicious({
         moderationFlags: [],
-        moderationReason: 'scanner.vt.suspicious',
+        moderationReason: "scanner.vt.suspicious",
       }),
-    ).toBe(true)
-  })
+    ).toBe(true);
+  });
 
-  it('returns false for clean moderation states', () => {
+  it("returns false for clean moderation states", () => {
     expect(
       isSkillSuspicious({
         moderationFlags: [],
-        moderationReason: 'scanner.vt.clean',
+        moderationReason: "scanner.vt.clean",
       }),
-    ).toBe(false)
-  })
-})
+    ).toBe(false);
+  });
+});

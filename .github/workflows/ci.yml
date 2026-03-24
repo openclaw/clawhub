@@ -11,11 +11,11 @@ jobs:
     timeout-minutes: 15
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
-      - uses: oven-sh/setup-bun@v2
+      - uses: oven-sh/setup-bun@e3914758a49697077f7bcd190d36582a61667aad
         with:
-          bun-version: 1.3.6
+          bun-version: 1.3.10
 
       - name: Install
         run: bun install --frozen-lockfile
@@ -31,8 +31,9 @@ jobs:
       - name: Coverage
         run: bun run coverage
 
-      - name: Typecheck packages
+      - name: Typecheck
         run: |
+          bunx tsc --noEmit
           bunx tsc -p packages/schema/tsconfig.json --noEmit
           bunx tsc -p packages/clawdhub/tsconfig.json --noEmit
 

@@ -1,12 +1,12 @@
-import { Link } from '@tanstack/react-router'
-import type { ReactNode } from 'react'
-import type { PublicSoul } from '../lib/publicUser'
+import { Link } from "@tanstack/react-router";
+import type { ReactNode } from "react";
+import type { PublicSoul } from "../lib/publicUser";
 
 type SoulCardProps = {
-  soul: PublicSoul
-  summaryFallback: string
-  meta: ReactNode
-}
+  soul: PublicSoul;
+  summaryFallback: string;
+  meta: ReactNode;
+};
 
 export function SoulCard({ soul, summaryFallback, meta }: SoulCardProps) {
   return (
@@ -15,5 +15,5 @@ export function SoulCard({ soul, summaryFallback, meta }: SoulCardProps) {
       <p className="skill-card-summary">{soul.summary ?? summaryFallback}</p>
       <div className="skill-card-footer">{meta}</div>
     </Link>
-  )
+  );
 }
