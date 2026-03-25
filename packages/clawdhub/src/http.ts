@@ -70,7 +70,11 @@ type RateLimitInfo = {
 };
 
 function serializeJsonBody(body: unknown): string {
-  return typeof body === "string" ? body : JSON.stringify(body ?? {});
+  if (typeof body === "string") {
+    // Assume already-serialized JSON; skip re-encoding to avoid double-encoding.
+    return body;
+  }
+  return JSON.stringify(body ?? {});
 }
 
 class HttpStatusError extends Error {
