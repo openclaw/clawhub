@@ -544,7 +544,9 @@ const embeddingSkillMap = defineTable({
 const skillSearchDigest = defineTable({
   skillId: v.id("skills"),
   slug: v.string(),
+  normalizedSlug: v.optional(v.string()),
   displayName: v.string(),
+  normalizedDisplayName: v.optional(v.string()),
   summary: v.optional(v.string()),
   ownerUserId: v.id("users"),
   ownerPublisherId: v.optional(v.id("publishers")),
@@ -584,6 +586,12 @@ const skillSearchDigest = defineTable({
   .index("by_active_updated", ["softDeletedAt", "updatedAt"])
   .index("by_active_created", ["softDeletedAt", "createdAt"])
   .index("by_active_name", ["softDeletedAt", "displayName"])
+  .index("by_active_normalized_slug", ["softDeletedAt", "normalizedSlug", "updatedAt"])
+  .index("by_active_normalized_display_name", [
+    "softDeletedAt",
+    "normalizedDisplayName",
+    "updatedAt",
+  ])
   .index("by_active_stats_downloads", ["softDeletedAt", "statsDownloads", "updatedAt"])
   .index("by_active_stats_stars", ["softDeletedAt", "statsStars", "updatedAt"])
   .index("by_active_stats_installs_all_time", [
@@ -594,6 +602,18 @@ const skillSearchDigest = defineTable({
   .index("by_nonsuspicious_updated", ["softDeletedAt", "isSuspicious", "updatedAt"])
   .index("by_nonsuspicious_created", ["softDeletedAt", "isSuspicious", "createdAt"])
   .index("by_nonsuspicious_name", ["softDeletedAt", "isSuspicious", "displayName"])
+  .index("by_nonsuspicious_normalized_slug", [
+    "softDeletedAt",
+    "isSuspicious",
+    "normalizedSlug",
+    "updatedAt",
+  ])
+  .index("by_nonsuspicious_normalized_display_name", [
+    "softDeletedAt",
+    "isSuspicious",
+    "normalizedDisplayName",
+    "updatedAt",
+  ])
   .index("by_nonsuspicious_downloads", [
     "softDeletedAt",
     "isSuspicious",

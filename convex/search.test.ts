@@ -2,7 +2,13 @@
 
 import { describe, expect, it, vi } from "vitest";
 import { tokenize } from "./lib/searchText";
-import { __test, hydrateResults, lexicalFallbackSkills, searchSkills } from "./search";
+import {
+  __test,
+  directLexicalSkills,
+  hydrateResults,
+  lexicalFallbackSkills,
+  searchSkills,
+} from "./search";
 
 const { generateEmbeddingMock } = vi.hoisted(() => ({
   generateEmbeddingMock: vi.fn(),
@@ -25,6 +31,14 @@ type WrappedHandler = {
 };
 
 const searchSkillsHandler = (searchSkills as unknown as WrappedHandler)._handler;
+const directLexicalSkillsHandler = (
+  directLexicalSkills as unknown as {
+    _handler: (
+      ctx: unknown,
+      args: unknown,
+    ) => Promise<Array<{ skill: { slug: string; _id: string } }>>;
+  }
+)._handler;
 const lexicalFallbackSkillsHandler = (lexicalFallbackSkills as unknown as WrappedHandler)._handler;
 const hydrateResultsHandler = (
   hydrateResults as unknown as {
@@ -34,6 +48,10 @@ const hydrateResultsHandler = (
     ) => Promise<Array<{ skill: { slug: string; _id: string }; ownerHandle: string | null }>>;
   }
 )._handler;
+type DigestRow = Omit<ReturnType<typeof makeDigestRow>, "normalizedSlug" | "normalizedDisplayName"> & {
+  normalizedSlug?: string;
+  normalizedDisplayName?: string;
+};
 
 describe("search helpers", () => {
   it("returns fallback results when vector candidates are empty", async () => {
@@ -46,8 +64,12 @@ describe("search helpers", () => {
         owner: null,
       },
     ];
-    // Slug-like queries now do an indexed exact-slug lookup before lexical fallback.
-    const runQuery = vi.fn().mockResolvedValueOnce(null).mockResolvedValueOnce(fallback);
+    // Slug-like queries do exact-slug lookup, then directLexicalSkills, then lexical fallback.
+    const runQuery = vi
+      .fn()
+      .mockResolvedValueOnce(null) // getExactSkillSlugMatch
+      .mockResolvedValueOnce([]) // directLexicalSkills
+      .mockResolvedValueOnce(fallback); // lexicalFallbackSkills
 
     const result = await searchSkillsHandler(
       {
@@ -59,10 +81,89 @@ describe("search helpers", () => {
 
     expect(result).toHaveLength(1);
     expect(result[0].skill.slug).toBe("orf");
-    expect(runQuery).toHaveBeenCalledWith(
+    expect(runQuery).toHaveBeenNthCalledWith(
+      3,
       expect.anything(),
       expect.objectContaining({ query: "orf", queryTokens: ["orf"] }),
     );
+  });
+
+  it("returns direct lexical prefix matches when vector recall misses them (#1254)", async () => {
+    const digest = makeDigestRow(
+      makeSkillDoc({
+        id: "skills:midscene",
+        slug: "midscene-computer-automation",
+        displayName: "Midscene Automations Skills for Computer",
+      }),
+    );
+
+    const result = await directLexicalSkillsHandler(
+      makeDirectLexicalCtx({
+        displayNameDigests: [digest],
+        slugDigests: [digest],
+      }),
+      { query: "Midscene", limit: 10 },
+    );
+
+    expect(result).toHaveLength(1);
+    expect(result[0].skill.slug).toBe("midscene-computer-automation");
+  });
+
+  it("returns direct lexical matches from legacy display-name indexes before digest backfill", async () => {
+    const digest = {
+      ...makeDigestRow(
+        makeSkillDoc({
+          id: "skills:midscene",
+          slug: "midscene-computer-automation",
+          displayName: "Midscene Automations Skills for Computer",
+        }),
+      ),
+      normalizedSlug: undefined,
+      normalizedDisplayName: undefined,
+    };
+
+    const result = await directLexicalSkillsHandler(
+      makeDirectLexicalCtx({
+        displayNameDigests: [],
+        legacyDisplayNameDigests: [digest],
+        slugDigests: [],
+      }),
+      { query: "Midscene", limit: 10 },
+    );
+
+    expect(result).toHaveLength(1);
+    expect(result[0].skill.slug).toBe("midscene-computer-automation");
+  });
+
+  it("merges direct lexical matches into search results when vector recall misses them", async () => {
+    generateEmbeddingMock.mockResolvedValueOnce([0, 1, 2]);
+    const direct = [
+      {
+        skill: makePublicSkill({
+          id: "skills:midscene",
+          slug: "midscene-computer-automation",
+          displayName: "Midscene Automations Skills for Computer",
+        }),
+        version: null,
+        ownerHandle: "quanru",
+        owner: null,
+      },
+    ];
+    const runQuery = vi
+      .fn()
+      .mockResolvedValueOnce(direct) // directLexicalSkills
+      .mockResolvedValueOnce([]); // lexicalFallbackSkills
+
+    const result = await searchSkillsHandler(
+      {
+        vectorSearch: vi.fn().mockResolvedValue([]),
+        runQuery,
+      },
+      { query: "Midscene", limit: 10 },
+    );
+
+    expect(result).toHaveLength(1);
+    expect(result[0].skill.slug).toBe("midscene-computer-automation");
   });
 
   it("applies highlightedOnly filtering in lexical fallback", async () => {
@@ -185,6 +286,7 @@ describe("search helpers", () => {
       .fn()
       .mockResolvedValueOnce(null) // getExactSkillSlugMatch
       .mockResolvedValueOnce(vectorEntries) // hydrateResults
+      .mockResolvedValueOnce([]) // directLexicalSkills
       .mockResolvedValueOnce(fallbackEntries); // lexicalFallbackSkills
 
     const result = await searchSkillsHandler(
@@ -868,14 +970,7 @@ function makeLexicalCtx(params: {
   recentSkills: Array<ReturnType<typeof makeSkillDoc>>;
 }) {
   // Convert skill docs to digest-shaped rows (add skillId + owner fields).
-  const digestRows = params.recentSkills.map((skill) => ({
-    ...skill,
-    skillId: skill._id,
-    ownerHandle: "owner",
-    ownerName: "Owner",
-    ownerDisplayName: "Owner",
-    ownerImage: undefined,
-  }));
+  const digestRows = params.recentSkills.map((skill) => makeDigestRow(skill));
   return {
     db: {
       query: vi.fn((table: string) => {
@@ -913,5 +1008,57 @@ function makeLexicalCtx(params: {
         return null;
       }),
     },
+  };
+}
+
+function makeDirectLexicalCtx(params: {
+  displayNameDigests: DigestRow[];
+  legacyDisplayNameDigests?: DigestRow[];
+  slugDigests: DigestRow[];
+}) {
+  return {
+    db: {
+      query: vi.fn((table: string) => {
+        if (table !== "skillSearchDigest") throw new Error(`Unexpected table ${table}`);
+        return {
+          withIndex: (index: string) => {
+            if (index === "by_active_normalized_display_name") {
+              return {
+                take: vi.fn().mockResolvedValue(params.displayNameDigests),
+              };
+            }
+            if (index === "by_active_name") {
+              return {
+                take: vi.fn().mockResolvedValue(params.legacyDisplayNameDigests ?? []),
+              };
+            }
+            if (index === "by_active_normalized_slug") {
+              return {
+                take: vi.fn().mockResolvedValue(params.slugDigests),
+              };
+            }
+            throw new Error(`Unexpected digest index ${index}`);
+          },
+        };
+      }),
+      get: vi.fn(async (id: string) => {
+        if (id.startsWith("users:")) return { _id: id, handle: "owner" };
+        if (id.startsWith("skillVersions:")) return { _id: id, version: "1.0.0" };
+        return null;
+      }),
+    },
+  };
+}
+
+function makeDigestRow(skill: ReturnType<typeof makeSkillDoc>) {
+  return {
+    ...skill,
+    skillId: skill._id,
+    normalizedSlug: skill.slug.trim().toLowerCase(),
+    normalizedDisplayName: skill.displayName.trim().toLowerCase().replace(/\s+/g, " "),
+    ownerHandle: "owner",
+    ownerName: "Owner",
+    ownerDisplayName: "Owner",
+    ownerImage: undefined,
   };
 }

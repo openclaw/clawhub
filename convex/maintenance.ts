@@ -1641,14 +1641,28 @@ export const backfillSkillSearchDigestInternal = internalMutation({
       .paginate({ cursor: args.cursor ?? null, numItems: batchSize });
 
     let inserted = 0;
+    let updated = 0;
     for (const skill of page) {
+      const fields = extractDigestFields(skill);
       const existing = await ctx.db
         .query("skillSearchDigest")
         .withIndex("by_skill", (q) => q.eq("skillId", skill._id))
         .unique();
       if (!existing) {
-        await ctx.db.insert("skillSearchDigest", extractDigestFields(skill));
+        await ctx.db.insert("skillSearchDigest", fields);
         inserted++;
+        continue;
+      }
+
+      if (
+        existing.normalizedSlug !== fields.normalizedSlug ||
+        existing.normalizedDisplayName !== fields.normalizedDisplayName
+      ) {
+        await ctx.db.patch(existing._id, {
+          normalizedSlug: fields.normalizedSlug,
+          normalizedDisplayName: fields.normalizedDisplayName,
+        });
+        updated++;
       }
     }
 
@@ -1659,7 +1673,7 @@ export const backfillSkillSearchDigestInternal = internalMutation({
       });
     }
 
-    return { inserted, isDone, scanned: page.length };
+    return { inserted, updated, isDone, scanned: page.length };
   },
 });
 
