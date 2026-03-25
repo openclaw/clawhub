@@ -125,10 +125,12 @@ describe("search helpers", () => {
     const result = await directLexicalSkillsHandler(
       makeDirectLexicalCtx({
         displayNameDigests: [],
-        legacyDisplayNameDigests: [digest],
+        legacyDisplayNameDigestsByPrefix: {
+          Midscene: [digest],
+        },
         slugDigests: [],
       }),
-      { query: "Midscene", limit: 10 },
+      { query: "midscene", limit: 10 },
     );
 
     expect(result).toHaveLength(1);
@@ -164,6 +166,36 @@ describe("search helpers", () => {
 
     expect(result).toHaveLength(1);
     expect(result[0].skill.slug).toBe("midscene-computer-automation");
+  });
+
+  it("skips direct lexical lookup when vector exact matches already satisfy the limit", async () => {
+    generateEmbeddingMock.mockResolvedValueOnce([0, 1, 2]);
+    const vectorEntries = [
+      {
+        embeddingId: "skillEmbeddings:midscene",
+        skill: makePublicSkill({
+          id: "skills:midscene",
+          slug: "midscene-computer-automation",
+          displayName: "Midscene Automations Skills for Computer",
+        }),
+        version: null,
+        ownerHandle: "quanru",
+        owner: null,
+      },
+    ];
+    const runQuery = vi.fn().mockResolvedValueOnce(vectorEntries); // hydrateResults
+
+    const result = await searchSkillsHandler(
+      {
+        vectorSearch: vi.fn().mockResolvedValue([{ _id: "skillEmbeddings:midscene", _score: 0.95 }]),
+        runQuery,
+      },
+      { query: "Midscene", limit: 1 },
+    );
+
+    expect(result).toHaveLength(1);
+    expect(result[0].skill.slug).toBe("midscene-computer-automation");
+    expect(runQuery).toHaveBeenCalledTimes(1);
   });
 
   it("applies highlightedOnly filtering in lexical fallback", async () => {
@@ -1014,6 +1046,7 @@ function makeLexicalCtx(params: {
 function makeDirectLexicalCtx(params: {
   displayNameDigests: DigestRow[];
   legacyDisplayNameDigests?: DigestRow[];
+  legacyDisplayNameDigestsByPrefix?: Record<string, DigestRow[]>;
   slugDigests: DigestRow[];
 }) {
   return {
@@ -1021,18 +1054,46 @@ function makeDirectLexicalCtx(params: {
       query: vi.fn((table: string) => {
         if (table !== "skillSearchDigest") throw new Error(`Unexpected table ${table}`);
         return {
-          withIndex: (index: string) => {
+          withIndex: (index: string, buildRange?: (q: LegacyRangeBuilder) => LegacyRangeBuilder) => {
+            const range = buildLegacyRange(buildRange);
             if (index === "by_active_normalized_display_name") {
+              return {
+                take: vi.fn().mockResolvedValue(params.displayNameDigests),
+              };
+            }
+            if (index === "by_nonsuspicious_normalized_display_name") {
               return {
                 take: vi.fn().mockResolvedValue(params.displayNameDigests),
               };
             }
             if (index === "by_active_name") {
               return {
-                take: vi.fn().mockResolvedValue(params.legacyDisplayNameDigests ?? []),
+                take: vi
+                  .fn()
+                  .mockResolvedValue(
+                    params.legacyDisplayNameDigestsByPrefix?.[range.gteValue ?? ""] ??
+                      params.legacyDisplayNameDigests ??
+                      [],
+                  ),
+              };
+            }
+            if (index === "by_nonsuspicious_name") {
+              return {
+                take: vi
+                  .fn()
+                  .mockResolvedValue(
+                    params.legacyDisplayNameDigestsByPrefix?.[range.gteValue ?? ""] ??
+                      params.legacyDisplayNameDigests ??
+                      [],
+                  ),
               };
             }
             if (index === "by_active_normalized_slug") {
+              return {
+                take: vi.fn().mockResolvedValue(params.slugDigests),
+              };
+            }
+            if (index === "by_nonsuspicious_normalized_slug") {
               return {
                 take: vi.fn().mockResolvedValue(params.slugDigests),
               };
@@ -1048,6 +1109,28 @@ function makeDirectLexicalCtx(params: {
       }),
     },
   };
+}
+
+type LegacyRangeBuilder = {
+  eq: (field: string, value: unknown) => LegacyRangeBuilder;
+  gte: (field: string, value: string) => LegacyRangeBuilder;
+  lt: (field: string, value: string) => LegacyRangeBuilder;
+};
+
+function buildLegacyRange(
+  buildRange?: (q: LegacyRangeBuilder) => LegacyRangeBuilder,
+) {
+  const state: { gteValue?: string } = {};
+  const range: LegacyRangeBuilder = {
+    eq: () => range,
+    gte: (_field, value) => {
+      state.gteValue = value;
+      return range;
+    },
+    lt: () => range,
+  };
+  buildRange?.(range);
+  return state;
 }
 
 function makeDigestRow(skill: ReturnType<typeof makeSkillDoc>) {

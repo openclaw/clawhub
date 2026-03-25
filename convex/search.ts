@@ -71,6 +71,15 @@ function slugPrefixForQuery(query: string) {
   return tokens.length > 0 ? tokens.join("-") : "";
 }
 
+function legacyDisplayNamePrefixes(query: string) {
+  const normalized = normalizeSkillSearchText(query);
+  if (!normalized) return [];
+
+  const raw = query.trim().replace(/\s+/g, " ");
+  const titleCase = normalized.replace(/\b[a-z]/g, (char) => char.toUpperCase());
+  return [...new Set([raw, normalized, titleCase].filter(Boolean))];
+}
+
 function matchesAllTokens(
   queryTokens: string[],
   candidateTokens: string[],
@@ -221,12 +230,15 @@ export const searchSkills: ReturnType<typeof action> = action({
       candidateLimit = nextLimit;
     }
 
-    const directMatches = (await ctx.runQuery(internal.search.directLexicalSkills, {
-      query,
-      limit: Math.min(Math.max(limit * 4, 20), DIRECT_LEXICAL_SCAN_LIMIT),
-      highlightedOnly: args.highlightedOnly,
-      nonSuspiciousOnly: args.nonSuspiciousOnly,
-    })) as SkillSearchEntry[];
+    const directMatches =
+      exactMatches.length >= limit
+        ? []
+        : ((await ctx.runQuery(internal.search.directLexicalSkills, {
+            query,
+            limit: Math.min(Math.max(limit * 4, 20), DIRECT_LEXICAL_SCAN_LIMIT),
+            highlightedOnly: args.highlightedOnly,
+            nonSuspiciousOnly: args.nonSuspiciousOnly,
+          })) as SkillSearchEntry[]);
 
     const primaryMatches = mergeUniqueBySkillId(
       exactSlugMatch
@@ -357,10 +369,10 @@ export const directLexicalSkills = internalQuery({
   },
   handler: async (ctx, args): Promise<SkillSearchEntry[]> => {
     const limit = Math.min(Math.max(args.limit ?? 20, 10), DIRECT_LEXICAL_SCAN_LIMIT);
-    const rawDisplayNamePrefix = args.query.trim();
     const displayNamePrefix = normalizeSkillSearchText(args.query);
+    const legacyNamePrefixes = legacyDisplayNamePrefixes(args.query);
     const slugPrefix = slugPrefixForQuery(args.query);
-    if (!rawDisplayNamePrefix && !displayNamePrefix && !slugPrefix) return [];
+    if (!displayNamePrefix && legacyNamePrefixes.length === 0 && !slugPrefix) return [];
 
     const [slugDigests, displayNameDigests, legacyDisplayNameDigests] = args.nonSuspiciousOnly
       ? await Promise.all([
@@ -386,16 +398,20 @@ export const directLexicalSkills = internalQuery({
                 )
                 .take(limit)
             : Promise.resolve([]),
-          rawDisplayNamePrefix
-            ? ctx.db
-                .query("skillSearchDigest")
-                .withIndex("by_nonsuspicious_name", (q) =>
-                  q.eq("softDeletedAt", undefined)
-                    .eq("isSuspicious", false)
-                    .gte("displayName", rawDisplayNamePrefix)
-                    .lt("displayName", prefixUpperBound(rawDisplayNamePrefix)),
-                )
-                .take(limit)
+          legacyNamePrefixes.length > 0
+            ? Promise.all(
+                legacyNamePrefixes.map((prefix) =>
+                  ctx.db
+                    .query("skillSearchDigest")
+                    .withIndex("by_nonsuspicious_name", (q) =>
+                      q.eq("softDeletedAt", undefined)
+                        .eq("isSuspicious", false)
+                        .gte("displayName", prefix)
+                        .lt("displayName", prefixUpperBound(prefix)),
+                    )
+                    .take(limit),
+                ),
+              ).then((pages) => pages.flat())
             : Promise.resolve([]),
         ])
       : await Promise.all([
@@ -419,15 +435,19 @@ export const directLexicalSkills = internalQuery({
                 )
                 .take(limit)
             : Promise.resolve([]),
-          rawDisplayNamePrefix
-            ? ctx.db
-                .query("skillSearchDigest")
-                .withIndex("by_active_name", (q) =>
-                  q.eq("softDeletedAt", undefined)
-                    .gte("displayName", rawDisplayNamePrefix)
-                    .lt("displayName", prefixUpperBound(rawDisplayNamePrefix)),
-                )
-                .take(limit)
+          legacyNamePrefixes.length > 0
+            ? Promise.all(
+                legacyNamePrefixes.map((prefix) =>
+                  ctx.db
+                    .query("skillSearchDigest")
+                    .withIndex("by_active_name", (q) =>
+                      q.eq("softDeletedAt", undefined)
+                        .gte("displayName", prefix)
+                        .lt("displayName", prefixUpperBound(prefix)),
+                    )
+                    .take(limit),
+                ),
+              ).then((pages) => pages.flat())
             : Promise.resolve([]),
         ]);
 
