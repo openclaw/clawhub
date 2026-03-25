@@ -62,6 +62,9 @@ When no proxy variable is set, behavior is unchanged (direct connections).
 Stores your API token + cached registry URL.
 
 - macOS: `~/Library/Application Support/clawhub/config.json`
+- Linux/XDG: `$XDG_CONFIG_HOME/clawhub/config.json` or `~/.config/clawhub/config.json`
+- Windows: `%APPDATA%\\clawhub\\config.json`
+- Legacy fallback: if `clawdhub/config.json` exists in the same config base directory, the CLI reuses it
 - override: `CLAWHUB_CONFIG_PATH` (legacy `CLAWDHUB_CONFIG_PATH`)
 
 ## Commands
