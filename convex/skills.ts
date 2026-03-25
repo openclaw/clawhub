@@ -414,28 +414,28 @@ async function syncSkillModerationFromLatestVersion(
   const latestVersion = skill.latestVersionId ? await ctx.db.get(skill.latestVersionId) : null;
   const basePatch: SkillModerationPatch = latestVersion
     ? buildScannerModerationPatchFromVersion({
-      owner,
-      version: latestVersion,
-      now,
-    })
+        owner,
+        version: latestVersion,
+        now,
+      })
     : {
-      moderationStatus: "active",
-      moderationReason: undefined,
-      moderationNotes: undefined,
-      moderationFlags: undefined,
-      moderationVerdict: "clean",
-      moderationReasonCodes: undefined,
-      moderationEvidence: undefined,
-      moderationSummary: "No suspicious patterns detected.",
-      moderationEngineVersion: undefined,
-      moderationEvaluatedAt: now,
-      moderationSourceVersionId: undefined,
-      isSuspicious: false,
-      hiddenAt: undefined,
-      hiddenBy: undefined,
-      lastReviewedAt: undefined,
-      updatedAt: now,
-    };
+        moderationStatus: "active",
+        moderationReason: undefined,
+        moderationNotes: undefined,
+        moderationFlags: undefined,
+        moderationVerdict: "clean",
+        moderationReasonCodes: undefined,
+        moderationEvidence: undefined,
+        moderationSummary: "No suspicious patterns detected.",
+        moderationEngineVersion: undefined,
+        moderationEvaluatedAt: now,
+        moderationSourceVersionId: undefined,
+        isSuspicious: false,
+        hiddenAt: undefined,
+        hiddenBy: undefined,
+        lastReviewedAt: undefined,
+        updatedAt: now,
+      };
 
   const patch = applySkillManualOverrideToSkillPatch({
     skill,
@@ -596,17 +596,17 @@ async function repointSkillRelationships(
       canonicalSkillId: params.toCanonicalSkillId,
       forkOf: related.forkOf
         ? {
-          ...related.forkOf,
-          skillId: params.toSkillId,
-          version: params.targetVersion?.version ?? related.forkOf.version,
-          at: params.now,
-        }
+            ...related.forkOf,
+            skillId: params.toSkillId,
+            version: params.targetVersion?.version ?? related.forkOf.version,
+            at: params.now,
+          }
         : {
-          skillId: params.toSkillId,
-          kind: "duplicate",
-          version: params.targetVersion?.version,
-          at: params.now,
-        },
+            skillId: params.toSkillId,
+            kind: "duplicate",
+            version: params.targetVersion?.version,
+            at: params.now,
+          },
       updatedAt: params.now,
     });
   }
@@ -1184,9 +1184,9 @@ function toPublicSkillListVersion(
     parsed:
       version.parsed?.clawdis || version.parsed?.license
         ? {
-          ...(version.parsed?.license ? { license: version.parsed.license } : {}),
-          ...(version.parsed?.clawdis ? { clawdis: version.parsed.clawdis } : {}),
-        }
+            ...(version.parsed?.license ? { license: version.parsed.license } : {}),
+            ...(version.parsed?.clawdis ? { clawdis: version.parsed.clawdis } : {}),
+          }
         : undefined,
   };
 }
@@ -1211,9 +1211,9 @@ function toPublicSkillVersion(
     })),
     parsed: version.parsed
       ? {
-        license: version.parsed.license,
-        clawdis: version.parsed.clawdis,
-      }
+          license: version.parsed.license,
+          clawdis: version.parsed.clawdis,
+        }
       : undefined,
     createdBy: version.createdBy,
     createdAt: version.createdAt,
@@ -1223,20 +1223,20 @@ function toPublicSkillVersion(
     llmAnalysis: version.llmAnalysis,
     staticScan: version.staticScan
       ? {
-        status: version.staticScan.status,
-        reasonCodes: version.staticScan.reasonCodes,
-        findings: (version.staticScan.findings ?? []).map((finding) => ({
-          code: finding.code,
-          severity: finding.severity,
-          file: finding.file,
-          line: finding.line,
-          message: finding.message,
-          evidence: "",
-        })),
-        summary: version.staticScan.summary,
-        engineVersion: version.staticScan.engineVersion,
-        checkedAt: version.staticScan.checkedAt,
-      }
+          status: version.staticScan.status,
+          reasonCodes: version.staticScan.reasonCodes,
+          findings: (version.staticScan.findings ?? []).map((finding) => ({
+            code: finding.code,
+            severity: finding.severity,
+            file: finding.file,
+            line: finding.line,
+            message: finding.message,
+            evidence: "",
+          })),
+          summary: version.staticScan.summary,
+          engineVersion: version.staticScan.engineVersion,
+          checkedAt: version.staticScan.checkedAt,
+        }
       : undefined,
   };
 }
@@ -1378,11 +1378,11 @@ export const getBySlug = query({
     const membership =
       userId && skill.ownerPublisherId
         ? await ctx.db
-          .query("publisherMembers")
-          .withIndex("by_publisher_user", (q) =>
-            q.eq("publisherId", skill.ownerPublisherId!).eq("userId", userId),
-          )
-          .unique()
+            .query("publisherMembers")
+            .withIndex("by_publisher_user", (q) =>
+              q.eq("publisherId", skill.ownerPublisherId!).eq("userId", userId),
+            )
+            .unique()
         : null;
     const isOwner = Boolean(userId && (userId === skill.ownerUserId || membership));
 
@@ -1396,17 +1396,17 @@ export const getBySlug = query({
     const forkOfSkill = skill.forkOf?.skillId ? await ctx.db.get(skill.forkOf.skillId) : null;
     const forkOfOwner = forkOfSkill
       ? await getOwnerPublisher(ctx, {
-        ownerPublisherId: forkOfSkill.ownerPublisherId,
-        ownerUserId: forkOfSkill.ownerUserId,
-      })
+          ownerPublisherId: forkOfSkill.ownerPublisherId,
+          ownerUserId: forkOfSkill.ownerUserId,
+        })
       : null;
 
     const canonicalSkill = skill.canonicalSkillId ? await ctx.db.get(skill.canonicalSkillId) : null;
     const canonicalOwner = canonicalSkill
       ? await getOwnerPublisher(ctx, {
-        ownerPublisherId: canonicalSkill.ownerPublisherId,
-        ownerUserId: canonicalSkill.ownerUserId,
-      })
+          ownerPublisherId: canonicalSkill.ownerPublisherId,
+          ownerUserId: canonicalSkill.ownerUserId,
+        })
       : null;
 
     const publicSkill = toPublicSkill({ ...skill, badges });
@@ -1451,19 +1451,19 @@ export const getBySlug = query({
         : skill.moderationSummary;
     const moderationInfo = showModerationInfo
       ? {
-        isPendingScan,
-        isMalwareBlocked,
-        isSuspicious,
-        isHiddenByMod,
-        isRemoved,
-        overrideActive,
-        verdict: skill.moderationVerdict,
-        reasonCodes: skill.moderationReasonCodes,
-        summary: publicModerationSummary,
-        engineVersion: skill.moderationEngineVersion,
-        updatedAt: skill.moderationEvaluatedAt,
-        reason: isOwner ? skill.moderationReason : undefined,
-      }
+          isPendingScan,
+          isMalwareBlocked,
+          isSuspicious,
+          isHiddenByMod,
+          isRemoved,
+          overrideActive,
+          verdict: skill.moderationVerdict,
+          reasonCodes: skill.moderationReasonCodes,
+          summary: publicModerationSummary,
+          engineVersion: skill.moderationEngineVersion,
+          updatedAt: skill.moderationEvaluatedAt,
+          reason: isOwner ? skill.moderationReason : undefined,
+        }
       : null;
 
     return {
@@ -1476,29 +1476,29 @@ export const getBySlug = query({
       moderationInfo,
       forkOf: forkOfSkill
         ? {
-          kind: skill.forkOf?.kind ?? "fork",
-          version: skill.forkOf?.version ?? null,
-          skill: {
-            slug: forkOfSkill.slug,
-            displayName: forkOfSkill.displayName,
-          },
-          owner: {
-            handle: forkOfOwner?.handle ?? null,
-            userId: forkOfOwner?.linkedUserId ?? null,
-          },
-        }
+            kind: skill.forkOf?.kind ?? "fork",
+            version: skill.forkOf?.version ?? null,
+            skill: {
+              slug: forkOfSkill.slug,
+              displayName: forkOfSkill.displayName,
+            },
+            owner: {
+              handle: forkOfOwner?.handle ?? null,
+              userId: forkOfOwner?.linkedUserId ?? null,
+            },
+          }
         : null,
       canonical: canonicalSkill
         ? {
-          skill: {
-            slug: canonicalSkill.slug,
-            displayName: canonicalSkill.displayName,
-          },
-          owner: {
-            handle: canonicalOwner?.handle ?? null,
-            userId: canonicalOwner?.linkedUserId ?? null,
-          },
-        }
+            skill: {
+              slug: canonicalSkill.slug,
+              displayName: canonicalSkill.displayName,
+            },
+            owner: {
+              handle: canonicalOwner?.handle ?? null,
+              userId: canonicalOwner?.linkedUserId ?? null,
+            },
+          }
         : null,
     };
   },
@@ -1674,29 +1674,29 @@ export const getBySlugForStaff = query({
       auditLogs,
       forkOf: forkOfSkill
         ? {
-          kind: skill.forkOf?.kind ?? "fork",
-          version: skill.forkOf?.version ?? null,
-          skill: {
-            slug: forkOfSkill.slug,
-            displayName: forkOfSkill.displayName,
-          },
-          owner: {
-            handle: forkOfOwner?.handle ?? forkOfOwner?.name ?? null,
-            userId: forkOfOwner?._id ?? null,
-          },
-        }
+            kind: skill.forkOf?.kind ?? "fork",
+            version: skill.forkOf?.version ?? null,
+            skill: {
+              slug: forkOfSkill.slug,
+              displayName: forkOfSkill.displayName,
+            },
+            owner: {
+              handle: forkOfOwner?.handle ?? forkOfOwner?.name ?? null,
+              userId: forkOfOwner?._id ?? null,
+            },
+          }
         : null,
       canonical: canonicalSkill
         ? {
-          skill: {
-            slug: canonicalSkill.slug,
-            displayName: canonicalSkill.displayName,
-          },
-          owner: {
-            handle: canonicalOwner?.handle ?? canonicalOwner?.name ?? null,
-            userId: canonicalOwner?._id ?? null,
-          },
-        }
+            skill: {
+              slug: canonicalSkill.slug,
+              displayName: canonicalSkill.displayName,
+            },
+            owner: {
+              handle: canonicalOwner?.handle ?? canonicalOwner?.name ?? null,
+              userId: canonicalOwner?._id ?? null,
+            },
+          }
         : null,
     };
   },
@@ -2065,10 +2065,10 @@ export const list = query({
       const legacyEntries =
         ownerPublisher?.kind === "user" && ownerPublisher.linkedUserId
           ? await ctx.db
-            .query("skills")
-            .withIndex("by_owner", (q) => q.eq("ownerUserId", ownerPublisher.linkedUserId!))
-            .order("desc")
-            .take(takeLimit)
+              .query("skills")
+              .withIndex("by_owner", (q) => q.eq("ownerUserId", ownerPublisher.linkedUserId!))
+              .order("desc")
+              .take(takeLimit)
           : [];
       const combined = [...scopedEntries, ...legacyEntries].filter(
         (skill, index, all) =>
@@ -2218,8 +2218,8 @@ export const listWithLatest = query({
     const ordered =
       args.batch === "highlighted"
         ? [...withBadges].sort(
-          (a, b) => (b.badges?.highlighted?.at ?? 0) - (a.badges?.highlighted?.at ?? 0),
-        )
+            (a, b) => (b.badges?.highlighted?.at ?? 0) - (a.badges?.highlighted?.at ?? 0),
+          )
         : withBadges;
     const limited = ordered.slice(0, limit);
     const items = await Promise.all(
@@ -5759,9 +5759,9 @@ export const insertVersion = internalMutation({
         const aliasedSkill = await ctx.db.get(alias.skillId);
         const owner = aliasedSkill
           ? await getOwnerPublisher(ctx, {
-            ownerPublisherId: aliasedSkill.ownerPublisherId,
-            ownerUserId: aliasedSkill.ownerUserId,
-          })
+              ownerPublisherId: aliasedSkill.ownerPublisherId,
+              ownerUserId: aliasedSkill.ownerUserId,
+            })
           : null;
         throw new ConvexError(
           aliasedSkill
@@ -5834,8 +5834,8 @@ export const insertVersion = internalMutation({
     const isStaticMalicious = staticSnapshot.verdict === "malicious";
     const initialModerationStatus =
       isStaticMalicious ||
-        isPublisherUnderModeration ||
-        !(isTrustedPublisher && !isQualityQuarantine)
+      isPublisherUnderModeration ||
+      !(isTrustedPublisher && !isQualityQuarantine)
         ? "hidden"
         : "active";
 
@@ -5857,14 +5857,14 @@ export const insertVersion = internalMutation({
 
     const qualityRecord = qualityAssessment
       ? {
-        score: qualityAssessment.score,
-        decision: qualityAssessment.decision,
-        trustTier: qualityAssessment.trustTier,
-        similarRecentCount: qualityAssessment.similarRecentCount,
-        reason: qualityAssessment.reason,
-        signals: qualityAssessment.signals,
-        evaluatedAt: now,
-      }
+          score: qualityAssessment.score,
+          decision: qualityAssessment.decision,
+          trustTier: qualityAssessment.trustTier,
+          similarRecentCount: qualityAssessment.similarRecentCount,
+          reason: qualityAssessment.reason,
+          signals: qualityAssessment.signals,
+          evaluatedAt: now,
+        }
       : undefined;
 
     if (!skill) {
@@ -5886,11 +5886,11 @@ export const insertVersion = internalMutation({
       let canonicalSkillId: Id<"skills"> | undefined;
       let forkOf:
         | {
-          skillId: Id<"skills">;
-          kind: "fork" | "duplicate";
-          version?: string;
-          at: number;
-        }
+            skillId: Id<"skills">;
+            kind: "fork" | "duplicate";
+            version?: string;
+            at: number;
+          }
         | undefined;
 
       if (forkOfSlug) {
