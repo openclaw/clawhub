@@ -145,6 +145,23 @@ describe("apiRequest", () => {
     vi.unstubAllGlobals();
   });
 
+  it("passes through pre-serialized json body without double-encoding", async () => {
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({ ok: true }),
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    await apiRequest("https://example.com", {
+      method: "POST",
+      path: "/x",
+      body: '{"a":1}',
+    });
+    const [, init] = fetchMock.mock.calls[0] as [string, RequestInit];
+    expect(init.body).toBe('{"a":1}');
+    expect((init.headers as Record<string, string>)["Content-Type"]).toBe("application/json");
+    vi.unstubAllGlobals();
+  });
+
   it("throws text body on non-200", async () => {
     const fetchMock = vi.fn().mockResolvedValue({
       ok: false,

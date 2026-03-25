@@ -69,6 +69,10 @@ type RateLimitInfo = {
   retryAfterSeconds?: number;
 };
 
+function serializeJsonBody(body: unknown): string {
+  return typeof body === "string" ? body : JSON.stringify(body ?? {});
+}
+
 class HttpStatusError extends Error {
   readonly status: number;
   readonly rateLimit: RateLimitInfo;
@@ -103,7 +107,7 @@ export async function apiRequest<T>(
     let body: string | undefined;
     if (args.method === "POST") {
       headers["Content-Type"] = "application/json";
-      body = JSON.stringify(args.body ?? {});
+      body = serializeJsonBody(args.body);
     }
     const response = await fetchWithTimeout(url, {
       method: args.method,
@@ -403,7 +407,7 @@ async function fetchJsonViaCurl(url: string, args: RequestArgs) {
   ];
   if (args.method === "POST") {
     curlArgs.push("-H", "Content-Type: application/json");
-    curlArgs.push("--data-binary", JSON.stringify(args.body ?? {}));
+    curlArgs.push("--data-binary", serializeJsonBody(args.body));
   }
 
   const result = spawnSync("curl", curlArgs, { encoding: "utf8" });

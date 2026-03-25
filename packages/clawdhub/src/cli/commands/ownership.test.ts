@@ -67,8 +67,8 @@ describe("ownership commands", () => {
       }),
       expect.anything(),
     );
-    const requestArgs = mockApiRequest.mock.calls[0]?.[1] as { body?: string };
-    expect(requestArgs.body).toContain('"newSlug":"demo-new"');
+    const requestArgs = mockApiRequest.mock.calls[0]?.[1] as { body?: unknown };
+    expect(requestArgs.body).toEqual({ newSlug: "demo-new" });
   });
 
   it("merge calls merge endpoint", async () => {
@@ -88,7 +88,7 @@ describe("ownership commands", () => {
       }),
       expect.anything(),
     );
-    const requestArgs = mockApiRequest.mock.calls[0]?.[1] as { body?: string };
-    expect(requestArgs.body).toContain('"targetSlug":"demo"');
+    const requestArgs = mockApiRequest.mock.calls[0]?.[1] as { body?: unknown };
+    expect(requestArgs.body).toEqual({ targetSlug: "demo" });
   });
 });
