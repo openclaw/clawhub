@@ -781,7 +781,17 @@ export const pollPendingPackageScans = internalAction({
     for (const { releaseId, sha256hash } of pending) {
       try {
         const vtResult = await checkExistingFile(apiKey, sha256hash);
-        if (!vtResult) continue;
+        if (!vtResult) {
+          // File not in VT — hash was written but upload never completed.
+          // Re-schedule the full scan to re-upload the file.
+          console.warn(
+            `[vt:pollPendingPackageScans] Hash ${sha256hash} not found in VT for release ${releaseId} — scheduling re-upload`,
+          );
+          await runAfterRef(ctx, 0, internalRefs.vt.scanPackageReleaseWithVirusTotal, {
+            releaseId,
+          });
+          continue;
+        }
 
         const aiResult = vtResult.data.attributes.crowdsourced_ai_results?.find(
           (r) => r.category === "code_insight",

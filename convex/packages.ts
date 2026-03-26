@@ -1407,9 +1407,9 @@ export const getPendingPackageReleasesInternal = internalQuery({
   args: { limit: v.optional(v.number()) },
   handler: async (ctx, args) => {
     const limit = Math.max(1, Math.min(args.limit ?? 50, 200));
-    const releases = await ctx.db
+    const candidates = await ctx.db
       .query("packageReleases")
-      .order("desc")
+      .withIndex("by_sha256hash", (q) => q.gte("sha256hash", ""))
       .take(limit * 3);
 
     const results: Array<{
@@ -1417,7 +1417,7 @@ export const getPendingPackageReleasesInternal = internalQuery({
       sha256hash: string;
     }> = [];
 
-    for (const release of releases) {
+    for (const release of candidates) {
       if (results.length >= limit) break;
       if (release.softDeletedAt) continue;
       if (!release.sha256hash || release.vtAnalysis) continue;
