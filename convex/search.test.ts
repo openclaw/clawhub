@@ -2,7 +2,15 @@
 
 import { describe, expect, it, vi } from "vitest";
 import { tokenize } from "./lib/searchText";
-import { __test, hydrateResults, lexicalFallbackSkills, searchSkills } from "./search";
+import {
+  __test,
+  hydrateResults,
+  hydrateSoulResults,
+  lexicalFallbackSkills,
+  lexicalFallbackSouls,
+  searchSkills,
+  searchSouls,
+} from "./search";
 
 const { generateEmbeddingMock } = vi.hoisted(() => ({
   generateEmbeddingMock: vi.fn(),
@@ -25,7 +33,17 @@ type WrappedHandler = {
 };
 
 const searchSkillsHandler = (searchSkills as unknown as WrappedHandler)._handler;
+const searchSoulsHandler = (searchSouls as unknown as WrappedHandler)._handler;
 const lexicalFallbackSkillsHandler = (lexicalFallbackSkills as unknown as WrappedHandler)._handler;
+const lexicalFallbackSoulsHandler = (lexicalFallbackSouls as unknown as WrappedHandler)._handler;
+const hydrateSoulResultsHandler = (
+  hydrateSoulResults as unknown as {
+    _handler: (
+      ctx: unknown,
+      args: unknown,
+    ) => Promise<Array<{ soul: { slug: string; _id: string }; embeddingId: string }>>;
+  }
+)._handler;
 const hydrateResultsHandler = (
   hydrateResults as unknown as {
     _handler: (
@@ -354,21 +372,21 @@ describe("search helpers", () => {
 
   it("boosts exact slug/name matches over loose matches", () => {
     const queryTokens = tokenize("notion");
-    const exactScore = __test.scoreSkillResult(queryTokens, 0.4, "Notion Sync", "notion-sync", 5);
-    const looseScore = __test.scoreSkillResult(queryTokens, 0.6, "Notes Sync", "notes-sync", 500);
+    const exactScore = __test.scoreSearchResult(queryTokens, 0.4, "Notion Sync", "notion-sync", 5);
+    const looseScore = __test.scoreSearchResult(queryTokens, 0.6, "Notes Sync", "notes-sync", 500);
     expect(exactScore).toBeGreaterThan(looseScore);
   });
 
   it("adds a popularity prior for equally relevant matches", () => {
     const queryTokens = tokenize("notion");
-    const lowDownloads = __test.scoreSkillResult(
+    const lowDownloads = __test.scoreSearchResult(
       queryTokens,
       0.5,
       "Notion Helper",
       "notion-helper",
       0,
     );
-    const highDownloads = __test.scoreSkillResult(
+    const highDownloads = __test.scoreSearchResult(
       queryTokens,
       0.5,
       "Notion Helper",
@@ -581,6 +599,186 @@ describe("search helpers", () => {
   });
 });
 
+describe("soul search", () => {
+  it("returns fallback results when vector candidates are empty", async () => {
+    generateEmbeddingMock.mockResolvedValueOnce([0, 1, 2]);
+    const fallback = [
+      {
+        soul: makePublicSoul({ id: "souls:1", slug: "helper", displayName: "Helper" }),
+        version: null,
+      },
+    ];
+    const runQuery = vi.fn().mockResolvedValueOnce(fallback); // lexicalFallbackSouls
+
+    const result = await searchSoulsHandler(
+      {
+        vectorSearch: vi.fn().mockResolvedValue([]),
+        runQuery,
+      },
+      { query: "helper", limit: 10 },
+    );
+
+    expect(result).toHaveLength(1);
+    expect(result[0].soul.slug).toBe("helper");
+    expect(runQuery).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({ query: "helper", queryTokens: ["helper"] }),
+    );
+  });
+
+  it("applies lexical boost and popularity scoring to soul results", async () => {
+    generateEmbeddingMock.mockResolvedValueOnce([0, 1, 2]);
+    const vectorEntries = [
+      {
+        embeddingId: "soulEmbeddings:a",
+        soul: makePublicSoul({
+          id: "souls:a",
+          slug: "notion-soul",
+          displayName: "Notion Soul",
+          downloads: 100,
+        }),
+        version: null,
+      },
+      {
+        embeddingId: "soulEmbeddings:b",
+        soul: makePublicSoul({
+          id: "souls:b",
+          slug: "notes-soul",
+          displayName: "Notes Soul",
+          downloads: 0,
+        }),
+        version: null,
+      },
+    ];
+
+    const runQuery = vi
+      .fn()
+      .mockResolvedValueOnce(vectorEntries) // hydrateSoulResults
+      .mockResolvedValueOnce([]); // lexicalFallbackSouls
+
+    const result = await searchSoulsHandler(
+      {
+        vectorSearch: vi.fn().mockResolvedValue([
+          { _id: "soulEmbeddings:a", _score: 0.5 },
+          { _id: "soulEmbeddings:b", _score: 0.8 },
+        ]),
+        runQuery,
+      },
+      { query: "notion soul", limit: 10 },
+    );
+
+    expect(result).toHaveLength(2);
+    // "notion-soul" should rank higher due to lexical boost despite lower vector score
+    expect(result[0].soul.slug).toBe("notion-soul");
+    expect(result[0].score).toBeGreaterThan(result[1].score);
+  });
+
+  it("includes exact slug match from lexicalFallbackSouls", async () => {
+    const exactSlugSoul = makeSoulDoc({ id: "souls:1", slug: "helper", displayName: "Helper" });
+    const ctx = makeSoulLexicalCtx({
+      exactSlugSoul,
+      recentSouls: [],
+    });
+
+    const result = await lexicalFallbackSoulsHandler(ctx, {
+      query: "helper",
+      queryTokens: ["helper"],
+      limit: 10,
+    });
+
+    expect(result).toHaveLength(1);
+    expect(result[0].soul.slug).toBe("helper");
+  });
+
+  it("excludes soft-deleted souls from lexical fallback", async () => {
+    const deletedSoul = makeSoulDoc({
+      id: "souls:1",
+      slug: "helper",
+      displayName: "Helper",
+      softDeletedAt: 1700000000000,
+    });
+    const ctx = makeSoulLexicalCtx({
+      exactSlugSoul: deletedSoul,
+      recentSouls: [],
+    });
+
+    const result = await lexicalFallbackSoulsHandler(ctx, {
+      query: "helper",
+      queryTokens: ["helper"],
+      limit: 10,
+    });
+
+    expect(result).toHaveLength(0);
+  });
+
+  it("merges fallback matches without duplicate soul ids", () => {
+    const primary = [
+      { embeddingId: "soulEmbeddings:1", soul: { _id: "souls:1" } },
+    ] as unknown as Parameters<typeof __test.mergeUniqueBySoulId>[0];
+    const fallback = [
+      { soul: { _id: "souls:1" } },
+      { soul: { _id: "souls:2" } },
+    ] as unknown as Parameters<typeof __test.mergeUniqueBySoulId>[1];
+
+    const merged = __test.mergeUniqueBySoulId(primary, fallback);
+    expect(merged).toHaveLength(2);
+    expect(merged.map((entry) => entry.soul._id)).toEqual(["souls:1", "souls:2"]);
+  });
+
+  it("uses incremental hydration for soul search", async () => {
+    generateEmbeddingMock.mockResolvedValueOnce([0, 1, 2]);
+
+    const firstBatch = Array.from({ length: 50 }, (_, i) => ({
+      _id: `soulEmbeddings:e${i}`,
+      _score: 0.5 - i * 0.001,
+    }));
+    const secondBatch = [
+      ...firstBatch,
+      ...Array.from({ length: 10 }, (_, i) => ({
+        _id: `soulEmbeddings:n${i}`,
+        _score: 0.3 - i * 0.001,
+      })),
+    ];
+
+    const vectorSearchMock = vi
+      .fn()
+      .mockResolvedValueOnce(firstBatch)
+      .mockResolvedValueOnce(secondBatch);
+
+    const hydrateCalls: string[][] = [];
+    const runQuery = vi.fn(
+      async (_ref: unknown, args: { embeddingIds?: string[]; query?: string }) => {
+        if (args.embeddingIds) {
+          hydrateCalls.push(args.embeddingIds);
+          return args.embeddingIds.map((embeddingId: string) => ({
+            embeddingId,
+            soul: makePublicSoul({
+              id: `souls:${embeddingId.split(":")[1]}`,
+              slug: `soul-${embeddingId.split(":")[1]}`,
+              displayName: `Soul ${embeddingId.split(":")[1]}`,
+            }),
+            version: null,
+          }));
+        }
+        return []; // lexicalFallbackSouls
+      },
+    );
+
+    await searchSoulsHandler(
+      { vectorSearch: vectorSearchMock, runQuery },
+      { query: "test", limit: 10 },
+    );
+
+    // Should have been called twice, but second call should only have new IDs
+    expect(hydrateCalls).toHaveLength(2);
+    expect(hydrateCalls[0]).toHaveLength(50);
+    expect(hydrateCalls[1]).toHaveLength(10);
+    const firstSet = new Set(hydrateCalls[0]);
+    const overlap = hydrateCalls[1].filter((id) => firstSet.has(id));
+    expect(overlap).toHaveLength(0);
+  });
+});
+
 function makePublicSkill(params: {
   id: string;
   slug: string;
@@ -678,6 +876,77 @@ function makeLexicalCtx(params: {
         if (id.startsWith("users:")) return { _id: id, handle: "owner" };
         if (id.startsWith("skillVersions:")) return { _id: id, version: "1.0.0" };
         return null;
+      }),
+    },
+  };
+}
+
+function makePublicSoul(params: {
+  id: string;
+  slug: string;
+  displayName: string;
+  downloads?: number;
+}) {
+  return {
+    _id: params.id,
+    _creationTime: 1,
+    slug: params.slug,
+    displayName: params.displayName,
+    summary: `${params.displayName} summary`,
+    ownerUserId: "users:owner",
+    ownerPublisherId: undefined,
+    latestVersionId: "soulVersions:1",
+    tags: {},
+    stats: {
+      downloads: params.downloads ?? 0,
+      stars: 0,
+      versions: 1,
+      comments: 0,
+    },
+    createdAt: 1,
+    updatedAt: 1,
+  };
+}
+
+function makeSoulDoc(params: {
+  id: string;
+  slug: string;
+  displayName: string;
+  softDeletedAt?: number;
+}) {
+  return {
+    ...makePublicSoul(params),
+    softDeletedAt: params.softDeletedAt as number | undefined,
+  };
+}
+
+function makeSoulLexicalCtx(params: {
+  exactSlugSoul: ReturnType<typeof makeSoulDoc> | null;
+  recentSouls: Array<ReturnType<typeof makeSoulDoc>>;
+}) {
+  return {
+    db: {
+      query: vi.fn((table: string) => {
+        if (table === "souls") {
+          return {
+            withIndex: (index: string) => {
+              if (index === "by_slug") {
+                return {
+                  unique: vi.fn().mockResolvedValue(params.exactSlugSoul),
+                };
+              }
+              if (index === "by_updated") {
+                return {
+                  order: () => ({
+                    take: vi.fn().mockResolvedValue(params.recentSouls),
+                  }),
+                };
+              }
+              throw new Error(`Unexpected souls index ${index}`);
+            },
+          };
+        }
+        throw new Error(`Unexpected table ${table}`);
       }),
     },
   };
