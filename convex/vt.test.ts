@@ -134,6 +134,40 @@ describe("vt AV engine fallback verdicts", () => {
 });
 
 describe("package VT retries", () => {
+  it("retries package scan when release files are not readable yet", async () => {
+    process.env.VT_API_KEY = "test-key";
+    const scheduler = { runAfter: vi.fn(async () => null) };
+
+    await scanPackageReleaseWithVirusTotalHandler(
+      {
+        runQuery: vi
+          .fn()
+          .mockResolvedValueOnce({
+            _id: "packageReleases:demo",
+            packageId: "packages:demo",
+            version: "1.0.0",
+            files: [{ path: "package.json", storageId: "storage:pkg" }],
+          })
+          .mockResolvedValueOnce({
+            _id: "packages:demo",
+            name: "demo-plugin",
+          }),
+        runMutation: vi.fn(async () => null),
+        scheduler,
+        storage: {
+          get: vi.fn(async () => null),
+        },
+      } as never,
+      { releaseId: "packageReleases:demo", attempt: 2 },
+    );
+
+    expect(scheduler.runAfter).toHaveBeenCalledWith(
+      5 * 60 * 1000,
+      expect.anything(),
+      { releaseId: "packageReleases:demo", attempt: 3 },
+    );
+  });
+
   it("retries package upload when VT upload fails", async () => {
     process.env.VT_API_KEY = "test-key";
     const fetchMock = vi

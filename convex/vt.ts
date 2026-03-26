@@ -552,17 +552,30 @@ export const scanPackageReleaseWithVirusTotal = internalAction({
       return;
     }
 
+    const attempt = args.attempt ?? 1;
     const entries: Array<{ path: string; bytes: Uint8Array }> = [];
+    let missingFiles = 0;
     for (const file of release.files) {
       const content = await ctx.storage.get(file.storageId);
-      if (!content) continue;
+      if (!content) {
+        missingFiles += 1;
+        continue;
+      }
       entries.push({
         path: file.path,
         bytes: new Uint8Array(await content.arrayBuffer()),
       });
     }
-    if (entries.length === 0) {
-      console.warn(`[vt:package] No files found for release ${args.releaseId}, skipping scan`);
+    if (entries.length === 0 || missingFiles > 0) {
+      console.warn(
+        `[vt:package] Release ${args.releaseId} missing ${missingFiles}/${release.files.length} files, retrying`,
+      );
+      if (attempt < PACKAGE_SCAN_MAX_ATTEMPTS) {
+        await runAfterRef(ctx, PACKAGE_SCAN_RETRY_DELAY_MS, internalRefs.vt.scanPackageReleaseWithVirusTotal, {
+          releaseId: args.releaseId,
+          attempt: attempt + 1,
+        });
+      }
       return;
     }
 
@@ -571,7 +584,6 @@ export const scanPackageReleaseWithVirusTotal = internalAction({
     const sha256hash = Array.from(new Uint8Array(hashBuffer))
       .map((b) => b.toString(16).padStart(2, "0"))
       .join("");
-    const attempt = args.attempt ?? 1;
 
     await runMutationRef(ctx, internalRefs.packages.updateReleaseScanResultsInternal, {
       releaseId: args.releaseId,

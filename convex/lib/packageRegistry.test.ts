@@ -46,6 +46,7 @@ describe("packageRegistry", () => {
 
     expect(result.runtimeId).toBe("demo.plugin");
     expect(result.compatibility?.pluginApiRange).toBe("^1.2.0");
+    expect(result.compatibility?.minGatewayVersion).toBe("2026.3.0");
     expect(result.capabilities.executesCode).toBe(true);
     expect(result.capabilities.toolNames).toContain("demoTool");
     expect(result.verification.tier).toBe("source-linked");
@@ -70,38 +71,60 @@ describe("packageRegistry", () => {
     ).toThrow("source repo and commit");
   });
 
-  it("infers compatibility for legacy openclaw extension manifests", () => {
-    const result = extractCodePluginArtifacts({
-      packageName: "@openclaw/matrix",
+  it("maps legacy minHostVersion to minGatewayVersion instead of pluginApiRange", () => {
+    expect(() =>
+      extractCodePluginArtifacts({
+        packageName: "@openclaw/matrix",
+        packageJson: {
+          name: "@openclaw/matrix",
+          version: "2026.3.13",
+          openclaw: {
+            extensions: ["./index.ts"],
+            install: {
+              npmSpec: "@openclaw/matrix",
+              localPath: "extensions/matrix",
+              defaultChoice: "npm",
+              minHostVersion: "2026.3.13",
+            },
+          },
+        },
+        pluginManifest: {
+          id: "matrix",
+          channels: ["matrix"],
+          configSchema: { type: "object" },
+        },
+        source: {
+          kind: "github",
+          url: "https://github.com/openclaw/openclaw",
+          repo: "openclaw/openclaw",
+          ref: "refs/tags/v2026.3.13",
+          commit: "abc123",
+          path: "extensions/matrix",
+          importedAt: Date.now(),
+        },
+      }),
+    ).toThrow("package.json openclaw.compat.pluginApi is required");
+  });
+
+  it("extracts legacy minHostVersion as minGatewayVersion while preserving build metadata", () => {
+    const result = extractBundlePluginArtifacts({
+      packageName: "@openclaw/matrix-bundle",
       packageJson: {
-        name: "@openclaw/matrix",
+        name: "@openclaw/matrix-bundle",
         version: "2026.3.13",
         openclaw: {
-          extensions: ["./index.ts"],
           install: {
-            npmSpec: "@openclaw/matrix",
-            localPath: "extensions/matrix",
-            defaultChoice: "npm",
+            minHostVersion: "2026.3.13",
           },
         },
       },
-      pluginManifest: {
-        id: "matrix",
-        channels: ["matrix"],
-        configSchema: { type: "object" },
-      },
-      source: {
-        kind: "github",
-        url: "https://github.com/openclaw/openclaw",
-        repo: "openclaw/openclaw",
-        ref: "refs/tags/v2026.3.13",
-        commit: "abc123",
-        path: "extensions/matrix",
-        importedAt: Date.now(),
+      bundleManifest: {
+        hostTargets: ["openclaw"],
       },
     });
 
-    expect(result.compatibility?.pluginApiRange).toBe(">=2026.3.13");
+    expect(result.compatibility?.pluginApiRange).toBeUndefined();
+    expect(result.compatibility?.minGatewayVersion).toBe("2026.3.13");
     expect(result.compatibility?.builtWithOpenClawVersion).toBe("2026.3.13");
   });
 

@@ -181,6 +181,7 @@ const getPackageReleaseScanBackfillBatchInternalHandler = (
     {
       cursor?: number;
       batchSize?: number;
+      prioritizeRecent?: boolean;
     },
     {
       releases: Array<{
@@ -2116,6 +2117,12 @@ describe("packages public queries", () => {
         reasonCodes: expect.arrayContaining(["suspicious.dangerous_exec"]),
       }),
     );
+    expect(ctx.scheduler.runAfter).toHaveBeenNthCalledWith(
+      1,
+      30_000,
+      expect.anything(),
+      expect.any(Object),
+    );
   });
 
   it("hides pending-scan packages from public reads", async () => {
@@ -2295,6 +2302,9 @@ describe("package scan backfill", () => {
           query: vi.fn((table: string) => {
             if (table !== "packageReleases") throw new Error(`Unexpected table ${table}`);
             return {
+              order: vi.fn(() => ({
+                take: vi.fn().mockResolvedValue([]),
+              })),
               withIndex: vi.fn(() => ({
                 order: vi.fn(() => ({
                   take: vi.fn().mockResolvedValue([
@@ -2333,6 +2343,70 @@ describe("package scan backfill", () => {
     expect(result.releases).toEqual([
       {
         releaseId: "packageReleases:missing-static",
+        packageId: "packages:demo",
+        needsVt: false,
+        needsLlm: false,
+        needsStatic: true,
+      },
+    ]);
+  });
+
+  it("prioritizes recent releases before draining older backlog", async () => {
+    const result = await getPackageReleaseScanBackfillBatchInternalHandler(
+      {
+        db: {
+          query: vi.fn((table: string) => {
+            if (table !== "packageReleases") throw new Error(`Unexpected table ${table}`);
+            return {
+              order: vi.fn(() => ({
+                take: vi.fn().mockResolvedValue([
+                  {
+                    _id: "packageReleases:recent-vt",
+                    _creationTime: 200,
+                    packageId: "packages:demo",
+                    sha256hash: "hash",
+                    vtAnalysis: undefined,
+                    llmAnalysis: { status: "clean" },
+                    staticScan: { status: "clean" },
+                  },
+                ]),
+              })),
+              withIndex: vi.fn(() => ({
+                order: vi.fn(() => ({
+                  take: vi.fn().mockResolvedValue([
+                    {
+                      _id: "packageReleases:old-static",
+                      _creationTime: 10,
+                      packageId: "packages:demo",
+                      sha256hash: "hash",
+                      vtAnalysis: { status: "clean" },
+                      llmAnalysis: { status: "clean" },
+                      staticScan: undefined,
+                    },
+                  ]),
+                })),
+              })),
+            };
+          }),
+          get: vi.fn(async (id: string) => {
+            if (id === "packages:demo") return makePackageDoc();
+            return null;
+          }),
+        },
+      } as never,
+      { batchSize: 2, prioritizeRecent: true },
+    );
+
+    expect(result.releases).toEqual([
+      {
+        releaseId: "packageReleases:recent-vt",
+        packageId: "packages:demo",
+        needsVt: true,
+        needsLlm: false,
+        needsStatic: false,
+      },
+      {
+        releaseId: "packageReleases:old-static",
         packageId: "packages:demo",
         needsVt: false,
         needsLlm: false,

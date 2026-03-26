@@ -178,24 +178,13 @@ function extractOpenClawBlock(packageJson: JsonRecord | undefined) {
 function extractCompatibility(packageJson: JsonRecord | undefined): PackageCompatibility | undefined {
   const { openclaw, compat, build } = extractOpenClawBlock(packageJson);
   const install = isRecord(openclaw?.install) ? openclaw.install : undefined;
-  const peerDependencies = isRecord(packageJson?.peerDependencies)
-    ? packageJson.peerDependencies
-    : undefined;
   const version =
     typeof packageJson?.version === "string" ? packageJson.version.trim() : undefined;
-  const peerOpenClaw =
-    typeof peerDependencies?.openclaw === "string" ? peerDependencies.openclaw.trim() : undefined;
   const minHostVersion =
     typeof install?.minHostVersion === "string" ? install.minHostVersion.trim() : undefined;
   const compatibility: PackageCompatibility = {};
   if (typeof compat?.pluginApi === "string") {
     compatibility.pluginApiRange = compat.pluginApi.trim();
-  } else if (peerOpenClaw) {
-    compatibility.pluginApiRange = peerOpenClaw;
-  } else if (minHostVersion) {
-    compatibility.pluginApiRange = minHostVersion;
-  } else if (version) {
-    compatibility.pluginApiRange = `>=${version}`;
   }
   if (typeof compat?.minGatewayVersion === "string") {
     compatibility.minGatewayVersion = compat.minGatewayVersion.trim();
