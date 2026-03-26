@@ -24,6 +24,7 @@ export default function Header() {
   const { signIn, signOut } = useAuthActions();
   const { mode, setMode } = useThemeMode();
   const toggleRef = useRef<HTMLDivElement | null>(null);
+  const pointerThemeRef = useRef<"system" | "light" | "dark" | null>(null);
   const siteMode = getSiteMode();
   const siteName = useMemo(() => getSiteName(siteMode), [siteMode]);
   const isSoulMode = siteMode === "souls";
@@ -47,6 +48,21 @@ export default function Header() {
       },
       context: { element: toggleRef.current },
     });
+  };
+
+  const handlePointerThemeChange = (next: "system" | "light" | "dark") => {
+    pointerThemeRef.current = next;
+    setTheme(next);
+  };
+
+  const handleThemeValueChange = (value: string) => {
+    if (value !== "system" && value !== "light" && value !== "dark") return;
+    if (pointerThemeRef.current === value) {
+      pointerThemeRef.current = null;
+      return;
+    }
+    pointerThemeRef.current = null;
+    setTheme(value);
   };
 
   return (
@@ -239,21 +255,30 @@ export default function Header() {
             <ToggleGroup
               type="single"
               value={mode}
-              onValueChange={(value) => {
-                if (!value) return;
-                setTheme(value as "system" | "light" | "dark");
-              }}
               aria-label="Theme mode"
+              onValueChange={handleThemeValueChange}
             >
-              <ToggleGroupItem value="system" aria-label="System theme">
+              <ToggleGroupItem
+                value="system"
+                aria-label="System theme"
+                onClick={() => handlePointerThemeChange("system")}
+              >
                 <Monitor className="h-4 w-4" aria-hidden="true" />
                 <span className="sr-only">System</span>
               </ToggleGroupItem>
-              <ToggleGroupItem value="light" aria-label="Light theme">
+              <ToggleGroupItem
+                value="light"
+                aria-label="Light theme"
+                onClick={() => handlePointerThemeChange("light")}
+              >
                 <Sun className="h-4 w-4" aria-hidden="true" />
                 <span className="sr-only">Light</span>
               </ToggleGroupItem>
-              <ToggleGroupItem value="dark" aria-label="Dark theme">
+              <ToggleGroupItem
+                value="dark"
+                aria-label="Dark theme"
+                onClick={() => handlePointerThemeChange("dark")}
+              >
                 <Moon className="h-4 w-4" aria-hidden="true" />
                 <span className="sr-only">Dark</span>
               </ToggleGroupItem>
