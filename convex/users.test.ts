@@ -1187,6 +1187,40 @@ describe("users.reserveHandleInternal", () => {
             rightfulOwnerUserId: string;
             reason?: string;
           },
+        ) => Promise<unknown>;
+      }
+    )._handler;
+
+    const result = await handler(ctx, {
+      actorUserId: "users:admin",
+      handle: "OpenClaw",
+      rightfulOwnerUserId: "users:owner",
+      reason: "official org",
+    });
+
+    expect(result).toEqual({
+      ok: true,
+      handle: "openclaw",
+      rightfulOwnerUserId: "users:owner",
+    });
+    expect(insert).toHaveBeenCalledWith(
+      "reservedHandles",
+      expect.objectContaining({
+        handle: "openclaw",
+        rightfulOwnerUserId: "users:owner",
+        reason: "official org",
+      }),
+    );
+    expect(insert).toHaveBeenCalledWith(
+      "auditLogs",
+      expect.objectContaining({
+        action: "handle.reserve",
+        targetId: "openclaw",
+      }),
+    );
+  });
+});
+
 describe("users.liftModerationHoldInternal", () => {
   it("clears the moderation hold and restores skills", async () => {
     vi.spyOn(Date, "now").mockReturnValue(1_700_000_100_000);
@@ -1226,34 +1260,6 @@ describe("users.liftModerationHoldInternal", () => {
       }
     )._handler;
 
-    const result = await handler(ctx, {
-      actorUserId: "users:admin",
-      handle: "OpenClaw",
-      rightfulOwnerUserId: "users:owner",
-      reason: "official org",
-    });
-
-    expect(result).toEqual({
-      ok: true,
-      handle: "openclaw",
-      rightfulOwnerUserId: "users:owner",
-    });
-    expect(insert).toHaveBeenCalledWith(
-      "reservedHandles",
-      expect.objectContaining({
-        handle: "openclaw",
-        rightfulOwnerUserId: "users:owner",
-        reason: "official org",
-      }),
-    );
-    expect(insert).toHaveBeenCalledWith(
-      "auditLogs",
-      expect.objectContaining({
-        action: "handle.reserve",
-        targetId: "openclaw",
-      }),
-    );
-  });
     const result = (await handler(
       {
         db: {
