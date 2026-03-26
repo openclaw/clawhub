@@ -10,6 +10,7 @@ const internalRefs = internal as unknown as {
     getReleaseByIdInternal: unknown;
     getPackageByIdInternal: unknown;
     updateReleaseScanResultsInternal: unknown;
+    getPendingPackageReleasesInternal: unknown;
   };
   vt: {
     scanPackageReleaseWithVirusTotal: unknown;
@@ -610,6 +611,27 @@ export const scanPackageReleaseWithVirusTotal = internalAction({
         });
         return;
       }
+
+      // Fallback: check AV engine stats when Code Insight is not available.
+      // Without this, packages scanned by engines but not Code Insight are
+      // re-uploaded on every backfill cycle, and vtAnalysis is never written.
+      if (existingFile) {
+        const status = statusFromAvStats(existingFile.data.attributes.last_analysis_stats);
+        if (status) {
+          console.log(
+            `[vt:package] Hash ${sha256hash} verdict from AV engines: ${status}`,
+          );
+          await runMutationRef(ctx, internalRefs.packages.updateReleaseScanResultsInternal, {
+            releaseId: args.releaseId,
+            vtAnalysis: {
+              status,
+              source: "engines",
+              checkedAt: Date.now(),
+            },
+          });
+          return;
+        }
+      }
     } catch (error) {
       console.error("[vt:package] Error checking existing file in VT:", error);
     }
@@ -731,6 +753,75 @@ export const pollPackageReleaseScanResults = internalAction({
         });
       }
     }
+  },
+});
+
+/**
+ * Poll for package releases that have been uploaded to VT (sha256hash set)
+ * but are missing vtAnalysis. This is the package equivalent of
+ * pollPendingScans for skills — a cron-based safety net that recovers
+ * from broken self-scheduling poll chains.
+ */
+export const pollPendingPackageScans = internalAction({
+  args: { batchSize: v.optional(v.number()) },
+  handler: async (ctx, args) => {
+    const apiKey = process.env.VT_API_KEY;
+    if (!apiKey) return { processed: 0, updated: 0 };
+
+    const batchSize = args.batchSize ?? 50;
+    const pending = (await runQueryRef(ctx, internalRefs.packages.getPendingPackageReleasesInternal, {
+      limit: batchSize,
+    })) as Array<{ releaseId: Id<"packageReleases">; sha256hash: string }>;
+
+    if (pending.length === 0) return { processed: 0, updated: 0 };
+
+    console.log(`[vt:pollPendingPackageScans] Checking ${pending.length} pending package releases`);
+
+    let updated = 0;
+    for (const { releaseId, sha256hash } of pending) {
+      try {
+        const vtResult = await checkExistingFile(apiKey, sha256hash);
+        if (!vtResult) continue;
+
+        const aiResult = vtResult.data.attributes.crowdsourced_ai_results?.find(
+          (r) => r.category === "code_insight",
+        );
+
+        if (aiResult) {
+          const verdict = normalizeVerdict(aiResult.verdict);
+          await runMutationRef(ctx, internalRefs.packages.updateReleaseScanResultsInternal, {
+            releaseId,
+            vtAnalysis: {
+              status: verdictToStatus(verdict),
+              verdict: aiResult.verdict,
+              analysis: aiResult.analysis,
+              source: aiResult.source,
+              checkedAt: Date.now(),
+            },
+          });
+          updated++;
+          continue;
+        }
+
+        const status = statusFromAvStats(vtResult.data.attributes.last_analysis_stats);
+        if (status) {
+          await runMutationRef(ctx, internalRefs.packages.updateReleaseScanResultsInternal, {
+            releaseId,
+            vtAnalysis: {
+              status,
+              source: "engines",
+              checkedAt: Date.now(),
+            },
+          });
+          updated++;
+        }
+      } catch (error) {
+        console.error(`[vt:pollPendingPackageScans] Error polling ${sha256hash}:`, error);
+      }
+    }
+
+    console.log(`[vt:pollPendingPackageScans] Updated ${updated}/${pending.length} releases`);
+    return { processed: pending.length, updated };
   },
 });
 

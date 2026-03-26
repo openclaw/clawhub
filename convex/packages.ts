@@ -1398,6 +1398,36 @@ export const getPackageReleaseScanBackfillBatchInternal = internalQuery({
   },
 });
 
+/**
+ * Returns package releases that have been uploaded to VT (sha256hash present)
+ * but are still missing vtAnalysis results. Used by the pending-package-scans
+ * cron to recover from broken poll chains.
+ */
+export const getPendingPackageReleasesInternal = internalQuery({
+  args: { limit: v.optional(v.number()) },
+  handler: async (ctx, args) => {
+    const limit = Math.max(1, Math.min(args.limit ?? 50, 200));
+    const releases = await ctx.db
+      .query("packageReleases")
+      .order("desc")
+      .take(limit * 3);
+
+    const results: Array<{
+      releaseId: Id<"packageReleases">;
+      sha256hash: string;
+    }> = [];
+
+    for (const release of releases) {
+      if (results.length >= limit) break;
+      if (release.softDeletedAt) continue;
+      if (!release.sha256hash || release.vtAnalysis) continue;
+      results.push({ releaseId: release._id, sha256hash: release.sha256hash });
+    }
+
+    return results;
+  },
+});
+
 async function publishPackageImpl(
   ctx: Parameters<typeof requireGitHubAccountAge>[0] & Pick<ActionCtx, "storage" | "scheduler">,
   actorUserId: Id<"users">,

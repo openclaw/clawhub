@@ -54,6 +54,12 @@ crons.interval("vt-pending-scans", { minutes: 5 }, internal.vt.pollPendingScans,
   batchSize: 100,
 });
 
+// Package equivalent of vt-pending-scans: recovers from broken poll chains
+// where VT has completed but vtAnalysis was never written back to the release.
+crons.interval("vt-pending-package-scans", { minutes: 10 }, internal.vt.pollPendingPackageScans, {
+  batchSize: 50,
+});
+
 crons.interval("vt-cache-backfill", { minutes: 30 }, internal.vt.backfillActiveSkillsVTCache, {
   batchSize: 100,
 });
