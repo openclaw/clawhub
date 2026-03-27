@@ -128,12 +128,12 @@ export const searchSkills: ReturnType<typeof action> = action({
     if (!query) return [];
     const queryTokens = tokenize(query);
     if (queryTokens.length === 0) return [];
-    let vector: number[];
+    let vector: number[] | null;
     try {
       vector = await generateEmbedding(query);
     } catch (error) {
-      console.warn("Search embedding generation failed", error);
-      return [];
+      console.warn("Search embedding generation failed, falling back to lexical search", error);
+      vector = null;
     }
     const limit = args.limit ?? 10;
     // Convex vectorSearch max limit is 256; clamp candidate sizes accordingly.
@@ -144,7 +144,7 @@ export const searchSkills: ReturnType<typeof action> = action({
     let scoreById = new Map<Id<"skillEmbeddings">, number>();
     let exactMatches: SkillSearchEntry[] = [];
 
-    while (candidateLimit <= maxCandidate) {
+    while (vector && candidateLimit <= maxCandidate) {
       const results = await ctx.vectorSearch("skillEmbeddings", "by_embedding", {
         vector,
         limit: candidateLimit,
@@ -383,12 +383,12 @@ export const searchSouls: ReturnType<typeof action> = action({
     if (!query) return [];
     const queryTokens = tokenize(query);
     if (queryTokens.length === 0) return [];
-    let vector: number[];
+    let vector: number[] | null;
     try {
       vector = await generateEmbedding(query);
     } catch (error) {
-      console.warn("Search embedding generation failed", error);
-      return [];
+      console.warn("Search embedding generation failed, falling back to lexical search", error);
+      vector = null;
     }
     const limit = args.limit ?? 10;
     // Convex vectorSearch max limit is 256; clamp candidate sizes accordingly.
@@ -398,7 +398,7 @@ export const searchSouls: ReturnType<typeof action> = action({
     let scoreById = new Map<Id<"soulEmbeddings">, number>();
     let exactMatches: HydratedSoulEntry[] = [];
 
-    while (candidateLimit <= maxCandidate) {
+    while (vector && candidateLimit <= maxCandidate) {
       const results = await ctx.vectorSearch("soulEmbeddings", "by_embedding", {
         vector,
         limit: candidateLimit,
