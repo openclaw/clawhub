@@ -1415,13 +1415,20 @@ export const getPendingPackageReleasesInternal = internalQuery({
     const results: Array<{
       releaseId: Id<"packageReleases">;
       sha256hash: string;
+      vtReuploadAttempts: number | undefined;
+      lastVtReuploadAt: number | undefined;
     }> = [];
 
     for (const release of candidates) {
       if (results.length >= limit) break;
       if (release.softDeletedAt) continue;
       if (!release.sha256hash || release.vtAnalysis) continue;
-      results.push({ releaseId: release._id, sha256hash: release.sha256hash });
+      results.push({
+        releaseId: release._id,
+        sha256hash: release.sha256hash,
+        vtReuploadAttempts: release.vtReuploadAttempts,
+        lastVtReuploadAt: release.lastVtReuploadAt,
+      });
     }
 
     return results;
@@ -1915,6 +1922,20 @@ export const updateReleaseScanResultsInternal = internalMutation({
         nextScanStatus,
       );
     }
+  },
+});
+
+export const recordVtReuploadAttemptInternal = internalMutation({
+  args: {
+    releaseId: v.id("packageReleases"),
+  },
+  handler: async (ctx, args) => {
+    const release = await ctx.db.get(args.releaseId);
+    if (!release || release.softDeletedAt) return;
+    await ctx.db.patch(args.releaseId, {
+      vtReuploadAttempts: (release.vtReuploadAttempts ?? 0) + 1,
+      lastVtReuploadAt: Date.now(),
+    });
   },
 });
 

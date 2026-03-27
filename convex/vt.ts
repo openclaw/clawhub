@@ -11,6 +11,7 @@ const internalRefs = internal as unknown as {
     getPackageByIdInternal: unknown;
     updateReleaseScanResultsInternal: unknown;
     getPendingPackageReleasesInternal: unknown;
+    recordVtReuploadAttemptInternal: unknown;
   };
   vt: {
     scanPackageReleaseWithVirusTotal: unknown;
@@ -524,6 +525,10 @@ export const scanWithVirusTotal = internalAction({
 
 const PACKAGE_SCAN_RETRY_DELAY_MS = 5 * 60 * 1000;
 const PACKAGE_SCAN_MAX_ATTEMPTS = 10;
+/** Max number of cron-triggered re-uploads before giving up on a release. */
+const MAX_CRON_REUPLOAD_ATTEMPTS = 5;
+/** Minimum interval between cron-triggered re-uploads for the same release (1 hour). */
+const REUPLOAD_COOLDOWN_MS = 60 * 60 * 1000;
 
 export const scanPackageReleaseWithVirusTotal = internalAction({
   args: {
@@ -771,22 +776,43 @@ export const pollPendingPackageScans = internalAction({
     const batchSize = args.batchSize ?? 50;
     const pending = (await runQueryRef(ctx, internalRefs.packages.getPendingPackageReleasesInternal, {
       limit: batchSize,
-    })) as Array<{ releaseId: Id<"packageReleases">; sha256hash: string }>;
+    })) as Array<{
+      releaseId: Id<"packageReleases">;
+      sha256hash: string;
+      vtReuploadAttempts: number | undefined;
+      lastVtReuploadAt: number | undefined;
+    }>;
 
     if (pending.length === 0) return { processed: 0, updated: 0 };
 
     console.log(`[vt:pollPendingPackageScans] Checking ${pending.length} pending package releases`);
 
     let updated = 0;
-    for (const { releaseId, sha256hash } of pending) {
+    for (const { releaseId, sha256hash, vtReuploadAttempts, lastVtReuploadAt } of pending) {
       try {
         const vtResult = await checkExistingFile(apiKey, sha256hash);
         if (!vtResult) {
           // File not in VT — hash was written but upload never completed.
-          // Re-schedule the full scan to re-upload the file.
+          // Rate-limit cron-triggered re-uploads to avoid infinite retry loops.
+          const attempts = vtReuploadAttempts ?? 0;
+          if (attempts >= MAX_CRON_REUPLOAD_ATTEMPTS) {
+            console.warn(
+              `[vt:pollPendingPackageScans] Release ${releaseId} exhausted ${MAX_CRON_REUPLOAD_ATTEMPTS} re-upload attempts — skipping`,
+            );
+            continue;
+          }
+          if (lastVtReuploadAt && Date.now() - lastVtReuploadAt < REUPLOAD_COOLDOWN_MS) {
+            console.log(
+              `[vt:pollPendingPackageScans] Release ${releaseId} re-uploaded recently (attempt ${attempts}), cooling down`,
+            );
+            continue;
+          }
           console.warn(
-            `[vt:pollPendingPackageScans] Hash ${sha256hash} not found in VT for release ${releaseId} — scheduling re-upload`,
+            `[vt:pollPendingPackageScans] Hash ${sha256hash} not found in VT for release ${releaseId} — scheduling re-upload (attempt ${attempts + 1}/${MAX_CRON_REUPLOAD_ATTEMPTS})`,
           );
+          await runMutationRef(ctx, internalRefs.packages.recordVtReuploadAttemptInternal, {
+            releaseId,
+          });
           await runAfterRef(ctx, 0, internalRefs.vt.scanPackageReleaseWithVirusTotal, {
             releaseId,
           });

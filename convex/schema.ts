@@ -718,6 +718,8 @@ const packageReleases = defineTable({
     }),
   ),
   source: v.optional(v.any()),
+  vtReuploadAttempts: v.optional(v.number()),
+  lastVtReuploadAt: v.optional(v.number()),
   createdBy: v.id("users"),
   createdAt: v.number(),
   softDeletedAt: v.optional(v.number()),
