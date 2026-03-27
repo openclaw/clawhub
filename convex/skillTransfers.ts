@@ -175,6 +175,7 @@ export const acceptTransferInternal = internalMutation({
     }
 
     const newPublisher = await ensurePersonalPublisherForUser(ctx, newOwner as Doc<"users">);
+    if (!newPublisher) throw new Error("Failed to resolve publisher for new owner");
 
     await ctx.db.patch(skill._id, {
       ownerUserId: args.actorUserId,
