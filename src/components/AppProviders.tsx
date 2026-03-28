@@ -1,57 +1,42 @@
-import { ConvexAuthProvider, useAuthActions } from "@convex-dev/auth/react";
+import { ConvexAuthProvider } from "@convex-dev/auth/react";
 import { useEffect, useRef } from "react";
 import { convex } from "../convex/client";
-import { getUserFacingConvexError } from "../lib/convexError";
-import { clearAuthError, setAuthError } from "../lib/useAuthError";
+import { setAuthError } from "../lib/useAuthError";
 import { UserBootstrap } from "./UserBootstrap";
 
-function getPendingAuthCode() {
+function getPendingAuthError() {
   if (typeof window === "undefined") return null;
   const url = new URL(window.location.href);
-  const code = url.searchParams.get("code");
-  if (!code) return null;
-  url.searchParams.delete("code");
+  const description =
+    url.searchParams.get("error_description")?.trim() ?? url.searchParams.get("error")?.trim();
+  if (!description) return null;
+  url.searchParams.delete("error");
+  url.searchParams.delete("error_description");
   return {
-    code,
+    description,
     relativeUrl: `${url.pathname}${url.search}${url.hash}`,
   };
 }
 
-export function AuthCodeHandler() {
-  const { signIn } = useAuthActions();
-  const handledCodeRef = useRef<string | null>(null);
-  const signInWithCode = signIn as (
-    provider: string | undefined,
-    params: { code: string },
-  ) => Promise<{ signingIn: boolean }>;
-
+export function AuthErrorHandler() {
+  const handledErrorRef = useRef<string | null>(null);
   useEffect(() => {
-    const pending = getPendingAuthCode();
+    const pending = getPendingAuthError();
     if (!pending) return;
-    if (handledCodeRef.current === pending.code) return;
-    handledCodeRef.current = pending.code;
+    if (handledErrorRef.current === pending.description) return;
+    handledErrorRef.current = pending.description;
 
-    clearAuthError();
     window.history.replaceState(null, "", pending.relativeUrl);
-
-    void signInWithCode(undefined, { code: pending.code })
-      .then((result) => {
-        if (result.signingIn === false) {
-          setAuthError("Sign in failed. Please try again.");
-        }
-      })
-      .catch((error) => {
-        setAuthError(getUserFacingConvexError(error, "Sign in failed. Please try again."));
-      });
-  }, [signInWithCode]);
+    setAuthError(pending.description);
+  }, []);
 
   return null;
 }
 
 export function AppProviders({ children }: { children: React.ReactNode }) {
   return (
-    <ConvexAuthProvider client={convex} shouldHandleCode={false}>
-      <AuthCodeHandler />
+    <ConvexAuthProvider client={convex}>
+      <AuthErrorHandler />
       <UserBootstrap />
       {children}
     </ConvexAuthProvider>

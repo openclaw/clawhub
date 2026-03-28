@@ -2,15 +2,10 @@
 import { render, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { getAuthErrorSnapshot, clearAuthError } from "../lib/useAuthError";
-import { AuthCodeHandler } from "./AppProviders";
-
-const signInMock = vi.fn();
+import { AuthErrorHandler } from "./AppProviders";
 
 vi.mock("@convex-dev/auth/react", () => ({
   ConvexAuthProvider: ({ children }: { children: React.ReactNode }) => <>{children}</>,
-  useAuthActions: () => ({
-    signIn: signInMock,
-  }),
 }));
 
 vi.mock("../convex/client", () => ({
@@ -21,9 +16,8 @@ vi.mock("./UserBootstrap", () => ({
   UserBootstrap: () => null,
 }));
 
-describe("AuthCodeHandler", () => {
+describe("AuthErrorHandler", () => {
   beforeEach(() => {
-    signInMock.mockReset();
     clearAuthError();
     window.history.replaceState(null, "", "/sign-in");
   });
@@ -32,43 +26,37 @@ describe("AuthCodeHandler", () => {
     clearAuthError();
   });
 
-  it("consumes the auth code and strips it from the URL", async () => {
-    signInMock.mockResolvedValue({ signingIn: true });
-    window.history.replaceState(null, "", "/sign-in?code=abc123&next=%2Fdashboard#section");
+  it("does nothing when there is no auth error in the URL", () => {
+    render(<AuthErrorHandler />);
 
-    render(<AuthCodeHandler />);
+    expect(getAuthErrorSnapshot()).toBeNull();
+  });
+
+  it("surfaces provider errors from the URL and strips them", async () => {
+    window.history.replaceState(
+      null,
+      "",
+      "/sign-in?error=access_denied&error_description=Account%20banned&next=%2Fdashboard#section",
+    );
+
+    render(<AuthErrorHandler />);
 
     await waitFor(() => {
-      expect(signInMock).toHaveBeenCalledWith(undefined, { code: "abc123" });
+      expect(getAuthErrorSnapshot()).toBe("Account banned");
     });
 
     expect(`${window.location.pathname}${window.location.search}${window.location.hash}`).toBe(
       "/sign-in?next=%2Fdashboard#section",
     );
-    expect(getAuthErrorSnapshot()).toBeNull();
   });
 
-  it("surfaces user-facing sign-in errors from code verification", async () => {
-    signInMock.mockRejectedValue(
-      new Error("[CONVEX A] Server Error Called by client ConvexError: Account banned"),
-    );
-    window.history.replaceState(null, "", "/sign-in?code=abc123");
+  it("falls back to the provider error when there is no description", async () => {
+    window.history.replaceState(null, "", "/sign-in?error=access_denied");
 
-    render(<AuthCodeHandler />);
+    render(<AuthErrorHandler />);
 
     await waitFor(() => {
-      expect(getAuthErrorSnapshot()).toBe("Account banned");
-    });
-  });
-
-  it("shows a generic error when sign-in finishes without a session", async () => {
-    signInMock.mockResolvedValue({ signingIn: false });
-    window.history.replaceState(null, "", "/sign-in?code=abc123");
-
-    render(<AuthCodeHandler />);
-
-    await waitFor(() => {
-      expect(getAuthErrorSnapshot()).toBe("Sign in failed. Please try again.");
+      expect(getAuthErrorSnapshot()).toBe("access_denied");
     });
   });
 });
