@@ -253,9 +253,6 @@ const skills = defineTable({
   moderationEngineVersion: v.optional(v.string()),
   moderationEvaluatedAt: v.optional(v.number()),
   moderationSourceVersionId: v.optional(v.id("skillVersions")),
-  // Legacy compatibility: some older deployments still have a denormalized
-  // moderationSignals field on skills.
-  moderationSignals: v.optional(v.any()),
   manualOverride: v.optional(manualModerationOverride),
   quality: v.optional(
     v.object({
@@ -428,10 +425,6 @@ const skillVersions = defineTable({
       checkedAt: v.number(),
     }),
   ),
-  // Legacy compatibility: some older deployments still have a denormalized
-  // moderationSignals field on skillVersions. Keep accepting it so remote
-  // dev deployments can still load newer code while we test migrations.
-  moderationSignals: v.optional(v.any()),
   staticScan: v.optional(
     v.object({
       status: v.union(v.literal("clean"), v.literal("suspicious"), v.literal("malicious")),

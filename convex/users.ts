@@ -35,6 +35,35 @@ export const getByIdInternal = internalQuery({
   handler: async (ctx, args) => ctx.db.get(args.userId),
 });
 
+async function scanUsersByNormalizedHandle(
+  ctx: Pick<QueryCtx | MutationCtx, "db">,
+  normalizedHandle: string,
+) {
+  let cursor: string | null = null;
+  let scanned = 0;
+
+  while (scanned < MAX_USER_SEARCH_SCAN) {
+    const pageSize = Math.min(500, MAX_USER_SEARCH_SCAN - scanned);
+    const result = await ctx.db
+      .query("users")
+      .order("asc")
+      .paginate({ cursor, numItems: pageSize });
+
+    scanned += result.page.length;
+    const match = result.page.find(
+      (user) =>
+        !user.deletedAt &&
+        !user.deactivatedAt &&
+        normalizeReservedHandle(user.handle) === normalizedHandle,
+    );
+    if (match) return match;
+    if (result.isDone || !result.continueCursor) return null;
+    cursor = result.continueCursor;
+  }
+
+  return null;
+}
+
 async function getUserByHandleCaseAware(
   ctx: Pick<QueryCtx | MutationCtx, "db">,
   handle: string | undefined | null,
@@ -60,10 +89,17 @@ async function getUserByHandleCaseAware(
   }
 
   const publisher = await getPublisherByHandle(ctx, normalizedHandle);
-  if (publisher?.kind !== "user" || !publisher.linkedUserId) return null;
-  const linkedUser = await ctx.db.get(publisher.linkedUserId);
-  if (!linkedUser || linkedUser.deletedAt || linkedUser.deactivatedAt) return null;
-  return linkedUser;
+  if (publisher?.kind === "user" && publisher.linkedUserId) {
+    const linkedUser = await ctx.db.get(publisher.linkedUserId);
+    if (linkedUser && !linkedUser.deletedAt && !linkedUser.deactivatedAt) {
+      return linkedUser;
+    }
+  }
+
+  // Migration bridge: older users may still have mixed-case handles without a
+  // personal publisher row yet. Fall back to a bounded scan so canonicalized
+  // lowercase profile URLs continue to resolve until the backfill finishes.
+  return await scanUsersByNormalizedHandle(ctx, normalizedHandle);
 }
 
 export const getByHandleInternal = internalQuery({
@@ -127,6 +163,7 @@ export const syncGitHubProfileInternal = internalMutation({
     if (!user || user.deletedAt || user.deactivatedAt) return;
 
     const rawUserHandle = user.handle?.trim();
+    const rawNewLogin = normalizeText(args.name);
     const canonicalUserHandle = normalizeReservedHandle(user.handle);
     const canonicalOldLogin = normalizeReservedHandle(user.name);
     const canonicalNewLogin = normalizeReservedHandle(args.name);
@@ -166,13 +203,14 @@ export const syncGitHubProfileInternal = internalMutation({
 
     // Update displayName if it was derived from the old username and the login actually changed.
     if (
+      rawNewLogin &&
       canonicalOldLogin &&
       canonicalNewLogin &&
       canonicalOldLogin !== canonicalNewLogin &&
       (user.displayName === user.name || user.displayName === user.handle) &&
       canClaimNewHandle
     ) {
-      updates.displayName = canonicalNewLogin;
+      updates.displayName = rawNewLogin;
       didChangeProfile = true;
     }
 
@@ -304,6 +342,7 @@ async function computeEnsureUpdates(ctx: MutationCtx, user: Doc<"users">) {
   const updates: Record<string, unknown> = {};
 
   const rawExistingHandle = normalizeText(user.handle);
+  const rawGithubLogin = normalizeText(user.name);
   const existingHandle = normalizeReservedHandle(user.handle);
   const githubLogin = normalizeReservedHandle(user.name);
   const requestedHandle = deriveHandle({
@@ -342,15 +381,17 @@ async function computeEnsureUpdates(ctx: MutationCtx, user: Doc<"users">) {
   }
 
   const displayName = normalizeText(user.displayName);
-  if (!displayName && baseHandle) {
-    updates.displayName = baseHandle;
+  const preferredDisplayName = rawGithubLogin ?? rawExistingHandle ?? baseHandle;
+  if (!displayName && preferredDisplayName) {
+    updates.displayName = preferredDisplayName;
   } else if (
+    preferredDisplayName &&
     derivedHandle &&
     rawExistingHandle &&
     displayName === rawExistingHandle &&
     normalizeReservedHandle(rawExistingHandle) !== derivedHandle
   ) {
-    updates.displayName = derivedHandle;
+    updates.displayName = preferredDisplayName;
   }
 
   if (!user.role) {

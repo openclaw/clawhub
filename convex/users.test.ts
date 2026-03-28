@@ -560,6 +560,32 @@ describe("ensureHandler", () => {
     });
   });
 
+  it("preserves GitHub login casing for derived display names", async () => {
+    const { ctx, patch } = makeCtx();
+    vi.mocked(requireUser).mockResolvedValue({
+      userId: "users:github",
+      user: {
+        _creationTime: 1,
+        handle: undefined,
+        displayName: undefined,
+        name: "JohnDoe",
+        email: undefined,
+        role: undefined,
+        createdAt: undefined,
+      },
+    } as never);
+
+    await ensureHandler(ctx);
+
+    expect(patch).toHaveBeenCalledWith("users:github", {
+      handle: "johndoe",
+      displayName: "JohnDoe",
+      role: "user",
+      createdAt: 1,
+      updatedAt: expect.any(Number),
+    });
+  });
+
   it("does not auto-claim a reserved handle for another user", async () => {
     const { ctx, patch, query } = makeCtx();
     query.mockImplementation(((table: string) => {
@@ -602,7 +628,10 @@ describe("ensureHandler", () => {
 
     await ensureHandler(ctx);
 
-    expect(patch).not.toHaveBeenCalled();
+    expect(patch).toHaveBeenCalledWith("users:other", {
+      displayName: "openclaw",
+      updatedAt: expect.any(Number),
+    });
   });
 
   it("does not auto-claim a handle already owned by an org publisher", async () => {
@@ -755,6 +784,38 @@ describe("users.syncGitHubProfileInternal", () => {
       expect.objectContaining({
         githubProfileSyncedAt: 10,
         handle: "jaredforreal",
+      }),
+    );
+  });
+
+  it("preserves GitHub login casing for derived display names", async () => {
+    const { ctx, get, patch } = makeCtx();
+    get.mockResolvedValue({
+      _id: "users:other",
+      handle: "old-handle",
+      displayName: "old-handle",
+      name: "old-handle",
+    });
+
+    const handler = (
+      syncGitHubProfileInternal as unknown as {
+        _handler: (ctx: unknown, args: unknown) => Promise<void>;
+      }
+    )._handler;
+
+    await handler(ctx, {
+      userId: "users:other",
+      name: "JohnDoe",
+      syncedAt: 10,
+    });
+
+    expect(patch).toHaveBeenCalledWith(
+      "users:other",
+      expect.objectContaining({
+        githubProfileSyncedAt: 10,
+        name: "JohnDoe",
+        handle: "johndoe",
+        displayName: "JohnDoe",
       }),
     );
   });
@@ -995,6 +1056,65 @@ describe("users.getByHandle", () => {
               ),
             };
           },
+        };
+      }
+      throw new Error(`Unexpected table ${table}`);
+    });
+
+    const result = (await getByHandleHandler(
+      { db: { get, query } },
+      { handle: "jaredforreal" },
+    )) as { handle: string | null } | null;
+
+    expect(result).toMatchObject({ handle: "jaredforreal" });
+  });
+
+  it("falls back to a bounded user scan when no publisher row exists", async () => {
+    const user = {
+      _id: "users:1",
+      _creationTime: 1,
+      handle: "JaredforReal",
+      name: "JaredforReal",
+      displayName: "Jared Wen",
+      image: undefined,
+      bio: undefined,
+    };
+
+    const get = vi.fn(async () => null);
+    const query = vi.fn((table: string) => {
+      if (table === "users") {
+        return {
+          withIndex: (
+            _name: string,
+            builder: (q: { eq: (field: string, value: string) => unknown }) => unknown,
+          ) => {
+            let handle = "";
+            const q = {
+              eq: (field: string, value: string) => {
+                if (field === "handle") handle = value;
+                return q;
+              },
+            };
+            builder(q);
+            return {
+              unique: vi.fn(async () => (handle === "JaredforReal" ? user : null)),
+            };
+          },
+          order: (direction: string) => {
+            if (direction !== "asc") throw new Error(`Unexpected users order ${direction}`);
+            return {
+              paginate: vi.fn(async () => ({
+                page: [user],
+                isDone: true,
+                continueCursor: null,
+              })),
+            };
+          },
+        };
+      }
+      if (table === "publishers") {
+        return {
+          withIndex: () => ({ unique: vi.fn(async () => null) }),
         };
       }
       throw new Error(`Unexpected table ${table}`);
