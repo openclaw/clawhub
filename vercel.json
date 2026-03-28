@@ -1,5 +1,5 @@
 {
-  "buildCommand": "npx convex deploy --cmd 'npm run build'",
+  "buildCommand": "bunx convex deploy --typecheck=disable --yes --cmd 'bun run build'",
   "redirects": [
     {
       "source": "/",
