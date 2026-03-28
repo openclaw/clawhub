@@ -1,5 +1,5 @@
 {
-  "buildCommand": "bunx convex deploy --typecheck=disable --yes --cmd 'bun run build'",
+  "buildCommand": "bun run build",
   "redirects": [
     {
       "source": "/",
