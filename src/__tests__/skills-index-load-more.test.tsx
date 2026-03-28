@@ -19,7 +19,11 @@ vi.mock("@tanstack/react-router", () => ({
     useSearch: () => searchMock,
   }),
   redirect: (options: unknown) => ({ redirect: options }),
-  Link: (props: { children: ReactNode }) => <a href="/">{props.children}</a>,
+  Link: (props: { children: ReactNode; className?: string }) => (
+    <a href="/" className={props.className}>
+      {props.children}
+    </a>
+  ),
 }));
 
 vi.mock("convex/react", () => ({

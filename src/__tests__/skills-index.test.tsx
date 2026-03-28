@@ -19,7 +19,11 @@ vi.mock("@tanstack/react-router", () => ({
     useSearch: () => searchMock,
   }),
   redirect: (options: unknown) => ({ redirect: options }),
-  Link: (props: { children: ReactNode }) => <a href="/">{props.children}</a>,
+  Link: (props: { children: ReactNode; className?: string }) => (
+    <a href="/" className={props.className}>
+      {props.children}
+    </a>
+  ),
 }));
 
 vi.mock("convex/react", () => ({
@@ -67,6 +71,13 @@ describe("SkillsIndex", () => {
     render(<SkillsIndex />);
     await act(async () => {});
     expect(screen.getByText("No skills match that filter.")).toBeTruthy();
+  });
+
+  it("shows a publish skill action in the toolbar", async () => {
+    render(<SkillsIndex />);
+    await act(async () => {});
+
+    expect(screen.getByRole("link", { name: "Publish Skill" })).toBeTruthy();
   });
 
   it("shows loading state before fetch completes", async () => {
@@ -229,10 +240,10 @@ describe("SkillsIndex", () => {
       await vi.runAllTimersAsync();
     });
 
-    const links = screen.getAllByRole("link");
-    expect(links[0]?.textContent).toContain("Skill B");
-    expect(links[1]?.textContent).toContain("Skill A");
-    expect(links[2]?.textContent).toContain("Skill C");
+    const resultRows = Array.from(document.querySelectorAll(".skills-table-row"));
+    expect(resultRows[0]?.textContent).toContain("Skill B");
+    expect(resultRows[1]?.textContent).toContain("Skill A");
+    expect(resultRows[2]?.textContent).toContain("Skill C");
   });
 
   it("uses relevance as default sort when searching", async () => {

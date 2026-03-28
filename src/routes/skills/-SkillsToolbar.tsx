@@ -1,3 +1,4 @@
+import { Link } from "@tanstack/react-router";
 import type { RefObject } from "react";
 import { type SortDir, type SortKey } from "./-params";
 
@@ -91,6 +92,13 @@ export function SkillsToolbar({
         >
           {view === "cards" ? "List" : "Cards"}
         </button>
+        <Link
+          className="btn btn-primary"
+          to="/publish-skill"
+          search={{ updateSlug: undefined }}
+        >
+          Publish Skill
+        </Link>
       </div>
     </div>
   );
