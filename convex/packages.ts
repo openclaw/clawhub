@@ -12,6 +12,7 @@ import { internal } from "./_generated/api";
 import { action, internalAction, internalMutation, internalQuery, query } from "./functions";
 import type { Doc, Id } from "./_generated/dataModel";
 import type { ActionCtx, MutationCtx, QueryCtx } from "./_generated/server";
+import { generatePackageChangelogPreview as buildPackageChangelogPreview } from "./lib/changelog";
 import { requireGitHubAccountAge } from "./lib/githubAccount";
 import { assertAdmin, assertModerator, requireUserFromAction } from "./lib/access";
 import {
@@ -1565,6 +1566,26 @@ export const publishRelease = action({
   handler: async (ctx, args) => {
     const { userId } = await requireUserFromAction(ctx);
     return await publishPackageImpl(ctx, userId, args.payload);
+  },
+});
+
+export const generateChangelogPreview = action({
+  args: {
+    name: v.string(),
+    version: v.string(),
+    readmeText: v.string(),
+    filePaths: v.optional(v.array(v.string())),
+  },
+  handler: async (ctx, args) => {
+    const { userId } = await requireUserFromAction(ctx);
+    const changelog = await buildPackageChangelogPreview(ctx, {
+      name: args.name.trim(),
+      version: args.version.trim(),
+      readmeText: args.readmeText,
+      filePaths: args.filePaths?.map((value) => value.trim()).filter(Boolean),
+      viewerUserId: userId,
+    });
+    return { changelog, source: "auto" as const };
   },
 });
 

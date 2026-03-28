@@ -6,6 +6,7 @@ import {
   backfillPackageReleaseScansInternal,
   getPackageReleaseScanBackfillBatchInternal,
   getByName,
+  generateChangelogPreview,
   list,
   publishPackage,
   publishPackageForUserInternal,
@@ -22,6 +23,10 @@ import {
 
 vi.mock("@convex-dev/auth/server", () => ({
   getAuthUserId: vi.fn(),
+}));
+
+vi.mock("./lib/changelog", () => ({
+  generatePackageChangelogPreview: vi.fn(),
 }));
 
 type WrappedHandler<TArgs, TResult> = {
@@ -233,6 +238,12 @@ const softDeletePackageInternalHandler = (
   softDeletePackageInternal as unknown as WrappedHandler<
     { userId: string; name: string },
     { ok: true; packageId: string; releaseCount: number; alreadyDeleted: boolean }
+  >
+)._handler;
+const generateChangelogPreviewHandler = (
+  generateChangelogPreview as unknown as WrappedHandler<
+    { name: string; version: string; readmeText: string; filePaths?: string[] },
+    { changelog: string; source: "auto" }
   >
 )._handler;
 
@@ -2535,5 +2546,82 @@ describe("package scan backfill", () => {
         }),
       }),
     );
+  });
+});
+
+describe("generateChangelogPreview action", () => {
+  it("rejects unauthenticated callers", async () => {
+    await expect(
+      generateChangelogPreviewHandler(
+        { runQuery: vi.fn() } as never,
+        { name: "demo-plugin", version: "1.0.0", readmeText: "# Demo" },
+      ),
+    ).rejects.toThrow("Unauthorized");
+  });
+
+  it("calls the changelog lib with the original name and viewer context", async () => {
+    vi.mocked(getAuthUserId).mockResolvedValueOnce("users:owner" as never);
+
+    const { generatePackageChangelogPreview: buildPreview } = await import("./lib/changelog");
+    vi.mocked(buildPreview).mockResolvedValueOnce("- Initial release.");
+
+    const ctx = {
+      runQuery: vi.fn().mockResolvedValueOnce({ _id: "users:owner" }),
+    };
+
+    const result = await generateChangelogPreviewHandler(ctx as never, {
+      name: "  Demo-Plugin  ",
+      version: "  1.0.0  ",
+      readmeText: "# Demo Plugin",
+      filePaths: [" dist/index.js ", ""],
+    });
+
+    expect(vi.mocked(buildPreview)).toHaveBeenCalledWith(
+      ctx,
+      expect.objectContaining({
+        name: "Demo-Plugin",
+        version: "1.0.0",
+        readmeText: "# Demo Plugin",
+        filePaths: ["dist/index.js"],
+        viewerUserId: "users:owner",
+      }),
+    );
+    expect(result).toEqual({ changelog: "- Initial release.", source: "auto" });
+  });
+
+  it("returns the changelog string from the lib wrapped with source: auto", async () => {
+    vi.mocked(getAuthUserId).mockResolvedValueOnce("users:owner" as never);
+
+    const { generatePackageChangelogPreview: buildPreview } = await import("./lib/changelog");
+    vi.mocked(buildPreview).mockResolvedValueOnce("- Added tool support.");
+
+    const ctx = { runQuery: vi.fn().mockResolvedValueOnce({ _id: "users:owner" }) };
+
+    const result = await generateChangelogPreviewHandler(ctx as never, {
+      name: "demo-plugin",
+      version: "2.0.0",
+      readmeText: "# Demo",
+    });
+
+    expect(result.source).toBe("auto");
+    expect(result.changelog).toBe("- Added tool support.");
+  });
+
+  it("omits undefined filePaths when none are supplied", async () => {
+    vi.mocked(getAuthUserId).mockResolvedValueOnce("users:owner" as never);
+
+    const { generatePackageChangelogPreview: buildPreview } = await import("./lib/changelog");
+    vi.mocked(buildPreview).mockResolvedValueOnce("- First publish.");
+
+    const ctx = { runQuery: vi.fn().mockResolvedValueOnce({ _id: "users:owner" }) };
+
+    await generateChangelogPreviewHandler(ctx as never, {
+      name: "demo-plugin",
+      version: "1.0.0",
+      readmeText: "# Demo",
+    });
+
+    const call = vi.mocked(buildPreview).mock.lastCall;
+    expect(call?.[1].filePaths).toBeUndefined();
   });
 });

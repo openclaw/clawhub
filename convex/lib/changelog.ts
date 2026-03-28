@@ -66,6 +66,8 @@ async function generateWithOpenAI(args: {
   oldReadme: string | null;
   nextReadme: string;
   fileDiff: FileDiffSummary | null;
+  subjectLabel?: string;
+  documentLabel?: string;
 }) {
   const apiKey = process.env.OPENAI_API_KEY;
   if (!apiKey) return null;
@@ -78,16 +80,18 @@ async function generateWithOpenAI(args: {
   const changedPaths = fileDiff ? pickPaths(fileDiff.changed) : [];
   const addedPaths = fileDiff ? pickPaths(fileDiff.added) : [];
   const removedPaths = fileDiff ? pickPaths(fileDiff.removed) : [];
+  const subjectLabel = args.subjectLabel ?? "Skill";
+  const documentLabel = args.documentLabel ?? "SKILL.md";
 
   const input = [
-    `Skill: ${args.slug}`,
+    `${subjectLabel}: ${args.slug}`,
     `Version: ${args.version}`,
     `File changes: ${diffSummary}`,
     changedPaths.length ? `Changed files (sample): ${changedPaths.join(", ")}` : null,
     addedPaths.length ? `Added files (sample): ${addedPaths.join(", ")}` : null,
     removedPaths.length ? `Removed files (sample): ${removedPaths.join(", ")}` : null,
-    oldReadme ? `Previous SKILL.md:\n${oldReadme}` : null,
-    `New SKILL.md:\n${nextReadme}`,
+    oldReadme ? `Previous ${documentLabel}:\n${oldReadme}` : null,
+    `New ${documentLabel}:\n${nextReadme}`,
   ]
     .filter(Boolean)
     .join("\n\n");
@@ -101,7 +105,7 @@ async function generateWithOpenAI(args: {
     body: JSON.stringify({
       model: CHANGELOG_MODEL,
       instructions:
-        "Write a concise changelog for this skill version. Audience: everyone. Output plain text. Prefer 2–6 bullet points. If it is a big change, include a short 1-line summary first, then bullets. Don’t mention that you are AI. Don’t invent details; only use the inputs.",
+        "Write a concise changelog for this release. Audience: everyone. Output plain text. Prefer 2–6 bullet points. If it is a big change, include a short 1-line summary first, then bullets. Don’t mention that you are AI. Don’t invent details; only use the inputs.",
       input,
       max_output_tokens: 220,
     }),
@@ -118,6 +122,7 @@ function generateFallback(args: {
   oldReadme: string | null;
   nextReadme: string;
   fileDiff: FileDiffSummary | null;
+  updateSummary?: string;
 }) {
   const lines: string[] = [];
   if (!args.oldReadme) {
@@ -134,7 +139,7 @@ function generateFallback(args: {
     if (parts.length) lines.push(`- ${parts.join(", ")} file(s).`);
   }
 
-  lines.push(`- Updated SKILL.md and bundle contents.`);
+  lines.push(`- ${args.updateSummary ?? "Updated SKILL.md and bundle contents."}`);
   return lines.join("\n");
 }
 
@@ -167,6 +172,8 @@ export async function generateChangelogForPublish(
       oldReadme: oldReadmeText,
       nextReadme: args.readmeText,
       fileDiff,
+      subjectLabel: "Skill",
+      documentLabel: "SKILL.md",
     }).catch(() => null);
 
     return (
@@ -177,6 +184,7 @@ export async function generateChangelogForPublish(
         oldReadme: oldReadmeText,
         nextReadme: args.readmeText,
         fileDiff,
+        updateSummary: "Updated SKILL.md and bundle contents.",
       })
     );
   } catch {
@@ -221,6 +229,8 @@ export async function generateChangelogPreview(
       oldReadme: oldReadmeText,
       nextReadme: args.readmeText,
       fileDiff,
+      subjectLabel: "Skill",
+      documentLabel: "SKILL.md",
     }).catch(() => null);
 
     return (
@@ -231,6 +241,7 @@ export async function generateChangelogPreview(
         oldReadme: oldReadmeText,
         nextReadme: args.readmeText,
         fileDiff,
+        updateSummary: "Updated SKILL.md and bundle contents.",
       })
     );
   } catch {
@@ -238,10 +249,72 @@ export async function generateChangelogPreview(
   }
 }
 
+export async function generatePackageChangelogPreview(
+  ctx: ActionCtx,
+  args: {
+    name: string;
+    version: string;
+    readmeText: string;
+    filePaths?: string[];
+    viewerUserId: Id<"users">;
+  },
+): Promise<string> {
+  try {
+    const existing = (await ctx.runQuery(internal.packages.getByNameForViewerInternal, {
+      name: args.name,
+      viewerUserId: args.viewerUserId,
+    })) as { latestRelease: Doc<"packageReleases"> | null } | null;
+    const previous = existing?.latestRelease ?? null;
+    const oldReadmeText = previous ? await readReadmeFromPackageRelease(ctx, previous) : null;
+    const fileDiff =
+      previous && args.filePaths
+        ? summarizeFileDiff(
+            previous.files.map((file) => ({ path: file.path, sha256: file.sha256 })),
+            args.filePaths.map((path) => ({ path })),
+          )
+        : null;
+
+    const ai = await generateWithOpenAI({
+      slug: args.name,
+      version: args.version,
+      oldReadme: oldReadmeText,
+      nextReadme: args.readmeText,
+      fileDiff,
+      subjectLabel: "Package",
+      documentLabel: "README",
+    }).catch(() => null);
+
+    return (
+      ai ??
+      generateFallback({
+        slug: args.name,
+        version: args.version,
+        oldReadme: oldReadmeText,
+        nextReadme: args.readmeText,
+        fileDiff,
+        updateSummary: "Updated README and package contents.",
+      })
+    );
+  } catch {
+    return "- Updated package.";
+  }
+}
+
 async function readReadmeFromVersion(ctx: ActionCtx, version: Doc<"skillVersions">) {
   const readmeFile = version.files.find((file) => {
     const lower = file.path.toLowerCase();
     return lower === "skill.md" || lower === "skills.md";
+  });
+  if (!readmeFile) return null;
+  const blob = await ctx.storage.get(readmeFile.storageId as Id<"_storage">);
+  if (!blob) return null;
+  return blob.text();
+}
+
+async function readReadmeFromPackageRelease(ctx: ActionCtx, release: Doc<"packageReleases">) {
+  const readmeFile = release.files.find((file) => {
+    const lower = file.path.toLowerCase();
+    return lower === "readme.md" || lower === "readme.mdx" || lower === "readme.markdown";
   });
   if (!readmeFile) return null;
   const blob = await ctx.storage.get(readmeFile.storageId as Id<"_storage">);

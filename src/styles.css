@@ -784,9 +784,10 @@ code {
 .upload-file-list {
   border-top: 1px solid rgba(255, 118, 84, 0.16);
   padding-top: 10px;
-  max-height: 248px;
+  max-height: 520px;
   overflow: auto;
-  display: grid;
+  display: flex;
+  flex-direction: column;
   gap: 6px;
 }
 
@@ -795,21 +796,62 @@ code {
 }
 
 .upload-file-row {
-  font-family: var(--font-mono);
-  font-size: 0.79rem;
-  line-height: 1.45;
-  border-radius: 10px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 42px;
+  border-radius: 6px;
   border: 1px solid rgba(255, 118, 84, 0.18);
   background: rgba(255, 255, 255, 0.55);
-  padding: 6px 9px;
+  padding: 6px 10px 6px 12px;
+}
+
+.upload-file-row-label {
+  flex: 1;
+  min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+  font-family: var(--font-mono);
+  font-size: 0.84rem;
+  line-height: 1.4;
+  color: var(--ink);
+}
+
+.upload-file-row-remove {
+  flex-shrink: 0;
+  border: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  background: transparent;
+  color: var(--ink-soft);
+  padding: 0;
+  border-radius: 8px;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.upload-file-row-remove:hover {
+  background: rgba(255, 118, 84, 0.12);
+  color: var(--accent-deep);
+}
+
+.upload-file-row-remove:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 3px rgba(255, 118, 84, 0.18);
 }
 
 [data-theme="dark"] .upload-file-row {
   border-color: rgba(255, 131, 95, 0.2);
   background: rgba(20, 36, 47, 0.72);
+}
+
+[data-theme="dark"] .upload-file-row-remove:hover {
+  background: rgba(255, 131, 95, 0.16);
+  color: #ffd8c8;
 }
 
 .validation-list {
