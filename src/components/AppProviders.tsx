@@ -8,7 +8,7 @@ function getPendingAuthError() {
   if (typeof window === "undefined") return null;
   const url = new URL(window.location.href);
   const description =
-    url.searchParams.get("error_description")?.trim() ?? url.searchParams.get("error")?.trim();
+    url.searchParams.get("error_description")?.trim() || url.searchParams.get("error")?.trim();
   if (!description) return null;
   url.searchParams.delete("error");
   url.searchParams.delete("error_description");

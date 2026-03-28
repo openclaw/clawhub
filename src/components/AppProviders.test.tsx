@@ -59,4 +59,22 @@ describe("AuthErrorHandler", () => {
       expect(getAuthErrorSnapshot()).toBe("access_denied");
     });
   });
+
+  it("falls back to the provider error when the description is blank", async () => {
+    window.history.replaceState(
+      null,
+      "",
+      "/sign-in?error=access_denied&error_description=%20%20%20",
+    );
+
+    render(<AuthErrorHandler />);
+
+    await waitFor(() => {
+      expect(getAuthErrorSnapshot()).toBe("access_denied");
+    });
+
+    expect(`${window.location.pathname}${window.location.search}${window.location.hash}`).toBe(
+      "/sign-in",
+    );
+  });
 });
