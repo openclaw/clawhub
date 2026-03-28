@@ -1642,6 +1642,29 @@ code {
 .skill-card {
   min-height: 176px;
   box-shadow: 0 1px 3px rgba(42, 31, 25, 0.08);
+  transition:
+    transform 0.2s ease,
+    box-shadow 0.2s ease,
+    border-color 0.2s ease,
+    background 0.2s ease;
+}
+
+.skill-card:hover,
+.skill-card:focus-within {
+  border-color: var(--border-ui-hover);
+  transform: translateY(-1px);
+  box-shadow: 0 10px 20px rgba(29, 26, 23, 0.12);
+}
+
+.skill-card:focus-visible {
+  outline: 3px solid rgba(255, 107, 74, 0.3);
+  outline-offset: 3px;
+}
+
+[data-theme="dark"] .skill-card:hover,
+[data-theme="dark"] .skill-card:focus-within {
+  border-color: var(--border-ui-hover);
+  box-shadow: 0 14px 28px rgba(7, 15, 20, 0.36);
 }
 
 .skill-card-tags {
