@@ -1,7 +1,7 @@
 {
   "name": "aivi-engagement",
   "display_name": "AIVI Lead Engagement",
-  "description": "Score leads and launch AI voice and SMS engagement sequences. Supports real estate, debt collection, healthcare, and home services verticals.",
+  "description": "Score leads and launch AI voice + SMS sequences in one command. AIVI enriches every lead with phone validity, litigator check, contactability, and economic indicators before first contact. OAuth 2.1 — authenticate once, works across Claude Code, ChatGPT, OpenClaw, and NemoClaw. Usage-based pricing from $0.75. TCPA, HIPAA, and FDCPA aware.",
   "version": "1.1.0",
   "author": "AIVI",
   "url": "https://aivi.io",
