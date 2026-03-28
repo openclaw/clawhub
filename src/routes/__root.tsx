@@ -5,7 +5,14 @@ import { ClientOnly } from "../components/ClientOnly";
 import { DeploymentDriftBanner } from "../components/DeploymentDriftBanner";
 import { Footer } from "../components/Footer";
 import Header from "../components/Header";
-import { getSiteDescription, getSiteMode, getSiteName, getSiteUrlForMode } from "../lib/site";
+import {
+  getKnotSiteUrl,
+  getSiteDescription,
+  getSiteMode,
+  getSiteName,
+  getSiteUrlForMode,
+  isKnotEnabled,
+} from "../lib/site";
 import appCss from "../styles.css?url";
 
 export const Route = createRootRoute({
@@ -98,8 +105,15 @@ export const Route = createRootRoute({
 });
 
 function RootDocument({ children }: { children: React.ReactNode }) {
+  const knotEnabled = isKnotEnabled();
+  const knotSiteUrl = knotEnabled ? getKnotSiteUrl() : undefined;
+
   return (
-    <html lang="en">
+    <html
+      lang="en"
+      data-is-knot={knotEnabled ? "true" : undefined}
+      data-knot-site-url={knotSiteUrl}
+    >
       <head>
         <HeadContent />
       </head>

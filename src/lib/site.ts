@@ -4,23 +4,49 @@ import { getRuntimeEnv } from "./runtimeEnv";
 
 const DEFAULT_CLAWHUB_SITE_URL = "https://clawhub.ai";
 const DEFAULT_ONLYCRABS_SITE_URL = "https://onlycrabs.ai";
+const DEFAULT_KNOT_SITE_URL = "https://openclaw.openknot.ai";
 const DEFAULT_ONLYCRABS_HOST = "onlycrabs.ai";
 const LEGACY_CLAWDHUB_HOSTS = new Set(["clawdhub.com", "www.clawdhub.com", "auth.clawdhub.com"]);
 
-export function normalizeClawHubSiteOrigin(value?: string | null) {
+function readString(value: unknown) {
+  if (typeof value !== "string") return undefined;
+  const trimmed = value.trim();
+  return trimmed ? trimmed : undefined;
+}
+
+function normalizeSiteOrigin(value?: string | null) {
   if (!value) return null;
   try {
-    const url = new URL(value);
-    if (LEGACY_CLAWDHUB_HOSTS.has(url.hostname.toLowerCase())) {
-      return DEFAULT_CLAWHUB_SITE_URL;
-    }
-    return url.origin;
+    return new URL(value).origin;
   } catch {
     return null;
   }
 }
 
+function readDocumentData(name: string) {
+  if (typeof document === "undefined") return undefined;
+  const dataset = document.documentElement.dataset as Record<string, string | undefined>;
+  return readString(dataset[name]);
+}
+
+function parseBoolean(value?: string | null) {
+  if (!value) return false;
+  const normalized = value.trim().toLowerCase();
+  return normalized === "1" || normalized === "true" || normalized === "yes" || normalized === "on";
+}
+
+export function normalizeClawHubSiteOrigin(value?: string | null) {
+  const origin = normalizeSiteOrigin(value);
+  if (!origin) return null;
+  const url = new URL(origin);
+  if (LEGACY_CLAWDHUB_HOSTS.has(url.hostname.toLowerCase())) {
+    return DEFAULT_CLAWHUB_SITE_URL;
+  }
+  return origin;
+}
+
 export function getClawHubSiteUrl() {
+  if (isKnotEnabled()) return getKnotSiteUrl();
   return normalizeClawHubSiteOrigin(getRuntimeEnv("VITE_SITE_URL")) ?? DEFAULT_CLAWHUB_SITE_URL;
 }
 
@@ -49,6 +75,22 @@ export function getOnlyCrabsSiteUrl() {
 
 export function getOnlyCrabsHost() {
   return getRuntimeEnv("VITE_SOULHUB_HOST") ?? DEFAULT_ONLYCRABS_HOST;
+}
+
+export function isKnotEnabled() {
+  const datasetValue = readDocumentData("isKnot");
+  if (datasetValue !== undefined) return parseBoolean(datasetValue);
+
+  const envValue = getRuntimeEnv("IS_KNOT") ?? getRuntimeEnv("VITE_IS_KNOT");
+  return parseBoolean(envValue);
+}
+
+export function getKnotSiteUrl() {
+  const datasetValue = readDocumentData("knotSiteUrl");
+  if (datasetValue !== undefined) return normalizeSiteOrigin(datasetValue) ?? DEFAULT_KNOT_SITE_URL;
+
+  const explicit = getRuntimeEnv("VITE_SITE_URL") ?? getRuntimeEnv("SITE_URL");
+  return normalizeSiteOrigin(explicit) ?? DEFAULT_KNOT_SITE_URL;
 }
 
 export function detectSiteMode(host?: string | null): SiteMode {

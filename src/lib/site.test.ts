@@ -4,6 +4,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   detectSiteMode,
   detectSiteModeFromUrl,
+  getKnotSiteUrl,
   getClawHubSiteUrl,
   getOnlyCrabsHost,
   getOnlyCrabsSiteUrl,
@@ -11,6 +12,7 @@ import {
   getSiteMode,
   getSiteName,
   getSiteUrlForMode,
+  isKnotEnabled,
 } from "./site";
 
 function withServerEnv<T>(values: Record<string, string | undefined>, run: () => T): T {
@@ -49,9 +51,60 @@ describe("site helpers", () => {
     });
   });
 
+  it("uses the knot site URL when knot mode is enabled", () => {
+    vi.stubGlobal("document", {
+      documentElement: {
+        dataset: {
+          isKnot: "true",
+          knotSiteUrl: "https://openclaw.openknot.ai",
+        },
+      },
+    } as unknown as Document);
+
+    expect(getClawHubSiteUrl()).toBe("https://openclaw.openknot.ai");
+  });
+
   it("picks SoulHub URL from explicit env", () => {
     withServerEnv({ VITE_SOULHUB_SITE_URL: "https://souls.example.com" }, () => {
       expect(getOnlyCrabsSiteUrl()).toBe("https://souls.example.com");
+    });
+  });
+
+  it("detects knot mode from env or document data", () => {
+    withServerEnv({ IS_KNOT: "true" }, () => {
+      expect(isKnotEnabled()).toBe(true);
+    });
+
+    withServerEnv({ IS_KNOT: "false" }, () => {
+      expect(isKnotEnabled()).toBe(false);
+    });
+
+    vi.stubGlobal("document", {
+      documentElement: { dataset: { isKnot: "true" } },
+    } as unknown as Document);
+
+    expect(isKnotEnabled()).toBe(true);
+  });
+
+  it("returns the knot site URL from document data, env, or default", () => {
+    vi.stubGlobal("document", {
+      documentElement: { dataset: { knotSiteUrl: "https://openclaw.openknot.ai" } },
+    } as unknown as Document);
+
+    expect(getKnotSiteUrl()).toBe("https://openclaw.openknot.ai");
+
+    vi.unstubAllGlobals();
+
+    withServerEnv({ SITE_URL: "http://localhost:3000" }, () => {
+      expect(getKnotSiteUrl()).toBe("http://localhost:3000");
+    });
+
+    withServerEnv({ VITE_SITE_URL: "https://openclaw.openknot.ai" }, () => {
+      expect(getKnotSiteUrl()).toBe("https://openclaw.openknot.ai");
+    });
+
+    withServerEnv({ VITE_SITE_URL: "not a url", SITE_URL: undefined }, () => {
+      expect(getKnotSiteUrl()).toBe("https://openclaw.openknot.ai");
     });
   });
 

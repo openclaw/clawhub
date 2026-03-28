@@ -1,4 +1,4 @@
-import { createFileRoute, Link } from "@tanstack/react-router";
+import { createFileRoute, Link, redirect } from "@tanstack/react-router";
 import { useAction, useQuery } from "convex/react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { api } from "../../convex/_generated/api";
@@ -11,9 +11,23 @@ import { UserBadge } from "../components/UserBadge";
 import { convexHttp } from "../convex/client";
 import { getSkillBadges } from "../lib/badges";
 import type { PublicSkill, PublicSoul, PublicUser } from "../lib/publicUser";
-import { getSiteMode } from "../lib/site";
+import { getKnotSiteUrl, getSiteMode, isKnotEnabled } from "../lib/site";
 
 export const Route = createFileRoute("/")({
+  beforeLoad: ({ location }) => {
+    if (!isKnotEnabled()) return;
+
+    const currentOrigin =
+      (location as { url?: URL }).url?.origin ??
+      (typeof window !== "undefined" ? window.location.origin : undefined);
+    const knotSiteUrl = getKnotSiteUrl();
+    if (currentOrigin === knotSiteUrl) return;
+
+    throw redirect({
+      href: knotSiteUrl,
+      replace: true,
+    });
+  },
   component: Home,
 });
 
