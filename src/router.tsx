@@ -1,4 +1,5 @@
 import { createRouter } from "@tanstack/react-router";
+import { NotFoundPage } from "./components/NotFoundPage";
 // Import the generated route tree
 import { routeTree } from "./routeTree.gen";
 
@@ -10,6 +11,7 @@ export const getRouter = () => {
 
     scrollRestoration: true,
     defaultPreloadStaleTime: 0,
+    defaultNotFoundComponent: NotFoundPage,
   });
 
   return router;

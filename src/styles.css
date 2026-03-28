@@ -436,6 +436,76 @@ code {
   box-sizing: border-box;
 }
 
+.not-found-page {
+  display: flex;
+  align-items: center;
+  min-height: clamp(420px, 62vh, 640px);
+}
+
+.not-found-card {
+  position: relative;
+  overflow: hidden;
+  gap: 20px;
+  padding: clamp(28px, 4vw, 42px);
+  background:
+    radial-gradient(circle at top right, rgba(255, 118, 84, 0.16), transparent 36%),
+    radial-gradient(circle at bottom left, rgba(32, 158, 146, 0.12), transparent 38%),
+    linear-gradient(180deg, color-mix(in srgb, var(--surface) 96%, white 4%), var(--surface));
+  box-shadow: var(--shadow);
+}
+
+.not-found-eyebrow {
+  display: inline-flex;
+  width: fit-content;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 12px;
+  border-radius: 999px;
+  border: 1px solid rgba(255, 118, 84, 0.24);
+  background: rgba(255, 118, 84, 0.1);
+  color: var(--accent-deep);
+  font-size: 0.78rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.not-found-copy {
+  display: grid;
+  gap: 14px;
+  max-width: 58ch;
+}
+
+.not-found-title {
+  margin: 0;
+  max-width: 12ch;
+  font-size: clamp(2.4rem, 5vw, 3.6rem);
+  line-height: 0.95;
+}
+
+.not-found-description {
+  margin: 0;
+  font-size: 1rem;
+  line-height: 1.7;
+}
+
+.not-found-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+}
+
+@media (max-width: 760px) {
+  .not-found-title {
+    max-width: none;
+  }
+
+  .not-found-actions .btn {
+    width: 100%;
+    justify-content: center;
+  }
+}
+
 .upload-shell {
   position: relative;
 }
