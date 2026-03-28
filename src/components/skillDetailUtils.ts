@@ -6,7 +6,7 @@ export function buildSkillHref(
   ownerId: Id<"users"> | Id<"publishers"> | null,
   slug: string,
 ) {
-  const owner = ownerHandle?.trim() || (ownerId ? String(ownerId) : "unknown");
+  const owner = ownerHandle?.trim().toLowerCase() || (ownerId ? String(ownerId) : "unknown");
   return `/${encodeURIComponent(owner)}/${encodeURIComponent(slug)}`;
 }
 

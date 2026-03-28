@@ -80,12 +80,17 @@ export type PublicSoul = Pick<
   | "updatedAt"
 >;
 
+function normalizePublicHandle(handle: string | undefined | null) {
+  const normalized = handle?.trim().toLowerCase();
+  return normalized ? normalized : undefined;
+}
+
 export function toPublicUser(user: Doc<"users"> | null | undefined): PublicUser | null {
   if (!user || user.deletedAt || user.deactivatedAt) return null;
   return {
     _id: user._id,
     _creationTime: user._creationTime,
-    handle: user.handle,
+    handle: normalizePublicHandle(user.handle),
     name: user.name,
     displayName: user.displayName,
     image: user.image,

@@ -17,7 +17,9 @@ const { requireUser } = await import("./lib/access");
 const { getAuthUserId } = await import("@convex-dev/auth/server");
 const { insertStatEvent } = await import("./skillStatEvents");
 const {
+  backfillCanonicalHandlesInternal,
   ensureHandler,
+  getByHandle,
   list,
   searchInternal,
   banUserInternal,
@@ -32,6 +34,14 @@ type WrappedHandler<TArgs, TResult> = {
 };
 
 const meHandler = (me as unknown as WrappedHandler<Record<string, never>, unknown>)._handler;
+const getByHandleHandler = (getByHandle as unknown as WrappedHandler<{ handle: string }, unknown>)
+  ._handler;
+const backfillCanonicalHandlesInternalHandler = (
+  backfillCanonicalHandlesInternal as unknown as WrappedHandler<
+    { cursor?: string; batchSize?: number; dryRun?: boolean },
+    unknown
+  >
+)._handler;
 
 function makeCtx() {
   const patch = vi.fn();
@@ -132,6 +142,200 @@ function makeListCtx(users: Array<Record<string, unknown>>) {
   };
 }
 
+function makeHandleBackfillCtx(
+  seedUsers: Array<Record<string, unknown>>,
+  seedPublishers: Array<Record<string, unknown>> = [],
+) {
+  const userRows = new Map(seedUsers.map((row) => [String(row._id), { ...row }]));
+  const publisherRows = new Map(seedPublishers.map((row) => [String(row._id), { ...row }]));
+  const publisherMembers: Array<Record<string, unknown>> = [];
+
+  const patch = vi.fn(async (id: string, value: Record<string, unknown>) => {
+    if (userRows.has(id)) {
+      userRows.set(id, { ...userRows.get(id), ...value });
+      return;
+    }
+    if (publisherRows.has(id)) {
+      publisherRows.set(id, { ...publisherRows.get(id), ...value });
+      return;
+    }
+    const member = publisherMembers.find((entry) => entry._id === id);
+    if (member) Object.assign(member, value);
+  });
+
+  const get = vi.fn(async (id: string) => {
+    const key = String(id);
+    return userRows.get(key) ?? publisherRows.get(key) ?? null;
+  });
+
+  const insert = vi.fn(async (table: string, value: Record<string, unknown>) => {
+    if (table === "publishers") {
+      const handle = typeof value.handle === "string" ? value.handle : "user";
+      const id = `publishers:${handle}`;
+      publisherRows.set(id, { _id: id, _creationTime: 1, ...value });
+      return id;
+    }
+    if (table === "publisherMembers") {
+      const id = `publisherMembers:${publisherMembers.length + 1}`;
+      publisherMembers.push({ _id: id, ...value });
+      return id;
+    }
+    if (table === "auditLogs") return "auditLogs:1";
+    throw new Error(`Unexpected insert table ${table}`);
+  });
+
+  const query = vi.fn((table: string) => {
+    if (table === "reservedHandles") {
+      return {
+        withIndex: (name: string) => {
+          if (name !== "by_handle_active_updatedAt") {
+            throw new Error(`Unexpected reservedHandles index ${name}`);
+          }
+          return { order: () => ({ take: vi.fn(async () => []) }) };
+        },
+      };
+    }
+
+    if (table === "users") {
+      return {
+        withIndex: (
+          name: string,
+          builder?: (q: { eq: (field: string, value: string) => unknown }) => unknown,
+        ) => {
+          if (name !== "handle") throw new Error(`Unexpected users index ${name}`);
+          let handle = "";
+          const q = {
+            eq: (field: string, value: string) => {
+              if (field === "handle") handle = value;
+              return q;
+            },
+          };
+          builder?.(q);
+          return {
+            unique: vi.fn(async () => {
+              return [...userRows.values()].find((row) => row.handle === handle) ?? null;
+            }),
+          };
+        },
+        order: (direction: string) => {
+          if (direction !== "asc") throw new Error(`Unexpected users order ${direction}`);
+          return {
+            paginate: vi.fn(
+              async ({ cursor, numItems }: { cursor?: string | null; numItems: number }) => {
+                const rows = [...userRows.values()].sort(
+                  (a, b) => Number(a._creationTime ?? 0) - Number(b._creationTime ?? 0),
+                );
+                const start = cursor ? Number.parseInt(cursor, 10) : 0;
+                const page = rows.slice(start, start + numItems);
+                const nextOffset = start + page.length;
+                return {
+                  page,
+                  isDone: nextOffset >= rows.length,
+                  continueCursor: nextOffset >= rows.length ? null : String(nextOffset),
+                };
+              },
+            ),
+          };
+        },
+      };
+    }
+
+    if (table === "publishers") {
+      return {
+        withIndex: (
+          name: string,
+          builder?: (q: { eq: (field: string, value: string) => unknown }) => unknown,
+        ) => {
+          let handle = "";
+          let linkedUserId = "";
+          const q = {
+            eq: (field: string, value: string) => {
+              if (field === "handle") handle = value;
+              if (field === "linkedUserId") linkedUserId = value;
+              return q;
+            },
+          };
+          builder?.(q);
+          if (name === "by_handle") {
+            return {
+              unique: vi.fn(async () => {
+                return [...publisherRows.values()].find((row) => row.handle === handle) ?? null;
+              }),
+            };
+          }
+          if (name === "by_linked_user") {
+            return {
+              unique: vi.fn(async () => {
+                return (
+                  [...publisherRows.values()].find((row) => row.linkedUserId === linkedUserId) ??
+                  null
+                );
+              }),
+            };
+          }
+          throw new Error(`Unexpected publishers index ${name}`);
+        },
+      };
+    }
+
+    if (table === "publisherMembers") {
+      return {
+        withIndex: (
+          name: string,
+          builder?: (q: { eq: (field: string, value: string) => unknown }) => unknown,
+        ) => {
+          if (name !== "by_publisher_user") {
+            throw new Error(`Unexpected publisherMembers index ${name}`);
+          }
+          let publisherId = "";
+          let userId = "";
+          const q = {
+            eq: (field: string, value: string) => {
+              if (field === "publisherId") publisherId = value;
+              if (field === "userId") userId = value;
+              return q;
+            },
+          };
+          builder?.(q);
+          return {
+            unique: vi.fn(async () => {
+              return (
+                publisherMembers.find(
+                  (row) => row.publisherId === publisherId && row.userId === userId,
+                ) ?? null
+              );
+            }),
+          };
+        },
+      };
+    }
+
+    if (table === "packages" || table === "skills") {
+      return {
+        withIndex: (name: string) => {
+          if (name !== "by_owner_publisher") {
+            throw new Error(`Unexpected ${table} index ${name}`);
+          }
+          return { collect: vi.fn(async () => []) };
+        },
+      };
+    }
+
+    throw new Error(`Unexpected table ${table}`);
+  });
+
+  return {
+    ctx: { db: { get, insert, patch, query, normalizeId: vi.fn() } } as never,
+    userRows,
+    publisherRows,
+    publisherMembers,
+    patch,
+    insert,
+    get,
+    query,
+  };
+}
+
 function makeBanCtx() {
   const patch = vi.fn();
   const insert = vi.fn();
@@ -200,6 +404,28 @@ describe("ensureHandler", () => {
     expect(patch).toHaveBeenCalledWith("users:1", {
       handle: "new-handle",
       displayName: "new-handle",
+      updatedAt: expect.any(Number),
+    });
+  });
+
+  it("normalizes a mixed-case handle to lowercase", async () => {
+    const { ctx, patch } = makeCtx();
+    vi.mocked(requireUser).mockResolvedValue({
+      userId: "users:case",
+      user: {
+        _creationTime: 1,
+        handle: "JaredforReal",
+        displayName: "Jared Wen",
+        name: "JaredforReal",
+        role: "user",
+        createdAt: 1,
+      },
+    } as never);
+
+    await ensureHandler(ctx);
+
+    expect(patch).toHaveBeenCalledWith("users:case", {
+      handle: "jaredforreal",
       updatedAt: expect.any(Number),
     });
   });
@@ -303,7 +529,6 @@ describe("ensureHandler", () => {
     await ensureHandler(ctx);
 
     expect(patch).toHaveBeenCalledWith("users:admin", {
-      displayName: "steipete",
       role: "admin",
       updatedAt: expect.any(Number),
     });
@@ -395,7 +620,10 @@ describe("ensureHandler", () => {
       }
       if (table === "publishers") {
         return {
-          withIndex: (name: string, builder?: (q: { eq: (field: string, value: string) => unknown }) => unknown) => {
+          withIndex: (
+            name: string,
+            builder?: (q: { eq: (field: string, value: string) => unknown }) => unknown,
+          ) => {
             let handle = "";
             let linkedUserId = "";
             const q = {
@@ -501,6 +729,36 @@ describe("me", () => {
 });
 
 describe("users.syncGitHubProfileInternal", () => {
+  it("normalizes a mixed-case stored handle to lowercase", async () => {
+    const { ctx, get, patch } = makeCtx();
+    get.mockResolvedValue({
+      _id: "users:other",
+      handle: "JaredforReal",
+      displayName: "Jared Wen",
+      name: "JaredforReal",
+    });
+
+    const handler = (
+      syncGitHubProfileInternal as unknown as {
+        _handler: (ctx: unknown, args: unknown) => Promise<void>;
+      }
+    )._handler;
+
+    await handler(ctx, {
+      userId: "users:other",
+      name: "JaredforReal",
+      syncedAt: 10,
+    });
+
+    expect(patch).toHaveBeenCalledWith(
+      "users:other",
+      expect.objectContaining({
+        githubProfileSyncedAt: 10,
+        handle: "jaredforreal",
+      }),
+    );
+  });
+
   it("keeps a derived handle unchanged when the new login is reserved", async () => {
     const { ctx, get, patch, query } = makeCtx();
     get.mockResolvedValue({
@@ -580,7 +838,10 @@ describe("users.syncGitHubProfileInternal", () => {
       }
       if (table === "publishers") {
         return {
-          withIndex: (name: string, builder?: (q: { eq: (field: string, value: string) => unknown }) => unknown) => {
+          withIndex: (
+            name: string,
+            builder?: (q: { eq: (field: string, value: string) => unknown }) => unknown,
+          ) => {
             let handle = "";
             let linkedUserId = "";
             const q = {
@@ -670,6 +931,179 @@ describe("users.syncGitHubProfileInternal", () => {
       "users:other",
       expect.objectContaining({ handle: "openclaw" }),
     );
+  });
+});
+
+describe("users.getByHandle", () => {
+  it("resolves lowercase lookups through the linked publisher handle", async () => {
+    const user = {
+      _id: "users:1",
+      _creationTime: 1,
+      handle: "JaredforReal",
+      name: "JaredforReal",
+      displayName: "Jared Wen",
+      image: undefined,
+      bio: undefined,
+    };
+
+    const get = vi.fn(async (id: string) => (id === "users:1" ? user : null));
+    const query = vi.fn((table: string) => {
+      if (table === "users") {
+        return {
+          withIndex: (
+            _name: string,
+            builder: (q: { eq: (field: string, value: string) => unknown }) => unknown,
+          ) => {
+            let handle = "";
+            const q = {
+              eq: (field: string, value: string) => {
+                if (field === "handle") handle = value;
+                return q;
+              },
+            };
+            builder(q);
+            return {
+              unique: vi.fn(async () => (handle === "JaredforReal" ? user : null)),
+            };
+          },
+        };
+      }
+      if (table === "publishers") {
+        return {
+          withIndex: (
+            _name: string,
+            builder: (q: { eq: (field: string, value: string) => unknown }) => unknown,
+          ) => {
+            let handle = "";
+            const q = {
+              eq: (field: string, value: string) => {
+                if (field === "handle") handle = value;
+                return q;
+              },
+            };
+            builder(q);
+            return {
+              unique: vi.fn(async () =>
+                handle === "jaredforreal"
+                  ? {
+                      _id: "publishers:jaredforreal",
+                      kind: "user",
+                      handle: "jaredforreal",
+                      linkedUserId: "users:1",
+                    }
+                  : null,
+              ),
+            };
+          },
+        };
+      }
+      throw new Error(`Unexpected table ${table}`);
+    });
+
+    const result = (await getByHandleHandler(
+      { db: { get, query } },
+      { handle: "jaredforreal" },
+    )) as { handle: string | null } | null;
+
+    expect(result).toMatchObject({ handle: "jaredforreal" });
+  });
+});
+
+describe("users.backfillCanonicalHandlesInternal", () => {
+  it("normalizes mixed-case handles and syncs personal publishers", async () => {
+    const { ctx, publisherRows, userRows } = makeHandleBackfillCtx(
+      [
+        {
+          _id: "users:1",
+          _creationTime: 1,
+          handle: "JaredforReal",
+          name: "JaredforReal",
+          displayName: "Jared Wen",
+          personalPublisherId: "publishers:jaredforreal",
+          role: "user",
+          createdAt: 1,
+          updatedAt: 1,
+        },
+      ],
+      [
+        {
+          _id: "publishers:jaredforreal",
+          _creationTime: 1,
+          kind: "user",
+          handle: "JaredforReal",
+          displayName: "Jared Wen",
+          linkedUserId: "users:1",
+          createdAt: 1,
+          updatedAt: 1,
+        },
+      ],
+    );
+
+    const result = (await backfillCanonicalHandlesInternalHandler(ctx, {
+      batchSize: 10,
+    })) as {
+      scanned: number;
+      normalizedUsers: number;
+      syncedPublishers: number;
+      skippedUsers: number;
+      cursor: string | null;
+      isDone: boolean;
+      dryRun: boolean;
+    };
+
+    expect(result).toEqual({
+      scanned: 1,
+      normalizedUsers: 1,
+      syncedPublishers: 1,
+      skippedUsers: 0,
+      cursor: null,
+      isDone: true,
+      dryRun: false,
+      ok: true,
+    });
+    expect(userRows.get("users:1")).toMatchObject({
+      handle: "jaredforreal",
+      personalPublisherId: "publishers:jaredforreal",
+    });
+    expect(publisherRows.get("publishers:jaredforreal")).toMatchObject({
+      handle: "jaredforreal",
+      linkedUserId: "users:1",
+      kind: "user",
+    });
+  });
+
+  it("supports dry-run without writing changes", async () => {
+    const { ctx, patch, insert, publisherRows, userRows } = makeHandleBackfillCtx([
+      {
+        _id: "users:1",
+        _creationTime: 1,
+        handle: "JaredforReal",
+        name: "JaredforReal",
+        displayName: "Jared Wen",
+        role: "user",
+        createdAt: 1,
+        updatedAt: 1,
+      },
+    ]);
+
+    const result = (await backfillCanonicalHandlesInternalHandler(ctx, {
+      batchSize: 10,
+      dryRun: true,
+    })) as {
+      normalizedUsers: number;
+      syncedPublishers: number;
+      dryRun: boolean;
+    };
+
+    expect(result).toMatchObject({
+      normalizedUsers: 1,
+      syncedPublishers: 1,
+      dryRun: true,
+    });
+    expect(patch).not.toHaveBeenCalled();
+    expect(insert).not.toHaveBeenCalled();
+    expect(userRows.get("users:1")).toMatchObject({ handle: "JaredforReal" });
+    expect(publisherRows.size).toBe(0);
   });
 });
 

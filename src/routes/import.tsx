@@ -199,7 +199,10 @@ export function ImportGitHub() {
       });
       const nextSlug = result.slug;
       setStatus("Imported.");
-      const ownerParam = me?.handle ?? (me?._id ? String(me._id) : "unknown");
+      const ownerParam =
+        me?.handle?.trim().toLowerCase() ??
+        me?.name?.trim().toLowerCase() ??
+        (me?._id ? String(me._id) : "unknown");
       await navigate({ to: "/$owner/$slug", params: { owner: ownerParam, slug: nextSlug } });
     } catch (e) {
       setError(getUserFacingConvexError(e, "Import failed"));

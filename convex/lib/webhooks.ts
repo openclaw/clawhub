@@ -81,7 +81,7 @@ export function buildDiscordPayload(
 }
 
 export function buildSkillUrl(skill: WebhookSkillPayload, siteUrl: string) {
-  const owner = skill.ownerHandle?.trim();
+  const owner = skill.ownerHandle?.trim().toLowerCase();
   if (owner) return `${siteUrl}/${owner}/${skill.slug}`;
   return `${siteUrl}/skills/${skill.slug}`;
 }

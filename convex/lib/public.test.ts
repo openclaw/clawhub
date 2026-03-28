@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { Doc } from "../_generated/dataModel";
-import { toPublicSkill } from "./public";
+import { toPublicSkill, toPublicUser } from "./public";
 
 function makeSkill(overrides: Partial<Doc<"skills">> = {}): Doc<"skills"> {
   return {
@@ -42,6 +42,25 @@ function makeSkill(overrides: Partial<Doc<"skills">> = {}): Doc<"skills"> {
     ...overrides,
   } as Doc<"skills">;
 }
+
+describe("public user mapping", () => {
+  it("normalizes public handles to lowercase", () => {
+    const user = {
+      _id: "users:1",
+      _creationTime: 1,
+      handle: "JaredforReal",
+      name: "JaredforReal",
+      displayName: "Jared Wen",
+      image: undefined,
+      bio: undefined,
+    } as Doc<"users">;
+
+    expect(toPublicUser(user)).toMatchObject({
+      handle: "jaredforreal",
+      name: "JaredforReal",
+    });
+  });
+});
 
 describe("public skill mapping", () => {
   it("normalizes stats when legacy skill record is missing stats object", () => {

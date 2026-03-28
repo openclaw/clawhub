@@ -8,10 +8,7 @@ import { useAction, useMutation, useQuery } from "convex/react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import semver from "semver";
 import { api } from "../../convex/_generated/api";
-import {
-  MAX_PUBLISH_FILE_BYTES,
-  MAX_PUBLISH_TOTAL_BYTES,
-} from "../../convex/lib/publishLimits";
+import { MAX_PUBLISH_FILE_BYTES, MAX_PUBLISH_TOTAL_BYTES } from "../../convex/lib/publishLimits";
 import { getSiteMode } from "../lib/site";
 import { getPublicSlugCollision } from "../lib/slugCollision";
 import { expandDroppedItems, expandFilesWithReport } from "../lib/uploadFiles";
@@ -194,7 +191,9 @@ export function Upload() {
 
   useEffect(() => {
     if (ownerHandle) return;
-    const personalPublisher = publisherMemberships?.find((entry) => entry.publisher.kind === "user");
+    const personalPublisher = publisherMemberships?.find(
+      (entry) => entry.publisher.kind === "user",
+    );
     if (personalPublisher?.publisher.handle) {
       setOwnerHandle(personalPublisher.publisher.handle);
     }
@@ -419,7 +418,10 @@ export function Upload() {
       setChangelogSource("user");
       if (result) {
         const ownerParam =
-          ownerHandle || me?.handle || (me?._id ? String(me._id) : "unknown");
+          ownerHandle ||
+          me?.handle?.trim().toLowerCase() ||
+          me?.name?.trim().toLowerCase() ||
+          (me?._id ? String(me._id) : "unknown");
         void navigate({
           to: isSoulMode ? "/souls/$slug" : "/$owner/$slug",
           params: isSoulMode ? { slug: trimmedSlug } : { owner: ownerParam, slug: trimmedSlug },

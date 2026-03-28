@@ -18,16 +18,16 @@ export function UserBadge({
   showName = false,
 }: UserBadgeProps) {
   const userName = user && "name" in user ? user.name?.trim() : undefined;
-  const displayName =
-    user?.displayName?.trim() || userName || null;
+  const displayName = user?.displayName?.trim() || userName || null;
   const handle = user?.handle ?? fallbackHandle ?? null;
+  const hrefHandle = handle?.trim().toLowerCase() || null;
   const href =
-    user?.handle && "kind" in user
+    hrefHandle && user?.handle && "kind" in user
       ? user.kind === "org"
-        ? `/orgs/${encodeURIComponent(user.handle)}`
-        : `/u/${encodeURIComponent(user.handle)}`
-      : user?.handle
-        ? `/u/${encodeURIComponent(user.handle)}`
+        ? `/orgs/${encodeURIComponent(hrefHandle)}`
+        : `/u/${encodeURIComponent(hrefHandle)}`
+      : hrefHandle
+        ? `/u/${encodeURIComponent(hrefHandle)}`
         : null;
   const label = handle ? `@${handle}` : "user";
   const image = user?.image ?? null;

@@ -1,13 +1,13 @@
 import { getAuthUserId } from "@convex-dev/auth/server";
 import { v } from "convex/values";
-import { internal } from "./_generated/api";
 import type { Doc, Id } from "./_generated/dataModel";
-import type { ActionCtx, MutationCtx } from "./_generated/server";
+import type { ActionCtx, MutationCtx, QueryCtx } from "./_generated/server";
+import { internal } from "./_generated/api";
 import { internalAction, internalMutation, internalQuery, mutation, query } from "./functions";
 import { assertAdmin, assertModerator, requireUser } from "./lib/access";
 import { syncGitHubProfile } from "./lib/githubAccount";
-import { ensurePersonalPublisherForUser, getPublisherByHandle } from "./lib/publishers";
 import { toPublicUser } from "./lib/public";
+import { ensurePersonalPublisherForUser, getPublisherByHandle } from "./lib/publishers";
 import {
   getLatestActiveReservedHandle,
   isHandleReservedForAnotherUser,
@@ -22,6 +22,8 @@ const ADMIN_HANDLE = "steipete";
 const MAX_USER_LIST_LIMIT = 200;
 const MAX_USER_SEARCH_SCAN = 5_000;
 const MIN_USER_SEARCH_SCAN = 500;
+const DEFAULT_HANDLE_BACKFILL_BATCH_SIZE = 100;
+const MAX_HANDLE_BACKFILL_BATCH_SIZE = 500;
 
 export const getById = query({
   args: { userId: v.id("users") },
@@ -33,15 +35,41 @@ export const getByIdInternal = internalQuery({
   handler: async (ctx, args) => ctx.db.get(args.userId),
 });
 
-export const getByHandleInternal = internalQuery({
-  args: { handle: v.string() },
-  handler: async (ctx, args) => {
-    const normalizedHandle = normalizeReservedHandle(args.handle);
-    if (!normalizedHandle) return null;
-    return await ctx.db
+async function getUserByHandleCaseAware(
+  ctx: Pick<QueryCtx | MutationCtx, "db">,
+  handle: string | undefined | null,
+) {
+  const trimmedHandle = handle?.trim();
+  const normalizedHandle = normalizeReservedHandle(handle);
+  if (!trimmedHandle || !normalizedHandle) return null;
+
+  const exactMatch = await ctx.db
+    .query("users")
+    .withIndex("handle", (q) => q.eq("handle", trimmedHandle))
+    .unique();
+  if (exactMatch && !exactMatch.deletedAt && !exactMatch.deactivatedAt) return exactMatch;
+
+  if (trimmedHandle !== normalizedHandle) {
+    const normalizedMatch = await ctx.db
       .query("users")
       .withIndex("handle", (q) => q.eq("handle", normalizedHandle))
       .unique();
+    if (normalizedMatch && !normalizedMatch.deletedAt && !normalizedMatch.deactivatedAt) {
+      return normalizedMatch;
+    }
+  }
+
+  const publisher = await getPublisherByHandle(ctx, normalizedHandle);
+  if (publisher?.kind !== "user" || !publisher.linkedUserId) return null;
+  const linkedUser = await ctx.db.get(publisher.linkedUserId);
+  if (!linkedUser || linkedUser.deletedAt || linkedUser.deactivatedAt) return null;
+  return linkedUser;
+}
+
+export const getByHandleInternal = internalQuery({
+  args: { handle: v.string() },
+  handler: async (ctx, args) => {
+    return await getUserByHandleCaseAware(ctx, args.handle);
   },
 });
 
@@ -97,7 +125,18 @@ export const syncGitHubProfileInternal = internalMutation({
   handler: async (ctx, args) => {
     const user = await ctx.db.get(args.userId);
     if (!user || user.deletedAt || user.deactivatedAt) return;
-    const canClaimNewHandle = await canUserClaimHandle(ctx, args.name, args.userId);
+
+    const rawUserHandle = user.handle?.trim();
+    const canonicalUserHandle = normalizeReservedHandle(user.handle);
+    const canonicalOldLogin = normalizeReservedHandle(user.name);
+    const canonicalNewLogin = normalizeReservedHandle(args.name);
+    const canClaimNewHandle = canonicalNewLogin
+      ? await canUserClaimHandle(ctx, canonicalNewLogin, args.userId)
+      : false;
+    const canNormalizeExistingHandle =
+      rawUserHandle && canonicalUserHandle && rawUserHandle !== canonicalUserHandle
+        ? await canUserClaimHandle(ctx, canonicalUserHandle, args.userId)
+        : false;
 
     const updates: Partial<Doc<"users">> = { githubProfileSyncedAt: args.syncedAt };
     let didChangeProfile = false;
@@ -107,19 +146,33 @@ export const syncGitHubProfileInternal = internalMutation({
       didChangeProfile = true;
     }
 
-    // Update handle if it was derived from the old username
-    if (user.handle === user.name && user.name !== args.name && canClaimNewHandle) {
-      updates.handle = args.name;
+    if (canNormalizeExistingHandle && canonicalUserHandle) {
+      updates.handle = canonicalUserHandle;
       didChangeProfile = true;
     }
 
-    // Update displayName if it was derived from the old username
+    // Update handle if it was derived from the old username.
     if (
-      (user.displayName === user.name || user.displayName === user.handle) &&
-      user.name !== args.name &&
+      canonicalUserHandle &&
+      canonicalOldLogin &&
+      canonicalNewLogin &&
+      canonicalUserHandle === canonicalOldLogin &&
+      canonicalOldLogin !== canonicalNewLogin &&
       canClaimNewHandle
     ) {
-      updates.displayName = args.name;
+      updates.handle = canonicalNewLogin;
+      didChangeProfile = true;
+    }
+
+    // Update displayName if it was derived from the old username and the login actually changed.
+    if (
+      canonicalOldLogin &&
+      canonicalNewLogin &&
+      canonicalOldLogin !== canonicalNewLogin &&
+      (user.displayName === user.name || user.displayName === user.handle) &&
+      canClaimNewHandle
+    ) {
+      updates.displayName = canonicalNewLogin;
       didChangeProfile = true;
     }
 
@@ -185,8 +238,8 @@ export const ensure = mutation({
   handler: ensureHandler,
 });
 
-function normalizeHandle(handle: string | undefined) {
-  const normalized = handle?.trim();
+function normalizeText(value: string | undefined | null) {
+  const normalized = value?.trim();
   return normalized ? normalized : undefined;
 }
 
@@ -231,11 +284,28 @@ async function canUserClaimHandle(
   return publisher.kind === "user" && publisher.linkedUserId === userId;
 }
 
+async function needsPersonalPublisherSync(
+  ctx: MutationCtx,
+  user: Doc<"users">,
+  canonicalHandle: string | undefined,
+  handleChanged: boolean,
+) {
+  if (handleChanged) return true;
+  if (!canonicalHandle) return false;
+  if (!user.personalPublisherId) return true;
+
+  const publisher = await ctx.db.get(user.personalPublisherId);
+  if (!publisher || publisher.deletedAt || publisher.deactivatedAt) return true;
+  if (publisher.kind !== "user" || publisher.linkedUserId !== user._id) return true;
+  return publisher.handle !== canonicalHandle;
+}
+
 async function computeEnsureUpdates(ctx: MutationCtx, user: Doc<"users">) {
   const updates: Record<string, unknown> = {};
 
-  const existingHandle = normalizeHandle(user.handle);
-  const githubLogin = normalizeHandle(user.name);
+  const rawExistingHandle = normalizeText(user.handle);
+  const existingHandle = normalizeReservedHandle(user.handle);
+  const githubLogin = normalizeReservedHandle(user.name);
   const requestedHandle = deriveHandle({
     existingHandle,
     githubLogin,
@@ -245,24 +315,41 @@ async function computeEnsureUpdates(ctx: MutationCtx, user: Doc<"users">) {
     requestedHandle && (await canUserClaimHandle(ctx, requestedHandle, user._id))
       ? requestedHandle
       : undefined;
+
+  if (
+    !derivedHandle &&
+    rawExistingHandle &&
+    existingHandle &&
+    rawExistingHandle !== existingHandle
+  ) {
+    derivedHandle = (await canUserClaimHandle(ctx, existingHandle, user._id))
+      ? existingHandle
+      : undefined;
+  }
+
   if (!derivedHandle && !existingHandle) {
-    const emailFallback = !requestedHandle && user.email ? user.email.split("@")[0]?.trim() : user.email?.split("@")[0]?.trim();
+    const emailFallback = user.email?.split("@")[0]?.trim();
     derivedHandle =
       (emailFallback &&
-      emailFallback !== requestedHandle &&
-      (await resolveAvailableHandle(ctx, emailFallback, user._id))) ||
+        emailFallback !== requestedHandle &&
+        (await resolveAvailableHandle(ctx, emailFallback, user._id))) ||
       (await resolveAvailableHandle(ctx, requestedHandle, user._id));
   }
   const baseHandle = derivedHandle ?? existingHandle;
 
-  if (derivedHandle && existingHandle !== derivedHandle) {
+  if (derivedHandle && rawExistingHandle !== derivedHandle) {
     updates.handle = derivedHandle;
   }
 
-  const displayName = normalizeHandle(user.displayName);
+  const displayName = normalizeText(user.displayName);
   if (!displayName && baseHandle) {
     updates.displayName = baseHandle;
-  } else if (derivedHandle && displayName === existingHandle) {
+  } else if (
+    derivedHandle &&
+    rawExistingHandle &&
+    displayName === rawExistingHandle &&
+    normalizeReservedHandle(rawExistingHandle) !== derivedHandle
+  ) {
     updates.displayName = derivedHandle;
   }
 
@@ -284,7 +371,9 @@ export async function ensureHandler(ctx: MutationCtx) {
     updates.updatedAt = Date.now();
     await ctx.db.patch(userId, updates);
   }
-  const ensuredUser = hasUpdates ? ({ ...user, ...updates } as Doc<"users">) : ((await ctx.db.get(userId)) ?? user);
+  const ensuredUser = hasUpdates
+    ? ({ ...user, ...updates } as Doc<"users">)
+    : ((await ctx.db.get(userId)) ?? user);
   await ensurePersonalPublisherForUser(ctx, ensuredUser);
   return await ctx.db.get(userId);
 }
@@ -396,11 +485,84 @@ function clampInt(value: number, min: number, max: number) {
 export const getByHandle = query({
   args: { handle: v.string() },
   handler: async (ctx, args) => {
-    const user = await ctx.db
+    return toPublicUser(await getUserByHandleCaseAware(ctx, args.handle));
+  },
+});
+
+// Cursor-based admin backfill for legacy mixed-case user handles.
+// Run one batch manually:
+//   bunx convex run users:backfillCanonicalHandlesInternal '{"batchSize":100}' --prod
+// Or use the helper script:
+//   bun scripts/backfill-user-handles.ts --prod --batch-size 100
+export const backfillCanonicalHandlesInternal = internalMutation({
+  args: {
+    cursor: v.optional(v.string()),
+    batchSize: v.optional(v.number()),
+    dryRun: v.optional(v.boolean()),
+  },
+  handler: async (ctx, args) => {
+    const batchSize = clampInt(
+      args.batchSize ?? DEFAULT_HANDLE_BACKFILL_BATCH_SIZE,
+      1,
+      MAX_HANDLE_BACKFILL_BATCH_SIZE,
+    );
+    const dryRun = args.dryRun ?? false;
+    const { page, isDone, continueCursor } = await ctx.db
       .query("users")
-      .withIndex("handle", (q) => q.eq("handle", args.handle))
-      .unique();
-    return toPublicUser(user);
+      .order("asc")
+      .paginate({ cursor: args.cursor ?? null, numItems: batchSize });
+
+    let normalizedUsers = 0;
+    let syncedPublishers = 0;
+    let skippedUsers = 0;
+
+    for (const user of page) {
+      if (user.deletedAt || user.deactivatedAt) continue;
+
+      const rawHandle = normalizeText(user.handle);
+      const canonicalHandle = normalizeReservedHandle(user.handle);
+      let nextUser = user;
+      let handleChanged = false;
+
+      if (rawHandle && canonicalHandle && rawHandle !== canonicalHandle) {
+        if (!(await canUserClaimHandle(ctx, canonicalHandle, user._id))) {
+          skippedUsers += 1;
+          continue;
+        }
+
+        handleChanged = true;
+        normalizedUsers += 1;
+        const updatedAt = Date.now();
+        nextUser = { ...user, handle: canonicalHandle, updatedAt };
+
+        if (!dryRun) {
+          await ctx.db.patch(user._id, {
+            handle: canonicalHandle,
+            updatedAt,
+          });
+        }
+      }
+
+      if (!(await needsPersonalPublisherSync(ctx, nextUser, canonicalHandle, handleChanged))) {
+        continue;
+      }
+
+      syncedPublishers += 1;
+      if (!dryRun) {
+        await ensurePersonalPublisherForUser(ctx, nextUser);
+      }
+    }
+
+    return {
+      ok: true as const,
+      scanned: page.length,
+      normalizedUsers,
+      syncedPublishers,
+      skippedUsers,
+      cursor: isDone ? null : continueCursor,
+      isDone,
+      dryRun,
+    };
   },
 });
 
@@ -822,7 +984,8 @@ async function ensurePublisherHandleWithActor(
 
   if (existing) {
     const nextDisplayName =
-      args.displayName?.trim() && (!existing.displayName || existing.displayName === existing.handle)
+      args.displayName?.trim() &&
+      (!existing.displayName || existing.displayName === existing.handle)
         ? displayName
         : existing.displayName;
     await ctx.db.patch(existing._id, {

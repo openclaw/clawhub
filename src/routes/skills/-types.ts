@@ -32,6 +32,7 @@ export type SkillSearchEntry = {
 };
 
 export function buildSkillHref(skill: PublicSkill, ownerHandle?: string | null) {
-  const owner = ownerHandle?.trim() || String(skill.ownerPublisherId ?? skill.ownerUserId);
+  const owner =
+    ownerHandle?.trim().toLowerCase() || String(skill.ownerPublisherId ?? skill.ownerUserId);
   return `/${encodeURIComponent(owner)}/${encodeURIComponent(skill.slug)}`;
 }

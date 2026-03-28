@@ -14,11 +14,11 @@ import {
 } from "lucide-react";
 import { useEffect, useState } from "react";
 import semver from "semver";
-import { api } from "../../convex/_generated/api";
 import type { Doc } from "../../convex/_generated/dataModel";
+import type { PublicSkill } from "../lib/publicUser";
+import { api } from "../../convex/_generated/api";
 import { formatCompactStat } from "../lib/numberFormat";
 import { familyLabel } from "../lib/packageLabels";
-import type { PublicSkill } from "../lib/publicUser";
 
 const emptyPluginPublishSearch = {
   ownerHandle: undefined,
@@ -104,7 +104,8 @@ function Dashboard() {
 
   useEffect(() => {
     if (selectedPublisherId) return;
-    const personal = publishers?.find((entry) => entry.publisher.kind === "user") ?? publishers?.[0];
+    const personal =
+      publishers?.find((entry) => entry.publisher.kind === "user") ?? publishers?.[0];
     if (personal?.publisher._id) {
       setSelectedPublisherId(personal.publisher._id);
     }
@@ -121,7 +122,10 @@ function Dashboard() {
   const skills = mySkills ?? [];
   const packages = myPackages ?? [];
   const ownerHandle =
-    selectedPublisher?.publisher.handle ?? me.handle ?? me.name ?? me.displayName ?? me._id;
+    selectedPublisher?.publisher.handle ??
+    me.handle?.trim().toLowerCase() ??
+    me.name?.trim().toLowerCase() ??
+    me._id;
 
   return (
     <main className="section">
@@ -177,9 +181,14 @@ function Dashboard() {
             {skills.length === 0 ? (
               <div className="dashboard-inline-empty">
                 <div className="dashboard-inline-empty-copy">
-                  <strong>No skills yet.</strong> Publish your first skill to share it with the community.
+                  <strong>No skills yet.</strong> Publish your first skill to share it with the
+                  community.
                 </div>
-                <Link to="/publish-skill" search={{ updateSlug: undefined }} className="btn btn-primary">
+                <Link
+                  to="/publish-skill"
+                  search={{ updateSlug: undefined }}
+                  className="btn btn-primary"
+                >
                   <Upload className="h-4 w-4" aria-hidden="true" />
                   Publish Skill
                 </Link>
@@ -211,7 +220,8 @@ function Dashboard() {
             {packages.length === 0 ? (
               <div className="dashboard-inline-empty">
                 <div className="dashboard-inline-empty-copy">
-                  <strong>No plugins yet.</strong> Publish your first plugin release to validate and distribute it.
+                  <strong>No plugins yet.</strong> Publish your first plugin release to validate and
+                  distribute it.
                 </div>
                 <Link
                   to="/publish-plugin"
@@ -264,7 +274,8 @@ function SkillRow({ skill, ownerHandle }: { skill: DashboardSkill; ownerHandle: 
         </div>
         <div className="dashboard-inline-metrics">
           <span>
-            <ArrowDownToLine size={13} aria-hidden="true" /> {formatCompactStat(skill.stats.downloads)}
+            <ArrowDownToLine size={13} aria-hidden="true" />{" "}
+            {formatCompactStat(skill.stats.downloads)}
           </span>
           <span>
             <Star size={13} aria-hidden="true" /> {formatCompactStat(skill.stats.stars)}
@@ -355,7 +366,9 @@ function PackageStatusTag({
 function PackageRow({ pkg, ownerHandle }: { pkg: DashboardPackage; ownerHandle: string }) {
   const scanLabel = scanStatusLabel(pkg.scanStatus);
   const nextVersion = pkg.latestVersion ? semver.inc(pkg.latestVersion, "patch") : null;
-  const sourceLabel = pkg.sourceRepo?.replace(/^https?:\/\/github\.com\//, "").replace(/\.git$/, "");
+  const sourceLabel = pkg.sourceRepo
+    ?.replace(/^https?:\/\/github\.com\//, "")
+    .replace(/\.git$/, "");
   const scanTone =
     pkg.scanStatus === "pending"
       ? "pending"
@@ -400,7 +413,8 @@ function PackageRow({ pkg, ownerHandle }: { pkg: DashboardPackage; ownerHandle: 
         </div>
         <div className="dashboard-inline-metrics">
           <span>
-            <ArrowDownToLine size={13} aria-hidden="true" /> {formatCompactStat(pkg.stats.downloads)}
+            <ArrowDownToLine size={13} aria-hidden="true" />{" "}
+            {formatCompactStat(pkg.stats.downloads)}
           </span>
           <span>
             <Star size={13} aria-hidden="true" /> {formatCompactStat(pkg.stats.stars)}
