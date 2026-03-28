@@ -252,7 +252,7 @@ describe("SkillsIndex", () => {
     });
 
     const titles = Array.from(
-      document.querySelectorAll(".skills-row-title > span:first-child"),
+      document.querySelectorAll(".skills-table-name > span:first-child"),
     ).map((node) => node.textContent);
 
     expect(titles[0]).toBe("Older High Score");

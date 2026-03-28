@@ -3,11 +3,11 @@ import type { Id } from "../../convex/_generated/dataModel";
 
 export function buildSkillHref(
   ownerHandle: string | null,
-  ownerId: Id<"users"> | null,
+  ownerId: Id<"users"> | Id<"publishers"> | null,
   slug: string,
 ) {
   const owner = ownerHandle?.trim() || (ownerId ? String(ownerId) : "unknown");
-  return `/${owner}/${slug}`;
+  return `/${encodeURIComponent(owner)}/${encodeURIComponent(slug)}`;
 }
 
 export function formatConfigSnippet(raw: string) {

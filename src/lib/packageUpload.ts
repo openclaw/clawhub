@@ -11,6 +11,11 @@ type UploadablePackageFile = {
   webkitRelativePath?: string;
 };
 
+export type NormalizedPackageUploadFile<TFile extends UploadablePackageFile = UploadablePackageFile> = {
+  file: TFile;
+  path: string;
+};
+
 const KNOWN_PACKAGE_ROOT_PATHS = new Set([
   'package.json',
   'openclaw.plugin.json',
@@ -67,14 +72,20 @@ function shouldStripSharedTopLevelFolder<TFile extends UploadablePackageFile>(fi
     .some((path) => KNOWN_PACKAGE_ROOT_PATHS.has(path));
 }
 
-export async function filterIgnoredPackageFiles<TFile extends UploadablePackageFile & Pick<File, "text">>(
+export function normalizePackageUploadFiles<TFile extends UploadablePackageFile>(
   files: TFile[],
-) {
+): NormalizedPackageUploadFile<TFile>[] {
   const stripTopLevelFolder = shouldStripSharedTopLevelFolder(files);
-  const normalized = files.map((file) => ({
+  return files.map((file) => ({
     file,
     path: getNormalizedUploadPath(file, { stripTopLevelFolder }),
   }));
+}
+
+export async function filterIgnoredPackageFiles<TFile extends UploadablePackageFile & Pick<File, "text">>(
+  files: TFile[],
+) {
+  const normalized = normalizePackageUploadFiles(files);
   const ig = ignore();
   ig.add(DEFAULT_PACKAGE_IGNORE_PATTERNS);
 
@@ -111,13 +122,11 @@ export async function buildPackageUploadEntries<TFile extends UploadablePackageF
     sha256: string;
     contentType?: string;
   }> = [];
-  const stripTopLevelFolder = shouldStripSharedTopLevelFolder(files);
 
-  for (const file of files) {
+  for (const { file, path } of normalizePackageUploadFiles(files)) {
     const sha256 = await options.hashFile(file);
     const uploadUrl = await options.generateUploadUrl();
     const storageId = await options.uploadFile(uploadUrl, file);
-    const path = getNormalizedUploadPath(file, { stripTopLevelFolder });
     uploaded.push({
       path,
       size: file.size,

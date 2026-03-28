@@ -191,6 +191,7 @@ describe("package commands", () => {
       });
 
       await cmdPublishPackage(makeOpts(workdir), "demo-plugin", {
+        owner: "@openclaw",
         sourceRepo: "openclaw/demo-plugin",
         sourceCommit: "abc123",
         sourceRef: "refs/tags/v1.0.0",
@@ -206,6 +207,7 @@ describe("package commands", () => {
       if (typeof payloadEntry !== "string") throw new Error("Missing publish payload");
       const payload = JSON.parse(payloadEntry);
       expect(payload.name).toBe("@scope/demo-plugin");
+      expect(payload.ownerHandle).toBe("openclaw");
       expect(payload.family).toBe("code-plugin");
       expect(payload.version).toBe("1.0.0");
       expect(payload.source).toMatchObject({

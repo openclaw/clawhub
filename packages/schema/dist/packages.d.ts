@@ -46,6 +46,63 @@ export declare const PackageVerificationSummarySchema: import("arktype/internal/
     scanStatus?: "clean" | "suspicious" | "malicious" | "pending" | "not-run" | undefined;
 }, {}>;
 export type PackageVerificationSummary = (typeof PackageVerificationSummarySchema)[inferred];
+export declare const PackageVtAnalysisSchema: import("arktype/internal/variants/object.ts").ObjectType<{
+    status: string;
+    checkedAt: number;
+    verdict?: string | undefined;
+    analysis?: string | undefined;
+    source?: string | undefined;
+}, {}>;
+export type PackageVtAnalysis = (typeof PackageVtAnalysisSchema)[inferred];
+export declare const PackageLlmAnalysisDimensionSchema: import("arktype/internal/variants/object.ts").ObjectType<{
+    name: string;
+    label: string;
+    rating: string;
+    detail: string;
+}, {}>;
+export type PackageLlmAnalysisDimension = (typeof PackageLlmAnalysisDimensionSchema)[inferred];
+export declare const PackageLlmAnalysisSchema: import("arktype/internal/variants/object.ts").ObjectType<{
+    status: string;
+    checkedAt: number;
+    verdict?: string | undefined;
+    confidence?: string | undefined;
+    summary?: string | undefined;
+    dimensions?: {
+        name: string;
+        label: string;
+        rating: string;
+        detail: string;
+    }[] | undefined;
+    guidance?: string | undefined;
+    findings?: string | undefined;
+    model?: string | undefined;
+}, {}>;
+export type PackageLlmAnalysis = (typeof PackageLlmAnalysisSchema)[inferred];
+export declare const PackageStaticFindingSchema: import("arktype/internal/variants/object.ts").ObjectType<{
+    code: string;
+    severity: string;
+    file: string;
+    line: number;
+    message: string;
+    evidence: string;
+}, {}>;
+export type PackageStaticFinding = (typeof PackageStaticFindingSchema)[inferred];
+export declare const PackageStaticScanSchema: import("arktype/internal/variants/object.ts").ObjectType<{
+    status: string;
+    reasonCodes: string[];
+    findings: {
+        code: string;
+        severity: string;
+        file: string;
+        line: number;
+        message: string;
+        evidence: string;
+    }[];
+    summary: string;
+    engineVersion: string;
+    checkedAt: number;
+}, {}>;
+export type PackageStaticScan = (typeof PackageStaticScanSchema)[inferred];
 export declare const BundlePublishMetadataSchema: import("arktype/internal/variants/object.ts").ObjectType<{
     id?: string | undefined;
     format?: string | undefined;
@@ -65,6 +122,7 @@ export declare const PackagePublishRequestSchema: import("arktype/internal/varia
         contentType?: string | undefined;
     }[];
     displayName?: string | undefined;
+    ownerHandle?: string | undefined;
     channel?: "official" | "community" | "private" | undefined;
     tags?: string[] | undefined;
     source?: {
@@ -253,6 +311,45 @@ export declare const ApiV1PackageVersionResponseSchema: import("arktype/internal
             sourceTag?: string | undefined;
             hasProvenance?: boolean | undefined;
             scanStatus?: "clean" | "suspicious" | "malicious" | "pending" | "not-run" | undefined;
+        } | null | undefined;
+        sha256hash?: string | undefined;
+        vtAnalysis?: {
+            status: string;
+            checkedAt: number;
+            verdict?: string | undefined;
+            analysis?: string | undefined;
+            source?: string | undefined;
+        } | null | undefined;
+        llmAnalysis?: {
+            status: string;
+            checkedAt: number;
+            verdict?: string | undefined;
+            confidence?: string | undefined;
+            summary?: string | undefined;
+            dimensions?: {
+                name: string;
+                label: string;
+                rating: string;
+                detail: string;
+            }[] | undefined;
+            guidance?: string | undefined;
+            findings?: string | undefined;
+            model?: string | undefined;
+        } | null | undefined;
+        staticScan?: {
+            status: string;
+            reasonCodes: string[];
+            findings: {
+                code: string;
+                severity: string;
+                file: string;
+                line: number;
+                message: string;
+                evidence: string;
+            }[];
+            summary: string;
+            engineVersion: string;
+            checkedAt: number;
         } | null | undefined;
     } | null;
 }, {}>;

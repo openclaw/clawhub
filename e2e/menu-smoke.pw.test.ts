@@ -1,7 +1,7 @@
 import { expect, test } from "@playwright/test";
 import { expectHealthyPage, trackRuntimeErrors } from "./helpers/runtimeErrors";
 
-const navLabels = ["Skills", "Upload", "Import", "Search"];
+const navLabels = ["Skills", "Plugins", "Search"];
 
 test("skills loads without error", async ({ page }) => {
   const errors = trackRuntimeErrors(page);
@@ -31,18 +31,9 @@ test("header menu routes render", async ({ page }) => {
       await expect(page.locator("h1", { hasText: "Skills" })).toBeVisible();
     }
 
-    if (label === "Upload") {
-      await expect(page).toHaveURL(/\/upload/);
-      const heading = page.locator("h1.section-title", { hasText: /^Publish a /i });
-      const signInCard = page.locator("text=Sign in to upload");
-      await expect(heading.or(signInCard)).toBeVisible();
-    }
-
-    if (label === "Import") {
-      await expect(page).toHaveURL(/\/import/);
-      const heading = page.getByRole("heading", { name: "Import from GitHub" });
-      const signInCard = page.locator("text=Sign in to import and publish skills.");
-      await expect(heading.or(signInCard)).toBeVisible();
+    if (label === "Plugins") {
+      await expect(page).toHaveURL(/\/plugins(\?|$)/);
+      await expect(page.locator("h1", { hasText: "Plugins" })).toBeVisible();
     }
 
     if (label === "Search") {

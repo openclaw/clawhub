@@ -47,12 +47,16 @@ function makeActionCtx(args: {
   soul?: Record<string, unknown> | null;
   version?: Record<string, unknown> | null;
   actor?: Record<string, unknown> | null;
+  publisherMemberRole?: "owner" | "admin" | "publisher" | null;
 }) {
   return {
     runQuery: vi.fn(async (_endpoint: unknown, payload: Record<string, unknown>) => {
       if (payload.versionId && args.version) return args.version ?? null;
       if (payload.skillId && args.skill) return args.skill ?? null;
       if (payload.soulId && args.soul) return args.soul ?? null;
+      if (payload.publisherId && payload.userId === args.actor?._id) {
+        return args.publisherMemberRole ?? null;
+      }
       if (payload.userId === args.actor?._id) {
         return args.actor ?? null;
       }
@@ -92,6 +96,28 @@ describe("version file access actions", () => {
       skill: {
         _id: "skills:1",
         ownerUserId: "users:owner",
+        softDeletedAt: undefined,
+        moderationStatus: "hidden",
+        moderationReason: "pending.scan",
+        moderationFlags: [],
+      },
+    });
+
+    await expect(
+      getSkillReadmeHandler._handler(ctx, { versionId: "skillVersions:1" } as never),
+    ).resolves.toEqual({ path: "SKILL.md", text: "# skill" });
+  });
+
+  it("allows org collaborators to read hidden skill versions", async () => {
+    vi.mocked(getAuthUserId).mockResolvedValue("users:member" as never);
+    const ctx = makeActionCtx({
+      actor: { _id: "users:member", role: "user" },
+      publisherMemberRole: "publisher",
+      version: makeSkillVersion(),
+      skill: {
+        _id: "skills:1",
+        ownerUserId: "users:owner",
+        ownerPublisherId: "publishers:org",
         softDeletedAt: undefined,
         moderationStatus: "hidden",
         moderationReason: "pending.scan",

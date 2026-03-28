@@ -17,6 +17,10 @@ vi.mock("../convex/client", () => ({
   convex: {},
 }));
 
+vi.mock("./UserBootstrap", () => ({
+  UserBootstrap: () => null,
+}));
+
 describe("AuthCodeHandler", () => {
   beforeEach(() => {
     signInMock.mockReset();

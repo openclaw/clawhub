@@ -93,11 +93,7 @@ export default function Header() {
               Skills
             </Link>
           )}
-          {isSoulMode ? null : <Link to="/packages">Packages</Link>}
-          <Link to="/upload" search={{ updateSlug: undefined }}>
-            Upload
-          </Link>
-          {isSoulMode ? null : <Link to="/import">Import</Link>}
+          {isSoulMode ? null : <Link to="/plugins">Plugins</Link>}
           <Link
             to={isSoulMode ? "/souls" : "/skills"}
             search={
@@ -122,6 +118,7 @@ export default function Header() {
           >
             Search
           </Link>
+          {isSoulMode ? null : <Link to="/about">About</Link>}
           {me ? <Link to="/stars">Stars</Link> : null}
           {isStaff ? (
             <Link to="/management" search={{ skill: undefined }}>
@@ -176,17 +173,7 @@ export default function Header() {
                 </DropdownMenuItem>
                 {isSoulMode ? null : (
                   <DropdownMenuItem asChild>
-                    <Link to="/packages">Packages</Link>
-                  </DropdownMenuItem>
-                )}
-                <DropdownMenuItem asChild>
-                  <Link to="/upload" search={{ updateSlug: undefined }}>
-                    Upload
-                  </Link>
-                </DropdownMenuItem>
-                {isSoulMode ? null : (
-                  <DropdownMenuItem asChild>
-                    <Link to="/import">Import</Link>
+                    <Link to="/plugins">Plugins</Link>
                   </DropdownMenuItem>
                 )}
                 <DropdownMenuItem asChild>
@@ -215,6 +202,11 @@ export default function Header() {
                     Search
                   </Link>
                 </DropdownMenuItem>
+                {isSoulMode ? null : (
+                  <DropdownMenuItem asChild>
+                    <Link to="/about">About</Link>
+                  </DropdownMenuItem>
+                )}
                 {me ? (
                   <DropdownMenuItem asChild>
                     <Link to="/stars">Stars</Link>

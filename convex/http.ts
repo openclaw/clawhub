@@ -17,9 +17,11 @@ import {
   listBundlePluginsV1Http,
   listCodePluginsV1Http,
   listPackagesV1Http,
+  listPluginsV1Http,
   listSkillsV1Http,
   listSoulsV1Http,
   packagesGetRouterV1Http,
+  pluginsGetRouterV1Http,
   publishSkillV1Http,
   publishPackageV1Http,
   publishSoulV1Http,
@@ -75,6 +77,12 @@ http.route({
 });
 
 http.route({
+  path: ApiRoutes.plugins,
+  method: "GET",
+  handler: listPluginsV1Http,
+});
+
+http.route({
   path: ApiRoutes.codePlugins,
   method: "GET",
   handler: listCodePluginsV1Http,
@@ -96,6 +104,12 @@ http.route({
   pathPrefix: `${ApiRoutes.packages}/`,
   method: "GET",
   handler: packagesGetRouterV1Http,
+});
+
+http.route({
+  pathPrefix: `${ApiRoutes.plugins}/`,
+  method: "GET",
+  handler: pluginsGetRouterV1Http,
 });
 
 http.route({

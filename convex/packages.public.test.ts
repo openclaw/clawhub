@@ -3,7 +3,10 @@
 import { getAuthUserId } from "@convex-dev/auth/server";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
+  backfillPackageReleaseScansInternal,
+  getPackageReleaseScanBackfillBatchInternal,
   getByName,
+  list,
   publishPackage,
   publishPackageForUserInternal,
   getVersionByName,
@@ -11,6 +14,7 @@ import {
   listPublicPage,
   listPageForViewerInternal,
   listVersions,
+  updateReleaseStaticScanInternal,
   softDeletePackageInternal,
   searchForViewerInternal,
   searchPublic,
@@ -31,6 +35,21 @@ const getByNameHandler = (
       package: { name: string; latestVersion: string | null };
       latestRelease: { version: string } | null;
     } | null
+  >
+)._handler;
+const listHandler = (
+  list as unknown as WrappedHandler<
+    {
+      ownerUserId?: string;
+      ownerPublisherId?: string;
+      limit?: number;
+    },
+    Array<{
+      name: string;
+      pendingReview?: boolean;
+      scanStatus?: string;
+      latestRelease: { vtStatus: string | null; staticScanStatus: string | null } | null;
+    }>
   >
 )._handler;
 const getVersionByNameHandler = (
@@ -78,7 +97,9 @@ const listVersionsHandler = (
 const insertReleaseInternalHandler = (
   insertReleaseInternal as unknown as WrappedHandler<
     {
-      userId: string;
+      actorUserId: string;
+      ownerUserId: string;
+      ownerPublisherId?: string;
       name: string;
       displayName: string;
       family: "skill" | "code-plugin" | "bundle-plugin";
@@ -100,6 +121,7 @@ const insertReleaseInternalHandler = (
       compatibility?: unknown;
       capabilities?: unknown;
       verification?: unknown;
+      staticScan?: unknown;
       extractedPackageJson?: unknown;
       extractedPluginManifest?: unknown;
       normalizedBundleManifest?: unknown;
@@ -148,8 +170,61 @@ const publishPackageHandler = (
 const publishPackageForUserInternalHandler = (
   publishPackageForUserInternal as unknown as WrappedHandler<
     {
-      userId: string;
+      actorUserId: string;
       payload: unknown;
+    },
+    unknown
+  >
+)._handler;
+const getPackageReleaseScanBackfillBatchInternalHandler = (
+  getPackageReleaseScanBackfillBatchInternal as unknown as WrappedHandler<
+    {
+      cursor?: number;
+      batchSize?: number;
+      prioritizeRecent?: boolean;
+    },
+    {
+      releases: Array<{
+        releaseId: string;
+        packageId: string;
+        needsVt: boolean;
+        needsLlm: boolean;
+        needsStatic: boolean;
+      }>;
+      nextCursor: number;
+      done: boolean;
+    }
+  >
+)._handler;
+const backfillPackageReleaseScansInternalHandler = (
+  backfillPackageReleaseScansInternal as unknown as WrappedHandler<
+    {
+      cursor?: number;
+      batchSize?: number;
+      scheduled?: number;
+    },
+    { scheduled: number; nextCursor: number; done: boolean }
+  >
+)._handler;
+const updateReleaseStaticScanInternalHandler = (
+  updateReleaseStaticScanInternal as unknown as WrappedHandler<
+    {
+      releaseId: string;
+      staticScan: {
+        status: "clean" | "suspicious" | "malicious";
+        reasonCodes: string[];
+        findings: Array<{
+          code: string;
+          severity: string;
+          file: string;
+          line: number;
+          message: string;
+          evidence: string;
+        }>;
+        summary: string;
+        engineVersion: string;
+        checkedAt: number;
+      };
     },
     unknown
   >
@@ -182,6 +257,7 @@ function makeDigest(
     isOfficial: false,
     summary: `${name} summary`,
     ownerUserId: "users:owner",
+    ownerPublisherId: undefined,
     ownerHandle: "owner",
     createdAt: 1,
     updatedAt: 1,
@@ -204,12 +280,15 @@ function makePackageDoc(overrides: Partial<Record<string, unknown>> = {}) {
     channel: "community",
     isOfficial: false,
     ownerUserId: "users:owner",
+    ownerPublisherId: undefined,
     tags: {},
     latestReleaseId: "packageReleases:demo-1",
     latestVersionSummary: { version: "1.0.0" },
     compatibility: null,
     capabilities: null,
     verification: null,
+    scanStatus: "clean",
+    stats: { downloads: 0, installs: 0, stars: 0, versions: 1 },
     createdAt: 1,
     updatedAt: 1,
     softDeletedAt: undefined,
@@ -235,6 +314,9 @@ function makeDigestCtx(options: {
     isDone: boolean;
     continueCursor: string;
   }>;
+  exactPackages?: Array<Record<string, unknown>>;
+  exactDigests?: Array<Record<string, unknown>>;
+  publisherMemberships?: Record<string, "owner" | "admin" | "publisher">;
 }) {
   const pageByTable = new Map<
     string,
@@ -302,7 +384,145 @@ function makeDigestCtx(options: {
     ctx: {
       db: {
         query: vi.fn((table: string) => {
-          if (table !== "packageSearchDigest" && table !== "packageCapabilitySearchDigest") {
+          if (table === "packages") {
+            return {
+              withIndex: vi.fn(
+                (
+                  indexName: string,
+                  builder?: (q: {
+                    eq: (field: string, value: string) => unknown;
+                    gte: (field: string, value: string) => unknown;
+                    lt: (field: string, value: string) => unknown;
+                  }) => unknown,
+                ) => {
+                  let matchedValue = "";
+                  let lowerBound = "";
+                  let upperBound = "";
+                  const queryBuilder = {
+                    eq: (_field: string, value: string) => {
+                      matchedValue = value;
+                      return queryBuilder;
+                    },
+                    gte: (_field: string, value: string) => {
+                      lowerBound = value;
+                      return queryBuilder;
+                    },
+                    lt: (_field: string, value: string) => {
+                      upperBound = value;
+                      return queryBuilder;
+                    },
+                  };
+                  builder?.(queryBuilder);
+                  if (indexName !== "by_name" && indexName !== "by_runtime_id") {
+                    throw new Error(`Unexpected packages index ${indexName}`);
+                  }
+                  const matches = (options.exactPackages ?? []).filter((pkg) =>
+                    indexName === "by_name"
+                      ? matchedValue
+                        ? String(pkg.normalizedName) === matchedValue
+                        : String(pkg.normalizedName) >= lowerBound && String(pkg.normalizedName) < upperBound
+                      : matchedValue
+                        ? String(pkg.runtimeId) === matchedValue
+                        : String(pkg.runtimeId) >= lowerBound && String(pkg.runtimeId) < upperBound,
+                  );
+                  return {
+                    unique: vi.fn().mockResolvedValue(matches[0] ?? null),
+                    take: vi.fn().mockResolvedValue(matches),
+                  };
+                },
+              ),
+            };
+          }
+          if (table === "publisherMembers") {
+            return {
+              withIndex: vi.fn(
+                (
+                  _indexName: string,
+                  builder?: (q: { eq: (field: string, value: string) => unknown }) => unknown,
+                ) => {
+                  let publisherId = "";
+                  const queryBuilder = {
+                    eq: (field: string, value: string) => {
+                      if (field === "publisherId") publisherId = value;
+                      return queryBuilder;
+                    },
+                  };
+                  builder?.(queryBuilder);
+                  const role = options.publisherMemberships?.[publisherId];
+                  return {
+                    unique: vi.fn().mockResolvedValue(
+                      role
+                        ? {
+                            _id: `publisherMembers:${publisherId}`,
+                            publisherId,
+                            userId: "users:member",
+                            role,
+                          }
+                        : null,
+                    ),
+                  };
+                },
+              ),
+            };
+          }
+          if (table === "packageSearchDigest") {
+            tableNames.push(table);
+            return {
+              withIndex: (
+                indexName: string,
+                builder?: (q: {
+                  eq: (field: string, value: string | undefined) => unknown;
+                  gte: (field: string, value: string) => unknown;
+                  lt: (field: string, value: string) => unknown;
+                }) => unknown,
+              ) => {
+                if (indexName === "by_package") {
+                  let packageId = "";
+                  const queryBuilder = {
+                    eq: (field: string, value: string | undefined) => {
+                      if (field === "packageId") packageId = value ?? "";
+                      return queryBuilder;
+                    },
+                    gte: () => queryBuilder,
+                    lt: () => queryBuilder,
+                  };
+                  builder?.(queryBuilder);
+                  const match = (options.exactDigests ?? []).find((digest) => digest.packageId === packageId);
+                  return {
+                    unique: vi.fn().mockResolvedValue(match ?? null),
+                  };
+                }
+                if (indexName === "by_active_normalized_name" || indexName === "by_active_runtime_id") {
+                  let lowerBound = "";
+                  let upperBound = "";
+                  const queryBuilder = {
+                    eq: () => queryBuilder,
+                    gte: (_field: string, value: string) => {
+                      lowerBound = value;
+                      return queryBuilder;
+                    },
+                    lt: (_field: string, value: string) => {
+                      upperBound = value;
+                      return queryBuilder;
+                    },
+                  };
+                  builder?.(queryBuilder);
+                  const matches = (options.exactDigests ?? []).filter((digest) =>
+                    indexName === "by_active_normalized_name"
+                      ? String(digest.normalizedName) >= lowerBound &&
+                        String(digest.normalizedName) < upperBound
+                      : String(digest.runtimeId) >= lowerBound &&
+                        String(digest.runtimeId) < upperBound,
+                  );
+                  return {
+                    take: vi.fn().mockResolvedValue(matches),
+                  };
+                }
+                return withIndex(table, indexName);
+              },
+            };
+          }
+          if (table !== "packageCapabilitySearchDigest") {
             throw new Error(`Unexpected table ${table}`);
           }
           tableNames.push(table);
@@ -318,6 +538,7 @@ function makeDigestCtx(options: {
 function makeInsertReleaseCtx(
   existing: Record<string, unknown> | null,
   priorReleases: Array<Record<string, unknown>> = [],
+  recordsById: Record<string, Record<string, unknown>> = {},
 ) {
   const patch = vi.fn();
   const insert = vi
@@ -328,7 +549,8 @@ function makeInsertReleaseCtx(
     insert,
     db: {
       get: vi.fn(async (id: string) => {
-        if (id === "users:owner") return { _id: id, trustedPublisher: false };
+        if (id in recordsById) return recordsById[id];
+        if (id === "users:owner") return { _id: id, role: "user", trustedPublisher: false };
         return null;
       }),
       query: vi.fn((table: string) => {
@@ -369,10 +591,13 @@ function makePackageCtx(options: {
   latestRelease?: Record<string, unknown> | null;
   versionRelease?: Record<string, unknown> | null;
   versionsPage?: { page: Array<Record<string, unknown>>; isDone: boolean; continueCursor: string };
+  ownerPublisher?: Record<string, unknown> | null;
+  viewerMembershipRole?: "owner" | "admin" | "publisher" | null;
 }) {
   const pkg = options.pkg ?? makePackageDoc();
   const latestRelease = options.latestRelease ?? makeReleaseDoc();
   const versionRelease = options.versionRelease ?? latestRelease;
+  const ownerPublisher = options.ownerPublisher ?? null;
   const versionsPage = options.versionsPage ?? {
     page: [latestRelease].filter(Boolean),
     isDone: true,
@@ -386,6 +611,7 @@ function makePackageCtx(options: {
       db: {
         get: vi.fn(async (id: string) => {
           if (pkg && id === pkg.ownerUserId) return { _id: id, handle: "owner" };
+          if (ownerPublisher && pkg && id === pkg.ownerPublisherId) return ownerPublisher;
           if (pkg && id === pkg.latestReleaseId) return latestRelease;
           return null;
         }),
@@ -424,6 +650,22 @@ function makePackageCtx(options: {
                   })),
                 };
               }),
+            };
+          }
+          if (table === "publisherMembers") {
+            return {
+              withIndex: vi.fn(() => ({
+                unique: vi.fn().mockResolvedValue(
+                  options.viewerMembershipRole
+                    ? {
+                        _id: "publisherMembers:1",
+                        publisherId: pkg?.ownerPublisherId,
+                        userId: "users:member",
+                        role: options.viewerMembershipRole,
+                      }
+                    : null,
+                ),
+              })),
             };
           }
           throw new Error(`Unexpected table ${table}`);
@@ -640,6 +882,35 @@ describe("packages public queries", () => {
     expect(indexNames).toEqual(["by_active_channel_updated"]);
   });
 
+  it("allows org collaborators to list their private packages", async () => {
+    const { ctx } = makeDigestCtx({
+      pages: [
+        {
+          page: [
+            makeDigest("secret-plugin", {
+              channel: "private",
+              ownerUserId: "users:owner",
+              ownerPublisherId: "publishers:org",
+            }),
+            makeDigest("public-plugin"),
+          ],
+          isDone: true,
+          continueCursor: "",
+        },
+      ],
+      publisherMemberships: {
+        "publishers:org": "publisher",
+      },
+    });
+
+    const result = await listPageForViewerInternalHandler(ctx, {
+      paginationOpts: { cursor: null, numItems: 10 },
+      viewerUserId: "users:member",
+    });
+
+    expect(result.page.map((entry) => entry.name)).toEqual(["secret-plugin", "public-plugin"]);
+  });
+
   it("applies isOfficial filtering even with family and channel set", async () => {
     const { ctx } = makeDigestCtx({
       pages: [
@@ -787,6 +1058,49 @@ describe("packages public queries", () => {
     expect(result.map((entry) => entry.package.name)).toEqual(["secret-tools"]);
   });
 
+  it("allows org collaborators to search their private packages", async () => {
+    const { ctx } = makeDigestCtx({
+      capabilityPages: [
+        {
+          page: [
+            makeDigest("secret-tools", {
+              channel: "private",
+              ownerUserId: "users:owner",
+              ownerPublisherId: "publishers:org",
+              executesCode: true,
+              capabilityTags: ["tools"],
+              capabilityTag: "tools",
+            }),
+            makeDigest("other-secret-tools", {
+              channel: "private",
+              ownerUserId: "users:other",
+              ownerPublisherId: "publishers:other",
+              executesCode: true,
+              capabilityTags: ["tools"],
+              capabilityTag: "tools",
+            }),
+          ],
+          isDone: true,
+          continueCursor: "",
+        },
+      ],
+      publisherMemberships: {
+        "publishers:org": "publisher",
+      },
+    });
+
+    const result = await searchForViewerInternalHandler(ctx, {
+      query: "secret",
+      executesCode: true,
+      capabilityTag: "tools",
+      channel: "private",
+      limit: 10,
+      viewerUserId: "users:member",
+    });
+
+    expect(result.map((entry) => entry.package.name)).toEqual(["secret-tools"]);
+  });
+
   it("uses the executesCode index for filtered public listings", async () => {
     const { ctx, indexNames, tableNames } = makeDigestCtx({
       pages: [
@@ -864,6 +1178,134 @@ describe("packages public queries", () => {
     });
 
     expect(result.map((entry) => entry.package.name)).toContain("demo-plugin");
+  });
+
+  it("includes exact package-name matches before digest scanning", async () => {
+    const exactPkg = makePackageDoc({
+      _id: "packages:exact",
+      name: "demo-plugin",
+      normalizedName: "demo-plugin",
+    });
+    const exactDigest = makeDigest("demo-plugin", {
+      packageId: "packages:exact",
+    });
+    const { ctx, paginate } = makeDigestCtx({
+      pages: [],
+      exactPackages: [exactPkg],
+      exactDigests: [exactDigest],
+    });
+
+    const result = await searchPublicHandler(ctx, {
+      query: "demo-plugin",
+      limit: 10,
+    });
+
+    expect(result.map((entry) => entry.package.name)).toEqual(["demo-plugin"]);
+    expect(paginate).toHaveBeenCalledTimes(1);
+    expect(ctx.db.query).toHaveBeenCalledWith("packageSearchDigest");
+  });
+
+  it("includes exact runtime-id matches before digest scanning", async () => {
+    const exactPkg = makePackageDoc({
+      _id: "packages:runtime",
+      name: "runtime-demo",
+      normalizedName: "runtime-demo",
+      runtimeId: "demo.plugin",
+    });
+    const exactDigest = makeDigest("runtime-demo", {
+      packageId: "packages:runtime",
+      runtimeId: "demo.plugin",
+    });
+    const { ctx, paginate } = makeDigestCtx({
+      pages: [],
+      exactPackages: [exactPkg],
+      exactDigests: [exactDigest],
+    });
+
+    const result = await searchPublicHandler(ctx, {
+      query: "demo.plugin",
+      limit: 10,
+    });
+
+    expect(result.map((entry) => entry.package.name)).toEqual(["runtime-demo"]);
+    expect(paginate).toHaveBeenCalledTimes(1);
+    expect(ctx.db.query).toHaveBeenCalledWith("packageSearchDigest");
+  });
+
+  it("includes prefix package-name matches before digest scanning", async () => {
+    const prefixPkg = makePackageDoc({
+      _id: "packages:prefix",
+      name: "demo-prefix",
+      normalizedName: "demo-prefix",
+    });
+    const prefixDigest = makeDigest("demo-prefix", {
+      packageId: "packages:prefix",
+    });
+    const { ctx, paginate } = makeDigestCtx({
+      pages: [],
+      exactPackages: [prefixPkg],
+      exactDigests: [prefixDigest],
+    });
+
+    const result = await searchPublicHandler(ctx, {
+      query: "demo",
+      limit: 10,
+    });
+
+    expect(result.map((entry) => entry.package.name)).toEqual(["demo-prefix"]);
+    expect(paginate).toHaveBeenCalledTimes(1);
+    expect(ctx.db.query).toHaveBeenCalledWith("packageSearchDigest");
+  });
+
+  it("keeps spaced queries on the scan path without throwing", async () => {
+    const { ctx } = makeDigestCtx({
+      pages: [
+        {
+          page: [
+            makeDigest("demo-plugin", {
+              displayName: "Demo Plugin",
+            }),
+          ],
+          isDone: true,
+          continueCursor: "",
+        },
+      ],
+    });
+
+    const result = await searchPublicHandler(ctx, {
+      query: "demo plugin",
+      limit: 10,
+    });
+
+    expect(result.map((entry) => entry.package.name)).toEqual(["demo-plugin"]);
+  });
+
+  it("skips publisher membership lookups for public search rows", async () => {
+    const { ctx } = makeDigestCtx({
+      pages: [
+        {
+          page: [
+            makeDigest("demo-plugin", {
+              ownerPublisherId: "publishers:org",
+            }),
+          ],
+          isDone: true,
+          continueCursor: "",
+        },
+      ],
+      publisherMemberships: {
+        "publishers:org": "publisher",
+      },
+    });
+
+    const result = await searchForViewerInternalHandler(ctx, {
+      query: "demo",
+      limit: 10,
+      viewerUserId: "users:member",
+    });
+
+    expect(result.map((entry) => entry.package.name)).toEqual(["demo-plugin"]);
+    expect(ctx.db.query).not.toHaveBeenCalledWith("publisherMembers");
   });
 
   it("caps public list scans below the Convex read limit budget", async () => {
@@ -1017,6 +1459,45 @@ describe("packages public queries", () => {
     expect(version?.version.version).toBe("1.0.0");
   });
 
+  it("allows org collaborators to read org-owned private packages", async () => {
+    vi.mocked(getAuthUserId).mockResolvedValue("users:member" as never);
+    const { ctx } = makePackageCtx({
+      pkg: makePackageDoc({
+        channel: "private",
+        ownerUserId: "users:owner",
+        ownerPublisherId: "publishers:org",
+      }),
+      ownerPublisher: {
+        _id: "publishers:org",
+        _creationTime: 1,
+        kind: "org",
+        handle: "acme",
+        displayName: "Acme",
+        linkedUserId: undefined,
+      },
+      viewerMembershipRole: "publisher",
+    });
+
+    const detail = await getByNameHandler(ctx, {
+      name: "demo-plugin",
+    });
+
+    expect(detail?.package.name).toBe("demo-plugin");
+  });
+
+  it("treats auth resolution failures as anonymous for public package detail", async () => {
+    vi.mocked(getAuthUserId).mockRejectedValue(new Error("stale session"));
+    const { ctx } = makePackageCtx({
+      pkg: makePackageDoc({ channel: "community" }),
+    });
+
+    const detail = await getByNameHandler(ctx, {
+      name: "demo-plugin",
+    });
+
+    expect(detail?.package.name).toBe("demo-plugin");
+  });
+
   it("does not expose a soft-deleted latest release as latestVersion", async () => {
     const { ctx } = makePackageCtx({
       latestRelease: makeReleaseDoc({ softDeletedAt: 10 }),
@@ -1101,7 +1582,8 @@ describe("packages public queries", () => {
 
     await expect(
       insertReleaseInternalHandler(ctx, {
-        userId: "users:owner",
+        actorUserId: "users:owner",
+        ownerUserId: "users:owner",
         name: "demo-plugin",
         displayName: "Demo Plugin",
         family: "code-plugin",
@@ -1120,7 +1602,8 @@ describe("packages public queries", () => {
 
     await expect(
       insertReleaseInternalHandler(ctx, {
-        userId: "users:owner",
+        actorUserId: "users:owner",
+        ownerUserId: "users:owner",
         name: "demo-plugin",
         displayName: "Demo Plugin",
         family: "code-plugin",
@@ -1149,7 +1632,8 @@ describe("packages public queries", () => {
     });
 
     await insertReleaseInternalHandler(ctx, {
-      userId: "users:owner",
+      actorUserId: "users:owner",
+      ownerUserId: "users:owner",
       name: "demo-plugin",
       displayName: "Demo Plugin",
       family: "code-plugin",
@@ -1171,6 +1655,159 @@ describe("packages public queries", () => {
     );
   });
 
+  it("lets admins publish package releases on behalf of another owner", async () => {
+    const ctx = makeInsertReleaseCtx(
+      makePackageDoc({
+        ownerUserId: "users:openclaw",
+        channel: "official",
+        isOfficial: true,
+        stats: { downloads: 0, installs: 0, stars: 0, versions: 1 },
+      }),
+      [],
+      {
+        "users:admin": { _id: "users:admin", role: "admin", trustedPublisher: false },
+        "users:openclaw": { _id: "users:openclaw", role: "user", trustedPublisher: true },
+      },
+    );
+
+    await insertReleaseInternalHandler(ctx, {
+      actorUserId: "users:admin",
+      ownerUserId: "users:openclaw",
+      name: "demo-plugin",
+      displayName: "Demo Plugin",
+      family: "code-plugin",
+      version: "1.1.0",
+      changelog: "promote",
+      tags: ["latest"],
+      summary: "demo",
+      files: [],
+      integritySha256: "abc123",
+      channel: "official",
+    });
+
+    expect(ctx.insert).toHaveBeenCalledWith(
+      "packageReleases",
+      expect.objectContaining({
+        createdBy: "users:admin",
+      }),
+    );
+  });
+
+  it("rejects non-admin publishes on behalf of another owner", async () => {
+    const ctx = makeInsertReleaseCtx(
+      makePackageDoc({
+        ownerUserId: "users:openclaw",
+        stats: { downloads: 0, installs: 0, stars: 0, versions: 1 },
+      }),
+      [],
+      {
+        "users:owner": { _id: "users:owner", role: "user", trustedPublisher: false },
+        "users:openclaw": { _id: "users:openclaw", role: "user", trustedPublisher: true },
+      },
+    );
+
+    await expect(
+      insertReleaseInternalHandler(ctx, {
+        actorUserId: "users:owner",
+        ownerUserId: "users:openclaw",
+        name: "demo-plugin",
+        displayName: "Demo Plugin",
+        family: "code-plugin",
+        version: "1.1.0",
+        changelog: "promote",
+        tags: ["latest"],
+        summary: "demo",
+        files: [],
+        integritySha256: "abc123",
+      }),
+    ).rejects.toThrow("Forbidden");
+  });
+
+  it("rejects publishing the same package name across different publishers", async () => {
+    const ctx = makeInsertReleaseCtx(
+      makePackageDoc({
+        ownerUserId: "users:owner",
+        ownerPublisherId: undefined,
+        stats: { downloads: 0, installs: 0, stars: 0, versions: 1 },
+      }),
+      [],
+      {
+        "users:owner": { _id: "users:owner", role: "user", trustedPublisher: false },
+        "publishers:org": {
+          _id: "publishers:org",
+          kind: "org",
+          handle: "acme",
+          displayName: "Acme",
+          trustedPublisher: false,
+        },
+      },
+    );
+
+    await expect(
+      insertReleaseInternalHandler(ctx, {
+        actorUserId: "users:owner",
+        ownerUserId: "users:owner",
+        ownerPublisherId: "publishers:org",
+        name: "demo-plugin",
+        displayName: "Demo Plugin",
+        family: "code-plugin",
+        version: "1.1.0",
+        changelog: "org release",
+        tags: ["latest"],
+        summary: "demo",
+        files: [],
+        integritySha256: "abc123",
+      }),
+    ).rejects.toThrow("Package already exists and belongs to another publisher");
+  });
+
+  it("treats a legacy personal package as the same personal publisher", async () => {
+    const ctx = makeInsertReleaseCtx(
+      makePackageDoc({
+        ownerUserId: "users:owner",
+        ownerPublisherId: undefined,
+        stats: { downloads: 0, installs: 0, stars: 0, versions: 1 },
+      }),
+      [],
+      {
+        "users:owner": { _id: "users:owner", role: "user", trustedPublisher: false },
+        "publishers:owner": {
+          _id: "publishers:owner",
+          kind: "user",
+          handle: "owner",
+          displayName: "Owner",
+          linkedUserId: "users:owner",
+          trustedPublisher: false,
+        },
+      },
+    );
+
+    await expect(
+      insertReleaseInternalHandler(ctx, {
+        actorUserId: "users:owner",
+        ownerUserId: "users:owner",
+        ownerPublisherId: "publishers:owner",
+        name: "demo-plugin",
+        displayName: "Demo Plugin",
+        family: "code-plugin",
+        version: "1.1.0",
+        changelog: "personal release",
+        tags: ["latest"],
+        summary: "demo",
+        files: [],
+        integritySha256: "abc123",
+      }),
+    ).resolves.toMatchObject({ ok: true, packageId: "packages:demo" });
+
+    expect(ctx.patch).toHaveBeenCalledWith(
+      "packages:demo",
+      expect.objectContaining({
+        ownerUserId: "users:owner",
+        ownerPublisherId: "publishers:owner",
+      }),
+    );
+  });
+
   it("does not overwrite capability search fields for non-latest releases", async () => {
     const ctx = makeInsertReleaseCtx(
       makePackageDoc({
@@ -1183,7 +1820,8 @@ describe("packages public queries", () => {
     );
 
     await insertReleaseInternalHandler(ctx, {
-      userId: "users:owner",
+      actorUserId: "users:owner",
+      ownerUserId: "users:owner",
       name: "demo-plugin",
       displayName: "Demo Plugin",
       family: "code-plugin",
@@ -1216,7 +1854,8 @@ describe("packages public queries", () => {
     );
 
     await insertReleaseInternalHandler(ctx, {
-      userId: "users:owner",
+      actorUserId: "users:owner",
+      ownerUserId: "users:owner",
       name: "demo-plugin",
       displayName: "Demo Plugin",
       family: "code-plugin",
@@ -1248,7 +1887,8 @@ describe("packages public queries", () => {
     );
 
     await insertReleaseInternalHandler(ctx, {
-      userId: "users:owner",
+      actorUserId: "users:owner",
+      ownerUserId: "users:owner",
       name: "demo-plugin",
       displayName: "Demo Plugin",
       family: "bundle-plugin",
@@ -1285,7 +1925,8 @@ describe("packages public queries", () => {
     );
 
     await insertReleaseInternalHandler(ctx, {
-      userId: "users:owner",
+      actorUserId: "users:owner",
+      ownerUserId: "users:owner",
       name: "demo-plugin",
       displayName: "Demo Plugin",
       family: "code-plugin",
@@ -1313,7 +1954,8 @@ describe("packages public queries", () => {
     );
 
     await insertReleaseInternalHandler(ctx, {
-      userId: "users:owner",
+      actorUserId: "users:owner",
+      ownerUserId: "users:owner",
       name: "demo-plugin",
       displayName: "Demo Plugin",
       family: "code-plugin",
@@ -1323,12 +1965,27 @@ describe("packages public queries", () => {
       summary: "demo",
       files: [],
       integritySha256: "abc123",
+      verification: {
+        tier: "source-linked",
+        scope: "artifact-only",
+        scanStatus: "suspicious",
+      },
+      staticScan: {
+        status: "suspicious",
+        reasonCodes: ["suspicious.dynamic_code_execution"],
+        findings: [],
+        summary: "Detected: suspicious.dynamic_code_execution",
+        engineVersion: "test",
+        checkedAt: 123,
+      },
     });
 
     expect(ctx.insert).toHaveBeenCalledWith(
       "packageReleases",
       expect.objectContaining({
         distTags: ["beta", "latest"],
+        verification: expect.objectContaining({ scanStatus: "suspicious" }),
+        staticScan: expect.objectContaining({ status: "suspicious" }),
       }),
     );
     expect(ctx.patch).toHaveBeenCalledWith(
@@ -1343,7 +2000,7 @@ describe("packages public queries", () => {
   it("validates package publish payloads inside the action path", async () => {
     await expect(
       publishPackageForUserInternalHandler({} as never, {
-        userId: "users:owner",
+        actorUserId: "users:owner",
         payload: {
           name: "demo-plugin",
           family: "bundle-plugin",
@@ -1359,7 +2016,7 @@ describe("packages public queries", () => {
   it("rejects skill publishes on the package endpoint", async () => {
     await expect(
       publishPackageForUserInternalHandler({} as never, {
-        userId: "users:owner",
+        actorUserId: "users:owner",
         payload: {
           name: "demo-skill",
           family: "skill",
@@ -1369,6 +2026,257 @@ describe("packages public queries", () => {
         },
       }),
     ).rejects.toThrow("Skill packages must use the skills publish flow");
+  });
+
+  it("scans plugin publishes and forwards scan status to insertReleaseInternal", async () => {
+    const runMutation = vi.fn(async (_ref: unknown, args: unknown) => args);
+    const ctx = {
+      runQuery: vi
+        .fn()
+        .mockResolvedValueOnce({
+          _id: "users:owner",
+          githubCreatedAt: Date.now() - 20 * 24 * 60 * 60 * 1000,
+        })
+        .mockResolvedValueOnce(null),
+      runMutation,
+      scheduler: {
+        runAfter: vi.fn(),
+      },
+      storage: {
+        get: vi.fn(async (storageId: string) => {
+          const files = new Map<string, string>([
+            [
+              "storage:package",
+              JSON.stringify({
+                name: "demo-plugin",
+                openclaw: {
+                  extensions: ["./dist/index.js"],
+                  compat: { pluginApi: "^1.0.0" },
+                  build: { openclawVersion: "2026.3.14" },
+                  configSchema: { type: "object" },
+                },
+              }),
+            ],
+            ["storage:manifest", JSON.stringify({ id: "demo.plugin", tools: [{ name: "demoTool" }] })],
+            ["storage:code", "import { execSync } from 'node:child_process';\nexecSync('curl http://x');\n"],
+          ]);
+          const content = files.get(storageId);
+          return content ? new Blob([content]) : null;
+        }),
+      },
+    };
+
+    const result = (await publishPackageForUserInternalHandler(ctx as never, {
+      actorUserId: "users:owner",
+      payload: {
+        name: "demo-plugin",
+        displayName: "Demo Plugin",
+        family: "code-plugin",
+        version: "1.0.0",
+        changelog: "init",
+        source: {
+          kind: "github",
+          url: "https://github.com/openclaw/demo-plugin",
+          repo: "openclaw/demo-plugin",
+          ref: "refs/tags/v1.0.0",
+          commit: "abc123",
+          path: ".",
+          importedAt: Date.now(),
+        },
+        files: [
+          {
+            path: "package.json",
+            size: 1,
+            storageId: "storage:package",
+            sha256: "package",
+            contentType: "application/json",
+          },
+          {
+            path: "openclaw.plugin.json",
+            size: 1,
+            storageId: "storage:manifest",
+            sha256: "manifest",
+            contentType: "application/json",
+          },
+          {
+            path: "dist/index.js",
+            size: 1,
+            storageId: "storage:code",
+            sha256: "code",
+            contentType: "application/javascript",
+          },
+        ],
+      },
+    })) as Record<string, unknown>;
+
+    expect(runMutation).toHaveBeenCalled();
+    expect(result.verification).toEqual(expect.objectContaining({ scanStatus: "pending" }));
+    expect(result.staticScan).toEqual(
+      expect.objectContaining({
+        status: "suspicious",
+        reasonCodes: expect.arrayContaining(["suspicious.dangerous_exec"]),
+      }),
+    );
+    expect(ctx.scheduler.runAfter).toHaveBeenNthCalledWith(
+      1,
+      30_000,
+      expect.anything(),
+      expect.any(Object),
+    );
+  });
+
+  it("keeps pending-scan packages visible to public reads", async () => {
+    vi.mocked(getAuthUserId).mockResolvedValue(null);
+    const ctx = {
+      db: {
+        get: vi.fn(async (id: string) => {
+          if (id === "packageReleases:demo-1") return makeReleaseDoc({ version: "1.0.0" });
+          if (id === "users:owner") return { _id: "users:owner", handle: "owner" };
+          return null;
+        }),
+        query: vi.fn((table: string) => {
+          if (table !== "packages") throw new Error(`Unexpected table ${table}`);
+          return {
+            withIndex: vi.fn(() => ({
+              unique: vi.fn().mockResolvedValue(makePackageDoc({ scanStatus: "pending" })),
+            })),
+          };
+        }),
+      },
+    };
+
+    const result = await getByNameHandler(ctx as never, { name: "demo-plugin" });
+    expect(result?.package?.name).toBe("demo-plugin");
+  });
+
+  it("keeps pending-scan packages visible to the owner", async () => {
+    vi.mocked(getAuthUserId).mockResolvedValue("users:owner" as never);
+    const result = await getByNameHandler(
+      {
+        db: {
+          get: vi.fn(async (id: string) => {
+            if (id === "packageReleases:demo-1") return makeReleaseDoc({ version: "1.0.0" });
+            if (id === "users:owner") return { _id: "users:owner", handle: "owner" };
+            return null;
+          }),
+          query: vi.fn((table: string) => {
+            if (table !== "packages") throw new Error(`Unexpected table ${table}`);
+            return {
+              withIndex: vi.fn(() => ({
+                unique: vi.fn().mockResolvedValue(
+                  makePackageDoc({ ownerUserId: "users:owner", scanStatus: "pending" }),
+                ),
+              })),
+            };
+          }),
+        },
+      } as never,
+      { name: "demo-plugin" },
+    );
+
+    expect(result?.package?.name).toBe("demo-plugin");
+  });
+
+  it("lists owner packages with pending review and latest release scan state", async () => {
+    vi.mocked(getAuthUserId).mockResolvedValue("users:owner" as never);
+    const result = await listHandler(
+      {
+        db: {
+          get: vi.fn(async (id: string) => {
+            if (id === "packageReleases:demo-1") {
+              return makeReleaseDoc({
+                version: "1.0.0",
+                vtAnalysis: { status: "pending" },
+                llmAnalysis: { status: "clean" },
+                staticScan: { status: "clean" },
+              });
+            }
+            if (id === "publishers:owner") {
+              return { _id: "publishers:owner", kind: "user", linkedUserId: "users:owner" };
+            }
+            return null;
+          }),
+          query: vi.fn((table: string) => {
+            if (table === "packages") {
+              return {
+                withIndex: vi.fn((indexName: string) => {
+                  if (indexName === "by_owner_publisher") {
+                    return {
+                      order: vi.fn(() => ({
+                        take: vi.fn().mockResolvedValue([
+                          makePackageDoc({
+                            ownerPublisherId: "publishers:owner",
+                            scanStatus: "pending",
+                          }),
+                        ]),
+                      })),
+                    };
+                  }
+                  if (indexName === "by_owner") {
+                    return {
+                      order: vi.fn(() => ({
+                        take: vi.fn().mockResolvedValue([]),
+                      })),
+                    };
+                  }
+                  throw new Error(`Unexpected index ${indexName}`);
+                }),
+              };
+            }
+            if (table === "publisherMembers") {
+              return {
+                withIndex: vi.fn(() => ({
+                  unique: vi.fn().mockResolvedValue(null),
+                })),
+              };
+            }
+            throw new Error(`Unexpected table ${table}`);
+          }),
+        },
+      } as never,
+      { ownerPublisherId: "publishers:owner", limit: 20 },
+    );
+
+    expect(result).toEqual([
+      expect.objectContaining({
+        name: "demo-plugin",
+        pendingReview: true,
+        scanStatus: "pending",
+        latestRelease: expect.objectContaining({
+          vtStatus: "pending",
+          staticScanStatus: "clean",
+        }),
+      }),
+    ]);
+  });
+
+  it("returns no owner packages when the viewer lacks access", async () => {
+    vi.mocked(getAuthUserId).mockResolvedValue("users:stranger" as never);
+    const result = await listHandler(
+      {
+        db: {
+          get: vi.fn(async (id: string) => {
+            if (id === "publishers:owner") {
+              return { _id: "publishers:owner", kind: "user", linkedUserId: "users:owner" };
+            }
+            return null;
+          }),
+          query: vi.fn((table: string) => {
+            if (table === "publisherMembers") {
+              return {
+                withIndex: vi.fn(() => ({
+                  unique: vi.fn().mockResolvedValue(null),
+                })),
+              };
+            }
+            throw new Error(`Unexpected table ${table}`);
+          }),
+        },
+      } as never,
+      { ownerPublisherId: "publishers:owner", limit: 20 },
+    );
+
+    expect(result).toEqual([]);
   });
 
   it("requires auth inside the public publish action", async () => {
@@ -1383,5 +2291,249 @@ describe("packages public queries", () => {
         },
       }),
     ).rejects.toThrow("Unauthorized");
+  });
+});
+
+describe("package scan backfill", () => {
+  it("includes releases missing static scan in the backfill batch", async () => {
+    const result = await getPackageReleaseScanBackfillBatchInternalHandler(
+      {
+        db: {
+          query: vi.fn((table: string) => {
+            if (table !== "packageReleases") throw new Error(`Unexpected table ${table}`);
+            return {
+              order: vi.fn(() => ({
+                take: vi.fn().mockResolvedValue([]),
+              })),
+              withIndex: vi.fn(() => ({
+                order: vi.fn(() => ({
+                  take: vi.fn().mockResolvedValue([
+                    {
+                      _id: "packageReleases:missing-static",
+                      _creationTime: 10,
+                      packageId: "packages:demo",
+                      sha256hash: "hash",
+                      vtAnalysis: { status: "clean" },
+                      llmAnalysis: { status: "clean" },
+                      staticScan: undefined,
+                    },
+                    {
+                      _id: "packageReleases:fully-scanned",
+                      _creationTime: 11,
+                      packageId: "packages:demo",
+                      sha256hash: "hash",
+                      vtAnalysis: { status: "clean" },
+                      llmAnalysis: { status: "clean" },
+                      staticScan: { status: "clean" },
+                    },
+                  ]),
+                })),
+              })),
+            };
+          }),
+          get: vi.fn(async (id: string) => {
+            if (id === "packages:demo") return makePackageDoc();
+            return null;
+          }),
+        },
+      } as never,
+      { batchSize: 10 },
+    );
+
+    expect(result.releases).toEqual([
+      {
+        releaseId: "packageReleases:missing-static",
+        packageId: "packages:demo",
+        needsVt: false,
+        needsLlm: false,
+        needsStatic: true,
+      },
+    ]);
+  });
+
+  it("prioritizes recent releases before draining older backlog", async () => {
+    const result = await getPackageReleaseScanBackfillBatchInternalHandler(
+      {
+        db: {
+          query: vi.fn((table: string) => {
+            if (table !== "packageReleases") throw new Error(`Unexpected table ${table}`);
+            return {
+              order: vi.fn(() => ({
+                take: vi.fn().mockResolvedValue([
+                  {
+                    _id: "packageReleases:recent-vt",
+                    _creationTime: 200,
+                    packageId: "packages:demo",
+                    sha256hash: "hash",
+                    vtAnalysis: undefined,
+                    llmAnalysis: { status: "clean" },
+                    staticScan: { status: "clean" },
+                  },
+                ]),
+              })),
+              withIndex: vi.fn(() => ({
+                order: vi.fn(() => ({
+                  take: vi.fn().mockResolvedValue([
+                    {
+                      _id: "packageReleases:old-static",
+                      _creationTime: 10,
+                      packageId: "packages:demo",
+                      sha256hash: "hash",
+                      vtAnalysis: { status: "clean" },
+                      llmAnalysis: { status: "clean" },
+                      staticScan: undefined,
+                    },
+                  ]),
+                })),
+              })),
+            };
+          }),
+          get: vi.fn(async (id: string) => {
+            if (id === "packages:demo") return makePackageDoc();
+            return null;
+          }),
+        },
+      } as never,
+      { batchSize: 2, prioritizeRecent: true },
+    );
+
+    expect(result.releases).toEqual([
+      {
+        releaseId: "packageReleases:recent-vt",
+        packageId: "packages:demo",
+        needsVt: true,
+        needsLlm: false,
+        needsStatic: false,
+      },
+      {
+        releaseId: "packageReleases:old-static",
+        packageId: "packages:demo",
+        needsVt: false,
+        needsLlm: false,
+        needsStatic: true,
+      },
+    ]);
+  });
+
+  it("schedules static rescans for releases missing only static scan data", async () => {
+    const originalVtApiKey = process.env.VT_API_KEY;
+    process.env.VT_API_KEY = "vt-test-key";
+
+    try {
+      const runAfter = vi.fn().mockResolvedValue(undefined);
+      const result = await backfillPackageReleaseScansInternalHandler(
+        {
+          runQuery: vi.fn().mockResolvedValue({
+            releases: [
+              {
+                releaseId: "packageReleases:static-only",
+                needsVt: false,
+                needsLlm: false,
+                needsStatic: true,
+              },
+            ],
+            nextCursor: 123,
+            done: true,
+          }),
+          scheduler: { runAfter },
+        } as never,
+        { batchSize: 10 },
+      );
+
+      expect(result).toEqual({ scheduled: 1, nextCursor: 123, done: true });
+      expect(runAfter).toHaveBeenCalledTimes(1);
+      expect(runAfter).toHaveBeenCalledWith(
+        0,
+        expect.anything(),
+        expect.objectContaining({ releaseId: "packageReleases:static-only" }),
+      );
+    } finally {
+      if (originalVtApiKey === undefined) {
+        delete process.env.VT_API_KEY;
+      } else {
+        process.env.VT_API_KEY = originalVtApiKey;
+      }
+    }
+  });
+
+  it("promotes latest package scan status when a static rescan finds malware", async () => {
+    const patch = vi.fn().mockResolvedValue(undefined);
+    const release = {
+      _id: "packageReleases:demo-1",
+      packageId: "packages:demo",
+      verification: {
+        tier: "source-linked",
+        scope: "artifact-only",
+        scanStatus: "pending",
+      },
+      softDeletedAt: undefined,
+    };
+    const pkg = {
+      ...makePackageDoc(),
+      _id: "packages:demo",
+      latestReleaseId: "packageReleases:demo-1",
+      verification: {
+        tier: "source-linked",
+        scope: "artifact-only",
+        scanStatus: "pending",
+      },
+      latestVersionSummary: {
+        version: "1.0.0",
+        verification: {
+          tier: "source-linked",
+          scope: "artifact-only",
+          scanStatus: "pending",
+        },
+      },
+    };
+
+    await updateReleaseStaticScanInternalHandler(
+      {
+        db: {
+          get: vi.fn(async (id: string) => {
+            if (id === "packageReleases:demo-1") return release;
+            if (id === "packages:demo") return pkg;
+            return null;
+          }),
+          query: vi.fn(),
+          insert: vi.fn(),
+          patch,
+          replace: vi.fn(),
+          delete: vi.fn(),
+          normalizeId: vi.fn(),
+        },
+      } as never,
+      {
+        releaseId: "packageReleases:demo-1",
+        staticScan: {
+          status: "malicious",
+          reasonCodes: ["malware.test"],
+          findings: [],
+          summary: "Malware detected",
+          engineVersion: "test",
+          checkedAt: 1,
+        },
+      },
+    );
+
+    expect(patch).toHaveBeenNthCalledWith(
+      1,
+      "packageReleases:demo-1",
+      expect.objectContaining({
+        staticScan: expect.objectContaining({ status: "malicious" }),
+        verification: expect.objectContaining({ scanStatus: "malicious" }),
+      }),
+    );
+    expect(patch).toHaveBeenNthCalledWith(
+      2,
+      "packages:demo",
+      expect.objectContaining({
+        scanStatus: "malicious",
+        verification: expect.objectContaining({ scanStatus: "malicious" }),
+        latestVersionSummary: expect.objectContaining({
+          verification: expect.objectContaining({ scanStatus: "malicious" }),
+        }),
+      }),
+    );
   });
 });

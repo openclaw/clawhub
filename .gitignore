@@ -24,7 +24,3 @@ coverage
 playwright-report
 test-results
 .playwright
-skills/
-docs/
-convex/
-skills-lock.json

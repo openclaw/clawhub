@@ -86,6 +86,9 @@ export const { auth, signIn, signOut, store, isAuthenticated } = convexAuth({
     async afterUserCreatedOrUpdated(ctx, args) {
       const user = await ctx.db.get(args.userId);
       await handleDeletedUserSignIn(ctx, args, user);
+      await ctx.scheduler.runAfter(0, internal.publishers.ensurePersonalPublisherInternal, {
+        userId: args.userId,
+      });
 
       // Schedule GitHub profile sync to handle username renames (fixes #303)
       // This runs as a background action so it doesn't block sign-in

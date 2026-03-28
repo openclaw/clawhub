@@ -1,4 +1,4 @@
-import { createFileRoute, useNavigate } from "@tanstack/react-router";
+import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { useAction, useQuery } from "convex/react";
 import { useMemo, useState } from "react";
 import { api } from "../../convex/_generated/api";
@@ -226,6 +226,23 @@ export function ImportGitHub() {
           <div className="upload-kicker">GitHub import</div>
           <h1 className="upload-title">Import from GitHub</h1>
           <p className="upload-subtitle">Public repos only. Detects SKILL.md automatically.</p>
+          <div className="tag tag-accent" style={{ marginTop: 12, width: "fit-content" }}>
+            Skill-only import. Plugins are not supported here. Use{" "}
+            <Link
+              to="/publish-plugin"
+              search={{
+                ownerHandle: undefined,
+                name: undefined,
+                displayName: undefined,
+                family: undefined,
+                nextVersion: undefined,
+                sourceRepo: undefined,
+              }}
+            >
+              Publish Plugin
+            </Link>
+            .
+          </div>
         </div>
         <div className="upload-badge">
           <div>Public only</div>

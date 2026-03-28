@@ -68,7 +68,53 @@ export type PackageVersionDetail = {
     compatibility?: PackageCompatibility | null;
     capabilities?: PackageCapabilitySummary | null;
     verification?: PackageVerificationSummary | null;
+    sha256hash?: string | null;
+    vtAnalysis?: {
+      status: string;
+      verdict?: string;
+      analysis?: string;
+      source?: string;
+      checkedAt: number;
+    } | null;
+    llmAnalysis?: {
+      status: string;
+      verdict?: string;
+      confidence?: string;
+      summary?: string;
+      dimensions?: Array<{
+        name: string;
+        label: string;
+        rating: string;
+        detail: string;
+      }>;
+      guidance?: string;
+      findings?: string;
+      model?: string;
+      checkedAt: number;
+    } | null;
+    staticScan?: {
+      status: string;
+      reasonCodes: string[];
+      findings: Array<{
+        code: string;
+        severity: string;
+        file: string;
+        line: number;
+        message: string;
+        evidence: string;
+      }>;
+      summary: string;
+      engineVersion: string;
+      checkedAt: number;
+    } | null;
   } | null;
+};
+
+type PluginFamily = "code-plugin" | "bundle-plugin";
+
+type PluginCatalogResult = {
+  items: PackageListItem[];
+  nextCursor: string | null;
 };
 
 function normalizeApiPath(path: string) {
@@ -117,8 +163,18 @@ async function getForwardedHeaders() {
     const headers: Record<string, string> = {};
     const cookie = requestHeaders.get("cookie");
     const authorization = requestHeaders.get("authorization");
+    const clientIpHeaders = [
+      "cf-connecting-ip",
+      "x-forwarded-for",
+      "x-real-ip",
+      "fly-client-ip",
+    ] as const;
     if (cookie) headers.cookie = cookie;
     if (authorization) headers.authorization = authorization;
+    for (const headerName of clientIpHeaders) {
+      const value = requestHeaders.get(headerName);
+      if (value) headers[headerName] = value;
+    }
     return headers;
   } catch {
     return {};
@@ -187,6 +243,58 @@ export async function fetchPackages(params: {
   return await fetchJson<{ items: PackageListItem[]; nextCursor: string | null }>(url);
 }
 
+export async function fetchPluginCatalog(params: {
+  q?: string;
+  cursor?: string;
+  family?: PluginFamily;
+  isOfficial?: boolean;
+  executesCode?: boolean;
+  limit?: number;
+}): Promise<PluginCatalogResult> {
+  if (params.family) {
+    const response = await fetchPackages({
+      q: params.q,
+      cursor: params.cursor,
+      family: params.family,
+      isOfficial: params.isOfficial,
+      executesCode: params.executesCode,
+      limit: params.limit,
+    });
+    return {
+      items: "results" in response ? response.results.map((entry) => entry.package) : response.items,
+      nextCursor: "results" in response ? null : response.nextCursor,
+    };
+  }
+
+  if (params.q?.trim()) {
+    const url = await packageApiUrl(`${ApiRoutes.plugins}/search`);
+    url.searchParams.set("q", params.q.trim());
+    if (typeof params.limit === "number") url.searchParams.set("limit", String(params.limit));
+    if (typeof params.isOfficial === "boolean") {
+      url.searchParams.set("isOfficial", String(params.isOfficial));
+    }
+    if (typeof params.executesCode === "boolean") {
+      url.searchParams.set("executesCode", String(params.executesCode));
+    }
+    const response = await fetchJson<{ results: Array<{ score: number; package: PackageListItem }> }>(url);
+    return {
+      items: response.results.map((entry) => entry.package),
+      nextCursor: null,
+    };
+  }
+
+  const url = await packageApiUrl(ApiRoutes.plugins);
+  if (params.cursor) url.searchParams.set("cursor", params.cursor);
+  if (typeof params.limit === "number") url.searchParams.set("limit", String(params.limit));
+  if (typeof params.isOfficial === "boolean") {
+    url.searchParams.set("isOfficial", String(params.isOfficial));
+  }
+  if (typeof params.executesCode === "boolean") {
+    url.searchParams.set("executesCode", String(params.executesCode));
+  }
+  return await fetchJson<PluginCatalogResult>(url);
+}
+
 export async function fetchPackageDetail(name: string) {
   const url = await packageApiUrl(`${ApiRoutes.packages}/${encodeURIComponent(name)}`);
   const response = await packageFetch(url, "application/json");
@@ -208,14 +316,11 @@ export async function fetchPackageVersion(name: string, version: string) {
 }
 
 export async function fetchPackageReadme(name: string, version?: string | null) {
-  const variants = ["README.md", "readme.md", "README.mdx", "readme.mdx"];
-  for (const path of variants) {
-    const url = await packageApiUrl(`${ApiRoutes.packages}/${encodeURIComponent(name)}/file`);
-    url.searchParams.set("path", path);
-    if (version) url.searchParams.set("version", version);
-    const response = await packageFetch(url, "text/plain");
-    if (response.ok) return await response.text();
-    if (response.status !== 404) throw new Error(await response.text());
-  }
-  return null;
+  const url = await packageApiUrl(`${ApiRoutes.packages}/${encodeURIComponent(name)}/file`);
+  url.searchParams.set("path", "README.md");
+  if (version) url.searchParams.set("version", version);
+  const response = await packageFetch(url, "text/plain");
+  if (response.ok) return await response.text();
+  if (response.status === 403 || response.status === 423 || response.status === 404) return null;
+  throw new Error(await response.text());
 }

@@ -40,6 +40,46 @@ export const PackageVerificationSummarySchema = type({
     hasProvenance: "boolean?",
     scanStatus: '"clean"|"suspicious"|"malicious"|"pending"|"not-run"?',
 });
+export const PackageVtAnalysisSchema = type({
+    status: "string",
+    verdict: "string?",
+    analysis: "string?",
+    source: "string?",
+    checkedAt: "number",
+});
+export const PackageLlmAnalysisDimensionSchema = type({
+    name: "string",
+    label: "string",
+    rating: "string",
+    detail: "string",
+});
+export const PackageLlmAnalysisSchema = type({
+    status: "string",
+    verdict: "string?",
+    confidence: "string?",
+    summary: "string?",
+    dimensions: PackageLlmAnalysisDimensionSchema.array().optional(),
+    guidance: "string?",
+    findings: "string?",
+    model: "string?",
+    checkedAt: "number",
+});
+export const PackageStaticFindingSchema = type({
+    code: "string",
+    severity: "string",
+    file: "string",
+    line: "number",
+    message: "string",
+    evidence: "string",
+});
+export const PackageStaticScanSchema = type({
+    status: "string",
+    reasonCodes: "string[]",
+    findings: PackageStaticFindingSchema.array(),
+    summary: "string",
+    engineVersion: "string",
+    checkedAt: "number",
+});
 export const BundlePublishMetadataSchema = type({
     id: "string?",
     format: "string?",
@@ -48,6 +88,7 @@ export const BundlePublishMetadataSchema = type({
 export const PackagePublishRequestSchema = type({
     name: "string",
     displayName: "string?",
+    ownerHandle: "string?",
     family: PackageFamilySchema,
     version: "string",
     changelog: "string",
@@ -131,6 +172,10 @@ export const ApiV1PackageVersionResponseSchema = type({
         compatibility: PackageCompatibilitySchema.or("null").optional(),
         capabilities: PackageCapabilitySummarySchema.or("null").optional(),
         verification: PackageVerificationSummarySchema.or("null").optional(),
+        sha256hash: "string?",
+        vtAnalysis: PackageVtAnalysisSchema.or("null").optional(),
+        llmAnalysis: PackageLlmAnalysisSchema.or("null").optional(),
+        staticScan: PackageStaticScanSchema.or("null").optional(),
     }).or("null"),
 });
 export const ApiV1PackagePublishResponseSchema = type({

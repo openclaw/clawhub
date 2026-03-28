@@ -1,11 +1,19 @@
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { createElement } from "react";
-import { vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 vi.mock("@tanstack/react-router", () => ({
   createFileRoute:
     (path: string) =>
     (config: { component: unknown }) => ({ __config: config, __path: path }),
+  useSearch: () => ({
+    ownerHandle: undefined,
+    name: undefined,
+    displayName: undefined,
+    family: undefined,
+    nextVersion: undefined,
+    sourceRepo: undefined,
+  }),
 }));
 
 const generateUploadUrl = vi.fn();
@@ -16,13 +24,14 @@ const useAuthStatusMock = vi.fn();
 vi.mock("convex/react", () => ({
   useMutation: () => generateUploadUrl,
   useAction: () => publishRelease,
+  useQuery: () => undefined,
 }));
 
 vi.mock("../lib/useAuthStatus", () => ({
   useAuthStatus: () => useAuthStatusMock(),
 }));
 
-import { Route } from "../routes/packages/new";
+import { Route } from "../routes/publish-plugin";
 
 function renderPublishRoute() {
   const route = Route as unknown as {
@@ -47,7 +56,7 @@ function getFileInput() {
   return input;
 }
 
-describe("packages publish route", () => {
+describe("plugins publish route", () => {
   beforeEach(() => {
     generateUploadUrl.mockReset();
     publishRelease.mockReset();
@@ -74,12 +83,23 @@ describe("packages publish route", () => {
     vi.unstubAllGlobals();
   });
 
-  it("registers the publish form on /packages/new", () => {
+  it("registers the publish form on /publish-plugin", () => {
     const route = Route as unknown as {
       __path: string;
     };
 
-    expect(route.__path).toBe("/packages/new");
+    expect(route.__path).toBe("/publish-plugin");
+  });
+
+  it("keeps metadata inputs locked until plugin code is uploaded", () => {
+    renderPublishRoute();
+
+    expect(screen.getByText(/Upload plugin code to detect the package shape/i)).toBeTruthy();
+    expect(screen.getByPlaceholderText("Plugin name").getAttribute("disabled")).not.toBeNull();
+    expect(screen.getByPlaceholderText("Display name").getAttribute("disabled")).not.toBeNull();
+    expect(screen.getByPlaceholderText("Version").getAttribute("disabled")).not.toBeNull();
+    expect(screen.getByPlaceholderText("Changelog").getAttribute("disabled")).not.toBeNull();
+    expect(screen.getByRole("button", { name: "Publish" }).getAttribute("disabled")).not.toBeNull();
   });
 
   it("publishes a code plugin folder with source metadata and normalized file paths", async () => {
@@ -92,6 +112,7 @@ describe("packages publish route", () => {
             name: "demo-plugin",
             displayName: "Demo Plugin",
             version: "1.2.3",
+            repository: "https://github.com/openclaw/demo-plugin.git",
           }),
         ],
         "package.json",
@@ -114,13 +135,12 @@ describe("packages publish route", () => {
       expect(screen.getByDisplayValue("demo-plugin")).toBeTruthy();
       expect(screen.getByDisplayValue("Demo Plugin")).toBeTruthy();
       expect(screen.getByDisplayValue("1.2.3")).toBeTruthy();
+      expect(screen.getByDisplayValue("openclaw/demo-plugin")).toBeTruthy();
+      expect(screen.getByPlaceholderText("Plugin name").getAttribute("disabled")).toBeNull();
     });
 
     fireEvent.change(screen.getByPlaceholderText("Changelog"), {
       target: { value: "Initial release" },
-    });
-    fireEvent.change(screen.getByPlaceholderText("Source repo (owner/repo)"), {
-      target: { value: "openclaw/demo-plugin" },
     });
     fireEvent.change(screen.getByPlaceholderText("Source commit"), {
       target: { value: "abc123" },
@@ -164,10 +184,6 @@ describe("packages publish route", () => {
   it("publishes a bundle plugin folder with bundle metadata", async () => {
     renderPublishRoute();
 
-    fireEvent.change(screen.getByRole("combobox"), {
-      target: { value: "bundle-plugin" },
-    });
-
     const packageJson = withRelativePath(
       new File(
         [
@@ -175,6 +191,10 @@ describe("packages publish route", () => {
             name: "demo-bundle",
             displayName: "Demo Bundle",
             version: "0.4.0",
+            openclaw: {
+              bundleFormat: "openclaw-bundle",
+              hostTargets: ["desktop", "mobile"],
+            },
           }),
         ],
         "package.json",
@@ -197,16 +217,15 @@ describe("packages publish route", () => {
       expect(screen.getByDisplayValue("demo-bundle")).toBeTruthy();
       expect(screen.getByDisplayValue("Demo Bundle")).toBeTruthy();
       expect(screen.getByDisplayValue("0.4.0")).toBeTruthy();
+      expect((screen.getAllByRole("combobox")[0] as HTMLSelectElement).value).toBe("bundle-plugin");
+      expect(screen.getByDisplayValue("openclaw-bundle")).toBeTruthy();
+      expect(screen.getByDisplayValue("desktop, mobile")).toBeTruthy();
+      expect(screen.getByText(/Browse files/i)).toBeTruthy();
+      expect(screen.getByText(/Choose folder/i)).toBeTruthy();
     });
 
     fireEvent.change(screen.getByPlaceholderText("Changelog"), {
       target: { value: "Bundle release" },
-    });
-    fireEvent.change(screen.getByPlaceholderText("Bundle format"), {
-      target: { value: "openclaw-bundle" },
-    });
-    fireEvent.change(screen.getByPlaceholderText("Host targets (comma separated)"), {
-      target: { value: "desktop, mobile" },
     });
 
     fireEvent.click(screen.getByRole("button", { name: "Publish" }));
@@ -233,6 +252,49 @@ describe("packages publish route", () => {
           expect.objectContaining({ path: "dist/plugin.wasm" }),
         ]),
       }),
+    });
+  });
+
+  it("prefills metadata from a wrapped GitHub release package", async () => {
+    renderPublishRoute();
+
+    const packageJson = new File(
+      [
+        JSON.stringify({
+          name: "@opik/opik-openclaw",
+          version: "0.2.9",
+          repository: {
+            type: "git",
+            url: "https://github.com/comet-ml/opik-openclaw.git",
+          },
+        }),
+      ],
+      "opik-openclaw-0.2.9/package.json",
+      { type: "application/json" },
+    );
+    const manifest = new File(
+      [JSON.stringify({ id: "opik-openclaw", name: "Opik" })],
+      "opik-openclaw-0.2.9/openclaw.plugin.json",
+      { type: "application/json" },
+    );
+    const readme = new File(
+      ["# Opik OpenClaw\n"],
+      "opik-openclaw-0.2.9/README.md",
+      { type: "text/markdown" },
+    );
+
+    fireEvent.change(getFileInput(), { target: { files: [packageJson, manifest, readme] } });
+
+    await waitFor(() => {
+      expect(screen.getByDisplayValue("@opik/opik-openclaw")).toBeTruthy();
+      expect(screen.getByDisplayValue("Opik")).toBeTruthy();
+      expect(screen.getByDisplayValue("0.2.9")).toBeTruthy();
+      expect(screen.getByDisplayValue("comet-ml/opik-openclaw")).toBeTruthy();
+      expect(screen.getByText(/Metadata detected and prefilled/i)).toBeTruthy();
+      expect(screen.getByText(/Autofilled package type, plugin name, display name, version, source repo\./i)).toBeTruthy();
+      expect(screen.getByText("Package manifest")).toBeTruthy();
+      expect(screen.getByText("Plugin manifest")).toBeTruthy();
+      expect(screen.queryByText("opik-openclaw-0.2.9/package.json")).toBeNull();
     });
   });
 
@@ -271,7 +333,7 @@ describe("packages publish route", () => {
     });
 
     await waitFor(() => {
-      expect(screen.getByText(/Ignored 1 files via ignore rules\./)).toBeTruthy();
+      expect(screen.getByText(/Ignored 1 files/i)).toBeTruthy();
     });
 
     fireEvent.change(screen.getByPlaceholderText("Changelog"), {
@@ -301,5 +363,75 @@ describe("packages publish route", () => {
       "package.json",
       "src/index.js",
     ]);
+  });
+
+  it("blocks plugin publish when a file exceeds 10MB", async () => {
+    renderPublishRoute();
+
+    const packageJson = withRelativePath(
+      new File([JSON.stringify({ name: "demo-plugin", version: "1.0.0" })], "package.json", {
+        type: "application/json",
+      }),
+      "demo-plugin/package.json",
+    );
+    const manifest = withRelativePath(
+      new File(['{"id":"demo.plugin"}'], "openclaw.plugin.json", { type: "application/json" }),
+      "demo-plugin/openclaw.plugin.json",
+    );
+    const huge = withRelativePath(
+      new File(["x"], "plugin.wasm", { type: "application/wasm" }),
+      "demo-plugin/dist/plugin.wasm",
+    );
+    Object.defineProperty(huge, "size", {
+      value: 10 * 1024 * 1024 + 1,
+      configurable: true,
+    });
+
+    fireEvent.change(getFileInput(), { target: { files: [packageJson, manifest, huge] } });
+
+    await waitFor(() => {
+      expect(screen.getByText(/Each file must be 10MB or smaller: plugin\.wasm/i)).toBeTruthy();
+    });
+    expect(screen.getByRole("button", { name: "Publish" }).getAttribute("disabled")).not.toBeNull();
+    expect(publishRelease).not.toHaveBeenCalled();
+  });
+
+  it("shows pending verification messaging after plugin publish", async () => {
+    renderPublishRoute();
+
+    const packageJson = withRelativePath(
+      new File([JSON.stringify({ name: "demo-plugin", version: "1.0.0" })], "package.json", {
+        type: "application/json",
+      }),
+      "demo-plugin/package.json",
+    );
+    const manifest = withRelativePath(
+      new File(['{"id":"demo.plugin"}'], "openclaw.plugin.json", { type: "application/json" }),
+      "demo-plugin/openclaw.plugin.json",
+    );
+    const dist = withRelativePath(
+      new File(["export const demo = true;\n"], "index.js", { type: "text/javascript" }),
+      "demo-plugin/dist/index.js",
+    );
+
+    fireEvent.change(getFileInput(), { target: { files: [packageJson, manifest, dist] } });
+    await waitFor(() => {
+      expect(screen.getByDisplayValue("demo-plugin")).toBeTruthy();
+    });
+    fireEvent.change(screen.getByPlaceholderText("Changelog"), {
+      target: { value: "Initial release" },
+    });
+    fireEvent.change(screen.getByPlaceholderText("Source repo (owner/repo)"), {
+      target: { value: "openclaw/demo-plugin" },
+    });
+    fireEvent.change(screen.getByPlaceholderText("Source commit"), {
+      target: { value: "abc123" },
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: "Publish" }));
+
+    expect(
+      await screen.findByText(/Pending security checks and verification before public listing\./i),
+    ).toBeTruthy();
   });
 });

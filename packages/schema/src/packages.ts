@@ -57,6 +57,57 @@ export const PackageVerificationSummarySchema = type({
 });
 export type PackageVerificationSummary = (typeof PackageVerificationSummarySchema)[inferred];
 
+export const PackageVtAnalysisSchema = type({
+  status: "string",
+  verdict: "string?",
+  analysis: "string?",
+  source: "string?",
+  checkedAt: "number",
+});
+export type PackageVtAnalysis = (typeof PackageVtAnalysisSchema)[inferred];
+
+export const PackageLlmAnalysisDimensionSchema = type({
+  name: "string",
+  label: "string",
+  rating: "string",
+  detail: "string",
+});
+export type PackageLlmAnalysisDimension =
+  (typeof PackageLlmAnalysisDimensionSchema)[inferred];
+
+export const PackageLlmAnalysisSchema = type({
+  status: "string",
+  verdict: "string?",
+  confidence: "string?",
+  summary: "string?",
+  dimensions: PackageLlmAnalysisDimensionSchema.array().optional(),
+  guidance: "string?",
+  findings: "string?",
+  model: "string?",
+  checkedAt: "number",
+});
+export type PackageLlmAnalysis = (typeof PackageLlmAnalysisSchema)[inferred];
+
+export const PackageStaticFindingSchema = type({
+  code: "string",
+  severity: "string",
+  file: "string",
+  line: "number",
+  message: "string",
+  evidence: "string",
+});
+export type PackageStaticFinding = (typeof PackageStaticFindingSchema)[inferred];
+
+export const PackageStaticScanSchema = type({
+  status: "string",
+  reasonCodes: "string[]",
+  findings: PackageStaticFindingSchema.array(),
+  summary: "string",
+  engineVersion: "string",
+  checkedAt: "number",
+});
+export type PackageStaticScan = (typeof PackageStaticScanSchema)[inferred];
+
 export const BundlePublishMetadataSchema = type({
   id: "string?",
   format: "string?",
@@ -67,6 +118,7 @@ export type BundlePublishMetadata = (typeof BundlePublishMetadataSchema)[inferre
 export const PackagePublishRequestSchema = type({
   name: "string",
   displayName: "string?",
+  ownerHandle: "string?",
   family: PackageFamilySchema,
   version: "string",
   changelog: "string",
@@ -158,6 +210,10 @@ export const ApiV1PackageVersionResponseSchema = type({
     compatibility: PackageCompatibilitySchema.or("null").optional(),
     capabilities: PackageCapabilitySummarySchema.or("null").optional(),
     verification: PackageVerificationSummarySchema.or("null").optional(),
+    sha256hash: "string?",
+    vtAnalysis: PackageVtAnalysisSchema.or("null").optional(),
+    llmAnalysis: PackageLlmAnalysisSchema.or("null").optional(),
+    staticScan: PackageStaticScanSchema.or("null").optional(),
   }).or("null"),
 });
 

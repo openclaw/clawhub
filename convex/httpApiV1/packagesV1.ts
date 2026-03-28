@@ -5,6 +5,8 @@ import type { Doc, Id } from "../_generated/dataModel";
 import type { ActionCtx } from "../_generated/server";
 import { getOptionalApiTokenUserId } from "../lib/apiTokenAuth";
 import { corsHeaders, mergeHeaders } from "../lib/httpHeaders";
+import { getPackageDownloadSecurityBlock } from "../lib/packageSecurity";
+import { getPublishFileSizeError, MAX_PUBLISH_FILE_BYTES } from "../lib/publishLimits";
 import { applyRateLimit } from "../lib/httpRateLimit";
 import { buildDeterministicPackageZip } from "../lib/skillZip";
 import { isMacJunkPath, isTextFile } from "../lib/skills";
@@ -56,6 +58,17 @@ async function runQueryRef<T>(ctx: ActionCtx, ref: unknown, args: unknown): Prom
 
 async function runActionRef<T>(ctx: ActionCtx, ref: unknown, args: unknown): Promise<T> {
   return (await ctx.runAction(ref as never, args as never)) as T;
+}
+
+async function getOptionalViewerUserIdForRequest(ctx: ActionCtx, request: Request) {
+  const apiTokenUserId = await getOptionalApiTokenUserId(ctx, request);
+  if (apiTokenUserId) return apiTokenUserId;
+  try {
+    return (await getAuthUserId(ctx)) ?? null;
+  } catch {
+    // Public package reads should degrade to anonymous when cookie-backed auth is stale.
+    return null;
+  }
 }
 
 type PackageListQueryArgs = {
@@ -113,6 +126,10 @@ type ReleaseLike = {
   compatibility?: Doc<"packageReleases">["compatibility"];
   capabilities?: Doc<"packageReleases">["capabilities"];
   verification?: Doc<"packageReleases">["verification"];
+  sha256hash?: string;
+  vtAnalysis?: Doc<"packageReleases">["vtAnalysis"];
+  llmAnalysis?: Doc<"packageReleases">["llmAnalysis"];
+  staticScan?: Doc<"packageReleases">["staticScan"];
   integritySha256?: string;
   softDeletedAt?: number;
 };
@@ -120,6 +137,10 @@ type ReleaseLike = {
 function toVisibleRelease(release: ReleaseLike | null) {
   if (!release || ("softDeletedAt" in release && release.softDeletedAt !== undefined)) return null;
   return release;
+}
+
+function getReleaseSecurityBlock(release: ReleaseLike) {
+  return getPackageDownloadSecurityBlock(release);
 }
 
 async function resolvePackageTags(
@@ -340,6 +361,7 @@ function parsePackagePublishBody(body: unknown) {
   const parsed = parseArk(PackagePublishRequestSchema, body, "Package publish payload") as {
     name: string;
     displayName?: string;
+    ownerHandle?: string;
     family: "skill" | "code-plugin" | "bundle-plugin";
     version: string;
     changelog: string;
@@ -359,6 +381,7 @@ function parsePackagePublishBody(body: unknown) {
   return {
     name: parsed.name,
     displayName: parsed.displayName ?? undefined,
+    ownerHandle: parsed.ownerHandle?.trim().replace(/^@+/, "") || undefined,
     family: parsed.family,
     version: parsed.version,
     changelog: parsed.changelog,
@@ -388,6 +411,9 @@ async function parseMultipartPackagePublish(ctx: ActionCtx, request: Request) {
   for (const entry of form.getAll("files")) {
     if (typeof entry === "string") continue;
     if (isMacJunkPath(entry.name)) continue;
+    if (entry.size > MAX_PUBLISH_FILE_BYTES) {
+      throw new Error(getPublishFileSizeError(entry.name));
+    }
     const buffer = new Uint8Array(await entry.arrayBuffer());
     const digest = await crypto.subtle.digest("SHA-256", buffer);
     const sha256 = Array.from(new Uint8Array(digest), (byte) => byte.toString(16).padStart(2, "0")).join("");
@@ -403,12 +429,17 @@ async function parseMultipartPackagePublish(ctx: ActionCtx, request: Request) {
   return parsePackagePublishBody({ ...payload, files });
 }
 
-async function listPackages(ctx: ActionCtx, request: Request, family?: PackageListQueryArgs["family"]) {
+async function listPackages(
+  ctx: ActionCtx,
+  request: Request,
+  family?: PackageListQueryArgs["family"],
+  options?: { includeSkills?: boolean },
+) {
   const rate = await applyRateLimit(ctx, request, "read");
   if (!rate.ok) return rate.response;
 
   const url = new URL(request.url);
-  const viewerUserId = (await getOptionalApiTokenUserId(ctx, request)) ?? (await getAuthUserId(ctx));
+  const viewerUserId = await getOptionalViewerUserIdForRequest(ctx, request);
   const limit = Math.max(1, Math.min(toOptionalNumber(url.searchParams.get("limit")) ?? 25, 100));
   const cursor = url.searchParams.get("cursor");
   const familyRaw = url.searchParams.get("family");
@@ -421,6 +452,7 @@ async function listPackages(ctx: ActionCtx, request: Request, family?: PackageLi
     (familyRaw === "skill" || familyRaw === "code-plugin" || familyRaw === "bundle-plugin"
       ? familyRaw
       : undefined);
+  const includeSkills = options?.includeSkills ?? effectiveFamily === undefined;
   const channel =
     channelRaw === "official" || channelRaw === "community" || channelRaw === "private"
       ? channelRaw
@@ -449,7 +481,7 @@ async function listPackages(ctx: ActionCtx, request: Request, family?: PackageLi
     );
   }
 
-  if (!effectiveFamily) {
+  if (!effectiveFamily && includeSkills) {
     const packageSource = initCatalogSource(decodeUnifiedCatalogCursor(cursor).packages);
     const skillSource = initCatalogSource(decodeUnifiedCatalogCursor(cursor).skills);
     const pageSize = limit;
@@ -546,7 +578,11 @@ async function listPackages(ctx: ActionCtx, request: Request, family?: PackageLi
 }
 
 export async function listPackagesV1Handler(ctx: ActionCtx, request: Request) {
-  return await listPackages(ctx, request);
+  return await listPackages(ctx, request, undefined, { includeSkills: true });
+}
+
+export async function listPluginsV1Handler(ctx: ActionCtx, request: Request) {
+  return await listPackages(ctx, request, undefined, { includeSkills: false });
 }
 
 export async function listCodePluginsV1Handler(ctx: ActionCtx, request: Request) {
@@ -570,7 +606,7 @@ export async function publishPackageV1Handler(ctx: ActionCtx, request: Request) 
       ? await parseMultipartPackagePublish(ctx, request)
       : parsePackagePublishBody(await request.json());
     const result = await runActionRef(ctx, internalRefs.packages.publishPackageForUserInternal, {
-      userId: auth.userId,
+      actorUserId: auth.userId,
       payload,
     });
     return json(result, 200, rate.headers);
@@ -644,6 +680,23 @@ function resolveSkillFilePath(version: SkillVersionLike, requestedPath: string) 
   );
 }
 
+function resolvePackageFilePath(release: ReleaseLike, requestedPath: string) {
+  const normalized = requestedPath.trim();
+  const lower = normalized.toLowerCase();
+  if (isReadmeVariantPath(normalized)) {
+    return (
+      release.files.find((file) => isReadmeVariantPath(file.path)) ??
+      release.files.find((file) => file.path.toLowerCase() === lower) ??
+      null
+    );
+  }
+  return (
+    release.files.find((file) => file.path === normalized) ??
+    release.files.find((file) => file.path.toLowerCase() === lower) ??
+    null
+  );
+}
+
 async function getSkillDetailForRequest(ctx: ActionCtx, slug: string) {
   return (await runQueryRef(ctx, apiRefs.skills.getBySlug, { slug })) as
     | {
@@ -683,99 +736,110 @@ async function getSkillVersionForRequest(
   })) as SkillVersionLike | null;
 }
 
-export async function packagesGetRouterV1Handler(ctx: ActionCtx, request: Request) {
-  const segments = getPathSegments(request, "/api/v1/packages/");
-  if (segments.length === 0) return text("Not found", 404);
-
-  const rateKind = segments[1] === "file" || segments[1] === "download" ? "download" : "read";
-  const rate = await applyRateLimit(ctx, request, rateKind);
+async function searchPackages(
+  ctx: ActionCtx,
+  request: Request,
+  options?: { includeSkills?: boolean },
+) {
+  const rate = await applyRateLimit(ctx, request, "read");
   if (!rate.ok) return rate.response;
 
-  if (segments[0] === "search" && new URL(request.url).searchParams.has("q")) {
-    const url = new URL(request.url);
-    const viewerUserId = (await getOptionalApiTokenUserId(ctx, request)) ?? (await getAuthUserId(ctx));
-    const queryText = url.searchParams.get("q")?.trim() ?? "";
-    const limit = Math.max(1, Math.min(toOptionalNumber(url.searchParams.get("limit")) ?? 20, 100));
-    const familyRaw = url.searchParams.get("family");
-    const channelRaw = url.searchParams.get("channel");
-    const isOfficialRaw = url.searchParams.get("isOfficial");
-    const executesCodeRaw = url.searchParams.get("executesCode");
-    const capabilityTag = url.searchParams.get("capabilityTag")?.trim() || undefined;
-    const family =
-      familyRaw === "skill" || familyRaw === "code-plugin" || familyRaw === "bundle-plugin"
-        ? familyRaw
-        : undefined;
-    const channel =
-      channelRaw === "official" || channelRaw === "community" || channelRaw === "private"
-        ? channelRaw
-        : undefined;
-    const isOfficial =
-      isOfficialRaw === "true" ? true : isOfficialRaw === "false" ? false : undefined;
-    const executesCode =
-      executesCodeRaw === "true" ? true : executesCodeRaw === "false" ? false : undefined;
+  const url = new URL(request.url);
+  const viewerUserId = await getOptionalViewerUserIdForRequest(ctx, request);
+  const queryText = url.searchParams.get("q")?.trim() ?? "";
+  const limit = Math.max(1, Math.min(toOptionalNumber(url.searchParams.get("limit")) ?? 20, 100));
+  const familyRaw = url.searchParams.get("family");
+  const channelRaw = url.searchParams.get("channel");
+  const isOfficialRaw = url.searchParams.get("isOfficial");
+  const executesCodeRaw = url.searchParams.get("executesCode");
+  const capabilityTag = url.searchParams.get("capabilityTag")?.trim() || undefined;
+  const family =
+    familyRaw === "skill" || familyRaw === "code-plugin" || familyRaw === "bundle-plugin"
+      ? familyRaw
+      : undefined;
+  const includeSkills = options?.includeSkills ?? family === undefined;
+  const channel =
+    channelRaw === "official" || channelRaw === "community" || channelRaw === "private"
+      ? channelRaw
+      : undefined;
+  const isOfficial =
+    isOfficialRaw === "true" ? true : isOfficialRaw === "false" ? false : undefined;
+  const executesCode =
+    executesCodeRaw === "true" ? true : executesCodeRaw === "false" ? false : undefined;
 
-    let results: CatalogSearchEntry[];
-    if (family === "skill") {
-      results = await runQueryRef<CatalogSearchEntry[]>(ctx, apiRefs.skills.searchPackageCatalogPublic, {
+  let results: CatalogSearchEntry[];
+  if (family === "skill") {
+    results = await runQueryRef<CatalogSearchEntry[]>(ctx, apiRefs.skills.searchPackageCatalogPublic, {
+      query: queryText,
+      limit,
+      channel,
+      isOfficial,
+      executesCode,
+      capabilityTag,
+    });
+  } else if (family || !includeSkills) {
+    results = await runQueryRef<CatalogSearchEntry[]>(ctx, internalRefs.packages.searchForViewerInternal, {
+      query: queryText,
+      limit,
+      family,
+      channel,
+      isOfficial,
+      executesCode,
+      capabilityTag,
+      viewerUserId: viewerUserId ?? undefined,
+    });
+  } else {
+    const [packageResults, skillResults] = await Promise.all([
+      runQueryRef<CatalogSearchEntry[]>(ctx, internalRefs.packages.searchForViewerInternal, {
         query: queryText,
         limit,
-        channel,
-        isOfficial,
-        executesCode,
-        capabilityTag,
-      });
-    } else if (family) {
-      results = await runQueryRef<CatalogSearchEntry[]>(ctx, internalRefs.packages.searchForViewerInternal, {
-        query: queryText,
-        limit,
-        family,
         channel,
         isOfficial,
         executesCode,
         capabilityTag,
         viewerUserId: viewerUserId ?? undefined,
-      });
-    } else {
-      const [packageResults, skillResults] = await Promise.all([
-        runQueryRef<CatalogSearchEntry[]>(ctx, internalRefs.packages.searchForViewerInternal, {
-          query: queryText,
-          limit,
-          channel,
-          isOfficial,
-          executesCode,
-          capabilityTag,
-          viewerUserId: viewerUserId ?? undefined,
-        }),
-        runQueryRef<CatalogSearchEntry[]>(ctx, apiRefs.skills.searchPackageCatalogPublic, {
-          query: queryText,
-          limit,
-          channel,
-          isOfficial,
-          executesCode,
-          capabilityTag,
-        }),
-      ]);
-      const seen = new Set<string>();
-      results = [...packageResults, ...skillResults]
-        .filter((entry) => {
-          const key = `${entry.package.family}:${entry.package.name}`;
-          if (seen.has(key)) return false;
-          seen.add(key);
-          return true;
-        })
-        .sort(
-          (a, b) =>
-            b.score - a.score ||
-            Number(b.package.isOfficial) - Number(a.package.isOfficial) ||
-            compareCatalogItems(a.package, b.package),
-        )
-        .slice(0, limit);
-    }
-    return json({ results }, 200, rate.headers);
+      }),
+      runQueryRef<CatalogSearchEntry[]>(ctx, apiRefs.skills.searchPackageCatalogPublic, {
+        query: queryText,
+        limit,
+        channel,
+        isOfficial,
+        executesCode,
+        capabilityTag,
+      }),
+    ]);
+    const seen = new Set<string>();
+    results = [...packageResults, ...skillResults]
+      .filter((entry) => {
+        const key = `${entry.package.family}:${entry.package.name}`;
+        if (seen.has(key)) return false;
+        seen.add(key);
+        return true;
+      })
+      .sort(
+        (a, b) =>
+          b.score - a.score ||
+          Number(b.package.isOfficial) - Number(a.package.isOfficial) ||
+          compareCatalogItems(a.package, b.package),
+      )
+      .slice(0, limit);
+  }
+  return json({ results }, 200, rate.headers);
+}
+
+export async function packagesGetRouterV1Handler(ctx: ActionCtx, request: Request) {
+  const segments = getPathSegments(request, "/api/v1/packages/");
+  if (segments.length === 0) return text("Not found", 404);
+  if (segments[0] === "search" && new URL(request.url).searchParams.has("q")) {
+    return await searchPackages(ctx, request, { includeSkills: true });
   }
 
+  const rateKind = segments[1] === "download" ? "download" : "read";
+  const rate = await applyRateLimit(ctx, request, rateKind);
+  if (!rate.ok) return rate.response;
+
   const packageName = segments[0] ?? "";
-  const viewerUserId = (await getOptionalApiTokenUserId(ctx, request)) ?? (await getAuthUserId(ctx));
+  const viewerUserId = await getOptionalViewerUserIdForRequest(ctx, request);
   const detail = (await runQueryRef(
     ctx,
     internalRefs.packages.getByNameForViewerInternal,
@@ -928,6 +992,10 @@ export async function packagesGetRouterV1Handler(ctx: ActionCtx, request: Reques
         compatibility: result.version.compatibility ?? null,
         capabilities: result.version.capabilities ?? null,
         verification: result.version.verification ?? null,
+        sha256hash: result.version.sha256hash ?? null,
+        vtAnalysis: result.version.vtAnalysis ?? null,
+        llmAnalysis: result.version.llmAnalysis ?? null,
+        staticScan: result.version.staticScan ?? null,
       },
     }, 200, rate.headers);
   }
@@ -958,7 +1026,9 @@ export async function packagesGetRouterV1Handler(ctx: ActionCtx, request: Reques
     }
     const release = await getReleaseForRequest(ctx, publicPackage!, request);
     if (!release) return text("Version not found", 404, rate.headers);
-    const file = release.files.find((entry) => entry.path === path);
+    const securityBlock = getReleaseSecurityBlock(release);
+    if (securityBlock) return text(securityBlock.message, securityBlock.status, rate.headers);
+    const file = resolvePackageFilePath(release, path);
     if (!file) return text("File not found", 404, rate.headers);
     if (!isTextFile(file.path, file.contentType)) {
       return text("Binary files are not served inline", 415, rate.headers);
@@ -993,6 +1063,8 @@ export async function packagesGetRouterV1Handler(ctx: ActionCtx, request: Reques
     }
     const release = await getReleaseForRequest(ctx, publicPackage!, request);
     if (!release) return text("Version not found", 404, rate.headers);
+    const securityBlock = getReleaseSecurityBlock(release);
+    if (securityBlock) return text(securityBlock.message, securityBlock.status, rate.headers);
     const entries: Array<{ path: string; bytes: Uint8Array }> = [];
     for (const file of release.files) {
       const blob = await ctx.storage.get(file.storageId);
@@ -1017,6 +1089,15 @@ export async function packagesGetRouterV1Handler(ctx: ActionCtx, request: Reques
   }
 
   return text("Not found", 404, rate.headers);
+}
+
+export async function pluginsGetRouterV1Handler(ctx: ActionCtx, request: Request) {
+  const segments = getPathSegments(request, "/api/v1/plugins/");
+  if (segments.length === 0) return text("Not found", 404);
+  if (segments[0] === "search" && new URL(request.url).searchParams.has("q")) {
+    return await searchPackages(ctx, request, { includeSkills: false });
+  }
+  return text("Not found", 404);
 }
 
 type PublicPackageDocLike = {

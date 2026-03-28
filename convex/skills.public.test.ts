@@ -113,13 +113,14 @@ describe("skills.getBySlug", () => {
     const result = await getBySlugHandler(ctx, { slug: "demo" } as never);
 
     expect(result?.owner).toEqual({
-      _id: "users:1",
+      _id: "publishers:demo-owner",
       _creationTime: 1,
+      kind: "user",
       handle: "demo-owner",
-      name: "Demo Owner",
       displayName: "Demo Owner",
       image: null,
       bio: "Ships demo skills",
+      linkedUserId: "users:1",
     });
     expect(result?.owner).not.toHaveProperty("email");
     expect(result?.owner).not.toHaveProperty("emailVerificationTime");

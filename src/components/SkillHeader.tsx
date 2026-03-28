@@ -8,7 +8,7 @@ import { Package } from "lucide-react";
 import type { Doc, Id } from "../../convex/_generated/dataModel";
 import { getSkillBadges } from "../lib/badges";
 import { formatCompactStat, formatSkillStatsTriplet } from "../lib/numberFormat";
-import type { PublicSkill, PublicUser } from "../lib/publicUser";
+import type { PublicPublisher, PublicSkill } from "../lib/publicUser";
 import { getRuntimeEnv } from "../lib/runtimeEnv";
 import { SkillInstallCard } from "./SkillInstallCard";
 import { type LlmAnalysis, SecurityScanResults } from "./SkillSecurityScanResults";
@@ -39,7 +39,7 @@ type SkillCanonical = {
 
 type SkillHeaderProps = {
   skill: Doc<"skills"> | PublicSkill;
-  owner: Doc<"users"> | PublicUser | null;
+  owner: PublicPublisher | null;
   ownerHandle: string | null;
   latestVersion: Doc<"skillVersions"> | null;
   modInfo: SkillModerationInfo | null;

@@ -10,7 +10,7 @@ import { SoulStatsTripletLine } from "../components/SoulStats";
 import { UserBadge } from "../components/UserBadge";
 import { convexHttp } from "../convex/client";
 import { getSkillBadges } from "../lib/badges";
-import type { PublicSkill, PublicSoul, PublicUser } from "../lib/publicUser";
+import type { PublicPublisher, PublicSkill, PublicSoul } from "../lib/publicUser";
 import { getSiteMode } from "../lib/site";
 
 export const Route = createFileRoute("/")({
@@ -26,7 +26,7 @@ function SkillsHome() {
   type SkillPageEntry = {
     skill: PublicSkill;
     ownerHandle?: string | null;
-    owner?: PublicUser | null;
+    owner?: PublicPublisher | null;
     latestVersion?: unknown;
   };
 
@@ -69,8 +69,8 @@ function SkillsHome() {
               vectors. No gatekeeping, just signal.
             </p>
             <div style={{ display: "flex", gap: 12, marginTop: 20 }}>
-              <Link to="/upload" search={{ updateSlug: undefined }} className="btn btn-primary">
-                Publish a skill
+              <Link to="/publish-skill" search={{ updateSlug: undefined }} className="btn btn-primary">
+                Publish Skill
               </Link>
               <Link
                 to="/skills"
@@ -207,8 +207,8 @@ function OnlyCrabsHome() {
               public place.
             </p>
             <div style={{ display: "flex", gap: 12, marginTop: 20 }}>
-              <Link to="/upload" search={{ updateSlug: undefined }} className="btn btn-primary">
-                Publish a soul
+              <Link to="/publish-skill" search={{ updateSlug: undefined }} className="btn btn-primary">
+                Publish Soul
               </Link>
               <Link
                 to="/souls"
