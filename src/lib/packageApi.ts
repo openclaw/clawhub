@@ -3,7 +3,7 @@ import type {
   PackageCompatibility,
   PackageVerificationSummary,
 } from "clawhub-schema";
-import { ApiRoutes } from "clawhub-schema";
+import { ApiRoutes } from "clawhub-schema/routes";
 import { getRequiredRuntimeEnv, getRuntimeEnv } from "./runtimeEnv";
 
 export type PackageListItem = {

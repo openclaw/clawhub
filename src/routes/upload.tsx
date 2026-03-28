@@ -3,7 +3,7 @@ import {
   PLATFORM_SKILL_LICENSE,
   PLATFORM_SKILL_LICENSE_NAME,
   PLATFORM_SKILL_LICENSE_SUMMARY,
-} from "clawhub-schema";
+} from "clawhub-schema/licenseConstants";
 import { useAction, useMutation, useQuery } from "convex/react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import semver from "semver";

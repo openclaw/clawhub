@@ -1,4 +1,4 @@
-import { TEXT_FILE_EXTENSION_SET } from "clawhub-schema";
+import { TEXT_FILE_EXTENSION_SET } from "clawhub-schema/textFiles";
 import { gunzipSync, unzipSync } from "fflate";
 
 const TEXT_TYPES = new Map([

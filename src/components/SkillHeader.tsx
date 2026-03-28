@@ -1,9 +1,9 @@
+import type { ClawdisSkillMetadata } from "clawhub-schema";
 import { Link } from "@tanstack/react-router";
 import {
-  type ClawdisSkillMetadata,
   PLATFORM_SKILL_LICENSE,
   PLATFORM_SKILL_LICENSE_SUMMARY,
-} from "clawhub-schema";
+} from "clawhub-schema/licenseConstants";
 import { Package } from "lucide-react";
 import type { Doc, Id } from "../../convex/_generated/dataModel";
 import { getSkillBadges } from "../lib/badges";

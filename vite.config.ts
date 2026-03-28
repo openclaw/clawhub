@@ -70,6 +70,8 @@ const config = defineConfig({
     viteReact(),
   ],
   build: {
+    // Keep the shipped client bundle parseable in Safari/WebKit.
+    target: "safari15",
     chunkSizeWarningLimit: 900,
     rollupOptions: {
       onwarn: handleRollupWarning,

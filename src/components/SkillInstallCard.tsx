@@ -1,9 +1,9 @@
+import type { ClawdisSkillMetadata } from "clawhub-schema";
 import {
-  type ClawdisSkillMetadata,
   PLATFORM_SKILL_LICENSE,
   PLATFORM_SKILL_LICENSE_SUMMARY,
   PLATFORM_SKILL_LICENSE_URL,
-} from "clawhub-schema";
+} from "clawhub-schema/licenseConstants";
 import { formatInstallCommand, formatInstallLabel } from "./skillDetailUtils";
 
 type SkillInstallCardProps = {
