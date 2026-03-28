@@ -312,6 +312,7 @@ code {
   display: inline-flex;
   align-items: center;
   gap: 8px;
+  cursor: pointer;
   white-space: nowrap;
   transition:
     transform 0.2s ease,
