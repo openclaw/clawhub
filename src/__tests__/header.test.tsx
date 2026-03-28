@@ -2,8 +2,10 @@
 
 import { render, screen } from "@testing-library/react";
 import type { ReactNode } from "react";
-import { describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import Header from "../components/Header";
+
+let mockSiteMode: "souls" | "skills" = "souls";
 
 vi.mock("@tanstack/react-router", () => ({
   Link: (props: { children: ReactNode }) => <a href="/">{props.children}</a>,
@@ -51,8 +53,8 @@ vi.mock("../lib/roles", () => ({
 
 vi.mock("../lib/site", () => ({
   getClawHubSiteUrl: () => "https://clawhub.ai",
-  getSiteMode: () => "souls",
-  getSiteName: () => "OnlyCrabs",
+  getSiteMode: () => mockSiteMode,
+  getSiteName: () => (mockSiteMode === "souls" ? "OnlyCrabs" : "ClawHub"),
 }));
 
 vi.mock("../lib/convexError", () => ({
@@ -77,9 +79,21 @@ vi.mock("../components/ui/toggle-group", () => ({
 }));
 
 describe("Header", () => {
+  beforeEach(() => {
+    mockSiteMode = "souls";
+  });
+
   it("hides Packages navigation in soul mode on mobile and desktop", () => {
     render(<Header />);
 
     expect(screen.queryByText("Packages")).toBeNull();
+  });
+
+  it("does not render a separate Search navigation item in skills mode", () => {
+    mockSiteMode = "skills";
+
+    render(<Header />);
+
+    expect(screen.queryByText("Search")).toBeNull();
   });
 });

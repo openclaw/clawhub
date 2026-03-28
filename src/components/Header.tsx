@@ -94,30 +94,6 @@ export default function Header() {
             </Link>
           )}
           {isSoulMode ? null : <Link to="/plugins">Plugins</Link>}
-          <Link
-            to={isSoulMode ? "/souls" : "/skills"}
-            search={
-              isSoulMode
-                ? {
-                    q: undefined,
-                    sort: undefined,
-                    dir: undefined,
-                    view: undefined,
-                    focus: "search",
-                  }
-                : {
-                    q: undefined,
-                    sort: undefined,
-                    dir: undefined,
-                    highlighted: undefined,
-                    nonSuspicious: undefined,
-                    view: undefined,
-                    focus: "search",
-                  }
-            }
-          >
-            Search
-          </Link>
           {isSoulMode ? null : <Link to="/about">About</Link>}
           {me ? <Link to="/stars">Stars</Link> : null}
           {isStaff ? (
@@ -176,32 +152,6 @@ export default function Header() {
                     <Link to="/plugins">Plugins</Link>
                   </DropdownMenuItem>
                 )}
-                <DropdownMenuItem asChild>
-                  <Link
-                    to={isSoulMode ? "/souls" : "/skills"}
-                    search={
-                      isSoulMode
-                        ? {
-                            q: undefined,
-                            sort: undefined,
-                            dir: undefined,
-                            view: undefined,
-                            focus: "search",
-                          }
-                        : {
-                            q: undefined,
-                            sort: undefined,
-                            dir: undefined,
-                            highlighted: undefined,
-                            nonSuspicious: undefined,
-                            view: undefined,
-                            focus: "search",
-                          }
-                    }
-                  >
-                    Search
-                  </Link>
-                </DropdownMenuItem>
                 {isSoulMode ? null : (
                   <DropdownMenuItem asChild>
                     <Link to="/about">About</Link>
