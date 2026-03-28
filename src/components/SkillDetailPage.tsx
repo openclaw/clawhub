@@ -144,12 +144,14 @@ export function SkillDetailPage({
   ) as Array<{ _id: Id<"skills">; slug: string; displayName: string }> | undefined;
 
   const ownerHandle = owner?.handle ?? null;
-  const ownerParam = ownerHandle ?? (owner?._id ? String(owner._id) : null);
+  const ownerParam = ownerHandle?.trim().toLowerCase() || (owner?._id ? String(owner._id) : null);
+  const canonicalOwnerParam =
+    typeof canonicalOwner === "string" ? canonicalOwner.trim().toLowerCase() : null;
   const wantsCanonicalRedirect = Boolean(
     ownerParam &&
     ((result?.resolvedSlug && result.resolvedSlug !== slug) ||
       redirectToCanonical ||
-      (typeof canonicalOwner === "string" && canonicalOwner && canonicalOwner !== ownerParam)),
+      (canonicalOwnerParam && canonicalOwnerParam !== ownerParam)),
   );
 
   const forkOf = result?.forkOf ?? null;

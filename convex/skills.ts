@@ -1632,7 +1632,11 @@ export const getBySlugForStaff = query({
     if (!skill) return null;
 
     const latestVersion = skill.latestVersionId ? await ctx.db.get(skill.latestVersionId) : null;
-    const owner = toPublicUser(await ctx.db.get(skill.ownerUserId));
+    const ownerPublisher = await getOwnerPublisher(ctx, {
+      ownerPublisherId: skill.ownerPublisherId,
+      ownerUserId: skill.ownerUserId,
+    });
+    const owner = toPublicPublisher(ownerPublisher);
     const badges = await getSkillBadgeMap(ctx, skill._id);
     const rawAuditLogs = await ctx.db
       .query("auditLogs")
@@ -1659,10 +1663,20 @@ export const getBySlugForStaff = query({
     }));
 
     const forkOfSkill = skill.forkOf?.skillId ? await ctx.db.get(skill.forkOf.skillId) : null;
-    const forkOfOwner = forkOfSkill ? await ctx.db.get(forkOfSkill.ownerUserId) : null;
+    const forkOfOwner = forkOfSkill
+      ? await getOwnerPublisher(ctx, {
+          ownerPublisherId: forkOfSkill.ownerPublisherId,
+          ownerUserId: forkOfSkill.ownerUserId,
+        })
+      : null;
 
     const canonicalSkill = skill.canonicalSkillId ? await ctx.db.get(skill.canonicalSkillId) : null;
-    const canonicalOwner = canonicalSkill ? await ctx.db.get(canonicalSkill.ownerUserId) : null;
+    const canonicalOwner = canonicalSkill
+      ? await getOwnerPublisher(ctx, {
+          ownerPublisherId: canonicalSkill.ownerPublisherId,
+          ownerUserId: canonicalSkill.ownerUserId,
+        })
+      : null;
 
     return {
       requestedSlug: resolved.requestedSlug,
@@ -1681,8 +1695,8 @@ export const getBySlugForStaff = query({
               displayName: forkOfSkill.displayName,
             },
             owner: {
-              handle: forkOfOwner?.handle ?? forkOfOwner?.name ?? null,
-              userId: forkOfOwner?._id ?? null,
+              handle: forkOfOwner?.handle ?? null,
+              userId: forkOfOwner?.linkedUserId ?? null,
             },
           }
         : null,
@@ -1693,8 +1707,8 @@ export const getBySlugForStaff = query({
               displayName: canonicalSkill.displayName,
             },
             owner: {
-              handle: canonicalOwner?.handle ?? canonicalOwner?.name ?? null,
-              userId: canonicalOwner?._id ?? null,
+              handle: canonicalOwner?.handle ?? null,
+              userId: canonicalOwner?.linkedUserId ?? null,
             },
           }
         : null,

@@ -72,8 +72,11 @@ type SkillBySlugResult = {
   } | null;
 } | null;
 
-function resolveOwnerParam(handle: string | null | undefined, ownerId?: Id<"users">) {
-  return handle?.trim() || (ownerId ? String(ownerId) : "unknown");
+function resolveOwnerParam(
+  handle: string | null | undefined,
+  ownerId?: Id<"users"> | Id<"publishers">,
+) {
+  return handle?.trim().toLowerCase() || (ownerId ? String(ownerId) : "unknown");
 }
 
 function promptBanReason(label: string) {

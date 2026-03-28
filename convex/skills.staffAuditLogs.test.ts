@@ -37,6 +37,7 @@ function makeCtx() {
     slug: "padel",
     displayName: "Padel",
     ownerUserId: "users:owner",
+    ownerPublisherId: "publishers:local",
     latestVersionId: "skillVersions:1",
     manualOverride: {
       verdict: "clean",
@@ -103,6 +104,15 @@ function makeCtx() {
     switch (id) {
       case "skillVersions:1":
         return latestVersion;
+      case "publishers:local":
+        return {
+          _id: "publishers:local",
+          _creationTime: 1,
+          kind: "user",
+          handle: "local-publisher",
+          displayName: "Local Dev",
+          linkedUserId: "users:owner",
+        };
       case "users:owner":
         return {
           _id: "users:owner",
@@ -150,7 +160,7 @@ describe("getBySlugForStaff audit logs", () => {
     vi.mocked(requireUser).mockReset();
   });
 
-  it("returns reviewer info and recent audit logs with actor handles", async () => {
+  it("returns publisher-backed owner info plus recent audit logs with actor handles", async () => {
     vi.mocked(requireUser).mockResolvedValue({
       userId: "users:moderator",
       user: { _id: "users:moderator", role: "moderator" },
@@ -162,6 +172,7 @@ describe("getBySlugForStaff audit logs", () => {
       slug: "padel",
       auditLogLimit: 5,
     })) as {
+      owner: { handle?: string | null } | null;
       overrideReviewer: { handle?: string | null } | null;
       auditLogs: Array<{
         actor: { handle?: string | null } | null;
@@ -171,6 +182,7 @@ describe("getBySlugForStaff audit logs", () => {
 
     expect(getSkillBadgeMap).toHaveBeenCalled();
     expect(auditTake).toHaveBeenCalledWith(5);
+    expect(result.owner?.handle).toBe("local-publisher");
     expect(result.overrideReviewer?.handle).toBe("moddy");
     expect(result.auditLogs).toHaveLength(2);
     expect(result.auditLogs[0]?.action).toBe("skill.manual_override.set");
