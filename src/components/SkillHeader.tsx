@@ -4,10 +4,11 @@ import {
   PLATFORM_SKILL_LICENSE,
   PLATFORM_SKILL_LICENSE_SUMMARY,
 } from "clawhub-schema";
-import { Package } from "lucide-react";
+import { Download, Users } from "lucide-react";
 import type { Doc, Id } from "../../convex/_generated/dataModel";
 import { getSkillBadges } from "../lib/badges";
 import { formatCompactStat, formatSkillStatsTriplet } from "../lib/numberFormat";
+import { installsTooltip } from "../lib/installsTooltip";
 import type { PublicPublisher, PublicSkill } from "../lib/publicUser";
 import { getRuntimeEnv } from "../lib/runtimeEnv";
 import { SkillInstallCard } from "./SkillInstallCard";
@@ -116,6 +117,10 @@ export function SkillHeader({
 }: SkillHeaderProps) {
   const convexSiteUrl = getRuntimeEnv("VITE_CONVEX_SITE_URL") ?? "https://clawhub.ai";
   const formattedStats = formatSkillStatsTriplet(skill.stats);
+  const installsAllTime = skill.stats.installsAllTime ?? 0;
+  const installsCurrent = skill.stats.installsCurrent ?? 0;
+  const shouldShowInstalls = installsAllTime > 0 || installsCurrent > 0;
+  const installsDisplay = installsAllTime > 0 ? formattedStats.installsAllTime : formatCompactStat(installsCurrent);
   const suppressScanResults =
     !isStaff &&
     Boolean(modInfo?.overrideActive) &&
@@ -211,9 +216,19 @@ export function SkillHeader({
                 <strong>{PLATFORM_SKILL_LICENSE}</strong> · {PLATFORM_SKILL_LICENSE_SUMMARY}
               </div>
               <div className="stat">
-                ⭐ {formattedStats.stars} · <Package size={14} aria-hidden="true" />{" "}
-                {formattedStats.downloads} · {formatCompactStat(skill.stats.installsCurrent ?? 0)}{" "}
-                current installs · {formattedStats.installsAllTime} all-time installs
+                <Download size={14} aria-hidden="true" /> {formattedStats.downloads} downloads · ⭐{" "}
+                {formattedStats.stars}
+                {shouldShowInstalls ? (
+                  <>
+                    {" "}
+                    ·{" "}
+                    <span
+                      title={installsTooltip(installsAllTime, installsCurrent)}
+                    >
+                      <Users size={14} aria-hidden="true" /> {installsDisplay} installs
+                    </span>
+                  </>
+                ) : null}
               </div>
               <div className="stat">
                 <UserBadge
