@@ -313,6 +313,7 @@ code {
   align-items: center;
   gap: 8px;
   white-space: nowrap;
+  cursor: pointer;
   transition:
     transform 0.2s ease,
     box-shadow 0.2s ease,
@@ -335,6 +336,10 @@ code {
   background: linear-gradient(135deg, var(--accent), var(--accent-deep));
   color: white;
   border: none;
+}
+
+.sign-in-button {
+  gap: 0.28em;
 }
 
 [data-theme="dark"] .btn-primary {
@@ -1358,7 +1363,9 @@ code {
   border: 1px solid var(--border-ui);
   border-radius: var(--radius-pill);
   padding: 10px 20px 10px 14px;
-  background: rgba(255, 255, 255, 0.45) url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='10' viewBox='0 0 24 24' fill='none' stroke='%236b5549' stroke-width='2.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M6 9l6 6 6-6'/%3E%3C/svg%3E") no-repeat right 7px center;
+  background: rgba(255, 255, 255, 0.45)
+    url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='10' viewBox='0 0 24 24' fill='none' stroke='%236b5549' stroke-width='2.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M6 9l6 6 6-6'/%3E%3C/svg%3E")
+    no-repeat right 7px center;
   background-size: 10px;
   color: var(--ink);
   font-weight: 650;

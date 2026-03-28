@@ -305,7 +305,7 @@ export default function Header() {
                 </div>
               ) : null}
               <button
-                className="btn btn-primary"
+                className="btn btn-primary sign-in-button"
                 type="button"
                 disabled={isLoading}
                 onClick={() => {

@@ -33,8 +33,13 @@ vi.mock("../lib/theme", () => ({
 }));
 
 vi.mock("../lib/theme-transition", () => ({
-  startThemeTransition: ({ setTheme, nextTheme }: { setTheme: (value: string) => void; nextTheme: string }) =>
-    setTheme(nextTheme),
+  startThemeTransition: ({
+    setTheme,
+    nextTheme,
+  }: {
+    setTheme: (value: string) => void;
+    nextTheme: string;
+  }) => setTheme(nextTheme),
 }));
 
 vi.mock("../lib/useAuthError", () => ({
@@ -73,7 +78,9 @@ vi.mock("../components/ui/dropdown-menu", () => ({
 
 vi.mock("../components/ui/toggle-group", () => ({
   ToggleGroup: ({ children }: { children: ReactNode }) => <div>{children}</div>,
-  ToggleGroupItem: ({ children }: { children: ReactNode }) => <button type="button">{children}</button>,
+  ToggleGroupItem: ({ children }: { children: ReactNode }) => (
+    <button type="button">{children}</button>
+  ),
 }));
 
 describe("Header", () => {
@@ -81,5 +88,13 @@ describe("Header", () => {
     render(<Header />);
 
     expect(screen.queryByText("Packages")).toBeNull();
+  });
+
+  it("renders the GitHub sign-in button with the dedicated spacing class", () => {
+    render(<Header />);
+
+    const button = screen.getByRole("button", { name: /Sign in/ });
+    expect(button.className).toContain("sign-in-button");
+    expect(screen.getByText("with GitHub")).toBeTruthy();
   });
 });
