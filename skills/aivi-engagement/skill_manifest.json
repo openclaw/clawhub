@@ -1,0 +1,53 @@
+{
+  "name": "aivi-engagement",
+  "display_name": "AIVI Lead Engagement",
+  "description": "Score leads and launch AI voice and SMS engagement sequences. Supports real estate, debt collection, healthcare, and home services verticals.",
+  "version": "1.1.0",
+  "author": "AIVI",
+  "url": "https://aivi.io",
+  "auth": {
+    "type": "oauth2",
+    "authorization_url": "https://mcp.aivi.io/authorize",
+    "token_url": "https://mcp.aivi.io/token",
+    "scopes": ["leads:score", "sequences:launch", "intelligence:read"]
+  },
+  "required_env": [],
+  "skills": [
+    {
+      "name": "qualify_lead",
+      "description": "Phone validation, litigator check, contactability, economic indicators, tier classification",
+      "cost": "$0.75 per lead (cached free, auto-reject free)"
+    },
+    {
+      "name": "score_lead",
+      "description": "Score a lead using ML bandit + call history + RRDB enrichment",
+      "cost": "$0.75 per score"
+    },
+    {
+      "name": "launch_sequence",
+      "description": "Launch 1, 3, or 12-day AI voice + SMS engagement sequence",
+      "cost": "$1-3 per sequence"
+    },
+    {
+      "name": "decide_next_action",
+      "description": "ML recommendation for optimal next channel and timing",
+      "cost": "free"
+    },
+    {
+      "name": "get_outcome",
+      "description": "Post-call intelligence and conversation analysis",
+      "cost": "free"
+    }
+  ],
+  "verticals": [
+    "real_estate",
+    "debt_collection",
+    "healthcare",
+    "home_services",
+    "financial_services"
+  ],
+  "compliance": ["TCPA", "HIPAA", "FDCPA"],
+  "mcp_transport": "http",
+  "mcp_endpoint": "https://mcp.aivi.io/mcp",
+  "mcp_compatible": ["claude_code", "claude_desktop", "chatgpt", "openclaw", "nemoclaw", "cursor"]
+}

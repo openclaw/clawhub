@@ -40,13 +40,11 @@ Sign in when prompted.
 ```
 clawhub install aivi-engagement
 ```
-Add to `~/.openclaw/.env`:
-`AIVI_API_KEY=your_key_from_app.aivi.io`
+Then authenticate: `/mcp` → AIVI → Authenticate → done.
 
 **All other MCP clients:**
 Endpoint: `https://mcp.aivi.io/mcp`
-Supports OAuth 2.1 + PKCE
-or `AIVI_API_KEY` env var as fallback.
+Supports OAuth 2.1 + PKCE.
 
 Need help? app.aivi.io/getting-started
 
@@ -102,7 +100,7 @@ Use this skill when the user wants to:
 
 ## Setup Required
 MCP endpoint: https://mcp.aivi.io/mcp
-Auth: OAuth 2.1 (automatic) or AIVI_API_KEY fallback.
+Auth: OAuth 2.1 (automatic).
 
 ## Available Skills
 
