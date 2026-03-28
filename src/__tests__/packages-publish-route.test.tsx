@@ -3,9 +3,10 @@ import { createElement } from "react";
 import { vi } from "vitest";
 
 vi.mock("@tanstack/react-router", () => ({
-  createFileRoute:
-    (path: string) =>
-    (config: { component: unknown }) => ({ __config: config, __path: path }),
+  createFileRoute: (path: string) => (config: { component: unknown }) => ({
+    __config: config,
+    __path: path,
+  }),
 }));
 
 const generateUploadUrl = vi.fn();

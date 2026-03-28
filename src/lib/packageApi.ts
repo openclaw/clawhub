@@ -83,9 +83,7 @@ async function packageApiUrl(path: string) {
   if (import.meta.env.SSR) {
     try {
       const serverRuntimeModule = "@tanstack/react-start/server";
-      const { getRequestUrl } = (await import(
-        /* @vite-ignore */ serverRuntimeModule
-      )) as {
+      const { getRequestUrl } = (await import(/* @vite-ignore */ serverRuntimeModule)) as {
         getRequestUrl: () => URL;
       };
       return new URL(normalizedPath, getRequestUrl());
@@ -93,8 +91,7 @@ async function packageApiUrl(path: string) {
       // Fall through to env-based base URL when no request context exists.
     }
   }
-  const base =
-    getRuntimeEnv("VITE_CONVEX_SITE_URL") ?? getRequiredRuntimeEnv("VITE_CONVEX_URL");
+  const base = getRuntimeEnv("VITE_CONVEX_SITE_URL") ?? getRequiredRuntimeEnv("VITE_CONVEX_URL");
   return new URL(normalizedPath, base);
 }
 
@@ -108,9 +105,7 @@ async function getForwardedHeaders() {
   if (typeof window !== "undefined" || !import.meta.env.SSR) return {};
   try {
     const serverRuntimeModule = "@tanstack/react-start/server";
-    const { getRequestHeaders } = (await import(
-      /* @vite-ignore */ serverRuntimeModule
-    )) as {
+    const { getRequestHeaders } = (await import(/* @vite-ignore */ serverRuntimeModule)) as {
       getRequestHeaders: () => Headers;
     };
     const requestHeaders = getRequestHeaders();

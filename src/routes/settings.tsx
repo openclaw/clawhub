@@ -148,13 +148,9 @@ function Settings() {
         </div>
 
         {(tokens ?? []).length ? (
-          <div style={{ display: "grid", gap: 10, marginTop: 16 }}>
+          <div className="settings-token-list">
             {(tokens ?? []).map((token) => (
-              <div
-                key={token._id}
-                className="stat"
-                style={{ display: "flex", justifyContent: "space-between", gap: 12 }}
-              >
+              <div key={token._id} className="stat settings-token-row">
                 <div>
                   <div>
                     <strong>{token.label}</strong>{" "}

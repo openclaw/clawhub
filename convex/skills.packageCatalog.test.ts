@@ -103,8 +103,13 @@ function makeDigest(
   };
 }
 
-function makeCtx(pages: Array<{ page: Array<Record<string, unknown>>; isDone: boolean; continueCursor: string }>) {
-  const pageByCursor = new Map<string | null, { page: Array<Record<string, unknown>>; isDone: boolean; continueCursor: string }>();
+function makeCtx(
+  pages: Array<{ page: Array<Record<string, unknown>>; isDone: boolean; continueCursor: string }>,
+) {
+  const pageByCursor = new Map<
+    string | null,
+    { page: Array<Record<string, unknown>>; isDone: boolean; continueCursor: string }
+  >();
   const allDigests = pages.flatMap((page) => page.page);
   let cursor: string | null = null;
   for (const page of pages) {
@@ -116,7 +121,12 @@ function makeCtx(pages: Array<{ page: Array<Record<string, unknown>>; isDone: bo
       query: (table: string) => {
         if (table === "skills") {
           return {
-            withIndex: (_index: string, builder: (q: { eq: (field: string, value: string) => { field: string; value: string } }) => { field: string; value: string }) => {
+            withIndex: (
+              _index: string,
+              builder: (q: {
+                eq: (field: string, value: string) => { field: string; value: string };
+              }) => { field: string; value: string },
+            ) => {
               const constraint = builder({ eq: (field, value) => ({ field, value }) });
               return {
                 unique: async () => {

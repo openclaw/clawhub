@@ -239,8 +239,8 @@ function makeDigestCtx(options: {
   const pageByTable = new Map<
     string,
     Map<
-    string | null,
-    { page: Array<Record<string, unknown>>; isDone: boolean; continueCursor: string }
+      string | null,
+      { page: Array<Record<string, unknown>>; isDone: boolean; continueCursor: string }
     >
   >();
   const indexNames: string[] = [];
@@ -320,9 +320,7 @@ function makeInsertReleaseCtx(
   priorReleases: Array<Record<string, unknown>> = [],
 ) {
   const patch = vi.fn();
-  const insert = vi
-    .fn()
-    .mockResolvedValueOnce("packageReleases:new");
+  const insert = vi.fn().mockResolvedValueOnce("packageReleases:new");
   return {
     patch,
     insert,
@@ -568,10 +566,7 @@ describe("packages public queries", () => {
     const { ctx } = makeDigestCtx({
       pages: [
         {
-          page: [
-            makeDigest("secret-plugin", { channel: "private" }),
-            makeDigest("public-plugin"),
-          ],
+          page: [makeDigest("secret-plugin", { channel: "private" }), makeDigest("public-plugin")],
           isDone: true,
           continueCursor: "",
         },
@@ -992,10 +987,11 @@ describe("packages public queries", () => {
       continueCursor: "",
     });
     await expect(
-      getVersionByNameHandler(
-        ctx,
-        { name: "demo-plugin", version: "1.0.0", viewerUserId: "users:owner" } as never,
-      ),
+      getVersionByNameHandler(ctx, {
+        name: "demo-plugin",
+        version: "1.0.0",
+        viewerUserId: "users:owner",
+      } as never),
     ).resolves.toBeNull();
   });
 
@@ -1132,7 +1128,7 @@ describe("packages public queries", () => {
         integritySha256: "abc123",
         runtimeId: "other.plugin",
       }),
-    ).rejects.toThrow('runtime id changes are not allowed');
+    ).rejects.toThrow("runtime id changes are not allowed");
   });
 
   it("promotes existing packages to official when publisher becomes trusted", async () => {

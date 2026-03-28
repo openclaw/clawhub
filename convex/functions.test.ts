@@ -60,10 +60,7 @@ describe("package digest sync", () => {
       },
     };
 
-    await syncPackageSearchDigestForPackageId(
-      ctx as never,
-      "packages:demo" as never,
-    );
+    await syncPackageSearchDigestForPackageId(ctx as never, "packages:demo" as never);
 
     expect(ctx.db.insert).toHaveBeenCalledWith(
       "packageSearchDigest",
@@ -126,10 +123,7 @@ describe("package digest sync", () => {
       },
     };
 
-    await syncPackageSearchDigestForPackageId(
-      ctx as never,
-      "packages:demo" as never,
-    );
+    await syncPackageSearchDigestForPackageId(ctx as never, "packages:demo" as never);
 
     expect(ctx.db.insert).toHaveBeenCalledWith(
       "packageSearchDigest",
@@ -441,13 +435,11 @@ describe("package digest sync", () => {
       updatedAt: 2,
       verification: undefined,
     };
-    const paginate = vi
-      .fn()
-      .mockResolvedValueOnce({
-        page: [pkg],
-        isDone: true,
-        continueCursor: "",
-      });
+    const paginate = vi.fn().mockResolvedValueOnce({
+      page: [pkg],
+      isDone: true,
+      continueCursor: "",
+    });
     const ctx = {
       db: {
         get: vi.fn(async (id: string) => {
@@ -486,10 +478,7 @@ describe("package digest sync", () => {
       },
     };
 
-    await syncPackageSearchDigestsForOwnerUserId(
-      ctx as never,
-      "users:owner" as never,
-    );
+    await syncPackageSearchDigestsForOwnerUserId(ctx as never, "users:owner" as never);
 
     expect(paginate).toHaveBeenCalledWith({ cursor: null, numItems: 100 });
     expect(ctx.db.insert).toHaveBeenCalledWith(

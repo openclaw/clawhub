@@ -23,7 +23,10 @@ describe("souls.insertVersion", () => {
       query: vi.fn((table: string) => {
         if (table !== "souls") throw new Error(`unexpected table ${table}`);
         return {
-          withIndex: (name: string, build: ((q: { eq: (field: string, value: string) => unknown }) => unknown) | undefined) => {
+          withIndex: (
+            name: string,
+            build: ((q: { eq: (field: string, value: string) => unknown }) => unknown) | undefined,
+          ) => {
             if (name !== "by_slug") throw new Error(`unexpected index ${name}`);
             const q = {
               eq: (field: string, value: string) => {
@@ -92,7 +95,12 @@ describe("souls.insertVersion", () => {
           query: vi.fn((table: string) => {
             if (table !== "souls") throw new Error(`unexpected table ${table}`);
             return {
-              withIndex: (name: string, build: ((q: { eq: (field: string, value: string) => unknown }) => unknown) | undefined) => {
+              withIndex: (
+                name: string,
+                build:
+                  | ((q: { eq: (field: string, value: string) => unknown }) => unknown)
+                  | undefined,
+              ) => {
                 if (name !== "by_slug") throw new Error(`unexpected index ${name}`);
                 const q = {
                   eq: (field: string, value: string) => {

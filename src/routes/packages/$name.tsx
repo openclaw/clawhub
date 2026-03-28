@@ -20,10 +20,9 @@ type PackageDetailLoaderData = {
 export const Route = createFileRoute("/packages/$name")({
   loader: async ({ params }): Promise<PackageDetailLoaderData> => {
     const detail = await fetchPackageDetail(params.name);
-    const version =
-      detail.package?.latestVersion
-        ? await fetchPackageVersion(params.name, detail.package.latestVersion)
-        : null;
+    const version = detail.package?.latestVersion
+      ? await fetchPackageVersion(params.name, detail.package.latestVersion)
+      : null;
     const readme = await fetchPackageReadme(params.name, detail.package?.latestVersion);
     return { detail, version, readme };
   },
@@ -113,7 +112,9 @@ function PackageDetailRoute() {
             <details className="bundle-details" open>
               <summary>Compatibility</summary>
               <pre>
-                <code>{JSON.stringify(latestRelease.compatibility ?? pkg.compatibility ?? {}, null, 2)}</code>
+                <code>
+                  {JSON.stringify(latestRelease.compatibility ?? pkg.compatibility ?? {}, null, 2)}
+                </code>
               </pre>
             </details>
           ) : null}
@@ -121,14 +122,18 @@ function PackageDetailRoute() {
             <details className="bundle-details" open>
               <summary>Capabilities</summary>
               <pre>
-                <code>{JSON.stringify(latestRelease.capabilities ?? pkg.capabilities ?? {}, null, 2)}</code>
+                <code>
+                  {JSON.stringify(latestRelease.capabilities ?? pkg.capabilities ?? {}, null, 2)}
+                </code>
               </pre>
             </details>
           ) : null}
           <details className="bundle-details" open>
             <summary>Verification</summary>
             <pre>
-              <code>{JSON.stringify(latestRelease?.verification ?? pkg.verification ?? {}, null, 2)}</code>
+              <code>
+                {JSON.stringify(latestRelease?.verification ?? pkg.verification ?? {}, null, 2)}
+              </code>
             </pre>
           </details>
           <details className="bundle-details" open>

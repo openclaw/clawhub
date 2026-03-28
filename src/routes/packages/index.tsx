@@ -22,7 +22,9 @@ export const Route = createFileRoute("/packages/")({
     q: typeof search.q === "string" && search.q.trim() ? search.q.trim() : undefined,
     cursor: typeof search.cursor === "string" && search.cursor ? search.cursor : undefined,
     family:
-      search.family === "skill" || search.family === "code-plugin" || search.family === "bundle-plugin"
+      search.family === "skill" ||
+      search.family === "code-plugin" ||
+      search.family === "bundle-plugin"
         ? search.family
         : undefined,
     official:
@@ -30,9 +32,7 @@ export const Route = createFileRoute("/packages/")({
         ? true
         : undefined,
     executesCode:
-      search.executesCode === true ||
-      search.executesCode === "true" ||
-      search.executesCode === "1"
+      search.executesCode === true || search.executesCode === "true" || search.executesCode === "1"
         ? true
         : undefined,
   }),
@@ -76,87 +76,89 @@ export function PackagesIndex() {
         </p>
       </header>
 
-      <div className="card" style={{ display: "grid", gap: 12, marginBottom: 18 }}>
-        <form
-          onSubmit={(event) => {
-            event.preventDefault();
-            void navigate({
-              search: (prev) => ({
-                ...prev,
-                cursor: undefined,
-                q: query.trim() || undefined,
-              }),
-            });
-          }}
-          style={{ display: "grid", gap: 12 }}
-        >
+      <form
+        className="skills-toolbar"
+        onSubmit={(event) => {
+          event.preventDefault();
+          void navigate({
+            search: (prev) => ({
+              ...prev,
+              cursor: undefined,
+              q: query.trim() || undefined,
+            }),
+          });
+        }}
+      >
+        <div className="skills-search">
           <input
-            className="input"
-            placeholder="Search packages"
+            className="skills-search-input"
+            placeholder="Search packages…"
             value={query}
             onChange={(event) => setQuery(event.target.value)}
           />
-          <div style={{ display: "flex", gap: 12, flexWrap: "wrap" }}>
-            <select
-              className="input"
-              value={search.family ?? ""}
-              onChange={(event) => {
-                const value = event.target.value as PackageSearchState["family"] | "";
-                void navigate({
-                  search: (prev) => ({
-                    ...prev,
-                    cursor: undefined,
-                    family: value || undefined,
-                  }),
-                });
-              }}
-            >
-              <option value="">All families</option>
-              <option value="skill">Skills</option>
-              <option value="code-plugin">Code plugins</option>
-              <option value="bundle-plugin">Bundle plugins</option>
-            </select>
-            <label className="tag" style={{ display: "inline-flex", alignItems: "center", gap: 8 }}>
-              <input
-                type="checkbox"
-                checked={search.official ?? false}
-                onChange={(event) => {
-                  void navigate({
-                    search: (prev) => ({
-                      ...prev,
-                      cursor: undefined,
-                      official: event.target.checked || undefined,
-                    }),
-                  });
-                }}
-              />
-              Official only
-            </label>
-            <label className="tag" style={{ display: "inline-flex", alignItems: "center", gap: 8 }}>
-              <input
-                type="checkbox"
-                checked={search.executesCode ?? false}
-                onChange={(event) => {
-                  void navigate({
-                    search: (prev) => ({
-                      ...prev,
-                      cursor: undefined,
-                      executesCode: event.target.checked || undefined,
-                    }),
-                  });
-                }}
-              />
-              Executes code
-            </label>
-            <Link className="btn" to="/upload" search={{ updateSlug: undefined }}>
-              Publish Skill
-            </Link>
-            <Link className="btn" to="/packages/new">
-              Publish Plugin
-            </Link>
-          </div>
-        </form>
-      </div>
+        </div>
+        <div className="skills-toolbar-row">
+          <select
+            className="skills-sort"
+            value={search.family ?? ""}
+            onChange={(event) => {
+              const value = event.target.value as PackageSearchState["family"] | "";
+              void navigate({
+                search: (prev) => ({
+                  ...prev,
+                  cursor: undefined,
+                  family: value || undefined,
+                }),
+              });
+            }}
+            aria-label="Package family"
+          >
+            <option value="">All families</option>
+            <option value="skill">Skills</option>
+            <option value="code-plugin">Code plugins</option>
+            <option value="bundle-plugin">Bundle plugins</option>
+          </select>
+          <button
+            className={`search-filter-button${search.official ? " is-active" : ""}`}
+            type="button"
+            aria-pressed={search.official ?? false}
+            onClick={() => {
+              void navigate({
+                search: (prev) => ({
+                  ...prev,
+                  cursor: undefined,
+                  official: prev.official ? undefined : true,
+                }),
+              });
+            }}
+          >
+            Official
+          </button>
+          <button
+            className={`search-filter-button${search.executesCode ? " is-active" : ""}`}
+            type="button"
+            aria-pressed={search.executesCode ?? false}
+            onClick={() => {
+              void navigate({
+                search: (prev) => ({
+                  ...prev,
+                  cursor: undefined,
+                  executesCode: prev.executesCode ? undefined : true,
+                }),
+              });
+            }}
+          >
+            Executes code
+          </button>
+          <span className="skills-toolbar-row-spacer" />
+          <Link className="btn btn-sm" to="/upload" search={{ updateSlug: undefined }}>
+            Publish Skill
+          </Link>
+          <Link className="btn btn-sm" to="/packages/new">
+            Publish Plugin
+          </Link>
+        </div>
+      </form>
 
       {items.length === 0 ? (
         <div className="card">No packages match that filter.</div>
@@ -176,13 +178,13 @@ export function PackagesIndex() {
                     {packageCapabilityLabel(item.family, item.executesCode)}
                   </span>
                   {item.isOfficial ? <span className="tag">Official</span> : null}
-                  {item.verificationTier ? <span className="tag">{item.verificationTier}</span> : null}
+                  {item.verificationTier ? (
+                    <span className="tag">{item.verificationTier}</span>
+                  ) : null}
                 </div>
                 <div className="skill-card-title">{item.displayName}</div>
                 <div className="skills-row-slug">{item.name}</div>
-                <div className="skill-card-summary">
-                  {item.summary ?? "No summary provided."}
-                </div>
+                <div className="skill-card-summary">{item.summary ?? "No summary provided."}</div>
                 <div className="skill-card-footer skill-card-footer-rows">
                   <div className="stat">Channel: {item.channel}</div>
                   <div className="stat">
@@ -196,14 +198,11 @@ export function PackagesIndex() {
             ))}
           </div>
           {!search.q && (search.cursor || nextCursor) ? (
-            <div
-              className="card"
-              style={{ display: "flex", gap: 12, flexWrap: "wrap", justifyContent: "space-between", marginTop: 18 }}
-            >
+            <div className="card packages-pagination">
               <div className="section-subtitle" style={{ margin: 0 }}>
                 Browsing {items.length} package{items.length === 1 ? "" : "s"} per page.
               </div>
-              <div style={{ display: "flex", gap: 12, flexWrap: "wrap" }}>
+              <div className="packages-pagination-actions">
                 {search.cursor ? (
                   <button
                     className="btn"

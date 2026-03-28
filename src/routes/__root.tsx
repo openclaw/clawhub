@@ -5,6 +5,7 @@ import { ClientOnly } from "../components/ClientOnly";
 import { DeploymentDriftBanner } from "../components/DeploymentDriftBanner";
 import { Footer } from "../components/Footer";
 import Header from "../components/Header";
+import { ScrollToTop } from "../components/ScrollToTop";
 import { getSiteDescription, getSiteMode, getSiteName, getSiteUrlForMode } from "../lib/site";
 import appCss from "../styles.css?url";
 
@@ -112,6 +113,9 @@ function RootDocument({ children }: { children: React.ReactNode }) {
             </ClientOnly>
             {children}
             <Footer />
+            <ClientOnly>
+              <ScrollToTop />
+            </ClientOnly>
           </div>
           <ClientOnly>
             <Analytics />

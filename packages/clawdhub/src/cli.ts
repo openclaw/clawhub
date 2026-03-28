@@ -330,9 +330,7 @@ program
   });
 
 const skill = program.command("skill").description("Manage published skills");
-const packageCmd = program
-  .command("package")
-  .description("Browse and publish OpenClaw packages");
+const packageCmd = program.command("package").description("Browse and publish OpenClaw packages");
 
 packageCmd
   .command("explore")

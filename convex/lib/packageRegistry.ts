@@ -84,7 +84,10 @@ export function normalizePublishFiles(files: PublishFile[]) {
   return normalized.map((file) => ({ ...file, path: file.path as string }));
 }
 
-export function assertPackageVersion(family: "code-plugin" | "bundle-plugin" | "skill", version: string) {
+export function assertPackageVersion(
+  family: "code-plugin" | "bundle-plugin" | "skill",
+  version: string,
+) {
   const trimmed = version.trim();
   if (!trimmed) throw new ConvexError("Version required");
   if (family === "code-plugin" && !semver.valid(trimmed)) {
@@ -125,9 +128,15 @@ function parseJsonFile(text: string, label: string): JsonRecord {
   }
 }
 
-function deriveSummary(params: { packageName: string; packageJson?: JsonRecord; readmeText?: string | null }) {
+function deriveSummary(params: {
+  packageName: string;
+  packageJson?: JsonRecord;
+  readmeText?: string | null;
+}) {
   const directDescription =
-    typeof params.packageJson?.description === "string" ? params.packageJson.description.trim() : "";
+    typeof params.packageJson?.description === "string"
+      ? params.packageJson.description.trim()
+      : "";
   if (directDescription) return directDescription;
   const readme = params.readmeText?.trim() ?? "";
   if (!readme) return params.packageName;
@@ -175,7 +184,9 @@ function extractOpenClawBlock(packageJson: JsonRecord | undefined) {
   };
 }
 
-function extractCompatibility(packageJson: JsonRecord | undefined): PackageCompatibility | undefined {
+function extractCompatibility(
+  packageJson: JsonRecord | undefined,
+): PackageCompatibility | undefined {
   const { compat, build } = extractOpenClawBlock(packageJson);
   const compatibility: PackageCompatibility = {};
   if (typeof compat?.pluginApi === "string") compatibility.pluginApiRange = compat.pluginApi.trim();
@@ -258,7 +269,9 @@ export function extractCodePluginArtifacts(params: {
     executesCode: true,
     runtimeId,
     pluginKind:
-      typeof params.pluginManifest.kind === "string" ? params.pluginManifest.kind.trim() : undefined,
+      typeof params.pluginManifest.kind === "string"
+        ? params.pluginManifest.kind.trim()
+        : undefined,
     channels,
     providers,
     hooks,
@@ -354,7 +367,9 @@ export function ensurePluginNameMatchesPackage(packageName: string, packageJson:
   const normalizedDeclared = normalizePackageName(declaredName);
   const normalizedExpected = normalizePackageName(packageName);
   if (normalizedDeclared !== normalizedExpected) {
-    throw new ConvexError(`package.json name must match published package name (${normalizedExpected})`);
+    throw new ConvexError(
+      `package.json name must match published package name (${normalizedExpected})`,
+    );
   }
 }
 

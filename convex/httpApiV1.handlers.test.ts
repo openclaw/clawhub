@@ -2715,7 +2715,10 @@ describe("httpApiV1 handlers", () => {
     );
 
     const zipEntries = unzipSync(new Uint8Array(await response.arrayBuffer()));
-    expect(Object.keys(zipEntries).sort()).toEqual(["package/dist/index.js", "package/package.json"]);
+    expect(Object.keys(zipEntries).sort()).toEqual([
+      "package/dist/index.js",
+      "package/package.json",
+    ]);
     expect(zipEntries["_meta.json"]).toBeUndefined();
   });
 
@@ -2829,7 +2832,9 @@ describe("httpApiV1 handlers", () => {
 
     const fileResponse = await __handlers.packagesGetRouterV1Handler(
       makeCtx({ runQuery, runMutation, storage: { get: vi.fn() } }),
-      new Request("https://example.com/api/v1/packages/demo-plugin/file?version=1.0.0&path=README.md"),
+      new Request(
+        "https://example.com/api/v1/packages/demo-plugin/file?version=1.0.0&path=README.md",
+      ),
     );
     const downloadResponse = await __handlers.packagesGetRouterV1Handler(
       makeCtx({ runQuery, runMutation, storage: { get: vi.fn() } }),
@@ -2849,7 +2854,9 @@ describe("httpApiV1 handlers", () => {
       user: { _id: "users:1", handle: "p" },
     } as never);
     const runMutation = vi.fn().mockResolvedValue(okRate());
-    const runAction = vi.fn().mockResolvedValue({ ok: true, packageId: "pkg:1", releaseId: "rel:1" });
+    const runAction = vi
+      .fn()
+      .mockResolvedValue({ ok: true, packageId: "pkg:1", releaseId: "rel:1" });
 
     const response = await __handlers.publishPackageV1Handler(
       makeCtx({ runAction, runMutation }),
@@ -2895,7 +2902,9 @@ describe("httpApiV1 handlers", () => {
       user: { _id: "users:1", handle: "p" },
     } as never);
     const runMutation = vi.fn().mockResolvedValue(okRate());
-    const runAction = vi.fn().mockResolvedValue({ ok: true, packageId: "pkg:1", releaseId: "rel:1" });
+    const runAction = vi
+      .fn()
+      .mockResolvedValue({ ok: true, packageId: "pkg:1", releaseId: "rel:1" });
     const form = new FormData();
     form.set(
       "payload",
@@ -2908,10 +2917,7 @@ describe("httpApiV1 handlers", () => {
       }),
     );
     form.append("files", new File(["{}"], ".DS_Store", { type: "application/octet-stream" }));
-    form.append(
-      "files",
-      new File(["{}"], "openclaw.bundle.json", { type: "application/json" }),
-    );
+    form.append("files", new File(["{}"], "openclaw.bundle.json", { type: "application/json" }));
 
     const response = await __handlers.publishPackageV1Handler(
       makeCtx({

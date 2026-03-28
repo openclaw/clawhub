@@ -188,9 +188,7 @@ export async function cmdInspectPackage(
       versionResult = await apiRequestPackageVersion(registry, trimmed, targetVersion, token);
     }
 
-    let versionsList:
-      | Awaited<ReturnType<typeof apiRequestPackageVersions>>
-      | null = null;
+    let versionsList: Awaited<ReturnType<typeof apiRequestPackageVersions>> | null = null;
     if (options.versions) {
       const limit = clampLimit(options.limit ?? 25, 100);
       spinner.text = `Fetching versions (${limit})`;
@@ -199,7 +197,10 @@ export async function cmdInspectPackage(
 
     let fileContent: string | null = null;
     if (options.file) {
-      const url = registryUrl(`${ApiRoutes.packages}/${encodeURIComponent(trimmed)}/file`, registry);
+      const url = registryUrl(
+        `${ApiRoutes.packages}/${encodeURIComponent(trimmed)}/file`,
+        registry,
+      );
       url.searchParams.set("path", options.file);
       if (options.version) {
         url.searchParams.set("version", options.version);
@@ -234,7 +235,9 @@ export async function cmdInspectPackage(
 
     if (shouldPrintMeta && versionResult?.version) {
       printVersionSummary(versionResult.version);
-      printCompatibility(versionResult.version.compatibility ?? detail.package.compatibility ?? null);
+      printCompatibility(
+        versionResult.version.compatibility ?? detail.package.compatibility ?? null,
+      );
       printCapabilities(versionResult.version.capabilities ?? detail.package.capabilities ?? null);
       printVerification(versionResult.version.verification ?? detail.package.verification ?? null);
     } else if (shouldPrintMeta) {
@@ -583,10 +586,7 @@ async function readJsonFile(path: string) {
   }
 }
 
-function packageJsonString(
-  value: Record<string, unknown> | null,
-  key: string,
-): string | undefined {
+function packageJsonString(value: Record<string, unknown> | null, key: string): string | undefined {
   const candidate = value?.[key];
   return typeof candidate === "string" && candidate.trim() ? candidate.trim() : undefined;
 }

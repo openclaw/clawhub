@@ -6,8 +6,8 @@ import type { ActionCtx } from "../_generated/server";
 import { getOptionalApiTokenUserId } from "../lib/apiTokenAuth";
 import { corsHeaders, mergeHeaders } from "../lib/httpHeaders";
 import { applyRateLimit } from "../lib/httpRateLimit";
-import { buildDeterministicPackageZip } from "../lib/skillZip";
 import { isMacJunkPath, isTextFile } from "../lib/skills";
+import { buildDeterministicPackageZip } from "../lib/skillZip";
 import {
   MAX_RAW_FILE_BYTES,
   getPathSegments,
@@ -128,9 +128,13 @@ async function resolvePackageTags(
 ): Promise<Record<string, string>> {
   const releaseIds = Object.values(tags);
   if (releaseIds.length === 0) return {};
-  const releases = await runQueryRef<ReleaseLike[]>(ctx, internalRefs.packages.getReleasesByIdsInternal, {
-    releaseIds,
-  });
+  const releases = await runQueryRef<ReleaseLike[]>(
+    ctx,
+    internalRefs.packages.getReleasesByIdsInternal,
+    {
+      releaseIds,
+    },
+  );
   const byId = new Map(releases.map((release) => [release._id, release.version]));
   return Object.fromEntries(
     Object.entries(tags)
@@ -201,8 +205,12 @@ function decodeUnifiedCatalogCursor(raw: string | null | undefined): UnifiedCata
     };
   }
   try {
-    const parsed = JSON.parse(raw.slice(UNIFIED_CATALOG_CURSOR_PREFIX.length)) as Partial<UnifiedCatalogCursorState>;
-    const normalize = (input: Partial<CatalogSourceCursorState> | undefined): CatalogSourceCursorState => ({
+    const parsed = JSON.parse(
+      raw.slice(UNIFIED_CATALOG_CURSOR_PREFIX.length),
+    ) as Partial<UnifiedCatalogCursorState>;
+    const normalize = (
+      input: Partial<CatalogSourceCursorState> | undefined,
+    ): CatalogSourceCursorState => ({
       cursor: typeof input?.cursor === "string" ? input.cursor : null,
       offset: typeof input?.offset === "number" && input.offset > 0 ? input.offset : 0,
       pageSize: typeof input?.pageSize === "number" && input.pageSize > 0 ? input.pageSize : null,
@@ -390,7 +398,9 @@ async function parseMultipartPackagePublish(ctx: ActionCtx, request: Request) {
     if (isMacJunkPath(entry.name)) continue;
     const buffer = new Uint8Array(await entry.arrayBuffer());
     const digest = await crypto.subtle.digest("SHA-256", buffer);
-    const sha256 = Array.from(new Uint8Array(digest), (byte) => byte.toString(16).padStart(2, "0")).join("");
+    const sha256 = Array.from(new Uint8Array(digest), (byte) =>
+      byte.toString(16).padStart(2, "0"),
+    ).join("");
     const storageId = await ctx.storage.store(entry);
     files.push({
       path: entry.name,
@@ -403,12 +413,17 @@ async function parseMultipartPackagePublish(ctx: ActionCtx, request: Request) {
   return parsePackagePublishBody({ ...payload, files });
 }
 
-async function listPackages(ctx: ActionCtx, request: Request, family?: PackageListQueryArgs["family"]) {
+async function listPackages(
+  ctx: ActionCtx,
+  request: Request,
+  family?: PackageListQueryArgs["family"],
+) {
   const rate = await applyRateLimit(ctx, request, "read");
   if (!rate.ok) return rate.response;
 
   const url = new URL(request.url);
-  const viewerUserId = (await getOptionalApiTokenUserId(ctx, request)) ?? (await getAuthUserId(ctx));
+  const viewerUserId =
+    (await getOptionalApiTokenUserId(ctx, request)) ?? (await getAuthUserId(ctx));
   const limit = Math.max(1, Math.min(toOptionalNumber(url.searchParams.get("limit")) ?? 25, 100));
   const cursor = url.searchParams.get("cursor");
   const familyRaw = url.searchParams.get("family");
@@ -497,7 +512,10 @@ async function listPackages(ctx: ActionCtx, request: Request, family?: PackageLi
       ]);
 
       if (!packageCandidate && !skillCandidate) break;
-      if (!skillCandidate || (packageCandidate && compareCatalogItems(packageCandidate, skillCandidate) <= 0)) {
+      if (
+        !skillCandidate ||
+        (packageCandidate && compareCatalogItems(packageCandidate, skillCandidate) <= 0)
+      ) {
         items.push(packageCandidate!);
         packageSource.index += 1;
       } else {
@@ -620,9 +638,7 @@ async function getReleaseForRequest(
 function isReadmeVariantPath(path: string) {
   const normalized = path.trim().toLowerCase();
   return (
-    normalized === "readme.md" ||
-    normalized === "readme.mdx" ||
-    normalized === "readme.markdown"
+    normalized === "readme.md" || normalized === "readme.mdx" || normalized === "readme.markdown"
   );
 }
 
@@ -645,13 +661,11 @@ function resolveSkillFilePath(version: SkillVersionLike, requestedPath: string) 
 }
 
 async function getSkillDetailForRequest(ctx: ActionCtx, slug: string) {
-  return (await runQueryRef(ctx, apiRefs.skills.getBySlug, { slug })) as
-    | {
-        skill: SkillPackageDocLike | null;
-        latestVersion: SkillVersionLike | null;
-        owner: { handle?: string; displayName?: string; image?: string } | null;
-      }
-    | null;
+  return (await runQueryRef(ctx, apiRefs.skills.getBySlug, { slug })) as {
+    skill: SkillPackageDocLike | null;
+    latestVersion: SkillVersionLike | null;
+    owner: { handle?: string; displayName?: string; image?: string } | null;
+  } | null;
 }
 
 async function getSkillVersionForRequest(
@@ -693,7 +707,8 @@ export async function packagesGetRouterV1Handler(ctx: ActionCtx, request: Reques
 
   if (segments[0] === "search" && new URL(request.url).searchParams.has("q")) {
     const url = new URL(request.url);
-    const viewerUserId = (await getOptionalApiTokenUserId(ctx, request)) ?? (await getAuthUserId(ctx));
+    const viewerUserId =
+      (await getOptionalApiTokenUserId(ctx, request)) ?? (await getAuthUserId(ctx));
     const queryText = url.searchParams.get("q")?.trim() ?? "";
     const limit = Math.max(1, Math.min(toOptionalNumber(url.searchParams.get("limit")) ?? 20, 100));
     const familyRaw = url.searchParams.get("family");
@@ -716,25 +731,33 @@ export async function packagesGetRouterV1Handler(ctx: ActionCtx, request: Reques
 
     let results: CatalogSearchEntry[];
     if (family === "skill") {
-      results = await runQueryRef<CatalogSearchEntry[]>(ctx, apiRefs.skills.searchPackageCatalogPublic, {
-        query: queryText,
-        limit,
-        channel,
-        isOfficial,
-        executesCode,
-        capabilityTag,
-      });
+      results = await runQueryRef<CatalogSearchEntry[]>(
+        ctx,
+        apiRefs.skills.searchPackageCatalogPublic,
+        {
+          query: queryText,
+          limit,
+          channel,
+          isOfficial,
+          executesCode,
+          capabilityTag,
+        },
+      );
     } else if (family) {
-      results = await runQueryRef<CatalogSearchEntry[]>(ctx, internalRefs.packages.searchForViewerInternal, {
-        query: queryText,
-        limit,
-        family,
-        channel,
-        isOfficial,
-        executesCode,
-        capabilityTag,
-        viewerUserId: viewerUserId ?? undefined,
-      });
+      results = await runQueryRef<CatalogSearchEntry[]>(
+        ctx,
+        internalRefs.packages.searchForViewerInternal,
+        {
+          query: queryText,
+          limit,
+          family,
+          channel,
+          isOfficial,
+          executesCode,
+          capabilityTag,
+          viewerUserId: viewerUserId ?? undefined,
+        },
+      );
     } else {
       const [packageResults, skillResults] = await Promise.all([
         runQueryRef<CatalogSearchEntry[]>(ctx, internalRefs.packages.searchForViewerInternal, {
@@ -775,21 +798,16 @@ export async function packagesGetRouterV1Handler(ctx: ActionCtx, request: Reques
   }
 
   const packageName = segments[0] ?? "";
-  const viewerUserId = (await getOptionalApiTokenUserId(ctx, request)) ?? (await getAuthUserId(ctx));
-  const detail = (await runQueryRef(
-    ctx,
-    internalRefs.packages.getByNameForViewerInternal,
-    {
-      name: packageName,
-      viewerUserId: viewerUserId ?? undefined,
-    },
-  )) as
-    | {
-        package: PublicPackageDocLike | null;
-        latestRelease: ReleaseLike | null;
-        owner: { _id: Id<"users">; handle?: string; displayName?: string; image?: string } | null;
-      }
-    | null;
+  const viewerUserId =
+    (await getOptionalApiTokenUserId(ctx, request)) ?? (await getAuthUserId(ctx));
+  const detail = (await runQueryRef(ctx, internalRefs.packages.getByNameForViewerInternal, {
+    name: packageName,
+    viewerUserId: viewerUserId ?? undefined,
+  })) as {
+    package: PublicPackageDocLike | null;
+    latestRelease: ReleaseLike | null;
+    owner: { _id: Id<"users">; handle?: string; displayName?: string; image?: string } | null;
+  } | null;
   const skillDetail = detail?.package ? null : await getSkillDetailForRequest(ctx, packageName);
   if (!detail?.package && !skillDetail?.skill) return text("Package not found", 404, rate.headers);
   const packageDetail = detail?.package ? detail : null;
@@ -809,23 +827,30 @@ export async function packagesGetRouterV1Handler(ctx: ActionCtx, request: Reques
         rate.headers,
       );
     }
-    return json({
-      package: {
-        ...publicPackage!,
-        tags: await resolvePackageTags(ctx, publicPackage!.tags),
+    return json(
+      {
+        package: {
+          ...publicPackage!,
+          tags: await resolvePackageTags(ctx, publicPackage!.tags),
+        },
+        owner: packageOwner
+          ? {
+              handle: packageOwner.handle ?? null,
+              displayName: packageOwner.displayName ?? null,
+              image: packageOwner.image ?? null,
+            }
+          : null,
       },
-      owner: packageOwner
-        ? {
-            handle: packageOwner.handle ?? null,
-            displayName: packageOwner.displayName ?? null,
-            image: packageOwner.image ?? null,
-          }
-        : null,
-    }, 200, rate.headers);
+      200,
+      rate.headers,
+    );
   }
 
   if (segments[1] === "versions" && segments.length === 2) {
-    const limit = Math.max(1, Math.min(toOptionalNumber(new URL(request.url).searchParams.get("limit")) ?? 25, 100));
+    const limit = Math.max(
+      1,
+      Math.min(toOptionalNumber(new URL(request.url).searchParams.get("limit")) ?? 25, 100),
+    );
     const cursor = new URL(request.url).searchParams.get("cursor");
     if (skillDetail?.skill) {
       const result = (await runQueryRef(ctx, apiRefs.skills.listVersionsPage, {
@@ -837,15 +862,19 @@ export async function packagesGetRouterV1Handler(ctx: ActionCtx, request: Reques
         nextCursor: string | null;
       };
       const tags = await resolveSkillTags(ctx, skillDetail.skill.tags);
-      return json({
-        items: result.items.map((version) => ({
-          version: version.version,
-          createdAt: version.createdAt,
-          changelog: version.changelog,
-          distTags: skillVersionTags(tags, version.version),
-        })),
-        nextCursor: result.nextCursor,
-      }, 200, rate.headers);
+      return json(
+        {
+          items: result.items.map((version) => ({
+            version: version.version,
+            createdAt: version.createdAt,
+            changelog: version.changelog,
+            distTags: skillVersionTags(tags, version.version),
+          })),
+          nextCursor: result.nextCursor,
+        },
+        200,
+        rate.headers,
+      );
     }
     const result = await runQueryRef<{
       page: ReleaseLike[];
@@ -856,47 +885,59 @@ export async function packagesGetRouterV1Handler(ctx: ActionCtx, request: Reques
       viewerUserId: viewerUserId ?? undefined,
       paginationOpts: { cursor, numItems: limit },
     });
-    return json({
-      items: result.page.map((release: ReleaseLike) => ({
-        version: release.version,
-        createdAt: release.createdAt,
-        changelog: release.changelog,
-        distTags: release.distTags ?? [],
-      })),
-      nextCursor: result.isDone ? null : result.continueCursor,
-    }, 200, rate.headers);
+    return json(
+      {
+        items: result.page.map((release: ReleaseLike) => ({
+          version: release.version,
+          createdAt: release.createdAt,
+          changelog: release.changelog,
+          distTags: release.distTags ?? [],
+        })),
+        nextCursor: result.isDone ? null : result.continueCursor,
+      },
+      200,
+      rate.headers,
+    );
   }
 
   if (segments[1] === "versions" && segments[2]) {
     if (skillDetail?.skill) {
-      const version = (await runQueryRef(ctx, internalRefs.skills.getVersionBySkillAndVersionInternal, {
-        skillId: skillDetail.skill._id,
-        version: segments[2],
-      })) as SkillVersionLike | null;
+      const version = (await runQueryRef(
+        ctx,
+        internalRefs.skills.getVersionBySkillAndVersionInternal,
+        {
+          skillId: skillDetail.skill._id,
+          version: segments[2],
+        },
+      )) as SkillVersionLike | null;
       if (!version || version.softDeletedAt) return text("Version not found", 404, rate.headers);
       const tags = await resolveSkillTags(ctx, skillDetail.skill.tags);
-      return json({
-        package: {
-          name: skillDetail.skill.slug,
-          displayName: skillDetail.skill.displayName,
-          family: "skill",
+      return json(
+        {
+          package: {
+            name: skillDetail.skill.slug,
+            displayName: skillDetail.skill.displayName,
+            family: "skill",
+          },
+          version: {
+            version: version.version,
+            createdAt: version.createdAt,
+            changelog: version.changelog,
+            distTags: skillVersionTags(tags, version.version),
+            files: version.files.map((file) => ({
+              path: file.path,
+              size: file.size,
+              sha256: file.sha256,
+              contentType: file.contentType,
+            })),
+            compatibility: null,
+            capabilities: null,
+            verification: null,
+          },
         },
-        version: {
-          version: version.version,
-          createdAt: version.createdAt,
-          changelog: version.changelog,
-          distTags: skillVersionTags(tags, version.version),
-          files: version.files.map((file) => ({
-            path: file.path,
-            size: file.size,
-            sha256: file.sha256,
-            contentType: file.contentType,
-          })),
-          compatibility: null,
-          capabilities: null,
-          verification: null,
-        },
-      }, 200, rate.headers);
+        200,
+        rate.headers,
+      );
     }
     const result = (await runQueryRef(
       ctx,
@@ -908,28 +949,32 @@ export async function packagesGetRouterV1Handler(ctx: ActionCtx, request: Reques
       },
     )) as { package: PublicPackageDocLike; version: ReleaseLike } | null;
     if (!result) return text("Version not found", 404, rate.headers);
-    return json({
-      package: {
-        name: result.package.name,
-        displayName: result.package.displayName,
-        family: result.package.family,
+    return json(
+      {
+        package: {
+          name: result.package.name,
+          displayName: result.package.displayName,
+          family: result.package.family,
+        },
+        version: {
+          version: result.version.version,
+          createdAt: result.version.createdAt,
+          changelog: result.version.changelog,
+          distTags: result.version.distTags ?? [],
+          files: result.version.files.map((file) => ({
+            path: file.path,
+            size: file.size,
+            sha256: file.sha256,
+            contentType: file.contentType,
+          })),
+          compatibility: result.version.compatibility ?? null,
+          capabilities: result.version.capabilities ?? null,
+          verification: result.version.verification ?? null,
+        },
       },
-      version: {
-        version: result.version.version,
-        createdAt: result.version.createdAt,
-        changelog: result.version.changelog,
-        distTags: result.version.distTags ?? [],
-        files: result.version.files.map((file) => ({
-          path: file.path,
-          size: file.size,
-          sha256: file.sha256,
-          contentType: file.contentType,
-        })),
-        compatibility: result.version.compatibility ?? null,
-        capabilities: result.version.capabilities ?? null,
-        verification: result.version.verification ?? null,
-      },
-    }, 200, rate.headers);
+      200,
+      rate.headers,
+    );
   }
 
   if (segments[1] === "file") {
@@ -940,7 +985,8 @@ export async function packagesGetRouterV1Handler(ctx: ActionCtx, request: Reques
       if (!version || version.softDeletedAt) return text("Version not found", 404, rate.headers);
       const file = resolveSkillFilePath(version, path);
       if (!file) return text("File not found", 404, rate.headers);
-      if (!("storageId" in file) || !file.storageId) return text("File not found", 404, rate.headers);
+      if (!("storageId" in file) || !file.storageId)
+        return text("File not found", 404, rate.headers);
       if (!isTextFile(file.path, file.contentType)) {
         return text("Binary files are not served inline", 415, rate.headers);
       }

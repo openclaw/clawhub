@@ -1,7 +1,7 @@
 import { useAuthActions } from "@convex-dev/auth/react";
 import { Link } from "@tanstack/react-router";
-import { Menu, Monitor, Moon, Sun } from "lucide-react";
-import { useMemo, useRef } from "react";
+import { Menu, Monitor, Moon, Sun, X } from "lucide-react";
+import { useMemo, useRef, useState } from "react";
 import { getUserFacingConvexError } from "../lib/convexError";
 import { gravatarUrl } from "../lib/gravatar";
 import { isModerator } from "../lib/roles";
@@ -17,6 +17,7 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "./ui/dropdown-menu";
+import { Sheet, SheetClose, SheetContent, SheetTitle, SheetTrigger } from "./ui/sheet";
 import { ToggleGroup, ToggleGroupItem } from "./ui/toggle-group";
 
 export default function Header() {
@@ -48,6 +49,8 @@ export default function Header() {
       context: { element: toggleRef.current },
     });
   };
+
+  const [sheetOpen, setSheetOpen] = useState(false);
 
   return (
     <header className="navbar">
@@ -131,19 +134,66 @@ export default function Header() {
         </nav>
         <div className="nav-actions">
           <div className="nav-mobile">
-            <DropdownMenu>
-              <DropdownMenuTrigger asChild>
+            <Sheet open={sheetOpen} onOpenChange={setSheetOpen}>
+              <SheetTrigger asChild>
                 <button className="nav-mobile-trigger" type="button" aria-label="Open menu">
                   <Menu className="h-4 w-4" aria-hidden="true" />
                 </button>
-              </DropdownMenuTrigger>
-              <DropdownMenuContent align="end">
-                {isSoulMode ? (
-                  <DropdownMenuItem asChild>
-                    <a href={clawHubUrl}>ClawHub</a>
-                  </DropdownMenuItem>
-                ) : null}
-                <DropdownMenuItem asChild>
+              </SheetTrigger>
+              <SheetContent aria-describedby={undefined}>
+                <SheetTitle className="sr-only">Navigation menu</SheetTitle>
+                {isAuthenticated && me ? (
+                  <div className="mobile-sheet-user">
+                    <div className="mobile-sheet-user-avatar">
+                      {avatar ? (
+                        <img src={avatar} alt={me.displayName ?? me.name ?? "User avatar"} />
+                      ) : (
+                        <span>{initial}</span>
+                      )}
+                    </div>
+                    <div className="mobile-sheet-user-info">
+                      <div className="mobile-sheet-user-name">
+                        {me.displayName ?? me.name ?? handle}
+                      </div>
+                      <div className="mobile-sheet-user-handle">@{handle}</div>
+                    </div>
+                    <SheetClose asChild>
+                      <button
+                        className="mobile-sheet-close"
+                        type="button"
+                        aria-label="Close menu"
+                        style={{ marginLeft: "auto" }}
+                      >
+                        <X className="h-4 w-4" aria-hidden="true" />
+                      </button>
+                    </SheetClose>
+                  </div>
+                ) : (
+                  <div className="mobile-sheet-header">
+                    <span
+                      className="brand-name"
+                      style={{ fontFamily: "var(--font-display)", fontSize: "1.1rem" }}
+                    >
+                      {siteName}
+                    </span>
+                    <SheetClose asChild>
+                      <button className="mobile-sheet-close" type="button" aria-label="Close menu">
+                        <X className="h-4 w-4" aria-hidden="true" />
+                      </button>
+                    </SheetClose>
+                  </div>
+                )}
+
+                <nav className="mobile-sheet-nav">
+                  {isSoulMode ? (
+                    <a
+                      href={clawHubUrl}
+                      className="mobile-sheet-nav-item"
+                      onClick={() => setSheetOpen(false)}
+                    >
+                      ClawHub
+                    </a>
+                  ) : null}
                   {isSoulMode ? (
                     <Link
                       to="/souls"
@@ -154,6 +204,8 @@ export default function Header() {
                         view: undefined,
                         focus: undefined,
                       }}
+                      className="mobile-sheet-nav-item"
+                      onClick={() => setSheetOpen(false)}
                     >
                       Souls
                     </Link>
@@ -169,27 +221,38 @@ export default function Header() {
                         view: undefined,
                         focus: undefined,
                       }}
+                      className="mobile-sheet-nav-item"
+                      onClick={() => setSheetOpen(false)}
                     >
                       Skills
                     </Link>
                   )}
-                </DropdownMenuItem>
-                {isSoulMode ? null : (
-                  <DropdownMenuItem asChild>
-                    <Link to="/packages">Packages</Link>
-                  </DropdownMenuItem>
-                )}
-                <DropdownMenuItem asChild>
-                  <Link to="/upload" search={{ updateSlug: undefined }}>
+                  {isSoulMode ? null : (
+                    <Link
+                      to="/packages"
+                      className="mobile-sheet-nav-item"
+                      onClick={() => setSheetOpen(false)}
+                    >
+                      Packages
+                    </Link>
+                  )}
+                  <Link
+                    to="/upload"
+                    search={{ updateSlug: undefined }}
+                    className="mobile-sheet-nav-item"
+                    onClick={() => setSheetOpen(false)}
+                  >
                     Upload
                   </Link>
-                </DropdownMenuItem>
-                {isSoulMode ? null : (
-                  <DropdownMenuItem asChild>
-                    <Link to="/import">Import</Link>
-                  </DropdownMenuItem>
-                )}
-                <DropdownMenuItem asChild>
+                  {isSoulMode ? null : (
+                    <Link
+                      to="/import"
+                      className="mobile-sheet-nav-item"
+                      onClick={() => setSheetOpen(false)}
+                    >
+                      Import
+                    </Link>
+                  )}
                   <Link
                     to={isSoulMode ? "/souls" : "/skills"}
                     search={
@@ -211,37 +274,95 @@ export default function Header() {
                             focus: "search",
                           }
                     }
+                    className="mobile-sheet-nav-item"
+                    onClick={() => setSheetOpen(false)}
                   >
                     Search
                   </Link>
-                </DropdownMenuItem>
-                {me ? (
-                  <DropdownMenuItem asChild>
-                    <Link to="/stars">Stars</Link>
-                  </DropdownMenuItem>
-                ) : null}
-                {isStaff ? (
-                  <DropdownMenuItem asChild>
-                    <Link to="/management" search={{ skill: undefined }}>
+                  {me ? (
+                    <Link
+                      to="/stars"
+                      className="mobile-sheet-nav-item"
+                      onClick={() => setSheetOpen(false)}
+                    >
+                      Stars
+                    </Link>
+                  ) : null}
+                  {isStaff ? (
+                    <Link
+                      to="/management"
+                      search={{ skill: undefined }}
+                      className="mobile-sheet-nav-item"
+                      onClick={() => setSheetOpen(false)}
+                    >
                       Management
                     </Link>
-                  </DropdownMenuItem>
-                ) : null}
-                <DropdownMenuSeparator />
-                <DropdownMenuItem onClick={() => setTheme("system")}>
-                  <Monitor className="h-4 w-4" aria-hidden="true" />
-                  System
-                </DropdownMenuItem>
-                <DropdownMenuItem onClick={() => setTheme("light")}>
-                  <Sun className="h-4 w-4" aria-hidden="true" />
-                  Light
-                </DropdownMenuItem>
-                <DropdownMenuItem onClick={() => setTheme("dark")}>
-                  <Moon className="h-4 w-4" aria-hidden="true" />
-                  Dark
-                </DropdownMenuItem>
-              </DropdownMenuContent>
-            </DropdownMenu>
+                  ) : null}
+
+                  {isAuthenticated && me ? (
+                    <div className="mobile-sheet-section">
+                      <div className="mobile-sheet-section-label">Account</div>
+                      <Link
+                        to="/dashboard"
+                        className="mobile-sheet-nav-item"
+                        onClick={() => setSheetOpen(false)}
+                      >
+                        Dashboard
+                      </Link>
+                      <Link
+                        to="/settings"
+                        className="mobile-sheet-nav-item"
+                        onClick={() => setSheetOpen(false)}
+                      >
+                        Settings
+                      </Link>
+                      <button
+                        type="button"
+                        className="mobile-sheet-nav-item"
+                        onClick={() => {
+                          setSheetOpen(false);
+                          void signOut();
+                        }}
+                        style={{
+                          width: "100%",
+                          background: "none",
+                          border: "none",
+                          cursor: "pointer",
+                          textAlign: "left",
+                        }}
+                      >
+                        Sign out
+                      </button>
+                    </div>
+                  ) : null}
+                </nav>
+
+                <div className="mobile-sheet-footer">
+                  <ToggleGroup
+                    type="single"
+                    value={mode}
+                    onValueChange={(value) => {
+                      if (!value) return;
+                      setTheme(value as "system" | "light" | "dark");
+                    }}
+                    aria-label="Theme mode"
+                  >
+                    <ToggleGroupItem value="system" aria-label="System theme">
+                      <Monitor className="h-4 w-4" aria-hidden="true" />
+                      <span className="sr-only">System</span>
+                    </ToggleGroupItem>
+                    <ToggleGroupItem value="light" aria-label="Light theme">
+                      <Sun className="h-4 w-4" aria-hidden="true" />
+                      <span className="sr-only">Light</span>
+                    </ToggleGroupItem>
+                    <ToggleGroupItem value="dark" aria-label="Dark theme">
+                      <Moon className="h-4 w-4" aria-hidden="true" />
+                      <span className="sr-only">Dark</span>
+                    </ToggleGroupItem>
+                  </ToggleGroup>
+                </div>
+              </SheetContent>
+            </Sheet>
           </div>
           <div className="theme-toggle" ref={toggleRef}>
             <ToggleGroup

@@ -106,17 +106,17 @@ function SoulsIndex() {
 
   return (
     <main className="section">
-      <header className="skills-header">
-        <div>
-          <h1 className="section-title" style={{ marginBottom: 8 }}>
-            Souls
-          </h1>
-          <p className="section-subtitle" style={{ marginBottom: 0 }}>
-            {isLoadingSouls
-              ? "Loading souls…"
-              : `${showing}${typeof total === "number" ? ` of ${total}` : ""} souls.`}
-          </p>
-        </div>
+      <header className="skills-header-top">
+        <h1 className="section-title" style={{ marginBottom: 8 }}>
+          Souls
+        </h1>
+        <p className="section-subtitle" style={{ marginBottom: 0 }}>
+          {isLoadingSouls
+            ? "Loading souls…"
+            : `${showing}${typeof total === "number" ? ` of ${total}` : ""} souls.`}
+        </p>
+      </header>
+      <div className="skills-container">
         <div className="skills-toolbar">
           <div className="skills-search">
             <input
@@ -191,7 +191,7 @@ function SoulsIndex() {
             </button>
           </div>
         </div>
-      </header>
+      </div>
 
       {isLoadingSouls ? (
         <div className="card">

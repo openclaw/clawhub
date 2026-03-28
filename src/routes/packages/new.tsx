@@ -2,8 +2,8 @@ import { createFileRoute } from "@tanstack/react-router";
 import { useAction, useMutation } from "convex/react";
 import { startTransition, useMemo, useState } from "react";
 import { api } from "../../../convex/_generated/api";
-import { expandDroppedItems, expandFilesWithReport } from "../../lib/uploadFiles";
 import { buildPackageUploadEntries, filterIgnoredPackageFiles } from "../../lib/packageUpload";
+import { expandDroppedItems, expandFilesWithReport } from "../../lib/uploadFiles";
 import { useAuthStatus } from "../../lib/useAuthStatus";
 import { formatBytes, formatPublishError, hashFile, uploadFile } from "../upload/-utils";
 
@@ -20,9 +20,9 @@ const apiRefs = api as unknown as {
 function PublishPackageRoute() {
   const { isAuthenticated } = useAuthStatus();
   const generateUploadUrl = useMutation(api.uploads.generateUploadUrl);
-  const publishRelease = useAction(apiRefs.packages.publishRelease as never) as unknown as (
-    args: { payload: unknown },
-  ) => Promise<unknown>;
+  const publishRelease = useAction(apiRefs.packages.publishRelease as never) as unknown as (args: {
+    payload: unknown;
+  }) => Promise<unknown>;
   const [family, setFamily] = useState<"code-plugin" | "bundle-plugin">("code-plugin");
   const [name, setName] = useState("");
   const [displayName, setDisplayName] = useState("");
@@ -46,12 +46,16 @@ function PublishPackageRoute() {
       includeBinaryArchiveFiles: true,
     });
     const filtered = await filterIgnoredPackageFiles(expanded.files);
-    const nextIgnoredPaths = [...new Set([...expanded.ignoredMacJunkPaths, ...filtered.ignoredPaths])];
+    const nextIgnoredPaths = [
+      ...new Set([...expanded.ignoredMacJunkPaths, ...filtered.ignoredPaths]),
+    ];
     setFiles(filtered.files);
     setIgnoredPaths(nextIgnoredPaths);
     setError(null);
 
-    const packageJson = filtered.files.find((file) => file.name.toLowerCase().endsWith("package.json"));
+    const packageJson = filtered.files.find((file) =>
+      file.name.toLowerCase().endsWith("package.json"),
+    );
     if (!packageJson) return;
     try {
       const text = await packageJson.text();
@@ -76,18 +80,32 @@ function PublishPackageRoute() {
       </header>
       <div className="card" style={{ display: "grid", gap: 12 }}>
         {!isAuthenticated ? <div>Log in to publish packages.</div> : null}
-        <select className="input" value={family} onChange={(event) => setFamily(event.target.value as never)}>
+        <select
+          className="input"
+          value={family}
+          onChange={(event) => setFamily(event.target.value as never)}
+        >
           <option value="code-plugin">Code plugin</option>
           <option value="bundle-plugin">Bundle plugin</option>
         </select>
-        <input className="input" placeholder="Package name" value={name} onChange={(event) => setName(event.target.value)} />
+        <input
+          className="input"
+          placeholder="Package name"
+          value={name}
+          onChange={(event) => setName(event.target.value)}
+        />
         <input
           className="input"
           placeholder="Display name"
           value={displayName}
           onChange={(event) => setDisplayName(event.target.value)}
         />
-        <input className="input" placeholder="Version" value={version} onChange={(event) => setVersion(event.target.value)} />
+        <input
+          className="input"
+          placeholder="Version"
+          value={version}
+          onChange={(event) => setVersion(event.target.value)}
+        />
         <textarea
           className="input"
           placeholder="Changelog"
@@ -146,8 +164,12 @@ function PublishPackageRoute() {
             void onPickFiles(selected);
           }}
         />
-        <div className="tag">{files.length} files · {formatBytes(totalBytes)}</div>
-        {ignoredPaths.length > 0 ? <div className="tag">Ignored {ignoredPaths.length} files via ignore rules.</div> : null}
+        <div className="tag">
+          {files.length} files · {formatBytes(totalBytes)}
+        </div>
+        {ignoredPaths.length > 0 ? (
+          <div className="tag">Ignored {ignoredPaths.length} files via ignore rules.</div>
+        ) : null}
         <button
           className="btn"
           type="button"

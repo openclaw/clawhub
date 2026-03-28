@@ -68,7 +68,7 @@ function SkillsHome() {
               Upload AgentSkills bundles, version them like npm, and make them searchable with
               vectors. No gatekeeping, just signal.
             </p>
-            <div style={{ display: "flex", gap: 12, marginTop: 20 }}>
+            <div className="hero-cta-row">
               <Link to="/upload" search={{ updateSlug: undefined }} className="btn btn-primary">
                 Publish a skill
               </Link>
@@ -206,7 +206,7 @@ function OnlyCrabsHome() {
               Share SOUL.md bundles, version them like docs, and keep personal system lore in one
               public place.
             </p>
-            <div style={{ display: "flex", gap: 12, marginTop: 20 }}>
+            <div className="hero-cta-row">
               <Link to="/upload" search={{ updateSlug: undefined }} className="btn btn-primary">
                 Publish a soul
               </Link>

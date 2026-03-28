@@ -298,6 +298,8 @@ describe("http bun runtime", () => {
     const [, args] = spawnSync.mock.calls[0] as [string, string[]];
     expect(args).toContain("-F");
     expect(args.some((arg) => arg.includes("name=demo"))).toBe(true);
-    expect(args.some((arg) => arg.includes("file=@/tmp/clawhub-upload-abc/dist/demo.txt"))).toBe(true);
+    expect(args.some((arg) => arg.includes("file=@/tmp/clawhub-upload-abc/dist/demo.txt"))).toBe(
+      true,
+    );
   });
 });

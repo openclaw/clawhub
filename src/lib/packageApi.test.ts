@@ -62,7 +62,9 @@ describe("fetchPackages", () => {
     vi.stubEnv("VITE_CONVEX_URL", "https://registry.example");
     const fetchMock = vi
       .spyOn(globalThis, "fetch")
-      .mockResolvedValue(new Response(JSON.stringify({ items: [], nextCursor: null }), { status: 200 }));
+      .mockResolvedValue(
+        new Response(JSON.stringify({ items: [], nextCursor: null }), { status: 200 }),
+      );
 
     await fetchPackages({
       family: "skill",
@@ -83,7 +85,9 @@ describe("fetchPackages", () => {
     vi.stubEnv("VITE_CONVEX_URL", "https://registry.example");
     const fetchMock = vi
       .spyOn(globalThis, "fetch")
-      .mockResolvedValue(new Response(JSON.stringify({ items: [], nextCursor: null }), { status: 200 }));
+      .mockResolvedValue(
+        new Response(JSON.stringify({ items: [], nextCursor: null }), { status: 200 }),
+      );
 
     await fetchPackages({
       cursor: "pkgpage:test",
@@ -104,7 +108,9 @@ describe("fetchPackages", () => {
     vi.stubEnv("VITE_CONVEX_URL", "https://registry.example");
     const fetchMock = vi
       .spyOn(globalThis, "fetch")
-      .mockResolvedValue(new Response(JSON.stringify({ items: [], nextCursor: null }), { status: 200 }));
+      .mockResolvedValue(
+        new Response(JSON.stringify({ items: [], nextCursor: null }), { status: 200 }),
+      );
 
     await fetchPackages({
       isOfficial: false,
@@ -161,9 +167,11 @@ describe("fetchPackages", () => {
     vi.stubEnv("VITE_CONVEX_URL", "https://registry.example");
     getRequestUrlMock.mockReturnValue(new URL("https://app.example/packages/private-plugin"));
     getRequestHeadersMock.mockReturnValue(new Headers({ cookie: "session=abc" }));
-    const fetchMock = vi.spyOn(globalThis, "fetch").mockResolvedValue(
-      new Response(JSON.stringify({ package: null, owner: null }), { status: 200 }),
-    );
+    const fetchMock = vi
+      .spyOn(globalThis, "fetch")
+      .mockResolvedValue(
+        new Response(JSON.stringify({ package: null, owner: null }), { status: 200 }),
+      );
 
     await fetchPackageDetail("private-plugin");
 
@@ -185,9 +193,11 @@ describe("fetchPackages", () => {
     vi.stubGlobal("window", {
       location: { origin: "https://app.example" },
     });
-    const fetchMock = vi.spyOn(globalThis, "fetch").mockResolvedValue(
-      new Response(JSON.stringify({ package: null, owner: null }), { status: 200 }),
-    );
+    const fetchMock = vi
+      .spyOn(globalThis, "fetch")
+      .mockResolvedValue(
+        new Response(JSON.stringify({ package: null, owner: null }), { status: 200 }),
+      );
 
     await fetchPackageDetail("private-plugin");
 
@@ -202,7 +212,9 @@ describe("fetchPackages", () => {
     });
     const fetchMock = vi
       .spyOn(globalThis, "fetch")
-      .mockResolvedValue(new Response(JSON.stringify({ items: [], nextCursor: null }), { status: 200 }));
+      .mockResolvedValue(
+        new Response(JSON.stringify({ items: [], nextCursor: null }), { status: 200 }),
+      );
 
     await fetchPackages({
       family: "bundle-plugin",

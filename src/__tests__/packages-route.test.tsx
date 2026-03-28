@@ -67,7 +67,9 @@ describe("packages route", () => {
 
   it("preserves skill family filters in search state", async () => {
     const route = await loadRoute();
-    const validateSearch = route.__config.validateSearch as (search: Record<string, unknown>) => Record<string, unknown>;
+    const validateSearch = route.__config.validateSearch as (
+      search: Record<string, unknown>,
+    ) => Record<string, unknown>;
 
     expect(validateSearch({ family: "skill", q: "demo" })).toEqual({
       family: "skill",

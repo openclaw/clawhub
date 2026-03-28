@@ -29,17 +29,11 @@ let loaderDataMock = {
 };
 
 vi.mock("@tanstack/react-router", () => ({
-  createFileRoute:
-    () =>
-    (config: {
-      loader?: unknown;
-      head?: unknown;
-      component?: unknown;
-    }) => ({
-      __config: config,
-      useParams: () => paramsMock,
-      useLoaderData: () => loaderDataMock,
-    }),
+  createFileRoute: () => (config: { loader?: unknown; head?: unknown; component?: unknown }) => ({
+    __config: config,
+    useParams: () => paramsMock,
+    useLoaderData: () => loaderDataMock,
+  }),
 }));
 
 vi.mock("../lib/packageApi", () => ({
@@ -47,7 +41,9 @@ vi.mock("../lib/packageApi", () => ({
   fetchPackageReadme: vi.fn(),
   fetchPackageVersion: vi.fn(),
   getPackageDownloadPath: vi.fn((name: string, version?: string | null) =>
-    version ? `/api/v1/packages/${name}/download?version=${version}` : `/api/v1/packages/${name}/download`,
+    version
+      ? `/api/v1/packages/${name}/download?version=${version}`
+      : `/api/v1/packages/${name}/download`,
   ),
 }));
 

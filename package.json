@@ -33,6 +33,7 @@
     "@fontsource/ibm-plex-mono": "^5.2.7",
     "@fontsource/manrope": "^5.2.8",
     "@monaco-editor/react": "^4.7.0",
+    "@radix-ui/react-dialog": "^1.1.15",
     "@radix-ui/react-dropdown-menu": "^2.1.16",
     "@radix-ui/react-toggle-group": "^1.1.11",
     "@resvg/resvg-wasm": "^2.6.2",

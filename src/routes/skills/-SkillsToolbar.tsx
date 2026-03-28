@@ -62,6 +62,7 @@ export function SkillsToolbar({
         >
           Hide suspicious
         </button>
+        <span className="skills-toolbar-row-spacer" />
         <select
           className="skills-sort"
           value={sort}

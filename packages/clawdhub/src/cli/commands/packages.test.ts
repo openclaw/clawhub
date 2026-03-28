@@ -181,7 +181,11 @@ describe("package commands", () => {
         "utf8",
       );
       await writeFile(join(folder, ".gitignore"), "dist/\n", "utf8");
-      await writeFile(join(folder, "openclaw.plugin.json"), JSON.stringify({ id: "demo.plugin" }), "utf8");
+      await writeFile(
+        join(folder, "openclaw.plugin.json"),
+        JSON.stringify({ id: "demo.plugin" }),
+        "utf8",
+      );
       await writeFile(join(folder, "dist", "index.js"), "export const demo = true;\n", "utf8");
 
       mockApiRequestForm.mockResolvedValueOnce({
@@ -235,7 +239,11 @@ describe("package commands", () => {
         JSON.stringify({ name: "demo-plugin", version: "1.0.0" }),
         "utf8",
       );
-      await writeFile(join(folder, "openclaw.plugin.json"), JSON.stringify({ id: "demo.plugin" }), "utf8");
+      await writeFile(
+        join(folder, "openclaw.plugin.json"),
+        JSON.stringify({ id: "demo.plugin" }),
+        "utf8",
+      );
 
       await expect(cmdPublishPackage(makeOpts(workdir), "demo-plugin", {})).rejects.toThrow(
         "--source-repo and --source-commit required for code plugins",

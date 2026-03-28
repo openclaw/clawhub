@@ -2642,12 +2642,13 @@ function decodeSkillCatalogCursor(raw: string | null | undefined): SkillCatalogC
     return { cursor: raw, offset: 0, pageSize: null, done: false };
   }
   try {
-    const parsed = JSON.parse(raw.slice(SKILL_CATALOG_CURSOR_PREFIX.length)) as Partial<SkillCatalogCursorState>;
+    const parsed = JSON.parse(
+      raw.slice(SKILL_CATALOG_CURSOR_PREFIX.length),
+    ) as Partial<SkillCatalogCursorState>;
     return {
       cursor: typeof parsed.cursor === "string" ? parsed.cursor : null,
       offset: typeof parsed.offset === "number" && parsed.offset > 0 ? parsed.offset : 0,
-      pageSize:
-        typeof parsed.pageSize === "number" && parsed.pageSize > 0 ? parsed.pageSize : null,
+      pageSize: typeof parsed.pageSize === "number" && parsed.pageSize > 0 ? parsed.pageSize : null,
       done: parsed.done === true,
     };
   } catch {
@@ -2731,7 +2732,9 @@ function scoreSkillCatalogResult(digest: Doc<"skillSearchDigest">, queryText: st
 
 export const listPackageCatalogPage = query({
   args: {
-    channel: v.optional(v.union(v.literal("official"), v.literal("community"), v.literal("private"))),
+    channel: v.optional(
+      v.union(v.literal("official"), v.literal("community"), v.literal("private")),
+    ),
     isOfficial: v.optional(v.boolean()),
     executesCode: v.optional(v.boolean()),
     capabilityTag: v.optional(v.string()),
@@ -2761,7 +2764,9 @@ export const listPackageCatalogPage = query({
       loops += 1;
       const effectivePageSize = Math.min(
         remainingScanBudget,
-        offset > 0 && pageSize ? Math.max(pageSize, offset + 1) : Math.max(targetCount * 3, targetCount),
+        offset > 0 && pageSize
+          ? Math.max(pageSize, offset + 1)
+          : Math.max(targetCount * 3, targetCount),
       );
       if (effectivePageSize <= 0) break;
       remainingScanBudget -= effectivePageSize;
@@ -2815,7 +2820,9 @@ export const searchPackageCatalogPublic = query({
   args: {
     query: v.string(),
     limit: v.optional(v.number()),
-    channel: v.optional(v.union(v.literal("official"), v.literal("community"), v.literal("private"))),
+    channel: v.optional(
+      v.union(v.literal("official"), v.literal("community"), v.literal("private")),
+    ),
     isOfficial: v.optional(v.boolean()),
     executesCode: v.optional(v.boolean()),
     capabilityTag: v.optional(v.string()),
