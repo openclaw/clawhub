@@ -1,4 +1,5 @@
 {
+  "buildCommand": "npx convex deploy --cmd 'npm run build'",
   "redirects": [
     {
       "source": "/",
