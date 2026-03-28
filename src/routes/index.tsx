@@ -18,7 +18,7 @@ export const Route = createFileRoute("/")({
     if (!isKnotEnabled()) return;
 
     const currentOrigin =
-      (location as { url?: URL }).url?.origin ??
+      (typeof location.href === "string" ? new URL(location.href).origin : undefined) ??
       (typeof window !== "undefined" ? window.location.origin : undefined);
     const knotSiteUrl = getKnotSiteUrl();
     if (currentOrigin === knotSiteUrl) return;
