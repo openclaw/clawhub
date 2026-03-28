@@ -89,7 +89,7 @@ export function getKnotSiteUrl() {
   const datasetValue = readDocumentData("knotSiteUrl");
   if (datasetValue !== undefined) return normalizeSiteOrigin(datasetValue) ?? DEFAULT_KNOT_SITE_URL;
 
-  const explicit = getRuntimeEnv("VITE_SITE_URL") ?? getRuntimeEnv("SITE_URL");
+  const explicit = getRuntimeEnv("SITE_URL") ?? getRuntimeEnv("VITE_SITE_URL");
   return normalizeSiteOrigin(explicit) ?? DEFAULT_KNOT_SITE_URL;
 }
 
