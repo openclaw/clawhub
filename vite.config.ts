@@ -70,6 +70,8 @@ const config = defineConfig({
     viteReact(),
   ],
   build: {
+    // Oxc currently emits Safari-hostile minified syntax for this app bundle.
+    minify: "esbuild",
     chunkSizeWarningLimit: 900,
     rollupOptions: {
       onwarn: handleRollupWarning,
