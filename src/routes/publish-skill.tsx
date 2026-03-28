@@ -432,17 +432,17 @@ export function Upload() {
   }
 
   return (
-    <main className="section upload-page">
-      <header className="upload-page-header">
-        <div>
-          <h1 className="upload-page-title">Publish a {contentLabel}</h1>
-          <p className="upload-page-subtitle">
-            Drop a folder with {requiredFileLabel} and text files. We will handle the rest.
-          </p>
-        </div>
+    <main className="section">
+      <header className="skills-header-top">
+        <h1 className="section-title" style={{ marginBottom: 8 }}>
+          Publish a {contentLabel}
+        </h1>
+        <p className="section-subtitle" style={{ marginBottom: 0 }}>
+          Drop a folder with {requiredFileLabel} and text files. We will handle the rest.
+        </p>
       </header>
 
-      <form onSubmit={handleSubmit} className="upload-grid">
+      <form onSubmit={handleSubmit} className="upload-grid publish-skill-grid">
         <div className="card upload-panel">
           <label className="form-label" htmlFor="slug">
             Slug

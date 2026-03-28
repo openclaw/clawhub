@@ -440,44 +440,7 @@ code {
   position: relative;
 }
 
-.upload-page {
-  position: relative;
-}
-
-.upload-page::before {
-  content: "";
-  position: absolute;
-  inset: -80px 0 auto;
-  height: 220px;
-  pointer-events: none;
-  background:
-    radial-gradient(circle at 22% 40%, rgba(255, 118, 84, 0.14), transparent 58%),
-    radial-gradient(circle at 78% 0%, rgba(255, 177, 136, 0.08), transparent 45%);
-}
-
-.upload-page-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: flex-end;
-  gap: 16px;
-  margin-bottom: 18px;
-}
-
-.upload-page-title {
-  margin: 0;
-  font-family: var(--font-display);
-  font-size: clamp(1.9rem, 3.2vw, 2.7rem);
-  letter-spacing: -0.03em;
-}
-
-.upload-page-subtitle {
-  margin: 8px 0 0;
-  max-width: 640px;
-  color: var(--ink-soft);
-  line-height: 1.6;
-}
-
-.upload-page .upload-grid {
+.publish-skill-grid {
   grid-template-columns: minmax(0, 1.1fr) minmax(0, 0.9fr);
   gap: 18px;
 }
@@ -3437,7 +3400,7 @@ code {
     grid-template-columns: 1fr;
   }
 
-  .upload-page .upload-grid {
+  .publish-skill-grid {
     gap: 14px;
   }
 
