@@ -1299,11 +1299,6 @@ code {
   margin-bottom: 22px;
 }
 
-.skills-container {
-  max-width: 900px;
-  margin: 0 auto;
-}
-
 .skills-header {
   display: flex;
   align-items: flex-end;

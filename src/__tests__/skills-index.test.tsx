@@ -63,6 +63,13 @@ describe("SkillsIndex", () => {
     );
   });
 
+  it("does not wrap the skills page content in a narrow width container", async () => {
+    render(<SkillsIndex />);
+    await act(async () => {});
+
+    expect(document.querySelector(".skills-container")).toBeNull();
+  });
+
   it("renders an empty state when no skills are returned", async () => {
     render(<SkillsIndex />);
     await act(async () => {});

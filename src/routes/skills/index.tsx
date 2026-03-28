@@ -74,36 +74,34 @@ export function SkillsIndex() {
             : `Browse the skill library${model.activeFilters.length ? ` (${model.activeFilters.join(", ")})` : ""}.`}
         </p>
       </header>
-      <div className="skills-container">
-        <SkillsToolbar
-          searchInputRef={searchInputRef}
-          query={model.query}
-          hasQuery={model.hasQuery}
-          sort={model.sort}
-          dir={model.dir}
-          view={model.view}
-          highlightedOnly={model.highlightedOnly}
-          nonSuspiciousOnly={model.nonSuspiciousOnly}
-          onQueryChange={model.onQueryChange}
-          onToggleHighlighted={model.onToggleHighlighted}
-          onToggleNonSuspicious={model.onToggleNonSuspicious}
-          onSortChange={model.onSortChange}
-          onToggleDir={model.onToggleDir}
-          onToggleView={model.onToggleView}
-        />
-        <SkillsResults
-          isLoadingSkills={model.isLoadingSkills}
-          sorted={model.sorted}
-          view={model.view}
-          listDoneLoading={!model.isLoadingSkills && !model.canLoadMore && !model.isLoadingMore}
-          hasQuery={model.hasQuery}
-          canLoadMore={model.canLoadMore}
-          isLoadingMore={model.isLoadingMore}
-          canAutoLoad={model.canAutoLoad}
-          loadMoreRef={model.loadMoreRef}
-          loadMore={model.loadMore}
-        />
-      </div>
+      <SkillsToolbar
+        searchInputRef={searchInputRef}
+        query={model.query}
+        hasQuery={model.hasQuery}
+        sort={model.sort}
+        dir={model.dir}
+        view={model.view}
+        highlightedOnly={model.highlightedOnly}
+        nonSuspiciousOnly={model.nonSuspiciousOnly}
+        onQueryChange={model.onQueryChange}
+        onToggleHighlighted={model.onToggleHighlighted}
+        onToggleNonSuspicious={model.onToggleNonSuspicious}
+        onSortChange={model.onSortChange}
+        onToggleDir={model.onToggleDir}
+        onToggleView={model.onToggleView}
+      />
+      <SkillsResults
+        isLoadingSkills={model.isLoadingSkills}
+        sorted={model.sorted}
+        view={model.view}
+        listDoneLoading={!model.isLoadingSkills && !model.canLoadMore && !model.isLoadingMore}
+        hasQuery={model.hasQuery}
+        canLoadMore={model.canLoadMore}
+        isLoadingMore={model.isLoadingMore}
+        canAutoLoad={model.canAutoLoad}
+        loadMoreRef={model.loadMoreRef}
+        loadMore={model.loadMore}
+      />
     </main>
   );
 }
