@@ -60,6 +60,7 @@ type PackagePublishOptions = {
   sourceCommit?: string;
   sourceRef?: string;
   sourcePath?: string;
+  dryRun?: boolean;
 };
 
 type PackageFile = {
@@ -326,6 +327,14 @@ export async function cmdPublishPackage(
     if (!fileSet.has("openclaw.bundle.json") && hostTargets.length === 0) {
       fail("Bundle plugins need openclaw.bundle.json or --host-targets");
     }
+  }
+
+  if (options.dryRun) {
+    console.log(`Would publish ${name}@${version} (${filesOnDisk.length} files):`);
+    for (const file of filesOnDisk) {
+      console.log(`  ${file.relPath}`);
+    }
+    return;
   }
 
   const spinner = createSpinner(`Preparing ${name}@${version}`);

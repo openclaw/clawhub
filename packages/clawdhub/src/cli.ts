@@ -387,6 +387,7 @@ packageCmd
   .option("--source-commit <sha>", "Git commit SHA")
   .option("--source-ref <ref>", "Git ref/tag/branch")
   .option("--source-path <path>", "Repo subpath", ".")
+  .option("--dry-run", "List files that would be uploaded without publishing")
   .action(async (folder, options) => {
     const opts = await resolveGlobalOpts();
     await cmdPublishPackage(opts, folder, options);
