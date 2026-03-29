@@ -195,14 +195,22 @@ export const acceptTransferInternal = internalMutation({
     const pkg = await ctx.db.get(transfer.packageId);
     if (!pkg || (pkg as Record<string, unknown>).softDeletedAt)
       throw new Error("Package not found");
-    if (pkg.ownerUserId !== transfer.fromUserId) {
+    const ownerChanged = transfer.fromPublisherId
+      ? pkg.ownerPublisherId !== transfer.fromPublisherId
+      : pkg.ownerUserId !== transfer.fromUserId;
+    if (ownerChanged) {
       await ctx.db.patch(transfer._id, { status: "cancelled", respondedAt: now });
       throw new Error("Transfer is no longer valid");
     }
 
     // Determine target publisher: explicit arg > transfer's toPublisherId > personal publisher
+    // Validate actor has admin/owner role on explicit publisher override
     let targetPublisher: Doc<"publishers"> | null = null;
     if (args.publisherId) {
+      await validateTransferAcceptPermission(ctx, {
+        actorUserId: args.actorUserId,
+        toPublisherId: args.publisherId,
+      });
       targetPublisher = await ctx.db.get(args.publisherId);
     } else if (transfer.toPublisherId) {
       targetPublisher = await ctx.db.get(transfer.toPublisherId);

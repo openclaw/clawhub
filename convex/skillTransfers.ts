@@ -184,14 +184,22 @@ export const acceptTransferInternal = internalMutation({
 
     const skill = await ctx.db.get(transfer.skillId);
     if (!skill || skill.softDeletedAt) throw new Error("Skill not found");
-    if (skill.ownerUserId !== transfer.fromUserId) {
+    const ownerChanged = transfer.fromPublisherId
+      ? skill.ownerPublisherId !== transfer.fromPublisherId
+      : skill.ownerUserId !== transfer.fromUserId;
+    if (ownerChanged) {
       await ctx.db.patch(transfer._id, { status: "cancelled", respondedAt: now });
       throw new Error("Transfer is no longer valid");
     }
 
     // Determine target publisher: explicit arg > transfer target > personal publisher
+    // Validate actor has admin/owner role on explicit publisher override
     let targetPublisherId: Id<"publishers">;
     if (args.publisherId) {
+      await validateTransferAcceptPermission(ctx, {
+        actorUserId: args.actorUserId,
+        toPublisherId: args.publisherId,
+      });
       targetPublisherId = args.publisherId;
     } else if (transfer.toPublisherId) {
       targetPublisherId = transfer.toPublisherId;
