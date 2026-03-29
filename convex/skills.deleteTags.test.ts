@@ -42,7 +42,7 @@ function makeCtx(params: {
   skill: Record<string, unknown> | null;
 }) {
   vi.mocked(getAuthUserId).mockResolvedValue(params.user._id as never);
-  const patch = vi.fn(async () => {});
+  const patch = vi.fn(async (_id: string, value: Record<string, unknown>) => value);
   const db = {
     get: vi.fn(async (id: string) => {
       if (id === params.user._id) return params.user;
