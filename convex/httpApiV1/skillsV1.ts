@@ -999,16 +999,26 @@ async function handleTransferDecision(
   const transferContext = await resolveTransferContext(ctx, request, slug, headers);
   if (!transferContext.ok) return transferContext.response;
 
-  const pendingTransfer =
-    decision === "cancel"
-      ? await ctx.runQuery(internal.skillTransfers.getPendingTransferBySkillAndFromUserInternal, {
-          skillId: transferContext.skill._id,
-          fromUserId: transferContext.userId,
-        })
-      : await ctx.runQuery(internal.skillTransfers.getPendingTransferBySkillAndUserInternal, {
-          skillId: transferContext.skill._id,
-          toUserId: transferContext.userId,
-        });
+  let pendingTransfer;
+  if (decision === "cancel") {
+    pendingTransfer = await ctx.runQuery(
+      internal.skillTransfers.getPendingTransferBySkillAndFromUserInternal,
+      { skillId: transferContext.skill._id, fromUserId: transferContext.userId },
+    );
+  } else {
+    // Try user-specific lookup first, then fall back to any pending transfer
+    // for the skill (allows org admins other than toUserId to accept/reject)
+    pendingTransfer = await ctx.runQuery(
+      internal.skillTransfers.getPendingTransferBySkillAndUserInternal,
+      { skillId: transferContext.skill._id, toUserId: transferContext.userId },
+    );
+    if (!pendingTransfer) {
+      pendingTransfer = await ctx.runQuery(
+        internal.skillTransfers.getPendingTransferBySkillInternal,
+        { skillId: transferContext.skill._id },
+      );
+    }
+  }
   if (!pendingTransfer) return text("No pending transfer found", 404, headers);
 
   const mutation =

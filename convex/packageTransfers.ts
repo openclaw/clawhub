@@ -429,6 +429,24 @@ export const listOutgoingInternal = internalQuery({
   },
 });
 
+export const getPendingTransferByPackageInternal = internalQuery({
+  args: {
+    packageId: v.id("packages"),
+  },
+  handler: async (ctx, args) => {
+    const now = Date.now();
+    const transfer = await ctx.db
+      .query("packageOwnershipTransfers")
+      .withIndex("by_package_status", (q) =>
+        q.eq("packageId", args.packageId).eq("status", "pending"),
+      )
+      .first();
+
+    if (!transfer || isTransferExpired(transfer, now)) return null;
+    return transfer;
+  },
+});
+
 export const getPendingTransferByPackageAndUserInternal = internalQuery({
   args: {
     packageId: v.id("packages"),

@@ -421,6 +421,22 @@ export const listOutgoingInternal = internalQuery({
   },
 });
 
+export const getPendingTransferBySkillInternal = internalQuery({
+  args: {
+    skillId: v.id("skills"),
+  },
+  handler: async (ctx, args) => {
+    const now = Date.now();
+    const transfer = await ctx.db
+      .query("skillOwnershipTransfers")
+      .withIndex("by_skill_status", (q) => q.eq("skillId", args.skillId).eq("status", "pending"))
+      .first();
+
+    if (!transfer || isTransferExpired(transfer, now)) return null;
+    return transfer;
+  },
+});
+
 export const getPendingTransferBySkillAndUserInternal = internalQuery({
   args: {
     skillId: v.id("skills"),

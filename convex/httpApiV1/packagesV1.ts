@@ -62,6 +62,7 @@ const internalRefs = internal as unknown as {
     cancelTransferInternal: unknown;
     listIncomingInternal: unknown;
     listOutgoingInternal: unknown;
+    getPendingTransferByPackageInternal: unknown;
     getPendingTransferByPackageAndUserInternal: unknown;
     getPendingTransferByPackageAndFromUserInternal: unknown;
   };
@@ -1248,24 +1249,35 @@ async function handlePackageTransferDecision(
   const transferContext = await resolvePackageTransferContext(ctx, request, name, headers);
   if (!transferContext.ok) return transferContext.response;
 
-  const pendingTransfer =
-    decision === "cancel"
-      ? await runQueryRef<PendingTransferLike | null>(
-          ctx,
-          internalRefs.packageTransfers.getPendingTransferByPackageAndFromUserInternal,
-          {
-            packageId: transferContext.pkg._id,
-            fromUserId: transferContext.userId,
-          },
-        )
-      : await runQueryRef<PendingTransferLike | null>(
-          ctx,
-          internalRefs.packageTransfers.getPendingTransferByPackageAndUserInternal,
-          {
-            packageId: transferContext.pkg._id,
-            toUserId: transferContext.userId,
-          },
-        );
+  let pendingTransfer: PendingTransferLike | null;
+  if (decision === "cancel") {
+    pendingTransfer = await runQueryRef<PendingTransferLike | null>(
+      ctx,
+      internalRefs.packageTransfers.getPendingTransferByPackageAndFromUserInternal,
+      {
+        packageId: transferContext.pkg._id,
+        fromUserId: transferContext.userId,
+      },
+    );
+  } else {
+    // Try user-specific lookup first, then fall back to any pending transfer
+    // for the package (allows org admins other than toUserId to accept/reject)
+    pendingTransfer = await runQueryRef<PendingTransferLike | null>(
+      ctx,
+      internalRefs.packageTransfers.getPendingTransferByPackageAndUserInternal,
+      {
+        packageId: transferContext.pkg._id,
+        toUserId: transferContext.userId,
+      },
+    );
+    if (!pendingTransfer) {
+      pendingTransfer = await runQueryRef<PendingTransferLike | null>(
+        ctx,
+        internalRefs.packageTransfers.getPendingTransferByPackageInternal,
+        { packageId: transferContext.pkg._id },
+      );
+    }
+  }
   if (!pendingTransfer) return text("No pending transfer found", 404, headers);
 
   const mutation =
