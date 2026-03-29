@@ -133,7 +133,7 @@ export const requestTransferInternal = internalMutation({
     const transferId = await ctx.db.insert("skillOwnershipTransfers", {
       skillId: skill._id,
       fromUserId: args.actorUserId,
-      toUserId: args.toPublisherId ? undefined : toUser._id,
+      toUserId: toUser._id,
       fromPublisherId: skill.ownerPublisherId,
       toPublisherId: args.toPublisherId,
       status: "pending",
