@@ -5,6 +5,7 @@ import {
   listPackagesV1Handler,
   listPluginsV1Handler,
   packagesGetRouterV1Handler,
+  packagesPostRouterV1Handler,
   pluginsGetRouterV1Handler,
   publishPackageV1Handler,
 } from "./httpApiV1/packagesV1";
@@ -33,6 +34,7 @@ export const listPackagesV1Http = httpAction(listPackagesV1Handler);
 export const listPluginsV1Http = httpAction(listPluginsV1Handler);
 export const packagesGetRouterV1Http = httpAction(packagesGetRouterV1Handler);
 export const pluginsGetRouterV1Http = httpAction(pluginsGetRouterV1Handler);
+export const packagesPostRouterV1Http = httpAction(packagesPostRouterV1Handler);
 export const publishPackageV1Http = httpAction(publishPackageV1Handler);
 export const listCodePluginsV1Http = httpAction(listCodePluginsV1Handler);
 export const listBundlePluginsV1Http = httpAction(listBundlePluginsV1Handler);
@@ -63,6 +65,7 @@ export const __handlers = {
   listPackagesV1Handler,
   listPluginsV1Handler,
   packagesGetRouterV1Handler,
+  packagesPostRouterV1Handler,
   pluginsGetRouterV1Handler,
   publishPackageV1Handler,
   listCodePluginsV1Handler,

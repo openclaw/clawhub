@@ -21,6 +21,7 @@ import {
   listSkillsV1Http,
   listSoulsV1Http,
   packagesGetRouterV1Http,
+  packagesPostRouterV1Http,
   pluginsGetRouterV1Http,
   publishSkillV1Http,
   publishPackageV1Http,
@@ -122,6 +123,12 @@ http.route({
   path: ApiRoutes.packages,
   method: "POST",
   handler: publishPackageV1Http,
+});
+
+http.route({
+  pathPrefix: `${ApiRoutes.packages}/`,
+  method: "POST",
+  handler: packagesPostRouterV1Http,
 });
 
 http.route({
