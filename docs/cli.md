@@ -228,7 +228,7 @@ Stores your API token + cached registry URL.
 #### GitHub Actions
 
 ClawHub also ships an official reusable workflow at
-[`/.github/workflows/package-publish.yml`](/Users/tengjizhang/.codex/worktrees/7d03/clawhub/.github/workflows/package-publish.yml)
+[`/.github/workflows/package-publish.yml`](../.github/workflows/package-publish.yml)
 for plugin repos.
 
 Typical caller setup:

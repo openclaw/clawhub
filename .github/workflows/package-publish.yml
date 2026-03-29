@@ -88,11 +88,15 @@ jobs:
           fi
 
       - name: Write ClawHub config
-        if: secrets.clawhub_token != ''
         env:
           CLAWHUB_TOKEN: ${{ secrets.clawhub_token }}
           CLAWHUB_REGISTRY: ${{ inputs.registry }}
         run: |
+          if [[ -z "$CLAWHUB_TOKEN" ]]; then
+            echo "No ClawHub token provided, skipping config file creation."
+            exit 0
+          fi
+
           python3 - <<'PY'
           import json
           import os
