@@ -1,6 +1,6 @@
-import type { Id } from "../_generated/dataModel";
+import type { Doc, Id } from "../_generated/dataModel";
 import type { QueryCtx, MutationCtx } from "../_generated/server";
-import { getPublisherMembership, isPublisherRoleAllowed } from "./publishers";
+import { getPublisherMembership, isPublisherActive, isPublisherRoleAllowed } from "./publishers";
 
 type DbCtx = Pick<QueryCtx | MutationCtx, "db">;
 
@@ -77,7 +77,13 @@ export async function validateTransferAcceptPermission(
     return;
   }
 
-  // Org target — actor must be admin or owner in the org
+  // Org target — publisher must be active and actor must be admin or owner
+  const db = (ctx as { db: { get: (id: Id<"publishers">) => Promise<Doc<"publishers"> | null> } })
+    .db;
+  const publisher = await db.get(params.toPublisherId);
+  if (!isPublisherActive(publisher)) {
+    throw new Error("Publisher not found");
+  }
   const membership = await getPublisherMembership(ctx, params.toPublisherId, params.actorUserId);
   if (!membership || !isPublisherRoleAllowed(membership.role, ["admin"])) {
     throw new Error("No pending transfer found");

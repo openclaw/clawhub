@@ -238,6 +238,11 @@ describe("transfers", () => {
       const ctx = {
         db: {
           normalizeId: vi.fn(),
+          get: vi.fn(async () => ({
+            _id: "publishers:org1",
+            kind: "org",
+            handle: "myorg",
+          })),
           query: vi.fn((table: string) => {
             if (table === "publisherMembers") {
               return {
@@ -269,6 +274,11 @@ describe("transfers", () => {
       const ctx = {
         db: {
           normalizeId: vi.fn(),
+          get: vi.fn(async () => ({
+            _id: "publishers:org1",
+            kind: "org",
+            handle: "myorg",
+          })),
           query: vi.fn((table: string) => {
             if (table === "publisherMembers") {
               return {

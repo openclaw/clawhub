@@ -1032,8 +1032,11 @@ async function handleTransferDecision(
     // For accept, resolve optional publisher handle to forward publisherId
     let publisherId: Id<"publishers"> | undefined;
     if (decision === "accept") {
-      const parsed = await parseJsonPayload(request, headers);
-      if (parsed.ok) {
+      const contentType = request.headers.get("content-type") ?? "";
+      const hasBody = contentType.includes("json");
+      const parsed = hasBody ? await parseJsonPayload(request, headers) : null;
+      if (parsed && !parsed.ok) return parsed.response;
+      if (parsed?.ok) {
         const publisherHandleRaw =
           typeof parsed.payload.publisherHandle === "string"
             ? parsed.payload.publisherHandle.trim()
