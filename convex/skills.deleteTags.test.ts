@@ -1,11 +1,12 @@
-import { describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 
 vi.mock("@convex-dev/auth/server", () => ({
   getAuthUserId: vi.fn(),
   authTables: {},
 }));
 
-import { deleteTags } from "./skills";
+const { getAuthUserId } = await import("@convex-dev/auth/server");
+const { deleteTags } = await import("./skills");
 
 type WrappedHandler<TArgs, TResult = unknown> = {
   _handler: (ctx: unknown, args: TArgs) => Promise<TResult>;
@@ -40,6 +41,7 @@ function makeCtx(params: {
   user: Record<string, unknown>;
   skill: Record<string, unknown> | null;
 }) {
+  vi.mocked(getAuthUserId).mockResolvedValue(params.user._id as never);
   const patch = vi.fn(async () => {});
   const db = {
     get: vi.fn(async (id: string) => {
@@ -54,7 +56,11 @@ function makeCtx(params: {
       if (digestQuery) return digestQuery;
       throw new Error(`unexpected table ${table}`);
     }),
+    insert: vi.fn(),
     patch,
+    delete: vi.fn(),
+    replace: vi.fn(),
+    normalizeId: vi.fn(() => null),
   };
   const auth = { getUserIdentity: vi.fn(async () => ({ tokenIdentifier: "test" })) };
   return { db, auth, patch };
@@ -96,6 +102,10 @@ const baseSkill = {
 };
 
 describe("deleteTags", () => {
+  beforeEach(() => {
+    vi.mocked(getAuthUserId).mockReset();
+  });
+
   it("deletes specified tags and keeps latest", async () => {
     const { db, auth, patch } = makeCtx({ user: ownerUser, skill: baseSkill });
     await deleteTagsHandler(
