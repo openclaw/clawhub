@@ -132,7 +132,7 @@ export async function cmdTransferRequest(
       message: options.message,
     };
     if (options.publisher) {
-      body.toPublisherId = options.publisher.replace(/^@+/, "");
+      body.toPublisherHandle = options.publisher.replace(/^@+/, "");
     }
 
     const result = await apiRequest(
@@ -226,7 +226,7 @@ async function runTransferDecision(
   try {
     const body: Record<string, string> | undefined =
       spec.action === "accept" && options.publisher
-        ? { toPublisherId: options.publisher.replace(/^@+/, "") }
+        ? { publisherHandle: options.publisher.replace(/^@+/, "") }
         : undefined;
 
     const result = await apiRequest(
