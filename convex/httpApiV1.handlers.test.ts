@@ -2090,18 +2090,25 @@ describe("httpApiV1 handlers", () => {
       user: { handle: "p" },
     } as never);
 
+    let transferQueryCount = 0;
     const runQuery = vi.fn(async (_query: unknown, args: Record<string, unknown>) => {
       if (isRateLimitArgs(args)) return okRate();
       if ("userId" in args) {
-        return [
-          {
-            _id: "skillOwnershipTransfers:1",
-            skill: { _id: "skills:1", slug: "demo", displayName: "Demo" },
-            fromUser: { _id: "users:2", handle: "alice", displayName: "Alice" },
-            requestedAt: 100,
-            expiresAt: 200,
-          },
-        ];
+        transferQueryCount++;
+        // First call is skill transfers, second is package transfers
+        if (transferQueryCount === 1) {
+          return [
+            {
+              _id: "skillOwnershipTransfers:1",
+              type: "skill",
+              skill: { _id: "skills:1", slug: "demo", displayName: "Demo" },
+              fromUser: { _id: "users:2", handle: "alice", displayName: "Alice" },
+              requestedAt: 100,
+              expiresAt: 200,
+            },
+          ];
+        }
+        return [];
       }
       return null;
     });
