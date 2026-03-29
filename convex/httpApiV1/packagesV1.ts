@@ -1259,6 +1259,14 @@ async function handlePackageTransferDecision(
         fromUserId: transferContext.userId,
       },
     );
+    if (!pendingTransfer) {
+      // Fallback: allow org admins to cancel transfers initiated by other admins
+      pendingTransfer = await runQueryRef<PendingTransferLike | null>(
+        ctx,
+        internalRefs.packageTransfers.getPendingTransferByPackageInternal,
+        { packageId: transferContext.pkg._id },
+      );
+    }
   } else {
     // Try user-specific lookup first, then fall back to any pending transfer
     // for the package (allows org admins other than toUserId to accept/reject)

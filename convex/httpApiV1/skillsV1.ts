@@ -1005,6 +1005,13 @@ async function handleTransferDecision(
       internal.skillTransfers.getPendingTransferBySkillAndFromUserInternal,
       { skillId: transferContext.skill._id, fromUserId: transferContext.userId },
     );
+    if (!pendingTransfer) {
+      // Fallback: allow org admins to cancel transfers initiated by other admins
+      pendingTransfer = await ctx.runQuery(
+        internal.skillTransfers.getPendingTransferBySkillInternal,
+        { skillId: transferContext.skill._id },
+      );
+    }
   } else {
     // Try user-specific lookup first, then fall back to any pending transfer
     // for the skill (allows org admins other than toUserId to accept/reject)
