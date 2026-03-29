@@ -84,7 +84,17 @@ async function resolveItemType(
         registry,
       ).toString(),
       { headers: { Authorization: `Bearer ${token}` } },
-    ).then((r) => r.ok),
+    ).then(async (r) => {
+      if (!r.ok) return false;
+      // The packages endpoint falls back to returning skills when no package
+      // exists, so check that the response actually contains a package
+      try {
+        const body = await r.json();
+        return Boolean(body?.package);
+      } catch {
+        return false;
+      }
+    }),
   ]);
 
   if (skillRes && pkgRes)
