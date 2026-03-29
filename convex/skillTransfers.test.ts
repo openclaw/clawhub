@@ -389,4 +389,79 @@ describe("skillTransfers", () => {
       expect.objectContaining({ ownerUserId: "users:2" }),
     );
   });
+
+  it("requestTransferInternal allows org admin to request transfer", async () => {
+    // Org admin (users:2) can request transfer of a skill owned by org (publishers:org1)
+    // even though ownerUserId is users:1
+    const insert = vi.fn(async (table: string) => {
+      if (table === "skillOwnershipTransfers") return "skillOwnershipTransfers:new";
+      return "auditLogs:1";
+    });
+
+    const result = (await requestTransferInternalHandler(
+      {
+        db: {
+          normalizeId: vi.fn(),
+          get: vi.fn(async (id: string) => {
+            if (id === "users:2") return { _id: "users:2", handle: "orgadmin" };
+            if (id === "skills:1") {
+              return {
+                _id: "skills:1",
+                slug: "demo",
+                displayName: "Demo",
+                ownerUserId: "users:1",
+                ownerPublisherId: "publishers:org1",
+              };
+            }
+            if (id === "publishers:org1") {
+              return { _id: "publishers:org1", kind: "org", handle: "myorg" };
+            }
+            return null;
+          }),
+          query: vi.fn((table: string) => {
+            if (table === "users") {
+              return {
+                withIndex: () => ({
+                  unique: async () => ({
+                    _id: "users:3",
+                    handle: "recipient",
+                    displayName: "Recipient",
+                  }),
+                }),
+              };
+            }
+            if (table === "skillOwnershipTransfers") {
+              return { withIndex: () => ({ collect: async () => [] }) };
+            }
+            if (table === "publisherMembers") {
+              return {
+                withIndex: () => ({
+                  unique: async () => ({
+                    _id: "publisherMembers:1",
+                    publisherId: "publishers:org1",
+                    userId: "users:2",
+                    role: "admin",
+                  }),
+                }),
+              };
+            }
+            if (table === "publishers") {
+              return { withIndex: () => ({ unique: async () => null }) };
+            }
+            throw new Error(`unexpected table ${table}`);
+          }),
+          patch: vi.fn(async () => {}),
+          insert,
+        },
+      } as never,
+      {
+        actorUserId: "users:2",
+        skillId: "skills:1",
+        toUserHandle: "@recipient",
+      } as never,
+    )) as { ok: boolean; transferId: string };
+
+    expect(result.ok).toBe(true);
+    expect(result.transferId).toBe("skillOwnershipTransfers:new");
+  });
 });
