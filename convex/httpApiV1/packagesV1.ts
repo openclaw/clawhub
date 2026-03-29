@@ -52,6 +52,9 @@ const internalRefs = internal as unknown as {
     getVersionByIdInternal: unknown;
     getVersionBySkillAndVersionInternal: unknown;
   };
+  publishers: {
+    getByHandleInternal: unknown;
+  };
   packageTransfers: {
     requestTransferInternal: unknown;
     acceptTransferInternal: unknown;
@@ -1201,6 +1204,22 @@ async function handlePackageTransferRequest(
   if (!toUserHandleRaw) return text("toUserHandle required", 400, headers);
   const message = typeof parsed.payload.message === "string" ? parsed.payload.message : undefined;
 
+  // Resolve optional publisher handle to a publisher ID
+  const toPublisherHandleRaw =
+    typeof parsed.payload.toPublisherHandle === "string"
+      ? parsed.payload.toPublisherHandle.trim()
+      : "";
+  let toPublisherId: Id<"publishers"> | undefined;
+  if (toPublisherHandleRaw) {
+    const publisher = await runQueryRef<{ _id: Id<"publishers"> } | null>(
+      ctx,
+      internalRefs.publishers.getByHandleInternal,
+      { handle: toPublisherHandleRaw },
+    );
+    if (!publisher) return text("Publisher not found", 404, headers);
+    toPublisherId = publisher._id;
+  }
+
   try {
     const result = await runMutationRef(
       ctx,
@@ -1209,6 +1228,7 @@ async function handlePackageTransferRequest(
         actorUserId: transferContext.userId,
         packageId: transferContext.pkg._id,
         toUserHandle: toUserHandleRaw,
+        toPublisherId,
         message,
       },
     );
@@ -1256,10 +1276,36 @@ async function handlePackageTransferDecision(
         : internalRefs.packageTransfers.cancelTransferInternal;
 
   try {
-    const result = await runMutationRef(ctx, mutation, {
+    // For accept, resolve optional publisher handle to forward publisherId
+    let publisherId: Id<"publishers"> | undefined;
+    if (decision === "accept") {
+      const parsed = await parseJsonPayload(request, headers);
+      if (parsed.ok) {
+        const publisherHandleRaw =
+          typeof parsed.payload.publisherHandle === "string"
+            ? parsed.payload.publisherHandle.trim()
+            : "";
+        if (publisherHandleRaw) {
+          const publisher = await runQueryRef<{ _id: Id<"publishers"> } | null>(
+            ctx,
+            internalRefs.publishers.getByHandleInternal,
+            { handle: publisherHandleRaw },
+          );
+          if (!publisher) return text("Publisher not found", 404, headers);
+          publisherId = publisher._id;
+        }
+      }
+    }
+
+    const mutationArgs: Record<string, unknown> = {
       actorUserId: transferContext.userId,
       transferId: pendingTransfer._id,
-    });
+    };
+    if (publisherId) {
+      mutationArgs.publisherId = publisherId;
+    }
+
+    const result = await runMutationRef(ctx, mutation, mutationArgs);
     return json(result, 200, headers);
   } catch (error) {
     return packageTransferErrorToResponse(error, headers);

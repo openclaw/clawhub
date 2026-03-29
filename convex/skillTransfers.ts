@@ -81,7 +81,9 @@ async function validatePendingTransferForActor(
   const transfer = await db.get(params.transferId);
   if (!transfer) throw new Error("Transfer not found");
 
-  if (params.role === "recipient" && transfer.toUserId !== params.actorUserId) {
+  if (params.role === "recipient" && transfer.toUserId && transfer.toUserId !== params.actorUserId) {
+    // For org-targeted transfers (toUserId is undefined), skip this check —
+    // validateTransferAcceptPermission handles org membership validation separately
     throw new Error("No pending transfer found");
   }
   if (params.role === "sender" && transfer.fromUserId !== params.actorUserId) {
@@ -176,7 +178,7 @@ export const acceptTransferInternal = internalMutation({
 
     await validateTransferAcceptPermission(ctx, {
       actorUserId: args.actorUserId,
-      toUserId: transfer.toUserId as Id<"users">,
+      toUserId: transfer.toUserId ?? undefined,
       toPublisherId: transfer.toPublisherId,
     });
 
@@ -257,7 +259,7 @@ export const rejectTransferInternal = internalMutation({
 
     await validateTransferAcceptPermission(ctx, {
       actorUserId: args.actorUserId,
-      toUserId: transfer.toUserId as Id<"users">,
+      toUserId: transfer.toUserId ?? undefined,
       toPublisherId: transfer.toPublisherId,
     });
 
@@ -369,7 +371,8 @@ export const listOutgoingInternal = internalQuery({
       type: "skill";
       _id: Id<"skillOwnershipTransfers">;
       skill: { _id: Id<"skills">; slug: string; displayName: string };
-      toUser: { _id: Id<"users">; handle: string | null; displayName: string | null };
+      toUser?: { _id: Id<"users">; handle: string | null; displayName: string | null };
+      toPublisherId?: Id<"publishers">;
       message: string | undefined;
       requestedAt: number;
       expiresAt: number;
@@ -379,19 +382,27 @@ export const listOutgoingInternal = internalQuery({
       if (isTransferExpired(transfer, now)) continue;
       const skill = await ctx.db.get(transfer.skillId);
       if (!skill || skill.softDeletedAt) continue;
-      if (!transfer.toUserId) continue;
-      const toUser = await ctx.db.get(transfer.toUserId);
-      if (!toUser || toUser.deletedAt || toUser.deactivatedAt) continue;
+
+      let toUser:
+        | { _id: Id<"users">; handle: string | null; displayName: string | null }
+        | undefined;
+      if (transfer.toUserId) {
+        const tu = await ctx.db.get(transfer.toUserId);
+        if (tu && !tu.deletedAt && !tu.deactivatedAt) {
+          toUser = {
+            _id: tu._id,
+            handle: tu.handle ?? null,
+            displayName: tu.displayName ?? null,
+          };
+        }
+      }
 
       results.push({
         type: "skill" as const,
         _id: transfer._id,
         skill: { _id: skill._id, slug: skill.slug, displayName: skill.displayName },
-        toUser: {
-          _id: toUser._id,
-          handle: toUser.handle ?? null,
-          displayName: toUser.displayName ?? null,
-        },
+        toUser,
+        toPublisherId: transfer.toPublisherId ?? undefined,
         message: transfer.message,
         requestedAt: transfer.requestedAt,
         expiresAt: transfer.expiresAt,

@@ -36,6 +36,10 @@ export async function transfersGetRouterV1Handler(ctx: ActionCtx, request: Reque
       : runQueryRef<unknown[]>(ctx, internalRefs.packageTransfers.listOutgoingInternal, { userId: auth.userId }),
   ]);
 
-  const transfers = [...skillTransfers, ...packageTransfers];
+  const transfers = [...skillTransfers, ...packageTransfers].sort(
+    (a, b) =>
+      ((b as { requestedAt?: number }).requestedAt ?? 0) -
+      ((a as { requestedAt?: number }).requestedAt ?? 0),
+  );
   return json({ transfers }, 200, rate.headers);
 }
