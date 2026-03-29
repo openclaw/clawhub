@@ -1,5 +1,14 @@
 # Changelog
 
+## Unreleased
+
+### Added
+
+- Packages/API/CLI: add ownership transfer workflow for packages with request/list/accept/reject/cancel flows, mirroring skill transfers.
+- Skills/Packages/API/CLI: extend ownership transfers to support org-targeted flows (user-to-org, org-to-user, org-to-org). Org admins can transfer items to/from organizations.
+- CLI: add `--type skill|package` flag to transfer commands with auto-detection fallback, and `--publisher @org` flag for org-targeted transfers.
+- API: unified transfer listing (`GET /api/v1/transfers/incoming|outgoing`) now returns both skill and package transfers sorted by date.
+
 ## 0.9.0 - 2026-03-23
 
 ### Added
