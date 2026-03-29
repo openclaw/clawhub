@@ -325,27 +325,26 @@ Semantics:
 
 ## Transfer Model
 
-~~Current transfers are user-to-user only. That is too narrow.~~ **Implemented.**
+Current transfers are user-to-user only. That is too narrow.
 
-Transfers now support all publisher-based flows for both skills and packages:
+New transfer target should be a publisher.
+
+Support:
 
 - user publisher -> org publisher
 - org publisher -> user publisher
 - org publisher -> org publisher
-- user publisher -> user publisher (existing)
 
 Transfer acceptance rule:
 
 - actor must have `owner` or `admin` on target publisher
 
-Audit records:
+Audit should record:
 
 - actor user id
-- source publisher id (`fromPublisherId`)
-- target publisher id (`toPublisherId`)
-- resource id (skill or package)
-
-Implementation: `convex/skillTransfers.ts`, `convex/packageTransfers.ts`, shared helpers in `convex/lib/transfers.ts`.
+- source publisher id
+- target publisher id
+- resource id
 
 ## Search Digest Changes
 
