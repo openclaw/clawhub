@@ -1226,7 +1226,9 @@ const userSkillRootInstalls = defineTable({
 const skillOwnershipTransfers = defineTable({
   skillId: v.id("skills"),
   fromUserId: v.id("users"),
-  toUserId: v.id("users"),
+  toUserId: v.optional(v.id("users")),
+  fromPublisherId: v.optional(v.id("publishers")),
+  toPublisherId: v.optional(v.id("publishers")),
   status: v.union(
     v.literal("pending"),
     v.literal("accepted"),
@@ -1245,6 +1247,31 @@ const skillOwnershipTransfers = defineTable({
   .index("by_to_user_status", ["toUserId", "status"])
   .index("by_from_user_status", ["fromUserId", "status"])
   .index("by_skill_status", ["skillId", "status"]);
+
+const packageOwnershipTransfers = defineTable({
+  packageId: v.id("packages"),
+  fromUserId: v.id("users"),
+  toUserId: v.optional(v.id("users")),
+  fromPublisherId: v.optional(v.id("publishers")),
+  toPublisherId: v.optional(v.id("publishers")),
+  status: v.union(
+    v.literal("pending"),
+    v.literal("accepted"),
+    v.literal("rejected"),
+    v.literal("cancelled"),
+    v.literal("expired"),
+  ),
+  message: v.optional(v.string()),
+  requestedAt: v.number(),
+  respondedAt: v.optional(v.number()),
+  expiresAt: v.number(),
+})
+  .index("by_package", ["packageId"])
+  .index("by_from_user", ["fromUserId"])
+  .index("by_to_user", ["toUserId"])
+  .index("by_to_user_status", ["toUserId", "status"])
+  .index("by_from_user_status", ["fromUserId", "status"])
+  .index("by_package_status", ["packageId", "status"]);
 
 export default defineSchema({
   ...authTables,
@@ -1291,4 +1318,5 @@ export default defineSchema({
   userSkillInstalls,
   userSkillRootInstalls,
   skillOwnershipTransfers,
+  packageOwnershipTransfers,
 });
