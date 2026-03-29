@@ -71,6 +71,7 @@ type SkillHeaderProps = {
   tagVersionId: Id<"skillVersions"> | "";
   onTagVersionChange: (value: Id<"skillVersions"> | "") => void;
   onTagSubmit: () => void;
+  onTagDelete: (tag: string) => void;
   tagVersions: Doc<"skillVersions">[];
   clawdis: ClawdisSkillMetadata | undefined;
   osLabels: string[];
@@ -110,6 +111,7 @@ export function SkillHeader({
   tagVersionId,
   onTagVersionChange,
   onTagSubmit,
+  onTagDelete,
   tagVersions,
   clawdis,
   osLabels,
@@ -364,6 +366,17 @@ export function SkillHeader({
                 <span className="tag-meta">
                   v{versionById.get(versionId)?.version ?? versionId}
                 </span>
+                {canManage && tag !== "latest" ? (
+                  <button
+                    type="button"
+                    className="tag-delete"
+                    onClick={() => onTagDelete(tag)}
+                    aria-label={`Delete tag ${tag}`}
+                    title={`Delete tag "${tag}"`}
+                  >
+                    ×
+                  </button>
+                ) : null}
               </span>
             ))
           )}

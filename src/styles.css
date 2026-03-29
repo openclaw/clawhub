@@ -2341,6 +2341,22 @@ code {
   opacity: 0.7;
 }
 
+.tag-delete {
+  all: unset;
+  cursor: pointer;
+  font-size: 0.85rem;
+  line-height: 1;
+  opacity: 0.5;
+  padding: 0 2px;
+  margin-left: -2px;
+  border-radius: 3px;
+  transition: opacity 0.15s;
+}
+
+.tag-delete:hover {
+  opacity: 1;
+}
+
 .tag-form {
   display: grid;
   grid-template-columns: minmax(140px, 1fr) minmax(160px, 1fr) auto;

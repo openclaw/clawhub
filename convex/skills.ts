@@ -4764,6 +4764,32 @@ export const updateTags = mutation({
   },
 });
 
+export const deleteTags = mutation({
+  args: {
+    skillId: v.id("skills"),
+    tags: v.array(v.string()),
+  },
+  handler: async (ctx, args) => {
+    const { user } = await requireUser(ctx);
+    const skill = await ctx.db.get(args.skillId);
+    if (!skill) throw new Error("Skill not found");
+    if (skill.ownerUserId !== user._id) {
+      assertModerator(user);
+    }
+
+    const nextTags = { ...skill.tags };
+    for (const tag of args.tags) {
+      if (tag === "latest") continue; // protect the latest tag from deletion
+      delete nextTags[tag];
+    }
+
+    await ctx.db.patch(skill._id, {
+      tags: nextTags,
+      updatedAt: Date.now(),
+    });
+  },
+});
+
 export const setRedactionApproved = mutation({
   args: { skillId: v.id("skills"), approved: v.boolean() },
   handler: async (ctx, args) => {

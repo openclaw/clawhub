@@ -80,6 +80,7 @@ export function SkillDetailPage({
   const toggleStar = useMutation(api.stars.toggle);
   const reportSkill = useMutation(api.skills.report);
   const updateTags = useMutation(api.skills.updateTags);
+  const deleteTags = useMutation(api.skills.deleteTags);
   const getReadme = useAction(api.skills.getReadme);
   const myPublishers = useQuery(api.publishers.listMine) as
     | Array<{ publisher: { _id: Id<"publishers"> }; role: string }>
@@ -289,6 +290,14 @@ export function SkillDetailPage({
     });
   };
 
+  const deleteTag = (tag: string) => {
+    if (!skill) return;
+    void deleteTags({
+      skillId: skill._id,
+      tags: [tag],
+    });
+  };
+
   const submitReport = async () => {
     if (!skill) return;
 
@@ -372,6 +381,7 @@ export function SkillDetailPage({
           tagVersionId={tagVersionId}
           onTagVersionChange={setTagVersionId}
           onTagSubmit={submitTag}
+          onTagDelete={deleteTag}
           tagVersions={versions ?? []}
           clawdis={clawdis}
           osLabels={osLabels}
