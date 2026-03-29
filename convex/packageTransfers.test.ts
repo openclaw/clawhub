@@ -1,7 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import {
   acceptTransferInternal,
-  cancelTransferInternal,
   requestTransferInternal,
 } from "./packageTransfers";
 
@@ -27,16 +26,8 @@ const acceptTransferInternalHandler = (
   }>
 )._handler;
 
-const cancelTransferInternalHandler = (
-  cancelTransferInternal as unknown as WrappedHandler<{
-    actorUserId: string;
-    transferId: string;
-  }>
-)._handler;
-
 describe("packageTransfers", () => {
   it("requestTransferInternal creates pending transfer for user→user", async () => {
-    const now = Date.now();
     const insert = vi.fn(async (table: string) => {
       if (table === "packageOwnershipTransfers") return "packageOwnershipTransfers:new";
       return "auditLogs:1";

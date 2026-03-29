@@ -91,7 +91,9 @@ async function validatePendingTransferForActor(
   const transfer = await db.get(params.transferId);
   if (!transfer) throw new Error("Transfer not found");
 
-  if (params.role === "recipient" && transfer.toUserId !== params.actorUserId) {
+  if (params.role === "recipient" && transfer.toUserId && transfer.toUserId !== params.actorUserId) {
+    // For org-targeted transfers (toUserId is null), skip this check —
+    // validateTransferAcceptPermission handles org membership validation separately
     throw new Error("No pending transfer found");
   }
   if (params.role === "sender" && transfer.fromUserId !== params.actorUserId) {
@@ -184,6 +186,12 @@ export const acceptTransferInternal = internalMutation({
       now,
     });
 
+    await validateTransferAcceptPermission(ctx, {
+      toUserId: transfer.toUserId,
+      toPublisherId: transfer.toPublisherId,
+      actorUserId: args.actorUserId,
+    });
+
     const pkg = await ctx.db.get(transfer.packageId);
     if (!pkg || (pkg as Record<string, unknown>).softDeletedAt)
       throw new Error("Package not found");
@@ -241,6 +249,12 @@ export const rejectTransferInternal = internalMutation({
       actorUserId: args.actorUserId,
       role: "recipient",
       now,
+    });
+
+    await validateTransferAcceptPermission(ctx, {
+      toUserId: transfer.toUserId,
+      toPublisherId: transfer.toPublisherId,
+      actorUserId: args.actorUserId,
     });
 
     await ctx.db.patch(transfer._id, { status: "rejected", respondedAt: now });

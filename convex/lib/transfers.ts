@@ -65,7 +65,7 @@ export async function validateTransferAcceptPermission(
   ctx: DbCtx,
   params: {
     actorUserId: Id<"users">;
-    toUserId: Id<"users">;
+    toUserId?: Id<"users"> | null;
     toPublisherId?: Id<"publishers"> | null;
   },
 ): Promise<void> {
