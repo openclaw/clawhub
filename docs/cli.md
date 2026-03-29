@@ -219,6 +219,8 @@ Stores your API token + cached registry URL.
 - Metadata is auto-detected from `package.json`, `openclaw.plugin.json`, and `openclaw.bundle.json`.
 - For GitHub sources, source attribution is auto-populated from the repo, resolved commit, ref, and subpath.
 - For local folders, source attribution is auto-detected from local git when the origin remote points at GitHub.
+- External code plugins must declare `openclaw.compat.pluginApi` and `openclaw.build.openclawVersion` explicitly.
+  Top-level `package.json.version` is not used as a fallback for publish validation.
 - `--dry-run` previews the resolved publish payload without uploading.
 - `--json` emits machine-readable output for CI.
 - `--owner <handle>` lets admins publish under a shared owner account while keeping their own token as the actor.
