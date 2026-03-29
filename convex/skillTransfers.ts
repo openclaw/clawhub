@@ -123,7 +123,9 @@ export const requestTransferInternal = internalMutation({
 
     const toUser = await getActiveUserByHandleOrPersonalPublisher(ctx, toHandle);
     if (!toUser) throw new Error("User not found");
-    if (toUser._id === args.actorUserId) throw new Error("Cannot transfer to yourself");
+    if (toUser._id === args.actorUserId && !args.toPublisherId) {
+      throw new Error("Cannot transfer to yourself");
+    }
 
     const activePending = await getActivePendingTransferForSkill(ctx, args.skillId, now);
     if (activePending) throw new Error("A transfer is already pending for this skill");

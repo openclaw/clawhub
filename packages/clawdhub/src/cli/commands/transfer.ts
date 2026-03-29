@@ -93,7 +93,9 @@ async function resolveItemType(
     );
   if (skillRes) return "skill";
   if (pkgRes) return "package";
-  fail(`No skill or package named "${name}" found.`);
+  fail(
+    `No skill or package named "${name}" found. If the item is private, use --type skill or --type package to skip auto-detection.`,
+  );
 }
 
 function resolveApiPath(name: string, type: "skill" | "package"): string {
