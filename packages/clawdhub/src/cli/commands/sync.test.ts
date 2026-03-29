@@ -1,13 +1,20 @@
 /* @vitest-environment node */
 
 import { afterEach, describe, expect, it, vi } from "vitest";
-import type { GlobalOpts } from "../types";
+import {
+  createAuthTokenModuleMocks,
+  createHttpModuleMocks,
+  createRegistryModuleMocks,
+  createUiModuleMocks,
+  makeGlobalOpts,
+} from "../../../test/cliCommandTestKit.js";
 
 const mockIntro = vi.fn();
 const mockOutro = vi.fn();
 const mockLog = vi.fn();
 const mockMultiselect = vi.fn(async (_args?: unknown) => [] as string[]);
 let interactive = false;
+const mocked = <T,>(value: T) => value as T & { mockImplementation: (...args: unknown[]) => unknown };
 
 const defaultFindSkillFolders = async (root: string) => {
   if (!root.endsWith("/scan")) return [];
@@ -26,30 +33,25 @@ vi.mock("@clack/prompts", () => ({
   isCancel: () => false,
 }));
 
-vi.mock("../authToken.js", () => ({
-  requireAuthToken: vi.fn(async () => "tkn"),
-}));
-
-const mockGetRegistry = vi.fn(async () => "https://clawhub.ai");
-vi.mock("../registry.js", () => ({
-  getRegistry: () => mockGetRegistry(),
-}));
-
-const mockApiRequest = vi.fn();
-vi.mock("../../http.js", () => ({
-  apiRequest: (registry: unknown, args: unknown, schema?: unknown) =>
-    mockApiRequest(registry, args, schema),
-}));
-
-const mockFail = vi.fn((message: string) => {
-  throw new Error(message);
-});
-const mockSpinner = { succeed: vi.fn(), fail: vi.fn(), stop: vi.fn() };
+const authTokenMocks = createAuthTokenModuleMocks();
+const registryMocks = createRegistryModuleMocks();
+const httpMocks = createHttpModuleMocks();
+const uiMocks = createUiModuleMocks();
+httpMocks.downloadZip.mockImplementation(
+  async (_registry?: unknown, _args?: unknown) => new Uint8Array([1, 2, 3]),
+);
+const mockApiRequest = httpMocks.apiRequest;
+const mockFail = uiMocks.fail;
+const mockSpinner = uiMocks.spinner;
+vi.mock("../authToken.js", () => authTokenMocks.moduleFactory());
+vi.mock("../registry.js", () => registryMocks.moduleFactory());
+vi.mock("../../http.js", () => httpMocks.moduleFactory());
 vi.mock("../ui.js", () => ({
   createSpinner: vi.fn(() => mockSpinner),
   fail: (message: string) => mockFail(message),
   formatError: (error: unknown) => (error instanceof Error ? error.message : String(error)),
   isInteractive: () => interactive,
+  promptConfirm: uiMocks.promptConfirm,
 }));
 
 vi.mock("../scanSkills.js", () => ({
@@ -68,37 +70,40 @@ vi.mock("../clawdbotConfig.js", () => ({
   resolveClawdbotSkillRoots: () => mockResolveClawdbotSkillRoots(),
 }));
 
-vi.mock("../../skills.js", async () => {
-  const actual = await vi.importActual<typeof import("../../skills.js")>("../../skills.js");
-  return {
-    ...actual,
-    listTextFiles: vi.fn(async (folder: string) => [
-      { relPath: "SKILL.md", bytes: new TextEncoder().encode(folder) },
-    ]),
-  };
-});
+const mockListTextFiles = vi.fn(async (folder: string) => [
+  { relPath: "SKILL.md", bytes: new TextEncoder().encode(folder) },
+]);
+const mockHashSkillFiles = vi.fn((files: Array<{ relPath: string; bytes: Uint8Array }>) => ({
+  fingerprint: files.map((file) => `${file.relPath}:${Buffer.from(file.bytes).toString("hex")}`).join("|"),
+  files: [],
+}));
+const mockHashSkillZip = vi.fn((_zip?: Uint8Array) => ({
+  fingerprint: "remote-fingerprint",
+  files: [],
+}));
+const mockReadSkillOrigin = vi.fn(async (_folder?: string) => null);
+vi.mock("../../skills.js", () => ({
+  listTextFiles: (folder: string) => mockListTextFiles(folder),
+  hashSkillFiles: (files: Array<{ relPath: string; bytes: Uint8Array }>) => mockHashSkillFiles(files),
+  hashSkillZip: (zip: Uint8Array) => mockHashSkillZip(zip),
+  readSkillOrigin: (folder: string) => mockReadSkillOrigin(folder),
+}));
 
 const mockCmdPublish = vi.fn();
 vi.mock("./publish.js", () => ({
-  cmdPublish: (...args: unknown[]) => mockCmdPublish(...args),
+  cmdPublish: (opts: unknown, folder: unknown, options?: unknown) => mockCmdPublish(opts, folder, options),
 }));
 
 const { cmdSync } = await import("./sync");
 
-function makeOpts(): GlobalOpts {
-  return {
-    workdir: "/work",
-    dir: "/work/skills",
-    site: "https://clawhub.ai",
-    registry: "https://clawhub.ai",
-    registrySource: "default",
-  };
+function makeOpts() {
+  return makeGlobalOpts();
 }
 
 afterEach(async () => {
   vi.clearAllMocks();
   const { findSkillFolders } = await import("../scanSkills.js");
-  vi.mocked(findSkillFolders).mockImplementation(defaultFindSkillFolders);
+  mocked(findSkillFolders).mockImplementation(defaultFindSkillFolders);
 });
 
 vi.spyOn(console, "log").mockImplementation((...args) => {
@@ -205,7 +210,7 @@ describe("cmdSync", () => {
   it("dedupes duplicate slugs before publishing", async () => {
     interactive = false;
     const { findSkillFolders } = await import("../scanSkills.js");
-    vi.mocked(findSkillFolders).mockImplementation(async (root: string) => {
+    mocked(findSkillFolders).mockImplementation(async (root: string) => {
       if (!root.endsWith("/scan")) return [];
       return [
         { folder: "/scan/dup-skill", slug: "dup-skill", displayName: "Dup Skill" },
@@ -237,7 +242,7 @@ describe("cmdSync", () => {
       labels: { "/auto": "Agent: Work" },
     });
     const { findSkillFolders } = await import("../scanSkills.js");
-    vi.mocked(findSkillFolders).mockImplementation(async (root: string) => {
+    mocked(findSkillFolders).mockImplementation(async (root: string) => {
       if (root === "/auto") {
         return [{ folder: "/auto/alpha", slug: "alpha", displayName: "Alpha" }];
       }

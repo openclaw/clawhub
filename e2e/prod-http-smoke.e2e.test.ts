@@ -69,7 +69,7 @@ describe("prod http smoke", () => {
 
     expect(html).toContain("<title>ClawHub");
     expect(html).toContain('href="/skills"');
-    expect(html).toContain('href="/upload"');
+    expect(html).toContain('href="/publish-skill"');
     expect(html).not.toContain("Something went wrong!");
   });
 

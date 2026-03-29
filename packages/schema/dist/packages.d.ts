@@ -177,6 +177,7 @@ export declare const ApiV1PackageListResponseSchema: import("arktype/internal/va
     }[];
     nextCursor: string | null;
 }, {}>;
+export type ApiV1PackageListResponse = (typeof ApiV1PackageListResponseSchema)[inferred];
 export declare const ApiV1PackageSearchResponseSchema: import("arktype/internal/variants/object.ts").ObjectType<{
     results: {
         score: number;
@@ -198,6 +199,7 @@ export declare const ApiV1PackageSearchResponseSchema: import("arktype/internal/
         };
     }[];
 }, {}>;
+export type ApiV1PackageSearchResponse = (typeof ApiV1PackageSearchResponseSchema)[inferred];
 export declare const ApiV1PackageResponseSchema: import("arktype/internal/variants/object.ts").ObjectType<{
     package: {
         name: string;
@@ -255,6 +257,7 @@ export declare const ApiV1PackageResponseSchema: import("arktype/internal/varian
         image?: string | null | undefined;
     } | null;
 }, {}>;
+export type ApiV1PackageResponse = (typeof ApiV1PackageResponseSchema)[inferred];
 export declare const ApiV1PackageVersionListResponseSchema: import("arktype/internal/variants/object.ts").ObjectType<{
     items: {
         version: string;
@@ -264,6 +267,7 @@ export declare const ApiV1PackageVersionListResponseSchema: import("arktype/inte
     }[];
     nextCursor: string | null;
 }, {}>;
+export type ApiV1PackageVersionListResponse = (typeof ApiV1PackageVersionListResponseSchema)[inferred];
 export declare const ApiV1PackageVersionResponseSchema: import("arktype/internal/variants/object.ts").ObjectType<{
     package: {
         name: string;
@@ -353,8 +357,10 @@ export declare const ApiV1PackageVersionResponseSchema: import("arktype/internal
         } | null | undefined;
     } | null;
 }, {}>;
+export type ApiV1PackageVersionResponse = (typeof ApiV1PackageVersionResponseSchema)[inferred];
 export declare const ApiV1PackagePublishResponseSchema: import("arktype/internal/variants/object.ts").ObjectType<{
     ok: true;
     packageId: string;
     releaseId: string;
 }, {}>;
+export type ApiV1PackagePublishResponse = (typeof ApiV1PackagePublishResponseSchema)[inferred];

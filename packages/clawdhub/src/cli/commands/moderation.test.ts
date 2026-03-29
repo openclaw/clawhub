@@ -1,49 +1,25 @@
 /* @vitest-environment node */
 
 import { afterEach, describe, expect, it, vi } from "vitest";
-import type { GlobalOpts } from "../types";
+import {
+  createAuthTokenModuleMocks,
+  createHttpModuleMocks,
+  createRegistryModuleMocks,
+  createUiModuleMocks,
+  makeGlobalOpts,
+} from "../../../test/cliCommandTestKit.js";
 
-vi.mock("../authToken.js", () => ({
-  requireAuthToken: vi.fn(async () => "tkn"),
-}));
+const authTokenMocks = createAuthTokenModuleMocks();
+const registryMocks = createRegistryModuleMocks();
+const httpMocks = createHttpModuleMocks();
+const uiMocks = createUiModuleMocks();
 
-vi.mock("../registry.js", () => ({
-  getRegistry: vi.fn(async () => "https://clawhub.ai"),
-}));
-
-const mockApiRequest = vi.fn();
-const mockRegistryUrl = vi.fn((path: string, registry: string) => {
-  const base = registry.endsWith("/") ? registry : `${registry}/`;
-  const relative = path.startsWith("/") ? path.slice(1) : path;
-  return new URL(relative, base);
-});
-vi.mock("../../http.js", () => ({
-  apiRequest: (registry: unknown, args: unknown, schema?: unknown) =>
-    mockApiRequest(registry, args, schema),
-  registryUrl: (...args: [string, string]) => mockRegistryUrl(...args),
-}));
-
-vi.mock("../ui.js", () => ({
-  createSpinner: vi.fn(() => ({ succeed: vi.fn(), fail: vi.fn() })),
-  fail: (message: string) => {
-    throw new Error(message);
-  },
-  formatError: (error: unknown) => (error instanceof Error ? error.message : String(error)),
-  isInteractive: () => false,
-  promptConfirm: vi.fn(async () => true),
-}));
+vi.mock("../authToken.js", () => authTokenMocks.moduleFactory());
+vi.mock("../registry.js", () => registryMocks.moduleFactory());
+vi.mock("../../http.js", () => httpMocks.moduleFactory());
+vi.mock("../ui.js", () => uiMocks.moduleFactory());
 
 const { cmdBanUser, cmdSetRole } = await import("./moderation");
-
-function makeOpts(): GlobalOpts {
-  return {
-    workdir: "/work",
-    dir: "/work/skills",
-    site: "https://clawhub.ai",
-    registry: "https://clawhub.ai",
-    registrySource: "default",
-  };
-}
 
 afterEach(() => {
   vi.clearAllMocks();
@@ -51,13 +27,13 @@ afterEach(() => {
 
 describe("cmdBanUser", () => {
   it("requires --yes when input is disabled", async () => {
-    await expect(cmdBanUser(makeOpts(), "demo", {}, false)).rejects.toThrow(/--yes/i);
+    await expect(cmdBanUser(makeGlobalOpts(), "demo", {}, false)).rejects.toThrow(/--yes/i);
   });
 
   it("posts handle payload", async () => {
-    mockApiRequest.mockResolvedValueOnce({ ok: true, alreadyBanned: false, deletedSkills: 1 });
-    await cmdBanUser(makeOpts(), "hightower6eu", { yes: true }, false);
-    expect(mockApiRequest).toHaveBeenCalledWith(
+    httpMocks.apiRequest.mockResolvedValueOnce({ ok: true, alreadyBanned: false, deletedSkills: 1 });
+    await cmdBanUser(makeGlobalOpts(), "hightower6eu", { yes: true }, false);
+    expect(httpMocks.apiRequest).toHaveBeenCalledWith(
       expect.anything(),
       expect.objectContaining({
         method: "POST",
@@ -69,14 +45,14 @@ describe("cmdBanUser", () => {
   });
 
   it("includes reason when provided", async () => {
-    mockApiRequest.mockResolvedValueOnce({ ok: true, alreadyBanned: false, deletedSkills: 0 });
+    httpMocks.apiRequest.mockResolvedValueOnce({ ok: true, alreadyBanned: false, deletedSkills: 0 });
     await cmdBanUser(
-      makeOpts(),
+      makeGlobalOpts(),
       "hightower6eu",
       { yes: true, reason: "malware distribution" },
       false,
     );
-    expect(mockApiRequest).toHaveBeenCalledWith(
+    expect(httpMocks.apiRequest).toHaveBeenCalledWith(
       expect.anything(),
       expect.objectContaining({
         method: "POST",
@@ -88,9 +64,9 @@ describe("cmdBanUser", () => {
   });
 
   it("posts user id payload when --id is set", async () => {
-    mockApiRequest.mockResolvedValueOnce({ ok: true, alreadyBanned: false, deletedSkills: 0 });
-    await cmdBanUser(makeOpts(), "user_123", { yes: true, id: true }, false);
-    expect(mockApiRequest).toHaveBeenCalledWith(
+    httpMocks.apiRequest.mockResolvedValueOnce({ ok: true, alreadyBanned: false, deletedSkills: 0 });
+    await cmdBanUser(makeGlobalOpts(), "user_123", { yes: true, id: true }, false);
+    expect(httpMocks.apiRequest).toHaveBeenCalledWith(
       expect.anything(),
       expect.objectContaining({
         method: "POST",
@@ -102,7 +78,7 @@ describe("cmdBanUser", () => {
   });
 
   it("resolves user via fuzzy search", async () => {
-    mockApiRequest
+    httpMocks.apiRequest
       .mockResolvedValueOnce({
         items: [
           {
@@ -116,8 +92,8 @@ describe("cmdBanUser", () => {
         total: 1,
       })
       .mockResolvedValueOnce({ ok: true, alreadyBanned: false, deletedSkills: 0 });
-    await cmdBanUser(makeOpts(), "moonshine-100rze", { yes: true, fuzzy: true }, false);
-    expect(mockApiRequest).toHaveBeenNthCalledWith(
+    await cmdBanUser(makeGlobalOpts(), "moonshine-100rze", { yes: true, fuzzy: true }, false);
+    expect(httpMocks.apiRequest).toHaveBeenNthCalledWith(
       1,
       expect.anything(),
       expect.objectContaining({
@@ -126,7 +102,7 @@ describe("cmdBanUser", () => {
       }),
       expect.anything(),
     );
-    expect(mockApiRequest).toHaveBeenNthCalledWith(
+    expect(httpMocks.apiRequest).toHaveBeenNthCalledWith(
       2,
       expect.anything(),
       expect.objectContaining({
@@ -139,7 +115,7 @@ describe("cmdBanUser", () => {
   });
 
   it("fails fuzzy search with multiple matches when not interactive", async () => {
-    mockApiRequest.mockResolvedValueOnce({
+    httpMocks.apiRequest.mockResolvedValueOnce({
       items: [
         {
           userId: "users_1",
@@ -159,26 +135,28 @@ describe("cmdBanUser", () => {
       total: 2,
     });
     await expect(
-      cmdBanUser(makeOpts(), "moonshine", { yes: true, fuzzy: true }, false),
+      cmdBanUser(makeGlobalOpts(), "moonshine", { yes: true, fuzzy: true }, false),
     ).rejects.toThrow(/multiple users matched/i);
   });
 });
 
 describe("cmdSetRole", () => {
   it("requires --yes when input is disabled", async () => {
-    await expect(cmdSetRole(makeOpts(), "demo", "moderator", {}, false)).rejects.toThrow(/--yes/i);
-  });
-
-  it("rejects invalid roles", async () => {
-    await expect(cmdSetRole(makeOpts(), "demo", "owner", { yes: true }, false)).rejects.toThrow(
-      /role/i,
+    await expect(cmdSetRole(makeGlobalOpts(), "demo", "moderator", {}, false)).rejects.toThrow(
+      /--yes/i,
     );
   });
 
+  it("rejects invalid roles", async () => {
+    await expect(
+      cmdSetRole(makeGlobalOpts(), "demo", "owner", { yes: true }, false),
+    ).rejects.toThrow(/role/i);
+  });
+
   it("posts handle payload", async () => {
-    mockApiRequest.mockResolvedValueOnce({ ok: true, role: "moderator" });
-    await cmdSetRole(makeOpts(), "hightower6eu", "moderator", { yes: true }, false);
-    expect(mockApiRequest).toHaveBeenCalledWith(
+    httpMocks.apiRequest.mockResolvedValueOnce({ ok: true, role: "moderator" });
+    await cmdSetRole(makeGlobalOpts(), "hightower6eu", "moderator", { yes: true }, false);
+    expect(httpMocks.apiRequest).toHaveBeenCalledWith(
       expect.anything(),
       expect.objectContaining({
         method: "POST",
@@ -190,9 +168,9 @@ describe("cmdSetRole", () => {
   });
 
   it("posts user id payload when --id is set", async () => {
-    mockApiRequest.mockResolvedValueOnce({ ok: true, role: "admin" });
-    await cmdSetRole(makeOpts(), "user_123", "admin", { yes: true, id: true }, false);
-    expect(mockApiRequest).toHaveBeenCalledWith(
+    httpMocks.apiRequest.mockResolvedValueOnce({ ok: true, role: "admin" });
+    await cmdSetRole(makeGlobalOpts(), "user_123", "admin", { yes: true, id: true }, false);
+    expect(httpMocks.apiRequest).toHaveBeenCalledWith(
       expect.anything(),
       expect.objectContaining({
         method: "POST",

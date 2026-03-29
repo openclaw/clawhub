@@ -1,31 +1,23 @@
 /* @vitest-environment node */
 
 import { afterEach, describe, expect, it, vi } from "vitest";
-import type { GlobalOpts } from "../types";
+import {
+  createAuthTokenModuleMocks,
+  createHttpModuleMocks,
+  createRegistryModuleMocks,
+  createUiModuleMocks,
+  makeGlobalOpts,
+} from "../../../test/cliCommandTestKit.js";
 
-vi.mock("../authToken.js", () => ({
-  requireAuthToken: vi.fn(async () => "tkn"),
-}));
+const authTokenMocks = createAuthTokenModuleMocks();
+const registryMocks = createRegistryModuleMocks();
+const httpMocks = createHttpModuleMocks();
+const uiMocks = createUiModuleMocks();
 
-vi.mock("../registry.js", () => ({
-  getRegistry: vi.fn(async () => "https://clawhub.ai"),
-}));
-
-const mockApiRequest = vi.fn();
-vi.mock("../../http.js", () => ({
-  apiRequest: (registry: unknown, args: unknown, schema?: unknown) =>
-    mockApiRequest(registry, args, schema),
-}));
-
-vi.mock("../ui.js", () => ({
-  createSpinner: vi.fn(() => ({ succeed: vi.fn(), fail: vi.fn(), stop: vi.fn() })),
-  fail: (message: string) => {
-    throw new Error(message);
-  },
-  formatError: (error: unknown) => (error instanceof Error ? error.message : String(error)),
-  isInteractive: () => false,
-  promptConfirm: vi.fn(async () => true),
-}));
+vi.mock("../authToken.js", () => authTokenMocks.moduleFactory());
+vi.mock("../registry.js", () => registryMocks.moduleFactory());
+vi.mock("../../http.js", () => httpMocks.moduleFactory());
+vi.mock("../ui.js", () => uiMocks.moduleFactory());
 
 const {
   cmdTransferAccept,
@@ -35,16 +27,6 @@ const {
   cmdTransferRequest,
 } = await import("./transfer");
 
-function makeOpts(): GlobalOpts {
-  return {
-    workdir: "/work",
-    dir: "/work/skills",
-    site: "https://clawhub.ai",
-    registry: "https://clawhub.ai",
-    registrySource: "default",
-  };
-}
-
 const consoleLog = vi.spyOn(console, "log").mockImplementation(() => {});
 
 afterEach(() => {
@@ -53,13 +35,15 @@ afterEach(() => {
 
 describe("transfer commands", () => {
   it("request requires --yes when input is disabled", async () => {
-    await expect(cmdTransferRequest(makeOpts(), "demo", "@alice", {}, false)).rejects.toThrow(
+    await expect(
+      cmdTransferRequest(makeGlobalOpts(), "demo", "@alice", {}, false),
+    ).rejects.toThrow(
       /--yes/i,
     );
   });
 
   it("request calls transfer endpoint", async () => {
-    mockApiRequest.mockResolvedValueOnce({
+    httpMocks.apiRequest.mockResolvedValueOnce({
       ok: true,
       transferId: "skillOwnershipTransfers:1",
       toUserHandle: "alice",
@@ -67,14 +51,14 @@ describe("transfer commands", () => {
     });
 
     await cmdTransferRequest(
-      makeOpts(),
+      makeGlobalOpts(),
       "Demo",
       "@Alice",
       { yes: true, message: "Please take over" },
       false,
     );
 
-    expect(mockApiRequest).toHaveBeenCalledWith(
+    expect(httpMocks.apiRequest).toHaveBeenCalledWith(
       expect.anything(),
       expect.objectContaining({
         method: "POST",
@@ -82,16 +66,16 @@ describe("transfer commands", () => {
       }),
       expect.anything(),
     );
-    const requestArgs = mockApiRequest.mock.calls[0]?.[1] as { body?: string };
+    const requestArgs = httpMocks.apiRequest.mock.calls[0]?.[1] as { body?: string };
     expect(requestArgs.body).toContain('"toUserHandle":"alice"');
   });
 
   it("list calls incoming transfers endpoint", async () => {
-    mockApiRequest.mockResolvedValueOnce({
+    httpMocks.apiRequest.mockResolvedValueOnce({
       transfers: [],
     });
-    await cmdTransferList(makeOpts(), {});
-    expect(mockApiRequest).toHaveBeenCalledWith(
+    await cmdTransferList(makeGlobalOpts(), {});
+    expect(httpMocks.apiRequest).toHaveBeenCalledWith(
       expect.anything(),
       expect.objectContaining({
         method: "GET",
@@ -103,11 +87,11 @@ describe("transfer commands", () => {
   });
 
   it("list supports outgoing endpoint", async () => {
-    mockApiRequest.mockResolvedValueOnce({
+    httpMocks.apiRequest.mockResolvedValueOnce({
       transfers: [],
     });
-    await cmdTransferList(makeOpts(), { outgoing: true });
-    expect(mockApiRequest).toHaveBeenCalledWith(
+    await cmdTransferList(makeGlobalOpts(), { outgoing: true });
+    expect(httpMocks.apiRequest).toHaveBeenCalledWith(
       expect.anything(),
       expect.objectContaining({
         method: "GET",
@@ -119,26 +103,26 @@ describe("transfer commands", () => {
   });
 
   it("accept/reject/cancel call action endpoints", async () => {
-    mockApiRequest.mockResolvedValue({
+    httpMocks.apiRequest.mockResolvedValue({
       ok: true,
       skillSlug: "demo",
     });
 
-    await cmdTransferAccept(makeOpts(), "demo", { yes: true }, false);
-    await cmdTransferReject(makeOpts(), "demo", { yes: true }, false);
-    await cmdTransferCancel(makeOpts(), "demo", { yes: true }, false);
+    await cmdTransferAccept(makeGlobalOpts(), "demo", { yes: true }, false);
+    await cmdTransferReject(makeGlobalOpts(), "demo", { yes: true }, false);
+    await cmdTransferCancel(makeGlobalOpts(), "demo", { yes: true }, false);
 
-    expect(mockApiRequest).toHaveBeenCalledWith(
+    expect(httpMocks.apiRequest).toHaveBeenCalledWith(
       expect.anything(),
       expect.objectContaining({ method: "POST", path: "/api/v1/skills/demo/transfer/accept" }),
       expect.anything(),
     );
-    expect(mockApiRequest).toHaveBeenCalledWith(
+    expect(httpMocks.apiRequest).toHaveBeenCalledWith(
       expect.anything(),
       expect.objectContaining({ method: "POST", path: "/api/v1/skills/demo/transfer/reject" }),
       expect.anything(),
     );
-    expect(mockApiRequest).toHaveBeenCalledWith(
+    expect(httpMocks.apiRequest).toHaveBeenCalledWith(
       expect.anything(),
       expect.objectContaining({ method: "POST", path: "/api/v1/skills/demo/transfer/cancel" }),
       expect.anything(),

@@ -31,6 +31,9 @@ jobs:
       - name: Coverage
         run: bun run coverage
 
+      - name: ClawHub CLI Verify
+        run: bun run --cwd packages/clawdhub verify
+
       - name: Typecheck
         run: |
           bunx tsc --noEmit

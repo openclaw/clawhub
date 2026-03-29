@@ -1,15 +1,20 @@
 /* @vitest-environment node */
 
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { createGlobalStubRegistry } from "../test/runtimeStubs.js";
 import { discoverRegistryFromSite } from "./discovery";
+
+const globalStubs = createGlobalStubRegistry();
 
 describe("discovery", () => {
   afterEach(() => {
-    vi.unstubAllGlobals();
+    globalStubs.restoreAll();
+    vi.restoreAllMocks();
+    vi.clearAllMocks();
   });
 
   it("returns null on non-ok response", async () => {
-    vi.stubGlobal(
+    globalStubs.stub(
       "fetch",
       vi.fn(async () => new Response("nope", { status: 404 })) as unknown as typeof fetch,
     );
@@ -17,7 +22,7 @@ describe("discovery", () => {
   });
 
   it("parses registry config", async () => {
-    vi.stubGlobal(
+    globalStubs.stub(
       "fetch",
       vi.fn(
         async () =>
@@ -35,7 +40,7 @@ describe("discovery", () => {
   });
 
   it("parses apiBase config", async () => {
-    vi.stubGlobal(
+    globalStubs.stub(
       "fetch",
       vi.fn(
         async () =>
@@ -60,7 +65,7 @@ describe("discovery", () => {
   });
 
   it("returns null when apiBase is empty", async () => {
-    vi.stubGlobal(
+    globalStubs.stub(
       "fetch",
       vi.fn(
         async () =>

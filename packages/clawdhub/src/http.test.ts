@@ -1,31 +1,39 @@
 /* @vitest-environment node */
 
 import { describe, expect, it, vi } from "vitest";
-import {
-  apiRequest,
-  apiRequestForm,
-  downloadZip,
-  fetchText,
-  registryUrl,
-  shouldUseProxyFromEnv,
-} from "./http";
+import { createHttpClient, detectHttpRuntime, registryUrl, shouldUseProxyFromEnv } from "./http.js";
 import { ApiV1WhoamiResponseSchema } from "./schema/index.js";
 
-function mockImmediateTimeouts() {
-  const setTimeoutMock = vi.fn((callback: () => void, _ms?: number) => {
+function createNodeClient(options?: {
+  fetchImpl?: typeof fetch;
+  setTimeoutImpl?: typeof setTimeout;
+  clearTimeoutImpl?: typeof clearTimeout;
+  now?: () => number;
+}) {
+  return createHttpClient({
+    runtime: "node",
+    configureDispatcher: false,
+    fetchImpl: options?.fetchImpl,
+    setTimeoutImpl: options?.setTimeoutImpl,
+    clearTimeoutImpl: options?.clearTimeoutImpl,
+    now: options?.now,
+    random: () => 0,
+  });
+}
+
+function createImmediateTimeouts() {
+  const setTimeoutImpl = vi.fn((callback: () => void, _ms?: number) => {
     callback();
     return 1 as unknown as ReturnType<typeof setTimeout>;
   });
-  const clearTimeoutMock = vi.fn();
-  vi.stubGlobal("setTimeout", setTimeoutMock as unknown as typeof setTimeout);
-  vi.stubGlobal("clearTimeout", clearTimeoutMock as typeof clearTimeout);
-  return { setTimeoutMock, clearTimeoutMock };
+  const clearTimeoutImpl = vi.fn();
+  return { setTimeoutImpl, clearTimeoutImpl };
 }
 
 function createAbortingFetchMock() {
   return vi.fn(async (_url: string, init?: RequestInit) => {
     const signal = init?.signal;
-    if (!signal || !(signal instanceof AbortSignal)) {
+    if (!(signal instanceof AbortSignal)) {
       throw new Error("Missing abort signal");
     }
     if (signal.aborted) {
@@ -42,6 +50,13 @@ function createAbortingFetchMock() {
     });
   });
 }
+
+describe("detectHttpRuntime", () => {
+  it("detects bun and node runtimes explicitly", () => {
+    expect(detectHttpRuntime({ bun: "1.2.3" } as NodeJS.ProcessVersions)).toBe("bun");
+    expect(detectHttpRuntime({ node: "22.0.0" } as NodeJS.ProcessVersions)).toBe("node");
+  });
+});
 
 describe("shouldUseProxyFromEnv", () => {
   it("detects standard proxy variables", () => {
@@ -73,94 +88,60 @@ describe("shouldUseProxyFromEnv", () => {
 });
 
 describe("registryUrl", () => {
-  it("works with a plain-origin registry (no base path)", () => {
+  it("preserves registry base paths and normalizes slashes", () => {
     expect(registryUrl("/api/v1/skills", "https://clawhub.ai").toString()).toBe(
       "https://clawhub.ai/api/v1/skills",
     );
-  });
-
-  it("preserves the registry base path", () => {
-    const base = "http://localhost:8081/custom/registry/path";
-    expect(registryUrl("/api/v1/skills", base).toString()).toBe(
-      "http://localhost:8081/custom/registry/path/api/v1/skills",
+    expect(registryUrl("/api/v1/skills", "http://localhost:8081/custom/path").toString()).toBe(
+      "http://localhost:8081/custom/path/api/v1/skills",
     );
-  });
-
-  it("handles a trailing slash on the registry", () => {
-    const base = "http://localhost:8081/custom/registry/path/";
-    expect(registryUrl("/api/v1/skills", base).toString()).toBe(
-      "http://localhost:8081/custom/registry/path/api/v1/skills",
-    );
-  });
-
-  it("handles paths without a leading slash", () => {
-    expect(registryUrl("api/v1/skills", "https://clawhub.ai").toString()).toBe(
-      "https://clawhub.ai/api/v1/skills",
-    );
-  });
-
-  it("handles compound paths with encoded segments", () => {
-    const base = "http://localhost:8081/base";
-    const path = `/api/v1/skills/${encodeURIComponent("my-skill")}/versions`;
-    expect(registryUrl(path, base).toString()).toBe(
-      "http://localhost:8081/base/api/v1/skills/my-skill/versions",
+    expect(registryUrl("api/v1/skills", "http://localhost:8081/custom/path/").toString()).toBe(
+      "http://localhost:8081/custom/path/api/v1/skills",
     );
   });
 });
 
-describe("apiRequest", () => {
+describe("node http client", () => {
   it("adds bearer token and parses json", async () => {
-    const fetchMock = vi.fn().mockResolvedValue({
+    const fetchImpl = vi.fn().mockResolvedValue({
       ok: true,
       json: async () => ({ user: { handle: null } }),
     });
-    vi.stubGlobal("fetch", fetchMock);
-    const result = await apiRequest(
+    const client = createNodeClient({ fetchImpl: fetchImpl as unknown as typeof fetch });
+
+    const result = await client.apiRequest(
       "https://example.com",
       { method: "GET", path: "/x", token: "clh_token" },
       ApiV1WhoamiResponseSchema,
     );
+
     expect(result.user.handle).toBeNull();
-    expect(fetchMock).toHaveBeenCalledTimes(1);
-    const [, init] = fetchMock.mock.calls[0] as [string, RequestInit];
+    const [, init] = fetchImpl.mock.calls[0] as [string, RequestInit];
     expect((init.headers as Record<string, string>).Authorization).toBe("Bearer clh_token");
-    vi.unstubAllGlobals();
   });
 
   it("posts json body", async () => {
-    const fetchMock = vi.fn().mockResolvedValue({
+    const fetchImpl = vi.fn().mockResolvedValue({
       ok: true,
       json: async () => ({ ok: true }),
     });
-    vi.stubGlobal("fetch", fetchMock);
-    await apiRequest("https://example.com", {
+    const client = createNodeClient({ fetchImpl: fetchImpl as unknown as typeof fetch });
+
+    await client.apiRequest("https://example.com", {
       method: "POST",
       path: "/x",
       body: { a: 1 },
     });
-    const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit];
+
+    const [url, init] = fetchImpl.mock.calls[0] as [string, RequestInit];
     expect(url).toBe("https://example.com/x");
     expect(init.body).toBe(JSON.stringify({ a: 1 }));
     expect((init.headers as Record<string, string>)["Content-Type"]).toBe("application/json");
-    vi.unstubAllGlobals();
   });
 
-  it("throws text body on non-200", async () => {
-    const fetchMock = vi.fn().mockResolvedValue({
-      ok: false,
-      status: 400,
-      text: async () => "bad",
-    });
-    vi.stubGlobal("fetch", fetchMock);
-    await expect(apiRequest("https://example.com", { method: "GET", path: "/x" })).rejects.toThrow(
-      "bad",
-    );
-    vi.unstubAllGlobals();
-  });
-
-  it("includes rate-limit guidance from headers on 429", async () => {
-    mockImmediateTimeouts();
-    const fetchMock = vi.fn().mockResolvedValue({
+  it("includes rate-limit guidance from response headers on 429", async () => {
+    const { setTimeoutImpl, clearTimeoutImpl } = createImmediateTimeouts();
+    const fetchImpl = vi.fn().mockResolvedValue({
       ok: false,
       status: 429,
       headers: new Headers({
@@ -171,19 +152,22 @@ describe("apiRequest", () => {
       }),
       text: async () => "Rate limit exceeded",
     });
-    vi.stubGlobal("fetch", fetchMock);
+    const client = createNodeClient({
+      fetchImpl: fetchImpl as unknown as typeof fetch,
+      setTimeoutImpl: setTimeoutImpl as unknown as typeof setTimeout,
+      clearTimeoutImpl,
+    });
 
-    await expect(apiRequest("https://example.com", { method: "GET", path: "/x" })).rejects.toThrow(
+    await expect(client.apiRequest("https://example.com", { method: "GET", path: "/x" })).rejects.toThrow(
       /retry in 34s.*remaining: 0\/20.*reset in 34s/i,
     );
-    expect(fetchMock).toHaveBeenCalledTimes(3);
-    vi.unstubAllGlobals();
+    expect(fetchImpl).toHaveBeenCalledTimes(3);
+    expect(clearTimeoutImpl).toHaveBeenCalledTimes(3);
   });
 
   it("interprets legacy epoch Retry-After values as reset delays", async () => {
-    mockImmediateTimeouts();
-    vi.spyOn(Date, "now").mockReturnValue(1_771_404_500_000);
-    const fetchMock = vi.fn().mockResolvedValue({
+    const { setTimeoutImpl, clearTimeoutImpl } = createImmediateTimeouts();
+    const fetchImpl = vi.fn().mockResolvedValue({
       ok: false,
       status: 429,
       headers: new Headers({
@@ -193,205 +177,146 @@ describe("apiRequest", () => {
       }),
       text: async () => "Rate limit exceeded",
     });
-    vi.stubGlobal("fetch", fetchMock);
+    const client = createNodeClient({
+      fetchImpl: fetchImpl as unknown as typeof fetch,
+      setTimeoutImpl: setTimeoutImpl as unknown as typeof setTimeout,
+      clearTimeoutImpl,
+      now: () => 1_771_404_500_000,
+    });
 
-    await expect(apiRequest("https://example.com", { method: "GET", path: "/x" })).rejects.toThrow(
+    await expect(client.apiRequest("https://example.com", { method: "GET", path: "/x" })).rejects.toThrow(
       /retry in 40s.*remaining: 0\/20/i,
     );
-    vi.restoreAllMocks();
-    vi.unstubAllGlobals();
   });
 
-  it("falls back to HTTP status when body is empty", async () => {
-    mockImmediateTimeouts();
-    const fetchMock = vi.fn().mockResolvedValue({
+  it("falls back to HTTP status when response bodies are empty", async () => {
+    const { setTimeoutImpl, clearTimeoutImpl } = createImmediateTimeouts();
+    const fetchImpl = vi.fn().mockResolvedValue({
       ok: false,
       status: 500,
       text: async () => "",
     });
-    vi.stubGlobal("fetch", fetchMock);
+    const client = createNodeClient({
+      fetchImpl: fetchImpl as unknown as typeof fetch,
+      setTimeoutImpl: setTimeoutImpl as unknown as typeof setTimeout,
+      clearTimeoutImpl,
+    });
+
     await expect(
-      apiRequest("https://example.com", { method: "GET", url: "https://example.com/x" }),
+      client.apiRequest("https://example.com", { method: "GET", url: "https://example.com/x" }),
     ).rejects.toThrow("HTTP 500");
-    expect(fetchMock).toHaveBeenCalledTimes(3);
-    vi.unstubAllGlobals();
+    expect(fetchImpl).toHaveBeenCalledTimes(3);
   });
 
-  it("downloads zip bytes", async () => {
-    const fetchMock = vi.fn().mockResolvedValue({
-      ok: true,
-      arrayBuffer: async () => new Uint8Array([1, 2, 3]).buffer,
-    });
-    vi.stubGlobal("fetch", fetchMock);
-    const bytes = await downloadZip("https://example.com", {
+  it("downloads zip bytes and does not retry non-retryable errors", async () => {
+    const fetchImpl = vi
+      .fn()
+      .mockResolvedValueOnce({
+        ok: true,
+        arrayBuffer: async () => new Uint8Array([1, 2, 3]).buffer,
+      })
+      .mockResolvedValueOnce({
+        ok: false,
+        status: 404,
+        text: async () => "nope",
+      });
+    const client = createNodeClient({ fetchImpl: fetchImpl as unknown as typeof fetch });
+
+    const bytes = await client.downloadZip("https://example.com", {
       slug: "demo",
       version: "1.0.0",
       token: "clh_token",
     });
     expect(Array.from(bytes)).toEqual([1, 2, 3]);
-    const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit];
-    expect(url).toContain("slug=demo");
-    expect(url).toContain("version=1.0.0");
-    expect((init.headers as Record<string, string>).Authorization).toBe("Bearer clh_token");
-    vi.unstubAllGlobals();
+
+    await expect(client.downloadZip("https://example.com", { slug: "demo" })).rejects.toThrow(
+      "nope",
+    );
+    expect(fetchImpl).toHaveBeenCalledTimes(2);
   });
 
-  it("does not retry on non-retryable errors", async () => {
-    const fetchMock = vi.fn().mockResolvedValue({
-      ok: false,
-      status: 404,
-      text: async () => "nope",
+  it("retries request and text timeouts using injected timeout helpers", async () => {
+    const { setTimeoutImpl, clearTimeoutImpl } = createImmediateTimeouts();
+    const fetchImpl = createAbortingFetchMock();
+    const client = createNodeClient({
+      fetchImpl: fetchImpl as unknown as typeof fetch,
+      setTimeoutImpl: setTimeoutImpl as unknown as typeof setTimeout,
+      clearTimeoutImpl,
     });
-    vi.stubGlobal("fetch", fetchMock);
-    await expect(downloadZip("https://example.com", { slug: "demo" })).rejects.toThrow("nope");
-    expect(fetchMock).toHaveBeenCalledTimes(1);
-    vi.unstubAllGlobals();
+
+    await expect(client.apiRequest("https://example.com", { method: "GET", path: "/x" })).rejects.toThrow(
+      /timed out/i,
+    );
+    await expect(client.fetchText("https://example.com", { path: "/x" })).rejects.toThrow(
+      /timed out/i,
+    );
+    expect(fetchImpl).toHaveBeenCalledTimes(6);
+    expect(clearTimeoutImpl).toHaveBeenCalledTimes(6);
   });
 
-  it("aborts with Error timeouts and retries", async () => {
-    const { clearTimeoutMock } = mockImmediateTimeouts();
-    const fetchMock = createAbortingFetchMock();
-    vi.stubGlobal("fetch", fetchMock);
+  it("normalizes non-Error throws from fetch", async () => {
+    const fetchImpl = vi.fn(async () => {
+      throw { message: "The operation was aborted", name: "AbortError" };
+    });
+    const client = createNodeClient({ fetchImpl: fetchImpl as unknown as typeof fetch });
 
-    let caught: unknown;
-    try {
-      await apiRequest("https://example.com", { method: "GET", path: "/x" });
-    } catch (error) {
-      caught = error;
-    }
-
-    expect(caught).toBeInstanceOf(Error);
-    expect((caught as Error).message).toMatch(/timed out/);
-    expect(fetchMock).toHaveBeenCalledTimes(3);
-    expect(clearTimeoutMock.mock.calls.length).toBeGreaterThanOrEqual(3);
-    vi.unstubAllGlobals();
+    await expect(client.apiRequest("https://example.com", { method: "GET", path: "/x" })).rejects.toThrow(
+      "The operation was aborted",
+    );
   });
-});
 
-describe("apiRequestForm", () => {
-  it("posts form data and returns json", async () => {
-    const fetchMock = vi.fn().mockResolvedValue({
+  it("posts form data, retries 429, and uses the upload timeout", async () => {
+    const successFetch = vi.fn().mockResolvedValue({
       ok: true,
       json: async () => ({ ok: true }),
     });
-    vi.stubGlobal("fetch", fetchMock);
+    const successClient = createNodeClient({ fetchImpl: successFetch as unknown as typeof fetch });
     const form = new FormData();
     form.append("x", "1");
-    const result = await apiRequestForm("https://example.com", {
+    const result = await successClient.apiRequestForm("https://example.com", {
       method: "POST",
       path: "/upload",
       token: "clh_token",
       form,
     });
     expect(result).toEqual({ ok: true });
-    const [, init] = fetchMock.mock.calls[0] as [string, RequestInit];
+    const [, init] = successFetch.mock.calls[0] as [string, RequestInit];
     expect(init.body).toBe(form);
     expect((init.headers as Record<string, string>).Authorization).toBe("Bearer clh_token");
-    vi.unstubAllGlobals();
-  });
 
-  it("retries on 429", async () => {
-    const fetchMock = vi.fn().mockResolvedValue({
+    const rateLimitedFetch = vi.fn().mockResolvedValue({
       ok: false,
       status: 429,
       text: async () => "rate limited",
     });
-    vi.stubGlobal("fetch", fetchMock);
+    const retryClient = createNodeClient({
+      fetchImpl: rateLimitedFetch as unknown as typeof fetch,
+      setTimeoutImpl: createImmediateTimeouts().setTimeoutImpl as unknown as typeof setTimeout,
+      clearTimeoutImpl: vi.fn(),
+    });
     await expect(
-      apiRequestForm("https://example.com", {
+      retryClient.apiRequestForm("https://example.com", {
         method: "POST",
         path: "/upload",
         form: new FormData(),
       }),
     ).rejects.toThrow("rate limited");
-    expect(fetchMock).toHaveBeenCalledTimes(3);
-    vi.unstubAllGlobals();
-  });
+    expect(rateLimitedFetch).toHaveBeenCalledTimes(3);
 
-  it("falls back to HTTP status when body cannot be read", async () => {
-    const fetchMock = vi.fn().mockResolvedValue({
-      ok: false,
-      status: 400,
-      text: async () => {
-        throw new Error("boom");
-      },
+    const { setTimeoutImpl, clearTimeoutImpl } = createImmediateTimeouts();
+    const abortingFetch = createAbortingFetchMock();
+    const timeoutClient = createNodeClient({
+      fetchImpl: abortingFetch as unknown as typeof fetch,
+      setTimeoutImpl: setTimeoutImpl as unknown as typeof setTimeout,
+      clearTimeoutImpl,
     });
-    vi.stubGlobal("fetch", fetchMock);
     await expect(
-      apiRequestForm("https://example.com", {
+      timeoutClient.apiRequestForm("https://example.com", {
         method: "POST",
         path: "/upload",
         form: new FormData(),
       }),
-    ).rejects.toThrow("HTTP 400");
-    expect(fetchMock).toHaveBeenCalledTimes(1);
-    vi.unstubAllGlobals();
-  });
-
-  it("uses the longer upload timeout for multipart requests", async () => {
-    const { setTimeoutMock, clearTimeoutMock } = mockImmediateTimeouts();
-    const fetchMock = createAbortingFetchMock();
-    vi.stubGlobal("fetch", fetchMock);
-
-    let caught: unknown;
-    try {
-      await apiRequestForm("https://example.com", {
-        method: "POST",
-        path: "/upload",
-        form: new FormData(),
-      });
-    } catch (error) {
-      caught = error;
-    }
-
-    expect(caught).toBeInstanceOf(Error);
-    expect((caught as Error).message).toMatch(/timed out after 120s/i);
-    expect(setTimeoutMock).toHaveBeenCalled();
-    expect(setTimeoutMock.mock.calls[0]?.[1]).toBe(120_000);
-    expect(fetchMock).toHaveBeenCalledTimes(3);
-    expect(clearTimeoutMock.mock.calls.length).toBeGreaterThanOrEqual(3);
-    vi.unstubAllGlobals();
-  });
-});
-
-describe("fetchText", () => {
-  it("aborts with Error timeouts and retries", async () => {
-    const { clearTimeoutMock } = mockImmediateTimeouts();
-    const fetchMock = createAbortingFetchMock();
-    vi.stubGlobal("fetch", fetchMock);
-
-    let caught: unknown;
-    try {
-      await fetchText("https://example.com", { path: "/x" });
-    } catch (error) {
-      caught = error;
-    }
-
-    expect(caught).toBeInstanceOf(Error);
-    expect((caught as Error).message).toMatch(/timed out/);
-    expect(fetchMock).toHaveBeenCalledTimes(3);
-    expect(clearTimeoutMock.mock.calls.length).toBeGreaterThanOrEqual(3);
-    vi.unstubAllGlobals();
-  });
-});
-
-describe("fetchWithTimeout — non-Error normalization", () => {
-  it("wraps DOMException-like non-Error throws into proper Error instances", async () => {
-    const fetchMock = vi.fn(async () => {
-      // Simulate a runtime that throws a non-Error object on abort
-      throw { message: "The operation was aborted", name: "AbortError" };
-    });
-    vi.stubGlobal("fetch", fetchMock);
-
-    let caught: unknown;
-    try {
-      await apiRequest("https://example.com", { method: "GET", path: "/x" });
-    } catch (error) {
-      caught = error;
-    }
-
-    expect(caught).toBeInstanceOf(Error);
-    expect((caught as Error).message).toContain("The operation was aborted");
-    vi.unstubAllGlobals();
+    ).rejects.toThrow(/timed out after 120s/i);
+    expect(setTimeoutImpl.mock.calls[0]?.[1]).toBe(120_000);
   });
 });

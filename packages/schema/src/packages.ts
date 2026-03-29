@@ -152,6 +152,7 @@ export const ApiV1PackageListResponseSchema = type({
   items: PackageListItemSchema.array(),
   nextCursor: "string|null",
 });
+export type ApiV1PackageListResponse = (typeof ApiV1PackageListResponseSchema)[inferred];
 
 export const ApiV1PackageSearchResponseSchema = type({
   results: type({
@@ -159,6 +160,7 @@ export const ApiV1PackageSearchResponseSchema = type({
     package: PackageListItemSchema,
   }).array(),
 });
+export type ApiV1PackageSearchResponse = (typeof ApiV1PackageSearchResponseSchema)[inferred];
 
 export const ApiV1PackageResponseSchema = type({
   package: type({
@@ -184,6 +186,7 @@ export const ApiV1PackageResponseSchema = type({
     image: "string|null?",
   }).or("null"),
 });
+export type ApiV1PackageResponse = (typeof ApiV1PackageResponseSchema)[inferred];
 
 export const ApiV1PackageVersionListResponseSchema = type({
   items: type({
@@ -194,6 +197,8 @@ export const ApiV1PackageVersionListResponseSchema = type({
   }).array(),
   nextCursor: "string|null",
 });
+export type ApiV1PackageVersionListResponse =
+  (typeof ApiV1PackageVersionListResponseSchema)[inferred];
 
 export const ApiV1PackageVersionResponseSchema = type({
   package: type({
@@ -216,9 +221,11 @@ export const ApiV1PackageVersionResponseSchema = type({
     staticScan: PackageStaticScanSchema.or("null").optional(),
   }).or("null"),
 });
+export type ApiV1PackageVersionResponse = (typeof ApiV1PackageVersionResponseSchema)[inferred];
 
 export const ApiV1PackagePublishResponseSchema = type({
   ok: "true",
   packageId: "string",
   releaseId: "string",
 });
+export type ApiV1PackagePublishResponse = (typeof ApiV1PackagePublishResponseSchema)[inferred];

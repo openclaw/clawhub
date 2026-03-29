@@ -5,6 +5,12 @@ import mime from "mime";
 import semver from "semver";
 import { apiRequest, apiRequestForm, fetchText, registryUrl } from "../../http.js";
 import {
+  fetchGitHubSource,
+  normalizeGitHubRepo,
+  resolveLocalGitInfo,
+  resolveSourceInput,
+} from "./github.js";
+import {
   ApiRoutes,
   ApiV1PackageListResponseSchema,
   ApiV1PackagePublishResponseSchema,
@@ -12,10 +18,12 @@ import {
   ApiV1PackageSearchResponseSchema,
   ApiV1PackageVersionListResponseSchema,
   ApiV1PackageVersionResponseSchema,
+  normalizeOpenClawExternalPluginCompatibility,
   type PackageCapabilitySummary,
   type PackageCompatibility,
   type PackageFamily,
   type PackageVerificationSummary,
+  validateOpenClawExternalCodePluginPackageJson,
 } from "../../schema/index.js";
 import { getOptionalAuthToken, requireAuthToken } from "../authToken.js";
 import { getRegistry } from "../registry.js";
@@ -60,12 +68,58 @@ type PackagePublishOptions = {
   sourceCommit?: string;
   sourceRef?: string;
   sourcePath?: string;
+  dryRun?: boolean;
+  json?: boolean;
 };
 
 type PackageFile = {
   relPath: string;
   bytes: Uint8Array;
   contentType?: string;
+};
+
+type InferredPublishSource = {
+  repo?: string;
+  commit?: string;
+  ref?: string;
+  path?: string;
+  url?: string;
+};
+
+type PackagePublishSource = ReturnType<typeof buildSource>;
+
+type PackagePublishPayload = {
+  name: string;
+  displayName: string;
+  ownerHandle?: string;
+  family: "code-plugin" | "bundle-plugin";
+  version: string;
+  changelog: string;
+  tags: string[];
+  source?: NonNullable<PackagePublishSource>;
+  bundle?: {
+    format?: string;
+    hostTargets: string[];
+  };
+};
+
+type PackagePublishPlan = {
+  folder: string;
+  cleanup?: () => Promise<void>;
+  filesOnDisk: PackageFile[];
+  payload: PackagePublishPayload;
+  compatibility?: PackageCompatibility;
+  sourceLabel: string;
+  output: {
+    source: string;
+    name: string;
+    displayName: string;
+    family: "code-plugin" | "bundle-plugin";
+    version: string;
+    commit?: string;
+    files: number;
+    totalBytes: number;
+  };
 };
 
 type PrintableFile = {
@@ -280,100 +334,77 @@ export async function cmdInspectPackage(
 
 export async function cmdPublishPackage(
   opts: GlobalOpts,
-  folderArg: string,
+  sourceArg: string,
   options: PackagePublishOptions = {},
 ) {
-  const folder = folderArg ? resolve(opts.workdir, folderArg) : null;
-  if (!folder) fail("Path required");
-  const folderStat = await stat(folder).catch(() => null);
-  if (!folderStat || !folderStat.isDirectory()) fail("Path must be a folder");
+  if (!sourceArg?.trim()) fail("Path required");
 
-  const token = await requireAuthToken();
-  const registry = await getRegistry(opts, { cache: true });
-  const filesOnDisk = await listPackageFiles(folder);
-  if (filesOnDisk.length === 0) fail("No files found");
-
-  const fileSet = new Set(filesOnDisk.map((file) => file.relPath.toLowerCase()));
-  const packageJson = await readJsonFile(join(folder, "package.json"));
-  const family = detectPackageFamily(fileSet, options.family);
-  const name =
-    options.name?.trim() ||
-    packageJsonString(packageJson, "name") ||
-    basename(folder).trim().toLowerCase();
-  const displayName =
-    options.displayName?.trim() ||
-    packageJsonString(packageJson, "displayName") ||
-    titleCase(basename(folder));
-  const ownerHandle = options.owner?.trim().replace(/^@+/, "");
-  const version = options.version?.trim() || packageJsonString(packageJson, "version");
-  const changelog = options.changelog ?? "";
-  const tags = parseTags(options.tags ?? "latest");
-  const source = buildSource(options);
-
-  if (!name) fail("--name required");
-  if (!displayName) fail("--display-name required");
-  if (!version) fail("--version required");
-  if (family === "code-plugin" && !semver.valid(version)) {
-    fail("--version must be valid semver for code plugins");
-  }
-  if (family === "code-plugin") {
-    if (!fileSet.has("package.json")) fail("package.json required");
-    if (!fileSet.has("openclaw.plugin.json")) fail("openclaw.plugin.json required");
-    if (!source) fail("--source-repo and --source-commit required for code plugins");
-  }
-  if (family === "bundle-plugin") {
-    const hostTargets = parseCsv(options.hostTargets);
-    if (!fileSet.has("openclaw.bundle.json") && hostTargets.length === 0) {
-      fail("Bundle plugins need openclaw.bundle.json or --host-targets");
-    }
-  }
-
-  const spinner = createSpinner(`Preparing ${name}@${version}`);
+  let plan: PackagePublishPlan | undefined;
   try {
-    const form = new FormData();
-    form.set(
-      "payload",
-      JSON.stringify({
-        name,
-        displayName,
-        ...(ownerHandle ? { ownerHandle } : {}),
-        family,
-        version,
-        changelog,
-        tags,
-        ...(source ? { source } : {}),
-        ...(family === "bundle-plugin"
-          ? {
-              bundle: {
-                format: options.bundleFormat?.trim() || undefined,
-                hostTargets: parseCsv(options.hostTargets),
-              },
-            }
-          : {}),
-      }),
-    );
+    plan = await preparePackagePublishPlan(opts, sourceArg, options);
 
-    let index = 0;
-    for (const file of filesOnDisk) {
-      index += 1;
-      spinner.text = `Uploading ${file.relPath} (${index}/${filesOnDisk.length})`;
-      const blob = new Blob([Buffer.from(file.bytes)], {
-        type: file.contentType ?? "application/octet-stream",
-      });
-      form.append("files", blob, file.relPath);
+    if (options.dryRun) {
+      if (options.json) {
+        process.stdout.write(`${JSON.stringify(plan.output, null, 2)}\n`);
+      } else {
+        printPackageDryRun({
+          source: plan.sourceLabel,
+          family: plan.payload.family,
+          name: plan.payload.name,
+          displayName: plan.payload.displayName,
+          version: plan.payload.version,
+          commit: plan.payload.source?.commit,
+          compatibility: plan.compatibility,
+          tags: plan.payload.tags,
+          files: plan.filesOnDisk,
+        });
+      }
+      return;
     }
 
-    spinner.text = `Publishing ${name}@${version}`;
-    const result = await apiRequestForm(
-      registry,
-      { method: "POST", path: ApiRoutes.packages, token, form },
-      ApiV1PackagePublishResponseSchema,
-    );
+    const token = await requireAuthToken();
+    const registry = await getRegistry(opts, { cache: true });
+    const spinner = options.json
+      ? null
+      : createSpinner(`Preparing ${plan.payload.name}@${plan.payload.version}`);
+    try {
+      const form = new FormData();
+      form.set("payload", JSON.stringify(plan.payload));
 
-    spinner.succeed(`OK. Published ${name}@${version} (${result.releaseId})`);
-  } catch (error) {
-    spinner.fail(formatError(error));
-    throw error;
+      let index = 0;
+      for (const file of plan.filesOnDisk) {
+        index += 1;
+        if (spinner) {
+          spinner.text = `Uploading ${file.relPath} (${index}/${plan.filesOnDisk.length})`;
+        }
+        const blob = new Blob([Buffer.from(file.bytes)], {
+          type: file.contentType ?? "application/octet-stream",
+        });
+        form.append("files", blob, file.relPath);
+      }
+
+      if (spinner) spinner.text = `Publishing ${plan.payload.name}@${plan.payload.version}`;
+      const result = await apiRequestForm(
+        registry,
+        { method: "POST", path: ApiRoutes.packages, token, form },
+        ApiV1PackagePublishResponseSchema,
+      );
+
+      if (options.json) {
+        process.stdout.write(
+          `${JSON.stringify({ ...plan.output, releaseId: result.releaseId }, null, 2)}\n`,
+        );
+      } else {
+        spinner?.succeed(
+          `OK. Published ${plan.payload.name}@${plan.payload.version} (${result.releaseId})`,
+        );
+      }
+    } catch (error) {
+      spinner?.fail(formatError(error));
+      throw error;
+    }
+  } finally {
+    await plan?.cleanup?.();
   }
 }
 
@@ -476,7 +507,12 @@ function printVersionSummary(version: NonNullable<PackageVersionResponse["versio
 
 function printCompatibility(compatibility: PackageCompatibility | null | undefined) {
   if (!compatibility) return;
-  const entries = [
+  const entries = formatCompatibilityEntries(compatibility);
+  if (entries.length > 0) console.log(`Compatibility: ${entries.join(", ")}`);
+}
+
+function formatCompatibilityEntries(compatibility: PackageCompatibility) {
+  return [
     compatibility.pluginApiRange ? `pluginApi=${compatibility.pluginApiRange}` : null,
     compatibility.builtWithOpenClawVersion
       ? `builtWith=${compatibility.builtWithOpenClawVersion}`
@@ -484,7 +520,6 @@ function printCompatibility(compatibility: PackageCompatibility | null | undefin
     compatibility.pluginSdkVersion ? `sdk=${compatibility.pluginSdkVersion}` : null,
     compatibility.minGatewayVersion ? `minGateway=${compatibility.minGatewayVersion}` : null,
   ].filter(Boolean);
-  if (entries.length > 0) console.log(`Compatibility: ${entries.join(", ")}`);
 }
 
 function printCapabilities(capabilities: PackageCapabilitySummary | null | undefined) {
@@ -619,26 +654,222 @@ function parseCsv(value: string | undefined) {
     .filter(Boolean);
 }
 
-function buildSource(options: PackagePublishOptions) {
-  const rawRepo = options.sourceRepo?.trim();
-  const rawCommit = options.sourceCommit?.trim();
-  const rawRef = options.sourceRef?.trim();
-  const rawPath = options.sourcePath?.trim();
+async function preparePackagePublishPlan(
+  opts: GlobalOpts,
+  sourceArg: string,
+  options: PackagePublishOptions,
+): Promise<PackagePublishPlan> {
+  const resolvedSource = await resolveSourceInput(sourceArg, { workdir: opts.workdir });
+  let folder = resolvedSource.kind === "local" ? resolvedSource.path : "";
+  let cleanup: (() => Promise<void>) | undefined;
+  let inferredSource: InferredPublishSource | undefined;
+
+  if (resolvedSource.kind === "github") {
+    const fetchSpinner = options.json
+      ? null
+      : createSpinner(`Fetching ${resolvedSource.owner}/${resolvedSource.repo}`);
+    try {
+      const fetched = await fetchGitHubSource(resolvedSource);
+      folder = fetched.dir;
+      cleanup = fetched.cleanup;
+      inferredSource = fetched.source;
+      fetchSpinner?.stop();
+    } catch (error) {
+      fetchSpinner?.fail(formatError(error));
+      throw error;
+    }
+  } else {
+    const folderStat = await stat(folder).catch(() => null);
+    if (!folderStat || !folderStat.isDirectory()) fail("Path must be a folder");
+
+    const localGitInfo = resolveLocalGitInfo(folder);
+    if (localGitInfo) {
+      inferredSource = {
+        repo: localGitInfo.repo,
+        commit: localGitInfo.commit,
+        ref: localGitInfo.ref,
+        path: localGitInfo.path,
+        ...(localGitInfo.repo ? { url: `https://github.com/${localGitInfo.repo}` } : {}),
+      };
+    }
+  }
+
+  const filesOnDisk = await listPackageFiles(folder);
+  if (filesOnDisk.length === 0) fail("No files found");
+
+  const fileSet = new Set(filesOnDisk.map((file) => file.relPath.toLowerCase()));
+  const packageJson = await readJsonFile(join(folder, "package.json"));
+  const pluginManifest = await readJsonFile(join(folder, "openclaw.plugin.json"));
+  const bundleManifest = await readJsonFile(join(folder, "openclaw.bundle.json"));
+  const family = detectPackageFamily(fileSet, options.family);
+  const name =
+    options.name?.trim() ||
+    packageJsonString(packageJson, "name") ||
+    packageJsonString(pluginManifest, "id") ||
+    packageJsonString(bundleManifest, "id") ||
+    basename(folder).trim().toLowerCase();
+  const displayName =
+    options.displayName?.trim() ||
+    packageJsonString(packageJson, "displayName") ||
+    packageJsonString(pluginManifest, "name") ||
+    packageJsonString(bundleManifest, "name") ||
+    titleCase(basename(folder));
+  const ownerHandle = options.owner?.trim().replace(/^@+/, "");
+  const version = options.version?.trim() || packageJsonString(packageJson, "version");
+  const changelog = options.changelog ?? "";
+  const tags = parseTags(options.tags ?? "latest");
+  const source = buildSource(options, inferredSource);
+
+  if (!name) fail("--name required");
+  if (!displayName) fail("--display-name required");
+  if (!version) fail("--version required");
+  if (family === "code-plugin" && !semver.valid(version)) {
+    fail("--version must be valid semver for code plugins");
+  }
+  if (family === "code-plugin") {
+    if (!fileSet.has("package.json")) fail("package.json required");
+    if (!fileSet.has("openclaw.plugin.json")) fail("openclaw.plugin.json required");
+    if (!source) fail("--source-repo and --source-commit required for code plugins");
+    const validation = validateOpenClawExternalCodePluginPackageJson(packageJson);
+    if (validation.issues.length > 0) {
+      fail(validation.issues.map((issue) => issue.message).join(" "));
+    }
+  }
+  if (family === "bundle-plugin") {
+    const hostTargets = parseCsv(options.hostTargets);
+    if (!fileSet.has("openclaw.bundle.json") && hostTargets.length === 0) {
+      fail("Bundle plugins need openclaw.bundle.json or --host-targets");
+    }
+  }
+
+  const payload: PackagePublishPayload = {
+    name,
+    displayName,
+    ...(ownerHandle ? { ownerHandle } : {}),
+    family,
+    version,
+    changelog,
+    tags,
+    ...(source ? { source } : {}),
+    ...(family === "bundle-plugin"
+      ? {
+          bundle: {
+            format: options.bundleFormat?.trim() || undefined,
+            hostTargets: parseCsv(options.hostTargets),
+          },
+        }
+      : {}),
+  };
+  const sourceLabel = describePublishSource(resolvedSource, source, folder);
+
+  return {
+    folder,
+    cleanup,
+    filesOnDisk,
+    payload,
+    compatibility:
+      family === "code-plugin"
+        ? normalizeOpenClawExternalPluginCompatibility(packageJson)
+        : undefined,
+    sourceLabel,
+    output: {
+      source: sourceLabel,
+      name,
+      displayName,
+      family,
+      version,
+      ...(source?.commit ? { commit: source.commit } : {}),
+      files: filesOnDisk.length,
+      totalBytes: filesOnDisk.reduce((sum, file) => sum + file.bytes.byteLength, 0),
+    },
+  };
+}
+
+function buildSource(
+  options: PackagePublishOptions,
+  inferred?: InferredPublishSource,
+) {
+  const rawRepo = options.sourceRepo?.trim() || inferred?.repo?.trim();
+  const rawCommit = options.sourceCommit?.trim() || inferred?.commit?.trim();
+  const rawRef = options.sourceRef?.trim() || inferred?.ref?.trim();
+  const rawPath = options.sourcePath?.trim() || inferred?.path?.trim();
   if (!rawRepo && !rawCommit && !rawRef && !rawPath) return undefined;
   if (!rawRepo || !rawCommit) fail("--source-repo and --source-commit must be set together");
-  const repo = rawRepo
-    .replace(/^https?:\/\/github\.com\//, "")
-    .replace(/\.git$/i, "")
-    .replace(/^\/+|\/+$/g, "");
+  const repo = normalizeGitHubRepo(rawRepo);
+  if (!repo) fail("--source-repo must be a GitHub repo or URL");
+  const explicitRepo = options.sourceRepo?.trim();
+  const url = explicitRepo
+    ? explicitRepo.startsWith("http")
+      ? explicitRepo
+      : `https://github.com/${repo}`
+    : inferred?.url || `https://github.com/${repo}`;
   return {
     kind: "github" as const,
-    url: rawRepo.startsWith("http") ? rawRepo : `https://github.com/${repo}`,
+    url,
     repo,
     ref: rawRef || rawCommit,
     commit: rawCommit,
     path: rawPath || ".",
     importedAt: Date.now(),
   };
+}
+
+function describePublishSource(
+  sourceInput: Awaited<ReturnType<typeof resolveSourceInput>>,
+  source: ReturnType<typeof buildSource>,
+  folder: string,
+) {
+  if (source) {
+    return `github:${source.repo}@${source.ref}${source.path !== "." ? `:${source.path}` : ""}`;
+  }
+  if (sourceInput.kind === "github") {
+    const repo = `${sourceInput.owner}/${sourceInput.repo}`;
+    return `github:${repo}@${sourceInput.ref ?? "HEAD"}${
+      sourceInput.path !== "." ? `:${sourceInput.path}` : ""
+    }`;
+  }
+  return `local:${folder}`;
+}
+
+function printPackageDryRun(params: {
+  source: string;
+  family: PackageFamily;
+  name: string;
+  displayName: string;
+  version: string;
+  commit?: string;
+  compatibility?: PackageCompatibility;
+  tags: string[];
+  files: PackageFile[];
+}) {
+  console.log("Dry run - nothing will be published.");
+  console.log("");
+  console.log(`Source:    ${params.source}`);
+  console.log(`Family:    ${params.family}`);
+  console.log(`Name:      ${params.name}`);
+  console.log(`Display:   ${params.displayName}`);
+  console.log(`Version:   ${params.version}`);
+  if (params.commit) console.log(`Commit:    ${params.commit}`);
+  if (params.compatibility) {
+    console.log(`Compat:    ${formatCompatibilityEntries(params.compatibility).join(", ")}`);
+  }
+  console.log(
+    `Files:     ${params.files.length} files (${formatByteCount(
+      params.files.reduce((sum, file) => sum + file.bytes.byteLength, 0),
+    )})`,
+  );
+  console.log(`Tags:      ${params.tags.join(", ")}`);
+  console.log("");
+  console.log("Files:");
+  for (const file of params.files) {
+    console.log(`  ${file.relPath.padEnd(28)} ${formatByteCount(file.bytes.byteLength)}`);
+  }
+}
+
+function formatByteCount(value: number) {
+  if (value < 1024) return `${value} B`;
+  if (value < 1024 * 1024) return `${(value / 1024).toFixed(1)} KB`;
+  return `${(value / (1024 * 1024)).toFixed(1)} MB`;
 }
 
 async function listPackageFiles(root: string) {

@@ -276,7 +276,7 @@ program
 
 program
   .command("publish")
-  .description("Publish skill from folder")
+  .description("Legacy alias: publish a skill from folder")
   .argument("<path>", "Skill folder path")
   .option("--slug <slug>", "Skill slug")
   .option("--name <name>", "Display name")
@@ -330,6 +330,21 @@ program
   });
 
 const skill = program.command("skill").description("Manage published skills");
+skill
+  .command("publish")
+  .description("Publish a skill from folder")
+  .argument("<path>", "Skill folder path")
+  .option("--slug <slug>", "Skill slug")
+  .option("--name <name>", "Display name")
+  .option("--version <version>", "Version (semver)")
+  .option("--fork-of <slug[@version]>", "Mark as a fork of an existing skill")
+  .option("--changelog <text>", "Changelog text")
+  .option("--tags <tags>", "Comma-separated tags", "latest")
+  .action(async (folder, options) => {
+    const opts = await resolveGlobalOpts();
+    await cmdPublish(opts, folder, options);
+  });
+
 const packageCmd = program
   .command("package")
   .description("Browse and publish OpenClaw packages");
@@ -372,8 +387,8 @@ packageCmd
 
 packageCmd
   .command("publish")
-  .description("Publish a code plugin or bundle plugin from folder")
-  .argument("<path>", "Package folder path")
+  .description("Publish a code plugin or bundle plugin from a folder or GitHub source")
+  .argument("<source>", "Package folder path, GitHub repo (owner/repo[@ref]), or URL")
   .option("--family <family>", "code-plugin|bundle-plugin")
   .option("--name <name>", "Package name")
   .option("--display-name <name>", "Display name")
@@ -387,9 +402,11 @@ packageCmd
   .option("--source-commit <sha>", "Git commit SHA")
   .option("--source-ref <ref>", "Git ref/tag/branch")
   .option("--source-path <path>", "Repo subpath", ".")
-  .action(async (folder, options) => {
+  .option("--dry-run", "Preview what would be published without uploading")
+  .option("--json", "Output JSON (for CI pipelines)")
+  .action(async (source, options) => {
     const opts = await resolveGlobalOpts();
-    await cmdPublishPackage(opts, folder, options);
+    await cmdPublishPackage(opts, source, options);
   });
 
 skill

@@ -47,6 +47,34 @@ function getSite() {
   );
 }
 
+function buildE2ESkillMarkdown(slug: string) {
+  return `# ${slug}
+
+## What it does
+
+This skill is used by the ClawHub CLI end-to-end suite to verify publish, install,
+update, delete, and undelete flows against a real registry.
+
+## Usage
+
+- Run the skill after installation to confirm the package can be discovered.
+- Use the published version history to verify update behavior.
+- Delete and undelete the listing to confirm ownership actions still work.
+
+## Notes
+
+This content is intentionally specific and non-templated so the publish pipeline
+accepts it during automated tests.
+`;
+}
+
+function allowLiveMutations() {
+  const value = process.env.CLAWHUB_E2E_ALLOW_MUTATIONS?.trim();
+  return value === "1" || value?.toLowerCase() === "true";
+}
+
+const itIfLiveMutations = allowLiveMutations() ? it : it.skip;
+
 async function makeTempConfig(registry: string, token: string | null) {
   const dir = await mkdtemp(join(tmpdir(), "clawhub-e2e-"));
   const path = join(dir, "config.json");
@@ -268,7 +296,81 @@ describe("clawhub e2e", () => {
     }
   });
 
-  it("publishes, deletes, and undeletes a skill (logged-in)", async () => {
+  it("package publish --dry-run from a GitHub repo shows a summary", async () => {
+    const registry = getRegistry();
+    const site = getSite();
+    const result = spawnSync(
+      "bun",
+      [
+        "clawhub",
+        "package",
+        "publish",
+        "encircleacity2/claw-plugin-byteplus-modelark",
+        "--dry-run",
+        "--site",
+        site,
+        "--registry",
+        registry,
+      ],
+      {
+        cwd: process.cwd(),
+        env: { ...process.env, CLAWHUB_DISABLE_TELEMETRY: "1" },
+        encoding: "utf8",
+      },
+    );
+
+    expect(result.status).toBe(0);
+    expect(result.stdout).toMatch(/Dry run/i);
+    expect(result.stdout).toMatch(/byteplus-modelark/);
+    expect(result.stdout).toMatch(/code-plugin/i);
+    expect(result.stdout).toMatch(/openclaw\.plugin\.json/);
+  }, 30_000);
+
+  it("package publish --dry-run --json from GitHub outputs valid JSON", async () => {
+    const registry = getRegistry();
+    const site = getSite();
+    const result = spawnSync(
+      "bun",
+      [
+        "clawhub",
+        "package",
+        "publish",
+        "encircleacity2/claw-plugin-byteplus-modelark",
+        "--dry-run",
+        "--json",
+        "--site",
+        site,
+        "--registry",
+        registry,
+      ],
+      {
+        cwd: process.cwd(),
+        env: { ...process.env, CLAWHUB_DISABLE_TELEMETRY: "1" },
+        encoding: "utf8",
+      },
+    );
+
+    expect(result.status).toBe(0);
+    const output = JSON.parse(result.stdout.trim()) as Record<string, unknown>;
+    expect(String(output.name)).toMatch(/byteplus-modelark/);
+    expect(output.family).toBe("code-plugin");
+    expect(Number(output.files)).toBeGreaterThan(0);
+    expect(output).not.toHaveProperty("releaseId");
+  }, 30_000);
+
+  it("package publish help shows the new source argument and flags", async () => {
+    const result = spawnSync("bun", ["clawhub", "package", "publish", "--help"], {
+      cwd: process.cwd(),
+      encoding: "utf8",
+    });
+
+    expect(result.status).toBe(0);
+    expect(result.stdout).toMatch(/<source>/);
+    expect(result.stdout).toMatch(/--dry-run/);
+    expect(result.stdout).toMatch(/--json/);
+  });
+
+  itIfLiveMutations("publishes, deletes, and undeletes a skill (logged-in)", async () => {
     const registry = getRegistry();
     const site = getSite();
     const token = mustGetToken() ?? (await readGlobalConfig())?.token ?? null;
@@ -284,7 +386,7 @@ describe("clawhub e2e", () => {
 
     try {
       await mkdir(skillDir, { recursive: true });
-      await writeFile(join(skillDir, "SKILL.md"), `# ${slug}\n\nHello.\n`, "utf8");
+      await writeFile(join(skillDir, "SKILL.md"), buildE2ESkillMarkdown(slug), "utf8");
 
       const publish1 = spawnSync(
         "bun",
@@ -506,22 +608,22 @@ describe("clawhub e2e", () => {
   }, 180_000);
 
   it("delete returns proper error for non-existent skill", async () => {
-    const registry = process.env.CLAWDHUB_REGISTRY?.trim() || "https://clawdhub.com";
-    const site = process.env.CLAWDHUB_SITE?.trim() || "https://clawdhub.com";
+    const registry = getRegistry();
+    const site = getSite();
     const token = mustGetToken() ?? (await readGlobalConfig())?.token ?? null;
     if (!token) {
-      throw new Error("Missing token. Set CLAWDHUB_E2E_TOKEN or run: bun clawdhub auth login");
+      throw new Error("Missing token. Set CLAWHUB_E2E_TOKEN or run: bun clawhub auth login");
     }
 
     const cfg = await makeTempConfig(registry, token);
-    const workdir = await mkdtemp(join(tmpdir(), "clawdhub-e2e-delete-"));
+    const workdir = await mkdtemp(join(tmpdir(), "clawhub-e2e-delete-"));
     const nonExistentSlug = `non-existent-skill-${Date.now()}`;
 
     try {
       const del = spawnSync(
         "bun",
         [
-          "clawdhub",
+          "clawhub",
           "delete",
           nonExistentSlug,
           "--yes",
@@ -534,7 +636,7 @@ describe("clawhub e2e", () => {
         ],
         {
           cwd: process.cwd(),
-          env: { ...process.env, CLAWDHUB_CONFIG_PATH: cfg.path, CLAWDHUB_DISABLE_TELEMETRY: "1" },
+          env: { ...process.env, CLAWHUB_CONFIG_PATH: cfg.path, CLAWHUB_DISABLE_TELEMETRY: "1" },
           encoding: "utf8",
         },
       );

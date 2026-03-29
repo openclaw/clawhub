@@ -15,9 +15,14 @@
   ],
   "type": "module",
   "scripts": {
-    "build": "tsc -p tsconfig.json",
+    "build": "node ./scripts/build.mjs",
     "dev": "node --enable-source-maps dist/cli.js",
-    "prepublishOnly": "npm run build"
+    "prepublishOnly": "npm run build",
+    "test": "bun run test:src",
+    "test:src": "vitest run -c vitest.config.ts",
+    "verify:build": "tsc -p tsconfig.json --noEmit",
+    "test:artifact": "bun run build && vitest run -c vitest.artifact.config.ts",
+    "verify": "bun run test:src && bun run verify:build && bun run test:artifact"
   },
   "dependencies": {
     "@clack/prompts": "^1.1.0",

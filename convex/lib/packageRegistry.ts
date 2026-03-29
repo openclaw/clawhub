@@ -1,3 +1,7 @@
+import {
+  listMissingOpenClawExternalCodePluginFieldPaths,
+  normalizeOpenClawExternalPluginCompatibility,
+} from "clawhub-schema";
 import type {
   BundlePublishMetadata,
   PackageCapabilitySummary,
@@ -165,41 +169,8 @@ function buildVerification(source: SourceInfo | undefined): PackageVerificationS
   };
 }
 
-function extractOpenClawBlock(packageJson: JsonRecord | undefined) {
-  if (!packageJson) return {};
-  const openclaw = isRecord(packageJson.openclaw) ? packageJson.openclaw : undefined;
-  return {
-    openclaw,
-    compat: isRecord(openclaw?.compat) ? openclaw.compat : undefined,
-    build: isRecord(openclaw?.build) ? openclaw.build : undefined,
-  };
-}
-
 function extractCompatibility(packageJson: JsonRecord | undefined): PackageCompatibility | undefined {
-  const { openclaw, compat, build } = extractOpenClawBlock(packageJson);
-  const install = isRecord(openclaw?.install) ? openclaw.install : undefined;
-  const version =
-    typeof packageJson?.version === "string" ? packageJson.version.trim() : undefined;
-  const minHostVersion =
-    typeof install?.minHostVersion === "string" ? install.minHostVersion.trim() : undefined;
-  const compatibility: PackageCompatibility = {};
-  if (typeof compat?.pluginApi === "string") {
-    compatibility.pluginApiRange = compat.pluginApi.trim();
-  }
-  if (typeof compat?.minGatewayVersion === "string") {
-    compatibility.minGatewayVersion = compat.minGatewayVersion.trim();
-  } else if (minHostVersion) {
-    compatibility.minGatewayVersion = minHostVersion;
-  }
-  if (typeof build?.openclawVersion === "string") {
-    compatibility.builtWithOpenClawVersion = build.openclawVersion.trim();
-  } else if (version) {
-    compatibility.builtWithOpenClawVersion = version;
-  }
-  if (typeof build?.pluginSdkVersion === "string") {
-    compatibility.pluginSdkVersion = build.pluginSdkVersion.trim();
-  }
-  return Object.keys(compatibility).length > 0 ? compatibility : undefined;
+  return normalizeOpenClawExternalPluginCompatibility(packageJson);
 }
 
 export function extractCodePluginArtifacts(params: {
@@ -212,7 +183,7 @@ export function extractCodePluginArtifacts(params: {
     throw new ConvexError("Code plugins must include source repo and commit metadata");
   }
 
-  const { openclaw } = extractOpenClawBlock(params.packageJson);
+  const openclaw = isRecord(params.packageJson.openclaw) ? params.packageJson.openclaw : undefined;
   const extensions = normalizeStringList(openclaw?.extensions);
   if (extensions.length === 0) {
     throw new ConvexError("package.json must declare openclaw.extensions");
@@ -223,11 +194,9 @@ export function extractCodePluginArtifacts(params: {
   if (!runtimeId) throw new ConvexError("openclaw.plugin.json must declare an id");
 
   const compatibility = extractCompatibility(params.packageJson);
-  if (!compatibility?.pluginApiRange) {
-    throw new ConvexError("package.json openclaw.compat.pluginApi is required");
-  }
-  if (!compatibility.builtWithOpenClawVersion) {
-    throw new ConvexError("package.json openclaw.build.openclawVersion is required");
+  const missingOpenClawFields = listMissingOpenClawExternalCodePluginFieldPaths(params.packageJson);
+  if (missingOpenClawFields.length > 0) {
+    throw new ConvexError(`package.json ${missingOpenClawFields[0]} is required`);
   }
 
   const channels = uniq([
@@ -311,7 +280,7 @@ export function extractBundlePluginArtifacts(params: {
   bundleMetadata?: BundlePublishMetadata;
   source?: SourceInfo;
 }) {
-  const { openclaw } = extractOpenClawBlock(params.packageJson);
+  const openclaw = isRecord(params.packageJson?.openclaw) ? params.packageJson.openclaw : undefined;
   const manifest = params.bundleManifest;
   const runtimeId =
     (typeof manifest?.id === "string" && manifest.id.trim()) ||

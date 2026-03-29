@@ -3,6 +3,7 @@ import { existsSync } from 'node:fs'
 import { stat } from 'node:fs/promises'
 import { fileURLToPath } from 'node:url'
 
+const packageRootPath = fileURLToPath(new URL('./packages/clawdhub/', import.meta.url))
 const distCliUrl = new URL('./packages/clawdhub/dist/cli.js', import.meta.url)
 const distCliPath = fileURLToPath(distCliUrl)
 const srcRootPath = fileURLToPath(new URL('./packages/clawdhub/src/', import.meta.url))
@@ -19,7 +20,8 @@ const shouldBuild = await (async () => {
 })()
 
 if (shouldBuild) {
-  const proc = Bun.spawn(['bunx', 'tsc', '-p', 'packages/clawdhub/tsconfig.json'], {
+  const proc = Bun.spawn(['bun', 'run', 'build'], {
+    cwd: packageRootPath,
     stdin: 'inherit',
     stdout: 'inherit',
     stderr: 'inherit',
@@ -34,6 +36,7 @@ async function getLatestMtime(root: string) {
   let latest = 0
   const glob = new Bun.Glob('**/*.ts')
   for await (const rel of glob.scan({ cwd: root, onlyFiles: true })) {
+    if (rel.endsWith('.test.ts')) continue
     const path = `${root}${root.endsWith('/') ? '' : '/'}${rel}`
     try {
       const entry = await stat(path)

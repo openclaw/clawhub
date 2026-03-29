@@ -61,8 +61,8 @@ Common CLI flows:
 - Browse unified catalog (skills + plugins): `clawhub package explore`, `clawhub package inspect <name>`
 - Manage local installs: `clawhub install <slug>`, `clawhub uninstall <slug>`, `clawhub list`, `clawhub update --all`
 - Inspect without installing: `clawhub inspect <slug>`
-- Publish/sync: `clawhub publish <path>`, `clawhub sync`
-- Publish plugins: `clawhub package publish <path> [--owner <handle>] --source-repo <owner/repo> --source-commit <sha>`
+- Publish/sync skills: `clawhub skill publish <path>`, `clawhub sync`
+- Publish plugins: `clawhub package publish <source>`
 - Canonicalize owned skills: `clawhub skill rename <slug> <new-slug>`, `clawhub skill merge <source> <target>`
 
 Docs: [`docs/quickstart.md`](docs/quickstart.md), [`docs/cli.md`](docs/cli.md).

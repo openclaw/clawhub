@@ -132,12 +132,13 @@ Stores your API token + cached registry URL.
   - refuses by default
   - overwrites with `--force` (or prompt, if interactive)
 
-### `publish <path>`
+### `skill publish <path>`
 
 - Publishes via `POST /api/v1/skills` (multipart).
 - Requires semver: `--version 1.2.3`.
 - Publishing a skill means it is released under `MIT-0` on ClawHub.
 - Published skills are free to use, modify, and redistribute without attribution.
+- Legacy alias: `publish <path>`.
 
 ### `delete <slug>`
 
@@ -208,11 +209,62 @@ Stores your API token + cached registry URL.
 - `--fuzzy` resolves the handle via fuzzy user search (admin only).
 - `--yes` skips confirmation.
 
-### `package publish <path>`
+### `package publish <source>`
 
 - Publishes a code plugin or bundle plugin via `POST /api/v1/packages`.
+- `<source>` accepts:
+  - Local folder path: `./my-plugin`
+  - GitHub repo: `owner/repo` or `owner/repo@ref`
+  - GitHub URL: `https://github.com/owner/repo`
+- Metadata is auto-detected from `package.json`, `openclaw.plugin.json`, and `openclaw.bundle.json`.
+- For GitHub sources, source attribution is auto-populated from the repo, resolved commit, ref, and subpath.
+- For local folders, source attribution is auto-detected from local git when the origin remote points at GitHub.
+- `--dry-run` previews the resolved publish payload without uploading.
+- `--json` emits machine-readable output for CI.
 - `--owner <handle>` lets admins publish under a shared owner account while keeping their own token as the actor.
-- Code plugins still require `--source-repo` and `--source-commit`.
+- Existing flags (`--family`, `--name`, `--version`, `--source-repo`, `--source-commit`, `--source-ref`, `--source-path`) still work as overrides.
+- Private GitHub repos require `GITHUB_TOKEN`.
+
+#### GitHub Actions
+
+ClawHub also ships an official reusable workflow at
+[`/.github/workflows/package-publish.yml`](/Users/tengjizhang/.codex/worktrees/7d03/clawhub/.github/workflows/package-publish.yml)
+for plugin repos.
+
+Typical caller setup:
+
+```yaml
+name: Package Publish
+
+on:
+  pull_request:
+  workflow_dispatch:
+  push:
+    tags:
+      - "v*"
+
+jobs:
+  dry-run:
+    if: github.event_name == 'pull_request'
+    uses: openclaw/clawhub/.github/workflows/package-publish.yml@main
+    with:
+      dry_run: true
+
+  publish:
+    if: github.event_name == 'workflow_dispatch' || startsWith(github.ref, 'refs/tags/')
+    uses: openclaw/clawhub/.github/workflows/package-publish.yml@main
+    with:
+      dry_run: false
+    secrets:
+      clawhub_token: ${{ secrets.CLAWHUB_TOKEN }}
+```
+
+Notes:
+
+- The reusable workflow defaults `source` to the caller repo.
+- `pull_request` should use `dry_run: true` so CI stays non-polluting.
+- Real publishes should be limited to trusted events such as `workflow_dispatch` or tag pushes.
+- The workflow uploads the JSON result as an artifact and exposes it as workflow outputs.
 
 ### `sync`
 

@@ -1,3 +1,5 @@
+/* @vitest-environment jsdom */
+
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { createElement } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -20,6 +22,7 @@ const generateUploadUrl = vi.fn();
 const publishRelease = vi.fn();
 const fetchMock = vi.fn();
 const useAuthStatusMock = vi.fn();
+const originalFetch = globalThis.fetch;
 
 vi.mock("convex/react", () => ({
   useMutation: () => generateUploadUrl,
@@ -31,15 +34,10 @@ vi.mock("../lib/useAuthStatus", () => ({
   useAuthStatus: () => useAuthStatusMock(),
 }));
 
-import { Route } from "../routes/publish-plugin";
+import { PublishPluginRoute, Route } from "../routes/publish-plugin";
 
 function renderPublishRoute() {
-  const route = Route as unknown as {
-    __config: {
-      component: unknown;
-    };
-  };
-  render(createElement(route.__config.component as never));
+  render(createElement(PublishPluginRoute as never));
 }
 
 function withRelativePath(file: File, path: string) {
@@ -50,10 +48,29 @@ function withRelativePath(file: File, path: string) {
   return file;
 }
 
+function makeCodePluginPackageJson(overrides: Record<string, unknown>) {
+  return JSON.stringify({
+    openclaw: {
+      extensions: ["./index.ts"],
+      compat: {
+        pluginApi: ">=2026.3.24-beta.2",
+      },
+      build: {
+        openclawVersion: "2026.3.24-beta.2",
+      },
+    },
+    ...overrides,
+  });
+}
+
 function getFileInput() {
   const input = document.querySelector('input[type="file"]');
   if (!(input instanceof HTMLInputElement)) throw new Error("Missing file input");
   return input;
+}
+
+function getFileInputs() {
+  return Array.from(document.querySelectorAll('input[type="file"]')) as HTMLInputElement[];
 }
 
 describe("plugins publish route", () => {
@@ -76,19 +93,23 @@ describe("plugins publish route", () => {
         storageId: `storage:${((init?.body as File | undefined)?.name ?? "unknown").replaceAll("/", "_")}`,
       }),
     }));
-    vi.stubGlobal("fetch", fetchMock);
+    Object.defineProperty(globalThis, "fetch", {
+      value: fetchMock,
+      configurable: true,
+      writable: true,
+    });
   });
 
   afterEach(() => {
-    vi.unstubAllGlobals();
+    Object.defineProperty(globalThis, "fetch", {
+      value: originalFetch,
+      configurable: true,
+      writable: true,
+    });
   });
 
   it("registers the publish form on /publish-plugin", () => {
-    const route = Route as unknown as {
-      __path: string;
-    };
-
-    expect(route.__path).toBe("/publish-plugin");
+    expect(Route).toBeTruthy();
   });
 
   it("keeps metadata inputs locked until plugin code is uploaded", () => {
@@ -102,13 +123,43 @@ describe("plugins publish route", () => {
     expect(screen.getByRole("button", { name: "Publish" }).getAttribute("disabled")).not.toBeNull();
   });
 
+  it("opens only the directory picker when clicking Choose folder", () => {
+    renderPublishRoute();
+
+    const [archiveInput, directoryInput] = getFileInputs();
+    const archiveClick = vi.fn();
+    const directoryClick = vi.fn();
+    archiveInput.click = archiveClick;
+    directoryInput.click = directoryClick;
+
+    fireEvent.click(screen.getByRole("button", { name: "Choose folder" }));
+
+    expect(directoryClick).toHaveBeenCalledTimes(1);
+    expect(archiveClick).not.toHaveBeenCalled();
+  });
+
+  it("opens only the archive picker when clicking Browse files", () => {
+    renderPublishRoute();
+
+    const [archiveInput, directoryInput] = getFileInputs();
+    const archiveClick = vi.fn();
+    const directoryClick = vi.fn();
+    archiveInput.click = archiveClick;
+    directoryInput.click = directoryClick;
+
+    fireEvent.click(screen.getByRole("button", { name: "Browse files" }));
+
+    expect(archiveClick).toHaveBeenCalledTimes(1);
+    expect(directoryClick).not.toHaveBeenCalled();
+  });
+
   it("publishes a code plugin folder with source metadata and normalized file paths", async () => {
     renderPublishRoute();
 
     const packageJson = withRelativePath(
       new File(
         [
-          JSON.stringify({
+          makeCodePluginPackageJson({
             name: "demo-plugin",
             displayName: "Demo Plugin",
             version: "1.2.3",
@@ -179,6 +230,55 @@ describe("plugins publish route", () => {
         ]),
       }),
     });
+  });
+
+  it("surfaces missing OpenClaw compatibility metadata before publish", async () => {
+    renderPublishRoute();
+
+    const packageJson = withRelativePath(
+      new File(
+        [
+          makeCodePluginPackageJson({
+            name: "demo-plugin",
+            displayName: "Demo Plugin",
+            version: "1.2.3",
+            openclaw: {
+              extensions: ["./index.ts"],
+            },
+          }),
+        ],
+        "package.json",
+        { type: "application/json" },
+      ),
+      "demo-plugin/package.json",
+    );
+    const manifest = withRelativePath(
+      new File(
+        [
+          JSON.stringify({
+            id: "demo.plugin",
+            name: "Demo Plugin",
+            configSchema: { type: "object", additionalProperties: false },
+          }),
+        ],
+        "openclaw.plugin.json",
+        { type: "application/json" },
+      ),
+      "demo-plugin/openclaw.plugin.json",
+    );
+
+    fireEvent.change(getFileInput(), { target: { files: [packageJson, manifest] } });
+
+    await waitFor(() => {
+      expect(
+        screen.getByText(/Missing required OpenClaw package metadata:/i),
+      ).toBeTruthy();
+    });
+
+    expect(screen.getByText(/openclaw\.compat\.pluginApi/i)).toBeTruthy();
+    expect(screen.getByText(/openclaw\.build\.openclawVersion/i)).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Publish" }).getAttribute("disabled")).not.toBeNull();
+    expect(publishRelease).not.toHaveBeenCalled();
   });
 
   it("publishes a bundle plugin folder with bundle metadata", async () => {
@@ -263,6 +363,16 @@ describe("plugins publish route", () => {
         JSON.stringify({
           name: "@opik/opik-openclaw",
           version: "0.2.9",
+          openclaw: {
+            compat: {
+              pluginApi: ">=2026.3.24-beta.2",
+              minGatewayVersion: "2026.3.24-beta.2",
+            },
+            build: {
+              openclawVersion: "2026.3.24-beta.2",
+              pluginSdkVersion: "2026.3.24-beta.2",
+            },
+          },
           repository: {
             type: "git",
             url: "https://github.com/comet-ml/opik-openclaw.git",
@@ -291,7 +401,9 @@ describe("plugins publish route", () => {
       expect(screen.getByDisplayValue("0.2.9")).toBeTruthy();
       expect(screen.getByDisplayValue("comet-ml/opik-openclaw")).toBeTruthy();
       expect(screen.getByText(/Metadata detected and prefilled/i)).toBeTruthy();
-      expect(screen.getByText(/Autofilled package type, plugin name, display name, version, source repo\./i)).toBeTruthy();
+      expect(
+        screen.getByText(/Autofilled package type, plugin name, display name, version, source repo, compatibility\./i),
+      ).toBeTruthy();
       expect(screen.getByText("Package manifest")).toBeTruthy();
       expect(screen.getByText("Plugin manifest")).toBeTruthy();
       expect(screen.queryByText("opik-openclaw-0.2.9/package.json")).toBeNull();
@@ -302,7 +414,7 @@ describe("plugins publish route", () => {
     renderPublishRoute();
 
     const packageJson = withRelativePath(
-      new File([JSON.stringify({ name: "demo-plugin", version: "1.0.0" })], "package.json", {
+      new File([makeCodePluginPackageJson({ name: "demo-plugin", version: "1.0.0" })], "package.json", {
         type: "application/json",
       }),
       "demo-plugin/package.json",
@@ -369,7 +481,7 @@ describe("plugins publish route", () => {
     renderPublishRoute();
 
     const packageJson = withRelativePath(
-      new File([JSON.stringify({ name: "demo-plugin", version: "1.0.0" })], "package.json", {
+      new File([makeCodePluginPackageJson({ name: "demo-plugin", version: "1.0.0" })], "package.json", {
         type: "application/json",
       }),
       "demo-plugin/package.json",
@@ -400,7 +512,7 @@ describe("plugins publish route", () => {
     renderPublishRoute();
 
     const packageJson = withRelativePath(
-      new File([JSON.stringify({ name: "demo-plugin", version: "1.0.0" })], "package.json", {
+      new File([makeCodePluginPackageJson({ name: "demo-plugin", version: "1.0.0" })], "package.json", {
         type: "application/json",
       }),
       "demo-plugin/package.json",

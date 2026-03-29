@@ -1,9 +1,10 @@
 import { createFileRoute, useSearch } from "@tanstack/react-router";
-import { Package } from "lucide-react";
+import type { PackageCompatibility } from "clawhub-schema";
 import { useAction, useMutation, useQuery } from "convex/react";
-import { startTransition, useEffect, useMemo, useRef, useState } from "react";
+import { startTransition, useEffect, useMemo, useState } from "react";
 import semver from "semver";
 import { api } from "../../convex/_generated/api";
+import { PackageSourceChooser } from "../components/PackageSourceChooser";
 import {
   MAX_PUBLISH_FILE_BYTES,
   MAX_PUBLISH_TOTAL_BYTES,
@@ -13,9 +14,13 @@ import {
   filterIgnoredPackageFiles,
   normalizePackageUploadFiles,
 } from "../lib/packageUpload";
-import { expandDroppedItems, expandFilesWithReport } from "../lib/uploadFiles";
+import {
+  derivePluginPrefill,
+  listPrefilledFields,
+} from "../lib/pluginPublishPrefill";
+import { expandFilesWithReport } from "../lib/uploadFiles";
 import { useAuthStatus } from "../lib/useAuthStatus";
-import { formatBytes, formatPublishError, hashFile, uploadFile } from "./upload/-utils";
+import { formatPublishError, hashFile, uploadFile } from "./upload/-utils";
 
 export const Route = createFileRoute("/publish-plugin")({
   validateSearch: (search) => ({
@@ -38,7 +43,7 @@ const apiRefs = api as unknown as {
   };
 };
 
-function PublishPluginRoute() {
+export function PublishPluginRoute() {
   const search = useSearch({ from: "/publish-plugin" });
   const { isAuthenticated } = useAuthStatus();
   const publishers = useQuery(api.publishers.listMine) as
@@ -73,19 +78,12 @@ function PublishPluginRoute() {
   const [files, setFiles] = useState<File[]>([]);
   const [ignoredPaths, setIgnoredPaths] = useState<string[]>([]);
   const [detectedPrefillFields, setDetectedPrefillFields] = useState<string[]>([]);
+  const [codePluginFieldIssues, setCodePluginFieldIssues] = useState<string[]>([]);
+  const [codePluginCompatibility, setCodePluginCompatibility] = useState<PackageCompatibility | null>(
+    null,
+  );
   const [status, setStatus] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [isDragging, setIsDragging] = useState(false);
-  const archiveInputRef = useRef<HTMLInputElement | null>(null);
-  const directoryInputRef = useRef<HTMLInputElement | null>(null);
-
-  const setDirectoryInputRef = (node: HTMLInputElement | null) => {
-    directoryInputRef.current = node;
-    if (node) {
-      node.setAttribute("webkitdirectory", "");
-      node.setAttribute("directory", "");
-    }
-  };
 
   const totalBytes = useMemo(() => files.reduce((sum, file) => sum + file.size, 0), [files]);
   const normalizedPaths = useMemo(
@@ -126,6 +124,8 @@ function PublishPluginRoute() {
     setError(null);
     const prefill = await derivePluginPrefill(normalized);
     setDetectedPrefillFields(listPrefilledFields(prefill));
+    setCodePluginFieldIssues(prefill.missingRequiredFields ?? []);
+    setCodePluginCompatibility(prefill.compatibility ?? null);
     if (prefill.family) setFamily(prefill.family);
     if (prefill.name) setName(prefill.name);
     if (prefill.displayName) setDisplayName(prefill.displayName);
@@ -163,132 +163,19 @@ function PublishPluginRoute() {
         ) : null}
       </header>
 
-      <div className="card upload-panel">
-        <div
-          className={`upload-dropzone${isDragging ? " is-dragging" : ""}`}
-          role="button"
-          tabIndex={0}
-          onClick={(event) => {
-            if ((event.target as HTMLElement | null)?.closest("button")) return;
-            archiveInputRef.current?.click();
-          }}
-          onKeyDown={(event) => {
-            if (event.key !== "Enter" && event.key !== " ") return;
-            event.preventDefault();
-            archiveInputRef.current?.click();
-          }}
-          onDragOver={(event) => {
-            event.preventDefault();
-            setIsDragging(true);
-          }}
-          onDragLeave={() => setIsDragging(false)}
-          onDrop={(event) => {
-            event.preventDefault();
-            setIsDragging(false);
-            void (async () => {
-              const dropped = event.dataTransfer.items?.length
-                ? await expandDroppedItems(event.dataTransfer.items)
-                : Array.from(event.dataTransfer.files);
-              await onPickFiles(dropped);
-            })();
-          }}
-        >
-          <input
-            ref={archiveInputRef}
-            className="upload-file-input"
-            type="file"
-            multiple
-            accept=".zip,.tgz,.tar.gz,application/zip,application/gzip,application/x-gzip,application/x-tar"
-            onChange={(event) => {
-              const selected = Array.from(event.target.files ?? []);
-              void onPickFiles(selected);
-            }}
-          />
-          <input
-            ref={setDirectoryInputRef}
-            className="upload-file-input"
-            type="file"
-            multiple
-            onChange={(event) => {
-              const selected = Array.from(event.target.files ?? []);
-              void onPickFiles(selected);
-            }}
-          />
-          <div className="plugin-dropzone-art" aria-hidden="true">
-            <Package size={28} />
-          </div>
-          <div className="upload-dropzone-copy">
-            <div className="upload-dropzone-title-row">
-              <strong>Upload plugin code first</strong>
-              <span className="upload-dropzone-count">
-                {files.length} files · {formatBytes(totalBytes)}
-              </span>
-            </div>
-            <span className="upload-dropzone-hint">
-              Drag a folder, zip, or tgz here. We inspect the package to unlock and prefill the rest
-              of the form.
-            </span>
-            <div className="plugin-dropzone-actions">
-              <button
-                className="btn upload-picker-btn"
-                type="button"
-                onClick={(event) => {
-                  event.stopPropagation();
-                  archiveInputRef.current?.click();
-                }}
-              >
-                Browse files
-              </button>
-              <button
-                className="btn upload-picker-btn plugin-dropzone-secondary"
-                type="button"
-                onClick={(event) => {
-                  event.stopPropagation();
-                  directoryInputRef.current?.click();
-                }}
-              >
-                Choose folder
-              </button>
-            </div>
-          </div>
-        </div>
-
-        <div className={`plugin-upload-summary${isMetadataLocked ? "" : " is-ready"}`}>
-          {normalizedPaths.length === 0 ? (
-            <div className="stat">No plugin package selected yet.</div>
-          ) : (
-            <>
-              <div className="plugin-upload-summary-row">
-                <strong>Package detected</strong>
-                <span className="upload-dropzone-count">
-                  {files.length} files · {formatBytes(totalBytes)}
-                </span>
-              </div>
-              <div className="plugin-upload-summary-copy">
-                {detectedPrefillFields.length > 0
-                  ? `Autofilled ${detectedPrefillFields.join(", ")}.`
-                  : "Package files were detected. Review and fill the release details below."}
-              </div>
-              <div className="plugin-upload-summary-tags">
-                {normalizedPathSet.has("package.json") ? <span className="tag">Package manifest</span> : null}
-                {normalizedPathSet.has("openclaw.plugin.json") ? (
-                  <span className="tag">Plugin manifest</span>
-                ) : null}
-                {normalizedPathSet.has("openclaw.bundle.json") ? (
-                  <span className="tag">Bundle manifest</span>
-                ) : null}
-                {normalizedPathSet.has("readme.md") || normalizedPathSet.has("readme.mdx") ? (
-                  <span className="tag">README</span>
-                ) : null}
-                {ignoredPaths.length > 0 ? (
-                  <span className="tag">Ignored {ignoredPaths.length} files</span>
-                ) : null}
-              </div>
-            </>
-          )}
-        </div>
-        {validationError ? <div className="tag tag-accent">{validationError}</div> : null}
-      </div>
+      <PackageSourceChooser
+        files={files}
+        totalBytes={totalBytes}
+        normalizedPaths={normalizedPaths}
+        normalizedPathSet={normalizedPathSet}
+        ignoredPaths={ignoredPaths}
+        detectedPrefillFields={detectedPrefillFields}
+        family={family}
+        validationError={validationError}
+        codePluginFieldIssues={codePluginFieldIssues}
+        codePluginCompatibility={codePluginCompatibility}
+        onPickFiles={onPickFiles}
+      />
 
       <div
         className={`card plugin-publish-form${isMetadataLocked ? " is-locked" : ""}`}
@@ -408,7 +295,8 @@ function PublishPluginRoute() {
             files.length === 0 ||
             Boolean(validationError) ||
             isSubmitting ||
-            (family === "code-plugin" && (!sourceRepo.trim() || !sourceCommit.trim()))
+            (family === "code-plugin" &&
+              (!sourceRepo.trim() || !sourceCommit.trim() || codePluginFieldIssues.length > 0))
           }
           onClick={() => {
             startTransition(() => {
@@ -416,6 +304,12 @@ function PublishPluginRoute() {
                 try {
                   if (validationError) {
                     setError(validationError);
+                    return;
+                  }
+                  if (family === "code-plugin" && codePluginFieldIssues.length > 0) {
+                    setError(
+                      `Missing required OpenClaw package metadata: ${codePluginFieldIssues.join(", ")}`,
+                    );
                     return;
                   }
                   setStatus("Uploading files…");
@@ -478,130 +372,4 @@ function PublishPluginRoute() {
       </div>
     </main>
   );
-}
-
-type JsonRecord = Record<string, unknown>;
-
-type PluginPublishPrefill = {
-  family?: "code-plugin" | "bundle-plugin";
-  name?: string;
-  displayName?: string;
-  version?: string;
-  sourceRepo?: string;
-  bundleFormat?: string;
-  hostTargets?: string;
-};
-
-function isRecord(value: unknown): value is JsonRecord {
-  return Boolean(value) && typeof value === "object" && !Array.isArray(value);
-}
-
-function getString(value: unknown) {
-  return typeof value === "string" && value.trim() ? value.trim() : undefined;
-}
-
-function getStringList(value: unknown) {
-  if (Array.isArray(value)) return value.map(getString).filter(Boolean) as string[];
-  if (typeof value === "string") {
-    return value
-      .split(",")
-      .map((entry) => entry.trim())
-      .filter(Boolean);
-  }
-  return [];
-}
-
-async function readJsonUploadFile(
-  files: Array<{ file: File; path: string }>,
-  expectedPath: string,
-): Promise<JsonRecord | null> {
-  const normalizedExpectedPath = expectedPath.toLowerCase();
-  const expectedFileName = normalizedExpectedPath.split("/").at(-1);
-  const entry =
-    files.find((file) => file.path.toLowerCase() === normalizedExpectedPath) ??
-    files.find((file) => file.path.toLowerCase().endsWith(`/${normalizedExpectedPath}`)) ??
-    files.find((file) => {
-      const normalizedPath = file.path.toLowerCase();
-      return expectedFileName ? normalizedPath.split("/").at(-1) === expectedFileName : false;
-    });
-  if (!entry) return null;
-  try {
-    const parsed = JSON.parse((await entry.file.text()).replace(/^\uFEFF/, "")) as unknown;
-    return isRecord(parsed) ? parsed : null;
-  } catch {
-    return null;
-  }
-}
-
-function normalizeGitHubRepo(value: string) {
-  const trimmed = value
-    .trim()
-    .replace(/^git\+/, "")
-    .replace(/\.git$/i, "")
-    .replace(/^git@github\.com:/i, "https://github.com/");
-  if (!trimmed) return undefined;
-
-  const shorthand = trimmed.match(/^([a-z0-9_.-]+)\/([a-z0-9_.-]+)$/i);
-  if (shorthand) return `${shorthand[1]}/${shorthand[2]}`;
-
-  try {
-    const url = new URL(trimmed);
-    if (url.hostname !== "github.com" && url.hostname !== "www.github.com") return undefined;
-    const [owner, repo] = url.pathname.replace(/^\/+|\/+$/g, "").split("/");
-    if (!owner || !repo) return undefined;
-    return `${owner}/${repo}`;
-  } catch {
-    return undefined;
-  }
-}
-
-function extractSourceRepo(packageJson: JsonRecord | null) {
-  if (!packageJson) return undefined;
-  const repository = packageJson.repository;
-  if (typeof repository === "string") return normalizeGitHubRepo(repository);
-  if (isRecord(repository) && typeof repository.url === "string") {
-    return normalizeGitHubRepo(repository.url);
-  }
-  if (typeof packageJson.homepage === "string") return normalizeGitHubRepo(packageJson.homepage);
-  if (isRecord(packageJson.bugs) && typeof packageJson.bugs.url === "string") {
-    return normalizeGitHubRepo(packageJson.bugs.url);
-  }
-  return undefined;
-}
-
-async function derivePluginPrefill(
-  files: Array<{ file: File; path: string }>,
-): Promise<PluginPublishPrefill> {
-  const packageJson = await readJsonUploadFile(files, "package.json");
-  const pluginManifest = await readJsonUploadFile(files, "openclaw.plugin.json");
-  const bundleManifest = await readJsonUploadFile(files, "openclaw.bundle.json");
-  const openclaw = isRecord(packageJson?.openclaw) ? packageJson.openclaw : undefined;
-  const hostTargets = bundleManifest
-    ? [...new Set([...getStringList(bundleManifest.hostTargets), ...getStringList(openclaw?.hostTargets)])]
-    : [];
-
-  return {
-    family: pluginManifest ? "code-plugin" : bundleManifest ? "bundle-plugin" : undefined,
-    name: getString(packageJson?.name) ?? getString(pluginManifest?.id) ?? getString(bundleManifest?.id),
-    displayName:
-      getString(packageJson?.displayName) ??
-      getString(pluginManifest?.name) ??
-      getString(bundleManifest?.name),
-    version: getString(packageJson?.version),
-    sourceRepo: extractSourceRepo(packageJson),
-    bundleFormat: getString(bundleManifest?.format) ?? getString(openclaw?.bundleFormat),
-    hostTargets: hostTargets.length > 0 ? hostTargets.join(", ") : undefined,
-  };
-}
-
-function listPrefilledFields(prefill: PluginPublishPrefill) {
-  const fields: string[] = [];
-  if (prefill.family) fields.push("package type");
-  if (prefill.name) fields.push("plugin name");
-  if (prefill.displayName) fields.push("display name");
-  if (prefill.version) fields.push("version");
-  if (prefill.sourceRepo) fields.push("source repo");
-  if (prefill.bundleFormat) fields.push("bundle format");
-  if (prefill.hostTargets) fields.push("host targets");
-  return fields;
 }

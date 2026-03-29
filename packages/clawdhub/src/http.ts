@@ -28,37 +28,18 @@ const CURL_WRITE_OUT_FORMAT = [
   "%{header:ratelimit-reset}",
   "%{header:retry-after}",
 ].join("\n");
-const isBun = typeof process !== "undefined" && Boolean(process.versions?.bun);
 
-export function shouldUseProxyFromEnv(env: NodeJS.ProcessEnv = process.env): boolean {
-  return Boolean(env.HTTPS_PROXY || env.HTTP_PROXY || env.https_proxy || env.http_proxy);
-}
-
-if (typeof process !== "undefined" && process.versions?.node) {
-  try {
-    setGlobalDispatcher(
-      shouldUseProxyFromEnv(process.env)
-        ? new EnvHttpProxyAgent({
-            connect: { timeout: REQUEST_TIMEOUT_MS },
-          })
-        : new Agent({
-            connect: { timeout: REQUEST_TIMEOUT_MS },
-          }),
-    );
-  } catch {
-    // ignore dispatcher setup failures in non-node runtimes
-  }
-}
-
-export function registryUrl(path: string, registry: string): URL {
-  const base = registry.endsWith("/") ? registry : `${registry}/`;
-  const relative = path.startsWith("/") ? path.slice(1) : path;
-  return new URL(relative, base);
-}
+export type HttpRuntime = "node" | "bun";
 
 type RequestArgs =
   | { method: "GET" | "POST" | "DELETE"; path: string; token?: string; body?: unknown }
   | { method: "GET" | "POST" | "DELETE"; url: string; token?: string; body?: unknown };
+
+type FormRequestArgs =
+  | { method: "POST"; path: string; token?: string; form: FormData }
+  | { method: "POST"; url: string; token?: string; form: FormData };
+
+type TextRequestArgs = { path: string; token?: string } | { url: string; token?: string };
 
 type HeaderSource = Headers | Record<string, string> | null | undefined;
 
@@ -67,6 +48,40 @@ type RateLimitInfo = {
   remaining?: number;
   resetDelaySeconds?: number;
   retryAfterSeconds?: number;
+};
+
+type HttpClientDeps = {
+  runtime: HttpRuntime;
+  fetchImpl: typeof fetch;
+  setTimeoutImpl: typeof setTimeout;
+  clearTimeoutImpl: typeof clearTimeout;
+  spawnSyncImpl: typeof spawnSync;
+  mkdirImpl: typeof mkdir;
+  mkdtempImpl: typeof mkdtemp;
+  readFileImpl: typeof readFile;
+  rmImpl: typeof rm;
+  writeFileImpl: typeof writeFile;
+  tmpdirPath: string;
+  now: () => number;
+  random: () => number;
+  env: NodeJS.ProcessEnv;
+  configureDispatcher: boolean;
+};
+
+export type HttpClientOptions = Partial<Omit<HttpClientDeps, "runtime">> & {
+  runtime?: HttpRuntime;
+};
+
+type HttpClient = {
+  apiRequest<T>(registry: string, args: RequestArgs): Promise<T>;
+  apiRequest<T>(registry: string, args: RequestArgs, schema: ArkValidator<T>): Promise<T>;
+  apiRequestForm<T>(registry: string, args: FormRequestArgs): Promise<T>;
+  apiRequestForm<T>(registry: string, args: FormRequestArgs, schema: ArkValidator<T>): Promise<T>;
+  fetchText(registry: string, args: TextRequestArgs): Promise<string>;
+  downloadZip(
+    registry: string,
+    args: { slug: string; version?: string; token?: string },
+  ): Promise<Uint8Array>;
 };
 
 class HttpStatusError extends Error {
@@ -81,6 +96,178 @@ class HttpStatusError extends Error {
   }
 }
 
+export function detectHttpRuntime(
+  processVersions: NodeJS.ProcessVersions | undefined = process.versions,
+): HttpRuntime {
+  return processVersions?.bun ? "bun" : "node";
+}
+
+export function shouldUseProxyFromEnv(env: NodeJS.ProcessEnv = process.env): boolean {
+  return Boolean(env.HTTPS_PROXY || env.HTTP_PROXY || env.https_proxy || env.http_proxy);
+}
+
+export function registryUrl(path: string, registry: string): URL {
+  const base = registry.endsWith("/") ? registry : `${registry}/`;
+  const relative = path.startsWith("/") ? path.slice(1) : path;
+  return new URL(relative, base);
+}
+
+export function createHttpClient(options: HttpClientOptions = {}): HttpClient {
+  const deps: HttpClientDeps = {
+    runtime: options.runtime ?? detectHttpRuntime(),
+    fetchImpl: options.fetchImpl ?? globalThis.fetch.bind(globalThis),
+    setTimeoutImpl: options.setTimeoutImpl ?? globalThis.setTimeout.bind(globalThis),
+    clearTimeoutImpl: options.clearTimeoutImpl ?? globalThis.clearTimeout.bind(globalThis),
+    spawnSyncImpl: options.spawnSyncImpl ?? spawnSync,
+    mkdirImpl: options.mkdirImpl ?? mkdir,
+    mkdtempImpl: options.mkdtempImpl ?? mkdtemp,
+    readFileImpl: options.readFileImpl ?? readFile,
+    rmImpl: options.rmImpl ?? rm,
+    writeFileImpl: options.writeFileImpl ?? writeFile,
+    tmpdirPath: options.tmpdirPath ?? tmpdir(),
+    now: options.now ?? Date.now,
+    random: options.random ?? Math.random,
+    env: options.env ?? process.env,
+    configureDispatcher: options.configureDispatcher ?? true,
+  };
+
+  if (deps.runtime === "node" && deps.configureDispatcher) {
+    configureNodeDispatcher(deps.env);
+  }
+
+  const runWithRetries = createRetryRunner(deps);
+
+  async function apiRequest<T>(
+    registry: string,
+    args: RequestArgs,
+    schema?: ArkValidator<T>,
+  ): Promise<T> {
+    const url = "url" in args ? args.url : registryUrl(args.path, registry).toString();
+    const json = await runWithRetries(async () => {
+      if (deps.runtime === "bun") {
+        return await fetchJsonViaCurl(deps, url, args);
+      }
+
+      const headers: Record<string, string> = { Accept: "application/json" };
+      if (args.token) headers.Authorization = `Bearer ${args.token}`;
+      let body: string | undefined;
+      if (args.method === "POST") {
+        headers["Content-Type"] = "application/json";
+        body = JSON.stringify(args.body ?? {});
+      }
+      const response = await fetchWithTimeout(deps, url, {
+        method: args.method,
+        headers,
+        body,
+      });
+      if (!response.ok) {
+        throwHttpStatusError(response.status, await readResponseTextSafe(response), response.headers, deps.now);
+      }
+      return (await response.json()) as unknown;
+    });
+    if (schema) return parseArk(schema, json, "API response");
+    return json as T;
+  }
+
+  async function apiRequestForm<T>(
+    registry: string,
+    args: FormRequestArgs,
+    schema?: ArkValidator<T>,
+  ): Promise<T> {
+    const url = "url" in args ? args.url : registryUrl(args.path, registry).toString();
+    const json = await runWithRetries(async () => {
+      if (deps.runtime === "bun") {
+        return await fetchJsonFormViaCurl(deps, url, args);
+      }
+
+      const headers: Record<string, string> = { Accept: "application/json" };
+      if (args.token) headers.Authorization = `Bearer ${args.token}`;
+      const response = await fetchWithTimeout(
+        deps,
+        url,
+        {
+          method: args.method,
+          headers,
+          body: args.form,
+        },
+        UPLOAD_TIMEOUT_MS,
+      );
+      if (!response.ok) {
+        throwHttpStatusError(response.status, await readResponseTextSafe(response), response.headers, deps.now);
+      }
+      return (await response.json()) as unknown;
+    });
+    if (schema) return parseArk(schema, json, "API response");
+    return json as T;
+  }
+
+  async function fetchTextRequest(registry: string, args: TextRequestArgs): Promise<string> {
+    const url = "url" in args ? args.url : registryUrl(args.path, registry).toString();
+    return await runWithRetries(async () => {
+      if (deps.runtime === "bun") {
+        return await fetchTextViaCurl(deps, url, args);
+      }
+
+      const headers: Record<string, string> = { Accept: "text/plain" };
+      if (args.token) headers.Authorization = `Bearer ${args.token}`;
+      const response = await fetchWithTimeout(deps, url, { method: "GET", headers });
+      const text = await response.text();
+      if (!response.ok) {
+        throwHttpStatusError(response.status, text, response.headers, deps.now);
+      }
+      return text;
+    });
+  }
+
+  async function downloadZipRequest(
+    registry: string,
+    args: { slug: string; version?: string; token?: string },
+  ) {
+    const url = registryUrl(ApiRoutes.download, registry);
+    url.searchParams.set("slug", args.slug);
+    if (args.version) url.searchParams.set("version", args.version);
+    return await runWithRetries(async () => {
+      if (deps.runtime === "bun") {
+        return await fetchBinaryViaCurl(deps, url.toString(), args.token);
+      }
+
+      const headers: Record<string, string> = {};
+      if (args.token) headers.Authorization = `Bearer ${args.token}`;
+      const response = await fetchWithTimeout(deps, url.toString(), { method: "GET", headers });
+      if (!response.ok) {
+        throwHttpStatusError(response.status, await readResponseTextSafe(response), response.headers, deps.now);
+      }
+      return new Uint8Array(await response.arrayBuffer());
+    });
+  }
+
+  return {
+    apiRequest,
+    apiRequestForm,
+    fetchText: fetchTextRequest,
+    downloadZip: downloadZipRequest,
+  };
+}
+
+function configureNodeDispatcher(env: NodeJS.ProcessEnv) {
+  if (!process.versions?.node) return;
+  try {
+    setGlobalDispatcher(
+      shouldUseProxyFromEnv(env)
+        ? new EnvHttpProxyAgent({
+            connect: { timeout: REQUEST_TIMEOUT_MS },
+          })
+        : new Agent({
+            connect: { timeout: REQUEST_TIMEOUT_MS },
+          }),
+    );
+  } catch {
+    // Ignore dispatcher setup failures in environments that partially emulate Node APIs.
+  }
+}
+
+const defaultHttpClient = createHttpClient();
+
 export async function apiRequest<T>(registry: string, args: RequestArgs): Promise<T>;
 export async function apiRequest<T>(
   registry: string,
@@ -92,36 +279,11 @@ export async function apiRequest<T>(
   args: RequestArgs,
   schema?: ArkValidator<T>,
 ): Promise<T> {
-  const url = "url" in args ? args.url : registryUrl(args.path, registry).toString();
-  const json = await runWithRetries(async () => {
-    if (isBun) {
-      return await fetchJsonViaCurl(url, args);
-    }
-
-    const headers: Record<string, string> = { Accept: "application/json" };
-    if (args.token) headers.Authorization = `Bearer ${args.token}`;
-    let body: string | undefined;
-    if (args.method === "POST") {
-      headers["Content-Type"] = "application/json";
-      body = JSON.stringify(args.body ?? {});
-    }
-    const response = await fetchWithTimeout(url, {
-      method: args.method,
-      headers,
-      body,
-    });
-    if (!response.ok) {
-      throwHttpStatusError(response.status, await readResponseTextSafe(response), response.headers);
-    }
-    return (await response.json()) as unknown;
-  });
-  if (schema) return parseArk(schema, json, "API response");
-  return json as T;
+  if (schema) {
+    return await defaultHttpClient.apiRequest(registry, args, schema);
+  }
+  return await defaultHttpClient.apiRequest(registry, args);
 }
-
-type FormRequestArgs =
-  | { method: "POST"; path: string; token?: string; form: FormData }
-  | { method: "POST"; url: string; token?: string; form: FormData };
 
 export async function apiRequestForm<T>(registry: string, args: FormRequestArgs): Promise<T>;
 export async function apiRequestForm<T>(
@@ -134,98 +296,63 @@ export async function apiRequestForm<T>(
   args: FormRequestArgs,
   schema?: ArkValidator<T>,
 ): Promise<T> {
-  const url = "url" in args ? args.url : registryUrl(args.path, registry).toString();
-  const json = await runWithRetries(async () => {
-    if (isBun) {
-      return await fetchJsonFormViaCurl(url, args);
-    }
-
-    const headers: Record<string, string> = { Accept: "application/json" };
-    if (args.token) headers.Authorization = `Bearer ${args.token}`;
-    const response = await fetchWithTimeout(
-      url,
-      {
-        method: args.method,
-        headers,
-        body: args.form,
-      },
-      UPLOAD_TIMEOUT_MS,
-    );
-    if (!response.ok) {
-      throwHttpStatusError(response.status, await readResponseTextSafe(response), response.headers);
-    }
-    return (await response.json()) as unknown;
-  });
-  if (schema) return parseArk(schema, json, "API response");
-  return json as T;
+  if (schema) {
+    return await defaultHttpClient.apiRequestForm(registry, args, schema);
+  }
+  return await defaultHttpClient.apiRequestForm(registry, args);
 }
 
-type TextRequestArgs = { path: string; token?: string } | { url: string; token?: string };
-
 export async function fetchText(registry: string, args: TextRequestArgs): Promise<string> {
-  const url = "url" in args ? args.url : registryUrl(args.path, registry).toString();
-  return runWithRetries(async () => {
-    if (isBun) {
-      return await fetchTextViaCurl(url, args);
-    }
-
-    const headers: Record<string, string> = { Accept: "text/plain" };
-    if (args.token) headers.Authorization = `Bearer ${args.token}`;
-    const response = await fetchWithTimeout(url, { method: "GET", headers });
-    const text = await response.text();
-    if (!response.ok) {
-      throwHttpStatusError(response.status, text, response.headers);
-    }
-    return text;
-  });
+  return await defaultHttpClient.fetchText(registry, args);
 }
 
 export async function downloadZip(
   registry: string,
   args: { slug: string; version?: string; token?: string },
 ) {
-  const url = registryUrl(ApiRoutes.download, registry);
-  url.searchParams.set("slug", args.slug);
-  if (args.version) url.searchParams.set("version", args.version);
-  return runWithRetries(async () => {
-    if (isBun) {
-      return await fetchBinaryViaCurl(url.toString(), args.token);
-    }
+  return await defaultHttpClient.downloadZip(registry, args);
+}
 
-    const headers: Record<string, string> = {};
-    if (args.token) headers.Authorization = `Bearer ${args.token}`;
-
-    const response = await fetchWithTimeout(url.toString(), { method: "GET", headers });
-    if (!response.ok) {
-      throwHttpStatusError(response.status, await readResponseTextSafe(response), response.headers);
-    }
-    return new Uint8Array(await response.arrayBuffer());
-  });
+function createRetryRunner(deps: Pick<HttpClientDeps, "setTimeoutImpl" | "random" | "now">) {
+  return async function runWithRetries<T>(fn: () => Promise<T>): Promise<T> {
+    return await pRetry(fn, {
+      retries: RETRY_COUNT,
+      minTimeout: 0,
+      maxTimeout: 0,
+      factor: 1,
+      randomize: false,
+      onFailedAttempt: async (attemptError) => {
+        const delayMs = getRetryDelayMs(attemptError, deps.random);
+        if (delayMs <= 0) return;
+        await sleep(delayMs, deps.setTimeoutImpl);
+      },
+    });
+  };
 }
 
 async function fetchWithTimeout(
+  deps: Pick<HttpClientDeps, "fetchImpl" | "setTimeoutImpl" | "clearTimeoutImpl">,
   url: string,
   init: RequestInit,
   timeoutMs = REQUEST_TIMEOUT_MS,
 ): Promise<Response> {
   const controller = new AbortController();
   const timeoutSeconds = Math.ceil(timeoutMs / 1000);
-  const timeout = setTimeout(
+  const timeout = deps.setTimeoutImpl(
     () => controller.abort(new Error(`Request timed out after ${timeoutSeconds}s`)),
     timeoutMs,
   );
   try {
-    return await fetch(url, { ...init, signal: controller.signal });
+    return await deps.fetchImpl(url, { ...init, signal: controller.signal });
   } catch (error) {
     if (error instanceof Error) throw error;
-    // Normalize non-Error throws (e.g. DOMException from AbortController) into proper Errors
     const message =
       typeof error === "object" && error !== null && "message" in error
         ? String((error as { message: unknown }).message)
         : String(error);
     throw new Error(message, { cause: error });
   } finally {
-    clearTimeout(timeout);
+    deps.clearTimeoutImpl(timeout);
   }
 }
 
@@ -233,22 +360,7 @@ async function readResponseTextSafe(response: Response): Promise<string> {
   return await response.text().catch(() => "");
 }
 
-async function runWithRetries<T>(fn: () => Promise<T>): Promise<T> {
-  return await pRetry(fn, {
-    retries: RETRY_COUNT,
-    minTimeout: 0,
-    maxTimeout: 0,
-    factor: 1,
-    randomize: false,
-    onFailedAttempt: async (attemptError) => {
-      const delayMs = getRetryDelayMs(attemptError);
-      if (delayMs <= 0) return;
-      await sleep(delayMs);
-    },
-  });
-}
-
-function getRetryDelayMs(attemptError: unknown): number {
+function getRetryDelayMs(attemptError: unknown, random: () => number): number {
   const failed = attemptError as {
     attemptNumber?: number;
     cause?: unknown;
@@ -257,25 +369,30 @@ function getRetryDelayMs(attemptError: unknown): number {
   const attemptNumber = Math.max(1, Number(failed.attemptNumber ?? 1));
   const rootError = failed.cause ?? failed.error ?? attemptError;
   if (rootError instanceof HttpStatusError && rootError.rateLimit.retryAfterSeconds !== undefined) {
-    return rootError.rateLimit.retryAfterSeconds * 1000 + jitterMs(RETRY_AFTER_JITTER_MS);
+    return rootError.rateLimit.retryAfterSeconds * 1000 + jitterMs(RETRY_AFTER_JITTER_MS, random);
   }
   const baseMs = Math.min(RETRY_BACKOFF_MAX_MS, RETRY_BACKOFF_BASE_MS * 2 ** (attemptNumber - 1));
-  return baseMs + jitterMs(RETRY_BACKOFF_BASE_MS);
+  return baseMs + jitterMs(RETRY_BACKOFF_BASE_MS, random);
 }
 
-function sleep(ms: number): Promise<void> {
+function sleep(ms: number, setTimeoutImpl: typeof setTimeout): Promise<void> {
   return new Promise((resolve) => {
-    setTimeout(resolve, ms);
+    setTimeoutImpl(resolve, ms);
   });
 }
 
-function jitterMs(maxMs: number): number {
+function jitterMs(maxMs: number, random: () => number): number {
   if (maxMs <= 0) return 0;
-  return Math.floor(Math.random() * maxMs);
+  return Math.floor(random() * maxMs);
 }
 
-function throwHttpStatusError(status: number, text: string, headers?: HeaderSource): never {
-  const rateLimit = parseRateLimitInfo(headers);
+function throwHttpStatusError(
+  status: number,
+  text: string,
+  headers: HeaderSource,
+  now: () => number,
+): never {
+  const rateLimit = parseRateLimitInfo(headers, now);
   const message = buildHttpErrorMessage(status, text, rateLimit);
   if (status === 429 || status >= 500) {
     throw new HttpStatusError(status, message, rateLimit);
@@ -295,13 +412,10 @@ function buildHttpErrorMessage(status: number, text: string, rateLimit: RateLimi
   if (rateLimit.resetDelaySeconds !== undefined) {
     details.push(`reset in ${rateLimit.resetDelaySeconds}s`);
   }
-  if (details.length === 0) {
-    return base;
-  }
-  return `${base} (${details.join(", ")})`;
+  return details.length === 0 ? base : `${base} (${details.join(", ")})`;
 }
 
-function parseRateLimitInfo(headers?: HeaderSource): RateLimitInfo {
+function parseRateLimitInfo(headers: HeaderSource, now: () => number): RateLimitInfo {
   if (!headers) return {};
   const limit = parseIntHeader(
     getHeader(headers, "x-ratelimit-limit") ?? getHeader(headers, "ratelimit-limit"),
@@ -309,16 +423,10 @@ function parseRateLimitInfo(headers?: HeaderSource): RateLimitInfo {
   const remaining = parseIntHeader(
     getHeader(headers, "x-ratelimit-remaining") ?? getHeader(headers, "ratelimit-remaining"),
   );
-  const nowMs = Date.now();
+  const nowMs = now();
   const retryAfterSeconds = parseRetryAfterSeconds(getHeader(headers, "retry-after"), nowMs);
   const resetDelaySeconds = parseResetDelaySeconds(headers, nowMs, retryAfterSeconds);
-
-  return {
-    limit,
-    remaining,
-    resetDelaySeconds,
-    retryAfterSeconds,
-  };
+  return { limit, remaining, resetDelaySeconds, retryAfterSeconds };
 }
 
 function parseResetDelaySeconds(
@@ -327,7 +435,6 @@ function parseResetDelaySeconds(
   retryAfterSeconds: number | undefined,
 ): number | undefined {
   if (retryAfterSeconds !== undefined) return retryAfterSeconds;
-
   const standardized = parseIntHeader(getHeader(headers, "ratelimit-reset"));
   if (standardized !== undefined) {
     return Math.max(1, standardized);
@@ -345,7 +452,6 @@ function parseRetryAfterSeconds(value: string | undefined, nowMs: number): numbe
 
   const asNumber = Number(trimmed);
   if (Number.isFinite(asNumber) && asNumber >= 0) {
-    // Compatibility guard for older servers that accidentally sent Unix epoch seconds.
     if (asNumber > 31_536_000) {
       const nowSeconds = Math.floor(nowMs / 1000);
       return Math.max(1, Math.ceil(asNumber - nowSeconds));
@@ -361,8 +467,7 @@ function parseRetryAfterSeconds(value: string | undefined, nowMs: number): numbe
 function parseIntHeader(value: string | undefined): number | undefined {
   if (!value) return undefined;
   const parsed = Number.parseInt(value, 10);
-  if (!Number.isFinite(parsed)) return undefined;
-  return parsed;
+  return Number.isFinite(parsed) ? parsed : undefined;
 }
 
 function getHeader(headers: HeaderSource, key: string): string | undefined {
@@ -383,11 +488,13 @@ function getHeader(headers: HeaderSource, key: string): string | undefined {
   return typeof match?.[1] === "string" ? match[1].trim() : undefined;
 }
 
-async function fetchJsonViaCurl(url: string, args: RequestArgs) {
+async function fetchJsonViaCurl(
+  deps: Pick<HttpClientDeps, "spawnSyncImpl" | "now">,
+  url: string,
+  args: RequestArgs,
+) {
   const headers = ["-H", "Accept: application/json"];
-  if (args.token) {
-    headers.push("-H", `Authorization: Bearer ${args.token}`);
-  }
+  if (args.token) headers.push("-H", `Authorization: Bearer ${args.token}`);
   const curlArgs = [
     "--silent",
     "--show-error",
@@ -406,24 +513,29 @@ async function fetchJsonViaCurl(url: string, args: RequestArgs) {
     curlArgs.push("--data-binary", JSON.stringify(args.body ?? {}));
   }
 
-  const result = spawnSync("curl", curlArgs, { encoding: "utf8" });
+  const result = deps.spawnSyncImpl("curl", curlArgs, { encoding: "utf8" });
   if (result.status !== 0) {
     throw new Error(result.stderr || "curl failed");
   }
   const { body, status, headers: responseHeaders } = parseCurlBodyAndMeta(result.stdout ?? "");
   if (status < 200 || status >= 300) {
-    throwHttpStatusError(status, body, responseHeaders);
+    throwHttpStatusError(status, body, responseHeaders, deps.now);
   }
   return JSON.parse(body || "null") as unknown;
 }
 
-async function fetchJsonFormViaCurl(url: string, args: FormRequestArgs) {
+async function fetchJsonFormViaCurl(
+  deps: Pick<
+    HttpClientDeps,
+    "spawnSyncImpl" | "mkdtempImpl" | "mkdirImpl" | "writeFileImpl" | "rmImpl" | "tmpdirPath" | "now"
+  >,
+  url: string,
+  args: FormRequestArgs,
+) {
   const headers = ["-H", "Accept: application/json"];
-  if (args.token) {
-    headers.push("-H", `Authorization: Bearer ${args.token}`);
-  }
+  if (args.token) headers.push("-H", `Authorization: Bearer ${args.token}`);
 
-  const tempDir = await mkdtemp(join(tmpdir(), "clawhub-upload-"));
+  const tempDir = await deps.mkdtempImpl(join(deps.tmpdirPath, "clawhub-upload-"));
   try {
     const formArgs: string[] = [];
     for (const [key, value] of args.form.entries()) {
@@ -431,8 +543,8 @@ async function fetchJsonFormViaCurl(url: string, args: FormRequestArgs) {
         const filename = typeof (value as File).name === "string" ? (value as File).name : "file";
         const filePath = join(tempDir, filename);
         const bytes = new Uint8Array(await value.arrayBuffer());
-        await mkdir(dirname(filePath), { recursive: true });
-        await writeFile(filePath, bytes);
+        await deps.mkdirImpl(dirname(filePath), { recursive: true });
+        await deps.writeFileImpl(filePath, bytes);
         formArgs.push("-F", `${key}=@${filePath};filename=${filename}`);
       } else {
         formArgs.push("-F", `${key}=${String(value)}`);
@@ -454,25 +566,27 @@ async function fetchJsonFormViaCurl(url: string, args: FormRequestArgs) {
       url,
     ];
 
-    const result = spawnSync("curl", curlArgs, { encoding: "utf8" });
+    const result = deps.spawnSyncImpl("curl", curlArgs, { encoding: "utf8" });
     if (result.status !== 0) {
       throw new Error(result.stderr || "curl failed");
     }
     const { body, status, headers: responseHeaders } = parseCurlBodyAndMeta(result.stdout ?? "");
     if (status < 200 || status >= 300) {
-      throwHttpStatusError(status, body, responseHeaders);
+      throwHttpStatusError(status, body, responseHeaders, deps.now);
     }
     return JSON.parse(body || "null") as unknown;
   } finally {
-    await rm(tempDir, { recursive: true, force: true });
+    await deps.rmImpl(tempDir, { recursive: true, force: true });
   }
 }
 
-async function fetchTextViaCurl(url: string, args: { token?: string }) {
+async function fetchTextViaCurl(
+  deps: Pick<HttpClientDeps, "spawnSyncImpl" | "now">,
+  url: string,
+  args: { token?: string },
+) {
   const headers = ["-H", "Accept: text/plain"];
-  if (args.token) {
-    headers.push("-H", `Authorization: Bearer ${args.token}`);
-  }
+  if (args.token) headers.push("-H", `Authorization: Bearer ${args.token}`);
   const curlArgs = [
     "--silent",
     "--show-error",
@@ -486,25 +600,30 @@ async function fetchTextViaCurl(url: string, args: { token?: string }) {
     ...headers,
     url,
   ];
-  const result = spawnSync("curl", curlArgs, { encoding: "utf8" });
+  const result = deps.spawnSyncImpl("curl", curlArgs, { encoding: "utf8" });
   if (result.status !== 0) {
     throw new Error(result.stderr || "curl failed");
   }
   const { body, status, headers: responseHeaders } = parseCurlBodyAndMeta(result.stdout ?? "");
   if (status < 200 || status >= 300) {
-    throwHttpStatusError(status, body, responseHeaders);
+    throwHttpStatusError(status, body, responseHeaders, deps.now);
   }
   return body;
 }
 
-async function fetchBinaryViaCurl(url: string, token?: string) {
-  const tempDir = await mkdtemp(join(tmpdir(), "clawhub-download-"));
+async function fetchBinaryViaCurl(
+  deps: Pick<
+    HttpClientDeps,
+    "spawnSyncImpl" | "mkdtempImpl" | "readFileImpl" | "rmImpl" | "tmpdirPath" | "now"
+  >,
+  url: string,
+  token?: string,
+) {
+  const tempDir = await deps.mkdtempImpl(join(deps.tmpdirPath, "clawhub-download-"));
   const filePath = join(tempDir, "payload.bin");
   try {
     const headers: string[] = [];
-    if (token) {
-      headers.push("-H", `Authorization: Bearer ${token}`);
-    }
+    if (token) headers.push("-H", `Authorization: Bearer ${token}`);
 
     const curlArgs = [
       "--silent",
@@ -519,19 +638,24 @@ async function fetchBinaryViaCurl(url: string, token?: string) {
       CURL_WRITE_OUT_FORMAT,
       url,
     ];
-    const result = spawnSync("curl", curlArgs, { encoding: "utf8" });
+    const result = deps.spawnSyncImpl("curl", curlArgs, { encoding: "utf8" });
     if (result.status !== 0) {
       throw new Error(result.stderr || "curl failed");
     }
     const { status, headers: responseHeaders } = parseCurlBodyAndMeta(result.stdout ?? "");
     if (status < 200 || status >= 300) {
-      const body = await readFileSafe(filePath);
-      throwHttpStatusError(status, body ? new TextDecoder().decode(body) : "", responseHeaders);
+      const body = await readFileSafe(deps.readFileImpl, filePath);
+      throwHttpStatusError(
+        status,
+        body ? new TextDecoder().decode(body) : "",
+        responseHeaders,
+        deps.now,
+      );
     }
-    const bytes = await readFileSafe(filePath);
+    const bytes = await readFileSafe(deps.readFileImpl, filePath);
     return bytes ? new Uint8Array(bytes) : new Uint8Array();
   } finally {
-    await rm(tempDir, { recursive: true, force: true });
+    await deps.rmImpl(tempDir, { recursive: true, force: true });
   }
 }
 
@@ -543,7 +667,6 @@ function parseCurlBodyAndMeta(output: string): {
   const marker = `\n${CURL_META_MARKER}\n`;
   const markerIndex = output.lastIndexOf(marker);
   if (markerIndex === -1) {
-    // Backward compatibility for older tests that only provide "<body>\n<status>".
     const splitAt = output.lastIndexOf("\n");
     if (splitAt === -1) {
       const statusOnly = Number(output.trim());
@@ -595,9 +718,9 @@ function setHeaderIfPresent(
   headers[key] = trimmed;
 }
 
-async function readFileSafe(path: string) {
+async function readFileSafe(readFileImpl: typeof readFile, path: string) {
   try {
-    return await readFile(path);
+    return await readFileImpl(path);
   } catch {
     return null;
   }

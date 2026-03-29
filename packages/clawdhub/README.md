@@ -36,12 +36,37 @@ clawhub search "postgres backups"
 clawhub install my-skill-pack
 clawhub update --all
 clawhub update --all --no-input --force
-clawhub publish ./my-skill-pack --slug my-skill-pack --name "My Skill Pack" --version 1.2.0 --changelog "Fixes + docs"
+clawhub skill publish ./my-skill-pack --slug my-skill-pack --name "My Skill Pack" --version 1.2.0 --changelog "Fixes + docs"
 clawhub package explore --family skill
 clawhub package explore --family code-plugin
 clawhub package inspect @openclaw/example-plugin
-clawhub package publish ./example-plugin --owner openclaw --source-repo openclaw/example-plugin --source-commit abc123
+clawhub package publish openclaw/example-plugin
+clawhub package publish openclaw/example-plugin@v1.0.0
+clawhub package publish https://github.com/openclaw/example-plugin --dry-run
+clawhub package publish ./example-plugin
 ```
+
+## GitHub Actions
+
+This repo also provides an official reusable workflow for plugin repos:
+
+- [`/.github/workflows/package-publish.yml`](/Users/tengjizhang/.codex/worktrees/7d03/clawhub/.github/workflows/package-publish.yml)
+
+Use `dry_run: true` on pull requests and reserve real publishes for trusted events
+such as `workflow_dispatch` or tag pushes with a `CLAWHUB_TOKEN` secret.
+
+## Development
+
+The supported verification flow for this package is package-local:
+
+```bash
+bun run --cwd packages/clawdhub test
+bun run --cwd packages/clawdhub verify:build
+bun run --cwd packages/clawdhub test:artifact
+bun run --cwd packages/clawdhub verify
+```
+
+`test` runs source tests only. `test:artifact` builds `dist/` and runs a small smoke suite against the built CLI entrypoint.
 
 ## Sync (upload local skills)
 

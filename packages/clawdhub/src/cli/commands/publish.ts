@@ -1,5 +1,5 @@
-import { stat } from "node:fs/promises";
-import { basename, resolve } from "node:path";
+import { readFile, stat } from "node:fs/promises";
+import { basename, join, resolve } from "node:path";
 import semver from "semver";
 import { apiRequestForm } from "../../http.js";
 import { ApiRoutes, ApiV1PublishResponseSchema } from "../../schema/index.js";
@@ -26,6 +26,9 @@ export async function cmdPublish(
   if (!folder) fail("Path required");
   const folderStat = await stat(folder).catch(() => null);
   if (!folderStat || !folderStat.isDirectory()) fail("Path must be a folder");
+  if (await looksLikePluginFolder(folder)) {
+    fail('This looks like a plugin. Use "clawhub package publish <source>" instead.');
+  }
 
   const token = await requireAuthToken();
   const registry = await getRegistry(opts, { cache: true });
@@ -93,6 +96,27 @@ export async function cmdPublish(
   } catch (error) {
     spinner.fail(formatError(error));
     throw error;
+  }
+}
+
+async function looksLikePluginFolder(folder: string) {
+  const checks = [
+    join(folder, "openclaw.plugin.json"),
+    join(folder, "openclaw.bundle.json"),
+    join(folder, "package.json"),
+  ];
+  const stats = await Promise.all(checks.map((candidate) => stat(candidate).catch(() => null)));
+  if (stats[0]?.isFile() || stats[1]?.isFile()) {
+    return true;
+  }
+  if (!stats[2]?.isFile()) {
+    return false;
+  }
+  try {
+    const raw = JSON.parse(await readFile(checks[2], "utf8")) as { openclaw?: unknown };
+    return Boolean(raw && typeof raw === "object" && raw.openclaw && typeof raw.openclaw === "object");
+  } catch {
+    return false;
   }
 }
 
