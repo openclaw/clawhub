@@ -91,7 +91,11 @@ async function validatePendingTransferForActor(
     // validateTransferAcceptPermission handles org membership validation separately
     throw new Error("No pending transfer found");
   }
-  if (params.role === "sender" && transfer.fromUserId !== params.actorUserId) {
+  if (
+    params.role === "sender" &&
+    transfer.fromUserId !== params.actorUserId &&
+    !transfer.fromPublisherId
+  ) {
     throw new Error("No pending transfer found");
   }
   if (transfer.status !== "pending") throw new Error("No pending transfer found");
@@ -307,6 +311,15 @@ export const cancelTransferInternal = internalMutation({
       role: "sender",
       now,
     });
+
+    // For org-owned transfers, verify actor is admin/owner of source publisher
+    if (transfer.fromPublisherId && transfer.fromUserId !== args.actorUserId) {
+      await validateTransferOwnership(ctx, {
+        ownerUserId: transfer.fromUserId,
+        ownerPublisherId: transfer.fromPublisherId,
+        actorUserId: args.actorUserId,
+      });
+    }
 
     await ctx.db.patch(transfer._id, { status: "cancelled", respondedAt: now });
     await ctx.db.insert("auditLogs", {
