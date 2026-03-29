@@ -43,10 +43,10 @@ const DECISION_SPECS: Record<DecisionAction, DecisionSpec> = {
   },
 };
 
-function normalizeSlug(slugArg: string) {
-  const slug = slugArg.trim().toLowerCase();
-  if (!slug) fail("Skill slug required");
-  return slug;
+function normalizeName(nameArg: string) {
+  const name = nameArg.trim().toLowerCase();
+  if (!name) fail("Skill slug or package name required");
+  return name;
 }
 
 function canPrompt(inputAllowed: boolean) {
@@ -59,39 +59,89 @@ async function requireYesOrConfirm(options: ConfirmOptions, inputAllowed: boolea
   return promptConfirm(prompt);
 }
 
+async function resolveItemType(
+  opts: GlobalOpts,
+  name: string,
+  explicitType?: string,
+): Promise<"skill" | "package"> {
+  if (explicitType === "skill" || explicitType === "package") return explicitType;
+  if (explicitType) fail(`Invalid type "${explicitType}". Use "skill" or "package".`);
+
+  const token = await requireAuthToken();
+  const registry = await getRegistry(opts, { cache: true });
+
+  const [skillRes, pkgRes] = await Promise.all([
+    fetch(
+      new URL(
+        `${ApiRoutes.skills}/${encodeURIComponent(name)}`,
+        registry,
+      ).toString(),
+      { headers: { Authorization: `Bearer ${token}` } },
+    ).then((r) => r.ok),
+    fetch(
+      new URL(
+        `${ApiRoutes.packages}/${encodeURIComponent(name)}`,
+        registry,
+      ).toString(),
+      { headers: { Authorization: `Bearer ${token}` } },
+    ).then((r) => r.ok),
+  ]);
+
+  if (skillRes && pkgRes)
+    fail(
+      `Found both a skill and package named "${name}". Use --type skill or --type package to specify.`,
+    );
+  if (skillRes) return "skill";
+  if (pkgRes) return "package";
+  fail(`No skill or package named "${name}" found.`);
+}
+
+function resolveApiPath(name: string, type: "skill" | "package"): string {
+  return type === "package"
+    ? `${ApiRoutes.packages}/${encodeURIComponent(name)}`
+    : `${ApiRoutes.skills}/${encodeURIComponent(name)}`;
+}
+
 export async function cmdTransferRequest(
   opts: GlobalOpts,
-  slugArg: string,
+  nameArg: string,
   toHandleArg: string,
-  options: ConfirmOptions & { message?: string },
+  options: ConfirmOptions & { message?: string; type?: string; publisher?: string },
   inputAllowed: boolean,
 ) {
-  const slug = normalizeSlug(slugArg);
+  const name = normalizeName(nameArg);
   const toHandle = toHandleArg.trim().replace(/^@+/, "").toLowerCase();
   if (!toHandle) fail("Recipient handle required (e.g., @username)");
+
+  const itemType = await resolveItemType(opts, name, options.type);
 
   const confirmed = await requireYesOrConfirm(
     options,
     inputAllowed,
-    `Transfer ${slug} to @${toHandle}? Recipient must accept.`,
+    `Transfer ${itemType} "${name}" to @${toHandle}? Recipient must accept.`,
   );
   if (!confirmed) return;
 
   const token = await requireAuthToken();
   const registry = await getRegistry(opts, { cache: true });
-  const spinner = createSpinner(`Requesting transfer of ${slug} to @${toHandle}`);
+  const spinner = createSpinner(`Requesting transfer of ${itemType} "${name}" to @${toHandle}`);
 
   try {
+    const body: Record<string, string | undefined> = {
+      toUserHandle: toHandle,
+      message: options.message,
+    };
+    if (options.publisher) {
+      body.toPublisherId = options.publisher.replace(/^@+/, "");
+    }
+
     const result = await apiRequest(
       registry,
       {
         method: "POST",
-        path: `${ApiRoutes.skills}/${encodeURIComponent(slug)}/transfer`,
+        path: `${resolveApiPath(name, itemType)}/transfer`,
         token,
-        body: JSON.stringify({
-          toUserHandle: toHandle,
-          message: options.message,
-        }),
+        body: JSON.stringify(body),
       },
       ApiV1TransferRequestResponseSchema,
     );
@@ -100,7 +150,7 @@ export async function cmdTransferRequest(
       result,
       "Transfer request response",
     );
-    spinner.succeed(`Transfer requested for ${slug} to @${parsed.toUserHandle}`);
+    spinner.succeed(`Transfer requested for ${itemType} "${name}" to @${parsed.toUserHandle}`);
     return parsed;
   } catch (error) {
     spinner.fail(formatError(error));
@@ -131,6 +181,7 @@ export async function cmdTransferList(opts: GlobalOpts, options: { outgoing?: bo
     }
 
     console.log(options.outgoing ? "Outgoing transfers:" : "Incoming transfers:");
+    console.log("  TYPE      NAME                  FROM/TO       EXPIRES");
     for (const transfer of parsed.transfers) {
       const otherHandle = options.outgoing ? transfer.toUser?.handle : transfer.fromUser?.handle;
       const other = otherHandle ? `@${otherHandle.replace(/^@+/, "")}` : "(unknown user)";
@@ -138,7 +189,11 @@ export async function cmdTransferList(opts: GlobalOpts, options: { outgoing?: bo
         0,
         Math.ceil((transfer.expiresAt - Date.now()) / (24 * 60 * 60 * 1000)),
       );
-      console.log(`  ${transfer.skill.slug} -> ${other} (expires in ${expiresInDays}d)`);
+      const itemType = transfer.type ?? "skill";
+      const itemName = transfer.package?.name ?? transfer.skill?.slug ?? "(unknown)";
+      console.log(
+        `  ${itemType.padEnd(9)} ${itemName.padEnd(21)} ${other.padEnd(13)} ${expiresInDays}d`,
+      );
     }
     return parsed;
   } catch (error) {
@@ -149,35 +204,43 @@ export async function cmdTransferList(opts: GlobalOpts, options: { outgoing?: bo
 
 async function runTransferDecision(
   opts: GlobalOpts,
-  slugArg: string,
-  options: ConfirmOptions,
+  nameArg: string,
+  options: ConfirmOptions & { type?: string; publisher?: string },
   inputAllowed: boolean,
   spec: DecisionSpec,
 ) {
-  const slug = normalizeSlug(slugArg);
+  const name = normalizeName(nameArg);
+  const itemType = await resolveItemType(opts, name, options.type);
+
   const confirmed = await requireYesOrConfirm(
     options,
     inputAllowed,
-    `${spec.verb} transfer of ${slug}?`,
+    `${spec.verb} transfer of ${itemType} "${name}"?`,
   );
   if (!confirmed) return;
 
   const token = await requireAuthToken();
   const registry = await getRegistry(opts, { cache: true });
-  const spinner = createSpinner(`${spec.progress} transfer of ${slug}`);
+  const spinner = createSpinner(`${spec.progress} transfer of ${itemType} "${name}"`);
 
   try {
+    const body: Record<string, string> | undefined =
+      spec.action === "accept" && options.publisher
+        ? { toPublisherId: options.publisher.replace(/^@+/, "") }
+        : undefined;
+
     const result = await apiRequest(
       registry,
       {
         method: "POST",
-        path: `${ApiRoutes.skills}/${encodeURIComponent(slug)}/transfer/${spec.action}`,
+        path: `${resolveApiPath(name, itemType)}/transfer/${spec.action}`,
         token,
+        ...(body ? { body: JSON.stringify(body) } : {}),
       },
       ApiV1TransferDecisionResponseSchema,
     );
     const parsed = parseArk(ApiV1TransferDecisionResponseSchema, result, "Transfer response");
-    spinner.succeed(`${spec.success} (${slug})`);
+    spinner.succeed(`${spec.success} (${name})`);
     return parsed;
   } catch (error) {
     spinner.fail(formatError(error));
@@ -187,27 +250,27 @@ async function runTransferDecision(
 
 export function cmdTransferAccept(
   opts: GlobalOpts,
-  slugArg: string,
-  options: ConfirmOptions,
+  nameArg: string,
+  options: ConfirmOptions & { type?: string; publisher?: string },
   inputAllowed: boolean,
 ) {
-  return runTransferDecision(opts, slugArg, options, inputAllowed, DECISION_SPECS.accept);
+  return runTransferDecision(opts, nameArg, options, inputAllowed, DECISION_SPECS.accept);
 }
 
 export function cmdTransferReject(
   opts: GlobalOpts,
-  slugArg: string,
-  options: ConfirmOptions,
+  nameArg: string,
+  options: ConfirmOptions & { type?: string },
   inputAllowed: boolean,
 ) {
-  return runTransferDecision(opts, slugArg, options, inputAllowed, DECISION_SPECS.reject);
+  return runTransferDecision(opts, nameArg, options, inputAllowed, DECISION_SPECS.reject);
 }
 
 export function cmdTransferCancel(
   opts: GlobalOpts,
-  slugArg: string,
-  options: ConfirmOptions,
+  nameArg: string,
+  options: ConfirmOptions & { type?: string },
   inputAllowed: boolean,
 ) {
-  return runTransferDecision(opts, slugArg, options, inputAllowed, DECISION_SPECS.cancel);
+  return runTransferDecision(opts, nameArg, options, inputAllowed, DECISION_SPECS.cancel);
 }
