@@ -292,6 +292,7 @@ export function SkillDetailPage({
 
   const deleteTag = (tag: string) => {
     if (!skill) return;
+    if (!window.confirm(`Delete tag "${tag}"?`)) return;
     void deleteTags({
       skillId: skill._id,
       tags: [tag],

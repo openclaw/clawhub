@@ -4778,10 +4778,16 @@ export const deleteTags = mutation({
     }
 
     const nextTags = { ...skill.tags };
+    let changed = false;
     for (const tag of args.tags) {
       if (tag === "latest") continue; // protect the latest tag from deletion
-      delete nextTags[tag];
+      if (tag in nextTags) {
+        delete nextTags[tag];
+        changed = true;
+      }
     }
+
+    if (!changed) return;
 
     await ctx.db.patch(skill._id, {
       tags: nextTags,
