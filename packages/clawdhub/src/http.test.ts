@@ -53,8 +53,8 @@ function createAbortingFetchMock() {
 
 describe("detectHttpRuntime", () => {
   it("detects bun and node runtimes explicitly", () => {
-    expect(detectHttpRuntime({ bun: "1.2.3" } as NodeJS.ProcessVersions)).toBe("bun");
-    expect(detectHttpRuntime({ node: "22.0.0" } as NodeJS.ProcessVersions)).toBe("node");
+    expect(detectHttpRuntime({ bun: "1.2.3" } as unknown as NodeJS.ProcessVersions)).toBe("bun");
+    expect(detectHttpRuntime({ node: "22.0.0" } as unknown as NodeJS.ProcessVersions)).toBe("node");
   });
 });
 

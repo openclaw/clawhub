@@ -187,6 +187,10 @@ describe("github publish source helpers", () => {
       "repo-root/package.json": new TextEncoder().encode('{"name":"demo","version":"1.0.0"}\n'),
       "repo-root/openclaw.plugin.json": new TextEncoder().encode('{"id":"demo","configSchema":{"type":"object"}}\n'),
     });
+    const archiveBody = archiveBytes.buffer.slice(
+      archiveBytes.byteOffset,
+      archiveBytes.byteOffset + archiveBytes.byteLength,
+    ) as ArrayBuffer;
 
     const fetchMock = vi
       .fn<typeof fetch>()
@@ -203,7 +207,7 @@ describe("github publish source helpers", () => {
         }),
       )
       .mockResolvedValueOnce(
-        new Response(archiveBytes, {
+        new Response(archiveBody, {
           status: 200,
           headers: { "content-type": "application/zip" },
         }),
