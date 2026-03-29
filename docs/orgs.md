@@ -325,14 +325,12 @@ Semantics:
 
 ## Transfer Model
 
-~~Current transfers are user-to-user only. That is too narrow.~~ **Implemented.**
+Transfers support publisher-based flows for both skills and packages:
 
-Transfers now support all publisher-based flows for both skills and packages:
-
+- user publisher -> user publisher
 - user publisher -> org publisher
 - org publisher -> user publisher
 - org publisher -> org publisher
-- user publisher -> user publisher (existing)
 
 Transfer acceptance rule:
 
@@ -344,8 +342,6 @@ Audit records:
 - source publisher id (`fromPublisherId`)
 - target publisher id (`toPublisherId`)
 - resource id (skill or package)
-
-Implementation: `convex/skillTransfers.ts`, `convex/packageTransfers.ts`, shared helpers in `convex/lib/transfers.ts`.
 
 ## Search Digest Changes
 
