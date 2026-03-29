@@ -81,8 +81,13 @@ async function validatePendingTransferForActor(
   const transfer = await db.get(params.transferId);
   if (!transfer) throw new Error("Transfer not found");
 
-  if (params.role === "recipient" && transfer.toUserId && transfer.toUserId !== params.actorUserId) {
-    // For org-targeted transfers (toUserId is undefined), skip this check —
+  if (
+    params.role === "recipient" &&
+    transfer.toUserId &&
+    transfer.toUserId !== params.actorUserId &&
+    !transfer.toPublisherId
+  ) {
+    // For org-targeted transfers (toPublisherId is set), skip this check —
     // validateTransferAcceptPermission handles org membership validation separately
     throw new Error("No pending transfer found");
   }
