@@ -158,7 +158,12 @@ export function PackageSourceChooser(props: {
         <Badge variant="accent">
           Missing required OpenClaw package metadata: {props.codePluginFieldIssues.join(", ")}. Add
           these fields to <code>package.json</code> before publishing. See{" "}
-          <a href={OPENCLAW_PLUGIN_PACKAGE_METADATA_DOCS_URL} className="underline">
+          <a
+            href={OPENCLAW_PLUGIN_PACKAGE_METADATA_DOCS_URL}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="underline"
+          >
             Plugin Setup and Config
           </a>
           .

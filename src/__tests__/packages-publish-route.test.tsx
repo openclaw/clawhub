@@ -276,9 +276,12 @@ describe("plugins publish route", () => {
 
     expect(screen.getByText(/openclaw\.compat\.pluginApi/i)).toBeTruthy();
     expect(screen.getByText(/openclaw\.build\.openclawVersion/i)).toBeTruthy();
-    expect(screen.getByRole("link", { name: /Plugin Setup and Config/i }).getAttribute("href")).toBe(
+    const docsLink = screen.getByRole("link", { name: /Plugin Setup and Config/i });
+    expect(docsLink.getAttribute("href")).toBe(
       "https://docs.openclaw.ai/plugins/sdk-setup#package-metadata",
     );
+    expect(docsLink.getAttribute("target")).toBe("_blank");
+    expect(docsLink.getAttribute("rel")).toBe("noopener noreferrer");
     expect(screen.getByRole("button", { name: "Publish" }).getAttribute("disabled")).not.toBeNull();
     expect(publishRelease).not.toHaveBeenCalled();
   });
