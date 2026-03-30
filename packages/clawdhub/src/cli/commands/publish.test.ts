@@ -4,32 +4,23 @@ import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import type { GlobalOpts } from "../types";
+import {
+  createAuthTokenModuleMocks,
+  createHttpModuleMocks,
+  createRegistryModuleMocks,
+  createUiModuleMocks,
+  makeGlobalOpts,
+} from "../../../test/cliCommandTestKit.js";
 
-vi.mock("../authToken.js", () => ({
-  requireAuthToken: vi.fn(async () => "tkn"),
-}));
+const authTokenMocks = createAuthTokenModuleMocks();
+const registryMocks = createRegistryModuleMocks();
+const httpMocks = createHttpModuleMocks();
+const uiMocks = createUiModuleMocks();
 
-const mockGetRegistry = vi.fn(async (_opts: unknown, _params?: unknown) => "https://clawhub.ai");
-vi.mock("../registry.js", () => ({
-  getRegistry: (opts: unknown, params?: unknown) => mockGetRegistry(opts, params),
-}));
-
-const mockApiRequestForm = vi.fn();
-vi.mock("../../http.js", () => ({
-  apiRequestForm: (registry: unknown, args: unknown, schema?: unknown) =>
-    mockApiRequestForm(registry, args, schema),
-}));
-
-const mockFail = vi.fn((message: string) => {
-  throw new Error(message);
-});
-const mockSpinner = { text: "", succeed: vi.fn(), fail: vi.fn() };
-vi.mock("../ui.js", () => ({
-  createSpinner: vi.fn(() => mockSpinner),
-  fail: (message: string) => mockFail(message),
-  formatError: (error: unknown) => (error instanceof Error ? error.message : String(error)),
-}));
+vi.mock("../authToken.js", () => authTokenMocks.moduleFactory());
+vi.mock("../registry.js", () => registryMocks.moduleFactory());
+vi.mock("../../http.js", () => httpMocks.moduleFactory());
+vi.mock("../ui.js", () => uiMocks.moduleFactory());
 
 const { cmdPublish } = await import("./publish");
 
@@ -38,18 +29,12 @@ async function makeTmpWorkdir() {
   return root;
 }
 
-function makeOpts(workdir: string): GlobalOpts {
-  return {
-    workdir,
-    dir: join(workdir, "skills"),
-    site: "https://clawhub.ai",
-    registry: "https://clawhub.ai",
-    registrySource: "default",
-  };
+function makeOpts(workdir: string) {
+  return makeGlobalOpts(workdir);
 }
 
 afterEach(() => {
-  vi.unstubAllGlobals();
+  vi.restoreAllMocks();
   vi.clearAllMocks();
 });
 
@@ -64,7 +49,7 @@ describe("cmdPublish", () => {
       await writeFile(join(folder, "SKILL.md"), skillContent, "utf8");
       await writeFile(join(folder, "notes.md"), notesContent, "utf8");
 
-      mockApiRequestForm.mockResolvedValueOnce({
+      httpMocks.apiRequestForm.mockResolvedValueOnce({
         ok: true,
         skillId: "skill_1",
         versionId: "ver_1",
@@ -78,7 +63,7 @@ describe("cmdPublish", () => {
         tags: "latest",
       });
 
-      const publishCall = mockApiRequestForm.mock.calls.find((call) => {
+      const publishCall = httpMocks.apiRequestForm.mock.calls.find((call) => {
         const req = call[1] as { path?: string } | undefined;
         return req?.path === "/api/v1/skills";
       });
@@ -107,7 +92,7 @@ describe("cmdPublish", () => {
       await mkdir(folder, { recursive: true });
       await writeFile(join(folder, "SKILL.md"), "# Skill\n", "utf8");
 
-      mockApiRequestForm.mockResolvedValueOnce({
+      httpMocks.apiRequestForm.mockResolvedValueOnce({
         ok: true,
         skillId: "skill_1",
         versionId: "ver_2",
@@ -119,11 +104,38 @@ describe("cmdPublish", () => {
         tags: "latest",
       });
 
-      expect(mockApiRequestForm).toHaveBeenCalledWith(
+      expect(httpMocks.apiRequestForm).toHaveBeenCalledWith(
         expect.anything(),
         expect.objectContaining({ path: "/api/v1/skills", method: "POST" }),
         expect.anything(),
       );
+    } finally {
+      await rm(workdir, { recursive: true, force: true });
+    }
+  });
+
+  it('rejects plugin folders with guidance to use "clawhub package publish"', async () => {
+    const workdir = await makeTmpWorkdir();
+    try {
+      const folder = join(workdir, "demo-plugin");
+      await mkdir(folder, { recursive: true });
+      await writeFile(
+        join(folder, "package.json"),
+        JSON.stringify({ name: "demo-plugin", openclaw: { extensions: ["./index.ts"] } }),
+        "utf8",
+      );
+      await writeFile(join(folder, "openclaw.plugin.json"), '{"id":"demo-plugin"}', "utf8");
+
+      await expect(
+        cmdPublish(makeOpts(workdir), "demo-plugin", {
+          slug: "demo-plugin",
+          name: "Demo Plugin",
+          version: "1.0.0",
+          tags: "latest",
+        }),
+      ).rejects.toThrow('This looks like a plugin. Use "clawhub package publish <source>" instead.');
+      expect(authTokenMocks.requireAuthToken).not.toHaveBeenCalled();
+      expect(httpMocks.apiRequestForm).not.toHaveBeenCalled();
     } finally {
       await rm(workdir, { recursive: true, force: true });
     }

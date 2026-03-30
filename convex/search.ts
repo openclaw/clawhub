@@ -5,27 +5,32 @@ import type { QueryCtx } from "./_generated/server";
 import { action, internalQuery } from "./functions";
 import { isSkillHighlighted } from "./lib/badges";
 import { generateEmbedding } from "./lib/embeddings";
-import type { HydratableSkill } from "./lib/public";
-import { toPublicSkill, toPublicSoul, toPublicUser } from "./lib/public";
+import type { HydratableSkill, PublicPublisher } from "./lib/public";
+import { toPublicPublisher, toPublicSkill, toPublicSoul } from "./lib/public";
+import { getOwnerPublisher } from "./lib/publishers";
 import { matchesExactTokens, tokenize } from "./lib/searchText";
 import { isSkillSuspicious } from "./lib/skillSafety";
 import { digestToHydratableSkill, digestToOwnerInfo } from "./lib/skillSearchDigest";
 
-type OwnerInfo = { ownerHandle: string | null; owner: ReturnType<typeof toPublicUser> | null };
+type OwnerInfo = { ownerHandle: string | null; owner: PublicPublisher | null };
 
 function makeOwnerInfoGetter(ctx: Pick<QueryCtx, "db">) {
-  const ownerCache = new Map<Id<"users">, Promise<OwnerInfo>>();
-  return (ownerUserId: Id<"users">) => {
-    const cached = ownerCache.get(ownerUserId);
+  const ownerCache = new Map<string, Promise<OwnerInfo>>();
+  return (ownerUserId: Id<"users">, ownerPublisherId?: Id<"publishers"> | null) => {
+    const cacheKey = String(ownerPublisherId ?? ownerUserId);
+    const cached = ownerCache.get(cacheKey);
     if (cached) return cached;
-    const ownerPromise = ctx.db.get(ownerUserId).then((ownerDoc) => {
-      const owner = toPublicUser(ownerDoc);
+    const ownerPromise = getOwnerPublisher(ctx, {
+      ownerPublisherId,
+      ownerUserId,
+    }).then((ownerDoc) => {
+      const owner = toPublicPublisher(ownerDoc);
       return {
-        ownerHandle: owner?.handle ?? owner?.name ?? null,
+        ownerHandle: owner?.handle ?? null,
         owner,
       };
     });
-    ownerCache.set(ownerUserId, ownerPromise);
+    ownerCache.set(cacheKey, ownerPromise);
     return ownerPromise;
   };
 }
@@ -35,7 +40,7 @@ type SkillSearchEntry = {
   skill: NonNullable<ReturnType<typeof toPublicSkill>>;
   version: Doc<"skillVersions"> | null;
   ownerHandle: string | null;
-  owner: ReturnType<typeof toPublicUser> | null;
+  owner: PublicPublisher | null;
 };
 
 type SearchResult = SkillSearchEntry & { score: number };
@@ -111,6 +116,10 @@ function mergeUniqueBySkillId(primary: SkillSearchEntry[], fallback: SkillSearch
   return out;
 }
 
+function isSlugLikeQuery(query: string) {
+  return /^[a-z0-9][a-z0-9-]*$/.test(query.trim().toLowerCase());
+}
+
 export const searchSkills: ReturnType<typeof action> = action({
   args: {
     query: v.string(),
@@ -123,6 +132,17 @@ export const searchSkills: ReturnType<typeof action> = action({
     if (!query) return [];
     const queryTokens = tokenize(query);
     if (queryTokens.length === 0) return [];
+    const rawExactSlugMatch =
+      isSlugLikeQuery(query)
+        ? ((await ctx.runQuery(internal.search.getExactSkillSlugMatch, {
+            slug: query.toLowerCase(),
+            nonSuspiciousOnly: args.nonSuspiciousOnly,
+          })) as SkillSearchEntry | null)
+        : null;
+    const exactSlugMatch =
+      rawExactSlugMatch && (!args.highlightedOnly || isSkillHighlighted(rawExactSlugMatch.skill))
+        ? rawExactSlugMatch
+        : null;
     let vector: number[];
     try {
       vector = await generateEmbedding(query);
@@ -187,8 +207,12 @@ export const searchSkills: ReturnType<typeof action> = action({
       candidateLimit = nextLimit;
     }
 
+    const primaryMatches = exactSlugMatch
+      ? mergeUniqueBySkillId([exactSlugMatch], exactMatches)
+      : exactMatches;
+
     const fallbackMatches =
-      exactMatches.length >= limit
+      primaryMatches.length >= limit
         ? []
         : ((await ctx.runQuery(internal.search.lexicalFallbackSkills, {
             query,
@@ -196,9 +220,9 @@ export const searchSkills: ReturnType<typeof action> = action({
             limit: Math.min(Math.max(limit * 4, 200), FALLBACK_SCAN_LIMIT),
             highlightedOnly: args.highlightedOnly,
             nonSuspiciousOnly: args.nonSuspiciousOnly,
+            skipExactSlugLookup: true,
           })) as SkillSearchEntry[]);
-
-    const mergedMatches = mergeUniqueBySkillId(exactMatches, fallbackMatches);
+    const mergedMatches = mergeUniqueBySkillId(primaryMatches, fallbackMatches);
 
     return mergedMatches
       .map((entry) => {
@@ -217,6 +241,33 @@ export const searchSkills: ReturnType<typeof action> = action({
       .filter((entry) => entry.skill)
       .sort((a, b) => b.score - a.score || b.skill.stats.downloads - a.skill.stats.downloads)
       .slice(0, limit);
+  },
+});
+
+export const getExactSkillSlugMatch = internalQuery({
+  args: {
+    slug: v.string(),
+    nonSuspiciousOnly: v.optional(v.boolean()),
+  },
+  handler: async (ctx, args): Promise<SkillSearchEntry | null> => {
+    const skill = await ctx.db
+      .query("skills")
+      .withIndex("by_slug", (q) => q.eq("slug", args.slug))
+      .unique();
+    if (!skill || skill.softDeletedAt) return null;
+    if (args.nonSuspiciousOnly && isSkillSuspicious(skill)) return null;
+
+    const getOwnerInfo = makeOwnerInfoGetter(ctx);
+    const resolved = await getOwnerInfo(skill.ownerUserId, skill.ownerPublisherId);
+    const publicSkill = toPublicSkill(skill);
+    if (!publicSkill || !resolved.owner) return null;
+
+    return {
+      skill: publicSkill,
+      version: null,
+      ownerHandle: resolved.ownerHandle,
+      owner: resolved.owner,
+    };
   },
 });
 
@@ -254,7 +305,9 @@ export const hydrateResults = internalQuery({
         // Use pre-resolved owner from digest to avoid reading the users table.
         // Fall back to live lookup when digest owner is null (deactivated/deleted user).
         const preResolved = digest ? digestToOwnerInfo(digest) : null;
-        const resolved = preResolved?.owner ? preResolved : await getOwnerInfo(skill.ownerUserId);
+        const resolved = preResolved?.owner
+          ? preResolved
+          : await getOwnerInfo(skill.ownerUserId, skill.ownerPublisherId);
         const publicSkill = toPublicSkill(skill);
         if (!publicSkill || !resolved.owner) return null;
         return {
@@ -278,6 +331,7 @@ export const lexicalFallbackSkills = internalQuery({
     limit: v.optional(v.number()),
     highlightedOnly: v.optional(v.boolean()),
     nonSuspiciousOnly: v.optional(v.boolean()),
+    skipExactSlugLookup: v.optional(v.boolean()),
   },
   handler: async (ctx, args): Promise<SkillSearchEntry[]> => {
     const limit = Math.min(Math.max(args.limit ?? 200, 10), FALLBACK_SCAN_LIMIT);
@@ -286,12 +340,12 @@ export const lexicalFallbackSkills = internalQuery({
     // Keep digest rows around so we can resolve owner info without hitting users table.
     const preResolvedOwners = new Map<
       Id<"skills">,
-      { ownerHandle: string | null; owner: ReturnType<typeof toPublicUser> | null }
+      { ownerHandle: string | null; owner: PublicPublisher | null }
     >();
 
     // Exact slug match via the skills table (only one row, cheap).
     const slugQuery = args.query.trim().toLowerCase();
-    if (/^[a-z0-9][a-z0-9-]*$/.test(slugQuery)) {
+    if (!args.skipExactSlugLookup && /^[a-z0-9][a-z0-9-]*$/.test(slugQuery)) {
       const exactSlugSkill = await ctx.db
         .query("skills")
         .withIndex("by_slug", (q) => q.eq("slug", slugQuery))
@@ -335,7 +389,9 @@ export const lexicalFallbackSkills = internalQuery({
     const entries = await Promise.all(
       matched.map(async (skill) => {
         const preResolved = preResolvedOwners.get(skill._id);
-        const resolved = preResolved?.owner ? preResolved : await getOwnerInfo(skill.ownerUserId);
+        const resolved = preResolved?.owner
+          ? preResolved
+          : await getOwnerInfo(skill.ownerUserId, skill.ownerPublisherId);
         const publicSkill = toPublicSkill(skill);
         if (!publicSkill || !resolved.owner) return null;
         return {

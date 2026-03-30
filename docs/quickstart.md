@@ -98,7 +98,7 @@ EOF
 Publish:
 
 ```bash
-bun clawhub publish . \
+bun clawhub skill publish . \
   --slug clawhub-demo-$(date +%s) \
   --name "Demo $(date +%s)" \
   --version 1.0.0 \

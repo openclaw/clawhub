@@ -1,7 +1,5 @@
-import { type } from 'arktype';
-export const PLATFORM_SKILL_LICENSE = 'MIT-0';
-export const PLATFORM_SKILL_LICENSE_NAME = 'MIT No Attribution';
-export const PLATFORM_SKILL_LICENSE_SUMMARY = 'Free to use, modify, and redistribute. No attribution required.';
-export const PLATFORM_SKILL_LICENSE_URL = 'https://spdx.org/licenses/MIT-0.html';
+import { type } from "arktype";
+import { PLATFORM_SKILL_LICENSE, PLATFORM_SKILL_LICENSE_NAME, PLATFORM_SKILL_LICENSE_SUMMARY, PLATFORM_SKILL_LICENSE_URL, } from "./licenseConstants.js";
+export { PLATFORM_SKILL_LICENSE, PLATFORM_SKILL_LICENSE_NAME, PLATFORM_SKILL_LICENSE_SUMMARY, PLATFORM_SKILL_LICENSE_URL, };
 export const SkillPlatformLicenseSchema = type('"MIT-0"');
 //# sourceMappingURL=license.js.map

@@ -1,7 +1,7 @@
-import type { PublicUser } from "../lib/publicUser";
+import type { PublicPublisher, PublicUser } from "../lib/publicUser";
 
 type UserBadgeProps = {
-  user: PublicUser | null | undefined;
+  user: PublicUser | PublicPublisher | null | undefined;
   fallbackHandle?: string | null;
   prefix?: string;
   size?: "sm" | "md";
@@ -17,17 +17,26 @@ export function UserBadge({
   link = true,
   showName = false,
 }: UserBadgeProps) {
-  const handle = user?.handle ?? user?.name ?? fallbackHandle ?? null;
-  const href = user?.handle ? `/u/${encodeURIComponent(user.handle)}` : null;
+  const userName = user && "name" in user ? user.name?.trim() : undefined;
+  const displayName =
+    user?.displayName?.trim() || userName || null;
+  const handle = user?.handle ?? fallbackHandle ?? null;
+  const href =
+    user?.handle && "kind" in user
+      ? user.kind === "org"
+        ? `/orgs/${encodeURIComponent(user.handle)}`
+        : `/u/${encodeURIComponent(user.handle)}`
+      : user?.handle
+        ? `/u/${encodeURIComponent(user.handle)}`
+        : null;
   const label = handle ? `@${handle}` : "user";
   const image = user?.image ?? null;
-  const displayName = user?.displayName?.trim() || null;
   const hasUsefulName =
     showName &&
     Boolean(displayName) &&
     Boolean(handle) &&
     displayName!.toLowerCase() !== handle!.toLowerCase();
-  const initial = (user?.displayName ?? user?.name ?? handle ?? "u").charAt(0).toUpperCase();
+  const initial = (displayName ?? handle ?? "u").charAt(0).toUpperCase();
 
   return (
     <span className={`user-badge user-badge-${size}`}>

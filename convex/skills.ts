@@ -1,5 +1,5 @@
 import { getAuthUserId } from "@convex-dev/auth/server";
-import { getPage, type IndexKey } from "convex-helpers/server/pagination";
+import { getPage, type IndexKey, paginator } from "convex-helpers/server/pagination";
 import { paginationOptsValidator } from "convex/server";
 import { ConvexError, v, type Value } from "convex/values";
 import { internal } from "./_generated/api";
@@ -41,7 +41,18 @@ import {
   summarizeReasonCodes,
   verdictFromCodes,
 } from "./lib/moderationReasonCodes";
-import { type HydratableSkill, toPublicSkill, toPublicUser } from "./lib/public";
+import {
+  type HydratableSkill,
+  type PublicPublisher,
+  toPublicPublisher,
+  toPublicSkill,
+  toPublicUser,
+} from "./lib/public";
+import {
+  ensurePersonalPublisherForUser,
+  getOwnerPublisher,
+  requirePublisherRole,
+} from "./lib/publishers";
 import {
   AUTO_HIDE_REPORT_THRESHOLD,
   MAX_ACTIVE_REPORTS_PER_USER,
@@ -82,6 +93,9 @@ const MAX_LIST_LIMIT = 50;
 const MAX_PUBLIC_LIST_LIMIT = 200;
 const MAX_LIST_BULK_LIMIT = 200;
 const MAX_LIST_TAKE = 1000;
+const MAX_SKILL_CATALOG_SCAN_DOCUMENTS = 30_000;
+const MAX_SKILL_CATALOG_SCAN_PAGES = 200;
+const MAX_SKILL_CATALOG_SEARCH_PAGE_SIZE = 200;
 const HARD_DELETE_BATCH_SIZE = 100;
 const HARD_DELETE_VERSION_BATCH_SIZE = 10;
 const HARD_DELETE_LEADERBOARD_BATCH_SIZE = 25;
@@ -96,6 +110,7 @@ const MAX_MANUAL_OVERRIDE_NOTE_LENGTH = 1200;
 const DEFAULT_STAFF_AUDIT_LOG_LIMIT = 10;
 const MAX_STAFF_AUDIT_LOG_LIMIT = 50;
 const USER_MODERATION_REASON = "user.moderation";
+const SKILL_CATALOG_CURSOR_PREFIX = "skillcat:";
 
 function buildStructuredModerationPatch(params: {
   staticScan?: Doc<"skillVersions">["staticScan"];
@@ -433,31 +448,59 @@ async function syncSkillModerationFromLatestVersion(
   await adjustGlobalPublicCountForSkillChange(ctx, skill, nextSkill);
 }
 
-function buildConflictingSkillUrl(skill: Doc<"skills">, owner: Doc<"users"> | null | undefined) {
+function buildConflictingSkillUrl(
+  skill: Doc<"skills">,
+  owner: Doc<"users"> | Doc<"publishers"> | null | undefined,
+) {
   if (!owner || owner.deletedAt || owner.deactivatedAt || !isPublicSkillDoc(skill)) return null;
   const ownerParam = owner.handle?.trim() || String(owner._id);
   if (!ownerParam) return null;
   return `/${encodeURIComponent(ownerParam)}/${encodeURIComponent(skill.slug)}`;
 }
 
-function buildSlugTakenErrorMessage(skill: Doc<"skills">, owner: Doc<"users"> | null | undefined) {
+function buildSlugTakenErrorMessage(
+  skill: Doc<"skills">,
+  owner: Doc<"users"> | Doc<"publishers"> | null | undefined,
+) {
+  if (!owner || owner.deletedAt || owner.deactivatedAt) {
+    return (
+      "This slug is locked to a deleted or banned account. " +
+      "If you believe you are the rightful owner, please contact security@openclaw.ai to reclaim it."
+    );
+  }
   const base = "Slug is already taken. Choose a different slug.";
   const url = buildConflictingSkillUrl(skill, owner);
   if (!url) return base;
   return `${base} Existing skill: ${url}`;
 }
 
-function buildAliasTakenErrorMessage(skill: Doc<"skills">, owner: Doc<"users"> | null | undefined) {
+function buildAliasTakenErrorMessage(
+  skill: Doc<"skills">,
+  owner: Doc<"users"> | Doc<"publishers"> | null | undefined,
+) {
   const base = "Slug redirects to an existing skill. Choose a different slug.";
   const url = buildConflictingSkillUrl(skill, owner);
   if (!url) return base;
   return `${base} Existing skill: ${url}`;
 }
 
+function normalizeSkillSlugKey(slug: string) {
+  return slug.trim().toLowerCase();
+}
+
+function normalizeSkillSlugForWrite(slug: string) {
+  const normalized = normalizeSkillSlugKey(slug);
+  if (!normalized || !/^[a-z0-9][a-z0-9-]*$/.test(normalized)) {
+    throw new ConvexError("Slug must be lowercase and url-safe");
+  }
+  return normalized;
+}
+
 async function getSkillSlugAliasBySlug(ctx: Pick<QueryCtx | MutationCtx, "db">, slug: string) {
+  const normalizedSlug = normalizeSkillSlugKey(slug);
   return ctx.db
     .query("skillSlugAliases")
-    .withIndex("by_slug", (q) => q.eq("slug", slug))
+    .withIndex("by_slug", (q) => q.eq("slug", normalizedSlug))
     .unique();
 }
 
@@ -472,7 +515,7 @@ async function listSkillSlugAliasesForSkill(
 }
 
 async function resolveSkillBySlugOrAlias(ctx: Pick<QueryCtx | MutationCtx, "db">, slug: string) {
-  const normalizedSlug = slug.trim().toLowerCase();
+  const normalizedSlug = normalizeSkillSlugKey(slug);
   if (!normalizedSlug) {
     return {
       requestedSlug: normalizedSlug,
@@ -955,7 +998,7 @@ type PublicSkillEntry = {
   skill: NonNullable<ReturnType<typeof toPublicSkill>>;
   latestVersion: PublicSkillListVersion | null;
   ownerHandle: string | null;
-  owner: ReturnType<typeof toPublicUser> | null;
+  owner: PublicPublisher | null;
 };
 
 type StaffSkillAuditLogEntry = Doc<"auditLogs"> & {
@@ -1033,30 +1076,38 @@ async function buildPublicSkillEntries(
     includeVersion?: boolean;
     preResolvedOwners?: Map<
       Id<"skills">,
-      { ownerHandle: string | null; owner: ReturnType<typeof toPublicUser> | null }
+      { ownerHandle: string | null; owner: PublicPublisher | null }
     >;
   },
 ) {
   const includeVersion = opts?.includeVersion ?? true;
   const ownerInfoCache = new Map<
-    Id<"users">,
+    string,
     Promise<{
       ownerHandle: string | null;
-      owner: ReturnType<typeof toPublicUser> | null;
+      owner: PublicPublisher | null;
     }>
   >();
 
-  const getOwnerInfo = (skillId: Id<"skills">, ownerUserId: Id<"users">) => {
+  const getOwnerInfo = (
+    skillId: Id<"skills">,
+    ownerUserId: Id<"users">,
+    ownerPublisherId?: Id<"publishers"> | null,
+  ) => {
     // Use pre-resolved owner from digest when available to avoid adding the
     // users table to the reactive read set (which causes thundering-herd
     // invalidation on every user-doc write).
     const preResolved = opts?.preResolvedOwners?.get(skillId);
     if (preResolved?.owner) return Promise.resolve(preResolved);
 
-    const cached = ownerInfoCache.get(ownerUserId);
+    const cacheKey = String(ownerPublisherId ?? ownerUserId);
+    const cached = ownerInfoCache.get(cacheKey);
     if (cached) return cached;
-    const ownerPromise = ctx.db.get(ownerUserId).then((ownerDoc) => {
-      const publicOwner = toPublicUser(ownerDoc);
+    const ownerPromise = getOwnerPublisher(ctx, {
+      ownerPublisherId,
+      ownerUserId,
+    }).then((ownerDoc) => {
+      const publicOwner = toPublicPublisher(ownerDoc);
       if (!publicOwner) {
         return { ownerHandle: null, owner: null };
       }
@@ -1065,7 +1116,7 @@ async function buildPublicSkillEntries(
         owner: publicOwner,
       };
     });
-    ownerInfoCache.set(ownerUserId, ownerPromise);
+    ownerInfoCache.set(cacheKey, ownerPromise);
     return ownerPromise;
   };
 
@@ -1078,7 +1129,7 @@ async function buildPublicSkillEntries(
         includeVersion && !hasSummary && skill.latestVersionId
           ? ctx.db.get(skill.latestVersionId)
           : null,
-        getOwnerInfo(skill._id, skill.ownerUserId),
+        getOwnerInfo(skill._id, skill.ownerUserId, skill.ownerPublisherId),
       ]);
       const publicSkill = toPublicSkill(skill);
       if (!publicSkill || !ownerInfo.owner) return null;
@@ -1320,20 +1371,43 @@ export const getBySlug = query({
     if (!skill) return null;
 
     const userId = await getAuthUserId(ctx);
-    const isOwner = Boolean(userId && userId === skill.ownerUserId);
+    const ownerPublisher = await getOwnerPublisher(ctx, {
+      ownerPublisherId: skill.ownerPublisherId,
+      ownerUserId: skill.ownerUserId,
+    });
+    const membership =
+      userId && skill.ownerPublisherId
+        ? await ctx.db
+            .query("publisherMembers")
+            .withIndex("by_publisher_user", (q) =>
+              q.eq("publisherId", skill.ownerPublisherId!).eq("userId", userId),
+            )
+            .unique()
+        : null;
+    const isOwner = Boolean(userId && (userId === skill.ownerUserId || membership));
 
     const latestVersion = toPublicSkillVersion(
       skill.latestVersionId ? await ctx.db.get(skill.latestVersionId) : null,
     );
-    const owner = toPublicUser(await ctx.db.get(skill.ownerUserId));
+    const owner = toPublicPublisher(ownerPublisher);
     if (!owner) return null;
     const badges = await getSkillBadgeMap(ctx, skill._id);
 
     const forkOfSkill = skill.forkOf?.skillId ? await ctx.db.get(skill.forkOf.skillId) : null;
-    const forkOfOwner = forkOfSkill ? await ctx.db.get(forkOfSkill.ownerUserId) : null;
+    const forkOfOwner = forkOfSkill
+      ? await getOwnerPublisher(ctx, {
+          ownerPublisherId: forkOfSkill.ownerPublisherId,
+          ownerUserId: forkOfSkill.ownerUserId,
+        })
+      : null;
 
     const canonicalSkill = skill.canonicalSkillId ? await ctx.db.get(skill.canonicalSkillId) : null;
-    const canonicalOwner = canonicalSkill ? await ctx.db.get(canonicalSkill.ownerUserId) : null;
+    const canonicalOwner = canonicalSkill
+      ? await getOwnerPublisher(ctx, {
+          ownerPublisherId: canonicalSkill.ownerPublisherId,
+          ownerUserId: canonicalSkill.ownerUserId,
+        })
+      : null;
 
     const publicSkill = toPublicSkill({ ...skill, badges });
 
@@ -1409,8 +1483,8 @@ export const getBySlug = query({
               displayName: forkOfSkill.displayName,
             },
             owner: {
-              handle: forkOfOwner?.handle ?? forkOfOwner?.name ?? null,
-              userId: forkOfOwner?._id ?? null,
+              handle: forkOfOwner?.handle ?? null,
+              userId: forkOfOwner?.linkedUserId ?? null,
             },
           }
         : null,
@@ -1421,8 +1495,8 @@ export const getBySlug = query({
               displayName: canonicalSkill.displayName,
             },
             owner: {
-              handle: canonicalOwner?.handle ?? canonicalOwner?.name ?? null,
-              userId: canonicalOwner?._id ?? null,
+              handle: canonicalOwner?.handle ?? null,
+              userId: canonicalOwner?.linkedUserId ?? null,
             },
           }
         : null,
@@ -1434,7 +1508,7 @@ export const checkSlugAvailability = query({
   args: { slug: v.string() },
   handler: async (ctx, args) => {
     const userId = await getAuthUserId(ctx);
-    const slug = args.slug.trim().toLowerCase();
+    const slug = normalizeSkillSlugKey(args.slug);
     if (!slug) {
       return {
         available: false,
@@ -1558,7 +1632,11 @@ export const getBySlugForStaff = query({
     if (!skill) return null;
 
     const latestVersion = skill.latestVersionId ? await ctx.db.get(skill.latestVersionId) : null;
-    const owner = toPublicUser(await ctx.db.get(skill.ownerUserId));
+    const ownerPublisher = await getOwnerPublisher(ctx, {
+      ownerPublisherId: skill.ownerPublisherId,
+      ownerUserId: skill.ownerUserId,
+    });
+    const owner = toPublicPublisher(ownerPublisher);
     const badges = await getSkillBadgeMap(ctx, skill._id);
     const rawAuditLogs = await ctx.db
       .query("auditLogs")
@@ -1585,10 +1663,20 @@ export const getBySlugForStaff = query({
     }));
 
     const forkOfSkill = skill.forkOf?.skillId ? await ctx.db.get(skill.forkOf.skillId) : null;
-    const forkOfOwner = forkOfSkill ? await ctx.db.get(forkOfSkill.ownerUserId) : null;
+    const forkOfOwner = forkOfSkill
+      ? await getOwnerPublisher(ctx, {
+          ownerPublisherId: forkOfSkill.ownerPublisherId,
+          ownerUserId: forkOfSkill.ownerUserId,
+        })
+      : null;
 
     const canonicalSkill = skill.canonicalSkillId ? await ctx.db.get(skill.canonicalSkillId) : null;
-    const canonicalOwner = canonicalSkill ? await ctx.db.get(canonicalSkill.ownerUserId) : null;
+    const canonicalOwner = canonicalSkill
+      ? await getOwnerPublisher(ctx, {
+          ownerPublisherId: canonicalSkill.ownerPublisherId,
+          ownerUserId: canonicalSkill.ownerUserId,
+        })
+      : null;
 
     return {
       requestedSlug: resolved.requestedSlug,
@@ -1607,8 +1695,8 @@ export const getBySlugForStaff = query({
               displayName: forkOfSkill.displayName,
             },
             owner: {
-              handle: forkOfOwner?.handle ?? forkOfOwner?.name ?? null,
-              userId: forkOfOwner?._id ?? null,
+              handle: forkOfOwner?.handle ?? null,
+              userId: forkOfOwner?.linkedUserId ?? null,
             },
           }
         : null,
@@ -1619,8 +1707,8 @@ export const getBySlugForStaff = query({
               displayName: canonicalSkill.displayName,
             },
             owner: {
-              handle: canonicalOwner?.handle ?? canonicalOwner?.name ?? null,
-              userId: canonicalOwner?._id ?? null,
+              handle: canonicalOwner?.handle ?? null,
+              userId: canonicalOwner?.linkedUserId ?? null,
             },
           }
         : null,
@@ -1941,6 +2029,7 @@ export const list = query({
   args: {
     batch: v.optional(v.string()),
     ownerUserId: v.optional(v.id("users")),
+    ownerPublisherId: v.optional(v.id("publishers")),
     limit: v.optional(v.number()),
   },
   handler: async (ctx, args) => {
@@ -1962,6 +2051,81 @@ export const list = query({
         .take(takeLimit);
       const filtered = entries.filter((skill) => !skill.softDeletedAt).slice(0, limit);
       const withBadges = await attachBadgesToSkills(ctx, filtered);
+      const visibleSkills = await filterSkillsByActiveOwner(ctx, withBadges);
+      return visibleSkills
+        .map((skill) => toPublicSkill(skill))
+        .filter((skill): skill is NonNullable<typeof skill> => Boolean(skill));
+    }
+    const ownerPublisherId = args.ownerPublisherId;
+    if (ownerPublisherId) {
+      const userId = await getAuthUserId(ctx);
+      const ownerPublisher = await ctx.db.get(ownerPublisherId);
+      const membership =
+        userId &&
+        (await ctx.db
+          .query("publisherMembers")
+          .withIndex("by_publisher_user", (q) =>
+            q.eq("publisherId", ownerPublisherId).eq("userId", userId),
+          )
+          .unique());
+      const isOwnDashboard = Boolean(
+        membership || (userId && ownerPublisher?.kind === "user" && ownerPublisher.linkedUserId === userId),
+      );
+      const scopedEntries = await ctx.db
+        .query("skills")
+        .withIndex("by_owner_publisher", (q) => q.eq("ownerPublisherId", ownerPublisherId))
+        .order("desc")
+        .take(takeLimit);
+      const legacyEntries =
+        ownerPublisher?.kind === "user" && ownerPublisher.linkedUserId
+          ? await ctx.db
+              .query("skills")
+              .withIndex("by_owner", (q) => q.eq("ownerUserId", ownerPublisher.linkedUserId!))
+              .order("desc")
+              .take(takeLimit)
+          : [];
+      const combined = [...scopedEntries, ...legacyEntries].filter(
+        (skill, index, all) =>
+          !skill.softDeletedAt &&
+          (!skill.ownerPublisherId || skill.ownerPublisherId === ownerPublisherId) &&
+          all.findIndex((candidate) => candidate._id === skill._id) === index,
+      );
+      const filtered = combined.slice(0, limit);
+      const withBadges = await attachBadgesToSkills(ctx, filtered);
+
+      if (isOwnDashboard) {
+        return withBadges
+          .map((skill) => {
+            const publicSkill = toPublicSkill(skill);
+            if (publicSkill) return publicSkill;
+            const isPending =
+              skill.moderationStatus === "hidden" && skill.moderationReason === "pending.scan";
+            if (isPending) {
+              const { badges } = skill;
+              return {
+                _id: skill._id,
+                _creationTime: skill._creationTime,
+                slug: skill.slug,
+                displayName: skill.displayName,
+                summary: skill.summary,
+                ownerUserId: skill.ownerUserId,
+                ownerPublisherId: skill.ownerPublisherId,
+                canonicalSkillId: skill.canonicalSkillId,
+                forkOf: skill.forkOf,
+                latestVersionId: skill.latestVersionId,
+                tags: skill.tags,
+                badges,
+                stats: skill.stats,
+                createdAt: skill.createdAt,
+                updatedAt: skill.updatedAt,
+                pendingReview: true as const,
+              };
+            }
+            return null;
+          })
+          .filter((skill): skill is NonNullable<typeof skill> => Boolean(skill));
+      }
+
       const visibleSkills = await filterSkillsByActiveOwner(ctx, withBadges);
       return visibleSkills
         .map((skill) => toPublicSkill(skill))
@@ -2587,6 +2751,277 @@ export const listPublicPageV4 = query({
     }
 
     return { page: items, hasMore: result.hasMore, nextCursor };
+  },
+});
+
+type PublicSkillCatalogItem = {
+  name: string;
+  displayName: string;
+  family: "skill";
+  runtimeId: null;
+  channel: "official" | "community";
+  isOfficial: boolean;
+  summary: string | null;
+  ownerHandle: string | null;
+  createdAt: number;
+  updatedAt: number;
+  latestVersion: string | null;
+  capabilityTags: string[];
+  executesCode: false;
+  verificationTier: null;
+};
+
+type SkillCatalogCursorState = {
+  cursor: string | null;
+  offset: number;
+  pageSize: number | null;
+  done: boolean;
+};
+
+function encodeSkillCatalogCursor(state: SkillCatalogCursorState) {
+  if (state.done && state.offset === 0) return "";
+  return `${SKILL_CATALOG_CURSOR_PREFIX}${JSON.stringify(state)}`;
+}
+
+function decodeSkillCatalogCursor(raw: string | null | undefined): SkillCatalogCursorState {
+  if (!raw) return { cursor: null, offset: 0, pageSize: null, done: false };
+  if (!raw.startsWith(SKILL_CATALOG_CURSOR_PREFIX)) {
+    return { cursor: raw, offset: 0, pageSize: null, done: false };
+  }
+  try {
+    const parsed = JSON.parse(raw.slice(SKILL_CATALOG_CURSOR_PREFIX.length)) as Partial<SkillCatalogCursorState>;
+    return {
+      cursor: typeof parsed.cursor === "string" ? parsed.cursor : null,
+      offset: typeof parsed.offset === "number" && parsed.offset > 0 ? parsed.offset : 0,
+      pageSize:
+        typeof parsed.pageSize === "number" && parsed.pageSize > 0 ? parsed.pageSize : null,
+      done: parsed.done === true,
+    };
+  } catch {
+    return { cursor: null, offset: 0, pageSize: null, done: false };
+  }
+}
+
+function isSkillCatalogOfficial(digest: Doc<"skillSearchDigest">) {
+  return Boolean(digest.badges?.official);
+}
+
+function getSkillCatalogChannel(digest: Doc<"skillSearchDigest">): "official" | "community" {
+  return isSkillCatalogOfficial(digest) ? "official" : "community";
+}
+
+function isVisibleSkillCatalogDigest(digest: Doc<"skillSearchDigest">) {
+  const publicSkill = toPublicSkill(digestToHydratableSkill(digest));
+  if (!publicSkill) return false;
+  const ownerInfo = digestToOwnerInfo(digest);
+  return Boolean(ownerInfo?.owner);
+}
+
+function skillCatalogMatchesFilters(
+  digest: Doc<"skillSearchDigest">,
+  args: {
+    channel?: "official" | "community" | "private";
+    isOfficial?: boolean;
+    executesCode?: boolean;
+    capabilityTag?: string;
+  },
+) {
+  if (!isVisibleSkillCatalogDigest(digest)) return false;
+  if (args.channel === "private") return false;
+  if (args.capabilityTag) return false;
+  if (args.executesCode === true) return false;
+  const isOfficial = isSkillCatalogOfficial(digest);
+  const channel = getSkillCatalogChannel(digest);
+  if (typeof args.isOfficial === "boolean" && isOfficial !== args.isOfficial) return false;
+  if (args.channel && channel !== args.channel) return false;
+  return true;
+}
+
+function toPublicSkillCatalogItem(digest: Doc<"skillSearchDigest">): PublicSkillCatalogItem {
+  const ownerInfo = digestToOwnerInfo(digest);
+  return {
+    name: digest.slug,
+    displayName: digest.displayName,
+    family: "skill",
+    runtimeId: null,
+    channel: getSkillCatalogChannel(digest),
+    isOfficial: isSkillCatalogOfficial(digest),
+    summary: digest.summary ?? null,
+    ownerHandle: ownerInfo?.ownerHandle ?? null,
+    createdAt: digest.createdAt,
+    updatedAt: digest.updatedAt,
+    latestVersion: digest.latestVersionSummary?.version ?? null,
+    capabilityTags: [],
+    executesCode: false,
+    verificationTier: null,
+  };
+}
+
+function scoreSkillCatalogResult(digest: Doc<"skillSearchDigest">, queryText: string) {
+  const needle = queryText.toLowerCase();
+  const slug = digest.slug.toLowerCase();
+  const display = digest.displayName.toLowerCase();
+  const summary = (digest.summary ?? "").toLowerCase();
+  let score = 0;
+  if (slug === needle) score += 200;
+  else if (slug.startsWith(needle)) score += 120;
+  else if (slug.includes(needle)) score += 80;
+
+  if (display === needle) score += 150;
+  else if (display.startsWith(needle)) score += 70;
+  else if (display.includes(needle)) score += 40;
+
+  if (summary.includes(needle)) score += 20;
+  if (isSkillCatalogOfficial(digest)) score += 5;
+  return score;
+}
+
+export const listPackageCatalogPage = query({
+  args: {
+    channel: v.optional(v.union(v.literal("official"), v.literal("community"), v.literal("private"))),
+    isOfficial: v.optional(v.boolean()),
+    executesCode: v.optional(v.boolean()),
+    capabilityTag: v.optional(v.string()),
+    paginationOpts: paginationOptsValidator,
+  },
+  handler: async (ctx, args) => {
+    if (args.channel === "private" || args.executesCode === true || args.capabilityTag) {
+      return { page: [], isDone: true, continueCursor: "" };
+    }
+
+    const targetCount = args.paginationOpts.numItems;
+    const collected: PublicSkillCatalogItem[] = [];
+    const decodedCursor = decodeSkillCatalogCursor(args.paginationOpts.cursor);
+    let cursor = decodedCursor.cursor;
+    let offset = decodedCursor.offset;
+    let pageSize = decodedCursor.pageSize;
+    let done = decodedCursor.done;
+    let loops = 0;
+    let remainingScanBudget = MAX_SKILL_CATALOG_SCAN_DOCUMENTS;
+
+    while (
+      (offset > 0 || !done) &&
+      collected.length < targetCount &&
+      loops < MAX_SKILL_CATALOG_SCAN_PAGES &&
+      remainingScanBudget > 0
+    ) {
+      loops += 1;
+      const effectivePageSize = Math.min(
+        remainingScanBudget,
+        offset > 0 && pageSize ? Math.max(pageSize, offset + 1) : Math.max(targetCount * 3, targetCount),
+      );
+      if (effectivePageSize <= 0) break;
+      remainingScanBudget -= effectivePageSize;
+      const pageCursor = cursor;
+      const page = await paginator(ctx.db, schema)
+        .query("skillSearchDigest")
+        .withIndex("by_active_updated", (q) => q.eq("softDeletedAt", undefined))
+        .order("desc")
+        .paginate({ cursor: pageCursor, numItems: effectivePageSize });
+
+      for (let index = offset; index < page.page.length; index += 1) {
+        const digest = page.page[index];
+        if (!skillCatalogMatchesFilters(digest, args)) continue;
+        collected.push(toPublicSkillCatalogItem(digest));
+        if (collected.length >= targetCount) {
+          const nextOffset = index + 1;
+          if (nextOffset < page.page.length) {
+            cursor = pageCursor;
+            offset = nextOffset;
+            pageSize = effectivePageSize;
+            done = page.isDone;
+          } else {
+            cursor = page.continueCursor;
+            offset = 0;
+            pageSize = effectivePageSize;
+            done = page.isDone;
+          }
+          return {
+            page: collected,
+            isDone: done && offset === 0,
+            continueCursor: encodeSkillCatalogCursor({ cursor, offset, pageSize, done }),
+          };
+        }
+      }
+
+      done = page.isDone;
+      cursor = page.continueCursor;
+      offset = 0;
+      pageSize = effectivePageSize;
+    }
+
+    return {
+      page: collected,
+      isDone: done,
+      continueCursor: encodeSkillCatalogCursor({ cursor, offset, pageSize, done }),
+    };
+  },
+});
+
+export const searchPackageCatalogPublic = query({
+  args: {
+    query: v.string(),
+    limit: v.optional(v.number()),
+    channel: v.optional(v.union(v.literal("official"), v.literal("community"), v.literal("private"))),
+    isOfficial: v.optional(v.boolean()),
+    executesCode: v.optional(v.boolean()),
+    capabilityTag: v.optional(v.string()),
+  },
+  handler: async (ctx, args) => {
+    const queryText = args.query.trim().toLowerCase();
+    if (!queryText) return [];
+    if (args.channel === "private" || args.executesCode === true || args.capabilityTag) return [];
+
+    const targetCount = Math.max(1, Math.min(args.limit ?? 20, 100));
+    const matches: Array<{ score: number; package: PublicSkillCatalogItem }> = [];
+    const seen = new Set<string>();
+
+    const exactSkill = await resolveSkillBySlugOrAlias(ctx, queryText);
+    if (exactSkill.skill) {
+      const exactDigest = await ctx.db
+        .query("skillSearchDigest")
+        .withIndex("by_skill", (q) => q.eq("skillId", exactSkill.skill!._id))
+        .unique();
+      if (exactDigest && skillCatalogMatchesFilters(exactDigest, args)) {
+        const exactScore = scoreSkillCatalogResult(exactDigest, queryText);
+        if (exactScore > 0) {
+          seen.add(exactDigest.skillId);
+          matches.push({
+            score: exactScore,
+            package: toPublicSkillCatalogItem(exactDigest),
+          });
+        }
+      }
+    }
+
+    if (matches.length < targetCount) {
+      const pageSize = Math.min(MAX_SKILL_CATALOG_SEARCH_PAGE_SIZE, Math.max(targetCount * 5, 50));
+      const page = await ctx.db
+        .query("skillSearchDigest")
+        .withIndex("by_active_updated", (q) => q.eq("softDeletedAt", undefined))
+        .order("desc")
+        .paginate({ cursor: null, numItems: pageSize });
+
+      for (const digest of page.page) {
+        if (!skillCatalogMatchesFilters(digest, args)) continue;
+        const score = scoreSkillCatalogResult(digest, queryText);
+        if (score <= 0 || seen.has(digest.skillId)) continue;
+        seen.add(digest.skillId);
+        matches.push({
+          score,
+          package: toPublicSkillCatalogItem(digest),
+        });
+      }
+    }
+
+    return matches
+      .sort(
+        (a, b) =>
+          b.score - a.score ||
+          Number(b.package.isOfficial) - Number(a.package.isOfficial) ||
+          b.package.updatedAt - a.package.updatedAt,
+      )
+      .slice(0, targetCount);
   },
 });
 
@@ -4070,6 +4505,7 @@ export const getVersionBySkillAndVersion = query({
 
 export const publishVersion: ReturnType<typeof action> = action({
   args: {
+    ownerHandle: v.optional(v.string()),
     slug: v.string(),
     displayName: v.string(),
     version: v.string(),
@@ -4097,7 +4533,14 @@ export const publishVersion: ReturnType<typeof action> = action({
       throw new ConvexError("MIT-0 license terms must be accepted to publish skills");
     }
     const { userId } = await requireUserFromAction(ctx);
-    return publishVersionForUser(ctx, userId, args);
+    const target = (await ctx.runMutation(internal.publishers.resolvePublishTargetForUserInternal, {
+      actorUserId: userId,
+      ownerHandle: args.ownerHandle,
+      minimumRole: "publisher",
+    })) as { publisherId: Id<"publishers"> };
+    return publishVersionForUser(ctx, userId, args, {
+      ownerPublisherId: target.publisherId,
+    });
   },
 });
 
@@ -4130,6 +4573,15 @@ async function canReadSkillVersionFiles(ctx: ActionCtx, version: Doc<"skillVersi
   if (authUserId) {
     if (authUserId === skill.ownerUserId && !skill.softDeletedAt && !version.softDeletedAt) {
       return true;
+    }
+    if (skill.ownerPublisherId && !skill.softDeletedAt && !version.softDeletedAt) {
+      const memberRole = (await ctx.runQuery(internal.publishers.getMemberRoleInternal, {
+        publisherId: skill.ownerPublisherId,
+        userId: authUserId,
+      })) as "owner" | "admin" | "publisher" | null;
+      if (memberRole) {
+        return true;
+      }
     }
     const actor = (await ctx.runQuery(internal.users.getByIdInternal, {
       userId: authUserId,
@@ -4309,6 +4761,38 @@ export const updateTags = mutation({
     if (latestEntry) {
       await setSkillEmbeddingsLatestVersion(ctx, skill._id, latestEntry.versionId, now);
     }
+  },
+});
+
+export const deleteTags = mutation({
+  args: {
+    skillId: v.id("skills"),
+    tags: v.array(v.string()),
+  },
+  handler: async (ctx, args) => {
+    const { user } = await requireUser(ctx);
+    const skill = await ctx.db.get(args.skillId);
+    if (!skill) throw new Error("Skill not found");
+    if (skill.ownerUserId !== user._id) {
+      assertModerator(user);
+    }
+
+    const nextTags = { ...skill.tags };
+    let changed = false;
+    for (const tag of args.tags) {
+      if (tag === "latest") continue; // protect the latest tag from deletion
+      if (tag in nextTags) {
+        delete nextTags[tag];
+        changed = true;
+      }
+    }
+
+    if (!changed) return;
+
+    await ctx.db.patch(skill._id, {
+      tags: nextTags,
+      updatedAt: Date.now(),
+    });
   },
 });
 
@@ -5223,6 +5707,7 @@ export const hardDeleteInternal = internalMutation({
 export const insertVersion = internalMutation({
   args: {
     userId: v.id("users"),
+    ownerPublisherId: v.optional(v.id("publishers")),
     slug: v.string(),
     displayName: v.string(),
     version: v.string(),
@@ -5293,21 +5778,37 @@ export const insertVersion = internalMutation({
   },
   handler: async (ctx, args) => {
     const userId = args.userId;
+    const slug = normalizeSkillSlugForWrite(args.slug);
     const user = await ctx.db.get(userId);
     if (!user || user.deletedAt || user.deactivatedAt) throw new Error("User not found");
+    const personalPublisher = await ensurePersonalPublisherForUser(ctx, user);
+    if (!personalPublisher) throw new ConvexError("Personal publisher not found");
+    const ownerPublisherId = args.ownerPublisherId ?? personalPublisher._id;
+    if (ownerPublisherId !== personalPublisher._id) {
+      await requirePublisherRole(ctx, {
+        publisherId: ownerPublisherId,
+        userId,
+        allowed: ["publisher"],
+      });
+    }
 
     const now = Date.now();
 
     let skill = await ctx.db
       .query("skills")
-      .withIndex("by_slug", (q) => q.eq("slug", args.slug))
+      .withIndex("by_slug", (q) => q.eq("slug", slug))
       .unique();
 
     if (!skill) {
-      const alias = await getSkillSlugAliasBySlug(ctx, args.slug);
+      const alias = await getSkillSlugAliasBySlug(ctx, slug);
       if (alias) {
         const aliasedSkill = await ctx.db.get(alias.skillId);
-        const owner = aliasedSkill ? await ctx.db.get(aliasedSkill.ownerUserId) : null;
+        const owner = aliasedSkill
+          ? await getOwnerPublisher(ctx, {
+              ownerPublisherId: aliasedSkill.ownerPublisherId,
+              ownerUserId: aliasedSkill.ownerUserId,
+            })
+          : null;
         throw new ConvexError(
           aliasedSkill
             ? buildAliasTakenErrorMessage(aliasedSkill, owner)
@@ -5316,10 +5817,21 @@ export const insertVersion = internalMutation({
       }
     }
 
-    if (skill && skill.ownerUserId !== userId) {
+    if (skill && skill.ownerPublisherId && skill.ownerPublisherId !== ownerPublisherId) {
+      const owner = await getOwnerPublisher(ctx, {
+        ownerPublisherId: skill.ownerPublisherId,
+        ownerUserId: skill.ownerUserId,
+      });
+      throw new ConvexError(buildSlugTakenErrorMessage(skill, owner));
+    }
+
+    if (skill && !skill.ownerPublisherId && skill.ownerUserId !== userId) {
       // Fallback: Convex Auth can create duplicate `users` records. Heal ownership ONLY
       // when the underlying GitHub identity matches (authAccounts.providerAccountId).
-      const owner = await ctx.db.get(skill.ownerUserId);
+      const owner = await getOwnerPublisher(ctx, {
+        ownerPublisherId: skill.ownerPublisherId,
+        ownerUserId: skill.ownerUserId,
+      });
       const slugTakenMessage = buildSlugTakenErrorMessage(skill, owner);
 
       // Check GitHub identity FIRST so ownership healing works even when the
@@ -5336,16 +5848,21 @@ export const insertVersion = internalMutation({
           callerProviderAccountId,
         )
       ) {
-        await ctx.db.patch(skill._id, { ownerUserId: userId, updatedAt: now });
-        skill = { ...skill, ownerUserId: userId };
-      } else if (!owner || owner.deletedAt || owner.deactivatedAt) {
-        throw new ConvexError(
-          "This slug is locked to a deleted or banned account. " +
-            "If you believe you are the rightful owner, please contact security@openclaw.ai to reclaim it.",
-        );
+        await ctx.db.patch(skill._id, {
+          ownerUserId: userId,
+          ownerPublisherId,
+          updatedAt: now,
+        });
+        skill = { ...skill, ownerUserId: userId, ownerPublisherId };
       } else {
         throw new ConvexError(slugTakenMessage);
       }
+    } else if (skill && !skill.ownerPublisherId) {
+      await ctx.db.patch(skill._id, {
+        ownerPublisherId,
+        updatedAt: now,
+      });
+      skill = { ...skill, ownerPublisherId };
     }
 
     const qualityAssessment = args.qualityAssessment;
@@ -5399,7 +5916,7 @@ export const insertVersion = internalMutation({
     if (!skill) {
       // Anti-squatting: enforce reserved slug cooldown.
       await enforceReservedSlugCooldownForNewSkill(ctx, {
-        slug: args.slug,
+        slug,
         userId,
         now,
       });
@@ -5451,7 +5968,7 @@ export const insertVersion = internalMutation({
       const summaryValue = summary ?? undefined;
       const derivedFlags = deriveModerationFlags({
         skill: {
-          slug: args.slug,
+          slug,
           displayName: args.displayName,
           summary: summaryValue,
         },
@@ -5462,10 +5979,11 @@ export const insertVersion = internalMutation({
         new Set([...(derivedFlags ?? []), ...(staticSnapshot.legacyFlags ?? [])]),
       );
       const skillId = await ctx.db.insert("skills", {
-        slug: args.slug,
+        slug,
         displayName: args.displayName,
         summary: summaryValue,
         ownerUserId: userId,
+        ownerPublisherId,
         canonicalSkillId,
         forkOf,
         latestVersionId: undefined,
@@ -5573,6 +6091,7 @@ export const insertVersion = internalMutation({
     const basePatch: SkillModerationPatch = {
       displayName: args.displayName,
       summary: nextSummary ?? undefined,
+      ownerPublisherId: skill.ownerPublisherId ?? ownerPublisherId,
       latestVersionId: versionId,
       latestVersionSummary: {
         version: args.version,

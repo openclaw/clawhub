@@ -80,7 +80,11 @@ export function SkillDetailPage({
   const toggleStar = useMutation(api.stars.toggle);
   const reportSkill = useMutation(api.skills.report);
   const updateTags = useMutation(api.skills.updateTags);
+  const deleteTags = useMutation(api.skills.deleteTags);
   const getReadme = useAction(api.skills.getReadme);
+  const myPublishers = useQuery(api.publishers.listMine) as
+    | Array<{ publisher: { _id: Id<"publishers"> }; role: string }>
+    | undefined;
 
   const [readme, setReadme] = useState<string | null>(initialData?.readme ?? null);
   const [readmeError, setReadmeError] = useState<string | null>(initialData?.readmeError ?? null);
@@ -118,20 +122,37 @@ export function SkillDetailPage({
     isAuthenticated && skill ? { skillId: skill._id } : "skip",
   );
 
-  const canManage = canManageSkill(me, skill);
-  const isOwner = Boolean(me && skill && me._id === skill.ownerUserId);
+  const myPublisherIds = useMemo(
+    () =>
+      new Set(
+        (Array.isArray(myPublishers) ? myPublishers : []).map((entry) => entry.publisher._id),
+      ),
+    [myPublishers],
+  );
+  const canManage =
+    canManageSkill(me, skill) ||
+    Boolean(skill?.ownerPublisherId && myPublisherIds.has(skill.ownerPublisherId));
+  const isOwner =
+    Boolean(me && skill && me._id === skill.ownerUserId) ||
+    Boolean(skill?.ownerPublisherId && myPublisherIds.has(skill.ownerPublisherId));
   const ownedSkills = useQuery(
     api.skills.list,
-    isOwner && skill ? { ownerUserId: skill.ownerUserId, limit: 100 } : "skip",
+    isOwner && skill
+      ? skill.ownerPublisherId
+        ? { ownerPublisherId: skill.ownerPublisherId, limit: 100 }
+        : { ownerUserId: skill.ownerUserId, limit: 100 }
+      : "skip",
   ) as Array<{ _id: Id<"skills">; slug: string; displayName: string }> | undefined;
 
-  const ownerHandle = owner?.handle ?? owner?.name ?? null;
-  const ownerParam = ownerHandle ?? (owner?._id ? String(owner._id) : null);
+  const ownerHandle = owner?.handle ?? null;
+  const ownerParam = ownerHandle?.trim().toLowerCase() || (owner?._id ? String(owner._id) : null);
+  const canonicalOwnerParam =
+    typeof canonicalOwner === "string" ? canonicalOwner.trim().toLowerCase() : null;
   const wantsCanonicalRedirect = Boolean(
     ownerParam &&
     ((result?.resolvedSlug && result.resolvedSlug !== slug) ||
       redirectToCanonical ||
-      (typeof canonicalOwner === "string" && canonicalOwner && canonicalOwner !== ownerParam)),
+      (canonicalOwnerParam && canonicalOwnerParam !== ownerParam)),
   );
 
   const forkOf = result?.forkOf ?? null;
@@ -269,6 +290,15 @@ export function SkillDetailPage({
     });
   };
 
+  const deleteTag = (tag: string) => {
+    if (!skill) return;
+    if (!window.confirm(`Delete tag "${tag}"?`)) return;
+    void deleteTags({
+      skillId: skill._id,
+      tags: [tag],
+    });
+  };
+
   const submitReport = async () => {
     if (!skill) return;
 
@@ -352,6 +382,7 @@ export function SkillDetailPage({
           tagVersionId={tagVersionId}
           onTagVersionChange={setTagVersionId}
           onTagSubmit={submitTag}
+          onTagDelete={deleteTag}
           tagVersions={versions ?? []}
           clawdis={clawdis}
           osLabels={osLabels}

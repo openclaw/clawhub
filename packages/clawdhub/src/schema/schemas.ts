@@ -67,6 +67,16 @@ export const CliPublishFileSchema = type({
 });
 export type CliPublishFile = (typeof CliPublishFileSchema)[inferred];
 
+export const PublishSourceSchema = type({
+  kind: '"github"',
+  url: "string",
+  repo: "string",
+  ref: "string",
+  commit: "string",
+  path: "string",
+  importedAt: "number",
+});
+
 export const CliPublishRequestSchema = type({
   slug: "string",
   displayName: "string",
@@ -74,6 +84,7 @@ export const CliPublishRequestSchema = type({
   changelog: "string",
   acceptLicenseTerms: "boolean?",
   tags: "string[]?",
+  source: PublishSourceSchema.optional(),
   forkOf: type({
     slug: "string",
     version: "string?",

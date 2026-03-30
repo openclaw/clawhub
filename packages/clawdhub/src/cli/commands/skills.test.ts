@@ -1,67 +1,69 @@
 /* @vitest-environment node */
 
-import { afterEach, describe, expect, it, vi } from "vitest";
+import * as fsPromises from "node:fs/promises";
+import * as skillStore from "../../skills.js";
+import { afterAll, afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import {
+  createAuthTokenModuleMocks,
+  createHttpModuleMocks,
+  createRegistryModuleMocks,
+  createUiModuleMocks,
+  makeGlobalOpts,
+} from "../../../test/cliCommandTestKit.js";
 import { ApiRoutes } from "../../schema/index.js";
-import type { GlobalOpts } from "../types";
 
-const mockApiRequest = vi.fn();
-const mockDownloadZip = vi.fn();
-const mockRegistryUrl = vi.fn((path: string, registry: string) => {
-  const base = registry.endsWith("/") ? registry : `${registry}/`;
-  const relative = path.startsWith("/") ? path.slice(1) : path;
-  return new URL(relative, base);
+const fsMocks = vi.hoisted(() => ({
+  mkdir: vi.fn(),
+  rm: vi.fn(),
+  stat: vi.fn(),
+}));
+
+vi.mock("node:fs/promises", async () => {
+  const actual = await vi.importActual<typeof import("node:fs/promises")>("node:fs/promises");
+  return {
+    ...actual,
+    mkdir: fsMocks.mkdir,
+    rm: fsMocks.rm,
+    stat: fsMocks.stat,
+  };
 });
-vi.mock("../../http.js", () => ({
-  apiRequest: (...args: unknown[]) => mockApiRequest(...args),
-  downloadZip: (...args: unknown[]) => mockDownloadZip(...args),
-  registryUrl: (...args: [string, string]) => mockRegistryUrl(...args),
-}));
 
-const mockGetRegistry = vi.fn(async () => "https://clawhub.ai");
-vi.mock("../registry.js", () => ({
-  getRegistry: () => mockGetRegistry(),
-}));
+const mocked = <T,>(value: T) => value as T & Record<string, unknown>;
+Object.assign(vi as object, { mocked });
 
-const mockGetOptionalAuthToken = vi.fn(async () => undefined as string | undefined);
-vi.mock("../authToken.js", () => ({
-  getOptionalAuthToken: () => mockGetOptionalAuthToken(),
-}));
-
-const mockSpinner = {
-  stop: vi.fn(),
-  fail: vi.fn(),
-  start: vi.fn(),
-  succeed: vi.fn(),
-  isSpinning: false,
-  text: "",
-};
+const authTokenMocks = createAuthTokenModuleMocks();
+const registryMocks = createRegistryModuleMocks();
+const httpMocks = createHttpModuleMocks();
+const uiMocks = createUiModuleMocks();
+const mockApiRequest = httpMocks.apiRequest;
+const mockDownloadZip = httpMocks.downloadZip;
+const mockGetOptionalAuthToken = authTokenMocks.getOptionalAuthToken;
+const mockSpinner = uiMocks.spinner;
 const mockIsInteractive = vi.fn(() => false);
 const mockPromptConfirm = vi.fn(async () => false);
+vi.mock("../../http.js", () => httpMocks.moduleFactory());
+vi.mock("../registry.js", () => registryMocks.moduleFactory());
+vi.mock("../authToken.js", () => authTokenMocks.moduleFactory());
 vi.mock("../ui.js", () => ({
   createSpinner: vi.fn(() => mockSpinner),
-  fail: (message: string) => {
-    throw new Error(message);
-  },
+  fail: (message: string) => uiMocks.fail(message),
   formatError: (error: unknown) => (error instanceof Error ? error.message : String(error)),
   isInteractive: mockIsInteractive,
   promptConfirm: mockPromptConfirm,
 }));
 
-vi.mock("../../skills.js", () => ({
-  extractZipToDir: vi.fn(),
-  hashSkillFiles: vi.fn(),
-  listTextFiles: vi.fn(),
-  readLockfile: vi.fn(),
-  readSkillOrigin: vi.fn(),
-  writeLockfile: vi.fn(),
-  writeSkillOrigin: vi.fn(),
-}));
+const extractZipToDirMock = vi.spyOn(skillStore, "extractZipToDir");
+const hashSkillFilesMock = vi.spyOn(skillStore, "hashSkillFiles");
+const listTextFilesMock = vi.spyOn(skillStore, "listTextFiles");
+const readLockfileMock = vi.spyOn(skillStore, "readLockfile");
+const readSkillOriginMock = vi.spyOn(skillStore, "readSkillOrigin");
+const writeLockfileMock = vi.spyOn(skillStore, "writeLockfile");
+const writeSkillOriginMock = vi.spyOn(skillStore, "writeSkillOrigin");
 
-vi.mock("node:fs/promises", () => ({
-  mkdir: vi.fn(),
-  rm: vi.fn(),
-  stat: vi.fn(),
-}));
+const mkdirMock = fsMocks.mkdir;
+const rmMock = fsMocks.rm;
+const statMock = fsMocks.stat;
+const commandSkillsModuleSpecifier = "./skills.js?command-skills-test" as string;
 
 const {
   clampLimit,
@@ -71,7 +73,7 @@ const {
   cmdUninstall,
   cmdUpdate,
   formatExploreLine,
-} = await import("./skills");
+} = (await import(commandSkillsModuleSpecifier)) as typeof import("./skills");
 const {
   extractZipToDir,
   hashSkillFiles,
@@ -80,23 +82,40 @@ const {
   readSkillOrigin,
   writeLockfile,
   writeSkillOrigin,
-} = await import("../../skills.js");
-const { rm, stat } = await import("node:fs/promises");
+} = skillStore;
+const { rm, stat } = fsPromises;
 
 const mockLog = vi.spyOn(console, "log").mockImplementation(() => {});
 
-function makeOpts(): GlobalOpts {
-  return {
-    workdir: "/work",
-    dir: "/work/skills",
-    site: "https://clawhub.ai",
-    registry: "https://clawhub.ai",
-    registrySource: "default",
-  };
+function makeOpts() {
+  return makeGlobalOpts();
 }
+
+beforeEach(() => {
+  mkdirMock.mockResolvedValue(undefined);
+  rmMock.mockResolvedValue(undefined);
+  statMock.mockRejectedValue(new Error("missing"));
+  extractZipToDirMock.mockResolvedValue(undefined);
+  hashSkillFilesMock.mockReturnValue({ fingerprint: "hash", files: [] });
+  listTextFilesMock.mockResolvedValue([]);
+  readLockfileMock.mockResolvedValue({ version: 1, skills: {} });
+  readSkillOriginMock.mockResolvedValue(null);
+  writeLockfileMock.mockResolvedValue(undefined);
+  writeSkillOriginMock.mockResolvedValue(undefined);
+});
 
 afterEach(() => {
   vi.clearAllMocks();
+});
+
+afterAll(() => {
+  extractZipToDirMock.mockRestore();
+  hashSkillFilesMock.mockRestore();
+  listTextFilesMock.mockRestore();
+  readLockfileMock.mockRestore();
+  readSkillOriginMock.mockRestore();
+  writeLockfileMock.mockRestore();
+  writeSkillOriginMock.mockRestore();
 });
 
 describe("explore helpers", () => {
@@ -512,10 +531,10 @@ describe("cmdUninstall", () => {
 
     await cmdUninstall(makeOpts(), "demo", { yes: true }, false);
 
-    const rmMock = vi.mocked(rm);
-    const writeLockfileMock = vi.mocked(writeLockfile);
-    expect(rmMock.mock.invocationCallOrder[0]).toBeLessThan(
-      writeLockfileMock.mock.invocationCallOrder[0],
+    const rmCallMock = vi.mocked(rm);
+    const writeLockfileCallMock = vi.mocked(writeLockfile);
+    expect(rmCallMock.mock.invocationCallOrder[0]).toBeLessThan(
+      writeLockfileCallMock.mock.invocationCallOrder[0],
     );
   });
 

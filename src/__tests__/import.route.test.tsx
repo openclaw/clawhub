@@ -1,9 +1,11 @@
+import type { ReactNode } from "react";
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { vi } from "vitest";
 import { ImportGitHub } from "../routes/import";
 
 vi.mock("@tanstack/react-router", () => ({
   createFileRoute: () => (config: { component: unknown }) => config,
+  Link: (props: { children: ReactNode }) => <a href="/">{props.children}</a>,
   useNavigate: () => vi.fn(),
 }));
 

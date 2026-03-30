@@ -77,7 +77,7 @@ clawhub sync --root /path/to/skills
 - Options:
   - keep local edits; skip updating
   - overwrite: `clawhub update <slug> --force`
-  - publish as fork: copy to new folder/slug then `clawhub publish ... --fork-of upstream@version`
+  - publish as fork: copy to new folder/slug then `clawhub skill publish ... --fork-of upstream@version`
 
 ## `GET /api/*` works locally but not on Vercel
 
@@ -90,4 +90,5 @@ clawhub sync --root /path/to/skills
   - `CONVEX_DEPLOY_KEY`
   - `VERCEL_TOKEN`
   - Optional: `PLAYWRIGHT_AUTH_STORAGE_STATE_JSON`
+- Missing required deploy secrets now fails the preflight job immediately.
 - If the optional Playwright auth secret is missing, authenticated smoke canaries will skip; deploy should still proceed.

@@ -15,7 +15,7 @@ type SkillOwnershipPanelProps = {
   skillId: Id<"skills">;
   slug: string;
   ownerHandle: string | null;
-  ownerId: Id<"users"> | null;
+  ownerId: Id<"users"> | Id<"publishers"> | null;
   ownedSkills: OwnedSkillOption[];
 };
 

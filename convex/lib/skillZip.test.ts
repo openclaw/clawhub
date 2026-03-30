@@ -2,7 +2,12 @@
 
 import { unzipSync } from "fflate";
 import { describe, expect, it } from "vitest";
-import { buildDeterministicZip, buildSkillMeta, type SkillZipMeta } from "./skillZip";
+import {
+  buildDeterministicPackageZip,
+  buildDeterministicZip,
+  buildSkillMeta,
+  type SkillZipMeta,
+} from "./skillZip";
 
 describe("skillZip", () => {
   describe("buildSkillMeta", () => {
@@ -134,6 +139,19 @@ describe("skillZip", () => {
       const unzipped = unzipSync(zip);
 
       expect(Object.keys(unzipped).sort()).toEqual(["SKILL.md", "docs/readme.md", "src/index.ts"]);
+    });
+  });
+
+  describe("buildDeterministicPackageZip", () => {
+    it("wraps package files under a package/ root", () => {
+      const zip = buildDeterministicPackageZip([
+        { path: "package.json", bytes: new TextEncoder().encode("{}") },
+        { path: "dist/index.js", bytes: new TextEncoder().encode("export default {}") },
+      ]);
+      const unzipped = unzipSync(zip);
+
+      expect(Object.keys(unzipped).sort()).toEqual(["package/dist/index.js", "package/package.json"]);
+      expect(unzipped["_meta.json"]).toBeUndefined();
     });
   });
 });

@@ -30,6 +30,7 @@ read_when:
 
 - `authId` (from Convex Auth provider)
 - `handle` (GitHub login)
+- reserved org/platform handles are held separately so official account names cannot be auto-claimed by unrelated sign-ins
 - `name`, `bio`
 - `avatarUrl` (GitHub, fallback gravatar)
 - `role`: `admin | moderator | user` (moderators can soft-delete and flag; admins can hard-delete + change owners)

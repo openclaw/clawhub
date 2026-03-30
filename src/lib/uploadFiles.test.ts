@@ -91,6 +91,21 @@ describe("expandFiles", () => {
     expect(png).toBeUndefined();
   });
 
+  it("keeps binary files from archives when requested", async () => {
+    const zip = zipSync({
+      "plugin/package.json": strToU8('{"name":"demo"}'),
+      "plugin/dist/module.wasm": Uint8Array.from([0, 1, 2, 3]),
+    });
+    const zipFile = new File([Uint8Array.from(zip).buffer], "pack.zip", {
+      type: "application/zip",
+    });
+    const report = await expandFilesWithReport([zipFile], {
+      includeBinaryArchiveFiles: true,
+    });
+
+    expect(report.files.map((file) => file.name)).toEqual(["package.json", "dist/module.wasm"]);
+  });
+
   it("filters mac junk files and reports ignored paths", async () => {
     const report = await expandFilesWithReport([
       new File(["hello"], "SKILL.md", { type: "text/markdown" }),
@@ -126,6 +141,22 @@ describe("expandFiles", () => {
     });
     const result = await expandFiles([tgzFile]);
     expect(result.map((file) => file.name)).toEqual(["SKILL.md", "notes.txt"]);
+  });
+
+  it("keeps binary files from tar.gz archives when requested", async () => {
+    const tar = buildTar([
+      { name: "plugin/package.json", content: '{"name":"demo"}' },
+      { name: "plugin/dist/loader.node", content: "\u0000\u0001\u0002" },
+    ]);
+    const tgz = gzipSync(tar);
+    const tgzFile = new File([Uint8Array.from(tgz).buffer], "bundle.tgz", {
+      type: "application/gzip",
+    });
+    const report = await expandFilesWithReport([tgzFile], {
+      includeBinaryArchiveFiles: true,
+    });
+
+    expect(report.files.map((file) => file.name)).toEqual(["package.json", "dist/loader.node"]);
   });
 
   it("expands .gz single files", async () => {

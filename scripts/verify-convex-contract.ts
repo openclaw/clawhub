@@ -1,5 +1,6 @@
 import { spawnSync } from "node:child_process";
-import { readFileSync, readdirSync } from "node:fs";
+import { mkdtempSync, readFileSync, readdirSync } from "node:fs";
+import { tmpdir } from "node:os";
 import { join, relative } from "node:path";
 import ts from "typescript";
 
@@ -55,8 +56,9 @@ function getExpectedIdentifiers() {
 }
 
 function getRemoteIdentifiers(cliArgs: string[]) {
-  const result = spawnSync("bunx", ["convex", "function-spec", ...cliArgs], {
-    cwd: root,
+  const tempDir = mkdtempSync(join(tmpdir(), "clawhub-function-spec-"));
+  const result = spawnSync("bunx", ["convex", "function-spec", "--file", ...cliArgs], {
+    cwd: tempDir,
     encoding: "utf8",
   });
   if (result.status !== 0) {
@@ -64,7 +66,16 @@ function getRemoteIdentifiers(cliArgs: string[]) {
     process.exit(result.status ?? 1);
   }
 
-  const parsed = JSON.parse(result.stdout) as {
+  const fileName = readdirSync(tempDir)
+    .filter((entry) => entry.startsWith("function_spec_") && entry.endsWith(".json"))
+    .sort()
+    .at(-1);
+  if (!fileName) {
+    process.stderr.write(result.stderr || result.stdout || "Missing function spec output\n");
+    process.exit(1);
+  }
+
+  const parsed = JSON.parse(readFileSync(join(tempDir, fileName), "utf8")) as {
     functions?: Array<{ identifier?: string }>;
   };
   return new Set(

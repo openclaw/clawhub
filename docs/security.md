@@ -8,6 +8,8 @@ read_when:
 
 # Security + Moderation
 
+See also: [acceptable-usage.md](./acceptable-usage.md) for the marketplace policy on prohibited skill categories.
+
 ## Roles + permissions
 
 - user: upload skills/souls (subject to GitHub age gate), report skills/comments.
@@ -42,6 +44,11 @@ read_when:
 ## Skill moderation pipeline
 
 - New skill publishes now persist a deterministic static scan result on the version.
+- Package/plugin scan backfills now also recompute deterministic static scan results for older releases,
+  so legacy plugin versions can surface OpenClaw scan findings without republishing.
+- Source-linked packages can fall back to a clean package verdict when VirusTotal only returns
+  undetected engine results, provided the LLM scan is clean and static scan is non-malicious. This
+  avoids indefinite pending scans when VT Code Insight never materializes.
 - Skill moderation state stores a structured snapshot:
   - `moderationVerdict`: `clean | suspicious | malicious`
   - `moderationReasonCodes[]`: canonical machine-readable reasons

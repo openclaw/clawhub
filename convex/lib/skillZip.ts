@@ -40,3 +40,14 @@ export function buildDeterministicZip(entries: ZipEntry[], meta?: SkillZipMeta) 
 
   return Uint8Array.from(zipSync(zipData, { level: 6 }));
 }
+
+export function buildDeterministicPackageZip(entries: ZipEntry[]) {
+  const sorted = [...entries].sort((a, b) => a.path.localeCompare(b.path));
+  const zipData: ZipInput = {};
+
+  for (const entry of sorted) {
+    zipData[`package/${entry.path}`] = [entry.bytes, { mtime: FIXED_ZIP_DATE }];
+  }
+
+  return Uint8Array.from(zipSync(zipData, { level: 6 }));
+}

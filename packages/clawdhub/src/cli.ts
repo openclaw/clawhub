@@ -14,6 +14,11 @@ import {
 import { cmdInspect } from "./cli/commands/inspect.js";
 import { cmdBanUser, cmdSetRole } from "./cli/commands/moderation.js";
 import { cmdMergeSkill, cmdRenameSkill } from "./cli/commands/ownership.js";
+import {
+  cmdExplorePackages,
+  cmdInspectPackage,
+  cmdPublishPackage,
+} from "./cli/commands/packages.js";
 import { cmdPublish } from "./cli/commands/publish.js";
 import {
   cmdExplore,
@@ -43,7 +48,7 @@ const program = new Command()
   .name("clawhub")
   .description(
     `${styleTitle(`ClawHub CLI ${getCliBuildLabel()}`)}\n${styleEnvBlock(
-      "install, update, search, and publish agent skills.",
+      "install, update, search, and publish skills plus OpenClaw packages.",
     )}`,
   )
   .version(getCliVersion(), "-V, --cli-version", "Show CLI version")
@@ -271,7 +276,7 @@ program
 
 program
   .command("publish")
-  .description("Publish skill from folder")
+  .description("Legacy alias: publish a skill from folder")
   .argument("<path>", "Skill folder path")
   .option("--slug <slug>", "Skill slug")
   .option("--name <name>", "Display name")
@@ -325,6 +330,84 @@ program
   });
 
 const skill = program.command("skill").description("Manage published skills");
+skill
+  .command("publish")
+  .description("Publish a skill from folder")
+  .argument("<path>", "Skill folder path")
+  .option("--slug <slug>", "Skill slug")
+  .option("--name <name>", "Display name")
+  .option("--version <version>", "Version (semver)")
+  .option("--fork-of <slug[@version]>", "Mark as a fork of an existing skill")
+  .option("--changelog <text>", "Changelog text")
+  .option("--tags <tags>", "Comma-separated tags", "latest")
+  .action(async (folder, options) => {
+    const opts = await resolveGlobalOpts();
+    await cmdPublish(opts, folder, options);
+  });
+
+const packageCmd = program
+  .command("package")
+  .description("Browse and publish OpenClaw packages");
+
+packageCmd
+  .command("explore")
+  .description("Browse published packages and plugins")
+  .argument("[query...]", "Optional search query")
+  .option("--family <family>", "skill|code-plugin|bundle-plugin")
+  .option("--official", "Only official packages")
+  .option("--executes-code", "Only packages that execute code")
+  .option(
+    "--limit <n>",
+    "Number of packages to show (max 100)",
+    (value) => Number.parseInt(value, 10),
+    25,
+  )
+  .option("--json", "Output JSON")
+  .action(async (queryParts, options) => {
+    const opts = await resolveGlobalOpts();
+    const query = Array.isArray(queryParts) ? queryParts.join(" ").trim() : "";
+    await cmdExplorePackages(opts, query, options);
+  });
+
+packageCmd
+  .command("inspect")
+  .description("Fetch package metadata and files without installing")
+  .argument("<name>", "Package name")
+  .option("--version <version>", "Version to inspect")
+  .option("--tag <tag>", "Tag to inspect (default: latest)")
+  .option("--versions", "List version history (first page)")
+  .option("--limit <n>", "Max versions to list (1-100)", (value) => Number.parseInt(value, 10))
+  .option("--files", "List files for the selected version")
+  .option("--file <path>", "Fetch raw file content (text only)")
+  .option("--json", "Output JSON")
+  .action(async (name, options) => {
+    const opts = await resolveGlobalOpts();
+    await cmdInspectPackage(opts, name, options);
+  });
+
+packageCmd
+  .command("publish")
+  .description("Publish a code plugin or bundle plugin from a folder or GitHub source")
+  .argument("<source>", "Package folder path, GitHub repo (owner/repo[@ref]), or URL")
+  .option("--family <family>", "code-plugin|bundle-plugin")
+  .option("--name <name>", "Package name")
+  .option("--display-name <name>", "Display name")
+  .option("--owner <handle>", "Publish under this owner handle (admin only)")
+  .option("--version <version>", "Version")
+  .option("--changelog <text>", "Changelog text")
+  .option("--tags <tags>", "Comma-separated tags", "latest")
+  .option("--bundle-format <format>", "Bundle format")
+  .option("--host-targets <targets>", "Comma-separated bundle host targets")
+  .option("--source-repo <repo>", "GitHub repo (owner/repo or URL)")
+  .option("--source-commit <sha>", "Git commit SHA")
+  .option("--source-ref <ref>", "Git ref/tag/branch")
+  .option("--source-path <path>", "Repo subpath")
+  .option("--dry-run", "Preview what would be published without uploading")
+  .option("--json", "Output JSON (for CI pipelines)")
+  .action(async (source, options) => {
+    const opts = await resolveGlobalOpts();
+    await cmdPublishPackage(opts, source, options);
+  });
 
 skill
   .command("rename")

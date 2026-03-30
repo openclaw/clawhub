@@ -1,14 +1,14 @@
+import type { ClawdisSkillMetadata } from "clawhub-schema";
 import { Link } from "@tanstack/react-router";
 import {
-  type ClawdisSkillMetadata,
   PLATFORM_SKILL_LICENSE,
   PLATFORM_SKILL_LICENSE_SUMMARY,
-} from "clawhub-schema";
+} from "clawhub-schema/licenseConstants";
 import { Package } from "lucide-react";
 import type { Doc, Id } from "../../convex/_generated/dataModel";
 import { getSkillBadges } from "../lib/badges";
 import { formatCompactStat, formatSkillStatsTriplet } from "../lib/numberFormat";
-import type { PublicSkill, PublicUser } from "../lib/publicUser";
+import type { PublicPublisher, PublicSkill } from "../lib/publicUser";
 import { getRuntimeEnv } from "../lib/runtimeEnv";
 import { SkillInstallCard } from "./SkillInstallCard";
 import { type LlmAnalysis, SecurityScanResults } from "./SkillSecurityScanResults";
@@ -39,7 +39,7 @@ type SkillCanonical = {
 
 type SkillHeaderProps = {
   skill: Doc<"skills"> | PublicSkill;
-  owner: Doc<"users"> | PublicUser | null;
+  owner: PublicPublisher | null;
   ownerHandle: string | null;
   latestVersion: Doc<"skillVersions"> | null;
   modInfo: SkillModerationInfo | null;
@@ -71,6 +71,7 @@ type SkillHeaderProps = {
   tagVersionId: Id<"skillVersions"> | "";
   onTagVersionChange: (value: Id<"skillVersions"> | "") => void;
   onTagSubmit: () => void;
+  onTagDelete: (tag: string) => void;
   tagVersions: Doc<"skillVersions">[];
   clawdis: ClawdisSkillMetadata | undefined;
   osLabels: string[];
@@ -110,6 +111,7 @@ export function SkillHeader({
   tagVersionId,
   onTagVersionChange,
   onTagSubmit,
+  onTagDelete,
   tagVersions,
   clawdis,
   osLabels,
@@ -364,6 +366,17 @@ export function SkillHeader({
                 <span className="tag-meta">
                   v{versionById.get(versionId)?.version ?? versionId}
                 </span>
+                {canManage && tag !== "latest" ? (
+                  <button
+                    type="button"
+                    className="tag-delete"
+                    onClick={() => onTagDelete(tag)}
+                    aria-label={`Delete tag ${tag}`}
+                    title={`Delete tag "${tag}"`}
+                  >
+                    ×
+                  </button>
+                ) : null}
               </span>
             ))
           )}

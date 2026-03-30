@@ -157,13 +157,14 @@ describe("digestToOwnerInfo", () => {
     expect(result).not.toBeNull();
     expect(result!.ownerHandle).toBe("jdoe");
     expect(result!.owner).toEqual({
-      _id: "users:owner",
+      _id: "publishers:missing",
       _creationTime: 0,
+      kind: "user",
       handle: "jdoe",
-      name: "John",
       displayName: "John Doe",
       image: "https://example.com/avatar.png",
       bio: undefined,
+      linkedUserId: "users:owner",
     });
   });
 
@@ -190,13 +191,14 @@ describe("digestToOwnerInfo", () => {
     expect(result).not.toBeNull();
     expect(result!.ownerHandle).toBe("users:owner");
     expect(result!.owner).toEqual({
-      _id: "users:owner",
+      _id: "publishers:missing",
       _creationTime: 0,
-      handle: undefined,
-      name: "No Handle User",
+      kind: "user",
+      handle: "users:owner",
       displayName: "No Handle",
       image: "https://example.com/avatar.png",
       bio: undefined,
+      linkedUserId: "users:owner",
     });
   });
 

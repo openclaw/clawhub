@@ -47,9 +47,9 @@ read_when:
   - `SKILL.md`
   - `notes.md`
 - Publish:
-  - `bun clawhub publish . --slug clawhub-manual-<ts> --name "Manual <ts>" --version 1.0.0 --tags latest`
+  - `bun clawhub skill publish . --slug clawhub-manual-<ts> --name "Manual <ts>" --version 1.0.0 --tags latest`
 - Publish update with empty changelog:
-  - `bun clawhub publish . --slug clawhub-manual-<ts> --name "Manual <ts>" --version 1.0.1 --tags latest`
+  - `bun clawhub skill publish . --slug clawhub-manual-<ts> --name "Manual <ts>" --version 1.0.1 --tags latest`
 
 ## Delete / undelete (owner/admin)
 

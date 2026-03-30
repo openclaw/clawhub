@@ -1,4 +1,4 @@
-import { isTextContentType, TEXT_FILE_EXTENSION_SET } from "clawhub-schema";
+import { isTextContentType, TEXT_FILE_EXTENSION_SET } from "clawhub-schema/textFiles";
 import { getUserFacingConvexError } from "./convexError";
 
 export async function uploadFile(uploadUrl: string, file: File) {

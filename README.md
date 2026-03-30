@@ -12,6 +12,7 @@
 
 ClawHub is the **public skill registry for Clawdbot**: publish, version, and search text-based agent skills (a `SKILL.md` plus supporting files).
 It's designed for fast browsing + a CLI-friendly API, with moderation hooks and vector search.
+It also now exposes a native **OpenClaw package catalog** for code plugins and bundle plugins.
 
 onlycrabs.ai is the **SOUL.md registry**: publish and share system lore the same way you publish skills.
 
@@ -34,6 +35,8 @@ onlycrabs.ai is the **SOUL.md registry**: publish and share system lore the same
 - Publish new soul versions with changelogs + tags.
 - Search via embeddings (vector index) instead of brittle keywords.
 - Star + comment; admins/mods can curate and approve skills.
+- Browse OpenClaw packages with family/trust/capability metadata.
+- Publish native code plugins and bundle plugins through `/packages` APIs and CLI flows.
 
 ## onlycrabs.ai (SOUL.md registry)
 
@@ -55,9 +58,11 @@ Common CLI flows:
 
 - Auth: `clawhub login`, `clawhub whoami`
 - Discover: `clawhub search ...`, `clawhub explore`
+- Browse unified catalog (skills + plugins): `clawhub package explore`, `clawhub package inspect <name>`
 - Manage local installs: `clawhub install <slug>`, `clawhub uninstall <slug>`, `clawhub list`, `clawhub update --all`
 - Inspect without installing: `clawhub inspect <slug>`
-- Publish/sync: `clawhub publish <path>`, `clawhub sync`
+- Publish/sync skills: `clawhub skill publish <path>`, `clawhub sync`
+- Publish plugins: `clawhub package publish <source>`
 - Canonicalize owned skills: `clawhub skill rename <slug> <new-slug>`, `clawhub skill merge <source> <target>`
 
 Docs: [`docs/quickstart.md`](docs/quickstart.md), [`docs/cli.md`](docs/cli.md).

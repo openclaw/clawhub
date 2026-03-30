@@ -1,62 +1,28 @@
 /* @vitest-environment node */
 
 import { afterEach, describe, expect, it, vi } from "vitest";
+import {
+  createAuthTokenModuleMocks,
+  createHttpModuleMocks,
+  createRegistryModuleMocks,
+  createUiModuleMocks,
+  makeGlobalOpts,
+} from "../../../test/cliCommandTestKit.js";
 import { ApiRoutes } from "../../schema/index.js";
-import type { GlobalOpts } from "../types";
+const authTokenMocks = createAuthTokenModuleMocks();
+const registryMocks = createRegistryModuleMocks();
+const httpMocks = createHttpModuleMocks();
+const uiMocks = createUiModuleMocks();
 
-const mockApiRequest = vi.fn();
-const mockFetchText = vi.fn();
-const mockRegistryUrl = vi.fn((path: string, registry: string) => {
-  const base = registry.endsWith("/") ? registry : `${registry}/`;
-  const relative = path.startsWith("/") ? path.slice(1) : path;
-  return new URL(relative, base);
-});
-vi.mock("../../http.js", () => ({
-  apiRequest: (...args: unknown[]) => mockApiRequest(...args),
-  fetchText: (...args: unknown[]) => mockFetchText(...args),
-  registryUrl: (...args: [string, string]) => mockRegistryUrl(...args),
-}));
-
-const mockGetRegistry = vi.fn(async () => "https://clawhub.ai");
-vi.mock("../registry.js", () => ({
-  getRegistry: () => mockGetRegistry(),
-}));
-
-const mockGetOptionalAuthToken = vi.fn(async () => undefined as string | undefined);
-vi.mock("../authToken.js", () => ({
-  getOptionalAuthToken: () => mockGetOptionalAuthToken(),
-}));
-
-const mockSpinner = {
-  stop: vi.fn(),
-  fail: vi.fn(),
-  start: vi.fn(),
-  succeed: vi.fn(),
-  isSpinning: false,
-  text: "",
-};
-vi.mock("../ui.js", () => ({
-  createSpinner: vi.fn(() => mockSpinner),
-  fail: (message: string) => {
-    throw new Error(message);
-  },
-  formatError: (error: unknown) => (error instanceof Error ? error.message : String(error)),
-}));
+vi.mock("../../http.js", () => httpMocks.moduleFactory());
+vi.mock("../registry.js", () => registryMocks.moduleFactory());
+vi.mock("../authToken.js", () => authTokenMocks.moduleFactory());
+vi.mock("../ui.js", () => uiMocks.moduleFactory());
 
 const { cmdInspect } = await import("./inspect");
 
 const mockLog = vi.spyOn(console, "log").mockImplementation(() => {});
 const mockWrite = vi.spyOn(process.stdout, "write").mockImplementation(() => true);
-
-function makeOpts(): GlobalOpts {
-  return {
-    workdir: "/work",
-    dir: "/work/skills",
-    site: "https://clawhub.ai",
-    registry: "https://clawhub.ai",
-    registrySource: "default",
-  };
-}
 
 afterEach(() => {
   vi.clearAllMocks();
@@ -66,7 +32,7 @@ afterEach(() => {
 
 describe("cmdInspect", () => {
   it("fetches latest version files when --files is set", async () => {
-    mockApiRequest
+    httpMocks.apiRequest
       .mockResolvedValueOnce({
         skill: {
           slug: "demo",
@@ -85,10 +51,10 @@ describe("cmdInspect", () => {
         version: { version: "1.2.3", createdAt: 3, changelog: "init", files: [] },
       });
 
-    await cmdInspect(makeOpts(), "demo", { files: true });
+    await cmdInspect(makeGlobalOpts(), "demo", { files: true });
 
-    const firstArgs = mockApiRequest.mock.calls[0]?.[1];
-    const secondArgs = mockApiRequest.mock.calls[1]?.[1];
+    const firstArgs = httpMocks.apiRequest.mock.calls[0]?.[1];
+    const secondArgs = httpMocks.apiRequest.mock.calls[1]?.[1];
     expect(firstArgs?.path).toBe(`${ApiRoutes.skills}/${encodeURIComponent("demo")}`);
     expect(secondArgs?.path).toBe(
       `${ApiRoutes.skills}/${encodeURIComponent("demo")}/versions/${encodeURIComponent("1.2.3")}`,
@@ -96,7 +62,7 @@ describe("cmdInspect", () => {
   });
 
   it("uses tag param when fetching a file", async () => {
-    mockApiRequest
+    httpMocks.apiRequest
       .mockResolvedValueOnce({
         skill: {
           slug: "demo",
@@ -114,11 +80,11 @@ describe("cmdInspect", () => {
         skill: { slug: "demo", displayName: "Demo" },
         version: { version: "2.0.0", createdAt: 3, changelog: "init", files: [] },
       });
-    mockFetchText.mockResolvedValue("content");
+    httpMocks.fetchText.mockResolvedValue("content");
 
-    await cmdInspect(makeOpts(), "demo", { file: "SKILL.md", tag: "latest" });
+    await cmdInspect(makeGlobalOpts(), "demo", { file: "SKILL.md", tag: "latest" });
 
-    const fetchArgs = mockFetchText.mock.calls[0]?.[1];
+    const fetchArgs = httpMocks.fetchText.mock.calls[0]?.[1];
     const url = new URL(String(fetchArgs?.url));
     expect(url.pathname).toBe("/api/v1/skills/demo/file");
     expect(url.searchParams.get("path")).toBe("SKILL.md");
@@ -127,7 +93,7 @@ describe("cmdInspect", () => {
   });
 
   it("prints security summary when version security metadata exists", async () => {
-    mockApiRequest
+    httpMocks.apiRequest
       .mockResolvedValueOnce({
         skill: {
           slug: "demo",
@@ -157,7 +123,7 @@ describe("cmdInspect", () => {
         },
       });
 
-    await cmdInspect(makeOpts(), "demo", { version: "2.0.0" });
+    await cmdInspect(makeGlobalOpts(), "demo", { version: "2.0.0" });
 
     expect(mockLog).toHaveBeenCalledWith(expect.stringContaining("License: MIT-0"));
     expect(mockLog).toHaveBeenCalledWith("Security: SUSPICIOUS");
@@ -168,7 +134,7 @@ describe("cmdInspect", () => {
 
   it("rejects when both version and tag are provided", async () => {
     await expect(
-      cmdInspect(makeOpts(), "demo", { version: "1.0.0", tag: "latest" }),
+      cmdInspect(makeGlobalOpts(), "demo", { version: "1.0.0", tag: "latest" }),
     ).rejects.toThrow("Use either --version or --tag");
   });
 });

@@ -8,6 +8,24 @@ read_when:
 
 # GitHub import (public repos)
 
+## CLI
+
+For plugin authors, the recommended GitHub import path is now the CLI:
+
+```bash
+clawhub package publish owner/repo
+clawhub package publish owner/repo@v1.0.0
+clawhub package publish https://github.com/owner/repo
+
+# Preview only
+clawhub package publish owner/repo --dry-run
+
+# CI-friendly output
+clawhub package publish owner/repo --dry-run --json
+```
+
+This keeps package metadata zero-config where possible and auto-populates GitHub provenance.
+
 Goal: paste a GitHub URL → auto-detect skill → preview files → publish (selective) → persist provenance.
 
 Non-goal (v1): private repos (no OAuth/PAT support).

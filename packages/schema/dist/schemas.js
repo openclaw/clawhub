@@ -1,357 +1,368 @@
-import { type } from 'arktype';
-import { SkillPlatformLicenseSchema } from './license.js';
+import { type } from "arktype";
+import { SkillPlatformLicenseSchema } from "./license.js";
 export const GlobalConfigSchema = type({
-    registry: 'string',
-    token: 'string?',
+    registry: "string",
+    token: "string?",
 });
 export const WellKnownConfigSchema = type({
-    apiBase: 'string',
-    authBase: 'string?',
-    minCliVersion: 'string?',
+    apiBase: "string",
+    authBase: "string?",
+    minCliVersion: "string?",
 }).or({
-    registry: 'string',
-    authBase: 'string?',
-    minCliVersion: 'string?',
+    registry: "string",
+    authBase: "string?",
+    minCliVersion: "string?",
 });
 export const LockfileSchema = type({
-    version: '1',
+    version: "1",
     skills: {
-        '[string]': {
-            version: 'string|null',
-            installedAt: 'number',
+        "[string]": {
+            version: "string|null",
+            installedAt: "number",
         },
     },
 });
 export const ApiCliWhoamiResponseSchema = type({
     user: {
-        handle: 'string|null',
+        handle: "string|null",
     },
 });
 export const ApiSearchResponseSchema = type({
     results: type({
-        slug: 'string?',
-        displayName: 'string?',
-        version: 'string|null?',
-        score: 'number',
+        slug: "string?",
+        displayName: "string?",
+        version: "string|null?",
+        score: "number",
     }).array(),
 });
 export const ApiSkillMetaResponseSchema = type({
     latestVersion: type({
-        version: 'string',
+        version: "string",
     }).optional(),
-    skill: 'unknown|null?',
+    skill: "unknown|null?",
 });
 export const ApiCliUploadUrlResponseSchema = type({
-    uploadUrl: 'string',
+    uploadUrl: "string",
 });
 export const ApiUploadFileResponseSchema = type({
-    storageId: 'string',
+    storageId: "string",
 });
 export const CliPublishFileSchema = type({
-    path: 'string',
-    size: 'number',
-    storageId: 'string',
-    sha256: 'string',
-    contentType: 'string?',
+    path: "string",
+    size: "number",
+    storageId: "string",
+    sha256: "string",
+    contentType: "string?",
 });
 export const PublishSourceSchema = type({
     kind: '"github"',
-    url: 'string',
-    repo: 'string',
-    ref: 'string',
-    commit: 'string',
-    path: 'string',
-    importedAt: 'number',
+    url: "string",
+    repo: "string",
+    ref: "string",
+    commit: "string",
+    path: "string",
+    importedAt: "number",
 });
 export const CliPublishRequestSchema = type({
-    slug: 'string',
-    displayName: 'string',
-    version: 'string',
-    changelog: 'string',
-    acceptLicenseTerms: 'boolean?',
-    tags: 'string[]?',
+    slug: "string",
+    displayName: "string",
+    version: "string",
+    changelog: "string",
+    acceptLicenseTerms: "boolean?",
+    tags: "string[]?",
     source: PublishSourceSchema.optional(),
     forkOf: type({
-        slug: 'string',
-        version: 'string?',
+        slug: "string",
+        version: "string?",
     }).optional(),
     files: CliPublishFileSchema.array(),
 });
 export const ApiCliPublishResponseSchema = type({
-    ok: 'true',
-    skillId: 'string',
-    versionId: 'string',
+    ok: "true",
+    skillId: "string",
+    versionId: "string",
 });
 export const CliSkillDeleteRequestSchema = type({
-    slug: 'string',
+    slug: "string",
 });
 export const ApiCliSkillDeleteResponseSchema = type({
-    ok: 'true',
+    ok: "true",
 });
 export const ApiSkillResolveResponseSchema = type({
-    match: type({ version: 'string' }).or('null'),
-    latestVersion: type({ version: 'string' }).or('null'),
+    match: type({ version: "string" }).or("null"),
+    latestVersion: type({ version: "string" }).or("null"),
 });
 export const CliTelemetrySyncRequestSchema = type({
     roots: type({
-        rootId: 'string',
-        label: 'string',
+        rootId: "string",
+        label: "string",
         skills: type({
-            slug: 'string',
-            version: 'string|null?',
+            slug: "string",
+            version: "string|null?",
         }).array(),
     }).array(),
 });
 export const ApiCliTelemetrySyncResponseSchema = type({
-    ok: 'true',
+    ok: "true",
 });
 export const ApiV1WhoamiResponseSchema = type({
     user: {
-        handle: 'string|null',
-        displayName: 'string|null?',
-        image: 'string|null?',
+        handle: "string|null",
+        displayName: "string|null?",
+        image: "string|null?",
     },
 });
 export const ApiV1UserSearchResponseSchema = type({
     items: type({
-        userId: 'string',
-        handle: 'string|null',
-        displayName: 'string|null?',
-        name: 'string|null?',
+        userId: "string",
+        handle: "string|null",
+        displayName: "string|null?",
+        name: "string|null?",
         role: '"admin"|"moderator"|"user"|null?',
     }).array(),
-    total: 'number',
+    total: "number",
 });
 export const ApiV1SearchResponseSchema = type({
     results: type({
-        slug: 'string?',
-        displayName: 'string?',
-        summary: 'string|null?',
-        version: 'string|null?',
-        score: 'number',
-        updatedAt: 'number?',
+        slug: "string?",
+        displayName: "string?",
+        summary: "string|null?",
+        version: "string|null?",
+        score: "number",
+        updatedAt: "number?",
     }).array(),
 });
 export const ApiV1SkillListResponseSchema = type({
     items: type({
-        slug: 'string',
-        displayName: 'string',
-        summary: 'string|null?',
-        tags: 'unknown',
-        stats: 'unknown',
-        createdAt: 'number',
-        updatedAt: 'number',
+        slug: "string",
+        displayName: "string",
+        summary: "string|null?",
+        tags: "unknown",
+        stats: "unknown",
+        createdAt: "number",
+        updatedAt: "number",
         latestVersion: type({
-            version: 'string',
-            createdAt: 'number',
-            changelog: 'string',
-            license: SkillPlatformLicenseSchema.or('null').optional(),
+            version: "string",
+            createdAt: "number",
+            changelog: "string",
+            license: SkillPlatformLicenseSchema.or("null").optional(),
         }).optional(),
     }).array(),
-    nextCursor: 'string|null',
+    nextCursor: "string|null",
 });
 export const ApiV1SkillResponseSchema = type({
     skill: type({
-        slug: 'string',
-        displayName: 'string',
-        summary: 'string|null?',
-        tags: 'unknown',
-        stats: 'unknown',
-        createdAt: 'number',
-        updatedAt: 'number',
-    }).or('null'),
+        slug: "string",
+        displayName: "string",
+        summary: "string|null?",
+        tags: "unknown",
+        stats: "unknown",
+        createdAt: "number",
+        updatedAt: "number",
+    }).or("null"),
     latestVersion: type({
-        version: 'string',
-        createdAt: 'number',
-        changelog: 'string',
-        license: SkillPlatformLicenseSchema.or('null').optional(),
-    }).or('null'),
+        version: "string",
+        createdAt: "number",
+        changelog: "string",
+        license: SkillPlatformLicenseSchema.or("null").optional(),
+    }).or("null"),
     owner: type({
-        handle: 'string|null',
-        displayName: 'string|null?',
-        image: 'string|null?',
-    }).or('null'),
+        handle: "string|null",
+        displayName: "string|null?",
+        image: "string|null?",
+    }).or("null"),
     moderation: type({
-        isSuspicious: 'boolean',
-        isMalwareBlocked: 'boolean',
+        isSuspicious: "boolean",
+        isMalwareBlocked: "boolean",
         verdict: '"clean"|"suspicious"|"malicious"?',
-        reasonCodes: 'string[]?',
-        updatedAt: 'number|null?',
-        engineVersion: 'string|null?',
-        summary: 'string|null?',
+        reasonCodes: "string[]?",
+        updatedAt: "number|null?",
+        engineVersion: "string|null?",
+        summary: "string|null?",
     })
-        .or('null')
+        .or("null")
         .optional(),
 });
 export const ApiV1SkillModerationResponseSchema = type({
     moderation: type({
-        isSuspicious: 'boolean',
-        isMalwareBlocked: 'boolean',
+        isSuspicious: "boolean",
+        isMalwareBlocked: "boolean",
         verdict: '"clean"|"suspicious"|"malicious"',
-        reasonCodes: 'string[]',
-        updatedAt: 'number|null?',
-        engineVersion: 'string|null?',
-        summary: 'string|null?',
-        legacyReason: 'string|null?',
+        reasonCodes: "string[]",
+        updatedAt: "number|null?",
+        engineVersion: "string|null?",
+        summary: "string|null?",
+        legacyReason: "string|null?",
         evidence: type({
-            code: 'string',
+            code: "string",
             severity: '"info"|"warn"|"critical"',
-            file: 'string',
-            line: 'number',
-            message: 'string',
-            evidence: 'string',
+            file: "string",
+            line: "number",
+            message: "string",
+            evidence: "string",
         }).array(),
-    }).or('null'),
+    }).or("null"),
 });
 export const ApiV1SkillVersionListResponseSchema = type({
     items: type({
-        version: 'string',
-        createdAt: 'number',
-        changelog: 'string',
+        version: "string",
+        createdAt: "number",
+        changelog: "string",
         changelogSource: '"auto"|"user"|null?',
     }).array(),
-    nextCursor: 'string|null',
+    nextCursor: "string|null",
 });
 export const SecurityStatusSchema = type({
     status: '"clean" | "suspicious" | "malicious" | "pending" | "error"',
-    hasWarnings: 'boolean',
-    checkedAt: 'number|null',
-    model: 'string|null',
+    hasWarnings: "boolean",
+    checkedAt: "number|null",
+    model: "string|null",
 });
 export const ApiV1SkillVersionResponseSchema = type({
     version: type({
-        version: 'string',
-        createdAt: 'number',
-        changelog: 'string',
+        version: "string",
+        createdAt: "number",
+        changelog: "string",
         changelogSource: '"auto"|"user"|null?',
-        license: SkillPlatformLicenseSchema.or('null').optional(),
-        files: 'unknown?',
+        license: SkillPlatformLicenseSchema.or("null").optional(),
+        files: "unknown?",
         security: SecurityStatusSchema.optional(),
-    }).or('null'),
+    }).or("null"),
     skill: type({
-        slug: 'string',
-        displayName: 'string',
-    }).or('null'),
+        slug: "string",
+        displayName: "string",
+    }).or("null"),
 });
 export const ApiV1SkillResolveResponseSchema = type({
-    match: type({ version: 'string' }).or('null'),
-    latestVersion: type({ version: 'string' }).or('null'),
+    match: type({ version: "string" }).or("null"),
+    latestVersion: type({ version: "string" }).or("null"),
 });
 export const ApiV1PublishResponseSchema = type({
-    ok: 'true',
-    skillId: 'string',
-    versionId: 'string',
+    ok: "true",
+    skillId: "string",
+    versionId: "string",
 });
 export const ApiV1DeleteResponseSchema = type({
-    ok: 'true',
+    ok: "true",
+});
+export const ApiV1SkillRenameResponseSchema = type({
+    ok: "true",
+    slug: "string",
+    previousSlug: "string",
+});
+export const ApiV1SkillMergeResponseSchema = type({
+    ok: "true",
+    sourceSlug: "string",
+    targetSlug: "string",
 });
 export const ApiV1TransferRequestResponseSchema = type({
-    ok: 'true',
-    transferId: 'string',
-    toUserHandle: 'string',
-    expiresAt: 'number',
+    ok: "true",
+    transferId: "string",
+    toUserHandle: "string",
+    expiresAt: "number",
 });
 export const ApiV1TransferDecisionResponseSchema = type({
-    ok: 'true',
-    skillSlug: 'string?',
+    ok: "true",
+    skillSlug: "string?",
 });
 export const ApiV1TransferListResponseSchema = type({
     transfers: type({
-        _id: 'string',
+        _id: "string",
         skill: type({
-            _id: 'string',
-            slug: 'string',
-            displayName: 'string',
+            _id: "string",
+            slug: "string",
+            displayName: "string",
         }),
         fromUser: type({
-            _id: 'string',
-            handle: 'string|null',
-            displayName: 'string|null',
+            _id: "string",
+            handle: "string|null",
+            displayName: "string|null",
         }).optional(),
         toUser: type({
-            _id: 'string',
-            handle: 'string|null',
-            displayName: 'string|null',
+            _id: "string",
+            handle: "string|null",
+            displayName: "string|null",
         }).optional(),
-        message: 'string?',
-        requestedAt: 'number',
-        expiresAt: 'number',
+        message: "string?",
+        requestedAt: "number",
+        expiresAt: "number",
     }).array(),
 });
 export const ApiV1SetRoleResponseSchema = type({
-    ok: 'true',
+    ok: "true",
     role: '"admin"|"moderator"|"user"',
 });
 export const ApiV1StarResponseSchema = type({
-    ok: 'true',
-    starred: 'boolean',
-    alreadyStarred: 'boolean',
+    ok: "true",
+    starred: "boolean",
+    alreadyStarred: "boolean",
 });
 export const ApiV1UnstarResponseSchema = type({
-    ok: 'true',
-    unstarred: 'boolean',
-    alreadyUnstarred: 'boolean',
+    ok: "true",
+    unstarred: "boolean",
+    alreadyUnstarred: "boolean",
 });
 export const SkillInstallSpecSchema = type({
-    id: 'string?',
+    id: "string?",
     kind: '"brew"|"node"|"go"|"uv"',
-    label: 'string?',
-    bins: 'string[]?',
-    formula: 'string?',
-    tap: 'string?',
-    package: 'string?',
-    module: 'string?',
+    label: "string?",
+    bins: "string[]?",
+    formula: "string?",
+    tap: "string?",
+    package: "string?",
+    module: "string?",
 });
 export const NixPluginSpecSchema = type({
-    plugin: 'string',
-    systems: 'string[]?',
+    plugin: "string",
+    systems: "string[]?",
 });
 export const ClawdbotConfigSpecSchema = type({
-    requiredEnv: 'string[]?',
-    stateDirs: 'string[]?',
-    example: 'string?',
+    requiredEnv: "string[]?",
+    stateDirs: "string[]?",
+    example: "string?",
 });
 export const ClawdisRequiresSchema = type({
-    bins: 'string[]?',
-    anyBins: 'string[]?',
-    env: 'string[]?',
-    config: 'string[]?',
+    bins: "string[]?",
+    anyBins: "string[]?",
+    env: "string[]?",
+    config: "string[]?",
 });
 export const EnvVarDeclarationSchema = type({
-    name: 'string',
-    required: 'boolean?',
-    description: 'string?',
+    name: "string",
+    required: "boolean?",
+    description: "string?",
 });
 export const DependencyDeclarationSchema = type({
-    name: 'string',
+    name: "string",
     type: '"pip"|"npm"|"brew"|"go"|"cargo"|"apt"|"other"',
-    version: 'string?',
-    url: 'string?',
-    repository: 'string?',
+    version: "string?",
+    url: "string?",
+    repository: "string?",
 });
 export const SkillLinksSchema = type({
-    homepage: 'string?',
-    repository: 'string?',
-    documentation: 'string?',
-    changelog: 'string?',
+    homepage: "string?",
+    repository: "string?",
+    documentation: "string?",
+    changelog: "string?",
 });
 export const ClawdisSkillMetadataSchema = type({
-    always: 'boolean?',
-    skillKey: 'string?',
-    primaryEnv: 'string?',
-    emoji: 'string?',
-    homepage: 'string?',
-    os: 'string[]?',
-    cliHelp: 'string?',
+    always: "boolean?",
+    skillKey: "string?",
+    primaryEnv: "string?",
+    emoji: "string?",
+    homepage: "string?",
+    os: "string[]?",
+    cliHelp: "string?",
     requires: ClawdisRequiresSchema.optional(),
     install: SkillInstallSpecSchema.array().optional(),
     nix: NixPluginSpecSchema.optional(),
     config: ClawdbotConfigSpecSchema.optional(),
     envVars: EnvVarDeclarationSchema.array().optional(),
     dependencies: DependencyDeclarationSchema.array().optional(),
-    author: 'string?',
+    author: "string?",
     links: SkillLinksSchema.optional(),
 });
 // If this line errors, ClawdisSkillMetadata is out of sync with ClawdisSkillMetadataSchema
 const _clawdisKeysCheck = true;
+void _clawdisKeysCheck;
 //# sourceMappingURL=schemas.js.map

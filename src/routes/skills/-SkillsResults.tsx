@@ -49,8 +49,7 @@ export function SkillsResults({
             const clawdis = entry.latestVersion?.parsed?.clawdis;
             const isPlugin = Boolean(clawdis?.nix?.plugin);
             const platforms = getPlatformLabels(clawdis?.os, clawdis?.nix?.systems);
-            const ownerHandle =
-              entry.owner?.handle ?? entry.owner?.name ?? entry.ownerHandle ?? null;
+            const ownerHandle = entry.owner?.handle ?? entry.ownerHandle ?? null;
             const skillHref = buildSkillHref(skill, ownerHandle);
             return (
               <SkillCard
@@ -79,50 +78,44 @@ export function SkillsResults({
           })}
         </div>
       ) : (
-        <div className="skills-list">
+        <div className="skills-table">
+          <div className="skills-table-header">
+            <span>Skill</span>
+            <span>Summary</span>
+            <span>Author</span>
+            <span className="skills-table-stats">Stats</span>
+          </div>
           {sorted.map((entry) => {
             const skill = entry.skill;
-            const clawdis = entry.latestVersion?.parsed?.clawdis;
-            const isPlugin = Boolean(clawdis?.nix?.plugin);
-            const platforms = getPlatformLabels(clawdis?.os, clawdis?.nix?.systems);
-            const ownerHandle =
-              entry.owner?.handle ?? entry.owner?.name ?? entry.ownerHandle ?? null;
+            const ownerHandle = entry.owner?.handle ?? entry.ownerHandle ?? null;
             const skillHref = buildSkillHref(skill, ownerHandle);
             return (
-              <Link key={skill._id} className="skills-row" to={skillHref}>
-                <div className="skills-row-main">
-                  <div className="skills-row-title">
-                    <span>{skill.displayName}</span>
-                    <span className="skills-row-slug">/{skill.slug}</span>
+              <Link key={skill._id} className="skills-table-row" to={skillHref}>
+                <span className="skills-table-name">
+                  <span>
+                    {skill.displayName}
                     {getSkillBadges(skill).map((badge) => (
-                      <span key={badge} className="tag">
-                        {badge}
-                      </span>
+                      <span key={badge} className="tag tag-compact">{badge}</span>
                     ))}
-                    {isPlugin ? (
-                      <span className="tag tag-accent tag-compact">Plugin bundle (nix)</span>
-                    ) : null}
-                    {platforms.map((label) => (
-                      <span key={label} className="tag tag-compact">
-                        {label}
-                      </span>
-                    ))}
-                  </div>
-                  <div className="skills-row-summary">
-                    {skill.summary ?? "No summary provided."}
-                  </div>
-                  <div className="skills-row-owner">
-                    <UserBadge
-                      user={entry.owner}
-                      fallbackHandle={ownerHandle}
-                      prefix="by"
-                      link={false}
-                    />
-                  </div>
-                </div>
-                <div className="skills-row-metrics">
+                  </span>
+                  {entry.latestVersion?.version ? (
+                    <span className="skills-table-version">v{entry.latestVersion.version}</span>
+                  ) : null}
+                </span>
+                <span className="skills-table-summary">
+                  {skill.summary ?? "No summary provided."}
+                </span>
+                <span className="skills-table-author">
+                  <UserBadge
+                    user={entry.owner}
+                    fallbackHandle={ownerHandle}
+                    prefix=""
+                    link={false}
+                  />
+                </span>
+                <span className="skills-table-stats">
                   <SkillMetricsRow stats={skill.stats} />
-                </div>
+                </span>
               </Link>
             );
           })}

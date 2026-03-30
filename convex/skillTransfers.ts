@@ -1,6 +1,10 @@
 import { v } from "convex/values";
 import type { Doc, Id } from "./_generated/dataModel";
 import { internalMutation, internalQuery } from "./functions";
+import {
+  ensurePersonalPublisherForUser,
+  getActiveUserByHandleOrPersonalPublisher,
+} from "./lib/publishers";
 const TRANSFER_EXPIRY_MS = 7 * 24 * 60 * 60 * 1000;
 
 type TransferDoc = Doc<"skillOwnershipTransfers">;
@@ -111,11 +115,8 @@ export const requestTransferInternal = internalMutation({
     const toHandle = normalizeHandle(args.toUserHandle);
     if (!toHandle) throw new Error("toUserHandle required");
 
-    const toUser = await ctx.db
-      .query("users")
-      .withIndex("handle", (q) => q.eq("handle", toHandle))
-      .first();
-    if (!toUser || toUser.deletedAt || toUser.deactivatedAt) throw new Error("User not found");
+    const toUser = await getActiveUserByHandleOrPersonalPublisher(ctx, toHandle);
+    if (!toUser) throw new Error("User not found");
     if (toUser._id === args.actorUserId) throw new Error("Cannot transfer to yourself");
 
     const activePending = await getActivePendingTransferForSkill(ctx, args.skillId, now);
@@ -157,7 +158,7 @@ export const acceptTransferInternal = internalMutation({
   },
   handler: async (ctx, args) => {
     const now = Date.now();
-    await requireActiveUserById(ctx, args.actorUserId);
+    const newOwner = await requireActiveUserById(ctx, args.actorUserId);
 
     const transfer = await validatePendingTransferForActor(ctx, {
       transferId: args.transferId,
@@ -173,10 +174,27 @@ export const acceptTransferInternal = internalMutation({
       throw new Error("Transfer is no longer valid");
     }
 
+    const newPublisher = await ensurePersonalPublisherForUser(ctx, newOwner);
+    if (!newPublisher) throw new Error("Failed to resolve publisher for new owner");
+
     await ctx.db.patch(skill._id, {
       ownerUserId: args.actorUserId,
+      ownerPublisherId: newPublisher._id,
       updatedAt: now,
     });
+
+    const aliases = await ctx.db
+      .query("skillSlugAliases")
+      .withIndex("by_skill", (q) => q.eq("skillId", skill._id))
+      .collect();
+    for (const alias of aliases) {
+      await ctx.db.patch(alias._id, {
+        ownerUserId: args.actorUserId,
+        ownerPublisherId: newPublisher._id,
+        updatedAt: now,
+      });
+    }
+
     await ctx.db.patch(transfer._id, { status: "accepted", respondedAt: now });
 
     await ctx.db.insert("auditLogs", {

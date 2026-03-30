@@ -1,4 +1,4 @@
-import { TEXT_FILE_EXTENSION_SET } from "clawhub-schema";
+import { TEXT_FILE_EXTENSION_SET } from "clawhub-schema/textFiles";
 import { gunzipSync, unzipSync } from "fflate";
 
 const TEXT_TYPES = new Map([
@@ -23,7 +23,14 @@ export type ExpandFilesReport = {
   ignoredMacJunkPaths: string[];
 };
 
-export async function expandFilesWithReport(selected: File[]): Promise<ExpandFilesReport> {
+type ExpandFilesOptions = {
+  includeBinaryArchiveFiles?: boolean;
+};
+
+export async function expandFilesWithReport(
+  selected: File[],
+  options: ExpandFilesOptions = {},
+): Promise<ExpandFilesReport> {
   const expanded: File[] = [];
   const ignoredMacJunkPaths: string[] = [];
   for (const file of selected) {
@@ -34,12 +41,13 @@ export async function expandFilesWithReport(selected: File[]): Promise<ExpandFil
         expanded,
         ignoredMacJunkPaths,
         Object.entries(entries).map(([path, data]) => ({ path, data })),
+        options,
       );
       continue;
     }
     if (lower.endsWith(".tar.gz") || lower.endsWith(".tgz")) {
       const unpacked = gunzipSync(new Uint8Array(await readArrayBuffer(file)));
-      pushArchiveEntries(expanded, ignoredMacJunkPaths, untar(unpacked));
+      pushArchiveEntries(expanded, ignoredMacJunkPaths, untar(unpacked), options);
       continue;
     }
     if (lower.endsWith(".gz")) {
@@ -131,6 +139,7 @@ function pushArchiveEntries(
   target: File[],
   ignoredMacJunkPaths: string[],
   entries: Array<{ path: string; data: Uint8Array }>,
+  options: ExpandFilesOptions = {},
 ) {
   const normalized: Array<{ path: string; data: Uint8Array }> = [];
 
@@ -141,7 +150,7 @@ function pushArchiveEntries(
       ignoredMacJunkPaths.push(path);
       continue;
     }
-    if (!isTextPath(path)) continue;
+    if (!options.includeBinaryArchiveFiles && !isTextPath(path)) continue;
     normalized.push({ path, data: entry.data });
   }
 

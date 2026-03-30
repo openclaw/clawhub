@@ -6,7 +6,19 @@ import type { ActionCtx, MutationCtx } from "./_generated/server";
 import { internalAction, internalMutation, internalQuery, mutation, query } from "./functions";
 import { assertAdmin, assertModerator, requireUser } from "./lib/access";
 import { syncGitHubProfile } from "./lib/githubAccount";
+import {
+  ensurePersonalPublisherForUser,
+  getActiveUserByHandleOrPersonalPublisher,
+  getPublisherByHandle,
+  getUserByHandleOrPersonalPublisher,
+} from "./lib/publishers";
 import { toPublicUser } from "./lib/public";
+import {
+  getLatestActiveReservedHandle,
+  isHandleReservedForAnotherUser,
+  normalizeReservedHandle,
+  upsertReservedHandleForRightfulOwner,
+} from "./lib/reservedHandles";
 import { buildUserSearchResults } from "./lib/userSearch";
 import { insertStatEvent } from "./skillStatEvents";
 
@@ -24,6 +36,13 @@ export const getById = query({
 export const getByIdInternal = internalQuery({
   args: { userId: v.id("users") },
   handler: async (ctx, args) => ctx.db.get(args.userId),
+});
+
+export const getByHandleInternal = internalQuery({
+  args: { handle: v.string() },
+  handler: async (ctx, args) => {
+    return await getUserByHandleOrPersonalPublisher(ctx, args.handle);
+  },
 });
 
 export const searchInternal = internalQuery({
@@ -78,6 +97,7 @@ export const syncGitHubProfileInternal = internalMutation({
   handler: async (ctx, args) => {
     const user = await ctx.db.get(args.userId);
     if (!user || user.deletedAt || user.deactivatedAt) return;
+    const canClaimNewHandle = await canUserClaimHandle(ctx, args.name, args.userId);
 
     const updates: Partial<Doc<"users">> = { githubProfileSyncedAt: args.syncedAt };
     let didChangeProfile = false;
@@ -88,7 +108,7 @@ export const syncGitHubProfileInternal = internalMutation({
     }
 
     // Update handle if it was derived from the old username
-    if (user.handle === user.name && user.name !== args.name) {
+    if (user.handle === user.name && user.name !== args.name && canClaimNewHandle) {
       updates.handle = args.name;
       didChangeProfile = true;
     }
@@ -96,7 +116,8 @@ export const syncGitHubProfileInternal = internalMutation({
     // Update displayName if it was derived from the old username
     if (
       (user.displayName === user.name || user.displayName === user.handle) &&
-      user.name !== args.name
+      user.name !== args.name &&
+      canClaimNewHandle
     ) {
       updates.displayName = args.name;
       didChangeProfile = true;
@@ -126,6 +147,8 @@ export const syncGitHubProfileInternal = internalMutation({
       updates.updatedAt = Date.now();
     }
     await ctx.db.patch(args.userId, updates);
+    const nextUser = didChangeProfile ? ({ ...user, ...updates } as Doc<"users">) : user;
+    await ensurePersonalPublisherForUser(ctx, nextUser);
   },
 });
 
@@ -143,7 +166,13 @@ export const syncGitHubProfileAction = internalAction({
 export const me = query({
   args: {},
   handler: async (ctx) => {
-    const userId = await getAuthUserId(ctx);
+    let userId: Awaited<ReturnType<typeof getAuthUserId>>;
+    try {
+      userId = await getAuthUserId(ctx);
+    } catch {
+      // Public pages should treat broken/stale auth as anonymous instead of crashing SSR.
+      return null;
+    }
     if (!userId) return null;
     const user = await ctx.db.get(userId);
     if (!user || user.deletedAt || user.deactivatedAt) return null;
@@ -168,16 +197,62 @@ function deriveHandle(args: { existingHandle?: string; githubLogin?: string; ema
   return undefined;
 }
 
-function computeEnsureUpdates(user: Doc<"users">) {
+function appendHandleSuffix(base: string, suffix: number) {
+  const suffixText = suffix <= 1 ? "" : `-${suffix}`;
+  const maxBaseLength = Math.max(2, 40 - suffixText.length);
+  return `${base.slice(0, maxBaseLength)}${suffixText}`;
+}
+
+async function resolveAvailableHandle(
+  ctx: MutationCtx,
+  preferredHandle: string | undefined,
+  userId: Id<"users">,
+) {
+  const normalizedHandle = normalizeReservedHandle(preferredHandle);
+  if (!normalizedHandle) return undefined;
+  for (let suffix = 1; suffix <= 50; suffix += 1) {
+    const candidate = appendHandleSuffix(normalizedHandle, suffix);
+    if (await canUserClaimHandle(ctx, candidate, userId)) return candidate;
+  }
+  return undefined;
+}
+
+async function canUserClaimHandle(
+  ctx: MutationCtx,
+  handle: string | undefined,
+  userId: Id<"users">,
+) {
+  const normalizedHandle = normalizeReservedHandle(handle);
+  if (!normalizedHandle) return false;
+  if (await isHandleReservedForAnotherUser(ctx, normalizedHandle, userId)) return false;
+
+  const publisher = await getPublisherByHandle(ctx, normalizedHandle);
+  if (!publisher || publisher.deletedAt || publisher.deactivatedAt) return true;
+  return publisher.kind === "user" && publisher.linkedUserId === userId;
+}
+
+async function computeEnsureUpdates(ctx: MutationCtx, user: Doc<"users">) {
   const updates: Record<string, unknown> = {};
 
   const existingHandle = normalizeHandle(user.handle);
   const githubLogin = normalizeHandle(user.name);
-  const derivedHandle = deriveHandle({
+  const requestedHandle = deriveHandle({
     existingHandle,
     githubLogin,
     email: user.email,
   });
+  let derivedHandle =
+    requestedHandle && (await canUserClaimHandle(ctx, requestedHandle, user._id))
+      ? requestedHandle
+      : undefined;
+  if (!derivedHandle && !existingHandle) {
+    const emailFallback = !requestedHandle && user.email ? user.email.split("@")[0]?.trim() : user.email?.split("@")[0]?.trim();
+    derivedHandle =
+      (emailFallback &&
+      emailFallback !== requestedHandle &&
+      (await resolveAvailableHandle(ctx, emailFallback, user._id))) ||
+      (await resolveAvailableHandle(ctx, requestedHandle, user._id));
+  }
   const baseHandle = derivedHandle ?? existingHandle;
 
   if (derivedHandle && existingHandle !== derivedHandle) {
@@ -202,14 +277,16 @@ function computeEnsureUpdates(user: Doc<"users">) {
 
 export async function ensureHandler(ctx: MutationCtx) {
   const { userId, user } = await requireUser(ctx);
-  const updates = computeEnsureUpdates(user);
+  const updates = await computeEnsureUpdates(ctx, user);
 
+  const hasUpdates = Object.keys(updates).length > 0;
   if (Object.keys(updates).length > 0) {
     updates.updatedAt = Date.now();
     await ctx.db.patch(userId, updates);
   }
-
-  return ctx.db.get(userId);
+  const ensuredUser = hasUpdates ? ({ ...user, ...updates } as Doc<"users">) : ((await ctx.db.get(userId)) ?? user);
+  await ensurePersonalPublisherForUser(ctx, ensuredUser);
+  return await ctx.db.get(userId);
 }
 
 export const updateProfile = mutation({
@@ -224,6 +301,10 @@ export const updateProfile = mutation({
       bio: args.bio?.trim(),
       updatedAt: Date.now(),
     });
+    const user = await ctx.db.get(userId);
+    if (user) {
+      await ensurePersonalPublisherForUser(ctx, user);
+    }
   },
 });
 
@@ -315,11 +396,14 @@ function clampInt(value: number, min: number, max: number) {
 export const getByHandle = query({
   args: { handle: v.string() },
   handler: async (ctx, args) => {
-    const user = await ctx.db
-      .query("users")
-      .withIndex("handle", (q) => q.eq("handle", args.handle))
-      .unique();
-    return toPublicUser(user);
+    return toPublicUser(await getActiveUserByHandleOrPersonalPublisher(ctx, args.handle));
+  },
+});
+
+export const getReservedHandleInternal = internalQuery({
+  args: { handle: v.string() },
+  handler: async (ctx, args) => {
+    return await getLatestActiveReservedHandle(ctx, args.handle);
   },
 });
 
@@ -331,6 +415,63 @@ export const setRole = mutation({
   handler: async (ctx, args) => {
     const { user } = await requireUser(ctx);
     return setRoleWithActor(ctx, user, args.userId, args.role);
+  },
+});
+
+export const reserveHandleInternal = internalMutation({
+  args: {
+    actorUserId: v.id("users"),
+    handle: v.string(),
+    rightfulOwnerUserId: v.id("users"),
+    reason: v.optional(v.string()),
+  },
+  handler: async (ctx, args) => {
+    const actor = await ctx.db.get(args.actorUserId);
+    if (!actor || actor.deletedAt || actor.deactivatedAt) throw new Error("User not found");
+    assertAdmin(actor);
+
+    const rightfulOwner = await ctx.db.get(args.rightfulOwnerUserId);
+    if (!rightfulOwner || rightfulOwner.deletedAt || rightfulOwner.deactivatedAt) {
+      throw new Error("Rightful owner not found");
+    }
+
+    const normalizedHandle = normalizeReservedHandle(args.handle);
+    if (!normalizedHandle) throw new Error("Handle required");
+
+    const existingUser = await ctx.db
+      .query("users")
+      .withIndex("handle", (q) => q.eq("handle", normalizedHandle))
+      .unique();
+    if (existingUser && existingUser._id !== args.rightfulOwnerUserId) {
+      throw new Error("Handle already claimed by another user");
+    }
+
+    const now = Date.now();
+    await upsertReservedHandleForRightfulOwner(ctx, {
+      handle: normalizedHandle,
+      rightfulOwnerUserId: args.rightfulOwnerUserId,
+      reason: args.reason,
+      now,
+    });
+
+    await ctx.db.insert("auditLogs", {
+      actorUserId: args.actorUserId,
+      action: "handle.reserve",
+      targetType: "handle",
+      targetId: normalizedHandle,
+      metadata: {
+        handle: normalizedHandle,
+        rightfulOwnerUserId: args.rightfulOwnerUserId,
+        reason: args.reason || undefined,
+      },
+      createdAt: now,
+    });
+
+    return {
+      ok: true as const,
+      handle: normalizedHandle,
+      rightfulOwnerUserId: args.rightfulOwnerUserId,
+    };
   },
 });
 
@@ -635,6 +776,111 @@ export const setTrustedPublisherInternal = internalMutation({
 
     return { ok: true as const, trusted: args.trusted };
   },
+});
+
+async function ensurePublisherHandleWithActor(
+  ctx: MutationCtx,
+  args: {
+    actorUserId: Id<"users">;
+    handle: string;
+    displayName?: string;
+    trusted?: boolean;
+  },
+) {
+  const actor = await ctx.db.get(args.actorUserId);
+  if (!actor || actor.deletedAt || actor.deactivatedAt) throw new Error("User not found");
+  assertAdmin(actor);
+
+  const normalizedHandle = normalizeReservedHandle(args.handle);
+  if (!normalizedHandle) throw new Error("Handle required");
+
+  const existing = await ctx.db
+    .query("users")
+    .withIndex("handle", (q) => q.eq("handle", normalizedHandle))
+    .unique();
+  if (existing?.deletedAt || existing?.deactivatedAt) {
+    throw new Error("Handle belongs to a deleted or deactivated user");
+  }
+
+  const now = Date.now();
+  const displayName = args.displayName?.trim() || normalizedHandle;
+  const trusted = args.trusted === false ? undefined : true;
+  const userId =
+    existing?._id ??
+    (await ctx.db.insert("users", {
+      handle: normalizedHandle,
+      displayName,
+      role: "user",
+      trustedPublisher: trusted,
+      createdAt: now,
+      updatedAt: now,
+    }));
+
+  if (existing) {
+    const nextDisplayName =
+      args.displayName?.trim() && (!existing.displayName || existing.displayName === existing.handle)
+        ? displayName
+        : existing.displayName;
+    await ctx.db.patch(existing._id, {
+      displayName: nextDisplayName,
+      trustedPublisher: trusted,
+      updatedAt: now,
+    });
+  }
+
+  await upsertReservedHandleForRightfulOwner(ctx, {
+    handle: normalizedHandle,
+    rightfulOwnerUserId: userId,
+    reason: "shared publisher",
+    now,
+  });
+
+  await ctx.db.insert("auditLogs", {
+    actorUserId: args.actorUserId,
+    action: "user.publisher.ensure",
+    targetType: "user",
+    targetId: userId,
+    metadata: {
+      handle: normalizedHandle,
+      trusted: trusted === true,
+    },
+    createdAt: now,
+  });
+
+  return {
+    ok: true as const,
+    userId,
+    handle: normalizedHandle,
+    created: !existing,
+    trusted: trusted === true,
+  };
+}
+
+export const ensurePublisherHandle = mutation({
+  args: {
+    handle: v.string(),
+    displayName: v.optional(v.string()),
+    trusted: v.optional(v.boolean()),
+  },
+  handler: async (ctx, args) => {
+    const { user } = await requireUser(ctx);
+    return await ensurePublisherHandleWithActor(ctx, {
+      actorUserId: user._id,
+      handle: args.handle,
+      displayName: args.displayName,
+      trusted: args.trusted,
+    });
+  },
+});
+
+export const ensurePublisherHandleInternal = internalMutation({
+  args: {
+    actorUserId: v.id("users"),
+    handle: v.string(),
+    displayName: v.optional(v.string()),
+    trusted: v.optional(v.boolean()),
+  },
+  handler: async (ctx, args) => await ensurePublisherHandleWithActor(ctx, args),
 });
 
 /**

@@ -11,6 +11,18 @@
     ".": {
       "types": "./dist/index.d.ts",
       "default": "./dist/index.js"
+    },
+    "./licenseConstants": {
+      "types": "./dist/licenseConstants.d.ts",
+      "default": "./dist/licenseConstants.js"
+    },
+    "./routes": {
+      "types": "./dist/routes.d.ts",
+      "default": "./dist/routes.js"
+    },
+    "./textFiles": {
+      "types": "./dist/textFiles.d.ts",
+      "default": "./dist/textFiles.js"
     }
   },
   "scripts": {

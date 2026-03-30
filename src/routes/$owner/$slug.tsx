@@ -6,8 +6,7 @@ import { fetchSkillPageData } from "../../lib/skillPage";
 export const Route = createFileRoute("/$owner/$slug")({
   loader: async ({ params }) => {
     const data = await fetchSkillPageData(params.slug);
-    const canonicalOwner =
-      data.initialData?.result?.owner?.handle ?? data.initialData?.result?.owner?.name ?? null;
+    const canonicalOwner = data.initialData?.result?.owner?.handle ?? null;
     const canonicalSlug = data.initialData?.result?.resolvedSlug ?? params.slug;
 
     if (canonicalOwner && (canonicalOwner !== params.owner || canonicalSlug !== params.slug)) {

@@ -1,9 +1,46 @@
 import { v } from "convex/values";
 import { internal } from "./_generated/api";
-import type { Id } from "./_generated/dataModel";
+import type { Doc, Id } from "./_generated/dataModel";
 import type { ActionCtx } from "./_generated/server";
 import { action, internalAction, internalMutation } from "./functions";
-import { buildDeterministicZip } from "./lib/skillZip";
+import { buildDeterministicPackageZip, buildDeterministicZip } from "./lib/skillZip";
+
+const internalRefs = internal as unknown as {
+  packages: {
+    getReleaseByIdInternal: unknown;
+    getPackageByIdInternal: unknown;
+    updateReleaseScanResultsInternal: unknown;
+  };
+  vt: {
+    scanPackageReleaseWithVirusTotal: unknown;
+    pollPackageReleaseScanResults: unknown;
+  };
+};
+
+async function runQueryRef<T>(
+  ctx: { runQuery: (ref: never, args: never) => Promise<unknown> },
+  ref: unknown,
+  args: unknown,
+): Promise<T> {
+  return (await ctx.runQuery(ref as never, args as never)) as T;
+}
+
+async function runMutationRef<T>(
+  ctx: { runMutation: (ref: never, args: never) => Promise<unknown> },
+  ref: unknown,
+  args: unknown,
+): Promise<T> {
+  return (await ctx.runMutation(ref as never, args as never)) as T;
+}
+
+async function runAfterRef(
+  ctx: { scheduler: { runAfter: (delayMs: number, ref: never, args: never) => Promise<unknown> } },
+  delayMs: number,
+  ref: unknown,
+  args: unknown,
+) {
+  return await ctx.scheduler.runAfter(delayMs, ref as never, args as never);
+}
 
 /**
  * Fix skills that have version.vtAnalysis but null skill.moderationReason.
@@ -123,6 +160,70 @@ type VTFileResponse = {
 };
 
 type VTAnalysisStats = NonNullable<VTFileResponse["data"]["attributes"]["last_analysis_stats"]>;
+type PackageReleaseScanDoc = Pick<
+  Doc<"packageReleases">,
+  "verification" | "llmAnalysis" | "staticScan"
+>;
+type PackageScanDoc = Pick<Doc<"packages">, "family" | "isOfficial">;
+
+function buildPackageUndetectedFallbackAnalysis(
+  release: PackageReleaseScanDoc,
+  pkg: PackageScanDoc,
+  stats?: VTAnalysisStats,
+) {
+  if (!stats) return null;
+  if (pkg.family === "skill") return null;
+
+  const tier = release.verification?.tier;
+  if (tier !== "source-linked" && tier !== "provenance-verified" && tier !== "rebuild-verified") {
+    return null;
+  }
+  if (release.llmAnalysis?.status !== "clean") return null;
+  if (!release.staticScan || release.staticScan.status === "malicious") return null;
+  if (stats.malicious !== 0 || stats.suspicious !== 0) return null;
+  if ((stats.harmless ?? 0) <= 0 && (stats.undetected ?? 0) <= 0) return null;
+
+  return {
+    status: "clean",
+    verdict: "undetected-only-fallback",
+    analysis:
+      "VirusTotal reported no malicious or suspicious engine hits. ClawHub promoted this source-linked package after clean LLM and non-malicious static scans.",
+    source: "engines-undetected-fallback",
+    checkedAt: Date.now(),
+  };
+}
+
+function buildPackageScanAnalysisFromVtResult(
+  release: PackageReleaseScanDoc,
+  pkg: PackageScanDoc,
+  vtResult: VTFileResponse,
+) {
+  const aiResult = vtResult.data.attributes.crowdsourced_ai_results?.find(
+    (r) => r.category === "code_insight",
+  );
+  if (aiResult) {
+    const verdict = normalizeVerdict(aiResult.verdict);
+    return {
+      status: verdictToStatus(verdict),
+      verdict: aiResult.verdict,
+      analysis: aiResult.analysis,
+      source: aiResult.source,
+      checkedAt: Date.now(),
+    };
+  }
+
+  const stats = vtResult.data.attributes.last_analysis_stats;
+  const status = statusFromAvStats(stats);
+  if (status) {
+    return {
+      status,
+      source: "engines",
+      checkedAt: Date.now(),
+    };
+  }
+
+  return buildPackageUndetectedFallbackAnalysis(release, pkg, stats);
+}
 
 type ScanQueueHealth = {
   queueSize: number;
@@ -480,6 +581,194 @@ export const scanWithVirusTotal = internalAction({
       // updates moderation when it has an actual verdict (clean/suspicious/malicious).
     } catch (error) {
       console.error("Failed to upload to VirusTotal:", error);
+    }
+  },
+});
+
+const PACKAGE_SCAN_RETRY_DELAY_MS = 5 * 60 * 1000;
+const PACKAGE_SCAN_MAX_ATTEMPTS = 10;
+
+export const scanPackageReleaseWithVirusTotal = internalAction({
+  args: {
+    releaseId: v.id("packageReleases"),
+    attempt: v.optional(v.number()),
+  },
+  handler: async (ctx, args) => {
+    const apiKey = process.env.VT_API_KEY;
+    if (!apiKey) {
+      console.log("[vt:package] VT_API_KEY not configured, skipping package release scan");
+      return;
+    }
+
+    const release = (await runQueryRef(ctx, internalRefs.packages.getReleaseByIdInternal, {
+      releaseId: args.releaseId,
+    })) as Doc<"packageReleases"> | null;
+    if (!release || release.softDeletedAt) {
+      console.error(`[vt:package] Release ${args.releaseId} not found for scanning`);
+      return;
+    }
+
+    const pkg = (await runQueryRef(ctx, internalRefs.packages.getPackageByIdInternal, {
+      packageId: release.packageId,
+    })) as Doc<"packages"> | null;
+    if (!pkg) {
+      console.error(`[vt:package] Package ${release.packageId} not found for scanning`);
+      return;
+    }
+
+    const attempt = args.attempt ?? 1;
+    const entries: Array<{ path: string; bytes: Uint8Array }> = [];
+    let missingFiles = 0;
+    for (const file of release.files) {
+      const content = await ctx.storage.get(file.storageId);
+      if (!content) {
+        missingFiles += 1;
+        continue;
+      }
+      entries.push({
+        path: file.path,
+        bytes: new Uint8Array(await content.arrayBuffer()),
+      });
+    }
+    if (entries.length === 0 || missingFiles > 0) {
+      console.warn(
+        `[vt:package] Release ${args.releaseId} missing ${missingFiles}/${release.files.length} files, retrying`,
+      );
+      if (attempt < PACKAGE_SCAN_MAX_ATTEMPTS) {
+        await runAfterRef(ctx, PACKAGE_SCAN_RETRY_DELAY_MS, internalRefs.vt.scanPackageReleaseWithVirusTotal, {
+          releaseId: args.releaseId,
+          attempt: attempt + 1,
+        });
+      }
+      return;
+    }
+
+    const zipArray = buildDeterministicPackageZip(entries);
+    const hashBuffer = await crypto.subtle.digest("SHA-256", zipArray);
+    const sha256hash = Array.from(new Uint8Array(hashBuffer))
+      .map((b) => b.toString(16).padStart(2, "0"))
+      .join("");
+
+    await runMutationRef(ctx, internalRefs.packages.updateReleaseScanResultsInternal, {
+      releaseId: args.releaseId,
+      sha256hash,
+    });
+
+    try {
+      const existingFile = await checkExistingFile(apiKey, sha256hash);
+      const vtAnalysis = existingFile
+        ? buildPackageScanAnalysisFromVtResult(release, pkg, existingFile)
+        : null;
+
+      if (vtAnalysis) {
+        await runMutationRef(ctx, internalRefs.packages.updateReleaseScanResultsInternal, {
+          releaseId: args.releaseId,
+          vtAnalysis,
+        });
+        return;
+      }
+    } catch (error) {
+      console.error("[vt:package] Error checking existing file in VT:", error);
+    }
+
+    const formData = new FormData();
+    const blob = new Blob([zipArray], { type: "application/zip" });
+    formData.append("file", blob, "package.zip");
+
+    try {
+      const response = await fetch("https://www.virustotal.com/api/v3/files", {
+        method: "POST",
+        headers: { "x-apikey": apiKey },
+        body: formData,
+      });
+
+      if (!response.ok) {
+        const error = await response.text();
+        console.error("[vt:package] VirusTotal upload error:", error);
+        if (attempt < PACKAGE_SCAN_MAX_ATTEMPTS) {
+          await runAfterRef(ctx, PACKAGE_SCAN_RETRY_DELAY_MS, internalRefs.vt.scanPackageReleaseWithVirusTotal, {
+            releaseId: args.releaseId,
+            attempt: attempt + 1,
+          });
+        }
+        return;
+      }
+
+      await runAfterRef(ctx, PACKAGE_SCAN_RETRY_DELAY_MS, internalRefs.vt.pollPackageReleaseScanResults, {
+        releaseId: args.releaseId,
+        attempt: 1,
+      });
+
+      console.log(
+        `[vt:package] Uploaded ${pkg.name}@${release.version} for scanning (${sha256hash})`,
+      );
+    } catch (error) {
+      console.error("[vt:package] Failed to upload to VirusTotal:", error);
+      if (attempt < PACKAGE_SCAN_MAX_ATTEMPTS) {
+        await runAfterRef(ctx, PACKAGE_SCAN_RETRY_DELAY_MS, internalRefs.vt.scanPackageReleaseWithVirusTotal, {
+          releaseId: args.releaseId,
+          attempt: attempt + 1,
+        });
+      }
+    }
+  },
+});
+
+export const pollPackageReleaseScanResults = internalAction({
+  args: {
+    releaseId: v.id("packageReleases"),
+    attempt: v.optional(v.number()),
+  },
+  handler: async (ctx, args) => {
+    const apiKey = process.env.VT_API_KEY;
+    if (!apiKey) return;
+
+    const release = (await runQueryRef(ctx, internalRefs.packages.getReleaseByIdInternal, {
+      releaseId: args.releaseId,
+    })) as Doc<"packageReleases"> | null;
+    if (!release || release.softDeletedAt || !release.sha256hash) return;
+    const pkg = (await runQueryRef(ctx, internalRefs.packages.getPackageByIdInternal, {
+      packageId: release.packageId,
+    })) as Doc<"packages"> | null;
+    if (!pkg || pkg.softDeletedAt) return;
+
+    const attempt = args.attempt ?? 1;
+    try {
+      const vtResult = await checkExistingFile(apiKey, release.sha256hash);
+      if (!vtResult) {
+        if (attempt < PACKAGE_SCAN_MAX_ATTEMPTS) {
+          await runAfterRef(ctx, PACKAGE_SCAN_RETRY_DELAY_MS, internalRefs.vt.pollPackageReleaseScanResults, {
+            releaseId: args.releaseId,
+            attempt: attempt + 1,
+          });
+        }
+        return;
+      }
+
+      const vtAnalysis = buildPackageScanAnalysisFromVtResult(release, pkg, vtResult);
+      if (vtAnalysis) {
+        await runMutationRef(ctx, internalRefs.packages.updateReleaseScanResultsInternal, {
+          releaseId: args.releaseId,
+          vtAnalysis,
+        });
+        return;
+      }
+
+      await requestRescan(apiKey, release.sha256hash);
+      if (attempt < PACKAGE_SCAN_MAX_ATTEMPTS) {
+        await runAfterRef(ctx, PACKAGE_SCAN_RETRY_DELAY_MS, internalRefs.vt.pollPackageReleaseScanResults, {
+          releaseId: args.releaseId,
+          attempt: attempt + 1,
+        });
+      }
+    } catch (error) {
+      console.error(`[vt:package] Error polling ${release.sha256hash}:`, error);
+      if (attempt < PACKAGE_SCAN_MAX_ATTEMPTS) {
+        await runAfterRef(ctx, PACKAGE_SCAN_RETRY_DELAY_MS, internalRefs.vt.pollPackageReleaseScanResults, {
+          releaseId: args.releaseId,
+          attempt: attempt + 1,
+        });
+      }
     }
   },
 });

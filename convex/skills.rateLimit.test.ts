@@ -216,6 +216,88 @@ describe("skills anti-spam guards", () => {
     );
   });
 
+  it("normalizes mixed-case slugs before checking skill ownership conflicts", async () => {
+    let authAccountLookupCount = 0;
+    let requestedSlug: string | null = null;
+    const db = {
+      get: vi.fn(async (id: string) => {
+        if (id === "users:caller") return { _id: "users:caller", deletedAt: undefined };
+        if (id === "users:owner") {
+          return {
+            _id: "users:owner",
+            handle: "alice",
+            deletedAt: undefined,
+            deactivatedAt: undefined,
+          };
+        }
+        return null;
+      }),
+      query: vi.fn((table: string) => {
+        if (table === "skills") {
+          return {
+            withIndex: (
+              name: string,
+              build:
+                | ((q: { eq: (field: string, value: string) => unknown }) => unknown)
+                | undefined,
+            ) => {
+              if (name !== "by_slug") throw new Error(`unexpected skills index ${name}`);
+              const q = {
+                eq: (field: string, value: string) => {
+                  if (field !== "slug") throw new Error(`unexpected field ${field}`);
+                  requestedSlug = value;
+                  return q;
+                },
+              };
+              build?.(q);
+              return {
+                unique: async () => ({
+                  _id: "skills:1",
+                  slug: "taken-skill",
+                  ownerUserId: "users:owner",
+                  softDeletedAt: undefined,
+                  moderationStatus: "active",
+                  moderationFlags: undefined,
+                }),
+              };
+            },
+          };
+        }
+        if (table === "authAccounts") {
+          return {
+            withIndex: (name: string) => {
+              if (name !== "userIdAndProvider") throw new Error(`unexpected auth index ${name}`);
+              return {
+                unique: async () => {
+                  authAccountLookupCount += 1;
+                  return authAccountLookupCount === 1
+                    ? { providerAccountId: "owner-gh" }
+                    : { providerAccountId: "caller-gh" };
+                },
+              };
+            },
+          };
+        }
+        throw new Error(`unexpected table ${table}`);
+      }),
+      normalizeId: vi.fn(),
+    };
+
+    await expect(
+      insertVersionHandler(
+        { db } as never,
+        createPublishArgs({
+          userId: "users:caller",
+          slug: "Taken-Skill",
+        }) as never,
+      ),
+    ).rejects.toThrow(
+      "Slug is already taken. Choose a different slug. Existing skill: /alice/taken-skill",
+    );
+
+    expect(requestedSlug).toBe("taken-skill");
+  });
+
   it("does not include a URL in slug-taken message when conflicting owner is deleted", async () => {
     let authAccountLookupCount = 0;
     const db = {
