@@ -276,6 +276,9 @@ describe("plugins publish route", () => {
 
     expect(screen.getByText(/openclaw\.compat\.pluginApi/i)).toBeTruthy();
     expect(screen.getByText(/openclaw\.build\.openclawVersion/i)).toBeTruthy();
+    expect(screen.getByRole("link", { name: /Plugin Setup and Config/i }).getAttribute("href")).toBe(
+      "https://docs.openclaw.ai/plugins/sdk-setup#package-metadata",
+    );
     expect(screen.getByRole("button", { name: "Publish" }).getAttribute("disabled")).not.toBeNull();
     expect(publishRelease).not.toHaveBeenCalled();
   });
