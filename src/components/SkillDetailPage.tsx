@@ -95,6 +95,7 @@ export function SkillDetailPage({
   const updateTags = useMutation(api.skills.updateTags);
   const deleteTags = useMutation(api.skills.deleteTags);
   const requestRescan = useMutation(api.skills.requestRescan);
+  const updateSummary = useMutation(api.skills.updateSummary);
   const getReadme = useAction(api.skills.getReadme);
   const myPublishers = useQuery(api.publishers.listMine) as
     | Array<{ publisher: { _id: Id<"publishers"> }; role: string }>
@@ -113,6 +114,9 @@ export function SkillDetailPage({
   const [reportReason, setReportReason] = useState("");
   const [reportError, setReportError] = useState<string | null>(null);
   const [isSubmittingReport, setIsSubmittingReport] = useState(false);
+  const [summary, setSummary] = useState("");
+  const [isSummaryEditing, setIsSummaryEditing] = useState(false);
+  const [isSummarySubmitting, setIsSummarySubmitting] = useState(false);
 
   const isLoadingSkill = isStaff ? staffResult === undefined : result === undefined;
   const skill = result?.skill;
@@ -143,9 +147,21 @@ export function SkillDetailPage({
       ),
     [myPublishers],
   );
+  const myManagePublisherIds = useMemo(
+    () =>
+      new Set(
+        (Array.isArray(myPublishers) ? myPublishers : [])
+          .filter((entry) => entry.role === "owner" || entry.role === "admin")
+          .map((entry) => entry.publisher._id),
+      ),
+    [myPublishers],
+  );
   const canManage =
     canManageSkill(me, skill) ||
     Boolean(skill?.ownerPublisherId && myPublisherIds.has(skill.ownerPublisherId));
+  const canEditSummary =
+    canManageSkill(me, skill) ||
+    Boolean(skill?.ownerPublisherId && myManagePublisherIds.has(skill.ownerPublisherId));
   const isOwner =
     Boolean(me && skill && me._id === skill.ownerUserId) ||
     Boolean(skill?.ownerPublisherId && myPublisherIds.has(skill.ownerPublisherId));
@@ -287,6 +303,12 @@ export function SkillDetailPage({
     }
   }, [latestVersion, tagVersionId]);
 
+  useEffect(() => {
+    if (skill && !isSummaryEditing) {
+      setSummary(skill.summary ?? "");
+    }
+  }, [skill, isSummaryEditing]);
+
   const closeReportDialog = () => {
     setIsReportDialogOpen(false);
     setReportReason("");
@@ -317,6 +339,40 @@ export function SkillDetailPage({
       skillId: skill._id,
       tags: [tag],
     });
+  };
+
+  const submitSummary = async () => {
+    if (!skill) return;
+    const nextSummary = summary.trim();
+    if (nextSummary === (skill.summary ?? "").trim()) {
+      setIsSummaryEditing(false);
+      return;
+    }
+    setIsSummarySubmitting(true);
+    try {
+      await updateSummary({
+        skillId: skill._id,
+        summary: nextSummary,
+      });
+      setSummary(nextSummary);
+      setIsSummaryEditing(false);
+      toast.success("Summary updated.");
+    } catch (error) {
+      console.error("Failed to update summary", error);
+      toast.error(getUserFacingConvexError(error, "Failed to update summary."));
+    } finally {
+      setIsSummarySubmitting(false);
+    }
+  };
+
+  const startSummaryEdit = () => {
+    setSummary(skill?.summary ?? "");
+    setIsSummaryEditing(true);
+  };
+
+  const cancelSummaryEdit = () => {
+    setSummary(skill?.summary ?? "");
+    setIsSummaryEditing(false);
   };
 
   const submitReport = async () => {
@@ -442,6 +498,14 @@ export function SkillDetailPage({
           osLabels={osLabels}
           priorityContent={securitySummary}
           settingsHref={settingsHref}
+          canEditSummary={canEditSummary}
+          summary={summary}
+          onSummaryChange={setSummary}
+          onSummarySubmit={submitSummary}
+          isSummaryEditing={isSummaryEditing}
+          onSummaryEdit={startSummaryEdit}
+          onSummaryCancel={cancelSummaryEdit}
+          isSummarySubmitting={isSummarySubmitting}
         >
           {mode === "detail" ? (
             <>

@@ -6,7 +6,7 @@ vi.mock("@convex-dev/auth/server", () => ({
 }));
 
 const { getAuthUserId } = await import("@convex-dev/auth/server");
-const { deleteTags } = await import("./skills");
+const { deleteTags, updateSummary } = await import("./skills");
 
 type WrappedHandler<TArgs, TResult = unknown> = {
   _handler: (ctx: unknown, args: TArgs) => Promise<TResult>;
@@ -16,6 +16,12 @@ const deleteTagsHandler = (
   deleteTags as unknown as WrappedHandler<{
     skillId: string;
     tags: string[];
+  }>
+)._handler;
+const updateSummaryHandler = (
+  updateSummary as unknown as WrappedHandler<{
+    skillId: string;
+    summary: string;
   }>
 )._handler;
 
@@ -37,13 +43,19 @@ function buildDigestQuery(table: string) {
   };
 }
 
-function makeCtx(params: { user: Record<string, unknown>; skill: Record<string, unknown> | null }) {
+function makeCtx(params: {
+  user: Record<string, unknown>;
+  skill: Record<string, unknown> | null;
+  publisher?: Record<string, unknown> | null;
+  membership?: Record<string, unknown> | null;
+}) {
   vi.mocked(getAuthUserId).mockResolvedValue(params.user._id as never);
   const patch = vi.fn(async (_id: string, value: Record<string, unknown>) => value);
   const db = {
     get: vi.fn(async (id: string) => {
       if (id === params.user._id) return params.user;
       if (params.skill && id === params.skill._id) return params.skill;
+      if (params.publisher && id === params.publisher._id) return params.publisher;
       return null;
     }),
     query: vi.fn((table: string) => {
@@ -51,6 +63,13 @@ function makeCtx(params: { user: Record<string, unknown>; skill: Record<string, 
       if (globalStatsQuery) return globalStatsQuery;
       const digestQuery = buildDigestQuery(table);
       if (digestQuery) return digestQuery;
+      if (table === "publisherMembers") {
+        return {
+          withIndex: () => ({
+            unique: async () => params.membership ?? null,
+          }),
+        };
+      }
       throw new Error(`unexpected table ${table}`);
     }),
     insert: vi.fn(),
@@ -96,6 +115,18 @@ const baseSkill = {
   moderationStatus: "active",
   moderationFlags: undefined,
   softDeletedAt: undefined,
+};
+
+const publisherSkill = {
+  ...baseSkill,
+  ownerPublisherId: "publishers:org",
+};
+
+const activePublisher = {
+  _id: "publishers:org",
+  kind: "org",
+  deletedAt: undefined,
+  deactivatedAt: undefined,
 };
 
 describe("deleteTags", () => {
@@ -169,5 +200,71 @@ describe("deleteTags", () => {
         { skillId: "skills:missing", tags: ["stable"] } as never,
       ),
     ).rejects.toThrow("Skill not found");
+  });
+});
+
+describe("updateSummary", () => {
+  beforeEach(() => {
+    vi.mocked(getAuthUserId).mockReset();
+  });
+
+  it("allows the skill owner to update a trimmed summary", async () => {
+    const { db, auth, patch } = makeCtx({ user: ownerUser, skill: baseSkill });
+    await updateSummaryHandler(
+      { db, auth } as never,
+      { skillId: "skills:1", summary: "  Updated summary  " } as never,
+    );
+    expect(patch).toHaveBeenCalledOnce();
+    expect(patch.mock.calls[0][1]).toMatchObject({ summary: "Updated summary" });
+  });
+
+  it("allows publisher admins to update org-owned skill summaries", async () => {
+    const { db, auth, patch } = makeCtx({
+      user: otherUser,
+      skill: publisherSkill,
+      publisher: activePublisher,
+      membership: {
+        _id: "publisherMembers:1",
+        publisherId: "publishers:org",
+        userId: "users:other",
+        role: "admin",
+      },
+    });
+    await updateSummaryHandler(
+      { db, auth } as never,
+      { skillId: "skills:1", summary: "Org summary" } as never,
+    );
+    expect(patch).toHaveBeenCalledOnce();
+    expect(patch.mock.calls[0][1]).toMatchObject({ summary: "Org summary" });
+  });
+
+  it("rejects publisher members without manage access", async () => {
+    const { db, auth } = makeCtx({
+      user: otherUser,
+      skill: publisherSkill,
+      publisher: activePublisher,
+      membership: {
+        _id: "publisherMembers:1",
+        publisherId: "publishers:org",
+        userId: "users:other",
+        role: "publisher",
+      },
+    });
+    await expect(
+      updateSummaryHandler(
+        { db, auth } as never,
+        { skillId: "skills:1", summary: "Nope" } as never,
+      ),
+    ).rejects.toThrow("Forbidden");
+  });
+
+  it("rejects overly long summaries", async () => {
+    const { db, auth } = makeCtx({ user: ownerUser, skill: baseSkill });
+    await expect(
+      updateSummaryHandler(
+        { db, auth } as never,
+        { skillId: "skills:1", summary: "x".repeat(501) } as never,
+      ),
+    ).rejects.toThrow("Summary must be 500 characters or less");
   });
 });

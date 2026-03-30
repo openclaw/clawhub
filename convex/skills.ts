@@ -119,6 +119,8 @@ import {
 import { getLatestSkillRescanTarget, insertSkillRescanRequest } from "./model/skills/rescans";
 import schema from "./schema";
 
+const MAX_OWNER_SUMMARY_LENGTH = 500;
+
 export { publishVersionForUser } from "./lib/skillPublish";
 
 type ReadmeResult = { path: string; text: string };
@@ -6734,7 +6736,7 @@ export const deleteTags = mutation({
     const nextTags = { ...skill.tags };
     let changed = false;
     for (const tag of args.tags) {
-      if (tag === "latest") continue; // protect the latest tag from deletion
+      if (tag === "latest") continue;
       if (tag in nextTags) {
         delete nextTags[tag];
         changed = true;
@@ -6747,6 +6749,38 @@ export const deleteTags = mutation({
       tags: nextTags,
       updatedAt: Date.now(),
     });
+  },
+});
+
+export const updateSummary = mutation({
+  args: {
+    skillId: v.id("skills"),
+    summary: v.string(),
+  },
+  handler: async (ctx, args) => {
+    const { user } = await requireUser(ctx);
+    const skill = await ctx.db.get(args.skillId);
+    if (!skill) throw new Error("Skill not found");
+    if (user.role !== "admin" && user.role !== "moderator") {
+      await assertCanManageOwnedResource(ctx, {
+        actor: user,
+        ownerUserId: skill.ownerUserId,
+        ownerPublisherId: skill.ownerPublisherId,
+        allowedPublisherRoles: ["admin"],
+      });
+    }
+    const summary = args.summary.trim();
+    if (summary.length > MAX_OWNER_SUMMARY_LENGTH) {
+      throw new ConvexError(`Summary must be ${MAX_OWNER_SUMMARY_LENGTH} characters or less`);
+    }
+
+    const now = Date.now();
+    const patch: Partial<Doc<"skills">> = {
+      summary,
+      updatedAt: now,
+    };
+
+    await ctx.db.patch(skill._id, patch);
   },
 });
 
