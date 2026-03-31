@@ -192,3 +192,59 @@ async function addIgnoreFile(ig: ReturnType<typeof ignore>, path: string) {
     // optional
   }
 }
+
+/**
+ * List manually installed skills (those in skills dir but not in lockfile).
+ * Returns an array of skill directory names.
+ */
+export async function listManualSkills(
+  skillsDir: string,
+  lockedSlugs: Set<string>,
+): Promise<string[]> {
+  const manual: string[] = [];
+  try {
+    const entries = await readdir(skillsDir, { withFileTypes: true });
+    for (const entry of entries) {
+      if (!entry.isDirectory()) continue;
+      if (entry.name.startsWith(".")) continue;
+      // Skip skills that are in the lockfile (already tracked by clawhub)
+      if (lockedSlugs.has(entry.name)) continue;
+      // Check if this is a valid skill directory (has SKILL.md or .clawhub/origin.json)
+      const skillPath = join(skillsDir, entry.name);
+      const hasSkillFile = await hasSkillMetadata(skillPath);
+      if (hasSkillFile) {
+        manual.push(entry.name);
+      }
+    }
+  } catch {
+    // Skills directory might not exist yet
+  }
+  return manual.sort();
+}
+
+/**
+ * Check if a directory looks like a skill by checking for common indicators.
+ */
+async function hasSkillMetadata(skillDir: string): Promise<boolean> {
+  // Check for SKILL.md
+  try {
+    await readFile(join(skillDir, "SKILL.md"), "utf8");
+    return true;
+  } catch {
+    // Check for .clawhub/origin.json or .clawdhub/origin.json
+    const originPath = join(skillDir, DOT_DIR, "origin.json");
+    try {
+      await readFile(originPath, "utf8");
+      return true;
+    } catch {
+      // Check legacy path
+      const legacyOriginPath = join(skillDir, LEGACY_DOT_DIR, "origin.json");
+      try {
+        await readFile(legacyOriginPath, "utf8");
+        return true;
+      } catch {
+        return false;
+      }
+    }
+  }
+}
