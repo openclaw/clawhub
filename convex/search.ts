@@ -442,8 +442,10 @@ export const searchSouls: ReturnType<typeof action> = action({
     }
     const limit = args.limit ?? 10;
     // Convex vectorSearch max limit is 256; clamp candidate sizes accordingly.
+    // Use a high minimum (200) for the initial candidate pool — same rationale
+    // as searchSkills (see #1375).
     const maxCandidate = Math.min(Math.max(limit * 10, 200), 256);
-    let candidateLimit = Math.min(Math.max(limit * 3, 50), 256);
+    let candidateLimit = Math.min(Math.max(limit * 3, 200), 256);
     let hydrated: HydratedSoulEntry[] = [];
     let scoreById = new Map<Id<"soulEmbeddings">, number>();
     let exactMatches: HydratedSoulEntry[] = [];
