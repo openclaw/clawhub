@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { mkdir, readdir, readFile, writeFile } from "node:fs/promises";
+import { access, mkdir, readdir, readFile, writeFile } from "node:fs/promises";
 import { dirname, join, relative, resolve, sep } from "node:path";
 import { unzipSync } from "fflate";
 import ignore from "ignore";
@@ -226,25 +226,24 @@ export async function listManualSkills(
  * Check if a directory looks like a skill by checking for common indicators.
  */
 async function hasSkillMetadata(skillDir: string): Promise<boolean> {
-  // Check for SKILL.md
-  try {
-    await readFile(join(skillDir, "SKILL.md"), "utf8");
-    return true;
-  } catch {
-    // Check for .clawhub/origin.json or .clawdhub/origin.json
-    const originPath = join(skillDir, DOT_DIR, "origin.json");
+  const candidates = [
+    join(skillDir, "SKILL.md"),
+    join(skillDir, DOT_DIR, "origin.json"),
+    join(skillDir, LEGACY_DOT_DIR, "origin.json"),
+  ];
+  for (const p of candidates) {
     try {
-      await readFile(originPath, "utf8");
+      await access(p);
       return true;
-    } catch {
-      // Check legacy path
-      const legacyOriginPath = join(skillDir, LEGACY_DOT_DIR, "origin.json");
-      try {
-        await readFile(legacyOriginPath, "utf8");
-        return true;
-      } catch {
-        return false;
+    } catch (err) {
+      // Re-throw unexpected errors (only ENOENT and ENOTDIR are expected)
+      if (
+        (err as NodeJS.ErrnoException).code !== "ENOENT" &&
+        (err as NodeJS.ErrnoException).code !== "ENOTDIR"
+      ) {
+        throw err;
       }
     }
   }
+  return false;
 }
