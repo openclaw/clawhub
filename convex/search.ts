@@ -152,8 +152,11 @@ export const searchSkills: ReturnType<typeof action> = action({
     }
     const limit = args.limit ?? 10;
     // Convex vectorSearch max limit is 256; clamp candidate sizes accordingly.
+    // Use a high minimum (200) for the initial candidate pool so that skills
+    // with moderate vector similarity but high lexical/popularity boosts are
+    // not silently dropped when `limit` is small (fixes #1375).
     const maxCandidate = Math.min(Math.max(limit * 10, 200), 256);
-    let candidateLimit = Math.min(Math.max(limit * 3, 50), 256);
+    let candidateLimit = Math.min(Math.max(limit * 3, 200), 256);
     let hydrated: SkillSearchEntry[] = [];
     const seenEmbeddingIds = new Set<Id<"skillEmbeddings">>();
     let scoreById = new Map<Id<"skillEmbeddings">, number>();

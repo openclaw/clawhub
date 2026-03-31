@@ -225,6 +225,28 @@ describe("cmdSearch", () => {
     const [, requestArgs] = mockApiRequest.mock.calls[0] ?? [];
     expect(requestArgs?.token).toBe("tkn");
   });
+
+  it("defaults limit to 25 when not specified", async () => {
+    mockGetOptionalAuthToken.mockResolvedValue(undefined);
+    mockApiRequest.mockResolvedValue({ results: [] });
+
+    await cmdSearch(makeOpts(), "stock price");
+
+    const [, requestArgs] = mockApiRequest.mock.calls[0] ?? [];
+    const url = new URL(String(requestArgs?.url));
+    expect(url.searchParams.get("limit")).toBe("25");
+  });
+
+  it("uses explicit limit when provided", async () => {
+    mockGetOptionalAuthToken.mockResolvedValue(undefined);
+    mockApiRequest.mockResolvedValue({ results: [] });
+
+    await cmdSearch(makeOpts(), "stock price", 5);
+
+    const [, requestArgs] = mockApiRequest.mock.calls[0] ?? [];
+    const url = new URL(String(requestArgs?.url));
+    expect(url.searchParams.get("limit")).toBe("5");
+  });
 });
 
 describe("cmdUpdate", () => {
