@@ -10,6 +10,7 @@ import {
   extractZipToDir,
   hashSkillFiles,
   hashSkillZip,
+  listManualSkills,
   listTextFiles,
   readLockfile,
   readSkillOrigin,
@@ -190,5 +191,124 @@ describe("skills", () => {
     };
     await writeSkillOrigin(workdir, origin);
     expect(await readSkillOrigin(workdir)).toEqual(origin);
+  });
+
+  describe("listManualSkills", () => {
+    it("lists manual skills not in lockfile", async () => {
+      const dir = await mkdtemp(join(tmpdir(), "clawhub-manual-"));
+      const skillDir = join(dir, "my-skill");
+      await mkdir(skillDir);
+      await writeFile(join(skillDir, "SKILL.md"), "# My Skill", "utf8");
+
+      const result = await listManualSkills(dir, new Set());
+      expect(result).toEqual(["my-skill"]);
+    });
+
+    it("excludes skills that are in the lockfile", async () => {
+      const dir = await mkdtemp(join(tmpdir(), "clawhub-manual-locked-"));
+      const skillDir = join(dir, "tracked-skill");
+      await mkdir(skillDir);
+      await writeFile(join(skillDir, "SKILL.md"), "# Tracked", "utf8");
+
+      const result = await listManualSkills(dir, new Set(["tracked-skill"]));
+      expect(result).toEqual([]);
+    });
+
+    it("returns empty array when skills dir does not exist", async () => {
+      const result = await listManualSkills("/nonexistent/path", new Set());
+      expect(result).toEqual([]);
+    });
+
+    it("recognizes skills with .clawhub/origin.json", async () => {
+      const dir = await mkdtemp(join(tmpdir(), "clawhub-origin-skill-"));
+      const skillDir = join(dir, "origin-skill");
+      await mkdir(skillDir);
+      await mkdir(join(skillDir, ".clawhub"));
+      await writeFile(
+        join(skillDir, ".clawhub", "origin.json"),
+        JSON.stringify({
+          version: 1,
+          registry: "https://example.com",
+          slug: "origin-skill",
+          installedVersion: "1.0.0",
+          installedAt: Date.now(),
+        }),
+        "utf8",
+      );
+
+      const result = await listManualSkills(dir, new Set());
+      expect(result).toEqual(["origin-skill"]);
+    });
+
+    it("recognizes skills with legacy .clawdhub/origin.json", async () => {
+      const dir = await mkdtemp(join(tmpdir(), "clawhub-legacy-skill-"));
+      const skillDir = join(dir, "legacy-skill");
+      await mkdir(skillDir);
+      await mkdir(join(skillDir, ".clawdhub"));
+      await writeFile(
+        join(skillDir, ".clawdhub", "origin.json"),
+        JSON.stringify({
+          version: 1,
+          registry: "https://example.com",
+          slug: "legacy-skill",
+          installedVersion: "1.0.0",
+          installedAt: Date.now(),
+        }),
+        "utf8",
+      );
+
+      const result = await listManualSkills(dir, new Set());
+      expect(result).toEqual(["legacy-skill"]);
+    });
+
+    it("skips directories without skill metadata", async () => {
+      const dir = await mkdtemp(join(tmpdir(), "clawhub-no-metadata-"));
+      const skillDir = join(dir, "not-a-skill");
+      await mkdir(skillDir);
+      await writeFile(join(skillDir, "readme.txt"), "just a folder", "utf8");
+
+      const result = await listManualSkills(dir, new Set());
+      expect(result).toEqual([]);
+    });
+
+    it("skips dotfile directories", async () => {
+      const dir = await mkdtemp(join(tmpdir(), "clawhub-dotfiles-"));
+      const visibleSkillDir = join(dir, "visible-skill");
+      await mkdir(visibleSkillDir);
+      await writeFile(join(visibleSkillDir, "SKILL.md"), "# Visible", "utf8");
+
+      const hiddenSkillDir = join(dir, ".hidden-skill");
+      await mkdir(hiddenSkillDir);
+      await writeFile(join(hiddenSkillDir, "SKILL.md"), "# Hidden", "utf8");
+
+      const result = await listManualSkills(dir, new Set());
+      expect(result).toEqual(["visible-skill"]);
+    });
+
+    it("returns sorted list of skills", async () => {
+      const dir = await mkdtemp(join(tmpdir(), "clawhub-sort-"));
+      await mkdir(join(dir, "z-skill"));
+      await writeFile(join(dir, "z-skill", "SKILL.md"), "# Z", "utf8");
+      await mkdir(join(dir, "a-skill"));
+      await writeFile(join(dir, "a-skill", "SKILL.md"), "# A", "utf8");
+      await mkdir(join(dir, "m-skill"));
+      await writeFile(join(dir, "m-skill", "SKILL.md"), "# M", "utf8");
+
+      const result = await listManualSkills(dir, new Set());
+      expect(result).toEqual(["a-skill", "m-skill", "z-skill"]);
+    });
+
+    it("handles mixed tracked and manual skills correctly", async () => {
+      const dir = await mkdtemp(join(tmpdir(), "clawhub-mixed-"));
+      await mkdir(join(dir, "tracked-skill"));
+      await writeFile(join(dir, "tracked-skill", "SKILL.md"), "# Tracked", "utf8");
+      await mkdir(join(dir, "manual-skill"));
+      await writeFile(join(dir, "manual-skill", "SKILL.md"), "# Manual", "utf8");
+      await mkdir(join(dir, "another-manual"));
+      await writeFile(join(dir, "another-manual", "SKILL.md"), "# Another", "utf8");
+
+      const result = await listManualSkills(dir, new Set(["tracked-skill"]));
+      expect(result).toEqual(["another-manual", "manual-skill"]);
+    });
   });
 });
