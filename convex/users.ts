@@ -58,14 +58,23 @@ export const searchInternal = internalQuery({
 
     const limit = clampInt(args.limit ?? 20, 1, MAX_USER_LIST_LIMIT);
     const result = await queryUsersForAdminList(ctx, { limit, search: args.query });
-    const items = result.items.map((user) => ({
+    const exactHandleUser = args.query
+      ? await getActiveUserByHandleOrPersonalPublisher(ctx, args.query)
+      : null;
+    const dedupedUsers = exactHandleUser
+      ? [exactHandleUser, ...result.items.filter((user) => user._id !== exactHandleUser._id)]
+      : result.items;
+    const total = exactHandleUser
+      ? result.total + (result.items.some((user) => user._id === exactHandleUser._id) ? 0 : 1)
+      : result.total;
+    const items = dedupedUsers.slice(0, limit).map((user) => ({
       userId: user._id,
       handle: user.handle ?? null,
       displayName: user.displayName ?? null,
       name: user.name ?? null,
       role: user.role ?? null,
     }));
-    return { items, total: result.total };
+    return { items, total };
   },
 });
 

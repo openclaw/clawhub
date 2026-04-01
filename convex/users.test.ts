@@ -120,12 +120,53 @@ function makeCtx() {
   };
 }
 
-function makeListCtx(users: Array<Record<string, unknown>>) {
+function makeListCtx(
+  users: Array<Record<string, unknown>>,
+  options?: {
+    publishersByHandle?: Record<string, Record<string, unknown>>;
+    usersById?: Record<string, Record<string, unknown>>;
+  },
+) {
   const take = vi.fn(async (n: number) => users.slice(0, n));
   const collect = vi.fn(async () => users);
   const order = vi.fn(() => ({ take, collect }));
-  const query = vi.fn(() => ({ order }));
-  const get = vi.fn();
+  const publishersByHandle = options?.publishersByHandle ?? {};
+  const usersById = options?.usersById ?? {};
+  const query = vi.fn((table: string) => {
+    if (table === "users") {
+      return {
+        order,
+        withIndex: (name: string, cb?: (q: { eq: (field: string, value: string) => unknown }) => unknown) => {
+          if (name !== "handle") throw new Error(`Unexpected users index ${name}`);
+          let handle = "";
+          cb?.({
+            eq: (field: string, value: string) => {
+              if (field === "handle") handle = value;
+              return {};
+            },
+          });
+          return { unique: vi.fn(async () => users.find((user) => user.handle === handle) ?? null) };
+        },
+      };
+    }
+    if (table === "publishers") {
+      return {
+        withIndex: (name: string, cb?: (q: { eq: (field: string, value: string) => unknown }) => unknown) => {
+          if (name !== "by_handle") throw new Error(`Unexpected publishers index ${name}`);
+          let handle = "";
+          cb?.({
+            eq: (field: string, value: string) => {
+              if (field === "handle") handle = value;
+              return {};
+            },
+          });
+          return { unique: vi.fn(async () => publishersByHandle[handle] ?? null) };
+        },
+      };
+    }
+    throw new Error(`Unexpected table ${table}`);
+  });
+  const get = vi.fn(async (id: string) => usersById[id] ?? null);
   return {
     ctx: { db: { query, get, normalizeId: vi.fn() } } as never,
     take,
@@ -1057,6 +1098,67 @@ describe("users.searchInternal", () => {
         role: "user",
       },
     ]);
+  });
+
+  it("includes an exact personal publisher handle match in admin search", async () => {
+    const users = [
+      { _id: "users:1", _creationTime: 2, handle: "alice", name: "alice", role: "user" },
+    ];
+    const { ctx, get } = makeListCtx(users, {
+      publishersByHandle: {
+        lmlukef: {
+          _id: "publishers:lmlukef",
+          kind: "user",
+          handle: "lmlukef",
+          linkedUserId: "users:owner",
+        },
+      },
+      usersById: {
+        "users:owner": {
+          _id: "users:owner",
+          _creationTime: 1,
+          handle: "luke",
+          name: "different-gh-login",
+          displayName: "Luke",
+          role: "user",
+        },
+      },
+    });
+    const handler = (
+      searchInternal as unknown as { _handler: (ctx: unknown, args: unknown) => Promise<unknown> }
+    )._handler;
+    get.mockImplementation(async (id: string) => {
+      if (id === "users:admin") return { _id: "users:admin", role: "admin" };
+      if (id === "users:owner") {
+        return {
+          _id: "users:owner",
+          _creationTime: 1,
+          handle: "luke",
+          name: "different-gh-login",
+          displayName: "Luke",
+          role: "user",
+        };
+      }
+      return null;
+    });
+
+    const result = (await handler(ctx, {
+      actorUserId: "users:admin",
+      query: "lmLukeF",
+      limit: 25,
+    })) as {
+      items: Array<Record<string, unknown>>;
+      total: number;
+    };
+
+    expect(result.total).toBe(1);
+    expect(result.items[0]).toEqual({
+      userId: "users:owner",
+      handle: "luke",
+      displayName: "Luke",
+      name: "different-gh-login",
+      role: "user",
+    });
   });
 
   it("rejects deactivated actors", async () => {
