@@ -16,12 +16,15 @@ import {
   ApiV1PackagePublishResponseSchema,
   ApiV1PackageResponseSchema,
   ApiV1PackageSearchResponseSchema,
+  ApiV1PackageTrustedPublisherResponseSchema,
   ApiV1PackageVersionListResponseSchema,
   ApiV1PackageVersionResponseSchema,
+  ApiV1PublishTokenMintResponseSchema,
   normalizeOpenClawExternalPluginCompatibility,
   type PackageCapabilitySummary,
   type PackageCompatibility,
   type PackageFamily,
+  type PackageTrustedPublisher,
   type PackageVerificationSummary,
   validateOpenClawExternalCodePluginPackageJson,
 } from "../../schema/index.js";
@@ -61,6 +64,7 @@ type PackagePublishOptions = {
   owner?: string;
   version?: string;
   changelog?: string;
+  manualOverrideReason?: string;
   tags?: string;
   bundleFormat?: string;
   hostTargets?: string;
@@ -69,6 +73,21 @@ type PackagePublishOptions = {
   sourceRef?: string;
   sourcePath?: string;
   dryRun?: boolean;
+  json?: boolean;
+};
+
+type PackageTrustedPublisherGetOptions = {
+  json?: boolean;
+};
+
+type PackageTrustedPublisherSetOptions = {
+  repository: string;
+  workflowFilename: string;
+  environment: string;
+  json?: boolean;
+};
+
+type PackageTrustedPublisherDeleteOptions = {
   json?: boolean;
 };
 
@@ -95,6 +114,7 @@ type PackagePublishPayload = {
   family: "code-plugin" | "bundle-plugin";
   version: string;
   changelog: string;
+  manualOverrideReason?: string;
   tags: string[];
   source?: NonNullable<PackagePublishSource>;
   bundle?: {
@@ -332,6 +352,102 @@ export async function cmdInspectPackage(
   }
 }
 
+export async function cmdGetPackageTrustedPublisher(
+  opts: GlobalOpts,
+  packageName: string,
+  options: PackageTrustedPublisherGetOptions = {},
+) {
+  const trimmed = normalizePackageNameOrFail(packageName);
+  const token = await getOptionalAuthToken();
+  const registry = await getRegistry(opts, { cache: true });
+  const spinner = createSpinner("Fetching trusted publisher");
+  try {
+    const result = await apiRequestPackageTrustedPublisher(registry, trimmed, token);
+    spinner.stop();
+    if (options.json) {
+      process.stdout.write(`${JSON.stringify(result, null, 2)}\n`);
+      return;
+    }
+    if (!result.trustedPublisher) {
+      console.log("No trusted publisher configured.");
+      return;
+    }
+    printTrustedPublisher(result.trustedPublisher);
+  } catch (error) {
+    spinner.fail(formatError(error));
+    throw error;
+  }
+}
+
+export async function cmdSetPackageTrustedPublisher(
+  opts: GlobalOpts,
+  packageName: string,
+  options: PackageTrustedPublisherSetOptions,
+) {
+  const trimmed = normalizePackageNameOrFail(packageName);
+  const repository = options.repository?.trim();
+  const workflowFilename = options.workflowFilename?.trim();
+  const environment = options.environment?.trim();
+  if (!repository) fail("--repository required");
+  if (!workflowFilename) fail("--workflow-filename required");
+  if (!environment) fail("--environment required");
+
+  const token = await requireAuthToken();
+  const registry = await getRegistry(opts, { cache: true });
+  const spinner = createSpinner("Saving trusted publisher");
+  try {
+    const result = await apiRequest(
+      registry,
+      {
+        method: "POST",
+        path: `${ApiRoutes.packages}/${encodeURIComponent(trimmed)}/trusted-publisher`,
+        token,
+        body: { repository, workflowFilename, environment },
+      },
+      ApiV1PackageTrustedPublisherResponseSchema,
+    );
+    spinner.stop();
+    if (options.json) {
+      process.stdout.write(`${JSON.stringify(result, null, 2)}\n`);
+      return;
+    }
+    console.log(`Trusted publisher saved for ${trimmed}.`);
+    if (result.trustedPublisher) {
+      printTrustedPublisher(result.trustedPublisher);
+    }
+  } catch (error) {
+    spinner.fail(formatError(error));
+    throw error;
+  }
+}
+
+export async function cmdDeletePackageTrustedPublisher(
+  opts: GlobalOpts,
+  packageName: string,
+  options: PackageTrustedPublisherDeleteOptions = {},
+) {
+  const trimmed = normalizePackageNameOrFail(packageName);
+  const token = await requireAuthToken();
+  const registry = await getRegistry(opts, { cache: true });
+  const spinner = createSpinner("Deleting trusted publisher");
+  try {
+    const result = await apiRequest<{ ok: boolean }>(registry, {
+      method: "DELETE",
+      path: `${ApiRoutes.packages}/${encodeURIComponent(trimmed)}/trusted-publisher`,
+      token,
+    });
+    spinner.stop();
+    if (options.json) {
+      process.stdout.write(`${JSON.stringify(result, null, 2)}\n`);
+      return;
+    }
+    console.log(`Trusted publisher deleted for ${trimmed}.`);
+  } catch (error) {
+    spinner.fail(formatError(error));
+    throw error;
+  }
+}
+
 export async function cmdPublishPackage(
   opts: GlobalOpts,
   sourceArg: string,
@@ -362,12 +478,18 @@ export async function cmdPublishPackage(
       return;
     }
 
-    const token = await requireAuthToken();
     const registry = await getRegistry(opts, { cache: true });
     const spinner = options.json
       ? null
       : createSpinner(`Preparing ${plan.payload.name}@${plan.payload.version}`);
     try {
+      const publishToken = await resolvePackagePublishToken({
+        registry,
+        packageName: plan.payload.name,
+        version: plan.payload.version,
+        manualOverrideReason: plan.payload.manualOverrideReason,
+        spinner,
+      });
       const form = new FormData();
       form.set("payload", JSON.stringify(plan.payload));
 
@@ -386,7 +508,7 @@ export async function cmdPublishPackage(
       if (spinner) spinner.text = `Publishing ${plan.payload.name}@${plan.payload.version}`;
       const result = await apiRequestForm(
         registry,
-        { method: "POST", path: ApiRoutes.packages, token, form },
+        { method: "POST", path: ApiRoutes.packages, token: publishToken, form },
         ApiV1PackagePublishResponseSchema,
       );
 
@@ -413,6 +535,18 @@ async function apiRequestPackageDetail(registry: string, name: string, token?: s
     registry,
     { method: "GET", path: `${ApiRoutes.packages}/${encodeURIComponent(name)}`, token },
     ApiV1PackageResponseSchema,
+  );
+}
+
+async function apiRequestPackageTrustedPublisher(registry: string, name: string, token?: string) {
+  return await apiRequest(
+    registry,
+    {
+      method: "GET",
+      path: `${ApiRoutes.packages}/${encodeURIComponent(name)}/trusted-publisher`,
+      token,
+    },
+    ApiV1PackageTrustedPublisherResponseSchema,
   );
 }
 
@@ -503,6 +637,13 @@ function printVersionSummary(version: NonNullable<PackageVersionResponse["versio
   console.log(`Selected: ${version.version}`);
   console.log(`Selected At: ${formatTimestamp(version.createdAt)}`);
   if (version.changelog.trim()) console.log(`Changelog: ${truncate(version.changelog, 120)}`);
+}
+
+function printTrustedPublisher(trustedPublisher: PackageTrustedPublisher) {
+  console.log(`Provider: ${trustedPublisher.provider}`);
+  console.log(`Repository: ${trustedPublisher.repository}`);
+  console.log(`Workflow: ${trustedPublisher.workflowFilename}`);
+  console.log(`Environment: ${trustedPublisher.environment}`);
 }
 
 function printCompatibility(compatibility: PackageCompatibility | null | undefined) {
@@ -749,6 +890,9 @@ async function preparePackagePublishPlan(
     family,
     version,
     changelog,
+    ...(options.manualOverrideReason?.trim()
+      ? { manualOverrideReason: options.manualOverrideReason.trim() }
+      : {}),
     tags,
     ...(source ? { source } : {}),
     ...(family === "bundle-plugin"
@@ -783,6 +927,105 @@ async function preparePackagePublishPlan(
       totalBytes: filesOnDisk.reduce((sum, file) => sum + file.bytes.byteLength, 0),
     },
   };
+}
+
+function hasGitHubActionsOidcEnv(env: NodeJS.ProcessEnv = process.env) {
+  return Boolean(env.ACTIONS_ID_TOKEN_REQUEST_URL && env.ACTIONS_ID_TOKEN_REQUEST_TOKEN);
+}
+
+async function requestGitHubActionsOidcToken(
+  audience: string,
+  options: {
+    env?: NodeJS.ProcessEnv;
+    fetchImpl?: typeof fetch;
+  } = {},
+) {
+  const env = options.env ?? process.env;
+  const fetchImpl = options.fetchImpl ?? globalThis.fetch.bind(globalThis);
+  const requestUrl = env.ACTIONS_ID_TOKEN_REQUEST_URL?.trim();
+  const requestToken = env.ACTIONS_ID_TOKEN_REQUEST_TOKEN?.trim();
+  if (!requestUrl || !requestToken) {
+    throw new Error("GitHub Actions OIDC is not available in this environment.");
+  }
+
+  const url = new URL(requestUrl);
+  url.searchParams.set("audience", audience);
+  const response = await fetchImpl(url, {
+    method: "GET",
+    headers: {
+      Accept: "application/json",
+      Authorization: `Bearer ${requestToken}`,
+    },
+  });
+  const responseText = await response.text();
+  if (!response.ok) {
+    throw new Error(`GitHub OIDC token request failed (${response.status}): ${responseText || response.statusText}`);
+  }
+
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(responseText);
+  } catch {
+    throw new Error("GitHub OIDC token request returned invalid JSON.");
+  }
+
+  const token = (parsed as { value?: unknown }).value;
+  if (typeof token !== "string" || !token.trim()) {
+    throw new Error("GitHub OIDC token response did not include a token value.");
+  }
+  return token;
+}
+
+async function mintPackagePublishToken(
+  registry: string,
+  packageName: string,
+  version: string,
+  githubOidcToken: string,
+) {
+  const response = await apiRequest(
+    registry,
+    {
+      method: "POST",
+      path: ApiRoutes.publishTokenMint,
+      body: {
+        packageName,
+        version,
+        githubOidcToken,
+      },
+    },
+    ApiV1PublishTokenMintResponseSchema,
+  );
+  return response.token;
+}
+
+async function resolvePackagePublishToken(params: {
+  registry: string;
+  packageName: string;
+  version: string;
+  manualOverrideReason?: string;
+  spinner: ReturnType<typeof createSpinner> | null;
+}) {
+  if (params.manualOverrideReason?.trim()) {
+    return await requireAuthToken();
+  }
+
+  if (!hasGitHubActionsOidcEnv()) {
+    return await requireAuthToken();
+  }
+
+  if (params.spinner) {
+    params.spinner.text = "Requesting GitHub Actions OIDC token";
+  }
+  const githubOidcToken = await requestGitHubActionsOidcToken("clawhub");
+  if (params.spinner) {
+    params.spinner.text = "Minting short-lived ClawHub publish token";
+  }
+  return await mintPackagePublishToken(
+    params.registry,
+    params.packageName,
+    params.version,
+    githubOidcToken,
+  );
 }
 
 function buildSource(

@@ -15,6 +15,7 @@ export const ApiRoutes = {
   search: "/api/v1/search",
   resolve: "/api/v1/resolve",
   download: "/api/v1/download",
+  publishTokenMint: "/api/v1/publish/token/mint",
   skills: "/api/v1/skills",
   packages: "/api/v1/packages",
   codePlugins: "/api/v1/code-plugins",

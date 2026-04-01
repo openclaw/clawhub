@@ -17,13 +17,22 @@ const authTokenMocks = createAuthTokenModuleMocks();
 const registryMocks = createRegistryModuleMocks();
 const httpMocks = createHttpModuleMocks();
 const uiMocks = createUiModuleMocks();
+const originalOidcRequestUrl = process.env.ACTIONS_ID_TOKEN_REQUEST_URL;
+const originalOidcRequestToken = process.env.ACTIONS_ID_TOKEN_REQUEST_TOKEN;
 
 vi.mock("../../http.js", () => httpMocks.moduleFactory());
 vi.mock("../registry.js", () => registryMocks.moduleFactory());
 vi.mock("../authToken.js", () => authTokenMocks.moduleFactory());
 vi.mock("../ui.js", () => uiMocks.moduleFactory());
 
-const { cmdExplorePackages, cmdInspectPackage, cmdPublishPackage } = await import("./packages");
+const {
+  cmdDeletePackageTrustedPublisher,
+  cmdExplorePackages,
+  cmdGetPackageTrustedPublisher,
+  cmdInspectPackage,
+  cmdPublishPackage,
+  cmdSetPackageTrustedPublisher,
+} = await import("./packages");
 
 const mockLog = vi.spyOn(console, "log").mockImplementation(() => {});
 const mockWrite = vi.spyOn(process.stdout, "write").mockImplementation(() => true);
@@ -92,6 +101,17 @@ afterEach(() => {
   mockLog.mockClear();
   mockWrite.mockClear();
   uiMocks.spinner.text = "";
+  vi.unstubAllGlobals();
+  if (originalOidcRequestUrl === undefined) {
+    delete process.env.ACTIONS_ID_TOKEN_REQUEST_URL;
+  } else {
+    process.env.ACTIONS_ID_TOKEN_REQUEST_URL = originalOidcRequestUrl;
+  }
+  if (originalOidcRequestToken === undefined) {
+    delete process.env.ACTIONS_ID_TOKEN_REQUEST_TOKEN;
+  } else {
+    process.env.ACTIONS_ID_TOKEN_REQUEST_TOKEN = originalOidcRequestToken;
+  }
 });
 
 describe("package commands", () => {
@@ -249,6 +269,127 @@ describe("package commands", () => {
       expect(mockLog).not.toHaveBeenCalled();
       expect(mockWrite).not.toHaveBeenCalled();
       dateSpy.mockRestore();
+    } finally {
+      await rm(workdir, { recursive: true, force: true });
+    }
+  });
+
+  it("mints a short-lived publish token from GitHub Actions OIDC in CI", async () => {
+    const workdir = await makeTmpWorkdir();
+    try {
+      process.env.ACTIONS_ID_TOKEN_REQUEST_URL = "https://token.actions.githubusercontent.com/oidc";
+      process.env.ACTIONS_ID_TOKEN_REQUEST_TOKEN = "gh-request-token";
+      const fetchMock = vi.fn().mockResolvedValue(
+        new Response(JSON.stringify({ value: "github-oidc-jwt" }), {
+          status: 200,
+          headers: { "content-type": "application/json" },
+        }),
+      );
+      vi.stubGlobal("fetch", fetchMock);
+
+      const folder = join(workdir, "demo-plugin");
+      await mkdir(folder, { recursive: true });
+      await writeFile(
+        join(folder, "package.json"),
+        makeCodePluginPackageJson({
+          name: "@scope/demo-plugin",
+          displayName: "Demo Plugin",
+          version: "1.0.0",
+        }),
+        "utf8",
+      );
+      await writeFile(join(folder, "openclaw.plugin.json"), JSON.stringify({ id: "demo.plugin" }), "utf8");
+
+      httpMocks.apiRequest.mockResolvedValueOnce({
+        token: "clh_short_publish",
+        expiresAt: 1_234_567_890,
+      });
+      httpMocks.apiRequestForm.mockResolvedValueOnce({
+        ok: true,
+        packageId: "pkg_1",
+        releaseId: "rel_1",
+      });
+
+      await cmdPublishPackage(makeOpts(workdir), "demo-plugin", {
+        sourceRepo: "openclaw/demo-plugin",
+        sourceCommit: "abc123",
+      });
+
+      expect(authTokenMocks.requireAuthToken).not.toHaveBeenCalled();
+      expect(fetchMock).toHaveBeenCalledWith(
+        new URL("https://token.actions.githubusercontent.com/oidc?audience=clawhub"),
+        expect.objectContaining({
+          method: "GET",
+          headers: expect.objectContaining({
+            Authorization: "Bearer gh-request-token",
+          }),
+        }),
+      );
+      expect(httpMocks.apiRequest).toHaveBeenCalledWith(
+        "https://clawhub.ai",
+        expect.objectContaining({
+          method: "POST",
+          path: "/api/v1/publish/token/mint",
+          body: {
+            packageName: "@scope/demo-plugin",
+            version: "1.0.0",
+            githubOidcToken: "github-oidc-jwt",
+          },
+        }),
+        expect.anything(),
+      );
+      const publishArgs = httpMocks.apiRequestForm.mock.calls[0]?.[1] as { token?: string } | undefined;
+      expect(publishArgs?.token).toBe("clh_short_publish");
+    } finally {
+      await rm(workdir, { recursive: true, force: true });
+    }
+  });
+
+  it("uses normal token auth for manual override publishes", async () => {
+    const workdir = await makeTmpWorkdir();
+    try {
+      process.env.ACTIONS_ID_TOKEN_REQUEST_URL = "https://token.actions.githubusercontent.com/oidc";
+      process.env.ACTIONS_ID_TOKEN_REQUEST_TOKEN = "gh-request-token";
+      const fetchMock = vi.fn();
+      vi.stubGlobal("fetch", fetchMock);
+
+      const folder = join(workdir, "demo-plugin");
+      await mkdir(folder, { recursive: true });
+      await writeFile(
+        join(folder, "package.json"),
+        makeCodePluginPackageJson({
+          name: "demo-plugin",
+          displayName: "Demo Plugin",
+          version: "1.0.0",
+        }),
+        "utf8",
+      );
+      await writeFile(join(folder, "openclaw.plugin.json"), JSON.stringify({ id: "demo.plugin" }), "utf8");
+
+      authTokenMocks.requireAuthToken.mockResolvedValueOnce("manual-token");
+      httpMocks.apiRequestForm.mockResolvedValueOnce({
+        ok: true,
+        packageId: "pkg_1",
+        releaseId: "rel_1",
+      });
+
+      await cmdPublishPackage(makeOpts(workdir), "demo-plugin", {
+        manualOverrideReason: "break glass",
+        sourceRepo: "openclaw/demo-plugin",
+        sourceCommit: "abc123",
+      });
+
+      expect(fetchMock).not.toHaveBeenCalled();
+      expect(httpMocks.apiRequest).not.toHaveBeenCalled();
+      const publishArgs = httpMocks.apiRequestForm.mock.calls[0]?.[1] as { token?: string; form?: FormData } | undefined;
+      expect(publishArgs?.token).toBe("manual-token");
+      const payloadEntry = publishArgs?.form?.get("payload");
+      if (typeof payloadEntry !== "string") {
+        throw new Error("Missing publish payload");
+      }
+      expect(JSON.parse(payloadEntry)).toMatchObject({
+        manualOverrideReason: "break glass",
+      });
     } finally {
       await rm(workdir, { recursive: true, force: true });
     }
@@ -741,5 +882,87 @@ describe("package commands", () => {
     } finally {
       await rm(workdir, { recursive: true, force: true });
     }
+  });
+
+  it("gets trusted publisher config for a package", async () => {
+    httpMocks.apiRequest.mockResolvedValueOnce({
+      trustedPublisher: {
+        provider: "github-actions",
+        repository: "openclaw/openclaw",
+        repositoryId: "1",
+        repositoryOwner: "openclaw",
+        repositoryOwnerId: "2",
+        workflowFilename: "plugin-clawhub-release.yml",
+        environment: "clawhub-release",
+      },
+    });
+
+    await cmdGetPackageTrustedPublisher(makeOpts(), "@openclaw/zalo");
+
+    expect(httpMocks.apiRequest).toHaveBeenCalledWith(
+      "https://clawhub.ai",
+      expect.objectContaining({
+        method: "GET",
+        path: "/api/v1/packages/%40openclaw%2Fzalo/trusted-publisher",
+      }),
+      expect.anything(),
+    );
+    expect(mockLog).toHaveBeenCalledWith("Provider: github-actions");
+    expect(mockLog).toHaveBeenCalledWith("Repository: openclaw/openclaw");
+    expect(mockLog).toHaveBeenCalledWith("Workflow: plugin-clawhub-release.yml");
+    expect(mockLog).toHaveBeenCalledWith("Environment: clawhub-release");
+  });
+
+  it("sets trusted publisher config for a package", async () => {
+    httpMocks.apiRequest.mockResolvedValueOnce({
+      trustedPublisher: {
+        provider: "github-actions",
+        repository: "openclaw/openclaw",
+        repositoryId: "1",
+        repositoryOwner: "openclaw",
+        repositoryOwnerId: "2",
+        workflowFilename: "plugin-clawhub-release.yml",
+        environment: "clawhub-release",
+      },
+    });
+
+    await cmdSetPackageTrustedPublisher(makeOpts(), "@openclaw/zalo", {
+      repository: "openclaw/openclaw",
+      workflowFilename: "plugin-clawhub-release.yml",
+      environment: "clawhub-release",
+    });
+
+    expect(authTokenMocks.requireAuthToken).toHaveBeenCalled();
+    expect(httpMocks.apiRequest).toHaveBeenCalledWith(
+      "https://clawhub.ai",
+      expect.objectContaining({
+        method: "POST",
+        path: "/api/v1/packages/%40openclaw%2Fzalo/trusted-publisher",
+        token: "tkn",
+        body: {
+          repository: "openclaw/openclaw",
+          workflowFilename: "plugin-clawhub-release.yml",
+          environment: "clawhub-release",
+        },
+      }),
+      expect.anything(),
+    );
+  });
+
+  it("deletes trusted publisher config for a package", async () => {
+    httpMocks.apiRequest.mockResolvedValueOnce({ ok: true });
+
+    await cmdDeletePackageTrustedPublisher(makeOpts(), "@openclaw/zalo");
+
+    expect(authTokenMocks.requireAuthToken).toHaveBeenCalled();
+    expect(httpMocks.apiRequest).toHaveBeenCalledWith(
+      "https://clawhub.ai",
+      expect.objectContaining({
+        method: "DELETE",
+        path: "/api/v1/packages/%40openclaw%2Fzalo/trusted-publisher",
+        token: "tkn",
+      }),
+      undefined,
+    );
   });
 });

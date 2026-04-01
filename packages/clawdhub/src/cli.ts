@@ -16,8 +16,11 @@ import { cmdBanUser, cmdSetRole } from "./cli/commands/moderation.js";
 import { cmdMergeSkill, cmdRenameSkill } from "./cli/commands/ownership.js";
 import {
   cmdExplorePackages,
+  cmdGetPackageTrustedPublisher,
   cmdInspectPackage,
+  cmdDeletePackageTrustedPublisher,
   cmdPublishPackage,
+  cmdSetPackageTrustedPublisher,
 } from "./cli/commands/packages.js";
 import { cmdPublish } from "./cli/commands/publish.js";
 import {
@@ -395,6 +398,10 @@ packageCmd
   .option("--owner <handle>", "Publish under this owner handle (admin only)")
   .option("--version <version>", "Version")
   .option("--changelog <text>", "Changelog text")
+  .option(
+    "--manual-override-reason <reason>",
+    "Required for manual publish when trusted publisher config exists",
+  )
   .option("--tags <tags>", "Comma-separated tags", "latest")
   .option("--bundle-format <format>", "Bundle format")
   .option("--host-targets <targets>", "Comma-separated bundle host targets")
@@ -407,6 +414,43 @@ packageCmd
   .action(async (source, options) => {
     const opts = await resolveGlobalOpts();
     await cmdPublishPackage(opts, source, options);
+  });
+
+const trustedPublisherCmd = packageCmd
+  .command("trusted-publisher")
+  .description("Manage package trusted publisher config");
+
+trustedPublisherCmd
+  .command("get")
+  .description("Show trusted publisher config for a package")
+  .argument("<name>", "Package name")
+  .option("--json", "Output JSON")
+  .action(async (name, options) => {
+    const opts = await resolveGlobalOpts();
+    await cmdGetPackageTrustedPublisher(opts, name, options);
+  });
+
+trustedPublisherCmd
+  .command("set")
+  .description("Attach or replace trusted publisher config for a package")
+  .argument("<name>", "Package name")
+  .requiredOption("--repository <repo>", "GitHub repo (owner/repo or URL)")
+  .requiredOption("--workflow-filename <file>", "Workflow filename, for example publish.yml")
+  .requiredOption("--environment <name>", "Protected GitHub environment name")
+  .option("--json", "Output JSON")
+  .action(async (name, options) => {
+    const opts = await resolveGlobalOpts();
+    await cmdSetPackageTrustedPublisher(opts, name, options);
+  });
+
+trustedPublisherCmd
+  .command("delete")
+  .description("Remove trusted publisher config from a package")
+  .argument("<name>", "Package name")
+  .option("--json", "Output JSON")
+  .action(async (name, options) => {
+    const opts = await resolveGlobalOpts();
+    await cmdDeletePackageTrustedPublisher(opts, name, options);
   });
 
 skill

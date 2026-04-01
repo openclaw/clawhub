@@ -13,6 +13,7 @@ import { action, internalAction, internalMutation, internalQuery, query } from "
 import type { Doc, Id } from "./_generated/dataModel";
 import type { ActionCtx, MutationCtx, QueryCtx } from "./_generated/server";
 import { requireGitHubAccountAge } from "./lib/githubAccount";
+import { normalizeGitHubRepository } from "./lib/githubActionsOidc";
 import { assertAdmin, assertModerator, requireUserFromAction } from "./lib/access";
 import {
   assertPackageVersion,
@@ -55,6 +56,8 @@ const internalRefs = internal as unknown as {
     backfillPackageReleaseScansInternal: unknown;
     scanPackageReleaseStaticallyInternal: unknown;
     insertReleaseInternal: unknown;
+    getPackageByNameInternal: unknown;
+    getTrustedPublisherByPackageIdInternal: unknown;
     getByNameForViewerInternal: unknown;
     getPackageByIdInternal: unknown;
     getReleaseByIdInternal: unknown;
@@ -62,7 +65,12 @@ const internalRefs = internal as unknown as {
     listVersionsForViewerInternal: unknown;
     getVersionByNameForViewerInternal: unknown;
     publishPackageForUserInternal: unknown;
+    insertAuditLogInternal: unknown;
     updateReleaseStaticScanInternal: unknown;
+  };
+  packagePublishTokens: {
+    createInternal: unknown;
+    getByIdInternal: unknown;
   };
   skills: {
     getSkillBySlugInternal: unknown;
@@ -79,6 +87,30 @@ const internalRefs = internal as unknown as {
   };
 };
 type DbReaderCtx = Pick<QueryCtx | MutationCtx, "db">;
+type PackagePublishActor =
+  | {
+      kind: "user";
+      userId: Id<"users">;
+    }
+  | {
+      kind: "github-actions";
+      repository: string;
+      workflow: string;
+      runId: string;
+      runAttempt: string;
+      sha: string;
+    };
+type PackagePublishAuthContext =
+  | {
+      kind: "user";
+      actorUserId: Id<"users">;
+      manualOverrideReason?: string;
+    }
+  | {
+      kind: "github-actions";
+      publishToken: Doc<"packagePublishTokens">;
+    };
+type PackageTrustedPublisherDoc = Doc<"packageTrustedPublishers">;
 type PublicPackageListItem = {
   name: string;
   displayName: string;
@@ -783,6 +815,43 @@ async function getReadablePackageByName(
   return pkg;
 }
 
+async function getPackageTrustedPublisherByPackageId(
+  ctx: DbReaderCtx,
+  packageId: Id<"packages">,
+) {
+  return await ctx.db
+    .query("packageTrustedPublishers")
+    .withIndex("by_package", (q) => q.eq("packageId", packageId))
+    .unique();
+}
+
+function normalizeWorkflowFilenameOrThrow(value: string) {
+  const trimmed = value.trim();
+  if (!trimmed) throw new ConvexError("Workflow filename is required");
+  if (trimmed.includes("/") || trimmed.includes("\\")) {
+    throw new ConvexError("Workflow filename must not include a path");
+  }
+  return trimmed;
+}
+
+function normalizeManualOverrideReason(reason: string | undefined) {
+  const normalized = reason?.trim();
+  return normalized || undefined;
+}
+
+async function requireTrustedPublisherEditor(
+  ctx: Pick<MutationCtx, "db">,
+  pkg: Doc<"packages">,
+  actorUserId: Id<"users">,
+) {
+  if (pkg.ownerUserId === actorUserId) return;
+  if (!pkg.ownerPublisherId) throw new ConvexError("Forbidden");
+  const membership = await getPublisherMembership(ctx, pkg.ownerPublisherId, actorUserId);
+  if (!membership || membership.role === "publisher") {
+    throw new ConvexError("Forbidden");
+  }
+}
+
 export const getByName = query({
   args: { name: v.string() },
   handler: async (ctx, args) => {
@@ -1220,6 +1289,135 @@ export const getPackageByNameInternal = internalQuery({
   },
 });
 
+export const getTrustedPublisherByPackageIdInternal = internalQuery({
+  args: { packageId: v.id("packages") },
+  handler: async (ctx, args) => {
+    return await getPackageTrustedPublisherByPackageId(ctx, args.packageId);
+  },
+});
+
+export const setTrustedPublisherForUserInternal = internalMutation({
+  args: {
+    actorUserId: v.id("users"),
+    packageName: v.string(),
+    repository: v.string(),
+    repositoryId: v.string(),
+    repositoryOwner: v.string(),
+    repositoryOwnerId: v.string(),
+    workflowFilename: v.string(),
+    environment: v.string(),
+  },
+  handler: async (ctx, args) => {
+    const pkg = await getPackageByNormalizedName(ctx, normalizePackageName(args.packageName));
+    if (!pkg) throw new ConvexError("Package not found");
+    if (pkg.family === "skill") {
+      throw new ConvexError("Trusted publishers are only supported for code-plugin and bundle-plugin packages");
+    }
+    await requireTrustedPublisherEditor(ctx, pkg, args.actorUserId);
+
+    const workflowFilename = normalizeWorkflowFilenameOrThrow(args.workflowFilename);
+    const environment = args.environment.trim();
+    if (!environment) throw new ConvexError("Environment is required");
+
+    const existing = await getPackageTrustedPublisherByPackageId(ctx, pkg._id);
+    const now = Date.now();
+    const patch = {
+      provider: "github-actions" as const,
+      repository: args.repository,
+      repositoryId: args.repositoryId,
+      repositoryOwner: args.repositoryOwner,
+      repositoryOwnerId: args.repositoryOwnerId,
+      workflowFilename,
+      environment,
+      updatedByUserId: args.actorUserId,
+      updatedAt: now,
+    };
+    if (existing) {
+      await ctx.db.patch(existing._id, patch);
+    } else {
+      await ctx.db.insert("packageTrustedPublishers", {
+        packageId: pkg._id,
+        createdByUserId: args.actorUserId,
+        createdAt: now,
+        ...patch,
+      });
+    }
+
+    await ctx.db.insert("auditLogs", {
+      actorUserId: args.actorUserId,
+      action: "package.trusted_publisher.set",
+      targetType: "package",
+      targetId: pkg._id,
+      metadata: {
+        provider: "github-actions",
+        repository: args.repository,
+        repositoryId: args.repositoryId,
+        repositoryOwner: args.repositoryOwner,
+        repositoryOwnerId: args.repositoryOwnerId,
+        workflowFilename,
+        environment,
+      },
+      createdAt: now,
+    });
+
+    return await getPackageTrustedPublisherByPackageId(ctx, pkg._id);
+  },
+});
+
+export const deleteTrustedPublisherForUserInternal = internalMutation({
+  args: {
+    actorUserId: v.id("users"),
+    packageName: v.string(),
+  },
+  handler: async (ctx, args) => {
+    const pkg = await getPackageByNormalizedName(ctx, normalizePackageName(args.packageName));
+    if (!pkg) throw new ConvexError("Package not found");
+    await requireTrustedPublisherEditor(ctx, pkg, args.actorUserId);
+
+    const existing = await getPackageTrustedPublisherByPackageId(ctx, pkg._id);
+    if (!existing) return { deleted: false as const };
+    await ctx.db.delete(existing._id);
+
+    await ctx.db.insert("auditLogs", {
+      actorUserId: args.actorUserId,
+      action: "package.trusted_publisher.delete",
+      targetType: "package",
+      targetId: pkg._id,
+      metadata: {
+        provider: existing.provider,
+        repository: existing.repository,
+        repositoryId: existing.repositoryId,
+        repositoryOwner: existing.repositoryOwner,
+        repositoryOwnerId: existing.repositoryOwnerId,
+        workflowFilename: existing.workflowFilename,
+        environment: existing.environment,
+      },
+      createdAt: Date.now(),
+    });
+    return { deleted: true as const };
+  },
+});
+
+export const insertAuditLogInternal = internalMutation({
+  args: {
+    actorUserId: v.id("users"),
+    action: v.string(),
+    targetType: v.string(),
+    targetId: v.string(),
+    metadata: v.optional(v.any()),
+  },
+  handler: async (ctx, args) => {
+    await ctx.db.insert("auditLogs", {
+      actorUserId: args.actorUserId,
+      action: args.action,
+      targetType: args.targetType,
+      targetId: args.targetId,
+      metadata: args.metadata,
+      createdAt: Date.now(),
+    });
+  },
+});
+
 export const softDeletePackageInternal = internalMutation({
   args: {
     userId: v.id("users"),
@@ -1385,9 +1583,55 @@ export const getPackageReleaseScanBackfillBatchInternal = internalQuery({
   },
 });
 
+function buildGitHubActionsPublishActor(
+  publishToken: Doc<"packagePublishTokens">,
+): Extract<PackagePublishActor, { kind: "github-actions" }> {
+  return {
+    kind: "github-actions",
+    repository: publishToken.repository,
+    workflow: publishToken.workflowFilename,
+    runId: publishToken.runId,
+    runAttempt: publishToken.runAttempt,
+    sha: publishToken.sha,
+  };
+}
+
+function resolveTrustedPublishSource(
+  payload: PackagePublishRequest,
+  publishToken: Doc<"packagePublishTokens">,
+): PackagePublishRequest["source"] {
+  const source = payload.source;
+  if (source && source.kind !== "github") {
+    throw new ConvexError("Trusted publishes only support GitHub source metadata");
+  }
+  const requestedRepo =
+    typeof source?.repo === "string" && source.repo.trim()
+      ? normalizeGitHubRepository(source.repo) ?? source.repo.trim()
+      : undefined;
+  if (requestedRepo && requestedRepo !== publishToken.repository) {
+    throw new ConvexError("Trusted publish source repo must match the verified GitHub repository");
+  }
+  if (source?.commit && source.commit !== publishToken.sha) {
+    throw new ConvexError("Trusted publish source commit must match the verified GitHub SHA");
+  }
+  if (source?.ref && source.ref !== publishToken.ref) {
+    throw new ConvexError("Trusted publish source ref must match the verified GitHub ref");
+  }
+  const path = source?.path?.trim() || ".";
+  return {
+    kind: "github",
+    url: `https://github.com/${publishToken.repository}`,
+    repo: publishToken.repository,
+    ref: publishToken.ref,
+    commit: publishToken.sha,
+    path,
+    importedAt: source?.importedAt ?? Date.now(),
+  };
+}
+
 async function publishPackageImpl(
   ctx: Parameters<typeof requireGitHubAccountAge>[0] & Pick<ActionCtx, "storage" | "scheduler">,
-  actorUserId: Id<"users">,
+  auth: PackagePublishAuthContext,
   rawPayload: unknown,
 ) {
   const payload = parseArk(
@@ -1398,21 +1642,71 @@ async function publishPackageImpl(
   if (payload.family === "skill") {
     throw new ConvexError("Skill packages must use the skills publish flow");
   }
-  await requireGitHubAccountAge(ctx, actorUserId);
-  const ownerTarget = await runMutationRef<{
-    publisherId: Id<"publishers">;
-    linkedUserId?: Id<"users">;
-  } | null>(ctx, internalRefs.publishers.resolvePublishTargetForUserInternal, {
-    actorUserId,
-    ownerHandle: payload.ownerHandle,
-    minimumRole: "publisher",
-  });
-  const ownerUserId = ownerTarget?.linkedUserId ?? actorUserId;
-  const ownerPublisherId = ownerTarget?.publisherId;
-
   const family = payload.family;
   const name = normalizePackageName(payload.name);
   const version = assertPackageVersion(family, payload.version);
+  const existingPackage = await runQueryRef<Doc<"packages"> | null>(
+    ctx,
+    internalRefs.packages.getPackageByNameInternal,
+    { name },
+  );
+  const existingTrustedPublisher = existingPackage
+    ? await runQueryRef<PackageTrustedPublisherDoc | null>(
+        ctx,
+        internalRefs.packages.getTrustedPublisherByPackageIdInternal,
+        { packageId: existingPackage._id },
+      )
+    : null;
+
+  let actorUserId: Id<"users">;
+  let ownerUserId: Id<"users">;
+  let ownerPublisherId: Id<"publishers"> | undefined;
+  let publishActor: PackagePublishActor;
+  let effectiveSource = payload.source;
+  const manualOverrideReason = normalizeManualOverrideReason(payload.manualOverrideReason);
+
+  if (auth.kind === "github-actions") {
+    if (!existingPackage) {
+      throw new ConvexError("First publish must be manual by a logged-in package owner");
+    }
+    if (auth.publishToken.packageId !== existingPackage._id) {
+      throw new ConvexError("Trusted publish token does not match the target package");
+    }
+    if (auth.publishToken.version !== version) {
+      throw new ConvexError("Trusted publish token does not match the target version");
+    }
+    if (payload.ownerHandle?.trim()) {
+      throw new ConvexError("Trusted publishes must not override the package owner");
+    }
+    if (payload.channel && payload.channel !== existingPackage.channel) {
+      throw new ConvexError("Trusted publishes must not change the package channel");
+    }
+    actorUserId = existingPackage.ownerUserId;
+    ownerUserId = existingPackage.ownerUserId;
+    ownerPublisherId = existingPackage.ownerPublisherId;
+    publishActor = buildGitHubActionsPublishActor(auth.publishToken);
+    effectiveSource = resolveTrustedPublishSource(payload, auth.publishToken);
+  } else {
+    actorUserId = auth.actorUserId;
+    await requireGitHubAccountAge(ctx, actorUserId);
+    const ownerTarget = await runMutationRef<{
+      publisherId: Id<"publishers">;
+      linkedUserId?: Id<"users">;
+    } | null>(ctx, internalRefs.publishers.resolvePublishTargetForUserInternal, {
+      actorUserId,
+      ownerHandle: payload.ownerHandle,
+      minimumRole: "publisher",
+    });
+    ownerUserId = ownerTarget?.linkedUserId ?? actorUserId;
+    ownerPublisherId = ownerTarget?.publisherId;
+    if (existingTrustedPublisher && !manualOverrideReason) {
+      throw new ConvexError(
+        "Manual publishes for packages with trusted publisher config require manualOverrideReason",
+      );
+    }
+    publishActor = { kind: "user", userId: actorUserId };
+  }
+
   const displayName = payload.displayName?.trim() || name;
   const files = normalizePublishFiles(payload.files as never);
   const oversizedFile = findOversizedPublishFile(files);
@@ -1430,7 +1724,7 @@ async function publishPackageImpl(
   if (existingSkill) {
     throw new ConvexError(`Package name collides with existing skill slug "${name}"`);
   }
-  if (family === "code-plugin" && (!payload.source?.repo || !payload.source?.commit)) {
+  if (family === "code-plugin" && (!effectiveSource?.repo || !effectiveSource?.commit)) {
     throw new ConvexError("Code plugins require source repo and commit metadata");
   }
 
@@ -1453,7 +1747,7 @@ async function publishPackageImpl(
           packageJson,
           bundleManifest: maybeParseJson(bundleManifestEntry?.text),
           bundleMetadata: payload.bundle,
-          source: payload.source,
+          source: effectiveSource,
         })
       : null;
 
@@ -1467,7 +1761,7 @@ async function publishPackageImpl(
           pluginManifest: maybeParseJson(pluginManifestEntry?.text) ?? (() => {
             throw new ConvexError("openclaw.plugin.json is required for code plugins");
           })(),
-          source: payload.source,
+          source: effectiveSource,
         })
       : null;
 
@@ -1480,14 +1774,14 @@ async function publishPackageImpl(
     slug: name,
     displayName,
     summary,
-    metadata: {
-      packageJson,
-      pluginManifest: maybeParseJson(pluginManifestEntry?.text),
-      bundleManifest: maybeParseJson(bundleManifestEntry?.text),
-      source: payload.source,
-    },
-    files,
-  });
+      metadata: {
+        packageJson,
+        pluginManifest: maybeParseJson(pluginManifestEntry?.text),
+        bundleManifest: maybeParseJson(bundleManifestEntry?.text),
+        source: effectiveSource,
+      },
+      files,
+    });
   const verificationSource = codeArtifacts?.verification ?? bundleArtifacts?.verification;
   const initialScanStatus = staticScan.status === "malicious" ? "malicious" : "pending";
   const verification = verificationSource
@@ -1507,6 +1801,7 @@ async function publishPackageImpl(
       actorUserId,
       ownerUserId,
       ownerPublisherId,
+      publishActor,
       name,
       displayName,
       family,
@@ -1514,7 +1809,7 @@ async function publishPackageImpl(
       changelog: payload.changelog.trim(),
       tags: payload.tags?.map((tag: string) => tag.trim()).filter(Boolean) ?? ["latest"],
       summary,
-      sourceRepo: payload.source?.repo || payload.source?.url,
+      sourceRepo: effectiveSource?.repo || effectiveSource?.url,
       runtimeId: codeArtifacts?.runtimeId ?? bundleArtifacts?.runtimeId,
       channel: payload.channel,
       compatibility: codeArtifacts?.compatibility ?? bundleArtifacts?.compatibility,
@@ -1528,9 +1823,45 @@ async function publishPackageImpl(
         family === "code-plugin" ? maybeParseJson(pluginManifestEntry?.text) : undefined,
       normalizedBundleManifest:
         family === "bundle-plugin" ? maybeParseJson(bundleManifestEntry?.text) : undefined,
-      source: payload.source,
+      source: effectiveSource,
     },
   );
+
+  if (auth.kind === "user" && existingTrustedPublisher && manualOverrideReason) {
+    await runMutationRef(ctx, internalRefs.packages.insertAuditLogInternal, {
+      actorUserId,
+      action: "package.publish.manual_override",
+      targetType: "package",
+      targetId: String(publishResult.packageId),
+      metadata: {
+        version,
+        reason: manualOverrideReason,
+        trustedPublisher: {
+          provider: existingTrustedPublisher.provider,
+          repository: existingTrustedPublisher.repository,
+          workflowFilename: existingTrustedPublisher.workflowFilename,
+          environment: existingTrustedPublisher.environment,
+        },
+      },
+    });
+  }
+  if (auth.kind === "github-actions") {
+    await runMutationRef(ctx, internalRefs.packages.insertAuditLogInternal, {
+      actorUserId,
+      action: "package.publish.github_actions",
+      targetType: "package",
+      targetId: String(publishResult.packageId),
+      metadata: {
+        version,
+        repository: auth.publishToken.repository,
+        workflowFilename: auth.publishToken.workflowFilename,
+        environment: auth.publishToken.environment,
+        runId: auth.publishToken.runId,
+        runAttempt: auth.publishToken.runAttempt,
+        sha: auth.publishToken.sha,
+      },
+    });
+  }
 
   await runAfterRef(ctx, INITIAL_PACKAGE_VT_SCAN_DELAY_MS, internalRefs.vt.scanPackageReleaseWithVirusTotal, {
     releaseId: publishResult.releaseId,
@@ -1546,7 +1877,7 @@ export const publishPackage = action({
   args: { payload: v.any() },
   handler: async (ctx, args) => {
     const { userId } = await requireUserFromAction(ctx);
-    return await publishPackageImpl(ctx, userId, args.payload);
+    return await publishPackageImpl(ctx, { kind: "user", actorUserId: userId }, args.payload);
   },
 });
 
@@ -1556,7 +1887,25 @@ export const publishPackageForUserInternal = internalAction({
     payload: v.any(),
   },
   handler: async (ctx, args) => {
-    return await publishPackageImpl(ctx, args.actorUserId, args.payload);
+    return await publishPackageImpl(ctx, { kind: "user", actorUserId: args.actorUserId }, args.payload);
+  },
+});
+
+export const publishPackageForTrustedPublisherInternal = internalAction({
+  args: {
+    publishTokenId: v.id("packagePublishTokens"),
+    payload: v.any(),
+  },
+  handler: async (ctx, args) => {
+    const publishToken = await runQueryRef<Doc<"packagePublishTokens"> | null>(
+      ctx,
+      internalRefs.packagePublishTokens.getByIdInternal,
+      { tokenId: args.publishTokenId },
+    );
+    if (!publishToken || publishToken.revokedAt || publishToken.expiresAt <= Date.now()) {
+      throw new ConvexError("Trusted publish token is missing or expired");
+    }
+    return await publishPackageImpl(ctx, { kind: "github-actions", publishToken }, args.payload);
   },
 });
 
@@ -1564,7 +1913,7 @@ export const publishRelease = action({
   args: { payload: v.any() },
   handler: async (ctx, args) => {
     const { userId } = await requireUserFromAction(ctx);
-    return await publishPackageImpl(ctx, userId, args.payload);
+    return await publishPackageImpl(ctx, { kind: "user", actorUserId: userId }, args.payload);
   },
 });
 
@@ -1573,6 +1922,22 @@ export const insertReleaseInternal = internalMutation({
     actorUserId: v.id("users"),
     ownerUserId: v.id("users"),
     ownerPublisherId: v.optional(v.id("publishers")),
+    publishActor: v.optional(
+      v.union(
+        v.object({
+          kind: v.literal("user"),
+          userId: v.id("users"),
+        }),
+        v.object({
+          kind: v.literal("github-actions"),
+          repository: v.string(),
+          workflow: v.string(),
+          runId: v.string(),
+          runAttempt: v.string(),
+          sha: v.string(),
+        }),
+      ),
+    ),
     name: v.string(),
     displayName: v.string(),
     family: v.union(v.literal("skill"), v.literal("code-plugin"), v.literal("bundle-plugin")),
@@ -1736,6 +2101,7 @@ export const insertReleaseInternal = internalMutation({
       staticScan: args.staticScan,
       source: args.source,
       createdBy: args.actorUserId,
+      publishActor: args.publishActor,
       createdAt: now,
     });
 

@@ -115,6 +115,17 @@ export const BundlePublishMetadataSchema = type({
 });
 export type BundlePublishMetadata = (typeof BundlePublishMetadataSchema)[inferred];
 
+export const PackageTrustedPublisherSchema = type({
+  provider: '"github-actions"',
+  repository: "string",
+  repositoryId: "string",
+  repositoryOwner: "string",
+  repositoryOwnerId: "string",
+  workflowFilename: "string",
+  environment: "string",
+});
+export type PackageTrustedPublisher = (typeof PackageTrustedPublisherSchema)[inferred];
+
 export const PackagePublishRequestSchema = type({
   name: "string",
   displayName: "string?",
@@ -122,6 +133,7 @@ export const PackagePublishRequestSchema = type({
   family: PackageFamilySchema,
   version: "string",
   changelog: "string",
+  manualOverrideReason: "string?",
   channel: PackageChannelSchema.optional(),
   tags: "string[]?",
   source: PublishSourceSchema.optional(),
@@ -222,3 +234,32 @@ export const ApiV1PackagePublishResponseSchema = type({
   packageId: "string",
   releaseId: "string",
 });
+export type ApiV1PackagePublishResponse = (typeof ApiV1PackagePublishResponseSchema)[inferred];
+
+export const PackageTrustedPublisherUpsertRequestSchema = type({
+  repository: "string",
+  workflowFilename: "string",
+  environment: "string",
+});
+export type PackageTrustedPublisherUpsertRequest =
+  (typeof PackageTrustedPublisherUpsertRequestSchema)[inferred];
+
+export const ApiV1PackageTrustedPublisherResponseSchema = type({
+  trustedPublisher: PackageTrustedPublisherSchema.or("null"),
+});
+export type ApiV1PackageTrustedPublisherResponse =
+  (typeof ApiV1PackageTrustedPublisherResponseSchema)[inferred];
+
+export const PublishTokenMintRequestSchema = type({
+  packageName: "string",
+  version: "string",
+  githubOidcToken: "string",
+});
+export type PublishTokenMintRequest = (typeof PublishTokenMintRequestSchema)[inferred];
+
+export const ApiV1PublishTokenMintResponseSchema = type({
+  token: "string",
+  expiresAt: "number",
+});
+export type ApiV1PublishTokenMintResponse =
+  (typeof ApiV1PublishTokenMintResponseSchema)[inferred];

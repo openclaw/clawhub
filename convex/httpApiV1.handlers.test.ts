@@ -11,6 +11,12 @@ vi.mock("@convex-dev/auth/server", () => ({
 vi.mock("./lib/apiTokenAuth", () => ({
   requireApiTokenUser: vi.fn(),
   getOptionalApiTokenUserId: vi.fn(),
+  requirePackagePublishAuth: vi.fn(),
+}));
+
+vi.mock("./lib/githubActionsOidc", () => ({
+  fetchGitHubRepositoryIdentity: vi.fn(),
+  verifyGitHubActionsTrustedPublishJwt: vi.fn(),
 }));
 
 vi.mock("./skills", () => ({
@@ -18,7 +24,12 @@ vi.mock("./skills", () => ({
 }));
 
 const { getAuthUserId } = await import("@convex-dev/auth/server");
-const { getOptionalApiTokenUserId, requireApiTokenUser } = await import("./lib/apiTokenAuth");
+const { getOptionalApiTokenUserId, requireApiTokenUser, requirePackagePublishAuth } = await import(
+  "./lib/apiTokenAuth"
+);
+const { fetchGitHubRepositoryIdentity, verifyGitHubActionsTrustedPublishJwt } = await import(
+  "./lib/githubActionsOidc"
+);
 const { publishVersionForUser } = await import("./skills");
 const { __handlers } = await import("./httpApiV1");
 
@@ -83,6 +94,9 @@ beforeEach(() => {
   vi.mocked(getOptionalApiTokenUserId).mockReset();
   vi.mocked(getOptionalApiTokenUserId).mockResolvedValue(null);
   vi.mocked(requireApiTokenUser).mockReset();
+  vi.mocked(requirePackagePublishAuth).mockReset();
+  vi.mocked(fetchGitHubRepositoryIdentity).mockReset();
+  vi.mocked(verifyGitHubActionsTrustedPublishJwt).mockReset();
   vi.mocked(publishVersionForUser).mockReset();
 });
 
@@ -3284,7 +3298,8 @@ describe("httpApiV1 handlers", () => {
 
   it("package publish uses write rate limiting", async () => {
     vi.mocked(getOptionalApiTokenUserId).mockResolvedValue("users:1" as never);
-    vi.mocked(requireApiTokenUser).mockResolvedValue({
+    vi.mocked(requirePackagePublishAuth).mockResolvedValue({
+      kind: "user",
       userId: "users:1",
       user: { _id: "users:1", handle: "p" },
     } as never);
@@ -3335,7 +3350,8 @@ describe("httpApiV1 handlers", () => {
 
   it("multipart package publish ignores macOS junk files", async () => {
     vi.mocked(getOptionalApiTokenUserId).mockResolvedValue("users:1" as never);
-    vi.mocked(requireApiTokenUser).mockResolvedValue({
+    vi.mocked(requirePackagePublishAuth).mockResolvedValue({
+      kind: "user",
       userId: "users:1",
       user: { _id: "users:1", handle: "p" },
     } as never);
@@ -3384,6 +3400,274 @@ describe("httpApiV1 handlers", () => {
             }),
           ],
         }),
+      }),
+    );
+  });
+
+  it("package publish routes GitHub Actions auth through the trusted publisher action", async () => {
+    vi.mocked(getOptionalApiTokenUserId).mockResolvedValue("users:1" as never);
+    vi.mocked(requirePackagePublishAuth).mockResolvedValue({
+      kind: "github-actions",
+      publishToken: { _id: "packagePublishTokens:1" },
+    } as never);
+    const runMutation = vi.fn().mockResolvedValue(okRate());
+    const runAction = vi.fn().mockResolvedValue({ ok: true, packageId: "pkg:1", releaseId: "rel:1" });
+
+    const response = await __handlers.publishPackageV1Handler(
+      makeCtx({ runAction, runMutation }),
+      new Request("https://example.com/api/v1/packages", {
+        method: "POST",
+        headers: {
+          Authorization: "Bearer clh_publish",
+          "content-type": "application/json",
+        },
+        body: JSON.stringify({
+          name: "demo-plugin",
+          family: "bundle-plugin",
+          version: "1.0.0",
+          changelog: "init",
+          bundle: { hostTargets: ["desktop"] },
+          files: [
+            {
+              path: "openclaw.bundle.json",
+              size: 2,
+              storageId: "storage:1",
+              sha256: "a".repeat(64),
+            },
+          ],
+        }),
+      }),
+    );
+
+    expect(response.status).toBe(200);
+    expect(runAction).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({
+        publishTokenId: "packagePublishTokens:1",
+      }),
+    );
+  });
+
+  it("returns trusted publisher config for a package", async () => {
+    const runMutation = vi.fn().mockResolvedValue(okRate());
+    const runQuery = vi.fn(async (_query: unknown, args: Record<string, unknown>) => {
+      if ("name" in args) {
+        return {
+          package: {
+            _id: "packages:1",
+            name: "@openclaw/demo-plugin",
+            displayName: "Demo Plugin",
+            family: "code-plugin",
+            tags: {},
+            channel: "community",
+            isOfficial: false,
+            createdAt: 1,
+            updatedAt: 1,
+          },
+          latestRelease: null,
+          owner: null,
+        };
+      }
+      if ("packageId" in args) {
+        return {
+          _id: "packageTrustedPublishers:1",
+          packageId: "packages:1",
+          provider: "github-actions",
+          repository: "openclaw/openclaw",
+          repositoryId: "1",
+          repositoryOwner: "openclaw",
+          repositoryOwnerId: "2",
+          workflowFilename: "plugin-clawhub-release.yml",
+          environment: "clawhub-release",
+          createdAt: 1,
+          updatedAt: 1,
+        };
+      }
+      return null;
+    });
+
+    const response = await __handlers.packagesGetRouterV1Handler(
+      makeCtx({ runQuery, runMutation }),
+      new Request(
+        "https://example.com/api/v1/packages/%40openclaw%2Fdemo-plugin/trusted-publisher",
+      ),
+    );
+
+    expect(response.status).toBe(200);
+    expect(await response.json()).toEqual({
+      trustedPublisher: {
+        provider: "github-actions",
+        repository: "openclaw/openclaw",
+        repositoryId: "1",
+        repositoryOwner: "openclaw",
+        repositoryOwnerId: "2",
+        workflowFilename: "plugin-clawhub-release.yml",
+        environment: "clawhub-release",
+      },
+    });
+  });
+
+  it("mints a short-lived publish token after verifying GitHub OIDC", async () => {
+    vi.mocked(verifyGitHubActionsTrustedPublishJwt).mockResolvedValue({
+      repository: "openclaw/openclaw",
+      repositoryId: "1",
+      repositoryOwner: "openclaw",
+      repositoryOwnerId: "2",
+      workflowFilename: "plugin-clawhub-release.yml",
+      environment: "clawhub-release",
+      runId: "101",
+      runAttempt: "1",
+      sha: "abc123",
+      ref: "refs/heads/main",
+      refType: "branch",
+      actor: "onur",
+      actorId: "42",
+    } as never);
+    const runMutation = vi.fn(async (_mutation: unknown, args: Record<string, unknown>) => {
+      if ("key" in args) return okRate();
+      return "mutation:ok";
+    });
+    const runQuery = vi.fn(async (_query: unknown, args: Record<string, unknown>) => {
+      if ("name" in args) {
+        return {
+          _id: "packages:1",
+          name: "@openclaw/demo-plugin",
+          ownerUserId: "users:owner",
+        };
+      }
+      if ("packageId" in args) {
+        return {
+          _id: "packageTrustedPublishers:1",
+          packageId: "packages:1",
+          provider: "github-actions",
+          repository: "openclaw/openclaw",
+          repositoryId: "1",
+          repositoryOwner: "openclaw",
+          repositoryOwnerId: "2",
+          workflowFilename: "plugin-clawhub-release.yml",
+          environment: "clawhub-release",
+        };
+      }
+      return null;
+    });
+
+    const response = await __handlers.mintPublishTokenV1Handler(
+      makeCtx({ runQuery, runMutation }),
+      new Request("https://example.com/api/v1/publish/token/mint", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          packageName: "@openclaw/demo-plugin",
+          version: "1.0.0",
+          githubOidcToken: "gh.jwt",
+        }),
+      }),
+    );
+
+    if (response.status !== 200) throw new Error(await response.text());
+    const body = await response.json();
+    expect(body.token).toEqual(expect.any(String));
+    expect(body.expiresAt).toEqual(expect.any(Number));
+    expect(runMutation).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({
+        packageId: "packages:1",
+        version: "1.0.0",
+        repository: "openclaw/openclaw",
+        workflowFilename: "plugin-clawhub-release.yml",
+        environment: "clawhub-release",
+        runId: "101",
+        sha: "abc123",
+      }),
+    );
+  });
+
+  it("sets trusted publisher config for a package", async () => {
+    vi.mocked(requireApiTokenUser).mockResolvedValue({
+      userId: "users:1",
+      user: { _id: "users:1", handle: "p" },
+    } as never);
+    vi.mocked(fetchGitHubRepositoryIdentity).mockResolvedValue({
+      repository: "openclaw/openclaw",
+      repositoryId: "1",
+      repositoryOwner: "openclaw",
+      repositoryOwnerId: "2",
+    } as never);
+    const runMutation = vi.fn(async (_mutation: unknown, args: Record<string, unknown>) => {
+      if ("key" in args) return okRate();
+      return {
+        _id: "packageTrustedPublishers:1",
+        packageId: "packages:1",
+        provider: "github-actions",
+        repository: "openclaw/openclaw",
+        repositoryId: "1",
+        repositoryOwner: "openclaw",
+        repositoryOwnerId: "2",
+        workflowFilename: "plugin-clawhub-release.yml",
+        environment: "clawhub-release",
+      };
+    });
+
+    const response = await __handlers.packagesPostRouterV1Handler(
+      makeCtx({ runMutation }),
+      new Request(
+        "https://example.com/api/v1/packages/%40openclaw%2Fdemo-plugin/trusted-publisher",
+        {
+          method: "POST",
+          headers: {
+            Authorization: "Bearer clh_test",
+            "content-type": "application/json",
+          },
+          body: JSON.stringify({
+            repository: "https://github.com/openclaw/openclaw",
+            workflowFilename: "plugin-clawhub-release.yml",
+            environment: "clawhub-release",
+          }),
+        },
+      ),
+    );
+
+    if (response.status !== 200) throw new Error(await response.text());
+    expect(fetchGitHubRepositoryIdentity).toHaveBeenCalledWith("https://github.com/openclaw/openclaw");
+    expect(runMutation).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({
+        actorUserId: "users:1",
+        packageName: "@openclaw/demo-plugin",
+        repository: "openclaw/openclaw",
+        workflowFilename: "plugin-clawhub-release.yml",
+        environment: "clawhub-release",
+      }),
+    );
+  });
+
+  it("deletes trusted publisher config for a package", async () => {
+    vi.mocked(requireApiTokenUser).mockResolvedValue({
+      userId: "users:1",
+      user: { _id: "users:1", handle: "p" },
+    } as never);
+    const runMutation = vi.fn(async (_mutation: unknown, args: Record<string, unknown>) => {
+      if ("key" in args) return okRate();
+      return { deleted: true };
+    });
+
+    const response = await __handlers.packagesDeleteRouterV1Handler(
+      makeCtx({ runMutation }),
+      new Request(
+        "https://example.com/api/v1/packages/%40openclaw%2Fdemo-plugin/trusted-publisher",
+        {
+          method: "DELETE",
+          headers: { Authorization: "Bearer clh_test" },
+        },
+      ),
+    );
+
+    expect(response.status).toBe(200);
+    expect(runMutation).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({
+        actorUserId: "users:1",
+        packageName: "@openclaw/demo-plugin",
       }),
     );
   });

@@ -109,6 +109,16 @@ export declare const BundlePublishMetadataSchema: import("arktype/internal/varia
     hostTargets?: string[] | undefined;
 }, {}>;
 export type BundlePublishMetadata = (typeof BundlePublishMetadataSchema)[inferred];
+export declare const PackageTrustedPublisherSchema: import("arktype/internal/variants/object.ts").ObjectType<{
+    provider: "github-actions";
+    repository: string;
+    repositoryId: string;
+    repositoryOwner: string;
+    repositoryOwnerId: string;
+    workflowFilename: string;
+    environment: string;
+}, {}>;
+export type PackageTrustedPublisher = (typeof PackageTrustedPublisherSchema)[inferred];
 export declare const PackagePublishRequestSchema: import("arktype/internal/variants/object.ts").ObjectType<{
     name: string;
     family: "skill" | "code-plugin" | "bundle-plugin";
@@ -123,6 +133,7 @@ export declare const PackagePublishRequestSchema: import("arktype/internal/varia
     }[];
     displayName?: string | undefined;
     ownerHandle?: string | undefined;
+    manualOverrideReason?: string | undefined;
     channel?: "official" | "community" | "private" | undefined;
     tags?: string[] | undefined;
     source?: {
@@ -364,3 +375,32 @@ export declare const ApiV1PackagePublishResponseSchema: import("arktype/internal
     releaseId: string;
 }, {}>;
 export type ApiV1PackagePublishResponse = (typeof ApiV1PackagePublishResponseSchema)[inferred];
+export declare const PackageTrustedPublisherUpsertRequestSchema: import("arktype/internal/variants/object.ts").ObjectType<{
+    repository: string;
+    workflowFilename: string;
+    environment: string;
+}, {}>;
+export type PackageTrustedPublisherUpsertRequest = (typeof PackageTrustedPublisherUpsertRequestSchema)[inferred];
+export declare const ApiV1PackageTrustedPublisherResponseSchema: import("arktype/internal/variants/object.ts").ObjectType<{
+    trustedPublisher: {
+        provider: "github-actions";
+        repository: string;
+        repositoryId: string;
+        repositoryOwner: string;
+        repositoryOwnerId: string;
+        workflowFilename: string;
+        environment: string;
+    } | null;
+}, {}>;
+export type ApiV1PackageTrustedPublisherResponse = (typeof ApiV1PackageTrustedPublisherResponseSchema)[inferred];
+export declare const PublishTokenMintRequestSchema: import("arktype/internal/variants/object.ts").ObjectType<{
+    packageName: string;
+    version: string;
+    githubOidcToken: string;
+}, {}>;
+export type PublishTokenMintRequest = (typeof PublishTokenMintRequestSchema)[inferred];
+export declare const ApiV1PublishTokenMintResponseSchema: import("arktype/internal/variants/object.ts").ObjectType<{
+    token: string;
+    expiresAt: number;
+}, {}>;
+export type ApiV1PublishTokenMintResponse = (typeof ApiV1PublishTokenMintResponseSchema)[inferred];

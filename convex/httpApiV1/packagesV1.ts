@@ -1,8 +1,17 @@
 import { getAuthUserId } from "@convex-dev/auth/server";
-import { PackagePublishRequestSchema, parseArk } from "clawhub-schema";
+import {
+  PackagePublishRequestSchema,
+  PackageTrustedPublisherUpsertRequestSchema,
+  PublishTokenMintRequestSchema,
+  parseArk,
+} from "clawhub-schema";
 import { api, internal } from "../_generated/api";
 import type { Doc, Id } from "../_generated/dataModel";
 import type { ActionCtx } from "../_generated/server";
+import {
+  fetchGitHubRepositoryIdentity,
+  verifyGitHubActionsTrustedPublishJwt,
+} from "../lib/githubActionsOidc";
 import { getOptionalApiTokenUserId } from "../lib/apiTokenAuth";
 import { corsHeaders, mergeHeaders } from "../lib/httpHeaders";
 import { getPackageDownloadSecurityBlock } from "../lib/packageSecurity";
@@ -10,12 +19,14 @@ import { getPublishFileSizeError, MAX_PUBLISH_FILE_BYTES } from "../lib/publishL
 import { applyRateLimit } from "../lib/httpRateLimit";
 import { buildDeterministicPackageZip } from "../lib/skillZip";
 import { isMacJunkPath, isTextFile } from "../lib/skills";
+import { generateToken, hashToken } from "../lib/tokens";
 import {
   MAX_RAW_FILE_BYTES,
   getPathSegments,
   json,
   resolveTagsBatch,
   requireApiTokenUserOrResponse,
+  requirePackagePublishAuthOrResponse,
   safeTextFileResponse,
   text,
   toOptionalNumber,
@@ -39,11 +50,20 @@ const internalRefs = internal as unknown as {
     listPageForViewerInternal: unknown;
     searchForViewerInternal: unknown;
     listVersionsForViewerInternal: unknown;
+    getPackageByNameInternal: unknown;
+    getTrustedPublisherByPackageIdInternal: unknown;
     getVersionByNameForViewerInternal: unknown;
     publishPackageForUserInternal: unknown;
+    publishPackageForTrustedPublisherInternal: unknown;
+    setTrustedPublisherForUserInternal: unknown;
+    deleteTrustedPublisherForUserInternal: unknown;
     getReleasesByIdsInternal: unknown;
     getReleaseByPackageAndVersionInternal: unknown;
     getReleaseByIdInternal: unknown;
+    insertAuditLogInternal: unknown;
+  };
+  packagePublishTokens: {
+    createInternal: unknown;
   };
   skills: {
     getSkillBySlugInternal: unknown;
@@ -58,6 +78,10 @@ async function runQueryRef<T>(ctx: ActionCtx, ref: unknown, args: unknown): Prom
 
 async function runActionRef<T>(ctx: ActionCtx, ref: unknown, args: unknown): Promise<T> {
   return (await ctx.runAction(ref as never, args as never)) as T;
+}
+
+async function runMutationRef<T>(ctx: ActionCtx, ref: unknown, args: unknown): Promise<T> {
+  return (await ctx.runMutation(ref as never, args as never)) as T;
 }
 
 async function getOptionalViewerUserIdForRequest(ctx: ActionCtx, request: Request) {
@@ -134,9 +158,36 @@ type ReleaseLike = {
   softDeletedAt?: number;
 };
 
+type PackageTrustedPublisherLike = {
+  _id: Id<"packageTrustedPublishers">;
+  packageId: Id<"packages">;
+  provider: "github-actions";
+  repository: string;
+  repositoryId: string;
+  repositoryOwner: string;
+  repositoryOwnerId: string;
+  workflowFilename: string;
+  environment: string;
+  createdAt: number;
+  updatedAt: number;
+};
+
 function toVisibleRelease(release: ReleaseLike | null) {
   if (!release || ("softDeletedAt" in release && release.softDeletedAt !== undefined)) return null;
   return release;
+}
+
+function toPublicTrustedPublisher(trustedPublisher: PackageTrustedPublisherLike | null) {
+  if (!trustedPublisher) return null;
+  return {
+    provider: trustedPublisher.provider,
+    repository: trustedPublisher.repository,
+    repositoryId: trustedPublisher.repositoryId,
+    repositoryOwner: trustedPublisher.repositoryOwner,
+    repositoryOwnerId: trustedPublisher.repositoryOwnerId,
+    workflowFilename: trustedPublisher.workflowFilename,
+    environment: trustedPublisher.environment,
+  };
 }
 
 function getReleaseSecurityBlock(release: ReleaseLike) {
@@ -365,6 +416,7 @@ function parsePackagePublishBody(body: unknown) {
     family: "skill" | "code-plugin" | "bundle-plugin";
     version: string;
     changelog: string;
+    manualOverrideReason?: string;
     channel?: "official" | "community" | "private";
     tags?: string[];
     source?: Record<string, unknown>;
@@ -385,6 +437,7 @@ function parsePackagePublishBody(body: unknown) {
     family: parsed.family,
     version: parsed.version,
     changelog: parsed.changelog,
+    manualOverrideReason: parsed.manualOverrideReason?.trim() || undefined,
     channel: parsed.channel ?? undefined,
     tags: parsed.tags?.filter(Boolean) ?? undefined,
     source: parsed.source ?? undefined,
@@ -597,7 +650,7 @@ export async function publishPackageV1Handler(ctx: ActionCtx, request: Request) 
   const rate = await applyRateLimit(ctx, request, "write");
   if (!rate.ok) return rate.response;
 
-  const auth = await requireApiTokenUserOrResponse(ctx, request, rate.headers);
+  const auth = await requirePackagePublishAuthOrResponse(ctx, request, rate.headers);
   if (!auth.ok) return auth.response;
 
   try {
@@ -605,13 +658,187 @@ export async function publishPackageV1Handler(ctx: ActionCtx, request: Request) 
     const payload = contentType.includes("multipart/form-data")
       ? await parseMultipartPackagePublish(ctx, request)
       : parsePackagePublishBody(await request.json());
-    const result = await runActionRef(ctx, internalRefs.packages.publishPackageForUserInternal, {
-      actorUserId: auth.userId,
-      payload,
-    });
+    const result =
+      auth.auth.kind === "user"
+        ? await runActionRef(ctx, internalRefs.packages.publishPackageForUserInternal, {
+            actorUserId: auth.auth.userId,
+            payload,
+          })
+        : await runActionRef(ctx, internalRefs.packages.publishPackageForTrustedPublisherInternal, {
+            publishTokenId: auth.auth.publishToken._id,
+            payload,
+          });
     return json(result, 200, rate.headers);
   } catch (error) {
     return text(error instanceof Error ? error.message : "Publish failed", 400, rate.headers);
+  }
+}
+
+async function getPackageAndTrustedPublisherByName(ctx: ActionCtx, packageName: string) {
+  const pkg = await runQueryRef<Doc<"packages"> | null>(ctx, internalRefs.packages.getPackageByNameInternal, {
+    name: packageName,
+  });
+  if (!pkg || pkg.softDeletedAt) return { pkg: null, trustedPublisher: null };
+  const trustedPublisher = await runQueryRef<PackageTrustedPublisherLike | null>(
+    ctx,
+    internalRefs.packages.getTrustedPublisherByPackageIdInternal,
+    { packageId: pkg._id },
+  );
+  return { pkg, trustedPublisher };
+}
+
+export async function mintPublishTokenV1Handler(ctx: ActionCtx, request: Request) {
+  const rate = await applyRateLimit(ctx, request, "write");
+  if (!rate.ok) return rate.response;
+
+  const parsedBody = await request.json().catch(() => null);
+  if (!parsedBody) return text("Invalid JSON", 400, rate.headers);
+
+  try {
+    const payload = parseArk(PublishTokenMintRequestSchema, parsedBody, "Publish token mint payload") as {
+      packageName: string;
+      version: string;
+      githubOidcToken: string;
+    };
+    const { pkg, trustedPublisher } = await getPackageAndTrustedPublisherByName(ctx, payload.packageName);
+    if (!pkg) return text("Package not found", 404, rate.headers);
+    if (!trustedPublisher) {
+      return text("Trusted publisher config is not set for this package", 403, rate.headers);
+    }
+
+    try {
+      const verified = await verifyGitHubActionsTrustedPublishJwt(payload.githubOidcToken, {
+        repository: trustedPublisher.repository,
+        repositoryId: trustedPublisher.repositoryId,
+        repositoryOwner: trustedPublisher.repositoryOwner,
+        repositoryOwnerId: trustedPublisher.repositoryOwnerId,
+        workflowFilename: trustedPublisher.workflowFilename,
+        environment: trustedPublisher.environment,
+      });
+      const { token, prefix } = generateToken();
+      const tokenHash = await hashToken(token);
+      const expiresAt = Date.now() + 15 * 60_000;
+
+      await ctx.runMutation(internalRefs.packagePublishTokens.createInternal as never, {
+        packageId: pkg._id,
+        version: payload.version,
+        prefix,
+        tokenHash,
+        provider: "github-actions",
+        repository: verified.repository,
+        repositoryId: verified.repositoryId,
+        repositoryOwner: verified.repositoryOwner,
+        repositoryOwnerId: verified.repositoryOwnerId,
+        workflowFilename: verified.workflowFilename,
+        environment: verified.environment,
+        runId: verified.runId,
+        runAttempt: verified.runAttempt,
+        sha: verified.sha,
+        ref: verified.ref,
+        ...(verified.refType ? { refType: verified.refType } : {}),
+        ...(verified.actor ? { actor: verified.actor } : {}),
+        ...(verified.actorId ? { actorId: verified.actorId } : {}),
+        expiresAt,
+      } as never);
+      await ctx.runMutation(internalRefs.packages.insertAuditLogInternal as never, {
+        actorUserId: pkg.ownerUserId,
+        action: "package.publish_token.mint",
+        targetType: "package",
+        targetId: String(pkg._id),
+        metadata: {
+          version: payload.version,
+          repository: verified.repository,
+          workflowFilename: verified.workflowFilename,
+          environment: verified.environment,
+          runId: verified.runId,
+          runAttempt: verified.runAttempt,
+          sha: verified.sha,
+          ref: verified.ref,
+          decision: "allowed",
+        },
+      } as never);
+      return json({ token, expiresAt }, 200, rate.headers);
+    } catch (error) {
+      await ctx.runMutation(internalRefs.packages.insertAuditLogInternal as never, {
+        actorUserId: pkg.ownerUserId,
+        action: "package.publish_token.mint_rejected",
+        targetType: "package",
+        targetId: String(pkg._id),
+        metadata: {
+          version: payload.version,
+          repository: trustedPublisher.repository,
+          workflowFilename: trustedPublisher.workflowFilename,
+          environment: trustedPublisher.environment,
+          decision: "rejected",
+          reason: error instanceof Error ? error.message : "Token verification failed",
+        },
+      } as never);
+      throw error;
+    }
+  } catch (error) {
+    return text(error instanceof Error ? error.message : "Token mint failed", 400, rate.headers);
+  }
+}
+
+export async function packagesPostRouterV1Handler(ctx: ActionCtx, request: Request) {
+  const segments = getPathSegments(request, "/api/v1/packages/");
+  if (segments[1] !== "trusted-publisher" || segments.length !== 2) {
+    return text("Not found", 404);
+  }
+  const rate = await applyRateLimit(ctx, request, "write");
+  if (!rate.ok) return rate.response;
+  const auth = await requireApiTokenUserOrResponse(ctx, request, rate.headers);
+  if (!auth.ok) return auth.response;
+
+  try {
+    const body = parseArk(
+      PackageTrustedPublisherUpsertRequestSchema,
+      await request.json(),
+      "Trusted publisher payload",
+    ) as {
+      repository: string;
+      workflowFilename: string;
+      environment: string;
+    };
+    const repositoryIdentity = await fetchGitHubRepositoryIdentity(body.repository);
+    const trustedPublisher = await runMutationRef<PackageTrustedPublisherLike | null>(
+      ctx,
+      internalRefs.packages.setTrustedPublisherForUserInternal,
+      {
+        actorUserId: auth.userId,
+        packageName: segments[0]!,
+        repository: repositoryIdentity.repository,
+        repositoryId: repositoryIdentity.repositoryId,
+        repositoryOwner: repositoryIdentity.repositoryOwner,
+        repositoryOwnerId: repositoryIdentity.repositoryOwnerId,
+        workflowFilename: body.workflowFilename,
+        environment: body.environment,
+      },
+    );
+    return json({ trustedPublisher: toPublicTrustedPublisher(trustedPublisher) }, 200, rate.headers);
+  } catch (error) {
+    return text(error instanceof Error ? error.message : "Trusted publisher update failed", 400, rate.headers);
+  }
+}
+
+export async function packagesDeleteRouterV1Handler(ctx: ActionCtx, request: Request) {
+  const segments = getPathSegments(request, "/api/v1/packages/");
+  if (segments[1] !== "trusted-publisher" || segments.length !== 2) {
+    return text("Not found", 404);
+  }
+  const rate = await applyRateLimit(ctx, request, "write");
+  if (!rate.ok) return rate.response;
+  const auth = await requireApiTokenUserOrResponse(ctx, request, rate.headers);
+  if (!auth.ok) return auth.response;
+
+  try {
+    await runMutationRef(ctx, internalRefs.packages.deleteTrustedPublisherForUserInternal, {
+      actorUserId: auth.userId,
+      packageName: segments[0]!,
+    });
+    return json({ ok: true }, 200, rate.headers);
+  } catch (error) {
+    return text(error instanceof Error ? error.message : "Trusted publisher delete failed", 400, rate.headers);
   }
 }
 
@@ -886,6 +1113,16 @@ export async function packagesGetRouterV1Handler(ctx: ActionCtx, request: Reques
           }
         : null,
     }, 200, rate.headers);
+  }
+
+  if (segments[1] === "trusted-publisher" && segments.length === 2) {
+    if (!publicPackage) return text("Not found", 404, rate.headers);
+    const trustedPublisher = await runQueryRef<PackageTrustedPublisherLike | null>(
+      ctx,
+      internalRefs.packages.getTrustedPublisherByPackageIdInternal,
+      { packageId: publicPackage._id },
+    );
+    return json({ trustedPublisher: toPublicTrustedPublisher(trustedPublisher) }, 200, rate.headers);
   }
 
   if (segments[1] === "versions" && segments.length === 2) {

@@ -4,7 +4,10 @@ import {
   listCodePluginsV1Handler,
   listPackagesV1Handler,
   listPluginsV1Handler,
+  mintPublishTokenV1Handler,
+  packagesDeleteRouterV1Handler,
   packagesGetRouterV1Handler,
+  packagesPostRouterV1Handler,
   pluginsGetRouterV1Handler,
   publishPackageV1Handler,
 } from "./httpApiV1/packagesV1";
@@ -32,8 +35,11 @@ import { whoamiV1Handler } from "./httpApiV1/whoamiV1";
 export const listPackagesV1Http = httpAction(listPackagesV1Handler);
 export const listPluginsV1Http = httpAction(listPluginsV1Handler);
 export const packagesGetRouterV1Http = httpAction(packagesGetRouterV1Handler);
+export const packagesPostRouterV1Http = httpAction(packagesPostRouterV1Handler);
+export const packagesDeleteRouterV1Http = httpAction(packagesDeleteRouterV1Handler);
 export const pluginsGetRouterV1Http = httpAction(pluginsGetRouterV1Handler);
 export const publishPackageV1Http = httpAction(publishPackageV1Handler);
+export const mintPublishTokenV1Http = httpAction(mintPublishTokenV1Handler);
 export const listCodePluginsV1Http = httpAction(listCodePluginsV1Handler);
 export const listBundlePluginsV1Http = httpAction(listBundlePluginsV1Handler);
 
@@ -63,8 +69,11 @@ export const __handlers = {
   listPackagesV1Handler,
   listPluginsV1Handler,
   packagesGetRouterV1Handler,
+  packagesPostRouterV1Handler,
+  packagesDeleteRouterV1Handler,
   pluginsGetRouterV1Handler,
   publishPackageV1Handler,
+  mintPublishTokenV1Handler,
   listCodePluginsV1Handler,
   listBundlePluginsV1Handler,
   searchSkillsV1Handler,
