@@ -67,6 +67,7 @@ jobs:
     timeout-minutes: 15
     permissions:
       contents: read
+      id-token: write
     outputs:
       publish_json: ${{ steps.capture.outputs.publish_json }}
       release_id: ${{ steps.capture.outputs.release_id }}
@@ -83,13 +84,21 @@ jobs:
           JSON_MODE: ${{ inputs.json }}
           CLAWHUB_TOKEN: ${{ secrets.clawhub_token }}
         run: |
-          if [[ "$DRY_RUN" != "true" && -z "$CLAWHUB_TOKEN" ]]; then
-            echo "::error::secrets.clawhub_token is required when dry_run is false."
-            exit 1
-          fi
           if [[ "$JSON_MODE" != "true" ]]; then
             echo "::warning::This reusable workflow always emits JSON output; forcing --json for downstream parsing."
           fi
+          if [[ "$DRY_RUN" == "true" ]]; then
+            exit 0
+          fi
+          if [[ -n "$CLAWHUB_TOKEN" ]]; then
+            exit 0
+          fi
+          if [[ -n "${ACTIONS_ID_TOKEN_REQUEST_URL:-}" && -n "${ACTIONS_ID_TOKEN_REQUEST_TOKEN:-}" ]]; then
+            echo "No ClawHub token provided; publish will rely on GitHub OIDC trusted publishing."
+            exit 0
+          fi
+          echo "::error::Real publishes need either secrets.clawhub_token or GitHub OIDC (permissions.id-token=write)."
+          exit 1
 
       - name: Write ClawHub config
         env:

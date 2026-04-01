@@ -52,11 +52,18 @@ type GitHubRepositoryIdentity = {
   repositoryOwnerId: string;
 };
 
+type ParsedWorkflowRef = {
+  repository: string;
+  workflowFilename: string;
+};
+
 const GITHUB_ACTIONS_ISSUER = "https://token.actions.githubusercontent.com";
 const GITHUB_ACTIONS_JWKS_URL = `${GITHUB_ACTIONS_ISSUER}/.well-known/jwks`;
 const TRUSTED_AUDIENCE = "clawhub";
 const CLOCK_SKEW_MS = 60_000;
 const JWKS_CACHE_TTL_MS = 5 * 60_000;
+const OFFICIAL_REUSABLE_WORKFLOW_REPOSITORY = "openclaw/clawhub";
+const OFFICIAL_REUSABLE_WORKFLOW_FILENAME = "package-publish.yml";
 
 let cachedJwks: { value: JwkSet; fetchedAt: number } | null = null;
 
@@ -109,7 +116,7 @@ export async function verifyGitHubActionsTrustedPublishJwt(
   const repositoryOwner = requireString(payload.repository_owner, "repository_owner");
   const repositoryOwnerId = requireClaimString(payload.repository_owner_id, "repository_owner_id");
   const workflowRef = requireString(payload.workflow_ref, "workflow_ref");
-  const workflowFilename = extractWorkflowFilenameFromWorkflowRef(workflowRef, repository);
+  const workflow = parseWorkflowRef(workflowRef, repository);
   const jobWorkflowRef = optionalString(payload.job_workflow_ref);
   const runnerEnvironment = requireString(payload.runner_environment, "runner_environment");
   const environment = requireString(payload.environment, "environment");
@@ -141,13 +148,21 @@ export async function verifyGitHubActionsTrustedPublishJwt(
       `GitHub OIDC repository_owner_id mismatch: expected ${trustedPublisher.repositoryOwnerId}, got ${repositoryOwnerId}`,
     );
   }
-  if (workflowFilename !== trustedPublisher.workflowFilename) {
+  if (workflow.workflowFilename !== trustedPublisher.workflowFilename) {
     throw new Error(
-      `GitHub OIDC workflow mismatch: expected ${trustedPublisher.workflowFilename}, got ${workflowFilename}`,
+      `GitHub OIDC workflow mismatch: expected ${trustedPublisher.workflowFilename}, got ${workflow.workflowFilename}`,
     );
   }
-  if (jobWorkflowRef && jobWorkflowRef !== workflowRef) {
-    throw new Error("Reusable GitHub workflows are not supported for trusted publishing");
+  if (jobWorkflowRef) {
+    const reusableWorkflow = parseWorkflowRef(jobWorkflowRef);
+    const usesOfficialReusableWorkflow =
+      reusableWorkflow.repository === OFFICIAL_REUSABLE_WORKFLOW_REPOSITORY &&
+      reusableWorkflow.workflowFilename === OFFICIAL_REUSABLE_WORKFLOW_FILENAME;
+    if (!usesOfficialReusableWorkflow) {
+      throw new Error(
+        "Only the official ClawHub reusable workflow is supported for trusted publishing",
+      );
+    }
   }
   if (runnerEnvironment !== "github-hosted") {
     throw new Error(`Only GitHub-hosted runners may mint trusted publish tokens, got ${runnerEnvironment}`);
@@ -166,7 +181,7 @@ export async function verifyGitHubActionsTrustedPublishJwt(
     repositoryId,
     repositoryOwner,
     repositoryOwnerId,
-    workflowFilename,
+    workflowFilename: workflow.workflowFilename,
     workflowName,
     workflowRef,
     ...(jobWorkflowRef ? { jobWorkflowRef } : {}),
@@ -223,6 +238,10 @@ export function normalizeGitHubRepository(repository: string) {
 }
 
 export function extractWorkflowFilenameFromWorkflowRef(workflowRef: string, expectedRepository?: string) {
+  return parseWorkflowRef(workflowRef, expectedRepository).workflowFilename;
+}
+
+function parseWorkflowRef(workflowRef: string, expectedRepository?: string): ParsedWorkflowRef {
   const match = /^([^/]+\/[^/]+)\/\.github\/workflows\/([^@/]+)@.+$/.exec(workflowRef.trim());
   if (!match?.[1] || !match[2]) {
     throw new Error(`Invalid GitHub workflow_ref claim: ${workflowRef}`);
@@ -232,7 +251,10 @@ export function extractWorkflowFilenameFromWorkflowRef(workflowRef: string, expe
       `GitHub workflow_ref repository mismatch: expected ${expectedRepository}, got ${match[1]}`,
     );
   }
-  return match[2];
+  return {
+    repository: match[1],
+    workflowFilename: match[2],
+  };
 }
 
 function decodeJwt(jwt: string) {

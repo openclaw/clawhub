@@ -254,6 +254,9 @@ jobs:
 
   publish:
     if: github.event_name == 'workflow_dispatch' || startsWith(github.ref, 'refs/tags/')
+    permissions:
+      contents: read
+      id-token: write
     uses: openclaw/clawhub/.github/workflows/package-publish.yml@main
     with:
       dry_run: false
@@ -266,6 +269,8 @@ Notes:
 - The reusable workflow defaults `source` to the caller repo.
 - `pull_request` should use `dry_run: true` so CI stays non-polluting.
 - Real publishes should be limited to trusted events such as `workflow_dispatch` or tag pushes.
+- Trusted publishing without a secret only works on `workflow_dispatch`; tag pushes still need `clawhub_token`.
+- Keep `clawhub_token` available for first publish, untrusted packages, or break-glass publishes.
 - The workflow uploads the JSON result as an artifact and exposes it as workflow outputs.
 
 ### `sync`

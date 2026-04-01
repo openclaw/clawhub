@@ -1020,12 +1020,26 @@ async function resolvePackagePublishToken(params: {
   if (params.spinner) {
     params.spinner.text = "Minting short-lived ClawHub publish token";
   }
-  return await mintPackagePublishToken(
-    params.registry,
-    params.packageName,
-    params.version,
-    githubOidcToken,
-  );
+  try {
+    return await mintPackagePublishToken(
+      params.registry,
+      params.packageName,
+      params.version,
+      githubOidcToken,
+    );
+  } catch (error) {
+    const status =
+      typeof error === "object" && error !== null && "status" in error
+        ? (error as { status?: unknown }).status
+        : undefined;
+    if (status !== 403 && status !== 404) {
+      throw error;
+    }
+    if (params.spinner) {
+      params.spinner.text = "Trusted publishing unavailable, falling back to ClawHub token";
+    }
+    return await requireAuthToken();
+  }
 }
 
 function buildSource(

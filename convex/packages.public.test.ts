@@ -8,6 +8,7 @@ import {
   getByName,
   list,
   publishPackage,
+  publishPackageForTrustedPublisherInternal,
   publishPackageForUserInternal,
   getVersionByName,
   insertReleaseInternal,
@@ -171,6 +172,15 @@ const publishPackageForUserInternalHandler = (
   publishPackageForUserInternal as unknown as WrappedHandler<
     {
       actorUserId: string;
+      payload: unknown;
+    },
+    unknown
+  >
+)._handler;
+const publishPackageForTrustedPublisherInternalHandler = (
+  publishPackageForTrustedPublisherInternal as unknown as WrappedHandler<
+    {
+      publishTokenId: string;
       payload: unknown;
     },
     unknown
@@ -2028,11 +2038,51 @@ describe("packages public queries", () => {
     ).rejects.toThrow("Skill packages must use the skills publish flow");
   });
 
+  it("rejects trusted publish tokens after trusted publisher rotation or deletion", async () => {
+    const ctx = {
+      runQuery: vi
+        .fn()
+        .mockResolvedValueOnce({
+          _id: "packagePublishTokens:1",
+          packageId: "packages:demo",
+          provider: "github-actions",
+          repository: "openclaw/openclaw",
+          repositoryId: "1",
+          repositoryOwner: "openclaw",
+          repositoryOwnerId: "2",
+          workflowFilename: "plugin-clawhub-release.yml",
+          environment: "clawhub-release",
+          version: "1.0.0",
+          sha: "abc123",
+          ref: "refs/heads/main",
+          runId: "100",
+          runAttempt: "1",
+          expiresAt: Date.now() + 60_000,
+        })
+        .mockResolvedValueOnce(null),
+    };
+
+    await expect(
+      publishPackageForTrustedPublisherInternalHandler(ctx as never, {
+        publishTokenId: "packagePublishTokens:1",
+        payload: {
+          name: "demo-plugin",
+          family: "bundle-plugin",
+          version: "1.0.0",
+          changelog: "init",
+          bundle: { hostTargets: ["desktop"] },
+          files: [],
+        },
+      }),
+    ).rejects.toThrow("Trusted publish token no longer matches the current package trusted publisher");
+  });
+
   it("scans plugin publishes and forwards scan status to insertReleaseInternal", async () => {
     const runMutation = vi.fn(async (_ref: unknown, args: unknown) => args);
     const ctx = {
       runQuery: vi
         .fn()
+        .mockResolvedValueOnce(null)
         .mockResolvedValueOnce({
           _id: "users:owner",
           githubCreatedAt: Date.now() - 20 * 24 * 60 * 60 * 1000,

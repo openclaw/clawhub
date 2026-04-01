@@ -1629,6 +1629,23 @@ function resolveTrustedPublishSource(
   };
 }
 
+function doesTrustedPublisherMatchPublishToken(
+  trustedPublisher: PackageTrustedPublisherDoc | null,
+  publishToken: Doc<"packagePublishTokens">,
+) {
+  return Boolean(
+    trustedPublisher &&
+      trustedPublisher.packageId === publishToken.packageId &&
+      trustedPublisher.provider === publishToken.provider &&
+      trustedPublisher.repository === publishToken.repository &&
+      trustedPublisher.repositoryId === publishToken.repositoryId &&
+      trustedPublisher.repositoryOwner === publishToken.repositoryOwner &&
+      trustedPublisher.repositoryOwnerId === publishToken.repositoryOwnerId &&
+      trustedPublisher.workflowFilename === publishToken.workflowFilename &&
+      trustedPublisher.environment === publishToken.environment,
+  );
+}
+
 async function publishPackageImpl(
   ctx: Parameters<typeof requireGitHubAccountAge>[0] & Pick<ActionCtx, "storage" | "scheduler">,
   auth: PackagePublishAuthContext,
@@ -1904,6 +1921,14 @@ export const publishPackageForTrustedPublisherInternal = internalAction({
     );
     if (!publishToken || publishToken.revokedAt || publishToken.expiresAt <= Date.now()) {
       throw new ConvexError("Trusted publish token is missing or expired");
+    }
+    const trustedPublisher = await runQueryRef<PackageTrustedPublisherDoc | null>(
+      ctx,
+      internalRefs.packages.getTrustedPublisherByPackageIdInternal,
+      { packageId: publishToken.packageId },
+    );
+    if (!doesTrustedPublisherMatchPublishToken(trustedPublisher, publishToken)) {
+      throw new ConvexError("Trusted publish token no longer matches the current package trusted publisher");
     }
     return await publishPackageImpl(ctx, { kind: "github-actions", publishToken }, args.payload);
   },
