@@ -167,6 +167,8 @@ export async function verifyGitHubActionsTrustedPublishJwt(
   if (runnerEnvironment !== "github-hosted") {
     throw new Error(`Only GitHub-hosted runners may mint trusted publish tokens, got ${runnerEnvironment}`);
   }
+  // v1 keeps secretless publishing behind a manual, environment-protected entry
+  // point. Tag and release automation should keep using the token path for now.
   if (eventName !== "workflow_dispatch") {
     throw new Error(`Trusted publishing requires workflow_dispatch, got ${eventName}`);
   }

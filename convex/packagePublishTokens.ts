@@ -59,3 +59,12 @@ export const touchInternal = internalMutation({
     await ctx.db.patch(token._id, { lastUsedAt: Date.now() });
   },
 });
+
+export const revokeInternal = internalMutation({
+  args: { tokenId: v.id("packagePublishTokens") },
+  handler: async (ctx, args) => {
+    const token = await ctx.db.get(args.tokenId);
+    if (!token || token.revokedAt) return;
+    await ctx.db.patch(token._id, { revokedAt: Date.now() });
+  },
+});

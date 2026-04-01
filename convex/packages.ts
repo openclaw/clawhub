@@ -71,6 +71,7 @@ const internalRefs = internal as unknown as {
   packagePublishTokens: {
     createInternal: unknown;
     getByIdInternal: unknown;
+    revokeInternal: unknown;
   };
   skills: {
     getSkillBySlugInternal: unknown;
@@ -1646,6 +1647,18 @@ function doesTrustedPublisherMatchPublishToken(
   );
 }
 
+function isTrustedPublisherTagTokenPublish(
+  payload: PackagePublishRequest,
+  trustedPublisher: PackageTrustedPublisherDoc | null,
+) {
+  if (!trustedPublisher) return false;
+  const source = payload.source;
+  if (!source || source.kind !== "github") return false;
+  const repo = source.repo?.trim() ? normalizeGitHubRepository(source.repo) ?? source.repo.trim() : null;
+  if (!repo || repo !== trustedPublisher.repository) return false;
+  return Boolean(source.ref?.trim().startsWith("refs/tags/"));
+}
+
 async function publishPackageImpl(
   ctx: Parameters<typeof requireGitHubAccountAge>[0] & Pick<ActionCtx, "storage" | "scheduler">,
   auth: PackagePublishAuthContext,
@@ -1716,7 +1729,11 @@ async function publishPackageImpl(
     });
     ownerUserId = ownerTarget?.linkedUserId ?? actorUserId;
     ownerPublisherId = ownerTarget?.publisherId;
-    if (existingTrustedPublisher && !manualOverrideReason) {
+    const allowTrustedPublisherTagTokenPublish = isTrustedPublisherTagTokenPublish(
+      payload,
+      existingTrustedPublisher,
+    );
+    if (existingTrustedPublisher && !manualOverrideReason && !allowTrustedPublisherTagTokenPublish) {
       throw new ConvexError(
         "Manual publishes for packages with trusted publisher config require manualOverrideReason",
       );
@@ -1844,6 +1861,11 @@ async function publishPackageImpl(
     },
   );
 
+  if (auth.kind === "github-actions") {
+    await runMutationRef(ctx, internalRefs.packagePublishTokens.revokeInternal, {
+      tokenId: auth.publishToken._id,
+    });
+  }
   if (auth.kind === "user" && existingTrustedPublisher && manualOverrideReason) {
     await runMutationRef(ctx, internalRefs.packages.insertAuditLogInternal, {
       actorUserId,
