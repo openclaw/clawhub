@@ -189,11 +189,67 @@ describe("verifyGitHubActionsTrustedPublishJwt", () => {
       }),
     ).rejects.toThrow("GitHub OIDC environment mismatch");
   });
+
+  it("refreshes JWKS on signing-key cache misses", async () => {
+    const now = Date.now() + 10 * 60_000;
+    const { token, jwks } = await createSignedToken(
+      {
+        repository: trustedPublisher.repository,
+        repository_id: trustedPublisher.repositoryId,
+        repository_owner: trustedPublisher.repositoryOwner,
+        repository_owner_id: trustedPublisher.repositoryOwnerId,
+        workflow_ref:
+          "openclaw/openclaw/.github/workflows/plugin-clawhub-release.yml@refs/heads/main",
+        runner_environment: "github-hosted",
+        environment: trustedPublisher.environment,
+        event_name: "workflow_dispatch",
+        workflow: "Plugin ClawHub Release",
+        sha: "deadbeef",
+        ref: "refs/heads/main",
+        ref_type: "branch",
+        actor: "onur",
+        actor_id: "42",
+        run_id: "100",
+        run_attempt: "2",
+        iss: "https://token.actions.githubusercontent.com",
+        aud: "clawhub",
+        exp: Math.floor(now / 1000) + 300,
+        iat: Math.floor(now / 1000) - 5,
+      },
+      "rotated-key",
+    );
+    const staleJwk = { ...jwks, kid: "stale-key" };
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify({ keys: [staleJwk] }), {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        }),
+      )
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify({ keys: [jwks] }), {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        }),
+      );
+
+    await expect(
+      verifyGitHubActionsTrustedPublishJwt(token, trustedPublisher, {
+        fetchImpl: fetchMock,
+        now: () => now,
+      }),
+    ).resolves.toMatchObject({
+      repository: trustedPublisher.repository,
+      workflowFilename: trustedPublisher.workflowFilename,
+    });
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+  });
 });
 
-async function createSignedToken(payload: Record<string, unknown>) {
+async function createSignedToken(payload: Record<string, unknown>, kid = "test-key") {
   const keyPair = await signingKeyPairPromise;
-  const header = { alg: "RS256", kid: "test-key", typ: "JWT" };
+  const header = { alg: "RS256", kid, typ: "JWT" };
   const encodedHeader = base64UrlEncodeJson(header);
   const encodedPayload = base64UrlEncodeJson(payload);
   const signingInput = `${encodedHeader}.${encodedPayload}`;
@@ -203,7 +259,7 @@ async function createSignedToken(payload: Record<string, unknown>) {
   const publicJwk = (await crypto.subtle.exportKey("jwk", keyPair.publicKey)) as JsonWebKey & {
     kid?: string;
   };
-  publicJwk.kid = "test-key";
+  publicJwk.kid = kid;
   return {
     token: `${signingInput}.${base64UrlEncodeBytes(signature)}`,
     jwks: publicJwk,

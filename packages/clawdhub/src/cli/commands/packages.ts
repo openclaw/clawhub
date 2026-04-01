@@ -1032,7 +1032,7 @@ async function resolvePackagePublishToken(params: {
       typeof error === "object" && error !== null && "status" in error
         ? (error as { status?: unknown }).status
         : undefined;
-    if (status !== 403 && status !== 404) {
+    if (status !== 400 && status !== 403 && status !== 404) {
       throw error;
     }
     if (params.spinner) {

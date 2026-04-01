@@ -83,8 +83,12 @@ export async function verifyGitHubActionsTrustedPublishJwt(
   }
 
   const keyId = requireString(header.kid, "kid");
-  const jwks = await fetchGitHubActionsJwks(fetchImpl, now);
-  const jwk = jwks.keys?.find((entry) => entry.kid === keyId);
+  let jwks = await fetchGitHubActionsJwks(fetchImpl, now);
+  let jwk = jwks.keys?.find((entry) => entry.kid === keyId);
+  if (!jwk) {
+    jwks = await fetchGitHubActionsJwks(fetchImpl, now, true);
+    jwk = jwks.keys?.find((entry) => entry.kid === keyId);
+  }
   if (!jwk) throw new Error(`Unknown GitHub OIDC signing key: ${keyId}`);
 
   const key = await crypto.subtle.importKey(
@@ -292,8 +296,8 @@ function base64UrlToBytes(value: string) {
   return bytes;
 }
 
-async function fetchGitHubActionsJwks(fetchImpl: typeof fetch, now: number) {
-  if (cachedJwks && now - cachedJwks.fetchedAt < JWKS_CACHE_TTL_MS) {
+async function fetchGitHubActionsJwks(fetchImpl: typeof fetch, now: number, forceRefresh = false) {
+  if (!forceRefresh && cachedJwks && now - cachedJwks.fetchedAt < JWKS_CACHE_TTL_MS) {
     return cachedJwks.value;
   }
   const response = await fetchImpl(GITHUB_ACTIONS_JWKS_URL, {

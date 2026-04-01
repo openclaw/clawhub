@@ -443,6 +443,54 @@ describe("package commands", () => {
     }
   });
 
+  it("falls back to a normal auth token when trusted minting returns a 400", async () => {
+    const workdir = await makeTmpWorkdir();
+    try {
+      process.env.ACTIONS_ID_TOKEN_REQUEST_URL = "https://token.actions.githubusercontent.com/oidc";
+      process.env.ACTIONS_ID_TOKEN_REQUEST_TOKEN = "gh-request-token";
+      const fetchMock = vi.fn().mockResolvedValue(
+        new Response(JSON.stringify({ value: "github-oidc-jwt" }), {
+          status: 200,
+          headers: { "content-type": "application/json" },
+        }),
+      );
+      vi.stubGlobal("fetch", fetchMock);
+
+      const folder = join(workdir, "demo-plugin");
+      await mkdir(folder, { recursive: true });
+      await writeFile(
+        join(folder, "package.json"),
+        makeCodePluginPackageJson({
+          name: "@scope/demo-plugin",
+          displayName: "Demo Plugin",
+          version: "1.0.0",
+        }),
+        "utf8",
+      );
+      await writeFile(join(folder, "openclaw.plugin.json"), JSON.stringify({ id: "demo.plugin" }), "utf8");
+
+      authTokenMocks.requireAuthToken.mockResolvedValueOnce("fallback-token");
+      httpMocks.apiRequest.mockRejectedValueOnce(
+        Object.assign(new Error("Trusted publishing requires workflow_dispatch"), { status: 400 }),
+      );
+      httpMocks.apiRequestForm.mockResolvedValueOnce({
+        ok: true,
+        packageId: "pkg_1",
+        releaseId: "rel_1",
+      });
+
+      await cmdPublishPackage(makeOpts(workdir), "demo-plugin", {
+        sourceRepo: "openclaw/demo-plugin",
+        sourceCommit: "abc123",
+      });
+
+      const publishArgs = httpMocks.apiRequestForm.mock.calls[0]?.[1] as { token?: string } | undefined;
+      expect(publishArgs?.token).toBe("fallback-token");
+    } finally {
+      await rm(workdir, { recursive: true, force: true });
+    }
+  });
+
   it("publishes a bundle plugin package with manifest-driven family detection", async () => {
     const workdir = await makeTmpWorkdir();
     try {
