@@ -1,0 +1,21 @@
+{
+  "name": "oraclaw-cmaes",
+  "version": "1.0.0",
+  "description": "CMA-ES continuous optimization for AI agents. State-of-the-art derivative-free optimizer. 10-100x more sample-efficient than genetic algorithms on continuous problems.",
+  "files": ["SKILL.md"],
+  "keywords": ["cma-es", "optimization", "continuous", "derivative-free", "hyperparameter-tuning", "calibration", "machine-learning"],
+  "author": "OraClaw <team@web-olive-one-89.vercel.app>",
+  "license": "MIT",
+  "homepage": "https://web-olive-one-89.vercel.app/cmaes",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/Whatsonyourmind/oraclaw",
+    "directory": "mission-control/packages/clawhub-skills/oraclaw-cmaes"
+  },
+  "clawhub": {
+    "price": 0.10,
+    "currency": "USDC",
+    "endpoint": "/api/v1/optimize/cmaes",
+    "method": "POST"
+  }
+}

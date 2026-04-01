@@ -1,0 +1,21 @@
+{
+  "name": "oraclaw-anomaly",
+  "version": "1.0.0",
+  "description": "Anomaly detection for AI agents. Z-score, IQR, and streaming detection. Find outliers in data instantly. Sub-millisecond response. Works on single values or full datasets.",
+  "files": ["SKILL.md"],
+  "keywords": ["anomaly-detection", "outlier", "statistics", "monitoring", "data-quality", "alerting", "time-series"],
+  "author": "OraClaw <team@web-olive-one-89.vercel.app>",
+  "license": "MIT",
+  "homepage": "https://web-olive-one-89.vercel.app/anomaly",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/Whatsonyourmind/oraclaw",
+    "directory": "mission-control/packages/clawhub-skills/oraclaw-anomaly"
+  },
+  "clawhub": {
+    "price": 0.02,
+    "currency": "USDC",
+    "endpoint": "/api/v1/detect/anomaly",
+    "method": "POST"
+  }
+}

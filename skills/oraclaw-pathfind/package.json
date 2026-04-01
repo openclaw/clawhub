@@ -1,0 +1,21 @@
+{
+  "name": "oraclaw-pathfind",
+  "version": "1.0.0",
+  "description": "A* pathfinding and task sequencing for AI agents. Find the optimal path through workflows, dependencies, and decision trees. K-shortest paths via Yen's algorithm. Cost/time/risk breakdown.",
+  "files": ["SKILL.md"],
+  "keywords": ["pathfinding", "a-star", "shortest-path", "routing", "workflow", "dependencies", "planning"],
+  "author": "OraClaw <team@web-olive-one-89.vercel.app>",
+  "license": "MIT",
+  "homepage": "https://web-olive-one-89.vercel.app/pathfind",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/Whatsonyourmind/oraclaw",
+    "directory": "mission-control/packages/clawhub-skills/oraclaw-pathfind"
+  },
+  "clawhub": {
+    "price": 0.03,
+    "currency": "USDC",
+    "endpoint": "/api/v1/plan/pathfind",
+    "method": "POST"
+  }
+}

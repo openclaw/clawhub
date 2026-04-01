@@ -1,0 +1,21 @@
+{
+  "name": "oraclaw-forecast",
+  "version": "1.0.0",
+  "description": "Time series forecasting for AI agents. ARIMA and Holt-Winters predictions with confidence intervals. Predict revenue, traffic, prices, or any sequential data. Sub-5ms inference.",
+  "files": ["SKILL.md"],
+  "keywords": ["time-series", "forecasting", "arima", "holt-winters", "prediction", "revenue", "finance"],
+  "author": "OraClaw <team@web-olive-one-89.vercel.app>",
+  "license": "MIT",
+  "homepage": "https://web-olive-one-89.vercel.app/forecast",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/Whatsonyourmind/oraclaw",
+    "directory": "mission-control/packages/clawhub-skills/oraclaw-forecast"
+  },
+  "clawhub": {
+    "price": 0.05,
+    "currency": "USDC",
+    "endpoint": "/api/v1/predict/forecast",
+    "method": "POST"
+  }
+}

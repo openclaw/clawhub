@@ -1,0 +1,21 @@
+{
+  "name": "oraclaw-bayesian",
+  "version": "1.0.0",
+  "description": "Bayesian inference engine for AI agents. Update beliefs with new evidence. Prior + evidence = posterior. Multi-factor prediction with calibration tracking.",
+  "files": ["SKILL.md"],
+  "keywords": ["bayesian", "inference", "prediction", "probability", "statistics", "machine-learning"],
+  "author": "OraClaw <team@web-olive-one-89.vercel.app>",
+  "license": "MIT",
+  "homepage": "https://web-olive-one-89.vercel.app/bayesian",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/Whatsonyourmind/oraclaw",
+    "directory": "mission-control/packages/clawhub-skills/oraclaw-bayesian"
+  },
+  "clawhub": {
+    "price": 0.02,
+    "currency": "USDC",
+    "endpoint": "/api/v1/predict/bayesian",
+    "method": "POST"
+  }
+}

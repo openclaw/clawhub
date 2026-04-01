@@ -1,0 +1,21 @@
+{
+  "name": "oraclaw-risk",
+  "version": "1.0.0",
+  "description": "Risk assessment engine for AI agents. Value at Risk (VaR), CVaR, stress testing, and multi-factor risk scoring. Monte Carlo powered. Built for trading agents, lending agents, and portfolio managers.",
+  "files": ["SKILL.md"],
+  "keywords": ["risk", "var", "cvar", "portfolio", "finance", "trading", "stress-testing", "monte-carlo"],
+  "author": "OraClaw <team@web-olive-one-89.vercel.app>",
+  "license": "MIT",
+  "homepage": "https://web-olive-one-89.vercel.app/risk",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/Whatsonyourmind/oraclaw",
+    "directory": "mission-control/packages/clawhub-skills/oraclaw-risk"
+  },
+  "clawhub": {
+    "price": 0.10,
+    "currency": "USDC",
+    "endpoint": "/api/v1/analyze/risk",
+    "method": "POST"
+  }
+}

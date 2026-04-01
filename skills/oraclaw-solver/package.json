@@ -1,0 +1,21 @@
+{
+  "name": "oraclaw-solver",
+  "version": "1.0.0",
+  "description": "Industrial-grade scheduling and resource optimization for AI agents. Solve task scheduling with energy matching, budget allocation, and any LP/MIP constraint problem in milliseconds.",
+  "files": ["SKILL.md"],
+  "keywords": ["scheduling", "optimization", "resource-allocation", "linear-programming", "operations-research", "planning"],
+  "author": "OraClaw <team@web-olive-one-89.vercel.app>",
+  "license": "MIT",
+  "homepage": "https://web-olive-one-89.vercel.app/solver",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/Whatsonyourmind/oraclaw",
+    "directory": "mission-control/packages/clawhub-skills/oraclaw-solver"
+  },
+  "clawhub": {
+    "price": 0.10,
+    "currency": "USDC",
+    "endpoint": "/api/v1/solve/constraints",
+    "method": "POST"
+  }
+}

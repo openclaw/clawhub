@@ -1,0 +1,21 @@
+{
+  "name": "oraclaw-evolve",
+  "version": "1.0.0",
+  "description": "Genetic Algorithm optimizer for AI agents. Multi-objective Pareto optimization for portfolio weights, pricing, hyperparameters, marketing mix -- any problem with multiple competing goals.",
+  "files": ["SKILL.md"],
+  "keywords": ["genetic-algorithm", "optimization", "pareto", "multi-objective", "portfolio", "evolutionary", "hyperparameter"],
+  "author": "OraClaw <team@web-olive-one-89.vercel.app>",
+  "license": "MIT",
+  "homepage": "https://web-olive-one-89.vercel.app/evolve",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/Whatsonyourmind/oraclaw",
+    "directory": "mission-control/packages/clawhub-skills/oraclaw-evolve"
+  },
+  "clawhub": {
+    "price": 0.15,
+    "currency": "USDC",
+    "endpoint": "/api/v1/optimize/evolve",
+    "method": "POST"
+  }
+}

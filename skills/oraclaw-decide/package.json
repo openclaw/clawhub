@@ -1,0 +1,21 @@
+{
+  "name": "oraclaw-decide",
+  "version": "1.0.0",
+  "description": "Decision intelligence for AI agents. Analyze options, map decision dependencies with PageRank, detect when information sources conflict, and find the choices that matter most.",
+  "files": ["SKILL.md"],
+  "keywords": ["decision-making", "analysis", "graph", "pagerank", "convergence", "intelligence"],
+  "author": "OraClaw <team@web-olive-one-89.vercel.app>",
+  "license": "MIT",
+  "homepage": "https://web-olive-one-89.vercel.app/decide",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/Whatsonyourmind/oraclaw",
+    "directory": "mission-control/packages/clawhub-skills/oraclaw-decide"
+  },
+  "clawhub": {
+    "price": 0.05,
+    "currency": "USDC",
+    "endpoint": "/api/v1/analyze/graph",
+    "method": "POST"
+  }
+}

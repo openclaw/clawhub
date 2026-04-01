@@ -1,0 +1,21 @@
+{
+  "name": "oraclaw-ensemble",
+  "version": "1.0.0",
+  "description": "Multi-model consensus for AI agents. Combine predictions from multiple LLMs, models, or sources into a mathematically optimal consensus. Auto-weights by historical accuracy.",
+  "files": ["SKILL.md"],
+  "keywords": ["ensemble", "consensus", "multi-model", "voting", "bayesian-averaging", "prediction"],
+  "author": "OraClaw <team@web-olive-one-89.vercel.app>",
+  "license": "MIT",
+  "homepage": "https://web-olive-one-89.vercel.app/ensemble",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/Whatsonyourmind/oraclaw",
+    "directory": "mission-control/packages/clawhub-skills/oraclaw-ensemble"
+  },
+  "clawhub": {
+    "price": 0.03,
+    "currency": "USDC",
+    "endpoint": "/api/v1/predict/ensemble",
+    "method": "POST"
+  }
+}

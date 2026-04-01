@@ -1,0 +1,21 @@
+{
+  "name": "oraclaw-calibrate",
+  "version": "1.0.0",
+  "description": "Prediction quality scoring for AI agents. Brier score, log score, and multi-source convergence analysis. Know if your forecasts are accurate and if your data sources agree.",
+  "files": ["SKILL.md"],
+  "keywords": ["calibration", "scoring", "convergence", "forecasting", "prediction-markets", "brier-score", "accuracy"],
+  "author": "OraClaw <team@web-olive-one-89.vercel.app>",
+  "license": "MIT",
+  "homepage": "https://web-olive-one-89.vercel.app/calibrate",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/Whatsonyourmind/oraclaw",
+    "directory": "mission-control/packages/clawhub-skills/oraclaw-calibrate"
+  },
+  "clawhub": {
+    "price": 0.02,
+    "currency": "USDC",
+    "endpoint": "/api/v1/score/calibration",
+    "method": "POST"
+  }
+}

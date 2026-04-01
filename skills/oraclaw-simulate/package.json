@@ -1,0 +1,21 @@
+{
+  "name": "oraclaw-simulate",
+  "version": "1.0.0",
+  "description": "Monte Carlo simulation for AI agents. Run thousands of probabilistic scenarios to model risk, forecast revenue, estimate project timelines, and quantify uncertainty. Supports 6 distribution types.",
+  "files": ["SKILL.md"],
+  "keywords": ["monte-carlo", "simulation", "risk", "forecasting", "probability", "finance", "trading"],
+  "author": "OraClaw <team@web-olive-one-89.vercel.app>",
+  "license": "MIT",
+  "homepage": "https://web-olive-one-89.vercel.app/simulate",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/Whatsonyourmind/oraclaw",
+    "directory": "mission-control/packages/clawhub-skills/oraclaw-simulate"
+  },
+  "clawhub": {
+    "price": 0.05,
+    "currency": "USDC",
+    "endpoint": "/api/v1/simulate/montecarlo",
+    "method": "POST"
+  }
+}

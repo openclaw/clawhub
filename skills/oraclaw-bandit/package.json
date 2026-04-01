@@ -1,0 +1,21 @@
+{
+  "name": "oraclaw-bandit",
+  "version": "1.0.0",
+  "description": "A/B testing and feature optimization for AI agents. Pick the best option automatically using Multi-Armed Bandits and Contextual Bandits (LinUCB). No data warehouse needed -- works from request #1.",
+  "files": ["SKILL.md"],
+  "keywords": ["optimization", "ab-testing", "feature-flags", "experimentation", "machine-learning"],
+  "author": "OraClaw <team@web-olive-one-89.vercel.app>",
+  "license": "MIT",
+  "homepage": "https://web-olive-one-89.vercel.app/bandit",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/Whatsonyourmind/oraclaw",
+    "directory": "mission-control/packages/clawhub-skills/oraclaw-bandit"
+  },
+  "clawhub": {
+    "price": 0.01,
+    "currency": "USDC",
+    "endpoint": "/api/v1/optimize/bandit",
+    "method": "POST"
+  }
+}
