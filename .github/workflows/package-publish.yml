@@ -96,21 +96,22 @@ jobs:
         id: clawhub_source
         env:
           WORKFLOW_REF: ${{ github.workflow_ref }}
+          WORKFLOW_SHA: ${{ github.workflow_sha }}
         run: |
           python3 - <<'PY'
           import os
           from pathlib import Path
 
           workflow_ref = os.environ["WORKFLOW_REF"].strip()
-          repo_and_path, sep, ref = workflow_ref.partition("@")
-          repo, marker, _ = repo_and_path.partition("/.github/workflows/")
-          if not sep or not marker or not repo or not ref:
+          workflow_sha = os.environ["WORKFLOW_SHA"].strip()
+          repo, marker, _ = workflow_ref.partition("/.github/workflows/")
+          if not marker or not repo or not workflow_sha:
               raise SystemExit(f"Unable to parse github.workflow_ref: {workflow_ref!r}")
 
           output_path = Path(os.environ["GITHUB_OUTPUT"])
           with output_path.open("a", encoding="utf-8") as fh:
               fh.write(f"repository={repo}\n")
-              fh.write(f"ref={ref}\n")
+              fh.write(f"ref={workflow_sha}\n")
           PY
 
       - uses: actions/checkout@v6
@@ -189,6 +190,7 @@ jobs:
           INPUT_SOURCE_REF: ${{ inputs.source_ref }}
           INPUT_SITE: ${{ inputs.site }}
           INPUT_REGISTRY: ${{ inputs.registry }}
+          GITHUB_REF: ${{ github.ref }}
           GITHUB_SHA: ${{ github.sha }}
         run: |
           python3 - <<'PY'
@@ -202,7 +204,11 @@ jobs:
               source = os.environ["GITHUB_REPOSITORY"]
           ref = os.environ["INPUT_REF"].strip()
           if not ref and source == os.environ["GITHUB_REPOSITORY"]:
-              ref = os.environ["GITHUB_SHA"].strip()
+              github_ref = os.environ["GITHUB_REF"].strip()
+              if github_ref.startswith("refs/tags/"):
+                  ref = github_ref
+              else:
+                  ref = os.environ["GITHUB_SHA"].strip()
           is_local_source = source.startswith(".") or source.startswith("/") or Path(source).exists()
           if ref and "@" not in source and not source.startswith("http") and not is_local_source:
               source = f"{source}@{ref}"
