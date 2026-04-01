@@ -1016,11 +1016,11 @@ async function resolvePackagePublishToken(params: {
   if (params.spinner) {
     params.spinner.text = "Requesting GitHub Actions OIDC token";
   }
-  const githubOidcToken = await requestGitHubActionsOidcToken("clawhub");
-  if (params.spinner) {
-    params.spinner.text = "Minting short-lived ClawHub publish token";
-  }
   try {
+    const githubOidcToken = await requestGitHubActionsOidcToken("clawhub");
+    if (params.spinner) {
+      params.spinner.text = "Minting short-lived ClawHub publish token";
+    }
     return await mintPackagePublishToken(
       params.registry,
       params.packageName,
@@ -1032,7 +1032,7 @@ async function resolvePackagePublishToken(params: {
       typeof error === "object" && error !== null && "status" in error
         ? (error as { status?: unknown }).status
         : undefined;
-    if (status !== 400 && status !== 403 && status !== 404) {
+    if (status !== undefined && status !== 400 && status !== 403 && status !== 404) {
       throw error;
     }
     if (params.spinner) {
