@@ -1024,10 +1024,11 @@ describe("users.searchInternal", () => {
     await expect(handler(ctx, { actorUserId: "users:missing" })).rejects.toThrow("Unauthorized");
   });
 
-  it("uses bounded scan and returns mapped fields", async () => {
+  it("searches across the full user list and returns mapped fields", async () => {
     const users = [
-      { _id: "users:1", _creationTime: 2, handle: "alice", name: "alice", role: "user" },
-      { _id: "users:2", _creationTime: 1, handle: "bob", name: "bob", role: "moderator" },
+      { _id: "users:1", _creationTime: 3, handle: "zoe", name: "zoe", role: "user" },
+      { _id: "users:2", _creationTime: 2, handle: "bob", name: "bob", role: "moderator" },
+      { _id: "users:3", _creationTime: 1, handle: "alice", name: "alice", role: "user" },
     ];
     const { ctx, take, collect, get } = makeListCtx(users);
     const handler = (
@@ -1044,12 +1045,12 @@ describe("users.searchInternal", () => {
       total: number;
     };
 
-    expect(take).toHaveBeenCalledWith(500);
-    expect(collect).not.toHaveBeenCalled();
+    expect(collect).toHaveBeenCalledTimes(1);
+    expect(take).not.toHaveBeenCalled();
     expect(result.total).toBe(1);
     expect(result.items).toEqual([
       {
-        userId: "users:1",
+        userId: "users:3",
         handle: "alice",
         displayName: null,
         name: "alice",
@@ -1080,7 +1081,7 @@ describe("users.searchInternal", () => {
     );
   });
 
-  it("clamps limit for empty query and uses non-search path", async () => {
+  it("still caps empty-query listing and uses non-search path", async () => {
     const users = Array.from({ length: 400 }, (_value, index) => ({
       _id: `users:${index}`,
       _creationTime: 1_000 - index,

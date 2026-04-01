@@ -362,15 +362,14 @@ function normalizeSearchQuery(search?: string) {
   return trimmed ? trimmed : undefined;
 }
 
-function computeUserSearchScanLimit(limit: number) {
-  return clampInt(limit * 10, MIN_USER_SEARCH_SCAN, MAX_USER_SEARCH_SCAN);
-}
-
 async function queryUsersForAdminList(
   ctx: {
     db: {
       query: (table: "users") => {
-        order: (order: "desc") => { take: (n: number) => Promise<Doc<"users">[]> };
+        order: (order: "desc") => {
+          take: (n: number) => Promise<Doc<"users">[]>;
+          collect: () => Promise<Doc<"users">[]>;
+        };
       };
     };
   },
@@ -384,7 +383,7 @@ async function queryUsersForAdminList(
     return { items, total: items.length };
   }
 
-  const scannedUsers = await orderedUsers.take(computeUserSearchScanLimit(args.limit));
+  const scannedUsers = await orderedUsers.collect();
   const result = buildUserSearchResults(scannedUsers, normalizedSearch);
   return { items: result.items.slice(0, args.limit), total: result.total };
 }
