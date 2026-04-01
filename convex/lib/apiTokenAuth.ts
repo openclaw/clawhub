@@ -5,10 +5,12 @@ import type { ActionCtx } from "../_generated/server";
 import { hashToken } from "./tokens";
 
 type TokenAuthResult = { user: Doc<"users">; userId: Doc<"users">["_id"] };
+type ApiTokenDoc = Doc<"apiTokens">;
 type PackagePublishTokenAuthResult = {
   kind: "github-actions";
   publishToken: Doc<"packagePublishTokens">;
 };
+type PackagePublishTokenDoc = Doc<"packagePublishTokens">;
 type UserPackagePublishAuthResult = {
   kind: "user";
   user: Doc<"users">;
@@ -36,12 +38,14 @@ export async function requireApiTokenUser(
   if (!token) throw new ConvexError("Unauthorized");
 
   const tokenHash = await hashToken(token);
-  const apiToken = await ctx.runQuery(internalRefs.tokens.getByHashInternal as never, { tokenHash } as never);
+  const apiToken = (await ctx.runQuery(internalRefs.tokens.getByHashInternal as never, {
+    tokenHash,
+  } as never)) as ApiTokenDoc | null;
   if (!apiToken || apiToken.revokedAt) throw new ConvexError("Unauthorized");
 
-  const user = await ctx.runQuery(internalRefs.tokens.getUserForTokenInternal as never, {
+  const user = (await ctx.runQuery(internalRefs.tokens.getUserForTokenInternal as never, {
     tokenId: apiToken._id,
-  } as never);
+  } as never)) as Doc<"users"> | null;
   if (!user || user.deletedAt || user.deactivatedAt) throw new ConvexError("Unauthorized");
 
   await ctx.runMutation(internalRefs.tokens.touchInternal as never, { tokenId: apiToken._id } as never);
@@ -57,12 +61,14 @@ export async function getOptionalApiTokenUserId(
   if (!token) return null;
 
   const tokenHash = await hashToken(token);
-  const apiToken = await ctx.runQuery(internalRefs.tokens.getByHashInternal as never, { tokenHash } as never);
+  const apiToken = (await ctx.runQuery(internalRefs.tokens.getByHashInternal as never, {
+    tokenHash,
+  } as never)) as ApiTokenDoc | null;
   if (!apiToken || apiToken.revokedAt) return null;
 
-  const user = await ctx.runQuery(internalRefs.tokens.getUserForTokenInternal as never, {
+  const user = (await ctx.runQuery(internalRefs.tokens.getUserForTokenInternal as never, {
     tokenId: apiToken._id,
-  } as never);
+  } as never)) as Doc<"users"> | null;
   if (!user || user.deletedAt || user.deactivatedAt) return null;
 
   return user._id;
@@ -77,9 +83,12 @@ export async function requirePackagePublishAuth(
   if (!token) throw new ConvexError("Unauthorized");
 
   const tokenHash = await hashToken(token);
-  const publishToken = await ctx.runQuery(internalRefs.packagePublishTokens.getByHashInternal as never, {
-    tokenHash,
-  } as never);
+  const publishToken = (await ctx.runQuery(
+    internalRefs.packagePublishTokens.getByHashInternal as never,
+    {
+      tokenHash,
+    } as never,
+  )) as PackagePublishTokenDoc | null;
   if (publishToken && !publishToken.revokedAt && publishToken.expiresAt > Date.now()) {
     await ctx.runMutation(internalRefs.packagePublishTokens.touchInternal as never, {
       tokenId: publishToken._id,
