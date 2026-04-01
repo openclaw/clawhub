@@ -1065,11 +1065,10 @@ describe("users.searchInternal", () => {
     await expect(handler(ctx, { actorUserId: "users:missing" })).rejects.toThrow("Unauthorized");
   });
 
-  it("searches across the full user list and returns mapped fields", async () => {
+  it("uses bounded scan and returns mapped fields", async () => {
     const users = [
-      { _id: "users:1", _creationTime: 3, handle: "zoe", name: "zoe", role: "user" },
-      { _id: "users:2", _creationTime: 2, handle: "bob", name: "bob", role: "moderator" },
-      { _id: "users:3", _creationTime: 1, handle: "alice", name: "alice", role: "user" },
+      { _id: "users:1", _creationTime: 2, handle: "alice", name: "alice", role: "user" },
+      { _id: "users:2", _creationTime: 1, handle: "bob", name: "bob", role: "moderator" },
     ];
     const { ctx, take, collect, get } = makeListCtx(users);
     const handler = (
@@ -1086,12 +1085,12 @@ describe("users.searchInternal", () => {
       total: number;
     };
 
-    expect(collect).toHaveBeenCalledTimes(1);
-    expect(take).not.toHaveBeenCalled();
+    expect(take).toHaveBeenCalledWith(500);
+    expect(collect).not.toHaveBeenCalled();
     expect(result.total).toBe(1);
     expect(result.items).toEqual([
       {
-        userId: "users:3",
+        userId: "users:1",
         handle: "alice",
         displayName: null,
         name: "alice",
@@ -1159,6 +1158,66 @@ describe("users.searchInternal", () => {
       name: "different-gh-login",
       role: "user",
     });
+  });
+
+  it("does not double-count total when the fallback user already matched off-page", async () => {
+    const users = [
+      {
+        _id: "users:1",
+        _creationTime: 3,
+        handle: "lmquery-top",
+        name: "lmquery-top",
+        role: "user",
+      },
+      {
+        _id: "users:2",
+        _creationTime: 2,
+        handle: "lmquery-mid",
+        name: "lmquery-mid",
+        role: "user",
+      },
+      {
+        _id: "users:owner",
+        _creationTime: 1,
+        handle: "owner-lmquery",
+        name: "owner-lmquery",
+        displayName: "Owner Lmquery",
+        role: "user",
+      },
+    ];
+    const { ctx, get } = makeListCtx(users, {
+      publishersByHandle: {
+        lmquery: {
+          _id: "publishers:lmquery",
+          kind: "user",
+          handle: "lmquery",
+          linkedUserId: "users:owner",
+        },
+      },
+      usersById: {
+        "users:owner": users[2] as Record<string, unknown>,
+      },
+    });
+    const handler = (
+      searchInternal as unknown as { _handler: (ctx: unknown, args: unknown) => Promise<unknown> }
+    )._handler;
+    get.mockImplementation(async (id: string) => {
+      if (id === "users:admin") return { _id: "users:admin", role: "admin" };
+      if (id === "users:owner") return users[2] as Record<string, unknown>;
+      return null;
+    });
+
+    const result = (await handler(ctx, {
+      actorUserId: "users:admin",
+      query: "lmquery",
+      limit: 2,
+    })) as {
+      items: Array<Record<string, unknown>>;
+      total: number;
+    };
+
+    expect(result.total).toBe(3);
+    expect(result.items.map((item) => item.userId)).toEqual(["users:owner", "users:1"]);
   });
 
   it("rejects deactivated actors", async () => {

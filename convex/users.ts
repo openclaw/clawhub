@@ -57,15 +57,19 @@ export const searchInternal = internalQuery({
     assertAdmin(actor);
 
     const limit = clampInt(args.limit ?? 20, 1, MAX_USER_LIST_LIMIT);
-    const result = await queryUsersForAdminList(ctx, { limit, search: args.query });
     const exactHandleUser = args.query
       ? await getActiveUserByHandleOrPersonalPublisher(ctx, args.query)
       : null;
+    const result = await queryUsersForAdminList(ctx, {
+      limit,
+      search: args.query,
+      exactUserId: exactHandleUser?._id,
+    });
     const dedupedUsers = exactHandleUser
       ? [exactHandleUser, ...result.items.filter((user) => user._id !== exactHandleUser._id)]
       : result.items;
     const total = exactHandleUser
-      ? result.total + (result.items.some((user) => user._id === exactHandleUser._id) ? 0 : 1)
+      ? result.total + (result.containsExactUser ? 0 : 1)
       : result.total;
     const items = dedupedUsers.slice(0, limit).map((user) => ({
       userId: user._id,
@@ -371,30 +375,37 @@ function normalizeSearchQuery(search?: string) {
   return trimmed ? trimmed : undefined;
 }
 
+function computeUserSearchScanLimit(limit: number) {
+  return clampInt(limit * 10, MIN_USER_SEARCH_SCAN, MAX_USER_SEARCH_SCAN);
+}
+
 async function queryUsersForAdminList(
   ctx: {
     db: {
       query: (table: "users") => {
-        order: (order: "desc") => {
-          take: (n: number) => Promise<Doc<"users">[]>;
-          collect: () => Promise<Doc<"users">[]>;
-        };
+        order: (order: "desc") => { take: (n: number) => Promise<Doc<"users">[]> };
       };
     };
   },
-  args: { limit: number; search?: string },
+  args: { limit: number; search?: string; exactUserId?: Id<"users"> },
 ) {
   const normalizedSearch = normalizeSearchQuery(args.search);
   const orderedUsers = ctx.db.query("users").order("desc");
 
   if (!normalizedSearch) {
     const items = await orderedUsers.take(args.limit);
-    return { items, total: items.length };
+    return { items, total: items.length, containsExactUser: false };
   }
 
-  const scannedUsers = await orderedUsers.collect();
+  const scannedUsers = await orderedUsers.take(computeUserSearchScanLimit(args.limit));
   const result = buildUserSearchResults(scannedUsers, normalizedSearch);
-  return { items: result.items.slice(0, args.limit), total: result.total };
+  return {
+    items: result.items.slice(0, args.limit),
+    total: result.total,
+    containsExactUser: args.exactUserId
+      ? result.items.some((user) => user._id === args.exactUserId)
+      : false,
+  };
 }
 
 function clampInt(value: number, min: number, max: number) {
