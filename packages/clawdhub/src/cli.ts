@@ -436,7 +436,7 @@ trustedPublisherCmd
   .argument("<name>", "Package name")
   .requiredOption("--repository <repo>", "GitHub repo (owner/repo or URL)")
   .requiredOption("--workflow-filename <file>", "Workflow filename, for example publish.yml")
-  .requiredOption("--environment <name>", "Protected GitHub environment name")
+  .option("--environment <name>", "Optional GitHub environment name to pin")
   .option("--json", "Output JSON")
   .action(async (name, options) => {
     const opts = await resolveGlobalOpts();

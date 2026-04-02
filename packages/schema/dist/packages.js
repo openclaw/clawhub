@@ -92,7 +92,7 @@ export const PackageTrustedPublisherSchema = type({
     repositoryOwner: "string",
     repositoryOwnerId: "string",
     workflowFilename: "string",
-    environment: "string",
+    environment: "string?",
 });
 export const PackagePublishRequestSchema = type({
     name: "string",
@@ -196,7 +196,7 @@ export const ApiV1PackagePublishResponseSchema = type({
 export const PackageTrustedPublisherUpsertRequestSchema = type({
     repository: "string",
     workflowFilename: "string",
-    environment: "string",
+    environment: "string?",
 });
 export const ApiV1PackageTrustedPublisherResponseSchema = type({
     trustedPublisher: PackageTrustedPublisherSchema.or("null"),

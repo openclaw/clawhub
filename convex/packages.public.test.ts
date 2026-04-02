@@ -2161,6 +2161,84 @@ describe("packages public queries", () => {
     });
   });
 
+  it("accepts trusted publish tokens when no environment is pinned", async () => {
+    const runMutation = vi.fn(async (_ref: unknown, args: unknown) => {
+      if (
+        typeof args === "object" &&
+        args !== null &&
+        "name" in args &&
+        "version" in args &&
+        "files" in args
+      ) {
+        return {
+          ok: true,
+          packageId: "packages:demo",
+          releaseId: "packageReleases:demo-2",
+        };
+      }
+      return null;
+    });
+    const trustedPublisher = {
+      _id: "packageTrustedPublishers:1",
+      packageId: "packages:demo",
+      provider: "github-actions",
+      repository: "openclaw/openclaw",
+      repositoryId: "1",
+      repositoryOwner: "openclaw",
+      repositoryOwnerId: "2",
+      workflowFilename: "plugin-clawhub-release.yml",
+    };
+    const ctx = {
+      runQuery: vi
+        .fn()
+        .mockResolvedValueOnce({
+          _id: "packagePublishTokens:1",
+          packageId: "packages:demo",
+          provider: "github-actions",
+          repository: "openclaw/openclaw",
+          repositoryId: "1",
+          repositoryOwner: "openclaw",
+          repositoryOwnerId: "2",
+          workflowFilename: "plugin-clawhub-release.yml",
+          version: "1.0.0",
+          sha: "abc123",
+          ref: "refs/heads/main",
+          runId: "100",
+          runAttempt: "1",
+          expiresAt: Date.now() + 60_000,
+        })
+        .mockResolvedValueOnce(trustedPublisher)
+        .mockResolvedValueOnce(makePackageDoc({ family: "bundle-plugin" }))
+        .mockResolvedValueOnce(trustedPublisher)
+        .mockResolvedValueOnce(null),
+      runMutation,
+      scheduler: {
+        runAfter: vi.fn(),
+      },
+      storage: {
+        get: vi.fn(),
+      },
+    };
+
+    await expect(
+      publishPackageForTrustedPublisherInternalHandler(ctx as never, {
+        publishTokenId: "packagePublishTokens:1",
+        payload: {
+          name: "demo-plugin",
+          family: "bundle-plugin",
+          version: "1.0.0",
+          changelog: "init",
+          bundle: { hostTargets: ["desktop"] },
+          files: [],
+        },
+      }),
+    ).resolves.toMatchObject({
+      ok: true,
+      packageId: "packages:demo",
+      releaseId: "packageReleases:demo-2",
+    });
+  });
+
   it("requires manual override for user-auth publishes when trusted publisher config exists", async () => {
     const runMutation = vi.fn(async (_ref: unknown, args: unknown) => {
       if (

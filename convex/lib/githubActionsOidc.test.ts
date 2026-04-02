@@ -15,6 +15,10 @@ const trustedPublisher: TrustedGitHubActionsPublisher = {
   workflowFilename: "plugin-clawhub-release.yml",
   environment: "clawhub-plugin-release",
 };
+const trustedPublisherWithoutEnvironment: TrustedGitHubActionsPublisher = {
+  ...trustedPublisher,
+  environment: undefined,
+};
 const signingKeyPairPromise = crypto.subtle.generateKey(
   {
     name: "RSASSA-PKCS1-v1_5",
@@ -82,6 +86,51 @@ describe("verifyGitHubActionsTrustedPublishJwt", () => {
       runAttempt: "2",
       sha: "deadbeef",
     });
+  });
+
+  it("accepts a valid GitHub Actions token when no environment is pinned", async () => {
+    const { token, jwks } = await createSignedToken({
+      repository: trustedPublisher.repository,
+      repository_id: trustedPublisher.repositoryId,
+      repository_owner: trustedPublisher.repositoryOwner,
+      repository_owner_id: trustedPublisher.repositoryOwnerId,
+      workflow_ref:
+        "openclaw/openclaw/.github/workflows/plugin-clawhub-release.yml@refs/heads/main",
+      runner_environment: "github-hosted",
+      event_name: "workflow_dispatch",
+      workflow: "Plugin ClawHub Release",
+      sha: "deadbeef",
+      ref: "refs/heads/main",
+      ref_type: "branch",
+      actor: "onur",
+      actor_id: "42",
+      run_id: "100",
+      run_attempt: "2",
+      iss: "https://token.actions.githubusercontent.com",
+      aud: "clawhub",
+      exp: Math.floor(Date.now() / 1000) + 300,
+      iat: Math.floor(Date.now() / 1000) - 5,
+    });
+
+    const identity = await verifyGitHubActionsTrustedPublishJwt(token, trustedPublisherWithoutEnvironment, {
+      fetchImpl: async () =>
+        new Response(JSON.stringify({ keys: [jwks] }), {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        }),
+    });
+
+    expect(identity).toMatchObject({
+      repository: trustedPublisher.repository,
+      repositoryId: trustedPublisher.repositoryId,
+      repositoryOwner: trustedPublisher.repositoryOwner,
+      repositoryOwnerId: trustedPublisher.repositoryOwnerId,
+      workflowFilename: trustedPublisher.workflowFilename,
+      runId: "100",
+      runAttempt: "2",
+      sha: "deadbeef",
+    });
+    expect(identity.environment).toBeUndefined();
   });
 
   it("rejects reusable workflow tokens", async () => {

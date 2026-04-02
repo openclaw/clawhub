@@ -1306,7 +1306,7 @@ export const setTrustedPublisherForUserInternal = internalMutation({
     repositoryOwner: v.string(),
     repositoryOwnerId: v.string(),
     workflowFilename: v.string(),
-    environment: v.string(),
+    environment: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
     const pkg = await getPackageByNormalizedName(ctx, normalizePackageName(args.packageName));
@@ -1317,8 +1317,7 @@ export const setTrustedPublisherForUserInternal = internalMutation({
     await requireTrustedPublisherEditor(ctx, pkg, args.actorUserId);
 
     const workflowFilename = normalizeWorkflowFilenameOrThrow(args.workflowFilename);
-    const environment = args.environment.trim();
-    if (!environment) throw new ConvexError("Environment is required");
+    const environment = args.environment?.trim() || undefined;
 
     const existing = await getPackageTrustedPublisherByPackageId(ctx, pkg._id);
     const now = Date.now();
@@ -1356,7 +1355,7 @@ export const setTrustedPublisherForUserInternal = internalMutation({
         repositoryOwner: args.repositoryOwner,
         repositoryOwnerId: args.repositoryOwnerId,
         workflowFilename,
-        environment,
+        ...(environment ? { environment } : {}),
       },
       createdAt: now,
     });
@@ -1635,7 +1634,7 @@ function doesTrustedPublisherMatchPublishToken(
   publishToken: Doc<"packagePublishTokens">,
 ) {
   return Boolean(
-    trustedPublisher &&
+      trustedPublisher &&
       trustedPublisher.packageId === publishToken.packageId &&
       trustedPublisher.provider === publishToken.provider &&
       trustedPublisher.repository === publishToken.repository &&

@@ -83,7 +83,7 @@ type PackageTrustedPublisherGetOptions = {
 type PackageTrustedPublisherSetOptions = {
   repository: string;
   workflowFilename: string;
-  environment: string;
+  environment?: string;
   json?: boolean;
 };
 
@@ -387,10 +387,9 @@ export async function cmdSetPackageTrustedPublisher(
   const trimmed = normalizePackageNameOrFail(packageName);
   const repository = options.repository?.trim();
   const workflowFilename = options.workflowFilename?.trim();
-  const environment = options.environment?.trim();
+  const environment = options.environment?.trim() || undefined;
   if (!repository) fail("--repository required");
   if (!workflowFilename) fail("--workflow-filename required");
-  if (!environment) fail("--environment required");
 
   const token = await requireAuthToken();
   const registry = await getRegistry(opts, { cache: true });
@@ -402,7 +401,11 @@ export async function cmdSetPackageTrustedPublisher(
         method: "POST",
         path: `${ApiRoutes.packages}/${encodeURIComponent(trimmed)}/trusted-publisher`,
         token,
-        body: { repository, workflowFilename, environment },
+        body: {
+          repository,
+          workflowFilename,
+          ...(environment ? { environment } : {}),
+        },
       },
       ApiV1PackageTrustedPublisherResponseSchema,
     );
@@ -643,7 +646,9 @@ function printTrustedPublisher(trustedPublisher: PackageTrustedPublisher) {
   console.log(`Provider: ${trustedPublisher.provider}`);
   console.log(`Repository: ${trustedPublisher.repository}`);
   console.log(`Workflow: ${trustedPublisher.workflowFilename}`);
-  console.log(`Environment: ${trustedPublisher.environment}`);
+  if (trustedPublisher.environment) {
+    console.log(`Environment: ${trustedPublisher.environment}`);
+  }
 }
 
 function printCompatibility(compatibility: PackageCompatibility | null | undefined) {

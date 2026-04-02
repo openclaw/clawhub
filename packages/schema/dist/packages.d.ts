@@ -116,7 +116,7 @@ export declare const PackageTrustedPublisherSchema: import("arktype/internal/var
     repositoryOwner: string;
     repositoryOwnerId: string;
     workflowFilename: string;
-    environment: string;
+    environment?: string | undefined;
 }, {}>;
 export type PackageTrustedPublisher = (typeof PackageTrustedPublisherSchema)[inferred];
 export declare const PackagePublishRequestSchema: import("arktype/internal/variants/object.ts").ObjectType<{
@@ -378,7 +378,7 @@ export type ApiV1PackagePublishResponse = (typeof ApiV1PackagePublishResponseSch
 export declare const PackageTrustedPublisherUpsertRequestSchema: import("arktype/internal/variants/object.ts").ObjectType<{
     repository: string;
     workflowFilename: string;
-    environment: string;
+    environment?: string | undefined;
 }, {}>;
 export type PackageTrustedPublisherUpsertRequest = (typeof PackageTrustedPublisherUpsertRequestSchema)[inferred];
 export declare const ApiV1PackageTrustedPublisherResponseSchema: import("arktype/internal/variants/object.ts").ObjectType<{
@@ -389,7 +389,7 @@ export declare const ApiV1PackageTrustedPublisherResponseSchema: import("arktype
         repositoryOwner: string;
         repositoryOwnerId: string;
         workflowFilename: string;
-        environment: string;
+        environment?: string | undefined;
     } | null;
 }, {}>;
 export type ApiV1PackageTrustedPublisherResponse = (typeof ApiV1PackageTrustedPublisherResponseSchema)[inferred];

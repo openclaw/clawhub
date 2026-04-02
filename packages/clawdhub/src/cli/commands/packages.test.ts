@@ -1054,6 +1054,26 @@ describe("package commands", () => {
     expect(mockLog).toHaveBeenCalledWith("Environment: clawhub-release");
   });
 
+  it("gets trusted publisher config without a pinned environment", async () => {
+    httpMocks.apiRequest.mockResolvedValueOnce({
+      trustedPublisher: {
+        provider: "github-actions",
+        repository: "openclaw/openclaw",
+        repositoryId: "1",
+        repositoryOwner: "openclaw",
+        repositoryOwnerId: "2",
+        workflowFilename: "plugin-clawhub-release.yml",
+      },
+    });
+
+    await cmdGetPackageTrustedPublisher(makeOpts(), "@openclaw/zalo");
+
+    expect(mockLog).toHaveBeenCalledWith("Provider: github-actions");
+    expect(mockLog).toHaveBeenCalledWith("Repository: openclaw/openclaw");
+    expect(mockLog).toHaveBeenCalledWith("Workflow: plugin-clawhub-release.yml");
+    expect(mockLog).not.toHaveBeenCalledWith(expect.stringContaining("Environment:"));
+  });
+
   it("sets trusted publisher config for a package", async () => {
     httpMocks.apiRequest.mockResolvedValueOnce({
       trustedPublisher: {
@@ -1084,6 +1104,39 @@ describe("package commands", () => {
           repository: "openclaw/openclaw",
           workflowFilename: "plugin-clawhub-release.yml",
           environment: "clawhub-release",
+        },
+      }),
+      expect.anything(),
+    );
+  });
+
+  it("sets trusted publisher config for a package without environment", async () => {
+    httpMocks.apiRequest.mockResolvedValueOnce({
+      trustedPublisher: {
+        provider: "github-actions",
+        repository: "openclaw/openclaw",
+        repositoryId: "1",
+        repositoryOwner: "openclaw",
+        repositoryOwnerId: "2",
+        workflowFilename: "plugin-clawhub-release.yml",
+      },
+    });
+
+    await cmdSetPackageTrustedPublisher(makeOpts(), "@openclaw/zalo", {
+      repository: "openclaw/openclaw",
+      workflowFilename: "plugin-clawhub-release.yml",
+    });
+
+    expect(authTokenMocks.requireAuthToken).toHaveBeenCalled();
+    expect(httpMocks.apiRequest).toHaveBeenCalledWith(
+      "https://clawhub.ai",
+      expect.objectContaining({
+        method: "POST",
+        path: "/api/v1/packages/%40openclaw%2Fzalo/trusted-publisher",
+        token: "tkn",
+        body: {
+          repository: "openclaw/openclaw",
+          workflowFilename: "plugin-clawhub-release.yml",
         },
       }),
       expect.anything(),

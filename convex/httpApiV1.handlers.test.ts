@@ -3582,6 +3582,81 @@ describe("httpApiV1 handlers", () => {
     );
   });
 
+  it("mints a short-lived publish token without environment when none is pinned", async () => {
+    vi.mocked(verifyGitHubActionsTrustedPublishJwt).mockResolvedValue({
+      repository: "openclaw/openclaw",
+      repositoryId: "1",
+      repositoryOwner: "openclaw",
+      repositoryOwnerId: "2",
+      workflowFilename: "plugin-clawhub-release.yml",
+      runId: "101",
+      runAttempt: "1",
+      sha: "abc123",
+      ref: "refs/heads/main",
+      refType: "branch",
+      actor: "onur",
+      actorId: "42",
+    } as never);
+    const runMutation = vi.fn(async (_mutation: unknown, args: Record<string, unknown>) => {
+      if ("key" in args) return okRate();
+      return "mutation:ok";
+    });
+    const runQuery = vi.fn(async (_query: unknown, args: Record<string, unknown>) => {
+      if ("name" in args) {
+        return {
+          _id: "packages:1",
+          name: "@openclaw/demo-plugin",
+          ownerUserId: "users:owner",
+        };
+      }
+      if ("packageId" in args) {
+        return {
+          _id: "packageTrustedPublishers:1",
+          packageId: "packages:1",
+          provider: "github-actions",
+          repository: "openclaw/openclaw",
+          repositoryId: "1",
+          repositoryOwner: "openclaw",
+          repositoryOwnerId: "2",
+          workflowFilename: "plugin-clawhub-release.yml",
+        };
+      }
+      return null;
+    });
+
+    const response = await __handlers.mintPublishTokenV1Handler(
+      makeCtx({ runQuery, runMutation }),
+      new Request("https://example.com/api/v1/publish/token/mint", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          packageName: "@openclaw/demo-plugin",
+          version: "1.0.0",
+          githubOidcToken: "gh.jwt",
+        }),
+      }),
+    );
+
+    if (response.status !== 200) throw new Error(await response.text());
+    const body = await response.json();
+    expect(body.token).toEqual(expect.any(String));
+    expect(body.expiresAt).toEqual(expect.any(Number));
+    const createCall = runMutation.mock.calls.find(
+      ([, args]) => typeof args === "object" && args !== null && "packageId" in args && "tokenHash" in args,
+    );
+    expect(createCall?.[1]).toEqual(
+      expect.objectContaining({
+        packageId: "packages:1",
+        version: "1.0.0",
+        repository: "openclaw/openclaw",
+        workflowFilename: "plugin-clawhub-release.yml",
+        runId: "101",
+        sha: "abc123",
+      }),
+    );
+    expect(createCall?.[1]).not.toHaveProperty("environment");
+  });
+
   it("sets trusted publisher config for a package", async () => {
     vi.mocked(requireApiTokenUser).mockResolvedValue({
       userId: "users:1",
@@ -3639,6 +3714,75 @@ describe("httpApiV1 handlers", () => {
         environment: "clawhub-release",
       }),
     );
+  });
+
+  it("sets trusted publisher config for a package without environment", async () => {
+    vi.mocked(requireApiTokenUser).mockResolvedValue({
+      userId: "users:1",
+      user: { _id: "users:1", handle: "p" },
+    } as never);
+    vi.mocked(fetchGitHubRepositoryIdentity).mockResolvedValue({
+      repository: "openclaw/openclaw",
+      repositoryId: "1",
+      repositoryOwner: "openclaw",
+      repositoryOwnerId: "2",
+    } as never);
+    const runMutation = vi.fn(async (_mutation: unknown, args: Record<string, unknown>) => {
+      if ("key" in args) return okRate();
+      return {
+        _id: "packageTrustedPublishers:1",
+        packageId: "packages:1",
+        provider: "github-actions",
+        repository: "openclaw/openclaw",
+        repositoryId: "1",
+        repositoryOwner: "openclaw",
+        repositoryOwnerId: "2",
+        workflowFilename: "plugin-clawhub-release.yml",
+      };
+    });
+
+    const response = await __handlers.packagesPostRouterV1Handler(
+      makeCtx({ runMutation }),
+      new Request(
+        "https://example.com/api/v1/packages/%40openclaw%2Fdemo-plugin/trusted-publisher",
+        {
+          method: "POST",
+          headers: {
+            Authorization: "Bearer clh_test",
+            "content-type": "application/json",
+          },
+          body: JSON.stringify({
+            repository: "https://github.com/openclaw/openclaw",
+            workflowFilename: "plugin-clawhub-release.yml",
+          }),
+        },
+      ),
+    );
+
+    if (response.status !== 200) throw new Error(await response.text());
+    expect(fetchGitHubRepositoryIdentity).toHaveBeenCalledWith("https://github.com/openclaw/openclaw");
+    expect(await response.json()).toEqual({
+      trustedPublisher: {
+        provider: "github-actions",
+        repository: "openclaw/openclaw",
+        repositoryId: "1",
+        repositoryOwner: "openclaw",
+        repositoryOwnerId: "2",
+        workflowFilename: "plugin-clawhub-release.yml",
+      },
+    });
+    const setCall = runMutation.mock.calls.find(
+      ([, args]) => typeof args === "object" && args !== null && "packageName" in args && "actorUserId" in args,
+    );
+    expect(setCall?.[1]).toEqual(
+      expect.objectContaining({
+        actorUserId: "users:1",
+        packageName: "@openclaw/demo-plugin",
+        repository: "openclaw/openclaw",
+        workflowFilename: "plugin-clawhub-release.yml",
+      }),
+    );
+    expect(setCall?.[1]).not.toHaveProperty("environment");
   });
 
   it("deletes trusted publisher config for a package", async () => {

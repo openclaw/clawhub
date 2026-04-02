@@ -16,7 +16,7 @@ export type TrustedGitHubActionsPublisher = {
   repositoryOwner: string;
   repositoryOwnerId: string;
   workflowFilename: string;
-  environment: string;
+  environment?: string;
 };
 
 export type VerifiedGitHubActionsIdentity = {
@@ -28,7 +28,7 @@ export type VerifiedGitHubActionsIdentity = {
   workflowName: string;
   workflowRef: string;
   jobWorkflowRef?: string;
-  environment: string;
+  environment?: string;
   runnerEnvironment: string;
   eventName: string;
   sha: string;
@@ -123,7 +123,7 @@ export async function verifyGitHubActionsTrustedPublishJwt(
   const workflow = parseWorkflowRef(workflowRef, repository);
   const jobWorkflowRef = optionalString(payload.job_workflow_ref);
   const runnerEnvironment = requireString(payload.runner_environment, "runner_environment");
-  const environment = requireString(payload.environment, "environment");
+  const environment = optionalString(payload.environment);
   const eventName = requireString(payload.event_name, "event_name");
   const workflowName = requireString(payload.workflow, "workflow");
   const sha = requireString(payload.sha, "sha");
@@ -171,14 +171,14 @@ export async function verifyGitHubActionsTrustedPublishJwt(
   if (runnerEnvironment !== "github-hosted") {
     throw new Error(`Only GitHub-hosted runners may mint trusted publish tokens, got ${runnerEnvironment}`);
   }
-  // v1 keeps secretless publishing behind a manual, environment-protected entry
-  // point. Tag and release automation should keep using the token path for now.
+  // v1 keeps secretless publishing behind a manual entry point. Environment
+  // pinning is optional, but if configured it must match exactly.
   if (eventName !== "workflow_dispatch") {
     throw new Error(`Trusted publishing requires workflow_dispatch, got ${eventName}`);
   }
-  if (environment !== trustedPublisher.environment) {
+  if (trustedPublisher.environment && environment !== trustedPublisher.environment) {
     throw new Error(
-      `GitHub OIDC environment mismatch: expected ${trustedPublisher.environment}, got ${environment}`,
+      `GitHub OIDC environment mismatch: expected ${trustedPublisher.environment}, got ${formatClaimValue(environment ?? "<missing>")}`,
     );
   }
 
@@ -191,7 +191,7 @@ export async function verifyGitHubActionsTrustedPublishJwt(
     workflowName,
     workflowRef,
     ...(jobWorkflowRef ? { jobWorkflowRef } : {}),
-    environment,
+    ...(environment ? { environment } : {}),
     runnerEnvironment,
     eventName,
     sha,

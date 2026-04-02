@@ -167,7 +167,7 @@ type PackageTrustedPublisherLike = {
   repositoryOwner: string;
   repositoryOwnerId: string;
   workflowFilename: string;
-  environment: string;
+  environment?: string;
   createdAt: number;
   updatedAt: number;
 };
@@ -186,7 +186,7 @@ function toPublicTrustedPublisher(trustedPublisher: PackageTrustedPublisherLike 
     repositoryOwner: trustedPublisher.repositoryOwner,
     repositoryOwnerId: trustedPublisher.repositoryOwnerId,
     workflowFilename: trustedPublisher.workflowFilename,
-    environment: trustedPublisher.environment,
+    ...(trustedPublisher.environment ? { environment: trustedPublisher.environment } : {}),
   };
 }
 
@@ -713,7 +713,7 @@ export async function mintPublishTokenV1Handler(ctx: ActionCtx, request: Request
         repositoryOwner: trustedPublisher.repositoryOwner,
         repositoryOwnerId: trustedPublisher.repositoryOwnerId,
         workflowFilename: trustedPublisher.workflowFilename,
-        environment: trustedPublisher.environment,
+        ...(trustedPublisher.environment ? { environment: trustedPublisher.environment } : {}),
       });
       const { token, prefix } = generateToken();
       const tokenHash = await hashToken(token);
@@ -730,7 +730,7 @@ export async function mintPublishTokenV1Handler(ctx: ActionCtx, request: Request
         repositoryOwner: verified.repositoryOwner,
         repositoryOwnerId: verified.repositoryOwnerId,
         workflowFilename: verified.workflowFilename,
-        environment: verified.environment,
+        ...(verified.environment ? { environment: verified.environment } : {}),
         runId: verified.runId,
         runAttempt: verified.runAttempt,
         sha: verified.sha,
@@ -749,7 +749,7 @@ export async function mintPublishTokenV1Handler(ctx: ActionCtx, request: Request
           version: payload.version,
           repository: verified.repository,
           workflowFilename: verified.workflowFilename,
-          environment: verified.environment,
+          ...(verified.environment ? { environment: verified.environment } : {}),
           runId: verified.runId,
           runAttempt: verified.runAttempt,
           sha: verified.sha,
@@ -768,7 +768,7 @@ export async function mintPublishTokenV1Handler(ctx: ActionCtx, request: Request
           version: payload.version,
           repository: trustedPublisher.repository,
           workflowFilename: trustedPublisher.workflowFilename,
-          environment: trustedPublisher.environment,
+          ...(trustedPublisher.environment ? { environment: trustedPublisher.environment } : {}),
           decision: "rejected",
           reason: error instanceof Error ? error.message : "Token verification failed",
         },
@@ -798,7 +798,7 @@ export async function packagesPostRouterV1Handler(ctx: ActionCtx, request: Reque
     ) as {
       repository: string;
       workflowFilename: string;
-      environment: string;
+      environment?: string;
     };
     const repositoryIdentity = await fetchGitHubRepositoryIdentity(body.repository);
     const trustedPublisher = await runMutationRef<PackageTrustedPublisherLike | null>(
@@ -812,7 +812,7 @@ export async function packagesPostRouterV1Handler(ctx: ActionCtx, request: Reque
         repositoryOwner: repositoryIdentity.repositoryOwner,
         repositoryOwnerId: repositoryIdentity.repositoryOwnerId,
         workflowFilename: body.workflowFilename,
-        environment: body.environment,
+        ...(body.environment ? { environment: body.environment } : {}),
       },
     );
     return json({ trustedPublisher: toPublicTrustedPublisher(trustedPublisher) }, 200, rate.headers);
