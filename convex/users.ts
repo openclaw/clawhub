@@ -254,15 +254,16 @@ async function computeEnsureUpdates(ctx: MutationCtx, user: Doc<"users">) {
       : undefined;
   if (!derivedHandle && (!existingHandle || !existingHandleClaimable)) {
     const emailFallback = normalizeHandle(user.email?.split("@")[0]);
+    const emailFallbackHandle =
+      emailFallback && emailFallback !== requestedHandle
+        ? await resolveAvailableHandle(ctx, emailFallback, user._id)
+        : undefined;
     derivedHandle =
       (await resolveAvailableHandle(
         ctx,
         requestedHandle ?? existingHandle ?? githubLogin ?? emailFallback,
         user._id,
-      )) ||
-      (emailFallback &&
-        emailFallback !== requestedHandle &&
-        (await resolveAvailableHandle(ctx, emailFallback, user._id)));
+      )) ?? emailFallbackHandle;
   }
   const baseHandle = derivedHandle ?? (existingHandleClaimable ? existingHandle : undefined);
 
