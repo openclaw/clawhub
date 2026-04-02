@@ -21,13 +21,13 @@ package_version="$(
   node --input-type=module <<'EOF'
 import { readFileSync } from "node:fs";
 
-const pkg = JSON.parse(readFileSync("./packages/clawdhub/package.json", "utf8"));
+const pkg = JSON.parse(readFileSync("./packages/clawhub/package.json", "utf8"));
 process.stdout.write(String(pkg.version ?? "").trim());
 EOF
 )"
 
 if [[ -z "${package_version}" ]]; then
-  echo "Unable to resolve packages/clawdhub/package.json version." >&2
+  echo "Unable to resolve packages/clawhub/package.json version." >&2
   exit 1
 fi
 
@@ -46,6 +46,6 @@ if [[ -n "${publish_target}" ]]; then
 fi
 
 (
-  cd packages/clawdhub
+  cd packages/clawhub
   npm publish --access public --tag latest --provenance
 )

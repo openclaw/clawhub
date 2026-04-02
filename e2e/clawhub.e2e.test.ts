@@ -13,7 +13,7 @@ import {
 import { unzipSync } from "fflate";
 import { Agent, setGlobalDispatcher } from "undici";
 import { describe, expect, it } from "vitest";
-import { readGlobalConfig } from "../packages/clawdhub/src/config";
+import { readGlobalConfig } from "../packages/clawhub/src/config";
 
 const REQUEST_TIMEOUT_MS = 15_000;
 

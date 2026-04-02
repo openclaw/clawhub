@@ -4,7 +4,7 @@ import { execFileSync } from "node:child_process";
 import { readFileSync } from "node:fs";
 
 const EXPECTED_REPOSITORY_URL = "https://github.com/openclaw/clawhub";
-const EXPECTED_REPOSITORY_DIRECTORY = "packages/clawdhub";
+const EXPECTED_REPOSITORY_DIRECTORY = "packages/clawhub";
 const EXPECTED_HOMEPAGE_URL = "https://clawhub.ai";
 const EXPECTED_BUGS_URL = "https://github.com/openclaw/clawhub/issues";
 const EXPECTED_BIN_PATH = "bin/clawdhub.js";
@@ -42,7 +42,7 @@ function normalizeUrl(value) {
 }
 
 function readPackageJson() {
-  return JSON.parse(readFileSync(new URL("../packages/clawdhub/package.json", import.meta.url), "utf8"));
+  return JSON.parse(readFileSync(new URL("../packages/clawhub/package.json", import.meta.url), "utf8"));
 }
 
 function isStableSemverVersion(value) {
@@ -61,57 +61,57 @@ function collectPackageMetadataErrors(pkg) {
     pkg.bugs && typeof pkg.bugs === "object" ? normalizeUrl(pkg.bugs.url) : normalizeUrl(pkg.bugs);
 
   if (pkg.name !== "clawhub") {
-    errors.push(`packages/clawdhub/package.json name must be "clawhub"; found "${pkg.name ?? ""}".`);
+    errors.push(`packages/clawhub/package.json name must be "clawhub"; found "${pkg.name ?? ""}".`);
   }
   if (!isStableSemverVersion(String(pkg.version ?? ""))) {
     errors.push(
-      `packages/clawdhub/package.json version must be stable semver (X.Y.Z); found "${pkg.version ?? ""}".`,
+      `packages/clawhub/package.json version must be stable semver (X.Y.Z); found "${pkg.version ?? ""}".`,
     );
   }
   if (!String(pkg.description ?? "").trim()) {
-    errors.push("packages/clawdhub/package.json description must be non-empty.");
+    errors.push("packages/clawhub/package.json description must be non-empty.");
   }
   if (pkg.license !== "MIT") {
-    errors.push(`packages/clawdhub/package.json license must be "MIT"; found "${pkg.license ?? ""}".`);
+    errors.push(`packages/clawhub/package.json license must be "MIT"; found "${pkg.license ?? ""}".`);
   }
   if (normalizeUrl(pkg.homepage) !== EXPECTED_HOMEPAGE_URL) {
     errors.push(
-      `packages/clawdhub/package.json homepage must resolve to ${EXPECTED_HOMEPAGE_URL}; found "${
+      `packages/clawhub/package.json homepage must resolve to ${EXPECTED_HOMEPAGE_URL}; found "${
         normalizeUrl(pkg.homepage) || "<missing>"
       }".`,
     );
   }
   if (bugsUrl !== EXPECTED_BUGS_URL) {
     errors.push(
-      `packages/clawdhub/package.json bugs.url must resolve to ${EXPECTED_BUGS_URL}; found "${
+      `packages/clawhub/package.json bugs.url must resolve to ${EXPECTED_BUGS_URL}; found "${
         bugsUrl || "<missing>"
       }".`,
     );
   }
   if (repoUrl !== EXPECTED_REPOSITORY_URL) {
     errors.push(
-      `packages/clawdhub/package.json repository.url must resolve to ${EXPECTED_REPOSITORY_URL}; found "${
+      `packages/clawhub/package.json repository.url must resolve to ${EXPECTED_REPOSITORY_URL}; found "${
         repoUrl || "<missing>"
       }".`,
     );
   }
   if (repoDirectory !== EXPECTED_REPOSITORY_DIRECTORY) {
     errors.push(
-      `packages/clawdhub/package.json repository.directory must be "${EXPECTED_REPOSITORY_DIRECTORY}"; found "${
+      `packages/clawhub/package.json repository.directory must be "${EXPECTED_REPOSITORY_DIRECTORY}"; found "${
         typeof repoDirectory === "string" ? repoDirectory : "<missing>"
       }".`,
     );
   }
   if (pkg.bin?.clawhub !== EXPECTED_BIN_PATH) {
     errors.push(
-      `packages/clawdhub/package.json bin.clawhub must be "${EXPECTED_BIN_PATH}"; found "${
+      `packages/clawhub/package.json bin.clawhub must be "${EXPECTED_BIN_PATH}"; found "${
         pkg.bin?.clawhub ?? ""
       }".`,
     );
   }
   if (pkg.bin?.clawdhub !== EXPECTED_BIN_PATH) {
     errors.push(
-      `packages/clawdhub/package.json bin.clawdhub must be "${EXPECTED_BIN_PATH}"; found "${
+      `packages/clawhub/package.json bin.clawdhub must be "${EXPECTED_BIN_PATH}"; found "${
         pkg.bin?.clawdhub ?? ""
       }".`,
     );
@@ -134,7 +134,7 @@ function collectReleaseTagErrors({ packageVersion, releaseTag, releaseSha, relea
   }
   if (normalizedTag !== `v${normalizedVersion}`) {
     errors.push(
-      `Release tag ${normalizedTag} does not match packages/clawdhub/package.json version ${normalizedVersion}; expected v${normalizedVersion}.`,
+      `Release tag ${normalizedTag} does not match packages/clawhub/package.json version ${normalizedVersion}; expected v${normalizedVersion}.`,
     );
   }
   if (releaseSha?.trim() && releaseMainRef?.trim()) {

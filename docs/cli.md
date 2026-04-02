@@ -7,7 +7,7 @@ read_when:
 
 # CLI
 
-CLI package: `packages/clawdhub/` (published as `clawhub`, bin: `clawhub`).
+CLI package: `packages/clawhub/` (published as `clawhub`, bin: `clawhub`).
 
 From this repo you can run it via the wrapper script:
 

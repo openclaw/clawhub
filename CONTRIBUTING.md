@@ -109,7 +109,7 @@ These features degrade gracefully without their keys:
 
 ## CLI Development
 
-The CLI source lives in [`packages/clawdhub/`](packages/clawdhub/). Both `clawhub` and `clawdhub` are registered as bin aliases.
+The CLI source lives in [`packages/clawhub/`](packages/clawhub/). Both `clawhub` and `clawdhub` are registered as bin aliases.
 
 To test the CLI against your local instance:
 
@@ -120,13 +120,13 @@ CLAWHUB_REGISTRY=http://127.0.0.1:3210 CLAWHUB_SITE=http://localhost:3000 clawhu
 Use the package-local verification contract when working on the CLI:
 
 ```bash
-bun run --cwd packages/clawdhub test
-bun run --cwd packages/clawdhub verify:build
-bun run --cwd packages/clawdhub test:artifact
-bun run --cwd packages/clawdhub verify
+bun run --cwd packages/clawhub test
+bun run --cwd packages/clawhub verify:build
+bun run --cwd packages/clawhub test:artifact
+bun run --cwd packages/clawhub verify
 ```
 
-`bun test packages/clawdhub/` is not the supported workflow. Source tests and built-artifact smoke tests are intentionally split.
+`bun test packages/clawhub/` is not the supported workflow. Source tests and built-artifact smoke tests are intentionally split.
 
 Manual smoke tests are documented in [`docs/manual-testing.md`](docs/manual-testing.md).
 
@@ -148,7 +148,7 @@ clawhub publish <path-to-skill-directory>
 bun run lint       # oxlint
 bun run test       # Vitest (80% coverage threshold)
 bun run build      # Vite + Nitro
-bun run --cwd packages/clawdhub verify
+bun run --cwd packages/clawhub verify
 ```
 
 These are the same checks that run in CI (`.github/workflows/ci.yml`).

@@ -67,7 +67,7 @@ jobs:
           PACKAGE_VERSION="$(node --input-type=module <<'EOF'
           import { readFileSync } from "node:fs";
 
-          const pkg = JSON.parse(readFileSync("./packages/clawdhub/package.json", "utf8"));
+          const pkg = JSON.parse(readFileSync("./packages/clawhub/package.json", "utf8"));
           process.stdout.write(String(pkg.version ?? "").trim());
           EOF
           )"
@@ -95,7 +95,7 @@ jobs:
           node scripts/clawhub-cli-npm-release-check.mjs
 
       - name: Verify CLI package
-        run: bun run --cwd packages/clawdhub verify
+        run: bun run --cwd packages/clawhub verify
 
       - name: Pack prepared npm tarball
         id: packed_tarball
@@ -103,12 +103,12 @@ jobs:
           RELEASE_TAG: ${{ inputs.tag }}
         run: |
           set -euo pipefail
-          pushd packages/clawdhub >/dev/null
+          pushd packages/clawhub >/dev/null
           PACK_JSON="$(npm pack --json --ignore-scripts)"
           echo "$PACK_JSON"
           PACK_PATH="$(printf '%s\n' "$PACK_JSON" | node --input-type=module -e 'const chunks=[]; process.stdin.on("data", (chunk) => chunks.push(chunk)); process.stdin.on("end", () => { const parsed = JSON.parse(Buffer.concat(chunks).toString("utf8")); const first = Array.isArray(parsed) ? parsed[0] : null; if (!first || typeof first.filename !== "string" || !first.filename) process.exit(1); process.stdout.write(first.filename); });')"
           popd >/dev/null
-          if [[ -z "${PACK_PATH}" || ! -f "packages/clawdhub/${PACK_PATH}" ]]; then
+          if [[ -z "${PACK_PATH}" || ! -f "packages/clawhub/${PACK_PATH}" ]]; then
             echo "npm pack did not produce a tarball file." >&2
             exit 1
           fi
@@ -116,14 +116,14 @@ jobs:
           PACKAGE_VERSION="$(node --input-type=module <<'EOF'
           import { readFileSync } from "node:fs";
 
-          const pkg = JSON.parse(readFileSync("./packages/clawdhub/package.json", "utf8"));
+          const pkg = JSON.parse(readFileSync("./packages/clawhub/package.json", "utf8"));
           process.stdout.write(String(pkg.version ?? "").trim());
           EOF
           )"
           ARTIFACT_DIR="$RUNNER_TEMP/clawhub-cli-npm-preflight"
           rm -rf "$ARTIFACT_DIR"
           mkdir -p "$ARTIFACT_DIR"
-          cp "packages/clawdhub/${PACK_PATH}" "$ARTIFACT_DIR/"
+          cp "packages/clawhub/${PACK_PATH}" "$ARTIFACT_DIR/"
           printf '%s\n' "$RELEASE_TAG" > "$ARTIFACT_DIR/release-tag.txt"
           printf '%s\n' "$RELEASE_SHA" > "$ARTIFACT_DIR/release-sha.txt"
           printf '%s\n' "$PACKAGE_VERSION" > "$ARTIFACT_DIR/package-version.txt"
@@ -190,7 +190,7 @@ jobs:
           PACKAGE_VERSION="$(node --input-type=module <<'EOF'
           import { readFileSync } from "node:fs";
 
-          const pkg = JSON.parse(readFileSync("./packages/clawdhub/package.json", "utf8"));
+          const pkg = JSON.parse(readFileSync("./packages/clawhub/package.json", "utf8"));
           process.stdout.write(String(pkg.version ?? "").trim());
           EOF
           )"

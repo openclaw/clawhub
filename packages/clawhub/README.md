@@ -68,10 +68,10 @@ The `clawhub` npm package is released separately from the ClawHub app deploy.
 The supported verification flow for this package is package-local:
 
 ```bash
-bun run --cwd packages/clawdhub test
-bun run --cwd packages/clawdhub verify:build
-bun run --cwd packages/clawdhub test:artifact
-bun run --cwd packages/clawdhub verify
+bun run --cwd packages/clawhub test
+bun run --cwd packages/clawhub verify:build
+bun run --cwd packages/clawhub test:artifact
+bun run --cwd packages/clawhub verify
 ```
 
 `test` runs source tests only. `test:artifact` builds `dist/` and runs a small smoke suite against the built CLI entrypoint.
