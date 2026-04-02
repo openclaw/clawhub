@@ -124,7 +124,7 @@ function makeListCtx(
   users: Array<Record<string, unknown>>,
   options?: {
     publishersByHandle?: Record<string, Record<string, unknown>>;
-    usersById?: Record<string, Record<string, unknown>>;
+    usersById?: Record<string, Record<string, unknown> | null>;
   },
 ) {
   const take = vi.fn(async (n: number) => users.slice(0, n));
@@ -166,7 +166,9 @@ function makeListCtx(
     }
     throw new Error(`Unexpected table ${table}`);
   });
-  const get = vi.fn(async (id: string) => usersById[id] ?? null);
+  const get = vi.fn<(id: string) => Promise<Record<string, unknown> | null>>(
+    async (id: string) => usersById[id] ?? null,
+  );
   return {
     ctx: { db: { query, get, normalizeId: vi.fn() } } as never,
     take,
