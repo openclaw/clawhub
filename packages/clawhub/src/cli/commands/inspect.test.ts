@@ -218,6 +218,36 @@ describe("cmdInspect", () => {
     expect(securityCalls).toHaveLength(0);
   });
 
+  it("falls back to boolean flags when verdict is absent", async () => {
+    httpMocks.apiRequest.mockResolvedValueOnce({
+      skill: {
+        slug: "demo",
+        displayName: "Demo",
+        summary: null,
+        tags: { latest: "1.0.0" },
+        stats: {},
+        createdAt: 1,
+        updatedAt: 2,
+      },
+      latestVersion: { version: "1.0.0", createdAt: 3, changelog: "init", license: null },
+      owner: null,
+      moderation: {
+        isSuspicious: true,
+        isMalwareBlocked: false,
+        // verdict intentionally absent
+        reasonCodes: [],
+        updatedAt: null,
+        engineVersion: null,
+        summary: null,
+      },
+    });
+
+    await cmdInspect(makeGlobalOpts(), "demo");
+
+    expect(mockLog).toHaveBeenCalledWith("Security: SUSPICIOUS");
+    expect(mockLog).toHaveBeenCalledWith("Suspicious: yes");
+  });
+
   it("rejects when both version and tag are provided", async () => {
     await expect(
       cmdInspect(makeGlobalOpts(), "demo", { version: "1.0.0", tag: "latest" }),

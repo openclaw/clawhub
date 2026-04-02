@@ -310,7 +310,9 @@ function printModerationSummary(
   } | null,
 ) {
   if (!moderation) return;
-  const verdict = moderation.verdict ?? "clean";
+  const verdict =
+    moderation.verdict ??
+    (moderation.isMalwareBlocked ? "malicious" : moderation.isSuspicious ? "suspicious" : "clean");
   console.log(`Security: ${verdict.toUpperCase()}`);
   if (moderation.isMalwareBlocked) {
     console.log("Malware: blocked");
