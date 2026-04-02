@@ -82,7 +82,13 @@ jobs:
         run: |
           set -euo pipefail
           for attempt in {1..90}; do
-            state="$(gh api "repos/$GITHUB_REPOSITORY/commits/$GITHUB_SHA/status"               --jq '.statuses[] | select(.context == env.VERCEL_STATUS_CONTEXT) | .state'               2>/dev/null | head -n1)"
+            if ! state="$(gh api "repos/$GITHUB_REPOSITORY/commits/$GITHUB_SHA/status" \
+              --jq '.statuses[] | select(.context == env.VERCEL_STATUS_CONTEXT) | .state' \
+              2>/dev/null | head -n1)"; then
+              echo "GitHub status check failed for $GITHUB_SHA; retrying..."
+              sleep 10
+              continue
+            fi
 
             case "$state" in
               success)
