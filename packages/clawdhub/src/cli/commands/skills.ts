@@ -47,9 +47,10 @@ export async function cmdSearch(opts: GlobalOpts, query: string, limit?: number)
   try {
     const url = registryUrl(ApiRoutes.search, registry);
     url.searchParams.set("q", query);
-    if (typeof limit === "number" && Number.isFinite(limit)) {
-      url.searchParams.set("limit", String(limit));
-    }
+    // Default to 25 (matching web UI pageSize) so CLI users get the same
+    // search quality as web users.  Fixes #1375.
+    const effectiveLimit = typeof limit === "number" && Number.isFinite(limit) ? limit : 25;
+    url.searchParams.set("limit", String(effectiveLimit));
     const result = await apiRequest(
       registry,
       { method: "GET", url: url.toString(), token },

@@ -732,14 +732,20 @@ describe("search helpers", () => {
   it("only hydrates new embedding IDs on subsequent iterations (incremental)", async () => {
     generateEmbeddingMock.mockResolvedValueOnce([0, 1, 2]);
 
-    // limit=10 → candidateLimit starts at 50, maxCandidate=200.
-    // First iteration must return exactly candidateLimit (50) to trigger expansion.
-    const firstBatch = Array.from({ length: 50 }, (_, i) => ({
+    // Use limit=100 so candidateLimit starts at 300 (capped to 256) and
+    // maxCandidate = min(1000,256) = 256.  Since 256 == 256 there is only
+    // one iteration, but we still need two iterations to test incremental
+    // hydration, so we use a lower limit.
+    //
+    // With the raised minimum (200), use limit=50 → candidateLimit =
+    // max(50*3,200) = 200, maxCandidate = min(500,256) = 256.
+    // First iteration returns exactly 200 to trigger expansion to 256.
+    const firstBatch = Array.from({ length: 200 }, (_, i) => ({
       _id: `skillEmbeddings:e${i}`,
       _score: 0.5 - i * 0.001,
     }));
-    // Second iteration returns 60 results (50 old + 10 new).
-    // 60 < next candidateLimit (100), so the loop breaks.
+    // Second iteration returns 210 results (200 old + 10 new).
+    // 210 < next candidateLimit (256 is the expanded limit), so the loop breaks.
     const secondBatch = [
       ...firstBatch,
       ...Array.from({ length: 10 }, (_, i) => ({
@@ -779,12 +785,12 @@ describe("search helpers", () => {
 
     await searchSkillsHandler(
       { vectorSearch: vectorSearchMock, runQuery },
-      { query: "test", limit: 10 },
+      { query: "test", limit: 50 },
     );
 
     // Should have been called twice, but second call should only have new IDs
     expect(hydrateCalls).toHaveLength(2);
-    expect(hydrateCalls[0]).toHaveLength(50);
+    expect(hydrateCalls[0]).toHaveLength(200);
     expect(hydrateCalls[1]).toHaveLength(10);
     // Verify no overlap between the two hydrate calls
     const firstSet = new Set(hydrateCalls[0]);
