@@ -2193,6 +2193,191 @@ export const list = query({
   },
 });
 
+/** Paginated dashboard query — used by the Publisher Dashboard to paginate
+ *  large skill sets with client-side search. */
+export const listDashboardPaginated = query({
+  args: {
+    ownerUserId: v.optional(v.id("users")),
+    ownerPublisherId: v.optional(v.id("publishers")),
+    paginationOpts: paginationOptsValidator,
+  },
+  handler: async (ctx, args) => {
+    const userId = await getAuthUserId(ctx);
+
+    // --- Publisher path (includes legacy user-owned skills) ----------------
+    const ownerPublisherId = args.ownerPublisherId;
+    if (ownerPublisherId) {
+      const ownerPublisher = await ctx.db.get(ownerPublisherId);
+      const membership =
+        userId &&
+        (await ctx.db
+          .query("publisherMembers")
+          .withIndex("by_publisher_user", (q) =>
+            q.eq("publisherId", ownerPublisherId).eq("userId", userId),
+          )
+          .unique());
+      const isOwnDashboard = Boolean(
+        membership || (userId && ownerPublisher?.kind === "user" && ownerPublisher.linkedUserId === userId),
+      );
+
+      const result = await ctx.db
+        .query("skills")
+        .withIndex("by_owner_publisher", (q) => q.eq("ownerPublisherId", ownerPublisherId))
+        .order("desc")
+        .paginate(args.paginationOpts);
+
+      const filtered = result.page.filter((skill) => !skill.softDeletedAt);
+      const withBadges = await attachBadgesToSkills(ctx, filtered);
+      const page = toDashboardPage(withBadges, isOwnDashboard);
+      return { ...result, page };
+    }
+
+    // --- User path --------------------------------------------------------
+    const ownerUserId = args.ownerUserId;
+    if (ownerUserId) {
+      const isOwnDashboard = Boolean(userId && userId === ownerUserId);
+
+      const result = await ctx.db
+        .query("skills")
+        .withIndex("by_owner", (q) => q.eq("ownerUserId", ownerUserId))
+        .order("desc")
+        .paginate(args.paginationOpts);
+
+      const filtered = result.page.filter((skill) => !skill.softDeletedAt);
+      const withBadges = await attachBadgesToSkills(ctx, filtered);
+      const page = toDashboardPage(withBadges, isOwnDashboard);
+      return { ...result, page };
+    }
+
+    return { page: [], isDone: true as const, continueCursor: "" };
+  },
+});
+
+/** Total (non-deleted) skill count for a given owner — used in the dashboard header. */
+export const countDashboard = query({
+  args: {
+    ownerUserId: v.optional(v.id("users")),
+    ownerPublisherId: v.optional(v.id("publishers")),
+  },
+  handler: async (ctx, args) => {
+    if (args.ownerPublisherId) {
+      const entries = await ctx.db
+        .query("skills")
+        .withIndex("by_owner_publisher", (q) => q.eq("ownerPublisherId", args.ownerPublisherId!))
+        .collect();
+      return entries.filter((s) => !s.softDeletedAt).length;
+    }
+    if (args.ownerUserId) {
+      const entries = await ctx.db
+        .query("skills")
+        .withIndex("by_owner", (q) => q.eq("ownerUserId", args.ownerUserId!))
+        .collect();
+      return entries.filter((s) => !s.softDeletedAt).length;
+    }
+    return 0;
+  },
+});
+
+/** Map skills to public shape, including pending-review items for owners. */
+function toDashboardPage(skills: Doc<"skills">[], isOwnDashboard: boolean) {
+  return skills
+    .map((skill) => {
+      const publicSkill = toPublicSkill(skill);
+      if (publicSkill) return publicSkill;
+      if (isOwnDashboard) {
+        const isPending =
+          skill.moderationStatus === "hidden" && skill.moderationReason === "pending.scan";
+        if (isPending) {
+          const { badges } = skill;
+          return {
+            _id: skill._id,
+            _creationTime: skill._creationTime,
+            slug: skill.slug,
+            displayName: skill.displayName,
+            summary: skill.summary,
+            ownerUserId: skill.ownerUserId,
+            ownerPublisherId: skill.ownerPublisherId,
+            canonicalSkillId: skill.canonicalSkillId,
+            forkOf: skill.forkOf,
+            latestVersionId: skill.latestVersionId,
+            tags: skill.tags,
+            badges,
+            stats: skill.stats,
+            createdAt: skill.createdAt,
+            updatedAt: skill.updatedAt,
+            pendingReview: true as const,
+          };
+        }
+      }
+      return null;
+    })
+    .filter((skill): skill is NonNullable<typeof skill> => Boolean(skill));
+}
+
+/** Server-side search for the Publisher Dashboard.
+ *  Scans the owner's skills by index, filters by substring match on
+ *  slug / displayName / summary, and returns up to `limit` results. */
+export const searchDashboard = query({
+  args: {
+    ownerUserId: v.optional(v.id("users")),
+    ownerPublisherId: v.optional(v.id("publishers")),
+    search: v.string(),
+    limit: v.optional(v.number()),
+  },
+  handler: async (ctx, args) => {
+    const searchTerm = args.search.toLowerCase();
+    if (!searchTerm) return [];
+    const limit = clampInt(args.limit ?? 50, 1, 200);
+    const userId = await getAuthUserId(ctx);
+
+    let entries: Doc<"skills">[];
+    let isOwnDashboard: boolean;
+
+    const ownerPublisherId = args.ownerPublisherId;
+    if (ownerPublisherId) {
+      const ownerPublisher = await ctx.db.get(ownerPublisherId);
+      const membership =
+        userId &&
+        (await ctx.db
+          .query("publisherMembers")
+          .withIndex("by_publisher_user", (q) =>
+            q.eq("publisherId", ownerPublisherId).eq("userId", userId),
+          )
+          .unique());
+      isOwnDashboard = Boolean(
+        membership || (userId && ownerPublisher?.kind === "user" && ownerPublisher.linkedUserId === userId),
+      );
+      entries = await ctx.db
+        .query("skills")
+        .withIndex("by_owner_publisher", (q) => q.eq("ownerPublisherId", ownerPublisherId))
+        .order("desc")
+        .take(4000);
+    } else if (args.ownerUserId) {
+      isOwnDashboard = Boolean(userId && userId === args.ownerUserId);
+      entries = await ctx.db
+        .query("skills")
+        .withIndex("by_owner", (q) => q.eq("ownerUserId", args.ownerUserId!))
+        .order("desc")
+        .take(4000);
+    } else {
+      return [];
+    }
+
+    const matches = entries
+      .filter(
+        (s) =>
+          !s.softDeletedAt &&
+          (s.slug.toLowerCase().includes(searchTerm) ||
+            s.displayName.toLowerCase().includes(searchTerm) ||
+            (s.summary ?? "").toLowerCase().includes(searchTerm)),
+      )
+      .slice(0, limit);
+
+    const withBadges = await attachBadgesToSkills(ctx, matches);
+    return toDashboardPage(withBadges, isOwnDashboard);
+  },
+});
+
 export const listWithLatest = query({
   args: {
     batch: v.optional(v.string()),

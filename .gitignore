@@ -24,3 +24,8 @@ coverage
 playwright-report
 test-results
 .playwright
+.agents
+skills
+convex/_generated
+skills-lock.json
+.claude

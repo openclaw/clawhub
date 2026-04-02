@@ -1,18 +1,20 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
-import { useQuery } from "convex/react";
+import { usePaginatedQuery, useQuery } from "convex/react";
 import {
   AlertTriangle,
   ArrowDownToLine,
   CheckCircle2,
   Clock,
   GitBranch,
+  Loader2,
   Package,
   Plug,
+  Search,
   ShieldCheck,
   Star,
   Upload,
 } from "lucide-react";
-import { useEffect, useState } from "react";
+import { useDeferredValue, useEffect, useState } from "react";
 import semver from "semver";
 import { api } from "../../convex/_generated/api";
 import type { Doc } from "../../convex/_generated/dataModel";
@@ -83,16 +85,46 @@ function Dashboard() {
   const selectedPublisher =
     publishers?.find((entry) => entry.publisher._id === selectedPublisherId) ?? null;
 
-  const mySkills = useQuery(
-    api.skills.list,
+  const [skillSearch, setSkillSearch] = useState("");
+  const deferredSearch = useDeferredValue(skillSearch);
+  const isSearching = Boolean(deferredSearch.trim());
+
+  const baseOwnerArgs =
     selectedPublisher?.publisher.kind === "user" && me?._id
-      ? { ownerUserId: me._id, limit: 100 }
+      ? { ownerUserId: me._id }
       : selectedPublisherId
-        ? { ownerPublisherId: selectedPublisherId as Doc<"publishers">["_id"], limit: 100 }
+        ? { ownerPublisherId: selectedPublisherId as Doc<"publishers">["_id"] }
         : me?._id
-          ? { ownerUserId: me._id, limit: 100 }
-          : "skip",
+          ? { ownerUserId: me._id }
+          : null;
+
+  // Browse mode: paginated
+  const {
+    results: paginatedSkills,
+    status: skillsStatus,
+    loadMore,
+  } = usePaginatedQuery(
+    api.skills.listDashboardPaginated,
+    !isSearching && baseOwnerArgs ? baseOwnerArgs : "skip",
+    { initialNumItems: 50 },
+  );
+
+  // Search mode: server-side filter
+  const searchResults = useQuery(
+    api.skills.searchDashboard,
+    isSearching && baseOwnerArgs
+      ? { ...baseOwnerArgs, search: deferredSearch, limit: 200 }
+      : "skip",
   ) as DashboardSkill[] | undefined;
+
+  const mySkills = isSearching ? searchResults : (paginatedSkills as DashboardSkill[] | undefined);
+
+  // Total published skill count (lightweight query for header)
+  const totalSkillCount = useQuery(
+    api.skills.countDashboard,
+    baseOwnerArgs ?? "skip",
+  );
+
   const myPackages = useQuery(
     api.packages.list,
     selectedPublisherId
@@ -168,13 +200,39 @@ function Dashboard() {
           <section className="dashboard-collection-block">
             <div className="dashboard-section-header">
               <div>
-                <h2 className="dashboard-collection-title">Publisher Skills</h2>
+                <h2 className="dashboard-collection-title">
+                  Publisher Skills
+                  {totalSkillCount != null && (
+                    <span className="dashboard-collection-count">{totalSkillCount}</span>
+                  )}
+                </h2>
                 <p className="section-subtitle" style={{ margin: "6px 0 0" }}>
                   Hidden skill versions remain visible here while checks are pending.
                 </p>
               </div>
             </div>
-            {skills.length === 0 ? (
+            <div className="dashboard-toolbar">
+              <div className="dashboard-search">
+                <Search className="dashboard-search-icon" size={16} aria-hidden="true" />
+                <input
+                  className="dashboard-search-input"
+                  type="text"
+                  placeholder="Search skills by name or description..."
+                  value={skillSearch}
+                  onChange={(e) => setSkillSearch(e.target.value)}
+                />
+                {skillSearch && (
+                  <button
+                    className="dashboard-search-clear"
+                    onClick={() => setSkillSearch("")}
+                    aria-label="Clear search"
+                  >
+                    &times;
+                  </button>
+                )}
+              </div>
+            </div>
+            {skills.length === 0 && !isSearching ? (
               <div className="dashboard-inline-empty">
                 <div className="dashboard-inline-empty-copy">
                   <strong>No skills yet.</strong> Publish your first skill to share it with the community.
@@ -183,6 +241,12 @@ function Dashboard() {
                   <Upload className="h-4 w-4" aria-hidden="true" />
                   Publish Skill
                 </Link>
+              </div>
+            ) : skills.length === 0 && isSearching ? (
+              <div className="dashboard-inline-empty">
+                <div className="dashboard-inline-empty-copy">
+                  No skills matching &ldquo;{deferredSearch}&rdquo;.
+                </div>
               </div>
             ) : (
               <div className="dashboard-list">
@@ -195,6 +259,19 @@ function Dashboard() {
                 {skills.map((skill) => (
                   <SkillRow key={skill._id} skill={skill} ownerHandle={ownerHandle} />
                 ))}
+              </div>
+            )}
+            {!isSearching && skillsStatus === "CanLoadMore" && (
+              <div className="dashboard-load-more">
+                <button className="btn" onClick={() => loadMore(50)}>
+                  Load More
+                </button>
+              </div>
+            )}
+            {!isSearching && skillsStatus === "LoadingMore" && (
+              <div className="dashboard-load-more">
+                <Loader2 className="dashboard-spinner" size={20} />
+                <span>Loading more skills...</span>
               </div>
             )}
           </section>
