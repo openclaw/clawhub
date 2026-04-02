@@ -326,6 +326,7 @@ function toPublicPackage(
     capabilities: pkg.capabilities,
     verification: pkg.verification,
     scanStatus: pkg.scanStatus,
+    stats: pkg.stats,
     createdAt: pkg.createdAt,
     updatedAt: pkg.updatedAt,
   };

@@ -1433,6 +1433,7 @@ type PublicPackageDocLike = {
   compatibility?: Doc<"packages">["compatibility"];
   capabilities?: Doc<"packages">["capabilities"];
   verification?: Doc<"packages">["verification"];
+  stats?: { downloads: number; installs: number; stars: number; versions: number };
   createdAt: number;
   updatedAt: number;
 };
