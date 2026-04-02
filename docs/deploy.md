@@ -36,6 +36,33 @@ Production deploy notes:
 - Required `Production` environment secret: `CONVEX_DEPLOY_KEY`.
 - Optional `Production` environment secret: `PLAYWRIGHT_AUTH_STORAGE_STATE_JSON` for authenticated smoke coverage.
 
+## CLI npm release
+
+The `clawhub` CLI package is released separately from the app deploy.
+
+Use the GitHub Actions workflow:
+
+```bash
+gh workflow run clawhub-cli-npm-release.yml \
+  --repo openclaw/clawhub \
+  --ref main \
+  -f tag=v0.10.0 \
+  -f preflight_only=true
+```
+
+Then rerun the same workflow from `main` with:
+
+- the same `tag`
+- `preflight_only=false`
+- `preflight_run_id=<successful preflight run id>`
+
+CLI release notes:
+
+- Real publishes are manual-only and require the workflow to be started from `main`.
+- The publish job waits at the GitHub `npm-release` environment for approval.
+- npm auth is handled through npm trusted publishing, not an `NPM_TOKEN`.
+- npm trusted publisher must be configured for package `clawhub` with repository `openclaw/clawhub`, workflow `clawhub-cli-npm-release.yml`, and environment `npm-release`.
+
 That workflow assumes Vercel Git integration is enabled for this repo. It does
 not run `vercel deploy` directly; instead it waits for the GitHub commit status
 `Vercel – clawhub` for the selected SHA, then runs smoke tests against

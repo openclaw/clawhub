@@ -2,10 +2,22 @@
   "name": "clawhub",
   "version": "0.10.0",
   "description": "ClawHub CLI \\u2014 install, update, search, and publish skills plus OpenClaw packages.",
+  "homepage": "https://clawhub.ai",
   "license": "MIT",
+  "bugs": {
+    "url": "https://github.com/openclaw/clawhub/issues"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/openclaw/clawhub.git",
+    "directory": "packages/clawdhub"
+  },
   "bin": {
     "clawdhub": "bin/clawdhub.js",
     "clawhub": "bin/clawdhub.js"
+  },
+  "publishConfig": {
+    "access": "public"
   },
   "files": [
     "bin",
