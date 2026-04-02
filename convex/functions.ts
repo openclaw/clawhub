@@ -331,6 +331,21 @@ triggers.register("skills", async (ctx, change) => {
   } else {
     await syncSkillSearchDigestForSkill(ctx, change.newDoc);
   }
+
+  // Maintain denormalized activeSkillCount on the publisher.
+  const wasActive = (doc: Doc<"skills"> | undefined) => doc && !doc.softDeletedAt;
+  const oldActive = change.operation !== "insert" && wasActive(change.oldDoc);
+  const newActive = change.operation !== "delete" && wasActive(change.newDoc);
+  if (oldActive !== newActive) {
+    const doc = change.operation === "delete" ? change.oldDoc : change.newDoc;
+    const publisher = await getOwnerPublisher(ctx, doc);
+    if (publisher) {
+      const delta = newActive ? 1 : -1;
+      await ctx.db.patch(publisher._id, {
+        activeSkillCount: Math.max(0, (publisher.activeSkillCount ?? 0) + delta),
+      });
+    }
+  }
 });
 
 triggers.register("packages", async (ctx, change) => {

@@ -50,6 +50,7 @@ const publishers = defineTable({
   image: v.optional(v.string()),
   linkedUserId: v.optional(v.id("users")),
   trustedPublisher: v.optional(v.boolean()),
+  activeSkillCount: v.optional(v.number()),
   deactivatedAt: v.optional(v.number()),
   deletedAt: v.optional(v.number()),
   createdAt: v.number(),

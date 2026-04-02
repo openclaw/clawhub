@@ -2253,31 +2253,38 @@ export const listDashboardPaginated = query({
   },
 });
 
-/** Total (non-deleted) skill count for a given owner — used in the dashboard header. */
+/** Total active skill count for a given owner — reads the denormalized
+ *  `activeSkillCount` on the publisher record (maintained by a Trigger).
+ *  Only the owner or a publisher member may read the count. */
 export const countDashboard = query({
   args: {
     ownerUserId: v.optional(v.id("users")),
     ownerPublisherId: v.optional(v.id("publishers")),
   },
-  // TODO: denormalize into a counter on the publisher/user record via Trigger
   handler: async (ctx, args) => {
-    if (args.ownerPublisherId) {
-      const entries = await ctx.db
-        .query("skills")
-        .withIndex("by_owner_publisher", (q) => q.eq("ownerPublisherId", args.ownerPublisherId!))
-        .filter((q) => q.eq(q.field("softDeletedAt"), undefined))
-        .collect();
-      return entries.length;
+    const userId = await getAuthUserId(ctx);
+    if (!userId) return 0;
+
+    const publisher = await getOwnerPublisher(ctx, {
+      ownerPublisherId: args.ownerPublisherId ?? null,
+      ownerUserId: args.ownerUserId ?? null,
+    });
+    if (!publisher) return 0;
+
+    // Ownership check
+    if (publisher.kind === "user") {
+      if (publisher.linkedUserId !== userId) return 0;
+    } else {
+      const membership = await ctx.db
+        .query("publisherMembers")
+        .withIndex("by_publisher_user", (q) =>
+          q.eq("publisherId", publisher._id).eq("userId", userId),
+        )
+        .unique();
+      if (!membership) return 0;
     }
-    if (args.ownerUserId) {
-      const entries = await ctx.db
-        .query("skills")
-        .withIndex("by_owner", (q) => q.eq("ownerUserId", args.ownerUserId!))
-        .filter((q) => q.eq(q.field("softDeletedAt"), undefined))
-        .collect();
-      return entries.length;
-    }
-    return 0;
+
+    return publisher.activeSkillCount ?? 0;
   },
 });
 
