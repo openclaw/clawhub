@@ -2223,11 +2223,11 @@ export const listDashboardPaginated = query({
       const result = await ctx.db
         .query("skills")
         .withIndex("by_owner_publisher", (q) => q.eq("ownerPublisherId", ownerPublisherId))
+        .filter((q) => q.eq(q.field("softDeletedAt"), undefined))
         .order("desc")
         .paginate(args.paginationOpts);
 
-      const filtered = result.page.filter((skill) => !skill.softDeletedAt);
-      const withBadges = await attachBadgesToSkills(ctx, filtered);
+      const withBadges = await attachBadgesToSkills(ctx, result.page);
       const page = toDashboardPage(withBadges, isOwnDashboard);
       return { ...result, page };
     }
@@ -2240,11 +2240,11 @@ export const listDashboardPaginated = query({
       const result = await ctx.db
         .query("skills")
         .withIndex("by_owner", (q) => q.eq("ownerUserId", ownerUserId))
+        .filter((q) => q.eq(q.field("softDeletedAt"), undefined))
         .order("desc")
         .paginate(args.paginationOpts);
 
-      const filtered = result.page.filter((skill) => !skill.softDeletedAt);
-      const withBadges = await attachBadgesToSkills(ctx, filtered);
+      const withBadges = await attachBadgesToSkills(ctx, result.page);
       const page = toDashboardPage(withBadges, isOwnDashboard);
       return { ...result, page };
     }
@@ -2259,20 +2259,23 @@ export const countDashboard = query({
     ownerUserId: v.optional(v.id("users")),
     ownerPublisherId: v.optional(v.id("publishers")),
   },
+  // TODO: denormalize into a counter on the publisher/user record via Trigger
   handler: async (ctx, args) => {
     if (args.ownerPublisherId) {
       const entries = await ctx.db
         .query("skills")
         .withIndex("by_owner_publisher", (q) => q.eq("ownerPublisherId", args.ownerPublisherId!))
+        .filter((q) => q.eq(q.field("softDeletedAt"), undefined))
         .collect();
-      return entries.filter((s) => !s.softDeletedAt).length;
+      return entries.length;
     }
     if (args.ownerUserId) {
       const entries = await ctx.db
         .query("skills")
         .withIndex("by_owner", (q) => q.eq("ownerUserId", args.ownerUserId!))
+        .filter((q) => q.eq(q.field("softDeletedAt"), undefined))
         .collect();
-      return entries.filter((s) => !s.softDeletedAt).length;
+      return entries.length;
     }
     return 0;
   },
@@ -2315,8 +2318,7 @@ function toDashboardPage(skills: Doc<"skills">[], isOwnDashboard: boolean) {
 }
 
 /** Server-side search for the Publisher Dashboard.
- *  Scans the owner's skills by index, filters by substring match on
- *  slug / displayName / summary, and returns up to `limit` results. */
+ *  Uses a full-text search index on displayName, scoped by owner. */
 export const searchDashboard = query({
   args: {
     ownerUserId: v.optional(v.id("users")),
@@ -2325,13 +2327,12 @@ export const searchDashboard = query({
     limit: v.optional(v.number()),
   },
   handler: async (ctx, args) => {
-    const searchTerm = args.search.toLowerCase();
-    if (!searchTerm) return [];
+    if (!args.search.trim()) return [];
     const limit = clampInt(args.limit ?? 50, 1, 200);
     const userId = await getAuthUserId(ctx);
 
-    let entries: Doc<"skills">[];
     let isOwnDashboard: boolean;
+    let entries: Doc<"skills">[];
 
     const ownerPublisherId = args.ownerPublisherId;
     if (ownerPublisherId) {
@@ -2349,31 +2350,29 @@ export const searchDashboard = query({
       );
       entries = await ctx.db
         .query("skills")
-        .withIndex("by_owner_publisher", (q) => q.eq("ownerPublisherId", ownerPublisherId))
-        .order("desc")
-        .take(4000);
+        .withSearchIndex("search_dashboard", (q) =>
+          q
+            .search("displayName", args.search)
+            .eq("ownerPublisherId", ownerPublisherId)
+            .eq("softDeletedAt", undefined),
+        )
+        .take(limit);
     } else if (args.ownerUserId) {
       isOwnDashboard = Boolean(userId && userId === args.ownerUserId);
       entries = await ctx.db
         .query("skills")
-        .withIndex("by_owner", (q) => q.eq("ownerUserId", args.ownerUserId!))
-        .order("desc")
-        .take(4000);
+        .withSearchIndex("search_dashboard", (q) =>
+          q
+            .search("displayName", args.search)
+            .eq("ownerUserId", args.ownerUserId!)
+            .eq("softDeletedAt", undefined),
+        )
+        .take(limit);
     } else {
       return [];
     }
 
-    const matches = entries
-      .filter(
-        (s) =>
-          !s.softDeletedAt &&
-          (s.slug.toLowerCase().includes(searchTerm) ||
-            s.displayName.toLowerCase().includes(searchTerm) ||
-            (s.summary ?? "").toLowerCase().includes(searchTerm)),
-      )
-      .slice(0, limit);
-
-    const withBadges = await attachBadgesToSkills(ctx, matches);
+    const withBadges = await attachBadgesToSkills(ctx, entries);
     return toDashboardPage(withBadges, isOwnDashboard);
   },
 });

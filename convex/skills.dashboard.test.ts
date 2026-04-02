@@ -26,10 +26,7 @@ const searchHandler = (
   >
 )._handler;
 
-function makeSkill(
-  slug: string,
-  overrides: Record<string, unknown> = {},
-) {
+function makeSkill(slug: string, overrides: Record<string, unknown> = {}) {
   return {
     _id: `skills:${slug}`,
     _creationTime: 1,
@@ -54,7 +51,12 @@ function makeSkill(
   };
 }
 
-function makeCtx(skills: ReturnType<typeof makeSkill>[]) {
+/** Build a mock ctx where `skills` queries return `allSkills`,
+ *  and search-index queries return `searchHits` (defaults to allSkills). */
+function makeCtx(
+  allSkills: ReturnType<typeof makeSkill>[],
+  searchHits?: ReturnType<typeof makeSkill>[],
+) {
   return {
     db: {
       get: vi.fn(async (id: string) => {
@@ -82,17 +84,24 @@ function makeCtx(skills: ReturnType<typeof makeSkill>[]) {
           };
         }
         if (table === "skills") {
+          const makeFilterChain = (items: ReturnType<typeof makeSkill>[]) => ({
+            order: vi.fn(() => ({
+              take: vi.fn().mockResolvedValue(items),
+              paginate: vi.fn().mockResolvedValue({
+                page: items,
+                isDone: true,
+                continueCursor: "",
+              }),
+            })),
+            collect: vi.fn().mockResolvedValue(items),
+          });
           return {
             withIndex: vi.fn(() => ({
-              order: vi.fn(() => ({
-                take: vi.fn().mockResolvedValue(skills),
-                paginate: vi.fn().mockResolvedValue({
-                  page: skills,
-                  isDone: true,
-                  continueCursor: "",
-                }),
-              })),
-              collect: vi.fn().mockResolvedValue(skills),
+              filter: vi.fn(() => makeFilterChain(allSkills)),
+              ...makeFilterChain(allSkills),
+            })),
+            withSearchIndex: vi.fn(() => ({
+              take: vi.fn().mockResolvedValue(searchHits ?? allSkills),
             })),
           };
         }
@@ -109,56 +118,44 @@ function makeCtx(skills: ReturnType<typeof makeSkill>[]) {
   };
 }
 
-describe("skills.countDashboard", () => {
-  it("counts non-deleted skills for ownerUserId", async () => {
-    const skills = [makeSkill("a"), makeSkill("b"), makeSkill("c")];
-    const ctx = makeCtx(skills);
+// ---------------------------------------------------------------------------
+// countDashboard
+// ---------------------------------------------------------------------------
 
+describe("skills.countDashboard", () => {
+  it("counts skills for ownerUserId", async () => {
+    const ctx = makeCtx([makeSkill("a"), makeSkill("b"), makeSkill("c")]);
     const result = await countHandler(ctx as never, { ownerUserId: "users:owner" } as never);
     expect(result).toBe(3);
   });
 
-  it("excludes soft-deleted skills", async () => {
-    const skills = [
-      makeSkill("a"),
-      makeSkill("deleted", { softDeletedAt: 123 }),
-      makeSkill("c"),
-    ];
-    const ctx = makeCtx(skills);
-
-    const result = await countHandler(ctx as never, { ownerUserId: "users:owner" } as never);
+  it("counts skills for ownerPublisherId", async () => {
+    const ctx = makeCtx([makeSkill("a"), makeSkill("b")]);
+    const result = await countHandler(ctx as never, { ownerPublisherId: "publishers:pub" } as never);
     expect(result).toBe(2);
   });
 
   it("returns 0 when no owner specified", async () => {
     const ctx = makeCtx([makeSkill("a")]);
-
     const result = await countHandler(ctx as never, {});
     expect(result).toBe(0);
   });
-
-  it("counts skills for ownerPublisherId", async () => {
-    const skills = [makeSkill("a"), makeSkill("b")];
-    const ctx = makeCtx(skills);
-
-    const result = await countHandler(ctx as never, { ownerPublisherId: "publishers:pub" } as never);
-    expect(result).toBe(2);
-  });
 });
+
+// ---------------------------------------------------------------------------
+// searchDashboard
+// ---------------------------------------------------------------------------
 
 describe("skills.searchDashboard", () => {
   const allSkills = [
-    makeSkill("slack", { displayName: "Slack", summary: "Slack messaging integration." }),
+    makeSkill("slack", { displayName: "Slack", summary: "Slack messaging." }),
     makeSkill("stripe", { displayName: "Stripe", summary: "Payment processing." }),
-    makeSkill("github", { displayName: "GitHub", summary: "Code hosting platform." }),
-    makeSkill("gitlab", { displayName: "GitLab", summary: "DevOps lifecycle tool." }),
-    makeSkill("deleted-one", { displayName: "Deleted", summary: "Gone.", softDeletedAt: 100 }),
+    makeSkill("github", { displayName: "GitHub", summary: "Code hosting." }),
   ];
 
   it("returns empty array when search is empty", async () => {
     vi.mocked(getAuthUserId).mockResolvedValue("users:owner" as never);
     const ctx = makeCtx(allSkills);
-
     const result = await searchHandler(ctx as never, {
       ownerUserId: "users:owner",
       search: "",
@@ -166,79 +163,53 @@ describe("skills.searchDashboard", () => {
     expect(result).toEqual([]);
   });
 
-  it("matches by slug", async () => {
+  it("returns matched skills from search index", async () => {
     vi.mocked(getAuthUserId).mockResolvedValue("users:owner" as never);
-    const ctx = makeCtx(allSkills);
-
+    const hits = [allSkills[0]]; // Slack
+    const ctx = makeCtx(allSkills, hits);
     const result = await searchHandler(ctx as never, {
       ownerUserId: "users:owner",
-      search: "slack",
+      search: "Slack",
     } as never);
     expect(result).toEqual([expect.objectContaining({ slug: "slack" })]);
   });
 
-  it("matches by displayName (case-insensitive)", async () => {
+  it("returns multiple search hits", async () => {
     vi.mocked(getAuthUserId).mockResolvedValue("users:owner" as never);
-    const ctx = makeCtx(allSkills);
-
+    const hits = [allSkills[0], allSkills[2]]; // Slack, GitHub
+    const ctx = makeCtx(allSkills, hits);
     const result = await searchHandler(ctx as never, {
       ownerUserId: "users:owner",
-      search: "GITHUB",
-    } as never);
-    expect(result).toEqual([expect.objectContaining({ slug: "github" })]);
-  });
-
-  it("matches by summary substring", async () => {
-    vi.mocked(getAuthUserId).mockResolvedValue("users:owner" as never);
-    const ctx = makeCtx(allSkills);
-
-    const result = await searchHandler(ctx as never, {
-      ownerUserId: "users:owner",
-      search: "payment",
-    } as never);
-    expect(result).toEqual([expect.objectContaining({ slug: "stripe" })]);
-  });
-
-  it("returns multiple matches", async () => {
-    vi.mocked(getAuthUserId).mockResolvedValue("users:owner" as never);
-    const ctx = makeCtx(allSkills);
-
-    const result = await searchHandler(ctx as never, {
-      ownerUserId: "users:owner",
-      search: "git",
+      search: "integration",
     } as never);
     expect(result).toHaveLength(2);
-    expect(result.map((s) => s.slug).sort()).toEqual(["github", "gitlab"]);
   });
 
-  it("excludes soft-deleted skills", async () => {
+  it("returns empty when no hits", async () => {
     vi.mocked(getAuthUserId).mockResolvedValue("users:owner" as never);
-    const ctx = makeCtx(allSkills);
-
+    const ctx = makeCtx(allSkills, []);
     const result = await searchHandler(ctx as never, {
       ownerUserId: "users:owner",
-      search: "deleted",
+      search: "nonexistent",
     } as never);
     expect(result).toEqual([]);
   });
 
-  it("respects limit", async () => {
+  it("returns empty when no owner specified", async () => {
     vi.mocked(getAuthUserId).mockResolvedValue("users:owner" as never);
     const ctx = makeCtx(allSkills);
-
-    const result = await searchHandler(ctx as never, {
-      ownerUserId: "users:owner",
-      search: "git",
-      limit: 1,
-    } as never);
-    expect(result).toHaveLength(1);
-  });
-
-  it("returns empty array when no owner specified", async () => {
-    vi.mocked(getAuthUserId).mockResolvedValue("users:owner" as never);
-    const ctx = makeCtx(allSkills);
-
     const result = await searchHandler(ctx as never, { search: "slack" } as never);
     expect(result).toEqual([]);
+  });
+
+  it("works with ownerPublisherId", async () => {
+    vi.mocked(getAuthUserId).mockResolvedValue("users:owner" as never);
+    const hits = [allSkills[1]]; // Stripe
+    const ctx = makeCtx(allSkills, hits);
+    const result = await searchHandler(ctx as never, {
+      ownerPublisherId: "publishers:pub",
+      search: "Stripe",
+    } as never);
+    expect(result).toEqual([expect.objectContaining({ slug: "stripe" })]);
   });
 });

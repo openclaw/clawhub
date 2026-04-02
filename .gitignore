@@ -25,7 +25,7 @@ playwright-report
 test-results
 .playwright
 .agents
-skills
+/skills
 convex/_generated
 skills-lock.json
 .claude
