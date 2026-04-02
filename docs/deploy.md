@@ -39,6 +39,7 @@ Production deploy notes:
 ## CLI npm release
 
 The `clawhub` CLI package is released separately from the app deploy.
+Only stable releases are supported here: `vX.Y.Z`.
 
 Use the GitHub Actions workflow:
 

@@ -45,8 +45,8 @@ function readPackageJson() {
   return JSON.parse(readFileSync(new URL("../packages/clawdhub/package.json", import.meta.url), "utf8"));
 }
 
-function isSemverVersion(value) {
-  return /^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?$/.test(value.trim());
+function isStableSemverVersion(value) {
+  return /^\d+\.\d+\.\d+$/.test(value.trim());
 }
 
 function collectPackageMetadataErrors(pkg) {
@@ -63,9 +63,9 @@ function collectPackageMetadataErrors(pkg) {
   if (pkg.name !== "clawhub") {
     errors.push(`packages/clawdhub/package.json name must be "clawhub"; found "${pkg.name ?? ""}".`);
   }
-  if (!isSemverVersion(String(pkg.version ?? ""))) {
+  if (!isStableSemverVersion(String(pkg.version ?? ""))) {
     errors.push(
-      `packages/clawdhub/package.json version must be valid semver; found "${pkg.version ?? ""}".`,
+      `packages/clawdhub/package.json version must be stable semver (X.Y.Z); found "${pkg.version ?? ""}".`,
     );
   }
   if (!String(pkg.description ?? "").trim()) {
@@ -129,10 +129,8 @@ function collectReleaseTagErrors({ packageVersion, releaseTag, releaseSha, relea
     errors.push("Release tag is required.");
     return errors;
   }
-  if (!/^v\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?$/.test(normalizedTag)) {
-    errors.push(
-      `Release tag must match vX.Y.Z or vX.Y.Z-prerelease; found "${normalizedTag}".`,
-    );
+  if (!/^v\d+\.\d+\.\d+$/.test(normalizedTag)) {
+    errors.push(`Release tag must match vX.Y.Z; found "${normalizedTag}".`);
   }
   if (normalizedTag !== `v${normalizedVersion}`) {
     errors.push(

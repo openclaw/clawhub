@@ -50,7 +50,7 @@
 - The workflow pauses at the GitHub `Production` environment. A member of the `openclaw-release-managers` team must approve it before any real deploy step runs.
 - Prod deploy secrets live on the `Production` environment, not as ordinary repo secrets. Required: `CONVEX_DEPLOY_KEY`. Optional: `PLAYWRIGHT_AUTH_STORAGE_STATE_JSON`.
 - If you are not in `openclaw-release-managers`, do not treat a started workflow as shipped. Ask that team to approve the pending deployment.
-- CLI npm releases are also manual-only and tag-based. Start `ClawHub CLI NPM Release` from `main`, first with `preflight_only=true`, then rerun it with the same tag and the successful `preflight_run_id`.
+- CLI npm releases are also manual-only and tag-based. Stable tags only: `vX.Y.Z`. Start `ClawHub CLI NPM Release` from `main`, first with `preflight_only=true`, then rerun it with the same tag and the successful `preflight_run_id`.
 - Real CLI publishes wait at the GitHub `npm-release` environment and use npm trusted publishing. Required npm trusted publisher settings: repository `openclaw/clawhub`, workflow `clawhub-cli-npm-release.yml`, environment `npm-release`.
 
 ## Git Notes
