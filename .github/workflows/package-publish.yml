@@ -252,11 +252,7 @@ jobs:
               github_ref = os.environ["GITHUB_REF"].strip()
               if github_ref:
                   cmd += ["--source-ref", github_ref]
-          if (
-              os.environ["INPUT_DRY_RUN"] != "true"
-              and os.environ["CLAWHUB_TOKEN"].strip()
-              and os.environ["GITHUB_EVENT_NAME"].strip() != "workflow_dispatch"
-          ):
+          if os.environ["INPUT_DRY_RUN"] != "true" and os.environ["CLAWHUB_TOKEN"].strip():
               cmd += [
                   "--manual-override-reason",
                   f"GitHub Actions {os.environ['GITHUB_EVENT_NAME'].strip()} publish via CLAWHUB_TOKEN",
