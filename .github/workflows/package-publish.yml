@@ -216,7 +216,7 @@ jobs:
 
           cmd = [
               "bun",
-              "clawhub-source/packages/clawdhub/src/cli.ts",
+              "clawhub-source/packages/clawhub/src/cli.ts",
               "package",
               "publish",
               source,

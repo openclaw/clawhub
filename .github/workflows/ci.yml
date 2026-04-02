@@ -32,13 +32,13 @@ jobs:
         run: bun run coverage
 
       - name: ClawHub CLI Verify
-        run: bun run --cwd packages/clawdhub verify
+        run: bun run --cwd packages/clawhub verify
 
       - name: Typecheck
         run: |
           bunx tsc --noEmit
           bunx tsc -p packages/schema/tsconfig.json --noEmit
-          bunx tsc -p packages/clawdhub/tsconfig.json --noEmit
+          bunx tsc -p packages/clawhub/tsconfig.json --noEmit
 
       - name: Build
         run: bun run build
