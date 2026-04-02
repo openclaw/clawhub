@@ -9,12 +9,11 @@ import {
   Loader2,
   Package,
   Plug,
-  Search,
   ShieldCheck,
   Star,
   Upload,
 } from "lucide-react";
-import { useDeferredValue, useEffect, useState } from "react";
+import { useEffect, useState } from "react";
 import semver from "semver";
 import { api } from "../../convex/_generated/api";
 import type { Doc } from "../../convex/_generated/dataModel";
@@ -85,39 +84,22 @@ function Dashboard() {
   const selectedPublisher =
     publishers?.find((entry) => entry.publisher._id === selectedPublisherId) ?? null;
 
-  const [skillSearch, setSkillSearch] = useState("");
-  const deferredSearch = useDeferredValue(skillSearch);
-  const isSearching = Boolean(deferredSearch.trim());
-
-  const baseOwnerArgs =
+  const skillsQueryArgs =
     selectedPublisher?.publisher.kind === "user" && me?._id
       ? { ownerUserId: me._id }
       : selectedPublisherId
         ? { ownerPublisherId: selectedPublisherId as Doc<"publishers">["_id"] }
         : me?._id
           ? { ownerUserId: me._id }
-          : null;
-
-  // Browse mode: paginated
+          : "skip";
   const {
     results: paginatedSkills,
     status: skillsStatus,
     loadMore,
-  } = usePaginatedQuery(
-    api.skills.listDashboardPaginated,
-    !isSearching && baseOwnerArgs ? baseOwnerArgs : "skip",
-    { initialNumItems: 50 },
-  );
-
-  // Search mode: server-side filter
-  const searchResults = useQuery(
-    api.skills.searchDashboard,
-    isSearching && baseOwnerArgs
-      ? { ...baseOwnerArgs, search: deferredSearch, limit: 200 }
-      : "skip",
-  ) as DashboardSkill[] | undefined;
-
-  const mySkills = isSearching ? searchResults : (paginatedSkills as DashboardSkill[] | undefined);
+  } = usePaginatedQuery(api.skills.listDashboardPaginated, skillsQueryArgs, {
+    initialNumItems: 50,
+  });
+  const mySkills = paginatedSkills as DashboardSkill[] | undefined;
 
   const myPackages = useQuery(
     api.packages.list,
@@ -200,28 +182,7 @@ function Dashboard() {
                 </p>
               </div>
             </div>
-            <div className="dashboard-toolbar">
-              <div className="dashboard-search">
-                <Search className="dashboard-search-icon" size={16} aria-hidden="true" />
-                <input
-                  className="dashboard-search-input"
-                  type="text"
-                  placeholder="Search skills by name or description..."
-                  value={skillSearch}
-                  onChange={(e) => setSkillSearch(e.target.value)}
-                />
-                {skillSearch && (
-                  <button
-                    className="dashboard-search-clear"
-                    onClick={() => setSkillSearch("")}
-                    aria-label="Clear search"
-                  >
-                    &times;
-                  </button>
-                )}
-              </div>
-            </div>
-            {skills.length === 0 && !isSearching ? (
+            {skills.length === 0 ? (
               <div className="dashboard-inline-empty">
                 <div className="dashboard-inline-empty-copy">
                   <strong>No skills yet.</strong> Publish your first skill to share it with the community.
@@ -230,12 +191,6 @@ function Dashboard() {
                   <Upload className="h-4 w-4" aria-hidden="true" />
                   Publish Skill
                 </Link>
-              </div>
-            ) : skills.length === 0 && isSearching ? (
-              <div className="dashboard-inline-empty">
-                <div className="dashboard-inline-empty-copy">
-                  No skills matching &ldquo;{deferredSearch}&rdquo;.
-                </div>
               </div>
             ) : (
               <div className="dashboard-list">
@@ -250,14 +205,14 @@ function Dashboard() {
                 ))}
               </div>
             )}
-            {!isSearching && skillsStatus === "CanLoadMore" && (
+            {skillsStatus === "CanLoadMore" && (
               <div className="dashboard-load-more">
                 <button className="btn" onClick={() => loadMore(50)}>
                   Load More
                 </button>
               </div>
             )}
-            {!isSearching && skillsStatus === "LoadingMore" && (
+            {skillsStatus === "LoadingMore" && (
               <div className="dashboard-load-more">
                 <Loader2 className="dashboard-spinner" size={20} />
                 <span>Loading more skills...</span>

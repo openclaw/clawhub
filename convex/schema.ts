@@ -331,10 +331,7 @@ const skills = defineTable({
     "statsInstallsAllTime",
     "updatedAt",
   ])
-  .searchIndex("search_dashboard", {
-    searchField: "displayName",
-    filterFields: ["ownerUserId", "ownerPublisherId", "softDeletedAt"],
-  });
+;
 
 const skillSlugAliases = defineTable({
   slug: v.string(),
@@ -610,7 +607,7 @@ const skillSearchDigest = defineTable({
     "isSuspicious",
     "statsInstallsAllTime",
     "updatedAt",
-  ]);
+  ])
 
 const packages = defineTable({
   name: v.string(),

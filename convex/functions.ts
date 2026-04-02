@@ -331,7 +331,6 @@ triggers.register("skills", async (ctx, change) => {
   } else {
     await syncSkillSearchDigestForSkill(ctx, change.newDoc);
   }
-
 });
 
 triggers.register("packages", async (ctx, change) => {
