@@ -3589,6 +3589,7 @@ describe("httpApiV1 handlers", () => {
       repositoryOwner: "openclaw",
       repositoryOwnerId: "2",
       workflowFilename: "plugin-clawhub-release.yml",
+      environment: "clawhub-release",
       runId: "101",
       runAttempt: "1",
       sha: "abc123",

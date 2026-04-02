@@ -730,7 +730,7 @@ export async function mintPublishTokenV1Handler(ctx: ActionCtx, request: Request
         repositoryOwner: verified.repositoryOwner,
         repositoryOwnerId: verified.repositoryOwnerId,
         workflowFilename: verified.workflowFilename,
-        ...(verified.environment ? { environment: verified.environment } : {}),
+        ...(trustedPublisher.environment ? { environment: trustedPublisher.environment } : {}),
         runId: verified.runId,
         runAttempt: verified.runAttempt,
         sha: verified.sha,
