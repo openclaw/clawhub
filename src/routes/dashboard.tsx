@@ -119,12 +119,6 @@ function Dashboard() {
 
   const mySkills = isSearching ? searchResults : (paginatedSkills as DashboardSkill[] | undefined);
 
-  // Total published skill count (lightweight query for header)
-  const totalSkillCount = useQuery(
-    api.skills.countDashboard,
-    baseOwnerArgs ?? "skip",
-  );
-
   const myPackages = useQuery(
     api.packages.list,
     selectedPublisherId
@@ -200,12 +194,7 @@ function Dashboard() {
           <section className="dashboard-collection-block">
             <div className="dashboard-section-header">
               <div>
-                <h2 className="dashboard-collection-title">
-                  Publisher Skills
-                  {totalSkillCount != null && (
-                    <span className="dashboard-collection-count">{totalSkillCount}</span>
-                  )}
-                </h2>
+                <h2 className="dashboard-collection-title">Publisher Skills</h2>
                 <p className="section-subtitle" style={{ margin: "6px 0 0" }}>
                   Hidden skill versions remain visible here while checks are pending.
                 </p>

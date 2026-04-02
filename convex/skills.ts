@@ -2253,41 +2253,6 @@ export const listDashboardPaginated = query({
   },
 });
 
-/** Total active skill count for a given owner — reads the denormalized
- *  `activeSkillCount` on the publisher record (maintained by a Trigger).
- *  Only the owner or a publisher member may read the count. */
-export const countDashboard = query({
-  args: {
-    ownerUserId: v.optional(v.id("users")),
-    ownerPublisherId: v.optional(v.id("publishers")),
-  },
-  handler: async (ctx, args) => {
-    const userId = await getAuthUserId(ctx);
-    if (!userId) return 0;
-
-    const publisher = await getOwnerPublisher(ctx, {
-      ownerPublisherId: args.ownerPublisherId ?? null,
-      ownerUserId: args.ownerUserId ?? null,
-    });
-    if (!publisher) return 0;
-
-    // Ownership check
-    if (publisher.kind === "user") {
-      if (publisher.linkedUserId !== userId) return 0;
-    } else {
-      const membership = await ctx.db
-        .query("publisherMembers")
-        .withIndex("by_publisher_user", (q) =>
-          q.eq("publisherId", publisher._id).eq("userId", userId),
-        )
-        .unique();
-      if (!membership) return 0;
-    }
-
-    return publisher.activeSkillCount ?? 0;
-  },
-});
-
 /** Map skills to public shape, including pending-review items for owners. */
 function toDashboardPage(skills: Doc<"skills">[], isOwnDashboard: boolean) {
   return skills

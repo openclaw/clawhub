@@ -6,18 +6,11 @@ vi.mock("@convex-dev/auth/server", () => ({
   authTables: {},
 }));
 
-import { countDashboard, searchDashboard } from "./skills";
+import { searchDashboard } from "./skills";
 
 type WrappedHandler<TArgs, TResult = unknown> = {
   _handler: (ctx: unknown, args: TArgs) => Promise<TResult>;
 };
-
-const countHandler = (
-  countDashboard as unknown as WrappedHandler<
-    { ownerUserId?: string; ownerPublisherId?: string },
-    number
-  >
-)._handler;
 
 const searchHandler = (
   searchDashboard as unknown as WrappedHandler<
@@ -117,90 +110,6 @@ function makeCtx(
     },
   };
 }
-
-// ---------------------------------------------------------------------------
-// countDashboard
-// ---------------------------------------------------------------------------
-
-describe("skills.countDashboard", () => {
-  function makeCountCtx(publisher: Record<string, unknown> | null, membership: unknown = null) {
-    return {
-      db: {
-        get: vi.fn(async (id: string) => {
-          if (id === "users:owner") {
-            return { _id: "users:owner", _creationTime: 1, handle: "owner", displayName: "Owner" };
-          }
-          if (id === "publishers:pub") return publisher;
-          return null;
-        }),
-        query: vi.fn((table: string) => {
-          if (table === "publishers") {
-            return {
-              withIndex: vi.fn(() => ({
-                unique: vi.fn().mockResolvedValue(publisher),
-              })),
-            };
-          }
-          if (table === "publisherMembers") {
-            return {
-              withIndex: vi.fn(() => ({
-                unique: vi.fn().mockResolvedValue(membership),
-              })),
-            };
-          }
-          throw new Error(`unexpected table ${table}`);
-        }),
-      },
-    };
-  }
-
-  const personalPublisher = {
-    _id: "publishers:pub",
-    _creationTime: 1,
-    kind: "user",
-    handle: "owner",
-    displayName: "Owner",
-    linkedUserId: "users:owner",
-    activeSkillCount: 42,
-    createdAt: 1,
-    updatedAt: 1,
-  };
-
-  it("reads denormalized activeSkillCount for authenticated owner", async () => {
-    vi.mocked(getAuthUserId).mockResolvedValue("users:owner" as never);
-    const ctx = makeCountCtx(personalPublisher);
-    const result = await countHandler(ctx as never, { ownerPublisherId: "publishers:pub" } as never);
-    expect(result).toBe(42);
-  });
-
-  it("returns 0 when not authenticated", async () => {
-    vi.mocked(getAuthUserId).mockResolvedValue(null as never);
-    const ctx = makeCountCtx(personalPublisher);
-    const result = await countHandler(ctx as never, { ownerPublisherId: "publishers:pub" } as never);
-    expect(result).toBe(0);
-  });
-
-  it("returns 0 when caller is not the owner", async () => {
-    vi.mocked(getAuthUserId).mockResolvedValue("users:other" as never);
-    const ctx = makeCountCtx(personalPublisher);
-    const result = await countHandler(ctx as never, { ownerPublisherId: "publishers:pub" } as never);
-    expect(result).toBe(0);
-  });
-
-  it("returns 0 when no owner specified", async () => {
-    vi.mocked(getAuthUserId).mockResolvedValue("users:owner" as never);
-    const ctx = makeCountCtx(null);
-    const result = await countHandler(ctx as never, {});
-    expect(result).toBe(0);
-  });
-
-  it("defaults to 0 when activeSkillCount is not yet backfilled", async () => {
-    vi.mocked(getAuthUserId).mockResolvedValue("users:owner" as never);
-    const ctx = makeCountCtx({ ...personalPublisher, activeSkillCount: undefined });
-    const result = await countHandler(ctx as never, { ownerPublisherId: "publishers:pub" } as never);
-    expect(result).toBe(0);
-  });
-});
 
 // ---------------------------------------------------------------------------
 // searchDashboard
