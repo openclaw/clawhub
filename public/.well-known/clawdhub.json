@@ -1,0 +1,6 @@
+{
+  "apiBase": "https://clawhub.ai",
+  "authBase": "https://clawhub.ai",
+  "minCliVersion": "0.1.0",
+  "registry": "https://clawhub.ai"
+}
