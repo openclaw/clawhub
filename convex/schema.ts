@@ -330,8 +330,7 @@ const skills = defineTable({
     "isSuspicious",
     "statsInstallsAllTime",
     "updatedAt",
-  ])
-;
+  ]);
 
 const skillSlugAliases = defineTable({
   slug: v.string(),
@@ -607,7 +606,7 @@ const skillSearchDigest = defineTable({
     "isSuspicious",
     "statsInstallsAllTime",
     "updatedAt",
-  ])
+  ]);
 
 const packages = defineTable({
   name: v.string(),
