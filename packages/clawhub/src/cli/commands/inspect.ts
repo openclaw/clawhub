@@ -145,6 +145,8 @@ export async function cmdInspect(opts: GlobalOpts, slug: string, options: Inspec
     if (shouldPrintMeta && versionResult?.version) {
       printVersionSummary(versionResult.version);
       printSecuritySummary(versionResult.version);
+    } else if (shouldPrintMeta) {
+      printModerationSummary(skillResult.moderation ?? null);
     }
 
     if (versionsList?.items && Array.isArray(versionsList.items)) {
@@ -295,6 +297,31 @@ function printSecuritySummary(version: unknown) {
   }
   if (sec.model) {
     console.log(`Model: ${sec.model}`);
+  }
+}
+
+function printModerationSummary(
+  moderation: {
+    isSuspicious?: boolean;
+    isMalwareBlocked?: boolean;
+    verdict?: string | null;
+    updatedAt?: number | null;
+    engineVersion?: string | null;
+  } | null,
+) {
+  if (!moderation) return;
+  const verdict = moderation.verdict ?? "clean";
+  console.log(`Security: ${verdict.toUpperCase()}`);
+  if (moderation.isMalwareBlocked) {
+    console.log("Malware: blocked");
+  } else if (moderation.isSuspicious) {
+    console.log("Suspicious: yes");
+  }
+  if (typeof moderation.updatedAt === "number") {
+    console.log(`Checked: ${formatTimestamp(moderation.updatedAt)}`);
+  }
+  if (moderation.engineVersion) {
+    console.log(`Engine: ${moderation.engineVersion}`);
   }
 }
 

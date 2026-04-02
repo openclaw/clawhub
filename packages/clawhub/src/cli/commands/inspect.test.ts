@@ -132,6 +132,92 @@ describe("cmdInspect", () => {
     expect(mockLog).toHaveBeenCalledWith("Model: gpt-5.2");
   });
 
+  it("prints skill-level moderation status on plain inspect (no version flags)", async () => {
+    httpMocks.apiRequest.mockResolvedValueOnce({
+      skill: {
+        slug: "demo",
+        displayName: "Demo",
+        summary: null,
+        tags: { latest: "1.0.0" },
+        stats: {},
+        createdAt: 1,
+        updatedAt: 2,
+      },
+      latestVersion: { version: "1.0.0", createdAt: 3, changelog: "init", license: null },
+      owner: null,
+      moderation: {
+        isSuspicious: true,
+        isMalwareBlocked: false,
+        verdict: "suspicious",
+        reasonCodes: ["env-leak"],
+        updatedAt: 1_700_000_000_000,
+        engineVersion: "v2",
+        summary: null,
+      },
+    });
+
+    await cmdInspect(makeGlobalOpts(), "demo");
+
+    expect(mockLog).toHaveBeenCalledWith("Security: SUSPICIOUS");
+    expect(mockLog).toHaveBeenCalledWith("Suspicious: yes");
+    expect(mockLog).toHaveBeenCalledWith("Checked: 2023-11-14T22:13:20.000Z");
+    expect(mockLog).toHaveBeenCalledWith("Engine: v2");
+  });
+
+  it("shows Security: CLEAN for a clean skill on plain inspect", async () => {
+    httpMocks.apiRequest.mockResolvedValueOnce({
+      skill: {
+        slug: "demo",
+        displayName: "Demo",
+        summary: null,
+        tags: { latest: "1.0.0" },
+        stats: {},
+        createdAt: 1,
+        updatedAt: 2,
+      },
+      latestVersion: { version: "1.0.0", createdAt: 3, changelog: "init", license: null },
+      owner: null,
+      moderation: {
+        isSuspicious: false,
+        isMalwareBlocked: false,
+        verdict: "clean",
+        reasonCodes: [],
+        updatedAt: null,
+        engineVersion: null,
+        summary: null,
+      },
+    });
+
+    await cmdInspect(makeGlobalOpts(), "demo");
+
+    expect(mockLog).toHaveBeenCalledWith("Security: CLEAN");
+    expect(mockLog).not.toHaveBeenCalledWith("Suspicious: yes");
+    expect(mockLog).not.toHaveBeenCalledWith("Malware: blocked");
+  });
+
+  it("skips security block when moderation is absent", async () => {
+    httpMocks.apiRequest.mockResolvedValueOnce({
+      skill: {
+        slug: "demo",
+        displayName: "Demo",
+        summary: null,
+        tags: { latest: "1.0.0" },
+        stats: {},
+        createdAt: 1,
+        updatedAt: 2,
+      },
+      latestVersion: { version: "1.0.0", createdAt: 3, changelog: "init", license: null },
+      owner: null,
+    });
+
+    await cmdInspect(makeGlobalOpts(), "demo");
+
+    const securityCalls = mockLog.mock.calls.filter((args) =>
+      String(args[0]).startsWith("Security:"),
+    );
+    expect(securityCalls).toHaveLength(0);
+  });
+
   it("rejects when both version and tag are provided", async () => {
     await expect(
       cmdInspect(makeGlobalOpts(), "demo", { version: "1.0.0", tag: "latest" }),
