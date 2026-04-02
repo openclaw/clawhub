@@ -230,7 +230,7 @@ program
 
 program
   .command("list")
-  .description("List installed skills (from lockfile)")
+  .description("List installed skills (tracked and manually installed)")
   .action(async () => {
     const opts = await resolveGlobalOpts();
     await cmdList(opts);

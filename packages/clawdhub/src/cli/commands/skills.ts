@@ -13,6 +13,7 @@ import {
 import {
   extractZipToDir,
   hashSkillFiles,
+  listManualSkills,
   listTextFiles,
   readLockfile,
   readSkillOrigin,
@@ -317,12 +318,30 @@ export async function cmdUpdate(
 export async function cmdList(opts: GlobalOpts) {
   const lock = await readLockfile(opts.workdir);
   const entries = Object.entries(lock.skills);
-  if (entries.length === 0) {
+
+  // Get manually installed skills (those in skills dir but not in lockfile)
+  const lockedSlugs = new Set(Object.keys(lock.skills));
+  const manualSkills = await listManualSkills(opts.dir, lockedSlugs);
+
+  if (entries.length === 0 && manualSkills.length === 0) {
     console.log("No installed skills.");
     return;
   }
+
+  // Display tracked skills (from lockfile)
   for (const [slug, entry] of entries) {
     console.log(`${slug}  ${entry.version ?? "latest"}`);
+  }
+
+  // Display manually installed skills
+  if (manualSkills.length > 0) {
+    if (entries.length > 0) {
+      console.log(); // Empty line separator
+    }
+    console.log("Manually installed (not tracked by clawhub):");
+    for (const slug of manualSkills) {
+      console.log(`  ${slug}`);
+    }
   }
 }
 
