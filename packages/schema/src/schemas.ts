@@ -335,6 +335,18 @@ export const ApiV1SetRoleResponseSchema = type({
   role: '"admin"|"moderator"|"user"',
 });
 
+export const ApiV1StarsListResponseSchema = type({
+  items: type({
+    slug: "string",
+    displayName: "string",
+    summary: "string|null?",
+    tags: "unknown",
+    stats: "unknown",
+    createdAt: "number",
+    updatedAt: "number",
+  }).array(),
+});
+
 export const ApiV1StarResponseSchema = type({
   ok: "true",
   starred: "boolean",

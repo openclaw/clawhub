@@ -8,6 +8,7 @@ import {
   CliSkillDeleteRequestSchema,
   LockfileSchema,
   WellKnownConfigSchema,
+  ApiV1StarsListResponseSchema,
 } from "./schemas";
 
 describe("clawhub-schema", () => {
@@ -130,5 +131,69 @@ describe("clawhub-schema", () => {
     expect(parseArk(CliSkillDeleteRequestSchema, { slug: "demo" }, "Delete")).toEqual({
       slug: "demo",
     });
+  });
+});
+
+describe("ApiV1StarsListResponseSchema", () => {
+  it("accepts a valid stars list response", () => {
+    const input = {
+      items: [
+        {
+          slug: "my-skill",
+          displayName: "My Skill",
+          tags: [],
+          stats: {},
+          createdAt: 1710000000000,
+          updatedAt: 1710000000000,
+        },
+      ],
+    };
+    const result = parseArk(ApiV1StarsListResponseSchema, input, "StarsList");
+    expect(result).toMatchObject(input);
+  });
+
+  it("accepts optional summary field", () => {
+    const input = {
+      items: [
+        {
+          slug: "my-skill",
+          displayName: "My Skill",
+          summary: "Does something useful",
+          tags: [],
+          stats: {},
+          createdAt: 1710000000000,
+          updatedAt: 1710000000000,
+        },
+      ],
+    };
+    expect(parseArk(ApiV1StarsListResponseSchema, input, "StarsList")).toMatchObject(input);
+  });
+
+  it("accepts null summary", () => {
+    const input = {
+      items: [
+        {
+          slug: "my-skill",
+          displayName: "My Skill",
+          summary: null,
+          tags: [],
+          stats: {},
+          createdAt: 1710000000000,
+          updatedAt: 1710000000000,
+        },
+      ],
+    };
+    expect(parseArk(ApiV1StarsListResponseSchema, input, "StarsList")).toMatchObject(input);
+  });
+
+  it("rejects missing required fields", () => {
+    const input = {
+      items: [{ slug: "my-skill" }], // missing displayName, tags, stats, etc.
+    };
+    expect(() => parseArk(ApiV1StarsListResponseSchema, input, "StarsList")).toThrow(/StarsList:/);
+  });
+
+  it("accepts an empty items array", () => {
+    expect(parseArk(ApiV1StarsListResponseSchema, { items: [] }, "StarsList")).toMatchObject({ items: [] });
   });
 });
