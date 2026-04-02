@@ -2161,7 +2161,7 @@ describe("packages public queries", () => {
     });
   });
 
-  it("allows tag-based token publishes for packages with trusted publisher config", async () => {
+  it("requires manual override for user-auth publishes when trusted publisher config exists", async () => {
     const runMutation = vi.fn(async (_ref: unknown, args: unknown) => {
       if (
         typeof args === "object" &&
@@ -2237,11 +2237,7 @@ describe("packages public queries", () => {
           files: [],
         },
       }),
-    ).resolves.toMatchObject({
-      ok: true,
-      packageId: "packages:demo",
-      releaseId: "packageReleases:demo-2",
-    });
+    ).rejects.toThrow("Manual publishes for packages with trusted publisher config require manualOverrideReason");
   });
 
   it("scans plugin publishes and forwards scan status to insertReleaseInternal", async () => {

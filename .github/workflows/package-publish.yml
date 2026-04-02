@@ -129,6 +129,7 @@ jobs:
           DRY_RUN: ${{ inputs.dry_run }}
           JSON_MODE: ${{ inputs.json }}
           CLAWHUB_TOKEN: ${{ secrets.clawhub_token }}
+          GITHUB_EVENT_NAME: ${{ github.event_name }}
         run: |
           if [[ "$JSON_MODE" != "true" ]]; then
             echo "::warning::This reusable workflow always emits JSON output; forcing --json for downstream parsing."
@@ -139,11 +140,11 @@ jobs:
           if [[ -n "$CLAWHUB_TOKEN" ]]; then
             exit 0
           fi
-          if [[ -n "${ACTIONS_ID_TOKEN_REQUEST_URL:-}" && -n "${ACTIONS_ID_TOKEN_REQUEST_TOKEN:-}" ]]; then
+          if [[ "$GITHUB_EVENT_NAME" == "workflow_dispatch" && -n "${ACTIONS_ID_TOKEN_REQUEST_URL:-}" && -n "${ACTIONS_ID_TOKEN_REQUEST_TOKEN:-}" ]]; then
             echo "No ClawHub token provided; publish will rely on GitHub OIDC trusted publishing."
             exit 0
           fi
-          echo "::error::Real publishes need either secrets.clawhub_token or GitHub OIDC (permissions.id-token=write)."
+          echo "::error::Real publishes need secrets.clawhub_token, or GitHub OIDC on workflow_dispatch runs (permissions.id-token=write)."
           exit 1
 
       - name: Write ClawHub config
@@ -190,6 +191,9 @@ jobs:
           INPUT_SOURCE_REF: ${{ inputs.source_ref }}
           INPUT_SITE: ${{ inputs.site }}
           INPUT_REGISTRY: ${{ inputs.registry }}
+          CLAWHUB_TOKEN: ${{ secrets.clawhub_token }}
+          GITHUB_EVENT_NAME: ${{ github.event_name }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
           GITHUB_REF: ${{ github.ref }}
           GITHUB_SHA: ${{ github.sha }}
         run: |
@@ -202,13 +206,10 @@ jobs:
           source = os.environ["INPUT_SOURCE"].strip()
           if not source:
               source = os.environ["GITHUB_REPOSITORY"]
+          source_is_current_repo = source == os.environ["GITHUB_REPOSITORY"]
           ref = os.environ["INPUT_REF"].strip()
-          if not ref and source == os.environ["GITHUB_REPOSITORY"]:
-              github_ref = os.environ["GITHUB_REF"].strip()
-              if github_ref.startswith("refs/tags/"):
-                  ref = github_ref
-              else:
-                  ref = os.environ["GITHUB_SHA"].strip()
+          if not ref and source_is_current_repo:
+              ref = os.environ["GITHUB_SHA"].strip()
           is_local_source = source.startswith(".") or source.startswith("/") or Path(source).exists()
           if ref and "@" not in source and not source.startswith("http") and not is_local_source:
               source = f"{source}@{ref}"
@@ -247,6 +248,19 @@ jobs:
               cmd += ["--source-commit", source_commit]
           if source_ref:
               cmd += ["--source-ref", source_ref]
+          elif source_is_current_repo:
+              github_ref = os.environ["GITHUB_REF"].strip()
+              if github_ref:
+                  cmd += ["--source-ref", github_ref]
+          if (
+              os.environ["INPUT_DRY_RUN"] != "true"
+              and os.environ["CLAWHUB_TOKEN"].strip()
+              and os.environ["GITHUB_EVENT_NAME"].strip() != "workflow_dispatch"
+          ):
+              cmd += [
+                  "--manual-override-reason",
+                  f"GitHub Actions {os.environ['GITHUB_EVENT_NAME'].strip()} publish via CLAWHUB_TOKEN",
+              ]
 
           path = Path(os.environ["RUNNER_TEMP"]) / "clawhub-package-publish-command.sh"
           shell_line = " ".join(shlex.quote(part) for part in cmd)
