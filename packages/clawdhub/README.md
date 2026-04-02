@@ -50,10 +50,18 @@ clawhub package publish ./example-plugin
 
 This repo also provides an official reusable workflow for plugin repos:
 
-- [`/.github/workflows/package-publish.yml`](/Users/tengjizhang/.codex/worktrees/7d03/clawhub/.github/workflows/package-publish.yml)
+- [`.github/workflows/package-publish.yml`](../../.github/workflows/package-publish.yml)
 
 Use `dry_run: true` on pull requests and reserve real publishes for trusted events
 such as `workflow_dispatch` or tag pushes with a `CLAWHUB_TOKEN` secret.
+
+## Maintainers
+
+The `clawhub` npm package is released separately from the ClawHub app deploy.
+
+- Release workflow: [`.github/workflows/clawhub-cli-npm-release.yml`](../../.github/workflows/clawhub-cli-npm-release.yml)
+- Release model: manual-only, stable tags only (`vX.Y.Z`), with a preflight run before the real publish
+- Publish auth: npm trusted publishing through the `npm-release` GitHub environment
 
 ## Development
 
