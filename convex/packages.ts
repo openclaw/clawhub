@@ -1,4 +1,3 @@
-import { getAuthUserId } from "@convex-dev/auth/server";
 import { paginationOptsValidator } from "convex/server";
 import { ConvexError, v } from "convex/values";
 import {
@@ -498,7 +497,7 @@ function decodePublicPageCursor(raw: string | null | undefined): PublicPageCurso
   }
 }
 
-async function getOptionalViewerUserId(ctx: Parameters<typeof getAuthUserId>[0]) {
+async function getOptionalViewerUserId(ctx: QueryCtx | MutationCtx) {
   return await getOptionalActiveAuthUserId(ctx);
 }
 
