@@ -130,6 +130,7 @@ For full setup instructions (env vars, GitHub OAuth, JWT keys, database seeding)
 - `OPENAI_API_KEY`: embeddings for search + indexing.
 
 ## Nix plugins (nixmode skills)
+- [skill-taxonomy](https://github.com/SeeleAI/skill-taxonomy) - Structured taxonomy for AI agent skills: discovery, classification and routing across multi-agent workflows.
 
 ClawHub can store a nix-clawdbot plugin pointer in SKILL frontmatter so the registry knows which
 Nix package bundle to install. A nix plugin is different from a regular skill pack: it bundles the
