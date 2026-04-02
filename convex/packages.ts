@@ -221,6 +221,7 @@ type PublicPackageDoc = {
   capabilities?: Doc<"packages">["capabilities"];
   verification?: Doc<"packages">["verification"];
   scanStatus?: Doc<"packages">["scanStatus"];
+  stats: Doc<"packages">["stats"];
   createdAt: number;
   updatedAt: number;
 };
