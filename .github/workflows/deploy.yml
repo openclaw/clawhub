@@ -27,7 +27,7 @@ jobs:
     timeout-minutes: 45
     needs: validate-deploy-request
     environment:
-      name: production
+      name: Production
       url: https://clawhub.ai
     env:
       CONVEX_DEPLOY_KEY: ${{ secrets.CONVEX_DEPLOY_KEY }}
