@@ -30,6 +30,13 @@
 - NEVER use `--typecheck=disable` on `npx convex deploy`.
 - Use `npx convex dev --once` to push functions once (not long-running watcher).
 
+## Production Release
+
+- Production deploys are manual-only. Merging to `main` does **not** deploy.
+- Start the GitHub Actions `Deploy` workflow from `main` with `gh workflow run deploy.yml --repo openclaw/clawhub --ref main`.
+- The workflow waits at the `Production` environment until `openclaw-release-managers` approves it.
+- Required prod secret: `CONVEX_DEPLOY_KEY` on the `Production` environment. Optional smoke secret: `PLAYWRIGHT_AUTH_STORAGE_STATE_JSON`.
+
 ## Testing
 
 - Tests use `._handler` to call mutation handlers directly with mock `db` objects.

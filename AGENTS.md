@@ -42,6 +42,15 @@
 - GitHub comments: for multiline `gh` comments/close messages, use `--body-file`, `--input`, or stdin/heredoc with real newlines; never pass literal `\\n` in shell strings.
 - Reject PRs that add skills into source code/repo content directly (for example under `skills/` or seed-only additions intended as published skills). Skills must be uploaded/published via CLI.
 
+## Production Release
+
+- Production deploys are manual-only. Merging to `main` does **not** deploy.
+- To release production, start the GitHub Actions `Deploy` workflow from `main`:
+  `gh workflow run deploy.yml --repo openclaw/clawhub --ref main`
+- The workflow pauses at the GitHub `Production` environment. A member of the `openclaw-release-managers` team must approve it before any real deploy step runs.
+- Prod deploy secrets live on the `Production` environment, not as ordinary repo secrets. Required: `CONVEX_DEPLOY_KEY`. Optional: `PLAYWRIGHT_AUTH_STORAGE_STATE_JSON`.
+- If you are not in `openclaw-release-managers`, do not treat a started workflow as shipped. Ask that team to approve the pending deployment.
+
 ## Git Notes
 
 - If `git branch -d/-D <branch>` is policy-blocked, delete the local ref directly: `git update-ref -d refs/heads/<branch>`.

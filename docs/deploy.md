@@ -25,20 +25,20 @@ bunx convex deploy
 Or use the GitHub Actions pipeline:
 
 ```bash
-gh workflow run deploy.yml
+gh workflow run deploy.yml --repo openclaw/clawhub --ref main
 ```
 
-GitHub Actions secrets required for `deploy.yml`:
+Production deploy notes:
 
-- `CONVEX_DEPLOY_KEY`
-- Optional: `PLAYWRIGHT_AUTH_STORAGE_STATE_JSON` for authenticated smoke coverage
-
-`deploy.yml` now fails in preflight if `CONVEX_DEPLOY_KEY` is missing. Web deploy
-verification no longer depends on a separate Vercel token in GitHub Actions.
+- `deploy.yml` is manual-only (`workflow_dispatch`). Merging to `main` does not deploy.
+- The workflow must be started from `main`.
+- The real deploy job waits at the GitHub `Production` environment. A member of `openclaw-release-managers` must approve it before deploy continues.
+- Required `Production` environment secret: `CONVEX_DEPLOY_KEY`.
+- Optional `Production` environment secret: `PLAYWRIGHT_AUTH_STORAGE_STATE_JSON` for authenticated smoke coverage.
 
 That workflow assumes Vercel Git integration is enabled for this repo. It does
 not run `vercel deploy` directly; instead it waits for the GitHub commit status
-`Vercel – clawhub` for the pushed SHA, then runs smoke tests against
+`Vercel – clawhub` for the selected SHA, then runs smoke tests against
 production.
 
 Ensure Convex env is set (auth + embeddings):
