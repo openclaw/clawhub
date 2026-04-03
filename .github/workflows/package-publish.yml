@@ -94,19 +94,50 @@ jobs:
 
       - name: Resolve ClawHub workflow source
         id: clawhub_source
-        env:
-          WORKFLOW_REF: ${{ github.workflow_ref }}
-          WORKFLOW_SHA: ${{ github.workflow_sha }}
         run: |
           python3 - <<'PY'
+          import base64
+          import json
           import os
           from pathlib import Path
+          from urllib.request import Request, urlopen
 
-          workflow_ref = os.environ["WORKFLOW_REF"].strip()
-          workflow_sha = os.environ["WORKFLOW_SHA"].strip()
+          request_token = os.environ.get("ACTIONS_ID_TOKEN_REQUEST_TOKEN", "").strip()
+          request_url = os.environ.get("ACTIONS_ID_TOKEN_REQUEST_URL", "").strip()
+          if not request_token or not request_url:
+              raise SystemExit("GitHub OIDC token request env vars are missing; id-token: write is required.")
+
+          audience = "clawhub-workflow-source"
+          joiner = "&" if "?" in request_url else "?"
+          token_url = f"{request_url}{joiner}audience={audience}"
+          request = Request(
+              token_url,
+              headers={"Authorization": f"Bearer {request_token}"},
+          )
+          with urlopen(request) as response:
+              payload = json.load(response)
+
+          token = str(payload.get("value", "")).strip()
+          if not token:
+              raise SystemExit("GitHub OIDC token response did not include a token value.")
+
+          try:
+              encoded_payload = token.split(".")[1]
+          except IndexError as exc:
+              raise SystemExit("GitHub OIDC token was not a valid JWT.") from exc
+          padding = "=" * (-len(encoded_payload) % 4)
+          claims = json.loads(
+              base64.urlsafe_b64decode(encoded_payload + padding).decode("utf-8")
+          )
+
+          workflow_ref = str(claims.get("job_workflow_ref", "")).strip()
+          workflow_sha = str(claims.get("job_workflow_sha", "")).strip()
           repo, marker, _ = workflow_ref.partition("/.github/workflows/")
           if not marker or not repo or not workflow_sha:
-              raise SystemExit(f"Unable to parse github.workflow_ref: {workflow_ref!r}")
+              raise SystemExit(
+                  "Unable to resolve reusable workflow source from GitHub OIDC claims: "
+                  f"job_workflow_ref={workflow_ref!r} job_workflow_sha={workflow_sha!r}"
+              )
 
           output_path = Path(os.environ["GITHUB_OUTPUT"])
           with output_path.open("a", encoding="utf-8") as fh:
@@ -214,9 +245,20 @@ jobs:
           if ref and "@" not in source and not source.startswith("http") and not is_local_source:
               source = f"{source}@{ref}"
 
+          cli_entry = (
+              Path(os.environ["GITHUB_WORKSPACE"])
+              / "clawhub-source"
+              / "packages"
+              / "clawhub"
+              / "src"
+              / "cli.ts"
+          )
+          if not cli_entry.exists():
+              raise SystemExit(f"Missing ClawHub CLI entrypoint at {cli_entry}")
+
           cmd = [
               "bun",
-              "clawhub-source/packages/clawhub/src/cli.ts",
+              str(cli_entry),
               "package",
               "publish",
               source,
@@ -267,6 +309,7 @@ jobs:
 
       - name: Run package publish
         run: |
+          set -euo pipefail
           "$RUNNER_TEMP/clawhub-package-publish-command.sh" | tee "$RUNNER_TEMP/package-publish.json"
 
       - name: Capture workflow outputs
