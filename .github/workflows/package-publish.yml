@@ -102,8 +102,8 @@ jobs:
           from pathlib import Path
           from urllib.request import Request, urlopen
 
-          request_token = os.environ["ACTIONS_ID_TOKEN_REQUEST_TOKEN"].strip()
-          request_url = os.environ["ACTIONS_ID_TOKEN_REQUEST_URL"].strip()
+          request_token = os.environ.get("ACTIONS_ID_TOKEN_REQUEST_TOKEN", "").strip()
+          request_url = os.environ.get("ACTIONS_ID_TOKEN_REQUEST_URL", "").strip()
           if not request_token or not request_url:
               raise SystemExit("GitHub OIDC token request env vars are missing; id-token: write is required.")
 
