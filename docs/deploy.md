@@ -32,6 +32,11 @@ Production deploy notes:
 
 - `deploy.yml` is manual-only (`workflow_dispatch`). Merging to `main` does not deploy.
 - The workflow must be started from `main`.
+- Deploy targets:
+  - `full`: deploy Convex, verify contract, wait for the matching Vercel production deploy, then run smoke tests
+  - `backend`: deploy Convex, verify contract, then run smoke tests against current production
+  - `frontend`: wait for the Vercel production deploy for the selected `main` SHA, then run smoke tests
+- `frontend` does not call `vercel deploy` directly yet. It relies on the existing Vercel Git-based production deploy for that SHA.
 - The real deploy job uses the GitHub `Production` environment for deploy secrets, but it does not wait for a separate approval.
 - Required `Production` environment secret: `CONVEX_DEPLOY_KEY`.
 - Optional `Production` environment secret: `PLAYWRIGHT_AUTH_STORAGE_STATE_JSON` for authenticated smoke coverage.
@@ -65,9 +70,9 @@ CLI release notes:
 - npm trusted publisher must be configured for package `clawhub` with repository `openclaw/clawhub`, workflow `clawhub-cli-npm-release.yml`, and environment `npm-release`.
 
 That workflow assumes Vercel Git integration is enabled for this repo. It does
-not run `vercel deploy` directly; instead it waits for the GitHub commit status
-`Vercel – clawhub` for the selected SHA, then runs smoke tests against
-production.
+not run `vercel deploy` directly; frontend-related steps wait for the GitHub
+commit status `Vercel – clawhub` for the selected SHA, then run smoke tests
+against production.
 
 Ensure Convex env is set (auth + embeddings):
 

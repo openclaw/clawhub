@@ -47,6 +47,8 @@
 - Production deploys are manual-only. Merging to `main` does **not** deploy.
 - To release production, start the GitHub Actions `Deploy` workflow from `main`:
   `gh workflow run deploy.yml --repo openclaw/clawhub --ref main`
+- The workflow supports `full`, `backend`, and `frontend` targets.
+- `frontend` currently means: wait for the Vercel production deploy for the selected `main` SHA, then run production smoke checks. It does not call `vercel deploy` directly yet.
 - The workflow uses the GitHub `Production` environment for deploy secrets, but it does not require a separate approval step.
 - Prod deploy secrets live on the `Production` environment, not as ordinary repo secrets. Required: `CONVEX_DEPLOY_KEY`. Optional: `PLAYWRIGHT_AUTH_STORAGE_STATE_JSON`.
 - CLI npm releases are also manual-only and tag-based. Stable tags only: `vX.Y.Z`. Start `ClawHub CLI NPM Release` from `main`, first with `preflight_only=true`, then rerun it with the same tag and the successful `preflight_run_id`.
