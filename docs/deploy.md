@@ -32,7 +32,7 @@ Production deploy notes:
 
 - `deploy.yml` is manual-only (`workflow_dispatch`). Merging to `main` does not deploy.
 - The workflow must be started from `main`.
-- The real deploy job waits at the GitHub `Production` environment. A member of `openclaw-release-managers` must approve it before deploy continues.
+- The real deploy job uses the GitHub `Production` environment for deploy secrets, but it does not wait for a separate approval.
 - Required `Production` environment secret: `CONVEX_DEPLOY_KEY`.
 - Optional `Production` environment secret: `PLAYWRIGHT_AUTH_STORAGE_STATE_JSON` for authenticated smoke coverage.
 

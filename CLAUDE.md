@@ -34,7 +34,7 @@
 
 - Production deploys are manual-only. Merging to `main` does **not** deploy.
 - Start the GitHub Actions `Deploy` workflow from `main` with `gh workflow run deploy.yml --repo openclaw/clawhub --ref main`.
-- The workflow waits at the `Production` environment until `openclaw-release-managers` approves it.
+- The workflow uses the `Production` environment for deploy secrets, but it does not wait for a separate approval.
 - Required prod secret: `CONVEX_DEPLOY_KEY` on the `Production` environment. Optional smoke secret: `PLAYWRIGHT_AUTH_STORAGE_STATE_JSON`.
 - CLI npm releases are manual-only and tag-based through `ClawHub CLI NPM Release`. Stable tags only: `vX.Y.Z`. Run a `preflight_only=true` pass first, then rerun with the same tag plus `preflight_run_id` for the real publish.
 - Real CLI publishes wait at `npm-release` and rely on npm trusted publishing for `openclaw/clawhub` + `clawhub-cli-npm-release.yml` + `npm-release`.
