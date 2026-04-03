@@ -216,7 +216,7 @@ jobs:
 
           cmd = [
               "bun",
-              "clawhub-source/packages/clawhub/src/cli.ts",
+              "./clawhub-source/packages/clawhub/src/cli.ts",
               "package",
               "publish",
               source,
@@ -267,6 +267,7 @@ jobs:
 
       - name: Run package publish
         run: |
+          set -euo pipefail
           "$RUNNER_TEMP/clawhub-package-publish-command.sh" | tee "$RUNNER_TEMP/package-publish.json"
 
       - name: Capture workflow outputs
