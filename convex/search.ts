@@ -50,7 +50,7 @@ const SLUG_PREFIX_BOOST = 0.8;
 const NAME_EXACT_BOOST = 1.1;
 const NAME_PREFIX_BOOST = 0.6;
 const POPULARITY_WEIGHT = 0.08;
-const FALLBACK_SCAN_LIMIT = 500;
+const FALLBACK_SCAN_LIMIT = 2000;
 
 function getNextCandidateLimit(current: number, max: number) {
   const next = Math.min(current * 2, max);
@@ -361,13 +361,22 @@ export const lexicalFallbackSkills = internalQuery({
     }
 
     // Scan recent active digests (~800 bytes each) instead of full skill docs (~3-5KB).
-    const recentDigests = await ctx.db
-      .query("skillSearchDigest")
-      .withIndex("by_active_updated", (q) => q.eq("softDeletedAt", undefined))
-      .order("desc")
-      .take(FALLBACK_SCAN_LIMIT);
+    // Use two scan windows (updatedAt + createdAt) to cover both recently modified
+    // and recently published skills that may not overlap in the top N entries.
+    const [recentByUpdated, recentByCreated] = await Promise.all([
+      ctx.db
+        .query("skillSearchDigest")
+        .withIndex("by_active_updated", (q) => q.eq("softDeletedAt", undefined))
+        .order("desc")
+        .take(FALLBACK_SCAN_LIMIT),
+      ctx.db
+        .query("skillSearchDigest")
+        .withIndex("by_active_created", (q) => q.eq("softDeletedAt", undefined))
+        .order("desc")
+        .take(FALLBACK_SCAN_LIMIT),
+    ]);
 
-    for (const digest of recentDigests) {
+    for (const digest of [...recentByUpdated, ...recentByCreated]) {
       if (seenSkillIds.has(digest.skillId)) continue;
       const skill = digestToHydratableSkill(digest);
       if (args.nonSuspiciousOnly && isSkillSuspicious(skill)) continue;
