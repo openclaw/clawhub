@@ -2,6 +2,16 @@ name: Deploy
 
 on:
   workflow_dispatch:
+    inputs:
+      target:
+        description: "What to deploy"
+        required: true
+        default: full
+        type: choice
+        options:
+          - full
+          - backend
+          - frontend
 
 concurrency:
   group: deploy-production
@@ -11,6 +21,11 @@ jobs:
   validate-deploy-request:
     runs-on: ubuntu-latest
     timeout-minutes: 5
+    outputs:
+      deploy_backend: ${{ steps.mode.outputs.deploy_backend }}
+      deploy_frontend: ${{ steps.mode.outputs.deploy_frontend }}
+      run_smoke: ${{ steps.mode.outputs.run_smoke }}
+      target: ${{ steps.mode.outputs.target }}
     steps:
       - name: Require main ref for production deploy
         run: |
@@ -19,6 +34,34 @@ jobs:
             echo "Production deploys must run from main."
             exit 1
           fi
+
+      - name: Resolve deploy mode
+        id: mode
+        run: |
+          set -euo pipefail
+          target="${{ inputs.target }}"
+          case "$target" in
+            full)
+              echo "deploy_backend=true" >> "$GITHUB_OUTPUT"
+              echo "deploy_frontend=true" >> "$GITHUB_OUTPUT"
+              echo "run_smoke=true" >> "$GITHUB_OUTPUT"
+              ;;
+            backend)
+              echo "deploy_backend=true" >> "$GITHUB_OUTPUT"
+              echo "deploy_frontend=false" >> "$GITHUB_OUTPUT"
+              echo "run_smoke=true" >> "$GITHUB_OUTPUT"
+              ;;
+            frontend)
+              echo "deploy_backend=false" >> "$GITHUB_OUTPUT"
+              echo "deploy_frontend=true" >> "$GITHUB_OUTPUT"
+              echo "run_smoke=true" >> "$GITHUB_OUTPUT"
+              ;;
+            *)
+              echo "Unsupported deploy target: $target" >&2
+              exit 1
+              ;;
+          esac
+          echo "target=$target" >> "$GITHUB_OUTPUT"
 
   deploy-production:
     runs-on: ubuntu-latest
@@ -32,12 +75,12 @@ jobs:
       PLAYWRIGHT_AUTH_STORAGE_STATE_JSON: ${{ secrets.PLAYWRIGHT_AUTH_STORAGE_STATE_JSON }}
       PLAYWRIGHT_BASE_URL: https://clawhub.ai
     steps:
-      - name: Check deploy secrets
+      - name: Check deploy configuration
         run: |
           set -euo pipefail
           missing=()
 
-          if [[ -z "$CONVEX_DEPLOY_KEY" ]]; then
+          if [[ "${{ needs.validate-deploy-request.outputs.deploy_backend }}" == "true" && -z "$CONVEX_DEPLOY_KEY" ]]; then
             missing+=("CONVEX_DEPLOY_KEY")
           fi
 
@@ -45,6 +88,8 @@ jobs:
             echo "::error::Missing required production environment secrets: ${missing[*]}"
             exit 1
           fi
+
+          echo "Deploy target: ${{ needs.validate-deploy-request.outputs.target }}"
 
           if [[ -z "$PLAYWRIGHT_AUTH_STORAGE_STATE_JSON" ]]; then
             echo "PLAYWRIGHT_AUTH_STORAGE_STATE_JSON not set; authenticated smoke will be skipped."
@@ -60,18 +105,23 @@ jobs:
         run: bun install --frozen-lockfile
 
       - name: Stamp Convex build SHA
+        if: needs.validate-deploy-request.outputs.deploy_backend == 'true'
         run: bunx convex env set APP_BUILD_SHA "${GITHUB_SHA}" --prod
 
       - name: Stamp Convex deploy time
+        if: needs.validate-deploy-request.outputs.deploy_backend == 'true'
         run: bunx convex env set APP_DEPLOYED_AT "$(date -u +"%Y-%m-%dT%H:%M:%SZ")" --prod
 
       - name: Deploy Convex
+        if: needs.validate-deploy-request.outputs.deploy_backend == 'true'
         run: bun run convex:deploy
 
       - name: Verify Convex contract
+        if: needs.validate-deploy-request.outputs.deploy_backend == 'true'
         run: bun run verify:convex-contract -- --prod
 
       - name: Wait for Vercel production deployment
+        if: needs.validate-deploy-request.outputs.deploy_frontend == 'true'
         env:
           GH_TOKEN: ${{ github.token }}
           GITHUB_REPOSITORY: ${{ github.repository }}
@@ -112,13 +162,15 @@ jobs:
           exit 1
 
       - name: Install Playwright browser
+        if: needs.validate-deploy-request.outputs.run_smoke == 'true'
         run: bunx playwright install --with-deps chromium
 
       - name: Write authenticated storage state
-        if: env.PLAYWRIGHT_AUTH_STORAGE_STATE_JSON != ''
+        if: needs.validate-deploy-request.outputs.run_smoke == 'true' && env.PLAYWRIGHT_AUTH_STORAGE_STATE_JSON != ''
         run: |
           echo "$PLAYWRIGHT_AUTH_STORAGE_STATE_JSON" > "$RUNNER_TEMP/playwright-auth.json"
           echo "PLAYWRIGHT_AUTH_STORAGE_STATE=$RUNNER_TEMP/playwright-auth.json" >> "$GITHUB_ENV"
 
       - name: Smoke test production
+        if: needs.validate-deploy-request.outputs.run_smoke == 'true'
         run: bunx playwright test e2e/menu-smoke.pw.test.ts e2e/upload-auth-smoke.pw.test.ts
