@@ -49,8 +49,11 @@ describe("theme", () => {
     expect(getStoredTheme()).toBe("dark");
     window.localStorage.setItem("clawhub-theme", "nope");
     expect(getStoredTheme()).toBe("system");
+  });
+
+  it("ignores the legacy ClawDHUB theme key", () => {
     window.localStorage.setItem("clawdhub-theme", "dark");
-    expect(getStoredTheme()).toBe("dark");
+    expect(getStoredTheme()).toBe("system");
   });
 
   it("applies theme and toggles dark class", () => {
