@@ -57,7 +57,7 @@ export const searchInternal = internalQuery({
 
     const limit = clampInt(args.limit ?? 20, 1, MAX_USER_LIST_LIMIT);
     const exactHandleUser = args.query
-      ? await getActiveUserByHandleOrPersonalPublisher(ctx, args.query)
+      ? await getUserByHandleOrPersonalPublisher(ctx, args.query)
       : null;
     const result = await queryUsersForAdminList(ctx, {
       limit,
@@ -365,7 +365,24 @@ export const list = query({
     const { user } = await requireUser(ctx);
     assertAdmin(user);
     const limit = clampInt(args.limit ?? 50, 1, MAX_USER_LIST_LIMIT);
-    return queryUsersForAdminList(ctx, { limit, search: args.search });
+    const exactHandleUser = args.search
+      ? await getUserByHandleOrPersonalPublisher(ctx, args.search)
+      : null;
+    const result = await queryUsersForAdminList(ctx, {
+      limit,
+      search: args.search,
+      exactUserId: exactHandleUser?._id,
+    });
+    const dedupedUsers = exactHandleUser
+      ? [exactHandleUser, ...result.items.filter((entry) => entry._id !== exactHandleUser._id)]
+      : result.items;
+    const total = exactHandleUser
+      ? result.total + (result.containsExactUser ? 0 : 1)
+      : result.total;
+    return {
+      items: dedupedUsers.slice(0, limit),
+      total,
+    };
   },
 });
 

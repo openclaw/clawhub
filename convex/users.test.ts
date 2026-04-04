@@ -1113,6 +1113,45 @@ describe("users.list", () => {
     });
   });
 
+  it("includes an exact publisher-handle match even when the linked user is banned", async () => {
+    vi.mocked(requireUser).mockResolvedValue({
+      userId: "users:admin",
+      user: { _id: "users:admin", role: "admin" },
+    } as never);
+    const users = [
+      {
+        _id: "users:1",
+        _creationTime: 3,
+        handle: "different-login",
+        displayName: "ClawGrid",
+        deletedAt: 123,
+        role: "user",
+      },
+      { _id: "users:2", _creationTime: 2, handle: "alice", role: "user" },
+    ];
+    const { ctx } = makeListCtx(users, {
+      publishersByHandle: {
+        clawgrid: {
+          _id: "publishers:clawgrid",
+          handle: "clawgrid",
+          kind: "user",
+          linkedUserId: "users:1",
+        },
+      },
+      usersById: {
+        "users:1": users[0]!,
+      },
+    });
+    const listHandler = (
+      list as unknown as { _handler: (ctx: unknown, args: unknown) => Promise<unknown> }
+    )._handler;
+
+    await expect(listHandler(ctx, { limit: 10, search: "clawgrid" })).resolves.toMatchObject({
+      total: 1,
+      items: [{ _id: "users:1", deletedAt: 123 }],
+    });
+  });
+
   it("treats whitespace search as empty search", async () => {
     vi.mocked(requireUser).mockResolvedValue({
       userId: "users:admin",

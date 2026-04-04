@@ -86,6 +86,13 @@ function promptBanReason(label: string) {
   return trimmed.length > 0 ? trimmed : undefined;
 }
 
+function promptUnbanReason(label: string) {
+  const result = window.prompt(`Unban reason for ${label} (optional)`);
+  if (result === null) return null;
+  const trimmed = result.trim();
+  return trimmed.length > 0 ? trimmed : undefined;
+}
+
 export const Route = createFileRoute("/management")({
   validateSearch: (search) => ({
     skill: typeof search.skill === "string" && search.skill.trim() ? search.skill : undefined,
@@ -118,6 +125,7 @@ function Management() {
 
   const setRole = useMutation(api.users.setRole);
   const banUser = useMutation(api.users.banUser);
+  const unbanUser = useMutation(api.users.unbanUser);
   const setBatch = useMutation(api.skills.setBatch);
   const setSoftDeleted = useMutation(api.skills.setSoftDeleted);
   const hardDelete = useMutation(api.skills.hardDelete);
@@ -867,11 +875,32 @@ function Management() {
                         const label = `@${user.handle ?? user.name ?? "user"}`;
                         const reason = promptBanReason(label);
                         if (reason === null) return;
-                        void banUser({ userId: user._id, reason });
+                        void banUser({ userId: user._id, reason }).catch((error) =>
+                          window.alert(formatMutationError(error)),
+                        );
                       }}
                     >
                       Ban user
                     </button>
+                    {user.deletedAt && !user.deactivatedAt ? (
+                      <button
+                        className="btn"
+                        type="button"
+                        onClick={() => {
+                          const label = `@${user.handle ?? user.name ?? "user"}`;
+                          if (!window.confirm(`Unban ${label} and restore eligible skills?`)) {
+                            return;
+                          }
+                          const reason = promptUnbanReason(label);
+                          if (reason === null) return;
+                          void unbanUser({ userId: user._id, reason }).catch((error) =>
+                            window.alert(formatMutationError(error)),
+                          );
+                        }}
+                      >
+                        Unban user
+                      </button>
+                    ) : null}
                   </div>
                 </div>
               ))
