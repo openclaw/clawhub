@@ -749,6 +749,15 @@ export const setTrustedPublisher = mutation({
       trustedPublisher: args.trusted || undefined,
       updatedAt: now,
     });
+    if (target.personalPublisherId) {
+      const personalPublisher = await ctx.db.get(target.personalPublisherId);
+      if (personalPublisher?.linkedUserId === args.userId) {
+        await ctx.db.patch(target.personalPublisherId, {
+          trustedPublisher: args.trusted || undefined,
+          updatedAt: now,
+        });
+      }
+    }
 
     await ctx.db.insert("auditLogs", {
       actorUserId: user._id,
@@ -760,6 +769,50 @@ export const setTrustedPublisher = mutation({
     });
 
     return { ok: true as const, trusted: args.trusted };
+  },
+});
+
+/**
+ * Admin-only: set or unset the verifiedPublisher flag for a user.
+ * Verified publishers are a stronger manually granted identity signal than trusted publishers.
+ */
+export const setVerifiedPublisher = mutation({
+  args: {
+    userId: v.id("users"),
+    verified: v.boolean(),
+  },
+  handler: async (ctx, args) => {
+    const { user } = await requireUser(ctx);
+    assertAdmin(user);
+
+    const target = await ctx.db.get(args.userId);
+    if (!target) throw new Error("User not found");
+
+    const now = Date.now();
+    await ctx.db.patch(args.userId, {
+      verifiedPublisher: args.verified || undefined,
+      updatedAt: now,
+    });
+    if (target.personalPublisherId) {
+      const personalPublisher = await ctx.db.get(target.personalPublisherId);
+      if (personalPublisher?.linkedUserId === args.userId) {
+        await ctx.db.patch(target.personalPublisherId, {
+          verifiedPublisher: args.verified || undefined,
+          updatedAt: now,
+        });
+      }
+    }
+
+    await ctx.db.insert("auditLogs", {
+      actorUserId: user._id,
+      action: args.verified ? "user.verified.set" : "user.verified.unset",
+      targetType: "user",
+      targetId: args.userId,
+      metadata: { verified: args.verified },
+      createdAt: now,
+    });
+
+    return { ok: true as const, verified: args.verified };
   },
 });
 
@@ -782,6 +835,15 @@ export const setTrustedPublisherInternal = internalMutation({
       trustedPublisher: args.trusted || undefined,
       updatedAt: now,
     });
+    if (target.personalPublisherId) {
+      const personalPublisher = await ctx.db.get(target.personalPublisherId);
+      if (personalPublisher?.linkedUserId === args.targetUserId) {
+        await ctx.db.patch(target.personalPublisherId, {
+          trustedPublisher: args.trusted || undefined,
+          updatedAt: now,
+        });
+      }
+    }
 
     await ctx.db.insert("auditLogs", {
       actorUserId: args.actorUserId,
@@ -796,6 +858,48 @@ export const setTrustedPublisherInternal = internalMutation({
   },
 });
 
+export const setVerifiedPublisherInternal = internalMutation({
+  args: {
+    actorUserId: v.id("users"),
+    targetUserId: v.id("users"),
+    verified: v.boolean(),
+  },
+  handler: async (ctx, args) => {
+    const actor = await ctx.db.get(args.actorUserId);
+    if (!actor || actor.deletedAt || actor.deactivatedAt) throw new Error("User not found");
+    assertAdmin(actor);
+
+    const target = await ctx.db.get(args.targetUserId);
+    if (!target) throw new Error("User not found");
+
+    const now = Date.now();
+    await ctx.db.patch(args.targetUserId, {
+      verifiedPublisher: args.verified || undefined,
+      updatedAt: now,
+    });
+    if (target.personalPublisherId) {
+      const personalPublisher = await ctx.db.get(target.personalPublisherId);
+      if (personalPublisher?.linkedUserId === args.targetUserId) {
+        await ctx.db.patch(target.personalPublisherId, {
+          verifiedPublisher: args.verified || undefined,
+          updatedAt: now,
+        });
+      }
+    }
+
+    await ctx.db.insert("auditLogs", {
+      actorUserId: args.actorUserId,
+      action: args.verified ? "user.verified.set" : "user.verified.unset",
+      targetType: "user",
+      targetId: args.targetUserId,
+      metadata: { verified: args.verified },
+      createdAt: now,
+    });
+
+    return { ok: true as const, verified: args.verified };
+  },
+});
+
 async function ensurePublisherHandleWithActor(
   ctx: MutationCtx,
   args: {
@@ -803,6 +907,7 @@ async function ensurePublisherHandleWithActor(
     handle: string;
     displayName?: string;
     trusted?: boolean;
+    verified?: boolean;
   },
 ) {
   const actor = await ctx.db.get(args.actorUserId);
@@ -823,6 +928,7 @@ async function ensurePublisherHandleWithActor(
   const now = Date.now();
   const displayName = args.displayName?.trim() || normalizedHandle;
   const trusted = args.trusted === false ? undefined : true;
+  const verified = args.verified || undefined;
   const userId =
     existing?._id ??
     (await ctx.db.insert("users", {
@@ -830,6 +936,7 @@ async function ensurePublisherHandleWithActor(
       displayName,
       role: "user",
       trustedPublisher: trusted,
+      verifiedPublisher: verified,
       createdAt: now,
       updatedAt: now,
     }));
@@ -842,6 +949,7 @@ async function ensurePublisherHandleWithActor(
     await ctx.db.patch(existing._id, {
       displayName: nextDisplayName,
       trustedPublisher: trusted,
+      verifiedPublisher: verified,
       updatedAt: now,
     });
   }
@@ -861,6 +969,7 @@ async function ensurePublisherHandleWithActor(
     metadata: {
       handle: normalizedHandle,
       trusted: trusted === true,
+      verified: verified === true,
     },
     createdAt: now,
   });

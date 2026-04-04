@@ -2,12 +2,29 @@ import type { Doc } from "../../convex/_generated/dataModel";
 
 export type PublicUser = Pick<
   Doc<"users">,
-  "_id" | "_creationTime" | "handle" | "name" | "displayName" | "image" | "bio"
+  | "_id"
+  | "_creationTime"
+  | "handle"
+  | "name"
+  | "displayName"
+  | "image"
+  | "bio"
+  | "trustedPublisher"
+  | "verifiedPublisher"
 >;
 
 export type PublicPublisher = Pick<
   Doc<"publishers">,
-  "_id" | "_creationTime" | "kind" | "handle" | "displayName" | "image" | "bio" | "linkedUserId"
+  | "_id"
+  | "_creationTime"
+  | "kind"
+  | "handle"
+  | "displayName"
+  | "image"
+  | "bio"
+  | "linkedUserId"
+  | "trustedPublisher"
+  | "verifiedPublisher"
 >;
 
 export type PublicSkill = Pick<

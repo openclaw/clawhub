@@ -3,12 +3,29 @@ import { isPublicSkillDoc } from "./globalStats";
 
 export type PublicUser = Pick<
   Doc<"users">,
-  "_id" | "_creationTime" | "handle" | "name" | "displayName" | "image" | "bio"
+  | "_id"
+  | "_creationTime"
+  | "handle"
+  | "name"
+  | "displayName"
+  | "image"
+  | "bio"
+  | "trustedPublisher"
+  | "verifiedPublisher"
 >;
 
 export type PublicPublisher = Pick<
   Doc<"publishers">,
-  "_id" | "_creationTime" | "kind" | "handle" | "displayName" | "image" | "bio" | "linkedUserId"
+  | "_id"
+  | "_creationTime"
+  | "kind"
+  | "handle"
+  | "displayName"
+  | "image"
+  | "bio"
+  | "linkedUserId"
+  | "trustedPublisher"
+  | "verifiedPublisher"
 >;
 
 export type PublicSkill = Pick<
@@ -92,6 +109,8 @@ export function toPublicUser(user: Doc<"users"> | null | undefined): PublicUser 
     displayName: user.displayName,
     image: user.image,
     bio: user.bio,
+    trustedPublisher: user.trustedPublisher,
+    verifiedPublisher: user.verifiedPublisher,
   };
 }
 
@@ -108,6 +127,8 @@ export function toPublicPublisher(
     image: publisher.image,
     bio: publisher.bio,
     linkedUserId: publisher.linkedUserId,
+    trustedPublisher: publisher.trustedPublisher,
+    verifiedPublisher: publisher.verifiedPublisher,
   };
 }
 

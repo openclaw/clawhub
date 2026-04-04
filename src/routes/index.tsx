@@ -110,6 +110,8 @@ function SkillsHome() {
                 key={entry.skill._id}
                 skill={entry.skill}
                 badge={getSkillBadges(entry.skill)}
+                trustedPublisher={Boolean(entry.owner?.trustedPublisher)}
+                verifiedPublisher={Boolean(entry.owner?.verifiedPublisher)}
                 summaryFallback="A fresh skill bundle."
                 meta={
                   <div className="skill-card-footer-rows">
@@ -141,6 +143,8 @@ function SkillsHome() {
               <SkillCard
                 key={entry.skill._id}
                 skill={entry.skill}
+                trustedPublisher={Boolean(entry.owner?.trustedPublisher)}
+                verifiedPublisher={Boolean(entry.owner?.verifiedPublisher)}
                 summaryFallback="Agent-ready skill pack."
                 meta={
                   <div className="skill-card-footer-rows">

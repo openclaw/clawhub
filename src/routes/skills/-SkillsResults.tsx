@@ -3,7 +3,9 @@ import type { RefObject } from "react";
 import { SkillCard } from "../../components/SkillCard";
 import { getPlatformLabels } from "../../components/skillDetailUtils";
 import { SkillMetricsRow, SkillStatsTripletLine } from "../../components/SkillStats";
+import { TrustedPublisherBadge } from "../../components/TrustedPublisherBadge";
 import { UserBadge } from "../../components/UserBadge";
+import { VerifiedPublisherBadge } from "../../components/VerifiedPublisherBadge";
 import { getSkillBadges } from "../../lib/badges";
 import { buildSkillHref, type SkillListEntry } from "./-types";
 
@@ -57,6 +59,8 @@ export function SkillsResults({
                 skill={skill}
                 href={skillHref}
                 badge={getSkillBadges(skill)}
+                trustedPublisher={Boolean(entry.owner?.trustedPublisher)}
+                verifiedPublisher={Boolean(entry.owner?.verifiedPublisher)}
                 chip={isPlugin ? "Plugin bundle (nix)" : undefined}
                 platformLabels={platforms.length ? platforms : undefined}
                 summaryFallback="Agent-ready skill pack."
@@ -94,6 +98,8 @@ export function SkillsResults({
                 <span className="skills-table-name">
                   <span>
                     {skill.displayName}
+                    {entry.owner?.verifiedPublisher ? <VerifiedPublisherBadge compact /> : null}
+                    {entry.owner?.trustedPublisher ? <TrustedPublisherBadge compact /> : null}
                     {getSkillBadges(skill).map((badge) => (
                       <span key={badge} className="tag tag-compact">{badge}</span>
                     ))}

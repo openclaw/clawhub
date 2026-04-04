@@ -70,6 +70,7 @@ async function migrateLegacyPublisherHandleToOrgWithActor(
     handle: string;
     fallbackUserHandle?: string;
     displayName?: string;
+    verified?: boolean;
   },
 ) {
   const actor = await ctx.db.get(args.actorUserId);
@@ -142,6 +143,7 @@ async function migrateLegacyPublisherHandleToOrgWithActor(
       displayName: args.displayName?.trim() || convertiblePublisher.displayName,
       linkedUserId: undefined,
       trustedPublisher: convertiblePublisher.trustedPublisher ?? legacyUser.trustedPublisher,
+      verifiedPublisher: args.verified ?? convertiblePublisher.verifiedPublisher ?? legacyUser.verifiedPublisher,
       updatedAt: now,
     });
   } else {
@@ -153,6 +155,7 @@ async function migrateLegacyPublisherHandleToOrgWithActor(
       image: undefined,
       linkedUserId: undefined,
       trustedPublisher: legacyUser.trustedPublisher,
+      verifiedPublisher: args.verified ?? legacyUser.verifiedPublisher,
       createdAt: now,
       updatedAt: now,
     });
@@ -201,6 +204,7 @@ async function migrateLegacyPublisherHandleToOrgWithActor(
       convertedExistingPublisher,
       packagesMigrated,
       personalPublisherId: ensuredPersonalPublisher?._id ?? null,
+      verified: args.verified ?? null,
     },
     createdAt: now,
   });
@@ -225,6 +229,7 @@ async function ensureOrgPublisherHandleWithActor(
     fallbackUserHandle?: string;
     displayName?: string;
     trusted?: boolean;
+    verified?: boolean;
   },
 ) {
   const actor = await ctx.db.get(args.actorUserId);
@@ -240,6 +245,7 @@ async function ensureOrgPublisherHandleWithActor(
     await ctx.db.patch(existingPublisher._id, {
       displayName: args.displayName?.trim() || existingPublisher.displayName,
       trustedPublisher: args.trusted ?? existingPublisher.trustedPublisher,
+      verifiedPublisher: args.verified ?? existingPublisher.verifiedPublisher,
       updatedAt: now,
     });
     const membership = await getPublisherMembership(ctx, existingPublisher._id, args.actorUserId);
@@ -259,6 +265,7 @@ async function ensureOrgPublisherHandleWithActor(
       created: false,
       migrated: false,
       trusted: args.trusted ?? existingPublisher.trustedPublisher ?? false,
+      verified: args.verified ?? existingPublisher.verifiedPublisher ?? false,
     };
   }
 
@@ -272,6 +279,7 @@ async function ensureOrgPublisherHandleWithActor(
     if (typeof args.trusted === "boolean") {
       await ctx.db.patch(result.orgPublisherId, {
         trustedPublisher: args.trusted,
+        verifiedPublisher: args.verified,
         updatedAt: now,
       });
     }
@@ -282,6 +290,7 @@ async function ensureOrgPublisherHandleWithActor(
       created: false,
       migrated: true,
       trusted: args.trusted ?? existingPublisher?.trustedPublisher ?? false,
+      verified: args.verified ?? existingPublisher?.verifiedPublisher ?? false,
     };
   }
 
@@ -293,6 +302,7 @@ async function ensureOrgPublisherHandleWithActor(
     image: undefined,
     linkedUserId: undefined,
     trustedPublisher: args.trusted || undefined,
+    verifiedPublisher: args.verified || undefined,
     createdAt: now,
     updatedAt: now,
   });
@@ -311,6 +321,7 @@ async function ensureOrgPublisherHandleWithActor(
     metadata: {
       handle,
       trusted: args.trusted === true,
+      verified: args.verified === true,
     },
     createdAt: now,
   });
@@ -321,6 +332,7 @@ async function ensureOrgPublisherHandleWithActor(
     created: true,
     migrated: false,
     trusted: args.trusted ?? false,
+    verified: args.verified ?? false,
   };
 }
 
@@ -560,6 +572,7 @@ export const ensureOrgPublisherHandleInternal = internalMutation({
     fallbackUserHandle: v.optional(v.string()),
     displayName: v.optional(v.string()),
     trusted: v.optional(v.boolean()),
+    verified: v.optional(v.boolean()),
   },
   handler: async (ctx, args) => await ensureOrgPublisherHandleWithActor(ctx, args),
 });
@@ -681,12 +694,54 @@ export const setTrustedPublisherInternal = internalMutation({
   },
 });
 
+export const setVerifiedPublisher = mutation({
+  args: {
+    publisherId: v.id("publishers"),
+    verifiedPublisher: v.boolean(),
+  },
+  handler: async (ctx, args) => {
+    const { user } = await requireUser(ctx);
+    assertAdmin(user);
+    await ctx.db.patch(args.publisherId, {
+      verifiedPublisher: args.verifiedPublisher || undefined,
+      updatedAt: Date.now(),
+    });
+    await ctx.db.insert("auditLogs", {
+      actorUserId: user._id,
+      action: args.verifiedPublisher ? "publisher.verified.set" : "publisher.verified.unset",
+      targetType: "publisher",
+      targetId: args.publisherId,
+      metadata: { verified: args.verifiedPublisher },
+      createdAt: Date.now(),
+    });
+    return { ok: true as const, verified: args.verifiedPublisher };
+  },
+});
+
+export const setVerifiedPublisherInternal = internalMutation({
+  args: {
+    actorUserId: v.id("users"),
+    publisherId: v.id("publishers"),
+    verifiedPublisher: v.boolean(),
+  },
+  handler: async (ctx, args) => {
+    const actor = await ctx.db.get(args.actorUserId);
+    if (!actor || actor.deletedAt || actor.deactivatedAt) throw new ConvexError("Unauthorized");
+    assertAdmin(actor);
+    await ctx.db.patch(args.publisherId, {
+      verifiedPublisher: args.verifiedPublisher || undefined,
+      updatedAt: Date.now(),
+    });
+  },
+});
+
 export const migrateLegacyPublisherHandleToOrgInternal = internalMutation({
   args: {
     actorUserId: v.id("users"),
     handle: v.string(),
     fallbackUserHandle: v.optional(v.string()),
     displayName: v.optional(v.string()),
+    verified: v.optional(v.boolean()),
   },
   handler: async (ctx, args) => await migrateLegacyPublisherHandleToOrgWithActor(ctx, args),
 });

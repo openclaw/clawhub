@@ -118,6 +118,8 @@ function Management() {
 
   const setRole = useMutation(api.users.setRole);
   const banUser = useMutation(api.users.banUser);
+  const setTrustedPublisher = useMutation(api.users.setTrustedPublisher);
+  const setVerifiedPublisher = useMutation(api.users.setVerifiedPublisher);
   const setBatch = useMutation(api.skills.setBatch);
   const setSoftDeleted = useMutation(api.skills.setSoftDeleted);
   const hardDelete = useMutation(api.skills.hardDelete);
@@ -829,6 +831,15 @@ function Management() {
                 <div key={user._id} className="management-item">
                   <div className="management-item-main">
                     <span className="mono">@{user.handle ?? user.name ?? "user"}</span>
+                    <div className="section-subtitle" style={{ margin: 0 }}>
+                      {[
+                        user.role ?? "user",
+                        user.verifiedPublisher ? "verified publisher" : null,
+                        user.trustedPublisher ? "trusted publisher" : null,
+                      ]
+                        .filter(Boolean)
+                        .join(" · ")}
+                    </div>
                     {user.deletedAt || user.deactivatedAt ? (
                       <div className="section-subtitle" style={{ margin: 0 }}>
                         {user.banReason && user.deletedAt
@@ -851,6 +862,30 @@ function Management() {
                       <option value="moderator">Moderator</option>
                       <option value="admin">Admin</option>
                     </select>
+                    <button
+                      className="btn"
+                      type="button"
+                      onClick={() =>
+                        void setTrustedPublisher({
+                          userId: user._id,
+                          trusted: !Boolean(user.trustedPublisher),
+                        })
+                      }
+                    >
+                      {user.trustedPublisher ? "Unset trusted" : "Mark trusted"}
+                    </button>
+                    <button
+                      className="btn"
+                      type="button"
+                      onClick={() =>
+                        void setVerifiedPublisher({
+                          userId: user._id,
+                          verified: !Boolean(user.verifiedPublisher),
+                        })
+                      }
+                    >
+                      {user.verifiedPublisher ? "Unset verified" : "Mark verified"}
+                    </button>
                     <button
                       className="btn"
                       type="button"
