@@ -3,6 +3,14 @@ import { describe, expect, it } from "vitest";
 import { SecurityScanResults } from "./SkillSecurityScanResults";
 
 describe("SecurityScanResults static guidance", () => {
+  it("renders capability-only states without scanner verdicts", () => {
+    render(<SecurityScanResults capabilityTags={["posts-externally", "requires-oauth-token"]} />);
+
+    expect(screen.getByText("Capability signals")).toBeTruthy();
+    expect(screen.getByText("Posts externally")).toBeTruthy();
+    expect(screen.getByText("Requires OAuth token")).toBeTruthy();
+  });
+
   it("renders capability labels separately from scan verdicts", () => {
     render(
       <SecurityScanResults

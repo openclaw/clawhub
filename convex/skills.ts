@@ -1041,6 +1041,7 @@ type PublicSkillVersion = {
   createdBy?: Id<"users">;
   createdAt?: number;
   softDeletedAt?: number;
+  capabilityTags?: string[];
   sha256hash?: string;
   vtAnalysis?: Doc<"skillVersions">["vtAnalysis"];
   llmAnalysis?: Doc<"skillVersions">["llmAnalysis"];
@@ -1218,6 +1219,7 @@ function toPublicSkillVersion(
     createdBy: version.createdBy,
     createdAt: version.createdAt,
     softDeletedAt: version.softDeletedAt,
+    capabilityTags: version.capabilityTags,
     sha256hash: version.sha256hash,
     vtAnalysis: version.vtAnalysis,
     llmAnalysis: version.llmAnalysis,

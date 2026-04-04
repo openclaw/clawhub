@@ -72,8 +72,9 @@ const PURCHASE_PATTERNS = [
   /\bcosts? \$\d/,
   /\bcharged?\b/,
   /\bpurchase\b/,
-  /\bbuy\b/,
-  /\bcheckout\b/,
+  /\bbuy(?:\s+(?:credits?|tokens?|coins?|nft|subscription|plan))\b/,
+  /\bpayment checkout\b/,
+  /\bone-?click checkout\b/,
 ] satisfies RegExp[];
 
 const TRANSACTION_PATTERNS = [
@@ -143,5 +144,5 @@ export function deriveSkillCapabilityTags(params: {
     tags.add("requires-wallet");
   }
 
-  return [...tags];
+  return SKILL_CAPABILITY_TAGS.filter((tag) => tags.has(tag));
 }

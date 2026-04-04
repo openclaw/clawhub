@@ -11,7 +11,7 @@ import {
   getTrustTier,
   type TrustTier,
 } from "./lib/skillQuality";
-import { hashSkillFiles } from "./lib/skills";
+import { hashSkillFiles, isTextFile } from "./lib/skills";
 import { computeIsSuspicious } from "./lib/skillSafety";
 import { deriveSkillCapabilityTags } from "./lib/skillCapabilityTags";
 import { extractDigestFields } from "./lib/skillSearchDigest";
@@ -23,6 +23,7 @@ const DEFAULT_MAX_BATCHES = 20;
 const MAX_MAX_BATCHES = 200;
 const DEFAULT_EMPTY_SKILL_MAX_README_BYTES = 8000;
 const DEFAULT_EMPTY_SKILL_NOMINATION_THRESHOLD = 3;
+const DEFAULT_CAPABILITY_BACKFILL_DELAY_MS = 500;
 const PLATFORM_SKILL_LICENSE = "MIT-0" as const;
 
 type BackfillStats = {
@@ -380,11 +381,14 @@ export async function backfillSkillCapabilityTagsInternalHandler(
     cursor?: string;
     batchSize?: number;
     maxBatches?: number;
+    delayMs?: number;
   },
 ): Promise<CapabilityBackfillResult> {
   const dryRun = Boolean(args.dryRun);
   const batchSize = clampInt(args.batchSize ?? DEFAULT_BATCH_SIZE, 1, MAX_BATCH_SIZE);
-  const maxBatches = clampInt(args.maxBatches ?? DEFAULT_MAX_BATCHES, 1, MAX_MAX_BATCHES);
+  const maxBatches = dryRun
+    ? clampInt(args.maxBatches ?? DEFAULT_MAX_BATCHES, 1, MAX_MAX_BATCHES)
+    : 1;
 
   const stats: CapabilityBackfillStats = {
     skillsScanned: 0,
@@ -435,6 +439,7 @@ export async function backfillSkillCapabilityTagsInternalHandler(
       for (const file of version.files) {
         const lower = file.path.toLowerCase();
         if (lower === "skill.md" || lower === "skills.md") continue;
+        if (!isTextFile(file.path, file.contentType ?? undefined)) continue;
         const blob = await ctx.storage.get(file.storageId);
         if (!blob) {
           stats.missingStorageBlob += 1;
@@ -447,7 +452,7 @@ export async function backfillSkillCapabilityTagsInternalHandler(
         slug: item.skillSlug,
         displayName: item.skillDisplayName,
         summary: item.skillSummary ?? undefined,
-        frontmatter: item.versionParsed.frontmatter,
+        frontmatter: item.versionParsed?.frontmatter,
         readmeText,
         fileContents,
       });
@@ -478,8 +483,24 @@ export const backfillSkillCapabilityTagsInternal = internalAction({
     cursor: v.optional(v.string()),
     batchSize: v.optional(v.number()),
     maxBatches: v.optional(v.number()),
+    delayMs: v.optional(v.number()),
   },
-  handler: backfillSkillCapabilityTagsInternalHandler,
+  handler: async (ctx, args): Promise<CapabilityBackfillResult> => {
+    const result = await backfillSkillCapabilityTagsInternalHandler(ctx, args);
+
+    if (!args.dryRun && !result.isDone && result.cursor) {
+      const delayMs = clampInt(args.delayMs ?? DEFAULT_CAPABILITY_BACKFILL_DELAY_MS, 0, 60_000);
+      await ctx.scheduler.runAfter(delayMs, internal.maintenance.backfillSkillCapabilityTagsInternal, {
+        dryRun: false,
+        cursor: result.cursor,
+        batchSize: args.batchSize,
+        maxBatches: 1,
+        delayMs,
+      });
+    }
+
+    return result;
+  },
 });
 
 export const backfillSkillCapabilityTags: ReturnType<typeof action> = action({
@@ -488,6 +509,7 @@ export const backfillSkillCapabilityTags: ReturnType<typeof action> = action({
     cursor: v.optional(v.string()),
     batchSize: v.optional(v.number()),
     maxBatches: v.optional(v.number()),
+    delayMs: v.optional(v.number()),
   },
   handler: async (ctx, args): Promise<CapabilityBackfillResult> => {
     const { user } = await requireUserFromAction(ctx);
