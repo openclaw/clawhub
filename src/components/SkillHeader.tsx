@@ -326,6 +326,7 @@ export function SkillHeader({
                 vtAnalysis={latestVersion?.vtAnalysis}
                 llmAnalysis={latestVersion?.llmAnalysis as LlmAnalysis | undefined}
                 staticFindings={latestVersion?.staticScan?.findings}
+                capabilityTags={latestVersion?.capabilityTags}
               />
               <p className="scan-disclaimer">
                 Like a lobster shell, security has layers — review code before you run it.

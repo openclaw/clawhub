@@ -1041,6 +1041,7 @@ type PublicSkillVersion = {
   createdBy?: Id<"users">;
   createdAt?: number;
   softDeletedAt?: number;
+  capabilityTags?: string[];
   sha256hash?: string;
   vtAnalysis?: Doc<"skillVersions">["vtAnalysis"];
   llmAnalysis?: Doc<"skillVersions">["llmAnalysis"];
@@ -1218,6 +1219,7 @@ function toPublicSkillVersion(
     createdBy: version.createdBy,
     createdAt: version.createdAt,
     softDeletedAt: version.softDeletedAt,
+    capabilityTags: version.capabilityTags,
     sha256hash: version.sha256hash,
     vtAnalysis: version.vtAnalysis,
     llmAnalysis: version.llmAnalysis,
@@ -2828,12 +2830,12 @@ function skillCatalogMatchesFilters(
 ) {
   if (!isVisibleSkillCatalogDigest(digest)) return false;
   if (args.channel === "private") return false;
-  if (args.capabilityTag) return false;
   if (args.executesCode === true) return false;
   const isOfficial = isSkillCatalogOfficial(digest);
   const channel = getSkillCatalogChannel(digest);
   if (typeof args.isOfficial === "boolean" && isOfficial !== args.isOfficial) return false;
   if (args.channel && channel !== args.channel) return false;
+  if (args.capabilityTag && !(digest.capabilityTags ?? []).includes(args.capabilityTag)) return false;
   return true;
 }
 
@@ -2851,7 +2853,7 @@ function toPublicSkillCatalogItem(digest: Doc<"skillSearchDigest">): PublicSkill
     createdAt: digest.createdAt,
     updatedAt: digest.updatedAt,
     latestVersion: digest.latestVersionSummary?.version ?? null,
-    capabilityTags: [],
+    capabilityTags: digest.capabilityTags ?? [],
     executesCode: false,
     verificationTier: null,
   };
@@ -2885,7 +2887,7 @@ export const listPackageCatalogPage = query({
     paginationOpts: paginationOptsValidator,
   },
   handler: async (ctx, args) => {
-    if (args.channel === "private" || args.executesCode === true || args.capabilityTag) {
+    if (args.channel === "private" || args.executesCode === true) {
       return { page: [], isDone: true, continueCursor: "" };
     }
 
@@ -2970,7 +2972,7 @@ export const searchPackageCatalogPublic = query({
   handler: async (ctx, args) => {
     const queryText = args.query.trim().toLowerCase();
     if (!queryText) return [];
-    if (args.channel === "private" || args.executesCode === true || args.capabilityTag) return [];
+    if (args.channel === "private" || args.executesCode === true) return [];
 
     const targetCount = Math.max(1, Math.min(args.limit ?? 20, 100));
     const matches: Array<{ score: number; package: PublicSkillCatalogItem }> = [];
@@ -4741,6 +4743,7 @@ export const updateTags = mutation({
           changelogSource: version.changelogSource,
           clawdis: version.parsed?.clawdis,
         };
+        patch.capabilityTags = version.capabilityTags;
       }
     }
 
@@ -5737,6 +5740,7 @@ export const insertVersion = internalMutation({
       clawdis: v.optional(v.any()),
       license: v.optional(v.literal(PLATFORM_SKILL_LICENSE)),
     }),
+    capabilityTags: v.optional(v.array(v.string())),
     summary: v.optional(v.string()),
     qualityAssessment: v.optional(
       v.object({
@@ -5988,6 +5992,7 @@ export const insertVersion = internalMutation({
         forkOf,
         latestVersionId: undefined,
         tags: {},
+        capabilityTags: args.capabilityTags,
         softDeletedAt: undefined,
         badges: {
           redactionApproved: undefined,
@@ -6056,6 +6061,7 @@ export const insertVersion = internalMutation({
       changelogSource: args.changelogSource,
       files: args.files,
       parsed: args.parsed,
+      capabilityTags: args.capabilityTags,
       staticScan: args.staticScan,
       createdBy: userId,
       createdAt: now,
@@ -6101,6 +6107,7 @@ export const insertVersion = internalMutation({
         clawdis: args.parsed.clawdis,
       },
       tags: nextTags,
+      capabilityTags: args.capabilityTags,
       stats: { ...skill.stats, versions: skill.stats.versions + 1 },
       softDeletedAt: undefined,
       moderationStatus: initialModerationStatus,

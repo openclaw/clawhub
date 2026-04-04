@@ -27,6 +27,7 @@ import {
   sanitizePath,
 } from "./skills";
 import { generateSkillSummary } from "./skillSummary";
+import { deriveSkillCapabilityTags } from "./skillCapabilityTags";
 import { runStaticPublishScan } from "./staticPublishScan";
 import type { WebhookSkillPayload } from "./webhooks";
 import {
@@ -246,6 +247,14 @@ export async function publishVersionForUser(
     readme: readmeText,
     otherFiles,
   });
+  const capabilityTags = deriveSkillCapabilityTags({
+    slug,
+    displayName,
+    summary,
+    frontmatter,
+    readmeText,
+    fileContents,
+  });
 
   const fingerprintPromise = hashSkillFiles(
     publishFiles.map((file) => ({ path: file.path, sha256: file.sha256 })),
@@ -298,6 +307,7 @@ export async function publishVersionForUser(
       clawdis,
       license: PLATFORM_SKILL_LICENSE,
     },
+    capabilityTags,
     summary,
     staticScan,
     embedding,

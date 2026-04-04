@@ -1264,6 +1264,7 @@ describe("httpApiV1 handlers", () => {
             changelog: "c",
             changelogSource: "auto",
             sha256hash: "b".repeat(64),
+            capabilityTags: ["crypto", "requires-wallet", "can-make-purchases"],
             vtAnalysis: {
               status: "clean",
               checkedAt: 111,
@@ -1298,6 +1299,11 @@ describe("httpApiV1 handlers", () => {
     const json = await response.json();
     expect(json.security.status).toBe("suspicious");
     expect(json.security.hasScanResult).toBe(true);
+    expect(json.security.capabilityTags).toEqual([
+      "crypto",
+      "requires-wallet",
+      "can-make-purchases",
+    ]);
     expect(json.security.scanners.llm.verdict).toBe("suspicious");
     expect(json.moderation.scope).toBe("skill");
     expect(json.moderation.sourceVersion).toEqual({
@@ -1357,6 +1363,51 @@ describe("httpApiV1 handlers", () => {
     expect(json.security.status).toBe("error");
     expect(json.security.hasScanResult).toBe(false);
     expect(json.security.scanners.llm.normalizedStatus).toBe("error");
+  });
+
+  it("returns capability tags even when no scanner result exists yet", async () => {
+    const runQuery = vi.fn(async (_query: unknown, args: Record<string, unknown>) => {
+      if ("slug" in args) {
+        return {
+          skill: {
+            _id: "skills:1",
+            slug: "demo",
+            displayName: "Demo",
+            summary: "s",
+            tags: { latest: "versions:1" },
+            stats: {},
+            createdAt: 1,
+            updatedAt: 2,
+          },
+          latestVersion: {
+            version: "1.0.0",
+            createdAt: 1,
+            changelog: "c",
+            changelogSource: "auto",
+            capabilityTags: ["posts-externally", "requires-oauth-token"],
+            files: [],
+          },
+          owner: { _id: "users:1", handle: "owner", displayName: "Owner" },
+          moderationInfo: {
+            isPendingScan: true,
+            isMalwareBlocked: false,
+            isSuspicious: false,
+            isHiddenByMod: false,
+            isRemoved: false,
+          },
+        };
+      }
+      return null;
+    });
+    const runMutation = vi.fn().mockResolvedValue(okRate());
+    const response = await __handlers.skillsGetRouterV1Handler(
+      makeCtx({ runQuery, runMutation }),
+      new Request("https://example.com/api/v1/skills/demo/scan"),
+    );
+    expect(response.status).toBe(200);
+    const json = await response.json();
+    expect(json.security.capabilityTags).toEqual(["posts-externally", "requires-oauth-token"]);
+    expect(json.security.hasScanResult).toBe(false);
   });
 
   it("keeps hasScanResult true when one scanner returns a definitive verdict", async () => {

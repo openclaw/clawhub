@@ -4561,6 +4561,32 @@ html.theme-transition::view-transition-new(theme) {
   gap: 0;
 }
 
+.scan-capabilities-section {
+  display: grid;
+  gap: 10px;
+  padding: 0 0 12px;
+  border-bottom: 1px solid color-mix(in srgb, var(--line) 50%, transparent);
+  margin-bottom: 4px;
+}
+
+.scan-capability-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.scan-capability-tag {
+  background: color-mix(in srgb, var(--accent) 10%, transparent);
+  border-color: color-mix(in srgb, var(--accent) 24%, var(--line));
+  color: var(--ink);
+}
+
+.scan-capability-note {
+  font-size: 0.82rem;
+  line-height: 1.45;
+  color: var(--ink-soft);
+}
+
 .scan-result-row {
   display: grid;
   grid-template-columns: minmax(120px, auto) auto 1fr;

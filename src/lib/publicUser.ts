@@ -23,6 +23,7 @@ export type PublicSkill = Pick<
   | "forkOf"
   | "latestVersionId"
   | "tags"
+  | "capabilityTags"
   | "badges"
   | "stats"
   | "createdAt"

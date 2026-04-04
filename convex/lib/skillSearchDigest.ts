@@ -22,6 +22,7 @@ const SHARED_KEYS = [
   "latestVersionId",
   "latestVersionSummary",
   "tags",
+  "capabilityTags",
   "badges",
   "stats",
   "statsDownloads",

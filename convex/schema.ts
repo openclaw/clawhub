@@ -245,6 +245,7 @@ const skills = defineTable({
     }),
   ),
   tags: v.record(v.string(), v.id("skillVersions")),
+  capabilityTags: v.optional(v.array(v.string())),
   softDeletedAt: v.optional(v.number()),
   badges: badgesValidator,
   moderationStatus: moderationStatusValidator,
@@ -442,6 +443,7 @@ const skillVersions = defineTable({
       checkedAt: v.number(),
     }),
   ),
+  capabilityTags: v.optional(v.array(v.string())),
   staticScan: v.optional(
     v.object({
       status: v.union(v.literal("clean"), v.literal("suspicious"), v.literal("malicious")),
@@ -583,6 +585,7 @@ const skillSearchDigest = defineTable({
     }),
   ),
   tags: v.record(v.string(), v.id("skillVersions")),
+  capabilityTags: v.optional(v.array(v.string())),
   badges: badgesValidator,
   stats: statsValidator,
   statsDownloads: v.optional(v.number()),

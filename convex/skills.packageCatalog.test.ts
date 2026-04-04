@@ -33,6 +33,7 @@ const listPackageCatalogPageHandler = (
         family: "skill";
         channel: "official" | "community";
         isOfficial: boolean;
+        capabilityTags: string[];
       }>;
       isDone: boolean;
       continueCursor: string;
@@ -79,6 +80,7 @@ function makeDigest(
       changelog: "init",
     },
     tags: { latest: `skillVersions:${slug}-1` },
+    capabilityTags: [],
     badges: {},
     stats: {
       downloads: 1,
@@ -204,5 +206,31 @@ describe("skills package catalog queries", () => {
       },
     });
     expect(result[0]?.score).toBeGreaterThan(0);
+  });
+
+  it("filters skills by capability tag", async () => {
+    const result = await listPackageCatalogPageHandler(
+      makeCtx([
+        {
+          page: [
+            makeDigest("paytoll", { capabilityTags: ["crypto", "requires-wallet"] }),
+            makeDigest("weather"),
+          ],
+          isDone: true,
+          continueCursor: "",
+        },
+      ]),
+      {
+        capabilityTag: "crypto",
+        paginationOpts: { cursor: null, numItems: 10 },
+      },
+    );
+
+    expect(result.page).toEqual([
+      expect.objectContaining({
+        name: "paytoll",
+        capabilityTags: ["crypto", "requires-wallet"],
+      }),
+    ]);
   });
 });
