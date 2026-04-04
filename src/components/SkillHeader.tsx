@@ -319,8 +319,7 @@ export function SkillHeader({
             <div className="skill-hero-note">{overrideScanMessage}</div>
           ) : latestVersion?.sha256hash ||
             latestVersion?.llmAnalysis ||
-            (latestVersion?.staticScan?.findings?.length ?? 0) > 0 ||
-            (latestVersion?.capabilityTags?.length ?? 0) > 0 ? (
+            (latestVersion?.staticScan?.findings?.length ?? 0) > 0 ? (
             <div className="skill-hero-scan-row">
               <SecurityScanResults
                 sha256hash={latestVersion?.sha256hash}

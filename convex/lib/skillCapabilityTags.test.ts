@@ -41,4 +41,16 @@ describe("deriveSkillCapabilityTags", () => {
 
     expect(tags).toEqual(["requires-oauth-token", "posts-externally"]);
   });
+
+  it("does not treat generic broadcast wording as a crypto transaction signal", () => {
+    const tags = deriveSkillCapabilityTags({
+      slug: "notify-bot",
+      displayName: "Notify Bot",
+      frontmatter: {},
+      readmeText: "Broadcast notifications to Slack and email when incidents are opened.",
+      fileContents: [],
+    });
+
+    expect(tags).toEqual([]);
+  });
 });

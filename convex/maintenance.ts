@@ -436,6 +436,7 @@ export async function backfillSkillCapabilityTagsInternalHandler(
 
       const readmeText = await readmeBlob.text();
       const fileContents: Array<{ path: string; content: string }> = [];
+      let hasMissingTextBlob = false;
       for (const file of version.files) {
         const lower = file.path.toLowerCase();
         if (lower === "skill.md" || lower === "skills.md") continue;
@@ -443,10 +444,13 @@ export async function backfillSkillCapabilityTagsInternalHandler(
         const blob = await ctx.storage.get(file.storageId);
         if (!blob) {
           stats.missingStorageBlob += 1;
-          continue;
+          hasMissingTextBlob = true;
+          break;
         }
         fileContents.push({ path: file.path, content: await blob.text() });
       }
+
+      if (hasMissingTextBlob) continue;
 
       const capabilityTags = deriveSkillCapabilityTags({
         slug: item.skillSlug,

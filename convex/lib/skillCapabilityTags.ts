@@ -83,7 +83,8 @@ const TRANSACTION_PATTERNS = [
   /\bapproval_required\b/,
   /\bon-?chain (?:tx|transaction)\b/,
   /\bexecute(?:s|d)? transaction\b/,
-  /\bbroadcast\b/,
+  /\bbroadcast (?:transaction|tx)\b/,
+  /\btransaction broadcast\b/,
   /\bwalletclient\.sendtransaction\b/,
 ] satisfies RegExp[];
 
