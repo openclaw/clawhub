@@ -72,6 +72,7 @@ import {
   publishVersionForUser,
   queueHighlightedWebhook,
 } from "./lib/skillPublish";
+import { SKILL_CAPABILITY_TAGS } from "./lib/skillCapabilityTags";
 import { getFrontmatterValue, hashSkillFiles } from "./lib/skills";
 import { computeIsSuspicious, isSkillSuspicious } from "./lib/skillSafety";
 import { digestToHydratableSkill, digestToOwnerInfo } from "./lib/skillSearchDigest";
@@ -111,6 +112,7 @@ const DEFAULT_STAFF_AUDIT_LOG_LIMIT = 10;
 const MAX_STAFF_AUDIT_LOG_LIMIT = 50;
 const USER_MODERATION_REASON = "user.moderation";
 const SKILL_CATALOG_CURSOR_PREFIX = "skillcat:";
+const SKILL_CAPABILITY_TAG_SET = new Set<string>(SKILL_CAPABILITY_TAGS);
 
 function buildStructuredModerationPatch(params: {
   staticScan?: Doc<"skillVersions">["staticScan"];
@@ -2878,6 +2880,10 @@ function scoreSkillCatalogResult(digest: Doc<"skillSearchDigest">, queryText: st
   return score;
 }
 
+function isKnownSkillCapabilityTag(tag: string | undefined) {
+  return typeof tag === "string" && SKILL_CAPABILITY_TAG_SET.has(tag);
+}
+
 export const listPackageCatalogPage = query({
   args: {
     channel: v.optional(v.union(v.literal("official"), v.literal("community"), v.literal("private"))),
@@ -2887,6 +2893,9 @@ export const listPackageCatalogPage = query({
     paginationOpts: paginationOptsValidator,
   },
   handler: async (ctx, args) => {
+    if (args.capabilityTag && !isKnownSkillCapabilityTag(args.capabilityTag)) {
+      return { page: [], isDone: true, continueCursor: "" };
+    }
     if (args.channel === "private" || args.executesCode === true) {
       return { page: [], isDone: true, continueCursor: "" };
     }
@@ -2972,6 +2981,7 @@ export const searchPackageCatalogPublic = query({
   handler: async (ctx, args) => {
     const queryText = args.query.trim().toLowerCase();
     if (!queryText) return [];
+    if (args.capabilityTag && !isKnownSkillCapabilityTag(args.capabilityTag)) return [];
     if (args.channel === "private" || args.executesCode === true) return [];
 
     const targetCount = Math.max(1, Math.min(args.limit ?? 20, 100));

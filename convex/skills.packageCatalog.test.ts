@@ -233,4 +233,22 @@ describe("skills package catalog queries", () => {
       }),
     ]);
   });
+
+  it("returns empty immediately for unknown capability tags", async () => {
+    const result = await listPackageCatalogPageHandler(
+      makeCtx([
+        {
+          page: [makeDigest("paytoll", { capabilityTags: ["crypto", "requires-wallet"] })],
+          isDone: true,
+          continueCursor: "",
+        },
+      ]),
+      {
+        capabilityTag: "not-a-real-tag",
+        paginationOpts: { cursor: null, numItems: 10 },
+      },
+    );
+
+    expect(result).toEqual({ page: [], isDone: true, continueCursor: "" });
+  });
 });
