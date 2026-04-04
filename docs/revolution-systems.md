@@ -198,9 +198,9 @@ openclaw cron add --agent main \
 - 最多 3 次迭代
 - 3 次失败后人工介入
 
----
-
-## 相关链接
+- **TDR on ClawHub:** https://clawhub.ai/openclaw/test-driven-revolution
+- **Auto Revolution on ClawHub:** https://clawhub.ai/openclaw/auto-revolution
+- **ClawHub CLI:** https://clawhub.ai
 
 - **TDR on ClawHub:** https://clawhub.com/skills/test-driven-revolution
 - **Auto Revolution on ClawHub:** https://clawhub.com/skills/auto-revolution
