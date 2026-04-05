@@ -3,6 +3,7 @@ import { internal } from "./_generated/api";
 import type { Doc } from "./_generated/dataModel";
 import type { ActionCtx } from "./_generated/server";
 import { internalAction, internalMutation, internalQuery } from "./functions";
+import { clampInt } from "./lib/math";
 import {
   countPublicSkillsForGlobalStats,
   isPublicSkillDoc,
@@ -301,9 +302,6 @@ export const runReconcileSkillStarCountsInternal = internalAction({
   },
 });
 
-function clampInt(value: number, min: number, max: number) {
-  return Math.min(Math.max(value, min), max);
-}
 
 /**
  * Count a page of skillSearchDigest docs and return the partial public count.

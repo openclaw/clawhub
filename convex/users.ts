@@ -12,6 +12,7 @@ import {
   getUserByHandleOrPersonalPublisher,
 } from "./lib/publishers";
 import { toPublicUser } from "./lib/public";
+import { clampInt } from "./lib/math";
 import {
   getLatestActiveReservedHandle,
   isHandleReservedForAnotherUser,
@@ -424,9 +425,6 @@ async function queryUsersForAdminList(
   };
 }
 
-function clampInt(value: number, min: number, max: number) {
-  return Math.min(Math.max(Math.trunc(value), min), max);
-}
 
 export const getByHandle = query({
   args: { handle: v.string() },

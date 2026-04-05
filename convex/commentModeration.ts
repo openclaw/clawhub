@@ -4,6 +4,7 @@ import type { Id } from "./_generated/dataModel";
 import type { ActionCtx, MutationCtx } from "./_generated/server";
 import { action, internalAction, internalMutation, internalQuery } from "./functions";
 import { assertRole, requireUserFromAction } from "./lib/access";
+import { clampInt } from "./lib/math";
 import {
   buildCommentScamBanReason,
   isCertainScam,
@@ -474,6 +475,3 @@ export const scheduleCommentScamModeration: ReturnType<typeof action> = action({
   },
 });
 
-function clampInt(value: number, min: number, max: number) {
-  return Math.min(Math.max(Math.trunc(value), min), max);
-}

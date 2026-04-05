@@ -8,6 +8,7 @@ import { embeddingVisibilityFor } from "./lib/embeddingVisibility";
 import { toPublicSoul, toPublicUser } from "./lib/public";
 import { getFrontmatterValue, hashSkillFiles } from "./lib/skills";
 import { generateSoulChangelogPreview } from "./lib/soulChangelog";
+import { clampInt } from "./lib/math";
 import { fetchText, type PublishResult, publishSoulVersionForUser } from "./lib/soulPublish";
 
 export { publishSoulVersionForUser } from "./lib/soulPublish";
@@ -671,7 +672,3 @@ export const setSoulSoftDeletedInternal = internalMutation({
   },
 });
 
-function clampInt(value: number, min: number, max: number) {
-  const rounded = Number.isFinite(value) ? Math.round(value) : min;
-  return Math.min(max, Math.max(min, rounded));
-}
