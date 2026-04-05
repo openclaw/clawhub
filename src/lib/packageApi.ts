@@ -181,9 +181,15 @@ async function getForwardedHeaders() {
 
 async function packageFetch(url: URL, accept: string) {
   const forwarded = await getForwardedHeaders();
+  const isSameOrigin =
+    typeof window !== "undefined" && url.origin === window.location.origin;
   return await fetch(url.toString(), {
     method: "GET",
-    credentials: "include",
+    // Only send credentials for same-origin requests (production Vercel
+    // rewrite). Cross-origin requests to the Convex site URL don't need
+    // cookies, and `credentials: "include"` is rejected when the server
+    // responds with `Access-Control-Allow-Origin: *`.
+    credentials: isSameOrigin ? "include" : "omit",
     headers: {
       Accept: accept,
       ...forwarded,
