@@ -823,6 +823,7 @@ function Management() {
                               >
                                 View
                               </Link>
+                              </Button>
                               <Button
                                 variant="outline"
                                 size="sm"
@@ -841,19 +842,20 @@ function Management() {
                       </div>
                     </div>
                     <div className="flex flex-wrap items-center gap-2">
-                      <Link
-                        className={linkBtnClasses}
-                        to="/$owner/$slug"
-                        params={{
-                          owner: resolveOwnerParam(
-                            entry.owner?.handle ?? null,
-                            entry.owner?._id ?? entry.skill.ownerUserId,
-                          ),
-                          slug: entry.skill.slug,
-                        }}
-                      >
-                        View
-                      </Link>
+                      <Button asChild variant="outline" size="sm">
+                        <Link
+                          to="/$owner/$slug"
+                          params={{
+                            owner: resolveOwnerParam(
+                              entry.owner?.handle ?? null,
+                              entry.owner?._id ?? entry.skill.ownerUserId,
+                            ),
+                            slug: entry.skill.slug,
+                          }}
+                        >
+                          View
+                        </Link>
+                      </Button>
                     </div>
                   </div>
                 ))
@@ -888,24 +890,27 @@ function Management() {
                     </div>
                     <div className="flex flex-wrap items-center gap-2">
                       {entry.skill ? (
-                        <Link className={linkBtnClasses} to="/management" search={{ skill: entry.skill.slug }}>
-                          Manage
-                        </Link>
+                        <Button asChild variant="outline" size="sm">
+                          <Link to="/management" search={{ skill: entry.skill.slug }}>
+                            Manage
+                          </Link>
+                        </Button>
                       ) : null}
                       {entry.skill ? (
-                        <Link
-                          className={linkBtnClasses}
-                          to="/$owner/$slug"
-                          params={{
-                            owner: resolveOwnerParam(
-                              entry.owner?.handle ?? null,
-                              entry.owner?._id ?? entry.skill.ownerUserId,
-                            ),
-                            slug: entry.skill.slug,
-                          }}
-                        >
-                          View
-                        </Link>
+                        <Button asChild variant="outline" size="sm">
+                          <Link
+                            to="/$owner/$slug"
+                            params={{
+                              owner: resolveOwnerParam(
+                                entry.owner?.handle ?? null,
+                                entry.owner?._id ?? entry.skill.ownerUserId,
+                              ),
+                              slug: entry.skill.slug,
+                            }}
+                          >
+                            View
+                          </Link>
+                        </Button>
                       ) : null}
                     </div>
                   </div>

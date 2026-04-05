@@ -19,6 +19,7 @@ import type { Doc } from "../../convex/_generated/dataModel";
 import { EmptyState } from "../components/EmptyState";
 import { Container } from "../components/layout/Container";
 import { Badge } from "../components/ui/badge";
+import { Button } from "../components/ui/button";
 import { Card, CardContent } from "../components/ui/card";
 import { formatCompactStat } from "../lib/numberFormat";
 import { familyLabel } from "../lib/packageLabels";
