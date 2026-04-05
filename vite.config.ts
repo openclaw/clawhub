@@ -40,7 +40,19 @@ function handleRollupWarning(
   warn(warning);
 }
 
+const convexSiteUrl = process.env.VITE_CONVEX_SITE_URL;
+
 const config = defineConfig({
+  server: {
+    proxy: convexSiteUrl
+      ? {
+          "/api": {
+            target: convexSiteUrl,
+            changeOrigin: true,
+          },
+        }
+      : undefined,
+  },
   resolve: {
     dedupe: ["convex", "@convex-dev/auth", "react", "react-dom"],
     alias: {
