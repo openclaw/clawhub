@@ -15,6 +15,30 @@ interface MarkdownPreviewProps {
 }
 
 /**
+ * Auto-link bare URLs in HTML that aren't already inside anchor tags or attributes.
+ * Matches http/https URLs in text nodes only (not inside tags).
+ */
+function autolinkURLs(html: string): string {
+  // Split HTML into tags and text segments, then only linkify text segments
+  return html.replace(
+    /(<[^>]*>)|((https?:\/\/)[^\s<>"')\]]+)/gi,
+    (match, tag: string | undefined, url: string | undefined) => {
+      // If it's an HTML tag, leave it alone
+      if (tag) return tag;
+      // If it's a bare URL in text content, wrap it
+      if (url) {
+        // Trim trailing punctuation that's likely not part of the URL
+        const trailingPunct = /[.,;:!?)]+$/.exec(url);
+        const cleanUrl = trailingPunct ? url.slice(0, -trailingPunct[0].length) : url;
+        const suffix = trailingPunct ? trailingPunct[0] : "";
+        return `<a href="${cleanUrl}" target="_blank" rel="noopener noreferrer">${cleanUrl}</a>${suffix}`;
+      }
+      return match;
+    },
+  );
+}
+
+/**
  * Rich markdown preview using @create-markdown/preview.
  * Renders markdown → HTML with optional Shiki syntax highlighting.
  * Falls back to synchronous (unhighlighted) rendering while Shiki loads.
@@ -29,7 +53,7 @@ export function MarkdownPreview({
   const [html, setHtml] = useState(() => {
     try {
       const blocks = parse(children);
-      return blocksToHTML(blocks);
+      return autolinkURLs(blocksToHTML(blocks));
     } catch {
       return "";
     }
@@ -41,7 +65,7 @@ export function MarkdownPreview({
     // Re-parse synchronously on content change
     try {
       const blocks = parse(children);
-      const syncHtml = blocksToHTML(blocks);
+      const syncHtml = autolinkURLs(blocksToHTML(blocks));
       setHtml(syncHtml);
 
       if (!highlight) return;
@@ -51,7 +75,7 @@ export function MarkdownPreview({
         plugins: [shikiPlugin({ theme: "github-dark" })],
       }).then((highlighted) => {
         if (!cancelled) {
-          setHtml(highlighted);
+          setHtml(autolinkURLs(highlighted));
         }
       }).catch(() => {
         // Shiki failed to load — keep the sync render

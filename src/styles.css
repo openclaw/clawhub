@@ -390,6 +390,66 @@ code {
   color: inherit;
 }
 
+/* ── Markdown tables ── */
+.markdown table {
+  width: 100%;
+  border-collapse: collapse;
+  caption-side: bottom;
+  font-size: 0.875rem;
+  margin: 1.25rem 0;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-md);
+  overflow: hidden;
+}
+
+.markdown thead {
+  background: var(--surface-muted);
+}
+
+.markdown thead th {
+  padding: 0.625rem 0.875rem;
+  text-align: left;
+  font-weight: 600;
+  font-size: 0.8rem;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+  color: var(--ink-soft);
+  border-bottom: 2px solid var(--line);
+  white-space: nowrap;
+}
+
+.markdown tbody tr {
+  border-bottom: 1px solid var(--line);
+  transition: background-color 0.15s ease;
+}
+
+.markdown tbody tr:last-child {
+  border-bottom: none;
+}
+
+.markdown tbody tr:hover {
+  background: var(--surface-muted);
+}
+
+.markdown tbody td {
+  padding: 0.625rem 0.875rem;
+  vertical-align: top;
+  color: var(--ink);
+  line-height: 1.5;
+}
+
+.markdown tbody td code {
+  font-size: 0.8em;
+}
+
+[data-theme="dark"] .markdown thead {
+  background: rgba(14, 22, 32, 0.6);
+}
+
+[data-theme="dark"] .markdown tbody tr:hover {
+  background: rgba(255, 255, 255, 0.03);
+}
+
 .fade-up {
   animation: fadeUp 0.6s ease forwards;
   opacity: 0;
