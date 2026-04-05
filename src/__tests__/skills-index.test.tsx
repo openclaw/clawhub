@@ -323,7 +323,7 @@ describe("SkillsIndex", () => {
       fireEvent.click(loadMoreButton);
     });
 
-    expect(screen.getByText("Loading…")).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Load more" }).hasAttribute("disabled")).toBe(true);
   });
 });
 

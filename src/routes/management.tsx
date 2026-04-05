@@ -5,6 +5,7 @@ import { useEffect, useState } from "react";
 import { toast } from "sonner";
 import { api } from "../../convex/_generated/api";
 import type { Doc, Id } from "../../convex/_generated/dataModel";
+import { SKILL_CAPABILITY_TAGS } from "../../convex/lib/skillCapabilityTags";
 import { EmptyState } from "../components/EmptyState";
 import { Container } from "../components/layout/Container";
 import { Badge } from "../components/ui/badge";
@@ -23,6 +24,15 @@ import {
 import { getUserFacingConvexError } from "../lib/convexError";
 import { isAdmin, isModerator } from "../lib/roles";
 import { useAuthStatus } from "../lib/useAuthStatus";
+
+const SKILL_CAPABILITY_LABELS: Record<string, string> = {
+  crypto: "Crypto / DeFi",
+  "requires-wallet": "Requires wallet",
+  "can-make-purchases": "Can make purchases",
+  "can-sign-transactions": "Can sign transactions",
+  "requires-oauth-token": "Requires OAuth token",
+  "posts-externally": "Posts externally",
+};
 
 const SKILL_AUDIT_LOG_LIMIT = 10;
 
@@ -148,6 +158,7 @@ function Management() {
   const setDeprecatedBadge = useMutation(api.skills.setDeprecatedBadge);
   const setSkillManualOverride = useMutation(api.skills.setSkillManualOverride);
   const clearSkillManualOverride = useMutation(api.skills.clearSkillManualOverride);
+  const setSkillCapabilityTags = useMutation(api.skills.setSkillCapabilityTags);
 
   const [selectedDuplicate, setSelectedDuplicate] = useState("");
   const [selectedOwner, setSelectedOwner] = useState("");
@@ -185,6 +196,19 @@ function Management() {
     const handle = setTimeout(() => setUserSearchDebounced(userSearch), 250);
     return () => clearTimeout(handle);
   }, [userSearch]);
+
+  const toggleSkillCapabilityTag = (tag: string, checked: boolean) => {
+    if (!selectedSkill?.skill) return;
+    const currentTags = new Set(
+      selectedSkill.latestVersion?.capabilityTags ?? selectedSkill.skill.capabilityTags ?? [],
+    );
+    if (checked) currentTags.add(tag);
+    else currentTags.delete(tag);
+    void setSkillCapabilityTags({
+      skillId: selectedSkill.skill._id,
+      capabilityTags: SKILL_CAPABILITY_TAGS.filter((entry) => currentTags.has(entry)),
+    }).catch((error) => toast.error(formatMutationError(error)));
+  };
 
   if (!staff) {
     return (
@@ -377,7 +401,7 @@ function Management() {
                               skillId: skill._id,
                               deleted: !skill.softDeletedAt,
                               reason: reason.trim(),
-                            });
+                            }).catch((error) => toast.error(formatMutationError(error)));
                           }}
                         >
                           {skill.softDeletedAt ? "Restore" : "Hide"}
@@ -451,6 +475,7 @@ function Management() {
                   const isOfficial = isSkillOfficial(skill);
                   const isDeprecated = isSkillDeprecated(skill);
                   const badges = getSkillBadges(skill);
+                  const capabilityTags = latestVersion?.capabilityTags ?? skill.capabilityTags ?? [];
                   const ownerUserId = skill.ownerUserId ?? selectedOwnerUserId;
                   const ownerHandle = owner?.handle ?? owner?.name ?? "user";
                   const isOwnerAdmin = owner?.role === "admin";
@@ -479,6 +504,25 @@ function Management() {
                             ))}
                           </div>
                         ) : null}
+                        <div className="flex flex-col gap-2 border-l-2 border-[color:var(--line)] pl-4">
+                          <div className="text-sm text-[color:var(--ink-soft)]">
+                            Capability tags
+                          </div>
+                          <div className="flex flex-wrap gap-3">
+                            {SKILL_CAPABILITY_TAGS.map((tag) => (
+                              <label key={tag} className="flex items-center gap-1.5 text-sm">
+                                <input
+                                  type="checkbox"
+                                  checked={capabilityTags.includes(tag)}
+                                  onChange={(event) =>
+                                    toggleSkillCapabilityTag(tag, event.target.checked)
+                                  }
+                                />
+                                <span>{SKILL_CAPABILITY_LABELS[tag] ?? tag}</span>
+                              </label>
+                            ))}
+                          </div>
+                        </div>
                         <div className="flex flex-col gap-2 border-l-2 border-[color:var(--line)] pl-4">
                           <div className="text-sm text-[color:var(--ink-soft)]">
                             Manual overrides
@@ -685,7 +729,7 @@ function Management() {
                               skillId: skill._id,
                               deleted: !skill.softDeletedAt,
                               reason: reason.trim(),
-                            });
+                            }).catch((error) => toast.error(formatMutationError(error)));
                           }}
                         >
                           {skill.softDeletedAt ? "Restore" : "Hide"}

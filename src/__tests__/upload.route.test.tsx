@@ -9,6 +9,10 @@ vi.mock("@tanstack/react-router", () => ({
   useSearch: () => ({ updateSlug: undefined }),
 }));
 
+vi.mock("@convex-dev/auth/react", () => ({
+  useAuthActions: () => ({ signIn: vi.fn() }),
+}));
+
 const generateUploadUrl = vi.fn();
 const publishVersion = vi.fn();
 const generateChangelogPreview = vi.fn();
