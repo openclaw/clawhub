@@ -1,7 +1,7 @@
 /* @vitest-environment node */
 
 import { describe, expect, it } from "vitest";
-import { extractDigestFields, digestToOwnerInfo } from "./skillSearchDigest";
+import { digestToOwnerInfo, extractDigestFields } from "./skillSearchDigest";
 
 function makeSkillDoc(overrides: Record<string, unknown> = {}) {
   return {
@@ -69,7 +69,9 @@ describe("extractDigestFields", () => {
 
     expect(digest.skillId).toBe("skills:abc");
     expect(digest.slug).toBe("test-skill");
+    expect(digest.normalizedSlug).toBe("test-skill");
     expect(digest.displayName).toBe("Test Skill");
+    expect(digest.normalizedDisplayName).toBe("test skill");
     expect(digest.summary).toBe("A test skill summary");
     expect(digest.ownerUserId).toBe("users:owner");
     expect(digest.statsDownloads).toBe(42);
@@ -125,6 +127,17 @@ describe("extractDigestFields", () => {
     expect(digest).not.toHaveProperty("ownerName");
     expect(digest).not.toHaveProperty("ownerDisplayName");
     expect(digest).not.toHaveProperty("ownerImage");
+  });
+
+  it("normalizes lexical fields for indexed prefix search", () => {
+    const skill = makeSkillDoc({
+      slug: "Midscene-Computer-Automation",
+      displayName: "  Midscene   Automations Skills  ",
+    });
+    const digest = extractDigestFields(skill as never);
+
+    expect(digest.normalizedSlug).toBe("midscene-computer-automation");
+    expect(digest.normalizedDisplayName).toBe("midscene automations skills");
   });
 
   it("produces a digest that works with toPublicSkill when shaped as Doc<skills>", () => {
