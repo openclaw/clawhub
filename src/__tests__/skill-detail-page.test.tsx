@@ -54,8 +54,9 @@ describe("SkillDetailPage", () => {
       return undefined;
     });
 
-    render(<SkillDetailPage slug="weather" />);
-    expect(screen.getByText(/Loading skill/i)).toBeTruthy();
+    const { container } = render(<SkillDetailPage slug="weather" />);
+    // Loading state now renders a skeleton, not text
+    expect(container.querySelector('[class*="animate-pulse"], [data-slot="skeleton"]')).toBeTruthy();
     expect(screen.queryByText(/Skill not found/i)).toBeNull();
   });
 
@@ -128,10 +129,10 @@ describe("SkillDetailPage", () => {
       />,
     );
 
-    expect(screen.queryByText(/Loading skill/i)).toBeNull();
+    // With initialData, should render content instead of skeleton
     expect(await screen.findByRole("heading", { name: "Weather" })).toBeTruthy();
     expect(screen.getByText(/Get current weather\./i)).toBeTruthy();
-    expect(screen.getByRole("button", { name: "Files" })).toBeTruthy();
+    expect(screen.getByRole("tab", { name: "Files" })).toBeTruthy();
   });
 
   it("shows capability tags on the skill page without other scan findings", async () => {
@@ -184,6 +185,7 @@ describe("SkillDetailPage", () => {
               changelog: "Initial release",
               parsed: { license: "MIT-0", frontmatter: {} },
               capabilityTags: ["crypto", "requires-wallet", "can-make-purchases"],
+              sha256hash: "abc123",
               files: [
                 {
                   path: "SKILL.md",
@@ -291,10 +293,10 @@ describe("SkillDetailPage", () => {
     );
 
     expect(await screen.findByRole("heading", { name: "SkillPay" })).toBeTruthy();
-    expect(screen.getByText(fullDescription)).toBeTruthy();
+    // The header now always shows skill.summary (not frontmatter.description)
     expect(
-      screen.queryByText("Add credit-based payments to any OpenClaw skill. Register paid skills..."),
-    ).toBeNull();
+      screen.getByText("Add credit-based payments to any OpenClaw skill. Register paid skills..."),
+    ).toBeTruthy();
   });
 
   it("does not refetch readme when SSR data already matches the latest version", async () => {
@@ -409,8 +411,9 @@ describe("SkillDetailPage", () => {
       };
     });
 
-    render(<SkillDetailPage slug="weather" redirectToCanonical />);
-    expect(screen.getByText(/Loading skill/i)).toBeTruthy();
+    const { container } = render(<SkillDetailPage slug="weather" redirectToCanonical />);
+    // Loading state now renders a skeleton, not text
+    expect(container.querySelector('[class*="animate-pulse"]')).toBeTruthy();
 
     await waitFor(() => {
       expect(navigateMock).toHaveBeenCalled();
@@ -515,7 +518,7 @@ describe("SkillDetailPage", () => {
       />,
     );
 
-    expect(screen.queryByText(/Loading skill/i)).toBeNull();
+    expect(screen.queryByText(/Skill not found/i)).toBeNull();
     expect(screen.getAllByText("Weather").length).toBeGreaterThan(0);
     expect(navigateMock).not.toHaveBeenCalled();
   });
@@ -670,7 +673,9 @@ describe("SkillDetailPage", () => {
       }),
     ).toBe(false);
 
-    fireEvent.click(screen.getByRole("button", { name: /compare/i }));
+    const compareTab = screen.getByRole("tab", { name: /compare/i });
+    fireEvent.mouseEnter(compareTab);
+    fireEvent.click(compareTab);
 
     await waitFor(() => {
       expect(

@@ -294,8 +294,8 @@ describe("plugins publish route", () => {
       expect(screen.getByText(/Each file must be 10MB or smaller/i)).toBeTruthy();
     });
 
-    const summary = document.querySelector(".plugin-upload-summary");
-    expect(summary?.classList.contains("is-ready")).toBe(false);
+    const summaryBorders = document.querySelectorAll(".border-emerald-300\\/40");
+    expect(summaryBorders.length).toBe(0);
   });
 
   it("publishes a bundle plugin folder with bundle metadata", async () => {
