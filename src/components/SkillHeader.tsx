@@ -77,6 +77,17 @@ type SkillHeaderProps = {
   osLabels: string[];
 };
 
+function getFullSkillDescription(
+  skill: Doc<"skills"> | PublicSkill,
+  latestVersion: Doc<"skillVersions"> | null,
+) {
+  const frontmatterDescription = latestVersion?.parsed?.frontmatter?.description;
+  if (typeof frontmatterDescription === "string" && frontmatterDescription.trim()) {
+    return frontmatterDescription.trim();
+  }
+  return skill.summary ?? "No summary provided.";
+}
+
 export function SkillHeader({
   skill,
   owner,
@@ -118,6 +129,7 @@ export function SkillHeader({
 }: SkillHeaderProps) {
   const convexSiteUrl = getRuntimeEnv("VITE_CONVEX_SITE_URL") ?? "https://clawhub.ai";
   const formattedStats = formatSkillStatsTriplet(skill.stats);
+  const skillDescription = getFullSkillDescription(skill, latestVersion);
   const suppressScanResults =
     !isStaff &&
     Boolean(modInfo?.overrideActive) &&
@@ -202,7 +214,7 @@ export function SkillHeader({
                 ) : null}
                 {nixPlugin ? <span className="tag tag-accent">Plugin bundle (nix)</span> : null}
               </div>
-              <p className="section-subtitle">{skill.summary ?? "No summary provided."}</p>
+              <p className="section-subtitle">{skillDescription}</p>
 
               {isStaff && staffModerationNote ? (
                 <div className="skill-hero-note">{staffModerationNote}</div>

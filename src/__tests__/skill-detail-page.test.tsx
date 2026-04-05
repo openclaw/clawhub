@@ -212,6 +212,91 @@ describe("SkillDetailPage", () => {
     expect(screen.getByText("Can make purchases")).toBeTruthy();
   });
 
+  it("prefers the full frontmatter description over the shortened summary in the header", async () => {
+    useQueryMock.mockImplementation((_fn: unknown, args: unknown) => {
+      if (args === "skip") return undefined;
+      if (args && typeof args === "object" && "skillId" in args) return [];
+      return undefined;
+    });
+
+    const fullDescription =
+      "Add credit-based payments to any OpenClaw skill. Register paid skills, charge users per call, track earnings, and withdraw USDC. Use when a user wants to monetize a skill.";
+
+    render(
+      <SkillDetailPage
+        slug="skill-pay"
+        initialData={{
+          result: {
+            skill: {
+              _id: skillId,
+              _creationTime: 0,
+              slug: "skill-pay",
+              displayName: "SkillPay",
+              summary: "Add credit-based payments to any OpenClaw skill. Register paid skills...",
+              ownerUserId: ownerId,
+              ownerPublisherId,
+              tags: {},
+              badges: {},
+              stats: {
+                stars: 12,
+                downloads: 34,
+                installsCurrent: 5,
+                installsAllTime: 8,
+                versions: 1,
+                comments: 0,
+              },
+              createdAt: 0,
+              updatedAt: 0,
+            },
+            owner: {
+              _id: ownerPublisherId,
+              _creationTime: 0,
+              kind: "user",
+              handle: "steipete",
+              displayName: "Peter",
+              linkedUserId: ownerId,
+            },
+            latestVersion: {
+              _id: versionId,
+              _creationTime: 0,
+              skillId,
+              version: "1.0.0",
+              fingerprint: "abc",
+              changelog: "Initial release",
+              parsed: {
+                license: "MIT-0",
+                frontmatter: {
+                  description: fullDescription,
+                },
+              },
+              files: [
+                {
+                  path: "SKILL.md",
+                  size: 10,
+                  storageId,
+                  sha256: "abc",
+                  contentType: "text/markdown",
+                },
+              ],
+              createdBy: ownerId,
+              createdAt: 0,
+            },
+            forkOf: null,
+            canonical: null,
+          },
+          readme: "# SkillPay",
+          readmeError: null,
+        }}
+      />,
+    );
+
+    expect(await screen.findByRole("heading", { name: "SkillPay" })).toBeTruthy();
+    expect(screen.getByText(fullDescription)).toBeTruthy();
+    expect(
+      screen.queryByText("Add credit-based payments to any OpenClaw skill. Register paid skills..."),
+    ).toBeNull();
+  });
+
   it("does not refetch readme when SSR data already matches the latest version", async () => {
     useQueryMock.mockImplementation((_fn: unknown, args: unknown) => {
       if (args === "skip") return undefined;
