@@ -1,8 +1,7 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { ExternalLink, Copy, Check, Download } from "lucide-react";
 import { useState } from "react";
-import ReactMarkdown from "react-markdown";
-import remarkGfm from "remark-gfm";
+import { MarkdownPreview } from "../../components/MarkdownPreview";
 import { EmptyState } from "../../components/EmptyState";
 import { Container } from "../../components/layout/Container";
 import { SecurityScanResults } from "../../components/SkillSecurityScanResults";
@@ -481,9 +480,9 @@ function PluginDetailRoute() {
 
           {/* Readme */}
           {readme ? (
-            <Card className="markdown">
+            <Card>
               <CardContent>
-                <ReactMarkdown remarkPlugins={[remarkGfm]}>{readme}</ReactMarkdown>
+                <MarkdownPreview>{readme}</MarkdownPreview>
               </CardContent>
             </Card>
           ) : null}

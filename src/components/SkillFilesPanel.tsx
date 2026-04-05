@@ -1,7 +1,6 @@
 import { useAction } from "convex/react";
 import { useCallback, useEffect, useRef, useState } from "react";
-import ReactMarkdown from "react-markdown";
-import remarkGfm from "remark-gfm";
+import { MarkdownPreview } from "./MarkdownPreview";
 import { api } from "../../convex/_generated/api";
 import type { Doc, Id } from "../../convex/_generated/dataModel";
 import { Skeleton } from "./ui/skeleton";
@@ -97,9 +96,9 @@ export function SkillFilesPanel({
         <h2 className="m-0 font-display text-[1.2rem] font-bold text-[color:var(--ink)]">
           SKILL.md
         </h2>
-        <div className="markdown">
+        <div>
           {readmeContent ? (
-            <ReactMarkdown remarkPlugins={[remarkGfm]}>{readmeContent}</ReactMarkdown>
+            <MarkdownPreview>{readmeContent}</MarkdownPreview>
           ) : readmeError ? (
             <div className="text-sm text-[color:var(--ink-soft)]">Failed to load SKILL.md: {readmeError}</div>
           ) : (

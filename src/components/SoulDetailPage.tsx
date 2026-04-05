@@ -1,7 +1,6 @@
 import { useAction, useMutation, useQuery } from "convex/react";
 import { useEffect, useMemo, useRef, useState } from "react";
-import ReactMarkdown from "react-markdown";
-import remarkGfm from "remark-gfm";
+import { MarkdownPreview } from "./MarkdownPreview";
 import { api } from "../../convex/_generated/api";
 import type { Doc } from "../../convex/_generated/dataModel";
 import type { PublicSoul, PublicUser } from "../lib/publicUser";
@@ -193,10 +192,10 @@ export function SoulDetailPage({ slug }: SoulDetailPageProps) {
             </CardContent>
           </Card>
 
-          <Card className="markdown">
+          <Card>
             <CardContent>
               {readmeContent ? (
-                <ReactMarkdown remarkPlugins={[remarkGfm]}>{readmeContent}</ReactMarkdown>
+                <MarkdownPreview>{readmeContent}</MarkdownPreview>
               ) : readmeError ? (
                 <div className="text-sm text-[color:var(--ink-soft)]">Failed to load SOUL.md: {readmeError}</div>
               ) : (
