@@ -26,9 +26,6 @@ import { useAuthStatus } from "../lib/useAuthStatus";
 
 const SKILL_AUDIT_LOG_LIMIT = 10;
 
-/** Tailwind classes that replicate `<Button variant="outline" size="sm">` for Link elements. */
-const linkBtnClasses =
-  "inline-flex items-center justify-center gap-2 whitespace-nowrap font-semibold transition-all duration-200 ease-out border border-[color:var(--border-ui)] bg-transparent text-[color:var(--ink)] min-h-[34px] rounded-[var(--radius-pill)] px-3 py-1.5 text-xs hover:-translate-y-px hover:border-[color:var(--border-ui-hover)] hover:bg-[color:var(--surface)]";
 
 type ManagementUserSummary = {
   _id: Id<"users">;
@@ -364,9 +361,11 @@ function Management() {
                         )}
                       </div>
                       <div className="flex flex-wrap items-center gap-2">
-                        <Link className={linkBtnClasses} to="/management" search={{ skill: skill.slug }}>
-                          Manage
-                        </Link>
+                        <Button asChild variant="outline" size="sm">
+                          <Link to="/management" search={{ skill: skill.slug }}>
+                            Manage
+                          </Link>
+                        </Button>
                         <Button
                           variant="outline"
                           size="sm"
@@ -663,13 +662,14 @@ function Management() {
                         </div>
                       </div>
                       <div className="flex flex-wrap gap-2">
+                        <Button asChild variant="outline" size="sm">
                         <Link
-                          className={linkBtnClasses}
                           to="/$owner/$slug"
                           params={{ owner: ownerParam, slug: skill.slug }}
                         >
                           View
                         </Link>
+                        </Button>
                         <Button
                           variant="outline"
                           size="sm"
@@ -810,8 +810,8 @@ function Management() {
                               </div>
                             </div>
                             <div className="flex flex-wrap items-center gap-2">
+                              <Button asChild variant="outline" size="sm">
                               <Link
-                                className={linkBtnClasses}
                                 to="/$owner/$slug"
                                 params={{
                                   owner: resolveOwnerParam(

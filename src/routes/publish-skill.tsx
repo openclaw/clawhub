@@ -369,24 +369,33 @@ export function Upload() {
       return;
     }
     if (slugCollision) {
+      setError(slugCollision.message);
       toast.error(slugCollision.message);
       return;
     }
     if (!isSoulMode && !acceptedLicenseTerms) {
-      toast.error("Accept the MIT-0 license terms to publish this skill.");
+      const msg = "Accept the MIT-0 license terms to publish this skill.";
+      setError(msg);
+      toast.error(msg);
       return;
     }
     setError(null);
     if (oversizedFiles.length > 0) {
-      toast.error(`Each file must be 10MB or smaller: ${oversizedFileNames.join(", ")}`);
+      const msg = `Each file must be 10MB or smaller: ${oversizedFileNames.join(", ")}`;
+      setError(msg);
+      toast.error(msg);
       return;
     }
     if (totalBytes > MAX_PUBLISH_TOTAL_BYTES) {
-      toast.error("Total size exceeds 50MB per version.");
+      const msg = "Total size exceeds 50MB per version.";
+      setError(msg);
+      toast.error(msg);
       return;
     }
     if (!hasRequiredFile) {
-      toast.error(`${requiredFileLabel} is required.`);
+      const msg = `${requiredFileLabel} is required.`;
+      setError(msg);
+      toast.error(msg);
       return;
     }
     setStatus("Uploading files…");

@@ -66,13 +66,6 @@ type DashboardPackage = {
   } | null;
 };
 
-/* ---------- shared link-as-button classes ---------- */
-const linkBtnBase =
-  "inline-flex items-center justify-center gap-2 whitespace-nowrap font-semibold transition-all duration-200 ease-out focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--accent)]/35 focus-visible:ring-offset-2 focus-visible:ring-offset-[color:var(--bg)]";
-const linkBtnDefault = `${linkBtnBase} border border-[color:var(--line)] bg-[color:var(--surface)] text-[color:var(--ink)] min-h-[44px] rounded-[var(--radius-pill)] px-4 py-[11px] text-sm`;
-const linkBtnPrimary = `${linkBtnBase} border-none bg-gradient-to-br from-[color:var(--accent)] to-[color:var(--accent-deep)] text-white min-h-[44px] rounded-[var(--radius-pill)] px-4 py-[11px] text-sm`;
-const linkBtnSm = `${linkBtnBase} border border-[color:var(--line)] bg-[color:var(--surface)] text-[color:var(--ink)] min-h-[34px] rounded-[var(--radius-pill)] px-3 py-1.5 text-xs`;
-const linkBtnGhostSm = `${linkBtnBase} border-transparent bg-transparent text-[color:var(--ink-soft)] min-h-[34px] rounded-[var(--radius-pill)] px-3 py-1.5 text-xs`;
 
 export const Route = createFileRoute("/dashboard")({
   component: Dashboard,
@@ -163,18 +156,18 @@ function Dashboard() {
               ))}
             </select>
           ) : null}
-          <Link to="/publish-skill" search={{ updateSlug: undefined }} className={linkBtnPrimary}>
-            <Upload className="h-4 w-4" aria-hidden="true" />
-            Publish Skill
-          </Link>
-          <Link
-            to="/publish-plugin"
-            search={{ ...emptyPluginPublishSearch, ownerHandle }}
-            className={linkBtnDefault}
-          >
-            <Plug className="h-4 w-4" aria-hidden="true" />
-            Publish Plugin
-          </Link>
+          <Button asChild variant="primary">
+            <Link to="/publish-skill" search={{ updateSlug: undefined }}>
+              <Upload className="h-4 w-4" aria-hidden="true" />
+              Publish Skill
+            </Link>
+          </Button>
+          <Button asChild>
+            <Link to="/publish-plugin" search={{ ...emptyPluginPublishSearch, ownerHandle }}>
+              <Plug className="h-4 w-4" aria-hidden="true" />
+              Publish Plugin
+            </Link>
+          </Button>
         </div>
       </div>
 
@@ -198,14 +191,12 @@ function Dashboard() {
                   title="No skills yet."
                   description="Publish your first skill to share it with the community."
                 >
-                  <Link
-                    to="/publish-skill"
-                    search={{ updateSlug: undefined }}
-                    className={linkBtnPrimary}
-                  >
-                    <Upload className="h-4 w-4" aria-hidden="true" />
-                    Publish Skill
-                  </Link>
+                  <Button asChild variant="primary">
+                    <Link to="/publish-skill" search={{ updateSlug: undefined }}>
+                      <Upload className="h-4 w-4" aria-hidden="true" />
+                      Publish Skill
+                    </Link>
+                  </Button>
                 </EmptyState>
               ) : (
                 <div className="flex flex-col">
@@ -238,14 +229,12 @@ function Dashboard() {
                   title="No plugins yet."
                   description="Publish your first plugin release to validate and distribute it."
                 >
-                  <Link
-                    to="/publish-plugin"
-                    search={{ ...emptyPluginPublishSearch, ownerHandle }}
-                    className={linkBtnPrimary}
-                  >
-                    <Plug className="h-4 w-4" aria-hidden="true" />
-                    Publish Plugin
-                  </Link>
+                  <Button asChild variant="primary">
+                    <Link to="/publish-plugin" search={{ ...emptyPluginPublishSearch, ownerHandle }}>
+                      <Plug className="h-4 w-4" aria-hidden="true" />
+                      Publish Plugin
+                    </Link>
+                  </Button>
                 </EmptyState>
               ) : (
                 <div className="flex flex-col">
@@ -326,17 +315,17 @@ function SkillRow({ skill, ownerHandle }: { skill: DashboardSkill; ownerHandle: 
 
       {/* Actions */}
       <div className="flex flex-wrap gap-2">
-        <Link to="/publish-skill" search={{ updateSlug: skill.slug }} className={linkBtnSm}>
-          <Upload className="h-3 w-3" aria-hidden="true" />
-          New Version
-        </Link>
-        <Link
-          to="/$owner/$slug"
-          params={{ owner: ownerHandle ?? "unknown", slug: skill.slug }}
-          className={linkBtnGhostSm}
-        >
-          View
-        </Link>
+        <Button asChild size="sm">
+          <Link to="/publish-skill" search={{ updateSlug: skill.slug }}>
+            <Upload className="h-3 w-3" aria-hidden="true" />
+            New Version
+          </Link>
+        </Button>
+        <Button asChild variant="ghost" size="sm">
+          <Link to="/$owner/$slug" params={{ owner: ownerHandle ?? "unknown", slug: skill.slug }}>
+            View
+          </Link>
+        </Button>
       </div>
     </div>
   );
@@ -491,24 +480,27 @@ function PackageRow({ pkg, ownerHandle }: { pkg: DashboardPackage; ownerHandle: 
 
       {/* Actions */}
       <div className="flex flex-wrap gap-2">
-        <Link
-          to="/publish-plugin"
-          search={{
-            ownerHandle,
-            name: pkg.name,
-            displayName: pkg.displayName,
-            family: pkg.family === "bundle-plugin" ? "bundle-plugin" : "code-plugin",
-            nextVersion: nextVersion ?? undefined,
-            sourceRepo: pkg.sourceRepo ?? undefined,
-          }}
-          className={linkBtnSm}
-        >
-          <Upload className="h-3 w-3" aria-hidden="true" />
-          New Release
-        </Link>
-        <Link to="/plugins/$name" params={{ name: pkg.name }} className={linkBtnGhostSm}>
-          View
-        </Link>
+        <Button asChild size="sm">
+          <Link
+            to="/publish-plugin"
+            search={{
+              ownerHandle,
+              name: pkg.name,
+              displayName: pkg.displayName,
+              family: pkg.family === "bundle-plugin" ? "bundle-plugin" : "code-plugin",
+              nextVersion: nextVersion ?? undefined,
+              sourceRepo: pkg.sourceRepo ?? undefined,
+            }}
+          >
+            <Upload className="h-3 w-3" aria-hidden="true" />
+            New Release
+          </Link>
+        </Button>
+        <Button asChild variant="ghost" size="sm">
+          <Link to="/plugins/$name" params={{ name: pkg.name }}>
+            View
+          </Link>
+        </Button>
       </div>
     </div>
   );
