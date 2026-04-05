@@ -22,10 +22,26 @@ type PluginDetailLoaderData = {
 
 export const Route = createFileRoute("/plugins/$name")({
   loader: async ({ params }): Promise<PluginDetailLoaderData> => {
-    const readmePromise = fetchPackageReadme(params.name);
-    const detail = await fetchPackageDetail(params.name);
+    const requestedName = params.name;
+    const candidateNames = requestedName.includes("/")
+      ? [requestedName]
+      : [requestedName, `@openclaw/${requestedName}`];
+
+    let resolvedName = requestedName;
+    let detail: PackageDetailResponse = { package: null, owner: null };
+    for (const candidateName of candidateNames) {
+      const candidateDetail = await fetchPackageDetail(candidateName);
+      if (candidateDetail.package) {
+        detail = candidateDetail;
+        resolvedName = candidateName;
+        break;
+      }
+      detail = candidateDetail;
+    }
+
+    const readmePromise = fetchPackageReadme(resolvedName);
     const versionPromise = detail.package?.latestVersion
-      ? fetchPackageVersion(params.name, detail.package.latestVersion)
+      ? fetchPackageVersion(resolvedName, detail.package.latestVersion)
       : Promise.resolve(null);
     const [version, readme] = await Promise.all([versionPromise, readmePromise]);
     return { detail, version, readme };

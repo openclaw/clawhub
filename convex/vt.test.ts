@@ -275,7 +275,73 @@ describe("package VT retries", () => {
     expect(scheduler.runAfter).not.toHaveBeenCalled();
   });
 
-  it("promotes official source-linked packages with undetected-only VT stats via fallback", async () => {
+  it("does not promote official source-linked packages with suspicious static scans via fallback", async () => {
+    process.env.VT_API_KEY = "test-key";
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({
+          data: {
+            attributes: {
+              last_analysis_stats: {
+                malicious: 0,
+                suspicious: 0,
+                harmless: 0,
+                undetected: 66,
+              },
+            },
+          },
+        }),
+      })
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({ data: { id: "analysis-123" } }),
+      });
+    vi.stubGlobal("fetch", fetchMock);
+
+    const runMutation = vi.fn(async () => null);
+    const scheduler = { runAfter: vi.fn(async () => null) };
+    await scanPackageReleaseWithVirusTotalHandler(
+      {
+        runQuery: vi
+          .fn()
+          .mockResolvedValueOnce({
+            _id: "packageReleases:demo",
+            packageId: "packages:demo",
+            version: "1.0.0",
+            verification: { tier: "source-linked" },
+            llmAnalysis: { status: "clean" },
+            staticScan: { status: "suspicious" },
+            files: [{ path: "package.json", storageId: "storage:pkg" }],
+          })
+          .mockResolvedValueOnce({
+            _id: "packages:demo",
+            name: "demo-plugin",
+            family: "code-plugin",
+            isOfficial: true,
+          }),
+        runMutation,
+        scheduler,
+        storage: {
+          get: vi.fn(async () => new Blob(['{"name":"demo-plugin"}'], { type: "application/json" })),
+        },
+      } as never,
+      { releaseId: "packageReleases:demo" },
+    );
+
+    expect(runMutation.mock.calls.length).toBe(1);
+    const mutationCalls = runMutation.mock.calls as unknown as Array<
+      [unknown, Record<string, unknown>]
+    >;
+    expect(
+      mutationCalls.some(([, payload]) => "vtAnalysis" in payload),
+    ).toBe(false);
+    expect(fetchMock.mock.calls.length).toBe(2);
+    expect(scheduler.runAfter.mock.calls.length).toBe(1);
+  });
+
+  it("promotes official source-linked packages with clean static scans via fallback", async () => {
     process.env.VT_API_KEY = "test-key";
     const fetchMock = vi.fn().mockResolvedValueOnce({
       ok: true,
@@ -306,7 +372,7 @@ describe("package VT retries", () => {
             version: "1.0.0",
             verification: { tier: "source-linked" },
             llmAnalysis: { status: "clean" },
-            staticScan: { status: "suspicious" },
+            staticScan: { status: "clean" },
             files: [{ path: "package.json", storageId: "storage:pkg" }],
           })
           .mockResolvedValueOnce({
@@ -429,7 +495,7 @@ describe("package VT retries", () => {
     );
   });
 
-  it("applies the same undetected-only fallback during package polling", async () => {
+  it("does not apply undetected-only fallback during package polling when static scan is suspicious", async () => {
     process.env.VT_API_KEY = "test-key";
     vi.stubGlobal(
       "fetch",
@@ -476,17 +542,8 @@ describe("package VT retries", () => {
       { releaseId: "packageReleases:demo", attempt: 3 },
     );
 
-    expect(runMutation).toHaveBeenCalledWith(
-      expect.anything(),
-      expect.objectContaining({
-        releaseId: "packageReleases:demo",
-        vtAnalysis: expect.objectContaining({
-          status: "clean",
-          source: "engines-undetected-fallback",
-        }),
-      }),
-    );
-    expect(scheduler.runAfter).not.toHaveBeenCalled();
+    expect(runMutation).not.toHaveBeenCalled();
+    expect(scheduler.runAfter).toHaveBeenCalledTimes(1);
   });
 
   it("applies the same undetected-only fallback during community package polling", async () => {

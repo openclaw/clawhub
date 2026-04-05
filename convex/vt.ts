@@ -179,7 +179,7 @@ function buildPackageUndetectedFallbackAnalysis(
     return null;
   }
   if (release.llmAnalysis?.status !== "clean") return null;
-  if (!release.staticScan || release.staticScan.status === "malicious") return null;
+  if (!release.staticScan || release.staticScan.status !== "clean") return null;
   if (stats.malicious !== 0 || stats.suspicious !== 0) return null;
   if ((stats.harmless ?? 0) <= 0 && (stats.undetected ?? 0) <= 0) return null;
 
@@ -187,7 +187,7 @@ function buildPackageUndetectedFallbackAnalysis(
     status: "clean",
     verdict: "undetected-only-fallback",
     analysis:
-      "VirusTotal reported no malicious or suspicious engine hits. ClawHub promoted this source-linked package after clean LLM and non-malicious static scans.",
+      "VirusTotal reported no malicious or suspicious engine hits. ClawHub promoted this source-linked package after clean LLM and clean static scans.",
     source: "engines-undetected-fallback",
     checkedAt: Date.now(),
   };
