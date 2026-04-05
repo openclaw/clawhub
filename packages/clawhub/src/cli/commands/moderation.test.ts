@@ -31,7 +31,11 @@ describe("cmdBanUser", () => {
   });
 
   it("posts handle payload", async () => {
-    httpMocks.apiRequest.mockResolvedValueOnce({ ok: true, alreadyBanned: false, deletedSkills: 1 });
+    httpMocks.apiRequest.mockResolvedValueOnce({
+      ok: true,
+      alreadyBanned: false,
+      deletedSkills: 1,
+    });
     await cmdBanUser(makeGlobalOpts(), "hightower6eu", { yes: true }, false);
     expect(httpMocks.apiRequest).toHaveBeenCalledWith(
       expect.anything(),
@@ -45,7 +49,11 @@ describe("cmdBanUser", () => {
   });
 
   it("includes reason when provided", async () => {
-    httpMocks.apiRequest.mockResolvedValueOnce({ ok: true, alreadyBanned: false, deletedSkills: 0 });
+    httpMocks.apiRequest.mockResolvedValueOnce({
+      ok: true,
+      alreadyBanned: false,
+      deletedSkills: 0,
+    });
     await cmdBanUser(
       makeGlobalOpts(),
       "hightower6eu",
@@ -64,7 +72,11 @@ describe("cmdBanUser", () => {
   });
 
   it("posts user id payload when --id is set", async () => {
-    httpMocks.apiRequest.mockResolvedValueOnce({ ok: true, alreadyBanned: false, deletedSkills: 0 });
+    httpMocks.apiRequest.mockResolvedValueOnce({
+      ok: true,
+      alreadyBanned: false,
+      deletedSkills: 0,
+    });
     await cmdBanUser(makeGlobalOpts(), "user_123", { yes: true, id: true }, false);
     expect(httpMocks.apiRequest).toHaveBeenCalledWith(
       expect.anything(),

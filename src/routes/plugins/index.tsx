@@ -37,9 +37,7 @@ export const Route = createFileRoute("/plugins/")({
         ? true
         : undefined,
     executesCode:
-      search.executesCode === true ||
-      search.executesCode === "true" ||
-      search.executesCode === "1"
+      search.executesCode === true || search.executesCode === "true" || search.executesCode === "1"
         ? true
         : undefined,
   }),
@@ -101,12 +99,8 @@ export function PluginsIndex() {
     <main className="py-10">
       <Container size="wide">
         <header className="mb-6">
-          <h1 className="font-display text-2xl font-bold text-[color:var(--ink)] mb-2">
-            Plugins
-          </h1>
-          <p className="text-sm text-[color:var(--ink-soft)]">
-            Browse the plugin catalog.
-          </p>
+          <h1 className="font-display text-2xl font-bold text-[color:var(--ink)] mb-2">Plugins</h1>
+          <p className="text-sm text-[color:var(--ink-soft)]">Browse the plugin catalog.</p>
         </header>
 
         <div className="flex flex-col gap-3">
@@ -124,7 +118,10 @@ export function PluginsIndex() {
                 });
               }}
             >
-              <Search className="pointer-events-none absolute left-3 h-4 w-4 text-[color:var(--ink-soft)] opacity-50" aria-hidden="true" />
+              <Search
+                className="pointer-events-none absolute left-3 h-4 w-4 text-[color:var(--ink-soft)] opacity-50"
+                aria-hidden="true"
+              />
               <Input
                 className="pl-9"
                 placeholder="Search plugins..."
@@ -148,12 +145,16 @@ export function PluginsIndex() {
             </Link>
           </div>
           <div className="flex flex-wrap items-center gap-2">
-            <div className="flex items-center rounded-[var(--radius-pill)] border border-[color:var(--line)]" role="group" aria-label="Filter by type">
-              {([
+            <div
+              className="flex items-center rounded-[var(--radius-pill)] border border-[color:var(--line)]"
+              role="group"
+              aria-label="Filter by type"
+            >
+              {[
                 { value: undefined, label: "All" },
                 { value: "code-plugin" as const, label: "Code" },
                 { value: "bundle-plugin" as const, label: "Bundles" },
-              ]).map((opt) => (
+              ].map((opt) => (
                 <button
                   key={opt.label}
                   className={`px-3 py-1.5 text-sm font-semibold transition-colors first:rounded-l-[var(--radius-pill)] last:rounded-r-[var(--radius-pill)] ${
@@ -225,11 +226,7 @@ export function PluginsIndex() {
             <>
               <div className="grid grid-cols-[repeat(auto-fill,minmax(320px,1fr))] gap-5">
                 {items.map((item) => (
-                  <Link
-                    key={item.name}
-                    to="/plugins/$name"
-                    params={{ name: item.name }}
-                  >
+                  <Link key={item.name} to="/plugins/$name" params={{ name: item.name }}>
                     <Card className="h-full cursor-pointer hover:-translate-y-px hover:shadow-[0_10px_20px_rgba(29,26,23,0.12)]">
                       <div className="flex flex-wrap gap-1.5">
                         <Badge variant="compact">{familyLabel(item.family)}</Badge>
@@ -239,7 +236,9 @@ export function PluginsIndex() {
                           </Badge>
                         ) : null}
                       </div>
-                      <h3 className="font-display text-lg font-bold text-[color:var(--ink)]">{item.displayName}</h3>
+                      <h3 className="font-display text-lg font-bold text-[color:var(--ink)]">
+                        {item.displayName}
+                      </h3>
                       <p className="text-sm text-[color:var(--ink-soft)]">
                         {item.summary ?? "No summary provided."}
                       </p>
@@ -248,7 +247,9 @@ export function PluginsIndex() {
                           {item.ownerHandle ? `by ${item.ownerHandle}` : "community"}
                         </span>
                         {item.latestVersion ? (
-                          <span className="text-sm text-[color:var(--ink-soft)]">v{item.latestVersion}</span>
+                          <span className="text-sm text-[color:var(--ink-soft)]">
+                            v{item.latestVersion}
+                          </span>
                         ) : null}
                       </div>
                     </Card>

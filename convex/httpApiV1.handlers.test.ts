@@ -24,12 +24,10 @@ vi.mock("./skills", () => ({
 }));
 
 const { getAuthUserId } = await import("@convex-dev/auth/server");
-const { getOptionalApiTokenUserId, requireApiTokenUser, requirePackagePublishAuth } = await import(
-  "./lib/apiTokenAuth"
-);
-const { fetchGitHubRepositoryIdentity, verifyGitHubActionsTrustedPublishJwt } = await import(
-  "./lib/githubActionsOidc"
-);
+const { getOptionalApiTokenUserId, requireApiTokenUser, requirePackagePublishAuth } =
+  await import("./lib/apiTokenAuth");
+const { fetchGitHubRepositoryIdentity, verifyGitHubActionsTrustedPublishJwt } =
+  await import("./lib/githubActionsOidc");
 const { publishVersionForUser } = await import("./skills");
 const { __handlers } = await import("./httpApiV1");
 
@@ -3090,7 +3088,10 @@ describe("httpApiV1 handlers", () => {
     );
 
     const zipEntries = unzipSync(new Uint8Array(await response.arrayBuffer()));
-    expect(Object.keys(zipEntries).sort()).toEqual(["package/dist/index.js", "package/package.json"]);
+    expect(Object.keys(zipEntries).sort()).toEqual([
+      "package/dist/index.js",
+      "package/package.json",
+    ]);
     expect(zipEntries["_meta.json"]).toBeUndefined();
   });
 
@@ -3365,7 +3366,9 @@ describe("httpApiV1 handlers", () => {
 
     const fileResponse = await __handlers.packagesGetRouterV1Handler(
       makeCtx({ runQuery, runMutation, storage: { get: vi.fn() } }),
-      new Request("https://example.com/api/v1/packages/demo-plugin/file?version=1.0.0&path=README.md"),
+      new Request(
+        "https://example.com/api/v1/packages/demo-plugin/file?version=1.0.0&path=README.md",
+      ),
     );
     const downloadResponse = await __handlers.packagesGetRouterV1Handler(
       makeCtx({ runQuery, runMutation, storage: { get: vi.fn() } }),
@@ -3386,7 +3389,9 @@ describe("httpApiV1 handlers", () => {
       user: { _id: "users:1", handle: "p" },
     } as never);
     const runMutation = vi.fn().mockResolvedValue(okRate());
-    const runAction = vi.fn().mockResolvedValue({ ok: true, packageId: "pkg:1", releaseId: "rel:1" });
+    const runAction = vi
+      .fn()
+      .mockResolvedValue({ ok: true, packageId: "pkg:1", releaseId: "rel:1" });
 
     const response = await __handlers.publishPackageV1Handler(
       makeCtx({ runAction, runMutation }),
@@ -3438,7 +3443,9 @@ describe("httpApiV1 handlers", () => {
       user: { _id: "users:1", handle: "p" },
     } as never);
     const runMutation = vi.fn().mockResolvedValue(okRate());
-    const runAction = vi.fn().mockResolvedValue({ ok: true, packageId: "pkg:1", releaseId: "rel:1" });
+    const runAction = vi
+      .fn()
+      .mockResolvedValue({ ok: true, packageId: "pkg:1", releaseId: "rel:1" });
     const form = new FormData();
     form.set(
       "payload",
@@ -3451,10 +3458,7 @@ describe("httpApiV1 handlers", () => {
       }),
     );
     form.append("files", new File(["{}"], ".DS_Store", { type: "application/octet-stream" }));
-    form.append(
-      "files",
-      new File(["{}"], "openclaw.bundle.json", { type: "application/json" }),
-    );
+    form.append("files", new File(["{}"], "openclaw.bundle.json", { type: "application/json" }));
 
     const response = await __handlers.publishPackageV1Handler(
       makeCtx({
@@ -3493,7 +3497,9 @@ describe("httpApiV1 handlers", () => {
       publishToken: { _id: "packagePublishTokens:1" },
     } as never);
     const runMutation = vi.fn().mockResolvedValue(okRate());
-    const runAction = vi.fn().mockResolvedValue({ ok: true, packageId: "pkg:1", releaseId: "rel:1" });
+    const runAction = vi
+      .fn()
+      .mockResolvedValue({ ok: true, packageId: "pkg:1", releaseId: "rel:1" });
 
     const response = await __handlers.publishPackageV1Handler(
       makeCtx({ runAction, runMutation }),
@@ -3725,7 +3731,8 @@ describe("httpApiV1 handlers", () => {
     expect(body.token).toEqual(expect.any(String));
     expect(body.expiresAt).toEqual(expect.any(Number));
     const createCall = runMutation.mock.calls.find(
-      ([, args]) => typeof args === "object" && args !== null && "packageId" in args && "tokenHash" in args,
+      ([, args]) =>
+        typeof args === "object" && args !== null && "packageId" in args && "tokenHash" in args,
     );
     expect(createCall?.[1]).toEqual(
       expect.objectContaining({
@@ -3786,7 +3793,9 @@ describe("httpApiV1 handlers", () => {
     );
 
     if (response.status !== 200) throw new Error(await response.text());
-    expect(fetchGitHubRepositoryIdentity).toHaveBeenCalledWith("https://github.com/openclaw/openclaw");
+    expect(fetchGitHubRepositoryIdentity).toHaveBeenCalledWith(
+      "https://github.com/openclaw/openclaw",
+    );
     expect(runMutation).toHaveBeenCalledWith(
       expect.anything(),
       expect.objectContaining({
@@ -3843,7 +3852,9 @@ describe("httpApiV1 handlers", () => {
     );
 
     if (response.status !== 200) throw new Error(await response.text());
-    expect(fetchGitHubRepositoryIdentity).toHaveBeenCalledWith("https://github.com/openclaw/openclaw");
+    expect(fetchGitHubRepositoryIdentity).toHaveBeenCalledWith(
+      "https://github.com/openclaw/openclaw",
+    );
     expect(await response.json()).toEqual({
       trustedPublisher: {
         provider: "github-actions",
@@ -3855,7 +3866,8 @@ describe("httpApiV1 handlers", () => {
       },
     });
     const setCall = runMutation.mock.calls.find(
-      ([, args]) => typeof args === "object" && args !== null && "packageName" in args && "actorUserId" in args,
+      ([, args]) =>
+        typeof args === "object" && args !== null && "packageName" in args && "actorUserId" in args,
     );
     expect(setCall?.[1]).toEqual(
       expect.objectContaining({

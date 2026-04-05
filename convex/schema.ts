@@ -909,12 +909,7 @@ const packageCapabilitySearchDigest = defineTable({
     "executesCode",
     "updatedAt",
   ])
-  .index("by_active_family_tag_updated", [
-    "softDeletedAt",
-    "family",
-    "capabilityTag",
-    "updatedAt",
-  ])
+  .index("by_active_family_tag_updated", ["softDeletedAt", "family", "capabilityTag", "updatedAt"])
   .index("by_active_family_tag_executes_updated", [
     "softDeletedAt",
     "family",

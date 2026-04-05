@@ -236,9 +236,9 @@ async function handleAdminEnsurePublisher(
   const handle = typeof payload.handle === "string" ? payload.handle.trim().toLowerCase() : "";
   if (!handle) return text("Missing handle", 400, headers);
 
-  const displayName = typeof payload.displayName === "string" ? payload.displayName.trim() : undefined;
-  const trusted =
-    typeof payload.trusted === "boolean" ? payload.trusted : true;
+  const displayName =
+    typeof payload.displayName === "string" ? payload.displayName.trim() : undefined;
+  const trusted = typeof payload.trusted === "boolean" ? payload.trusted : true;
 
   try {
     const result = await ctx.runMutation(internal.publishers.ensureOrgPublisherHandleInternal, {

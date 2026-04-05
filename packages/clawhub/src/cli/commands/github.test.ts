@@ -1,9 +1,9 @@
 /* @vitest-environment node */
 
+import { spawnSync } from "node:child_process";
 import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { spawnSync } from "node:child_process";
 import { zipSync } from "fflate";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { fetchGitHubSource, resolveLocalGitInfo, resolveSourceInput } from "./github";
@@ -60,7 +60,16 @@ function mockGitHubCommitLookup(validRefs: string[]) {
 
 describe("github publish source helpers", () => {
   it.each([
-    ["owner/repo", { kind: "github", owner: "owner", repo: "repo", path: ".", url: "https://github.com/owner/repo" }],
+    [
+      "owner/repo",
+      {
+        kind: "github",
+        owner: "owner",
+        repo: "repo",
+        path: ".",
+        url: "https://github.com/owner/repo",
+      },
+    ],
     [
       "owner/repo@v1.0.0",
       {
@@ -172,18 +181,22 @@ describe("github publish source helpers", () => {
     }
   });
 
-  it.each(["./local-folder", "/absolute/path", "~/path", ".", "@scope/package", "owner/repo/extra"])(
-    "treats %s as a local path",
-    async (input) => {
-      const workdir = await makeTmpDir();
-      try {
-        const resolved = await resolveSourceInput(input, { workdir });
-        expect(resolved.kind).toBe("local");
-      } finally {
-        await rm(workdir, { recursive: true, force: true });
-      }
-    },
-  );
+  it.each([
+    "./local-folder",
+    "/absolute/path",
+    "~/path",
+    ".",
+    "@scope/package",
+    "owner/repo/extra",
+  ])("treats %s as a local path", async (input) => {
+    const workdir = await makeTmpDir();
+    try {
+      const resolved = await resolveSourceInput(input, { workdir });
+      expect(resolved.kind).toBe("local");
+    } finally {
+      await rm(workdir, { recursive: true, force: true });
+    }
+  });
 
   it("prefers an existing local directory over GitHub shorthand", async () => {
     const workdir = await makeTmpDir();
@@ -210,7 +223,15 @@ describe("github publish source helpers", () => {
       runGit(root, ["init", "-b", "main"]);
       runGit(root, ["remote", "add", "origin", "git@github.com:openclaw/demo-repo.git"]);
       runGit(root, ["add", "."]);
-      runGit(root, ["-c", "user.name=Test", "-c", "user.email=test@example.com", "commit", "-m", "init"]);
+      runGit(root, [
+        "-c",
+        "user.name=Test",
+        "-c",
+        "user.email=test@example.com",
+        "commit",
+        "-m",
+        "init",
+      ]);
       const commit = runGit(root, ["rev-parse", "HEAD"]);
       const gitRoot = runGit(root, ["rev-parse", "--show-toplevel"]);
       runGit(root, ["-c", "tag.gpgSign=false", "tag", "v1.0.0"]);
@@ -243,7 +264,9 @@ describe("github publish source helpers", () => {
       "repo-root/.agents/": new Uint8Array(),
       "repo-root/.agents/config.json": new TextEncoder().encode('{"ok":true}\n'),
       "repo-root/package.json": new TextEncoder().encode('{"name":"demo","version":"1.0.0"}\n'),
-      "repo-root/openclaw.plugin.json": new TextEncoder().encode('{"id":"demo","configSchema":{"type":"object"}}\n'),
+      "repo-root/openclaw.plugin.json": new TextEncoder().encode(
+        '{"id":"demo","configSchema":{"type":"object"}}\n',
+      ),
     });
     const archiveBody = archiveBytes.buffer.slice(
       archiveBytes.byteOffset,
@@ -304,7 +327,9 @@ describe("github publish source helpers", () => {
     const archiveBytes = zipSync({
       "repo-root/../../escape.txt": new TextEncoder().encode("bad\n"),
       "repo-root/package.json": new TextEncoder().encode('{"name":"demo","version":"1.0.0"}\n'),
-      "repo-root/openclaw.plugin.json": new TextEncoder().encode('{"id":"demo","configSchema":{"type":"object"}}\n'),
+      "repo-root/openclaw.plugin.json": new TextEncoder().encode(
+        '{"id":"demo","configSchema":{"type":"object"}}\n',
+      ),
     });
     const archiveBody = archiveBytes.buffer.slice(
       archiveBytes.byteOffset,

@@ -114,7 +114,9 @@ async function looksLikePluginFolder(folder: string) {
   }
   try {
     const raw = JSON.parse(await readFile(checks[2], "utf8")) as { openclaw?: unknown };
-    return Boolean(raw && typeof raw === "object" && raw.openclaw && typeof raw.openclaw === "object");
+    return Boolean(
+      raw && typeof raw === "object" && raw.openclaw && typeof raw.openclaw === "object",
+    );
   } catch {
     return false;
   }

@@ -635,10 +635,15 @@ export const scanPackageReleaseWithVirusTotal = internalAction({
         `[vt:package] Release ${args.releaseId} missing ${missingFiles}/${release.files.length} files, retrying`,
       );
       if (attempt < PACKAGE_SCAN_MAX_ATTEMPTS) {
-        await runAfterRef(ctx, PACKAGE_SCAN_RETRY_DELAY_MS, internalRefs.vt.scanPackageReleaseWithVirusTotal, {
-          releaseId: args.releaseId,
-          attempt: attempt + 1,
-        });
+        await runAfterRef(
+          ctx,
+          PACKAGE_SCAN_RETRY_DELAY_MS,
+          internalRefs.vt.scanPackageReleaseWithVirusTotal,
+          {
+            releaseId: args.releaseId,
+            attempt: attempt + 1,
+          },
+        );
       }
       return;
     }
@@ -686,18 +691,28 @@ export const scanPackageReleaseWithVirusTotal = internalAction({
         const error = await response.text();
         console.error("[vt:package] VirusTotal upload error:", error);
         if (attempt < PACKAGE_SCAN_MAX_ATTEMPTS) {
-          await runAfterRef(ctx, PACKAGE_SCAN_RETRY_DELAY_MS, internalRefs.vt.scanPackageReleaseWithVirusTotal, {
-            releaseId: args.releaseId,
-            attempt: attempt + 1,
-          });
+          await runAfterRef(
+            ctx,
+            PACKAGE_SCAN_RETRY_DELAY_MS,
+            internalRefs.vt.scanPackageReleaseWithVirusTotal,
+            {
+              releaseId: args.releaseId,
+              attempt: attempt + 1,
+            },
+          );
         }
         return;
       }
 
-      await runAfterRef(ctx, PACKAGE_SCAN_RETRY_DELAY_MS, internalRefs.vt.pollPackageReleaseScanResults, {
-        releaseId: args.releaseId,
-        attempt: 1,
-      });
+      await runAfterRef(
+        ctx,
+        PACKAGE_SCAN_RETRY_DELAY_MS,
+        internalRefs.vt.pollPackageReleaseScanResults,
+        {
+          releaseId: args.releaseId,
+          attempt: 1,
+        },
+      );
 
       console.log(
         `[vt:package] Uploaded ${pkg.name}@${release.version} for scanning (${sha256hash})`,
@@ -705,10 +720,15 @@ export const scanPackageReleaseWithVirusTotal = internalAction({
     } catch (error) {
       console.error("[vt:package] Failed to upload to VirusTotal:", error);
       if (attempt < PACKAGE_SCAN_MAX_ATTEMPTS) {
-        await runAfterRef(ctx, PACKAGE_SCAN_RETRY_DELAY_MS, internalRefs.vt.scanPackageReleaseWithVirusTotal, {
-          releaseId: args.releaseId,
-          attempt: attempt + 1,
-        });
+        await runAfterRef(
+          ctx,
+          PACKAGE_SCAN_RETRY_DELAY_MS,
+          internalRefs.vt.scanPackageReleaseWithVirusTotal,
+          {
+            releaseId: args.releaseId,
+            attempt: attempt + 1,
+          },
+        );
       }
     }
   },
@@ -737,10 +757,15 @@ export const pollPackageReleaseScanResults = internalAction({
       const vtResult = await checkExistingFile(apiKey, release.sha256hash);
       if (!vtResult) {
         if (attempt < PACKAGE_SCAN_MAX_ATTEMPTS) {
-          await runAfterRef(ctx, PACKAGE_SCAN_RETRY_DELAY_MS, internalRefs.vt.pollPackageReleaseScanResults, {
-            releaseId: args.releaseId,
-            attempt: attempt + 1,
-          });
+          await runAfterRef(
+            ctx,
+            PACKAGE_SCAN_RETRY_DELAY_MS,
+            internalRefs.vt.pollPackageReleaseScanResults,
+            {
+              releaseId: args.releaseId,
+              attempt: attempt + 1,
+            },
+          );
         }
         return;
       }
@@ -756,18 +781,28 @@ export const pollPackageReleaseScanResults = internalAction({
 
       await requestRescan(apiKey, release.sha256hash);
       if (attempt < PACKAGE_SCAN_MAX_ATTEMPTS) {
-        await runAfterRef(ctx, PACKAGE_SCAN_RETRY_DELAY_MS, internalRefs.vt.pollPackageReleaseScanResults, {
-          releaseId: args.releaseId,
-          attempt: attempt + 1,
-        });
+        await runAfterRef(
+          ctx,
+          PACKAGE_SCAN_RETRY_DELAY_MS,
+          internalRefs.vt.pollPackageReleaseScanResults,
+          {
+            releaseId: args.releaseId,
+            attempt: attempt + 1,
+          },
+        );
       }
     } catch (error) {
       console.error(`[vt:package] Error polling ${release.sha256hash}:`, error);
       if (attempt < PACKAGE_SCAN_MAX_ATTEMPTS) {
-        await runAfterRef(ctx, PACKAGE_SCAN_RETRY_DELAY_MS, internalRefs.vt.pollPackageReleaseScanResults, {
-          releaseId: args.releaseId,
-          attempt: attempt + 1,
-        });
+        await runAfterRef(
+          ctx,
+          PACKAGE_SCAN_RETRY_DELAY_MS,
+          internalRefs.vt.pollPackageReleaseScanResults,
+          {
+            releaseId: args.releaseId,
+            attempt: attempt + 1,
+          },
+        );
       }
     }
   },

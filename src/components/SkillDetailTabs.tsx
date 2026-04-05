@@ -1,9 +1,9 @@
 import { lazy, Suspense } from "react";
 import type { Doc, Id } from "../../convex/_generated/dataModel";
+import { SkillVersionsPanel } from "./SkillVersionsPanel";
 import { Card } from "./ui/card";
 import { Skeleton } from "./ui/skeleton";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "./ui/tabs";
-import { SkillVersionsPanel } from "./SkillVersionsPanel";
 
 const SkillDiffCard = lazy(() =>
   import("./SkillDiffCard").then((module) => ({ default: module.SkillDiffCard })),
@@ -50,9 +50,7 @@ export function SkillDetailTabs({
     <Card>
       <Tabs value={activeTab} onValueChange={(value) => setActiveTab(value as typeof activeTab)}>
         <TabsList>
-          <TabsTrigger value="files">
-            Files
-          </TabsTrigger>
+          <TabsTrigger value="files">Files</TabsTrigger>
           <TabsTrigger
             value="compare"
             onMouseEnter={() => {
@@ -66,9 +64,7 @@ export function SkillDetailTabs({
           >
             Compare
           </TabsTrigger>
-          <TabsTrigger value="versions">
-            Versions
-          </TabsTrigger>
+          <TabsTrigger value="versions">Versions</TabsTrigger>
         </TabsList>
 
         <TabsContent value="files">

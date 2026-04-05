@@ -1,16 +1,20 @@
 /* @vitest-environment node */
 
 import { describe, expect, it, vi } from "vitest";
-import { buildPackageUploadEntries, filterIgnoredPackageFiles, normalizePackageUploadPath } from "./packageUpload";
+import {
+  buildPackageUploadEntries,
+  filterIgnoredPackageFiles,
+  normalizePackageUploadPath,
+} from "./packageUpload";
 
 describe("normalizePackageUploadPath", () => {
   it("strips the picked folder prefix", () => {
-    expect(normalizePackageUploadPath("my-plugin/package.json", { stripTopLevelFolder: true })).toBe(
-      "package.json",
-    );
-    expect(normalizePackageUploadPath("my-plugin/src/index.ts", { stripTopLevelFolder: true })).toBe(
-      "src/index.ts",
-    );
+    expect(
+      normalizePackageUploadPath("my-plugin/package.json", { stripTopLevelFolder: true }),
+    ).toBe("package.json");
+    expect(
+      normalizePackageUploadPath("my-plugin/src/index.ts", { stripTopLevelFolder: true }),
+    ).toBe("src/index.ts");
   });
 
   it("keeps flat files unchanged", () => {
@@ -25,41 +29,41 @@ describe("normalizePackageUploadPath", () => {
 describe("buildPackageUploadEntries", () => {
   it("filters builtin and package-ignore-file paths before upload", async () => {
     const filtered = await filterIgnoredPackageFiles([
-      new File(['{}'], 'demo-plugin/package.json', { type: 'application/json' }),
-      new File(['dist/\nsecret.txt\n'], 'demo-plugin/.clawhubignore', { type: 'text/plain' }),
-      new File(['ignored'], 'demo-plugin/node_modules/pkg/index.js', { type: 'text/javascript' }),
-      new File(['ignored'], 'demo-plugin/.git/config', { type: 'text/plain' }),
-      new File(['ignored'], 'demo-plugin/dist/index.js', { type: 'text/javascript' }),
-      new File(['kept'], 'demo-plugin/src/index.js', { type: 'text/javascript' }),
-      new File(['ignored'], 'demo-plugin/secret.txt', { type: 'text/plain' }),
+      new File(["{}"], "demo-plugin/package.json", { type: "application/json" }),
+      new File(["dist/\nsecret.txt\n"], "demo-plugin/.clawhubignore", { type: "text/plain" }),
+      new File(["ignored"], "demo-plugin/node_modules/pkg/index.js", { type: "text/javascript" }),
+      new File(["ignored"], "demo-plugin/.git/config", { type: "text/plain" }),
+      new File(["ignored"], "demo-plugin/dist/index.js", { type: "text/javascript" }),
+      new File(["kept"], "demo-plugin/src/index.js", { type: "text/javascript" }),
+      new File(["ignored"], "demo-plugin/secret.txt", { type: "text/plain" }),
     ]);
 
     expect(filtered.files.map((file) => file.name)).toEqual([
-      'demo-plugin/package.json',
-      'demo-plugin/.clawhubignore',
-      'demo-plugin/src/index.js',
+      "demo-plugin/package.json",
+      "demo-plugin/.clawhubignore",
+      "demo-plugin/src/index.js",
     ]);
     expect(filtered.ignoredPaths).toEqual([
-      'node_modules/pkg/index.js',
-      '.git/config',
-      'dist/index.js',
-      'secret.txt',
+      "node_modules/pkg/index.js",
+      ".git/config",
+      "dist/index.js",
+      "secret.txt",
     ]);
   });
 
   it("does not apply repo .gitignore rules to package uploads", async () => {
     const filtered = await filterIgnoredPackageFiles([
-      new File(['{}'], 'demo-plugin/package.json', { type: 'application/json' }),
-      new File(['dist/\nsecret.txt\n'], 'demo-plugin/.gitignore', { type: 'text/plain' }),
-      new File(['kept'], 'demo-plugin/dist/index.js', { type: 'text/javascript' }),
-      new File(['kept'], 'demo-plugin/secret.txt', { type: 'text/plain' }),
+      new File(["{}"], "demo-plugin/package.json", { type: "application/json" }),
+      new File(["dist/\nsecret.txt\n"], "demo-plugin/.gitignore", { type: "text/plain" }),
+      new File(["kept"], "demo-plugin/dist/index.js", { type: "text/javascript" }),
+      new File(["kept"], "demo-plugin/secret.txt", { type: "text/plain" }),
     ]);
 
     expect(filtered.files.map((file) => file.name)).toEqual([
-      'demo-plugin/package.json',
-      'demo-plugin/.gitignore',
-      'demo-plugin/dist/index.js',
-      'demo-plugin/secret.txt',
+      "demo-plugin/package.json",
+      "demo-plugin/.gitignore",
+      "demo-plugin/dist/index.js",
+      "demo-plugin/secret.txt",
     ]);
     expect(filtered.ignoredPaths).toEqual([]);
   });
@@ -79,7 +83,10 @@ describe("buildPackageUploadEntries", () => {
         webkitRelativePath: "demo-plugin/dist/index.js",
       },
     ];
-    const generateUploadUrl = vi.fn().mockResolvedValueOnce("upload-1").mockResolvedValueOnce("upload-2");
+    const generateUploadUrl = vi
+      .fn()
+      .mockResolvedValueOnce("upload-1")
+      .mockResolvedValueOnce("upload-2");
     const hashFile = vi.fn(async (file: (typeof files)[number]) => `sha:${file.name}`);
     const uploadFile = vi
       .fn()

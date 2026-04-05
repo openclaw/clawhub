@@ -4,9 +4,9 @@ import {
   PLATFORM_SKILL_LICENSE_SUMMARY,
   PLATFORM_SKILL_LICENSE_URL,
 } from "clawhub-schema/licenseConstants";
+import { formatInstallCommand, formatInstallLabel } from "./skillDetailUtils";
 import { Badge } from "./ui/badge";
 import { Card, CardContent } from "./ui/card";
-import { formatInstallCommand, formatInstallLabel } from "./skillDetailUtils";
 
 type SkillInstallCardProps = {
   clawdis: ClawdisSkillMetadata | undefined;
@@ -53,7 +53,12 @@ export function SkillInstallCard({ clawdis, osLabels }: SkillInstallCardProps) {
               </div>
               <div className="text-sm text-[color:var(--ink-soft)]">
                 <strong>Terms</strong>
-                <a href={PLATFORM_SKILL_LICENSE_URL} target="_blank" rel="noopener noreferrer" className="ml-1">
+                <a
+                  href={PLATFORM_SKILL_LICENSE_URL}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="ml-1"
+                >
                   {PLATFORM_SKILL_LICENSE_URL}
                 </a>
               </div>
@@ -109,19 +114,12 @@ export function SkillInstallCard({ clawdis, osLabels }: SkillInstallCardProps) {
                     <strong>Environment variables</strong>
                     <div className="mt-1 flex flex-col gap-1">
                       {envVars.map((env, index) => (
-                        <div
-                          key={`${env.name}-${index}`}
-                          className="flex items-baseline gap-2"
-                        >
+                        <div key={`${env.name}-${index}`} className="flex items-baseline gap-2">
                           <code className="text-[0.85rem]">{env.name}</code>
                           {env.required === false ? (
-                            <span className="text-xs text-[color:var(--ink-soft)]">
-                              optional
-                            </span>
+                            <span className="text-xs text-[color:var(--ink-soft)]">optional</span>
                           ) : env.required === true ? (
-                            <span className="text-xs text-[color:var(--accent)]">
-                              required
-                            </span>
+                            <span className="text-xs text-[color:var(--accent)]">required</span>
                           ) : null}
                           {env.description ? (
                             <span className="text-[0.8rem] text-[color:var(--ink-soft)]">
@@ -145,7 +143,10 @@ export function SkillInstallCard({ clawdis, osLabels }: SkillInstallCardProps) {
               </h3>
               <div className="flex flex-col gap-2">
                 {dependencies.map((dep, index) => (
-                  <div key={`${dep.name}-${index}`} className="text-sm text-[color:var(--ink-soft)]">
+                  <div
+                    key={`${dep.name}-${index}`}
+                    className="text-sm text-[color:var(--ink-soft)]"
+                  >
                     <div>
                       <strong>{dep.name}</strong>
                       <span className="ml-2 text-[0.85rem] text-[color:var(--ink-soft)]">
@@ -183,7 +184,10 @@ export function SkillInstallCard({ clawdis, osLabels }: SkillInstallCardProps) {
                 {installSpecs.map((spec, index) => {
                   const command = formatInstallCommand(spec);
                   return (
-                    <div key={`${spec.id ?? spec.kind}-${index}`} className="text-sm text-[color:var(--ink-soft)]">
+                    <div
+                      key={`${spec.id ?? spec.kind}-${index}`}
+                      className="text-sm text-[color:var(--ink-soft)]"
+                    >
                       <div>
                         <strong>{spec.label ?? formatInstallLabel(spec)}</strong>
                         {spec.bins?.length ? (
@@ -191,7 +195,9 @@ export function SkillInstallCard({ clawdis, osLabels }: SkillInstallCardProps) {
                             Bins: {spec.bins.join(", ")}
                           </div>
                         ) : null}
-                        {command ? <code className="mt-0.5 block font-mono text-xs">{command}</code> : null}
+                        {command ? (
+                          <code className="mt-0.5 block font-mono text-xs">{command}</code>
+                        ) : null}
                       </div>
                     </div>
                   );
@@ -210,7 +216,12 @@ export function SkillInstallCard({ clawdis, osLabels }: SkillInstallCardProps) {
                 {links?.homepage ? (
                   <div className="text-sm text-[color:var(--ink-soft)]">
                     <strong>Homepage</strong>
-                    <a href={links.homepage} target="_blank" rel="noopener noreferrer" className="ml-1 break-all">
+                    <a
+                      href={links.homepage}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="ml-1 break-all"
+                    >
                       {links.homepage}
                     </a>
                   </div>
@@ -218,7 +229,12 @@ export function SkillInstallCard({ clawdis, osLabels }: SkillInstallCardProps) {
                 {links?.repository ? (
                   <div className="text-sm text-[color:var(--ink-soft)]">
                     <strong>Repository</strong>
-                    <a href={links.repository} target="_blank" rel="noopener noreferrer" className="ml-1 break-all">
+                    <a
+                      href={links.repository}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="ml-1 break-all"
+                    >
                       {links.repository}
                     </a>
                   </div>
@@ -226,7 +242,12 @@ export function SkillInstallCard({ clawdis, osLabels }: SkillInstallCardProps) {
                 {links?.documentation ? (
                   <div className="text-sm text-[color:var(--ink-soft)]">
                     <strong>Docs</strong>
-                    <a href={links.documentation} target="_blank" rel="noopener noreferrer" className="ml-1">
+                    <a
+                      href={links.documentation}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="ml-1"
+                    >
                       {links.documentation}
                     </a>
                   </div>

@@ -1,5 +1,5 @@
-import type { ClawdisSkillMetadata } from "clawhub-schema";
 import { Link } from "@tanstack/react-router";
+import type { ClawdisSkillMetadata } from "clawhub-schema";
 import {
   PLATFORM_SKILL_LICENSE,
   PLATFORM_SKILL_LICENSE_SUMMARY,
@@ -10,12 +10,12 @@ import { getSkillBadges } from "../lib/badges";
 import { formatCompactStat, formatSkillStatsTriplet } from "../lib/numberFormat";
 import type { PublicPublisher, PublicSkill } from "../lib/publicUser";
 import { getRuntimeEnv } from "../lib/runtimeEnv";
+import { SkillInstallCard } from "./SkillInstallCard";
+import { type LlmAnalysis, SecurityScanResults } from "./SkillSecurityScanResults";
 import { Badge } from "./ui/badge";
 import { Button } from "./ui/button";
 import { Card, CardContent } from "./ui/card";
 import { Input } from "./ui/input";
-import { SkillInstallCard } from "./SkillInstallCard";
-import { type LlmAnalysis, SecurityScanResults } from "./SkillSecurityScanResults";
 import { UserBadge } from "./UserBadge";
 
 export type SkillModerationInfo = {
@@ -207,10 +207,14 @@ export function SkillHeader({
                   ) : null}
                   {nixPlugin ? <Badge variant="accent">Plugin bundle (nix)</Badge> : null}
                 </div>
-                <p className="m-0 text-sm text-[color:var(--ink-soft)]">{skill.summary ?? "No summary provided."}</p>
+                <p className="m-0 text-sm text-[color:var(--ink-soft)]">
+                  {skill.summary ?? "No summary provided."}
+                </p>
 
                 {isStaff && staffModerationNote ? (
-                  <div className="rounded-[var(--radius-sm)] border border-amber-200/60 bg-amber-50/60 px-3 py-2 text-sm text-[color:var(--ink-soft)] dark:border-amber-500/20 dark:bg-amber-950/30">{staffModerationNote}</div>
+                  <div className="rounded-[var(--radius-sm)] border border-amber-200/60 bg-amber-50/60 px-3 py-2 text-sm text-[color:var(--ink-soft)] dark:border-amber-500/20 dark:bg-amber-950/30">
+                    {staffModerationNote}
+                  </div>
                 ) : null}
                 {nixPlugin ? (
                   <div className="rounded-[var(--radius-sm)] border border-amber-200/60 bg-amber-50/60 px-3 py-2 text-sm text-[color:var(--ink-soft)] dark:border-amber-500/20 dark:bg-amber-950/30">
@@ -220,13 +224,21 @@ export function SkillHeader({
 
                 <div className="flex flex-col gap-2 pt-1">
                   <div className="flex flex-wrap items-center gap-2">
-                    <span className="text-sm text-[color:var(--ink-soft)]">⭐ {formattedStats.stars}</span>
+                    <span className="text-sm text-[color:var(--ink-soft)]">
+                      ⭐ {formattedStats.stars}
+                    </span>
                     <span className="text-[color:var(--ink-soft)] opacity-40">·</span>
-                    <span className="flex items-center gap-1 text-sm text-[color:var(--ink-soft)]"><Package size={14} aria-hidden="true" /> {formattedStats.downloads}</span>
+                    <span className="flex items-center gap-1 text-sm text-[color:var(--ink-soft)]">
+                      <Package size={14} aria-hidden="true" /> {formattedStats.downloads}
+                    </span>
                     <span className="text-[color:var(--ink-soft)] opacity-40">·</span>
-                    <span className="text-sm text-[color:var(--ink-soft)]">{formatCompactStat(skill.stats.installsCurrent ?? 0)} current</span>
+                    <span className="text-sm text-[color:var(--ink-soft)]">
+                      {formatCompactStat(skill.stats.installsCurrent ?? 0)} current
+                    </span>
                     <span className="text-[color:var(--ink-soft)] opacity-40">·</span>
-                    <span className="text-sm text-[color:var(--ink-soft)]">{formattedStats.installsAllTime} all-time</span>
+                    <span className="text-sm text-[color:var(--ink-soft)]">
+                      {formattedStats.installsAllTime} all-time
+                    </span>
                   </div>
                   <div className="flex flex-wrap items-center gap-2">
                     <UserBadge
@@ -290,8 +302,12 @@ export function SkillHeader({
               ) : null}
               <div className="flex flex-col gap-2">
                 <div className="flex flex-col gap-0.5">
-                  <span className="text-xs font-semibold text-[color:var(--ink-soft)]">License</span>
-                  <span className="text-sm text-[color:var(--ink)]">{PLATFORM_SKILL_LICENSE} · {PLATFORM_SKILL_LICENSE_SUMMARY}</span>
+                  <span className="text-xs font-semibold text-[color:var(--ink-soft)]">
+                    License
+                  </span>
+                  <span className="text-sm text-[color:var(--ink)]">
+                    {PLATFORM_SKILL_LICENSE} · {PLATFORM_SKILL_LICENSE_SUMMARY}
+                  </span>
                 </div>
               </div>
               <div className="flex items-center gap-2">
@@ -325,7 +341,9 @@ export function SkillHeader({
 
           {/* Security scan — full width below the header columns */}
           {suppressScanResults ? (
-            <div className="rounded-[var(--radius-sm)] border border-amber-200/60 bg-amber-50/60 px-3 py-2 text-sm text-[color:var(--ink-soft)] dark:border-amber-500/20 dark:bg-amber-950/30">{overrideScanMessage}</div>
+            <div className="rounded-[var(--radius-sm)] border border-amber-200/60 bg-amber-50/60 px-3 py-2 text-sm text-[color:var(--ink-soft)] dark:border-amber-500/20 dark:bg-amber-950/30">
+              {overrideScanMessage}
+            </div>
           ) : latestVersion?.sha256hash ||
             latestVersion?.llmAnalysis ||
             (latestVersion?.staticScan?.findings?.length ?? 0) > 0 ? (
@@ -346,8 +364,12 @@ export function SkillHeader({
             <Card className="border-dashed">
               <CardContent>
                 <div className="flex flex-col gap-1">
-                  <div className="font-display text-base font-bold text-[color:var(--ink)]">Plugin bundle (nix)</div>
-                  <div className="text-sm text-[color:var(--ink-soft)]">Skill pack · CLI binary · Config</div>
+                  <div className="font-display text-base font-bold text-[color:var(--ink)]">
+                    Plugin bundle (nix)
+                  </div>
+                  <div className="text-sm text-[color:var(--ink-soft)]">
+                    Skill pack · CLI binary · Config
+                  </div>
                 </div>
                 <div className="flex flex-wrap gap-2">
                   <Badge>SKILL.md</Badge>
@@ -356,7 +378,9 @@ export function SkillHeader({
                 </div>
                 {configRequirements ? (
                   <div className="flex flex-col gap-2">
-                    <div className="text-sm font-semibold text-[color:var(--ink)]">Config requirements</div>
+                    <div className="text-sm font-semibold text-[color:var(--ink)]">
+                      Config requirements
+                    </div>
                     <div className="flex flex-col gap-1">
                       {configRequirements.requiredEnv?.length ? (
                         <div className="text-sm text-[color:var(--ink-soft)]">
@@ -375,8 +399,12 @@ export function SkillHeader({
                 ) : null}
                 {cliHelp ? (
                   <details className="flex flex-col gap-2">
-                    <summary className="cursor-pointer text-sm font-semibold text-[color:var(--ink)]">CLI help (from plugin)</summary>
-                    <pre className="mt-2 overflow-x-auto rounded-[var(--radius-sm)] bg-[color:var(--surface-muted)] p-3 font-mono text-xs">{cliHelp}</pre>
+                    <summary className="cursor-pointer text-sm font-semibold text-[color:var(--ink)]">
+                      CLI help (from plugin)
+                    </summary>
+                    <pre className="mt-2 overflow-x-auto rounded-[var(--radius-sm)] bg-[color:var(--surface-muted)] p-3 font-mono text-xs">
+                      {cliHelp}
+                    </pre>
                   </details>
                 ) : null}
               </CardContent>
@@ -386,9 +414,7 @@ export function SkillHeader({
 
         <div className="flex flex-wrap items-center gap-2 border-t border-[color:var(--line)] pt-4">
           {tagEntries.length === 0 ? (
-            <span className="m-0 text-sm text-[color:var(--ink-soft)]">
-              No tags yet.
-            </span>
+            <span className="m-0 text-sm text-[color:var(--ink-soft)]">No tags yet.</span>
           ) : (
             tagEntries.map(([tag, versionId]) => (
               <Badge key={tag} className="gap-1.5">
@@ -437,9 +463,7 @@ export function SkillHeader({
                 </option>
               ))}
             </select>
-            <Button type="submit">
-              Update tag
-            </Button>
+            <Button type="submit">Update tag</Button>
           </form>
         ) : null}
 

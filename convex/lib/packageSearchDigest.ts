@@ -145,10 +145,7 @@ export async function deletePackageSearchDigests(
 function hasDigestChanged<
   TExisting extends Record<string, unknown>,
   TFields extends Record<string, unknown>,
->(
-  existing: TExisting,
-  fields: TFields,
-): boolean {
+>(existing: TExisting, fields: TFields): boolean {
   for (const key of Object.keys(fields)) {
     const oldValue = (existing as Record<string, unknown>)[key];
     const newValue = (fields as Record<string, unknown>)[key];

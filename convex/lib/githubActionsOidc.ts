@@ -135,7 +135,9 @@ export async function verifyGitHubActionsTrustedPublishJwt(
   const actorId = optionalStringValue(payload.actor_id);
 
   if (repository !== trustedPublisher.repository) {
-    throw new Error(`GitHub OIDC repository mismatch: expected ${trustedPublisher.repository}, got ${repository}`);
+    throw new Error(
+      `GitHub OIDC repository mismatch: expected ${trustedPublisher.repository}, got ${repository}`,
+    );
   }
   if (repositoryId !== trustedPublisher.repositoryId) {
     throw new Error(
@@ -169,7 +171,9 @@ export async function verifyGitHubActionsTrustedPublishJwt(
     }
   }
   if (runnerEnvironment !== "github-hosted") {
-    throw new Error(`Only GitHub-hosted runners may mint trusted publish tokens, got ${runnerEnvironment}`);
+    throw new Error(
+      `Only GitHub-hosted runners may mint trusted publish tokens, got ${runnerEnvironment}`,
+    );
   }
   // v1 keeps secretless publishing behind a manual entry point. Environment
   // pinning is optional, but if configured it must match exactly.
@@ -219,7 +223,9 @@ export async function fetchGitHubRepositoryIdentity(
     },
   });
   if (!response.ok) {
-    throw new Error(`GitHub repository lookup failed for ${normalizedRepository}: ${response.status}`);
+    throw new Error(
+      `GitHub repository lookup failed for ${normalizedRepository}: ${response.status}`,
+    );
   }
   const body = (await response.json()) as {
     id?: unknown;
@@ -237,13 +243,19 @@ export async function fetchGitHubRepositoryIdentity(
 }
 
 export function normalizeGitHubRepository(repository: string) {
-  const trimmed = repository.trim().replace(/^https?:\/\/github\.com\//i, "").replace(/\.git$/i, "");
+  const trimmed = repository
+    .trim()
+    .replace(/^https?:\/\/github\.com\//i, "")
+    .replace(/\.git$/i, "");
   const match = /^([A-Za-z0-9_.-]+)\/([A-Za-z0-9_.-]+)$/.exec(trimmed);
   if (!match) return null;
   return `${match[1]}/${match[2]}`;
 }
 
-export function extractWorkflowFilenameFromWorkflowRef(workflowRef: string, expectedRepository?: string) {
+export function extractWorkflowFilenameFromWorkflowRef(
+  workflowRef: string,
+  expectedRepository?: string,
+) {
   return parseWorkflowRef(workflowRef, expectedRepository).workflowFilename;
 }
 
@@ -338,7 +350,8 @@ function assertTokenTimeWindow(payload: JwtPayload, now: number) {
   if (now - CLOCK_SKEW_MS >= expiresAt) {
     throw new Error("GitHub OIDC token has expired");
   }
-  const notBefore = payload.nbf === undefined ? undefined : requireNumericClaim(payload.nbf, "nbf") * 1000;
+  const notBefore =
+    payload.nbf === undefined ? undefined : requireNumericClaim(payload.nbf, "nbf") * 1000;
   if (typeof notBefore === "number" && now + CLOCK_SKEW_MS < notBefore) {
     throw new Error("GitHub OIDC token is not active yet");
   }

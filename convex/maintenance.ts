@@ -5,6 +5,7 @@ import type { ActionCtx } from "./_generated/server";
 import { action, internalAction, internalMutation, internalQuery } from "./functions";
 import { assertRole, requireUserFromAction } from "./lib/access";
 import { buildSkillSummaryBackfillPatch, type ParsedSkillData } from "./lib/skillBackfill";
+import { deriveSkillCapabilityTags } from "./lib/skillCapabilityTags";
 import {
   computeQualitySignals,
   evaluateQuality,
@@ -13,7 +14,6 @@ import {
 } from "./lib/skillQuality";
 import { hashSkillFiles, isTextFile } from "./lib/skills";
 import { computeIsSuspicious } from "./lib/skillSafety";
-import { deriveSkillCapabilityTags } from "./lib/skillCapabilityTags";
 import { extractDigestFields } from "./lib/skillSearchDigest";
 import { generateSkillSummary } from "./lib/skillSummary";
 
@@ -494,13 +494,17 @@ export const backfillSkillCapabilityTagsInternal = internalAction({
 
     if (!args.dryRun && !result.isDone && result.cursor) {
       const delayMs = clampInt(args.delayMs ?? DEFAULT_CAPABILITY_BACKFILL_DELAY_MS, 0, 60_000);
-      await ctx.scheduler.runAfter(delayMs, internal.maintenance.backfillSkillCapabilityTagsInternal, {
-        dryRun: false,
-        cursor: result.cursor,
-        batchSize: args.batchSize,
-        maxBatches: 1,
+      await ctx.scheduler.runAfter(
         delayMs,
-      });
+        internal.maintenance.backfillSkillCapabilityTagsInternal,
+        {
+          dryRun: false,
+          cursor: result.cursor,
+          batchSize: args.batchSize,
+          maxBatches: 1,
+          delayMs,
+        },
+      );
     }
 
     return result;

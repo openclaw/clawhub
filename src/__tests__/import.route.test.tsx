@@ -1,5 +1,5 @@
-import type { ReactNode } from "react";
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import type { ReactNode } from "react";
 import { vi } from "vitest";
 import { ImportGitHub } from "../routes/import";
 

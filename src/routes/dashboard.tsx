@@ -67,7 +67,6 @@ type DashboardPackage = {
   } | null;
 };
 
-
 export const Route = createFileRoute("/dashboard")({
   component: Dashboard,
 });
@@ -110,7 +109,8 @@ function Dashboard() {
 
   useEffect(() => {
     if (selectedPublisherId) return;
-    const personal = publishers?.find((entry) => entry.publisher.kind === "user") ?? publishers?.[0];
+    const personal =
+      publishers?.find((entry) => entry.publisher.kind === "user") ?? publishers?.[0];
     if (personal?.publisher._id) {
       setSelectedPublisherId(personal.publisher._id);
     }
@@ -231,7 +231,10 @@ function Dashboard() {
                   description="Publish your first plugin release to validate and distribute it."
                 >
                   <Button asChild variant="primary">
-                    <Link to="/publish-plugin" search={{ ...emptyPluginPublishSearch, ownerHandle }}>
+                    <Link
+                      to="/publish-plugin"
+                      search={{ ...emptyPluginPublishSearch, ownerHandle }}
+                    >
                       <Plug className="h-4 w-4" aria-hidden="true" />
                       Publish Plugin
                     </Link>
@@ -281,7 +284,8 @@ function SkillRow({ skill, ownerHandle }: { skill: DashboardSkill; ownerHandle: 
         </div>
         <div className="flex flex-wrap items-center gap-3 text-xs text-[color:var(--ink-soft)]">
           <span className="inline-flex items-center gap-1">
-            <ArrowDownToLine size={13} aria-hidden="true" /> {formatCompactStat(skill.stats.downloads)}
+            <ArrowDownToLine size={13} aria-hidden="true" />{" "}
+            {formatCompactStat(skill.stats.downloads)}
           </span>
           <span className="inline-flex items-center gap-1">
             <Star size={13} aria-hidden="true" /> {formatCompactStat(skill.stats.stars)}
@@ -380,7 +384,9 @@ function PackageStatusTag({
 function PackageRow({ pkg, ownerHandle }: { pkg: DashboardPackage; ownerHandle: string }) {
   const scanLabel = scanStatusLabel(pkg.scanStatus);
   const nextVersion = pkg.latestVersion ? semver.inc(pkg.latestVersion, "patch") : null;
-  const sourceLabel = pkg.sourceRepo?.replace(/^https?:\/\/github\.com\//, "").replace(/\.git$/, "");
+  const sourceLabel = pkg.sourceRepo
+    ?.replace(/^https?:\/\/github\.com\//, "")
+    .replace(/\.git$/, "");
   const scanTone =
     pkg.scanStatus === "pending"
       ? "pending"
@@ -430,7 +436,8 @@ function PackageRow({ pkg, ownerHandle }: { pkg: DashboardPackage; ownerHandle: 
         </div>
         <div className="flex flex-wrap items-center gap-3 text-xs text-[color:var(--ink-soft)]">
           <span className="inline-flex items-center gap-1">
-            <ArrowDownToLine size={13} aria-hidden="true" /> {formatCompactStat(pkg.stats.downloads)}
+            <ArrowDownToLine size={13} aria-hidden="true" />{" "}
+            {formatCompactStat(pkg.stats.downloads)}
           </span>
           <span className="inline-flex items-center gap-1">
             <Star size={13} aria-hidden="true" /> {formatCompactStat(pkg.stats.stars)}

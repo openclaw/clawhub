@@ -27,9 +27,9 @@ afterEach(() => {
 
 describe("ownership commands", () => {
   it("rename requires --yes when input is disabled", async () => {
-    await expect(
-      cmdRenameSkill(makeGlobalOpts(), "demo", "demo-new", {}, false),
-    ).rejects.toThrow(/--yes/i);
+    await expect(cmdRenameSkill(makeGlobalOpts(), "demo", "demo-new", {}, false)).rejects.toThrow(
+      /--yes/i,
+    );
   });
 
   it("rename calls rename endpoint", async () => {

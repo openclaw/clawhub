@@ -9,6 +9,13 @@ import { generateEmbedding } from "./embeddings";
 import { requireGitHubAccountAge } from "./githubAccount";
 import type { PublicUser } from "./public";
 import {
+  findOversizedPublishFile,
+  getPublishFileSizeError,
+  getPublishTotalSizeError,
+  MAX_PUBLISH_TOTAL_BYTES,
+} from "./publishLimits";
+import { deriveSkillCapabilityTags } from "./skillCapabilityTags";
+import {
   computeQualitySignals,
   evaluateQuality,
   getTrustTier,
@@ -27,15 +34,8 @@ import {
   sanitizePath,
 } from "./skills";
 import { generateSkillSummary } from "./skillSummary";
-import { deriveSkillCapabilityTags } from "./skillCapabilityTags";
 import { runStaticPublishScan } from "./staticPublishScan";
 import type { WebhookSkillPayload } from "./webhooks";
-import {
-  findOversizedPublishFile,
-  getPublishFileSizeError,
-  getPublishTotalSizeError,
-  MAX_PUBLISH_TOTAL_BYTES,
-} from "./publishLimits";
 
 const MAX_FILES_FOR_EMBEDDING = 40;
 const QUALITY_WINDOW_MS = 24 * 60 * 60 * 1000;

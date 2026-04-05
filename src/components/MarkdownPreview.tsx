@@ -1,10 +1,6 @@
-import { useEffect, useRef, useState } from "react";
 import { parse } from "@create-markdown/core";
-import {
-  blocksToHTML,
-  renderAsync,
-  shikiPlugin,
-} from "@create-markdown/preview";
+import { blocksToHTML, renderAsync, shikiPlugin } from "@create-markdown/preview";
+import { useEffect, useRef, useState } from "react";
 import { cn } from "../lib/utils";
 
 interface MarkdownPreviewProps {
@@ -43,11 +39,7 @@ function autolinkURLs(html: string): string {
  * Renders markdown → HTML with optional Shiki syntax highlighting.
  * Falls back to synchronous (unhighlighted) rendering while Shiki loads.
  */
-export function MarkdownPreview({
-  children,
-  className,
-  highlight = true,
-}: MarkdownPreviewProps) {
+export function MarkdownPreview({ children, className, highlight = true }: MarkdownPreviewProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   // Initial sync render (no highlighting) for instant display
   const [html, setHtml] = useState(() => {
@@ -73,13 +65,15 @@ export function MarkdownPreview({
       // Async render with Shiki syntax highlighting
       void renderAsync(blocks, {
         plugins: [shikiPlugin({ theme: "github-dark" })],
-      }).then((highlighted) => {
-        if (!cancelled) {
-          setHtml(autolinkURLs(highlighted));
-        }
-      }).catch(() => {
-        // Shiki failed to load — keep the sync render
-      });
+      })
+        .then((highlighted) => {
+          if (!cancelled) {
+            setHtml(autolinkURLs(highlighted));
+          }
+        })
+        .catch(() => {
+          // Shiki failed to load — keep the sync render
+        });
     } catch {
       // Parse failed — clear
       setHtml("");

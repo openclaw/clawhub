@@ -348,9 +348,7 @@ skill
     await cmdPublish(opts, folder, options);
   });
 
-const packageCmd = program
-  .command("package")
-  .description("Browse and publish OpenClaw packages");
+const packageCmd = program.command("package").description("Browse and publish OpenClaw packages");
 
 packageCmd
   .command("explore")

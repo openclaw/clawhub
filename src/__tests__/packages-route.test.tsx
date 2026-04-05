@@ -67,7 +67,9 @@ describe("plugins route", () => {
 
   it("rejects skill family filter in search state", async () => {
     const route = await loadRoute();
-    const validateSearch = route.__config.validateSearch as (search: Record<string, unknown>) => Record<string, unknown>;
+    const validateSearch = route.__config.validateSearch as (
+      search: Record<string, unknown>,
+    ) => Record<string, unknown>;
 
     expect(validateSearch({ family: "skill", q: "demo" })).toEqual({
       family: undefined,
@@ -137,8 +139,24 @@ describe("plugins route", () => {
   it("filters out skills from loader results", async () => {
     fetchPluginCatalogMock.mockResolvedValue({
       items: [
-        { name: "my-skill", displayName: "My Skill", family: "skill", channel: "community", isOfficial: false, createdAt: 1, updatedAt: 1 },
-        { name: "my-plugin", displayName: "My Plugin", family: "code-plugin", channel: "community", isOfficial: false, createdAt: 1, updatedAt: 1 },
+        {
+          name: "my-skill",
+          displayName: "My Skill",
+          family: "skill",
+          channel: "community",
+          isOfficial: false,
+          createdAt: 1,
+          updatedAt: 1,
+        },
+        {
+          name: "my-plugin",
+          displayName: "My Plugin",
+          family: "code-plugin",
+          channel: "community",
+          isOfficial: false,
+          createdAt: 1,
+          updatedAt: 1,
+        },
       ],
       nextCursor: null,
     });

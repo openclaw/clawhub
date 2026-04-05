@@ -1,9 +1,9 @@
 /* @vitest-environment node */
 
+import { spawnSync } from "node:child_process";
 import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
-import { spawnSync } from "node:child_process";
 import { afterEach, describe, expect, it } from "vitest";
 
 const packageRoot = resolve(import.meta.dirname, "..");
@@ -92,7 +92,15 @@ describe("built CLI artifact", () => {
     runGit(root, ["init"]);
     runGit(root, ["remote", "add", "origin", "https://github.com/openclaw/demo-plugin.git"]);
     runGit(root, ["add", "."]);
-    runGit(root, ["-c", "user.name=Test", "-c", "user.email=test@example.com", "commit", "-m", "init"]);
+    runGit(root, [
+      "-c",
+      "user.name=Test",
+      "-c",
+      "user.email=test@example.com",
+      "commit",
+      "-m",
+      "init",
+    ]);
 
     const result = runNode([
       binPath,

@@ -1,9 +1,9 @@
 /* @vitest-environment node */
 
+import { spawnSync } from "node:child_process";
 import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { spawnSync } from "node:child_process";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   createAuthTokenModuleMocks,
@@ -222,7 +222,11 @@ describe("package commands", () => {
         "utf8",
       );
       await writeFile(join(folder, ".gitignore"), "dist/\n", "utf8");
-      await writeFile(join(folder, "openclaw.plugin.json"), JSON.stringify({ id: "demo.plugin" }), "utf8");
+      await writeFile(
+        join(folder, "openclaw.plugin.json"),
+        JSON.stringify({ id: "demo.plugin" }),
+        "utf8",
+      );
       await writeFile(join(folder, "dist", "index.js"), "export const demo = true;\n", "utf8");
 
       httpMocks.apiRequestForm.mockResolvedValueOnce({
@@ -298,7 +302,11 @@ describe("package commands", () => {
         }),
         "utf8",
       );
-      await writeFile(join(folder, "openclaw.plugin.json"), JSON.stringify({ id: "demo.plugin" }), "utf8");
+      await writeFile(
+        join(folder, "openclaw.plugin.json"),
+        JSON.stringify({ id: "demo.plugin" }),
+        "utf8",
+      );
 
       httpMocks.apiRequest.mockResolvedValueOnce({
         token: "clh_short_publish",
@@ -338,7 +346,9 @@ describe("package commands", () => {
         }),
         expect.anything(),
       );
-      const publishArgs = httpMocks.apiRequestForm.mock.calls[0]?.[1] as { token?: string } | undefined;
+      const publishArgs = httpMocks.apiRequestForm.mock.calls[0]?.[1] as
+        | { token?: string }
+        | undefined;
       expect(publishArgs?.token).toBe("clh_short_publish");
     } finally {
       await rm(workdir, { recursive: true, force: true });
@@ -364,7 +374,11 @@ describe("package commands", () => {
         }),
         "utf8",
       );
-      await writeFile(join(folder, "openclaw.plugin.json"), JSON.stringify({ id: "demo.plugin" }), "utf8");
+      await writeFile(
+        join(folder, "openclaw.plugin.json"),
+        JSON.stringify({ id: "demo.plugin" }),
+        "utf8",
+      );
 
       authTokenMocks.requireAuthToken.mockResolvedValueOnce("manual-token");
       httpMocks.apiRequestForm.mockResolvedValueOnce({
@@ -381,7 +395,9 @@ describe("package commands", () => {
 
       expect(fetchMock).not.toHaveBeenCalled();
       expect(httpMocks.apiRequest).not.toHaveBeenCalled();
-      const publishArgs = httpMocks.apiRequestForm.mock.calls[0]?.[1] as { token?: string; form?: FormData } | undefined;
+      const publishArgs = httpMocks.apiRequestForm.mock.calls[0]?.[1] as
+        | { token?: string; form?: FormData }
+        | undefined;
       expect(publishArgs?.token).toBe("manual-token");
       const payloadEntry = publishArgs?.form?.get("payload");
       if (typeof payloadEntry !== "string") {
@@ -419,7 +435,11 @@ describe("package commands", () => {
         }),
         "utf8",
       );
-      await writeFile(join(folder, "openclaw.plugin.json"), JSON.stringify({ id: "demo.plugin" }), "utf8");
+      await writeFile(
+        join(folder, "openclaw.plugin.json"),
+        JSON.stringify({ id: "demo.plugin" }),
+        "utf8",
+      );
 
       authTokenMocks.requireAuthToken.mockResolvedValueOnce("fallback-token");
       httpMocks.apiRequest.mockRejectedValueOnce(
@@ -436,7 +456,9 @@ describe("package commands", () => {
         sourceCommit: "abc123",
       });
 
-      const publishArgs = httpMocks.apiRequestForm.mock.calls[0]?.[1] as { token?: string } | undefined;
+      const publishArgs = httpMocks.apiRequestForm.mock.calls[0]?.[1] as
+        | { token?: string }
+        | undefined;
       expect(publishArgs?.token).toBe("fallback-token");
     } finally {
       await rm(workdir, { recursive: true, force: true });
@@ -467,7 +489,11 @@ describe("package commands", () => {
         }),
         "utf8",
       );
-      await writeFile(join(folder, "openclaw.plugin.json"), JSON.stringify({ id: "demo.plugin" }), "utf8");
+      await writeFile(
+        join(folder, "openclaw.plugin.json"),
+        JSON.stringify({ id: "demo.plugin" }),
+        "utf8",
+      );
 
       authTokenMocks.requireAuthToken.mockResolvedValueOnce("fallback-token");
       httpMocks.apiRequest.mockRejectedValueOnce(
@@ -484,7 +510,9 @@ describe("package commands", () => {
         sourceCommit: "abc123",
       });
 
-      const publishArgs = httpMocks.apiRequestForm.mock.calls[0]?.[1] as { token?: string } | undefined;
+      const publishArgs = httpMocks.apiRequestForm.mock.calls[0]?.[1] as
+        | { token?: string }
+        | undefined;
       expect(publishArgs?.token).toBe("fallback-token");
     } finally {
       await rm(workdir, { recursive: true, force: true });
@@ -515,7 +543,11 @@ describe("package commands", () => {
         }),
         "utf8",
       );
-      await writeFile(join(folder, "openclaw.plugin.json"), JSON.stringify({ id: "demo.plugin" }), "utf8");
+      await writeFile(
+        join(folder, "openclaw.plugin.json"),
+        JSON.stringify({ id: "demo.plugin" }),
+        "utf8",
+      );
 
       authTokenMocks.requireAuthToken.mockResolvedValueOnce("fallback-token");
       httpMocks.apiRequestForm.mockResolvedValueOnce({
@@ -529,7 +561,9 @@ describe("package commands", () => {
         sourceCommit: "abc123",
       });
 
-      const publishArgs = httpMocks.apiRequestForm.mock.calls[0]?.[1] as { token?: string } | undefined;
+      const publishArgs = httpMocks.apiRequestForm.mock.calls[0]?.[1] as
+        | { token?: string }
+        | undefined;
       expect(publishArgs?.token).toBe("fallback-token");
     } finally {
       await rm(workdir, { recursive: true, force: true });
@@ -600,7 +634,11 @@ describe("package commands", () => {
         makeCodePluginPackageJson({ name: "demo-plugin", version: "1.0.0" }),
         "utf8",
       );
-      await writeFile(join(folder, "openclaw.plugin.json"), JSON.stringify({ id: "demo.plugin" }), "utf8");
+      await writeFile(
+        join(folder, "openclaw.plugin.json"),
+        JSON.stringify({ id: "demo.plugin" }),
+        "utf8",
+      );
 
       await expect(cmdPublishPackage(makeOpts(workdir), "demo-plugin", {})).rejects.toThrow(
         "--source-repo and --source-commit required for code plugins",
@@ -708,11 +746,19 @@ describe("package commands", () => {
         }),
         "utf8",
       );
-      await writeFile(join(folder, "openclaw.plugin.json"), JSON.stringify({ id: "ignored.plugin" }), "utf8");
+      await writeFile(
+        join(folder, "openclaw.plugin.json"),
+        JSON.stringify({ id: "ignored.plugin" }),
+        "utf8",
+      );
       await writeFile(join(folder, ".clawhubignore"), "ignored.txt\n", "utf8");
       await writeFile(join(folder, "dist", "index.js"), "export {};\n", "utf8");
       await writeFile(join(folder, "ignored.txt"), "ignore me\n", "utf8");
-      await writeFile(join(folder, "node_modules", "pkg", "index.js"), "module.exports = {};\n", "utf8");
+      await writeFile(
+        join(folder, "node_modules", "pkg", "index.js"),
+        "module.exports = {};\n",
+        "utf8",
+      );
       await writeFile(join(folder, ".git", "HEAD"), "ref: refs/heads/main\n", "utf8");
 
       httpMocks.apiRequestForm.mockResolvedValueOnce({
@@ -751,7 +797,11 @@ describe("package commands", () => {
         }),
         "utf8",
       );
-      await writeFile(join(folder, "openclaw.plugin.json"), JSON.stringify({ id: "broken.plugin" }), "utf8");
+      await writeFile(
+        join(folder, "openclaw.plugin.json"),
+        JSON.stringify({ id: "broken.plugin" }),
+        "utf8",
+      );
 
       httpMocks.apiRequestForm.mockRejectedValueOnce(new Error("Registry rejected upload"));
 
@@ -786,13 +836,25 @@ describe("package commands", () => {
         }),
         "utf8",
       );
-      await writeFile(join(folder, "openclaw.plugin.json"), JSON.stringify({ id: "demo.plugin" }), "utf8");
+      await writeFile(
+        join(folder, "openclaw.plugin.json"),
+        JSON.stringify({ id: "demo.plugin" }),
+        "utf8",
+      );
       await writeFile(join(folder, "dist", "index.js"), "export const demo = true;\n", "utf8");
 
       runGit(folder, ["init", "-b", "main"]);
       runGit(folder, ["remote", "add", "origin", "git@github.com:openclaw/demo-plugin.git"]);
       runGit(folder, ["add", "."]);
-      runGit(folder, ["-c", "user.name=Test", "-c", "user.email=test@example.com", "commit", "-m", "init"]);
+      runGit(folder, [
+        "-c",
+        "user.name=Test",
+        "-c",
+        "user.email=test@example.com",
+        "commit",
+        "-m",
+        "init",
+      ]);
       const commit = runGit(folder, ["rev-parse", "HEAD"]);
       runGit(folder, ["-c", "tag.gpgSign=false", "tag", "v1.0.0"]);
 
@@ -838,12 +900,24 @@ describe("package commands", () => {
         }),
         "utf8",
       );
-      await writeFile(join(folder, "openclaw.plugin.json"), JSON.stringify({ id: "demo.plugin" }), "utf8");
+      await writeFile(
+        join(folder, "openclaw.plugin.json"),
+        JSON.stringify({ id: "demo.plugin" }),
+        "utf8",
+      );
 
       runGit(folder, ["init", "-b", "main"]);
       runGit(folder, ["remote", "add", "origin", "git@github.com:openclaw/demo-plugin.git"]);
       runGit(folder, ["add", "."]);
-      runGit(folder, ["-c", "user.name=Test", "-c", "user.email=test@example.com", "commit", "-m", "init"]);
+      runGit(folder, [
+        "-c",
+        "user.name=Test",
+        "-c",
+        "user.email=test@example.com",
+        "commit",
+        "-m",
+        "init",
+      ]);
 
       httpMocks.apiRequestForm.mockResolvedValueOnce({
         ok: true,
@@ -905,7 +979,15 @@ describe("package commands", () => {
       runGit(workdir, ["init", "-b", "main"]);
       runGit(workdir, ["remote", "add", "origin", "git@github.com:openclaw/demo-plugin.git"]);
       runGit(workdir, ["add", "."]);
-      runGit(workdir, ["-c", "user.name=Test", "-c", "user.email=test@example.com", "commit", "-m", "init"]);
+      runGit(workdir, [
+        "-c",
+        "user.name=Test",
+        "-c",
+        "user.email=test@example.com",
+        "commit",
+        "-m",
+        "init",
+      ]);
 
       httpMocks.apiRequestForm.mockResolvedValueOnce({
         ok: true,
@@ -953,13 +1035,25 @@ describe("package commands", () => {
         }),
         "utf8",
       );
-      await writeFile(join(folder, "openclaw.plugin.json"), JSON.stringify({ id: "demo.plugin" }), "utf8");
+      await writeFile(
+        join(folder, "openclaw.plugin.json"),
+        JSON.stringify({ id: "demo.plugin" }),
+        "utf8",
+      );
       await writeFile(join(folder, "dist", "index.js"), "export const demo = true;\n", "utf8");
 
       runGit(folder, ["init", "-b", "main"]);
       runGit(folder, ["remote", "add", "origin", "git@github.com:openclaw/demo-plugin.git"]);
       runGit(folder, ["add", "."]);
-      runGit(folder, ["-c", "user.name=Test", "-c", "user.email=test@example.com", "commit", "-m", "init"]);
+      runGit(folder, [
+        "-c",
+        "user.name=Test",
+        "-c",
+        "user.email=test@example.com",
+        "commit",
+        "-m",
+        "init",
+      ]);
       const commit = runGit(folder, ["rev-parse", "HEAD"]);
 
       await cmdPublishPackage(makeOpts(workdir), "demo-plugin", { dryRun: true });
@@ -996,12 +1090,24 @@ describe("package commands", () => {
         }),
         "utf8",
       );
-      await writeFile(join(folder, "openclaw.plugin.json"), JSON.stringify({ id: "demo.plugin" }), "utf8");
+      await writeFile(
+        join(folder, "openclaw.plugin.json"),
+        JSON.stringify({ id: "demo.plugin" }),
+        "utf8",
+      );
 
       runGit(folder, ["init", "-b", "main"]);
       runGit(folder, ["remote", "add", "origin", "git@github.com:openclaw/demo-plugin.git"]);
       runGit(folder, ["add", "."]);
-      runGit(folder, ["-c", "user.name=Test", "-c", "user.email=test@example.com", "commit", "-m", "init"]);
+      runGit(folder, [
+        "-c",
+        "user.name=Test",
+        "-c",
+        "user.email=test@example.com",
+        "commit",
+        "-m",
+        "init",
+      ]);
 
       await cmdPublishPackage(makeOpts(workdir), "demo-plugin", { dryRun: true, json: true });
 

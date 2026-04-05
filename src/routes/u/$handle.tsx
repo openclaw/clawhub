@@ -7,9 +7,9 @@ import { api } from "../../../convex/_generated/api";
 import type { Doc } from "../../../convex/_generated/dataModel";
 import { EmptyState } from "../../components/EmptyState";
 import { Container } from "../../components/layout/Container";
+import { SkillCardSkeletonGrid } from "../../components/skeletons/SkillCardSkeleton";
 import { SkillCard } from "../../components/SkillCard";
 import { SkillStatsTripletLine } from "../../components/SkillStats";
-import { SkillCardSkeletonGrid } from "../../components/skeletons/SkillCardSkeleton";
 import { Avatar, AvatarFallback, AvatarImage } from "../../components/ui/avatar";
 import { Badge } from "../../components/ui/badge";
 import { Button } from "../../components/ui/button";
@@ -96,7 +96,9 @@ function UserProfile() {
               <AvatarFallback className="text-xl">{initial}</AvatarFallback>
             </Avatar>
             <div>
-              <h1 className="font-display text-xl font-bold text-[color:var(--ink)]">{displayName}</h1>
+              <h1 className="font-display text-xl font-bold text-[color:var(--ink)]">
+                {displayName}
+              </h1>
               <p className="font-mono text-sm text-[color:var(--ink-soft)]">@{displayHandle}</p>
             </div>
           </Card>
@@ -154,7 +156,9 @@ function PublishedAndStarred({
       {/* Published */}
       <section>
         <h2 className="font-display text-lg font-bold text-[color:var(--ink)]">Published</h2>
-        <p className="mt-1 mb-4 text-sm text-[color:var(--ink-soft)]">Skills published by this user.</p>
+        <p className="mt-1 mb-4 text-sm text-[color:var(--ink-soft)]">
+          Skills published by this user.
+        </p>
         {isLoadingPublished ? (
           <SkillCardSkeletonGrid count={3} />
         ) : published.length > 0 ? (
@@ -181,7 +185,9 @@ function PublishedAndStarred({
       {/* Stars */}
       <section>
         <h2 className="font-display text-lg font-bold text-[color:var(--ink)]">Stars</h2>
-        <p className="mt-1 mb-4 text-sm text-[color:var(--ink-soft)]">Skills this user has starred.</p>
+        <p className="mt-1 mb-4 text-sm text-[color:var(--ink-soft)]">
+          Skills this user has starred.
+        </p>
         {isLoadingSkills ? (
           <SkillCardSkeletonGrid count={3} />
         ) : skills.length === 0 ? (
@@ -295,7 +301,9 @@ function InstalledSection(props: {
                 <Badge variant="default">{root.skills.length} skills</Badge>
               </div>
               {root.skills.length === 0 ? (
-                <p className="text-sm text-[color:var(--ink-soft)]">No skills found in this root.</p>
+                <p className="text-sm text-[color:var(--ink-soft)]">
+                  No skills found in this root.
+                </p>
               ) : (
                 <div className="flex flex-col gap-1">
                   {root.skills.map((entry) => (

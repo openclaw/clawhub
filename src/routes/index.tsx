@@ -5,13 +5,13 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { api } from "../../convex/_generated/api";
 import { InstallSwitcher } from "../components/InstallSwitcher";
 import { Container } from "../components/layout/Container";
+import { SkillCardSkeletonGrid } from "../components/skeletons/SkillCardSkeleton";
 import { SkillCard } from "../components/SkillCard";
 import { SkillStatsTripletLine } from "../components/SkillStats";
 import { SoulCard } from "../components/SoulCard";
 import { SoulStatsTripletLine } from "../components/SoulStats";
 import { Button } from "../components/ui/button";
 import { Input } from "../components/ui/input";
-import { SkillCardSkeletonGrid } from "../components/skeletons/SkillCardSkeleton";
 import { UserBadge } from "../components/UserBadge";
 import { convexHttp } from "../convex/client";
 import { getSkillBadges } from "../lib/badges";
@@ -84,7 +84,8 @@ function SkillsHome() {
                 ClawHub, the skill dock for sharp agents.
               </h1>
               <p className="max-w-lg text-lg leading-relaxed text-[color:var(--ink-soft)]">
-                Browse, install, and publish skill packs. Versioned like npm, searchable with vectors, no gatekeeping.
+                Browse, install, and publish skill packs. Versioned like npm, searchable with
+                vectors, no gatekeeping.
               </p>
               {/* Stats bar */}
               {totalSkillsText && (
@@ -95,7 +96,15 @@ function SkillsHome() {
               <div className="flex flex-wrap gap-3 pt-2">
                 <Link
                   to="/skills"
-                  search={{ q: undefined, sort: undefined, dir: undefined, highlighted: undefined, nonSuspicious: true, view: undefined, focus: undefined }}
+                  search={{
+                    q: undefined,
+                    sort: undefined,
+                    dir: undefined,
+                    highlighted: undefined,
+                    nonSuspicious: true,
+                    view: undefined,
+                    focus: undefined,
+                  }}
                 >
                   <Button variant="primary" size="lg">
                     Browse skills
@@ -111,7 +120,9 @@ function SkillsHome() {
             </div>
             <div className="hero-card hero-search-card fade-up" data-delay="2">
               <div className="hero-install" style={{ marginTop: 18 }}>
-                <div className="text-sm font-semibold text-[color:var(--ink-soft)]">Search skills. Versioned, rollback-ready.</div>
+                <div className="text-sm font-semibold text-[color:var(--ink-soft)]">
+                  Search skills. Versioned, rollback-ready.
+                </div>
                 <InstallSwitcher exampleSlug="sonoscli" />
               </div>
             </div>
@@ -125,12 +136,24 @@ function SkillsHome() {
           <div className="flex flex-col gap-6">
             <div className="flex items-end justify-between">
               <div>
-                <h2 className="font-display text-xl font-bold text-[color:var(--ink)]">Staff Picks</h2>
-                <p className="mt-1 text-sm text-[color:var(--ink-soft)]">Curated signal — highlighted for quick trust.</p>
+                <h2 className="font-display text-xl font-bold text-[color:var(--ink)]">
+                  Staff Picks
+                </h2>
+                <p className="mt-1 text-sm text-[color:var(--ink-soft)]">
+                  Curated signal — highlighted for quick trust.
+                </p>
               </div>
               <Link
                 to="/skills"
-                search={{ q: undefined, sort: undefined, dir: undefined, highlighted: true, nonSuspicious: undefined, view: undefined, focus: undefined }}
+                search={{
+                  q: undefined,
+                  sort: undefined,
+                  dir: undefined,
+                  highlighted: true,
+                  nonSuspicious: undefined,
+                  view: undefined,
+                  focus: undefined,
+                }}
                 className="hidden text-sm font-semibold text-[color:var(--accent)] hover:underline sm:block"
               >
                 View all
@@ -174,8 +197,12 @@ function SkillsHome() {
         <Container>
           <div className="flex flex-col gap-6">
             <div>
-              <h2 className="font-display text-xl font-bold text-[color:var(--ink)]">Popular skills</h2>
-              <p className="mt-1 text-sm text-[color:var(--ink-soft)]">Most-downloaded, verified picks.</p>
+              <h2 className="font-display text-xl font-bold text-[color:var(--ink)]">
+                Popular skills
+              </h2>
+              <p className="mt-1 text-sm text-[color:var(--ink-soft)]">
+                Most-downloaded, verified picks.
+              </p>
             </div>
             {!loaded && popular.length === 0 ? (
               <SkillCardSkeletonGrid count={6} />
@@ -208,7 +235,15 @@ function SkillsHome() {
             <div className="flex justify-center pt-4">
               <Link
                 to="/skills"
-                search={{ q: undefined, sort: undefined, dir: undefined, highlighted: undefined, nonSuspicious: true, view: undefined, focus: undefined }}
+                search={{
+                  q: undefined,
+                  sort: undefined,
+                  dir: undefined,
+                  highlighted: undefined,
+                  nonSuspicious: true,
+                  view: undefined,
+                  focus: undefined,
+                }}
               >
                 <Button variant="outline">
                   See all skills
@@ -250,17 +285,28 @@ function OnlyCrabsHome() {
                 SoulHub, where system lore lives.
               </h1>
               <p className="max-w-lg text-lg leading-relaxed text-[color:var(--ink-soft)]">
-                Share SOUL.md bundles, version them like docs, and keep personal system lore in one public place.
+                Share SOUL.md bundles, version them like docs, and keep personal system lore in one
+                public place.
               </p>
               <div className="flex flex-wrap gap-3 pt-2">
                 <Link to="/publish-skill" search={{ updateSlug: undefined }}>
-                  <Button variant="primary" size="lg">Publish Soul</Button>
+                  <Button variant="primary" size="lg">
+                    Publish Soul
+                  </Button>
                 </Link>
                 <Link
                   to="/souls"
-                  search={{ q: undefined, sort: undefined, dir: undefined, view: undefined, focus: undefined }}
+                  search={{
+                    q: undefined,
+                    sort: undefined,
+                    dir: undefined,
+                    view: undefined,
+                    focus: undefined,
+                  }}
                 >
-                  <Button variant="outline" size="lg">Browse souls</Button>
+                  <Button variant="outline" size="lg">
+                    Browse souls
+                  </Button>
                 </Link>
               </div>
             </div>
@@ -290,7 +336,9 @@ function OnlyCrabsHome() {
                 />
               </form>
               <div className="hero-install" style={{ marginTop: 18 }}>
-                <div className="text-sm font-semibold text-[color:var(--ink-soft)]">Search souls. Versioned, readable, easy to remix.</div>
+                <div className="text-sm font-semibold text-[color:var(--ink-soft)]">
+                  Search souls. Versioned, readable, easy to remix.
+                </div>
               </div>
             </div>
           </div>
@@ -301,8 +349,12 @@ function OnlyCrabsHome() {
         <Container>
           <div className="flex flex-col gap-6">
             <div>
-              <h2 className="font-display text-xl font-bold text-[color:var(--ink)]">Latest souls</h2>
-              <p className="mt-1 text-sm text-[color:var(--ink-soft)]">Newest SOUL.md bundles across the hub.</p>
+              <h2 className="font-display text-xl font-bold text-[color:var(--ink)]">
+                Latest souls
+              </h2>
+              <p className="mt-1 text-sm text-[color:var(--ink-soft)]">
+                Newest SOUL.md bundles across the hub.
+              </p>
             </div>
             {latest.length === 0 ? (
               <SkillCardSkeletonGrid count={6} />
@@ -325,7 +377,13 @@ function OnlyCrabsHome() {
             <div className="flex justify-center pt-4">
               <Link
                 to="/souls"
-                search={{ q: undefined, sort: undefined, dir: undefined, view: undefined, focus: undefined }}
+                search={{
+                  q: undefined,
+                  sort: undefined,
+                  dir: undefined,
+                  view: undefined,
+                  focus: undefined,
+                }}
               >
                 <Button variant="outline">
                   See all souls

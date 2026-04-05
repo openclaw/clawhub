@@ -33,9 +33,8 @@ type WrappedHandler<TArgs, TResult> = {
 };
 
 const meHandler = (me as unknown as WrappedHandler<Record<string, never>, unknown>)._handler;
-const getByHandleHandler = (
-  getByHandle as unknown as WrappedHandler<{ handle: string }, unknown>
-)._handler;
+const getByHandleHandler = (getByHandle as unknown as WrappedHandler<{ handle: string }, unknown>)
+  ._handler;
 
 function makeCtx() {
   const patch = vi.fn();
@@ -136,7 +135,10 @@ function makeListCtx(
     if (table === "users") {
       return {
         order,
-        withIndex: (name: string, cb?: (q: { eq: (field: string, value: string) => unknown }) => unknown) => {
+        withIndex: (
+          name: string,
+          cb?: (q: { eq: (field: string, value: string) => unknown }) => unknown,
+        ) => {
           if (name !== "handle") throw new Error(`Unexpected users index ${name}`);
           let handle = "";
           cb?.({
@@ -145,13 +147,18 @@ function makeListCtx(
               return {};
             },
           });
-          return { unique: vi.fn(async () => users.find((user) => user.handle === handle) ?? null) };
+          return {
+            unique: vi.fn(async () => users.find((user) => user.handle === handle) ?? null),
+          };
         },
       };
     }
     if (table === "publishers") {
       return {
-        withIndex: (name: string, cb?: (q: { eq: (field: string, value: string) => unknown }) => unknown) => {
+        withIndex: (
+          name: string,
+          cb?: (q: { eq: (field: string, value: string) => unknown }) => unknown,
+        ) => {
           if (name !== "by_handle") throw new Error(`Unexpected publishers index ${name}`);
           let handle = "";
           cb?.({
@@ -397,7 +404,10 @@ describe("ensureHandler", () => {
       }
       if (table === "publishers") {
         return {
-          withIndex: (name: string, builder?: (q: { eq: (field: string, value: string) => unknown }) => unknown) => {
+          withIndex: (
+            name: string,
+            builder?: (q: { eq: (field: string, value: string) => unknown }) => unknown,
+          ) => {
             let handle = "";
             let linkedUserId = "";
             const q = {
@@ -548,7 +558,10 @@ describe("ensureHandler", () => {
       }
       if (table === "publishers") {
         return {
-          withIndex: (name: string, builder?: (q: { eq: (field: string, value: string) => unknown }) => unknown) => {
+          withIndex: (
+            name: string,
+            builder?: (q: { eq: (field: string, value: string) => unknown }) => unknown,
+          ) => {
             let handle = "";
             let linkedUserId = "";
             const q = {
@@ -908,7 +921,10 @@ describe("users.syncGitHubProfileInternal", () => {
       }
       if (table === "publishers") {
         return {
-          withIndex: (name: string, builder?: (q: { eq: (field: string, value: string) => unknown }) => unknown) => {
+          withIndex: (
+            name: string,
+            builder?: (q: { eq: (field: string, value: string) => unknown }) => unknown,
+          ) => {
             let handle = "";
             let linkedUserId = "";
             const q = {

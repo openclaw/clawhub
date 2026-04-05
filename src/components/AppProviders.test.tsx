@@ -1,10 +1,7 @@
 /* @vitest-environment jsdom */
 import { render, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import {
-  ACCESS_DENIED_SIGN_IN_MESSAGE,
-  BANNED_SIGN_IN_MESSAGE,
-} from "../lib/authErrorMessage";
+import { ACCESS_DENIED_SIGN_IN_MESSAGE, BANNED_SIGN_IN_MESSAGE } from "../lib/authErrorMessage";
 import { getAuthErrorSnapshot, clearAuthError } from "../lib/useAuthError";
 import { AuthCodeHandler, AuthErrorHandler } from "./AppProviders";
 

@@ -29,7 +29,9 @@ export function InstallSwitcher({ exampleSlug = "sonoscli" }: InstallSwitcherPro
   return (
     <div className="flex flex-col gap-3 rounded-[var(--radius-md)] border border-[color:var(--line)] bg-[color:var(--surface-muted)] p-4">
       <div className="flex flex-wrap items-center justify-between gap-3">
-        <div className="text-sm text-[color:var(--ink-soft)]">Install any skill folder in one shot:</div>
+        <div className="text-sm text-[color:var(--ink-soft)]">
+          Install any skill folder in one shot:
+        </div>
         <div
           className="inline-flex items-center gap-0.5 rounded-full border border-[color:var(--line)] bg-[color:var(--surface)] p-[3px]"
           role="tablist"
@@ -53,7 +55,9 @@ export function InstallSwitcher({ exampleSlug = "sonoscli" }: InstallSwitcherPro
           ))}
         </div>
       </div>
-      <div className="overflow-x-auto rounded-[var(--radius-sm)] bg-[color:var(--surface)] p-3 font-mono text-xs">{command}</div>
+      <div className="overflow-x-auto rounded-[var(--radius-sm)] bg-[color:var(--surface)] p-3 font-mono text-xs">
+        {command}
+      </div>
     </div>
   );
 }

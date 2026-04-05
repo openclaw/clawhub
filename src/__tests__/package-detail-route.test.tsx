@@ -2,6 +2,7 @@
 
 import { render, screen } from "@testing-library/react";
 import type { AnchorHTMLAttributes, ComponentType, ReactNode } from "react";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import {
   fetchPackageDetail,
   fetchPackageReadme,
@@ -9,7 +10,6 @@ import {
   type PackageDetailResponse,
   type PackageVersionDetail,
 } from "../lib/packageApi";
-import { beforeEach, describe, expect, it, vi } from "vitest";
 
 type PluginDetailLoaderData = {
   detail: PackageDetailResponse;
@@ -42,17 +42,11 @@ let loaderDataMock: PluginDetailLoaderData = {
 };
 
 vi.mock("@tanstack/react-router", () => ({
-  createFileRoute:
-    () =>
-    (config: {
-      loader?: unknown;
-      head?: unknown;
-      component?: unknown;
-    }) => ({
-      __config: config,
-      useParams: () => paramsMock,
-      useLoaderData: () => loaderDataMock,
-    }),
+  createFileRoute: () => (config: { loader?: unknown; head?: unknown; component?: unknown }) => ({
+    __config: config,
+    useParams: () => paramsMock,
+    useLoaderData: () => loaderDataMock,
+  }),
   Link: ({
     children,
     to,
@@ -72,7 +66,9 @@ vi.mock("../lib/packageApi", () => ({
   fetchPackageReadme: vi.fn(),
   fetchPackageVersion: vi.fn(),
   getPackageDownloadPath: vi.fn((name: string, version?: string | null) =>
-    version ? `/api/v1/packages/${name}/download?version=${version}` : `/api/v1/packages/${name}/download`,
+    version
+      ? `/api/v1/packages/${name}/download?version=${version}`
+      : `/api/v1/packages/${name}/download`,
   ),
 }));
 
@@ -176,7 +172,11 @@ describe("plugin detail route", () => {
 
   it("falls back to the official scoped package name for short plugin routes", async () => {
     const route = await loadRoute();
-    const loader = route.__config.loader as ({ params }: { params: { name: string } }) => Promise<PluginDetailLoaderData>;
+    const loader = route.__config.loader as ({
+      params,
+    }: {
+      params: { name: string };
+    }) => Promise<PluginDetailLoaderData>;
     const fetchPackageDetailMock = vi.mocked(fetchPackageDetail);
     const fetchPackageReadmeMock = vi.mocked(fetchPackageReadme);
     const fetchPackageVersionMock = vi.mocked(fetchPackageVersion);

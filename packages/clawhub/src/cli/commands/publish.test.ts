@@ -133,7 +133,9 @@ describe("cmdPublish", () => {
           version: "1.0.0",
           tags: "latest",
         }),
-      ).rejects.toThrow('This looks like a plugin. Use "clawhub package publish <source>" instead.');
+      ).rejects.toThrow(
+        'This looks like a plugin. Use "clawhub package publish <source>" instead.',
+      );
       expect(authTokenMocks.requireAuthToken).not.toHaveBeenCalled();
       expect(httpMocks.apiRequestForm).not.toHaveBeenCalled();
     } finally {

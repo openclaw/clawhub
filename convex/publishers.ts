@@ -4,6 +4,7 @@ import type { Doc, Id } from "./_generated/dataModel";
 import type { MutationCtx } from "./_generated/server";
 import { internalMutation, internalQuery, mutation, query } from "./functions";
 import { assertAdmin, requireUser } from "./lib/access";
+import { toPublicPublisher } from "./lib/public";
 import {
   ensurePersonalPublisherForUser,
   getActiveUserByHandleOrPersonalPublisher,
@@ -14,7 +15,6 @@ import {
   isPublisherRoleAllowed,
   normalizePublisherHandle,
 } from "./lib/publishers";
-import { toPublicPublisher } from "./lib/public";
 
 const PUBLISHER_HANDLE_PATTERN = /^[a-z0-9](?:[a-z0-9-]{0,38}[a-z0-9])?$/;
 
@@ -88,10 +88,9 @@ async function migrateLegacyPublisherHandleToOrgWithActor(
     throw new ConvexError(`Legacy user "@${orgHandle}" not found`);
   }
 
-  const personalPublisher =
-    legacyUser.personalPublisherId
-      ? await ctx.db.get(legacyUser.personalPublisherId)
-      : await getPersonalPublisherForUser(ctx, legacyUser._id);
+  const personalPublisher = legacyUser.personalPublisherId
+    ? await ctx.db.get(legacyUser.personalPublisherId)
+    : await getPersonalPublisherForUser(ctx, legacyUser._id);
   const convertiblePublisher =
     handlePublisher?.kind === "user" && handlePublisher.linkedUserId === legacyUser._id
       ? handlePublisher
@@ -356,7 +355,9 @@ export const resolvePublishTargetForUserInternal = internalMutation({
   args: {
     actorUserId: v.id("users"),
     ownerHandle: v.optional(v.string()),
-    minimumRole: v.optional(v.union(v.literal("owner"), v.literal("admin"), v.literal("publisher"))),
+    minimumRole: v.optional(
+      v.union(v.literal("owner"), v.literal("admin"), v.literal("publisher")),
+    ),
   },
   handler: async (ctx, args) => {
     const actor = await ctx.db.get(args.actorUserId);
@@ -418,9 +419,9 @@ export const listMine = query({
         if (!publicPublisher) return null;
         return {
           publisher: publicPublisher,
-        role: membership.role,
-      };
-    }),
+          role: membership.role,
+        };
+      }),
     );
     const visiblePublishers = publishers.filter(
       (

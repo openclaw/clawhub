@@ -13,12 +13,12 @@ import {
   selectDefaultFilePath,
   sortVersionsBySemver,
 } from "../lib/diffing";
+import { ClientOnly } from "./ClientOnly";
 import { Badge } from "./ui/badge";
 import { Button } from "./ui/button";
 import { Card } from "./ui/card";
 import { Label } from "./ui/label";
 import { Skeleton } from "./ui/skeleton";
-import { ClientOnly } from "./ClientOnly";
 
 type SkillDiffCardProps = {
   skill: Doc<"skills">;
@@ -404,18 +404,26 @@ export function SkillDiffCard({ skill, versions, variant = "card" }: SkillDiffCa
         </div>
         <div className="relative min-h-[300px]">
           {error ? (
-            <div className="flex h-full items-center justify-center p-4 text-sm text-[color:var(--ink-soft)]">{error}</div>
+            <div className="flex h-full items-center justify-center p-4 text-sm text-[color:var(--ink-soft)]">
+              {error}
+            </div>
           ) : sizeWarning ? (
             <div className="flex h-full items-center justify-center p-4 text-sm text-[color:var(--ink-soft)]">
               {sizeWarning.side === "left" ? "Left" : "Right"} file exceeds 200KB:{" "}
               {sizeWarning.path}
             </div>
           ) : diffUnavailable ? (
-            <div className="flex h-full items-center justify-center p-4 text-sm text-[color:var(--ink-soft)]">Publish another version to compare.</div>
+            <div className="flex h-full items-center justify-center p-4 text-sm text-[color:var(--ink-soft)]">
+              Publish another version to compare.
+            </div>
           ) : !selectionReady ? (
-            <div className="flex h-full items-center justify-center p-4 text-sm text-[color:var(--ink-soft)]">Select two versions to compare.</div>
+            <div className="flex h-full items-center justify-center p-4 text-sm text-[color:var(--ink-soft)]">
+              Select two versions to compare.
+            </div>
           ) : !fileSelected ? (
-            <div className="flex h-full items-center justify-center p-4 text-sm text-[color:var(--ink-soft)]">Select a file to compare.</div>
+            <div className="flex h-full items-center justify-center p-4 text-sm text-[color:var(--ink-soft)]">
+              Select a file to compare.
+            </div>
           ) : (
             <ClientOnly fallback={<Skeleton className="h-full w-full" />}>
               <DiffEditor

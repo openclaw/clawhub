@@ -104,7 +104,8 @@ export function SkillsIndex() {
           {/* Results count */}
           {!model.isLoadingSkills && model.sorted.length > 0 && (
             <p className="text-xs font-medium text-[color:var(--ink-soft)]">
-              Showing {model.sorted.length}{totalSkillsText ? ` of ${totalSkillsText}` : ""} skills
+              Showing {model.sorted.length}
+              {totalSkillsText ? ` of ${totalSkillsText}` : ""} skills
               {model.hasQuery ? ` matching "${model.query}"` : ""}
             </p>
           )}

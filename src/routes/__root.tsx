@@ -112,9 +112,7 @@ function RootDocument({ children }: { children: React.ReactNode }) {
             <ClientOnly>
               <DeploymentDriftBanner />
             </ClientOnly>
-            <RouteErrorBoundary>
-              {children}
-            </RouteErrorBoundary>
+            <RouteErrorBoundary>{children}</RouteErrorBoundary>
             <Footer />
           </div>
           <Toaster
@@ -140,11 +138,7 @@ function RootDocument({ children }: { children: React.ReactNode }) {
 }
 
 /** Resets the error boundary whenever the route pathname changes. */
-function RouteErrorBoundary({ children }: { children: React.ReactNode; }) {
+function RouteErrorBoundary({ children }: { children: React.ReactNode }) {
   const location = useLocation();
-  return (
-    <ErrorBoundary resetKey={location.pathname}>
-      {children}
-    </ErrorBoundary>
-  );
+  return <ErrorBoundary resetKey={location.pathname}>{children}</ErrorBoundary>;
 }

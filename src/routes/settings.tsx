@@ -156,9 +156,7 @@ export function Settings() {
         <Card>
           <CardContent className="flex items-center gap-4">
             <Avatar className="h-16 w-16">
-              {avatar ? (
-                <AvatarImage src={avatar} alt={identityName} />
-              ) : null}
+              {avatar ? <AvatarImage src={avatar} alt={identityName} /> : null}
               <AvatarFallback className="text-lg">
                 {identityName[0]?.toUpperCase() ?? "U"}
               </AvatarFallback>
@@ -364,11 +362,7 @@ export function Settings() {
               />
             </div>
             <div className="flex flex-col items-start gap-3">
-              <Button
-                variant="primary"
-                type="button"
-                onClick={() => void onCreateToken()}
-              >
+              <Button variant="primary" type="button" onClick={() => void onCreateToken()}>
                 Create token
               </Button>
               {newToken ? (
@@ -427,7 +421,8 @@ export function Settings() {
           <CardHeader>
             <CardTitle className="text-red-700 dark:text-red-300">Danger zone</CardTitle>
             <CardDescription>
-              Delete your account permanently. This cannot be undone. Published skills remain public.
+              Delete your account permanently. This cannot be undone. Published skills remain
+              public.
             </CardDescription>
           </CardHeader>
           <CardContent>

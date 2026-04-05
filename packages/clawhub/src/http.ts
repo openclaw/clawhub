@@ -161,7 +161,12 @@ export function createHttpClient(options: HttpClientOptions = {}): HttpClient {
         body,
       });
       if (!response.ok) {
-        throwHttpStatusError(response.status, await readResponseTextSafe(response), response.headers, deps.now);
+        throwHttpStatusError(
+          response.status,
+          await readResponseTextSafe(response),
+          response.headers,
+          deps.now,
+        );
       }
       return (await response.json()) as unknown;
     });
@@ -193,7 +198,12 @@ export function createHttpClient(options: HttpClientOptions = {}): HttpClient {
         UPLOAD_TIMEOUT_MS,
       );
       if (!response.ok) {
-        throwHttpStatusError(response.status, await readResponseTextSafe(response), response.headers, deps.now);
+        throwHttpStatusError(
+          response.status,
+          await readResponseTextSafe(response),
+          response.headers,
+          deps.now,
+        );
       }
       return (await response.json()) as unknown;
     });
@@ -235,7 +245,12 @@ export function createHttpClient(options: HttpClientOptions = {}): HttpClient {
       if (args.token) headers.Authorization = `Bearer ${args.token}`;
       const response = await fetchWithTimeout(deps, url.toString(), { method: "GET", headers });
       if (!response.ok) {
-        throwHttpStatusError(response.status, await readResponseTextSafe(response), response.headers, deps.now);
+        throwHttpStatusError(
+          response.status,
+          await readResponseTextSafe(response),
+          response.headers,
+          deps.now,
+        );
       }
       return new Uint8Array(await response.arrayBuffer());
     });
@@ -527,7 +542,13 @@ async function fetchJsonViaCurl(
 async function fetchJsonFormViaCurl(
   deps: Pick<
     HttpClientDeps,
-    "spawnSyncImpl" | "mkdtempImpl" | "mkdirImpl" | "writeFileImpl" | "rmImpl" | "tmpdirPath" | "now"
+    | "spawnSyncImpl"
+    | "mkdtempImpl"
+    | "mkdirImpl"
+    | "writeFileImpl"
+    | "rmImpl"
+    | "tmpdirPath"
+    | "now"
   >,
   url: string,
   args: FormRequestArgs,

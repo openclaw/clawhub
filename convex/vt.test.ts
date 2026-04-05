@@ -161,11 +161,10 @@ describe("package VT retries", () => {
       { releaseId: "packageReleases:demo", attempt: 2 },
     );
 
-    expect(scheduler.runAfter).toHaveBeenCalledWith(
-      5 * 60 * 1000,
-      expect.anything(),
-      { releaseId: "packageReleases:demo", attempt: 3 },
-    );
+    expect(scheduler.runAfter).toHaveBeenCalledWith(5 * 60 * 1000, expect.anything(), {
+      releaseId: "packageReleases:demo",
+      attempt: 3,
+    });
   });
 
   it("retries package upload when VT upload fails", async () => {
@@ -195,7 +194,9 @@ describe("package VT retries", () => {
         runMutation,
         scheduler,
         storage: {
-          get: vi.fn(async () => new Blob(['{"name":"demo-plugin"}'], { type: "application/json" })),
+          get: vi.fn(
+            async () => new Blob(['{"name":"demo-plugin"}'], { type: "application/json" }),
+          ),
         },
       } as never,
       { releaseId: "packageReleases:demo" },
@@ -208,11 +209,10 @@ describe("package VT retries", () => {
         sha256hash: expect.any(String),
       }),
     );
-    expect(scheduler.runAfter).toHaveBeenCalledWith(
-      5 * 60 * 1000,
-      expect.anything(),
-      { releaseId: "packageReleases:demo", attempt: 2 },
-    );
+    expect(scheduler.runAfter).toHaveBeenCalledWith(5 * 60 * 1000, expect.anything(), {
+      releaseId: "packageReleases:demo",
+      attempt: 2,
+    });
   });
 
   it("uses existing AV engine verdicts for packages without re-uploading", async () => {
@@ -258,7 +258,9 @@ describe("package VT retries", () => {
         runMutation,
         scheduler,
         storage: {
-          get: vi.fn(async () => new Blob(['{"name":"demo-plugin"}'], { type: "application/json" })),
+          get: vi.fn(
+            async () => new Blob(['{"name":"demo-plugin"}'], { type: "application/json" }),
+          ),
         },
       } as never,
       { releaseId: "packageReleases:demo" },
@@ -324,7 +326,9 @@ describe("package VT retries", () => {
         runMutation,
         scheduler,
         storage: {
-          get: vi.fn(async () => new Blob(['{"name":"demo-plugin"}'], { type: "application/json" })),
+          get: vi.fn(
+            async () => new Blob(['{"name":"demo-plugin"}'], { type: "application/json" }),
+          ),
         },
       } as never,
       { releaseId: "packageReleases:demo" },
@@ -334,9 +338,7 @@ describe("package VT retries", () => {
     const mutationCalls = runMutation.mock.calls as unknown as Array<
       [unknown, Record<string, unknown>]
     >;
-    expect(
-      mutationCalls.some(([, payload]) => "vtAnalysis" in payload),
-    ).toBe(false);
+    expect(mutationCalls.some(([, payload]) => "vtAnalysis" in payload)).toBe(false);
     expect(fetchMock.mock.calls.length).toBe(2);
     expect(scheduler.runAfter.mock.calls.length).toBe(1);
   });
@@ -384,7 +386,9 @@ describe("package VT retries", () => {
         runMutation,
         scheduler,
         storage: {
-          get: vi.fn(async () => new Blob(['{"name":"demo-plugin"}'], { type: "application/json" })),
+          get: vi.fn(
+            async () => new Blob(['{"name":"demo-plugin"}'], { type: "application/json" }),
+          ),
         },
       } as never,
       { releaseId: "packageReleases:demo" },
@@ -448,7 +452,9 @@ describe("package VT retries", () => {
         runMutation,
         scheduler,
         storage: {
-          get: vi.fn(async () => new Blob(['{"name":"demo-plugin"}'], { type: "application/json" })),
+          get: vi.fn(
+            async () => new Blob(['{"name":"demo-plugin"}'], { type: "application/json" }),
+          ),
         },
       } as never,
       { releaseId: "packageReleases:demo" },
@@ -488,11 +494,10 @@ describe("package VT retries", () => {
       { releaseId: "packageReleases:demo", attempt: 3 },
     );
 
-    expect(scheduler.runAfter).toHaveBeenCalledWith(
-      5 * 60 * 1000,
-      expect.anything(),
-      { releaseId: "packageReleases:demo", attempt: 4 },
-    );
+    expect(scheduler.runAfter).toHaveBeenCalledWith(5 * 60 * 1000, expect.anything(), {
+      releaseId: "packageReleases:demo",
+      attempt: 4,
+    });
   });
 
   it("does not apply undetected-only fallback during package polling when static scan is suspicious", async () => {
@@ -660,10 +665,9 @@ describe("package VT retries", () => {
 
     expect(runMutation).not.toHaveBeenCalled();
     expect(fetchMock).toHaveBeenCalledTimes(2);
-    expect(scheduler.runAfter).toHaveBeenCalledWith(
-      5 * 60 * 1000,
-      expect.anything(),
-      { releaseId: "packageReleases:demo", attempt: 4 },
-    );
+    expect(scheduler.runAfter).toHaveBeenCalledWith(5 * 60 * 1000, expect.anything(), {
+      releaseId: "packageReleases:demo",
+      attempt: 4,
+    });
   });
 });

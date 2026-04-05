@@ -3,10 +3,10 @@
   "version": "0.10.0",
   "description": "ClawHub CLI \\u2014 install, update, search, and publish skills plus OpenClaw packages.",
   "homepage": "https://clawhub.ai",
-  "license": "MIT",
   "bugs": {
     "url": "https://github.com/openclaw/clawhub/issues"
   },
+  "license": "MIT",
   "repository": {
     "type": "git",
     "url": "https://github.com/openclaw/clawhub.git",
@@ -16,9 +16,6 @@
     "clawdhub": "bin/clawdhub.js",
     "clawhub": "bin/clawdhub.js"
   },
-  "publishConfig": {
-    "access": "public"
-  },
   "files": [
     "bin",
     "dist",
@@ -26,15 +23,18 @@
     "LICENSE"
   ],
   "type": "module",
+  "publishConfig": {
+    "access": "public"
+  },
   "scripts": {
     "build": "node ./scripts/build.mjs",
     "dev": "node --enable-source-maps dist/cli.js",
     "prepublishOnly": "npm run build",
     "test": "bun run test:src",
-    "test:src": "vitest run -c vitest.config.ts",
-    "verify:build": "tsc -p tsconfig.json --noEmit",
     "test:artifact": "bun run build && vitest run -c vitest.artifact.config.ts",
-    "verify": "bun run test:src && bun run verify:build && bun run test:artifact"
+    "test:src": "vitest run -c vitest.config.ts",
+    "verify": "bun run test:src && bun run verify:build && bun run test:artifact",
+    "verify:build": "tsc -p tsconfig.json --noEmit"
   },
   "dependencies": {
     "@clack/prompts": "^1.1.0",

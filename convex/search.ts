@@ -132,13 +132,12 @@ export const searchSkills: ReturnType<typeof action> = action({
     if (!query) return [];
     const queryTokens = tokenize(query);
     if (queryTokens.length === 0) return [];
-    const rawExactSlugMatch =
-      isSlugLikeQuery(query)
-        ? ((await ctx.runQuery(internal.search.getExactSkillSlugMatch, {
-            slug: query.toLowerCase(),
-            nonSuspiciousOnly: args.nonSuspiciousOnly,
-          })) as SkillSearchEntry | null)
-        : null;
+    const rawExactSlugMatch = isSlugLikeQuery(query)
+      ? ((await ctx.runQuery(internal.search.getExactSkillSlugMatch, {
+          slug: query.toLowerCase(),
+          nonSuspiciousOnly: args.nonSuspiciousOnly,
+        })) as SkillSearchEntry | null)
+      : null;
     const exactSlugMatch =
       rawExactSlugMatch && (!args.highlightedOnly || isSkillHighlighted(rawExactSlugMatch.skill))
         ? rawExactSlugMatch

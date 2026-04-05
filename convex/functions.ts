@@ -128,7 +128,8 @@ async function syncPackageSearchDigest(
   });
   await upsertPackageSearchDigest(ctx, {
     ...fields,
-    latestVersion: latestRelease && !latestRelease.softDeletedAt ? latestRelease.version : undefined,
+    latestVersion:
+      latestRelease && !latestRelease.softDeletedAt ? latestRelease.version : undefined,
     ownerHandle: owner?.handle ?? "",
     ownerKind: owner?.kind,
   });
@@ -344,13 +345,15 @@ triggers.register("packages", async (ctx, change) => {
 
 triggers.register("packageReleases", async (ctx, change) => {
   if (change.operation === "insert") return;
-  if (change.operation === "update" && change.oldDoc.softDeletedAt === change.newDoc.softDeletedAt) {
+  if (
+    change.operation === "update" &&
+    change.oldDoc.softDeletedAt === change.newDoc.softDeletedAt
+  ) {
     return;
   }
   const packageId =
     change.operation === "delete" ? change.oldDoc.packageId : change.newDoc.packageId;
-  const affectedReleaseId =
-    change.operation === "delete" ? change.oldDoc._id : change.newDoc._id;
+  const affectedReleaseId = change.operation === "delete" ? change.oldDoc._id : change.newDoc._id;
   if (change.operation === "delete" || change.newDoc.softDeletedAt) {
     await repointPackageLatestRelease(ctx, packageId, affectedReleaseId);
     return;

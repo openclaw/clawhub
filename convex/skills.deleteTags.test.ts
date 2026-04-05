@@ -37,10 +37,7 @@ function buildDigestQuery(table: string) {
   };
 }
 
-function makeCtx(params: {
-  user: Record<string, unknown>;
-  skill: Record<string, unknown> | null;
-}) {
+function makeCtx(params: { user: Record<string, unknown>; skill: Record<string, unknown> | null }) {
   vi.mocked(getAuthUserId).mockResolvedValue(params.user._id as never);
   const patch = vi.fn(async (_id: string, value: Record<string, unknown>) => value);
   const db = {
@@ -144,10 +141,7 @@ describe("deleteTags", () => {
   it("throws for non-owner non-moderator user", async () => {
     const { db, auth } = makeCtx({ user: otherUser, skill: baseSkill });
     await expect(
-      deleteTagsHandler(
-        { db, auth } as never,
-        { skillId: "skills:1", tags: ["stable"] } as never,
-      ),
+      deleteTagsHandler({ db, auth } as never, { skillId: "skills:1", tags: ["stable"] } as never),
     ).rejects.toThrow();
   });
 

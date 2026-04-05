@@ -158,9 +158,9 @@ describe("node http client", () => {
       clearTimeoutImpl,
     });
 
-    await expect(client.apiRequest("https://example.com", { method: "GET", path: "/x" })).rejects.toThrow(
-      /retry in 34s.*remaining: 0\/20.*reset in 34s/i,
-    );
+    await expect(
+      client.apiRequest("https://example.com", { method: "GET", path: "/x" }),
+    ).rejects.toThrow(/retry in 34s.*remaining: 0\/20.*reset in 34s/i);
     expect(fetchImpl).toHaveBeenCalledTimes(3);
     expect(clearTimeoutImpl).toHaveBeenCalledTimes(3);
   });
@@ -184,9 +184,9 @@ describe("node http client", () => {
       now: () => 1_771_404_500_000,
     });
 
-    await expect(client.apiRequest("https://example.com", { method: "GET", path: "/x" })).rejects.toThrow(
-      /retry in 40s.*remaining: 0\/20/i,
-    );
+    await expect(
+      client.apiRequest("https://example.com", { method: "GET", path: "/x" }),
+    ).rejects.toThrow(/retry in 40s.*remaining: 0\/20/i);
   });
 
   it("falls back to HTTP status when response bodies are empty", async () => {
@@ -244,9 +244,9 @@ describe("node http client", () => {
       clearTimeoutImpl,
     });
 
-    await expect(client.apiRequest("https://example.com", { method: "GET", path: "/x" })).rejects.toThrow(
-      /timed out/i,
-    );
+    await expect(
+      client.apiRequest("https://example.com", { method: "GET", path: "/x" }),
+    ).rejects.toThrow(/timed out/i);
     await expect(client.fetchText("https://example.com", { path: "/x" })).rejects.toThrow(
       /timed out/i,
     );
@@ -260,9 +260,9 @@ describe("node http client", () => {
     });
     const client = createNodeClient({ fetchImpl: fetchImpl as unknown as typeof fetch });
 
-    await expect(client.apiRequest("https://example.com", { method: "GET", path: "/x" })).rejects.toThrow(
-      "The operation was aborted",
-    );
+    await expect(
+      client.apiRequest("https://example.com", { method: "GET", path: "/x" }),
+    ).rejects.toThrow("The operation was aborted");
   });
 
   it("posts form data, retries 429, and uses the upload timeout", async () => {

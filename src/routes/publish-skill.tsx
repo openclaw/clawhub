@@ -11,10 +11,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import semver from "semver";
 import { toast } from "sonner";
 import { api } from "../../convex/_generated/api";
-import {
-  MAX_PUBLISH_FILE_BYTES,
-  MAX_PUBLISH_TOTAL_BYTES,
-} from "../../convex/lib/publishLimits";
+import { MAX_PUBLISH_FILE_BYTES, MAX_PUBLISH_TOTAL_BYTES } from "../../convex/lib/publishLimits";
 import { EmptyState } from "../components/EmptyState";
 import { Container } from "../components/layout/Container";
 import { Badge } from "../components/ui/badge";
@@ -206,7 +203,9 @@ export function Upload() {
 
   useEffect(() => {
     if (ownerHandle) return;
-    const personalPublisher = publisherMemberships?.find((entry) => entry.publisher.kind === "user");
+    const personalPublisher = publisherMemberships?.find(
+      (entry) => entry.publisher.kind === "user",
+    );
     if (personalPublisher?.publisher.handle) {
       setOwnerHandle(personalPublisher.publisher.handle);
     }
@@ -446,8 +445,7 @@ export function Upload() {
       setChangelogSource("user");
       if (result) {
         toast.success(`Published ${trimmedSlug}@${version}`);
-        const ownerParam =
-          ownerHandle || me?.handle || (me?._id ? String(me._id) : "unknown");
+        const ownerParam = ownerHandle || me?.handle || (me?._id ? String(me._id) : "unknown");
         void navigate({
           to: isSoulMode ? "/souls/$slug" : "/$owner/$slug",
           params: isSoulMode ? { slug: trimmedSlug } : { owner: ownerParam, slug: trimmedSlug },
@@ -488,9 +486,7 @@ export function Upload() {
                   placeholder={`${contentLabel}-name`}
                 />
                 {trimmedSlug && SLUG_PATTERN.test(trimmedSlug) && slugAvailability ? (
-                  <Badge
-                    variant={slugAvailability.available ? "success" : "destructive"}
-                  >
+                  <Badge variant={slugAvailability.available ? "success" : "destructive"}>
                     {slugAvailability.available ? "Available" : "Taken"}
                   </Badge>
                 ) : null}
@@ -636,7 +632,10 @@ export function Upload() {
               {slugCollision?.url ? (
                 <div className="text-sm text-[color:var(--ink-soft)]">
                   Existing skill:{" "}
-                  <a href={slugCollision.url} className="text-[color:var(--accent)] hover:underline">
+                  <a
+                    href={slugCollision.url}
+                    className="text-[color:var(--accent)] hover:underline"
+                  >
                     {slugCollision.url}
                   </a>
                 </div>
@@ -709,9 +708,7 @@ export function Upload() {
                   {error}
                 </div>
               ) : null}
-              {status ? (
-                <div className="text-sm text-[color:var(--ink-soft)]">{status}</div>
-              ) : null}
+              {status ? <div className="text-sm text-[color:var(--ink-soft)]">{status}</div> : null}
               {hasAttempted && !validation.ready ? (
                 <div className="text-sm text-[color:var(--ink-soft)]">
                   Fix validation issues to continue.

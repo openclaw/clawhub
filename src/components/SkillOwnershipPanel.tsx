@@ -4,6 +4,7 @@ import { useState } from "react";
 import { toast } from "sonner";
 import { api } from "../../convex/_generated/api";
 import type { Id } from "../../convex/_generated/dataModel";
+import { buildSkillHref } from "./skillDetailUtils";
 import { Button } from "./ui/button";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "./ui/card";
 import {
@@ -16,7 +17,6 @@ import {
 } from "./ui/dialog";
 import { Input } from "./ui/input";
 import { Label } from "./ui/label";
-import { buildSkillHref } from "./skillDetailUtils";
 
 type OwnedSkillOption = {
   _id: Id<"skills">;
@@ -115,135 +115,138 @@ export function SkillOwnershipPanel({
 
   return (
     <>
-    <Card className="border-[color:var(--border-ui)]/30 bg-[color:var(--surface-muted)]/50" data-skill-id={skillId}>
-      <CardHeader>
-        <CardTitle className="text-base">Owner tools</CardTitle>
-        <CardDescription>
-          Rename the canonical slug or fold this listing into another one you own. Old slugs stay as
-          redirects and stop polluting search/list views.
-        </CardDescription>
-      </CardHeader>
-      <CardContent>
-        <div className="grid gap-4 sm:grid-cols-2">
-          {/* Rename */}
-          <div className="flex flex-col gap-2">
-            <Label>Rename slug</Label>
-            <Input
-              value={renameSlug}
-              onChange={(event) => setRenameSlug(event.target.value)}
-              placeholder="new-slug"
-              autoComplete="off"
-              spellCheck={false}
-            />
-            <span className="text-xs text-[color:var(--ink-soft)]">
-              Current page: {ownerHref(slug)}
-            </span>
+      <Card
+        className="border-[color:var(--border-ui)]/30 bg-[color:var(--surface-muted)]/50"
+        data-skill-id={skillId}
+      >
+        <CardHeader>
+          <CardTitle className="text-base">Owner tools</CardTitle>
+          <CardDescription>
+            Rename the canonical slug or fold this listing into another one you own. Old slugs stay
+            as redirects and stop polluting search/list views.
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          <div className="grid gap-4 sm:grid-cols-2">
+            {/* Rename */}
+            <div className="flex flex-col gap-2">
+              <Label>Rename slug</Label>
+              <Input
+                value={renameSlug}
+                onChange={(event) => setRenameSlug(event.target.value)}
+                placeholder="new-slug"
+                autoComplete="off"
+                spellCheck={false}
+              />
+              <span className="text-xs text-[color:var(--ink-soft)]">
+                Current page: {ownerHref(slug)}
+              </span>
+            </div>
+            <div className="flex flex-col gap-2">
+              <Label>Rename action</Label>
+              <Button
+                variant="outline"
+                onClick={() => setConfirmRename(true)}
+                disabled={isSubmitting || renameSlug.trim().toLowerCase() === slug}
+              >
+                Rename and redirect
+              </Button>
+            </div>
+
+            {/* Merge */}
+            <div className="flex flex-col gap-2">
+              <Label>Merge into</Label>
+              <select
+                className="w-full min-h-[44px] rounded-[var(--radius-sm)] border border-[rgba(29,59,78,0.22)] bg-[rgba(255,255,255,0.94)] px-3.5 py-[13px] text-[color:var(--ink)] dark:border-[rgba(255,255,255,0.12)] dark:bg-[rgba(14,28,37,0.84)]"
+                value={mergeTargetSlug}
+                onChange={(event) => setMergeTargetSlug(event.target.value)}
+                disabled={ownedSkills.length === 0 || isSubmitting}
+              >
+                {ownedSkills.length === 0 ? <option value="">No other owned skills</option> : null}
+                {ownedSkills.map((entry) => (
+                  <option key={entry._id} value={entry.slug}>
+                    {entry.displayName} ({entry.slug})
+                  </option>
+                ))}
+              </select>
+            </div>
+            <div className="flex flex-col gap-2">
+              <Label>Merge action</Label>
+              <Button
+                variant="outline"
+                onClick={() => setConfirmMerge(true)}
+                disabled={isSubmitting || !mergeTargetSlug}
+              >
+                Merge into target
+              </Button>
+            </div>
           </div>
-          <div className="flex flex-col gap-2">
-            <Label>Rename action</Label>
-            <Button
-              variant="outline"
-              onClick={() => setConfirmRename(true)}
-              disabled={isSubmitting || renameSlug.trim().toLowerCase() === slug}
-            >
-              Rename and redirect
+
+          {error ? (
+            <p className="mt-3 text-sm font-medium text-red-600 dark:text-red-400">{error}</p>
+          ) : null}
+          <p className="mt-3 text-xs text-[color:var(--ink-soft)]">
+            Merge keeps the target live and hides this row. Versions and stats stay on the original
+            records for now.
+          </p>
+        </CardContent>
+      </Card>
+
+      {/* Rename confirmation dialog */}
+      <Dialog open={confirmRename} onOpenChange={setConfirmRename}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Rename skill slug?</DialogTitle>
+            <DialogDescription>
+              This will permanently rename <strong>{slug}</strong> to{" "}
+              <strong>{renameSlug.trim().toLowerCase()}</strong>. The old slug will become a
+              redirect. This cannot be undone without another rename.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setConfirmRename(false)}>
+              Cancel
             </Button>
-          </div>
-
-          {/* Merge */}
-          <div className="flex flex-col gap-2">
-            <Label>Merge into</Label>
-            <select
-              className="w-full min-h-[44px] rounded-[var(--radius-sm)] border border-[rgba(29,59,78,0.22)] bg-[rgba(255,255,255,0.94)] px-3.5 py-[13px] text-[color:var(--ink)] dark:border-[rgba(255,255,255,0.12)] dark:bg-[rgba(14,28,37,0.84)]"
-              value={mergeTargetSlug}
-              onChange={(event) => setMergeTargetSlug(event.target.value)}
-              disabled={ownedSkills.length === 0 || isSubmitting}
-            >
-              {ownedSkills.length === 0 ? <option value="">No other owned skills</option> : null}
-              {ownedSkills.map((entry) => (
-                <option key={entry._id} value={entry.slug}>
-                  {entry.displayName} ({entry.slug})
-                </option>
-              ))}
-            </select>
-          </div>
-          <div className="flex flex-col gap-2">
-            <Label>Merge action</Label>
             <Button
-              variant="outline"
-              onClick={() => setConfirmMerge(true)}
-              disabled={isSubmitting || !mergeTargetSlug}
+              variant="primary"
+              loading={isSubmitting}
+              onClick={() => {
+                void handleRename().finally(() => setConfirmRename(false));
+              }}
             >
-              Merge into target
+              Rename
             </Button>
-          </div>
-        </div>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
-        {error ? (
-          <p className="mt-3 text-sm font-medium text-red-600 dark:text-red-400">{error}</p>
-        ) : null}
-        <p className="mt-3 text-xs text-[color:var(--ink-soft)]">
-          Merge keeps the target live and hides this row. Versions and stats stay on the original
-          records for now.
-        </p>
-      </CardContent>
-    </Card>
-
-    {/* Rename confirmation dialog */}
-    <Dialog open={confirmRename} onOpenChange={setConfirmRename}>
-      <DialogContent>
-        <DialogHeader>
-          <DialogTitle>Rename skill slug?</DialogTitle>
-          <DialogDescription>
-            This will permanently rename <strong>{slug}</strong> to{" "}
-            <strong>{renameSlug.trim().toLowerCase()}</strong>. The old slug will become a
-            redirect. This cannot be undone without another rename.
-          </DialogDescription>
-        </DialogHeader>
-        <DialogFooter>
-          <Button variant="outline" onClick={() => setConfirmRename(false)}>
-            Cancel
-          </Button>
-          <Button
-            variant="primary"
-            loading={isSubmitting}
-            onClick={() => {
-              void handleRename().finally(() => setConfirmRename(false));
-            }}
-          >
-            Rename
-          </Button>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
-
-    {/* Merge confirmation dialog */}
-    <Dialog open={confirmMerge} onOpenChange={setConfirmMerge}>
-      <DialogContent>
-        <DialogHeader>
-          <DialogTitle>Merge into another skill?</DialogTitle>
-          <DialogDescription>
-            This will hide <strong>{slug}</strong> and redirect it to{" "}
-            <strong>{mergeTargetSlug.trim().toLowerCase()}</strong>. The listing row will be
-            removed from search and browse views. This is not easily reversible.
-          </DialogDescription>
-        </DialogHeader>
-        <DialogFooter>
-          <Button variant="outline" onClick={() => setConfirmMerge(false)}>
-            Cancel
-          </Button>
-          <Button
-            variant="destructive"
-            loading={isSubmitting}
-            onClick={() => {
-              void handleMerge().finally(() => setConfirmMerge(false));
-            }}
-          >
-            Merge and hide
-          </Button>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
+      {/* Merge confirmation dialog */}
+      <Dialog open={confirmMerge} onOpenChange={setConfirmMerge}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Merge into another skill?</DialogTitle>
+            <DialogDescription>
+              This will hide <strong>{slug}</strong> and redirect it to{" "}
+              <strong>{mergeTargetSlug.trim().toLowerCase()}</strong>. The listing row will be
+              removed from search and browse views. This is not easily reversible.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setConfirmMerge(false)}>
+              Cancel
+            </Button>
+            <Button
+              variant="destructive"
+              loading={isSubmitting}
+              onClick={() => {
+                void handleMerge().finally(() => setConfirmMerge(false));
+              }}
+            >
+              Merge and hide
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </>
   );
 }

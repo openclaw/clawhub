@@ -38,11 +38,19 @@ export function SkillCard({
       {hasTags ? (
         <div className="flex flex-wrap items-center gap-1.5">
           {badges.map((label) => (
-            <Badge key={label} variant="default">{label}</Badge>
+            <Badge key={label} variant="default">
+              {label}
+            </Badge>
           ))}
-          {chip ? <Badge variant="accent" className="text-[0.72rem] px-2.5 py-0.5">{chip}</Badge> : null}
+          {chip ? (
+            <Badge variant="accent" className="text-[0.72rem] px-2.5 py-0.5">
+              {chip}
+            </Badge>
+          ) : null}
           {platformLabels?.map((label) => (
-            <Badge key={label} variant="compact">{label}</Badge>
+            <Badge key={label} variant="compact">
+              {label}
+            </Badge>
           ))}
           {verified && (
             <span className="inline-flex items-center gap-1 text-[0.72rem] font-semibold text-emerald-600 dark:text-emerald-400">

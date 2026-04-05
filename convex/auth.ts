@@ -24,9 +24,12 @@ function getBannedReauthMessage(reason: string | undefined) {
 export async function handleDeletedUserSignIn(
   ctx: GenericMutationCtx<DataModel>,
   args: { userId: Id<"users">; existingUserId: Id<"users"> | null },
-  userOverride?:
-    | { deletedAt?: number; deactivatedAt?: number; purgedAt?: number; banReason?: string }
-    | null,
+  userOverride?: {
+    deletedAt?: number;
+    deactivatedAt?: number;
+    purgedAt?: number;
+    banReason?: string;
+  } | null,
 ) {
   const user = userOverride !== undefined ? userOverride : await ctx.db.get(args.userId);
   if (!user?.deletedAt && !user?.deactivatedAt) return;

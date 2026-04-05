@@ -52,7 +52,8 @@ export function getPackageDownloadSecurityBlock(release: PackageReleaseSecurityL
   if (scanStatus === "malicious") {
     return {
       status: 403,
-      message: "Blocked: this package release has been flagged as malicious and cannot be downloaded.",
+      message:
+        "Blocked: this package release has been flagged as malicious and cannot be downloaded.",
     };
   }
 

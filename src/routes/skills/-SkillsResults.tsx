@@ -2,10 +2,10 @@ import { Link } from "@tanstack/react-router";
 import { Loader2 } from "lucide-react";
 import type { RefObject } from "react";
 import { EmptyState } from "../../components/EmptyState";
+import { SkillCardSkeletonGrid } from "../../components/skeletons/SkillCardSkeleton";
 import { SkillCard } from "../../components/SkillCard";
 import { getPlatformLabels } from "../../components/skillDetailUtils";
 import { SkillMetricsRow, SkillStatsTripletLine } from "../../components/SkillStats";
-import { SkillCardSkeletonGrid } from "../../components/skeletons/SkillCardSkeleton";
 import { Badge } from "../../components/ui/badge";
 import { Button } from "../../components/ui/button";
 import { UserBadge } from "../../components/UserBadge";
@@ -105,13 +105,19 @@ export function SkillsResults({
               >
                 <span className="flex flex-col gap-1">
                   <span className="flex items-center gap-2">
-                    <span className="font-semibold text-[color:var(--ink)]">{skill.displayName}</span>
+                    <span className="font-semibold text-[color:var(--ink)]">
+                      {skill.displayName}
+                    </span>
                     {getSkillBadges(skill).map((badge) => (
-                      <Badge key={badge} variant="compact">{badge}</Badge>
+                      <Badge key={badge} variant="compact">
+                        {badge}
+                      </Badge>
                     ))}
                   </span>
                   {entry.latestVersion?.version ? (
-                    <span className="font-mono text-xs text-[color:var(--ink-soft)]">v{entry.latestVersion.version}</span>
+                    <span className="font-mono text-xs text-[color:var(--ink-soft)]">
+                      v{entry.latestVersion.version}
+                    </span>
                   ) : null}
                 </span>
                 <span className="truncate text-sm text-[color:var(--ink-soft)]">
@@ -136,10 +142,7 @@ export function SkillsResults({
 
       {/* Load more */}
       {(canLoadMore || isLoadingMore) && (
-        <div
-          ref={canAutoLoad ? loadMoreRef : null}
-          className="flex justify-center pt-4"
-        >
+        <div ref={canAutoLoad ? loadMoreRef : null} className="flex justify-center pt-4">
           {canAutoLoad ? (
             isLoadingMore ? (
               <div className="flex items-center gap-2 text-sm font-medium text-[color:var(--ink-soft)]">
@@ -150,7 +153,12 @@ export function SkillsResults({
               <div className="text-sm text-[color:var(--ink-soft)]">Scroll to load more</div>
             )
           ) : (
-            <Button variant="outline" onClick={loadMore} disabled={isLoadingMore} loading={isLoadingMore}>
+            <Button
+              variant="outline"
+              onClick={loadMore}
+              disabled={isLoadingMore}
+              loading={isLoadingMore}
+            >
               Load more
             </Button>
           )}
