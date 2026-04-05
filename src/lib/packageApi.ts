@@ -117,6 +117,29 @@ type PluginCatalogResult = {
   nextCursor: string | null;
 };
 
+type PackageApiErrorOptions = {
+  status: number;
+  retryAfterSeconds?: number | null;
+};
+
+export class PackageApiError extends Error {
+  status: number;
+  retryAfterSeconds: number | null;
+
+  constructor(message: string, options: PackageApiErrorOptions) {
+    super(message);
+    this.name = options.status === 429 ? "PackageApiRateLimitError" : "PackageApiError";
+    this.status = options.status;
+    this.retryAfterSeconds = options.retryAfterSeconds ?? null;
+  }
+}
+
+export function isRateLimitedPackageApiError(
+  error: unknown,
+): error is PackageApiError & { status: 429 } {
+  return error instanceof PackageApiError && error.status === 429;
+}
+
 function normalizeApiPath(path: string) {
   return path.startsWith("/") ? path : `/${path}`;
 }
@@ -193,9 +216,28 @@ async function packageFetch(url: URL, accept: string) {
   });
 }
 
+function parseRetryAfterSeconds(value: string | null): number | null {
+  if (!value) return null;
+  const asSeconds = Number(value);
+  if (Number.isFinite(asSeconds) && asSeconds >= 0) {
+    return Math.ceil(asSeconds);
+  }
+  const parsedDateMs = Date.parse(value);
+  if (Number.isNaN(parsedDateMs)) return null;
+  return Math.max(0, Math.ceil((parsedDateMs - Date.now()) / 1000));
+}
+
+async function createPackageApiError(response: Response) {
+  const body = (await response.text()).trim();
+  return new PackageApiError(body || `Request failed with status ${response.status}`, {
+    status: response.status,
+    retryAfterSeconds: parseRetryAfterSeconds(response.headers.get("Retry-After")),
+  });
+}
+
 async function fetchJson<T>(url: URL): Promise<T> {
   const response = await packageFetch(url, "application/json");
-  if (!response.ok) throw new Error(await response.text());
+  if (!response.ok) throw await createPackageApiError(response);
   return (await response.json()) as T;
 }
 
@@ -307,7 +349,7 @@ export async function fetchPackageDetail(name: string) {
       owner: null,
     } satisfies PackageDetailResponse;
   }
-  if (!response.ok) throw new Error(await response.text());
+  if (!response.ok) throw await createPackageApiError(response);
   return (await response.json()) as PackageDetailResponse;
 }
 
@@ -325,5 +367,5 @@ export async function fetchPackageReadme(name: string, version?: string | null) 
   const response = await packageFetch(url, "text/plain");
   if (response.ok) return await response.text();
   if (response.status === 403 || response.status === 423 || response.status === 404) return null;
-  throw new Error(await response.text());
+  throw await createPackageApiError(response);
 }

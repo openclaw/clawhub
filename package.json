@@ -8,11 +8,13 @@
   "scripts": {
     "build": "bun --bun vite build && bun scripts/copy-og-assets.ts",
     "check:peers": "bun scripts/check-peer-deps.ts",
+    "check:secrets": "bun scripts/check-staged-secrets.mjs",
     "convex:deploy": "bunx convex deploy --typecheck=disable --yes",
     "coverage": "vitest run --coverage",
     "dev": "bun --bun vite dev --port 3000",
     "docs:list": "bun scripts/docs-list.ts",
     "format": "oxfmt --write",
+    "install:local-hooks": "bun scripts/install-git-hooks.mjs",
     "lint": "bun run lint:oxlint",
     "lint:fix": "oxlint --type-aware --tsconfig ./tsconfig.oxlint.json ./src ./convex ./packages/clawhub/src ./packages/schema/src --fix && bun run format",
     "lint:oxlint": "oxlint --type-aware --tsconfig ./tsconfig.oxlint.json ./src ./convex ./packages/clawhub/src ./packages/schema/src",

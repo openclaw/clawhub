@@ -1,4 +1,4 @@
-import { Slot } from "@radix-ui/react-slot";
+import { Slot, Slottable } from "@radix-ui/react-slot";
 import * as React from "react";
 import { cn } from "../../lib/utils";
 
@@ -59,7 +59,7 @@ const Button = React.forwardRef<HTMLButtonElement, ButtonProps>(
         {loading && (
           <span className="h-3.5 w-3.5 animate-spin rounded-full border-2 border-current/25 border-t-current" />
         )}
-        {children}
+        <Slottable>{children}</Slottable>
       </Comp>
     );
   },

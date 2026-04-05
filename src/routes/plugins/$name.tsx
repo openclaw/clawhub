@@ -1,5 +1,5 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
-import { ExternalLink, Copy, Check, Download } from "lucide-react";
+import { AlertTriangle, ExternalLink, Copy, Check, Download } from "lucide-react";
 import { useState } from "react";
 import { EmptyState } from "../../components/EmptyState";
 import { Container } from "../../components/layout/Container";
@@ -8,20 +8,30 @@ import { SecurityScanResults } from "../../components/SkillSecurityScanResults";
 import { Badge } from "../../components/ui/badge";
 import { Button } from "../../components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "../../components/ui/card";
+import { formatRetryDelay } from "../../lib/formatRetryDelay";
 import {
   fetchPackageDetail,
   fetchPackageReadme,
   fetchPackageVersion,
   getPackageDownloadPath,
+  isRateLimitedPackageApiError,
   type PackageDetailResponse,
   type PackageVersionDetail,
 } from "../../lib/packageApi";
 import { familyLabel } from "../../lib/packageLabels";
 
+type PluginDetailRateLimitState =
+  | {
+      scope: "detail" | "metadata";
+      retryAfterSeconds: number | null;
+    }
+  | null;
+
 type PluginDetailLoaderData = {
   detail: PackageDetailResponse;
   version: PackageVersionDetail | null;
   readme: string | null;
+  rateLimited: PluginDetailRateLimitState;
 };
 
 export const Route = createFileRoute("/plugins/$name")({
@@ -34,7 +44,23 @@ export const Route = createFileRoute("/plugins/$name")({
     let resolvedName = requestedName;
     let detail: PackageDetailResponse = { package: null, owner: null };
     for (const candidateName of candidateNames) {
-      const candidateDetail = await fetchPackageDetail(candidateName);
+      let candidateDetail: PackageDetailResponse;
+      try {
+        candidateDetail = await fetchPackageDetail(candidateName);
+      } catch (error) {
+        if (isRateLimitedPackageApiError(error)) {
+          return {
+            detail: { package: null, owner: null },
+            version: null,
+            readme: null,
+            rateLimited: {
+              scope: "detail",
+              retryAfterSeconds: error.retryAfterSeconds,
+            },
+          };
+        }
+        throw error;
+      }
       if (candidateDetail.package) {
         detail = candidateDetail;
         resolvedName = candidateName;
@@ -43,12 +69,36 @@ export const Route = createFileRoute("/plugins/$name")({
       detail = candidateDetail;
     }
 
-    const readmePromise = fetchPackageReadme(resolvedName);
+    if (!detail.package) {
+      return {
+        detail,
+        version: null,
+        readme: null,
+        rateLimited: null,
+      };
+    }
+
+    let metadataRateLimited: PluginDetailRateLimitState = null;
+    const readmePromise = fetchPackageReadme(resolvedName).catch((error: unknown) => {
+      if (!isRateLimitedPackageApiError(error)) throw error;
+      metadataRateLimited ??= {
+        scope: "metadata",
+        retryAfterSeconds: error.retryAfterSeconds,
+      };
+      return null;
+    });
     const versionPromise = detail.package?.latestVersion
-      ? fetchPackageVersion(resolvedName, detail.package.latestVersion)
+      ? fetchPackageVersion(resolvedName, detail.package.latestVersion).catch((error: unknown) => {
+          if (!isRateLimitedPackageApiError(error)) throw error;
+          metadataRateLimited ??= {
+            scope: "metadata",
+            retryAfterSeconds: error.retryAfterSeconds,
+          };
+          return null;
+        })
       : Promise.resolve(null);
     const [version, readme] = await Promise.all([versionPromise, readmePromise]);
-    return { detail, version, readme };
+    return { detail, version, readme, rateLimited: metadataRateLimited };
   },
   head: ({ params, loaderData }) => ({
     meta: [
@@ -118,7 +168,7 @@ function CopyButton({ text }: { text: string }) {
     <Button
       variant="outline"
       size="sm"
-      className="shrink-0"
+      className="w-full shrink-0 sm:w-auto"
       onClick={() => {
         if (navigator.clipboard?.writeText) {
           void navigator.clipboard
@@ -185,7 +235,27 @@ function isEmptyObject(obj: unknown): boolean {
 
 function PluginDetailRoute() {
   const { name } = Route.useParams();
-  const { detail, version, readme } = Route.useLoaderData() as PluginDetailLoaderData;
+  const { detail, version, readme, rateLimited } = Route.useLoaderData() as PluginDetailLoaderData;
+
+  if (rateLimited?.scope === "detail") {
+    return (
+      <main className="py-10">
+        <Container size="narrow">
+          <EmptyState
+            icon={AlertTriangle}
+            title="Plugin details are temporarily unavailable"
+            description={`The public plugin API is rate-limited right now. Try again ${formatRetryDelay(
+              rateLimited.retryAfterSeconds,
+            )}.`}
+            action={{
+              label: "Try again",
+              onClick: () => window.location.reload(),
+            }}
+          />
+        </Container>
+      </main>
+    );
+  }
 
   if (!detail.package) {
     return (
@@ -237,6 +307,9 @@ function PluginDetailRoute() {
                 {verification?.tier ? (
                   <Badge variant="compact">{verification.tier.replace(/-/g, " ")}</Badge>
                 ) : null}
+                {rateLimited?.scope === "metadata" ? (
+                  <Badge variant="compact">Some metadata is temporarily unavailable</Badge>
+                ) : null}
                 {pkg.isOfficial ? (
                   <Badge className="bg-[rgba(59,130,246,0.15)] text-[#3b82f6]">
                     <VerifiedBadge />
@@ -279,15 +352,15 @@ function PluginDetailRoute() {
               </div>
 
               {pkg.family === "code-plugin" && !pkg.isOfficial ? (
-                <Badge variant="accent" className="mt-3">
+                <Badge variant="accent" className="mt-3 self-start">
                   Community code plugin. Review compatibility and verification before install.
                 </Badge>
               ) : null}
 
               {/* Install */}
               <div className="mt-4">
-                <div className="flex items-center gap-2 rounded-[var(--radius-sm)] border border-[color:var(--line)] bg-[color:var(--surface-muted)] p-3">
-                  <pre className="flex-1 overflow-x-auto font-mono text-xs text-[color:var(--ink)]">
+                <div className="flex flex-col gap-3 rounded-[var(--radius-sm)] border border-[color:var(--line)] bg-[color:var(--surface-muted)] p-3 sm:flex-row sm:items-center sm:gap-2">
+                  <pre className="min-w-0 flex-1 overflow-x-auto font-mono text-xs text-[color:var(--ink)]">
                     <code>{installSnippet}</code>
                   </pre>
                   <CopyButton text={installSnippet} />
@@ -296,13 +369,13 @@ function PluginDetailRoute() {
 
               {/* Latest Release */}
               {pkg.latestVersion ? (
-                <div className="mt-3 flex items-center justify-between gap-3 rounded-[var(--radius-sm)] border border-[color:var(--line)] bg-[color:var(--surface-muted)] px-3 py-2">
+                <div className="mt-3 flex flex-col gap-3 rounded-[var(--radius-sm)] border border-[color:var(--line)] bg-[color:var(--surface-muted)] px-3 py-3 sm:flex-row sm:items-center sm:justify-between sm:py-2">
                   <span className="text-sm">
                     Latest release: <strong>v{pkg.latestVersion}</strong>
                   </span>
                   <a
                     href={getPackageDownloadPath(name, pkg.latestVersion)}
-                    className="inline-flex items-center justify-center gap-2 whitespace-nowrap font-semibold text-xs min-h-[34px] rounded-[var(--radius-pill)] px-3 py-1.5 border border-[color:var(--border-ui)] bg-transparent text-[color:var(--ink)] hover:border-[color:var(--border-ui-hover)] hover:bg-[color:var(--surface)] transition-all duration-200 no-underline"
+                    className="inline-flex min-h-[34px] w-full items-center justify-center gap-2 rounded-[var(--radius-pill)] border border-[color:var(--border-ui)] bg-transparent px-3 py-1.5 text-xs font-semibold text-[color:var(--ink)] transition-all duration-200 no-underline hover:border-[color:var(--border-ui-hover)] hover:bg-[color:var(--surface)] sm:w-auto sm:whitespace-nowrap"
                   >
                     <Download className="h-3.5 w-3.5" aria-hidden="true" />
                     Download zip
@@ -315,15 +388,15 @@ function PluginDetailRoute() {
           {/* Capabilities */}
           {capEntries.length > 0 ? (
             <Card>
-              <CardHeader className="flex-row items-center justify-between">
+              <CardHeader className="gap-3 sm:flex-row sm:items-center sm:justify-between">
                 <CardTitle>Capabilities</CardTitle>
                 <CopyButton text={JSON.stringify(capabilities, null, 2)} />
               </CardHeader>
               <CardContent>
-                <dl className="grid grid-cols-[auto_1fr] gap-x-4 gap-y-2 text-sm">
+                <dl className="flex flex-col gap-3 text-sm">
                   {capEntries.map(([key, value]) => (
-                    <div key={key} className="col-span-2 grid grid-cols-subgrid">
-                      <dt className="font-semibold text-[color:var(--ink-soft)]">
+                    <div key={key} className="flex flex-col gap-1.5 border-b border-[color:var(--line)] pb-3 last:border-b-0 last:pb-0 sm:grid sm:grid-cols-[minmax(140px,220px)_1fr] sm:gap-x-4 sm:gap-y-0">
+                      <dt className="font-semibold text-[color:var(--ink-soft)] sm:pr-2">
                         {CAPABILITY_LABELS[key] ?? key}
                       </dt>
                       <dd className="text-[color:var(--ink)]">
@@ -357,15 +430,15 @@ function PluginDetailRoute() {
           {/* Compatibility */}
           {compatEntries.length > 0 ? (
             <Card>
-              <CardHeader className="flex-row items-center justify-between">
+              <CardHeader className="gap-3 sm:flex-row sm:items-center sm:justify-between">
                 <CardTitle>Compatibility</CardTitle>
                 <CopyButton text={JSON.stringify(compatibility, null, 2)} />
               </CardHeader>
               <CardContent>
-                <dl className="grid grid-cols-[auto_1fr] gap-x-4 gap-y-2 text-sm">
+                <dl className="flex flex-col gap-3 text-sm">
                   {compatEntries.map(([key, value]) => (
-                    <div key={key} className="col-span-2 grid grid-cols-subgrid">
-                      <dt className="font-semibold text-[color:var(--ink-soft)]">
+                    <div key={key} className="flex flex-col gap-1.5 border-b border-[color:var(--line)] pb-3 last:border-b-0 last:pb-0 sm:grid sm:grid-cols-[minmax(140px,220px)_1fr] sm:gap-x-4 sm:gap-y-0">
+                      <dt className="font-semibold text-[color:var(--ink-soft)] sm:pr-2">
                         {key.replace(/([A-Z])/g, " $1").replace(/^./, (s) => s.toUpperCase())}
                       </dt>
                       <dd className="font-mono text-xs text-[color:var(--ink)]">{String(value)}</dd>
@@ -397,9 +470,9 @@ function PluginDetailRoute() {
                 <CardTitle>Verification</CardTitle>
               </CardHeader>
               <CardContent>
-                <dl className="grid grid-cols-[auto_1fr] gap-x-4 gap-y-2 text-sm">
+                <dl className="flex flex-col gap-3 text-sm">
                   {verification.tier ? (
-                    <div className="col-span-2 grid grid-cols-subgrid">
+                    <div className="flex flex-col gap-1.5 border-b border-[color:var(--line)] pb-3 sm:grid sm:grid-cols-[minmax(140px,220px)_1fr] sm:gap-x-4 sm:gap-y-0">
                       <dt className="font-semibold text-[color:var(--ink-soft)]">Tier</dt>
                       <dd className="text-[color:var(--ink)]">
                         {verification.tier.replace(/-/g, " ")}
@@ -407,7 +480,7 @@ function PluginDetailRoute() {
                     </div>
                   ) : null}
                   {verification.scope ? (
-                    <div className="col-span-2 grid grid-cols-subgrid">
+                    <div className="flex flex-col gap-1.5 border-b border-[color:var(--line)] pb-3 sm:grid sm:grid-cols-[minmax(140px,220px)_1fr] sm:gap-x-4 sm:gap-y-0">
                       <dt className="font-semibold text-[color:var(--ink-soft)]">Scope</dt>
                       <dd className="text-[color:var(--ink)]">
                         {verification.scope.replace(/-/g, " ")}
@@ -415,7 +488,7 @@ function PluginDetailRoute() {
                     </div>
                   ) : null}
                   {verification.summary ? (
-                    <div className="col-span-2 grid grid-cols-subgrid">
+                    <div className="flex flex-col gap-1.5 border-b border-[color:var(--line)] pb-3 sm:grid sm:grid-cols-[minmax(140px,220px)_1fr] sm:gap-x-4 sm:gap-y-0">
                       <dt className="font-semibold text-[color:var(--ink-soft)]">Summary</dt>
                       <dd className="text-[color:var(--ink)]">{verification.summary}</dd>
                     </div>
@@ -426,7 +499,7 @@ function PluginDetailRoute() {
                         const href = /^https?:\/\//.test(raw) ? raw : `https://github.com/${raw}`;
                         const display = href.replace(/^https?:\/\//, "");
                         return (
-                          <div className="col-span-2 grid grid-cols-subgrid">
+                          <div className="flex flex-col gap-1.5 border-b border-[color:var(--line)] pb-3 sm:grid sm:grid-cols-[minmax(140px,220px)_1fr] sm:gap-x-4 sm:gap-y-0">
                             <dt className="font-semibold text-[color:var(--ink-soft)]">Source</dt>
                             <dd className="text-[color:var(--ink)]">
                               <a
@@ -444,7 +517,7 @@ function PluginDetailRoute() {
                       })()
                     : null}
                   {verification.sourceCommit ? (
-                    <div className="col-span-2 grid grid-cols-subgrid">
+                    <div className="flex flex-col gap-1.5 border-b border-[color:var(--line)] pb-3 sm:grid sm:grid-cols-[minmax(140px,220px)_1fr] sm:gap-x-4 sm:gap-y-0">
                       <dt className="font-semibold text-[color:var(--ink-soft)]">Commit</dt>
                       <dd className="font-mono text-xs text-[color:var(--ink)]">
                         {verification.sourceCommit.slice(0, 12)}
@@ -452,7 +525,7 @@ function PluginDetailRoute() {
                     </div>
                   ) : null}
                   {verification.sourceTag ? (
-                    <div className="col-span-2 grid grid-cols-subgrid">
+                    <div className="flex flex-col gap-1.5 border-b border-[color:var(--line)] pb-3 sm:grid sm:grid-cols-[minmax(140px,220px)_1fr] sm:gap-x-4 sm:gap-y-0">
                       <dt className="font-semibold text-[color:var(--ink-soft)]">Tag</dt>
                       <dd className="font-mono text-xs text-[color:var(--ink)]">
                         {verification.sourceTag}
@@ -460,7 +533,7 @@ function PluginDetailRoute() {
                     </div>
                   ) : null}
                   {verification.hasProvenance !== undefined ? (
-                    <div className="col-span-2 grid grid-cols-subgrid">
+                    <div className="flex flex-col gap-1.5 border-b border-[color:var(--line)] pb-3 sm:grid sm:grid-cols-[minmax(140px,220px)_1fr] sm:gap-x-4 sm:gap-y-0">
                       <dt className="font-semibold text-[color:var(--ink-soft)]">Provenance</dt>
                       <dd className="text-[color:var(--ink)]">
                         {verification.hasProvenance ? "Yes" : "No"}
@@ -468,7 +541,7 @@ function PluginDetailRoute() {
                     </div>
                   ) : null}
                   {verification.scanStatus ? (
-                    <div className="col-span-2 grid grid-cols-subgrid">
+                    <div className="flex flex-col gap-1.5 last:border-b-0 last:pb-0 sm:grid sm:grid-cols-[minmax(140px,220px)_1fr] sm:gap-x-4 sm:gap-y-0">
                       <dt className="font-semibold text-[color:var(--ink-soft)]">Scan status</dt>
                       <dd className="text-[color:var(--ink)]">{verification.scanStatus}</dd>
                     </div>
@@ -485,9 +558,9 @@ function PluginDetailRoute() {
                 <CardTitle>Tags</CardTitle>
               </CardHeader>
               <CardContent>
-                <dl className="grid grid-cols-[auto_1fr] gap-x-4 gap-y-2 text-sm">
+                <dl className="flex flex-col gap-3 text-sm">
                   {Object.entries(pkg.tags).map(([key, value]) => (
-                    <div key={key} className="col-span-2 grid grid-cols-subgrid">
+                    <div key={key} className="flex flex-col gap-1.5 border-b border-[color:var(--line)] pb-3 last:border-b-0 last:pb-0 sm:grid sm:grid-cols-[minmax(140px,220px)_1fr] sm:gap-x-4 sm:gap-y-0">
                       <dt className="font-semibold text-[color:var(--ink-soft)]">{key}</dt>
                       <dd className="font-mono text-xs text-[color:var(--ink)]">{value}</dd>
                     </div>

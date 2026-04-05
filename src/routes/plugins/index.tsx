@@ -1,6 +1,6 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { Link } from "@tanstack/react-router";
-import { Search } from "lucide-react";
+import { AlertTriangle, Search } from "lucide-react";
 import { useEffect, useState } from "react";
 import { EmptyState } from "../../components/EmptyState";
 import { Container } from "../../components/layout/Container";
@@ -8,7 +8,12 @@ import { Badge } from "../../components/ui/badge";
 import { Button } from "../../components/ui/button";
 import { Card } from "../../components/ui/card";
 import { Input } from "../../components/ui/input";
-import { fetchPluginCatalog, type PackageListItem } from "../../lib/packageApi";
+import { formatRetryDelay } from "../../lib/formatRetryDelay";
+import {
+  fetchPluginCatalog,
+  isRateLimitedPackageApiError,
+  type PackageListItem,
+} from "../../lib/packageApi";
 import { familyLabel } from "../../lib/packageLabels";
 
 type PluginSearchState = {
@@ -22,6 +27,8 @@ type PluginSearchState = {
 type PluginsLoaderData = {
   items: PackageListItem[];
   nextCursor: string | null;
+  rateLimited: boolean;
+  retryAfterSeconds: number | null;
 };
 
 export const Route = createFileRoute("/plugins/")({
@@ -43,18 +50,30 @@ export const Route = createFileRoute("/plugins/")({
   }),
   loaderDeps: ({ search }) => search,
   loader: async ({ deps }) => {
-    const data = await fetchPluginCatalog({
-      q: deps.q,
-      cursor: deps.q ? undefined : deps.cursor,
-      family: deps.family,
-      isOfficial: deps.verified,
-      executesCode: deps.executesCode,
-      limit: 50,
-    });
-    return {
-      items: data.items,
-      nextCursor: data.nextCursor,
-    } satisfies PluginsLoaderData;
+    try {
+      const data = await fetchPluginCatalog({
+        q: deps.q,
+        cursor: deps.q ? undefined : deps.cursor,
+        family: deps.family,
+        isOfficial: deps.verified,
+        executesCode: deps.executesCode,
+        limit: 50,
+      });
+      return {
+        items: data.items,
+        nextCursor: data.nextCursor,
+        rateLimited: false,
+        retryAfterSeconds: null,
+      } satisfies PluginsLoaderData;
+    } catch (error) {
+      if (!isRateLimitedPackageApiError(error)) throw error;
+      return {
+        items: [],
+        nextCursor: null,
+        rateLimited: true,
+        retryAfterSeconds: error.retryAfterSeconds,
+      } satisfies PluginsLoaderData;
+    }
   },
   component: PluginsIndex,
 });
@@ -88,7 +107,8 @@ function VerifiedBadge() {
 export function PluginsIndex() {
   const search = Route.useSearch();
   const navigate = Route.useNavigate();
-  const { items, nextCursor } = Route.useLoaderData() as PluginsLoaderData;
+  const { items, nextCursor, rateLimited, retryAfterSeconds } =
+    Route.useLoaderData() as PluginsLoaderData;
   const [query, setQuery] = useState(search.q ?? "");
 
   useEffect(() => {
@@ -144,9 +164,9 @@ export function PluginsIndex() {
               Publish Plugin
             </Link>
           </div>
-          <div className="flex flex-wrap items-center gap-2">
+          <div className="flex flex-wrap items-stretch gap-2">
             <div
-              className="flex items-center rounded-[var(--radius-pill)] border border-[color:var(--line)]"
+              className="flex min-w-0 flex-wrap items-center rounded-[var(--radius-pill)] border border-[color:var(--line)]"
               role="group"
               aria-label="Filter by type"
             >
@@ -157,7 +177,7 @@ export function PluginsIndex() {
               ].map((opt) => (
                 <button
                   key={opt.label}
-                  className={`px-3 py-1.5 text-sm font-semibold transition-colors first:rounded-l-[var(--radius-pill)] last:rounded-r-[var(--radius-pill)] ${
+                  className={`flex-1 px-3 py-1.5 text-sm font-semibold transition-colors first:rounded-l-[var(--radius-pill)] last:rounded-r-[var(--radius-pill)] sm:flex-none ${
                     (search.family ?? undefined) === opt.value
                       ? "bg-[color:var(--accent)] text-white"
                       : "text-[color:var(--ink-soft)] hover:text-[color:var(--ink)]"
@@ -182,6 +202,7 @@ export function PluginsIndex() {
             <Button
               variant={search.verified ? "primary" : "outline"}
               size="sm"
+              className="flex-1 sm:flex-none"
               aria-pressed={search.verified ?? false}
               onClick={() => {
                 void navigate({
@@ -199,6 +220,7 @@ export function PluginsIndex() {
             <Button
               variant={search.executesCode ? "primary" : "outline"}
               size="sm"
+              className="flex-1 sm:flex-none"
               aria-pressed={search.executesCode ?? false}
               onClick={() => {
                 void navigate({
@@ -217,14 +239,26 @@ export function PluginsIndex() {
         </div>
 
         <div className="mt-6">
-          {items.length === 0 ? (
+          {rateLimited ? (
+            <EmptyState
+              icon={AlertTriangle}
+              title="Plugin catalog is temporarily unavailable"
+              description={`The public plugin API is rate-limited right now. Try again ${formatRetryDelay(
+                retryAfterSeconds,
+              )}.`}
+              action={{
+                label: "Try again",
+                onClick: () => window.location.reload(),
+              }}
+            />
+          ) : items.length === 0 ? (
             <EmptyState
               title="No plugins match that filter"
               description="Try a different search or filter."
             />
           ) : (
             <>
-              <div className="grid grid-cols-[repeat(auto-fill,minmax(320px,1fr))] gap-5">
+              <div className="grid grid-cols-1 gap-4 sm:grid-cols-[repeat(auto-fill,minmax(280px,1fr))] sm:gap-5">
                 {items.map((item) => (
                   <Link key={item.name} to="/plugins/$name" params={{ name: item.name }}>
                     <Card className="h-full cursor-pointer hover:-translate-y-px hover:shadow-[0_10px_20px_rgba(29,26,23,0.12)]">
@@ -242,8 +276,8 @@ export function PluginsIndex() {
                       <p className="text-sm text-[color:var(--ink-soft)]">
                         {item.summary ?? "No summary provided."}
                       </p>
-                      <div className="flex items-center justify-between pt-2">
-                        <span className="text-sm text-[color:var(--ink-soft)]">
+                      <div className="flex flex-col gap-1.5 pt-2 sm:flex-row sm:items-center sm:justify-between">
+                        <span className="min-w-0 break-words text-sm text-[color:var(--ink-soft)]">
                           {item.ownerHandle ? `by ${item.ownerHandle}` : "community"}
                         </span>
                         {item.latestVersion ? (
@@ -257,10 +291,11 @@ export function PluginsIndex() {
                 ))}
               </div>
               {!search.q && (search.cursor || nextCursor) ? (
-                <div className="mt-6 flex items-center justify-center gap-3">
+                <div className="mt-6 flex flex-col items-stretch justify-center gap-3 sm:flex-row sm:items-center">
                   {search.cursor ? (
                     <Button
                       variant="outline"
+                      className="w-full sm:w-auto"
                       onClick={() => {
                         void navigate({
                           search: (prev) => ({
@@ -276,6 +311,7 @@ export function PluginsIndex() {
                   {nextCursor ? (
                     <Button
                       variant="primary"
+                      className="w-full sm:w-auto"
                       onClick={() => {
                         void navigate({
                           search: (prev) => ({

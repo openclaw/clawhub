@@ -11,10 +11,21 @@ import {
   type PackageVersionDetail,
 } from "../lib/packageApi";
 
+const isRateLimitedPackageApiErrorMock = vi.fn(
+  (error: unknown) =>
+    typeof error === "object" && error !== null && (error as { status?: number }).status === 429,
+);
+
 type PluginDetailLoaderData = {
   detail: PackageDetailResponse;
   version: PackageVersionDetail | null;
   readme: string | null;
+  rateLimited:
+    | {
+        scope: "detail" | "metadata";
+        retryAfterSeconds: number | null;
+      }
+    | null;
 };
 
 let paramsMock = { name: "demo-plugin" };
@@ -39,6 +50,7 @@ let loaderDataMock: PluginDetailLoaderData = {
   },
   version: null,
   readme: null as string | null,
+  rateLimited: null,
 };
 
 vi.mock("@tanstack/react-router", () => ({
@@ -65,6 +77,7 @@ vi.mock("../lib/packageApi", () => ({
   fetchPackageDetail: vi.fn(),
   fetchPackageReadme: vi.fn(),
   fetchPackageVersion: vi.fn(),
+  isRateLimitedPackageApiError: (error: unknown) => isRateLimitedPackageApiErrorMock(error),
   getPackageDownloadPath: vi.fn((name: string, version?: string | null) =>
     version
       ? `/api/v1/packages/${name}/download?version=${version}`
@@ -84,6 +97,9 @@ async function loadRoute() {
 describe("plugin detail route", () => {
   beforeEach(() => {
     paramsMock = { name: "demo-plugin" };
+    vi.mocked(fetchPackageDetail).mockReset();
+    vi.mocked(fetchPackageReadme).mockReset();
+    vi.mocked(fetchPackageVersion).mockReset();
     loaderDataMock = {
       detail: {
         package: {
@@ -105,7 +121,9 @@ describe("plugin detail route", () => {
       },
       version: null,
       readme: null,
+      rateLimited: null,
     };
+    isRateLimitedPackageApiErrorMock.mockClear();
   });
 
   it("hides download actions when the plugin has no latest release", async () => {
@@ -158,6 +176,7 @@ describe("plugin detail route", () => {
         },
       },
       readme: null,
+      rateLimited: null,
     };
 
     const route = await loadRoute();
@@ -168,6 +187,68 @@ describe("plugin detail route", () => {
     expect(screen.getByText("Security Scan")).toBeTruthy();
     expect(screen.getAllByText("VirusTotal").length).toBeGreaterThan(0);
     expect(screen.getAllByText("OpenClaw").length).toBeGreaterThan(0);
+  });
+
+  it("shows a retryable empty state when the detail lookup is rate limited", async () => {
+    loaderDataMock = {
+      detail: { package: null, owner: null },
+      version: null,
+      readme: null,
+      rateLimited: {
+        scope: "detail",
+        retryAfterSeconds: 15,
+      },
+    };
+    const route = await loadRoute();
+    const Component = route.__config.component as ComponentType;
+
+    render(<Component />);
+
+    expect(screen.getByText("Plugin details are temporarily unavailable")).toBeTruthy();
+    expect(screen.getByText(/Try again in about 15 seconds/i)).toBeTruthy();
+  });
+
+  it("downgrades rate-limited README/version fetches into partial detail data", async () => {
+    const route = await loadRoute();
+    const loader = route.__config.loader as ({
+      params,
+    }: {
+      params: { name: string };
+    }) => Promise<PluginDetailLoaderData>;
+    const fetchPackageDetailMock = vi.mocked(fetchPackageDetail);
+    const fetchPackageReadmeMock = vi.mocked(fetchPackageReadme);
+    const fetchPackageVersionMock = vi.mocked(fetchPackageVersion);
+
+    fetchPackageDetailMock.mockResolvedValueOnce({
+      package: {
+        name: "demo-plugin",
+        displayName: "Demo Plugin",
+        family: "code-plugin",
+        channel: "community",
+        isOfficial: false,
+        summary: "Demo summary",
+        latestVersion: "1.0.0",
+        createdAt: 1,
+        updatedAt: 1,
+        tags: {},
+        compatibility: null,
+        capabilities: null,
+        verification: null,
+      },
+      owner: null,
+    });
+    fetchPackageReadmeMock.mockRejectedValueOnce({ status: 429, retryAfterSeconds: 11 });
+    fetchPackageVersionMock.mockRejectedValueOnce({ status: 429, retryAfterSeconds: 11 });
+
+    const result = await loader({ params: { name: "demo-plugin" } });
+
+    expect(result.detail.package?.name).toBe("demo-plugin");
+    expect(result.readme).toBeNull();
+    expect(result.version).toBeNull();
+    expect(result.rateLimited).toEqual({
+      scope: "metadata",
+      retryAfterSeconds: 11,
+    });
   });
 
   it("falls back to the official scoped package name for short plugin routes", async () => {
@@ -211,5 +292,6 @@ describe("plugin detail route", () => {
     expect(fetchPackageReadmeMock).toHaveBeenCalledWith("@openclaw/matrix");
     expect(fetchPackageVersionMock).toHaveBeenCalledWith("@openclaw/matrix", "2026.3.22");
     expect(result.detail.package?.name).toBe("@openclaw/matrix");
+    expect(result.rateLimited).toBeNull();
   });
 });
