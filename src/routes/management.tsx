@@ -369,12 +369,16 @@ function Management() {
                         <Button
                           variant="outline"
                           size="sm"
-                          onClick={() =>
+                          onClick={() => {
+                            const action = skill.softDeletedAt ? "Restore" : "Hide";
+                            const reason = window.prompt(`${action} reason for "${skill.displayName}"`);
+                            if (!reason?.trim()) return;
                             void setSoftDeleted({
                               skillId: skill._id,
                               deleted: !skill.softDeletedAt,
-                            })
-                          }
+                              reason: reason.trim(),
+                            });
+                          }}
                         >
                           {skill.softDeletedAt ? "Restore" : "Hide"}
                         </Button>
@@ -673,12 +677,16 @@ function Management() {
                         <Button
                           variant="outline"
                           size="sm"
-                          onClick={() =>
+                          onClick={() => {
+                            const action = skill.softDeletedAt ? "Restore" : "Hide";
+                            const reason = window.prompt(`${action} reason for "${skill.displayName}"`);
+                            if (!reason?.trim()) return;
                             void setSoftDeleted({
                               skillId: skill._id,
                               deleted: !skill.softDeletedAt,
-                            })
-                          }
+                              reason: reason.trim(),
+                            });
+                          }}
                         >
                           {skill.softDeletedAt ? "Restore" : "Hide"}
                         </Button>
