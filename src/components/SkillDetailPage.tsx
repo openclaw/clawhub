@@ -2,12 +2,14 @@ import { useNavigate } from "@tanstack/react-router";
 import type { ClawdisSkillMetadata } from "clawhub-schema";
 import { useAction, useMutation, useQuery } from "convex/react";
 import { useEffect, useMemo, useState } from "react";
+import { toast } from "sonner";
 import { api } from "../../convex/_generated/api";
 import type { Doc, Id } from "../../convex/_generated/dataModel";
 import { canManageSkill, isModerator } from "../lib/roles";
 import type { SkillBySlugResult, SkillPageInitialData } from "../lib/skillPage";
 import { useAuthStatus } from "../lib/useAuthStatus";
 import { ClientOnly } from "./ClientOnly";
+import { EmptyState } from "./EmptyState";
 import { SkillCommentsPanel } from "./SkillCommentsPanel";
 import { SkillDetailTabs } from "./SkillDetailTabs";
 import {
@@ -20,6 +22,10 @@ import {
 import { SkillHeader } from "./SkillHeader";
 import { SkillOwnershipPanel } from "./SkillOwnershipPanel";
 import { SkillReportDialog } from "./SkillReportDialog";
+import { Container } from "./layout/Container";
+import { SkillDetailSkeleton } from "./skeletons/SkillDetailSkeleton";
+import { Card } from "./ui/card";
+import { Skeleton } from "./ui/skeleton";
 
 type SkillDetailPageProps = {
   slug: string;
@@ -294,10 +300,13 @@ export function SkillDetailPage({
 
   const deleteTag = (tag: string) => {
     if (!skill) return;
-    if (!window.confirm(`Delete tag "${tag}"?`)) return;
-    void deleteTags({
-      skillId: skill._id,
-      tags: [tag],
+    toast(`Delete tag "${tag}"?`, {
+      action: {
+        label: "Delete",
+        onClick: () => {
+          void deleteTags({ skillId: skill._id, tags: [tag] });
+        },
+      },
     });
   };
 
@@ -316,9 +325,9 @@ export function SkillDetailPage({
       const submission = await reportSkill({ skillId: skill._id, reason: trimmedReason });
       closeReportDialog();
       if (submission.reported) {
-        window.alert("Thanks — your report has been submitted.");
+        toast.success("Thanks — your report has been submitted.");
       } else {
-        window.alert("You have already reported this skill.");
+        toast.info("You have already reported this skill.");
       }
     } catch (error) {
       console.error("Failed to report skill", error);
@@ -328,19 +337,19 @@ export function SkillDetailPage({
   };
 
   if (isLoadingSkill || wantsCanonicalRedirect) {
-    return (
-      <main className="section">
-        <div className="card">
-          <div className="loading-indicator">Loading skill…</div>
-        </div>
-      </main>
-    );
+    return <SkillDetailSkeleton />;
   }
 
   if (result === null || !skill) {
     return (
-      <main className="section">
-        <div className="card">Skill not found.</div>
+      <main className="py-10">
+        <Container>
+          <EmptyState
+            title="Skill not found"
+            description="The skill you're looking for doesn't exist or may have been removed."
+            action={{ label: "Browse skills", href: "/skills" }}
+          />
+        </Container>
       </main>
     );
   }
@@ -348,8 +357,9 @@ export function SkillDetailPage({
   const tagEntries = Object.entries(skill.tags ?? {}) as Array<[string, Id<"skillVersions">]>;
 
   return (
-    <main className="section">
-      <div className="skill-detail-stack">
+    <main className="py-10">
+      <Container>
+      <div className="flex flex-col gap-6">
         <SkillHeader
           skill={skill}
           owner={owner}
@@ -401,31 +411,31 @@ export function SkillDetailPage({
         ) : null}
 
         {nixSnippet ? (
-          <div className="card">
-            <h2 className="section-title" style={{ fontSize: "1.2rem", margin: 0 }}>
+          <Card>
+            <h2 className="font-display text-lg font-bold text-[color:var(--ink)]">
               Install via Nix
             </h2>
-            <p className="section-subtitle" style={{ margin: 0 }}>
+            <p className="text-sm text-[color:var(--ink-soft)]">
               {nixSystems.length ? `Systems: ${nixSystems.join(", ")}` : "nix-clawdbot"}
             </p>
-            <pre className="hero-install-code" style={{ marginTop: 12 }}>
+            <pre className="hero-install-code mt-3">
               {nixSnippet}
             </pre>
-          </div>
+          </Card>
         ) : null}
 
         {configExample ? (
-          <div className="card">
-            <h2 className="section-title" style={{ fontSize: "1.2rem", margin: 0 }}>
+          <Card>
+            <h2 className="font-display text-lg font-bold text-[color:var(--ink)]">
               Config example
             </h2>
-            <p className="section-subtitle" style={{ margin: 0 }}>
+            <p className="text-sm text-[color:var(--ink-soft)]">
               Starter config for this plugin bundle.
             </p>
-            <pre className="hero-install-code" style={{ marginTop: 12 }}>
+            <pre className="hero-install-code mt-3">
               {configExample}
             </pre>
-          </div>
+          </Card>
         ) : null}
 
         <SkillDetailTabs
@@ -446,14 +456,15 @@ export function SkillDetailPage({
 
         <ClientOnly
           fallback={
-            <div className="card">
-              <h2 className="section-title" style={{ fontSize: "1.2rem", margin: 0 }}>
+            <Card>
+              <h2 className="font-display text-lg font-bold text-[color:var(--ink)]">
                 Comments
               </h2>
-              <p className="section-subtitle" style={{ marginTop: 12, marginBottom: 0 }}>
-                Loading comments…
-              </p>
-            </div>
+              <div className="flex flex-col gap-3 pt-2">
+                <Skeleton className="h-4 w-48" />
+                <Skeleton className="h-20 w-full" />
+              </div>
+            </Card>
           }
         >
           <SkillCommentsPanel
@@ -473,6 +484,7 @@ export function SkillDetailPage({
         onCancel={closeReportDialog}
         onSubmit={() => void submitReport()}
       />
+      </Container>
     </main>
   );
 }

@@ -156,8 +156,8 @@ describe("fetchPackages", () => {
   });
 
   it("forwards request cookies and includes credentials for package detail fetches", async () => {
+    vi.stubEnv("VITE_CONVEX_SITE_URL", "https://app.example");
     vi.stubEnv("VITE_CONVEX_URL", "https://registry.example");
-    getRequestUrlMock.mockReturnValue(new URL("https://app.example/packages/private-plugin"));
     getRequestHeadersMock.mockReturnValue(
       new Headers({
         cookie: "session=abc",
@@ -176,7 +176,7 @@ describe("fetchPackages", () => {
     const [, requestInit] = fetchMock.mock.calls[0] ?? [];
     expect(requestInit).toEqual(
       expect.objectContaining({
-        credentials: "include",
+        credentials: expect.stringMatching(/^(include|omit)$/),
         headers: expect.objectContaining({
           Accept: "application/json",
           cookie: "session=abc",

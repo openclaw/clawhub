@@ -1,4 +1,10 @@
 import { createFileRoute, Link } from '@tanstack/react-router';
+import { AlertTriangle, Shield, ShieldAlert } from 'lucide-react';
+import { Badge } from '../components/ui/badge';
+import { Button } from '../components/ui/button';
+import { Card, CardContent, CardHeader, CardTitle } from '../components/ui/card';
+import { Container } from '../components/layout/Container';
+import { Separator } from '../components/ui/separator';
 import { getSiteMode, getSiteName, getSiteUrlForMode } from '../lib/site';
 
 const prohibitedCategories = [
@@ -81,83 +87,115 @@ export const Route = createFileRoute('/about')({
 
 function AboutPage() {
   return (
-    <main className="section">
-      <div className="skill-detail-stack">
-        <section className="card">
-          <div className="skill-card-tags" style={{ marginBottom: 12 }}>
-            <span className="tag">About</span>
-            <span className="tag tag-accent">Policy</span>
-          </div>
-          <h1 className="section-title" style={{ marginBottom: 10 }}>
-            What ClawHub Will Not Host
-          </h1>
-          <p className="section-subtitle" style={{ marginBottom: 14 }}>
-            ClawHub is for useful agent tooling, not abuse workflows. If a skill is built to evade
-            defenses, abuse platforms, scam people, invade privacy, or enable non-consensual
-            behavior, it does not belong here.
-          </p>
-          <div className="stat">
-            We moderate based on end-to-end abuse patterns, not just isolated keywords.
-          </div>
-        </section>
-
-        <section className="grid" style={{ gap: 16 }}>
-          {prohibitedCategories.map((category) => (
-            <article key={category.title} className="card">
-              <h2 className="dashboard-collection-title" style={{ marginBottom: 8 }}>
-                {category.title}
-              </h2>
-              <p className="section-subtitle" style={{ margin: 0 }}>
-                {category.examples}
-              </p>
-            </article>
-          ))}
-        </section>
-
-        <section className="card">
-          <h2 className="dashboard-collection-title" style={{ marginBottom: 10 }}>
-            Recent patterns we are explicitly not okay with
-          </h2>
-          <div className="management-sublist">
-            {recentPatterns.map((pattern) => (
-              <div key={pattern} className="management-subitem">
-                {pattern}
+    <main className="py-10">
+      <Container size="narrow">
+        <div className="flex flex-col gap-6">
+          <Card>
+            <CardContent className="flex flex-col gap-4 pt-6">
+              <div className="flex flex-wrap gap-2">
+                <Badge>About</Badge>
+                <Badge variant="accent">Policy</Badge>
               </div>
+              <h1 className="font-display text-2xl font-bold text-[color:var(--ink)]">
+                What ClawHub Will Not Host
+              </h1>
+              <p className="text-sm leading-relaxed text-[color:var(--ink-soft)]">
+                ClawHub is for useful agent tooling, not abuse workflows. If a skill is built to evade
+                defenses, abuse platforms, scam people, invade privacy, or enable non-consensual
+                behavior, it does not belong here.
+              </p>
+              <div className="flex items-center gap-2 rounded-[var(--radius-sm)] bg-[color:var(--surface-muted)] px-4 py-3 text-sm font-medium text-[color:var(--ink-soft)]">
+                <Shield className="h-4 w-4 shrink-0 text-[color:var(--accent)]" />
+                We moderate based on end-to-end abuse patterns, not just isolated keywords.
+              </div>
+            </CardContent>
+          </Card>
+
+          <div className="grid grid-cols-[repeat(auto-fill,minmax(320px,1fr))] gap-4">
+            {prohibitedCategories.map((category) => (
+              <Card key={category.title}>
+                <CardHeader className="pb-2">
+                  <CardTitle className="flex items-center gap-2 text-base">
+                    <ShieldAlert className="h-4 w-4 shrink-0 text-[color:var(--gold)]" />
+                    {category.title}
+                  </CardTitle>
+                </CardHeader>
+                <CardContent>
+                  <p className="text-sm leading-relaxed text-[color:var(--ink-soft)]">
+                    {category.examples}
+                  </p>
+                </CardContent>
+              </Card>
             ))}
           </div>
-        </section>
 
-        <section className="card">
-          <h2 className="dashboard-collection-title" style={{ marginBottom: 10 }}>
-            Enforcement
-          </h2>
-          <div className="management-sublist">
-            <div className="management-subitem">
-              We may hide, remove, or hard-delete violating skills.
-            </div>
-            <div className="management-subitem">
-              We may revoke tokens, soft-delete associated content, and ban repeat or severe
-              offenders.
-            </div>
-            <div className="management-subitem">
-              We do not guarantee warning-first enforcement for obvious abuse.
-            </div>
-          </div>
-          <div className="skill-card-tags" style={{ marginTop: 16 }}>
-            <Link className="btn btn-primary" to="/skills">
-              Browse Skills
-            </Link>
-            <a
-              className="btn"
-              href="https://github.com/openclaw/clawhub/blob/main/docs/acceptable-usage.md"
-              target="_blank"
-              rel="noreferrer"
-            >
-              Reviewer Doc
-            </a>
-          </div>
-        </section>
-      </div>
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <AlertTriangle className="h-4 w-4 shrink-0 text-[color:var(--gold)]" />
+                Recent patterns we are explicitly not okay with
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              <ul className="flex flex-col gap-2">
+                {recentPatterns.map((pattern) => (
+                  <li
+                    key={pattern}
+                    className="flex items-start gap-2 rounded-[var(--radius-sm)] border border-[color:var(--line)] bg-[color:var(--surface-muted)] px-4 py-3 text-sm text-[color:var(--ink-soft)]"
+                  >
+                    <span className="mt-0.5 shrink-0 text-[color:var(--gold)]" aria-hidden="true">
+                      -
+                    </span>
+                    {pattern}
+                  </li>
+                ))}
+              </ul>
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardHeader>
+              <CardTitle>Enforcement</CardTitle>
+            </CardHeader>
+            <CardContent className="flex flex-col gap-4">
+              <ul className="flex flex-col gap-2">
+                <li className="flex items-start gap-2 text-sm text-[color:var(--ink-soft)]">
+                  <span className="mt-0.5 shrink-0 text-[color:var(--accent)]" aria-hidden="true">
+                    1.
+                  </span>
+                  We may hide, remove, or hard-delete violating skills.
+                </li>
+                <li className="flex items-start gap-2 text-sm text-[color:var(--ink-soft)]">
+                  <span className="mt-0.5 shrink-0 text-[color:var(--accent)]" aria-hidden="true">
+                    2.
+                  </span>
+                  We may revoke tokens, soft-delete associated content, and ban repeat or severe
+                  offenders.
+                </li>
+                <li className="flex items-start gap-2 text-sm text-[color:var(--ink-soft)]">
+                  <span className="mt-0.5 shrink-0 text-[color:var(--accent)]" aria-hidden="true">
+                    3.
+                  </span>
+                  We do not guarantee warning-first enforcement for obvious abuse.
+                </li>
+              </ul>
+              <Separator />
+              <div className="flex flex-wrap gap-3">
+                <Link to="/skills" search={{ q: undefined, sort: undefined, dir: undefined, highlighted: undefined, nonSuspicious: undefined, view: undefined, focus: undefined }}>
+                  <Button variant="primary">Browse Skills</Button>
+                </Link>
+                <a
+                  href="https://github.com/openclaw/clawhub/blob/main/docs/acceptable-usage.md"
+                  target="_blank"
+                  rel="noreferrer"
+                >
+                  <Button variant="outline">Reviewer Doc</Button>
+                </a>
+              </div>
+            </CardContent>
+          </Card>
+        </div>
+      </Container>
     </main>
   );
 }

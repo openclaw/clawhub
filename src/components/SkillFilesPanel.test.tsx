@@ -9,12 +9,8 @@ vi.mock("convex/react", () => ({
   useAction: () => getFileTextMock,
 }));
 
-vi.mock("react-markdown", () => ({
-  default: ({ children }: { children: string }) => <div>{children}</div>,
-}));
-
-vi.mock("remark-gfm", () => ({
-  default: {},
+vi.mock("./MarkdownPreview", () => ({
+  MarkdownPreview: ({ children }: { children: string }) => <div>{children}</div>,
 }));
 
 type SkillFile = Doc<"skillVersions">["files"][number];

@@ -1,6 +1,6 @@
 import { useAuthActions } from "@convex-dev/auth/react";
 import { Link } from "@tanstack/react-router";
-import { Menu, Monitor, Moon, Sun } from "lucide-react";
+import { Menu, Monitor, Moon, Plus, Search, Sun } from "lucide-react";
 import { useMemo, useRef } from "react";
 import { getUserFacingAuthError } from "../lib/authErrorMessage";
 import { gravatarUrl } from "../lib/gravatar";
@@ -10,6 +10,8 @@ import { applyTheme, useThemeMode } from "../lib/theme";
 import { startThemeTransition } from "../lib/theme-transition";
 import { setAuthError, useAuthError } from "../lib/useAuthError";
 import { useAuthStatus } from "../lib/useAuthStatus";
+import { Avatar, AvatarFallback, AvatarImage } from "./ui/avatar";
+import { Button } from "./ui/button";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -17,6 +19,7 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "./ui/dropdown-menu";
+import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetTrigger } from "./ui/sheet";
 import { ToggleGroup, ToggleGroupItem } from "./ui/toggle-group";
 
 export default function Header() {
@@ -49,193 +52,148 @@ export default function Header() {
     });
   };
 
+  const navLinks = (
+    <>
+      {isSoulMode ? <a href={clawHubUrl} className="text-[color:var(--ink-soft)] font-semibold text-sm transition-colors duration-150 hover:text-[color:var(--ink)]">ClawHub</a> : null}
+      {isSoulMode ? (
+        <Link
+          to="/souls"
+          search={{ q: undefined, sort: undefined, dir: undefined, view: undefined, focus: undefined }}
+          className="text-[color:var(--ink-soft)] font-semibold text-sm transition-colors duration-150 hover:text-[color:var(--ink)]"
+        >
+          Souls
+        </Link>
+      ) : (
+        <Link
+          to="/skills"
+          search={{ q: undefined, sort: undefined, dir: undefined, highlighted: undefined, nonSuspicious: undefined, view: undefined, focus: undefined }}
+          className="text-[color:var(--ink-soft)] font-semibold text-sm transition-colors duration-150 hover:text-[color:var(--ink)]"
+        >
+          Skills
+        </Link>
+      )}
+      {isSoulMode ? null : (
+        <Link to="/plugins" className="text-[color:var(--ink-soft)] font-semibold text-sm transition-colors duration-150 hover:text-[color:var(--ink)]">
+          Plugins
+        </Link>
+      )}
+      <Link
+        to={isSoulMode ? "/souls" : "/skills"}
+        search={
+          isSoulMode
+            ? { q: undefined, sort: undefined, dir: undefined, view: undefined, focus: "search" }
+            : { q: undefined, sort: undefined, dir: undefined, highlighted: undefined, nonSuspicious: undefined, view: undefined, focus: "search" }
+        }
+        className="text-[color:var(--ink-soft)] font-semibold text-sm transition-colors duration-150 hover:text-[color:var(--ink)] inline-flex items-center gap-1.5"
+      >
+        <Search className="h-3.5 w-3.5" />
+        Search
+      </Link>
+      {isSoulMode ? null : (
+        <Link to="/about" className="text-[color:var(--ink-soft)] font-semibold text-sm transition-colors duration-150 hover:text-[color:var(--ink)]">
+          About
+        </Link>
+      )}
+      {me ? (
+        <Link to="/stars" className="text-[color:var(--ink-soft)] font-semibold text-sm transition-colors duration-150 hover:text-[color:var(--ink)]">
+          Stars
+        </Link>
+      ) : null}
+      {isStaff ? (
+        <Link to="/management" search={{ skill: undefined }} className="text-[color:var(--ink-soft)] font-semibold text-sm transition-colors duration-150 hover:text-[color:var(--ink)]">
+          Management
+        </Link>
+      ) : null}
+    </>
+  );
+
   return (
-    <header className="navbar">
-      <div className="navbar-inner">
+    <header className="sticky top-0 z-50 border-b border-[color:var(--line)] bg-[color:var(--nav-bg)] backdrop-blur-xl">
+      <div className="mx-auto flex h-16 max-w-[1200px] items-center justify-between gap-4 px-5">
+        {/* Brand */}
         <Link
           to="/"
           search={{ q: undefined, highlighted: undefined, search: undefined }}
-          className="brand"
+          className="flex items-center gap-2.5 font-display text-lg font-bold text-[color:var(--ink)] no-underline transition-opacity hover:opacity-80"
         >
-          <span className="brand-mark">
-            <img src="/clawd-logo.png" alt="" aria-hidden="true" />
+          <span className="flex h-8 w-8 items-center justify-center rounded-full bg-gradient-to-br from-[color:var(--accent)] to-[color:var(--accent-deep)] p-0.5">
+            <img src="/clawd-logo.png" alt="" aria-hidden="true" className="h-full w-full rounded-full object-cover" />
           </span>
-          <span className="brand-name">{siteName}</span>
+          <span>{siteName}</span>
         </Link>
-        <nav className="nav-links">
-          {isSoulMode ? <a href={clawHubUrl}>ClawHub</a> : null}
-          {isSoulMode ? (
-            <Link
-              to="/souls"
-              search={{
-                q: undefined,
-                sort: undefined,
-                dir: undefined,
-                view: undefined,
-                focus: undefined,
-              }}
-            >
-              Souls
-            </Link>
-          ) : (
-            <Link
-              to="/skills"
-              search={{
-                q: undefined,
-                sort: undefined,
-                dir: undefined,
-                highlighted: undefined,
-                nonSuspicious: undefined,
-                view: undefined,
-                focus: undefined,
-              }}
-            >
-              Skills
+
+        {/* Desktop nav */}
+        <nav className="hidden items-center gap-6 md:flex">
+          {navLinks}
+        </nav>
+
+        {/* Actions */}
+        <div className="flex items-center gap-3">
+          {/* Publish CTA (desktop, authenticated) */}
+          {isAuthenticated && me && (
+            <Link to="/publish-skill" search={{ updateSlug: undefined }} className="hidden sm:block">
+              <Button variant="primary" size="sm">
+                <Plus className="h-3.5 w-3.5" />
+                Publish
+              </Button>
             </Link>
           )}
-          {isSoulMode ? null : <Link to="/plugins">Plugins</Link>}
-          <Link
-            to={isSoulMode ? "/souls" : "/skills"}
-            search={
-              isSoulMode
-                ? {
-                    q: undefined,
-                    sort: undefined,
-                    dir: undefined,
-                    view: undefined,
-                    focus: "search",
-                  }
-                : {
-                    q: undefined,
-                    sort: undefined,
-                    dir: undefined,
-                    highlighted: undefined,
-                    nonSuspicious: undefined,
-                    view: undefined,
-                    focus: "search",
-                  }
-            }
-          >
-            Search
-          </Link>
-          {isSoulMode ? null : <Link to="/about">About</Link>}
-          {me ? <Link to="/stars">Stars</Link> : null}
-          {isStaff ? (
-            <Link to="/management" search={{ skill: undefined }}>
-              Management
-            </Link>
-          ) : null}
-        </nav>
-        <div className="nav-actions">
-          <div className="nav-mobile">
-            <DropdownMenu>
-              <DropdownMenuTrigger asChild>
-                <button className="nav-mobile-trigger" type="button" aria-label="Open menu">
-                  <Menu className="h-4 w-4" aria-hidden="true" />
-                </button>
-              </DropdownMenuTrigger>
-              <DropdownMenuContent align="end">
-                {isSoulMode ? (
-                  <DropdownMenuItem asChild>
-                    <a href={clawHubUrl}>ClawHub</a>
-                  </DropdownMenuItem>
-                ) : null}
-                <DropdownMenuItem asChild>
-                  {isSoulMode ? (
-                    <Link
-                      to="/souls"
-                      search={{
-                        q: undefined,
-                        sort: undefined,
-                        dir: undefined,
-                        view: undefined,
-                        focus: undefined,
-                      }}
-                    >
-                      Souls
-                    </Link>
-                  ) : (
-                    <Link
-                      to="/skills"
-                      search={{
-                        q: undefined,
-                        sort: undefined,
-                        dir: undefined,
-                        highlighted: undefined,
-                        nonSuspicious: undefined,
-                        view: undefined,
-                        focus: undefined,
-                      }}
-                    >
-                      Skills
-                    </Link>
-                  )}
-                </DropdownMenuItem>
-                {isSoulMode ? null : (
-                  <DropdownMenuItem asChild>
-                    <Link to="/plugins">Plugins</Link>
-                  </DropdownMenuItem>
-                )}
-                <DropdownMenuItem asChild>
-                  <Link
-                    to={isSoulMode ? "/souls" : "/skills"}
-                    search={
-                      isSoulMode
-                        ? {
-                            q: undefined,
-                            sort: undefined,
-                            dir: undefined,
-                            view: undefined,
-                            focus: "search",
-                          }
-                        : {
-                            q: undefined,
-                            sort: undefined,
-                            dir: undefined,
-                            highlighted: undefined,
-                            nonSuspicious: undefined,
-                            view: undefined,
-                            focus: "search",
-                          }
-                    }
+
+          {/* Mobile nav trigger */}
+          <div className="md:hidden">
+            <Sheet>
+              <SheetTrigger asChild>
+                <Button variant="ghost" size="icon" aria-label="Open menu">
+                  <Menu className="h-5 w-5" />
+                </Button>
+              </SheetTrigger>
+              <SheetContent side="right" className="w-72">
+                <SheetHeader>
+                  <SheetTitle>{siteName}</SheetTitle>
+                </SheetHeader>
+                <nav className="mt-6 flex flex-col gap-4">
+                  {navLinks}
+                </nav>
+                {/* Mobile theme toggle */}
+                <div className="mt-6 flex flex-col gap-2">
+                  <span className="text-xs font-bold uppercase tracking-widest text-[color:var(--ink-soft)]">Theme</span>
+                  <ToggleGroup
+                    type="single"
+                    value={mode}
+                    onValueChange={(value) => {
+                      if (!value) return;
+                      setTheme(value as "system" | "light" | "dark");
+                    }}
+                    aria-label="Theme mode"
                   >
-                    Search
-                  </Link>
-                </DropdownMenuItem>
-                {isSoulMode ? null : (
-                  <DropdownMenuItem asChild>
-                    <Link to="/about">About</Link>
-                  </DropdownMenuItem>
-                )}
-                {me ? (
-                  <DropdownMenuItem asChild>
-                    <Link to="/stars">Stars</Link>
-                  </DropdownMenuItem>
-                ) : null}
-                {isStaff ? (
-                  <DropdownMenuItem asChild>
-                    <Link to="/management" search={{ skill: undefined }}>
-                      Management
+                    <ToggleGroupItem value="system" aria-label="System theme">
+                      <Monitor className="h-4 w-4" aria-hidden="true" />
+                    </ToggleGroupItem>
+                    <ToggleGroupItem value="light" aria-label="Light theme">
+                      <Sun className="h-4 w-4" aria-hidden="true" />
+                    </ToggleGroupItem>
+                    <ToggleGroupItem value="dark" aria-label="Dark theme">
+                      <Moon className="h-4 w-4" aria-hidden="true" />
+                    </ToggleGroupItem>
+                  </ToggleGroup>
+                </div>
+                {/* Mobile publish link */}
+                {isAuthenticated && me && (
+                  <div className="mt-6">
+                    <Link to="/publish-skill" search={{ updateSlug: undefined }}>
+                      <Button variant="primary" className="w-full">
+                        <Plus className="h-4 w-4" />
+                        Publish Skill
+                      </Button>
                     </Link>
-                  </DropdownMenuItem>
-                ) : null}
-                <DropdownMenuSeparator />
-                <DropdownMenuItem onClick={() => setTheme("system")}>
-                  <Monitor className="h-4 w-4" aria-hidden="true" />
-                  System
-                </DropdownMenuItem>
-                <DropdownMenuItem onClick={() => setTheme("light")}>
-                  <Sun className="h-4 w-4" aria-hidden="true" />
-                  Light
-                </DropdownMenuItem>
-                <DropdownMenuItem onClick={() => setTheme("dark")}>
-                  <Moon className="h-4 w-4" aria-hidden="true" />
-                  Dark
-                </DropdownMenuItem>
-              </DropdownMenuContent>
-            </DropdownMenu>
+                  </div>
+                )}
+              </SheetContent>
+            </Sheet>
           </div>
-          <div className="theme-toggle" ref={toggleRef}>
+
+          {/* Desktop theme toggle */}
+          <div className="theme-toggle hidden md:block" ref={toggleRef}>
             <ToggleGroup
               type="single"
               value={mode}
@@ -247,29 +205,30 @@ export default function Header() {
             >
               <ToggleGroupItem value="system" aria-label="System theme">
                 <Monitor className="h-4 w-4" aria-hidden="true" />
-                <span className="sr-only">System</span>
               </ToggleGroupItem>
               <ToggleGroupItem value="light" aria-label="Light theme">
                 <Sun className="h-4 w-4" aria-hidden="true" />
-                <span className="sr-only">Light</span>
               </ToggleGroupItem>
               <ToggleGroupItem value="dark" aria-label="Dark theme">
                 <Moon className="h-4 w-4" aria-hidden="true" />
-                <span className="sr-only">Dark</span>
               </ToggleGroupItem>
             </ToggleGroup>
           </div>
+
+          {/* User menu / Sign in */}
           {isAuthenticated && me ? (
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
-                <button className="user-trigger" type="button">
-                  {avatar ? (
-                    <img src={avatar} alt={me.displayName ?? me.name ?? "User avatar"} />
-                  ) : (
-                    <span className="user-menu-fallback">{initial}</span>
-                  )}
-                  <span className="mono">@{handle}</span>
-                  <span className="user-menu-chevron">▾</span>
+                <button
+                  type="button"
+                  className="flex cursor-pointer items-center gap-2 rounded-full border border-[color:var(--line)] bg-[color:var(--surface)] px-2 py-1.5 text-sm font-semibold text-[color:var(--ink)] transition-colors hover:border-[color:var(--border-ui-hover)]"
+                >
+                  <Avatar className="h-7 w-7">
+                    {avatar && <AvatarImage src={avatar} alt={me.displayName ?? me.name ?? "User avatar"} />}
+                    <AvatarFallback className="text-xs">{initial}</AvatarFallback>
+                  </Avatar>
+                  <span className="hidden font-mono text-xs sm:inline">@{handle}</span>
+                  <span className="text-xs text-[color:var(--ink-soft)]">▾</span>
                 </button>
               </DropdownMenuTrigger>
               <DropdownMenuContent align="end">
@@ -286,27 +245,21 @@ export default function Header() {
           ) : (
             <>
               {authError ? (
-                <div className="error" role="alert" style={{ fontSize: "0.85rem", marginRight: 8 }}>
-                  {authError}{" "}
+                <div className="flex items-center gap-1 text-[0.85rem] text-red-600 dark:text-red-400" role="alert">
+                  {authError}
                   <button
                     type="button"
                     onClick={clearAuthError}
                     aria-label="Dismiss"
-                    style={{
-                      background: "none",
-                      border: "none",
-                      cursor: "pointer",
-                      color: "inherit",
-                      padding: "0 2px",
-                    }}
+                    className="ml-1 cursor-pointer border-none bg-transparent p-0.5 text-inherit opacity-70 hover:opacity-100"
                   >
                     &times;
                   </button>
                 </div>
               ) : null}
-              <button
-                className="btn btn-primary"
-                type="button"
+              <Button
+                variant="primary"
+                size="sm"
                 disabled={isLoading}
                 onClick={() => {
                   clearAuthError();
@@ -318,9 +271,9 @@ export default function Header() {
                   });
                 }}
               >
-                <span className="sign-in-label">Sign in</span>
-                <span className="sign-in-provider">with GitHub</span>
-              </button>
+                <span>Sign in</span>
+                <span className="hidden text-white/70 sm:inline">with GitHub</span>
+              </Button>
             </>
           )}
         </div>

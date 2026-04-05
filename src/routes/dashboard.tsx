@@ -16,6 +16,11 @@ import { useEffect, useState } from "react";
 import semver from "semver";
 import { api } from "../../convex/_generated/api";
 import type { Doc } from "../../convex/_generated/dataModel";
+import { EmptyState } from "../components/EmptyState";
+import { Container } from "../components/layout/Container";
+import { Badge } from "../components/ui/badge";
+import { Button } from "../components/ui/button";
+import { Card, CardContent } from "../components/ui/card";
 import { formatCompactStat } from "../lib/numberFormat";
 import { familyLabel } from "../lib/packageLabels";
 import type { PublicSkill } from "../lib/publicUser";
@@ -61,6 +66,7 @@ type DashboardPackage = {
     staticScanStatus: "clean" | "suspicious" | "malicious" | null;
   } | null;
 };
+
 
 export const Route = createFileRoute("/dashboard")({
   component: Dashboard,
@@ -112,9 +118,11 @@ function Dashboard() {
 
   if (!me) {
     return (
-      <main className="section">
-        <div className="card">Sign in to access your dashboard.</div>
-      </main>
+      <Container className="py-10">
+        <Card>
+          <CardContent>Sign in to access your dashboard.</CardContent>
+        </Card>
+      </Container>
     );
   }
 
@@ -124,20 +132,21 @@ function Dashboard() {
     selectedPublisher?.publisher.handle ?? me.handle ?? me.name ?? me.displayName ?? me._id;
 
   return (
-    <main className="section">
-      <div className="dashboard-header">
-        <div style={{ display: "grid", gap: "6px" }}>
-          <h1 className="section-title" style={{ margin: 0 }}>
+    <Container className="py-10">
+      {/* Header */}
+      <div className="mb-8 flex flex-col gap-6 sm:flex-row sm:items-start sm:justify-between">
+        <div className="grid gap-1.5">
+          <h1 className="font-display text-2xl font-bold text-[color:var(--ink)]">
             Publisher Dashboard
           </h1>
-          <p className="section-subtitle" style={{ margin: 0 }}>
+          <p className="text-sm text-[color:var(--ink-soft)]">
             Owner-only view for skills and plugins, including security scans and verification.
           </p>
         </div>
-        <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+        <div className="flex flex-wrap gap-2">
           {publishers && publishers.length > 0 ? (
             <select
-              className="input"
+              className="min-h-[44px] rounded-[var(--radius-pill)] border border-[color:var(--line)] bg-[color:var(--surface)] px-4 py-[11px] text-sm text-[color:var(--ink)] transition-all duration-200 ease-out focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--accent)]/35"
               value={selectedPublisherId}
               onChange={(event) => setSelectedPublisherId(event.target.value)}
             >
@@ -148,160 +157,176 @@ function Dashboard() {
               ))}
             </select>
           ) : null}
-          <Link to="/publish-skill" search={{ updateSlug: undefined }} className="btn btn-primary">
-            <Upload className="h-4 w-4" aria-hidden="true" />
-            Publish Skill
-          </Link>
-          <Link
-            to="/publish-plugin"
-            search={{ ...emptyPluginPublishSearch, ownerHandle }}
-            className="btn"
-          >
-            <Plug className="h-4 w-4" aria-hidden="true" />
-            Publish Plugin
-          </Link>
+          <Button asChild variant="primary">
+            <Link to="/publish-skill" search={{ updateSlug: undefined }}>
+              <Upload className="h-4 w-4" aria-hidden="true" />
+              Publish Skill
+            </Link>
+          </Button>
+          <Button asChild>
+            <Link to="/publish-plugin" search={{ ...emptyPluginPublishSearch, ownerHandle }}>
+              <Plug className="h-4 w-4" aria-hidden="true" />
+              Publish Plugin
+            </Link>
+          </Button>
         </div>
       </div>
 
-      <section className="card dashboard-owner-panel">
-        <div className="dashboard-owner-grid">
-          <section className="dashboard-collection-block">
-            <div className="dashboard-section-header">
+      {/* Owner panel */}
+      <Card>
+        <CardContent>
+          <div className="grid gap-10">
+            {/* Skills section */}
+            <section className="flex flex-col gap-4">
               <div>
-                <h2 className="dashboard-collection-title">Publisher Skills</h2>
-                <p className="section-subtitle" style={{ margin: "6px 0 0" }}>
+                <h2 className="font-display text-lg font-bold text-[color:var(--ink)]">
+                  Publisher Skills
+                </h2>
+                <p className="mt-1.5 text-sm text-[color:var(--ink-soft)]">
                   Hidden skill versions remain visible here while checks are pending.
                 </p>
               </div>
-            </div>
-            {skills.length === 0 ? (
-              <div className="dashboard-inline-empty">
-                <div className="dashboard-inline-empty-copy">
-                  <strong>No skills yet.</strong> Publish your first skill to share it with the community.
+              {skills.length === 0 ? (
+                <EmptyState
+                  icon={Upload}
+                  title="No skills yet."
+                  description="Publish your first skill to share it with the community."
+                >
+                  <Button asChild variant="primary">
+                    <Link to="/publish-skill" search={{ updateSlug: undefined }}>
+                      <Upload className="h-4 w-4" aria-hidden="true" />
+                      Publish Skill
+                    </Link>
+                  </Button>
+                </EmptyState>
+              ) : (
+                <div className="flex flex-col">
+                  <div className="hidden grid-cols-[2fr_2fr_1.5fr_auto] gap-4 border-b border-[color:var(--line)] px-4 pb-2 text-xs font-semibold uppercase tracking-wider text-[color:var(--ink-soft)] md:grid">
+                    <span>Skill</span>
+                    <span>Summary</span>
+                    <span>Status</span>
+                    <span>Actions</span>
+                  </div>
+                  {skills.map((skill) => (
+                    <SkillRow key={skill._id} skill={skill} ownerHandle={ownerHandle} />
+                  ))}
                 </div>
-                <Link to="/publish-skill" search={{ updateSlug: undefined }} className="btn btn-primary">
-                  <Upload className="h-4 w-4" aria-hidden="true" />
-                  Publish Skill
-                </Link>
-              </div>
-            ) : (
-              <div className="dashboard-list">
-                <div className="dashboard-list-header">
-                  <span>Skill</span>
-                  <span>Summary</span>
-                  <span>Status</span>
-                  <span>Actions</span>
-                </div>
-                {skills.map((skill) => (
-                  <SkillRow key={skill._id} skill={skill} ownerHandle={ownerHandle} />
-                ))}
-              </div>
-            )}
-          </section>
+              )}
+            </section>
 
-          <section className="dashboard-collection-block">
-            <div className="dashboard-section-header">
+            {/* Plugins section */}
+            <section className="flex flex-col gap-4">
               <div>
-                <h2 className="dashboard-collection-title">Publisher Plugins</h2>
-                <p className="section-subtitle" style={{ margin: "6px 0 0" }}>
+                <h2 className="font-display text-lg font-bold text-[color:var(--ink)]">
+                  Publisher Plugins
+                </h2>
+                <p className="mt-1.5 text-sm text-[color:var(--ink-soft)]">
                   Owner-only package view with VirusTotal, static scan, and verification state.
                 </p>
               </div>
-            </div>
-            {packages.length === 0 ? (
-              <div className="dashboard-inline-empty">
-                <div className="dashboard-inline-empty-copy">
-                  <strong>No plugins yet.</strong> Publish your first plugin release to validate and distribute it.
-                </div>
-                <Link
-                  to="/publish-plugin"
-                  search={{ ...emptyPluginPublishSearch, ownerHandle }}
-                  className="btn btn-primary"
+              {packages.length === 0 ? (
+                <EmptyState
+                  icon={Plug}
+                  title="No plugins yet."
+                  description="Publish your first plugin release to validate and distribute it."
                 >
-                  <Plug className="h-4 w-4" aria-hidden="true" />
-                  Publish Plugin
-                </Link>
-              </div>
-            ) : (
-              <div className="dashboard-list">
-                <div className="dashboard-list-header">
-                  <span>Plugin</span>
-                  <span>Summary</span>
-                  <span>Status</span>
-                  <span>Actions</span>
+                  <Button asChild variant="primary">
+                    <Link to="/publish-plugin" search={{ ...emptyPluginPublishSearch, ownerHandle }}>
+                      <Plug className="h-4 w-4" aria-hidden="true" />
+                      Publish Plugin
+                    </Link>
+                  </Button>
+                </EmptyState>
+              ) : (
+                <div className="flex flex-col">
+                  <div className="hidden grid-cols-[2fr_2fr_1.5fr_auto] gap-4 border-b border-[color:var(--line)] px-4 pb-2 text-xs font-semibold uppercase tracking-wider text-[color:var(--ink-soft)] md:grid">
+                    <span>Plugin</span>
+                    <span>Summary</span>
+                    <span>Status</span>
+                    <span>Actions</span>
+                  </div>
+                  {packages.map((pkg) => (
+                    <PackageRow key={pkg._id} pkg={pkg} ownerHandle={ownerHandle} />
+                  ))}
                 </div>
-                {packages.map((pkg) => (
-                  <PackageRow key={pkg._id} pkg={pkg} ownerHandle={ownerHandle} />
-                ))}
-              </div>
-            )}
-          </section>
-        </div>
-      </section>
-    </main>
+              )}
+            </section>
+          </div>
+        </CardContent>
+      </Card>
+    </Container>
   );
 }
 
 function SkillRow({ skill, ownerHandle }: { skill: DashboardSkill; ownerHandle: string | null }) {
   return (
-    <div className="dashboard-list-row">
-      <div className="dashboard-list-primary">
-        <div className="dashboard-list-title">
+    <div className="grid items-start gap-4 border-b border-[color:var(--line)] px-4 py-4 last:border-b-0 md:grid-cols-[2fr_2fr_1.5fr_auto]">
+      {/* Primary info */}
+      <div className="flex flex-col gap-2">
+        <div className="flex flex-wrap items-center gap-2">
           <Link
             to="/$owner/$slug"
             params={{ owner: ownerHandle ?? "unknown", slug: skill.slug }}
-            className="dashboard-skill-name"
+            className="font-display text-sm font-bold text-[color:var(--ink)] hover:text-[color:var(--accent)]"
           >
             {skill.displayName}
           </Link>
-          <span className="dashboard-list-id">/{skill.slug}</span>
+          <span className="font-mono text-xs text-[color:var(--ink-soft)]">/{skill.slug}</span>
           {skill.pendingReview ? (
-            <span className="tag tag-pending">
+            <Badge variant="pending">
               <Clock className="h-3 w-3" aria-hidden="true" />
               Pending checks
-            </span>
+            </Badge>
           ) : null}
         </div>
-        <div className="dashboard-inline-metrics">
-          <span>
+        <div className="flex flex-wrap items-center gap-3 text-xs text-[color:var(--ink-soft)]">
+          <span className="inline-flex items-center gap-1">
             <ArrowDownToLine size={13} aria-hidden="true" /> {formatCompactStat(skill.stats.downloads)}
           </span>
-          <span>
+          <span className="inline-flex items-center gap-1">
             <Star size={13} aria-hidden="true" /> {formatCompactStat(skill.stats.stars)}
           </span>
-          <span>
+          <span className="inline-flex items-center gap-1">
             <Package size={13} aria-hidden="true" /> {skill.stats.versions}
           </span>
         </div>
       </div>
-      <div className="dashboard-list-summary">{skill.summary ?? "No summary provided."}</div>
-      <div className="dashboard-list-status">
+
+      {/* Summary */}
+      <div className="text-sm text-[color:var(--ink-soft)]">
+        {skill.summary ?? "No summary provided."}
+      </div>
+
+      {/* Status */}
+      <div className="flex flex-col gap-1 text-xs text-[color:var(--ink-soft)]">
         {skill.pendingReview ? (
           <>
-            <span className="dashboard-inline-status-item">
+            <span className="inline-flex items-center gap-1">
               <ShieldCheck size={13} aria-hidden="true" />
               VT pending
             </span>
-            <span className="dashboard-inline-status-note">
+            <span className="text-[color:var(--ink-soft)]">
               Hidden until verification checks finish.
             </span>
           </>
         ) : (
-          <span className="dashboard-inline-status-note">Visible</span>
+          <span>Visible</span>
         )}
       </div>
-      <div className="dashboard-row-actions">
-        <Link to="/publish-skill" search={{ updateSlug: skill.slug }} className="btn btn-sm">
-          <Upload className="h-3 w-3" aria-hidden="true" />
-          New Version
-        </Link>
-        <Link
-          to="/$owner/$slug"
-          params={{ owner: ownerHandle ?? "unknown", slug: skill.slug }}
-          className="btn btn-ghost btn-sm"
-        >
-          View
-        </Link>
+
+      {/* Actions */}
+      <div className="flex flex-wrap gap-2">
+        <Button asChild size="sm">
+          <Link to="/publish-skill" search={{ updateSlug: skill.slug }}>
+            <Upload className="h-3 w-3" aria-hidden="true" />
+            New Version
+          </Link>
+        </Button>
+        <Button asChild variant="ghost" size="sm">
+          <Link to="/$owner/$slug" params={{ owner: ownerHandle ?? "unknown", slug: skill.slug }}>
+            View
+          </Link>
+        </Button>
       </div>
     </div>
   );
@@ -339,17 +364,17 @@ function PackageStatusTag({
   label: string;
   tone: "default" | "pending" | "warning" | "danger" | "success";
 }) {
-  const className =
+  const variant =
     tone === "pending"
-      ? "tag tag-pending"
+      ? "pending"
       : tone === "warning"
-        ? "tag dashboard-tag-warning"
+        ? "warning"
         : tone === "danger"
-          ? "tag dashboard-tag-danger"
+          ? "destructive"
           : tone === "success"
-            ? "tag dashboard-tag-success"
-            : "tag";
-  return <span className={className}>{label}</span>;
+            ? "success"
+            : "default";
+  return <Badge variant={variant}>{label}</Badge>;
 }
 
 function PackageRow({ pkg, ownerHandle }: { pkg: DashboardPackage; ownerHandle: string }) {
@@ -376,15 +401,20 @@ function PackageRow({ pkg, ownerHandle }: { pkg: DashboardPackage; ownerHandle: 
           : "default";
 
   return (
-    <div className="dashboard-list-row">
-      <div className="dashboard-list-primary">
-        <div className="dashboard-list-title">
-          <Link to="/plugins/$name" params={{ name: pkg.name }} className="dashboard-skill-name">
+    <div className="grid items-start gap-4 border-b border-[color:var(--line)] px-4 py-4 last:border-b-0 md:grid-cols-[2fr_2fr_1.5fr_auto]">
+      {/* Primary info */}
+      <div className="flex flex-col gap-2">
+        <div className="flex flex-wrap items-center gap-2">
+          <Link
+            to="/plugins/$name"
+            params={{ name: pkg.name }}
+            className="font-display text-sm font-bold text-[color:var(--ink)] hover:text-[color:var(--accent)]"
+          >
             {pkg.displayName}
           </Link>
-          <span className="dashboard-list-id">{pkg.name}</span>
+          <span className="font-mono text-xs text-[color:var(--ink-soft)]">{pkg.name}</span>
         </div>
-        <div className="dashboard-inline-tags">
+        <div className="flex flex-wrap gap-1.5">
           <PackageStatusTag label={familyLabel(pkg.family)} tone="default" />
           <PackageStatusTag label={pkg.channel} tone="default" />
           {scanLabel ? <PackageStatusTag label={scanLabel} tone={scanTone} /> : null}
@@ -398,34 +428,40 @@ function PackageRow({ pkg, ownerHandle }: { pkg: DashboardPackage; ownerHandle: 
             />
           ) : null}
         </div>
-        <div className="dashboard-inline-metrics">
-          <span>
+        <div className="flex flex-wrap items-center gap-3 text-xs text-[color:var(--ink-soft)]">
+          <span className="inline-flex items-center gap-1">
             <ArrowDownToLine size={13} aria-hidden="true" /> {formatCompactStat(pkg.stats.downloads)}
           </span>
-          <span>
+          <span className="inline-flex items-center gap-1">
             <Star size={13} aria-hidden="true" /> {formatCompactStat(pkg.stats.stars)}
           </span>
-          <span>
+          <span className="inline-flex items-center gap-1">
             <Package size={13} aria-hidden="true" /> {pkg.stats.versions}
           </span>
-          <span>
+          <span className="inline-flex items-center gap-1">
             <GitBranch size={13} aria-hidden="true" /> {pkg.latestVersion ?? "No tag"}
           </span>
           {pkg.runtimeId ? (
-            <span>
+            <span className="inline-flex items-center gap-1">
               <Plug size={13} aria-hidden="true" /> {pkg.runtimeId}
             </span>
           ) : null}
           {sourceLabel ? (
-            <span>
+            <span className="inline-flex items-center gap-1">
               <ShieldCheck size={13} aria-hidden="true" /> {sourceLabel}
             </span>
           ) : null}
         </div>
       </div>
-      <div className="dashboard-list-summary">{pkg.summary ?? "No summary provided."}</div>
-      <div className="dashboard-list-status">
-        <span className="dashboard-inline-status-item">
+
+      {/* Summary */}
+      <div className="text-sm text-[color:var(--ink-soft)]">
+        {pkg.summary ?? "No summary provided."}
+      </div>
+
+      {/* Status */}
+      <div className="flex flex-col gap-1 text-xs text-[color:var(--ink-soft)]">
+        <span className="inline-flex items-center gap-1">
           <ShieldCheck size={13} aria-hidden="true" />{" "}
           {releaseStatusLabel(
             "VT",
@@ -433,34 +469,39 @@ function PackageRow({ pkg, ownerHandle }: { pkg: DashboardPackage; ownerHandle: 
             pkg.scanStatus === "pending" ? "pending" : "unknown",
           )}
         </span>
-        <span className="dashboard-inline-status-item">
+        <span className="inline-flex items-center gap-1">
           <CheckCircle2 size={13} aria-hidden="true" />{" "}
           {releaseStatusLabel("LLM", pkg.latestRelease?.llmStatus)}
         </span>
-        <span className="dashboard-inline-status-item">
+        <span className="inline-flex items-center gap-1">
           <AlertTriangle size={13} aria-hidden="true" />{" "}
           {releaseStatusLabel("Static", pkg.latestRelease?.staticScanStatus)}
         </span>
       </div>
-      <div className="dashboard-row-actions">
-        <Link
-          to="/publish-plugin"
-          search={{
-            ownerHandle,
-            name: pkg.name,
-            displayName: pkg.displayName,
-            family: pkg.family === "bundle-plugin" ? "bundle-plugin" : "code-plugin",
-            nextVersion: nextVersion ?? undefined,
-            sourceRepo: pkg.sourceRepo ?? undefined,
-          }}
-          className="btn btn-sm"
-        >
-          <Upload className="h-3 w-3" aria-hidden="true" />
-          New Release
-        </Link>
-        <Link to="/plugins/$name" params={{ name: pkg.name }} className="btn btn-ghost btn-sm">
-          View
-        </Link>
+
+      {/* Actions */}
+      <div className="flex flex-wrap gap-2">
+        <Button asChild size="sm">
+          <Link
+            to="/publish-plugin"
+            search={{
+              ownerHandle,
+              name: pkg.name,
+              displayName: pkg.displayName,
+              family: pkg.family === "bundle-plugin" ? "bundle-plugin" : "code-plugin",
+              nextVersion: nextVersion ?? undefined,
+              sourceRepo: pkg.sourceRepo ?? undefined,
+            }}
+          >
+            <Upload className="h-3 w-3" aria-hidden="true" />
+            New Release
+          </Link>
+        </Button>
+        <Button asChild variant="ghost" size="sm">
+          <Link to="/plugins/$name" params={{ name: pkg.name }}>
+            View
+          </Link>
+        </Button>
       </div>
     </div>
   );
