@@ -3,6 +3,7 @@ import { useMutation, useQuery } from "convex/react";
 import { useEffect, useState } from "react";
 import { api } from "../../convex/_generated/api";
 import type { Doc, Id } from "../../convex/_generated/dataModel";
+import { SKILL_CAPABILITY_TAGS } from "../../convex/lib/skillCapabilityTags";
 import {
   getSkillBadges,
   isSkillDeprecated,
@@ -13,6 +14,14 @@ import { isAdmin, isModerator } from "../lib/roles";
 import { useAuthStatus } from "../lib/useAuthStatus";
 
 const SKILL_AUDIT_LOG_LIMIT = 10;
+const SKILL_CAPABILITY_LABELS: Record<string, string> = {
+  crypto: "Crypto",
+  "requires-wallet": "Requires wallet",
+  "can-make-purchases": "Can make purchases",
+  "can-sign-transactions": "Can sign transactions",
+  "requires-oauth-token": "Requires OAuth token",
+  "posts-externally": "Posts externally",
+};
 
 type ManagementUserSummary = {
   _id: Id<"users">;
@@ -139,6 +148,7 @@ function Management() {
   const setDuplicate = useMutation(api.skills.setDuplicate);
   const setOfficialBadge = useMutation(api.skills.setOfficialBadge);
   const setDeprecatedBadge = useMutation(api.skills.setDeprecatedBadge);
+  const setSkillCapabilityTags = useMutation(api.skills.setSkillCapabilityTags);
   const setSkillManualOverride = useMutation(api.skills.setSkillManualOverride);
   const clearSkillManualOverride = useMutation(api.skills.clearSkillManualOverride);
 
@@ -262,6 +272,19 @@ function Management() {
         setSkillOverrideNote("");
       })
       .catch((error) => window.alert(formatMutationError(error)));
+  };
+
+  const toggleSkillCapabilityTag = (tag: string, checked: boolean) => {
+    if (!selectedSkill?.skill) return;
+    const currentTags = new Set(
+      selectedSkill.latestVersion?.capabilityTags ?? selectedSkill.skill.capabilityTags ?? [],
+    );
+    if (checked) currentTags.add(tag);
+    else currentTags.delete(tag);
+    void setSkillCapabilityTags({
+      skillId: selectedSkill.skill._id,
+      capabilityTags: SKILL_CAPABILITY_TAGS.filter((entry) => currentTags.has(entry)),
+    }).catch((error) => window.alert(formatMutationError(error)));
   };
 
   const openVisibilityDialog = (
@@ -450,6 +473,7 @@ function Management() {
               const isOfficial = isSkillOfficial(skill);
               const isDeprecated = isSkillDeprecated(skill);
               const badges = getSkillBadges(skill);
+              const capabilityTags = latestVersion?.capabilityTags ?? skill.capabilityTags ?? [];
               const ownerUserId = skill.ownerUserId ?? selectedOwnerUserId;
               const ownerHandle = owner?.handle ?? owner?.name ?? "user";
               const isOwnerAdmin = owner?.role === "admin";
@@ -476,6 +500,25 @@ function Management() {
                         ))}
                       </div>
                     ) : null}
+                    <div className="management-sublist">
+                      <div className="section-subtitle" style={{ margin: 0 }}>
+                        Capability tags
+                      </div>
+                      <div className="management-capability-options">
+                        {SKILL_CAPABILITY_TAGS.map((tag) => (
+                          <label key={tag} className="management-capability-option">
+                            <input
+                              type="checkbox"
+                              checked={capabilityTags.includes(tag)}
+                              onChange={(event) =>
+                                toggleSkillCapabilityTag(tag, event.target.checked)
+                              }
+                            />
+                            <span>{SKILL_CAPABILITY_LABELS[tag] ?? tag}</span>
+                          </label>
+                        ))}
+                      </div>
+                    </div>
                     <div className="management-sublist">
                       <div className="section-subtitle" style={{ margin: 0 }}>
                         Manual overrides

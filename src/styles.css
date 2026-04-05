@@ -4331,6 +4331,24 @@ html.theme-transition::view-transition-new(theme) {
   gap: 6px;
 }
 
+.management-capability-options {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px 14px;
+}
+
+.management-capability-option {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 0.92rem;
+  color: var(--ink);
+}
+
+.management-capability-option input {
+  margin: 0;
+}
+
 .management-controls {
   display: flex;
   flex-wrap: wrap;

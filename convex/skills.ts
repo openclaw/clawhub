@@ -75,7 +75,12 @@ import {
 import { SKILL_CAPABILITY_TAGS } from "./lib/skillCapabilityTags";
 import { getFrontmatterValue, hashSkillFiles } from "./lib/skills";
 import { computeIsSuspicious, isSkillSuspicious } from "./lib/skillSafety";
-import { digestToHydratableSkill, digestToOwnerInfo } from "./lib/skillSearchDigest";
+import {
+  digestToHydratableSkill,
+  digestToOwnerInfo,
+  extractDigestFields,
+  upsertSkillSearchDigest,
+} from "./lib/skillSearchDigest";
 import schema from "./schema";
 
 export { publishVersionForUser } from "./lib/skillPublish";
@@ -5697,6 +5702,72 @@ export const setDeprecatedBadge = mutation({
       targetType: "skill",
       targetId: skill._id,
       metadata: { deprecated: args.deprecated },
+      createdAt: now,
+    });
+  },
+});
+
+export const setSkillCapabilityTags = mutation({
+  args: { skillId: v.id("skills"), capabilityTags: v.array(v.string()) },
+  handler: async (ctx, args) => {
+    const { user } = await requireUser(ctx);
+    assertModerator(user);
+
+    const skill = await ctx.db.get(args.skillId);
+    if (!skill) throw new Error("Skill not found");
+
+    const invalidTags = args.capabilityTags.filter(
+      (tag) => !SKILL_CAPABILITY_TAGS.includes(tag as (typeof SKILL_CAPABILITY_TAGS)[number]),
+    );
+    if (invalidTags.length > 0) {
+      throw new ConvexError(`Unknown capability tags: ${invalidTags.join(", ")}`);
+    }
+
+    const selectedTags = new Set(args.capabilityTags);
+    const normalizedTags = SKILL_CAPABILITY_TAGS.filter((tag) => selectedTags.has(tag));
+    const now = Date.now();
+
+    if (skill.latestVersionId) {
+      const latestVersion = await ctx.db.get(skill.latestVersionId);
+      if (latestVersion) {
+        await ctx.db.patch(latestVersion._id, {
+          capabilityTags: normalizedTags.length ? normalizedTags : undefined,
+        });
+      }
+    }
+
+    const nextSkill = {
+      ...skill,
+      capabilityTags: normalizedTags.length ? normalizedTags : undefined,
+      lastReviewedAt: now,
+      updatedAt: now,
+    };
+
+    await ctx.db.patch(skill._id, {
+      capabilityTags: nextSkill.capabilityTags,
+      lastReviewedAt: now,
+      updatedAt: now,
+    });
+
+    const owner = await getOwnerPublisher(ctx, {
+      ownerPublisherId: nextSkill.ownerPublisherId,
+      ownerUserId: nextSkill.ownerUserId,
+    });
+    await upsertSkillSearchDigest(ctx, {
+      ...extractDigestFields(nextSkill),
+      ownerHandle: owner?.handle ?? "",
+      ownerKind: owner?.kind,
+      ownerName: owner?.linkedUserId ? owner.handle : undefined,
+      ownerDisplayName: owner?.displayName,
+      ownerImage: owner?.image,
+    });
+
+    await ctx.db.insert("auditLogs", {
+      actorUserId: user._id,
+      action: "skill.capability_tags.set",
+      targetType: "skill",
+      targetId: skill._id,
+      metadata: { capabilityTags: normalizedTags },
       createdAt: now,
     });
   },
