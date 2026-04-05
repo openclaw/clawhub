@@ -56,7 +56,9 @@ describe("SkillDetailPage", () => {
 
     const { container } = render(<SkillDetailPage slug="weather" />);
     // Loading state now renders a skeleton, not text
-    expect(container.querySelector('[class*="animate-pulse"], [data-slot="skeleton"]')).toBeTruthy();
+    expect(
+      container.querySelector('[class*="animate-pulse"], [data-slot="skeleton"]'),
+    ).toBeTruthy();
     expect(screen.queryByText(/Skill not found/i)).toBeNull();
   });
 
@@ -388,17 +390,17 @@ describe("SkillDetailPage", () => {
     useQueryMock.mockImplementation((_fn: unknown, args: unknown) => {
       if (args === "skip") return undefined;
       if (args && typeof args === "object" && "skillId" in args) return [];
-        return {
-          skill: {
-            _id: "skills:1",
-            slug: "weather",
-            displayName: "Weather",
-            summary: "Get current weather.",
-            ownerUserId: "users:1",
-            ownerPublisherId: "publishers:steipete",
-            tags: {},
-            stats: { stars: 0, downloads: 0 },
-          },
+      return {
+        skill: {
+          _id: "skills:1",
+          slug: "weather",
+          displayName: "Weather",
+          summary: "Get current weather.",
+          ownerUserId: "users:1",
+          ownerPublisherId: "publishers:steipete",
+          tags: {},
+          stats: { stars: 0, downloads: 0 },
+        },
         owner: {
           _id: "publishers:steipete",
           _creationTime: 0,

@@ -10,14 +10,12 @@ function makeCtx({
   user,
   banRecords,
 }: {
-  user:
-    | {
-        deletedAt?: number;
-        deactivatedAt?: number;
-        purgedAt?: number;
-        banReason?: string;
-      }
-    | null;
+  user: {
+    deletedAt?: number;
+    deactivatedAt?: number;
+    purgedAt?: number;
+    banReason?: string;
+  } | null;
   banRecords?: Array<Record<string, unknown>>;
 }) {
   const query = {

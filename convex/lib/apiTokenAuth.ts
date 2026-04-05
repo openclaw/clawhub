@@ -38,17 +38,26 @@ export async function requireApiTokenUser(
   if (!token) throw new ConvexError("Unauthorized");
 
   const tokenHash = await hashToken(token);
-  const apiToken = (await ctx.runQuery(internalRefs.tokens.getByHashInternal as never, {
-    tokenHash,
-  } as never)) as ApiTokenDoc | null;
+  const apiToken = (await ctx.runQuery(
+    internalRefs.tokens.getByHashInternal as never,
+    {
+      tokenHash,
+    } as never,
+  )) as ApiTokenDoc | null;
   if (!apiToken || apiToken.revokedAt) throw new ConvexError("Unauthorized");
 
-  const user = (await ctx.runQuery(internalRefs.tokens.getUserForTokenInternal as never, {
-    tokenId: apiToken._id,
-  } as never)) as Doc<"users"> | null;
+  const user = (await ctx.runQuery(
+    internalRefs.tokens.getUserForTokenInternal as never,
+    {
+      tokenId: apiToken._id,
+    } as never,
+  )) as Doc<"users"> | null;
   if (!user || user.deletedAt || user.deactivatedAt) throw new ConvexError("Unauthorized");
 
-  await ctx.runMutation(internalRefs.tokens.touchInternal as never, { tokenId: apiToken._id } as never);
+  await ctx.runMutation(
+    internalRefs.tokens.touchInternal as never,
+    { tokenId: apiToken._id } as never,
+  );
   return { user, userId: user._id };
 }
 
@@ -61,14 +70,20 @@ export async function getOptionalApiTokenUserId(
   if (!token) return null;
 
   const tokenHash = await hashToken(token);
-  const apiToken = (await ctx.runQuery(internalRefs.tokens.getByHashInternal as never, {
-    tokenHash,
-  } as never)) as ApiTokenDoc | null;
+  const apiToken = (await ctx.runQuery(
+    internalRefs.tokens.getByHashInternal as never,
+    {
+      tokenHash,
+    } as never,
+  )) as ApiTokenDoc | null;
   if (!apiToken || apiToken.revokedAt) return null;
 
-  const user = (await ctx.runQuery(internalRefs.tokens.getUserForTokenInternal as never, {
-    tokenId: apiToken._id,
-  } as never)) as Doc<"users"> | null;
+  const user = (await ctx.runQuery(
+    internalRefs.tokens.getUserForTokenInternal as never,
+    {
+      tokenId: apiToken._id,
+    } as never,
+  )) as Doc<"users"> | null;
   if (!user || user.deletedAt || user.deactivatedAt) return null;
 
   return user._id;
@@ -90,9 +105,12 @@ export async function requirePackagePublishAuth(
     } as never,
   )) as PackagePublishTokenDoc | null;
   if (publishToken && !publishToken.revokedAt && publishToken.expiresAt > Date.now()) {
-    await ctx.runMutation(internalRefs.packagePublishTokens.touchInternal as never, {
-      tokenId: publishToken._id,
-    } as never);
+    await ctx.runMutation(
+      internalRefs.packagePublishTokens.touchInternal as never,
+      {
+        tokenId: publishToken._id,
+      } as never,
+    );
     return { kind: "github-actions", publishToken };
   }
 

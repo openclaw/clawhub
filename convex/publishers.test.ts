@@ -16,9 +16,11 @@ type WrappedHandler<TArgs, TResult = unknown> = {
 };
 
 const addMemberHandler = (
-  addMember as unknown as WrappedHandler<
-    { publisherId: string; userHandle: string; role: "owner" | "admin" | "publisher" }
-  >
+  addMember as unknown as WrappedHandler<{
+    publisherId: string;
+    userHandle: string;
+    role: "owner" | "admin" | "publisher";
+  }>
 )._handler;
 
 const removeMemberHandler = (
@@ -232,98 +234,115 @@ describe("publishers membership controls", () => {
         query: vi.fn((table: string) => {
           if (table === "publisherMembers") {
             return {
-              withIndex: vi.fn((indexName: string, builder?: (q: { eq: (field: string, value: string) => unknown }) => unknown) => {
-                if (indexName !== "by_publisher_user") {
-                  throw new Error(`unexpected index ${indexName}`);
-                }
-                let publisherId = "";
-                let userId = "";
-                const q = {
-                  eq: (field: string, value: string) => {
-                    if (field === "publisherId") publisherId = value;
-                    if (field === "userId") userId = value;
-                    return q;
-                  },
-                };
-                builder?.(q);
-                return {
-                  unique: vi.fn(async () =>
-                    publisherMembers.find(
-                      (member) => member.publisherId === publisherId && member.userId === userId,
-                    ) ?? null,
-                  ),
-                };
-              }),
+              withIndex: vi.fn(
+                (
+                  indexName: string,
+                  builder?: (q: { eq: (field: string, value: string) => unknown }) => unknown,
+                ) => {
+                  if (indexName !== "by_publisher_user") {
+                    throw new Error(`unexpected index ${indexName}`);
+                  }
+                  let publisherId = "";
+                  let userId = "";
+                  const q = {
+                    eq: (field: string, value: string) => {
+                      if (field === "publisherId") publisherId = value;
+                      if (field === "userId") userId = value;
+                      return q;
+                    },
+                  };
+                  builder?.(q);
+                  return {
+                    unique: vi.fn(
+                      async () =>
+                        publisherMembers.find(
+                          (member) =>
+                            member.publisherId === publisherId && member.userId === userId,
+                        ) ?? null,
+                    ),
+                  };
+                },
+              ),
             };
           }
           if (table === "users") {
             return {
-              withIndex: vi.fn((indexName: string, builder?: (q: { eq: (field: string, value: string) => unknown }) => unknown) => {
-                if (indexName !== "handle") {
-                  throw new Error(`unexpected index ${indexName}`);
-                }
-                let handle = "";
-                const q = {
-                  eq: (field: string, value: string) => {
-                    if (field === "handle") handle = value;
-                    return q;
-                  },
-                };
-                builder?.(q);
-                return {
-                  unique: vi.fn(async () => {
-                    if (handle === "owner") return { _id: "users:owner", handle: "owner" };
-                    return null;
-                  }),
-                };
-              }),
+              withIndex: vi.fn(
+                (
+                  indexName: string,
+                  builder?: (q: { eq: (field: string, value: string) => unknown }) => unknown,
+                ) => {
+                  if (indexName !== "handle") {
+                    throw new Error(`unexpected index ${indexName}`);
+                  }
+                  let handle = "";
+                  const q = {
+                    eq: (field: string, value: string) => {
+                      if (field === "handle") handle = value;
+                      return q;
+                    },
+                  };
+                  builder?.(q);
+                  return {
+                    unique: vi.fn(async () => {
+                      if (handle === "owner") return { _id: "users:owner", handle: "owner" };
+                      return null;
+                    }),
+                  };
+                },
+              ),
             };
           }
           if (table === "publishers") {
             return {
-              withIndex: vi.fn((indexName: string, builder?: (q: { eq: (field: string, value: string) => unknown }) => unknown) => {
-                let handle = "";
-                let linkedUserId = "";
-                const q = {
-                  eq: (field: string, value: string) => {
-                    if (field === "handle") handle = value;
-                    if (field === "linkedUserId") linkedUserId = value;
-                    return q;
-                  },
-                };
-                builder?.(q);
-                return {
-                  unique: vi.fn(async () => {
-                    if (indexName === "by_handle" && handle === "jaredforreal") {
-                      return {
-                        _id: "publishers:jaredforreal",
-                        _creationTime: 1,
-                        kind: "user",
-                        handle: "jaredforreal",
-                        displayName: "Jared",
-                        linkedUserId: "users:jared",
-                        trustedPublisher: false,
-                        createdAt: 1,
-                        updatedAt: 1,
-                      };
-                    }
-                    if (indexName === "by_linked_user" && linkedUserId === "users:jared") {
-                      return {
-                        _id: "publishers:jaredforreal",
-                        _creationTime: 1,
-                        kind: "user",
-                        handle: "jaredforreal",
-                        displayName: "Jared",
-                        linkedUserId: "users:jared",
-                        trustedPublisher: false,
-                        createdAt: 1,
-                        updatedAt: 1,
-                      };
-                    }
-                    return null;
-                  }),
-                };
-              }),
+              withIndex: vi.fn(
+                (
+                  indexName: string,
+                  builder?: (q: { eq: (field: string, value: string) => unknown }) => unknown,
+                ) => {
+                  let handle = "";
+                  let linkedUserId = "";
+                  const q = {
+                    eq: (field: string, value: string) => {
+                      if (field === "handle") handle = value;
+                      if (field === "linkedUserId") linkedUserId = value;
+                      return q;
+                    },
+                  };
+                  builder?.(q);
+                  return {
+                    unique: vi.fn(async () => {
+                      if (indexName === "by_handle" && handle === "jaredforreal") {
+                        return {
+                          _id: "publishers:jaredforreal",
+                          _creationTime: 1,
+                          kind: "user",
+                          handle: "jaredforreal",
+                          displayName: "Jared",
+                          linkedUserId: "users:jared",
+                          trustedPublisher: false,
+                          createdAt: 1,
+                          updatedAt: 1,
+                        };
+                      }
+                      if (indexName === "by_linked_user" && linkedUserId === "users:jared") {
+                        return {
+                          _id: "publishers:jaredforreal",
+                          _creationTime: 1,
+                          kind: "user",
+                          handle: "jaredforreal",
+                          displayName: "Jared",
+                          linkedUserId: "users:jared",
+                          trustedPublisher: false,
+                          createdAt: 1,
+                          updatedAt: 1,
+                        };
+                      }
+                      return null;
+                    }),
+                  };
+                },
+              ),
             };
           }
           throw new Error(`unexpected table ${table}`);
@@ -526,101 +545,126 @@ describe("legacy publisher migration", () => {
     const query = vi.fn((table: string) => {
       if (table === "users") {
         return {
-          withIndex: vi.fn((_indexName: string, builder?: (q: { eq: (field: string, value: string) => unknown }) => unknown) => {
-            let handle = "";
-            const q = {
-              eq: (field: string, value: string) => {
-                if (field === "handle") handle = value;
-                return q;
-              },
-            };
-            builder?.(q);
-            return {
-              unique: vi.fn(async () =>
-                [...users.values()].find((user) => user.handle === handle) ?? null,
-              ),
-            };
-          }),
+          withIndex: vi.fn(
+            (
+              _indexName: string,
+              builder?: (q: { eq: (field: string, value: string) => unknown }) => unknown,
+            ) => {
+              let handle = "";
+              const q = {
+                eq: (field: string, value: string) => {
+                  if (field === "handle") handle = value;
+                  return q;
+                },
+              };
+              builder?.(q);
+              return {
+                unique: vi.fn(
+                  async () => [...users.values()].find((user) => user.handle === handle) ?? null,
+                ),
+              };
+            },
+          ),
         };
       }
       if (table === "publishers") {
         return {
-          withIndex: vi.fn((_indexName: string, builder?: (q: { eq: (field: string, value: string) => unknown }) => unknown) => {
-            let handle = "";
-            let linkedUserId = "";
-            const q = {
-              eq: (field: string, value: string) => {
-                if (field === "handle") handle = value;
-                if (field === "linkedUserId") linkedUserId = value;
-                return q;
-              },
-            };
-            builder?.(q);
-            return {
-              unique: vi.fn(async () => {
-                if (handle) {
-                  return [...publishers.values()].find((publisher) => publisher.handle === handle) ?? null;
-                }
-                if (linkedUserId) {
-                  return (
-                    [...publishers.values()].find((publisher) => publisher.linkedUserId === linkedUserId) ??
-                    null
-                  );
-                }
-                return null;
-              }),
-            };
-          }),
+          withIndex: vi.fn(
+            (
+              _indexName: string,
+              builder?: (q: { eq: (field: string, value: string) => unknown }) => unknown,
+            ) => {
+              let handle = "";
+              let linkedUserId = "";
+              const q = {
+                eq: (field: string, value: string) => {
+                  if (field === "handle") handle = value;
+                  if (field === "linkedUserId") linkedUserId = value;
+                  return q;
+                },
+              };
+              builder?.(q);
+              return {
+                unique: vi.fn(async () => {
+                  if (handle) {
+                    return (
+                      [...publishers.values()].find((publisher) => publisher.handle === handle) ??
+                      null
+                    );
+                  }
+                  if (linkedUserId) {
+                    return (
+                      [...publishers.values()].find(
+                        (publisher) => publisher.linkedUserId === linkedUserId,
+                      ) ?? null
+                    );
+                  }
+                  return null;
+                }),
+              };
+            },
+          ),
         };
       }
       if (table === "publisherMembers") {
         return {
-          withIndex: vi.fn((_indexName: string, builder?: (q: { eq: (field: string, value: string) => unknown }) => unknown) => {
-            let publisherId = "";
-            let userId = "";
-            const q = {
-              eq: (field: string, value: string) => {
-                if (field === "publisherId") publisherId = value;
-                if (field === "userId") userId = value;
-                return q;
-              },
-            };
-            builder?.(q);
-            return {
-              unique: vi.fn(async () =>
-                publisherMembers.find(
-                  (member) => member.publisherId === publisherId && member.userId === userId,
-                ) ?? null,
-              ),
-            };
-          }),
+          withIndex: vi.fn(
+            (
+              _indexName: string,
+              builder?: (q: { eq: (field: string, value: string) => unknown }) => unknown,
+            ) => {
+              let publisherId = "";
+              let userId = "";
+              const q = {
+                eq: (field: string, value: string) => {
+                  if (field === "publisherId") publisherId = value;
+                  if (field === "userId") userId = value;
+                  return q;
+                },
+              };
+              builder?.(q);
+              return {
+                unique: vi.fn(
+                  async () =>
+                    publisherMembers.find(
+                      (member) => member.publisherId === publisherId && member.userId === userId,
+                    ) ?? null,
+                ),
+              };
+            },
+          ),
         };
       }
       if (table === "packages") {
         return {
-          withIndex: vi.fn((_indexName: string, builder?: (q: { eq: (field: string, value: string) => unknown }) => unknown) => {
-            let ownerUserId = "";
-            let ownerPublisherId = "";
-            const q = {
-              eq: (field: string, value: string) => {
-                if (field === "ownerUserId") ownerUserId = value;
-                if (field === "ownerPublisherId") ownerPublisherId = value;
-                return q;
-              },
-            };
-            builder?.(q);
-            return {
-              collect: vi.fn(async () => {
-                if (ownerUserId) {
-                  return packages.filter((pkg) => pkg.ownerUserId === ownerUserId);
-                }
-                if (ownerPublisherId) {
-                  return packages.filter((pkg) => pkg.ownerPublisherId === ownerPublisherId);
-                }
-                return [];
-              }),
-            };
-          }),
+          withIndex: vi.fn(
+            (
+              _indexName: string,
+              builder?: (q: { eq: (field: string, value: string) => unknown }) => unknown,
+            ) => {
+              let ownerUserId = "";
+              let ownerPublisherId = "";
+              const q = {
+                eq: (field: string, value: string) => {
+                  if (field === "ownerUserId") ownerUserId = value;
+                  if (field === "ownerPublisherId") ownerPublisherId = value;
+                  return q;
+                },
+              };
+              builder?.(q);
+              return {
+                collect: vi.fn(async () => {
+                  if (ownerUserId) {
+                    return packages.filter((pkg) => pkg.ownerUserId === ownerUserId);
+                  }
+                  if (ownerPublisherId) {
+                    return packages.filter((pkg) => pkg.ownerPublisherId === ownerPublisherId);
+                  }
+                  return [];
+                }),
+              };
+            },
+          ),
         };
       }
       if (table === "skills") {
@@ -636,9 +680,7 @@ describe("legacy publisher migration", () => {
     const result = await migrateLegacyPublisherHandleToOrgInternalHandler(
       {
         db: {
-          get: vi.fn(async (id: string) =>
-            users.get(id) ?? publishers.get(id) ?? null,
-          ),
+          get: vi.fn(async (id: string) => users.get(id) ?? publishers.get(id) ?? null),
           query,
           patch,
           insert,

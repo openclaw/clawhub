@@ -5,12 +5,6 @@ import mime from "mime";
 import semver from "semver";
 import { apiRequest, apiRequestForm, fetchText, registryUrl } from "../../http.js";
 import {
-  fetchGitHubSource,
-  normalizeGitHubRepo,
-  resolveLocalGitInfo,
-  resolveSourceInput,
-} from "./github.js";
-import {
   ApiRoutes,
   ApiV1PackageListResponseSchema,
   ApiV1PackagePublishResponseSchema,
@@ -33,6 +27,12 @@ import { getRegistry } from "../registry.js";
 import { titleCase } from "../slug.js";
 import type { GlobalOpts } from "../types.js";
 import { createSpinner, fail, formatError } from "../ui.js";
+import {
+  fetchGitHubSource,
+  normalizeGitHubRepo,
+  resolveLocalGitInfo,
+  resolveSourceInput,
+} from "./github.js";
 
 const DOT_DIR = ".clawhub";
 const LEGACY_DOT_DIR = ".clawdhub";
@@ -263,9 +263,7 @@ export async function cmdInspectPackage(
       versionResult = await apiRequestPackageVersion(registry, trimmed, targetVersion, token);
     }
 
-    let versionsList:
-      | Awaited<ReturnType<typeof apiRequestPackageVersions>>
-      | null = null;
+    let versionsList: Awaited<ReturnType<typeof apiRequestPackageVersions>> | null = null;
     if (options.versions) {
       const limit = clampLimit(options.limit ?? 25, 100);
       spinner.text = `Fetching versions (${limit})`;
@@ -274,7 +272,10 @@ export async function cmdInspectPackage(
 
     let fileContent: string | null = null;
     if (options.file) {
-      const url = registryUrl(`${ApiRoutes.packages}/${encodeURIComponent(trimmed)}/file`, registry);
+      const url = registryUrl(
+        `${ApiRoutes.packages}/${encodeURIComponent(trimmed)}/file`,
+        registry,
+      );
       url.searchParams.set("path", options.file);
       if (options.version) {
         url.searchParams.set("version", options.version);
@@ -309,7 +310,9 @@ export async function cmdInspectPackage(
 
     if (shouldPrintMeta && versionResult?.version) {
       printVersionSummary(versionResult.version);
-      printCompatibility(versionResult.version.compatibility ?? detail.package.compatibility ?? null);
+      printCompatibility(
+        versionResult.version.compatibility ?? detail.package.compatibility ?? null,
+      );
       printCapabilities(versionResult.version.capabilities ?? detail.package.capabilities ?? null);
       printVerification(versionResult.version.verification ?? detail.package.verification ?? null);
     } else if (shouldPrintMeta) {
@@ -767,10 +770,7 @@ async function readJsonFile(path: string) {
   }
 }
 
-function packageJsonString(
-  value: Record<string, unknown> | null,
-  key: string,
-): string | undefined {
+function packageJsonString(value: Record<string, unknown> | null, key: string): string | undefined {
   const candidate = value?.[key];
   return typeof candidate === "string" && candidate.trim() ? candidate.trim() : undefined;
 }
@@ -964,7 +964,9 @@ async function requestGitHubActionsOidcToken(
   });
   const responseText = await response.text();
   if (!response.ok) {
-    throw new Error(`GitHub OIDC token request failed (${response.status}): ${responseText || response.statusText}`);
+    throw new Error(
+      `GitHub OIDC token request failed (${response.status}): ${responseText || response.statusText}`,
+    );
   }
 
   let parsed: unknown;
@@ -1047,10 +1049,7 @@ async function resolvePackagePublishToken(params: {
   }
 }
 
-function buildSource(
-  options: PackagePublishOptions,
-  inferred?: InferredPublishSource,
-) {
+function buildSource(options: PackagePublishOptions, inferred?: InferredPublishSource) {
   const rawRepo = options.sourceRepo?.trim() || inferred?.repo?.trim();
   const rawCommit = options.sourceCommit?.trim() || inferred?.commit?.trim();
   const rawRef = options.sourceRef?.trim() || inferred?.ref?.trim();

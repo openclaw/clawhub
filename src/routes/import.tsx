@@ -236,9 +236,15 @@ export function ImportGitHub() {
         <header className="mb-6">
           <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
             <div>
-              <p className="text-xs font-bold uppercase tracking-[0.14em] text-[color:var(--accent)]">GitHub import</p>
-              <h1 className="font-display text-2xl font-bold text-[color:var(--ink)]">Import from GitHub</h1>
-              <p className="text-sm text-[color:var(--ink-soft)]">Public repos only. Detects SKILL.md automatically.</p>
+              <p className="text-xs font-bold uppercase tracking-[0.14em] text-[color:var(--accent)]">
+                GitHub import
+              </p>
+              <h1 className="font-display text-2xl font-bold text-[color:var(--ink)]">
+                Import from GitHub
+              </h1>
+              <p className="text-sm text-[color:var(--ink-soft)]">
+                Public repos only. Detects SKILL.md automatically.
+              </p>
               <Badge variant="accent" className="mt-3 w-fit">
                 Skill-only import. Plugins are not supported here. Use{" "}
                 <Link
@@ -270,7 +276,9 @@ export function ImportGitHub() {
             <div>
               <div className="flex items-center justify-between">
                 <Label htmlFor="github-url">GitHub URL</Label>
-                <span className="text-xs text-[color:var(--ink-soft)]">Repo, tree path, or blob</span>
+                <span className="text-xs text-[color:var(--ink-soft)]">
+                  Repo, tree path, or blob
+                </span>
               </div>
               <Input
                 id="github-url"
@@ -308,7 +316,10 @@ export function ImportGitHub() {
             <h2 className="font-display text-lg font-bold text-[color:var(--ink)]">Pick a skill</h2>
             <div className="flex flex-col gap-2">
               {candidates.map((candidate) => (
-                <label key={candidate.path} className="flex items-center gap-3 rounded-[var(--radius-sm)] border border-[color:var(--line)] px-3 py-2 cursor-pointer hover:bg-[color:var(--surface-muted)]">
+                <label
+                  key={candidate.path}
+                  className="flex items-center gap-3 rounded-[var(--radius-sm)] border border-[color:var(--line)] px-3 py-2 cursor-pointer hover:bg-[color:var(--surface-muted)]"
+                >
                   <input
                     type="radio"
                     name="candidate"
@@ -338,7 +349,9 @@ export function ImportGitHub() {
                   <div>
                     <div className="flex items-center justify-between">
                       <Label htmlFor="slug">Slug</Label>
-                      <span className="text-xs text-[color:var(--ink-soft)]">Unique, lowercase</span>
+                      <span className="text-xs text-[color:var(--ink-soft)]">
+                        Unique, lowercase
+                      </span>
                     </div>
                     <Input
                       id="slug"
@@ -353,7 +366,9 @@ export function ImportGitHub() {
                   <div>
                     <div className="flex items-center justify-between">
                       <Label htmlFor="name">Display name</Label>
-                      <span className="text-xs text-[color:var(--ink-soft)]">Shown in listings</span>
+                      <span className="text-xs text-[color:var(--ink-soft)]">
+                        Shown in listings
+                      </span>
                     </div>
                     <Input
                       id="name"
@@ -381,7 +396,9 @@ export function ImportGitHub() {
                     <div>
                       <div className="flex items-center justify-between">
                         <Label htmlFor="tags">Tags</Label>
-                        <span className="text-xs text-[color:var(--ink-soft)]">Comma-separated</span>
+                        <span className="text-xs text-[color:var(--ink-soft)]">
+                          Comma-separated
+                        </span>
                       </div>
                       <Input
                         id="tags"
@@ -396,12 +413,16 @@ export function ImportGitHub() {
                   </div>
                 </div>
                 <aside className="flex flex-col gap-1 rounded-[var(--radius-sm)] border border-[color:var(--line)] bg-[color:var(--surface-muted)] px-4 py-3">
-                  <div className="flex items-center gap-2 text-sm font-semibold text-emerald-600">Commit pinned</div>
+                  <div className="flex items-center gap-2 text-sm font-semibold text-emerald-600">
+                    Commit pinned
+                  </div>
                   <div className="text-sm text-[color:var(--ink-soft)]">
                     {preview.resolved.owner}/{preview.resolved.repo}@
                     {preview.resolved.commit.slice(0, 7)}
                   </div>
-                  <div className="font-mono text-xs text-[color:var(--ink-soft)]">{preview.candidate.path || "repo root"}</div>
+                  <div className="font-mono text-xs text-[color:var(--ink-soft)]">
+                    {preview.candidate.path || "repo root"}
+                  </div>
                 </aside>
               </div>
             </Card>
@@ -431,7 +452,10 @@ export function ImportGitHub() {
               </p>
               <div className="flex flex-col gap-1">
                 {preview.files.map((file) => (
-                  <label key={file.path} className="flex items-center gap-3 rounded-[var(--radius-sm)] px-2 py-1.5 hover:bg-[color:var(--surface-muted)]">
+                  <label
+                    key={file.path}
+                    className="flex items-center gap-3 rounded-[var(--radius-sm)] px-2 py-1.5 hover:bg-[color:var(--surface-muted)]"
+                  >
                     <input
                       type="checkbox"
                       checked={Boolean(selected[file.path])}
@@ -441,7 +465,9 @@ export function ImportGitHub() {
                       disabled={isBusy}
                     />
                     <span className="flex-1 truncate font-mono text-xs">{file.path}</span>
-                    <span className="shrink-0 text-xs text-[color:var(--ink-soft)]">{formatBytes(file.size)}</span>
+                    <span className="shrink-0 text-xs text-[color:var(--ink-soft)]">
+                      {formatBytes(file.size)}
+                    </span>
                   </label>
                 ))}
               </div>
@@ -466,7 +492,10 @@ export function ImportGitHub() {
                     {slugCollision.url ? (
                       <>
                         {" "}
-                        <a href={slugCollision.url} className="text-[color:var(--accent)] hover:underline">
+                        <a
+                          href={slugCollision.url}
+                          className="text-[color:var(--accent)] hover:underline"
+                        >
                           {slugCollision.url}
                         </a>
                       </>

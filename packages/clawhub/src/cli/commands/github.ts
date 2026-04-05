@@ -1,8 +1,8 @@
 import { spawnSync } from "node:child_process";
 import { mkdir, mkdtemp, rm, stat, writeFile } from "node:fs/promises";
-import { unzipSync } from "fflate";
 import { homedir, tmpdir } from "node:os";
 import { dirname, join, resolve, sep } from "node:path";
+import { unzipSync } from "fflate";
 
 const GITHUB_API = "https://api.github.com";
 const GITHUB_HOSTS = new Set(["github.com", "www.github.com"]);
@@ -68,11 +68,14 @@ export async function resolveSourceInput(
   return { kind: "local", path: resolveLocalPath(options.workdir, trimmed) };
 }
 
-export async function fetchGitHubSource(source: Extract<ResolvedPublishSource, { kind: "github" }>) {
+export async function fetchGitHubSource(
+  source: Extract<ResolvedPublishSource, { kind: "github" }>,
+) {
   const token = process.env.GITHUB_TOKEN?.trim() || undefined;
   const repo = `${source.owner}/${source.repo}`;
   const repoUrl = `https://github.com/${repo}`;
-  const resolvedRef = source.ref?.trim() || (await resolveDefaultBranch(source.owner, source.repo, token));
+  const resolvedRef =
+    source.ref?.trim() || (await resolveDefaultBranch(source.owner, source.repo, token));
   const commit = await resolveCommitSha(source.owner, source.repo, resolvedRef, token);
   const archiveBytes = await downloadGitHubZip(source.owner, source.repo, commit, token);
   const entries = stripSingleTopLevelFolder(unzipSync(archiveBytes));
@@ -152,7 +155,9 @@ export function normalizeGitHubRepo(value: string) {
   }
 }
 
-function parseGitHubShorthand(input: string): Extract<ResolvedPublishSource, { kind: "github" }> | null {
+function parseGitHubShorthand(
+  input: string,
+): Extract<ResolvedPublishSource, { kind: "github" }> | null {
   const atIndex = input.lastIndexOf("@");
   const rawRepo = atIndex > 0 ? input.slice(0, atIndex) : input;
   const rawRef = atIndex > 0 ? input.slice(atIndex + 1).trim() : "";
@@ -178,7 +183,9 @@ function parseGitHubShorthand(input: string): Extract<ResolvedPublishSource, { k
   };
 }
 
-async function parseGitHubUrl(input: string): Promise<Extract<ResolvedPublishSource, { kind: "github" }>> {
+async function parseGitHubUrl(
+  input: string,
+): Promise<Extract<ResolvedPublishSource, { kind: "github" }>> {
   let url: URL;
   try {
     url = new URL(input);

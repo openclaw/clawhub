@@ -1,10 +1,10 @@
 import { useAction } from "convex/react";
 import { useCallback, useEffect, useRef, useState } from "react";
-import { MarkdownPreview } from "./MarkdownPreview";
 import { api } from "../../convex/_generated/api";
 import type { Doc, Id } from "../../convex/_generated/dataModel";
-import { Skeleton } from "./ui/skeleton";
+import { MarkdownPreview } from "./MarkdownPreview";
 import { formatBytes } from "./skillDetailUtils";
+import { Skeleton } from "./ui/skeleton";
 
 type SkillFile = Doc<"skillVersions">["files"][number];
 
@@ -100,7 +100,9 @@ export function SkillFilesPanel({
           {readmeContent ? (
             <MarkdownPreview>{readmeContent}</MarkdownPreview>
           ) : readmeError ? (
-            <div className="text-sm text-[color:var(--ink-soft)]">Failed to load SKILL.md: {readmeError}</div>
+            <div className="text-sm text-[color:var(--ink-soft)]">
+              Failed to load SKILL.md: {readmeError}
+            </div>
           ) : (
             <Skeleton className="h-24 w-full" />
           )}
@@ -118,7 +120,9 @@ export function SkillFilesPanel({
           </div>
           <div className="flex max-h-[400px] flex-col overflow-y-auto">
             {latestFiles.length === 0 ? (
-              <div className="px-3 py-2 text-sm text-[color:var(--ink-soft)]">No files available.</div>
+              <div className="px-3 py-2 text-sm text-[color:var(--ink-soft)]">
+                No files available.
+              </div>
             ) : (
               latestFiles.map((file) => (
                 <button
@@ -133,7 +137,9 @@ export function SkillFilesPanel({
                   aria-current={selectedPath === file.path ? "true" : undefined}
                 >
                   <span className="truncate font-mono text-xs">{file.path}</span>
-                  <span className="ml-2 shrink-0 text-xs text-[color:var(--ink-soft)]">{formatBytes(file.size)}</span>
+                  <span className="ml-2 shrink-0 text-xs text-[color:var(--ink-soft)]">
+                    {formatBytes(file.size)}
+                  </span>
                 </button>
               ))
             )}
@@ -152,9 +158,13 @@ export function SkillFilesPanel({
             {isLoading ? (
               <Skeleton className="h-24 w-full" />
             ) : fileError ? (
-              <div className="text-sm text-[color:var(--ink-soft)]">Failed to load file: {fileError}</div>
+              <div className="text-sm text-[color:var(--ink-soft)]">
+                Failed to load file: {fileError}
+              </div>
             ) : fileContent ? (
-              <pre className="m-0 overflow-x-auto whitespace-pre-wrap break-words font-mono text-xs leading-relaxed">{fileContent}</pre>
+              <pre className="m-0 overflow-x-auto whitespace-pre-wrap break-words font-mono text-xs leading-relaxed">
+                {fileContent}
+              </pre>
             ) : (
               <div className="text-sm text-[color:var(--ink-soft)]">Select a file to preview.</div>
             )}

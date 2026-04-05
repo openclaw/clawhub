@@ -84,7 +84,8 @@ export async function fetchSkillPageData(slug: string): Promise<SkillPageLoaderD
       owner:
         result.owner?.handle ??
         result.owner?.displayName ??
-        ((result.owner as { name?: string | null } | null)?.name ?? null),
+        (result.owner as { name?: string | null } | null)?.name ??
+        null,
       displayName: result.skill.displayName ?? null,
       summary: result.skill.summary ?? null,
       version: result.latestVersion?.version ?? null,

@@ -1,7 +1,6 @@
 /* @vitest-environment node */
 
 import * as fsPromises from "node:fs/promises";
-import * as skillStore from "../../skills.js";
 import { afterAll, afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   createAuthTokenModuleMocks,
@@ -11,6 +10,7 @@ import {
   makeGlobalOpts,
 } from "../../../test/cliCommandTestKit.js";
 import { ApiRoutes } from "../../schema/index.js";
+import * as skillStore from "../../skills.js";
 
 const fsMocks = vi.hoisted(() => ({
   mkdir: vi.fn(),
@@ -28,7 +28,7 @@ vi.mock("node:fs/promises", async () => {
   };
 });
 
-const mocked = <T,>(value: T) => value as T & Record<string, unknown>;
+const mocked = <T>(value: T) => value as T & Record<string, unknown>;
 Object.assign(vi as object, { mocked });
 
 const authTokenMocks = createAuthTokenModuleMocks();

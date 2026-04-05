@@ -29,7 +29,12 @@ export function SkillReportDialog({
   onSubmit,
 }: SkillReportDialogProps) {
   return (
-    <Dialog open={isOpen} onOpenChange={(open) => { if (!open && !isSubmitting) onCancel(); }}>
+    <Dialog
+      open={isOpen}
+      onOpenChange={(open) => {
+        if (!open && !isSubmitting) onCancel();
+      }}
+    >
       <DialogContent>
         <DialogHeader>
           <DialogTitle>Report skill</DialogTitle>

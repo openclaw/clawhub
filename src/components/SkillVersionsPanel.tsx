@@ -29,12 +29,17 @@ export function SkillVersionsPanel({
             ? "Review release history and changelog."
             : "Download older releases or scan the changelog."}
         </p>
-        {suppressedMessage ? <p className="text-sm text-[color:var(--ink-soft)]">{suppressedMessage}</p> : null}
+        {suppressedMessage ? (
+          <p className="text-sm text-[color:var(--ink-soft)]">{suppressedMessage}</p>
+        ) : null}
       </div>
       <div className="max-h-[600px] overflow-y-auto">
         <div className="flex flex-col gap-3">
           {(versions ?? []).map((version) => (
-            <div key={version._id} className="flex items-start justify-between gap-4 rounded-[var(--radius-sm)] border border-[color:var(--line)] bg-[color:var(--surface)] p-3">
+            <div
+              key={version._id}
+              className="flex items-start justify-between gap-4 rounded-[var(--radius-sm)] border border-[color:var(--line)] bg-[color:var(--surface)] p-3"
+            >
               <div className="flex min-w-0 flex-1 flex-col gap-1">
                 <div>
                   v{version.version} · {new Date(version.createdAt).toLocaleDateString()}
@@ -42,7 +47,9 @@ export function SkillVersionsPanel({
                     <span className="text-[color:var(--ink-soft)]"> · auto</span>
                   ) : null}
                 </div>
-                <div className="whitespace-pre-wrap break-words text-[color:var(--ink-soft)]">{version.changelog}</div>
+                <div className="whitespace-pre-wrap break-words text-[color:var(--ink-soft)]">
+                  {version.changelog}
+                </div>
                 <div className="pt-1">
                   {!suppressScanResults && (version.sha256hash || version.llmAnalysis) ? (
                     <SecurityScanResults

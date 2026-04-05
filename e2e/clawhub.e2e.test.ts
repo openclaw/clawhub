@@ -370,242 +370,246 @@ describe("clawhub e2e", () => {
     expect(result.stdout).toMatch(/--json/);
   });
 
-  itIfLiveMutations("publishes, deletes, and undeletes a skill (logged-in)", async () => {
-    const registry = getRegistry();
-    const site = getSite();
-    const token = mustGetToken() ?? (await readGlobalConfig())?.token ?? null;
-    if (!token) {
-      throw new Error("Missing token. Set CLAWHUB_E2E_TOKEN or run: bun clawhub auth login");
-    }
-
-    const cfg = await makeTempConfig(registry, token);
-    const workdir = await mkdtemp(join(tmpdir(), "clawhub-e2e-publish-"));
-    const installWorkdir = await mkdtemp(join(tmpdir(), "clawhub-e2e-install-"));
-    const slug = `e2e-${Date.now()}`;
-    const skillDir = join(workdir, slug);
-
-    try {
-      await mkdir(skillDir, { recursive: true });
-      await writeFile(join(skillDir, "SKILL.md"), buildE2ESkillMarkdown(slug), "utf8");
-
-      const publish1 = spawnSync(
-        "bun",
-        [
-          "clawhub",
-          "publish",
-          skillDir,
-          "--slug",
-          slug,
-          "--name",
-          `E2E ${slug}`,
-          "--version",
-          "1.0.0",
-          "--tags",
-          "latest",
-          "--site",
-          site,
-          "--registry",
-          registry,
-          "--workdir",
-          workdir,
-        ],
-        {
-          cwd: process.cwd(),
-          env: { ...process.env, CLAWHUB_CONFIG_PATH: cfg.path, CLAWHUB_DISABLE_TELEMETRY: "1" },
-          encoding: "utf8",
-        },
-      );
-      expect(publish1.status).toBe(0);
-      expect(publish1.stderr).not.toMatch(/changelog required/i);
-
-      const publish2 = spawnSync(
-        "bun",
-        [
-          "clawhub",
-          "publish",
-          skillDir,
-          "--slug",
-          slug,
-          "--name",
-          `E2E ${slug}`,
-          "--version",
-          "1.0.1",
-          "--tags",
-          "latest",
-          "--site",
-          site,
-          "--registry",
-          registry,
-          "--workdir",
-          workdir,
-        ],
-        {
-          cwd: process.cwd(),
-          env: { ...process.env, CLAWHUB_CONFIG_PATH: cfg.path, CLAWHUB_DISABLE_TELEMETRY: "1" },
-          encoding: "utf8",
-        },
-      );
-      expect(publish2.status).toBe(0);
-      expect(publish2.stderr).not.toMatch(/changelog required/i);
-
-      const downloadUrl = new URL(ApiRoutes.download, registry);
-      downloadUrl.searchParams.set("slug", slug);
-      downloadUrl.searchParams.set("version", "1.0.1");
-      const zipRes = await fetchWithTimeout(downloadUrl.toString());
-      expect(zipRes.ok).toBe(true);
-      const zipBytes = new Uint8Array(await zipRes.arrayBuffer());
-      const unzipped = unzipSync(zipBytes);
-      expect(Object.keys(unzipped)).toContain("SKILL.md");
-
-      const install = spawnSync(
-        "bun",
-        [
-          "clawhub",
-          "install",
-          slug,
-          "--version",
-          "1.0.0",
-          "--force",
-          "--site",
-          site,
-          "--registry",
-          registry,
-          "--workdir",
-          installWorkdir,
-        ],
-        {
-          cwd: process.cwd(),
-          env: { ...process.env, CLAWHUB_CONFIG_PATH: cfg.path, CLAWHUB_DISABLE_TELEMETRY: "1" },
-          encoding: "utf8",
-        },
-      );
-      expect(install.status).toBe(0);
-
-      const list = spawnSync(
-        "bun",
-        ["clawhub", "list", "--site", site, "--registry", registry, "--workdir", installWorkdir],
-        {
-          cwd: process.cwd(),
-          env: { ...process.env, CLAWHUB_CONFIG_PATH: cfg.path, CLAWHUB_DISABLE_TELEMETRY: "1" },
-          encoding: "utf8",
-        },
-      );
-      expect(list.status).toBe(0);
-      expect(list.stdout).toMatch(new RegExp(`${slug}\\s+1\\.0\\.0`));
-
-      const update = spawnSync(
-        "bun",
-        [
-          "clawhub",
-          "update",
-          slug,
-          "--force",
-          "--site",
-          site,
-          "--registry",
-          registry,
-          "--workdir",
-          installWorkdir,
-        ],
-        {
-          cwd: process.cwd(),
-          env: { ...process.env, CLAWHUB_CONFIG_PATH: cfg.path, CLAWHUB_DISABLE_TELEMETRY: "1" },
-          encoding: "utf8",
-        },
-      );
-      expect(update.status).toBe(0);
-
-      const metaUrl = new URL(`${ApiRoutes.skills}/${slug}`, registry);
-      const metaRes = await fetchWithTimeout(metaUrl.toString(), {
-        headers: { Accept: "application/json" },
-      });
-      expect(metaRes.status).toBe(200);
-
-      const del = spawnSync(
-        "bun",
-        [
-          "clawhub",
-          "delete",
-          slug,
-          "--yes",
-          "--site",
-          site,
-          "--registry",
-          registry,
-          "--workdir",
-          workdir,
-        ],
-        {
-          cwd: process.cwd(),
-          env: { ...process.env, CLAWHUB_CONFIG_PATH: cfg.path, CLAWHUB_DISABLE_TELEMETRY: "1" },
-          encoding: "utf8",
-        },
-      );
-      expect(del.status).toBe(0);
-
-      const metaAfterDelete = await fetchWithTimeout(metaUrl.toString(), {
-        headers: { Accept: "application/json" },
-      });
-      expect(metaAfterDelete.status).toBe(404);
-
-      const downloadAfterDelete = await fetchWithTimeout(downloadUrl.toString());
-      expect(downloadAfterDelete.status).toBe(404);
-
-      const undelete = spawnSync(
-        "bun",
-        [
-          "clawhub",
-          "undelete",
-          slug,
-          "--yes",
-          "--site",
-          site,
-          "--registry",
-          registry,
-          "--workdir",
-          workdir,
-        ],
-        {
-          cwd: process.cwd(),
-          env: { ...process.env, CLAWHUB_CONFIG_PATH: cfg.path, CLAWHUB_DISABLE_TELEMETRY: "1" },
-          encoding: "utf8",
-        },
-      );
-      expect(undelete.status).toBe(0);
-
-      const metaAfterUndelete = await fetchWithTimeout(metaUrl.toString(), {
-        headers: { Accept: "application/json" },
-      });
-      expect(metaAfterUndelete.status).toBe(200);
-    } finally {
-      const cleanup = spawnSync(
-        "bun",
-        [
-          "clawhub",
-          "delete",
-          slug,
-          "--yes",
-          "--site",
-          site,
-          "--registry",
-          registry,
-          "--workdir",
-          workdir,
-        ],
-        {
-          cwd: process.cwd(),
-          env: { ...process.env, CLAWHUB_CONFIG_PATH: cfg.path, CLAWHUB_DISABLE_TELEMETRY: "1" },
-          encoding: "utf8",
-        },
-      );
-      if (cleanup.status !== 0) {
-        // best-effort cleanup
+  itIfLiveMutations(
+    "publishes, deletes, and undeletes a skill (logged-in)",
+    async () => {
+      const registry = getRegistry();
+      const site = getSite();
+      const token = mustGetToken() ?? (await readGlobalConfig())?.token ?? null;
+      if (!token) {
+        throw new Error("Missing token. Set CLAWHUB_E2E_TOKEN or run: bun clawhub auth login");
       }
-      await rm(workdir, { recursive: true, force: true });
-      await rm(installWorkdir, { recursive: true, force: true });
-      await rm(cfg.dir, { recursive: true, force: true });
-    }
-  }, 180_000);
+
+      const cfg = await makeTempConfig(registry, token);
+      const workdir = await mkdtemp(join(tmpdir(), "clawhub-e2e-publish-"));
+      const installWorkdir = await mkdtemp(join(tmpdir(), "clawhub-e2e-install-"));
+      const slug = `e2e-${Date.now()}`;
+      const skillDir = join(workdir, slug);
+
+      try {
+        await mkdir(skillDir, { recursive: true });
+        await writeFile(join(skillDir, "SKILL.md"), buildE2ESkillMarkdown(slug), "utf8");
+
+        const publish1 = spawnSync(
+          "bun",
+          [
+            "clawhub",
+            "publish",
+            skillDir,
+            "--slug",
+            slug,
+            "--name",
+            `E2E ${slug}`,
+            "--version",
+            "1.0.0",
+            "--tags",
+            "latest",
+            "--site",
+            site,
+            "--registry",
+            registry,
+            "--workdir",
+            workdir,
+          ],
+          {
+            cwd: process.cwd(),
+            env: { ...process.env, CLAWHUB_CONFIG_PATH: cfg.path, CLAWHUB_DISABLE_TELEMETRY: "1" },
+            encoding: "utf8",
+          },
+        );
+        expect(publish1.status).toBe(0);
+        expect(publish1.stderr).not.toMatch(/changelog required/i);
+
+        const publish2 = spawnSync(
+          "bun",
+          [
+            "clawhub",
+            "publish",
+            skillDir,
+            "--slug",
+            slug,
+            "--name",
+            `E2E ${slug}`,
+            "--version",
+            "1.0.1",
+            "--tags",
+            "latest",
+            "--site",
+            site,
+            "--registry",
+            registry,
+            "--workdir",
+            workdir,
+          ],
+          {
+            cwd: process.cwd(),
+            env: { ...process.env, CLAWHUB_CONFIG_PATH: cfg.path, CLAWHUB_DISABLE_TELEMETRY: "1" },
+            encoding: "utf8",
+          },
+        );
+        expect(publish2.status).toBe(0);
+        expect(publish2.stderr).not.toMatch(/changelog required/i);
+
+        const downloadUrl = new URL(ApiRoutes.download, registry);
+        downloadUrl.searchParams.set("slug", slug);
+        downloadUrl.searchParams.set("version", "1.0.1");
+        const zipRes = await fetchWithTimeout(downloadUrl.toString());
+        expect(zipRes.ok).toBe(true);
+        const zipBytes = new Uint8Array(await zipRes.arrayBuffer());
+        const unzipped = unzipSync(zipBytes);
+        expect(Object.keys(unzipped)).toContain("SKILL.md");
+
+        const install = spawnSync(
+          "bun",
+          [
+            "clawhub",
+            "install",
+            slug,
+            "--version",
+            "1.0.0",
+            "--force",
+            "--site",
+            site,
+            "--registry",
+            registry,
+            "--workdir",
+            installWorkdir,
+          ],
+          {
+            cwd: process.cwd(),
+            env: { ...process.env, CLAWHUB_CONFIG_PATH: cfg.path, CLAWHUB_DISABLE_TELEMETRY: "1" },
+            encoding: "utf8",
+          },
+        );
+        expect(install.status).toBe(0);
+
+        const list = spawnSync(
+          "bun",
+          ["clawhub", "list", "--site", site, "--registry", registry, "--workdir", installWorkdir],
+          {
+            cwd: process.cwd(),
+            env: { ...process.env, CLAWHUB_CONFIG_PATH: cfg.path, CLAWHUB_DISABLE_TELEMETRY: "1" },
+            encoding: "utf8",
+          },
+        );
+        expect(list.status).toBe(0);
+        expect(list.stdout).toMatch(new RegExp(`${slug}\\s+1\\.0\\.0`));
+
+        const update = spawnSync(
+          "bun",
+          [
+            "clawhub",
+            "update",
+            slug,
+            "--force",
+            "--site",
+            site,
+            "--registry",
+            registry,
+            "--workdir",
+            installWorkdir,
+          ],
+          {
+            cwd: process.cwd(),
+            env: { ...process.env, CLAWHUB_CONFIG_PATH: cfg.path, CLAWHUB_DISABLE_TELEMETRY: "1" },
+            encoding: "utf8",
+          },
+        );
+        expect(update.status).toBe(0);
+
+        const metaUrl = new URL(`${ApiRoutes.skills}/${slug}`, registry);
+        const metaRes = await fetchWithTimeout(metaUrl.toString(), {
+          headers: { Accept: "application/json" },
+        });
+        expect(metaRes.status).toBe(200);
+
+        const del = spawnSync(
+          "bun",
+          [
+            "clawhub",
+            "delete",
+            slug,
+            "--yes",
+            "--site",
+            site,
+            "--registry",
+            registry,
+            "--workdir",
+            workdir,
+          ],
+          {
+            cwd: process.cwd(),
+            env: { ...process.env, CLAWHUB_CONFIG_PATH: cfg.path, CLAWHUB_DISABLE_TELEMETRY: "1" },
+            encoding: "utf8",
+          },
+        );
+        expect(del.status).toBe(0);
+
+        const metaAfterDelete = await fetchWithTimeout(metaUrl.toString(), {
+          headers: { Accept: "application/json" },
+        });
+        expect(metaAfterDelete.status).toBe(404);
+
+        const downloadAfterDelete = await fetchWithTimeout(downloadUrl.toString());
+        expect(downloadAfterDelete.status).toBe(404);
+
+        const undelete = spawnSync(
+          "bun",
+          [
+            "clawhub",
+            "undelete",
+            slug,
+            "--yes",
+            "--site",
+            site,
+            "--registry",
+            registry,
+            "--workdir",
+            workdir,
+          ],
+          {
+            cwd: process.cwd(),
+            env: { ...process.env, CLAWHUB_CONFIG_PATH: cfg.path, CLAWHUB_DISABLE_TELEMETRY: "1" },
+            encoding: "utf8",
+          },
+        );
+        expect(undelete.status).toBe(0);
+
+        const metaAfterUndelete = await fetchWithTimeout(metaUrl.toString(), {
+          headers: { Accept: "application/json" },
+        });
+        expect(metaAfterUndelete.status).toBe(200);
+      } finally {
+        const cleanup = spawnSync(
+          "bun",
+          [
+            "clawhub",
+            "delete",
+            slug,
+            "--yes",
+            "--site",
+            site,
+            "--registry",
+            registry,
+            "--workdir",
+            workdir,
+          ],
+          {
+            cwd: process.cwd(),
+            env: { ...process.env, CLAWHUB_CONFIG_PATH: cfg.path, CLAWHUB_DISABLE_TELEMETRY: "1" },
+            encoding: "utf8",
+          },
+        );
+        if (cleanup.status !== 0) {
+          // best-effort cleanup
+        }
+        await rm(workdir, { recursive: true, force: true });
+        await rm(installWorkdir, { recursive: true, force: true });
+        await rm(cfg.dir, { recursive: true, force: true });
+      }
+    },
+    180_000,
+  );
 
   it("delete returns proper error for non-existent skill", async () => {
     const registry = getRegistry();

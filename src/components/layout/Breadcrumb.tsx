@@ -1,5 +1,5 @@
-import { ChevronRight } from "lucide-react";
 import { Link } from "@tanstack/react-router";
+import { ChevronRight } from "lucide-react";
 import type { ReactNode } from "react";
 import { cn } from "../../lib/utils";
 
@@ -33,9 +33,7 @@ export function Breadcrumb({ items, className }: BreadcrumbProps) {
             ) : (
               <span
                 className={cn(
-                  isLast
-                    ? "font-semibold text-[color:var(--ink)]"
-                    : "text-[color:var(--ink-soft)]",
+                  isLast ? "font-semibold text-[color:var(--ink)]" : "text-[color:var(--ink-soft)]",
                 )}
               >
                 {item.label}

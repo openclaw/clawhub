@@ -115,9 +115,7 @@ function SoulsIndex() {
       <Container>
         <header className="flex flex-col gap-5 sm:flex-row sm:items-end sm:justify-between">
           <div>
-            <h1 className="font-display text-2xl font-bold text-[color:var(--ink)] mb-2">
-              Souls
-            </h1>
+            <h1 className="font-display text-2xl font-bold text-[color:var(--ink)] mb-2">Souls</h1>
             <p className="text-sm text-[color:var(--ink-soft)]">
               {isLoadingSouls
                 ? "Loading souls..."
@@ -126,7 +124,10 @@ function SoulsIndex() {
           </div>
           <div className="flex flex-col gap-3 sm:items-end">
             <div className="relative flex items-center">
-              <Search className="pointer-events-none absolute left-3 h-4 w-4 text-[color:var(--ink-soft)] opacity-50" aria-hidden="true" />
+              <Search
+                className="pointer-events-none absolute left-3 h-4 w-4 text-[color:var(--ink-soft)] opacity-50"
+                aria-hidden="true"
+              />
               <Input
                 ref={searchInputRef}
                 className="pl-9"
@@ -235,10 +236,14 @@ function SoulsIndex() {
                 >
                   <div className="flex min-w-0 flex-col gap-1">
                     <div className="flex items-center gap-2">
-                      <span className="font-display font-bold text-[color:var(--ink)]">{soul.displayName}</span>
+                      <span className="font-display font-bold text-[color:var(--ink)]">
+                        {soul.displayName}
+                      </span>
                       <span className="text-sm text-[color:var(--ink-soft)]">/{soul.slug}</span>
                     </div>
-                    <div className="text-sm text-[color:var(--ink-soft)]">{soul.summary ?? "SOUL.md bundle."}</div>
+                    <div className="text-sm text-[color:var(--ink-soft)]">
+                      {soul.summary ?? "SOUL.md bundle."}
+                    </div>
                   </div>
                   <div className="flex shrink-0 items-center gap-4">
                     <SoulMetricsRow stats={soul.stats} />

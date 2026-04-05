@@ -5,26 +5,20 @@ import { startTransition, useEffect, useMemo, useState } from "react";
 import semver from "semver";
 import { toast } from "sonner";
 import { api } from "../../convex/_generated/api";
-import { PackageSourceChooser } from "../components/PackageSourceChooser";
+import { MAX_PUBLISH_FILE_BYTES, MAX_PUBLISH_TOTAL_BYTES } from "../../convex/lib/publishLimits";
 import { Container } from "../components/layout/Container";
+import { PackageSourceChooser } from "../components/PackageSourceChooser";
 import { Badge } from "../components/ui/badge";
 import { Button } from "../components/ui/button";
 import { Card } from "../components/ui/card";
 import { Input } from "../components/ui/input";
 import { Textarea } from "../components/ui/textarea";
 import {
-  MAX_PUBLISH_FILE_BYTES,
-  MAX_PUBLISH_TOTAL_BYTES,
-} from "../../convex/lib/publishLimits";
-import {
   buildPackageUploadEntries,
   filterIgnoredPackageFiles,
   normalizePackageUploadFiles,
 } from "../lib/packageUpload";
-import {
-  derivePluginPrefill,
-  listPrefilledFields,
-} from "../lib/pluginPublishPrefill";
+import { derivePluginPrefill, listPrefilledFields } from "../lib/pluginPublishPrefill";
 import { expandFilesWithReport } from "../lib/uploadFiles";
 import { useAuthStatus } from "../lib/useAuthStatus";
 import { formatPublishError, hashFile, uploadFile } from "./upload/-utils";
@@ -65,9 +59,9 @@ export function PublishPluginRoute() {
       }>
     | undefined;
   const generateUploadUrl = useMutation(api.uploads.generateUploadUrl);
-  const publishRelease = useAction(apiRefs.packages.publishRelease as never) as unknown as (
-    args: { payload: unknown },
-  ) => Promise<unknown>;
+  const publishRelease = useAction(apiRefs.packages.publishRelease as never) as unknown as (args: {
+    payload: unknown;
+  }) => Promise<unknown>;
   const [family, setFamily] = useState<"code-plugin" | "bundle-plugin">(
     search.family === "bundle-plugin" ? "bundle-plugin" : "code-plugin",
   );
@@ -299,9 +293,7 @@ export function PublishPluginRoute() {
                 Boolean(validationError) ||
                 isSubmitting ||
                 (family === "code-plugin" &&
-                  (!sourceRepo.trim() ||
-                    !sourceCommit.trim() ||
-                    codePluginFieldIssues.length > 0))
+                  (!sourceRepo.trim() || !sourceCommit.trim() || codePluginFieldIssues.length > 0))
               }
               onClick={() => {
                 startTransition(() => {

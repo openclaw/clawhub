@@ -139,9 +139,9 @@ describe("packageRegistry", () => {
 
   it("validates package name consistency and summary extraction", () => {
     ensurePluginNameMatchesPackage("demo-plugin", { name: "demo-plugin" });
-    expect(() =>
-      ensurePluginNameMatchesPackage("demo-plugin", { name: "other-plugin" }),
-    ).toThrow("must match published package name");
+    expect(() => ensurePluginNameMatchesPackage("demo-plugin", { name: "other-plugin" })).toThrow(
+      "must match published package name",
+    );
 
     expect(
       summarizePackageForSearch({

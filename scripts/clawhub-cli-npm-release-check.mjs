@@ -42,7 +42,9 @@ function normalizeUrl(value) {
 }
 
 function readPackageJson() {
-  return JSON.parse(readFileSync(new URL("../packages/clawhub/package.json", import.meta.url), "utf8"));
+  return JSON.parse(
+    readFileSync(new URL("../packages/clawhub/package.json", import.meta.url), "utf8"),
+  );
 }
 
 function isStableSemverVersion(value) {
@@ -72,7 +74,9 @@ function collectPackageMetadataErrors(pkg) {
     errors.push("packages/clawhub/package.json description must be non-empty.");
   }
   if (pkg.license !== "MIT") {
-    errors.push(`packages/clawhub/package.json license must be "MIT"; found "${pkg.license ?? ""}".`);
+    errors.push(
+      `packages/clawhub/package.json license must be "MIT"; found "${pkg.license ?? ""}".`,
+    );
   }
   if (normalizeUrl(pkg.homepage) !== EXPECTED_HOMEPAGE_URL) {
     errors.push(
@@ -145,7 +149,9 @@ function collectReleaseTagErrors({ packageVersion, releaseTag, releaseSha, relea
         { stdio: "ignore" },
       );
     } catch {
-      errors.push(`Tagged commit ${releaseSha.trim()} is not contained in ${releaseMainRef.trim()}.`);
+      errors.push(
+        `Tagged commit ${releaseSha.trim()} is not contained in ${releaseMainRef.trim()}.`,
+      );
     }
   }
 

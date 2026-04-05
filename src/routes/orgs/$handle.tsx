@@ -1,18 +1,18 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useQuery } from "convex/react";
+import { Building2, Users } from "lucide-react";
 import { api } from "../../../convex/_generated/api";
-import type { PublicPublisher, PublicSkill } from "../../lib/publicUser";
+import { EmptyState } from "../../components/EmptyState";
+import { Container } from "../../components/layout/Container";
+import { SkillCardSkeletonGrid } from "../../components/skeletons/SkillCardSkeleton";
 import { SkillCard } from "../../components/SkillCard";
-import { getSkillBadges } from "../../lib/badges";
 import { SkillStatsTripletLine } from "../../components/SkillStats";
 import { Avatar, AvatarFallback, AvatarImage } from "../../components/ui/avatar";
 import { Badge } from "../../components/ui/badge";
 import { Card, CardContent } from "../../components/ui/card";
-import { Container } from "../../components/layout/Container";
-import { EmptyState } from "../../components/EmptyState";
-import { SkillCardSkeletonGrid } from "../../components/skeletons/SkillCardSkeleton";
 import { Skeleton } from "../../components/ui/skeleton";
-import { Building2, Users } from "lucide-react";
+import { getSkillBadges } from "../../lib/badges";
+import type { PublicPublisher, PublicSkill } from "../../lib/publicUser";
 
 export const Route = createFileRoute("/orgs/$handle")({
   component: OrgProfile,
@@ -130,7 +130,10 @@ function OrgProfile() {
                 ))}
               </div>
             ) : (
-              <EmptyState title="No published skills yet" description="This organization hasn't published any skills." />
+              <EmptyState
+                title="No published skills yet"
+                description="This organization hasn't published any skills."
+              />
             )}
           </section>
 
@@ -147,9 +150,14 @@ function OrgProfile() {
                     <CardContent className="flex items-center justify-between py-4">
                       <div className="flex items-center gap-3">
                         <Avatar className="h-9 w-9">
-                          <AvatarImage src={entry.user.image ?? undefined} alt={entry.user.displayName ?? entry.user.handle ?? "User"} />
+                          <AvatarImage
+                            src={entry.user.image ?? undefined}
+                            alt={entry.user.displayName ?? entry.user.handle ?? "User"}
+                          />
                           <AvatarFallback>
-                            {(entry.user.displayName ?? entry.user.handle ?? "U").charAt(0).toUpperCase()}
+                            {(entry.user.displayName ?? entry.user.handle ?? "U")
+                              .charAt(0)
+                              .toUpperCase()}
                           </AvatarFallback>
                         </Avatar>
                         <div className="flex flex-col">
@@ -167,7 +175,11 @@ function OrgProfile() {
                           ) : null}
                         </div>
                       </div>
-                      <Badge variant={(roleColor[entry.role] ?? "default") as "accent" | "default" | "compact"}>
+                      <Badge
+                        variant={
+                          (roleColor[entry.role] ?? "default") as "accent" | "default" | "compact"
+                        }
+                      >
                         {entry.role}
                       </Badge>
                     </CardContent>
@@ -175,7 +187,10 @@ function OrgProfile() {
                 ))}
               </div>
             ) : (
-              <EmptyState title="No members listed" description="Member information is not available." />
+              <EmptyState
+                title="No members listed"
+                description="Member information is not available."
+              />
             )}
           </section>
         </div>

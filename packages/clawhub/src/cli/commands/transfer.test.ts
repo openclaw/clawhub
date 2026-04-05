@@ -35,9 +35,7 @@ afterEach(() => {
 
 describe("transfer commands", () => {
   it("request requires --yes when input is disabled", async () => {
-    await expect(
-      cmdTransferRequest(makeGlobalOpts(), "demo", "@alice", {}, false),
-    ).rejects.toThrow(
+    await expect(cmdTransferRequest(makeGlobalOpts(), "demo", "@alice", {}, false)).rejects.toThrow(
       /--yes/i,
     );
   });

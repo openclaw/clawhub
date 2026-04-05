@@ -1,6 +1,5 @@
 import { useAction, useMutation, useQuery } from "convex/react";
 import { useEffect, useMemo, useRef, useState } from "react";
-import { MarkdownPreview } from "./MarkdownPreview";
 import { api } from "../../convex/_generated/api";
 import type { Doc } from "../../convex/_generated/dataModel";
 import type { PublicSoul, PublicUser } from "../lib/publicUser";
@@ -9,6 +8,7 @@ import { getRuntimeEnv } from "../lib/runtimeEnv";
 import { useAuthStatus } from "../lib/useAuthStatus";
 import { EmptyState } from "./EmptyState";
 import { Container } from "./layout/Container";
+import { MarkdownPreview } from "./MarkdownPreview";
 import { SkillCardSkeletonGrid } from "./skeletons/SkillCardSkeleton";
 import { stripFrontmatter } from "./skillDetailUtils";
 import { SoulStatsTripletLine } from "./SoulStats";
@@ -128,7 +128,10 @@ export function SoulDetailPage({ slug }: SoulDetailPageProps) {
     return (
       <main className="py-10">
         <Container size="narrow">
-          <EmptyState title="Soul not found" description="This soul does not exist or has been removed." />
+          <EmptyState
+            title="Soul not found"
+            description="This soul does not exist or has been removed."
+          />
         </Container>
       </main>
     );
@@ -149,13 +152,21 @@ export function SoulDetailPage({ slug }: SoulDetailPageProps) {
                   <h1 className="font-display text-2xl font-bold text-[color:var(--ink)]">
                     {soul.displayName}
                   </h1>
-                  <p className="text-sm text-[color:var(--ink-soft)]">{soul.summary ?? "No summary provided."}</p>
+                  <p className="text-sm text-[color:var(--ink-soft)]">
+                    {soul.summary ?? "No summary provided."}
+                  </p>
                   <div className="text-sm text-[color:var(--ink-soft)]">
                     <SoulStatsTripletLine stats={soul.stats} versionSuffix="versions" />
                   </div>
                   {ownerHandle ? (
                     <div className="text-sm text-[color:var(--ink-soft)]">
-                      by <a href={`/u/${ownerHandle}`} className="text-[color:var(--accent)] hover:underline">@{ownerHandle}</a>
+                      by{" "}
+                      <a
+                        href={`/u/${ownerHandle}`}
+                        className="text-[color:var(--accent)] hover:underline"
+                      >
+                        @{ownerHandle}
+                      </a>
                     </div>
                   ) : null}
                   <div className="flex items-center gap-2">
@@ -197,7 +208,9 @@ export function SoulDetailPage({ slug }: SoulDetailPageProps) {
               {readmeContent ? (
                 <MarkdownPreview>{readmeContent}</MarkdownPreview>
               ) : readmeError ? (
-                <div className="text-sm text-[color:var(--ink-soft)]">Failed to load SOUL.md: {readmeError}</div>
+                <div className="text-sm text-[color:var(--ink-soft)]">
+                  Failed to load SOUL.md: {readmeError}
+                </div>
               ) : (
                 <div className="flex flex-col gap-2">
                   <Skeleton className="h-4 w-3/4" />
@@ -216,10 +229,14 @@ export function SoulDetailPage({ slug }: SoulDetailPageProps) {
               <div className="max-h-[400px] overflow-y-auto">
                 <div className="flex flex-col gap-3">
                   {(versions ?? []).map((version) => (
-                    <div key={version._id} className="flex items-center justify-between gap-3 rounded-[var(--radius-sm)] border border-[color:var(--line)] px-3 py-2">
+                    <div
+                      key={version._id}
+                      className="flex items-center justify-between gap-3 rounded-[var(--radius-sm)] border border-[color:var(--line)] px-3 py-2"
+                    >
                       <div className="flex flex-col gap-0.5">
                         <div className="text-sm">
-                          v{version.version} &middot; {new Date(version.createdAt).toLocaleDateString()}
+                          v{version.version} &middot;{" "}
+                          {new Date(version.createdAt).toLocaleDateString()}
                           {version.changelogSource === "auto" ? (
                             <span className="text-[color:var(--ink-soft)]"> &middot; auto</span>
                           ) : null}
@@ -279,12 +296,21 @@ export function SoulDetailPage({ slug }: SoulDetailPageProps) {
                   <div className="text-sm text-[color:var(--ink-soft)]">No comments yet.</div>
                 ) : (
                   (comments ?? []).map((entry) => (
-                    <div key={entry.comment._id} className="flex items-start justify-between gap-3 rounded-[var(--radius-sm)] border border-[color:var(--line)] px-3 py-2">
+                    <div
+                      key={entry.comment._id}
+                      className="flex items-start justify-between gap-3 rounded-[var(--radius-sm)] border border-[color:var(--line)] px-3 py-2"
+                    >
                       <div className="flex flex-col gap-1">
-                        <strong className="text-sm">@{entry.user?.handle ?? entry.user?.name ?? "user"}</strong>
-                        <div className="whitespace-pre-wrap break-words text-sm text-[color:var(--ink)]">{entry.comment.body}</div>
+                        <strong className="text-sm">
+                          @{entry.user?.handle ?? entry.user?.name ?? "user"}
+                        </strong>
+                        <div className="whitespace-pre-wrap break-words text-sm text-[color:var(--ink)]">
+                          {entry.comment.body}
+                        </div>
                       </div>
-                      {isAuthenticated && me && (me._id === entry.comment.userId || isModerator(me)) ? (
+                      {isAuthenticated &&
+                      me &&
+                      (me._id === entry.comment.userId || isModerator(me)) ? (
                         <Button
                           variant="destructive"
                           size="sm"

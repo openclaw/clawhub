@@ -11,26 +11,33 @@ type UploadablePackageFile = {
   webkitRelativePath?: string;
 };
 
-export type NormalizedPackageUploadFile<TFile extends UploadablePackageFile = UploadablePackageFile> = {
+export type NormalizedPackageUploadFile<
+  TFile extends UploadablePackageFile = UploadablePackageFile,
+> = {
   file: TFile;
   path: string;
 };
 
 const KNOWN_PACKAGE_ROOT_PATHS = new Set([
-  'package.json',
-  'openclaw.plugin.json',
-  'openclaw.bundle.json',
-  'README.md',
-  'readme.md',
-  'README.mdx',
-  'readme.mdx',
+  "package.json",
+  "openclaw.plugin.json",
+  "openclaw.bundle.json",
+  "README.md",
+  "readme.md",
+  "README.mdx",
+  "readme.mdx",
 ]);
-const DOT_DIR = '.clawhub';
-const LEGACY_DOT_DIR = '.clawdhub';
-const DOT_IGNORE = '.clawhubignore';
-const LEGACY_DOT_IGNORE = '.clawdhubignore';
+const DOT_DIR = ".clawhub";
+const LEGACY_DOT_DIR = ".clawdhub";
+const DOT_IGNORE = ".clawhubignore";
+const LEGACY_DOT_IGNORE = ".clawdhubignore";
 const PACKAGE_IGNORE_FILES = new Set([DOT_IGNORE, LEGACY_DOT_IGNORE]);
-const DEFAULT_PACKAGE_IGNORE_PATTERNS = ['.git/', 'node_modules/', `${DOT_DIR}/`, `${LEGACY_DOT_DIR}/`];
+const DEFAULT_PACKAGE_IGNORE_PATTERNS = [
+  ".git/",
+  "node_modules/",
+  `${DOT_DIR}/`,
+  `${LEGACY_DOT_DIR}/`,
+];
 
 export function normalizePackageUploadPath(
   path: string,
@@ -82,9 +89,9 @@ export function normalizePackageUploadFiles<TFile extends UploadablePackageFile>
   }));
 }
 
-export async function filterIgnoredPackageFiles<TFile extends UploadablePackageFile & Pick<File, "text">>(
-  files: TFile[],
-) {
+export async function filterIgnoredPackageFiles<
+  TFile extends UploadablePackageFile & Pick<File, "text">,
+>(files: TFile[]) {
   const normalized = normalizePackageUploadFiles(files);
   const ig = ignore();
   ig.add(DEFAULT_PACKAGE_IGNORE_PATTERNS);

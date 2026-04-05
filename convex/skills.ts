@@ -66,13 +66,13 @@ import {
   reserveSlugForHardDeleteFinalize,
   upsertReservedSlugForRightfulOwner,
 } from "./lib/reservedSlugs";
+import { SKILL_CAPABILITY_TAGS } from "./lib/skillCapabilityTags";
 import {
   fetchText,
   type PublishResult,
   publishVersionForUser,
   queueHighlightedWebhook,
 } from "./lib/skillPublish";
-import { SKILL_CAPABILITY_TAGS } from "./lib/skillCapabilityTags";
 import { getFrontmatterValue, hashSkillFiles } from "./lib/skills";
 import { computeIsSuspicious, isSkillSuspicious } from "./lib/skillSafety";
 import {
@@ -2078,7 +2078,8 @@ export const list = query({
           )
           .unique());
       const isOwnDashboard = Boolean(
-        membership || (userId && ownerPublisher?.kind === "user" && ownerPublisher.linkedUserId === userId),
+        membership ||
+        (userId && ownerPublisher?.kind === "user" && ownerPublisher.linkedUserId === userId),
       );
       const scopedEntries = await ctx.db
         .query("skills")
@@ -2798,12 +2799,13 @@ function decodeSkillCatalogCursor(raw: string | null | undefined): SkillCatalogC
     return { cursor: raw, offset: 0, pageSize: null, done: false };
   }
   try {
-    const parsed = JSON.parse(raw.slice(SKILL_CATALOG_CURSOR_PREFIX.length)) as Partial<SkillCatalogCursorState>;
+    const parsed = JSON.parse(
+      raw.slice(SKILL_CATALOG_CURSOR_PREFIX.length),
+    ) as Partial<SkillCatalogCursorState>;
     return {
       cursor: typeof parsed.cursor === "string" ? parsed.cursor : null,
       offset: typeof parsed.offset === "number" && parsed.offset > 0 ? parsed.offset : 0,
-      pageSize:
-        typeof parsed.pageSize === "number" && parsed.pageSize > 0 ? parsed.pageSize : null,
+      pageSize: typeof parsed.pageSize === "number" && parsed.pageSize > 0 ? parsed.pageSize : null,
       done: parsed.done === true,
     };
   } catch {
@@ -2842,7 +2844,8 @@ function skillCatalogMatchesFilters(
   const channel = getSkillCatalogChannel(digest);
   if (typeof args.isOfficial === "boolean" && isOfficial !== args.isOfficial) return false;
   if (args.channel && channel !== args.channel) return false;
-  if (args.capabilityTag && !(digest.capabilityTags ?? []).includes(args.capabilityTag)) return false;
+  if (args.capabilityTag && !(digest.capabilityTags ?? []).includes(args.capabilityTag))
+    return false;
   return true;
 }
 
@@ -2891,7 +2894,9 @@ function isKnownSkillCapabilityTag(tag: string | undefined) {
 
 export const listPackageCatalogPage = query({
   args: {
-    channel: v.optional(v.union(v.literal("official"), v.literal("community"), v.literal("private"))),
+    channel: v.optional(
+      v.union(v.literal("official"), v.literal("community"), v.literal("private")),
+    ),
     isOfficial: v.optional(v.boolean()),
     executesCode: v.optional(v.boolean()),
     capabilityTag: v.optional(v.string()),
@@ -2924,7 +2929,9 @@ export const listPackageCatalogPage = query({
       loops += 1;
       const effectivePageSize = Math.min(
         remainingScanBudget,
-        offset > 0 && pageSize ? Math.max(pageSize, offset + 1) : Math.max(targetCount * 3, targetCount),
+        offset > 0 && pageSize
+          ? Math.max(pageSize, offset + 1)
+          : Math.max(targetCount * 3, targetCount),
       );
       if (effectivePageSize <= 0) break;
       remainingScanBudget -= effectivePageSize;
@@ -2978,7 +2985,9 @@ export const searchPackageCatalogPublic = query({
   args: {
     query: v.string(),
     limit: v.optional(v.number()),
-    channel: v.optional(v.union(v.literal("official"), v.literal("community"), v.literal("private"))),
+    channel: v.optional(
+      v.union(v.literal("official"), v.literal("community"), v.literal("private")),
+    ),
     isOfficial: v.optional(v.boolean()),
     executesCode: v.optional(v.boolean()),
     capabilityTag: v.optional(v.string()),
@@ -5002,7 +5011,9 @@ export const setSoftDeleted = mutation({
     const now = Date.now();
     const note = args.reason ? trimManualOverrideNote(args.reason) : undefined;
     if (!note) {
-      throw new ConvexError(args.deleted ? "Hide reason is required." : "Restore reason is required.");
+      throw new ConvexError(
+        args.deleted ? "Hide reason is required." : "Restore reason is required.",
+      );
     }
     const patch: Partial<Doc<"skills">> = {
       softDeletedAt: args.deleted ? now : undefined,

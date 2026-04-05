@@ -71,7 +71,9 @@ export function AuthErrorHandler() {
     handledErrorRef.current = pending.description;
 
     window.history.replaceState(null, "", pending.relativeUrl);
-    setAuthError(normalizeAuthErrorMessage(pending.description, "Sign in failed. Please try again."));
+    setAuthError(
+      normalizeAuthErrorMessage(pending.description, "Sign in failed. Please try again."),
+    );
   }, []);
 
   return null;

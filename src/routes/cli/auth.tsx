@@ -120,9 +120,14 @@ function CliAuth() {
               <CardTitle className="text-2xl">CLI login</CardTitle>
             </CardHeader>
             <CardContent>
-              <p className="text-sm text-[color:var(--ink-soft)]">Sign in to create an API token for the CLI.</p>
+              <p className="text-sm text-[color:var(--ink-soft)]">
+                Sign in to create an API token for the CLI.
+              </p>
               {authError ? (
-                <p className="rounded-[var(--radius-sm)] border border-red-300/40 bg-red-50 px-3 py-2 text-sm text-red-700 dark:border-red-500/30 dark:bg-red-950/50 dark:text-red-300" role="alert">
+                <p
+                  className="rounded-[var(--radius-sm)] border border-red-300/40 bg-red-50 px-3 py-2 text-sm text-red-700 dark:border-red-500/30 dark:bg-red-950/50 dark:text-red-300"
+                  role="alert"
+                >
                   {authError}{" "}
                   <button
                     type="button"
@@ -143,7 +148,9 @@ function CliAuth() {
                     "github",
                     signInRedirectTo ? { redirectTo: signInRedirectTo } : undefined,
                   ).catch((error) => {
-                    setAuthError(getUserFacingAuthError(error, "Sign in failed. Please try again."));
+                    setAuthError(
+                      getUserFacingAuthError(error, "Sign in failed. Please try again."),
+                    );
                   });
                 }}
               >

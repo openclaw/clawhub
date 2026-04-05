@@ -1,9 +1,9 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { ExternalLink, Copy, Check, Download } from "lucide-react";
 import { useState } from "react";
-import { MarkdownPreview } from "../../components/MarkdownPreview";
 import { EmptyState } from "../../components/EmptyState";
 import { Container } from "../../components/layout/Container";
+import { MarkdownPreview } from "../../components/MarkdownPreview";
 import { SecurityScanResults } from "../../components/SkillSecurityScanResults";
 import { Badge } from "../../components/ui/badge";
 import { Button } from "../../components/ui/button";
@@ -121,18 +121,21 @@ function CopyButton({ text }: { text: string }) {
       className="shrink-0"
       onClick={() => {
         if (navigator.clipboard?.writeText) {
-          void navigator.clipboard.writeText(text).then(() => {
-            setState("copied");
-            setTimeout(() => setState("idle"), 2000);
-          }).catch(() => {
-            if (fallbackCopy(text)) {
+          void navigator.clipboard
+            .writeText(text)
+            .then(() => {
               setState("copied");
               setTimeout(() => setState("idle"), 2000);
-            } else {
-              setState("failed");
-              setTimeout(() => setState("idle"), 2000);
-            }
-          });
+            })
+            .catch(() => {
+              if (fallbackCopy(text)) {
+                setState("copied");
+                setTimeout(() => setState("idle"), 2000);
+              } else {
+                setState("failed");
+                setTimeout(() => setState("idle"), 2000);
+              }
+            });
         } else if (fallbackCopy(text)) {
           setState("copied");
           setTimeout(() => setState("idle"), 2000);
@@ -188,7 +191,10 @@ function PluginDetailRoute() {
     return (
       <main className="py-10">
         <Container size="narrow">
-          <EmptyState title="Plugin not found" description="This plugin does not exist or has been removed." />
+          <EmptyState
+            title="Plugin not found"
+            description="This plugin does not exist or has been removed."
+          />
         </Container>
       </main>
     );
@@ -210,7 +216,8 @@ function PluginDetailRoute() {
 
   const capEntries = capabilities
     ? Object.entries(capabilities).filter(
-        ([, v]) => v !== undefined && v !== null && v !== false && !(Array.isArray(v) && v.length === 0),
+        ([, v]) =>
+          v !== undefined && v !== null && v !== false && !(Array.isArray(v) && v.length === 0),
       )
     : [];
 
@@ -248,9 +255,7 @@ function PluginDetailRoute() {
                 {pkg.summary ?? "No summary provided."}
               </p>
               <div className="flex flex-wrap items-center gap-2 text-sm text-[color:var(--ink-soft)]">
-                <span className="font-mono text-xs">
-                  {pkg.name}
-                </span>
+                <span className="font-mono text-xs">{pkg.name}</span>
                 {pkg.runtimeId ? (
                   <>
                     <span className="opacity-40">&middot;</span>
@@ -282,7 +287,9 @@ function PluginDetailRoute() {
               {/* Install */}
               <div className="mt-4">
                 <div className="flex items-center gap-2 rounded-[var(--radius-sm)] border border-[color:var(--line)] bg-[color:var(--surface-muted)] p-3">
-                  <pre className="flex-1 overflow-x-auto font-mono text-xs text-[color:var(--ink)]"><code>{installSnippet}</code></pre>
+                  <pre className="flex-1 overflow-x-auto font-mono text-xs text-[color:var(--ink)]">
+                    <code>{installSnippet}</code>
+                  </pre>
                   <CopyButton text={installSnippet} />
                 </div>
               </div>
@@ -316,16 +323,14 @@ function PluginDetailRoute() {
                 <dl className="grid grid-cols-[auto_1fr] gap-x-4 gap-y-2 text-sm">
                   {capEntries.map(([key, value]) => (
                     <div key={key} className="col-span-2 grid grid-cols-subgrid">
-                      <dt className="font-semibold text-[color:var(--ink-soft)]">{CAPABILITY_LABELS[key] ?? key}</dt>
+                      <dt className="font-semibold text-[color:var(--ink-soft)]">
+                        {CAPABILITY_LABELS[key] ?? key}
+                      </dt>
                       <dd className="text-[color:var(--ink)]">
                         {key === "capabilityTags" && Array.isArray(value) ? (
                           <div className="flex flex-wrap gap-1.5">
                             {(value as string[]).map((tag) => (
-                              <Link
-                                key={tag}
-                                to="/plugins"
-                                search={{ q: tag }}
-                              >
+                              <Link key={tag} to="/plugins" search={{ q: tag }}>
                                 <Badge variant="compact">{tag}</Badge>
                               </Link>
                             ))}
@@ -333,7 +338,9 @@ function PluginDetailRoute() {
                         ) : key === "hostTargets" && Array.isArray(value) ? (
                           <div className="flex flex-wrap gap-1.5">
                             {(value as string[]).map((target) => (
-                              <Badge key={target} variant="compact">{target}</Badge>
+                              <Badge key={target} variant="compact">
+                                {target}
+                              </Badge>
                             ))}
                           </div>
                         ) : (
@@ -394,13 +401,17 @@ function PluginDetailRoute() {
                   {verification.tier ? (
                     <div className="col-span-2 grid grid-cols-subgrid">
                       <dt className="font-semibold text-[color:var(--ink-soft)]">Tier</dt>
-                      <dd className="text-[color:var(--ink)]">{verification.tier.replace(/-/g, " ")}</dd>
+                      <dd className="text-[color:var(--ink)]">
+                        {verification.tier.replace(/-/g, " ")}
+                      </dd>
                     </div>
                   ) : null}
                   {verification.scope ? (
                     <div className="col-span-2 grid grid-cols-subgrid">
                       <dt className="font-semibold text-[color:var(--ink-soft)]">Scope</dt>
-                      <dd className="text-[color:var(--ink)]">{verification.scope.replace(/-/g, " ")}</dd>
+                      <dd className="text-[color:var(--ink)]">
+                        {verification.scope.replace(/-/g, " ")}
+                      </dd>
                     </div>
                   ) : null}
                   {verification.summary ? (
@@ -409,43 +420,51 @@ function PluginDetailRoute() {
                       <dd className="text-[color:var(--ink)]">{verification.summary}</dd>
                     </div>
                   ) : null}
-                  {verification.sourceRepo ? (() => {
-                    const raw = verification.sourceRepo;
-                    const href = /^https?:\/\//.test(raw) ? raw : `https://github.com/${raw}`;
-                    const display = href.replace(/^https?:\/\//, "");
-                    return (
-                      <div className="col-span-2 grid grid-cols-subgrid">
-                        <dt className="font-semibold text-[color:var(--ink-soft)]">Source</dt>
-                        <dd className="text-[color:var(--ink)]">
-                          <a
-                            href={href}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            className="inline-flex items-center gap-1 text-[color:var(--accent)] hover:underline"
-                          >
-                            {display}
-                            <ExternalLink className="h-3 w-3" aria-hidden="true" />
-                          </a>
-                        </dd>
-                      </div>
-                    );
-                  })() : null}
+                  {verification.sourceRepo
+                    ? (() => {
+                        const raw = verification.sourceRepo;
+                        const href = /^https?:\/\//.test(raw) ? raw : `https://github.com/${raw}`;
+                        const display = href.replace(/^https?:\/\//, "");
+                        return (
+                          <div className="col-span-2 grid grid-cols-subgrid">
+                            <dt className="font-semibold text-[color:var(--ink-soft)]">Source</dt>
+                            <dd className="text-[color:var(--ink)]">
+                              <a
+                                href={href}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="inline-flex items-center gap-1 text-[color:var(--accent)] hover:underline"
+                              >
+                                {display}
+                                <ExternalLink className="h-3 w-3" aria-hidden="true" />
+                              </a>
+                            </dd>
+                          </div>
+                        );
+                      })()
+                    : null}
                   {verification.sourceCommit ? (
                     <div className="col-span-2 grid grid-cols-subgrid">
                       <dt className="font-semibold text-[color:var(--ink-soft)]">Commit</dt>
-                      <dd className="font-mono text-xs text-[color:var(--ink)]">{verification.sourceCommit.slice(0, 12)}</dd>
+                      <dd className="font-mono text-xs text-[color:var(--ink)]">
+                        {verification.sourceCommit.slice(0, 12)}
+                      </dd>
                     </div>
                   ) : null}
                   {verification.sourceTag ? (
                     <div className="col-span-2 grid grid-cols-subgrid">
                       <dt className="font-semibold text-[color:var(--ink-soft)]">Tag</dt>
-                      <dd className="font-mono text-xs text-[color:var(--ink)]">{verification.sourceTag}</dd>
+                      <dd className="font-mono text-xs text-[color:var(--ink)]">
+                        {verification.sourceTag}
+                      </dd>
                     </div>
                   ) : null}
                   {verification.hasProvenance !== undefined ? (
                     <div className="col-span-2 grid grid-cols-subgrid">
                       <dt className="font-semibold text-[color:var(--ink-soft)]">Provenance</dt>
-                      <dd className="text-[color:var(--ink)]">{verification.hasProvenance ? "Yes" : "No"}</dd>
+                      <dd className="text-[color:var(--ink)]">
+                        {verification.hasProvenance ? "Yes" : "No"}
+                      </dd>
                     </div>
                   ) : null}
                   {verification.scanStatus ? (

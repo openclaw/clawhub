@@ -36,7 +36,6 @@ const SKILL_CAPABILITY_LABELS: Record<string, string> = {
 
 const SKILL_AUDIT_LOG_LIMIT = 10;
 
-
 type ManagementUserSummary = {
   _id: Id<"users">;
   handle?: string | null;
@@ -395,7 +394,9 @@ function Management() {
                           size="sm"
                           onClick={() => {
                             const action = skill.softDeletedAt ? "Restore" : "Hide";
-                            const reason = window.prompt(`${action} reason for "${skill.displayName}"`);
+                            const reason = window.prompt(
+                              `${action} reason for "${skill.displayName}"`,
+                            );
                             if (!reason?.trim()) return;
                             void setSoftDeleted({
                               skillId: skill._id,
@@ -457,10 +458,7 @@ function Management() {
                   <Skeleton className="h-32 w-full" />
                 </div>
               ) : !selectedSkill?.skill ? (
-                <EmptyState
-                  icon={Shield}
-                  title={`No skill found for "${selectedSlug}"`}
-                />
+                <EmptyState icon={Shield} title={`No skill found for "${selectedSlug}"`} />
               ) : (
                 (() => {
                   const { skill, latestVersion, owner, canonical, overrideReviewer, auditLogs } =
@@ -475,7 +473,8 @@ function Management() {
                   const isOfficial = isSkillOfficial(skill);
                   const isDeprecated = isSkillDeprecated(skill);
                   const badges = getSkillBadges(skill);
-                  const capabilityTags = latestVersion?.capabilityTags ?? skill.capabilityTags ?? [];
+                  const capabilityTags =
+                    latestVersion?.capabilityTags ?? skill.capabilityTags ?? [];
                   const ownerUserId = skill.ownerUserId ?? selectedOwnerUserId;
                   const ownerHandle = owner?.handle ?? owner?.name ?? "user";
                   const isOwnerAdmin = owner?.role === "admin";
@@ -534,7 +533,10 @@ function Management() {
                                   Current override
                                 </span>
                                 <span>
-                                  {formatManualOverrideState(skill.manualOverride, overrideReviewer)}
+                                  {formatManualOverrideState(
+                                    skill.manualOverride,
+                                    overrideReviewer,
+                                  )}
                                 </span>
                               </div>
                               <div className="flex flex-col gap-1">
@@ -551,9 +553,7 @@ function Management() {
                                 <span className="text-xs font-medium text-[color:var(--ink-soft)]">
                                   Behavior
                                 </span>
-                                <span>
-                                  Applies to the full skill until a moderator clears it.
-                                </span>
+                                <span>Applies to the full skill until a moderator clears it.</span>
                               </div>
                               <Textarea
                                 rows={4}
@@ -600,9 +600,7 @@ function Management() {
                                 <span className="text-xs font-medium text-[color:var(--ink-soft)]">
                                   Window
                                 </span>
-                                <span>
-                                  Last {SKILL_AUDIT_LOG_LIMIT} entries for this skill.
-                                </span>
+                                <span>Last {SKILL_AUDIT_LOG_LIMIT} entries for this skill.</span>
                               </div>
                               {auditLogs.length === 0 ? (
                                 <div className="text-sm text-[color:var(--ink-soft)]">
@@ -711,19 +709,18 @@ function Management() {
                       </div>
                       <div className="flex flex-wrap gap-2">
                         <Button asChild variant="outline" size="sm">
-                        <Link
-                          to="/$owner/$slug"
-                          params={{ owner: ownerParam, slug: skill.slug }}
-                        >
-                          View
-                        </Link>
+                          <Link to="/$owner/$slug" params={{ owner: ownerParam, slug: skill.slug }}>
+                            View
+                          </Link>
                         </Button>
                         <Button
                           variant="outline"
                           size="sm"
                           onClick={() => {
                             const action = skill.softDeletedAt ? "Restore" : "Hide";
-                            const reason = window.prompt(`${action} reason for "${skill.displayName}"`);
+                            const reason = window.prompt(
+                              `${action} reason for "${skill.displayName}"`,
+                            );
                             if (!reason?.trim()) return;
                             void setSoftDeleted({
                               skillId: skill._id,
@@ -863,18 +860,18 @@ function Management() {
                             </div>
                             <div className="flex flex-wrap items-center gap-2">
                               <Button asChild variant="outline" size="sm">
-                              <Link
-                                to="/$owner/$slug"
-                                params={{
-                                  owner: resolveOwnerParam(
-                                    match.owner?.handle ?? null,
-                                    match.owner?._id ?? match.skill.ownerUserId,
-                                  ),
-                                  slug: match.skill.slug,
-                                }}
-                              >
-                                View
-                              </Link>
+                                <Link
+                                  to="/$owner/$slug"
+                                  params={{
+                                    owner: resolveOwnerParam(
+                                      match.owner?.handle ?? null,
+                                      match.owner?._id ?? match.skill.ownerUserId,
+                                    ),
+                                    slug: match.skill.slug,
+                                  }}
+                                >
+                                  View
+                                </Link>
                               </Button>
                               <Button
                                 variant="outline"

@@ -14,7 +14,8 @@ const mockOutro = vi.fn();
 const mockLog = vi.fn();
 const mockMultiselect = vi.fn(async (_args?: unknown) => [] as string[]);
 let interactive = false;
-const mocked = <T,>(value: T) => value as T & { mockImplementation: (...args: unknown[]) => unknown };
+const mocked = <T>(value: T) =>
+  value as T & { mockImplementation: (...args: unknown[]) => unknown };
 
 const defaultFindSkillFolders = async (root: string) => {
   if (!root.endsWith("/scan")) return [];
@@ -74,7 +75,9 @@ const mockListTextFiles = vi.fn(async (folder: string) => [
   { relPath: "SKILL.md", bytes: new TextEncoder().encode(folder) },
 ]);
 const mockHashSkillFiles = vi.fn((files: Array<{ relPath: string; bytes: Uint8Array }>) => ({
-  fingerprint: files.map((file) => `${file.relPath}:${Buffer.from(file.bytes).toString("hex")}`).join("|"),
+  fingerprint: files
+    .map((file) => `${file.relPath}:${Buffer.from(file.bytes).toString("hex")}`)
+    .join("|"),
   files: [],
 }));
 const mockHashSkillZip = vi.fn((_zip?: Uint8Array) => ({
@@ -84,14 +87,16 @@ const mockHashSkillZip = vi.fn((_zip?: Uint8Array) => ({
 const mockReadSkillOrigin = vi.fn(async (_folder?: string) => null);
 vi.mock("../../skills.js", () => ({
   listTextFiles: (folder: string) => mockListTextFiles(folder),
-  hashSkillFiles: (files: Array<{ relPath: string; bytes: Uint8Array }>) => mockHashSkillFiles(files),
+  hashSkillFiles: (files: Array<{ relPath: string; bytes: Uint8Array }>) =>
+    mockHashSkillFiles(files),
   hashSkillZip: (zip: Uint8Array) => mockHashSkillZip(zip),
   readSkillOrigin: (folder: string) => mockReadSkillOrigin(folder),
 }));
 
 const mockCmdPublish = vi.fn();
 vi.mock("./publish.js", () => ({
-  cmdPublish: (opts: unknown, folder: unknown, options?: unknown) => mockCmdPublish(opts, folder, options),
+  cmdPublish: (opts: unknown, folder: unknown, options?: unknown) =>
+    mockCmdPublish(opts, folder, options),
 }));
 
 const { cmdSync } = await import("./sync");

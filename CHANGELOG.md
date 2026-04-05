@@ -1,5 +1,53 @@
 # Changelog
 
+## 0.10.0 - 2026-04-05
+
+### Added
+
+- Design system: introduce a shared UI component library (`src/components/ui/`) built on Radix UI primitives — Button, Card, Badge, Tabs, Dialog, Input, Textarea, Label, Select, Avatar, Separator, Tooltip, ScrollArea, Sheet, Skeleton, and Table — following the shadcn/ui pattern with `cn()` + Tailwind utilities.
+- Design system: `Button` supports `asChild` via Radix Slot for polymorphic rendering (e.g., wrapping `<Link>` without extra DOM).
+- Layout: add `Container` component with `narrow` / `default` / `wide` size presets and `Breadcrumb` component for hierarchical navigation.
+- Loading: add skeleton loading states (`SkillCardSkeleton`, `SkillDetailSkeleton`, `DashboardSkeleton`) replacing text-based "Loading..." indicators with animated placeholders.
+- Errors: add `ErrorBoundary` with `resetKey` prop that auto-resets on route changes, wired into the root layout.
+- Errors: surface fallback messages from Convex API error payloads in mutation/action error toasts.
+- UX: add `EmptyState` component with icon, headline, description, and optional CTA action used across dashboard, stars, profile, and publish pages.
+- UX: add confirmation dialogs for destructive skill ownership actions (transfer, abandon).
+- Markdown: add `MarkdownPreview` component with `react-markdown`, `remark-gfm`, and `react-syntax-highlighter` for rich rendering of skill/plugin READMEs with syntax-highlighted code blocks, GFM tables, and task lists.
+- Markdown: render tables with the new `Table` UI primitive for consistent styling across skill docs.
+- Navigation: replace DropdownMenu-based mobile nav with a slide-out `Sheet` panel.
+- Validation: add Zod schemas (`src/lib/schemas.ts`) for publish-skill, settings, report, and org forms.
+- Management: restore capability-tags UI (crypto, requires-wallet, can-make-purchases, etc.) that was silently removed during the initial refactor.
+- Management: add `.catch()` error handling with toast feedback on `setSoftDeleted` calls; prompt for hide/restore reasons.
+
+### Changed
+
+- CSS: migrate from a monolithic 5,161-line `styles.css` to Tailwind utilities on components, pruning CSS to ~1,000 lines (81% reduction). Dark mode now uses Tailwind `dark:` variants via a `@variant dark` directive bridging existing CSS custom properties.
+- Tailwind: add `@theme` block mapping all CSS design tokens (`--bg`, `--surface`, `--ink`, `--accent`, `--line`, `--radius-*`, etc.) into first-class Tailwind utilities.
+- Pages: modernize all route pages (home, skills browse, skill detail, dashboard, settings, publish-skill, publish-plugin, import, about, CLI auth, stars, souls, user profile, org profile, management, plugins browse, plugin detail) from CSS class selectors to Tailwind + UI primitives.
+- Skills browse: widen container to `wide` (1400px) for better use of screen space on desktop; same for plugins browse.
+- Skills browse: replace text-based filter toggles with pill chips and modernize toolbar layout.
+- Skill detail: migrate tab controls from CSS-styled buttons to Radix `Tabs` primitive with proper `role="tab"` accessibility.
+- Skill detail: replace inline CSS class-based install card with `SkillInstallCard` using Card + Button primitives.
+- Header/Footer: migrate from CSS classes to Tailwind utilities with responsive Sheet-based mobile navigation.
+- Dashboard: replace CSS table layout with `Table` UI primitive; add metric cards and skeleton loading.
+- Settings: modernize form inputs with `Input`/`Textarea`/`Label` primitives and structured layout.
+- Publish: use `Dialog` primitive for modals; inline validation indicators; modernized file list display.
+
+### Fixed
+
+- Auth: `EmptyState` "Sign in" button on publish page now triggers GitHub OAuth via `useAuthActions` instead of linking to non-existent `/signin` route.
+- API: fix plugins page dev-mode `{"error":"Only HTML requests are supported here"}` by routing SSR and localhost API fetches directly to the Convex site URL instead of through TanStack Start's request pipeline.
+- API: fix CORS error when `credentials: "include"` conflicts with `Access-Control-Allow-Origin: *` by making credentials conditional on same-origin requests.
+- API: fix SSR `packageApiUrl` to always use `VITE_CONVEX_SITE_URL` directly, avoiding `getRequestUrl()` failures when SSR request context is unavailable.
+- Management: restore `setSoftDeleted` reason parameter for hide/restore actions.
+- Tests: rename `settings.test.tsx` to `-settings.test.tsx` to exclude from TanStack Router's file-based route discovery.
+- Tests: add `@convex-dev/auth/react` mock for `useAuthActions` in upload route tests.
+- Tests: update skill detail tests for Radix tab roles (`role="tab"` instead of `role="button"`), skeleton loading classes (`animate-pulse`), and capability tag data.
+- Tests: update skills index tests for refreshed UI copy (placeholder text, empty state wording, loading indicator patterns).
+- Tests: update SkillDiffCard tests for Tailwind active-tab class (`shadow-sm` replacing `.is-active`).
+- Tests: update packages publish route tests for Tailwind border classes.
+- Tests: update packageApi tests for conditional credentials and SSR URL resolution.
+
 ## 0.9.0 - 2026-03-23
 
 ### Added

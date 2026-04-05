@@ -240,9 +240,14 @@ describe("search helpers", () => {
 
     const result = await searchSkillsHandler(
       {
-        vectorSearch: vi.fn().mockResolvedValue(
-          vectorEntries.map((entry, index) => ({ _id: entry.embeddingId, _score: 0.9 - index * 0.01 })),
-        ),
+        vectorSearch: vi
+          .fn()
+          .mockResolvedValue(
+            vectorEntries.map((entry, index) => ({
+              _id: entry.embeddingId,
+              _score: 0.9 - index * 0.01,
+            })),
+          ),
         runQuery,
       },
       { query: "skill-downloader", limit: 10 },

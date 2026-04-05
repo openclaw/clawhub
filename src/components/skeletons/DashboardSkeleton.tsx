@@ -15,7 +15,10 @@ export function DashboardSkeleton() {
       {/* Stats row */}
       <div className="mb-8 grid grid-cols-2 gap-4 sm:grid-cols-4">
         {Array.from({ length: 4 }, (_, i) => (
-          <div key={i} className="flex flex-col gap-2 rounded-[var(--radius-md)] border border-[color:var(--line)] bg-[color:var(--surface)] p-5">
+          <div
+            key={i}
+            className="flex flex-col gap-2 rounded-[var(--radius-md)] border border-[color:var(--line)] bg-[color:var(--surface)] p-5"
+          >
             <Skeleton className="h-4 w-20" />
             <Skeleton className="h-7 w-16" />
           </div>

@@ -3,15 +3,20 @@ import { internal } from "./_generated/api";
 import type { Doc, Id } from "./_generated/dataModel";
 import type { ActionCtx, MutationCtx } from "./_generated/server";
 import { internalAction, internalMutation, internalQuery, mutation, query } from "./functions";
-import { assertAdmin, assertModerator, getOptionalActiveAuthUserId, requireUser } from "./lib/access";
+import {
+  assertAdmin,
+  assertModerator,
+  getOptionalActiveAuthUserId,
+  requireUser,
+} from "./lib/access";
 import { syncGitHubProfile } from "./lib/githubAccount";
+import { toPublicUser } from "./lib/public";
 import {
   ensurePersonalPublisherForUser,
   getActiveUserByHandleOrPersonalPublisher,
   getPublisherByHandle,
   getUserByHandleOrPersonalPublisher,
 } from "./lib/publishers";
-import { toPublicUser } from "./lib/public";
 import {
   getLatestActiveReservedHandle,
   isHandleReservedForAnotherUser,
@@ -296,7 +301,9 @@ export async function ensureHandler(ctx: MutationCtx) {
     updates.updatedAt = Date.now();
     await ctx.db.patch(userId, updates);
   }
-  const ensuredUser = hasUpdates ? ({ ...user, ...updates } as Doc<"users">) : ((await ctx.db.get(userId)) ?? user);
+  const ensuredUser = hasUpdates
+    ? ({ ...user, ...updates } as Doc<"users">)
+    : ((await ctx.db.get(userId)) ?? user);
   await ensurePersonalPublisherForUser(ctx, ensuredUser);
   return await ctx.db.get(userId);
 }
@@ -853,7 +860,8 @@ async function ensurePublisherHandleWithActor(
 
   if (existing) {
     const nextDisplayName =
-      args.displayName?.trim() && (!existing.displayName || existing.displayName === existing.handle)
+      args.displayName?.trim() &&
+      (!existing.displayName || existing.displayName === existing.handle)
         ? displayName
         : existing.displayName;
     await ctx.db.patch(existing._id, {

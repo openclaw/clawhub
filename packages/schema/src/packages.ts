@@ -72,8 +72,7 @@ export const PackageLlmAnalysisDimensionSchema = type({
   rating: "string",
   detail: "string",
 });
-export type PackageLlmAnalysisDimension =
-  (typeof PackageLlmAnalysisDimensionSchema)[inferred];
+export type PackageLlmAnalysisDimension = (typeof PackageLlmAnalysisDimensionSchema)[inferred];
 
 export const PackageLlmAnalysisSchema = type({
   status: "string",
@@ -267,5 +266,4 @@ export const ApiV1PublishTokenMintResponseSchema = type({
   token: "string",
   expiresAt: "number",
 });
-export type ApiV1PublishTokenMintResponse =
-  (typeof ApiV1PublishTokenMintResponseSchema)[inferred];
+export type ApiV1PublishTokenMintResponse = (typeof ApiV1PublishTokenMintResponseSchema)[inferred];

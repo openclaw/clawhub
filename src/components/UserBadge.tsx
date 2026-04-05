@@ -18,8 +18,7 @@ export function UserBadge({
   showName = false,
 }: UserBadgeProps) {
   const userName = user && "name" in user ? user.name?.trim() : undefined;
-  const displayName =
-    user?.displayName?.trim() || userName || null;
+  const displayName = user?.displayName?.trim() || userName || null;
   const handle = user?.handle ?? fallbackHandle ?? null;
   const href =
     user?.handle && "kind" in user

@@ -54,11 +54,24 @@ export default function Header() {
 
   const navLinks = (
     <>
-      {isSoulMode ? <a href={clawHubUrl} className="text-[color:var(--ink-soft)] font-semibold text-sm transition-colors duration-150 hover:text-[color:var(--ink)]">ClawHub</a> : null}
+      {isSoulMode ? (
+        <a
+          href={clawHubUrl}
+          className="text-[color:var(--ink-soft)] font-semibold text-sm transition-colors duration-150 hover:text-[color:var(--ink)]"
+        >
+          ClawHub
+        </a>
+      ) : null}
       {isSoulMode ? (
         <Link
           to="/souls"
-          search={{ q: undefined, sort: undefined, dir: undefined, view: undefined, focus: undefined }}
+          search={{
+            q: undefined,
+            sort: undefined,
+            dir: undefined,
+            view: undefined,
+            focus: undefined,
+          }}
           className="text-[color:var(--ink-soft)] font-semibold text-sm transition-colors duration-150 hover:text-[color:var(--ink)]"
         >
           Souls
@@ -66,14 +79,25 @@ export default function Header() {
       ) : (
         <Link
           to="/skills"
-          search={{ q: undefined, sort: undefined, dir: undefined, highlighted: undefined, nonSuspicious: undefined, view: undefined, focus: undefined }}
+          search={{
+            q: undefined,
+            sort: undefined,
+            dir: undefined,
+            highlighted: undefined,
+            nonSuspicious: undefined,
+            view: undefined,
+            focus: undefined,
+          }}
           className="text-[color:var(--ink-soft)] font-semibold text-sm transition-colors duration-150 hover:text-[color:var(--ink)]"
         >
           Skills
         </Link>
       )}
       {isSoulMode ? null : (
-        <Link to="/plugins" className="text-[color:var(--ink-soft)] font-semibold text-sm transition-colors duration-150 hover:text-[color:var(--ink)]">
+        <Link
+          to="/plugins"
+          className="text-[color:var(--ink-soft)] font-semibold text-sm transition-colors duration-150 hover:text-[color:var(--ink)]"
+        >
           Plugins
         </Link>
       )}
@@ -82,7 +106,15 @@ export default function Header() {
         search={
           isSoulMode
             ? { q: undefined, sort: undefined, dir: undefined, view: undefined, focus: "search" }
-            : { q: undefined, sort: undefined, dir: undefined, highlighted: undefined, nonSuspicious: undefined, view: undefined, focus: "search" }
+            : {
+                q: undefined,
+                sort: undefined,
+                dir: undefined,
+                highlighted: undefined,
+                nonSuspicious: undefined,
+                view: undefined,
+                focus: "search",
+              }
         }
         className="text-[color:var(--ink-soft)] font-semibold text-sm transition-colors duration-150 hover:text-[color:var(--ink)] inline-flex items-center gap-1.5"
       >
@@ -90,17 +122,27 @@ export default function Header() {
         Search
       </Link>
       {isSoulMode ? null : (
-        <Link to="/about" className="text-[color:var(--ink-soft)] font-semibold text-sm transition-colors duration-150 hover:text-[color:var(--ink)]">
+        <Link
+          to="/about"
+          className="text-[color:var(--ink-soft)] font-semibold text-sm transition-colors duration-150 hover:text-[color:var(--ink)]"
+        >
           About
         </Link>
       )}
       {me ? (
-        <Link to="/stars" className="text-[color:var(--ink-soft)] font-semibold text-sm transition-colors duration-150 hover:text-[color:var(--ink)]">
+        <Link
+          to="/stars"
+          className="text-[color:var(--ink-soft)] font-semibold text-sm transition-colors duration-150 hover:text-[color:var(--ink)]"
+        >
           Stars
         </Link>
       ) : null}
       {isStaff ? (
-        <Link to="/management" search={{ skill: undefined }} className="text-[color:var(--ink-soft)] font-semibold text-sm transition-colors duration-150 hover:text-[color:var(--ink)]">
+        <Link
+          to="/management"
+          search={{ skill: undefined }}
+          className="text-[color:var(--ink-soft)] font-semibold text-sm transition-colors duration-150 hover:text-[color:var(--ink)]"
+        >
           Management
         </Link>
       ) : null}
@@ -117,21 +159,28 @@ export default function Header() {
           className="flex items-center gap-2.5 font-display text-lg font-bold text-[color:var(--ink)] no-underline transition-opacity hover:opacity-80"
         >
           <span className="flex h-8 w-8 items-center justify-center rounded-full bg-gradient-to-br from-[color:var(--accent)] to-[color:var(--accent-deep)] p-0.5">
-            <img src="/clawd-logo.png" alt="" aria-hidden="true" className="h-full w-full rounded-full object-cover" />
+            <img
+              src="/clawd-logo.png"
+              alt=""
+              aria-hidden="true"
+              className="h-full w-full rounded-full object-cover"
+            />
           </span>
           <span>{siteName}</span>
         </Link>
 
         {/* Desktop nav */}
-        <nav className="hidden items-center gap-6 md:flex">
-          {navLinks}
-        </nav>
+        <nav className="hidden items-center gap-6 md:flex">{navLinks}</nav>
 
         {/* Actions */}
         <div className="flex items-center gap-3">
           {/* Publish CTA (desktop, authenticated) */}
           {isAuthenticated && me && (
-            <Link to="/publish-skill" search={{ updateSlug: undefined }} className="hidden sm:block">
+            <Link
+              to="/publish-skill"
+              search={{ updateSlug: undefined }}
+              className="hidden sm:block"
+            >
               <Button variant="primary" size="sm">
                 <Plus className="h-3.5 w-3.5" />
                 Publish
@@ -151,12 +200,12 @@ export default function Header() {
                 <SheetHeader>
                   <SheetTitle>{siteName}</SheetTitle>
                 </SheetHeader>
-                <nav className="mt-6 flex flex-col gap-4">
-                  {navLinks}
-                </nav>
+                <nav className="mt-6 flex flex-col gap-4">{navLinks}</nav>
                 {/* Mobile theme toggle */}
                 <div className="mt-6 flex flex-col gap-2">
-                  <span className="text-xs font-bold uppercase tracking-widest text-[color:var(--ink-soft)]">Theme</span>
+                  <span className="text-xs font-bold uppercase tracking-widest text-[color:var(--ink-soft)]">
+                    Theme
+                  </span>
                   <ToggleGroup
                     type="single"
                     value={mode}
@@ -224,7 +273,9 @@ export default function Header() {
                   className="flex cursor-pointer items-center gap-2 rounded-full border border-[color:var(--line)] bg-[color:var(--surface)] px-2 py-1.5 text-sm font-semibold text-[color:var(--ink)] transition-colors hover:border-[color:var(--border-ui-hover)]"
                 >
                   <Avatar className="h-7 w-7">
-                    {avatar && <AvatarImage src={avatar} alt={me.displayName ?? me.name ?? "User avatar"} />}
+                    {avatar && (
+                      <AvatarImage src={avatar} alt={me.displayName ?? me.name ?? "User avatar"} />
+                    )}
                     <AvatarFallback className="text-xs">{initial}</AvatarFallback>
                   </Avatar>
                   <span className="hidden font-mono text-xs sm:inline">@{handle}</span>
@@ -245,7 +296,10 @@ export default function Header() {
           ) : (
             <>
               {authError ? (
-                <div className="flex items-center gap-1 text-[0.85rem] text-red-600 dark:text-red-400" role="alert">
+                <div
+                  className="flex items-center gap-1 text-[0.85rem] text-red-600 dark:text-red-400"
+                  role="alert"
+                >
                   {authError}
                   <button
                     type="button"
@@ -267,7 +321,9 @@ export default function Header() {
                     "github",
                     signInRedirectTo ? { redirectTo: signInRedirectTo } : undefined,
                   ).catch((error) => {
-                    setAuthError(getUserFacingAuthError(error, "Sign in failed. Please try again."));
+                    setAuthError(
+                      getUserFacingAuthError(error, "Sign in failed. Please try again."),
+                    );
                   });
                 }}
               >

@@ -112,13 +112,17 @@ describe("verifyGitHubActionsTrustedPublishJwt", () => {
       iat: Math.floor(Date.now() / 1000) - 5,
     });
 
-    const identity = await verifyGitHubActionsTrustedPublishJwt(token, trustedPublisherWithoutEnvironment, {
-      fetchImpl: async () =>
-        new Response(JSON.stringify({ keys: [jwks] }), {
-          status: 200,
-          headers: { "Content-Type": "application/json" },
-        }),
-    });
+    const identity = await verifyGitHubActionsTrustedPublishJwt(
+      token,
+      trustedPublisherWithoutEnvironment,
+      {
+        fetchImpl: async () =>
+          new Response(JSON.stringify({ keys: [jwks] }), {
+            status: 200,
+            headers: { "Content-Type": "application/json" },
+          }),
+      },
+    );
 
     expect(identity).toMatchObject({
       repository: trustedPublisher.repository,
@@ -160,10 +164,10 @@ describe("verifyGitHubActionsTrustedPublishJwt", () => {
     await expect(
       verifyGitHubActionsTrustedPublishJwt(token, trustedPublisher, {
         fetchImpl: async () =>
-        new Response(JSON.stringify({ keys: [jwks] }), {
-          status: 200,
-          headers: { "Content-Type": "application/json" },
-        }),
+          new Response(JSON.stringify({ keys: [jwks] }), {
+            status: 200,
+            headers: { "Content-Type": "application/json" },
+          }),
       }),
     ).rejects.toThrow("Only the official ClawHub reusable workflow is supported");
   });
@@ -303,7 +307,11 @@ async function createSignedToken(payload: Record<string, unknown>, kid = "test-k
   const encodedPayload = base64UrlEncodeJson(payload);
   const signingInput = `${encodedHeader}.${encodedPayload}`;
   const signature = new Uint8Array(
-    await crypto.subtle.sign("RSASSA-PKCS1-v1_5", keyPair.privateKey, new TextEncoder().encode(signingInput)),
+    await crypto.subtle.sign(
+      "RSASSA-PKCS1-v1_5",
+      keyPair.privateKey,
+      new TextEncoder().encode(signingInput),
+    ),
   );
   const publicJwk = (await crypto.subtle.exportKey("jwk", keyPair.publicKey)) as JsonWebKey & {
     kid?: string;

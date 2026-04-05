@@ -137,10 +137,13 @@ describe("bun http client", () => {
       readFileValue: Buffer.from("not found"),
     });
 
-    await expect(client.fetchText("https://registry.example", { path: "/v1/readme" })).resolves.toBe(
-      "hello world",
-    );
-    const bytes = await client.downloadZip("https://registry.example", { slug: "demo", token: "t" });
+    await expect(
+      client.fetchText("https://registry.example", { path: "/v1/readme" }),
+    ).resolves.toBe("hello world");
+    const bytes = await client.downloadZip("https://registry.example", {
+      slug: "demo",
+      token: "t",
+    });
     expect(Array.from(bytes)).toEqual(Array.from(Buffer.from("not found")));
     await expect(
       client.downloadZip("https://registry.example", { slug: "demo", token: "t" }),

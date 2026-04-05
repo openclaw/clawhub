@@ -108,9 +108,7 @@ export function SkillCommentsPanel({ skillId, isAuthenticated, me }: SkillCommen
 
   return (
     <Card>
-      <h2 className="m-0 font-display text-[1.2rem] font-bold text-[color:var(--ink)]">
-        Comments
-      </h2>
+      <h2 className="m-0 font-display text-[1.2rem] font-bold text-[color:var(--ink)]">Comments</h2>
       {isAuthenticated ? (
         <form
           onSubmit={(event) => {
@@ -133,7 +131,9 @@ export function SkillCommentsPanel({ skillId, isAuthenticated, me }: SkillCommen
       ) : (
         <p className="text-sm text-[color:var(--ink-soft)]">Sign in to comment.</p>
       )}
-      {reportNotice ? <div className="text-sm text-[color:var(--ink-soft)]">{reportNotice}</div> : null}
+      {reportNotice ? (
+        <div className="text-sm text-[color:var(--ink-soft)]">{reportNotice}</div>
+      ) : null}
       <div className="grid gap-3 pt-1">
         {comments === undefined ? (
           <Skeleton className="h-16 w-full" />
@@ -141,10 +141,17 @@ export function SkillCommentsPanel({ skillId, isAuthenticated, me }: SkillCommen
           <div className="text-sm text-[color:var(--ink-soft)]">No comments yet.</div>
         ) : (
           comments.map((entry) => (
-            <div key={entry.comment._id} className="flex gap-3 rounded-[var(--radius-sm)] border border-[color:var(--line)] bg-[color:var(--surface)] p-3">
+            <div
+              key={entry.comment._id}
+              className="flex gap-3 rounded-[var(--radius-sm)] border border-[color:var(--line)] bg-[color:var(--surface)] p-3"
+            >
               <div className="flex min-w-0 flex-1 flex-col gap-1.5">
-                <strong className="text-sm">@{entry.user?.handle ?? entry.user?.name ?? "user"}</strong>
-                <div className="whitespace-pre-wrap break-words text-sm text-[color:var(--ink)]">{entry.comment.body}</div>
+                <strong className="text-sm">
+                  @{entry.user?.handle ?? entry.user?.name ?? "user"}
+                </strong>
+                <div className="whitespace-pre-wrap break-words text-sm text-[color:var(--ink)]">
+                  {entry.comment.body}
+                </div>
                 {isAuthenticated && reportingCommentId === entry.comment._id ? (
                   <form
                     className="mt-2 flex flex-col gap-2 rounded-[var(--radius-sm)] border border-[color:var(--line)] bg-[color:var(--surface-muted)] p-3"
@@ -171,15 +178,13 @@ export function SkillCommentsPanel({ skillId, isAuthenticated, me }: SkillCommen
                       >
                         Cancel
                       </Button>
-                      <Button
-                        size="sm"
-                        type="submit"
-                        disabled={isSubmittingReport}
-                      >
+                      <Button size="sm" type="submit" disabled={isSubmittingReport}>
                         {isSubmittingReport ? "Reporting…" : "Submit report"}
                       </Button>
                     </div>
-                    {reportError ? <div className="text-sm text-red-600 dark:text-red-400">{reportError}</div> : null}
+                    {reportError ? (
+                      <div className="text-sm text-red-600 dark:text-red-400">{reportError}</div>
+                    ) : null}
                     <div className="text-sm text-[color:var(--ink-soft)]">
                       Reports require a reason. Abuse of reporting may result in bans.
                     </div>

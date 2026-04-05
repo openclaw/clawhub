@@ -1,5 +1,6 @@
 import { ArrowDownUp, Check, Grid3X3, List, Search, X } from "lucide-react";
 import type { RefObject } from "react";
+import { Button } from "../../components/ui/button";
 import { Input } from "../../components/ui/input";
 import {
   Select,
@@ -8,7 +9,6 @@ import {
   SelectTrigger,
   SelectValue,
 } from "../../components/ui/select";
-import { Button } from "../../components/ui/button";
 import { type SortDir, type SortKey } from "./-params";
 
 type SkillsToolbarProps = {
@@ -83,7 +83,10 @@ export function SkillsToolbar({
 
         {/* Sort */}
         <Select value={sort} onValueChange={onSortChange}>
-          <SelectTrigger className="w-auto min-w-[140px] min-h-[36px] py-1.5 text-xs font-semibold" aria-label="Sort skills">
+          <SelectTrigger
+            className="w-auto min-w-[140px] min-h-[36px] py-1.5 text-xs font-semibold"
+            aria-label="Sort skills"
+          >
             <SelectValue />
           </SelectTrigger>
           <SelectContent>
@@ -104,7 +107,9 @@ export function SkillsToolbar({
           aria-label={`Sort direction: ${dir === "asc" ? "ascending" : "descending"}`}
           className="min-h-[36px] px-2"
         >
-          <ArrowDownUp className={`h-4 w-4 transition-transform ${dir === "asc" ? "rotate-180" : ""}`} />
+          <ArrowDownUp
+            className={`h-4 w-4 transition-transform ${dir === "asc" ? "rotate-180" : ""}`}
+          />
         </Button>
 
         {/* View toggle */}

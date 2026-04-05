@@ -331,8 +331,8 @@ function makeDigestCtx(options: {
   const pageByTable = new Map<
     string,
     Map<
-    string | null,
-    { page: Array<Record<string, unknown>>; isDone: boolean; continueCursor: string }
+      string | null,
+      { page: Array<Record<string, unknown>>; isDone: boolean; continueCursor: string }
     >
   >();
   const indexNames: string[] = [];
@@ -430,7 +430,8 @@ function makeDigestCtx(options: {
                     indexName === "by_name"
                       ? matchedValue
                         ? String(pkg.normalizedName) === matchedValue
-                        : String(pkg.normalizedName) >= lowerBound && String(pkg.normalizedName) < upperBound
+                        : String(pkg.normalizedName) >= lowerBound &&
+                          String(pkg.normalizedName) < upperBound
                       : matchedValue
                         ? String(pkg.runtimeId) === matchedValue
                         : String(pkg.runtimeId) >= lowerBound && String(pkg.runtimeId) < upperBound,
@@ -497,12 +498,17 @@ function makeDigestCtx(options: {
                     lt: () => queryBuilder,
                   };
                   builder?.(queryBuilder);
-                  const match = (options.exactDigests ?? []).find((digest) => digest.packageId === packageId);
+                  const match = (options.exactDigests ?? []).find(
+                    (digest) => digest.packageId === packageId,
+                  );
                   return {
                     unique: vi.fn().mockResolvedValue(match ?? null),
                   };
                 }
-                if (indexName === "by_active_normalized_name" || indexName === "by_active_runtime_id") {
+                if (
+                  indexName === "by_active_normalized_name" ||
+                  indexName === "by_active_runtime_id"
+                ) {
                   let lowerBound = "";
                   let upperBound = "";
                   const queryBuilder = {
@@ -551,9 +557,7 @@ function makeInsertReleaseCtx(
   recordsById: Record<string, Record<string, unknown>> = {},
 ) {
   const patch = vi.fn();
-  const insert = vi
-    .fn()
-    .mockResolvedValueOnce("packageReleases:new");
+  const insert = vi.fn().mockResolvedValueOnce("packageReleases:new");
   return {
     patch,
     insert,
@@ -822,10 +826,7 @@ describe("packages public queries", () => {
     const { ctx } = makeDigestCtx({
       pages: [
         {
-          page: [
-            makeDigest("secret-plugin", { channel: "private" }),
-            makeDigest("public-plugin"),
-          ],
+          page: [makeDigest("secret-plugin", { channel: "private" }), makeDigest("public-plugin")],
           isDone: true,
           continueCursor: "",
         },
@@ -1446,10 +1447,11 @@ describe("packages public queries", () => {
       continueCursor: "",
     });
     await expect(
-      getVersionByNameHandler(
-        ctx,
-        { name: "demo-plugin", version: "1.0.0", viewerUserId: "users:owner" } as never,
-      ),
+      getVersionByNameHandler(ctx, {
+        name: "demo-plugin",
+        version: "1.0.0",
+        viewerUserId: "users:owner",
+      } as never),
     ).resolves.toBeNull();
   });
 
@@ -1647,7 +1649,7 @@ describe("packages public queries", () => {
         integritySha256: "abc123",
         runtimeId: "other.plugin",
       }),
-    ).rejects.toThrow('runtime id changes are not allowed');
+    ).rejects.toThrow("runtime id changes are not allowed");
   });
 
   it("promotes existing packages to official when publisher becomes trusted", async () => {
@@ -2096,7 +2098,9 @@ describe("packages public queries", () => {
           files: [],
         },
       }),
-    ).rejects.toThrow("Trusted publish token no longer matches the current package trusted publisher");
+    ).rejects.toThrow(
+      "Trusted publish token no longer matches the current package trusted publisher",
+    );
   });
 
   it("revokes trusted publish tokens after a successful publish", async () => {
@@ -2337,7 +2341,9 @@ describe("packages public queries", () => {
           files: [],
         },
       }),
-    ).rejects.toThrow("Manual publishes for packages with trusted publisher config require manualOverrideReason");
+    ).rejects.toThrow(
+      "Manual publishes for packages with trusted publisher config require manualOverrideReason",
+    );
   });
 
   it("scans plugin publishes and forwards scan status to insertReleaseInternal", async () => {
@@ -2370,8 +2376,14 @@ describe("packages public queries", () => {
                 },
               }),
             ],
-            ["storage:manifest", JSON.stringify({ id: "demo.plugin", tools: [{ name: "demoTool" }] })],
-            ["storage:code", "import { execSync } from 'node:child_process';\nexecSync('curl http://x');\n"],
+            [
+              "storage:manifest",
+              JSON.stringify({ id: "demo.plugin", tools: [{ name: "demoTool" }] }),
+            ],
+            [
+              "storage:code",
+              "import { execSync } from 'node:child_process';\nexecSync('curl http://x');\n",
+            ],
           ]);
           const content = files.get(storageId);
           return content ? new Blob([content]) : null;
@@ -2476,9 +2488,11 @@ describe("packages public queries", () => {
             if (table !== "packages") throw new Error(`Unexpected table ${table}`);
             return {
               withIndex: vi.fn(() => ({
-                unique: vi.fn().mockResolvedValue(
-                  makePackageDoc({ ownerUserId: "users:owner", scanStatus: "pending" }),
-                ),
+                unique: vi
+                  .fn()
+                  .mockResolvedValue(
+                    makePackageDoc({ ownerUserId: "users:owner", scanStatus: "pending" }),
+                  ),
               })),
             };
           }),

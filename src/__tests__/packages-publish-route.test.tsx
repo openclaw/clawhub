@@ -5,9 +5,10 @@ import { createElement } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 vi.mock("@tanstack/react-router", () => ({
-  createFileRoute:
-    (path: string) =>
-    (config: { component: unknown }) => ({ __config: config, __path: path }),
+  createFileRoute: (path: string) => (config: { component: unknown }) => ({
+    __config: config,
+    __path: path,
+  }),
   useSearch: () => ({
     ownerHandle: undefined,
     name: undefined,
@@ -270,9 +271,7 @@ describe("plugins publish route", () => {
     fireEvent.change(getFileInput(), { target: { files: [packageJson, manifest] } });
 
     await waitFor(() => {
-      expect(
-        screen.getByText(/Missing required OpenClaw package metadata:/i),
-      ).toBeTruthy();
+      expect(screen.getByText(/Missing required OpenClaw package metadata:/i)).toBeTruthy();
     });
 
     expect(screen.getByText(/openclaw\.compat\.pluginApi/i)).toBeTruthy();
@@ -404,11 +403,9 @@ describe("plugins publish route", () => {
       "opik-openclaw-0.2.9/openclaw.plugin.json",
       { type: "application/json" },
     );
-    const readme = new File(
-      ["# Opik OpenClaw\n"],
-      "opik-openclaw-0.2.9/README.md",
-      { type: "text/markdown" },
-    );
+    const readme = new File(["# Opik OpenClaw\n"], "opik-openclaw-0.2.9/README.md", {
+      type: "text/markdown",
+    });
 
     fireEvent.change(getFileInput(), { target: { files: [packageJson, manifest, readme] } });
 
@@ -419,7 +416,9 @@ describe("plugins publish route", () => {
       expect(screen.getByDisplayValue("comet-ml/opik-openclaw")).toBeTruthy();
       expect(screen.getByText(/Metadata detected and prefilled/i)).toBeTruthy();
       expect(
-        screen.getByText(/Autofilled package type, plugin name, display name, version, source repo, compatibility\./i),
+        screen.getByText(
+          /Autofilled package type, plugin name, display name, version, source repo, compatibility\./i,
+        ),
       ).toBeTruthy();
       expect(screen.getByText("Package manifest")).toBeTruthy();
       expect(screen.getByText("Plugin manifest")).toBeTruthy();
@@ -431,9 +430,13 @@ describe("plugins publish route", () => {
     renderPublishRoute();
 
     const packageJson = withRelativePath(
-      new File([makeCodePluginPackageJson({ name: "demo-plugin", version: "1.0.0" })], "package.json", {
-        type: "application/json",
-      }),
+      new File(
+        [makeCodePluginPackageJson({ name: "demo-plugin", version: "1.0.0" })],
+        "package.json",
+        {
+          type: "application/json",
+        },
+      ),
       "demo-plugin/package.json",
     );
     const ignoreFile = withRelativePath(
@@ -498,9 +501,13 @@ describe("plugins publish route", () => {
     renderPublishRoute();
 
     const packageJson = withRelativePath(
-      new File([makeCodePluginPackageJson({ name: "demo-plugin", version: "1.0.0" })], "package.json", {
-        type: "application/json",
-      }),
+      new File(
+        [makeCodePluginPackageJson({ name: "demo-plugin", version: "1.0.0" })],
+        "package.json",
+        {
+          type: "application/json",
+        },
+      ),
       "demo-plugin/package.json",
     );
     const manifest = withRelativePath(
@@ -529,9 +536,13 @@ describe("plugins publish route", () => {
     renderPublishRoute();
 
     const packageJson = withRelativePath(
-      new File([makeCodePluginPackageJson({ name: "demo-plugin", version: "1.0.0" })], "package.json", {
-        type: "application/json",
-      }),
+      new File(
+        [makeCodePluginPackageJson({ name: "demo-plugin", version: "1.0.0" })],
+        "package.json",
+        {
+          type: "application/json",
+        },
+      ),
       "demo-plugin/package.json",
     );
     const manifest = withRelativePath(

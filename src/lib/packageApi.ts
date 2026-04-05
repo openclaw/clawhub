@@ -137,8 +137,7 @@ async function packageApiUrl(path: string) {
   // In production, Vercel rewrites /api/* but SSR loaders run server-side
   // where the rewrite doesn't apply. Using getRequestUrl() would loop back
   // into TanStack Start / Nitro, which rejects non-HTML requests.
-  const base =
-    getRuntimeEnv("VITE_CONVEX_SITE_URL") ?? getRequiredRuntimeEnv("VITE_CONVEX_URL");
+  const base = getRuntimeEnv("VITE_CONVEX_SITE_URL") ?? getRequiredRuntimeEnv("VITE_CONVEX_URL");
   return new URL(normalizedPath, base);
 }
 
@@ -152,9 +151,7 @@ async function getForwardedHeaders() {
   if (typeof window !== "undefined" || !import.meta.env.SSR) return {};
   try {
     const serverRuntimeModule = "@tanstack/react-start/server";
-    const { getRequestHeaders } = (await import(
-      /* @vite-ignore */ serverRuntimeModule
-    )) as {
+    const { getRequestHeaders } = (await import(/* @vite-ignore */ serverRuntimeModule)) as {
       getRequestHeaders: () => Headers;
     };
     const requestHeaders = getRequestHeaders();
@@ -181,8 +178,7 @@ async function getForwardedHeaders() {
 
 async function packageFetch(url: URL, accept: string) {
   const forwarded = await getForwardedHeaders();
-  const isSameOrigin =
-    typeof window !== "undefined" && url.origin === window.location.origin;
+  const isSameOrigin = typeof window !== "undefined" && url.origin === window.location.origin;
   return await fetch(url.toString(), {
     method: "GET",
     // Only send credentials for same-origin requests (production Vercel
@@ -265,7 +261,8 @@ export async function fetchPluginCatalog(params: {
       limit: params.limit,
     });
     return {
-      items: "results" in response ? response.results.map((entry) => entry.package) : response.items,
+      items:
+        "results" in response ? response.results.map((entry) => entry.package) : response.items,
       nextCursor: "results" in response ? null : response.nextCursor,
     };
   }
@@ -280,7 +277,9 @@ export async function fetchPluginCatalog(params: {
     if (typeof params.executesCode === "boolean") {
       url.searchParams.set("executesCode", String(params.executesCode));
     }
-    const response = await fetchJson<{ results: Array<{ score: number; package: PackageListItem }> }>(url);
+    const response = await fetchJson<{
+      results: Array<{ score: number; package: PackageListItem }>;
+    }>(url);
     return {
       items: response.results.map((entry) => entry.package),
       nextCursor: null,

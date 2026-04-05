@@ -1,6 +1,6 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
-import { Star } from "lucide-react";
 import { useMutation, useQuery } from "convex/react";
+import { Star } from "lucide-react";
 import { toast } from "sonner";
 import { api } from "../../convex/_generated/api";
 import type { Doc } from "../../convex/_generated/dataModel";
@@ -42,8 +42,12 @@ function Stars() {
       <Container size="narrow">
         <div className="flex flex-col gap-6">
           <header>
-            <h1 className="font-display text-2xl font-bold text-[color:var(--ink)]">Your highlights</h1>
-            <p className="mt-1 text-sm text-[color:var(--ink-soft)]">Skills you've starred for quick access.</p>
+            <h1 className="font-display text-2xl font-bold text-[color:var(--ink)]">
+              Your highlights
+            </h1>
+            <p className="mt-1 text-sm text-[color:var(--ink-soft)]">
+              Skills you've starred for quick access.
+            </p>
           </header>
           {skills.length === 0 ? (
             <EmptyState
@@ -61,7 +65,11 @@ function Stars() {
                     key={skill._id}
                     className="flex w-full flex-col gap-3 rounded-[var(--radius-md)] border border-[color:var(--line)] bg-[color:var(--surface)] p-[22px] transition-all duration-200 hover:-translate-y-0.5 hover:shadow-[0_12px_28px_rgba(29,26,23,0.12)]"
                   >
-                    <Link to="/$owner/$slug" params={{ owner, slug: skill.slug }} className="no-underline">
+                    <Link
+                      to="/$owner/$slug"
+                      params={{ owner, slug: skill.slug }}
+                      className="no-underline"
+                    >
                       <h3 className="font-display text-base font-bold text-[color:var(--ink)] hover:text-[color:var(--accent)]">
                         {skill.displayName}
                       </h3>
