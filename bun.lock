@@ -6,8 +6,8 @@
       "dependencies": {
         "@auth/core": "^0.37.4",
         "@convex-dev/auth": "^0.0.91",
-        "@create-markdown/core": "^2.0.0",
-        "@create-markdown/preview": "^2.0.0",
+        "@create-markdown/core": "^2.0.1",
+        "@create-markdown/preview": "^2.0.1",
         "@fontsource/bricolage-grotesque": "^5.2.10",
         "@fontsource/ibm-plex-mono": "^5.2.7",
         "@fontsource/manrope": "^5.2.8",
@@ -174,9 +174,9 @@
 
     "@convex-dev/auth": ["@convex-dev/auth@0.0.91", "", { "dependencies": { "@oslojs/crypto": "^1.0.1", "@oslojs/encoding": "^1.1.0", "cookie": "^1.0.1", "is-network-error": "^1.1.0", "jose": "^5.2.2", "jwt-decode": "^4.0.0", "lucia": "^3.2.0", "oauth4webapi": "^3.1.2", "path-to-regexp": "^6.3.0", "server-only": "^0.0.1" }, "peerDependencies": { "@auth/core": "^0.37.0", "convex": "^1.17.0", "react": "^18.2.0 || ^19.0.0-0" }, "optionalPeers": ["react"], "bin": { "auth": "dist/bin.cjs" } }, "sha512-wLD4hszo3IhhMkwPs6ozWf0cUauwmhOvjUVn0g//kC338n/jApOjeDYWKCrn/qYUkveyDsbag5zrY8mVzA09Qg=="],
 
-    "@create-markdown/core": ["@create-markdown/core@2.0.0", "", {}, "sha512-xOmhoiDSa82EzjXp3aViQdB+xfCP4E2jEKxJiKJ702sup3p/CTCtL8fZBKQ3BvzASQRpq/xKCRXZZwRrg1DmZQ=="],
+    "@create-markdown/core": ["@create-markdown/core@2.0.1", "", {}, "sha512-SW0an3OwgRRXkfhtUGcHDKPBP9saRKOyQKv2V26crrdZcY53Nlkvp3jilkYStFHGCPkXPOvHjKZwG0EGqhZ1tQ=="],
 
-    "@create-markdown/preview": ["@create-markdown/preview@2.0.0", "", { "peerDependencies": { "@create-markdown/core": ">=2.0.0", "mermaid": ">=10.0.0", "shiki": ">=1.0.0" }, "optionalPeers": ["@create-markdown/core", "mermaid", "shiki"] }, "sha512-3WTGCrCOVBy9wH2X82Oa2ZHJ+eiEqu8AlucckenWVtFSbzRKzkxgci0BRw7IDvsOsTUEMxS9Ltc9/hSUHkdidA=="],
+    "@create-markdown/preview": ["@create-markdown/preview@2.0.1", "", { "peerDependencies": { "@create-markdown/core": ">=2.0.0", "mermaid": ">=10.0.0", "shiki": ">=1.0.0" }, "optionalPeers": ["@create-markdown/core", "mermaid", "shiki"] }, "sha512-3HKizzym27NUdGFPaAYhkrSvdKHxIaU0DGDL6kChNATPwNCoH430UXa3C7/SU8eRx25XhhcGPoYlKSTV/VHXQg=="],
 
     "@csstools/color-helpers": ["@csstools/color-helpers@6.0.2", "", {}, "sha512-LMGQLS9EuADloEFkcTBR3BwV/CGHV7zyDxVRtVDTwdI2Ca4it0CCVTT9wCkxSgokjE5Ho41hEPgb8OEUwoXr6Q=="],
 
