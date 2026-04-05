@@ -1,3 +1,4 @@
+import { useAuthActions } from "@convex-dev/auth/react";
 import { createFileRoute, useNavigate, useSearch } from "@tanstack/react-router";
 import {
   PLATFORM_SKILL_LICENSE,
@@ -46,6 +47,7 @@ export const Route = createFileRoute("/publish-skill")({
 
 export function Upload() {
   const { isAuthenticated, me } = useAuthStatus();
+  const { signIn } = useAuthActions();
   const { updateSlug } = useSearch({ from: "/publish-skill" });
   const siteMode = getSiteMode();
   const isSoulMode = siteMode === "souls";
@@ -346,7 +348,7 @@ export function Upload() {
           <EmptyState
             title={`Sign in to publish a ${contentLabel}`}
             description="You need to be signed in to publish skills on ClawHub."
-            action={{ label: "Sign in", href: "/signin" }}
+            action={{ label: "Sign in", onClick: () => void signIn("github") }}
           />
         </Container>
       </main>
