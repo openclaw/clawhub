@@ -4983,7 +4983,11 @@ export const clearSkillManualOverride = mutation({
 });
 
 export const setSoftDeleted = mutation({
-  args: { skillId: v.id("skills"), deleted: v.boolean() },
+  args: {
+    skillId: v.id("skills"),
+    deleted: v.boolean(),
+    reason: v.optional(v.string()),
+  },
   handler: async (ctx, args) => {
     const { user } = await requireUser(ctx);
     assertModerator(user);
@@ -4991,9 +4995,14 @@ export const setSoftDeleted = mutation({
     if (!skill) throw new Error("Skill not found");
 
     const now = Date.now();
+    const note = args.reason ? trimManualOverrideNote(args.reason) : undefined;
+    if (!note) {
+      throw new ConvexError(args.deleted ? "Hide reason is required." : "Restore reason is required.");
+    }
     const patch: Partial<Doc<"skills">> = {
       softDeletedAt: args.deleted ? now : undefined,
       moderationStatus: args.deleted ? "hidden" : "active",
+      moderationNotes: note,
       hiddenAt: args.deleted ? now : undefined,
       hiddenBy: args.deleted ? user._id : undefined,
       lastReviewedAt: now,
@@ -5010,7 +5019,11 @@ export const setSoftDeleted = mutation({
       action: args.deleted ? "skill.delete" : "skill.undelete",
       targetType: "skill",
       targetId: skill._id,
-      metadata: { slug: skill.slug, softDeletedAt: args.deleted ? now : null },
+      metadata: {
+        slug: skill.slug,
+        softDeletedAt: args.deleted ? now : null,
+        reason: note,
+      },
       createdAt: now,
     });
   },

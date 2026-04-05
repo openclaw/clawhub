@@ -192,13 +192,15 @@ export function SkillDetailPage({
       : isHidden
         ? "Hidden"
         : null;
-  const staffModerationNote = staffVisibilityTag
-    ? isAutoHidden
-      ? "Auto-hidden after 4+ unique reports."
-      : isRemoved
-        ? "Removed from public view."
-        : "Hidden from public view."
-    : null;
+  const staffModerationNote =
+    staffSkill?.moderationNotes?.trim() ||
+    (staffVisibilityTag
+      ? isAutoHidden
+        ? "Auto-hidden after 4+ unique reports."
+        : isRemoved
+          ? "Removed from public view."
+          : "Hidden from public view."
+      : null);
 
   const versionById = new Map<Id<"skillVersions">, Doc<"skillVersions">>(
     (diffVersions ?? versions ?? []).map((version) => [version._id, version]),

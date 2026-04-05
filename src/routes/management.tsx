@@ -93,6 +93,21 @@ function promptUnbanReason(label: string) {
   return trimmed.length > 0 ? trimmed : undefined;
 }
 
+function promptSkillVisibilityReason(action: "hide" | "restore", label: string) {
+  const result = window.prompt(
+    action === "hide"
+      ? `Why are you hiding ${label}?`
+      : `Why are you restoring ${label}?`,
+  );
+  if (result === null) return null;
+  const trimmed = result.trim();
+  if (!trimmed) {
+    window.alert(action === "hide" ? "Hide reason is required." : "Restore reason is required.");
+    return null;
+  }
+  return trimmed;
+}
+
 export const Route = createFileRoute("/management")({
   validateSearch: (search) => ({
     skill: typeof search.skill === "string" && search.skill.trim() ? search.skill : undefined,
@@ -591,12 +606,19 @@ function Management() {
                     <button
                       className="btn management-action-btn"
                       type="button"
-                      onClick={() =>
+                      onClick={() => {
+                        const deleted = !skill.softDeletedAt;
+                        const reason = promptSkillVisibilityReason(
+                          deleted ? "hide" : "restore",
+                          skill.displayName,
+                        );
+                        if (reason === null) return;
                         void setSoftDeleted({
                           skillId: skill._id,
-                          deleted: !skill.softDeletedAt,
-                        })
-                      }
+                          deleted,
+                          reason,
+                        }).catch((error) => window.alert(formatMutationError(error)));
+                      }}
                     >
                       {skill.softDeletedAt ? "Restore" : "Hide"}
                     </button>
