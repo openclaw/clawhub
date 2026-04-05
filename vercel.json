@@ -1,0 +1,34 @@
+{
+  "redirects": [
+    {
+      "source": "/",
+      "has": [
+        {
+          "type": "header",
+          "key": "host",
+          "value": "mirror-cn.clawhub.com"
+        }
+      ],
+      "destination": "https://cn.clawhub-mirror.com/",
+      "statusCode": 302
+    },
+    {
+      "source": "/:path*",
+      "has": [
+        {
+          "type": "header",
+          "key": "host",
+          "value": "mirror-cn.clawhub.com"
+        }
+      ],
+      "destination": "https://cn.clawhub-mirror.com/:path*",
+      "statusCode": 302
+    }
+  ],
+  "rewrites": [
+    {
+      "source": "/api/:path*",
+      "destination": "https://wry-manatee-359.convex.site/api/:path*"
+    }
+  ]
+}

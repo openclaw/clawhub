@@ -1,0 +1,502 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "ClawHub API",
+    "version": "1.0.0",
+    "description": "Public REST API for skills. Rate limits: read 120/min per IP + 600/min per key; write 30/min per IP + 120/min per key."
+  },
+  "servers": [{ "url": "https://clawhub.ai" }],
+  "components": {
+    "securitySchemes": {
+      "bearerAuth": {
+        "type": "http",
+        "scheme": "bearer",
+        "bearerFormat": "API token"
+      }
+    },
+    "schemas": {
+      "SearchResult": {
+        "type": "object",
+        "properties": {
+          "score": { "type": "number" },
+          "slug": { "type": ["string", "null"] },
+          "displayName": { "type": ["string", "null"] },
+          "summary": { "type": ["string", "null"] },
+          "version": { "type": ["string", "null"] },
+          "updatedAt": { "type": ["number", "null"] }
+        }
+      },
+      "SearchResponse": {
+        "type": "object",
+        "properties": {
+          "results": { "type": "array", "items": { "$ref": "#/components/schemas/SearchResult" } }
+        }
+      },
+      "TagMap": {
+        "type": "object",
+        "additionalProperties": { "type": "string" }
+      },
+      "Stats": {
+        "type": "object",
+        "additionalProperties": true
+      },
+      "SkillListItem": {
+        "type": "object",
+        "properties": {
+          "slug": { "type": "string" },
+          "displayName": { "type": "string" },
+          "summary": { "type": ["string", "null"] },
+          "tags": { "$ref": "#/components/schemas/TagMap" },
+          "stats": { "$ref": "#/components/schemas/Stats" },
+          "createdAt": { "type": "number" },
+          "updatedAt": { "type": "number" },
+          "latestVersion": {
+            "type": ["object", "null"],
+            "properties": {
+              "version": { "type": "string" },
+              "createdAt": { "type": "number" },
+              "changelog": { "type": "string" }
+            }
+          }
+        }
+      },
+      "SkillListResponse": {
+        "type": "object",
+        "properties": {
+          "items": { "type": "array", "items": { "$ref": "#/components/schemas/SkillListItem" } },
+          "nextCursor": { "type": ["string", "null"] }
+        }
+      },
+      "Owner": {
+        "type": ["object", "null"],
+        "properties": {
+          "handle": { "type": ["string", "null"] },
+          "displayName": { "type": ["string", "null"] },
+          "image": { "type": ["string", "null"] }
+        }
+      },
+      "Skill": {
+        "type": ["object", "null"],
+        "properties": {
+          "slug": { "type": "string" },
+          "displayName": { "type": "string" },
+          "summary": { "type": ["string", "null"] },
+          "tags": { "$ref": "#/components/schemas/TagMap" },
+          "stats": { "$ref": "#/components/schemas/Stats" },
+          "createdAt": { "type": "number" },
+          "updatedAt": { "type": "number" }
+        }
+      },
+      "SkillResponse": {
+        "type": "object",
+        "properties": {
+          "skill": { "$ref": "#/components/schemas/Skill" },
+          "latestVersion": {
+            "type": ["object", "null"],
+            "properties": {
+              "version": { "type": "string" },
+              "createdAt": { "type": "number" },
+              "changelog": { "type": "string" }
+            }
+          },
+          "owner": { "$ref": "#/components/schemas/Owner" },
+          "moderation": {
+            "type": ["object", "null"],
+            "properties": {
+              "isSuspicious": { "type": "boolean" },
+              "isMalwareBlocked": { "type": "boolean" },
+              "verdict": { "type": "string", "enum": ["clean", "suspicious", "malicious"] },
+              "reasonCodes": { "type": "array", "items": { "type": "string" } },
+              "summary": { "type": ["string", "null"] },
+              "engineVersion": { "type": ["string", "null"] },
+              "updatedAt": { "type": ["number", "null"] }
+            }
+          }
+        }
+      },
+      "SkillVersion": {
+        "type": "object",
+        "properties": {
+          "version": { "type": "string" },
+          "createdAt": { "type": "number" },
+          "changelog": { "type": "string" },
+          "changelogSource": { "type": ["string", "null"], "enum": ["auto", "user", null] }
+        }
+      },
+      "SkillVersionListResponse": {
+        "type": "object",
+        "properties": {
+          "items": { "type": "array", "items": { "$ref": "#/components/schemas/SkillVersion" } },
+          "nextCursor": { "type": ["string", "null"] }
+        }
+      },
+      "SecuritySnapshot": {
+        "type": "object",
+        "properties": {
+          "status": { "type": "string", "enum": ["clean", "suspicious", "malicious", "pending", "error"] },
+          "hasWarnings": { "type": "boolean" },
+          "checkedAt": { "type": ["number", "null"] },
+          "model": { "type": ["string", "null"] },
+          "hasScanResult": { "type": "boolean" },
+          "sha256hash": { "type": ["string", "null"] },
+          "virustotalUrl": { "type": ["string", "null"] },
+          "scanners": { "type": "object", "additionalProperties": true }
+        }
+      },
+      "SkillVersionResponse": {
+        "type": "object",
+        "properties": {
+          "skill": {
+            "type": ["object", "null"],
+            "properties": {
+              "slug": { "type": "string" },
+              "displayName": { "type": "string" }
+            }
+          },
+          "version": {
+            "type": ["object", "null"],
+            "properties": {
+              "version": { "type": "string" },
+              "createdAt": { "type": "number" },
+              "changelog": { "type": "string" },
+              "changelogSource": { "type": ["string", "null"], "enum": ["auto", "user", null] },
+              "files": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "path": { "type": "string" },
+                    "size": { "type": "number" },
+                    "sha256": { "type": "string" },
+                    "contentType": { "type": ["string", "null"] }
+                  }
+                }
+              },
+              "security": { "$ref": "#/components/schemas/SecuritySnapshot" }
+            }
+          }
+        }
+      },
+      "SkillScanResponse": {
+        "type": "object",
+        "properties": {
+          "skill": {
+            "type": "object",
+            "properties": {
+              "slug": { "type": "string" },
+              "displayName": { "type": "string" }
+            }
+          },
+          "version": {
+            "type": "object",
+            "properties": {
+              "version": { "type": "string" },
+              "createdAt": { "type": "number" },
+              "changelogSource": { "type": ["string", "null"], "enum": ["auto", "user", null] }
+            }
+          },
+          "moderation": {
+            "type": ["object", "null"],
+            "properties": {
+              "scope": { "type": "string", "enum": ["skill"] },
+              "sourceVersion": {
+                "type": ["object", "null"],
+                "properties": {
+                  "version": { "type": "string" },
+                  "createdAt": { "type": "number" }
+                }
+              },
+              "matchesRequestedVersion": { "type": "boolean" },
+              "isPendingScan": { "type": "boolean" },
+              "isMalwareBlocked": { "type": "boolean" },
+              "isSuspicious": { "type": "boolean" },
+              "isHiddenByMod": { "type": "boolean" },
+              "isRemoved": { "type": "boolean" }
+            }
+          },
+          "security": {
+            "anyOf": [{ "$ref": "#/components/schemas/SecuritySnapshot" }, { "type": "null" }]
+          }
+        }
+      },
+      "ResolveResponse": {
+        "type": "object",
+        "properties": {
+          "match": { "type": ["object", "null"], "properties": { "version": { "type": "string" } } },
+          "latestVersion": { "type": ["object", "null"], "properties": { "version": { "type": "string" } } }
+        }
+      },
+      "PublishResponse": {
+        "type": "object",
+        "properties": {
+          "ok": { "type": "boolean" },
+          "skillId": { "type": "string" },
+          "versionId": { "type": "string" }
+        }
+      },
+      "DeleteResponse": {
+        "type": "object",
+        "properties": { "ok": { "type": "boolean" } }
+      },
+      "WhoamiResponse": {
+        "type": "object",
+        "properties": {
+          "user": {
+            "type": "object",
+            "properties": {
+              "handle": { "type": ["string", "null"] },
+              "displayName": { "type": ["string", "null"] },
+              "image": { "type": ["string", "null"] }
+            }
+          }
+        }
+      }
+    }
+  },
+  "paths": {
+    "/api/v1/search": {
+      "get": {
+        "summary": "Search skills",
+        "parameters": [
+          { "name": "q", "in": "query", "required": true, "schema": { "type": "string" } },
+          { "name": "limit", "in": "query", "required": false, "schema": { "type": "integer" } },
+          { "name": "highlightedOnly", "in": "query", "required": false, "schema": { "type": "boolean" } },
+          { "name": "nonSuspiciousOnly", "in": "query", "required": false, "schema": { "type": "boolean" } },
+          { "name": "nonSuspicious", "in": "query", "required": false, "schema": { "type": "boolean" }, "description": "Legacy alias for nonSuspiciousOnly." }
+        ],
+        "responses": {
+          "200": {
+            "description": "Search results",
+            "content": { "application/json": { "schema": { "$ref": "#/components/schemas/SearchResponse" } } }
+          }
+        }
+      }
+    },
+    "/api/v1/resolve": {
+      "get": {
+        "summary": "Resolve version by hash",
+        "parameters": [
+          { "name": "slug", "in": "query", "required": true, "schema": { "type": "string" } },
+          { "name": "hash", "in": "query", "required": true, "schema": { "type": "string" } }
+        ],
+        "responses": {
+          "200": { "description": "Resolved", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/ResolveResponse" } } } },
+          "404": { "description": "Not found" }
+        }
+      }
+    },
+    "/api/v1/skills": {
+      "get": {
+        "summary": "List skills",
+        "parameters": [
+          { "name": "limit", "in": "query", "required": false, "schema": { "type": "integer" } },
+          { "name": "cursor", "in": "query", "required": false, "schema": { "type": "string" }, "description": "Pagination cursor for any non-trending sort." },
+          { "name": "nonSuspiciousOnly", "in": "query", "required": false, "schema": { "type": "boolean" }, "description": "Hide suspicious skills. For cursor-based sorts, pages may contain fewer than limit items because filtering happens after page retrieval." },
+          { "name": "nonSuspicious", "in": "query", "required": false, "schema": { "type": "boolean" }, "description": "Legacy alias for nonSuspiciousOnly." }
+        ],
+        "responses": {
+          "200": { "description": "Skills", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/SkillListResponse" } } } }
+        }
+      },
+      "post": {
+        "summary": "Publish a skill version",
+        "security": [{ "bearerAuth": [] }],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "multipart/form-data": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "payload": { "type": "string" },
+                  "files": { "type": "array", "items": { "type": "string", "format": "binary" } }
+                },
+                "required": ["payload", "files"]
+              }
+            },
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "slug": { "type": "string" },
+                  "displayName": { "type": "string" },
+                  "version": { "type": "string" },
+                  "changelog": { "type": "string" },
+                  "tags": { "type": "array", "items": { "type": "string" } },
+                  "forkOf": {
+                    "type": "object",
+                    "properties": { "slug": { "type": "string" }, "version": { "type": "string" } }
+                  },
+                  "files": {
+                    "type": "array",
+                    "items": {
+                      "type": "object",
+                      "properties": {
+                        "path": { "type": "string" },
+                        "size": { "type": "number" },
+                        "storageId": { "type": "string" },
+                        "sha256": { "type": "string" },
+                        "contentType": { "type": "string" }
+                      }
+                    }
+                  }
+                },
+                "required": ["slug", "displayName", "version", "changelog", "files"]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": { "description": "Published", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/PublishResponse" } } } }
+        }
+      }
+    },
+    "/api/v1/skills/{slug}": {
+      "get": {
+        "summary": "Get skill",
+        "parameters": [
+          { "name": "slug", "in": "path", "required": true, "schema": { "type": "string" } }
+        ],
+        "responses": {
+          "200": { "description": "Skill", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/SkillResponse" } } } },
+          "404": { "description": "Not found" }
+        }
+      },
+      "delete": {
+        "summary": "Soft delete skill",
+        "security": [{ "bearerAuth": [] }],
+        "parameters": [
+          { "name": "slug", "in": "path", "required": true, "schema": { "type": "string" } }
+        ],
+        "responses": {
+          "200": { "description": "Deleted", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/DeleteResponse" } } } }
+        }
+      }
+    },
+    "/api/v1/skills/{slug}/moderation": {
+      "get": {
+        "summary": "Get moderation details",
+        "parameters": [
+          { "name": "slug", "in": "path", "required": true, "schema": { "type": "string" } }
+        ],
+        "responses": {
+          "200": {
+            "description": "Moderation details",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "moderation": {
+                      "type": ["object", "null"],
+                      "properties": {
+                        "isSuspicious": { "type": "boolean" },
+                        "isMalwareBlocked": { "type": "boolean" },
+                        "verdict": { "type": "string", "enum": ["clean", "suspicious", "malicious"] },
+                        "reasonCodes": { "type": "array", "items": { "type": "string" } },
+                        "summary": { "type": ["string", "null"] },
+                        "engineVersion": { "type": ["string", "null"] },
+                        "updatedAt": { "type": ["number", "null"] },
+                        "legacyReason": { "type": ["string", "null"] },
+                        "evidence": { "type": "array", "items": { "type": "object", "additionalProperties": true } }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "404": { "description": "Moderation details unavailable" }
+        }
+      }
+    },
+    "/api/v1/skills/{slug}/undelete": {
+      "post": {
+        "summary": "Undelete skill",
+        "security": [{ "bearerAuth": [] }],
+        "parameters": [
+          { "name": "slug", "in": "path", "required": true, "schema": { "type": "string" } }
+        ],
+        "responses": {
+          "200": { "description": "Undeleted", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/DeleteResponse" } } } }
+        }
+      }
+    },
+    "/api/v1/skills/{slug}/versions": {
+      "get": {
+        "summary": "List versions",
+        "parameters": [
+          { "name": "slug", "in": "path", "required": true, "schema": { "type": "string" } },
+          { "name": "limit", "in": "query", "required": false, "schema": { "type": "integer" } },
+          { "name": "cursor", "in": "query", "required": false, "schema": { "type": "string" } }
+        ],
+        "responses": {
+          "200": { "description": "Versions", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/SkillVersionListResponse" } } } }
+        }
+      }
+    },
+    "/api/v1/skills/{slug}/versions/{version}": {
+      "get": {
+        "summary": "Get version",
+        "parameters": [
+          { "name": "slug", "in": "path", "required": true, "schema": { "type": "string" } },
+          { "name": "version", "in": "path", "required": true, "schema": { "type": "string" } }
+        ],
+        "responses": {
+          "200": { "description": "Version", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/SkillVersionResponse" } } } }
+        }
+      }
+    },
+    "/api/v1/skills/{slug}/scan": {
+      "get": {
+        "summary": "Get security scan details",
+        "parameters": [
+          { "name": "slug", "in": "path", "required": true, "schema": { "type": "string" } },
+          { "name": "version", "in": "query", "required": false, "schema": { "type": "string" } },
+          { "name": "tag", "in": "query", "required": false, "schema": { "type": "string" } }
+        ],
+        "responses": {
+          "200": { "description": "Scan results", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/SkillScanResponse" } } } },
+          "404": { "description": "Not found" }
+        }
+      }
+    },
+    "/api/v1/skills/{slug}/file": {
+      "get": {
+        "summary": "Fetch raw file",
+        "parameters": [
+          { "name": "slug", "in": "path", "required": true, "schema": { "type": "string" } },
+          { "name": "path", "in": "query", "required": true, "schema": { "type": "string" } },
+          { "name": "version", "in": "query", "required": false, "schema": { "type": "string" } },
+          { "name": "tag", "in": "query", "required": false, "schema": { "type": "string" } }
+        ],
+        "responses": {
+          "200": { "description": "File contents", "content": { "text/plain": { "schema": { "type": "string" } } } },
+          "404": { "description": "Not found" }
+        }
+      }
+    },
+    "/api/v1/download": {
+      "get": {
+        "summary": "Download zip",
+        "parameters": [
+          { "name": "slug", "in": "query", "required": true, "schema": { "type": "string" } },
+          { "name": "version", "in": "query", "required": false, "schema": { "type": "string" } },
+          { "name": "tag", "in": "query", "required": false, "schema": { "type": "string" } }
+        ],
+        "responses": {
+          "200": { "description": "Zip", "content": { "application/zip": { "schema": { "type": "string", "format": "binary" } } } }
+        }
+      }
+    },
+    "/api/v1/whoami": {
+      "get": {
+        "summary": "Current user",
+        "security": [{ "bearerAuth": [] }],
+        "responses": {
+          "200": { "description": "User", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/WhoamiResponse" } } } }
+        }
+      }
+    }
+  }
+}
