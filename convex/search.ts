@@ -387,7 +387,7 @@ export const searchSouls: ReturnType<typeof action> = action({
     try {
       vector = await generateEmbedding(query);
     } catch (error) {
-      console.warn("Search embedding generation failed, falling back to lexical search", error);
+      console.warn("Search embedding generation failed, returning empty results", error);
       vector = null;
     }
     const limit = args.limit ?? 10;
