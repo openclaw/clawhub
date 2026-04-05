@@ -64,7 +64,7 @@ export function SkillsIndex() {
 
   return (
     <main className="py-10">
-      <Container size="narrow">
+      <Container size="wide">
         <div className="flex flex-col gap-6">
           {/* Header */}
           <header>

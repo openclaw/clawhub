@@ -99,7 +99,7 @@ export function PluginsIndex() {
 
   return (
     <main className="py-10">
-      <Container>
+      <Container size="wide">
         <header className="mb-6">
           <h1 className="font-display text-2xl font-bold text-[color:var(--ink)] mb-2">
             Plugins
