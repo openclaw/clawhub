@@ -3,6 +3,7 @@ import { internal } from "./_generated/api";
 import type { Doc, Id } from "./_generated/dataModel";
 import { action, internalMutation, internalQuery } from "./functions";
 import { assertRole, requireUserFromAction } from "./lib/access";
+import { clampInt } from "./lib/math";
 
 const DEFAULT_BATCH_SIZE = 50;
 const MAX_BATCH_SIZE = 200;
@@ -186,6 +187,3 @@ export const syncGitHubBackups: ReturnType<typeof action> = action({
   },
 });
 
-function clampInt(value: number, min: number, max: number) {
-  return Math.max(min, Math.min(max, Math.floor(value)));
-}

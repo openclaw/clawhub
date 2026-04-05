@@ -5,6 +5,7 @@ import { internal } from "./_generated/api";
 import type { Doc } from "./_generated/dataModel";
 import type { ActionCtx } from "./_generated/server";
 import { internalAction } from "./functions";
+import { clampInt } from "./lib/math";
 import {
   backupSoulToGitHub,
   fetchGitHubSoulMeta,
@@ -181,6 +182,3 @@ export const syncGitHubSoulBackupsInternal = internalAction({
   handler: syncGitHubSoulBackupsInternalHandler,
 });
 
-function clampInt(value: number, min: number, max: number) {
-  return Math.max(min, Math.min(max, Math.floor(value)));
-}

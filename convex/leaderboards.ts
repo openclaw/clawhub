@@ -1,6 +1,7 @@
 import { v } from "convex/values";
 import { internal } from "./_generated/api";
 import { internalAction, internalMutation, internalQuery } from "./functions";
+import { clampInt } from "./lib/math";
 import {
   buildTrendingEntriesFromDailyRows,
   getTrendingRange,
@@ -136,6 +137,3 @@ export const rebuildTrendingLeaderboardInternal = internalMutation({
   },
 });
 
-function clampInt(value: number, min: number, max: number) {
-  return Math.min(Math.max(value, min), max);
-}

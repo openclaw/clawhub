@@ -4,6 +4,7 @@ import type { Doc, Id } from "./_generated/dataModel";
 import type { ActionCtx } from "./_generated/server";
 import { action, internalAction, internalMutation, internalQuery } from "./functions";
 import { assertRole, requireUserFromAction } from "./lib/access";
+import { clampInt } from "./lib/math";
 import { buildSkillSummaryBackfillPatch, type ParsedSkillData } from "./lib/skillBackfill";
 import {
   computeQualitySignals,
@@ -2066,8 +2067,3 @@ export const backfillDigestIsSuspicious = internalMutation({
   },
 });
 
-function clampInt(value: number, min: number, max: number) {
-  const rounded = Math.trunc(value);
-  if (!Number.isFinite(rounded)) return min;
-  return Math.min(max, Math.max(min, rounded));
-}

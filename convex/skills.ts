@@ -14,6 +14,7 @@ import {
   query,
 } from "./functions";
 import { assertAdmin, assertModerator, requireUser, requireUserFromAction } from "./lib/access";
+import { clampInt } from "./lib/math";
 import { getSkillBadgeMap, getSkillBadgeMaps, isSkillHighlighted } from "./lib/badges";
 import { scheduleNextBatchIfNeeded } from "./lib/batching";
 import { generateChangelogPreview as buildChangelogPreview } from "./lib/changelog";
@@ -6340,10 +6341,6 @@ export const setSkillSoftDeletedInternal = internalMutation({
   },
 });
 
-function clampInt(value: number, min: number, max: number) {
-  const rounded = Number.isFinite(value) ? Math.round(value) : min;
-  return Math.min(max, Math.max(min, rounded));
-}
 
 async function findCanonicalSkillForFingerprint(
   ctx: { db: MutationCtx["db"] },
