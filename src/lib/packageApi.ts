@@ -124,21 +124,19 @@ function normalizeApiPath(path: string) {
 async function packageApiUrl(path: string) {
   const normalizedPath = normalizeApiPath(path);
   if (typeof window !== "undefined") {
+    // In production, Vercel rewrites /api/* to the Convex site, so relative
+    // paths work. In local dev, Nitro intercepts the request before Vite's
+    // proxy, so we must use the Convex site URL directly.
+    const convexSiteUrl = getRuntimeEnv("VITE_CONVEX_SITE_URL");
+    if (convexSiteUrl && window.location.hostname === "localhost") {
+      return new URL(normalizedPath, convexSiteUrl);
+    }
     return new URL(normalizedPath, window.location.origin);
   }
-  if (import.meta.env.SSR) {
-    try {
-      const serverRuntimeModule = "@tanstack/react-start/server";
-      const { getRequestUrl } = (await import(
-        /* @vite-ignore */ serverRuntimeModule
-      )) as {
-        getRequestUrl: () => URL;
-      };
-      return new URL(normalizedPath, getRequestUrl());
-    } catch {
-      // Fall through to env-based base URL when no request context exists.
-    }
-  }
+  // On the server (SSR / loader), always use the Convex site URL directly.
+  // In production, Vercel rewrites /api/* but SSR loaders run server-side
+  // where the rewrite doesn't apply. Using getRequestUrl() would loop back
+  // into TanStack Start / Nitro, which rejects non-HTML requests.
   const base =
     getRuntimeEnv("VITE_CONVEX_SITE_URL") ?? getRequiredRuntimeEnv("VITE_CONVEX_URL");
   return new URL(normalizedPath, base);
