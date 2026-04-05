@@ -372,11 +372,16 @@ export const getPendingTransferBySkillAndUserInternal = internalQuery({
   },
   handler: async (ctx, args) => {
     const now = Date.now();
-    const transfer = await ctx.db
+    // Use by_to_user_status index instead of by_skill_status + .filter()
+    // to avoid scanning all pending transfers for the skill.  A user will
+    // have very few pending transfers, so the JS skillId check is cheap.
+    const transfers = await ctx.db
       .query("skillOwnershipTransfers")
-      .withIndex("by_skill_status", (q) => q.eq("skillId", args.skillId).eq("status", "pending"))
-      .filter((q) => q.eq(q.field("toUserId"), args.toUserId))
-      .first();
+      .withIndex("by_to_user_status", (q) =>
+        q.eq("toUserId", args.toUserId).eq("status", "pending"),
+      )
+      .collect();
+    const transfer = transfers.find((t) => t.skillId === args.skillId) ?? null;
 
     if (!transfer || isExpired(transfer, now)) return null;
     return transfer;
@@ -390,11 +395,16 @@ export const getPendingTransferBySkillAndFromUserInternal = internalQuery({
   },
   handler: async (ctx, args) => {
     const now = Date.now();
-    const transfer = await ctx.db
+    // Use by_from_user_status index instead of by_skill_status + .filter()
+    // to avoid scanning all pending transfers for the skill.  A user will
+    // have very few pending outgoing transfers, so the JS check is cheap.
+    const transfers = await ctx.db
       .query("skillOwnershipTransfers")
-      .withIndex("by_skill_status", (q) => q.eq("skillId", args.skillId).eq("status", "pending"))
-      .filter((q) => q.eq(q.field("fromUserId"), args.fromUserId))
-      .first();
+      .withIndex("by_from_user_status", (q) =>
+        q.eq("fromUserId", args.fromUserId).eq("status", "pending"),
+      )
+      .collect();
+    const transfer = transfers.find((t) => t.skillId === args.skillId) ?? null;
 
     if (!transfer || isExpired(transfer, now)) return null;
     return transfer;
