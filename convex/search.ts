@@ -526,15 +526,17 @@ export const lexicalFallbackSouls = internalQuery({
     }
 
     // Scan recent active souls by updatedAt.
+    // Filter out soft-deleted rows before truncating so that deleted souls
+    // don't consume slots in the FALLBACK_SCAN_LIMIT budget.
     const recentSouls = await ctx.db
       .query("souls")
       .withIndex("by_updated")
       .order("desc")
+      .filter((q) => q.eq(q.field("softDeletedAt"), undefined))
       .take(FALLBACK_SCAN_LIMIT);
 
     for (const soul of recentSouls) {
       if (seenSoulIds.has(soul._id)) continue;
-      if (soul.softDeletedAt) continue;
       seenSoulIds.add(soul._id);
       candidates.push(soul);
     }
