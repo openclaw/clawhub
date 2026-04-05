@@ -72,6 +72,12 @@ type SkillBySlugResult = {
   } | null;
 } | null;
 
+type SkillVisibilityDialogState = {
+  skillId: Id<"skills">;
+  displayName: string;
+  action: "hide" | "restore";
+} | null;
+
 function resolveOwnerParam(
   handle: string | null | undefined,
   ownerId?: Id<"users"> | Id<"publishers">,
@@ -91,21 +97,6 @@ function promptUnbanReason(label: string) {
   if (result === null) return null;
   const trimmed = result.trim();
   return trimmed.length > 0 ? trimmed : undefined;
-}
-
-function promptSkillVisibilityReason(action: "hide" | "restore", label: string) {
-  const result = window.prompt(
-    action === "hide"
-      ? `Why are you hiding ${label}?`
-      : `Why are you restoring ${label}?`,
-  );
-  if (result === null) return null;
-  const trimmed = result.trim();
-  if (!trimmed) {
-    window.alert(action === "hide" ? "Hide reason is required." : "Restore reason is required.");
-    return null;
-  }
-  return trimmed;
 }
 
 export const Route = createFileRoute("/management")({
@@ -158,6 +149,10 @@ function Management() {
   const [userSearch, setUserSearch] = useState("");
   const [userSearchDebounced, setUserSearchDebounced] = useState("");
   const [skillOverrideNote, setSkillOverrideNote] = useState("");
+  const [visibilityDialog, setVisibilityDialog] = useState<SkillVisibilityDialogState>(null);
+  const [visibilityReason, setVisibilityReason] = useState("");
+  const [visibilityError, setVisibilityError] = useState<string | null>(null);
+  const [isVisibilitySubmitting, setIsVisibilitySubmitting] = useState(false);
 
   const userQuery = userSearchDebounced.trim();
   const userResult = useQuery(
@@ -269,6 +264,56 @@ function Management() {
       .catch((error) => window.alert(formatMutationError(error)));
   };
 
+  const openVisibilityDialog = (
+    skillId: Id<"skills">,
+    displayName: string,
+    action: "hide" | "restore",
+  ) => {
+    setVisibilityDialog({ skillId, displayName, action });
+    setVisibilityReason("");
+    setVisibilityError(null);
+    setIsVisibilitySubmitting(false);
+  };
+
+  const closeVisibilityDialog = () => {
+    if (isVisibilitySubmitting) return;
+    setVisibilityDialog(null);
+    setVisibilityReason("");
+    setVisibilityError(null);
+  };
+
+  const submitVisibilityDialog = () => {
+    if (!visibilityDialog) return;
+    const reason = visibilityReason.trim();
+    if (!reason) {
+      setVisibilityError(
+        visibilityDialog.action === "hide"
+          ? "Hide reason is required."
+          : "Restore reason is required.",
+      );
+      return;
+    }
+
+    setVisibilityError(null);
+    setIsVisibilitySubmitting(true);
+    void setSoftDeleted({
+      skillId: visibilityDialog.skillId,
+      deleted: visibilityDialog.action === "hide",
+      reason,
+    })
+      .then(() => {
+        setVisibilityDialog(null);
+        setVisibilityReason("");
+        setVisibilityError(null);
+      })
+      .catch((error) => {
+        setVisibilityError(formatMutationError(error));
+      })
+      .finally(() => {
+        setIsVisibilitySubmitting(false);
+      });
+  };
+
   return (
     <main className="section">
       <h1 className="section-title">Management console</h1>
@@ -343,10 +388,11 @@ function Management() {
                       className="btn"
                       type="button"
                       onClick={() =>
-                        void setSoftDeleted({
-                          skillId: skill._id,
-                          deleted: !skill.softDeletedAt,
-                        })
+                        openVisibilityDialog(
+                          skill._id,
+                          skill.displayName,
+                          skill.softDeletedAt ? "restore" : "hide",
+                        )
                       }
                     >
                       {skill.softDeletedAt ? "Restore" : "Hide"}
@@ -606,19 +652,13 @@ function Management() {
                     <button
                       className="btn management-action-btn"
                       type="button"
-                      onClick={() => {
-                        const deleted = !skill.softDeletedAt;
-                        const reason = promptSkillVisibilityReason(
-                          deleted ? "hide" : "restore",
+                      onClick={() =>
+                        openVisibilityDialog(
+                          skill._id,
                           skill.displayName,
-                        );
-                        if (reason === null) return;
-                        void setSoftDeleted({
-                          skillId: skill._id,
-                          deleted,
-                          reason,
-                        }).catch((error) => window.alert(formatMutationError(error)));
-                      }}
+                          skill.softDeletedAt ? "restore" : "hide",
+                        )
+                      }
                     >
                       {skill.softDeletedAt ? "Restore" : "Hide"}
                     </button>
@@ -927,6 +967,72 @@ function Management() {
                 </div>
               ))
             )}
+          </div>
+        </div>
+      ) : null}
+
+      {visibilityDialog ? (
+        <div className="report-dialog-backdrop">
+          <div className="report-dialog" role="dialog" aria-modal="true" aria-labelledby="visibility-dialog-title">
+            <h2
+              id="visibility-dialog-title"
+              className="section-title"
+              style={{ margin: 0, fontSize: "1.1rem" }}
+            >
+              {visibilityDialog.action === "hide" ? "Hide skill" : "Restore skill"}
+            </h2>
+            <p className="section-subtitle" style={{ margin: 0 }}>
+              {visibilityDialog.action === "hide"
+                ? `Why are you hiding ${visibilityDialog.displayName}?`
+                : `Why are you restoring ${visibilityDialog.displayName}?`}
+            </p>
+            <form
+              className="report-dialog-form"
+              onSubmit={(event) => {
+                event.preventDefault();
+                submitVisibilityDialog();
+              }}
+            >
+              <textarea
+                className="report-dialog-textarea"
+                aria-label={
+                  visibilityDialog.action === "hide" ? "Hide reason" : "Restore reason"
+                }
+                placeholder={
+                  visibilityDialog.action === "hide"
+                    ? "What should staff know about why this is being hidden?"
+                    : "What changed, and why is this being restored?"
+                }
+                value={visibilityReason}
+                onChange={(event) => setVisibilityReason(event.target.value)}
+                rows={5}
+                disabled={isVisibilitySubmitting}
+              />
+              {visibilityError ? <p className="report-dialog-error">{visibilityError}</p> : null}
+              <div className="report-dialog-actions">
+                <button
+                  type="button"
+                  className="btn btn-ghost"
+                  onClick={closeVisibilityDialog}
+                  disabled={isVisibilitySubmitting}
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  className="btn"
+                  disabled={isVisibilitySubmitting || !visibilityReason.trim()}
+                >
+                  {isVisibilitySubmitting
+                    ? visibilityDialog.action === "hide"
+                      ? "Hiding…"
+                      : "Restoring…"
+                    : visibilityDialog.action === "hide"
+                      ? "Hide skill"
+                      : "Restore skill"}
+                </button>
+              </div>
+            </form>
           </div>
         </div>
       ) : null}
