@@ -15,6 +15,7 @@ import {
   fetchPluginCatalog,
   fetchPackages,
   getPackageDownloadPath,
+  PackageApiError,
 } from "./packageApi";
 
 describe("fetchPackages", () => {
@@ -288,7 +289,30 @@ describe("fetchPackages", () => {
     vi.stubEnv("VITE_CONVEX_URL", "https://registry.example");
     vi.spyOn(globalThis, "fetch").mockResolvedValue(new Response("boom", { status: 500 }));
 
-    await expect(fetchPackageDetail("broken-plugin")).rejects.toThrow("boom");
+    await expect(fetchPackageDetail("broken-plugin")).rejects.toMatchObject({
+      message: "boom",
+      status: 500,
+      retryAfterSeconds: null,
+    });
+  });
+
+  it("preserves retry metadata on rate-limited package detail failures", async () => {
+    vi.stubEnv("VITE_CONVEX_URL", "https://registry.example");
+    vi.spyOn(globalThis, "fetch").mockResolvedValue(
+      new Response("rate limited", {
+        status: 429,
+        headers: { "Retry-After": "17" },
+      }),
+    );
+
+    await expect(fetchPackageDetail("busy-plugin")).rejects.toEqual(
+      expect.objectContaining<Partial<PackageApiError>>({
+        name: "PackageApiRateLimitError",
+        message: "rate limited",
+        status: 429,
+        retryAfterSeconds: 17,
+      }),
+    );
   });
 
   it("fetches package version details from the encoded version route", async () => {
@@ -333,11 +357,19 @@ describe("fetchPackages", () => {
 
   it("throws when README fetch fails for reasons other than 404", async () => {
     vi.stubEnv("VITE_CONVEX_URL", "https://registry.example");
-    const fetchMock = vi
-      .spyOn(globalThis, "fetch")
-      .mockResolvedValue(new Response("rate limited", { status: 429 }));
+    const fetchMock = vi.spyOn(globalThis, "fetch").mockResolvedValue(
+      new Response("rate limited", {
+        status: 429,
+        headers: { "Retry-After": "9" },
+      }),
+    );
 
-    await expect(fetchPackageReadme("demo-plugin", "1.0.0")).rejects.toThrow("rate limited");
+    await expect(fetchPackageReadme("demo-plugin", "1.0.0")).rejects.toMatchObject({
+      name: "PackageApiRateLimitError",
+      message: "rate limited",
+      status: 429,
+      retryAfterSeconds: 9,
+    });
     expect(fetchMock).toHaveBeenCalledTimes(1);
   });
 

@@ -1,6 +1,6 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { Link } from "@tanstack/react-router";
-import { Search } from "lucide-react";
+import { AlertTriangle, Search } from "lucide-react";
 import { useEffect, useState } from "react";
 import { EmptyState } from "../../components/EmptyState";
 import { Container } from "../../components/layout/Container";
@@ -8,7 +8,11 @@ import { Badge } from "../../components/ui/badge";
 import { Button } from "../../components/ui/button";
 import { Card } from "../../components/ui/card";
 import { Input } from "../../components/ui/input";
-import { fetchPluginCatalog, type PackageListItem } from "../../lib/packageApi";
+import {
+  fetchPluginCatalog,
+  isRateLimitedPackageApiError,
+  type PackageListItem,
+} from "../../lib/packageApi";
 import { familyLabel } from "../../lib/packageLabels";
 
 type PluginSearchState = {
@@ -22,7 +26,18 @@ type PluginSearchState = {
 type PluginsLoaderData = {
   items: PackageListItem[];
   nextCursor: string | null;
+  rateLimited: boolean;
+  retryAfterSeconds: number | null;
 };
+
+function formatRetryDelay(retryAfterSeconds: number | null) {
+  if (!retryAfterSeconds || retryAfterSeconds <= 0) return "in a moment";
+  if (retryAfterSeconds < 60) {
+    return `in about ${retryAfterSeconds} second${retryAfterSeconds === 1 ? "" : "s"}`;
+  }
+  const minutes = Math.ceil(retryAfterSeconds / 60);
+  return `in about ${minutes} minute${minutes === 1 ? "" : "s"}`;
+}
 
 export const Route = createFileRoute("/plugins/")({
   validateSearch: (search): PluginSearchState => ({
@@ -43,18 +58,30 @@ export const Route = createFileRoute("/plugins/")({
   }),
   loaderDeps: ({ search }) => search,
   loader: async ({ deps }) => {
-    const data = await fetchPluginCatalog({
-      q: deps.q,
-      cursor: deps.q ? undefined : deps.cursor,
-      family: deps.family,
-      isOfficial: deps.verified,
-      executesCode: deps.executesCode,
-      limit: 50,
-    });
-    return {
-      items: data.items,
-      nextCursor: data.nextCursor,
-    } satisfies PluginsLoaderData;
+    try {
+      const data = await fetchPluginCatalog({
+        q: deps.q,
+        cursor: deps.q ? undefined : deps.cursor,
+        family: deps.family,
+        isOfficial: deps.verified,
+        executesCode: deps.executesCode,
+        limit: 50,
+      });
+      return {
+        items: data.items,
+        nextCursor: data.nextCursor,
+        rateLimited: false,
+        retryAfterSeconds: null,
+      } satisfies PluginsLoaderData;
+    } catch (error) {
+      if (!isRateLimitedPackageApiError(error)) throw error;
+      return {
+        items: [],
+        nextCursor: null,
+        rateLimited: true,
+        retryAfterSeconds: error.retryAfterSeconds,
+      } satisfies PluginsLoaderData;
+    }
   },
   component: PluginsIndex,
 });
@@ -88,7 +115,8 @@ function VerifiedBadge() {
 export function PluginsIndex() {
   const search = Route.useSearch();
   const navigate = Route.useNavigate();
-  const { items, nextCursor } = Route.useLoaderData() as PluginsLoaderData;
+  const { items, nextCursor, rateLimited, retryAfterSeconds } =
+    Route.useLoaderData() as PluginsLoaderData;
   const [query, setQuery] = useState(search.q ?? "");
 
   useEffect(() => {
@@ -217,7 +245,19 @@ export function PluginsIndex() {
         </div>
 
         <div className="mt-6">
-          {items.length === 0 ? (
+          {rateLimited ? (
+            <EmptyState
+              icon={AlertTriangle}
+              title="Plugin catalog is temporarily unavailable"
+              description={`The public plugin API is rate-limited right now. Try again ${formatRetryDelay(
+                retryAfterSeconds,
+              )}.`}
+              action={{
+                label: "Try again",
+                onClick: () => window.location.reload(),
+              }}
+            />
+          ) : items.length === 0 ? (
             <EmptyState
               title="No plugins match that filter"
               description="Try a different search or filter."

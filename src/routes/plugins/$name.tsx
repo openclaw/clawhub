@@ -1,5 +1,5 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
-import { ExternalLink, Copy, Check, Download } from "lucide-react";
+import { AlertTriangle, ExternalLink, Copy, Check, Download } from "lucide-react";
 import { useState } from "react";
 import { EmptyState } from "../../components/EmptyState";
 import { Container } from "../../components/layout/Container";
@@ -13,16 +13,34 @@ import {
   fetchPackageReadme,
   fetchPackageVersion,
   getPackageDownloadPath,
+  isRateLimitedPackageApiError,
   type PackageDetailResponse,
   type PackageVersionDetail,
 } from "../../lib/packageApi";
 import { familyLabel } from "../../lib/packageLabels";
 
+type PluginDetailRateLimitState =
+  | {
+      scope: "detail" | "metadata";
+      retryAfterSeconds: number | null;
+    }
+  | null;
+
 type PluginDetailLoaderData = {
   detail: PackageDetailResponse;
   version: PackageVersionDetail | null;
   readme: string | null;
+  rateLimited: PluginDetailRateLimitState;
 };
+
+function formatRetryDelay(retryAfterSeconds: number | null) {
+  if (!retryAfterSeconds || retryAfterSeconds <= 0) return "in a moment";
+  if (retryAfterSeconds < 60) {
+    return `in about ${retryAfterSeconds} second${retryAfterSeconds === 1 ? "" : "s"}`;
+  }
+  const minutes = Math.ceil(retryAfterSeconds / 60);
+  return `in about ${minutes} minute${minutes === 1 ? "" : "s"}`;
+}
 
 export const Route = createFileRoute("/plugins/$name")({
   loader: async ({ params }): Promise<PluginDetailLoaderData> => {
@@ -34,7 +52,23 @@ export const Route = createFileRoute("/plugins/$name")({
     let resolvedName = requestedName;
     let detail: PackageDetailResponse = { package: null, owner: null };
     for (const candidateName of candidateNames) {
-      const candidateDetail = await fetchPackageDetail(candidateName);
+      let candidateDetail: PackageDetailResponse;
+      try {
+        candidateDetail = await fetchPackageDetail(candidateName);
+      } catch (error) {
+        if (isRateLimitedPackageApiError(error)) {
+          return {
+            detail: { package: null, owner: null },
+            version: null,
+            readme: null,
+            rateLimited: {
+              scope: "detail",
+              retryAfterSeconds: error.retryAfterSeconds,
+            },
+          };
+        }
+        throw error;
+      }
       if (candidateDetail.package) {
         detail = candidateDetail;
         resolvedName = candidateName;
@@ -43,12 +77,36 @@ export const Route = createFileRoute("/plugins/$name")({
       detail = candidateDetail;
     }
 
-    const readmePromise = fetchPackageReadme(resolvedName);
+    if (!detail.package) {
+      return {
+        detail,
+        version: null,
+        readme: null,
+        rateLimited: null,
+      };
+    }
+
+    let metadataRateLimited: PluginDetailRateLimitState = null;
+    const readmePromise = fetchPackageReadme(resolvedName).catch((error: unknown) => {
+      if (!isRateLimitedPackageApiError(error)) throw error;
+      metadataRateLimited ??= {
+        scope: "metadata",
+        retryAfterSeconds: error.retryAfterSeconds,
+      };
+      return null;
+    });
     const versionPromise = detail.package?.latestVersion
-      ? fetchPackageVersion(resolvedName, detail.package.latestVersion)
+      ? fetchPackageVersion(resolvedName, detail.package.latestVersion).catch((error: unknown) => {
+          if (!isRateLimitedPackageApiError(error)) throw error;
+          metadataRateLimited ??= {
+            scope: "metadata",
+            retryAfterSeconds: error.retryAfterSeconds,
+          };
+          return null;
+        })
       : Promise.resolve(null);
     const [version, readme] = await Promise.all([versionPromise, readmePromise]);
-    return { detail, version, readme };
+    return { detail, version, readme, rateLimited: metadataRateLimited };
   },
   head: ({ params, loaderData }) => ({
     meta: [
@@ -185,7 +243,27 @@ function isEmptyObject(obj: unknown): boolean {
 
 function PluginDetailRoute() {
   const { name } = Route.useParams();
-  const { detail, version, readme } = Route.useLoaderData() as PluginDetailLoaderData;
+  const { detail, version, readme, rateLimited } = Route.useLoaderData() as PluginDetailLoaderData;
+
+  if (rateLimited?.scope === "detail") {
+    return (
+      <main className="py-10">
+        <Container size="narrow">
+          <EmptyState
+            icon={AlertTriangle}
+            title="Plugin details are temporarily unavailable"
+            description={`The public plugin API is rate-limited right now. Try again ${formatRetryDelay(
+              rateLimited.retryAfterSeconds,
+            )}.`}
+            action={{
+              label: "Try again",
+              onClick: () => window.location.reload(),
+            }}
+          />
+        </Container>
+      </main>
+    );
+  }
 
   if (!detail.package) {
     return (
@@ -236,6 +314,9 @@ function PluginDetailRoute() {
                 <Badge>{familyLabel(pkg.family)}</Badge>
                 {verification?.tier ? (
                   <Badge variant="compact">{verification.tier.replace(/-/g, " ")}</Badge>
+                ) : null}
+                {rateLimited?.scope === "metadata" ? (
+                  <Badge variant="compact">Some metadata is temporarily unavailable</Badge>
                 ) : null}
                 {pkg.isOfficial ? (
                   <Badge className="bg-[rgba(59,130,246,0.15)] text-[#3b82f6]">

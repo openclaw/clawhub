@@ -8,6 +8,7 @@
   "scripts": {
     "build": "bun --bun vite build && bun scripts/copy-og-assets.ts",
     "check:peers": "bun scripts/check-peer-deps.ts",
+    "check:secrets": "bun scripts/check-staged-secrets.mjs",
     "convex:deploy": "bunx convex deploy --typecheck=disable --yes",
     "coverage": "vitest run --coverage",
     "dev": "bun --bun vite dev --port 3000",
@@ -18,6 +19,7 @@
     "lint:oxlint": "oxlint --type-aware --tsconfig ./tsconfig.oxlint.json ./src ./convex ./packages/clawhub/src ./packages/schema/src",
     "preinstall": "bunx only-allow bun",
     "preview": "bun --bun vite preview",
+    "prepare": "bun scripts/install-git-hooks.mjs",
     "release:clawhub:cli:npm:check": "node scripts/clawhub-cli-npm-release-check.mjs",
     "test": "vitest run",
     "test:e2e": "vitest run -c vitest.e2e.config.ts",
