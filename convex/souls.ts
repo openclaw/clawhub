@@ -125,24 +125,27 @@ export const list = query({
     const limit = args.limit ?? 24;
     const ownerUserId = args.ownerUserId;
     if (ownerUserId) {
+      // No compound index on (ownerUserId, softDeletedAt) exists, so use
+      // the by_owner index and let Convex filter out deleted rows before
+      // truncating.  This avoids the previous take(limit*5) over-fetch.
       const entries = await ctx.db
         .query("souls")
         .withIndex("by_owner", (q) => q.eq("ownerUserId", ownerUserId))
         .order("desc")
-        .take(limit * 5);
+        .filter((q) => q.eq(q.field("softDeletedAt"), undefined))
+        .take(limit);
       return entries
-        .filter((soul) => !soul.softDeletedAt)
-        .slice(0, limit)
         .map((soul) => toPublicSoul(soul))
         .filter((soul): soul is NonNullable<typeof soul> => Boolean(soul));
     }
+    // Use the by_active_updated index to skip soft-deleted rows at the
+    // index level instead of reading 5× documents and filtering in JS.
     const entries = await ctx.db
       .query("souls")
+      .withIndex("by_active_updated", (q) => q.eq("softDeletedAt", undefined))
       .order("desc")
-      .take(limit * 5);
+      .take(limit);
     return entries
-      .filter((soul) => !soul.softDeletedAt)
-      .slice(0, limit)
       .map((soul) => toPublicSoul(soul))
       .filter((soul): soul is NonNullable<typeof soul> => Boolean(soul));
   },
