@@ -57,11 +57,24 @@ export class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundarySt
   }
 }
 
+function extractErrorMessage(error: unknown): string {
+  if (!error) return "An unexpected error occurred. Please try again.";
+  if (error instanceof Error && error.message.trim()) return error.message.trim();
+  // Handle plain objects like { error: "message" } from API responses
+  if (typeof error === "object" && error !== null) {
+    const record = error as Record<string, unknown>;
+    if (typeof record.error === "string" && record.error.trim()) return record.error.trim();
+    if (typeof record.message === "string" && record.message.trim()) return record.message.trim();
+  }
+  if (typeof error === "string" && error.trim()) return error.trim();
+  return "An unexpected error occurred. Please try again.";
+}
+
 export function ErrorFallback({
   error,
   onRetry,
 }: {
-  error: Error | null;
+  error: unknown;
   onRetry?: () => void;
 }) {
   return (
@@ -74,7 +87,7 @@ export function ErrorFallback({
           Something went wrong
         </h3>
         <p className="max-w-md text-sm text-[color:var(--ink-soft)]">
-          {error?.message || "An unexpected error occurred. Please try again."}
+          {extractErrorMessage(error)}
         </p>
       </div>
       {onRetry && (
