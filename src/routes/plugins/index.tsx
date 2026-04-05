@@ -8,6 +8,7 @@ import { Badge } from "../../components/ui/badge";
 import { Button } from "../../components/ui/button";
 import { Card } from "../../components/ui/card";
 import { Input } from "../../components/ui/input";
+import { formatRetryDelay } from "../../lib/formatRetryDelay";
 import {
   fetchPluginCatalog,
   isRateLimitedPackageApiError,
@@ -29,15 +30,6 @@ type PluginsLoaderData = {
   rateLimited: boolean;
   retryAfterSeconds: number | null;
 };
-
-function formatRetryDelay(retryAfterSeconds: number | null) {
-  if (!retryAfterSeconds || retryAfterSeconds <= 0) return "in a moment";
-  if (retryAfterSeconds < 60) {
-    return `in about ${retryAfterSeconds} second${retryAfterSeconds === 1 ? "" : "s"}`;
-  }
-  const minutes = Math.ceil(retryAfterSeconds / 60);
-  return `in about ${minutes} minute${minutes === 1 ? "" : "s"}`;
-}
 
 export const Route = createFileRoute("/plugins/")({
   validateSearch: (search): PluginSearchState => ({

@@ -8,6 +8,7 @@ import { SecurityScanResults } from "../../components/SkillSecurityScanResults";
 import { Badge } from "../../components/ui/badge";
 import { Button } from "../../components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "../../components/ui/card";
+import { formatRetryDelay } from "../../lib/formatRetryDelay";
 import {
   fetchPackageDetail,
   fetchPackageReadme,
@@ -32,15 +33,6 @@ type PluginDetailLoaderData = {
   readme: string | null;
   rateLimited: PluginDetailRateLimitState;
 };
-
-function formatRetryDelay(retryAfterSeconds: number | null) {
-  if (!retryAfterSeconds || retryAfterSeconds <= 0) return "in a moment";
-  if (retryAfterSeconds < 60) {
-    return `in about ${retryAfterSeconds} second${retryAfterSeconds === 1 ? "" : "s"}`;
-  }
-  const minutes = Math.ceil(retryAfterSeconds / 60);
-  return `in about ${minutes} minute${minutes === 1 ? "" : "s"}`;
-}
 
 export const Route = createFileRoute("/plugins/$name")({
   loader: async ({ params }): Promise<PluginDetailLoaderData> => {
