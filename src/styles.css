@@ -4050,6 +4050,24 @@ html.theme-transition::view-transition-new(theme) {
   color: var(--color-text);
 }
 
+.dashboard-load-more {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 16px;
+  color: var(--muted);
+  font-size: 0.88rem;
+}
+
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
+
+.dashboard-spinner {
+  animation: spin 1s linear infinite;
+}
+
 .dashboard-list {
   border: 1px solid var(--card-border);
   border-radius: 14px;

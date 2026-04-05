@@ -2197,6 +2197,108 @@ export const list = query({
   },
 });
 
+/** Paginated dashboard query — used by the Publisher Dashboard to paginate
+ *  large skill sets with client-side search. */
+export const listDashboardPaginated = query({
+  args: {
+    ownerUserId: v.optional(v.id("users")),
+    ownerPublisherId: v.optional(v.id("publishers")),
+    paginationOpts: paginationOptsValidator,
+  },
+  handler: async (ctx, args) => {
+    const userId = await getAuthUserId(ctx);
+
+    // --- Publisher path (includes legacy user-owned skills) ----------------
+    const ownerPublisherId = args.ownerPublisherId;
+    if (ownerPublisherId) {
+      const ownerPublisher = await ctx.db.get(ownerPublisherId);
+      const membership =
+        userId &&
+        (await ctx.db
+          .query("publisherMembers")
+          .withIndex("by_publisher_user", (q) =>
+            q.eq("publisherId", ownerPublisherId).eq("userId", userId),
+          )
+          .unique());
+      const isOwnDashboard = Boolean(
+        membership || (userId && ownerPublisher?.kind === "user" && ownerPublisher.linkedUserId === userId),
+      );
+
+      const result = await ctx.db
+        .query("skills")
+        .withIndex("by_owner_publisher", (q) => q.eq("ownerPublisherId", ownerPublisherId))
+        .filter((q) => q.eq(q.field("softDeletedAt"), undefined))
+        .order("desc")
+        .paginate(args.paginationOpts);
+
+      const filtered = isOwnDashboard
+        ? result.page
+        : await filterSkillsByActiveOwner(ctx, result.page);
+      const withBadges = await attachBadgesToSkills(ctx, filtered);
+      const page = toDashboardPage(withBadges, isOwnDashboard);
+      return { ...result, page };
+    }
+
+    // --- User path --------------------------------------------------------
+    const ownerUserId = args.ownerUserId;
+    if (ownerUserId) {
+      const isOwnDashboard = Boolean(userId && userId === ownerUserId);
+
+      const result = await ctx.db
+        .query("skills")
+        .withIndex("by_owner", (q) => q.eq("ownerUserId", ownerUserId))
+        .filter((q) => q.eq(q.field("softDeletedAt"), undefined))
+        .order("desc")
+        .paginate(args.paginationOpts);
+
+      const filtered = isOwnDashboard
+        ? result.page
+        : await filterSkillsByActiveOwner(ctx, result.page);
+      const withBadges = await attachBadgesToSkills(ctx, filtered);
+      const page = toDashboardPage(withBadges, isOwnDashboard);
+      return { ...result, page };
+    }
+
+    return { page: [], isDone: true as const, continueCursor: "" };
+  },
+});
+
+/** Map skills to public shape, including pending-review items for owners. */
+function toDashboardPage(skills: Doc<"skills">[], isOwnDashboard: boolean) {
+  return skills
+    .map((skill) => {
+      const publicSkill = toPublicSkill(skill);
+      if (publicSkill) return publicSkill;
+      if (isOwnDashboard) {
+        const isPending =
+          skill.moderationStatus === "hidden" && skill.moderationReason === "pending.scan";
+        if (isPending) {
+          const { badges } = skill;
+          return {
+            _id: skill._id,
+            _creationTime: skill._creationTime,
+            slug: skill.slug,
+            displayName: skill.displayName,
+            summary: skill.summary,
+            ownerUserId: skill.ownerUserId,
+            ownerPublisherId: skill.ownerPublisherId,
+            canonicalSkillId: skill.canonicalSkillId,
+            forkOf: skill.forkOf,
+            latestVersionId: skill.latestVersionId,
+            tags: skill.tags,
+            badges,
+            stats: skill.stats,
+            createdAt: skill.createdAt,
+            updatedAt: skill.updatedAt,
+            pendingReview: true as const,
+          };
+        }
+      }
+      return null;
+    })
+    .filter((skill): skill is NonNullable<typeof skill> => Boolean(skill));
+}
+
 export const listWithLatest = query({
   args: {
     batch: v.optional(v.string()),

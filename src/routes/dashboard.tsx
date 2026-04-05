@@ -1,11 +1,12 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
-import { useQuery } from "convex/react";
+import { usePaginatedQuery, useQuery } from "convex/react";
 import {
   AlertTriangle,
   ArrowDownToLine,
   CheckCircle2,
   Clock,
   GitBranch,
+  Loader2,
   Package,
   Plug,
   ShieldCheck,
@@ -83,16 +84,23 @@ function Dashboard() {
   const selectedPublisher =
     publishers?.find((entry) => entry.publisher._id === selectedPublisherId) ?? null;
 
-  const mySkills = useQuery(
-    api.skills.list,
+  const skillsQueryArgs =
     selectedPublisher?.publisher.kind === "user" && me?._id
-      ? { ownerUserId: me._id, limit: 100 }
+      ? { ownerUserId: me._id }
       : selectedPublisherId
-        ? { ownerPublisherId: selectedPublisherId as Doc<"publishers">["_id"], limit: 100 }
+        ? { ownerPublisherId: selectedPublisherId as Doc<"publishers">["_id"] }
         : me?._id
-          ? { ownerUserId: me._id, limit: 100 }
-          : "skip",
-  ) as DashboardSkill[] | undefined;
+          ? { ownerUserId: me._id }
+          : "skip";
+  const {
+    results: paginatedSkills,
+    status: skillsStatus,
+    loadMore,
+  } = usePaginatedQuery(api.skills.listDashboardPaginated, skillsQueryArgs, {
+    initialNumItems: 50,
+  });
+  const mySkills = paginatedSkills as DashboardSkill[] | undefined;
+
   const myPackages = useQuery(
     api.packages.list,
     selectedPublisherId
@@ -195,6 +203,19 @@ function Dashboard() {
                 {skills.map((skill) => (
                   <SkillRow key={skill._id} skill={skill} ownerHandle={ownerHandle} />
                 ))}
+              </div>
+            )}
+            {skillsStatus === "CanLoadMore" && (
+              <div className="dashboard-load-more">
+                <button className="btn" onClick={() => loadMore(50)}>
+                  Load More
+                </button>
+              </div>
+            )}
+            {skillsStatus === "LoadingMore" && (
+              <div className="dashboard-load-more">
+                <Loader2 className="dashboard-spinner" size={20} />
+                <span>Loading more skills...</span>
               </div>
             )}
           </section>
