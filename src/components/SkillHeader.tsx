@@ -4,7 +4,7 @@ import {
   PLATFORM_SKILL_LICENSE,
   PLATFORM_SKILL_LICENSE_SUMMARY,
 } from "clawhub-schema/licenseConstants";
-import { Package } from "lucide-react";
+import { ArrowDownToLine } from "lucide-react";
 import type { Doc, Id } from "../../convex/_generated/dataModel";
 import { getSkillBadges } from "../lib/badges";
 import { formatCompactStat, formatSkillStatsTriplet } from "../lib/numberFormat";
@@ -229,7 +229,7 @@ export function SkillHeader({
                     </span>
                     <span className="text-[color:var(--ink-soft)] opacity-40">·</span>
                     <span className="flex items-center gap-1 text-sm text-[color:var(--ink-soft)]">
-                      <Package size={14} aria-hidden="true" /> {formattedStats.downloads}
+                      <ArrowDownToLine size={14} aria-hidden="true" /> {formattedStats.downloads}
                     </span>
                     <span className="text-[color:var(--ink-soft)] opacity-40">·</span>
                     <span className="text-sm text-[color:var(--ink-soft)]">
