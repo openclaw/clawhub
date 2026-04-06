@@ -241,7 +241,7 @@ export function useSkillsBrowseModel({
       }
     });
     return results;
-  }, [baseItems, dir, hasQuery, sort]);
+  }, [baseItems, dir, hasQuery, isOtherCategory, sort]);
 
   const isLoadingSkills = hasQuery ? isSearching && searchResults.length === 0 : isLoadingList;
   const canLoadMore = hasQuery
