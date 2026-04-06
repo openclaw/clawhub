@@ -85,6 +85,10 @@ vi.mock("../lib/packageApi", () => ({
   ),
 }));
 
+vi.mock("../components/MarkdownPreview", () => ({
+  MarkdownPreview: ({ children }: { children: string }) => <div>{children}</div>,
+}));
+
 async function loadRoute() {
   return (await import("../routes/plugins/$name")).Route as unknown as {
     __config: {

@@ -32,8 +32,8 @@
   "dependencies": {
     "@auth/core": "^0.37.4",
     "@convex-dev/auth": "^0.0.91",
-    "@create-markdown/core": "^2.0.0",
-    "@create-markdown/preview": "^2.0.0",
+    "@create-markdown/core": "^2.0.1",
+    "@create-markdown/preview": "^2.0.1",
     "@fontsource/bricolage-grotesque": "^5.2.10",
     "@fontsource/ibm-plex-mono": "^5.2.7",
     "@fontsource/manrope": "^5.2.8",
