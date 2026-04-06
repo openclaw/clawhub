@@ -104,7 +104,9 @@ async function resolveWorkdir(explicit?: string) {
   if (hasMarker) return cwd;
 
   const clawdbotWorkspace = await resolveClawdbotDefaultWorkspace();
-  return clawdbotWorkspace ? resolve(clawdbotWorkspace) : cwd;
+  if (clawdbotWorkspace) return resolve(clawdbotWorkspace);
+  // Default to ~/.openclaw instead of cwd to avoid mixing npm skills with custom skills
+  return resolve(process.env.HOME ?? "", ".openclaw");
 }
 
 async function hasClawhubMarker(workdir: string) {
