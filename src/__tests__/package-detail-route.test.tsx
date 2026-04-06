@@ -86,7 +86,7 @@ vi.mock("../lib/packageApi", () => ({
 }));
 
 vi.mock("../components/MarkdownPreview", () => ({
-  MarkdownPreview: ({ children }: { children: string }) => <div>{children}</div>,
+  MarkdownPreview: ({ children }: { children: string; className?: string; highlight?: boolean }) => <div>{children}</div>,
 }));
 
 async function loadRoute() {
