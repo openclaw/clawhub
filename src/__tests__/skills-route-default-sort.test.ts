@@ -49,6 +49,7 @@ describe("skills route default sort", () => {
           dir: undefined,
           highlighted: undefined,
           nonSuspicious: true,
+          tag: undefined,
           view: undefined,
           focus: undefined,
         },
