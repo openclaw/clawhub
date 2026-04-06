@@ -323,6 +323,8 @@ const NONSUSPICIOUS_SORT_INDEXES = {
   stars: "by_nonsuspicious_stars",
   installs: "by_nonsuspicious_installs",
 } as const;
+const MAX_FILTERED_PUBLIC_LIST_SCAN_PAGES = 12;
+const MAX_FILTERED_PUBLIC_LIST_SCAN_ROWS = 500;
 
 function isSkillVersionId(
   value: Id<"skillVersions"> | null | undefined,
@@ -2694,8 +2696,12 @@ export const listPublicPageV4 = query({
     dir: v.optional(v.union(v.literal("asc"), v.literal("desc"))),
     highlightedOnly: v.optional(v.boolean()),
     nonSuspiciousOnly: v.optional(v.boolean()),
+    capabilityTag: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
+    if (args.capabilityTag && !isKnownSkillCapabilityTag(args.capabilityTag)) {
+      return { page: [], hasMore: false, nextCursor: null };
+    }
     const sort = args.sort ?? "newest";
     const dir = args.dir ?? (sort === "name" ? "asc" : "desc");
     const numItems = clampInt(args.numItems ?? 25, 1, MAX_PUBLIC_LIST_LIMIT);
@@ -2708,6 +2714,7 @@ export const listPublicPageV4 = query({
         sort,
         dir,
         numItems,
+        capabilityTag: args.capabilityTag,
         nonSuspiciousOnly: args.nonSuspiciousOnly ?? false,
       });
     }
@@ -2724,45 +2731,104 @@ export const listPublicPageV4 = query({
     const isFirstPage = !decodedCursor;
     const startIndexKey: IndexKey = decodedCursor ?? eqPrefix;
 
-    const result = await getPage(ctx, {
-      table: "skillSearchDigest",
-      startIndexKey,
-      startInclusive: isFirstPage,
-      endIndexKey: eqPrefix,
-      endInclusive: true,
-      absoluteMaxRows: numItems,
-      order: dir,
-      index: indexName,
-      schema,
-    });
-
-    // Build PublicSkillEntry[] from digests
-    const items: PublicSkillEntry[] = [];
-    for (const digest of result.page) {
-      const hydratable = digestToHydratableSkill(digest);
-      const publicSkill = toPublicSkill(hydratable);
-      if (!publicSkill) continue;
-      const ownerInfo = digestToOwnerInfo(digest);
-      if (!ownerInfo?.owner) continue;
-      const latestVersion = digest.latestVersionSummary
-        ? toPublicSkillListVersionFromSummary(digest.latestVersionSummary, digest.latestVersionId)
-        : null;
-      items.push({
-        skill: publicSkill,
-        latestVersion,
-        ownerHandle: ownerInfo.ownerHandle,
-        owner: ownerInfo.owner,
+    if (!args.capabilityTag) {
+      const result = await getPage(ctx, {
+        table: "skillSearchDigest",
+        startIndexKey,
+        startInclusive: isFirstPage,
+        endIndexKey: eqPrefix,
+        endInclusive: true,
+        absoluteMaxRows: numItems,
+        order: dir,
+        index: indexName,
+        schema,
       });
+
+      const items = result.page
+        .map((digest) => buildPublicSkillEntryFromDigest(digest))
+        .filter((item): item is PublicSkillEntry => item !== null);
+      let nextCursor: string | null = null;
+      if (result.hasMore && result.indexKeys.length > 0) {
+        nextCursor = encodeIndexKey(result.indexKeys[result.indexKeys.length - 1]);
+      }
+
+      return { page: items, hasMore: result.hasMore, nextCursor };
     }
 
+    const items: PublicSkillEntry[] = [];
+    let scanCursor = startIndexKey;
+    let scanInclusive = isFirstPage;
+    let hasMore = false;
     let nextCursor: string | null = null;
-    if (result.hasMore && result.indexKeys.length > 0) {
-      nextCursor = encodeIndexKey(result.indexKeys[result.indexKeys.length - 1]);
+    let remainingRows = Math.max(numItems, Math.min(MAX_FILTERED_PUBLIC_LIST_SCAN_ROWS, numItems * 12));
+
+    for (let pageCount = 0; pageCount < MAX_FILTERED_PUBLIC_LIST_SCAN_PAGES; pageCount += 1) {
+      if (remainingRows <= 0) break;
+      const batchSize = Math.min(remainingRows, Math.max(numItems * 3, numItems));
+      const result = await getPage(ctx, {
+        table: "skillSearchDigest",
+        startIndexKey: scanCursor,
+        startInclusive: scanInclusive,
+        endIndexKey: eqPrefix,
+        endInclusive: true,
+        absoluteMaxRows: batchSize,
+        order: dir,
+        index: indexName,
+        schema,
+      });
+      remainingRows -= batchSize;
+      if (result.indexKeys.length === 0) {
+        hasMore = false;
+        nextCursor = null;
+        break;
+      }
+
+      for (let index = 0; index < result.page.length; index += 1) {
+        const digest = result.page[index];
+        const cursor = result.indexKeys[index];
+        if ((digest.capabilityTags ?? []).includes(args.capabilityTag)) {
+          const item = buildPublicSkillEntryFromDigest(digest);
+          if (item) items.push(item);
+        }
+        if (items.length >= numItems) {
+          hasMore = result.hasMore || index < result.page.length - 1;
+          nextCursor = hasMore ? encodeIndexKey(cursor) : null;
+          return { page: items, hasMore, nextCursor };
+        }
+      }
+
+      if (!result.hasMore) {
+        hasMore = false;
+        nextCursor = null;
+        break;
+      }
+
+      scanCursor = result.indexKeys[result.indexKeys.length - 1];
+      scanInclusive = false;
+      hasMore = true;
+      nextCursor = encodeIndexKey(scanCursor);
     }
 
-    return { page: items, hasMore: result.hasMore, nextCursor };
+    return { page: items, hasMore, nextCursor };
   },
 });
+
+function buildPublicSkillEntryFromDigest(digest: Doc<"skillSearchDigest">): PublicSkillEntry | null {
+  const hydratable = digestToHydratableSkill(digest);
+  const publicSkill = toPublicSkill(hydratable);
+  if (!publicSkill) return null;
+  const ownerInfo = digestToOwnerInfo(digest);
+  if (!ownerInfo?.owner) return null;
+  const latestVersion = digest.latestVersionSummary
+    ? toPublicSkillListVersionFromSummary(digest.latestVersionSummary, digest.latestVersionId)
+    : null;
+  return {
+    skill: publicSkill,
+    latestVersion,
+    ownerHandle: ownerInfo.ownerHandle,
+    owner: ownerInfo.owner,
+  };
+}
 
 type PublicSkillCatalogItem = {
   name: string;
@@ -3060,6 +3126,7 @@ async function fetchHighlightedPage(
     sort: SortKey;
     dir: "asc" | "desc";
     numItems: number;
+    capabilityTag?: string;
     nonSuspiciousOnly: boolean;
   },
 ) {
@@ -3079,6 +3146,7 @@ async function fetchHighlightedPage(
       .unique();
     if (!digest || digest.softDeletedAt) continue;
     if (opts.nonSuspiciousOnly && digest.isSuspicious) continue;
+    if (opts.capabilityTag && !(digest.capabilityTags ?? []).includes(opts.capabilityTag)) continue;
     digests.push(digest);
   }
 
@@ -3105,23 +3173,9 @@ async function fetchHighlightedPage(
   const trimmed = digests.slice(0, opts.numItems);
 
   // Build PublicSkillEntry[]
-  const items: PublicSkillEntry[] = [];
-  for (const digest of trimmed) {
-    const hydratable = digestToHydratableSkill(digest);
-    const publicSkill = toPublicSkill(hydratable);
-    if (!publicSkill) continue;
-    const ownerInfo = digestToOwnerInfo(digest);
-    if (!ownerInfo?.owner) continue;
-    const latestVersion = digest.latestVersionSummary
-      ? toPublicSkillListVersionFromSummary(digest.latestVersionSummary, digest.latestVersionId)
-      : null;
-    items.push({
-      skill: publicSkill,
-      latestVersion,
-      ownerHandle: ownerInfo.ownerHandle,
-      owner: ownerInfo.owner,
-    });
-  }
+  const items = trimmed
+    .map((digest) => buildPublicSkillEntryFromDigest(digest))
+    .filter((item): item is PublicSkillEntry => item !== null);
 
   // Highlighted skills are few enough to return in one page — no cursor needed
   return { page: items, hasMore: false, nextCursor: null };

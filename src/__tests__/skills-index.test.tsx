@@ -288,6 +288,19 @@ describe("SkillsIndex", () => {
     );
   });
 
+  it("passes capabilityTag to list query when tag filter is active", async () => {
+    searchMock = { tag: "crypto" };
+    render(<SkillsIndex />);
+    await act(async () => {});
+
+    expect(convexHttpMock.query).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({
+        capabilityTag: "crypto",
+      }),
+    );
+  });
+
   it("shows load-more button when more results are available", async () => {
     vi.stubGlobal("IntersectionObserver", undefined);
     convexHttpMock.query.mockResolvedValue({

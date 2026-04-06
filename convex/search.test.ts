@@ -345,6 +345,55 @@ describe("search helpers", () => {
     expect(result[0].skill.slug).toBe("downloader-1");
   });
 
+  it("filters vector search results by capability tag", async () => {
+    generateEmbeddingMock.mockResolvedValueOnce([0, 1, 2]);
+
+    const runQuery = vi
+      .fn()
+      .mockResolvedValueOnce(null)
+      .mockResolvedValueOnce([
+        {
+          embeddingId: "skillEmbeddings:crypto",
+          skill: makePublicSkill({
+            id: "skills:crypto",
+            slug: "wallet-helper",
+            displayName: "Wallet Helper",
+            capabilityTags: ["crypto", "requires-wallet"],
+          }),
+          version: null,
+          ownerHandle: "owner",
+          owner: null,
+        },
+        {
+          embeddingId: "skillEmbeddings:oauth",
+          skill: makePublicSkill({
+            id: "skills:oauth",
+            slug: "x-poster",
+            displayName: "X Poster",
+            capabilityTags: ["requires-oauth-token", "posts-externally"],
+          }),
+          version: null,
+          ownerHandle: "owner",
+          owner: null,
+        },
+      ])
+      .mockResolvedValueOnce([]);
+
+    const result = await searchSkillsHandler(
+      {
+        vectorSearch: vi.fn().mockResolvedValue([
+          { _id: "skillEmbeddings:crypto", _score: 0.9 },
+          { _id: "skillEmbeddings:oauth", _score: 0.8 },
+        ]),
+        runQuery,
+      },
+      { query: "helper", limit: 10, capabilityTag: "crypto" },
+    );
+
+    expect(result).toHaveLength(1);
+    expect(result[0].skill.slug).toBe("wallet-helper");
+  });
+
   it("deduplicates exact slug injection against vector exact matches", async () => {
     generateEmbeddingMock.mockResolvedValueOnce([0, 1, 2]);
 
@@ -824,6 +873,7 @@ function makePublicSkill(params: {
   slug: string;
   displayName: string;
   downloads?: number;
+  capabilityTags?: string[];
 }) {
   return {
     _id: params.id,
@@ -836,6 +886,7 @@ function makePublicSkill(params: {
     forkOf: undefined,
     latestVersionId: "skillVersions:1",
     tags: {},
+    capabilityTags: params.capabilityTags,
     badges: {},
     stats: {
       downloads: params.downloads ?? 0,

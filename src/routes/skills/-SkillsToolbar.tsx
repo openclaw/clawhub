@@ -1,5 +1,6 @@
 import { ArrowDownUp, Check, Grid3X3, List, Search, X } from "lucide-react";
 import type { RefObject } from "react";
+import { SKILL_CAPABILITY_TAGS } from "../../../convex/lib/skillCapabilityTags";
 import { Button } from "../../components/ui/button";
 import { Input } from "../../components/ui/input";
 import {
@@ -20,12 +21,23 @@ type SkillsToolbarProps = {
   view: "cards" | "list";
   highlightedOnly: boolean;
   nonSuspiciousOnly: boolean;
+  capabilityTag?: string;
   onQueryChange: (next: string) => void;
   onToggleHighlighted: () => void;
   onToggleNonSuspicious: () => void;
+  onCapabilityTagChange: (value: string) => void;
   onSortChange: (value: string) => void;
   onToggleDir: () => void;
   onToggleView: () => void;
+};
+
+const SKILL_CAPABILITY_LABELS: Record<string, string> = {
+  crypto: "Crypto",
+  "requires-wallet": "Requires wallet",
+  "can-make-purchases": "Payments",
+  "can-sign-transactions": "Signs transactions",
+  "requires-oauth-token": "OAuth",
+  "posts-externally": "External posting",
 };
 
 export function SkillsToolbar({
@@ -37,9 +49,11 @@ export function SkillsToolbar({
   view,
   highlightedOnly,
   nonSuspiciousOnly,
+  capabilityTag,
   onQueryChange,
   onToggleHighlighted,
   onToggleNonSuspicious,
+  onCapabilityTagChange,
   onSortChange,
   onToggleDir,
   onToggleView,
@@ -77,6 +91,22 @@ export function SkillsToolbar({
         <FilterChip active={nonSuspiciousOnly} onClick={onToggleNonSuspicious}>
           Clean only
         </FilterChip>
+        <Select value={capabilityTag ?? "__all__"} onValueChange={onCapabilityTagChange}>
+          <SelectTrigger
+            className="w-auto min-w-[156px] min-h-[36px] py-1.5 text-xs font-semibold"
+            aria-label="Filter by tag"
+          >
+            <SelectValue placeholder="All tags" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="__all__">All tags</SelectItem>
+            {SKILL_CAPABILITY_TAGS.map((tag) => (
+              <SelectItem key={tag} value={tag}>
+                {SKILL_CAPABILITY_LABELS[tag] ?? tag}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
 
         {/* Spacer */}
         <div className="ml-auto" />

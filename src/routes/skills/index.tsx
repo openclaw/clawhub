@@ -2,11 +2,14 @@ import { createFileRoute, redirect } from "@tanstack/react-router";
 import { useQuery } from "convex/react";
 import { useRef } from "react";
 import { api } from "../../../convex/_generated/api";
+import { SKILL_CAPABILITY_TAGS } from "../../../convex/lib/skillCapabilityTags";
 import { Container } from "../../components/layout/Container";
 import { parseSort } from "./-params";
 import { SkillsResults } from "./-SkillsResults";
 import { SkillsToolbar } from "./-SkillsToolbar";
 import { useSkillsBrowseModel, type SkillsSearchState } from "./-useSkillsBrowseModel";
+
+const SKILL_CAPABILITY_TAG_SET = new Set<string>(SKILL_CAPABILITY_TAGS);
 
 export const Route = createFileRoute("/skills/")({
   validateSearch: (search): SkillsSearchState => {
@@ -24,6 +27,10 @@ export const Route = createFileRoute("/skills/")({
         search.nonSuspicious === true
           ? true
           : undefined,
+      tag:
+        typeof search.tag === "string" && SKILL_CAPABILITY_TAG_SET.has(search.tag)
+          ? search.tag
+          : undefined,
       view: search.view === "cards" || search.view === "list" ? search.view : undefined,
       focus: search.focus === "search" ? "search" : undefined,
     };
@@ -39,6 +46,7 @@ export const Route = createFileRoute("/skills/")({
         dir: search.dir || undefined,
         highlighted: search.highlighted || undefined,
         nonSuspicious: search.nonSuspicious || undefined,
+        tag: search.tag || undefined,
         view: search.view || undefined,
         focus: search.focus || undefined,
       },
@@ -93,9 +101,11 @@ export function SkillsIndex() {
             view={model.view}
             highlightedOnly={model.highlightedOnly}
             nonSuspiciousOnly={model.nonSuspiciousOnly}
+            capabilityTag={model.capabilityTag}
             onQueryChange={model.onQueryChange}
             onToggleHighlighted={model.onToggleHighlighted}
             onToggleNonSuspicious={model.onToggleNonSuspicious}
+            onCapabilityTagChange={model.onCapabilityTagChange}
             onSortChange={model.onSortChange}
             onToggleDir={model.onToggleDir}
             onToggleView={model.onToggleView}
