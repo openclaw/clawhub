@@ -88,7 +88,7 @@ export const Route = createFileRoute("/about")({
 function AboutPage() {
   return (
     <main className="py-10">
-      <Container size="narrow">
+      <Container size="wide">
         <div className="flex flex-col gap-6">
           <Card>
             <CardContent className="flex flex-col gap-4 pt-6">
