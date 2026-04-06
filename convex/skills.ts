@@ -324,8 +324,6 @@ const NONSUSPICIOUS_SORT_INDEXES = {
   stars: "by_nonsuspicious_stars",
   installs: "by_nonsuspicious_installs",
 } as const;
-const MAX_FILTERED_PUBLIC_LIST_SCAN_PAGES = 12;
-const MAX_FILTERED_PUBLIC_LIST_SCAN_ROWS = 500;
 
 function isSkillVersionId(
   value: Id<"skillVersions"> | null | undefined,
@@ -2754,25 +2752,9 @@ export const listPublicPageV4 = query({
       schema,
     });
 
-    // Build PublicSkillEntry[] from digests
-    const items: PublicSkillEntry[] = [];
-    for (const digest of result.page) {
-      const hydratable = digestToHydratableSkill(digest);
-      const publicSkill = toPublicSkill(hydratable);
-      if (!publicSkill) continue;
-      const ownerInfo = digestToOwnerInfo(digest);
-      if (!ownerInfo?.owner) continue;
-      const latestVersion = digest.latestVersionSummary
-        ? toPublicSkillListVersionFromSummary(digest.latestVersionSummary, digest.latestVersionId)
-        : null;
-      items.push({
-        skill: publicSkill,
-        latestVersion,
-        ownerHandle: ownerInfo.ownerHandle,
-        owner: ownerInfo.owner,
-      });
-    }
-
+    const items = result.page
+      .map((digest) => buildPublicSkillEntryFromDigest(digest))
+      .filter((item): item is PublicSkillEntry => item !== null);
     let nextCursor: string | null = null;
     if (result.hasMore && result.indexKeys.length > 0) {
       nextCursor = encodeIndexKey(result.indexKeys[result.indexKeys.length - 1]);
