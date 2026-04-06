@@ -24,6 +24,10 @@ vi.mock("../lib/useAuthStatus", () => ({
   useAuthStatus: () => useAuthStatusMock(),
 }));
 
+vi.mock("../components/SkillDiffCard", () => ({
+  SkillDiffCard: () => <div data-testid="skill-diff-card" />,
+}));
+
 describe("SkillDetailPage", () => {
   const skillId = "skills:1" as Id<"skills">;
   const ownerId = "users:1" as Id<"users">;
