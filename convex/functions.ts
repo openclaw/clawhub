@@ -20,7 +20,11 @@ import {
   upsertPackageSearchDigest,
 } from "./lib/packageSearchDigest";
 import { getOwnerPublisher } from "./lib/publishers";
-import { extractDigestFields, upsertSkillSearchDigest } from "./lib/skillSearchDigest";
+import {
+  deleteSkillSearchDigest,
+  extractDigestFields,
+  upsertSkillSearchDigest,
+} from "./lib/skillSearchDigest";
 
 const triggers = new Triggers<DataModel>();
 
@@ -324,11 +328,7 @@ export async function repointPackageLatestRelease(
 
 triggers.register("skills", async (ctx, change) => {
   if (change.operation === "delete") {
-    const existing = await ctx.db
-      .query("skillSearchDigest")
-      .withIndex("by_skill", (q) => q.eq("skillId", change.id))
-      .unique();
-    if (existing) await ctx.db.delete(existing._id);
+    await deleteSkillSearchDigest(ctx, change.id);
   } else {
     await syncSkillSearchDigestForSkill(ctx, change.newDoc);
   }

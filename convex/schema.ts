@@ -1025,6 +1025,8 @@ const skillStatBackfillState = defineTable({
 const globalStats = defineTable({
   key: v.string(),
   activeSkillsCount: v.number(),
+  /** Precomputed content-tag → count map, maintained by digest sync triggers. */
+  contentTagCounts: v.optional(v.record(v.string(), v.number())),
   updatedAt: v.number(),
 }).index("by_key", ["key"]);
 

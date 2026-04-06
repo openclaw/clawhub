@@ -1,5 +1,6 @@
 import type { Doc, Id } from "../_generated/dataModel";
 import type { MutationCtx } from "../_generated/server";
+import { adjustContentTagCounts } from "./globalStats";
 import type { HydratableSkill, PublicPublisher } from "./public";
 import { deriveContentTags } from "./skillContentTags";
 
@@ -89,10 +90,47 @@ export async function upsertSkillSearchDigest(
     .unique();
   if (existing) {
     if (!hasDigestChanged(existing, fields)) return;
+    const deltas = computeTagDeltas(existing.contentTags ?? [], fields.contentTags ?? []);
     await ctx.db.patch(existing._id, fields);
+    await adjustContentTagCounts(ctx, deltas);
   } else {
     await ctx.db.insert("skillSearchDigest", fields);
+    const deltas = computeTagDeltas([], fields.contentTags ?? []);
+    await adjustContentTagCounts(ctx, deltas);
   }
+}
+
+/**
+ * Remove a skill's digest and adjust precomputed tag counts.
+ * Called from the skills trigger on delete.
+ */
+export async function deleteSkillSearchDigest(
+  ctx: Pick<MutationCtx, "db">,
+  skillId: Id<"skills">,
+) {
+  const existing = await ctx.db
+    .query("skillSearchDigest")
+    .withIndex("by_skill", (q) => q.eq("skillId", skillId))
+    .unique();
+  if (!existing) return;
+  const deltas = computeTagDeltas(existing.contentTags ?? [], []);
+  await ctx.db.delete(existing._id);
+  await adjustContentTagCounts(ctx, deltas);
+}
+
+/** Compute per-tag deltas between old and new tag arrays. */
+function computeTagDeltas(
+  oldTags: string[],
+  newTags: string[],
+): Record<string, number> {
+  const deltas: Record<string, number> = {};
+  for (const tag of oldTags) deltas[tag] = (deltas[tag] ?? 0) - 1;
+  for (const tag of newTags) deltas[tag] = (deltas[tag] ?? 0) + 1;
+  // Remove zero deltas
+  for (const key of Object.keys(deltas)) {
+    if (deltas[key] === 0) delete deltas[key];
+  }
+  return deltas;
 }
 
 /** Compare new fields against existing row. Returns true if any field differs. */

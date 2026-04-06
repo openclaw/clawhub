@@ -139,3 +139,108 @@ export async function readGlobalPublicSkillsCount(ctx: GlobalStatsReadCtx) {
     throw error;
   }
 }
+
+// ---------------------------------------------------------------------------
+// Content tag counts — precomputed on the globalStats singleton
+// ---------------------------------------------------------------------------
+
+export async function readContentTagCounts(
+  ctx: GlobalStatsReadCtx,
+): Promise<Record<string, number> | null> {
+  try {
+    const stats = await ctx.db
+      .query("globalStats")
+      .withIndex("by_key", (q) => q.eq("key", GLOBAL_STATS_KEY))
+      .unique();
+    return stats?.contentTagCounts ?? null;
+  } catch (error) {
+    if (isGlobalStatsStorageNotReadyError(error)) return null;
+    throw error;
+  }
+}
+
+/**
+ * Apply tag deltas (e.g. +1 for added tags, -1 for removed tags).
+ * Call this from digest upsert/delete paths.
+ */
+export async function adjustContentTagCounts(
+  ctx: GlobalStatsWriteCtx,
+  deltas: Record<string, number>,
+  now = Date.now(),
+) {
+  const hasNonZero = Object.values(deltas).some((d) => d !== 0);
+  if (!hasNonZero) return;
+
+  let existing: Doc<"globalStats"> | null | undefined;
+  try {
+    existing = await ctx.db
+      .query("globalStats")
+      .withIndex("by_key", (q) => q.eq("key", GLOBAL_STATS_KEY))
+      .unique();
+  } catch (error) {
+    if (isGlobalStatsStorageNotReadyError(error)) return;
+    throw error;
+  }
+
+  const current: Record<string, number> = existing?.contentTagCounts ?? {};
+  const next: Record<string, number> = { ...current };
+  for (const [tag, delta] of Object.entries(deltas)) {
+    const value = Math.max(0, (next[tag] ?? 0) + delta);
+    if (value > 0) {
+      next[tag] = value;
+    } else {
+      delete next[tag];
+    }
+  }
+
+  if (existing) {
+    await ctx.db.patch(existing._id, { contentTagCounts: next, updatedAt: now });
+  } else {
+    await ctx.db.insert("globalStats", {
+      key: GLOBAL_STATS_KEY,
+      activeSkillsCount: 0,
+      contentTagCounts: next,
+      updatedAt: now,
+    });
+  }
+}
+
+/**
+ * Fully recompute content tag counts from all active digest rows.
+ * Used during backfill — NOT for per-request reads.
+ */
+export async function recomputeContentTagCounts(ctx: GlobalStatsWriteCtx, now = Date.now()) {
+  const digests = await ctx.db
+    .query("skillSearchDigest")
+    .withIndex("by_active_updated", (q) => q.eq("softDeletedAt", undefined))
+    .collect();
+
+  const counts: Record<string, number> = {};
+  for (const digest of digests) {
+    for (const tag of (digest as { contentTags?: string[] }).contentTags ?? []) {
+      counts[tag] = (counts[tag] ?? 0) + 1;
+    }
+  }
+
+  let existing: Doc<"globalStats"> | null | undefined;
+  try {
+    existing = await ctx.db
+      .query("globalStats")
+      .withIndex("by_key", (q) => q.eq("key", GLOBAL_STATS_KEY))
+      .unique();
+  } catch (error) {
+    if (isGlobalStatsStorageNotReadyError(error)) return;
+    throw error;
+  }
+
+  if (existing) {
+    await ctx.db.patch(existing._id, { contentTagCounts: counts, updatedAt: now });
+  } else {
+    await ctx.db.insert("globalStats", {
+      key: GLOBAL_STATS_KEY,
+      activeSkillsCount: 0,
+      contentTagCounts: counts,
+      updatedAt: now,
+    });
+  }
+}

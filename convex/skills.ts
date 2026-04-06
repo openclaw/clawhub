@@ -27,7 +27,9 @@ import {
   countPublicSkillsForGlobalStats,
   getPublicSkillVisibilityDelta,
   isPublicSkillDoc,
+  readContentTagCounts,
   readGlobalPublicSkillsCount,
+  recomputeContentTagCounts,
 } from "./lib/globalStats";
 import {
   applyManualOverrideToSkillPatch,
@@ -3177,14 +3179,21 @@ async function fetchContentTagFilteredPage(
       schema,
     });
 
-    for (const digest of result.page) {
-      if (!(digest.contentTags ?? []).includes(opts.contentTag)) continue;
+    for (let i = 0; i < result.page.length; i++) {
+      const digest = result.page[i];
+      const key = result.indexKeys[i];
+
+      if (!(digest.contentTags ?? []).includes(opts.contentTag)) {
+        // Track cursor past skipped rows so we don't re-scan them.
+        lastKey = key;
+        continue;
+      }
 
       const hydratable = digestToHydratableSkill(digest);
       const publicSkill = toPublicSkill(hydratable);
-      if (!publicSkill) continue;
+      if (!publicSkill) { lastKey = key; continue; }
       const ownerInfo = digestToOwnerInfo(digest);
-      if (!ownerInfo?.owner) continue;
+      if (!ownerInfo?.owner) { lastKey = key; continue; }
 
       const latestVersion = digest.latestVersionSummary
         ? toPublicSkillListVersionFromSummary(digest.latestVersionSummary, digest.latestVersionId)
@@ -3196,16 +3205,17 @@ async function fetchContentTagFilteredPage(
         ownerHandle: ownerInfo.ownerHandle,
         owner: ownerInfo.owner,
       });
+      lastKey = key;
 
       if (items.length >= opts.numItems) break;
     }
 
-    hasMore = result.hasMore;
-    if (result.indexKeys.length > 0) {
-      lastKey = result.indexKeys[result.indexKeys.length - 1];
+    hasMore = result.hasMore || items.length < opts.numItems;
+    if (lastKey) {
       currentCursor = lastKey;
       isFirstIteration = false;
-    } else {
+    }
+    if (result.indexKeys.length === 0) {
       hasMore = false;
     }
   }
@@ -3277,24 +3287,15 @@ export const countPublicSkills = query({
 });
 
 /**
- * Return content-tag counts for all active (non-deleted) skills.
+ * Return content-tag counts from precomputed globalStats.
+ * Reads a single document instead of scanning all digest rows.
  * Called via ConvexHttpClient for one-shot fetch, not reactive subscription.
  */
 export const getContentTagCounts = query({
   args: {},
   handler: async (ctx) => {
-    const digests = await ctx.db
-      .query("skillSearchDigest")
-      .withIndex("by_active_updated", (q) => q.eq("softDeletedAt", undefined))
-      .collect();
-
-    const counts: Record<string, number> = {};
-    for (const digest of digests) {
-      for (const tag of digest.contentTags ?? []) {
-        counts[tag] = (counts[tag] ?? 0) + 1;
-      }
-    }
-
+    const counts = await readContentTagCounts(ctx);
+    if (!counts) return [];
     return Object.entries(counts)
       .sort((a, b) => b[1] - a[1])
       .map(([tag, count]) => ({ tag, count }));
@@ -3337,6 +3338,9 @@ export const backfillContentTags = internalMutation({
         cursor: digests.continueCursor,
         batchSize,
       });
+    } else {
+      // Final batch — recompute the precomputed tag counts in globalStats.
+      await recomputeContentTagCounts(ctx);
     }
 
     return { patched, isDone: digests.isDone };
