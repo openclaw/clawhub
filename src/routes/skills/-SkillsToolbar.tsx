@@ -1,6 +1,22 @@
-import { ArrowDownUp, Check, Grid3X3, List, Search, X } from "lucide-react";
+import {
+  ArrowDownUp,
+  Check,
+  Database,
+  GitBranch,
+  Grid3X3,
+  List,
+  MessageSquare,
+  Package,
+  Plug,
+  Search,
+  Shield,
+  Wrench,
+  X,
+  Zap,
+} from "lucide-react";
 import type { RefObject } from "react";
-import { SKILL_CAPABILITY_TAGS } from "../../../convex/lib/skillCapabilityTags";
+import { useMemo } from "react";
+import { SKILL_CATEGORIES, type SkillCategory } from "../../lib/categories";
 import { Button } from "../../components/ui/button";
 import { Input } from "../../components/ui/input";
 import {
@@ -40,6 +56,17 @@ const SKILL_CAPABILITY_LABELS: Record<string, string> = {
   "posts-externally": "External posting",
 };
 
+const CATEGORY_ICONS: Record<string, React.ReactNode> = {
+  "mcp-tools": <Plug size={13} />,
+  prompts: <MessageSquare size={13} />,
+  workflows: <GitBranch size={13} />,
+  "dev-tools": <Wrench size={13} />,
+  data: <Database size={13} />,
+  security: <Shield size={13} />,
+  automation: <Zap size={13} />,
+  other: <Package size={13} />,
+};
+
 export function SkillsToolbar({
   searchInputRef,
   query,
@@ -58,6 +85,26 @@ export function SkillsToolbar({
   onToggleDir,
   onToggleView,
 }: SkillsToolbarProps) {
+  const activeCategory = useMemo(() => {
+    if (query === "__other__") return "other";
+    if (!query) return undefined;
+    return SKILL_CATEGORIES.find((c) =>
+      c.keywords.some((k) => k === query.trim().toLowerCase()),
+    )?.slug;
+  }, [query]);
+
+  const handleCategoryChange = (cat: SkillCategory | undefined) => {
+    if (!cat) {
+      onQueryChange("");
+    } else if (cat.slug === "other") {
+      onQueryChange("__other__");
+    } else if (cat.keywords[0]) {
+      onQueryChange(cat.keywords[0]);
+    } else {
+      onQueryChange("");
+    }
+  };
+
   return (
     <div className="flex flex-col gap-3">
       {/* Search row */}
@@ -91,18 +138,30 @@ export function SkillsToolbar({
         <FilterChip active={nonSuspiciousOnly} onClick={onToggleNonSuspicious}>
           Clean only
         </FilterChip>
-        <Select value={capabilityTag ?? "__all__"} onValueChange={onCapabilityTagChange}>
+        {capabilityTag ? (
+          <FilterChip
+            active
+            onClick={() => onCapabilityTagChange("__all__")}
+            icon={<X className="h-3 w-3" />}
+          >
+            {SKILL_CAPABILITY_LABELS[capabilityTag] ?? capabilityTag}
+          </FilterChip>
+        ) : null}
+        <Select value={activeCategory ?? "__all__"} onValueChange={(v) => handleCategoryChange(v === "__all__" ? undefined : SKILL_CATEGORIES.find((c) => c.slug === v))}>
           <SelectTrigger
             className="w-auto min-w-[156px] min-h-[36px] py-1.5 text-xs font-semibold"
-            aria-label="Filter by tag"
+            aria-label="Filter by category"
           >
-            <SelectValue placeholder="All tags" />
+            <SelectValue placeholder="All categories" />
           </SelectTrigger>
           <SelectContent>
-            <SelectItem value="__all__">All tags</SelectItem>
-            {SKILL_CAPABILITY_TAGS.map((tag) => (
-              <SelectItem key={tag} value={tag}>
-                {SKILL_CAPABILITY_LABELS[tag] ?? tag}
+            <SelectItem value="__all__">All categories</SelectItem>
+            {SKILL_CATEGORIES.map((cat) => (
+              <SelectItem key={cat.slug} value={cat.slug}>
+                <span className="inline-flex items-center gap-1.5">
+                  <span className="opacity-60">{CATEGORY_ICONS[cat.slug]}</span>
+                  {cat.label}
+                </span>
               </SelectItem>
             ))}
           </SelectContent>
@@ -131,11 +190,11 @@ export function SkillsToolbar({
         </Select>
 
         <Button
-          variant="ghost"
+          variant="outline"
           size="sm"
           onClick={onToggleDir}
           aria-label={`Sort direction: ${dir === "asc" ? "ascending" : "descending"}`}
-          className="min-h-[36px] px-2"
+          className="min-h-[36px] px-2 rounded-[var(--radius-sm)]"
         >
           <ArrowDownUp
             className={`h-4 w-4 transition-transform ${dir === "asc" ? "rotate-180" : ""}`}
@@ -143,7 +202,7 @@ export function SkillsToolbar({
         </Button>
 
         {/* View toggle */}
-        <div className="inline-flex items-center rounded-[var(--radius-pill)] border border-[color:var(--line)] bg-[color:var(--surface)] p-0.5">
+        <div className="inline-flex items-center rounded-[var(--radius-sm)] border border-[rgba(29,59,78,0.22)] bg-[rgba(255,255,255,0.94)] p-0.5">
           <button
             type="button"
             onClick={view === "list" ? onToggleView : undefined}
@@ -178,23 +237,26 @@ function FilterChip({
   active,
   onClick,
   children,
+  icon,
 }: {
   active: boolean;
   onClick: () => void;
   children: React.ReactNode;
+  icon?: React.ReactNode;
 }) {
   return (
     <button
       type="button"
       aria-pressed={active}
       onClick={onClick}
-      className={`inline-flex items-center gap-1.5 rounded-[var(--radius-pill)] border px-3 py-1.5 text-xs font-semibold transition-all duration-150 ${
+      className={`inline-flex items-center gap-1.5 rounded-[var(--radius-sm)] border border-[rgba(29,59,78,0.22)] bg-[rgba(255,255,255,0.94)] px-3.5 min-h-[36px] text-xs font-semibold transition-all duration-150 ${
         active
           ? "border-[color:var(--accent)]/30 bg-[color:var(--accent)]/10 text-[color:var(--accent)]"
-          : "border-[color:var(--line)] bg-[color:var(--surface)] text-[color:var(--ink-soft)] hover:border-[color:var(--border-ui-hover)] hover:text-[color:var(--ink)]"
+          : "text-[color:var(--ink-soft)] hover:border-[color:var(--border-ui-hover)] hover:text-[color:var(--ink)]"
       }`}
     >
-      {active && <Check className="h-3 w-3" />}
+      {active && !icon && <Check className="h-3 w-3" />}
+      {icon && <span className={active ? "opacity-100" : "opacity-60"}>{icon}</span>}
       {children}
     </button>
   );

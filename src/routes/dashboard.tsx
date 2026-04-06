@@ -18,6 +18,7 @@ import { api } from "../../convex/_generated/api";
 import type { Doc } from "../../convex/_generated/dataModel";
 import { EmptyState } from "../components/EmptyState";
 import { Container } from "../components/layout/Container";
+import { SignInButton } from "../components/SignInButton";
 import { Badge } from "../components/ui/badge";
 import { Button } from "../components/ui/button";
 import { Card, CardContent } from "../components/ui/card";
@@ -120,7 +121,10 @@ function Dashboard() {
     return (
       <Container className="py-10">
         <Card>
-          <CardContent>Sign in to access your dashboard.</CardContent>
+          <CardContent className="flex flex-col items-start gap-3">
+            <span>Sign in to access your dashboard.</span>
+            <SignInButton variant="outline">Sign in with GitHub</SignInButton>
+          </CardContent>
         </Card>
       </Container>
     );

@@ -6,6 +6,7 @@ import { toast } from "sonner";
 import { api } from "../../convex/_generated/api";
 import type { Doc, Id } from "../../convex/_generated/dataModel";
 import { canManageSkill, isModerator } from "../lib/roles";
+import { hasOwnProperty } from "../lib/hasOwnProperty";
 import type { SkillBySlugResult, SkillPageInitialData } from "../lib/skillPage";
 import { useAuthStatus } from "../lib/useAuthStatus";
 import { ClientOnly } from "./ClientOnly";
@@ -37,13 +38,11 @@ type SkillDetailPageProps = {
 type SkillFile = Doc<"skillVersions">["files"][number];
 
 function formatReportError(error: unknown) {
-  if (error && typeof error === "object" && "data" in error) {
+  if (hasOwnProperty(error, "data")) {
     const data = (error as { data?: unknown }).data;
     if (typeof data === "string" && data.trim()) return data.trim();
     if (
-      data &&
-      typeof data === "object" &&
-      "message" in data &&
+      hasOwnProperty(data, "message") &&
       typeof (data as { message?: unknown }).message === "string"
     ) {
       const message = (data as { message?: string }).message?.trim();

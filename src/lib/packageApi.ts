@@ -4,6 +4,7 @@ import type {
   PackageVerificationSummary,
 } from "clawhub-schema";
 import { ApiRoutes } from "clawhub-schema/routes";
+import { hasOwnProperty } from "./hasOwnProperty";
 import { getRequiredRuntimeEnv, getRuntimeEnv } from "./runtimeEnv";
 
 export type PackageListItem = {
@@ -113,6 +114,11 @@ export type PackageVersionDetail = {
 type PluginFamily = "code-plugin" | "bundle-plugin";
 
 type PluginCatalogResult = {
+  items: PackageListItem[];
+  nextCursor: string | null;
+};
+
+type PackageCatalogBrowseResponse = {
   items: PackageListItem[];
   nextCursor: string | null;
 };
@@ -302,10 +308,17 @@ export async function fetchPluginCatalog(params: {
       executesCode: params.executesCode,
       limit: params.limit,
     });
+    if (hasOwnProperty(response, "results") && Array.isArray(response.results)) {
+      return {
+        items: response.results.map((entry) => entry.package),
+        nextCursor: null,
+      };
+    }
+
+    const browseResponse = response as PackageCatalogBrowseResponse;
     return {
-      items:
-        "results" in response ? response.results.map((entry) => entry.package) : response.items,
-      nextCursor: "results" in response ? null : response.nextCursor,
+      items: browseResponse.items,
+      nextCursor: browseResponse.nextCursor,
     };
   }
 

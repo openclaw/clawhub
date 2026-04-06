@@ -2,6 +2,7 @@ import { useAction } from "convex/react";
 import { useCallback, useEffect, useMemo, useRef, useState, type RefObject } from "react";
 import { api } from "../../../convex/_generated/api";
 import { convexHttp } from "../../convex/client";
+import { ALL_CATEGORY_KEYWORDS } from "../../lib/categories";
 import { parseDir, parseSort, toListSort, type SortDir, type SortKey } from "./-params";
 import type { SkillListEntry, SkillSearchEntry } from "./-types";
 
@@ -60,8 +61,9 @@ export function useSkillsBrowseModel({
   const capabilityTag = search.tag;
   const searchSkills = useAction(api.search.searchSkills);
 
+  const isOtherCategory = query === "__other__";
   const trimmedQuery = useMemo(() => query.trim(), [query]);
-  const hasQuery = trimmedQuery.length > 0;
+  const hasQuery = !isOtherCategory && trimmedQuery.length > 0;
   const sort: SortKey =
     search.sort === "relevance" && !hasQuery
       ? "downloads"
@@ -192,6 +194,12 @@ export function useSkillsBrowseModel({
   }, [hasQuery, listResults, searchResults]);
 
   const sorted = useMemo(() => {
+    if (isOtherCategory) {
+      return baseItems.filter((entry) => {
+        const text = `${entry.skill.displayName} ${entry.skill.summary ?? ""} ${entry.skill.slug}`.toLowerCase();
+        return !ALL_CATEGORY_KEYWORDS.some((kw) => text.includes(kw));
+      });
+    }
     if (!hasQuery) {
       return baseItems;
     }
@@ -233,7 +241,7 @@ export function useSkillsBrowseModel({
       }
     });
     return results;
-  }, [baseItems, dir, hasQuery, sort]);
+  }, [baseItems, dir, hasQuery, isOtherCategory, sort]);
 
   const isLoadingSkills = hasQuery ? isSearching && searchResults.length === 0 : isLoadingList;
   const canLoadMore = hasQuery

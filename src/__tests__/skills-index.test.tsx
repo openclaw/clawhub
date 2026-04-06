@@ -301,6 +301,29 @@ describe("SkillsIndex", () => {
     );
   });
 
+  it("shows and clears the active capability tag filter", async () => {
+    searchMock = { tag: "crypto" };
+    render(<SkillsIndex />);
+    await act(async () => {});
+
+    const capabilityChip = screen.getByRole("button", { name: /crypto/i });
+    expect(capabilityChip).toBeTruthy();
+
+    await act(async () => {
+      fireEvent.click(capabilityChip);
+    });
+
+    expect(navigateMock).toHaveBeenCalled();
+    const lastCall = navigateMock.mock.calls.at(-1)?.[0] as {
+      replace?: boolean;
+      search: (prev: Record<string, unknown>) => Record<string, unknown>;
+    };
+    expect(lastCall.replace).toBe(true);
+    expect(lastCall.search({ tag: "crypto" })).toEqual({
+      tag: undefined,
+    });
+  });
+
   it("shows load-more button when more results are available", async () => {
     vi.stubGlobal("IntersectionObserver", undefined);
     convexHttpMock.query.mockResolvedValue({

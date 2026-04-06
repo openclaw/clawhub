@@ -78,11 +78,11 @@ export function SkillsIndex() {
           <header>
             <h1 className="font-display text-2xl font-bold text-[color:var(--ink)]">
               Skills
-              {totalSkillsText && (
-                <span className="ml-2 text-lg font-normal text-[color:var(--ink-soft)] opacity-70">
-                  ({totalSkillsText})
-                </span>
-              )}
+              <span className="ml-2 text-lg font-normal text-[color:var(--ink-soft)] opacity-70">
+                ({model.hasQuery || model.highlightedOnly || model.nonSuspiciousOnly
+                  ? model.sorted.length.toLocaleString("en-US")
+                  : totalSkillsText ?? "…"})
+              </span>
             </h1>
             <p className="mt-1 text-sm text-[color:var(--ink-soft)]">
               {model.isLoadingSkills
@@ -112,11 +112,14 @@ export function SkillsIndex() {
           />
 
           {/* Results count */}
-          {!model.isLoadingSkills && model.sorted.length > 0 && (
+          {model.sorted.length > 0 && (
             <p className="text-xs font-medium text-[color:var(--ink-soft)]">
-              Showing {model.sorted.length}
-              {totalSkillsText ? ` of ${totalSkillsText}` : ""} skills
+              {model.sorted.length}
+              {!model.hasQuery && totalSkillsText ? ` of ${totalSkillsText}` : ""} skills
               {model.hasQuery ? ` matching "${model.query}"` : ""}
+              {model.highlightedOnly || model.nonSuspiciousOnly || model.capabilityTag
+                ? ` (filtered)`
+                : ""}
             </p>
           )}
 

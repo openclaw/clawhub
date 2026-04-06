@@ -2,13 +2,13 @@ import { useAuthActions } from "@convex-dev/auth/react";
 import { Link } from "@tanstack/react-router";
 import { Menu, Monitor, Moon, Plus, Search, Sun } from "lucide-react";
 import { useMemo, useRef } from "react";
-import { getUserFacingAuthError } from "../lib/authErrorMessage";
 import { gravatarUrl } from "../lib/gravatar";
 import { isModerator } from "../lib/roles";
 import { getClawHubSiteUrl, getSiteMode, getSiteName } from "../lib/site";
 import { applyTheme, useThemeMode } from "../lib/theme";
 import { startThemeTransition } from "../lib/theme-transition";
-import { setAuthError, useAuthError } from "../lib/useAuthError";
+import { useAuthError } from "../lib/useAuthError";
+import { SignInButton } from "./SignInButton";
 import { useAuthStatus } from "../lib/useAuthStatus";
 import { Avatar, AvatarFallback, AvatarImage } from "./ui/avatar";
 import { Button } from "./ui/button";
@@ -24,7 +24,7 @@ import { ToggleGroup, ToggleGroupItem } from "./ui/toggle-group";
 
 export default function Header() {
   const { isAuthenticated, isLoading, me } = useAuthStatus();
-  const { signIn, signOut } = useAuthActions();
+  const { signOut } = useAuthActions();
   const { mode, setMode } = useThemeMode();
   const toggleRef = useRef<HTMLDivElement | null>(null);
   const siteMode = getSiteMode();
@@ -37,7 +37,6 @@ export default function Header() {
   const initial = (me?.displayName ?? me?.name ?? handle).charAt(0).toUpperCase();
   const isStaff = isModerator(me);
   const { error: authError, clear: clearAuthError } = useAuthError();
-  const signInRedirectTo = getCurrentRelativeUrl();
 
   const setTheme = (next: "system" | "light" | "dark") => {
     startThemeTransition({
@@ -311,34 +310,18 @@ export default function Header() {
                   </button>
                 </div>
               ) : null}
-              <Button
+              <SignInButton
                 variant="primary"
                 size="sm"
                 disabled={isLoading}
-                onClick={() => {
-                  clearAuthError();
-                  void signIn(
-                    "github",
-                    signInRedirectTo ? { redirectTo: signInRedirectTo } : undefined,
-                  ).catch((error) => {
-                    setAuthError(
-                      getUserFacingAuthError(error, "Sign in failed. Please try again."),
-                    );
-                  });
-                }}
               >
                 <span>Sign in</span>
                 <span className="hidden text-white/70 sm:inline">with GitHub</span>
-              </Button>
+              </SignInButton>
             </>
           )}
         </div>
       </div>
     </header>
   );
-}
-
-function getCurrentRelativeUrl() {
-  if (typeof window === "undefined") return "/";
-  return `${window.location.pathname}${window.location.search}${window.location.hash}`;
 }

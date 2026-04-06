@@ -9,6 +9,7 @@ import { Avatar, AvatarFallback, AvatarImage } from "../components/ui/avatar";
 import { Badge } from "../components/ui/badge";
 import { Button } from "../components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "../components/ui/card";
+import { SignInButton } from "../components/SignInButton";
 import {
   Dialog,
   DialogContent,
@@ -107,7 +108,10 @@ export function Settings() {
     return (
       <Container size="narrow" className="py-10">
         <Card>
-          <CardContent>Sign in to access settings.</CardContent>
+          <CardContent className="flex flex-col items-start gap-3">
+            <span>Sign in to access settings.</span>
+            <SignInButton variant="outline">Sign in with GitHub</SignInButton>
+          </CardContent>
         </Card>
       </Container>
     );

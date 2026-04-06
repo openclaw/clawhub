@@ -1,3 +1,4 @@
+import { hasOwnProperty } from "../lib/hasOwnProperty";
 import type { PublicPublisher, PublicUser } from "../lib/publicUser";
 
 type UserBadgeProps = {
@@ -17,11 +18,13 @@ export function UserBadge({
   link = true,
   showName = false,
 }: UserBadgeProps) {
-  const userName = user && "name" in user ? user.name?.trim() : undefined;
+  const userName = hasOwnProperty(user, "name") && typeof user.name === "string"
+    ? user.name.trim()
+    : undefined;
   const displayName = user?.displayName?.trim() || userName || null;
   const handle = user?.handle ?? fallbackHandle ?? null;
   const href =
-    user?.handle && "kind" in user
+    user?.handle && hasOwnProperty(user, "kind")
       ? user.kind === "org"
         ? `/orgs/${encodeURIComponent(user.handle)}`
         : `/u/${encodeURIComponent(user.handle)}`

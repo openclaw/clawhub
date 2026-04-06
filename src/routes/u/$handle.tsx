@@ -7,6 +7,7 @@ import { api } from "../../../convex/_generated/api";
 import type { Doc } from "../../../convex/_generated/dataModel";
 import { EmptyState } from "../../components/EmptyState";
 import { Container } from "../../components/layout/Container";
+import { SignInButton } from "../../components/SignInButton";
 import { SkillCardSkeletonGrid } from "../../components/skeletons/SkillCardSkeleton";
 import { SkillCard } from "../../components/SkillCard";
 import { SkillStatsTripletLine } from "../../components/SkillStats";
@@ -236,7 +237,9 @@ function InstalledSection(props: {
     return (
       <div className="flex flex-col gap-4">
         <h2 className="font-display text-lg font-bold text-[color:var(--ink)]">Installed</h2>
-        <EmptyState title="Sign in to view your installed skills" />
+        <EmptyState title="Sign in to view your installed skills">
+          <SignInButton variant="outline">Sign in with GitHub</SignInButton>
+        </EmptyState>
       </div>
     );
   }

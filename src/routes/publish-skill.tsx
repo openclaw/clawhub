@@ -1,4 +1,3 @@
-import { useAuthActions } from "@convex-dev/auth/react";
 import { createFileRoute, useNavigate, useSearch } from "@tanstack/react-router";
 import {
   PLATFORM_SKILL_LICENSE,
@@ -14,6 +13,7 @@ import { api } from "../../convex/_generated/api";
 import { MAX_PUBLISH_FILE_BYTES, MAX_PUBLISH_TOTAL_BYTES } from "../../convex/lib/publishLimits";
 import { EmptyState } from "../components/EmptyState";
 import { Container } from "../components/layout/Container";
+import { SignInButton } from "../components/SignInButton";
 import { Badge } from "../components/ui/badge";
 import { Button } from "../components/ui/button";
 import { Card, CardContent, CardTitle } from "../components/ui/card";
@@ -44,7 +44,6 @@ export const Route = createFileRoute("/publish-skill")({
 
 export function Upload() {
   const { isAuthenticated, me } = useAuthStatus();
-  const { signIn } = useAuthActions();
   const { updateSlug } = useSearch({ from: "/publish-skill" });
   const siteMode = getSiteMode();
   const isSoulMode = siteMode === "souls";
@@ -347,8 +346,9 @@ export function Upload() {
           <EmptyState
             title={`Sign in to publish a ${contentLabel}`}
             description="You need to be signed in to publish skills on ClawHub."
-            action={{ label: "Sign in", onClick: () => void signIn("github") }}
-          />
+          >
+            <SignInButton variant="outline">Sign in with GitHub</SignInButton>
+          </EmptyState>
         </Container>
       </main>
     );
@@ -364,7 +364,7 @@ export function Upload() {
     event.preventDefault();
     setHasAttempted(true);
     if (!validation.ready) {
-      if (validationRef.current && "scrollIntoView" in validationRef.current) {
+      if (typeof validationRef.current?.scrollIntoView === "function") {
         validationRef.current.scrollIntoView({ behavior: "smooth", block: "center" });
       }
       return;

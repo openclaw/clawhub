@@ -5,6 +5,7 @@ import { toast } from "sonner";
 import { api } from "../../convex/_generated/api";
 import { EmptyState } from "../components/EmptyState";
 import { Container } from "../components/layout/Container";
+import { SignInButton } from "../components/SignInButton";
 import { Badge } from "../components/ui/badge";
 import { Button } from "../components/ui/button";
 import { Card } from "../components/ui/card";
@@ -224,7 +225,11 @@ export function ImportGitHub() {
           <EmptyState
             title={isLoading ? "Loading..." : "Sign in to import and publish skills"}
             description="You need to be signed in to import skills from GitHub."
-          />
+          >
+            {!isLoading ? (
+              <SignInButton variant="outline">Sign in with GitHub</SignInButton>
+            ) : null}
+          </EmptyState>
         </Container>
       </main>
     );

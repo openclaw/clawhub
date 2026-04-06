@@ -1,14 +1,12 @@
-import { useAuthActions } from "@convex-dev/auth/react";
 import { createFileRoute } from "@tanstack/react-router";
 import { useMutation } from "convex/react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { api } from "../../../convex/_generated/api";
 import { Container } from "../../components/layout/Container";
-import { Button } from "../../components/ui/button";
+import { SignInButton } from "../../components/SignInButton";
 import { Card, CardContent, CardHeader, CardTitle } from "../../components/ui/card";
-import { getUserFacingAuthError } from "../../lib/authErrorMessage";
 import { getClawHubSiteUrl, normalizeClawHubSiteOrigin } from "../../lib/site";
-import { setAuthError, useAuthError } from "../../lib/useAuthError";
+import { useAuthError } from "../../lib/useAuthError";
 import { useAuthStatus } from "../../lib/useAuthStatus";
 
 export const Route = createFileRoute("/cli/auth")({
@@ -17,7 +15,6 @@ export const Route = createFileRoute("/cli/auth")({
 
 function CliAuth() {
   const { isAuthenticated, isLoading, me } = useAuthStatus();
-  const { signIn } = useAuthActions();
   const { error: authError, clear: clearAuthError } = useAuthError();
   const createToken = useMutation(api.tokens.create);
 
@@ -35,7 +32,6 @@ function CliAuth() {
   const label =
     (decodeLabel(search.label_b64) ?? search.label ?? "CLI token").trim() || "CLI token";
   const state = typeof search.state === "string" ? search.state.trim() : "";
-  const signInRedirectTo = getCurrentRelativeUrl();
 
   const safeRedirect = useMemo(() => isAllowedRedirectUri(redirectUri), [redirectUri]);
   const registry = useMemo(() => {
@@ -139,23 +135,12 @@ function CliAuth() {
                   </button>
                 </p>
               ) : null}
-              <Button
+              <SignInButton
                 variant="primary"
                 disabled={isLoading}
-                onClick={() => {
-                  clearAuthError();
-                  void signIn(
-                    "github",
-                    signInRedirectTo ? { redirectTo: signInRedirectTo } : undefined,
-                  ).catch((error) => {
-                    setAuthError(
-                      getUserFacingAuthError(error, "Sign in failed. Please try again."),
-                    );
-                  });
-                }}
               >
                 Sign in with GitHub
-              </Button>
+              </SignInButton>
             </CardContent>
           </Card>
         </Container>
@@ -213,9 +198,4 @@ function decodeLabel(value: string | undefined) {
   } catch {
     return null;
   }
-}
-
-function getCurrentRelativeUrl() {
-  if (typeof window === "undefined") return "/";
-  return `${window.location.pathname}${window.location.search}${window.location.hash}`;
 }

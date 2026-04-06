@@ -6,6 +6,7 @@ import { api } from "../../convex/_generated/api";
 import type { Doc } from "../../convex/_generated/dataModel";
 import { EmptyState } from "../components/EmptyState";
 import { Container } from "../components/layout/Container";
+import { SignInButton } from "../components/SignInButton";
 import { Button } from "../components/ui/button";
 import { formatCompactStat } from "../lib/numberFormat";
 import type { PublicSkill } from "../lib/publicUser";
@@ -31,7 +32,9 @@ function Stars() {
             icon={Star}
             title="Sign in to see your highlights"
             description="Star skills for quick access later."
-          />
+          >
+            <SignInButton variant="outline">Sign in with GitHub</SignInButton>
+          </EmptyState>
         </Container>
       </main>
     );

@@ -1,3 +1,5 @@
+import { hasOwnProperty } from "./hasOwnProperty";
+
 type ConvexLikeErrorData =
   | string
   | {
@@ -24,9 +26,12 @@ export function getUserFacingConvexError(error: unknown, fallback: string) {
   const candidates: string[] = [];
   const maybe = error as ConvexLikeError;
 
-  if (maybe && typeof maybe === "object" && "data" in maybe) {
+  if (hasOwnProperty(maybe, "data")) {
     if (typeof maybe.data === "string") candidates.push(maybe.data);
-    if (maybe.data && typeof maybe.data === "object" && typeof maybe.data.message === "string") {
+    if (
+      hasOwnProperty(maybe.data, "message") &&
+      typeof maybe.data.message === "string"
+    ) {
       candidates.push(maybe.data.message);
     }
   }
