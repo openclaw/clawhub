@@ -1,6 +1,5 @@
 import { ArrowDownUp, Check, Grid3X3, List, Search, X } from "lucide-react";
 import type { RefObject } from "react";
-import { SKILL_CAPABILITY_TAGS } from "../../../convex/lib/skillCapabilityTags";
 import { Button } from "../../components/ui/button";
 import { Input } from "../../components/ui/input";
 import {
@@ -10,7 +9,10 @@ import {
   SelectTrigger,
   SelectValue,
 } from "../../components/ui/select";
+import { CONTENT_TAG_LABELS } from "../../lib/contentTags";
 import { type SortDir, type SortKey } from "./-params";
+
+type TagCount = { tag: string; count: number };
 
 type SkillsToolbarProps = {
   searchInputRef: RefObject<HTMLInputElement | null>;
@@ -21,23 +23,15 @@ type SkillsToolbarProps = {
   view: "cards" | "list";
   highlightedOnly: boolean;
   nonSuspiciousOnly: boolean;
-  capabilityTag?: string;
+  activeTag?: string;
+  popularTags: TagCount[];
   onQueryChange: (next: string) => void;
   onToggleHighlighted: () => void;
   onToggleNonSuspicious: () => void;
-  onCapabilityTagChange: (value: string) => void;
+  onTagChange: (tag: string | undefined) => void;
   onSortChange: (value: string) => void;
   onToggleDir: () => void;
   onToggleView: () => void;
-};
-
-const SKILL_CAPABILITY_LABELS: Record<string, string> = {
-  crypto: "Crypto",
-  "requires-wallet": "Requires wallet",
-  "can-make-purchases": "Payments",
-  "can-sign-transactions": "Signs transactions",
-  "requires-oauth-token": "OAuth",
-  "posts-externally": "External posting",
 };
 
 export function SkillsToolbar({
@@ -49,11 +43,12 @@ export function SkillsToolbar({
   view,
   highlightedOnly,
   nonSuspiciousOnly,
-  capabilityTag,
+  activeTag,
+  popularTags,
   onQueryChange,
   onToggleHighlighted,
   onToggleNonSuspicious,
-  onCapabilityTagChange,
+  onTagChange,
   onSortChange,
   onToggleDir,
   onToggleView,
@@ -84,29 +79,30 @@ export function SkillsToolbar({
 
       {/* Filters + sort row */}
       <div className="flex flex-wrap items-center gap-2">
-        {/* Filter chips */}
+        {/* Boolean filter chips */}
         <FilterChip active={highlightedOnly} onClick={onToggleHighlighted}>
           Staff Picks
         </FilterChip>
         <FilterChip active={nonSuspiciousOnly} onClick={onToggleNonSuspicious}>
           Clean only
         </FilterChip>
-        <Select value={capabilityTag ?? "__all__"} onValueChange={onCapabilityTagChange}>
-          <SelectTrigger
-            className="w-auto min-w-[156px] min-h-[36px] py-1.5 text-xs font-semibold"
-            aria-label="Filter by tag"
-          >
-            <SelectValue placeholder="All tags" />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="__all__">All tags</SelectItem>
-            {SKILL_CAPABILITY_TAGS.map((tag) => (
-              <SelectItem key={tag} value={tag}>
-                {SKILL_CAPABILITY_LABELS[tag] ?? tag}
-              </SelectItem>
+
+        {/* Tag filter chips — data-driven, only the most popular */}
+        {popularTags.length > 0 && (
+          <>
+            <div className="mx-0.5 h-5 w-px bg-[color:var(--line)]" aria-hidden="true" />
+            {popularTags.map(({ tag, count }) => (
+              <TagChip
+                key={tag}
+                active={activeTag === tag}
+                onClick={() => onTagChange(activeTag === tag ? undefined : tag)}
+                count={count}
+              >
+                {CONTENT_TAG_LABELS[tag] ?? tag}
+              </TagChip>
             ))}
-          </SelectContent>
-        </Select>
+          </>
+        )}
 
         {/* Spacer */}
         <div className="ml-auto" />
@@ -196,6 +192,39 @@ function FilterChip({
     >
       {active && <Check className="h-3 w-3" />}
       {children}
+    </button>
+  );
+}
+
+function TagChip({
+  active,
+  onClick,
+  count,
+  children,
+}: {
+  active: boolean;
+  onClick: () => void;
+  count: number;
+  children: React.ReactNode;
+}) {
+  return (
+    <button
+      type="button"
+      aria-pressed={active}
+      onClick={onClick}
+      className={`inline-flex items-center gap-1.5 rounded-[var(--radius-pill)] border px-2.5 py-1 text-[0.7rem] font-medium transition-all duration-150 ${
+        active
+          ? "border-[color:var(--accent)]/30 bg-[color:var(--accent)]/10 text-[color:var(--accent)]"
+          : "border-[color:var(--line)] bg-[color:var(--surface)] text-[color:var(--ink-soft)] hover:border-[color:var(--border-ui-hover)] hover:text-[color:var(--ink)]"
+      }`}
+    >
+      {active && <Check className="h-2.5 w-2.5" />}
+      {children}
+      <span
+        className={`text-[0.6rem] tabular-nums ${active ? "text-[color:var(--accent)]/60" : "text-[color:var(--ink-soft)]/50"}`}
+      >
+        {count}
+      </span>
     </button>
   );
 }

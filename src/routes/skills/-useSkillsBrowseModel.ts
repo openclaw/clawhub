@@ -1,6 +1,7 @@
 import { useAction } from "convex/react";
 import { useCallback, useEffect, useMemo, useRef, useState, type RefObject } from "react";
 import { api } from "../../../convex/_generated/api";
+import { CONTENT_TAG_LABELS } from "../../lib/contentTags";
 import { convexHttp } from "../../convex/client";
 import { parseDir, parseSort, toListSort, type SortDir, type SortKey } from "./-params";
 import type { SkillListEntry, SkillSearchEntry } from "./-types";
@@ -18,15 +19,6 @@ export type SkillsSearchState = {
   tag?: string;
   view?: SkillsView;
   focus?: "search";
-};
-
-const SKILL_CAPABILITY_LABELS: Record<string, string> = {
-  crypto: "crypto",
-  "requires-wallet": "requires wallet",
-  "can-make-purchases": "payments",
-  "can-sign-transactions": "signs transactions",
-  "requires-oauth-token": "oauth",
-  "posts-externally": "external posting",
 };
 
 type SkillsNavigate = (options: {
@@ -57,11 +49,7 @@ export function useSkillsBrowseModel({
   const view: SkillsView = search.view ?? "list";
   const highlightedOnly = search.highlighted ?? false;
   const nonSuspiciousOnly = search.nonSuspicious ?? false;
-<<<<<<< Updated upstream
-  const capabilityTag = search.tag;
-=======
   const activeTag = search.tag ?? undefined;
->>>>>>> Stashed changes
   const searchSkills = useAction(api.search.searchSkills);
 
   const trimmedQuery = useMemo(() => query.trim(), [query]);
@@ -73,11 +61,7 @@ export function useSkillsBrowseModel({
   const listSort = toListSort(sort);
   const dir = parseDir(search.dir, sort);
   const searchKey = trimmedQuery
-<<<<<<< Updated upstream
-    ? `${trimmedQuery}::${highlightedOnly ? "1" : "0"}::${nonSuspiciousOnly ? "1" : "0"}::${capabilityTag ?? ""}`
-=======
     ? `${trimmedQuery}::${highlightedOnly ? "1" : "0"}::${nonSuspiciousOnly ? "1" : "0"}::${activeTag ?? ""}`
->>>>>>> Stashed changes
     : "";
 
   // One-shot paginated fetches (no reactive subscription)
@@ -96,11 +80,7 @@ export function useSkillsBrowseModel({
           dir,
           highlightedOnly,
           nonSuspiciousOnly,
-<<<<<<< Updated upstream
-          capabilityTag,
-=======
           contentTag: activeTag,
->>>>>>> Stashed changes
         });
         if (generation !== fetchGeneration.current) return;
         setListResults((prev) => (cursor ? [...prev, ...result.page] : result.page));
@@ -114,11 +94,7 @@ export function useSkillsBrowseModel({
         setListStatus(cursor ? "idle" : "done");
       }
     },
-<<<<<<< Updated upstream
-    [capabilityTag, dir, highlightedOnly, listSort, nonSuspiciousOnly],
-=======
-    [listSort, dir, highlightedOnly, nonSuspiciousOnly, activeTag],
->>>>>>> Stashed changes
+    [activeTag, dir, highlightedOnly, listSort, nonSuspiciousOnly],
   );
 
   // Reset and fetch first page when sort/dir/filters change
@@ -170,11 +146,7 @@ export function useSkillsBrowseModel({
             query: trimmedQuery,
             highlightedOnly,
             nonSuspiciousOnly,
-<<<<<<< Updated upstream
-            capabilityTag,
-=======
             contentTag: activeTag,
->>>>>>> Stashed changes
             limit: searchLimit,
           })) as Array<SkillSearchEntry>;
           if (requestId === searchRequest.current) {
@@ -188,19 +160,7 @@ export function useSkillsBrowseModel({
       })();
     }, 220);
     return () => window.clearTimeout(handle);
-<<<<<<< Updated upstream
-  }, [
-    capabilityTag,
-    hasQuery,
-    highlightedOnly,
-    nonSuspiciousOnly,
-    searchLimit,
-    searchSkills,
-    trimmedQuery,
-  ]);
-=======
   }, [activeTag, hasQuery, highlightedOnly, nonSuspiciousOnly, searchLimit, searchSkills, trimmedQuery]);
->>>>>>> Stashed changes
 
   const baseItems = useMemo(() => {
     if (hasQuery) {
@@ -389,17 +349,12 @@ export function useSkillsBrowseModel({
     });
   }, [navigate]);
 
-  const activeFilters: string[] = [];
-  if (highlightedOnly) activeFilters.push("highlighted");
-  if (nonSuspiciousOnly) activeFilters.push("non-suspicious");
-  if (capabilityTag) activeFilters.push(SKILL_CAPABILITY_LABELS[capabilityTag] ?? capabilityTag);
-
-  const onCapabilityTagChange = useCallback(
-    (value: string) => {
+  const onTagChange = useCallback(
+    (tag: string | undefined) => {
       void navigate({
         search: (prev) => ({
           ...prev,
-          tag: value === "__all__" ? undefined : value,
+          tag: tag || undefined,
         }),
         replace: true,
       });
@@ -407,9 +362,14 @@ export function useSkillsBrowseModel({
     [navigate],
   );
 
+  const activeFilters: string[] = [];
+  if (highlightedOnly) activeFilters.push("highlighted");
+  if (nonSuspiciousOnly) activeFilters.push("non-suspicious");
+  if (activeTag) activeFilters.push(CONTENT_TAG_LABELS[activeTag] ?? activeTag);
+
   return {
     activeFilters,
-    capabilityTag,
+    activeTag,
     canAutoLoad,
     canLoadMore,
     dir,
@@ -420,9 +380,9 @@ export function useSkillsBrowseModel({
     loadMore,
     loadMoreRef,
     nonSuspiciousOnly,
-    onCapabilityTagChange,
     onQueryChange,
     onSortChange,
+    onTagChange,
     onToggleDir,
     onToggleHighlighted,
     onToggleNonSuspicious,

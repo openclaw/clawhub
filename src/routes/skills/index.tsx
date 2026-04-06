@@ -1,15 +1,16 @@
 import { createFileRoute, redirect } from "@tanstack/react-router";
 import { useQuery } from "convex/react";
-import { useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import { api } from "../../../convex/_generated/api";
-import { SKILL_CAPABILITY_TAGS } from "../../../convex/lib/skillCapabilityTags";
+import { CONTENT_TAG_LABELS, MAX_VISIBLE_TAG_CHIPS } from "../../lib/contentTags";
+import { convexHttp } from "../../convex/client";
 import { Container } from "../../components/layout/Container";
 import { parseSort } from "./-params";
 import { SkillsResults } from "./-SkillsResults";
 import { SkillsToolbar } from "./-SkillsToolbar";
 import { useSkillsBrowseModel, type SkillsSearchState } from "./-useSkillsBrowseModel";
 
-const SKILL_CAPABILITY_TAG_SET = new Set<string>(SKILL_CAPABILITY_TAGS);
+const KNOWN_CONTENT_TAGS = new Set(Object.keys(CONTENT_TAG_LABELS));
 
 export const Route = createFileRoute("/skills/")({
   validateSearch: (search): SkillsSearchState => {
@@ -28,7 +29,7 @@ export const Route = createFileRoute("/skills/")({
           ? true
           : undefined,
       tag:
-        typeof search.tag === "string" && SKILL_CAPABILITY_TAG_SET.has(search.tag)
+        typeof search.tag === "string" && KNOWN_CONTENT_TAGS.has(search.tag)
           ? search.tag
           : undefined,
       view: search.view === "cards" || search.view === "list" ? search.view : undefined,
@@ -56,6 +57,8 @@ export const Route = createFileRoute("/skills/")({
   component: SkillsIndex,
 });
 
+type TagCount = { tag: string; count: number };
+
 export function SkillsIndex() {
   const navigate = Route.useNavigate();
   const search = Route.useSearch();
@@ -63,6 +66,24 @@ export function SkillsIndex() {
   const totalSkills = useQuery(api.skills.countPublicSkills);
   const totalSkillsText =
     typeof totalSkills === "number" ? totalSkills.toLocaleString("en-US") : null;
+
+  // Fetch popular tags via one-shot HTTP (non-reactive)
+  const [popularTags, setPopularTags] = useState<TagCount[]>([]);
+  useEffect(() => {
+    let cancelled = false;
+    void convexHttp.query(api.skills.getContentTagCounts, {}).then((counts) => {
+      if (!cancelled) {
+        setPopularTags(
+          counts
+            .filter((t: TagCount) => t.count > 0 && KNOWN_CONTENT_TAGS.has(t.tag))
+            .slice(0, MAX_VISIBLE_TAG_CHIPS),
+        );
+      }
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   const model = useSkillsBrowseModel({
     navigate,
@@ -101,11 +122,12 @@ export function SkillsIndex() {
             view={model.view}
             highlightedOnly={model.highlightedOnly}
             nonSuspiciousOnly={model.nonSuspiciousOnly}
-            capabilityTag={model.capabilityTag}
+            activeTag={model.activeTag}
+            popularTags={popularTags}
             onQueryChange={model.onQueryChange}
             onToggleHighlighted={model.onToggleHighlighted}
             onToggleNonSuspicious={model.onToggleNonSuspicious}
-            onCapabilityTagChange={model.onCapabilityTagChange}
+            onTagChange={model.onTagChange}
             onSortChange={model.onSortChange}
             onToggleDir={model.onToggleDir}
             onToggleView={model.onToggleView}

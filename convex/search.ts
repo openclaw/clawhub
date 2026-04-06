@@ -7,7 +7,6 @@ import { isSkillHighlighted } from "./lib/badges";
 import { generateEmbedding } from "./lib/embeddings";
 import type { HydratableSkill, PublicPublisher } from "./lib/public";
 import { toPublicPublisher, toPublicSkill, toPublicSoul } from "./lib/public";
-import { SKILL_CAPABILITY_TAGS } from "./lib/skillCapabilityTags";
 import { getOwnerPublisher } from "./lib/publishers";
 import { matchesExactTokens, tokenize } from "./lib/searchText";
 import { deriveContentTags } from "./lib/skillContentTags";
@@ -53,7 +52,6 @@ const NAME_EXACT_BOOST = 1.1;
 const NAME_PREFIX_BOOST = 0.6;
 const POPULARITY_WEIGHT = 0.08;
 const FALLBACK_SCAN_LIMIT = 500;
-const SKILL_CAPABILITY_TAG_SET = new Set<string>(SKILL_CAPABILITY_TAGS);
 
 function getNextCandidateLimit(current: number, max: number) {
   const next = Math.min(current * 2, max);
@@ -123,12 +121,18 @@ function isSlugLikeQuery(query: string) {
   return /^[a-z0-9][a-z0-9-]*$/.test(query.trim().toLowerCase());
 }
 
-function matchesCapabilityTag(
-  skill: Pick<HydratableSkill, "capabilityTags">,
-  capabilityTag?: string,
+/** Check if a skill matches a content tag by deriving tags from its fields. */
+function matchesContentTag(
+  skill: Pick<HydratableSkill, "slug" | "displayName" | "summary">,
+  contentTag?: string,
 ) {
-  if (!capabilityTag) return true;
-  return (skill.capabilityTags ?? []).includes(capabilityTag);
+  if (!contentTag) return true;
+  const tags = deriveContentTags({
+    slug: skill.slug,
+    displayName: skill.displayName,
+    summary: skill.summary,
+  });
+  return tags.includes(contentTag as (typeof tags)[number]);
 }
 
 export const searchSkills: ReturnType<typeof action> = action({
@@ -137,16 +141,11 @@ export const searchSkills: ReturnType<typeof action> = action({
     limit: v.optional(v.number()),
     highlightedOnly: v.optional(v.boolean()),
     nonSuspiciousOnly: v.optional(v.boolean()),
-<<<<<<< Updated upstream
-    capabilityTag: v.optional(v.string()),
-=======
     contentTag: v.optional(v.string()),
->>>>>>> Stashed changes
   },
   handler: async (ctx, args): Promise<SearchResult[]> => {
     const query = args.query.trim();
     if (!query) return [];
-    if (args.capabilityTag && !SKILL_CAPABILITY_TAG_SET.has(args.capabilityTag)) return [];
     const queryTokens = tokenize(query);
     if (queryTokens.length === 0) return [];
     const rawExactSlugMatch = isSlugLikeQuery(query)
@@ -158,7 +157,7 @@ export const searchSkills: ReturnType<typeof action> = action({
     const exactSlugMatch =
       rawExactSlugMatch &&
       (!args.highlightedOnly || isSkillHighlighted(rawExactSlugMatch.skill)) &&
-      matchesCapabilityTag(rawExactSlugMatch.skill, args.capabilityTag)
+      matchesContentTag(rawExactSlugMatch.skill, args.contentTag)
         ? rawExactSlugMatch
         : null;
     let vector: number[];
@@ -204,28 +203,13 @@ export const searchSkills: ReturnType<typeof action> = action({
 
       // Skills already have badges from their docs (via toPublicSkill).
       // No need for a separate badge table lookup.
-<<<<<<< Updated upstream
-      const filtered = hydrated.filter(
-        (entry) =>
-          (!args.highlightedOnly || isSkillHighlighted(entry.skill)) &&
-          matchesCapabilityTag(entry.skill, args.capabilityTag),
-      );
-=======
       let filtered = args.highlightedOnly
         ? hydrated.filter((entry) => isSkillHighlighted(entry.skill))
         : hydrated;
->>>>>>> Stashed changes
 
       // Content tag filter — derive tags from skill fields and post-filter.
       if (args.contentTag) {
-        filtered = filtered.filter((entry) => {
-          const tags = deriveContentTags({
-            slug: entry.skill.slug,
-            displayName: entry.skill.displayName,
-            summary: entry.skill.summary,
-          });
-          return tags.includes(args.contentTag as (typeof tags)[number]);
-        });
+        filtered = filtered.filter((entry) => matchesContentTag(entry.skill, args.contentTag));
       }
 
       exactMatches = filtered.filter((entry) =>
@@ -258,11 +242,7 @@ export const searchSkills: ReturnType<typeof action> = action({
             limit: Math.min(Math.max(limit * 4, 200), FALLBACK_SCAN_LIMIT),
             highlightedOnly: args.highlightedOnly,
             nonSuspiciousOnly: args.nonSuspiciousOnly,
-<<<<<<< Updated upstream
-            capabilityTag: args.capabilityTag,
-=======
             contentTag: args.contentTag,
->>>>>>> Stashed changes
             skipExactSlugLookup: true,
           })) as SkillSearchEntry[]);
     const mergedMatches = mergeUniqueBySkillId(primaryMatches, fallbackMatches);
@@ -374,15 +354,10 @@ export const lexicalFallbackSkills = internalQuery({
     limit: v.optional(v.number()),
     highlightedOnly: v.optional(v.boolean()),
     nonSuspiciousOnly: v.optional(v.boolean()),
-<<<<<<< Updated upstream
-    capabilityTag: v.optional(v.string()),
-=======
     contentTag: v.optional(v.string()),
->>>>>>> Stashed changes
     skipExactSlugLookup: v.optional(v.boolean()),
   },
   handler: async (ctx, args): Promise<SkillSearchEntry[]> => {
-    if (args.capabilityTag && !SKILL_CAPABILITY_TAG_SET.has(args.capabilityTag)) return [];
     const limit = Math.min(Math.max(args.limit ?? 200, 10), FALLBACK_SCAN_LIMIT);
     const seenSkillIds = new Set<Id<"skills">>();
     const candidates: HydratableSkill[] = [];
@@ -402,8 +377,7 @@ export const lexicalFallbackSkills = internalQuery({
       if (
         exactSlugSkill &&
         !exactSlugSkill.softDeletedAt &&
-        (!args.nonSuspiciousOnly || !isSkillSuspicious(exactSlugSkill)) &&
-        matchesCapabilityTag(exactSlugSkill, args.capabilityTag)
+        (!args.nonSuspiciousOnly || !isSkillSuspicious(exactSlugSkill))
       ) {
         seenSkillIds.add(exactSlugSkill._id);
         candidates.push(exactSlugSkill);
@@ -421,7 +395,6 @@ export const lexicalFallbackSkills = internalQuery({
       if (seenSkillIds.has(digest.skillId)) continue;
       const skill = digestToHydratableSkill(digest);
       if (args.nonSuspiciousOnly && isSkillSuspicious(skill)) continue;
-      if (!matchesCapabilityTag(skill, args.capabilityTag)) continue;
       seenSkillIds.add(digest.skillId);
       candidates.push(skill);
       // Pre-resolve owner from digest to avoid users table reads.
@@ -433,15 +406,9 @@ export const lexicalFallbackSkills = internalQuery({
       matchesExactTokens(args.queryTokens, [skill.displayName, skill.slug, skill.summary]),
     );
 
+    // Content tag filter — derive tags from skill fields and post-filter.
     if (args.contentTag) {
-      matched = matched.filter((skill) => {
-        const tags = deriveContentTags({
-          slug: skill.slug,
-          displayName: skill.displayName,
-          summary: skill.summary,
-        });
-        return tags.includes(args.contentTag as (typeof tags)[number]);
-      });
+      matched = matched.filter((skill) => matchesContentTag(skill, args.contentTag));
     }
 
     if (matched.length === 0) return [];
