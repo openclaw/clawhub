@@ -1,6 +1,7 @@
 import type { Doc, Id } from "../_generated/dataModel";
 import type { MutationCtx } from "../_generated/server";
 import type { HydratableSkill, PublicPublisher } from "./public";
+import { deriveContentTags } from "./skillContentTags";
 
 function pick<T extends Record<string, unknown>, K extends keyof T>(obj: T, keys: K[]): Pick<T, K> {
   return Object.fromEntries(keys.map((k) => [k, obj[k]])) as Pick<T, K>;
@@ -41,6 +42,7 @@ const SHARED_KEYS = [
 export type SkillSearchDigestFields = Pick<Doc<"skills">, (typeof SHARED_KEYS)[number]> & {
   skillId: Id<"skills">;
   isSuspicious?: boolean;
+  contentTags?: string[];
   ownerHandle?: string;
   ownerKind?: "user" | "org";
   ownerName?: string;
@@ -54,6 +56,11 @@ export function extractDigestFields(skill: Doc<"skills">): SkillSearchDigestFiel
     ...pick(skill, [...SHARED_KEYS]),
     skillId: skill._id,
     isSuspicious: skill.isSuspicious,
+    contentTags: deriveContentTags({
+      slug: skill.slug,
+      displayName: skill.displayName,
+      summary: skill.summary,
+    }),
   };
 }
 

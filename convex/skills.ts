@@ -67,6 +67,7 @@ import {
   upsertReservedSlugForRightfulOwner,
 } from "./lib/reservedSlugs";
 import { SKILL_CAPABILITY_TAGS } from "./lib/skillCapabilityTags";
+import { deriveContentTags, isKnownContentTag } from "./lib/skillContentTags";
 import {
   fetchText,
   type PublishResult,
@@ -2696,7 +2697,11 @@ export const listPublicPageV4 = query({
     dir: v.optional(v.union(v.literal("asc"), v.literal("desc"))),
     highlightedOnly: v.optional(v.boolean()),
     nonSuspiciousOnly: v.optional(v.boolean()),
+<<<<<<< Updated upstream
     capabilityTag: v.optional(v.string()),
+=======
+    contentTag: v.optional(v.string()),
+>>>>>>> Stashed changes
   },
   handler: async (ctx, args) => {
     if (args.capabilityTag && !isKnownSkillCapabilityTag(args.capabilityTag)) {
@@ -2716,6 +2721,20 @@ export const listPublicPageV4 = query({
         numItems,
         capabilityTag: args.capabilityTag,
         nonSuspiciousOnly: args.nonSuspiciousOnly ?? false,
+        contentTag: args.contentTag,
+      });
+    }
+
+    // Content tag filtering uses over-fetch + post-filter since there's no
+    // compound index on contentTags (array field).
+    if (args.contentTag && isKnownContentTag(args.contentTag)) {
+      return fetchContentTagFilteredPage(ctx, {
+        contentTag: args.contentTag,
+        sort,
+        dir,
+        numItems,
+        nonSuspiciousOnly: args.nonSuspiciousOnly ?? false,
+        cursor: args.cursor,
       });
     }
 
@@ -3128,6 +3147,7 @@ async function fetchHighlightedPage(
     numItems: number;
     capabilityTag?: string;
     nonSuspiciousOnly: boolean;
+    contentTag?: string;
   },
 ) {
   // Get all highlighted skill IDs from the skillBadges index (very few rows)
@@ -3146,7 +3166,11 @@ async function fetchHighlightedPage(
       .unique();
     if (!digest || digest.softDeletedAt) continue;
     if (opts.nonSuspiciousOnly && digest.isSuspicious) continue;
+<<<<<<< Updated upstream
     if (opts.capabilityTag && !(digest.capabilityTags ?? []).includes(opts.capabilityTag)) continue;
+=======
+    if (opts.contentTag && !(digest.contentTags ?? []).includes(opts.contentTag)) continue;
+>>>>>>> Stashed changes
     digests.push(digest);
   }
 
@@ -3179,6 +3203,88 @@ async function fetchHighlightedPage(
 
   // Highlighted skills are few enough to return in one page — no cursor needed
   return { page: items, hasMore: false, nextCursor: null };
+}
+
+/**
+ * Over-fetch from the sort index + post-filter by content tag.
+ * Uses the same cursor encoding as listPublicPageV4 so pagination works.
+ */
+async function fetchContentTagFilteredPage(
+  ctx: QueryCtx,
+  opts: {
+    contentTag: string;
+    sort: SortKey;
+    dir: "asc" | "desc";
+    numItems: number;
+    nonSuspiciousOnly: boolean;
+    cursor?: string;
+  },
+) {
+  const indexName = opts.nonSuspiciousOnly
+    ? NONSUSPICIOUS_SORT_INDEXES[opts.sort]
+    : SORT_INDEXES[opts.sort];
+  const eqPrefix: IndexKey = opts.nonSuspiciousOnly ? [undefined, false] : [undefined];
+
+  const MAX_LOOPS = 20;
+  const BATCH_SIZE = Math.min(opts.numItems * 5, MAX_PUBLIC_LIST_LIMIT);
+
+  let currentCursor = opts.cursor ? decodeIndexKey(opts.cursor) : null;
+  let isFirstIteration = !currentCursor;
+  let hasMore = true;
+
+  const items: PublicSkillEntry[] = [];
+  let lastKey: IndexKey | null = null;
+
+  for (let loop = 0; loop < MAX_LOOPS && items.length < opts.numItems && hasMore; loop++) {
+    const startKey: IndexKey = currentCursor ?? eqPrefix;
+
+    const result = await getPage(ctx, {
+      table: "skillSearchDigest",
+      startIndexKey: startKey,
+      startInclusive: isFirstIteration && loop === 0,
+      endIndexKey: eqPrefix,
+      endInclusive: true,
+      absoluteMaxRows: BATCH_SIZE,
+      order: opts.dir,
+      index: indexName,
+      schema,
+    });
+
+    for (const digest of result.page) {
+      if (!(digest.contentTags ?? []).includes(opts.contentTag)) continue;
+
+      const hydratable = digestToHydratableSkill(digest);
+      const publicSkill = toPublicSkill(hydratable);
+      if (!publicSkill) continue;
+      const ownerInfo = digestToOwnerInfo(digest);
+      if (!ownerInfo?.owner) continue;
+
+      const latestVersion = digest.latestVersionSummary
+        ? toPublicSkillListVersionFromSummary(digest.latestVersionSummary, digest.latestVersionId)
+        : null;
+
+      items.push({
+        skill: publicSkill,
+        latestVersion,
+        ownerHandle: ownerInfo.ownerHandle,
+        owner: ownerInfo.owner,
+      });
+
+      if (items.length >= opts.numItems) break;
+    }
+
+    hasMore = result.hasMore;
+    if (result.indexKeys.length > 0) {
+      lastKey = result.indexKeys[result.indexKeys.length - 1];
+      currentCursor = lastKey;
+      isFirstIteration = false;
+    } else {
+      hasMore = false;
+    }
+  }
+
+  const nextCursor = hasMore && lastKey ? encodeIndexKey(lastKey) : null;
+  return { page: items, hasMore: hasMore && items.length >= opts.numItems, nextCursor };
 }
 
 function filterPublicSkillPage(
@@ -3240,6 +3346,73 @@ export const countPublicSkills = query({
     if (typeof statsCount === "number") return statsCount;
     // Fallback for uninitialized/missing globalStats storage.
     return countPublicSkillsForGlobalStats(ctx);
+  },
+});
+
+/**
+ * Return content-tag counts for all active (non-deleted) skills.
+ * Called via ConvexHttpClient for one-shot fetch, not reactive subscription.
+ */
+export const getContentTagCounts = query({
+  args: {},
+  handler: async (ctx) => {
+    const digests = await ctx.db
+      .query("skillSearchDigest")
+      .withIndex("by_active_updated", (q) => q.eq("softDeletedAt", undefined))
+      .collect();
+
+    const counts: Record<string, number> = {};
+    for (const digest of digests) {
+      for (const tag of digest.contentTags ?? []) {
+        counts[tag] = (counts[tag] ?? 0) + 1;
+      }
+    }
+
+    return Object.entries(counts)
+      .sort((a, b) => b[1] - a[1])
+      .map(([tag, count]) => ({ tag, count }));
+  },
+});
+
+/**
+ * Backfill contentTags on existing skillSearchDigest rows.
+ * Run once after deploying the schema change:
+ *   npx convex run skills:backfillContentTags
+ */
+export const backfillContentTags = internalMutation({
+  args: {
+    cursor: v.optional(v.string()),
+    batchSize: v.optional(v.number()),
+  },
+  handler: async (ctx, args) => {
+    const batchSize = args.batchSize ?? 100;
+    const digests = await ctx.db
+      .query("skillSearchDigest")
+      .withIndex("by_active_updated", (q) => q.eq("softDeletedAt", undefined))
+      .paginate({ cursor: args.cursor ?? null, numItems: batchSize });
+
+    let patched = 0;
+    for (const digest of digests.page) {
+      const tags = deriveContentTags({
+        slug: digest.slug,
+        displayName: digest.displayName,
+        summary: digest.summary,
+      });
+      const existing = digest.contentTags ?? [];
+      if (JSON.stringify(existing) !== JSON.stringify(tags)) {
+        await ctx.db.patch(digest._id, { contentTags: tags });
+        patched += 1;
+      }
+    }
+
+    if (!digests.isDone) {
+      await ctx.scheduler.runAfter(200, internal.skills.backfillContentTags, {
+        cursor: digests.continueCursor,
+        batchSize,
+      });
+    }
+
+    return { patched, isDone: digests.isDone };
   },
 });
 

@@ -57,7 +57,11 @@ export function useSkillsBrowseModel({
   const view: SkillsView = search.view ?? "list";
   const highlightedOnly = search.highlighted ?? false;
   const nonSuspiciousOnly = search.nonSuspicious ?? false;
+<<<<<<< Updated upstream
   const capabilityTag = search.tag;
+=======
+  const activeTag = search.tag ?? undefined;
+>>>>>>> Stashed changes
   const searchSkills = useAction(api.search.searchSkills);
 
   const trimmedQuery = useMemo(() => query.trim(), [query]);
@@ -69,7 +73,11 @@ export function useSkillsBrowseModel({
   const listSort = toListSort(sort);
   const dir = parseDir(search.dir, sort);
   const searchKey = trimmedQuery
+<<<<<<< Updated upstream
     ? `${trimmedQuery}::${highlightedOnly ? "1" : "0"}::${nonSuspiciousOnly ? "1" : "0"}::${capabilityTag ?? ""}`
+=======
+    ? `${trimmedQuery}::${highlightedOnly ? "1" : "0"}::${nonSuspiciousOnly ? "1" : "0"}::${activeTag ?? ""}`
+>>>>>>> Stashed changes
     : "";
 
   // One-shot paginated fetches (no reactive subscription)
@@ -88,7 +96,11 @@ export function useSkillsBrowseModel({
           dir,
           highlightedOnly,
           nonSuspiciousOnly,
+<<<<<<< Updated upstream
           capabilityTag,
+=======
+          contentTag: activeTag,
+>>>>>>> Stashed changes
         });
         if (generation !== fetchGeneration.current) return;
         setListResults((prev) => (cursor ? [...prev, ...result.page] : result.page));
@@ -102,7 +114,11 @@ export function useSkillsBrowseModel({
         setListStatus(cursor ? "idle" : "done");
       }
     },
+<<<<<<< Updated upstream
     [capabilityTag, dir, highlightedOnly, listSort, nonSuspiciousOnly],
+=======
+    [listSort, dir, highlightedOnly, nonSuspiciousOnly, activeTag],
+>>>>>>> Stashed changes
   );
 
   // Reset and fetch first page when sort/dir/filters change
@@ -154,7 +170,11 @@ export function useSkillsBrowseModel({
             query: trimmedQuery,
             highlightedOnly,
             nonSuspiciousOnly,
+<<<<<<< Updated upstream
             capabilityTag,
+=======
+            contentTag: activeTag,
+>>>>>>> Stashed changes
             limit: searchLimit,
           })) as Array<SkillSearchEntry>;
           if (requestId === searchRequest.current) {
@@ -168,6 +188,7 @@ export function useSkillsBrowseModel({
       })();
     }, 220);
     return () => window.clearTimeout(handle);
+<<<<<<< Updated upstream
   }, [
     capabilityTag,
     hasQuery,
@@ -177,6 +198,9 @@ export function useSkillsBrowseModel({
     searchSkills,
     trimmedQuery,
   ]);
+=======
+  }, [activeTag, hasQuery, highlightedOnly, nonSuspiciousOnly, searchLimit, searchSkills, trimmedQuery]);
+>>>>>>> Stashed changes
 
   const baseItems = useMemo(() => {
     if (hasQuery) {
