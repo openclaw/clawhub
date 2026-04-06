@@ -38,9 +38,12 @@ export function SkillsResults({
         <div className="skeleton-list">
           {Array.from({ length: 6 }, (_, i) => (
             <div key={i} className="skeleton-row">
-              <div className="skeleton-bar skeleton-bar-lg" />
-              <div className="skeleton-bar skeleton-bar-sm" />
-              <div className="skeleton-bar skeleton-bar-xs" />
+              <div className="skeleton-icon" />
+              <div className="skeleton-row-body">
+                <div className="skeleton-bar skeleton-bar-lg" />
+                <div className="skeleton-bar skeleton-bar-sm" />
+                <div className="skeleton-bar skeleton-bar-xs" />
+              </div>
             </div>
           ))}
         </div>

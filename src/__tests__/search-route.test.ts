@@ -43,6 +43,13 @@ describe("search route", () => {
     });
   });
 
+  it("accepts the users type filter", () => {
+    expect(runValidateSearch({ q: "vincent", type: "users" })).toEqual({
+      q: "vincent",
+      type: "users",
+    });
+  });
+
   it("strips empty query", () => {
     expect(runValidateSearch({ q: "   " })).toEqual({
       q: undefined,

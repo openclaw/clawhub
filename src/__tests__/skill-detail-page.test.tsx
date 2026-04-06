@@ -24,6 +24,10 @@ vi.mock("../lib/useAuthStatus", () => ({
   useAuthStatus: () => useAuthStatusMock(),
 }));
 
+vi.mock("../components/SkillCommentsPanel", () => ({
+  SkillCommentsPanel: () => <div data-testid="skill-comments-panel" />,
+}));
+
 describe("SkillDetailPage", () => {
   const skillId = "skills:1" as Id<"skills">;
   const ownerId = "users:1" as Id<"users">;
@@ -132,6 +136,7 @@ describe("SkillDetailPage", () => {
     expect((await screen.findAllByRole("heading", { name: "Weather" })).length).toBeGreaterThan(0);
     expect(screen.getByText(/Get current weather\./i)).toBeTruthy();
     expect(screen.getByRole("button", { name: "Files" })).toBeTruthy();
+    expect(screen.queryByRole("button", { name: "Compare" })).toBeNull();
   });
 
   it("does not refetch readme when SSR data already matches the latest version", async () => {
@@ -462,10 +467,24 @@ describe("SkillDetailPage", () => {
   it("defers compare version query until compare tab is requested", async () => {
     useQueryMock.mockImplementation((_fn: unknown, args: unknown) => {
       if (args === "skip") return undefined;
+      if (
+        args &&
+        typeof args === "object" &&
+        "skillId" in args &&
+        "limit" in args &&
+        (args as { limit: number }).limit === 50
+      ) {
+        return [
+          { _id: "skillVersions:1", version: "1.0.0", files: [] },
+          { _id: "skillVersions:2", version: "1.1.0", files: [] },
+        ];
+      }
+      if (args && typeof args === "object" && "skillId" in args && "limit" in args) {
+        if ((args as { limit: number }).limit === 200) return [];
+      }
       if (args && typeof args === "object" && "limit" in args) {
         return [];
       }
-      if (args && typeof args === "object" && "skillId" in args) return [];
       if (args && typeof args === "object" && "slug" in args) {
         return {
           skill: {
@@ -494,6 +513,7 @@ describe("SkillDetailPage", () => {
 
     render(<SkillDetailPage slug="weather" />);
     expect(await screen.findByText("Weather")).toBeTruthy();
+    expect(screen.getByRole("button", { name: /compare/i })).toBeTruthy();
 
     expect(
       useQueryMock.mock.calls.some((call) => {

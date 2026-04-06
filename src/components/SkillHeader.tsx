@@ -1,9 +1,5 @@
 import type { ClawdisSkillMetadata } from "clawhub-schema";
 import { Link } from "@tanstack/react-router";
-import {
-  PLATFORM_SKILL_LICENSE,
-  PLATFORM_SKILL_LICENSE_SUMMARY,
-} from "clawhub-schema/licenseConstants";
 import { Package } from "lucide-react";
 import type { Doc, Id } from "../../convex/_generated/dataModel";
 import { getSkillBadges } from "../lib/badges";
@@ -258,7 +254,6 @@ export function SkillHeader({
               </div>
 
               <div className="skill-hero-badges">
-                <span className="tag tag-compact">{PLATFORM_SKILL_LICENSE}</span>
                 {getSkillBadges(skill).map((badge) => (
                   <span key={badge} className="tag tag-compact">
                     {badge}
@@ -272,12 +267,6 @@ export function SkillHeader({
               </div>
             </div>
             <div className="skill-hero-sidebar">
-              <div className="skill-hero-sidebar-meta">
-                <div className="skill-sidebar-item">
-                  <span className="skill-sidebar-label">License</span>
-                  <span className="skill-sidebar-value">{PLATFORM_SKILL_LICENSE} · {PLATFORM_SKILL_LICENSE_SUMMARY}</span>
-                </div>
-              </div>
               <div className="skill-actions">
                 {isAuthenticated ? (
                   <button

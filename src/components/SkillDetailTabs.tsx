@@ -47,6 +47,8 @@ export function SkillDetailTabs({
   suppressVersionScanResults,
   scanResultsSuppressedMessage,
 }: SkillDetailTabsProps) {
+  const compareEnabled = (versions?.length ?? 0) > 1;
+
   return (
     <div className="card tab-card">
       <div className="tab-header">
@@ -64,21 +66,23 @@ export function SkillDetailTabs({
         >
           Files
         </button>
-        <button
-          className={`tab-button${activeTab === "compare" ? " is-active" : ""}`}
-          type="button"
-          onClick={() => setActiveTab("compare")}
-          onMouseEnter={() => {
-            onCompareIntent();
-            void import("./SkillDiffCard");
-          }}
-          onFocus={() => {
-            onCompareIntent();
-            void import("./SkillDiffCard");
-          }}
-        >
-          Compare
-        </button>
+        {compareEnabled ? (
+          <button
+            className={`tab-button${activeTab === "compare" ? " is-active" : ""}`}
+            type="button"
+            onClick={() => setActiveTab("compare")}
+            onMouseEnter={() => {
+              onCompareIntent();
+              void import("./SkillDiffCard");
+            }}
+            onFocus={() => {
+              onCompareIntent();
+              void import("./SkillDiffCard");
+            }}
+          >
+            Compare
+          </button>
+        ) : null}
         <button
           className={`tab-button${activeTab === "versions" ? " is-active" : ""}`}
           type="button"

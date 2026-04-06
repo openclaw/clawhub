@@ -81,56 +81,59 @@ export const Route = createFileRoute('/about')({
 
 function AboutPage() {
   return (
-    <main className="section">
-      <div className="skill-detail-stack">
-        <section className="card">
+    <main className="section about-page">
+      <div className="about-hero">
+        <div className="about-hero-copy">
           <div className="skill-card-tags" style={{ marginBottom: 12 }}>
             <span className="tag">About</span>
             <span className="tag tag-accent">Policy</span>
           </div>
-          <h1 className="section-title" style={{ marginBottom: 10 }}>
-            What ClawHub Will Not Host
-          </h1>
-          <p className="section-subtitle" style={{ marginBottom: 14 }}>
+          <h1 className="about-title">What ClawHub will not host</h1>
+          <p className="about-lead">
             ClawHub is for useful agent tooling, not abuse workflows. If a skill is built to evade
-            defenses, abuse platforms, scam people, invade privacy, or enable non-consensual
-            behavior, it does not belong here.
+            defenses, scam people, invade privacy, or enable non-consensual behavior, it does not
+            belong here.
           </p>
-          <div className="stat">
-            We moderate based on end-to-end abuse patterns, not just isolated keywords.
-          </div>
-        </section>
+        </div>
+        <div className="about-callout">
+          <span className="about-callout-label">Moderation stance</span>
+          <p>
+            We judge end-to-end abuse patterns, not keyword theater. Useful tooling stays.
+            Predatory workflows get removed.
+          </p>
+        </div>
+      </div>
 
-        <section className="grid" style={{ gap: 16 }}>
+      <section className="about-section">
+        <div className="home-section-header">
+          <h2 className="home-section-title">Immediate rejection categories</h2>
+        </div>
+        <div className="about-grid">
           {prohibitedCategories.map((category) => (
-            <article key={category.title} className="card">
-              <h2 className="dashboard-collection-title" style={{ marginBottom: 8 }}>
-                {category.title}
-              </h2>
-              <p className="section-subtitle" style={{ margin: 0 }}>
-                {category.examples}
-              </p>
+            <article key={category.title} className="about-rule-card">
+              <h2>{category.title}</h2>
+              <p>{category.examples}</p>
             </article>
           ))}
-        </section>
+        </div>
+      </section>
 
-        <section className="card">
-          <h2 className="dashboard-collection-title" style={{ marginBottom: 10 }}>
-            Recent patterns we are explicitly not okay with
-          </h2>
-          <div className="management-sublist">
-            {recentPatterns.map((pattern) => (
-              <div key={pattern} className="management-subitem">
-                {pattern}
-              </div>
-            ))}
-          </div>
-        </section>
+      <section className="about-section">
+        <div className="home-section-header">
+          <h2 className="home-section-title">Recent patterns we are explicitly not okay with</h2>
+        </div>
+        <div className="about-patterns">
+          {recentPatterns.map((pattern) => (
+            <div key={pattern} className="about-pattern">
+              {pattern}
+            </div>
+          ))}
+        </div>
+      </section>
 
-        <section className="card">
-          <h2 className="dashboard-collection-title" style={{ marginBottom: 10 }}>
-            Enforcement
-          </h2>
+      <section className="about-enforcement">
+        <div>
+          <span className="about-callout-label">Enforcement</span>
           <div className="management-sublist">
             <div className="management-subitem">
               We may hide, remove, or hard-delete violating skills.
@@ -143,21 +146,21 @@ function AboutPage() {
               We do not guarantee warning-first enforcement for obvious abuse.
             </div>
           </div>
-          <div className="skill-card-tags" style={{ marginTop: 16 }}>
-            <Link className="btn btn-primary" to="/skills">
-              Browse Skills
-            </Link>
-            <a
-              className="btn"
-              href="https://github.com/openclaw/clawhub/blob/main/docs/acceptable-usage.md"
-              target="_blank"
-              rel="noreferrer"
-            >
-              Reviewer Doc
-            </a>
-          </div>
-        </section>
-      </div>
+        </div>
+        <div className="skill-card-tags">
+          <Link className="btn btn-primary" to="/skills">
+            Browse Skills
+          </Link>
+          <a
+            className="btn"
+            href="https://github.com/openclaw/clawhub/blob/main/docs/acceptable-usage.md"
+            target="_blank"
+            rel="noreferrer"
+          >
+            Reviewer Doc
+          </a>
+        </div>
+      </section>
     </main>
   );
 }

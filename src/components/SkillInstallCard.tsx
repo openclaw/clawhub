@@ -1,9 +1,4 @@
 import type { ClawdisSkillMetadata } from "clawhub-schema";
-import {
-  PLATFORM_SKILL_LICENSE,
-  PLATFORM_SKILL_LICENSE_SUMMARY,
-  PLATFORM_SKILL_LICENSE_URL,
-} from "clawhub-schema/licenseConstants";
 import { formatInstallCommand, formatInstallLabel } from "./skillDetailUtils";
 
 type SkillInstallCardProps = {
@@ -30,32 +25,14 @@ export function SkillInstallCard({ clawdis, osLabels }: SkillInstallCardProps) {
   const hasInstallSpecs = installSpecs.length > 0;
   const hasDependencies = dependencies.length > 0;
   const hasLinks = Boolean(links?.homepage || links?.repository || links?.documentation);
-  const hasLicense = true;
 
-  if (!hasRuntimeRequirements && !hasInstallSpecs && !hasDependencies && !hasLinks && !hasLicense) {
+  if (!hasRuntimeRequirements && !hasInstallSpecs && !hasDependencies && !hasLinks) {
     return null;
   }
 
   return (
     <div className="skill-hero-content">
       <div className="skill-hero-panels">
-        <div className="skill-panel">
-          <h3 className="section-title" style={{ fontSize: "1rem", margin: 0 }}>
-            License
-          </h3>
-          <div className="skill-panel-body">
-            <div className="tag tag-accent">{PLATFORM_SKILL_LICENSE}</div>
-            <div className="stat">
-              <span>{PLATFORM_SKILL_LICENSE_SUMMARY}</span>
-            </div>
-            <div className="stat">
-              <strong>Terms</strong>
-              <a href={PLATFORM_SKILL_LICENSE_URL} target="_blank" rel="noopener noreferrer">
-                {PLATFORM_SKILL_LICENSE_URL}
-              </a>
-            </div>
-          </div>
-        </div>
         {hasRuntimeRequirements ? (
           <div className="skill-panel">
             <h3 className="section-title" style={{ fontSize: "1rem", margin: 0 }}>

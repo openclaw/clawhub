@@ -1,7 +1,9 @@
 import { useAction } from "convex/react";
 import { useEffect, useRef, useState } from "react";
 import { api } from "../../convex/_generated/api";
+import { convexHttp } from "../convex/client";
 import { fetchPluginCatalog, type PackageListItem } from "./packageApi";
+import type { PublicUser } from "./publicUser";
 
 export type UnifiedSkillResult = {
   type: "skill";
@@ -25,13 +27,22 @@ export type UnifiedPluginResult = {
   plugin: PackageListItem;
 };
 
-export type UnifiedResult = UnifiedSkillResult | UnifiedPluginResult;
+export type UnifiedUserResult = {
+  type: "user";
+  user: PublicUser;
+};
 
-export function useUnifiedSearch(query: string, activeType: "all" | "skills" | "plugins") {
+export type UnifiedResult = UnifiedSkillResult | UnifiedPluginResult | UnifiedUserResult;
+
+export function useUnifiedSearch(
+  query: string,
+  activeType: "all" | "skills" | "plugins" | "users",
+) {
   const searchSkills = useAction(api.search.searchSkills);
   const [results, setResults] = useState<UnifiedResult[]>([]);
   const [skillCount, setSkillCount] = useState(0);
   const [pluginCount, setPluginCount] = useState(0);
+  const [userCount, setUserCount] = useState(0);
   const [isSearching, setIsSearching] = useState(false);
   const requestRef = useRef(0);
 
@@ -41,6 +52,7 @@ export function useUnifiedSearch(query: string, activeType: "all" | "skills" | "
       setResults([]);
       setSkillCount(0);
       setPluginCount(0);
+      setUserCount(0);
       setIsSearching(false);
       return;
     }
@@ -55,6 +67,7 @@ export function useUnifiedSearch(query: string, activeType: "all" | "skills" | "
           const promises: [
             Promise<unknown> | null,
             Promise<{ items: PackageListItem[] }> | null,
+            Promise<{ items: PublicUser[] }> | null,
           ] = [null, null];
 
           if (activeType === "all" || activeType === "skills") {
@@ -69,7 +82,11 @@ export function useUnifiedSearch(query: string, activeType: "all" | "skills" | "
             promises[1] = fetchPluginCatalog({ q: trimmed, limit: 25 });
           }
 
-          const [skillsRaw, pluginsRaw] = await Promise.all(promises);
+          if (activeType === "all" || activeType === "users") {
+            promises[2] = convexHttp.query(api.users.listPublic, { search: trimmed, limit: 25 });
+          }
+
+          const [skillsRaw, pluginsRaw, usersRaw] = await Promise.all(promises);
 
           if (requestId !== requestRef.current) return;
 
@@ -91,14 +108,23 @@ export function useUnifiedSearch(query: string, activeType: "all" | "skills" | "
 
           setSkillCount(skillResults.length);
           setPluginCount(pluginResults.length);
+          const userResults: UnifiedUserResult[] = (
+            (usersRaw as { items: PublicUser[] })?.items ?? []
+          ).map((user) => ({
+            type: "user" as const,
+            user,
+          }));
+          setUserCount(userResults.length);
 
           const merged: UnifiedResult[] = [];
           if (activeType === "all") {
-            merged.push(...skillResults, ...pluginResults);
+            merged.push(...skillResults, ...pluginResults, ...userResults);
           } else if (activeType === "skills") {
             merged.push(...skillResults);
-          } else {
+          } else if (activeType === "plugins") {
             merged.push(...pluginResults);
+          } else {
+            merged.push(...userResults);
           }
 
           setResults(merged);
@@ -107,6 +133,7 @@ export function useUnifiedSearch(query: string, activeType: "all" | "skills" | "
             setResults([]);
             setSkillCount(0);
             setPluginCount(0);
+            setUserCount(0);
           }
         } finally {
           if (requestId === requestRef.current) {
@@ -119,5 +146,5 @@ export function useUnifiedSearch(query: string, activeType: "all" | "skills" | "
     return () => window.clearTimeout(handle);
   }, [query, activeType, searchSkills]);
 
-  return { results, skillCount, pluginCount, isSearching };
+  return { results, skillCount, pluginCount, userCount, isSearching };
 }

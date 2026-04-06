@@ -285,77 +285,86 @@ export function SkillDiffCard({ skill, versions, variant = "card" }: SkillDiffCa
             Inline or side-by-side diff for any file.
           </p>
         </div>
-        <fieldset className="diff-toggle-group">
-          <legend className="sr-only">Diff layout</legend>
-          <button
-            className={`diff-toggle${viewMode === "split" ? " is-active" : ""}`}
-            type="button"
-            onClick={() => updateViewMode("split")}
-          >
-            Side-by-side
-          </button>
-          <button
-            className={`diff-toggle${viewMode === "inline" ? " is-active" : ""}`}
-            type="button"
-            onClick={() => updateViewMode("inline")}
-          >
-            Inline
-          </button>
-        </fieldset>
+        {!diffUnavailable ? (
+          <fieldset className="diff-toggle-group">
+            <legend className="sr-only">Diff layout</legend>
+            <button
+              className={`diff-toggle${viewMode === "split" ? " is-active" : ""}`}
+              type="button"
+              onClick={() => updateViewMode("split")}
+            >
+              Side-by-side
+            </button>
+            <button
+              className={`diff-toggle${viewMode === "inline" ? " is-active" : ""}`}
+              type="button"
+              onClick={() => updateViewMode("inline")}
+            >
+              Inline
+            </button>
+          </fieldset>
+        ) : null}
       </div>
 
-      <div className="diff-controls">
-        <div className="diff-select">
-          <label htmlFor="diff-left">Left</label>
-          <select
-            id="diff-left"
-            className="search-input"
-            value={leftVersionId ?? ""}
-            onChange={(event) => setLeftVersionId(event.target.value as Id<"skillVersions">)}
-          >
-            <option value="" disabled>
-              Select version
-            </option>
-            {renderOptions(versionOptions)}
-          </select>
-        </div>
-        <button
-          className="btn diff-swap"
-          type="button"
-          onClick={() => {
-            setLeftVersionId(rightVersionId);
-            setRightVersionId(leftVersionId);
-          }}
-          disabled={!leftVersionId || !rightVersionId}
-        >
-          Swap
-        </button>
-        <div className="diff-select">
-          <label htmlFor="diff-right">Right</label>
-          <select
-            id="diff-right"
-            className="search-input"
-            value={rightVersionId ?? ""}
-            onChange={(event) => setRightVersionId(event.target.value as Id<"skillVersions">)}
-          >
-            <option value="" disabled>
-              Select version
-            </option>
-            {renderOptions(versionOptions)}
-          </select>
-        </div>
-      </div>
+      {!diffUnavailable ? (
+        <>
+          <div className="diff-controls">
+            <div className="diff-select">
+              <label htmlFor="diff-left">Left</label>
+              <select
+                id="diff-left"
+                className="search-input"
+                value={leftVersionId ?? ""}
+                onChange={(event) => setLeftVersionId(event.target.value as Id<"skillVersions">)}
+              >
+                <option value="" disabled>
+                  Select version
+                </option>
+                {renderOptions(versionOptions)}
+              </select>
+            </div>
+            <button
+              className="btn diff-swap"
+              type="button"
+              onClick={() => {
+                setLeftVersionId(rightVersionId);
+                setRightVersionId(leftVersionId);
+              }}
+              disabled={!leftVersionId || !rightVersionId}
+            >
+              Swap
+            </button>
+            <div className="diff-select">
+              <label htmlFor="diff-right">Right</label>
+              <select
+                id="diff-right"
+                className="search-input"
+                value={rightVersionId ?? ""}
+                onChange={(event) => setRightVersionId(event.target.value as Id<"skillVersions">)}
+              >
+                <option value="" disabled>
+                  Select version
+                </option>
+                {renderOptions(versionOptions)}
+              </select>
+            </div>
+          </div>
 
-      <div className="diff-meta">
-        <span>
-          Left {leftLabel} • Right {rightLabel}
-        </span>
-        {diffUnavailable ? <span>Need at least 2 versions.</span> : null}
-      </div>
+          <div className="diff-meta">
+            <span>
+              Left {leftLabel} • Right {rightLabel}
+            </span>
+          </div>
+        </>
+      ) : null}
 
       <div className="diff-layout">
         <div className="diff-files">
-          {fileDiffItems.length === 0 ? (
+          {diffUnavailable ? (
+            <div className="diff-empty">
+              Publish another version to compare changes side by side.
+            </div>
+          ) : fileDiffItems.length === 0 ? (
             <div className="diff-empty">No files to compare.</div>
           ) : (
             fileDiffItems.map((item) => (

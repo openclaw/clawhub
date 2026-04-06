@@ -25,6 +25,8 @@ export function Footer() {
               Skills
             </Link>
             <Link to="/plugins">Plugins</Link>
+            <Link to="/souls">Souls</Link>
+            <Link to="/users">Users</Link>
             <Link
               to="/skills"
               search={{

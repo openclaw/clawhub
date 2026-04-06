@@ -1,25 +1,29 @@
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { Search } from "lucide-react";
 import { useState } from "react";
+import { PluginListItem } from "../components/PluginListItem";
 import { SkillListItem } from "../components/SkillListItem";
-import { familyLabel } from "../lib/packageLabels";
-import type { PublicSkill } from "../lib/publicUser";
+import { UserListItem } from "../components/UserListItem";
+import type { PublicSkill, PublicUser } from "../lib/publicUser";
 import {
   useUnifiedSearch,
   type UnifiedPluginResult,
   type UnifiedSkillResult,
+  type UnifiedUserResult,
 } from "../lib/useUnifiedSearch";
 
 type SearchState = {
   q?: string;
-  type?: "all" | "skills" | "plugins";
+  type?: "all" | "skills" | "plugins" | "users";
 };
 
 export const Route = createFileRoute("/search")({
   validateSearch: (search): SearchState => ({
     q: typeof search.q === "string" && search.q.trim() ? search.q : undefined,
     type:
-      search.type === "skills" || search.type === "plugins" ? search.type : undefined,
+      search.type === "skills" || search.type === "plugins" || search.type === "users"
+        ? search.type
+        : undefined,
   }),
   component: UnifiedSearchPage,
 });
@@ -30,7 +34,7 @@ function UnifiedSearchPage() {
   const activeType = search.type ?? "all";
   const [query, setQuery] = useState(search.q ?? "");
 
-  const { results, skillCount, pluginCount, isSearching } = useUnifiedSearch(
+  const { results, skillCount, pluginCount, userCount, isSearching } = useUnifiedSearch(
     search.q ?? "",
     activeType,
   );
@@ -43,7 +47,7 @@ function UnifiedSearchPage() {
     });
   };
 
-  const setType = (type: "all" | "skills" | "plugins") => {
+  const setType = (type: "all" | "skills" | "plugins" | "users") => {
     void navigate({
       to: "/search",
       search: { q: search.q, type: type === "all" ? undefined : type },
@@ -65,11 +69,11 @@ function UnifiedSearchPage() {
 
       <form className="search-page-form" onSubmit={handleSearch}>
         <div className="browse-search-bar" style={{ maxWidth: 560, flex: 1 }}>
-          <Search size={16} className="navbar-search-icon" aria-hidden="true" />
+            <Search size={16} className="navbar-search-icon" aria-hidden="true" />
           <input
             className="browse-search-input"
             type="text"
-            placeholder="Search skills, plugins..."
+            placeholder="Search skills, plugins, users..."
             value={query}
             onChange={(e) => setQuery(e.target.value)}
             autoFocus
@@ -105,6 +109,14 @@ function UnifiedSearchPage() {
             <span className="search-tab-count">{pluginCount}</span>
           ) : null}
         </button>
+        <button
+          className={`search-tab${activeType === "users" ? " is-active" : ""}`}
+          type="button"
+          onClick={() => setType("users")}
+        >
+          Users
+          {userCount > 0 ? <span className="search-tab-count">{userCount}</span> : null}
+        </button>
       </div>
 
       {isSearching ? (
@@ -113,7 +125,9 @@ function UnifiedSearchPage() {
         </div>
       ) : !search.q ? (
         <div className="card" style={{ textAlign: "center", padding: 40 }}>
-          <p style={{ color: "var(--ink-soft)" }}>Enter a search term to find skills and plugins</p>
+          <p style={{ color: "var(--ink-soft)" }}>
+            Enter a search term to find skills, plugins, and users
+          </p>
         </div>
       ) : results.length === 0 ? (
         <div className="card" style={{ textAlign: "center", padding: 40 }}>
@@ -124,8 +138,10 @@ function UnifiedSearchPage() {
           {results.map((item) =>
             item.type === "skill" ? (
               <SkillResultRow key={`skill-${item.skill._id}`} result={item} />
-            ) : (
+            ) : item.type === "plugin" ? (
               <PluginResultRow key={`plugin-${item.plugin.name}`} result={item} />
+            ) : (
+              <UserResultRow key={`user-${item.user._id}`} result={item} />
             ),
           )}
         </div>
@@ -145,33 +161,10 @@ function SkillResultRow({ result }: { result: UnifiedSkillResult }) {
 }
 
 function PluginResultRow({ result }: { result: UnifiedPluginResult }) {
-  const item = result.plugin;
-  return (
-    <Link
-      to="/plugins/$name"
-      params={{ name: item.name }}
-      className="skill-list-item"
-    >
-      <div className="skill-list-item-main">
-        {item.ownerHandle ? (
-          <>
-            <span className="skill-list-item-owner">@{item.ownerHandle}</span>
-            <span className="skill-list-item-sep">/</span>
-          </>
-        ) : null}
-        <span className="skill-list-item-name">{item.displayName}</span>
-        <span className="tag tag-compact">{familyLabel(item.family)}</span>
-        {item.isOfficial ? (
-          <span className="tag tag-compact tag-accent">Verified</span>
-        ) : null}
-      </div>
-      {item.summary ? <p className="skill-list-item-summary">{item.summary}</p> : null}
-      <div className="skill-list-item-meta">
-        <span className="skill-list-item-meta-item">Plugin</span>
-        {item.latestVersion ? (
-          <span className="skill-list-item-meta-item">v{item.latestVersion}</span>
-        ) : null}
-      </div>
-    </Link>
-  );
+  return <PluginListItem item={result.plugin} />;
+}
+
+function UserResultRow({ result }: { result: UnifiedUserResult }) {
+  const user = result.user as PublicUser;
+  return <UserListItem user={user} />;
 }

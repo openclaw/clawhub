@@ -1,5 +1,6 @@
 import { Link } from "@tanstack/react-router";
 import { Package, Star } from "lucide-react";
+import { MarketplaceIcon } from "./MarketplaceIcon";
 import { getSkillBadges } from "../lib/badges";
 import { formatCompactStat } from "../lib/numberFormat";
 import type { PublicPublisher, PublicSkill } from "../lib/publicUser";
@@ -19,29 +20,32 @@ export function SkillListItem({ skill, ownerHandle, owner }: SkillListItemProps)
 
   return (
     <Link to={href} className="skill-list-item">
-      <div className="skill-list-item-main">
-        {handle ? (
-          <>
-            <span className="skill-list-item-owner">@{handle}</span>
-            <span className="skill-list-item-sep">/</span>
-          </>
-        ) : null}
-        <span className="skill-list-item-name">{skill.displayName}</span>
-        {badges.map((b) => (
-          <span key={b} className="tag tag-compact">
-            {b}
+      <MarketplaceIcon kind="skill" label={skill.displayName} />
+      <div className="skill-list-item-body">
+        <div className="skill-list-item-main">
+          {handle ? (
+            <>
+              <span className="skill-list-item-owner">@{handle}</span>
+              <span className="skill-list-item-sep">/</span>
+            </>
+          ) : null}
+          <span className="skill-list-item-name">{skill.displayName}</span>
+          {badges.map((b) => (
+            <span key={b} className="tag tag-compact">
+              {b}
+            </span>
+          ))}
+        </div>
+        {skill.summary ? <p className="skill-list-item-summary">{skill.summary}</p> : null}
+        <div className="skill-list-item-meta">
+          <span className="skill-list-item-meta-item">Updated {timeAgo(skill.updatedAt)}</span>
+          <span className="skill-list-item-meta-item">
+            <Star size={14} aria-hidden="true" /> {formatCompactStat(skill.stats.stars)}
           </span>
-        ))}
-      </div>
-      {skill.summary ? <p className="skill-list-item-summary">{skill.summary}</p> : null}
-      <div className="skill-list-item-meta">
-        <span className="skill-list-item-meta-item">Updated {timeAgo(skill.updatedAt)}</span>
-        <span className="skill-list-item-meta-item">
-          <Star size={14} aria-hidden="true" /> {formatCompactStat(skill.stats.stars)}
-        </span>
-        <span className="skill-list-item-meta-item">
-          <Package size={14} aria-hidden="true" /> {formatCompactStat(skill.stats.downloads)}
-        </span>
+          <span className="skill-list-item-meta-item">
+            <Package size={14} aria-hidden="true" /> {formatCompactStat(skill.stats.downloads)}
+          </span>
+        </div>
       </div>
     </Link>
   );

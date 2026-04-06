@@ -1,12 +1,9 @@
 import { useAuthActions } from "@convex-dev/auth/react";
 import { Link, useNavigate } from "@tanstack/react-router";
-import { Menu, Monitor, Moon, Search, Sun } from "lucide-react";
-import { useEffect, useMemo, useRef, useState } from "react";
-import { api } from "../../convex/_generated/api";
-import { convexHttp } from "../convex/client";
+import { Github, Menu, Monitor, Moon, Search, Sun } from "lucide-react";
+import { useMemo, useRef, useState } from "react";
 import { getUserFacingAuthError } from "../lib/authErrorMessage";
 import { gravatarUrl } from "../lib/gravatar";
-import { formatCompactStat } from "../lib/numberFormat";
 import { isModerator } from "../lib/roles";
 import { getClawHubSiteUrl, getSiteMode, getSiteName } from "../lib/site";
 import { applyTheme, useThemeMode } from "../lib/theme";
@@ -40,16 +37,8 @@ export default function Header() {
   const { error: authError, clear: clearAuthError } = useAuthError();
   const signInRedirectTo = getCurrentRelativeUrl();
 
-  const [skillCount, setSkillCount] = useState<number | null>(null);
   const [navSearchQuery, setNavSearchQuery] = useState("");
   const [mobileSearchOpen, setMobileSearchOpen] = useState(false);
-
-  useEffect(() => {
-    convexHttp
-      .query(api.skills.countPublicSkills, {})
-      .then((count) => setSkillCount(count as number))
-      .catch(() => {});
-  }, []);
 
   const setTheme = (next: "system" | "light" | "dark") => {
     startThemeTransition({
@@ -97,7 +86,7 @@ export default function Header() {
             <input
               className="navbar-search-input"
               type="search"
-              placeholder={isSoulMode ? "Search souls..." : "Search skills, plugins..."}
+              placeholder={isSoulMode ? "Search souls..." : "Search skills, plugins, users"}
               value={navSearchQuery}
               onChange={(e) => setNavSearchQuery(e.target.value)}
               aria-label="Search"
@@ -160,6 +149,29 @@ export default function Header() {
                   {isSoulMode ? null : (
                     <DropdownMenuItem asChild>
                       <Link to="/plugins">Plugins</Link>
+                    </DropdownMenuItem>
+                  )}
+                  {isSoulMode ? null : (
+                    <DropdownMenuItem asChild>
+                      <Link
+                        to="/souls"
+                        search={{
+                          q: undefined,
+                          sort: undefined,
+                          dir: undefined,
+                          view: undefined,
+                          focus: undefined,
+                        }}
+                      >
+                        Souls
+                      </Link>
+                    </DropdownMenuItem>
+                  )}
+                  {isSoulMode ? null : (
+                    <DropdownMenuItem asChild>
+                      <Link to="/users" search={{ q: undefined }}>
+                        Users
+                      </Link>
                     </DropdownMenuItem>
                   )}
                   {isSoulMode ? null : (
@@ -283,6 +295,7 @@ export default function Header() {
                     });
                   }}
                 >
+                  <Github size={16} aria-hidden="true" />
                   <span className="sign-in-label">Sign in</span>
                   <span className="sign-in-provider">with GitHub</span>
                 </button>
@@ -298,7 +311,7 @@ export default function Header() {
             <input
               className="navbar-search-input"
               type="text"
-              placeholder={isSoulMode ? "Search souls..." : "Search skills, plugins..."}
+              placeholder={isSoulMode ? "Search souls..." : "Search skills, plugins, users"}
               value={navSearchQuery}
               onChange={(e) => setNavSearchQuery(e.target.value)}
               autoFocus
@@ -308,75 +321,95 @@ export default function Header() {
 
         {/* Row 2: Content type tabs */}
         <nav className="navbar-tabs" aria-label="Content types">
-          {isSoulMode ? (
-            <a href={clawHubUrl} className="navbar-tab">
-              ClawHub
-            </a>
-          ) : null}
-          {isSoulMode ? (
-            <Link
-              to="/souls"
-              className="navbar-tab"
-              search={{
-                q: undefined,
-                sort: undefined,
-                dir: undefined,
-                view: undefined,
-                focus: undefined,
-              }}
-            >
-              Souls
-            </Link>
-          ) : (
-            <Link
-              to="/skills"
-              className="navbar-tab"
-              search={{
-                q: undefined,
-                sort: undefined,
-                dir: undefined,
-                highlighted: undefined,
-                nonSuspicious: undefined,
-                view: undefined,
-                focus: undefined,
-              }}
-            >
-              Skills
-              {skillCount != null ? (
-                <span className="navbar-tab-count">{formatCompactStat(skillCount)}</span>
-              ) : null}
-            </Link>
-          )}
-          {isSoulMode ? null : (
-            <Link to="/plugins" className="navbar-tab">
-              Plugins
-            </Link>
-          )}
-          <span className="navbar-tab-spacer" />
-          {isSoulMode ? null : (
-            <Link to="/about" className="navbar-tab navbar-tab-secondary">
-              About
-            </Link>
-          )}
-          {me ? (
-            <Link to="/stars" className="navbar-tab navbar-tab-secondary">
-              Stars
-            </Link>
-          ) : null}
-          {me ? (
-            <Link to="/dashboard" className="navbar-tab navbar-tab-secondary">
-              Dashboard
-            </Link>
-          ) : null}
-          {isStaff ? (
-            <Link
-              to="/management"
-              search={{ skill: undefined }}
-              className="navbar-tab navbar-tab-secondary"
-            >
-              Manage
-            </Link>
-          ) : null}
+          <div className="navbar-tabs-primary">
+            {isSoulMode ? (
+              <a href={clawHubUrl} className="navbar-tab">
+                ClawHub
+              </a>
+            ) : null}
+            {isSoulMode ? (
+              <Link
+                to="/souls"
+                className="navbar-tab"
+                search={{
+                  q: undefined,
+                  sort: undefined,
+                  dir: undefined,
+                  view: undefined,
+                  focus: undefined,
+                }}
+              >
+                Souls
+              </Link>
+            ) : (
+              <Link
+                to="/skills"
+                className="navbar-tab"
+                search={{
+                  q: undefined,
+                  sort: undefined,
+                  dir: undefined,
+                  highlighted: undefined,
+                  nonSuspicious: undefined,
+                  view: undefined,
+                  focus: undefined,
+                }}
+              >
+                Skills
+              </Link>
+            )}
+            {isSoulMode ? null : (
+              <Link to="/plugins" className="navbar-tab">
+                Plugins
+              </Link>
+            )}
+            {isSoulMode ? null : (
+              <Link
+                to="/souls"
+                className="navbar-tab"
+                search={{
+                  q: undefined,
+                  sort: undefined,
+                  dir: undefined,
+                  view: undefined,
+                  focus: undefined,
+                }}
+              >
+                Souls
+              </Link>
+            )}
+          </div>
+          <div className="navbar-tabs-secondary">
+            {isSoulMode ? null : (
+              <Link to="/users" search={{ q: undefined }} className="navbar-tab navbar-tab-secondary">
+                Users
+              </Link>
+            )}
+            {isSoulMode ? null : (
+              <Link to="/about" className="navbar-tab navbar-tab-secondary">
+                About
+              </Link>
+            )}
+            {me ? (
+              <Link to="/stars" className="navbar-tab navbar-tab-secondary">
+                Stars
+              </Link>
+            ) : null}
+            {me ? (
+              <Link to="/dashboard" className="navbar-tab navbar-tab-secondary">
+                Dashboard
+              </Link>
+            ) : null}
+            {isStaff ? (
+              <Link
+                to="/management"
+                search={{ skill: undefined }}
+                className="navbar-tab navbar-tab-secondary"
+              >
+                Manage
+              </Link>
+            ) : null}
+          </div>
         </nav>
       </div>
     </header>

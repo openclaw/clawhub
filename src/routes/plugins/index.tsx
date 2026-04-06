@@ -2,8 +2,8 @@ import { createFileRoute, Link } from "@tanstack/react-router";
 import { Search } from "lucide-react";
 import { useEffect, useState } from "react";
 import { BrowseSidebar } from "../../components/BrowseSidebar";
+import { PluginListItem } from "../../components/PluginListItem";
 import { fetchPluginCatalog, type PackageListItem } from "../../lib/packageApi";
-import { familyLabel } from "../../lib/packageLabels";
 
 type PluginSearchState = {
   q?: string;
@@ -58,32 +58,6 @@ export const Route = createFileRoute("/plugins/")({
   },
   component: PluginsIndex,
 });
-
-function VerifiedBadge() {
-  return (
-    <svg
-      width="14"
-      height="14"
-      viewBox="0 0 16 16"
-      fill="none"
-      xmlns="http://www.w3.org/2000/svg"
-      aria-label="Verified publisher"
-      style={{ display: "inline-block", verticalAlign: "middle", flexShrink: 0 }}
-    >
-      <path
-        d="M8 0L9.79 1.52L12.12 1.21L12.93 3.41L15.01 4.58L14.42 6.84L15.56 8.82L14.12 10.5L14.12 12.82L11.86 13.41L10.34 15.27L8 14.58L5.66 15.27L4.14 13.41L1.88 12.82L1.88 10.5L0.44 8.82L1.58 6.84L0.99 4.58L3.07 3.41L3.88 1.21L6.21 1.52L8 0Z"
-        fill="#3b82f6"
-      />
-      <path
-        d="M5.5 8L7 9.5L10.5 6"
-        stroke="white"
-        strokeWidth="1.5"
-        strokeLinecap="round"
-        strokeLinejoin="round"
-      />
-    </svg>
-  );
-}
 
 export function PluginsIndex() {
   const search = Route.useSearch();
@@ -207,39 +181,7 @@ export function PluginsIndex() {
           ) : (
             <div className="results-list">
               {items.map((item) => (
-                <Link
-                  key={item.name}
-                  to="/plugins/$name"
-                  params={{ name: item.name }}
-                  className="skill-list-item"
-                >
-                  <div className="skill-list-item-main">
-                    {item.ownerHandle ? (
-                      <>
-                        <span className="skill-list-item-owner">@{item.ownerHandle}</span>
-                        <span className="skill-list-item-sep">/</span>
-                      </>
-                    ) : null}
-                    <span className="skill-list-item-name">{item.displayName}</span>
-                    <span className="tag tag-compact">{familyLabel(item.family)}</span>
-                    {item.isOfficial ? (
-                      <span className="tag tag-compact tag-accent">
-                        <VerifiedBadge /> Verified
-                      </span>
-                    ) : null}
-                  </div>
-                  {item.summary ? (
-                    <p className="skill-list-item-summary">{item.summary}</p>
-                  ) : null}
-                  <div className="skill-list-item-meta">
-                    {item.latestVersion ? (
-                      <span className="skill-list-item-meta-item">v{item.latestVersion}</span>
-                    ) : null}
-                    <span className="skill-list-item-meta-item">
-                      {item.ownerHandle ? item.ownerHandle : "community"}
-                    </span>
-                  </div>
-                </Link>
+                <PluginListItem key={item.name} item={item} />
               ))}
             </div>
           )}

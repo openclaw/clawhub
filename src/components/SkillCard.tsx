@@ -1,5 +1,6 @@
 import { Link } from "@tanstack/react-router";
 import type { ReactNode } from "react";
+import { MarketplaceIcon } from "./MarketplaceIcon";
 import type { PublicSkill } from "../lib/publicUser";
 
 type SkillCardProps = {
@@ -43,7 +44,10 @@ export function SkillCard({
           ))}
         </div>
       ) : null}
-      <h3 className="skill-card-title">{skill.displayName}</h3>
+      <div className="skill-card-header">
+        <MarketplaceIcon kind="skill" label={skill.displayName} size="md" />
+        <h3 className="skill-card-title">{skill.displayName}</h3>
+      </div>
       <p className="skill-card-summary">{skill.summary ?? summaryFallback}</p>
       <div className="skill-card-footer">{meta}</div>
     </Link>

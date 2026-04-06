@@ -71,40 +71,91 @@ function SkillsHome() {
 
   return (
     <main>
-      {/* Value prop hero — no search (navbar handles it) */}
       <section className="home-hero">
         <div className="home-hero-inner">
-          <h1 className="home-hero-title">
-            The collaborative hub for agent skills
-          </h1>
-          <p className="home-hero-subtitle">
-            {skillCount != null
-              ? `${formatCompactStat(skillCount)} skill bundles for AI agents. Browse, install, publish.`
-              : "Skill bundles for AI agents. Browse, install, publish."}
-          </p>
-          <div className="home-hero-actions">
-            <Link
-              to="/skills"
-              search={{
-                q: undefined,
-                sort: undefined,
-                dir: undefined,
-                highlighted: undefined,
-                nonSuspicious: true,
-                view: undefined,
-                focus: undefined,
-              }}
-              className="btn btn-primary"
-            >
-              Browse skills
-            </Link>
-            <Link
-              to="/publish-skill"
-              search={{ updateSlug: undefined }}
-              className="btn"
-            >
-              Publish yours
-            </Link>
+          <div className="home-hero-grid">
+            <div className="home-hero-copy">
+              <div className="home-hero-kicker">Discovery hub</div>
+              <h1 className="home-hero-title">The collaborative hub for agent skills</h1>
+              <p className="home-hero-subtitle">
+                {skillCount != null
+                  ? `${formatCompactStat(skillCount)} public skill bundles, plugin packages, and builder profiles in one shared index. Browse fast, fork the good stuff, ship your own.`
+                  : "Public skill bundles, plugin packages, and builder profiles in one shared index. Browse fast, fork the good stuff, ship your own."}
+              </p>
+              <div className="home-hero-actions">
+                <Link
+                  to="/skills"
+                  search={{
+                    q: undefined,
+                    sort: undefined,
+                    dir: undefined,
+                    highlighted: undefined,
+                    nonSuspicious: true,
+                    view: undefined,
+                    focus: undefined,
+                  }}
+                  className="btn btn-primary"
+                >
+                  Browse All Skills & Plugins
+                </Link>
+                <Link
+                  to="/publish-skill"
+                  search={{ updateSlug: undefined }}
+                  className="btn home-hero-publish-btn"
+                >
+                  + Publish Yours
+                </Link>
+              </div>
+              <p className="home-hero-explainer">
+                Sharp filters. Clean listings. Discovery that feels more like a real index and less
+                like a sad spreadsheet.
+              </p>
+            </div>
+
+            <div className="home-hero-panels" id="home-discovery">
+              <Link
+                to="/skills"
+                search={{
+                  q: undefined,
+                  sort: "downloads" as const,
+                  dir: "desc" as const,
+                  highlighted: undefined,
+                  nonSuspicious: true,
+                  view: undefined,
+                  focus: undefined,
+                }}
+                className="home-hero-panel"
+              >
+                <span className="home-hero-panel-label">Skills</span>
+                <strong>Browse ranked skill bundles</strong>
+                <span>Popular installs, fresh updates, staff picks.</span>
+              </Link>
+              <Link to="/plugins" className="home-hero-panel">
+                <span className="home-hero-panel-label">Plugins</span>
+                <strong>Find agent-ready packages</strong>
+                <span>Code plugins, bundles, and verified publishers.</span>
+              </Link>
+              <Link to="/users" search={{ q: undefined }} className="home-hero-panel">
+                <span className="home-hero-panel-label">Users</span>
+                <strong>Meet the builders</strong>
+                <span>Profiles, bios, and the people shipping useful stuff.</span>
+              </Link>
+              <Link
+                to="/souls"
+                search={{
+                  q: undefined,
+                  sort: undefined,
+                  dir: undefined,
+                  view: undefined,
+                  focus: undefined,
+                }}
+                className="home-hero-panel"
+              >
+                <span className="home-hero-panel-label">Souls</span>
+                <strong>SOUL.md discovery is coming</strong>
+                <span>Holding page for the next catalog surface.</span>
+              </Link>
+            </div>
           </div>
         </div>
       </section>
@@ -245,6 +296,16 @@ function SkillsHome() {
           <Link to="/plugins" className="home-quick-link">
             Browse plugins
           </Link>
+          <Link to="/users" search={{ q: undefined }} className="home-quick-link">
+            Browse users
+          </Link>
+          <Link
+            to="/souls"
+            search={{ q: undefined, sort: undefined, dir: undefined, view: undefined, focus: undefined }}
+            className="home-quick-link"
+          >
+            Souls coming soon
+          </Link>
           <Link
             to="/skills"
             search={{ q: undefined, sort: undefined, dir: undefined, highlighted: true, nonSuspicious: undefined, view: undefined, focus: undefined }}
@@ -277,38 +338,43 @@ function OnlyCrabsHome() {
     <main>
       <section className="home-hero">
         <div className="home-hero-inner">
-          <h1 className="home-hero-title">SoulHub, where system lore lives.</h1>
-          <p className="home-hero-subtitle">
-            Share SOUL.md bundles, version them like docs, and keep personal system lore in one
-            public place.
-          </p>
-          <form
-            className="home-hero-search"
-            onSubmit={(event) => {
-              event.preventDefault();
-              void navigate({
-                to: "/souls",
-                search: {
-                  q: trimmedQuery || undefined,
-                  sort: undefined,
-                  dir: undefined,
-                  view: undefined,
-                  focus: undefined,
-                },
-              });
-            }}
-          >
-            <input
-              className="home-hero-search-input"
-              type="text"
-              placeholder="Search souls, prompts, or lore"
-              value={query}
-              onChange={(event) => setQuery(event.target.value)}
-            />
-            <button className="btn btn-primary" type="submit">
-              Search
-            </button>
-          </form>
+          <div className="home-hero-grid">
+            <div className="home-hero-copy">
+              <div className="home-hero-kicker">OnlyCrabs</div>
+              <h1 className="home-hero-title">SoulHub, where system lore lives.</h1>
+              <p className="home-hero-subtitle">
+                Share SOUL.md bundles, version them like docs, and keep personal system lore in one
+                public place.
+              </p>
+              <form
+                className="home-hero-search"
+                onSubmit={(event) => {
+                  event.preventDefault();
+                  void navigate({
+                    to: "/souls",
+                    search: {
+                      q: trimmedQuery || undefined,
+                      sort: undefined,
+                      dir: undefined,
+                      view: undefined,
+                      focus: undefined,
+                    },
+                  });
+                }}
+              >
+                <input
+                  className="home-hero-search-input"
+                  type="text"
+                  placeholder="Search souls, prompts, or lore"
+                  value={query}
+                  onChange={(event) => setQuery(event.target.value)}
+                />
+                <button className="btn btn-primary" type="submit">
+                  Search
+                </button>
+              </form>
+            </div>
+          </div>
         </div>
       </section>
 
