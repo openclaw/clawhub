@@ -84,6 +84,7 @@ metadata:
 | `os`               | `string[]` | OS restrictions (e.g. `["macos"]`, `["linux"]`).                |
 | `install`          | `array`    | Install specs for dependencies (see below).                     |
 | `nix`              | `object`   | Nix plugin spec (see README).                                   |
+| `category`         | `string`   | Skill category for moderation context (see below).              |
 | `config`           | `object`   | Clawdbot config spec (see README).                              |
 
 ### Install specs
@@ -103,6 +104,30 @@ metadata:
 ```
 
 Supported install kinds: `brew`, `node`, `go`, `uv`.
+
+### Skill categories
+
+Declare your skill's category to give ClawHub's security analysis context about its purpose. This is especially important for security tools, which legitimately contain patterns that would be suspicious in other skill types.
+
+```yaml
+metadata:
+  openclaw:
+    category: security
+```
+
+Recognised categories:
+
+| Category   | Description                                                                                       |
+| ---------- | ------------------------------------------------------------------------------------------------- |
+| `security` | Security scanners, audit tools, threat detectors, IOC databases, and other defensive tools.       |
+
+When `category: security` is declared:
+
+- The static scanner contextualises expected patterns (shell execution for auditing, encoded payloads in IOC databases, credential scanning) so they don't trigger false-positive suspicion.
+- The LLM evaluator assesses coherence through a security-tool lens -- does the skill detect threats or deploy them?
+- Truly malicious behaviours (crypto mining, obfuscated install payloads, known blocked signatures) are **never** suppressed regardless of category.
+
+Declaring a category that doesn't match your skill's actual purpose is counterproductive -- the LLM evaluator will flag the mismatch as evidence of misdirection.
 
 ### Why this matters
 

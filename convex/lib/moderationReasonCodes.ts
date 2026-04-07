@@ -12,7 +12,7 @@ export type ModerationFinding = {
   evidence: string;
 };
 
-export const MODERATION_ENGINE_VERSION = "v2.2.0";
+export const MODERATION_ENGINE_VERSION = "v2.3.0";
 
 export const REASON_CODES = {
   DANGEROUS_EXEC: "suspicious.dangerous_exec",
@@ -37,6 +37,67 @@ const MALICIOUS_CODES = new Set<string>([
 
 const EXTERNALLY_CLEARABLE_SUSPICIOUS_CODES = new Set<string>([REASON_CODES.CREDENTIAL_HARVEST]);
 
+// ---------------------------------------------------------------------------
+// Skill categories
+// ---------------------------------------------------------------------------
+
+/**
+ * Recognized skill categories. Publishers declare a category in frontmatter
+ * metadata to give the moderation pipeline context about their skill's purpose.
+ *
+ * Security tools legitimately contain patterns (IOC databases, shell audit
+ * commands, credential scanners) that would be suspicious in other contexts.
+ * The category declaration is NOT a free pass -- malicious codes (crypto
+ * mining, obfuscated install payloads, known blocked signatures) are never
+ * suppressed regardless of category.
+ */
+export const SKILL_CATEGORIES = {
+  SECURITY: "security",
+} as const;
+
+export type SkillCategory = (typeof SKILL_CATEGORIES)[keyof typeof SKILL_CATEGORIES];
+
+/**
+ * Static scan codes that are contextually expected for security tools.
+ * When a skill declares `category: security`, these codes are re-prefixed
+ * from `suspicious.*` to `info.security_context.*` so they no longer
+ * contribute to the suspicious/malicious verdict.
+ *
+ * Malicious codes are NEVER contextualised -- they always trigger regardless
+ * of declared category.
+ */
+const SECURITY_CONTEXTUAL_CODES = new Set<string>([
+  REASON_CODES.DANGEROUS_EXEC,
+  REASON_CODES.DYNAMIC_CODE,
+  REASON_CODES.CREDENTIAL_HARVEST,
+  REASON_CODES.EXFILTRATION,
+  REASON_CODES.OBFUSCATED_CODE,
+  REASON_CODES.SUSPICIOUS_NETWORK,
+]);
+
+/**
+ * Re-prefix a reason code when the skill's declared category provides
+ * legitimate context for the pattern. Returns the original code unchanged
+ * when no contextualisation applies.
+ */
+export function contextualizeReasonCode(
+  code: string,
+  category: string | undefined,
+): string {
+  if (category === SKILL_CATEGORIES.SECURITY && SECURITY_CONTEXTUAL_CODES.has(code)) {
+    return code.replace(/^suspicious\./, "info.security_context.");
+  }
+  return code;
+}
+
+/**
+ * Check whether a category string is a recognised skill category.
+ */
+export function isValidSkillCategory(value: unknown): value is SkillCategory {
+  if (typeof value !== "string") return false;
+  return Object.values(SKILL_CATEGORIES).includes(value as SkillCategory);
+}
+
 export function isExternallyClearableSuspiciousCode(code: string) {
   return EXTERNALLY_CLEARABLE_SUSPICIOUS_CODES.has(code);
 }
@@ -57,7 +118,11 @@ export function verdictFromCodes(codes: string[]): ScannerModerationVerdict {
   if (normalized.some((code) => MALICIOUS_CODES.has(code) || code.startsWith("malicious."))) {
     return "malicious";
   }
-  if (normalized.length > 0) return "suspicious";
+  // Contextualised info.* codes are recorded for transparency but do not
+  // escalate the verdict. All other non-empty codes (including unknown
+  // prefixes) conservatively trigger "suspicious" to fail closed.
+  const actionableCodes = normalized.filter((code) => !code.startsWith("info."));
+  if (actionableCodes.length > 0) return "suspicious";
   return "clean";
 }
 

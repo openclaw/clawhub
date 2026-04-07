@@ -62,6 +62,27 @@ See also: [acceptable-usage.md](./acceptable-usage.md) for the marketplace polic
   - the uploader is placed into manual moderation
   - all owned skills are hidden until staff review
 
+## Skill category context
+
+Skills may declare a `category` in their frontmatter metadata (see `skill-format.md`). The category gives the moderation pipeline context about the skill's purpose, which reduces false positives for legitimate tools that contain patterns that would be suspicious in other contexts.
+
+Currently recognised categories:
+
+- **`security`** -- Security scanners, audit tools, threat detectors, IOC databases, and similar defensive tools. When declared, the following static scan codes are contextualised to `info.security_context.*` (recorded but not counted toward the suspicious/malicious verdict):
+  - `suspicious.dangerous_exec` -- security scanners run shell commands to audit systems
+  - `suspicious.dynamic_code_execution` -- some scanners use dynamic evaluation for pattern matching
+  - `suspicious.env_credential_access` -- credential scanners check environment variables
+  - `suspicious.potential_exfiltration` -- reporting scan results involves file read + network send
+  - `suspicious.obfuscated_code` -- IOC databases contain encoded payloads by definition
+  - `suspicious.nonstandard_network` -- network scanning tools may probe non-standard ports
+
+Codes that are **never** contextualised regardless of category:
+- `malicious.crypto_mining`
+- `malicious.install_terminal_payload`
+- `malicious.known_blocked_signature`
+
+The LLM evaluator also receives the declared category and evaluates coherence through the appropriate lens. Declaring a false category (e.g. claiming `security` for a non-security skill) is treated as misdirection evidence by the LLM evaluator.
+
 ## AI comment scam backfill
 
 - Moderators/admins can run a comment backfill scanner to classify scam comments with OpenAI.
