@@ -101,18 +101,18 @@
   --surface-muted: #1a1a1a;
   --nav-bg: rgba(10, 10, 10, 0.95);
   --ink: #e0e0e0;
-  --ink-soft: #808080;
+  --ink-soft: #818181;
   --accent: #ffffff;
   --accent-fg: #0a0a0a;
   --accent-deep: #cccccc;
-  --seafoam: #808080;
+  --seafoam: #818181;
   --diff-added: #4a9;
   --diff-added-strong: #3a8;
   --diff-removed: #e55;
   --diff-removed-strong: #c44;
   --diff-diagonal: #ffffff11;
   --diff-scrollbar-rgb: 128, 128, 128;
-  --gold: #999;
+  --gold: #999999;
   --line: rgba(255, 255, 255, 0.08);
   --border-ui: rgba(255, 255, 255, 0.15);
   --border-ui-hover: rgba(255, 255, 255, 0.25);
@@ -509,17 +509,16 @@ code {
   width: 24px;
   height: 24px;
   border-radius: var(--r-sm);
-  background: var(--ink);
   display: grid;
   place-items: center;
   overflow: hidden;
 }
 
 .brand-mark img {
-  width: 70%;
-  height: 70%;
+  width: 100%;
+  height: 100%;
   object-fit: cover;
-  border-radius: 50%;
+  border-radius: var(--r-sm);
 }
 
 .nav-links {
@@ -1018,7 +1017,7 @@ code {
 }
 
 .plugin-publish-lock-note.is-ready {
-  color: #808080;
+  color: #818181;
   font-weight: 700;
 }
 
@@ -1389,7 +1388,7 @@ code {
 
 .upload-requirement.ok {
   background: rgba(43, 198, 164, 0.18);
-  color: #808080;
+  color: #818181;
 }
 
 .upload-filelist {
@@ -1479,7 +1478,7 @@ code {
 .upload-ready {
   font-size: 0.9rem;
   font-weight: 600;
-  color: #808080;
+  color: #818181;
 }
 
 .upload-error {
@@ -2340,7 +2339,7 @@ code {
   border-radius: 50%;
   border: 1px solid rgba(43, 198, 164, 0.45);
   background: rgba(43, 198, 164, 0.14);
-  color: #808080;
+  color: #818181;
   display: grid;
   place-items: center;
   cursor: pointer;
@@ -3062,7 +3061,7 @@ code {
 
 .diff-pill-added {
   background: rgba(43, 198, 164, 0.18);
-  color: #808080;
+  color: #818181;
 }
 
 .diff-pill-removed {
