@@ -89,6 +89,10 @@ describe("skill route loader", () => {
     expect(() => runBeforeLoad({ owner: "users:abc123", slug: "weather" })).not.toThrow();
   });
 
+  it("allows raw publisher ids in beforeLoad", () => {
+    expect(() => runBeforeLoad({ owner: "publishers:abc123", slug: "weather" })).not.toThrow();
+  });
+
   beforeEach(() => {
     fetchSkillPageDataMock.mockReset();
   });
