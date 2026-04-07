@@ -1,9 +1,14 @@
-import { createFileRoute, redirect } from "@tanstack/react-router";
+import { createFileRoute, notFound, redirect } from "@tanstack/react-router";
 import { SkillDetailPage } from "../../components/SkillDetailPage";
 import { buildSkillMeta } from "../../lib/og";
 import { fetchSkillPageData } from "../../lib/skillPage";
 
 export const Route = createFileRoute("/$owner/$slug")({
+  beforeLoad: ({ params }) => {
+    if (!/^[a-zA-Z_][a-zA-Z0-9_-]*$/.test(params.owner)) {
+      throw notFound();
+    }
+  },
   loader: async ({ params }) => {
     const data = await fetchSkillPageData(params.slug);
     const canonicalOwner = data.initialData?.result?.owner?.handle ?? null;

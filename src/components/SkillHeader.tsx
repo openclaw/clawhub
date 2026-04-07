@@ -7,6 +7,8 @@ import { formatCompactStat, formatSkillStatsTriplet } from "../lib/numberFormat"
 import type { PublicPublisher, PublicSkill } from "../lib/publicUser";
 
 import { type LlmAnalysis, SecurityScanResults } from "./SkillSecurityScanResults";
+import { Badge } from "./ui/badge";
+import { Button } from "./ui/button";
 import { UserBadge } from "./UserBadge";
 
 export type SkillModerationInfo = {
@@ -188,13 +190,13 @@ export function SkillHeader({
           <div className="skill-hero-header">
             <div className="skill-hero-title">
               <div className="skill-hero-title-row">
-                <h1 className="section-title" style={{ margin: 0 }}>
+                <h1 className="section-title m-0">
                   {skill.displayName}
                 </h1>
                 {latestVersion?.version ? (
                   <span className="plugin-version-badge">v{latestVersion.version}</span>
                 ) : null}
-                {nixPlugin ? <span className="tag tag-accent">Plugin bundle (nix)</span> : null}
+                {nixPlugin ? <Badge variant="accent">Plugin bundle (nix)</Badge> : null}
               </div>
               <p className="section-subtitle">{skill.summary ?? "No summary provided."}</p>
 
@@ -210,11 +212,11 @@ export function SkillHeader({
               <div className="skill-hero-inline-meta">
                 <div className="skill-hero-stats-row">
                   <span className="stat">⭐ {formattedStats.stars}</span>
-                  <span style={{ color: "var(--ink-soft)", opacity: 0.4 }}>·</span>
+                  <span className="text-ink-soft opacity-40">·</span>
                   <span className="stat"><Package size={14} aria-hidden="true" /> {formattedStats.downloads}</span>
-                  <span style={{ color: "var(--ink-soft)", opacity: 0.4 }}>·</span>
+                  <span className="text-ink-soft opacity-40">·</span>
                   <span className="stat">{formatCompactStat(skill.stats.installsCurrent ?? 0)} current</span>
-                  <span style={{ color: "var(--ink-soft)", opacity: 0.4 }}>·</span>
+                  <span className="text-ink-soft opacity-40">·</span>
                   <span className="stat">{formattedStats.installsAllTime} all-time</span>
                 </div>
                 <div className="skill-hero-meta-row">
@@ -227,7 +229,7 @@ export function SkillHeader({
                   />
                   {forkOf && forkOfHref ? (
                     <>
-                      <span style={{ color: "var(--ink-soft)", opacity: 0.4 }}>·</span>
+                      <span className="text-ink-soft opacity-40">·</span>
                       <span className="stat">
                         {forkOfLabel}{" "}
                         <a href={forkOfHref}>
@@ -240,7 +242,7 @@ export function SkillHeader({
                   ) : null}
                   {canonicalHref ? (
                     <>
-                      <span style={{ color: "var(--ink-soft)", opacity: 0.4 }}>·</span>
+                      <span className="text-ink-soft opacity-40">·</span>
                       <span className="stat">
                         canonical:{" "}
                         <a href={canonicalHref}>
@@ -255,14 +257,14 @@ export function SkillHeader({
 
               <div className="skill-hero-badges">
                 {getSkillBadges(skill).map((badge) => (
-                  <span key={badge} className="tag tag-compact">
+                  <Badge key={badge} variant="compact">
                     {badge}
-                  </span>
+                  </Badge>
                 ))}
                 {isStaff && staffVisibilityTag ? (
-                  <span className={`tag tag-compact${isAutoHidden || isRemoved ? " tag-accent" : ""}`}>
+                  <Badge variant={isAutoHidden || isRemoved ? "accent" : "compact"}>
                     {staffVisibilityTag}
-                  </span>
+                  </Badge>
                 ) : null}
               </div>
             </div>
@@ -279,14 +281,16 @@ export function SkillHeader({
                   </button>
                 ) : null}
                 {isAuthenticated ? (
-                  <button className="btn btn-sm btn-ghost" type="button" onClick={onOpenReport}>
+                  <Button variant="ghost" size="sm" type="button" onClick={onOpenReport}>
                     Report
-                  </button>
+                  </Button>
                 ) : null}
                 {isStaff ? (
-                  <Link className="btn btn-sm" to="/management" search={{ skill: skill.slug }}>
-                    Manage
-                  </Link>
+                  <Button asChild size="sm">
+                    <Link to="/management" search={{ skill: skill.slug }}>
+                      Manage
+                    </Link>
+                  </Button>
                 ) : null}
               </div>
             </div>
@@ -354,12 +358,12 @@ export function SkillHeader({
 
         <div className="skill-tag-row">
           {tagEntries.length === 0 ? (
-            <span className="section-subtitle" style={{ margin: 0 }}>
+            <span className="section-subtitle m-0">
               No tags yet.
             </span>
           ) : (
             tagEntries.map(([tag, versionId]) => (
-              <span key={tag} className="tag">
+              <Badge key={tag}>
                 {tag}
                 <span className="tag-meta">
                   v{versionById.get(versionId)?.version ?? versionId}
@@ -375,7 +379,7 @@ export function SkillHeader({
                     ×
                   </button>
                 ) : null}
-              </span>
+              </Badge>
             ))
           )}
         </div>
@@ -405,9 +409,9 @@ export function SkillHeader({
                 </option>
               ))}
             </select>
-            <button className="btn" type="submit">
+            <Button type="submit">
               Update tag
-            </button>
+            </Button>
           </form>
         ) : null}
 

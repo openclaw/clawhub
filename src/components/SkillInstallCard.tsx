@@ -1,4 +1,5 @@
 import type { ClawdisSkillMetadata } from "clawhub-schema";
+import { Badge } from "./ui/badge";
 import { formatInstallCommand, formatInstallLabel } from "./skillDetailUtils";
 
 type SkillInstallCardProps = {
@@ -35,11 +36,11 @@ export function SkillInstallCard({ clawdis, osLabels }: SkillInstallCardProps) {
       <div className="skill-hero-panels">
         {hasRuntimeRequirements ? (
           <div className="skill-panel">
-            <h3 className="section-title" style={{ fontSize: "1rem", margin: 0 }}>
+            <h3 className="section-title text-[1rem] m-0">
               Runtime requirements
             </h3>
             <div className="skill-panel-body">
-              {clawdis?.emoji ? <div className="tag">{clawdis.emoji} Clawdis</div> : null}
+              {clawdis?.emoji ? <Badge>{clawdis.emoji} Clawdis</Badge> : null}
               {osLabels.length ? (
                 <div className="stat">
                   <strong>OS</strong>
@@ -79,31 +80,24 @@ export function SkillInstallCard({ clawdis, osLabels }: SkillInstallCardProps) {
               {envVars.length > 0 ? (
                 <div className="stat">
                   <strong>Environment variables</strong>
-                  <div
-                    style={{
-                      display: "flex",
-                      flexDirection: "column",
-                      gap: "0.25rem",
-                      marginTop: "0.25rem",
-                    }}
-                  >
+                  <div className="flex flex-col gap-1 mt-1">
                     {envVars.map((env, index) => (
                       <div
                         key={`${env.name}-${index}`}
-                        style={{ display: "flex", alignItems: "baseline", gap: "0.5rem" }}
+                        className="flex items-baseline gap-2"
                       >
-                        <code style={{ fontSize: "0.85rem" }}>{env.name}</code>
+                        <code className="text-[0.85rem]">{env.name}</code>
                         {env.required === false ? (
-                          <span style={{ color: "var(--ink-soft)", fontSize: "0.75rem" }}>
+                          <span className="text-ink-soft text-[0.75rem]">
                             optional
                           </span>
                         ) : env.required === true ? (
-                          <span style={{ color: "var(--ink-accent)", fontSize: "0.75rem" }}>
+                          <span className="text-ink-accent text-[0.75rem]">
                             required
                           </span>
                         ) : null}
                         {env.description ? (
-                          <span style={{ color: "var(--ink-soft)", fontSize: "0.8rem" }}>
+                          <span className="text-ink-soft text-[0.8rem]">
                             — {env.description}
                           </span>
                         ) : null}
@@ -117,7 +111,7 @@ export function SkillInstallCard({ clawdis, osLabels }: SkillInstallCardProps) {
         ) : null}
         {hasDependencies ? (
           <div className="skill-panel">
-            <h3 className="section-title" style={{ fontSize: "1rem", margin: 0 }}>
+            <h3 className="section-title text-[1rem] m-0">
               Dependencies
             </h3>
             <div className="skill-panel-body">
@@ -125,25 +119,19 @@ export function SkillInstallCard({ clawdis, osLabels }: SkillInstallCardProps) {
                 <div key={`${dep.name}-${index}`} className="stat">
                   <div>
                     <strong>{dep.name}</strong>
-                    <span
-                      style={{
-                        color: "var(--ink-soft)",
-                        fontSize: "0.85rem",
-                        marginLeft: "0.5rem",
-                      }}
-                    >
+                    <span className="text-ink-soft text-[0.85rem] ml-2">
                       {dep.type}
                       {dep.version ? ` ${dep.version}` : ""}
                     </span>
                     {dep.url ? (
-                      <div style={{ fontSize: "0.8rem", wordBreak: "break-all" }}>
+                      <div className="text-[0.8rem] break-all">
                         <a href={dep.url} target="_blank" rel="noopener noreferrer">
                           {dep.url}
                         </a>
                       </div>
                     ) : null}
                     {dep.repository && dep.repository !== dep.url ? (
-                      <div style={{ fontSize: "0.8rem" }}>
+                      <div className="text-[0.8rem]">
                         <a href={dep.repository} target="_blank" rel="noopener noreferrer">
                           Source
                         </a>
@@ -157,7 +145,7 @@ export function SkillInstallCard({ clawdis, osLabels }: SkillInstallCardProps) {
         ) : null}
         {hasInstallSpecs ? (
           <div className="skill-panel">
-            <h3 className="section-title" style={{ fontSize: "1rem", margin: 0 }}>
+            <h3 className="section-title text-[1rem] m-0">
               Install
             </h3>
             <div className="skill-panel-body">
@@ -168,7 +156,7 @@ export function SkillInstallCard({ clawdis, osLabels }: SkillInstallCardProps) {
                     <div>
                       <strong>{spec.label ?? formatInstallLabel(spec)}</strong>
                       {spec.bins?.length ? (
-                        <div style={{ color: "var(--ink-soft)", fontSize: "0.85rem" }}>
+                        <div className="text-ink-soft text-[0.85rem]">
                           Bins: {spec.bins.join(", ")}
                         </div>
                       ) : null}
@@ -182,14 +170,14 @@ export function SkillInstallCard({ clawdis, osLabels }: SkillInstallCardProps) {
         ) : null}
         {hasLinks ? (
           <div className="skill-panel">
-            <h3 className="section-title" style={{ fontSize: "1rem", margin: 0 }}>
+            <h3 className="section-title text-[1rem] m-0">
               Links
             </h3>
             <div className="skill-panel-body">
               {links?.homepage ? (
                 <div className="stat">
                   <strong>Homepage</strong>
-                  <a href={links.homepage} target="_blank" rel="noopener noreferrer" style={{ wordBreak: "break-all" }}>
+                  <a href={links.homepage} target="_blank" rel="noopener noreferrer" className="break-all">
                     {links.homepage}
                   </a>
                 </div>
@@ -197,7 +185,7 @@ export function SkillInstallCard({ clawdis, osLabels }: SkillInstallCardProps) {
               {links?.repository ? (
                 <div className="stat">
                   <strong>Repository</strong>
-                  <a href={links.repository} target="_blank" rel="noopener noreferrer" style={{ wordBreak: "break-all" }}>
+                  <a href={links.repository} target="_blank" rel="noopener noreferrer" className="break-all">
                     {links.repository}
                   </a>
                 </div>

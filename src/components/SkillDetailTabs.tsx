@@ -99,14 +99,14 @@ export function SkillDetailTabs({
               <ReactMarkdown remarkPlugins={[remarkGfm]}>{readmeContent}</ReactMarkdown>
             </div>
           ) : readmeError ? (
-            <div className="empty-state" style={{ padding: "var(--space-6) var(--space-4)" }}>
+            <div className="empty-state px-[var(--space-4)] py-[var(--space-6)]">
               <p className="empty-state-title">No README available</p>
               <p className="empty-state-body">
                 This skill doesn't have a SKILL.md file yet.
               </p>
             </div>
           ) : (
-            <div className="stat" style={{ padding: 16 }}>
+            <div className="stat p-4">
               Loading README...
             </div>
           )}

@@ -7,6 +7,8 @@ import { SkillListItem } from "../components/SkillListItem";
 import { SkillStatsTripletLine } from "../components/SkillStats";
 import { SoulCard } from "../components/SoulCard";
 import { SoulStatsTripletLine } from "../components/SoulStats";
+import { Button } from "../components/ui/button";
+import { Card } from "../components/ui/card";
 import { UserBadge } from "../components/UserBadge";
 import { convexHttp } from "../convex/client";
 import { getSkillBadges } from "../lib/badges";
@@ -83,28 +85,30 @@ function SkillsHome() {
                   : "Public skill bundles, plugin packages, and builder profiles in one shared index. Browse fast, fork the good stuff, ship your own."}
               </p>
               <div className="home-hero-actions">
-                <Link
-                  to="/skills"
-                  search={{
-                    q: undefined,
-                    sort: undefined,
-                    dir: undefined,
-                    highlighted: undefined,
-                    nonSuspicious: true,
-                    view: undefined,
-                    focus: undefined,
-                  }}
-                  className="btn btn-primary"
-                >
-                  Browse All Skills & Plugins
-                </Link>
-                <Link
-                  to="/publish-skill"
-                  search={{ updateSlug: undefined }}
-                  className="btn home-hero-publish-btn"
-                >
-                  + Publish Yours
-                </Link>
+                <Button asChild variant="primary">
+                  <Link
+                    to="/skills"
+                    search={{
+                      q: undefined,
+                      sort: undefined,
+                      dir: undefined,
+                      highlighted: undefined,
+                      nonSuspicious: true,
+                      view: undefined,
+                      focus: undefined,
+                    }}
+                  >
+                    Browse All Skills & Plugins
+                  </Link>
+                </Button>
+                <Button asChild className="home-hero-publish-btn">
+                  <Link
+                    to="/publish-skill"
+                    search={{ updateSlug: undefined }}
+                  >
+                    + Publish Yours
+                  </Link>
+                </Button>
               </div>
               <p className="home-hero-explainer">
                 Sharp filters. Clean listings. Discovery that feels more like a real index and less
@@ -369,9 +373,9 @@ function OnlyCrabsHome() {
                   value={query}
                   onChange={(event) => setQuery(event.target.value)}
                 />
-                <button className="btn btn-primary" type="submit">
+                <Button variant="primary" type="submit">
                   Search
-                </button>
+                </Button>
               </form>
             </div>
           </div>
@@ -397,7 +401,7 @@ function OnlyCrabsHome() {
         </div>
         <div className="grid">
           {latest.length === 0 ? (
-            <div className="card">No souls yet. Be the first.</div>
+            <Card>No souls yet. Be the first.</Card>
           ) : (
             latest.map((soul) => (
               <SoulCard

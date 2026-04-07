@@ -1,4 +1,6 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
+import { Badge } from "../../components/ui/badge";
+import { Button } from "../../components/ui/button";
 
 const sortKeys = ["newest", "downloads", "stars", "name", "updated"] as const;
 type SortKey = (typeof sortKeys)[number];
@@ -26,9 +28,9 @@ function SoulsHoldingPage() {
     <main className="section souls-coming-page">
       <section className="souls-coming-hero">
         <div>
-          <div className="skill-card-tags" style={{ marginBottom: 12 }}>
-            <span className="tag">Souls</span>
-            <span className="tag tag-accent">Coming soon</span>
+          <div className="skill-card-tags mb-3">
+            <Badge>Souls</Badge>
+            <Badge variant="accent">Coming soon</Badge>
           </div>
           <h1 className="about-title">SOUL.md discovery is on deck</h1>
           <p className="about-lead">
@@ -55,18 +57,22 @@ function SoulsHoldingPage() {
       <section className="about-enforcement">
         <div>
           <span className="about-callout-label">In the meantime</span>
-          <p className="about-lead" style={{ marginBottom: 0 }}>
+          <p className="about-lead mb-0">
             ClawHub already handles skills and plugins. Souls will get the same discovery treatment
             once the publishing flow is ready.
           </p>
         </div>
         <div className="skill-card-tags">
-          <Link className="btn btn-primary" to="/skills" search={{ q: undefined, sort: "downloads", dir: "desc", highlighted: undefined, nonSuspicious: true, view: undefined, focus: undefined }}>
-            Browse Skills
-          </Link>
-          <Link className="btn" to="/users" search={{ q: undefined }}>
-            Browse Users
-          </Link>
+          <Button asChild variant="primary">
+            <Link to="/skills" search={{ q: undefined, sort: "downloads", dir: "desc", highlighted: undefined, nonSuspicious: true, view: undefined, focus: undefined }}>
+              Browse Skills
+            </Link>
+          </Button>
+          <Button asChild>
+            <Link to="/users" search={{ q: undefined }}>
+              Browse Users
+            </Link>
+          </Button>
         </div>
       </section>
     </main>

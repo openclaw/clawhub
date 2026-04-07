@@ -13,6 +13,7 @@ import {
   selectDefaultFilePath,
   sortVersionsBySemver,
 } from "../lib/diffing";
+import { Button } from "./ui/button";
 import { ClientOnly } from "./ClientOnly";
 
 type SkillDiffCardProps = {
@@ -278,10 +279,10 @@ export function SkillDiffCard({ skill, versions, variant = "card" }: SkillDiffCa
     <div className={containerClass}>
       <div className="diff-header">
         <div>
-          <h2 className="section-title" style={{ fontSize: "1.2rem", margin: 0 }}>
+          <h2 className="section-title text-[1.2rem] m-0">
             Compare versions
           </h2>
-          <p className="section-subtitle" style={{ margin: 0 }}>
+          <p className="section-subtitle m-0">
             Inline or side-by-side diff for any file.
           </p>
         </div>
@@ -323,8 +324,8 @@ export function SkillDiffCard({ skill, versions, variant = "card" }: SkillDiffCa
                 {renderOptions(versionOptions)}
               </select>
             </div>
-            <button
-              className="btn diff-swap"
+            <Button
+              className="diff-swap"
               type="button"
               onClick={() => {
                 setLeftVersionId(rightVersionId);
@@ -333,7 +334,7 @@ export function SkillDiffCard({ skill, versions, variant = "card" }: SkillDiffCa
               disabled={!leftVersionId || !rightVersionId}
             >
               Swap
-            </button>
+            </Button>
             <div className="diff-select">
               <label htmlFor="diff-right">Right</label>
               <select

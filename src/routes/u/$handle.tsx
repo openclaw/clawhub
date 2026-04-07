@@ -4,6 +4,9 @@ import { useEffect, useState } from "react";
 import { api } from "../../../convex/_generated/api";
 import type { Doc } from "../../../convex/_generated/dataModel";
 import { SkillListItem } from "../../components/SkillListItem";
+import { Badge } from "../../components/ui/badge";
+import { Button } from "../../components/ui/button";
+import { Card } from "../../components/ui/card";
 import type { PublicSkill, PublicUser } from "../../lib/publicUser";
 
 export const Route = createFileRoute("/u/$handle")({
@@ -38,9 +41,9 @@ function UserProfile() {
   if (user === undefined) {
     return (
       <main className="section">
-        <div className="card">
+        <Card>
           <div className="loading-indicator">Loading user…</div>
-        </div>
+        </Card>
       </main>
     );
   }
@@ -48,7 +51,7 @@ function UserProfile() {
   if (user === null) {
     return (
       <main className="section">
-        <div className="card">User not found.</div>
+        <Card>User not found.</Card>
       </main>
     );
   }
@@ -111,15 +114,15 @@ function UserProfile() {
         <>
           {published.length > 0 ? (
             <>
-              <h2 className="home-section-title" style={{ marginBottom: 12 }}>
+              <h2 className="home-section-title mb-3">
                 Published ({published.length})
               </h2>
               {isLoadingPublished ? (
-                <div className="card">
+                <Card>
                   <div className="loading-indicator">Loading published skills...</div>
-                </div>
+                </Card>
               ) : (
-                <div className="results-list" style={{ marginBottom: 24 }}>
+                <div className="results-list mb-6">
                   {published.map((skill) => (
                     <SkillListItem key={skill._id} skill={skill} />
                   ))}
@@ -128,15 +131,15 @@ function UserProfile() {
             </>
           ) : null}
 
-          <h2 className="home-section-title" style={{ marginBottom: 12 }}>
+          <h2 className="home-section-title mb-3">
             Stars ({skills.length})
           </h2>
           {isLoadingSkills ? (
-            <div className="card">
+            <Card>
               <div className="loading-indicator">Loading stars...</div>
-            </div>
+            </Card>
           ) : skills.length === 0 ? (
-            <div className="card">No stars yet.</div>
+            <Card>No stars yet.</Card>
           ) : (
             <div className="results-list">
               {skills.map((skill) => (
@@ -161,12 +164,12 @@ function InstalledSection(props: {
   if (data === undefined) {
     return (
       <>
-        <h2 className="section-title" style={{ fontSize: "1.3rem" }}>
+        <h2 className="section-title text-xl">
           Installed
         </h2>
-        <div className="card">
+        <Card>
           <div className="loading-indicator">Loading telemetry…</div>
-        </div>
+        </Card>
       </>
     );
   }
@@ -174,32 +177,31 @@ function InstalledSection(props: {
   if (data === null) {
     return (
       <>
-        <h2 className="section-title" style={{ fontSize: "1.3rem" }}>
+        <h2 className="section-title text-xl">
           Installed
         </h2>
-        <div className="card">Sign in to view your installed skills.</div>
+        <Card>Sign in to view your installed skills.</Card>
       </>
     );
   }
 
   return (
     <>
-      <h2 className="section-title" style={{ fontSize: "1.3rem" }}>
+      <h2 className="section-title text-xl">
         Installed
       </h2>
-      <p className="section-subtitle" style={{ maxWidth: 760 }}>
+      <p className="section-subtitle max-w-[760px]">
         Private view. Only you can see your folders/roots. Everyone else only sees aggregated
         install counts per skill.
       </p>
       <div className="profile-actions">
-        <button className="btn" type="button" onClick={props.onToggleRemoved}>
+        <Button type="button" onClick={props.onToggleRemoved}>
           {props.includeRemoved ? "Hide removed" : "Show removed"}
-        </button>
-        <button className="btn" type="button" onClick={() => setShowRaw((value) => !value)}>
+        </Button>
+        <Button type="button" onClick={() => setShowRaw((value) => !value)}>
           {showRaw ? "Hide JSON" : "Show JSON"}
-        </button>
-        <button
-          className="btn"
+        </Button>
+        <Button
           type="button"
           onClick={() => {
             if (!window.confirm("Delete all telemetry data?")) return;
@@ -207,23 +209,23 @@ function InstalledSection(props: {
           }}
         >
           Delete telemetry
-        </button>
+        </Button>
       </div>
 
       {showRaw ? (
-        <div className="card telemetry-json" style={{ marginBottom: 18 }}>
-          <pre className="mono" style={{ margin: 0, whiteSpace: "pre-wrap" }}>
+        <Card className="telemetry-json mb-4">
+          <pre className="mono m-0 whitespace-pre-wrap">
             {JSON.stringify(data, null, 2)}
           </pre>
-        </div>
+        </Card>
       ) : null}
 
       {data.roots.length === 0 ? (
-        <div className="card">No telemetry yet. Run `clawhub sync` from the CLI.</div>
+        <Card>No telemetry yet. Run `clawhub sync` from the CLI.</Card>
       ) : (
-        <div style={{ display: "grid", gap: 16 }}>
+        <div className="grid gap-4">
           {data.roots.map((root) => (
-            <div key={root.rootId} className="card telemetry-root">
+            <Card key={root.rootId} className="telemetry-root">
               <div className="telemetry-root-header">
                 <div>
                   <div className="telemetry-root-title">{root.label}</div>
@@ -232,7 +234,7 @@ function InstalledSection(props: {
                     {root.expiredAt ? " · stale" : ""}
                   </div>
                 </div>
-                <div className="tag">{root.skills.length} skills</div>
+                <Badge>{root.skills.length} skills</Badge>
               </div>
               {root.skills.length === 0 ? (
                 <div className="stat">No skills found in this root.</div>
@@ -255,7 +257,7 @@ function InstalledSection(props: {
                   ))}
                 </div>
               )}
-            </div>
+            </Card>
           ))}
         </div>
       )}

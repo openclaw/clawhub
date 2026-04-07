@@ -16,6 +16,9 @@ import { useEffect, useState } from "react";
 import semver from "semver";
 import { api } from "../../convex/_generated/api";
 import type { Doc } from "../../convex/_generated/dataModel";
+import { Badge } from "../components/ui/badge";
+import { Button } from "../components/ui/button";
+import { Card } from "../components/ui/card";
 import { formatCompactStat } from "../lib/numberFormat";
 import { familyLabel } from "../lib/packageLabels";
 import type { PublicSkill } from "../lib/publicUser";
@@ -113,7 +116,7 @@ function Dashboard() {
   if (!me) {
     return (
       <main className="section">
-        <div className="card">Sign in to access your dashboard.</div>
+        <Card>Sign in to access your dashboard.</Card>
       </main>
     );
   }
@@ -129,31 +132,34 @@ function Dashboard() {
     return (
       <main className="section">
         <div className="empty-state">
-          <h1 className="empty-state-title" style={{ fontSize: "1.4rem", fontFamily: "var(--font-display)" }}>
+          <h1 className="empty-state-title text-[1.4rem] font-[family-name:var(--font-display)]">
             Welcome to ClawHub
           </h1>
           <p className="empty-state-body">
             You're signed in as @{ownerHandle}. Get started by publishing your first skill or plugin.
           </p>
-          <div style={{ display: "flex", gap: 12, justifyContent: "center" }}>
-            <Link to="/publish-skill" search={{ updateSlug: undefined }} className="btn btn-primary">
-              Publish a Skill
-            </Link>
-            <Link
-              to="/skills"
-              search={{
-                q: undefined,
-                sort: undefined,
-                dir: undefined,
-                highlighted: undefined,
-                nonSuspicious: true,
-                view: undefined,
-                focus: undefined,
-              }}
-              className="btn"
-            >
-              Browse Skills
-            </Link>
+          <div className="flex gap-3 justify-center">
+            <Button asChild variant="primary">
+              <Link to="/publish-skill" search={{ updateSlug: undefined }}>
+                Publish a Skill
+              </Link>
+            </Button>
+            <Button asChild>
+              <Link
+                to="/skills"
+                search={{
+                  q: undefined,
+                  sort: undefined,
+                  dir: undefined,
+                  highlighted: undefined,
+                  nonSuspicious: true,
+                  view: undefined,
+                  focus: undefined,
+                }}
+              >
+                Browse Skills
+              </Link>
+            </Button>
           </div>
         </div>
       </main>
@@ -164,14 +170,14 @@ function Dashboard() {
     <main className="section">
       <div className="dashboard-header">
         <div>
-          <h1 className="section-title" style={{ margin: 0 }}>
+          <h1 className="section-title m-0">
             Publisher Dashboard
           </h1>
-          <p className="section-subtitle" style={{ margin: 0 }}>
+          <p className="section-subtitle m-0">
             Manage your published skills and plugins.
           </p>
         </div>
-        <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+        <div className="flex gap-2 flex-wrap">
           {publishers && publishers.length > 0 ? (
             <select
               className="input"
@@ -185,28 +191,31 @@ function Dashboard() {
               ))}
             </select>
           ) : null}
-          <Link to="/publish-skill" search={{ updateSlug: undefined }} className="btn btn-primary">
-            <Upload className="h-4 w-4" aria-hidden="true" />
-            Publish Skill
-          </Link>
-          <Link
-            to="/publish-plugin"
-            search={{ ...emptyPluginPublishSearch, ownerHandle }}
-            className="btn"
-          >
-            <Plug className="h-4 w-4" aria-hidden="true" />
-            Publish Plugin
-          </Link>
+          <Button asChild variant="primary">
+            <Link to="/publish-skill" search={{ updateSlug: undefined }}>
+              <Upload className="h-4 w-4" aria-hidden="true" />
+              Publish Skill
+            </Link>
+          </Button>
+          <Button asChild>
+            <Link
+              to="/publish-plugin"
+              search={{ ...emptyPluginPublishSearch, ownerHandle }}
+            >
+              <Plug className="h-4 w-4" aria-hidden="true" />
+              Publish Plugin
+            </Link>
+          </Button>
         </div>
       </div>
 
-      <section className="card dashboard-owner-panel">
+      <Card className="dashboard-owner-panel">
         <div className="dashboard-owner-grid">
           <section className="dashboard-collection-block">
             <div className="dashboard-section-header">
               <div>
                 <h2 className="dashboard-collection-title">Publisher Skills</h2>
-                <p className="section-subtitle" style={{ margin: "6px 0 0" }}>
+                <p className="section-subtitle mt-1.5 mb-0 mx-0">
                   Hidden skill versions remain visible here while checks are pending.
                 </p>
               </div>
@@ -216,10 +225,12 @@ function Dashboard() {
                 <div className="dashboard-inline-empty-copy">
                   <strong>No skills yet.</strong> Publish your first skill to share it with the community.
                 </div>
-                <Link to="/publish-skill" search={{ updateSlug: undefined }} className="btn btn-primary">
-                  <Upload className="h-4 w-4" aria-hidden="true" />
-                  Publish Skill
-                </Link>
+                <Button asChild variant="primary">
+                  <Link to="/publish-skill" search={{ updateSlug: undefined }}>
+                    <Upload className="h-4 w-4" aria-hidden="true" />
+                    Publish Skill
+                  </Link>
+                </Button>
               </div>
             ) : (
               <div className="dashboard-list">
@@ -240,7 +251,7 @@ function Dashboard() {
             <div className="dashboard-section-header">
               <div>
                 <h2 className="dashboard-collection-title">Publisher Plugins</h2>
-                <p className="section-subtitle" style={{ margin: "6px 0 0" }}>
+                <p className="section-subtitle mt-1.5 mb-0 mx-0">
                   Owner-only package view with VirusTotal, static scan, and verification state.
                 </p>
               </div>
@@ -250,14 +261,15 @@ function Dashboard() {
                 <div className="dashboard-inline-empty-copy">
                   <strong>No plugins yet.</strong> Publish your first plugin release to validate and distribute it.
                 </div>
-                <Link
-                  to="/publish-plugin"
-                  search={{ ...emptyPluginPublishSearch, ownerHandle }}
-                  className="btn btn-primary"
-                >
-                  <Plug className="h-4 w-4" aria-hidden="true" />
-                  Publish Plugin
-                </Link>
+                <Button asChild variant="primary">
+                  <Link
+                    to="/publish-plugin"
+                    search={{ ...emptyPluginPublishSearch, ownerHandle }}
+                  >
+                    <Plug className="h-4 w-4" aria-hidden="true" />
+                    Publish Plugin
+                  </Link>
+                </Button>
               </div>
             ) : (
               <div className="dashboard-list">
@@ -274,7 +286,7 @@ function Dashboard() {
             )}
           </section>
         </div>
-      </section>
+      </Card>
     </main>
   );
 }
@@ -293,10 +305,10 @@ function SkillRow({ skill, ownerHandle }: { skill: DashboardSkill; ownerHandle: 
           </Link>
           <span className="dashboard-list-id">/{skill.slug}</span>
           {skill.pendingReview ? (
-            <span className="tag tag-pending">
+            <Badge variant="pending">
               <Clock className="h-3 w-3" aria-hidden="true" />
               Pending checks
-            </span>
+            </Badge>
           ) : null}
         </div>
         <div className="dashboard-inline-metrics">
@@ -328,17 +340,20 @@ function SkillRow({ skill, ownerHandle }: { skill: DashboardSkill; ownerHandle: 
         )}
       </div>
       <div className="dashboard-row-actions">
-        <Link to="/publish-skill" search={{ updateSlug: skill.slug }} className="btn btn-sm">
-          <Upload className="h-3 w-3" aria-hidden="true" />
-          New Version
-        </Link>
-        <Link
-          to="/$owner/$slug"
-          params={{ owner: ownerHandle ?? "unknown", slug: skill.slug }}
-          className="btn btn-ghost btn-sm"
-        >
-          View
-        </Link>
+        <Button asChild size="sm">
+          <Link to="/publish-skill" search={{ updateSlug: skill.slug }}>
+            <Upload className="h-3 w-3" aria-hidden="true" />
+            New Version
+          </Link>
+        </Button>
+        <Button asChild variant="ghost" size="sm">
+          <Link
+            to="/$owner/$slug"
+            params={{ owner: ownerHandle ?? "unknown", slug: skill.slug }}
+          >
+            View
+          </Link>
+        </Button>
       </div>
     </div>
   );
@@ -376,17 +391,17 @@ function PackageStatusTag({
   label: string;
   tone: "default" | "pending" | "warning" | "danger" | "success";
 }) {
-  const className =
+  const variant =
     tone === "pending"
-      ? "tag tag-pending"
+      ? "pending"
       : tone === "warning"
-        ? "tag dashboard-tag-warning"
+        ? "warning"
         : tone === "danger"
-          ? "tag dashboard-tag-danger"
+          ? "destructive"
           : tone === "success"
-            ? "tag dashboard-tag-success"
-            : "tag";
-  return <span className={className}>{label}</span>;
+            ? "success"
+            : "default";
+  return <Badge variant={variant}>{label}</Badge>;
 }
 
 function PackageRow({ pkg, ownerHandle }: { pkg: DashboardPackage; ownerHandle: string }) {
@@ -480,24 +495,27 @@ function PackageRow({ pkg, ownerHandle }: { pkg: DashboardPackage; ownerHandle: 
         </span>
       </div>
       <div className="dashboard-row-actions">
-        <Link
-          to="/publish-plugin"
-          search={{
-            ownerHandle,
-            name: pkg.name,
-            displayName: pkg.displayName,
-            family: pkg.family === "bundle-plugin" ? "bundle-plugin" : "code-plugin",
-            nextVersion: nextVersion ?? undefined,
-            sourceRepo: pkg.sourceRepo ?? undefined,
-          }}
-          className="btn btn-sm"
-        >
-          <Upload className="h-3 w-3" aria-hidden="true" />
-          New Release
-        </Link>
-        <Link to="/plugins/$name" params={{ name: pkg.name }} className="btn btn-ghost btn-sm">
-          View
-        </Link>
+        <Button asChild size="sm">
+          <Link
+            to="/publish-plugin"
+            search={{
+              ownerHandle,
+              name: pkg.name,
+              displayName: pkg.displayName,
+              family: pkg.family === "bundle-plugin" ? "bundle-plugin" : "code-plugin",
+              nextVersion: nextVersion ?? undefined,
+              sourceRepo: pkg.sourceRepo ?? undefined,
+            }}
+          >
+            <Upload className="h-3 w-3" aria-hidden="true" />
+            New Release
+          </Link>
+        </Button>
+        <Button asChild variant="ghost" size="sm">
+          <Link to="/plugins/$name" params={{ name: pkg.name }}>
+            View
+          </Link>
+        </Button>
       </div>
     </div>
   );

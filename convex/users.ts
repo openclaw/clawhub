@@ -467,6 +467,31 @@ export const getByHandle = query({
   },
 });
 
+/** Lightweight stats for user hover tooltips. Uses the skills by_owner index. */
+export const getHoverStats = query({
+  args: { userId: v.id("users") },
+  handler: async (ctx, args) => {
+    const skills = await ctx.db
+      .query("skills")
+      .withIndex("by_owner", (q) => q.eq("ownerUserId", args.userId))
+      .collect();
+
+    const active = skills.filter((s) => !s.softDeletedAt);
+    let totalStars = 0;
+    let totalDownloads = 0;
+    for (const s of active) {
+      totalStars += s.stats?.stars ?? 0;
+      totalDownloads += s.stats?.downloads ?? 0;
+    }
+
+    return {
+      publishedSkills: active.length,
+      totalStars,
+      totalDownloads,
+    };
+  },
+});
+
 export const getReservedHandleInternal = internalQuery({
   args: { handle: v.string() },
   handler: async (ctx, args) => {

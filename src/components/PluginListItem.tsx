@@ -1,5 +1,6 @@
 import { Link } from "@tanstack/react-router";
 import { MarketplaceIcon } from "./MarketplaceIcon";
+import { Badge } from "./ui/badge";
 import { familyLabel } from "../lib/packageLabels";
 import type { PackageListItem } from "../lib/packageApi";
 
@@ -20,8 +21,8 @@ export function PluginListItem({ item }: PluginListItemProps) {
             </>
           ) : null}
           <span className="skill-list-item-name">{item.displayName}</span>
-          <span className="tag tag-compact">{familyLabel(item.family)}</span>
-          {item.isOfficial ? <span className="tag tag-compact tag-accent">Verified</span> : null}
+          <Badge variant="compact">{familyLabel(item.family)}</Badge>
+          {item.isOfficial ? <Badge variant="accent">Verified</Badge> : null}
         </div>
         <p className="skill-list-item-summary">{item.summary ?? "Plugin package for agent workflows."}</p>
         <div className="skill-list-item-meta">

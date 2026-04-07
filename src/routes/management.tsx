@@ -3,6 +3,9 @@ import { useMutation, useQuery } from "convex/react";
 import { useEffect, useState } from "react";
 import { api } from "../../convex/_generated/api";
 import type { Doc, Id } from "../../convex/_generated/dataModel";
+import { Badge } from "../components/ui/badge";
+import { Button } from "../components/ui/button";
+import { Card } from "../components/ui/card";
 import {
   getSkillBadges,
   isSkillDeprecated,
@@ -176,7 +179,7 @@ function Management() {
   if (!staff) {
     return (
       <main className="section">
-        <div className="card">Management only.</div>
+        <Card>Management only.</Card>
       </main>
     );
   }
@@ -184,7 +187,7 @@ function Management() {
   if (!recentVersions || !reportedSkills || !duplicateCandidates) {
     return (
       <main className="section">
-        <div className="card">Loading management console…</div>
+        <Card>Loading management console…</Card>
       </main>
     );
   }
@@ -259,8 +262,8 @@ function Management() {
       <h1 className="section-title">Management console</h1>
       <p className="section-subtitle">Moderation, curation, and ownership tools.</p>
 
-      <div className="card">
-        <h2 className="section-title" style={{ fontSize: "1.2rem", margin: 0 }}>
+      <Card>
+        <h2 className="section-title text-[1.2rem] m-0">
           Reported skills
         </h2>
         <div className="management-controls">
@@ -292,7 +295,7 @@ function Management() {
                     <Link to="/$owner/$slug" params={{ owner: ownerParam, slug: skill.slug }}>
                       {skill.displayName}
                     </Link>
-                    <div className="section-subtitle" style={{ margin: 0 }}>
+                    <div className="section-subtitle m-0">
                       @{owner?.handle ?? owner?.name ?? "user"} · v{latestVersion?.version ?? "—"} ·
                       {skill.reportCount ?? 0} report{(skill.reportCount ?? 0) === 1 ? "" : "s"}
                       {skill.lastReportedAt
@@ -315,17 +318,18 @@ function Management() {
                         ))}
                       </div>
                     ) : (
-                      <div className="section-subtitle" style={{ margin: 0 }}>
+                      <div className="section-subtitle m-0">
                         No report reasons yet.
                       </div>
                     )}
                   </div>
                   <div className="management-actions">
-                    <Link className="btn" to="/management" search={{ skill: skill.slug }}>
-                      Manage
-                    </Link>
-                    <button
-                      className="btn"
+                    <Button asChild>
+                      <Link to="/management" search={{ skill: skill.slug }}>
+                        Manage
+                      </Link>
+                    </Button>
+                    <Button
                       type="button"
                       onClick={() => {
                         const reason = window.prompt(
@@ -340,10 +344,9 @@ function Management() {
                       }}
                     >
                       {skill.softDeletedAt ? "Restore" : "Hide"}
-                    </button>
+                    </Button>
                     {admin ? (
-                      <button
-                        className="btn"
+                      <Button
                         type="button"
                         onClick={() => {
                           if (!window.confirm(`Hard delete ${skill.displayName}?`)) return;
@@ -351,7 +354,7 @@ function Management() {
                         }}
                       >
                         Hard delete
-                      </button>
+                      </Button>
                     ) : null}
                   </div>
                 </div>
@@ -359,14 +362,14 @@ function Management() {
             })
           )}
         </div>
-      </div>
+      </Card>
 
-      <div className="card" style={{ marginTop: 20 }}>
-        <h2 className="section-title" style={{ fontSize: "1.2rem", margin: 0 }}>
+      <Card className="mt-5">
+        <h2 className="section-title text-[1.2rem] m-0">
           Skill tools
         </h2>
         {selectedSlug ? (
-          <div className="section-subtitle" style={{ marginTop: 8 }}>
+          <div className="section-subtitle mt-2">
             Managing "{selectedSlug}" ·{" "}
             <Link to="/management" search={{ skill: undefined }}>
               Clear selection
@@ -406,7 +409,7 @@ function Management() {
                     <Link to="/$owner/$slug" params={{ owner: ownerParam, slug: skill.slug }}>
                       {skill.displayName}
                     </Link>
-                    <div className="section-subtitle" style={{ margin: 0 }}>
+                    <div className="section-subtitle m-0">
                       @{owner?.handle ?? owner?.name ?? "user"} · v{latestVersion?.version ?? "—"} ·
                       updated {formatTimestamp(skill.updatedAt)} · {moderationStatus}
                       {badges.length ? ` · ${badges.join(", ").toLowerCase()}` : ""}
@@ -414,14 +417,14 @@ function Management() {
                     {skill.moderationFlags?.length ? (
                       <div className="management-tags">
                         {skill.moderationFlags.map((flag: string) => (
-                          <span key={flag} className="tag">
+                          <Badge key={flag}>
                             {flag}
-                          </span>
+                          </Badge>
                         ))}
                       </div>
                     ) : null}
                     <div className="management-sublist">
-                      <div className="section-subtitle" style={{ margin: 0 }}>
+                      <div className="section-subtitle m-0">
                         Manual overrides
                       </div>
                       <section className="management-override-panel">
@@ -453,29 +456,29 @@ function Management() {
                           onChange={(event) => setSkillOverrideNote(event.target.value)}
                         />
                         <div className="management-actions management-actions-start">
-                          <button
-                            className="btn management-action-btn"
+                          <Button
+                            className="management-action-btn"
                             type="button"
                             disabled={!skillOverrideNote.trim()}
                             onClick={applySkillOverride}
                           >
                             {skill.manualOverride ? "Update okay override" : "Mark skill okay"}
-                          </button>
+                          </Button>
                           {skill.manualOverride ? (
-                            <button
-                              className="btn management-action-btn"
+                            <Button
+                              className="management-action-btn"
                               type="button"
                               disabled={!skillOverrideNote.trim()}
                               onClick={clearSkillOverride}
                             >
                               Clear skill override
-                            </button>
+                            </Button>
                           ) : null}
                         </div>
                       </section>
                     </div>
                     <div className="management-sublist">
-                      <div className="section-subtitle" style={{ margin: 0 }}>
+                      <div className="section-subtitle m-0">
                         Recent audit activity
                       </div>
                       <section className="management-override-panel management-audit-panel">
@@ -484,7 +487,7 @@ function Management() {
                           <span>Last {SKILL_AUDIT_LOG_LIMIT} entries for this skill.</span>
                         </div>
                         {auditLogs.length === 0 ? (
-                          <div className="section-subtitle" style={{ margin: 0 }}>
+                          <div className="section-subtitle m-0">
                             No audit activity yet.
                           </div>
                         ) : (
@@ -537,8 +540,8 @@ function Management() {
                       </label>
                       <div className="management-control management-control-stack">
                         <span className="mono">duplicate action</span>
-                        <button
-                          className="btn management-action-btn"
+                        <Button
+                          className="management-action-btn"
                           type="button"
                           onClick={() =>
                             void setDuplicate({
@@ -548,7 +551,7 @@ function Management() {
                           }
                         >
                           Set duplicate
-                        </button>
+                        </Button>
                       </div>
                       {admin ? (
                         <>
@@ -568,8 +571,8 @@ function Management() {
                           </label>
                           <div className="management-control management-control-stack">
                             <span className="mono">owner action</span>
-                            <button
-                              className="btn management-action-btn"
+                            <Button
+                              className="management-action-btn"
                               type="button"
                               onClick={() =>
                                 void changeOwner({
@@ -579,22 +582,23 @@ function Management() {
                               }
                             >
                               Change owner
-                            </button>
+                            </Button>
                           </div>
                         </>
                       ) : null}
                     </div>
                   </div>
                   <div className="management-actions management-action-grid">
-                    <Link
-                      className="btn management-action-btn"
-                      to="/$owner/$slug"
-                      params={{ owner: ownerParam, slug: skill.slug }}
-                    >
-                      View
-                    </Link>
-                    <button
-                      className="btn management-action-btn"
+                    <Button asChild className="management-action-btn">
+                      <Link
+                        to="/$owner/$slug"
+                        params={{ owner: ownerParam, slug: skill.slug }}
+                      >
+                        View
+                      </Link>
+                    </Button>
+                    <Button
+                      className="management-action-btn"
                       type="button"
                       onClick={() => {
                         const reason = window.prompt(
@@ -609,9 +613,9 @@ function Management() {
                       }}
                     >
                       {skill.softDeletedAt ? "Restore" : "Hide"}
-                    </button>
-                    <button
-                      className="btn management-action-btn"
+                    </Button>
+                    <Button
+                      className="management-action-btn"
                       type="button"
                       onClick={() =>
                         void setBatch({
@@ -621,10 +625,10 @@ function Management() {
                       }
                     >
                       {isHighlighted ? "Unhighlight" : "Highlight"}
-                    </button>
+                    </Button>
                     {admin ? (
-                      <button
-                        className="btn management-action-btn"
+                      <Button
+                        className="management-action-btn"
                         type="button"
                         onClick={() => {
                           if (!window.confirm(`Hard delete ${skill.displayName}?`)) return;
@@ -632,11 +636,11 @@ function Management() {
                         }}
                       >
                         Hard delete
-                      </button>
+                      </Button>
                     ) : null}
                     {staff ? (
-                      <button
-                        className="btn management-action-btn"
+                      <Button
+                        className="management-action-btn"
                         type="button"
                         disabled={!canBanOwner}
                         onClick={() => {
@@ -650,12 +654,12 @@ function Management() {
                         }}
                       >
                         Ban user
-                      </button>
+                      </Button>
                     ) : null}
                     {admin ? (
                       <>
-                        <button
-                          className="btn management-action-btn"
+                        <Button
+                          className="management-action-btn"
                           type="button"
                           onClick={() =>
                             void setOfficialBadge({
@@ -665,9 +669,9 @@ function Management() {
                           }
                         >
                           {isOfficial ? "Remove official" : "Mark official"}
-                        </button>
-                        <button
-                          className="btn management-action-btn"
+                        </Button>
+                        <Button
+                          className="management-action-btn"
                           type="button"
                           onClick={() =>
                             void setDeprecatedBadge({
@@ -677,7 +681,7 @@ function Management() {
                           }
                         >
                           {isDeprecated ? "Remove deprecated" : "Mark deprecated"}
-                        </button>
+                        </Button>
                       </>
                     ) : null}
                   </div>
@@ -686,10 +690,10 @@ function Management() {
             })()
           )}
         </div>
-      </div>
+      </Card>
 
-      <div className="card" style={{ marginTop: 20 }}>
-        <h2 className="section-title" style={{ fontSize: "1.2rem", margin: 0 }}>
+      <Card className="mt-5">
+        <h2 className="section-title text-[1.2rem] m-0">
           Duplicate candidates
         </h2>
         <div className="management-list">
@@ -711,7 +715,7 @@ function Management() {
                   >
                     {entry.skill.displayName}
                   </Link>
-                  <div className="section-subtitle" style={{ margin: 0 }}>
+                  <div className="section-subtitle m-0">
                     @{entry.owner?.handle ?? entry.owner?.name ?? "user"} · v
                     {entry.latestVersion?.version ?? "—"} · fingerprint{" "}
                     {entry.fingerprint?.slice(0, 8)}
@@ -721,27 +725,27 @@ function Management() {
                       <div key={match.skill._id} className="management-subitem">
                         <div>
                           <strong>{match.skill.displayName}</strong>
-                          <div className="section-subtitle" style={{ margin: 0 }}>
+                          <div className="section-subtitle m-0">
                             @{match.owner?.handle ?? match.owner?.name ?? "user"} ·{" "}
                             {match.skill.slug}
                           </div>
                         </div>
                         <div className="management-actions">
-                          <Link
-                            className="btn"
-                            to="/$owner/$slug"
-                            params={{
-                              owner: resolveOwnerParam(
-                                match.owner?.handle ?? null,
-                                match.owner?._id ?? match.skill.ownerUserId,
-                              ),
-                              slug: match.skill.slug,
-                            }}
-                          >
-                            View
-                          </Link>
-                          <button
-                            className="btn"
+                          <Button asChild>
+                            <Link
+                              to="/$owner/$slug"
+                              params={{
+                                owner: resolveOwnerParam(
+                                  match.owner?.handle ?? null,
+                                  match.owner?._id ?? match.skill.ownerUserId,
+                                ),
+                                slug: match.skill.slug,
+                              }}
+                            >
+                              View
+                            </Link>
+                          </Button>
+                          <Button
                             type="button"
                             onClick={() =>
                               void setDuplicate({
@@ -751,58 +755,15 @@ function Management() {
                             }
                           >
                             Mark duplicate
-                          </button>
+                          </Button>
                         </div>
                       </div>
                     ))}
                   </div>
                 </div>
                 <div className="management-actions">
-                  <Link
-                    className="btn"
-                    to="/$owner/$slug"
-                    params={{
-                      owner: resolveOwnerParam(
-                        entry.owner?.handle ?? null,
-                        entry.owner?._id ?? entry.skill.ownerUserId,
-                      ),
-                      slug: entry.skill.slug,
-                    }}
-                  >
-                    View
-                  </Link>
-                </div>
-              </div>
-            ))
-          )}
-        </div>
-      </div>
-
-      <div className="card" style={{ marginTop: 20 }}>
-        <h2 className="section-title" style={{ fontSize: "1.2rem", margin: 0 }}>
-          Recent pushes
-        </h2>
-        <div className="management-list">
-          {recentVersions.length === 0 ? (
-            <div className="stat">No recent versions.</div>
-          ) : (
-            recentVersions.map((entry) => (
-              <div key={entry.version._id} className="management-item">
-                <div className="management-item-main">
-                  <strong>{entry.skill?.displayName ?? "Unknown skill"}</strong>
-                  <div className="section-subtitle" style={{ margin: 0 }}>
-                    v{entry.version.version} · @{entry.owner?.handle ?? entry.owner?.name ?? "user"}
-                  </div>
-                </div>
-                <div className="management-actions">
-                  {entry.skill ? (
-                    <Link className="btn" to="/management" search={{ skill: entry.skill.slug }}>
-                      Manage
-                    </Link>
-                  ) : null}
-                  {entry.skill ? (
+                  <Button asChild>
                     <Link
-                      className="btn"
                       to="/$owner/$slug"
                       params={{
                         owner: resolveOwnerParam(
@@ -814,17 +775,64 @@ function Management() {
                     >
                       View
                     </Link>
+                  </Button>
+                </div>
+              </div>
+            ))
+          )}
+        </div>
+      </Card>
+
+      <Card className="mt-5">
+        <h2 className="section-title text-[1.2rem] m-0">
+          Recent pushes
+        </h2>
+        <div className="management-list">
+          {recentVersions.length === 0 ? (
+            <div className="stat">No recent versions.</div>
+          ) : (
+            recentVersions.map((entry) => (
+              <div key={entry.version._id} className="management-item">
+                <div className="management-item-main">
+                  <strong>{entry.skill?.displayName ?? "Unknown skill"}</strong>
+                  <div className="section-subtitle m-0">
+                    v{entry.version.version} · @{entry.owner?.handle ?? entry.owner?.name ?? "user"}
+                  </div>
+                </div>
+                <div className="management-actions">
+                  {entry.skill ? (
+                    <Button asChild>
+                      <Link to="/management" search={{ skill: entry.skill.slug }}>
+                        Manage
+                      </Link>
+                    </Button>
+                  ) : null}
+                  {entry.skill ? (
+                    <Button asChild>
+                      <Link
+                        to="/$owner/$slug"
+                        params={{
+                          owner: resolveOwnerParam(
+                            entry.owner?.handle ?? null,
+                            entry.owner?._id ?? entry.skill.ownerUserId,
+                          ),
+                          slug: entry.skill.slug,
+                        }}
+                      >
+                        View
+                      </Link>
+                    </Button>
                   ) : null}
                 </div>
               </div>
             ))
           )}
         </div>
-      </div>
+      </Card>
 
       {admin ? (
-        <div className="card" style={{ marginTop: 20 }}>
-          <h2 className="section-title" style={{ fontSize: "1.2rem", margin: 0 }}>
+        <Card className="mt-5">
+          <h2 className="section-title text-[1.2rem] m-0">
             Users
           </h2>
           <div className="management-controls">
@@ -848,7 +856,7 @@ function Management() {
                   <div className="management-item-main">
                     <span className="mono">@{user.handle ?? user.name ?? "user"}</span>
                     {user.deletedAt || user.deactivatedAt ? (
-                      <div className="section-subtitle" style={{ margin: 0 }}>
+                      <div className="section-subtitle m-0">
                         {user.banReason && user.deletedAt
                           ? `Banned ${formatTimestamp(user.deletedAt)} · ${user.banReason}`
                           : `Deleted ${formatTimestamp((user.deactivatedAt ?? user.deletedAt) as number)}`}
@@ -869,8 +877,7 @@ function Management() {
                       <option value="moderator">Moderator</option>
                       <option value="admin">Admin</option>
                     </select>
-                    <button
-                      className="btn"
+                    <Button
                       type="button"
                       disabled={user._id === me?._id}
                       onClick={() => {
@@ -891,10 +898,9 @@ function Management() {
                       }}
                     >
                       Ban user
-                    </button>
+                    </Button>
                     {user.deletedAt && !user.deactivatedAt ? (
-                      <button
-                        className="btn"
+                      <Button
                         type="button"
                         onClick={() => {
                           const label = `@${user.handle ?? user.name ?? "user"}`;
@@ -909,14 +915,14 @@ function Management() {
                         }}
                       >
                         Unban user
-                      </button>
+                      </Button>
                     ) : null}
                   </div>
                 </div>
               ))
             )}
           </div>
-        </div>
+        </Card>
       ) : null}
     </main>
   );

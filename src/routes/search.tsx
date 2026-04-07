@@ -4,6 +4,7 @@ import { useState } from "react";
 import { PluginListItem } from "../components/PluginListItem";
 import { SkillListItem } from "../components/SkillListItem";
 import { UserListItem } from "../components/UserListItem";
+import { Card } from "../components/ui/card";
 import type { PublicSkill, PublicUser } from "../lib/publicUser";
 import {
   useUnifiedSearch,
@@ -57,10 +58,10 @@ function UnifiedSearchPage() {
 
   return (
     <main className="browse-page">
-      <h1 className="browse-title" style={{ marginBottom: 16 }}>
+      <h1 className="browse-title mb-4">
         {search.q ? (
           <>
-            Search results for <span style={{ color: "var(--accent)" }}>"{search.q}"</span>
+            Search results for <span className="text-[color:var(--accent)]">"{search.q}"</span>
           </>
         ) : (
           "Search"
@@ -68,7 +69,7 @@ function UnifiedSearchPage() {
       </h1>
 
       <form className="search-page-form" onSubmit={handleSearch}>
-        <div className="browse-search-bar" style={{ maxWidth: 560, flex: 1 }}>
+        <div className="browse-search-bar max-w-[560px] flex-1">
             <Search size={16} className="navbar-search-icon" aria-hidden="true" />
           <input
             className="browse-search-input"
@@ -120,19 +121,19 @@ function UnifiedSearchPage() {
       </div>
 
       {isSearching ? (
-        <div className="card">
+        <Card>
           <div className="loading-indicator">Searching...</div>
-        </div>
+        </Card>
       ) : !search.q ? (
-        <div className="card" style={{ textAlign: "center", padding: 40 }}>
-          <p style={{ color: "var(--ink-soft)" }}>
+        <Card className="text-center p-10">
+          <p className="text-ink-soft">
             Enter a search term to find skills, plugins, and users
           </p>
-        </div>
+        </Card>
       ) : results.length === 0 ? (
-        <div className="card" style={{ textAlign: "center", padding: 40 }}>
-          <p style={{ color: "var(--ink-soft)" }}>No results found for "{search.q}"</p>
-        </div>
+        <Card className="text-center p-10">
+          <p className="text-ink-soft">No results found for "{search.q}"</p>
+        </Card>
       ) : (
         <div className="results-list">
           {results.map((item) =>

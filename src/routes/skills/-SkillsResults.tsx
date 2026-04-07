@@ -3,6 +3,7 @@ import { SkillCard } from "../../components/SkillCard";
 import { SkillListItem } from "../../components/SkillListItem";
 import { getPlatformLabels } from "../../components/skillDetailUtils";
 import { SkillStatsTripletLine } from "../../components/SkillStats";
+import { Button } from "../../components/ui/button";
 import { UserBadge } from "../../components/UserBadge";
 import { getSkillBadges } from "../../lib/badges";
 import { buildSkillHref, type SkillListEntry } from "./-types";
@@ -109,8 +110,7 @@ export function SkillsResults({
       {canLoadMore || isLoadingMore ? (
         <div
           ref={canAutoLoad ? loadMoreRef : null}
-          className="card"
-          style={{ marginTop: 16, display: "flex", justifyContent: "center" }}
+          className="card mt-4 flex justify-center"
         >
           {canAutoLoad ? (
             isLoadingMore ? (
@@ -119,9 +119,9 @@ export function SkillsResults({
               "Scroll to load more"
             )
           ) : (
-            <button className="btn" type="button" onClick={loadMore} disabled={isLoadingMore}>
+            <Button type="button" onClick={loadMore} disabled={isLoadingMore}>
               {isLoadingMore ? "Loading..." : "Load more"}
-            </button>
+            </Button>
           )}
         </div>
       ) : null}

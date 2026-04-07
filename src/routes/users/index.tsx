@@ -3,6 +3,7 @@ import { Search } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
 import { api } from "../../../convex/_generated/api";
 import { UserListItem } from "../../components/UserListItem";
+import { Card } from "../../components/ui/card";
 import { convexHttp } from "../../convex/client";
 import type { PublicUser } from "../../lib/publicUser";
 
@@ -84,9 +85,9 @@ function UsersIndex() {
         </div>
 
         {loading ? (
-          <div className="card">
+          <Card>
             <div className="loading-indicator">Loading users...</div>
-          </div>
+          </Card>
         ) : users.length === 0 ? (
           <div className="empty-state">
             <p className="empty-state-title">No users found</p>

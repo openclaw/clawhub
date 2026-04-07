@@ -9,6 +9,8 @@ import { formatCompactStat } from "../lib/numberFormat";
 import type { PublicPublisher, PublicSkill } from "../lib/publicUser";
 import { getRuntimeEnv } from "../lib/runtimeEnv";
 import { timeAgo } from "../lib/timeAgo";
+import { Badge } from "./ui/badge";
+import { Button } from "./ui/button";
 import { UserBadge } from "./UserBadge";
 
 type SkillMetadataSidebarProps = {
@@ -44,13 +46,11 @@ export function SkillMetadataSidebar({
       {!nixPlugin && !isMalwareBlocked && !isRemoved ? (
         <div className="sidebar-card">
           <h3 className="sidebar-card-title">Download</h3>
-          <a
-            className="btn btn-primary"
-            href={`${convexSiteUrl}/api/v1/download?slug=${skill.slug}`}
-            style={{ width: "100%", justifyContent: "center" }}
-          >
-            Download zip
-          </a>
+          <Button asChild variant="primary" className="w-full justify-center">
+            <a href={`${convexSiteUrl}/api/v1/download?slug=${skill.slug}`}>
+              Download zip
+            </a>
+          </Button>
         </div>
       ) : null}
 
@@ -118,9 +118,9 @@ export function SkillMetadataSidebar({
           <h3 className="sidebar-card-title">Tags</h3>
           <div className="sidebar-tags">
             {tagEntries.map(([tag]) => (
-              <span key={tag} className="tag tag-compact">
+              <Badge key={tag} variant="compact">
                 {tag}
-              </span>
+              </Badge>
             ))}
           </div>
         </div>

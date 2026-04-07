@@ -43,7 +43,7 @@ export function InstallSwitcher({ exampleSlug = "sonoscli" }: InstallSwitcherPro
               type="button"
               className={`cursor-pointer rounded-full border-none px-3 py-1.5 text-xs font-semibold transition-all duration-200 ${
                 pm === entry.id
-                  ? "bg-[color:var(--accent)] text-white shadow-sm"
+                  ? "bg-accent text-accent-fg shadow-sm"
                   : "bg-transparent text-[color:var(--ink-soft)] hover:text-[color:var(--ink)]"
               }`}
               role="tab"

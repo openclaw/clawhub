@@ -89,10 +89,10 @@ export function SkillFilesPanel({
       <div className="file-browser">
         <div className="file-list">
           <div className="file-list-header">
-            <h3 className="section-title" style={{ fontSize: "1.05rem", margin: 0 }}>
+            <h3 className="section-title text-[1.05rem] m-0">
               Files
             </h3>
-            <span className="section-subtitle" style={{ margin: 0 }}>
+            <span className="section-subtitle m-0">
               {latestFiles.length} total
             </span>
           </div>

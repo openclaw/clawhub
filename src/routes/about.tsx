@@ -1,4 +1,6 @@
 import { createFileRoute, Link } from '@tanstack/react-router';
+import { Badge } from '../components/ui/badge';
+import { Button } from '../components/ui/button';
 import { getSiteMode, getSiteName, getSiteUrlForMode } from '../lib/site';
 
 const prohibitedCategories = [
@@ -84,9 +86,9 @@ function AboutPage() {
     <main className="section about-page">
       <div className="about-hero">
         <div className="about-hero-copy">
-          <div className="skill-card-tags" style={{ marginBottom: 12 }}>
-            <span className="tag">About</span>
-            <span className="tag tag-accent">Policy</span>
+          <div className="skill-card-tags mb-3">
+            <Badge>About</Badge>
+            <Badge variant="accent">Policy</Badge>
           </div>
           <h1 className="about-title">What ClawHub will not host</h1>
           <p className="about-lead">
@@ -148,17 +150,20 @@ function AboutPage() {
           </div>
         </div>
         <div className="skill-card-tags">
-          <Link className="btn btn-primary" to="/skills">
-            Browse Skills
-          </Link>
-          <a
-            className="btn"
-            href="https://github.com/openclaw/clawhub/blob/main/docs/acceptable-usage.md"
-            target="_blank"
-            rel="noreferrer"
-          >
-            Reviewer Doc
-          </a>
+          <Button asChild variant="primary">
+            <Link to="/skills">
+              Browse Skills
+            </Link>
+          </Button>
+          <Button asChild>
+            <a
+              href="https://github.com/openclaw/clawhub/blob/main/docs/acceptable-usage.md"
+              target="_blank"
+              rel="noreferrer"
+            >
+              Reviewer Doc
+            </a>
+          </Button>
         </div>
       </section>
     </main>

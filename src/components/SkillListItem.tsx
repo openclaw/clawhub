@@ -1,6 +1,7 @@
 import { Link } from "@tanstack/react-router";
 import { Package, Star } from "lucide-react";
 import { MarketplaceIcon } from "./MarketplaceIcon";
+import { Badge } from "./ui/badge";
 import { getSkillBadges } from "../lib/badges";
 import { formatCompactStat } from "../lib/numberFormat";
 import type { PublicPublisher, PublicSkill } from "../lib/publicUser";
@@ -31,9 +32,9 @@ export function SkillListItem({ skill, ownerHandle, owner }: SkillListItemProps)
           ) : null}
           <span className="skill-list-item-name">{skill.displayName}</span>
           {badges.map((b) => (
-            <span key={b} className="tag tag-compact">
+            <Badge key={b} variant="compact">
               {b}
-            </span>
+            </Badge>
           ))}
         </div>
         {skill.summary ? <p className="skill-list-item-summary">{skill.summary}</p> : null}

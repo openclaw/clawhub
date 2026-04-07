@@ -3,6 +3,7 @@ import { AlertTriangle, Search } from "lucide-react";
 import { useEffect, useState } from "react";
 import { BrowseSidebar } from "../../components/BrowseSidebar";
 import { PluginListItem } from "../../components/PluginListItem";
+import { Button } from "../../components/ui/button";
 import {
   fetchPluginCatalog,
   isRateLimitedPackageApiError,
@@ -143,7 +144,7 @@ export function PluginsIndex() {
     <main className="browse-page">
       <div className="browse-page-header">
         <h1 className="browse-title">Plugins</h1>
-        <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+        <div className="flex items-center gap-2">
           <button
             className="browse-sidebar-toggle"
             type="button"
@@ -152,20 +153,21 @@ export function PluginsIndex() {
           >
             Filters
           </button>
-          <Link
-            className="btn btn-primary"
-            to="/publish-plugin"
-            search={{
-              ownerHandle: undefined,
-              name: undefined,
-              displayName: undefined,
-              family: undefined,
-              nextVersion: undefined,
-              sourceRepo: undefined,
-            }}
-          >
-            Publish
-          </Link>
+          <Button asChild variant="primary">
+            <Link
+              to="/publish-plugin"
+              search={{
+                ownerHandle: undefined,
+                name: undefined,
+                displayName: undefined,
+                family: undefined,
+                nextVersion: undefined,
+                sourceRepo: undefined,
+              }}
+            >
+              Publish
+            </Link>
+          </Button>
         </div>
       </div>
       <form className="browse-page-search" onSubmit={handleSearch}>
@@ -221,10 +223,9 @@ export function PluginsIndex() {
           )}
 
           {!search.q && (search.cursor || nextCursor) ? (
-            <div style={{ display: "flex", gap: 12, justifyContent: "center", marginTop: 22 }}>
+            <div className="mt-5 flex justify-center gap-3">
               {search.cursor ? (
-                <button
-                  className="btn"
+                <Button
                   type="button"
                   onClick={() => {
                     void navigate({
@@ -233,11 +234,11 @@ export function PluginsIndex() {
                   }}
                 >
                   First page
-                </button>
+                </Button>
               ) : null}
               {nextCursor ? (
-                <button
-                  className="btn btn-primary"
+                <Button
+                  variant="primary"
                   type="button"
                   onClick={() => {
                     void navigate({
@@ -246,7 +247,7 @@ export function PluginsIndex() {
                   }}
                 >
                   Next page
-                </button>
+                </Button>
               ) : null}
             </div>
           ) : null}

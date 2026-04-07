@@ -4,6 +4,7 @@
 @import "@fontsource/ibm-plex-mono/latin.css";
 
 @theme {
+  /* Colors — core palette */
   --color-bg: var(--bg);
   --color-bg-soft: var(--bg-soft);
   --color-surface: var(--surface);
@@ -12,6 +13,7 @@
   --color-ink: var(--ink);
   --color-ink-soft: var(--ink-soft);
   --color-accent: var(--accent);
+  --color-accent-fg: var(--accent-fg);
   --color-accent-deep: var(--accent-deep);
   --color-seafoam: var(--seafoam);
   --color-gold: var(--gold);
@@ -19,14 +21,70 @@
   --color-border-ui: var(--border-ui);
   --color-border-ui-hover: var(--border-ui-hover);
   --color-border-ui-active: var(--border-ui-active);
-  --radius-lg: var(--radius-lg);
-  --radius-md: var(--radius-md);
-  --radius-sm: var(--radius-sm);
-  --radius-pill: var(--radius-pill);
+
+  /* Colors — status */
+  --color-status-success-bg: var(--status-success-bg);
+  --color-status-success-fg: var(--status-success-fg);
+  --color-status-warning-bg: var(--status-warning-bg);
+  --color-status-warning-fg: var(--status-warning-fg);
+  --color-status-error-bg: var(--status-error-bg);
+  --color-status-error-fg: var(--status-error-fg);
+
+  /* Colors — form controls */
+  --color-input-border: var(--input-border);
+  --color-input-bg: var(--input-bg);
+  --color-input-placeholder: var(--input-placeholder);
+  --color-input-focus-border: var(--input-focus-border);
+  --color-input-focus-ring: var(--input-focus-ring);
+  --color-label-fg: var(--label-fg);
+
+  /* Colors — interactive states */
+  --color-hover-bg: var(--hover-bg);
+  --color-active-bg: var(--active-bg);
+
+  /* Colors — overlay */
+  --color-overlay-bg: var(--overlay-bg);
+
+  /* Spacing scale */
+  --spacing-space-1: var(--space-1);
+  --spacing-space-2: var(--space-2);
+  --spacing-space-3: var(--space-3);
+  --spacing-space-4: var(--space-4);
+  --spacing-space-5: var(--space-5);
+  --spacing-space-6: var(--space-6);
+  --spacing-space-7: var(--space-7);
+  --spacing-space-8: var(--space-8);
+
+  /* Typography scale */
+  --font-size-fs-xs: var(--fs-xs);
+  --font-size-fs-sm: var(--fs-sm);
+  --font-size-fs-base: var(--fs-base);
+  --font-size-fs-md: var(--fs-md);
+  --font-size-fs-lg: var(--fs-lg);
+  --font-size-fs-xl: var(--fs-xl);
+  --font-size-fs-2xl: var(--fs-2xl);
+  --font-size-fs-3xl: var(--fs-3xl);
+
+  /* Radii */
+  --radius-lg: var(--r-lg);
+  --radius-md: var(--r-md);
+  --radius-sm: var(--r-sm);
+  --radius-pill: var(--r-pill);
+
+  /* Fonts */
   --font-display: var(--font-display);
   --font-body: var(--font-body);
   --font-mono: var(--font-mono);
+
+  /* Layout widths */
+  --width-page-max: var(--page-max);
+  --width-page-narrow: var(--page-narrow);
+  --width-page-min: var(--page-min);
+
+  /* Shadows */
   --shadow-default: var(--shadow);
+  --shadow-dialog: var(--shadow-dialog);
+  --shadow-hover: var(--shadow-hover);
 }
 
 @variant dark (&:where([data-theme="dark"], [data-theme="dark"] *));
@@ -45,6 +103,7 @@
   --ink: #e0e0e0;
   --ink-soft: #808080;
   --accent: #ffffff;
+  --accent-fg: #0a0a0a;
   --accent-deep: #cccccc;
   --seafoam: #808080;
   --diff-added: #4a9;
@@ -59,6 +118,38 @@
   --border-ui-hover: rgba(255, 255, 255, 0.25);
   --border-ui-active: rgba(255, 255, 255, 0.4);
   --shadow: none;
+
+  /* Status colors — monochrome TUI */
+  --status-success-bg: rgba(255, 255, 255, 0.06);
+  --status-success-fg: #a0a0a0;
+  --status-warning-bg: rgba(255, 255, 255, 0.06);
+  --status-warning-fg: #999999;
+  --status-error-bg: rgba(255, 255, 255, 0.06);
+  --status-error-fg: #b0b0b0;
+
+  /* Form controls */
+  --input-border: rgba(255, 255, 255, 0.12);
+  --input-bg: rgba(14, 28, 37, 0.84);
+  --input-placeholder: rgba(184, 205, 216, 0.68);
+  --input-focus-border: rgba(255, 255, 255, 0.4);
+  --input-focus-ring: rgba(255, 255, 255, 0.12);
+  --label-fg: rgba(206, 227, 238, 0.76);
+
+  /* Interactive states */
+  --hover-bg: rgba(255, 255, 255, 0.04);
+  --active-bg: rgba(255, 255, 255, 0.08);
+
+  /* Overlay */
+  --overlay-bg: rgba(10, 10, 10, 0.65);
+
+  /* Shadows */
+  --shadow-dialog: 0 24px 50px rgba(0, 0, 0, 0.35);
+  --shadow-hover: none;
+
+  /* Layout widths */
+  --page-max: 1536px;
+  --page-narrow: 900px;
+  --page-min: 320px;
 
   /* Spacing scale */
   --space-1: 4px;
@@ -104,11 +195,39 @@
   --ink: #0a0a0a;
   --ink-soft: #555555;
   --accent: #0a0a0a;
+  --accent-fg: #f0f0f0;
   --accent-deep: #333333;
   --line: rgba(0, 0, 0, 0.12);
   --border-ui: rgba(0, 0, 0, 0.2);
   --border-ui-hover: rgba(0, 0, 0, 0.35);
   --border-ui-active: rgba(0, 0, 0, 0.5);
+
+  /* Status colors — light */
+  --status-success-bg: rgba(0, 0, 0, 0.04);
+  --status-success-fg: #555555;
+  --status-warning-bg: rgba(0, 0, 0, 0.04);
+  --status-warning-fg: #555555;
+  --status-error-bg: rgba(0, 0, 0, 0.04);
+  --status-error-fg: #333333;
+
+  /* Form controls — light */
+  --input-border: rgba(0, 0, 0, 0.2);
+  --input-bg: rgba(255, 255, 255, 0.94);
+  --input-placeholder: rgba(88, 115, 133, 0.72);
+  --input-focus-border: rgba(0, 0, 0, 0.5);
+  --input-focus-ring: rgba(0, 0, 0, 0.08);
+  --label-fg: rgba(70, 95, 113, 0.9);
+
+  /* Interactive states — light */
+  --hover-bg: rgba(0, 0, 0, 0.04);
+  --active-bg: rgba(0, 0, 0, 0.08);
+
+  /* Overlay — light */
+  --overlay-bg: rgba(240, 240, 240, 0.65);
+
+  /* Shadows — light */
+  --shadow-dialog: 0 24px 50px rgba(0, 0, 0, 0.12);
+  --shadow-hover: none;
 }
 
 * {
@@ -155,6 +274,7 @@ code {
 }
 
 .app-shell {
+  min-width: var(--page-min);
   min-height: 100vh;
   display: flex;
   flex-direction: column;
@@ -169,7 +289,7 @@ code {
 }
 
 .site-footer-inner {
-  max-width: 1200px;
+  max-width: var(--page-max);
   margin: 0 auto;
 }
 
@@ -225,7 +345,7 @@ code {
 }
 
 .navbar-inner {
-  max-width: 1360px;
+  max-width: var(--page-max);
   margin: 0 auto;
   padding: 0 22px;
   display: flex;
@@ -540,6 +660,7 @@ code {
   color: var(--ink-soft);
 }
 
+/* @deprecated — use <Button> from components/ui/button.tsx */
 .btn {
   border: 1px solid var(--border-ui);
   padding: var(--space-2) var(--space-3);
@@ -570,9 +691,9 @@ code {
 }
 
 .btn-primary {
-  background: var(--ink);
-  color: var(--bg);
-  border: 1px solid var(--ink);
+  background: var(--accent);
+  color: var(--accent-fg);
+  border: 1px solid var(--accent);
 }
 
 .btn-primary:hover {
@@ -587,7 +708,7 @@ code {
 }
 
 .hero-inner {
-  max-width: 1200px;
+  max-width: var(--page-max);
   margin: 0 auto;
   display: grid;
   grid-template-columns: minmax(0, 1.15fr) minmax(0, 1fr);
@@ -666,7 +787,7 @@ code {
 
 .section {
   width: 100%;
-  max-width: 1200px;
+  max-width: var(--page-max);
   margin: 0 auto;
   padding: var(--space-5) var(--space-5) var(--space-7);
   box-sizing: border-box;
@@ -736,6 +857,7 @@ code {
   letter-spacing: -0.01em;
 }
 
+/* @deprecated — use <Label> from components/ui/label.tsx */
 .form-label {
   font-size: 0.74rem;
   letter-spacing: 0.14em;
@@ -744,6 +866,7 @@ code {
   font-weight: 700;
 }
 
+/* @deprecated — use <Input> from components/ui/input.tsx */
 .form-input {
   width: 100%;
   box-sizing: border-box;
@@ -1708,6 +1831,7 @@ code {
   align-items: center;
 }
 
+/* @deprecated — use <Card> from components/ui/card.tsx */
 .card {
   width: 100%;
   background: var(--surface);
@@ -2089,6 +2213,7 @@ code {
   box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.7);
 }
 
+/* @deprecated — use <Badge> from components/ui/badge.tsx */
 .tag {
   display: inline-flex;
   align-items: center;
@@ -2200,7 +2325,7 @@ code {
 
 .star-toggle.is-active {
   background: var(--accent);
-  color: white;
+  color: var(--accent-fg);
   border-color: var(--accent-deep);
 }
 
@@ -5226,7 +5351,7 @@ html.theme-transition::view-transition-new(theme) {
   position: relative;
   padding: var(--space-6) var(--space-5) var(--space-5);
   border-bottom: 1px solid var(--line);
-  max-width: 1200px;
+  max-width: var(--page-max);
   margin: 0 auto;
   isolation: isolate;
   overflow: clip;
@@ -5256,7 +5381,7 @@ html.theme-transition::view-transition-new(theme) {
 }
 
 .home-hero-inner {
-  max-width: 1120px;
+  max-width: var(--page-max);
 }
 
 .home-hero-grid {
@@ -5372,7 +5497,7 @@ html.theme-transition::view-transition-new(theme) {
 /* Home sections */
 
 .home-section {
-  max-width: 1200px;
+  max-width: var(--page-max);
   margin: 0 auto;
   padding: var(--space-5) var(--space-5) var(--space-6);
 }
@@ -5562,7 +5687,7 @@ html.theme-transition::view-transition-new(theme) {
 /* ===== Browse Pages with Faceted Sidebar ===== */
 
 .browse-page {
-  max-width: 1450px;
+  max-width: var(--page-max);
   margin: 0 auto;
   padding: var(--space-5) 20px var(--space-7);
 }

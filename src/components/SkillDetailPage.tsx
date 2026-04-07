@@ -7,6 +7,7 @@ import type { Doc, Id } from "../../convex/_generated/dataModel";
 import { canManageSkill, isModerator } from "../lib/roles";
 import type { SkillBySlugResult, SkillPageInitialData } from "../lib/skillPage";
 import { useAuthStatus } from "../lib/useAuthStatus";
+import { Card } from "./ui/card";
 import { ClientOnly } from "./ClientOnly";
 import { SkillCommentsPanel } from "./SkillCommentsPanel";
 import { SkillDetailTabs, type DetailTab } from "./SkillDetailTabs";
@@ -330,9 +331,9 @@ export function SkillDetailPage({
   if (isLoadingSkill || wantsCanonicalRedirect) {
     return (
       <main className="section">
-        <div className="card">
+        <Card>
           <div className="loading-indicator">Loading skill…</div>
-        </div>
+        </Card>
       </main>
     );
   }
@@ -340,7 +341,7 @@ export function SkillDetailPage({
   if (result === null || !skill) {
     return (
       <main className="section">
-        <div className="card">Skill not found.</div>
+        <Card>Skill not found.</Card>
       </main>
     );
   }
@@ -403,25 +404,25 @@ export function SkillDetailPage({
         <div className="detail-layout">
           <div className="detail-main">
             {nixSnippet ? (
-              <div className="card">
-                <h3 style={{ margin: 0, fontSize: "var(--text-base)", fontWeight: 600 }}>
+              <Card>
+                <h3 className="m-0 text-[length:var(--text-base)] font-semibold">
                   Install via Nix
                 </h3>
-                <pre className="hero-install-code" style={{ marginTop: 8 }}>
+                <pre className="hero-install-code mt-2">
                   {nixSnippet}
                 </pre>
-              </div>
+              </Card>
             ) : null}
 
             {configExample ? (
-              <div className="card">
-                <h3 style={{ margin: 0, fontSize: "var(--text-base)", fontWeight: 600 }}>
+              <Card>
+                <h3 className="m-0 text-[length:var(--text-base)] font-semibold">
                   Config example
                 </h3>
-                <pre className="hero-install-code" style={{ marginTop: 8 }}>
+                <pre className="hero-install-code mt-2">
                   {configExample}
                 </pre>
-              </div>
+              </Card>
             ) : null}
 
             <SkillDetailTabs
@@ -442,14 +443,14 @@ export function SkillDetailPage({
 
             <ClientOnly
               fallback={
-                <div className="card">
-                  <h2 className="section-title" style={{ fontSize: "1.2rem", margin: 0 }}>
+                <Card>
+                  <h2 className="section-title text-[1.2rem] m-0">
                     Comments
                   </h2>
-                  <p className="section-subtitle" style={{ marginTop: 12, marginBottom: 0 }}>
+                  <p className="section-subtitle mt-3 mb-0">
                     Loading comments...
                   </p>
-                </div>
+                </Card>
               }
             >
               <SkillCommentsPanel

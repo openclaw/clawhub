@@ -373,13 +373,12 @@ function PluginDetailRoute() {
                   <span className="text-sm">
                     Latest release: <strong>v{pkg.latestVersion}</strong>
                   </span>
-                  <a
-                    href={getPackageDownloadPath(name, pkg.latestVersion)}
-                    className="inline-flex min-h-[34px] w-full items-center justify-center gap-2 rounded-[var(--radius-pill)] border border-[color:var(--border-ui)] bg-transparent px-3 py-1.5 text-xs font-semibold text-[color:var(--ink)] transition-all duration-200 no-underline hover:border-[color:var(--border-ui-hover)] hover:bg-[color:var(--surface)] sm:w-auto sm:whitespace-nowrap"
-                  >
-                    <Download className="h-3.5 w-3.5" aria-hidden="true" />
-                    Download zip
-                  </a>
+                  <Button asChild variant="outline" size="sm" className="w-full no-underline sm:w-auto">
+                    <a href={getPackageDownloadPath(name, pkg.latestVersion)}>
+                      <Download className="h-3.5 w-3.5" aria-hidden="true" />
+                      Download zip
+                    </a>
+                  </Button>
                 </div>
               ) : null}
             </CardContent>
