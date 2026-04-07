@@ -1,5 +1,13 @@
 import { describe, expect, it, vi } from "vitest";
 
+process.env.VITE_CONVEX_URL = process.env.VITE_CONVEX_URL ?? "https://example.convex.cloud";
+
+
+vi.mock("../convex/client", () => ({
+  convex: {},
+  convexHttp: { query: vi.fn() },
+}));
+
 vi.mock("@tanstack/react-router", () => ({
   createFileRoute: () => (config: { validateSearch?: unknown; component?: unknown }) => ({
     __config: config,

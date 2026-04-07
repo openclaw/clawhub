@@ -47,9 +47,10 @@ export default function Header() {
   const handle = me?.handle ?? me?.displayName ?? "user";
   const initial = (me?.displayName ?? me?.name ?? handle).charAt(0).toUpperCase();
   const isStaff = isModerator(me);
+  const hasResolvedUser = Boolean(me);
   const navCtx = useMemo(
-    () => ({ isSoulMode, isAuthenticated, isStaff }),
-    [isSoulMode, isAuthenticated, isStaff],
+    () => ({ isSoulMode, isAuthenticated: hasResolvedUser, isStaff }),
+    [hasResolvedUser, isSoulMode, isStaff],
   );
   const primaryItems = useMemo(() => filterNavItems(PRIMARY_NAV_ITEMS, navCtx), [navCtx]);
   const secondaryItems = useMemo(() => filterNavItems(SECONDARY_NAV_ITEMS, navCtx), [navCtx]);

@@ -20,12 +20,14 @@ vi.mock("@convex-dev/auth/react", () => ({
   }),
 }));
 
+const authStatusMock = vi.fn(() => ({
+  isAuthenticated: false,
+  isLoading: false,
+  me: null,
+}));
+
 vi.mock("../lib/useAuthStatus", () => ({
-  useAuthStatus: () => ({
-    isAuthenticated: false,
-    isLoading: false,
-    me: null,
-  }),
+  useAuthStatus: () => authStatusMock(),
 }));
 
 vi.mock("../lib/theme", () => ({
@@ -125,5 +127,4 @@ describe("Header", () => {
     expect(screen.getAllByText("Users")).toHaveLength(2);
     expect(screen.getByPlaceholderText("Search skills, plugins, users")).toBeTruthy();
     expect(convexQueryMock).not.toHaveBeenCalled();
-  });
-});
+  });});

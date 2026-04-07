@@ -6,6 +6,18 @@ import { SkillDetailPage } from "../components/SkillDetailPage";
 const navigateMock = vi.fn();
 const useAuthStatusMock = vi.fn();
 
+process.env.VITE_CONVEX_URL = process.env.VITE_CONVEX_URL ?? "https://example.convex.cloud";
+
+
+vi.mock("../components/UserBadge", () => ({
+  UserBadge: () => null,
+}));
+
+vi.mock("../convex/client", () => ({
+  convex: {},
+  convexHttp: { query: vi.fn() },
+}));
+
 vi.mock("@tanstack/react-router", () => ({
   Link: ({ children }: { children: unknown }) => children,
   useNavigate: () => navigateMock,

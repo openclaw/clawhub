@@ -17,6 +17,7 @@ vi.mock("@tanstack/react-router", () => ({
   createFileRoute:
     () =>
     (config: {
+      beforeLoad?: (args: { params: { owner: string; slug: string } }) => unknown;
       loader?: (args: { params: { owner: string; slug: string } }) => Promise<unknown>;
       component?: unknown;
       head?: unknown;
@@ -31,6 +32,7 @@ vi.mock("../lib/skillPage", () => ({
 async function loadRoute() {
   return (await import("../routes/$owner/$slug")).Route as unknown as {
     __config: {
+      beforeLoad?: (args: { params: { owner: string; slug: string } }) => unknown;
       loader?: (args: { params: { owner: string; slug: string } }) => Promise<unknown>;
       head?: (args: {
         params: { owner: string; slug: string };
@@ -43,6 +45,14 @@ async function loadRoute() {
       }) => unknown;
     };
   };
+}
+
+async function runBeforeLoad(params: { owner: string; slug: string }) {
+  const route = await loadRoute();
+  const beforeLoad = route.__config.beforeLoad as ((args: {
+    params: { owner: string; slug: string };
+  }) => unknown) | undefined;
+  return beforeLoad?.({ params });
 }
 
 async function runLoader(params: { owner: string; slug: string }) {
@@ -71,6 +81,14 @@ function runHead(
 }
 
 describe("skill route loader", () => {
+  it("allows numeric owner handles in beforeLoad", () => {
+    expect(() => runBeforeLoad({ owner: "123abc", slug: "weather" })).not.toThrow();
+  });
+
+  it("allows raw owner ids in beforeLoad", () => {
+    expect(() => runBeforeLoad({ owner: "users:abc123", slug: "weather" })).not.toThrow();
+  });
+
   beforeEach(() => {
     fetchSkillPageDataMock.mockReset();
   });
