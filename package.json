@@ -98,7 +98,7 @@
     "oxlint-tsgolint": "^0.17.4",
     "typescript": "^5.9.3",
     "undici": "^7.24.7",
-    "vite": "8.0.1",
+    "vite": "8.0.5",
     "vitest": "^4.1.2"
   }
 }
