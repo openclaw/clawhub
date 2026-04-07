@@ -27,7 +27,7 @@ const useQueryMock = vi.fn();
 const getReadmeMock = vi.fn();
 
 vi.mock("convex/react", () => ({
-  ConvexReactClient: class { constructor(_url: string) {} },
+  ConvexReactClient: class {},
   useQuery: (...args: unknown[]) => useQueryMock(...args),
   useMutation: () => vi.fn(),
   useAction: () => getReadmeMock,
