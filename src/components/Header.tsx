@@ -1,11 +1,12 @@
 import { useAuthActions } from "@convex-dev/auth/react";
 import { Link, useNavigate } from "@tanstack/react-router";
-import { Github, Menu, Monitor, Moon, Search, Sun } from "lucide-react";
+import { Ghost, Github, Menu, Monitor, Moon, Plug, Search, Sun, Wrench } from "lucide-react";
 import { useMemo, useRef, useState } from "react";
 import { getUserFacingAuthError } from "../lib/authErrorMessage";
 import { gravatarUrl } from "../lib/gravatar";
 import {
   filterNavItems,
+  type NavIconName,
   PRIMARY_NAV_ITEMS,
   SECONDARY_NAV_ITEMS,
 } from "../lib/nav-items";
@@ -24,6 +25,12 @@ import {
   DropdownMenuTrigger,
 } from "./ui/dropdown-menu";
 import { ToggleGroup, ToggleGroupItem } from "./ui/toggle-group";
+
+const NAV_ICONS: Record<NavIconName, React.ComponentType<{ size?: number; className?: string }>> = {
+  wrench: Wrench,
+  plug: Plug,
+  ghost: Ghost,
+};
 
 export default function Header() {
   const { isAuthenticated, isLoading, me } = useAuthStatus();
@@ -267,16 +274,20 @@ export default function Header() {
                 ClawHub
               </a>
             ) : null}
-            {primaryItems.map((item) => (
-              <Link
-                key={item.to + item.label}
-                to={item.to}
-                className="navbar-tab"
-                search={item.search ?? {}}
-              >
-                {item.label}
-              </Link>
-            ))}
+            {primaryItems.map((item) => {
+              const Icon = item.icon ? NAV_ICONS[item.icon] : null;
+              return (
+                <Link
+                  key={item.to + item.label}
+                  to={item.to}
+                  className="navbar-tab"
+                  search={item.search ?? {}}
+                >
+                  {Icon ? <Icon size={14} className="opacity-50" aria-hidden="true" /> : null}
+                  {item.label}
+                </Link>
+              );
+            })}
           </div>
           <div className="navbar-tabs-secondary">
             {secondaryItems.map((item) => (

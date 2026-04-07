@@ -3,6 +3,9 @@
  * triple duplication of nav link definitions.
  */
 
+/** Lucide icon name used as a key to look up the component at render time. */
+export type NavIconName = "wrench" | "plug" | "ghost";
+
 export interface NavItem {
   /** Visible link text */
   label: string;
@@ -10,6 +13,8 @@ export interface NavItem {
   to: string;
   /** Optional search params object passed to `<Link search>` */
   search?: Record<string, unknown>;
+  /** Optional lucide icon name shown beside the label in navbar tabs */
+  icon?: NavIconName;
   /** Link only shown when user is authenticated */
   authRequired: boolean;
   /** Link only shown for staff / moderator users */
@@ -58,6 +63,7 @@ export const PRIMARY_NAV_ITEMS: NavItem[] = [
     label: "Skills",
     to: "/skills",
     search: SKILLS_SEARCH,
+    icon: "wrench",
     authRequired: false,
     staffOnly: false,
     soulModeOnly: false,
@@ -66,6 +72,7 @@ export const PRIMARY_NAV_ITEMS: NavItem[] = [
   {
     label: "Plugins",
     to: "/plugins",
+    icon: "plug",
     authRequired: false,
     staffOnly: false,
     soulModeOnly: false,
@@ -75,6 +82,7 @@ export const PRIMARY_NAV_ITEMS: NavItem[] = [
     label: "Souls",
     to: "/souls",
     search: SOULS_SEARCH,
+    icon: "ghost",
     authRequired: false,
     staffOnly: false,
     soulModeOnly: false,

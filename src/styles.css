@@ -474,11 +474,20 @@ code {
   color: var(--ink);
 }
 
+.navbar-tab:hover svg {
+  opacity: 0.85;
+}
+
 .navbar-tab.active,
 .navbar-tab[data-status="active"] {
   color: var(--ink);
   font-weight: 600;
   border-bottom: 1px solid var(--ink);
+}
+
+.navbar-tab.active svg,
+.navbar-tab[data-status="active"] svg {
+  opacity: 1;
 }
 
 .navbar-tab-secondary {
