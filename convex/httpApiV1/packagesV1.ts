@@ -1,15 +1,25 @@
 import { getAuthUserId } from "@convex-dev/auth/server";
-import { PackagePublishRequestSchema, parseArk } from "clawhub-schema";
+import {
+  PackagePublishRequestSchema,
+  PackageTrustedPublisherUpsertRequestSchema,
+  PublishTokenMintRequestSchema,
+  parseArk,
+} from "clawhub-schema";
 import { api, internal } from "../_generated/api";
 import type { Doc, Id } from "../_generated/dataModel";
 import type { ActionCtx } from "../_generated/server";
 import { getOptionalApiTokenUserId } from "../lib/apiTokenAuth";
+import {
+  fetchGitHubRepositoryIdentity,
+  verifyGitHubActionsTrustedPublishJwt,
+} from "../lib/githubActionsOidc";
 import { corsHeaders, mergeHeaders } from "../lib/httpHeaders";
+import { applyRateLimit } from "../lib/httpRateLimit";
 import { getPackageDownloadSecurityBlock } from "../lib/packageSecurity";
 import { getPublishFileSizeError, MAX_PUBLISH_FILE_BYTES } from "../lib/publishLimits";
-import { applyRateLimit } from "../lib/httpRateLimit";
-import { buildDeterministicPackageZip } from "../lib/skillZip";
 import { isMacJunkPath, isTextFile } from "../lib/skills";
+import { buildDeterministicPackageZip } from "../lib/skillZip";
+import { generateToken, hashToken } from "../lib/tokens";
 import {
   MAX_RAW_FILE_BYTES,
   getPathSegments,
@@ -17,6 +27,7 @@ import {
   parseJsonPayload,
   resolveTagsBatch,
   requireApiTokenUserOrResponse,
+  requirePackagePublishAuthOrResponse,
   safeTextFileResponse,
   text,
   toOptionalNumber,
@@ -41,11 +52,19 @@ const internalRefs = internal as unknown as {
     listPageForViewerInternal: unknown;
     searchForViewerInternal: unknown;
     listVersionsForViewerInternal: unknown;
+    getTrustedPublisherByPackageIdInternal: unknown;
     getVersionByNameForViewerInternal: unknown;
     publishPackageForUserInternal: unknown;
+    publishPackageForTrustedPublisherInternal: unknown;
+    setTrustedPublisherForUserInternal: unknown;
+    deleteTrustedPublisherForUserInternal: unknown;
     getReleasesByIdsInternal: unknown;
     getReleaseByPackageAndVersionInternal: unknown;
     getReleaseByIdInternal: unknown;
+    insertAuditLogInternal: unknown;
+  };
+  packagePublishTokens: {
+    createInternal: unknown;
   };
   skills: {
     getSkillBySlugInternal: unknown;
@@ -84,7 +103,13 @@ async function getOptionalViewerUserIdForRequest(ctx: ActionCtx, request: Reques
   const apiTokenUserId = await getOptionalApiTokenUserId(ctx, request);
   if (apiTokenUserId) return apiTokenUserId;
   try {
-    return (await getAuthUserId(ctx)) ?? null;
+    const userId = (await getAuthUserId(ctx)) ?? null;
+    if (!userId) return null;
+    const user = await runQueryRef<Doc<"users"> | null>(ctx, internal.users.getByIdInternal, {
+      userId,
+    });
+    if (!user || user.deletedAt || user.deactivatedAt) return null;
+    return userId;
   } catch {
     // Public package reads should degrade to anonymous when cookie-backed auth is stale.
     return null;
@@ -154,9 +179,36 @@ type ReleaseLike = {
   softDeletedAt?: number;
 };
 
+type PackageTrustedPublisherLike = {
+  _id: Id<"packageTrustedPublishers">;
+  packageId: Id<"packages">;
+  provider: "github-actions";
+  repository: string;
+  repositoryId: string;
+  repositoryOwner: string;
+  repositoryOwnerId: string;
+  workflowFilename: string;
+  environment?: string;
+  createdAt: number;
+  updatedAt: number;
+};
+
 function toVisibleRelease(release: ReleaseLike | null) {
   if (!release || ("softDeletedAt" in release && release.softDeletedAt !== undefined)) return null;
   return release;
+}
+
+function toPublicTrustedPublisher(trustedPublisher: PackageTrustedPublisherLike | null) {
+  if (!trustedPublisher) return null;
+  return {
+    provider: trustedPublisher.provider,
+    repository: trustedPublisher.repository,
+    repositoryId: trustedPublisher.repositoryId,
+    repositoryOwner: trustedPublisher.repositoryOwner,
+    repositoryOwnerId: trustedPublisher.repositoryOwnerId,
+    workflowFilename: trustedPublisher.workflowFilename,
+    ...(trustedPublisher.environment ? { environment: trustedPublisher.environment } : {}),
+  };
 }
 
 function getReleaseSecurityBlock(release: ReleaseLike) {
@@ -169,9 +221,13 @@ async function resolvePackageTags(
 ): Promise<Record<string, string>> {
   const releaseIds = Object.values(tags);
   if (releaseIds.length === 0) return {};
-  const releases = await runQueryRef<ReleaseLike[]>(ctx, internalRefs.packages.getReleasesByIdsInternal, {
-    releaseIds,
-  });
+  const releases = await runQueryRef<ReleaseLike[]>(
+    ctx,
+    internalRefs.packages.getReleasesByIdsInternal,
+    {
+      releaseIds,
+    },
+  );
   const byId = new Map(releases.map((release) => [release._id, release.version]));
   return Object.fromEntries(
     Object.entries(tags)
@@ -242,8 +298,12 @@ function decodeUnifiedCatalogCursor(raw: string | null | undefined): UnifiedCata
     };
   }
   try {
-    const parsed = JSON.parse(raw.slice(UNIFIED_CATALOG_CURSOR_PREFIX.length)) as Partial<UnifiedCatalogCursorState>;
-    const normalize = (input: Partial<CatalogSourceCursorState> | undefined): CatalogSourceCursorState => ({
+    const parsed = JSON.parse(
+      raw.slice(UNIFIED_CATALOG_CURSOR_PREFIX.length),
+    ) as Partial<UnifiedCatalogCursorState>;
+    const normalize = (
+      input: Partial<CatalogSourceCursorState> | undefined,
+    ): CatalogSourceCursorState => ({
       cursor: typeof input?.cursor === "string" ? input.cursor : null,
       offset: typeof input?.offset === "number" && input.offset > 0 ? input.offset : 0,
       pageSize: typeof input?.pageSize === "number" && input.pageSize > 0 ? input.pageSize : null,
@@ -385,6 +445,7 @@ function parsePackagePublishBody(body: unknown) {
     family: "skill" | "code-plugin" | "bundle-plugin";
     version: string;
     changelog: string;
+    manualOverrideReason?: string;
     channel?: "official" | "community" | "private";
     tags?: string[];
     source?: Record<string, unknown>;
@@ -405,6 +466,7 @@ function parsePackagePublishBody(body: unknown) {
     family: parsed.family,
     version: parsed.version,
     changelog: parsed.changelog,
+    manualOverrideReason: parsed.manualOverrideReason?.trim() || undefined,
     channel: parsed.channel ?? undefined,
     tags: parsed.tags?.filter(Boolean) ?? undefined,
     source: parsed.source ?? undefined,
@@ -436,7 +498,9 @@ async function parseMultipartPackagePublish(ctx: ActionCtx, request: Request) {
     }
     const buffer = new Uint8Array(await entry.arrayBuffer());
     const digest = await crypto.subtle.digest("SHA-256", buffer);
-    const sha256 = Array.from(new Uint8Array(digest), (byte) => byte.toString(16).padStart(2, "0")).join("");
+    const sha256 = Array.from(new Uint8Array(digest), (byte) =>
+      byte.toString(16).padStart(2, "0"),
+    ).join("");
     const storageId = await ctx.storage.store(entry);
     files.push({
       path: entry.name,
@@ -549,7 +613,10 @@ async function listPackages(
       ]);
 
       if (!packageCandidate && !skillCandidate) break;
-      if (!skillCandidate || (packageCandidate && compareCatalogItems(packageCandidate, skillCandidate) <= 0)) {
+      if (
+        !skillCandidate ||
+        (packageCandidate && compareCatalogItems(packageCandidate, skillCandidate) <= 0)
+      ) {
         items.push(packageCandidate!);
         packageSource.index += 1;
       } else {
@@ -617,7 +684,7 @@ export async function publishPackageV1Handler(ctx: ActionCtx, request: Request) 
   const rate = await applyRateLimit(ctx, request, "write");
   if (!rate.ok) return rate.response;
 
-  const auth = await requireApiTokenUserOrResponse(ctx, request, rate.headers);
+  const auth = await requirePackagePublishAuthOrResponse(ctx, request, rate.headers);
   if (!auth.ok) return auth.response;
 
   try {
@@ -625,13 +692,227 @@ export async function publishPackageV1Handler(ctx: ActionCtx, request: Request) 
     const payload = contentType.includes("multipart/form-data")
       ? await parseMultipartPackagePublish(ctx, request)
       : parsePackagePublishBody(await request.json());
-    const result = await runActionRef(ctx, internalRefs.packages.publishPackageForUserInternal, {
-      actorUserId: auth.userId,
-      payload,
-    });
+    const result =
+      auth.auth.kind === "user"
+        ? await runActionRef(ctx, internalRefs.packages.publishPackageForUserInternal, {
+            actorUserId: auth.auth.userId,
+            payload,
+          })
+        : await runActionRef(ctx, internalRefs.packages.publishPackageForTrustedPublisherInternal, {
+            publishTokenId: auth.auth.publishToken._id,
+            payload,
+          });
     return json(result, 200, rate.headers);
   } catch (error) {
     return text(error instanceof Error ? error.message : "Publish failed", 400, rate.headers);
+  }
+}
+
+async function getPackageAndTrustedPublisherByName(ctx: ActionCtx, packageName: string) {
+  const pkg = await runQueryRef<Doc<"packages"> | null>(
+    ctx,
+    internalRefs.packages.getPackageByNameInternal,
+    {
+      name: packageName,
+    },
+  );
+  if (!pkg || pkg.softDeletedAt) return { pkg: null, trustedPublisher: null };
+  const trustedPublisher = await runQueryRef<PackageTrustedPublisherLike | null>(
+    ctx,
+    internalRefs.packages.getTrustedPublisherByPackageIdInternal,
+    { packageId: pkg._id },
+  );
+  return { pkg, trustedPublisher };
+}
+
+export async function mintPublishTokenV1Handler(ctx: ActionCtx, request: Request) {
+  const rate = await applyRateLimit(ctx, request, "write");
+  if (!rate.ok) return rate.response;
+
+  const parsedBody = await request.json().catch(() => null);
+  if (!parsedBody) return text("Invalid JSON", 400, rate.headers);
+
+  try {
+    const payload = parseArk(
+      PublishTokenMintRequestSchema,
+      parsedBody,
+      "Publish token mint payload",
+    ) as {
+      packageName: string;
+      version: string;
+      githubOidcToken: string;
+    };
+    const { pkg, trustedPublisher } = await getPackageAndTrustedPublisherByName(
+      ctx,
+      payload.packageName,
+    );
+    if (!pkg) return text("Package not found", 404, rate.headers);
+    if (!trustedPublisher) {
+      return text("Trusted publisher config is not set for this package", 403, rate.headers);
+    }
+
+    try {
+      const verified = await verifyGitHubActionsTrustedPublishJwt(payload.githubOidcToken, {
+        repository: trustedPublisher.repository,
+        repositoryId: trustedPublisher.repositoryId,
+        repositoryOwner: trustedPublisher.repositoryOwner,
+        repositoryOwnerId: trustedPublisher.repositoryOwnerId,
+        workflowFilename: trustedPublisher.workflowFilename,
+        ...(trustedPublisher.environment ? { environment: trustedPublisher.environment } : {}),
+      });
+      const { token, prefix } = generateToken();
+      const tokenHash = await hashToken(token);
+      const expiresAt = Date.now() + 15 * 60_000;
+
+      await ctx.runMutation(
+        internalRefs.packagePublishTokens.createInternal as never,
+        {
+          packageId: pkg._id,
+          version: payload.version,
+          prefix,
+          tokenHash,
+          provider: "github-actions",
+          repository: verified.repository,
+          repositoryId: verified.repositoryId,
+          repositoryOwner: verified.repositoryOwner,
+          repositoryOwnerId: verified.repositoryOwnerId,
+          workflowFilename: verified.workflowFilename,
+          ...(trustedPublisher.environment ? { environment: trustedPublisher.environment } : {}),
+          runId: verified.runId,
+          runAttempt: verified.runAttempt,
+          sha: verified.sha,
+          ref: verified.ref,
+          ...(verified.refType ? { refType: verified.refType } : {}),
+          ...(verified.actor ? { actor: verified.actor } : {}),
+          ...(verified.actorId ? { actorId: verified.actorId } : {}),
+          expiresAt,
+        } as never,
+      );
+      await ctx.runMutation(
+        internalRefs.packages.insertAuditLogInternal as never,
+        {
+          actorUserId: pkg.ownerUserId,
+          action: "package.publish_token.mint",
+          targetType: "package",
+          targetId: String(pkg._id),
+          metadata: {
+            version: payload.version,
+            repository: verified.repository,
+            workflowFilename: verified.workflowFilename,
+            ...(verified.environment ? { environment: verified.environment } : {}),
+            runId: verified.runId,
+            runAttempt: verified.runAttempt,
+            sha: verified.sha,
+            ref: verified.ref,
+            decision: "allowed",
+          },
+        } as never,
+      );
+      return json({ token, expiresAt }, 200, rate.headers);
+    } catch (error) {
+      await ctx.runMutation(
+        internalRefs.packages.insertAuditLogInternal as never,
+        {
+          actorUserId: pkg.ownerUserId,
+          action: "package.publish_token.mint_rejected",
+          targetType: "package",
+          targetId: String(pkg._id),
+          metadata: {
+            version: payload.version,
+            repository: trustedPublisher.repository,
+            workflowFilename: trustedPublisher.workflowFilename,
+            ...(trustedPublisher.environment ? { environment: trustedPublisher.environment } : {}),
+            decision: "rejected",
+            reason: error instanceof Error ? error.message : "Token verification failed",
+          },
+        } as never,
+      );
+      throw error;
+    }
+  } catch (error) {
+    return text(error instanceof Error ? error.message : "Token mint failed", 400, rate.headers);
+  }
+}
+
+export async function packagesPostRouterV1Handler(ctx: ActionCtx, request: Request) {
+  const rate = await applyRateLimit(ctx, request, "write");
+  if (!rate.ok) return rate.response;
+
+  const segments = getPathSegments(request, "/api/v1/packages/");
+  const action = segments[1] ?? "";
+
+  if (action === "transfer") {
+    return handlePackagesTransferPost(ctx, request, segments, rate.headers);
+  }
+
+  if (action === "trusted-publisher" && segments.length === 2) {
+    const auth = await requireApiTokenUserOrResponse(ctx, request, rate.headers);
+    if (!auth.ok) return auth.response;
+
+    try {
+      const body = parseArk(
+        PackageTrustedPublisherUpsertRequestSchema,
+        await request.json(),
+        "Trusted publisher payload",
+      ) as {
+        repository: string;
+        workflowFilename: string;
+        environment?: string;
+      };
+      const repositoryIdentity = await fetchGitHubRepositoryIdentity(body.repository);
+      const trustedPublisher = await runMutationRef<PackageTrustedPublisherLike | null>(
+        ctx,
+        internalRefs.packages.setTrustedPublisherForUserInternal,
+        {
+          actorUserId: auth.userId,
+          packageName: segments[0]!,
+          repository: repositoryIdentity.repository,
+          repositoryId: repositoryIdentity.repositoryId,
+          repositoryOwner: repositoryIdentity.repositoryOwner,
+          repositoryOwnerId: repositoryIdentity.repositoryOwnerId,
+          workflowFilename: body.workflowFilename,
+          ...(body.environment ? { environment: body.environment } : {}),
+        },
+      );
+      return json(
+        { trustedPublisher: toPublicTrustedPublisher(trustedPublisher) },
+        200,
+        rate.headers,
+      );
+    } catch (error) {
+      return text(
+        error instanceof Error ? error.message : "Trusted publisher update failed",
+        400,
+        rate.headers,
+      );
+    }
+  }
+
+  return text("Not found", 404, rate.headers);
+}
+
+export async function packagesDeleteRouterV1Handler(ctx: ActionCtx, request: Request) {
+  const segments = getPathSegments(request, "/api/v1/packages/");
+  if (segments[1] !== "trusted-publisher" || segments.length !== 2) {
+    return text("Not found", 404);
+  }
+  const rate = await applyRateLimit(ctx, request, "write");
+  if (!rate.ok) return rate.response;
+  const auth = await requireApiTokenUserOrResponse(ctx, request, rate.headers);
+  if (!auth.ok) return auth.response;
+
+  try {
+    await runMutationRef(ctx, internalRefs.packages.deleteTrustedPublisherForUserInternal, {
+      actorUserId: auth.userId,
+      packageName: segments[0]!,
+    });
+    return json({ ok: true }, 200, rate.headers);
+  } catch (error) {
+    return text(
+      error instanceof Error ? error.message : "Trusted publisher delete failed",
+      400,
+      rate.headers,
+    );
   }
 }
 
@@ -676,9 +957,7 @@ async function getReleaseForRequest(
 function isReadmeVariantPath(path: string) {
   const normalized = path.trim().toLowerCase();
   return (
-    normalized === "readme.md" ||
-    normalized === "readme.mdx" ||
-    normalized === "readme.markdown"
+    normalized === "readme.md" || normalized === "readme.mdx" || normalized === "readme.markdown"
   );
 }
 
@@ -718,13 +997,11 @@ function resolvePackageFilePath(release: ReleaseLike, requestedPath: string) {
 }
 
 async function getSkillDetailForRequest(ctx: ActionCtx, slug: string) {
-  return (await runQueryRef(ctx, apiRefs.skills.getBySlug, { slug })) as
-    | {
-        skill: SkillPackageDocLike | null;
-        latestVersion: SkillVersionLike | null;
-        owner: { handle?: string; displayName?: string; image?: string } | null;
-      }
-    | null;
+  return (await runQueryRef(ctx, apiRefs.skills.getBySlug, { slug })) as {
+    skill: SkillPackageDocLike | null;
+    latestVersion: SkillVersionLike | null;
+    owner: { handle?: string; displayName?: string; image?: string } | null;
+  } | null;
 }
 
 async function getSkillVersionForRequest(
@@ -789,25 +1066,33 @@ async function searchPackages(
 
   let results: CatalogSearchEntry[];
   if (family === "skill") {
-    results = await runQueryRef<CatalogSearchEntry[]>(ctx, apiRefs.skills.searchPackageCatalogPublic, {
-      query: queryText,
-      limit,
-      channel,
-      isOfficial,
-      executesCode,
-      capabilityTag,
-    });
+    results = await runQueryRef<CatalogSearchEntry[]>(
+      ctx,
+      apiRefs.skills.searchPackageCatalogPublic,
+      {
+        query: queryText,
+        limit,
+        channel,
+        isOfficial,
+        executesCode,
+        capabilityTag,
+      },
+    );
   } else if (family || !includeSkills) {
-    results = await runQueryRef<CatalogSearchEntry[]>(ctx, internalRefs.packages.searchForViewerInternal, {
-      query: queryText,
-      limit,
-      family,
-      channel,
-      isOfficial,
-      executesCode,
-      capabilityTag,
-      viewerUserId: viewerUserId ?? undefined,
-    });
+    results = await runQueryRef<CatalogSearchEntry[]>(
+      ctx,
+      internalRefs.packages.searchForViewerInternal,
+      {
+        query: queryText,
+        limit,
+        family,
+        channel,
+        isOfficial,
+        executesCode,
+        capabilityTag,
+        viewerUserId: viewerUserId ?? undefined,
+      },
+    );
   } else {
     const [packageResults, skillResults] = await Promise.all([
       runQueryRef<CatalogSearchEntry[]>(ctx, internalRefs.packages.searchForViewerInternal, {
@@ -860,20 +1145,14 @@ export async function packagesGetRouterV1Handler(ctx: ActionCtx, request: Reques
 
   const packageName = segments[0] ?? "";
   const viewerUserId = await getOptionalViewerUserIdForRequest(ctx, request);
-  const detail = (await runQueryRef(
-    ctx,
-    internalRefs.packages.getByNameForViewerInternal,
-    {
-      name: packageName,
-      viewerUserId: viewerUserId ?? undefined,
-    },
-  )) as
-    | {
-        package: PublicPackageDocLike | null;
-        latestRelease: ReleaseLike | null;
-        owner: { _id: Id<"users">; handle?: string; displayName?: string; image?: string } | null;
-      }
-    | null;
+  const detail = (await runQueryRef(ctx, internalRefs.packages.getByNameForViewerInternal, {
+    name: packageName,
+    viewerUserId: viewerUserId ?? undefined,
+  })) as {
+    package: PublicPackageDocLike | null;
+    latestRelease: ReleaseLike | null;
+    owner: { _id: Id<"users">; handle?: string; displayName?: string; image?: string } | null;
+  } | null;
   const skillDetail = detail?.package ? null : await getSkillDetailForRequest(ctx, packageName);
   if (!detail?.package && !skillDetail?.skill) return text("Package not found", 404, rate.headers);
   const packageDetail = detail?.package ? detail : null;
@@ -893,23 +1172,44 @@ export async function packagesGetRouterV1Handler(ctx: ActionCtx, request: Reques
         rate.headers,
       );
     }
-    return json({
-      package: {
-        ...publicPackage!,
-        tags: await resolvePackageTags(ctx, publicPackage!.tags),
+    return json(
+      {
+        package: {
+          ...publicPackage!,
+          tags: await resolvePackageTags(ctx, publicPackage!.tags),
+        },
+        owner: packageOwner
+          ? {
+              handle: packageOwner.handle ?? null,
+              displayName: packageOwner.displayName ?? null,
+              image: packageOwner.image ?? null,
+            }
+          : null,
       },
-      owner: packageOwner
-        ? {
-            handle: packageOwner.handle ?? null,
-            displayName: packageOwner.displayName ?? null,
-            image: packageOwner.image ?? null,
-          }
-        : null,
-    }, 200, rate.headers);
+      200,
+      rate.headers,
+    );
+  }
+
+  if (segments[1] === "trusted-publisher" && segments.length === 2) {
+    if (!publicPackage) return text("Not found", 404, rate.headers);
+    const trustedPublisher = await runQueryRef<PackageTrustedPublisherLike | null>(
+      ctx,
+      internalRefs.packages.getTrustedPublisherByPackageIdInternal,
+      { packageId: publicPackage._id },
+    );
+    return json(
+      { trustedPublisher: toPublicTrustedPublisher(trustedPublisher) },
+      200,
+      rate.headers,
+    );
   }
 
   if (segments[1] === "versions" && segments.length === 2) {
-    const limit = Math.max(1, Math.min(toOptionalNumber(new URL(request.url).searchParams.get("limit")) ?? 25, 100));
+    const limit = Math.max(
+      1,
+      Math.min(toOptionalNumber(new URL(request.url).searchParams.get("limit")) ?? 25, 100),
+    );
     const cursor = new URL(request.url).searchParams.get("cursor");
     if (skillDetail?.skill) {
       const result = (await runQueryRef(ctx, apiRefs.skills.listVersionsPage, {
@@ -921,15 +1221,19 @@ export async function packagesGetRouterV1Handler(ctx: ActionCtx, request: Reques
         nextCursor: string | null;
       };
       const tags = await resolveSkillTags(ctx, skillDetail.skill.tags);
-      return json({
-        items: result.items.map((version) => ({
-          version: version.version,
-          createdAt: version.createdAt,
-          changelog: version.changelog,
-          distTags: skillVersionTags(tags, version.version),
-        })),
-        nextCursor: result.nextCursor,
-      }, 200, rate.headers);
+      return json(
+        {
+          items: result.items.map((version) => ({
+            version: version.version,
+            createdAt: version.createdAt,
+            changelog: version.changelog,
+            distTags: skillVersionTags(tags, version.version),
+          })),
+          nextCursor: result.nextCursor,
+        },
+        200,
+        rate.headers,
+      );
     }
     const result = await runQueryRef<{
       page: ReleaseLike[];
@@ -940,47 +1244,59 @@ export async function packagesGetRouterV1Handler(ctx: ActionCtx, request: Reques
       viewerUserId: viewerUserId ?? undefined,
       paginationOpts: { cursor, numItems: limit },
     });
-    return json({
-      items: result.page.map((release: ReleaseLike) => ({
-        version: release.version,
-        createdAt: release.createdAt,
-        changelog: release.changelog,
-        distTags: release.distTags ?? [],
-      })),
-      nextCursor: result.isDone ? null : result.continueCursor,
-    }, 200, rate.headers);
+    return json(
+      {
+        items: result.page.map((release: ReleaseLike) => ({
+          version: release.version,
+          createdAt: release.createdAt,
+          changelog: release.changelog,
+          distTags: release.distTags ?? [],
+        })),
+        nextCursor: result.isDone ? null : result.continueCursor,
+      },
+      200,
+      rate.headers,
+    );
   }
 
   if (segments[1] === "versions" && segments[2]) {
     if (skillDetail?.skill) {
-      const version = (await runQueryRef(ctx, internalRefs.skills.getVersionBySkillAndVersionInternal, {
-        skillId: skillDetail.skill._id,
-        version: segments[2],
-      })) as SkillVersionLike | null;
+      const version = (await runQueryRef(
+        ctx,
+        internalRefs.skills.getVersionBySkillAndVersionInternal,
+        {
+          skillId: skillDetail.skill._id,
+          version: segments[2],
+        },
+      )) as SkillVersionLike | null;
       if (!version || version.softDeletedAt) return text("Version not found", 404, rate.headers);
       const tags = await resolveSkillTags(ctx, skillDetail.skill.tags);
-      return json({
-        package: {
-          name: skillDetail.skill.slug,
-          displayName: skillDetail.skill.displayName,
-          family: "skill",
+      return json(
+        {
+          package: {
+            name: skillDetail.skill.slug,
+            displayName: skillDetail.skill.displayName,
+            family: "skill",
+          },
+          version: {
+            version: version.version,
+            createdAt: version.createdAt,
+            changelog: version.changelog,
+            distTags: skillVersionTags(tags, version.version),
+            files: version.files.map((file) => ({
+              path: file.path,
+              size: file.size,
+              sha256: file.sha256,
+              contentType: file.contentType,
+            })),
+            compatibility: null,
+            capabilities: null,
+            verification: null,
+          },
         },
-        version: {
-          version: version.version,
-          createdAt: version.createdAt,
-          changelog: version.changelog,
-          distTags: skillVersionTags(tags, version.version),
-          files: version.files.map((file) => ({
-            path: file.path,
-            size: file.size,
-            sha256: file.sha256,
-            contentType: file.contentType,
-          })),
-          compatibility: null,
-          capabilities: null,
-          verification: null,
-        },
-      }, 200, rate.headers);
+        200,
+        rate.headers,
+      );
     }
     const result = (await runQueryRef(
       ctx,
@@ -992,32 +1308,36 @@ export async function packagesGetRouterV1Handler(ctx: ActionCtx, request: Reques
       },
     )) as { package: PublicPackageDocLike; version: ReleaseLike } | null;
     if (!result) return text("Version not found", 404, rate.headers);
-    return json({
-      package: {
-        name: result.package.name,
-        displayName: result.package.displayName,
-        family: result.package.family,
+    return json(
+      {
+        package: {
+          name: result.package.name,
+          displayName: result.package.displayName,
+          family: result.package.family,
+        },
+        version: {
+          version: result.version.version,
+          createdAt: result.version.createdAt,
+          changelog: result.version.changelog,
+          distTags: result.version.distTags ?? [],
+          files: result.version.files.map((file) => ({
+            path: file.path,
+            size: file.size,
+            sha256: file.sha256,
+            contentType: file.contentType,
+          })),
+          compatibility: result.version.compatibility ?? null,
+          capabilities: result.version.capabilities ?? null,
+          verification: result.version.verification ?? null,
+          sha256hash: result.version.sha256hash ?? null,
+          vtAnalysis: result.version.vtAnalysis ?? null,
+          llmAnalysis: result.version.llmAnalysis ?? null,
+          staticScan: result.version.staticScan ?? null,
+        },
       },
-      version: {
-        version: result.version.version,
-        createdAt: result.version.createdAt,
-        changelog: result.version.changelog,
-        distTags: result.version.distTags ?? [],
-        files: result.version.files.map((file) => ({
-          path: file.path,
-          size: file.size,
-          sha256: file.sha256,
-          contentType: file.contentType,
-        })),
-        compatibility: result.version.compatibility ?? null,
-        capabilities: result.version.capabilities ?? null,
-        verification: result.version.verification ?? null,
-        sha256hash: result.version.sha256hash ?? null,
-        vtAnalysis: result.version.vtAnalysis ?? null,
-        llmAnalysis: result.version.llmAnalysis ?? null,
-        staticScan: result.version.staticScan ?? null,
-      },
-    }, 200, rate.headers);
+      200,
+      rate.headers,
+    );
   }
 
   if (segments[1] === "file") {
@@ -1028,7 +1348,8 @@ export async function packagesGetRouterV1Handler(ctx: ActionCtx, request: Reques
       if (!version || version.softDeletedAt) return text("Version not found", 404, rate.headers);
       const file = resolveSkillFilePath(version, path);
       if (!file) return text("File not found", 404, rate.headers);
-      if (!("storageId" in file) || !file.storageId) return text("File not found", 404, rate.headers);
+      if (!("storageId" in file) || !file.storageId)
+        return text("File not found", 404, rate.headers);
       if (!isTextFile(file.path, file.contentType)) {
         return text("Binary files are not served inline", 415, rate.headers);
       }
@@ -1356,16 +1677,3 @@ async function handlePackagesTransferPost(
   return text("Not found", 404, headers);
 }
 
-export async function packagesPostRouterV1Handler(ctx: ActionCtx, request: Request) {
-  const rate = await applyRateLimit(ctx, request, "write");
-  if (!rate.ok) return rate.response;
-
-  const segments = getPathSegments(request, "/api/v1/packages/");
-  const action = segments[1] ?? "";
-
-  if (action === "transfer") {
-    return handlePackagesTransferPost(ctx, request, segments, rate.headers);
-  }
-
-  return text("Not found", 404, rate.headers);
-}

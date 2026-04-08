@@ -1,9 +1,12 @@
-import { Package } from 'lucide-react';
-import type { PackageCompatibility } from 'clawhub-schema';
-import { useRef, useState } from 'react';
-import { expandDroppedItems } from '../lib/uploadFiles';
-import { formatBytes } from '../routes/upload/-utils';
-import { formatPackageCompatibility } from '../lib/pluginPublishPrefill';
+import type { PackageCompatibility } from "clawhub-schema";
+import { Package } from "lucide-react";
+import { useRef, useState } from "react";
+import { formatPackageCompatibility } from "../lib/pluginPublishPrefill";
+import { expandDroppedItems } from "../lib/uploadFiles";
+import { formatBytes } from "../routes/upload/-utils";
+import { Badge } from "./ui/badge";
+import { Button } from "./ui/button";
+import { Card } from "./ui/card";
 
 export function PackageSourceChooser(props: {
   files: File[];
@@ -12,7 +15,7 @@ export function PackageSourceChooser(props: {
   normalizedPathSet: Set<string>;
   ignoredPaths: string[];
   detectedPrefillFields: string[];
-  family: 'code-plugin' | 'bundle-plugin';
+  family: "code-plugin" | "bundle-plugin";
   validationError: string | null;
   codePluginFieldIssues: string[];
   codePluginCompatibility: PackageCompatibility | null;
@@ -21,21 +24,21 @@ export function PackageSourceChooser(props: {
   const [isDragging, setIsDragging] = useState(false);
   const archiveInputRef = useRef<HTMLInputElement | null>(null);
   const directoryInputRef = useRef<HTMLInputElement | null>(null);
-  const isMetadataLocked = props.files.length === 0;
+  const isMetadataLocked = props.files.length === 0 || Boolean(props.validationError);
 
   const setDirectoryInputRef = (node: HTMLInputElement | null) => {
     directoryInputRef.current = node;
     if (node) {
-      node.setAttribute('webkitdirectory', '');
-      node.setAttribute('directory', '');
+      node.setAttribute("webkitdirectory", "");
+      node.setAttribute("directory", "");
     }
   };
 
   return (
-    <div className="card upload-panel">
+    <Card className="mb-5">
       <input
         ref={archiveInputRef}
-        className="upload-file-input"
+        className="hidden"
         type="file"
         multiple
         accept=".zip,.tgz,.tar.gz,application/zip,application/gzip,application/x-gzip,application/x-tar"
@@ -46,7 +49,7 @@ export function PackageSourceChooser(props: {
       />
       <input
         ref={setDirectoryInputRef}
-        className="upload-file-input"
+        className="hidden"
         type="file"
         multiple
         onChange={(event) => {
@@ -55,7 +58,11 @@ export function PackageSourceChooser(props: {
         }}
       />
       <div
-        className={`upload-dropzone${isDragging ? ' is-dragging' : ''}`}
+        className={`flex flex-col items-center gap-4 rounded-[var(--radius-md)] border-2 border-dashed p-8 text-center transition-colors ${
+          isDragging
+            ? "border-[color:var(--accent)] bg-[rgba(255,107,74,0.06)]"
+            : "border-[color:var(--line)] bg-[color:var(--surface-muted)]"
+        }`}
         onDragOver={(event) => {
           event.preventDefault();
           setIsDragging(true);
@@ -72,88 +79,93 @@ export function PackageSourceChooser(props: {
           })();
         }}
       >
-        <div className="plugin-dropzone-art" aria-hidden="true">
-          <Package size={28} />
+        <div
+          className="flex h-14 w-14 items-center justify-center rounded-full bg-[color:var(--surface)]"
+          aria-hidden="true"
+        >
+          <Package size={28} className="text-[color:var(--ink-soft)]" />
         </div>
-        <div className="upload-dropzone-copy">
-          <div className="upload-dropzone-title-row">
-            <strong>Upload plugin code first</strong>
-            <span className="upload-dropzone-count">
-              {props.files.length} files · {formatBytes(props.totalBytes)}
+        <div className="flex flex-col items-center gap-2">
+          <div className="flex flex-wrap items-center justify-center gap-2">
+            <strong className="text-[color:var(--ink)]">Upload plugin code first</strong>
+            <span className="text-xs text-[color:var(--ink-soft)]">
+              {props.files.length} files &middot; {formatBytes(props.totalBytes)}
             </span>
           </div>
-          <span className="upload-dropzone-hint">
+          <span className="max-w-md text-sm text-[color:var(--ink-soft)]">
             Drag a folder, zip, or tgz here. We inspect the package to unlock and prefill the rest
             of the form.
           </span>
-          <div className="plugin-dropzone-actions">
-            <button
-              className="btn upload-picker-btn"
-              type="button"
-              onClick={() => archiveInputRef.current?.click()}
-            >
+          <div className="flex gap-2 pt-2">
+            <Button variant="outline" size="sm" onClick={() => archiveInputRef.current?.click()}>
               Browse files
-            </button>
-            <button
-              className="btn upload-picker-btn plugin-dropzone-secondary"
-              type="button"
-              onClick={() => directoryInputRef.current?.click()}
-            >
+            </Button>
+            <Button variant="ghost" size="sm" onClick={() => directoryInputRef.current?.click()}>
               Choose folder
-            </button>
+            </Button>
           </div>
         </div>
       </div>
 
-      <div className={`plugin-upload-summary${isMetadataLocked ? '' : ' is-ready'}`}>
+      <div
+        className={`rounded-[var(--radius-sm)] border px-4 py-3 transition-colors ${
+          isMetadataLocked
+            ? "border-[color:var(--line)] bg-[color:var(--surface-muted)]"
+            : "border-emerald-300/40 bg-emerald-50 dark:border-emerald-500/30 dark:bg-emerald-950/30"
+        }`}
+      >
         {props.normalizedPaths.length === 0 ? (
-          <div className="stat">No plugin package selected yet.</div>
+          <div className="text-sm text-[color:var(--ink-soft)]">
+            No plugin package selected yet.
+          </div>
         ) : (
           <>
-            <div className="plugin-upload-summary-row">
-              <strong>Package detected</strong>
-              <span className="upload-dropzone-count">
-                {props.files.length} files · {formatBytes(props.totalBytes)}
+            <div className="flex items-center justify-between">
+              <strong className="text-sm text-[color:var(--ink)]">Package detected</strong>
+              <span className="text-xs text-[color:var(--ink-soft)]">
+                {props.files.length} files &middot; {formatBytes(props.totalBytes)}
               </span>
             </div>
-            <div className="plugin-upload-summary-copy">
+            <p className="mt-1 text-sm text-[color:var(--ink-soft)]">
               {props.detectedPrefillFields.length > 0
-                ? `Autofilled ${props.detectedPrefillFields.join(', ')}.`
-                : 'Package files were detected. Review and fill the release details below.'}
-            </div>
-            <div className="plugin-upload-summary-tags">
-              {props.normalizedPathSet.has('package.json') ? (
-                <span className="tag">Package manifest</span>
+                ? `Autofilled ${props.detectedPrefillFields.join(", ")}.`
+                : "Package files were detected. Review and fill the release details below."}
+            </p>
+            <div className="mt-2 flex flex-wrap gap-1.5">
+              {props.normalizedPathSet.has("package.json") ? <Badge>Package manifest</Badge> : null}
+              {props.normalizedPathSet.has("openclaw.plugin.json") ? (
+                <Badge>Plugin manifest</Badge>
               ) : null}
-              {props.normalizedPathSet.has('openclaw.plugin.json') ? (
-                <span className="tag">Plugin manifest</span>
+              {props.normalizedPathSet.has("openclaw.bundle.json") ? (
+                <Badge>Bundle manifest</Badge>
               ) : null}
-              {props.normalizedPathSet.has('openclaw.bundle.json') ? (
-                <span className="tag">Bundle manifest</span>
-              ) : null}
-              {props.normalizedPathSet.has('readme.md') || props.normalizedPathSet.has('readme.mdx') ? (
-                <span className="tag">README</span>
+              {props.normalizedPathSet.has("readme.md") ||
+              props.normalizedPathSet.has("readme.mdx") ? (
+                <Badge>README</Badge>
               ) : null}
               {props.ignoredPaths.length > 0 ? (
-                <span className="tag">Ignored {props.ignoredPaths.length} files</span>
+                <Badge>Ignored {props.ignoredPaths.length} files</Badge>
               ) : null}
             </div>
           </>
         )}
       </div>
-      {props.validationError ? <div className="tag tag-accent">{props.validationError}</div> : null}
-      {props.family === 'code-plugin' && props.codePluginFieldIssues.length > 0 ? (
-        <div className="tag tag-accent">
-          Missing required OpenClaw package metadata: {props.codePluginFieldIssues.join(', ')}. Add these
-          fields to <code>package.json</code> before publishing. See{' '}
-          <a href="/plugins/sdk-setup#package-metadata">Plugin Setup and Config</a>.
-        </div>
+      {props.validationError ? <Badge variant="accent">{props.validationError}</Badge> : null}
+      {props.family === "code-plugin" && props.codePluginFieldIssues.length > 0 ? (
+        <Badge variant="accent">
+          Missing required OpenClaw package metadata: {props.codePluginFieldIssues.join(", ")}. Add
+          these fields to <code>package.json</code> before publishing. See{" "}
+          <a href="/plugins/sdk-setup#package-metadata" className="underline">
+            Plugin Setup and Config
+          </a>
+          .
+        </Badge>
       ) : null}
-      {props.family === 'code-plugin' && props.codePluginCompatibility ? (
-        <div className="plugin-upload-summary-copy">
+      {props.family === "code-plugin" && props.codePluginCompatibility ? (
+        <p className="text-sm text-[color:var(--ink-soft)]">
           Compatibility: {formatPackageCompatibility(props.codePluginCompatibility)}
-        </div>
+        </p>
       ) : null}
-    </div>
+    </Card>
   );
 }

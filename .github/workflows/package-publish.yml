@@ -45,8 +45,20 @@ on:
         required: false
         type: string
         default: latest
+      source_repo:
+        description: Optional source repo override for local-folder publishes.
+        required: false
+        type: string
+      source_commit:
+        description: Optional source commit override for local-folder publishes.
+        required: false
+        type: string
+      source_ref:
+        description: Optional source ref override for local-folder publishes.
+        required: false
+        type: string
       clawhub_version:
-        description: CLI version to run.
+        description: Legacy npm CLI version input. Kept for compatibility; the workflow now runs the checked-out source.
         required: false
         type: string
         default: latest
@@ -67,32 +79,115 @@ jobs:
     timeout-minutes: 15
     permissions:
       contents: read
+      id-token: write
     outputs:
       publish_json: ${{ steps.capture.outputs.publish_json }}
       release_id: ${{ steps.capture.outputs.release_id }}
     steps:
       - uses: actions/checkout@v6
+        with:
+          ref: ${{ github.sha }}
 
       - uses: oven-sh/setup-bun@e3914758a49697077f7bcd190d36582a61667aad
         with:
           bun-version: 1.3.10
 
+      - name: Resolve ClawHub workflow source
+        id: clawhub_source
+        run: |
+          python3 - <<'PY'
+          import base64
+          import json
+          import os
+          from pathlib import Path
+          from urllib.request import Request, urlopen
+
+          request_token = os.environ.get("ACTIONS_ID_TOKEN_REQUEST_TOKEN", "").strip()
+          request_url = os.environ.get("ACTIONS_ID_TOKEN_REQUEST_URL", "").strip()
+          if not request_token or not request_url:
+              raise SystemExit("GitHub OIDC token request env vars are missing; id-token: write is required.")
+
+          audience = "clawhub-workflow-source"
+          joiner = "&" if "?" in request_url else "?"
+          token_url = f"{request_url}{joiner}audience={audience}"
+          request = Request(
+              token_url,
+              headers={"Authorization": f"Bearer {request_token}"},
+          )
+          with urlopen(request) as response:
+              payload = json.load(response)
+
+          token = str(payload.get("value", "")).strip()
+          if not token:
+              raise SystemExit("GitHub OIDC token response did not include a token value.")
+
+          try:
+              encoded_payload = token.split(".")[1]
+          except IndexError as exc:
+              raise SystemExit("GitHub OIDC token was not a valid JWT.") from exc
+          padding = "=" * (-len(encoded_payload) % 4)
+          claims = json.loads(
+              base64.urlsafe_b64decode(encoded_payload + padding).decode("utf-8")
+          )
+
+          workflow_ref = str(claims.get("job_workflow_ref", "")).strip()
+          workflow_sha = str(claims.get("job_workflow_sha", "")).strip()
+          repo, marker, _ = workflow_ref.partition("/.github/workflows/")
+          if not marker or not repo or not workflow_sha:
+              raise SystemExit(
+                  "Unable to resolve reusable workflow source from GitHub OIDC claims: "
+                  f"job_workflow_ref={workflow_ref!r} job_workflow_sha={workflow_sha!r}"
+              )
+
+          output_path = Path(os.environ["GITHUB_OUTPUT"])
+          with output_path.open("a", encoding="utf-8") as fh:
+              fh.write(f"repository={repo}\n")
+              fh.write(f"ref={workflow_sha}\n")
+          PY
+
+      - uses: actions/checkout@v6
+        with:
+          repository: ${{ steps.clawhub_source.outputs.repository }}
+          ref: ${{ steps.clawhub_source.outputs.ref }}
+          path: clawhub-source
+
+      - name: Install ClawHub CLI dependencies
+        working-directory: clawhub-source
+        run: bun install --frozen-lockfile
+
       - name: Validate publish mode inputs
         env:
           DRY_RUN: ${{ inputs.dry_run }}
+          JSON_MODE: ${{ inputs.json }}
           CLAWHUB_TOKEN: ${{ secrets.clawhub_token }}
+          GITHUB_EVENT_NAME: ${{ github.event_name }}
         run: |
-          if [[ "$DRY_RUN" != "true" && -z "$CLAWHUB_TOKEN" ]]; then
-            echo "::error::secrets.clawhub_token is required when dry_run is false."
-            exit 1
+          if [[ "$JSON_MODE" != "true" ]]; then
+            echo "::warning::This reusable workflow always emits JSON output; forcing --json for downstream parsing."
           fi
+          if [[ "$DRY_RUN" == "true" ]]; then
+            exit 0
+          fi
+          if [[ -n "$CLAWHUB_TOKEN" ]]; then
+            exit 0
+          fi
+          if [[ "$GITHUB_EVENT_NAME" == "workflow_dispatch" && -n "${ACTIONS_ID_TOKEN_REQUEST_URL:-}" && -n "${ACTIONS_ID_TOKEN_REQUEST_TOKEN:-}" ]]; then
+            echo "No ClawHub token provided; publish will rely on GitHub OIDC trusted publishing."
+            exit 0
+          fi
+          echo "::error::Real publishes need secrets.clawhub_token, or GitHub OIDC on workflow_dispatch runs (permissions.id-token=write)."
+          exit 1
 
       - name: Write ClawHub config
-        if: secrets.clawhub_token != ''
         env:
           CLAWHUB_TOKEN: ${{ secrets.clawhub_token }}
           CLAWHUB_REGISTRY: ${{ inputs.registry }}
         run: |
+          if [[ -z "$CLAWHUB_TOKEN" ]]; then
+            echo "No ClawHub token provided, skipping config file creation."
+            exit 0
+          fi
+
           python3 - <<'PY'
           import json
           import os
@@ -119,13 +214,19 @@ jobs:
           INPUT_SOURCE: ${{ inputs.source }}
           INPUT_REF: ${{ inputs.ref }}
           INPUT_DRY_RUN: ${{ inputs.dry_run }}
-          INPUT_JSON: ${{ inputs.json }}
           INPUT_OWNER: ${{ inputs.owner }}
           INPUT_VERSION: ${{ inputs.version }}
           INPUT_TAGS: ${{ inputs.tags }}
+          INPUT_SOURCE_REPO: ${{ inputs.source_repo }}
+          INPUT_SOURCE_COMMIT: ${{ inputs.source_commit }}
+          INPUT_SOURCE_REF: ${{ inputs.source_ref }}
           INPUT_SITE: ${{ inputs.site }}
           INPUT_REGISTRY: ${{ inputs.registry }}
-          INPUT_CLAWHUB_VERSION: ${{ inputs.clawhub_version }}
+          CLAWHUB_TOKEN: ${{ secrets.clawhub_token }}
+          GITHUB_EVENT_NAME: ${{ github.event_name }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+          GITHUB_REF: ${{ github.ref }}
+          GITHUB_SHA: ${{ github.sha }}
         run: |
           python3 - <<'PY'
           import json
@@ -136,13 +237,28 @@ jobs:
           source = os.environ["INPUT_SOURCE"].strip()
           if not source:
               source = os.environ["GITHUB_REPOSITORY"]
+          source_is_current_repo = source == os.environ["GITHUB_REPOSITORY"]
           ref = os.environ["INPUT_REF"].strip()
-          if ref and "@" not in source and not source.startswith("http"):
+          if not ref and source_is_current_repo:
+              ref = os.environ["GITHUB_SHA"].strip()
+          is_local_source = source.startswith(".") or source.startswith("/") or Path(source).exists()
+          if ref and "@" not in source and not source.startswith("http") and not is_local_source:
               source = f"{source}@{ref}"
 
+          cli_entry = (
+              Path(os.environ["GITHUB_WORKSPACE"])
+              / "clawhub-source"
+              / "packages"
+              / "clawhub"
+              / "src"
+              / "cli.ts"
+          )
+          if not cli_entry.exists():
+              raise SystemExit(f"Missing ClawHub CLI entrypoint at {cli_entry}")
+
           cmd = [
-              "bunx",
-              f"clawhub@{os.environ['INPUT_CLAWHUB_VERSION'].strip() or 'latest'}",
+              "bun",
+              str(cli_entry),
               "package",
               "publish",
               source,
@@ -154,8 +270,7 @@ jobs:
 
           if os.environ["INPUT_DRY_RUN"] == "true":
               cmd.append("--dry-run")
-          if os.environ["INPUT_JSON"] == "true":
-              cmd.append("--json")
+          cmd.append("--json")
 
           owner = os.environ["INPUT_OWNER"].strip()
           version = os.environ["INPUT_VERSION"].strip()
@@ -166,6 +281,24 @@ jobs:
               cmd += ["--version", version]
           if tags:
               cmd += ["--tags", tags]
+          source_repo = os.environ["INPUT_SOURCE_REPO"].strip()
+          source_commit = os.environ["INPUT_SOURCE_COMMIT"].strip()
+          source_ref = os.environ["INPUT_SOURCE_REF"].strip()
+          if source_repo:
+              cmd += ["--source-repo", source_repo]
+          if source_commit:
+              cmd += ["--source-commit", source_commit]
+          if source_ref:
+              cmd += ["--source-ref", source_ref]
+          elif source_is_current_repo:
+              github_ref = os.environ["GITHUB_REF"].strip()
+              if github_ref:
+                  cmd += ["--source-ref", github_ref]
+          if os.environ["INPUT_DRY_RUN"] != "true" and os.environ["CLAWHUB_TOKEN"].strip():
+              cmd += [
+                  "--manual-override-reason",
+                  f"GitHub Actions {os.environ['GITHUB_EVENT_NAME'].strip()} publish via CLAWHUB_TOKEN",
+              ]
 
           path = Path(os.environ["RUNNER_TEMP"]) / "clawhub-package-publish-command.sh"
           shell_line = " ".join(shlex.quote(part) for part in cmd)
@@ -176,6 +309,7 @@ jobs:
 
       - name: Run package publish
         run: |
+          set -euo pipefail
           "$RUNNER_TEMP/clawhub-package-publish-command.sh" | tee "$RUNNER_TEMP/package-publish.json"
 
       - name: Capture workflow outputs

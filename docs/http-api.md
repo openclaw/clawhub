@@ -237,6 +237,9 @@ Notes:
 
 - If neither `version` nor `tag` is provided, uses the latest version.
 - Includes normalized verification status plus scanner-specific details.
+- `security.capabilityTags` includes deterministic capability/risk labels such as
+  `crypto`, `requires-wallet`, `can-make-purchases`, `can-sign-transactions`,
+  `requires-oauth-token`, and `posts-externally` when detected.
 - `security.hasScanResult` is `true` only when a scanner produced a definitive verdict (`clean`, `suspicious`, or `malicious`).
 - `moderation` is a current skill-level moderation snapshot derived from the latest version.
 - When querying a historical version, check `moderation.matchesRequestedVersion` and `moderation.sourceVersion` before treating `moderation` and `security` as the same version context.

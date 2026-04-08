@@ -4,6 +4,7 @@ import type {
   PackageVerificationSummary,
 } from "clawhub-schema";
 import { ApiRoutes } from "clawhub-schema/routes";
+import { hasOwnProperty } from "./hasOwnProperty";
 import { getRequiredRuntimeEnv, getRuntimeEnv } from "./runtimeEnv";
 
 export type PackageListItem = {
@@ -117,6 +118,34 @@ type PluginCatalogResult = {
   nextCursor: string | null;
 };
 
+type PackageCatalogBrowseResponse = {
+  items: PackageListItem[];
+  nextCursor: string | null;
+};
+
+type PackageApiErrorOptions = {
+  status: number;
+  retryAfterSeconds?: number | null;
+};
+
+export class PackageApiError extends Error {
+  status: number;
+  retryAfterSeconds: number | null;
+
+  constructor(message: string, options: PackageApiErrorOptions) {
+    super(message);
+    this.name = options.status === 429 ? "PackageApiRateLimitError" : "PackageApiError";
+    this.status = options.status;
+    this.retryAfterSeconds = options.retryAfterSeconds ?? null;
+  }
+}
+
+export function isRateLimitedPackageApiError(
+  error: unknown,
+): error is PackageApiError & { status: 429 } {
+  return error instanceof PackageApiError && error.status === 429;
+}
+
 function normalizeApiPath(path: string) {
   return path.startsWith("/") ? path : `/${path}`;
 }
@@ -124,23 +153,20 @@ function normalizeApiPath(path: string) {
 async function packageApiUrl(path: string) {
   const normalizedPath = normalizeApiPath(path);
   if (typeof window !== "undefined") {
+    // In production, Vercel rewrites /api/* to the Convex site, so relative
+    // paths work. In local dev, Nitro intercepts the request before Vite's
+    // proxy, so we must use the Convex site URL directly.
+    const convexSiteUrl = getRuntimeEnv("VITE_CONVEX_SITE_URL");
+    if (convexSiteUrl && window.location.hostname === "localhost") {
+      return new URL(normalizedPath, convexSiteUrl);
+    }
     return new URL(normalizedPath, window.location.origin);
   }
-  if (import.meta.env.SSR) {
-    try {
-      const serverRuntimeModule = "@tanstack/react-start/server";
-      const { getRequestUrl } = (await import(
-        /* @vite-ignore */ serverRuntimeModule
-      )) as {
-        getRequestUrl: () => URL;
-      };
-      return new URL(normalizedPath, getRequestUrl());
-    } catch {
-      // Fall through to env-based base URL when no request context exists.
-    }
-  }
-  const base =
-    getRuntimeEnv("VITE_CONVEX_SITE_URL") ?? getRequiredRuntimeEnv("VITE_CONVEX_URL");
+  // On the server (SSR / loader), always use the Convex site URL directly.
+  // In production, Vercel rewrites /api/* but SSR loaders run server-side
+  // where the rewrite doesn't apply. Using getRequestUrl() would loop back
+  // into TanStack Start / Nitro, which rejects non-HTML requests.
+  const base = getRuntimeEnv("VITE_CONVEX_SITE_URL") ?? getRequiredRuntimeEnv("VITE_CONVEX_URL");
   return new URL(normalizedPath, base);
 }
 
@@ -154,9 +180,7 @@ async function getForwardedHeaders() {
   if (typeof window !== "undefined" || !import.meta.env.SSR) return {};
   try {
     const serverRuntimeModule = "@tanstack/react-start/server";
-    const { getRequestHeaders } = (await import(
-      /* @vite-ignore */ serverRuntimeModule
-    )) as {
+    const { getRequestHeaders } = (await import(/* @vite-ignore */ serverRuntimeModule)) as {
       getRequestHeaders: () => Headers;
     };
     const requestHeaders = getRequestHeaders();
@@ -183,9 +207,14 @@ async function getForwardedHeaders() {
 
 async function packageFetch(url: URL, accept: string) {
   const forwarded = await getForwardedHeaders();
+  const isSameOrigin = typeof window !== "undefined" && url.origin === window.location.origin;
   return await fetch(url.toString(), {
     method: "GET",
-    credentials: "include",
+    // Only send credentials for same-origin requests (production Vercel
+    // rewrite). Cross-origin requests to the Convex site URL don't need
+    // cookies, and `credentials: "include"` is rejected when the server
+    // responds with `Access-Control-Allow-Origin: *`.
+    credentials: isSameOrigin ? "include" : "omit",
     headers: {
       Accept: accept,
       ...forwarded,
@@ -193,9 +222,28 @@ async function packageFetch(url: URL, accept: string) {
   });
 }
 
+function parseRetryAfterSeconds(value: string | null): number | null {
+  if (!value) return null;
+  const asSeconds = Number(value);
+  if (Number.isFinite(asSeconds) && asSeconds >= 0) {
+    return Math.ceil(asSeconds);
+  }
+  const parsedDateMs = Date.parse(value);
+  if (Number.isNaN(parsedDateMs)) return null;
+  return Math.max(0, Math.ceil((parsedDateMs - Date.now()) / 1000));
+}
+
+async function createPackageApiError(response: Response) {
+  const body = (await response.text()).trim();
+  return new PackageApiError(body || `Request failed with status ${response.status}`, {
+    status: response.status,
+    retryAfterSeconds: parseRetryAfterSeconds(response.headers.get("Retry-After")),
+  });
+}
+
 async function fetchJson<T>(url: URL): Promise<T> {
   const response = await packageFetch(url, "application/json");
-  if (!response.ok) throw new Error(await response.text());
+  if (!response.ok) throw await createPackageApiError(response);
   return (await response.json()) as T;
 }
 
@@ -260,9 +308,17 @@ export async function fetchPluginCatalog(params: {
       executesCode: params.executesCode,
       limit: params.limit,
     });
+    if (hasOwnProperty(response, "results") && Array.isArray(response.results)) {
+      return {
+        items: response.results.map((entry) => entry.package),
+        nextCursor: null,
+      };
+    }
+
+    const browseResponse = response as PackageCatalogBrowseResponse;
     return {
-      items: "results" in response ? response.results.map((entry) => entry.package) : response.items,
-      nextCursor: "results" in response ? null : response.nextCursor,
+      items: browseResponse.items,
+      nextCursor: browseResponse.nextCursor,
     };
   }
 
@@ -276,7 +332,9 @@ export async function fetchPluginCatalog(params: {
     if (typeof params.executesCode === "boolean") {
       url.searchParams.set("executesCode", String(params.executesCode));
     }
-    const response = await fetchJson<{ results: Array<{ score: number; package: PackageListItem }> }>(url);
+    const response = await fetchJson<{
+      results: Array<{ score: number; package: PackageListItem }>;
+    }>(url);
     return {
       items: response.results.map((entry) => entry.package),
       nextCursor: null,
@@ -304,7 +362,7 @@ export async function fetchPackageDetail(name: string) {
       owner: null,
     } satisfies PackageDetailResponse;
   }
-  if (!response.ok) throw new Error(await response.text());
+  if (!response.ok) throw await createPackageApiError(response);
   return (await response.json()) as PackageDetailResponse;
 }
 
@@ -322,5 +380,5 @@ export async function fetchPackageReadme(name: string, version?: string | null) 
   const response = await packageFetch(url, "text/plain");
   if (response.ok) return await response.text();
   if (response.status === 403 || response.status === 423 || response.status === 404) return null;
-  throw new Error(await response.text());
+  throw await createPackageApiError(response);
 }

@@ -150,7 +150,10 @@ describe("skillZip", () => {
       ]);
       const unzipped = unzipSync(zip);
 
-      expect(Object.keys(unzipped).sort()).toEqual(["package/dist/index.js", "package/package.json"]);
+      expect(Object.keys(unzipped).sort()).toEqual([
+        "package/dist/index.js",
+        "package/package.json",
+      ]);
       expect(unzipped["_meta.json"]).toBeUndefined();
     });
   });

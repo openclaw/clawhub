@@ -7,7 +7,7 @@ read_when:
 
 # CLI
 
-CLI package: `packages/clawdhub/` (published as `clawhub`, bin: `clawhub`).
+CLI package: `packages/clawhub/` (published as `clawhub`, bin: `clawhub`).
 
 From this repo you can run it via the wrapper script:
 
@@ -224,6 +224,8 @@ Stores your API token + cached registry URL.
 - Metadata is auto-detected from `package.json`, `openclaw.plugin.json`, and `openclaw.bundle.json`.
 - For GitHub sources, source attribution is auto-populated from the repo, resolved commit, ref, and subpath.
 - For local folders, source attribution is auto-detected from local git when the origin remote points at GitHub.
+- External code plugins must declare `openclaw.compat.pluginApi` and `openclaw.build.openclawVersion` explicitly.
+  Top-level `package.json.version` is not used as a fallback for publish validation.
 - `--dry-run` previews the resolved publish payload without uploading.
 - `--json` emits machine-readable output for CI.
 - `--owner <handle>` lets admins publish under a shared owner account while keeping their own token as the actor.
@@ -233,7 +235,7 @@ Stores your API token + cached registry URL.
 #### GitHub Actions
 
 ClawHub also ships an official reusable workflow at
-[`/.github/workflows/package-publish.yml`](/Users/tengjizhang/.codex/worktrees/7d03/clawhub/.github/workflows/package-publish.yml)
+[`/.github/workflows/package-publish.yml`](../.github/workflows/package-publish.yml)
 for plugin repos.
 
 Typical caller setup:
@@ -257,6 +259,9 @@ jobs:
 
   publish:
     if: github.event_name == 'workflow_dispatch' || startsWith(github.ref, 'refs/tags/')
+    permissions:
+      contents: read
+      id-token: write
     uses: openclaw/clawhub/.github/workflows/package-publish.yml@main
     with:
       dry_run: false
@@ -269,6 +274,8 @@ Notes:
 - The reusable workflow defaults `source` to the caller repo.
 - `pull_request` should use `dry_run: true` so CI stays non-polluting.
 - Real publishes should be limited to trusted events such as `workflow_dispatch` or tag pushes.
+- Trusted publishing without a secret only works on `workflow_dispatch`; tag pushes still need `clawhub_token`.
+- Keep `clawhub_token` available for first publish, untrusted packages, or break-glass publishes.
 - The workflow uploads the JSON result as an artifact and exposes it as workflow outputs.
 
 ### `sync`

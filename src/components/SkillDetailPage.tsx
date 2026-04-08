@@ -2,12 +2,17 @@ import { useNavigate } from "@tanstack/react-router";
 import type { ClawdisSkillMetadata } from "clawhub-schema";
 import { useAction, useMutation, useQuery } from "convex/react";
 import { useEffect, useMemo, useState } from "react";
+import { toast } from "sonner";
 import { api } from "../../convex/_generated/api";
 import type { Doc, Id } from "../../convex/_generated/dataModel";
 import { canManageSkill, isModerator } from "../lib/roles";
+import { hasOwnProperty } from "../lib/hasOwnProperty";
 import type { SkillBySlugResult, SkillPageInitialData } from "../lib/skillPage";
 import { useAuthStatus } from "../lib/useAuthStatus";
 import { ClientOnly } from "./ClientOnly";
+import { EmptyState } from "./EmptyState";
+import { Container } from "./layout/Container";
+import { SkillDetailSkeleton } from "./skeletons/SkillDetailSkeleton";
 import { SkillCommentsPanel } from "./SkillCommentsPanel";
 import { SkillDetailTabs } from "./SkillDetailTabs";
 import {
@@ -20,6 +25,8 @@ import {
 import { SkillHeader } from "./SkillHeader";
 import { SkillOwnershipPanel } from "./SkillOwnershipPanel";
 import { SkillReportDialog } from "./SkillReportDialog";
+import { Card } from "./ui/card";
+import { Skeleton } from "./ui/skeleton";
 
 type SkillDetailPageProps = {
   slug: string;
@@ -31,13 +38,11 @@ type SkillDetailPageProps = {
 type SkillFile = Doc<"skillVersions">["files"][number];
 
 function formatReportError(error: unknown) {
-  if (error && typeof error === "object" && "data" in error) {
+  if (hasOwnProperty(error, "data")) {
     const data = (error as { data?: unknown }).data;
     if (typeof data === "string" && data.trim()) return data.trim();
     if (
-      data &&
-      typeof data === "object" &&
-      "message" in data &&
+      hasOwnProperty(data, "message") &&
       typeof (data as { message?: unknown }).message === "string"
     ) {
       const message = (data as { message?: string }).message?.trim();
@@ -192,13 +197,15 @@ export function SkillDetailPage({
       : isHidden
         ? "Hidden"
         : null;
-  const staffModerationNote = staffVisibilityTag
-    ? isAutoHidden
-      ? "Auto-hidden after 4+ unique reports."
-      : isRemoved
-        ? "Removed from public view."
-        : "Hidden from public view."
-    : null;
+  const staffModerationNote =
+    staffSkill?.moderationNotes?.trim() ||
+    (staffVisibilityTag
+      ? isAutoHidden
+        ? "Auto-hidden after 4+ unique reports."
+        : isRemoved
+          ? "Removed from public view."
+          : "Hidden from public view."
+      : null);
 
   const versionById = new Map<Id<"skillVersions">, Doc<"skillVersions">>(
     (diffVersions ?? versions ?? []).map((version) => [version._id, version]),
@@ -292,10 +299,13 @@ export function SkillDetailPage({
 
   const deleteTag = (tag: string) => {
     if (!skill) return;
-    if (!window.confirm(`Delete tag "${tag}"?`)) return;
-    void deleteTags({
-      skillId: skill._id,
-      tags: [tag],
+    toast(`Delete tag "${tag}"?`, {
+      action: {
+        label: "Delete",
+        onClick: () => {
+          void deleteTags({ skillId: skill._id, tags: [tag] });
+        },
+      },
     });
   };
 
@@ -314,9 +324,9 @@ export function SkillDetailPage({
       const submission = await reportSkill({ skillId: skill._id, reason: trimmedReason });
       closeReportDialog();
       if (submission.reported) {
-        window.alert("Thanks — your report has been submitted.");
+        toast.success("Thanks — your report has been submitted.");
       } else {
-        window.alert("You have already reported this skill.");
+        toast.info("You have already reported this skill.");
       }
     } catch (error) {
       console.error("Failed to report skill", error);
@@ -326,19 +336,19 @@ export function SkillDetailPage({
   };
 
   if (isLoadingSkill || wantsCanonicalRedirect) {
-    return (
-      <main className="section">
-        <div className="card">
-          <div className="loading-indicator">Loading skill…</div>
-        </div>
-      </main>
-    );
+    return <SkillDetailSkeleton />;
   }
 
   if (result === null || !skill) {
     return (
-      <main className="section">
-        <div className="card">Skill not found.</div>
+      <main className="py-10">
+        <Container>
+          <EmptyState
+            title="Skill not found"
+            description="The skill you're looking for doesn't exist or may have been removed."
+            action={{ label: "Browse skills", href: "/skills" }}
+          />
+        </Container>
       </main>
     );
   }
@@ -346,131 +356,128 @@ export function SkillDetailPage({
   const tagEntries = Object.entries(skill.tags ?? {}) as Array<[string, Id<"skillVersions">]>;
 
   return (
-    <main className="section">
-      <div className="skill-detail-stack">
-        <SkillHeader
-          skill={skill}
-          owner={owner}
-          ownerHandle={ownerHandle}
-          latestVersion={latestVersion}
-          modInfo={modInfo}
-          canManage={canManage}
-          isAuthenticated={isAuthenticated}
-          isStaff={isStaff}
-          isStarred={isStarred}
-          onToggleStar={() => void toggleStar({ skillId: skill._id })}
-          onOpenReport={openReportDialog}
-          forkOf={forkOf}
-          forkOfLabel={forkOfLabel}
-          forkOfHref={forkOfHref}
-          forkOfOwnerHandle={forkOfOwnerHandle}
-          canonical={canonical}
-          canonicalHref={canonicalHref}
-          canonicalOwnerHandle={canonicalOwnerHandle}
-          staffModerationNote={staffModerationNote}
-          staffVisibilityTag={staffVisibilityTag}
-          isAutoHidden={isAutoHidden}
-          isRemoved={isRemoved}
-          nixPlugin={nixPlugin}
-          hasPluginBundle={hasPluginBundle}
-          configRequirements={configRequirements}
-          cliHelp={cliHelp}
-          tagEntries={tagEntries}
-          versionById={versionById}
-          tagName={tagName}
-          onTagNameChange={setTagName}
-          tagVersionId={tagVersionId}
-          onTagVersionChange={setTagVersionId}
-          onTagSubmit={submitTag}
-          onTagDelete={deleteTag}
-          tagVersions={versions ?? []}
-          clawdis={clawdis}
-          osLabels={osLabels}
-        />
-
-        {isOwner && skill ? (
-          <SkillOwnershipPanel
-            skillId={skill._id}
-            slug={skill.slug}
+    <main className="py-10">
+      <Container>
+        <div className="flex flex-col gap-6">
+          <SkillHeader
+            skill={skill}
+            owner={owner}
             ownerHandle={ownerHandle}
-            ownerId={owner?._id ?? null}
-            ownedSkills={(ownedSkills ?? []).filter((entry) => entry._id !== skill._id)}
-          />
-        ) : null}
-
-        {nixSnippet ? (
-          <div className="card">
-            <h2 className="section-title" style={{ fontSize: "1.2rem", margin: 0 }}>
-              Install via Nix
-            </h2>
-            <p className="section-subtitle" style={{ margin: 0 }}>
-              {nixSystems.length ? `Systems: ${nixSystems.join(", ")}` : "nix-clawdbot"}
-            </p>
-            <pre className="hero-install-code" style={{ marginTop: 12 }}>
-              {nixSnippet}
-            </pre>
-          </div>
-        ) : null}
-
-        {configExample ? (
-          <div className="card">
-            <h2 className="section-title" style={{ fontSize: "1.2rem", margin: 0 }}>
-              Config example
-            </h2>
-            <p className="section-subtitle" style={{ margin: 0 }}>
-              Starter config for this plugin bundle.
-            </p>
-            <pre className="hero-install-code" style={{ marginTop: 12 }}>
-              {configExample}
-            </pre>
-          </div>
-        ) : null}
-
-        <SkillDetailTabs
-          activeTab={activeTab}
-          setActiveTab={setActiveTab}
-          onCompareIntent={() => setShouldPrefetchCompare(true)}
-          readmeContent={readmeContent}
-          readmeError={readmeError}
-          latestFiles={latestFiles}
-          latestVersionId={latestVersion?._id ?? null}
-          skill={skill as Doc<"skills">}
-          diffVersions={diffVersions}
-          versions={versions}
-          nixPlugin={Boolean(nixPlugin)}
-          suppressVersionScanResults={suppressVersionScanResults}
-          scanResultsSuppressedMessage={scanResultsSuppressedMessage}
-        />
-
-        <ClientOnly
-          fallback={
-            <div className="card">
-              <h2 className="section-title" style={{ fontSize: "1.2rem", margin: 0 }}>
-                Comments
-              </h2>
-              <p className="section-subtitle" style={{ marginTop: 12, marginBottom: 0 }}>
-                Loading comments…
-              </p>
-            </div>
-          }
-        >
-          <SkillCommentsPanel
-            skillId={skill._id}
+            latestVersion={latestVersion}
+            modInfo={modInfo}
+            canManage={canManage}
             isAuthenticated={isAuthenticated}
-            me={me ?? null}
+            isStaff={isStaff}
+            isStarred={isStarred}
+            onToggleStar={() => void toggleStar({ skillId: skill._id })}
+            onOpenReport={openReportDialog}
+            forkOf={forkOf}
+            forkOfLabel={forkOfLabel}
+            forkOfHref={forkOfHref}
+            forkOfOwnerHandle={forkOfOwnerHandle}
+            canonical={canonical}
+            canonicalHref={canonicalHref}
+            canonicalOwnerHandle={canonicalOwnerHandle}
+            staffModerationNote={staffModerationNote}
+            staffVisibilityTag={staffVisibilityTag}
+            isAutoHidden={isAutoHidden}
+            isRemoved={isRemoved}
+            nixPlugin={nixPlugin}
+            hasPluginBundle={hasPluginBundle}
+            configRequirements={configRequirements}
+            cliHelp={cliHelp}
+            tagEntries={tagEntries}
+            versionById={versionById}
+            tagName={tagName}
+            onTagNameChange={setTagName}
+            tagVersionId={tagVersionId}
+            onTagVersionChange={setTagVersionId}
+            onTagSubmit={submitTag}
+            onTagDelete={deleteTag}
+            tagVersions={versions ?? []}
+            clawdis={clawdis}
+            osLabels={osLabels}
           />
-        </ClientOnly>
-      </div>
 
-      <SkillReportDialog
-        isOpen={isAuthenticated && isReportDialogOpen}
-        isSubmitting={isSubmittingReport}
-        reportReason={reportReason}
-        reportError={reportError}
-        onReasonChange={setReportReason}
-        onCancel={closeReportDialog}
-        onSubmit={() => void submitReport()}
-      />
+          {isOwner && skill ? (
+            <SkillOwnershipPanel
+              skillId={skill._id}
+              slug={skill.slug}
+              ownerHandle={ownerHandle}
+              ownerId={owner?._id ?? null}
+              ownedSkills={(ownedSkills ?? []).filter((entry) => entry._id !== skill._id)}
+            />
+          ) : null}
+
+          {nixSnippet ? (
+            <Card>
+              <h2 className="font-display text-lg font-bold text-[color:var(--ink)]">
+                Install via Nix
+              </h2>
+              <p className="text-sm text-[color:var(--ink-soft)]">
+                {nixSystems.length ? `Systems: ${nixSystems.join(", ")}` : "nix-clawdbot"}
+              </p>
+              <pre className="hero-install-code mt-3">{nixSnippet}</pre>
+            </Card>
+          ) : null}
+
+          {configExample ? (
+            <Card>
+              <h2 className="font-display text-lg font-bold text-[color:var(--ink)]">
+                Config example
+              </h2>
+              <p className="text-sm text-[color:var(--ink-soft)]">
+                Starter config for this plugin bundle.
+              </p>
+              <pre className="hero-install-code mt-3">{configExample}</pre>
+            </Card>
+          ) : null}
+
+          <SkillDetailTabs
+            activeTab={activeTab}
+            setActiveTab={setActiveTab}
+            onCompareIntent={() => setShouldPrefetchCompare(true)}
+            readmeContent={readmeContent}
+            readmeError={readmeError}
+            latestFiles={latestFiles}
+            latestVersionId={latestVersion?._id ?? null}
+            skill={skill as Doc<"skills">}
+            diffVersions={diffVersions}
+            versions={versions}
+            nixPlugin={Boolean(nixPlugin)}
+            suppressVersionScanResults={suppressVersionScanResults}
+            scanResultsSuppressedMessage={scanResultsSuppressedMessage}
+          />
+
+          <ClientOnly
+            fallback={
+              <Card>
+                <h2 className="font-display text-lg font-bold text-[color:var(--ink)]">Comments</h2>
+                <div className="flex flex-col gap-3 pt-2">
+                  <Skeleton className="h-4 w-48" />
+                  <Skeleton className="h-20 w-full" />
+                </div>
+              </Card>
+            }
+          >
+            <SkillCommentsPanel
+              skillId={skill._id}
+              isAuthenticated={isAuthenticated}
+              me={me ?? null}
+            />
+          </ClientOnly>
+        </div>
+
+        <SkillReportDialog
+          isOpen={isAuthenticated && isReportDialogOpen}
+          isSubmitting={isSubmittingReport}
+          reportReason={reportReason}
+          reportError={reportError}
+          onReasonChange={setReportReason}
+          onCancel={closeReportDialog}
+          onSubmit={() => void submitReport()}
+        />
+      </Container>
     </main>
   );
 }

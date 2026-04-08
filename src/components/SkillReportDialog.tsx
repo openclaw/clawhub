@@ -1,3 +1,14 @@
+import { Button } from "./ui/button";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "./ui/dialog";
+import { Textarea } from "./ui/textarea";
+
 type SkillReportDialogProps = {
   isOpen: boolean;
   isSubmitting: boolean;
@@ -17,51 +28,58 @@ export function SkillReportDialog({
   onCancel,
   onSubmit,
 }: SkillReportDialogProps) {
-  if (!isOpen) return null;
-
   return (
-    <div className="report-dialog-backdrop">
-      <div className="report-dialog" role="dialog" aria-modal="true" aria-labelledby="report-title">
-        <h2 id="report-title" className="section-title" style={{ margin: 0, fontSize: "1.1rem" }}>
-          Report skill
-        </h2>
-        <p className="section-subtitle" style={{ margin: 0 }}>
-          Describe the issue so moderators can review it quickly.
-        </p>
+    <Dialog
+      open={isOpen}
+      onOpenChange={(open) => {
+        if (!open && !isSubmitting) onCancel();
+      }}
+    >
+      <DialogContent>
+        <DialogHeader>
+          <DialogTitle>Report skill</DialogTitle>
+          <DialogDescription>
+            Describe the issue so moderators can review it quickly.
+          </DialogDescription>
+        </DialogHeader>
         <form
-          className="report-dialog-form"
+          className="flex flex-col gap-3"
           onSubmit={(event) => {
             event.preventDefault();
             onSubmit();
           }}
         >
-          <textarea
-            className="report-dialog-textarea"
+          <Textarea
             aria-label="Report reason"
             placeholder="What should moderators know?"
             value={reportReason}
             onChange={(event) => onReasonChange(event.target.value)}
             rows={5}
             disabled={isSubmitting}
+            className="min-h-[120px]"
           />
-          {reportError ? <p className="report-dialog-error">{reportError}</p> : null}
-          <div className="report-dialog-actions">
-            <button
+          {reportError ? (
+            <p className="text-sm font-medium text-red-600 dark:text-red-400" role="alert">
+              {reportError}
+            </p>
+          ) : null}
+          <DialogFooter>
+            <Button
               type="button"
-              className="btn btn-ghost"
+              variant="ghost"
               onClick={() => {
                 if (!isSubmitting) onCancel();
               }}
               disabled={isSubmitting}
             >
               Cancel
-            </button>
-            <button type="submit" className="btn" disabled={isSubmitting}>
-              {isSubmitting ? "Submitting…" : "Submit report"}
-            </button>
-          </div>
+            </Button>
+            <Button type="submit" disabled={isSubmitting} loading={isSubmitting}>
+              {isSubmitting ? "Submitting..." : "Submit report"}
+            </Button>
+          </DialogFooter>
         </form>
-      </div>
-    </div>
+      </DialogContent>
+    </Dialog>
   );
 }

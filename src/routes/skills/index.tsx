@@ -2,10 +2,14 @@ import { createFileRoute, redirect } from "@tanstack/react-router";
 import { useQuery } from "convex/react";
 import { useRef } from "react";
 import { api } from "../../../convex/_generated/api";
+import { SKILL_CAPABILITY_TAGS } from "../../../convex/lib/skillCapabilityTags";
+import { Container } from "../../components/layout/Container";
 import { parseSort } from "./-params";
 import { SkillsResults } from "./-SkillsResults";
 import { SkillsToolbar } from "./-SkillsToolbar";
 import { useSkillsBrowseModel, type SkillsSearchState } from "./-useSkillsBrowseModel";
+
+const SKILL_CAPABILITY_TAG_SET = new Set<string>(SKILL_CAPABILITY_TAGS);
 
 export const Route = createFileRoute("/skills/")({
   validateSearch: (search): SkillsSearchState => {
@@ -23,6 +27,10 @@ export const Route = createFileRoute("/skills/")({
         search.nonSuspicious === true
           ? true
           : undefined,
+      tag:
+        typeof search.tag === "string" && SKILL_CAPABILITY_TAG_SET.has(search.tag)
+          ? search.tag
+          : undefined,
       view: search.view === "cards" || search.view === "list" ? search.view : undefined,
       focus: search.focus === "search" ? "search" : undefined,
     };
@@ -38,6 +46,7 @@ export const Route = createFileRoute("/skills/")({
         dir: search.dir || undefined,
         highlighted: search.highlighted || undefined,
         nonSuspicious: search.nonSuspicious || undefined,
+        tag: search.tag || undefined,
         view: search.view || undefined,
         focus: search.focus || undefined,
       },
@@ -62,48 +71,73 @@ export function SkillsIndex() {
   });
 
   return (
-    <main className="section">
-      <header className="skills-header-top">
-        <h1 className="section-title" style={{ marginBottom: 8 }}>
-          Skills
-          {totalSkillsText && <span style={{ opacity: 0.55 }}>{` (${totalSkillsText})`}</span>}
-        </h1>
-        <p className="section-subtitle" style={{ marginBottom: 0 }}>
-          {model.isLoadingSkills
-            ? "Loading skills…"
-            : `Browse the skill library${model.activeFilters.length ? ` (${model.activeFilters.join(", ")})` : ""}.`}
-        </p>
-      </header>
-      <div className="skills-container">
-        <SkillsToolbar
-          searchInputRef={searchInputRef}
-          query={model.query}
-          hasQuery={model.hasQuery}
-          sort={model.sort}
-          dir={model.dir}
-          view={model.view}
-          highlightedOnly={model.highlightedOnly}
-          nonSuspiciousOnly={model.nonSuspiciousOnly}
-          onQueryChange={model.onQueryChange}
-          onToggleHighlighted={model.onToggleHighlighted}
-          onToggleNonSuspicious={model.onToggleNonSuspicious}
-          onSortChange={model.onSortChange}
-          onToggleDir={model.onToggleDir}
-          onToggleView={model.onToggleView}
-        />
-        <SkillsResults
-          isLoadingSkills={model.isLoadingSkills}
-          sorted={model.sorted}
-          view={model.view}
-          listDoneLoading={!model.isLoadingSkills && !model.canLoadMore && !model.isLoadingMore}
-          hasQuery={model.hasQuery}
-          canLoadMore={model.canLoadMore}
-          isLoadingMore={model.isLoadingMore}
-          canAutoLoad={model.canAutoLoad}
-          loadMoreRef={model.loadMoreRef}
-          loadMore={model.loadMore}
-        />
-      </div>
+    <main className="py-10">
+      <Container size="wide">
+        <div className="flex flex-col gap-6">
+          {/* Header */}
+          <header>
+            <h1 className="font-display text-2xl font-bold text-[color:var(--ink)]">
+              Skills
+              <span className="ml-2 text-lg font-normal text-[color:var(--ink-soft)] opacity-70">
+                ({model.hasQuery || model.highlightedOnly || model.nonSuspiciousOnly
+                  ? model.sorted.length.toLocaleString("en-US")
+                  : totalSkillsText ?? "…"})
+              </span>
+            </h1>
+            <p className="mt-1 text-sm text-[color:var(--ink-soft)]">
+              {model.isLoadingSkills
+                ? "Loading skills..."
+                : `Browse the skill library${model.activeFilters.length ? ` (${model.activeFilters.join(", ")})` : ""}.`}
+            </p>
+          </header>
+
+          {/* Toolbar */}
+          <SkillsToolbar
+            searchInputRef={searchInputRef}
+            query={model.query}
+            hasQuery={model.hasQuery}
+            sort={model.sort}
+            dir={model.dir}
+            view={model.view}
+            highlightedOnly={model.highlightedOnly}
+            nonSuspiciousOnly={model.nonSuspiciousOnly}
+            capabilityTag={model.capabilityTag}
+            onQueryChange={model.onQueryChange}
+            onToggleHighlighted={model.onToggleHighlighted}
+            onToggleNonSuspicious={model.onToggleNonSuspicious}
+            onCapabilityTagChange={model.onCapabilityTagChange}
+            onSortChange={model.onSortChange}
+            onToggleDir={model.onToggleDir}
+            onToggleView={model.onToggleView}
+          />
+
+          {/* Results count */}
+          {model.sorted.length > 0 && (
+            <p className="text-xs font-medium text-[color:var(--ink-soft)]">
+              {model.sorted.length}
+              {!model.hasQuery && totalSkillsText ? ` of ${totalSkillsText}` : ""} skills
+              {model.hasQuery ? ` matching "${model.query}"` : ""}
+              {model.highlightedOnly || model.nonSuspiciousOnly || model.capabilityTag
+                ? ` (filtered)`
+                : ""}
+            </p>
+          )}
+
+          {/* Results */}
+          <SkillsResults
+            isLoadingSkills={model.isLoadingSkills}
+            sorted={model.sorted}
+            view={model.view}
+            listDoneLoading={!model.isLoadingSkills && !model.canLoadMore && !model.isLoadingMore}
+            hasQuery={model.hasQuery}
+            canLoadMore={model.canLoadMore}
+            isLoadingMore={model.isLoadingMore}
+            canAutoLoad={model.canAutoLoad}
+            loadMoreRef={model.loadMoreRef}
+            loadMore={model.loadMore}
+          />
+        </div>
+      </Container>
     </main>
   );
 }

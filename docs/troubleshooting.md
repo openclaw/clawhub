@@ -86,9 +86,8 @@ clawhub sync --root /path/to/skills
 
 ## `deploy.yml` fails before deploy or smoke runs
 
-- Ensure GitHub Actions secrets exist for the repo:
+- Ensure GitHub Actions secrets exist on the `Production` environment:
   - `CONVEX_DEPLOY_KEY`
-  - `VERCEL_TOKEN`
   - Optional: `PLAYWRIGHT_AUTH_STORAGE_STATE_JSON`
 - Missing required deploy secrets now fails the preflight job immediately.
 - If the optional Playwright auth secret is missing, authenticated smoke canaries will skip; deploy should still proceed.

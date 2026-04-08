@@ -30,6 +30,17 @@
 - NEVER use `--typecheck=disable` on `npx convex deploy`.
 - Use `npx convex dev --once` to push functions once (not long-running watcher).
 
+## Production Release
+
+- Production deploys are manual-only. Merging to `main` does **not** deploy.
+- Start the GitHub Actions `Deploy` workflow from `main` with `gh workflow run deploy.yml --repo openclaw/clawhub --ref main`.
+- The workflow supports `full`, `backend`, and `frontend` targets.
+- `frontend` currently waits for the Vercel production deploy on the selected `main` SHA and then runs smoke checks. It does not trigger Vercel directly yet.
+- The workflow uses the `Production` environment for deploy secrets, but it does not wait for a separate approval.
+- Required prod secret: `CONVEX_DEPLOY_KEY` on the `Production` environment. Optional smoke secret: `PLAYWRIGHT_AUTH_STORAGE_STATE_JSON`.
+- CLI npm releases are manual-only and tag-based through `ClawHub CLI NPM Release`. Stable tags only: `vX.Y.Z`. Run a `preflight_only=true` pass first, then rerun with the same tag plus `preflight_run_id` for the real publish.
+- Real CLI publishes wait at `npm-release` and rely on npm trusted publishing for `openclaw/clawhub` + `clawhub-cli-npm-release.yml` + `npm-release`.
+
 ## Testing
 
 - Tests use `._handler` to call mutation handlers directly with mock `db` objects.

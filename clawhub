@@ -3,10 +3,10 @@ import { existsSync } from 'node:fs'
 import { stat } from 'node:fs/promises'
 import { fileURLToPath } from 'node:url'
 
-const packageRootPath = fileURLToPath(new URL('./packages/clawdhub/', import.meta.url))
-const distCliUrl = new URL('./packages/clawdhub/dist/cli.js', import.meta.url)
+const packageRootPath = fileURLToPath(new URL('./packages/clawhub/', import.meta.url))
+const distCliUrl = new URL('./packages/clawhub/dist/cli.js', import.meta.url)
 const distCliPath = fileURLToPath(distCliUrl)
-const srcRootPath = fileURLToPath(new URL('./packages/clawdhub/src/', import.meta.url))
+const srcRootPath = fileURLToPath(new URL('./packages/clawhub/src/', import.meta.url))
 
 const shouldBuild = await (async () => {
   if (!existsSync(distCliPath)) return true

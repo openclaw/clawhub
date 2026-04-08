@@ -25,12 +25,15 @@ export function resolvePackageReleaseScanStatus(
 ): Exclude<PackageScanStatus, undefined> {
   const staticStatus = normalizePackageScanStatus(release.staticScan?.status);
   if (staticStatus === "malicious") return "malicious";
+  if (staticStatus === "suspicious") return "suspicious";
 
   const vtStatus = normalizePackageScanStatus(release.vtAnalysis?.status);
   if (vtStatus === "malicious") return "malicious";
+  if (vtStatus === "suspicious") return "suspicious";
 
   const verificationStatus = normalizePackageScanStatus(release.verification?.scanStatus);
   if (verificationStatus === "malicious") return "malicious";
+  if (verificationStatus === "suspicious") return "suspicious";
 
   if (vtStatus) return vtStatus;
   if (verificationStatus && verificationStatus !== "not-run") return verificationStatus;
@@ -49,7 +52,8 @@ export function getPackageDownloadSecurityBlock(release: PackageReleaseSecurityL
   if (scanStatus === "malicious") {
     return {
       status: 403,
-      message: "Blocked: this package release has been flagged as malicious and cannot be downloaded.",
+      message:
+        "Blocked: this package release has been flagged as malicious and cannot be downloaded.",
     };
   }
 

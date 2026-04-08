@@ -1,7 +1,7 @@
 import { ConvexAuthProvider, useAuthActions } from "@convex-dev/auth/react";
 import { useEffect, useRef } from "react";
 import { convex } from "../convex/client";
-import { getUserFacingConvexError } from "../lib/convexError";
+import { getUserFacingAuthError, normalizeAuthErrorMessage } from "../lib/authErrorMessage";
 import { clearAuthError, setAuthError } from "../lib/useAuthError";
 import { UserBootstrap } from "./UserBootstrap";
 
@@ -41,7 +41,7 @@ export function AuthCodeHandler() {
         }
       })
       .catch((error) => {
-        setAuthError(getUserFacingConvexError(error, "Sign in failed. Please try again."));
+        setAuthError(getUserFacingAuthError(error, "Sign in failed. Please try again."));
       });
   }, [signInWithCode]);
 
@@ -71,7 +71,9 @@ export function AuthErrorHandler() {
     handledErrorRef.current = pending.description;
 
     window.history.replaceState(null, "", pending.relativeUrl);
-    setAuthError(pending.description);
+    setAuthError(
+      normalizeAuthErrorMessage(pending.description, "Sign in failed. Please try again."),
+    );
   }, []);
 
   return null;

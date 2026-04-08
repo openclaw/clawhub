@@ -1,6 +1,7 @@
 /* @vitest-environment jsdom */
 import { render, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { ACCESS_DENIED_SIGN_IN_MESSAGE, BANNED_SIGN_IN_MESSAGE } from "../lib/authErrorMessage";
 import { getAuthErrorSnapshot, clearAuthError } from "../lib/useAuthError";
 import { AuthCodeHandler, AuthErrorHandler } from "./AppProviders";
 
@@ -57,7 +58,7 @@ describe("AuthCodeHandler", () => {
     render(<AuthCodeHandler />);
 
     await waitFor(() => {
-      expect(getAuthErrorSnapshot()).toBe("Account banned");
+      expect(getAuthErrorSnapshot()).toBe(BANNED_SIGN_IN_MESSAGE);
     });
   });
 
@@ -100,7 +101,7 @@ describe("AuthErrorHandler", () => {
     render(<AuthErrorHandler />);
 
     await waitFor(() => {
-      expect(getAuthErrorSnapshot()).toBe("Account banned");
+      expect(getAuthErrorSnapshot()).toBe(BANNED_SIGN_IN_MESSAGE);
     });
 
     expect(`${window.location.pathname}${window.location.search}${window.location.hash}`).toBe(
@@ -114,7 +115,7 @@ describe("AuthErrorHandler", () => {
     render(<AuthErrorHandler />);
 
     await waitFor(() => {
-      expect(getAuthErrorSnapshot()).toBe("access_denied");
+      expect(getAuthErrorSnapshot()).toBe(ACCESS_DENIED_SIGN_IN_MESSAGE);
     });
   });
 
@@ -128,7 +129,7 @@ describe("AuthErrorHandler", () => {
     render(<AuthErrorHandler />);
 
     await waitFor(() => {
-      expect(getAuthErrorSnapshot()).toBe("access_denied");
+      expect(getAuthErrorSnapshot()).toBe(ACCESS_DENIED_SIGN_IN_MESSAGE);
     });
 
     expect(`${window.location.pathname}${window.location.search}${window.location.hash}`).toBe(

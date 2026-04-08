@@ -8,6 +8,7 @@ import {
   getByName,
   list,
   publishPackage,
+  publishPackageForTrustedPublisherInternal,
   publishPackageForUserInternal,
   getVersionByName,
   insertReleaseInternal,
@@ -176,6 +177,15 @@ const publishPackageForUserInternalHandler = (
     unknown
   >
 )._handler;
+const publishPackageForTrustedPublisherInternalHandler = (
+  publishPackageForTrustedPublisherInternal as unknown as WrappedHandler<
+    {
+      publishTokenId: string;
+      payload: unknown;
+    },
+    unknown
+  >
+)._handler;
 const getPackageReleaseScanBackfillBatchInternalHandler = (
   getPackageReleaseScanBackfillBatchInternal as unknown as WrappedHandler<
     {
@@ -321,8 +331,8 @@ function makeDigestCtx(options: {
   const pageByTable = new Map<
     string,
     Map<
-    string | null,
-    { page: Array<Record<string, unknown>>; isDone: boolean; continueCursor: string }
+      string | null,
+      { page: Array<Record<string, unknown>>; isDone: boolean; continueCursor: string }
     >
   >();
   const indexNames: string[] = [];
@@ -420,7 +430,8 @@ function makeDigestCtx(options: {
                     indexName === "by_name"
                       ? matchedValue
                         ? String(pkg.normalizedName) === matchedValue
-                        : String(pkg.normalizedName) >= lowerBound && String(pkg.normalizedName) < upperBound
+                        : String(pkg.normalizedName) >= lowerBound &&
+                          String(pkg.normalizedName) < upperBound
                       : matchedValue
                         ? String(pkg.runtimeId) === matchedValue
                         : String(pkg.runtimeId) >= lowerBound && String(pkg.runtimeId) < upperBound,
@@ -487,12 +498,17 @@ function makeDigestCtx(options: {
                     lt: () => queryBuilder,
                   };
                   builder?.(queryBuilder);
-                  const match = (options.exactDigests ?? []).find((digest) => digest.packageId === packageId);
+                  const match = (options.exactDigests ?? []).find(
+                    (digest) => digest.packageId === packageId,
+                  );
                   return {
                     unique: vi.fn().mockResolvedValue(match ?? null),
                   };
                 }
-                if (indexName === "by_active_normalized_name" || indexName === "by_active_runtime_id") {
+                if (
+                  indexName === "by_active_normalized_name" ||
+                  indexName === "by_active_runtime_id"
+                ) {
                   let lowerBound = "";
                   let upperBound = "";
                   const queryBuilder = {
@@ -541,9 +557,7 @@ function makeInsertReleaseCtx(
   recordsById: Record<string, Record<string, unknown>> = {},
 ) {
   const patch = vi.fn();
-  const insert = vi
-    .fn()
-    .mockResolvedValueOnce("packageReleases:new");
+  const insert = vi.fn().mockResolvedValueOnce("packageReleases:new");
   return {
     patch,
     insert,
@@ -610,7 +624,9 @@ function makePackageCtx(options: {
     ctx: {
       db: {
         get: vi.fn(async (id: string) => {
-          if (pkg && id === pkg.ownerUserId) return { _id: id, handle: "owner" };
+          if (typeof id === "string" && id.startsWith("users:")) {
+            return { _id: id, handle: id.split(":").pop() ?? "user" };
+          }
           if (ownerPublisher && pkg && id === pkg.ownerPublisherId) return ownerPublisher;
           if (pkg && id === pkg.latestReleaseId) return latestRelease;
           return null;
@@ -810,10 +826,7 @@ describe("packages public queries", () => {
     const { ctx } = makeDigestCtx({
       pages: [
         {
-          page: [
-            makeDigest("secret-plugin", { channel: "private" }),
-            makeDigest("public-plugin"),
-          ],
+          page: [makeDigest("secret-plugin", { channel: "private" }), makeDigest("public-plugin")],
           isDone: true,
           continueCursor: "",
         },
@@ -1434,10 +1447,11 @@ describe("packages public queries", () => {
       continueCursor: "",
     });
     await expect(
-      getVersionByNameHandler(
-        ctx,
-        { name: "demo-plugin", version: "1.0.0", viewerUserId: "users:owner" } as never,
-      ),
+      getVersionByNameHandler(ctx, {
+        name: "demo-plugin",
+        version: "1.0.0",
+        viewerUserId: "users:owner",
+      } as never),
     ).resolves.toBeNull();
   });
 
@@ -1489,6 +1503,26 @@ describe("packages public queries", () => {
     vi.mocked(getAuthUserId).mockRejectedValue(new Error("stale session"));
     const { ctx } = makePackageCtx({
       pkg: makePackageDoc({ channel: "community" }),
+    });
+
+    const detail = await getByNameHandler(ctx, {
+      name: "demo-plugin",
+    });
+
+    expect(detail?.package.name).toBe("demo-plugin");
+  });
+
+  it("treats invalid auth user lookups as anonymous for public package detail", async () => {
+    vi.mocked(getAuthUserId).mockResolvedValue("users:broken" as never);
+    const { ctx } = makePackageCtx({
+      pkg: makePackageDoc({ channel: "community" }),
+    });
+    const get = ctx.db.get as ReturnType<typeof vi.fn>;
+    get.mockImplementation(async (id: string) => {
+      if (id === "users:broken") throw new Error("Table mismatch");
+      if (id === "users:owner") return { _id: id, handle: "owner" };
+      if (id === "packageReleases:demo-1") return makeReleaseDoc();
+      return null;
     });
 
     const detail = await getByNameHandler(ctx, {
@@ -1615,7 +1649,7 @@ describe("packages public queries", () => {
         integritySha256: "abc123",
         runtimeId: "other.plugin",
       }),
-    ).rejects.toThrow('runtime id changes are not allowed');
+    ).rejects.toThrow("runtime id changes are not allowed");
   });
 
   it("promotes existing packages to official when publisher becomes trusted", async () => {
@@ -2028,11 +2062,296 @@ describe("packages public queries", () => {
     ).rejects.toThrow("Skill packages must use the skills publish flow");
   });
 
+  it("rejects trusted publish tokens after trusted publisher rotation or deletion", async () => {
+    const ctx = {
+      runQuery: vi
+        .fn()
+        .mockResolvedValueOnce({
+          _id: "packagePublishTokens:1",
+          packageId: "packages:demo",
+          provider: "github-actions",
+          repository: "openclaw/openclaw",
+          repositoryId: "1",
+          repositoryOwner: "openclaw",
+          repositoryOwnerId: "2",
+          workflowFilename: "plugin-clawhub-release.yml",
+          environment: "clawhub-release",
+          version: "1.0.0",
+          sha: "abc123",
+          ref: "refs/heads/main",
+          runId: "100",
+          runAttempt: "1",
+          expiresAt: Date.now() + 60_000,
+        })
+        .mockResolvedValueOnce(null),
+    };
+
+    await expect(
+      publishPackageForTrustedPublisherInternalHandler(ctx as never, {
+        publishTokenId: "packagePublishTokens:1",
+        payload: {
+          name: "demo-plugin",
+          family: "bundle-plugin",
+          version: "1.0.0",
+          changelog: "init",
+          bundle: { hostTargets: ["desktop"] },
+          files: [],
+        },
+      }),
+    ).rejects.toThrow(
+      "Trusted publish token no longer matches the current package trusted publisher",
+    );
+  });
+
+  it("revokes trusted publish tokens after a successful publish", async () => {
+    const runMutation = vi.fn(async (_ref: unknown, args: unknown) => {
+      if (
+        typeof args === "object" &&
+        args !== null &&
+        "name" in args &&
+        "version" in args &&
+        "files" in args
+      ) {
+        return {
+          ok: true,
+          packageId: "packages:demo",
+          releaseId: "packageReleases:demo-2",
+        };
+      }
+      return null;
+    });
+    const trustedPublisher = {
+      _id: "packageTrustedPublishers:1",
+      packageId: "packages:demo",
+      provider: "github-actions",
+      repository: "openclaw/openclaw",
+      repositoryId: "1",
+      repositoryOwner: "openclaw",
+      repositoryOwnerId: "2",
+      workflowFilename: "plugin-clawhub-release.yml",
+      environment: "clawhub-release",
+    };
+    const ctx = {
+      runQuery: vi
+        .fn()
+        .mockResolvedValueOnce({
+          _id: "packagePublishTokens:1",
+          packageId: "packages:demo",
+          provider: "github-actions",
+          repository: "openclaw/openclaw",
+          repositoryId: "1",
+          repositoryOwner: "openclaw",
+          repositoryOwnerId: "2",
+          workflowFilename: "plugin-clawhub-release.yml",
+          environment: "clawhub-release",
+          version: "1.0.0",
+          sha: "abc123",
+          ref: "refs/heads/main",
+          runId: "100",
+          runAttempt: "1",
+          expiresAt: Date.now() + 60_000,
+        })
+        .mockResolvedValueOnce(trustedPublisher)
+        .mockResolvedValueOnce(makePackageDoc({ family: "bundle-plugin" }))
+        .mockResolvedValueOnce(trustedPublisher)
+        .mockResolvedValueOnce(null),
+      runMutation,
+      scheduler: {
+        runAfter: vi.fn(),
+      },
+      storage: {
+        get: vi.fn(),
+      },
+    };
+
+    await expect(
+      publishPackageForTrustedPublisherInternalHandler(ctx as never, {
+        publishTokenId: "packagePublishTokens:1",
+        payload: {
+          name: "demo-plugin",
+          family: "bundle-plugin",
+          version: "1.0.0",
+          changelog: "init",
+          bundle: { hostTargets: ["desktop"] },
+          files: [],
+        },
+      }),
+    ).resolves.toMatchObject({
+      ok: true,
+      packageId: "packages:demo",
+      releaseId: "packageReleases:demo-2",
+    });
+
+    expect(runMutation).toHaveBeenCalledWith(expect.anything(), {
+      tokenId: "packagePublishTokens:1",
+    });
+  });
+
+  it("accepts trusted publish tokens when no environment is pinned", async () => {
+    const runMutation = vi.fn(async (_ref: unknown, args: unknown) => {
+      if (
+        typeof args === "object" &&
+        args !== null &&
+        "name" in args &&
+        "version" in args &&
+        "files" in args
+      ) {
+        return {
+          ok: true,
+          packageId: "packages:demo",
+          releaseId: "packageReleases:demo-2",
+        };
+      }
+      return null;
+    });
+    const trustedPublisher = {
+      _id: "packageTrustedPublishers:1",
+      packageId: "packages:demo",
+      provider: "github-actions",
+      repository: "openclaw/openclaw",
+      repositoryId: "1",
+      repositoryOwner: "openclaw",
+      repositoryOwnerId: "2",
+      workflowFilename: "plugin-clawhub-release.yml",
+    };
+    const ctx = {
+      runQuery: vi
+        .fn()
+        .mockResolvedValueOnce({
+          _id: "packagePublishTokens:1",
+          packageId: "packages:demo",
+          provider: "github-actions",
+          repository: "openclaw/openclaw",
+          repositoryId: "1",
+          repositoryOwner: "openclaw",
+          repositoryOwnerId: "2",
+          workflowFilename: "plugin-clawhub-release.yml",
+          version: "1.0.0",
+          sha: "abc123",
+          ref: "refs/heads/main",
+          runId: "100",
+          runAttempt: "1",
+          expiresAt: Date.now() + 60_000,
+        })
+        .mockResolvedValueOnce(trustedPublisher)
+        .mockResolvedValueOnce(makePackageDoc({ family: "bundle-plugin" }))
+        .mockResolvedValueOnce(trustedPublisher)
+        .mockResolvedValueOnce(null),
+      runMutation,
+      scheduler: {
+        runAfter: vi.fn(),
+      },
+      storage: {
+        get: vi.fn(),
+      },
+    };
+
+    await expect(
+      publishPackageForTrustedPublisherInternalHandler(ctx as never, {
+        publishTokenId: "packagePublishTokens:1",
+        payload: {
+          name: "demo-plugin",
+          family: "bundle-plugin",
+          version: "1.0.0",
+          changelog: "init",
+          bundle: { hostTargets: ["desktop"] },
+          files: [],
+        },
+      }),
+    ).resolves.toMatchObject({
+      ok: true,
+      packageId: "packages:demo",
+      releaseId: "packageReleases:demo-2",
+    });
+  });
+
+  it("requires manual override for user-auth publishes when trusted publisher config exists", async () => {
+    const runMutation = vi.fn(async (_ref: unknown, args: unknown) => {
+      if (
+        typeof args === "object" &&
+        args !== null &&
+        "actorUserId" in args &&
+        "minimumRole" in args
+      ) {
+        return null;
+      }
+      if (
+        typeof args === "object" &&
+        args !== null &&
+        "name" in args &&
+        "version" in args &&
+        "files" in args
+      ) {
+        return {
+          ok: true,
+          packageId: "packages:demo",
+          releaseId: "packageReleases:demo-2",
+        };
+      }
+      return null;
+    });
+    const trustedPublisher = {
+      _id: "packageTrustedPublishers:1",
+      packageId: "packages:demo",
+      provider: "github-actions",
+      repository: "openclaw/openclaw",
+      repositoryId: "1",
+      repositoryOwner: "openclaw",
+      repositoryOwnerId: "2",
+      workflowFilename: "plugin-clawhub-release.yml",
+      environment: "clawhub-release",
+    };
+    const ctx = {
+      runQuery: vi
+        .fn()
+        .mockResolvedValueOnce(makePackageDoc({ family: "bundle-plugin" }))
+        .mockResolvedValueOnce(trustedPublisher)
+        .mockResolvedValueOnce({
+          _id: "users:owner",
+          githubCreatedAt: Date.now() - 20 * 24 * 60 * 60 * 1000,
+        })
+        .mockResolvedValueOnce(null),
+      runMutation,
+      scheduler: {
+        runAfter: vi.fn(),
+      },
+      storage: {
+        get: vi.fn(),
+      },
+    };
+
+    await expect(
+      publishPackageForUserInternalHandler(ctx as never, {
+        actorUserId: "users:owner",
+        payload: {
+          name: "demo-plugin",
+          family: "bundle-plugin",
+          version: "1.0.0",
+          changelog: "tag publish",
+          bundle: { hostTargets: ["desktop"] },
+          source: {
+            kind: "github",
+            url: "https://github.com/openclaw/openclaw",
+            repo: "openclaw/openclaw",
+            ref: "refs/tags/plugins-2026.4.1-beta.1",
+            commit: "abc123",
+            path: "extensions/discord",
+            importedAt: Date.now(),
+          },
+          files: [],
+        },
+      }),
+    ).rejects.toThrow(
+      "Manual publishes for packages with trusted publisher config require manualOverrideReason",
+    );
+  });
+
   it("scans plugin publishes and forwards scan status to insertReleaseInternal", async () => {
     const runMutation = vi.fn(async (_ref: unknown, args: unknown) => args);
     const ctx = {
       runQuery: vi
         .fn()
+        .mockResolvedValueOnce(null)
         .mockResolvedValueOnce({
           _id: "users:owner",
           githubCreatedAt: Date.now() - 20 * 24 * 60 * 60 * 1000,
@@ -2057,8 +2376,14 @@ describe("packages public queries", () => {
                 },
               }),
             ],
-            ["storage:manifest", JSON.stringify({ id: "demo.plugin", tools: [{ name: "demoTool" }] })],
-            ["storage:code", "import { execSync } from 'node:child_process';\nexecSync('curl http://x');\n"],
+            [
+              "storage:manifest",
+              JSON.stringify({ id: "demo.plugin", tools: [{ name: "demoTool" }] }),
+            ],
+            [
+              "storage:code",
+              "import { execSync } from 'node:child_process';\nexecSync('curl http://x');\n",
+            ],
           ]);
           const content = files.get(storageId);
           return content ? new Blob([content]) : null;
@@ -2163,9 +2488,11 @@ describe("packages public queries", () => {
             if (table !== "packages") throw new Error(`Unexpected table ${table}`);
             return {
               withIndex: vi.fn(() => ({
-                unique: vi.fn().mockResolvedValue(
-                  makePackageDoc({ ownerUserId: "users:owner", scanStatus: "pending" }),
-                ),
+                unique: vi
+                  .fn()
+                  .mockResolvedValue(
+                    makePackageDoc({ ownerUserId: "users:owner", scanStatus: "pending" }),
+                  ),
               })),
             };
           }),
@@ -2190,6 +2517,9 @@ describe("packages public queries", () => {
                 llmAnalysis: { status: "clean" },
                 staticScan: { status: "clean" },
               });
+            }
+            if (id === "users:owner") {
+              return { _id: "users:owner", handle: "owner" };
             }
             if (id === "publishers:owner") {
               return { _id: "publishers:owner", kind: "user", linkedUserId: "users:owner" };

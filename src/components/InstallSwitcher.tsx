@@ -27,17 +27,25 @@ export function InstallSwitcher({ exampleSlug = "sonoscli" }: InstallSwitcherPro
   }, [exampleSlug, pm]);
 
   return (
-    <div className="install-switcher">
-      <div className="install-switcher-row">
-        <div className="stat">Install any skill folder in one shot:</div>
-        <div className="install-switcher-toggle" role="tablist" aria-label="Install command">
+    <div className="flex flex-col gap-3 rounded-[var(--radius-md)] border border-[color:var(--line)] bg-[color:var(--surface-muted)] p-4">
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div className="text-sm text-[color:var(--ink-soft)]">
+          Install any skill folder in one shot:
+        </div>
+        <div
+          className="inline-flex items-center gap-0.5 rounded-full border border-[color:var(--line)] bg-[color:var(--surface)] p-[3px]"
+          role="tablist"
+          aria-label="Install command"
+        >
           {PACKAGE_MANAGERS.map((entry) => (
             <button
               key={entry.id}
               type="button"
-              className={
-                pm === entry.id ? "install-switcher-pill is-active" : "install-switcher-pill"
-              }
+              className={`cursor-pointer rounded-full border-none px-3 py-1.5 text-xs font-semibold transition-all duration-200 ${
+                pm === entry.id
+                  ? "bg-[color:var(--accent)] text-white shadow-sm"
+                  : "bg-transparent text-[color:var(--ink-soft)] hover:text-[color:var(--ink)]"
+              }`}
               role="tab"
               aria-selected={pm === entry.id}
               onClick={() => setPm(entry.id)}
@@ -47,7 +55,9 @@ export function InstallSwitcher({ exampleSlug = "sonoscli" }: InstallSwitcherPro
           ))}
         </div>
       </div>
-      <div className="hero-install-code mono">{command}</div>
+      <div className="overflow-x-auto rounded-[var(--radius-sm)] bg-[color:var(--surface)] p-3 font-mono text-xs">
+        {command}
+      </div>
     </div>
   );
 }

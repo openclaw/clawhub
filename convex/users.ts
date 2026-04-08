@@ -1,18 +1,22 @@
-import { getAuthUserId } from "@convex-dev/auth/server";
 import { v } from "convex/values";
 import { internal } from "./_generated/api";
 import type { Doc, Id } from "./_generated/dataModel";
 import type { ActionCtx, MutationCtx } from "./_generated/server";
 import { internalAction, internalMutation, internalQuery, mutation, query } from "./functions";
-import { assertAdmin, assertModerator, requireUser } from "./lib/access";
+import {
+  assertAdmin,
+  assertModerator,
+  getOptionalActiveAuthUserId,
+  requireUser,
+} from "./lib/access";
 import { syncGitHubProfile } from "./lib/githubAccount";
+import { toPublicUser } from "./lib/public";
 import {
   ensurePersonalPublisherForUser,
   getActiveUserByHandleOrPersonalPublisher,
   getPublisherByHandle,
   getUserByHandleOrPersonalPublisher,
 } from "./lib/publishers";
-import { toPublicUser } from "./lib/public";
 import {
   getLatestActiveReservedHandle,
   isHandleReservedForAnotherUser,
@@ -57,15 +61,28 @@ export const searchInternal = internalQuery({
     assertAdmin(actor);
 
     const limit = clampInt(args.limit ?? 20, 1, MAX_USER_LIST_LIMIT);
-    const result = await queryUsersForAdminList(ctx, { limit, search: args.query });
-    const items = result.items.map((user) => ({
+    const exactHandleUser = args.query
+      ? await getUserByHandleOrPersonalPublisher(ctx, args.query)
+      : null;
+    const result = await queryUsersForAdminList(ctx, {
+      limit,
+      search: args.query,
+      exactUserId: exactHandleUser?._id,
+    });
+    const dedupedUsers = exactHandleUser
+      ? [exactHandleUser, ...result.items.filter((user) => user._id !== exactHandleUser._id)]
+      : result.items;
+    const total = exactHandleUser
+      ? result.total + (result.containsExactUser ? 0 : 1)
+      : result.total;
+    const items = dedupedUsers.slice(0, limit).map((user) => ({
       userId: user._id,
       handle: user.handle ?? null,
       displayName: user.displayName ?? null,
       name: user.name ?? null,
       role: user.role ?? null,
     }));
-    return { items, total: result.total };
+    return { items, total };
   },
 });
 
@@ -166,17 +183,9 @@ export const syncGitHubProfileAction = internalAction({
 export const me = query({
   args: {},
   handler: async (ctx) => {
-    let userId: Awaited<ReturnType<typeof getAuthUserId>>;
-    try {
-      userId = await getAuthUserId(ctx);
-    } catch {
-      // Public pages should treat broken/stale auth as anonymous instead of crashing SSR.
-      return null;
-    }
+    const userId = await getOptionalActiveAuthUserId(ctx);
     if (!userId) return null;
-    const user = await ctx.db.get(userId);
-    if (!user || user.deletedAt || user.deactivatedAt) return null;
-    return user;
+    return await ctx.db.get(userId);
   },
 });
 
@@ -235,6 +244,9 @@ async function computeEnsureUpdates(ctx: MutationCtx, user: Doc<"users">) {
   const updates: Record<string, unknown> = {};
 
   const existingHandle = normalizeHandle(user.handle);
+  const existingHandleClaimable = existingHandle
+    ? await canUserClaimHandle(ctx, existingHandle, user._id)
+    : false;
   const githubLogin = normalizeHandle(user.name);
   const requestedHandle = deriveHandle({
     existingHandle,
@@ -245,15 +257,20 @@ async function computeEnsureUpdates(ctx: MutationCtx, user: Doc<"users">) {
     requestedHandle && (await canUserClaimHandle(ctx, requestedHandle, user._id))
       ? requestedHandle
       : undefined;
-  if (!derivedHandle && !existingHandle) {
-    const emailFallback = !requestedHandle && user.email ? user.email.split("@")[0]?.trim() : user.email?.split("@")[0]?.trim();
+  if (!derivedHandle && (!existingHandle || !existingHandleClaimable)) {
+    const emailFallback = normalizeHandle(user.email?.split("@")[0]);
+    const emailFallbackHandle =
+      emailFallback && emailFallback !== requestedHandle
+        ? await resolveAvailableHandle(ctx, emailFallback, user._id)
+        : undefined;
     derivedHandle =
-      (emailFallback &&
-      emailFallback !== requestedHandle &&
-      (await resolveAvailableHandle(ctx, emailFallback, user._id))) ||
-      (await resolveAvailableHandle(ctx, requestedHandle, user._id));
+      (await resolveAvailableHandle(
+        ctx,
+        requestedHandle ?? existingHandle ?? githubLogin ?? emailFallback,
+        user._id,
+      )) ?? emailFallbackHandle;
   }
-  const baseHandle = derivedHandle ?? existingHandle;
+  const baseHandle = derivedHandle ?? (existingHandleClaimable ? existingHandle : undefined);
 
   if (derivedHandle && existingHandle !== derivedHandle) {
     updates.handle = derivedHandle;
@@ -284,7 +301,9 @@ export async function ensureHandler(ctx: MutationCtx) {
     updates.updatedAt = Date.now();
     await ctx.db.patch(userId, updates);
   }
-  const ensuredUser = hasUpdates ? ({ ...user, ...updates } as Doc<"users">) : ((await ctx.db.get(userId)) ?? user);
+  const ensuredUser = hasUpdates
+    ? ({ ...user, ...updates } as Doc<"users">)
+    : ((await ctx.db.get(userId)) ?? user);
   await ensurePersonalPublisherForUser(ctx, ensuredUser);
   return await ctx.db.get(userId);
 }
@@ -353,7 +372,24 @@ export const list = query({
     const { user } = await requireUser(ctx);
     assertAdmin(user);
     const limit = clampInt(args.limit ?? 50, 1, MAX_USER_LIST_LIMIT);
-    return queryUsersForAdminList(ctx, { limit, search: args.search });
+    const exactHandleUser = args.search
+      ? await getUserByHandleOrPersonalPublisher(ctx, args.search)
+      : null;
+    const result = await queryUsersForAdminList(ctx, {
+      limit,
+      search: args.search,
+      exactUserId: exactHandleUser?._id,
+    });
+    const dedupedUsers = exactHandleUser
+      ? [exactHandleUser, ...result.items.filter((entry) => entry._id !== exactHandleUser._id)]
+      : result.items;
+    const total = exactHandleUser
+      ? result.total + (result.containsExactUser ? 0 : 1)
+      : result.total;
+    return {
+      items: dedupedUsers.slice(0, limit),
+      total,
+    };
   },
 });
 
@@ -374,19 +410,25 @@ async function queryUsersForAdminList(
       };
     };
   },
-  args: { limit: number; search?: string },
+  args: { limit: number; search?: string; exactUserId?: Id<"users"> },
 ) {
   const normalizedSearch = normalizeSearchQuery(args.search);
   const orderedUsers = ctx.db.query("users").order("desc");
 
   if (!normalizedSearch) {
     const items = await orderedUsers.take(args.limit);
-    return { items, total: items.length };
+    return { items, total: items.length, containsExactUser: false };
   }
 
   const scannedUsers = await orderedUsers.take(computeUserSearchScanLimit(args.limit));
   const result = buildUserSearchResults(scannedUsers, normalizedSearch);
-  return { items: result.items.slice(0, args.limit), total: result.total };
+  return {
+    items: result.items.slice(0, args.limit),
+    total: result.total,
+    containsExactUser: args.exactUserId
+      ? result.items.some((user) => user._id === args.exactUserId)
+      : false,
+  };
 }
 
 function clampInt(value: number, min: number, max: number) {
@@ -818,7 +860,8 @@ async function ensurePublisherHandleWithActor(
 
   if (existing) {
     const nextDisplayName =
-      args.displayName?.trim() && (!existing.displayName || existing.displayName === existing.handle)
+      args.displayName?.trim() &&
+      (!existing.displayName || existing.displayName === existing.handle)
         ? displayName
         : existing.displayName;
     await ctx.db.patch(existing._id, {

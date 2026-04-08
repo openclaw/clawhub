@@ -38,4 +38,13 @@ describe("packageSecurity", () => {
       }),
     );
   });
+
+  it("treats suspicious static scans as suspicious even when verification is clean", () => {
+    expect(
+      resolvePackageReleaseScanStatus({
+        staticScan: { status: "suspicious" },
+        verification: { scanStatus: "clean" },
+      } as never),
+    ).toBe("suspicious");
+  });
 });

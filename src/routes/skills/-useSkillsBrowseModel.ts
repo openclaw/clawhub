@@ -2,6 +2,7 @@ import { useAction } from "convex/react";
 import { useCallback, useEffect, useMemo, useRef, useState, type RefObject } from "react";
 import { api } from "../../../convex/_generated/api";
 import { convexHttp } from "../../convex/client";
+import { ALL_CATEGORY_KEYWORDS } from "../../lib/categories";
 import { parseDir, parseSort, toListSort, type SortDir, type SortKey } from "./-params";
 import type { SkillListEntry, SkillSearchEntry } from "./-types";
 
@@ -15,8 +16,18 @@ export type SkillsSearchState = {
   dir?: SortDir;
   highlighted?: boolean;
   nonSuspicious?: boolean;
+  tag?: string;
   view?: SkillsView;
   focus?: "search";
+};
+
+const SKILL_CAPABILITY_LABELS: Record<string, string> = {
+  crypto: "crypto",
+  "requires-wallet": "requires wallet",
+  "can-make-purchases": "payments",
+  "can-sign-transactions": "signs transactions",
+  "requires-oauth-token": "oauth",
+  "posts-externally": "external posting",
 };
 
 type SkillsNavigate = (options: {
@@ -47,10 +58,12 @@ export function useSkillsBrowseModel({
   const view: SkillsView = search.view ?? "list";
   const highlightedOnly = search.highlighted ?? false;
   const nonSuspiciousOnly = search.nonSuspicious ?? false;
+  const capabilityTag = search.tag;
   const searchSkills = useAction(api.search.searchSkills);
 
+  const isOtherCategory = query === "__other__";
   const trimmedQuery = useMemo(() => query.trim(), [query]);
-  const hasQuery = trimmedQuery.length > 0;
+  const hasQuery = !isOtherCategory && trimmedQuery.length > 0;
   const sort: SortKey =
     search.sort === "relevance" && !hasQuery
       ? "downloads"
@@ -58,7 +71,7 @@ export function useSkillsBrowseModel({
   const listSort = toListSort(sort);
   const dir = parseDir(search.dir, sort);
   const searchKey = trimmedQuery
-    ? `${trimmedQuery}::${highlightedOnly ? "1" : "0"}::${nonSuspiciousOnly ? "1" : "0"}`
+    ? `${trimmedQuery}::${highlightedOnly ? "1" : "0"}::${nonSuspiciousOnly ? "1" : "0"}::${capabilityTag ?? ""}`
     : "";
 
   // One-shot paginated fetches (no reactive subscription)
@@ -77,6 +90,7 @@ export function useSkillsBrowseModel({
           dir,
           highlightedOnly,
           nonSuspiciousOnly,
+          capabilityTag,
         });
         if (generation !== fetchGeneration.current) return;
         setListResults((prev) => (cursor ? [...prev, ...result.page] : result.page));
@@ -90,7 +104,7 @@ export function useSkillsBrowseModel({
         setListStatus(cursor ? "idle" : "done");
       }
     },
-    [listSort, dir, highlightedOnly, nonSuspiciousOnly],
+    [capabilityTag, dir, highlightedOnly, listSort, nonSuspiciousOnly],
   );
 
   // Reset and fetch first page when sort/dir/filters change
@@ -142,6 +156,7 @@ export function useSkillsBrowseModel({
             query: trimmedQuery,
             highlightedOnly,
             nonSuspiciousOnly,
+            capabilityTag,
             limit: searchLimit,
           })) as Array<SkillSearchEntry>;
           if (requestId === searchRequest.current) {
@@ -155,7 +170,15 @@ export function useSkillsBrowseModel({
       })();
     }, 220);
     return () => window.clearTimeout(handle);
-  }, [hasQuery, highlightedOnly, nonSuspiciousOnly, searchLimit, searchSkills, trimmedQuery]);
+  }, [
+    capabilityTag,
+    hasQuery,
+    highlightedOnly,
+    nonSuspiciousOnly,
+    searchLimit,
+    searchSkills,
+    trimmedQuery,
+  ]);
 
   const baseItems = useMemo(() => {
     if (hasQuery) {
@@ -171,6 +194,12 @@ export function useSkillsBrowseModel({
   }, [hasQuery, listResults, searchResults]);
 
   const sorted = useMemo(() => {
+    if (isOtherCategory) {
+      return baseItems.filter((entry) => {
+        const text = `${entry.skill.displayName} ${entry.skill.summary ?? ""} ${entry.skill.slug}`.toLowerCase();
+        return !ALL_CATEGORY_KEYWORDS.some((kw) => text.includes(kw));
+      });
+    }
     if (!hasQuery) {
       return baseItems;
     }
@@ -212,7 +241,7 @@ export function useSkillsBrowseModel({
       }
     });
     return results;
-  }, [baseItems, dir, hasQuery, sort]);
+  }, [baseItems, dir, hasQuery, isOtherCategory, sort]);
 
   const isLoadingSkills = hasQuery ? isSearching && searchResults.length === 0 : isLoadingList;
   const canLoadMore = hasQuery
@@ -347,9 +376,24 @@ export function useSkillsBrowseModel({
   const activeFilters: string[] = [];
   if (highlightedOnly) activeFilters.push("highlighted");
   if (nonSuspiciousOnly) activeFilters.push("non-suspicious");
+  if (capabilityTag) activeFilters.push(SKILL_CAPABILITY_LABELS[capabilityTag] ?? capabilityTag);
+
+  const onCapabilityTagChange = useCallback(
+    (value: string) => {
+      void navigate({
+        search: (prev) => ({
+          ...prev,
+          tag: value === "__all__" ? undefined : value,
+        }),
+        replace: true,
+      });
+    },
+    [navigate],
+  );
 
   return {
     activeFilters,
+    capabilityTag,
     canAutoLoad,
     canLoadMore,
     dir,
@@ -360,6 +404,7 @@ export function useSkillsBrowseModel({
     loadMore,
     loadMoreRef,
     nonSuspiciousOnly,
+    onCapabilityTagChange,
     onQueryChange,
     onSortChange,
     onToggleDir,

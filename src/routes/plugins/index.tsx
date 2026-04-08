@@ -1,7 +1,19 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { Link } from "@tanstack/react-router";
+import { AlertTriangle, Search } from "lucide-react";
 import { useEffect, useState } from "react";
-import { fetchPluginCatalog, type PackageListItem } from "../../lib/packageApi";
+import { EmptyState } from "../../components/EmptyState";
+import { Container } from "../../components/layout/Container";
+import { Badge } from "../../components/ui/badge";
+import { Button } from "../../components/ui/button";
+import { Card } from "../../components/ui/card";
+import { Input } from "../../components/ui/input";
+import { formatRetryDelay } from "../../lib/formatRetryDelay";
+import {
+  fetchPluginCatalog,
+  isRateLimitedPackageApiError,
+  type PackageListItem,
+} from "../../lib/packageApi";
 import { familyLabel } from "../../lib/packageLabels";
 
 type PluginSearchState = {
@@ -15,6 +27,8 @@ type PluginSearchState = {
 type PluginsLoaderData = {
   items: PackageListItem[];
   nextCursor: string | null;
+  rateLimited: boolean;
+  retryAfterSeconds: number | null;
 };
 
 export const Route = createFileRoute("/plugins/")({
@@ -30,26 +44,36 @@ export const Route = createFileRoute("/plugins/")({
         ? true
         : undefined,
     executesCode:
-      search.executesCode === true ||
-      search.executesCode === "true" ||
-      search.executesCode === "1"
+      search.executesCode === true || search.executesCode === "true" || search.executesCode === "1"
         ? true
         : undefined,
   }),
   loaderDeps: ({ search }) => search,
   loader: async ({ deps }) => {
-    const data = await fetchPluginCatalog({
-      q: deps.q,
-      cursor: deps.q ? undefined : deps.cursor,
-      family: deps.family,
-      isOfficial: deps.verified,
-      executesCode: deps.executesCode,
-      limit: 50,
-    });
-    return {
-      items: data.items,
-      nextCursor: data.nextCursor,
-    } satisfies PluginsLoaderData;
+    try {
+      const data = await fetchPluginCatalog({
+        q: deps.q,
+        cursor: deps.q ? undefined : deps.cursor,
+        family: deps.family,
+        isOfficial: deps.verified,
+        executesCode: deps.executesCode,
+        limit: 50,
+      });
+      return {
+        items: data.items,
+        nextCursor: data.nextCursor,
+        rateLimited: false,
+        retryAfterSeconds: null,
+      } satisfies PluginsLoaderData;
+    } catch (error) {
+      if (!isRateLimitedPackageApiError(error)) throw error;
+      return {
+        items: [],
+        nextCursor: null,
+        rateLimited: true,
+        retryAfterSeconds: error.retryAfterSeconds,
+      } satisfies PluginsLoaderData;
+    }
   },
   component: PluginsIndex,
 });
@@ -63,7 +87,7 @@ function VerifiedBadge() {
       fill="none"
       xmlns="http://www.w3.org/2000/svg"
       aria-label="Verified publisher"
-      style={{ display: "inline-block", verticalAlign: "middle", flexShrink: 0 }}
+      className="inline-block shrink-0 align-middle"
     >
       <path
         d="M8 0L9.79 1.52L12.12 1.21L12.93 3.41L15.01 4.58L14.42 6.84L15.56 8.82L14.12 10.5L14.12 12.82L11.86 13.41L10.34 15.27L8 14.58L5.66 15.27L4.14 13.41L1.88 12.82L1.88 10.5L0.44 8.82L1.58 6.84L0.99 4.58L3.07 3.41L3.88 1.21L6.21 1.52L8 0Z"
@@ -83,7 +107,8 @@ function VerifiedBadge() {
 export function PluginsIndex() {
   const search = Route.useSearch();
   const navigate = Route.useNavigate();
-  const { items, nextCursor } = Route.useLoaderData() as PluginsLoaderData;
+  const { items, nextCursor, rateLimited, retryAfterSeconds } =
+    Route.useLoaderData() as PluginsLoaderData;
   const [query, setQuery] = useState(search.q ?? "");
 
   useEffect(() => {
@@ -91,184 +116,220 @@ export function PluginsIndex() {
   }, [search.q]);
 
   return (
-    <main className="section">
-      <header className="skills-header-top">
-        <h1 className="section-title" style={{ marginBottom: 8 }}>
-          Plugins
-        </h1>
-        <p className="section-subtitle" style={{ marginBottom: 0 }}>
-          Browse the plugin catalog.
-        </p>
-      </header>
+    <main className="py-10">
+      <Container size="wide">
+        <header className="mb-6">
+          <h1 className="font-display text-2xl font-bold text-[color:var(--ink)] mb-2">Plugins</h1>
+          <p className="text-sm text-[color:var(--ink-soft)]">Browse the plugin catalog.</p>
+        </header>
 
-      <form
-        className="skills-toolbar"
-        onSubmit={(event) => {
-          event.preventDefault();
-          void navigate({
-            search: (prev) => ({
-              ...prev,
-              cursor: undefined,
-              q: query.trim() || undefined,
-            }),
-          });
-        }}
-      >
-        <div className="skills-search">
-          <input
-            className="skills-search-input"
-            placeholder="Search plugins…"
-            value={query}
-            onChange={(event) => setQuery(event.target.value)}
-          />
-        </div>
-        <div className="skills-toolbar-row">
-          <select
-            className="skills-sort"
-            value={search.family ?? ""}
-            onChange={(event) => {
-              const value = event.target.value as PluginSearchState["family"] | "";
-              void navigate({
-                search: (prev) => ({
-                  ...prev,
-                  cursor: undefined,
-                  q: query.trim() || undefined,
-                  family: value || undefined,
-                }),
-              });
-            }}
-            aria-label="Filter by type"
-          >
-            <option value="">All plugins</option>
-            <option value="code-plugin">Code plugins</option>
-            <option value="bundle-plugin">Bundle plugins</option>
-          </select>
-          <button
-            className="search-filter-button"
-            type="button"
-            aria-pressed={search.verified ?? false}
-            onClick={() => {
-              void navigate({
-                search: (prev) => ({
-                  ...prev,
-                  cursor: undefined,
-                  q: query.trim() || undefined,
-                  verified: prev.verified ? undefined : true,
-                }),
-              });
-            }}
-          >
-            Verified
-          </button>
-          <button
-            className="search-filter-button"
-            type="button"
-            aria-pressed={search.executesCode ?? false}
-            onClick={() => {
-              void navigate({
-                search: (prev) => ({
-                  ...prev,
-                  cursor: undefined,
-                  q: query.trim() || undefined,
-                  executesCode: prev.executesCode ? undefined : true,
-                }),
-              });
-            }}
-          >
-            Executes code
-          </button>
-          <Link
-            className="btn btn-primary"
-            to="/publish-plugin"
-            search={{
-              ownerHandle: undefined,
-              name: undefined,
-              displayName: undefined,
-              family: undefined,
-              nextVersion: undefined,
-              sourceRepo: undefined,
-            }}
-          >
-            Publish Plugin
-          </Link>
-        </div>
-      </form>
-
-      {items.length === 0 ? (
-        <div className="card">No plugins match that filter.</div>
-      ) : (
-        <>
-          <div className="grid">
-            {items.map((item) => (
-              <Link
-                key={item.name}
-                to="/plugins/$name"
-                params={{ name: item.name }}
-                className="card skill-card"
-              >
-                <div className="skill-card-tags">
-                  <span className="tag tag-compact">{familyLabel(item.family)}</span>
-                  {item.isOfficial ? (
-                    <span className="tag tag-compact tag-accent">
-                      <VerifiedBadge /> Verified
-                    </span>
-                  ) : null}
-                </div>
-                <h3 className="skill-card-title">{item.displayName}</h3>
-                <p className="skill-card-summary">
-                  {item.summary ?? "No summary provided."}
-                </p>
-                <div className="skill-card-footer" style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-                  <span className="stat">
-                    {item.ownerHandle ? `by ${item.ownerHandle}` : "community"}
-                  </span>
-                  {item.latestVersion ? (
-                    <span className="stat">v{item.latestVersion}</span>
-                  ) : null}
-                </div>
-              </Link>
-            ))}
-          </div>
-          {!search.q && (search.cursor || nextCursor) ? (
-            <div
-              style={{ display: "flex", gap: 12, justifyContent: "center", marginTop: 22 }}
+        <div className="flex flex-col gap-3">
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
+            <form
+              className="relative flex flex-1 items-center"
+              onSubmit={(event) => {
+                event.preventDefault();
+                void navigate({
+                  search: (prev) => ({
+                    ...prev,
+                    cursor: undefined,
+                    q: query.trim() || undefined,
+                  }),
+                });
+              }}
             >
-              {search.cursor ? (
+              <Search
+                className="pointer-events-none absolute left-3 h-4 w-4 text-[color:var(--ink-soft)] opacity-50"
+                aria-hidden="true"
+              />
+              <Input
+                className="pl-9"
+                placeholder="Search plugins..."
+                value={query}
+                onChange={(event) => setQuery(event.target.value)}
+              />
+            </form>
+            <Link
+              to="/publish-plugin"
+              search={{
+                ownerHandle: undefined,
+                name: undefined,
+                displayName: undefined,
+                family: undefined,
+                nextVersion: undefined,
+                sourceRepo: undefined,
+              }}
+              className="inline-flex items-center justify-center gap-2 whitespace-nowrap font-semibold text-sm min-h-[44px] rounded-[var(--radius-pill)] px-4 py-[11px] border-none bg-gradient-to-br from-[color:var(--accent)] to-[color:var(--accent-deep)] text-white transition-all duration-200 no-underline hover:-translate-y-px hover:shadow-[0_10px_20px_rgba(29,26,23,0.12)]"
+            >
+              Publish Plugin
+            </Link>
+          </div>
+          <div className="flex flex-wrap items-stretch gap-2">
+            <div
+              className="flex min-w-0 flex-wrap items-center rounded-[var(--radius-pill)] border border-[color:var(--line)]"
+              role="group"
+              aria-label="Filter by type"
+            >
+              {[
+                { value: undefined, label: "All" },
+                { value: "code-plugin" as const, label: "Code" },
+                { value: "bundle-plugin" as const, label: "Bundles" },
+              ].map((opt) => (
                 <button
-                  className="btn"
+                  key={opt.label}
+                  className={`flex-1 px-3 py-1.5 text-sm font-semibold transition-colors first:rounded-l-[var(--radius-pill)] last:rounded-r-[var(--radius-pill)] sm:flex-none ${
+                    (search.family ?? undefined) === opt.value
+                      ? "bg-[color:var(--accent)] text-white"
+                      : "text-[color:var(--ink-soft)] hover:text-[color:var(--ink)]"
+                  }`}
                   type="button"
+                  aria-pressed={(search.family ?? undefined) === opt.value}
                   onClick={() => {
                     void navigate({
                       search: (prev) => ({
                         ...prev,
                         cursor: undefined,
+                        q: query.trim() || undefined,
+                        family: opt.value,
                       }),
                     });
                   }}
                 >
-                  First page
+                  {opt.label}
                 </button>
-              ) : null}
-              {nextCursor ? (
-                <button
-                  className="btn btn-primary"
-                  type="button"
-                  onClick={() => {
-                    void navigate({
-                      search: (prev) => ({
-                        ...prev,
-                        cursor: nextCursor,
-                      }),
-                    });
-                  }}
-                >
-                  Next page
-                </button>
-              ) : null}
+              ))}
             </div>
-          ) : null}
-        </>
-      )}
+            <Button
+              variant={search.verified ? "primary" : "outline"}
+              size="sm"
+              className="flex-1 sm:flex-none"
+              aria-pressed={search.verified ?? false}
+              onClick={() => {
+                void navigate({
+                  search: (prev) => ({
+                    ...prev,
+                    cursor: undefined,
+                    q: query.trim() || undefined,
+                    verified: prev.verified ? undefined : true,
+                  }),
+                });
+              }}
+            >
+              <VerifiedBadge /> Verified
+            </Button>
+            <Button
+              variant={search.executesCode ? "primary" : "outline"}
+              size="sm"
+              className="flex-1 sm:flex-none"
+              aria-pressed={search.executesCode ?? false}
+              onClick={() => {
+                void navigate({
+                  search: (prev) => ({
+                    ...prev,
+                    cursor: undefined,
+                    q: query.trim() || undefined,
+                    executesCode: prev.executesCode ? undefined : true,
+                  }),
+                });
+              }}
+            >
+              Executes code
+            </Button>
+          </div>
+        </div>
+
+        <div className="mt-6">
+          {rateLimited ? (
+            <EmptyState
+              icon={AlertTriangle}
+              title="Plugin catalog is temporarily unavailable"
+              description={`The public plugin API is rate-limited right now. Try again ${formatRetryDelay(
+                retryAfterSeconds,
+              )}.`}
+              action={{
+                label: "Try again",
+                onClick: () => window.location.reload(),
+              }}
+            />
+          ) : items.length === 0 ? (
+            <EmptyState
+              title="No plugins match that filter"
+              description="Try a different search or filter."
+            />
+          ) : (
+            <>
+              <div className="grid grid-cols-1 gap-4 sm:grid-cols-[repeat(auto-fill,minmax(280px,1fr))] sm:gap-5">
+                {items.map((item) => (
+                  <Link key={item.name} to="/plugins/$name" params={{ name: item.name }}>
+                    <Card className="h-full cursor-pointer hover:-translate-y-px hover:shadow-[0_10px_20px_rgba(29,26,23,0.12)]">
+                      <div className="flex flex-wrap gap-1.5">
+                        <Badge variant="compact">{familyLabel(item.family)}</Badge>
+                        {item.isOfficial ? (
+                          <Badge variant="accent">
+                            <VerifiedBadge /> Verified
+                          </Badge>
+                        ) : null}
+                      </div>
+                      <h3 className="font-display text-lg font-bold text-[color:var(--ink)]">
+                        {item.displayName}
+                      </h3>
+                      <p className="text-sm text-[color:var(--ink-soft)]">
+                        {item.summary ?? "No summary provided."}
+                      </p>
+                      <div className="flex flex-col gap-1.5 pt-2 sm:flex-row sm:items-center sm:justify-between">
+                        <span className="min-w-0 break-words text-sm text-[color:var(--ink-soft)]">
+                          {item.ownerHandle ? `by ${item.ownerHandle}` : "community"}
+                        </span>
+                        {item.latestVersion ? (
+                          <span className="text-sm text-[color:var(--ink-soft)]">
+                            v{item.latestVersion}
+                          </span>
+                        ) : null}
+                      </div>
+                    </Card>
+                  </Link>
+                ))}
+              </div>
+              {!search.q && (search.cursor || nextCursor) ? (
+                <div className="mt-6 flex flex-col items-stretch justify-center gap-3 sm:flex-row sm:items-center">
+                  {search.cursor ? (
+                    <Button
+                      variant="outline"
+                      className="w-full sm:w-auto"
+                      onClick={() => {
+                        void navigate({
+                          search: (prev) => ({
+                            ...prev,
+                            cursor: undefined,
+                          }),
+                        });
+                      }}
+                    >
+                      First page
+                    </Button>
+                  ) : null}
+                  {nextCursor ? (
+                    <Button
+                      variant="primary"
+                      className="w-full sm:w-auto"
+                      onClick={() => {
+                        void navigate({
+                          search: (prev) => ({
+                            ...prev,
+                            cursor: nextCursor,
+                          }),
+                        });
+                      }}
+                    >
+                      Next page
+                    </Button>
+                  ) : null}
+                </div>
+              ) : null}
+            </>
+          )}
+        </div>
+      </Container>
     </main>
   );
 }

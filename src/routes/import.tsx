@@ -1,7 +1,16 @@
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { useAction, useQuery } from "convex/react";
 import { useMemo, useState } from "react";
+import { toast } from "sonner";
 import { api } from "../../convex/_generated/api";
+import { EmptyState } from "../components/EmptyState";
+import { Container } from "../components/layout/Container";
+import { SignInButton } from "../components/SignInButton";
+import { Badge } from "../components/ui/badge";
+import { Button } from "../components/ui/button";
+import { Card } from "../components/ui/card";
+import { Input } from "../components/ui/input";
+import { Label } from "../components/ui/label";
 import { getUserFacingConvexError } from "../lib/convexError";
 import { getPublicSlugCollision } from "../lib/slugCollision";
 import { formatBytes } from "../lib/uploadUtils";
@@ -175,12 +184,12 @@ export function ImportGitHub() {
   const doImport = async () => {
     if (!preview) return;
     if (slugCollision) {
-      setError(slugCollision.message);
+      toast.error(slugCollision.message);
       return;
     }
     setIsBusy(true);
     setError(null);
-    setStatus("Importing…");
+    setStatus("Importing...");
     try {
       const selectedPaths = preview.files.map((file) => file.path).filter((path) => selected[path]);
       const tagList = tags
@@ -202,7 +211,7 @@ export function ImportGitHub() {
       const ownerParam = me?.handle ?? (me?._id ? String(me._id) : "unknown");
       await navigate({ to: "/$owner/$slug", params: { owner: ownerParam, slug: nextSlug } });
     } catch (e) {
-      setError(getUserFacingConvexError(e, "Import failed"));
+      toast.error(getUserFacingConvexError(e, "Import failed"));
       setStatus(null);
     } finally {
       setIsBusy(false);
@@ -211,268 +220,298 @@ export function ImportGitHub() {
 
   if (!isAuthenticated) {
     return (
-      <main className="section">
-        <div className="card">
-          {isLoading ? "Loading…" : "Sign in to import and publish skills."}
-        </div>
+      <main className="py-10">
+        <Container size="narrow">
+          <EmptyState
+            title={isLoading ? "Loading..." : "Sign in to import and publish skills"}
+            description="You need to be signed in to import skills from GitHub."
+          >
+            {!isLoading ? (
+              <SignInButton variant="outline">Sign in with GitHub</SignInButton>
+            ) : null}
+          </EmptyState>
+        </Container>
       </main>
     );
   }
 
   return (
-    <main className="section upload-shell">
-      <div className="upload-header">
-        <div>
-          <div className="upload-kicker">GitHub import</div>
-          <h1 className="upload-title">Import from GitHub</h1>
-          <p className="upload-subtitle">Public repos only. Detects SKILL.md automatically.</p>
-          <div className="tag tag-accent" style={{ marginTop: 12, width: "fit-content" }}>
-            Skill-only import. Plugins are not supported here. Use{" "}
-            <Link
-              to="/publish-plugin"
-              search={{
-                ownerHandle: undefined,
-                name: undefined,
-                displayName: undefined,
-                family: undefined,
-                nextVersion: undefined,
-                sourceRepo: undefined,
-              }}
-            >
-              Publish Plugin
-            </Link>
-            .
-          </div>
-        </div>
-        <div className="upload-badge">
-          <div>Public only</div>
-          <div className="upload-badge-sub">Commit pinned</div>
-        </div>
-      </div>
-
-      <div className="upload-card">
-        <div className="upload-fields">
-          <label className="upload-field" htmlFor="github-url">
-            <div className="upload-field-header">
-              <strong>GitHub URL</strong>
-              <span className="upload-field-hint">Repo, tree path, or blob</span>
-            </div>
-            <input
-              id="github-url"
-              className="upload-input"
-              value={url}
-              onChange={(e) => setUrl(e.target.value)}
-              placeholder="https://github.com/owner/repo"
-              autoCapitalize="none"
-              autoCorrect="off"
-              spellCheck={false}
-            />
-          </label>
-        </div>
-
-        <div className="upload-footer">
-          <button
-            className="btn btn-primary"
-            type="button"
-            disabled={!url.trim() || isBusy}
-            onClick={() => void detect()}
-          >
-            Detect
-          </button>
-          {status ? <p className="upload-muted">{status}</p> : null}
-        </div>
-
-        {error ? (
-          <div className="upload-validation">
-            <div className="upload-validation-item upload-error">{error}</div>
-          </div>
-        ) : null}
-      </div>
-
-      {candidates.length > 1 ? (
-        <div className="card">
-          <h2 style={{ margin: 0 }}>Pick a skill</h2>
-          <div className="upload-filelist">
-            {candidates.map((candidate) => (
-              <label key={candidate.path} className="upload-file">
-                <input
-                  type="radio"
-                  name="candidate"
-                  checked={selectedCandidatePath === candidate.path}
-                  onChange={() => void loadCandidate(candidate.path)}
-                  disabled={isBusy}
-                />
-                <span className="mono">{candidate.path || "(repo root)"}</span>
-                <span>
-                  {candidate.name
-                    ? candidate.name
-                    : candidate.description
-                      ? candidate.description
-                      : ""}
-                </span>
-              </label>
-            ))}
-          </div>
-        </div>
-      ) : null}
-
-      {preview ? (
-        <>
-          <div className="upload-card">
-            <div className="upload-grid">
-              <div className="upload-fields">
-                <label className="upload-field" htmlFor="slug">
-                  <div className="upload-field-header">
-                    <strong>Slug</strong>
-                    <span className="upload-field-hint">Unique, lowercase</span>
-                  </div>
-                  <input
-                    id="slug"
-                    className="upload-input"
-                    value={slug}
-                    onChange={(e) => setSlug(e.target.value)}
-                    autoCapitalize="none"
-                    autoCorrect="off"
-                    spellCheck={false}
-                  />
-                </label>
-                <label className="upload-field" htmlFor="name">
-                  <div className="upload-field-header">
-                    <strong>Display name</strong>
-                    <span className="upload-field-hint">Shown in listings</span>
-                  </div>
-                  <input
-                    id="name"
-                    className="upload-input"
-                    value={displayName}
-                    onChange={(e) => setDisplayName(e.target.value)}
-                  />
-                </label>
-                <div className="upload-row">
-                  <label className="upload-field" htmlFor="version">
-                    <div className="upload-field-header">
-                      <strong>Version</strong>
-                      <span className="upload-field-hint">Semver</span>
-                    </div>
-                    <input
-                      id="version"
-                      className="upload-input"
-                      value={version}
-                      onChange={(e) => setVersion(e.target.value)}
-                      autoCapitalize="none"
-                      autoCorrect="off"
-                      spellCheck={false}
-                    />
-                  </label>
-                  <label className="upload-field" htmlFor="tags">
-                    <div className="upload-field-header">
-                      <strong>Tags</strong>
-                      <span className="upload-field-hint">Comma-separated</span>
-                    </div>
-                    <input
-                      id="tags"
-                      className="upload-input"
-                      value={tags}
-                      onChange={(e) => setTags(e.target.value)}
-                      autoCapitalize="none"
-                      autoCorrect="off"
-                      spellCheck={false}
-                    />
-                  </label>
-                </div>
-              </div>
-              <aside className="upload-side">
-                <div className="upload-summary">
-                  <div className="upload-requirement ok">Commit pinned</div>
-                  <div className="upload-muted">
-                    {preview.resolved.owner}/{preview.resolved.repo}@
-                    {preview.resolved.commit.slice(0, 7)}
-                  </div>
-                  <div className="upload-muted mono">{preview.candidate.path || "repo root"}</div>
-                </div>
-              </aside>
-            </div>
-          </div>
-
-          <div className="card">
-            <div
-              style={{
-                display: "flex",
-                justifyContent: "space-between",
-                gap: 12,
-                flexWrap: "wrap",
-              }}
-            >
-              <h2 style={{ margin: 0 }}>Files</h2>
-              <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
-                <button
-                  className="btn"
-                  type="button"
-                  disabled={isBusy}
-                  onClick={applyDefaultSelection}
+    <main className="py-10">
+      <Container>
+        <header className="mb-6">
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+            <div>
+              <p className="text-xs font-bold uppercase tracking-[0.14em] text-[color:var(--accent)]">
+                GitHub import
+              </p>
+              <h1 className="font-display text-2xl font-bold text-[color:var(--ink)]">
+                Import from GitHub
+              </h1>
+              <p className="text-sm text-[color:var(--ink-soft)]">
+                Public repos only. Detects SKILL.md automatically.
+              </p>
+              <Badge variant="accent" className="mt-3 w-fit">
+                Skill-only import. Plugins are not supported here. Use{" "}
+                <Link
+                  to="/publish-plugin"
+                  search={{
+                    ownerHandle: undefined,
+                    name: undefined,
+                    displayName: undefined,
+                    family: undefined,
+                    nextVersion: undefined,
+                    sourceRepo: undefined,
+                  }}
+                  className="underline"
                 >
-                  Select referenced
-                </button>
-                <button className="btn" type="button" disabled={isBusy} onClick={selectAll}>
-                  Select all
-                </button>
-                <button className="btn" type="button" disabled={isBusy} onClick={clearAll}>
-                  Clear
-                </button>
+                  Publish Plugin
+                </Link>
+                .
+              </Badge>
+            </div>
+            <div className="flex flex-col items-end gap-1 rounded-[var(--radius-sm)] border border-[color:var(--line)] bg-[color:var(--surface-muted)] px-4 py-3 text-sm">
+              <div className="font-semibold">Public only</div>
+              <div className="text-xs text-[color:var(--ink-soft)]">Commit pinned</div>
+            </div>
+          </div>
+        </header>
+
+        <Card className="mb-5">
+          <div className="flex flex-col gap-3">
+            <div>
+              <div className="flex items-center justify-between">
+                <Label htmlFor="github-url">GitHub URL</Label>
+                <span className="text-xs text-[color:var(--ink-soft)]">
+                  Repo, tree path, or blob
+                </span>
               </div>
+              <Input
+                id="github-url"
+                className="mt-1"
+                value={url}
+                onChange={(e) => setUrl(e.target.value)}
+                placeholder="https://github.com/owner/repo"
+                autoCapitalize="none"
+                autoCorrect="off"
+                spellCheck={false}
+              />
             </div>
-            <div className="upload-muted">
-              Selected: {selectedCount}/{preview.files.length} • {formatBytes(selectedBytes)}
+          </div>
+
+          <div className="flex items-center gap-3 pt-2">
+            <Button
+              variant="primary"
+              disabled={!url.trim() || isBusy}
+              onClick={() => void detect()}
+            >
+              Detect
+            </Button>
+            {status ? <p className="text-sm text-[color:var(--ink-soft)]">{status}</p> : null}
+          </div>
+
+          {error ? (
+            <div className="mt-3 rounded-[var(--radius-sm)] border border-red-300/40 bg-red-50 px-3 py-2 text-sm text-red-700 dark:border-red-500/30 dark:bg-red-950/50 dark:text-red-300">
+              {error}
             </div>
-            <div className="file-list">
-              {preview.files.map((file) => (
-                <label key={file.path} className="file-row">
+          ) : null}
+        </Card>
+
+        {candidates.length > 1 ? (
+          <Card className="mb-5">
+            <h2 className="font-display text-lg font-bold text-[color:var(--ink)]">Pick a skill</h2>
+            <div className="flex flex-col gap-2">
+              {candidates.map((candidate) => (
+                <label
+                  key={candidate.path}
+                  className="flex items-center gap-3 rounded-[var(--radius-sm)] border border-[color:var(--line)] px-3 py-2 cursor-pointer hover:bg-[color:var(--surface-muted)]"
+                >
                   <input
-                    type="checkbox"
-                    checked={Boolean(selected[file.path])}
-                    onChange={() =>
-                      setSelected((prev) => ({ ...prev, [file.path]: !prev[file.path] }))
-                    }
+                    type="radio"
+                    name="candidate"
+                    checked={selectedCandidatePath === candidate.path}
+                    onChange={() => void loadCandidate(candidate.path)}
                     disabled={isBusy}
                   />
-                  <span className="mono file-path">{file.path}</span>
-                  <span className="file-meta">{formatBytes(file.size)}</span>
+                  <span className="font-mono text-xs">{candidate.path || "(repo root)"}</span>
+                  <span className="text-sm text-[color:var(--ink-soft)]">
+                    {candidate.name
+                      ? candidate.name
+                      : candidate.description
+                        ? candidate.description
+                        : ""}
+                  </span>
                 </label>
               ))}
             </div>
-            <div className="upload-footer">
-              <button
-                className="btn btn-primary"
-                type="button"
-                disabled={
-                  isBusy ||
-                  !slug.trim() ||
-                  !displayName.trim() ||
-                  !version.trim() ||
-                  selectedCount === 0 ||
-                  Boolean(slugCollision)
-                }
-                onClick={() => void doImport()}
-              >
-                Import + publish
-              </button>
-              {slugCollision ? (
-                <div className="upload-muted">
-                  {slugCollision.message}
-                  {slugCollision.url ? (
-                    <>
-                      {" "}
-                      <a href={slugCollision.url} className="upload-link">
-                        {slugCollision.url}
-                      </a>
-                    </>
-                  ) : null}
+          </Card>
+        ) : null}
+
+        {preview ? (
+          <>
+            <Card className="mb-5">
+              <div className="grid gap-5 md:grid-cols-[1fr_auto]">
+                <div className="flex flex-col gap-3">
+                  <div>
+                    <div className="flex items-center justify-between">
+                      <Label htmlFor="slug">Slug</Label>
+                      <span className="text-xs text-[color:var(--ink-soft)]">
+                        Unique, lowercase
+                      </span>
+                    </div>
+                    <Input
+                      id="slug"
+                      className="mt-1"
+                      value={slug}
+                      onChange={(e) => setSlug(e.target.value)}
+                      autoCapitalize="none"
+                      autoCorrect="off"
+                      spellCheck={false}
+                    />
+                  </div>
+                  <div>
+                    <div className="flex items-center justify-between">
+                      <Label htmlFor="name">Display name</Label>
+                      <span className="text-xs text-[color:var(--ink-soft)]">
+                        Shown in listings
+                      </span>
+                    </div>
+                    <Input
+                      id="name"
+                      className="mt-1"
+                      value={displayName}
+                      onChange={(e) => setDisplayName(e.target.value)}
+                    />
+                  </div>
+                  <div className="grid grid-cols-2 gap-3">
+                    <div>
+                      <div className="flex items-center justify-between">
+                        <Label htmlFor="version">Version</Label>
+                        <span className="text-xs text-[color:var(--ink-soft)]">Semver</span>
+                      </div>
+                      <Input
+                        id="version"
+                        className="mt-1"
+                        value={version}
+                        onChange={(e) => setVersion(e.target.value)}
+                        autoCapitalize="none"
+                        autoCorrect="off"
+                        spellCheck={false}
+                      />
+                    </div>
+                    <div>
+                      <div className="flex items-center justify-between">
+                        <Label htmlFor="tags">Tags</Label>
+                        <span className="text-xs text-[color:var(--ink-soft)]">
+                          Comma-separated
+                        </span>
+                      </div>
+                      <Input
+                        id="tags"
+                        className="mt-1"
+                        value={tags}
+                        onChange={(e) => setTags(e.target.value)}
+                        autoCapitalize="none"
+                        autoCorrect="off"
+                        spellCheck={false}
+                      />
+                    </div>
+                  </div>
                 </div>
-              ) : null}
-            </div>
-          </div>
-        </>
-      ) : null}
+                <aside className="flex flex-col gap-1 rounded-[var(--radius-sm)] border border-[color:var(--line)] bg-[color:var(--surface-muted)] px-4 py-3">
+                  <div className="flex items-center gap-2 text-sm font-semibold text-emerald-600">
+                    Commit pinned
+                  </div>
+                  <div className="text-sm text-[color:var(--ink-soft)]">
+                    {preview.resolved.owner}/{preview.resolved.repo}@
+                    {preview.resolved.commit.slice(0, 7)}
+                  </div>
+                  <div className="font-mono text-xs text-[color:var(--ink-soft)]">
+                    {preview.candidate.path || "repo root"}
+                  </div>
+                </aside>
+              </div>
+            </Card>
+
+            <Card>
+              <div className="flex flex-wrap items-center justify-between gap-3">
+                <h2 className="font-display text-lg font-bold text-[color:var(--ink)]">Files</h2>
+                <div className="flex flex-wrap gap-2">
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    disabled={isBusy}
+                    onClick={applyDefaultSelection}
+                  >
+                    Select referenced
+                  </Button>
+                  <Button variant="outline" size="sm" disabled={isBusy} onClick={selectAll}>
+                    Select all
+                  </Button>
+                  <Button variant="outline" size="sm" disabled={isBusy} onClick={clearAll}>
+                    Clear
+                  </Button>
+                </div>
+              </div>
+              <p className="text-sm text-[color:var(--ink-soft)]">
+                Selected: {selectedCount}/{preview.files.length} &bull; {formatBytes(selectedBytes)}
+              </p>
+              <div className="flex flex-col gap-1">
+                {preview.files.map((file) => (
+                  <label
+                    key={file.path}
+                    className="flex items-center gap-3 rounded-[var(--radius-sm)] px-2 py-1.5 hover:bg-[color:var(--surface-muted)]"
+                  >
+                    <input
+                      type="checkbox"
+                      checked={Boolean(selected[file.path])}
+                      onChange={() =>
+                        setSelected((prev) => ({ ...prev, [file.path]: !prev[file.path] }))
+                      }
+                      disabled={isBusy}
+                    />
+                    <span className="flex-1 truncate font-mono text-xs">{file.path}</span>
+                    <span className="shrink-0 text-xs text-[color:var(--ink-soft)]">
+                      {formatBytes(file.size)}
+                    </span>
+                  </label>
+                ))}
+              </div>
+              <div className="flex items-center gap-3 pt-2">
+                <Button
+                  variant="primary"
+                  disabled={
+                    isBusy ||
+                    !slug.trim() ||
+                    !displayName.trim() ||
+                    !version.trim() ||
+                    selectedCount === 0 ||
+                    Boolean(slugCollision)
+                  }
+                  onClick={() => void doImport()}
+                >
+                  Import + publish
+                </Button>
+                {slugCollision ? (
+                  <div className="text-sm text-[color:var(--ink-soft)]">
+                    {slugCollision.message}
+                    {slugCollision.url ? (
+                      <>
+                        {" "}
+                        <a
+                          href={slugCollision.url}
+                          className="text-[color:var(--accent)] hover:underline"
+                        >
+                          {slugCollision.url}
+                        </a>
+                      </>
+                    ) : null}
+                  </div>
+                ) : null}
+              </div>
+            </Card>
+          </>
+        ) : null}
+      </Container>
     </main>
   );
 }

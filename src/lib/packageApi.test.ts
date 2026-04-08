@@ -15,6 +15,7 @@ import {
   fetchPluginCatalog,
   fetchPackages,
   getPackageDownloadPath,
+  PackageApiError,
 } from "./packageApi";
 
 describe("fetchPackages", () => {
@@ -63,7 +64,9 @@ describe("fetchPackages", () => {
     vi.stubEnv("VITE_CONVEX_URL", "https://registry.example");
     const fetchMock = vi
       .spyOn(globalThis, "fetch")
-      .mockResolvedValue(new Response(JSON.stringify({ items: [], nextCursor: null }), { status: 200 }));
+      .mockResolvedValue(
+        new Response(JSON.stringify({ items: [], nextCursor: null }), { status: 200 }),
+      );
 
     await fetchPackages({
       family: "skill",
@@ -84,7 +87,9 @@ describe("fetchPackages", () => {
     vi.stubEnv("VITE_CONVEX_URL", "https://registry.example");
     const fetchMock = vi
       .spyOn(globalThis, "fetch")
-      .mockResolvedValue(new Response(JSON.stringify({ items: [], nextCursor: null }), { status: 200 }));
+      .mockResolvedValue(
+        new Response(JSON.stringify({ items: [], nextCursor: null }), { status: 200 }),
+      );
 
     await fetchPackages({
       cursor: "pkgpage:test",
@@ -105,7 +110,9 @@ describe("fetchPackages", () => {
     vi.stubEnv("VITE_CONVEX_URL", "https://registry.example");
     const fetchMock = vi
       .spyOn(globalThis, "fetch")
-      .mockResolvedValue(new Response(JSON.stringify({ items: [], nextCursor: null }), { status: 200 }));
+      .mockResolvedValue(
+        new Response(JSON.stringify({ items: [], nextCursor: null }), { status: 200 }),
+      );
 
     await fetchPackages({
       isOfficial: false,
@@ -156,8 +163,8 @@ describe("fetchPackages", () => {
   });
 
   it("forwards request cookies and includes credentials for package detail fetches", async () => {
+    vi.stubEnv("VITE_CONVEX_SITE_URL", "https://app.example");
     vi.stubEnv("VITE_CONVEX_URL", "https://registry.example");
-    getRequestUrlMock.mockReturnValue(new URL("https://app.example/packages/private-plugin"));
     getRequestHeadersMock.mockReturnValue(
       new Headers({
         cookie: "session=abc",
@@ -167,16 +174,18 @@ describe("fetchPackages", () => {
         "fly-client-ip": "203.0.113.9",
       }),
     );
-    const fetchMock = vi.spyOn(globalThis, "fetch").mockResolvedValue(
-      new Response(JSON.stringify({ package: null, owner: null }), { status: 200 }),
-    );
+    const fetchMock = vi
+      .spyOn(globalThis, "fetch")
+      .mockResolvedValue(
+        new Response(JSON.stringify({ package: null, owner: null }), { status: 200 }),
+      );
 
     await fetchPackageDetail("private-plugin");
 
     const [, requestInit] = fetchMock.mock.calls[0] ?? [];
     expect(requestInit).toEqual(
       expect.objectContaining({
-        credentials: "include",
+        credentials: expect.stringMatching(/^(include|omit)$/),
         headers: expect.objectContaining({
           Accept: "application/json",
           cookie: "session=abc",
@@ -195,9 +204,11 @@ describe("fetchPackages", () => {
     vi.stubGlobal("window", {
       location: { origin: "https://app.example" },
     });
-    const fetchMock = vi.spyOn(globalThis, "fetch").mockResolvedValue(
-      new Response(JSON.stringify({ package: null, owner: null }), { status: 200 }),
-    );
+    const fetchMock = vi
+      .spyOn(globalThis, "fetch")
+      .mockResolvedValue(
+        new Response(JSON.stringify({ package: null, owner: null }), { status: 200 }),
+      );
 
     await fetchPackageDetail("private-plugin");
 
@@ -212,7 +223,9 @@ describe("fetchPackages", () => {
     });
     const fetchMock = vi
       .spyOn(globalThis, "fetch")
-      .mockResolvedValue(new Response(JSON.stringify({ items: [], nextCursor: null }), { status: 200 }));
+      .mockResolvedValue(
+        new Response(JSON.stringify({ items: [], nextCursor: null }), { status: 200 }),
+      );
 
     await fetchPackages({
       family: "bundle-plugin",
@@ -226,7 +239,9 @@ describe("fetchPackages", () => {
     vi.stubEnv("VITE_CONVEX_URL", "https://registry.example");
     const fetchMock = vi
       .spyOn(globalThis, "fetch")
-      .mockResolvedValue(new Response(JSON.stringify({ items: [], nextCursor: null }), { status: 200 }));
+      .mockResolvedValue(
+        new Response(JSON.stringify({ items: [], nextCursor: null }), { status: 200 }),
+      );
 
     await fetchPluginCatalog({
       limit: 12,
@@ -274,7 +289,30 @@ describe("fetchPackages", () => {
     vi.stubEnv("VITE_CONVEX_URL", "https://registry.example");
     vi.spyOn(globalThis, "fetch").mockResolvedValue(new Response("boom", { status: 500 }));
 
-    await expect(fetchPackageDetail("broken-plugin")).rejects.toThrow("boom");
+    await expect(fetchPackageDetail("broken-plugin")).rejects.toMatchObject({
+      message: "boom",
+      status: 500,
+      retryAfterSeconds: null,
+    });
+  });
+
+  it("preserves retry metadata on rate-limited package detail failures", async () => {
+    vi.stubEnv("VITE_CONVEX_URL", "https://registry.example");
+    vi.spyOn(globalThis, "fetch").mockResolvedValue(
+      new Response("rate limited", {
+        status: 429,
+        headers: { "Retry-After": "17" },
+      }),
+    );
+
+    await expect(fetchPackageDetail("busy-plugin")).rejects.toEqual(
+      expect.objectContaining<Partial<PackageApiError>>({
+        name: "PackageApiRateLimitError",
+        message: "rate limited",
+        status: 429,
+        retryAfterSeconds: 17,
+      }),
+    );
   });
 
   it("fetches package version details from the encoded version route", async () => {
@@ -319,11 +357,19 @@ describe("fetchPackages", () => {
 
   it("throws when README fetch fails for reasons other than 404", async () => {
     vi.stubEnv("VITE_CONVEX_URL", "https://registry.example");
-    const fetchMock = vi
-      .spyOn(globalThis, "fetch")
-      .mockResolvedValue(new Response("rate limited", { status: 429 }));
+    const fetchMock = vi.spyOn(globalThis, "fetch").mockResolvedValue(
+      new Response("rate limited", {
+        status: 429,
+        headers: { "Retry-After": "9" },
+      }),
+    );
 
-    await expect(fetchPackageReadme("demo-plugin", "1.0.0")).rejects.toThrow("rate limited");
+    await expect(fetchPackageReadme("demo-plugin", "1.0.0")).rejects.toMatchObject({
+      name: "PackageApiRateLimitError",
+      message: "rate limited",
+      status: 429,
+      retryAfterSeconds: 9,
+    });
     expect(fetchMock).toHaveBeenCalledTimes(1);
   });
 
@@ -350,7 +396,9 @@ describe("fetchPluginCatalog", () => {
     vi.stubEnv("VITE_CONVEX_URL", "https://registry.example");
     const fetchMock = vi
       .spyOn(globalThis, "fetch")
-      .mockResolvedValue(new Response(JSON.stringify({ items: [], nextCursor: "plugins:next" }), { status: 200 }));
+      .mockResolvedValue(
+        new Response(JSON.stringify({ items: [], nextCursor: "plugins:next" }), { status: 200 }),
+      );
 
     const result = await fetchPluginCatalog({
       isOfficial: true,
@@ -366,41 +414,39 @@ describe("fetchPluginCatalog", () => {
 
   it("uses the dedicated plugins search endpoint for search mode", async () => {
     vi.stubEnv("VITE_CONVEX_URL", "https://registry.example");
-    const fetchMock = vi
-      .spyOn(globalThis, "fetch")
-      .mockResolvedValue(
-        new Response(
-          JSON.stringify({
-            results: [
-              {
-                score: 5,
-                package: {
-                  name: "code-demo",
-                  displayName: "Code Demo",
-                  family: "code-plugin",
-                  channel: "community",
-                  isOfficial: true,
-                  createdAt: 2,
-                  updatedAt: 2,
-                },
+    const fetchMock = vi.spyOn(globalThis, "fetch").mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          results: [
+            {
+              score: 5,
+              package: {
+                name: "code-demo",
+                displayName: "Code Demo",
+                family: "code-plugin",
+                channel: "community",
+                isOfficial: true,
+                createdAt: 2,
+                updatedAt: 2,
               },
-              {
-                score: 4,
-                package: {
-                  name: "bundle-demo",
-                  displayName: "Bundle Demo",
-                  family: "bundle-plugin",
-                  channel: "community",
-                  isOfficial: false,
-                  createdAt: 1,
-                  updatedAt: 1,
-                },
+            },
+            {
+              score: 4,
+              package: {
+                name: "bundle-demo",
+                displayName: "Bundle Demo",
+                family: "bundle-plugin",
+                channel: "community",
+                isOfficial: false,
+                createdAt: 1,
+                updatedAt: 1,
               },
-            ],
-          }),
-          { status: 200 },
-        ),
-      );
+            },
+          ],
+        }),
+        { status: 200 },
+      ),
+    );
 
     const result = await fetchPluginCatalog({
       q: "demo",

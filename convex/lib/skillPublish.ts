@@ -9,6 +9,13 @@ import { generateEmbedding } from "./embeddings";
 import { requireGitHubAccountAge } from "./githubAccount";
 import type { PublicUser } from "./public";
 import {
+  findOversizedPublishFile,
+  getPublishFileSizeError,
+  getPublishTotalSizeError,
+  MAX_PUBLISH_TOTAL_BYTES,
+} from "./publishLimits";
+import { deriveSkillCapabilityTags } from "./skillCapabilityTags";
+import {
   computeQualitySignals,
   evaluateQuality,
   getTrustTier,
@@ -29,12 +36,6 @@ import {
 import { generateSkillSummary } from "./skillSummary";
 import { runStaticPublishScan } from "./staticPublishScan";
 import type { WebhookSkillPayload } from "./webhooks";
-import {
-  findOversizedPublishFile,
-  getPublishFileSizeError,
-  getPublishTotalSizeError,
-  MAX_PUBLISH_TOTAL_BYTES,
-} from "./publishLimits";
 
 const MAX_FILES_FOR_EMBEDDING = 40;
 const QUALITY_WINDOW_MS = 24 * 60 * 60 * 1000;
@@ -246,6 +247,14 @@ export async function publishVersionForUser(
     readme: readmeText,
     otherFiles,
   });
+  const capabilityTags = deriveSkillCapabilityTags({
+    slug,
+    displayName,
+    summary,
+    frontmatter,
+    readmeText,
+    fileContents,
+  });
 
   const fingerprintPromise = hashSkillFiles(
     publishFiles.map((file) => ({ path: file.path, sha256: file.sha256 })),
@@ -298,6 +307,7 @@ export async function publishVersionForUser(
       clawdis,
       license: PLATFORM_SKILL_LICENSE,
     },
+    capabilityTags,
     summary,
     staticScan,
     embedding,

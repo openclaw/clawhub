@@ -7,16 +7,29 @@ import type { DataModel, Id } from "./_generated/dataModel";
 import { shouldScheduleGitHubProfileSync } from "./lib/githubProfileSync";
 
 export const BANNED_REAUTH_MESSAGE =
-  "Your account has been banned for uploading malicious skills. If you believe this is a mistake, please contact security@openclaw.ai and we will work with you to restore access.";
+  "This account has been banned and cannot sign in. If you believe this is a mistake, please contact security@openclaw.ai and we will review it.";
 export const DELETED_ACCOUNT_REAUTH_MESSAGE =
   "This account has been permanently deleted and cannot be restored.";
 
 const REAUTH_BLOCKING_BAN_ACTIONS = new Set(["user.ban", "user.autoban.malware"]);
 
+function getBannedReauthMessage(reason: string | undefined) {
+  const normalizedReason = reason?.trim();
+  if (!normalizedReason || normalizedReason.toLowerCase() === "malware auto-ban") {
+    return BANNED_REAUTH_MESSAGE;
+  }
+  return `${BANNED_REAUTH_MESSAGE} Reason: ${normalizedReason}`;
+}
+
 export async function handleDeletedUserSignIn(
   ctx: GenericMutationCtx<DataModel>,
   args: { userId: Id<"users">; existingUserId: Id<"users"> | null },
-  userOverride?: { deletedAt?: number; deactivatedAt?: number; purgedAt?: number } | null,
+  userOverride?: {
+    deletedAt?: number;
+    deactivatedAt?: number;
+    purgedAt?: number;
+    banReason?: string;
+  } | null,
 ) {
   const user = userOverride !== undefined ? userOverride : await ctx.db.get(args.userId);
   if (!user?.deletedAt && !user?.deactivatedAt) return;
@@ -42,7 +55,7 @@ export async function handleDeletedUserSignIn(
   );
 
   if (hasBlockingBan) {
-    throw new ConvexError(BANNED_REAUTH_MESSAGE);
+    throw new ConvexError(getBannedReauthMessage(user.banReason));
   }
 
   // Migrate legacy self-deleted accounts (stored in deletedAt) to the new

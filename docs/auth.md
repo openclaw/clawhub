@@ -11,6 +11,7 @@ read_when:
 
 - Convex Auth + GitHub OAuth App.
 - GitHub is the only supported login provider.
+- Disabled/banned accounts are blocked during OAuth completion and should surface a user-facing reason instead of a generic auth failure.
 - Env vars:
   - `AUTH_GITHUB_ID`
   - `AUTH_GITHUB_SECRET`

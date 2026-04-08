@@ -38,9 +38,21 @@
 - Commit messages: Conventional Commits (`feat:`, `fix:`, `chore:`, `docs:`…).
 - Keep changes scoped; avoid repo-wide search/replace.
 - PRs: include summary + test commands run. Add screenshots for UI changes.
-- Before merging any PR, verify TypeScript cleanly with `bunx tsc -p packages/schema/tsconfig.json --noEmit` and `bunx tsc -p packages/clawdhub/tsconfig.json --noEmit`; if Convex code changed, also run the repo typecheck path used by deploy so `bunx convex deploy` will not fail on `tsc`.
+- Before merging any PR, verify TypeScript cleanly with `bunx tsc -p packages/schema/tsconfig.json --noEmit` and `bunx tsc -p packages/clawhub/tsconfig.json --noEmit`; if Convex code changed, also run the repo typecheck path used by deploy so `bunx convex deploy` will not fail on `tsc`.
 - GitHub comments: for multiline `gh` comments/close messages, use `--body-file`, `--input`, or stdin/heredoc with real newlines; never pass literal `\\n` in shell strings.
 - Reject PRs that add skills into source code/repo content directly (for example under `skills/` or seed-only additions intended as published skills). Skills must be uploaded/published via CLI.
+
+## Production Release
+
+- Production deploys are manual-only. Merging to `main` does **not** deploy.
+- To release production, start the GitHub Actions `Deploy` workflow from `main`:
+  `gh workflow run deploy.yml --repo openclaw/clawhub --ref main`
+- The workflow supports `full`, `backend`, and `frontend` targets.
+- `frontend` currently means: wait for the Vercel production deploy for the selected `main` SHA, then run production smoke checks. It does not call `vercel deploy` directly yet.
+- The workflow uses the GitHub `Production` environment for deploy secrets, but it does not require a separate approval step.
+- Prod deploy secrets live on the `Production` environment, not as ordinary repo secrets. Required: `CONVEX_DEPLOY_KEY`. Optional: `PLAYWRIGHT_AUTH_STORAGE_STATE_JSON`.
+- CLI npm releases are also manual-only and tag-based. Stable tags only: `vX.Y.Z`. Start `ClawHub CLI NPM Release` from `main`, first with `preflight_only=true`, then rerun it with the same tag and the successful `preflight_run_id`.
+- Real CLI publishes wait at the GitHub `npm-release` environment and use npm trusted publishing. Required npm trusted publisher settings: repository `openclaw/clawhub`, workflow `clawhub-cli-npm-release.yml`, environment `npm-release`.
 
 ## Git Notes
 

@@ -323,7 +323,10 @@ export const evaluatePackageReleaseWithLlm = internalAction({
         const content = await blob.text();
         fileContents.push({ path: f.path, content });
         const lower = f.path.toLowerCase();
-        if (!readmeContent && (lower === "readme.md" || lower === "readme.mdx" || lower === "readme.markdown")) {
+        if (
+          !readmeContent &&
+          (lower === "readme.md" || lower === "readme.mdx" || lower === "readme.markdown")
+        ) {
           readmeContent = content;
         }
       } catch {
@@ -332,8 +335,11 @@ export const evaluatePackageReleaseWithLlm = internalAction({
     }
 
     if (!readmeContent) {
-      const packageJsonText = fileContents.find((entry) => entry.path.toLowerCase() === "package.json")?.content;
-      readmeContent = packageJsonText ?? `# ${pkg.displayName}\n\n${release.summary ?? pkg.summary ?? pkg.name}`;
+      const packageJsonText = fileContents.find(
+        (entry) => entry.path.toLowerCase() === "package.json",
+      )?.content;
+      readmeContent =
+        packageJsonText ?? `# ${pkg.displayName}\n\n${release.summary ?? pkg.summary ?? pkg.name}`;
     }
 
     const allContent = [readmeContent, ...fileContents.map((f) => f.content)].join("\n");

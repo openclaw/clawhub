@@ -1,0 +1,59 @@
+{
+  "name": "clawhub",
+  "version": "0.10.0",
+  "description": "ClawHub CLI \\u2014 install, update, search, and publish skills plus OpenClaw packages.",
+  "homepage": "https://clawhub.ai",
+  "bugs": {
+    "url": "https://github.com/openclaw/clawhub/issues"
+  },
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/openclaw/clawhub.git",
+    "directory": "packages/clawhub"
+  },
+  "bin": {
+    "clawdhub": "bin/clawdhub.js",
+    "clawhub": "bin/clawdhub.js"
+  },
+  "files": [
+    "bin",
+    "dist",
+    "README.md",
+    "LICENSE"
+  ],
+  "type": "module",
+  "publishConfig": {
+    "access": "public"
+  },
+  "scripts": {
+    "build": "node ./scripts/build.mjs",
+    "dev": "node --enable-source-maps dist/cli.js",
+    "prepublishOnly": "npm run build",
+    "test": "bun run test:src",
+    "test:artifact": "bun run build && vitest run -c vitest.artifact.config.ts",
+    "test:src": "vitest run -c vitest.config.ts",
+    "verify": "bun run test:src && bun run verify:build && bun run test:artifact",
+    "verify:build": "tsc -p tsconfig.json --noEmit"
+  },
+  "dependencies": {
+    "@clack/prompts": "^1.1.0",
+    "arktype": "^2.2.0",
+    "commander": "^14.0.3",
+    "fflate": "^0.8.2",
+    "ignore": "^7.0.5",
+    "json5": "^2.2.3",
+    "mime": "^4.1.0",
+    "ora": "^9.3.0",
+    "p-retry": "^7.1.1",
+    "semver": "^7.7.4",
+    "undici": "^7.24.0"
+  },
+  "devDependencies": {
+    "@types/node": "^25.5.0",
+    "typescript": "^5.9.3"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}

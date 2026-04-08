@@ -20,11 +20,13 @@ import {
   listPluginsV1Http,
   listSkillsV1Http,
   listSoulsV1Http,
+  mintPublishTokenV1Http,
+  packagesDeleteRouterV1Http,
   packagesGetRouterV1Http,
   packagesPostRouterV1Http,
   pluginsGetRouterV1Http,
-  publishSkillV1Http,
   publishPackageV1Http,
+  publishSkillV1Http,
   publishSoulV1Http,
   resolveSkillVersionV1Http,
   searchSkillsV1Http,
@@ -126,9 +128,21 @@ http.route({
 });
 
 http.route({
+  path: ApiRoutes.publishTokenMint,
+  method: "POST",
+  handler: mintPublishTokenV1Http,
+});
+
+http.route({
   pathPrefix: `${ApiRoutes.packages}/`,
   method: "POST",
   handler: packagesPostRouterV1Http,
+});
+
+http.route({
+  pathPrefix: `${ApiRoutes.packages}/`,
+  method: "DELETE",
+  handler: packagesDeleteRouterV1Http,
 });
 
 http.route({

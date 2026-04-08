@@ -33,6 +33,7 @@ const listPackageCatalogPageHandler = (
         family: "skill";
         channel: "official" | "community";
         isOfficial: boolean;
+        capabilityTags: string[];
       }>;
       isDone: boolean;
       continueCursor: string;
@@ -79,6 +80,7 @@ function makeDigest(
       changelog: "init",
     },
     tags: { latest: `skillVersions:${slug}-1` },
+    capabilityTags: [],
     badges: {},
     stats: {
       downloads: 1,
@@ -103,8 +105,13 @@ function makeDigest(
   };
 }
 
-function makeCtx(pages: Array<{ page: Array<Record<string, unknown>>; isDone: boolean; continueCursor: string }>) {
-  const pageByCursor = new Map<string | null, { page: Array<Record<string, unknown>>; isDone: boolean; continueCursor: string }>();
+function makeCtx(
+  pages: Array<{ page: Array<Record<string, unknown>>; isDone: boolean; continueCursor: string }>,
+) {
+  const pageByCursor = new Map<
+    string | null,
+    { page: Array<Record<string, unknown>>; isDone: boolean; continueCursor: string }
+  >();
   const allDigests = pages.flatMap((page) => page.page);
   let cursor: string | null = null;
   for (const page of pages) {
@@ -116,7 +123,12 @@ function makeCtx(pages: Array<{ page: Array<Record<string, unknown>>; isDone: bo
       query: (table: string) => {
         if (table === "skills") {
           return {
-            withIndex: (_index: string, builder: (q: { eq: (field: string, value: string) => { field: string; value: string } }) => { field: string; value: string }) => {
+            withIndex: (
+              _index: string,
+              builder: (q: {
+                eq: (field: string, value: string) => { field: string; value: string };
+              }) => { field: string; value: string },
+            ) => {
               const constraint = builder({ eq: (field, value) => ({ field, value }) });
               return {
                 unique: async () => {
@@ -204,5 +216,49 @@ describe("skills package catalog queries", () => {
       },
     });
     expect(result[0]?.score).toBeGreaterThan(0);
+  });
+
+  it("filters skills by capability tag", async () => {
+    const result = await listPackageCatalogPageHandler(
+      makeCtx([
+        {
+          page: [
+            makeDigest("paytoll", { capabilityTags: ["crypto", "requires-wallet"] }),
+            makeDigest("weather"),
+          ],
+          isDone: true,
+          continueCursor: "",
+        },
+      ]),
+      {
+        capabilityTag: "crypto",
+        paginationOpts: { cursor: null, numItems: 10 },
+      },
+    );
+
+    expect(result.page).toEqual([
+      expect.objectContaining({
+        name: "paytoll",
+        capabilityTags: ["crypto", "requires-wallet"],
+      }),
+    ]);
+  });
+
+  it("returns empty immediately for unknown capability tags", async () => {
+    const result = await listPackageCatalogPageHandler(
+      makeCtx([
+        {
+          page: [makeDigest("paytoll", { capabilityTags: ["crypto", "requires-wallet"] })],
+          isDone: true,
+          continueCursor: "",
+        },
+      ]),
+      {
+        capabilityTag: "not-a-real-tag",
+        paginationOpts: { cursor: null, numItems: 10 },
+      },
+    );
+
+    expect(result).toEqual({ page: [], isDone: true, continueCursor: "" });
   });
 });

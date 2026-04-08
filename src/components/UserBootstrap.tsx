@@ -11,7 +11,9 @@ export function UserBootstrap() {
   useEffect(() => {
     if (isLoading || !isAuthenticated || didRun.current) return;
     didRun.current = true;
-    void ensureUser();
+    void ensureUser().catch(() => {
+      // Best-effort normalization. Broken auth state should not crash the UI.
+    });
   }, [isAuthenticated, isLoading, ensureUser]);
 
   return null;

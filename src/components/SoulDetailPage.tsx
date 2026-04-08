@@ -1,15 +1,21 @@
 import { useAction, useMutation, useQuery } from "convex/react";
 import { useEffect, useMemo, useRef, useState } from "react";
-import ReactMarkdown from "react-markdown";
-import remarkGfm from "remark-gfm";
 import { api } from "../../convex/_generated/api";
 import type { Doc } from "../../convex/_generated/dataModel";
 import type { PublicSoul, PublicUser } from "../lib/publicUser";
 import { isModerator } from "../lib/roles";
 import { getRuntimeEnv } from "../lib/runtimeEnv";
 import { useAuthStatus } from "../lib/useAuthStatus";
+import { EmptyState } from "./EmptyState";
+import { Container } from "./layout/Container";
+import { MarkdownPreview } from "./MarkdownPreview";
+import { SkillCardSkeletonGrid } from "./skeletons/SkillCardSkeleton";
 import { stripFrontmatter } from "./skillDetailUtils";
 import { SoulStatsTripletLine } from "./SoulStats";
+import { Button } from "./ui/button";
+import { Card, CardContent, CardHeader, CardTitle } from "./ui/card";
+import { Skeleton } from "./ui/skeleton";
+import { Textarea } from "./ui/textarea";
 
 type SoulDetailPageProps = {
   slug: string;
@@ -110,18 +116,23 @@ export function SoulDetailPage({ slug }: SoulDetailPageProps) {
 
   if (isLoadingSoul) {
     return (
-      <main className="section">
-        <div className="card">
-          <div className="loading-indicator">Loading soul…</div>
-        </div>
+      <main className="py-10">
+        <Container>
+          <SkillCardSkeletonGrid count={1} />
+        </Container>
       </main>
     );
   }
 
   if (result === null || !soul) {
     return (
-      <main className="section">
-        <div className="card">Soul not found.</div>
+      <main className="py-10">
+        <Container size="narrow">
+          <EmptyState
+            title="Soul not found"
+            description="This soul does not exist or has been removed."
+          />
+        </Container>
       </main>
     );
   }
@@ -131,153 +142,191 @@ export function SoulDetailPage({ slug }: SoulDetailPageProps) {
   const downloadBase = `${convexSiteUrl}/api/v1/souls/${soul.slug}/file`;
 
   return (
-    <main className="section">
-      <div className="skill-detail-stack">
-        <div className="card skill-hero">
-          <div className="skill-hero-header">
-            <div className="skill-hero-title">
-              <h1 className="section-title" style={{ margin: 0 }}>
-                {soul.displayName}
-              </h1>
-              <p className="section-subtitle">{soul.summary ?? "No summary provided."}</p>
-              <div className="stat">
-                <SoulStatsTripletLine stats={soul.stats} versionSuffix="versions" />
-              </div>
-              {ownerHandle ? (
-                <div className="stat">
-                  by <a href={`/u/${ownerHandle}`}>@{ownerHandle}</a>
+    <main className="py-10">
+      <Container>
+        <div className="flex flex-col gap-5">
+          <Card>
+            <CardContent>
+              <div className="flex flex-col gap-5 sm:flex-row sm:items-start sm:justify-between">
+                <div className="flex flex-col gap-2">
+                  <h1 className="font-display text-2xl font-bold text-[color:var(--ink)]">
+                    {soul.displayName}
+                  </h1>
+                  <p className="text-sm text-[color:var(--ink-soft)]">
+                    {soul.summary ?? "No summary provided."}
+                  </p>
+                  <div className="text-sm text-[color:var(--ink-soft)]">
+                    <SoulStatsTripletLine stats={soul.stats} versionSuffix="versions" />
+                  </div>
+                  {ownerHandle ? (
+                    <div className="text-sm text-[color:var(--ink-soft)]">
+                      by{" "}
+                      <a
+                        href={`/u/${ownerHandle}`}
+                        className="text-[color:var(--accent)] hover:underline"
+                      >
+                        @{ownerHandle}
+                      </a>
+                    </div>
+                  ) : null}
+                  <div className="flex items-center gap-2">
+                    {isAuthenticated ? (
+                      <button
+                        className={`flex h-9 w-9 items-center justify-center rounded-full border transition-colors ${
+                          isStarred
+                            ? "border-amber-400 bg-amber-50 text-amber-500 dark:bg-amber-900/30"
+                            : "border-[color:var(--line)] text-[color:var(--ink-soft)] hover:border-amber-300 hover:text-amber-400"
+                        }`}
+                        type="button"
+                        onClick={() => void toggleStar({ soulId: soul._id })}
+                        aria-label={isStarred ? "Unstar soul" : "Star soul"}
+                      >
+                        <span aria-hidden="true">&#9733;</span>
+                      </button>
+                    ) : null}
+                  </div>
                 </div>
-              ) : null}
-              <div className="skill-actions">
-                {isAuthenticated ? (
-                  <button
-                    className={`star-toggle${isStarred ? " is-active" : ""}`}
-                    type="button"
-                    onClick={() => void toggleStar({ soulId: soul._id })}
-                    aria-label={isStarred ? "Unstar soul" : "Star soul"}
+                <div className="flex flex-col items-end gap-3">
+                  <div className="flex flex-col items-center rounded-[var(--radius-sm)] border border-[color:var(--line)] bg-[color:var(--surface-muted)] px-4 py-2">
+                    <span className="text-xs text-[color:var(--ink-soft)]">Current version</span>
+                    <strong>v{latestVersion?.version ?? "\u2014"}</strong>
+                  </div>
+                  <a
+                    href={`${downloadBase}?path=SOUL.md`}
+                    aria-label="Download SOUL.md"
+                    className="inline-flex items-center justify-center gap-2 whitespace-nowrap font-semibold text-sm min-h-[44px] rounded-[var(--radius-pill)] px-4 py-[11px] border-none bg-gradient-to-br from-[color:var(--accent)] to-[color:var(--accent-deep)] text-white transition-all duration-200 no-underline hover:-translate-y-px hover:shadow-[0_10px_20px_rgba(29,26,23,0.12)]"
                   >
-                    <span aria-hidden="true">★</span>
-                  </button>
-                ) : null}
+                    Download SOUL.md
+                  </a>
+                </div>
               </div>
-            </div>
-            <div className="skill-hero-cta">
-              <div className="skill-version-pill">
-                <span className="skill-version-label">Current version</span>
-                <strong>v{latestVersion?.version ?? "—"}</strong>
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardContent>
+              {readmeContent ? (
+                <MarkdownPreview>{readmeContent}</MarkdownPreview>
+              ) : readmeError ? (
+                <div className="text-sm text-[color:var(--ink-soft)]">
+                  Failed to load SOUL.md: {readmeError}
+                </div>
+              ) : (
+                <div className="flex flex-col gap-2">
+                  <Skeleton className="h-4 w-3/4" />
+                  <Skeleton className="h-4 w-full" />
+                  <Skeleton className="h-4 w-2/3" />
+                </div>
+              )}
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardHeader>
+              <CardTitle className="text-lg">Versions</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <div className="max-h-[400px] overflow-y-auto">
+                <div className="flex flex-col gap-3">
+                  {(versions ?? []).map((version) => (
+                    <div
+                      key={version._id}
+                      className="flex items-center justify-between gap-3 rounded-[var(--radius-sm)] border border-[color:var(--line)] px-3 py-2"
+                    >
+                      <div className="flex flex-col gap-0.5">
+                        <div className="text-sm">
+                          v{version.version} &middot;{" "}
+                          {new Date(version.createdAt).toLocaleDateString()}
+                          {version.changelogSource === "auto" ? (
+                            <span className="text-[color:var(--ink-soft)]"> &middot; auto</span>
+                          ) : null}
+                        </div>
+                        <div className="whitespace-pre-wrap break-words text-sm text-[color:var(--ink-soft)]">
+                          {version.changelog}
+                        </div>
+                      </div>
+                      <div className="shrink-0">
+                        <a
+                          className="inline-flex items-center justify-center gap-2 whitespace-nowrap font-semibold text-xs min-h-[34px] rounded-[var(--radius-pill)] px-3 py-1.5 border border-[color:var(--line)] bg-[color:var(--surface)] text-[color:var(--ink)] transition-all duration-200 no-underline hover:-translate-y-px hover:shadow-[0_10px_20px_rgba(29,26,23,0.12)]"
+                          href={`${downloadBase}?path=SOUL.md&version=${encodeURIComponent(
+                            version.version,
+                          )}`}
+                        >
+                          SOUL.md
+                        </a>
+                      </div>
+                    </div>
+                  ))}
+                </div>
               </div>
-              <a
-                className="btn btn-primary"
-                href={`${downloadBase}?path=SOUL.md`}
-                aria-label="Download SOUL.md"
-              >
-                Download SOUL.md
-              </a>
-            </div>
-          </div>
-        </div>
+            </CardContent>
+          </Card>
 
-        <div className="card">
-          <div className="skill-readme markdown">
-            {readmeContent ? (
-              <ReactMarkdown remarkPlugins={[remarkGfm]}>{readmeContent}</ReactMarkdown>
-            ) : readmeError ? (
-              <div className="stat">Failed to load SOUL.md: {readmeError}</div>
-            ) : (
-              <div className="loading-indicator">Loading SOUL.md…</div>
-            )}
-          </div>
-        </div>
-
-        <div className="card">
-          <h2 className="section-title" style={{ fontSize: "1.2rem", marginBottom: 8 }}>
-            Versions
-          </h2>
-          <div className="version-scroll">
-            <div className="version-list">
-              {(versions ?? []).map((version) => (
-                <div key={version._id} className="version-row">
-                  <div className="version-info">
-                    <div>
-                      v{version.version} · {new Date(version.createdAt).toLocaleDateString()}
-                      {version.changelogSource === "auto" ? (
-                        <span style={{ color: "var(--ink-soft)" }}> · auto</span>
+          <Card>
+            <CardHeader>
+              <CardTitle className="text-lg">Comments</CardTitle>
+            </CardHeader>
+            <CardContent>
+              {isAuthenticated ? (
+                <form
+                  onSubmit={(event) => {
+                    event.preventDefault();
+                    if (!comment.trim()) return;
+                    void addComment({ soulId: soul._id, body: comment.trim() }).then(() =>
+                      setComment(""),
+                    );
+                  }}
+                  className="flex flex-col gap-3"
+                >
+                  <Textarea
+                    rows={4}
+                    value={comment}
+                    onChange={(event) => setComment(event.target.value)}
+                    placeholder="Leave a note..."
+                  />
+                  <Button variant="default" type="submit" className="self-start">
+                    Post comment
+                  </Button>
+                </form>
+              ) : (
+                <p className="text-sm text-[color:var(--ink-soft)]">Sign in to comment.</p>
+              )}
+              <div className="mt-4 flex flex-col gap-3">
+                {(comments ?? []).length === 0 ? (
+                  <div className="text-sm text-[color:var(--ink-soft)]">No comments yet.</div>
+                ) : (
+                  (comments ?? []).map((entry) => (
+                    <div
+                      key={entry.comment._id}
+                      className="flex items-start justify-between gap-3 rounded-[var(--radius-sm)] border border-[color:var(--line)] px-3 py-2"
+                    >
+                      <div className="flex flex-col gap-1">
+                        <strong className="text-sm">
+                          @{entry.user?.handle ?? entry.user?.name ?? "user"}
+                        </strong>
+                        <div className="whitespace-pre-wrap break-words text-sm text-[color:var(--ink)]">
+                          {entry.comment.body}
+                        </div>
+                      </div>
+                      {isAuthenticated &&
+                      me &&
+                      (me._id === entry.comment.userId || isModerator(me)) ? (
+                        <Button
+                          variant="destructive"
+                          size="sm"
+                          onClick={() => void removeComment({ commentId: entry.comment._id })}
+                        >
+                          Delete
+                        </Button>
                       ) : null}
                     </div>
-                    <div style={{ color: "#5c554e", whiteSpace: "pre-wrap" }}>
-                      {version.changelog}
-                    </div>
-                  </div>
-                  <div className="version-actions">
-                    <a
-                      className="btn version-zip"
-                      href={`${downloadBase}?path=SOUL.md&version=${encodeURIComponent(
-                        version.version,
-                      )}`}
-                    >
-                      SOUL.md
-                    </a>
-                  </div>
-                </div>
-              ))}
-            </div>
-          </div>
+                  ))
+                )}
+              </div>
+            </CardContent>
+          </Card>
         </div>
-
-        <div className="card">
-          <h2 className="section-title" style={{ fontSize: "1.2rem", margin: 0 }}>
-            Comments
-          </h2>
-          {isAuthenticated ? (
-            <form
-              onSubmit={(event) => {
-                event.preventDefault();
-                if (!comment.trim()) return;
-                void addComment({ soulId: soul._id, body: comment.trim() }).then(() =>
-                  setComment(""),
-                );
-              }}
-              className="comment-form"
-            >
-              <textarea
-                className="comment-input"
-                rows={4}
-                value={comment}
-                onChange={(event) => setComment(event.target.value)}
-                placeholder="Leave a note…"
-              />
-              <button className="btn comment-submit" type="submit">
-                Post comment
-              </button>
-            </form>
-          ) : (
-            <p className="section-subtitle">Sign in to comment.</p>
-          )}
-          <div style={{ display: "grid", gap: 12, marginTop: 16 }}>
-            {(comments ?? []).length === 0 ? (
-              <div className="stat">No comments yet.</div>
-            ) : (
-              (comments ?? []).map((entry) => (
-                <div key={entry.comment._id} className="comment-item">
-                  <div className="comment-body">
-                    <strong>@{entry.user?.handle ?? entry.user?.name ?? "user"}</strong>
-                    <div className="comment-body-text">{entry.comment.body}</div>
-                  </div>
-                  {isAuthenticated && me && (me._id === entry.comment.userId || isModerator(me)) ? (
-                    <button
-                      className="btn comment-delete"
-                      type="button"
-                      onClick={() => void removeComment({ commentId: entry.comment._id })}
-                    >
-                      Delete
-                    </button>
-                  ) : null}
-                </div>
-              ))
-            )}
-          </div>
-        </div>
-      </div>
+      </Container>
     </main>
   );
 }

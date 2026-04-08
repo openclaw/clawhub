@@ -5,13 +5,21 @@ import {
   PLATFORM_SKILL_LICENSE_SUMMARY,
 } from "clawhub-schema/licenseConstants";
 import { useAction, useMutation, useQuery } from "convex/react";
+import { Upload as UploadIcon } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import semver from "semver";
+import { toast } from "sonner";
 import { api } from "../../convex/_generated/api";
-import {
-  MAX_PUBLISH_FILE_BYTES,
-  MAX_PUBLISH_TOTAL_BYTES,
-} from "../../convex/lib/publishLimits";
+import { MAX_PUBLISH_FILE_BYTES, MAX_PUBLISH_TOTAL_BYTES } from "../../convex/lib/publishLimits";
+import { EmptyState } from "../components/EmptyState";
+import { Container } from "../components/layout/Container";
+import { SignInButton } from "../components/SignInButton";
+import { Badge } from "../components/ui/badge";
+import { Button } from "../components/ui/button";
+import { Card, CardContent, CardTitle } from "../components/ui/card";
+import { Input } from "../components/ui/input";
+import { Label } from "../components/ui/label";
+import { Textarea } from "../components/ui/textarea";
 import { getSiteMode } from "../lib/site";
 import { getPublicSlugCollision } from "../lib/slugCollision";
 import { expandDroppedItems, expandFilesWithReport } from "../lib/uploadFiles";
@@ -194,7 +202,9 @@ export function Upload() {
 
   useEffect(() => {
     if (ownerHandle) return;
-    const personalPublisher = publisherMemberships?.find((entry) => entry.publisher.kind === "user");
+    const personalPublisher = publisherMemberships?.find(
+      (entry) => entry.publisher.kind === "user",
+    );
     if (personalPublisher?.publisher.handle) {
       setOwnerHandle(personalPublisher.publisher.handle);
     }
@@ -331,8 +341,15 @@ export function Upload() {
 
   if (!isAuthenticated) {
     return (
-      <main className="section">
-        <div className="card">Sign in to publish a {contentLabel}.</div>
+      <main className="py-10">
+        <Container size="narrow">
+          <EmptyState
+            title={`Sign in to publish a ${contentLabel}`}
+            description="You need to be signed in to publish skills on ClawHub."
+          >
+            <SignInButton variant="outline">Sign in with GitHub</SignInButton>
+          </EmptyState>
+        </Container>
       </main>
     );
   }
@@ -347,30 +364,39 @@ export function Upload() {
     event.preventDefault();
     setHasAttempted(true);
     if (!validation.ready) {
-      if (validationRef.current && "scrollIntoView" in validationRef.current) {
+      if (typeof validationRef.current?.scrollIntoView === "function") {
         validationRef.current.scrollIntoView({ behavior: "smooth", block: "center" });
       }
       return;
     }
     if (slugCollision) {
       setError(slugCollision.message);
+      toast.error(slugCollision.message);
       return;
     }
     if (!isSoulMode && !acceptedLicenseTerms) {
-      setError("Accept the MIT-0 license terms to publish this skill.");
+      const msg = "Accept the MIT-0 license terms to publish this skill.";
+      setError(msg);
+      toast.error(msg);
       return;
     }
     setError(null);
     if (oversizedFiles.length > 0) {
-      setError(`Each file must be 10MB or smaller: ${oversizedFileNames.join(", ")}`);
+      const msg = `Each file must be 10MB or smaller: ${oversizedFileNames.join(", ")}`;
+      setError(msg);
+      toast.error(msg);
       return;
     }
     if (totalBytes > MAX_PUBLISH_TOTAL_BYTES) {
-      setError("Total size exceeds 50MB per version.");
+      const msg = "Total size exceeds 50MB per version.";
+      setError(msg);
+      toast.error(msg);
       return;
     }
     if (!hasRequiredFile) {
-      setError(`${requiredFileLabel} is required.`);
+      const msg = `${requiredFileLabel} is required.`;
+      setError(msg);
+      toast.error(msg);
       return;
     }
     setStatus("Uploading files…");
@@ -418,8 +444,8 @@ export function Upload() {
       setHasAttempted(false);
       setChangelogSource("user");
       if (result) {
-        const ownerParam =
-          ownerHandle || me?.handle || (me?._id ? String(me._id) : "unknown");
+        toast.success(`Published ${trimmedSlug}@${version}`);
+        const ownerParam = ownerHandle || me?.handle || (me?._id ? String(me._id) : "unknown");
         void navigate({
           to: isSoulMode ? "/souls/$slug" : "/$owner/$slug",
           params: isSoulMode ? { slug: trimmedSlug } : { owner: ownerParam, slug: trimmedSlug },
@@ -427,246 +453,280 @@ export function Upload() {
       }
     } catch (publishError) {
       setStatus(null);
-      setError(formatPublishError(publishError));
+      const message = formatPublishError(publishError);
+      setError(message);
+      toast.error(message);
     }
   }
 
   return (
-    <main className="section upload-page">
-      <header className="upload-page-header">
-        <div>
-          <h1 className="upload-page-title">Publish a {contentLabel}</h1>
-          <p className="upload-page-subtitle">
-            Drop a folder with {requiredFileLabel} and text files. We will handle the rest.
-          </p>
-        </div>
-      </header>
-
-      <form onSubmit={handleSubmit} className="upload-grid">
-        <div className="card upload-panel">
-          <label className="form-label" htmlFor="slug">
-            Slug
-          </label>
-          <input
-            className="form-input"
-            id="slug"
-            value={slug}
-            onChange={(event) => setSlug(event.target.value)}
-            placeholder={`${contentLabel}-name`}
-          />
-
-          <label className="form-label" htmlFor="displayName">
-            Display name
-          </label>
-          <input
-            className="form-input"
-            id="displayName"
-            value={displayName}
-            onChange={(event) => setDisplayName(event.target.value)}
-            placeholder={`My ${contentLabel}`}
-          />
-
-          {!isSoulMode ? (
-            <>
-              <label className="form-label" htmlFor="ownerHandle">
-                Owner
-              </label>
-              <select
-                className="form-input"
-                id="ownerHandle"
-                value={ownerHandle}
-                onChange={(event) => setOwnerHandle(event.target.value)}
-              >
-                {(publisherMemberships ?? []).map((entry) => (
-                  <option key={entry.publisher._id} value={entry.publisher.handle}>
-                    @{entry.publisher.handle} · {entry.publisher.displayName}
-                  </option>
-                ))}
-              </select>
-            </>
-          ) : null}
-
-          <label className="form-label" htmlFor="version">
-            Version
-          </label>
-          <input
-            className="form-input"
-            id="version"
-            value={version}
-            onChange={(event) => setVersion(event.target.value)}
-            placeholder="1.0.0"
-          />
-
-          <label className="form-label" htmlFor="tags">
-            Tags
-          </label>
-          <input
-            className="form-input"
-            id="tags"
-            value={tags}
-            onChange={(event) => setTags(event.target.value)}
-            placeholder="latest, stable"
-          />
-        </div>
-
-        <div className="card upload-panel">
-          <label
-            className={`upload-dropzone${isDragging ? " is-dragging" : ""}`}
-            onDragOver={(event) => {
-              event.preventDefault();
-              setIsDragging(true);
-            }}
-            onDragLeave={() => setIsDragging(false)}
-            onDrop={(event) => {
-              event.preventDefault();
-              setIsDragging(false);
-              const items = event.dataTransfer.items;
-              void (async () => {
-                const dropped = items?.length
-                  ? await expandDroppedItems(items)
-                  : Array.from(event.dataTransfer.files);
-                await applyExpandedFiles(dropped);
-              })();
-            }}
-          >
-            <input
-              ref={setFileInputRef}
-              className="upload-file-input"
-              id="upload-files"
-              data-testid="upload-input"
-              type="file"
-              multiple
-              onChange={(event) => {
-                const picked = Array.from(event.target.files ?? []);
-                void applyExpandedFiles(picked);
-              }}
-            />
-            <div className="upload-dropzone-copy">
-              <div className="upload-dropzone-title-row">
-                <strong>Drop a folder</strong>
-                <span className="upload-dropzone-count">
-                  {files.length} files · {sizeLabel}
-                </span>
-              </div>
-              <span className="upload-dropzone-hint">
-                We keep folder paths and flatten the outer wrapper automatically.
-              </span>
-              <button
-                className="btn upload-picker-btn"
-                type="button"
-                onClick={() => fileInputRef.current?.click()}
-              >
-                Choose folder
-              </button>
-            </div>
-          </label>
-
-          <div className="upload-file-list">
-            {files.length === 0 ? (
-              <div className="stat">No files selected.</div>
-            ) : (
-              normalizedPaths.map((path) => (
-                <div key={path} className="upload-file-row">
-                  <span>{path}</span>
-                </div>
-              ))
-            )}
+    <main className="py-10">
+      <Container size="narrow">
+        <header className="flex flex-col gap-2 mb-6">
+          <div>
+            <h1 className="font-display text-2xl font-bold text-[color:var(--ink)]">
+              Publish a {contentLabel}
+            </h1>
+            <p className="text-sm text-[color:var(--ink-soft)]">
+              Drop a folder with {requiredFileLabel} and text files. We will handle the rest.
+            </p>
           </div>
-          {ignoredMacJunkNote ? <div className="stat">{ignoredMacJunkNote}</div> : null}
-        </div>
+        </header>
 
-        <div className="card upload-panel" ref={validationRef}>
-          <h2 className="upload-panel-title">Validation</h2>
-          {validation.issues.length === 0 ? (
-            <div className="stat">All checks passed.</div>
-          ) : (
-            <ul className="validation-list">
-              {validation.issues.map((issue) => (
-                <li key={issue}>{issue}</li>
-              ))}
-            </ul>
-          )}
-          {slugCollision?.url ? (
-            <div className="stat">
-              Existing skill:{" "}
-              <a href={slugCollision.url} className="upload-link">
-                {slugCollision.url}
-              </a>
-            </div>
-          ) : null}
-        </div>
+        <form onSubmit={handleSubmit} className="flex flex-col gap-6">
+          {/* Metadata panel */}
+          <Card>
+            <CardContent>
+              <Label htmlFor="slug">Slug</Label>
+              <div className="flex items-center gap-2">
+                <Input
+                  id="slug"
+                  value={slug}
+                  onChange={(event) => setSlug(event.target.value)}
+                  placeholder={`${contentLabel}-name`}
+                />
+                {trimmedSlug && SLUG_PATTERN.test(trimmedSlug) && slugAvailability ? (
+                  <Badge variant={slugAvailability.available ? "success" : "destructive"}>
+                    {slugAvailability.available ? "Available" : "Taken"}
+                  </Badge>
+                ) : null}
+              </div>
 
-        <div className="card upload-panel">
-          {!isSoulMode ? (
-            <>
-              <h2 className="upload-panel-title">License</h2>
-              <div className="upload-license-card">
-                <div className="upload-license-pill">
-                  {PLATFORM_SKILL_LICENSE} · {PLATFORM_SKILL_LICENSE_NAME}
-                </div>
-                <p className="upload-license-copy">
-                  All skills published on ClawHub are licensed under {PLATFORM_SKILL_LICENSE}.{" "}
-                  {PLATFORM_SKILL_LICENSE_SUMMARY}
-                </p>
-                <label className="upload-license-check">
-                  <input
-                    type="checkbox"
-                    checked={acceptedLicenseTerms}
-                    onChange={(event) => setAcceptedLicenseTerms(event.target.checked)}
-                  />
-                  <span>
-                    I have the rights to this skill and agree to publish it under{" "}
-                    {PLATFORM_SKILL_LICENSE}.
+              <Label htmlFor="displayName">Display name</Label>
+              <Input
+                id="displayName"
+                value={displayName}
+                onChange={(event) => setDisplayName(event.target.value)}
+                placeholder={`My ${contentLabel}`}
+              />
+
+              {!isSoulMode ? (
+                <>
+                  <Label htmlFor="ownerHandle">Owner</Label>
+                  <select
+                    className="w-full min-h-[44px] rounded-[var(--radius-sm)] border px-3.5 py-[13px] text-[color:var(--ink)] transition-all duration-[180ms] ease-out border-[rgba(29,59,78,0.22)] bg-[rgba(255,255,255,0.94)] focus:outline-none focus:border-[color-mix(in_srgb,var(--accent)_70%,white)] focus:shadow-[0_0_0_3px_color-mix(in_srgb,var(--accent)_22%,transparent)] dark:border-[rgba(255,255,255,0.12)] dark:bg-[rgba(14,28,37,0.84)]"
+                    id="ownerHandle"
+                    value={ownerHandle}
+                    onChange={(event) => setOwnerHandle(event.target.value)}
+                  >
+                    {(publisherMemberships ?? []).map((entry) => (
+                      <option key={entry.publisher._id} value={entry.publisher.handle}>
+                        @{entry.publisher.handle} · {entry.publisher.displayName}
+                      </option>
+                    ))}
+                  </select>
+                </>
+              ) : null}
+
+              <Label htmlFor="version">Version</Label>
+              <Input
+                id="version"
+                value={version}
+                onChange={(event) => setVersion(event.target.value)}
+                placeholder="1.0.0"
+              />
+
+              <Label htmlFor="tags">Tags</Label>
+              <Input
+                id="tags"
+                value={tags}
+                onChange={(event) => setTags(event.target.value)}
+                placeholder="latest, stable"
+              />
+            </CardContent>
+          </Card>
+
+          {/* File upload panel */}
+          <Card>
+            <CardContent>
+              <label
+                className={`flex flex-col items-center gap-3 rounded-[var(--radius-md)] border-2 border-dashed p-8 transition-colors cursor-pointer ${
+                  isDragging
+                    ? "border-[color:var(--accent)] bg-[color:var(--accent)]/5"
+                    : "border-[color:var(--line)] bg-[color:var(--surface-muted)]"
+                }`}
+                onDragOver={(event) => {
+                  event.preventDefault();
+                  setIsDragging(true);
+                }}
+                onDragLeave={() => setIsDragging(false)}
+                onDrop={(event) => {
+                  event.preventDefault();
+                  setIsDragging(false);
+                  const items = event.dataTransfer.items;
+                  void (async () => {
+                    const dropped = items?.length
+                      ? await expandDroppedItems(items)
+                      : Array.from(event.dataTransfer.files);
+                    await applyExpandedFiles(dropped);
+                  })();
+                }}
+              >
+                <input
+                  ref={setFileInputRef}
+                  className="sr-only"
+                  id="upload-files"
+                  data-testid="upload-input"
+                  type="file"
+                  multiple
+                  onChange={(event) => {
+                    const picked = Array.from(event.target.files ?? []);
+                    void applyExpandedFiles(picked);
+                  }}
+                />
+                <div className="flex flex-col items-center gap-2 text-center">
+                  <div className="flex items-center gap-3">
+                    <UploadIcon className="h-5 w-5 text-[color:var(--ink-soft)]" />
+                    <strong>Drop a folder</strong>
+                    <span className="text-xs font-medium text-[color:var(--ink-soft)]">
+                      {files.length} files · {sizeLabel}
+                    </span>
+                  </div>
+                  <span className="text-xs text-[color:var(--ink-soft)]">
+                    We keep folder paths and flatten the outer wrapper automatically.
                   </span>
-                </label>
-              </div>
-            </>
-          ) : null}
-          <label className="form-label" htmlFor="changelog">
-            Changelog
-          </label>
-          <textarea
-            className="form-input"
-            id="changelog"
-            rows={6}
-            value={changelog}
-            onChange={(event) => {
-              changelogTouchedRef.current = true;
-              setChangelogSource("user");
-              setChangelog(event.target.value);
-            }}
-            placeholder={`Describe what changed in this ${contentLabel}...`}
-          />
-          {changelogStatus === "loading" ? <div className="stat">Generating changelog…</div> : null}
-          {changelogStatus === "error" ? (
-            <div className="stat">Could not auto-generate changelog.</div>
-          ) : null}
-          {changelogSource === "auto" && changelog ? (
-            <div className="stat">Auto-generated changelog (edit as needed).</div>
-          ) : null}
-        </div>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    type="button"
+                    onClick={() => fileInputRef.current?.click()}
+                  >
+                    Choose folder
+                  </Button>
+                </div>
+              </label>
 
-        <div className="upload-submit-row">
-          <div className="upload-submit-notes">
-            {error ? (
-              <div className="error" role="alert">
-                {error}
+              <div className="flex flex-col gap-1 max-h-[300px] overflow-y-auto">
+                {files.length === 0 ? (
+                  <div className="text-sm text-[color:var(--ink-soft)]">No files selected.</div>
+                ) : (
+                  normalizedPaths.map((path) => (
+                    <div
+                      key={path}
+                      className="flex items-center gap-2 rounded-[var(--radius-sm)] px-3 py-1.5 text-sm font-mono text-[color:var(--ink-soft)] bg-[color:var(--surface-muted)]"
+                    >
+                      <span>{path}</span>
+                    </div>
+                  ))
+                )}
               </div>
-            ) : null}
-            {status ? <div className="stat">{status}</div> : null}
-            {hasAttempted && !validation.ready ? (
-              <div className="stat">Fix validation issues to continue.</div>
-            ) : null}
+              {ignoredMacJunkNote ? (
+                <div className="text-sm text-[color:var(--ink-soft)]">{ignoredMacJunkNote}</div>
+              ) : null}
+            </CardContent>
+          </Card>
+
+          {/* Validation panel */}
+          <Card ref={validationRef}>
+            <CardContent>
+              <CardTitle>Validation</CardTitle>
+              {validation.issues.length === 0 ? (
+                <div className="text-sm text-[color:var(--ink-soft)]">All checks passed.</div>
+              ) : (
+                <ul className="flex flex-col gap-1 list-disc pl-5 text-sm text-[color:var(--ink-soft)]">
+                  {validation.issues.map((issue) => (
+                    <li key={issue}>{issue}</li>
+                  ))}
+                </ul>
+              )}
+              {slugCollision?.url ? (
+                <div className="text-sm text-[color:var(--ink-soft)]">
+                  Existing skill:{" "}
+                  <a
+                    href={slugCollision.url}
+                    className="text-[color:var(--accent)] hover:underline"
+                  >
+                    {slugCollision.url}
+                  </a>
+                </div>
+              ) : null}
+            </CardContent>
+          </Card>
+
+          {/* License & changelog panel */}
+          <Card>
+            <CardContent>
+              {!isSoulMode ? (
+                <>
+                  <CardTitle>License</CardTitle>
+                  <div className="flex flex-col gap-3">
+                    <Badge variant="accent">
+                      {PLATFORM_SKILL_LICENSE} · {PLATFORM_SKILL_LICENSE_NAME}
+                    </Badge>
+                    <p className="text-sm text-[color:var(--ink-soft)]">
+                      All skills published on ClawHub are licensed under {PLATFORM_SKILL_LICENSE}.{" "}
+                      {PLATFORM_SKILL_LICENSE_SUMMARY}
+                    </p>
+                    <label className="flex items-start gap-2 text-sm cursor-pointer">
+                      <input
+                        type="checkbox"
+                        className="mt-0.5"
+                        checked={acceptedLicenseTerms}
+                        onChange={(event) => setAcceptedLicenseTerms(event.target.checked)}
+                      />
+                      <span>
+                        I have the rights to this skill and agree to publish it under{" "}
+                        {PLATFORM_SKILL_LICENSE}.
+                      </span>
+                    </label>
+                  </div>
+                </>
+              ) : null}
+              <Label htmlFor="changelog">Changelog</Label>
+              <Textarea
+                id="changelog"
+                rows={6}
+                value={changelog}
+                onChange={(event) => {
+                  changelogTouchedRef.current = true;
+                  setChangelogSource("user");
+                  setChangelog(event.target.value);
+                }}
+                placeholder={`Describe what changed in this ${contentLabel}...`}
+              />
+              {changelogStatus === "loading" ? (
+                <div className="text-sm text-[color:var(--ink-soft)]">Generating changelog…</div>
+              ) : null}
+              {changelogStatus === "error" ? (
+                <div className="text-sm text-[color:var(--ink-soft)]">
+                  Could not auto-generate changelog.
+                </div>
+              ) : null}
+              {changelogSource === "auto" && changelog ? (
+                <div className="text-sm text-[color:var(--ink-soft)]">
+                  Auto-generated changelog (edit as needed).
+                </div>
+              ) : null}
+            </CardContent>
+          </Card>
+
+          {/* Submit row */}
+          <div className="flex items-center justify-between gap-4">
+            <div className="flex flex-col gap-2">
+              {error ? (
+                <div className="text-sm font-medium text-red-600 dark:text-red-400" role="alert">
+                  {error}
+                </div>
+              ) : null}
+              {status ? <div className="text-sm text-[color:var(--ink-soft)]">{status}</div> : null}
+              {hasAttempted && !validation.ready ? (
+                <div className="text-sm text-[color:var(--ink-soft)]">
+                  Fix validation issues to continue.
+                </div>
+              ) : null}
+            </div>
+            <Button
+              variant="primary"
+              size="lg"
+              type="submit"
+              disabled={!validation.ready || isSubmitting}
+              loading={isSubmitting}
+            >
+              Publish {contentLabel}
+            </Button>
           </div>
-          <button
-            className="btn btn-primary upload-submit-btn"
-            type="submit"
-            disabled={!validation.ready || isSubmitting}
-          >
-            Publish {contentLabel}
-          </button>
-        </div>
-      </form>
+        </form>
+      </Container>
     </main>
   );
 }

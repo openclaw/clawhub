@@ -1,10 +1,22 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useMutation, useQuery } from "convex/react";
+import { Star, User } from "lucide-react";
 import { useEffect, useState } from "react";
+import { toast } from "sonner";
 import { api } from "../../../convex/_generated/api";
 import type { Doc } from "../../../convex/_generated/dataModel";
+import { EmptyState } from "../../components/EmptyState";
+import { Container } from "../../components/layout/Container";
+import { SignInButton } from "../../components/SignInButton";
+import { SkillCardSkeletonGrid } from "../../components/skeletons/SkillCardSkeleton";
 import { SkillCard } from "../../components/SkillCard";
 import { SkillStatsTripletLine } from "../../components/SkillStats";
+import { Avatar, AvatarFallback, AvatarImage } from "../../components/ui/avatar";
+import { Badge } from "../../components/ui/badge";
+import { Button } from "../../components/ui/button";
+import { Card } from "../../components/ui/card";
+import { Skeleton } from "../../components/ui/skeleton";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "../../components/ui/tabs";
 import { getSkillBadges } from "../../lib/badges";
 import type { PublicSkill, PublicUser } from "../../lib/publicUser";
 
@@ -39,18 +51,28 @@ function UserProfile() {
 
   if (user === undefined) {
     return (
-      <main className="section">
-        <div className="card">
-          <div className="loading-indicator">Loading user…</div>
-        </div>
+      <main className="py-10">
+        <Container size="narrow">
+          <div className="flex flex-col items-center gap-4">
+            <Skeleton className="h-20 w-20 rounded-full" />
+            <Skeleton className="h-6 w-40" />
+            <Skeleton className="h-4 w-24" />
+          </div>
+        </Container>
       </main>
     );
   }
 
   if (user === null) {
     return (
-      <main className="section">
-        <div className="card">User not found.</div>
+      <main className="py-10">
+        <Container size="narrow">
+          <EmptyState
+            icon={User}
+            title="User not found"
+            description="This user doesn't exist or their account has been removed."
+          />
+        </Container>
       </main>
     );
   }
@@ -65,106 +87,131 @@ function UserProfile() {
   const published = publishedSkills ?? [];
 
   return (
-    <main className="section">
-      <div className="card settings-profile" style={{ marginBottom: 22 }}>
-        <div className="settings-avatar" aria-hidden="true">
-          {avatar ? <img src={avatar} alt="" /> : <span>{initial}</span>}
-        </div>
-        <div className="settings-profile-body">
-          <div className="settings-name">{displayName}</div>
-          <div className="settings-handle">@{displayHandle}</div>
-        </div>
-      </div>
-
-      {isSelf ? (
-        <div className="profile-tabs" role="tablist" aria-label="Profile tabs">
-          <button
-            className={tab === "stars" ? "profile-tab is-active" : "profile-tab"}
-            type="button"
-            role="tab"
-            aria-selected={tab === "stars"}
-            onClick={() => setTab("stars")}
-          >
-            Stars
-          </button>
-          <button
-            className={tab === "installed" ? "profile-tab is-active" : "profile-tab"}
-            type="button"
-            role="tab"
-            aria-selected={tab === "installed"}
-            onClick={() => setTab("installed")}
-          >
-            Installed
-          </button>
-        </div>
-      ) : null}
-
-      {tab === "installed" && isSelf ? (
-        <InstalledSection
-          includeRemoved={includeRemoved}
-          onToggleRemoved={() => setIncludeRemoved((value) => !value)}
-          data={installed}
-        />
-      ) : (
-        <>
-          <h2 className="section-title" style={{ fontSize: "1.3rem" }}>
-            Published
-          </h2>
-          <p className="section-subtitle">Skills published by this user.</p>
-
-          {isLoadingPublished ? (
-            <div className="card">
-              <div className="loading-indicator">Loading published skills…</div>
+    <main className="py-10">
+      <Container size="narrow">
+        <div className="flex flex-col gap-8">
+          {/* Profile header */}
+          <Card className="flex-row items-center gap-4 p-6">
+            <Avatar className="h-16 w-16">
+              {avatar && <AvatarImage src={avatar} alt={displayName} />}
+              <AvatarFallback className="text-xl">{initial}</AvatarFallback>
+            </Avatar>
+            <div>
+              <h1 className="font-display text-xl font-bold text-[color:var(--ink)]">
+                {displayName}
+              </h1>
+              <p className="font-mono text-sm text-[color:var(--ink-soft)]">@{displayHandle}</p>
             </div>
-          ) : published.length > 0 ? (
-            <div className="grid" style={{ marginBottom: 18 }}>
-              {published.map((skill) => (
-                <SkillCard
-                  key={skill._id}
-                  skill={skill}
-                  badge={getSkillBadges(skill)}
-                  summaryFallback="Agent-ready skill pack."
-                  meta={
-                    <div className="stat">
-                      <SkillStatsTripletLine stats={skill.stats} />
-                    </div>
-                  }
+          </Card>
+
+          {/* Tabs */}
+          {isSelf ? (
+            <Tabs value={tab} onValueChange={(v) => setTab(v as "stars" | "installed")}>
+              <TabsList>
+                <TabsTrigger value="stars">Stars</TabsTrigger>
+                <TabsTrigger value="installed">Installed</TabsTrigger>
+              </TabsList>
+              <TabsContent value="stars" className="mt-6">
+                <PublishedAndStarred
+                  published={published}
+                  isLoadingPublished={isLoadingPublished}
+                  skills={skills}
+                  isLoadingSkills={isLoadingSkills}
                 />
-              ))}
-            </div>
-          ) : null}
-
-          <h2 className="section-title" style={{ fontSize: "1.3rem" }}>
-            Stars
-          </h2>
-          <p className="section-subtitle">Skills this user has starred.</p>
-
-          {isLoadingSkills ? (
-            <div className="card">
-              <div className="loading-indicator">Loading stars…</div>
-            </div>
-          ) : skills.length === 0 ? (
-            <div className="card">No stars yet.</div>
+              </TabsContent>
+              <TabsContent value="installed" className="mt-6">
+                <InstalledSection
+                  includeRemoved={includeRemoved}
+                  onToggleRemoved={() => setIncludeRemoved((value) => !value)}
+                  data={installed}
+                />
+              </TabsContent>
+            </Tabs>
           ) : (
-            <div className="grid">
-              {skills.map((skill) => (
-                <SkillCard
-                  key={skill._id}
-                  skill={skill}
-                  badge={getSkillBadges(skill)}
-                  summaryFallback="Agent-ready skill pack."
-                  meta={
-                    <div className="stat">
-                      <SkillStatsTripletLine stats={skill.stats} />
-                    </div>
-                  }
-                />
-              ))}
-            </div>
+            <PublishedAndStarred
+              published={published}
+              isLoadingPublished={isLoadingPublished}
+              skills={skills}
+              isLoadingSkills={isLoadingSkills}
+            />
           )}
-        </>
-      )}
+        </div>
+      </Container>
     </main>
+  );
+}
+
+function PublishedAndStarred({
+  published,
+  isLoadingPublished,
+  skills,
+  isLoadingSkills,
+}: {
+  published: PublicSkill[];
+  isLoadingPublished: boolean;
+  skills: PublicSkill[];
+  isLoadingSkills: boolean;
+}) {
+  return (
+    <div className="flex flex-col gap-8">
+      {/* Published */}
+      <section>
+        <h2 className="font-display text-lg font-bold text-[color:var(--ink)]">Published</h2>
+        <p className="mt-1 mb-4 text-sm text-[color:var(--ink-soft)]">
+          Skills published by this user.
+        </p>
+        {isLoadingPublished ? (
+          <SkillCardSkeletonGrid count={3} />
+        ) : published.length > 0 ? (
+          <div className="grid grid-cols-[repeat(auto-fill,minmax(320px,1fr))] gap-5">
+            {published.map((skill) => (
+              <SkillCard
+                key={skill._id}
+                skill={skill}
+                badge={getSkillBadges(skill)}
+                summaryFallback="Agent-ready skill pack."
+                meta={
+                  <span className="text-[0.8rem] text-[color:var(--ink-soft)]">
+                    <SkillStatsTripletLine stats={skill.stats} />
+                  </span>
+                }
+              />
+            ))}
+          </div>
+        ) : (
+          <p className="text-sm text-[color:var(--ink-soft)]">No published skills yet.</p>
+        )}
+      </section>
+
+      {/* Stars */}
+      <section>
+        <h2 className="font-display text-lg font-bold text-[color:var(--ink)]">Stars</h2>
+        <p className="mt-1 mb-4 text-sm text-[color:var(--ink-soft)]">
+          Skills this user has starred.
+        </p>
+        {isLoadingSkills ? (
+          <SkillCardSkeletonGrid count={3} />
+        ) : skills.length === 0 ? (
+          <EmptyState icon={Star} title="No stars yet" />
+        ) : (
+          <div className="grid grid-cols-[repeat(auto-fill,minmax(320px,1fr))] gap-5">
+            {skills.map((skill) => (
+              <SkillCard
+                key={skill._id}
+                skill={skill}
+                badge={getSkillBadges(skill)}
+                summaryFallback="Agent-ready skill pack."
+                meta={
+                  <span className="text-[0.8rem] text-[color:var(--ink-soft)]">
+                    <SkillStatsTripletLine stats={skill.stats} />
+                  </span>
+                }
+              />
+            ))}
+          </div>
+        )}
+      </section>
+    </div>
   );
 }
 
@@ -176,108 +223,119 @@ function InstalledSection(props: {
   const clearTelemetry = useMutation(api.telemetry.clearMyTelemetry);
   const [showRaw, setShowRaw] = useState(false);
   const data = props.data;
+
   if (data === undefined) {
     return (
-      <>
-        <h2 className="section-title" style={{ fontSize: "1.3rem" }}>
-          Installed
-        </h2>
-        <div className="card">
-          <div className="loading-indicator">Loading telemetry…</div>
-        </div>
-      </>
+      <div className="flex flex-col gap-4">
+        <h2 className="font-display text-lg font-bold text-[color:var(--ink)]">Installed</h2>
+        <SkillCardSkeletonGrid count={3} />
+      </div>
     );
   }
 
   if (data === null) {
     return (
-      <>
-        <h2 className="section-title" style={{ fontSize: "1.3rem" }}>
-          Installed
-        </h2>
-        <div className="card">Sign in to view your installed skills.</div>
-      </>
+      <div className="flex flex-col gap-4">
+        <h2 className="font-display text-lg font-bold text-[color:var(--ink)]">Installed</h2>
+        <EmptyState title="Sign in to view your installed skills">
+          <SignInButton variant="outline">Sign in with GitHub</SignInButton>
+        </EmptyState>
+      </div>
     );
   }
 
   return (
-    <>
-      <h2 className="section-title" style={{ fontSize: "1.3rem" }}>
-        Installed
-      </h2>
-      <p className="section-subtitle" style={{ maxWidth: 760 }}>
+    <div className="flex flex-col gap-4">
+      <h2 className="font-display text-lg font-bold text-[color:var(--ink)]">Installed</h2>
+      <p className="max-w-2xl text-sm text-[color:var(--ink-soft)]">
         Private view. Only you can see your folders/roots. Everyone else only sees aggregated
         install counts per skill.
       </p>
-      <div className="profile-actions">
-        <button className="btn" type="button" onClick={props.onToggleRemoved}>
+      <div className="flex flex-wrap gap-2">
+        <Button variant="outline" size="sm" onClick={props.onToggleRemoved}>
           {props.includeRemoved ? "Hide removed" : "Show removed"}
-        </button>
-        <button className="btn" type="button" onClick={() => setShowRaw((value) => !value)}>
+        </Button>
+        <Button variant="outline" size="sm" onClick={() => setShowRaw((value) => !value)}>
           {showRaw ? "Hide JSON" : "Show JSON"}
-        </button>
-        <button
-          className="btn"
-          type="button"
+        </Button>
+        <Button
+          variant="destructive"
+          size="sm"
           onClick={() => {
-            if (!window.confirm("Delete all telemetry data?")) return;
-            void clearTelemetry();
+            toast("Delete all telemetry data?", {
+              action: {
+                label: "Delete",
+                onClick: () => void clearTelemetry(),
+              },
+            });
           }}
         >
           Delete telemetry
-        </button>
+        </Button>
       </div>
 
       {showRaw ? (
-        <div className="card telemetry-json" style={{ marginBottom: 18 }}>
-          <pre className="mono" style={{ margin: 0, whiteSpace: "pre-wrap" }}>
+        <Card className="mb-4">
+          <pre className="font-mono text-xs whitespace-pre-wrap break-all">
             {JSON.stringify(data, null, 2)}
           </pre>
-        </div>
+        </Card>
       ) : null}
 
       {data.roots.length === 0 ? (
-        <div className="card">No telemetry yet. Run `clawhub sync` from the CLI.</div>
+        <EmptyState
+          title="No telemetry yet"
+          description='Run "clawhub sync" from the CLI to start tracking.'
+        />
       ) : (
-        <div style={{ display: "grid", gap: 16 }}>
+        <div className="grid gap-4">
           {data.roots.map((root) => (
-            <div key={root.rootId} className="card telemetry-root">
-              <div className="telemetry-root-header">
+            <Card key={root.rootId}>
+              <div className="flex items-center justify-between">
                 <div>
-                  <div className="telemetry-root-title">{root.label}</div>
-                  <div className="telemetry-root-meta">
+                  <h3 className="font-display text-sm font-bold text-[color:var(--ink)]">
+                    {root.label}
+                  </h3>
+                  <p className="text-xs text-[color:var(--ink-soft)]">
                     Last sync {new Date(root.lastSeenAt).toLocaleString()}
                     {root.expiredAt ? " · stale" : ""}
-                  </div>
+                  </p>
                 </div>
-                <div className="tag">{root.skills.length} skills</div>
+                <Badge variant="default">{root.skills.length} skills</Badge>
               </div>
               {root.skills.length === 0 ? (
-                <div className="stat">No skills found in this root.</div>
+                <p className="text-sm text-[color:var(--ink-soft)]">
+                  No skills found in this root.
+                </p>
               ) : (
-                <div className="telemetry-skill-list">
+                <div className="flex flex-col gap-1">
                   {root.skills.map((entry) => (
-                    <div key={`${root.rootId}:${entry.skill.slug}`} className="telemetry-skill-row">
-                      <a
-                        className="telemetry-skill-link"
-                        href={`/${encodeURIComponent(String(entry.skill.ownerUserId))}/${entry.skill.slug}`}
-                      >
-                        <span>{entry.skill.displayName}</span>
-                        <span className="telemetry-skill-slug">/{entry.skill.slug}</span>
-                      </a>
-                      <div className="telemetry-skill-meta mono">
+                    <a
+                      key={`${root.rootId}:${entry.skill.slug}`}
+                      className="flex items-center justify-between rounded-[var(--radius-sm)] px-3 py-2 text-sm no-underline transition-colors hover:bg-[color:var(--surface-muted)]"
+                      href={`/${encodeURIComponent(String(entry.skill.ownerUserId))}/${entry.skill.slug}`}
+                    >
+                      <span className="flex items-center gap-2">
+                        <span className="font-semibold text-[color:var(--ink)]">
+                          {entry.skill.displayName}
+                        </span>
+                        <span className="font-mono text-xs text-[color:var(--ink-soft)]">
+                          /{entry.skill.slug}
+                        </span>
+                      </span>
+                      <span className="font-mono text-xs text-[color:var(--ink-soft)]">
                         {entry.lastVersion ? `v${entry.lastVersion}` : "v?"}{" "}
                         {entry.removedAt ? "· removed" : ""}
-                      </div>
-                    </div>
+                      </span>
+                    </a>
                   ))}
                 </div>
               )}
-            </div>
+            </Card>
           ))}
         </div>
       )}
-    </>
+    </div>
   );
 }
 

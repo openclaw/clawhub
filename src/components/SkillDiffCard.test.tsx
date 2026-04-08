@@ -83,7 +83,7 @@ describe("SkillDiffCard", () => {
     await waitFor(() => {
       expect(screen.getByTestId("diff-editor").getAttribute("data-side-by-side")).toBe("false");
     });
-    expect(screen.getByRole("button", { name: "Inline" }).className).toContain("is-active");
+    expect(screen.getByRole("button", { name: "Inline" }).className).toContain("shadow-sm");
     expect(screen.getByTestId("diff-editor").getAttribute("data-inline-fallback")).toBe("false");
   });
 
@@ -106,6 +106,6 @@ describe("SkillDiffCard", () => {
     await waitFor(() => {
       expect(screen.getByTestId("diff-editor").getAttribute("data-side-by-side")).toBe("true");
     });
-    expect(screen.getByRole("button", { name: "Side-by-side" }).className).toContain("is-active");
+    expect(screen.getByRole("button", { name: "Side-by-side" }).className).toContain("shadow-sm");
   });
 });

@@ -1,11 +1,12 @@
-import { useAuthActions } from "@convex-dev/auth/react";
 import { createFileRoute } from "@tanstack/react-router";
 import { useMutation } from "convex/react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { api } from "../../../convex/_generated/api";
-import { getUserFacingConvexError } from "../../lib/convexError";
+import { Container } from "../../components/layout/Container";
+import { SignInButton } from "../../components/SignInButton";
+import { Card, CardContent, CardHeader, CardTitle } from "../../components/ui/card";
 import { getClawHubSiteUrl, normalizeClawHubSiteOrigin } from "../../lib/site";
-import { setAuthError, useAuthError } from "../../lib/useAuthError";
+import { useAuthError } from "../../lib/useAuthError";
 import { useAuthStatus } from "../../lib/useAuthStatus";
 
 export const Route = createFileRoute("/cli/auth")({
@@ -14,7 +15,6 @@ export const Route = createFileRoute("/cli/auth")({
 
 function CliAuth() {
   const { isAuthenticated, isLoading, me } = useAuthStatus();
-  const { signIn } = useAuthActions();
   const { error: authError, clear: clearAuthError } = useAuthError();
   const createToken = useMutation(api.tokens.create);
 
@@ -24,7 +24,7 @@ function CliAuth() {
     label_b64?: string;
     state?: string;
   };
-  const [status, setStatus] = useState<string>("Preparing…");
+  const [status, setStatus] = useState<string>("Preparing...");
   const [token, setToken] = useState<string | null>(null);
   const hasRun = useRef(false);
 
@@ -32,7 +32,6 @@ function CliAuth() {
   const label =
     (decodeLabel(search.label_b64) ?? search.label ?? "CLI token").trim() || "CLI token";
   const state = typeof search.state === "string" ? search.state.trim() : "";
-  const signInRedirectTo = getCurrentRelativeUrl();
 
   const safeRedirect = useMemo(() => isAllowedRedirectUri(redirectUri), [redirectUri]);
   const registry = useMemo(() => {
@@ -50,10 +49,10 @@ function CliAuth() {
     hasRun.current = true;
 
     const run = async () => {
-      setStatus("Creating token…");
+      setStatus("Creating token...");
       const result = await createToken({ label });
       setToken(result.token);
-      setStatus("Redirecting to CLI…");
+      setStatus("Redirecting to CLI...");
       const hash = new URLSearchParams();
       hash.set("token", result.token);
       hash.set("registry", registry);
@@ -70,98 +69,103 @@ function CliAuth() {
 
   if (!safeRedirect) {
     return (
-      <main className="section">
-        <div className="card">
-          <h1 className="section-title" style={{ marginTop: 0 }}>
-            CLI login
-          </h1>
-          <p className="section-subtitle">Invalid redirect URL.</p>
-          <p className="section-subtitle" style={{ marginBottom: 0 }}>
-            Run the CLI again to start a fresh login.
-          </p>
-        </div>
+      <main className="py-10">
+        <Container size="narrow">
+          <Card>
+            <CardHeader>
+              <CardTitle className="text-2xl">CLI login</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <p className="text-sm text-[color:var(--ink-soft)]">Invalid redirect URL.</p>
+              <p className="text-sm text-[color:var(--ink-soft)]">
+                Run the CLI again to start a fresh login.
+              </p>
+            </CardContent>
+          </Card>
+        </Container>
       </main>
     );
   }
 
   if (!state) {
     return (
-      <main className="section">
-        <div className="card">
-          <h1 className="section-title" style={{ marginTop: 0 }}>
-            CLI login
-          </h1>
-          <p className="section-subtitle">Missing state.</p>
-          <p className="section-subtitle" style={{ marginBottom: 0 }}>
-            Run the CLI again to start a fresh login.
-          </p>
-        </div>
+      <main className="py-10">
+        <Container size="narrow">
+          <Card>
+            <CardHeader>
+              <CardTitle className="text-2xl">CLI login</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <p className="text-sm text-[color:var(--ink-soft)]">Missing state.</p>
+              <p className="text-sm text-[color:var(--ink-soft)]">
+                Run the CLI again to start a fresh login.
+              </p>
+            </CardContent>
+          </Card>
+        </Container>
       </main>
     );
   }
 
   if (!isAuthenticated || !me) {
     return (
-      <main className="section">
-        <div className="card">
-          <h1 className="section-title" style={{ marginTop: 0 }}>
-            CLI login
-          </h1>
-          <p className="section-subtitle">Sign in to create an API token for the CLI.</p>
-          {authError ? (
-            <p className="error" role="alert">
-              {authError}{" "}
-              <button
-                type="button"
-                onClick={clearAuthError}
-                aria-label="Dismiss"
-                style={{
-                  background: "none",
-                  border: "none",
-                  cursor: "pointer",
-                  color: "inherit",
-                  padding: "0 2px",
-                }}
+      <main className="py-10">
+        <Container size="narrow">
+          <Card>
+            <CardHeader>
+              <CardTitle className="text-2xl">CLI login</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <p className="text-sm text-[color:var(--ink-soft)]">
+                Sign in to create an API token for the CLI.
+              </p>
+              {authError ? (
+                <p
+                  className="rounded-[var(--radius-sm)] border border-red-300/40 bg-red-50 px-3 py-2 text-sm text-red-700 dark:border-red-500/30 dark:bg-red-950/50 dark:text-red-300"
+                  role="alert"
+                >
+                  {authError}{" "}
+                  <button
+                    type="button"
+                    onClick={clearAuthError}
+                    aria-label="Dismiss"
+                    className="cursor-pointer border-none bg-transparent px-0.5 text-inherit"
+                  >
+                    &times;
+                  </button>
+                </p>
+              ) : null}
+              <SignInButton
+                variant="primary"
+                disabled={isLoading}
               >
-                &times;
-              </button>
-            </p>
-          ) : null}
-          <button
-            className="btn btn-primary"
-            type="button"
-            disabled={isLoading}
-            onClick={() => {
-              clearAuthError();
-              void signIn(
-                "github",
-                signInRedirectTo ? { redirectTo: signInRedirectTo } : undefined,
-              ).catch((error) => {
-                setAuthError(getUserFacingConvexError(error, "Sign in failed. Please try again."));
-              });
-            }}
-          >
-            Sign in with GitHub
-          </button>
-        </div>
+                Sign in with GitHub
+              </SignInButton>
+            </CardContent>
+          </Card>
+        </Container>
       </main>
     );
   }
 
   return (
-    <main className="section">
-      <div className="card">
-        <h1 className="section-title" style={{ marginTop: 0 }}>
-          CLI login
-        </h1>
-        <p className="section-subtitle">{status}</p>
-        {token ? (
-          <div className="stat" style={{ overflowX: "auto" }}>
-            <div style={{ marginBottom: 8 }}>If redirect fails, copy this token:</div>
-            <code>{token}</code>
-          </div>
-        ) : null}
-      </div>
+    <main className="py-10">
+      <Container size="narrow">
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-2xl">CLI login</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <p className="text-sm text-[color:var(--ink-soft)]">{status}</p>
+            {token ? (
+              <div className="text-sm text-[color:var(--ink-soft)] overflow-x-auto">
+                <div className="mb-2">If redirect fails, copy this token:</div>
+                <code className="font-mono text-xs">{token}</code>
+              </div>
+            ) : null}
+          </CardContent>
+        </Card>
+      </Container>
     </main>
   );
 }
@@ -194,9 +198,4 @@ function decodeLabel(value: string | undefined) {
   } catch {
     return null;
   }
-}
-
-function getCurrentRelativeUrl() {
-  if (typeof window === "undefined") return "/";
-  return `${window.location.pathname}${window.location.search}${window.location.hash}`;
 }

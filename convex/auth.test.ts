@@ -10,7 +10,12 @@ function makeCtx({
   user,
   banRecords,
 }: {
-  user: { deletedAt?: number; deactivatedAt?: number; purgedAt?: number } | null;
+  user: {
+    deletedAt?: number;
+    deactivatedAt?: number;
+    purgedAt?: number;
+    banReason?: string;
+  } | null;
   banRecords?: Array<Record<string, unknown>>;
 }) {
   const query = {
@@ -112,7 +117,7 @@ describe("handleDeletedUserSignIn", () => {
 
   it("blocks users auto-banned for malware", async () => {
     const { ctx } = makeCtx({
-      user: { deletedAt: 123 },
+      user: { deletedAt: 123, banReason: "malware auto-ban" },
       banRecords: [{ action: "user.autoban.malware" }],
     });
 
@@ -121,5 +126,16 @@ describe("handleDeletedUserSignIn", () => {
     ).rejects.toThrow(BANNED_REAUTH_MESSAGE);
 
     expect(ctx.db.patch).not.toHaveBeenCalled();
+  });
+
+  it("includes the moderator ban reason in the sign-in error", async () => {
+    const { ctx } = makeCtx({
+      user: { deletedAt: 123, banReason: "Chargeback fraud" },
+      banRecords: [{ action: "user.ban" }],
+    });
+
+    await expect(
+      handleDeletedUserSignIn(ctx as never, { userId, existingUserId: userId }),
+    ).rejects.toThrow(`${BANNED_REAUTH_MESSAGE} Reason: Chargeback fraud`);
   });
 });

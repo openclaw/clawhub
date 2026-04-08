@@ -14,6 +14,11 @@ import {
   sortVersionsBySemver,
 } from "../lib/diffing";
 import { ClientOnly } from "./ClientOnly";
+import { Badge } from "./ui/badge";
+import { Button } from "./ui/button";
+import { Card } from "./ui/card";
+import { Label } from "./ui/label";
+import { Skeleton } from "./ui/skeleton";
 
 type SkillDiffCardProps = {
   skill: Doc<"skills">;
@@ -272,30 +277,39 @@ export function SkillDiffCard({ skill, versions, variant = "card" }: SkillDiffCa
   const fileSelected = Boolean(selectedItem);
   const diffOptions = useMemo(() => buildDiffOptions(viewMode), [viewMode]);
 
-  const containerClass = variant === "card" ? "card diff-card" : "diff-card diff-card-embedded";
+  const Wrapper = variant === "card" ? Card : "div";
+  const wrapperClassName = variant === "card" ? "flex flex-col gap-4" : "flex flex-col gap-4";
 
   return (
-    <div className={containerClass}>
-      <div className="diff-header">
+    <Wrapper className={wrapperClassName}>
+      <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
-          <h2 className="section-title" style={{ fontSize: "1.2rem", margin: 0 }}>
+          <h2 className="m-0 font-display text-[1.2rem] font-bold text-[color:var(--ink)]">
             Compare versions
           </h2>
-          <p className="section-subtitle" style={{ margin: 0 }}>
+          <p className="m-0 text-sm text-[color:var(--ink-soft)]">
             Inline or side-by-side diff for any file.
           </p>
         </div>
-        <fieldset className="diff-toggle-group">
+        <fieldset className="inline-flex items-center gap-0.5 rounded-full border border-[color:var(--line)] bg-[color:var(--surface-muted)] p-[3px]">
           <legend className="sr-only">Diff layout</legend>
           <button
-            className={`diff-toggle${viewMode === "split" ? " is-active" : ""}`}
+            className={`cursor-pointer rounded-full border-none px-3 py-1.5 text-xs font-semibold transition-all duration-200 ${
+              viewMode === "split"
+                ? "bg-[color:var(--surface)] text-[color:var(--ink)] shadow-sm"
+                : "bg-transparent text-[color:var(--ink-soft)] hover:text-[color:var(--ink)]"
+            }`}
             type="button"
             onClick={() => updateViewMode("split")}
           >
             Side-by-side
           </button>
           <button
-            className={`diff-toggle${viewMode === "inline" ? " is-active" : ""}`}
+            className={`cursor-pointer rounded-full border-none px-3 py-1.5 text-xs font-semibold transition-all duration-200 ${
+              viewMode === "inline"
+                ? "bg-[color:var(--surface)] text-[color:var(--ink)] shadow-sm"
+                : "bg-transparent text-[color:var(--ink-soft)] hover:text-[color:var(--ink)]"
+            }`}
             type="button"
             onClick={() => updateViewMode("inline")}
           >
@@ -304,12 +318,12 @@ export function SkillDiffCard({ skill, versions, variant = "card" }: SkillDiffCa
         </fieldset>
       </div>
 
-      <div className="diff-controls">
-        <div className="diff-select">
-          <label htmlFor="diff-left">Left</label>
+      <div className="flex flex-wrap items-end gap-3">
+        <div className="flex min-w-[140px] flex-1 flex-col gap-1">
+          <Label htmlFor="diff-left">Left</Label>
           <select
             id="diff-left"
-            className="search-input"
+            className="min-h-[44px] w-full rounded-[var(--radius-sm)] border border-[rgba(29,59,78,0.22)] bg-[rgba(255,255,255,0.94)] px-3.5 py-[13px] text-[color:var(--ink)] transition-all duration-[180ms] ease-out focus:border-[color-mix(in_srgb,var(--accent)_70%,white)] focus:shadow-[0_0_0_3px_color-mix(in_srgb,var(--accent)_22%,transparent)] focus:outline-none dark:border-[rgba(255,255,255,0.12)] dark:bg-[rgba(14,28,37,0.84)]"
             value={leftVersionId ?? ""}
             onChange={(event) => setLeftVersionId(event.target.value as Id<"skillVersions">)}
           >
@@ -319,9 +333,9 @@ export function SkillDiffCard({ skill, versions, variant = "card" }: SkillDiffCa
             {renderOptions(versionOptions)}
           </select>
         </div>
-        <button
-          className="btn diff-swap"
-          type="button"
+        <Button
+          variant="outline"
+          size="sm"
           onClick={() => {
             setLeftVersionId(rightVersionId);
             setRightVersionId(leftVersionId);
@@ -329,12 +343,12 @@ export function SkillDiffCard({ skill, versions, variant = "card" }: SkillDiffCa
           disabled={!leftVersionId || !rightVersionId}
         >
           Swap
-        </button>
-        <div className="diff-select">
-          <label htmlFor="diff-right">Right</label>
+        </Button>
+        <div className="flex min-w-[140px] flex-1 flex-col gap-1">
+          <Label htmlFor="diff-right">Right</Label>
           <select
             id="diff-right"
-            className="search-input"
+            className="min-h-[44px] w-full rounded-[var(--radius-sm)] border border-[rgba(29,59,78,0.22)] bg-[rgba(255,255,255,0.94)] px-3.5 py-[13px] text-[color:var(--ink)] transition-all duration-[180ms] ease-out focus:border-[color-mix(in_srgb,var(--accent)_70%,white)] focus:shadow-[0_0_0_3px_color-mix(in_srgb,var(--accent)_22%,transparent)] focus:outline-none dark:border-[rgba(255,255,255,0.12)] dark:bg-[rgba(14,28,37,0.84)]"
             value={rightVersionId ?? ""}
             onChange={(event) => setRightVersionId(event.target.value as Id<"skillVersions">)}
           >
@@ -346,62 +360,91 @@ export function SkillDiffCard({ skill, versions, variant = "card" }: SkillDiffCa
         </div>
       </div>
 
-      <div className="diff-meta">
+      <div className="flex flex-wrap items-center gap-3 text-sm text-[color:var(--ink-soft)]">
         <span>
           Left {leftLabel} • Right {rightLabel}
         </span>
         {diffUnavailable ? <span>Need at least 2 versions.</span> : null}
       </div>
 
-      <div className="diff-layout">
-        <div className="diff-files">
+      <div className="grid gap-0 overflow-hidden rounded-[var(--radius-md)] border border-[color:var(--line)] md:grid-cols-[minmax(160px,220px)_1fr]">
+        <div className="flex max-h-[500px] flex-col overflow-y-auto border-b border-[color:var(--line)] bg-[color:var(--surface-muted)] md:border-r md:border-b-0">
           {fileDiffItems.length === 0 ? (
-            <div className="diff-empty">No files to compare.</div>
+            <div className="p-3 text-sm text-[color:var(--ink-soft)]">No files to compare.</div>
           ) : (
             fileDiffItems.map((item) => (
               <button
                 key={item.path}
                 type="button"
-                className={`diff-file${item.path === selectedPath ? " is-active" : ""}`}
+                className={`flex w-full cursor-pointer items-center gap-2 border-none px-3 py-2 text-left text-sm transition-colors hover:bg-[color:var(--surface)] ${
+                  item.path === selectedPath
+                    ? "bg-[color:var(--surface)] font-semibold text-[color:var(--ink)]"
+                    : "bg-transparent text-[color:var(--ink)]"
+                }`}
                 onClick={() => setSelectedPath(item.path)}
               >
-                <span className={`diff-pill diff-pill-${item.status}`}>{item.status}</span>
-                <span className="diff-file-name">{item.path}</span>
+                <Badge
+                  variant={
+                    item.status === "added"
+                      ? "success"
+                      : item.status === "removed"
+                        ? "destructive"
+                        : item.status === "changed"
+                          ? "warning"
+                          : "compact"
+                  }
+                  className="shrink-0 text-[0.65rem]"
+                >
+                  {item.status}
+                </Badge>
+                <span className="truncate font-mono text-xs">{item.path}</span>
               </button>
             ))
           )}
         </div>
-        <div className="diff-view">
+        <div className="relative min-h-[300px]">
           {error ? (
-            <div className="diff-empty">{error}</div>
+            <div className="flex h-full items-center justify-center p-4 text-sm text-[color:var(--ink-soft)]">
+              {error}
+            </div>
           ) : sizeWarning ? (
-            <div className="diff-empty">
+            <div className="flex h-full items-center justify-center p-4 text-sm text-[color:var(--ink-soft)]">
               {sizeWarning.side === "left" ? "Left" : "Right"} file exceeds 200KB:{" "}
               {sizeWarning.path}
             </div>
           ) : diffUnavailable ? (
-            <div className="diff-empty">Publish another version to compare.</div>
+            <div className="flex h-full items-center justify-center p-4 text-sm text-[color:var(--ink-soft)]">
+              Publish another version to compare.
+            </div>
           ) : !selectionReady ? (
-            <div className="diff-empty">Select two versions to compare.</div>
+            <div className="flex h-full items-center justify-center p-4 text-sm text-[color:var(--ink-soft)]">
+              Select two versions to compare.
+            </div>
           ) : !fileSelected ? (
-            <div className="diff-empty">Select a file to compare.</div>
+            <div className="flex h-full items-center justify-center p-4 text-sm text-[color:var(--ink-soft)]">
+              Select a file to compare.
+            </div>
           ) : (
-            <ClientOnly fallback={<div className="diff-empty">Preparing diff…</div>}>
+            <ClientOnly fallback={<Skeleton className="h-full w-full" />}>
               <DiffEditor
                 key={`diff-${viewMode}`}
-                className={`diff-monaco diff-monaco-${viewMode}`}
+                className={`h-full min-h-[400px] w-full ${viewMode === "inline" ? "max-w-full" : ""}`}
                 original={leftText}
                 modified={rightText}
                 theme={getMonacoThemeName()}
-                loading={<div className="diff-empty">Loading diff…</div>}
+                loading={<Skeleton className="h-full w-full" />}
                 options={diffOptions}
               />
-              {isLoading ? <div className="diff-loading">Loading…</div> : null}
+              {isLoading ? (
+                <div className="absolute inset-0 flex items-center justify-center bg-[color:var(--surface)]/80">
+                  <Skeleton className="h-8 w-24" />
+                </div>
+              ) : null}
             </ClientOnly>
           )}
         </div>
       </div>
-    </div>
+    </Wrapper>
   );
 }
 

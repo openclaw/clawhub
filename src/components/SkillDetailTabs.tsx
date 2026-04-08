@@ -1,6 +1,9 @@
 import { lazy, Suspense } from "react";
 import type { Doc, Id } from "../../convex/_generated/dataModel";
 import { SkillVersionsPanel } from "./SkillVersionsPanel";
+import { Card } from "./ui/card";
+import { Skeleton } from "./ui/skeleton";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "./ui/tabs";
 
 const SkillDiffCard = lazy(() =>
   import("./SkillDiffCard").then((module) => ({ default: module.SkillDiffCard })),
@@ -44,67 +47,53 @@ export function SkillDetailTabs({
   scanResultsSuppressedMessage,
 }: SkillDetailTabsProps) {
   return (
-    <div className="card tab-card">
-      <div className="tab-header">
-        <button
-          className={`tab-button${activeTab === "files" ? " is-active" : ""}`}
-          type="button"
-          onClick={() => setActiveTab("files")}
-        >
-          Files
-        </button>
-        <button
-          className={`tab-button${activeTab === "compare" ? " is-active" : ""}`}
-          type="button"
-          onClick={() => setActiveTab("compare")}
-          onMouseEnter={() => {
-            onCompareIntent();
-            void import("./SkillDiffCard");
-          }}
-          onFocus={() => {
-            onCompareIntent();
-            void import("./SkillDiffCard");
-          }}
-        >
-          Compare
-        </button>
-        <button
-          className={`tab-button${activeTab === "versions" ? " is-active" : ""}`}
-          type="button"
-          onClick={() => setActiveTab("versions")}
-        >
-          Versions
-        </button>
-      </div>
+    <Card>
+      <Tabs value={activeTab} onValueChange={(value) => setActiveTab(value as typeof activeTab)}>
+        <TabsList>
+          <TabsTrigger value="files">Files</TabsTrigger>
+          <TabsTrigger
+            value="compare"
+            onMouseEnter={() => {
+              onCompareIntent();
+              void import("./SkillDiffCard");
+            }}
+            onFocus={() => {
+              onCompareIntent();
+              void import("./SkillDiffCard");
+            }}
+          >
+            Compare
+          </TabsTrigger>
+          <TabsTrigger value="versions">Versions</TabsTrigger>
+        </TabsList>
 
-      {activeTab === "files" ? (
-        <Suspense fallback={<div className="tab-body stat">Loading file viewer…</div>}>
-          <SkillFilesPanel
-            versionId={latestVersionId}
-            readmeContent={readmeContent}
-            readmeError={readmeError}
-            latestFiles={latestFiles}
-          />
-        </Suspense>
-      ) : null}
+        <TabsContent value="files">
+          <Suspense fallback={<Skeleton className="h-40 w-full" />}>
+            <SkillFilesPanel
+              versionId={latestVersionId}
+              readmeContent={readmeContent}
+              readmeError={readmeError}
+              latestFiles={latestFiles}
+            />
+          </Suspense>
+        </TabsContent>
 
-      {activeTab === "compare" ? (
-        <div className="tab-body">
-          <Suspense fallback={<div className="stat">Loading diff viewer…</div>}>
+        <TabsContent value="compare">
+          <Suspense fallback={<Skeleton className="h-40 w-full" />}>
             <SkillDiffCard skill={skill} versions={diffVersions ?? []} variant="embedded" />
           </Suspense>
-        </div>
-      ) : null}
+        </TabsContent>
 
-      {activeTab === "versions" ? (
-        <SkillVersionsPanel
-          versions={versions}
-          nixPlugin={nixPlugin}
-          skillSlug={skill.slug}
-          suppressScanResults={suppressVersionScanResults}
-          suppressedMessage={scanResultsSuppressedMessage}
-        />
-      ) : null}
-    </div>
+        <TabsContent value="versions">
+          <SkillVersionsPanel
+            versions={versions}
+            nixPlugin={nixPlugin}
+            skillSlug={skill.slug}
+            suppressScanResults={suppressVersionScanResults}
+            suppressedMessage={scanResultsSuppressedMessage}
+          />
+        </TabsContent>
+      </Tabs>
+    </Card>
   );
 }

@@ -33,9 +33,8 @@ type WrappedHandler<TArgs, TResult> = {
 };
 
 const meHandler = (me as unknown as WrappedHandler<Record<string, never>, unknown>)._handler;
-const getByHandleHandler = (
-  getByHandle as unknown as WrappedHandler<{ handle: string }, unknown>
-)._handler;
+const getByHandleHandler = (getByHandle as unknown as WrappedHandler<{ handle: string }, unknown>)
+  ._handler;
 
 function makeCtx() {
   const patch = vi.fn();
@@ -120,12 +119,63 @@ function makeCtx() {
   };
 }
 
-function makeListCtx(users: Array<Record<string, unknown>>) {
+function makeListCtx(
+  users: Array<Record<string, unknown>>,
+  options?: {
+    publishersByHandle?: Record<string, Record<string, unknown>>;
+    usersById?: Record<string, Record<string, unknown> | null>;
+  },
+) {
   const take = vi.fn(async (n: number) => users.slice(0, n));
   const collect = vi.fn(async () => users);
   const order = vi.fn(() => ({ take, collect }));
-  const query = vi.fn(() => ({ order }));
-  const get = vi.fn();
+  const publishersByHandle = options?.publishersByHandle ?? {};
+  const usersById = options?.usersById ?? {};
+  const query = vi.fn((table: string) => {
+    if (table === "users") {
+      return {
+        order,
+        withIndex: (
+          name: string,
+          cb?: (q: { eq: (field: string, value: string) => unknown }) => unknown,
+        ) => {
+          if (name !== "handle") throw new Error(`Unexpected users index ${name}`);
+          let handle = "";
+          cb?.({
+            eq: (field: string, value: string) => {
+              if (field === "handle") handle = value;
+              return {};
+            },
+          });
+          return {
+            unique: vi.fn(async () => users.find((user) => user.handle === handle) ?? null),
+          };
+        },
+      };
+    }
+    if (table === "publishers") {
+      return {
+        withIndex: (
+          name: string,
+          cb?: (q: { eq: (field: string, value: string) => unknown }) => unknown,
+        ) => {
+          if (name !== "by_handle") throw new Error(`Unexpected publishers index ${name}`);
+          let handle = "";
+          cb?.({
+            eq: (field: string, value: string) => {
+              if (field === "handle") handle = value;
+              return {};
+            },
+          });
+          return { unique: vi.fn(async () => publishersByHandle[handle] ?? null) };
+        },
+      };
+    }
+    throw new Error(`Unexpected table ${table}`);
+  });
+  const get = vi.fn<(id: string) => Promise<Record<string, unknown> | null>>(
+    async (id: string) => usersById[id] ?? null,
+  );
   return {
     ctx: { db: { query, get, normalizeId: vi.fn() } } as never,
     take,
@@ -339,6 +389,115 @@ describe("ensureHandler", () => {
     });
   });
 
+  it("repairs an existing handle that is no longer claimable", async () => {
+    const { ctx, patch, query } = makeCtx();
+    query.mockImplementation(((table: string) => {
+      if (table === "reservedHandles") {
+        return {
+          withIndex: (name: string) => {
+            if (name !== "by_handle_active_updatedAt") {
+              throw new Error(`Unexpected reservedHandles index ${name}`);
+            }
+            return { order: () => ({ take: async () => [] }) };
+          },
+        };
+      }
+      if (table === "publishers") {
+        return {
+          withIndex: (
+            name: string,
+            builder?: (q: { eq: (field: string, value: string) => unknown }) => unknown,
+          ) => {
+            let handle = "";
+            let linkedUserId = "";
+            const q = {
+              eq: (field: string, value: string) => {
+                if (field === "handle") handle = value;
+                if (field === "linkedUserId") linkedUserId = value;
+                return q;
+              },
+            };
+            builder?.(q);
+            if (name === "by_handle") {
+              return {
+                unique: vi.fn(async () => {
+                  if (handle === "openclaw") {
+                    return {
+                      _id: "publishers:openclaw",
+                      kind: "org",
+                      handle: "openclaw",
+                      displayName: "OpenClaw",
+                    };
+                  }
+                  return null;
+                }),
+              };
+            }
+            if (name === "by_linked_user") {
+              return {
+                unique: vi.fn(async () =>
+                  linkedUserId === "users:owner"
+                    ? {
+                        _id: "publishers:openclaw-user",
+                        kind: "user",
+                        handle: "openclaw-user",
+                        linkedUserId: "users:owner",
+                        displayName: "OpenClaw User",
+                      }
+                    : null,
+                ),
+              };
+            }
+            throw new Error(`Unexpected publishers index ${name}`);
+          },
+        };
+      }
+      if (table === "publisherMembers") {
+        return {
+          withIndex: (name: string) => {
+            if (name !== "by_publisher_user") {
+              throw new Error(`Unexpected publisherMembers index ${name}`);
+            }
+            return { unique: vi.fn(async () => null) };
+          },
+        };
+      }
+      if (table === "packages" || table === "skills") {
+        return {
+          withIndex: (name: string) => {
+            if (name !== "by_owner_publisher") {
+              throw new Error(`Unexpected ${table} index ${name}`);
+            }
+            return { collect: vi.fn(async () => []) };
+          },
+        };
+      }
+      throw new Error(`Unexpected table ${table}`);
+    }) as never);
+    vi.mocked(requireUser).mockResolvedValue({
+      userId: "users:owner",
+      user: {
+        _id: "users:owner",
+        _creationTime: 1,
+        handle: "openclaw",
+        displayName: "openclaw",
+        name: "openclaw",
+        email: "owner@example.com",
+        role: "user",
+        createdAt: 1,
+        personalPublisherId: "publishers:openclaw-user",
+      },
+    } as never);
+
+    await ensureHandler(ctx);
+
+    expect(patch).toHaveBeenCalledWith("users:owner", {
+      handle: "openclaw-2",
+      displayName: "openclaw-2",
+      updatedAt: expect.any(Number),
+    });
+  });
+
   it("does not auto-claim a reserved handle for another user", async () => {
     const { ctx, patch, query } = makeCtx();
     query.mockImplementation(((table: string) => {
@@ -399,7 +558,10 @@ describe("ensureHandler", () => {
       }
       if (table === "publishers") {
         return {
-          withIndex: (name: string, builder?: (q: { eq: (field: string, value: string) => unknown }) => unknown) => {
+          withIndex: (
+            name: string,
+            builder?: (q: { eq: (field: string, value: string) => unknown }) => unknown,
+          ) => {
             let handle = "";
             let linkedUserId = "";
             const q = {
@@ -501,6 +663,19 @@ describe("me", () => {
 
     expect(result).toBeNull();
     expect(get).not.toHaveBeenCalled();
+  });
+
+  it("returns null when auth resolves to an invalid user id", async () => {
+    vi.mocked(getAuthUserId).mockResolvedValue("users:broken" as never);
+    const get = vi.fn(async (id: string) => {
+      if (id === "users:broken") throw new Error("Table mismatch");
+      return null;
+    });
+
+    const result = await meHandler({ db: { get } } as never, {});
+
+    expect(result).toBeNull();
+    expect(get).toHaveBeenCalledWith("users:broken");
   });
 });
 
@@ -746,7 +921,10 @@ describe("users.syncGitHubProfileInternal", () => {
       }
       if (table === "publishers") {
         return {
-          withIndex: (name: string, builder?: (q: { eq: (field: string, value: string) => unknown }) => unknown) => {
+          withIndex: (
+            name: string,
+            builder?: (q: { eq: (field: string, value: string) => unknown }) => unknown,
+          ) => {
             let handle = "";
             let linkedUserId = "";
             const q = {
@@ -951,6 +1129,45 @@ describe("users.list", () => {
     });
   });
 
+  it("includes an exact publisher-handle match even when the linked user is banned", async () => {
+    vi.mocked(requireUser).mockResolvedValue({
+      userId: "users:admin",
+      user: { _id: "users:admin", role: "admin" },
+    } as never);
+    const users = [
+      {
+        _id: "users:1",
+        _creationTime: 3,
+        handle: "different-login",
+        displayName: "ClawGrid",
+        deletedAt: 123,
+        role: "user",
+      },
+      { _id: "users:2", _creationTime: 2, handle: "alice", role: "user" },
+    ];
+    const { ctx } = makeListCtx(users, {
+      publishersByHandle: {
+        clawgrid: {
+          _id: "publishers:clawgrid",
+          handle: "clawgrid",
+          kind: "user",
+          linkedUserId: "users:1",
+        },
+      },
+      usersById: {
+        "users:1": users[0]!,
+      },
+    });
+    const listHandler = (
+      list as unknown as { _handler: (ctx: unknown, args: unknown) => Promise<unknown> }
+    )._handler;
+
+    await expect(listHandler(ctx, { limit: 10, search: "clawgrid" })).resolves.toMatchObject({
+      total: 1,
+      items: [{ _id: "users:1", deletedAt: 123 }],
+    });
+  });
+
   it("treats whitespace search as empty search", async () => {
     vi.mocked(requireUser).mockResolvedValue({
       userId: "users:admin",
@@ -1058,6 +1275,127 @@ describe("users.searchInternal", () => {
     ]);
   });
 
+  it("includes an exact personal publisher handle match in admin search", async () => {
+    const users = [
+      { _id: "users:1", _creationTime: 2, handle: "alice", name: "alice", role: "user" },
+    ];
+    const { ctx, get } = makeListCtx(users, {
+      publishersByHandle: {
+        lmlukef: {
+          _id: "publishers:lmlukef",
+          kind: "user",
+          handle: "lmlukef",
+          linkedUserId: "users:owner",
+        },
+      },
+      usersById: {
+        "users:owner": {
+          _id: "users:owner",
+          _creationTime: 1,
+          handle: "luke",
+          name: "different-gh-login",
+          displayName: "Luke",
+          role: "user",
+        },
+      },
+    });
+    const handler = (
+      searchInternal as unknown as { _handler: (ctx: unknown, args: unknown) => Promise<unknown> }
+    )._handler;
+    get.mockImplementation(async (id: string) => {
+      if (id === "users:admin") return { _id: "users:admin", role: "admin" };
+      if (id === "users:owner") {
+        return {
+          _id: "users:owner",
+          _creationTime: 1,
+          handle: "luke",
+          name: "different-gh-login",
+          displayName: "Luke",
+          role: "user",
+        };
+      }
+      return null;
+    });
+
+    const result = (await handler(ctx, {
+      actorUserId: "users:admin",
+      query: "lmLukeF",
+      limit: 25,
+    })) as {
+      items: Array<Record<string, unknown>>;
+      total: number;
+    };
+
+    expect(result.total).toBe(1);
+    expect(result.items[0]).toEqual({
+      userId: "users:owner",
+      handle: "luke",
+      displayName: "Luke",
+      name: "different-gh-login",
+      role: "user",
+    });
+  });
+
+  it("does not double-count total when the fallback user already matched off-page", async () => {
+    const users = [
+      {
+        _id: "users:1",
+        _creationTime: 3,
+        handle: "lmquery-top",
+        name: "lmquery-top",
+        role: "user",
+      },
+      {
+        _id: "users:2",
+        _creationTime: 2,
+        handle: "lmquery-mid",
+        name: "lmquery-mid",
+        role: "user",
+      },
+      {
+        _id: "users:owner",
+        _creationTime: 1,
+        handle: "owner-lmquery",
+        name: "owner-lmquery",
+        displayName: "Owner Lmquery",
+        role: "user",
+      },
+    ];
+    const { ctx, get } = makeListCtx(users, {
+      publishersByHandle: {
+        lmquery: {
+          _id: "publishers:lmquery",
+          kind: "user",
+          handle: "lmquery",
+          linkedUserId: "users:owner",
+        },
+      },
+      usersById: {
+        "users:owner": users[2] as Record<string, unknown>,
+      },
+    });
+    const handler = (
+      searchInternal as unknown as { _handler: (ctx: unknown, args: unknown) => Promise<unknown> }
+    )._handler;
+    get.mockImplementation(async (id: string) => {
+      if (id === "users:admin") return { _id: "users:admin", role: "admin" };
+      if (id === "users:owner") return users[2] as Record<string, unknown>;
+      return null;
+    });
+
+    const result = (await handler(ctx, {
+      actorUserId: "users:admin",
+      query: "lmquery",
+      limit: 2,
+    })) as {
+      items: Array<Record<string, unknown>>;
+      total: number;
+    };
+
+    expect(result.total).toBe(3);
+    expect(result.items.map((item) => item.userId)).toEqual(["users:owner", "users:1"]);
+  });
+
   it("rejects deactivated actors", async () => {
     const { ctx, get } = makeListCtx([]);
     const handler = (
@@ -1080,7 +1418,7 @@ describe("users.searchInternal", () => {
     );
   });
 
-  it("clamps limit for empty query and uses non-search path", async () => {
+  it("still caps empty-query listing and uses non-search path", async () => {
     const users = Array.from({ length: 400 }, (_value, index) => ({
       _id: `users:${index}`,
       _creationTime: 1_000 - index,

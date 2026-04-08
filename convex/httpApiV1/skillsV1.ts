@@ -81,6 +81,7 @@ type PublicSkillVersionResponse = {
   sha256hash?: string;
   vtAnalysis?: Doc<"skillVersions">["vtAnalysis"];
   llmAnalysis?: Doc<"skillVersions">["llmAnalysis"];
+  capabilityTags?: string[];
 };
 
 type ModerationEvidence = {
@@ -189,6 +190,7 @@ type SkillSecuritySnapshot = {
   hasScanResult: boolean;
   sha256hash: string | null;
   virustotalUrl: string | null;
+  capabilityTags: string[];
   scanners: {
     vt: {
       status: string;
@@ -271,13 +273,17 @@ function hasLlmDimensionWarnings(
 }
 
 function buildSkillSecuritySnapshot(
-  version: Pick<PublicSkillVersionResponse, "sha256hash" | "vtAnalysis" | "llmAnalysis">,
+  version: Pick<
+    PublicSkillVersionResponse,
+    "sha256hash" | "vtAnalysis" | "llmAnalysis" | "capabilityTags"
+  >,
 ): SkillSecuritySnapshot | null {
+  const capabilityTags = version.capabilityTags ?? [];
   const sha256hash = version.sha256hash ?? null;
   const vt = version.vtAnalysis;
   const llm = version.llmAnalysis;
 
-  if (!sha256hash && !vt && !llm) return null;
+  if (!sha256hash && !vt && !llm && capabilityTags.length === 0) return null;
 
   const vtStatus = vt ? normalizeSecurityStatus(vt.verdict ?? vt.status) : null;
   const llmStatus = llm ? normalizeSecurityStatus(llm.verdict ?? llm.status) : null;
@@ -305,6 +311,7 @@ function buildSkillSecuritySnapshot(
     hasScanResult,
     sha256hash,
     virustotalUrl: sha256hash ? `https://www.virustotal.com/gui/file/${sha256hash}` : null,
+    capabilityTags,
     scanners: {
       vt: vt
         ? {

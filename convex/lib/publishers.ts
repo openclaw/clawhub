@@ -18,8 +18,7 @@ function derivePersonalPublisherHandle(user: Doc<"users">) {
   const emailLocalPart = user.email?.split("@")[0];
   const userIdSuffix = String(user._id).split(":").pop();
   return (
-    normalizePublisherHandle(user.handle ?? user.name ?? emailLocalPart ?? userIdSuffix) ??
-    "user"
+    normalizePublisherHandle(user.handle ?? user.name ?? emailLocalPart ?? userIdSuffix) ?? "user"
   );
 }
 
@@ -27,7 +26,8 @@ function synthesizePersonalPublisher(user: Doc<"users">): Doc<"publishers"> {
   const handle = derivePersonalPublisherHandle(user);
   const now = user.updatedAt ?? user.createdAt ?? user._creationTime;
   return {
-    _id: (user.personalPublisherId ?? (`publishers:${handle}` as Id<"publishers">)) as Id<"publishers">,
+    _id: (user.personalPublisherId ??
+      (`publishers:${handle}` as Id<"publishers">)) as Id<"publishers">,
     _creationTime: user._creationTime,
     kind: "user",
     handle,
@@ -43,10 +43,7 @@ function synthesizePersonalPublisher(user: Doc<"users">): Doc<"publishers"> {
   };
 }
 
-export async function getPersonalPublisherForUserOrFallback(
-  ctx: DbCtx,
-  user: Doc<"users">,
-) {
+export async function getPersonalPublisherForUserOrFallback(ctx: DbCtx, user: Doc<"users">) {
   if (user.personalPublisherId) {
     const publisher = await ctx.db.get(user.personalPublisherId);
     if (isPublisherActive(publisher)) return publisher;
@@ -80,10 +77,7 @@ export function isPublisherRoleAllowed(role: PublisherRole, allowed: PublisherRo
   return allowed.some((candidate) => ranks[role] >= ranks[candidate]);
 }
 
-export async function getPublisherByHandle(
-  ctx: DbCtx,
-  handle: string | undefined | null,
-) {
+export async function getPublisherByHandle(ctx: DbCtx, handle: string | undefined | null) {
   const normalized = normalizePublisherHandle(handle);
   if (!normalized) return null;
   try {
@@ -111,7 +105,12 @@ export async function getUserByHandleOrPersonalPublisher(
   if (user) return user;
 
   const publisher = await getPublisherByHandle(ctx, normalized);
-  if (!publisher || !isPublisherActive(publisher) || publisher.kind !== "user" || !publisher.linkedUserId) {
+  if (
+    !publisher ||
+    !isPublisherActive(publisher) ||
+    publisher.kind !== "user" ||
+    !publisher.linkedUserId
+  ) {
     return null;
   }
 
@@ -127,10 +126,7 @@ export async function getActiveUserByHandleOrPersonalPublisher(
   return user;
 }
 
-export async function getPersonalPublisherForUser(
-  ctx: DbCtx,
-  userId: Id<"users">,
-) {
+export async function getPersonalPublisherForUser(ctx: DbCtx, userId: Id<"users">) {
   try {
     return await ctx.db
       .query("publishers")
@@ -149,10 +145,9 @@ export async function ensurePersonalPublisherForUser(
   const handle = derivePersonalPublisherHandle(user);
   let existing: Doc<"publishers"> | null = null;
   try {
-    existing =
-      user.personalPublisherId
-        ? await ctx.db.get(user.personalPublisherId)
-        : await getPersonalPublisherForUser(ctx, user._id);
+    existing = user.personalPublisherId
+      ? await ctx.db.get(user.personalPublisherId)
+      : await getPersonalPublisherForUser(ctx, user._id);
   } catch (error) {
     if (!isMissingPublisherTableError(error)) throw error;
     return synthesizePersonalPublisher(user);
@@ -240,7 +235,9 @@ export async function ensurePersonalPublisherForUser(
 
     const existingMember = await ctx.db
       .query("publisherMembers")
-      .withIndex("by_publisher_user", (q) => q.eq("publisherId", publisherId).eq("userId", user._id))
+      .withIndex("by_publisher_user", (q) =>
+        q.eq("publisherId", publisherId).eq("userId", user._id),
+      )
       .unique();
     if (!existingMember) {
       await ctx.db.insert("publisherMembers", {

@@ -85,6 +85,15 @@ export const BundlePublishMetadataSchema = type({
     format: "string?",
     hostTargets: "string[]?",
 });
+export const PackageTrustedPublisherSchema = type({
+    provider: '"github-actions"',
+    repository: "string",
+    repositoryId: "string",
+    repositoryOwner: "string",
+    repositoryOwnerId: "string",
+    workflowFilename: "string",
+    environment: "string?",
+});
 export const PackagePublishRequestSchema = type({
     name: "string",
     displayName: "string?",
@@ -92,6 +101,7 @@ export const PackagePublishRequestSchema = type({
     family: PackageFamilySchema,
     version: "string",
     changelog: "string",
+    manualOverrideReason: "string?",
     channel: PackageChannelSchema.optional(),
     tags: "string[]?",
     source: PublishSourceSchema.optional(),
@@ -182,5 +192,22 @@ export const ApiV1PackagePublishResponseSchema = type({
     ok: "true",
     packageId: "string",
     releaseId: "string",
+});
+export const PackageTrustedPublisherUpsertRequestSchema = type({
+    repository: "string",
+    workflowFilename: "string",
+    environment: "string?",
+});
+export const ApiV1PackageTrustedPublisherResponseSchema = type({
+    trustedPublisher: PackageTrustedPublisherSchema.or("null"),
+});
+export const PublishTokenMintRequestSchema = type({
+    packageName: "string",
+    version: "string",
+    githubOidcToken: "string",
+});
+export const ApiV1PublishTokenMintResponseSchema = type({
+    token: "string",
+    expiresAt: "number",
 });
 //# sourceMappingURL=packages.js.map

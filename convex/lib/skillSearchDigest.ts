@@ -22,6 +22,7 @@ const SHARED_KEYS = [
   "latestVersionId",
   "latestVersionSummary",
   "tags",
+  "capabilityTags",
   "badges",
   "stats",
   "statsDownloads",
@@ -121,8 +122,7 @@ export function digestToOwnerInfo(
   // Empty string means backfilled but owner has no handle.
   // Use userId as fallback handle, matching the live getOwnerInfo path.
   const handle = digest.ownerHandle || undefined;
-  const fallbackHandle =
-    handle ?? String(digest.ownerPublisherId ?? digest.ownerUserId);
+  const fallbackHandle = handle ?? String(digest.ownerPublisherId ?? digest.ownerUserId);
   const resolvedHandle = handle ?? fallbackHandle;
   // Determine if we have real profile data (deactivated/deleted owners have
   // all profile fields undefined, while handle-less visible owners still have

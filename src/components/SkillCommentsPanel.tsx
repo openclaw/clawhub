@@ -1,8 +1,13 @@
 import { useMutation, useQuery } from "convex/react";
 import { useState } from "react";
+import { toast } from "sonner";
 import { api } from "../../convex/_generated/api";
 import type { Doc, Id } from "../../convex/_generated/dataModel";
 import { isModerator } from "../lib/roles";
+import { Button } from "./ui/button";
+import { Card } from "./ui/card";
+import { Skeleton } from "./ui/skeleton";
+import { Textarea } from "./ui/textarea";
 
 type SkillCommentsPanelProps = {
   skillId: Id<"skills">;
@@ -29,8 +34,6 @@ export function SkillCommentsPanel({ skillId, isAuthenticated, me }: SkillCommen
   const reportComment = useMutation(api.comments.report);
   const [comment, setComment] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
-  const [submitError, setSubmitError] = useState<string | null>(null);
-  const [deleteError, setDeleteError] = useState<string | null>(null);
   const [deletingCommentId, setDeletingCommentId] = useState<Id<"comments"> | null>(null);
   const [reportingCommentId, setReportingCommentId] = useState<Id<"comments"> | null>(null);
   const [reportReason, setReportReason] = useState("");
@@ -43,12 +46,11 @@ export function SkillCommentsPanel({ skillId, isAuthenticated, me }: SkillCommen
     const body = comment.trim();
     if (!body || isSubmitting) return;
     setIsSubmitting(true);
-    setSubmitError(null);
     try {
       await addComment({ skillId, body });
       setComment("");
     } catch (error) {
-      setSubmitError(error instanceof Error ? error.message : "Failed to post comment");
+      toast.error(error instanceof Error ? error.message : "Failed to post comment");
     } finally {
       setIsSubmitting(false);
     }
@@ -56,12 +58,11 @@ export function SkillCommentsPanel({ skillId, isAuthenticated, me }: SkillCommen
 
   const deleteComment = async (commentId: Id<"comments">) => {
     if (deletingCommentId) return;
-    setDeleteError(null);
     setDeletingCommentId(commentId);
     try {
       await removeComment({ commentId });
     } catch (error) {
-      setDeleteError(error instanceof Error ? error.message : "Failed to delete comment");
+      toast.error(error instanceof Error ? error.message : "Failed to delete comment");
     } finally {
       setDeletingCommentId(null);
     }
@@ -106,101 +107,106 @@ export function SkillCommentsPanel({ skillId, isAuthenticated, me }: SkillCommen
   };
 
   return (
-    <div className="card">
-      <h2 className="section-title" style={{ fontSize: "1.2rem", margin: 0 }}>
-        Comments
-      </h2>
+    <Card>
+      <h2 className="m-0 font-display text-[1.2rem] font-bold text-[color:var(--ink)]">Comments</h2>
       {isAuthenticated ? (
         <form
           onSubmit={(event) => {
             event.preventDefault();
             void submitComment();
           }}
-          className="comment-form"
+          className="flex flex-col gap-3"
         >
-          <textarea
-            className="comment-input"
+          <Textarea
             rows={4}
             value={comment}
             onChange={(event) => setComment(event.target.value)}
             placeholder="Leave a note…"
             disabled={isSubmitting}
           />
-          {submitError ? <div className="report-dialog-error">{submitError}</div> : null}
-          <button className="btn comment-submit" type="submit" disabled={isSubmitting}>
+          <Button type="submit" disabled={isSubmitting} className="self-start">
             {isSubmitting ? "Posting…" : "Post comment"}
-          </button>
+          </Button>
         </form>
       ) : (
-        <p className="section-subtitle">Sign in to comment.</p>
+        <p className="text-sm text-[color:var(--ink-soft)]">Sign in to comment.</p>
       )}
-      {deleteError ? <div className="report-dialog-error">{deleteError}</div> : null}
-      {reportNotice ? <div className="stat">{reportNotice}</div> : null}
-      <div style={{ display: "grid", gap: 12, marginTop: 16 }}>
-        {(comments ?? []).length === 0 ? (
-          <div className="stat">No comments yet.</div>
+      {reportNotice ? (
+        <div className="text-sm text-[color:var(--ink-soft)]">{reportNotice}</div>
+      ) : null}
+      <div className="grid gap-3 pt-1">
+        {comments === undefined ? (
+          <Skeleton className="h-16 w-full" />
+        ) : comments.length === 0 ? (
+          <div className="text-sm text-[color:var(--ink-soft)]">No comments yet.</div>
         ) : (
-          (comments ?? []).map((entry) => (
-            <div key={entry.comment._id} className="comment-item">
-              <div className="comment-body">
-                <strong>@{entry.user?.handle ?? entry.user?.name ?? "user"}</strong>
-                <div className="comment-body-text">{entry.comment.body}</div>
+          comments.map((entry) => (
+            <div
+              key={entry.comment._id}
+              className="flex gap-3 rounded-[var(--radius-sm)] border border-[color:var(--line)] bg-[color:var(--surface)] p-3"
+            >
+              <div className="flex min-w-0 flex-1 flex-col gap-1.5">
+                <strong className="text-sm">
+                  @{entry.user?.handle ?? entry.user?.name ?? "user"}
+                </strong>
+                <div className="whitespace-pre-wrap break-words text-sm text-[color:var(--ink)]">
+                  {entry.comment.body}
+                </div>
                 {isAuthenticated && reportingCommentId === entry.comment._id ? (
                   <form
-                    className="comment-report-form"
+                    className="mt-2 flex flex-col gap-2 rounded-[var(--radius-sm)] border border-[color:var(--line)] bg-[color:var(--surface-muted)] p-3"
                     onSubmit={(event) => {
                       event.preventDefault();
                       void submitReport(entry.comment._id);
                     }}
                   >
-                    <textarea
-                      className="comment-input comment-report-input"
+                    <Textarea
                       rows={3}
                       value={reportReason}
                       onChange={(event) => setReportReason(event.target.value)}
                       placeholder="Why are you reporting this comment?"
                       disabled={isSubmittingReport}
+                      className="min-h-[80px]"
                     />
-                    <div className="comment-report-actions">
-                      <button
-                        className="btn comment-delete"
+                    <div className="flex items-center gap-2">
+                      <Button
+                        variant="ghost"
+                        size="sm"
                         type="button"
                         onClick={closeReportForm}
                         disabled={isSubmittingReport}
                       >
                         Cancel
-                      </button>
-                      <button
-                        className="btn comment-submit"
-                        type="submit"
-                        disabled={isSubmittingReport}
-                      >
+                      </Button>
+                      <Button size="sm" type="submit" disabled={isSubmittingReport}>
                         {isSubmittingReport ? "Reporting…" : "Submit report"}
-                      </button>
+                      </Button>
                     </div>
-                    {reportError ? <div className="report-dialog-error">{reportError}</div> : null}
-                    <div className="stat">
+                    {reportError ? (
+                      <div className="text-sm text-red-600 dark:text-red-400">{reportError}</div>
+                    ) : null}
+                    <div className="text-sm text-[color:var(--ink-soft)]">
                       Reports require a reason. Abuse of reporting may result in bans.
                     </div>
                   </form>
                 ) : null}
               </div>
               {isAuthenticated && me ? (
-                <div className="comment-actions">
+                <div className="flex shrink-0 flex-col gap-1">
                   {me._id === entry.comment.userId || isModerator(me) ? (
-                    <button
-                      className="btn comment-delete"
-                      type="button"
+                    <Button
+                      variant="ghost"
+                      size="sm"
                       onClick={() => void deleteComment(entry.comment._id)}
                       disabled={Boolean(deletingCommentId) || isSubmitting || isSubmittingReport}
                     >
                       {deletingCommentId === entry.comment._id ? "Deleting…" : "Delete"}
-                    </button>
+                    </Button>
                   ) : null}
                   {me._id !== entry.comment.userId ? (
-                    <button
-                      className="btn comment-delete"
-                      type="button"
+                    <Button
+                      variant="ghost"
+                      size="sm"
                       onClick={() => openReportForm(entry.comment._id)}
                       disabled={
                         isSubmitting ||
@@ -209,7 +215,7 @@ export function SkillCommentsPanel({ skillId, isAuthenticated, me }: SkillCommen
                       }
                     >
                       {reportingCommentId === entry.comment._id ? "Report open" : "Report"}
-                    </button>
+                    </Button>
                   ) : null}
                 </div>
               ) : null}
@@ -217,6 +223,6 @@ export function SkillCommentsPanel({ skillId, isAuthenticated, me }: SkillCommen
           ))
         )}
       </div>
-    </div>
+    </Card>
   );
 }

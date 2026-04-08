@@ -188,6 +188,23 @@ const packageVerificationValidator = v.optional(
   }),
 );
 
+const packagePublishActorValidator = v.optional(
+  v.union(
+    v.object({
+      kind: v.literal("user"),
+      userId: v.id("users"),
+    }),
+    v.object({
+      kind: v.literal("github-actions"),
+      repository: v.string(),
+      workflow: v.string(),
+      runId: v.string(),
+      runAttempt: v.string(),
+      sha: v.string(),
+    }),
+  ),
+);
+
 const packageScanStatusValidator = v.optional(
   v.union(
     v.literal("clean"),
@@ -228,6 +245,7 @@ const skills = defineTable({
     }),
   ),
   tags: v.record(v.string(), v.id("skillVersions")),
+  capabilityTags: v.optional(v.array(v.string())),
   softDeletedAt: v.optional(v.number()),
   badges: badgesValidator,
   moderationStatus: moderationStatusValidator,
@@ -425,6 +443,7 @@ const skillVersions = defineTable({
       checkedAt: v.number(),
     }),
   ),
+  capabilityTags: v.optional(v.array(v.string())),
   staticScan: v.optional(
     v.object({
       status: v.union(v.literal("clean"), v.literal("suspicious"), v.literal("malicious")),
@@ -566,6 +585,7 @@ const skillSearchDigest = defineTable({
     }),
   ),
   tags: v.record(v.string(), v.id("skillVersions")),
+  capabilityTags: v.optional(v.array(v.string())),
   badges: badgesValidator,
   stats: statsValidator,
   statsDownloads: v.optional(v.number()),
@@ -719,6 +739,7 @@ const packageReleases = defineTable({
   ),
   source: v.optional(v.any()),
   createdBy: v.id("users"),
+  publishActor: packagePublishActorValidator,
   createdAt: v.number(),
   softDeletedAt: v.optional(v.number()),
 })
@@ -726,6 +747,50 @@ const packageReleases = defineTable({
   .index("by_package_active_created", ["packageId", "softDeletedAt", "createdAt"])
   .index("by_package_version", ["packageId", "version"])
   .index("by_sha256hash", ["sha256hash"]);
+
+const packageTrustedPublishers = defineTable({
+  packageId: v.id("packages"),
+  provider: v.literal("github-actions"),
+  repository: v.string(),
+  repositoryId: v.string(),
+  repositoryOwner: v.string(),
+  repositoryOwnerId: v.string(),
+  workflowFilename: v.string(),
+  environment: v.optional(v.string()),
+  createdByUserId: v.id("users"),
+  updatedByUserId: v.id("users"),
+  createdAt: v.number(),
+  updatedAt: v.number(),
+})
+  .index("by_package", ["packageId"])
+  .index("by_repository", ["repository", "workflowFilename"]);
+
+const packagePublishTokens = defineTable({
+  packageId: v.id("packages"),
+  version: v.string(),
+  prefix: v.string(),
+  tokenHash: v.string(),
+  provider: v.literal("github-actions"),
+  repository: v.string(),
+  repositoryId: v.string(),
+  repositoryOwner: v.string(),
+  repositoryOwnerId: v.string(),
+  workflowFilename: v.string(),
+  environment: v.optional(v.string()),
+  runId: v.string(),
+  runAttempt: v.string(),
+  sha: v.string(),
+  ref: v.string(),
+  refType: v.optional(v.string()),
+  actor: v.optional(v.string()),
+  actorId: v.optional(v.string()),
+  expiresAt: v.number(),
+  lastUsedAt: v.optional(v.number()),
+  revokedAt: v.optional(v.number()),
+  createdAt: v.number(),
+})
+  .index("by_hash", ["tokenHash"])
+  .index("by_package", ["packageId", "version", "createdAt"]);
 
 const packageSearchDigest = defineTable({
   packageId: v.id("packages"),
@@ -844,12 +909,7 @@ const packageCapabilitySearchDigest = defineTable({
     "executesCode",
     "updatedAt",
   ])
-  .index("by_active_family_tag_updated", [
-    "softDeletedAt",
-    "family",
-    "capabilityTag",
-    "updatedAt",
-  ])
+  .index("by_active_family_tag_updated", ["softDeletedAt", "family", "capabilityTag", "updatedAt"])
   .index("by_active_family_tag_executes_updated", [
     "softDeletedAt",
     "family",
@@ -1282,6 +1342,8 @@ export default defineSchema({
   skillSlugAliases,
   packages,
   packageReleases,
+  packageTrustedPublishers,
+  packagePublishTokens,
   packageSearchDigest,
   packageCapabilitySearchDigest,
   souls,

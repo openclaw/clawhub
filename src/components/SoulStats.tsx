@@ -21,11 +21,15 @@ export function SoulMetricsRow({ stats }: { stats: SoulStatsTriplet }) {
   const formatted = formatSoulStatsTriplet(stats);
   return (
     <>
-      <span>
+      <span className="inline-flex w-14 items-center justify-end gap-1 tabular-nums">
         <Package size={13} aria-hidden="true" /> {formatted.downloads}
       </span>
-      <span>★ {formatted.stars}</span>
-      <span>{formatted.versions} v</span>
+      <span className="inline-flex w-14 items-center justify-end gap-1 tabular-nums">
+        ★ {formatted.stars}
+      </span>
+      <span className="inline-flex w-14 items-center justify-end gap-1 tabular-nums">
+        {formatted.versions} v
+      </span>
     </>
   );
 }

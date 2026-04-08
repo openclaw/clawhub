@@ -1,5 +1,5 @@
 {
-  "include": ["src", "convex", "packages/clawdhub/src", "packages/schema/src"],
+  "include": ["src", "convex", "packages/clawhub/src", "packages/schema/src"],
   "compilerOptions": {
     "target": "ES2022",
     "jsx": "react-jsx",

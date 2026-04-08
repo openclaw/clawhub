@@ -66,6 +66,7 @@ import {
   reserveSlugForHardDeleteFinalize,
   upsertReservedSlugForRightfulOwner,
 } from "./lib/reservedSlugs";
+import { SKILL_CAPABILITY_TAGS } from "./lib/skillCapabilityTags";
 import {
   fetchText,
   type PublishResult,
@@ -74,7 +75,12 @@ import {
 } from "./lib/skillPublish";
 import { getFrontmatterValue, hashSkillFiles } from "./lib/skills";
 import { computeIsSuspicious, isSkillSuspicious } from "./lib/skillSafety";
-import { digestToHydratableSkill, digestToOwnerInfo } from "./lib/skillSearchDigest";
+import {
+  digestToHydratableSkill,
+  digestToOwnerInfo,
+  extractDigestFields,
+  upsertSkillSearchDigest,
+} from "./lib/skillSearchDigest";
 import schema from "./schema";
 
 export { publishVersionForUser } from "./lib/skillPublish";
@@ -111,6 +117,7 @@ const DEFAULT_STAFF_AUDIT_LOG_LIMIT = 10;
 const MAX_STAFF_AUDIT_LOG_LIMIT = 50;
 const USER_MODERATION_REASON = "user.moderation";
 const SKILL_CATALOG_CURSOR_PREFIX = "skillcat:";
+const SKILL_CAPABILITY_TAG_SET = new Set<string>(SKILL_CAPABILITY_TAGS);
 
 function buildStructuredModerationPatch(params: {
   staticScan?: Doc<"skillVersions">["staticScan"];
@@ -316,6 +323,8 @@ const NONSUSPICIOUS_SORT_INDEXES = {
   stars: "by_nonsuspicious_stars",
   installs: "by_nonsuspicious_installs",
 } as const;
+const MAX_FILTERED_PUBLIC_LIST_SCAN_PAGES = 12;
+const MAX_FILTERED_PUBLIC_LIST_SCAN_ROWS = 500;
 
 function isSkillVersionId(
   value: Id<"skillVersions"> | null | undefined,
@@ -1041,6 +1050,7 @@ type PublicSkillVersion = {
   createdBy?: Id<"users">;
   createdAt?: number;
   softDeletedAt?: number;
+  capabilityTags?: string[];
   sha256hash?: string;
   vtAnalysis?: Doc<"skillVersions">["vtAnalysis"];
   llmAnalysis?: Doc<"skillVersions">["llmAnalysis"];
@@ -1218,6 +1228,7 @@ function toPublicSkillVersion(
     createdBy: version.createdBy,
     createdAt: version.createdAt,
     softDeletedAt: version.softDeletedAt,
+    capabilityTags: version.capabilityTags,
     sha256hash: version.sha256hash,
     vtAnalysis: version.vtAnalysis,
     llmAnalysis: version.llmAnalysis,
@@ -2069,7 +2080,8 @@ export const list = query({
           )
           .unique());
       const isOwnDashboard = Boolean(
-        membership || (userId && ownerPublisher?.kind === "user" && ownerPublisher.linkedUserId === userId),
+        membership ||
+        (userId && ownerPublisher?.kind === "user" && ownerPublisher.linkedUserId === userId),
       );
       const scopedEntries = await ctx.db
         .query("skills")
@@ -2684,8 +2696,12 @@ export const listPublicPageV4 = query({
     dir: v.optional(v.union(v.literal("asc"), v.literal("desc"))),
     highlightedOnly: v.optional(v.boolean()),
     nonSuspiciousOnly: v.optional(v.boolean()),
+    capabilityTag: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
+    if (args.capabilityTag && !isKnownSkillCapabilityTag(args.capabilityTag)) {
+      return { page: [], hasMore: false, nextCursor: null };
+    }
     const sort = args.sort ?? "newest";
     const dir = args.dir ?? (sort === "name" ? "asc" : "desc");
     const numItems = clampInt(args.numItems ?? 25, 1, MAX_PUBLIC_LIST_LIMIT);
@@ -2698,6 +2714,7 @@ export const listPublicPageV4 = query({
         sort,
         dir,
         numItems,
+        capabilityTag: args.capabilityTag,
         nonSuspiciousOnly: args.nonSuspiciousOnly ?? false,
       });
     }
@@ -2714,45 +2731,112 @@ export const listPublicPageV4 = query({
     const isFirstPage = !decodedCursor;
     const startIndexKey: IndexKey = decodedCursor ?? eqPrefix;
 
-    const result = await getPage(ctx, {
-      table: "skillSearchDigest",
-      startIndexKey,
-      startInclusive: isFirstPage,
-      endIndexKey: eqPrefix,
-      endInclusive: true,
-      absoluteMaxRows: numItems,
-      order: dir,
-      index: indexName,
-      schema,
-    });
-
-    // Build PublicSkillEntry[] from digests
-    const items: PublicSkillEntry[] = [];
-    for (const digest of result.page) {
-      const hydratable = digestToHydratableSkill(digest);
-      const publicSkill = toPublicSkill(hydratable);
-      if (!publicSkill) continue;
-      const ownerInfo = digestToOwnerInfo(digest);
-      if (!ownerInfo?.owner) continue;
-      const latestVersion = digest.latestVersionSummary
-        ? toPublicSkillListVersionFromSummary(digest.latestVersionSummary, digest.latestVersionId)
-        : null;
-      items.push({
-        skill: publicSkill,
-        latestVersion,
-        ownerHandle: ownerInfo.ownerHandle,
-        owner: ownerInfo.owner,
+    if (!args.capabilityTag) {
+      const result = await getPage(ctx, {
+        table: "skillSearchDigest",
+        startIndexKey,
+        startInclusive: isFirstPage,
+        endIndexKey: eqPrefix,
+        endInclusive: true,
+        absoluteMaxRows: numItems,
+        order: dir,
+        index: indexName,
+        schema,
       });
+
+      const items = result.page
+        .map((digest) => buildPublicSkillEntryFromDigest(digest))
+        .filter((item): item is PublicSkillEntry => item !== null);
+      let nextCursor: string | null = null;
+      if (result.hasMore && result.indexKeys.length > 0) {
+        nextCursor = encodeIndexKey(result.indexKeys[result.indexKeys.length - 1]);
+      }
+
+      return { page: items, hasMore: result.hasMore, nextCursor };
     }
 
+    const items: PublicSkillEntry[] = [];
+    let scanCursor = startIndexKey;
+    let scanInclusive = isFirstPage;
+    let hasMore = false;
     let nextCursor: string | null = null;
-    if (result.hasMore && result.indexKeys.length > 0) {
-      nextCursor = encodeIndexKey(result.indexKeys[result.indexKeys.length - 1]);
+    let remainingRows = Math.max(numItems, Math.min(MAX_FILTERED_PUBLIC_LIST_SCAN_ROWS, numItems * 12));
+
+    for (let pageCount = 0; pageCount < MAX_FILTERED_PUBLIC_LIST_SCAN_PAGES; pageCount += 1) {
+      if (remainingRows <= 0) break;
+      const batchSize = Math.min(remainingRows, Math.max(numItems * 3, numItems));
+      const result = await getPage(ctx, {
+        table: "skillSearchDigest",
+        startIndexKey: scanCursor,
+        startInclusive: scanInclusive,
+        endIndexKey: eqPrefix,
+        endInclusive: true,
+        absoluteMaxRows: batchSize,
+        order: dir,
+        index: indexName,
+        schema,
+      });
+      remainingRows -= batchSize;
+      if (result.indexKeys.length === 0) {
+        hasMore = false;
+        nextCursor = null;
+        break;
+      }
+
+      for (let index = 0; index < result.page.length; index += 1) {
+        const digest = result.page[index];
+        const cursor = result.indexKeys[index];
+        if ((digest.capabilityTags ?? []).includes(args.capabilityTag)) {
+          const item = buildPublicSkillEntryFromDigest(digest);
+          if (item) items.push(item);
+        }
+        if (items.length >= numItems) {
+          hasMore = result.hasMore || index < result.page.length - 1;
+          nextCursor = hasMore ? encodeIndexKey(cursor) : null;
+          return { page: items, hasMore, nextCursor };
+        }
+      }
+
+      if (!result.hasMore) {
+        hasMore = false;
+        nextCursor = null;
+        break;
+      }
+
+      scanCursor = result.indexKeys[result.indexKeys.length - 1];
+      scanInclusive = false;
+      hasMore = true;
+      nextCursor = encodeIndexKey(scanCursor);
     }
 
-    return { page: items, hasMore: result.hasMore, nextCursor };
+    // Guard: never signal more pages when the scan budget is exhausted
+    // without finding any items — that would cause the client's
+    // IntersectionObserver auto-load to loop on empty responses.
+    if (items.length === 0) {
+      hasMore = false;
+      nextCursor = null;
+    }
+
+    return { page: items, hasMore, nextCursor };
   },
 });
+
+function buildPublicSkillEntryFromDigest(digest: Doc<"skillSearchDigest">): PublicSkillEntry | null {
+  const hydratable = digestToHydratableSkill(digest);
+  const publicSkill = toPublicSkill(hydratable);
+  if (!publicSkill) return null;
+  const ownerInfo = digestToOwnerInfo(digest);
+  if (!ownerInfo?.owner) return null;
+  const latestVersion = digest.latestVersionSummary
+    ? toPublicSkillListVersionFromSummary(digest.latestVersionSummary, digest.latestVersionId)
+    : null;
+  return {
+    skill: publicSkill,
+    latestVersion,
+    ownerHandle: ownerInfo.ownerHandle,
+    owner: ownerInfo.owner,
+  };
+}
 
 type PublicSkillCatalogItem = {
   name: string;
@@ -2789,12 +2873,13 @@ function decodeSkillCatalogCursor(raw: string | null | undefined): SkillCatalogC
     return { cursor: raw, offset: 0, pageSize: null, done: false };
   }
   try {
-    const parsed = JSON.parse(raw.slice(SKILL_CATALOG_CURSOR_PREFIX.length)) as Partial<SkillCatalogCursorState>;
+    const parsed = JSON.parse(
+      raw.slice(SKILL_CATALOG_CURSOR_PREFIX.length),
+    ) as Partial<SkillCatalogCursorState>;
     return {
       cursor: typeof parsed.cursor === "string" ? parsed.cursor : null,
       offset: typeof parsed.offset === "number" && parsed.offset > 0 ? parsed.offset : 0,
-      pageSize:
-        typeof parsed.pageSize === "number" && parsed.pageSize > 0 ? parsed.pageSize : null,
+      pageSize: typeof parsed.pageSize === "number" && parsed.pageSize > 0 ? parsed.pageSize : null,
       done: parsed.done === true,
     };
   } catch {
@@ -2828,12 +2913,13 @@ function skillCatalogMatchesFilters(
 ) {
   if (!isVisibleSkillCatalogDigest(digest)) return false;
   if (args.channel === "private") return false;
-  if (args.capabilityTag) return false;
   if (args.executesCode === true) return false;
   const isOfficial = isSkillCatalogOfficial(digest);
   const channel = getSkillCatalogChannel(digest);
   if (typeof args.isOfficial === "boolean" && isOfficial !== args.isOfficial) return false;
   if (args.channel && channel !== args.channel) return false;
+  if (args.capabilityTag && !(digest.capabilityTags ?? []).includes(args.capabilityTag))
+    return false;
   return true;
 }
 
@@ -2851,7 +2937,7 @@ function toPublicSkillCatalogItem(digest: Doc<"skillSearchDigest">): PublicSkill
     createdAt: digest.createdAt,
     updatedAt: digest.updatedAt,
     latestVersion: digest.latestVersionSummary?.version ?? null,
-    capabilityTags: [],
+    capabilityTags: digest.capabilityTags ?? [],
     executesCode: false,
     verificationTier: null,
   };
@@ -2876,16 +2962,25 @@ function scoreSkillCatalogResult(digest: Doc<"skillSearchDigest">, queryText: st
   return score;
 }
 
+function isKnownSkillCapabilityTag(tag: string | undefined) {
+  return typeof tag === "string" && SKILL_CAPABILITY_TAG_SET.has(tag);
+}
+
 export const listPackageCatalogPage = query({
   args: {
-    channel: v.optional(v.union(v.literal("official"), v.literal("community"), v.literal("private"))),
+    channel: v.optional(
+      v.union(v.literal("official"), v.literal("community"), v.literal("private")),
+    ),
     isOfficial: v.optional(v.boolean()),
     executesCode: v.optional(v.boolean()),
     capabilityTag: v.optional(v.string()),
     paginationOpts: paginationOptsValidator,
   },
   handler: async (ctx, args) => {
-    if (args.channel === "private" || args.executesCode === true || args.capabilityTag) {
+    if (args.capabilityTag && !isKnownSkillCapabilityTag(args.capabilityTag)) {
+      return { page: [], isDone: true, continueCursor: "" };
+    }
+    if (args.channel === "private" || args.executesCode === true) {
       return { page: [], isDone: true, continueCursor: "" };
     }
 
@@ -2908,7 +3003,9 @@ export const listPackageCatalogPage = query({
       loops += 1;
       const effectivePageSize = Math.min(
         remainingScanBudget,
-        offset > 0 && pageSize ? Math.max(pageSize, offset + 1) : Math.max(targetCount * 3, targetCount),
+        offset > 0 && pageSize
+          ? Math.max(pageSize, offset + 1)
+          : Math.max(targetCount * 3, targetCount),
       );
       if (effectivePageSize <= 0) break;
       remainingScanBudget -= effectivePageSize;
@@ -2962,7 +3059,9 @@ export const searchPackageCatalogPublic = query({
   args: {
     query: v.string(),
     limit: v.optional(v.number()),
-    channel: v.optional(v.union(v.literal("official"), v.literal("community"), v.literal("private"))),
+    channel: v.optional(
+      v.union(v.literal("official"), v.literal("community"), v.literal("private")),
+    ),
     isOfficial: v.optional(v.boolean()),
     executesCode: v.optional(v.boolean()),
     capabilityTag: v.optional(v.string()),
@@ -2970,7 +3069,8 @@ export const searchPackageCatalogPublic = query({
   handler: async (ctx, args) => {
     const queryText = args.query.trim().toLowerCase();
     if (!queryText) return [];
-    if (args.channel === "private" || args.executesCode === true || args.capabilityTag) return [];
+    if (args.capabilityTag && !isKnownSkillCapabilityTag(args.capabilityTag)) return [];
+    if (args.channel === "private" || args.executesCode === true) return [];
 
     const targetCount = Math.max(1, Math.min(args.limit ?? 20, 100));
     const matches: Array<{ score: number; package: PublicSkillCatalogItem }> = [];
@@ -3034,6 +3134,7 @@ async function fetchHighlightedPage(
     sort: SortKey;
     dir: "asc" | "desc";
     numItems: number;
+    capabilityTag?: string;
     nonSuspiciousOnly: boolean;
   },
 ) {
@@ -3053,6 +3154,7 @@ async function fetchHighlightedPage(
       .unique();
     if (!digest || digest.softDeletedAt) continue;
     if (opts.nonSuspiciousOnly && digest.isSuspicious) continue;
+    if (opts.capabilityTag && !(digest.capabilityTags ?? []).includes(opts.capabilityTag)) continue;
     digests.push(digest);
   }
 
@@ -3079,23 +3181,9 @@ async function fetchHighlightedPage(
   const trimmed = digests.slice(0, opts.numItems);
 
   // Build PublicSkillEntry[]
-  const items: PublicSkillEntry[] = [];
-  for (const digest of trimmed) {
-    const hydratable = digestToHydratableSkill(digest);
-    const publicSkill = toPublicSkill(hydratable);
-    if (!publicSkill) continue;
-    const ownerInfo = digestToOwnerInfo(digest);
-    if (!ownerInfo?.owner) continue;
-    const latestVersion = digest.latestVersionSummary
-      ? toPublicSkillListVersionFromSummary(digest.latestVersionSummary, digest.latestVersionId)
-      : null;
-    items.push({
-      skill: publicSkill,
-      latestVersion,
-      ownerHandle: ownerInfo.ownerHandle,
-      owner: ownerInfo.owner,
-    });
-  }
+  const items = trimmed
+    .map((digest) => buildPublicSkillEntryFromDigest(digest))
+    .filter((item): item is PublicSkillEntry => item !== null);
 
   // Highlighted skills are few enough to return in one page — no cursor needed
   return { page: items, hasMore: false, nextCursor: null };
@@ -4741,6 +4829,7 @@ export const updateTags = mutation({
           changelogSource: version.changelogSource,
           clawdis: version.parsed?.clawdis,
         };
+        patch.capabilityTags = version.capabilityTags;
       }
     }
 
@@ -4970,7 +5059,11 @@ export const clearSkillManualOverride = mutation({
 });
 
 export const setSoftDeleted = mutation({
-  args: { skillId: v.id("skills"), deleted: v.boolean() },
+  args: {
+    skillId: v.id("skills"),
+    deleted: v.boolean(),
+    reason: v.optional(v.string()),
+  },
   handler: async (ctx, args) => {
     const { user } = await requireUser(ctx);
     assertModerator(user);
@@ -4978,9 +5071,16 @@ export const setSoftDeleted = mutation({
     if (!skill) throw new Error("Skill not found");
 
     const now = Date.now();
+    const note = args.reason ? trimManualOverrideNote(args.reason) : undefined;
+    if (!note) {
+      throw new ConvexError(
+        args.deleted ? "Hide reason is required." : "Restore reason is required.",
+      );
+    }
     const patch: Partial<Doc<"skills">> = {
       softDeletedAt: args.deleted ? now : undefined,
       moderationStatus: args.deleted ? "hidden" : "active",
+      moderationNotes: note,
       hiddenAt: args.deleted ? now : undefined,
       hiddenBy: args.deleted ? user._id : undefined,
       lastReviewedAt: now,
@@ -4997,7 +5097,11 @@ export const setSoftDeleted = mutation({
       action: args.deleted ? "skill.delete" : "skill.undelete",
       targetType: "skill",
       targetId: skill._id,
-      metadata: { slug: skill.slug, softDeletedAt: args.deleted ? now : null },
+      metadata: {
+        slug: skill.slug,
+        softDeletedAt: args.deleted ? now : null,
+        reason: note,
+      },
       createdAt: now,
     });
   },
@@ -5676,6 +5780,72 @@ export const setDeprecatedBadge = mutation({
   },
 });
 
+export const setSkillCapabilityTags = mutation({
+  args: { skillId: v.id("skills"), capabilityTags: v.array(v.string()) },
+  handler: async (ctx, args) => {
+    const { user } = await requireUser(ctx);
+    assertModerator(user);
+
+    const skill = await ctx.db.get(args.skillId);
+    if (!skill) throw new Error("Skill not found");
+
+    const invalidTags = args.capabilityTags.filter(
+      (tag) => !SKILL_CAPABILITY_TAGS.includes(tag as (typeof SKILL_CAPABILITY_TAGS)[number]),
+    );
+    if (invalidTags.length > 0) {
+      throw new ConvexError(`Unknown capability tags: ${invalidTags.join(", ")}`);
+    }
+
+    const selectedTags = new Set(args.capabilityTags);
+    const normalizedTags = SKILL_CAPABILITY_TAGS.filter((tag) => selectedTags.has(tag));
+    const now = Date.now();
+
+    if (skill.latestVersionId) {
+      const latestVersion = await ctx.db.get(skill.latestVersionId);
+      if (latestVersion) {
+        await ctx.db.patch(latestVersion._id, {
+          capabilityTags: normalizedTags.length ? normalizedTags : undefined,
+        });
+      }
+    }
+
+    const nextSkill = {
+      ...skill,
+      capabilityTags: normalizedTags.length ? normalizedTags : undefined,
+      lastReviewedAt: now,
+      updatedAt: now,
+    };
+
+    await ctx.db.patch(skill._id, {
+      capabilityTags: nextSkill.capabilityTags,
+      lastReviewedAt: now,
+      updatedAt: now,
+    });
+
+    const owner = await getOwnerPublisher(ctx, {
+      ownerPublisherId: nextSkill.ownerPublisherId,
+      ownerUserId: nextSkill.ownerUserId,
+    });
+    await upsertSkillSearchDigest(ctx, {
+      ...extractDigestFields(nextSkill),
+      ownerHandle: owner?.handle ?? "",
+      ownerKind: owner?.kind,
+      ownerName: owner?.linkedUserId ? owner.handle : undefined,
+      ownerDisplayName: owner?.displayName,
+      ownerImage: owner?.image,
+    });
+
+    await ctx.db.insert("auditLogs", {
+      actorUserId: user._id,
+      action: "skill.capability_tags.set",
+      targetType: "skill",
+      targetId: skill._id,
+      metadata: { capabilityTags: normalizedTags },
+      createdAt: now,
+    });
+  },
+});
+
 export const hardDelete = mutation({
   args: { skillId: v.id("skills") },
   handler: async (ctx, args) => {
@@ -5737,6 +5907,7 @@ export const insertVersion = internalMutation({
       clawdis: v.optional(v.any()),
       license: v.optional(v.literal(PLATFORM_SKILL_LICENSE)),
     }),
+    capabilityTags: v.optional(v.array(v.string())),
     summary: v.optional(v.string()),
     qualityAssessment: v.optional(
       v.object({
@@ -5988,6 +6159,7 @@ export const insertVersion = internalMutation({
         forkOf,
         latestVersionId: undefined,
         tags: {},
+        capabilityTags: args.capabilityTags,
         softDeletedAt: undefined,
         badges: {
           redactionApproved: undefined,
@@ -6056,6 +6228,7 @@ export const insertVersion = internalMutation({
       changelogSource: args.changelogSource,
       files: args.files,
       parsed: args.parsed,
+      capabilityTags: args.capabilityTags,
       staticScan: args.staticScan,
       createdBy: userId,
       createdAt: now,
@@ -6101,6 +6274,7 @@ export const insertVersion = internalMutation({
         clawdis: args.parsed.clawdis,
       },
       tags: nextTags,
+      capabilityTags: args.capabilityTags,
       stats: { ...skill.stats, versions: skill.stats.versions + 1 },
       softDeletedAt: undefined,
       moderationStatus: initialModerationStatus,

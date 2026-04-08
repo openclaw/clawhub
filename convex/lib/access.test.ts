@@ -36,6 +36,17 @@ describe("access.requireUser", () => {
     }
   });
 
+  it("throws when auth resolves to an invalid user id", async () => {
+    vi.mocked(getAuthUserId).mockResolvedValue("users:broken" as never);
+    const dbGet = vi.fn().mockRejectedValue(new Error("Table mismatch"));
+
+    await expect(
+      requireUser({
+        db: { get: dbGet },
+      } as never),
+    ).rejects.toThrow("User not found");
+  });
+
   it("returns auth user when active", async () => {
     vi.mocked(getAuthUserId).mockResolvedValue("users:2" as never);
     const user = { _id: "users:2", role: "user" };
@@ -75,6 +86,17 @@ describe("access.requireUserFromAction", () => {
         } as never),
       ).rejects.toThrow("User not found");
     }
+  });
+
+  it("throws when action auth resolves to an invalid user id", async () => {
+    vi.mocked(getAuthUserId).mockResolvedValue("users:broken" as never);
+    const runQuery = vi.fn().mockRejectedValue(new Error("Table mismatch"));
+
+    await expect(
+      requireUserFromAction({
+        runQuery,
+      } as never),
+    ).rejects.toThrow("User not found");
   });
 
   it("returns active user from action query", async () => {
