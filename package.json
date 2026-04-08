@@ -7,7 +7,7 @@
   "type": "module",
   "scripts": {
     "build": "bun --bun vite build && bun scripts/copy-og-assets.ts",
-    "check": "bun run lint:oxlint",
+    "check": "bun run check:peers",
     "check:peers": "bun scripts/check-peer-deps.ts",
     "check:secrets": "bun scripts/check-staged-secrets.mjs",
     "convex:deploy": "bunx convex deploy --typecheck=disable --yes",
