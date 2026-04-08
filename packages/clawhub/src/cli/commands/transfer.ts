@@ -153,7 +153,7 @@ export async function cmdTransferRequest(
         method: "POST",
         path: `${resolveApiPath(name, itemType)}/transfer`,
         token,
-        body: JSON.stringify(body),
+        body,
       },
       ApiV1TransferRequestResponseSchema,
     );
