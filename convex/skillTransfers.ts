@@ -5,17 +5,15 @@ import {
   ensurePersonalPublisherForUser,
   getActiveUserByHandleOrPersonalPublisher,
 } from "./lib/publishers";
-const TRANSFER_EXPIRY_MS = 7 * 24 * 60 * 60 * 1000;
+import {
+  TRANSFER_EXPIRY_MS,
+  isTransferExpired,
+  normalizeTransferHandle,
+  validateTransferOwnership,
+  validateTransferAcceptPermission,
+} from "./lib/transfers";
 
 type TransferDoc = Doc<"skillOwnershipTransfers">;
-
-function normalizeHandle(value: string) {
-  return value.trim().replace(/^@+/, "").toLowerCase();
-}
-
-function isExpired(transfer: TransferDoc, now: number) {
-  return transfer.expiresAt < now;
-}
 
 async function requireActiveUserById(ctx: unknown, userId: Id<"users">) {
   const db = (ctx as { db: { get: (id: Id<"users">) => Promise<Doc<"users"> | null> } }).db;
@@ -53,7 +51,7 @@ async function getActivePendingTransferForSkill(ctx: unknown, skillId: Id<"skill
 
   let active: TransferDoc | null = null;
   for (const transfer of transfers) {
-    if (isExpired(transfer, now)) {
+    if (isTransferExpired(transfer, now)) {
       await db.patch(transfer._id, { status: "expired", respondedAt: now });
       continue;
     }
@@ -83,14 +81,25 @@ async function validatePendingTransferForActor(
   const transfer = await db.get(params.transferId);
   if (!transfer) throw new Error("Transfer not found");
 
-  if (params.role === "recipient" && transfer.toUserId !== params.actorUserId) {
+  if (
+    params.role === "recipient" &&
+    transfer.toUserId &&
+    transfer.toUserId !== params.actorUserId &&
+    !transfer.toPublisherId
+  ) {
+    // For org-targeted transfers (toPublisherId is set), skip this check —
+    // validateTransferAcceptPermission handles org membership validation separately
     throw new Error("No pending transfer found");
   }
-  if (params.role === "sender" && transfer.fromUserId !== params.actorUserId) {
+  if (
+    params.role === "sender" &&
+    transfer.fromUserId !== params.actorUserId &&
+    !transfer.fromPublisherId
+  ) {
     throw new Error("No pending transfer found");
   }
   if (transfer.status !== "pending") throw new Error("No pending transfer found");
-  if (isExpired(transfer, params.now)) {
+  if (isTransferExpired(transfer, params.now)) {
     await db.patch(transfer._id, { status: "expired", respondedAt: params.now });
     throw new Error("Transfer has expired");
   }
@@ -102,6 +111,7 @@ export const requestTransferInternal = internalMutation({
     actorUserId: v.id("users"),
     skillId: v.id("skills"),
     toUserHandle: v.string(),
+    toPublisherId: v.optional(v.id("publishers")),
     message: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
@@ -110,14 +120,21 @@ export const requestTransferInternal = internalMutation({
 
     const skill = await ctx.db.get(args.skillId);
     if (!skill || skill.softDeletedAt) throw new Error("Skill not found");
-    if (skill.ownerUserId !== args.actorUserId) throw new Error("Forbidden");
 
-    const toHandle = normalizeHandle(args.toUserHandle);
+    await validateTransferOwnership(ctx, {
+      ownerUserId: skill.ownerUserId,
+      ownerPublisherId: skill.ownerPublisherId,
+      actorUserId: args.actorUserId,
+    });
+
+    const toHandle = normalizeTransferHandle(args.toUserHandle);
     if (!toHandle) throw new Error("toUserHandle required");
 
     const toUser = await getActiveUserByHandleOrPersonalPublisher(ctx, toHandle);
     if (!toUser) throw new Error("User not found");
-    if (toUser._id === args.actorUserId) throw new Error("Cannot transfer to yourself");
+    if (toUser._id === args.actorUserId && !args.toPublisherId) {
+      throw new Error("Cannot transfer to yourself");
+    }
 
     const activePending = await getActivePendingTransferForSkill(ctx, args.skillId, now);
     if (activePending) throw new Error("A transfer is already pending for this skill");
@@ -128,6 +145,8 @@ export const requestTransferInternal = internalMutation({
       skillId: skill._id,
       fromUserId: args.actorUserId,
       toUserId: toUser._id,
+      fromPublisherId: skill.ownerPublisherId,
+      toPublisherId: args.toPublisherId,
       status: "pending",
       message: message || undefined,
       requestedAt: now,
@@ -155,6 +174,7 @@ export const acceptTransferInternal = internalMutation({
   args: {
     actorUserId: v.id("users"),
     transferId: v.id("skillOwnershipTransfers"),
+    publisherId: v.optional(v.id("publishers")),
   },
   handler: async (ctx, args) => {
     const now = Date.now();
@@ -167,19 +187,42 @@ export const acceptTransferInternal = internalMutation({
       now,
     });
 
+    await validateTransferAcceptPermission(ctx, {
+      actorUserId: args.actorUserId,
+      toUserId: transfer.toUserId ?? undefined,
+      toPublisherId: transfer.toPublisherId,
+    });
+
     const skill = await ctx.db.get(transfer.skillId);
     if (!skill || skill.softDeletedAt) throw new Error("Skill not found");
-    if (skill.ownerUserId !== transfer.fromUserId) {
+    const ownerChanged = transfer.fromPublisherId
+      ? skill.ownerPublisherId !== transfer.fromPublisherId
+      : skill.ownerUserId !== transfer.fromUserId;
+    if (ownerChanged) {
       await ctx.db.patch(transfer._id, { status: "cancelled", respondedAt: now });
       throw new Error("Transfer is no longer valid");
     }
 
-    const newPublisher = await ensurePersonalPublisherForUser(ctx, newOwner);
-    if (!newPublisher) throw new Error("Failed to resolve publisher for new owner");
+    // Determine target publisher: explicit arg > transfer target > personal publisher
+    // Validate actor has admin/owner role on explicit publisher override
+    let targetPublisherId: Id<"publishers">;
+    if (args.publisherId) {
+      await validateTransferAcceptPermission(ctx, {
+        actorUserId: args.actorUserId,
+        toPublisherId: args.publisherId,
+      });
+      targetPublisherId = args.publisherId;
+    } else if (transfer.toPublisherId) {
+      targetPublisherId = transfer.toPublisherId;
+    } else {
+      const newPublisher = await ensurePersonalPublisherForUser(ctx, newOwner);
+      if (!newPublisher) throw new Error("Failed to resolve publisher for new owner");
+      targetPublisherId = newPublisher._id;
+    }
 
     await ctx.db.patch(skill._id, {
       ownerUserId: args.actorUserId,
-      ownerPublisherId: newPublisher._id,
+      ownerPublisherId: targetPublisherId,
       updatedAt: now,
     });
 
@@ -190,12 +233,16 @@ export const acceptTransferInternal = internalMutation({
     for (const alias of aliases) {
       await ctx.db.patch(alias._id, {
         ownerUserId: args.actorUserId,
-        ownerPublisherId: newPublisher._id,
+        ownerPublisherId: targetPublisherId,
         updatedAt: now,
       });
     }
 
-    await ctx.db.patch(transfer._id, { status: "accepted", respondedAt: now });
+    await ctx.db.patch(transfer._id, {
+      status: "accepted",
+      respondedAt: now,
+      toUserId: args.actorUserId,
+    });
 
     await ctx.db.insert("auditLogs", {
       actorUserId: args.actorUserId,
@@ -229,6 +276,12 @@ export const rejectTransferInternal = internalMutation({
       now,
     });
 
+    await validateTransferAcceptPermission(ctx, {
+      actorUserId: args.actorUserId,
+      toUserId: transfer.toUserId ?? undefined,
+      toPublisherId: transfer.toPublisherId,
+    });
+
     await ctx.db.patch(transfer._id, { status: "rejected", respondedAt: now });
     await ctx.db.insert("auditLogs", {
       actorUserId: args.actorUserId,
@@ -259,6 +312,15 @@ export const cancelTransferInternal = internalMutation({
       now,
     });
 
+    // For org-owned transfers, verify actor is admin/owner of source publisher
+    if (transfer.fromPublisherId && transfer.fromUserId !== args.actorUserId) {
+      await validateTransferOwnership(ctx, {
+        ownerUserId: transfer.fromUserId,
+        ownerPublisherId: transfer.fromPublisherId,
+        actorUserId: args.actorUserId,
+      });
+    }
+
     await ctx.db.patch(transfer._id, { status: "cancelled", respondedAt: now });
     await ctx.db.insert("auditLogs", {
       actorUserId: args.actorUserId,
@@ -285,6 +347,7 @@ export const listIncomingInternal = internalQuery({
       .collect();
 
     const results: Array<{
+      type: "skill";
       _id: Id<"skillOwnershipTransfers">;
       skill: { _id: Id<"skills">; slug: string; displayName: string };
       fromUser: { _id: Id<"users">; handle: string | null; displayName: string | null };
@@ -294,13 +357,14 @@ export const listIncomingInternal = internalQuery({
     }> = [];
 
     for (const transfer of transfers) {
-      if (isExpired(transfer, now)) continue;
+      if (isTransferExpired(transfer, now)) continue;
       const skill = await ctx.db.get(transfer.skillId);
       if (!skill || skill.softDeletedAt) continue;
       const fromUser = await ctx.db.get(transfer.fromUserId);
       if (!fromUser || fromUser.deletedAt || fromUser.deactivatedAt) continue;
 
       results.push({
+        type: "skill" as const,
         _id: transfer._id,
         skill: { _id: skill._id, slug: skill.slug, displayName: skill.displayName },
         fromUser: {
@@ -332,29 +396,41 @@ export const listOutgoingInternal = internalQuery({
       .collect();
 
     const results: Array<{
+      type: "skill";
       _id: Id<"skillOwnershipTransfers">;
       skill: { _id: Id<"skills">; slug: string; displayName: string };
-      toUser: { _id: Id<"users">; handle: string | null; displayName: string | null };
+      toUser?: { _id: Id<"users">; handle: string | null; displayName: string | null };
+      toPublisherId?: Id<"publishers">;
       message: string | undefined;
       requestedAt: number;
       expiresAt: number;
     }> = [];
 
     for (const transfer of transfers) {
-      if (isExpired(transfer, now)) continue;
+      if (isTransferExpired(transfer, now)) continue;
       const skill = await ctx.db.get(transfer.skillId);
       if (!skill || skill.softDeletedAt) continue;
-      const toUser = await ctx.db.get(transfer.toUserId);
-      if (!toUser || toUser.deletedAt || toUser.deactivatedAt) continue;
+
+      let toUser:
+        | { _id: Id<"users">; handle: string | null; displayName: string | null }
+        | undefined;
+      if (transfer.toUserId) {
+        const tu = await ctx.db.get(transfer.toUserId);
+        if (tu && !tu.deletedAt && !tu.deactivatedAt) {
+          toUser = {
+            _id: tu._id,
+            handle: tu.handle ?? null,
+            displayName: tu.displayName ?? null,
+          };
+        }
+      }
 
       results.push({
+        type: "skill" as const,
         _id: transfer._id,
         skill: { _id: skill._id, slug: skill.slug, displayName: skill.displayName },
-        toUser: {
-          _id: toUser._id,
-          handle: toUser.handle ?? null,
-          displayName: toUser.displayName ?? null,
-        },
+        toUser,
+        toPublisherId: transfer.toPublisherId ?? undefined,
         message: transfer.message,
         requestedAt: transfer.requestedAt,
         expiresAt: transfer.expiresAt,
@@ -362,6 +438,22 @@ export const listOutgoingInternal = internalQuery({
     }
 
     return results;
+  },
+});
+
+export const getPendingTransferBySkillInternal = internalQuery({
+  args: {
+    skillId: v.id("skills"),
+  },
+  handler: async (ctx, args) => {
+    const now = Date.now();
+    const transfer = await ctx.db
+      .query("skillOwnershipTransfers")
+      .withIndex("by_skill_status", (q) => q.eq("skillId", args.skillId).eq("status", "pending"))
+      .first();
+
+    if (!transfer || isTransferExpired(transfer, now)) return null;
+    return transfer;
   },
 });
 
@@ -378,7 +470,7 @@ export const getPendingTransferBySkillAndUserInternal = internalQuery({
       .filter((q) => q.eq(q.field("toUserId"), args.toUserId))
       .first();
 
-    if (!transfer || isExpired(transfer, now)) return null;
+    if (!transfer || isTransferExpired(transfer, now)) return null;
     return transfer;
   },
 });
@@ -396,7 +488,7 @@ export const getPendingTransferBySkillAndFromUserInternal = internalQuery({
       .filter((q) => q.eq(q.field("fromUserId"), args.fromUserId))
       .first();
 
-    if (!transfer || isExpired(transfer, now)) return null;
+    if (!transfer || isTransferExpired(transfer, now)) return null;
     return transfer;
   },
 });

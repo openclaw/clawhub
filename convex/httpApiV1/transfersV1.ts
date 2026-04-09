@@ -16,9 +16,14 @@ export async function transfersGetRouterV1Handler(ctx: ActionCtx, request: Reque
   const auth = await requireApiTokenUserOrResponse(ctx, request, rate.headers);
   if (!auth.ok) return auth.response;
 
-  const transfers =
+  const skillTransfers =
     direction === "incoming"
       ? await ctx.runQuery(internal.skillTransfers.listIncomingInternal, { userId: auth.userId })
       : await ctx.runQuery(internal.skillTransfers.listOutgoingInternal, { userId: auth.userId });
+
+  const transfers = skillTransfers
+    .map((t) => ({ ...t, type: "skill" as const }))
+    .sort((a, b) => (b.requestedAt ?? 0) - (a.requestedAt ?? 0));
+
   return json({ transfers }, 200, rate.headers);
 }
