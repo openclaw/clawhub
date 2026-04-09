@@ -21,7 +21,7 @@ export const toggle = mutation({
   handler: async (ctx, args) => {
     const { userId } = await requireUser(ctx);
     const skill = await ctx.db.get(args.skillId);
-    if (!skill) throw new Error("Skill not found");
+    if (!skill || skill.softDeletedAt) throw new Error("Skill not found");
 
     const existing = await ctx.db
       .query("stars")
@@ -70,7 +70,7 @@ export const addStarInternal = internalMutation({
   args: { userId: v.id("users"), skillId: v.id("skills") },
   handler: async (ctx, args) => {
     const skill = await ctx.db.get(args.skillId);
-    if (!skill) throw new Error("Skill not found");
+    if (!skill || skill.softDeletedAt) throw new Error("Skill not found");
     const existing = await ctx.db
       .query("stars")
       .withIndex("by_skill_user", (q) => q.eq("skillId", args.skillId).eq("userId", args.userId))

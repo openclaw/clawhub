@@ -232,6 +232,7 @@ export const reconcileSkillStarCounts = internalMutation({
 
     let patched = 0;
     for (const skill of page) {
+      if (skill.softDeletedAt) continue;
       // Count actual star records for this skill
       const starRecords = await ctx.db
         .query("stars")
