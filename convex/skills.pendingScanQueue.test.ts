@@ -5,7 +5,10 @@ vi.mock("@convex-dev/auth/server", () => ({
   authTables: {},
 }));
 
-import { getPendingScanSkillsInternal } from "./skills";
+import {
+  getActiveSkillBatchForStaticScanBackfillInternal,
+  getPendingScanSkillsInternal,
+} from "./skills";
 
 type PendingScanResult = Array<{
   skillId: string;
@@ -22,6 +25,17 @@ const getPendingScanSkillsHandler = (
   getPendingScanSkillsInternal as unknown as WrappedHandler<
     Record<string, unknown>,
     PendingScanResult
+  >
+)._handler;
+
+const getStaticScanBackfillBatchHandler = (
+  getActiveSkillBatchForStaticScanBackfillInternal as unknown as WrappedHandler<
+    Record<string, unknown>,
+    {
+      skills: Array<{ skillId: string; versionId: string; slug: string }>;
+      nextCursor: number;
+      done: boolean;
+    }
   >
 )._handler;
 
@@ -212,6 +226,114 @@ describe("skills.getPendingScanSkillsInternal", () => {
     });
 
     expect(result).toHaveLength(150);
+  });
+});
+
+describe("skills.getActiveSkillBatchForStaticScanBackfillInternal", () => {
+  it("includes latest active skills with missing or stale static scan engine versions", async () => {
+    const skills = [
+      {
+        _id: "skills:missing-static",
+        _creationTime: 10,
+        softDeletedAt: undefined,
+        moderationStatus: "active",
+        latestVersionId: "skillVersions:missing-static",
+        slug: "missing-static",
+      },
+      {
+        _id: "skills:stale-static",
+        _creationTime: 20,
+        softDeletedAt: undefined,
+        moderationStatus: "active",
+        latestVersionId: "skillVersions:stale-static",
+        slug: "stale-static",
+      },
+      {
+        _id: "skills:current-static",
+        _creationTime: 30,
+        softDeletedAt: undefined,
+        moderationStatus: "active",
+        latestVersionId: "skillVersions:current-static",
+        slug: "current-static",
+      },
+      {
+        _id: "skills:hidden-static",
+        _creationTime: 40,
+        softDeletedAt: undefined,
+        moderationStatus: "hidden",
+        latestVersionId: "skillVersions:hidden-static",
+        slug: "hidden-static",
+      },
+    ];
+
+    const versions = new Map<string, unknown>([
+      ["skillVersions:missing-static", { _id: "skillVersions:missing-static" }],
+      [
+        "skillVersions:stale-static",
+        {
+          _id: "skillVersions:stale-static",
+          staticScan: { engineVersion: "v2.2.0" },
+        },
+      ],
+      [
+        "skillVersions:current-static",
+        {
+          _id: "skillVersions:current-static",
+          staticScan: { engineVersion: "v2.3.0" },
+        },
+      ],
+      [
+        "skillVersions:hidden-static",
+        {
+          _id: "skillVersions:hidden-static",
+          staticScan: { engineVersion: "v2.2.0" },
+        },
+      ],
+    ]);
+
+    const ctx = {
+      db: {
+        query: vi.fn((table: string) => {
+          if (table !== "skills") throw new Error(`unexpected table ${table}`);
+          return {
+            withIndex: (
+              indexName: string,
+              builder: (q: { gt: (field: string, value: unknown) => unknown }) => unknown,
+            ) => {
+              builder({ gt: () => ({}) });
+              if (indexName !== "by_creation_time") {
+                throw new Error(`unexpected index ${indexName}`);
+              }
+              return {
+                order: () => ({
+                  take: async () => skills,
+                }),
+              };
+            },
+          };
+        }),
+        get: vi.fn(async (id: string) => versions.get(id) ?? null),
+      },
+    };
+
+    const result = await getStaticScanBackfillBatchHandler(ctx, {
+      batchSize: 10,
+      cursor: 0,
+    });
+
+    expect(result.skills).toEqual([
+      {
+        skillId: "skills:missing-static",
+        versionId: "skillVersions:missing-static",
+        slug: "missing-static",
+      },
+      {
+        skillId: "skills:stale-static",
+        versionId: "skillVersions:stale-static",
+        slug: "stale-static",
+      },
+    ]);
+    expect(result.done).toBe(true);
   });
 });
 

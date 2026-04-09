@@ -50,6 +50,10 @@ const CODE_EXTENSION = /\.(js|ts|mjs|cjs|mts|cts|jsx|tsx|py|sh|bash|zsh|rb|go)$/
 const STANDARD_PORTS = new Set([80, 443, 8080, 8443, 3000]);
 const RAW_IP_URL_PATTERN = /https?:\/\/\d{1,3}(?:\.\d{1,3}){3}(?::\d+)?(?:\/|["'])/i;
 const INSTALL_PACKAGE_PATTERN = /installer-package\s*:\s*https?:\/\/[^\s"'`]+/i;
+const GENERATED_SOURCE_PLACEHOLDER_PATTERN =
+  /^\s*[A-Za-z_][A-Za-z0-9_]*\s*=.*["']\$\{[A-Za-z_][A-Za-z0-9_-]*\}["']/m;
+const GENERATED_SOURCE_CONTEXT_PATTERN =
+  /```(?:python|py|javascript|js|typescript|ts|shell|bash|sh)\b|cat\s*(?:>|>>)?\s*[^`\n]*\.(?:py|js|ts|sh)\b|python3?\b|node\b/i;
 
 function hasMaliciousInstallPrompt(content: string) {
   const hasTerminalInstruction =
@@ -224,6 +228,21 @@ function scanMarkdownFile(path: string, content: string, findings: ModerationFin
       file: path,
       line: match.line,
       message: "Prompt-injection style instruction pattern detected.",
+      evidence: match.text,
+    });
+  }
+
+  if (
+    GENERATED_SOURCE_PLACEHOLDER_PATTERN.test(content) &&
+    GENERATED_SOURCE_CONTEXT_PATTERN.test(content)
+  ) {
+    const match = findFirstLine(content, GENERATED_SOURCE_PLACEHOLDER_PATTERN);
+    addFinding(findings, {
+      code: REASON_CODES.GENERATED_SOURCE_TEMPLATE,
+      severity: "critical",
+      file: path,
+      line: match.line,
+      message: "User-controlled placeholder is embedded directly into generated source code.",
       evidence: match.text,
     });
   }

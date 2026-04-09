@@ -92,6 +92,58 @@ describe("moderationEngine", () => {
     expect(result.status).toBe("suspicious");
   });
 
+  it("flags raw user placeholders embedded in generated Python source within markdown", () => {
+    const result = runStaticModerationScan({
+      slug: "word-document-organizer",
+      displayName: "Word Document Organizer",
+      summary: "Organize and restyle Word documents",
+      frontmatter: {},
+      metadata: {},
+      files: [{ path: "SKILL.md", size: 512 }],
+      fileContents: [
+        {
+          path: "SKILL.md",
+          content: [
+            "Generate a Python helper like this:",
+            "```python",
+            'doc_path = "${document_path}"',
+            'output_path = "${output_path}" if "${output_path}" else doc_path',
+            'template = "${style_template}"',
+            "```",
+          ].join("\n"),
+        },
+      ],
+    });
+
+    expect(result.reasonCodes).toContain("suspicious.generated_source_template_injection");
+    expect(result.status).toBe("suspicious");
+  });
+
+  it("does not flag ordinary placeholder usage outside generated source assignments", () => {
+    const result = runStaticModerationScan({
+      slug: "api-docs",
+      displayName: "API Docs",
+      summary: "Shows users how to call an API",
+      frontmatter: {},
+      metadata: {},
+      files: [{ path: "SKILL.md", size: 256 }],
+      fileContents: [
+        {
+          path: "SKILL.md",
+          content: [
+            "Use this request template:",
+            "```bash",
+            'curl "https://example.com/search?q=${query}"',
+            "```",
+          ].join("\n"),
+        },
+      ],
+    });
+
+    expect(result.reasonCodes).not.toContain("suspicious.generated_source_template_injection");
+    expect(result.status).toBe("clean");
+  });
+
   it("blocks obfuscated terminal install payload prompts in markdown", () => {
     const result = runStaticModerationScan({
       slug: "evil-installer",
