@@ -203,7 +203,7 @@ program
   .description("Install into <dir>/<slug>")
   .argument("<slug>", "Skill slug")
   .option("--version <version>", "Version to install")
-  .option("--force", "Overwrite existing folder")
+  .option("--force", "Overwrite existing folder, bypass OS mismatch, and allow suspicious skills")
   .action(async (slug, options) => {
     const opts = await resolveGlobalOpts();
     await cmdInstall(opts, slug, options.version, options.force);
