@@ -247,7 +247,7 @@ async function runTransferDecision(
         method: "POST",
         path: `${resolveApiPath(name, itemType)}/transfer/${spec.action}`,
         token,
-        ...(body ? { body: JSON.stringify(body) } : {}),
+        ...(body ? { body } : {}),
       },
       ApiV1TransferDecisionResponseSchema,
     );

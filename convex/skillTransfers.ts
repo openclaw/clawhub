@@ -220,6 +220,9 @@ export const acceptTransferInternal = internalMutation({
       targetPublisherId = newPublisher._id;
     }
 
+    // For org-targeted transfers, ownerUserId is set to whichever admin accepts,
+    // not necessarily the original toUserId. The toUserHandle on the request just
+    // routes the transfer — actual ownership reflects who acted on it.
     await ctx.db.patch(skill._id, {
       ownerUserId: args.actorUserId,
       ownerPublisherId: targetPublisherId,
