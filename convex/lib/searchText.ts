@@ -1,5 +1,4 @@
 const CJK_RE = /[\u4e00-\u9fff\u3400-\u4dbf\u3040-\u309f\u30a0-\u30ff\uac00-\ud7af]/;
-const CONTAINS_CJK_RE = /[\u4e00-\u9fff\u3400-\u4dbf\u3040-\u309f\u30a0-\u30ff\uac00-\ud7af]/;
 
 let zhSegmenter: Intl.Segmenter | null = null;
 let jaSegmenter: Intl.Segmenter | null = null;
@@ -91,7 +90,7 @@ export function tokenize(value: string): string[] {
 
   const normalized = normalize(value);
 
-  if (!CONTAINS_CJK_RE.test(normalized)) {
+  if (!CJK_RE.test(normalized)) {
     return normalized.match(/[a-z0-9]+/g) ?? [];
   }
 
@@ -102,7 +101,7 @@ export function tokenize(value: string): string[] {
   for (const part of parts) {
     if (!part.trim()) continue;
 
-    if (CONTAINS_CJK_RE.test(part)) {
+    if (CJK_RE.test(part)) {
       const cjkTokens = segmentCJK(part);
       tokens.push(...cjkTokens);
     } else {
