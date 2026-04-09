@@ -87,6 +87,10 @@ Auth required:
 - `POST /api/v1/skills/{slug}/transfer/accept`
 - `POST /api/v1/skills/{slug}/transfer/reject`
 - `POST /api/v1/skills/{slug}/transfer/cancel`
+- `POST /api/v1/packages/{name}/transfer`
+- `POST /api/v1/packages/{name}/transfer/accept`
+- `POST /api/v1/packages/{name}/transfer/reject`
+- `POST /api/v1/packages/{name}/transfer/cancel`
 - `GET /api/v1/transfers/incoming`
 - `GET /api/v1/transfers/outgoing`
 - `GET /api/v1/whoami`
