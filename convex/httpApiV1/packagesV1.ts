@@ -24,6 +24,7 @@ import {
   MAX_RAW_FILE_BYTES,
   getPathSegments,
   json,
+  parseJsonPayload,
   resolveTagsBatch,
   requireApiTokenUserOrResponse,
   requirePackagePublishAuthOrResponse,
@@ -47,10 +48,10 @@ const apiRefs = api as unknown as {
 const internalRefs = internal as unknown as {
   packages: {
     getByNameForViewerInternal: unknown;
+    getPackageByNameInternal: unknown;
     listPageForViewerInternal: unknown;
     searchForViewerInternal: unknown;
     listVersionsForViewerInternal: unknown;
-    getPackageByNameInternal: unknown;
     getTrustedPublisherByPackageIdInternal: unknown;
     getVersionByNameForViewerInternal: unknown;
     publishPackageForUserInternal: unknown;
@@ -70,18 +71,32 @@ const internalRefs = internal as unknown as {
     getVersionByIdInternal: unknown;
     getVersionBySkillAndVersionInternal: unknown;
   };
+  publishers: {
+    getByHandleInternal: unknown;
+  };
+  packageTransfers: {
+    requestTransferInternal: unknown;
+    acceptTransferInternal: unknown;
+    rejectTransferInternal: unknown;
+    cancelTransferInternal: unknown;
+    listIncomingInternal: unknown;
+    listOutgoingInternal: unknown;
+    getPendingTransferByPackageInternal: unknown;
+    getPendingTransferByPackageAndUserInternal: unknown;
+    getPendingTransferByPackageAndFromUserInternal: unknown;
+  };
 };
 
 async function runQueryRef<T>(ctx: ActionCtx, ref: unknown, args: unknown): Promise<T> {
   return (await ctx.runQuery(ref as never, args as never)) as T;
 }
 
-async function runActionRef<T>(ctx: ActionCtx, ref: unknown, args: unknown): Promise<T> {
-  return (await ctx.runAction(ref as never, args as never)) as T;
-}
-
 async function runMutationRef<T>(ctx: ActionCtx, ref: unknown, args: unknown): Promise<T> {
   return (await ctx.runMutation(ref as never, args as never)) as T;
+}
+
+async function runActionRef<T>(ctx: ActionCtx, ref: unknown, args: unknown): Promise<T> {
+  return (await ctx.runAction(ref as never, args as never)) as T;
 }
 
 async function getOptionalViewerUserIdForRequest(ctx: ActionCtx, request: Request) {
@@ -820,52 +835,60 @@ export async function mintPublishTokenV1Handler(ctx: ActionCtx, request: Request
 }
 
 export async function packagesPostRouterV1Handler(ctx: ActionCtx, request: Request) {
-  const segments = getPathSegments(request, "/api/v1/packages/");
-  if (segments[1] !== "trusted-publisher" || segments.length !== 2) {
-    return text("Not found", 404);
-  }
   const rate = await applyRateLimit(ctx, request, "write");
   if (!rate.ok) return rate.response;
-  const auth = await requireApiTokenUserOrResponse(ctx, request, rate.headers);
-  if (!auth.ok) return auth.response;
 
-  try {
-    const body = parseArk(
-      PackageTrustedPublisherUpsertRequestSchema,
-      await request.json(),
-      "Trusted publisher payload",
-    ) as {
-      repository: string;
-      workflowFilename: string;
-      environment?: string;
-    };
-    const repositoryIdentity = await fetchGitHubRepositoryIdentity(body.repository);
-    const trustedPublisher = await runMutationRef<PackageTrustedPublisherLike | null>(
-      ctx,
-      internalRefs.packages.setTrustedPublisherForUserInternal,
-      {
-        actorUserId: auth.userId,
-        packageName: segments[0]!,
-        repository: repositoryIdentity.repository,
-        repositoryId: repositoryIdentity.repositoryId,
-        repositoryOwner: repositoryIdentity.repositoryOwner,
-        repositoryOwnerId: repositoryIdentity.repositoryOwnerId,
-        workflowFilename: body.workflowFilename,
-        ...(body.environment ? { environment: body.environment } : {}),
-      },
-    );
-    return json(
-      { trustedPublisher: toPublicTrustedPublisher(trustedPublisher) },
-      200,
-      rate.headers,
-    );
-  } catch (error) {
-    return text(
-      error instanceof Error ? error.message : "Trusted publisher update failed",
-      400,
-      rate.headers,
-    );
+  const segments = getPathSegments(request, "/api/v1/packages/");
+  const action = segments[1] ?? "";
+
+  if (action === "transfer") {
+    return handlePackagesTransferPost(ctx, request, segments, rate.headers);
   }
+
+  if (action === "trusted-publisher" && segments.length === 2) {
+    const auth = await requireApiTokenUserOrResponse(ctx, request, rate.headers);
+    if (!auth.ok) return auth.response;
+
+    try {
+      const body = parseArk(
+        PackageTrustedPublisherUpsertRequestSchema,
+        await request.json(),
+        "Trusted publisher payload",
+      ) as {
+        repository: string;
+        workflowFilename: string;
+        environment?: string;
+      };
+      const repositoryIdentity = await fetchGitHubRepositoryIdentity(body.repository);
+      const trustedPublisher = await runMutationRef<PackageTrustedPublisherLike | null>(
+        ctx,
+        internalRefs.packages.setTrustedPublisherForUserInternal,
+        {
+          actorUserId: auth.userId,
+          packageName: segments[0]!,
+          repository: repositoryIdentity.repository,
+          repositoryId: repositoryIdentity.repositoryId,
+          repositoryOwner: repositoryIdentity.repositoryOwner,
+          repositoryOwnerId: repositoryIdentity.repositoryOwnerId,
+          workflowFilename: body.workflowFilename,
+          ...(body.environment ? { environment: body.environment } : {}),
+        },
+      );
+      return json(
+        { trustedPublisher: toPublicTrustedPublisher(trustedPublisher) },
+        200,
+        rate.headers,
+      );
+    } catch (error) {
+      return text(
+        error instanceof Error ? error.message : "Trusted publisher update failed",
+        400,
+        rate.headers,
+      );
+    }
+  }
+
+  return text("Not found", 404, rate.headers);
 }
 
 export async function packagesDeleteRouterV1Handler(ctx: ActionCtx, request: Request) {
@@ -1436,3 +1459,218 @@ type PublicPackageDocLike = {
   createdAt: number;
   updatedAt: number;
 };
+
+// ---------------------------------------------------------------------------
+// Package transfer handlers
+// ---------------------------------------------------------------------------
+
+type PackageTransferDecisionAction = "accept" | "reject" | "cancel";
+
+function packageTransferErrorToResponse(error: unknown, headers: HeadersInit) {
+  const message = error instanceof Error ? error.message : "Transfer failed";
+  const lower = message.toLowerCase();
+  if (lower.includes("unauthorized")) return text("Unauthorized", 401, headers);
+  if (lower.includes("forbidden")) return text("Forbidden", 403, headers);
+  if (lower.includes("not found")) return text(message, 404, headers);
+  if (lower.includes("required") || lower.includes("invalid") || lower.includes("pending")) {
+    return text(message, 400, headers);
+  }
+  return text(message, 400, headers);
+}
+
+type PackageTransferDocLike = {
+  _id: Id<"packages">;
+  softDeletedAt?: number;
+};
+
+type PendingTransferLike = {
+  _id: Id<"packageOwnershipTransfers">;
+};
+
+async function resolvePackageTransferContext(
+  ctx: ActionCtx,
+  request: Request,
+  name: string,
+  headers: HeadersInit,
+): Promise<
+  { ok: true; userId: Id<"users">; pkg: PackageTransferDocLike } | { ok: false; response: Response }
+> {
+  const auth = await requireApiTokenUserOrResponse(ctx, request, headers);
+  if (!auth.ok) return auth;
+
+  const pkg = await runQueryRef<PackageTransferDocLike | null>(
+    ctx,
+    internalRefs.packages.getPackageByNameInternal,
+    { name },
+  );
+  if (!pkg || pkg.softDeletedAt)
+    return { ok: false, response: text("Package not found", 404, headers) };
+
+  return { ok: true, userId: auth.userId, pkg };
+}
+
+async function handlePackageTransferRequest(
+  ctx: ActionCtx,
+  request: Request,
+  name: string,
+  headers: HeadersInit,
+) {
+  const transferContext = await resolvePackageTransferContext(ctx, request, name, headers);
+  if (!transferContext.ok) return transferContext.response;
+
+  const parsed = await parseJsonPayload(request, headers);
+  if (!parsed.ok) return parsed.response;
+
+  const toUserHandleRaw =
+    typeof parsed.payload.toUserHandle === "string" ? parsed.payload.toUserHandle.trim() : "";
+  if (!toUserHandleRaw) return text("toUserHandle required", 400, headers);
+  const message = typeof parsed.payload.message === "string" ? parsed.payload.message : undefined;
+
+  // Resolve optional publisher handle to a publisher ID
+  const toPublisherHandleRaw =
+    typeof parsed.payload.toPublisherHandle === "string"
+      ? parsed.payload.toPublisherHandle.trim()
+      : "";
+  let toPublisherId: Id<"publishers"> | undefined;
+  if (toPublisherHandleRaw) {
+    const publisher = await runQueryRef<{ _id: Id<"publishers"> } | null>(
+      ctx,
+      internalRefs.publishers.getByHandleInternal,
+      { handle: toPublisherHandleRaw },
+    );
+    if (!publisher) return text("Publisher not found", 404, headers);
+    toPublisherId = publisher._id;
+  }
+
+  try {
+    const result = await runMutationRef(
+      ctx,
+      internalRefs.packageTransfers.requestTransferInternal,
+      {
+        actorUserId: transferContext.userId,
+        packageId: transferContext.pkg._id,
+        toUserHandle: toUserHandleRaw,
+        toPublisherId,
+        message,
+      },
+    );
+    return json(result, 200, headers);
+  } catch (error) {
+    return packageTransferErrorToResponse(error, headers);
+  }
+}
+
+async function handlePackageTransferDecision(
+  ctx: ActionCtx,
+  request: Request,
+  name: string,
+  decision: PackageTransferDecisionAction,
+  headers: HeadersInit,
+) {
+  const transferContext = await resolvePackageTransferContext(ctx, request, name, headers);
+  if (!transferContext.ok) return transferContext.response;
+
+  let pendingTransfer: PendingTransferLike | null;
+  if (decision === "cancel") {
+    pendingTransfer = await runQueryRef<PendingTransferLike | null>(
+      ctx,
+      internalRefs.packageTransfers.getPendingTransferByPackageAndFromUserInternal,
+      {
+        packageId: transferContext.pkg._id,
+        fromUserId: transferContext.userId,
+      },
+    );
+    if (!pendingTransfer) {
+      // Fallback: allow org admins to cancel transfers initiated by other admins
+      pendingTransfer = await runQueryRef<PendingTransferLike | null>(
+        ctx,
+        internalRefs.packageTransfers.getPendingTransferByPackageInternal,
+        { packageId: transferContext.pkg._id },
+      );
+    }
+  } else {
+    // Try user-specific lookup first, then fall back to any pending transfer
+    // for the package (allows org admins other than toUserId to accept/reject)
+    pendingTransfer = await runQueryRef<PendingTransferLike | null>(
+      ctx,
+      internalRefs.packageTransfers.getPendingTransferByPackageAndUserInternal,
+      {
+        packageId: transferContext.pkg._id,
+        toUserId: transferContext.userId,
+      },
+    );
+    if (!pendingTransfer) {
+      pendingTransfer = await runQueryRef<PendingTransferLike | null>(
+        ctx,
+        internalRefs.packageTransfers.getPendingTransferByPackageInternal,
+        { packageId: transferContext.pkg._id },
+      );
+    }
+  }
+  if (!pendingTransfer) return text("No pending transfer found", 404, headers);
+
+  const mutation =
+    decision === "accept"
+      ? internalRefs.packageTransfers.acceptTransferInternal
+      : decision === "reject"
+        ? internalRefs.packageTransfers.rejectTransferInternal
+        : internalRefs.packageTransfers.cancelTransferInternal;
+
+  try {
+    // For accept, resolve optional publisher handle to forward publisherId
+    let publisherId: Id<"publishers"> | undefined;
+    if (decision === "accept") {
+      const parsed = await parseJsonPayload(request, headers);
+      if (parsed.ok) {
+        const publisherHandleRaw =
+          typeof parsed.payload.publisherHandle === "string"
+            ? parsed.payload.publisherHandle.trim()
+            : "";
+        if (publisherHandleRaw) {
+          const publisher = await runQueryRef<{ _id: Id<"publishers"> } | null>(
+            ctx,
+            internalRefs.publishers.getByHandleInternal,
+            { handle: publisherHandleRaw },
+          );
+          if (!publisher) return text("Publisher not found", 404, headers);
+          publisherId = publisher._id;
+        }
+      }
+    }
+
+    const mutationArgs: Record<string, unknown> = {
+      actorUserId: transferContext.userId,
+      transferId: pendingTransfer._id,
+    };
+    if (publisherId) {
+      mutationArgs.publisherId = publisherId;
+    }
+
+    const result = await runMutationRef(ctx, mutation, mutationArgs);
+    return json(result, 200, headers);
+  } catch (error) {
+    return packageTransferErrorToResponse(error, headers);
+  }
+}
+
+async function handlePackagesTransferPost(
+  ctx: ActionCtx,
+  request: Request,
+  segments: string[],
+  headers: HeadersInit,
+) {
+  const name = segments[0]?.trim().toLowerCase() ?? "";
+  if (!name) return text("Package name required", 400, headers);
+
+  if (segments.length === 2) {
+    return handlePackageTransferRequest(ctx, request, name, headers);
+  }
+  if (segments.length === 3) {
+    const decision = segments[2]?.trim().toLowerCase();
+    if (decision === "accept" || decision === "reject" || decision === "cancel") {
+      return handlePackageTransferDecision(ctx, request, name, decision, headers);
+    }
+  }
+  return text("Not found", 404, headers);
+}
+
