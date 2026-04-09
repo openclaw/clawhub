@@ -12,12 +12,13 @@ export type ModerationFinding = {
   evidence: string;
 };
 
-export const MODERATION_ENGINE_VERSION = "v2.3.0";
+export const MODERATION_ENGINE_VERSION = "v2.4.0";
 
 export const REASON_CODES = {
   DANGEROUS_EXEC: "suspicious.dangerous_exec",
   DYNAMIC_CODE: "suspicious.dynamic_code_execution",
   GENERATED_SOURCE_TEMPLATE: "suspicious.generated_source_template_injection",
+  EXPOSED_RESOURCE_IDENTIFIER: "suspicious.exposed_resource_identifier",
   CREDENTIAL_HARVEST: "suspicious.env_credential_access",
   EXFILTRATION: "suspicious.potential_exfiltration",
   OBFUSCATED_CODE: "suspicious.obfuscated_code",

@@ -54,6 +54,10 @@ const GENERATED_SOURCE_PLACEHOLDER_PATTERN =
   /^\s*[A-Za-z_][A-Za-z0-9_]*\s*=.*["']\$\{[A-Za-z_][A-Za-z0-9_-]*\}["']/m;
 const GENERATED_SOURCE_CONTEXT_PATTERN =
   /```(?:python|py|javascript|js|typescript|ts|shell|bash|sh)\b|cat\s*(?:>|>>)?\s*[^`\n]*\.(?:py|js|ts|sh)\b|python3?\b|node\b/i;
+const HARDCODED_CONNECTION_ID_PATTERN =
+  /["']connection_id["']\s*:\s*["'][0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}["']/i;
+const GOOGLE_SHEETS_SPREADSHEET_URL_PATTERN =
+  /https?:\/\/[^\s"'`]*\/spreadsheets\/([A-Za-z0-9_-]{20,})\/[^\s"'`]*/i;
 
 function hasMaliciousInstallPrompt(content: string) {
   const hasTerminalInstruction =
@@ -79,6 +83,10 @@ function truncateEvidence(evidence: string, maxLen = 160) {
   return `${evidence.slice(0, maxLen)}...`;
 }
 
+function looksLikePlaceholderIdentifier(identifier: string) {
+  return /^[A-Z0-9_]+$/.test(identifier) || /(your|example|placeholder)/i.test(identifier);
+}
+
 function addFinding(
   findings: ModerationFinding[],
   finding: Omit<ModerationFinding, "evidence"> & { evidence: string },
@@ -94,6 +102,14 @@ function findFirstLine(content: string, pattern: RegExp) {
     }
   }
   return { line: 1, text: lines[0] ?? "" };
+}
+
+function findLineAtIndex(content: string, index: number) {
+  const line = content.slice(0, index).split("\n").length;
+  const lineStart = content.lastIndexOf("\n", Math.max(0, index - 1)) + 1;
+  const nextNewline = content.indexOf("\n", index);
+  const lineEnd = nextNewline === -1 ? content.length : nextNewline;
+  return { line, text: content.slice(lineStart, lineEnd) };
 }
 
 function scanCodeFile(path: string, content: string, findings: ModerationFinding[]) {
@@ -245,6 +261,38 @@ function scanMarkdownFile(path: string, content: string, findings: ModerationFin
       message: "User-controlled placeholder is embedded directly into generated source code.",
       evidence: match.text,
     });
+  }
+
+  if (HARDCODED_CONNECTION_ID_PATTERN.test(content)) {
+    const match = findFirstLine(content, HARDCODED_CONNECTION_ID_PATTERN);
+    addFinding(findings, {
+      code: REASON_CODES.EXPOSED_RESOURCE_IDENTIFIER,
+      severity: "critical",
+      file: path,
+      line: match.line,
+      message: "Example code exposes a concrete connection_id instead of a placeholder.",
+      evidence: match.text,
+    });
+  }
+
+  const spreadsheetUrlPattern = new RegExp(
+    GOOGLE_SHEETS_SPREADSHEET_URL_PATTERN.source,
+    `${GOOGLE_SHEETS_SPREADSHEET_URL_PATTERN.flags.replaceAll("g", "")}g`,
+  );
+  for (const spreadsheetUrlMatch of content.matchAll(spreadsheetUrlPattern)) {
+    const spreadsheetId = spreadsheetUrlMatch[1];
+    if (!spreadsheetId || looksLikePlaceholderIdentifier(spreadsheetId)) continue;
+
+    const match = findLineAtIndex(content, spreadsheetUrlMatch.index ?? 0);
+    addFinding(findings, {
+      code: REASON_CODES.EXPOSED_RESOURCE_IDENTIFIER,
+      severity: "critical",
+      file: path,
+      line: match.line,
+      message: "Example code exposes a concrete Google Sheets spreadsheet ID instead of a placeholder.",
+      evidence: match.text,
+    });
+    break;
   }
 }
 

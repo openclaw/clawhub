@@ -144,6 +144,121 @@ describe("moderationEngine", () => {
     expect(result.status).toBe("clean");
   });
 
+  it("flags hardcoded connection_id UUIDs in markdown examples", () => {
+    const result = runStaticModerationScan({
+      slug: "api-gateway",
+      displayName: "API Gateway",
+      summary: "Route API calls through an authenticated gateway",
+      frontmatter: {},
+      metadata: {},
+      files: [{ path: "SKILL.md", size: 256 }],
+      fileContents: [
+        {
+          path: "SKILL.md",
+          content: [
+            "Use this payload:",
+            "```json",
+            '{"connection_id": "21fd90f9-5935-43cd-b6c8-bde9d915ca80"}',
+            "```",
+          ].join("\n"),
+        },
+      ],
+    });
+
+    expect(result.reasonCodes).toContain("suspicious.exposed_resource_identifier");
+    expect(result.status).toBe("suspicious");
+    expect(
+      result.findings.find((finding) => finding.message.includes("connection_id"))?.message,
+    ).toContain("connection_id");
+  });
+
+  it("flags hardcoded Google Sheets spreadsheet IDs in markdown examples", () => {
+    const result = runStaticModerationScan({
+      slug: "api-gateway",
+      displayName: "API Gateway",
+      summary: "Route API calls through an authenticated gateway",
+      frontmatter: {},
+      metadata: {},
+      files: [{ path: "SKILL.md", size: 256 }],
+      fileContents: [
+        {
+          path: "SKILL.md",
+          content: [
+            "Call the Sheets bridge like this:",
+            "```python",
+            "req = urllib.request.Request('https://gateway.maton.ai/google-sheets/v4/spreadsheets/122BS1sFN2RKL8AOUQjkLdubzOwgqzPT64KfZ2rvYI4M/values/Sheet1!A1:B2')",
+            "```",
+          ].join("\n"),
+        },
+      ],
+    });
+
+    expect(result.reasonCodes).toContain("suspicious.exposed_resource_identifier");
+    expect(result.status).toBe("suspicious");
+    expect(
+      result.findings.find((finding) => finding.message.includes("spreadsheet ID"))?.message,
+    ).toContain("spreadsheet ID");
+  });
+
+  it("does not flag placeholder resource identifiers in markdown examples", () => {
+    const result = runStaticModerationScan({
+      slug: "api-gateway",
+      displayName: "API Gateway",
+      summary: "Route API calls through an authenticated gateway",
+      frontmatter: {},
+      metadata: {},
+      files: [{ path: "SKILL.md", size: 256 }],
+      fileContents: [
+        {
+          path: "SKILL.md",
+          content: [
+            "Use placeholders in public docs:",
+            "```json",
+            '{"connection_id": "YOUR_CONNECTION_ID"}',
+            "```",
+            "```python",
+            "req = urllib.request.Request('https://gateway.maton.ai/google-sheets/v4/spreadsheets/YOUR_SPREADSHEET_ID/values/Sheet1!A1:B2')",
+            "```",
+          ].join("\n"),
+        },
+      ],
+    });
+
+    expect(result.reasonCodes).not.toContain("suspicious.exposed_resource_identifier");
+    expect(result.status).toBe("clean");
+  });
+
+  it("flags a real spreadsheet ID even when a placeholder URL appears first", () => {
+    const result = runStaticModerationScan({
+      slug: "api-gateway",
+      displayName: "API Gateway",
+      summary: "Route API calls through an authenticated gateway",
+      frontmatter: {},
+      metadata: {},
+      files: [{ path: "SKILL.md", size: 512 }],
+      fileContents: [
+        {
+          path: "SKILL.md",
+          content: [
+            "Placeholder example first:",
+            "```python",
+            "req = urllib.request.Request('https://gateway.maton.ai/google-sheets/v4/spreadsheets/YOUR_SPREADSHEET_ID/values/Sheet1!A1:B2')",
+            "```",
+            "Real leaked URL later:",
+            "```python",
+            "req = urllib.request.Request('https://gateway.maton.ai/google-sheets/v4/spreadsheets/122BS1sFN2RKL8AOUQjkLdubzOwgqzPT64KfZ2rvYI4M/values/Sheet1!A1:B2')",
+            "```",
+          ].join("\n"),
+        },
+      ],
+    });
+
+    expect(result.reasonCodes).toContain("suspicious.exposed_resource_identifier");
+    expect(
+      result.findings.find((finding) => finding.message.includes("spreadsheet ID"))?.line,
+    ).toBe(7);
+  });
+
   it("blocks obfuscated terminal install payload prompts in markdown", () => {
     const result = runStaticModerationScan({
       slug: "evil-installer",
