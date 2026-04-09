@@ -54,10 +54,15 @@ const GENERATED_SOURCE_PLACEHOLDER_PATTERN =
   /^\s*[A-Za-z_][A-Za-z0-9_]*\s*=.*["']\$\{[A-Za-z_][A-Za-z0-9_-]*\}["']/m;
 const GENERATED_SOURCE_CONTEXT_PATTERN =
   /```(?:python|py|javascript|js|typescript|ts|shell|bash|sh)\b|cat\s*(?:>|>>)?\s*[^`\n]*\.(?:py|js|ts|sh)\b|python3?\b|node\b/i;
+const RM_RF_PATTERN = /^\s*(?:sudo\s+)?rm\s+-[^\s]*r[^\s]*f[^\s]*\s+[^\n]+/gim;
+const TROUBLESHOOTING_REINSTALL_CONTEXT_PATTERN =
+  /troubleshooting|故障排查|reinstall|re-install|repair|reset|recovery|clean install|rebuild/i;
 const HARDCODED_CONNECTION_ID_PATTERN =
   /["']connection_id["']\s*:\s*["'][0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}["']/i;
 const GOOGLE_SHEETS_SPREADSHEET_URL_PATTERN =
   /https?:\/\/[^\s"'`]*\/spreadsheets\/([A-Za-z0-9_-]{20,})\/[^\s"'`]*/i;
+const CONFIRMATION_GATE_PATTERN =
+  /explicit(?:ly)?\s+confirm|ask\s+(?:the\s+)?user\s+(?:for\s+)?(?:explicit\s+)?confirmation|(?:require|requires)\s+(?:the\s+)?(?:user\s+)?confirmation|wait(?:ing)?\s+for\s+(?:the\s+)?(?:user\s+)?confirmation|continue\?\s*\(?(?:yes\/no|y\/n)\)?|reply\s+["']?yes["']?|only\s+after\s+(?:the\s+user\s+)?(?:repl(?:y|ies)|responds?)\s+["']?yes["']?/i;
 
 function hasMaliciousInstallPrompt(content: string) {
   const hasTerminalInstruction =
@@ -110,6 +115,45 @@ function findLineAtIndex(content: string, index: number) {
   const nextNewline = content.indexOf("\n", index);
   const lineEnd = nextNewline === -1 ? content.length : nextNewline;
   return { line, text: content.slice(lineStart, lineEnd) };
+}
+
+function hasNearbyConfirmationGate(content: string, index: number, contextLines = 8) {
+  const lines = content.split("\n");
+  const lineNumber = content.slice(0, index).split("\n").length - 1;
+  const start = Math.max(0, lineNumber - contextLines);
+  const end = Math.min(lines.length, lineNumber + contextLines + 1);
+  return CONFIRMATION_GATE_PATTERN.test(lines.slice(start, end).join("\n"));
+}
+
+function hasNearbyTroubleshootingContext(content: string, index: number, contextLines = 8) {
+  const lines = content.split("\n");
+  const lineNumber = content.slice(0, index).split("\n").length - 1;
+  const start = Math.max(0, lineNumber - contextLines);
+  const end = Math.min(lines.length, lineNumber + contextLines + 1);
+  return TROUBLESHOOTING_REINSTALL_CONTEXT_PATTERN.test(lines.slice(start, end).join("\n"));
+}
+
+function extractDeleteTargets(commandLine: string) {
+  return commandLine
+    .trim()
+    .replace(/^sudo\s+/, "")
+    .replace(/^rm\s+-[^\s]+\s+/, "")
+    .split(/\s+/)
+    .filter((token) => token && token !== "--")
+    .map((token) => token.replace(/^['"]+|['"]+$/g, ""));
+}
+
+function isSensitiveDeleteTarget(target: string | undefined) {
+  if (!target) return false;
+  if (/^\/(?:tmp|var\/tmp)(?:\/|$)/i.test(target)) return false;
+  if (/^(?:\.\/)?(?:dist|build|coverage|node_modules|tmp|temp)(?:\/|$)/i.test(target)) {
+    return false;
+  }
+  return /^(?:\/|~\/|\$HOME\/)/.test(target);
+}
+
+function hasSensitiveDeleteTarget(commandLine: string) {
+  return extractDeleteTargets(commandLine).some((target) => isSensitiveDeleteTarget(target));
 }
 
 function scanCodeFile(path: string, content: string, findings: ModerationFinding[]) {
@@ -261,6 +305,24 @@ function scanMarkdownFile(path: string, content: string, findings: ModerationFin
       message: "User-controlled placeholder is embedded directly into generated source code.",
       evidence: match.text,
     });
+  }
+
+  for (const destructiveDeleteMatch of content.matchAll(RM_RF_PATTERN)) {
+    if (destructiveDeleteMatch.index === undefined) continue;
+    if (!hasNearbyTroubleshootingContext(content, destructiveDeleteMatch.index)) continue;
+    if (!hasSensitiveDeleteTarget(destructiveDeleteMatch[0])) continue;
+    if (hasNearbyConfirmationGate(content, destructiveDeleteMatch.index)) continue;
+
+    const match = findLineAtIndex(content, destructiveDeleteMatch.index);
+    addFinding(findings, {
+      code: REASON_CODES.DESTRUCTIVE_DELETE_COMMAND,
+      severity: "critical",
+      file: path,
+      line: match.line,
+      message: "Destructive rm -rf command appears without an explicit confirmation gate.",
+      evidence: match.text,
+    });
+    break;
   }
 
   if (HARDCODED_CONNECTION_ID_PATTERN.test(content)) {
