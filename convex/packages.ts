@@ -4,6 +4,7 @@ import {
   type PackageChannel,
   type PackageFamily,
   type PackagePublishRequest,
+  type PackageVerificationTier,
 } from "clawhub-schema";
 import { paginationOptsValidator } from "convex/server";
 import { ConvexError, v } from "convex/values";
@@ -127,7 +128,7 @@ type PublicPackageListItem = {
   latestVersion: string | null;
   capabilityTags: string[];
   executesCode: boolean;
-  verificationTier: string | null;
+  verificationTier: PackageVerificationTier | null;
 };
 type PackageDigestLike = Pick<
   Doc<"packageSearchDigest">,
@@ -162,6 +163,14 @@ type PublicPageCursorState = {
   done: boolean;
 };
 const PUBLIC_PAGE_CURSOR_PREFIX = "pkgpage:";
+
+function stringifyId(value: Id<"users"> | Id<"publishers">): string {
+  return value;
+}
+
+function stringifyOptionalId(value: Id<"publishers"> | null | undefined): string | null {
+  return value ? stringifyId(value) : null;
+}
 
 async function runQueryRef<T>(
   ctx: { runQuery: (ref: never, args: never) => Promise<unknown> },
@@ -2133,11 +2142,11 @@ export const insertReleaseInternal = internalMutation({
       args.channel ??
       (existing?.channel === "private" ? "private" : publisherTrusted ? "official" : "community");
     const nextIsOfficial = nextChannel === "official";
-    const nextOwnerPublisherId = args.ownerPublisherId ? (args.ownerPublisherId as string) : null;
-    const nextOwnerUserId = String(args.ownerUserId);
-    const nextName = String(args.name);
-    const nextRuntimeId = args.runtimeId ? (args.runtimeId as string) : null;
-    const nextVersion = String(args.version);
+    const nextOwnerPublisherId = stringifyOptionalId(args.ownerPublisherId ?? null);
+    const nextOwnerUserId = stringifyId(args.ownerUserId);
+    const nextName = args.name;
+    const nextRuntimeId = args.runtimeId ?? null;
+    const nextVersion = args.version;
     if (existing) {
       const existingIsLegacyPersonalPackage =
         !existing.ownerPublisherId &&
