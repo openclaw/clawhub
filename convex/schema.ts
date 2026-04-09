@@ -1286,7 +1286,9 @@ const userSkillRootInstalls = defineTable({
 const skillOwnershipTransfers = defineTable({
   skillId: v.id("skills"),
   fromUserId: v.id("users"),
-  toUserId: v.id("users"),
+  toUserId: v.optional(v.id("users")),
+  fromPublisherId: v.optional(v.id("publishers")),
+  toPublisherId: v.optional(v.id("publishers")),
   status: v.union(
     v.literal("pending"),
     v.literal("accepted"),

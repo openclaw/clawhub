@@ -295,16 +295,23 @@ export const ApiV1TransferRequestResponseSchema = type({
 export const ApiV1TransferDecisionResponseSchema = type({
   ok: "true",
   skillSlug: "string?",
+  packageName: "string?",
 });
 
 export const ApiV1TransferListResponseSchema = type({
   transfers: type({
     _id: "string",
+    type: "string?",
     skill: type({
       _id: "string",
       slug: "string",
       displayName: "string",
-    }),
+    }).optional(),
+    package: type({
+      _id: "string",
+      name: "string",
+      displayName: "string",
+    }).optional(),
     fromUser: type({
       _id: "string",
       handle: "string|null",

@@ -478,16 +478,33 @@ Notes:
 
 ### Transfer ownership endpoints
 
+Transfers support user-to-user, user-to-org, org-to-user, and org-to-org flows for skills. Org-targeted transfers require the actor to hold `admin` or `owner` role on the relevant publisher.
+
+#### Skill transfers
+
 - `POST /api/v1/skills/{slug}/transfer`
-  - Body: `{ "toUserHandle": "target_handle", "message": "optional" }`
+  - Body: `{ "toUserHandle": "target_handle", "message": "optional", "toPublisherHandle": "optional_org_handle" }`
+  - When `toPublisherHandle` is provided, the transfer targets the org. The recipient (or any org admin) accepts on behalf of the org.
   - Response: `{ "ok": true, "transferId": "skillOwnershipTransfers:...", "toUserHandle": "target_handle", "expiresAt": 1730000000000 }`
 - `POST /api/v1/skills/{slug}/transfer/accept`
+  - Optional body: `{ "publisherHandle": "org_handle" }` — assign the skill to an org instead of the accepting user's personal publisher.
 - `POST /api/v1/skills/{slug}/transfer/reject`
 - `POST /api/v1/skills/{slug}/transfer/cancel`
   - Response (accept/reject/cancel): `{ "ok": true, "skillSlug": "demo-skill?" }`
+
+#### Transfer listing
+
 - `GET /api/v1/transfers/incoming`
 - `GET /api/v1/transfers/outgoing`
-  - Response shape: `{ "transfers": [{ "_id": "...", "skill": { "slug": "demo", "displayName": "Demo" }, "fromUser"|"toUser": { "handle": "..." }, "message": "...", "requestedAt": 0, "expiresAt": 0 }] }`
+  - Returns skill transfers, sorted by `requestedAt` descending.
+  - Response shape: `{ "transfers": [{ "_id": "...", "type": "skill", "skill": { "slug": "demo", "displayName": "Demo" }, "fromUser"|"toUser": { "handle": "..." }, "message": "...", "requestedAt": 0, "expiresAt": 0 }] }`
+
+#### Transfer rules
+
+- Pending transfers expire after 7 days.
+- Only one pending transfer per skill at a time.
+- Ownership is re-validated at accept time; if ownership changed since the request, the transfer is auto-cancelled.
+- Org transfers require `admin` or `owner` role on the source/target publisher.
 
 ### `POST /api/v1/users/ban`
 
