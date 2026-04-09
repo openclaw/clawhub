@@ -64,8 +64,9 @@ describe("transfer commands", () => {
       }),
       expect.anything(),
     );
-    const requestArgs = httpMocks.apiRequest.mock.calls[0]?.[1] as { body?: string };
-    expect(requestArgs.body).toContain('"toUserHandle":"alice"');
+    const requestArgs = httpMocks.apiRequest.mock.calls[0]?.[1] as { body?: unknown };
+    expect(typeof requestArgs.body).toBe('object');
+    expect(requestArgs.body).toEqual({ toUserHandle: 'alice', message: 'Please take over' });
   });
 
   it("list calls incoming transfers endpoint", async () => {
