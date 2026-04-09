@@ -239,6 +239,74 @@ xuezh audio process-voice --file ./utterance.wav
 \`\`\`
 `,
   },
+  {
+    slug: "hanzi-helper",
+    displayName: "汉字助手",
+    summary: "汉字学习与分析工具，支持笔画查询、部首检索和组词生成。",
+    version: "0.1.0",
+    metadata: {
+      clawdbot: {
+        nix: {
+          plugin: "github:example/hanzi-helper",
+          systems: ["aarch64-darwin", "x86_64-linux"],
+        },
+        config: {
+          requiredEnv: ["HANZI_DB_PATH"],
+          stateDirs: [".config/hanzi"],
+          example:
+            'config = { env = { HANZI_DB_PATH = ".config/hanzi/db"; }; stateDirs = [ ".config/hanzi" ]; };',
+        },
+        cliHelp: `汉字助手 - Chinese character learning and analysis
+
+Usage:
+  hanzi-helper [command]
+
+Available Commands:
+  lookup      查询汉字信息（笔画、部首、释义）
+  radical     按部首检索汉字
+  stroke      按笔画数筛选汉字
+  words       生成汉字组词
+  practice    练习汉字书写
+  quiz        汉字听写测试
+
+Flags:
+  -h, --help   help for hanzi-helper
+  --json       Output JSON
+`,
+      },
+    },
+    rawSkillMd: `---
+name: hanzi-helper
+description: 汉字学习与分析工具，提供笔画查询、部首检索、组词生成和汉字听写练习功能。
+---
+
+# 汉字助手
+
+## 功能介绍
+
+汉字助手是一个强大的中文汉字学习工具，帮助用户深入了解每个汉字的结构和含义。
+
+## CLI
+
+\`\`\`bash
+hanzi-helper lookup --char 学
+hanzi-helper radical --name 木
+hanzi-helper stroke --count 8
+hanzi-helper words --char 大 --limit 20
+\`\`\`
+
+## 使用场景
+
+- **汉字查询**：输入任意汉字，查看笔画数、部首、繁体形式和基本释义
+- **部首检索**：按部首浏览相关汉字，了解汉字的分类规律
+- **组词生成**：输入一个汉字，自动生成常用词语和成语
+- **听写练习**：随机生成汉字听写测试，巩固学习效果
+
+## 学习建议
+
+建议每天学习五个新汉字，结合组词和例句加深记忆。坚持使用听写练习功能可以有效提高汉字识别能力。
+`,
+  },
 ];
 
 function injectMetadata(rawSkillMd: string, metadata: Record<string, unknown>) {

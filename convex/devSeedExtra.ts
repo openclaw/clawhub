@@ -448,6 +448,22 @@ const EXTRA_SEED_SKILLS: SeedSkillSpec[] = [
     ["SSH_KEY_DIR"],
     ["generate", "rotate", "deploy", "list", "revoke"],
   ),
+
+  // CJK Language Support (2)
+  makeSkill(
+    "nihongo-check",
+    "日本語チェッカー",
+    "日本語文章の文法チェックと翻訳支援ツール。Japanese grammar checker and translation assistant.",
+    ["NIHONGO_API_KEY"],
+    ["check", "translate", "kanji", "grammar", "vocabulary"],
+  ),
+  makeSkill(
+    "hangukgeo-helper",
+    "한국어 도우미",
+    "한국어 학습 보조 도구입니다. Korean language learning assistant with vocabulary and grammar support.",
+    ["HANGUL_API_KEY"],
+    ["learn", "quiz", "vocabulary", "grammar", "pronunciation"],
+  ),
 ];
 
 function injectMetadata(rawSkillMd: string, metadata: Record<string, unknown>) {
