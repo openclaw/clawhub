@@ -1,4 +1,6 @@
-const CJK_RE = /[\u4e00-\u9fff\u3400-\u4dbf\u3040-\u309f\u30a0-\u30ff\uac00-\ud7af]/;
+const CJK_RE = /[\u4e00-\u9fff\u3400-\u4dbf\u3041-\u3096\u30a1-\u30fa\uac00-\ud7af]/;
+
+const hasSegmenter = typeof Intl !== "undefined" && "Segmenter" in Intl;
 
 let zhSegmenter: Intl.Segmenter | null = null;
 let jaSegmenter: Intl.Segmenter | null = null;
@@ -23,6 +25,20 @@ function getKoSegmenter(): Intl.Segmenter {
     koSegmenter = new Intl.Segmenter("ko", { granularity: "word" });
   }
   return koSegmenter;
+}
+
+/**
+ * Fallback: split CJK text into individual characters.
+ * Used when Intl.Segmenter is unavailable (e.g. stripped V8 runtime).
+ */
+function segmentCJKByChar(text: string): string[] {
+  const tokens: string[] = [];
+  for (const ch of text) {
+    if (CJK_RE.test(ch)) {
+      tokens.push(ch);
+    }
+  }
+  return tokens;
 }
 
 function normalize(value: string) {
@@ -51,9 +67,12 @@ function detectCJKLanguage(text: string): "zh" | "ja" | "ko" | null {
 }
 
 /**
- * Segment CJK text using Intl.Segmenter
+ * Segment CJK text using Intl.Segmenter, falling back to character-level
+ * tokenization when the API is unavailable.
  */
 function segmentCJK(text: string): string[] {
+  if (!hasSegmenter) return segmentCJKByChar(text);
+
   const lang = detectCJKLanguage(text);
   if (!lang) return [];
 
@@ -72,7 +91,7 @@ function segmentCJK(text: string): string[] {
   const segments: string[] = [];
   for (const { segment, isWordLike } of segmenter.segment(text)) {
     const trimmed = segment.trim();
-    if (trimmed && (isWordLike || CJK_RE.test(trimmed))) {
+    if (trimmed && isWordLike) {
       segments.push(trimmed);
     }
   }
@@ -96,7 +115,7 @@ export function tokenize(value: string): string[] {
 
   const tokens: string[] = [];
 
-  const parts = normalized.split(/([^\u4e00-\u9fff\u3400-\u4dbf\u3040-\u309f\u30a0-\u30ff\uac00-\ud7af]+)/g);
+  const parts = normalized.split(/([^\u4e00-\u9fff\u3400-\u4dbf\u3041-\u3096\u30a1-\u30fa\uac00-\ud7af]+)/g);
 
   for (const part of parts) {
     if (!part.trim()) continue;
@@ -131,4 +150,5 @@ export function matchesExactTokens(
 export const __test = {
   normalize,
   detectCJKLanguage,
+  segmentCJKByChar,
 };
