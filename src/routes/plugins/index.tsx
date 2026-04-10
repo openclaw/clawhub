@@ -6,7 +6,6 @@ import { PluginListItem } from "../../components/PluginListItem";
 import { Button } from "../../components/ui/button";
 import {
   fetchPluginCatalog,
-  isRateLimitedPackageApiError,
   type PackageListItem,
 } from "../../lib/packageApi";
 
@@ -56,37 +55,22 @@ export const Route = createFileRoute("/plugins/")({
   }),
   loaderDeps: ({ search }) => search,
   loader: async ({ deps }): Promise<PluginsLoaderData> => {
-    // Return empty data if API is unavailable - don't throw
-    let data: { items?: PackageListItem[]; nextCursor?: string | null } | null = null;
-    let apiError = false;
-    let rateLimited = false;
-    let retryAfterSeconds: number | null = null;
-
-    try {
-      data = await fetchPluginCatalog({
-        q: deps.q,
-        cursor: deps.q ? undefined : deps.cursor,
-        family: deps.family,
-        isOfficial: deps.verified,
-        executesCode: deps.executesCode,
-        limit: 50,
-      });
-    } catch (error) {
-      if (isRateLimitedPackageApiError(error)) {
-        rateLimited = true;
-        retryAfterSeconds = (error as { retryAfterSeconds?: number }).retryAfterSeconds ?? null;
-      } else {
-        // Log but don't crash - return empty state
-        apiError = true;
-      }
-    }
+    // fetchPluginCatalog now handles errors internally and returns empty results
+    const data = await fetchPluginCatalog({
+      q: deps.q,
+      cursor: deps.q ? undefined : deps.cursor,
+      family: deps.family,
+      isOfficial: deps.verified,
+      executesCode: deps.executesCode,
+      limit: 50,
+    });
 
     return {
-      items: data?.items ?? [],
-      nextCursor: data?.nextCursor ?? null,
-      rateLimited,
-      retryAfterSeconds,
-      apiError,
+      items: data.items ?? [],
+      nextCursor: data.nextCursor ?? null,
+      rateLimited: false,
+      retryAfterSeconds: null,
+      apiError: data.items.length === 0 && !deps.q,
     };
   },
   component: PluginsIndex,
