@@ -39,14 +39,26 @@ export async function validateTransferOwnership(
   },
 ): Promise<void> {
   if (!params.ownerPublisherId) {
-    // Personally owned — actor must be the owner
     if (params.actorUserId !== params.ownerUserId) {
       throw new Error("Forbidden");
     }
     return;
   }
 
-  // Org-owned — actor must be admin or owner in the org
+  const db = (ctx as { db: { get: (id: Id<"publishers">) => Promise<Doc<"publishers"> | null> } })
+    .db;
+  const publisher = await db.get(params.ownerPublisherId);
+  if (!publisher) throw new Error("Forbidden");
+
+  if (publisher.kind === "user") {
+    // Personal publisher — require direct user ownership, not membership
+    if (params.actorUserId !== params.ownerUserId) {
+      throw new Error("Forbidden");
+    }
+    return;
+  }
+
+  // Org publisher — actor must be admin or owner
   const membership = await getPublisherMembership(ctx, params.ownerPublisherId, params.actorUserId);
   if (!membership || !isPublisherRoleAllowed(membership.role, ["admin"])) {
     throw new Error("Forbidden");

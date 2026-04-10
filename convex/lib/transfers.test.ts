@@ -66,6 +66,7 @@ describe("transfers", () => {
       const ctx = {
         db: {
           normalizeId: vi.fn(),
+          get: vi.fn(async () => ({ _id: "publishers:org1", kind: "org" })),
           query: vi.fn((table: string) => {
             if (table === "publisherMembers") {
               return {
@@ -97,6 +98,7 @@ describe("transfers", () => {
       const ctx = {
         db: {
           normalizeId: vi.fn(),
+          get: vi.fn(async () => ({ _id: "publishers:org1", kind: "org" })),
           query: vi.fn((table: string) => {
             if (table === "publisherMembers") {
               return {
@@ -128,6 +130,7 @@ describe("transfers", () => {
       const ctx = {
         db: {
           normalizeId: vi.fn(),
+          get: vi.fn(async () => ({ _id: "publishers:org1", kind: "org" })),
           query: vi.fn((table: string) => {
             if (table === "publisherMembers") {
               return {
@@ -159,6 +162,7 @@ describe("transfers", () => {
       const ctx = {
         db: {
           normalizeId: vi.fn(),
+          get: vi.fn(async () => ({ _id: "publishers:org1", kind: "org" })),
           query: vi.fn((table: string) => {
             if (table === "publisherMembers") {
               return {
@@ -194,6 +198,56 @@ describe("transfers", () => {
           actorUserId: "users:2" as never,
           ownerUserId: "users:1" as never,
           ownerPublisherId: undefined,
+        }),
+      ).rejects.toThrow("Forbidden");
+    });
+
+    it("passes for personal publisher owner (kind: user)", async () => {
+      const ctx = {
+        db: {
+          normalizeId: vi.fn(),
+          get: vi.fn(async () => ({ _id: "publishers:alice", kind: "user" })),
+          query: vi.fn(),
+        },
+      };
+
+      await expect(
+        validateTransferOwnership(ctx as never, {
+          actorUserId: "users:1" as never,
+          ownerUserId: "users:1" as never,
+          ownerPublisherId: "publishers:alice" as never,
+        }),
+      ).resolves.toBeUndefined();
+    });
+
+    it("rejects personal publisher member who is not the owner user (kind: user)", async () => {
+      const ctx = {
+        db: {
+          normalizeId: vi.fn(),
+          get: vi.fn(async () => ({ _id: "publishers:alice", kind: "user" })),
+          query: vi.fn((table: string) => {
+            if (table === "publisherMembers") {
+              return {
+                withIndex: () => ({
+                  unique: async () => ({
+                    _id: "publisherMembers:1",
+                    publisherId: "publishers:alice",
+                    userId: "users:2",
+                    role: "admin",
+                  }),
+                }),
+              };
+            }
+            throw new Error(`unexpected table ${table}`);
+          }),
+        },
+      };
+
+      await expect(
+        validateTransferOwnership(ctx as never, {
+          actorUserId: "users:2" as never,
+          ownerUserId: "users:1" as never,
+          ownerPublisherId: "publishers:alice" as never,
         }),
       ).rejects.toThrow("Forbidden");
     });
