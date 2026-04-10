@@ -210,17 +210,17 @@ export const acceptTransferInternal = internalMutation({
       throw new Error("Transfer is no longer valid");
     }
 
-    // Determine target publisher: explicit arg > transfer target > personal publisher
-    // Validate actor has admin/owner role on explicit publisher override
+    // Determine target publisher: sender's choice > recipient override > personal
+    // When the sender specified a target publisher, honor it unconditionally
     let targetPublisherId: Id<"publishers">;
-    if (args.publisherId) {
+    if (transfer.toPublisherId) {
+      targetPublisherId = transfer.toPublisherId;
+    } else if (args.publisherId) {
       await validateTransferAcceptPermission(ctx, {
         actorUserId: args.actorUserId,
         toPublisherId: args.publisherId,
       });
       targetPublisherId = args.publisherId;
-    } else if (transfer.toPublisherId) {
-      targetPublisherId = transfer.toPublisherId;
     } else {
       const newPublisher = await ensurePersonalPublisherForUser(ctx, newOwner);
       if (!newPublisher) throw new Error("Failed to resolve publisher for new owner");
