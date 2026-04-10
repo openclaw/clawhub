@@ -136,6 +136,13 @@ export const requestTransferInternal = internalMutation({
       throw new Error("Cannot transfer to yourself");
     }
 
+    if (args.toPublisherId) {
+      const toPublisher = await ctx.db.get(args.toPublisherId);
+      if (!toPublisher || toPublisher.deletedAt || toPublisher.deactivatedAt) {
+        throw new Error("Target publisher not found");
+      }
+    }
+
     const activePending = await getActivePendingTransferForSkill(ctx, args.skillId, now);
     if (activePending) throw new Error("A transfer is already pending for this skill");
 
