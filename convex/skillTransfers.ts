@@ -315,8 +315,8 @@ export const cancelTransferInternal = internalMutation({
       now,
     });
 
-    // For org-owned transfers, verify actor is admin/owner of source publisher
-    if (transfer.fromPublisherId && transfer.fromUserId !== args.actorUserId) {
+    // For org-owned transfers, always verify actor still has admin/owner role
+    if (transfer.fromPublisherId) {
       await validateTransferOwnership(ctx, {
         ownerUserId: transfer.fromUserId,
         ownerPublisherId: transfer.fromPublisherId,
