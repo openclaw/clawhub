@@ -6169,7 +6169,7 @@ export const insertVersion = internalMutation({
     if (!user || user.deletedAt || user.deactivatedAt) throw new Error("User not found");
     const personalPublisher = await ensurePersonalPublisherForUser(ctx, user);
     if (!personalPublisher) throw new ConvexError("Personal publisher not found");
-    const ownerPublisherId = args.ownerPublisherId ?? personalPublisher._id;
+    let ownerPublisherId = args.ownerPublisherId ?? personalPublisher._id;
     if (ownerPublisherId !== personalPublisher._id) {
       await requirePublisherRole(ctx, {
         publisherId: ownerPublisherId,
@@ -6204,11 +6204,36 @@ export const insertVersion = internalMutation({
     }
 
     if (skill && skill.ownerPublisherId && skill.ownerPublisherId !== ownerPublisherId) {
-      const owner = await getOwnerPublisher(ctx, {
-        ownerPublisherId: skill.ownerPublisherId,
-        ownerUserId: skill.ownerUserId,
-      });
-      throw new ConvexError(buildSlugTakenErrorMessage(skill, owner));
+      // Only move the skill when the caller explicitly requested a different publisher.
+      // When ownerPublisherId was defaulted from the personal publisher (legacy CLI paths),
+      // preserve the existing publisher to avoid silently moving org skills to personal.
+      const explicitPublisherRequested = Boolean(args.ownerPublisherId);
+      if (skill.ownerUserId === userId && explicitPublisherRequested) {
+        await ctx.db.patch(skill._id, { ownerPublisherId, updatedAt: now });
+        const aliases = await ctx.db
+          .query("skillSlugAliases")
+          .withIndex("by_skill", (q) => q.eq("skillId", skill!._id))
+          .collect();
+        for (const alias of aliases) {
+          await ctx.db.patch(alias._id, { ownerPublisherId, updatedAt: now });
+        }
+        skill = { ...skill, ownerPublisherId };
+      } else if (skill.ownerUserId === userId && !explicitPublisherRequested) {
+        // Owner publishing via a legacy path that doesn't pass ownerPublisherId.
+        // Keep the existing publisher, but verify the caller still has access.
+        await requirePublisherRole(ctx, {
+          publisherId: skill.ownerPublisherId!,
+          userId,
+          allowed: ["publisher"],
+        });
+        ownerPublisherId = skill.ownerPublisherId;
+      } else {
+        const owner = await getOwnerPublisher(ctx, {
+          ownerPublisherId: skill.ownerPublisherId,
+          ownerUserId: skill.ownerUserId,
+        });
+        throw new ConvexError(buildSlugTakenErrorMessage(skill, owner));
+      }
     }
 
     if (skill && !skill.ownerPublisherId && skill.ownerUserId !== userId) {

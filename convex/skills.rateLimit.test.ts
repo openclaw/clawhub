@@ -1357,4 +1357,305 @@ describe("skills anti-spam guards", () => {
       }),
     );
   });
+
+  it("allows owner to move skill from personal publisher to org publisher", async () => {
+    const patch = vi.fn(async () => {});
+    const insert = vi.fn(async (table: string) => {
+      if (table === "skillVersions") return "skillVersions:1";
+      if (table === "skillEmbeddings") return "skillEmbeddings:1";
+      if (table === "embeddingSkillMap") return "embeddingSkillMap:1";
+      if (table === "skillVersionFingerprints") return "skillVersionFingerprints:1";
+      throw new Error(`unexpected insert table ${table}`);
+    });
+    const existingSkill = {
+      _id: "skills:1",
+      slug: "shop",
+      displayName: "Shop",
+      summary: "A skill",
+      ownerUserId: "users:owner",
+      ownerPublisherId: "publishers:personal",
+      latestVersionId: undefined,
+      tags: {},
+      softDeletedAt: undefined,
+      badges: { redactionApproved: undefined, highlighted: undefined, official: undefined, deprecated: undefined },
+      moderationStatus: "active",
+      moderationReason: "pending.scan",
+      moderationNotes: undefined,
+      moderationVerdict: "clean",
+      moderationReasonCodes: undefined,
+      moderationEvidence: undefined,
+      moderationSummary: "Clean",
+      moderationEngineVersion: "test",
+      moderationEvaluatedAt: 1,
+      moderationSourceVersionId: undefined,
+      quality: undefined,
+      moderationFlags: undefined,
+      isSuspicious: false,
+      reportCount: 0,
+      lastReportedAt: undefined,
+      statsDownloads: 0,
+      statsStars: 0,
+      statsInstallsCurrent: 0,
+      statsInstallsAllTime: 0,
+      stats: { downloads: 0, installsCurrent: 0, installsAllTime: 0, stars: 0, versions: 0, comments: 0 },
+      createdAt: 1,
+      updatedAt: 1,
+      manualOverride: undefined,
+    };
+    const db = {
+      get: vi.fn(async (id: string) => {
+        if (id === "users:owner") {
+          return { _id: "users:owner", handle: "pushmatrix", deletedAt: undefined, deactivatedAt: undefined, trustedPublisher: false, role: "user" };
+        }
+        if (id === "publishers:personal") return { _id: "publishers:personal", kind: "user", linkedUserId: "users:owner" };
+        if (id === "publishers:org") return { _id: "publishers:org", kind: "org", deletedAt: undefined, deactivatedAt: undefined };
+        return null;
+      }),
+      query: vi.fn((table: string) => {
+        if (table === "skills") return { withIndex: () => ({ unique: async () => existingSkill }) };
+        if (table === "publishers") return { withIndex: () => ({ unique: async () => ({ _id: "publishers:personal", kind: "user", linkedUserId: "users:owner" }) }) };
+        if (table === "publisherMembers") return { withIndex: () => ({ unique: async () => ({ role: "publisher", publisherId: "publishers:org" }) }) };
+        if (table === "skillSlugAliases") return { withIndex: (name: string) => name === "by_skill" ? { collect: async () => [] } : { unique: async () => null } };
+        if (table === "skillVersions") return { withIndex: () => ({ unique: async () => null }) };
+        if (table === "skillBadges") return { withIndex: () => ({ take: async () => [] }) };
+        if (table === "skillEmbeddings") return { withIndex: () => ({ unique: async () => null }) };
+        throw new Error(`unexpected table ${table}`);
+      }),
+      patch,
+      insert,
+      normalizeId: vi.fn(),
+    };
+
+    const result = await insertVersionHandler(
+      { db } as never,
+      createPublishArgs({ userId: "users:owner", slug: "shop", ownerPublisherId: "publishers:org" }) as never,
+    );
+
+    expect(patch).toHaveBeenCalledWith("skills:1", expect.objectContaining({ ownerPublisherId: "publishers:org" }));
+    expect(result).toEqual({ skillId: "skills:1", versionId: "skillVersions:1", embeddingId: "skillEmbeddings:1" });
+  });
+
+  it("blocks non-owner from claiming a skill with a different publisher", async () => {
+    // Stranger publishes under their own personal publisher (skips requirePublisherRole),
+    // but the slug belongs to a different user — should throw slug-taken.
+    const db = {
+      get: vi.fn(async (id: string) => {
+        if (id === "users:stranger") return { _id: "users:stranger", handle: "stranger", personalPublisherId: "publishers:stranger-personal", deletedAt: undefined, deactivatedAt: undefined };
+        if (id === "users:owner") return { _id: "users:owner", handle: "alice", deletedAt: undefined, deactivatedAt: undefined };
+        if (id === "publishers:stranger-personal") return { _id: "publishers:stranger-personal", handle: "stranger", kind: "user", linkedUserId: "users:stranger", deletedAt: undefined, deactivatedAt: undefined };
+        return null;
+      }),
+      query: vi.fn((table: string) => {
+        if (table === "skills") {
+          return {
+            withIndex: () => ({
+              unique: async () => ({
+                _id: "skills:1",
+                slug: "shop",
+                ownerUserId: "users:owner",
+                ownerPublisherId: "publishers:other",
+                softDeletedAt: undefined,
+                moderationStatus: "active",
+                moderationFlags: undefined,
+              }),
+            }),
+          };
+        }
+        if (table === "publishers") {
+          return {
+            withIndex: (name: string) => {
+              if (name === "by_handle") return { unique: async () => ({ _id: "publishers:stranger-personal", handle: "stranger", kind: "user", linkedUserId: "users:stranger", deletedAt: undefined, deactivatedAt: undefined }) };
+              return { unique: async () => ({ _id: "publishers:stranger-personal", handle: "stranger", kind: "user", linkedUserId: "users:stranger", deletedAt: undefined, deactivatedAt: undefined }) };
+            },
+          };
+        }
+        if (table === "publisherMembers") return { withIndex: () => ({ unique: async () => ({ role: "owner", publisherId: "publishers:stranger-personal", userId: "users:stranger" }) }) };
+        throw new Error(`unexpected table ${table}`);
+      }),
+      patch: vi.fn(async () => {}),
+      insert: vi.fn(async () => "publisherMembers:1"),
+      normalizeId: vi.fn(),
+    };
+
+    await expect(
+      insertVersionHandler(
+        { db } as never,
+        createPublishArgs({ userId: "users:stranger", slug: "shop", ownerPublisherId: "publishers:stranger-personal" }) as never,
+      ),
+    ).rejects.toThrow(/slug is already taken/i);
+  });
+
+  it("updates slug aliases when moving skill to a different publisher", async () => {
+    const patch = vi.fn(async () => {});
+    const insert = vi.fn(async (table: string) => {
+      if (table === "skillVersions") return "skillVersions:1";
+      if (table === "skillEmbeddings") return "skillEmbeddings:1";
+      if (table === "embeddingSkillMap") return "embeddingSkillMap:1";
+      if (table === "skillVersionFingerprints") return "skillVersionFingerprints:1";
+      throw new Error(`unexpected insert table ${table}`);
+    });
+    const existingSkill = {
+      _id: "skills:1",
+      slug: "shop",
+      displayName: "Shop",
+      summary: "A skill",
+      ownerUserId: "users:owner",
+      ownerPublisherId: "publishers:personal",
+      latestVersionId: undefined,
+      tags: {},
+      softDeletedAt: undefined,
+      badges: { redactionApproved: undefined, highlighted: undefined, official: undefined, deprecated: undefined },
+      moderationStatus: "active",
+      moderationReason: "pending.scan",
+      moderationNotes: undefined,
+      moderationVerdict: "clean",
+      moderationReasonCodes: undefined,
+      moderationEvidence: undefined,
+      moderationSummary: "Clean",
+      moderationEngineVersion: "test",
+      moderationEvaluatedAt: 1,
+      moderationSourceVersionId: undefined,
+      quality: undefined,
+      moderationFlags: undefined,
+      isSuspicious: false,
+      reportCount: 0,
+      lastReportedAt: undefined,
+      statsDownloads: 0,
+      statsStars: 0,
+      statsInstallsCurrent: 0,
+      statsInstallsAllTime: 0,
+      stats: { downloads: 0, installsCurrent: 0, installsAllTime: 0, stars: 0, versions: 0, comments: 0 },
+      createdAt: 1,
+      updatedAt: 1,
+      manualOverride: undefined,
+    };
+    const db = {
+      get: vi.fn(async (id: string) => {
+        if (id === "users:owner") {
+          return { _id: "users:owner", handle: "pushmatrix", deletedAt: undefined, deactivatedAt: undefined, trustedPublisher: false, role: "user" };
+        }
+        if (id === "publishers:personal") return { _id: "publishers:personal", kind: "user", linkedUserId: "users:owner" };
+        if (id === "publishers:org") return { _id: "publishers:org", kind: "org", deletedAt: undefined, deactivatedAt: undefined };
+        return null;
+      }),
+      query: vi.fn((table: string) => {
+        if (table === "skills") return { withIndex: () => ({ unique: async () => existingSkill }) };
+        if (table === "publishers") return { withIndex: () => ({ unique: async () => ({ _id: "publishers:personal", kind: "user", linkedUserId: "users:owner" }) }) };
+        if (table === "publisherMembers") return { withIndex: () => ({ unique: async () => ({ role: "publisher", publisherId: "publishers:org" }) }) };
+        if (table === "skillSlugAliases") {
+          return {
+            withIndex: (name: string) => {
+              if (name === "by_skill") return { collect: async () => [{ _id: "skillSlugAliases:1", skillId: "skills:1", ownerPublisherId: "publishers:personal" }] };
+              return { unique: async () => null };
+            },
+          };
+        }
+        if (table === "skillVersions") return { withIndex: () => ({ unique: async () => null }) };
+        if (table === "skillBadges") return { withIndex: () => ({ take: async () => [] }) };
+        if (table === "skillEmbeddings") return { withIndex: () => ({ unique: async () => null }) };
+        throw new Error(`unexpected table ${table}`);
+      }),
+      patch,
+      insert,
+      normalizeId: vi.fn(),
+    };
+
+    const result = await insertVersionHandler(
+      { db } as never,
+      createPublishArgs({ userId: "users:owner", slug: "shop", ownerPublisherId: "publishers:org" }) as never,
+    );
+
+    expect(result).toEqual({ skillId: "skills:1", versionId: "skillVersions:1", embeddingId: "skillEmbeddings:1" });
+    expect(patch).toHaveBeenCalledWith("skills:1", expect.objectContaining({ ownerPublisherId: "publishers:org" }));
+    expect(patch).toHaveBeenCalledWith("skillSlugAliases:1", expect.objectContaining({ ownerPublisherId: "publishers:org" }));
+  });
+
+  it("preserves org publisher when owner publishes via legacy path without ownerPublisherId", async () => {
+    const patch = vi.fn(async () => {});
+    const insert = vi.fn(async (table: string) => {
+      if (table === "skillVersions") return "skillVersions:1";
+      if (table === "skillEmbeddings") return "skillEmbeddings:1";
+      if (table === "embeddingSkillMap") return "embeddingSkillMap:1";
+      if (table === "skillVersionFingerprints") return "skillVersionFingerprints:1";
+      throw new Error(`unexpected insert table ${table}`);
+    });
+    const existingSkill = {
+      _id: "skills:1",
+      slug: "shop",
+      displayName: "Shop",
+      summary: "A skill",
+      ownerUserId: "users:owner",
+      ownerPublisherId: "publishers:org",
+      latestVersionId: undefined,
+      tags: {},
+      softDeletedAt: undefined,
+      badges: { redactionApproved: undefined, highlighted: undefined, official: undefined, deprecated: undefined },
+      moderationStatus: "active",
+      moderationReason: "pending.scan",
+      moderationNotes: undefined,
+      moderationVerdict: "clean",
+      moderationReasonCodes: undefined,
+      moderationEvidence: undefined,
+      moderationSummary: "Clean",
+      moderationEngineVersion: "test",
+      moderationEvaluatedAt: 1,
+      moderationSourceVersionId: undefined,
+      quality: undefined,
+      moderationFlags: undefined,
+      isSuspicious: false,
+      reportCount: 0,
+      lastReportedAt: undefined,
+      statsDownloads: 0,
+      statsStars: 0,
+      statsInstallsCurrent: 0,
+      statsInstallsAllTime: 0,
+      stats: { downloads: 0, installsCurrent: 0, installsAllTime: 0, stars: 0, versions: 0, comments: 0 },
+      createdAt: 1,
+      updatedAt: 1,
+      manualOverride: undefined,
+    };
+    const db = {
+      get: vi.fn(async (id: string) => {
+        if (id === "users:owner") {
+          return { _id: "users:owner", handle: "pushmatrix", deletedAt: undefined, deactivatedAt: undefined, trustedPublisher: false, role: "user" };
+        }
+        if (id === "publishers:personal") return { _id: "publishers:personal", kind: "user", linkedUserId: "users:owner" };
+        if (id === "publishers:org") return { _id: "publishers:org", kind: "org", deletedAt: undefined, deactivatedAt: undefined };
+        return null;
+      }),
+      query: vi.fn((table: string) => {
+        if (table === "skills") return { withIndex: () => ({ unique: async () => existingSkill }) };
+        if (table === "publishers") return { withIndex: () => ({ unique: async () => ({ _id: "publishers:personal", kind: "user", linkedUserId: "users:owner" }) }) };
+        if (table === "publisherMembers") return { withIndex: () => ({ unique: async () => ({ role: "publisher", publisherId: "publishers:org" }) }) };
+        if (table === "skillSlugAliases") {
+          return {
+            withIndex: (name: string) => name === "by_skill" ? { collect: async () => [] } : { unique: async () => null },
+          };
+        }
+        if (table === "skillVersions") return { withIndex: () => ({ unique: async () => null }) };
+        if (table === "skillBadges") return { withIndex: () => ({ take: async () => [] }) };
+        if (table === "skillEmbeddings") return { withIndex: () => ({ unique: async () => null }) };
+        throw new Error(`unexpected table ${table}`);
+      }),
+      patch,
+      insert,
+      normalizeId: vi.fn(),
+    };
+
+    // No ownerPublisherId passed — simulates legacy CLI publish
+    const result = await insertVersionHandler(
+      { db } as never,
+      createPublishArgs({ userId: "users:owner", slug: "shop" }) as never,
+    );
+
+    expect(result).toEqual({ skillId: "skills:1", versionId: "skillVersions:1", embeddingId: "skillEmbeddings:1" });
+    // ownerPublisherId should stay as publishers:org, never changed to publishers:personal
+    // ownerPublisherId in every skill patch should be the org, never personal
+    for (const call of patch.mock.calls) {
+      const [id, fields] = call as never as [string, Record<string, unknown>];
+      if (id === "skills:1" && "ownerPublisherId" in fields) {
+        expect(fields.ownerPublisherId).toBe("publishers:org");
+      }
+    }
+  });
 });
