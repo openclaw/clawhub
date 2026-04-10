@@ -262,7 +262,7 @@ a {
 
 /* Global focus indicator for keyboard navigation */
 :focus-visible {
-  outline: 1px solid var(--ink);
+  outline: 2px solid var(--accent);
   outline-offset: 2px;
 }
 
@@ -294,7 +294,10 @@ code {
 }
 
 .site-footer {
-  padding: 0 28px 40px;
+  padding: var(--space-6) var(--space-5);
+  margin-top: auto;
+  background: var(--surface);
+  border-top: 1px solid var(--line);
 }
 
 .site-footer-inner {
@@ -305,38 +308,33 @@ code {
 .site-footer-divider {
   height: 1px;
   background: var(--line);
-  opacity: 0.6;
-  margin: 18px 0 16px;
+  margin: var(--space-5) 0;
 }
 
 .site-footer-row {
   display: flex;
   align-items: center;
-  justify-content: center;
-  gap: 16px;
+  justify-content: space-between;
+  gap: 24px;
+  flex-wrap: wrap;
 }
 
 .site-footer-copy {
-  font-size: 0.85rem;
+  font-size: var(--fs-sm);
   color: var(--ink-soft);
-  opacity: 0.72;
   text-align: center;
-  max-width: 720px;
+  flex: 1;
 }
 
 .site-footer-copy a {
-  color: inherit;
-  text-decoration: underline;
-  text-decoration-color: rgba(255, 255, 255, 0.32);
-  text-underline-offset: 3px;
-  transition:
-    color 0.2s ease,
-    text-decoration-color 0.2s ease;
+  color: var(--accent);
+  text-decoration: none;
+  font-weight: 500;
+  transition: opacity 0.15s ease;
 }
 
 .site-footer-copy a:hover {
-  color: var(--ink);
-  text-decoration-color: rgba(255, 255, 255, 0.6);
+  opacity: 0.8;
 }
 
 .section-cta {
@@ -693,30 +691,32 @@ code {
 /* @deprecated — use <Button> from components/ui/button.tsx */
 .btn {
   border: 1px solid var(--border-ui);
-  padding: var(--space-2) var(--space-3);
-  border-radius: var(--r-sm);
-  background: transparent;
-  font-family: var(--font-mono);
+  padding: 10px 16px;
+  border-radius: var(--r-md);
+  background: var(--surface);
+  font-family: var(--font-body);
   font-weight: 500;
   font-size: var(--fs-sm);
   color: var(--ink);
   display: inline-flex;
   align-items: center;
-  gap: var(--space-2);
+  justify-content: center;
+  gap: 8px;
   white-space: nowrap;
   cursor: pointer;
-  min-height: 36px;
-  transition: border-color 0.1s ease, background 0.1s ease;
+  min-height: 40px;
+  transition: all 0.15s ease;
 }
 
 .btn:hover {
   border-color: var(--border-ui-hover);
+  background: var(--hover-bg);
+  transform: translateY(-1px);
 }
 
 .btn:disabled {
   cursor: not-allowed;
-  opacity: 0.6;
-  box-shadow: none;
+  opacity: 0.5;
   transform: none;
 }
 
@@ -724,11 +724,13 @@ code {
   background: var(--accent);
   color: var(--accent-fg);
   border: 1px solid var(--accent);
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.1);
 }
 
 .btn-primary:hover {
-  background: var(--ink-soft);
-  border-color: var(--ink-soft);
+  background: var(--accent-deep);
+  border-color: var(--accent-deep);
+  box-shadow: 0 4px 12px rgba(99, 102, 241, 0.25);
 }
 
 .hero {
@@ -1531,8 +1533,8 @@ code {
 
 .grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
-  gap: var(--space-3);
+  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  gap: 16px;
   max-width: 100%;
 }
 
@@ -1865,13 +1867,14 @@ code {
 .card {
   width: 100%;
   background: var(--surface);
-  border-radius: var(--r-sm);
+  border-radius: var(--r-md);
   border: 1px solid var(--line);
-  padding: var(--space-4);
+  padding: 18px;
   display: flex;
   flex-direction: column;
-  gap: var(--space-3);
+  gap: 14px;
   box-sizing: border-box;
+  box-shadow: var(--shadow-card);
 }
 
 @keyframes shimmer {
@@ -1974,17 +1977,20 @@ code {
 }
 
 .skill-card {
-  min-height: 140px;
+  min-height: 160px;
+  transition: all 0.2s ease;
 }
 
 .skill-card:hover {
   border-color: var(--border-ui-hover);
+  transform: translateY(-2px);
+  box-shadow: var(--shadow-hover);
 }
 
 .skill-card-header {
   display: flex;
-  align-items: center;
-  gap: 12px;
+  align-items: flex-start;
+  gap: 14px;
 }
 
 .skill-card-tags {
@@ -1994,61 +2000,65 @@ code {
 }
 
 .tag-compact {
-  padding: 3px 10px;
-  font-size: 0.72rem;
+  padding: 4px 10px;
+  font-size: var(--fs-xs);
+  border-radius: var(--r-sm);
 }
 
 .skills-row-meta {
-  font-size: 0.82rem;
+  font-size: var(--fs-xs);
   color: var(--ink-soft);
 }
 
 .skill-card-title {
-  font-family: var(--font-mono);
-  font-size: var(--fs-base);
+  font-family: var(--font-display);
+  font-size: var(--fs-md);
   font-weight: 600;
   margin: 0;
   display: -webkit-box;
   -webkit-line-clamp: 2;
   -webkit-box-orient: vertical;
   overflow: hidden;
+  letter-spacing: -0.01em;
 }
 
 .marketplace-icon {
   --marketplace-icon-accent: var(--accent);
-  --marketplace-icon-wash: color-mix(in srgb, var(--accent) 10%, white);
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  border-radius: 10px;
+  border-radius: var(--r-md);
   flex: 0 0 auto;
-  background:
-    radial-gradient(circle at 24% 20%, color-mix(in srgb, white 78%, transparent) 0 10%, transparent 11%),
-    linear-gradient(145deg, var(--marketplace-icon-wash), color-mix(in srgb, var(--marketplace-icon-accent) 16%, white));
-  border: 1px solid color-mix(in srgb, var(--marketplace-icon-accent) 20%, var(--line));
-  box-shadow: inset 0 1px 0 color-mix(in srgb, white 80%, transparent);
+  background: color-mix(in srgb, var(--marketplace-icon-accent) 12%, var(--surface));
+  border: 1px solid color-mix(in srgb, var(--marketplace-icon-accent) 15%, var(--line));
   color: var(--marketplace-icon-accent);
   overflow: hidden;
+  transition: transform 0.15s ease, box-shadow 0.15s ease;
+}
+
+.marketplace-icon:hover {
+  transform: scale(1.02);
+  box-shadow: 0 4px 12px color-mix(in srgb, var(--marketplace-icon-accent) 15%, transparent);
 }
 
 .marketplace-icon-sm {
-  width: 42px;
-  height: 42px;
+  width: 44px;
+  height: 44px;
 }
 
 .marketplace-icon-md {
-  width: 48px;
-  height: 48px;
+  width: 52px;
+  height: 52px;
 }
 
 .marketplace-icon-glyph {
-  width: 20px;
-  height: 20px;
+  width: 22px;
+  height: 22px;
 }
 
 .marketplace-icon-md .marketplace-icon-glyph {
-  width: 24px;
-  height: 24px;
+  width: 26px;
+  height: 26px;
 }
 
 .marketplace-icon-image {
@@ -2248,19 +2258,25 @@ code {
   display: inline-flex;
   align-items: center;
   gap: 4px;
-  padding: 2px 8px;
+  padding: 4px 10px;
   border-radius: var(--r-sm);
   border: 1px solid var(--line);
-  background: transparent;
+  background: var(--surface-muted);
   color: var(--ink-soft);
   font-size: var(--fs-xs);
   font-weight: 500;
-  font-family: var(--font-mono);
+  font-family: var(--font-body);
+  transition: all 0.15s ease;
+}
+
+.tag:hover {
+  border-color: var(--border-ui-hover);
+  color: var(--ink);
 }
 
 [data-theme="light"] .tag {
-  background: rgba(255, 255, 255, 0.2);
-  color: #cccccc;
+  background: var(--surface);
+  color: var(--ink-soft);
 }
 
 .skill-actions {
