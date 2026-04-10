@@ -89,12 +89,15 @@ export async function validateTransferAcceptPermission(
     return;
   }
 
-  // Org target — publisher must be active and actor must be admin or owner
+  // Target must be an active org publisher — personal publishers are not valid transfer targets
   const db = (ctx as { db: { get: (id: Id<"publishers">) => Promise<Doc<"publishers"> | null> } })
     .db;
   const publisher = await db.get(params.toPublisherId);
   if (!isPublisherActive(publisher)) {
     throw new Error("Publisher not found");
+  }
+  if (publisher!.kind === "user") {
+    throw new Error("No pending transfer found");
   }
   const membership = await getPublisherMembership(ctx, params.toPublisherId, params.actorUserId);
   if (!membership || !isPublisherRoleAllowed(membership.role, ["admin"])) {
