@@ -142,6 +142,9 @@ export const requestTransferInternal = internalMutation({
       if (!toPublisher || toPublisher.deletedAt || toPublisher.deactivatedAt) {
         throw new Error("Target publisher not found");
       }
+      if (toPublisher.kind === "user") {
+        throw new Error("Cannot transfer to a personal publisher");
+      }
     }
 
     const activePending = await getActivePendingTransferForSkill(ctx, args.skillId, now);
