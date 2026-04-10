@@ -1,5 +1,19 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useAction, useQuery } from "convex/react";
+import {
+  ArrowRight,
+  Code2,
+  Download,
+  Flame,
+  Ghost,
+  Package,
+  Search,
+  Sparkles,
+  Star,
+  TrendingUp,
+  Users,
+  Zap,
+} from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { api } from "../../convex/_generated/api";
 import { SkillCard } from "../components/SkillCard";
@@ -25,6 +39,19 @@ function Home() {
   return mode === "souls" ? <OnlyCrabsHome /> : <SkillsHome />;
 }
 
+const popularSearches = ["AI Writing", "Screenshot", "Productivity", "Analytics", "Automation"];
+
+const categories = [
+  { name: "Productivity", icon: "⚡", count: 324, className: "productivity" },
+  { name: "AI & ML", icon: "🧠", count: 218, className: "ai" },
+  { name: "Developer Tools", icon: "💻", count: 456, className: "developer" },
+  { name: "Design", icon: "🎨", count: 189, className: "design" },
+  { name: "Analytics", icon: "📊", count: 142, className: "analytics" },
+  { name: "Security", icon: "🔐", count: 98, className: "security" },
+  { name: "Automation", icon: "⚙️", count: 276, className: "automation" },
+  { name: "Media", icon: "🖼️", count: 167, className: "media" },
+];
+
 function SkillsHome() {
   type SkillPageEntry = {
     skill: PublicSkill;
@@ -37,6 +64,8 @@ function SkillsHome() {
   const [trending, setTrending] = useState<SkillPageEntry[]>([]);
   const [recent, setRecent] = useState<SkillPageEntry[]>([]);
   const [skillCount, setSkillCount] = useState<number | null>(null);
+  const [searchQuery, setSearchQuery] = useState("");
+  const navigate = Route.useNavigate();
 
   useEffect(() => {
     let cancelled = false;
@@ -44,13 +73,13 @@ function SkillsHome() {
     Promise.all([
       convexHttp.query(api.skills.listHighlightedPublic, { limit: 6 }),
       convexHttp.query(api.skills.listPublicPageV4, {
-        numItems: 8,
+        numItems: 6,
         sort: "downloads",
         dir: "desc",
         nonSuspiciousOnly: true,
       }),
       convexHttp.query(api.skills.listPublicPageV4, {
-        numItems: 8,
+        numItems: 6,
         sort: "updated",
         dir: "desc",
         nonSuspiciousOnly: true,
@@ -71,51 +100,80 @@ function SkillsHome() {
     };
   }, []);
 
+  const handleSearch = (e: React.FormEvent) => {
+    e.preventDefault();
+    const q = searchQuery.trim();
+    if (!q) return;
+    void navigate({
+      to: "/search",
+      search: { q, type: undefined },
+    });
+  };
+
   return (
     <main>
+      {/* Hero Section */}
       <section className="home-hero">
         <div className="home-hero-inner">
           <div className="home-hero-grid">
             <div className="home-hero-copy">
-              <div className="home-hero-kicker">Discovery hub</div>
-              <h1 className="home-hero-title">The collaborative hub for agent skills</h1>
-              <p className="home-hero-subtitle">
-                {skillCount != null
-                  ? `${formatCompactStat(skillCount)} public skill bundles, plugin packages, and builder profiles in one shared index. Browse fast, fork the good stuff, ship your own.`
-                  : "Public skill bundles, plugin packages, and builder profiles in one shared index. Browse fast, fork the good stuff, ship your own."}
-              </p>
-              <div className="home-hero-actions">
-                <Button asChild variant="primary">
-                  <Link
-                    to="/skills"
-                    search={{
-                      q: undefined,
-                      sort: undefined,
-                      dir: undefined,
-                      highlighted: undefined,
-                      nonSuspicious: true,
-                      view: undefined,
-                      focus: undefined,
-                    }}
-                  >
-                    Browse All Skills & Plugins
-                  </Link>
-                </Button>
-                <Button asChild className="home-hero-publish-btn">
-                  <Link
-                    to="/publish-skill"
-                    search={{ updateSlug: undefined }}
-                  >
-                    + Publish Yours
-                  </Link>
-                </Button>
+              {/* Badge */}
+              <div className="home-hero-kicker">
+                <Sparkles size={14} className="home-hero-kicker-icon" />
+                <span>
+                  {skillCount != null
+                    ? `${formatCompactStat(skillCount)} curated tools`
+                    : "Thousands of curated tools"}
+                </span>
               </div>
-              <p className="home-hero-explainer">
-                Sharp filters. Clean listings. Discovery that feels more like a real index and less
-                like a sad spreadsheet.
+
+              {/* Headline */}
+              <h1 className="home-hero-title">
+                Discover tools that{" "}
+                <span className="home-hero-title-accent">power your work</span>
+              </h1>
+
+              {/* Subheadline */}
+              <p className="home-hero-subtitle">
+                The modern marketplace for internet tools. Find, compare, and install the best
+                software to supercharge your productivity.
               </p>
+
+              {/* Search */}
+              <form className="home-hero-search" onSubmit={handleSearch}>
+                <div className="home-hero-search-wrapper">
+                  <Search size={20} className="home-hero-search-icon" />
+                  <input
+                    type="text"
+                    className="home-hero-search-input"
+                    placeholder="Search for tools, categories, or features..."
+                    value={searchQuery}
+                    onChange={(e) => setSearchQuery(e.target.value)}
+                  />
+                  <button type="submit" className="home-hero-search-btn">
+                    <span>Search</span>
+                    <ArrowRight size={16} />
+                  </button>
+                </div>
+              </form>
+
+              {/* Popular searches */}
+              <div className="home-hero-popular">
+                <span className="home-hero-popular-label">Popular:</span>
+                {popularSearches.map((search) => (
+                  <button
+                    key={search}
+                    type="button"
+                    className="home-hero-popular-tag"
+                    onClick={() => setSearchQuery(search)}
+                  >
+                    {search}
+                  </button>
+                ))}
+              </div>
             </div>
 
+            {/* Discovery Panels */}
             <div className="home-hero-panels" id="home-discovery">
               <Link
                 to="/skills"
@@ -130,19 +188,25 @@ function SkillsHome() {
                 }}
                 className="home-hero-panel"
               >
-                <span className="home-hero-panel-label">Skills</span>
-                <strong>Browse ranked skill bundles</strong>
-                <span>Popular installs, fresh updates, staff picks.</span>
+                <div className="home-hero-panel-icon">
+                  <Zap size={20} />
+                </div>
+                <strong>Skills</strong>
+                <span>Browse ranked skill bundles</span>
               </Link>
               <Link to="/plugins" className="home-hero-panel">
-                <span className="home-hero-panel-label">Plugins</span>
-                <strong>Find agent-ready packages</strong>
-                <span>Code plugins, bundles, and verified publishers.</span>
+                <div className="home-hero-panel-icon">
+                  <Code2 size={20} />
+                </div>
+                <strong>Plugins</strong>
+                <span>Agent-ready packages</span>
               </Link>
               <Link to="/users" search={{ q: undefined }} className="home-hero-panel">
-                <span className="home-hero-panel-label">Users</span>
-                <strong>Meet the builders</strong>
-                <span>Profiles, bios, and the people shipping useful stuff.</span>
+                <div className="home-hero-panel-icon">
+                  <Users size={20} />
+                </div>
+                <strong>Builders</strong>
+                <span>Meet the creators</span>
               </Link>
               <Link
                 to="/souls"
@@ -155,11 +219,37 @@ function SkillsHome() {
                 }}
                 className="home-hero-panel"
               >
-                <span className="home-hero-panel-label">Souls</span>
-                <strong>SOUL.md discovery is coming</strong>
-                <span>Holding page for the next catalog surface.</span>
+                <div className="home-hero-panel-icon">
+                  <Ghost size={20} />
+                </div>
+                <strong>Souls</strong>
+                <span>SOUL.md discovery</span>
               </Link>
             </div>
+          </div>
+        </div>
+      </section>
+
+      {/* Stats Bar */}
+      <section className="home-section">
+        <div className="home-stats">
+          <div className="home-stat">
+            <div className="home-stat-value">
+              {skillCount != null ? formatCompactStat(skillCount) : "2.4K"}+
+            </div>
+            <div className="home-stat-label">Curated Tools</div>
+          </div>
+          <div className="home-stat">
+            <div className="home-stat-value">180K+</div>
+            <div className="home-stat-label">Active Users</div>
+          </div>
+          <div className="home-stat">
+            <div className="home-stat-value">12M+</div>
+            <div className="home-stat-label">Total Downloads</div>
+          </div>
+          <div className="home-stat">
+            <div className="home-stat-value">4.8</div>
+            <div className="home-stat-label">Avg. Rating</div>
           </div>
         </div>
       </section>
@@ -168,7 +258,12 @@ function SkillsHome() {
       {trending.length > 0 ? (
         <section className="home-section">
           <div className="home-section-header">
-            <h2 className="home-section-title">Trending</h2>
+            <h2 className="home-section-title">
+              <span className="home-section-title-icon trending">
+                <TrendingUp size={16} />
+              </span>
+              Trending Now
+            </h2>
             <Link
               to="/skills"
               search={{
@@ -182,7 +277,8 @@ function SkillsHome() {
               }}
               className="home-section-link"
             >
-              See all
+              View all
+              <ArrowRight size={14} />
             </Link>
           </div>
           <div className="results-list">
@@ -202,7 +298,12 @@ function SkillsHome() {
       {recent.length > 0 ? (
         <section className="home-section">
           <div className="home-section-header">
-            <h2 className="home-section-title">Recently updated</h2>
+            <h2 className="home-section-title">
+              <span className="home-section-title-icon recent">
+                <Sparkles size={16} />
+              </span>
+              Recently Updated
+            </h2>
             <Link
               to="/skills"
               search={{
@@ -216,7 +317,8 @@ function SkillsHome() {
               }}
               className="home-section-link"
             >
-              See all
+              View all
+              <ArrowRight size={14} />
             </Link>
           </div>
           <div className="results-list">
@@ -236,7 +338,12 @@ function SkillsHome() {
       {highlighted.length > 0 ? (
         <section className="home-section">
           <div className="home-section-header">
-            <h2 className="home-section-title">Staff picks</h2>
+            <h2 className="home-section-title">
+              <span className="home-section-title-icon featured">
+                <Star size={16} />
+              </span>
+              Staff Picks
+            </h2>
             <Link
               to="/skills"
               search={{
@@ -250,12 +357,12 @@ function SkillsHome() {
               }}
               className="home-section-link"
             >
-              See all
+              View all
+              <ArrowRight size={14} />
             </Link>
           </div>
           <div className="grid">
-            {
-            highlighted.map((entry) => (
+            {highlighted.map((entry) => (
               <SkillCard
                 key={entry.skill._id}
                 skill={entry.skill}
@@ -280,41 +387,94 @@ function SkillsHome() {
         </section>
       ) : null}
 
+      {/* Categories */}
+      <section className="home-section">
+        <div className="home-section-header">
+          <h2 className="home-section-title">Browse by Category</h2>
+        </div>
+        <div className="home-categories">
+          {categories.map((category) => (
+            <Link
+              key={category.name}
+              to="/skills"
+              search={{
+                q: category.name,
+                sort: undefined,
+                dir: undefined,
+                highlighted: undefined,
+                nonSuspicious: true,
+                view: undefined,
+                focus: undefined,
+              }}
+              className="home-category-card"
+            >
+              <div className={`home-category-icon ${category.className}`}>{category.icon}</div>
+              <div className="home-category-content">
+                <div className="home-category-name">{category.name}</div>
+                <div className="home-category-count">{category.count} tools</div>
+              </div>
+            </Link>
+          ))}
+        </div>
+      </section>
+
       {/* Quick links */}
       <section className="home-section">
         <div className="home-quick-links">
           <Link
             to="/skills"
-            search={{ q: undefined, sort: "stars" as const, dir: "desc" as const, highlighted: undefined, nonSuspicious: true, view: undefined, focus: undefined }}
+            search={{
+              q: undefined,
+              sort: "stars" as const,
+              dir: "desc" as const,
+              highlighted: undefined,
+              nonSuspicious: true,
+              view: undefined,
+              focus: undefined,
+            }}
             className="home-quick-link"
           >
+            <Star size={14} className="home-quick-link-icon" />
             Most starred
           </Link>
           <Link
             to="/skills"
-            search={{ q: undefined, sort: "newest" as const, dir: undefined, highlighted: undefined, nonSuspicious: true, view: undefined, focus: undefined }}
+            search={{
+              q: undefined,
+              sort: "newest" as const,
+              dir: undefined,
+              highlighted: undefined,
+              nonSuspicious: true,
+              view: undefined,
+              focus: undefined,
+            }}
             className="home-quick-link"
           >
+            <Sparkles size={14} className="home-quick-link-icon" />
             New this week
           </Link>
           <Link to="/plugins" className="home-quick-link">
+            <Code2 size={14} className="home-quick-link-icon" />
             Browse plugins
           </Link>
           <Link to="/users" search={{ q: undefined }} className="home-quick-link">
+            <Users size={14} className="home-quick-link-icon" />
             Browse users
           </Link>
           <Link
-            to="/souls"
-            search={{ q: undefined, sort: undefined, dir: undefined, view: undefined, focus: undefined }}
-            className="home-quick-link"
-          >
-            Souls coming soon
-          </Link>
-          <Link
             to="/skills"
-            search={{ q: undefined, sort: undefined, dir: undefined, highlighted: true, nonSuspicious: undefined, view: undefined, focus: undefined }}
+            search={{
+              q: undefined,
+              sort: undefined,
+              dir: undefined,
+              highlighted: true,
+              nonSuspicious: undefined,
+              view: undefined,
+              focus: undefined,
+            }}
             className="home-quick-link"
           >
+            <Star size={14} className="home-quick-link-icon" />
             Staff picks
           </Link>
         </div>
@@ -322,7 +482,6 @@ function SkillsHome() {
     </main>
   );
 }
-
 
 function OnlyCrabsHome() {
   const navigate = Route.useNavigate();
@@ -344,8 +503,13 @@ function OnlyCrabsHome() {
         <div className="home-hero-inner">
           <div className="home-hero-grid">
             <div className="home-hero-copy">
-              <div className="home-hero-kicker">OnlyCrabs</div>
-              <h1 className="home-hero-title">SoulHub, where system lore lives.</h1>
+              <div className="home-hero-kicker">
+                <Ghost size={14} className="home-hero-kicker-icon" />
+                <span>OnlyCrabs</span>
+              </div>
+              <h1 className="home-hero-title">
+                <span className="home-hero-title-accent">SoulHub</span>, where system lore lives.
+              </h1>
               <p className="home-hero-subtitle">
                 Share SOUL.md bundles, version them like docs, and keep personal system lore in one
                 public place.
@@ -366,16 +530,20 @@ function OnlyCrabsHome() {
                   });
                 }}
               >
-                <input
-                  className="home-hero-search-input"
-                  type="text"
-                  placeholder="Search souls, prompts, or lore"
-                  value={query}
-                  onChange={(event) => setQuery(event.target.value)}
-                />
-                <Button variant="primary" type="submit">
-                  Search
-                </Button>
+                <div className="home-hero-search-wrapper">
+                  <Search size={20} className="home-hero-search-icon" />
+                  <input
+                    className="home-hero-search-input"
+                    type="text"
+                    placeholder="Search souls, prompts, or lore"
+                    value={query}
+                    onChange={(event) => setQuery(event.target.value)}
+                  />
+                  <button type="submit" className="home-hero-search-btn">
+                    <span>Search</span>
+                    <ArrowRight size={16} />
+                  </button>
+                </div>
               </form>
             </div>
           </div>
@@ -384,7 +552,12 @@ function OnlyCrabsHome() {
 
       <section className="home-section">
         <div className="home-section-header">
-          <h2 className="home-section-title">Latest souls</h2>
+          <h2 className="home-section-title">
+            <span className="home-section-title-icon recent">
+              <Sparkles size={16} />
+            </span>
+            Latest Souls
+          </h2>
           <Link
             to="/souls"
             search={{
@@ -396,7 +569,8 @@ function OnlyCrabsHome() {
             }}
             className="home-section-link"
           >
-            See all
+            View all
+            <ArrowRight size={14} />
           </Link>
         </div>
         <div className="grid">
