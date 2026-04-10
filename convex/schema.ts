@@ -1305,6 +1305,7 @@ const skillOwnershipTransfers = defineTable({
   .index("by_from_user", ["fromUserId"])
   .index("by_to_user", ["toUserId"])
   .index("by_to_user_status", ["toUserId", "status"])
+  .index("by_to_publisher_status", ["toPublisherId", "status"])
   .index("by_from_user_status", ["fromUserId", "status"])
   .index("by_skill_status", ["skillId", "status"]);
 

@@ -1036,13 +1036,6 @@ async function handleTransferDecision(
   }
   if (!pendingTransfer) return text("No pending transfer found", 404, headers);
 
-  const mutation =
-    decision === "accept"
-      ? internal.skillTransfers.acceptTransferInternal
-      : decision === "reject"
-        ? internal.skillTransfers.rejectTransferInternal
-        : internal.skillTransfers.cancelTransferInternal;
-
   try {
     // For accept, resolve optional publisher handle to forward publisherId
     let publisherId: Id<"publishers"> | undefined;
@@ -1063,15 +1056,19 @@ async function handleTransferDecision(
       }
     }
 
-    const mutationArgs: Record<string, unknown> = {
+    const baseArgs = {
       actorUserId: transferContext.userId,
       transferId: pendingTransfer._id,
     };
-    if (publisherId) {
-      mutationArgs.publisherId = publisherId;
-    }
 
-    const result = await ctx.runMutation(mutation, mutationArgs as never);
+    const result = await (decision === "accept"
+      ? ctx.runMutation(internal.skillTransfers.acceptTransferInternal, {
+          ...baseArgs,
+          publisherId,
+        })
+      : decision === "reject"
+        ? ctx.runMutation(internal.skillTransfers.rejectTransferInternal, baseArgs)
+        : ctx.runMutation(internal.skillTransfers.cancelTransferInternal, baseArgs));
     return json(result, 200, headers);
   } catch (error) {
     return transferErrorToResponse(error, headers);

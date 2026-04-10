@@ -91,12 +91,13 @@ async function validatePendingTransferForActor(
     // validateTransferAcceptPermission handles org membership validation separately
     throw new Error("No pending transfer found");
   }
-  if (
-    params.role === "sender" &&
-    transfer.fromUserId !== params.actorUserId &&
-    !transfer.fromPublisherId
-  ) {
-    throw new Error("No pending transfer found");
+  if (params.role === "sender") {
+    if (!transfer.fromPublisherId && transfer.fromUserId !== params.actorUserId) {
+      // Personal transfer: actor must be the original sender
+      throw new Error("No pending transfer found");
+    }
+    // Org-owned transfer: actor's org membership is verified by the caller
+    // (e.g. cancelTransferInternal calls validateTransferOwnership after this)
   }
   if (transfer.status !== "pending") throw new Error("No pending transfer found");
   if (isTransferExpired(transfer, params.now)) {
@@ -351,22 +352,55 @@ export const listIncomingInternal = internalQuery({
     const now = Date.now();
     await requireActiveUserById(ctx, args.userId);
 
-    const transfers = await ctx.db
+    // Query transfers directed at this user personally
+    const userTransfers = await ctx.db
       .query("skillOwnershipTransfers")
       .withIndex("by_to_user_status", (q) => q.eq("toUserId", args.userId).eq("status", "pending"))
       .collect();
+
+    // Query transfers directed at orgs where this user is an admin or owner
+    const memberships = await ctx.db
+      .query("publisherMembers")
+      .withIndex("by_user", (q) => q.eq("userId", args.userId))
+      .collect();
+    const adminPublisherIds = memberships
+      .filter((m) => m.role === "owner" || m.role === "admin")
+      .map((m) => m.publisherId);
+
+    const orgTransferArrays = await Promise.all(
+      adminPublisherIds.map((publisherId) =>
+        ctx.db
+          .query("skillOwnershipTransfers")
+          .withIndex("by_to_publisher_status", (q) =>
+            q.eq("toPublisherId", publisherId).eq("status", "pending"),
+          )
+          .collect(),
+      ),
+    );
+    const orgTransfers = orgTransferArrays.flat();
+
+    // Merge and deduplicate by transfer ID
+    const seen = new Set<string>();
+    const allTransfers: TransferDoc[] = [];
+    for (const t of [...userTransfers, ...orgTransfers]) {
+      if (!seen.has(t._id)) {
+        seen.add(t._id);
+        allTransfers.push(t);
+      }
+    }
 
     const results: Array<{
       type: "skill";
       _id: Id<"skillOwnershipTransfers">;
       skill: { _id: Id<"skills">; slug: string; displayName: string };
       fromUser: { _id: Id<"users">; handle: string | null; displayName: string | null };
+      toPublisherId?: Id<"publishers">;
       message: string | undefined;
       requestedAt: number;
       expiresAt: number;
     }> = [];
 
-    for (const transfer of transfers) {
+    for (const transfer of allTransfers) {
       if (isTransferExpired(transfer, now)) continue;
       const skill = await ctx.db.get(transfer.skillId);
       if (!skill || skill.softDeletedAt) continue;
@@ -382,6 +416,7 @@ export const listIncomingInternal = internalQuery({
           handle: fromUser.handle ?? null,
           displayName: fromUser.displayName ?? null,
         },
+        toPublisherId: transfer.toPublisherId ?? undefined,
         message: transfer.message,
         requestedAt: transfer.requestedAt,
         expiresAt: transfer.expiresAt,
