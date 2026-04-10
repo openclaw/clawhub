@@ -359,5 +359,27 @@ describe("transfers", () => {
         }),
       ).rejects.toThrow("No pending transfer found");
     });
+
+    it("rejects personal publisher as transfer target (kind: user)", async () => {
+      const ctx = {
+        db: {
+          normalizeId: vi.fn(),
+          get: vi.fn(async () => ({
+            _id: "publishers:alice",
+            kind: "user",
+            handle: "alice",
+          })),
+          query: vi.fn(),
+        },
+      };
+
+      await expect(
+        validateTransferAcceptPermission(ctx as never, {
+          actorUserId: "users:1" as never,
+          toUserId: "users:1" as never,
+          toPublisherId: "publishers:alice" as never,
+        }),
+      ).rejects.toThrow("No pending transfer found");
+    });
   });
 });
