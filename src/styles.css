@@ -6726,14 +6726,20 @@ html.theme-transition::view-transition-new(theme) {
 .about-enforcement {
   display: grid;
   grid-template-columns: minmax(0, 1.2fr) minmax(280px, 0.8fr);
-  gap: 20px;
+  gap: var(--space-5);
   align-items: start;
-  padding: 24px;
+  padding: var(--space-5);
   border: 1px solid var(--line);
-  border-radius: 28px;
+  border-radius: var(--r-xl);
   background:
     linear-gradient(180deg, color-mix(in srgb, var(--surface) 88%, transparent), transparent),
     color-mix(in srgb, var(--surface-muted) 58%, transparent);
+}
+
+.about-hero-copy {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
 }
 
 .about-title {
@@ -6777,39 +6783,62 @@ html.theme-transition::view-transition-new(theme) {
 
 .about-section {
   display: grid;
-  gap: 12px;
+  gap: var(--space-4);
+}
+
+.about-section .home-section-title {
+  font-size: var(--fs-lg);
+  font-weight: 600;
+  color: var(--ink);
 }
 
 .about-grid,
 .about-patterns,
 .souls-coming-grid {
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
   gap: 14px;
 }
 
 .about-rule-card,
 .about-pattern {
-  display: grid;
+  display: flex;
+  flex-direction: column;
   gap: 10px;
-  padding: 18px;
+  padding: 20px;
   border: 1px solid var(--line);
-  border-radius: 22px;
+  border-radius: var(--r-lg);
   background: color-mix(in srgb, var(--surface) 88%, transparent);
+  transition: border-color var(--transition-fast), box-shadow var(--transition-fast);
+}
+
+.about-rule-card:hover {
+  border-color: var(--border-ui-hover);
+  box-shadow: 0 4px 12px rgba(220, 38, 38, 0.08);
 }
 
 .about-rule-card h2 {
   margin: 0;
   font-size: 1rem;
   font-family: var(--font-display);
+  font-weight: 600;
   letter-spacing: -0.02em;
+  color: var(--accent);
 }
 
-.about-rule-card p,
+.about-rule-card p {
+  margin: 0;
+  flex: 1;
+  color: var(--ink-soft);
+  line-height: 1.6;
+  font-size: var(--fs-sm);
+}
+
 .about-pattern {
   margin: 0;
   color: var(--ink-soft);
   line-height: 1.6;
+  font-size: var(--fs-sm);
 }
 
 .souls-coming-page {
@@ -6824,7 +6853,16 @@ html.theme-transition::view-transition-new(theme) {
 
 @media (max-width: 860px) {
   .about-hero,
-  .about-enforcement,
+  .about-enforcement {
+    grid-template-columns: 1fr;
+  }
+  
+  .about-callout {
+    order: -1;
+  }
+}
+
+@media (max-width: 640px) {
   .about-grid,
   .about-patterns,
   .souls-coming-grid {
