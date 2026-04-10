@@ -80,8 +80,15 @@ export const Route = createFileRoute("/plugins/")({
 function PluginsIndex() {
   const search = Route.useSearch();
   const navigate = Route.useNavigate();
-  const { items, nextCursor, rateLimited, retryAfterSeconds, apiError } =
-    Route.useLoaderData() as PluginsLoaderData;
+  const loaderData = Route.useLoaderData() as PluginsLoaderData | undefined;
+  
+  // Defensive handling for when loader data is unavailable (SSR errors, etc.)
+  const items = loaderData?.items ?? [];
+  const nextCursor = loaderData?.nextCursor ?? null;
+  const rateLimited = loaderData?.rateLimited ?? false;
+  const retryAfterSeconds = loaderData?.retryAfterSeconds ?? null;
+  const apiError = loaderData?.apiError ?? !loaderData;
+  
   const [query, setQuery] = useState(search.q ?? "");
   const [sidebarOpen, setSidebarOpen] = useState(false);
 
