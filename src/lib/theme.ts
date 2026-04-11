@@ -51,3 +51,32 @@ export function useThemeMode() {
 
   return { mode, setMode };
 }
+
+export type ResolvedTheme = "light" | "dark";
+
+export function getResolvedTheme(): ResolvedTheme {
+  if (typeof document === "undefined") return "light";
+  return document.documentElement.dataset.theme === "dark" ? "dark" : "light";
+}
+
+/**
+ * Returns the currently active theme ("light" | "dark") and reactively updates
+ * whenever the theme changes. Observes the `data-theme` attribute on `<html>`
+ * which `applyTheme` sets on every toggle.
+ */
+export function useResolvedTheme(): ResolvedTheme {
+  const [theme, setTheme] = useState<ResolvedTheme>(getResolvedTheme);
+
+  useEffect(() => {
+    setTheme(getResolvedTheme());
+
+    const observer = new MutationObserver(() => setTheme(getResolvedTheme()));
+    observer.observe(document.documentElement, {
+      attributes: true,
+      attributeFilter: ["data-theme"],
+    });
+    return () => observer.disconnect();
+  }, []);
+
+  return theme;
+}

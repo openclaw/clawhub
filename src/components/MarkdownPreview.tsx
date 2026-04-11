@@ -1,6 +1,7 @@
 import { parse } from "@create-markdown/core";
 import { blocksToHTML, renderAsync, shikiPlugin } from "@create-markdown/preview";
 import { useEffect, useRef, useState } from "react";
+import { useResolvedTheme } from "../lib/theme";
 import { cn } from "../lib/utils";
 
 interface MarkdownPreviewProps {
@@ -8,28 +9,6 @@ interface MarkdownPreviewProps {
   className?: string;
   /** Enable Shiki syntax highlighting for code blocks (async). Default: true */
   highlight?: boolean;
-}
-
-function getResolvedTheme(): "light" | "dark" {
-  if (typeof document === "undefined") return "light";
-  return document.documentElement.dataset.theme === "dark" ? "dark" : "light";
-}
-
-function useResolvedTheme(): "light" | "dark" {
-  const [theme, setTheme] = useState(getResolvedTheme);
-
-  useEffect(() => {
-    setTheme(getResolvedTheme());
-
-    const observer = new MutationObserver(() => setTheme(getResolvedTheme()));
-    observer.observe(document.documentElement, {
-      attributes: true,
-      attributeFilter: ["data-theme"],
-    });
-    return () => observer.disconnect();
-  }, []);
-
-  return theme;
 }
 
 /**
