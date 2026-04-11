@@ -64,8 +64,8 @@
   --font-display: "Bricolage Grotesque", "Manrope", sans-serif;
   --font-body: "Manrope", "Bricolage Grotesque", sans-serif;
   --font-mono:
-    "IBM Plex Mono", ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono",
-    "Courier New", monospace;
+    "IBM Plex Mono", ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas,
+    "Liberation Mono", "Courier New", monospace;
 }
 
 [data-theme="dark"] {
@@ -105,8 +105,17 @@ body {
   font-family: var(--font-body);
   color: var(--ink);
   background:
-    radial-gradient(1200px 800px at 20% -10%, var(--bg-glow-1) 0%, transparent 60%),
-    radial-gradient(900px 600px at 90% 10%, var(--bg-glow-2) 0%, transparent 60%), var(--bg);
+    radial-gradient(
+      1200px 800px at 20% -10%,
+      var(--bg-glow-1) 0%,
+      transparent 60%
+    ),
+    radial-gradient(
+      900px 600px at 90% 10%,
+      var(--bg-glow-2) 0%,
+      transparent 60%
+    ),
+    var(--bg);
   min-height: 100vh;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
@@ -181,7 +190,11 @@ code {
 
 .hero-install-code {
   border: 1px solid color-mix(in srgb, var(--accent) 45%, var(--line));
-  background: linear-gradient(180deg, rgba(255, 255, 255, 0.92), rgba(255, 250, 247, 0.9));
+  background: linear-gradient(
+    180deg,
+    rgba(255, 255, 255, 0.92),
+    rgba(255, 250, 247, 0.9)
+  );
   border-radius: 12px;
   padding: 12px 14px;
   font-size: 0.9rem;
@@ -203,7 +216,11 @@ code {
 
 [data-theme="dark"] .hero-install-code {
   border-color: color-mix(in srgb, var(--accent) 52%, var(--line));
-  background: linear-gradient(180deg, rgba(26, 20, 18, 0.9), rgba(20, 16, 14, 0.85));
+  background: linear-gradient(
+    180deg,
+    rgba(26, 20, 18, 0.9),
+    rgba(20, 16, 14, 0.85)
+  );
   color: #f5e9e3;
   box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.05);
 }
@@ -345,7 +362,11 @@ code {
   overflow-x: auto;
   -webkit-overflow-scrolling: touch;
   background:
-    radial-gradient(1200px 220px at 12% 0%, rgba(255, 107, 74, 0.08), transparent 55%),
+    radial-gradient(
+      1200px 220px at 12% 0%,
+      rgba(255, 107, 74, 0.08),
+      transparent 55%
+    ),
     linear-gradient(180deg, rgba(255, 255, 255, 0.92), rgba(255, 250, 247, 0.9));
   border: 1px solid rgba(255, 107, 74, 0.2);
   border-radius: 12px;
@@ -371,7 +392,11 @@ code {
 
 [data-theme="dark"] .markdown pre {
   background:
-    radial-gradient(900px 260px at 12% 0%, rgba(255, 168, 142, 0.08), transparent 55%),
+    radial-gradient(
+      900px 260px at 12% 0%,
+      rgba(255, 168, 142, 0.08),
+      transparent 55%
+    ),
     linear-gradient(180deg, rgba(14, 22, 32, 0.95), rgba(10, 16, 24, 0.92));
   border: 1px solid rgba(255, 168, 142, 0.22);
   color: rgba(244, 238, 234, 0.96);
@@ -388,12 +413,6 @@ code {
 [data-theme="dark"] .markdown pre code {
   background: transparent;
   color: inherit;
-}
-
-/* Strip Shiki's inline background so the CSS gradient on .markdown pre shows. */
-.markdown .shiki,
-.markdown .shiki code {
-  background: transparent !important;
 }
 
 /* ── Markdown tables ── */
@@ -489,10 +508,14 @@ code {
 
 @keyframes theme-circle-transition {
   0% {
-    clip-path: circle(0% at var(--theme-switch-x, 50%) var(--theme-switch-y, 50%));
+    clip-path: circle(
+      0% at var(--theme-switch-x, 50%) var(--theme-switch-y, 50%)
+    );
   }
   100% {
-    clip-path: circle(150% at var(--theme-switch-x, 50%) var(--theme-switch-y, 50%));
+    clip-path: circle(
+      150% at var(--theme-switch-x, 50%) var(--theme-switch-y, 50%)
+    );
   }
 }
 
