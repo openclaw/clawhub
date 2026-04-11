@@ -260,7 +260,7 @@ function FilterChip({
       type="button"
       aria-pressed={active}
       onClick={onClick}
-      className={`inline-flex items-center gap-1.5 rounded-[var(--radius-sm)] border border-[rgba(29,59,78,0.22)] bg-[rgba(255,255,255,0.94)] px-3.5 min-h-[36px] text-xs font-semibold transition-all duration-150 ${
+      className={`inline-flex items-center gap-1.5 rounded-[var(--radius-sm)] border border-[rgba(29,59,78,0.22)] bg-[rgba(255,255,255,0.94)] dark:border-[rgba(255,255,255,0.12)] dark:bg-[rgba(14,28,37,0.84)] px-3.5 min-h-[36px] text-xs font-semibold transition-all duration-150 ${
         active
           ? "border-[color:var(--accent)]/30 bg-[color:var(--accent)]/10 text-[color:var(--accent)]"
           : "text-[color:var(--ink-soft)] hover:border-[color:var(--border-ui-hover)] hover:text-[color:var(--ink)] dark:text-[rgba(245,238,232,0.88)] dark:hover:text-[rgba(245,238,232,0.96)]"
