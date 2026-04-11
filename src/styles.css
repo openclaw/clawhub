@@ -390,6 +390,12 @@ code {
   color: inherit;
 }
 
+/* Strip Shiki's inline background so the CSS gradient on .markdown pre shows. */
+.markdown .shiki,
+.markdown .shiki code {
+  background: transparent !important;
+}
+
 /* ── Markdown tables ── */
 .markdown table {
   width: 100%;
