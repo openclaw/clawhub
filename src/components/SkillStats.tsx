@@ -8,9 +8,13 @@ type SkillMetricsStats = SkillStatsTriplet & {
 export function SkillStatsTripletLine({ stats }: { stats: SkillStatsTriplet }) {
   const formatted = formatSkillStatsTriplet(stats);
   return (
-    <>
-      ⭐ {formatted.stars} · <Package size={13} aria-hidden="true" /> {formatted.downloads}
-    </>
+    <span className="inline-flex items-center gap-1.5">
+      <span className="inline-flex items-center gap-0.5">⭐ {formatted.stars}</span>
+      <span className="opacity-40">·</span>
+      <span className="inline-flex items-center gap-0.5">
+        <Package size={13} aria-hidden="true" /> {formatted.downloads}
+      </span>
+    </span>
   );
 }
 

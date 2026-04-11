@@ -10,10 +10,15 @@ export function SoulStatsTripletLine({
 }) {
   const formatted = formatSoulStatsTriplet(stats);
   return (
-    <>
-      ⭐ {formatted.stars} · <Package size={13} aria-hidden="true" /> {formatted.downloads} ·{" "}
-      {formatted.versions} {versionSuffix}
-    </>
+    <span className="inline-flex items-center gap-1.5">
+      <span className="inline-flex items-center gap-0.5">⭐ {formatted.stars}</span>
+      <span className="opacity-40">·</span>
+      <span className="inline-flex items-center gap-0.5">
+        <Package size={13} aria-hidden="true" /> {formatted.downloads}
+      </span>
+      <span className="opacity-40">·</span>
+      <span>{formatted.versions} {versionSuffix}</span>
+    </span>
   );
 }
 
