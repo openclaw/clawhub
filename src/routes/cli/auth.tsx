@@ -14,7 +14,11 @@ export const Route = createFileRoute("/cli/auth")({
   component: CliAuth,
 });
 
-function CliAuth() {
+type CliAuthProps = {
+  navigate?: (url: string) => void;
+};
+
+export function CliAuth({ navigate = (url: string) => window.location.assign(url) }: CliAuthProps = {}) {
   const { isAuthenticated, isLoading, me } = useAuthStatus();
   const { error: authError, clear: clearAuthError } = useAuthError();
   const createToken = useMutation(api.tokens.create);
@@ -67,7 +71,7 @@ function CliAuth() {
         setCallbackUrl(callbackUrl);
         setStatus("Redirecting to CLI…");
       });
-      window.location.assign(callbackUrl);
+      navigate(callbackUrl);
     };
 
     void run().catch((error) => {
@@ -75,7 +79,7 @@ function CliAuth() {
       setStatus(message);
       setToken(null);
     });
-  }, [createToken, isAuthenticated, label, me, redirectUri, registry, safeRedirect, state]);
+  }, [createToken, isAuthenticated, label, me, navigate, redirectUri, registry, safeRedirect, state]);
 
   if (!safeRedirect) {
     return (
