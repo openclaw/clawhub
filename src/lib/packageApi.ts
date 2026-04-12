@@ -24,6 +24,13 @@ export type PackageListItem = {
   verificationTier?: string | null;
 };
 
+export type PackageStats = {
+  downloads: number;
+  installs: number;
+  stars: number;
+  versions: number;
+};
+
 export type PackageDetailResponse = {
   package: {
     _id?: string;
@@ -41,6 +48,7 @@ export type PackageDetailResponse = {
     compatibility?: PackageCompatibility | null;
     capabilities?: PackageCapabilitySummary | null;
     verification?: PackageVerificationSummary | null;
+    stats?: PackageStats;
   } | null;
   owner: {
     handle?: string | null;

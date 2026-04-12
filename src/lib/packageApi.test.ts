@@ -162,6 +162,45 @@ describe("fetchPackages", () => {
     });
   });
 
+  it("preserves package stats from package detail responses", async () => {
+    vi.stubEnv("VITE_CONVEX_URL", "https://registry.example");
+    vi.spyOn(globalThis, "fetch").mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          package: {
+            name: "demo-plugin",
+            displayName: "Demo Plugin",
+            family: "code-plugin",
+            channel: "community",
+            isOfficial: false,
+            createdAt: 1,
+            updatedAt: 2,
+            tags: {},
+            stats: {
+              downloads: 7,
+              installs: 3,
+              stars: 2,
+              versions: 4,
+            },
+          },
+          owner: null,
+        }),
+        { status: 200 },
+      ),
+    );
+
+    await expect(fetchPackageDetail("demo-plugin")).resolves.toMatchObject({
+      package: {
+        stats: {
+          downloads: 7,
+          installs: 3,
+          stars: 2,
+          versions: 4,
+        },
+      },
+    });
+  });
+
   it("forwards request cookies and includes credentials for package detail fetches", async () => {
     vi.stubEnv("VITE_CONVEX_SITE_URL", "https://app.example");
     vi.stubEnv("VITE_CONVEX_URL", "https://registry.example");
