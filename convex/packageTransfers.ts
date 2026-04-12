@@ -1,5 +1,6 @@
 import { v } from "convex/values";
 import type { Doc, Id } from "./_generated/dataModel";
+import type { MutationCtx } from "./_generated/server";
 import { internalMutation, internalQuery, mutation, query } from "./functions";
 import { assertModerator, requireUser } from "./lib/access";
 import {
@@ -46,7 +47,7 @@ async function getActivePendingTransferForPackage(
                 field: "packageId",
                 value: Id<"packages">,
               ) => {
-                eq: (field: "status", value: "pending") => unknown;
+                eq: (field: "status", value: "pending" | "pending_admin_approval") => unknown;
               };
             }) => unknown,
           ) => { collect: () => Promise<TransferDoc[]> };
@@ -55,10 +56,17 @@ async function getActivePendingTransferForPackage(
     }
   ).db;
 
-  const transfers = await db
+  const pendingTransfers = await db
     .query("packageOwnershipTransfers")
     .withIndex("by_package_status", (q) => q.eq("packageId", packageId).eq("status", "pending"))
     .collect();
+  const pendingApprovalTransfers = await db
+    .query("packageOwnershipTransfers")
+    .withIndex("by_package_status", (q) =>
+      q.eq("packageId", packageId).eq("status", "pending_admin_approval"),
+    )
+    .collect();
+  const transfers = [...pendingTransfers, ...pendingApprovalTransfers];
 
   let active: TransferDoc | null = null;
   for (const transfer of transfers) {
@@ -535,15 +543,7 @@ export const listPendingApprovals = query({
 });
 
 export async function approvePendingApprovalAsModerator(
-  ctx: {
-    db: {
-      get: (
-        id: Id<"users"> | Id<"packages"> | Id<"publishers"> | Id<"packageOwnershipTransfers">,
-      ) => Promise<unknown>;
-      patch: (id: string, value: Record<string, unknown>) => Promise<unknown>;
-      insert: (table: "auditLogs", value: Record<string, unknown>) => Promise<unknown>;
-    };
-  },
+  ctx: Pick<MutationCtx, "db">,
   actorUserId: Id<"users">,
   transferId: Id<"packageOwnershipTransfers">,
 ) {

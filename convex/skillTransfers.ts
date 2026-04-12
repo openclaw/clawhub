@@ -1,5 +1,6 @@
 import { v } from "convex/values";
 import type { Doc, Id } from "./_generated/dataModel";
+import type { MutationCtx } from "./_generated/server";
 import { internalMutation, internalQuery, mutation, query } from "./functions";
 import { assertModerator, requireUser } from "./lib/access";
 import {
@@ -39,7 +40,7 @@ async function getActivePendingTransferForSkill(ctx: unknown, skillId: Id<"skill
                 field: "skillId",
                 value: Id<"skills">,
               ) => {
-                eq: (field: "status", value: "pending") => unknown;
+                eq: (field: "status", value: "pending" | "pending_admin_approval") => unknown;
               };
             }) => unknown,
           ) => { collect: () => Promise<TransferDoc[]> };
@@ -48,10 +49,17 @@ async function getActivePendingTransferForSkill(ctx: unknown, skillId: Id<"skill
     }
   ).db;
 
-  const transfers = await db
+  const pendingTransfers = await db
     .query("skillOwnershipTransfers")
     .withIndex("by_skill_status", (q) => q.eq("skillId", skillId).eq("status", "pending"))
     .collect();
+  const pendingApprovalTransfers = await db
+    .query("skillOwnershipTransfers")
+    .withIndex("by_skill_status", (q) =>
+      q.eq("skillId", skillId).eq("status", "pending_admin_approval"),
+    )
+    .collect();
+  const transfers = [...pendingTransfers, ...pendingApprovalTransfers];
 
   let active: TransferDoc | null = null;
   for (const transfer of transfers) {
@@ -505,19 +513,7 @@ export const listPendingApprovals = query({
 });
 
 export async function approvePendingApprovalAsModerator(
-  ctx: {
-    db: {
-      get: (id: Id<"users"> | Id<"skills"> | Id<"publishers"> | Id<"skillOwnershipTransfers">) => Promise<unknown>;
-      patch: (id: string, value: Record<string, unknown>) => Promise<unknown>;
-      insert: (table: "auditLogs", value: Record<string, unknown>) => Promise<unknown>;
-      query: (table: "skillSlugAliases") => {
-        withIndex: (
-          indexName: "by_skill",
-          cb: (q: { eq: (field: "skillId", value: Id<"skills">) => unknown }) => unknown,
-        ) => { collect: () => Promise<Array<{ _id: string }>> };
-      };
-    };
-  },
+  ctx: Pick<MutationCtx, "db">,
   actorUserId: Id<"users">,
   transferId: Id<"skillOwnershipTransfers">,
 ) {

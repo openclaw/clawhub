@@ -34,6 +34,19 @@ const SKILL_CAPABILITY_LABELS: Record<string, string> = {
   "posts-externally": "Posts externally",
 };
 
+const apiRefs = api as typeof api & {
+  skillTransfers: {
+    listPendingApprovals: typeof api.skills.listRecentVersions;
+    approvePendingApproval: unknown;
+    rejectPendingApproval: unknown;
+  };
+  packageTransfers: {
+    listPendingApprovals: typeof api.skills.listRecentVersions;
+    approvePendingApproval: unknown;
+    rejectPendingApproval: unknown;
+  };
+};
+
 const SKILL_AUDIT_LOG_LIMIT = 10;
 
 type ManagementUserSummary = {
@@ -182,11 +195,11 @@ function Management() {
     staff ? { limit: 20 } : "skip",
   ) as DuplicateCandidateEntry[] | undefined;
   const pendingSkillTransferApprovals = useQuery(
-    api.skillTransfers.listPendingApprovals,
+    apiRefs.skillTransfers.listPendingApprovals,
     staff ? { limit: 25 } : "skip",
   ) as PendingSkillTransferApprovalEntry[] | undefined;
   const pendingPackageTransferApprovals = useQuery(
-    api.packageTransfers.listPendingApprovals,
+    apiRefs.packageTransfers.listPendingApprovals,
     staff ? { limit: 25 } : "skip",
   ) as PendingPackageTransferApprovalEntry[] | undefined;
 
@@ -203,10 +216,18 @@ function Management() {
   const setSkillManualOverride = useMutation(api.skills.setSkillManualOverride);
   const clearSkillManualOverride = useMutation(api.skills.clearSkillManualOverride);
   const setSkillCapabilityTags = useMutation(api.skills.setSkillCapabilityTags);
-  const approveSkillTransferApproval = useMutation(api.skillTransfers.approvePendingApproval);
-  const rejectSkillTransferApproval = useMutation(api.skillTransfers.rejectPendingApproval);
-  const approvePackageTransferApproval = useMutation(api.packageTransfers.approvePendingApproval);
-  const rejectPackageTransferApproval = useMutation(api.packageTransfers.rejectPendingApproval);
+  const approveSkillTransferApproval = useMutation(
+    apiRefs.skillTransfers.approvePendingApproval as never,
+  ) as unknown as (args: { transferId: Id<"skillOwnershipTransfers"> }) => Promise<unknown>;
+  const rejectSkillTransferApproval = useMutation(
+    apiRefs.skillTransfers.rejectPendingApproval as never,
+  ) as unknown as (args: { transferId: Id<"skillOwnershipTransfers"> }) => Promise<unknown>;
+  const approvePackageTransferApproval = useMutation(
+    apiRefs.packageTransfers.approvePendingApproval as never,
+  ) as unknown as (args: { transferId: Id<"packageOwnershipTransfers"> }) => Promise<unknown>;
+  const rejectPackageTransferApproval = useMutation(
+    apiRefs.packageTransfers.rejectPendingApproval as never,
+  ) as unknown as (args: { transferId: Id<"packageOwnershipTransfers"> }) => Promise<unknown>;
 
   const [selectedDuplicate, setSelectedDuplicate] = useState("");
   const [selectedOwner, setSelectedOwner] = useState("");
