@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 import {
   acceptTransferInternal,
+  listIncomingInternal,
   requestTransferInternal,
 } from "./packageTransfers";
 
@@ -23,6 +24,12 @@ const acceptTransferInternalHandler = (
     actorUserId: string;
     transferId: string;
     publisherId?: string;
+  }>
+)._handler;
+
+const listIncomingInternalHandler = (
+  listIncomingInternal as unknown as WrappedHandler<{
+    userId: string;
   }>
 )._handler;
 
@@ -190,7 +197,7 @@ describe("packageTransfers", () => {
     ).rejects.toThrow(/yourself/i);
   });
 
-  it("acceptTransferInternal updates package ownerUserId + ownerPublisherId", async () => {
+  it("acceptTransferInternal queues package transfer for management approval", async () => {
     const patch = vi.fn(async () => {});
     const insert = vi.fn(async () => "auditLogs:1");
     const newPublisher = {
@@ -276,19 +283,26 @@ describe("packageTransfers", () => {
         actorUserId: "users:2",
         transferId: "packageOwnershipTransfers:1",
       } as never,
-    )) as { ok: boolean; packageName: string };
+    )) as { ok: boolean; packageName: string; status: string };
 
-    expect(result).toEqual({ ok: true, packageName: "my-pkg" });
-    expect(patch).toHaveBeenCalledWith(
+    expect(result).toEqual({
+      ok: true,
+      packageName: "my-pkg",
+      status: "pending_admin_approval",
+    });
+    expect(patch).not.toHaveBeenCalledWith(
       "packages:1",
       expect.objectContaining({
         ownerUserId: "users:2",
-        ownerPublisherId: "publishers:alice",
       }),
     );
     expect(patch).toHaveBeenCalledWith(
       "packageOwnershipTransfers:1",
-      expect.objectContaining({ status: "accepted" }),
+      expect.objectContaining({
+        status: "pending_admin_approval",
+        toUserId: "users:2",
+        toPublisherId: "publishers:alice",
+      }),
     );
   });
 
@@ -343,5 +357,88 @@ describe("packageTransfers", () => {
       "packages:1",
       expect.objectContaining({ ownerUserId: "users:2" }),
     );
+  });
+
+  it("listIncomingInternal includes org-targeted package transfers for org admins", async () => {
+    const result = (await listIncomingInternalHandler(
+      {
+        db: {
+          get: vi.fn(async (id: string) => {
+            if (id === "users:2") return { _id: "users:2", handle: "alice" };
+            if (id === "packages:1") {
+              return {
+                _id: "packages:1",
+                name: "my-pkg",
+                displayName: "My Package",
+              };
+            }
+            if (id === "users:1") {
+              return {
+                _id: "users:1",
+                handle: "owner",
+                displayName: "Owner",
+              };
+            }
+            return null;
+          }),
+          query: vi.fn((table: string) => {
+            if (table === "packageOwnershipTransfers") {
+              return {
+                withIndex: (indexName: string) => {
+                  if (indexName === "by_to_user_status") {
+                    return { collect: async () => [] };
+                  }
+                  if (indexName === "by_to_publisher_status") {
+                    return {
+                      collect: async () => [
+                        {
+                          _id: "packageOwnershipTransfers:1",
+                          packageId: "packages:1",
+                          fromUserId: "users:1",
+                          toUserId: "users:9",
+                          toPublisherId: "publishers:org1",
+                          status: "pending",
+                          requestedAt: Date.now() - 1_000,
+                          expiresAt: Date.now() + 10_000,
+                        },
+                      ],
+                    };
+                  }
+                  throw new Error(`unexpected package transfer index ${indexName}`);
+                },
+              };
+            }
+            if (table === "publisherMembers") {
+              return {
+                withIndex: (indexName: string) => {
+                  expect(indexName).toBe("by_user");
+                  return {
+                    collect: async () => [
+                      {
+                        _id: "publisherMembers:1",
+                        publisherId: "publishers:org1",
+                        userId: "users:2",
+                        role: "admin",
+                      },
+                    ],
+                  };
+                },
+              };
+            }
+            throw new Error(`unexpected table ${table}`);
+          }),
+        },
+      } as never,
+      { userId: "users:2" } as never,
+    )) as Array<{ _id: string; type: string; package: { name: string }; toPublisherId?: string }>;
+
+    expect(result).toEqual([
+      expect.objectContaining({
+        _id: "packageOwnershipTransfers:1",
+        type: "package",
+        package: expect.objectContaining({ name: "my-pkg" }),
+        toPublisherId: "publishers:org1",
+      }),
+    ]);
   });
 });

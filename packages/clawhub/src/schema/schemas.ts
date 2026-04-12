@@ -294,6 +294,7 @@ export const ApiV1TransferRequestResponseSchema = type({
 
 export const ApiV1TransferDecisionResponseSchema = type({
   ok: "true",
+  status: '"pending_admin_approval"|"accepted"|"rejected"?',
   skillSlug: "string?",
   packageName: "string?",
 });
@@ -322,6 +323,7 @@ export const ApiV1TransferListResponseSchema = type({
       handle: "string|null",
       displayName: "string|null",
     }).optional(),
+    toPublisherId: "string?",
     message: "string?",
     requestedAt: "number",
     expiresAt: "number",

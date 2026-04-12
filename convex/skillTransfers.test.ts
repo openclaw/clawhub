@@ -197,7 +197,7 @@ describe("skillTransfers", () => {
     );
   });
 
-  it("acceptTransferInternal updates skill and alias ownership to the recipient publisher", async () => {
+  it("acceptTransferInternal queues skill transfer for management approval", async () => {
     const patch = vi.fn(async () => {});
     const insert = vi.fn(async () => "auditLogs:1");
     const newPublisher = {
@@ -308,33 +308,38 @@ describe("skillTransfers", () => {
         actorUserId: "users:2",
         transferId: "skillOwnershipTransfers:1",
       } as never,
-    )) as { ok: boolean; skillSlug: string };
+    )) as { ok: boolean; skillSlug: string; status: string };
 
-    expect(result).toEqual({ ok: true, skillSlug: "demo" });
-    expect(patch).toHaveBeenCalledWith(
+    expect(result).toEqual({
+      ok: true,
+      skillSlug: "demo",
+      status: "pending_admin_approval",
+    });
+    expect(patch).not.toHaveBeenCalledWith(
       "skills:1",
       expect.objectContaining({
         ownerUserId: "users:2",
-        ownerPublisherId: "publishers:alice",
       }),
     );
-    expect(patch).toHaveBeenCalledWith(
+    expect(patch).not.toHaveBeenCalledWith(
       "skillSlugAliases:1",
       expect.objectContaining({
         ownerUserId: "users:2",
-        ownerPublisherId: "publishers:alice",
       }),
     );
-    expect(patch).toHaveBeenCalledWith(
+    expect(patch).not.toHaveBeenCalledWith(
       "skillSlugAliases:2",
       expect.objectContaining({
         ownerUserId: "users:2",
-        ownerPublisherId: "publishers:alice",
       }),
     );
     expect(patch).toHaveBeenCalledWith(
       "skillOwnershipTransfers:1",
-      expect.objectContaining({ status: "accepted" }),
+      expect.objectContaining({
+        status: "pending_admin_approval",
+        toUserId: "users:2",
+        toPublisherId: "publishers:alice",
+      }),
     );
   });
 

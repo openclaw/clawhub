@@ -1,9 +1,11 @@
 import { v } from "convex/values";
 import type { Doc, Id } from "./_generated/dataModel";
-import { internalMutation, internalQuery } from "./functions";
+import { internalMutation, internalQuery, mutation, query } from "./functions";
+import { assertModerator, requireUser } from "./lib/access";
 import {
   ensurePersonalPublisherForUser,
   getActiveUserByHandleOrPersonalPublisher,
+  isPublisherActive,
 } from "./lib/publishers";
 import {
   TRANSFER_EXPIRY_MS,
@@ -14,6 +16,8 @@ import {
 } from "./lib/transfers";
 
 type TransferDoc = Doc<"packageOwnershipTransfers">;
+
+type PendingApprovalTransferDoc = TransferDoc & { status: "pending_admin_approval" };
 
 async function requireActiveUserById(ctx: unknown, userId: Id<"users">) {
   const db = (ctx as { db: { get: (id: Id<"users">) => Promise<Doc<"users"> | null> } }).db;
@@ -116,6 +120,25 @@ async function validatePendingTransferForActor(
     throw new Error("Transfer has expired");
   }
   return transfer;
+}
+
+async function getPendingAdminApprovalTransfer(
+  ctx: unknown,
+  transferId: Id<"packageOwnershipTransfers">,
+) {
+  const db = (
+    ctx as {
+      db: {
+        get: (id: Id<"packageOwnershipTransfers">) => Promise<TransferDoc | null>;
+      };
+    }
+  ).db;
+
+  const transfer = await db.get(transferId);
+  if (!transfer || transfer.status !== "pending_admin_approval") {
+    throw new Error("No transfer pending management approval");
+  }
+  return transfer as PendingApprovalTransferDoc;
 }
 
 export const requestTransferInternal = internalMutation({
@@ -243,30 +266,30 @@ export const acceptTransferInternal = internalMutation({
     }
     if (!targetPublisher) throw new Error("Failed to resolve publisher for new owner");
 
-    await ctx.db.patch(pkg._id, {
-      ownerUserId: args.actorUserId,
-      ownerPublisherId: targetPublisher._id,
-    });
-
     await ctx.db.patch(transfer._id, {
-      status: "accepted",
-      respondedAt: now,
+      status: "pending_admin_approval",
       toUserId: args.actorUserId,
+      toPublisherId: targetPublisher._id,
     });
 
     await ctx.db.insert("auditLogs", {
       actorUserId: args.actorUserId,
-      action: "package.transfer.accept",
+      action: "package.transfer.accept_pending_approval",
       targetType: "package",
       targetId: pkg._id,
       metadata: {
         transferId: transfer._id,
         fromUserId: transfer.fromUserId,
+        toPublisherId: targetPublisher._id,
       },
       createdAt: now,
     });
 
-    return { ok: true as const, packageName: pkg.name };
+    return {
+      ok: true as const,
+      status: "pending_admin_approval" as const,
+      packageName: pkg.name,
+    };
   },
 });
 
@@ -351,10 +374,35 @@ export const listIncomingInternal = internalQuery({
     const now = Date.now();
     await requireActiveUserById(ctx, args.userId);
 
-    const transfers = await ctx.db
+    const userTransfers = await ctx.db
       .query("packageOwnershipTransfers")
       .withIndex("by_to_user_status", (q) => q.eq("toUserId", args.userId).eq("status", "pending"))
       .collect();
+    const memberships = await ctx.db
+      .query("publisherMembers")
+      .withIndex("by_user", (q) => q.eq("userId", args.userId))
+      .collect();
+    const adminPublisherIds = memberships
+      .filter((m) => m.role === "owner" || m.role === "admin")
+      .map((m) => m.publisherId);
+    const orgTransferArrays = await Promise.all(
+      adminPublisherIds.map((publisherId) =>
+        ctx.db
+          .query("packageOwnershipTransfers")
+          .withIndex("by_to_publisher_status", (q) =>
+            q.eq("toPublisherId", publisherId).eq("status", "pending"),
+          )
+          .collect(),
+      ),
+    );
+    const orgTransfers = orgTransferArrays.flat();
+    const seen = new Set<string>();
+    const transfers: TransferDoc[] = [];
+    for (const transfer of [...userTransfers, ...orgTransfers]) {
+      if (seen.has(transfer._id)) continue;
+      seen.add(transfer._id);
+      transfers.push(transfer);
+    }
 
     const results: Array<{
       _id: Id<"packageOwnershipTransfers">;
@@ -362,6 +410,7 @@ export const listIncomingInternal = internalQuery({
       package: { _id: Id<"packages">; name: string; displayName: string };
       fromUser: { _id: Id<"users">; handle: string | null; displayName: string | null };
       toUser?: { _id: Id<"users">; handle: string | null; displayName: string | null };
+      toPublisherId?: Id<"publishers">;
       message: string | undefined;
       requestedAt: number;
       expiresAt: number;
@@ -398,6 +447,7 @@ export const listIncomingInternal = internalQuery({
           displayName: fromUser.displayName ?? null,
         },
         toUser,
+        toPublisherId: transfer.toPublisherId ?? undefined,
         message: transfer.message,
         requestedAt: transfer.requestedAt,
         expiresAt: transfer.expiresAt,
@@ -405,6 +455,174 @@ export const listIncomingInternal = internalQuery({
     }
 
     return results;
+  },
+});
+
+export const listPendingApprovals = query({
+  args: { limit: v.optional(v.number()) },
+  handler: async (ctx, args) => {
+    const { user } = await requireUser(ctx);
+    assertModerator(user);
+    const limit = Math.max(1, Math.min(args.limit ?? 25, 100));
+    const transfers = await ctx.db
+      .query("packageOwnershipTransfers")
+      .withIndex("by_status", (q) => q.eq("status", "pending_admin_approval"))
+      .collect();
+    const pendingTransfers = transfers
+      .sort((a, b) => b.requestedAt - a.requestedAt)
+      .slice(0, limit);
+
+    const results: Array<{
+      _id: Id<"packageOwnershipTransfers">;
+      type: "package";
+      package: { _id: Id<"packages">; name: string; displayName: string };
+      fromUser: { _id: Id<"users">; handle: string | null; displayName: string | null };
+      toUser: { _id: Id<"users">; handle: string | null; displayName: string | null } | null;
+      toPublisher:
+        | { _id: Id<"publishers">; handle: string; displayName: string | null; kind: "user" | "org" }
+        | null;
+      message: string | undefined;
+      requestedAt: number;
+      expiresAt: number;
+    }> = [];
+
+    for (const transfer of pendingTransfers) {
+      const pkg = await ctx.db.get(transfer.packageId);
+      if (!pkg || (pkg as Record<string, unknown>).softDeletedAt) continue;
+      const fromUser = await ctx.db.get(transfer.fromUserId);
+      if (!fromUser || fromUser.deletedAt || fromUser.deactivatedAt) continue;
+      const toUser = transfer.toUserId ? await ctx.db.get(transfer.toUserId) : null;
+      const toPublisher = transfer.toPublisherId ? await ctx.db.get(transfer.toPublisherId) : null;
+      results.push({
+        _id: transfer._id,
+        type: "package",
+        package: { _id: pkg._id, name: pkg.name, displayName: pkg.displayName },
+        fromUser: {
+          _id: fromUser._id,
+          handle: fromUser.handle ?? null,
+          displayName: fromUser.displayName ?? null,
+        },
+        toUser:
+          toUser && !toUser.deletedAt && !toUser.deactivatedAt
+            ? {
+                _id: toUser._id,
+                handle: toUser.handle ?? null,
+                displayName: toUser.displayName ?? null,
+              }
+            : null,
+        toPublisher:
+          toPublisher &&
+          !(toPublisher as Record<string, unknown>).deletedAt &&
+          !(toPublisher as Record<string, unknown>).deactivatedAt
+            ? {
+                _id: toPublisher._id,
+                handle: String((toPublisher as Record<string, unknown>).handle),
+                displayName:
+                  (toPublisher as Record<string, unknown>).displayName === undefined
+                    ? null
+                    : ((toPublisher as Record<string, unknown>).displayName as string | null),
+                kind: (toPublisher as Record<string, unknown>).kind as "user" | "org",
+              }
+            : null,
+        message: transfer.message,
+        requestedAt: transfer.requestedAt,
+        expiresAt: transfer.expiresAt,
+      });
+    }
+
+    return results;
+  },
+});
+
+export async function approvePendingApprovalAsModerator(
+  ctx: {
+    db: {
+      get: (
+        id: Id<"users"> | Id<"packages"> | Id<"publishers"> | Id<"packageOwnershipTransfers">,
+      ) => Promise<unknown>;
+      patch: (id: string, value: Record<string, unknown>) => Promise<unknown>;
+      insert: (table: "auditLogs", value: Record<string, unknown>) => Promise<unknown>;
+    };
+  },
+  actorUserId: Id<"users">,
+  transferId: Id<"packageOwnershipTransfers">,
+) {
+  const now = Date.now();
+  const transfer = await getPendingAdminApprovalTransfer(ctx, transferId);
+  const pkg = await ctx.db.get(transfer.packageId);
+  if (!pkg || (pkg as Record<string, unknown>).softDeletedAt) {
+    throw new Error("Package not found");
+  }
+  const ownerChanged = transfer.fromPublisherId
+    ? (pkg as Doc<"packages">).ownerPublisherId !== transfer.fromPublisherId
+    : (pkg as Doc<"packages">).ownerUserId !== transfer.fromUserId;
+  if (ownerChanged) {
+    await ctx.db.patch(transfer._id, { status: "cancelled", respondedAt: now });
+    throw new Error("Transfer is no longer valid");
+  }
+  if (!transfer.toUserId || !transfer.toPublisherId) {
+    throw new Error("Transfer is missing approval target");
+  }
+  const nextOwner = await ctx.db.get(transfer.toUserId);
+  if (!nextOwner || (nextOwner as Doc<"users">).deletedAt || (nextOwner as Doc<"users">).deactivatedAt) {
+    await ctx.db.patch(transfer._id, { status: "cancelled", respondedAt: now });
+    throw new Error("Transfer recipient is no longer active");
+  }
+  const nextPublisher = await ctx.db.get(transfer.toPublisherId);
+  if (!isPublisherActive(nextPublisher as Doc<"publishers"> | null)) {
+    await ctx.db.patch(transfer._id, { status: "cancelled", respondedAt: now });
+    throw new Error("Transfer target publisher is no longer active");
+  }
+
+  await ctx.db.patch((pkg as Doc<"packages">)._id, {
+    ownerUserId: transfer.toUserId,
+    ownerPublisherId: transfer.toPublisherId,
+  });
+  await ctx.db.patch(transfer._id, {
+    status: "accepted",
+    respondedAt: now,
+  });
+  await ctx.db.insert("auditLogs", {
+    actorUserId,
+    action: "package.transfer.approve",
+    targetType: "package",
+    targetId: (pkg as Doc<"packages">)._id,
+    metadata: { transferId: transfer._id, toUserId: transfer.toUserId, toPublisherId: transfer.toPublisherId },
+    createdAt: now,
+  });
+  return { ok: true as const, status: "accepted" as const, packageName: (pkg as Doc<"packages">).name };
+}
+
+export const approvePendingApproval = mutation({
+  args: { transferId: v.id("packageOwnershipTransfers") },
+  handler: async (ctx, args) => {
+    const { user, userId } = await requireUser(ctx);
+    assertModerator(user);
+    return approvePendingApprovalAsModerator(ctx, userId, args.transferId);
+  },
+});
+
+export const rejectPendingApproval = mutation({
+  args: { transferId: v.id("packageOwnershipTransfers") },
+  handler: async (ctx, args) => {
+    const { user, userId } = await requireUser(ctx);
+    assertModerator(user);
+
+    const now = Date.now();
+    const transfer = await getPendingAdminApprovalTransfer(ctx, args.transferId);
+    await ctx.db.patch(transfer._id, {
+      status: "rejected",
+      respondedAt: now,
+    });
+    await ctx.db.insert("auditLogs", {
+      actorUserId: userId,
+      action: "package.transfer.reject_approval",
+      targetType: "package",
+      targetId: transfer.packageId,
+      metadata: { transferId: transfer._id },
+      createdAt: now,
+    });
+    return { ok: true as const, status: "rejected" as const };
   },
 });
 

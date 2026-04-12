@@ -252,7 +252,11 @@ async function runTransferDecision(
       ApiV1TransferDecisionResponseSchema,
     );
     const parsed = parseArk(ApiV1TransferDecisionResponseSchema, result, "Transfer response");
-    spinner.succeed(`${spec.success} (${name})`);
+    const successMessage =
+      spec.action === "accept" && parsed.status === "pending_admin_approval"
+        ? `Transfer submitted for management approval (${name})`
+        : `${spec.success} (${name})`;
+    spinner.succeed(successMessage);
     return parsed;
   } catch (error) {
     spinner.fail(formatError(error));

@@ -82,6 +82,43 @@ type DuplicateCandidateEntry = {
   owner: Doc<"users"> | null;
 };
 
+type TransferParty = {
+  _id: Id<"users">;
+  handle: string | null;
+  displayName: string | null;
+};
+
+type TransferPublisher = {
+  _id: Id<"publishers">;
+  handle: string;
+  displayName: string | null;
+  kind: "user" | "org";
+};
+
+type PendingSkillTransferApprovalEntry = {
+  _id: Id<"skillOwnershipTransfers">;
+  type: "skill";
+  skill: { _id: Id<"skills">; slug: string; displayName: string };
+  fromUser: TransferParty;
+  toUser: TransferParty | null;
+  toPublisher: TransferPublisher | null;
+  message?: string;
+  requestedAt: number;
+  expiresAt: number;
+};
+
+type PendingPackageTransferApprovalEntry = {
+  _id: Id<"packageOwnershipTransfers">;
+  type: "package";
+  package: { _id: Id<"packages">; name: string; displayName: string };
+  fromUser: TransferParty;
+  toUser: TransferParty | null;
+  toPublisher: TransferPublisher | null;
+  message?: string;
+  requestedAt: number;
+  expiresAt: number;
+};
+
 type SkillBySlugResult = {
   skill: Doc<"skills">;
   latestVersion: Doc<"skillVersions"> | null;
@@ -144,6 +181,14 @@ function Management() {
     api.skills.listDuplicateCandidates,
     staff ? { limit: 20 } : "skip",
   ) as DuplicateCandidateEntry[] | undefined;
+  const pendingSkillTransferApprovals = useQuery(
+    api.skillTransfers.listPendingApprovals,
+    staff ? { limit: 25 } : "skip",
+  ) as PendingSkillTransferApprovalEntry[] | undefined;
+  const pendingPackageTransferApprovals = useQuery(
+    api.packageTransfers.listPendingApprovals,
+    staff ? { limit: 25 } : "skip",
+  ) as PendingPackageTransferApprovalEntry[] | undefined;
 
   const setRole = useMutation(api.users.setRole);
   const banUser = useMutation(api.users.banUser);
@@ -158,6 +203,10 @@ function Management() {
   const setSkillManualOverride = useMutation(api.skills.setSkillManualOverride);
   const clearSkillManualOverride = useMutation(api.skills.clearSkillManualOverride);
   const setSkillCapabilityTags = useMutation(api.skills.setSkillCapabilityTags);
+  const approveSkillTransferApproval = useMutation(api.skillTransfers.approvePendingApproval);
+  const rejectSkillTransferApproval = useMutation(api.skillTransfers.rejectPendingApproval);
+  const approvePackageTransferApproval = useMutation(api.packageTransfers.approvePendingApproval);
+  const rejectPackageTransferApproval = useMutation(api.packageTransfers.rejectPendingApproval);
 
   const [selectedDuplicate, setSelectedDuplicate] = useState("");
   const [selectedOwner, setSelectedOwner] = useState("");
@@ -221,7 +270,13 @@ function Management() {
     );
   }
 
-  if (!recentVersions || !reportedSkills || !duplicateCandidates) {
+  if (
+    !recentVersions ||
+    !reportedSkills ||
+    !duplicateCandidates ||
+    !pendingSkillTransferApprovals ||
+    !pendingPackageTransferApprovals
+  ) {
     return (
       <main className="py-10">
         <Container size="wide">
@@ -236,6 +291,11 @@ function Management() {
       </main>
     );
   }
+
+  const pendingTransferApprovals = [
+    ...pendingSkillTransferApprovals,
+    ...pendingPackageTransferApprovals,
+  ].sort((a, b) => b.requestedAt - a.requestedAt);
 
   const reportQuery = reportSearchDebounced.trim().toLowerCase();
   const filteredReportedSkills = reportQuery
@@ -311,6 +371,79 @@ function Management() {
         <p className="text-sm text-[color:var(--ink-soft)]">
           Moderation, curation, and ownership tools.
         </p>
+
+        <Separator className="my-6" />
+
+        <Card>
+          <CardHeader>
+            <CardTitle>Transfer approvals</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="flex flex-col gap-3">
+              {pendingTransferApprovals.length === 0 ? (
+                <EmptyState icon={Shield} title="No transfers waiting for management" />
+              ) : (
+                pendingTransferApprovals.map((entry) => {
+                  const isSkill = entry.type === "skill";
+                  const itemName = isSkill ? entry.skill.displayName : entry.package.displayName;
+                  const itemSubtext = isSkill ? entry.skill.slug : entry.package.name;
+                  const approve = () =>
+                    isSkill
+                      ? approveSkillTransferApproval({ transferId: entry._id as Id<"skillOwnershipTransfers"> })
+                      : approvePackageTransferApproval({ transferId: entry._id as Id<"packageOwnershipTransfers"> });
+                  const reject = () =>
+                    isSkill
+                      ? rejectSkillTransferApproval({ transferId: entry._id as Id<"skillOwnershipTransfers"> })
+                      : rejectPackageTransferApproval({ transferId: entry._id as Id<"packageOwnershipTransfers"> });
+                  return (
+                    <div
+                      key={entry._id}
+                      className="flex items-start justify-between gap-4 rounded-[var(--radius-md)] border border-[color:var(--line)] bg-[color:var(--surface)] p-4"
+                    >
+                      <div className="flex flex-1 flex-col gap-2">
+                        <div className="flex items-center gap-2">
+                          <Badge>{entry.type}</Badge>
+                          <strong>{itemName}</strong>
+                        </div>
+                        <div className="text-sm text-[color:var(--ink-soft)]">
+                          {itemSubtext} · requested {formatTimestamp(entry.requestedAt)}
+                        </div>
+                        <div className="text-sm text-[color:var(--ink-soft)]">
+                          From {formatUserHandle(entry.fromUser)} to{" "}
+                          {entry.toPublisher
+                            ? `${entry.toPublisher.kind === "org" ? "org" : "publisher"} @${entry.toPublisher.handle}`
+                            : formatUserHandle(entry.toUser)}
+                          {entry.toUser && entry.toPublisher ? ` via ${formatUserHandle(entry.toUser)}` : ""}
+                        </div>
+                        {entry.message ? <div className="text-sm">{entry.message}</div> : null}
+                      </div>
+                      <div className="flex flex-wrap items-center gap-2">
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() =>
+                            void approve().then(() => toast.success("Transfer approved.")).catch((error) => toast.error(formatMutationError(error)))
+                          }
+                        >
+                          Approve
+                        </Button>
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() =>
+                            void reject().then(() => toast.success("Transfer rejected.")).catch((error) => toast.error(formatMutationError(error)))
+                          }
+                        >
+                          Reject
+                        </Button>
+                      </div>
+                    </div>
+                  );
+                })
+              )}
+            </div>
+          </CardContent>
+        </Card>
 
         <Separator className="my-6" />
 
@@ -1093,6 +1226,11 @@ function formatTimestamp(value: number) {
 
 function formatMutationError(error: unknown) {
   return getUserFacingConvexError(error, "Request failed.");
+}
+
+function formatUserHandle(user: TransferParty | null | undefined) {
+  if (!user) return "unknown user";
+  return `@${user.handle ?? user.displayName ?? "user"}`;
 }
 
 function formatManualOverrideState(

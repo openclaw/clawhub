@@ -1,9 +1,11 @@
 import { v } from "convex/values";
 import type { Doc, Id } from "./_generated/dataModel";
-import { internalMutation, internalQuery } from "./functions";
+import { internalMutation, internalQuery, mutation, query } from "./functions";
+import { assertModerator, requireUser } from "./lib/access";
 import {
   ensurePersonalPublisherForUser,
   getActiveUserByHandleOrPersonalPublisher,
+  isPublisherActive,
 } from "./lib/publishers";
 import {
   TRANSFER_EXPIRY_MS,
@@ -14,6 +16,8 @@ import {
 } from "./lib/transfers";
 
 type TransferDoc = Doc<"skillOwnershipTransfers">;
+
+type PendingApprovalTransferDoc = TransferDoc & { status: "pending_admin_approval" };
 
 async function requireActiveUserById(ctx: unknown, userId: Id<"users">) {
   const db = (ctx as { db: { get: (id: Id<"users">) => Promise<Doc<"users"> | null> } }).db;
@@ -105,6 +109,25 @@ async function validatePendingTransferForActor(
     throw new Error("Transfer has expired");
   }
   return transfer;
+}
+
+async function getPendingAdminApprovalTransfer(
+  ctx: unknown,
+  transferId: Id<"skillOwnershipTransfers">,
+) {
+  const db = (
+    ctx as {
+      db: {
+        get: (id: Id<"skillOwnershipTransfers">) => Promise<TransferDoc | null>;
+      };
+    }
+  ).db;
+
+  const transfer = await db.get(transferId);
+  if (!transfer || transfer.status !== "pending_admin_approval") {
+    throw new Error("No transfer pending management approval");
+  }
+  return transfer as PendingApprovalTransferDoc;
 }
 
 export const requestTransferInternal = internalMutation({
@@ -231,46 +254,26 @@ export const acceptTransferInternal = internalMutation({
       targetPublisherId = newPublisher._id;
     }
 
-    // For org-targeted transfers, ownerUserId is set to whichever admin accepts,
-    // not necessarily the original toUserId. The toUserHandle on the request just
-    // routes the transfer — actual ownership reflects who acted on it.
-    await ctx.db.patch(skill._id, {
-      ownerUserId: args.actorUserId,
-      ownerPublisherId: targetPublisherId,
-      updatedAt: now,
-    });
-
-    const aliases = await ctx.db
-      .query("skillSlugAliases")
-      .withIndex("by_skill", (q) => q.eq("skillId", skill._id))
-      .collect();
-    for (const alias of aliases) {
-      await ctx.db.patch(alias._id, {
-        ownerUserId: args.actorUserId,
-        ownerPublisherId: targetPublisherId,
-        updatedAt: now,
-      });
-    }
-
     await ctx.db.patch(transfer._id, {
-      status: "accepted",
-      respondedAt: now,
+      status: "pending_admin_approval",
       toUserId: args.actorUserId,
+      toPublisherId: targetPublisherId,
     });
 
     await ctx.db.insert("auditLogs", {
       actorUserId: args.actorUserId,
-      action: "skill.transfer.accept",
+      action: "skill.transfer.accept_pending_approval",
       targetType: "skill",
       targetId: skill._id,
       metadata: {
         transferId: transfer._id,
         fromUserId: transfer.fromUserId,
+        toPublisherId: targetPublisherId,
       },
       createdAt: now,
     });
 
-    return { ok: true as const, skillSlug: skill.slug };
+    return { ok: true as const, status: "pending_admin_approval" as const, skillSlug: skill.slug };
   },
 });
 
@@ -427,6 +430,187 @@ export const listIncomingInternal = internalQuery({
     }
 
     return results;
+  },
+});
+
+export const listPendingApprovals = query({
+  args: { limit: v.optional(v.number()) },
+  handler: async (ctx, args) => {
+    const { user } = await requireUser(ctx);
+    assertModerator(user);
+    const limit = Math.max(1, Math.min(args.limit ?? 25, 100));
+    const transfers = await ctx.db
+      .query("skillOwnershipTransfers")
+      .withIndex("by_status", (q) => q.eq("status", "pending_admin_approval"))
+      .collect();
+    const pendingTransfers = transfers
+      .sort((a, b) => b.requestedAt - a.requestedAt)
+      .slice(0, limit);
+
+    const results: Array<{
+      _id: Id<"skillOwnershipTransfers">;
+      type: "skill";
+      skill: { _id: Id<"skills">; slug: string; displayName: string };
+      fromUser: { _id: Id<"users">; handle: string | null; displayName: string | null };
+      toUser: { _id: Id<"users">; handle: string | null; displayName: string | null } | null;
+      toPublisher:
+        | { _id: Id<"publishers">; handle: string; displayName: string | null; kind: "user" | "org" }
+        | null;
+      message: string | undefined;
+      requestedAt: number;
+      expiresAt: number;
+    }> = [];
+
+    for (const transfer of pendingTransfers) {
+      const skill = await ctx.db.get(transfer.skillId);
+      if (!skill || skill.softDeletedAt) continue;
+      const fromUser = await ctx.db.get(transfer.fromUserId);
+      if (!fromUser || fromUser.deletedAt || fromUser.deactivatedAt) continue;
+      const toUser = transfer.toUserId ? await ctx.db.get(transfer.toUserId) : null;
+      const toPublisher = transfer.toPublisherId ? await ctx.db.get(transfer.toPublisherId) : null;
+      results.push({
+        _id: transfer._id,
+        type: "skill",
+        skill: { _id: skill._id, slug: skill.slug, displayName: skill.displayName },
+        fromUser: {
+          _id: fromUser._id,
+          handle: fromUser.handle ?? null,
+          displayName: fromUser.displayName ?? null,
+        },
+        toUser:
+          toUser && !toUser.deletedAt && !toUser.deactivatedAt
+            ? {
+                _id: toUser._id,
+                handle: toUser.handle ?? null,
+                displayName: toUser.displayName ?? null,
+              }
+            : null,
+        toPublisher:
+          toPublisher && !toPublisher.deletedAt && !toPublisher.deactivatedAt
+            ? {
+                _id: toPublisher._id,
+                handle: toPublisher.handle,
+                displayName: toPublisher.displayName ?? null,
+                kind: toPublisher.kind,
+              }
+            : null,
+        message: transfer.message,
+        requestedAt: transfer.requestedAt,
+        expiresAt: transfer.expiresAt,
+      });
+    }
+
+    return results;
+  },
+});
+
+export async function approvePendingApprovalAsModerator(
+  ctx: {
+    db: {
+      get: (id: Id<"users"> | Id<"skills"> | Id<"publishers"> | Id<"skillOwnershipTransfers">) => Promise<unknown>;
+      patch: (id: string, value: Record<string, unknown>) => Promise<unknown>;
+      insert: (table: "auditLogs", value: Record<string, unknown>) => Promise<unknown>;
+      query: (table: "skillSlugAliases") => {
+        withIndex: (
+          indexName: "by_skill",
+          cb: (q: { eq: (field: "skillId", value: Id<"skills">) => unknown }) => unknown,
+        ) => { collect: () => Promise<Array<{ _id: string }>> };
+      };
+    };
+  },
+  actorUserId: Id<"users">,
+  transferId: Id<"skillOwnershipTransfers">,
+) {
+  const now = Date.now();
+  const transfer = await getPendingAdminApprovalTransfer(ctx, transferId);
+  const skill = await ctx.db.get(transfer.skillId);
+  if (!skill || (skill as Doc<"skills">).softDeletedAt) throw new Error("Skill not found");
+  const ownerChanged = transfer.fromPublisherId
+    ? (skill as Doc<"skills">).ownerPublisherId !== transfer.fromPublisherId
+    : (skill as Doc<"skills">).ownerUserId !== transfer.fromUserId;
+  if (ownerChanged) {
+    await ctx.db.patch(transfer._id, { status: "cancelled", respondedAt: now });
+    throw new Error("Transfer is no longer valid");
+  }
+  if (!transfer.toUserId || !transfer.toPublisherId) {
+    throw new Error("Transfer is missing approval target");
+  }
+  const nextOwner = await ctx.db.get(transfer.toUserId);
+  if (!nextOwner || (nextOwner as Doc<"users">).deletedAt || (nextOwner as Doc<"users">).deactivatedAt) {
+    await ctx.db.patch(transfer._id, { status: "cancelled", respondedAt: now });
+    throw new Error("Transfer recipient is no longer active");
+  }
+  const nextPublisher = await ctx.db.get(transfer.toPublisherId);
+  if (!isPublisherActive(nextPublisher as Doc<"publishers"> | null)) {
+    await ctx.db.patch(transfer._id, { status: "cancelled", respondedAt: now });
+    throw new Error("Transfer target publisher is no longer active");
+  }
+
+  await ctx.db.patch((skill as Doc<"skills">)._id, {
+    ownerUserId: transfer.toUserId,
+    ownerPublisherId: transfer.toPublisherId,
+    updatedAt: now,
+  });
+
+  const aliases = await ctx.db
+    .query("skillSlugAliases")
+    .withIndex("by_skill", (q) => q.eq("skillId", (skill as Doc<"skills">)._id))
+    .collect();
+  for (const alias of aliases) {
+    await ctx.db.patch(alias._id, {
+      ownerUserId: transfer.toUserId,
+      ownerPublisherId: transfer.toPublisherId,
+      updatedAt: now,
+    });
+  }
+
+  await ctx.db.patch(transfer._id, {
+    status: "accepted",
+    respondedAt: now,
+  });
+
+  await ctx.db.insert("auditLogs", {
+    actorUserId,
+    action: "skill.transfer.approve",
+    targetType: "skill",
+    targetId: (skill as Doc<"skills">)._id,
+    metadata: { transferId: transfer._id, toUserId: transfer.toUserId, toPublisherId: transfer.toPublisherId },
+    createdAt: now,
+  });
+
+  return { ok: true as const, status: "accepted" as const, skillSlug: (skill as Doc<"skills">).slug };
+}
+
+export const approvePendingApproval = mutation({
+  args: { transferId: v.id("skillOwnershipTransfers") },
+  handler: async (ctx, args) => {
+    const { user, userId } = await requireUser(ctx);
+    assertModerator(user);
+    return approvePendingApprovalAsModerator(ctx, userId, args.transferId);
+  },
+});
+
+export const rejectPendingApproval = mutation({
+  args: { transferId: v.id("skillOwnershipTransfers") },
+  handler: async (ctx, args) => {
+    const { user, userId } = await requireUser(ctx);
+    assertModerator(user);
+
+    const now = Date.now();
+    const transfer = await getPendingAdminApprovalTransfer(ctx, args.transferId);
+    await ctx.db.patch(transfer._id, {
+      status: "rejected",
+      respondedAt: now,
+    });
+    await ctx.db.insert("auditLogs", {
+      actorUserId: userId,
+      action: "skill.transfer.reject_approval",
+      targetType: "skill",
+      targetId: transfer.skillId,
+      metadata: { transferId: transfer._id },
+      createdAt: now,
+    });
+    return { ok: true as const, status: "rejected" as const };
   },
 });
 
