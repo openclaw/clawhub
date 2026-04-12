@@ -46,6 +46,13 @@ export declare const PackageVerificationSummarySchema: import("arktype/internal/
     scanStatus?: "clean" | "suspicious" | "malicious" | "pending" | "not-run" | undefined;
 }, {}>;
 export type PackageVerificationSummary = (typeof PackageVerificationSummarySchema)[inferred];
+export declare const PackageStatsSchema: import("arktype/internal/variants/object.ts").ObjectType<{
+    downloads: number;
+    installs: number;
+    stars: number;
+    versions: number;
+}, {}>;
+export type PackageStats = (typeof PackageStatsSchema)[inferred];
 export declare const PackageVtAnalysisSchema: import("arktype/internal/variants/object.ts").ObjectType<{
     status: string;
     checkedAt: number;
@@ -261,6 +268,12 @@ export declare const ApiV1PackageResponseSchema: import("arktype/internal/varian
             hasProvenance?: boolean | undefined;
             scanStatus?: "clean" | "suspicious" | "malicious" | "pending" | "not-run" | undefined;
         } | null | undefined;
+        stats?: {
+            downloads: number;
+            installs: number;
+            stars: number;
+            versions: number;
+        } | undefined;
     } | null;
     owner: {
         handle: string | null;

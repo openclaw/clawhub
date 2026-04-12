@@ -40,6 +40,12 @@ export const PackageVerificationSummarySchema = type({
     hasProvenance: "boolean?",
     scanStatus: '"clean"|"suspicious"|"malicious"|"pending"|"not-run"?',
 });
+export const PackageStatsSchema = type({
+    downloads: "number",
+    installs: "number",
+    stars: "number",
+    versions: "number",
+});
 export const PackageVtAnalysisSchema = type({
     status: "string",
     verdict: "string?",
@@ -151,6 +157,7 @@ export const ApiV1PackageResponseSchema = type({
         compatibility: PackageCompatibilitySchema.or("null").optional(),
         capabilities: PackageCapabilitySummarySchema.or("null").optional(),
         verification: PackageVerificationSummarySchema.or("null").optional(),
+        stats: PackageStatsSchema.optional(),
     }).or("null"),
     owner: type({
         handle: "string|null",
