@@ -384,7 +384,8 @@ const souls = defineTable({
   .index("by_slug", ["slug"])
   .index("by_owner", ["ownerUserId"])
   .index("by_owner_publisher", ["ownerPublisherId"])
-  .index("by_updated", ["updatedAt"]);
+  .index("by_updated", ["updatedAt"])
+  .index("by_active_updated", ["softDeletedAt", "updatedAt"]);
 
 const skillVersions = defineTable({
   skillId: v.id("skills"),

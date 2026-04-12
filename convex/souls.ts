@@ -138,11 +138,10 @@ export const list = query({
     }
     const entries = await ctx.db
       .query("souls")
+      .withIndex("by_active_updated", (q) => q.eq("softDeletedAt", undefined))
       .order("desc")
-      .take(limit * 5);
+      .take(limit);
     return entries
-      .filter((soul) => !soul.softDeletedAt)
-      .slice(0, limit)
       .map((soul) => toPublicSoul(soul))
       .filter((soul): soul is NonNullable<typeof soul> => Boolean(soul));
   },

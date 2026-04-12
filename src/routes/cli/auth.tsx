@@ -61,17 +61,17 @@ export function CliAuth({ navigate = (url: string) => window.location.assign(url
       hash.set("token", result.token);
       hash.set("registry", registry);
       hash.set("state", state);
-      const callbackUrl = `${redirectUri}#${hash.toString()}`;
+      const redirectUrl = `${redirectUri}#${hash.toString()}`;
       // Render the fallback token before attempting navigation so it is
       // always visible if the browser blocks or fails the http:// redirect
       // (e.g. ERR_CONNECTION_REFUSED when the CLI server has already shut
       // down, or Chrome's HTTPS-first mode interfering with localhost).
       flushSync(() => {
         setToken(result.token);
-        setCallbackUrl(callbackUrl);
+        setCallbackUrl(redirectUrl);
         setStatus("Redirecting to CLI…");
       });
-      navigate(callbackUrl);
+      navigate(redirectUrl);
     };
 
     void run().catch((error) => {

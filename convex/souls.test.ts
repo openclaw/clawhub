@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { getSoulBySlugInternal, insertVersion } from "./souls";
+import { getSoulBySlugInternal, insertVersion, list } from "./souls";
 
 type WrappedHandler<TArgs> = {
   _handler: (ctx: unknown, args: TArgs) => Promise<unknown>;
@@ -10,6 +10,7 @@ const insertVersionHandler = (insertVersion as unknown as WrappedHandler<Record<
 const getSoulBySlugInternalHandler = (
   getSoulBySlugInternal as unknown as WrappedHandler<{ slug: string }>
 )._handler;
+const listHandler = (list as unknown as WrappedHandler<{ ownerUserId?: string; limit?: number }>)._handler;
 
 describe("souls.insertVersion", () => {
   it("throws a soul-specific ownership error for non-owners", async () => {
@@ -137,5 +138,77 @@ describe("souls.insertVersion", () => {
         slug: "demo-soul",
       }),
     );
+  });
+});
+
+describe("souls.list", () => {
+  it("uses the active browse index and only takes the requested limit", async () => {
+    let requestedIndex: string | null = null;
+    let requestedSoftDeletedAt: number | undefined;
+    let requestedLimit: number | null = null;
+
+    const result = await listHandler(
+      {
+        db: {
+          query: vi.fn((table: string) => {
+            if (table !== "souls") throw new Error(`unexpected table ${table}`);
+            return {
+              withIndex: (
+                name: string,
+                build:
+                  | ((q: { eq: (field: string, value: undefined) => unknown }) => unknown)
+                  | undefined,
+              ) => {
+                requestedIndex = name;
+                const q = {
+                  eq: (field: string, value: undefined) => {
+                    if (field !== "softDeletedAt") throw new Error(`unexpected field ${field}`);
+                    requestedSoftDeletedAt = value;
+                    return q;
+                  },
+                };
+                build?.(q);
+                return {
+                  order: () => ({
+                    take: async (limit: number) => {
+                      requestedLimit = limit;
+                      return [
+                        {
+                          _id: "souls:1",
+                          _creationTime: 1,
+                          slug: "demo-soul",
+                          displayName: "Demo Soul",
+                          summary: "A demo soul",
+                          ownerUserId: "users:owner",
+                          ownerPublisherId: undefined,
+                          latestVersionId: undefined,
+                          tags: {},
+                          softDeletedAt: undefined,
+                          stats: { downloads: 1, stars: 2, versions: 3, comments: 4 },
+                          createdAt: 1,
+                          updatedAt: 2,
+                        },
+                      ];
+                    },
+                  }),
+                };
+              },
+            };
+          }),
+        },
+      } as never,
+      { limit: 7 } as never,
+    );
+
+    expect(requestedIndex).toBe("by_active_updated");
+    expect(requestedSoftDeletedAt).toBeUndefined();
+    expect(requestedLimit).toBe(7);
+    expect(result).toEqual([
+      expect.objectContaining({
+        _id: "souls:1",
+        slug: "demo-soul",
+        displayName: "Demo Soul",
+      }),
+    ]);
   });
 });
