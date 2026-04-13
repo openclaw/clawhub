@@ -82,9 +82,10 @@ function parsePackageJson(content: string, path: string): DepEntry[] {
       const deps = pkg[field];
       if (deps && typeof deps === "object" && !Array.isArray(deps)) {
         for (const name of Object.keys(deps as Record<string, unknown>)) {
-          // Skip scoped packages pointing to local paths/URLs
+          // Skip non-registry version specifiers (local, git, URL, workspace)
           const ver = (deps as Record<string, string>)[name] ?? "";
-          if (ver.startsWith("file:") || ver.startsWith("link:")) continue;
+          const NON_REGISTRY = ["file:", "link:", "git+", "git://", "github:", "bitbucket:", "gist:", "http:", "https://", "workspace:"];
+          if (NON_REGISTRY.some((p) => ver.startsWith(p))) continue;
           entries.push({ name: name.toLowerCase(), registry: "npm", source: path });
         }
       }
@@ -204,7 +205,12 @@ async function checkRegistryExists(
   registry: SupportedRegistry,
   packageName: string,
 ): Promise<{ exists: boolean; httpStatus: number } | { exists: null; httpStatus: null }> {
-  const url = REGISTRY_ENDPOINTS[registry].replace("{name}", encodeURIComponent(packageName));
+  // npm scoped packages (@scope/name) need the @ literal, only the rest encoded.
+  const encodedName =
+    registry === "npm" && packageName.startsWith("@")
+      ? `@${encodeURIComponent(packageName.slice(1))}`
+      : encodeURIComponent(packageName);
+  const url = REGISTRY_ENDPOINTS[registry].replace("{name}", encodedName);
   const headers: Record<string, string> = {
     Accept: "application/json",
   };
@@ -353,6 +359,7 @@ export const checkDependencyRegistries = internalAction({
       name: string;
       exists: boolean;
       httpStatus?: number;
+      networkError?: boolean;
     }> = [];
     let consecutiveFailures = 0;
     let abortedDueToErrors = false;
@@ -382,9 +389,9 @@ export const checkDependencyRegistries = internalAction({
       const check = await checkRegistryExists(dep.registry, dep.name);
 
       if (check.exists === null) {
-        // Network error — count towards abort threshold
+        // Network error — count towards abort threshold but do NOT mark as missing.
         consecutiveFailures++;
-        results.push({ registry: dep.registry, name: dep.name, exists: false });
+        results.push({ registry: dep.registry, name: dep.name, exists: true, networkError: true });
         if (consecutiveFailures >= CONSECUTIVE_FAILURE_ABORT) {
           console.warn(
             `depRegistryScan: aborting after ${CONSECUTIVE_FAILURE_ABORT} consecutive failures for version ${args.versionId}`,
@@ -416,7 +423,7 @@ export const checkDependencyRegistries = internalAction({
     }
 
     const notFoundPackages = results
-      .filter((r) => !r.exists)
+      .filter((r) => !r.exists && !r.networkError)
       .map((r) => `${r.name} (${r.registry})`);
 
     let status: "clean" | "suspicious" | "error";
@@ -458,6 +465,10 @@ export const getErrorDepRegistryVersionsInternal = internalQuery({
   },
   handler: async (ctx, args) => {
     const limit = args.limit ?? 50;
+    // NOTE: JS-filtering on a nested field is acceptable here because this is
+    // a low-frequency maintenance query (manual or cron), not a hot read path.
+    // Adding a denormalized index field would require a Trigger + schema change
+    // for negligible benefit.
     const versions = await ctx.db.query("skillVersions").order("desc").take(500);
     return versions
       .filter((ver) => ver.depRegistryAnalysis?.status === "error")
