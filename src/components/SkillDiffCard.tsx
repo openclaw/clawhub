@@ -13,12 +13,9 @@ import {
   selectDefaultFilePath,
   sortVersionsBySemver,
 } from "../lib/diffing";
-import { ClientOnly } from "./ClientOnly";
-import { Badge } from "./ui/badge";
+import { isDarkThemeResolved, onThemeChange } from "../lib/theme";
 import { Button } from "./ui/button";
-import { Card } from "./ui/card";
-import { Label } from "./ui/label";
-import { Skeleton } from "./ui/skeleton";
+import { ClientOnly } from "./ClientOnly";
 
 type SkillDiffCardProps = {
   skill: Doc<"skills">;
@@ -236,15 +233,18 @@ export function SkillDiffCard({ skill, versions, variant = "card" }: SkillDiffCa
 
   useEffect(() => {
     if (!monaco || typeof document === "undefined") return;
-    const observer = new MutationObserver(() => {
-      applyMonacoTheme(monaco);
-    });
+    const syncTheme = () => applyMonacoTheme(monaco);
+    const observer = new MutationObserver(syncTheme);
     observer.observe(document.documentElement, {
       attributes: true,
-      attributeFilter: ["data-theme"],
+      attributeFilter: ["data-theme", "data-theme-family", "data-theme-resolved"],
     });
-    applyMonacoTheme(monaco);
-    return () => observer.disconnect();
+    const removeThemeListener = onThemeChange(syncTheme);
+    syncTheme();
+    return () => {
+      observer.disconnect();
+      removeThemeListener();
+    };
   }, [monaco]);
 
   useEffect(() => {
@@ -277,174 +277,145 @@ export function SkillDiffCard({ skill, versions, variant = "card" }: SkillDiffCa
   const fileSelected = Boolean(selectedItem);
   const diffOptions = useMemo(() => buildDiffOptions(viewMode), [viewMode]);
 
-  const Wrapper = variant === "card" ? Card : "div";
-  const wrapperClassName = variant === "card" ? "flex flex-col gap-4" : "flex flex-col gap-4";
+  const containerClass = variant === "card" ? "card diff-card" : "diff-card diff-card-embedded";
 
   return (
-    <Wrapper className={wrapperClassName}>
-      <div className="flex flex-wrap items-start justify-between gap-3">
+    <div className={containerClass}>
+      <div className="diff-header">
         <div>
-          <h2 className="m-0 font-display text-[1.2rem] font-bold text-[color:var(--ink)]">
+          <h2 className="section-title text-[1.2rem] m-0">
             Compare versions
           </h2>
-          <p className="m-0 text-sm text-[color:var(--ink-soft)]">
+          <p className="section-subtitle m-0">
             Inline or side-by-side diff for any file.
           </p>
         </div>
-        <fieldset className="inline-flex items-center gap-0.5 rounded-full border border-[color:var(--line)] bg-[color:var(--surface-muted)] p-[3px]">
-          <legend className="sr-only">Diff layout</legend>
-          <button
-            className={`cursor-pointer rounded-full border-none px-3 py-1.5 text-xs font-semibold transition-all duration-200 ${
-              viewMode === "split"
-                ? "bg-[color:var(--surface)] text-[color:var(--ink)] shadow-sm"
-                : "bg-transparent text-[color:var(--ink-soft)] hover:text-[color:var(--ink)]"
-            }`}
-            type="button"
-            onClick={() => updateViewMode("split")}
-          >
-            Side-by-side
-          </button>
-          <button
-            className={`cursor-pointer rounded-full border-none px-3 py-1.5 text-xs font-semibold transition-all duration-200 ${
-              viewMode === "inline"
-                ? "bg-[color:var(--surface)] text-[color:var(--ink)] shadow-sm"
-                : "bg-transparent text-[color:var(--ink-soft)] hover:text-[color:var(--ink)]"
-            }`}
-            type="button"
-            onClick={() => updateViewMode("inline")}
-          >
-            Inline
-          </button>
-        </fieldset>
+        {!diffUnavailable ? (
+          <fieldset className="diff-toggle-group">
+            <legend className="sr-only">Diff layout</legend>
+            <button
+              className={`diff-toggle${viewMode === "split" ? " is-active" : ""}`}
+              type="button"
+              onClick={() => updateViewMode("split")}
+            >
+              Side-by-side
+            </button>
+            <button
+              className={`diff-toggle${viewMode === "inline" ? " is-active" : ""}`}
+              type="button"
+              onClick={() => updateViewMode("inline")}
+            >
+              Inline
+            </button>
+          </fieldset>
+        ) : null}
       </div>
 
-      <div className="flex flex-wrap items-end gap-3">
-        <div className="flex min-w-[140px] flex-1 flex-col gap-1">
-          <Label htmlFor="diff-left">Left</Label>
-          <select
-            id="diff-left"
-            className="min-h-[44px] w-full rounded-[var(--radius-sm)] border border-[rgba(29,59,78,0.22)] bg-[rgba(255,255,255,0.94)] px-3.5 py-[13px] text-[color:var(--ink)] transition-all duration-[180ms] ease-out focus:border-[color-mix(in_srgb,var(--accent)_70%,white)] focus:shadow-[0_0_0_3px_color-mix(in_srgb,var(--accent)_22%,transparent)] focus:outline-none dark:border-[rgba(255,255,255,0.12)] dark:bg-[rgba(14,28,37,0.84)]"
-            value={leftVersionId ?? ""}
-            onChange={(event) => setLeftVersionId(event.target.value as Id<"skillVersions">)}
-          >
-            <option value="" disabled>
-              Select version
-            </option>
-            {renderOptions(versionOptions)}
-          </select>
-        </div>
-        <Button
-          variant="outline"
-          size="sm"
-          onClick={() => {
-            setLeftVersionId(rightVersionId);
-            setRightVersionId(leftVersionId);
-          }}
-          disabled={!leftVersionId || !rightVersionId}
-        >
-          Swap
-        </Button>
-        <div className="flex min-w-[140px] flex-1 flex-col gap-1">
-          <Label htmlFor="diff-right">Right</Label>
-          <select
-            id="diff-right"
-            className="min-h-[44px] w-full rounded-[var(--radius-sm)] border border-[rgba(29,59,78,0.22)] bg-[rgba(255,255,255,0.94)] px-3.5 py-[13px] text-[color:var(--ink)] transition-all duration-[180ms] ease-out focus:border-[color-mix(in_srgb,var(--accent)_70%,white)] focus:shadow-[0_0_0_3px_color-mix(in_srgb,var(--accent)_22%,transparent)] focus:outline-none dark:border-[rgba(255,255,255,0.12)] dark:bg-[rgba(14,28,37,0.84)]"
-            value={rightVersionId ?? ""}
-            onChange={(event) => setRightVersionId(event.target.value as Id<"skillVersions">)}
-          >
-            <option value="" disabled>
-              Select version
-            </option>
-            {renderOptions(versionOptions)}
-          </select>
-        </div>
-      </div>
+      {!diffUnavailable ? (
+        <>
+          <div className="diff-controls">
+            <div className="diff-select">
+              <label htmlFor="diff-left">Left</label>
+              <select
+                id="diff-left"
+                className="search-input"
+                value={leftVersionId ?? ""}
+                onChange={(event) => setLeftVersionId(event.target.value as Id<"skillVersions">)}
+              >
+                <option value="" disabled>
+                  Select version
+                </option>
+                {renderOptions(versionOptions)}
+              </select>
+            </div>
+            <Button
+              className="diff-swap"
+              type="button"
+              onClick={() => {
+                setLeftVersionId(rightVersionId);
+                setRightVersionId(leftVersionId);
+              }}
+              disabled={!leftVersionId || !rightVersionId}
+            >
+              Swap
+            </Button>
+            <div className="diff-select">
+              <label htmlFor="diff-right">Right</label>
+              <select
+                id="diff-right"
+                className="search-input"
+                value={rightVersionId ?? ""}
+                onChange={(event) => setRightVersionId(event.target.value as Id<"skillVersions">)}
+              >
+                <option value="" disabled>
+                  Select version
+                </option>
+                {renderOptions(versionOptions)}
+              </select>
+            </div>
+          </div>
 
-      <div className="flex flex-wrap items-center gap-3 text-sm text-[color:var(--ink-soft)]">
-        <span>
-          Left {leftLabel} • Right {rightLabel}
-        </span>
-        {diffUnavailable ? <span>Need at least 2 versions.</span> : null}
-      </div>
+          <div className="diff-meta">
+            <span>
+              Left {leftLabel} • Right {rightLabel}
+            </span>
+          </div>
+        </>
+      ) : null}
 
-      <div className="grid gap-0 overflow-hidden rounded-[var(--radius-md)] border border-[color:var(--line)] md:grid-cols-[minmax(160px,220px)_1fr]">
-        <div className="flex max-h-[500px] flex-col overflow-y-auto border-b border-[color:var(--line)] bg-[color:var(--surface-muted)] md:border-r md:border-b-0">
-          {fileDiffItems.length === 0 ? (
-            <div className="p-3 text-sm text-[color:var(--ink-soft)]">No files to compare.</div>
+      <div className="diff-layout">
+        <div className="diff-files">
+          {diffUnavailable ? (
+            <div className="diff-empty">
+              Publish another version to compare changes side by side.
+            </div>
+          ) : fileDiffItems.length === 0 ? (
+            <div className="diff-empty">No files to compare.</div>
           ) : (
             fileDiffItems.map((item) => (
               <button
                 key={item.path}
                 type="button"
-                className={`flex w-full cursor-pointer items-center gap-2 border-none px-3 py-2 text-left text-sm transition-colors hover:bg-[color:var(--surface)] ${
-                  item.path === selectedPath
-                    ? "bg-[color:var(--surface)] font-semibold text-[color:var(--ink)]"
-                    : "bg-transparent text-[color:var(--ink)]"
-                }`}
+                className={`diff-file${item.path === selectedPath ? " is-active" : ""}`}
                 onClick={() => setSelectedPath(item.path)}
               >
-                <Badge
-                  variant={
-                    item.status === "added"
-                      ? "success"
-                      : item.status === "removed"
-                        ? "destructive"
-                        : item.status === "changed"
-                          ? "warning"
-                          : "compact"
-                  }
-                  className="shrink-0 text-[0.65rem]"
-                >
-                  {item.status}
-                </Badge>
-                <span className="truncate font-mono text-xs">{item.path}</span>
+                <span className={`diff-pill diff-pill-${item.status}`}>{item.status}</span>
+                <span className="diff-file-name">{item.path}</span>
               </button>
             ))
           )}
         </div>
-        <div className="relative min-h-[300px]">
+        <div className="diff-view">
           {error ? (
-            <div className="flex h-full items-center justify-center p-4 text-sm text-[color:var(--ink-soft)]">
-              {error}
-            </div>
+            <div className="diff-empty">{error}</div>
           ) : sizeWarning ? (
-            <div className="flex h-full items-center justify-center p-4 text-sm text-[color:var(--ink-soft)]">
+            <div className="diff-empty">
               {sizeWarning.side === "left" ? "Left" : "Right"} file exceeds 200KB:{" "}
               {sizeWarning.path}
             </div>
           ) : diffUnavailable ? (
-            <div className="flex h-full items-center justify-center p-4 text-sm text-[color:var(--ink-soft)]">
-              Publish another version to compare.
-            </div>
+            <div className="diff-empty">Publish another version to compare.</div>
           ) : !selectionReady ? (
-            <div className="flex h-full items-center justify-center p-4 text-sm text-[color:var(--ink-soft)]">
-              Select two versions to compare.
-            </div>
+            <div className="diff-empty">Select two versions to compare.</div>
           ) : !fileSelected ? (
-            <div className="flex h-full items-center justify-center p-4 text-sm text-[color:var(--ink-soft)]">
-              Select a file to compare.
-            </div>
+            <div className="diff-empty">Select a file to compare.</div>
           ) : (
-            <ClientOnly fallback={<Skeleton className="h-full w-full" />}>
+            <ClientOnly fallback={<div className="diff-empty">Preparing diff…</div>}>
               <DiffEditor
                 key={`diff-${viewMode}`}
-                className={`h-full min-h-[400px] w-full ${viewMode === "inline" ? "max-w-full" : ""}`}
+                className={`diff-monaco diff-monaco-${viewMode}`}
                 original={leftText}
                 modified={rightText}
                 theme={getMonacoThemeName()}
-                loading={<Skeleton className="h-full w-full" />}
+                loading={<div className="diff-empty">Loading diff…</div>}
                 options={diffOptions}
               />
-              {isLoading ? (
-                <div className="absolute inset-0 flex items-center justify-center bg-[color:var(--surface)]/80">
-                  <Skeleton className="h-8 w-24" />
-                </div>
-              ) : null}
+              {isLoading ? <div className="diff-loading">Loading…</div> : null}
             </ClientOnly>
           )}
         </div>
       </div>
-    </Wrapper>
+    </div>
   );
 }
 
@@ -472,7 +443,7 @@ function renderOptions(options: VersionOption[]) {
 
 function getMonacoThemeName() {
   if (typeof document === "undefined") return "clawhub-light";
-  return document.documentElement.dataset.theme === "dark" ? "clawhub-dark" : "clawhub-light";
+  return isDarkThemeResolved() ? "clawhub-dark" : "clawhub-light";
 }
 
 function buildDiffOptions(viewMode: "split" | "inline"): DiffEditorProps["options"] {
@@ -508,7 +479,7 @@ function applyMonacoTheme(monaco: NonNullable<ReturnType<typeof useMonaco>>) {
   const diffDiagonal = styles.getPropertyValue("--diff-diagonal").trim() || "#22222233";
   const background = surface;
   const gutter = surfaceMuted;
-  const isDark = document.documentElement.dataset.theme === "dark";
+  const isDark = isDarkThemeResolved();
   const base = isDark ? "vs-dark" : "vs";
 
   const diffInserted = withAlpha(diffAdded, isDark ? 0.22 : 0.2);

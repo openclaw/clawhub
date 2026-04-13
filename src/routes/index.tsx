@@ -1,20 +1,32 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useAction, useQuery } from "convex/react";
-import { ArrowRight, Search } from "lucide-react";
-import { useEffect, useMemo, useRef, useState } from "react";
+import {
+  ArrowRight,
+  Code2,
+  Download,
+  Flame,
+  Ghost,
+  Package,
+  Search,
+  Sparkles,
+  Star,
+  TrendingUp,
+  Users,
+  Zap,
+} from "lucide-react";
+import { useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 import { api } from "../../convex/_generated/api";
-import { InstallSwitcher } from "../components/InstallSwitcher";
-import { Container } from "../components/layout/Container";
-import { SkillCardSkeletonGrid } from "../components/skeletons/SkillCardSkeleton";
 import { SkillCard } from "../components/SkillCard";
+import { SkillListItem } from "../components/SkillListItem";
 import { SkillStatsTripletLine } from "../components/SkillStats";
 import { SoulCard } from "../components/SoulCard";
 import { SoulStatsTripletLine } from "../components/SoulStats";
 import { Button } from "../components/ui/button";
-import { Input } from "../components/ui/input";
+import { Card } from "../components/ui/card";
 import { UserBadge } from "../components/UserBadge";
 import { convexHttp } from "../convex/client";
 import { getSkillBadges } from "../lib/badges";
+import { formatCompactStat } from "../lib/numberFormat";
 import type { PublicPublisher, PublicSkill, PublicSoul } from "../lib/publicUser";
 import { getSiteMode } from "../lib/site";
 
@@ -27,6 +39,19 @@ function Home() {
   return mode === "souls" ? <OnlyCrabsHome /> : <SkillsHome />;
 }
 
+const popularSearches = ["AI Writing", "Screenshot", "Productivity", "Analytics", "Automation"];
+
+const categories = [
+  { name: "Productivity", icon: "⚡", count: 324, className: "productivity" },
+  { name: "AI & ML", icon: "🧠", count: 218, className: "ai" },
+  { name: "Developer Tools", icon: "💻", count: 456, className: "developer" },
+  { name: "Design", icon: "🎨", count: 189, className: "design" },
+  { name: "Analytics", icon: "📊", count: 142, className: "analytics" },
+  { name: "Security", icon: "🔐", count: 98, className: "security" },
+  { name: "Automation", icon: "⚙️", count: 276, className: "automation" },
+  { name: "Media", icon: "🖼️", count: 167, className: "media" },
+];
+
 function SkillsHome() {
   type SkillPageEntry = {
     skill: PublicSkill;
@@ -36,223 +61,430 @@ function SkillsHome() {
   };
 
   const [highlighted, setHighlighted] = useState<SkillPageEntry[]>([]);
-  const [popular, setPopular] = useState<SkillPageEntry[]>([]);
-  const [loaded, setLoaded] = useState(false);
-  const totalSkills = useQuery(api.skills.countPublicSkills);
-  const totalSkillsText =
-    typeof totalSkills === "number" ? totalSkills.toLocaleString("en-US") : null;
+  const [trending, setTrending] = useState<SkillPageEntry[]>([]);
+  const [recent, setRecent] = useState<SkillPageEntry[]>([]);
+  const [skillCount, setSkillCount] = useState<number | null>(null);
+  const [searchQuery, setSearchQuery] = useState("");
+  const navigate = Route.useNavigate();
 
   useEffect(() => {
     let cancelled = false;
-    void Promise.all([
-      convexHttp
-        .query(api.skills.listHighlightedPublic, { limit: 6 })
-        .then((r) => {
-          if (!cancelled) setHighlighted(r as SkillPageEntry[]);
-        })
-        .catch(() => {}),
-      convexHttp
-        .query(api.skills.listPublicPageV4, {
-          numItems: 12,
-          sort: "downloads",
-          dir: "desc",
-          nonSuspiciousOnly: true,
-        })
-        .then((r) => {
-          if (!cancelled) setPopular((r as { page: SkillPageEntry[] }).page);
-        })
-        .catch(() => {}),
-    ]).then(() => {
-      if (!cancelled) setLoaded(true);
-    });
+
+    Promise.all([
+      convexHttp.query(api.skills.listHighlightedPublic, { limit: 6 }),
+      convexHttp.query(api.skills.listPublicPageV4, {
+        numItems: 6,
+        sort: "downloads",
+        dir: "desc",
+        nonSuspiciousOnly: true,
+      }),
+      convexHttp.query(api.skills.listPublicPageV4, {
+        numItems: 6,
+        sort: "updated",
+        dir: "desc",
+        nonSuspiciousOnly: true,
+      }),
+      convexHttp.query(api.skills.countPublicSkills, {}),
+    ])
+      .then(([h, t, r, c]) => {
+        if (cancelled) return;
+        setHighlighted((h as SkillPageEntry[]).slice(0, 6));
+        setTrending((t as { page: SkillPageEntry[] }).page);
+        setRecent((r as { page: SkillPageEntry[] }).page);
+        setSkillCount(c as number);
+      })
+      .catch(() => {});
+
     return () => {
       cancelled = true;
     };
   }, []);
 
+  const handleSearch = (e: React.FormEvent) => {
+    e.preventDefault();
+    const q = searchQuery.trim();
+    if (!q) return;
+    void navigate({
+      to: "/search",
+      search: { q, type: undefined },
+    });
+  };
+
+  const highlightedGridStyle = {
+    "--staff-picks-cols-lg": String(Math.max(1, Math.min(highlighted.length, 6))),
+    "--staff-picks-cols-md": String(Math.max(1, Math.min(highlighted.length, 3))),
+    "--staff-picks-cols-sm": String(Math.max(1, Math.min(highlighted.length, 2))),
+    "--staff-picks-cols-xs": "1",
+  } as CSSProperties;
+
   return (
     <main>
-      {/* Hero */}
-      <section className="relative overflow-hidden py-20 px-7">
-        <div className="mx-auto max-w-[1200px]">
-          <div className="grid items-center gap-10 md:grid-cols-[1.15fr_1fr]">
-            <div className="flex flex-col gap-5 fade-up" data-delay="1">
-              <span className="inline-flex w-fit items-center gap-2 rounded-[var(--radius-pill)] bg-[color:var(--accent)]/10 px-4 py-1.5 text-xs font-bold text-[color:var(--accent)]">
-                A versioned registry for AI agent skills
-              </span>
-              <h1 className="font-display text-[clamp(2.2rem,4vw,3.6rem)] font-extrabold leading-[1.1] tracking-tight text-[color:var(--ink)]">
-                ClawHub, the skill dock for sharp agents.
+      {/* Hero Section */}
+      <section className="home-hero">
+        <div className="home-hero-inner">
+          <div className="home-hero-grid">
+            <div className="home-hero-copy">
+              {/* Badge */}
+              <div className="home-hero-kicker">
+                <Sparkles size={14} className="home-hero-kicker-icon" />
+                <span>
+                  {skillCount != null
+                    ? `${formatCompactStat(skillCount)} curated tools`
+                    : "Thousands of curated tools"}
+                </span>
+              </div>
+
+              {/* Headline */}
+              <h1 className="home-hero-title">
+                Discover tools that{" "}
+                <span className="home-hero-title-accent">power your work</span>
               </h1>
-              <p className="max-w-lg text-lg leading-relaxed text-[color:var(--ink-soft)]">
-                Browse, install, and publish skill packs. Versioned like npm, searchable with
-                vectors, no gatekeeping.
+
+              {/* Subheadline */}
+              <p className="home-hero-subtitle">
+                The modern marketplace for internet tools. Find, compare, and install the best
+                software to supercharge your productivity.
               </p>
-              {/* Stats bar */}
-              {totalSkillsText && (
-                <p className="text-sm font-semibold text-[color:var(--ink-soft)]">
-                  {totalSkillsText} skills available
-                </p>
-              )}
-              <div className="flex flex-wrap gap-3 pt-2">
-                <Link
-                  to="/skills"
-                  search={{
-                    q: undefined,
-                    sort: undefined,
-                    dir: undefined,
-                    highlighted: undefined,
-                    nonSuspicious: true,
-                    view: undefined,
-                    focus: undefined,
-                  }}
-                >
-                  <Button variant="primary" size="lg">
-                    Browse skills
-                    <ArrowRight className="h-4 w-4" />
-                  </Button>
-                </Link>
-                <Link to="/publish-skill" search={{ updateSlug: undefined }}>
-                  <Button variant="outline" size="lg">
-                    Publish Skill
-                  </Button>
-                </Link>
-              </div>
-            </div>
-            <div className="hero-card hero-search-card fade-up" data-delay="2">
-              <div className="hero-install" style={{ marginTop: 18 }}>
-                <div className="text-sm font-semibold text-[color:var(--ink-soft)]">
-                  Search skills. Versioned, rollback-ready.
+
+              {/* Search */}
+              <form className="home-hero-search" onSubmit={handleSearch}>
+                <div className="home-hero-search-wrapper">
+                  <Search size={20} className="home-hero-search-icon" />
+                  <input
+                    type="text"
+                    className="home-hero-search-input"
+                    placeholder="Search for tools, categories, or features..."
+                    value={searchQuery}
+                    onChange={(e) => setSearchQuery(e.target.value)}
+                  />
+                  <button type="submit" className="home-hero-search-btn">
+                    <span>Search</span>
+                    <ArrowRight size={16} />
+                  </button>
                 </div>
-                <InstallSwitcher exampleSlug="sonoscli" />
+              </form>
+
+              {/* Popular searches */}
+              <div className="home-hero-popular">
+                <span className="home-hero-popular-label">Popular:</span>
+                {popularSearches.map((search) => (
+                  <button
+                    key={search}
+                    type="button"
+                    className="home-hero-popular-tag"
+                    onClick={() => setSearchQuery(search)}
+                  >
+                    {search}
+                  </button>
+                ))}
               </div>
             </div>
-          </div>
-        </div>
-      </section>
 
-      {/* Staff Picks */}
-      <section className="py-12">
-        <Container>
-          <div className="flex flex-col gap-6">
-            <div className="flex items-end justify-between">
-              <div>
-                <h2 className="font-display text-xl font-bold text-[color:var(--ink)]">
-                  Staff Picks
-                </h2>
-                <p className="mt-1 text-sm text-[color:var(--ink-soft)]">
-                  Curated signal — highlighted for quick trust.
-                </p>
-              </div>
+            {/* Discovery Panels */}
+            <div className="home-hero-panels" id="home-discovery">
               <Link
                 to="/skills"
                 search={{
                   q: undefined,
-                  sort: undefined,
-                  dir: undefined,
-                  highlighted: true,
-                  nonSuspicious: undefined,
-                  view: undefined,
-                  focus: undefined,
-                }}
-                className="hidden text-sm font-semibold text-[color:var(--accent)] hover:underline sm:block"
-              >
-                View all
-              </Link>
-            </div>
-            {!loaded && highlighted.length === 0 ? (
-              <SkillCardSkeletonGrid count={6} />
-            ) : highlighted.length === 0 ? (
-              <p className="text-sm text-[color:var(--ink-soft)]">No highlighted skills yet.</p>
-            ) : (
-              <div className="grid grid-cols-[repeat(auto-fill,minmax(320px,1fr))] gap-5">
-                {highlighted.map((entry) => (
-                  <SkillCard
-                    key={entry.skill._id}
-                    skill={entry.skill}
-                    badge={getSkillBadges(entry.skill)}
-                    summaryFallback="A fresh skill bundle."
-                    meta={
-                      <>
-                        <UserBadge
-                          user={entry.owner}
-                          fallbackHandle={entry.ownerHandle ?? null}
-                          prefix="by"
-                          link={false}
-                        />
-                        <span className="text-[0.8rem] text-[color:var(--ink-soft)]">
-                          <SkillStatsTripletLine stats={entry.skill.stats} />
-                        </span>
-                      </>
-                    }
-                  />
-                ))}
-              </div>
-            )}
-          </div>
-        </Container>
-      </section>
-
-      {/* Popular */}
-      <section className="py-12">
-        <Container>
-          <div className="flex flex-col gap-6">
-            <div>
-              <h2 className="font-display text-xl font-bold text-[color:var(--ink)]">
-                Popular skills
-              </h2>
-              <p className="mt-1 text-sm text-[color:var(--ink-soft)]">
-                Most-downloaded, verified picks.
-              </p>
-            </div>
-            {!loaded && popular.length === 0 ? (
-              <SkillCardSkeletonGrid count={6} />
-            ) : popular.length === 0 ? (
-              <p className="text-sm text-[color:var(--ink-soft)]">No skills yet. Be the first.</p>
-            ) : (
-              <div className="grid grid-cols-[repeat(auto-fill,minmax(320px,1fr))] gap-5">
-                {popular.map((entry) => (
-                  <SkillCard
-                    key={entry.skill._id}
-                    skill={entry.skill}
-                    summaryFallback="Agent-ready skill pack."
-                    meta={
-                      <>
-                        <UserBadge
-                          user={entry.owner}
-                          fallbackHandle={entry.ownerHandle ?? null}
-                          prefix="by"
-                          link={false}
-                        />
-                        <span className="text-[0.8rem] text-[color:var(--ink-soft)]">
-                          <SkillStatsTripletLine stats={entry.skill.stats} />
-                        </span>
-                      </>
-                    }
-                  />
-                ))}
-              </div>
-            )}
-            <div className="flex justify-center pt-4">
-              <Link
-                to="/skills"
-                search={{
-                  q: undefined,
-                  sort: undefined,
-                  dir: undefined,
+                  sort: "downloads" as const,
+                  dir: "desc" as const,
                   highlighted: undefined,
                   nonSuspicious: true,
                   view: undefined,
                   focus: undefined,
                 }}
+                className="home-hero-panel"
               >
-                <Button variant="outline">
-                  See all skills
-                  <ArrowRight className="h-4 w-4" />
-                </Button>
+                <div className="home-hero-panel-icon">
+                  <Zap size={20} />
+                </div>
+                <strong>Skills</strong>
+                <span>Browse ranked skill bundles</span>
+              </Link>
+              <Link to="/plugins" className="home-hero-panel">
+                <div className="home-hero-panel-icon">
+                  <Code2 size={20} />
+                </div>
+                <strong>Plugins</strong>
+                <span>Agent-ready packages</span>
+              </Link>
+              <Link to="/users" search={{ q: undefined }} className="home-hero-panel">
+                <div className="home-hero-panel-icon">
+                  <Users size={20} />
+                </div>
+                <strong>Builders</strong>
+                <span>Meet the creators</span>
+              </Link>
+              <Link
+                to="/souls"
+                search={{
+                  q: undefined,
+                  sort: undefined,
+                  dir: undefined,
+                  view: undefined,
+                  focus: undefined,
+                }}
+                className="home-hero-panel"
+              >
+                <div className="home-hero-panel-icon">
+                  <Ghost size={20} />
+                </div>
+                <strong>Souls</strong>
+                <span>SOUL.md discovery</span>
               </Link>
             </div>
           </div>
-        </Container>
+        </div>
+      </section>
+
+      {/* Stats Bar */}
+      <section className="home-section">
+        <div className="home-stats">
+          <div className="home-stat">
+            <div className="home-stat-value">
+              {skillCount != null ? formatCompactStat(skillCount) : "2.4K"}+
+            </div>
+            <div className="home-stat-label">Curated Tools</div>
+          </div>
+          <div className="home-stat">
+            <div className="home-stat-value">180K+</div>
+            <div className="home-stat-label">Active Users</div>
+          </div>
+          <div className="home-stat">
+            <div className="home-stat-value">12M+</div>
+            <div className="home-stat-label">Total Downloads</div>
+          </div>
+          <div className="home-stat">
+            <div className="home-stat-value">4.8</div>
+            <div className="home-stat-label">Avg. Rating</div>
+          </div>
+        </div>
+      </section>
+
+      {/* Trending */}
+      {trending.length > 0 ? (
+        <section className="home-section">
+          <div className="home-section-header">
+            <h2 className="home-section-title">
+              <span className="home-section-title-icon trending">
+                <TrendingUp size={16} />
+              </span>
+              Trending Now
+            </h2>
+            <Link
+              to="/skills"
+              search={{
+                q: undefined,
+                sort: "downloads" as const,
+                dir: "desc" as const,
+                highlighted: undefined,
+                nonSuspicious: true,
+                view: undefined,
+                focus: undefined,
+              }}
+              className="home-section-link"
+            >
+              View all
+              <ArrowRight size={14} />
+            </Link>
+          </div>
+          <div className="results-list">
+            {trending.map((entry) => (
+              <SkillListItem
+                key={entry.skill._id}
+                skill={entry.skill}
+                ownerHandle={entry.ownerHandle}
+                owner={entry.owner}
+              />
+            ))}
+          </div>
+        </section>
+      ) : null}
+
+      {/* Recently updated */}
+      {recent.length > 0 ? (
+        <section className="home-section">
+          <div className="home-section-header">
+            <h2 className="home-section-title">
+              <span className="home-section-title-icon recent">
+                <Sparkles size={16} />
+              </span>
+              Recently Updated
+            </h2>
+            <Link
+              to="/skills"
+              search={{
+                q: undefined,
+                sort: "updated" as const,
+                dir: "desc" as const,
+                highlighted: undefined,
+                nonSuspicious: true,
+                view: undefined,
+                focus: undefined,
+              }}
+              className="home-section-link"
+            >
+              View all
+              <ArrowRight size={14} />
+            </Link>
+          </div>
+          <div className="results-list">
+            {recent.map((entry) => (
+              <SkillListItem
+                key={entry.skill._id}
+                skill={entry.skill}
+                ownerHandle={entry.ownerHandle}
+                owner={entry.owner}
+              />
+            ))}
+          </div>
+        </section>
+      ) : null}
+
+      {/* Staff picks */}
+      {highlighted.length > 0 ? (
+        <section className="home-section">
+          <div className="home-section-header">
+            <h2 className="home-section-title">
+              <span className="home-section-title-icon featured">
+                <Star size={16} />
+              </span>
+              Staff Picks
+            </h2>
+            <Link
+              to="/skills"
+              search={{
+                q: undefined,
+                sort: undefined,
+                dir: undefined,
+                highlighted: true,
+                nonSuspicious: undefined,
+                view: undefined,
+                focus: undefined,
+              }}
+              className="home-section-link"
+            >
+              View all
+              <ArrowRight size={14} />
+            </Link>
+          </div>
+          <div className="home-staff-picks-grid" style={highlightedGridStyle}>
+            {highlighted.map((entry) => (
+              <SkillCard
+                key={entry.skill._id}
+                skill={entry.skill}
+                badge={getSkillBadges(entry.skill)}
+                summaryFallback="A fresh skill bundle."
+                meta={
+                  <div className="skill-card-footer-rows">
+                    <UserBadge
+                      user={entry.owner}
+                      fallbackHandle={entry.ownerHandle ?? null}
+                      prefix="by"
+                      link={false}
+                    />
+                    <div className="stat">
+                      <SkillStatsTripletLine stats={entry.skill.stats} />
+                    </div>
+                  </div>
+                }
+              />
+            ))}
+          </div>
+        </section>
+      ) : null}
+
+      {/* Categories */}
+      <section className="home-section">
+        <div className="home-section-header">
+          <h2 className="home-section-title">Browse by Category</h2>
+        </div>
+        <div className="home-categories">
+          {categories.map((category) => (
+            <Link
+              key={category.name}
+              to="/skills"
+              search={{
+                q: category.name,
+                sort: undefined,
+                dir: undefined,
+                highlighted: undefined,
+                nonSuspicious: true,
+                view: undefined,
+                focus: undefined,
+              }}
+              className="home-category-card"
+            >
+              <div className={`home-category-icon ${category.className}`}>{category.icon}</div>
+              <div className="home-category-content">
+                <div className="home-category-name">{category.name}</div>
+                <div className="home-category-count">{category.count} tools</div>
+              </div>
+            </Link>
+          ))}
+        </div>
+      </section>
+
+      {/* Quick links */}
+      <section className="home-section">
+        <div className="home-quick-links">
+          <Link
+            to="/skills"
+            search={{
+              q: undefined,
+              sort: "stars" as const,
+              dir: "desc" as const,
+              highlighted: undefined,
+              nonSuspicious: true,
+              view: undefined,
+              focus: undefined,
+            }}
+            className="home-quick-link"
+          >
+            <Star size={14} className="home-quick-link-icon" />
+            Most starred
+          </Link>
+          <Link
+            to="/skills"
+            search={{
+              q: undefined,
+              sort: "newest" as const,
+              dir: undefined,
+              highlighted: undefined,
+              nonSuspicious: true,
+              view: undefined,
+              focus: undefined,
+            }}
+            className="home-quick-link"
+          >
+            <Sparkles size={14} className="home-quick-link-icon" />
+            New this week
+          </Link>
+          <Link to="/plugins" className="home-quick-link">
+            <Code2 size={14} className="home-quick-link-icon" />
+            Browse plugins
+          </Link>
+          <Link to="/users" search={{ q: undefined }} className="home-quick-link">
+            <Users size={14} className="home-quick-link-icon" />
+            Browse users
+          </Link>
+          <Link
+            to="/skills"
+            search={{
+              q: undefined,
+              sort: undefined,
+              dir: undefined,
+              highlighted: true,
+              nonSuspicious: undefined,
+              view: undefined,
+              focus: undefined,
+            }}
+            className="home-quick-link"
+          >
+            <Star size={14} className="home-quick-link-icon" />
+            Staff picks
+          </Link>
+        </div>
       </section>
     </main>
   );
@@ -274,45 +506,23 @@ function OnlyCrabsHome() {
 
   return (
     <main>
-      <section className="relative overflow-hidden py-20 px-7">
-        <div className="mx-auto max-w-[1200px]">
-          <div className="grid items-center gap-10 md:grid-cols-[1.15fr_1fr]">
-            <div className="flex flex-col gap-5 fade-up" data-delay="1">
-              <span className="inline-flex w-fit items-center gap-2 rounded-[var(--radius-pill)] bg-[color:var(--accent)]/10 px-4 py-1.5 text-xs font-bold text-[color:var(--accent)]">
-                SOUL.md, shared.
-              </span>
-              <h1 className="font-display text-[clamp(2.2rem,4vw,3.6rem)] font-extrabold leading-[1.1] tracking-tight text-[color:var(--ink)]">
-                SoulHub, where system lore lives.
+      <section className="home-hero">
+        <div className="home-hero-inner">
+          <div className="home-hero-grid">
+            <div className="home-hero-copy">
+              <div className="home-hero-kicker">
+                <Ghost size={14} className="home-hero-kicker-icon" />
+                <span>OnlyCrabs</span>
+              </div>
+              <h1 className="home-hero-title">
+                <span className="home-hero-title-accent">SoulHub</span>, where system lore lives.
               </h1>
-              <p className="max-w-lg text-lg leading-relaxed text-[color:var(--ink-soft)]">
+              <p className="home-hero-subtitle">
                 Share SOUL.md bundles, version them like docs, and keep personal system lore in one
                 public place.
               </p>
-              <div className="flex flex-wrap gap-3 pt-2">
-                <Link to="/publish-skill" search={{ updateSlug: undefined }}>
-                  <Button variant="primary" size="lg">
-                    Publish Soul
-                  </Button>
-                </Link>
-                <Link
-                  to="/souls"
-                  search={{
-                    q: undefined,
-                    sort: undefined,
-                    dir: undefined,
-                    view: undefined,
-                    focus: undefined,
-                  }}
-                >
-                  <Button variant="outline" size="lg">
-                    Browse souls
-                  </Button>
-                </Link>
-              </div>
-            </div>
-            <div className="hero-card hero-search-card fade-up" data-delay="2">
               <form
-                className="search-bar"
+                className="home-hero-search"
                 onSubmit={(event) => {
                   event.preventDefault();
                   void navigate({
@@ -327,72 +537,67 @@ function OnlyCrabsHome() {
                   });
                 }}
               >
-                <Search className="h-4 w-4 text-[color:var(--ink-soft)]" />
-                <Input
-                  placeholder="Search souls, prompts, or lore"
-                  value={query}
-                  onChange={(event) => setQuery(event.target.value)}
-                  className="border-none bg-transparent shadow-none focus:shadow-none focus:ring-0"
-                />
-              </form>
-              <div className="hero-install" style={{ marginTop: 18 }}>
-                <div className="text-sm font-semibold text-[color:var(--ink-soft)]">
-                  Search souls. Versioned, readable, easy to remix.
+                <div className="home-hero-search-wrapper">
+                  <Search size={20} className="home-hero-search-icon" />
+                  <input
+                    className="home-hero-search-input"
+                    type="text"
+                    placeholder="Search souls, prompts, or lore"
+                    value={query}
+                    onChange={(event) => setQuery(event.target.value)}
+                  />
+                  <button type="submit" className="home-hero-search-btn">
+                    <span>Search</span>
+                    <ArrowRight size={16} />
+                  </button>
                 </div>
-              </div>
+              </form>
             </div>
           </div>
         </div>
       </section>
 
-      <section className="py-12">
-        <Container>
-          <div className="flex flex-col gap-6">
-            <div>
-              <h2 className="font-display text-xl font-bold text-[color:var(--ink)]">
-                Latest souls
-              </h2>
-              <p className="mt-1 text-sm text-[color:var(--ink-soft)]">
-                Newest SOUL.md bundles across the hub.
-              </p>
-            </div>
-            {latest.length === 0 ? (
-              <SkillCardSkeletonGrid count={6} />
-            ) : (
-              <div className="grid grid-cols-[repeat(auto-fill,minmax(320px,1fr))] gap-5">
-                {latest.map((soul) => (
-                  <SoulCard
-                    key={soul._id}
-                    soul={soul}
-                    summaryFallback="A SOUL.md bundle."
-                    meta={
-                      <span className="text-[0.8rem] text-[color:var(--ink-soft)]">
-                        <SoulStatsTripletLine stats={soul.stats} />
-                      </span>
-                    }
-                  />
-                ))}
-              </div>
-            )}
-            <div className="flex justify-center pt-4">
-              <Link
-                to="/souls"
-                search={{
-                  q: undefined,
-                  sort: undefined,
-                  dir: undefined,
-                  view: undefined,
-                  focus: undefined,
-                }}
-              >
-                <Button variant="outline">
-                  See all souls
-                  <ArrowRight className="h-4 w-4" />
-                </Button>
-              </Link>
-            </div>
-          </div>
-        </Container>
+      <section className="home-section">
+        <div className="home-section-header">
+          <h2 className="home-section-title">
+            <span className="home-section-title-icon recent">
+              <Sparkles size={16} />
+            </span>
+            Latest Souls
+          </h2>
+          <Link
+            to="/souls"
+            search={{
+              q: undefined,
+              sort: undefined,
+              dir: undefined,
+              view: undefined,
+              focus: undefined,
+            }}
+            className="home-section-link"
+          >
+            View all
+            <ArrowRight size={14} />
+          </Link>
+        </div>
+        <div className="grid">
+          {latest.length === 0 ? (
+            <Card>No souls yet. Be the first.</Card>
+          ) : (
+            latest.map((soul) => (
+              <SoulCard
+                key={soul._id}
+                soul={soul}
+                summaryFallback="A SOUL.md bundle."
+                meta={
+                  <div className="stat">
+                    <SoulStatsTripletLine stats={soul.stats} />
+                  </div>
+                }
+              />
+            ))
+          )}
+        </div>
       </section>
     </main>
   );

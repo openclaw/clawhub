@@ -1,12 +1,8 @@
-import { Link } from "@tanstack/react-router";
-import { Loader2 } from "lucide-react";
 import type { RefObject } from "react";
-import { EmptyState } from "../../components/EmptyState";
-import { SkillCardSkeletonGrid } from "../../components/skeletons/SkillCardSkeleton";
 import { SkillCard } from "../../components/SkillCard";
+import { SkillListItem } from "../../components/SkillListItem";
 import { getPlatformLabels } from "../../components/skillDetailUtils";
-import { SkillMetricsRow, SkillStatsTripletLine } from "../../components/SkillStats";
-import { Badge } from "../../components/ui/badge";
+import { SkillStatsTripletLine } from "../../components/SkillStats";
 import { Button } from "../../components/ui/button";
 import { UserBadge } from "../../components/UserBadge";
 import { getSkillBadges } from "../../lib/badges";
@@ -29,7 +25,7 @@ export function SkillsResults({
   isLoadingSkills,
   sorted,
   view,
-  listDoneLoading,
+  listDoneLoading: _listDoneLoading,
   hasQuery,
   canLoadMore,
   isLoadingMore,
@@ -40,14 +36,27 @@ export function SkillsResults({
   return (
     <>
       {isLoadingSkills ? (
-        <SkillCardSkeletonGrid count={6} />
+        <div className="skeleton-list">
+          {Array.from({ length: 6 }, (_, i) => (
+            <div key={i} className="skeleton-row">
+              <div className="skeleton-icon" />
+              <div className="skeleton-row-body">
+                <div className="skeleton-bar skeleton-bar-lg" />
+                <div className="skeleton-bar skeleton-bar-sm" />
+                <div className="skeleton-bar skeleton-bar-xs" />
+              </div>
+            </div>
+          ))}
+        </div>
       ) : sorted.length === 0 ? (
-        <EmptyState
-          title={listDoneLoading || hasQuery ? "No skills match that filter" : "Loading skills..."}
-          description={hasQuery ? "Try adjusting your search or filters." : undefined}
-        />
+        <div className="empty-state">
+          <p className="empty-state-title">No skills found</p>
+          <p className="empty-state-body">
+            {hasQuery ? "Try a different search term or remove filters." : "No skills have been published yet."}
+          </p>
+        </div>
       ) : view === "cards" ? (
-        <div className="grid grid-cols-[repeat(auto-fill,minmax(320px,1fr))] gap-5">
+        <div className="grid">
           {sorted.map((entry) => {
             const skill = entry.skill;
             const clawdis = entry.latestVersion?.parsed?.clawdis;
@@ -65,105 +74,57 @@ export function SkillsResults({
                 platformLabels={platforms.length ? platforms : undefined}
                 summaryFallback="Agent-ready skill pack."
                 meta={
-                  <>
+                  <div className="skill-card-footer-rows">
                     <UserBadge
                       user={entry.owner}
                       fallbackHandle={ownerHandle}
                       prefix="by"
                       link={false}
                     />
-                    <span className="text-[0.8rem] text-[color:var(--ink-soft)]">
+                    <div className="stat">
                       <SkillStatsTripletLine stats={skill.stats} />
-                    </span>
-                  </>
+                    </div>
+                  </div>
                 }
               />
             );
           })}
         </div>
       ) : (
-        /* List view */
-        <div className="overflow-hidden rounded-[var(--radius-md)] border border-[color:var(--line)]">
-          {/* Table header */}
-          <div className="grid grid-cols-[minmax(160px,1.2fr)_minmax(120px,1.6fr)_minmax(100px,0.8fr)_minmax(120px,1fr)] gap-4 border-b border-[color:var(--line)] bg-[color:var(--surface-muted)] px-5 py-3 text-xs font-bold uppercase tracking-wider text-[color:var(--ink-soft)]">
-            <span>Skill</span>
-            <span>Summary</span>
-            <span>Author</span>
-            <span className="text-right">Stats</span>
-          </div>
-          {sorted.map((entry, i) => {
+        <div className="results-list">
+          {sorted.map((entry) => {
             const skill = entry.skill;
             const ownerHandle = entry.owner?.handle ?? entry.ownerHandle ?? null;
-            const skillHref = buildSkillHref(skill, ownerHandle);
             return (
-              <Link
+              <SkillListItem
                 key={skill._id}
-                className={`grid grid-cols-[minmax(160px,1.2fr)_minmax(120px,1.6fr)_minmax(100px,0.8fr)_minmax(120px,1fr)] items-center gap-4 px-5 py-3.5 no-underline transition-colors hover:bg-[color:var(--surface-muted)] ${
-                  i % 2 === 0 ? "bg-[color:var(--surface)]" : "bg-[color:var(--bg-soft)]"
-                }`}
-                to={skillHref}
-              >
-                <span className="flex flex-col gap-1">
-                  <span className="flex items-center gap-2">
-                    <span className="font-semibold text-[color:var(--ink)]">
-                      {skill.displayName}
-                    </span>
-                    {getSkillBadges(skill).map((badge) => (
-                      <Badge key={badge} variant="compact">
-                        {badge}
-                      </Badge>
-                    ))}
-                  </span>
-                  {entry.latestVersion?.version ? (
-                    <span className="font-mono text-xs text-[color:var(--ink-soft)]">
-                      v{entry.latestVersion.version}
-                    </span>
-                  ) : null}
-                </span>
-                <span className="truncate text-sm text-[color:var(--ink-soft)]">
-                  {skill.summary ?? "No summary provided."}
-                </span>
-                <span className="text-sm">
-                  <UserBadge
-                    user={entry.owner}
-                    fallbackHandle={ownerHandle}
-                    prefix=""
-                    link={false}
-                  />
-                </span>
-                <span className="flex flex-wrap justify-end gap-3 text-xs text-[color:var(--ink-soft)]">
-                  <SkillMetricsRow stats={skill.stats} />
-                </span>
-              </Link>
+                skill={skill}
+                ownerHandle={ownerHandle}
+                owner={entry.owner}
+              />
             );
           })}
         </div>
       )}
 
-      {/* Load more */}
-      {(canLoadMore || isLoadingMore) && (
-        <div ref={canAutoLoad ? loadMoreRef : null} className="flex justify-center pt-4">
+      {canLoadMore || isLoadingMore ? (
+        <div
+          ref={canAutoLoad ? loadMoreRef : null}
+          className="card mt-4 flex justify-center"
+        >
           {canAutoLoad ? (
             isLoadingMore ? (
-              <div className="flex items-center gap-2 text-sm font-medium text-[color:var(--ink-soft)]">
-                <Loader2 className="h-4 w-4 animate-spin" />
-                Loading more...
-              </div>
+              "Loading more..."
             ) : (
-              <div className="text-sm text-[color:var(--ink-soft)]">Scroll to load more</div>
+              "Scroll to load more"
             )
           ) : (
-            <Button
-              variant="outline"
-              onClick={loadMore}
-              disabled={isLoadingMore}
-              loading={isLoadingMore}
-            >
-              Load more
+            <Button type="button" onClick={loadMore} disabled={isLoadingMore}>
+              {isLoadingMore ? "Loading..." : "Load more"}
             </Button>
           )}
         </div>
-      )}
+      ) : null}
     </>
   );
 }

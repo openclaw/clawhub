@@ -1,15 +1,23 @@
 import { createFileRoute, redirect } from "@tanstack/react-router";
 import { useQuery } from "convex/react";
-import { useRef } from "react";
+import { Search } from "lucide-react";
+import { useCallback, useMemo, useRef, useState } from "react";
 import { api } from "../../../convex/_generated/api";
-import { SKILL_CAPABILITY_TAGS } from "../../../convex/lib/skillCapabilityTags";
-import { Container } from "../../components/layout/Container";
+import { BrowseSidebar } from "../../components/BrowseSidebar";
+import { SKILL_CATEGORIES } from "../../lib/categories";
+import { formatCompactStat } from "../../lib/numberFormat";
 import { parseSort } from "./-params";
 import { SkillsResults } from "./-SkillsResults";
-import { SkillsToolbar } from "./-SkillsToolbar";
 import { useSkillsBrowseModel, type SkillsSearchState } from "./-useSkillsBrowseModel";
 
-const SKILL_CAPABILITY_TAG_SET = new Set<string>(SKILL_CAPABILITY_TAGS);
+const SORT_OPTIONS = [
+  { value: "downloads", label: "Most downloaded" },
+  { value: "stars", label: "Most starred" },
+  { value: "installs", label: "Most installed" },
+  { value: "updated", label: "Recently updated" },
+  { value: "newest", label: "Newest" },
+  { value: "name", label: "Name" },
+];
 
 export const Route = createFileRoute("/skills/")({
   validateSearch: (search): SkillsSearchState => {
@@ -27,10 +35,6 @@ export const Route = createFileRoute("/skills/")({
         search.nonSuspicious === true
           ? true
           : undefined,
-      tag:
-        typeof search.tag === "string" && SKILL_CAPABILITY_TAG_SET.has(search.tag)
-          ? search.tag
-          : undefined,
       view: search.view === "cards" || search.view === "list" ? search.view : undefined,
       focus: search.focus === "search" ? "search" : undefined,
     };
@@ -46,7 +50,6 @@ export const Route = createFileRoute("/skills/")({
         dir: search.dir || undefined,
         highlighted: search.highlighted || undefined,
         nonSuspicious: search.nonSuspicious || undefined,
-        tag: search.tag || undefined,
         view: search.view || undefined,
         focus: search.focus || undefined,
       },
@@ -62,7 +65,8 @@ export function SkillsIndex() {
   const searchInputRef = useRef<HTMLInputElement>(null);
   const totalSkills = useQuery(api.skills.countPublicSkills);
   const totalSkillsText =
-    typeof totalSkills === "number" ? totalSkills.toLocaleString("en-US") : null;
+    typeof totalSkills === "number" ? formatCompactStat(totalSkills) : null;
+  const [sidebarOpen, setSidebarOpen] = useState(false);
 
   const model = useSkillsBrowseModel({
     navigate,
@@ -70,60 +74,120 @@ export function SkillsIndex() {
     searchInputRef,
   });
 
+  const sortOptionsWithRelevance = model.hasQuery
+    ? [{ value: "relevance", label: "Relevance" }, ...SORT_OPTIONS]
+    : SORT_OPTIONS;
+
+  const handleFilterToggle = useCallback(
+    (key: string) => {
+      if (key === "highlighted") model.onToggleHighlighted();
+      else if (key === "nonSuspicious") model.onToggleNonSuspicious();
+    },
+    [model.onToggleHighlighted, model.onToggleNonSuspicious],
+  );
+
+  const handleCategoryChange = useCallback(
+    (slug: string | undefined) => {
+      if (slug) {
+        const cat = SKILL_CATEGORIES.find((c) => c.slug === slug);
+        if (cat?.keywords[0]) {
+          model.onQueryChange(cat.keywords[0]);
+        }
+      } else {
+        model.onQueryChange("");
+      }
+    },
+    [model.onQueryChange],
+  );
+
+  const activeCategory = useMemo(() => {
+    if (!model.query) return undefined;
+    return (
+      SKILL_CATEGORIES.find((c) =>
+        c.keywords.some((k) => k === model.query.trim().toLowerCase()),
+      )?.slug ?? undefined
+    );
+  }, [model.query]);
+
   return (
-    <main className="py-10">
-      <Container size="wide">
-        <div className="flex flex-col gap-6">
-          {/* Header */}
-          <header>
-            <h1 className="font-display text-2xl font-bold text-[color:var(--ink)]">
-              Skills
-              <span className="ml-2 text-lg font-normal text-[color:var(--ink-soft)] opacity-70">
-                ({model.hasQuery || model.highlightedOnly || model.nonSuspiciousOnly
-                  ? model.sorted.length.toLocaleString("en-US")
-                  : totalSkillsText ?? "…"})
-              </span>
-            </h1>
-            <p className="mt-1 text-sm text-[color:var(--ink-soft)]">
+    <main className="browse-page">
+      <div className="browse-page-header">
+        <button
+          className="browse-sidebar-toggle"
+          type="button"
+          onClick={() => setSidebarOpen(!sidebarOpen)}
+          aria-label="Toggle filters"
+        >
+          Filters
+        </button>
+        <h1 className="browse-title">
+          Skills
+          {totalSkillsText ? (
+            <span className="browse-count">{totalSkillsText}</span>
+          ) : null}
+        </h1>
+      </div>
+      <div className="browse-page-search">
+        <Search size={15} className="navbar-search-icon" aria-hidden="true" />
+        <input
+          ref={searchInputRef}
+          className="browse-search-input"
+          value={model.query}
+          onChange={(event) => model.onQueryChange(event.target.value)}
+          placeholder="Search skills..."
+        />
+      </div>
+      <div className={`browse-layout${sidebarOpen ? " sidebar-open" : ""}`}>
+        <BrowseSidebar
+          categories={SKILL_CATEGORIES}
+          activeCategory={activeCategory}
+          onCategoryChange={handleCategoryChange}
+          sortOptions={sortOptionsWithRelevance}
+          activeSort={model.sort}
+          onSortChange={model.onSortChange}
+          filters={[
+            { key: "highlighted", label: "Staff picks", active: model.highlightedOnly },
+            { key: "nonSuspicious", label: "Hide suspicious", active: model.nonSuspiciousOnly },
+          ]}
+          onFilterToggle={handleFilterToggle}
+        />
+        <div className="browse-results">
+          <div className="browse-results-toolbar">
+            <span className="browse-results-count">
               {model.isLoadingSkills
-                ? "Loading skills..."
-                : `Browse the skill library${model.activeFilters.length ? ` (${model.activeFilters.join(", ")})` : ""}.`}
-            </p>
-          </header>
-
-          {/* Toolbar */}
-          <SkillsToolbar
-            searchInputRef={searchInputRef}
-            query={model.query}
-            hasQuery={model.hasQuery}
-            sort={model.sort}
-            dir={model.dir}
-            view={model.view}
-            highlightedOnly={model.highlightedOnly}
-            nonSuspiciousOnly={model.nonSuspiciousOnly}
-            capabilityTag={model.capabilityTag}
-            onQueryChange={model.onQueryChange}
-            onToggleHighlighted={model.onToggleHighlighted}
-            onToggleNonSuspicious={model.onToggleNonSuspicious}
-            onCapabilityTagChange={model.onCapabilityTagChange}
-            onSortChange={model.onSortChange}
-            onToggleDir={model.onToggleDir}
-            onToggleView={model.onToggleView}
-          />
-
-          {/* Results count */}
-          {model.sorted.length > 0 && (
-            <p className="text-xs font-medium text-[color:var(--ink-soft)]">
-              {model.sorted.length}
-              {!model.hasQuery && totalSkillsText ? ` of ${totalSkillsText}` : ""} skills
-              {model.hasQuery ? ` matching "${model.query}"` : ""}
-              {model.highlightedOnly || model.nonSuspiciousOnly || model.capabilityTag
-                ? ` (filtered)`
-                : ""}
-            </p>
-          )}
-
-          {/* Results */}
+                ? "\u2014"
+                : `${model.sorted.length} results`}
+              {(model.hasQuery || model.highlightedOnly || model.nonSuspiciousOnly) ? (
+                <button
+                  className="browse-clear-btn"
+                  type="button"
+                  onClick={() => {
+                    model.onQueryChange("");
+                    if (model.highlightedOnly) model.onToggleHighlighted();
+                    if (model.nonSuspiciousOnly) model.onToggleNonSuspicious();
+                  }}
+                >
+                  Clear
+                </button>
+              ) : null}
+            </span>
+            <div className="browse-view-toggle">
+              <button
+                className={`browse-view-btn${model.view === "list" ? " is-active" : ""}`}
+                type="button"
+                onClick={model.view === "cards" ? model.onToggleView : undefined}
+              >
+                List
+              </button>
+              <button
+                className={`browse-view-btn${model.view === "cards" ? " is-active" : ""}`}
+                type="button"
+                onClick={model.view === "list" ? model.onToggleView : undefined}
+              >
+                Cards
+              </button>
+            </div>
+          </div>
           <SkillsResults
             isLoadingSkills={model.isLoadingSkills}
             sorted={model.sorted}
@@ -137,7 +201,7 @@ export function SkillsIndex() {
             loadMore={model.loadMore}
           />
         </div>
-      </Container>
+      </div>
     </main>
   );
 }

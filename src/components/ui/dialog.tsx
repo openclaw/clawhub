@@ -16,7 +16,7 @@ const DialogOverlay = React.forwardRef<
     ref={ref}
     className={cn(
       // Matches .report-dialog-backdrop
-      "fixed inset-0 z-80 grid place-items-center bg-[rgba(21,24,35,0.42)] p-5 backdrop-blur-[3px]",
+      "fixed inset-0 z-80 grid place-items-center bg-overlay-bg p-5 backdrop-blur-[3px]",
       "data-[state=open]:animate-in data-[state=open]:fade-in-0",
       "data-[state=closed]:animate-out data-[state=closed]:fade-out-0",
       className,
@@ -36,7 +36,7 @@ const DialogContent = React.forwardRef<
       ref={ref}
       className={cn(
         // Matches .report-dialog
-        "fixed top-1/2 left-1/2 z-80 grid w-[min(100%,560px)] -translate-x-1/2 -translate-y-1/2 gap-3 rounded-[var(--radius-md)] border border-[color:var(--line)] bg-[color:var(--surface)] p-5 shadow-[0_24px_50px_rgba(18,22,34,0.24)]",
+        "fixed top-1/2 left-1/2 z-80 grid w-[min(100%,560px)] -translate-x-1/2 -translate-y-1/2 gap-3 rounded-[var(--radius-md)] border border-[color:var(--line)] bg-[color:var(--surface)] p-5 shadow-dialog",
         "data-[state=open]:animate-in data-[state=open]:fade-in-0 data-[state=open]:zoom-in-95",
         "data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=closed]:zoom-out-95",
         className,

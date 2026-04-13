@@ -3,6 +3,7 @@ import { useEffect, useRef } from "react";
 import { convex } from "../convex/client";
 import { getUserFacingAuthError, normalizeAuthErrorMessage } from "../lib/authErrorMessage";
 import { clearAuthError, setAuthError } from "../lib/useAuthError";
+import { TooltipProvider } from "./ui/tooltip";
 import { UserBootstrap } from "./UserBootstrap";
 
 function getPendingAuthCode() {
@@ -82,10 +83,12 @@ export function AuthErrorHandler() {
 export function AppProviders({ children }: { children: React.ReactNode }) {
   return (
     <ConvexAuthProvider client={convex} shouldHandleCode={false}>
-      <AuthCodeHandler />
-      <AuthErrorHandler />
-      <UserBootstrap />
-      {children}
+      <TooltipProvider delayDuration={400}>
+        <AuthCodeHandler />
+        <AuthErrorHandler />
+        <UserBootstrap />
+        {children}
+      </TooltipProvider>
     </ConvexAuthProvider>
   );
 }

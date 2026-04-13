@@ -33,15 +33,15 @@ const Button = React.forwardRef<HTMLButtonElement, ButtonProps>(
           "inline-flex items-center justify-center gap-2 whitespace-nowrap font-semibold transition-all duration-200 ease-out",
           "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--accent)]/35 focus-visible:ring-offset-2 focus-visible:ring-offset-[color:var(--bg)]",
           "disabled:pointer-events-none disabled:opacity-60",
-          // Hover lift (matches .btn:hover)
-          "hover:not-disabled:-translate-y-px hover:not-disabled:shadow-[0_10px_20px_rgba(29,26,23,0.12)]",
+          // Hover lift
+          "hover:not-disabled:-translate-y-px hover:not-disabled:shadow-hover",
           // Variant styles
           variant === "default" &&
             "border border-[color:var(--line)] bg-[color:var(--surface)] text-[color:var(--ink)]",
           variant === "primary" &&
-            "border-none bg-gradient-to-br from-[color:var(--accent)] to-[color:var(--accent-deep)] text-white dark:from-[#c35640] dark:to-[#953827] dark:shadow-[0_10px_22px_rgba(58,23,16,0.42),inset_0_1px_0_rgba(255,201,184,0.18)]",
+            "border border-accent bg-accent/10 text-[color:var(--ink)]",
           variant === "destructive" &&
-            "border border-red-300/40 bg-red-50 text-red-700 hover:not-disabled:bg-red-100 dark:border-red-500/30 dark:bg-red-950/50 dark:text-red-300",
+            "border border-status-error-fg/20 bg-status-error-bg text-status-error-fg hover:not-disabled:bg-active-bg",
           variant === "ghost" &&
             "border-transparent bg-transparent text-[color:var(--ink-soft)] hover:not-disabled:bg-[color:var(--surface-muted)] hover:not-disabled:text-[color:var(--ink)] hover:not-disabled:shadow-none hover:not-disabled:translate-y-0",
           variant === "outline" &&

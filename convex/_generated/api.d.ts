@@ -100,6 +100,7 @@ import type * as publishers from "../publishers.js";
 import type * as rateLimits from "../rateLimits.js";
 import type * as search from "../search.js";
 import type * as seed from "../seed.js";
+import type * as seedDemo from "../seedDemo.js";
 import type * as seedSouls from "../seedSouls.js";
 import type * as skillStatEvents from "../skillStatEvents.js";
 import type * as skillTransfers from "../skillTransfers.js";
@@ -216,6 +217,7 @@ declare const fullApi: ApiFromModules<{
   rateLimits: typeof rateLimits;
   search: typeof search;
   seed: typeof seed;
+  seedDemo: typeof seedDemo;
   seedSouls: typeof seedSouls;
   skillStatEvents: typeof skillStatEvents;
   skillTransfers: typeof skillTransfers;

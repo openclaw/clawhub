@@ -1,23 +1,12 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useMutation, useQuery } from "convex/react";
-import { Star, User } from "lucide-react";
 import { useEffect, useState } from "react";
-import { toast } from "sonner";
 import { api } from "../../../convex/_generated/api";
 import type { Doc } from "../../../convex/_generated/dataModel";
-import { EmptyState } from "../../components/EmptyState";
-import { Container } from "../../components/layout/Container";
-import { SignInButton } from "../../components/SignInButton";
-import { SkillCardSkeletonGrid } from "../../components/skeletons/SkillCardSkeleton";
-import { SkillCard } from "../../components/SkillCard";
-import { SkillStatsTripletLine } from "../../components/SkillStats";
-import { Avatar, AvatarFallback, AvatarImage } from "../../components/ui/avatar";
+import { SkillListItem } from "../../components/SkillListItem";
 import { Badge } from "../../components/ui/badge";
 import { Button } from "../../components/ui/button";
 import { Card } from "../../components/ui/card";
-import { Skeleton } from "../../components/ui/skeleton";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "../../components/ui/tabs";
-import { getSkillBadges } from "../../lib/badges";
 import type { PublicSkill, PublicUser } from "../../lib/publicUser";
 
 export const Route = createFileRoute("/u/$handle")({
@@ -51,28 +40,18 @@ function UserProfile() {
 
   if (user === undefined) {
     return (
-      <main className="py-10">
-        <Container size="narrow">
-          <div className="flex flex-col items-center gap-4">
-            <Skeleton className="h-20 w-20 rounded-full" />
-            <Skeleton className="h-6 w-40" />
-            <Skeleton className="h-4 w-24" />
-          </div>
-        </Container>
+      <main className="section">
+        <Card>
+          <div className="loading-indicator">Loading user…</div>
+        </Card>
       </main>
     );
   }
 
   if (user === null) {
     return (
-      <main className="py-10">
-        <Container size="narrow">
-          <EmptyState
-            icon={User}
-            title="User not found"
-            description="This user doesn't exist or their account has been removed."
-          />
-        </Container>
+      <main className="section">
+        <Card>User not found.</Card>
       </main>
     );
   }
@@ -87,131 +66,90 @@ function UserProfile() {
   const published = publishedSkills ?? [];
 
   return (
-    <main className="py-10">
-      <Container size="narrow">
-        <div className="flex flex-col gap-8">
-          {/* Profile header */}
-          <Card className="flex-row items-center gap-4 p-6">
-            <Avatar className="h-16 w-16">
-              {avatar && <AvatarImage src={avatar} alt={displayName} />}
-              <AvatarFallback className="text-xl">{initial}</AvatarFallback>
-            </Avatar>
-            <div>
-              <h1 className="font-display text-xl font-bold text-[color:var(--ink)]">
-                {displayName}
-              </h1>
-              <p className="font-mono text-sm text-[color:var(--ink-soft)]">@{displayHandle}</p>
-            </div>
-          </Card>
-
-          {/* Tabs */}
-          {isSelf ? (
-            <Tabs value={tab} onValueChange={(v) => setTab(v as "stars" | "installed")}>
-              <TabsList>
-                <TabsTrigger value="stars">Stars</TabsTrigger>
-                <TabsTrigger value="installed">Installed</TabsTrigger>
-              </TabsList>
-              <TabsContent value="stars" className="mt-6">
-                <PublishedAndStarred
-                  published={published}
-                  isLoadingPublished={isLoadingPublished}
-                  skills={skills}
-                  isLoadingSkills={isLoadingSkills}
-                />
-              </TabsContent>
-              <TabsContent value="installed" className="mt-6">
-                <InstalledSection
-                  includeRemoved={includeRemoved}
-                  onToggleRemoved={() => setIncludeRemoved((value) => !value)}
-                  data={installed}
-                />
-              </TabsContent>
-            </Tabs>
-          ) : (
-            <PublishedAndStarred
-              published={published}
-              isLoadingPublished={isLoadingPublished}
-              skills={skills}
-              isLoadingSkills={isLoadingSkills}
-            />
-          )}
+    <main className="browse-page">
+      <div className="profile-header">
+        <div className="profile-avatar-lg" aria-hidden="true">
+          {avatar ? <img src={avatar} alt="" /> : <span>{initial}</span>}
         </div>
-      </Container>
+        <div className="profile-info">
+          <h1 className="profile-display-name">{displayName}</h1>
+          <span className="profile-handle">@{displayHandle}</span>
+          <div className="profile-stats-row">
+            <span className="profile-stat">{published.length} published</span>
+            <span className="profile-stat">{skills.length} stars</span>
+          </div>
+        </div>
+      </div>
+
+      {isSelf ? (
+        <div className="profile-tabs" role="tablist" aria-label="Profile tabs">
+          <button
+            className={tab === "stars" ? "profile-tab is-active" : "profile-tab"}
+            type="button"
+            role="tab"
+            aria-selected={tab === "stars"}
+            onClick={() => setTab("stars")}
+          >
+            Overview
+          </button>
+          <button
+            className={tab === "installed" ? "profile-tab is-active" : "profile-tab"}
+            type="button"
+            role="tab"
+            aria-selected={tab === "installed"}
+            onClick={() => setTab("installed")}
+          >
+            Installed
+          </button>
+        </div>
+      ) : null}
+
+      {tab === "installed" && isSelf ? (
+        <InstalledSection
+          includeRemoved={includeRemoved}
+          onToggleRemoved={() => setIncludeRemoved((value) => !value)}
+          data={installed}
+        />
+      ) : (
+        <>
+          {published.length > 0 ? (
+            <>
+              <h2 className="home-section-title mb-3">
+                Published ({published.length})
+              </h2>
+              {isLoadingPublished ? (
+                <Card>
+                  <div className="loading-indicator">Loading published skills...</div>
+                </Card>
+              ) : (
+                <div className="results-list mb-6">
+                  {published.map((skill) => (
+                    <SkillListItem key={skill._id} skill={skill} />
+                  ))}
+                </div>
+              )}
+            </>
+          ) : null}
+
+          <h2 className="home-section-title mb-3">
+            Stars ({skills.length})
+          </h2>
+          {isLoadingSkills ? (
+            <Card>
+              <div className="loading-indicator">Loading stars...</div>
+            </Card>
+          ) : skills.length === 0 ? (
+            <Card>No stars yet.</Card>
+          ) : (
+            <div className="results-list">
+              {skills.map((skill) => (
+                <SkillListItem key={skill._id} skill={skill} />
+              ))}
+            </div>
+          )}
+        </>
+      )}
     </main>
-  );
-}
-
-function PublishedAndStarred({
-  published,
-  isLoadingPublished,
-  skills,
-  isLoadingSkills,
-}: {
-  published: PublicSkill[];
-  isLoadingPublished: boolean;
-  skills: PublicSkill[];
-  isLoadingSkills: boolean;
-}) {
-  return (
-    <div className="flex flex-col gap-8">
-      {/* Published */}
-      <section>
-        <h2 className="font-display text-lg font-bold text-[color:var(--ink)]">Published</h2>
-        <p className="mt-1 mb-4 text-sm text-[color:var(--ink-soft)]">
-          Skills published by this user.
-        </p>
-        {isLoadingPublished ? (
-          <SkillCardSkeletonGrid count={3} />
-        ) : published.length > 0 ? (
-          <div className="grid grid-cols-[repeat(auto-fill,minmax(320px,1fr))] gap-5">
-            {published.map((skill) => (
-              <SkillCard
-                key={skill._id}
-                skill={skill}
-                badge={getSkillBadges(skill)}
-                summaryFallback="Agent-ready skill pack."
-                meta={
-                  <span className="text-[0.8rem] text-[color:var(--ink-soft)]">
-                    <SkillStatsTripletLine stats={skill.stats} />
-                  </span>
-                }
-              />
-            ))}
-          </div>
-        ) : (
-          <p className="text-sm text-[color:var(--ink-soft)]">No published skills yet.</p>
-        )}
-      </section>
-
-      {/* Stars */}
-      <section>
-        <h2 className="font-display text-lg font-bold text-[color:var(--ink)]">Stars</h2>
-        <p className="mt-1 mb-4 text-sm text-[color:var(--ink-soft)]">
-          Skills this user has starred.
-        </p>
-        {isLoadingSkills ? (
-          <SkillCardSkeletonGrid count={3} />
-        ) : skills.length === 0 ? (
-          <EmptyState icon={Star} title="No stars yet" />
-        ) : (
-          <div className="grid grid-cols-[repeat(auto-fill,minmax(320px,1fr))] gap-5">
-            {skills.map((skill) => (
-              <SkillCard
-                key={skill._id}
-                skill={skill}
-                badge={getSkillBadges(skill)}
-                summaryFallback="Agent-ready skill pack."
-                meta={
-                  <span className="text-[0.8rem] text-[color:var(--ink-soft)]">
-                    <SkillStatsTripletLine stats={skill.stats} />
-                  </span>
-                }
-              />
-            ))}
-          </div>
-        )}
-      </section>
-    </div>
   );
 }
 
@@ -223,51 +161,51 @@ function InstalledSection(props: {
   const clearTelemetry = useMutation(api.telemetry.clearMyTelemetry);
   const [showRaw, setShowRaw] = useState(false);
   const data = props.data;
-
   if (data === undefined) {
     return (
-      <div className="flex flex-col gap-4">
-        <h2 className="font-display text-lg font-bold text-[color:var(--ink)]">Installed</h2>
-        <SkillCardSkeletonGrid count={3} />
-      </div>
+      <>
+        <h2 className="section-title text-xl">
+          Installed
+        </h2>
+        <Card>
+          <div className="loading-indicator">Loading telemetry…</div>
+        </Card>
+      </>
     );
   }
 
   if (data === null) {
     return (
-      <div className="flex flex-col gap-4">
-        <h2 className="font-display text-lg font-bold text-[color:var(--ink)]">Installed</h2>
-        <EmptyState title="Sign in to view your installed skills">
-          <SignInButton variant="outline">Sign in with GitHub</SignInButton>
-        </EmptyState>
-      </div>
+      <>
+        <h2 className="section-title text-xl">
+          Installed
+        </h2>
+        <Card>Sign in to view your installed skills.</Card>
+      </>
     );
   }
 
   return (
-    <div className="flex flex-col gap-4">
-      <h2 className="font-display text-lg font-bold text-[color:var(--ink)]">Installed</h2>
-      <p className="max-w-2xl text-sm text-[color:var(--ink-soft)]">
+    <>
+      <h2 className="section-title text-xl">
+        Installed
+      </h2>
+      <p className="section-subtitle max-w-[760px]">
         Private view. Only you can see your folders/roots. Everyone else only sees aggregated
         install counts per skill.
       </p>
-      <div className="flex flex-wrap gap-2">
-        <Button variant="outline" size="sm" onClick={props.onToggleRemoved}>
+      <div className="profile-actions">
+        <Button type="button" onClick={props.onToggleRemoved}>
           {props.includeRemoved ? "Hide removed" : "Show removed"}
         </Button>
-        <Button variant="outline" size="sm" onClick={() => setShowRaw((value) => !value)}>
+        <Button type="button" onClick={() => setShowRaw((value) => !value)}>
           {showRaw ? "Hide JSON" : "Show JSON"}
         </Button>
         <Button
-          variant="destructive"
-          size="sm"
+          type="button"
           onClick={() => {
-            toast("Delete all telemetry data?", {
-              action: {
-                label: "Delete",
-                onClick: () => void clearTelemetry(),
-              },
-            });
+            if (!window.confirm("Delete all telemetry data?")) return;
+            void clearTelemetry();
           }}
         >
           Delete telemetry
@@ -275,59 +213,47 @@ function InstalledSection(props: {
       </div>
 
       {showRaw ? (
-        <Card className="mb-4">
-          <pre className="font-mono text-xs whitespace-pre-wrap break-all">
+        <Card className="telemetry-json mb-4">
+          <pre className="mono m-0 whitespace-pre-wrap">
             {JSON.stringify(data, null, 2)}
           </pre>
         </Card>
       ) : null}
 
       {data.roots.length === 0 ? (
-        <EmptyState
-          title="No telemetry yet"
-          description='Run "clawhub sync" from the CLI to start tracking.'
-        />
+        <Card>No telemetry yet. Run `clawhub sync` from the CLI.</Card>
       ) : (
         <div className="grid gap-4">
           {data.roots.map((root) => (
-            <Card key={root.rootId}>
-              <div className="flex items-center justify-between">
+            <Card key={root.rootId} className="telemetry-root">
+              <div className="telemetry-root-header">
                 <div>
-                  <h3 className="font-display text-sm font-bold text-[color:var(--ink)]">
-                    {root.label}
-                  </h3>
-                  <p className="text-xs text-[color:var(--ink-soft)]">
+                  <div className="telemetry-root-title">{root.label}</div>
+                  <div className="telemetry-root-meta">
                     Last sync {new Date(root.lastSeenAt).toLocaleString()}
                     {root.expiredAt ? " · stale" : ""}
-                  </p>
+                  </div>
                 </div>
-                <Badge variant="default">{root.skills.length} skills</Badge>
+                <Badge>{root.skills.length} skills</Badge>
               </div>
               {root.skills.length === 0 ? (
-                <p className="text-sm text-[color:var(--ink-soft)]">
-                  No skills found in this root.
-                </p>
+                <div className="stat">No skills found in this root.</div>
               ) : (
-                <div className="flex flex-col gap-1">
+                <div className="telemetry-skill-list">
                   {root.skills.map((entry) => (
-                    <a
-                      key={`${root.rootId}:${entry.skill.slug}`}
-                      className="flex items-center justify-between rounded-[var(--radius-sm)] px-3 py-2 text-sm no-underline transition-colors hover:bg-[color:var(--surface-muted)]"
-                      href={`/${encodeURIComponent(String(entry.skill.ownerUserId))}/${entry.skill.slug}`}
-                    >
-                      <span className="flex items-center gap-2">
-                        <span className="font-semibold text-[color:var(--ink)]">
-                          {entry.skill.displayName}
-                        </span>
-                        <span className="font-mono text-xs text-[color:var(--ink-soft)]">
-                          /{entry.skill.slug}
-                        </span>
-                      </span>
-                      <span className="font-mono text-xs text-[color:var(--ink-soft)]">
+                    <div key={`${root.rootId}:${entry.skill.slug}`} className="telemetry-skill-row">
+                      <a
+                        className="telemetry-skill-link"
+                        href={`/${encodeURIComponent(String(entry.skill.ownerUserId))}/${entry.skill.slug}`}
+                      >
+                        <span>{entry.skill.displayName}</span>
+                        <span className="telemetry-skill-slug">/{entry.skill.slug}</span>
+                      </a>
+                      <div className="telemetry-skill-meta mono">
                         {entry.lastVersion ? `v${entry.lastVersion}` : "v?"}{" "}
                         {entry.removedAt ? "· removed" : ""}
-                      </span>
-                    </a>
+                      </div>
+                    </div>
                   ))}
                 </div>
               )}
@@ -335,7 +261,7 @@ function InstalledSection(props: {
           ))}
         </div>
       )}
-    </div>
+    </>
   );
 }
 

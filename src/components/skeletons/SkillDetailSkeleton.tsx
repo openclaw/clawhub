@@ -2,7 +2,7 @@ import { Skeleton } from "../ui/skeleton";
 
 export function SkillDetailSkeleton() {
   return (
-    <div className="mx-auto max-w-[1200px] px-7 py-10">
+    <div className="mx-auto max-w-page-max px-7 py-10">
       {/* Breadcrumb */}
       <Skeleton className="mb-6 h-4 w-48" />
 

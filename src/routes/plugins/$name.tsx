@@ -14,7 +14,6 @@ import {
   fetchPackageReadme,
   fetchPackageVersion,
   getPackageDownloadPath,
-  isRateLimitedPackageApiError,
   type PackageDetailResponse,
   type PackageVersionDetail,
 } from "../../lib/packageApi";
@@ -36,6 +35,7 @@ type PluginDetailLoaderData = {
 
 export const Route = createFileRoute("/plugins/$name")({
   loader: async ({ params }): Promise<PluginDetailLoaderData> => {
+    // All fetch functions now handle errors internally and return null/empty on failure
     const requestedName = params.name;
     const candidateNames = requestedName.includes("/")
       ? [requestedName]
@@ -43,24 +43,9 @@ export const Route = createFileRoute("/plugins/$name")({
 
     let resolvedName = requestedName;
     let detail: PackageDetailResponse = { package: null, owner: null };
+
     for (const candidateName of candidateNames) {
-      let candidateDetail: PackageDetailResponse;
-      try {
-        candidateDetail = await fetchPackageDetail(candidateName);
-      } catch (error) {
-        if (isRateLimitedPackageApiError(error)) {
-          return {
-            detail: { package: null, owner: null },
-            version: null,
-            readme: null,
-            rateLimited: {
-              scope: "detail",
-              retryAfterSeconds: error.retryAfterSeconds,
-            },
-          };
-        }
-        throw error;
-      }
+      const candidateDetail = await fetchPackageDetail(candidateName);
       if (candidateDetail.package) {
         detail = candidateDetail;
         resolvedName = candidateName;
@@ -70,35 +55,18 @@ export const Route = createFileRoute("/plugins/$name")({
     }
 
     if (!detail.package) {
-      return {
-        detail,
-        version: null,
-        readme: null,
-        rateLimited: null,
-      };
+      return { detail, version: null, readme: null, rateLimited: null };
     }
 
-    let metadataRateLimited: PluginDetailRateLimitState = null;
-    const readmePromise = fetchPackageReadme(resolvedName).catch((error: unknown) => {
-      if (!isRateLimitedPackageApiError(error)) throw error;
-      metadataRateLimited ??= {
-        scope: "metadata",
-        retryAfterSeconds: error.retryAfterSeconds,
-      };
-      return null;
-    });
-    const versionPromise = detail.package?.latestVersion
-      ? fetchPackageVersion(resolvedName, detail.package.latestVersion).catch((error: unknown) => {
-          if (!isRateLimitedPackageApiError(error)) throw error;
-          metadataRateLimited ??= {
-            scope: "metadata",
-            retryAfterSeconds: error.retryAfterSeconds,
-          };
-          return null;
-        })
-      : Promise.resolve(null);
-    const [version, readme] = await Promise.all([versionPromise, readmePromise]);
-    return { detail, version, readme, rateLimited: metadataRateLimited };
+    // Fetch readme and version in parallel - functions handle errors internally
+    const [version, readme] = await Promise.all([
+      detail.package.latestVersion
+        ? fetchPackageVersion(resolvedName, detail.package.latestVersion)
+        : Promise.resolve(null),
+      fetchPackageReadme(resolvedName),
+    ]);
+
+    return { detail, version, readme, rateLimited: null };
   },
   head: ({ params, loaderData }) => ({
     meta: [
@@ -296,9 +264,8 @@ function PluginDetailRoute() {
     : [];
 
   return (
-    <main className="py-10">
-      <Container>
-        <div className="flex flex-col gap-5">
+    <main className="section">
+        <div className="flex min-w-0 flex-col gap-5">
           {/* Header card */}
           <Card>
             <CardContent>
@@ -316,7 +283,7 @@ function PluginDetailRoute() {
                   </Badge>
                 ) : null}
               </div>
-              <h1 className="font-display text-2xl font-bold text-[color:var(--ink)] mb-1">
+              <h1 className="mb-1 break-words font-display text-2xl font-bold text-[color:var(--ink)]">
                 {pkg.displayName}
                 {pkg.latestVersion ? (
                   <span className="ml-2 inline-block rounded-[var(--radius-pill)] bg-[color:var(--surface-muted)] px-2 py-0.5 text-xs font-semibold text-[color:var(--ink-soft)]">
@@ -324,16 +291,16 @@ function PluginDetailRoute() {
                   </span>
                 ) : null}
               </h1>
-              <p className="text-sm text-[color:var(--ink-soft)] mb-2">
+              <p className="mb-2 break-words text-sm text-[color:var(--ink-soft)]">
                 {pkg.summary ?? "No summary provided."}
               </p>
-              <div className="flex flex-wrap items-center gap-2 text-sm text-[color:var(--ink-soft)]">
-                <span className="font-mono text-xs">{pkg.name}</span>
+              <div className="flex min-w-0 flex-wrap items-center gap-2 text-sm text-[color:var(--ink-soft)]">
+                <span className="break-all font-mono text-xs">{pkg.name}</span>
                 {pkg.runtimeId ? (
                   <>
                     <span className="opacity-40">&middot;</span>
                     <span>
-                      runtime <span className="font-mono text-xs">{pkg.runtimeId}</span>
+                      runtime <span className="break-all font-mono text-xs">{pkg.runtimeId}</span>
                     </span>
                   </>
                 ) : null}
@@ -360,7 +327,7 @@ function PluginDetailRoute() {
               {/* Install */}
               <div className="mt-4">
                 <div className="flex flex-col gap-3 rounded-[var(--radius-sm)] border border-[color:var(--line)] bg-[color:var(--surface-muted)] p-3 sm:flex-row sm:items-center sm:gap-2">
-                  <pre className="min-w-0 flex-1 overflow-x-auto font-mono text-xs text-[color:var(--ink)]">
+                  <pre className="plugin-detail-code-block min-w-0 flex-1 font-mono text-xs text-[color:var(--ink)]">
                     <code>{installSnippet}</code>
                   </pre>
                   <CopyButton text={installSnippet} />
@@ -373,13 +340,12 @@ function PluginDetailRoute() {
                   <span className="text-sm">
                     Latest release: <strong>v{pkg.latestVersion}</strong>
                   </span>
-                  <a
-                    href={getPackageDownloadPath(name, pkg.latestVersion)}
-                    className="inline-flex min-h-[34px] w-full items-center justify-center gap-2 rounded-[var(--radius-pill)] border border-[color:var(--border-ui)] bg-transparent px-3 py-1.5 text-xs font-semibold text-[color:var(--ink)] transition-all duration-200 no-underline hover:border-[color:var(--border-ui-hover)] hover:bg-[color:var(--surface)] sm:w-auto sm:whitespace-nowrap"
-                  >
-                    <Download className="h-3.5 w-3.5" aria-hidden="true" />
-                    Download zip
-                  </a>
+                  <Button asChild variant="outline" size="sm" className="w-full no-underline sm:w-auto">
+                    <a href={getPackageDownloadPath(name, pkg.latestVersion)}>
+                      <Download className="h-3.5 w-3.5" aria-hidden="true" />
+                      Download zip
+                    </a>
+                  </Button>
                 </div>
               ) : null}
             </CardContent>
@@ -399,7 +365,7 @@ function PluginDetailRoute() {
                       <dt className="font-semibold text-[color:var(--ink-soft)] sm:pr-2">
                         {CAPABILITY_LABELS[key] ?? key}
                       </dt>
-                      <dd className="text-[color:var(--ink)]">
+                      <dd className="min-w-0 break-words text-[color:var(--ink)]">
                         {key === "capabilityTags" && Array.isArray(value) ? (
                           <div className="flex flex-wrap gap-1.5">
                             {(value as string[]).map((tag) => (
@@ -441,7 +407,9 @@ function PluginDetailRoute() {
                       <dt className="font-semibold text-[color:var(--ink-soft)] sm:pr-2">
                         {key.replace(/([A-Z])/g, " $1").replace(/^./, (s) => s.toUpperCase())}
                       </dt>
-                      <dd className="font-mono text-xs text-[color:var(--ink)]">{String(value)}</dd>
+                      <dd className="min-w-0 break-all font-mono text-xs text-[color:var(--ink)]">
+                        {String(value)}
+                      </dd>
                     </div>
                   ))}
                 </dl>
@@ -506,7 +474,7 @@ function PluginDetailRoute() {
                                 href={href}
                                 target="_blank"
                                 rel="noopener noreferrer"
-                                className="inline-flex items-center gap-1 text-[color:var(--accent)] hover:underline"
+                                className="inline-flex max-w-full flex-wrap items-center gap-1 break-all text-[color:var(--accent)] hover:underline"
                               >
                                 {display}
                                 <ExternalLink className="h-3 w-3" aria-hidden="true" />
@@ -519,7 +487,7 @@ function PluginDetailRoute() {
                   {verification.sourceCommit ? (
                     <div className="flex flex-col gap-1.5 border-b border-[color:var(--line)] pb-3 sm:grid sm:grid-cols-[minmax(140px,220px)_1fr] sm:gap-x-4 sm:gap-y-0">
                       <dt className="font-semibold text-[color:var(--ink-soft)]">Commit</dt>
-                      <dd className="font-mono text-xs text-[color:var(--ink)]">
+                      <dd className="min-w-0 break-all font-mono text-xs text-[color:var(--ink)]">
                         {verification.sourceCommit.slice(0, 12)}
                       </dd>
                     </div>
@@ -527,7 +495,7 @@ function PluginDetailRoute() {
                   {verification.sourceTag ? (
                     <div className="flex flex-col gap-1.5 border-b border-[color:var(--line)] pb-3 sm:grid sm:grid-cols-[minmax(140px,220px)_1fr] sm:gap-x-4 sm:gap-y-0">
                       <dt className="font-semibold text-[color:var(--ink-soft)]">Tag</dt>
-                      <dd className="font-mono text-xs text-[color:var(--ink)]">
+                      <dd className="min-w-0 break-all font-mono text-xs text-[color:var(--ink)]">
                         {verification.sourceTag}
                       </dd>
                     </div>
@@ -562,7 +530,9 @@ function PluginDetailRoute() {
                   {Object.entries(pkg.tags).map(([key, value]) => (
                     <div key={key} className="flex flex-col gap-1.5 border-b border-[color:var(--line)] pb-3 last:border-b-0 last:pb-0 sm:grid sm:grid-cols-[minmax(140px,220px)_1fr] sm:gap-x-4 sm:gap-y-0">
                       <dt className="font-semibold text-[color:var(--ink-soft)]">{key}</dt>
-                      <dd className="font-mono text-xs text-[color:var(--ink)]">{value}</dd>
+                      <dd className="min-w-0 break-all font-mono text-xs text-[color:var(--ink)]">
+                        {value}
+                      </dd>
                     </div>
                   ))}
                 </dl>
@@ -579,7 +549,6 @@ function PluginDetailRoute() {
             </Card>
           ) : null}
         </div>
-      </Container>
     </main>
   );
 }

@@ -10,9 +10,8 @@ const Label = React.forwardRef<
     ref={ref}
     className={cn(
       // Matches .form-label
-      "text-[0.74rem] font-bold uppercase tracking-[0.14em]",
-      "text-[rgba(70,95,113,0.9)]",
-      "dark:text-[rgba(206,227,238,0.76)]",
+      "text-fs-xs font-bold uppercase tracking-[0.14em]",
+      "text-label-fg",
       "peer-disabled:cursor-not-allowed peer-disabled:opacity-70",
       className,
     )}
