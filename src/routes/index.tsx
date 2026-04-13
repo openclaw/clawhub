@@ -5,11 +5,8 @@ import {
   BarChart3,
   Brain,
   Code2,
-  Download,
-  Flame,
   Ghost,
   Image,
-  Package,
   Palette,
   Search,
   Settings,
@@ -27,7 +24,6 @@ import { SkillListItem } from "../components/SkillListItem";
 import { SkillStatsTripletLine } from "../components/SkillStats";
 import { SoulCard } from "../components/SoulCard";
 import { SoulStatsTripletLine } from "../components/SoulStats";
-import { Button } from "../components/ui/button";
 import { Card } from "../components/ui/card";
 import { UserBadge } from "../components/UserBadge";
 import { convexHttp } from "../convex/client";
@@ -135,8 +131,7 @@ function SkillsHome() {
 
               {/* Headline */}
               <h1 className="home-hero-title">
-                Discover tools that{" "}
-                <span className="home-hero-title-accent">power your work</span>
+                Discover tools that <span className="home-hero-title-accent">power your work</span>
               </h1>
 
               {/* Subheadline */}

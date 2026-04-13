@@ -308,7 +308,7 @@ export async function fetchPluginCatalog(params: {
       executesCode: params.executesCode,
       limit: params.limit,
     });
-    if (hasOwnProperty(response, 'results') && Array.isArray(response.results)) {
+    if (hasOwnProperty(response, "results") && Array.isArray(response.results)) {
       return {
         items: response.results.map((entry) => entry.package),
         nextCursor: null,
@@ -324,7 +324,7 @@ export async function fetchPluginCatalog(params: {
 
   if (params.q?.trim()) {
     const url = await packageApiUrl(`${ApiRoutes.plugins}/search`);
-    url.searchParams.set('q', params.q.trim());
+    url.searchParams.set("q", params.q.trim());
     if (typeof params.limit === "number") url.searchParams.set("limit", String(params.limit));
     if (typeof params.isOfficial === "boolean") {
       url.searchParams.set("isOfficial", String(params.isOfficial));
@@ -355,7 +355,7 @@ export async function fetchPluginCatalog(params: {
 
 export async function fetchPackageDetail(name: string): Promise<PackageDetailResponse> {
   const url = await packageApiUrl(`${ApiRoutes.packages}/${encodeURIComponent(name)}`);
-  const response = await packageFetch(url, 'application/json');
+  const response = await packageFetch(url, "application/json");
   if (response.status === 404) {
     return {
       package: null,
@@ -366,28 +366,19 @@ export async function fetchPackageDetail(name: string): Promise<PackageDetailRes
   return (await response.json()) as PackageDetailResponse;
 }
 
-export async function fetchPackageVersion(name: string, version: string): Promise<PackageVersionDetail | null> {
-  try {
-    const url = await packageApiUrl(
-      `${ApiRoutes.packages}/${encodeURIComponent(name)}/versions/${encodeURIComponent(version)}`,
-    );
-    return await fetchJson<PackageVersionDetail>(url);
-  } catch {
-    // Return null on API error to prevent SSR crashes
-    return null;
-  }
+export async function fetchPackageVersion(name: string, version: string) {
+  const url = await packageApiUrl(
+    `${ApiRoutes.packages}/${encodeURIComponent(name)}/versions/${encodeURIComponent(version)}`,
+  );
+  return await fetchJson<PackageVersionDetail>(url);
 }
 
-export async function fetchPackageReadme(name: string, version?: string | null): Promise<string | null> {
-  try {
-    const url = await packageApiUrl(`${ApiRoutes.packages}/${encodeURIComponent(name)}/file`);
-    url.searchParams.set("path", "README.md");
-    if (version) url.searchParams.set("version", version);
-    const response = await packageFetch(url, "text/plain");
-    if (response.ok) return await response.text();
-    return null;
-  } catch {
-    // Return null on API error to prevent SSR crashes
-    return null;
-  }
+export async function fetchPackageReadme(name: string, version?: string | null) {
+  const url = await packageApiUrl(`${ApiRoutes.packages}/${encodeURIComponent(name)}/file`);
+  url.searchParams.set("path", "README.md");
+  if (version) url.searchParams.set("version", version);
+  const response = await packageFetch(url, "text/plain");
+  if (response.ok) return await response.text();
+  if (response.status === 403 || response.status === 423 || response.status === 404) return null;
+  throw await createPackageApiError(response);
 }
