@@ -86,7 +86,7 @@ function parsePackageJson(content: string, path: string): DepEntry[] {
         for (const name of Object.keys(deps as Record<string, unknown>)) {
           // Skip non-registry version specifiers (local, git, URL, workspace)
           const ver = (deps as Record<string, string>)[name] ?? "";
-          const NON_REGISTRY = ["file:", "link:", "git+", "git://", "github:", "bitbucket:", "gist:", "http:", "https://", "workspace:"];
+          const NON_REGISTRY = ["file:", "link:", "git+", "git://", "github:", "bitbucket:", "gist:", "http:", "https://", "workspace:", "npm:"];
           if (NON_REGISTRY.some((p) => ver.startsWith(p))) continue;
           entries.push({ name: name.toLowerCase(), registry: "npm", source: path });
         }
@@ -386,7 +386,6 @@ export const checkDependencyRegistries = internalAction({
       name: string;
       exists: boolean;
       httpStatus?: number;
-      networkError?: boolean;
     }> = [];
     let consecutiveFailures = 0;
     let abortedDueToErrors = false;
@@ -416,9 +415,9 @@ export const checkDependencyRegistries = internalAction({
       const check = await checkRegistryExists(dep.registry, dep.name);
 
       if (check.exists === null) {
-        // Network error — count towards abort threshold but do NOT mark as missing.
+        // Network error — count towards abort threshold. Do NOT add to results
+        // (the package is neither confirmed-found nor confirmed-missing).
         consecutiveFailures++;
-        results.push({ registry: dep.registry, name: dep.name, exists: true, networkError: true });
         if (consecutiveFailures >= CONSECUTIVE_FAILURE_ABORT) {
           console.warn(
             `depRegistryScan: aborting after ${CONSECUTIVE_FAILURE_ABORT} consecutive failures for version ${args.versionId}`,
@@ -450,7 +449,7 @@ export const checkDependencyRegistries = internalAction({
     }
 
     const notFoundPackages = results
-      .filter((r) => !r.exists && !r.networkError)
+      .filter((r) => !r.exists)
       .map((r) => `${r.name} (${r.registry})`);
 
     let status: "clean" | "suspicious" | "error";
