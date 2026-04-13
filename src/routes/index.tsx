@@ -2,12 +2,18 @@ import { createFileRoute, Link } from "@tanstack/react-router";
 import { useAction, useQuery } from "convex/react";
 import {
   ArrowRight,
+  BarChart3,
+  Brain,
   Code2,
   Download,
   Flame,
   Ghost,
+  Image,
   Package,
+  Palette,
   Search,
+  Settings,
+  Shield,
   Sparkles,
   Star,
   TrendingUp,
@@ -42,14 +48,14 @@ function Home() {
 const popularSearches = ["AI Writing", "Screenshot", "Productivity", "Analytics", "Automation"];
 
 const categories = [
-  { name: "Productivity", icon: "⚡", count: 324, className: "productivity" },
-  { name: "AI & ML", icon: "🧠", count: 218, className: "ai" },
-  { name: "Developer Tools", icon: "💻", count: 456, className: "developer" },
-  { name: "Design", icon: "🎨", count: 189, className: "design" },
-  { name: "Analytics", icon: "📊", count: 142, className: "analytics" },
-  { name: "Security", icon: "🔐", count: 98, className: "security" },
-  { name: "Automation", icon: "⚙️", count: 276, className: "automation" },
-  { name: "Media", icon: "🖼️", count: 167, className: "media" },
+  { name: "Productivity", icon: Zap, count: 324, className: "productivity" },
+  { name: "AI & ML", icon: Brain, count: 218, className: "ai" },
+  { name: "Developer Tools", icon: Code2, count: 456, className: "developer" },
+  { name: "Design", icon: Palette, count: 189, className: "design" },
+  { name: "Analytics", icon: BarChart3, count: 142, className: "analytics" },
+  { name: "Security", icon: Shield, count: 98, className: "security" },
+  { name: "Automation", icon: Settings, count: 276, className: "automation" },
+  { name: "Media", icon: Image, count: 167, className: "media" },
 ];
 
 function SkillsHome() {
@@ -231,28 +237,16 @@ function SkillsHome() {
       </section>
 
       {/* Stats Bar */}
-      <section className="home-section">
-        <div className="home-stats">
-          <div className="home-stat">
-            <div className="home-stat-value">
-              {skillCount != null ? formatCompactStat(skillCount) : "2.4K"}+
+      {skillCount != null ? (
+        <section className="home-section">
+          <div className="home-stats">
+            <div className="home-stat">
+              <div className="home-stat-value">{formatCompactStat(skillCount)}+</div>
+              <div className="home-stat-label">Curated Tools</div>
             </div>
-            <div className="home-stat-label">Curated Tools</div>
           </div>
-          <div className="home-stat">
-            <div className="home-stat-value">180K+</div>
-            <div className="home-stat-label">Active Users</div>
-          </div>
-          <div className="home-stat">
-            <div className="home-stat-value">12M+</div>
-            <div className="home-stat-label">Total Downloads</div>
-          </div>
-          <div className="home-stat">
-            <div className="home-stat-value">4.8</div>
-            <div className="home-stat-label">Avg. Rating</div>
-          </div>
-        </div>
-      </section>
+        </section>
+      ) : null}
 
       {/* Trending */}
       {trending.length > 0 ? (
@@ -408,7 +402,9 @@ function SkillsHome() {
               }}
               className="home-category-card"
             >
-              <div className={`home-category-icon ${category.className}`}>{category.icon}</div>
+              <div className={`home-category-icon ${category.className}`}>
+                <category.icon size={20} aria-hidden="true" />
+              </div>
               <div className="home-category-content">
                 <div className="home-category-name">{category.name}</div>
                 <div className="home-category-count">{category.count} tools</div>

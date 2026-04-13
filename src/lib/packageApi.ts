@@ -299,51 +299,32 @@ export async function fetchPluginCatalog(params: {
   executesCode?: boolean;
   limit?: number;
 }): Promise<PluginCatalogResult> {
-  try {
-    if (params.family) {
-      const response = await fetchPackages({
-        q: params.q,
-        cursor: params.cursor,
-        family: params.family,
-        isOfficial: params.isOfficial,
-        executesCode: params.executesCode,
-        limit: params.limit,
-      });
-      if (hasOwnProperty(response, "results") && Array.isArray(response.results)) {
-        return {
-          items: response.results.map((entry) => entry?.package).filter(Boolean) as PackageListItem[],
-          nextCursor: null,
-        };
-      }
-
-      const browseResponse = response as PackageCatalogBrowseResponse;
+  if (params.family) {
+    const response = await fetchPackages({
+      q: params.q,
+      cursor: params.cursor,
+      family: params.family,
+      isOfficial: params.isOfficial,
+      executesCode: params.executesCode,
+      limit: params.limit,
+    });
+    if (hasOwnProperty(response, 'results') && Array.isArray(response.results)) {
       return {
-        items: browseResponse?.items ?? [],
-        nextCursor: browseResponse?.nextCursor ?? null,
-      };
-    }
-
-    if (params.q?.trim()) {
-      const url = await packageApiUrl(`${ApiRoutes.plugins}/search`);
-      url.searchParams.set("q", params.q.trim());
-      if (typeof params.limit === "number") url.searchParams.set("limit", String(params.limit));
-      if (typeof params.isOfficial === "boolean") {
-        url.searchParams.set("isOfficial", String(params.isOfficial));
-      }
-      if (typeof params.executesCode === "boolean") {
-        url.searchParams.set("executesCode", String(params.executesCode));
-      }
-      const response = await fetchJson<{
-        results?: Array<{ score: number; package: PackageListItem }>;
-      }>(url);
-      return {
-        items: (response?.results ?? []).map((entry) => entry?.package).filter(Boolean) as PackageListItem[],
+        items: response.results.map((entry) => entry.package),
         nextCursor: null,
       };
     }
 
-    const url = await packageApiUrl(ApiRoutes.plugins);
-    if (params.cursor) url.searchParams.set("cursor", params.cursor);
+    const browseResponse = response as PackageCatalogBrowseResponse;
+    return {
+      items: browseResponse.items,
+      nextCursor: browseResponse.nextCursor,
+    };
+  }
+
+  if (params.q?.trim()) {
+    const url = await packageApiUrl(`${ApiRoutes.plugins}/search`);
+    url.searchParams.set('q', params.q.trim());
     if (typeof params.limit === "number") url.searchParams.set("limit", String(params.limit));
     if (typeof params.isOfficial === "boolean") {
       url.searchParams.set("isOfficial", String(params.isOfficial));
@@ -351,29 +332,38 @@ export async function fetchPluginCatalog(params: {
     if (typeof params.executesCode === "boolean") {
       url.searchParams.set("executesCode", String(params.executesCode));
     }
-    const result = await fetchJson<PluginCatalogResult>(url);
+    const response = await fetchJson<{
+      results: Array<{ score: number; package: PackageListItem }>;
+    }>(url);
     return {
-      items: result?.items ?? [],
-      nextCursor: result?.nextCursor ?? null,
+      items: response.results.map((entry) => entry.package),
+      nextCursor: null,
     };
-  } catch {
-    // Return empty result on API error to prevent SSR crashes
-    return { items: [], nextCursor: null };
   }
+
+  const url = await packageApiUrl(ApiRoutes.plugins);
+  if (params.cursor) url.searchParams.set("cursor", params.cursor);
+  if (typeof params.limit === "number") url.searchParams.set("limit", String(params.limit));
+  if (typeof params.isOfficial === "boolean") {
+    url.searchParams.set("isOfficial", String(params.isOfficial));
+  }
+  if (typeof params.executesCode === "boolean") {
+    url.searchParams.set("executesCode", String(params.executesCode));
+  }
+  return await fetchJson<PluginCatalogResult>(url);
 }
 
 export async function fetchPackageDetail(name: string): Promise<PackageDetailResponse> {
-  try {
-    const url = await packageApiUrl(`${ApiRoutes.packages}/${encodeURIComponent(name)}`);
-    const response = await packageFetch(url, "application/json");
-    if (response.status === 404 || !response.ok) {
-      return { package: null, owner: null };
-    }
-    return (await response.json()) as PackageDetailResponse;
-  } catch {
-    // Return empty result on API error to prevent SSR crashes
-    return { package: null, owner: null };
+  const url = await packageApiUrl(`${ApiRoutes.packages}/${encodeURIComponent(name)}`);
+  const response = await packageFetch(url, 'application/json');
+  if (response.status === 404) {
+    return {
+      package: null,
+      owner: null,
+    } satisfies PackageDetailResponse;
   }
+  if (!response.ok) throw await createPackageApiError(response);
+  return (await response.json()) as PackageDetailResponse;
 }
 
 export async function fetchPackageVersion(name: string, version: string): Promise<PackageVersionDetail | null> {
