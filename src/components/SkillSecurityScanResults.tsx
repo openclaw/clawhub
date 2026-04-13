@@ -309,7 +309,7 @@ function StaticAnalysisDetail({
                 <div className={`dimension-icon ${icon.className}`}>{icon.symbol}</div>
                 <div className="dimension-content">
                   <div className="dimension-label">
-                    {finding.file}:{finding.line}
+                    {finding.line ? `${finding.file}:${finding.line}` : finding.file}
                   </div>
                   <div className="dimension-detail">{finding.message}</div>
                 </div>

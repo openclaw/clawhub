@@ -40,6 +40,7 @@ import { buildModerationSnapshot } from "./lib/moderationEngine";
 import {
   legacyFlagsFromVerdict,
   MODERATION_ENGINE_VERSION,
+  REASON_CODES,
   summarizeReasonCodes,
   verdictFromCodes,
 } from "./lib/moderationReasonCodes";
@@ -4567,6 +4568,95 @@ export const updateVersionLlmAnalysisInternal = internalMutation({
     const skill = await ctx.db.get(version.skillId);
     if (!skill || skill.latestVersionId !== version._id) return;
     await patchStructuredModerationFromVersion(ctx, skill, nextVersion);
+  },
+});
+
+export const updateVersionDepRegistryAnalysisInternal = internalMutation({
+  args: {
+    versionId: v.id("skillVersions"),
+    depRegistryAnalysis: v.object({
+      status: v.union(v.literal("clean"), v.literal("suspicious"), v.literal("error")),
+      results: v.array(
+        v.object({
+          registry: v.string(),
+          name: v.string(),
+          exists: v.boolean(),
+          httpStatus: v.optional(v.number()),
+        }),
+      ),
+      notFoundPackages: v.array(v.string()),
+      summary: v.string(),
+      checkedAt: v.number(),
+    }),
+  },
+  handler: async (ctx, args) => {
+    const version = await ctx.db.get(args.versionId);
+    if (!version) return;
+
+    // 1. Store the analysis result on the version.
+    await ctx.db.patch(args.versionId, {
+      depRegistryAnalysis: args.depRegistryAnalysis,
+    });
+
+    // 2. If suspicious, inject a single consolidated finding into staticScan
+    //    so the existing moderation pipeline picks it up.
+    if (args.depRegistryAnalysis.status === "suspicious") {
+      const notFoundResults = args.depRegistryAnalysis.results.filter((r) => !r.exists);
+      const pkgList = notFoundResults.map((r) => `${r.name} (${r.registry})`).join(", ");
+      const newFindings = [
+        {
+          code: REASON_CODES.DEP_NOT_FOUND,
+          severity: "critical" as const,
+          file: "Dependency Confusion via Phantom Package",
+          line: 0,
+          message: `${notFoundResults.length} package(s) referenced in dependency files do not exist on their public registries: ${pkgList}`,
+          evidence: `An attacker could register these phantom package names and inject malicious code that gets installed automatically when a user sets up this skill. This is a known supply-chain attack vector (Dependency Confusion).`,
+        },
+      ];
+
+      const existingScan = version.staticScan;
+      if (existingScan) {
+        const mergedCodes = [
+          ...new Set([...existingScan.reasonCodes, REASON_CODES.DEP_NOT_FOUND]),
+        ];
+        // Remove any prior dep-registry findings before appending the fresh one.
+        const filteredFindings = existingScan.findings.filter(
+          (f) => f.code !== REASON_CODES.DEP_NOT_FOUND,
+        );
+        const mergedFindings = [...filteredFindings, ...newFindings];
+        const mergedStatus =
+          existingScan.status === "malicious" ? "malicious" : ("suspicious" as const);
+        await ctx.db.patch(args.versionId, {
+          staticScan: {
+            ...existingScan,
+            status: mergedStatus,
+            reasonCodes: mergedCodes,
+            findings: mergedFindings,
+          },
+        });
+      } else {
+        // No prior static scan — create a minimal one with just dep findings.
+        await ctx.db.patch(args.versionId, {
+          staticScan: {
+            status: "suspicious",
+            reasonCodes: [REASON_CODES.DEP_NOT_FOUND],
+            findings: newFindings,
+            summary: args.depRegistryAnalysis.summary,
+            engineVersion: "dep-registry-v1",
+            checkedAt: args.depRegistryAnalysis.checkedAt,
+          },
+        });
+      }
+    }
+
+    // 3. Trigger moderation rebuild on the parent skill (only for latest version).
+    const skill = await ctx.db.get(version.skillId);
+    if (!skill || skill.latestVersionId !== version._id) return;
+
+    // Re-read version after patches to pick up merged staticScan.
+    const updatedVersion = await ctx.db.get(args.versionId);
+    if (!updatedVersion) return;
+    await patchStructuredModerationFromVersion(ctx, skill, updatedVersion);
   },
 });
 
