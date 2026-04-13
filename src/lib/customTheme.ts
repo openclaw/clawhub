@@ -262,11 +262,15 @@ function loadGoogleFonts(fonts: string[]): void {
   document.getElementById(CUSTOM_THEME_FONT_LINK_ID)?.remove();
   if (fonts.length === 0) return;
 
-  const families = fonts.map((font) => `family=${font.replace(/\s+/g, "+")}:wght@300..800`).join("&");
+  const fontUrl = new URL("https://fonts.googleapis.com/css2");
+  for (const font of fonts) {
+    fontUrl.searchParams.append("family", `${font}:wght@300..800`);
+  }
+  fontUrl.searchParams.set("display", "swap");
   const link = document.createElement("link");
   link.id = CUSTOM_THEME_FONT_LINK_ID;
   link.rel = "stylesheet";
-  link.href = `https://fonts.googleapis.com/css2?${families}&display=swap`;
+  link.href = fontUrl.toString();
   document.head.appendChild(link);
 }
 
