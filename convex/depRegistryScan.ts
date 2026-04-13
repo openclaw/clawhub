@@ -60,6 +60,8 @@ function parseRequirementsTxt(content: string, path: string): DepEntry[] {
   for (const raw of content.split("\n")) {
     const line = raw.trim();
     if (!line || line.startsWith("#") || line.startsWith("-")) continue;
+    // Skip direct URL references: `pkg @ git+https://...` or `pkg @ https://...`
+    if (/\s@\s/.test(line)) continue;
     // Strip version specifiers, extras, environment markers
     const match = line.match(/^([a-zA-Z0-9_][a-zA-Z0-9._-]*)/);
     if (match) {
@@ -78,7 +80,7 @@ function parsePackageJson(content: string, path: string): DepEntry[] {
   const entries: DepEntry[] = [];
   try {
     const pkg = JSON.parse(content) as Record<string, unknown>;
-    for (const field of ["dependencies", "devDependencies"]) {
+    for (const field of ["dependencies", "devDependencies", "optionalDependencies"]) {
       const deps = pkg[field];
       if (deps && typeof deps === "object" && !Array.isArray(deps)) {
         for (const name of Object.keys(deps as Record<string, unknown>)) {
@@ -127,21 +129,33 @@ function parseCargoToml(content: string, path: string): DepEntry[] {
   return entries;
 }
 
-/** Parse pyproject.toml — extract [project.dependencies] list items. */
+/**
+ * Parse pyproject.toml — extract dependencies from:
+ * - PEP 621 array: `dependencies = ["requests>=2.0", ...]`
+ * - Poetry table: `[tool.poetry.dependencies]` with `name = "version"` entries
+ */
 function parsePyprojectToml(content: string, path: string): DepEntry[] {
   const entries: DepEntry[] = [];
   const lines = content.split("\n");
   let inDepArray = false;
+  let inPoetryDepTable = false;
   for (const raw of lines) {
     const line = raw.trim();
-    // Detect `dependencies = [` or being inside [project] section's dependencies
+
+    // Section header resets state
     if (/^\[.*\]$/.test(line)) {
       inDepArray = false;
+      const section = line.replace(/[[\]\s]/g, "").toLowerCase();
+      inPoetryDepTable =
+        section === "tool.poetry.dependencies" ||
+        section === "tool.poetry.dev-dependencies" ||
+        section === "tool.poetry.group.dev.dependencies";
       continue;
     }
+
+    // PEP 621 array: `dependencies = [`
     if (/^dependencies\s*=\s*\[/.test(line)) {
       inDepArray = true;
-      // Check for inline entries on the same line
       const inline = line.match(/\[\s*(.*)\s*\]/);
       if (inline) {
         for (const item of extractQuotedStrings(inline[1])) {
@@ -152,11 +166,24 @@ function parsePyprojectToml(content: string, path: string): DepEntry[] {
       }
       continue;
     }
+
     if (inDepArray) {
       if (line === "]") { inDepArray = false; continue; }
       const quoted = line.match(/^["']([a-zA-Z0-9_][a-zA-Z0-9._-]*)/);
       if (quoted) {
         entries.push({ name: quoted[1].toLowerCase(), registry: "pypi", source: path });
+      }
+    }
+
+    // Poetry table: `package-name = "^1.0"` or `package-name = {version = "..."}`
+    if (inPoetryDepTable) {
+      if (!line || line.startsWith("#")) continue;
+      const match = line.match(/^([a-zA-Z0-9_][a-zA-Z0-9._-]*)\s*=/);
+      if (match) {
+        const name = match[1].toLowerCase();
+        if (name !== "python") {
+          entries.push({ name, registry: "pypi", source: path });
+        }
       }
     }
   }
@@ -429,14 +456,17 @@ export const checkDependencyRegistries = internalAction({
     let status: "clean" | "suspicious" | "error";
     let summary: string;
 
-    if (abortedDueToErrors) {
+    if (notFoundPackages.length > 0) {
+      // Suspicious takes priority even if we also aborted — confirmed phantom
+      // packages are a real signal regardless of incomplete scan.
+      status = "suspicious";
+      const pkgList = notFoundPackages.join(", ");
+      const abortNote = abortedDueToErrors ? " (scan was partially completed due to network failures)" : "";
+      summary = `${notFoundPackages.length} declared dependency package(s) not found on their public registry: ${pkgList}. This may indicate a typosquatting attempt, dependency confusion attack, or a reference to a non-existent package.${abortNote}`;
+    } else if (abortedDueToErrors) {
       status = "error";
       summary =
         "Dependency registry check aborted due to repeated network failures. Will be retried later.";
-    } else if (notFoundPackages.length > 0) {
-      status = "suspicious";
-      const pkgList = notFoundPackages.join(", ");
-      summary = `${notFoundPackages.length} declared dependency package(s) not found on their public registry: ${pkgList}. This may indicate a typosquatting attempt, dependency confusion attack, or a reference to a non-existent package.`;
     } else {
       status = "clean";
       summary = `All ${results.length} declared dependency package(s) verified as present on their public registries.`;
