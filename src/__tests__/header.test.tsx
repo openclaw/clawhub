@@ -6,10 +6,19 @@ import { describe, expect, it, vi } from "vitest";
 import Header from "../components/Header";
 
 const siteModeMock = vi.fn(() => "souls");
-const convexQueryMock = vi.fn().mockResolvedValue(0);
 
 vi.mock("@tanstack/react-router", () => ({
-  Link: (props: { children: ReactNode }) => <a href="/">{props.children}</a>,
+  Link: (props: {
+    children: ReactNode;
+    className?: string;
+    hash?: string;
+    to?: string;
+  }) => (
+    <a href={`${props.to ?? "/"}${props.hash ? `#${props.hash}` : ""}`} className={props.className}>
+      {props.children}
+    </a>
+  ),
+  useLocation: () => ({ pathname: "/" }),
   useNavigate: () => vi.fn(),
 }));
 
@@ -30,11 +39,21 @@ vi.mock("../lib/useAuthStatus", () => ({
   useAuthStatus: () => authStatusMock(),
 }));
 
+const setThemeMock = vi.fn();
+const setModeMock = vi.fn();
+
 vi.mock("../lib/theme", () => ({
   applyTheme: vi.fn(),
+  THEME_OPTIONS: [
+    { value: "claw", label: "Claw", description: "" },
+    { value: "knot", label: "Knot", description: "" },
+    { value: "dash", label: "Dash", description: "" },
+  ],
   useThemeMode: () => ({
+    theme: "dash",
     mode: "system",
-    setMode: vi.fn(),
+    setTheme: setThemeMock,
+    setMode: setModeMock,
   }),
 }));
 
@@ -66,30 +85,8 @@ vi.mock("../lib/site", () => ({
   getSiteName: () => "OnlyCrabs",
 }));
 
-vi.mock("../lib/convexError", () => ({
-  getUserFacingConvexError: vi.fn(),
-}));
-
 vi.mock("../lib/gravatar", () => ({
   gravatarUrl: vi.fn(),
-}));
-
-vi.mock("../convex/client", () => ({
-  convexHttp: {
-    query: convexQueryMock,
-  },
-}));
-
-vi.mock("../../convex/_generated/api", () => ({
-  api: {
-    skills: {
-      countPublicSkills: "countPublicSkills",
-    },
-  },
-}));
-
-vi.mock("../lib/numberFormat", () => ({
-  formatCompactStat: (n: number) => String(n),
 }));
 
 vi.mock("../components/ui/dropdown-menu", () => ({
@@ -102,9 +99,7 @@ vi.mock("../components/ui/dropdown-menu", () => ({
 
 vi.mock("../components/ui/toggle-group", () => ({
   ToggleGroup: ({ children }: { children: ReactNode }) => <div>{children}</div>,
-  ToggleGroupItem: ({ children }: { children: ReactNode }) => (
-    <button type="button">{children}</button>
-  ),
+  ToggleGroupItem: ({ children }: { children: ReactNode }) => <button type="button">{children}</button>,
 }));
 
 describe("Header", () => {
@@ -116,15 +111,15 @@ describe("Header", () => {
     expect(screen.queryByText("Packages")).toBeNull();
   });
 
-  it("renders a plain Skills tab without fetching a count", () => {
+  it("renders a theme family shortcut and plain Skills tab", () => {
     siteModeMock.mockReturnValue("skills");
-    convexQueryMock.mockClear();
 
     render(<Header />);
 
+    expect(screen.getByText("Dash")).toBeTruthy();
     expect(screen.getAllByText("Skills")).toHaveLength(2);
     expect(screen.getAllByText("Souls")).toHaveLength(2);
     expect(screen.getAllByText("Users")).toHaveLength(2);
     expect(screen.getByPlaceholderText("Search skills, plugins, users")).toBeTruthy();
-    expect(convexQueryMock).not.toHaveBeenCalled();
-  });});
+  });
+});

@@ -52,7 +52,7 @@ import {
   type ListViewMode,
   usePreferences,
 } from "../lib/preferences";
-import { useThemeMode } from "../lib/theme";
+import { getThemeFamilyLabel, THEME_FAMILY_OPTIONS, useThemeMode } from "../lib/theme";
 
 export const Route = createFileRoute("/settings")({
   component: Settings,
@@ -62,7 +62,15 @@ export function Settings() {
   const me = useQuery(api.users.me);
   const updateProfile = useMutation(api.users.updateProfile);
   const deleteAccount = useMutation(api.users.deleteAccount);
-  const { mode: themeMode, setMode: setThemeMode } = useThemeMode();
+  const {
+    customTheme,
+    family: themeFamily,
+    importCustomTheme,
+    mode: themeMode,
+    setFamily: setThemeFamily,
+    setMode: setThemeMode,
+    clearCustomTheme,
+  } = useThemeMode();
   const { preferences, updatePreference, resetPreferences, isAdvancedMode } = usePreferences();
   const tokens = useQuery(api.tokens.listMine, me ? {} : "skip") as
     | Array<{
@@ -100,6 +108,7 @@ export function Settings() {
   const [memberHandle, setMemberHandle] = useState("");
   const [memberRole, setMemberRole] = useState<"owner" | "admin" | "publisher">("publisher");
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
+  const [customThemeInput, setCustomThemeInput] = useState("");
   const orgs = (publisherMemberships ?? []).filter((entry) => entry.publisher.kind === "org");
   const selectedOrg =
     orgs.find((entry) => entry.publisher.handle === selectedOrgHandle) ?? orgs[0] ?? null;
@@ -180,6 +189,20 @@ export function Settings() {
       setOrgHandle("");
       setOrgDisplayName("");
     }
+  }
+
+  async function onImportCustomTheme() {
+    try {
+      const importedTheme = await importCustomTheme(customThemeInput);
+      setCustomThemeInput("");
+      toast.success(`Imported ${importedTheme.name ?? "custom theme"}`);
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Failed to import theme");
+    }
+  }
+  function onRemoveCustomTheme() {
+    clearCustomTheme();
+    toast.success("Removed custom theme");
   }
 
   return (
@@ -267,8 +290,31 @@ export function Settings() {
           <CardContent className="space-y-6">
             {/* Theme Section */}
             <div className="space-y-3">
-              <Label className="text-sm font-semibold text-[color:var(--ink)]">Theme</Label>
-              <div className="flex gap-2">
+              <Label id="theme" className="text-sm font-semibold text-[color:var(--ink)]">Theme</Label>
+              <div className="grid gap-3 sm:grid-cols-3">
+                {THEME_FAMILY_OPTIONS.map((option) => (
+                  <button
+                    key={option.value}
+                    type="button"
+                    onClick={() => setThemeFamily(option.value)}
+                    className="rounded-[var(--r-md)] border p-4 text-left transition-colors"
+                    style={{
+                      borderColor:
+                        themeFamily === option.value ? "var(--accent)" : "var(--border-ui)",
+                      background:
+                        themeFamily === option.value
+                          ? "var(--accent-subtle)"
+                          : "var(--surface-muted)",
+                    }}
+                  >
+                    <div className="text-sm font-semibold text-[color:var(--ink)]">{option.label}</div>
+                    <div className="mt-1 text-xs text-[color:var(--ink-soft)]">
+                      {option.description}
+                    </div>
+                  </button>
+                ))}
+              </div>
+              <div className="flex flex-wrap gap-2">
                 <Button
                   variant={themeMode === "light" ? "primary" : "ghost"}
                   size="sm"
@@ -296,6 +342,45 @@ export function Settings() {
                   <Monitor size={14} />
                   System
                 </Button>
+              </div>
+              <div className="space-y-3 rounded-[var(--r-md)] border border-[color:var(--border-ui)] bg-[color:var(--surface-muted)] p-4">
+                <div className="flex items-start justify-between gap-3">
+                  <div>
+                    <div className="text-sm font-semibold text-[color:var(--ink)]">
+                      tweakcn overlay
+                    </div>
+                    <p className="text-xs text-[color:var(--ink-soft)]">
+                      Paste a tweakcn URL, a tweakcn theme name, CSS variables, or JSON.
+                    </p>
+                  </div>
+                  {customTheme ? (
+                    <Badge variant="accent">
+                      {customTheme.name} on {getThemeFamilyLabel(themeFamily)}
+                    </Badge>
+                  ) : null}
+                </div>
+                <div className="flex flex-col gap-2 sm:flex-row">
+                  <Input
+                    value={customThemeInput}
+                    onChange={(event) => setCustomThemeInput(event.target.value)}
+                    placeholder="https://tweakcn.com/... or midnight-ocean"
+                    aria-label="Import tweakcn theme"
+                  />
+                  <Button type="button" variant="primary" onClick={onImportCustomTheme}>
+                    Import
+                  </Button>
+                  {customTheme ? (
+                    <Button type="button" variant="ghost" onClick={onRemoveCustomTheme}>
+                      <RotateCcw size={14} />
+                      Remove
+                    </Button>
+                  ) : null}
+                </div>
+                {customTheme ? (
+                  <div className="text-xs text-[color:var(--ink-soft)]">
+                    Source: {customTheme.source}
+                  </div>
+                ) : null}
               </div>
             </div>
 

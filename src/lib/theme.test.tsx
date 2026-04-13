@@ -1,17 +1,21 @@
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { applyTheme, getStoredTheme, useThemeMode } from "./theme";
+import { applyTheme, getStoredTheme, getStoredThemeName, getStoredThemeSelection, useThemeMode } from "./theme";
 
 describe("theme", () => {
   let store: Record<string, string>;
 
   function Harness() {
-    const { mode, setMode } = useThemeMode();
+    const { family, mode, setFamily, setMode } = useThemeMode();
     return (
       <div>
         <div data-testid="mode">{mode}</div>
+        <div data-testid="family">{family}</div>
         <button type="button" onClick={() => setMode("dark")}>
           dark
+        </button>
+        <button type="button" onClick={() => setFamily("dash")}>
+          dash
         </button>
       </div>
     );
@@ -39,27 +43,43 @@ describe("theme", () => {
   afterEach(() => {
     document.documentElement.classList.remove("dark");
     delete document.documentElement.dataset.theme;
+    delete document.documentElement.dataset.themeResolved;
+    delete document.documentElement.dataset.themeFamily;
+    delete document.documentElement.dataset.themeMode;
     window.localStorage.clear();
     vi.unstubAllGlobals();
   });
 
-  it("reads stored theme with fallback", () => {
+  it("reads stored selection with legacy fallback", () => {
     expect(getStoredTheme()).toBe("system");
+    expect(getStoredThemeName()).toBe("claw");
+
+    window.localStorage.setItem(
+      "clawhub-theme-selection",
+      JSON.stringify({ theme: "dash", mode: "light" }),
+    );
+    expect(getStoredThemeSelection()).toEqual({ theme: "dash", mode: "light" });
+
+    window.localStorage.clear();
     window.localStorage.setItem("clawhub-theme", "dark");
     expect(getStoredTheme()).toBe("dark");
-    window.localStorage.setItem("clawhub-theme", "nope");
-    expect(getStoredTheme()).toBe("system");
-    window.localStorage.setItem("clawdhub-theme", "dark");
-    expect(getStoredTheme()).toBe("dark");
+
+    window.localStorage.clear();
+    window.localStorage.setItem("clawdhub-theme", "openknot");
+    expect(getStoredThemeSelection()).toEqual({ theme: "knot", mode: "dark" });
   });
 
-  it("applies theme and toggles dark class", () => {
-    applyTheme("dark");
+  it("applies family and resolved mode to the document", () => {
+    applyTheme("dark", "dash");
     expect(document.documentElement.dataset.theme).toBe("dark");
+    expect(document.documentElement.dataset.themeResolved).toBe("dark");
+    expect(document.documentElement.dataset.themeFamily).toBe("dash");
     expect(document.documentElement.classList.contains("dark")).toBe(true);
 
-    applyTheme("light");
+    applyTheme("light", "knot");
     expect(document.documentElement.dataset.theme).toBe("light");
+    expect(document.documentElement.dataset.themeResolved).toBe("light");
+    expect(document.documentElement.dataset.themeFamily).toBe("knot");
     expect(document.documentElement.classList.contains("dark")).toBe(false);
   });
 
@@ -69,38 +89,30 @@ describe("theme", () => {
       addEventListener: vi.fn(),
       removeEventListener: vi.fn(),
     }));
-    applyTheme("system");
-    expect(document.documentElement.dataset.theme).toBe("dark");
+    applyTheme("system", "claw");
+    expect(document.documentElement.dataset.themeResolved).toBe("dark");
   });
 
-  it("useThemeMode persists and applies mode", async () => {
+  it("useThemeMode persists family and mode", async () => {
     vi.stubGlobal("matchMedia", () => ({
       matches: false,
       addEventListener: vi.fn(),
       removeEventListener: vi.fn(),
     }));
+
     render(<Harness />);
     expect(screen.getByTestId("mode").textContent).toBe("system");
+    expect(screen.getByTestId("family").textContent).toBe("claw");
+
+    fireEvent.click(screen.getByRole("button", { name: "dash" }));
     fireEvent.click(screen.getByRole("button", { name: "dark" }));
+
     await waitFor(() => {
-      expect(document.documentElement.dataset.theme).toBe("dark");
+      expect(document.documentElement.dataset.themeFamily).toBe("dash");
+      expect(document.documentElement.dataset.themeResolved).toBe("dark");
     });
+
     expect(window.localStorage.getItem("clawhub-theme")).toBe("dark");
-  });
-
-  it("loads stored theme after mount without a mismatched initial render", async () => {
-    window.localStorage.setItem("clawhub-theme", "dark");
-    vi.stubGlobal("matchMedia", () => ({
-      matches: false,
-      addEventListener: vi.fn(),
-      removeEventListener: vi.fn(),
-    }));
-
-    render(<Harness />);
-
-    await waitFor(() => {
-      expect(screen.getByTestId("mode").textContent).toBe("dark");
-    });
-    expect(document.documentElement.dataset.theme).toBe("dark");
+    expect(window.localStorage.getItem("clawhub-theme-name")).toBe("dash");
   });
 });

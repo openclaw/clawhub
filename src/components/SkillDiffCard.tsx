@@ -13,6 +13,7 @@ import {
   selectDefaultFilePath,
   sortVersionsBySemver,
 } from "../lib/diffing";
+import { isDarkThemeResolved, onThemeChange } from "../lib/theme";
 import { Button } from "./ui/button";
 import { ClientOnly } from "./ClientOnly";
 
@@ -232,15 +233,18 @@ export function SkillDiffCard({ skill, versions, variant = "card" }: SkillDiffCa
 
   useEffect(() => {
     if (!monaco || typeof document === "undefined") return;
-    const observer = new MutationObserver(() => {
-      applyMonacoTheme(monaco);
-    });
+    const syncTheme = () => applyMonacoTheme(monaco);
+    const observer = new MutationObserver(syncTheme);
     observer.observe(document.documentElement, {
       attributes: true,
-      attributeFilter: ["data-theme"],
+      attributeFilter: ["data-theme", "data-theme-family", "data-theme-resolved"],
     });
-    applyMonacoTheme(monaco);
-    return () => observer.disconnect();
+    const removeThemeListener = onThemeChange(syncTheme);
+    syncTheme();
+    return () => {
+      observer.disconnect();
+      removeThemeListener();
+    };
   }, [monaco]);
 
   useEffect(() => {
@@ -439,7 +443,7 @@ function renderOptions(options: VersionOption[]) {
 
 function getMonacoThemeName() {
   if (typeof document === "undefined") return "clawhub-light";
-  return document.documentElement.dataset.theme === "dark" ? "clawhub-dark" : "clawhub-light";
+  return isDarkThemeResolved() ? "clawhub-dark" : "clawhub-light";
 }
 
 function buildDiffOptions(viewMode: "split" | "inline"): DiffEditorProps["options"] {
@@ -475,7 +479,7 @@ function applyMonacoTheme(monaco: NonNullable<ReturnType<typeof useMonaco>>) {
   const diffDiagonal = styles.getPropertyValue("--diff-diagonal").trim() || "#22222233";
   const background = surface;
   const gutter = surfaceMuted;
-  const isDark = document.documentElement.dataset.theme === "dark";
+  const isDark = isDarkThemeResolved();
   const base = isDark ? "vs-dark" : "vs";
 
   const diffInserted = withAlpha(diffAdded, isDark ? 0.22 : 0.2);

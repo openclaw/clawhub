@@ -1,7 +1,7 @@
 import { useAuthActions } from "@convex-dev/auth/react";
 import { Link, useLocation, useNavigate } from "@tanstack/react-router";
 import { Ghost, Github, Menu, Monitor, Moon, Plug, Search, Sun, Wrench } from "lucide-react";
-import { useMemo, useRef, useState } from "react";
+import { type ComponentType, useMemo, useRef, useState } from "react";
 import { getUserFacingAuthError } from "../lib/authErrorMessage";
 import { gravatarUrl } from "../lib/gravatar";
 import {
@@ -12,7 +12,7 @@ import {
 } from "../lib/nav-items";
 import { isModerator } from "../lib/roles";
 import { getClawHubSiteUrl, getSiteMode, getSiteName } from "../lib/site";
-import { applyTheme, useThemeMode } from "../lib/theme";
+import { applyTheme, THEME_OPTIONS, useThemeMode } from "../lib/theme";
 import { startThemeTransition } from "../lib/theme-transition";
 import { setAuthError, useAuthError } from "../lib/useAuthError";
 import { useAuthStatus } from "../lib/useAuthStatus";
@@ -34,7 +34,7 @@ import {
 } from "./ui/sheet";
 import { ToggleGroup, ToggleGroupItem } from "./ui/toggle-group";
 
-const NAV_ICONS: Record<NavIconName, React.ComponentType<{ size?: number; className?: string }>> = {
+const NAV_ICONS: Record<NavIconName, ComponentType<{ size?: number; className?: string }>> = {
   wrench: Wrench,
   plug: Plug,
   ghost: Ghost,
@@ -43,7 +43,7 @@ const NAV_ICONS: Record<NavIconName, React.ComponentType<{ size?: number; classN
 export default function Header() {
   const { isAuthenticated, isLoading, me } = useAuthStatus();
   const { signIn, signOut } = useAuthActions();
-  const { mode, setMode } = useThemeMode();
+  const { theme, mode, setMode, setTheme } = useThemeMode();
   const toggleRef = useRef<HTMLDivElement | null>(null);
   const siteMode = getSiteMode();
   const siteName = useMemo(() => getSiteName(siteMode), [siteMode]);
@@ -69,14 +69,15 @@ export default function Header() {
   const [navSearchQuery, setNavSearchQuery] = useState("");
   const [mobileSearchOpen, setMobileSearchOpen] = useState(false);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+  const themeLabel = THEME_OPTIONS.find((option) => option.value === theme)?.label ?? "Claw";
 
-  const setTheme = (next: "system" | "light" | "dark") => {
+  const setThemeMode = (next: "system" | "light" | "dark") => {
     startThemeTransition({
       nextTheme: next,
       currentTheme: mode,
       setTheme: (value) => {
         const nextMode = value as "system" | "light" | "dark";
-        applyTheme(nextMode);
+        applyTheme(nextMode, theme);
         setMode(nextMode);
       },
       context: { element: toggleRef.current },
@@ -141,12 +142,29 @@ export default function Header() {
                   ))}
                 </div>
                 <div className="mobile-nav-section">
-                  <div className="mobile-nav-section-title">Theme</div>
+                  <div className="mobile-nav-section-title">Theme family</div>
+                  {THEME_OPTIONS.map((option) => (
+                    <button
+                      key={option.value}
+                      className="mobile-nav-link"
+                      type="button"
+                      onClick={() => {
+                        setTheme(option.value);
+                        setMobileMenuOpen(false);
+                      }}
+                    >
+                      <span>{option.label}</span>
+                      {theme === option.value ? <span className="mobile-nav-meta">Selected</span> : null}
+                    </button>
+                  ))}
+                </div>
+                <div className="mobile-nav-section">
+                  <div className="mobile-nav-section-title">Theme mode</div>
                   <button
                     className="mobile-nav-link"
                     type="button"
                     onClick={() => {
-                      setTheme("system");
+                      setThemeMode("system");
                       setMobileMenuOpen(false);
                     }}
                   >
@@ -157,7 +175,7 @@ export default function Header() {
                     className="mobile-nav-link"
                     type="button"
                     onClick={() => {
-                      setTheme("light");
+                      setThemeMode("light");
                       setMobileMenuOpen(false);
                     }}
                   >
@@ -168,7 +186,7 @@ export default function Header() {
                     className="mobile-nav-link"
                     type="button"
                     onClick={() => {
-                      setTheme("dark");
+                      setThemeMode("dark");
                       setMobileMenuOpen(false);
                     }}
                   >
@@ -213,14 +231,17 @@ export default function Header() {
               <Search size={18} aria-hidden="true" />
             </button>
             <div className="theme-toggle" ref={toggleRef}>
+              <Link to="/settings" hash="theme" className="theme-family-chip" aria-label={`Theme family: ${themeLabel}`}>
+                {themeLabel}
+              </Link>
               <ToggleGroup
                 type="single"
                 value={mode}
                 onValueChange={(value) => {
                   if (!value) return;
-                  setTheme(value as "system" | "light" | "dark");
+                  setThemeMode(value as "system" | "light" | "dark");
                 }}
-                aria-label="Theme mode"
+                aria-label={`Theme mode, ${themeLabel} preset`}
               >
                 <ToggleGroupItem value="system" aria-label="System theme">
                   <Monitor className="h-4 w-4" aria-hidden="true" />
