@@ -40,6 +40,13 @@ const NAV_ICONS: Record<NavIconName, ComponentType<{ size?: number; className?: 
   ghost: Ghost,
 };
 
+const THEME_FAMILY_ICONS: Record<string, ComponentType<{ size?: number; className?: string }>> = {
+  claw: Ghost,
+  hub: Plug,
+};
+
+const THEME_MODE_SEQUENCE: Array<"system" | "light" | "dark"> = ["system", "light", "dark"];
+
 export default function Header() {
   const { isAuthenticated, isLoading, me } = useAuthStatus();
   const { signIn, signOut } = useAuthActions();
@@ -70,6 +77,8 @@ export default function Header() {
   const [mobileSearchOpen, setMobileSearchOpen] = useState(false);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const themeLabel = THEME_OPTIONS.find((option) => option.value === theme)?.label ?? "Claw";
+  const ThemeFamilyIcon = THEME_FAMILY_ICONS[theme] ?? Wrench;
+  const ThemeModeIcon = getThemeModeIcon(mode);
 
   const setThemeMode = (next: "system" | "light" | "dark") => {
     startThemeTransition({
@@ -87,6 +96,21 @@ export default function Header() {
   const setThemeFamily = (nextTheme: string) => {
     applyTheme(mode, nextTheme);
     setTheme(nextTheme);
+  };
+
+  const cycleThemeFamily = () => {
+    const currentIndex = Math.max(
+      0,
+      THEME_OPTIONS.findIndex((option) => option.value === theme),
+    );
+    const nextTheme = THEME_OPTIONS[(currentIndex + 1) % THEME_OPTIONS.length]?.value ?? "claw";
+    setThemeFamily(nextTheme);
+  };
+
+  const cycleThemeMode = () => {
+    const currentIndex = Math.max(0, THEME_MODE_SEQUENCE.indexOf(mode));
+    const nextMode = THEME_MODE_SEQUENCE[(currentIndex + 1) % THEME_MODE_SEQUENCE.length] ?? "system";
+    setThemeMode(nextMode);
   };
 
   const handleNavSearch = (e: React.FormEvent) => {
@@ -237,7 +261,6 @@ export default function Header() {
             </button>
             <div className="theme-toggle" ref={toggleRef}>
               <div className="theme-picker-desktop" aria-label={`Theme family, current ${themeLabel}`}>
-                <span className="theme-picker-label">Theme</span>
                 <div className="theme-family-toggle" role="group" aria-label="Theme family">
                   {THEME_OPTIONS.map((option) => (
                     <button
@@ -252,6 +275,26 @@ export default function Header() {
                     </button>
                   ))}
                 </div>
+              </div>
+              <div className="theme-cycle-group" aria-label="Theme controls">
+                <button
+                  type="button"
+                  className="theme-cycle-button theme-cycle-button-family"
+                  onClick={cycleThemeFamily}
+                  aria-label={`Cycle theme family. Current: ${themeLabel}`}
+                  title={`Theme family: ${themeLabel}`}
+                >
+                  <ThemeFamilyIcon className="h-4 w-4" aria-hidden="true" />
+                </button>
+                <button
+                  type="button"
+                  className="theme-cycle-button theme-cycle-button-mode"
+                  onClick={cycleThemeMode}
+                  aria-label={`Cycle theme mode. Current: ${mode}`}
+                  title={`Theme mode: ${mode}`}
+                >
+                  <ThemeModeIcon className="h-4 w-4" aria-hidden="true" />
+                </button>
               </div>
               <ToggleGroup
                 className="theme-mode-toggle"
@@ -409,4 +452,16 @@ export default function Header() {
 function getCurrentRelativeUrl() {
   if (typeof window === "undefined") return "/";
   return `${window.location.pathname}${window.location.search}${window.location.hash}`;
+}
+
+function getThemeModeIcon(mode: "system" | "light" | "dark") {
+  switch (mode) {
+    case "light":
+      return Sun;
+    case "dark":
+      return Moon;
+    case "system":
+    default:
+      return Monitor;
+  }
 }

@@ -113,6 +113,7 @@ describe("Header", () => {
   it("renders direct desktop theme family controls and plain Skills tab", () => {
     siteModeMock.mockReturnValue("skills");
     setThemeMock.mockClear();
+    setModeMock.mockClear();
 
     render(<Header />);
 
@@ -126,6 +127,12 @@ describe("Header", () => {
 
     fireEvent.click(screen.getByRole("button", { name: "Hub" }));
     expect(setThemeMock).toHaveBeenCalledWith("hub");
+
+    fireEvent.click(screen.getByRole("button", { name: /Cycle theme family/i }));
+    expect(setThemeMock).toHaveBeenCalledWith("claw");
+
+    fireEvent.click(screen.getByRole("button", { name: /Cycle theme mode/i }));
+    expect(setModeMock).toHaveBeenCalledWith("light");
 
     fireEvent.click(screen.getByRole("button", { name: "Open menu" }));
 

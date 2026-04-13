@@ -84,88 +84,104 @@ export const Route = createFileRoute('/about')({
 function AboutPage() {
   return (
     <main className="section about-page">
-      <div className="about-hero">
-        <div className="about-hero-copy">
-          <div className="skill-card-tags mb-3">
-            <Badge>About</Badge>
-            <Badge variant="accent">Policy</Badge>
+      <div className="about-bento">
+        <section className="about-panel about-panel-hero">
+          <div className="about-hero-copy">
+            <div className="skill-card-tags mb-3">
+              <Badge>About</Badge>
+              <Badge variant="accent">Policy</Badge>
+            </div>
+            <h1 className="about-title">What ClawHub will not host</h1>
+            <p className="about-lead">
+              ClawHub is for useful agent tooling, not abuse workflows. If a skill is built to
+              evade defenses, scam people, invade privacy, or enable non-consensual behavior, it
+              does not belong here.
+            </p>
           </div>
-          <h1 className="about-title">What ClawHub will not host</h1>
-          <p className="about-lead">
-            ClawHub is for useful agent tooling, not abuse workflows. If a skill is built to evade
-            defenses, scam people, invade privacy, or enable non-consensual behavior, it does not
-            belong here.
+        </section>
+
+        <aside className="about-panel about-panel-callout">
+          <div className="about-callout">
+            <span className="about-callout-label">Moderation stance</span>
+            <p>
+              We judge end-to-end abuse patterns, not keyword theater. Useful tooling stays.
+              Predatory workflows get removed.
+            </p>
+          </div>
+        </aside>
+
+        <section className="about-panel about-panel-categories">
+          <div className="home-section-header">
+            <h2 className="home-section-title">Immediate rejection categories</h2>
+          </div>
+          <div className="about-grid">
+            {prohibitedCategories.map((category, index) => (
+              <article
+                key={category.title}
+                className={`about-rule-card${index % 3 === 0 ? ' about-rule-card-featured' : ''}`}
+              >
+                <h2>{category.title}</h2>
+                <p>{category.examples}</p>
+              </article>
+            ))}
+          </div>
+        </section>
+
+        <section className="about-panel about-panel-patterns">
+          <div className="home-section-header">
+            <h2 className="home-section-title">Recent patterns we are explicitly not okay with</h2>
+          </div>
+          <div className="about-patterns">
+            {recentPatterns.map((pattern) => (
+              <div key={pattern} className="about-pattern">
+                {pattern}
+              </div>
+            ))}
+          </div>
+        </section>
+
+        <section className="about-panel about-panel-enforcement">
+          <div>
+            <span className="about-callout-label">Enforcement</span>
+            <div className="management-sublist">
+              <div className="management-subitem">
+                We may hide, remove, or hard-delete violating skills.
+              </div>
+              <div className="management-subitem">
+                We may revoke tokens, soft-delete associated content, and ban repeat or severe
+                offenders.
+              </div>
+              <div className="management-subitem">
+                We do not guarantee warning-first enforcement for obvious abuse.
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <section className="about-panel about-panel-actions">
+          <span className="about-callout-label">Next steps</span>
+          <p className="about-panel-copy">
+            If you are reviewing a borderline workflow, use the reviewer doc. If you are browsing,
+            stay in the public catalog.
           </p>
-        </div>
-        <div className="about-callout">
-          <span className="about-callout-label">Moderation stance</span>
-          <p>
-            We judge end-to-end abuse patterns, not keyword theater. Useful tooling stays.
-            Predatory workflows get removed.
-          </p>
-        </div>
+          <div className="skill-card-tags">
+            <Button asChild variant="primary">
+              <Link to="/skills">
+                Browse Skills
+              </Link>
+            </Button>
+            <Button asChild>
+              <a
+                href="https://github.com/openclaw/clawhub/blob/main/docs/acceptable-usage.md"
+                target="_blank"
+                rel="noreferrer"
+              >
+                Reviewer Doc
+              </a>
+            </Button>
+          </div>
+        </section>
       </div>
-
-      <section className="about-section">
-        <div className="home-section-header">
-          <h2 className="home-section-title">Immediate rejection categories</h2>
-        </div>
-        <div className="about-grid">
-          {prohibitedCategories.map((category) => (
-            <article key={category.title} className="about-rule-card">
-              <h2>{category.title}</h2>
-              <p>{category.examples}</p>
-            </article>
-          ))}
-        </div>
-      </section>
-
-      <section className="about-section">
-        <div className="home-section-header">
-          <h2 className="home-section-title">Recent patterns we are explicitly not okay with</h2>
-        </div>
-        <div className="about-patterns">
-          {recentPatterns.map((pattern) => (
-            <div key={pattern} className="about-pattern">
-              {pattern}
-            </div>
-          ))}
-        </div>
-      </section>
-
-      <section className="about-enforcement">
-        <div>
-          <span className="about-callout-label">Enforcement</span>
-          <div className="management-sublist">
-            <div className="management-subitem">
-              We may hide, remove, or hard-delete violating skills.
-            </div>
-            <div className="management-subitem">
-              We may revoke tokens, soft-delete associated content, and ban repeat or severe
-              offenders.
-            </div>
-            <div className="management-subitem">
-              We do not guarantee warning-first enforcement for obvious abuse.
-            </div>
-          </div>
-        </div>
-        <div className="skill-card-tags">
-          <Button asChild variant="primary">
-            <Link to="/skills">
-              Browse Skills
-            </Link>
-          </Button>
-          <Button asChild>
-            <a
-              href="https://github.com/openclaw/clawhub/blob/main/docs/acceptable-usage.md"
-              target="_blank"
-              rel="noreferrer"
-            >
-              Reviewer Doc
-            </a>
-          </Button>
-        </div>
-      </section>
     </main>
   );
 }
