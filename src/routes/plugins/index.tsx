@@ -71,8 +71,7 @@ export const Route = createFileRoute("/plugins/")({
       nextCursor: data?.nextCursor ?? null,
       rateLimited: false,
       retryAfterSeconds: null,
-      apiError: items.length === 0 && !deps.q,
-    };
+      apiError: items.length === 0 && !deps.q && !deps.family && !deps.verified && !deps.executesCode,
   },
   component: PluginsIndex,
 });
