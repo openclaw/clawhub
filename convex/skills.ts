@@ -52,7 +52,9 @@ import {
 } from "./lib/public";
 import {
   ensurePersonalPublisherForUser,
+  getPublisherByHandle,
   getOwnerPublisher,
+  isPublisherActive,
   requirePublisherRole,
 } from "./lib/publishers";
 import {
@@ -5360,6 +5362,80 @@ export const changeOwner = mutation({
       metadata: { from: skill.ownerUserId, to: args.ownerUserId },
       createdAt: now,
     });
+  },
+});
+
+export const setSkillPublisherInternal = internalMutation({
+  args: {
+    actorUserId: v.id("users"),
+    slug: v.string(),
+    targetPublisherHandle: v.string(),
+    reason: v.optional(v.string()),
+  },
+  handler: async (ctx, args) => {
+    const actor = await ctx.db.get(args.actorUserId);
+    if (!actor || actor.deletedAt || actor.deactivatedAt) throw new Error("User not found");
+    assertModerator(actor);
+
+    const slug = normalizeSkillSlugForWrite(args.slug);
+    const targetPublisherHandle = args.targetPublisherHandle.trim();
+    if (!targetPublisherHandle) throw new Error("targetPublisherHandle required");
+
+    const resolved = await resolveSkillBySlugOrAlias(ctx, slug);
+    const skill = resolved.skill;
+    if (!skill || skill.softDeletedAt) throw new Error("Skill not found");
+
+    const targetPublisher = await getPublisherByHandle(ctx, targetPublisherHandle);
+    if (!targetPublisher || !isPublisherActive(targetPublisher)) {
+      throw new Error("Publisher not found");
+    }
+
+    if (skill.ownerPublisherId === targetPublisher._id) {
+      return {
+        ok: true as const,
+        changed: false as const,
+        skillSlug: skill.slug,
+        ownerPublisherHandle: targetPublisher.handle,
+        ownerPublisherId: targetPublisher._id,
+      };
+    }
+
+    const now = Date.now();
+    await ctx.db.patch(skill._id, {
+      ownerPublisherId: targetPublisher._id,
+      lastReviewedAt: now,
+      updatedAt: now,
+    });
+
+    const aliases = await listSkillSlugAliasesForSkill(ctx, skill._id);
+    for (const alias of aliases) {
+      await ctx.db.patch(alias._id, {
+        ownerPublisherId: targetPublisher._id,
+        updatedAt: now,
+      });
+    }
+
+    await ctx.db.insert("auditLogs", {
+      actorUserId: actor._id,
+      action: "skill.publisher.change",
+      targetType: "skill",
+      targetId: skill._id,
+      metadata: {
+        slug: skill.slug,
+        fromPublisherId: skill.ownerPublisherId,
+        toPublisherId: targetPublisher._id,
+        reason: args.reason?.trim() || undefined,
+      },
+      createdAt: now,
+    });
+
+    return {
+      ok: true as const,
+      changed: true as const,
+      skillSlug: skill.slug,
+      ownerPublisherHandle: targetPublisher.handle,
+      ownerPublisherId: targetPublisher._id,
+    };
   },
 });
 

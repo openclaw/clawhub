@@ -1096,6 +1096,37 @@ async function handleSkillMergePost(
   }
 }
 
+async function handleSkillPublisherPost(
+  ctx: ActionCtx,
+  request: Request,
+  slug: string,
+  headers: HeadersInit,
+) {
+  const auth = await requireApiTokenUserOrResponse(ctx, request, headers);
+  if (!auth.ok) return auth.response;
+
+  const parsed = await parseJsonPayload(request, headers);
+  if (!parsed.ok) return parsed.response;
+  const targetPublisherHandle =
+    typeof parsed.payload.targetPublisherHandle === "string"
+      ? parsed.payload.targetPublisherHandle
+      : "";
+  const reason = typeof parsed.payload.reason === "string" ? parsed.payload.reason : undefined;
+  if (!targetPublisherHandle.trim()) return text("targetPublisherHandle required", 400, headers);
+
+  try {
+    const result = await ctx.runMutation(internal.skills.setSkillPublisherInternal, {
+      actorUserId: auth.userId,
+      slug,
+      targetPublisherHandle,
+      reason,
+    });
+    return json(result, 200, headers);
+  } catch (error) {
+    return ownershipErrorToResponse(error, headers);
+  }
+}
+
 export async function skillsPostRouterV1Handler(ctx: ActionCtx, request: Request) {
   const rate = await applyRateLimit(ctx, request, "write");
   if (!rate.ok) return rate.response;
@@ -1130,6 +1161,11 @@ export async function skillsPostRouterV1Handler(ctx: ActionCtx, request: Request
   if (segments.length === 2 && action === "merge") {
     if (!slug) return text("Slug required", 400, rate.headers);
     return handleSkillMergePost(ctx, request, slug, rate.headers);
+  }
+
+  if (segments.length === 2 && action === "publisher") {
+    if (!slug) return text("Slug required", 400, rate.headers);
+    return handleSkillPublisherPost(ctx, request, slug, rate.headers);
   }
 
   return text("Not found", 404, rate.headers);

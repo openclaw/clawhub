@@ -2147,6 +2147,47 @@ describe("httpApiV1 handlers", () => {
     );
   });
 
+  it("publisher endpoint forwards to setSkillPublisherInternal", async () => {
+    vi.mocked(requireApiTokenUser).mockResolvedValue({
+      userId: "users:moderator",
+      user: { handle: "p" },
+    } as never);
+
+    const runMutation = vi.fn(async (_mutation: unknown, args: Record<string, unknown>) => {
+      if ("key" in args) return okRate();
+      return {
+        ok: true,
+        changed: true,
+        skillSlug: "shop",
+        ownerPublisherHandle: "shopify",
+        ownerPublisherId: "publishers:shopify",
+      };
+    });
+
+    const response = await __handlers.skillsPostRouterV1Handler(
+      makeCtx({ runMutation }),
+      new Request("https://example.com/api/v1/skills/shop/publisher", {
+        method: "POST",
+        headers: { Authorization: "Bearer clh_test", "content-type": "application/json" },
+        body: JSON.stringify({
+          targetPublisherHandle: "shopify",
+          reason: "org migration",
+        }),
+      }),
+    );
+
+    expect(response.status).toBe(200);
+    expect(runMutation).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({
+        actorUserId: "users:moderator",
+        slug: "shop",
+        targetPublisherHandle: "shopify",
+        reason: "org migration",
+      }),
+    );
+  });
+
   it("transfer list returns incoming transfers", async () => {
     vi.mocked(requireApiTokenUser).mockResolvedValue({
       userId: "users:1",
