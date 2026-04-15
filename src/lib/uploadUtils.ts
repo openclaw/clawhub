@@ -8,7 +8,7 @@ import { getUserFacingConvexError } from "./convexError";
 export async function uploadFile(uploadUrl: string, file: File) {
   const path = file.webkitRelativePath || file.name;
   const contentType =
-    normalizeTextContentType(path, file.type) ?? file.type ?? "application/octet-stream";
+    normalizeTextContentType(path, file.type) || file.type || "application/octet-stream";
   const response = await fetch(uploadUrl, {
     method: "POST",
     headers: { "Content-Type": contentType },
