@@ -423,6 +423,24 @@ describe("moderationEngine", () => {
     expect(snapshot.reasonCodes).toEqual(["suspicious.dynamic_code_execution"]);
   });
 
+  it("removes only clearable codes when mixed with non-clearable ones", () => {
+    const snapshot = buildModerationSnapshot({
+      staticScan: {
+        status: "suspicious",
+        reasonCodes: ["suspicious.dynamic_code_execution", "suspicious.potential_exfiltration"],
+        findings: [],
+        summary: "",
+        engineVersion: "v2.1.1",
+        checkedAt: Date.now(),
+      },
+      vtStatus: "clean",
+      llmStatus: "clean",
+    });
+
+    expect(snapshot.verdict).toBe("suspicious");
+    expect(snapshot.reasonCodes).toEqual(["suspicious.dynamic_code_execution"]);
+  });
+
   it("preserves static malicious findings even when VT and LLM are clean", () => {
     const snapshot = buildModerationSnapshot({
       staticScan: {
