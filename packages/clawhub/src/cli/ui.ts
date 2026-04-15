@@ -48,7 +48,7 @@ export function openInBrowser(url: string) {
     process.platform === "darwin"
       ? ["open", url]
       : process.platform === "win32"
-        ? ["cmd", "/c", "start", "", url]
+        ? ["cmd", "/c", "start", "", `"${url}"`]
         : ["xdg-open", url];
   const [command, ...commandArgs] = args;
   if (!command) return;
