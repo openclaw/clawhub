@@ -361,12 +361,20 @@ describe("moderationEngine", () => {
     expect(snapshot.evidence.length).toBe(1);
   });
 
-  it("keeps non-allowlisted suspicious findings when VT and LLM both report clean", () => {
+  it("demotes shell-exec and exfiltration findings when VT and LLM both report clean", () => {
     const snapshot = buildModerationSnapshot({
       staticScan: {
         status: "suspicious",
-        reasonCodes: ["suspicious.env_credential_access", "suspicious.potential_exfiltration"],
+        reasonCodes: ["suspicious.dangerous_exec", "suspicious.potential_exfiltration"],
         findings: [
+          {
+            code: "suspicious.dangerous_exec",
+            severity: "critical",
+            file: "scripts/setup.mjs",
+            line: 3,
+            message: "Shell command execution detected (child_process).",
+            evidence: "spawnSync('openclaw', ['cron', 'add'])",
+          },
           {
             code: "suspicious.potential_exfiltration",
             severity: "warn",
@@ -384,8 +392,35 @@ describe("moderationEngine", () => {
       llmStatus: "clean",
     });
 
+    expect(snapshot.verdict).toBe("clean");
+    expect(snapshot.reasonCodes).toEqual([]);
+  });
+
+  it("keeps dynamic-code findings when VT and LLM both report clean", () => {
+    const snapshot = buildModerationSnapshot({
+      staticScan: {
+        status: "suspicious",
+        reasonCodes: ["suspicious.dynamic_code_execution"],
+        findings: [
+          {
+            code: "suspicious.dynamic_code_execution",
+            severity: "critical",
+            file: "index.ts",
+            line: 11,
+            message: "Dynamic code execution detected.",
+            evidence: "eval(input)",
+          },
+        ],
+        summary: "",
+        engineVersion: "v2.1.1",
+        checkedAt: Date.now(),
+      },
+      vtStatus: "clean",
+      llmStatus: "clean",
+    });
+
     expect(snapshot.verdict).toBe("suspicious");
-    expect(snapshot.reasonCodes).toEqual(["suspicious.potential_exfiltration"]);
+    expect(snapshot.reasonCodes).toEqual(["suspicious.dynamic_code_execution"]);
   });
 
   it("preserves static malicious findings even when VT and LLM are clean", () => {
