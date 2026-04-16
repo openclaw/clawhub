@@ -35,9 +35,9 @@ afterEach(() => {
 
 describe("transfer commands", () => {
   it("request requires --yes when input is disabled", async () => {
-    await expect(cmdTransferRequest(makeGlobalOpts(), "demo", "@alice", {}, false)).rejects.toThrow(
-      /--yes/i,
-    );
+    await expect(
+      cmdTransferRequest(makeGlobalOpts(), "demo", "@alice", { type: "skill" }, false),
+    ).rejects.toThrow(/--yes/i);
   });
 
   it("request calls transfer endpoint", async () => {
@@ -52,7 +52,7 @@ describe("transfer commands", () => {
       makeGlobalOpts(),
       "Demo",
       "@Alice",
-      { yes: true, message: "Please take over" },
+      { yes: true, message: "Please take over", type: "skill" },
       false,
     );
 
@@ -64,8 +64,10 @@ describe("transfer commands", () => {
       }),
       expect.anything(),
     );
-    const requestArgs = httpMocks.apiRequest.mock.calls[0]?.[1] as { body?: string };
-    expect(requestArgs.body).toContain('"toUserHandle":"alice"');
+    const requestArgs = httpMocks.apiRequest.mock.calls[0]?.[1] as {
+      body?: Record<string, string>;
+    };
+    expect(requestArgs.body?.toUserHandle).toBe("alice");
   });
 
   it("list calls incoming transfers endpoint", async () => {
@@ -106,9 +108,9 @@ describe("transfer commands", () => {
       skillSlug: "demo",
     });
 
-    await cmdTransferAccept(makeGlobalOpts(), "demo", { yes: true }, false);
-    await cmdTransferReject(makeGlobalOpts(), "demo", { yes: true }, false);
-    await cmdTransferCancel(makeGlobalOpts(), "demo", { yes: true }, false);
+    await cmdTransferAccept(makeGlobalOpts(), "demo", { yes: true, type: "skill" }, false);
+    await cmdTransferReject(makeGlobalOpts(), "demo", { yes: true, type: "skill" }, false);
+    await cmdTransferCancel(makeGlobalOpts(), "demo", { yes: true, type: "skill" }, false);
 
     expect(httpMocks.apiRequest).toHaveBeenCalledWith(
       expect.anything(),

@@ -2233,6 +2233,43 @@ describe("httpApiV1 handlers", () => {
     expect(response.status).toBe(404);
   });
 
+  it("transfer accept returns 400 for malformed JSON", async () => {
+    vi.mocked(requireApiTokenUser).mockResolvedValue({
+      userId: "users:1",
+      user: { handle: "p" },
+    } as never);
+
+    const runQuery = vi.fn(async (_query: unknown, args: Record<string, unknown>) => {
+      if ("slug" in args) return { _id: "skills:1", slug: "demo" };
+      if ("skillId" in args) return { _id: "skillOwnershipTransfers:1" };
+      return null;
+    });
+    const runMutation = vi.fn(async (_mutation: unknown, args: Record<string, unknown>) => {
+      if ("key" in args) return okRate();
+      return { ok: true };
+    });
+
+    const response = await __handlers.skillsPostRouterV1Handler(
+      makeCtx({ runQuery, runMutation }),
+      new Request("https://example.com/api/v1/skills/demo/transfer/accept", {
+        method: "POST",
+        headers: { Authorization: "Bearer clh_test", "content-type": "application/json" },
+        body: "{",
+      }),
+    );
+
+    const body = await response.text();
+    if (response.status !== 400) {
+      throw new Error(`expected 400, got ${response.status}: ${body}`);
+    }
+    expect(body).toBe("Invalid JSON");
+    expect(
+      runMutation.mock.calls.some(
+        ([, args]) => typeof args === "object" && args !== null && "transferId" in args,
+      ),
+    ).toBe(false);
+  });
+
   it("rename endpoint forwards to renameOwnedSkillInternal", async () => {
     vi.mocked(requireApiTokenUser).mockResolvedValue({
       userId: "users:1",
@@ -2301,18 +2338,24 @@ describe("httpApiV1 handlers", () => {
       user: { handle: "p" },
     } as never);
 
+    let transferQueryCount = 0;
     const runQuery = vi.fn(async (_query: unknown, args: Record<string, unknown>) => {
       if (isRateLimitArgs(args)) return okRate();
       if ("userId" in args) {
-        return [
-          {
-            _id: "skillOwnershipTransfers:1",
-            skill: { _id: "skills:1", slug: "demo", displayName: "Demo" },
-            fromUser: { _id: "users:2", handle: "alice", displayName: "Alice" },
-            requestedAt: 100,
-            expiresAt: 200,
-          },
-        ];
+        transferQueryCount++;
+        if (transferQueryCount === 1) {
+          return [
+            {
+              _id: "skillOwnershipTransfers:1",
+              type: "skill",
+              skill: { _id: "skills:1", slug: "demo", displayName: "Demo" },
+              fromUser: { _id: "users:2", handle: "alice", displayName: "Alice" },
+              requestedAt: 100,
+              expiresAt: 200,
+            },
+          ];
+        }
+        return [];
       }
       return null;
     });
@@ -2329,6 +2372,45 @@ describe("httpApiV1 handlers", () => {
     const payload = await response.json();
     expect(payload.transfers).toHaveLength(1);
     expect(payload.transfers[0]?.skill?.slug).toBe("demo");
+  });
+
+  it("package transfer accept returns 400 for malformed JSON", async () => {
+    vi.mocked(requireApiTokenUser).mockResolvedValue({
+      userId: "users:1",
+      user: { handle: "p" },
+    } as never);
+
+    const runQuery = vi.fn(async (_query: unknown, args: Record<string, unknown>) => {
+      if ("name" in args) return { _id: "packages:1", name: "@openclaw/demo-plugin" };
+      if ("packageId" in args) {
+        return { _id: "packageOwnershipTransfers:1" };
+      }
+      return null;
+    });
+    const runMutation = vi.fn(async (_mutation: unknown, args: Record<string, unknown>) => {
+      if ("key" in args) return okRate();
+      return { ok: true };
+    });
+
+    const response = await __handlers.packagesPostRouterV1Handler(
+      makeCtx({ runQuery, runMutation }),
+      new Request("https://example.com/api/v1/packages/%40openclaw%2Fdemo-plugin/transfer/accept", {
+        method: "POST",
+        headers: { Authorization: "Bearer clh_test", "content-type": "application/json" },
+        body: "{",
+      }),
+    );
+
+    const body = await response.text();
+    if (response.status !== 400) {
+      throw new Error(`expected 400, got ${response.status}: ${body}`);
+    }
+    expect(body).toBe("Invalid JSON");
+    expect(
+      runMutation.mock.calls.some(
+        ([, args]) => typeof args === "object" && args !== null && "transferId" in args,
+      ),
+    ).toBe(false);
   });
 
   it("ban user requires auth", async () => {

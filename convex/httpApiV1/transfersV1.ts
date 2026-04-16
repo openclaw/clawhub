@@ -16,9 +16,20 @@ export async function transfersGetRouterV1Handler(ctx: ActionCtx, request: Reque
   const auth = await requireApiTokenUserOrResponse(ctx, request, rate.headers);
   if (!auth.ok) return auth.response;
 
-  const transfers =
+  const [skillTransfers, packageTransfers] = await Promise.all([
     direction === "incoming"
-      ? await ctx.runQuery(internal.skillTransfers.listIncomingInternal, { userId: auth.userId })
-      : await ctx.runQuery(internal.skillTransfers.listOutgoingInternal, { userId: auth.userId });
+      ? ctx.runQuery(internal.skillTransfers.listIncomingInternal, { userId: auth.userId })
+      : ctx.runQuery(internal.skillTransfers.listOutgoingInternal, { userId: auth.userId }),
+    direction === "incoming"
+      ? ctx.runQuery(internal.packageTransfers.listIncomingInternal, { userId: auth.userId })
+      : ctx.runQuery(internal.packageTransfers.listOutgoingInternal, { userId: auth.userId }),
+  ]);
+
+  const transfers = [...skillTransfers, ...packageTransfers].sort(
+    (a, b) =>
+      ((b as { requestedAt?: number }).requestedAt ?? 0) -
+      ((a as { requestedAt?: number }).requestedAt ?? 0),
+  );
+
   return json({ transfers }, 200, rate.headers);
 }

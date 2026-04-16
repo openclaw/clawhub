@@ -294,17 +294,25 @@ export const ApiV1TransferRequestResponseSchema = type({
 
 export const ApiV1TransferDecisionResponseSchema = type({
   ok: "true",
+  status: '"pending_admin_approval"|"accepted"|"rejected"?',
   skillSlug: "string?",
+  packageName: "string?",
 });
 
 export const ApiV1TransferListResponseSchema = type({
   transfers: type({
     _id: "string",
+    type: "string?",
     skill: type({
       _id: "string",
       slug: "string",
       displayName: "string",
-    }),
+    }).optional(),
+    package: type({
+      _id: "string",
+      name: "string",
+      displayName: "string",
+    }).optional(),
     fromUser: type({
       _id: "string",
       handle: "string|null",
@@ -315,6 +323,7 @@ export const ApiV1TransferListResponseSchema = type({
       handle: "string|null",
       displayName: "string|null",
     }).optional(),
+    toPublisherId: "string?",
     message: "string?",
     requestedAt: "number",
     expiresAt: "number",

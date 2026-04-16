@@ -180,18 +180,26 @@ Stores your API token + cached registry URL.
 
 ### `transfer`
 
-- Ownership transfer workflow.
+- Ownership transfer workflow for both skills and packages.
+- Supports user-to-user, user-to-org, org-to-user, and org-to-org transfers.
 - Subcommands:
-  - `transfer request <slug> <handle> [--message "..."] [--yes]`
+  - `transfer request <name> <handle> [--message "..."] [--type skill|package] [--publisher @org] [--yes]`
   - `transfer list [--outgoing]`
-  - `transfer accept <slug> [--yes]`
-  - `transfer reject <slug> [--yes]`
-  - `transfer cancel <slug> [--yes]`
+  - `transfer accept <name> [--type skill|package] [--publisher @org] [--yes]`
+  - `transfer reject <name> [--type skill|package] [--yes]`
+  - `transfer cancel <name> [--type skill|package] [--yes]`
+- `--type`: explicitly specify skill or package. If omitted, auto-detects by probing both APIs. Errors if both a skill and package share the same name.
+- `--publisher @org`: on request, targets the transfer to an org (recipient must be org admin to accept). On accept, assigns ownership to the org instead of the accepting user's personal publisher.
+- `transfer list` shows both skill and package transfers with a TYPE column, sorted by date.
 - Endpoints:
-  - `POST /api/v1/skills/{slug}/transfer`
+  - `POST /api/v1/skills/{slug}/transfer` (skills)
+  - `POST /api/v1/packages/{name}/transfer` (packages)
   - `POST /api/v1/skills/{slug}/transfer/accept`
   - `POST /api/v1/skills/{slug}/transfer/reject`
   - `POST /api/v1/skills/{slug}/transfer/cancel`
+  - `POST /api/v1/packages/{name}/transfer/accept`
+  - `POST /api/v1/packages/{name}/transfer/reject`
+  - `POST /api/v1/packages/{name}/transfer/cancel`
   - `GET /api/v1/transfers/incoming`
   - `GET /api/v1/transfers/outgoing`
 

@@ -999,11 +999,26 @@ async function handleTransferRequest(
   if (!toUserHandleRaw) return text("toUserHandle required", 400, headers);
   const message = typeof parsed.payload.message === "string" ? parsed.payload.message : undefined;
 
+  // Resolve optional publisher handle to a publisher ID
+  const toPublisherHandleRaw =
+    typeof parsed.payload.toPublisherHandle === "string"
+      ? parsed.payload.toPublisherHandle.trim()
+      : "";
+  let toPublisherId: Id<"publishers"> | undefined;
+  if (toPublisherHandleRaw) {
+    const publisher = await ctx.runQuery(internal.publishers.getByHandleInternal, {
+      handle: toPublisherHandleRaw,
+    });
+    if (!publisher) return text("Publisher not found", 404, headers);
+    toPublisherId = publisher._id;
+  }
+
   try {
     const result = await ctx.runMutation(internal.skillTransfers.requestTransferInternal, {
       actorUserId: transferContext.userId,
       skillId: transferContext.skill._id,
       toUserHandle: toUserHandleRaw,
+      toPublisherId,
       message,
     });
     return json(result, 200, headers);
@@ -1022,30 +1037,44 @@ async function handleTransferDecision(
   const transferContext = await resolveTransferContext(ctx, request, slug, headers);
   if (!transferContext.ok) return transferContext.response;
 
-  const pendingTransfer =
-    decision === "cancel"
-      ? await ctx.runQuery(internal.skillTransfers.getPendingTransferBySkillAndFromUserInternal, {
-          skillId: transferContext.skill._id,
-          fromUserId: transferContext.userId,
-        })
-      : await ctx.runQuery(internal.skillTransfers.getPendingTransferBySkillAndUserInternal, {
-          skillId: transferContext.skill._id,
-          toUserId: transferContext.userId,
-        });
+  const pendingTransfer = await ctx.runQuery(internal.skillTransfers.getPendingTransferBySkillInternal, {
+    skillId: transferContext.skill._id,
+  });
   if (!pendingTransfer) return text("No pending transfer found", 404, headers);
 
-  const mutation =
-    decision === "accept"
-      ? internal.skillTransfers.acceptTransferInternal
-      : decision === "reject"
-        ? internal.skillTransfers.rejectTransferInternal
-        : internal.skillTransfers.cancelTransferInternal;
-
   try {
-    const result = await ctx.runMutation(mutation, {
+    // For accept, resolve optional publisher handle to forward publisherId
+    let publisherId: Id<"publishers"> | undefined;
+    if (decision === "accept") {
+      const parsed = await parseJsonPayload(request, headers);
+      if (!parsed.ok) return parsed.response;
+
+      const publisherHandleRaw =
+        typeof parsed.payload.publisherHandle === "string"
+          ? parsed.payload.publisherHandle.trim()
+          : "";
+      if (publisherHandleRaw) {
+        const publisher = await ctx.runQuery(internal.publishers.getByHandleInternal, {
+          handle: publisherHandleRaw,
+        });
+        if (!publisher) return text("Publisher not found", 404, headers);
+        publisherId = publisher._id;
+      }
+    }
+
+    const baseArgs = {
       actorUserId: transferContext.userId,
       transferId: pendingTransfer._id,
-    });
+    };
+
+    const result = await (decision === "accept"
+      ? ctx.runMutation(internal.skillTransfers.acceptTransferInternal, {
+          ...baseArgs,
+          publisherId,
+        })
+      : decision === "reject"
+        ? ctx.runMutation(internal.skillTransfers.rejectTransferInternal, baseArgs)
+        : ctx.runMutation(internal.skillTransfers.cancelTransferInternal, baseArgs));
     return json(result, 200, headers);
   } catch (error) {
     return transferErrorToResponse(error, headers);

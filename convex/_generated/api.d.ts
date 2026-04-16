@@ -94,6 +94,7 @@ import type * as lib_userSearch from "../lib/userSearch.js";
 import type * as lib_webhooks from "../lib/webhooks.js";
 import type * as llmEval from "../llmEval.js";
 import type * as maintenance from "../maintenance.js";
+import type * as packageTransfers from "../packageTransfers.js";
 import type * as packagePublishTokens from "../packagePublishTokens.js";
 import type * as packages from "../packages.js";
 import type * as publishers from "../publishers.js";
@@ -210,6 +211,7 @@ declare const fullApi: ApiFromModules<{
   "lib/webhooks": typeof lib_webhooks;
   llmEval: typeof llmEval;
   maintenance: typeof maintenance;
+  packageTransfers: typeof packageTransfers;
   packagePublishTokens: typeof packagePublishTokens;
   packages: typeof packages;
   publishers: typeof publishers;

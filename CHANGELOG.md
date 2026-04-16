@@ -5,6 +5,7 @@
 ### Changed
 
 - Search: add CJK tokenization support (Chinese/Japanese/Korean) with Intl.Segmenter plus fallback behavior to improve skill query matching (#1596) (thanks @pq-dong).
+- Ownership transfers now support org targets across both skills and packages: `transfer request` and `transfer accept` accept a `--publisher` flag to send or receive ownership on behalf of an org. Org admins can see incoming org-targeted transfers via `GET /api/v1/transfers/incoming`, and the CLI now supports unified skill/package transfer flows. (#1603 thanks @TommYDeeee)
 
 ### Fixes
 

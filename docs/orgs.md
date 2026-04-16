@@ -325,12 +325,9 @@ Semantics:
 
 ## Transfer Model
 
-Current transfers are user-to-user only. That is too narrow.
+Transfers support publisher-based flows for both skills and packages:
 
-New transfer target should be a publisher.
-
-Support:
-
+- user publisher -> user publisher
 - user publisher -> org publisher
 - org publisher -> user publisher
 - org publisher -> org publisher
@@ -339,12 +336,12 @@ Transfer acceptance rule:
 
 - actor must have `owner` or `admin` on target publisher
 
-Audit should record:
+Audit records:
 
 - actor user id
-- source publisher id
-- target publisher id
-- resource id
+- source publisher id (`fromPublisherId`)
+- target publisher id (`toPublisherId`)
+- resource id (skill or package)
 
 ## Search Digest Changes
 
