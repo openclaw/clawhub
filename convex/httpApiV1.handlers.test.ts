@@ -1250,6 +1250,101 @@ describe("httpApiV1 handlers", () => {
     expect(json.version.security.scanners.llm.normalizedStatus).toBe("clean");
   });
 
+  it("lets static-scan malicious status dominate benign vt and llm results", async () => {
+    const runQuery = vi.fn(async (_query: unknown, args: Record<string, unknown>) => {
+      if ("slug" in args) {
+        return {
+          skill: { _id: "skills:1", slug: "demo", displayName: "Demo" },
+          latestVersion: null,
+          owner: { handle: "owner", displayName: "Owner", image: null },
+        };
+      }
+      if ("skillId" in args && "version" in args) {
+        return {
+          version: "1.0.0",
+          createdAt: 1,
+          changelog: "c",
+          changelogSource: "auto",
+          sha256hash: "a".repeat(64),
+          staticScan: {
+            status: "malicious",
+            reasonCodes: ["malicious.credential_harvest"],
+            summary: "Detected: malicious.credential_harvest",
+            engineVersion: "v2.4.0",
+            checkedAt: 555,
+          },
+          vtAnalysis: {
+            status: "clean",
+            verdict: "benign",
+            checkedAt: 111,
+          },
+          llmAnalysis: {
+            status: "completed",
+            verdict: "benign",
+            checkedAt: 222,
+          },
+          files: [],
+        };
+      }
+      return null;
+    });
+    const runMutation = vi.fn().mockResolvedValue(okRate());
+    const response = await __handlers.skillsGetRouterV1Handler(
+      makeCtx({ runQuery, runMutation }),
+      new Request("https://example.com/api/v1/skills/demo/versions/1.0.0"),
+    );
+    expect(response.status).toBe(200);
+    const json = await response.json();
+    expect(json.version.security.status).toBe("malicious");
+    expect(json.version.security.hasWarnings).toBe(true);
+    expect(json.version.security.hasScanResult).toBe(true);
+    expect(json.version.security.checkedAt).toBe(555);
+    expect(json.version.security.scanners.static.normalizedStatus).toBe("malicious");
+  });
+
+  it("treats a static scan by itself as a definitive scan result", async () => {
+    const runQuery = vi.fn(async (_query: unknown, args: Record<string, unknown>) => {
+      if ("slug" in args) {
+        return {
+          skill: { _id: "skills:1", slug: "demo", displayName: "Demo" },
+          latestVersion: null,
+          owner: { handle: "owner", displayName: "Owner", image: null },
+        };
+      }
+      if ("skillId" in args && "version" in args) {
+        return {
+          version: "1.0.0",
+          createdAt: 1,
+          changelog: "c",
+          changelogSource: "auto",
+          staticScan: {
+            status: "clean",
+            reasonCodes: [],
+            summary: "No issues found",
+            engineVersion: "v2.4.0",
+            checkedAt: 555,
+          },
+          files: [],
+        };
+      }
+      return null;
+    });
+    const runMutation = vi.fn().mockResolvedValue(okRate());
+    const response = await __handlers.skillsGetRouterV1Handler(
+      makeCtx({ runQuery, runMutation }),
+      new Request("https://example.com/api/v1/skills/demo/versions/1.0.0"),
+    );
+    expect(response.status).toBe(200);
+    const json = await response.json();
+    expect(json.version.security.status).toBe("clean");
+    expect(json.version.security.hasWarnings).toBe(false);
+    expect(json.version.security.hasScanResult).toBe(true);
+    expect(json.version.security.virustotalUrl).toBeNull();
+    expect(json.version.security.scanners.static.normalizedStatus).toBe("clean");
+    expect(json.version.security.scanners.vt).toBeNull();
+    expect(json.version.security.scanners.llm).toBeNull();
+  });
+
   it("keeps hasWarnings true when llm dimensions include non-ok ratings", async () => {
     const runQuery = vi.fn(async (_query: unknown, args: Record<string, unknown>) => {
       if ("slug" in args) {

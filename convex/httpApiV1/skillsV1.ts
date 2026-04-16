@@ -71,6 +71,11 @@ type PublicSkillVersionParsed = {
   clawdis?: { os?: string[]; nix?: { plugin?: boolean; systems?: string[] } };
 };
 
+type PublicSkillVersionStaticScan = Pick<
+  NonNullable<Doc<"skillVersions">["staticScan"]>,
+  "status" | "reasonCodes" | "summary" | "engineVersion" | "checkedAt"
+>;
+
 type PublicSkillVersionResponse = {
   _id: Id<"skillVersions">;
   version: string;
@@ -83,13 +88,7 @@ type PublicSkillVersionResponse = {
   sha256hash?: string;
   vtAnalysis?: Doc<"skillVersions">["vtAnalysis"];
   llmAnalysis?: Doc<"skillVersions">["llmAnalysis"];
-  staticScan?: {
-    status: string;
-    reasonCodes?: string[];
-    summary?: string;
-    engineVersion?: string;
-    checkedAt?: number;
-  };
+  staticScan?: PublicSkillVersionStaticScan;
   capabilityTags?: string[];
 };
 
