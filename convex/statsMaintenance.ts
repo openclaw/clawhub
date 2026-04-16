@@ -267,14 +267,14 @@ export async function reconcileSkillStarCountsHandler(
     // Count actual star records for this skill
     const starRecords = await ctx.db
       .query("stars")
-      .withIndex("by_skill_user", (q: Function) => q.eq("skillId", skill._id))
+      .withIndex("by_skill_user", (q) => q.eq("skillId", skill._id))
       .collect();
     const actualStars = starRecords.length;
 
     // Count actual comment records for this skill
     const commentRecords = await ctx.db
       .query("comments")
-      .withIndex("by_skill", (q: Function) => q.eq("skillId", skill._id))
+      .withIndex("by_skill", (q) => q.eq("skillId", skill._id))
       .collect();
     const actualComments = commentRecords.filter((c: { softDeletedAt?: unknown }) => !c.softDeletedAt).length;
 
