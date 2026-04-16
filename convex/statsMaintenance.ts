@@ -248,7 +248,8 @@ function buildSkillStatPatch(skill: Doc<"skills">) {
  * going through the Convex internalMutation wrapper.
  */
 export async function reconcileSkillStarCountsHandler(
-  ctx: { db: { query: Function; patch: Function } },
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  ctx: { db: { query: any; patch: any } },
   args: { cursor?: string; batchSize?: number },
 ) {
   const batchSize = clampInt(args.batchSize ?? 50, 1, 200);
@@ -267,14 +268,16 @@ export async function reconcileSkillStarCountsHandler(
     // Count actual star records for this skill
     const starRecords = await ctx.db
       .query("stars")
-      .withIndex("by_skill_user", (q) => q.eq("skillId", skill._id))
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      .withIndex("by_skill_user", (q: any) => q.eq("skillId", skill._id))
       .collect();
     const actualStars = starRecords.length;
 
     // Count actual comment records for this skill
     const commentRecords = await ctx.db
       .query("comments")
-      .withIndex("by_skill", (q) => q.eq("skillId", skill._id))
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      .withIndex("by_skill", (q: any) => q.eq("skillId", skill._id))
       .collect();
     const actualComments = commentRecords.filter((c: { softDeletedAt?: unknown }) => !c.softDeletedAt).length;
 
