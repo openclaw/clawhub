@@ -3,6 +3,7 @@
 import { describe, expect, it, vi } from "vitest";
 
 const mockSpawn = vi.fn();
+const originalPlatform = process.platform;
 
 vi.mock("node:child_process", () => ({
   spawn: (...args: unknown[]) => mockSpawn(...args),
@@ -26,6 +27,26 @@ function createMockChild() {
 }
 
 describe("openInBrowser", () => {
+  it("uses explorer on Windows and preserves query params in the URL argument", () => {
+    const child = createMockChild();
+    mockSpawn.mockReturnValueOnce(child);
+    const url =
+      "https://clawhub.ai/auth?redirect_uri=http%3A%2F%2F127.0.0.1%3A43123%2Fcallback&state=abc123";
+
+    try {
+      Object.defineProperty(process, "platform", { value: "win32" });
+      openInBrowser(url);
+    } finally {
+      Object.defineProperty(process, "platform", { value: originalPlatform });
+    }
+
+    expect(mockSpawn).toHaveBeenCalledWith("explorer", [url], {
+      stdio: "ignore",
+      detached: true,
+    });
+    expect(child.unref).toHaveBeenCalledOnce();
+  });
+
   it("prints manual URL instructions when browser opener is missing", () => {
     const child = createMockChild();
     mockSpawn.mockReturnValueOnce(child);
