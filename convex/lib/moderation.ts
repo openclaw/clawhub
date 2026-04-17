@@ -14,7 +14,7 @@ const FLAG_RULES: Array<{ flag: string; pattern: RegExp }> = [
   // Data exfiltration patterns - webhooks are unusual in skills
   // NOTE: Only flag explicit Discord/Slack webhook URLs, not generic webhook mentions.
   // WordPress, Zapier, Make, and other legitimate integrations use webhook as a common term.
-  { flag: "suspicious.webhook", pattern: /(discord\.gg\/|webhook\.discord|webhook\.slack|hooks\.slack)/i },
+  { flag: "suspicious.webhook", pattern: /(discord\.gg\/|discord\.com\/api\/webhooks|discordapp\.com\/api\/webhooks|hooks\.slack)/i },
 
   // Arbitrary code execution - curl | bash is dangerous
   { flag: "suspicious.script", pattern: /(curl[^\n]+\|\s*(sh|bash))/i },
