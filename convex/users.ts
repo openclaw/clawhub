@@ -467,7 +467,7 @@ export const getByHandle = query({
   },
 });
 
-/** Lightweight stats for user hover tooltips. Uses the skills by_owner index. */
+/** Lightweight stats for user hover tooltips from denormalized user counters. */
 export const getHoverStats = query({
   args: { userId: v.id("users") },
   handler: async (ctx, args) => {

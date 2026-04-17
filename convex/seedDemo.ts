@@ -330,8 +330,6 @@ export const seedDemoSkills = internalMutation({
           versions: numVersions,
           comments: numComments,
         },
-          versions: numVersions,
-          comments: numComments,
         moderationReason: undefined,
         isSuspicious: false,
         createdAt,
