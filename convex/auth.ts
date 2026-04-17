@@ -70,11 +70,18 @@ export async function handleDeletedUserSignIn(
   throw new ConvexError(DELETED_ACCOUNT_REAUTH_MESSAGE);
 }
 
+function missingEnvVar(name: string): never {
+  throw new Error(
+    `Missing required environment variable: ${name}. ` +
+    `Set it in the Convex dashboard under Settings → Environment Variables.`,
+  );
+}
+
 export const { auth, signIn, signOut, store, isAuthenticated } = convexAuth({
   providers: [
     GitHub({
-      clientId: process.env.AUTH_GITHUB_ID ?? "",
-      clientSecret: process.env.AUTH_GITHUB_SECRET ?? "",
+      clientId: process.env.AUTH_GITHUB_ID ?? missingEnvVar("AUTH_GITHUB_ID"),
+      clientSecret: process.env.AUTH_GITHUB_SECRET ?? missingEnvVar("AUTH_GITHUB_SECRET"),
       profile(profile) {
         return {
           id: String(profile.id),
