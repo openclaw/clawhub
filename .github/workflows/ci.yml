@@ -27,9 +27,15 @@ jobs:
 
       - name: Test
         run: bun run test
+        env:
+          AUTH_GITHUB_ID: test-github-client-id
+          AUTH_GITHUB_SECRET: test-github-client-secret
 
       - name: Coverage
         run: bun run coverage
+        env:
+          AUTH_GITHUB_ID: test-github-client-id
+          AUTH_GITHUB_SECRET: test-github-client-secret
 
       - name: ClawHub CLI Verify
         run: bun run --cwd packages/clawhub verify
