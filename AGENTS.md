@@ -87,3 +87,23 @@
 - **32K document limit per query.** Split `.collect()` calls by a partition field (e.g., one day at a time instead of a 7-day range). See `rebuildTrendingLeaderboardAction` in `convex/leaderboards.ts` for an example.
 - **Common mistakes**: `.filter().collect()` without an index; `ctx.db.get()` on large docs in a loop for list views; while loops that paginate the whole table to find filtered results.
 - **Before writing or reviewing Convex queries, check deployment health.** Run `bunx convex insights` to check for OCC conflicts, `bytesReadLimit`, and `documentsReadLimit` errors. Run `bunx convex logs --failure` to see individual error messages and stack traces. This helps identify which functions are causing bandwidth issues so you can prioritize fixes.
+
+## Stat Field Migration Rules
+
+The `skills` table maintains two parallel sets of stat fields as part of an in-progress field migration:
+
+| Legacy (nested, `@deprecated`) | Top-level (source of truth, indexable) |
+|---|---|
+| `stats.downloads` | `statsDownloads` |
+| `stats.stars` | `statsStars` |
+| `stats.installsCurrent` | `statsInstallsCurrent` |
+| `stats.installsAllTime` | `statsInstallsAllTime` |
+
+**Rules:**
+
+- **Always use `readCanonicalStat(skill, field)` (`convex/lib/skillStats.ts`) to read** any of the four migrated fields. It prefers the top-level field and falls back to the nested field for pre-migration documents. Never access `skill.stats.downloads` / `.stars` / `.installsCurrent` / `.installsAllTime` directly.
+- **Always use `applySkillStatDeltas()` to write** stat deltas. It writes both the top-level and nested fields in the same patch to keep them in sync.
+- **Both sets of fields must be written together** in any patch that touches stat values (see the return shape of `applySkillStatDeltas`).
+- **Nested-only reads are acceptable only for** `stats.comments` and `stats.versions` — no top-level field exists for these yet.
+- The four legacy nested fields are marked `@deprecated` in `statsValidator` (schema.ts). Any IDE access to `skill.stats.downloads` etc. will show a strikethrough warning — treat this as a signal to use `readCanonicalStat()` instead.
+- When adding new stat fields, follow the same dual-write pattern and add a cursor-based backfill mutation (see `backfillSkillStatFieldsInternal` for an example).

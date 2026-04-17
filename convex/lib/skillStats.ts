@@ -10,18 +10,34 @@ type SkillStatDeltas = {
   installsAllTime?: number;
 };
 
+/**
+ * Read the canonical value of a migrated stat field from a skill document.
+ *
+ * Top-level fields (`statsDownloads`, etc.) are the source of truth — they are
+ * indexable and kept up-to-date by the event pipeline. The nested `stats.*`
+ * fields are only used as a fallback for pre-migration documents where the
+ * top-level field is still `undefined`.
+ *
+ * All code that reads a migrated stat value should go through this function
+ * rather than accessing `skill.stats.*` directly.
+ */
+export function readCanonicalStat(
+  skill: Doc<"skills">,
+  field: "downloads" | "stars" | "installsCurrent" | "installsAllTime",
+): number {
+  const topLevelKey = `stats${field[0].toUpperCase()}${field.slice(1)}` as
+    | "statsDownloads"
+    | "statsStars"
+    | "statsInstallsCurrent"
+    | "statsInstallsAllTime";
+  return typeof skill[topLevelKey] === "number" ? skill[topLevelKey]! : (skill.stats[field] ?? 0);
+}
+
 export function applySkillStatDeltas(skill: Doc<"skills">, deltas: SkillStatDeltas) {
-  const currentDownloads =
-    typeof skill.statsDownloads === "number" ? skill.statsDownloads : skill.stats.downloads;
-  const currentStars = typeof skill.statsStars === "number" ? skill.statsStars : skill.stats.stars;
-  const currentInstallsCurrent =
-    typeof skill.statsInstallsCurrent === "number"
-      ? skill.statsInstallsCurrent
-      : (skill.stats.installsCurrent ?? 0);
-  const currentInstallsAllTime =
-    typeof skill.statsInstallsAllTime === "number"
-      ? skill.statsInstallsAllTime
-      : (skill.stats.installsAllTime ?? 0);
+  const currentDownloads = readCanonicalStat(skill, "downloads");
+  const currentStars = readCanonicalStat(skill, "stars");
+  const currentInstallsCurrent = readCanonicalStat(skill, "installsCurrent");
+  const currentInstallsAllTime = readCanonicalStat(skill, "installsAllTime");
 
   const currentComments = skill.stats.comments;
   const nextDownloads = Math.max(0, currentDownloads + (deltas.downloads ?? 0));
