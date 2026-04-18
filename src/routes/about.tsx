@@ -13,7 +13,7 @@ import { Badge } from '../components/ui/badge';
 import { Button } from '../components/ui/button';
 import { getSiteMode, getSiteName, getSiteUrlForMode } from '../lib/site';
 
-function renderWithInlineCode(text: string): (string | JSX.Element)[] {
+export function renderWithInlineCode(text: string): (string | JSX.Element)[] {
   const parts = text.split(/(`[^`]+`)/g);
   return parts.map((part, i) => {
     if (part.startsWith('`') && part.endsWith('`')) {
@@ -154,7 +154,7 @@ function AboutPage() {
                     <div className="about-rule-card-icon">
                       <Icon size={18} />
                     </div>
-                    <h2>{category.title}</h2>
+                    <h3>{category.title}</h3>
                   </div>
                   <p>{renderWithInlineCode(category.examples)}</p>
                 </article>
