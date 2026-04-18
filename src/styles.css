@@ -4272,10 +4272,6 @@ code {
 }
 
 @media (max-width: 639px) {
-  .brand-name-responsive {
-    display: none;
-  }
-
   .brand-mark-image {
     display: none;
   }
@@ -7352,6 +7348,14 @@ html.theme-transition::view-transition-new(theme) {
   gap: 20px;
 }
 
+.about-panel-categories {
+  overflow: visible;
+}
+
+.about-panel-categories .about-grid {
+  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+}
+
 .about-rule-card,
 .about-pattern {
   display: flex;
@@ -7473,7 +7477,6 @@ html.theme-transition::view-transition-new(theme) {
     grid-template-columns: repeat(2, 1fr);
     gap: 22px;
   }
-
   .about-patterns {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
@@ -7504,7 +7507,6 @@ html.theme-transition::view-transition-new(theme) {
     grid-template-columns: repeat(3, 1fr);
     gap: 24px;
   }
-
   .about-patterns {
     grid-template-columns: repeat(4, minmax(0, 1fr));
   }
@@ -7514,6 +7516,7 @@ html.theme-transition::view-transition-new(theme) {
   .about-bento,
   .about-grid,
   .about-patterns,
+  .about-panel-categories .about-grid,
   .souls-coming-grid {
     grid-template-columns: 1fr;
   }
@@ -7669,6 +7672,9 @@ html.theme-transition::view-transition-new(theme) {
 
 /* --- Variables (scoped) --- */
 .home-v2-main {
+  max-width: var(--page-max);
+  margin-inline: auto;
+  width: 100%;
   --hv2-bg: #060608;
   --hv2-surface: rgba(255,255,255,0.02);
   --hv2-surface-hover: rgba(255,255,255,0.045);
@@ -8085,7 +8091,7 @@ html.theme-transition::view-transition-new(theme) {
 .home-v2-carousel-track {
   display: flex;
   gap: 16px;
-  padding: 4px 48px 48px;
+  padding: 12px 48px 48px;
   animation: home-v2-scroll 46s linear infinite;
   width: max-content;
 }
@@ -8115,8 +8121,8 @@ html.theme-transition::view-transition-new(theme) {
 }
 .home-v2-c-card:hover {
   border-color: var(--hv2-border-hover);
-  transform: translateY(-4px) scale(1.01);
-  box-shadow: 0 8px 32px rgba(0,0,0,0.25);
+  transform: translateY(-3px);
+  box-shadow: 0 6px 24px rgba(0,0,0,0.22);
   background: var(--hv2-surface-hover);
 }
 .home-v2-c-head {
@@ -8546,7 +8552,7 @@ html.theme-transition::view-transition-new(theme) {
     padding: 0 20px;
   }
   .home-v2-carousel-track {
-    padding: 4px 20px 36px;
+    padding: 12px 20px 36px;
   }
   .home-v2-c-card {
     min-width: 280px;
@@ -8582,6 +8588,49 @@ html.theme-transition::view-transition-new(theme) {
 }
 .home-v2-carousel-header {
   max-width: none;
+}
+
+/* ═══ MINIMAL FOOTER (home-v2 pages) ═══ */
+
+/* Fix: use :has() since main is wrapped in ErrorBoundary */
+.app-shell:has(.home-v2-main) > .site-footer .footer-grid {
+  display: none;
+}
+.app-shell:has(.home-v2-main) > .site-footer .site-footer-divider {
+  display: none;
+}
+.app-shell:has(.home-v2-main) > .site-footer {
+  border-top: 1px solid rgba(255,255,255,0.06);
+  padding: 0;
+  background: transparent;
+}
+.app-shell:has(.home-v2-main) > .site-footer .site-footer-inner {
+  max-width: none;
+  padding: 20px 48px;
+}
+.app-shell:has(.home-v2-main) > .site-footer .footer-bottom {
+  padding: 0;
+  margin: 0;
+  border: none;
+  font-size: 13px;
+  color: #555;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+.app-shell:has(.home-v2-main) > .site-footer .footer-bottom a {
+  color: #777;
+}
+.app-shell:has(.home-v2-main) > .site-footer .footer-bottom a:hover {
+  color: #aaa;
+}
+
+/* ═══ HOME V2 — Page-max constraint + full-bleed background ═══ */
+.app-shell:has(.home-v2-main) {
+  background: #060608;
+}
+[data-theme-resolved="light"] .app-shell:has(.home-v2-main) {
+  background: #faf6f1;
 }
 
 /* ═══ HOME V2 — Full-width nav override ═══ */
@@ -8687,7 +8736,7 @@ html.theme-transition::view-transition-new(theme) {
   box-shadow:
     inset 0 1px 0 rgba(255, 255, 255, 0.05),
     inset 0 0 24px rgba(0, 0, 0, 0.2),
-    0 8px 32px rgba(0, 0, 0, 0.25);
+    0 6px 24px rgba(0, 0, 0, 0.22);
 }
 
 /* Dark mode — search bar inner fade */
@@ -8729,7 +8778,7 @@ html.theme-transition::view-transition-new(theme) {
   box-shadow:
     inset 0 1px 0 rgba(255, 255, 255, 0.8),
     inset 0 0 30px rgba(170, 125, 80, 0.08),
-    0 4px 20px rgba(140, 100, 60, 0.12),
+    0 4px 18px rgba(140, 100, 60, 0.12),
     0 0 0 1px rgba(160, 115, 72, 0.12);
 }
 
@@ -8864,7 +8913,6 @@ html.theme-transition::view-transition-new(theme) {
 /* Light — footer */
 [data-theme-resolved="light"] .app-shell:has(.home-v2-main) > .site-footer {
   border-top-color: rgba(170, 125, 80, 0.15);
-  background: var(--hv2-bg);
 }
 [data-theme-resolved="light"] .app-shell:has(.home-v2-main) > .site-footer .footer-bottom {
   color: #9c8b7a;
@@ -8939,7 +8987,7 @@ html.theme-transition::view-transition-new(theme) {
   box-shadow:
     inset 0 1px 0 rgba(255, 255, 255, 0.06),
     inset 0 0 32px rgba(0, 0, 0, 0.25),
-    0 8px 36px rgba(0, 0, 0, 0.3);
+    0 6px 28px rgba(0, 0, 0, 0.28);
 }
 
 /* Dark — search inset */

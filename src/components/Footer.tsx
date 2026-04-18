@@ -4,7 +4,6 @@ export function Footer() {
   return (
     <footer className="site-footer" role="contentinfo">
       <div className="site-footer-inner">
-        <div className="site-footer-divider" aria-hidden="true" />
         <div className="footer-grid">
           {FOOTER_NAV_SECTIONS.map((section) => (
             <div key={section.title} className="footer-col">
