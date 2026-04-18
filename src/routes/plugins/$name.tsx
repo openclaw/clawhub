@@ -14,6 +14,7 @@ import {
   fetchPackageReadme,
   fetchPackageVersion,
   getPackageDownloadPath,
+  isRateLimitedPackageApiError,
   type PackageDetailResponse,
   type PackageVersionDetail,
 } from "../../lib/packageApi";
@@ -35,7 +36,6 @@ type PluginDetailLoaderData = {
 
 export const Route = createFileRoute("/plugins/$name")({
   loader: async ({ params }): Promise<PluginDetailLoaderData> => {
-    // All fetch functions now handle errors internally and return null/empty on failure
     const requestedName = params.name;
     const candidateNames = requestedName.includes("/")
       ? [requestedName]
@@ -43,9 +43,25 @@ export const Route = createFileRoute("/plugins/$name")({
 
     let resolvedName = requestedName;
     let detail: PackageDetailResponse = { package: null, owner: null };
-    
+
     for (const candidateName of candidateNames) {
-      const candidateDetail = await fetchPackageDetail(candidateName);
+      let candidateDetail: PackageDetailResponse;
+      try {
+        candidateDetail = await fetchPackageDetail(candidateName);
+      } catch (error) {
+        if (isRateLimitedPackageApiError(error)) {
+          return {
+            detail: { package: null, owner: null },
+            version: null,
+            readme: null,
+            rateLimited: {
+              scope: "detail",
+              retryAfterSeconds: error.retryAfterSeconds,
+            },
+          };
+        }
+        throw error;
+      }
       if (candidateDetail.package) {
         detail = candidateDetail;
         resolvedName = candidateName;
@@ -58,15 +74,29 @@ export const Route = createFileRoute("/plugins/$name")({
       return { detail, version: null, readme: null, rateLimited: null };
     }
 
-    // Fetch readme and version in parallel - functions handle errors internally
-    const [version, readme] = await Promise.all([
-      detail.package.latestVersion 
-        ? fetchPackageVersion(resolvedName, detail.package.latestVersion)
-        : Promise.resolve(null),
-      fetchPackageReadme(resolvedName),
-    ]);
-    
-    return { detail, version, readme, rateLimited: null };
+    try {
+      const [version, readme] = await Promise.all([
+        detail.package.latestVersion
+          ? fetchPackageVersion(resolvedName, detail.package.latestVersion)
+          : Promise.resolve(null),
+        fetchPackageReadme(resolvedName),
+      ]);
+
+      return { detail, version, readme, rateLimited: null };
+    } catch (error) {
+      if (isRateLimitedPackageApiError(error)) {
+        return {
+          detail,
+          version: null,
+          readme: null,
+          rateLimited: {
+            scope: "metadata",
+            retryAfterSeconds: error.retryAfterSeconds,
+          },
+        };
+      }
+      throw error;
+    }
   },
   head: ({ params, loaderData }) => ({
     meta: [

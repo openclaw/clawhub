@@ -1062,7 +1062,7 @@ code {
   width: 32px;
   height: 32px;
   border: 1px solid var(--line);
-  border-radius: var(--r-pill);
+  border-radius: var(--r-btn);
   background: var(--surface);
   color: var(--ink-soft);
   cursor: pointer;
@@ -1091,7 +1091,7 @@ code {
   justify-content: center;
   width: 28px;
   height: 28px;
-  border-radius: 50%;
+  border-radius: var(--r-btn);
   cursor: pointer;
   color: var(--ink-soft);
   opacity: 0.4;
@@ -6843,6 +6843,9 @@ html.theme-transition::view-transition-new(theme) {
   font-size: var(--fs-sm);
   color: var(--ink-soft);
   cursor: pointer;
+  transition:
+    color var(--transition-fast),
+    background-color var(--transition-fast);
 }
 
 .browse-view-btn:hover {
@@ -6850,8 +6853,8 @@ html.theme-transition::view-transition-new(theme) {
 }
 
 .browse-view-btn.is-active {
-  background: var(--surface-muted);
-  color: var(--ink);
+  background: color-mix(in srgb, var(--accent) 14%, transparent);
+  color: var(--accent);
   font-weight: 600;
 }
 
@@ -7143,6 +7146,7 @@ html.theme-transition::view-transition-new(theme) {
   padding: var(--space-4) 0;
   text-align: center;
   font-size: var(--fs-sm);
+  letter-spacing: 0.015em;
   color: var(--ink-soft);
 }
 
@@ -7323,12 +7327,25 @@ html.theme-transition::view-transition-new(theme) {
   color: var(--ink);
 }
 
+.about-categories-header {
+  justify-items: center;
+  text-align: center;
+  margin-bottom: 10px;
+}
+
+.about-categories-header .home-section-title {
+  max-width: 18ch;
+  font-size: clamp(1.9rem, 3vw, 2.6rem);
+  line-height: 1.02;
+  letter-spacing: -0.035em;
+}
+
 .about-grid,
 .about-patterns,
 .souls-coming-grid {
   display: grid;
   grid-template-columns: 1fr;
-  gap: 14px;
+  gap: 20px;
 }
 
 .about-panel-categories {
@@ -7343,10 +7360,11 @@ html.theme-transition::view-transition-new(theme) {
 .about-pattern {
   display: flex;
   flex-direction: column;
-  gap: 10px;
-  padding: 20px;
+  gap: 16px;
+  min-height: 220px;
+  padding: 28px 26px 24px;
   border: 1px solid var(--line);
-  border-radius: var(--r-lg);
+  border-radius: 22px;
   background: color-mix(in srgb, var(--surface) 88%, transparent);
   transition: border-color var(--transition-fast), box-shadow var(--transition-fast);
 }
@@ -7358,19 +7376,21 @@ html.theme-transition::view-transition-new(theme) {
 
 .about-rule-card h2 {
   margin: 0;
-  font-size: 1rem;
+  font-size: 1.22rem;
   font-family: var(--font-display);
   font-weight: 600;
-  letter-spacing: -0.02em;
-  color: var(--accent);
+  line-height: 1.08;
+  letter-spacing: -0.03em;
+  color: var(--ink);
 }
 
 .about-rule-card p {
   margin: 0;
   flex: 1;
   color: var(--ink-soft);
-  line-height: 1.6;
-  font-size: var(--fs-sm);
+  line-height: 1.72;
+  font-size: 0.98rem;
+  max-width: 30ch;
 }
 
 .about-pattern {
@@ -7539,7 +7559,7 @@ html.theme-transition::view-transition-new(theme) {
   height: 24px;
   min-width: 0;
   padding: 0 8px;
-  border-radius: 999px;
+  border-radius: var(--r-btn);
   color: var(--ink-soft);
   font-size: 0.78rem;
   font-weight: 600;
@@ -8183,7 +8203,7 @@ html.theme-transition::view-transition-new(theme) {
 }
 .home-v2-categories-grid {
   display: grid;
-  grid-template-columns: repeat(4, 1fr);
+  grid-template-columns: repeat(3, minmax(0, 1fr));
   max-width: 1200px;
   margin: 0 auto;
   border-top: 1px solid var(--hv2-border);

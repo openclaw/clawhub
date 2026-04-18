@@ -7,6 +7,10 @@ vi.mock("./_generated/api", () => ({
       getSkillBackfillPageInternal: Symbol("getSkillBackfillPageInternal"),
       applySkillBackfillPatchInternal: Symbol("applySkillBackfillPatchInternal"),
       backfillSkillSummariesInternal: Symbol("backfillSkillSummariesInternal"),
+      getUserStatsBackfillPageInternal: Symbol("getUserStatsBackfillPageInternal"),
+      getUserOwnedSkillsBackfillPageInternal: Symbol("getUserOwnedSkillsBackfillPageInternal"),
+      applyUserStatsBackfillPatchInternal: Symbol("applyUserStatsBackfillPatchInternal"),
+      backfillUserStatsInternal: Symbol("backfillUserStatsInternal"),
       getSkillFingerprintBackfillPageInternal: Symbol("getSkillFingerprintBackfillPageInternal"),
       applySkillFingerprintBackfillPatchInternal: Symbol(
         "applySkillFingerprintBackfillPatchInternal",
@@ -36,6 +40,7 @@ const {
   backfillLatestVersionSummaryInternal,
   backfillSkillFingerprintsInternalHandler,
   backfillSkillSummariesInternalHandler,
+  backfillUserStatsInternalHandler,
   cleanupEmptySkillsInternalHandler,
   nominateEmptySkillSpammersInternalHandler,
   upsertSkillBadgeRecordInternal,
@@ -258,6 +263,63 @@ describe("maintenance backfill", () => {
       },
     });
     expect(runAfter).not.toHaveBeenCalled();
+  });
+
+  it("backfills denormalized user hover stats from indexed owner pages", async () => {
+    const runQuery = vi
+      .fn()
+      .mockResolvedValueOnce({
+        items: [{ _id: "users:1" }],
+        cursor: null,
+        isDone: true,
+      })
+      .mockResolvedValueOnce({
+        items: [
+          { stats: { stars: 4, downloads: 30 }, softDeletedAt: undefined },
+          { stats: { stars: 2, downloads: 10 }, softDeletedAt: 123 },
+          { stats: { stars: 1, downloads: 5 }, softDeletedAt: undefined },
+        ],
+        cursor: null,
+        isDone: true,
+      });
+    const runMutation = vi.fn().mockResolvedValue({ ok: true });
+
+    const result = await backfillUserStatsInternalHandler(
+      { runQuery, runMutation } as never,
+      { batchSize: 10, skillBatchSize: 50, maxBatches: 1 },
+    );
+
+    expect(result).toEqual({
+      ok: true,
+      stats: {
+        usersScanned: 1,
+        usersPatched: 1,
+      },
+      isDone: true,
+      cursor: null,
+    });
+    expect(runQuery).toHaveBeenNthCalledWith(1, internal.maintenance.getUserStatsBackfillPageInternal, {
+      cursor: undefined,
+      batchSize: 10,
+    });
+    expect(runQuery).toHaveBeenNthCalledWith(
+      2,
+      internal.maintenance.getUserOwnedSkillsBackfillPageInternal,
+      {
+        ownerUserId: "users:1",
+        cursor: undefined,
+        batchSize: 50,
+      },
+    );
+    expect(runMutation).toHaveBeenCalledWith(
+      internal.maintenance.applyUserStatsBackfillPatchInternal,
+      {
+        userId: "users:1",
+        publishedSkills: 2,
+        totalStars: 5,
+        totalDownloads: 35,
+      },
+    );
   });
 });
 

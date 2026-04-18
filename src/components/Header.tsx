@@ -97,8 +97,16 @@ export default function Header() {
     const q = navSearchQuery.trim();
     if (!q) return;
     void navigate({
-      to: "/search",
-      search: { q, type: undefined },
+      to: isSoulMode ? "/souls" : "/search",
+      search: isSoulMode
+        ? {
+            q,
+            sort: undefined,
+            dir: undefined,
+            view: undefined,
+            focus: undefined,
+          }
+        : { q, type: undefined },
     });
     setNavSearchQuery("");
     setMobileSearchOpen(false);

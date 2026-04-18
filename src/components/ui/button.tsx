@@ -47,10 +47,10 @@ const Button = React.forwardRef<HTMLButtonElement, ButtonProps>(
           variant === "outline" &&
             "border border-[color:var(--border-ui)] bg-transparent text-[color:var(--ink)] hover:not-disabled:border-[color:var(--border-ui-hover)] hover:not-disabled:bg-[color:var(--surface)]",
           // Size styles
-          size === "default" && "min-h-[44px] rounded-[var(--radius-pill)] px-4 py-[11px] text-sm",
-          size === "sm" && "min-h-[34px] rounded-[var(--radius-pill)] px-3 py-1.5 text-xs",
-          size === "lg" && "min-h-[52px] rounded-[var(--radius-pill)] px-6 py-3 text-base",
-          size === "icon" && "h-[44px] w-[44px] rounded-[var(--radius-pill)] p-0",
+          size === "default" && "min-h-[44px] rounded-[var(--r-btn)] px-4 py-[11px] text-sm",
+          size === "sm" && "min-h-[34px] rounded-[var(--r-btn)] px-3 py-1.5 text-xs",
+          size === "lg" && "min-h-[52px] rounded-[var(--r-btn)] px-6 py-3 text-base",
+          size === "icon" && "h-[44px] w-[44px] rounded-[var(--r-btn)] p-0",
           className,
         )}
         disabled={disabled || loading}

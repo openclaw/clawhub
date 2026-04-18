@@ -1,6 +1,6 @@
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { Search } from "lucide-react";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { PluginListItem } from "../components/PluginListItem";
 import { SkillListItem } from "../components/SkillListItem";
 import { UserListItem } from "../components/UserListItem";
@@ -34,6 +34,10 @@ function UnifiedSearchPage() {
   const navigate = useNavigate();
   const activeType = search.type ?? "all";
   const [query, setQuery] = useState(search.q ?? "");
+
+  useEffect(() => {
+    setQuery(search.q ?? "");
+  }, [search.q]);
 
   const { results, skillCount, pluginCount, userCount, isSearching } = useUnifiedSearch(
     search.q ?? "",

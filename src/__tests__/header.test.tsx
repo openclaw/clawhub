@@ -6,6 +6,7 @@ import { describe, expect, it, vi } from "vitest";
 import Header from "../components/Header";
 
 const siteModeMock = vi.fn(() => "souls");
+const navigateMock = vi.fn();
 
 vi.mock("@tanstack/react-router", () => ({
   Link: (props: {
@@ -19,7 +20,7 @@ vi.mock("@tanstack/react-router", () => ({
     </a>
   ),
   useLocation: () => ({ pathname: "/" }),
-  useNavigate: () => vi.fn(),
+  useNavigate: () => navigateMock,
 }));
 
 vi.mock("@convex-dev/auth/react", () => ({
@@ -117,19 +118,10 @@ describe("Header", () => {
 
     render(<Header />);
 
-    expect(screen.getByText("Theme")).toBeTruthy();
-    expect(screen.getByRole("button", { name: "Claw" })).toBeTruthy();
-    expect(screen.getByRole("button", { name: "Hub" })).toBeTruthy();
+    expect(screen.getByRole("button", { name: /Cycle theme mode/i })).toBeTruthy();
     expect(screen.getAllByText("Skills")).toHaveLength(1);
-    expect(screen.getAllByText("Souls")).toHaveLength(1);
     expect(screen.getAllByText("Users")).toHaveLength(1);
     expect(screen.getByPlaceholderText("Search skills, plugins, users")).toBeTruthy();
-
-    fireEvent.click(screen.getByRole("button", { name: "Hub" }));
-    expect(setThemeMock).toHaveBeenCalledWith("hub");
-
-    fireEvent.click(screen.getByRole("button", { name: /Cycle theme family/i }));
-    expect(setThemeMock).toHaveBeenCalledWith("claw");
 
     fireEvent.click(screen.getByRole("button", { name: /Cycle theme mode/i }));
     expect(setModeMock).toHaveBeenCalledWith("light");
@@ -137,7 +129,29 @@ describe("Header", () => {
     fireEvent.click(screen.getByRole("button", { name: "Open menu" }));
 
     expect(screen.getAllByText("Skills")).toHaveLength(2);
-    expect(screen.getAllByText("Souls")).toHaveLength(2);
     expect(screen.getAllByText("Users")).toHaveLength(2);
+  });
+
+  it("routes soul-mode header searches to the souls browse page", () => {
+    siteModeMock.mockReturnValue("souls");
+    navigateMock.mockReset();
+
+    render(<Header />);
+
+    fireEvent.change(screen.getByPlaceholderText("Search souls..."), {
+      target: { value: "angler" },
+    });
+    fireEvent.submit(screen.getByRole("search", { name: "Site search" }));
+
+    expect(navigateMock).toHaveBeenCalledWith({
+      to: "/souls",
+      search: {
+        q: "angler",
+        sort: undefined,
+        dir: undefined,
+        view: undefined,
+        focus: undefined,
+      },
+    });
   });
 });

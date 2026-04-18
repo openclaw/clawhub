@@ -28,6 +28,7 @@ let loaderDataMock: {
   nextCursor: string | null;
   rateLimited: boolean;
   retryAfterSeconds: number | null;
+  apiError?: boolean;
 } = {
   items: [],
   nextCursor: null,
@@ -72,7 +73,13 @@ describe("plugins route", () => {
     isRateLimitedPackageApiErrorMock.mockClear();
     navigateMock.mockReset();
     searchMock = {};
-    loaderDataMock = { items: [], nextCursor: null, rateLimited: false, retryAfterSeconds: null };
+    loaderDataMock = {
+      items: [],
+      nextCursor: null,
+      rateLimited: false,
+      retryAfterSeconds: null,
+      apiError: false,
+    };
   });
 
   it("rejects skill family filter in search state", async () => {
@@ -223,6 +230,36 @@ describe("plugins route", () => {
       nextCursor: null,
       rateLimited: true,
       retryAfterSeconds: 22,
+      apiError: false,
+    });
+  });
+
+  it("flags API errors for filtered catalog requests", async () => {
+    fetchPluginCatalogMock.mockRejectedValue(new Error("boom"));
+    const route = await loadRoute();
+    const loader = route.__config.loader as (args: {
+      deps: Record<string, unknown>;
+    }) => Promise<{
+      items: Array<{ name: string }>;
+      nextCursor: string | null;
+      rateLimited: boolean;
+      retryAfterSeconds: number | null;
+      apiError?: boolean;
+    }>;
+
+    const result = await loader({
+      deps: {
+        q: "demo",
+        executesCode: true,
+      },
+    });
+
+    expect(result).toEqual({
+      items: [],
+      nextCursor: null,
+      rateLimited: false,
+      retryAfterSeconds: null,
+      apiError: true,
     });
   });
 

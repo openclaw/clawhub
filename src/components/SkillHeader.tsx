@@ -7,6 +7,7 @@ import { formatCompactStat, formatSkillStatsTriplet } from "../lib/numberFormat"
 import type { PublicPublisher, PublicSkill } from "../lib/publicUser";
 
 import { type LlmAnalysis, SecurityScanResults } from "./SkillSecurityScanResults";
+import { SkillInstallCard } from "./SkillInstallCard";
 import { Badge } from "./ui/badge";
 import { Button } from "./ui/button";
 import { UserBadge } from "./UserBadge";
@@ -110,8 +111,8 @@ export function SkillHeader({
   onTagSubmit,
   onTagDelete,
   tagVersions,
-  clawdis: _clawdis,
-  osLabels: _osLabels,
+  clawdis,
+  osLabels,
 }: SkillHeaderProps) {
   const formattedStats = formatSkillStatsTriplet(skill.stats);
   const suppressScanResults =
@@ -354,6 +355,7 @@ export function SkillHeader({
               ) : null}
             </div>
           ) : null}
+          <SkillInstallCard clawdis={clawdis} osLabels={osLabels} />
         </div>
 
         <div className="skill-tag-row">

@@ -83,7 +83,7 @@ export const PRIMARY_NAV_ITEMS: NavItem[] = [
     authRequired: false,
     staffOnly: false,
     soulModeOnly: false,
-    soulModeHide: true,
+    soulModeHide: false,
     activePathPrefixes: ["/plugin/"],
   },
   {
@@ -194,25 +194,18 @@ export const FOOTER_NAV_SECTIONS: FooterNavSection[] = [
           sourceRepo: undefined,
         },
       },
-      {
-        kind: "external",
-        label: "Documentation",
-        href: "https://github.com/openclaw/clawhub",
-      },
     ],
   },
   {
     title: "Community",
     items: [
       { kind: "external", label: "GitHub", href: "https://github.com/openclaw/clawhub" },
-      { kind: "link", label: "About", to: "/about" },
       { kind: "external", label: "OpenClaw", href: "https://openclaw.ai" },
     ],
   },
   {
     title: "Platform",
     items: [
-      { kind: "text", label: "MIT Licensed" },
       { kind: "external", label: "Deployed on Vercel", href: "https://vercel.com" },
       { kind: "external", label: "Powered by Convex", href: "https://www.convex.dev" },
     ],

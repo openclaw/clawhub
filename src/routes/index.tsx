@@ -19,7 +19,6 @@ import { SoulCard } from "../components/SoulCard";
 import { SoulStatsTripletLine } from "../components/SoulStats";
 import { convexHttp } from "../convex/client";
 import type { PublicSkill, PublicSoul, PublicUser } from "../lib/publicUser";
-import { FEATURE_SOULS } from "../lib/features";
 import { getSiteMode } from "../lib/site";
 
 export const Route = createFileRoute("/")({
@@ -341,30 +340,6 @@ function SkillsHome() {
               <ChevronRight size={16} />
             </span>
           </Link>
-          {FEATURE_SOULS && (
-          <Link
-            to="/souls"
-            search={{
-              q: undefined,
-              sort: undefined,
-              dir: undefined,
-              view: undefined,
-              focus: undefined,
-            }}
-            className="home-v2-cat-item"
-          >
-            <div className="home-v2-cat-icon">
-              <Shield size={20} />
-            </div>
-            <div className="home-v2-cat-text">
-              <div className="home-v2-cat-name">Souls</div>
-              <div className="home-v2-cat-desc">Agent identities</div>
-            </div>
-            <span className="home-v2-cat-arrow">
-              <ChevronRight size={16} />
-            </span>
-          </Link>
-          )}
         </div>
       </section>
 
