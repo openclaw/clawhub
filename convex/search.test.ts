@@ -643,6 +643,26 @@ describe("search helpers", () => {
     expect(exactScore).toBeGreaterThan(looseScore);
   });
 
+  it("boosts exact full slug over slug that merely contains all query tokens", () => {
+    const queryTokens = tokenize("self-improving-agent");
+    const exactScore = __test.scoreSkillResult(
+      queryTokens,
+      0.5,
+      "Self Improving Agent",
+      "self-improving-agent",
+      10,
+    );
+    const containingScore = __test.scoreSkillResult(
+      queryTokens,
+      0.6,
+      "Self Improving Agent",
+      "xiucheng-self-improving-agent",
+      100,
+    );
+    // Exact slug should beat a longer slug even with lower vector score and fewer downloads
+    expect(exactScore).toBeGreaterThan(containingScore);
+  });
+
   it("adds a popularity prior for equally relevant matches", () => {
     const queryTokens = tokenize("notion");
     const lowDownloads = __test.scoreSkillResult(
