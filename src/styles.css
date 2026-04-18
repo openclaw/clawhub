@@ -7767,6 +7767,10 @@ html.theme-transition::view-transition-new(theme) {
   text-transform: uppercase;
   color: var(--hv2-text-tertiary);
   margin-bottom: 20px;
+  cursor: pointer;
+  user-select: none;
+  -webkit-user-select: none;
+  transition: color 0.2s, text-shadow 0.3s;
 }
 .home-v2-headline {
   font-family: 'Inter', sans-serif;
@@ -7837,6 +7841,74 @@ html.theme-transition::view-transition-new(theme) {
   60%, 78% { transform: translateY(-60%); }
   80%, 98% { transform: translateY(-80%); }
   100% { transform: translateY(-80%); }
+}
+
+/* ═══ SLOT MACHINE EASTER EGG ═══ */
+.home-v2-hero-label:hover {
+  color: var(--hv2-accent);
+}
+.home-v2-hero-label-active {
+  color: var(--hv2-accent) !important;
+  text-shadow: 0 0 12px rgba(212, 69, 58, 0.4);
+  animation: home-v2-labelPulse 0.6s ease-in-out infinite;
+}
+@keyframes home-v2-labelPulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.6; }
+}
+
+.home-v2-headline-slots {
+  min-height: 1.15em;
+}
+.home-v2-slot-reel {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 180px;
+  text-align: center;
+  font-family: 'JetBrains Mono', monospace;
+  font-weight: 800;
+  color: var(--hv2-accent);
+  position: relative;
+}
+.home-v2-slot-reel.spinning .home-v2-slot-word {
+  animation: home-v2-slotBlur 0.12s steps(1) infinite;
+}
+.home-v2-slot-reel:not(.spinning) .home-v2-slot-word {
+  animation: home-v2-slotLand 0.3s cubic-bezier(0.34, 1.56, 0.64, 1) both;
+}
+@keyframes home-v2-slotBlur {
+  0% { filter: blur(0px); opacity: 1; }
+  50% { filter: blur(1px); opacity: 0.7; }
+  100% { filter: blur(0px); opacity: 1; }
+}
+@keyframes home-v2-slotLand {
+  0% { transform: translateY(-8px) scale(1.1); opacity: 0.5; }
+  60% { transform: translateY(2px) scale(0.98); }
+  100% { transform: translateY(0) scale(1); opacity: 1; }
+}
+
+.home-v2-headline-jackpot {
+  animation: home-v2-jackpot 0.5s ease-out;
+}
+@keyframes home-v2-jackpot {
+  0% { transform: scale(1); }
+  30% { transform: scale(1.08); }
+  60% { transform: scale(0.97); }
+  100% { transform: scale(1); }
+}
+.home-v2-headline-jackpot .home-v2-slot-word {
+  color: #ffd93d !important;
+  text-shadow:
+    0 0 20px rgba(255, 217, 61, 0.6),
+    0 0 40px rgba(255, 217, 61, 0.3);
+}
+
+.home-v2-confetti {
+  position: fixed;
+  inset: 0;
+  z-index: 9999;
+  pointer-events: none;
 }
 
 .home-v2-sub {
