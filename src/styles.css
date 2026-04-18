@@ -7473,7 +7473,8 @@ html.theme-transition::view-transition-new(theme) {
     grid-column: span 3;
   }
 
-  .about-grid {
+  .about-grid,
+  .about-panel-categories .about-grid {
     grid-template-columns: repeat(2, 1fr);
     gap: 22px;
   }
@@ -7503,7 +7504,8 @@ html.theme-transition::view-transition-new(theme) {
     grid-column: span 5;
   }
 
-  .about-grid {
+  .about-grid,
+  .about-panel-categories .about-grid {
     grid-template-columns: repeat(3, 1fr);
     gap: 24px;
   }

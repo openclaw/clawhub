@@ -121,6 +121,14 @@ function SkillsHome() {
   const spinIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const cooldownUntilRef = useRef<number>(0);
 
+  // Clean up timers/intervals if the component unmounts mid-spin
+  useEffect(() => {
+    return () => {
+      for (const t of slotTimersRef.current) clearTimeout(t);
+      if (spinIntervalRef.current) clearInterval(spinIntervalRef.current);
+    };
+  }, []);
+
   const triggerSlots = useCallback(() => {
     // Clean up any previous timers
     for (const t of slotTimersRef.current) clearTimeout(t);
