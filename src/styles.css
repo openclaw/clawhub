@@ -8026,7 +8026,7 @@ html.theme-transition::view-transition-new(theme) {
 .home-v2-carousel-track {
   display: flex;
   gap: 16px;
-  padding: 4px 48px 48px;
+  padding: 12px 48px 48px;
   animation: home-v2-scroll 46s linear infinite;
   width: max-content;
 }
@@ -8056,8 +8056,8 @@ html.theme-transition::view-transition-new(theme) {
 }
 .home-v2-c-card:hover {
   border-color: var(--hv2-border-hover);
-  transform: translateY(-4px) scale(1.01);
-  box-shadow: 0 8px 32px rgba(0,0,0,0.25);
+  transform: translateY(-2px);
+  box-shadow: 0 4px 16px rgba(0,0,0,0.18);
   background: var(--hv2-surface-hover);
 }
 .home-v2-c-head {
@@ -8487,7 +8487,7 @@ html.theme-transition::view-transition-new(theme) {
     padding: 0 20px;
   }
   .home-v2-carousel-track {
-    padding: 4px 20px 36px;
+    padding: 12px 20px 36px;
   }
   .home-v2-c-card {
     min-width: 280px;
@@ -8671,7 +8671,7 @@ html.theme-transition::view-transition-new(theme) {
   box-shadow:
     inset 0 1px 0 rgba(255, 255, 255, 0.05),
     inset 0 0 24px rgba(0, 0, 0, 0.2),
-    0 8px 32px rgba(0, 0, 0, 0.25);
+    0 4px 16px rgba(0, 0, 0, 0.2);
 }
 
 /* Dark mode — search bar inner fade */
@@ -8713,7 +8713,7 @@ html.theme-transition::view-transition-new(theme) {
   box-shadow:
     inset 0 1px 0 rgba(255, 255, 255, 0.8),
     inset 0 0 30px rgba(170, 125, 80, 0.08),
-    0 4px 20px rgba(140, 100, 60, 0.12),
+    0 3px 14px rgba(140, 100, 60, 0.1),
     0 0 0 1px rgba(160, 115, 72, 0.12);
 }
 
@@ -8922,7 +8922,7 @@ html.theme-transition::view-transition-new(theme) {
   box-shadow:
     inset 0 1px 0 rgba(255, 255, 255, 0.06),
     inset 0 0 32px rgba(0, 0, 0, 0.25),
-    0 8px 36px rgba(0, 0, 0, 0.3);
+    0 4px 20px rgba(0, 0, 0, 0.25);
 }
 
 /* Dark — search inset */
