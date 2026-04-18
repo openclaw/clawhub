@@ -112,13 +112,13 @@ function AboutPage() {
 
         <section className="about-panel about-panel-categories">
           <div className="home-section-header">
-            <h2 className="home-section-title">Immediate rejection categories</h2>
+            <h2 className="home-section-title">Rejection Categories</h2>
           </div>
           <div className="about-grid">
-            {prohibitedCategories.map((category, index) => (
+            {prohibitedCategories.map((category) => (
               <article
                 key={category.title}
-                className={`about-rule-card${index % 3 === 0 ? ' about-rule-card-featured' : ''}`}
+                className="about-rule-card"
               >
                 <h2>{category.title}</h2>
                 <p>{category.examples}</p>

@@ -7335,6 +7335,14 @@ html.theme-transition::view-transition-new(theme) {
   gap: 14px;
 }
 
+.about-panel-categories {
+  overflow: visible;
+}
+
+.about-panel-categories .about-grid {
+  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+}
+
 .about-rule-card,
 .about-pattern {
   display: flex;
@@ -7409,18 +7417,6 @@ html.theme-transition::view-transition-new(theme) {
     grid-column: span 3;
   }
 
-  .about-grid {
-    grid-template-columns: repeat(6, minmax(0, 1fr));
-  }
-
-  .about-rule-card {
-    grid-column: span 2;
-  }
-
-  .about-rule-card-featured {
-    grid-column: span 3;
-  }
-
   .about-patterns {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
@@ -7445,18 +7441,6 @@ html.theme-transition::view-transition-new(theme) {
 
   .about-panel-actions {
     grid-column: span 5;
-  }
-
-  .about-grid {
-    grid-template-columns: repeat(12, minmax(0, 1fr));
-  }
-
-  .about-rule-card {
-    grid-column: span 4;
-  }
-
-  .about-rule-card-featured {
-    grid-column: span 6;
   }
 
   .about-patterns {
