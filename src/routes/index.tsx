@@ -130,10 +130,30 @@ function SkillsHome() {
     setSlotState({ phase: "spinning" });
     setStoppedReels(new Set());
 
-    // Pick 3 random landing indices — 1/13 chance all match
-    const r0 = Math.floor(Math.random() * SLOT_WORDS.length);
-    const r1 = Math.floor(Math.random() * SLOT_WORDS.length);
-    const r2 = Math.floor(Math.random() * SLOT_WORDS.length);
+    // Controlled odds: ~1/25 any jackpot, ~1/100 Hack jackpot
+    let r0: number, r1: number, r2: number;
+    const isJackpot = Math.random() < 1 / 25;
+    if (isJackpot) {
+      // 25% of jackpots are Hack (1/25 × 1/4 = 1/100 overall)
+      const isHack = Math.random() < 0.25;
+      if (isHack) {
+        r0 = HACK_INDEX;
+      } else {
+        // Pick any word except Hack
+        let idx = Math.floor(Math.random() * (SLOT_WORDS.length - 1));
+        if (idx >= HACK_INDEX) idx++;
+        r0 = idx;
+      }
+      r1 = r0;
+      r2 = r0;
+    } else {
+      // Normal spin — re-roll if accidental triple match
+      do {
+        r0 = Math.floor(Math.random() * SLOT_WORDS.length);
+        r1 = Math.floor(Math.random() * SLOT_WORDS.length);
+        r2 = Math.floor(Math.random() * SLOT_WORDS.length);
+      } while (r0 === r1 && r1 === r2);
+    }
     const results: [number, number, number] = [r0, r1, r2];
     const landed = new Set<number>();
 
