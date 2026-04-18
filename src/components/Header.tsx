@@ -194,6 +194,7 @@ export default function Header() {
             search={{ q: undefined, highlighted: undefined, search: undefined }}
             className="brand"
           >
+            {/* TODO: Re-introduce logo once new asset is ready */}
             {/* <span className="brand-mark">
               <img src="/clawd-logo.png" alt="" aria-hidden="true" className="brand-mark-image" />
             </span> */}
