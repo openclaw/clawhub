@@ -1,6 +1,6 @@
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { useAction, useQuery } from "convex/react";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   ArrowLeft,
   ArrowRight,
@@ -29,6 +29,13 @@ function Home() {
   const mode = getSiteMode();
   return mode === "souls" ? <OnlyCrabsHome /> : <SkillsHome />;
 }
+
+// ═══ Slot machine word pool (13 words = 1/13 jackpot odds) ═══
+const SLOT_WORDS = [
+  "Equip", "Install", "Unleash", "Ship", "Build",
+  "Create", "Deploy", "Launch", "Hack", "Scale",
+  "Forge", "Craft", "Wield",
+];
 
 function SkillsHome() {
   type SkillPageEntry = {
@@ -99,8 +106,187 @@ function SkillsHome() {
   // Build carousel cards from highlighted data
   const carouselCards = highlighted.length > 0 ? highlighted.slice(0, 6) : [];
 
+  // ═══ SLOT MACHINE EASTER EGG ═══
+  const clickTimesRef = useRef<number[]>([]);
+  const [slotState, setSlotState] = useState<
+    | null
+    | { phase: "spinning" }
+    | { phase: "stopped"; results: [number, number, number]; won: boolean }
+  >(null);
+  const slotTimersRef = useRef<ReturnType<typeof setTimeout>[]>([]);
+  const [slotReelOffsets, setSlotReelOffsets] = useState<[number, number, number]>([0, 0, 0]);
+  const [stoppedReels, setStoppedReels] = useState<Set<number>>(new Set());
+  const confettiRef = useRef<HTMLCanvasElement>(null);
+  const spinIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
+  const triggerSlots = useCallback(() => {
+    // Clean up any previous timers
+    for (const t of slotTimersRef.current) clearTimeout(t);
+    slotTimersRef.current = [];
+    if (spinIntervalRef.current) clearInterval(spinIntervalRef.current);
+
+    setSlotState({ phase: "spinning" });
+    setStoppedReels(new Set());
+
+    // Pick 3 random landing indices — 1/13 chance all match
+    const r0 = Math.floor(Math.random() * SLOT_WORDS.length);
+    const r1 = Math.floor(Math.random() * SLOT_WORDS.length);
+    const r2 = Math.floor(Math.random() * SLOT_WORDS.length);
+    const results: [number, number, number] = [r0, r1, r2];
+    const landed = new Set<number>();
+
+    // Animate fast offset cycling — only cycle reels that haven't landed
+    let frame = 0;
+    const spinInterval = setInterval(() => {
+      frame++;
+      setSlotReelOffsets((prev) => [
+        landed.has(0) ? prev[0] : (frame * 3) % SLOT_WORDS.length,
+        landed.has(1) ? prev[1] : (frame * 5 + 4) % SLOT_WORDS.length,
+        landed.has(2) ? prev[2] : (frame * 7 + 9) % SLOT_WORDS.length,
+      ]);
+    }, 60);
+    spinIntervalRef.current = spinInterval;
+
+    // Stop reels sequentially with a satisfying stagger
+    const stopReel = (reelIdx: 0 | 1 | 2, delay: number) => {
+      const t = setTimeout(() => {
+        landed.add(reelIdx);
+        setStoppedReels((prev) => new Set(prev).add(reelIdx));
+        setSlotReelOffsets((prev) => {
+          const next = [...prev] as [number, number, number];
+          next[reelIdx] = results[reelIdx];
+          return next;
+        });
+      }, delay);
+      slotTimersRef.current.push(t);
+    };
+
+    stopReel(0, 1200);
+    stopReel(1, 1800);
+
+    const tFinal = setTimeout(() => {
+      clearInterval(spinInterval);
+      spinIntervalRef.current = null;
+      landed.add(2);
+      setStoppedReels(new Set([0, 1, 2]));
+      setSlotReelOffsets(results);
+      const won = r0 === r1 && r1 === r2;
+      setSlotState({ phase: "stopped", results, won });
+      if (won) {
+        fireConfetti();
+      }
+      // Auto-reset after a delay
+      const tReset = setTimeout(() => {
+        setSlotState(null);
+        setStoppedReels(new Set());
+      }, won ? 5000 : 2400);
+      slotTimersRef.current.push(tReset);
+    }, 2400);
+    slotTimersRef.current.push(tFinal);
+  }, []);
+
+  const handleLabelClick = useCallback(() => {
+    const now = Date.now();
+    clickTimesRef.current.push(now);
+    // Keep only last 3 clicks
+    if (clickTimesRef.current.length > 3) {
+      clickTimesRef.current = clickTimesRef.current.slice(-3);
+    }
+    if (clickTimesRef.current.length === 3) {
+      const first = clickTimesRef.current[0];
+      const last = clickTimesRef.current[2];
+      if (last - first < 800 && !slotState) {
+        clickTimesRef.current = [];
+        triggerSlots();
+      }
+    }
+  }, [slotState, triggerSlots]);
+
+  const fireConfetti = () => {
+    const canvas = confettiRef.current;
+    if (!canvas) return;
+    const ctx = canvas.getContext("2d");
+    if (!ctx) return;
+    canvas.width = window.innerWidth;
+    canvas.height = window.innerHeight;
+    canvas.style.display = "block";
+
+    const COLORS = [
+      "#d4453a", "#ff6b6b", "#ffd93d", "#6bcb77",
+      "#4d96ff", "#ff6f91", "#845ec2", "#ffc75f",
+    ];
+    const particles: {
+      x: number; y: number; vx: number; vy: number;
+      w: number; h: number; color: string; rot: number; vr: number;
+      life: number;
+    }[] = [];
+
+    for (let i = 0; i < 150; i++) {
+      particles.push({
+        x: canvas.width / 2 + (Math.random() - 0.5) * 200,
+        y: canvas.height * 0.35,
+        vx: (Math.random() - 0.5) * 18,
+        vy: -Math.random() * 16 - 4,
+        w: Math.random() * 10 + 4,
+        h: Math.random() * 6 + 3,
+        color: COLORS[Math.floor(Math.random() * COLORS.length)],
+        rot: Math.random() * Math.PI * 2,
+        vr: (Math.random() - 0.5) * 0.3,
+        life: 1,
+      });
+    }
+
+    let raf: number;
+    const draw = () => {
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+      let alive = false;
+      for (const p of particles) {
+        if (p.life <= 0) continue;
+        alive = true;
+        p.x += p.vx;
+        p.y += p.vy;
+        p.vy += 0.4;
+        p.vx *= 0.99;
+        p.rot += p.vr;
+        p.life -= 0.008;
+        ctx.save();
+        ctx.translate(p.x, p.y);
+        ctx.rotate(p.rot);
+        ctx.globalAlpha = Math.max(0, p.life);
+        ctx.fillStyle = p.color;
+        ctx.fillRect(-p.w / 2, -p.h / 2, p.w, p.h);
+        ctx.restore();
+      }
+      if (alive) {
+        raf = requestAnimationFrame(draw);
+      } else {
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+        canvas.style.display = "none";
+      }
+    };
+    raf = requestAnimationFrame(draw);
+  };
+
+  const renderSlotReel = (reelIdx: 0 | 1 | 2) => {
+    const offset = slotReelOffsets[reelIdx];
+    const word = SLOT_WORDS[offset];
+    const isReelSpinning = slotState !== null && !stoppedReels.has(reelIdx);
+    return (
+      <span className={`home-v2-slot-reel ${isReelSpinning ? "spinning" : ""}`}>
+        <span className="home-v2-slot-word">{word}</span>
+      </span>
+    );
+  };
+
   return (
     <main className="home-v2-main">
+      {/* Confetti canvas for slot machine wins */}
+      <canvas
+        ref={confettiRef}
+        className="home-v2-confetti"
+        style={{ display: "none" }}
+      />
+
       {/* ═══ HERO ═══ */}
       <section className="home-v2-hero">
         <div className="home-v2-hero-bg">
@@ -111,25 +297,47 @@ function SkillsHome() {
           <div className="home-v2-ring home-v2-ring-3" />
         </div>
 
-        <div className="home-v2-hero-label">BUILT BY THE COMMUNITY.</div>
+        <div
+          className={`home-v2-hero-label ${slotState ? "home-v2-hero-label-active" : ""}`}
+          onClick={handleLabelClick}
+          role="button"
+          tabIndex={0}
+          onKeyDown={(e) => { if (e.key === "Enter") handleLabelClick(); }}
+        >
+          BUILT BY THE COMMUNITY.
+        </div>
 
-        <h1 className="home-v2-headline">
-          <span className="home-v2-headline-inner">
-            <span className="home-v2-action-word">Equip</span>
-            <span className="home-v2-sep" />
-            <span className="home-v2-action-word">Install</span>
-            <span className="home-v2-sep" />
-            <span className="home-v2-cycle-wrap">
-              <span className="home-v2-cycle-track">
-                <span className="home-v2-cycle-word">Unleash.</span>
-                <span className="home-v2-cycle-word">Ship.</span>
-                <span className="home-v2-cycle-word">Build.</span>
-                <span className="home-v2-cycle-word">Create.</span>
-                <span className="home-v2-cycle-word">Unleash.</span>
+        {slotState ? (
+          <h1 className={`home-v2-headline home-v2-headline-slots ${
+            slotState.phase === "stopped" && slotState.won ? "home-v2-headline-jackpot" : ""
+          }`}>
+            <span className="home-v2-headline-inner">
+              {renderSlotReel(0)}
+              <span className="home-v2-sep" />
+              {renderSlotReel(1)}
+              <span className="home-v2-sep" />
+              {renderSlotReel(2)}
+            </span>
+          </h1>
+        ) : (
+          <h1 className="home-v2-headline">
+            <span className="home-v2-headline-inner">
+              <span className="home-v2-action-word">Equip</span>
+              <span className="home-v2-sep" />
+              <span className="home-v2-action-word">Install</span>
+              <span className="home-v2-sep" />
+              <span className="home-v2-cycle-wrap">
+                <span className="home-v2-cycle-track">
+                  <span className="home-v2-cycle-word">Unleash.</span>
+                  <span className="home-v2-cycle-word">Ship.</span>
+                  <span className="home-v2-cycle-word">Build.</span>
+                  <span className="home-v2-cycle-word">Create.</span>
+                  <span className="home-v2-cycle-word">Unleash.</span>
+                </span>
               </span>
             </span>
-          </span>
-        </h1>
+          </h1>
+        )}
 
         <p className="home-v2-sub">Tools built by thousands, ready in one search.</p>
 
