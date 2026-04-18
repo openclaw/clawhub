@@ -4,6 +4,8 @@ import { Agent, setGlobalDispatcher } from "undici";
 import { describe, expect, it } from "vitest";
 
 const REQUEST_TIMEOUT_MS = 15_000;
+const MAX_RATE_LIMIT_RETRIES = 3;
+const MAX_RATE_LIMIT_WAIT_MS = 15_000;
 
 try {
   setGlobalDispatcher(
@@ -39,8 +41,52 @@ async function fetchWithTimeout(input: RequestInfo | URL, init?: RequestInit) {
   }
 }
 
+function parsePositiveNumber(value: string | null) {
+  const parsed = Number(value);
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : null;
+}
+
+function getRetryDelayMs(response: Response) {
+  const retryAfterSeconds = parsePositiveNumber(response.headers.get("Retry-After"));
+  if (retryAfterSeconds !== null) {
+    return Math.min(retryAfterSeconds * 1000, MAX_RATE_LIMIT_WAIT_MS);
+  }
+
+  const relativeResetSeconds = parsePositiveNumber(response.headers.get("RateLimit-Reset"));
+  if (relativeResetSeconds !== null) {
+    return Math.min(relativeResetSeconds * 1000, MAX_RATE_LIMIT_WAIT_MS);
+  }
+
+  const absoluteResetSeconds = parsePositiveNumber(response.headers.get("X-RateLimit-Reset"));
+  if (absoluteResetSeconds !== null) {
+    return Math.min(Math.max(absoluteResetSeconds * 1000 - Date.now(), 0), MAX_RATE_LIMIT_WAIT_MS);
+  }
+
+  return 1000;
+}
+
+async function fetchWithRetry(input: RequestInfo | URL, init?: RequestInit) {
+  let lastResponse: Response | null = null;
+
+  for (let attempt = 0; attempt < MAX_RATE_LIMIT_RETRIES; attempt += 1) {
+    const response = await fetchWithTimeout(input, init);
+    if (response.status !== 429) return response;
+
+    lastResponse = response;
+    if (attempt === MAX_RATE_LIMIT_RETRIES - 1) return response;
+
+    await new Promise((resolve) => setTimeout(resolve, getRetryDelayMs(response)));
+  }
+
+  if (!lastResponse) {
+    throw new Error("Expected a response while retrying rate-limited request.");
+  }
+
+  return lastResponse;
+}
+
 async function fetchHtml(pathname: string) {
-  const response = await fetchWithTimeout(new URL(pathname, getSiteBase()), {
+  const response = await fetchWithRetry(new URL(pathname, getSiteBase()), {
     headers: { Accept: "text/html" },
   });
   expect(response.ok).toBe(true);
@@ -48,19 +94,29 @@ async function fetchHtml(pathname: string) {
   return response.text();
 }
 
+type SkillDetailResponse = {
+  skill: { slug: string; displayName: string; summary: string | null };
+  latestVersion: { version: string | null } | null;
+  owner: { handle: string | null };
+};
+
+let skillDetailPromise: Promise<SkillDetailResponse> | null = null;
+
 async function fetchSkillDetail() {
-  const response = await fetchWithTimeout(
-    new URL(`/api/v1/skills/${getSkillSlug()}`, getSiteBase()),
-    {
-      headers: { Accept: "application/json" },
-    },
-  );
-  expect(response.ok).toBe(true);
-  return (await response.json()) as {
-    skill: { slug: string; displayName: string; summary: string | null };
-    latestVersion: { version: string | null } | null;
-    owner: { handle: string | null };
-  };
+  if (!skillDetailPromise) {
+    skillDetailPromise = (async () => {
+      const response = await fetchWithRetry(
+        new URL(`/api/v1/skills/${getSkillSlug()}`, getSiteBase()),
+        {
+          headers: { Accept: "application/json" },
+        },
+      );
+      expect(response.ok).toBe(true);
+      return (await response.json()) as SkillDetailResponse;
+    })();
+  }
+
+  return skillDetailPromise;
 }
 
 describe("prod http smoke", () => {
@@ -99,7 +155,7 @@ describe("prod http smoke", () => {
       params.set("version", detail.latestVersion.version);
     }
 
-    const response = await fetchWithTimeout(
+    const response = await fetchWithRetry(
       new URL(`/og/skill.png?${params.toString()}`, getSiteBase()),
     );
 
