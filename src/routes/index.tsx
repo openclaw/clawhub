@@ -438,7 +438,8 @@ function SkillsHome() {
             />
             <kbd>/</kbd>
             <button type="submit" className="home-v2-search-go">
-              Search <ArrowRight size={16} />
+              <span className="home-v2-search-go-label">Search</span>{" "}
+              <ArrowRight size={16} />
             </button>
           </form>
         </div>

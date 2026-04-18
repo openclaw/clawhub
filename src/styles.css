@@ -8747,6 +8747,12 @@ html.theme-transition::view-transition-new(theme) {
     padding: 20px;
     gap: 16px;
   }
+  .home-v2-search-go-label {
+    display: none;
+  }
+  .home-v2-search-go {
+    padding: 13px 16px;
+  }
 }
 
 /* ═══ HOME V2 — Full-width overrides ═══ */

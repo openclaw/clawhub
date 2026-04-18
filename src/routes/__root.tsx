@@ -117,6 +117,11 @@ function RootDocument({ children }: { children: React.ReactNode }) {
     <html lang="en">
       <head>
         <HeadContent />
+        <script
+          dangerouslySetInnerHTML={{
+            __html: `(function(){try{var d=document.documentElement,s='clawhub-theme-selection',k='clawhub-theme',n='clawhub-theme-name',l='clawdhub-theme';var sel;try{var raw=localStorage.getItem(s);if(raw){sel=JSON.parse(raw)}}catch(e){}if(!sel){var m=localStorage.getItem(k),t=localStorage.getItem(n);if(m||t){sel={theme:t||'claw',mode:m||'system'}}else{var lg=localStorage.getItem(l);if(lg){var map={dark:'dark',light:'light',system:'system',defaultTheme:'dark',docsTheme:'light',lightTheme:'dark',landingTheme:'dark',newTheme:'dark',openknot:'dark',fieldmanual:'dark',clawdash:'light'};sel={theme:'claw',mode:map[lg]||'system'}}}}if(!sel)sel={theme:'claw',mode:'system'};var themes=['claw'],modes=['system','light','dark'];if(themes.indexOf(sel.theme)<0)sel.theme='claw';if(modes.indexOf(sel.mode)<0)sel.mode='system';var resolved=sel.mode==='system'?(window.matchMedia&&window.matchMedia('(prefers-color-scheme: dark)').matches?'dark':'light'):sel.mode;d.dataset.theme=resolved;d.dataset.themeResolved=resolved;d.dataset.themeMode=sel.mode;d.dataset.themeFamily=sel.theme;if(resolved==='dark')d.classList.add('dark');else d.classList.remove('dark')}catch(e){}})()`,
+          }}
+        />
       </head>
       <body>
         <AppProviders>
