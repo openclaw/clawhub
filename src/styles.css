@@ -710,7 +710,7 @@ code {
 
 .navbar-top {
   display: grid;
-  grid-template-columns: minmax(148px, auto) minmax(320px, 1fr) minmax(320px, auto);
+  grid-template-columns: minmax(148px, auto) minmax(200px, 1fr) auto;
   align-items: center;
   gap: 16px;
   padding: 12px 0;
@@ -1041,7 +1041,7 @@ code {
   align-items: center;
   gap: 8px;
   flex: 0 0 auto;
-  min-width: 276px;
+  min-width: 0;
   justify-content: flex-end;
 }
 
@@ -7701,7 +7701,7 @@ html.theme-transition::view-transition-new(theme) {
   flex-direction: column;
   align-items: center;
   text-align: center;
-  padding: 80px 48px 56px;
+  padding: 64px 48px 48px;
   overflow: hidden;
 }
 .home-v2-hero > *:not(.home-v2-hero-bg) {
@@ -7844,12 +7844,12 @@ html.theme-transition::view-transition-new(theme) {
   font-size: 16px;
   line-height: 1.5;
   margin-bottom: 36px;
-  max-width: 480px;
+  max-width: 580px;
   font-weight: 400;
 }
 .home-v2-sub-clear {
   color: var(--hv2-text-secondary);
-  max-width: 720px;
+  max-width: 820px;
   margin-bottom: 18px;
 }
 .home-v2-motto {
@@ -8595,7 +8595,7 @@ html.theme-transition::view-transition-new(theme) {
 
 /* ═══ HOME V2 — Wider search + even dot spacing ═══ */
 .home-v2-search-container {
-  max-width: 780px;
+  max-width: 920px;
 }
 .home-v2-search-bar {
   padding: 8px 8px 8px 24px;
