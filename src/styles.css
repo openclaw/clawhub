@@ -7607,6 +7607,9 @@ html.theme-transition::view-transition-new(theme) {
 
 /* --- Variables (scoped) --- */
 .home-v2-main {
+  max-width: var(--page-max);
+  margin-inline: auto;
+  width: 100%;
   --hv2-bg: #060608;
   --hv2-surface: rgba(255,255,255,0.02);
   --hv2-surface-hover: rgba(255,255,255,0.045);
@@ -8553,6 +8556,14 @@ html.theme-transition::view-transition-new(theme) {
 }
 .app-shell:has(.home-v2-main) > .site-footer .footer-bottom a:hover {
   color: #aaa;
+}
+
+/* ═══ HOME V2 — Page-max constraint + full-bleed background ═══ */
+.app-shell:has(.home-v2-main) {
+  background: #060608;
+}
+[data-theme-resolved="light"] .app-shell:has(.home-v2-main) {
+  background: #faf6f1;
 }
 
 /* ═══ HOME V2 — Full-width nav override ═══ */
