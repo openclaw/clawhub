@@ -108,8 +108,17 @@ function subscribe(listener: () => void) {
         return;
       }
 
-      cachedPreferencesRaw = null;
-      cachedPreferencesSnapshot = readStoredPreferences();
+      cachedPreferencesRaw = event.newValue;
+      if (!event.newValue) {
+        cachedPreferencesSnapshot = defaultPreferences;
+      } else {
+        try {
+          const parsed = JSON.parse(event.newValue) as Partial<UserPreferences>;
+          cachedPreferencesSnapshot = normalizePreferences(parsed);
+        } catch {
+          cachedPreferencesSnapshot = defaultPreferences;
+        }
+      }
       notifyListeners();
     };
 
