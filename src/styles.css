@@ -7402,7 +7402,7 @@ html.theme-transition::view-transition-new(theme) {
   box-shadow: 0 0 14px rgba(220, 38, 38, 0.08);
 }
 
-.about-rule-card h3 {
+.about-rule-card :is(h2, h3) {
   margin: 0;
   font-size: 1.22rem;
   font-family: var(--font-display);
