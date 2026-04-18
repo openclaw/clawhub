@@ -1,7 +1,7 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" fill="none">
   <rect width="512" height="512" rx="0" fill="none"/>
   <!-- Body segments -->
-  <g fill="#F03020" stroke="#fff" stroke-width="6" stroke-linejoin="round">
+  <g fill="#F03020" stroke="#1a0808" stroke-width="6" stroke-linejoin="round">
     <!-- Tail fan - center -->
     <ellipse cx="256" cy="460" rx="42" ry="30"/>
     <!-- Tail fan - left -->
@@ -27,9 +27,9 @@
     <!-- Right claw -->
     <ellipse cx="424" cy="115" rx="52" ry="42" transform="rotate(20 424 115)"/>
     <!-- Left claw notch -->
-    <path d="M65 95 Q78 80 72 65" stroke-width="6" fill="none" stroke="#fff" stroke-linecap="round"/>
+    <path d="M65 95 Q78 80 72 65" stroke-width="6" fill="none" stroke="#1a0808" stroke-linecap="round"/>
     <!-- Right claw notch -->
-    <path d="M447 95 Q434 80 440 65" stroke-width="6" fill="none" stroke="#fff" stroke-linecap="round"/>
+    <path d="M447 95 Q434 80 440 65" stroke-width="6" fill="none" stroke="#1a0808" stroke-linecap="round"/>
     <!-- Left legs -->
     <path d="M205 290 Q175 295 155 305" stroke-width="10" fill="none" stroke-linecap="round"/>
     <path d="M202 320 Q172 330 152 340" stroke-width="10" fill="none" stroke-linecap="round"/>
