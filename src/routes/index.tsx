@@ -107,17 +107,19 @@ function SkillsHome() {
   const carouselCards = highlighted.length > 0 ? highlighted.slice(0, 6) : [];
 
   // ═══ SLOT MACHINE EASTER EGG ═══
+  const HACK_INDEX = SLOT_WORDS.indexOf("Hack");
   const clickTimesRef = useRef<number[]>([]);
   const [slotState, setSlotState] = useState<
     | null
     | { phase: "spinning" }
-    | { phase: "stopped"; results: [number, number, number]; won: boolean }
+    | { phase: "stopped"; results: [number, number, number]; won: boolean; isHackJackpot: boolean }
   >(null);
   const slotTimersRef = useRef<ReturnType<typeof setTimeout>[]>([]);
   const [slotReelOffsets, setSlotReelOffsets] = useState<[number, number, number]>([0, 0, 0]);
   const [stoppedReels, setStoppedReels] = useState<Set<number>>(new Set());
   const confettiRef = useRef<HTMLCanvasElement>(null);
   const spinIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const cooldownUntilRef = useRef<number>(0);
 
   const triggerSlots = useCallback(() => {
     // Clean up any previous timers
@@ -171,15 +173,19 @@ function SkillsHome() {
       setStoppedReels(new Set([0, 1, 2]));
       setSlotReelOffsets(results);
       const won = r0 === r1 && r1 === r2;
-      setSlotState({ phase: "stopped", results, won });
+      const isHackJackpot = won && r0 === HACK_INDEX;
+      setSlotState({ phase: "stopped", results, won, isHackJackpot });
       if (won) {
-        fireConfetti();
+        fireConfetti(isHackJackpot);
       }
-      // Auto-reset after a delay
+      // Cooldown: 18s after win, 3s after loss
+      const displayTime = won ? 10000 : 2400;
+      const cooldownTime = won ? 18000 : 3000;
+      cooldownUntilRef.current = Date.now() + cooldownTime;
       const tReset = setTimeout(() => {
         setSlotState(null);
         setStoppedReels(new Set());
-      }, won ? 5000 : 2400);
+      }, displayTime);
       slotTimersRef.current.push(tReset);
     }, 2400);
     slotTimersRef.current.push(tFinal);
@@ -187,6 +193,8 @@ function SkillsHome() {
 
   const handleLabelClick = useCallback(() => {
     const now = Date.now();
+    // Respect cooldown period
+    if (now < cooldownUntilRef.current) return;
     clickTimesRef.current.push(now);
     // Keep only last 3 clicks
     if (clickTimesRef.current.length > 3) {
@@ -202,7 +210,7 @@ function SkillsHome() {
     }
   }, [slotState, triggerSlots]);
 
-  const fireConfetti = () => {
+  const fireConfetti = (isHackJackpot: boolean) => {
     const canvas = confettiRef.current;
     if (!canvas) return;
     const ctx = canvas.getContext("2d");
@@ -211,30 +219,56 @@ function SkillsHome() {
     canvas.height = window.innerHeight;
     canvas.style.display = "block";
 
-    const COLORS = [
+    const STANDARD_COLORS = [
       "#d4453a", "#ff6b6b", "#ffd93d", "#6bcb77",
       "#4d96ff", "#ff6f91", "#845ec2", "#ffc75f",
     ];
-    const particles: {
+    const OCEAN_COLORS = [
+      "#0ea5e9", "#06b6d4", "#14b8a6", "#22d3ee",
+      "#38bdf8", "#67e8f9", "#a5f3fc", "#2dd4bf",
+      "#d4453a", "#ff6b6b",
+    ];
+    const colors = isHackJackpot ? OCEAN_COLORS : STANDARD_COLORS;
+
+    type Particle = {
       x: number; y: number; vx: number; vy: number;
       w: number; h: number; color: string; rot: number; vr: number;
-      life: number;
-    }[] = [];
+      life: number; shape: "rect" | "bubble" | "claw";
+    };
+    const particles: Particle[] = [];
 
-    for (let i = 0; i < 150; i++) {
+    const count = isHackJackpot ? 200 : 150;
+    for (let i = 0; i < count; i++) {
+      const isBubble = isHackJackpot && Math.random() < 0.35;
+      const isClaw = isHackJackpot && !isBubble && Math.random() < 0.2;
       particles.push({
-        x: canvas.width / 2 + (Math.random() - 0.5) * 200,
+        x: canvas.width / 2 + (Math.random() - 0.5) * 300,
         y: canvas.height * 0.35,
         vx: (Math.random() - 0.5) * 18,
-        vy: -Math.random() * 16 - 4,
-        w: Math.random() * 10 + 4,
-        h: Math.random() * 6 + 3,
-        color: COLORS[Math.floor(Math.random() * COLORS.length)],
+        vy: isHackJackpot
+          ? -Math.random() * 14 - 2 + (isBubble ? -4 : 0)
+          : -Math.random() * 16 - 4,
+        w: isBubble ? Math.random() * 8 + 4 : Math.random() * 10 + 4,
+        h: isBubble ? 0 : Math.random() * 6 + 3,
+        color: colors[Math.floor(Math.random() * colors.length)],
         rot: Math.random() * Math.PI * 2,
         vr: (Math.random() - 0.5) * 0.3,
-        life: 1,
+        life: isHackJackpot ? 1.3 : 1,
+        shape: isClaw ? "claw" : isBubble ? "bubble" : "rect",
       });
     }
+
+    const drawClaw = (ctx: CanvasRenderingContext2D, size: number) => {
+      // Simple lobster claw shape
+      ctx.beginPath();
+      ctx.moveTo(0, size * 0.5);
+      ctx.quadraticCurveTo(-size * 0.6, size * 0.2, -size * 0.4, -size * 0.3);
+      ctx.quadraticCurveTo(-size * 0.2, -size * 0.6, 0, -size * 0.3);
+      ctx.quadraticCurveTo(size * 0.2, -size * 0.6, size * 0.4, -size * 0.3);
+      ctx.quadraticCurveTo(size * 0.6, size * 0.2, 0, size * 0.5);
+      ctx.closePath();
+      ctx.fill();
+    };
 
     let raf: number;
     const draw = () => {
@@ -245,16 +279,30 @@ function SkillsHome() {
         alive = true;
         p.x += p.vx;
         p.y += p.vy;
-        p.vy += 0.4;
+        p.vy += p.shape === "bubble" ? 0.15 : 0.4;
         p.vx *= 0.99;
         p.rot += p.vr;
-        p.life -= 0.008;
+        p.life -= isHackJackpot ? 0.005 : 0.008;
         ctx.save();
         ctx.translate(p.x, p.y);
         ctx.rotate(p.rot);
-        ctx.globalAlpha = Math.max(0, p.life);
+        ctx.globalAlpha = Math.max(0, Math.min(1, p.life));
         ctx.fillStyle = p.color;
-        ctx.fillRect(-p.w / 2, -p.h / 2, p.w, p.h);
+
+        if (p.shape === "bubble") {
+          ctx.beginPath();
+          ctx.arc(0, 0, p.w, 0, Math.PI * 2);
+          ctx.strokeStyle = p.color;
+          ctx.lineWidth = 1.5;
+          ctx.globalAlpha *= 0.7;
+          ctx.stroke();
+          ctx.globalAlpha *= 0.15;
+          ctx.fill();
+        } else if (p.shape === "claw") {
+          drawClaw(ctx, p.w);
+        } else {
+          ctx.fillRect(-p.w / 2, -p.h / 2, p.w, p.h);
+        }
         ctx.restore();
       }
       if (alive) {
@@ -308,9 +356,21 @@ function SkillsHome() {
         </div>
 
         {slotState ? (
-          <h1 className={`home-v2-headline home-v2-headline-slots ${
-            slotState.phase === "stopped" && slotState.won ? "home-v2-headline-jackpot" : ""
+          <h1 className={`home-v2-headline home-v2-headline-slots${
+            slotState.phase === "stopped" && slotState.won
+              ? slotState.isHackJackpot
+                ? " home-v2-headline-jackpot home-v2-headline-hack"
+                : " home-v2-headline-jackpot"
+              : ""
           }`}>
+            {slotState.phase === "stopped" && slotState.isHackJackpot && (
+              <img
+                src="/clawd-mark.png"
+                alt=""
+                aria-hidden="true"
+                className="home-v2-hack-lobster"
+              />
+            )}
             <span className="home-v2-headline-inner">
               {renderSlotReel(0)}
               <span className="home-v2-sep" />
