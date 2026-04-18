@@ -128,15 +128,36 @@ function normalizeApiPath(path: string) {
   return path.startsWith("/") ? path : `/${path}`;
 }
 
+function resolveAbsoluteBaseUrl(...candidates: Array<string | undefined>) {
+  for (const candidate of candidates) {
+    const value = candidate?.trim();
+    if (!value) continue;
+    try {
+      return new URL(value).toString();
+    } catch {
+      continue;
+    }
+  }
+  return null;
+}
+
 async function packageApiUrl(path: string) {
   const normalizedPath = normalizeApiPath(path);
   if (typeof window !== "undefined") {
     // In production, Vercel rewrites /api/* to the Convex site, so relative
     // paths work. In local dev, Nitro intercepts the request before Vite's
     // proxy, so we must use the Convex site URL directly.
-    const convexSiteUrl = getRuntimeEnv("VITE_CONVEX_SITE_URL");
-    if (convexSiteUrl && window.location.hostname === "localhost") {
-      return new URL(normalizedPath, convexSiteUrl);
+    const convexClientBaseUrl = resolveAbsoluteBaseUrl(
+      getRuntimeEnv("VITE_CONVEX_SITE_URL"),
+      getRuntimeEnv("VITE_CONVEX_URL"),
+    );
+    if (
+      convexClientBaseUrl &&
+      (window.location.hostname === "localhost" ||
+        window.location.hostname === "127.0.0.1" ||
+        window.location.hostname === "0.0.0.0")
+    ) {
+      return new URL(normalizedPath, convexClientBaseUrl);
     }
     return new URL(normalizedPath, window.location.origin);
   }
@@ -144,7 +165,11 @@ async function packageApiUrl(path: string) {
   // In production, Vercel rewrites /api/* but SSR loaders run server-side
   // where the rewrite doesn't apply. Using getRequestUrl() would loop back
   // into TanStack Start / Nitro, which rejects non-HTML requests.
-  const base = getRuntimeEnv("VITE_CONVEX_SITE_URL") ?? getRequiredRuntimeEnv("VITE_CONVEX_URL");
+  const base =
+    resolveAbsoluteBaseUrl(
+      getRuntimeEnv("VITE_CONVEX_SITE_URL"),
+      getRuntimeEnv("VITE_CONVEX_URL"),
+    ) ?? getRequiredRuntimeEnv("VITE_CONVEX_URL");
   return new URL(normalizedPath, base);
 }
 
@@ -288,15 +313,15 @@ export async function fetchPluginCatalog(params: {
     });
     if (hasOwnProperty(response, "results") && Array.isArray(response.results)) {
       return {
-        items: response.results.map((entry) => entry.package),
+        items: response.results.map((entry) => entry?.package).filter(Boolean) as PackageListItem[],
         nextCursor: null,
       };
     }
 
     const browseResponse = response as PackageCatalogBrowseResponse;
     return {
-      items: browseResponse.items,
-      nextCursor: browseResponse.nextCursor,
+      items: browseResponse?.items ?? [],
+      nextCursor: browseResponse?.nextCursor ?? null,
     };
   }
 
@@ -311,10 +336,10 @@ export async function fetchPluginCatalog(params: {
       url.searchParams.set("executesCode", String(params.executesCode));
     }
     const response = await fetchJson<{
-      results: Array<{ score: number; package: PackageListItem }>;
+      results?: Array<{ score: number; package: PackageListItem }>;
     }>(url);
     return {
-      items: response.results.map((entry) => entry.package),
+      items: (response?.results ?? []).map((entry) => entry?.package).filter(Boolean) as PackageListItem[],
       nextCursor: null,
     };
   }
@@ -328,35 +353,43 @@ export async function fetchPluginCatalog(params: {
   if (typeof params.executesCode === "boolean") {
     url.searchParams.set("executesCode", String(params.executesCode));
   }
-  return await fetchJson<PluginCatalogResult>(url);
+  const result = await fetchJson<PluginCatalogResult>(url);
+  return {
+    items: result?.items ?? [],
+    nextCursor: result?.nextCursor ?? null,
+  };
 }
 
-export async function fetchPackageDetail(name: string) {
+export async function fetchPackageDetail(name: string): Promise<PackageDetailResponse> {
   const url = await packageApiUrl(`${ApiRoutes.packages}/${encodeURIComponent(name)}`);
   const response = await packageFetch(url, "application/json");
   if (response.status === 404) {
-    return {
-      package: null,
-      owner: null,
-    } satisfies PackageDetailResponse;
+    return { package: null, owner: null };
   }
   if (!response.ok) throw await createPackageApiError(response);
   return (await response.json()) as PackageDetailResponse;
 }
 
-export async function fetchPackageVersion(name: string, version: string) {
-  const url = await packageApiUrl(
-    `${ApiRoutes.packages}/${encodeURIComponent(name)}/versions/${encodeURIComponent(version)}`,
-  );
-  return await fetchJson<PackageVersionDetail>(url);
+export async function fetchPackageVersion(name: string, version: string): Promise<PackageVersionDetail | null> {
+  try {
+    const url = await packageApiUrl(
+      `${ApiRoutes.packages}/${encodeURIComponent(name)}/versions/${encodeURIComponent(version)}`,
+    );
+    return await fetchJson<PackageVersionDetail>(url);
+  } catch {
+    // Return null on API error to prevent SSR crashes
+    return null;
+  }
 }
 
-export async function fetchPackageReadme(name: string, version?: string | null) {
+export async function fetchPackageReadme(name: string, version?: string | null): Promise<string | null> {
   const url = await packageApiUrl(`${ApiRoutes.packages}/${encodeURIComponent(name)}/file`);
   url.searchParams.set("path", "README.md");
   if (version) url.searchParams.set("version", version);
   const response = await packageFetch(url, "text/plain");
   if (response.ok) return await response.text();
-  if (response.status === 403 || response.status === 423 || response.status === 404) return null;
+  if (response.status === 404 || response.status === 423) {
+    return null;
+  }
   throw await createPackageApiError(response);
 }

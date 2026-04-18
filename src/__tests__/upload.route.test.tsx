@@ -22,6 +22,7 @@ const useAuthStatusMock = vi.fn();
 let useActionCallCount = 0;
 
 vi.mock("convex/react", () => ({
+  ConvexReactClient: class {},
   useQuery: (...args: unknown[]) => useQueryMock(...args),
   useMutation: () => generateUploadUrl,
   useAction: () => {

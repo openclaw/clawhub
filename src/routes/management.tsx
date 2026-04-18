@@ -1,39 +1,19 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useMutation, useQuery } from "convex/react";
-import { Copy, Flag, History, Shield, Users } from "lucide-react";
 import { useEffect, useState } from "react";
-import { toast } from "sonner";
 import { api } from "../../convex/_generated/api";
 import type { Doc, Id } from "../../convex/_generated/dataModel";
-import { SKILL_CAPABILITY_TAGS } from "../../convex/lib/skillCapabilityTags";
-import { EmptyState } from "../components/EmptyState";
-import { Container } from "../components/layout/Container";
 import { Badge } from "../components/ui/badge";
 import { Button } from "../components/ui/button";
-import { Card, CardContent, CardHeader, CardTitle } from "../components/ui/card";
-import { Input } from "../components/ui/input";
-import { Separator } from "../components/ui/separator";
-import { Skeleton } from "../components/ui/skeleton";
-import { Textarea } from "../components/ui/textarea";
+import { Card } from "../components/ui/card";
 import {
   getSkillBadges,
   isSkillDeprecated,
   isSkillHighlighted,
   isSkillOfficial,
 } from "../lib/badges";
-import { getUserFacingConvexError } from "../lib/convexError";
 import { isAdmin, isModerator } from "../lib/roles";
 import { useAuthStatus } from "../lib/useAuthStatus";
-
-const SKILL_CAPABILITY_LABELS: Record<string, string> = {
-  crypto: "Crypto / DeFi",
-  "requires-wallet": "Requires wallet",
-  "can-make-purchases": "Can make purchases",
-  "can-sign-transactions": "Can sign transactions",
-  "requires-oauth-token": "Requires OAuth token",
-  "requires-sensitive-credentials": "Requires sensitive credentials",
-  "posts-externally": "Posts externally",
-};
 
 const SKILL_AUDIT_LOG_LIMIT = 10;
 
@@ -158,7 +138,6 @@ function Management() {
   const setDeprecatedBadge = useMutation(api.skills.setDeprecatedBadge);
   const setSkillManualOverride = useMutation(api.skills.setSkillManualOverride);
   const clearSkillManualOverride = useMutation(api.skills.clearSkillManualOverride);
-  const setSkillCapabilityTags = useMutation(api.skills.setSkillCapabilityTags);
 
   const [selectedDuplicate, setSelectedDuplicate] = useState("");
   const [selectedOwner, setSelectedOwner] = useState("");
@@ -197,43 +176,18 @@ function Management() {
     return () => clearTimeout(handle);
   }, [userSearch]);
 
-  const toggleSkillCapabilityTag = (tag: string, checked: boolean) => {
-    if (!selectedSkill?.skill) return;
-    const currentTags = new Set(
-      selectedSkill.latestVersion?.capabilityTags ?? selectedSkill.skill.capabilityTags ?? [],
-    );
-    if (checked) currentTags.add(tag);
-    else currentTags.delete(tag);
-    void setSkillCapabilityTags({
-      skillId: selectedSkill.skill._id,
-      capabilityTags: SKILL_CAPABILITY_TAGS.filter((entry) => currentTags.has(entry)),
-    }).catch((error) => toast.error(formatMutationError(error)));
-  };
-
   if (!staff) {
     return (
-      <main className="py-10">
-        <Container size="wide">
-          <Card>
-            <CardContent>Management only.</CardContent>
-          </Card>
-        </Container>
+      <main className="section">
+        <Card>Management only.</Card>
       </main>
     );
   }
 
   if (!recentVersions || !reportedSkills || !duplicateCandidates) {
     return (
-      <main className="py-10">
-        <Container size="wide">
-          <Card>
-            <CardContent className="flex flex-col gap-4">
-              <Skeleton className="h-6 w-64" />
-              <Skeleton className="h-4 w-48" />
-              <Skeleton className="h-40 w-full" />
-            </CardContent>
-          </Card>
-        </Container>
+      <main className="section">
+        <Card>Loading management console…</Card>
       </main>
     );
   }
@@ -288,7 +242,7 @@ function Management() {
       .then(() => {
         setSkillOverrideNote("");
       })
-      .catch((error) => toast.error(formatMutationError(error)));
+      .catch((error) => window.alert(formatMutationError(error)));
   };
 
   const clearSkillOverride = () => {
@@ -300,535 +254,561 @@ function Management() {
       .then(() => {
         setSkillOverrideNote("");
       })
-      .catch((error) => toast.error(formatMutationError(error)));
+      .catch((error) => window.alert(formatMutationError(error)));
   };
 
   return (
-    <main className="py-10">
-      <Container size="wide">
-        <h1 className="font-display text-2xl font-bold text-[color:var(--ink)]">
-          Management console
-        </h1>
-        <p className="text-sm text-[color:var(--ink-soft)]">
-          Moderation, curation, and ownership tools.
-        </p>
+    <main className="section">
+      <h1 className="section-title">Management console</h1>
+      <p className="section-subtitle">Moderation, curation, and ownership tools.</p>
 
-        <Separator className="my-6" />
-
-        {/* Reported skills */}
-        <Card>
-          <CardHeader>
-            <CardTitle>Reported skills</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="flex items-center gap-3 py-3">
-              <div className="flex items-center gap-2">
-                <span className="font-mono text-xs">Filter</span>
-                <Input
-                  type="search"
-                  placeholder="Search reported skills"
-                  value={reportSearch}
-                  onChange={(event) => setReportSearch(event.target.value)}
-                />
-              </div>
-              <span className="text-xs font-medium text-[color:var(--ink-soft)]">
-                {reportSummary}
-              </span>
-            </div>
-            <div className="flex flex-col gap-3">
-              {filteredReportedSkills.length === 0 ? (
-                <EmptyState icon={Flag} title={reportCountLabel} />
-              ) : (
-                filteredReportedSkills.map((entry) => {
-                  const { skill, latestVersion, owner, reports } = entry;
-                  const ownerParam = resolveOwnerParam(
-                    owner?.handle ?? null,
-                    owner?._id ?? skill.ownerUserId,
-                  );
-                  const reportEntries = reports ?? [];
-                  return (
-                    <div
-                      key={skill._id}
-                      className="flex items-start justify-between gap-4 rounded-[var(--radius-md)] border border-[color:var(--line)] bg-[color:var(--surface)] p-4"
-                    >
-                      <div className="flex flex-1 flex-col gap-2">
-                        <Link to="/$owner/$slug" params={{ owner: ownerParam, slug: skill.slug }}>
-                          {skill.displayName}
-                        </Link>
-                        <div className="text-sm text-[color:var(--ink-soft)]">
-                          @{owner?.handle ?? owner?.name ?? "user"} · v
-                          {latestVersion?.version ?? "—"} ·{skill.reportCount ?? 0} report
-                          {(skill.reportCount ?? 0) === 1 ? "" : "s"}
-                          {skill.lastReportedAt
-                            ? ` · last ${formatTimestamp(skill.lastReportedAt)}`
-                            : ""}
-                        </div>
-                        {reportEntries.length > 0 ? (
-                          <div className="flex flex-col gap-2 border-l-2 border-[color:var(--line)] pl-4">
-                            {reportEntries.map((report) => (
-                              <div
-                                key={`${report.reporterId}-${report.createdAt}`}
-                                className="flex flex-col gap-1"
-                              >
-                                <span className="text-xs font-medium text-[color:var(--ink-soft)]">
-                                  {formatTimestamp(report.createdAt)}
-                                  {report.reporterHandle ? ` · @${report.reporterHandle}` : ""}
-                                </span>
-                                <span>{report.reason}</span>
-                              </div>
-                            ))}
-                          </div>
-                        ) : (
-                          <div className="text-sm text-[color:var(--ink-soft)]">
-                            No report reasons yet.
-                          </div>
-                        )}
-                      </div>
-                      <div className="flex flex-wrap items-center gap-2">
-                        <Button asChild variant="outline" size="sm">
-                          <Link to="/management" search={{ skill: skill.slug }}>
-                            Manage
-                          </Link>
-                        </Button>
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          onClick={() => {
-                            const action = skill.softDeletedAt ? "Restore" : "Hide";
-                            const reason = window.prompt(
-                              `${action} reason for "${skill.displayName}"`,
-                            );
-                            if (!reason?.trim()) return;
-                            void setSoftDeleted({
-                              skillId: skill._id,
-                              deleted: !skill.softDeletedAt,
-                              reason: reason.trim(),
-                            }).catch((error) => toast.error(formatMutationError(error)));
-                          }}
-                        >
-                          {skill.softDeletedAt ? "Restore" : "Hide"}
-                        </Button>
-                        {admin ? (
-                          <Button
-                            variant="destructive"
-                            size="sm"
-                            onClick={() => {
-                              if (!window.confirm(`Hard delete ${skill.displayName}?`)) return;
-                              void hardDelete({ skillId: skill._id });
-                            }}
-                          >
-                            Hard delete
-                          </Button>
-                        ) : null}
-                      </div>
+      <Card>
+        <h2 className="section-title text-[1.2rem] m-0">
+          Reported skills
+        </h2>
+        <div className="management-controls">
+          <div className="management-control management-search">
+            <span className="mono">Filter</span>
+            <input
+              type="search"
+              placeholder="Search reported skills"
+              value={reportSearch}
+              onChange={(event) => setReportSearch(event.target.value)}
+            />
+          </div>
+          <div className="management-count">{reportSummary}</div>
+        </div>
+        <div className="management-list">
+          {filteredReportedSkills.length === 0 ? (
+            <div className="stat">{reportCountLabel}</div>
+          ) : (
+            filteredReportedSkills.map((entry) => {
+              const { skill, latestVersion, owner, reports } = entry;
+              const ownerParam = resolveOwnerParam(
+                owner?.handle ?? null,
+                owner?._id ?? skill.ownerUserId,
+              );
+              const reportEntries = reports ?? [];
+              return (
+                <div key={skill._id} className="management-item">
+                  <div className="management-item-main">
+                    <Link to="/$owner/$slug" params={{ owner: ownerParam, slug: skill.slug }}>
+                      {skill.displayName}
+                    </Link>
+                    <div className="section-subtitle m-0">
+                      @{owner?.handle ?? owner?.name ?? "user"} · v{latestVersion?.version ?? "—"} ·
+                      {skill.reportCount ?? 0} report{(skill.reportCount ?? 0) === 1 ? "" : "s"}
+                      {skill.lastReportedAt
+                        ? ` · last ${formatTimestamp(skill.lastReportedAt)}`
+                        : ""}
                     </div>
-                  );
-                })
-              )}
-            </div>
-          </CardContent>
-        </Card>
-
-        <Separator className="my-6" />
-
-        {/* Skill tools */}
-        <Card>
-          <CardHeader>
-            <CardTitle>Skill tools</CardTitle>
-            {selectedSlug ? (
-              <p className="text-sm text-[color:var(--ink-soft)]">
-                Managing &ldquo;{selectedSlug}&rdquo; &middot;{" "}
-                <Link to="/management" search={{ skill: undefined }}>
-                  Clear selection
-                </Link>
-              </p>
-            ) : null}
-          </CardHeader>
-          <CardContent>
-            <div className="flex flex-col gap-3">
-              {!selectedSlug ? (
-                <EmptyState
-                  icon={Shield}
-                  title="No skill selected"
-                  description="Use the Manage button on a skill to open tooling here."
-                />
-              ) : selectedSkill === undefined ? (
-                <div className="flex flex-col gap-3">
-                  <Skeleton className="h-6 w-48" />
-                  <Skeleton className="h-4 w-64" />
-                  <Skeleton className="h-32 w-full" />
-                </div>
-              ) : !selectedSkill?.skill ? (
-                <EmptyState icon={Shield} title={`No skill found for "${selectedSlug}"`} />
-              ) : (
-                (() => {
-                  const { skill, latestVersion, owner, canonical, overrideReviewer, auditLogs } =
-                    selectedSkill;
-                  const ownerParam = resolveOwnerParam(
-                    owner?.handle ?? null,
-                    owner?._id ?? skill.ownerUserId,
-                  );
-                  const moderationStatus =
-                    skill.moderationStatus ?? (skill.softDeletedAt ? "hidden" : "active");
-                  const isHighlighted = isSkillHighlighted(skill);
-                  const isOfficial = isSkillOfficial(skill);
-                  const isDeprecated = isSkillDeprecated(skill);
-                  const badges = getSkillBadges(skill);
-                  const capabilityTags =
-                    latestVersion?.capabilityTags ?? skill.capabilityTags ?? [];
-                  const ownerUserId = skill.ownerUserId ?? selectedOwnerUserId;
-                  const ownerHandle = owner?.handle ?? owner?.name ?? "user";
-                  const isOwnerAdmin = owner?.role === "admin";
-                  const canBanOwner =
-                    staff && ownerUserId && ownerUserId !== me?._id && (admin || !isOwnerAdmin);
-
-                  return (
-                    <div
-                      key={skill._id}
-                      className="flex items-start justify-between gap-4 rounded-[var(--radius-md)] border border-[color:var(--line)] bg-[color:var(--surface)] p-6"
+                    {reportEntries.length > 0 ? (
+                      <div className="management-sublist">
+                        {reportEntries.map((report) => (
+                          <div
+                            key={`${report.reporterId}-${report.createdAt}`}
+                            className="management-report-item"
+                          >
+                            <span className="management-report-meta">
+                              {formatTimestamp(report.createdAt)}
+                              {report.reporterHandle ? ` · @${report.reporterHandle}` : ""}
+                            </span>
+                            <span>{report.reason}</span>
+                          </div>
+                        ))}
+                      </div>
+                    ) : (
+                      <div className="section-subtitle m-0">
+                        No report reasons yet.
+                      </div>
+                    )}
+                  </div>
+                  <div className="management-actions">
+                    <Button asChild>
+                      <Link to="/management" search={{ skill: skill.slug }}>
+                        Manage
+                      </Link>
+                    </Button>
+                    <Button
+                      type="button"
+                      onClick={() => {
+                        const reason = window.prompt(
+                          skill.softDeletedAt ? "Restore reason:" : "Hide reason:",
+                        );
+                        if (!reason?.trim()) return;
+                        void setSoftDeleted({
+                          skillId: skill._id,
+                          deleted: !skill.softDeletedAt,
+                          reason: reason.trim(),
+                        }).catch((error) => window.alert(formatMutationError(error)));
+                      }}
                     >
-                      <div className="flex flex-1 flex-col gap-2">
-                        <Link to="/$owner/$slug" params={{ owner: ownerParam, slug: skill.slug }}>
-                          {skill.displayName}
-                        </Link>
-                        <div className="text-sm text-[color:var(--ink-soft)]">
-                          @{owner?.handle ?? owner?.name ?? "user"} · v
-                          {latestVersion?.version ?? "—"} · updated{" "}
-                          {formatTimestamp(skill.updatedAt)} · {moderationStatus}
-                          {badges.length ? ` · ${badges.join(", ").toLowerCase()}` : ""}
+                      {skill.softDeletedAt ? "Restore" : "Hide"}
+                    </Button>
+                    {admin ? (
+                      <Button
+                        type="button"
+                        onClick={() => {
+                          if (!window.confirm(`Hard delete ${skill.displayName}?`)) return;
+                          void hardDelete({ skillId: skill._id });
+                        }}
+                      >
+                        Hard delete
+                      </Button>
+                    ) : null}
+                  </div>
+                </div>
+              );
+            })
+          )}
+        </div>
+      </Card>
+
+      <Card className="mt-5">
+        <h2 className="section-title text-[1.2rem] m-0">
+          Skill tools
+        </h2>
+        {selectedSlug ? (
+          <div className="section-subtitle mt-2">
+            Managing "{selectedSlug}" ·{" "}
+            <Link to="/management" search={{ skill: undefined }}>
+              Clear selection
+            </Link>
+          </div>
+        ) : null}
+        <div className="management-list">
+          {!selectedSlug ? (
+            <div className="stat">Use the Manage button on a skill to open tooling here.</div>
+          ) : selectedSkill === undefined ? (
+            <div className="stat">Loading skill…</div>
+          ) : !selectedSkill?.skill ? (
+            <div className="stat">No skill found for "{selectedSlug}".</div>
+          ) : (
+            (() => {
+              const { skill, latestVersion, owner, canonical, overrideReviewer, auditLogs } =
+                selectedSkill;
+              const ownerParam = resolveOwnerParam(
+                owner?.handle ?? null,
+                owner?._id ?? skill.ownerUserId,
+              );
+              const moderationStatus =
+                skill.moderationStatus ?? (skill.softDeletedAt ? "hidden" : "active");
+              const isHighlighted = isSkillHighlighted(skill);
+              const isOfficial = isSkillOfficial(skill);
+              const isDeprecated = isSkillDeprecated(skill);
+              const badges = getSkillBadges(skill);
+              const ownerUserId = skill.ownerUserId ?? selectedOwnerUserId;
+              const ownerHandle = owner?.handle ?? owner?.name ?? "user";
+              const isOwnerAdmin = owner?.role === "admin";
+              const canBanOwner =
+                staff && ownerUserId && ownerUserId !== me?._id && (admin || !isOwnerAdmin);
+
+              return (
+                <div key={skill._id} className="management-item management-item-detail">
+                  <div className="management-item-main">
+                    <Link to="/$owner/$slug" params={{ owner: ownerParam, slug: skill.slug }}>
+                      {skill.displayName}
+                    </Link>
+                    <div className="section-subtitle m-0">
+                      @{owner?.handle ?? owner?.name ?? "user"} · v{latestVersion?.version ?? "—"} ·
+                      updated {formatTimestamp(skill.updatedAt)} · {moderationStatus}
+                      {badges.length ? ` · ${badges.join(", ").toLowerCase()}` : ""}
+                    </div>
+                    {skill.moderationFlags?.length ? (
+                      <div className="management-tags">
+                        {skill.moderationFlags.map((flag: string) => (
+                          <Badge key={flag}>
+                            {flag}
+                          </Badge>
+                        ))}
+                      </div>
+                    ) : null}
+                    <div className="management-sublist">
+                      <div className="section-subtitle m-0">
+                        Manual overrides
+                      </div>
+                      <section className="management-override-panel">
+                        <div className="management-report-item">
+                          <span className="management-report-meta">Current override</span>
+                          <span>
+                            {formatManualOverrideState(skill.manualOverride, overrideReviewer)}
+                          </span>
                         </div>
-                        {skill.moderationFlags?.length ? (
-                          <div className="flex flex-wrap gap-2">
-                            {skill.moderationFlags.map((flag: string) => (
-                              <Badge key={flag}>{flag}</Badge>
-                            ))}
-                          </div>
-                        ) : null}
-                        <div className="flex flex-col gap-2 border-l-2 border-[color:var(--line)] pl-4">
-                          <div className="text-sm text-[color:var(--ink-soft)]">
-                            Capability tags
-                          </div>
-                          <div className="flex flex-wrap gap-3">
-                            {SKILL_CAPABILITY_TAGS.map((tag) => (
-                              <label key={tag} className="flex items-center gap-1.5 text-sm">
-                                <input
-                                  type="checkbox"
-                                  checked={capabilityTags.includes(tag)}
-                                  onChange={(event) =>
-                                    toggleSkillCapabilityTag(tag, event.target.checked)
-                                  }
-                                />
-                                <span>{SKILL_CAPABILITY_LABELS[tag] ?? tag}</span>
-                              </label>
-                            ))}
-                          </div>
+                        <div className="management-report-item">
+                          <span className="management-report-meta">Latest version</span>
+                          <span>
+                            {latestVersion ? `v${latestVersion.version}` : "No published version."}
+                          </span>
                         </div>
-                        <div className="flex flex-col gap-2 border-l-2 border-[color:var(--line)] pl-4">
-                          <div className="text-sm text-[color:var(--ink-soft)]">
-                            Manual overrides
-                          </div>
-                          <Card>
-                            <CardContent>
-                              <div className="flex flex-col gap-1">
-                                <span className="text-xs font-medium text-[color:var(--ink-soft)]">
-                                  Current override
-                                </span>
-                                <span>
-                                  {formatManualOverrideState(
-                                    skill.manualOverride,
-                                    overrideReviewer,
-                                  )}
-                                </span>
-                              </div>
-                              <div className="flex flex-col gap-1">
-                                <span className="text-xs font-medium text-[color:var(--ink-soft)]">
-                                  Latest version
-                                </span>
-                                <span>
-                                  {latestVersion
-                                    ? `v${latestVersion.version}`
-                                    : "No published version."}
-                                </span>
-                              </div>
-                              <div className="flex flex-col gap-1">
-                                <span className="text-xs font-medium text-[color:var(--ink-soft)]">
-                                  Behavior
-                                </span>
-                                <span>Applies to the full skill until a moderator clears it.</span>
-                              </div>
-                              <Textarea
-                                rows={4}
-                                placeholder={
-                                  skill.manualOverride
-                                    ? "Audit note required to update or clear the okay override"
-                                    : "Audit note required to mark this skill okay"
-                                }
-                                value={skillOverrideNote}
-                                onChange={(event) => setSkillOverrideNote(event.target.value)}
-                              />
-                              <div className="flex flex-wrap items-center gap-2">
-                                <Button
-                                  variant="outline"
-                                  size="sm"
-                                  disabled={!skillOverrideNote.trim()}
-                                  onClick={applySkillOverride}
-                                >
-                                  {skill.manualOverride
-                                    ? "Update okay override"
-                                    : "Mark skill okay"}
-                                </Button>
-                                {skill.manualOverride ? (
-                                  <Button
-                                    variant="outline"
-                                    size="sm"
-                                    disabled={!skillOverrideNote.trim()}
-                                    onClick={clearSkillOverride}
-                                  >
-                                    Clear skill override
-                                  </Button>
-                                ) : null}
-                              </div>
-                            </CardContent>
-                          </Card>
+                        <div className="management-report-item">
+                          <span className="management-report-meta">Behavior</span>
+                          <span>Applies to the full skill until a moderator clears it.</span>
                         </div>
-                        <div className="flex flex-col gap-2 border-l-2 border-[color:var(--line)] pl-4">
-                          <div className="text-sm text-[color:var(--ink-soft)]">
-                            Recent audit activity
-                          </div>
-                          <Card>
-                            <CardContent>
-                              <div className="flex flex-col gap-1">
-                                <span className="text-xs font-medium text-[color:var(--ink-soft)]">
-                                  Window
-                                </span>
-                                <span>Last {SKILL_AUDIT_LOG_LIMIT} entries for this skill.</span>
-                              </div>
-                              {auditLogs.length === 0 ? (
-                                <div className="text-sm text-[color:var(--ink-soft)]">
-                                  No audit activity yet.
-                                </div>
-                              ) : (
-                                <div className="flex flex-col gap-3">
-                                  {auditLogs.map((entry) => {
-                                    const auditSummary = formatAuditMetadataSummary(
-                                      entry.action,
-                                      entry.metadata,
-                                    );
-                                    return (
-                                      <div
-                                        key={entry._id}
-                                        className="flex flex-col gap-1 border-b border-[color:var(--line)] pb-3 last:border-0"
-                                      >
-                                        <div className="flex flex-col gap-1">
-                                          <span className="text-xs font-medium text-[color:var(--ink-soft)]">
-                                            {formatTimestamp(entry.createdAt)} &middot;{" "}
-                                            {formatManagementUserLabel(entry.actor)}
-                                          </span>
-                                          <span>
-                                            {formatAuditActionLabel(entry.action, entry.metadata)}
-                                          </span>
-                                        </div>
-                                        {auditSummary ? (
-                                          <div className="text-xs text-[color:var(--ink-soft)]">
-                                            {auditSummary}
-                                          </div>
-                                        ) : null}
-                                        {entry.metadata ? (
-                                          <details className="text-xs">
-                                            <summary>metadata</summary>
-                                            <pre className="mt-1 overflow-x-auto rounded bg-[color:var(--surface-muted)] p-3 font-mono text-xs">
-                                              {JSON.stringify(entry.metadata, null, 2)}
-                                            </pre>
-                                          </details>
-                                        ) : null}
-                                      </div>
-                                    );
-                                  })}
-                                </div>
-                              )}
-                            </CardContent>
-                          </Card>
-                        </div>
-                        <div className="grid grid-cols-2 gap-4">
-                          <label className="flex flex-col gap-2">
-                            <span className="font-mono text-xs">duplicate of</span>
-                            <Input
-                              value={selectedDuplicate}
-                              onChange={(event) => setSelectedDuplicate(event.target.value)}
-                              placeholder={canonical?.skill?.slug ?? "canonical slug"}
-                            />
-                          </label>
-                          <div className="flex flex-col gap-2">
-                            <span className="font-mono text-xs">duplicate action</span>
+                        <textarea
+                          className="form-input management-textarea"
+                          rows={4}
+                          placeholder={
+                            skill.manualOverride
+                              ? "Audit note required to update or clear the okay override"
+                              : "Audit note required to mark this skill okay"
+                          }
+                          value={skillOverrideNote}
+                          onChange={(event) => setSkillOverrideNote(event.target.value)}
+                        />
+                        <div className="management-actions management-actions-start">
+                          <Button
+                            className="management-action-btn"
+                            type="button"
+                            disabled={!skillOverrideNote.trim()}
+                            onClick={applySkillOverride}
+                          >
+                            {skill.manualOverride ? "Update okay override" : "Mark skill okay"}
+                          </Button>
+                          {skill.manualOverride ? (
                             <Button
-                              variant="outline"
-                              size="sm"
-                              onClick={() =>
-                                void setDuplicate({
-                                  skillId: skill._id,
-                                  canonicalSlug: selectedDuplicate.trim() || undefined,
-                                })
-                              }
+                              className="management-action-btn"
+                              type="button"
+                              disabled={!skillOverrideNote.trim()}
+                              onClick={clearSkillOverride}
                             >
-                              Set duplicate
+                              Clear skill override
                             </Button>
-                          </div>
-                          {admin ? (
-                            <>
-                              <label className="flex flex-col gap-2">
-                                <span className="font-mono text-xs">owner</span>
-                                <select
-                                  className="w-full min-h-[44px] rounded-[var(--radius-sm)] border border-[rgba(29,59,78,0.22)] bg-[rgba(255,255,255,0.94)] px-3.5 py-[13px] text-[color:var(--ink)] transition-all duration-[180ms] ease-out dark:border-[rgba(255,255,255,0.12)] dark:bg-[rgba(14,28,37,0.84)]"
-                                  value={selectedOwner}
-                                  onChange={(event) => setSelectedOwner(event.target.value)}
-                                >
-                                  {filteredUsers.map((user) => (
-                                    <option key={user._id} value={user._id}>
-                                      @{user.handle ?? user.name ?? "user"}
-                                    </option>
-                                  ))}
-                                </select>
-                              </label>
-                              <div className="flex flex-col gap-2">
-                                <span className="font-mono text-xs">owner action</span>
-                                <Button
-                                  variant="outline"
-                                  size="sm"
-                                  onClick={() =>
-                                    void changeOwner({
-                                      skillId: skill._id,
-                                      ownerUserId: selectedOwner as Doc<"users">["_id"],
-                                    })
-                                  }
-                                >
-                                  Change owner
-                                </Button>
-                              </div>
-                            </>
                           ) : null}
                         </div>
+                      </section>
+                    </div>
+                    <div className="management-sublist">
+                      <div className="section-subtitle m-0">
+                        Recent audit activity
                       </div>
-                      <div className="flex flex-wrap gap-2">
-                        <Button asChild variant="outline" size="sm">
-                          <Link to="/$owner/$slug" params={{ owner: ownerParam, slug: skill.slug }}>
-                            View
-                          </Link>
-                        </Button>
+                      <section className="management-override-panel management-audit-panel">
+                        <div className="management-report-item">
+                          <span className="management-report-meta">Window</span>
+                          <span>Last {SKILL_AUDIT_LOG_LIMIT} entries for this skill.</span>
+                        </div>
+                        {auditLogs.length === 0 ? (
+                          <div className="section-subtitle m-0">
+                            No audit activity yet.
+                          </div>
+                        ) : (
+                          <div className="management-audit-list">
+                            {auditLogs.map((entry) => {
+                              const auditSummary = formatAuditMetadataSummary(
+                                entry.action,
+                                entry.metadata,
+                              );
+                              return (
+                                <div key={entry._id} className="management-audit-item">
+                                  <div className="management-report-item">
+                                    <span className="management-report-meta">
+                                      {formatTimestamp(entry.createdAt)} ·{" "}
+                                      {formatManagementUserLabel(entry.actor)}
+                                    </span>
+                                    <span>
+                                      {formatAuditActionLabel(entry.action, entry.metadata)}
+                                    </span>
+                                  </div>
+                                  {auditSummary ? (
+                                    <div className="section-subtitle management-audit-summary">
+                                      {auditSummary}
+                                    </div>
+                                  ) : null}
+                                  {entry.metadata ? (
+                                    <details className="management-audit-details">
+                                      <summary>metadata</summary>
+                                      <pre className="management-audit-json">
+                                        {JSON.stringify(entry.metadata, null, 2)}
+                                      </pre>
+                                    </details>
+                                  ) : null}
+                                </div>
+                              );
+                            })}
+                          </div>
+                        )}
+                      </section>
+                    </div>
+                    <div className="management-tool-grid">
+                      <label className="management-control management-control-stack">
+                        <span className="mono">duplicate of</span>
+                        <input
+                          className="management-field"
+                          value={selectedDuplicate}
+                          onChange={(event) => setSelectedDuplicate(event.target.value)}
+                          placeholder={canonical?.skill?.slug ?? "canonical slug"}
+                        />
+                      </label>
+                      <div className="management-control management-control-stack">
+                        <span className="mono">duplicate action</span>
                         <Button
-                          variant="outline"
-                          size="sm"
-                          onClick={() => {
-                            const action = skill.softDeletedAt ? "Restore" : "Hide";
-                            const reason = window.prompt(
-                              `${action} reason for "${skill.displayName}"`,
-                            );
-                            if (!reason?.trim()) return;
-                            void setSoftDeleted({
-                              skillId: skill._id,
-                              deleted: !skill.softDeletedAt,
-                              reason: reason.trim(),
-                            }).catch((error) => toast.error(formatMutationError(error)));
-                          }}
-                        >
-                          {skill.softDeletedAt ? "Restore" : "Hide"}
-                        </Button>
-                        <Button
-                          variant="outline"
-                          size="sm"
+                          className="management-action-btn"
+                          type="button"
                           onClick={() =>
-                            void setBatch({
+                            void setDuplicate({
                               skillId: skill._id,
-                              batch: isHighlighted ? undefined : "highlighted",
+                              canonicalSlug: selectedDuplicate.trim() || undefined,
                             })
                           }
                         >
-                          {isHighlighted ? "Unhighlight" : "Highlight"}
+                          Set duplicate
                         </Button>
-                        {admin ? (
-                          <Button
-                            variant="destructive"
-                            size="sm"
-                            onClick={() => {
-                              if (!window.confirm(`Hard delete ${skill.displayName}?`)) return;
-                              void hardDelete({ skillId: skill._id });
-                            }}
-                          >
-                            Hard delete
-                          </Button>
-                        ) : null}
-                        {staff ? (
-                          <Button
-                            variant="outline"
-                            size="sm"
-                            disabled={!canBanOwner}
-                            onClick={() => {
-                              if (!ownerUserId || ownerUserId === me?._id) return;
-                              if (!window.confirm(`Ban @${ownerHandle} and delete their skills?`)) {
-                                return;
-                              }
-                              const reason = promptBanReason(`@${ownerHandle}`);
-                              if (reason === null) return;
-                              void banUser({ userId: ownerUserId, reason });
-                            }}
-                          >
-                            Ban user
-                          </Button>
-                        ) : null}
-                        {admin ? (
-                          <>
-                            <Button
-                              variant="outline"
-                              size="sm"
-                              onClick={() =>
-                                void setOfficialBadge({
-                                  skillId: skill._id,
-                                  official: !isOfficial,
-                                })
-                              }
-                            >
-                              {isOfficial ? "Remove official" : "Mark official"}
-                            </Button>
-                            <Button
-                              variant="outline"
-                              size="sm"
-                              onClick={() =>
-                                void setDeprecatedBadge({
-                                  skillId: skill._id,
-                                  deprecated: !isDeprecated,
-                                })
-                              }
-                            >
-                              {isDeprecated ? "Remove deprecated" : "Mark deprecated"}
-                            </Button>
-                          </>
-                        ) : null}
                       </div>
+                      {admin ? (
+                        <>
+                          <label className="management-control management-control-stack">
+                            <span className="mono">owner</span>
+                            <select
+                              className="management-field"
+                              value={selectedOwner}
+                              onChange={(event) => setSelectedOwner(event.target.value)}
+                            >
+                              {filteredUsers.map((user) => (
+                                <option key={user._id} value={user._id}>
+                                  @{user.handle ?? user.name ?? "user"}
+                                </option>
+                              ))}
+                            </select>
+                          </label>
+                          <div className="management-control management-control-stack">
+                            <span className="mono">owner action</span>
+                            <Button
+                              className="management-action-btn"
+                              type="button"
+                              onClick={() =>
+                                void changeOwner({
+                                  skillId: skill._id,
+                                  ownerUserId: selectedOwner as Doc<"users">["_id"],
+                                })
+                              }
+                            >
+                              Change owner
+                            </Button>
+                          </div>
+                        </>
+                      ) : null}
                     </div>
-                  );
-                })()
-              )}
-            </div>
-          </CardContent>
-        </Card>
+                  </div>
+                  <div className="management-actions management-action-grid">
+                    <Button asChild className="management-action-btn">
+                      <Link
+                        to="/$owner/$slug"
+                        params={{ owner: ownerParam, slug: skill.slug }}
+                      >
+                        View
+                      </Link>
+                    </Button>
+                    <Button
+                      className="management-action-btn"
+                      type="button"
+                      onClick={() => {
+                        const reason = window.prompt(
+                          skill.softDeletedAt ? "Restore reason:" : "Hide reason:",
+                        );
+                        if (!reason?.trim()) return;
+                        void setSoftDeleted({
+                          skillId: skill._id,
+                          deleted: !skill.softDeletedAt,
+                          reason: reason.trim(),
+                        }).catch((error) => window.alert(formatMutationError(error)));
+                      }}
+                    >
+                      {skill.softDeletedAt ? "Restore" : "Hide"}
+                    </Button>
+                    <Button
+                      className="management-action-btn"
+                      type="button"
+                      onClick={() =>
+                        void setBatch({
+                          skillId: skill._id,
+                          batch: isHighlighted ? undefined : "highlighted",
+                        })
+                      }
+                    >
+                      {isHighlighted ? "Unhighlight" : "Highlight"}
+                    </Button>
+                    {admin ? (
+                      <Button
+                        className="management-action-btn"
+                        type="button"
+                        onClick={() => {
+                          if (!window.confirm(`Hard delete ${skill.displayName}?`)) return;
+                          void hardDelete({ skillId: skill._id });
+                        }}
+                      >
+                        Hard delete
+                      </Button>
+                    ) : null}
+                    {staff ? (
+                      <Button
+                        className="management-action-btn"
+                        type="button"
+                        disabled={!canBanOwner}
+                        onClick={() => {
+                          if (!ownerUserId || ownerUserId === me?._id) return;
+                          if (!window.confirm(`Ban @${ownerHandle} and delete their skills?`)) {
+                            return;
+                          }
+                          const reason = promptBanReason(`@${ownerHandle}`);
+                          if (reason === null) return;
+                          void banUser({ userId: ownerUserId, reason });
+                        }}
+                      >
+                        Ban user
+                      </Button>
+                    ) : null}
+                    {admin ? (
+                      <>
+                        <Button
+                          className="management-action-btn"
+                          type="button"
+                          onClick={() =>
+                            void setOfficialBadge({
+                              skillId: skill._id,
+                              official: !isOfficial,
+                            })
+                          }
+                        >
+                          {isOfficial ? "Remove official" : "Mark official"}
+                        </Button>
+                        <Button
+                          className="management-action-btn"
+                          type="button"
+                          onClick={() =>
+                            void setDeprecatedBadge({
+                              skillId: skill._id,
+                              deprecated: !isDeprecated,
+                            })
+                          }
+                        >
+                          {isDeprecated ? "Remove deprecated" : "Mark deprecated"}
+                        </Button>
+                      </>
+                    ) : null}
+                  </div>
+                </div>
+              );
+            })()
+          )}
+        </div>
+      </Card>
 
-        <Separator className="my-6" />
-
-        {/* Duplicate candidates */}
-        <Card>
-          <CardHeader>
-            <CardTitle>Duplicate candidates</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="flex flex-col gap-3">
-              {duplicateCandidates.length === 0 ? (
-                <EmptyState icon={Copy} title="No duplicate candidates" />
-              ) : (
-                duplicateCandidates.map((entry) => (
-                  <div
-                    key={entry.skill._id}
-                    className="flex items-start justify-between gap-4 rounded-[var(--radius-md)] border border-[color:var(--line)] bg-[color:var(--surface)] p-4"
+      <Card className="mt-5">
+        <h2 className="section-title text-[1.2rem] m-0">
+          Duplicate candidates
+        </h2>
+        <div className="management-list">
+          {duplicateCandidates.length === 0 ? (
+            <div className="stat">No duplicate candidates.</div>
+          ) : (
+            duplicateCandidates.map((entry) => (
+              <div key={entry.skill._id} className="management-item">
+                <div className="management-item-main">
+                  <Link
+                    to="/$owner/$slug"
+                    params={{
+                      owner: resolveOwnerParam(
+                        entry.owner?.handle ?? null,
+                        entry.owner?._id ?? entry.skill.ownerUserId,
+                      ),
+                      slug: entry.skill.slug,
+                    }}
                   >
-                    <div className="flex flex-1 flex-col gap-2">
+                    {entry.skill.displayName}
+                  </Link>
+                  <div className="section-subtitle m-0">
+                    @{entry.owner?.handle ?? entry.owner?.name ?? "user"} · v
+                    {entry.latestVersion?.version ?? "—"} · fingerprint{" "}
+                    {entry.fingerprint?.slice(0, 8)}
+                  </div>
+                  <div className="management-sublist">
+                    {entry.matches.map((match) => (
+                      <div key={match.skill._id} className="management-subitem">
+                        <div>
+                          <strong>{match.skill.displayName}</strong>
+                          <div className="section-subtitle m-0">
+                            @{match.owner?.handle ?? match.owner?.name ?? "user"} ·{" "}
+                            {match.skill.slug}
+                          </div>
+                        </div>
+                        <div className="management-actions">
+                          <Button asChild>
+                            <Link
+                              to="/$owner/$slug"
+                              params={{
+                                owner: resolveOwnerParam(
+                                  match.owner?.handle ?? null,
+                                  match.owner?._id ?? match.skill.ownerUserId,
+                                ),
+                                slug: match.skill.slug,
+                              }}
+                            >
+                              View
+                            </Link>
+                          </Button>
+                          <Button
+                            type="button"
+                            onClick={() =>
+                              void setDuplicate({
+                                skillId: entry.skill._id,
+                                canonicalSlug: match.skill.slug,
+                              })
+                            }
+                          >
+                            Mark duplicate
+                          </Button>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+                <div className="management-actions">
+                  <Button asChild>
+                    <Link
+                      to="/$owner/$slug"
+                      params={{
+                        owner: resolveOwnerParam(
+                          entry.owner?.handle ?? null,
+                          entry.owner?._id ?? entry.skill.ownerUserId,
+                        ),
+                        slug: entry.skill.slug,
+                      }}
+                    >
+                      View
+                    </Link>
+                  </Button>
+                </div>
+              </div>
+            ))
+          )}
+        </div>
+      </Card>
+
+      <Card className="mt-5">
+        <h2 className="section-title text-[1.2rem] m-0">
+          Recent pushes
+        </h2>
+        <div className="management-list">
+          {recentVersions.length === 0 ? (
+            <div className="stat">No recent versions.</div>
+          ) : (
+            recentVersions.map((entry) => (
+              <div key={entry.version._id} className="management-item">
+                <div className="management-item-main">
+                  <strong>{entry.skill?.displayName ?? "Unknown skill"}</strong>
+                  <div className="section-subtitle m-0">
+                    v{entry.version.version} · @{entry.owner?.handle ?? entry.owner?.name ?? "user"}
+                  </div>
+                </div>
+                <div className="management-actions">
+                  {entry.skill ? (
+                    <Button asChild>
+                      <Link to="/management" search={{ skill: entry.skill.slug }}>
+                        Manage
+                      </Link>
+                    </Button>
+                  ) : null}
+                  {entry.skill ? (
+                    <Button asChild>
                       <Link
                         to="/$owner/$slug"
                         params={{
@@ -839,251 +819,111 @@ function Management() {
                           slug: entry.skill.slug,
                         }}
                       >
-                        {entry.skill.displayName}
+                        View
                       </Link>
-                      <div className="text-sm text-[color:var(--ink-soft)]">
-                        @{entry.owner?.handle ?? entry.owner?.name ?? "user"} · v
-                        {entry.latestVersion?.version ?? "—"} · fingerprint{" "}
-                        {entry.fingerprint?.slice(0, 8)}
-                      </div>
-                      <div className="flex flex-col gap-2 border-l-2 border-[color:var(--line)] pl-4">
-                        {entry.matches.map((match) => (
-                          <div
-                            key={match.skill._id}
-                            className="flex items-start justify-between gap-4 py-2 text-sm text-[color:var(--ink-soft)]"
-                          >
-                            <div>
-                              <strong>{match.skill.displayName}</strong>
-                              <div className="text-sm text-[color:var(--ink-soft)]">
-                                @{match.owner?.handle ?? match.owner?.name ?? "user"} &middot;{" "}
-                                {match.skill.slug}
-                              </div>
-                            </div>
-                            <div className="flex flex-wrap items-center gap-2">
-                              <Button asChild variant="outline" size="sm">
-                                <Link
-                                  to="/$owner/$slug"
-                                  params={{
-                                    owner: resolveOwnerParam(
-                                      match.owner?.handle ?? null,
-                                      match.owner?._id ?? match.skill.ownerUserId,
-                                    ),
-                                    slug: match.skill.slug,
-                                  }}
-                                >
-                                  View
-                                </Link>
-                              </Button>
-                              <Button
-                                variant="outline"
-                                size="sm"
-                                onClick={() =>
-                                  void setDuplicate({
-                                    skillId: entry.skill._id,
-                                    canonicalSlug: match.skill.slug,
-                                  })
-                                }
-                              >
-                                Mark duplicate
-                              </Button>
-                            </div>
-                          </div>
-                        ))}
-                      </div>
-                    </div>
-                    <div className="flex flex-wrap items-center gap-2">
-                      <Button asChild variant="outline" size="sm">
-                        <Link
-                          to="/$owner/$slug"
-                          params={{
-                            owner: resolveOwnerParam(
-                              entry.owner?.handle ?? null,
-                              entry.owner?._id ?? entry.skill.ownerUserId,
-                            ),
-                            slug: entry.skill.slug,
-                          }}
-                        >
-                          View
-                        </Link>
-                      </Button>
-                    </div>
-                  </div>
-                ))
-              )}
-            </div>
-          </CardContent>
-        </Card>
-
-        <Separator className="my-6" />
-
-        {/* Recent pushes */}
-        <Card>
-          <CardHeader>
-            <CardTitle>Recent pushes</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="flex flex-col gap-3">
-              {recentVersions.length === 0 ? (
-                <EmptyState icon={History} title="No recent versions" />
-              ) : (
-                recentVersions.map((entry) => (
-                  <div
-                    key={entry.version._id}
-                    className="flex items-start justify-between gap-4 rounded-[var(--radius-md)] border border-[color:var(--line)] bg-[color:var(--surface)] p-4"
-                  >
-                    <div className="flex flex-1 flex-col gap-2">
-                      <strong>{entry.skill?.displayName ?? "Unknown skill"}</strong>
-                      <div className="text-sm text-[color:var(--ink-soft)]">
-                        v{entry.version.version} · @
-                        {entry.owner?.handle ?? entry.owner?.name ?? "user"}
-                      </div>
-                    </div>
-                    <div className="flex flex-wrap items-center gap-2">
-                      {entry.skill ? (
-                        <Button asChild variant="outline" size="sm">
-                          <Link to="/management" search={{ skill: entry.skill.slug }}>
-                            Manage
-                          </Link>
-                        </Button>
-                      ) : null}
-                      {entry.skill ? (
-                        <Button asChild variant="outline" size="sm">
-                          <Link
-                            to="/$owner/$slug"
-                            params={{
-                              owner: resolveOwnerParam(
-                                entry.owner?.handle ?? null,
-                                entry.owner?._id ?? entry.skill.ownerUserId,
-                              ),
-                              slug: entry.skill.slug,
-                            }}
-                          >
-                            View
-                          </Link>
-                        </Button>
-                      ) : null}
-                    </div>
-                  </div>
-                ))
-              )}
-            </div>
-          </CardContent>
-        </Card>
-
-        {admin ? (
-          <>
-            <Separator className="my-6" />
-
-            {/* Users */}
-            <Card>
-              <CardHeader>
-                <CardTitle>Users</CardTitle>
-              </CardHeader>
-              <CardContent>
-                <div className="flex items-center gap-3 py-3">
-                  <div className="flex items-center gap-2">
-                    <span className="font-mono text-xs">Filter</span>
-                    <Input
-                      type="search"
-                      placeholder="Search users"
-                      value={userSearch}
-                      onChange={(event) => setUserSearch(event.target.value)}
-                    />
-                  </div>
-                  <span className="text-xs font-medium text-[color:var(--ink-soft)]">
-                    {userSummary}
-                  </span>
+                    </Button>
+                  ) : null}
                 </div>
-                <div className="flex flex-col gap-3">
-                  {filteredUsers.length === 0 ? (
-                    <EmptyState icon={Users} title={userEmptyLabel || "No users"} />
-                  ) : (
-                    filteredUsers.map((user) => (
-                      <div
-                        key={user._id}
-                        className="flex items-start justify-between gap-4 rounded-[var(--radius-md)] border border-[color:var(--line)] bg-[color:var(--surface)] p-4"
+              </div>
+            ))
+          )}
+        </div>
+      </Card>
+
+      {admin ? (
+        <Card className="mt-5">
+          <h2 className="section-title text-[1.2rem] m-0">
+            Users
+          </h2>
+          <div className="management-controls">
+            <div className="management-control management-search">
+              <span className="mono">Filter</span>
+              <input
+                type="search"
+                placeholder="Search users"
+                value={userSearch}
+                onChange={(event) => setUserSearch(event.target.value)}
+              />
+            </div>
+            <div className="management-count">{userSummary}</div>
+          </div>
+          <div className="management-list">
+            {filteredUsers.length === 0 ? (
+              <div className="stat">{userEmptyLabel}</div>
+            ) : (
+              filteredUsers.map((user) => (
+                <div key={user._id} className="management-item">
+                  <div className="management-item-main">
+                    <span className="mono">@{user.handle ?? user.name ?? "user"}</span>
+                    {user.deletedAt || user.deactivatedAt ? (
+                      <div className="section-subtitle m-0">
+                        {user.banReason && user.deletedAt
+                          ? `Banned ${formatTimestamp(user.deletedAt)} · ${user.banReason}`
+                          : `Deleted ${formatTimestamp((user.deactivatedAt ?? user.deletedAt) as number)}`}
+                      </div>
+                    ) : null}
+                  </div>
+                  <div className="management-actions">
+                    <select
+                      value={user.role ?? "user"}
+                      onChange={(event) => {
+                        const value = event.target.value;
+                        if (value === "admin" || value === "moderator" || value === "user") {
+                          void setRole({ userId: user._id, role: value });
+                        }
+                      }}
+                    >
+                      <option value="user">User</option>
+                      <option value="moderator">Moderator</option>
+                      <option value="admin">Admin</option>
+                    </select>
+                    <Button
+                      type="button"
+                      disabled={user._id === me?._id}
+                      onClick={() => {
+                        if (user._id === me?._id) return;
+                        if (
+                          !window.confirm(
+                            `Ban @${user.handle ?? user.name ?? "user"} and delete their skills?`,
+                          )
+                        ) {
+                          return;
+                        }
+                        const label = `@${user.handle ?? user.name ?? "user"}`;
+                        const reason = promptBanReason(label);
+                        if (reason === null) return;
+                        void banUser({ userId: user._id, reason }).catch((error) =>
+                          window.alert(formatMutationError(error)),
+                        );
+                      }}
+                    >
+                      Ban user
+                    </Button>
+                    {user.deletedAt && !user.deactivatedAt ? (
+                      <Button
+                        type="button"
+                        onClick={() => {
+                          const label = `@${user.handle ?? user.name ?? "user"}`;
+                          if (!window.confirm(`Unban ${label} and restore eligible skills?`)) {
+                            return;
+                          }
+                          const reason = promptUnbanReason(label);
+                          if (reason === null) return;
+                          void unbanUser({ userId: user._id, reason }).catch((error) =>
+                            window.alert(formatMutationError(error)),
+                          );
+                        }}
                       >
-                        <div className="flex flex-1 flex-col gap-2">
-                          <span className="font-mono text-xs">
-                            @{user.handle ?? user.name ?? "user"}
-                          </span>
-                          {user.deletedAt || user.deactivatedAt ? (
-                            <div className="text-sm text-[color:var(--ink-soft)]">
-                              {user.banReason && user.deletedAt
-                                ? `Banned ${formatTimestamp(user.deletedAt)} · ${user.banReason}`
-                                : `Deleted ${formatTimestamp((user.deactivatedAt ?? user.deletedAt) as number)}`}
-                            </div>
-                          ) : null}
-                        </div>
-                        <div className="flex flex-wrap items-center gap-2">
-                          <select
-                            className="min-h-[34px] rounded-[var(--radius-sm)] border border-[rgba(29,59,78,0.22)] bg-[rgba(255,255,255,0.94)] px-2 py-1 text-xs text-[color:var(--ink)] dark:border-[rgba(255,255,255,0.12)] dark:bg-[rgba(14,28,37,0.84)]"
-                            value={user.role ?? "user"}
-                            onChange={(event) => {
-                              const value = event.target.value;
-                              if (value === "admin" || value === "moderator" || value === "user") {
-                                void setRole({ userId: user._id, role: value });
-                              }
-                            }}
-                          >
-                            <option value="user">User</option>
-                            <option value="moderator">Moderator</option>
-                            <option value="admin">Admin</option>
-                          </select>
-                          <Button
-                            variant="outline"
-                            size="sm"
-                            disabled={user._id === me?._id}
-                            onClick={() => {
-                              if (user._id === me?._id) return;
-                              if (
-                                !window.confirm(
-                                  `Ban @${user.handle ?? user.name ?? "user"} and delete their skills?`,
-                                )
-                              ) {
-                                return;
-                              }
-                              const label = `@${user.handle ?? user.name ?? "user"}`;
-                              const reason = promptBanReason(label);
-                              if (reason === null) return;
-                              void banUser({ userId: user._id, reason }).catch((error) =>
-                                toast.error(formatMutationError(error)),
-                              );
-                            }}
-                          >
-                            Ban user
-                          </Button>
-                          {user.deletedAt && !user.deactivatedAt ? (
-                            <Button
-                              variant="outline"
-                              size="sm"
-                              onClick={() => {
-                                const label = `@${user.handle ?? user.name ?? "user"}`;
-                                if (
-                                  !window.confirm(`Unban ${label} and restore eligible skills?`)
-                                ) {
-                                  return;
-                                }
-                                const reason = promptUnbanReason(label);
-                                if (reason === null) return;
-                                void unbanUser({ userId: user._id, reason }).catch((error) =>
-                                  toast.error(formatMutationError(error)),
-                                );
-                              }}
-                            >
-                              Unban user
-                            </Button>
-                          ) : null}
-                        </div>
-                      </div>
-                    ))
-                  )}
+                        Unban user
+                      </Button>
+                    ) : null}
+                  </div>
                 </div>
-              </CardContent>
-            </Card>
-          </>
-        ) : null}
-      </Container>
+              ))
+            )}
+          </div>
+        </Card>
+      ) : null}
     </main>
   );
 }
@@ -1093,7 +933,10 @@ function formatTimestamp(value: number) {
 }
 
 function formatMutationError(error: unknown) {
-  return getUserFacingConvexError(error, "Request failed.");
+  if (error instanceof Error && error.message.trim()) {
+    return error.message.trim();
+  }
+  return "Request failed.";
 }
 
 function formatManualOverrideState(

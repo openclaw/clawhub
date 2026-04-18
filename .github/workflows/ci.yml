@@ -27,9 +27,13 @@ jobs:
 
       - name: Test
         run: bun run test
+        env:
+          VITE_CONVEX_URL: https://example.invalid
 
       - name: Coverage
         run: bun run coverage
+        env:
+          VITE_CONVEX_URL: https://example.invalid
 
       - name: ClawHub CLI Verify
         run: bun run --cwd packages/clawhub verify

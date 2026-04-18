@@ -5,7 +5,6 @@ import { toast } from "sonner";
 import { api } from "../../convex/_generated/api";
 import type { Doc } from "../../convex/_generated/dataModel";
 import { EmptyState } from "../components/EmptyState";
-import { Container } from "../components/layout/Container";
 import { SignInButton } from "../components/SignInButton";
 import { Button } from "../components/ui/button";
 import { formatCompactStat } from "../lib/numberFormat";
@@ -26,8 +25,8 @@ function Stars() {
 
   if (!me) {
     return (
-      <main className="py-10">
-        <Container size="narrow">
+      <main className="browse-page">
+        <div className="browse-page-narrow">
           <EmptyState
             icon={Star}
             title="Sign in to see your highlights"
@@ -35,14 +34,14 @@ function Stars() {
           >
             <SignInButton variant="outline">Sign in with GitHub</SignInButton>
           </EmptyState>
-        </Container>
+        </div>
       </main>
     );
   }
 
   return (
-    <main className="py-10">
-      <Container size="narrow">
+    <main className="browse-page">
+      <div className="browse-page-narrow">
         <div className="flex flex-col gap-6">
           <header>
             <h1 className="font-display text-2xl font-bold text-[color:var(--ink)]">
@@ -105,7 +104,7 @@ function Stars() {
             </div>
           )}
         </div>
-      </Container>
+      </div>
     </main>
   );
 }

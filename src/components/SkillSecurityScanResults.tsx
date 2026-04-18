@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { Badge } from "./ui/badge";
 
 type LlmAnalysisDimension = {
   name: string;
@@ -389,9 +390,9 @@ export function SecurityScanResults({
             <div className="scan-findings-title">Capability signals</div>
             <div className="scan-capability-tags">
               {visibleCapabilityTags.map((tag) => (
-                <span key={tag} className="tag scan-capability-tag">
+                <Badge key={tag} className="scan-capability-tag">
                   {SKILL_CAPABILITY_LABELS[tag] ?? tag}
-                </span>
+                </Badge>
               ))}
             </div>
             <div className="scan-capability-note">

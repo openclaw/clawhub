@@ -84,6 +84,7 @@ import {
   extractDigestFields,
   upsertSkillSearchDigest,
 } from "./lib/skillSearchDigest";
+import { adjustUserSkillStatsForSkillChange } from "./lib/userSkillStats";
 import schema from "./schema";
 
 export { publishVersionForUser } from "./lib/skillPublish";
@@ -758,6 +759,7 @@ async function hardDeleteSkillStep(
     const nextSkill = { ...skill, ...patch };
     await ctx.db.patch(skill._id, patch);
     await adjustGlobalPublicCountForSkillChange(ctx, skill, nextSkill);
+    await adjustUserSkillStatsForSkillChange(ctx, skill, nextSkill);
   }
 
   switch (phase) {
@@ -2529,6 +2531,7 @@ export const report = mutation({
     const nextSkill = { ...skill, ...updates };
     await ctx.db.patch(skill._id, updates);
     await adjustGlobalPublicCountForSkillChange(ctx, skill, nextSkill);
+    await adjustUserSkillStatsForSkillChange(ctx, skill, nextSkill);
 
     if (shouldAutoHide) {
       await setSkillEmbeddingsSoftDeleted(ctx, skill._id, true, now);
@@ -4255,6 +4258,7 @@ export const applyBanToOwnedSkillsBatchInternal = internalMutation({
       const nextSkill = { ...skill, ...patch };
       await ctx.db.patch(skill._id, patch);
       await adjustGlobalPublicCountForSkillChange(ctx, skill, nextSkill);
+      await adjustUserSkillStatsForSkillChange(ctx, skill, nextSkill);
       await setSkillEmbeddingsSoftDeleted(ctx, skill._id, true, args.bannedAt);
     }
 
@@ -4366,6 +4370,7 @@ export const restoreOwnedSkillsForUnbanBatchInternal = internalMutation({
       const nextSkill = { ...skill, ...patch };
       await ctx.db.patch(skill._id, patch);
       await adjustGlobalPublicCountForSkillChange(ctx, skill, nextSkill);
+      await adjustUserSkillStatsForSkillChange(ctx, skill, nextSkill);
 
       await setSkillEmbeddingsSoftDeleted(ctx, skill._id, false, now);
       restoredCount += 1;
@@ -5305,6 +5310,7 @@ export const setSoftDeleted = mutation({
     const nextSkill = { ...skill, ...patch };
     await ctx.db.patch(skill._id, patch);
     await adjustGlobalPublicCountForSkillChange(ctx, skill, nextSkill);
+    await adjustUserSkillStatsForSkillChange(ctx, skill, nextSkill);
 
     await setSkillEmbeddingsSoftDeleted(ctx, skill._id, args.deleted, now);
 
@@ -5343,6 +5349,7 @@ export const changeOwner = mutation({
       lastReviewedAt: now,
       updatedAt: now,
     });
+    await adjustUserSkillStatsForSkillChange(ctx, skill, { ...skill, ownerUserId: args.ownerUserId });
 
     const embeddings = await listSkillEmbeddingsForSkill(ctx, skill._id);
     for (const embedding of embeddings) {
@@ -6423,6 +6430,7 @@ export const insertVersion = internalMutation({
         // Digest sync is handled after the version patch below (line ~4222),
         // which captures the final state including latestVersionId and tags.
         await adjustGlobalPublicCountForSkillChange(ctx, null, skill);
+        await adjustUserSkillStatsForSkillChange(ctx, null, skill);
       }
     }
 

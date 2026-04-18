@@ -7,16 +7,12 @@ const Input = React.forwardRef<HTMLInputElement, React.InputHTMLAttributes<HTMLI
       ref={ref}
       type={type}
       className={cn(
-        // Base styles matching .form-input
-        "w-full min-h-[44px] rounded-[var(--radius-sm)] border px-3.5 py-[13px] text-[color:var(--ink)] transition-all duration-[180ms] ease-out",
-        "border-[rgba(29,59,78,0.22)] bg-[rgba(255,255,255,0.94)]",
-        "placeholder:text-[rgba(88,115,133,0.72)]",
-        // Focus styles matching .form-input:focus
-        "focus:outline-none focus:border-[color-mix(in_srgb,var(--accent)_70%,white)] focus:shadow-[0_0_0_3px_color-mix(in_srgb,var(--accent)_22%,transparent)]",
-        // Dark mode matching [data-theme="dark"] .form-input
-        "dark:border-[rgba(255,255,255,0.12)] dark:bg-[rgba(14,28,37,0.84)]",
-        "dark:placeholder:text-[rgba(184,205,216,0.68)]",
-        "dark:focus:border-[rgba(255,131,95,0.75)] dark:focus:shadow-[0_0_0_3px_rgba(255,131,95,0.2)]",
+        // Base styles
+        "w-full min-h-[44px] rounded-[var(--radius-sm)] border px-3.5 py-space-3 text-[color:var(--ink)] transition-all duration-[180ms] ease-out",
+        "border-input-border bg-input-bg",
+        "placeholder:text-input-placeholder",
+        // Focus
+        "focus:outline-none focus:border-input-focus-border focus:shadow-[0_0_0_3px_var(--input-focus-ring)]",
         // Disabled
         "disabled:cursor-not-allowed disabled:opacity-60",
         className,

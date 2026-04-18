@@ -23,6 +23,7 @@ import type { Doc, Id } from "./_generated/dataModel";
 import type { MutationCtx } from "./_generated/server";
 import { internalAction, internalMutation, internalQuery } from "./functions";
 import { applySkillStatDeltas, bumpDailySkillStats } from "./lib/skillStats";
+import { adjustUserSkillStatsForSkillChange } from "./lib/userSkillStats";
 
 /**
  * Event types that affect skill stats:
@@ -259,6 +260,7 @@ export const processSkillStatEventsInternal = internalMutation({
         // Don't update `updatedAt` — stat changes shouldn't move the
         // skill's position in the by_active_updated index.
         await ctx.db.patch(skill._id, patch);
+        await adjustUserSkillStatsForSkillChange(ctx, skill, { ...skill, ...patch });
       }
 
       // NOTE: Daily stats (skillDailyStats) are written by the 15-minute

@@ -469,6 +469,11 @@ export const seedSkillMutation = internalMutation({
       createdAt: now,
       updatedAt: now,
     });
+    await ctx.db.patch(userId, {
+      publishedSkills: 1,
+      totalStars: 0,
+      totalDownloads: 0,
+    });
 
     const versionId = await ctx.db.insert("skillVersions", {
       skillId,

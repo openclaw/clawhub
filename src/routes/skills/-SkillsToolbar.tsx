@@ -220,7 +220,7 @@ export function SkillsToolbar({
             onClick={view === "list" ? onToggleView : undefined}
             className={`inline-flex h-[30px] w-[30px] items-center justify-center rounded-full transition-colors ${
               view === "cards"
-                ? "bg-[color:var(--accent)] text-white"
+                ? "bg-accent text-accent-fg"
                 : "text-[color:var(--ink-soft)] hover:text-[color:var(--ink)]"
             }`}
             aria-label="Grid view"
@@ -232,7 +232,7 @@ export function SkillsToolbar({
             onClick={view === "cards" ? onToggleView : undefined}
             className={`inline-flex h-[30px] w-[30px] items-center justify-center rounded-full transition-colors ${
               view === "list"
-                ? "bg-[color:var(--accent)] text-white"
+                ? "bg-accent text-accent-fg"
                 : "text-[color:var(--ink-soft)] hover:text-[color:var(--ink)]"
             }`}
             aria-label="List view"

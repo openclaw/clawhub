@@ -6,7 +6,6 @@ import { tanstackStart } from "@tanstack/react-start/plugin/vite";
 import viteReact from "@vitejs/plugin-react";
 import { nitro } from "nitro/vite";
 import { defineConfig, type Plugin } from "vite";
-import viteTsConfigPaths from "vite-tsconfig-paths";
 
 const require = createRequire(import.meta.url);
 
@@ -166,6 +165,8 @@ const config = defineConfig({
       "convex/values": convexValuesPath,
       "@convex-dev/auth/react": convexAuthReactPath,
     },
+    // Use native Vite tsconfig paths resolution instead of the plugin
+    tsconfigPaths: true,
   },
   optimizeDeps: {
     include: ["convex/react", "convex/browser"],
@@ -178,10 +179,6 @@ const config = defineConfig({
       rollupConfig: {
         onwarn: handleRollupWarning,
       },
-    }),
-    // this is the plugin that enables path aliases
-    viteTsConfigPaths({
-      projects: ["./tsconfig.json"],
     }),
     tailwindcss(),
     tanstackStart(),

@@ -1,99 +1,74 @@
 import { describe, expect, it, vi } from "vitest";
 
+process.env.VITE_CONVEX_URL = process.env.VITE_CONVEX_URL ?? "https://example.convex.cloud";
+
+
+vi.mock("../convex/client", () => ({
+  convex: {},
+  convexHttp: { query: vi.fn() },
+}));
+
 vi.mock("@tanstack/react-router", () => ({
-  createFileRoute: () => (config: { beforeLoad?: unknown }) => ({ __config: config }),
+  createFileRoute: () => (config: { validateSearch?: unknown; component?: unknown }) => ({
+    __config: config,
+  }),
   redirect: (options: unknown) => ({ redirect: options }),
+  Link: "a",
+  useNavigate: () => vi.fn(),
 }));
 
 import { Route } from "../routes/search";
 
-function runBeforeLoad(
-  search: { q?: string; highlighted?: boolean; nonSuspicious?: boolean },
-  hostname = "clawdhub.com",
-) {
+function runValidateSearch(search: Record<string, unknown>) {
   const route = Route as unknown as {
     __config: {
-      beforeLoad?: (args: {
-        search: { q?: string; highlighted?: boolean; nonSuspicious?: boolean };
-        location: { url: URL };
-      }) => void;
+      validateSearch?: (search: Record<string, unknown>) => unknown;
     };
   };
-  const beforeLoad = route.__config.beforeLoad as (args: {
-    search: { q?: string; highlighted?: boolean; nonSuspicious?: boolean };
-    location: { url: URL };
-  }) => void;
-  let thrown: unknown;
-
-  try {
-    beforeLoad({ search, location: { url: new URL(`https://${hostname}/search`) } });
-  } catch (error) {
-    thrown = error;
-  }
-
-  return thrown;
+  const validateSearch = route.__config.validateSearch;
+  return validateSearch ? validateSearch(search) : {};
 }
 
 describe("search route", () => {
-  it("redirects skills host to the skills index", () => {
-    expect(runBeforeLoad({ q: "crab", highlighted: true }, "clawdhub.com")).toEqual({
-      redirect: {
-        to: "/skills",
-        search: {
-          q: "crab",
-          sort: undefined,
-          dir: undefined,
-          highlighted: true,
-          nonSuspicious: undefined,
-          view: undefined,
-        },
-        replace: true,
-      },
+  it("validates search with query", () => {
+    expect(runValidateSearch({ q: "crab" })).toEqual({
+      q: "crab",
+      type: undefined,
     });
   });
 
-  it("forwards nonSuspicious filter to skills index", () => {
-    expect(runBeforeLoad({ q: "crab", nonSuspicious: true }, "clawdhub.com")).toEqual({
-      redirect: {
-        to: "/skills",
-        search: {
-          q: "crab",
-          sort: undefined,
-          dir: undefined,
-          highlighted: undefined,
-          nonSuspicious: true,
-          view: undefined,
-        },
-        replace: true,
-      },
+  it("validates search with type filter", () => {
+    expect(runValidateSearch({ q: "crab", type: "skills" })).toEqual({
+      q: "crab",
+      type: "skills",
     });
   });
 
-  it("redirects souls host with query to home search", () => {
-    expect(runBeforeLoad({ q: "crab", highlighted: true }, "onlycrabs.ai")).toEqual({
-      redirect: {
-        to: "/",
-        search: {
-          q: "crab",
-          highlighted: undefined,
-          search: undefined,
-        },
-        replace: true,
-      },
+  it("ignores invalid type filter", () => {
+    expect(runValidateSearch({ q: "crab", type: "invalid" })).toEqual({
+      q: "crab",
+      type: undefined,
     });
   });
 
-  it("redirects souls host without query to home with search mode", () => {
-    expect(runBeforeLoad({}, "onlycrabs.ai")).toEqual({
-      redirect: {
-        to: "/",
-        search: {
-          q: undefined,
-          highlighted: undefined,
-          search: true,
-        },
-        replace: true,
-      },
+  it("accepts the users type filter", () => {
+    expect(runValidateSearch({ q: "vincent", type: "users" })).toEqual({
+      q: "vincent",
+      type: "users",
     });
+  });
+
+  it("strips empty query", () => {
+    expect(runValidateSearch({ q: "   " })).toEqual({
+      q: undefined,
+      type: undefined,
+    });
+  });
+
+  it("has a component (not a redirect-only route)", () => {
+    const route = Route as unknown as {
+      __config: { component?: unknown };
+    };
+    expect(route.__config.component).toBeDefined();
   });
 });

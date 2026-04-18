@@ -36,6 +36,11 @@ type BackfillStats = {
   missingStorageBlob: number;
 };
 
+type UserStatsBackfillStats = {
+  usersScanned: number;
+  usersPatched: number;
+};
+
 type BackfillPageItem =
   | {
       kind: "ok";
@@ -53,6 +58,18 @@ type BackfillPageItem =
 
 type BackfillPageResult = {
   items: BackfillPageItem[];
+  cursor: string | null;
+  isDone: boolean;
+};
+
+type UserStatsBackfillPageResult = {
+  items: Array<Pick<Doc<"users">, "_id">>;
+  cursor: string | null;
+  isDone: boolean;
+};
+
+type UserOwnedSkillsBackfillPageResult = {
+  items: Array<Pick<Doc<"skills">, "stats" | "softDeletedAt">>;
   cursor: string | null;
   isDone: boolean;
 };
@@ -136,6 +153,65 @@ export const applySkillBackfillPatchInternal = internalMutation({
   },
 });
 
+export const getUserStatsBackfillPageInternal = internalQuery({
+  args: {
+    cursor: v.optional(v.string()),
+    batchSize: v.optional(v.number()),
+  },
+  handler: async (ctx, args): Promise<UserStatsBackfillPageResult> => {
+    const batchSize = clampInt(args.batchSize ?? DEFAULT_BATCH_SIZE, 1, MAX_BATCH_SIZE);
+    const { page, isDone, continueCursor } = await ctx.db
+      .query("users")
+      .order("asc")
+      .paginate({ cursor: args.cursor ?? null, numItems: batchSize });
+    return {
+      items: page.map((user) => ({ _id: user._id })),
+      cursor: continueCursor,
+      isDone,
+    };
+  },
+});
+
+export const getUserOwnedSkillsBackfillPageInternal = internalQuery({
+  args: {
+    ownerUserId: v.id("users"),
+    cursor: v.optional(v.string()),
+    batchSize: v.optional(v.number()),
+  },
+  handler: async (ctx, args): Promise<UserOwnedSkillsBackfillPageResult> => {
+    const batchSize = clampInt(args.batchSize ?? DEFAULT_BATCH_SIZE, 1, MAX_BATCH_SIZE);
+    const { page, isDone, continueCursor } = await ctx.db
+      .query("skills")
+      .withIndex("by_owner", (q) => q.eq("ownerUserId", args.ownerUserId))
+      .paginate({ cursor: args.cursor ?? null, numItems: batchSize });
+    return {
+      items: page.map((skill) => ({
+        stats: skill.stats,
+        softDeletedAt: skill.softDeletedAt,
+      })),
+      cursor: continueCursor,
+      isDone,
+    };
+  },
+});
+
+export const applyUserStatsBackfillPatchInternal = internalMutation({
+  args: {
+    userId: v.id("users"),
+    publishedSkills: v.number(),
+    totalStars: v.number(),
+    totalDownloads: v.number(),
+  },
+  handler: async (ctx, args) => {
+    await ctx.db.patch(args.userId, {
+      publishedSkills: args.publishedSkills,
+      totalStars: args.totalStars,
+      totalDownloads: args.totalDownloads,
+    });
+    return { ok: true as const };
+  },
+});
+
 export type BackfillActionArgs = {
   dryRun?: boolean;
   batchSize?: number;
@@ -147,6 +223,20 @@ export type BackfillActionArgs = {
 export type BackfillActionResult = {
   ok: true;
   stats: BackfillStats;
+  isDone: boolean;
+  cursor: string | null;
+};
+
+export type UserStatsBackfillActionArgs = {
+  batchSize?: number;
+  skillBatchSize?: number;
+  maxBatches?: number;
+  cursor?: string;
+};
+
+export type UserStatsBackfillActionResult = {
+  ok: true;
+  stats: UserStatsBackfillStats;
   isDone: boolean;
   cursor: string | null;
 };
@@ -246,6 +336,73 @@ export async function backfillSkillSummariesInternalHandler(
   return { ok: true as const, stats: totals, isDone, cursor };
 }
 
+export async function backfillUserStatsInternalHandler(
+  ctx: ActionCtx,
+  args: UserStatsBackfillActionArgs,
+): Promise<UserStatsBackfillActionResult> {
+  const batchSize = clampInt(args.batchSize ?? DEFAULT_BATCH_SIZE, 1, MAX_BATCH_SIZE);
+  const skillBatchSize = clampInt(args.skillBatchSize ?? DEFAULT_BATCH_SIZE, 1, MAX_BATCH_SIZE);
+  const maxBatches = clampInt(args.maxBatches ?? DEFAULT_MAX_BATCHES, 1, MAX_MAX_BATCHES);
+  const totals: UserStatsBackfillStats = {
+    usersScanned: 0,
+    usersPatched: 0,
+  };
+
+  let cursor: string | null = args.cursor ?? null;
+  let isDone = false;
+
+  for (let i = 0; i < maxBatches; i++) {
+    const page = (await ctx.runQuery(internal.maintenance.getUserStatsBackfillPageInternal, {
+      cursor: cursor ?? undefined,
+      batchSize,
+    })) as UserStatsBackfillPageResult;
+
+    cursor = page.cursor;
+    isDone = page.isDone;
+
+    for (const user of page.items) {
+      totals.usersScanned++;
+      let ownedSkillsCursor: string | null = null;
+      let userPublishedSkills = 0;
+      let userTotalStars = 0;
+      let userTotalDownloads = 0;
+
+      while (true) {
+        const skillPage = (await ctx.runQuery(
+          internal.maintenance.getUserOwnedSkillsBackfillPageInternal,
+          {
+            ownerUserId: user._id,
+            cursor: ownedSkillsCursor ?? undefined,
+            batchSize: skillBatchSize,
+          },
+        )) as UserOwnedSkillsBackfillPageResult;
+
+        for (const skill of skillPage.items) {
+          if (skill.softDeletedAt) continue;
+          userPublishedSkills += 1;
+          userTotalStars += skill.stats?.stars ?? 0;
+          userTotalDownloads += skill.stats?.downloads ?? 0;
+        }
+
+        if (skillPage.isDone) break;
+        ownedSkillsCursor = skillPage.cursor;
+      }
+
+      await ctx.runMutation(internal.maintenance.applyUserStatsBackfillPatchInternal, {
+        userId: user._id,
+        publishedSkills: userPublishedSkills,
+        totalStars: userTotalStars,
+        totalDownloads: userTotalDownloads,
+      });
+      totals.usersPatched++;
+    }
+
+    if (isDone) break;
+  }
+
+  return { ok: true as const, stats: totals, isDone, cursor };
+}
+
 export const backfillSkillSummariesInternal = internalAction({
   args: {
     dryRun: v.optional(v.boolean()),
@@ -255,6 +412,16 @@ export const backfillSkillSummariesInternal = internalAction({
     cursor: v.optional(v.string()),
   },
   handler: backfillSkillSummariesInternalHandler,
+});
+
+export const backfillUserStatsInternal = internalAction({
+  args: {
+    batchSize: v.optional(v.number()),
+    skillBatchSize: v.optional(v.number()),
+    maxBatches: v.optional(v.number()),
+    cursor: v.optional(v.string()),
+  },
+  handler: backfillUserStatsInternalHandler,
 });
 
 export const backfillSkillSummaries: ReturnType<typeof action> = action({

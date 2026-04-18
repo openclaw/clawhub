@@ -2,7 +2,7 @@ import { Skeleton } from "../ui/skeleton";
 
 export function DashboardSkeleton() {
   return (
-    <div className="mx-auto max-w-[1200px] px-7 py-10">
+    <div className="mx-auto max-w-page-max px-7 py-10">
       {/* Header */}
       <div className="mb-8 flex items-center justify-between">
         <Skeleton className="h-8 w-52" />

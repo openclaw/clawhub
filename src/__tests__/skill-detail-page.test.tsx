@@ -6,6 +6,18 @@ import { SkillDetailPage } from "../components/SkillDetailPage";
 const navigateMock = vi.fn();
 const useAuthStatusMock = vi.fn();
 
+process.env.VITE_CONVEX_URL = process.env.VITE_CONVEX_URL ?? "https://example.convex.cloud";
+
+
+vi.mock("../components/UserBadge", () => ({
+  UserBadge: () => null,
+}));
+
+vi.mock("../convex/client", () => ({
+  convex: {},
+  convexHttp: { query: vi.fn() },
+}));
+
 vi.mock("@tanstack/react-router", () => ({
   Link: ({ children }: { children: unknown }) => children,
   useNavigate: () => navigateMock,
@@ -15,6 +27,7 @@ const useQueryMock = vi.fn();
 const getReadmeMock = vi.fn();
 
 vi.mock("convex/react", () => ({
+  ConvexReactClient: class {},
   useQuery: (...args: unknown[]) => useQueryMock(...args),
   useMutation: () => vi.fn(),
   useAction: () => getReadmeMock,
@@ -24,8 +37,8 @@ vi.mock("../lib/useAuthStatus", () => ({
   useAuthStatus: () => useAuthStatusMock(),
 }));
 
-vi.mock("../components/SkillDiffCard", () => ({
-  SkillDiffCard: () => <div data-testid="skill-diff-card" />,
+vi.mock("../components/SkillCommentsPanel", () => ({
+  SkillCommentsPanel: () => <div data-testid="skill-comments-panel" />,
 }));
 
 describe("SkillDetailPage", () => {
@@ -58,11 +71,8 @@ describe("SkillDetailPage", () => {
       return undefined;
     });
 
-    const { container } = render(<SkillDetailPage slug="weather" />);
-    // Loading state now renders a skeleton, not text
-    expect(
-      container.querySelector('[class*="animate-pulse"], [data-slot="skeleton"]'),
-    ).toBeTruthy();
+    render(<SkillDetailPage slug="weather" />);
+    expect(screen.getByText(/Loading skill/i)).toBeTruthy();
     expect(screen.queryByText(/Skill not found/i)).toBeNull();
   });
 
@@ -135,174 +145,11 @@ describe("SkillDetailPage", () => {
       />,
     );
 
-    // With initialData, should render content instead of skeleton
-    expect(await screen.findByRole("heading", { name: "Weather" })).toBeTruthy();
+    expect(screen.queryByText(/Loading skill/i)).toBeNull();
+    expect((await screen.findAllByRole("heading", { name: "Weather" })).length).toBeGreaterThan(0);
     expect(screen.getByText(/Get current weather\./i)).toBeTruthy();
-    expect(screen.getByRole("tab", { name: "Files" })).toBeTruthy();
-  });
-
-  it("shows capability tags on the skill page without other scan findings", async () => {
-    useQueryMock.mockImplementation((_fn: unknown, args: unknown) => {
-      if (args === "skip") return undefined;
-      if (args && typeof args === "object" && "skillId" in args) return [];
-      return undefined;
-    });
-
-    render(
-      <SkillDetailPage
-        slug="skill-pay"
-        initialData={{
-          result: {
-            skill: {
-              _id: skillId,
-              _creationTime: 0,
-              slug: "skill-pay",
-              displayName: "SkillPay",
-              summary: "Crypto payments for AI skills.",
-              ownerUserId: ownerId,
-              ownerPublisherId,
-              tags: {},
-              badges: {},
-              stats: {
-                stars: 12,
-                downloads: 34,
-                installsCurrent: 5,
-                installsAllTime: 8,
-                versions: 1,
-                comments: 0,
-              },
-              createdAt: 0,
-              updatedAt: 0,
-            },
-            owner: {
-              _id: ownerPublisherId,
-              _creationTime: 0,
-              kind: "user",
-              handle: "steipete",
-              displayName: "Peter",
-              linkedUserId: ownerId,
-            },
-            latestVersion: {
-              _id: versionId,
-              _creationTime: 0,
-              skillId,
-              version: "1.0.0",
-              fingerprint: "abc",
-              changelog: "Initial release",
-              parsed: { license: "MIT-0", frontmatter: {} },
-              capabilityTags: ["crypto", "requires-wallet", "can-make-purchases"],
-              sha256hash: "abc123",
-              files: [
-                {
-                  path: "SKILL.md",
-                  size: 10,
-                  storageId,
-                  sha256: "abc",
-                  contentType: "text/markdown",
-                },
-              ],
-              createdBy: ownerId,
-              createdAt: 0,
-            },
-            forkOf: null,
-            canonical: null,
-          },
-          readme: "# SkillPay",
-          readmeError: null,
-        }}
-      />,
-    );
-
-    expect(await screen.findByRole("heading", { name: "SkillPay" })).toBeTruthy();
-    expect(screen.getByText("Capability signals")).toBeTruthy();
-    expect(screen.getByText("Crypto")).toBeTruthy();
-    expect(screen.getByText("Requires wallet")).toBeTruthy();
-    expect(screen.getByText("Can make purchases")).toBeTruthy();
-  });
-
-  it("prefers the full frontmatter description over the shortened summary in the header", async () => {
-    useQueryMock.mockImplementation((_fn: unknown, args: unknown) => {
-      if (args === "skip") return undefined;
-      if (args && typeof args === "object" && "skillId" in args) return [];
-      return undefined;
-    });
-
-    const fullDescription =
-      "Add credit-based payments to any OpenClaw skill. Register paid skills, charge users per call, track earnings, and withdraw USDC. Use when a user wants to monetize a skill.";
-
-    render(
-      <SkillDetailPage
-        slug="skill-pay"
-        initialData={{
-          result: {
-            skill: {
-              _id: skillId,
-              _creationTime: 0,
-              slug: "skill-pay",
-              displayName: "SkillPay",
-              summary: "Add credit-based payments to any OpenClaw skill. Register paid skills...",
-              ownerUserId: ownerId,
-              ownerPublisherId,
-              tags: {},
-              badges: {},
-              stats: {
-                stars: 12,
-                downloads: 34,
-                installsCurrent: 5,
-                installsAllTime: 8,
-                versions: 1,
-                comments: 0,
-              },
-              createdAt: 0,
-              updatedAt: 0,
-            },
-            owner: {
-              _id: ownerPublisherId,
-              _creationTime: 0,
-              kind: "user",
-              handle: "steipete",
-              displayName: "Peter",
-              linkedUserId: ownerId,
-            },
-            latestVersion: {
-              _id: versionId,
-              _creationTime: 0,
-              skillId,
-              version: "1.0.0",
-              fingerprint: "abc",
-              changelog: "Initial release",
-              parsed: {
-                license: "MIT-0",
-                frontmatter: {
-                  description: fullDescription,
-                },
-              },
-              files: [
-                {
-                  path: "SKILL.md",
-                  size: 10,
-                  storageId,
-                  sha256: "abc",
-                  contentType: "text/markdown",
-                },
-              ],
-              createdBy: ownerId,
-              createdAt: 0,
-            },
-            forkOf: null,
-            canonical: null,
-          },
-          readme: "# SkillPay",
-          readmeError: null,
-        }}
-      />,
-    );
-
-    expect(await screen.findByRole("heading", { name: "SkillPay" })).toBeTruthy();
-    // The header now always shows skill.summary (not frontmatter.description)
-    expect(
-      screen.getByText("Add credit-based payments to any OpenClaw skill. Register paid skills..."),
-    ).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Files" })).toBeTruthy();
+    expect(screen.queryByRole("button", { name: "Compare" })).toBeNull();
   });
 
   it("does not refetch readme when SSR data already matches the latest version", async () => {
@@ -375,7 +222,7 @@ describe("SkillDetailPage", () => {
       />,
     );
 
-    expect(await screen.findByRole("heading", { name: "Weather" })).toBeTruthy();
+    expect((await screen.findAllByRole("heading", { name: "Weather" })).length).toBeGreaterThan(0);
     expect(screen.getByText(/Get current weather\./i)).toBeTruthy();
     expect(getReadmeMock).not.toHaveBeenCalled();
   });
@@ -394,17 +241,17 @@ describe("SkillDetailPage", () => {
     useQueryMock.mockImplementation((_fn: unknown, args: unknown) => {
       if (args === "skip") return undefined;
       if (args && typeof args === "object" && "skillId" in args) return [];
-      return {
-        skill: {
-          _id: "skills:1",
-          slug: "weather",
-          displayName: "Weather",
-          summary: "Get current weather.",
-          ownerUserId: "users:1",
-          ownerPublisherId: "publishers:steipete",
-          tags: {},
-          stats: { stars: 0, downloads: 0 },
-        },
+        return {
+          skill: {
+            _id: "skills:1",
+            slug: "weather",
+            displayName: "Weather",
+            summary: "Get current weather.",
+            ownerUserId: "users:1",
+            ownerPublisherId: "publishers:steipete",
+            tags: {},
+            stats: { stars: 0, downloads: 0 },
+          },
         owner: {
           _id: "publishers:steipete",
           _creationTime: 0,
@@ -417,9 +264,8 @@ describe("SkillDetailPage", () => {
       };
     });
 
-    const { container } = render(<SkillDetailPage slug="weather" redirectToCanonical />);
-    // Loading state now renders a skeleton, not text
-    expect(container.querySelector('[class*="animate-pulse"]')).toBeTruthy();
+    render(<SkillDetailPage slug="weather" redirectToCanonical />);
+    expect(screen.getByText(/Loading skill/i)).toBeTruthy();
 
     await waitFor(() => {
       expect(navigateMock).toHaveBeenCalled();
@@ -524,7 +370,7 @@ describe("SkillDetailPage", () => {
       />,
     );
 
-    expect(screen.queryByText(/Skill not found/i)).toBeNull();
+    expect(screen.queryByText(/Loading skill/i)).toBeNull();
     expect(screen.getAllByText("Weather").length).toBeGreaterThan(0);
     expect(navigateMock).not.toHaveBeenCalled();
   });
@@ -634,10 +480,24 @@ describe("SkillDetailPage", () => {
   it("defers compare version query until compare tab is requested", async () => {
     useQueryMock.mockImplementation((_fn: unknown, args: unknown) => {
       if (args === "skip") return undefined;
+      if (
+        args &&
+        typeof args === "object" &&
+        "skillId" in args &&
+        "limit" in args &&
+        (args as { limit: number }).limit === 50
+      ) {
+        return [
+          { _id: "skillVersions:1", version: "1.0.0", files: [] },
+          { _id: "skillVersions:2", version: "1.1.0", files: [] },
+        ];
+      }
+      if (args && typeof args === "object" && "skillId" in args && "limit" in args) {
+        if ((args as { limit: number }).limit === 200) return [];
+      }
       if (args && typeof args === "object" && "limit" in args) {
         return [];
       }
-      if (args && typeof args === "object" && "skillId" in args) return [];
       if (args && typeof args === "object" && "slug" in args) {
         return {
           skill: {
@@ -666,6 +526,7 @@ describe("SkillDetailPage", () => {
 
     render(<SkillDetailPage slug="weather" />);
     expect(await screen.findByText("Weather")).toBeTruthy();
+    expect(screen.getByRole("button", { name: /compare/i })).toBeTruthy();
 
     expect(
       useQueryMock.mock.calls.some((call) => {
@@ -679,9 +540,7 @@ describe("SkillDetailPage", () => {
       }),
     ).toBe(false);
 
-    const compareTab = screen.getByRole("tab", { name: /compare/i });
-    fireEvent.mouseEnter(compareTab);
-    fireEvent.click(compareTab);
+    fireEvent.click(screen.getByRole("button", { name: /compare/i }));
 
     await waitFor(() => {
       expect(
