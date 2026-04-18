@@ -8536,6 +8536,8 @@ html.theme-transition::view-transition-new(theme) {
 }
 .app-shell:has(.home-v2-main) > .site-footer {
   border-top: 1px solid rgba(255,255,255,0.06);
+  padding: 0;
+  background: transparent;
 }
 .app-shell:has(.home-v2-main) > .site-footer .site-footer-inner {
   max-width: none;
@@ -8846,7 +8848,6 @@ html.theme-transition::view-transition-new(theme) {
 /* Light — footer */
 [data-theme-resolved="light"] .app-shell:has(.home-v2-main) > .site-footer {
   border-top-color: rgba(170, 125, 80, 0.15);
-  background: var(--hv2-bg);
 }
 [data-theme-resolved="light"] .app-shell:has(.home-v2-main) > .site-footer .footer-bottom {
   color: #9c8b7a;
