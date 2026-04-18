@@ -4,9 +4,9 @@ import {
   MessageSquare,
   Package,
   Plug,
+  RefreshCw,
   Shield,
   Wrench,
-  Zap,
 } from "lucide-react";
 import type { SkillCategory } from "../lib/categories";
 
@@ -39,7 +39,7 @@ const CATEGORY_ICONS: Record<string, React.ReactNode> = {
   "dev-tools": <Wrench size={15} />,
   data: <Database size={15} />,
   security: <Shield size={15} />,
-  automation: <Zap size={15} />,
+  automation: <RefreshCw size={15} />,
   other: <Package size={15} />,
 };
 

@@ -8,11 +8,11 @@ import {
   MessageSquare,
   Package,
   Plug,
+  RefreshCw,
   Search,
   Shield,
   Wrench,
   X,
-  Zap,
 } from "lucide-react";
 import type { RefObject } from "react";
 import { useMemo } from "react";
@@ -64,7 +64,7 @@ const CATEGORY_ICONS: Record<string, React.ReactNode> = {
   "dev-tools": <Wrench size={13} />,
   data: <Database size={13} />,
   security: <Shield size={13} />,
-  automation: <Zap size={13} />,
+  automation: <RefreshCw size={13} />,
   other: <Package size={13} />,
 };
 

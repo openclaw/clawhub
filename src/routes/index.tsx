@@ -7,12 +7,10 @@ import {
   ChevronRight,
   Code2,
   Download,
-  Layers,
+  Package,
   Search,
-  Shield,
   Star,
   Users,
-  Zap,
 } from "lucide-react";
 import { api } from "../../convex/_generated/api";
 import { SoulCard } from "../components/SoulCard";
@@ -452,28 +450,28 @@ function SkillsHome() {
             className="home-v2-suggestion"
             onClick={() => handleSuggestion("self-improving agent")}
           >
-            <Zap size={13} /> self-improving agent
+            self-improving agent
           </button>
           <button
             type="button"
             className="home-v2-suggestion"
             onClick={() => handleSuggestion("GitHub integration")}
           >
-            <Code2 size={13} /> GitHub integration
+            GitHub integration
           </button>
           <button
             type="button"
             className="home-v2-suggestion"
             onClick={() => handleSuggestion("security soul")}
           >
-            <Shield size={13} /> security soul
+            security soul
           </button>
           <button
             type="button"
             className="home-v2-suggestion"
             onClick={() => handleSuggestion("dashboard builder")}
           >
-            <Layers size={13} /> dashboard builder
+            dashboard builder
           </button>
         </div>
       </section>
@@ -502,9 +500,6 @@ function SkillsHome() {
                   className="home-v2-c-card"
                 >
                   <div className="home-v2-c-head">
-                    <div className="home-v2-c-icon">
-                      <Zap size={18} />
-                    </div>
                     <div className="home-v2-c-meta">
                       <div className="home-v2-c-name">
                         {entry.skill.displayName || entry.skill.slug}
@@ -514,9 +509,7 @@ function SkillsHome() {
                       </div>
                     </div>
                   </div>
-                  <span className="home-v2-c-tag">
-                    <Zap size={11} /> Skill
-                  </span>
+                  <span className="home-v2-c-tag">Skill</span>
                   <div className="home-v2-c-desc">
                     {entry.skill.summary || "A fresh skill bundle."}
                   </div>
@@ -545,9 +538,6 @@ function SkillsHome() {
                   className="home-v2-c-card"
                 >
                   <div className="home-v2-c-head">
-                    <div className="home-v2-c-icon">
-                      <Zap size={18} />
-                    </div>
                     <div className="home-v2-c-meta">
                       <div className="home-v2-c-name">
                         {entry.skill.displayName || entry.skill.slug}
@@ -557,9 +547,7 @@ function SkillsHome() {
                       </div>
                     </div>
                   </div>
-                  <span className="home-v2-c-tag">
-                    <Zap size={11} /> Skill
-                  </span>
+                  <span className="home-v2-c-tag">Skill</span>
                   <div className="home-v2-c-desc">
                     {entry.skill.summary || "A fresh skill bundle."}
                   </div>
@@ -602,7 +590,7 @@ function SkillsHome() {
             className="home-v2-cat-item"
           >
             <div className="home-v2-cat-icon">
-              <Zap size={20} />
+              <Package size={20} />
             </div>
             <div className="home-v2-cat-text">
               <div className="home-v2-cat-name">Skills</div>
