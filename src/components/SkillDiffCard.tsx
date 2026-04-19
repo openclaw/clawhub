@@ -38,7 +38,7 @@ type SizeWarning = {
 };
 
 const EMPTY_DIFF_TEXT = "";
-const MOBILE_DIFF_BREAKPOINT = 860;
+const MOBILE_DIFF_BREAKPOINT = 768;
 
 function getDefaultViewMode() {
   if (typeof window === "undefined") return "split";
