@@ -75,7 +75,7 @@ test("skill detail page has no horizontal overflow on mobile", async ({ page, re
   };
   const ownerHandle = payload.owner?.handle?.trim();
   const slug = payload.skill?.slug?.trim();
-  test.skip(!ownerHandle || !slug, "fixture missing owner handle or slug");
+  test.skip(!ownerHandle || !slug || !payload.skill?.displayName, "fixture missing owner handle, slug, or displayName");
 
   await page.goto(`/${ownerHandle}/${slug}`, { waitUntil: "domcontentloaded" });
   await expect(
