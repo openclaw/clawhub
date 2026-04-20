@@ -480,6 +480,26 @@ const skillVersions = defineTable({
       checkedAt: v.number(),
     }),
   ),
+  depRegistryAnalysis: v.optional(
+    v.object({
+      status: v.union(
+        v.literal("clean"),
+        v.literal("suspicious"),
+        v.literal("error"),
+      ),
+      results: v.array(
+        v.object({
+          registry: v.string(),
+          name: v.string(),
+          exists: v.boolean(),
+          httpStatus: v.optional(v.number()),
+        }),
+      ),
+      notFoundPackages: v.array(v.string()),
+      summary: v.string(),
+      checkedAt: v.number(),
+    }),
+  ),
 })
   .index("by_skill", ["skillId"])
   .index("by_skill_version", ["skillId", "version"])
@@ -1323,6 +1343,15 @@ const skillOwnershipTransfers = defineTable({
   .index("by_from_user_status", ["fromUserId", "status"])
   .index("by_skill_status", ["skillId", "status"]);
 
+const depRegistryCache = defineTable({
+  registry: v.union(v.literal("pypi"), v.literal("npm"), v.literal("cargo")),
+  name: v.string(),
+  exists: v.boolean(),
+  httpStatus: v.number(),
+  checkedAt: v.number(),
+})
+  .index("by_registry_name", ["registry", "name"]);
+
 export default defineSchema({
   ...authTables,
   users,
@@ -1370,4 +1399,5 @@ export default defineSchema({
   userSkillInstalls,
   userSkillRootInstalls,
   skillOwnershipTransfers,
+  depRegistryCache,
 });
