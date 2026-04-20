@@ -470,13 +470,19 @@ export async function listSkillsV1Handler(ctx: ActionCtx, request: Request) {
     url.searchParams.get("nonSuspiciousOnly"),
     url.searchParams.get("nonSuspicious"),
   );
+  // Map V1 sort to V4 sort (V4 uses "newest" instead of "updated")
+  const v4Sort = sort === "updated" ? "newest" :
+                 sort === "installsCurrent" ? "installs" :
+                 sort === "installsAllTime" ? "installs" : sort;
 
-  const result = (await ctx.runQuery(api.skills.listPublicPage, {
-    limit,
+  const v4Result = await ctx.runQuery(api.skills.listPublicPageV4, {
     cursor,
-    sort,
+    numItems: limit,
+    sort: v4Sort,
     nonSuspiciousOnly: nonSuspiciousOnly || undefined,
-  })) as ListSkillsResult;
+  });
+
+  const result = { items: v4Result.page ?? [], nextCursor: v4Result.nextCursor ?? null } as ListSkillsResult;
 
   // Batch resolve all tags in a single query instead of N queries
   const resolvedTagsList = await resolveTagsBatch(
