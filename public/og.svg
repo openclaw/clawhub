@@ -25,40 +25,26 @@
   <rect width="1200" height="630" fill="url(#bgGlowA)"/>
   <rect width="1200" height="630" fill="url(#bgGlowB)"/>
 
-  <g opacity="0.8">
+  <g opacity="0.42">
     <circle cx="162" cy="120" r="1.4" fill="#FF6B5F"/>
     <circle cx="194" cy="164" r="1.1" fill="#D4453A"/>
-    <circle cx="244" cy="142" r="1.2" fill="#F45B4E"/>
     <circle cx="286" cy="182" r="1.3" fill="#C73E34"/>
-    <circle cx="324" cy="146" r="1.1" fill="#E7574B"/>
     <circle cx="372" cy="172" r="1.5" fill="#FF7A6E"/>
-    <circle cx="416" cy="132" r="1.1" fill="#D4453A"/>
     <circle cx="456" cy="186" r="1.2" fill="#FF6B5F"/>
-    <circle cx="500" cy="150" r="1.1" fill="#D4453A"/>
     <circle cx="548" cy="170" r="1.4" fill="#F45B4E"/>
-    <circle cx="602" cy="132" r="1.1" fill="#D4453A"/>
     <circle cx="652" cy="164" r="1.3" fill="#FF6B5F"/>
-    <circle cx="704" cy="144" r="1.1" fill="#D4453A"/>
     <circle cx="752" cy="172" r="1.4" fill="#F45B4E"/>
-    <circle cx="808" cy="136" r="1.2" fill="#D4453A"/>
     <circle cx="854" cy="176" r="1.1" fill="#FF6B5F"/>
-    <circle cx="906" cy="150" r="1.3" fill="#D4453A"/>
     <circle cx="956" cy="182" r="1.1" fill="#F45B4E"/>
-    <circle cx="1012" cy="146" r="1.4" fill="#D4453A"/>
     <circle cx="1058" cy="170" r="1.1" fill="#FF6B5F"/>
   </g>
 
-  <g opacity="0.45">
+  <g opacity="0.2">
     <circle cx="174" cy="502" r="1.1" fill="#C73E34"/>
-    <circle cx="220" cy="534" r="1.3" fill="#FF6B5F"/>
     <circle cx="268" cy="512" r="1.1" fill="#D4453A"/>
-    <circle cx="320" cy="546" r="1.2" fill="#F45B4E"/>
     <circle cx="370" cy="516" r="1.1" fill="#D4453A"/>
-    <circle cx="426" cy="542" r="1.3" fill="#FF6B5F"/>
     <circle cx="478" cy="508" r="1.1" fill="#D4453A"/>
-    <circle cx="942" cy="506" r="1.2" fill="#F45B4E"/>
     <circle cx="988" cy="540" r="1.1" fill="#D4453A"/>
-    <circle cx="1040" cy="514" r="1.3" fill="#FF6B5F"/>
   </g>
 
   <rect x="110" y="158" width="980" height="1" fill="#A5342B" fill-opacity="0.18"/>
@@ -87,9 +73,9 @@
     <circle cx="470" cy="377" r="11" stroke="#F3E7E5" stroke-width="3"/>
     <line x1="478" y1="385" x2="487" y2="394" stroke="#F3E7E5" stroke-width="3" stroke-linecap="round"/>
     <text x="508" y="386" fill="#F0E4E2" font-size="24" font-weight="500" font-family="'Helvetica Neue', Helvetica, Arial, sans-serif">What are you looking for?</text>
-    <rect x="808" y="352" width="182" height="50" rx="14" fill="#E24538"/>
-    <rect x="808" y="352" width="182" height="50" rx="14" fill="#FFFFFF" fill-opacity="0.05"/>
-    <text x="840" y="385" fill="#FFF8F6" font-size="24" font-weight="700" font-family="'Helvetica Neue', Helvetica, Arial, sans-serif">Search tools</text>
+    <rect x="808" y="352" width="182" height="50" rx="14" fill="#B7372D"/>
+    <rect x="808" y="352" width="182" height="50" rx="14" fill="#FFFFFF" fill-opacity="0.025"/>
+    <text x="840" y="385" fill="#FFF3F0" fill-opacity="0.94" font-size="24" font-weight="700" font-family="'Helvetica Neue', Helvetica, Arial, sans-serif">Search tools</text>
   </g>
 
   <g>
