@@ -1,10 +1,13 @@
 /* @vitest-environment jsdom */
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { useEffect } from "react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { Doc, Id } from "../../convex/_generated/dataModel";
 import { SkillDiffCard } from "./SkillDiffCard";
 
 const getFileTextMock = vi.fn();
+let diffEditorMounts = 0;
+let diffEditorUnmounts = 0;
 
 vi.mock("convex/react", () => ({
   useAction: () => getFileTextMock,
@@ -18,15 +21,37 @@ vi.mock("@monaco-editor/react", () => ({
     className?: string;
     options?: { renderSideBySide?: boolean; useInlineViewWhenSpaceIsLimited?: boolean };
   }) => (
+    <MockDiffEditor
+      className={className}
+      options={options}
+    />
+  ),
+  useMonaco: () => null,
+}));
+
+function MockDiffEditor({
+  className,
+  options,
+}: {
+  className?: string;
+  options?: { renderSideBySide?: boolean; useInlineViewWhenSpaceIsLimited?: boolean };
+}) {
+  useEffect(() => {
+    diffEditorMounts += 1;
+    return () => {
+      diffEditorUnmounts += 1;
+    };
+  }, []);
+
+  return (
     <div
       className={className}
       data-inline-fallback={String(options?.useInlineViewWhenSpaceIsLimited)}
       data-side-by-side={String(options?.renderSideBySide)}
       data-testid="diff-editor"
     />
-  ),
-  useMonaco: () => null,
-}));
+  );
+}
 
 function installMatchMedia(matches: boolean) {
   Object.defineProperty(window, "matchMedia", {
@@ -65,6 +90,8 @@ describe("SkillDiffCard", () => {
   beforeEach(() => {
     getFileTextMock.mockReset();
     getFileTextMock.mockResolvedValue({ text: "content" });
+    diffEditorMounts = 0;
+    diffEditorUnmounts = 0;
   });
 
   it("defaults to inline mode on narrow screens", async () => {
@@ -107,5 +134,35 @@ describe("SkillDiffCard", () => {
       expect(screen.getByTestId("diff-editor").getAttribute("data-side-by-side")).toBe("true");
     });
     expect(screen.getByRole("button", { name: "Side-by-side" }).className).toContain("is-active");
+  });
+
+  it("keeps the diff editor mounted when toggling view mode", async () => {
+    installMatchMedia(false);
+
+    render(
+      <SkillDiffCard
+        skill={skill}
+        versions={[
+          makeVersion("skillVersions:1", "1.0.1"),
+          makeVersion("skillVersions:2", "1.0.2"),
+        ]}
+      />,
+    );
+
+    await waitFor(() => {
+      expect(screen.getByTestId("diff-editor")).toBeTruthy();
+    });
+
+    expect(diffEditorMounts).toBe(1);
+    expect(diffEditorUnmounts).toBe(0);
+
+    fireEvent.click(screen.getByRole("button", { name: "Inline" }));
+
+    await waitFor(() => {
+      expect(screen.getByTestId("diff-editor").getAttribute("data-side-by-side")).toBe("false");
+    });
+
+    expect(diffEditorMounts).toBe(1);
+    expect(diffEditorUnmounts).toBe(0);
   });
 });

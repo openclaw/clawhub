@@ -5,6 +5,7 @@
 ### Changed
 
 - Search: add CJK tokenization support (Chinese/Japanese/Korean) with Intl.Segmenter plus fallback behavior to improve skill query matching (#1596) (thanks @pq-dong).
+- Stats: centralize migrated skill stat fallback reads through `readCanonicalStat()` and add schema/agent guardrails to discourage direct legacy nested-field access (#1709) (thanks @momothemage).
 
 ### Fixes
 

@@ -95,10 +95,22 @@ const badgesValidator = v.optional(
   }),
 );
 
+/**
+ * Nested stat fields on the `skills` document.
+ *
+ * The four migrated fields below are kept for backward compatibility only.
+ * Always use the top-level fields (`statsDownloads`, `statsStars`,
+ * `statsInstallsCurrent`, `statsInstallsAllTime`) as the source of truth,
+ * and use `readCanonicalStat()` / `applySkillStatDeltas()` to read/write them.
+ */
 const statsValidator = v.object({
+  /** @deprecated Use top-level `statsDownloads` instead. */
   downloads: v.number(),
+  /** @deprecated Use top-level `statsInstallsCurrent` instead. */
   installsCurrent: v.optional(v.number()),
+  /** @deprecated Use top-level `statsInstallsAllTime` instead. */
   installsAllTime: v.optional(v.number()),
+  /** @deprecated Use top-level `statsStars` instead. */
   stars: v.number(),
   versions: v.number(),
   comments: v.number(),

@@ -128,15 +128,36 @@ function normalizeApiPath(path: string) {
   return path.startsWith("/") ? path : `/${path}`;
 }
 
+function resolveAbsoluteBaseUrl(...candidates: Array<string | undefined>) {
+  for (const candidate of candidates) {
+    const value = candidate?.trim();
+    if (!value) continue;
+    try {
+      return new URL(value).toString();
+    } catch {
+      continue;
+    }
+  }
+  return null;
+}
+
 async function packageApiUrl(path: string) {
   const normalizedPath = normalizeApiPath(path);
   if (typeof window !== "undefined") {
     // In production, Vercel rewrites /api/* to the Convex site, so relative
     // paths work. In local dev, Nitro intercepts the request before Vite's
     // proxy, so we must use the Convex site URL directly.
-    const convexSiteUrl = getRuntimeEnv("VITE_CONVEX_SITE_URL");
-    if (convexSiteUrl && window.location.hostname === "localhost") {
-      return new URL(normalizedPath, convexSiteUrl);
+    const convexClientBaseUrl = resolveAbsoluteBaseUrl(
+      getRuntimeEnv("VITE_CONVEX_SITE_URL"),
+      getRuntimeEnv("VITE_CONVEX_URL"),
+    );
+    if (
+      convexClientBaseUrl &&
+      (window.location.hostname === "localhost" ||
+        window.location.hostname === "127.0.0.1" ||
+        window.location.hostname === "0.0.0.0")
+    ) {
+      return new URL(normalizedPath, convexClientBaseUrl);
     }
     return new URL(normalizedPath, window.location.origin);
   }
@@ -144,7 +165,11 @@ async function packageApiUrl(path: string) {
   // In production, Vercel rewrites /api/* but SSR loaders run server-side
   // where the rewrite doesn't apply. Using getRequestUrl() would loop back
   // into TanStack Start / Nitro, which rejects non-HTML requests.
-  const base = getRuntimeEnv("VITE_CONVEX_SITE_URL") ?? getRequiredRuntimeEnv("VITE_CONVEX_URL");
+  const base =
+    resolveAbsoluteBaseUrl(
+      getRuntimeEnv("VITE_CONVEX_SITE_URL"),
+      getRuntimeEnv("VITE_CONVEX_URL"),
+    ) ?? getRequiredRuntimeEnv("VITE_CONVEX_URL");
   return new URL(normalizedPath, base);
 }
 
@@ -277,51 +302,32 @@ export async function fetchPluginCatalog(params: {
   executesCode?: boolean;
   limit?: number;
 }): Promise<PluginCatalogResult> {
-  try {
-    if (params.family) {
-      const response = await fetchPackages({
-        q: params.q,
-        cursor: params.cursor,
-        family: params.family,
-        isOfficial: params.isOfficial,
-        executesCode: params.executesCode,
-        limit: params.limit,
-      });
-      if (hasOwnProperty(response, "results") && Array.isArray(response.results)) {
-        return {
-          items: response.results.map((entry) => entry?.package).filter(Boolean) as PackageListItem[],
-          nextCursor: null,
-        };
-      }
-
-      const browseResponse = response as PackageCatalogBrowseResponse;
+  if (params.family) {
+    const response = await fetchPackages({
+      q: params.q,
+      cursor: params.cursor,
+      family: params.family,
+      isOfficial: params.isOfficial,
+      executesCode: params.executesCode,
+      limit: params.limit,
+    });
+    if (hasOwnProperty(response, "results") && Array.isArray(response.results)) {
       return {
-        items: browseResponse?.items ?? [],
-        nextCursor: browseResponse?.nextCursor ?? null,
-      };
-    }
-
-    if (params.q?.trim()) {
-      const url = await packageApiUrl(`${ApiRoutes.plugins}/search`);
-      url.searchParams.set("q", params.q.trim());
-      if (typeof params.limit === "number") url.searchParams.set("limit", String(params.limit));
-      if (typeof params.isOfficial === "boolean") {
-        url.searchParams.set("isOfficial", String(params.isOfficial));
-      }
-      if (typeof params.executesCode === "boolean") {
-        url.searchParams.set("executesCode", String(params.executesCode));
-      }
-      const response = await fetchJson<{
-        results?: Array<{ score: number; package: PackageListItem }>;
-      }>(url);
-      return {
-        items: (response?.results ?? []).map((entry) => entry?.package).filter(Boolean) as PackageListItem[],
+        items: response.results.map((entry) => entry?.package).filter(Boolean) as PackageListItem[],
         nextCursor: null,
       };
     }
 
-    const url = await packageApiUrl(ApiRoutes.plugins);
-    if (params.cursor) url.searchParams.set("cursor", params.cursor);
+    const browseResponse = response as PackageCatalogBrowseResponse;
+    return {
+      items: browseResponse?.items ?? [],
+      nextCursor: browseResponse?.nextCursor ?? null,
+    };
+  }
+
+  if (params.q?.trim()) {
+    const url = await packageApiUrl(`${ApiRoutes.plugins}/search`);
+    url.searchParams.set("q", params.q.trim());
     if (typeof params.limit === "number") url.searchParams.set("limit", String(params.limit));
     if (typeof params.isOfficial === "boolean") {
       url.searchParams.set("isOfficial", String(params.isOfficial));
@@ -329,29 +335,39 @@ export async function fetchPluginCatalog(params: {
     if (typeof params.executesCode === "boolean") {
       url.searchParams.set("executesCode", String(params.executesCode));
     }
-    const result = await fetchJson<PluginCatalogResult>(url);
+    const response = await fetchJson<{
+      results?: Array<{ score: number; package: PackageListItem }>;
+    }>(url);
     return {
-      items: result?.items ?? [],
-      nextCursor: result?.nextCursor ?? null,
+      items: (response?.results ?? []).map((entry) => entry?.package).filter(Boolean) as PackageListItem[],
+      nextCursor: null,
     };
-  } catch {
-    // Return empty result on API error to prevent SSR crashes
-    return { items: [], nextCursor: null };
   }
+
+  const url = await packageApiUrl(ApiRoutes.plugins);
+  if (params.cursor) url.searchParams.set("cursor", params.cursor);
+  if (typeof params.limit === "number") url.searchParams.set("limit", String(params.limit));
+  if (typeof params.isOfficial === "boolean") {
+    url.searchParams.set("isOfficial", String(params.isOfficial));
+  }
+  if (typeof params.executesCode === "boolean") {
+    url.searchParams.set("executesCode", String(params.executesCode));
+  }
+  const result = await fetchJson<PluginCatalogResult>(url);
+  return {
+    items: result?.items ?? [],
+    nextCursor: result?.nextCursor ?? null,
+  };
 }
 
 export async function fetchPackageDetail(name: string): Promise<PackageDetailResponse> {
-  try {
-    const url = await packageApiUrl(`${ApiRoutes.packages}/${encodeURIComponent(name)}`);
-    const response = await packageFetch(url, "application/json");
-    if (response.status === 404 || !response.ok) {
-      return { package: null, owner: null };
-    }
-    return (await response.json()) as PackageDetailResponse;
-  } catch {
-    // Return empty result on API error to prevent SSR crashes
+  const url = await packageApiUrl(`${ApiRoutes.packages}/${encodeURIComponent(name)}`);
+  const response = await packageFetch(url, "application/json");
+  if (response.status === 404) {
     return { package: null, owner: null };
   }
+  if (!response.ok) throw await createPackageApiError(response);
+  return (await response.json()) as PackageDetailResponse;
 }
 
 export async function fetchPackageVersion(name: string, version: string): Promise<PackageVersionDetail | null> {
@@ -367,15 +383,13 @@ export async function fetchPackageVersion(name: string, version: string): Promis
 }
 
 export async function fetchPackageReadme(name: string, version?: string | null): Promise<string | null> {
-  try {
-    const url = await packageApiUrl(`${ApiRoutes.packages}/${encodeURIComponent(name)}/file`);
-    url.searchParams.set("path", "README.md");
-    if (version) url.searchParams.set("version", version);
-    const response = await packageFetch(url, "text/plain");
-    if (response.ok) return await response.text();
-    return null;
-  } catch {
-    // Return null on API error to prevent SSR crashes
+  const url = await packageApiUrl(`${ApiRoutes.packages}/${encodeURIComponent(name)}/file`);
+  url.searchParams.set("path", "README.md");
+  if (version) url.searchParams.set("version", version);
+  const response = await packageFetch(url, "text/plain");
+  if (response.ok) return await response.text();
+  if (response.status === 404 || response.status === 423) {
     return null;
   }
+  throw await createPackageApiError(response);
 }

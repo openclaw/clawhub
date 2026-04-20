@@ -1,41 +1,72 @@
 import { createFileRoute, Link } from '@tanstack/react-router';
+import type { LucideIcon } from 'lucide-react';
+import {
+  Banknote,
+  Drama,
+  Eye,
+  EyeOff,
+  ImageOff,
+  ShieldOff,
+  UserX,
+} from 'lucide-react';
 import { Badge } from '../components/ui/badge';
 import { Button } from '../components/ui/button';
 import { getSiteMode, getSiteName, getSiteUrlForMode } from '../lib/site';
 
-const prohibitedCategories = [
+export function renderWithInlineCode(text: string): (string | JSX.Element)[] {
+  const parts = text.split(/(`[^`]+`)/g);
+  return parts.map((part, i) => {
+    if (part.startsWith('`') && part.endsWith('`')) {
+      return (
+        <code key={i} className="about-inline-code">
+          {part.slice(1, -1)}
+        </code>
+      );
+    }
+    return part;
+  });
+}
+
+const prohibitedCategories: { title: string; icon: LucideIcon; examples: string }[] = [
   {
     title: 'Bypass and unauthorized access',
+    icon: ShieldOff,
     examples:
       'Auth bypass, account takeover, CAPTCHA bypass, Cloudflare or anti-bot evasion, rate-limit bypass, reusable session theft, live call or agent takeover.',
   },
   {
     title: 'Platform abuse and ban evasion',
+    icon: UserX,
     examples:
       'Stealth accounts after bans, account warming/farming, fake engagement, multi-account automation, spam posting, marketplace or social automation built to avoid detection.',
   },
   {
     title: 'Fraud and deception',
+    icon: Banknote,
     examples:
       'Fake certificates, fake invoices, deceptive payment flows, fake social proof, scam outreach, or synthetic-identity workflows built to create accounts for fraud.',
   },
   {
     title: 'Privacy-invasive surveillance',
+    icon: Eye,
     examples:
       'Mass contact scraping for spam, doxxing, stalking, covert monitoring, biometric / face-matching workflows without clear consent, or buying, publishing, downloading, or operationalizing leaked data or breach dumps.',
   },
   {
     title: 'Non-consensual impersonation',
+    icon: Drama,
     examples:
       'Face swap, digital twins, cloned influencers, fake personas, or other identity manipulation used to impersonate or mislead.',
   },
   {
     title: 'Explicit sexual content',
+    icon: ImageOff,
     examples:
       'NSFW image, video, or text generation, especially wrappers around third-party APIs with safety checks disabled.',
   },
   {
     title: 'Hidden or misleading execution',
+    icon: EyeOff,
     examples:
       'Obfuscated install commands, `curl | sh`, undeclared secret requirements, undeclared private-key use, or remote `npx @latest` execution without reviewability.',
   },
@@ -112,18 +143,23 @@ function AboutPage() {
 
         <section className="about-panel about-panel-categories">
           <div className="home-section-header">
-            <h2 className="home-section-title">Immediate rejection categories</h2>
+            <h2 className="home-section-title">Rejection Categories</h2>
           </div>
           <div className="about-grid">
-            {prohibitedCategories.map((category, index) => (
-              <article
-                key={category.title}
-                className={`about-rule-card${index % 3 === 0 ? ' about-rule-card-featured' : ''}`}
-              >
-                <h2>{category.title}</h2>
-                <p>{category.examples}</p>
-              </article>
-            ))}
+            {prohibitedCategories.map((category) => {
+              const Icon = category.icon;
+              return (
+                <article key={category.title} className="about-rule-card">
+                  <div className="about-rule-card-header">
+                    <div className="about-rule-card-icon">
+                      <Icon size={18} />
+                    </div>
+                    <h3>{category.title}</h3>
+                  </div>
+                  <p>{renderWithInlineCode(category.examples)}</p>
+                </article>
+              );
+            })}
           </div>
         </section>
 

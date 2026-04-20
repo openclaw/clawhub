@@ -97,8 +97,16 @@ export default function Header() {
     const q = navSearchQuery.trim();
     if (!q) return;
     void navigate({
-      to: "/search",
-      search: { q, type: undefined },
+      to: isSoulMode ? "/souls" : "/search",
+      search: isSoulMode
+        ? {
+            q,
+            sort: undefined,
+            dir: undefined,
+            view: undefined,
+            focus: undefined,
+          }
+        : { q, type: undefined },
     });
     setNavSearchQuery("");
     setMobileSearchOpen(false);
@@ -121,12 +129,29 @@ export default function Header() {
               </button>
               <SheetContent side="left" className="mobile-nav-sheet">
                 <SheetHeader className="pr-10">
-                  <SheetTitle>{siteName}</SheetTitle>
+                  <SheetTitle>
+                    <span className="mobile-nav-brand">
+                      <span className="mobile-nav-brand-mark" aria-hidden="true">
+                        <img
+                          src="/clawd-logo.png"
+                          alt=""
+                          aria-hidden="true"
+                          className="mobile-nav-brand-mark-image"
+                        />
+                      </span>
+                      <span className="mobile-nav-brand-name">{siteName}</span>
+                    </span>
+                  </SheetTitle>
                   <SheetDescription>
                     Browse sections, switch theme, and access account actions.
                   </SheetDescription>
                 </SheetHeader>
                 <div className="mobile-nav-section">
+                  <SheetClose asChild>
+                    <Link to="/" className="mobile-nav-link">
+                      Home
+                    </Link>
+                  </SheetClose>
                   {isSoulMode ? (
                     <SheetClose asChild>
                       <a href={clawHubUrl} className="mobile-nav-link">

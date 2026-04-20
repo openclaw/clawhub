@@ -9,9 +9,7 @@ import {
   Moon,
   RotateCcw,
   Settings2,
-  Sparkles,
   Sun,
-  Zap,
 } from "lucide-react";
 import { useEffect, useState } from "react";
 import { toast } from "sonner";
@@ -495,8 +493,7 @@ export function Settings() {
 
                 {/* Code & Content Section - Advanced */}
                 <div className="space-y-4">
-                  <Label className="text-sm font-semibold text-[color:var(--ink)] flex items-center gap-2">
-                    <Sparkles size={14} className="text-[color:var(--accent)]" />
+                  <Label className="text-sm font-semibold text-[color:var(--ink)]">
                     Code &amp; Content
                   </Label>
                   
@@ -533,10 +530,7 @@ export function Settings() {
                         </SelectTrigger>
                         <SelectContent>
                           <SelectItem value="full">
-                            <span className="flex items-center gap-2">
-                              <Zap size={14} />
-                              Full
-                            </span>
+                            Full
                           </SelectItem>
                           <SelectItem value="reduced">Reduced</SelectItem>
                           <SelectItem value="none">None</SelectItem>
@@ -604,8 +598,7 @@ export function Settings() {
 
                 {/* Experimental Features - Advanced */}
                 <div className="space-y-4">
-                  <Label className="text-sm font-semibold text-[color:var(--ink)] flex items-center gap-2">
-                    <Sparkles size={14} className="text-[color:var(--gold)]" />
+                  <Label className="text-sm font-semibold text-[color:var(--ink)]">
                     Experimental
                   </Label>
                   

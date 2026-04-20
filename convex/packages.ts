@@ -2146,9 +2146,9 @@ export const insertReleaseInternal = internalMutation({
     const nextIsOfficial = nextChannel === "official";
     const nextOwnerPublisherId = stringifyOptionalId(args.ownerPublisherId ?? null);
     const nextOwnerUserId = stringifyId(args.ownerUserId);
-    const nextName = args.name;
-    const nextRuntimeId = args.runtimeId ?? null;
-    const nextVersion = args.version;
+    const nextNameLabel = typeof args.name === "string" ? args.name : "<unknown>";
+    const nextRuntimeIdLabel = typeof args.runtimeId === "string" ? args.runtimeId : "<unknown>";
+    const nextVersionLabel = typeof args.version === "string" ? args.version : "<unknown>";
     if (existing) {
       const existingIsLegacyPersonalPackage =
         !existing.ownerPublisherId &&
@@ -2171,7 +2171,7 @@ export const insertReleaseInternal = internalMutation({
     }
     if (existing && existing.family !== args.family) {
       throw new ConvexError(
-        `Package "${nextName}" already exists as a ${existing.family}; family changes are not allowed`,
+        `Package "${nextNameLabel}" already exists as a ${existing.family}; family changes are not allowed`,
       );
     }
     if (
@@ -2182,7 +2182,7 @@ export const insertReleaseInternal = internalMutation({
       existing.runtimeId !== args.runtimeId
     ) {
       throw new ConvexError(
-        `Package "${nextName}" already exists with plugin id "${existing.runtimeId}"; runtime id changes are not allowed`,
+        `Package "${nextNameLabel}" already exists with plugin id "${existing.runtimeId}"; runtime id changes are not allowed`,
       );
     }
     if (args.family === "code-plugin" && args.runtimeId) {
@@ -2191,7 +2191,7 @@ export const insertReleaseInternal = internalMutation({
         .withIndex("by_runtime_id", (q) => q.eq("runtimeId", args.runtimeId))
         .unique();
       if (runtimeCollision && runtimeCollision._id !== existing?._id) {
-        throw new ConvexError(`Plugin id "${nextRuntimeId}" is already claimed by another package`);
+        throw new ConvexError(`Plugin id "${nextRuntimeIdLabel}" is already claimed by another package`);
       }
     }
 
@@ -2228,7 +2228,7 @@ export const insertReleaseInternal = internalMutation({
           q.eq("packageId", existing._id).eq("version", args.version),
         )
         .unique();
-      if (releaseExists) throw new ConvexError(`Version ${nextVersion} already exists`);
+      if (releaseExists) throw new ConvexError(`Version ${nextVersionLabel} already exists`);
     }
     const priorReleases = existing
       ? await ctx.db

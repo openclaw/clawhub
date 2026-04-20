@@ -6,6 +6,7 @@ import { PluginListItem } from "../../components/PluginListItem";
 import { Button } from "../../components/ui/button";
 import {
   fetchPluginCatalog,
+  isRateLimitedPackageApiError,
   type PackageListItem,
 } from "../../lib/packageApi";
 
@@ -55,24 +56,42 @@ export const Route = createFileRoute("/plugins/")({
   }),
   loaderDeps: ({ search }) => search,
   loader: async ({ deps }): Promise<PluginsLoaderData> => {
-    // fetchPluginCatalog now handles errors internally and returns empty results
-    const data = await fetchPluginCatalog({
-      q: deps.q,
-      cursor: deps.q ? undefined : deps.cursor,
-      family: deps.family,
-      isOfficial: deps.verified,
-      executesCode: deps.executesCode,
-      limit: 50,
-    });
+    try {
+      const data = await fetchPluginCatalog({
+        q: deps.q,
+        cursor: deps.q ? undefined : deps.cursor,
+        family: deps.family,
+        isOfficial: deps.verified,
+        executesCode: deps.executesCode,
+        limit: 50,
+      });
 
-    const items = data?.items ?? [];
-    return {
-      items,
-      nextCursor: data?.nextCursor ?? null,
-      rateLimited: false,
-      retryAfterSeconds: null,
-      apiError: items.length === 0 && !deps.q && !deps.family && !deps.verified && !deps.executesCode,
-    };
+      return {
+        items: data?.items ?? [],
+        nextCursor: data?.nextCursor ?? null,
+        rateLimited: false,
+        retryAfterSeconds: null,
+        apiError: false,
+      };
+    } catch (error) {
+      if (isRateLimitedPackageApiError(error)) {
+        return {
+          items: [],
+          nextCursor: null,
+          rateLimited: true,
+          retryAfterSeconds: error.retryAfterSeconds,
+          apiError: false,
+        };
+      }
+
+      return {
+        items: [],
+        nextCursor: null,
+        rateLimited: false,
+        retryAfterSeconds: null,
+        apiError: true,
+      };
+    }
   },
   component: PluginsIndex,
 });

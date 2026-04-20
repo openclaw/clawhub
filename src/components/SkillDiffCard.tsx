@@ -38,7 +38,7 @@ type SizeWarning = {
 };
 
 const EMPTY_DIFF_TEXT = "";
-const MOBILE_DIFF_BREAKPOINT = 860;
+const MOBILE_DIFF_BREAKPOINT = 768;
 
 function getDefaultViewMode() {
   if (typeof window === "undefined") return "split";
@@ -402,7 +402,6 @@ export function SkillDiffCard({ skill, versions, variant = "card" }: SkillDiffCa
           ) : (
             <ClientOnly fallback={<div className="diff-empty">Preparing diff…</div>}>
               <DiffEditor
-                key={`diff-${viewMode}`}
                 className={`diff-monaco diff-monaco-${viewMode}`}
                 original={leftText}
                 modified={rightText}

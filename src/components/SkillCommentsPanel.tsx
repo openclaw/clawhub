@@ -143,7 +143,7 @@ export function SkillCommentsPanel({ skillId, isAuthenticated, me }: SkillCommen
           comments.map((entry) => (
             <div
               key={entry.comment._id}
-              className="flex gap-3 rounded-[var(--radius-sm)] border border-[color:var(--line)] bg-[color:var(--surface)] p-3"
+              className="comment-entry flex gap-3 rounded-[var(--radius-sm)] border border-[color:var(--line)] bg-[color:var(--surface)] p-3"
             >
               <div className="flex min-w-0 flex-1 flex-col gap-1.5">
                 <strong className="text-sm">

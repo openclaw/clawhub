@@ -1,13 +1,9 @@
 import { Link } from "@tanstack/react-router";
 import { FOOTER_NAV_SECTIONS } from "../lib/nav-items";
-import { getSiteName } from "../lib/site";
-
 export function Footer() {
-  const siteName = getSiteName();
   return (
     <footer className="site-footer" role="contentinfo">
       <div className="site-footer-inner">
-        <div className="site-footer-divider" aria-hidden="true" />
         <div className="footer-grid">
           {FOOTER_NAV_SECTIONS.map((section) => (
             <div key={section.title} className="footer-col">
@@ -32,18 +28,6 @@ export function Footer() {
               })}
             </div>
           ))}
-        </div>
-        <div className="footer-bottom">
-          <span>
-            {siteName} — An{" "}
-            <a href="https://openclaw.ai" target="_blank" rel="noreferrer">
-              OpenClaw
-            </a>{" "}
-            project by{" "}
-            <a href="https://steipete.me" target="_blank" rel="noreferrer">
-              Peter Steinberger
-            </a>
-          </span>
         </div>
       </div>
     </footer>
