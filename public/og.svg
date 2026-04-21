@@ -56,17 +56,20 @@
   <g>
     <rect x="86" y="110" width="1028" height="414" rx="42" fill="url(#cardFill)"/>
     <rect x="86.75" y="110.75" width="1026.5" height="412.5" rx="41.25" stroke="url(#cardStroke)" stroke-width="1.5"/>
-    <rect x="112" y="118" width="334" height="286" rx="36" fill="#110C0F"/>
-    <rect x="112.75" y="118.75" width="332.5" height="284.5" rx="35.25" stroke="#584144" stroke-opacity="0.42" stroke-width="1.5"/>
+    <rect x="112" y="118" width="334" height="286" rx="36" fill="#040406"/>
+    <rect x="112.75" y="118.75" width="332.5" height="284.5" rx="35.25" stroke="#4A363B" stroke-opacity="0.32" stroke-width="1.5"/>
     <ellipse cx="108" cy="518" rx="38" ry="12" fill="#F04B3D" fill-opacity="0.18" filter="url(#softBlur)"/>
     <ellipse cx="958" cy="202" rx="124" ry="70" fill="#A43027" fill-opacity="0.06" filter="url(#softBlur)"/>
   </g>
 
-  <image href="clawd-logo.png" x="118" y="98" width="322" height="322" preserveAspectRatio="xMidYMid meet"/>
+  <image href="clawd-logo.png" x="120" y="102" width="318" height="318" preserveAspectRatio="xMidYMid meet"/>
 
-  <text x="512" y="258" fill="#F6F1EF" font-size="96" font-weight="900" letter-spacing="-4.4" font-family="'Helvetica Neue', Helvetica, Arial, sans-serif">ClawHub.ai</text>
-  <text x="514" y="330" fill="#F6F1EF" font-size="42" font-weight="800" letter-spacing="-1.2" font-family="'Helvetica Neue', Helvetica, Arial, sans-serif">Equip. Install. <tspan fill="#FF5A49">Build.</tspan></text>
-  <text x="514" y="391" fill="#CFC3C2" font-size="28" font-weight="500" letter-spacing="-0.2" font-family="'Helvetica Neue', Helvetica, Arial, sans-serif">Developer tools and agent skills for your next project.</text>
+  <text x="502" y="252" fill="#F6F1EF" font-size="88" font-weight="900" letter-spacing="-4.2" font-family="'Helvetica Neue', Helvetica, Arial, sans-serif">ClawHub.ai</text>
+  <text x="504" y="322" fill="#F6F1EF" font-size="38" font-weight="800" letter-spacing="-1" font-family="'Helvetica Neue', Helvetica, Arial, sans-serif">Equip. Install. <tspan fill="#FF5A49">Build.</tspan></text>
+  <text x="504" y="378" fill="#CFC3C2" font-size="24" font-weight="500" letter-spacing="-0.15" font-family="'Helvetica Neue', Helvetica, Arial, sans-serif">
+    <tspan x="504" dy="0">Developer tools and agent skills</tspan>
+    <tspan x="504" dy="30">for your next project.</tspan>
+  </text>
 
   <g>
     <rect x="184" y="428" width="832" height="90" rx="28" fill="#100B0E"/>
