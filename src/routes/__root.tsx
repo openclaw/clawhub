@@ -10,7 +10,7 @@ import Header from "../components/Header";
 import { getSiteDescription, getSiteMode, getSiteName, getSiteUrlForMode } from "../lib/site";
 import appCss from "../styles.css?url";
 
-const OG_IMAGE_VERSION = "20260420-10";
+const OG_IMAGE_VERSION = "20260420-12";
 
 export const Route = createRootRoute({
   head: () => {
