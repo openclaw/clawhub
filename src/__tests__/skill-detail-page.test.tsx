@@ -152,6 +152,89 @@ describe("SkillDetailPage", () => {
     expect(screen.queryByRole("button", { name: "Compare" })).toBeNull();
   });
 
+  it("renders the install surface above the security scan with visible prompts and commands", async () => {
+    useQueryMock.mockImplementation((_fn: unknown, args: unknown) => {
+      if (args === "skip") return undefined;
+      return undefined;
+    });
+
+    render(
+      <SkillDetailPage
+        slug="weather"
+        initialData={{
+          result: {
+            skill: {
+              _id: skillId,
+              _creationTime: 0,
+              slug: "weather",
+              displayName: "Weather",
+              summary: "Get current weather.",
+              ownerUserId: ownerId,
+              ownerPublisherId,
+              tags: {},
+              badges: {},
+              stats: {
+                stars: 12,
+                downloads: 34,
+                installsCurrent: 5,
+                installsAllTime: 8,
+                versions: 1,
+                comments: 0,
+              },
+              createdAt: 0,
+              updatedAt: 0,
+            },
+            owner: {
+              _id: ownerPublisherId,
+              _creationTime: 0,
+              kind: "user",
+              handle: "steipete",
+              displayName: "Peter",
+              linkedUserId: ownerId,
+            },
+            latestVersion: {
+              _id: versionId,
+              _creationTime: 0,
+              skillId,
+              version: "1.0.0",
+              fingerprint: "abc",
+              changelog: "Initial release",
+              parsed: {
+                license: "MIT-0",
+                frontmatter: {},
+                clawdis: {
+                  requires: {
+                    env: ["WEATHER_API_KEY"],
+                    bins: ["curl"],
+                  },
+                },
+              },
+              files: [],
+              sha256hash: "abc123",
+              createdBy: ownerId,
+              createdAt: 0,
+            },
+            forkOf: null,
+            canonical: null,
+          },
+          readme: "# Weather",
+          readmeError: null,
+        }}
+      />,
+    );
+
+    const installHeading = await screen.findByRole("heading", { name: "Install with OpenClaw" });
+    const scanDisclaimer = screen.getByText(
+      /Like a lobster shell, security has layers — review code before you run it\./i,
+    );
+
+    expect(screen.getByRole("heading", { name: "CLI Commands" })).toBeTruthy();
+    expect(screen.getByText("openclaw skills install steipete/weather")).toBeTruthy();
+    expect(screen.getByText("npx clawhub@latest install weather")).toBeTruthy();
+    expect(screen.getByText(/After install, inspect the skill metadata/i)).toBeTruthy();
+    expect(installHeading.compareDocumentPosition(scanDisclaimer) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  });
+
   it("does not refetch readme when SSR data already matches the latest version", async () => {
     useQueryMock.mockImplementation((_fn: unknown, args: unknown) => {
       if (args === "skip") return undefined;

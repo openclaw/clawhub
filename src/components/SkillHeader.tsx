@@ -8,6 +8,7 @@ import type { PublicPublisher, PublicSkill } from "../lib/publicUser";
 
 import { type LlmAnalysis, SecurityScanResults } from "./SkillSecurityScanResults";
 import { SkillInstallCard } from "./SkillInstallCard";
+import { SkillInstallSurface } from "./SkillInstallSurface";
 import { Badge } from "./ui/badge";
 import { Button } from "./ui/button";
 import { UserBadge } from "./UserBadge";
@@ -123,6 +124,7 @@ export function SkillHeader({
   const overrideScanMessage = suppressScanResults
     ? "Security findings were reviewed by staff and cleared for public use."
     : null;
+  const installOwnerId = owner?._id ?? skill.ownerPublisherId ?? skill.ownerUserId ?? null;
 
   return (
     <>
@@ -297,6 +299,14 @@ export function SkillHeader({
             </div>
           </div>
 
+          <SkillInstallSurface
+            slug={skill.slug}
+            displayName={skill.displayName}
+            ownerHandle={ownerHandle}
+            ownerId={installOwnerId}
+            clawdis={clawdis}
+          />
+
           {/* Security scan — full width below the header columns */}
           {suppressScanResults ? (
             <div className="skill-hero-note">{overrideScanMessage}</div>
@@ -395,13 +405,17 @@ export function SkillHeader({
             className="tag-form"
           >
             <input
+              aria-label="Tag name"
               className="search-input"
+              name="tagName"
               value={tagName}
               onChange={(event) => onTagNameChange(event.target.value)}
-              placeholder="latest"
+              placeholder="latest…"
             />
             <select
+              aria-label="Tag version"
               className="search-input"
+              name="tagVersion"
               value={tagVersionId ?? ""}
               onChange={(event) => onTagVersionChange(event.target.value as Id<"skillVersions">)}
             >
@@ -412,7 +426,7 @@ export function SkillHeader({
               ))}
             </select>
             <Button type="submit">
-              Update tag
+              Update Tag
             </Button>
           </form>
         ) : null}
