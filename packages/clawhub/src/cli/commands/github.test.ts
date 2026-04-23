@@ -149,7 +149,7 @@ describe("github publish source helpers", () => {
     const workdir = await makeTmpDir();
     const restoreFetch =
       input.includes("/tree/") || input.includes("/blob/")
-        ? mockGitHubCommitLookup([String((expected as { ref?: string }).ref ?? "")])
+        ? mockGitHubCommitLookup([(expected as { ref?: string }).ref ?? ""])
         : null;
     try {
       await expect(resolveSourceInput(input, { workdir })).resolves.toEqual(expected);

@@ -14,8 +14,8 @@ describe("theme", () => {
         <button type="button" onClick={() => setMode("dark")}>
           dark
         </button>
-        <button type="button" onClick={() => setFamily("hub")}>
-          hub
+        <button type="button" onClick={() => setFamily("claw")}>
+          claw
         </button>
       </div>
     );
@@ -27,7 +27,7 @@ describe("theme", () => {
       value: {
         getItem: (key: string) => (key in store ? store[key] : null),
         setItem: (key: string, value: string) => {
-          store[key] = String(value);
+          store[key] = value;
         },
         removeItem: (key: string) => {
           delete store[key];
@@ -58,7 +58,7 @@ describe("theme", () => {
       "clawhub-theme-selection",
       JSON.stringify({ theme: "hub", mode: "light" }),
     );
-    expect(getStoredThemeSelection()).toEqual({ theme: "hub", mode: "light" });
+    expect(getStoredThemeSelection()).toEqual({ theme: "claw", mode: "light" });
 
     window.localStorage.clear();
     window.localStorage.setItem("clawhub-theme", "dark");
@@ -70,10 +70,10 @@ describe("theme", () => {
   });
 
   it("applies family and resolved mode to the document", () => {
-    applyTheme("dark", "hub");
+    applyTheme("dark", "claw");
     expect(document.documentElement.dataset.theme).toBe("dark");
     expect(document.documentElement.dataset.themeResolved).toBe("dark");
-    expect(document.documentElement.dataset.themeFamily).toBe("hub");
+    expect(document.documentElement.dataset.themeFamily).toBe("claw");
     expect(document.documentElement.classList.contains("dark")).toBe(true);
 
     applyTheme("light", "claw");
@@ -104,15 +104,15 @@ describe("theme", () => {
     expect(screen.getByTestId("mode").textContent).toBe("system");
     expect(screen.getByTestId("family").textContent).toBe("claw");
 
-    fireEvent.click(screen.getByRole("button", { name: "hub" }));
+    fireEvent.click(screen.getByRole("button", { name: "claw" }));
     fireEvent.click(screen.getByRole("button", { name: "dark" }));
 
     await waitFor(() => {
-      expect(document.documentElement.dataset.themeFamily).toBe("hub");
+      expect(document.documentElement.dataset.themeFamily).toBe("claw");
       expect(document.documentElement.dataset.themeResolved).toBe("dark");
     });
 
     expect(window.localStorage.getItem("clawhub-theme")).toBe("dark");
-    expect(window.localStorage.getItem("clawhub-theme-name")).toBe("hub");
+    expect(window.localStorage.getItem("clawhub-theme-name")).toBe("claw");
   });
 });

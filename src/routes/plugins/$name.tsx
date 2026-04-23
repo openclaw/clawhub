@@ -438,7 +438,7 @@ function PluginDetailRoute() {
                         {key.replace(/([A-Z])/g, " $1").replace(/^./, (s) => s.toUpperCase())}
                       </dt>
                       <dd className="min-w-0 break-all font-mono text-xs text-[color:var(--ink)]">
-                        {String(value)}
+                        {value}
                       </dd>
                     </div>
                   ))}

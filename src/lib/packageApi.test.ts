@@ -368,7 +368,7 @@ describe("fetchPackages", () => {
 
     const result = await fetchPackageVersion("demo-plugin", "1.2.3+build/meta");
 
-    expect(result.version?.version).toBe("1.2.3");
+    expect(result?.version?.version).toBe("1.2.3");
     expect(fetchMock.mock.calls[0]?.[0]).toBe(
       "https://registry.example/api/v1/packages/demo-plugin/versions/1.2.3%2Bbuild%2Fmeta",
     );

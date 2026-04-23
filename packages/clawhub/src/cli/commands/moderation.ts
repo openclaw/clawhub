@@ -33,13 +33,13 @@ export async function cmdBanUser(
     { id: options.id, fuzzy: options.fuzzy },
     allowPrompt,
   );
-  if (!resolved) return;
+  if (!resolved) return undefined;
   if (!options.yes) {
     if (!allowPrompt) fail("Pass --yes (no input)");
     const ok = await promptConfirm(
       `Ban ${resolved.label}? (requires moderator/admin; deletes owned skills)`,
     );
-    if (!ok) return;
+    if (!ok) return undefined;
   }
 
   const spinner = createSpinner(`Banning ${resolved.label}`);
@@ -90,11 +90,11 @@ export async function cmdSetRole(
     { id: options.id, fuzzy: options.fuzzy },
     allowPrompt,
   );
-  if (!resolved) return;
+  if (!resolved) return undefined;
   if (!options.yes) {
     if (!allowPrompt) fail("Pass --yes (no input)");
     const ok = await promptConfirm(`Set role for ${resolved.label} to ${role}? (admin only)`);
-    if (!ok) return;
+    if (!ok) return undefined;
   }
 
   const spinner = createSpinner(`Setting role for ${resolved.label}`);
@@ -218,7 +218,7 @@ function formatUserList(users: UserSearchItem[]) {
 function normalizeRole(value: string) {
   const role = value.trim().toLowerCase();
   if (role === "user" || role === "moderator" || role === "admin") return role;
-  fail("Role must be user|moderator|admin");
+  return fail("Role must be user|moderator|admin");
 }
 
 function formatDeletedSkills(count: number) {

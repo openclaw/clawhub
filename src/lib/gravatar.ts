@@ -141,9 +141,6 @@ function rhex(n: number) {
 }
 
 function hex(x: number[]) {
-  for (let i = 0; i < x.length; i += 1) {
-    x[i] = Number(x[i]);
-  }
   return x.map(rhex).join("");
 }
 

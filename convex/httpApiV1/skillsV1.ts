@@ -704,7 +704,7 @@ export async function skillsGetRouterV1Handler(ctx: ActionCtx, request: Request)
               summary: mod.summary,
               engineVersion: mod.engineVersion,
               updatedAt: mod.updatedAt,
-              evidence: sanitizeEvidence(mod.evidence, Boolean(isOwner || isStaff)),
+              evidence: sanitizeEvidence(mod.evidence, isOwner || isStaff),
               legacyReason: isOwner || isStaff ? mod.reason : null,
             }
           : null,

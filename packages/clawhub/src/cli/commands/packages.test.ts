@@ -77,7 +77,7 @@ function getPublishPayload() {
 function getUploadedFileNames() {
   const form = getPublishForm();
   return (form.getAll("files") as Array<Blob & { name?: string }>)
-    .map((file) => String(file.name ?? ""))
+    .map((file) => file.name ?? "")
     .sort();
 }
 

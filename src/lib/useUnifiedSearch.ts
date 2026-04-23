@@ -55,7 +55,7 @@ export function useUnifiedSearch(
       setPluginCount(0);
       setUserCount(0);
       setIsSearching(false);
-      return;
+      return () => {};
     }
 
     requestRef.current += 1;

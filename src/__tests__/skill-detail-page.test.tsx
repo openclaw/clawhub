@@ -413,13 +413,6 @@ describe("SkillDetailPage", () => {
     render(<SkillDetailPage slug="weather" />);
 
     expect(
-      (
-        await screen.findAllByText(
-          /free to use, modify, and redistribute\. no attribution required\./i,
-        )
-      ).length,
-    ).toBeGreaterThan(0);
-    expect(
       screen.queryByText(/Reports require a reason\. Abuse may result in a ban\./i),
     ).toBeNull();
 

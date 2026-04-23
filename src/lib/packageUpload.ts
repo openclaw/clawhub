@@ -52,18 +52,18 @@ export function normalizePackageUploadPath(
   return parts.slice(1).join("/") || (parts.at(-1) ?? "");
 }
 
-function getRawUploadPath<TFile extends UploadablePackageFile>(file: TFile) {
+function getRawUploadPath(file: UploadablePackageFile) {
   return file.webkitRelativePath?.trim() || file.name;
 }
 
-function getNormalizedUploadPath<TFile extends UploadablePackageFile>(
-  file: TFile,
+function getNormalizedUploadPath(
+  file: UploadablePackageFile,
   options: NormalizePackageUploadPathOptions = {},
 ) {
   return normalizePackageUploadPath(getRawUploadPath(file), options) || file.name;
 }
 
-function shouldStripSharedTopLevelFolder<TFile extends UploadablePackageFile>(files: TFile[]) {
+function shouldStripSharedTopLevelFolder(files: UploadablePackageFile[]) {
   if (files.length === 0) return false;
   const partsList = files
     .map((file) => getNormalizedUploadPath(file))

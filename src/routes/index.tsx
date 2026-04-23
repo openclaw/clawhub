@@ -284,19 +284,18 @@ function SkillsHome() {
       });
     }
 
-    const drawClaw = (ctx: CanvasRenderingContext2D, size: number) => {
+    const drawClaw = (context: CanvasRenderingContext2D, size: number) => {
       // Simple lobster claw shape
-      ctx.beginPath();
-      ctx.moveTo(0, size * 0.5);
-      ctx.quadraticCurveTo(-size * 0.6, size * 0.2, -size * 0.4, -size * 0.3);
-      ctx.quadraticCurveTo(-size * 0.2, -size * 0.6, 0, -size * 0.3);
-      ctx.quadraticCurveTo(size * 0.2, -size * 0.6, size * 0.4, -size * 0.3);
-      ctx.quadraticCurveTo(size * 0.6, size * 0.2, 0, size * 0.5);
-      ctx.closePath();
-      ctx.fill();
+      context.beginPath();
+      context.moveTo(0, size * 0.5);
+      context.quadraticCurveTo(-size * 0.6, size * 0.2, -size * 0.4, -size * 0.3);
+      context.quadraticCurveTo(-size * 0.2, -size * 0.6, 0, -size * 0.3);
+      context.quadraticCurveTo(size * 0.2, -size * 0.6, size * 0.4, -size * 0.3);
+      context.quadraticCurveTo(size * 0.6, size * 0.2, 0, size * 0.5);
+      context.closePath();
+      context.fill();
     };
 
-    let raf: number;
     const draw = () => {
       ctx.clearRect(0, 0, canvas.width, canvas.height);
       let alive = false;
@@ -332,13 +331,13 @@ function SkillsHome() {
         ctx.restore();
       }
       if (alive) {
-        raf = requestAnimationFrame(draw);
+        requestAnimationFrame(draw);
       } else {
         ctx.clearRect(0, 0, canvas.width, canvas.height);
         canvas.style.display = "none";
       }
     };
-    raf = requestAnimationFrame(draw);
+    requestAnimationFrame(draw);
   };
 
   const renderSlotReel = (reelIdx: 0 | 1 | 2) => {

@@ -1,8 +1,5 @@
 import type { ClawdisSkillMetadata } from "clawhub-schema";
-import {
-  PLATFORM_SKILL_LICENSE,
-  PLATFORM_SKILL_LICENSE_SUMMARY,
-} from "clawhub-schema/licenseConstants";
+import { PLATFORM_SKILL_LICENSE } from "clawhub-schema/licenseConstants";
 import { Calendar, Download, Package, Scale, Star, Tag } from "lucide-react";
 import type { Id } from "../../convex/_generated/dataModel";
 import { formatCompactStat } from "../lib/numberFormat";

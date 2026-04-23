@@ -381,7 +381,7 @@ function getRetryDelayMs(attemptError: unknown, random: () => number): number {
     cause?: unknown;
     error?: unknown;
   };
-  const attemptNumber = Math.max(1, Number(failed.attemptNumber ?? 1));
+  const attemptNumber = Math.max(1, failed.attemptNumber ?? 1);
   const rootError = failed.cause ?? failed.error ?? attemptError;
   if (rootError instanceof HttpStatusError && rootError.rateLimit.retryAfterSeconds !== undefined) {
     return rootError.rateLimit.retryAfterSeconds * 1000 + jitterMs(RETRY_AFTER_JITTER_MS, random);
@@ -568,7 +568,7 @@ async function fetchJsonFormViaCurl(
         await deps.writeFileImpl(filePath, bytes);
         formArgs.push("-F", `${key}=@${filePath};filename=${filename}`);
       } else {
-        formArgs.push("-F", `${key}=${String(value)}`);
+        formArgs.push("-F", `${key}=${value}`);
       }
     }
 

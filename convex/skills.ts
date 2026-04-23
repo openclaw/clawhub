@@ -4794,8 +4794,6 @@ export const escalateByVtInternal = internalMutation({
         slug: skill.slug,
       });
     }
-
-    return { ok: true, skillId: version.skillId, versionId: version._id };
   },
 });
 
@@ -6264,9 +6262,8 @@ export const insertVersion = internalMutation({
 
     // Trusted publishers (and moderators/admins) bypass auto-hide for pending scans.
     // Keep moderationReason as pending.scan so the VT poller keeps working.
-    const isTrustedPublisher = Boolean(
-      user.trustedPublisher || user.role === "admin" || user.role === "moderator",
-    );
+    const isTrustedPublisher =
+      user.trustedPublisher || user.role === "admin" || user.role === "moderator";
     const staticSnapshot = buildModerationSnapshot({
       staticScan: args.staticScan,
     });

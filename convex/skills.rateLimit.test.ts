@@ -653,7 +653,7 @@ describe("skills anti-spam guards", () => {
     const runAfter = vi.fn();
     const db = {
       get: vi.fn(async (tableOrId: string, maybeId?: string) => {
-        const key = String(maybeId ?? tableOrId);
+        const key = maybeId ?? tableOrId;
         if (storedSkills.has(key)) return storedSkills.get(key);
         if (key === "users:owner") {
           return {
@@ -759,7 +759,7 @@ describe("skills anti-spam guards", () => {
       patch,
       insert,
       normalizeId: vi.fn((tableName: string, id: string) =>
-        String(id).startsWith(`${tableName}:`) ? id : null,
+        id.startsWith(`${tableName}:`) ? id : null,
       ),
     };
 
@@ -840,7 +840,7 @@ describe("skills anti-spam guards", () => {
     });
     const db = {
       get: vi.fn(async (tableOrId: string, maybeId?: string) => {
-        const key = String(maybeId ?? tableOrId);
+        const key = maybeId ?? tableOrId;
         if (storedSkills.has(key)) return storedSkills.get(key);
         if (key === "users:owner") {
           return {
@@ -948,7 +948,7 @@ describe("skills anti-spam guards", () => {
       patch,
       insert,
       normalizeId: vi.fn((tableName: string, id: string) =>
-        String(id).startsWith(`${tableName}:`) ? id : null,
+        id.startsWith(`${tableName}:`) ? id : null,
       ),
     };
 

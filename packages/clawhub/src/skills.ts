@@ -133,9 +133,9 @@ export async function readSkillOrigin(skillFolder: string): Promise<SkillOrigin 
       }
       return {
         version: 1,
-        registry: String(parsed.registry),
-        slug: String(parsed.slug),
-        installedVersion: String(parsed.installedVersion),
+        registry: parsed.registry,
+        slug: parsed.slug,
+        installedVersion: parsed.installedVersion,
         installedAt: parsed.installedAt,
       };
     } catch {

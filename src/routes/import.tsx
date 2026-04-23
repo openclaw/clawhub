@@ -463,7 +463,7 @@ export function ImportGitHub() {
                   >
                     <input
                       type="checkbox"
-                      checked={Boolean(selected[file.path])}
+                      checked={selected[file.path]}
                       onChange={() =>
                         setSelected((prev) => ({ ...prev, [file.path]: !prev[file.path] }))
                       }

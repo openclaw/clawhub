@@ -40,7 +40,7 @@ export async function promptHidden(prompt: string) {
 export async function promptConfirm(prompt: string) {
   const answer = await confirm({ message: prompt });
   if (isCancel(answer)) return false;
-  return Boolean(answer);
+  return answer;
 }
 
 export function openInBrowser(url: string) {
@@ -70,7 +70,7 @@ export function openInBrowser(url: string) {
 }
 
 export function isInteractive() {
-  return Boolean(process.stdout.isTTY && stdin.isTTY);
+  return process.stdout.isTTY && stdin.isTTY;
 }
 
 export function createSpinner(text: string) {

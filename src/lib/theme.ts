@@ -166,13 +166,13 @@ export function useThemeMode() {
   }, []);
 
   useEffect(() => {
-    if (!isHydrated) return;
+    if (!isHydrated) return () => {};
     applyThemeSelection(selection);
     persistThemeSelection(selection);
     syncCustomThemeFromStorage();
 
     if (selection.mode !== 'system' || typeof window === 'undefined' || typeof window.matchMedia !== 'function') {
-      return;
+      return () => {};
     }
 
     const media = window.matchMedia('(prefers-color-scheme: dark)');

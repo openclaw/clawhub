@@ -54,7 +54,7 @@ export async function cmdDeleteSkill(
   if (!options.yes) {
     if (!allowPrompt) fail("Pass --yes (no input)");
     const ok = await promptConfirm(formatPrompt(labels, slug));
-    if (!ok) return;
+    if (!ok) return undefined;
   }
 
   const token = await requireAuthToken();
@@ -88,7 +88,7 @@ export async function cmdUndeleteSkill(
   if (!options.yes) {
     if (!allowPrompt) fail("Pass --yes (no input)");
     const ok = await promptConfirm(formatPrompt(labels, slug));
-    if (!ok) return;
+    if (!ok) return undefined;
   }
 
   const token = await requireAuthToken();

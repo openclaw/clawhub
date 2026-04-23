@@ -191,7 +191,7 @@ describe("skills.getPendingScanSkillsInternal", () => {
         const versionId = skill.latestVersionId as string;
         return [
           versionId,
-          { _id: versionId, sha256hash: `${String(versionId).slice(-8)}${"f".repeat(56)}` },
+          { _id: versionId, sha256hash: `${versionId.slice(-8)}${"f".repeat(56)}` },
         ];
       }),
     );

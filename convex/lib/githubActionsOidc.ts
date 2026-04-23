@@ -279,8 +279,8 @@ function decodeJwt(jwt: string) {
   const parts = jwt.trim().split(".");
   if (parts.length !== 3) throw new Error("Invalid GitHub OIDC token format");
   const [encodedHeader, encodedPayload, encodedSignature] = parts;
-  const header = parseJsonSegment<JwtHeader>(encodedHeader, "header");
-  const payload = parseJsonSegment<JwtPayload>(encodedPayload, "payload");
+  const header = parseJsonSegment(encodedHeader, "header") as JwtHeader;
+  const payload = parseJsonSegment(encodedPayload, "payload") as JwtPayload;
   return {
     header,
     payload,
@@ -289,9 +289,9 @@ function decodeJwt(jwt: string) {
   };
 }
 
-function parseJsonSegment<T>(segment: string, label: string) {
+function parseJsonSegment(segment: string, label: string): unknown {
   try {
-    return JSON.parse(new TextDecoder().decode(base64UrlToBytes(segment))) as T;
+    return JSON.parse(new TextDecoder().decode(base64UrlToBytes(segment)));
   } catch {
     throw new Error(`Invalid GitHub OIDC ${label}`);
   }

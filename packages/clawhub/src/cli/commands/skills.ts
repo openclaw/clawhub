@@ -478,7 +478,7 @@ function resolveExploreSort(raw?: string): { sort: ExploreSort; apiSort: ApiExpl
   if (normalized === "trending") {
     return { sort: "trending", apiSort: "trending" };
   }
-  fail(
+  return fail(
     `Invalid sort "${raw}". Use newest, downloads, rating, installs, installsAllTime, or trending.`,
   );
 }

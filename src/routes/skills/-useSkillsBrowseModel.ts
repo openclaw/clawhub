@@ -146,7 +146,7 @@ export function useSkillsBrowseModel({
   }, [searchKey]);
 
   useEffect(() => {
-    if (!hasQuery) return;
+    if (!hasQuery) return () => {};
     searchRequest.current += 1;
     const requestId = searchRequest.current;
     setIsSearching(true);
@@ -269,9 +269,9 @@ export function useSkillsBrowseModel({
   }, [isLoadingMore]);
 
   useEffect(() => {
-    if (!canLoadMore || typeof IntersectionObserver === "undefined") return;
+    if (!canLoadMore || typeof IntersectionObserver === "undefined") return () => {};
     const target = loadMoreRef.current;
-    if (!target) return;
+    if (!target) return () => {};
     const observer = new IntersectionObserver(
       (entries) => {
         if (entries.some((entry) => entry.isIntersecting)) {

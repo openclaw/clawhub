@@ -782,7 +782,7 @@ function detectPackageFamily(
   if (explicit) return explicit;
   if (fileSet.has("openclaw.plugin.json")) return "code-plugin";
   if (fileSet.has("openclaw.bundle.json")) return "bundle-plugin";
-  fail("Could not detect package family. Use --family.");
+  return fail("Could not detect package family. Use --family.");
 }
 
 function parseTags(value: string) {

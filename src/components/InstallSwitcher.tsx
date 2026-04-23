@@ -23,6 +23,8 @@ export function InstallSwitcher({ exampleSlug = "sonoscli" }: InstallSwitcherPro
         return `pnpm dlx clawhub@latest install ${exampleSlug}`;
       case "bun":
         return `bunx clawhub@latest install ${exampleSlug}`;
+      default:
+        return `npx clawhub@latest install ${exampleSlug}`;
     }
   }, [exampleSlug, pm]);
 

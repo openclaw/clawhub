@@ -236,28 +236,25 @@ export function SkillDetailPage({
   }, [navigate, ownerParam, slug, wantsCanonicalRedirect]);
 
   useEffect(() => {
-    if (!latestVersion) return;
-    if (loadedReadmeVersionId === latestVersion._id && (readme !== null || readmeError !== null)) {
-      return;
-    }
-
-    setReadme(null);
-    setReadmeError(null);
-    setLoadedReadmeVersionId(latestVersion._id);
     let cancelled = false;
+    if (latestVersion && !(loadedReadmeVersionId === latestVersion._id && (readme !== null || readmeError !== null))) {
+      setReadme(null);
+      setReadmeError(null);
+      setLoadedReadmeVersionId(latestVersion._id);
 
-    void getReadme({ versionId: latestVersion._id })
-      .then((data) => {
-        if (cancelled) return;
-        setReadme(data.text);
-        setLoadedReadmeVersionId(latestVersion._id);
-      })
-      .catch((error) => {
-        if (cancelled) return;
-        setReadmeError(error instanceof Error ? error.message : "Failed to load README");
-        setReadme(null);
-        setLoadedReadmeVersionId(latestVersion._id);
-      });
+      void getReadme({ versionId: latestVersion._id })
+        .then((data) => {
+          if (cancelled) return;
+          setReadme(data.text);
+          setLoadedReadmeVersionId(latestVersion._id);
+        })
+        .catch((error) => {
+          if (cancelled) return;
+          setReadmeError(error instanceof Error ? error.message : "Failed to load README");
+          setReadme(null);
+          setLoadedReadmeVersionId(latestVersion._id);
+        });
+    }
 
     return () => {
       cancelled = true;
