@@ -23,6 +23,7 @@ vi.mock("./_generated/api", () => ({
       nominateEmptySkillSpammersInternal: Symbol("nominateEmptySkillSpammersInternal"),
     },
     skills: {
+      backfillLatestSkillModerationInternal: Symbol("skills.backfillLatestSkillModerationInternal"),
       getVersionByIdInternal: Symbol("skills.getVersionByIdInternal"),
       getOwnerSkillActivityInternal: Symbol("skills.getOwnerSkillActivityInternal"),
     },
