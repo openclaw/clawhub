@@ -5,6 +5,10 @@ import { getClawHubSiteUrl } from "../lib/site";
 export type SkillPromptMode = "install-only" | "install-and-setup";
 export type SkillPackageManager = "npm" | "pnpm" | "bun";
 
+function assertNever(value: never): never {
+  throw new Error(`Unsupported package manager: ${String(value)}`);
+}
+
 type SkillOwnerId = Id<"users"> | Id<"publishers">;
 
 type SkillPromptContext = {
@@ -208,8 +212,7 @@ export function formatClawHubInstallCommand(slug: string, pm: SkillPackageManage
       return `bunx clawhub@latest install ${slug}`;
   }
 
-  const _exhaustiveCheck: never = pm;
-  throw new Error("Unsupported package manager");
+  return assertNever(pm);
 }
 
 export function formatOpenClawPrompt({
