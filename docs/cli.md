@@ -126,6 +126,17 @@ Stores your API token + cached registry URL.
 ### `list`
 
 - Reads `<workdir>/.clawhub/lock.json` (legacy `.clawdhub`).
+- Shows `pinned` next to skills frozen with `clawhub pin`, including the optional reason.
+
+### `pin <slug>`
+
+- Marks an installed skill as pinned in the lockfile.
+- `--reason <text>` records why the skill is frozen.
+- Pinned skills are skipped by `update --all` and rejected by direct `update <slug>`.
+
+### `unpin <slug>`
+
+- Removes the lockfile pin from an installed skill so future updates can modify it.
 
 ### `update [slug]` / `update --all`
 
@@ -134,6 +145,9 @@ Stores your API token + cached registry URL.
 - If fingerprint does not match:
   - refuses by default
   - overwrites with `--force` (or prompt, if interactive)
+- Pinned skills are never updated by `--force`.
+- `update <slug>` fails fast for pinned slugs and tells you to run `clawhub unpin <slug>` first.
+- `update --all` skips pinned slugs and prints a summary of what stayed frozen.
 
 ### `skill publish <path>`
 

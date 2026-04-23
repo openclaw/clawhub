@@ -5,6 +5,8 @@ export type Lockfile = {
     {
       version: string | null;
       installedAt: number;
+      pinned?: boolean;
+      pinReason?: string;
     }
   >;
 };
