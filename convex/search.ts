@@ -94,7 +94,7 @@ function getLexicalBoost(queryTokens: string[], displayName: string, slug: strin
   return boost;
 }
 
-function scoreSkillResult(
+function scoreSearchResult(
   queryTokens: string[],
   vectorScore: number,
   displayName: string,
@@ -245,7 +245,7 @@ export const searchSkills: ReturnType<typeof action> = action({
         const vectorScore = entry.embeddingId ? (scoreById.get(entry.embeddingId) ?? 0) : 0;
         return {
           ...entry,
-          score: scoreSkillResult(
+          score: scoreSearchResult(
             queryTokens,
             vectorScore,
             entry.skill.displayName,
@@ -433,12 +433,24 @@ export const lexicalFallbackSkills = internalQuery({
 });
 
 type HydratedSoulEntry = {
-  embeddingId: Id<"soulEmbeddings">;
+  embeddingId?: Id<"soulEmbeddings">;
   soul: NonNullable<ReturnType<typeof toPublicSoul>>;
   version: Doc<"soulVersions"> | null;
 };
 
 type SoulSearchResult = HydratedSoulEntry & { score: number };
+
+function mergeUniqueBySoulId(primary: HydratedSoulEntry[], fallback: HydratedSoulEntry[]) {
+  if (fallback.length === 0) return primary;
+  const out = [...primary];
+  const seen = new Set(primary.map((entry) => entry.soul._id));
+  for (const entry of fallback) {
+    if (seen.has(entry.soul._id)) continue;
+    seen.add(entry.soul._id);
+    out.push(entry);
+  }
+  return out;
+}
 
 export const searchSouls: ReturnType<typeof action> = action({
   args: {
@@ -462,6 +474,7 @@ export const searchSouls: ReturnType<typeof action> = action({
     const maxCandidate = Math.min(Math.max(limit * 10, 200), 256);
     let candidateLimit = Math.min(Math.max(limit * 3, 50), 256);
     let hydrated: HydratedSoulEntry[] = [];
+    const seenEmbeddingIds = new Set<Id<"soulEmbeddings">>();
     let scoreById = new Map<Id<"soulEmbeddings">, number>();
     let exactMatches: HydratedSoulEntry[] = [];
 
@@ -472,9 +485,16 @@ export const searchSouls: ReturnType<typeof action> = action({
         filter: (q) => q.or(q.eq("visibility", "latest"), q.eq("visibility", "latest-approved")),
       });
 
-      hydrated = (await ctx.runQuery(internal.search.hydrateSoulResults, {
-        embeddingIds: results.map((result) => result._id),
-      })) as HydratedSoulEntry[];
+      // Only hydrate embedding IDs we haven't seen yet (incremental).
+      const newEmbeddingIds = results.map((r) => r._id).filter((id) => !seenEmbeddingIds.has(id));
+      for (const id of newEmbeddingIds) seenEmbeddingIds.add(id);
+
+      if (newEmbeddingIds.length > 0) {
+        const newEntries = (await ctx.runQuery(internal.search.hydrateSoulResults, {
+          embeddingIds: newEmbeddingIds,
+        })) as HydratedSoulEntry[];
+        hydrated = [...hydrated, ...newEntries];
+      }
 
       scoreById = new Map<Id<"soulEmbeddings">, number>(
         results.map((result) => [result._id, result._score]),
@@ -497,12 +517,33 @@ export const searchSouls: ReturnType<typeof action> = action({
       candidateLimit = nextLimit;
     }
 
-    return exactMatches
-      .map((entry) => ({
-        ...entry,
-        score: scoreById.get(entry.embeddingId) ?? 0,
-      }))
+    const fallbackMatches =
+      exactMatches.length >= limit
+        ? []
+        : ((await ctx.runQuery(internal.search.lexicalFallbackSouls, {
+            query,
+            queryTokens,
+            limit: Math.min(Math.max(limit * 4, 200), FALLBACK_SCAN_LIMIT),
+          })) as HydratedSoulEntry[]);
+
+    const mergedMatches = mergeUniqueBySoulId(exactMatches, fallbackMatches);
+
+    return mergedMatches
+      .map((entry) => {
+        const vectorScore = entry.embeddingId ? (scoreById.get(entry.embeddingId) ?? 0) : 0;
+        return {
+          ...entry,
+          score: scoreSearchResult(
+            queryTokens,
+            vectorScore,
+            entry.soul.displayName,
+            entry.soul.slug,
+            entry.soul.stats.downloads,
+          ),
+        };
+      })
       .filter((entry) => entry.soul)
+      .sort((a, b) => b.score - a.score || b.soul.stats.downloads - a.soul.stats.downloads)
       .slice(0, limit);
   },
 });
@@ -527,10 +568,69 @@ export const hydrateSoulResults = internalQuery({
   },
 });
 
+export const lexicalFallbackSouls = internalQuery({
+  args: {
+    query: v.string(),
+    queryTokens: v.array(v.string()),
+    limit: v.optional(v.number()),
+  },
+  handler: async (ctx, args): Promise<HydratedSoulEntry[]> => {
+    const limit = Math.min(Math.max(args.limit ?? 200, 10), FALLBACK_SCAN_LIMIT);
+    const seenSoulIds = new Set<Id<"souls">>();
+    const candidates: Doc<"souls">[] = [];
+
+    // Exact slug match via the souls table (only one row, cheap).
+    const slugQuery = args.query.trim().toLowerCase();
+    if (/^[a-z0-9][a-z0-9-]*$/.test(slugQuery)) {
+      const exactSlugSoul = await ctx.db
+        .query("souls")
+        .withIndex("by_slug", (q) => q.eq("slug", slugQuery))
+        .unique();
+      if (exactSlugSoul && !exactSlugSoul.softDeletedAt) {
+        seenSoulIds.add(exactSlugSoul._id);
+        candidates.push(exactSlugSoul);
+      }
+    }
+
+    // Scan recent active souls by updatedAt.
+    // Filter out soft-deleted rows before truncating so that deleted souls
+    // don't consume slots in the FALLBACK_SCAN_LIMIT budget.
+    const recentSouls = await ctx.db
+      .query("souls")
+      .withIndex("by_updated")
+      .order("desc")
+      .filter((q) => q.eq(q.field("softDeletedAt"), undefined))
+      .take(FALLBACK_SCAN_LIMIT);
+
+    for (const soul of recentSouls) {
+      if (seenSoulIds.has(soul._id)) continue;
+      seenSoulIds.add(soul._id);
+      candidates.push(soul);
+    }
+
+    const matched = candidates.filter((soul) =>
+      matchesExactTokens(args.queryTokens, [soul.displayName, soul.slug, soul.summary]),
+    );
+    if (matched.length === 0) return [];
+
+    const entries = matched.map((soul) => {
+      const publicSoul = toPublicSoul(soul);
+      if (!publicSoul) return null;
+      return {
+        soul: publicSoul,
+        version: null as Doc<"soulVersions"> | null,
+      };
+    });
+
+    return entries.filter(Boolean).slice(0, limit) as HydratedSoulEntry[];
+  },
+});
+
 export const __test = {
   getNextCandidateLimit,
   matchesAllTokens,
   getLexicalBoost,
-  scoreSkillResult,
+  scoreSearchResult,
   mergeUniqueBySkillId,
+  mergeUniqueBySoulId,
 };
