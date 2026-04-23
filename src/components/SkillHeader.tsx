@@ -64,6 +64,7 @@ type SkillHeaderProps = {
   configRequirements: ClawdisSkillMetadata["config"] | undefined;
   cliHelp: string | undefined;
   tagEntries: Array<[string, Id<"skillVersions">]>;
+  historicalTagEntries: Array<[string, Id<"skillVersions">]>;
   versionById: Map<Id<"skillVersions">, Doc<"skillVersions">>;
   tagName: string;
   onTagNameChange: (value: string) => void;
@@ -104,6 +105,7 @@ export function SkillHeader({
   configRequirements,
   cliHelp,
   tagEntries,
+  historicalTagEntries,
   versionById,
   tagName,
   onTagNameChange,
@@ -395,6 +397,33 @@ export function SkillHeader({
             ))
           )}
         </div>
+
+        {canManage && historicalTagEntries.length > 0 ? (
+          <div className="skill-tag-history">
+            <div className="skill-tag-history-label">Historical tags</div>
+            <div className="skill-tag-row">
+              {historicalTagEntries.map(([tag, versionId]) => (
+                <Badge key={tag}>
+                  {tag}
+                  <span className="tag-meta">
+                    v{versionById.get(versionId)?.version ?? versionId}
+                  </span>
+                  {tag !== "latest" ? (
+                    <button
+                      type="button"
+                      className="tag-delete"
+                      onClick={() => onTagDelete(tag)}
+                      aria-label={`Delete tag ${tag}`}
+                      title={`Delete tag "${tag}"`}
+                    >
+                      ×
+                    </button>
+                  ) : null}
+                </Badge>
+              ))}
+            </div>
+          </div>
+        ) : null}
 
         {canManage ? (
           <form

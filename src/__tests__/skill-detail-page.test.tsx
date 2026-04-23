@@ -553,6 +553,123 @@ describe("SkillDetailPage", () => {
     expect(screen.getByRole("button", { name: /Merge into target/i })).toBeTruthy();
   });
 
+  it("shows only latest-version tags in public tag surfaces", async () => {
+    useQueryMock.mockImplementation((_fn: unknown, args: unknown) => {
+      if (args === "skip") return undefined;
+      if (args && typeof args === "object" && "skillId" in args) {
+        return [
+          { _id: "skillVersions:1", version: "1.0.7", files: [] },
+          { _id: "skillVersions:2", version: "1.0.8", files: [] },
+        ];
+      }
+      if (args && typeof args === "object" && "slug" in args) {
+        return {
+          skill: {
+            _id: "skills:ip-publisher",
+            slug: "ip-publisher",
+            displayName: "IP Publisher",
+            summary: "Publish knowledge-base content everywhere.",
+            ownerUserId: "users:1",
+            ownerPublisherId: "publishers:veeicwgy",
+            latestVersionId: "skillVersions:2",
+            tags: {
+              "ip-publisher": "skillVersions:2",
+              "knowledge-base": "skillVersions:2",
+              "content-rewrite": "skillVersions:1",
+            },
+            stats: { stars: 0, downloads: 0 },
+          },
+          owner: {
+            _id: "publishers:veeicwgy",
+            _creationTime: 0,
+            kind: "user",
+            handle: "veeicwgy",
+            displayName: "Vee",
+            linkedUserId: "users:1",
+          },
+          latestVersion: {
+            _id: "skillVersions:2",
+            version: "1.0.8",
+            parsed: {},
+            files: [],
+          },
+          forkOf: null,
+          canonical: null,
+        };
+      }
+      return undefined;
+    });
+
+    render(<SkillDetailPage slug="ip-publisher" />);
+
+    expect((await screen.findAllByText("ip-publisher")).length).toBeGreaterThan(0);
+    expect(screen.getAllByText("knowledge-base").length).toBeGreaterThan(0);
+    expect(screen.queryByText("content-rewrite")).toBeNull();
+    expect(screen.queryByText("Historical tags")).toBeNull();
+  });
+
+  it("separates historical tags for managers", async () => {
+    useAuthStatusMock.mockReturnValue({
+      isAuthenticated: true,
+      isLoading: false,
+      me: { _id: "users:1", role: "user" },
+    });
+    useQueryMock.mockImplementation((_fn: unknown, args: unknown) => {
+      if (args === "skip") return undefined;
+      if (args && typeof args === "object" && "ownerUserId" in args) {
+        return [{ _id: "skills:ip-publisher", slug: "ip-publisher", displayName: "IP Publisher" }];
+      }
+      if (args && typeof args === "object" && "skillId" in args) {
+        return [
+          { _id: "skillVersions:1", version: "1.0.7", files: [] },
+          { _id: "skillVersions:2", version: "1.0.8", files: [] },
+        ];
+      }
+      if (args && typeof args === "object" && "slug" in args) {
+        return {
+          skill: {
+            _id: "skills:ip-publisher",
+            slug: "ip-publisher",
+            displayName: "IP Publisher",
+            summary: "Publish knowledge-base content everywhere.",
+            ownerUserId: "users:1",
+            ownerPublisherId: "publishers:veeicwgy",
+            latestVersionId: "skillVersions:2",
+            tags: {
+              "ip-publisher": "skillVersions:2",
+              "knowledge-base": "skillVersions:2",
+              "content-rewrite": "skillVersions:1",
+            },
+            stats: { stars: 0, downloads: 0 },
+          },
+          owner: {
+            _id: "publishers:veeicwgy",
+            _creationTime: 0,
+            kind: "user",
+            handle: "veeicwgy",
+            displayName: "Vee",
+            linkedUserId: "users:1",
+          },
+          latestVersion: {
+            _id: "skillVersions:2",
+            version: "1.0.8",
+            parsed: {},
+            files: [],
+          },
+          forkOf: null,
+          canonical: null,
+        };
+      }
+      return undefined;
+    });
+
+    render(<SkillDetailPage slug="ip-publisher" />);
+
+    expect(await screen.findByText("Historical tags")).toBeTruthy();
+    expect(screen.getByText("content-rewrite")).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Delete tag content-rewrite" })).toBeTruthy();
+  });
+
   it("defers compare version query until compare tab is requested", async () => {
     useQueryMock.mockImplementation((_fn: unknown, args: unknown) => {
       if (args === "skip") return undefined;

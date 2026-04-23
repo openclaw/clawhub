@@ -3729,6 +3729,19 @@ code {
   min-width: 0;
 }
 
+.skill-tag-history {
+  display: grid;
+  gap: 8px;
+}
+
+.skill-tag-history-label {
+  font-size: var(--fs-xs);
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--ink-soft);
+}
+
 .tag-meta {
   font-size: 0.72rem;
   font-weight: 600;
