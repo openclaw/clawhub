@@ -30,5 +30,29 @@
       "source": "/api/:path*",
       "destination": "https://wry-manatee-359.convex.site/api/:path*"
     }
-  ]
+  ],
+  "images": {
+    "sizes": [256, 640, 1024, 1920],
+    "formats": ["image/webp"],
+    "minimumCacheTTL": 86400,
+    "dangerouslyAllowSVG": false,
+    "remotePatterns": [
+      { "protocol": "https", "hostname": "raw.githubusercontent.com" },
+      { "protocol": "https", "hostname": "user-images.githubusercontent.com" },
+      { "protocol": "https", "hostname": "avatars.githubusercontent.com" },
+      { "protocol": "https", "hostname": "camo.githubusercontent.com" },
+      { "protocol": "https", "hostname": "github.com" },
+      { "protocol": "https", "hostname": "raw.github.com" },
+      { "protocol": "https", "hostname": "img.shields.io" },
+      { "protocol": "https", "hostname": "shields.io" },
+      { "protocol": "https", "hostname": "cdn.jsdelivr.net" },
+      { "protocol": "https", "hostname": "i.imgur.com" },
+      { "protocol": "https", "hostname": "codecov.io" },
+      { "protocol": "https", "hostname": "coveralls.io" },
+      { "protocol": "https", "hostname": "codefactor.io" },
+      { "protocol": "https", "hostname": "badgen.net" },
+      { "protocol": "https", "hostname": "flat.badgen.net" },
+      { "protocol": "https", "hostname": "gitlab.com" }
+    ]
+  }
 }

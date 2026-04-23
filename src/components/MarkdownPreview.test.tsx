@@ -41,8 +41,27 @@ describe("MarkdownPreview — raw HTML passthrough", () => {
     const container = renderMarkdown(`<img src="screenshot.png" alt="Demo screenshot"/>`);
     const img = container.querySelector("img");
     expect(img).not.toBeNull();
+    // Relative paths render as-is — only external http(s) URLs get proxied.
     expect(img?.getAttribute("src")).toBe("screenshot.png");
     expect(img?.getAttribute("alt")).toBe("Demo screenshot");
+  });
+
+  it("routes external https <img> URLs through /_vercel/image", () => {
+    const container = renderMarkdown(
+      `<img src="https://raw.githubusercontent.com/foo/bar/main/logo.png" alt="logo"/>`,
+    );
+    const img = container.querySelector("img");
+    expect(img?.getAttribute("src")).toBe(
+      "/_vercel/image?url=https%3A%2F%2Fraw.githubusercontent.com%2Ffoo%2Fbar%2Fmain%2Flogo.png&w=1024&q=75",
+    );
+  });
+
+  it("routes external markdown ![](url) images through /_vercel/image", () => {
+    const container = renderMarkdown(`![logo](https://img.shields.io/badge/x-y-blue.svg)`);
+    const img = container.querySelector("img");
+    expect(img?.getAttribute("src")).toBe(
+      "/_vercel/image?url=https%3A%2F%2Fimg.shields.io%2Fbadge%2Fx-y-blue.svg&w=1024&q=75",
+    );
   });
 
   it("renders <br/> as a real line break", () => {
