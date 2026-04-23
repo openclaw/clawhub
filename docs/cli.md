@@ -230,6 +230,53 @@ Stores your API token + cached registry URL.
 - Existing flags (`--family`, `--name`, `--version`, `--source-repo`, `--source-commit`, `--source-ref`, `--source-path`) still work as overrides.
 - Private GitHub repos require `GITHUB_TOKEN`.
 
+#### Recommended local flow
+
+Use `--dry-run` first so you can confirm the resolved package metadata and
+source attribution before creating a live release:
+
+```bash
+clawhub package publish ./my-plugin --family code-plugin --dry-run
+clawhub package publish ./my-plugin --family code-plugin
+```
+
+#### Minimal `package.json` for `--family code-plugin`
+
+External code plugins need a small amount of OpenClaw metadata in
+`package.json`. This minimal manifest is enough for a successful publish:
+
+```json
+{
+  "name": "@myorg/openclaw-my-plugin",
+  "version": "1.0.0",
+  "type": "module",
+  "openclaw": {
+    "extensions": ["./index.ts"],
+    "compat": {
+      "pluginApi": ">=2026.3.24-beta.2"
+    },
+    "build": {
+      "openclawVersion": "2026.3.24-beta.2"
+    }
+  }
+}
+```
+
+Required fields:
+
+- `openclaw.compat.pluginApi`
+- `openclaw.build.openclawVersion`
+
+Notes:
+
+- `package.json.version` is your package release version, but it is not used as
+  a fallback for OpenClaw compatibility/build validation.
+- `openclaw.compat.minGatewayVersion` and
+  `openclaw.build.pluginSdkVersion` are optional extras if you want to publish
+  more detailed compatibility metadata.
+- If you are using an older `clawhub` CLI release, upgrade before publishing so
+  the local preflight checks run before upload.
+
 #### GitHub Actions
 
 ClawHub also ships an official reusable workflow at

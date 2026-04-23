@@ -51,6 +51,44 @@ clawhub package publish https://github.com/openclaw/example-plugin --dry-run
 clawhub package publish ./example-plugin
 ```
 
+## Publish code plugins
+
+For local plugin folders, start with a dry run:
+
+```bash
+clawhub package publish ./my-plugin --family code-plugin --dry-run
+clawhub package publish ./my-plugin --family code-plugin
+```
+
+`code-plugin` packages must declare these `package.json` fields:
+
+- `openclaw.compat.pluginApi`
+- `openclaw.build.openclawVersion`
+
+Minimal example:
+
+```json
+{
+  "name": "@myorg/openclaw-my-plugin",
+  "version": "1.0.0",
+  "type": "module",
+  "openclaw": {
+    "extensions": ["./index.ts"],
+    "compat": {
+      "pluginApi": ">=2026.3.24-beta.2"
+    },
+    "build": {
+      "openclawVersion": "2026.3.24-beta.2"
+    }
+  }
+}
+```
+
+`package.json.version` does not replace these OpenClaw-specific fields. Add
+`openclaw.compat.minGatewayVersion` and
+`openclaw.build.pluginSdkVersion` when you want richer compatibility metadata,
+but they are not required for publish.
+
 ## GitHub Actions
 
 This repo also provides an official reusable workflow for plugin repos:
