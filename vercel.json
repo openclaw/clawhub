@@ -35,7 +35,9 @@
     "sizes": [256, 640, 1024, 1920],
     "formats": ["image/webp"],
     "minimumCacheTTL": 86400,
-    "dangerouslyAllowSVG": false,
+    "dangerouslyAllowSVG": true,
+    "contentDispositionType": "attachment",
+    "contentSecurityPolicy": "default-src 'self'; script-src 'none'; sandbox;",
     "remotePatterns": [
       { "protocol": "https", "hostname": "raw.githubusercontent.com" },
       { "protocol": "https", "hostname": "user-images.githubusercontent.com" },
