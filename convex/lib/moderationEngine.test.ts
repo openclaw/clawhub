@@ -144,6 +144,291 @@ describe("moderationEngine", () => {
     expect(result.status).toBe("clean");
   });
 
+  it("flags destructive rm -rf troubleshooting commands without confirmation", () => {
+    const result = runStaticModerationScan({
+      slug: "stt-simple",
+      displayName: "STT Simple",
+      summary: "Simple speech-to-text setup",
+      frontmatter: {},
+      metadata: {},
+      files: [{ path: "SKILL.md", size: 512 }],
+      fileContents: [
+        {
+          path: "SKILL.md",
+          content: [
+            "## Troubleshooting",
+            "",
+            "```bash",
+            "# Reinstall",
+            "rm -rf /root/.openclaw/venv/stt-simple",
+            "/root/.openclaw/workspace/skills/stt-simple/install.sh",
+            "```",
+          ].join("\n"),
+        },
+      ],
+    });
+
+    expect(result.reasonCodes).toContain("suspicious.destructive_delete_command");
+    expect(result.status).toBe("suspicious");
+    expect(
+      result.findings.find((finding) => finding.code === "suspicious.destructive_delete_command")
+        ?.message,
+    ).toContain("confirmation gate");
+  });
+
+  it("does not flag destructive rm -rf commands when confirmation is required nearby", () => {
+    const result = runStaticModerationScan({
+      slug: "stt-simple",
+      displayName: "STT Simple",
+      summary: "Simple speech-to-text setup",
+      frontmatter: {},
+      metadata: {},
+      files: [{ path: "SKILL.md", size: 640 }],
+      fileContents: [
+        {
+          path: "SKILL.md",
+          content: [
+            "## Troubleshooting",
+            "Before reinstalling, ask the user for explicit confirmation.",
+            'Continue? (yes/no)',
+            "",
+            "```bash",
+            "# Reinstall",
+            "rm -rf /root/.openclaw/venv/stt-simple",
+            "/root/.openclaw/workspace/skills/stt-simple/install.sh",
+            "```",
+          ].join("\n"),
+        },
+      ],
+    });
+
+    expect(result.reasonCodes).not.toContain("suspicious.destructive_delete_command");
+    expect(result.status).toBe("clean");
+  });
+
+  it("flags a later unguarded rm -rf even if an earlier one is confirmed", () => {
+    const result = runStaticModerationScan({
+      slug: "stt-simple",
+      displayName: "STT Simple",
+      summary: "Simple speech-to-text setup",
+      frontmatter: {},
+      metadata: {},
+      files: [{ path: "SKILL.md", size: 768 }],
+      fileContents: [
+        {
+          path: "SKILL.md",
+          content: [
+            "## Troubleshooting",
+            "Ask the user for explicit confirmation first.",
+            "```bash",
+            "rm -rf /root/.openclaw/venv/stt-simple",
+            "```",
+            "",
+            "## Notes",
+            "More details",
+            "Extra detail",
+            "Another detail",
+            "Yet another detail",
+            "Still discussing",
+            "One more line",
+            "Second more line",
+            "## Rebuild again",
+            "```bash",
+            "rm -rf /root/.openclaw/cache/stt-simple",
+            "```",
+          ].join("\n"),
+        },
+      ],
+    });
+
+    expect(result.reasonCodes).toContain("suspicious.destructive_delete_command");
+    expect(
+      result.findings.find((finding) => finding.code === "suspicious.destructive_delete_command")
+        ?.line,
+    ).toBe(17);
+  });
+
+  it("flags destructive troubleshooting commands in untyped code fences", () => {
+    const result = runStaticModerationScan({
+      slug: "stt-simple",
+      displayName: "STT Simple",
+      summary: "Simple speech-to-text setup",
+      frontmatter: {},
+      metadata: {},
+      files: [{ path: "SKILL.md", size: 512 }],
+      fileContents: [
+        {
+          path: "SKILL.md",
+          content: [
+            "## Troubleshooting",
+            "```",
+            "rm -rf /root/.openclaw/venv/stt-simple",
+            "```",
+          ].join("\n"),
+        },
+      ],
+    });
+
+    expect(result.reasonCodes).toContain("suspicious.destructive_delete_command");
+    expect(result.status).toBe("suspicious");
+  });
+
+  it("does not treat 'no confirmation required' as a confirmation gate", () => {
+    const result = runStaticModerationScan({
+      slug: "stt-simple",
+      displayName: "STT Simple",
+      summary: "Simple speech-to-text setup",
+      frontmatter: {},
+      metadata: {},
+      files: [{ path: "SKILL.md", size: 512 }],
+      fileContents: [
+        {
+          path: "SKILL.md",
+          content: [
+            "## Troubleshooting",
+            "No confirmation required for this reinstall.",
+            "```bash",
+            "rm -rf /root/.openclaw/venv/stt-simple",
+            "```",
+          ].join("\n"),
+        },
+      ],
+    });
+
+    expect(result.reasonCodes).toContain("suspicious.destructive_delete_command");
+    expect(result.status).toBe("suspicious");
+  });
+
+  it("flags destructive troubleshooting commands that use '--' before the target", () => {
+    const result = runStaticModerationScan({
+      slug: "stt-simple",
+      displayName: "STT Simple",
+      summary: "Simple speech-to-text setup",
+      frontmatter: {},
+      metadata: {},
+      files: [{ path: "SKILL.md", size: 512 }],
+      fileContents: [
+        {
+          path: "SKILL.md",
+          content: [
+            "## Troubleshooting",
+            "```bash",
+            "rm -rf -- /root/.openclaw/venv/stt-simple",
+            "```",
+          ].join("\n"),
+        },
+      ],
+    });
+
+    expect(result.reasonCodes).toContain("suspicious.destructive_delete_command");
+    expect(result.status).toBe("suspicious");
+  });
+
+  it("flags destructive troubleshooting commands when the target path is quoted", () => {
+    const result = runStaticModerationScan({
+      slug: "stt-simple",
+      displayName: "STT Simple",
+      summary: "Simple speech-to-text setup",
+      frontmatter: {},
+      metadata: {},
+      files: [{ path: "SKILL.md", size: 512 }],
+      fileContents: [
+        {
+          path: "SKILL.md",
+          content: [
+            "## Troubleshooting",
+            "```bash",
+            'rm -rf "/root/.openclaw/venv/stt-simple"',
+            "```",
+          ].join("\n"),
+        },
+      ],
+    });
+
+    expect(result.reasonCodes).toContain("suspicious.destructive_delete_command");
+    expect(result.status).toBe("suspicious");
+  });
+
+  it("flags destructive troubleshooting commands when a later target is sensitive", () => {
+    const result = runStaticModerationScan({
+      slug: "stt-simple",
+      displayName: "STT Simple",
+      summary: "Simple speech-to-text setup",
+      frontmatter: {},
+      metadata: {},
+      files: [{ path: "SKILL.md", size: 512 }],
+      fileContents: [
+        {
+          path: "SKILL.md",
+          content: [
+            "## Troubleshooting",
+            "```bash",
+            "rm -rf /tmp/stt-simple-cache /root/.openclaw/venv/stt-simple",
+            "```",
+          ].join("\n"),
+        },
+      ],
+    });
+
+    expect(result.reasonCodes).toContain("suspicious.destructive_delete_command");
+    expect(result.status).toBe("suspicious");
+  });
+
+  it("does not flag routine project cleanup commands outside troubleshooting context", () => {
+    const result = runStaticModerationScan({
+      slug: "frontend-build",
+      displayName: "Frontend Build",
+      summary: "Project setup helpers",
+      frontmatter: {},
+      metadata: {},
+      files: [{ path: "SKILL.md", size: 512 }],
+      fileContents: [
+        {
+          path: "SKILL.md",
+          content: [
+            "## Build from scratch",
+            "",
+            "```bash",
+            "rm -rf node_modules dist",
+            "bun install",
+            "bun run build",
+            "```",
+          ].join("\n"),
+        },
+      ],
+    });
+
+    expect(result.reasonCodes).not.toContain("suspicious.destructive_delete_command");
+    expect(result.status).toBe("clean");
+  });
+
+  it("does not flag troubleshooting cleanup for temp directories", () => {
+    const result = runStaticModerationScan({
+      slug: "temp-cleaner",
+      displayName: "Temp Cleaner",
+      summary: "Troubleshoot temp workspace issues",
+      frontmatter: {},
+      metadata: {},
+      files: [{ path: "SKILL.md", size: 512 }],
+      fileContents: [
+        {
+          path: "SKILL.md",
+          content: [
+            "## Troubleshooting",
+            "",
+            "```bash",
+            "# Reinstall",
+            "rm -rf /tmp/stt-simple-cache",
+            "```",
+          ].join("\n"),
+        },
+      ],
+    });
+
+    expect(result.reasonCodes).not.toContain("suspicious.destructive_delete_command");
+    expect(result.status).toBe("clean");
+  });
+
   it("flags hardcoded connection_id UUIDs in markdown examples", () => {
     const result = runStaticModerationScan({
       slug: "api-gateway",
