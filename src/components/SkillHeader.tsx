@@ -74,6 +74,12 @@ type SkillHeaderProps = {
   tagVersions: Doc<"skillVersions">[];
   clawdis: ClawdisSkillMetadata | undefined;
   osLabels: string[];
+  summary: string;
+  onSummaryChange: (value: string) => void;
+  onSummarySubmit: () => void;
+  isSummaryEditing: boolean;
+  onSummaryEditToggle: () => void;
+  isSummarySubmitting: boolean;
 };
 
 export function SkillHeader({
@@ -114,6 +120,12 @@ export function SkillHeader({
   tagVersions,
   clawdis,
   osLabels,
+  summary,
+  onSummaryChange,
+  onSummarySubmit,
+  isSummaryEditing,
+  onSummaryEditToggle,
+  isSummarySubmitting,
 }: SkillHeaderProps) {
   const formattedStats = formatSkillStatsTriplet(skill.stats);
   const suppressScanResults =
@@ -201,7 +213,56 @@ export function SkillHeader({
                 ) : null}
                 {nixPlugin ? <Badge variant="accent">Plugin bundle (nix)</Badge> : null}
               </div>
-              <p className="section-subtitle">{skill.summary ?? "No summary provided."}</p>
+              <p className="section-subtitle">
+                {isSummaryEditing ? (
+                  <form
+                    onSubmit={(event) => {
+                      event.preventDefault();
+                      onSummarySubmit();
+                    }}
+                    className="summary-edit-form"
+                  >
+                    <textarea
+                      className="search-input summary-textarea"
+                      value={summary}
+                      onChange={(event) => onSummaryChange(event.target.value)}
+                      placeholder="Enter a brief summary..."
+                      rows={2}
+                    />
+                    <div className="summary-edit-actions">
+                      <button
+                        className="btn"
+                        type="submit"
+                        disabled={isSummarySubmitting}
+                      >
+                        {isSummarySubmitting ? "Saving..." : "Save"}
+                      </button>
+                      <button
+                        className="btn btn-ghost"
+                        type="button"
+                        onClick={onSummaryEditToggle}
+                        disabled={isSummarySubmitting}
+                      >
+                        Cancel
+                      </button>
+                    </div>
+                  </form>
+                ) : (
+                  <>
+                    {skill.summary ?? "No summary provided."}
+                    {canManage && (
+                      <button
+                        className="edit-summary-btn"
+                        type="button"
+                        onClick={onSummaryEditToggle}
+                        title="Edit summary"
+                      >
+                        ✎
+                      </button>
+                    )}
+                  </>
+                )}
+              </p>
 
               {isStaff && staffModerationNote ? (
                 <div className="skill-hero-note">{staffModerationNote}</div>

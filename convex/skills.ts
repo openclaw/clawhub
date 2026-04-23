@@ -5088,7 +5088,7 @@ export const deleteTags = mutation({
     const nextTags = { ...skill.tags };
     let changed = false;
     for (const tag of args.tags) {
-      if (tag === "latest") continue; // protect the latest tag from deletion
+      if (tag === "latest") continue;
       if (tag in nextTags) {
         delete nextTags[tag];
         changed = true;
@@ -5101,6 +5101,29 @@ export const deleteTags = mutation({
       tags: nextTags,
       updatedAt: Date.now(),
     });
+  },
+});
+
+export const updateSummary = mutation({
+  args: {
+    skillId: v.id("skills"),
+    summary: v.string(),
+  },
+  handler: async (ctx, args) => {
+    const { user } = await requireUser(ctx);
+    const skill = await ctx.db.get(args.skillId);
+    if (!skill) throw new Error("Skill not found");
+    if (skill.ownerUserId !== user._id) {
+      assertModerator(user);
+    }
+
+    const now = Date.now();
+    const patch: Partial<Doc<"skills">> = {
+      summary: args.summary,
+      updatedAt: now,
+    };
+
+    await ctx.db.patch(skill._id, patch);
   },
 });
 
