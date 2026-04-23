@@ -4593,7 +4593,7 @@ export const approveSkillByHashInternal = internalMutation({
     // Update the skill's moderation status based on scan result
     const skill = await ctx.db.get(version.skillId);
     if (skill) {
-      if (skill.latestVersionId !== version._id) {
+      if (skill.latestVersionId && skill.latestVersionId !== version._id) {
         return { ok: true, skillId: version.skillId, versionId: version._id };
       }
 
@@ -4721,7 +4721,7 @@ export const escalateByVtInternal = internalMutation({
 
     const skill = await ctx.db.get(version.skillId);
     if (!skill) return;
-    if (skill.latestVersionId !== version._id) return;
+    if (skill.latestVersionId && skill.latestVersionId !== version._id) return;
 
     const isMalicious = args.status === "malicious";
     const existingFlags: string[] = (skill.moderationFlags as string[] | undefined) ?? [];
