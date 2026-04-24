@@ -344,6 +344,15 @@ export function SkillDetailPage({
   }
 
   const tagEntries = Object.entries(skill.tags ?? {}) as Array<[string, Id<"skillVersions">]>;
+  const latestTagVersionId = latestVersion?._id ?? skill.latestVersionId ?? null;
+  const currentTagEntries =
+    latestTagVersionId === null
+      ? tagEntries
+      : tagEntries.filter(([, versionId]) => versionId === latestTagVersionId);
+  const historicalTagEntries =
+    latestTagVersionId === null
+      ? []
+      : tagEntries.filter(([, versionId]) => versionId !== latestTagVersionId);
 
   return (
     <main className="section">
@@ -375,7 +384,8 @@ export function SkillDetailPage({
           hasPluginBundle={hasPluginBundle}
           configRequirements={configRequirements}
           cliHelp={cliHelp}
-          tagEntries={tagEntries}
+          tagEntries={currentTagEntries}
+          historicalTagEntries={historicalTagEntries}
           versionById={versionById}
           tagName={tagName}
           onTagNameChange={setTagName}
@@ -405,7 +415,7 @@ export function SkillDetailPage({
           ownerHandle={ownerHandle}
           clawdis={clawdis}
           osLabels={osLabels}
-          tagEntries={tagEntries}
+          tagEntries={currentTagEntries}
           isMalwareBlocked={modInfo?.isMalwareBlocked}
           isRemoved={modInfo?.isRemoved}
           nixPlugin={nixPlugin}
