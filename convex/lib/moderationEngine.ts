@@ -112,7 +112,81 @@ function findLineAtIndex(content: string, index: number) {
   return { line, text: content.slice(lineStart, lineEnd) };
 }
 
-function scanCodeFile(path: string, content: string, findings: ModerationFinding[]) {
+function normalizeEnvName(value: unknown) {
+  if (typeof value !== "string") return undefined;
+  const trimmed = value.trim();
+  return trimmed ? trimmed.toUpperCase() : undefined;
+}
+
+function addDeclaredEnvName(names: Set<string>, value: unknown) {
+  const normalized = normalizeEnvName(value);
+  if (normalized) names.add(normalized);
+}
+
+function addDeclaredEnvNamesFromList(names: Set<string>, value: unknown) {
+  if (!Array.isArray(value)) return;
+  for (const entry of value) {
+    if (typeof entry === "string") {
+      addDeclaredEnvName(names, entry);
+      continue;
+    }
+    if (entry && typeof entry === "object" && !Array.isArray(entry)) {
+      addDeclaredEnvName(names, (entry as { name?: unknown }).name);
+    }
+  }
+}
+
+function collectDeclaredEnvNames(input: { frontmatter: Record<string, unknown>; metadata?: unknown }) {
+  const names = new Set<string>();
+  const sources: unknown[] = [input.frontmatter, input.metadata];
+
+  for (const source of sources) {
+    if (!source || typeof source !== "object" || Array.isArray(source)) continue;
+    const record = source as Record<string, unknown>;
+    const requires =
+      record.requires && typeof record.requires === "object" && !Array.isArray(record.requires)
+        ? (record.requires as Record<string, unknown>)
+        : undefined;
+
+    addDeclaredEnvName(names, record.primaryEnv);
+    addDeclaredEnvNamesFromList(names, record.envVars);
+    addDeclaredEnvNamesFromList(names, record.env);
+    addDeclaredEnvNamesFromList(names, requires?.env);
+  }
+
+  return names;
+}
+
+function collectReferencedEnvNames(content: string) {
+  const names = new Set<string>();
+  const patterns = [
+    /process\.env\.([A-Za-z_][A-Za-z0-9_]*)/g,
+    /process\.env\[\s*["']([A-Za-z_][A-Za-z0-9_]*)["']\s*\]/g,
+  ];
+
+  for (const pattern of patterns) {
+    for (const match of content.matchAll(pattern)) {
+      addDeclaredEnvName(names, match[1]);
+    }
+  }
+
+  return names;
+}
+
+function hasBroadEnvAccess(content: string) {
+  return (
+    /Object\.(?:keys|values|entries)\s*\(\s*process\.env\s*\)/.test(content) ||
+    /process\.env(?!\s*(?:\.|\[))/.test(content) ||
+    /process\.env\[\s*[^"'`\]]/.test(content)
+  );
+}
+
+function scanCodeFile(
+  path: string,
+  content: string,
+  findings: ModerationFinding[],
+  declaredEnvNames: Set<string>,
+) {
   if (!CODE_EXTENSION.test(path)) return;
 
   const hasChildProcess = /child_process/.test(content);
@@ -185,15 +259,23 @@ function scanCodeFile(path: string, content: string, findings: ModerationFinding
 
   const hasProcessEnv = /process\.env/.test(content);
   if (hasProcessEnv && hasNetworkSend) {
-    const match = findFirstLine(content, /process\.env/);
-    addFinding(findings, {
-      code: REASON_CODES.CREDENTIAL_HARVEST,
-      severity: "critical",
-      file: path,
-      line: match.line,
-      message: "Environment variable access combined with network send.",
-      evidence: match.text,
-    });
+    const referencedEnvNames = collectReferencedEnvNames(content);
+    const accessesOnlyDeclaredEnvNames =
+      referencedEnvNames.size > 0 &&
+      [...referencedEnvNames].every((name) => declaredEnvNames.has(name)) &&
+      !hasBroadEnvAccess(content);
+
+    if (!accessesOnlyDeclaredEnvNames) {
+      const match = findFirstLine(content, /process\.env/);
+      addFinding(findings, {
+        code: REASON_CODES.CREDENTIAL_HARVEST,
+        severity: "critical",
+        file: path,
+        line: match.line,
+        message: "Environment variable access combined with network send.",
+        evidence: match.text,
+      });
+    }
   }
 
   if (
@@ -342,9 +424,10 @@ function addScannerStatusReason(reasonCodes: string[], scanner: "vt" | "llm", st
 export function runStaticModerationScan(input: StaticScanInput): StaticScanResult {
   const findings: ModerationFinding[] = [];
   const files = [...input.fileContents].sort((a, b) => a.path.localeCompare(b.path));
+  const declaredEnvNames = collectDeclaredEnvNames(input);
 
   for (const file of files) {
-    scanCodeFile(file.path, file.content, findings);
+    scanCodeFile(file.path, file.content, findings, declaredEnvNames);
     scanMarkdownFile(file.path, file.content, findings);
     scanManifestFile(file.path, file.content, findings);
   }

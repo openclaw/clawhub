@@ -279,7 +279,7 @@ describe("skills.getActiveSkillBatchForStaticScanBackfillInternal", () => {
         "skillVersions:current-static",
         {
           _id: "skillVersions:current-static",
-          staticScan: { engineVersion: "v2.4.0" },
+          staticScan: { engineVersion: "v2.4.1" },
         },
       ],
       [
