@@ -14,10 +14,22 @@ describe("clawhub-schema", () => {
   it("parses lockfile records", () => {
     const lock = parseArk(
       LockfileSchema,
-      { version: 1, skills: { demo: { version: "1.0.0", installedAt: 123 } } },
+      {
+        version: 1,
+        skills: {
+          demo: {
+            version: "1.0.0",
+            installedAt: 123,
+            pinned: true,
+            pinReason: "scanner-flagged",
+          },
+        },
+      },
       "Lockfile",
     );
     expect(lock.skills.demo?.version).toBe("1.0.0");
+    expect(lock.skills.demo?.pinned).toBe(true);
+    expect(lock.skills.demo?.pinReason).toBe("scanner-flagged");
   });
 
   it("allows publish payload without tags", () => {

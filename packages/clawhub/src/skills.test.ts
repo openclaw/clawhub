@@ -38,10 +38,19 @@ describe("skills", () => {
     const workdir = await mkdtemp(join(tmpdir(), "clawhub-work-"));
     await writeLockfile(workdir, {
       version: 1,
-      skills: { demo: { version: "1.0.0", installedAt: 1 } },
+      skills: {
+        demo: {
+          version: "1.0.0",
+          installedAt: 1,
+          pinned: true,
+          pinReason: "awaiting moderation review",
+        },
+      },
     });
     const read = await readLockfile(workdir);
     expect(read.skills.demo?.version).toBe("1.0.0");
+    expect(read.skills.demo?.pinned).toBe(true);
+    expect(read.skills.demo?.pinReason).toBe("awaiting moderation review");
   });
 
   it("returns empty lockfile on invalid json", async () => {

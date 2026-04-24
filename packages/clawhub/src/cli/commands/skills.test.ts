@@ -69,8 +69,11 @@ const {
   clampLimit,
   cmdExplore,
   cmdInstall,
+  cmdList,
+  cmdPin,
   cmdSearch,
   cmdUninstall,
+  cmdUnpin,
   cmdUpdate,
   formatExploreLine,
 } = (await import(commandSkillsModuleSpecifier)) as typeof import("./skills");
@@ -228,6 +231,59 @@ describe("cmdSearch", () => {
 });
 
 describe("cmdUpdate", () => {
+  it("fails when directly updating a pinned skill", async () => {
+    vi.mocked(readLockfile).mockResolvedValue({
+      version: 1,
+      skills: {
+        demo: { version: "0.1.0", installedAt: 123, pinned: true, pinReason: "hold" },
+      },
+    });
+
+    await expect(cmdUpdate(makeOpts(), "demo", { force: true }, false)).rejects.toThrow(
+      /is pinned/i,
+    );
+
+    expect(mockApiRequest).not.toHaveBeenCalled();
+    expect(mockDownloadZip).not.toHaveBeenCalled();
+  });
+
+  it("skips pinned skills during update --all and reports them in the summary", async () => {
+    mockApiRequest.mockResolvedValue({
+      latestVersion: { version: "2.0.0" },
+      moderation: null,
+    });
+    mockDownloadZip.mockResolvedValue(new Uint8Array([1, 2, 3]));
+    vi.mocked(readLockfile).mockResolvedValue({
+      version: 1,
+      skills: {
+        demo: { version: "0.1.0", installedAt: 123, pinned: true, pinReason: "hold" },
+        other: { version: "1.0.0", installedAt: 456 },
+      },
+    });
+    vi.mocked(writeLockfile).mockResolvedValue();
+    vi.mocked(readSkillOrigin).mockResolvedValue(null);
+    vi.mocked(writeSkillOrigin).mockResolvedValue();
+    vi.mocked(extractZipToDir).mockResolvedValue();
+    vi.mocked(listTextFiles).mockResolvedValue([]);
+    vi.mocked(hashSkillFiles).mockReturnValue({ fingerprint: "hash", files: [] });
+    vi.mocked(stat).mockRejectedValue(new Error("missing"));
+    vi.mocked(rm).mockResolvedValue();
+
+    await cmdUpdate(makeOpts(), undefined, { all: true }, false);
+
+    expect(mockApiRequest).toHaveBeenCalledTimes(1);
+    const [, args] = mockApiRequest.mock.calls[0] ?? [];
+    expect(args?.path).toBe(`${ApiRoutes.skills}/${encodeURIComponent("other")}`);
+    expect(writeLockfile).toHaveBeenCalledWith("/work", {
+      version: 1,
+      skills: {
+        demo: { version: "0.1.0", installedAt: 123, pinned: true, pinReason: "hold" },
+        other: { version: "2.0.0", installedAt: expect.any(Number) },
+      },
+    });
+    expect(mockLog).toHaveBeenCalledWith("Skipped 1 pinned skill: demo");
+  });
+
   it("uses path-based skill lookup when no local fingerprint is available", async () => {
     mockApiRequest.mockResolvedValue({ latestVersion: { version: "1.0.0" } });
     mockDownloadZip.mockResolvedValue(new Uint8Array([1, 2, 3]));
@@ -249,6 +305,71 @@ describe("cmdUpdate", () => {
     const [, args] = mockApiRequest.mock.calls[0] ?? [];
     expect(args?.path).toBe(`${ApiRoutes.skills}/${encodeURIComponent("demo")}`);
     expect(args?.url).toBeUndefined();
+  });
+});
+
+describe("pin commands", () => {
+  it("pins an installed skill and preserves its version metadata", async () => {
+    vi.mocked(readLockfile).mockResolvedValue({
+      version: 1,
+      skills: { demo: { version: "1.0.0", installedAt: 123 } },
+    });
+    vi.mocked(writeLockfile).mockResolvedValue();
+
+    await cmdPin(makeOpts(), "demo", { reason: "scanner hold" });
+
+    expect(writeLockfile).toHaveBeenCalledWith("/work", {
+      version: 1,
+      skills: {
+        demo: {
+          version: "1.0.0",
+          installedAt: 123,
+          pinned: true,
+          pinReason: "scanner hold",
+        },
+      },
+    });
+    expect(mockLog).toHaveBeenCalledWith("Pinned demo: scanner hold");
+  });
+
+  it("unpinned skills clear pin metadata and keep the installed version", async () => {
+    vi.mocked(readLockfile).mockResolvedValue({
+      version: 1,
+      skills: {
+        demo: { version: "1.0.0", installedAt: 123, pinned: true, pinReason: "scanner hold" },
+      },
+    });
+    vi.mocked(writeLockfile).mockResolvedValue();
+
+    await cmdUnpin(makeOpts(), "demo");
+
+    expect(writeLockfile).toHaveBeenCalledWith("/work", {
+      version: 1,
+      skills: {
+        demo: {
+          version: "1.0.0",
+          installedAt: 123,
+        },
+      },
+    });
+    expect(mockLog).toHaveBeenCalledWith("Unpinned demo");
+  });
+});
+
+describe("cmdList", () => {
+  it("shows pinned state in list output", async () => {
+    vi.mocked(readLockfile).mockResolvedValue({
+      version: 1,
+      skills: {
+        demo: { version: "1.0.0", installedAt: 123, pinned: true, pinReason: "scanner hold" },
+        other: { version: "2.0.0", installedAt: 456 },
+      },
+    });
+
+    await cmdList(makeOpts());
+
+    expect(mockLog).toHaveBeenCalledWith("demo  1.0.0  pinned (scanner hold)");
+    expect(mockLog).toHaveBeenCalledWith("other  2.0.0");
   });
 });
 

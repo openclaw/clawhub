@@ -24,6 +24,8 @@ export const LockfileSchema = type({
     "[string]": {
       version: "string|null",
       installedAt: "number",
+      pinned: "boolean?",
+      pinReason: "string?",
     },
   },
 });

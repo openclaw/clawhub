@@ -39,8 +39,10 @@ Notes:
 ```bash
 clawhub search "postgres backups"
 clawhub install my-skill-pack
+clawhub pin bear-notes --reason "scanner-flagged while awaiting moderation"
 clawhub update --all
 clawhub update --all --no-input --force
+clawhub unpin bear-notes
 clawhub skill publish ./my-skill-pack --slug my-skill-pack --name "My Skill Pack" --version 1.2.0 --changelog "Fixes + docs"
 clawhub package explore --family skill
 clawhub package explore --family code-plugin
