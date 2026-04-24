@@ -600,6 +600,26 @@ html {
   scrollbar-gutter: stable;
 }
 
+/*
+ * Radix UI (react-remove-scroll) locks body scroll when a dropdown/dialog/popover
+ * opens and, to prevent the scrollbar from disappearing visibly, injects a
+ * dynamic stylesheet that sets `padding-right: <scrollbar-width>px !important`
+ * on `body[data-scroll-locked]`. We already reserve a stable scrollbar gutter
+ * globally via `scrollbar-gutter: stable` on <html>, so Radix's compensation is
+ * double-work and ends up shifting the whole page ~15px to the left for the
+ * duration the overlay is open — producing a visible horizontal "jump".
+ *
+ * We neutralize the compensation, but Radix's rule *also* uses `!important`
+ * and is injected into <head> at runtime (i.e. after our stylesheet), so a
+ * plain `body[data-scroll-locked]` selector would tie on specificity and lose
+ * on source order. We therefore prefix `html` to raise specificity (0,1,2 vs
+ * Radix's 0,1,1), guaranteeing we win regardless of inject order.
+ */
+html body[data-scroll-locked] {
+  padding-right: 0 !important;
+  margin-right: 0 !important;
+}
+
 a {
   color: inherit;
   text-decoration: none;
@@ -3154,11 +3174,8 @@ code {
   gap: 24px;
 }
 
-@media (max-width: 960px) {
-  .skill-hero-top.has-plugin {
-    grid-template-columns: 1fr;
-  }
-}
+/* .skill-hero-top.has-plugin no longer uses a 2-column grid, so no
+   collapse override is needed here. */
 
 .skill-hero-title {
   display: grid;
@@ -3194,10 +3211,10 @@ code {
   gap: 16px;
 }
 
-.skill-hero-top.has-plugin {
-  grid-template-columns: minmax(0, 1fr) minmax(320px, 420px);
-  align-items: start;
-}
+/* Removed two-column layout for .skill-hero-top.has-plugin so that
+   <SkillInstallSurface /> and sibling panels span the full hero width
+   directly below the title/description instead of being squeezed into
+   a narrow right column. */
 
 .skill-hero-content {
   display: grid;
@@ -3381,7 +3398,7 @@ code {
 .skill-install-grid {
   display: grid;
   gap: 16px;
-  grid-template-columns: minmax(0, 1.08fr) minmax(0, 0.92fr);
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
 }
 
 .skill-install-panel {
@@ -3527,6 +3544,17 @@ code {
 }
 
 .skill-install-copy-feedback {
+  /*
+   * Force the feedback line onto its own row inside `.skill-install-actions`
+   * regardless of the current string length. The feedback text changes between
+   * short ("Previewing Install Only.") and longer ("Install & Setup prompt
+   * copied.") states; without `flex-basis: 100%` the long state can push past
+   * the container width and wrap below the trigger button, causing the whole
+   * panel to visibly reflow vertically every time the user picks a prompt mode.
+   * Pinning the row makes the layout stable — only the `<pre>` preview below
+   * is allowed to grow/shrink with content.
+   */
+  flex-basis: 100%;
   min-height: 1.25rem;
   font-size: 0.82rem;
   font-weight: 600;
@@ -3586,6 +3614,19 @@ code {
   word-break: break-word;
   font-variant-numeric: tabular-nums;
   box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.04);
+}
+
+/*
+ * Keep the prompt preview at a stable height so that switching between
+ * "Install Only" and "Install & Setup" does not shift the surrounding
+ * layout. The setup prompt is noticeably longer than the install-only
+ * prompt; without a min-height the whole panel (and its neighbour CLI
+ * panel, since they share a grid row) visibly jumps on every toggle.
+ * Only applied to the prompt preview — the CLI `<pre>` blocks stay
+ * content-sized to avoid unnecessary blank space.
+ */
+.skill-install-prompt-preview {
+  min-height: 22em;
 }
 
 .skill-install-command-card {
@@ -3684,7 +3725,7 @@ code {
   }
 }
 
-@media (max-width: 860px) {
+@media (max-width: 1024px) {
   .skill-install-grid {
     grid-template-columns: 1fr;
   }
