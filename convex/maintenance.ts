@@ -1965,6 +1965,20 @@ export const backfillLatestVersionSummaryInternal = internalMutation({
   },
 });
 
+// Repair stale skill-level moderation that was sourced from a non-latest version.
+// Run once after deploying the latest-version moderation fix:
+//   npx convex run maintenance:backfillLatestSkillModeration --prod
+export const backfillLatestSkillModeration: ReturnType<typeof action> = action({
+  args: {
+    batchSize: v.optional(v.number()),
+  },
+  handler: async (ctx, args) => {
+    const { user } = await requireUserFromAction(ctx);
+    assertRole(user, ["admin"]);
+    return await ctx.runMutation(internal.skills.backfillLatestSkillModerationInternal, args);
+  },
+});
+
 /**
  * Backfill `isSuspicious` on all skills. Cursor-based paginated mutation
  * that self-schedules until done.

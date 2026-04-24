@@ -7,6 +7,7 @@ vi.mock("@convex-dev/auth/server", () => ({
 
 import {
   approveSkillByHashInternal,
+  backfillLatestSkillModerationInternal,
   clearOwnerSuspiciousFlagsInternal,
   escalateSkillByIdInternal,
   escalateByVtInternal,
@@ -27,6 +28,9 @@ const escalateSkillByIdHandler = (
 )._handler;
 const escalateByVtHandler = (
   escalateByVtInternal as unknown as WrappedHandler<Record<string, unknown>>
+)._handler;
+const backfillLatestSkillModerationHandler = (
+  backfillLatestSkillModerationInternal as unknown as WrappedHandler<Record<string, unknown>>
 )._handler;
 const clearOwnerSuspiciousFlagsHandler = (
   clearOwnerSuspiciousFlagsInternal as unknown as WrappedHandler<Record<string, unknown>>
@@ -1147,6 +1151,63 @@ describe("skills anti-spam guards", () => {
     );
   });
 
+  it("ignores non-latest versions when approving by hash", async () => {
+    const patch = vi.fn(async () => {});
+    const version = {
+      _id: "skillVersions:old",
+      skillId: "skills:1",
+      staticScan: {
+        status: "suspicious",
+        reasonCodes: ["suspicious.dynamic_code_execution"],
+        findings: [],
+        summary: "",
+        engineVersion: "v2.1.1",
+        checkedAt: Date.now(),
+      },
+      vtAnalysis: { status: "suspicious" },
+      llmAnalysis: { status: "clean" },
+    };
+    const skill = {
+      _id: "skills:1",
+      slug: "rollback-helper",
+      ownerUserId: "users:owner",
+      latestVersionId: "skillVersions:latest",
+      moderationFlags: undefined,
+      moderationReason: "scanner.vt.clean",
+    };
+
+    const db = {
+      get: vi.fn(async (id: string) => {
+        if (id === "skills:1") return skill;
+        return null;
+      }),
+      query: vi.fn((table: string) => {
+        if (table === "skillVersions") {
+          return {
+            withIndex: () => ({
+              unique: async () => version,
+            }),
+          };
+        }
+        throw new Error(`unexpected table ${table}`);
+      }),
+      patch,
+      insert: vi.fn(),
+      normalizeId: vi.fn(),
+    };
+
+    await approveSkillByHashHandler(
+      { db, scheduler: { runAfter: vi.fn() } } as never,
+      {
+        sha256hash: "h".repeat(64),
+        scanner: "vt",
+        status: "clean",
+      } as never,
+    );
+
+    expect(patch).not.toHaveBeenCalled();
+  });
+
   it("vt suspicious escalation does not keep suspicious flags for admin owners", async () => {
     const patch = vi.fn(async () => {});
     const version = { _id: "skillVersions:1", skillId: "skills:1" };
@@ -1203,6 +1264,61 @@ describe("skills anti-spam guards", () => {
         moderationReason: "scanner.llm.clean",
       }),
     );
+  });
+
+  it("ignores vt escalation for non-latest versions", async () => {
+    const patch = vi.fn(async () => {});
+    const version = {
+      _id: "skillVersions:old",
+      skillId: "skills:1",
+      staticScan: {
+        status: "suspicious",
+        reasonCodes: ["suspicious.dynamic_code_execution"],
+        findings: [],
+        summary: "",
+        engineVersion: "v2.1.1",
+        checkedAt: Date.now(),
+      },
+      llmAnalysis: { status: "clean" },
+    };
+    const skill = {
+      _id: "skills:1",
+      slug: "rollback-helper",
+      ownerUserId: "users:owner",
+      latestVersionId: "skillVersions:latest",
+      moderationFlags: undefined,
+      moderationReason: "scanner.vt.clean",
+    };
+
+    const db = {
+      get: vi.fn(async (id: string) => {
+        if (id === "skills:1") return skill;
+        return null;
+      }),
+      query: vi.fn((table: string) => {
+        if (table === "skillVersions") {
+          return {
+            withIndex: () => ({
+              unique: async () => version,
+            }),
+          };
+        }
+        throw new Error(`unexpected table ${table}`);
+      }),
+      patch,
+      insert: vi.fn(),
+      normalizeId: vi.fn(),
+    };
+
+    await escalateByVtHandler(
+      { db, scheduler: { runAfter: vi.fn() } } as never,
+      {
+        sha256hash: "h".repeat(64),
+        status: "suspicious",
+      } as never,
+    );
+
+    expect(patch).not.toHaveBeenCalled();
   });
 
   it("rebuilds structured moderation state for legacy skillId escalation", async () => {
@@ -1354,6 +1470,94 @@ describe("skills anti-spam guards", () => {
         moderationFlags: undefined,
         moderationReason: "scanner.vt.clean",
         moderationStatus: "active",
+      }),
+    );
+  });
+
+  it("re-syncs stale skill moderation from latestVersionId during backfill", async () => {
+    const paginate = vi.fn().mockResolvedValue({
+      page: [
+        {
+          _id: "skills:1",
+          slug: "rollback-helper",
+          ownerUserId: "users:owner",
+          latestVersionId: "skillVersions:latest",
+          moderationSourceVersionId: "skillVersions:old",
+          moderationStatus: "hidden",
+          moderationReason: "scanner.vt.suspicious",
+          moderationFlags: ["flagged.suspicious"],
+          manualOverride: undefined,
+          softDeletedAt: undefined,
+        },
+      ],
+      continueCursor: null,
+      isDone: true,
+    });
+    const patch = vi.fn(async () => {});
+    const latestVersion = {
+      _id: "skillVersions:latest",
+      staticScan: {
+        status: "clean",
+        reasonCodes: [],
+        findings: [],
+        summary: "",
+        engineVersion: "v2.1.1",
+        checkedAt: Date.now(),
+      },
+      vtAnalysis: { status: "clean" },
+      llmAnalysis: { status: "clean" },
+    };
+    const owner = {
+      _id: "users:owner",
+      role: "user",
+      _creationTime: Date.now() - 60 * 24 * 60 * 60 * 1000,
+      createdAt: Date.now() - 60 * 24 * 60 * 60 * 1000,
+      deletedAt: undefined,
+    };
+
+    const db = {
+      get: vi.fn(async (id: string) => {
+        if (id === "skillVersions:latest") return latestVersion;
+        if (id === "users:owner") return owner;
+        return null;
+      }),
+      query: vi.fn((table: string) => {
+        const globalStatsQuery = buildGlobalStatsQuery(table);
+        if (globalStatsQuery) return globalStatsQuery;
+        if (table === "skills") {
+          return {
+            paginate,
+          };
+        }
+        throw new Error(`unexpected table ${table}`);
+      }),
+      patch,
+      insert: vi.fn(),
+      normalizeId: vi.fn(),
+    };
+
+    const result = await backfillLatestSkillModerationHandler(
+      { db, scheduler: { runAfter: vi.fn() } } as never,
+      { batchSize: 10 } as never,
+    );
+
+    expect(result).toEqual({ patched: 1, isDone: true, scanned: 1 });
+    expect(patch).toHaveBeenNthCalledWith(
+      1,
+      "skills:1",
+      expect.objectContaining({
+        moderationStatus: "active",
+        moderationReason: "scanner.vt.clean",
+        moderationFlags: undefined,
+        moderationVerdict: "clean",
+        moderationSourceVersionId: "skillVersions:latest",
+      }),
+    );
+    expect(patch).toHaveBeenNthCalledWith(
+      2,
+      "globalStats:1",
+      expect.objectContaining({
+        activeSkillsCount: 101,
       }),
     );
   });
