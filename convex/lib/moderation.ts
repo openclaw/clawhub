@@ -12,7 +12,9 @@ const FLAG_RULES: Array<{ flag: string; pattern: RegExp }> = [
   { flag: "suspicious.keyword", pattern: /(malware|stealer|phish|phishing|keylogger)/i },
 
   // Data exfiltration patterns - webhooks are unusual in skills
-  { flag: "suspicious.webhook", pattern: /(discord\.gg|webhook|hooks\.slack)/i },
+  // NOTE: Only flag explicit Discord/Slack webhook URLs, not generic webhook mentions.
+  // WordPress, Zapier, Make, and other legitimate integrations use webhook as a common term.
+  { flag: "suspicious.webhook", pattern: /(discord\.gg\/|discord\.com\/api\/webhooks|discordapp\.com\/api\/webhooks|hooks\.slack)/i },
 
   // Arbitrary code execution - curl | bash is dangerous
   { flag: "suspicious.script", pattern: /(curl[^\n]+\|\s*(sh|bash))/i },
@@ -20,9 +22,9 @@ const FLAG_RULES: Array<{ flag: string; pattern: RegExp }> = [
   // URL obfuscation - shorteners hide destination
   { flag: "suspicious.url_shortener", pattern: /(bit\.ly|tinyurl\.com|t\.co|goo\.gl|is\.gd)/i },
 
-  // Note: Removed overly broad patterns for "token", "api key", "password", "crypto", etc.
-  // These are common in legitimate auth/payment skills (OAuth, API integrations, crypto wallets).
-  // The LLM evaluator handles credential proportionality analysis (section 4 of security prompt).
+  // Note: Removed overly broad patterns for token, api key, password, crypto, etc.
+  // These are common in legitimate auth/payment skills.
+  // The LLM evaluator handles credential proportionality analysis.
 ];
 
 export function deriveModerationFlags({
