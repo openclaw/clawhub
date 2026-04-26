@@ -77,6 +77,29 @@ See also: [acceptable-usage.md](./acceptable-usage.md) for the marketplace polic
   - one-shot: `npx convex run commentModeration:backfillCommentScamModeration '{"batchSize":25,"maxBatches":20}'`
   - background chain: `npx convex run commentModeration:scheduleCommentScamModeration '{"batchSize":25}'`
 
+## Moderation holds
+
+When the static scanner flags an uploaded skill as malicious, the publisher is automatically
+placed under a **moderation hold** (`requiresModerationAt` set on the user). This:
+
+- Hides all of the publisher's skills (not just the flagged one)
+- Causes all future publishes to start in `hidden` state
+- Creates an audit log entry (`user.moderation.auto`)
+
+**Lifting a moderation hold** (admin-only):
+
+```bash
+# Via Convex console or CLI:
+npx convex run users:liftModerationHold '{"userId": "<user-id>", "reason": "False positive from security tool scanning"}'
+```
+
+This clears `requiresModerationAt` and `requiresModerationReason`, restores skills that were
+hidden by the hold (skills hidden for other reasons are not affected), and creates an audit
+log entry (`user.moderation.lift`).
+
+Skills whose own static scan returned `malicious` are not restored -- only the user-level
+hold is lifted. This prevents genuinely malicious skills from being accidentally restored.
+
 ## Bans
 
 - Banning a user:
