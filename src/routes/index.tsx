@@ -390,7 +390,7 @@ function SkillsHome() {
           }`}>
             {slotState.phase === "stopped" && slotState.isHackJackpot && (
               <img
-                src="/clawd-mark.png"
+                src="/clawhub-signet.svg"
                 alt=""
                 aria-hidden="true"
                 className="home-v2-hack-lobster"

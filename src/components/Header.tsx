@@ -133,7 +133,7 @@ export default function Header() {
                     <span className="mobile-nav-brand">
                       <span className="mobile-nav-brand-mark" aria-hidden="true">
                         <img
-                          src="/clawd-logo.png"
+                          src="/clawhub-mark.svg"
                           alt=""
                           aria-hidden="true"
                           className="mobile-nav-brand-mark-image"
@@ -220,7 +220,12 @@ export default function Header() {
             className="brand"
           >
             <span className="brand-mark">
-              <img src="/clawd-logo.png" alt="" aria-hidden="true" className="brand-mark-image" />
+              <img
+                src="/clawhub-mark.svg"
+                alt=""
+                aria-hidden="true"
+                className="brand-mark-image"
+              />
             </span>
             <span className="brand-name brand-name-responsive">{siteName}</span>
           </Link>

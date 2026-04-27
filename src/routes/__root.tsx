@@ -16,6 +16,7 @@ export const Route = createRootRoute({
   head: () => {
     const mode = getSiteMode();
     const siteName = getSiteName(mode);
+    const siteTitle = mode === "souls" ? siteName : "ClawHub | The OpenClaw Registry";
     const siteDescription = getSiteDescription(mode);
     const siteUrl = getSiteUrlForMode(mode);
     const ogImage = `${siteUrl}/og.png?v=${OG_IMAGE_VERSION}`;
@@ -30,7 +31,7 @@ export const Route = createRootRoute({
           content: "width=device-width, initial-scale=1",
         },
         {
-          title: siteName,
+          title: siteTitle,
         },
         {
           name: "description",
@@ -93,6 +94,11 @@ export const Route = createRootRoute({
         {
           rel: "stylesheet",
           href: appCss,
+        },
+        {
+          rel: "icon",
+          href: "/favicon.svg",
+          type: "image/svg+xml",
         },
         {
           rel: "icon",

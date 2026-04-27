@@ -72,7 +72,7 @@
   <ellipse cx="96" cy="532" rx="48" ry="10" fill="#FF5E35" fill-opacity="0.24" filter="url(#softBlur)"/>
   <ellipse cx="572" cy="494" rx="302" ry="12" fill="#FF5E35" fill-opacity="0.12" filter="url(#softBlur)"/>
 
-  <image href="clawd-logo.png" x="124" y="158" width="270" height="270" preserveAspectRatio="xMidYMid meet"/>
+  <image href="clawhub-signet.svg" x="124" y="158" width="270" height="270" preserveAspectRatio="xMidYMid meet"/>
 
   <text x="500" y="256" fill="#F8EEE8" font-size="88" font-weight="900" letter-spacing="-4.2" font-family="'Helvetica Neue', Helvetica, Arial, sans-serif">ClawHub.ai</text>
   <text x="500" y="338" fill="#F8EEE8" font-size="42" font-weight="800" letter-spacing="-1.2" font-family="'Helvetica Neue', Helvetica, Arial, sans-serif">Equip. Install. <tspan fill="#FF6236">Build.</tspan></text>
