@@ -6461,9 +6461,20 @@ export const insertVersion = internalMutation({
     // currently published latest version (by semver). This allows backport /
     // hotfix publishes on lower version lines (e.g. shipping 1.0.1 while 2.x is
     // live) without clobbering the latest pointer, tag, embedding, or summary.
+    //
+    // The schema only enforces `v.string()` on `latestVersionSummary.version`,
+    // so legacy / imported skills may persist non-semver values (e.g. "latest",
+    // "2024-12"). Calling `semver.gt` with a malformed right-hand operand
+    // throws `TypeError: Invalid Version`, which would crash the publish
+    // mutation. Short-circuit to treating the incoming publish as the new
+    // latest in that case, which self-heals the skill back into a valid
+    // semver latest pointer (args.version is already validated upstream in
+    // publishVersionForUser / githubImport).
     const prevLatestVersion = skill.latestVersionSummary?.version;
     const isNewLatest =
-      !prevLatestVersion || semver.gt(args.version, prevLatestVersion);
+      !prevLatestVersion ||
+      !semver.valid(prevLatestVersion) ||
+      semver.gt(args.version, prevLatestVersion);
 
     const nextTags: Record<string, Id<"skillVersions">> = { ...skill.tags };
     if (isNewLatest) {

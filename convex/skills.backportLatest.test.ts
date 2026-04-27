@@ -656,4 +656,64 @@ describe("skills.insertVersion latest-tag protection", () => {
     const flags = (finalPatch.moderationFlags ?? []) as string[];
     expect(flags).toContain("suspicious.keyword");
   });
+
+  it("does not throw when the persisted latestVersionSummary.version is not valid semver", async () => {
+    // Regression for reviewer catch: the schema only enforces v.string() on
+    // latestVersionSummary.version, so legacy / imported skills may persist
+    // non-semver values. Without the semver.valid() guard, semver.gt would
+    // throw `TypeError: Invalid Version` and crash the publish mutation.
+    const skill = buildExistingSkill({
+      latestVersionSummary: {
+        version: "not-a-semver",
+        createdAt: 1000,
+        changelog: "legacy",
+      },
+    });
+    const { ctx, captured } = buildCtx(skill);
+
+    // Must not throw `TypeError: Invalid Version` from semver.gt().
+    await insertVersionHandler(
+      ctx as never,
+      buildPublishArgs({
+        version: "1.0.0",
+        displayName: "Recovered v1",
+      }) as never,
+    );
+
+    // The new publish should self-heal the skill back into a valid semver
+    // latest pointer, since the persisted one is unusable for comparison.
+    const finalPatch = captured.skillPatches.at(-1) as Record<string, unknown>;
+    expect(finalPatch.latestVersionId).toBe(NEW_VERSION_ID);
+    expect(finalPatch.latestVersionSummary).toMatchObject({ version: "1.0.0" });
+    expect(finalPatch.tags).toEqual(
+      expect.objectContaining({ latest: NEW_VERSION_ID }),
+    );
+    expect(captured.embeddingInserts[0]).toMatchObject({ isLatest: true });
+  });
+
+  it("does not throw when the persisted latestVersionSummary.version is an empty string", async () => {
+    // Empty string is falsy but still fails semver.valid(); make sure both
+    // guard clauses (`!prevLatestVersion` and `!semver.valid(...)`) keep us
+    // safe rather than only one of them.
+    const skill = buildExistingSkill({
+      latestVersionSummary: {
+        version: "",
+        createdAt: 1000,
+        changelog: "legacy",
+      },
+    });
+    const { ctx, captured } = buildCtx(skill);
+
+    await insertVersionHandler(
+      ctx as never,
+      buildPublishArgs({
+        version: "0.1.0",
+        displayName: "Recovered v0.1",
+      }) as never,
+    );
+
+    const finalPatch = captured.skillPatches.at(-1) as Record<string, unknown>;
+    expect(finalPatch.latestVersionId).toBe(NEW_VERSION_ID);
+    expect(finalPatch.latestVersionSummary).toMatchObject({ version: "0.1.0" });
+  });
 });
