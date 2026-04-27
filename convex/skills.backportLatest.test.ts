@@ -608,4 +608,52 @@ describe("skills.insertVersion latest-tag protection", () => {
     expect(finalPatch.capabilityTags).toEqual(["cap-v0"]);
     expect(captured.embeddingInserts[0]).toMatchObject({ isLatest: true });
   });
+
+  it("does not derive moderation flags from a backport's displayName", async () => {
+    // Regression for reviewer catch: on backport publishes the skill card
+    // keeps the old displayName, so the moderation evaluation must run
+    // against the old displayName too. Otherwise we persist flags that were
+    // triggered by text the user can never see on the card.
+    const skill = buildExistingSkill({ displayName: "Harmless Card Title" });
+    const { ctx, captured } = buildCtx(skill);
+
+    await insertVersionHandler(
+      ctx as never,
+      buildPublishArgs({
+        version: "1.0.1",
+        // "phishing" would match FLAG_RULES ("suspicious.keyword") if it
+        // actually reached deriveModerationFlags.
+        displayName: "backport phishing helper",
+      }) as never,
+    );
+
+    const finalPatch = captured.skillPatches.at(-1) as Record<string, unknown>;
+    // Card displayName is unchanged (backport cannot leak its title).
+    expect(finalPatch.displayName).toBe("Harmless Card Title");
+    // And the flags derived from that evaluation must not contain the
+    // keyword match sourced from the backport-only title.
+    const flags = (finalPatch.moderationFlags ?? []) as string[];
+    expect(flags).not.toContain("suspicious.keyword");
+  });
+
+  it("still derives moderation flags from displayName when the publish IS the new latest", async () => {
+    // Counter-case for the guard above: when the publish actually promotes
+    // to latest, the new displayName is what lives on the card, so flags
+    // derived from it must be recorded.
+    const skill = buildExistingSkill({ displayName: "Harmless Card Title" });
+    const { ctx, captured } = buildCtx(skill);
+
+    await insertVersionHandler(
+      ctx as never,
+      buildPublishArgs({
+        version: "3.0.0",
+        displayName: "shiny phishing helper",
+      }) as never,
+    );
+
+    const finalPatch = captured.skillPatches.at(-1) as Record<string, unknown>;
+    expect(finalPatch.displayName).toBe("shiny phishing helper");
+    const flags = (finalPatch.moderationFlags ?? []) as string[];
+    expect(flags).toContain("suspicious.keyword");
+  });
 });

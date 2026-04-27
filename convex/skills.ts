@@ -6486,10 +6486,15 @@ export const insertVersion = internalMutation({
     // follow the latest version. Backport publishes must not leak their values
     // into the skill card shown on the listing / detail pages.
     const nextSummary = isNewLatest ? derivedSummary : skill.summary;
+    // Backport publishes must not promote their displayName/summary onto the
+    // skill card (see basePatch below), so the moderation evaluation must use
+    // the same values that will actually be persisted. Otherwise we would
+    // persist flags derived from text the user can never see on the card.
+    const nextDisplayName = isNewLatest ? args.displayName : skill.displayName;
     const derivedFlags = deriveModerationFlags({
       skill: {
         slug: skill.slug,
-        displayName: args.displayName,
+        displayName: nextDisplayName,
         summary: nextSummary ?? undefined,
       },
       parsed: args.parsed,
@@ -6503,7 +6508,7 @@ export const insertVersion = internalMutation({
       new Set([...(derivedFlags ?? []), ...(moderationSnapshot.legacyFlags ?? [])]),
     );
     const basePatch: SkillModerationPatch = {
-      displayName: isNewLatest ? args.displayName : skill.displayName,
+      displayName: nextDisplayName,
       summary: nextSummary ?? undefined,
       ownerPublisherId: skill.ownerPublisherId ?? ownerPublisherId,
       latestVersionId: isNewLatest ? versionId : skill.latestVersionId,
