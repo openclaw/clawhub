@@ -13,6 +13,10 @@ All v1 paths are under `/api/v1/...` and implemented by Convex HTTP routes (`con
 Legacy `/api/...` and `/api/cli/...` remain for compatibility (see `DEPRECATIONS.md`).
 OpenAPI: `/api/v1/openapi.json`.
 
+## Public catalog reuse
+
+Third-party directories may use the public read endpoints to list or search ClawHub skills. Please cache results, honor `429`/`Retry-After`, link users back to the canonical ClawHub listing, and avoid implying ClawHub endorsement of the third-party site. Do not attempt to mirror hidden, private, or moderation-blocked content outside the public API surface.
+
 ## Rate limits
 
 Enforcement model:

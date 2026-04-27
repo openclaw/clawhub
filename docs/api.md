@@ -11,6 +11,18 @@ Base: `https://clawhub.ai`
 
 OpenAPI: `/api/v1/openapi.json`
 
+## Public catalog reuse
+
+You can build a third-party catalog, directory, or search surface on top of ClawHub's public read APIs. Public skill metadata and skill files are published under ClawHub's skill license rules, while the API itself is rate-limited and should be consumed responsibly.
+
+Guidelines:
+
+- Use public read endpoints such as `GET /api/v1/skills`, `GET /api/v1/search`, and `GET /api/v1/skills/{slug}` for catalog listings.
+- Cache responses and respect `429`, `Retry-After`, and rate-limit headers instead of polling aggressively.
+- Link back to the canonical ClawHub skill URL when displaying listings so users can inspect the source registry record.
+- Do not imply that ClawHub endorses, verifies, or operates the third-party site.
+- Do not mirror hidden, private, or moderation-blocked content by bypassing public API filters or auth boundaries.
+
 ## Auth
 
 - Public read: no token required.
