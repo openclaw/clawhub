@@ -217,10 +217,7 @@ export async function fetchGitHubRepositoryIdentity(
     throw new Error(`Invalid GitHub repository: ${repository}`);
   }
   const response = await fetchImpl(`https://api.github.com/repos/${normalizedRepository}`, {
-    headers: {
-      Accept: "application/vnd.github+json",
-      "User-Agent": "clawhub/package-trusted-publisher",
-    },
+    headers: buildGitHubRepositoryLookupHeaders(),
   });
   if (!response.ok) {
     throw new Error(
@@ -240,6 +237,18 @@ export async function fetchGitHubRepositoryIdentity(
     repositoryOwner: ownerLogin,
     repositoryOwnerId: requireClaimString(body.owner?.id, "owner.id"),
   };
+}
+
+function buildGitHubRepositoryLookupHeaders() {
+  const headers: Record<string, string> = {
+    Accept: "application/vnd.github+json",
+    "User-Agent": "clawhub/package-trusted-publisher",
+  };
+  const token = process.env.GITHUB_TOKEN?.trim();
+  if (token) {
+    headers.Authorization = `Bearer ${token}`;
+  }
+  return headers;
 }
 
 export function normalizeGitHubRepository(repository: string) {

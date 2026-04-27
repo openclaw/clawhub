@@ -3,6 +3,7 @@
 import { describe, expect, it, vi } from "vitest";
 import {
   extractWorkflowFilenameFromWorkflowRef,
+  fetchGitHubRepositoryIdentity,
   verifyGitHubActionsTrustedPublishJwt,
   type TrustedGitHubActionsPublisher,
 } from "./githubActionsOidc";
@@ -38,6 +39,46 @@ describe("extractWorkflowFilenameFromWorkflowRef", () => {
         "openclaw/openclaw",
       ),
     ).toBe("plugin-clawhub-release.yml");
+  });
+});
+
+describe("fetchGitHubRepositoryIdentity", () => {
+  it("uses GITHUB_TOKEN for repository lookup when configured", async () => {
+    const previousToken = process.env.GITHUB_TOKEN;
+    process.env.GITHUB_TOKEN = "ghs_test_token";
+    const fetchMock = vi.fn(async () =>
+      Response.json({
+        id: 123,
+        full_name: "openclaw/clawhub",
+        owner: { login: "openclaw", id: 456 },
+      }),
+    );
+
+    try {
+      await expect(fetchGitHubRepositoryIdentity("openclaw/clawhub", fetchMock)).resolves.toEqual({
+        repository: "openclaw/clawhub",
+        repositoryId: "123",
+        repositoryOwner: "openclaw",
+        repositoryOwnerId: "456",
+      });
+    } finally {
+      if (previousToken === undefined) {
+        delete process.env.GITHUB_TOKEN;
+      } else {
+        process.env.GITHUB_TOKEN = previousToken;
+      }
+    }
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      "https://api.github.com/repos/openclaw/clawhub",
+      expect.objectContaining({
+        headers: expect.objectContaining({
+          Authorization: "Bearer ghs_test_token",
+          Accept: "application/vnd.github+json",
+          "User-Agent": "clawhub/package-trusted-publisher",
+        }),
+      }),
+    );
   });
 });
 
