@@ -67,6 +67,39 @@ describe("search helpers", () => {
     );
   });
 
+  it("falls back to lexical skill search when embedding generation fails", async () => {
+    generateEmbeddingMock.mockRejectedValueOnce(new Error("API unavailable"));
+    const fallback = [
+      {
+        skill: makePublicSkill({ id: "skills:orf", slug: "orf", displayName: "ORF" }),
+        version: null,
+        ownerHandle: "steipete",
+        owner: null,
+      },
+    ];
+    const vectorSearch = vi.fn().mockRejectedValue(new Error("should not be called"));
+    const runQuery = vi
+      .fn()
+      .mockResolvedValueOnce(null) // getExactSkillSlugMatch
+      .mockResolvedValueOnce(fallback); // lexicalFallbackSkills
+
+    const result = await searchSkillsHandler(
+      {
+        vectorSearch,
+        runQuery,
+      },
+      { query: "orf", limit: 10 },
+    );
+
+    expect(vectorSearch).not.toHaveBeenCalled();
+    expect(result).toHaveLength(1);
+    expect(result[0].skill.slug).toBe("orf");
+    expect(runQuery).toHaveBeenLastCalledWith(
+      expect.anything(),
+      expect.objectContaining({ query: "orf", queryTokens: ["orf"] }),
+    );
+  });
+
   it("applies highlightedOnly filtering in lexical fallback", async () => {
     const highlighted = {
       ...makeSkillDoc({
