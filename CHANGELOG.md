@@ -13,6 +13,7 @@
 - Packages: keep package search fallback scans bounded, stop scanning after the requested result limit, and keep direct plugin-name matches scoped to the requested package family (OpenClaw #64025).
 - Moderation: stop flagging declared env vars sent to their intended API while preserving broad env scraping and exfiltration findings (#1803) (thanks @deepujain).
 - Stats maintenance: keep skill stat migration fields synchronized by treating top-level stat fields as canonical during backfill/reconcile fallback reads (#1704) (thanks @momothemage).
+- Skills: keep historical tags out of public skill detail surfaces while preserving manager visibility (#1804) (thanks @deepujain).
 - Skills: prevent backport publishes from clobbering `latest` state and guard malformed persisted latest semver values during publish comparisons (#1832) (thanks @momothemage).
 
 ## 0.10.0 - 2026-04-05
