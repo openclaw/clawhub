@@ -523,6 +523,57 @@ describe("skills.insertVersion latest-tag protection", () => {
     );
   });
 
+  it("ignores an explicit `latest` in args.tags for a backport publish", async () => {
+    // Security regression: a caller must not be able to defeat the semver
+    // guard by smuggling `latest` through the custom-tag loop.
+    const skill = buildExistingSkill();
+    const { ctx, captured } = buildCtx(skill);
+
+    await insertVersionHandler(
+      ctx as never,
+      buildPublishArgs({
+        version: "1.0.1",
+        tags: ["latest", "lts"],
+      }) as never,
+    );
+
+    const finalPatch = captured.skillPatches.at(-1) as Record<string, unknown>;
+    expect(finalPatch.latestVersionId).toBe(PREV_LATEST_VERSION_ID);
+    expect(finalPatch.latestVersionSummary).toMatchObject({ version: "2.0.0" });
+    expect(finalPatch.tags).toEqual(
+      expect.objectContaining({
+        latest: PREV_LATEST_VERSION_ID,
+        lts: NEW_VERSION_ID,
+      }),
+    );
+    // New embedding must still be marked non-latest.
+    expect(captured.embeddingInserts[0]).toMatchObject({ isLatest: false });
+    expect(captured.embeddingPatches).toHaveLength(0);
+  });
+
+  it("ignores case-variant `LaTeSt` in args.tags for a backport publish", async () => {
+    // Defense in depth against case-only bypass attempts.
+    const skill = buildExistingSkill();
+    const { ctx, captured } = buildCtx(skill);
+
+    await insertVersionHandler(
+      ctx as never,
+      buildPublishArgs({
+        version: "1.0.1",
+        tags: ["LaTeSt"],
+      }) as never,
+    );
+
+    const finalPatch = captured.skillPatches.at(-1) as Record<string, unknown>;
+    expect(finalPatch.latestVersionId).toBe(PREV_LATEST_VERSION_ID);
+    expect(finalPatch.tags).toEqual(
+      expect.objectContaining({ latest: PREV_LATEST_VERSION_ID }),
+    );
+    // The case-variant tag must not leak into the stored tag map either.
+    const tags = finalPatch.tags as Record<string, string>;
+    expect(tags.LaTeSt).toBeUndefined();
+  });
+
   it("treats the very first publish as latest even when the version is low", async () => {
     const skill = buildExistingSkill({
       latestVersionId: undefined,

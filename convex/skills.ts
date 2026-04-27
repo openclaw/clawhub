@@ -6469,7 +6469,12 @@ export const insertVersion = internalMutation({
     if (isNewLatest) {
       nextTags.latest = versionId;
     }
+    // `latest` is a reserved tag: it is managed exclusively by the semver
+    // comparison above so that backport publishes cannot clobber the latest
+    // pointer. Silently drop it (case-insensitively) from caller-provided tags
+    // to prevent a trivial bypass via args.tags: ["latest"].
     for (const tag of args.tags ?? []) {
+      if (tag.toLowerCase() === "latest") continue;
       nextTags[tag] = versionId;
     }
 
