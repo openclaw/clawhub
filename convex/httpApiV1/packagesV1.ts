@@ -105,6 +105,7 @@ async function getOptionalViewerUserIdForRequest(ctx: ActionCtx, request: Reques
 
 type PackageListQueryArgs = {
   family?: "skill" | "code-plugin" | "bundle-plugin";
+  families?: Array<"skill" | "code-plugin" | "bundle-plugin">;
   channel?: "official" | "community" | "private";
   isOfficial?: boolean;
   executesCode?: boolean;
@@ -504,7 +505,7 @@ async function listPackages(
   ctx: ActionCtx,
   request: Request,
   family?: PackageListQueryArgs["family"],
-  options?: { includeSkills?: boolean },
+  options?: { includeSkills?: boolean; families?: PackageListQueryArgs["families"] },
 ) {
   const rate = await applyRateLimit(ctx, request, "read");
   if (!rate.ok) return rate.response;
@@ -523,6 +524,7 @@ async function listPackages(
     (familyRaw === "skill" || familyRaw === "code-plugin" || familyRaw === "bundle-plugin"
       ? familyRaw
       : undefined);
+  const effectiveFamilies = effectiveFamily ? undefined : options?.families;
   const includeSkills = options?.includeSkills ?? effectiveFamily === undefined;
   const channel =
     channelRaw === "official" || channelRaw === "community" || channelRaw === "private"
@@ -637,6 +639,7 @@ async function listPackages(
     continueCursor: string | null;
   }>(ctx, internalRefs.packages.listPageForViewerInternal, {
     family: effectiveFamily,
+    families: effectiveFamilies,
     channel,
     isOfficial,
     executesCode,
@@ -656,7 +659,10 @@ export async function listPackagesV1Handler(ctx: ActionCtx, request: Request) {
 }
 
 export async function listPluginsV1Handler(ctx: ActionCtx, request: Request) {
-  return await listPackages(ctx, request, undefined, { includeSkills: false });
+  return await listPackages(ctx, request, undefined, {
+    includeSkills: false,
+    families: ["code-plugin", "bundle-plugin"],
+  });
 }
 
 export async function listCodePluginsV1Handler(ctx: ActionCtx, request: Request) {
@@ -1028,7 +1034,7 @@ async function getSkillVersionForRequest(
 async function searchPackages(
   ctx: ActionCtx,
   request: Request,
-  options?: { includeSkills?: boolean },
+  options?: { includeSkills?: boolean; families?: PackageListQueryArgs["families"] },
 ) {
   const rate = await applyRateLimit(ctx, request, "read");
   if (!rate.ok) return rate.response;
@@ -1046,6 +1052,7 @@ async function searchPackages(
     familyRaw === "skill" || familyRaw === "code-plugin" || familyRaw === "bundle-plugin"
       ? familyRaw
       : undefined;
+  const families = family ? undefined : options?.families;
   const includeSkills = options?.includeSkills ?? family === undefined;
   const channel =
     channelRaw === "official" || channelRaw === "community" || channelRaw === "private"
@@ -1078,6 +1085,7 @@ async function searchPackages(
         query: queryText,
         limit,
         family,
+        families,
         channel,
         isOfficial,
         executesCode,
@@ -1428,7 +1436,10 @@ export async function pluginsGetRouterV1Handler(ctx: ActionCtx, request: Request
   const segments = getPathSegments(request, "/api/v1/plugins/");
   if (segments.length === 0) return text("Not found", 404);
   if (segments[0] === "search" && new URL(request.url).searchParams.has("q")) {
-    return await searchPackages(ctx, request, { includeSkills: false });
+    return await searchPackages(ctx, request, {
+      includeSkills: false,
+      families: ["code-plugin", "bundle-plugin"],
+    });
   }
   return text("Not found", 404);
 }
