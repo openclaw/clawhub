@@ -4585,6 +4585,7 @@ export const updateVersionDepRegistryAnalysisInternal = internalMutation({
         }),
       ),
       notFoundPackages: v.array(v.string()),
+      unregisteredScopes: v.optional(v.array(v.string())),
       summary: v.string(),
       checkedAt: v.number(),
     }),
@@ -4603,14 +4604,23 @@ export const updateVersionDepRegistryAnalysisInternal = internalMutation({
     if (args.depRegistryAnalysis.status === "suspicious") {
       const notFoundResults = args.depRegistryAnalysis.results.filter((r) => !r.exists);
       const pkgList = notFoundResults.map((r) => `${r.name} (${r.registry})`).join(", ");
+      const unregisteredScopes = args.depRegistryAnalysis.unregisteredScopes ?? [];
+      const scopeMsg =
+        unregisteredScopes.length > 0
+          ? ` Additionally, the following npm scope(s) are not registered and could be claimed by an attacker: ${unregisteredScopes.join(", ")}.`
+          : "";
+      const scopeEvidence =
+        unregisteredScopes.length > 0
+          ? ` Higher risk: an unregistered npm scope (${unregisteredScopes.join(", ")}) means an attacker can register the entire namespace and own every package published under it.`
+          : "";
       const newFindings = [
         {
           code: REASON_CODES.DEP_NOT_FOUND,
           severity: "critical" as const,
           file: "Dependency Confusion via Phantom Package",
           line: 0,
-          message: `${notFoundResults.length} package(s) referenced in dependency files do not exist on their public registries: ${pkgList}`,
-          evidence: `An attacker could register these phantom package names and inject malicious code that gets installed automatically when a user sets up this skill. This is a known supply-chain attack vector (Dependency Confusion).`,
+          message: `${notFoundResults.length} package(s) referenced in dependency files do not exist on their public registries: ${pkgList}.${scopeMsg}`,
+          evidence: `An attacker could register these phantom package names and inject malicious code that gets installed automatically when a user sets up this skill. This is a known supply-chain attack vector (Dependency Confusion).${scopeEvidence}`,
         },
       ];
 

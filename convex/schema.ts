@@ -480,6 +480,7 @@ const skillVersions = defineTable({
         }),
       ),
       notFoundPackages: v.array(v.string()),
+      unregisteredScopes: v.optional(v.array(v.string())),
       summary: v.string(),
       checkedAt: v.number(),
     }),

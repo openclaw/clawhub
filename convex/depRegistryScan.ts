@@ -196,10 +196,30 @@ function extractQuotedStrings(s: string): string[] {
 }
 
 /**
+ * Vendored / build-output paths whose contents are not the skill's own
+ * declared dependencies — they're already-installed copies or generated.
+ */
+const VENDORED_PATH_PATTERNS = [
+  /(^|\/)node_modules\//,
+  /(^|\/)vendor\//,
+  /(^|\/)__pycache__\//,
+  /(^|\/)\.venv\//,
+  /(^|\/)venv\//,
+  /(^|\/)target\//,
+  /(^|\/)\.cargo\//,
+];
+
+function isVendoredPath(path: string): boolean {
+  return VENDORED_PATH_PATTERNS.some((re) => re.test(path));
+}
+
+/**
  * Scan a skill version's files for recognized dependency files and extract
  * package names. Only checks files that can trigger automatic installation
  * (requirements.txt, package.json, Cargo.toml, etc.) — frontmatter
- * declarations in SKILL.md are informational and not scanned.
+ * declarations in SKILL.md are informational and not scanned. Files inside
+ * vendored / build-output directories are skipped because their contents
+ * describe already-resolved copies, not the skill's own install-time deps.
  */
 async function extractDependencies(
   ctx: ActionCtx,
@@ -208,6 +228,7 @@ async function extractDependencies(
   const entries: DepEntry[] = [];
 
   for (const file of version.files) {
+    if (isVendoredPath(file.path)) continue;
     const basename = file.path.split("/").pop()?.toLowerCase() ?? "";
     const parser = DEP_FILE_PARSERS[basename];
     if (!parser) continue;
@@ -222,6 +243,76 @@ async function extractDependencies(
   }
 
   return entries;
+}
+
+// ---------------------------------------------------------------------------
+// npm scope registration check
+// ---------------------------------------------------------------------------
+
+/**
+ * Check whether an npm scope (e.g. "@acme") has any published packages.
+ * Returns true if the scope appears to be claimed (>=1 package whose name
+ * literally begins with `@scope/`), false if no such package exists,
+ * null on network error.
+ *
+ * An unregistered scope is a strong dependency-confusion signal: an attacker
+ * could register the scope and inject any package name under it.
+ *
+ * Implementation note: npm's v1 search API does not honor the `scope:`
+ * qualifier, so we send the scope name as free-text and filter results
+ * client-side by exact `@scope/` prefix match.
+ */
+async function checkNpmScopeRegistered(
+  scope: string,
+): Promise<{ registered: boolean } | { registered: null }> {
+  // Normalize: ensure leading @
+  const scopeWithAt = scope.startsWith("@") ? scope : `@${scope}`;
+  const queryText = scopeWithAt; // free-text search; we filter results below
+  const url = `https://registry.npmjs.org/-/v1/search?text=${encodeURIComponent(queryText)}&size=20`;
+  const prefix = `${scopeWithAt}/`;
+
+  for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
+    try {
+      const response = await fetch(url, {
+        method: "GET",
+        headers: { Accept: "application/json" },
+        signal: controller.signal,
+      });
+      clearTimeout(timeout);
+
+      if (response.status === 200) {
+        const body = (await response.json()) as {
+          objects?: Array<{ package?: { name?: string } }>;
+        };
+        const hasMatch =
+          (body.objects ?? []).some(
+            (o) => typeof o.package?.name === "string" && o.package.name.startsWith(prefix),
+          ) ?? false;
+        return { registered: hasMatch };
+      }
+
+      if (response.status === 429 || response.status >= 500) {
+        if (attempt < MAX_RETRIES) {
+          const delay = 2 ** attempt * BACKOFF_BASE_MS + Math.random() * 1_000;
+          await new Promise((r) => setTimeout(r, delay));
+          continue;
+        }
+      }
+      break;
+    } catch {
+      clearTimeout(timeout);
+      if (attempt < MAX_RETRIES) {
+        const delay = 2 ** attempt * BACKOFF_BASE_MS + Math.random() * 1_000;
+        await new Promise((r) => setTimeout(r, delay));
+        continue;
+      }
+    }
+  }
+
+  console.warn(`depRegistryScan: failed to check npm scope ${scope}`);
+  return { registered: null };
 }
 
 // ---------------------------------------------------------------------------
@@ -452,6 +543,49 @@ export const checkDependencyRegistries = internalAction({
       .filter((r) => !r.exists)
       .map((r) => `${r.name} (${r.registry})`);
 
+    // For any not-found scoped npm packages, also check whether the scope
+    // itself is registered on npm. An unregistered scope is a higher-risk
+    // signal: an attacker could register the scope and inject any package
+    // under it (full namespace takeover).
+    const unregisteredScopes: string[] = [];
+    if (!abortedDueToErrors) {
+      const scopesToCheck = new Set<string>();
+      for (const r of results) {
+        if (!r.exists && r.registry === "npm" && r.name.startsWith("@")) {
+          const scope = r.name.split("/")[0]; // "@scope"
+          scopesToCheck.add(scope);
+        }
+      }
+      for (const scope of scopesToCheck) {
+        // Reuse depRegistryCache for scope lookups (key: registry=npm, name=@scope)
+        const cached = (await ctx.runQuery(internal.depRegistryScan.lookupCacheInternal, {
+          registry: "npm",
+          name: scope,
+        })) as Doc<"depRegistryCache"> | null;
+        let registered: boolean | null = null;
+        if (cached) {
+          const ttl = cached.exists ? CACHE_TTL_EXISTS_MS : CACHE_TTL_NOT_EXISTS_MS;
+          if (Date.now() - cached.checkedAt < ttl) {
+            registered = cached.exists;
+          }
+        }
+        if (registered === null) {
+          const check = await checkNpmScopeRegistered(scope);
+          if (check.registered !== null) {
+            registered = check.registered;
+            await ctx.runMutation(internal.depRegistryScan.upsertCacheInternal, {
+              registry: "npm",
+              name: scope,
+              exists: registered,
+              httpStatus: 200,
+            });
+          }
+        }
+        if (registered === false) unregisteredScopes.push(scope);
+        await new Promise((r) => setTimeout(r, INTER_REQUEST_DELAY_MS));
+      }
+    }
+
     let status: "clean" | "suspicious" | "error";
     let summary: string;
 
@@ -461,7 +595,11 @@ export const checkDependencyRegistries = internalAction({
       status = "suspicious";
       const pkgList = notFoundPackages.join(", ");
       const abortNote = abortedDueToErrors ? " (scan was partially completed due to network failures)" : "";
-      summary = `${notFoundPackages.length} declared dependency package(s) not found on their public registry: ${pkgList}. This may indicate a typosquatting attempt, dependency confusion attack, or a reference to a non-existent package.${abortNote}`;
+      const scopeNote =
+        unregisteredScopes.length > 0
+          ? ` HIGHER RISK: the following npm scope(s) are not yet registered and could be claimed by an attacker — ${unregisteredScopes.join(", ")}.`
+          : "";
+      summary = `${notFoundPackages.length} declared dependency package(s) not found on their public registry: ${pkgList}. This may indicate a typosquatting attempt, dependency confusion attack, or a reference to a non-existent package.${abortNote}${scopeNote}`;
     } else if (abortedDueToErrors) {
       status = "error";
       summary =
@@ -477,6 +615,7 @@ export const checkDependencyRegistries = internalAction({
         status,
         results,
         notFoundPackages,
+        unregisteredScopes: unregisteredScopes.length > 0 ? unregisteredScopes : undefined,
         summary,
         checkedAt: Date.now(),
       },
