@@ -2825,7 +2825,18 @@ describe("package scan backfill", () => {
             if (id === "packages:demo") return pkg;
             return null;
           }),
-          query: vi.fn(),
+          query: vi.fn((table: string) => {
+            if (table === "rescanRequests") {
+              return {
+                withIndex: vi.fn(() => ({
+                  order: vi.fn(() => ({
+                    take: vi.fn(async () => []),
+                  })),
+                })),
+              };
+            }
+            throw new Error(`Unexpected query table: ${table}`);
+          }),
           insert: vi.fn(),
           patch,
           replace: vi.fn(),

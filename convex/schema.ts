@@ -1199,6 +1199,33 @@ const vtScanLogs = defineTable({
   createdAt: v.number(),
 }).index("by_type_date", ["type", "createdAt"]);
 
+const rescanRequests = defineTable({
+  targetKind: v.union(v.literal("skill"), v.literal("plugin")),
+  skillId: v.optional(v.id("skills")),
+  skillVersionId: v.optional(v.id("skillVersions")),
+  packageId: v.optional(v.id("packages")),
+  packageReleaseId: v.optional(v.id("packageReleases")),
+  targetVersion: v.string(),
+  requestedByUserId: v.id("users"),
+  ownerUserId: v.id("users"),
+  ownerPublisherId: v.optional(v.id("publishers")),
+  status: v.union(v.literal("in_progress"), v.literal("completed"), v.literal("failed")),
+  error: v.optional(v.string()),
+  createdAt: v.number(),
+  updatedAt: v.number(),
+  completedAt: v.optional(v.number()),
+})
+  .index("by_skill_version", ["targetKind", "skillVersionId", "createdAt"])
+  .index("by_skill_version_status", ["targetKind", "skillVersionId", "status", "createdAt"])
+  .index("by_package_release", ["targetKind", "packageReleaseId", "createdAt"])
+  .index("by_package_release_status", [
+    "targetKind",
+    "packageReleaseId",
+    "status",
+    "createdAt",
+  ])
+  .index("by_requester", ["requestedByUserId", "createdAt"]);
+
 const apiTokens = defineTable({
   userId: v.id("users"),
   label: v.string(),
@@ -1360,6 +1387,7 @@ export default defineSchema({
   soulStars,
   auditLogs,
   vtScanLogs,
+  rescanRequests,
   apiTokens,
   rateLimits,
   downloadDedupes,

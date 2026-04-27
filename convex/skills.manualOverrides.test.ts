@@ -57,6 +57,16 @@ function makeCtx(params: { skill: Record<string, unknown>; version?: Record<stri
       };
     }
 
+    if (table === "rescanRequests") {
+      return {
+        withIndex: vi.fn(() => ({
+          order: vi.fn(() => ({
+            take: vi.fn(async () => []),
+          })),
+        })),
+      };
+    }
+
     throw new Error(`Unexpected query table: ${table}`);
   });
   const get = vi.fn(async (id: string) => {
