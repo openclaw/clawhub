@@ -199,6 +199,10 @@ export const ApiV1SkillResponseSchema = type({
     displayName: "string|null?",
     image: "string|null?",
   }).or("null"),
+  metadata: type({
+    os:"string[]|null",
+    systems:"string[]|null",
+  }).or("null"),
   moderation: type({
     isSuspicious: "boolean",
     isMalwareBlocked: "boolean",
