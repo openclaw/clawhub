@@ -9,6 +9,7 @@ import {
   getActiveSkillBatchForStaticScanBackfillInternal,
   getPendingScanSkillsInternal,
 } from "./skills";
+import { MODERATION_ENGINE_VERSION } from "./lib/moderationReasonCodes";
 
 type PendingScanResult = Array<{
   skillId: string;
@@ -279,7 +280,7 @@ describe("skills.getActiveSkillBatchForStaticScanBackfillInternal", () => {
         "skillVersions:current-static",
         {
           _id: "skillVersions:current-static",
-          staticScan: { engineVersion: "v2.4.1" },
+          staticScan: { engineVersion: MODERATION_ENGINE_VERSION },
         },
       ],
       [

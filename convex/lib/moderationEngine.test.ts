@@ -23,6 +23,53 @@ describe("moderationEngine", () => {
     expect(result.status).toBe("clean");
   });
 
+  it("flags hardcoded API secrets in skill documentation and redacts evidence", () => {
+    const exposedSecret = "ak_live_1234567890abcdefSECRET";
+    const result = runStaticModerationScan({
+      slug: "seo-admin",
+      displayName: "SEO Admin",
+      summary: "Manage production SEO content",
+      frontmatter: {},
+      metadata: {},
+      files: [{ path: "SKILL.md", size: 256 }],
+      fileContents: [
+        {
+          path: "SKILL.md",
+          content: [
+            "# SEO Admin",
+            "Production endpoint: https://example.com/admin/api",
+            `API secret: ${exposedSecret}`,
+          ].join("\n"),
+        },
+      ],
+    });
+
+    expect(result.reasonCodes).toContain("suspicious.exposed_secret_literal");
+    expect(result.status).toBe("suspicious");
+    expect(result.findings[0]?.evidence).toContain("[REDACTED]");
+    expect(result.findings[0]?.evidence).not.toContain(exposedSecret);
+  });
+
+  it("does not flag placeholder secret examples", () => {
+    const result = runStaticModerationScan({
+      slug: "demo",
+      displayName: "Demo",
+      summary: "A normal integration skill",
+      frontmatter: {},
+      metadata: {},
+      files: [{ path: "SKILL.md", size: 128 }],
+      fileContents: [
+        {
+          path: "SKILL.md",
+          content: "Set `API secret: your-secret-here` before running the sample.",
+        },
+      ],
+    });
+
+    expect(result.reasonCodes).not.toContain("suspicious.exposed_secret_literal");
+    expect(result.status).toBe("clean");
+  });
+
   it("flags dynamic eval usage as suspicious", () => {
     const result = runStaticModerationScan({
       slug: "demo",

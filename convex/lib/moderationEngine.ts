@@ -58,6 +58,10 @@ const HARDCODED_CONNECTION_ID_PATTERN =
   /["']connection_id["']\s*:\s*["'][0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}["']/i;
 const GOOGLE_SHEETS_SPREADSHEET_URL_PATTERN =
   /https?:\/\/[^\s"'`]*\/spreadsheets\/([A-Za-z0-9_-]{20,})\/[^\s"'`]*/i;
+const SECRET_ASSIGNMENT_PATTERN =
+  /\b(?:api[_\s-]?(?:secret|key)|secret[_\s-]?key|access[_\s-]?token|auth[_\s-]?token|bearer[_\s-]?token|password)\b\s*[:=]\s*["'`]?([A-Za-z0-9][A-Za-z0-9._~+/=-]{15,})["'`]?/i;
+const AUTH_HEADER_SECRET_PATTERN =
+  /\b(?:authorization|x-api-key|x-api-secret)\b\s*[:=]\s*(?:Bearer\s+)?["'`]?([A-Za-z0-9][A-Za-z0-9._~+/=-]{15,})["'`]?/i;
 
 function hasMaliciousInstallPrompt(content: string) {
   const hasTerminalInstruction =
@@ -85,6 +89,30 @@ function truncateEvidence(evidence: string, maxLen = 160) {
 
 function looksLikePlaceholderIdentifier(identifier: string) {
   return /^[A-Z0-9_]+$/.test(identifier) || /(your|example|placeholder)/i.test(identifier);
+}
+
+function looksLikePlaceholderSecret(secret: string) {
+  const normalized = secret.trim().toLowerCase();
+  if (!normalized) return true;
+  if (/^(?:x+|_+|-+|\*+|\.{3})$/.test(normalized)) return true;
+  return /(your|example|placeholder|change-?me|replace|redacted|dummy|sample|test-token|token-here|secret-here|api-key-here)/i.test(
+    normalized,
+  );
+}
+
+function findHardcodedSecret(content: string) {
+  const lines = content.split("\n");
+  for (let i = 0; i < lines.length; i += 1) {
+    const line = lines[i];
+    const match = line.match(SECRET_ASSIGNMENT_PATTERN) ?? line.match(AUTH_HEADER_SECRET_PATTERN);
+    const secret = match?.[1];
+    if (!secret || looksLikePlaceholderSecret(secret)) continue;
+    return {
+      line: i + 1,
+      text: line.replace(secret, "[REDACTED]"),
+    };
+  }
+  return null;
 }
 
 function addFinding(
@@ -296,6 +324,18 @@ function scanCodeFile(
 
 function scanMarkdownFile(path: string, content: string, findings: ModerationFinding[]) {
   if (!MARKDOWN_EXTENSION.test(path)) return;
+
+  const secretMatch = findHardcodedSecret(content);
+  if (secretMatch) {
+    addFinding(findings, {
+      code: REASON_CODES.EXPOSED_SECRET_LITERAL,
+      severity: "critical",
+      file: path,
+      line: secretMatch.line,
+      message: "Documentation appears to expose a hardcoded API secret or token.",
+      evidence: secretMatch.text,
+    });
+  }
 
   if (hasMaliciousInstallPrompt(content)) {
     const match = findFirstLine(
