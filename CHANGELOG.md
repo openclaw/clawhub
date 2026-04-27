@@ -10,6 +10,7 @@
 ### Fixes
 
 - Stats maintenance: keep skill stat migration fields synchronized by treating top-level stat fields as canonical during backfill/reconcile fallback reads (#1704) (thanks @momothemage).
+- Skills: prevent backport publishes from clobbering `latest` state and guard malformed persisted latest semver values during publish comparisons (#1832) (thanks @momothemage).
 
 ## 0.10.0 - 2026-04-05
 
