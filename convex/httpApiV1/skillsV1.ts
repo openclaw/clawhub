@@ -277,9 +277,7 @@ function mergeSecurityStatuses(statuses: NormalizedSecurityStatus[]) {
   );
 }
 
-function hasLlmDimensionWarnings(
-  dimensions: LlmEvalDimension[] | undefined,
-) {
+function hasLlmDimensionWarnings(dimensions: LlmEvalDimension[] | undefined) {
   if (!Array.isArray(dimensions)) return false;
   return dimensions.some((dimension) => {
     if (!dimension || typeof dimension !== "object") return false;
@@ -438,6 +436,8 @@ type SkillListSort =
   | "installsAllTime"
   | "trending";
 
+type PublicListSort = "updated" | "downloads" | "stars" | "installs";
+
 function parseListSort(value: string | null): SkillListSort {
   const normalized = value?.trim().toLowerCase();
   if (normalized === "downloads") return "downloads";
@@ -457,6 +457,12 @@ function parseListSort(value: string | null): SkillListSort {
   return "updated";
 }
 
+function toPublicListSort(sort: Exclude<SkillListSort, "trending">): PublicListSort {
+  if (sort === "updated") return "updated";
+  if (sort === "downloads" || sort === "stars") return sort;
+  return "installs";
+}
+
 export async function listSkillsV1Handler(ctx: ActionCtx, request: Request) {
   const rate = await applyRateLimit(ctx, request, "read");
   if (!rate.ok) return rate.response;
@@ -471,12 +477,24 @@ export async function listSkillsV1Handler(ctx: ActionCtx, request: Request) {
     url.searchParams.get("nonSuspicious"),
   );
 
-  const result = (await ctx.runQuery(api.skills.listPublicPage, {
-    limit,
-    cursor,
-    sort,
-    nonSuspiciousOnly: nonSuspiciousOnly || undefined,
-  })) as ListSkillsResult;
+  let result: ListSkillsResult;
+  if (sort === "trending") {
+    result = (await ctx.runQuery(api.skills.listPublicTrendingPage, {
+      limit,
+      nonSuspiciousOnly: nonSuspiciousOnly || undefined,
+    })) as ListSkillsResult;
+  } else {
+    const pageResult = (await ctx.runQuery(api.skills.listPublicPageV4, {
+      cursor,
+      numItems: limit,
+      sort: toPublicListSort(sort),
+      nonSuspiciousOnly: nonSuspiciousOnly || undefined,
+    })) as { page?: ListSkillsResult["items"]; nextCursor?: string | null };
+    result = {
+      items: pageResult.page ?? [],
+      nextCursor: pageResult.nextCursor ?? null,
+    };
+  }
 
   // Batch resolve all tags in a single query instead of N queries
   const resolvedTagsList = await resolveTagsBatch(

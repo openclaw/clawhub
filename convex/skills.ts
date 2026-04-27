@@ -32,6 +32,10 @@ import {
   readGlobalPublicSkillsCount,
 } from "./lib/globalStats";
 import {
+  TRENDING_LEADERBOARD_KIND,
+  TRENDING_NON_SUSPICIOUS_LEADERBOARD_KIND,
+} from "./lib/leaderboards";
+import {
   applyManualOverrideToSkillPatch,
   isManualOverrideReason,
   type ManualModerationOverride,
@@ -2838,7 +2842,45 @@ export const listPublicPageV4 = query({
   },
 });
 
-function buildPublicSkillEntryFromDigest(digest: Doc<"skillSearchDigest">): PublicSkillEntry | null {
+export const listPublicTrendingPage = query({
+  args: {
+    limit: v.optional(v.number()),
+    nonSuspiciousOnly: v.optional(v.boolean()),
+  },
+  handler: async (ctx, args) => {
+    const limit = clampInt(args.limit ?? 25, 1, MAX_PUBLIC_LIST_LIMIT);
+    const kind = args.nonSuspiciousOnly
+      ? TRENDING_NON_SUSPICIOUS_LEADERBOARD_KIND
+      : TRENDING_LEADERBOARD_KIND;
+    const leaderboard = await ctx.db
+      .query("skillLeaderboards")
+      .withIndex("by_kind", (q) => q.eq("kind", kind))
+      .order("desc")
+      .first();
+
+    if (!leaderboard) return { items: [], nextCursor: null };
+
+    const items: PublicSkillEntry[] = [];
+    for (const entry of leaderboard.items) {
+      const digest = await ctx.db
+        .query("skillSearchDigest")
+        .withIndex("by_skill", (q) => q.eq("skillId", entry.skillId))
+        .unique();
+      if (!digest) continue;
+      if (args.nonSuspiciousOnly && digest.isSuspicious) continue;
+      const item = buildPublicSkillEntryFromDigest(digest);
+      if (!item) continue;
+      items.push(item);
+      if (items.length >= limit) break;
+    }
+
+    return { items, nextCursor: null };
+  },
+});
+
+function buildPublicSkillEntryFromDigest(
+  digest: Doc<"skillSearchDigest">,
+): PublicSkillEntry | null {
   const hydratable = digestToHydratableSkill(digest);
   const publicSkill = toPublicSkill(hydratable);
   if (!publicSkill) return null;
