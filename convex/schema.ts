@@ -12,6 +12,23 @@ const manualModerationOverride = v.object({
   updatedAt: v.number(),
 });
 
+const vtEngineStatsValidator = v.object({
+  malicious: v.optional(v.number()),
+  suspicious: v.optional(v.number()),
+  undetected: v.optional(v.number()),
+  harmless: v.optional(v.number()),
+});
+
+const vtAnalysisValidator = v.object({
+  status: v.string(),
+  verdict: v.optional(v.string()),
+  analysis: v.optional(v.string()),
+  source: v.optional(v.string()),
+  scanner: v.optional(v.string()),
+  engineStats: v.optional(vtEngineStatsValidator),
+  checkedAt: v.number(),
+});
+
 const users = defineTable({
   name: v.optional(v.string()),
   image: v.optional(v.string()),
@@ -429,15 +446,7 @@ const skillVersions = defineTable({
   createdAt: v.number(),
   softDeletedAt: v.optional(v.number()),
   sha256hash: v.optional(v.string()),
-  vtAnalysis: v.optional(
-    v.object({
-      status: v.string(),
-      verdict: v.optional(v.string()),
-      analysis: v.optional(v.string()),
-      source: v.optional(v.string()),
-      checkedAt: v.number(),
-    }),
-  ),
+  vtAnalysis: v.optional(vtAnalysisValidator),
   llmAnalysis: v.optional(
     v.object({
       status: v.string(),
@@ -704,15 +713,7 @@ const packageReleases = defineTable({
   capabilities: packageCapabilitiesValidator,
   verification: packageVerificationValidator,
   sha256hash: v.optional(v.string()),
-  vtAnalysis: v.optional(
-    v.object({
-      status: v.string(),
-      verdict: v.optional(v.string()),
-      analysis: v.optional(v.string()),
-      source: v.optional(v.string()),
-      checkedAt: v.number(),
-    }),
-  ),
+  vtAnalysis: v.optional(vtAnalysisValidator),
   llmAnalysis: v.optional(
     v.object({
       status: v.string(),
