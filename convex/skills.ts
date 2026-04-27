@@ -3,6 +3,7 @@ import { normalizeTextContentType } from "clawhub-schema";
 import { getPage, type IndexKey, paginator } from "convex-helpers/server/pagination";
 import { paginationOptsValidator } from "convex/server";
 import { ConvexError, v, type Value } from "convex/values";
+import semver from "semver";
 import { internal } from "./_generated/api";
 import type { Doc, Id } from "./_generated/dataModel";
 import type { ActionCtx, MutationCtx, QueryCtx } from "./_generated/server";
@@ -6456,16 +6457,30 @@ export const insertVersion = internalMutation({
       softDeletedAt: undefined,
     });
 
+    // Only promote this version to `latest` if it is strictly greater than the
+    // currently published latest version (by semver). This allows backport /
+    // hotfix publishes on lower version lines (e.g. shipping 1.0.1 while 2.x is
+    // live) without clobbering the latest pointer, tag, embedding, or summary.
+    const prevLatestVersion = skill.latestVersionSummary?.version;
+    const isNewLatest =
+      !prevLatestVersion || semver.gt(args.version, prevLatestVersion);
+
     const nextTags: Record<string, Id<"skillVersions">> = { ...skill.tags };
-    nextTags.latest = versionId;
+    if (isNewLatest) {
+      nextTags.latest = versionId;
+    }
     for (const tag of args.tags ?? []) {
       nextTags[tag] = versionId;
     }
 
     const latestBefore = skill.latestVersionId;
 
-    const nextSummary =
+    const derivedSummary =
       args.summary ?? getFrontmatterValue(args.parsed.frontmatter, "description") ?? skill.summary;
+    // Skill-level fields (displayName / summary / capabilityTags) should only
+    // follow the latest version. Backport publishes must not leak their values
+    // into the skill card shown on the listing / detail pages.
+    const nextSummary = isNewLatest ? derivedSummary : skill.summary;
     const derivedFlags = deriveModerationFlags({
       skill: {
         slug: skill.slug,
@@ -6483,19 +6498,21 @@ export const insertVersion = internalMutation({
       new Set([...(derivedFlags ?? []), ...(moderationSnapshot.legacyFlags ?? [])]),
     );
     const basePatch: SkillModerationPatch = {
-      displayName: args.displayName,
+      displayName: isNewLatest ? args.displayName : skill.displayName,
       summary: nextSummary ?? undefined,
       ownerPublisherId: skill.ownerPublisherId ?? ownerPublisherId,
-      latestVersionId: versionId,
-      latestVersionSummary: {
-        version: args.version,
-        createdAt: now,
-        changelog: args.changelog,
-        changelogSource: args.changelogSource,
-        clawdis: args.parsed.clawdis,
-      },
+      latestVersionId: isNewLatest ? versionId : skill.latestVersionId,
+      latestVersionSummary: isNewLatest
+        ? {
+            version: args.version,
+            createdAt: now,
+            changelog: args.changelog,
+            changelogSource: args.changelogSource,
+            clawdis: args.parsed.clawdis,
+          }
+        : skill.latestVersionSummary,
       tags: nextTags,
-      capabilityTags: args.capabilityTags,
+      capabilityTags: isNewLatest ? args.capabilityTags : skill.capabilityTags,
       stats: { ...skill.stats, versions: skill.stats.versions + 1 },
       softDeletedAt: undefined,
       moderationStatus: initialModerationStatus,
@@ -6547,9 +6564,9 @@ export const insertVersion = internalMutation({
       versionId,
       ownerId: userId,
       embedding: args.embedding,
-      isLatest: true,
+      isLatest: isNewLatest,
       isApproved,
-      visibility: embeddingVisibilityFor(true, isApproved),
+      visibility: embeddingVisibilityFor(isNewLatest, isApproved),
       updatedAt: now,
     });
     // Lightweight lookup so search hydration can skip reading the 12KB embedding doc
@@ -6558,7 +6575,10 @@ export const insertVersion = internalMutation({
       skillId: skill._id,
     });
 
-    if (latestBefore) {
+    // Only demote the previous latest embedding when this publish actually
+    // replaces `latest`. Backport publishes must leave the existing latest
+    // embedding untouched so vector search keeps returning the right version.
+    if (isNewLatest && latestBefore) {
       const previousEmbedding = await ctx.db
         .query("skillEmbeddings")
         .withIndex("by_version", (q) => q.eq("versionId", latestBefore))
