@@ -239,6 +239,7 @@ export async function parseMultipartPublish(
 ): Promise<{
   slug: string;
   displayName: string;
+  ownerHandle?: string;
   version: string;
   changelog: string;
   acceptLicenseTerms?: boolean;
@@ -293,6 +294,7 @@ export async function parseMultipartPublish(
   const body = {
     slug: payload.slug,
     displayName: payload.displayName,
+    ownerHandle: payload.ownerHandle,
     version: payload.version,
     changelog: typeof payload.changelog === "string" ? payload.changelog : "",
     ...(hasAcceptLicenseTerms ? { acceptLicenseTerms: payload.acceptLicenseTerms } : {}),
@@ -312,6 +314,7 @@ export function parsePublishBody(body: unknown) {
   return {
     slug: parsed.slug,
     displayName: parsed.displayName,
+    ownerHandle: parsed.ownerHandle?.trim().replace(/^@+/, "") || undefined,
     version: parsed.version,
     changelog: parsed.changelog,
     acceptLicenseTerms: parsed.acceptLicenseTerms,

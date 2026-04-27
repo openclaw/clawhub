@@ -958,7 +958,7 @@ export async function publishSkillV1Handler(ctx: ActionCtx, request: Request) {
       if (!hasAcceptedLegacyLicenseTerms(payload.acceptLicenseTerms)) {
         return text("MIT-0 license terms must be accepted to publish skills", 400, rate.headers);
       }
-      const result = await publishVersionForUser(ctx, userId, payload);
+      const result = await publishSkillPayloadForApiUser(ctx, userId, payload);
       return json({ ok: true, ...result }, 200, rate.headers);
     }
 
@@ -967,7 +967,7 @@ export async function publishSkillV1Handler(ctx: ActionCtx, request: Request) {
       if (!hasAcceptedLegacyLicenseTerms(payload.acceptLicenseTerms)) {
         return text("MIT-0 license terms must be accepted to publish skills", 400, rate.headers);
       }
-      const result = await publishVersionForUser(ctx, userId, payload);
+      const result = await publishSkillPayloadForApiUser(ctx, userId, payload);
       return json({ ok: true, ...result }, 200, rate.headers);
     }
   } catch (error) {
@@ -976,6 +976,24 @@ export async function publishSkillV1Handler(ctx: ActionCtx, request: Request) {
   }
 
   return text("Unsupported content type", 415, rate.headers);
+}
+
+async function publishSkillPayloadForApiUser(
+  ctx: ActionCtx,
+  userId: Id<"users">,
+  payload: ReturnType<typeof parsePublishBody>,
+) {
+  if (!payload.ownerHandle) {
+    return await publishVersionForUser(ctx, userId, payload);
+  }
+  const target = (await ctx.runMutation(internal.publishers.resolvePublishTargetForUserInternal, {
+    actorUserId: userId,
+    ownerHandle: payload.ownerHandle,
+    minimumRole: "publisher",
+  })) as { publisherId: Id<"publishers"> };
+  return await publishVersionForUser(ctx, userId, payload, {
+    ownerPublisherId: target.publisherId,
+  });
 }
 
 function hasAcceptedLegacyLicenseTerms(acceptLicenseTerms: boolean | undefined) {
