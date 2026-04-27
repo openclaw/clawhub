@@ -83,7 +83,7 @@ export function SkillInstallSurface({
 
   const selectedPrompt = PROMPT_OPTIONS.find((option) => option.mode === promptMode) ?? PROMPT_OPTIONS[1];
   const installTarget = buildSkillInstallTarget(ownerHandle, ownerId, slug);
-  const openClawCommand = formatOpenClawInstallCommand(ownerHandle, ownerId, slug);
+  const openClawCommand = formatOpenClawInstallCommand(slug);
   const clawHubCommand = formatClawHubInstallCommand(slug, packageManager);
   const promptPreview = formatOpenClawPrompt({
     mode: promptMode,
@@ -188,7 +188,7 @@ export function SkillInstallSurface({
             <div className="skill-install-command-header">
               <div className="skill-install-command-copy">
                 <p className="skill-install-command-label">OpenClaw CLI</p>
-                <p className="skill-install-command-caption">Canonical install target</p>
+                <p className="skill-install-command-caption">Bare skill slug</p>
               </div>
               <InstallCopyButton
                 text={openClawCommand}

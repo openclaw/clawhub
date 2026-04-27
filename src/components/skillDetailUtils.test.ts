@@ -22,9 +22,7 @@ describe("skill detail install helpers", () => {
   });
 
   it("formats the OpenClaw and ClawHub commands", () => {
-    expect(formatOpenClawInstallCommand("steipete", ownerPublisherId, "weather")).toBe(
-      "openclaw skills install steipete/weather",
-    );
+    expect(formatOpenClawInstallCommand("weather")).toBe("openclaw skills install weather");
     expect(formatClawHubInstallCommand("weather", "npm")).toBe("npx clawhub@latest install weather");
     expect(formatClawHubInstallCommand("weather", "pnpm")).toBe(
       "pnpm dlx clawhub@latest install weather",

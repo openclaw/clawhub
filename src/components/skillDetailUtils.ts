@@ -194,12 +194,8 @@ export function buildSkillPageUrl(
   return new URL(path, getClawHubSiteUrl()).toString();
 }
 
-export function formatOpenClawInstallCommand(
-  ownerHandle: string | null,
-  ownerId: SkillOwnerId | null,
-  slug: string,
-) {
-  return `openclaw skills install ${buildSkillInstallTarget(ownerHandle, ownerId, slug)}`;
+export function formatOpenClawInstallCommand(slug: string) {
+  return `openclaw skills install ${slug}`;
 }
 
 export function formatClawHubInstallCommand(slug: string, pm: SkillPackageManager) {
