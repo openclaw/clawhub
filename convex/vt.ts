@@ -203,11 +203,14 @@ function buildPackageScanAnalysisFromVtResult(
   );
   if (aiResult) {
     const verdict = normalizeVerdict(aiResult.verdict);
+    const stats = vtResult.data.attributes.last_analysis_stats;
     return {
       status: verdictToStatus(verdict),
       verdict: aiResult.verdict,
       analysis: aiResult.analysis,
       source: aiResult.source,
+      scanner: "code_insight",
+      engineStats: stats,
       checkedAt: Date.now(),
     };
   }
@@ -511,6 +514,7 @@ export const scanWithVirusTotal = internalAction({
         );
 
         if (aiResult) {
+          const stats = existingFile.data.attributes.last_analysis_stats;
           // File exists and has AI analysis - use the verdict
           const verdict = normalizeVerdict(aiResult.verdict);
           const status = verdictToStatus(verdict);
@@ -526,6 +530,8 @@ export const scanWithVirusTotal = internalAction({
               verdict: aiResult.verdict,
               analysis: aiResult.analysis,
               source: aiResult.source,
+              scanner: "code_insight",
+              engineStats: stats,
               checkedAt: Date.now(),
             },
           });
@@ -914,6 +920,7 @@ export const pollPendingScans = internalAction({
               vtAnalysis: {
                 status,
                 source,
+                engineStats: stats,
                 checkedAt: Date.now(),
               },
             });
@@ -952,6 +959,7 @@ export const pollPendingScans = internalAction({
         // We have a verdict - update the skill
         const verdict = normalizeVerdict(aiResult.verdict);
         const status = verdictToStatus(verdict);
+        const stats = vtResult.data.attributes.last_analysis_stats;
 
         console.log(
           `[vt:pollPendingScans] Hash ${sha256hash} verdict: ${verdict} -> status: ${status}`,
@@ -965,6 +973,8 @@ export const pollPendingScans = internalAction({
             verdict: aiResult.verdict,
             analysis: aiResult.analysis,
             source: aiResult.source,
+            scanner: "code_insight",
+            engineStats: stats,
             checkedAt: Date.now(),
           },
         });
@@ -1249,6 +1259,7 @@ export const rescanActiveSkills = internalAction({
             vtAnalysis: {
               status,
               source,
+              engineStats: stats,
               checkedAt: Date.now(),
             },
           });
@@ -1278,6 +1289,7 @@ export const rescanActiveSkills = internalAction({
 
         const verdict = normalizeVerdict(aiResult.verdict);
         const status = verdictToStatus(verdict);
+        const stats = vtResult.data.attributes.last_analysis_stats;
 
         await ctx.runMutation(internal.skills.updateVersionScanResultsInternal, {
           versionId,
@@ -1286,6 +1298,8 @@ export const rescanActiveSkills = internalAction({
             verdict: aiResult.verdict,
             analysis: aiResult.analysis,
             source: aiResult.source,
+            scanner: "code_insight",
+            engineStats: stats,
             checkedAt: Date.now(),
           },
         });
@@ -1576,6 +1590,7 @@ export const backfillActiveSkillsVTCache = internalAction({
         // Update the version with VT analysis
         const verdict = normalizeVerdict(aiResult.verdict);
         const status = verdictToStatus(verdict);
+        const stats = vtResult.data.attributes.last_analysis_stats;
 
         await ctx.runMutation(internal.skills.updateVersionScanResultsInternal, {
           versionId,
@@ -1585,6 +1600,8 @@ export const backfillActiveSkillsVTCache = internalAction({
             verdict: aiResult.verdict,
             analysis: aiResult.analysis,
             source: aiResult.source,
+            scanner: "code_insight",
+            engineStats: stats,
             checkedAt: Date.now(),
           },
         });

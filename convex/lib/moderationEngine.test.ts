@@ -527,4 +527,60 @@ describe("moderationEngine", () => {
     expect(snapshot.reasonCodes).toContain("suspicious.env_credential_access");
     expect(snapshot.reasonCodes).toContain("suspicious.vt_suspicious");
   });
+
+  it("does not let uncorroborated VT Code Insight suspicious override clean local scans", () => {
+    const snapshot = buildModerationSnapshot({
+      staticScan: {
+        status: "clean",
+        reasonCodes: [],
+        findings: [],
+        summary: "",
+        engineVersion: "v2.1.1",
+        checkedAt: Date.now(),
+      },
+      vtAnalysis: {
+        status: "suspicious",
+        scanner: "code_insight",
+        source: "VirusTotal Code Insight",
+        engineStats: {
+          malicious: 0,
+          suspicious: 0,
+          harmless: 12,
+          undetected: 54,
+        },
+      },
+      llmStatus: "clean",
+    });
+
+    expect(snapshot.verdict).toBe("clean");
+    expect(snapshot.reasonCodes).toEqual([]);
+  });
+
+  it("keeps VT Code Insight suspicious when AV engines also report suspicious", () => {
+    const snapshot = buildModerationSnapshot({
+      staticScan: {
+        status: "clean",
+        reasonCodes: [],
+        findings: [],
+        summary: "",
+        engineVersion: "v2.1.1",
+        checkedAt: Date.now(),
+      },
+      vtAnalysis: {
+        status: "suspicious",
+        scanner: "code_insight",
+        source: "VirusTotal Code Insight",
+        engineStats: {
+          malicious: 0,
+          suspicious: 1,
+          harmless: 12,
+          undetected: 53,
+        },
+      },
+      llmStatus: "clean",
+    });
+
+    expect(snapshot.verdict).toBe("suspicious");
+    expect(snapshot.reasonCodes).toContain("suspicious.vt_suspicious");
+  });
 });

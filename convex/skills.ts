@@ -128,8 +128,26 @@ const USER_MODERATION_REASON = "user.moderation";
 const SKILL_CATALOG_CURSOR_PREFIX = "skillcat:";
 const SKILL_CAPABILITY_TAG_SET = new Set<string>(SKILL_CAPABILITY_TAGS);
 
+const vtEngineStatsValidator = v.object({
+  malicious: v.optional(v.number()),
+  suspicious: v.optional(v.number()),
+  undetected: v.optional(v.number()),
+  harmless: v.optional(v.number()),
+});
+
+const vtAnalysisValidator = v.object({
+  status: v.string(),
+  verdict: v.optional(v.string()),
+  analysis: v.optional(v.string()),
+  source: v.optional(v.string()),
+  scanner: v.optional(v.string()),
+  engineStats: v.optional(vtEngineStatsValidator),
+  checkedAt: v.number(),
+});
+
 function buildStructuredModerationPatch(params: {
   staticScan?: Doc<"skillVersions">["staticScan"];
+  vtAnalysis?: Doc<"skillVersions">["vtAnalysis"];
   vtStatus?: string;
   llmStatus?: string;
   sourceVersionId?: Id<"skillVersions">;
@@ -145,6 +163,7 @@ function buildStructuredModerationPatch(params: {
 > {
   const snapshot = buildModerationSnapshot({
     staticScan: params.staticScan,
+    vtAnalysis: params.vtAnalysis,
     vtStatus: params.vtStatus,
     llmStatus: params.llmStatus,
     sourceVersionId: params.sourceVersionId,
@@ -210,6 +229,7 @@ function buildScannerModerationPatchFromVersion(params: {
 }): SkillModerationPatch {
   const structuredPatch = buildStructuredModerationPatch({
     staticScan: params.version.staticScan,
+    vtAnalysis: params.version.vtAnalysis,
     vtStatus: params.version.vtAnalysis?.status,
     llmStatus: params.version.llmAnalysis?.status,
     sourceVersionId: params.version._id,
@@ -4085,6 +4105,7 @@ export const escalateSkillByIdInternal = internalMutation({
     const llmStatus = reasonMatch?.[1] === "llm" ? reasonMatch[2] : version?.llmAnalysis?.status;
     const snapshot = buildModerationSnapshot({
       staticScan: version?.staticScan,
+      vtAnalysis: version?.vtAnalysis,
       vtStatus,
       llmStatus,
       sourceVersionId: version?._id,
@@ -4572,15 +4593,7 @@ export const updateVersionScanResultsInternal = internalMutation({
   args: {
     versionId: v.id("skillVersions"),
     sha256hash: v.optional(v.string()),
-    vtAnalysis: v.optional(
-      v.object({
-        status: v.string(),
-        verdict: v.optional(v.string()),
-        analysis: v.optional(v.string()),
-        source: v.optional(v.string()),
-        checkedAt: v.number(),
-      }),
-    ),
+    vtAnalysis: v.optional(vtAnalysisValidator),
   },
   handler: async (ctx, args) => {
     const version = await ctx.db.get(args.versionId);
@@ -4694,11 +4707,6 @@ export const approveSkillByHashInternal = internalMutation({
 
       const now = Date.now();
       const qualityLocked = skill.moderationReason === "quality.low" && !isMalicious;
-      const nextModerationReason = qualityLocked
-        ? "quality.low"
-        : bypassSuspicious
-          ? `scanner.${args.scanner}.clean`
-          : `scanner.${args.scanner}.${args.status}`;
       const nextModerationNotes = qualityLocked
         ? (skill.moderationNotes ??
           "Quality gate quarantine is still active. Manual moderation review required.")
@@ -4706,6 +4714,7 @@ export const approveSkillByHashInternal = internalMutation({
       const scanner = args.scanner.trim().toLowerCase();
       const snapshot = buildModerationSnapshot({
         staticScan: version.staticScan,
+        vtAnalysis: version.vtAnalysis,
         vtStatus: scanner === "vt" ? args.status : version.vtAnalysis?.status,
         llmStatus: scanner === "llm" ? args.status : version.llmAnalysis?.status,
         sourceVersionId: version._id,
@@ -4716,6 +4725,16 @@ export const approveSkillByHashInternal = internalMutation({
           : snapshot.reasonCodes;
       const nextVerdict = verdictFromCodes(nextReasonCodes);
       const nextLegacyFlags = legacyFlagsFromVerdict(nextVerdict);
+      if (nextVerdict === "clean" && !alreadyBlocked) {
+        newFlags = undefined;
+      }
+      const nextModerationReason = qualityLocked
+        ? "quality.low"
+        : bypassSuspicious
+          ? `scanner.${args.scanner}.clean`
+          : nextVerdict === "clean"
+            ? "scanner.aggregate.clean"
+            : `scanner.${args.scanner}.${args.status}`;
       const nextModerationStatus =
         nextVerdict === "malicious" || qualityLocked ? "hidden" : "active";
 
@@ -4801,9 +4820,9 @@ export const escalateByVtInternal = internalMutation({
       newFlags = ["flagged.suspicious"];
     }
 
-    const nextModerationFlags = newFlags.length ? newFlags : undefined;
     const snapshot = buildModerationSnapshot({
       staticScan: version.staticScan,
+      vtAnalysis: version.vtAnalysis,
       vtStatus: args.status,
       llmStatus: version.llmAnalysis?.status,
       sourceVersionId: version._id,
@@ -4813,6 +4832,13 @@ export const escalateByVtInternal = internalMutation({
         ? snapshot.reasonCodes.filter((code) => !code.startsWith("suspicious."))
         : snapshot.reasonCodes;
     const nextVerdict = verdictFromCodes(nextReasonCodes);
+    const nextLegacyFlags = legacyFlagsFromVerdict(nextVerdict);
+    const nextModerationFlags =
+      nextVerdict === "clean" && !alreadyBlocked
+        ? undefined
+        : newFlags.length
+          ? newFlags
+          : nextLegacyFlags;
     const now = Date.now();
     const basePatch: SkillModerationPatch = {
       moderationFlags: nextModerationFlags,
