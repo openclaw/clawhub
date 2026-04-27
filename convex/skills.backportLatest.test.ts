@@ -153,12 +153,6 @@ type Captured = {
 };
 
 function buildDb(skill: SkillDoc, captured: Captured) {
-  const throwMissingPublisherTable = (table: string) => {
-    // Forces ensurePersonalPublisherForUser's synthesize fallback in
-    // lib/publishers.ts so we don't need to mock publishers/publisherMembers.
-    throw new Error(`unexpected table: ${table}`);
-  };
-
   // Trigger-driven code (syncSkillSearchDigestForSkill -> getOwnerPublisher)
   // will ask for publishers via `db.get(ownerPublisherId)`. Return null so
   // getOwnerPublisher falls back to resolving the publisher from the owner user.
