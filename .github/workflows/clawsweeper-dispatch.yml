@@ -29,7 +29,11 @@ jobs:
           ITEM_NUMBER: ${{ github.event.issue.number || github.event.pull_request.number }}
           ITEM_KIND: ${{ github.event_name == 'pull_request_target' && 'pull_request' || 'issue' }}
         run: |
+          payload="$(jq -nc \
+            --arg target_repo "$TARGET_REPO" \
+            --argjson item_number "$ITEM_NUMBER" \
+            --arg item_kind "$ITEM_KIND" \
+            '{event_type:"clawsweeper_item",client_payload:{target_repo:$target_repo,item_number:$item_number,item_kind:$item_kind}}')"
           gh api repos/openclaw/clawsweeper/dispatches \
             --method POST \
-            --field event_type=clawsweeper_item \
-            --raw-field client_payload="{\"target_repo\":\"$TARGET_REPO\",\"item_number\":$ITEM_NUMBER,\"item_kind\":\"$ITEM_KIND\"}"
+            --input - <<< "$payload"
