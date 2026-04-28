@@ -20,9 +20,13 @@ const Command = React.forwardRef<
 ));
 Command.displayName = CommandPrimitive.displayName;
 
-const CommandDialog = ({ children, ...props }: React.ComponentProps<typeof Dialog>) => (
+const CommandDialog = ({
+  children,
+  showCloseButton = false,
+  ...props
+}: React.ComponentProps<typeof Dialog> & { showCloseButton?: boolean }) => (
   <Dialog {...props}>
-    <DialogContent className="overflow-hidden p-0">
+    <DialogContent className="overflow-hidden p-0" showCloseButton={showCloseButton}>
       <Command>{children}</Command>
     </DialogContent>
   </Dialog>

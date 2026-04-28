@@ -17,7 +17,7 @@ const DialogOverlay = React.forwardRef<
     ref={ref}
     className={cn(
       // Matches .report-dialog-backdrop
-      "fixed inset-0 z-80 grid place-items-center bg-overlay-bg p-5 backdrop-blur-[3px]",
+      "fixed inset-0 z-80 bg-overlay-bg backdrop-blur-[3px]",
       "data-[state=open]:animate-in data-[state=open]:fade-in-0",
       "data-[state=closed]:animate-out data-[state=closed]:fade-out-0",
       className,
