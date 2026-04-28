@@ -41,6 +41,28 @@ See also: [acceptable-usage.md](./acceptable-usage.md) for the marketplace polic
 - Skills directory supports an optional "Hide suspicious" filter to exclude
   active-but-flagged (`flagged.suspicious`) entries from browse/search results.
 
+## Bad-faith or trademark reports
+
+ClawHub uses the same report and staff moderation pipeline for bad-faith registrations,
+impersonation, and trademark-related skill disputes. These reports usually need more
+context than an ordinary abuse report because staff must be able to identify the claimant,
+the disputed listing, and the requested action.
+
+When reporting a skill that appears to use another party's valid trademark or was registered
+in bad faith, include:
+
+- the canonical ClawHub skill URL and owner handle
+- the trademark, project, company, or product name at issue
+- a link to public evidence of the claimant's ownership or authority
+- why the current skill owner is not authorized to publish under that name
+- the requested action, such as hide pending review, transfer ownership, rename, or remove
+
+Staff can use the existing moderation tools to hide a listing during review, restore it,
+soft-delete it, hard-delete it, ban abusive users, or change ownership when a verified
+claim requires it. Do not use the public report flow for private secrets or sensitive legal
+documents; open a GitHub issue with non-sensitive evidence and ask maintainers for a private
+handoff path when needed.
+
 ## Skill moderation pipeline
 
 - New skill publishes now persist a deterministic static scan result on the version.
