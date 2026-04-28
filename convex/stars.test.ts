@@ -10,15 +10,19 @@ vi.mock("@convex-dev/auth/server", () => ({
 }));
 
 type WrappedHandler<TArgs, TResult> = {
-  _handler: (ctx: unknown, args: TArgs) => Promise<TResult>;
+  _handler?: (ctx: unknown, args: TArgs) => Promise<TResult>;
 };
 
-const isStarredHandler = (
-  isStarred as unknown as WrappedHandler<{ skillId: string }, boolean>
-)._handler;
-const isSoulStarredHandler = (
-  isSoulStarred as unknown as WrappedHandler<{ soulId: string }, boolean>
-)._handler;
+function unwrapHandler<TArgs, TResult>(
+  wrapped: unknown,
+): (ctx: unknown, args: TArgs) => Promise<TResult> {
+  const handler = (wrapped as WrappedHandler<TArgs, TResult>)._handler;
+  if (!handler) throw new Error("Expected Convex test wrapper to expose _handler");
+  return handler;
+}
+
+const isStarredHandler = unwrapHandler<{ skillId: string }, boolean>(isStarred);
+const isSoulStarredHandler = unwrapHandler<{ soulId: string }, boolean>(isSoulStarred);
 
 function makeCtx(options: { user?: Record<string, unknown> | null; existingStar?: unknown }) {
   return {
@@ -63,6 +67,16 @@ describe("stars queries", () => {
     await expect(
       isStarredHandler(makeCtx({ existingStar: { _id: "stars:demo" } }), {
         skillId: "skills:demo",
+      }),
+    ).resolves.toBe(true);
+  });
+
+  it("still reports existing soul stars for active users", async () => {
+    vi.mocked(getAuthUserId).mockResolvedValue("users:viewer" as never);
+
+    await expect(
+      isSoulStarredHandler(makeCtx({ existingStar: { _id: "soulStars:demo" } }), {
+        soulId: "souls:demo",
       }),
     ).resolves.toBe(true);
   });
