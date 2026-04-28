@@ -80,7 +80,28 @@ Report examples:
 - undeclared credential or permission requirements
 - suspicious install instructions
 - scam comments or impersonation
+- bad-faith registrations or trademark misuse
 - content that violates [Acceptable usage](./acceptable-usage.md)
+
+## Bad-faith or trademark reports
+
+ClawHub uses the same report and staff moderation pipeline for bad-faith
+registrations, impersonation, and trademark-related disputes. These reports need
+enough context for staff to identify the claimant, disputed listing, and
+requested action.
+
+Include:
+
+- the canonical ClawHub skill or package URL and owner handle
+- the trademark, project, company, or product name at issue
+- public evidence of the claimant's ownership or authority
+- why the current owner is not authorized to publish under that name
+- the requested action, such as hide pending review, transfer ownership, rename,
+  or remove
+
+Do not put private secrets or sensitive legal documents in public reports. Open
+a GitHub issue with non-sensitive evidence and ask maintainers for a private
+handoff path when needed.
 
 ## Appeals and rescans
 
