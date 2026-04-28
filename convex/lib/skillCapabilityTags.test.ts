@@ -71,4 +71,35 @@ describe("deriveSkillCapabilityTags", () => {
 
     expect(tags).toEqual([]);
   });
+
+  it("does not treat generic web font display swap wording as a crypto signal", () => {
+    const tags = deriveSkillCapabilityTags({
+      slug: "landing-page",
+      displayName: "Landing Page",
+      frontmatter: {},
+      readmeText:
+        "Loads Google Fonts with display=swap so text renders quickly while custom fonts load.",
+      fileContents: [
+        {
+          path: "src/styles.css",
+          content:
+            "@import url('https://fonts.googleapis.com/css2?family=Inter&display=swap');",
+        },
+      ],
+    });
+
+    expect(tags).toEqual([]);
+  });
+
+  it("still detects token swap wording as a crypto signal", () => {
+    const tags = deriveSkillCapabilityTags({
+      slug: "token-router",
+      displayName: "Token Router",
+      frontmatter: {},
+      readmeText: "Find the best route to swap USDC for ETH across supported pools.",
+      fileContents: [],
+    });
+
+    expect(tags).toEqual(["crypto"]);
+  });
 });
