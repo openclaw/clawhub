@@ -133,6 +133,7 @@ program
   .option("--token <token>", "API token")
   .option("--label <label>", "Token label (browser flow only)", "CLI token")
   .option("--no-browser", "Do not open browser (requires --token)")
+  .option("--device", "Use Device Flow (for headless/remote environments)")
   .action(async (options) => {
     const opts = await resolveGlobalOpts();
     await cmdLoginFlow(opts, options, isInputAllowed());
@@ -166,6 +167,7 @@ auth
   .option("--token <token>", "API token")
   .option("--label <label>", "Token label (browser flow only)", "CLI token")
   .option("--no-browser", "Do not open browser (requires --token)")
+  .option("--device", "Use Device Flow (for headless/remote environments)")
   .action(async (options) => {
     const opts = await resolveGlobalOpts();
     await cmdLoginFlow(opts, options, isInputAllowed());
