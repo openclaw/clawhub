@@ -1,9 +1,13 @@
-import { lazy, Suspense } from "react";
-import ReactMarkdown, { defaultUrlTransform } from "react-markdown";
+import { lazy, Suspense, useMemo } from "react";
+import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
+import type { PluggableList } from "unified";
 import type { Doc, Id } from "../../convex/_generated/dataModel";
 import { rehypeProxyImages } from "../lib/rehypeProxyImages";
-import { resolveSkillReadmeHref } from "../lib/skillReadmeLinks";
+import {
+  remarkSkillReadmeLinks,
+  sanitizeRenderedSkillReadmeUrl,
+} from "../lib/skillReadmeLinks";
 import { SkillVersionsPanel } from "./SkillVersionsPanel";
 
 const REHYPE_PLUGINS = [rehypeProxyImages];
@@ -52,6 +56,13 @@ export function SkillDetailTabs({
   scanResultsSuppressedMessage,
 }: SkillDetailTabsProps) {
   const compareEnabled = (versions?.length ?? 0) > 1;
+  const readmeRemarkPlugins = useMemo<PluggableList>(
+    () => [
+      remarkGfm,
+      [remarkSkillReadmeLinks, { readmePath: "SKILL.md", skillSlug: skill.slug }],
+    ],
+    [skill.slug],
+  );
 
   return (
     <div className="card tab-card">
@@ -101,13 +112,9 @@ export function SkillDetailTabs({
           {readmeContent ? (
             <div className="markdown">
               <ReactMarkdown
-                remarkPlugins={[remarkGfm]}
+                remarkPlugins={readmeRemarkPlugins}
                 rehypePlugins={REHYPE_PLUGINS}
-                urlTransform={(url, key) =>
-                  key === "href"
-                    ? resolveSkillReadmeHref(url, skill.slug)
-                    : defaultUrlTransform(url)
-                }
+                urlTransform={sanitizeRenderedSkillReadmeUrl}
               >
                 {readmeContent}
               </ReactMarkdown>

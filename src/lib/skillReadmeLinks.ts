@@ -1,59 +1,108 @@
-import { defaultUrlTransform } from "react-markdown";
+import type { Root } from "mdast";
+import { visit } from "unist-util-visit";
 
-const ABSOLUTE_OR_ROOT_HREF = /^(?:[a-z][a-z0-9+.-]*:|\/\/|\/|#|\?)/i;
+type SkillReadmeLinkOptions = {
+  readmePath?: string;
+  skillSlug: string;
+};
 
-function splitFragment(href: string) {
-  const hashIndex = href.indexOf("#");
-  if (hashIndex === -1) return { path: href, fragment: "" };
+type MarkdownUrlNode = {
+  type: string;
+  url: string;
+};
+
+const ALLOWED_ABSOLUTE_SCHEMES = new Set(["http:", "https:", "mailto:", "tel:"]);
+const SCHEME_RE = /^[a-z][a-z0-9+.-]*:/i;
+
+function isMarkdownUrlNode(node: unknown): node is MarkdownUrlNode {
+  if (!node || typeof node !== "object") return false;
+  const maybeNode = node as { type?: unknown; url?: unknown };
+  return (
+    (maybeNode.type === "definition" ||
+      maybeNode.type === "image" ||
+      maybeNode.type === "link") &&
+    typeof maybeNode.url === "string"
+  );
+}
+
+function splitReference(reference: string) {
+  const hashIndex = reference.indexOf("#");
+  const beforeHash = hashIndex >= 0 ? reference.slice(0, hashIndex) : reference;
+  const hash = hashIndex >= 0 ? reference.slice(hashIndex) : "";
+  const queryIndex = beforeHash.indexOf("?");
   return {
-    path: href.slice(0, hashIndex),
-    fragment: href.slice(hashIndex),
+    hash,
+    path: queryIndex >= 0 ? beforeHash.slice(0, queryIndex) : beforeHash,
   };
 }
 
-function normalizeRelativeSkillPath(rawPath: string) {
-  if (!rawPath || rawPath.includes("\\") || rawPath.includes("\0")) return null;
+function hasUnsafePathSyntax(path: string) {
+  if (!path || path.startsWith("/") || path.startsWith("//") || path.includes("\\")) return true;
+  if (path.includes("..")) return true;
 
-  const pathOnly = rawPath.split("?")[0] ?? "";
-  const segments: string[] = [];
-  for (const segment of pathOnly.split("/")) {
-    if (!segment || segment === ".") continue;
-
-    let decoded: string;
-    try {
-      decoded = decodeURIComponent(segment);
-    } catch {
-      return null;
-    }
-
-    if (
-      decoded === "." ||
-      decoded === ".." ||
-      decoded.includes("/") ||
-      decoded.includes("\\") ||
-      decoded.includes("\0")
-    ) {
-      return null;
-    }
-
-    segments.push(segment);
+  try {
+    const decoded = decodeURIComponent(path);
+    return decoded.includes("..") || decoded.includes("\\") || decoded.startsWith("/");
+  } catch {
+    return true;
   }
-
-  return segments.length ? segments.join("/") : null;
 }
 
-export function resolveSkillReadmeHref(href: string, skillSlug: string) {
-  const safeHref = defaultUrlTransform(href);
-  if (!safeHref) return "";
+function normalizeRelativePath(path: string) {
+  if (hasUnsafePathSyntax(path)) return null;
+  const parts = path.split("/").filter((part) => part && part !== ".");
+  return parts.join("/");
+}
 
-  const trimmed = safeHref.trim();
-  if (!trimmed || ABSOLUTE_OR_ROOT_HREF.test(trimmed)) return safeHref;
+function resolveReadmeRelativePath(readmePath: string, targetPath: string) {
+  const normalizedReadmePath = normalizeRelativePath(readmePath);
+  const normalizedTargetPath = normalizeRelativePath(targetPath);
+  if (!normalizedReadmePath || !normalizedTargetPath) return null;
 
-  const { path, fragment } = splitFragment(trimmed);
-  const normalizedPath = normalizeRelativeSkillPath(path);
-  if (!normalizedPath) return "";
+  const baseDir = normalizedReadmePath.split("/").slice(0, -1);
+  return [...baseDir, ...normalizedTargetPath.split("/")].filter(Boolean).join("/");
+}
 
-  return `/api/v1/skills/${encodeURIComponent(skillSlug)}/file?path=${encodeURIComponent(
-    normalizedPath,
-  )}${fragment}`;
+export function rewriteSkillReadmeMarkdownUrl(
+  reference: string,
+  options: SkillReadmeLinkOptions,
+) {
+  const trimmed = reference.trim();
+  if (!trimmed) return null;
+  if (trimmed.startsWith("#")) return reference;
+
+  if (SCHEME_RE.test(trimmed)) {
+    const scheme = trimmed.slice(0, trimmed.indexOf(":") + 1).toLowerCase();
+    return ALLOWED_ABSOLUTE_SCHEMES.has(scheme) ? reference : null;
+  }
+
+  const { hash, path } = splitReference(trimmed);
+  const resolvedPath = resolveReadmeRelativePath(options.readmePath ?? "SKILL.md", path);
+  if (!resolvedPath) return null;
+
+  return `/api/v1/skills/${encodeURIComponent(options.skillSlug)}/file?path=${encodeURIComponent(
+    resolvedPath,
+  )}${hash}`;
+}
+
+export function sanitizeRenderedSkillReadmeUrl(url: string) {
+  const trimmed = url.trim();
+  if (!trimmed) return "";
+  if (trimmed.startsWith("#") || trimmed.startsWith("/")) return url;
+
+  if (SCHEME_RE.test(trimmed)) {
+    const scheme = trimmed.slice(0, trimmed.indexOf(":") + 1).toLowerCase();
+    return ALLOWED_ABSOLUTE_SCHEMES.has(scheme) ? url : "";
+  }
+
+  return "";
+}
+
+export function remarkSkillReadmeLinks(options: SkillReadmeLinkOptions) {
+  return (tree: Root) => {
+    visit(tree, (node) => {
+      if (!isMarkdownUrlNode(node)) return;
+      node.url = rewriteSkillReadmeMarkdownUrl(node.url, options) ?? "";
+    });
+  };
 }

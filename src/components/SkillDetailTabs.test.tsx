@@ -1,51 +1,79 @@
 /* @vitest-environment jsdom */
 
-import { render, screen } from "@testing-library/react";
+import { render } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 import type { Doc } from "../../convex/_generated/dataModel";
 import { SkillDetailTabs } from "./SkillDetailTabs";
+
+vi.mock("./SkillVersionsPanel", () => ({
+  SkillVersionsPanel: () => <div />,
+}));
+
+const skill = {
+  _creationTime: 0,
+  _id: "skills:1",
+  badges: {},
+  createdAt: 0,
+  displayName: "Demo",
+  ownerUserId: "users:1",
+  slug: "demo-skill",
+  stats: {},
+  tags: {},
+  updatedAt: 0,
+} as unknown as Doc<"skills">;
 
 function renderReadme(readmeContent: string) {
   return render(
     <SkillDetailTabs
       activeTab="readme"
-      setActiveTab={vi.fn()}
-      onCompareIntent={vi.fn()}
-      readmeContent={readmeContent}
-      readmeError={null}
+      diffVersions={undefined}
       latestFiles={[]}
       latestVersionId={null}
-      skill={{ slug: "api-gateway" } as Doc<"skills">}
-      diffVersions={[]}
-      versions={[]}
       nixPlugin={false}
-      suppressVersionScanResults={false}
+      onCompareIntent={() => undefined}
+      readmeContent={readmeContent}
+      readmeError={null}
       scanResultsSuppressedMessage={null}
+      setActiveTab={() => undefined}
+      skill={skill}
+      suppressVersionScanResults={false}
+      versions={undefined}
     />,
-  );
+  ).container;
 }
 
-describe("SkillDetailTabs README links", () => {
-  it("keeps relative skill README links inside the viewed skill", () => {
-    const { container } = renderReadme(
-      [
-        "[Google Mail](references/google-mail/README.md)",
-        "[External](https://example.com/docs)",
-        "[Usage](#usage)",
-        "[Traversal](../references/README.md)",
-      ].join("\n\n"),
-    );
+describe("SkillDetailTabs README markdown links", () => {
+  it("rewrites relative README links and images to skill file URLs", () => {
+    const container = renderReadme("[Usage](docs/usage.md) ![Logo](img/logo.png)");
+    const link = container.querySelector("a");
+    const image = container.querySelector("img");
 
-    expect(screen.getByRole("link", { name: "Google Mail" }).getAttribute("href")).toBe(
-      "/api/v1/skills/api-gateway/file?path=references%2Fgoogle-mail%2FREADME.md",
+    expect(link?.getAttribute("href")).toBe(
+      "/api/v1/skills/demo-skill/file?path=docs%2Fusage.md",
     );
-    expect(screen.getByRole("link", { name: "External" }).getAttribute("href")).toBe(
-      "https://example.com/docs",
+    expect(image?.getAttribute("src")).toBe(
+      "/api/v1/skills/demo-skill/file?path=img%2Flogo.png",
     );
-    expect(screen.getByRole("link", { name: "Usage" }).getAttribute("href")).toBe("#usage");
-    const traversal = Array.from(container.querySelectorAll("a")).find(
-      (link) => link.textContent === "Traversal",
+  });
+
+  it("preserves safe non-file references and sanitizes traversal", () => {
+    const container = renderReadme(
+      [
+        "[External](https://example.com)",
+        "[Mail](mailto:security@example.com)",
+        "[Phone](tel:+15555550100)",
+        "[Anchor](#usage)",
+        "[Secret](../secret.md)",
+      ].join(" "),
     );
-    expect(traversal?.getAttribute("href")).toBe("");
+    const links = Array.from(container.querySelectorAll("a"));
+
+    expect(links.map((link) => link.getAttribute("href"))).toEqual([
+      "https://example.com",
+      "mailto:security@example.com",
+      "tel:+15555550100",
+      "#usage",
+      "",
+    ]);
   });
 });

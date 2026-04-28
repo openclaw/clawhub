@@ -1,28 +1,69 @@
 import { describe, expect, it } from "vitest";
-import { resolveSkillReadmeHref } from "./skillReadmeLinks";
+import {
+  rewriteSkillReadmeMarkdownUrl,
+  sanitizeRenderedSkillReadmeUrl,
+} from "./skillReadmeLinks";
 
-describe("resolveSkillReadmeHref", () => {
-  it("routes safe relative README links through the skill file API", () => {
-    expect(resolveSkillReadmeHref("references/google-mail/README.md", "api-gateway")).toBe(
-      "/api/v1/skills/api-gateway/file?path=references%2Fgoogle-mail%2FREADME.md",
+const options = { readmePath: "SKILL.md", skillSlug: "demo-skill" };
+
+describe("rewriteSkillReadmeMarkdownUrl", () => {
+  it("rewrites README-relative links to the skill file endpoint", () => {
+    expect(rewriteSkillReadmeMarkdownUrl("docs/usage.md", options)).toBe(
+      "/api/v1/skills/demo-skill/file?path=docs%2Fusage.md",
     );
-    expect(resolveSkillReadmeHref("./docs/Usage Guide.md#setup", "api-gateway")).toBe(
-      "/api/v1/skills/api-gateway/file?path=docs%2FUsage%20Guide.md#setup",
+    expect(rewriteSkillReadmeMarkdownUrl("./img/logo.svg", options)).toBe(
+      "/api/v1/skills/demo-skill/file?path=img%2Flogo.svg",
     );
   });
 
-  it("preserves external, root, hash, and query links", () => {
-    expect(resolveSkillReadmeHref("https://example.com/docs", "api-gateway")).toBe(
+  it("resolves links relative to a nested README path", () => {
+    expect(
+      rewriteSkillReadmeMarkdownUrl("images/logo.png", {
+        readmePath: "docs/SKILL.md",
+        skillSlug: "demo-skill",
+      }),
+    ).toBe("/api/v1/skills/demo-skill/file?path=docs%2Fimages%2Flogo.png");
+  });
+
+  it("keeps fragment anchors on rewritten document links", () => {
+    expect(rewriteSkillReadmeMarkdownUrl("docs/usage.md#setup", options)).toBe(
+      "/api/v1/skills/demo-skill/file?path=docs%2Fusage.md#setup",
+    );
+  });
+
+  it("preserves absolute URLs, mail, phone, and hash-only anchors", () => {
+    expect(rewriteSkillReadmeMarkdownUrl("https://example.com/docs", options)).toBe(
       "https://example.com/docs",
     );
-    expect(resolveSkillReadmeHref("/plugins?q=mail", "api-gateway")).toBe("/plugins?q=mail");
-    expect(resolveSkillReadmeHref("#usage", "api-gateway")).toBe("#usage");
-    expect(resolveSkillReadmeHref("?tab=files", "api-gateway")).toBe("?tab=files");
+    expect(rewriteSkillReadmeMarkdownUrl("mailto:security@example.com", options)).toBe(
+      "mailto:security@example.com",
+    );
+    expect(rewriteSkillReadmeMarkdownUrl("tel:+15555550100", options)).toBe(
+      "tel:+15555550100",
+    );
+    expect(rewriteSkillReadmeMarkdownUrl("#usage", options)).toBe("#usage");
   });
 
-  it("rejects traversal and unsafe protocols", () => {
-    expect(resolveSkillReadmeHref("../other-skill/README.md", "api-gateway")).toBe("");
-    expect(resolveSkillReadmeHref("%2e%2e/other-skill/README.md", "api-gateway")).toBe("");
-    expect(resolveSkillReadmeHref("javascript:alert(1)", "api-gateway")).toBe("");
+  it("sanitizes traversal, root-absolute, backslash, and unsafe scheme targets", () => {
+    expect(rewriteSkillReadmeMarkdownUrl("../secret.md", options)).toBeNull();
+    expect(rewriteSkillReadmeMarkdownUrl("%2e%2e/secret.md", options)).toBeNull();
+    expect(rewriteSkillReadmeMarkdownUrl("/secret.md", options)).toBeNull();
+    expect(rewriteSkillReadmeMarkdownUrl("docs\\secret.md", options)).toBeNull();
+    expect(rewriteSkillReadmeMarkdownUrl("javascript:alert(1)", options)).toBeNull();
+  });
+});
+
+describe("sanitizeRenderedSkillReadmeUrl", () => {
+  it("allows rewritten site paths, safe schemes, and hash anchors", () => {
+    expect(sanitizeRenderedSkillReadmeUrl("/api/v1/skills/demo/file?path=SKILL.md")).toBe(
+      "/api/v1/skills/demo/file?path=SKILL.md",
+    );
+    expect(sanitizeRenderedSkillReadmeUrl("tel:+15555550100")).toBe("tel:+15555550100");
+    expect(sanitizeRenderedSkillReadmeUrl("#usage")).toBe("#usage");
+  });
+
+  it("removes unrewritten relative paths and unsafe schemes", () => {
+    expect(sanitizeRenderedSkillReadmeUrl("docs/usage.md")).toBe("");
+    expect(sanitizeRenderedSkillReadmeUrl("javascript:alert(1)")).toBe("");
   });
 });
