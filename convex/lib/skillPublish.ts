@@ -101,7 +101,7 @@ export async function publishVersionForUser(
   }
 
   if (!options.bypassGitHubAccountAge) {
-    await requireGitHubAccountAge(ctx, userId);
+    await requireGitHubAccountAge(ctx, userId, { allowGitHubAppAuth: true });
   }
   const existingSkill = (await ctx.runQuery(internal.skills.getSkillBySlugInternal, {
     slug,

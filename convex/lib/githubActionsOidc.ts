@@ -1,3 +1,5 @@
+import { getGitHubApiAuthorization } from "./githubAuth";
+
 type JwtHeader = {
   alg?: unknown;
   kid?: unknown;
@@ -217,7 +219,7 @@ export async function fetchGitHubRepositoryIdentity(
     throw new Error(`Invalid GitHub repository: ${repository}`);
   }
   const response = await fetchImpl(`https://api.github.com/repos/${normalizedRepository}`, {
-    headers: buildGitHubRepositoryLookupHeaders(),
+    headers: await buildGitHubRepositoryLookupHeaders(),
   });
   if (!response.ok) {
     throw new Error(
@@ -239,15 +241,16 @@ export async function fetchGitHubRepositoryIdentity(
   };
 }
 
-function buildGitHubRepositoryLookupHeaders() {
+async function buildGitHubRepositoryLookupHeaders() {
   const headers: Record<string, string> = {
     Accept: "application/vnd.github+json",
     "User-Agent": "clawhub/package-trusted-publisher",
   };
-  const token = process.env.GITHUB_TOKEN?.trim();
-  if (token) {
-    headers.Authorization = `Bearer ${token}`;
-  }
+  const authorization = await getGitHubApiAuthorization({
+    userAgent: "clawhub/package-trusted-publisher",
+    allowGitHubApp: true,
+  });
+  if (authorization) headers.Authorization = authorization;
   return headers;
 }
 

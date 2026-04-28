@@ -1,8 +1,12 @@
 "use node";
 
-import { createPrivateKey, createSign } from "node:crypto";
 import type { Id } from "../_generated/dataModel";
 import type { ActionCtx } from "../_generated/server";
+import {
+  buildGitHubHeaders,
+  createInstallationToken,
+  isGitHubAppConfigured,
+} from "./githubAppAuth";
 
 const GITHUB_API = "https://api.github.com";
 const DEFAULT_REPO = "clawdbot/souls";
@@ -75,18 +79,14 @@ export type GitHubBackupContext = {
 };
 
 export function isGitHubSoulBackupConfigured() {
-  return Boolean(
-    process.env.GITHUB_APP_ID &&
-    process.env.GITHUB_APP_PRIVATE_KEY &&
-    process.env.GITHUB_APP_INSTALLATION_ID,
-  );
+  return isGitHubAppConfigured();
 }
 
 export async function getGitHubSoulBackupContext(): Promise<GitHubBackupContext> {
   const repo = process.env.GITHUB_SOULS_REPO ?? DEFAULT_REPO;
   const root = process.env.GITHUB_SOULS_ROOT ?? DEFAULT_ROOT;
   const [repoOwner, repoName] = parseRepo(repo);
-  const token = await createInstallationToken();
+  const token = await createInstallationToken(USER_AGENT);
   const repoInfo = await githubGet<RepoInfo>(token, `/repos/${repoOwner}/${repoName}`);
   const branch = repoInfo.default_branch ?? "main";
 
@@ -297,48 +297,6 @@ async function fetchStorageBase64(ctx: ActionCtx, storageId: Id<"_storage">) {
   return buffer.toString("base64");
 }
 
-async function createInstallationToken() {
-  const appId = process.env.GITHUB_APP_ID;
-  const installationId = process.env.GITHUB_APP_INSTALLATION_ID;
-  if (!appId || !installationId) {
-    throw new Error("GitHub App credentials missing");
-  }
-  const jwt = createAppJwt(appId);
-  const response = await fetch(`${GITHUB_API}/app/installations/${installationId}/access_tokens`, {
-    method: "POST",
-    headers: buildHeaders(jwt, true),
-  });
-  if (!response.ok) {
-    const message = await response.text();
-    throw new Error(`GitHub App token failed: ${message}`);
-  }
-  const payload = (await response.json()) as { token?: string };
-  if (!payload.token) throw new Error("GitHub App token missing");
-  return payload.token;
-}
-
-function createAppJwt(appId: string) {
-  const privateKey = loadPrivateKey();
-  const now = Math.floor(Date.now() / 1000);
-  const header = { alg: "RS256", typ: "JWT" };
-  const payload = { iat: now - 60, exp: now + 9 * 60, iss: appId };
-  const encodedHeader = base64Url(JSON.stringify(header));
-  const encodedPayload = base64Url(JSON.stringify(payload));
-  const signingInput = `${encodedHeader}.${encodedPayload}`;
-  const sign = createSign("RSA-SHA256");
-  sign.update(signingInput);
-  sign.end();
-  const signature = sign.sign(privateKey);
-  return `${signingInput}.${base64Url(signature)}`;
-}
-
-function loadPrivateKey() {
-  const raw = process.env.GITHUB_APP_PRIVATE_KEY;
-  if (!raw) throw new Error("GITHUB_APP_PRIVATE_KEY is not configured");
-  const normalized = raw.replace(/\\n/g, "\n");
-  return createPrivateKey(normalized);
-}
-
 async function createBlob(token: string, repoOwner: string, repoName: string, content: string) {
   const result = await githubPost<{ sha: string }>(
     token,
@@ -389,11 +347,7 @@ async function githubPatch(token: string, path: string, body: unknown) {
 }
 
 function buildHeaders(token: string, isAppJwt = false) {
-  return {
-    Authorization: `${isAppJwt ? "Bearer" : "token"} ${token}`,
-    Accept: "application/vnd.github+json",
-    "User-Agent": USER_AGENT,
-  };
+  return buildGitHubHeaders(token, USER_AGENT, isAppJwt);
 }
 
 function parseRepo(repo: string) {
@@ -426,11 +380,6 @@ function encodePath(path: string) {
     .split("/")
     .map((segment) => encodeURIComponent(segment))
     .join("/");
-}
-
-function base64Url(value: string | Uint8Array) {
-  const buffer = typeof value === "string" ? Buffer.from(value) : Buffer.from(value);
-  return buffer.toString("base64").replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/g, "");
 }
 
 function toBase64(value: string) {

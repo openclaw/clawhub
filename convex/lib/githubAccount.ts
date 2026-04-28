@@ -2,12 +2,14 @@ import { ConvexError } from "convex/values";
 import { internal } from "../_generated/api";
 import type { Id } from "../_generated/dataModel";
 import type { ActionCtx } from "../_generated/server";
+import { getGitHubApiAuthorization } from "./githubAuth";
 import { GITHUB_PROFILE_SYNC_WINDOW_MS } from "./githubProfileSync";
 
 const GITHUB_API = "https://api.github.com";
 const MIN_ACCOUNT_AGE_MS = 14 * 24 * 60 * 60 * 1000;
 
 type GitHubAccountGateCtx = Pick<ActionCtx, "runQuery" | "runMutation">;
+type GitHubAccountGateOptions = { allowGitHubAppAuth?: boolean };
 
 type GitHubUser = {
   login?: string;
@@ -22,16 +24,21 @@ function assertGitHubNumericId(providerAccountId: string) {
   }
 }
 
-function buildGitHubHeaders() {
+async function buildGitHubHeaders(options: GitHubAccountGateOptions = {}) {
   const headers: Record<string, string> = { "User-Agent": "clawhub" };
-  const token = process.env.GITHUB_TOKEN;
-  if (token) {
-    headers.Authorization = `Bearer ${token}`;
-  }
+  const authorization = await getGitHubApiAuthorization({
+    userAgent: "clawhub",
+    allowGitHubApp: options.allowGitHubAppAuth,
+  });
+  if (authorization) headers.Authorization = authorization;
   return headers;
 }
 
-export async function requireGitHubAccountAge(ctx: GitHubAccountGateCtx, userId: Id<"users">) {
+export async function requireGitHubAccountAge(
+  ctx: GitHubAccountGateCtx,
+  userId: Id<"users">,
+  options: GitHubAccountGateOptions = {},
+) {
   const user = await ctx.runQuery(internal.users.getByIdInternal, { userId });
   if (!user || user.deletedAt || user.deactivatedAt) throw new ConvexError("User not found");
 
@@ -51,7 +58,7 @@ export async function requireGitHubAccountAge(ctx: GitHubAccountGateCtx, userId:
 
     // Fetch by immutable GitHub numeric ID to avoid username swap attacks entirely.
     const response = await fetch(`${GITHUB_API}/user/${providerAccountId}`, {
-      headers: buildGitHubHeaders(),
+      headers: await buildGitHubHeaders(options),
     });
     if (!response.ok) {
       if (response.status === 403 || response.status === 429) {
@@ -107,7 +114,7 @@ export async function syncGitHubProfile(ctx: ActionCtx, userId: Id<"users">) {
   assertGitHubNumericId(providerAccountId);
 
   const response = await fetch(`${GITHUB_API}/user/${providerAccountId}`, {
-    headers: buildGitHubHeaders(),
+    headers: await buildGitHubHeaders(),
   });
   if (!response.ok) {
     // Silently fail - this is a best-effort sync, not critical path

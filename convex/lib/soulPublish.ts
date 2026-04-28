@@ -94,7 +94,7 @@ export async function publishSoulVersionForUser(
     throw new ConvexError("Version must be valid semver");
   }
 
-  await requireGitHubAccountAge(ctx, userId);
+  await requireGitHubAccountAge(ctx, userId, { allowGitHubAppAuth: true });
 
   const suppliedChangelog = args.changelog.trim();
   const changelogSource = suppliedChangelog ? ("user" as const) : ("auto" as const);

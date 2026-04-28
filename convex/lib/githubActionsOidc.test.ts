@@ -33,6 +33,7 @@ const signingKeyPairPromise = crypto.subtle.generateKey(
 
 afterEach(() => {
   vi.unstubAllEnvs();
+  vi.unstubAllGlobals();
 });
 
 describe("extractWorkflowFilenameFromWorkflowRef", () => {
@@ -94,6 +95,32 @@ describe("fetchGitHubRepositoryIdentity", () => {
         "User-Agent": "clawhub/package-trusted-publisher",
       },
     });
+  });
+
+  it("uses a GitHub App installation token for repository lookup when GITHUB_TOKEN is missing", async () => {
+    vi.stubEnv("GITHUB_APP_ID", "123");
+    vi.stubEnv("GITHUB_APP_INSTALLATION_ID", "456");
+    vi.stubEnv("GITHUB_APP_PRIVATE_KEY", await generatePrivateKeyPem());
+    const appFetchMock = vi.fn(async () => Response.json({ token: "ghs_installation" }));
+    vi.stubGlobal("fetch", appFetchMock);
+    const fetchMock = vi.fn(async () =>
+      Response.json({
+        id: 123,
+        full_name: "openclaw/clawhub",
+        owner: { login: "openclaw", id: 456 },
+      }),
+    );
+
+    await fetchGitHubRepositoryIdentity("openclaw/clawhub", fetchMock);
+
+    expect(fetchMock).toHaveBeenLastCalledWith(
+      "https://api.github.com/repos/openclaw/clawhub",
+      expect.objectContaining({
+        headers: expect.objectContaining({
+          Authorization: "Bearer ghs_installation",
+        }),
+      }),
+    );
   });
 });
 
@@ -387,4 +414,21 @@ function base64UrlEncodeBytes(bytes: Uint8Array) {
   let binary = "";
   for (const byte of bytes) binary += String.fromCharCode(byte);
   return btoa(binary).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/g, "");
+}
+
+async function generatePrivateKeyPem() {
+  const keyPair = await crypto.subtle.generateKey(
+    {
+      name: "RSASSA-PKCS1-v1_5",
+      modulusLength: 2048,
+      publicExponent: new Uint8Array([1, 0, 1]),
+      hash: "SHA-256",
+    },
+    true,
+    ["sign", "verify"],
+  );
+  const pkcs8 = await crypto.subtle.exportKey("pkcs8", keyPair.privateKey);
+  const base64 = Buffer.from(pkcs8).toString("base64");
+  const lines = base64.match(/.{1,64}/g)?.join("\n") ?? base64;
+  return `-----BEGIN PRIVATE KEY-----\n${lines}\n-----END PRIVATE KEY-----`;
 }

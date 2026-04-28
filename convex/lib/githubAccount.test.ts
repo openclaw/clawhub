@@ -44,7 +44,11 @@ describe("requireGitHubAccountAge", () => {
     const fetchMock = vi.fn();
     vi.stubGlobal("fetch", fetchMock);
 
-    await requireGitHubAccountAge({ runQuery, runMutation } as never, "users:1" as never);
+    await requireGitHubAccountAge(
+      { runQuery, runMutation } as never,
+      "users:1" as never,
+      { allowGitHubAppAuth: true },
+    );
 
     expect(fetchMock).not.toHaveBeenCalled();
     expect(runMutation).not.toHaveBeenCalled();
@@ -254,7 +258,11 @@ describe("requireGitHubAccountAge", () => {
     });
     vi.stubGlobal("fetch", fetchMock);
 
-    await requireGitHubAccountAge({ runQuery, runMutation } as never, "users:1" as never);
+    await requireGitHubAccountAge(
+      { runQuery, runMutation } as never,
+      "users:1" as never,
+      { allowGitHubAppAuth: true },
+    );
 
     expect(fetchMock).toHaveBeenCalledWith(
       "https://api.github.com/user/12345",
@@ -262,6 +270,50 @@ describe("requireGitHubAccountAge", () => {
         headers: {
           "User-Agent": "clawhub",
           Authorization: "Bearer ghp_test123",
+        },
+      }),
+    );
+  });
+
+  it("uses a GitHub App installation token when GITHUB_TOKEN is missing", async () => {
+    vi.useFakeTimers();
+    const now = new Date("2026-02-02T12:00:00Z");
+    vi.setSystemTime(now);
+
+    vi.stubEnv("GITHUB_APP_ID", "123");
+    vi.stubEnv("GITHUB_APP_INSTALLATION_ID", "456");
+    vi.stubEnv("GITHUB_APP_PRIVATE_KEY", await generatePrivateKeyPem());
+
+    const runQuery = vi
+      .fn()
+      .mockResolvedValueOnce({
+        _id: "users:1",
+        githubCreatedAt: undefined,
+      })
+      .mockResolvedValueOnce("12345");
+    const runMutation = vi.fn();
+    const fetchMock = vi.fn(async (url: string) => {
+      if (url.endsWith("/app/installations/456/access_tokens")) {
+        return Response.json({ token: "ghs_installation" });
+      }
+      return Response.json({
+        created_at: "2020-01-01T00:00:00Z",
+      });
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    await requireGitHubAccountAge(
+      { runQuery, runMutation } as never,
+      "users:1" as never,
+      { allowGitHubAppAuth: true },
+    );
+
+    expect(fetchMock).toHaveBeenLastCalledWith(
+      "https://api.github.com/user/12345",
+      expect.objectContaining({
+        headers: {
+          "User-Agent": "clawhub",
+          Authorization: "Bearer ghs_installation",
         },
       }),
     );
@@ -403,3 +455,20 @@ describe("syncGitHubProfile", () => {
     });
   });
 });
+
+async function generatePrivateKeyPem() {
+  const keyPair = await crypto.subtle.generateKey(
+    {
+      name: "RSASSA-PKCS1-v1_5",
+      modulusLength: 2048,
+      publicExponent: new Uint8Array([1, 0, 1]),
+      hash: "SHA-256",
+    },
+    true,
+    ["sign", "verify"],
+  );
+  const pkcs8 = await crypto.subtle.exportKey("pkcs8", keyPair.privateKey);
+  const base64 = Buffer.from(pkcs8).toString("base64");
+  const lines = base64.match(/.{1,64}/g)?.join("\n") ?? base64;
+  return `-----BEGIN PRIVATE KEY-----\n${lines}\n-----END PRIVATE KEY-----`;
+}

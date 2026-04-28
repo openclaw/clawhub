@@ -1828,7 +1828,7 @@ async function publishPackageImpl(
     effectiveSource = resolveTrustedPublishSource(payload, auth.publishToken);
   } else {
     actorUserId = auth.actorUserId;
-    await requireGitHubAccountAge(ctx, actorUserId);
+    await requireGitHubAccountAge(ctx, actorUserId, { allowGitHubAppAuth: true });
     const ownerTarget = await runMutationRef<{
       publisherId: Id<"publishers">;
       linkedUserId?: Id<"users">;
