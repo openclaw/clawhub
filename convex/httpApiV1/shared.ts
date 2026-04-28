@@ -236,23 +236,7 @@ function toFileLike(entry: FormDataEntryValue): FileLikeEntry | null {
 export async function parseMultipartPublish(
   ctx: ActionCtx,
   request: Request,
-): Promise<{
-  slug: string;
-  displayName: string;
-  ownerHandle?: string;
-  version: string;
-  changelog: string;
-  acceptLicenseTerms?: boolean;
-  tags?: string[];
-  forkOf?: { slug: string; version?: string };
-  files: Array<{
-    path: string;
-    size: number;
-    storageId: Id<"_storage">;
-    sha256: string;
-    contentType?: string;
-  }>;
-}> {
+): Promise<ReturnType<typeof parsePublishBody>> {
   const form = await request.formData();
   const payloadRaw = form.get("payload");
   if (!payloadRaw || typeof payloadRaw !== "string") {
