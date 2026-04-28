@@ -66,6 +66,7 @@ export const PublishSourceSchema = type({
 export const CliPublishRequestSchema = type({
     slug: "string",
     displayName: "string",
+    ownerHandle: "string?",
     version: "string",
     changelog: "string",
     acceptLicenseTerms: "boolean?",
@@ -245,6 +246,16 @@ export const ApiV1PublishResponseSchema = type({
 });
 export const ApiV1DeleteResponseSchema = type({
     ok: "true",
+});
+export const ApiV1RescanResponseSchema = type({
+    ok: "true",
+    targetKind: '"skill"|"package"',
+    name: "string",
+    version: "string",
+    status: '"in_progress"|"completed"|"failed"',
+    remainingRequests: "number",
+    maxRequests: "number",
+    pendingRequestId: "string?",
 });
 export const ApiV1SkillRenameResponseSchema = type({
     ok: "true",
