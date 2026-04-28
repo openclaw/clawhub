@@ -294,7 +294,7 @@ export async function parseMultipartPublish(
   const body = {
     slug: payload.slug,
     displayName: payload.displayName,
-    ownerHandle: payload.ownerHandle,
+    ...(typeof payload.ownerHandle === "string" ? { ownerHandle: payload.ownerHandle } : {}),
     version: payload.version,
     changelog: typeof payload.changelog === "string" ? payload.changelog : "",
     ...(hasAcceptLicenseTerms ? { acceptLicenseTerms: payload.acceptLicenseTerms } : {}),
