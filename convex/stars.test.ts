@@ -9,20 +9,22 @@ vi.mock("@convex-dev/auth/server", () => ({
   getAuthUserId: vi.fn(),
 }));
 
-type WrappedHandler<TArgs, TResult> = {
-  _handler?: (ctx: unknown, args: TArgs) => Promise<TResult>;
-};
-
-function unwrapHandler<TArgs, TResult>(
-  wrapped: unknown,
-): (ctx: unknown, args: TArgs) => Promise<TResult> {
-  const handler = (wrapped as WrappedHandler<TArgs, TResult>)._handler;
-  if (!handler) throw new Error("Expected Convex test wrapper to expose _handler");
+function unwrapHandler(wrapped: unknown) {
+  const handler = (wrapped as { _handler?: unknown })._handler;
+  if (typeof handler !== "function") {
+    throw new Error("Expected Convex test wrapper to expose _handler");
+  }
   return handler;
 }
 
-const isStarredHandler = unwrapHandler<{ skillId: string }, boolean>(isStarred);
-const isSoulStarredHandler = unwrapHandler<{ soulId: string }, boolean>(isSoulStarred);
+const isStarredHandler = unwrapHandler(isStarred) as (
+  ctx: unknown,
+  args: { skillId: string },
+) => Promise<boolean>;
+const isSoulStarredHandler = unwrapHandler(isSoulStarred) as (
+  ctx: unknown,
+  args: { soulId: string },
+) => Promise<boolean>;
 
 function makeCtx(options: { user?: Record<string, unknown> | null; existingStar?: unknown }) {
   return {
