@@ -52,7 +52,7 @@ Use the GitHub Actions workflow:
 gh workflow run clawhub-cli-npm-release.yml \
   --repo openclaw/clawhub \
   --ref main \
-  -f tag=v0.10.0 \
+  -f tag=v0.11.0 \
   -f preflight_only=true
 ```
 
@@ -84,7 +84,7 @@ Ensure Convex env is set (auth + embeddings):
 - `OPENAI_API_KEY`
 - `SITE_URL` (your web app URL)
 - Optional webhook env (see `docs/webhook.md`)
-- Optional: `GITHUB_TOKEN` (recommended; raises GitHub account lookup limit used by publish gate)
+- Optional: `GITHUB_TOKEN` (recommended; raises GitHub API limits used by publish gates)
 
 ## 2) Deploy web app (Vercel)
 

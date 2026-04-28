@@ -659,6 +659,10 @@ export function Upload() {
                       All skills published on ClawHub are licensed under {PLATFORM_SKILL_LICENSE}.{" "}
                       {PLATFORM_SKILL_LICENSE_SUMMARY}
                     </p>
+                    <p className="text-sm text-[color:var(--ink-soft)]">
+                      ClawHub does not support paid skills, per-skill pricing, or paywalled
+                      releases.
+                    </p>
                     <label className="flex items-start gap-2 text-sm cursor-pointer">
                       <input
                         type="checkbox"

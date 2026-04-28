@@ -156,3 +156,9 @@ Limits (server-side):
 - Anyone may use, modify, and redistribute published skills, including commercially.
 - Attribution is not required.
 - Do not add conflicting license terms in `SKILL.md`; ClawHub does not support per-skill license overrides.
+
+## Paid skills
+
+- ClawHub does not support paid skills, per-skill pricing, paywalls, or revenue sharing.
+- Do not add pricing metadata to `SKILL.md`; it is not part of the skill format and will not make a published skill paid.
+- If your skill integrates with a paid third-party service, document the external cost and required account clearly in the skill instructions and `requires.env`.

@@ -141,6 +141,7 @@ Stores your API token + cached registry URL.
 - Requires semver: `--version 1.2.3`.
 - Publishing a skill means it is released under `MIT-0` on ClawHub.
 - Published skills are free to use, modify, and redistribute without attribution.
+- ClawHub does not support paid skills or per-skill pricing.
 - Legacy alias: `publish <path>`.
 
 ### `delete <slug>`

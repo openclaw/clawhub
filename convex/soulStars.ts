@@ -1,12 +1,13 @@
 import { v } from "convex/values";
 import { mutation, query } from "./functions";
-import { requireUser } from "./lib/access";
+import { getOptionalActiveAuthUserId, requireUser } from "./lib/access";
 import { toPublicSoul } from "./lib/public";
 
 export const isStarred = query({
   args: { soulId: v.id("souls") },
   handler: async (ctx, args) => {
-    const { userId } = await requireUser(ctx);
+    const userId = await getOptionalActiveAuthUserId(ctx);
+    if (!userId) return false;
     const existing = await ctx.db
       .query("soulStars")
       .withIndex("by_soul_user", (q) => q.eq("soulId", args.soulId).eq("userId", userId))

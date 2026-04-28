@@ -2,14 +2,19 @@
 
 ## Unreleased
 
+## 0.11.0 - 2026-04-28
+
 ### Changed
 
+- Docs: clarify that ClawHub does not support paid skills, per-skill pricing, or paywalled releases (#1752, #1844) (thanks @deepujain).
+- API docs: clarify how third-party directories can reuse public ClawHub catalog endpoints while respecting rate limits and canonical links (#1825, #1845) (thanks @deepujain).
 - Packages docs: document the required fields for code-plugin package publish flows (#1802) (thanks @deepujain).
 - Search: add CJK tokenization support (Chinese/Japanese/Korean) with Intl.Segmenter plus fallback behavior to improve skill query matching (#1596) (thanks @pq-dong).
 - Stats: centralize migrated skill stat fallback reads through `readCanonicalStat()` and add schema/agent guardrails to discourage direct legacy nested-field access (#1709) (thanks @momothemage).
 
 ### Fixes
 
+- Packages: use the configured `GITHUB_TOKEN` for trusted-publisher repository identity lookups to avoid anonymous GitHub API rate limits during publish setup (#1820, #1846) (thanks @deepujain).
 - Packages: keep package search fallback scans bounded, stop scanning after the requested result limit, and keep direct plugin-name matches scoped to the requested package family (OpenClaw #64025).
 - Moderation: stop flagging declared env vars sent to their intended API while preserving broad env scraping and exfiltration findings (#1803) (thanks @deepujain).
 - Moderation: stop treating generic webhook integration docs as suspicious unless they include explicit Discord or Slack webhook endpoints (#1716) (thanks @langningchen-openclaw).

@@ -55,7 +55,7 @@ The CLI respects `HTTPS_PROXY`, `HTTP_PROXY`, `https_proxy`, and `http_proxy`.
 
 ## `publish` fails with `GitHub API rate limit exceeded`
 
-- This is the GitHub account-age gate lookup hitting unauthenticated limits.
+- This is a GitHub publish-gate lookup hitting unauthenticated limits.
 - Set `GITHUB_TOKEN` in Convex environment to use authenticated GitHub API limits.
 - Retry publish after a short wait if the limit was already exhausted.
 
