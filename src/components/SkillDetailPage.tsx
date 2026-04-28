@@ -83,6 +83,7 @@ export function SkillDetailPage({
   const reportSkill = useMutation(api.skills.report);
   const updateTags = useMutation(api.skills.updateTags);
   const deleteTags = useMutation(api.skills.deleteTags);
+  const updateSummary = useMutation(api.skills.updateSummary);
   const getReadme = useAction(api.skills.getReadme);
   const myPublishers = useQuery(api.publishers.listMine) as
     | Array<{ publisher: { _id: Id<"publishers"> }; role: string }>
@@ -101,6 +102,9 @@ export function SkillDetailPage({
   const [reportReason, setReportReason] = useState("");
   const [reportError, setReportError] = useState<string | null>(null);
   const [isSubmittingReport, setIsSubmittingReport] = useState(false);
+  const [summary, setSummary] = useState("");
+  const [isSummaryEditing, setIsSummaryEditing] = useState(false);
+  const [isSummarySubmitting, setIsSummarySubmitting] = useState(false);
 
   const isLoadingSkill = isStaff ? staffResult === undefined : result === undefined;
   const skill = result?.skill;
@@ -267,6 +271,12 @@ export function SkillDetailPage({
     }
   }, [latestVersion, tagVersionId]);
 
+  useEffect(() => {
+    if (skill && !isSummaryEditing) {
+      setSummary(skill.summary ?? "");
+    }
+  }, [skill, isSummaryEditing]);
+
   const closeReportDialog = () => {
     setIsReportDialogOpen(false);
     setReportReason("");
@@ -297,6 +307,28 @@ export function SkillDetailPage({
       skillId: skill._id,
       tags: [tag],
     });
+  };
+
+  const submitSummary = async () => {
+    if (!skill) return;
+    setIsSummarySubmitting(true);
+    try {
+      await updateSummary({
+        skillId: skill._id,
+        summary: summary,
+      });
+      setIsSummaryEditing(false);
+    } catch (error) {
+      console.error("Failed to update summary", error);
+      window.alert("Failed to update summary. Please try again.");
+    } finally {
+      setIsSummarySubmitting(false);
+    }
+  };
+
+  const startSummaryEdit = () => {
+    setSummary(skill?.summary ?? "");
+    setIsSummaryEditing(true);
   };
 
   const submitReport = async () => {
@@ -396,6 +428,12 @@ export function SkillDetailPage({
           tagVersions={versions ?? []}
           clawdis={clawdis}
           osLabels={osLabels}
+          summary={summary}
+          onSummaryChange={setSummary}
+          onSummarySubmit={submitSummary}
+          isSummaryEditing={isSummaryEditing}
+          onSummaryEditToggle={isSummaryEditing ? () => setIsSummaryEditing(false) : startSummaryEdit}
+          isSummarySubmitting={isSummarySubmitting}
         />
 
         {isOwner && skill ? (
