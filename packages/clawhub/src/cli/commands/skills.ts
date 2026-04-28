@@ -173,12 +173,12 @@ export async function cmdInstall(
     });
 
     const lock = await readLockfile(opts.workdir);
-    lock.skills[trimmed] = withPinnedMetadata(
-      resolvedVersion,
-      Date.now(),
-      lock.skills[trimmed],
-    );
+    const existingEntry = lock.skills[trimmed];
+    lock.skills[trimmed] = withPinnedMetadata(resolvedVersion, Date.now(), existingEntry);
     await writeLockfile(opts.workdir, lock);
+    if (isPinnedSkillEntry(existingEntry)) {
+      console.log(`${trimmed} is pinned; reinstall will not change pin state`);
+    }
     spinner.succeed(`OK. Installed ${trimmed} -> ${target}`);
   } catch (error) {
     spinner.fail(formatError(error));
@@ -383,6 +383,11 @@ export async function cmdPin(
   if (!existing) fail(`Not installed: ${trimmed}`);
 
   const reason = options.reason?.trim() || existing.pinReason;
+  if (isPinnedSkillEntry(existing) && reason === existing.pinReason) {
+    console.log(`Skill "${trimmed}" is already pinned${reason ? `: ${reason}` : ""}`);
+    return;
+  }
+
   lock.skills[trimmed] = {
     ...existing,
     pinned: true,
