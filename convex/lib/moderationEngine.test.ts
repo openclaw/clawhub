@@ -23,7 +23,7 @@ describe("moderationEngine", () => {
     expect(result.status).toBe("clean");
   });
 
-  it("flags hardcoded API secrets in skill documentation and redacts evidence", () => {
+  it("flags hardcoded API secrets in skill documentation and redacts every evidence copy", () => {
     const exposedSecret = "ak_live_1234567890abcdefSECRET";
     const result = runStaticModerationScan({
       slug: "seo-admin",
@@ -38,7 +38,7 @@ describe("moderationEngine", () => {
           content: [
             "# SEO Admin",
             "Production endpoint: https://example.com/admin/api",
-            `API secret: ${exposedSecret}`,
+            `API secret: ${exposedSecret} # rotate ${exposedSecret}`,
           ].join("\n"),
         },
       ],
@@ -50,7 +50,7 @@ describe("moderationEngine", () => {
     expect(result.findings[0]?.evidence).not.toContain(exposedSecret);
   });
 
-  it("does not flag placeholder secret examples", () => {
+  it("does not flag placeholder or env-var secret examples", () => {
     const result = runStaticModerationScan({
       slug: "demo",
       displayName: "Demo",
@@ -61,7 +61,11 @@ describe("moderationEngine", () => {
       fileContents: [
         {
           path: "SKILL.md",
-          content: "Set `API secret: your-secret-here` before running the sample.",
+          content: [
+            "Set `API secret: your-secret-here` before running the sample.",
+            "const api_key = process.env.PROVIDER_API_KEY;",
+            "api_secret = os.environ['PROVIDER_API_SECRET']",
+          ].join("\n"),
         },
       ],
     });

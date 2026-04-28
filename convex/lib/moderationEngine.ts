@@ -95,6 +95,7 @@ function looksLikePlaceholderSecret(secret: string) {
   const normalized = secret.trim().toLowerCase();
   if (!normalized) return true;
   if (/^(?:x+|_+|-+|\*+|\.{3})$/.test(normalized)) return true;
+  if (/process\.env\.|os\.environ[.[]|getenv\s*\(/.test(normalized)) return true;
   return /(your|example|placeholder|change-?me|replace|redacted|dummy|sample|test-token|token-here|secret-here|api-key-here)/i.test(
     normalized,
   );
@@ -109,7 +110,7 @@ function findHardcodedSecret(content: string) {
     if (!secret || looksLikePlaceholderSecret(secret)) continue;
     return {
       line: i + 1,
-      text: line.replace(secret, "[REDACTED]"),
+      text: line.replaceAll(secret, "[REDACTED]"),
     };
   }
   return null;
