@@ -163,7 +163,7 @@ jobs:
 
       - name: Install Playwright browser
         if: needs.validate-deploy-request.outputs.run_smoke == 'true'
-        run: bunx playwright install --with-deps chromium
+        run: bunx playwright install --with-deps chromium webkit
 
       - name: Write authenticated storage state
         if: needs.validate-deploy-request.outputs.run_smoke == 'true' && env.PLAYWRIGHT_AUTH_STORAGE_STATE_JSON != ''
