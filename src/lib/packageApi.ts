@@ -388,7 +388,7 @@ export async function fetchPackageReadme(name: string, version?: string | null):
   if (version) url.searchParams.set("version", version);
   const response = await packageFetch(url, "text/plain");
   if (response.ok) return await response.text();
-  if (response.status === 404 || response.status === 423) {
+  if (response.status === 403 || response.status === 404 || response.status === 423) {
     return null;
   }
   throw await createPackageApiError(response);

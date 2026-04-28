@@ -103,7 +103,7 @@ export function DetailSecuritySummary({
   const rescanButtonDisabledReason = rescanDisabledReason(rescanState);
   const isScanInProgress = Boolean(rescanState?.inProgressRequest);
   const rescanButtonLabel = isScanInProgress
-    ? "Scan in progress"
+    ? "Scanning"
     : isRequestingRescan
       ? "Requesting..."
       : "Rescan";
@@ -121,14 +121,14 @@ export function DetailSecuritySummary({
   return (
     <Card>
       <CardHeader>
-        <CardTitle className="flex items-center gap-2">
+        <CardTitle className="flex flex-col items-start gap-3 sm:flex-row sm:items-center">
           Security Scans
           {rescanState && onRequestRescan ? (
             <Button
               type="button"
               variant="outline"
               size="sm"
-              className="ml-auto"
+              className="w-full justify-center sm:ml-auto sm:w-auto"
               loading={isRequestingRescan || isScanInProgress}
               disabled={Boolean(rescanButtonDisabledReason)}
               title={rescanButtonDisabledReason ?? "Request a fresh scan"}

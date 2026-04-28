@@ -28,7 +28,7 @@ describe("DetailSecuritySummary", () => {
       />,
     );
 
-    const button = screen.getByRole("button", { name: "Scan in progress" });
+    const button = screen.getByRole("button", { name: "Scanning" });
     expect((button as HTMLButtonElement).disabled).toBe(true);
     expect(button.getAttribute("title")).toBe("A rescan is already in progress.");
     expect(button.querySelector(".animate-spin")?.className).toContain(

@@ -1,4 +1,3 @@
-import { getAuthUserId } from "@convex-dev/auth/server";
 import {
   PackagePublishRequestSchema,
   PackageTrustedPublisherUpsertRequestSchema,
@@ -9,6 +8,7 @@ import { api, internal } from "../_generated/api";
 import type { Doc, Id } from "../_generated/dataModel";
 import type { ActionCtx } from "../_generated/server";
 import { getOptionalApiTokenUserId } from "../lib/apiTokenAuth";
+import { getOptionalActiveAuthUserIdFromAction } from "../lib/access";
 import {
   fetchGitHubRepositoryIdentity,
   verifyGitHubActionsTrustedPublishJwt,
@@ -91,12 +91,8 @@ async function getOptionalViewerUserIdForRequest(ctx: ActionCtx, request: Reques
   const apiTokenUserId = await getOptionalApiTokenUserId(ctx, request);
   if (apiTokenUserId) return apiTokenUserId;
   try {
-    const userId = (await getAuthUserId(ctx)) ?? null;
+    const userId = (await getOptionalActiveAuthUserIdFromAction(ctx)) ?? null;
     if (!userId) return null;
-    const user = await runQueryRef<Doc<"users"> | null>(ctx, internal.users.getByIdInternal, {
-      userId,
-    });
-    if (!user || user.deletedAt || user.deactivatedAt) return null;
     return userId;
   } catch {
     // Public package reads should degrade to anonymous when cookie-backed auth is stale.

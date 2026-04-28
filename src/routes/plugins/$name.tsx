@@ -231,6 +231,11 @@ function PluginDetailRoute() {
   const pkg = detail.package;
   const owner = detail.owner;
   const latestRelease = version?.version ?? null;
+  const isDownloadBlocked =
+    pkg.verification?.scanStatus === "malicious" ||
+    latestRelease?.verification?.scanStatus === "malicious" ||
+    latestRelease?.vtAnalysis?.status === "malicious" ||
+    latestRelease?.vtAnalysis?.verdict === "malicious";
   const installSnippet =
     pkg.family === "code-plugin"
       ? `openclaw plugins install clawhub:${pkg.name}`
@@ -284,7 +289,7 @@ function PluginDetailRoute() {
                 {pkg.latestVersion ? (
                   <span className="plugin-version-badge">v{pkg.latestVersion}</span>
                 ) : null}
-                {pkg.latestVersion ? (
+                {pkg.latestVersion && !isDownloadBlocked ? (
                   <div className="skill-title-actions">
                     <Button asChild variant="outline" size="sm" className="no-underline">
                       <a href={getPackageDownloadPath(name, pkg.latestVersion)}>
@@ -292,6 +297,11 @@ function PluginDetailRoute() {
                         Download
                       </a>
                     </Button>
+                  </div>
+                ) : null}
+                {isDownloadBlocked ? (
+                  <div className="skill-title-actions">
+                    <Badge variant="destructive">Download blocked</Badge>
                   </div>
                 ) : null}
               </div>

@@ -4608,20 +4608,17 @@ code {
   }
 
   .navbar-search {
-    display: flex;
-    order: 2;
-    flex: 1 1 0;
-    min-width: 0;
-    max-width: none;
-    height: 36px;
+    display: none;
   }
 
   .navbar-search-mobile-trigger {
-    display: none;
+    display: inline-flex;
   }
 
   .navbar-search-mobile {
-    display: none;
+    display: flex;
+    border-radius: var(--r-md);
+    margin: 0 0 10px;
   }
 
   .navbar-top-links {
@@ -6481,6 +6478,22 @@ code {
 
   .skill-hero-note {
     font-size: 0.82rem;
+  }
+
+  .skill-hero-title-row {
+    align-items: flex-start;
+  }
+
+  .skill-title-actions {
+    width: 100%;
+    margin-left: 0;
+    justify-content: flex-start;
+  }
+
+  .skill-title-actions .btn,
+  .skill-title-actions [data-slot="button"] {
+    flex: 1 1 0;
+    justify-content: center;
   }
 
   .skill-install-actions,
