@@ -2543,7 +2543,33 @@ describe("httpApiV1 handlers", () => {
   });
 
   it("plugins list defaults to plugin package families", async () => {
-    const runQuery = vi.fn().mockResolvedValue({ page: [], isDone: true, continueCursor: "" });
+    const codePlugin = {
+      name: "code-plugin",
+      displayName: "Code Plugin",
+      family: "code-plugin",
+      channel: "community",
+      isOfficial: false,
+      createdAt: 20,
+      updatedAt: 200,
+    };
+    const bundlePlugin = {
+      name: "bundle-plugin",
+      displayName: "Bundle Plugin",
+      family: "bundle-plugin",
+      channel: "community",
+      isOfficial: false,
+      createdAt: 10,
+      updatedAt: 100,
+    };
+    const runQuery = vi.fn((_, args: Record<string, unknown>) => {
+      if (args.family === "code-plugin") {
+        return { page: [codePlugin], isDone: true, continueCursor: "" };
+      }
+      if (args.family === "bundle-plugin") {
+        return { page: [bundlePlugin], isDone: true, continueCursor: "" };
+      }
+      throw new Error(`unexpected family ${String(args.family)}`);
+    });
     const runMutation = vi.fn().mockResolvedValue(okRate());
 
     const response = await __handlers.listPluginsV1Handler(
@@ -2552,14 +2578,19 @@ describe("httpApiV1 handlers", () => {
     );
 
     expect(response.status).toBe(200);
-    expect(runQuery).toHaveBeenCalledWith(
-      expect.anything(),
-      expect.objectContaining({
-        families: ["code-plugin", "bundle-plugin"],
-        family: undefined,
-        paginationOpts: { cursor: null, numItems: 7 },
-      }),
-    );
+    expect((await response.json()).items.map((entry: { name: string }) => entry.name)).toEqual([
+      "code-plugin",
+      "bundle-plugin",
+    ]);
+    const families = runQuery.mock.calls.map(([, args]) => (args as { family?: string }).family);
+    expect(families).toEqual(["code-plugin", "bundle-plugin"]);
+    for (const [, args] of runQuery.mock.calls) {
+      expect(args).toEqual(
+        expect.objectContaining({
+          paginationOpts: { cursor: null, numItems: 7 },
+        }),
+      );
+    }
   });
 
   it("packages search supports family=skill on the generic route", async () => {
@@ -2581,7 +2612,41 @@ describe("httpApiV1 handlers", () => {
   });
 
   it("plugins search defaults to plugin package families", async () => {
-    const runQuery = vi.fn().mockResolvedValue([]);
+    const runQuery = vi.fn((_, args: Record<string, unknown>) => {
+      if (args.family === "code-plugin") {
+        return [
+          {
+            score: 10,
+            package: {
+              name: "weather-code",
+              displayName: "Weather Code",
+              family: "code-plugin",
+              channel: "community",
+              isOfficial: false,
+              createdAt: 10,
+              updatedAt: 100,
+            },
+          },
+        ];
+      }
+      if (args.family === "bundle-plugin") {
+        return [
+          {
+            score: 20,
+            package: {
+              name: "weather-bundle",
+              displayName: "Weather Bundle",
+              family: "bundle-plugin",
+              channel: "community",
+              isOfficial: false,
+              createdAt: 20,
+              updatedAt: 200,
+            },
+          },
+        ];
+      }
+      throw new Error(`unexpected family ${String(args.family)}`);
+    });
     const runMutation = vi.fn().mockResolvedValue(okRate());
 
     const response = await __handlers.pluginsGetRouterV1Handler(
@@ -2590,15 +2655,21 @@ describe("httpApiV1 handlers", () => {
     );
 
     expect(response.status).toBe(200);
-    expect(runQuery).toHaveBeenCalledWith(
-      expect.anything(),
-      expect.objectContaining({
-        query: "weather",
-        families: ["code-plugin", "bundle-plugin"],
-        family: undefined,
-        limit: 7,
-      }),
-    );
+    expect(
+      (await response.json()).results.map(
+        (entry: { package: { name: string } }) => entry.package.name,
+      ),
+    ).toEqual(["weather-bundle", "weather-code"]);
+    const families = runQuery.mock.calls.map(([, args]) => (args as { family?: string }).family);
+    expect(families).toEqual(["code-plugin", "bundle-plugin"]);
+    for (const [, args] of runQuery.mock.calls) {
+      expect(args).toEqual(
+        expect.objectContaining({
+          query: "weather",
+          limit: 7,
+        }),
+      );
+    }
   });
 
   it("packages list forwards viewerUserId for authenticated private package browsing", async () => {

@@ -337,12 +337,10 @@ function toPublicPackage(
 function digestMatchesFilters(
   digest: PackageDigestLike,
   args: {
-    families?: PackageFamily[];
     executesCode?: boolean;
     capabilityTag?: string;
   },
 ) {
-  if (args.families && !args.families.includes(digest.family)) return false;
   if (
     typeof args.executesCode === "boolean" &&
     Boolean(digest.executesCode) !== args.executesCode
@@ -360,7 +358,6 @@ function digestMatchesSearchFilters(
   digest: PackageDigestLike,
   args: {
     family?: PackageFamily;
-    families?: PackageFamily[];
     channel?: PackageChannel;
     isOfficial?: boolean;
     executesCode?: boolean;
@@ -368,7 +365,6 @@ function digestMatchesSearchFilters(
   },
 ) {
   if (args.family && digest.family !== args.family) return false;
-  if (!args.family && args.families && !args.families.includes(digest.family)) return false;
   if (args.channel && digest.channel !== args.channel) return false;
   if (typeof args.isOfficial === "boolean" && digest.isOfficial !== args.isOfficial) {
     return false;
@@ -1114,9 +1110,6 @@ export const listPublicPage = query({
     family: v.optional(
       v.union(v.literal("skill"), v.literal("code-plugin"), v.literal("bundle-plugin")),
     ),
-    families: v.optional(
-      v.array(v.union(v.literal("skill"), v.literal("code-plugin"), v.literal("bundle-plugin"))),
-    ),
     channel: v.optional(
       v.union(v.literal("official"), v.literal("community"), v.literal("private")),
     ),
@@ -1134,9 +1127,6 @@ export const listPageForViewerInternal = internalQuery({
   args: {
     family: v.optional(
       v.union(v.literal("skill"), v.literal("code-plugin"), v.literal("bundle-plugin")),
-    ),
-    families: v.optional(
-      v.array(v.union(v.literal("skill"), v.literal("code-plugin"), v.literal("bundle-plugin"))),
     ),
     channel: v.optional(
       v.union(v.literal("official"), v.literal("community"), v.literal("private")),
@@ -1156,7 +1146,6 @@ async function listPackagePageImpl(
   ctx: DbReaderCtx,
   args: {
     family?: PackageFamily;
-    families?: PackageFamily[];
     channel?: PackageChannel;
     isOfficial?: boolean;
     executesCode?: boolean;
@@ -1269,9 +1258,6 @@ export const searchPublic = query({
     family: v.optional(
       v.union(v.literal("skill"), v.literal("code-plugin"), v.literal("bundle-plugin")),
     ),
-    families: v.optional(
-      v.array(v.union(v.literal("skill"), v.literal("code-plugin"), v.literal("bundle-plugin"))),
-    ),
     channel: v.optional(
       v.union(v.literal("official"), v.literal("community"), v.literal("private")),
     ),
@@ -1290,9 +1276,6 @@ export const searchForViewerInternal = internalQuery({
     limit: v.optional(v.number()),
     family: v.optional(
       v.union(v.literal("skill"), v.literal("code-plugin"), v.literal("bundle-plugin")),
-    ),
-    families: v.optional(
-      v.array(v.union(v.literal("skill"), v.literal("code-plugin"), v.literal("bundle-plugin"))),
     ),
     channel: v.optional(
       v.union(v.literal("official"), v.literal("community"), v.literal("private")),
@@ -1313,7 +1296,6 @@ async function searchPackagesImpl(
     query: string;
     limit?: number;
     family?: PackageFamily;
-    families?: PackageFamily[];
     channel?: PackageChannel;
     isOfficial?: boolean;
     executesCode?: boolean;
@@ -2226,7 +2208,9 @@ export const insertReleaseInternal = internalMutation({
         .withIndex("by_runtime_id", (q) => q.eq("runtimeId", args.runtimeId))
         .unique();
       if (runtimeCollision && runtimeCollision._id !== existing?._id) {
-        throw new ConvexError(`Plugin id "${nextRuntimeIdLabel}" is already claimed by another package`);
+        throw new ConvexError(
+          `Plugin id "${nextRuntimeIdLabel}" is already claimed by another package`,
+        );
       }
     }
 

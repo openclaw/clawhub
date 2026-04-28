@@ -63,7 +63,6 @@ const listPublicPageHandler = (
   listPublicPage as unknown as WrappedHandler<
     {
       family?: "skill" | "code-plugin" | "bundle-plugin";
-      families?: Array<"skill" | "code-plugin" | "bundle-plugin">;
       channel?: "official" | "community" | "private";
       isOfficial?: boolean;
       executesCode?: boolean;
@@ -77,7 +76,6 @@ const listPageForViewerInternalHandler = (
   listPageForViewerInternal as unknown as WrappedHandler<
     {
       family?: "skill" | "code-plugin" | "bundle-plugin";
-      families?: Array<"skill" | "code-plugin" | "bundle-plugin">;
       channel?: "official" | "community" | "private";
       isOfficial?: boolean;
       executesCode?: boolean;
@@ -840,29 +838,6 @@ describe("packages public queries", () => {
     });
 
     expect(result.page.map((entry) => entry.name)).toEqual(["public-plugin"]);
-  });
-
-  it("filters public list pages to the requested package families", async () => {
-    const { ctx } = makeDigestCtx({
-      pages: [
-        {
-          page: [
-            makeDigest("skill-package", { family: "skill" }),
-            makeDigest("code-plugin", { family: "code-plugin" }),
-            makeDigest("bundle-plugin", { family: "bundle-plugin" }),
-          ],
-          isDone: true,
-          continueCursor: "",
-        },
-      ],
-    });
-
-    const result = await listPageForViewerInternalHandler(ctx, {
-      families: ["code-plugin", "bundle-plugin"],
-      paginationOpts: { cursor: null, numItems: 10 },
-    });
-
-    expect(result.page.map((entry) => entry.name)).toEqual(["code-plugin", "bundle-plugin"]);
   });
 
   it("allows owners to list their private packages", async () => {
