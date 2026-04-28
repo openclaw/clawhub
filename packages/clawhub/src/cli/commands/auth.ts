@@ -1,5 +1,6 @@
 import { buildCliAuthUrl, startLoopbackAuthServer } from "../../browserAuth.js";
 import { readGlobalConfig, writeGlobalConfig } from "../../config.js";
+import { pollForDeviceToken, requestDeviceCode } from "../../deviceAuth.js";
 import { discoverRegistryFromSite } from "../../discovery.js";
 import { apiRequest } from "../../http.js";
 import { ApiRoutes, ApiV1WhoamiResponseSchema } from "../../schema/index.js";
@@ -10,7 +11,7 @@ import { createSpinner, fail, formatError, openInBrowser, promptHidden } from ".
 
 export async function cmdLoginFlow(
   opts: GlobalOpts,
-  options: { token?: string; label?: string; browser?: boolean },
+  options: { token?: string; label?: string; browser?: boolean; device?: boolean },
   inputAllowed: boolean,
 ) {
   if (options.token) {
@@ -18,8 +19,13 @@ export async function cmdLoginFlow(
     return;
   }
 
+  if (options.device) {
+    await cmdDeviceLogin(opts);
+    return;
+  }
+
   if (options.browser === false) {
-    fail("Token required (use --token or remove --no-browser)");
+    fail("Token required (use --token, --device, or remove --no-browser)");
   }
 
   const label = (options.label ?? "CLI token").trim() || "CLI token";
@@ -88,6 +94,51 @@ export async function cmdWhoami(opts: GlobalOpts) {
     spinner.succeed(whoami.user.handle ?? "unknown");
   } catch (error) {
     spinner.fail(formatError(error));
+    throw error;
+  }
+}
+
+/**
+ * Device Flow login for headless environments.
+ * Requests a device code, displays it to the user, then polls until authorized.
+ */
+export async function cmdDeviceLogin(opts: GlobalOpts) {
+  const discovery = await discoverRegistryFromSite(opts.site).catch(() => null);
+  const authBase = discovery?.authBase?.trim() || opts.site;
+
+  const spinner = createSpinner("Requesting device code");
+  let deviceCode;
+  try {
+    deviceCode = await requestDeviceCode({ siteUrl: authBase });
+    spinner.succeed("Device code received");
+  } catch (error) {
+    spinner.fail(formatError(error));
+    throw error;
+  }
+
+  // Display the code and URL for the user
+  console.log();
+  console.log("  To authenticate, visit:");
+  console.log(`  ${deviceCode.verification_uri}`);
+  console.log();
+  console.log(`  And enter code: ${deviceCode.user_code}`);
+  console.log();
+  console.log(`  Code expires in ${Math.floor(deviceCode.expires_in / 60)} minutes.`);
+  console.log();
+
+  const pollSpinner = createSpinner("Waiting for authorization");
+  try {
+    const tokenResponse = await pollForDeviceToken(
+      { siteUrl: authBase },
+      deviceCode.device_code,
+      { interval: deviceCode.interval, expiresIn: deviceCode.expires_in },
+    );
+    pollSpinner.succeed("Authorized");
+
+    // Store the token
+    await cmdLogin(opts, tokenResponse.access_token, true);
+  } catch (error) {
+    pollSpinner.fail(formatError(error));
     throw error;
   }
 }
