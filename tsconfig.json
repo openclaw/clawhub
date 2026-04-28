@@ -10,6 +10,7 @@
     /* Bundler mode */
     "moduleResolution": "bundler",
     "paths": {
+      "@/*": ["./src/*"],
       "convex": ["./node_modules/convex"],
       "convex/*": ["./node_modules/convex/*"]
     },
