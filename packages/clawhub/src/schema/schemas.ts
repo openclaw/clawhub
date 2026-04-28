@@ -251,6 +251,14 @@ export const ApiV1SkillVersionResponseSchema = type({
     changelogSource: '"auto"|"user"|null?',
     license: '"MIT-0"|null?',
     files: "unknown?",
+    security: type({
+      status: '"clean"|"suspicious"|"malicious"|"pending"|"error"',
+      hasWarnings: "boolean",
+      checkedAt: "number|null?",
+      model: "string|null?",
+    })
+      .or("null")
+      .optional(),
   }).or("null"),
   skill: type({
     slug: "string",
