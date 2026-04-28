@@ -68,15 +68,18 @@ metadata:
 ---
 ```
 
+Use `requires.env` for environment variables that must be present before the skill can run. Use `envVars` when you need per-variable metadata, including optional variables with `required: false`.
+
 ### Full field reference
 
 | Field              | Type       | Description                                                     |
 | ------------------ | ---------- | --------------------------------------------------------------- |
-| `requires.env`     | `string[]` | Environment variables your skill expects.                       |
+| `requires.env`     | `string[]` | Required environment variables your skill expects.              |
 | `requires.bins`    | `string[]` | CLI binaries that must all be installed.                        |
 | `requires.anyBins` | `string[]` | CLI binaries where at least one must exist.                     |
 | `requires.config`  | `string[]` | Config file paths your skill reads.                             |
 | `primaryEnv`       | `string`   | The main credential env var for your skill.                     |
+| `envVars`          | `array`    | Environment variable declarations with `name`, optional `required`, and optional `description`. Set `required: false` for optional env vars. |
 | `always`           | `boolean`  | If `true`, skill is always active (no explicit install needed). |
 | `skillKey`         | `string`   | Override the skill's invocation key.                            |
 | `emoji`            | `string`   | Display emoji for the skill.                                    |
@@ -104,9 +107,26 @@ metadata:
 
 Supported install kinds: `brew`, `node`, `go`, `uv`.
 
+### Optional environment variables
+
+Declare optional environment variables under `metadata.openclaw.envVars` and set `required: false`. Do not add optional entries to `requires.env`, because `requires.env` means the skill cannot run without them.
+
+```yaml
+metadata:
+  openclaw:
+    primaryEnv: TODOIST_API_KEY
+    envVars:
+      - name: TODOIST_API_KEY
+        required: true
+        description: Todoist API token used for authenticated requests.
+      - name: TODOIST_PROJECT_ID
+        required: false
+        description: Optional default project ID when the user does not specify one.
+```
+
 ### Why this matters
 
-ClawHub's security analysis checks that what your skill declares matches what it actually does. If your code references `TODOIST_API_KEY` but your frontmatter doesn't declare it under `requires.env`, the analysis will flag a metadata mismatch. Keeping declarations accurate helps your skill pass review and helps users understand what they're installing.
+ClawHub's security analysis checks that what your skill declares matches what it actually does. If your code references `TODOIST_API_KEY` but your frontmatter doesn't declare it under `requires.env`, `primaryEnv`, or `envVars`, the analysis will flag a metadata mismatch. Keeping declarations accurate helps your skill pass review and helps users understand what they're installing.
 
 ### Example: complete frontmatter
 
@@ -123,6 +143,13 @@ metadata:
       bins:
         - curl
     primaryEnv: TODOIST_API_KEY
+    envVars:
+      - name: TODOIST_API_KEY
+        required: true
+        description: Todoist API token.
+      - name: TODOIST_PROJECT_ID
+        required: false
+        description: Optional default project ID.
     emoji: "\u2705"
     homepage: https://github.com/example/todoist-cli
 ---
@@ -161,4 +188,4 @@ Limits (server-side):
 
 - ClawHub does not support paid skills, per-skill pricing, paywalls, or revenue sharing.
 - Do not add pricing metadata to `SKILL.md`; it is not part of the skill format and will not make a published skill paid.
-- If your skill integrates with a paid third-party service, document the external cost and required account clearly in the skill instructions and `requires.env`.
+- If your skill integrates with a paid third-party service, document the external cost and required account clearly in the skill instructions and env declarations (`requires.env` for required variables, or `envVars` with `required: false` for optional variables).

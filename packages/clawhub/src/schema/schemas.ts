@@ -383,6 +383,13 @@ export const ClawdisRequiresSchema = type({
 });
 export type ClawdisRequires = (typeof ClawdisRequiresSchema)[inferred];
 
+export const EnvVarDeclarationSchema = type({
+  name: "string",
+  required: "boolean?",
+  description: "string?",
+});
+export type EnvVarDeclaration = (typeof EnvVarDeclarationSchema)[inferred];
+
 export const ClawdisSkillMetadataSchema = type({
   always: "boolean?",
   skillKey: "string?",
@@ -392,5 +399,6 @@ export const ClawdisSkillMetadataSchema = type({
   os: "string[]?",
   requires: ClawdisRequiresSchema.optional(),
   install: SkillInstallSpecSchema.array().optional(),
+  envVars: EnvVarDeclarationSchema.array().optional(),
 });
 export type ClawdisSkillMetadata = (typeof ClawdisSkillMetadataSchema)[inferred];

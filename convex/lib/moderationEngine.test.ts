@@ -279,6 +279,29 @@ describe("moderationEngine", () => {
     expect(result.status).toBe("clean");
   });
 
+  it("treats optional envVars declarations as declared env access", () => {
+    const result = runStaticModerationScan({
+      slug: "todoist",
+      displayName: "Todoist",
+      summary: "Manage tasks via the Todoist API",
+      frontmatter: {},
+      metadata: {
+        envVars: [{ name: "TODOIST_PROJECT_ID", required: false }],
+      },
+      files: [{ path: "index.ts", size: 128 }],
+      fileContents: [
+        {
+          path: "index.ts",
+          content:
+            "const project = process.env.TODOIST_PROJECT_ID;\nawait fetch(url, { body: project });",
+        },
+      ],
+    });
+
+    expect(result.reasonCodes).not.toContain("suspicious.env_credential_access");
+    expect(result.status).toBe("clean");
+  });
+
   it("still flags undeclared env vars sent over the network", () => {
     const result = runStaticModerationScan({
       slug: "todoist",
