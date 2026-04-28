@@ -429,6 +429,8 @@ function dedupeEvidence(evidence: ModerationFinding[]) {
 }
 
 function isStaticScanClean(staticScan: StaticScanResult | undefined) {
+  // Older moderation records can predate static scan persistence; absence means
+  // there are no static findings available to corroborate an external signal.
   return !staticScan || staticScan.reasonCodes.length === 0 || staticScan.status === "clean";
 }
 
