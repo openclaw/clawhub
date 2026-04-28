@@ -110,12 +110,16 @@ export async function pollForDeviceToken(
       body: JSON.stringify(body),
     });
 
-    if (response.ok) {
-      const data = (await response.json()) as DeviceTokenResponse;
-      if (data.access_token) return data;
+    // Parse JSON once to avoid "body already read" errors
+    const data = (await response.json().catch(() => ({}))) as
+      | DeviceTokenResponse
+      | DeviceTokenErrorResponse;
+
+    if (response.ok && "access_token" in data && data.access_token) {
+      return data as DeviceTokenResponse;
     }
 
-    const errorData = (await response.json().catch(() => ({}))) as DeviceTokenErrorResponse;
+    const errorData = data as DeviceTokenErrorResponse;
 
     switch (errorData.error) {
       case "authorization_pending":
