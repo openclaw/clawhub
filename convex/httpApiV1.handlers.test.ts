@@ -55,6 +55,26 @@ function findRateLimitCallArgs(mock: ReturnType<typeof vi.fn>) {
   return mock.mock.calls.map(([, args]) => args).find(isRateLimitArgs);
 }
 
+function makeCatalogItem(
+  name: string,
+  options: {
+    family: "code-plugin" | "bundle-plugin" | "skill";
+    updatedAt: number;
+    score?: number;
+  },
+) {
+  return {
+    name,
+    displayName: name,
+    family: options.family,
+    channel: "community",
+    isOfficial: false,
+    createdAt: options.updatedAt,
+    updatedAt: options.updatedAt,
+    ...(typeof options.score === "number" ? { score: options.score } : {}),
+  };
+}
+
 function makeCtx(partial: Record<string, unknown>) {
   const partialRunQuery =
     typeof partial.runQuery === "function"
@@ -2593,6 +2613,72 @@ describe("httpApiV1 handlers", () => {
     }
   });
 
+  it("plugins list paginates with separate plugin family cursors", async () => {
+    const codeNewest = makeCatalogItem("code-newest", {
+      family: "code-plugin",
+      updatedAt: 300,
+    });
+    const codeOlder = makeCatalogItem("code-older", {
+      family: "code-plugin",
+      updatedAt: 100,
+    });
+    const bundleMiddle = makeCatalogItem("bundle-middle", {
+      family: "bundle-plugin",
+      updatedAt: 200,
+    });
+    const runQuery = vi.fn((_, args: Record<string, unknown>) => {
+      const pagination = args.paginationOpts as { cursor: string | null };
+      if (args.family === "code-plugin" && pagination.cursor === null) {
+        return { page: [codeNewest], isDone: false, continueCursor: "code-cursor" };
+      }
+      if (args.family === "code-plugin" && pagination.cursor === "code-cursor") {
+        return { page: [codeOlder], isDone: true, continueCursor: "" };
+      }
+      if (args.family === "bundle-plugin" && pagination.cursor === null) {
+        return { page: [bundleMiddle], isDone: true, continueCursor: "" };
+      }
+      throw new Error(`unexpected args ${JSON.stringify(args)}`);
+    });
+    const runMutation = vi.fn().mockResolvedValue(okRate());
+
+    const firstResponse = await __handlers.listPluginsV1Handler(
+      makeCtx({ runQuery, runMutation }),
+      new Request("https://example.com/api/v1/plugins?limit=1"),
+    );
+    expect(firstResponse.status).toBe(200);
+    const firstJson = await firstResponse.json();
+    expect(firstJson.items.map((entry: { name: string }) => entry.name)).toEqual(["code-newest"]);
+    expect(firstJson.nextCursor).toMatch(/^pkgplugins:/);
+
+    const secondUrl = new URL("https://example.com/api/v1/plugins");
+    secondUrl.searchParams.set("limit", "1");
+    secondUrl.searchParams.set("cursor", firstJson.nextCursor);
+    const secondResponse = await __handlers.listPluginsV1Handler(
+      makeCtx({ runQuery, runMutation }),
+      new Request(secondUrl),
+    );
+    expect(secondResponse.status).toBe(200);
+    const secondJson = await secondResponse.json();
+    expect(secondJson.items.map((entry: { name: string }) => entry.name)).toEqual([
+      "bundle-middle",
+    ]);
+
+    const packageCalls = runQuery.mock.calls
+      .map(([, args]) => args as { family?: string; paginationOpts?: { cursor: string | null } })
+      .filter((args) => args.family === "code-plugin" || args.family === "bundle-plugin");
+    expect(
+      packageCalls.map((args) => ({
+        family: args.family,
+        cursor: args.paginationOpts?.cursor ?? null,
+      })),
+    ).toEqual([
+      { family: "code-plugin", cursor: null },
+      { family: "bundle-plugin", cursor: null },
+      { family: "code-plugin", cursor: "code-cursor" },
+      { family: "bundle-plugin", cursor: null },
+    ]);
+  });
+
   it("packages search supports family=skill on the generic route", async () => {
     const runQuery = vi.fn().mockResolvedValue([]);
     const runMutation = vi.fn().mockResolvedValue(okRate());
@@ -2670,6 +2756,57 @@ describe("httpApiV1 handlers", () => {
         }),
       );
     }
+  });
+
+  it("plugins search dedupes and sorts results from both plugin families", async () => {
+    const runQuery = vi.fn((_, args: Record<string, unknown>) => {
+      if (args.family === "code-plugin") {
+        return [
+          {
+            score: 5,
+            package: makeCatalogItem("shared-plugin", { family: "code-plugin", updatedAt: 100 }),
+          },
+          {
+            score: 30,
+            package: makeCatalogItem("code-only", { family: "code-plugin", updatedAt: 50 }),
+          },
+        ];
+      }
+      if (args.family === "bundle-plugin") {
+        return [
+          {
+            score: 50,
+            package: makeCatalogItem("bundle-only", { family: "bundle-plugin", updatedAt: 80 }),
+          },
+          {
+            score: 40,
+            package: makeCatalogItem("shared-plugin", { family: "bundle-plugin", updatedAt: 60 }),
+          },
+        ];
+      }
+      throw new Error(`unexpected family ${String(args.family)}`);
+    });
+    const runMutation = vi.fn().mockResolvedValue(okRate());
+
+    const response = await __handlers.pluginsGetRouterV1Handler(
+      makeCtx({ runQuery, runMutation }),
+      new Request("https://example.com/api/v1/plugins/search?q=plugin&limit=3"),
+    );
+
+    expect(response.status).toBe(200);
+    expect(
+      (await response.json()).results.map(
+        (entry: { score: number; package: { family: string; name: string } }) => ({
+          score: entry.score,
+          family: entry.package.family,
+          name: entry.package.name,
+        }),
+      ),
+    ).toEqual([
+      { score: 50, family: "bundle-plugin", name: "bundle-only" },
+      { score: 40, family: "bundle-plugin", name: "shared-plugin" },
+      { score: 30, family: "code-plugin", name: "code-only" },
+    ]);
   });
 
   it("packages list forwards viewerUserId for authenticated private package browsing", async () => {

@@ -366,7 +366,7 @@ function finalizeCatalogSource(source: CatalogSourceState): CatalogSourceCursorS
       cursor: source.pageCursor,
       offset: source.index,
       pageSize: source.state.pageSize,
-      done: source.page.isDone,
+      done: false,
     };
   }
   return {
