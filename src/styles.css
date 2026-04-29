@@ -963,6 +963,11 @@ code {
   height: 22px;
 }
 
+.theme-mode-toggle button:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
 .theme-mode-toggle button:hover {
   opacity: 0.8;
 }
