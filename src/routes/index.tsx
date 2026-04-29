@@ -121,7 +121,7 @@ function SkillsHome() {
 
   // Build skill detail link
   const skillLink = (entry: SkillPageEntry) =>
-    `/${encodeURIComponent(String(entry.skill.ownerUserId))}/${entry.skill.slug}`;
+    `/${encodeURIComponent(String(entry.ownerHandle || entry.skill.ownerUserId))}/${entry.skill.slug}`;
 
   // Build carousel cards from highlighted data, then fall back to the public skill feed.
   const highlightedCarouselCards = highlighted.slice(0, 6);
