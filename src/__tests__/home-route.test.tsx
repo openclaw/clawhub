@@ -141,6 +141,41 @@ describe("home route", () => {
     expect(await screen.findByText("Featured skills")).toBeTruthy();
     expect(document.querySelector(".home-v2-carousel-track")).toBeTruthy();
     expect(document.querySelectorAll(".home-v2-carousel-track .home-v2-c-card")).toHaveLength(4);
+    expect(
+      document.querySelector(".home-v2-carousel-track .home-v2-c-card")?.getAttribute("href"),
+    ).toBe("/openclaw/one");
+  });
+
+  it("wires carousel previous and next controls to scroll the featured track", async () => {
+    const scrollByMock = vi.fn();
+    Object.defineProperty(HTMLElement.prototype, "scrollBy", {
+      configurable: true,
+      value: scrollByMock,
+    });
+    Object.defineProperty(HTMLElement.prototype, "offsetWidth", {
+      configurable: true,
+      get: () => 320,
+    });
+    convexQueryMock.mockResolvedValue([
+      {
+        skill: {
+          _id: "skill-one",
+          ownerUserId: "user-one",
+          slug: "one",
+          displayName: "One",
+          summary: "First highlighted skill.",
+          stats: { stars: 3, downloads: 12 },
+        },
+        ownerHandle: "openclaw",
+      },
+    ]);
+
+    await renderHome();
+    fireEvent.click(await screen.findByLabelText("Next"));
+    fireEvent.click(screen.getByLabelText("Previous"));
+
+    expect(scrollByMock).toHaveBeenNthCalledWith(1, { left: 336, behavior: "smooth" });
+    expect(scrollByMock).toHaveBeenNthCalledWith(2, { left: -336, behavior: "smooth" });
   });
 
   it("falls back to public skill cards when no highlighted carousel cards exist", async () => {

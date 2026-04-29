@@ -107,7 +107,6 @@ export default function Header() {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const searchWrapRef = useRef<HTMLDivElement | null>(null);
   const ThemeModeIcon = getThemeModeIcon(mode);
-  const nextThemeMode = getNextThemeMode(mode);
   const trimmedNavSearchQuery = navSearchQuery.trim();
   const showTypeahead = !isSoulMode && typeaheadOpen && trimmedNavSearchQuery.length > 0;
   const {
@@ -741,9 +740,4 @@ function getThemeModeIcon(mode: "system" | "light" | "dark") {
     default:
       return Monitor;
   }
-}
-
-function getNextThemeMode(mode: "system" | "light" | "dark"): "system" | "light" | "dark" {
-  const currentIndex = Math.max(0, THEME_MODE_SEQUENCE.indexOf(mode));
-  return THEME_MODE_SEQUENCE[(currentIndex + 1) % THEME_MODE_SEQUENCE.length] ?? "system";
 }

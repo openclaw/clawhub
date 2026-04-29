@@ -121,7 +121,7 @@ function SkillsHome() {
 
   // Build skill detail link
   const skillLink = (entry: SkillPageEntry) =>
-    `/${encodeURIComponent(String(entry.ownerHandle || entry.skill.ownerUserId))}/${entry.skill.slug}`;
+    `/${encodeURIComponent(entry.ownerHandle || entry.owner?.handle || entry.skill.ownerUserId)}/${entry.skill.slug}`;
 
   // Build carousel cards from highlighted data, then fall back to the public skill feed.
   const highlightedCarouselCards = highlighted.slice(0, 6);
@@ -145,6 +145,21 @@ function SkillsHome() {
   const confettiRef = useRef<HTMLCanvasElement>(null);
   const spinIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const cooldownUntilRef = useRef<number>(0);
+  const carouselWrapRef = useRef<HTMLDivElement>(null);
+
+  const scrollCarousel = (direction: -1 | 1) => {
+    const carousel = carouselWrapRef.current;
+    if (!carousel) return;
+
+    const firstCard = carousel.querySelector<HTMLElement>(".home-v2-c-card");
+    const scrollAmount = (firstCard?.offsetWidth ?? 320) + 16;
+    if (typeof carousel.scrollBy === "function") {
+      carousel.scrollBy({ left: direction * scrollAmount, behavior: "smooth" });
+      return;
+    }
+
+    carousel.scrollLeft += direction * scrollAmount;
+  };
 
   useEffect(() => {
     return () => {
@@ -553,15 +568,25 @@ function SkillsHome() {
               >
                 View all <ArrowRight size={14} />
               </Link>
-              <button type="button" className="home-v2-carousel-btn" aria-label="Previous">
+              <button
+                type="button"
+                className="home-v2-carousel-btn"
+                aria-label="Previous"
+                onClick={() => scrollCarousel(-1)}
+              >
                 <ArrowLeft size={16} />
               </button>
-              <button type="button" className="home-v2-carousel-btn" aria-label="Next">
+              <button
+                type="button"
+                className="home-v2-carousel-btn"
+                aria-label="Next"
+                onClick={() => scrollCarousel(1)}
+              >
                 <ArrowRight size={16} />
               </button>
             </div>
           </div>
-          <div className="home-v2-carousel-wrap">
+          <div className="home-v2-carousel-wrap" ref={carouselWrapRef}>
             <div className="home-v2-carousel-track">
               {/* First pass */}
               {carouselCards.map((entry) => (
