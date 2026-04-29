@@ -1,11 +1,11 @@
 import { Link } from "@tanstack/react-router";
 import { ArrowDownToLine, Star } from "lucide-react";
-import { MarketplaceIcon } from "./MarketplaceIcon";
-import { Badge } from "./ui/badge";
 import { getSkillBadges } from "../lib/badges";
 import { formatCompactStat } from "../lib/numberFormat";
 import type { PublicPublisher, PublicSkill } from "../lib/publicUser";
 import { timeAgo } from "../lib/timeAgo";
+import { MarketplaceIcon } from "./MarketplaceIcon";
+import { Badge } from "./ui/badge";
 
 type SkillListItemProps = {
   skill: PublicSkill;
