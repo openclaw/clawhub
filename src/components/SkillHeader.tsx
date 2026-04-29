@@ -164,204 +164,204 @@ export function SkillHeader({
         topClassName={hasPluginBundle ? "has-plugin" : undefined}
         main={
           <>
-              <div className="skill-hero-title">
-                <div className="skill-hero-title-row">
-                  <h1 className="skill-page-title">{skill.displayName}</h1>
-                  {latestVersion?.version ? (
-                    <span className="plugin-version-badge">v{latestVersion.version}</span>
-                  ) : null}
-                  {nixPlugin ? <Badge variant="accent">Plugin bundle (nix)</Badge> : null}
-                  {canManage || isStaff || settingsHref ? (
-                    <div className="skill-title-actions">
-                      {isStaff ? (
-                        <Button asChild variant="outline" size="sm">
-                          <Link to="/management" search={{ skill: skill.slug }}>
-                            Manage
-                          </Link>
-                        </Button>
-                      ) : null}
-                      {canManage ? (
-                        <Button asChild variant="outline" size="sm" className="skill-settings-link">
-                          <Link to="/publish-skill" search={{ updateSlug: skill.slug }}>
-                            <Upload size={14} aria-hidden="true" />
-                            New Version
-                          </Link>
-                        </Button>
-                      ) : null}
-                      {settingsHref ? (
-                        <Button asChild variant="outline" size="sm" className="skill-settings-link">
-                          <a href={settingsHref}>
-                            <Settings size={14} aria-hidden="true" />
-                            Settings
-                          </a>
-                        </Button>
-                      ) : null}
-                    </div>
-                  ) : null}
-                </div>
-                <p className="section-subtitle">{skill.summary ?? "No summary provided."}</p>
-
-                {isStaff && staffModerationNote ? (
-                  <div className="skill-hero-note">{staffModerationNote}</div>
+            <div className="skill-hero-title">
+              <div className="skill-hero-title-row">
+                <h1 className="skill-page-title">{skill.displayName}</h1>
+                {latestVersion?.version ? (
+                  <span className="plugin-version-badge">v{latestVersion.version}</span>
                 ) : null}
-                {nixPlugin ? (
-                  <div className="skill-hero-note">
-                    Bundles the skill pack, CLI binary, and config requirements in one Nix install.
-                  </div>
-                ) : null}
-
-                <div className="skill-hero-inline-meta">
-                  <div className="skill-hero-stats-row">
-                    <span className="stat">
-                      <Star size={14} aria-hidden="true" /> {formattedStats.stars}
-                    </span>
-                    <span className="text-ink-soft opacity-40">·</span>
-                    <span className="stat">
-                      <Download size={14} aria-hidden="true" /> {formattedStats.downloads}
-                    </span>
-                    <span className="text-ink-soft opacity-40">·</span>
-                    <span className="stat">
-                      <Package size={14} aria-hidden="true" /> {skill.stats.versions ?? 0} versions
-                    </span>
-                    <span className="text-ink-soft opacity-40">·</span>
-                    <span className="stat">
-                      <History size={14} aria-hidden="true" />{" "}
-                      {formatCompactStat(skill.stats.installsCurrent ?? 0)} current
-                    </span>
-                    <span className="text-ink-soft opacity-40">·</span>
-                    <span className="stat">
-                      <History size={14} aria-hidden="true" /> {formattedStats.installsAllTime}{" "}
-                      all-time
-                    </span>
-                    <span className="text-ink-soft opacity-40">·</span>
-                    <span className="stat">
-                      <Calendar size={14} aria-hidden="true" /> Updated {timeAgo(skill.updatedAt)}
-                    </span>
-                    <span className="text-ink-soft opacity-40">·</span>
-                    <span className="stat">
-                      <Scale size={14} aria-hidden="true" /> {PLATFORM_SKILL_LICENSE}
-                    </span>
-                  </div>
-                  <div className="skill-hero-meta-row">
-                    <UserBadge
-                      user={owner}
-                      fallbackHandle={ownerHandle}
-                      prefix="by"
-                      size="md"
-                      showName
-                    />
-                    {forkOf && forkOfHref ? (
-                      <>
-                        <span className="text-ink-soft opacity-40">·</span>
-                        <span className="stat">
-                          {forkOfLabel}{" "}
-                          <a href={forkOfHref}>
-                            {forkOfOwnerHandle ? `@${forkOfOwnerHandle}/` : ""}
-                            {forkOf.skill.slug}
-                          </a>
-                          {forkOf.version ? ` (${forkOf.version})` : null}
-                        </span>
-                      </>
+                {nixPlugin ? <Badge variant="accent">Plugin bundle (nix)</Badge> : null}
+                {canManage || isStaff || settingsHref ? (
+                  <div className="skill-title-actions">
+                    {isStaff ? (
+                      <Button asChild variant="outline" size="sm">
+                        <Link to="/management" search={{ skill: skill.slug, plugin: undefined }}>
+                          Manage
+                        </Link>
+                      </Button>
                     ) : null}
-                    {canonicalHref ? (
-                      <>
-                        <span className="text-ink-soft opacity-40">·</span>
-                        <span className="stat">
-                          canonical:{" "}
-                          <a href={canonicalHref}>
-                            {canonicalOwnerHandle ? `@${canonicalOwnerHandle}/` : ""}
-                            {canonical?.skill?.slug}
-                          </a>
-                        </span>
-                      </>
+                    {canManage ? (
+                      <Button asChild variant="outline" size="sm" className="skill-settings-link">
+                        <Link to="/publish-skill" search={{ updateSlug: skill.slug }}>
+                          <Upload size={14} aria-hidden="true" />
+                          New Version
+                        </Link>
+                      </Button>
+                    ) : null}
+                    {settingsHref ? (
+                      <Button asChild variant="outline" size="sm" className="skill-settings-link">
+                        <a href={settingsHref}>
+                          <Settings size={14} aria-hidden="true" />
+                          Settings
+                        </a>
+                      </Button>
                     ) : null}
                   </div>
-                </div>
+                ) : null}
+              </div>
+              <p className="section-subtitle">{skill.summary ?? "No summary provided."}</p>
 
-                <div className="skill-hero-badges">
-                  {getSkillBadges(skill).map((badge) => (
-                    <Badge key={badge} variant="compact">
-                      {badge}
-                    </Badge>
-                  ))}
-                  {isStaff && staffVisibilityTag ? (
-                    <Badge variant={isAutoHidden || isRemoved ? "accent" : "compact"}>
-                      {staffVisibilityTag}
-                    </Badge>
+              {isStaff && staffModerationNote ? (
+                <div className="skill-hero-note">{staffModerationNote}</div>
+              ) : null}
+              {nixPlugin ? (
+                <div className="skill-hero-note">
+                  Bundles the skill pack, CLI binary, and config requirements in one Nix install.
+                </div>
+              ) : null}
+
+              <div className="skill-hero-inline-meta">
+                <div className="skill-hero-stats-row">
+                  <span className="stat">
+                    <Star size={14} aria-hidden="true" /> {formattedStats.stars}
+                  </span>
+                  <span className="text-ink-soft opacity-40">·</span>
+                  <span className="stat">
+                    <Download size={14} aria-hidden="true" /> {formattedStats.downloads}
+                  </span>
+                  <span className="text-ink-soft opacity-40">·</span>
+                  <span className="stat">
+                    <Package size={14} aria-hidden="true" /> {skill.stats.versions ?? 0} versions
+                  </span>
+                  <span className="text-ink-soft opacity-40">·</span>
+                  <span className="stat">
+                    <History size={14} aria-hidden="true" />{" "}
+                    {formatCompactStat(skill.stats.installsCurrent ?? 0)} current
+                  </span>
+                  <span className="text-ink-soft opacity-40">·</span>
+                  <span className="stat">
+                    <History size={14} aria-hidden="true" /> {formattedStats.installsAllTime}{" "}
+                    all-time
+                  </span>
+                  <span className="text-ink-soft opacity-40">·</span>
+                  <span className="stat">
+                    <Calendar size={14} aria-hidden="true" /> Updated {timeAgo(skill.updatedAt)}
+                  </span>
+                  <span className="text-ink-soft opacity-40">·</span>
+                  <span className="stat">
+                    <Scale size={14} aria-hidden="true" /> {PLATFORM_SKILL_LICENSE}
+                  </span>
+                </div>
+                <div className="skill-hero-meta-row">
+                  <UserBadge
+                    user={owner}
+                    fallbackHandle={ownerHandle}
+                    prefix="by"
+                    size="md"
+                    showName
+                  />
+                  {forkOf && forkOfHref ? (
+                    <>
+                      <span className="text-ink-soft opacity-40">·</span>
+                      <span className="stat">
+                        {forkOfLabel}{" "}
+                        <a href={forkOfHref}>
+                          {forkOfOwnerHandle ? `@${forkOfOwnerHandle}/` : ""}
+                          {forkOf.skill.slug}
+                        </a>
+                        {forkOf.version ? ` (${forkOf.version})` : null}
+                      </span>
+                    </>
+                  ) : null}
+                  {canonicalHref ? (
+                    <>
+                      <span className="text-ink-soft opacity-40">·</span>
+                      <span className="stat">
+                        canonical:{" "}
+                        <a href={canonicalHref}>
+                          {canonicalOwnerHandle ? `@${canonicalOwnerHandle}/` : ""}
+                          {canonical?.skill?.slug}
+                        </a>
+                      </span>
+                    </>
                   ) : null}
                 </div>
               </div>
+
+              <div className="skill-hero-badges">
+                {getSkillBadges(skill).map((badge) => (
+                  <Badge key={badge} variant="compact">
+                    {badge}
+                  </Badge>
+                ))}
+                {isStaff && staffVisibilityTag ? (
+                  <Badge variant={isAutoHidden || isRemoved ? "accent" : "compact"}>
+                    {staffVisibilityTag}
+                  </Badge>
+                ) : null}
+              </div>
+            </div>
           </>
         }
         sidebar={
           <>
-              {isAuthenticated ? (
-                <div className="skill-actions">
-                  <button
-                    className={`star-toggle${isStarred ? " is-active" : ""}`}
-                    type="button"
-                    onClick={onToggleStar}
-                    aria-label={isStarred ? "Unstar skill" : "Star skill"}
-                  >
-                    <Star size={16} aria-hidden="true" />
-                  </button>
-                  <Button variant="ghost" size="sm" type="button" onClick={onOpenReport}>
-                    Report
-                  </Button>
-                </div>
-              ) : null}
-              {sidebarContent}
-              <SkillCommandLineCard
-                slug={skill.slug}
-                displayName={skill.displayName}
-                ownerHandle={ownerHandle}
-                ownerId={installOwnerId}
-                clawdis={clawdis}
-              />
+            {isAuthenticated ? (
+              <div className="skill-actions">
+                <button
+                  className={`star-toggle${isStarred ? " is-active" : ""}`}
+                  type="button"
+                  onClick={onToggleStar}
+                  aria-label={isStarred ? "Unstar skill" : "Star skill"}
+                >
+                  <Star size={16} aria-hidden="true" />
+                </button>
+                <Button variant="ghost" size="sm" type="button" onClick={onOpenReport}>
+                  Report
+                </Button>
+              </div>
+            ) : null}
+            {sidebarContent}
+            <SkillCommandLineCard
+              slug={skill.slug}
+              displayName={skill.displayName}
+              ownerHandle={ownerHandle}
+              ownerId={installOwnerId}
+              clawdis={clawdis}
+            />
           </>
         }
       >
-          {children}
+        {children}
 
-          {hasPluginBundle ? (
-            <div className="skill-panel bundle-card">
-              <div className="bundle-header">
-                <div className="bundle-title">Plugin bundle (nix)</div>
-                <div className="bundle-subtitle">Skill pack · CLI binary · Config</div>
-              </div>
-              <div className="bundle-includes">
-                <span>SKILL.md</span>
-                <span>CLI</span>
-                <span>Config</span>
-              </div>
-              {configRequirements ? (
-                <div className="bundle-section">
-                  <div className="bundle-section-title">Config requirements</div>
-                  <div className="bundle-meta">
-                    {configRequirements.requiredEnv?.length ? (
-                      <div className="stat">
-                        <strong>Required env</strong>
-                        <span>{configRequirements.requiredEnv.join(", ")}</span>
-                      </div>
-                    ) : null}
-                    {configRequirements.stateDirs?.length ? (
-                      <div className="stat">
-                        <strong>State dirs</strong>
-                        <span>{configRequirements.stateDirs.join(", ")}</span>
-                      </div>
-                    ) : null}
-                  </div>
-                </div>
-              ) : null}
-              {cliHelp ? (
-                <details className="bundle-section bundle-details">
-                  <summary>CLI help (from plugin)</summary>
-                  <pre className="hero-install-code mono">{cliHelp}</pre>
-                </details>
-              ) : null}
+        {hasPluginBundle ? (
+          <div className="skill-panel bundle-card">
+            <div className="bundle-header">
+              <div className="bundle-title">Plugin bundle (nix)</div>
+              <div className="bundle-subtitle">Skill pack · CLI binary · Config</div>
             </div>
-          ) : null}
-          <SkillInstallCard clawdis={clawdis} osLabels={osLabels} />
+            <div className="bundle-includes">
+              <span>SKILL.md</span>
+              <span>CLI</span>
+              <span>Config</span>
+            </div>
+            {configRequirements ? (
+              <div className="bundle-section">
+                <div className="bundle-section-title">Config requirements</div>
+                <div className="bundle-meta">
+                  {configRequirements.requiredEnv?.length ? (
+                    <div className="stat">
+                      <strong>Required env</strong>
+                      <span>{configRequirements.requiredEnv.join(", ")}</span>
+                    </div>
+                  ) : null}
+                  {configRequirements.stateDirs?.length ? (
+                    <div className="stat">
+                      <strong>State dirs</strong>
+                      <span>{configRequirements.stateDirs.join(", ")}</span>
+                    </div>
+                  ) : null}
+                </div>
+              </div>
+            ) : null}
+            {cliHelp ? (
+              <details className="bundle-section bundle-details">
+                <summary>CLI help (from plugin)</summary>
+                <pre className="hero-install-code mono">{cliHelp}</pre>
+              </details>
+            ) : null}
+          </div>
+        ) : null}
+        <SkillInstallCard clawdis={clawdis} osLabels={osLabels} />
       </DetailHero>
     </>
   );

@@ -323,7 +323,7 @@ export default function Header() {
                     className="mobile-nav-link"
                     type="button"
                     onClick={() => {
-                      setThemeMode(nextThemeMode);
+                      cycleThemeMode();
                       setMobileMenuOpen(false);
                     }}
                   >

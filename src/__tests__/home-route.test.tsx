@@ -75,8 +75,8 @@ describe("home route", () => {
 
   async function renderHome() {
     const { Route } = await import("../routes/index");
-    const Component = (Route as { __config: { component: React.ComponentType } }).__config
-      .component;
+    const Component = (Route as unknown as { __config: { component: React.ComponentType } })
+      .__config.component;
 
     render(<Component />);
   }

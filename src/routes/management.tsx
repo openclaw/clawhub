@@ -352,7 +352,7 @@ function Management() {
                   </div>
                   <div className="management-actions">
                     <Button asChild>
-                      <Link to="/management" search={{ skill: skill.slug }}>
+                      <Link to="/management" search={{ skill: skill.slug, plugin: undefined }}>
                         Manage
                       </Link>
                     </Button>
@@ -396,7 +396,7 @@ function Management() {
         {selectedSlug ? (
           <div className="section-subtitle mt-2">
             Managing "{selectedSlug}" ·{" "}
-            <Link to="/management" search={{ skill: undefined }}>
+            <Link to="/management" search={{ skill: undefined, plugin: undefined }}>
               Clear selection
             </Link>
           </div>
@@ -920,7 +920,10 @@ function Management() {
                 <div className="management-actions">
                   {entry.skill ? (
                     <Button asChild>
-                      <Link to="/management" search={{ skill: entry.skill.slug }}>
+                      <Link
+                        to="/management"
+                        search={{ skill: entry.skill.slug, plugin: undefined }}
+                      >
                         Manage
                       </Link>
                     </Button>
