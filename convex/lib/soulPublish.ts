@@ -16,7 +16,7 @@ import {
   parseFrontmatter,
   sanitizePath,
 } from "./skills";
-import { assertValidSkillSlug } from "./skillSlugValidator";
+import { assertValidSkillSlug, normalizeSkillSlug } from "./skillSlugValidator";
 import { generateSoulChangelogForPublish } from "./soulChangelog";
 
 const MAX_TOTAL_BYTES = 50 * 1024 * 1024;
@@ -85,9 +85,13 @@ export async function publishSoulVersionForUser(
   args: PublishVersionArgs,
 ): Promise<PublishResult> {
   const version = args.version.trim();
-  // Souls share the slug rules with skills (length, pattern, reserved words,
-  // no consecutive hyphens). Keep them aligned so /souls/$slug routing is safe.
-  const slug = assertValidSkillSlug(args.slug);
+  // Normalize first so we can look up the existing soul before deciding how
+  // strictly to validate. Owners of grandfathered slugs (reserved, <3 chars,
+  // or >48 chars) must still be able to publish new versions; the strict
+  // write-path rules only apply when creating a brand-new soul.
+  const normalizedSlug = normalizeSkillSlug(args.slug);
+  if (!normalizedSlug) throw new ConvexError("Slug is required.");
+
   const displayName = args.displayName.trim();
   if (!displayName) throw new ConvexError("Display name required");
   if (!semver.valid(version)) {
@@ -95,6 +99,16 @@ export async function publishSoulVersionForUser(
   }
 
   await requireGitHubAccountAge(ctx, userId);
+
+  // Resolve existing soul before enforcing slug rules so grandfathered rows
+  // are not blocked. Full validation is only applied on the create path.
+  const existingSoul = (await ctx.runQuery(internal.souls.getSoulBySlugInternal, {
+    slug: normalizedSlug,
+  })) as Doc<"souls"> | null;
+  if (!existingSoul) {
+    assertValidSkillSlug(normalizedSlug);
+  }
+  const slug = normalizedSlug;
 
   const suppliedChangelog = args.changelog.trim();
   const changelogSource = suppliedChangelog ? ("user" as const) : ("auto" as const);
