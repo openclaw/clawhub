@@ -73,6 +73,9 @@ on:
         description: Published release id when dry_run is false.
         value: ${{ jobs.publish.outputs.release_id }}
 
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
+
 jobs:
   publish:
     runs-on: ubuntu-latest
@@ -334,7 +337,7 @@ jobs:
           PY
 
       - name: Upload publish JSON artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: clawhub-package-publish-json
           path: ${{ runner.temp }}/package-publish.json
