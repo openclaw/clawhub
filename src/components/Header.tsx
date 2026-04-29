@@ -1,10 +1,26 @@
 import { useAuthActions } from "@convex-dev/auth/react";
 import { Link, useLocation, useNavigate } from "@tanstack/react-router";
-import { ArrowRight, Ghost, Menu, Moon, Plug, Search, Sun, Wrench } from "lucide-react";
+import {
+  ArrowRight,
+  Ghost,
+  Github,
+  Menu,
+  Monitor,
+  Moon,
+  Plug,
+  Search,
+  Sun,
+  Wrench,
+} from "lucide-react";
 import { type ComponentType, useEffect, useMemo, useRef, useState } from "react";
 import { getUserFacingAuthError } from "../lib/authErrorMessage";
 import { gravatarUrl } from "../lib/gravatar";
-import { filterNavItems, type NavIconName, PRIMARY_NAV_ITEMS } from "../lib/nav-items";
+import {
+  filterNavItems,
+  type NavIconName,
+  PRIMARY_NAV_ITEMS,
+  SECONDARY_NAV_ITEMS,
+} from "../lib/nav-items";
 import { isModerator } from "../lib/roles";
 import { getClawHubSiteUrl, getSiteMode, getSiteName } from "../lib/site";
 import { applyTheme, useThemeMode } from "../lib/theme";
@@ -31,12 +47,15 @@ import {
   SheetHeader,
   SheetTitle,
 } from "./ui/sheet";
+import { ToggleGroup, ToggleGroupItem } from "./ui/toggle-group";
 
 const NAV_ICONS: Record<NavIconName, ComponentType<{ size?: number; className?: string }>> = {
   wrench: Wrench,
   plug: Plug,
   ghost: Ghost,
 };
+
+const THEME_MODE_SEQUENCE: Array<"system" | "light" | "dark"> = ["system", "light", "dark"];
 
 type TypeaheadItem =
   | {
@@ -77,6 +96,7 @@ export default function Header() {
     [hasResolvedUser, isSoulMode, isStaff],
   );
   const primaryItems = useMemo(() => filterNavItems(PRIMARY_NAV_ITEMS, navCtx), [navCtx]);
+  const secondaryItems = useMemo(() => filterNavItems(SECONDARY_NAV_ITEMS, navCtx), [navCtx]);
   const { error: authError, clear: clearAuthError } = useAuthError();
   const signInRedirectTo = getCurrentRelativeUrl();
 
@@ -146,6 +166,11 @@ export default function Header() {
   const setThemeMode = (next: "system" | "light" | "dark") => {
     applyTheme(next, theme);
     setMode(next);
+  };
+
+  const cycleThemeMode = () => {
+    const currentIndex = Math.max(0, THEME_MODE_SEQUENCE.indexOf(mode));
+    setThemeMode(THEME_MODE_SEQUENCE[(currentIndex + 1) % THEME_MODE_SEQUENCE.length] ?? "system");
   };
 
   const handleNavSearch = (e: React.FormEvent) => {
@@ -285,6 +310,13 @@ export default function Header() {
                       </Link>
                     </SheetClose>
                   ))}
+                  {secondaryItems.map((item) => (
+                    <SheetClose key={item.to + item.label} asChild>
+                      <Link to={item.to} search={item.search ?? {}} className="mobile-nav-link">
+                        {item.label}
+                      </Link>
+                    </SheetClose>
+                  ))}
                 </div>
                 <div className="mobile-nav-section">
                   <div className="mobile-nav-section-title">Theme</div>
@@ -326,7 +358,7 @@ export default function Header() {
               <input
                 className="navbar-search-input"
                 type="search"
-                placeholder={isSoulMode ? "Search souls..." : "Search skills and plugins"}
+                placeholder={isSoulMode ? "Search souls..." : "Search skills, plugins, users"}
                 value={navSearchQuery}
                 onChange={(e) => {
                   setNavSearchQuery(e.target.value);
@@ -352,32 +384,6 @@ export default function Header() {
             ) : null}
           </div>
 
-          <nav className="navbar-top-links" aria-label="Primary">
-            {isSoulMode ? (
-              <a href={clawHubUrl} className="navbar-tab">
-                ClawHub
-              </a>
-            ) : null}
-            {primaryItems.map((item) => {
-              const Icon = item.icon ? NAV_ICONS[item.icon] : null;
-              const isActiveByPrefix = item.activePathPrefixes?.some((prefix) =>
-                location.pathname.startsWith(prefix),
-              );
-              return (
-                <Link
-                  key={item.to + item.label}
-                  to={item.to}
-                  className="navbar-tab"
-                  search={item.search ?? {}}
-                  data-status={isActiveByPrefix ? "active" : undefined}
-                >
-                  {Icon ? <Icon size={14} className="opacity-50" aria-hidden="true" /> : null}
-                  {item.label}
-                </Link>
-              );
-            })}
-          </nav>
-
           <div className="nav-actions">
             <button
               className="navbar-search-mobile-trigger"
@@ -388,15 +394,40 @@ export default function Header() {
               <Search size={18} aria-hidden="true" />
             </button>
             <div className="theme-toggle">
-              <button
-                type="button"
-                className="theme-cycle-button"
-                onClick={() => setThemeMode(nextThemeMode)}
-                aria-label={`Toggle theme. Current: ${mode}`}
-                title={`Theme: ${mode}`}
+              <div className="theme-cycle-group" aria-label="Theme controls">
+                <button
+                  type="button"
+                  className="theme-cycle-button theme-cycle-button-mode"
+                  onClick={cycleThemeMode}
+                  aria-label={`Cycle theme mode. Current: ${mode}`}
+                  title={`Theme mode: ${mode}`}
+                >
+                  <ThemeModeIcon className="h-4 w-4" aria-hidden="true" />
+                </button>
+              </div>
+              <ToggleGroup
+                className="theme-mode-toggle"
+                type="single"
+                value={mode}
+                onValueChange={(value) => {
+                  if (!value) return;
+                  setThemeMode(value as "system" | "light" | "dark");
+                }}
+                aria-label="Theme mode"
               >
-                <ThemeModeIcon className="h-4 w-4" aria-hidden="true" />
-              </button>
+                <ToggleGroupItem value="system" aria-label="System theme">
+                  <Monitor className="h-4 w-4" aria-hidden="true" />
+                  <span className="sr-only">System</span>
+                </ToggleGroupItem>
+                <ToggleGroupItem value="light" aria-label="Light theme">
+                  <Sun className="h-4 w-4" aria-hidden="true" />
+                  <span className="sr-only">Light</span>
+                </ToggleGroupItem>
+                <ToggleGroupItem value="dark" aria-label="Dark theme">
+                  <Moon className="h-4 w-4" aria-hidden="true" />
+                  <span className="sr-only">Dark</span>
+                </ToggleGroupItem>
+              </ToggleGroup>
             </div>
             {isAuthenticated && me ? (
               <DropdownMenu>
@@ -438,9 +469,11 @@ export default function Header() {
                   </div>
                 ) : null}
                 <Button
-                  variant="primary"
+                  variant="outline"
                   size="sm"
                   type="button"
+                  aria-label="Sign in with GitHub"
+                  className="github-sign-in-button"
                   disabled={isLoading}
                   onClick={() => {
                     clearAuthError();
@@ -454,7 +487,13 @@ export default function Header() {
                     });
                   }}
                 >
-                  Sign In
+                  <Github className="h-5 w-5" aria-hidden="true" />
+                  <span className="sign-in-full-copy" aria-hidden="true">
+                    Sign in with GitHub
+                  </span>
+                  <span className="sign-in-compact-copy" aria-hidden="true">
+                    GitHub
+                  </span>
                 </Button>
               </>
             )}
@@ -468,13 +507,59 @@ export default function Header() {
             <input
               className="navbar-search-input"
               type="text"
-              placeholder={isSoulMode ? "Search souls..." : "Search skills and plugins"}
+              placeholder={isSoulMode ? "Search souls..." : "Search skills, plugins, users"}
               value={navSearchQuery}
               onChange={(e) => setNavSearchQuery(e.target.value)}
               autoFocus
             />
           </form>
         ) : null}
+
+        <nav className="navbar-tabs" aria-label="Content types">
+          <div className="navbar-tabs-primary">
+            {isSoulMode ? (
+              <a href={clawHubUrl} className="navbar-tab">
+                ClawHub
+              </a>
+            ) : null}
+            {primaryItems.map((item) => {
+              const Icon = item.icon ? NAV_ICONS[item.icon] : null;
+              const isActiveByPrefix = item.activePathPrefixes?.some((prefix) =>
+                location.pathname.startsWith(prefix),
+              );
+              return (
+                <Link
+                  key={item.to + item.label}
+                  to={item.to}
+                  className="navbar-tab"
+                  search={item.search ?? {}}
+                  data-status={isActiveByPrefix ? "active" : undefined}
+                >
+                  {Icon ? <Icon size={14} className="opacity-50" aria-hidden="true" /> : null}
+                  {item.label}
+                </Link>
+              );
+            })}
+          </div>
+          <div className="navbar-tabs-secondary">
+            {secondaryItems.map((item) => {
+              const isActiveByPrefix = item.activePathPrefixes?.some((prefix) =>
+                location.pathname.startsWith(prefix),
+              );
+              return (
+                <Link
+                  key={item.to + item.label}
+                  to={item.to}
+                  search={item.search ?? {}}
+                  className="navbar-tab navbar-tab-secondary"
+                  data-status={isActiveByPrefix ? "active" : undefined}
+                >
+                  {item.label}
+                </Link>
+              );
+            })}
+          </div>
+        </nav>
       </div>
     </header>
   );
@@ -654,22 +739,11 @@ function getThemeModeIcon(mode: "system" | "light" | "dark") {
       return Moon;
     case "system":
     default:
-      return Sun;
+      return Monitor;
   }
 }
 
-function getResolvedThemeMode(): "light" | "dark" {
-  if (typeof document !== "undefined") {
-    const resolved = document.documentElement.dataset.themeResolved;
-    if (resolved === "light" || resolved === "dark") return resolved;
-  }
-  if (typeof window !== "undefined" && typeof window.matchMedia === "function") {
-    return window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
-  }
-  return "light";
-}
-
-function getNextThemeMode(mode: "system" | "light" | "dark"): "light" | "dark" {
-  const resolved = mode === "system" ? getResolvedThemeMode() : mode;
-  return resolved === "dark" ? "light" : "dark";
+function getNextThemeMode(mode: "system" | "light" | "dark"): "system" | "light" | "dark" {
+  const currentIndex = Math.max(0, THEME_MODE_SEQUENCE.indexOf(mode));
+  return THEME_MODE_SEQUENCE[(currentIndex + 1) % THEME_MODE_SEQUENCE.length] ?? "system";
 }

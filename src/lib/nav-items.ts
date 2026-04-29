@@ -53,6 +53,8 @@ const SOULS_SEARCH = {
   focus: undefined,
 } as const;
 
+const USERS_SEARCH = { q: undefined } as const;
+
 // ---------------------------------------------------------------------------
 // Primary nav items (desktop tabs row + mobile dropdown top section)
 // These map to the "content-type" tabs: Skills | Plugins | Souls
@@ -97,6 +99,30 @@ export const PRIMARY_NAV_ITEMS: NavItem[] = [
 ];
 
 // ---------------------------------------------------------------------------
+// Secondary nav items (desktop secondary tabs + mobile dropdown section)
+// ---------------------------------------------------------------------------
+
+export const SECONDARY_NAV_ITEMS: NavItem[] = [
+  {
+    label: "Users",
+    to: "/users",
+    search: USERS_SEARCH,
+    authRequired: false,
+    staffOnly: false,
+    soulModeOnly: false,
+    soulModeHide: true,
+  },
+  {
+    label: "About",
+    to: "/about",
+    authRequired: false,
+    staffOnly: false,
+    soulModeOnly: false,
+    soulModeHide: true,
+  },
+];
+
+// ---------------------------------------------------------------------------
 // Footer sections
 // ---------------------------------------------------------------------------
 
@@ -106,7 +132,13 @@ export interface FooterNavSection {
 }
 
 export type FooterNavItem =
-  | { kind: "link"; label: string; to: string; search?: Record<string, unknown>; featureFlag?: boolean }
+  | {
+      kind: "link";
+      label: string;
+      to: string;
+      search?: Record<string, unknown>;
+      featureFlag?: boolean;
+    }
   | { kind: "external"; label: string; href: string; featureFlag?: boolean }
   | { kind: "text"; label: string; featureFlag?: boolean };
 
@@ -116,7 +148,13 @@ export const FOOTER_NAV_SECTIONS: FooterNavSection[] = [
     items: [
       { kind: "link", label: "Skills", to: "/skills", search: SKILLS_SEARCH },
       { kind: "link", label: "Plugins", to: "/plugins" },
-      { kind: "link", label: "Souls", to: "/souls", search: SOULS_SEARCH, featureFlag: FEATURE_SOULS },
+      {
+        kind: "link",
+        label: "Souls",
+        to: "/souls",
+        search: SOULS_SEARCH,
+        featureFlag: FEATURE_SOULS,
+      },
     ],
   },
   {
@@ -146,9 +184,15 @@ export const FOOTER_NAV_SECTIONS: FooterNavSection[] = [
   {
     title: "Community",
     items: [
-      { kind: "link", label: "About", to: "/about" },
       { kind: "external", label: "GitHub", href: "https://github.com/openclaw/clawhub" },
       { kind: "external", label: "OpenClaw", href: "https://openclaw.ai" },
+    ],
+  },
+  {
+    title: "Platform",
+    items: [
+      { kind: "external", label: "Deployed on Vercel", href: "https://vercel.com" },
+      { kind: "external", label: "Powered by Convex", href: "https://www.convex.dev" },
     ],
   },
 ];

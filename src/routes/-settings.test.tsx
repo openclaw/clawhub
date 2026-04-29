@@ -71,5 +71,12 @@ describe("Settings", () => {
 
     expect(screen.getByRole("heading", { name: "Stars" })).toBeTruthy();
     expect(screen.getByRole("link", { name: "View stars" }).getAttribute("href")).toBe("/stars");
+    expect(screen.getByRole("button", { name: /system/i })).toBeTruthy();
+    expect(screen.queryByText(/tweakcn overlay/i)).toBeNull();
+    expect(screen.queryByText(/density/i)).toBeNull();
+    expect(screen.queryByText(/default view/i)).toBeNull();
+    expect(screen.queryByText(/code font size/i)).toBeNull();
+    expect(screen.queryByText(/high contrast/i)).toBeNull();
+    expect(screen.queryByText(/experimental features/i)).toBeNull();
   });
 });

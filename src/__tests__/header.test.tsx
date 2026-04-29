@@ -1,5 +1,7 @@
 /* @vitest-environment jsdom */
 
+import { readFileSync } from "node:fs";
+import { resolve } from "node:path";
 import { fireEvent, render, screen, within } from "@testing-library/react";
 import type { ReactNode } from "react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
@@ -86,19 +88,13 @@ vi.mock("../lib/useAuthStatus", () => ({
   useAuthStatus: () => authStatusMock(),
 }));
 
-const setThemeMock = vi.fn();
 const setModeMock = vi.fn();
 
 vi.mock("../lib/theme", () => ({
   applyTheme: vi.fn(),
-  THEME_OPTIONS: [
-    { value: "claw", label: "Claw", description: "" },
-    { value: "hub", label: "Hub", description: "" },
-  ],
   useThemeMode: () => ({
-    theme: "hub",
+    theme: "claw",
     mode: "system",
-    setTheme: setThemeMock,
     setMode: setModeMock,
   }),
 }));
@@ -148,13 +144,46 @@ vi.mock("../components/ui/dropdown-menu", () => ({
 }));
 
 vi.mock("../components/ui/toggle-group", () => ({
-  ToggleGroup: ({ children }: { children: ReactNode }) => <div>{children}</div>,
-  ToggleGroupItem: ({ children }: { children: ReactNode }) => (
-    <button type="button">{children}</button>
+  ToggleGroup: ({
+    children,
+    className,
+    ...props
+  }: {
+    children: ReactNode;
+    className?: string;
+    "aria-label"?: string;
+  }) => (
+    <div className={className} aria-label={props["aria-label"]}>
+      {children}
+    </div>
+  ),
+  ToggleGroupItem: ({
+    children,
+    value,
+    ...props
+  }: {
+    children: ReactNode;
+    value?: string;
+    "aria-label"?: string;
+  }) => (
+    <button type="button" aria-label={props["aria-label"]} data-value={value}>
+      {children}
+    </button>
   ),
 }));
 
 import Header from "../components/Header";
+
+function stylesCss() {
+  return readFileSync(resolve(process.cwd(), "src/styles.css"), "utf8");
+}
+
+function compactHeaderCss() {
+  const css = stylesCss();
+  const start = css.indexOf("@media (max-width: 760px)");
+  const end = css.indexOf("@media (max-width: 520px)", start);
+  return css.slice(start, end);
+}
 
 describe("Header", () => {
   beforeEach(() => {
@@ -175,29 +204,80 @@ describe("Header", () => {
     expect(screen.queryByText("Packages")).toBeNull();
   });
 
-  it("renders simplified desktop nav and theme toggle", () => {
+  it("renders restored desktop nav rows and segmented theme controls", () => {
     siteModeMock.mockReturnValue("skills");
-    setThemeMock.mockClear();
     setModeMock.mockClear();
 
     render(<Header />);
 
-    expect(screen.getByRole("button", { name: /Toggle theme\. Current: system/i })).toBeTruthy();
+    expect(document.querySelector(".navbar-tabs")).toBeTruthy();
+    expect(document.querySelector(".navbar-tabs-secondary")).toBeTruthy();
+    expect(document.querySelector(".theme-mode-toggle")).toBeTruthy();
+    expect(screen.getByLabelText("Theme mode").className).toContain("theme-mode-toggle");
+    expect(screen.getByRole("button", { name: /Cycle theme mode/i })).toBeTruthy();
+    expect(screen.getByRole("button", { name: "System theme" })).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Light theme" })).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Dark theme" })).toBeTruthy();
     expect(screen.getAllByText("Skills")).toHaveLength(1);
     expect(screen.getAllByText("Plugins")).toHaveLength(1);
-    expect(screen.queryByText("Users")).toBeNull();
+    expect(screen.getAllByText("Users")).toHaveLength(1);
+    expect(screen.getAllByText("About")).toHaveLength(1);
     expect(screen.queryByText("Dashboard")).toBeNull();
     expect(screen.queryByText("Manage")).toBeNull();
-    expect(screen.getByPlaceholderText("Search skills and plugins")).toBeTruthy();
+    expect(screen.getByPlaceholderText("Search skills, plugins, users")).toBeTruthy();
 
-    fireEvent.click(screen.getByRole("button", { name: /Toggle theme\. Current: system/i }));
-    expect(setModeMock).toHaveBeenCalledWith("dark");
+    fireEvent.click(screen.getByRole("button", { name: /Cycle theme mode/i }));
+    expect(setModeMock).toHaveBeenCalledWith("light");
 
     fireEvent.click(screen.getByRole("button", { name: "Open menu" }));
 
     expect(screen.getAllByText("Home")).toHaveLength(1);
     expect(screen.getAllByText("Skills")).toHaveLength(2);
     expect(screen.getAllByText("Plugins")).toHaveLength(2);
+    expect(screen.getAllByText("Users")).toHaveLength(2);
+    expect(screen.getAllByText("About")).toHaveLength(2);
+  });
+
+  it("renders the GitHub sign-in button with desktop and compact labels", () => {
+    siteModeMock.mockReturnValue("skills");
+
+    render(<Header />);
+
+    const signInButton = screen.getByRole("button", { name: "Sign in with GitHub" });
+    expect(signInButton.className).toContain("github-sign-in-button");
+    const fullCopy = signInButton.querySelector(".sign-in-full-copy");
+    expect(fullCopy?.textContent).toBe("Sign in with GitHub");
+    expect(fullCopy?.childNodes).toHaveLength(1);
+    expect(signInButton.querySelector(".sign-in-with")).toBeNull();
+    expect(signInButton.querySelector(".sign-in-compact-copy")?.textContent).toBe("GitHub");
+  });
+
+  it("keeps inline search and content nav visible in the compact header", () => {
+    const css = compactHeaderCss();
+
+    expect(css).toContain(".navbar-search-wrap");
+    expect(css).toContain("grid-template-columns");
+    expect(css).toContain(".navbar-search {");
+    expect(css).toContain("display: flex;");
+    expect(css).toContain(".navbar-search-mobile-trigger");
+    expect(css).toContain("display: none;");
+    expect(css).toContain(".navbar-tabs {");
+    expect(css).toContain("display: flex;");
+    expect(css).toContain(".navbar-tabs-secondary");
+    expect(css).toContain("display: inline-flex;");
+    expect(css).not.toContain(".navbar-search {\n    display: none;");
+    expect(css).not.toContain(".navbar-tabs {\n    display: none;");
+  });
+
+  it("aligns the restored header shell to the browse page width", () => {
+    const css = stylesCss();
+    const compactCss = compactHeaderCss();
+
+    expect(css).toContain(".navbar-inner {\n  width: 100%;\n  max-width: var(--page-max);");
+    expect(css).toContain("margin: 0 auto;\n  padding: 0 var(--space-5);");
+    expect(compactCss).toContain("padding: 10px 16px;");
+    expect(compactCss).toContain("scroll-padding-inline: 16px;");
+    expect(css).not.toContain(".navbar-inner,\n  .section.detail-page-section");
   });
 
   it("shows grouped skills and plugins typeahead without users", () => {
@@ -206,7 +286,7 @@ describe("Header", () => {
 
     render(<Header />);
 
-    const input = screen.getByPlaceholderText("Search skills and plugins");
+    const input = screen.getByPlaceholderText("Search skills, plugins, users");
     fireEvent.focus(input);
     fireEvent.change(input, { target: { value: "weather" } });
 
@@ -249,7 +329,7 @@ describe("Header", () => {
 
     render(<Header />);
 
-    const input = screen.getByPlaceholderText("Search skills and plugins");
+    const input = screen.getByPlaceholderText("Search skills, plugins, users");
     fireEvent.focus(input);
     fireEvent.change(input, { target: { value: "weather" } });
     fireEvent.click(screen.getByRole("option", { name: /Weather Skill/i }));
@@ -278,7 +358,7 @@ describe("Header", () => {
 
     render(<Header />);
 
-    const input = screen.getByPlaceholderText("Search skills and plugins");
+    const input = screen.getByPlaceholderText("Search skills, plugins, users");
     fireEvent.focus(input);
     fireEvent.change(input, { target: { value: "zzzz" } });
 

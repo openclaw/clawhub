@@ -1,17 +1,6 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useMutation, useQuery } from "convex/react";
-import {
-  Eye,
-  Grid3X3,
-  LayoutGrid,
-  List,
-  Monitor,
-  Moon,
-  RotateCcw,
-  Settings2,
-  Star,
-  Sun,
-} from "lucide-react";
+import { Monitor, Moon, Settings2, Star, Sun } from "lucide-react";
 import { useEffect, useState } from "react";
 import { toast } from "sonner";
 import { api } from "../../convex/_generated/api";
@@ -33,25 +22,10 @@ import {
 } from "../components/ui/dialog";
 import { Input } from "../components/ui/input";
 import { Label } from "../components/ui/label";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "../components/ui/select";
 import { Separator } from "../components/ui/separator";
-import { Switch } from "../components/ui/switch";
 import { Textarea } from "../components/ui/textarea";
 import { gravatarUrl } from "../lib/gravatar";
-import {
-  type AnimationLevel,
-  type CodeFontSize,
-  type LayoutDensity,
-  type ListViewMode,
-  usePreferences,
-} from "../lib/preferences";
-import { getThemeFamilyLabel, useThemeMode } from "../lib/theme";
+import { useThemeMode } from "../lib/theme";
 
 export const Route = createFileRoute("/settings")({
   component: Settings,
@@ -61,15 +35,7 @@ export function Settings() {
   const me = useQuery(api.users.me);
   const updateProfile = useMutation(api.users.updateProfile);
   const deleteAccount = useMutation(api.users.deleteAccount);
-  const {
-    customTheme,
-    family: themeFamily,
-    importCustomTheme,
-    mode: themeMode,
-    setMode: setThemeMode,
-    clearCustomTheme,
-  } = useThemeMode();
-  const { preferences, updatePreference, resetPreferences, isAdvancedMode } = usePreferences();
+  const { mode: themeMode, setMode: setThemeMode } = useThemeMode();
   const tokens = useQuery(api.tokens.listMine, me ? {} : "skip") as
     | Array<{
         _id: Id<"apiTokens">;
@@ -112,7 +78,6 @@ export function Settings() {
   const [memberHandle, setMemberHandle] = useState("");
   const [memberRole, setMemberRole] = useState<"owner" | "admin" | "publisher">("publisher");
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
-  const [customThemeInput, setCustomThemeInput] = useState("");
   const orgs = (publisherMemberships ?? []).filter((entry) => entry.publisher.kind === "org");
   const selectedOrg =
     orgs.find((entry) => entry.publisher.handle === selectedOrgHandle) ?? orgs[0] ?? null;
@@ -207,20 +172,6 @@ export function Settings() {
     }
   }
 
-  async function onImportCustomTheme() {
-    try {
-      const importedTheme = await importCustomTheme(customThemeInput);
-      setCustomThemeInput("");
-      toast.success(`Imported ${importedTheme.name ?? "custom theme"}`);
-    } catch (error) {
-      toast.error(error instanceof Error ? error.message : "Failed to import theme");
-    }
-  }
-  function onRemoveCustomTheme() {
-    clearCustomTheme();
-    toast.success("Removed custom theme");
-  }
-
   async function onSaveOrgProfile() {
     if (!selectedOrg) return;
     await updateOrgProfile({
@@ -304,34 +255,19 @@ export function Settings() {
           </form>
         </Card>
 
-        {/* Customization */}
+        {/* Appearance */}
         <Card>
           <CardHeader>
-            <div className="flex items-center justify-between">
-              <div>
-                <CardTitle className="flex items-center gap-2">
-                  <Settings2 size={18} />
-                  Customization
-                </CardTitle>
-                <CardDescription>Personalize your ClawHub experience</CardDescription>
-              </div>
-              <div className="flex items-center gap-2">
-                <Label htmlFor="advanced-mode" className="text-sm text-[color:var(--ink-soft)]">
-                  Advanced
-                </Label>
-                <Switch
-                  id="advanced-mode"
-                  checked={isAdvancedMode}
-                  onCheckedChange={(checked) => updatePreference("advancedMode", checked)}
-                />
-              </div>
-            </div>
+            <CardTitle className="flex items-center gap-2">
+              <Settings2 size={18} />
+              Appearance
+            </CardTitle>
+            <CardDescription>Choose how ClawHub follows your system theme.</CardDescription>
           </CardHeader>
-          <CardContent className="space-y-6">
-            {/* Theme Section */}
+          <CardContent>
             <div className="space-y-3">
               <Label id="theme" className="text-sm font-semibold text-[color:var(--ink)]">
-                Theme
+                Theme mode
               </Label>
               <div className="flex flex-wrap gap-2">
                 <Button
@@ -362,335 +298,6 @@ export function Settings() {
                   System
                 </Button>
               </div>
-              <div className="space-y-3 rounded-[var(--r-md)] border border-[color:var(--border-ui)] bg-[color:var(--surface-muted)] p-4">
-                <div className="flex items-start justify-between gap-3">
-                  <div>
-                    <div className="text-sm font-semibold text-[color:var(--ink)]">
-                      tweakcn overlay
-                    </div>
-                    <p className="text-xs text-[color:var(--ink-soft)]">
-                      Paste a tweakcn URL, a tweakcn theme name, CSS variables, or JSON.
-                    </p>
-                  </div>
-                  {customTheme ? (
-                    <Badge variant="accent">
-                      {customTheme.name} on {getThemeFamilyLabel(themeFamily)}
-                    </Badge>
-                  ) : null}
-                </div>
-                <div className="flex flex-col gap-2 sm:flex-row">
-                  <Input
-                    value={customThemeInput}
-                    onChange={(event) => setCustomThemeInput(event.target.value)}
-                    placeholder="https://tweakcn.com/... or midnight-ocean"
-                    aria-label="Import tweakcn theme"
-                  />
-                  <Button type="button" variant="primary" onClick={onImportCustomTheme}>
-                    Import
-                  </Button>
-                  {customTheme ? (
-                    <Button type="button" variant="ghost" onClick={onRemoveCustomTheme}>
-                      <RotateCcw size={14} />
-                      Remove
-                    </Button>
-                  ) : null}
-                </div>
-                {customTheme ? (
-                  <div className="text-xs text-[color:var(--ink-soft)]">
-                    Source: {customTheme.source}
-                  </div>
-                ) : null}
-              </div>
-            </div>
-
-            <Separator />
-
-            {/* Layout Section */}
-            <div className="space-y-4">
-              <Label className="text-sm font-semibold text-[color:var(--ink)]">Layout</Label>
-
-              <div className="grid gap-4 sm:grid-cols-2">
-                <div className="space-y-2">
-                  <Label htmlFor="layout-density" className="text-xs text-[color:var(--ink-soft)]">
-                    Density
-                  </Label>
-                  <Select
-                    value={preferences.layoutDensity}
-                    onValueChange={(value) =>
-                      updatePreference("layoutDensity", value as LayoutDensity)
-                    }
-                  >
-                    <SelectTrigger id="layout-density">
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="comfortable">
-                        <span className="flex items-center gap-2">
-                          <LayoutGrid size={14} />
-                          Comfortable
-                        </span>
-                      </SelectItem>
-                      <SelectItem value="compact">
-                        <span className="flex items-center gap-2">
-                          <Grid3X3 size={14} />
-                          Compact
-                        </span>
-                      </SelectItem>
-                    </SelectContent>
-                  </Select>
-                </div>
-
-                <div className="space-y-2">
-                  <Label htmlFor="list-view" className="text-xs text-[color:var(--ink-soft)]">
-                    Default view
-                  </Label>
-                  <Select
-                    value={preferences.listViewMode}
-                    onValueChange={(value) =>
-                      updatePreference("listViewMode", value as ListViewMode)
-                    }
-                  >
-                    <SelectTrigger id="list-view">
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="grid">
-                        <span className="flex items-center gap-2">
-                          <LayoutGrid size={14} />
-                          Grid
-                        </span>
-                      </SelectItem>
-                      <SelectItem value="list">
-                        <span className="flex items-center gap-2">
-                          <List size={14} />
-                          List
-                        </span>
-                      </SelectItem>
-                    </SelectContent>
-                  </Select>
-                </div>
-              </div>
-
-              <div className="space-y-3">
-                <div className="flex items-center justify-between">
-                  <Label htmlFor="show-descriptions" className="text-sm">
-                    Show descriptions
-                  </Label>
-                  <Switch
-                    id="show-descriptions"
-                    checked={preferences.showDescriptions}
-                    onCheckedChange={(checked) => updatePreference("showDescriptions", checked)}
-                  />
-                </div>
-                <div className="flex items-center justify-between">
-                  <Label htmlFor="show-stats" className="text-sm">
-                    Show statistics
-                  </Label>
-                  <Switch
-                    id="show-stats"
-                    checked={preferences.showStats}
-                    onCheckedChange={(checked) => updatePreference("showStats", checked)}
-                  />
-                </div>
-                <div className="flex items-center justify-between">
-                  <Label htmlFor="show-tags" className="text-sm">
-                    Show tags
-                  </Label>
-                  <Switch
-                    id="show-tags"
-                    checked={preferences.showTags}
-                    onCheckedChange={(checked) => updatePreference("showTags", checked)}
-                  />
-                </div>
-                <div className="flex items-center justify-between">
-                  <Label htmlFor="sticky-header" className="text-sm">
-                    Sticky header
-                  </Label>
-                  <Switch
-                    id="sticky-header"
-                    checked={preferences.stickyHeader}
-                    onCheckedChange={(checked) => updatePreference("stickyHeader", checked)}
-                  />
-                </div>
-              </div>
-            </div>
-
-            {isAdvancedMode ? (
-              <>
-                <Separator />
-
-                {/* Code & Content Section - Advanced */}
-                <div className="space-y-4">
-                  <Label className="text-sm font-semibold text-[color:var(--ink)]">
-                    Code &amp; Content
-                  </Label>
-
-                  <div className="grid gap-4 sm:grid-cols-2">
-                    <div className="space-y-2">
-                      <Label
-                        htmlFor="code-font-size"
-                        className="text-xs text-[color:var(--ink-soft)]"
-                      >
-                        Code font size
-                      </Label>
-                      <Select
-                        value={preferences.codeFontSize}
-                        onValueChange={(value) =>
-                          updatePreference("codeFontSize", value as CodeFontSize)
-                        }
-                      >
-                        <SelectTrigger id="code-font-size">
-                          <SelectValue />
-                        </SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value="small">Small (12px)</SelectItem>
-                          <SelectItem value="medium">Medium (14px)</SelectItem>
-                          <SelectItem value="large">Large (16px)</SelectItem>
-                        </SelectContent>
-                      </Select>
-                    </div>
-
-                    <div className="space-y-2">
-                      <Label
-                        htmlFor="animation-level"
-                        className="text-xs text-[color:var(--ink-soft)]"
-                      >
-                        Animation level
-                      </Label>
-                      <Select
-                        value={preferences.animationLevel}
-                        onValueChange={(value) =>
-                          updatePreference("animationLevel", value as AnimationLevel)
-                        }
-                      >
-                        <SelectTrigger id="animation-level">
-                          <SelectValue />
-                        </SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value="full">Full</SelectItem>
-                          <SelectItem value="reduced">Reduced</SelectItem>
-                          <SelectItem value="none">None</SelectItem>
-                        </SelectContent>
-                      </Select>
-                    </div>
-                  </div>
-
-                  <div className="space-y-3">
-                    <div className="flex items-center justify-between">
-                      <Label htmlFor="line-numbers" className="text-sm">
-                        Line numbers in code
-                      </Label>
-                      <Switch
-                        id="line-numbers"
-                        checked={preferences.lineNumbers}
-                        onCheckedChange={(checked) => updatePreference("lineNumbers", checked)}
-                      />
-                    </div>
-                    <div className="flex items-center justify-between">
-                      <Label htmlFor="word-wrap" className="text-sm">
-                        Word wrap in code
-                      </Label>
-                      <Switch
-                        id="word-wrap"
-                        checked={preferences.wordWrap}
-                        onCheckedChange={(checked) => updatePreference("wordWrap", checked)}
-                      />
-                    </div>
-                  </div>
-                </div>
-
-                <Separator />
-
-                {/* Accessibility Section - Advanced */}
-                <div className="space-y-4">
-                  <Label className="text-sm font-semibold text-[color:var(--ink)] flex items-center gap-2">
-                    <Eye size={14} className="text-[color:var(--accent)]" />
-                    Accessibility
-                  </Label>
-
-                  <div className="space-y-3">
-                    <div className="flex items-center justify-between">
-                      <div>
-                        <Label htmlFor="reduced-motion" className="text-sm">
-                          Reduced motion
-                        </Label>
-                        <p className="text-xs text-[color:var(--ink-soft)]">Minimize animations</p>
-                      </div>
-                      <Switch
-                        id="reduced-motion"
-                        checked={preferences.reducedMotion}
-                        onCheckedChange={(checked) => updatePreference("reducedMotion", checked)}
-                      />
-                    </div>
-                    <div className="flex items-center justify-between">
-                      <div>
-                        <Label htmlFor="high-contrast" className="text-sm">
-                          High contrast
-                        </Label>
-                        <p className="text-xs text-[color:var(--ink-soft)]">
-                          Increase color contrast
-                        </p>
-                      </div>
-                      <Switch
-                        id="high-contrast"
-                        checked={preferences.highContrast}
-                        onCheckedChange={(checked) => updatePreference("highContrast", checked)}
-                      />
-                    </div>
-                  </div>
-                </div>
-
-                <Separator />
-
-                {/* Experimental Features - Advanced */}
-                <div className="space-y-4">
-                  <Label className="text-sm font-semibold text-[color:var(--ink)]">
-                    Experimental
-                  </Label>
-
-                  <div className="flex items-center justify-between">
-                    <div>
-                      <Label htmlFor="experimental-features" className="text-sm">
-                        Enable experimental features
-                      </Label>
-                      <p className="text-xs text-[color:var(--ink-soft)]">
-                        Try new features before they&apos;re released
-                      </p>
-                    </div>
-                    <Switch
-                      id="experimental-features"
-                      checked={preferences.experimentalFeatures}
-                      onCheckedChange={(checked) =>
-                        updatePreference("experimentalFeatures", checked)
-                      }
-                    />
-                  </div>
-                </div>
-              </>
-            ) : null}
-
-            <Separator />
-
-            {/* Reset Section */}
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-sm font-medium text-[color:var(--ink)]">Reset preferences</p>
-                <p className="text-xs text-[color:var(--ink-soft)]">
-                  Restore all settings to defaults
-                </p>
-              </div>
-              <Button
-                variant="ghost"
-                size="sm"
-                onClick={() => {
-                  resetPreferences();
-                  toast.success("Preferences reset to defaults");
-                }}
-                className="flex items-center gap-2"
-              >
-                <RotateCcw size={14} />
-                Reset
-              </Button>
             </div>
           </CardContent>
         </Card>
