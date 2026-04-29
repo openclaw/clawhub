@@ -20,6 +20,11 @@ export function Footer() {
   const [isMobile, setIsMobile] = useState(false);
 
   useEffect(() => {
+    if (typeof window.matchMedia !== "function") {
+      setIsMobile(false);
+      return () => {};
+    }
+
     const mq = window.matchMedia(`(max-width: ${MOBILE_BREAKPOINT}px)`);
     setIsMobile(mq.matches);
     const handler = (e: MediaQueryListEvent) => setIsMobile(e.matches);

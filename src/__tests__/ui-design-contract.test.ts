@@ -144,7 +144,8 @@ describe("restored UI design contract", () => {
     expect(navSource).toContain('label: "Powered by Convex"');
 
     expect(footerSource).toContain('className="footer-col-toggle"');
-    expect(footerSource).toContain("aria-expanded={isOpen}");
+    expect(footerSource).toContain("const ariaExpanded = isMobile ? isOpen : true");
+    expect(footerSource).toContain("aria-expanded={ariaExpanded}");
     expect(footerSource).toContain("data-open={isOpen}");
     expect(footerSource).toContain("toggleSection(section.title)");
 

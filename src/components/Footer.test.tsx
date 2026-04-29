@@ -1,8 +1,8 @@
 /* @vitest-environment jsdom */
 
-import { fireEvent, render, screen, within } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import type { ReactNode } from "react";
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 
 vi.mock("@tanstack/react-router", () => ({
   Link: (props: { children: ReactNode; to?: string }) => (
@@ -13,6 +13,21 @@ vi.mock("@tanstack/react-router", () => ({
 import { Footer } from "./Footer";
 
 describe("Footer", () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  function mockMatchMedia(matches: boolean) {
+    vi.stubGlobal(
+      "matchMedia",
+      vi.fn().mockImplementation(() => ({
+        matches,
+        addEventListener: vi.fn(),
+        removeEventListener: vi.fn(),
+      })),
+    );
+  }
+
   it("renders the restored four-column public footer", () => {
     const { container } = render(<Footer />);
 
@@ -72,7 +87,8 @@ describe("Footer", () => {
     ).toBe("https://www.convex.dev");
   });
 
-  it("collapses footer sections by heading until toggled open", () => {
+  it("collapses footer sections by heading until toggled open", async () => {
+    mockMatchMedia(true);
     render(<Footer />);
 
     const browseToggle = screen.getByRole("button", { name: "Browse" });
@@ -82,7 +98,7 @@ describe("Footer", () => {
 
     expect(browseLinks).not.toBeNull();
     expect(platformLinks).not.toBeNull();
-    expect(browseToggle.getAttribute("aria-expanded")).toBe("false");
+    await waitFor(() => expect(browseToggle.getAttribute("aria-expanded")).toBe("false"));
     expect(browseLinks?.getAttribute("data-open")).toBe("false");
     expect(platformToggle.getAttribute("aria-expanded")).toBe("false");
     expect(platformLinks?.getAttribute("data-open")).toBe("false");
