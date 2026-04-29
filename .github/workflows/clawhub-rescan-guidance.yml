@@ -1,0 +1,38 @@
+name: ClawHub Rescan Guidance
+
+on:
+  issues:
+    types: [labeled]
+  workflow_dispatch:
+    inputs:
+      issue:
+        description: "Issue number to check"
+        required: true
+        type: string
+
+permissions:
+  contents: read
+  issues: write
+
+concurrency:
+  group: clawhub-rescan-guidance-${{ github.event.issue.number || github.event.inputs.issue }}
+  cancel-in-progress: false
+
+jobs:
+  rescan-guidance:
+    runs-on: ubuntu-latest
+    if: "${{ github.event_name == 'workflow_dispatch' || github.event.label.name == 'r: rescan-guidance' }}"
+    env:
+      GH_TOKEN: ${{ github.token }}
+      CLAWHUB_RESCAN_GUIDANCE_APPLY: "1"
+      ISSUE_NUMBER: ${{ github.event.issue.number || github.event.inputs.issue }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Comment when rescan guidance label is present
+        run: |
+          node scripts/github/clawhub-rescan-auto-response.mjs \
+            --repo "$GITHUB_REPOSITORY" \
+            --issue "$ISSUE_NUMBER" \
+            --comment-for-labeled-issue \
+            --apply
