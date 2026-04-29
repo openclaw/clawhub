@@ -421,6 +421,12 @@ const skills = defineTable({
   .index("by_slug", ["slug"])
   .index("by_owner", ["ownerUserId"])
   .index("by_owner_publisher", ["ownerPublisherId"])
+  .index("by_owner_active_updated", ["ownerUserId", "softDeletedAt", "updatedAt"])
+  .index("by_owner_publisher_active_updated", [
+    "ownerPublisherId",
+    "softDeletedAt",
+    "updatedAt",
+  ])
   .index("by_updated", ["updatedAt"])
   .index("by_stats_downloads", ["statsDownloads", "updatedAt"])
   .index("by_stats_stars", ["statsStars", "updatedAt"])
