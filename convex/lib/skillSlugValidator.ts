@@ -163,19 +163,22 @@ export function isValidSkillSlugShape(value: string | undefined | null): boolean
  * Lenient shape check used by read paths (search exact-slug optimization,
  * redirect lookups, etc.).
  *
- * Unlike isValidSkillSlugShape, this predicate intentionally omits the
- * min-length floor so legacy rows whose slugs were persisted before the
- * current MIN_SLUG_LENGTH was introduced remain discoverable via exact
- * slug match. The max-length cap is still enforced to avoid unbounded
- * inputs hitting the by_slug index. The reserved-word blocklist is also
- * skipped for the same reason (grandfathered data must stay readable).
+ * Unlike isValidSkillSlugShape, this predicate intentionally omits:
+ *   - the min-length floor (legacy rows with 1- or 2-char slugs must stay
+ *     retrievable via the by_slug fast path),
+ *   - the max-length cap (rows persisted before MAX_SLUG_LENGTH was
+ *     introduced may exceed 48 chars and must remain lookup-able; the
+ *     indexed point lookup for a missing key is cheap, and upstream
+ *     request-body limits bound the practical query length),
+ *   - the reserved-word blocklist (grandfathered data must stay readable).
  *
  * Write paths MUST continue to use assertValidSkillSlug, which enforces
- * the full validation surface (length floor + reserved blocklist).
+ * the full validation surface (length floor + length cap + pattern +
+ * reserved blocklist).
  */
 export function isSearchableSkillSlugShape(value: string | undefined | null): boolean {
   const normalized = normalizeSkillSlug(value);
-  if (normalized.length === 0 || normalized.length > MAX_SLUG_LENGTH) {
+  if (normalized.length === 0) {
     return false;
   }
   // Single-character legacy slug: a bare [a-z0-9] is searchable. The full

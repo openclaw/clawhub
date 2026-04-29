@@ -174,10 +174,13 @@ describe("isSearchableSkillSlugShape", () => {
     expect(isSearchableSkillSlugShape("-")).toBe(false);
   });
 
-  it("still enforces the upper length bound", () => {
+  it("accepts slugs longer than the write-path upper bound (legacy rows)", () => {
+    // Legacy rows predate MAX_SLUG_LENGTH and may exceed 48 chars. The read
+    // path must still resolve them via the by_slug fast path; otherwise
+    // searchSkills falls back to scanning only the most recent digests and
+    // can miss older records entirely.
     expect(isSearchableSkillSlugShape("a".repeat(SKILL_SLUG_CONSTRAINTS.maxLength))).toBe(true);
-    expect(isSearchableSkillSlugShape("a".repeat(SKILL_SLUG_CONSTRAINTS.maxLength + 1))).toBe(
-      false,
-    );
+    expect(isSearchableSkillSlugShape("a".repeat(SKILL_SLUG_CONSTRAINTS.maxLength + 1))).toBe(true);
+    expect(isSearchableSkillSlugShape("a".repeat(200))).toBe(true);
   });
 });
