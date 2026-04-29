@@ -1,4 +1,4 @@
-import { createFileRoute } from "@tanstack/react-router";
+import { createFileRoute, Link } from "@tanstack/react-router";
 import { useMutation, useQuery } from "convex/react";
 import {
   Eye,
@@ -9,6 +9,7 @@ import {
   Moon,
   RotateCcw,
   Settings2,
+  Star,
   Sun,
 } from "lucide-react";
 import { useEffect, useState } from "react";
@@ -257,6 +258,21 @@ export function Settings() {
           </CardContent>
         </Card>
 
+        <Card>
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2">
+              <Star size={18} />
+              Stars
+            </CardTitle>
+            <CardDescription>Review skills you&apos;ve starred for quick access.</CardDescription>
+          </CardHeader>
+          <CardContent>
+            <Button asChild variant="outline">
+              <Link to="/stars">View stars</Link>
+            </Button>
+          </CardContent>
+        </Card>
+
         {/* Edit profile form */}
         <Card>
           <form className="flex flex-col gap-4" onSubmit={onSave}>
@@ -297,9 +313,7 @@ export function Settings() {
                   <Settings2 size={18} />
                   Customization
                 </CardTitle>
-                <CardDescription>
-                  Personalize your ClawHub experience
-                </CardDescription>
+                <CardDescription>Personalize your ClawHub experience</CardDescription>
               </div>
               <div className="flex items-center gap-2">
                 <Label htmlFor="advanced-mode" className="text-sm text-[color:var(--ink-soft)]">
@@ -316,7 +330,9 @@ export function Settings() {
           <CardContent className="space-y-6">
             {/* Theme Section */}
             <div className="space-y-3">
-              <Label id="theme" className="text-sm font-semibold text-[color:var(--ink)]">Theme</Label>
+              <Label id="theme" className="text-sm font-semibold text-[color:var(--ink)]">
+                Theme
+              </Label>
               <div className="flex flex-wrap gap-2">
                 <Button
                   variant={themeMode === "light" ? "primary" : "ghost"}
@@ -392,7 +408,7 @@ export function Settings() {
             {/* Layout Section */}
             <div className="space-y-4">
               <Label className="text-sm font-semibold text-[color:var(--ink)]">Layout</Label>
-              
+
               <div className="grid gap-4 sm:grid-cols-2">
                 <div className="space-y-2">
                   <Label htmlFor="layout-density" className="text-xs text-[color:var(--ink-soft)]">
@@ -400,7 +416,9 @@ export function Settings() {
                   </Label>
                   <Select
                     value={preferences.layoutDensity}
-                    onValueChange={(value) => updatePreference("layoutDensity", value as LayoutDensity)}
+                    onValueChange={(value) =>
+                      updatePreference("layoutDensity", value as LayoutDensity)
+                    }
                   >
                     <SelectTrigger id="layout-density">
                       <SelectValue />
@@ -428,7 +446,9 @@ export function Settings() {
                   </Label>
                   <Select
                     value={preferences.listViewMode}
-                    onValueChange={(value) => updatePreference("listViewMode", value as ListViewMode)}
+                    onValueChange={(value) =>
+                      updatePreference("listViewMode", value as ListViewMode)
+                    }
                   >
                     <SelectTrigger id="list-view">
                       <SelectValue />
@@ -453,7 +473,9 @@ export function Settings() {
 
               <div className="space-y-3">
                 <div className="flex items-center justify-between">
-                  <Label htmlFor="show-descriptions" className="text-sm">Show descriptions</Label>
+                  <Label htmlFor="show-descriptions" className="text-sm">
+                    Show descriptions
+                  </Label>
                   <Switch
                     id="show-descriptions"
                     checked={preferences.showDescriptions}
@@ -461,7 +483,9 @@ export function Settings() {
                   />
                 </div>
                 <div className="flex items-center justify-between">
-                  <Label htmlFor="show-stats" className="text-sm">Show statistics</Label>
+                  <Label htmlFor="show-stats" className="text-sm">
+                    Show statistics
+                  </Label>
                   <Switch
                     id="show-stats"
                     checked={preferences.showStats}
@@ -469,7 +493,9 @@ export function Settings() {
                   />
                 </div>
                 <div className="flex items-center justify-between">
-                  <Label htmlFor="show-tags" className="text-sm">Show tags</Label>
+                  <Label htmlFor="show-tags" className="text-sm">
+                    Show tags
+                  </Label>
                   <Switch
                     id="show-tags"
                     checked={preferences.showTags}
@@ -477,7 +503,9 @@ export function Settings() {
                   />
                 </div>
                 <div className="flex items-center justify-between">
-                  <Label htmlFor="sticky-header" className="text-sm">Sticky header</Label>
+                  <Label htmlFor="sticky-header" className="text-sm">
+                    Sticky header
+                  </Label>
                   <Switch
                     id="sticky-header"
                     checked={preferences.stickyHeader}
@@ -496,15 +524,20 @@ export function Settings() {
                   <Label className="text-sm font-semibold text-[color:var(--ink)]">
                     Code &amp; Content
                   </Label>
-                  
+
                   <div className="grid gap-4 sm:grid-cols-2">
                     <div className="space-y-2">
-                      <Label htmlFor="code-font-size" className="text-xs text-[color:var(--ink-soft)]">
+                      <Label
+                        htmlFor="code-font-size"
+                        className="text-xs text-[color:var(--ink-soft)]"
+                      >
                         Code font size
                       </Label>
                       <Select
                         value={preferences.codeFontSize}
-                        onValueChange={(value) => updatePreference("codeFontSize", value as CodeFontSize)}
+                        onValueChange={(value) =>
+                          updatePreference("codeFontSize", value as CodeFontSize)
+                        }
                       >
                         <SelectTrigger id="code-font-size">
                           <SelectValue />
@@ -518,20 +551,23 @@ export function Settings() {
                     </div>
 
                     <div className="space-y-2">
-                      <Label htmlFor="animation-level" className="text-xs text-[color:var(--ink-soft)]">
+                      <Label
+                        htmlFor="animation-level"
+                        className="text-xs text-[color:var(--ink-soft)]"
+                      >
                         Animation level
                       </Label>
                       <Select
                         value={preferences.animationLevel}
-                        onValueChange={(value) => updatePreference("animationLevel", value as AnimationLevel)}
+                        onValueChange={(value) =>
+                          updatePreference("animationLevel", value as AnimationLevel)
+                        }
                       >
                         <SelectTrigger id="animation-level">
                           <SelectValue />
                         </SelectTrigger>
                         <SelectContent>
-                          <SelectItem value="full">
-                            Full
-                          </SelectItem>
+                          <SelectItem value="full">Full</SelectItem>
                           <SelectItem value="reduced">Reduced</SelectItem>
                           <SelectItem value="none">None</SelectItem>
                         </SelectContent>
@@ -541,7 +577,9 @@ export function Settings() {
 
                   <div className="space-y-3">
                     <div className="flex items-center justify-between">
-                      <Label htmlFor="line-numbers" className="text-sm">Line numbers in code</Label>
+                      <Label htmlFor="line-numbers" className="text-sm">
+                        Line numbers in code
+                      </Label>
                       <Switch
                         id="line-numbers"
                         checked={preferences.lineNumbers}
@@ -549,7 +587,9 @@ export function Settings() {
                       />
                     </div>
                     <div className="flex items-center justify-between">
-                      <Label htmlFor="word-wrap" className="text-sm">Word wrap in code</Label>
+                      <Label htmlFor="word-wrap" className="text-sm">
+                        Word wrap in code
+                      </Label>
                       <Switch
                         id="word-wrap"
                         checked={preferences.wordWrap}
@@ -567,11 +607,13 @@ export function Settings() {
                     <Eye size={14} className="text-[color:var(--accent)]" />
                     Accessibility
                   </Label>
-                  
+
                   <div className="space-y-3">
                     <div className="flex items-center justify-between">
                       <div>
-                        <Label htmlFor="reduced-motion" className="text-sm">Reduced motion</Label>
+                        <Label htmlFor="reduced-motion" className="text-sm">
+                          Reduced motion
+                        </Label>
                         <p className="text-xs text-[color:var(--ink-soft)]">Minimize animations</p>
                       </div>
                       <Switch
@@ -582,8 +624,12 @@ export function Settings() {
                     </div>
                     <div className="flex items-center justify-between">
                       <div>
-                        <Label htmlFor="high-contrast" className="text-sm">High contrast</Label>
-                        <p className="text-xs text-[color:var(--ink-soft)]">Increase color contrast</p>
+                        <Label htmlFor="high-contrast" className="text-sm">
+                          High contrast
+                        </Label>
+                        <p className="text-xs text-[color:var(--ink-soft)]">
+                          Increase color contrast
+                        </p>
                       </div>
                       <Switch
                         id="high-contrast"
@@ -601,16 +647,22 @@ export function Settings() {
                   <Label className="text-sm font-semibold text-[color:var(--ink)]">
                     Experimental
                   </Label>
-                  
+
                   <div className="flex items-center justify-between">
                     <div>
-                      <Label htmlFor="experimental-features" className="text-sm">Enable experimental features</Label>
-                      <p className="text-xs text-[color:var(--ink-soft)]">Try new features before they&apos;re released</p>
+                      <Label htmlFor="experimental-features" className="text-sm">
+                        Enable experimental features
+                      </Label>
+                      <p className="text-xs text-[color:var(--ink-soft)]">
+                        Try new features before they&apos;re released
+                      </p>
                     </div>
                     <Switch
                       id="experimental-features"
                       checked={preferences.experimentalFeatures}
-                      onCheckedChange={(checked) => updatePreference("experimentalFeatures", checked)}
+                      onCheckedChange={(checked) =>
+                        updatePreference("experimentalFeatures", checked)
+                      }
                     />
                   </div>
                 </div>
@@ -623,7 +675,9 @@ export function Settings() {
             <div className="flex items-center justify-between">
               <div>
                 <p className="text-sm font-medium text-[color:var(--ink)]">Reset preferences</p>
-                <p className="text-xs text-[color:var(--ink-soft)]">Restore all settings to defaults</p>
+                <p className="text-xs text-[color:var(--ink-soft)]">
+                  Restore all settings to defaults
+                </p>
               </div>
               <Button
                 variant="ghost"
