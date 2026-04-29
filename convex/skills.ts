@@ -90,7 +90,6 @@ import {
   upsertReservedSlugForRightfulOwner,
 } from "./lib/reservedSlugs";
 import { SKILL_CAPABILITY_TAGS } from "./lib/skillCapabilityTags";
-import { assertValidSkillSlug, normalizeSkillSlug } from "./lib/skillSlugValidator";
 import {
   fetchText,
   type PublishResult,
@@ -105,6 +104,7 @@ import {
   extractDigestFields,
   upsertSkillSearchDigest,
 } from "./lib/skillSearchDigest";
+import { assertValidSkillSlug, normalizeSkillSlug } from "./lib/skillSlugValidator";
 import { readCanonicalStat } from "./lib/skillStats";
 import { runStaticPublishScan } from "./lib/staticPublishScan";
 import { adjustUserSkillStatsForSkillChange } from "./lib/userSkillStats";
