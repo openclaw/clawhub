@@ -143,15 +143,46 @@ export function normalizeSkillSlugOrNull(raw: string | undefined | null): string
  * Check whether a string already matches the full slug shape rules.
  * Returns true only when the value is a plausible slug (length, pattern).
  *
- * Used by search to decide whether to attempt an exact-slug lookup.
  * Note: this intentionally does NOT consult the reserved-word blocklist
  * because legacy rows may still carry reserved slugs and we want to
- * keep them readable.
+ * keep them readable. It DOES enforce the current min-length floor
+ * (MIN_SLUG_LENGTH) and is therefore only appropriate for call sites
+ * that treat a value as a "newly-shaped" slug. For read-only lookups
+ * (search, redirect) that must stay discoverable for pre-existing
+ * short slugs, use isSearchableSkillSlugShape instead.
  */
 export function isValidSkillSlugShape(value: string | undefined | null): boolean {
   const normalized = normalizeSkillSlug(value);
   if (normalized.length < MIN_SLUG_LENGTH || normalized.length > MAX_SLUG_LENGTH) {
     return false;
+  }
+  return SLUG_PATTERN.test(normalized);
+}
+
+/**
+ * Lenient shape check used by read paths (search exact-slug optimization,
+ * redirect lookups, etc.).
+ *
+ * Unlike isValidSkillSlugShape, this predicate intentionally omits the
+ * min-length floor so legacy rows whose slugs were persisted before the
+ * current MIN_SLUG_LENGTH was introduced remain discoverable via exact
+ * slug match. The max-length cap is still enforced to avoid unbounded
+ * inputs hitting the by_slug index. The reserved-word blocklist is also
+ * skipped for the same reason (grandfathered data must stay readable).
+ *
+ * Write paths MUST continue to use assertValidSkillSlug, which enforces
+ * the full validation surface (length floor + reserved blocklist).
+ */
+export function isSearchableSkillSlugShape(value: string | undefined | null): boolean {
+  const normalized = normalizeSkillSlug(value);
+  if (normalized.length === 0 || normalized.length > MAX_SLUG_LENGTH) {
+    return false;
+  }
+  // Single-character legacy slug: a bare [a-z0-9] is searchable. The full
+  // SLUG_PATTERN requires >=2 chars (separate first/last classes), so we
+  // handle the single-char case explicitly before delegating to it.
+  if (normalized.length === 1) {
+    return /^[a-z0-9]$/.test(normalized);
   }
   return SLUG_PATTERN.test(normalized);
 }

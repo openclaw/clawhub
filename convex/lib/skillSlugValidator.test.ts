@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   assertValidSkillSlug,
   isReservedSkillSlug,
+  isSearchableSkillSlugShape,
   isValidSkillSlugShape,
   normalizeSkillSlug,
   normalizeSkillSlugOrNull,
@@ -132,5 +133,51 @@ describe("isReservedSkillSlug", () => {
     expect(isReservedSkillSlug("my-skill")).toBe(false);
     expect(isReservedSkillSlug("")).toBe(false);
     expect(isReservedSkillSlug(null)).toBe(false);
+  });
+});
+
+describe("isSearchableSkillSlugShape", () => {
+  it("accepts slugs shorter than the write-path minimum (legacy rows)", () => {
+    // Single- and two-character slugs predate the min-length floor but may
+    // still exist in the skills table. Search must surface them via the
+    // exact-slug fast path.
+    expect(isSearchableSkillSlugShape("a")).toBe(true);
+    expect(isSearchableSkillSlugShape("ab")).toBe(true);
+    expect(isSearchableSkillSlugShape("a1")).toBe(true);
+  });
+
+  it("accepts regular well-formed slugs", () => {
+    expect(isSearchableSkillSlugShape("abc")).toBe(true);
+    expect(isSearchableSkillSlugShape("my-skill-1")).toBe(true);
+  });
+
+  it("accepts reserved slugs (read path ignores the blocklist)", () => {
+    // Legacy data may still carry reserved slugs; they must remain
+    // searchable even though the write path would now reject them.
+    expect(isSearchableSkillSlugShape("admin")).toBe(true);
+    expect(isSearchableSkillSlugShape("u")).toBe(true);
+  });
+
+  it("is case-insensitive", () => {
+    expect(isSearchableSkillSlugShape("A-B")).toBe(true);
+    expect(isSearchableSkillSlugShape("  My-Skill  ")).toBe(true);
+  });
+
+  it("still rejects malformed shapes", () => {
+    expect(isSearchableSkillSlugShape("")).toBe(false);
+    expect(isSearchableSkillSlugShape("   ")).toBe(false);
+    expect(isSearchableSkillSlugShape("-abc")).toBe(false);
+    expect(isSearchableSkillSlugShape("abc-")).toBe(false);
+    expect(isSearchableSkillSlugShape("a--b")).toBe(false);
+    expect(isSearchableSkillSlugShape("a_b")).toBe(false);
+    expect(isSearchableSkillSlugShape("a b")).toBe(false);
+    expect(isSearchableSkillSlugShape("-")).toBe(false);
+  });
+
+  it("still enforces the upper length bound", () => {
+    expect(isSearchableSkillSlugShape("a".repeat(SKILL_SLUG_CONSTRAINTS.maxLength))).toBe(true);
+    expect(isSearchableSkillSlugShape("a".repeat(SKILL_SLUG_CONSTRAINTS.maxLength + 1))).toBe(
+      false,
+    );
   });
 });
