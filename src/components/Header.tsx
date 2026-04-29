@@ -4,11 +4,7 @@ import { Ghost, Menu, Moon, Plug, Search, Sun, Wrench } from "lucide-react";
 import { type ComponentType, useMemo, useState } from "react";
 import { getUserFacingAuthError } from "../lib/authErrorMessage";
 import { gravatarUrl } from "../lib/gravatar";
-import {
-  filterNavItems,
-  type NavIconName,
-  PRIMARY_NAV_ITEMS,
-} from "../lib/nav-items";
+import { filterNavItems, type NavIconName, PRIMARY_NAV_ITEMS } from "../lib/nav-items";
 import { isModerator } from "../lib/roles";
 import { getClawHubSiteUrl, getSiteMode, getSiteName } from "../lib/site";
 import { applyTheme, useThemeMode } from "../lib/theme";
@@ -176,7 +172,12 @@ export default function Header() {
             <span className="brand-name brand-name-responsive">{siteName}</span>
           </Link>
 
-          <form className="navbar-search" onSubmit={handleNavSearch} role="search" aria-label="Site search">
+          <form
+            className="navbar-search"
+            onSubmit={handleNavSearch}
+            role="search"
+            aria-label="Site search"
+          >
             <Search size={16} className="navbar-search-icon" aria-hidden="true" />
             <input
               className="navbar-search-input"
@@ -287,7 +288,9 @@ export default function Header() {
                       "github",
                       signInRedirectTo ? { redirectTo: signInRedirectTo } : undefined,
                     ).catch((error) => {
-                      setAuthError(getUserFacingAuthError(error, "Sign in failed. Please try again."));
+                      setAuthError(
+                        getUserFacingAuthError(error, "Sign in failed. Please try again."),
+                      );
                     });
                   }}
                 >
@@ -312,7 +315,6 @@ export default function Header() {
             />
           </form>
         ) : null}
-
       </div>
     </header>
   );
