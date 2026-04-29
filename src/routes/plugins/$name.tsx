@@ -1,7 +1,8 @@
 import { createFileRoute, Link, Outlet, useRouterState } from "@tanstack/react-router";
 import { useMutation, useQuery } from "convex/react";
-import { AlertTriangle, ExternalLink, Download } from "lucide-react";
+import { AlertTriangle, Download, ExternalLink, Upload } from "lucide-react";
 import type { ComponentProps } from "react";
+import semver from "semver";
 import { toast } from "sonner";
 import { api } from "../../../convex/_generated/api";
 import type { Id } from "../../../convex/_generated/dataModel";
@@ -180,6 +181,11 @@ function isEmptyObject(obj: unknown): boolean {
   return Object.keys(obj).length === 0;
 }
 
+function suggestNextPluginVersion(latestVersion: string | null | undefined): string | undefined {
+  if (!latestVersion) return undefined;
+  return semver.inc(latestVersion, "patch") ?? undefined;
+}
+
 function PluginDetailRoute() {
   const { name } = Route.useParams();
   const { detail, version, readme, rateLimited } = Route.useLoaderData() as PluginDetailLoaderData;
@@ -246,6 +252,9 @@ function PluginDetailRoute() {
   const capabilities = latestRelease?.capabilities ?? pkg.capabilities;
   const compatibility = latestRelease?.compatibility ?? pkg.compatibility;
   const verification = latestRelease?.verification ?? pkg.verification;
+  const canManagePlugin = Boolean(rescanState);
+  const pluginFamily = pkg.family === "bundle-plugin" ? "bundle-plugin" : "code-plugin";
+  const nextVersion = suggestNextPluginVersion(pkg.latestVersion);
   const requestRescan = async () => {
     const packageId = (pkg as { _id?: Id<"packages"> })._id;
     if (!packageId) {
@@ -289,14 +298,34 @@ function PluginDetailRoute() {
                 {pkg.latestVersion ? (
                   <span className="plugin-version-badge">v{pkg.latestVersion}</span>
                 ) : null}
-                {pkg.latestVersion && !isDownloadBlocked ? (
+                {canManagePlugin || (pkg.latestVersion && !isDownloadBlocked) ? (
                   <div className="skill-title-actions">
-                    <Button asChild variant="outline" size="sm" className="no-underline">
-                      <a href={getPackageDownloadPath(name, pkg.latestVersion)}>
-                        <Download className="h-3.5 w-3.5" aria-hidden="true" />
-                        Download
-                      </a>
-                    </Button>
+                    {canManagePlugin ? (
+                      <Button asChild variant="outline" size="sm" className="no-underline">
+                        <Link
+                          to="/publish-plugin"
+                          search={{
+                            ownerHandle: owner?.handle ?? undefined,
+                            name: pkg.name,
+                            displayName: pkg.displayName,
+                            family: pluginFamily,
+                            nextVersion,
+                            sourceRepo: undefined,
+                          }}
+                        >
+                          <Upload className="h-3.5 w-3.5" aria-hidden="true" />
+                          New Release
+                        </Link>
+                      </Button>
+                    ) : null}
+                    {pkg.latestVersion && !isDownloadBlocked ? (
+                      <Button asChild variant="outline" size="sm" className="no-underline">
+                        <a href={getPackageDownloadPath(name, pkg.latestVersion)}>
+                          <Download className="h-3.5 w-3.5" aria-hidden="true" />
+                          Download
+                        </a>
+                      </Button>
+                    ) : null}
                   </div>
                 ) : null}
                 {isDownloadBlocked ? (

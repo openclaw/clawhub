@@ -1,7 +1,7 @@
 import { Link } from "@tanstack/react-router";
 import type { ClawdisSkillMetadata } from "clawhub-schema";
 import { PLATFORM_SKILL_LICENSE } from "clawhub-schema/licenseConstants";
-import { Calendar, Download, History, Package, Scale, Settings, Star } from "lucide-react";
+import { Calendar, Download, History, Package, Scale, Settings, Star, Upload } from "lucide-react";
 import type { ReactNode } from "react";
 import type { Doc, Id } from "../../convex/_generated/dataModel";
 import { getSkillBadges } from "../lib/badges";
@@ -171,8 +171,16 @@ export function SkillHeader({
                     <span className="plugin-version-badge">v{latestVersion.version}</span>
                   ) : null}
                   {nixPlugin ? <Badge variant="accent">Plugin bundle (nix)</Badge> : null}
-                  {isStaff || settingsHref ? (
+                  {canManage || isStaff || settingsHref ? (
                     <div className="skill-title-actions">
+                      {canManage ? (
+                        <Button asChild variant="outline" size="sm" className="skill-settings-link">
+                          <Link to="/publish-skill" search={{ updateSlug: skill.slug }}>
+                            <Upload size={14} aria-hidden="true" />
+                            New Version
+                          </Link>
+                        </Button>
+                      ) : null}
                       {isStaff ? (
                         <Button asChild variant="outline" size="sm">
                           <Link to="/management" search={{ skill: skill.slug }}>
