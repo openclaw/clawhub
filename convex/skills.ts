@@ -6530,7 +6530,16 @@ export const insertVersion = internalMutation({
   },
   handler: async (ctx, args) => {
     const userId = args.userId;
-    const slug = normalizeSkillSlugForWrite(args.slug);
+    // Lenient normalization first so we can look up an existing skill row
+    // before deciding whether to enforce the strict write-path validator.
+    // Owners of grandfathered slugs (reserved, <3 chars, >48 chars, or other
+    // pre-validator shapes) must remain able to publish new versions; the
+    // strict reserved/length/pattern rules only apply when creating a brand
+    // new skill. The caller (publishVersionForUser) performs the same split,
+    // but the mutation re-validates defensively because it can be invoked on
+    // its own (e.g. tests, internal schedulers).
+    const normalizedSlug = normalizeSkillSlug(args.slug);
+    if (!normalizedSlug) throw new ConvexError("Slug is required.");
     const user = await ctx.db.get(userId);
     if (!user || user.deletedAt || user.deactivatedAt) throw new Error("User not found");
     const personalPublisher = await ensurePersonalPublisherForUser(ctx, user);
@@ -6548,8 +6557,13 @@ export const insertVersion = internalMutation({
 
     let skill = await ctx.db
       .query("skills")
-      .withIndex("by_slug", (q) => q.eq("slug", slug))
+      .withIndex("by_slug", (q) => q.eq("slug", normalizedSlug))
       .unique();
+
+    // Only enforce the strict write-path rules when creating a new skill.
+    // For existing rows, keep the already-persisted (possibly grandfathered)
+    // slug as-is so legacy publishers are not locked out of version updates.
+    const slug = skill ? normalizedSlug : normalizeSkillSlugForWrite(args.slug);
 
     if (!skill) {
       const alias = await getSkillSlugAliasBySlug(ctx, slug);
