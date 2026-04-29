@@ -7,9 +7,9 @@ import { assertModerator, requireUser, requireUserFromAction } from "./lib/acces
 import { embeddingVisibilityFor } from "./lib/embeddingVisibility";
 import { toPublicSoul, toPublicUser } from "./lib/public";
 import { getFrontmatterValue, hashSkillFiles } from "./lib/skills";
+import { assertValidSkillSlug, normalizeSkillSlug } from "./lib/skillSlugValidator";
 import { generateSoulChangelogPreview } from "./lib/soulChangelog";
 import { fetchText, type PublishResult, publishSoulVersionForUser } from "./lib/soulPublish";
-import { assertValidSkillSlug, normalizeSkillSlug } from "./lib/skillSlugValidator";
 
 export { publishSoulVersionForUser } from "./lib/soulPublish";
 

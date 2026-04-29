@@ -1,5 +1,5 @@
-import { ConvexError } from "convex/values";
 import { normalizeTextContentType } from "clawhub-schema";
+import { ConvexError } from "convex/values";
 import semver from "semver";
 import { api, internal } from "../_generated/api";
 import type { Doc, Id } from "../_generated/dataModel";
@@ -16,7 +16,6 @@ import {
   MAX_PUBLISH_TOTAL_BYTES,
 } from "./publishLimits";
 import { deriveSkillCapabilityTags } from "./skillCapabilityTags";
-import { assertValidSkillSlug } from "./skillSlugValidator";
 import {
   computeQualitySignals,
   evaluateQuality,
@@ -35,6 +34,7 @@ import {
   parseFrontmatter,
   sanitizePath,
 } from "./skills";
+import { assertValidSkillSlug } from "./skillSlugValidator";
 import { generateSkillSummary } from "./skillSummary";
 import { runStaticPublishScan } from "./staticPublishScan";
 import type { WebhookSkillPayload } from "./webhooks";

@@ -186,8 +186,7 @@ export const searchSkills: ReturnType<typeof action> = action({
         const results = await ctx.vectorSearch("skillEmbeddings", "by_embedding", {
           vector,
           limit: candidateLimit,
-          filter: (q) =>
-            q.or(q.eq("visibility", "latest"), q.eq("visibility", "latest-approved")),
+          filter: (q) => q.or(q.eq("visibility", "latest"), q.eq("visibility", "latest-approved")),
         });
 
         // Only hydrate embedding IDs we haven't seen yet (incremental).
