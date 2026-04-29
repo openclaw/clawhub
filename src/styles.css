@@ -294,6 +294,17 @@ a:hover {
   text-underline-offset: 2px;
 }
 
+a.card:hover,
+a.skill-card:hover,
+a.skill-list-item:hover,
+a.home-quick-link:hover,
+a.home-category-card:hover,
+a.home-v2-c-card:hover,
+a.home-v2-cat-item:hover,
+a.home-v2-trend-card:hover {
+  text-decoration: none;
+}
+
 /* Global focus indicator for keyboard navigation */
 :focus-visible {
   outline: 2px solid var(--accent);
