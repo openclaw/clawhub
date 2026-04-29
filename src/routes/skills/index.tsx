@@ -45,7 +45,7 @@ export const Route = createFileRoute("/skills/")({
   },
   beforeLoad: ({ search }) => {
     const hasQuery = Boolean(search.q?.trim());
-    if (hasQuery || search.sort || search.featured || search.highlighted) {
+    if (hasQuery || search.sort || search.featured || search.highlighted || search.nonSuspicious) {
       return;
     }
     throw redirect({
