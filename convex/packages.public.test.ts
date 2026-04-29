@@ -123,6 +123,7 @@ const insertReleaseInternalHandler = (
       capabilities?: unknown;
       verification?: unknown;
       staticScan?: unknown;
+      allowExistingRelease?: boolean;
       extractedPackageJson?: unknown;
       extractedPluginManifest?: unknown;
       normalizedBundleManifest?: unknown;
@@ -577,16 +578,40 @@ function makeInsertReleaseCtx(
         }
         if (table === "packageReleases") {
           return {
-            withIndex: vi.fn((indexName: string) => {
+            withIndex: vi.fn(
+              (
+                indexName: string,
+                buildQuery?: (q: { eq: (field: string, value: unknown) => unknown }) => unknown,
+              ) => {
               if (indexName === "by_package") {
                 return {
                   collect: vi.fn().mockResolvedValue(priorReleases),
                 };
               }
+              if (indexName === "by_package_version") {
+                const filters = new Map<string, unknown>();
+                const query = {
+                  eq(field: string, value: unknown) {
+                    filters.set(field, value);
+                    return query;
+                  },
+                };
+                buildQuery?.(query);
+                return {
+                  unique: vi.fn().mockResolvedValue(
+                    priorReleases.find(
+                      (release) =>
+                        release.packageId === filters.get("packageId") &&
+                        release.version === filters.get("version"),
+                    ) ?? null,
+                  ),
+                };
+              }
               return {
                 unique: vi.fn().mockResolvedValue(null),
               };
-            }),
+              },
+            ),
           };
         }
         throw new Error(`Unexpected table ${table}`);
@@ -2009,6 +2034,66 @@ describe("packages public queries", () => {
     expect(ctx.patch).toHaveBeenCalledWith("packageReleases:old", {
       distTags: ["stable"],
     });
+  });
+
+  it("rejects duplicate package versions by default", async () => {
+    const ctx = makeInsertReleaseCtx(makePackageDoc(), [
+      makeReleaseDoc({
+        _id: "packageReleases:existing",
+        version: "1.0.0",
+        integritySha256: "abc123",
+      }),
+    ]);
+
+    await expect(
+      insertReleaseInternalHandler(ctx, {
+        actorUserId: "users:owner",
+        ownerUserId: "users:owner",
+        name: "demo-plugin",
+        displayName: "Demo Plugin",
+        family: "code-plugin",
+        version: "1.0.0",
+        changelog: "retry",
+        tags: ["latest"],
+        summary: "demo",
+        files: [],
+        integritySha256: "abc123",
+      }),
+    ).rejects.toThrow("Version 1.0.0 already exists");
+  });
+
+  it("treats matching workflow duplicate package releases as idempotent", async () => {
+    const ctx = makeInsertReleaseCtx(makePackageDoc(), [
+      makeReleaseDoc({
+        _id: "packageReleases:existing",
+        version: "1.0.0",
+        integritySha256: "abc123",
+      }),
+    ]);
+
+    await expect(
+      insertReleaseInternalHandler(ctx, {
+        actorUserId: "users:owner",
+        ownerUserId: "users:owner",
+        name: "demo-plugin",
+        displayName: "Demo Plugin",
+        family: "code-plugin",
+        version: "1.0.0",
+        changelog: "retry",
+        tags: ["latest"],
+        summary: "demo",
+        files: [],
+        integritySha256: "abc123",
+        allowExistingRelease: true,
+      }),
+    ).resolves.toMatchObject({
+      ok: true,
+      packageId: "packages:demo",
+      releaseId: "packageReleases:existing",
+    });
+
+    expect(ctx.insert).not.toHaveBeenCalled();
+    expect(ctx.patch).not.toHaveBeenCalled();
   });
 
   it("adds a latest tag when an untagged promoted release becomes the package latest", async () => {

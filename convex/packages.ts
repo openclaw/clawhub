@@ -2005,6 +2005,9 @@ async function publishPackageImpl(
     staticScan,
     files,
     integritySha256,
+    allowExistingRelease:
+      auth.kind === "github-actions" ||
+      (auth.kind === "user" && manualOverrideReason?.startsWith("GitHub Actions ")),
     extractedPackageJson: packageJson,
     extractedPluginManifest:
       family === "code-plugin" ? maybeParseJson(pluginManifestEntry?.text) : undefined,
@@ -2164,6 +2167,7 @@ export const insertReleaseInternal = internalMutation({
     capabilities: v.optional(v.any()),
     verification: v.optional(v.any()),
     staticScan: v.optional(v.any()),
+    allowExistingRelease: v.optional(v.boolean()),
     files: v.array(
       v.object({
         path: v.string(),
@@ -2285,7 +2289,20 @@ export const insertReleaseInternal = internalMutation({
           q.eq("packageId", existing._id).eq("version", args.version),
         )
         .unique();
-      if (releaseExists) throw new ConvexError(`Version ${nextVersionLabel} already exists`);
+      if (releaseExists) {
+        if (
+          args.allowExistingRelease &&
+          !releaseExists.softDeletedAt &&
+          releaseExists.integritySha256 === args.integritySha256
+        ) {
+          return {
+            ok: true as const,
+            packageId: existing._id,
+            releaseId: releaseExists._id,
+          };
+        }
+        throw new ConvexError(`Version ${nextVersionLabel} already exists`);
+      }
     }
     const priorReleases = existing
       ? await ctx.db

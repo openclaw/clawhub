@@ -15,6 +15,7 @@
     "dev": "bun --bun vite dev --port 3000",
     "docs:list": "bun scripts/docs-list.ts",
     "format": "oxfmt --write",
+    "format:check": "oxfmt --check",
     "install:local-hooks": "bun scripts/install-git-hooks.mjs",
     "lint": "bun run lint:oxlint",
     "lint:fix": "oxlint --type-aware --tsconfig ./tsconfig.oxlint.json ./src ./convex ./packages/clawhub/src ./packages/schema/src --fix && bun run format",

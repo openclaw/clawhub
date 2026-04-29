@@ -12,6 +12,8 @@ jobs:
 
     steps:
       - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
 
       - uses: oven-sh/setup-bun@e3914758a49697077f7bcd190d36582a61667aad
         with:
@@ -21,6 +23,24 @@ jobs:
         run: bun install --frozen-lockfile
       - name: Peer deps
         run: bun run check:peers
+
+      - name: Format
+        if: github.event_name == 'pull_request'
+        run: |
+          mapfile -d '' changed_files < <(
+            git diff --name-only --diff-filter=ACMR -z \
+              "${{ github.event.pull_request.base.sha }}" \
+              "${{ github.event.pull_request.head.sha }}" \
+              -- \
+              '*.css' '*.js' '*.jsx' '*.json' '*.md' '*.mjs' '*.ts' '*.tsx' '*.yaml' '*.yml'
+          )
+
+          if (( ${#changed_files[@]} == 0 )); then
+            echo "No changed files supported by oxfmt."
+            exit 0
+          fi
+
+          bun run format:check -- "${changed_files[@]}"
 
       - name: Lint
         run: bun run lint

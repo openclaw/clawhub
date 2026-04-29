@@ -1,6 +1,5 @@
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { useAction, useQuery } from "convex/react";
-import { useEffect, useMemo, useRef, useState } from "react";
 import {
   ArrowLeft,
   ArrowRight,
@@ -12,6 +11,7 @@ import {
   Star,
   Users,
 } from "lucide-react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { api } from "../../convex/_generated/api";
 import { SoulCard } from "../components/SoulCard";
 import { SoulStatsTripletLine } from "../components/SoulStats";
@@ -138,8 +138,7 @@ function SkillsHome() {
               onChange={(e) => setQuery(e.target.value)}
             />
             <button type="submit" className="home-v2-search-go">
-              <span className="home-v2-search-go-label">Search</span>{" "}
-              <ArrowRight size={16} />
+              <span className="home-v2-search-go-label">Search</span> <ArrowRight size={16} />
             </button>
           </form>
         </div>
@@ -216,12 +215,10 @@ function SkillsHome() {
                   <div className="home-v2-c-footer">
                     <div className="home-v2-c-stats">
                       <span>
-                        <Star size={12} />{" "}
-                        {formatStat(entry.skill.stats?.stars)}
+                        <Star size={12} /> {formatStat(entry.skill.stats?.stars)}
                       </span>
                       <span>
-                        <Download size={12} />{" "}
-                        {formatStat(entry.skill.stats?.downloads)}
+                        <Download size={12} /> {formatStat(entry.skill.stats?.downloads)}
                       </span>
                     </div>
                     <span className="home-v2-c-install">
@@ -254,12 +251,10 @@ function SkillsHome() {
                   <div className="home-v2-c-footer">
                     <div className="home-v2-c-stats">
                       <span>
-                        <Star size={12} />{" "}
-                        {formatStat(entry.skill.stats?.stars)}
+                        <Star size={12} /> {formatStat(entry.skill.stats?.stars)}
                       </span>
                       <span>
-                        <Download size={12} />{" "}
-                        {formatStat(entry.skill.stats?.downloads)}
+                        <Download size={12} /> {formatStat(entry.skill.stats?.downloads)}
                       </span>
                     </div>
                     <span className="home-v2-c-install">
@@ -373,11 +368,7 @@ function SkillsHome() {
           </div>
           <div className="home-v2-trending-grid">
             {popular.slice(0, 6).map((entry) => (
-              <Link
-                key={entry.skill._id}
-                to={skillLink(entry)}
-                className="home-v2-trend-card"
-              >
+              <Link key={entry.skill._id} to={skillLink(entry)} className="home-v2-trend-card">
                 <div className="home-v2-trend-head">
                   <div className="home-v2-trend-title">
                     {entry.skill.displayName || entry.skill.slug}
@@ -392,12 +383,10 @@ function SkillsHome() {
                 <div className="home-v2-trend-bottom">
                   <div className="home-v2-trend-signals">
                     <span>
-                      <Star size={12} />{" "}
-                      {formatStat(entry.skill.stats?.stars)}
+                      <Star size={12} /> {formatStat(entry.skill.stats?.stars)}
                     </span>
                     <span>
-                      <Download size={12} />{" "}
-                      {formatStat(entry.skill.stats?.downloads)}
+                      <Download size={12} /> {formatStat(entry.skill.stats?.downloads)}
                     </span>
                   </div>
                   <span className="home-v2-trend-install">

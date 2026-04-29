@@ -4,6 +4,12 @@ import { fireEvent, render, screen, within } from "@testing-library/react";
 import type { ReactNode } from "react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
+type HeaderAuthStatus = {
+  isAuthenticated: boolean;
+  isLoading: boolean;
+  me: Record<string, unknown> | null;
+};
+
 const siteModeMock = vi.fn(() => "souls");
 const navigateMock = vi.fn();
 const { useUnifiedSearchMock } = vi.hoisted(() => ({
@@ -70,7 +76,7 @@ vi.mock("@convex-dev/auth/react", () => ({
   }),
 }));
 
-const authStatusMock = vi.fn(() => ({
+const authStatusMock = vi.fn<() => HeaderAuthStatus>(() => ({
   isAuthenticated: false,
   isLoading: false,
   me: null,
@@ -152,6 +158,12 @@ import Header from "../components/Header";
 
 describe("Header", () => {
   beforeEach(() => {
+    authStatusMock.mockReturnValue({
+      isAuthenticated: false,
+      isLoading: false,
+      me: null,
+    });
+    siteModeMock.mockReturnValue("souls");
     useUnifiedSearchMock.mockReturnValue(defaultUnifiedSearchResult);
   });
 
@@ -292,6 +304,27 @@ describe("Header", () => {
       .filter((label): label is string => Boolean(label));
 
     expect(labels.slice(0, 2)).toEqual(["Home", "Skills"]);
+  });
+
+  it("keeps Stars out of signed-in header navigation", () => {
+    siteModeMock.mockReturnValue("skills");
+    authStatusMock.mockReturnValue({
+      isAuthenticated: true,
+      isLoading: false,
+      me: {
+        displayName: "Patrick",
+        email: "patrick@example.com",
+        handle: "patrick",
+        image: null,
+        name: "Patrick",
+      },
+    });
+
+    render(<Header />);
+
+    expect(screen.queryByText("Stars")).toBeNull();
+    expect(screen.getAllByText("Dashboard").length).toBeGreaterThan(0);
+    expect(screen.getByText("Settings")).toBeTruthy();
   });
 
   it("routes soul-mode header searches to the souls browse page", () => {
