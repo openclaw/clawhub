@@ -16,6 +16,7 @@ import {
   MAX_PUBLISH_TOTAL_BYTES,
 } from "./publishLimits";
 import { deriveSkillCapabilityTags } from "./skillCapabilityTags";
+import { assertValidSkillSlug } from "./skillSlugValidator";
 import {
   computeQualitySignals,
   evaluateQuality,
@@ -90,12 +91,10 @@ export async function publishVersionForUser(
   options: PublishOptions = {},
 ): Promise<PublishResult> {
   const version = args.version.trim();
-  const slug = args.slug.trim().toLowerCase();
+  // Full slug validation: length, pattern, reserved-word blocklist, etc.
+  const slug = assertValidSkillSlug(args.slug);
   const displayName = args.displayName.trim();
-  if (!slug || !displayName) throw new ConvexError("Slug and display name required");
-  if (!/^[a-z0-9][a-z0-9-]*$/.test(slug)) {
-    throw new ConvexError("Slug must be lowercase and url-safe");
-  }
+  if (!displayName) throw new ConvexError("Display name required");
   if (!semver.valid(version)) {
     throw new ConvexError("Version must be valid semver");
   }

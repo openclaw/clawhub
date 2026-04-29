@@ -6,6 +6,7 @@ import type { Doc, Id } from "../_generated/dataModel";
 import type { ActionCtx } from "../_generated/server";
 import { generateEmbedding } from "./embeddings";
 import { requireGitHubAccountAge } from "./githubAccount";
+import { assertValidSkillSlug } from "./skillSlugValidator";
 import {
   buildEmbeddingText,
   getFrontmatterMetadata,
@@ -84,12 +85,11 @@ export async function publishSoulVersionForUser(
   args: PublishVersionArgs,
 ): Promise<PublishResult> {
   const version = args.version.trim();
-  const slug = args.slug.trim().toLowerCase();
+  // Souls share the slug rules with skills (length, pattern, reserved words,
+  // no consecutive hyphens). Keep them aligned so /souls/$slug routing is safe.
+  const slug = assertValidSkillSlug(args.slug);
   const displayName = args.displayName.trim();
-  if (!slug || !displayName) throw new ConvexError("Slug and display name required");
-  if (!/^[a-z0-9][a-z0-9-]*$/.test(slug)) {
-    throw new ConvexError("Slug must be lowercase and url-safe");
-  }
+  if (!displayName) throw new ConvexError("Display name required");
   if (!semver.valid(version)) {
     throw new ConvexError("Version must be valid semver");
   }

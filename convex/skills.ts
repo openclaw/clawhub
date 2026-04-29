@@ -90,6 +90,7 @@ import {
   upsertReservedSlugForRightfulOwner,
 } from "./lib/reservedSlugs";
 import { SKILL_CAPABILITY_TAGS } from "./lib/skillCapabilityTags";
+import { assertValidSkillSlug, normalizeSkillSlug } from "./lib/skillSlugValidator";
 import {
   fetchText,
   type PublishResult,
@@ -585,7 +586,10 @@ function buildAliasTakenErrorMessage(skill: Doc<"skills">, owner: SkillOwnerRef)
 }
 
 function normalizeSkillSlugKey(slug: string) {
-  return slug.trim().toLowerCase();
+  // Read-path normalization: lowercase + trim only. Intentionally lenient so
+  // that legacy rows (pre-validator) remain lookup-able. Write paths must
+  // use `normalizeSkillSlugForWrite` / `assertValidSkillSlug` instead.
+  return normalizeSkillSlug(slug);
 }
 
 type SkillOwnerRef =
@@ -599,11 +603,9 @@ type SkillOwnerRef =
   | undefined;
 
 function normalizeSkillSlugForWrite(slug: string) {
-  const normalized = normalizeSkillSlugKey(slug);
-  if (!normalized || !/^[a-z0-9][a-z0-9-]*$/.test(normalized)) {
-    throw new ConvexError("Slug must be lowercase and url-safe");
-  }
-  return normalized;
+  // Write-path: full validation (length, pattern, reserved words,
+  // no consecutive hyphens). See `lib/skillSlugValidator.ts`.
+  return assertValidSkillSlug(slug);
 }
 
 async function getSkillSlugAliasBySlug(ctx: Pick<QueryCtx | MutationCtx, "db">, slug: string) {
@@ -6825,13 +6827,11 @@ async function renameOwnedSkillByActor(
   }
 
   const now = Date.now();
-  const sourceSlug = sourceSlugArg.trim().toLowerCase();
-  const newSlug = newSlugArg.trim().toLowerCase();
+  const sourceSlug = normalizeSkillSlug(sourceSlugArg);
   if (!sourceSlug) throw new ConvexError("Current slug required");
-  if (!newSlug) throw new ConvexError("New slug required");
-  if (!/^[a-z0-9][a-z0-9-]*$/.test(newSlug)) {
-    throw new ConvexError("Invalid slug. Use lowercase letters, numbers, and hyphens only.");
-  }
+  // Full write-path validation for the new slug: length, pattern,
+  // reserved-word blocklist, no consecutive hyphens.
+  const newSlug = assertValidSkillSlug(newSlugArg);
 
   const resolved = await resolveSkillBySlugOrAlias(ctx, sourceSlug);
   const skill = resolved.skill;

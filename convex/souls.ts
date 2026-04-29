@@ -9,6 +9,7 @@ import { toPublicSoul, toPublicUser } from "./lib/public";
 import { getFrontmatterValue, hashSkillFiles } from "./lib/skills";
 import { generateSoulChangelogPreview } from "./lib/soulChangelog";
 import { fetchText, type PublishResult, publishSoulVersionForUser } from "./lib/soulPublish";
+import { assertValidSkillSlug, normalizeSkillSlug } from "./lib/skillSlugValidator";
 
 export { publishSoulVersionForUser } from "./lib/soulPublish";
 
@@ -70,15 +71,15 @@ function toPublicSoulVersion(
 }
 
 function normalizeSoulSlugKey(slug: string) {
-  return slug.trim().toLowerCase();
+  // Read-path normalization: lowercase + trim only. Intentionally lenient so
+  // that legacy rows (pre-validator) remain lookup-able.
+  return normalizeSkillSlug(slug);
 }
 
 function normalizeSoulSlugForWrite(slug: string) {
-  const normalized = normalizeSoulSlugKey(slug);
-  if (!normalized || !/^[a-z0-9][a-z0-9-]*$/.test(normalized)) {
-    throw new ConvexError("Slug must be lowercase and url-safe");
-  }
-  return normalized;
+  // Write-path: full validation (length, pattern, reserved words,
+  // no consecutive hyphens). Souls share the rules with skills.
+  return assertValidSkillSlug(slug);
 }
 
 export const getBySlug = query({
