@@ -16,6 +16,7 @@
     "dataset:snapshot:prod:dry-run": "bun scripts/security-dataset/export-snapshot.ts --prod --limit 10 --dry-run",
     "dev": "bun --bun vite dev --port 3000",
     "docs:list": "bun scripts/docs-list.ts",
+    "eval:clawscan:skilltester": "bun scripts/eval/clawscan-skilltester.ts",
     "format": "oxfmt --write",
     "format:check": "oxfmt --check",
     "install:local-hooks": "bun scripts/install-git-hooks.mjs",

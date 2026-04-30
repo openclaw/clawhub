@@ -68,6 +68,22 @@ Common CLI flows:
 
 Docs: [`docs/quickstart.md`](docs/quickstart.md), [`docs/cli.md`](docs/cli.md).
 
+## ClawScan prompt evals
+
+ClawHub owns the production ClawScan prompt, parser, and OpenAI eval defaults. By default, prompt
+benchmarks load the private Hugging Face dataset
+`OpenClaw/clawhub-security-signals-private` and run against the `eval_holdout` split:
+
+```bash
+bun run eval:clawscan:skilltester -- --mock --limit 2
+```
+
+The default private dataset fetch requires `HF_TOKEN`, `HUGGINGFACE_TOKEN`, or
+`HUGGING_FACE_HUB_TOKEN`; live model runs also require `OPENAI_API_KEY`. Use `--corpus <path>` to
+run against a local corpus JSONL instead. Useful flags include `--output-dir`, `--cache-dir`,
+`--limit`, `--concurrency`, `--target`, `--risky-only`, `--model`, `--reasoning-effort`, and
+`--service-tier`.
+
 ### Removal permissions
 
 - `clawhub uninstall <slug>` only removes a local install on your machine.
