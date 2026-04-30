@@ -85,6 +85,7 @@ jobs:
             printf '\n'
             printf '%s\n' '## Validation'
             printf '\n'
+            # shellcheck disable=SC2016
             printf '%s\n' '- `$(bun pm bin)/convex ai-files status`'
           } > "$body_file"
 
