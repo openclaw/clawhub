@@ -1,5 +1,5 @@
-import { ConvexError } from "convex/values";
 import { normalizeTextContentType } from "clawhub-schema";
+import { ConvexError } from "convex/values";
 import semver from "semver";
 import { internal } from "../_generated/api";
 import type { Doc, Id } from "../_generated/dataModel";
@@ -16,6 +16,7 @@ import {
   parseFrontmatter,
   sanitizePath,
 } from "./skills";
+import { assertValidSkillSlug, normalizeSkillSlug } from "./skillSlugValidator";
 import { generateSoulChangelogForPublish } from "./soulChangelog";
 
 const MAX_TOTAL_BYTES = 50 * 1024 * 1024;
@@ -84,17 +85,30 @@ export async function publishSoulVersionForUser(
   args: PublishVersionArgs,
 ): Promise<PublishResult> {
   const version = args.version.trim();
-  const slug = args.slug.trim().toLowerCase();
+  // Normalize first so we can look up the existing soul before deciding how
+  // strictly to validate. Owners of grandfathered slugs (reserved, <3 chars,
+  // or >48 chars) must still be able to publish new versions; the strict
+  // write-path rules only apply when creating a brand-new soul.
+  const normalizedSlug = normalizeSkillSlug(args.slug);
+  if (!normalizedSlug) throw new ConvexError("Slug is required.");
+
   const displayName = args.displayName.trim();
-  if (!slug || !displayName) throw new ConvexError("Slug and display name required");
-  if (!/^[a-z0-9][a-z0-9-]*$/.test(slug)) {
-    throw new ConvexError("Slug must be lowercase and url-safe");
-  }
+  if (!displayName) throw new ConvexError("Display name required");
   if (!semver.valid(version)) {
     throw new ConvexError("Version must be valid semver");
   }
 
   await requireGitHubAccountAge(ctx, userId);
+
+  // Resolve existing soul before enforcing slug rules so grandfathered rows
+  // are not blocked. Full validation is only applied on the create path.
+  const existingSoul = (await ctx.runQuery(internal.souls.getSoulBySlugInternal, {
+    slug: normalizedSlug,
+  })) as Doc<"souls"> | null;
+  if (!existingSoul) {
+    assertValidSkillSlug(normalizedSlug);
+  }
+  const slug = normalizedSlug;
 
   const suppliedChangelog = args.changelog.trim();
   const changelogSource = suppliedChangelog ? ("user" as const) : ("auto" as const);

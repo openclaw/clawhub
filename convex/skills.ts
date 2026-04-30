@@ -96,6 +96,7 @@ import {
   extractDigestFields,
   upsertSkillSearchDigest,
 } from "./lib/skillSearchDigest";
+import { assertValidSkillSlug, normalizeSkillSlug } from "./lib/skillSlugValidator";
 import { readCanonicalStat } from "./lib/skillStats";
 import { runStaticPublishScan } from "./lib/staticPublishScan";
 import { adjustUserSkillStatsForSkillChange } from "./lib/userSkillStats";
@@ -576,7 +577,10 @@ function buildAliasTakenErrorMessage(skill: Doc<"skills">, owner: SkillOwnerRef)
 }
 
 function normalizeSkillSlugKey(slug: string) {
-  return slug.trim().toLowerCase();
+  // Read-path normalization: lowercase + trim only. Intentionally lenient so
+  // that legacy rows (pre-validator) remain lookup-able. Write paths must
+  // use `normalizeSkillSlugForWrite` / `assertValidSkillSlug` instead.
+  return normalizeSkillSlug(slug);
 }
 
 type SkillOwnerRef =
@@ -590,11 +594,9 @@ type SkillOwnerRef =
   | undefined;
 
 function normalizeSkillSlugForWrite(slug: string) {
-  const normalized = normalizeSkillSlugKey(slug);
-  if (!normalized || !/^[a-z0-9][a-z0-9-]*$/.test(normalized)) {
-    throw new ConvexError("Slug must be lowercase and url-safe");
-  }
-  return normalized;
+  // Write-path: full validation (length, pattern, reserved words,
+  // no consecutive hyphens). See `lib/skillSlugValidator.ts`.
+  return assertValidSkillSlug(slug);
 }
 
 async function getSkillSlugAliasBySlug(ctx: Pick<QueryCtx | MutationCtx, "db">, slug: string) {
@@ -5906,13 +5908,11 @@ async function renameOwnedSkillByActor(
   }
 
   const now = Date.now();
-  const sourceSlug = sourceSlugArg.trim().toLowerCase();
-  const newSlug = newSlugArg.trim().toLowerCase();
+  const sourceSlug = normalizeSkillSlug(sourceSlugArg);
   if (!sourceSlug) throw new ConvexError("Current slug required");
-  if (!newSlug) throw new ConvexError("New slug required");
-  if (!/^[a-z0-9][a-z0-9-]*$/.test(newSlug)) {
-    throw new ConvexError("Invalid slug. Use lowercase letters, numbers, and hyphens only.");
-  }
+  // Full write-path validation for the new slug: length, pattern,
+  // reserved-word blocklist, no consecutive hyphens.
+  const newSlug = assertValidSkillSlug(newSlugArg);
 
   const resolved = await resolveSkillBySlugOrAlias(ctx, sourceSlug);
   const skill = resolved.skill;
@@ -6647,7 +6647,16 @@ export const insertVersion = internalMutation({
   },
   handler: async (ctx, args) => {
     const userId = args.userId;
-    const slug = normalizeSkillSlugForWrite(args.slug);
+    // Lenient normalization first so we can look up an existing skill row
+    // before deciding whether to enforce the strict write-path validator.
+    // Owners of grandfathered slugs (reserved, <3 chars, >48 chars, or other
+    // pre-validator shapes) must remain able to publish new versions; the
+    // strict reserved/length/pattern rules only apply when creating a brand
+    // new skill. The caller (publishVersionForUser) performs the same split,
+    // but the mutation re-validates defensively because it can be invoked on
+    // its own (e.g. tests, internal schedulers).
+    const normalizedSlug = normalizeSkillSlug(args.slug);
+    if (!normalizedSlug) throw new ConvexError("Slug is required.");
     const user = await ctx.db.get(userId);
     if (!user || user.deletedAt || user.deactivatedAt) throw new Error("User not found");
     const personalPublisher = await ensurePersonalPublisherForUser(ctx, user);
@@ -6665,8 +6674,13 @@ export const insertVersion = internalMutation({
 
     let skill = await ctx.db
       .query("skills")
-      .withIndex("by_slug", (q) => q.eq("slug", slug))
+      .withIndex("by_slug", (q) => q.eq("slug", normalizedSlug))
       .unique();
+
+    // Only enforce the strict write-path rules when creating a new skill.
+    // For existing rows, keep the already-persisted (possibly grandfathered)
+    // slug as-is so legacy publishers are not locked out of version updates.
+    const slug = skill ? normalizedSlug : normalizeSkillSlugForWrite(args.slug);
 
     if (!skill) {
       const alias = await getSkillSlugAliasBySlug(ctx, slug);

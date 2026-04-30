@@ -34,6 +34,7 @@ import {
   parseFrontmatter,
   sanitizePath,
 } from "./skills";
+import { assertValidSkillSlug, normalizeSkillSlug } from "./skillSlugValidator";
 import { generateSkillSummary } from "./skillSummary";
 import { runStaticPublishScan } from "./staticPublishScan";
 import type { WebhookSkillPayload } from "./webhooks";
@@ -90,12 +91,16 @@ export async function publishVersionForUser(
   options: PublishOptions = {},
 ): Promise<PublishResult> {
   const version = args.version.trim();
-  const slug = args.slug.trim().toLowerCase();
+  // Normalize first so we can look up the existing skill before deciding
+  // how strictly to validate. The reserved-word blocklist and length floor
+  // are only enforced for brand-new skills; owners of grandfathered slugs
+  // (reserved, <3 chars, or >48 chars) must still be able to publish new
+  // versions without being blocked by the write-path validator.
+  const normalizedSlug = normalizeSkillSlug(args.slug);
+  if (!normalizedSlug) throw new ConvexError("Slug is required.");
+
   const displayName = args.displayName.trim();
-  if (!slug || !displayName) throw new ConvexError("Slug and display name required");
-  if (!/^[a-z0-9][a-z0-9-]*$/.test(slug)) {
-    throw new ConvexError("Slug must be lowercase and url-safe");
-  }
+  if (!displayName) throw new ConvexError("Display name required");
   if (!semver.valid(version)) {
     throw new ConvexError("Version must be valid semver");
   }
@@ -104,9 +109,18 @@ export async function publishVersionForUser(
     await requireGitHubAccountAge(ctx, userId);
   }
   const existingSkill = (await ctx.runQuery(internal.skills.getSkillBySlugInternal, {
-    slug,
+    slug: normalizedSlug,
   })) as Doc<"skills"> | null;
   const isNewSkill = !existingSkill;
+
+  // For new skills, enforce the full write-path rules (length, pattern,
+  // reserved-word blocklist). For existing skills the slug is already
+  // persisted and grandfathered — re-validating it would block legitimate
+  // version publishes on legacy rows.
+  if (isNewSkill) {
+    assertValidSkillSlug(normalizedSlug);
+  }
+  const slug = normalizedSlug;
 
   const suppliedChangelog = args.changelog.trim();
   const changelogSource = suppliedChangelog ? ("user" as const) : ("auto" as const);
