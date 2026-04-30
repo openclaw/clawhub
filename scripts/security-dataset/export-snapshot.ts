@@ -13,6 +13,13 @@ import {
 	type NormalizedDatasetRows,
 	type SourceKind,
 } from "./normalize";
+import {
+	assertCreatedTimeWindow,
+	clampCreatedBounds,
+	emptyCreatedTimeWindow,
+	parseCreatedTimestamp,
+	type CreatedTimeWindow,
+} from "./timeWindow";
 
 const execFileAsync = promisify(execFile);
 
@@ -41,6 +48,7 @@ type Options = {
 	shards: number;
 	outDir: string;
 	sourceKind: SourceKind | "all";
+	timeWindow: CreatedTimeWindow;
 };
 
 type ExportShard = {
@@ -115,7 +123,7 @@ async function buildExportShards(options: Options) {
 
 	for (const sourceKind of sourceKinds) {
 		const bounds = await runConvexBounds(options, sourceKind);
-		shards.push(...boundsToShards(bounds, options.shards));
+		shards.push(...boundsToShards(clampCreatedBounds(bounds, options.timeWindow), options.shards));
 	}
 
 	return shards;
@@ -251,6 +259,7 @@ function buildManifest(input: {
 		modelNames: Array.from(state.modelNames).sort(),
 		redactionPolicyVersion: "public-signals-v1",
 		sourceTables: ["skillVersions", "packageReleases"],
+		timeWindow: options.timeWindow,
 	});
 }
 
@@ -447,6 +456,7 @@ function parseArgs(args: string[]): Options {
 		shards: DEFAULT_SHARDS,
 		outDir: DEFAULT_OUT_DIR,
 		sourceKind: "all",
+		timeWindow: emptyCreatedTimeWindow(),
 	};
 
 	for (let index = 0; index < args.length; index += 1) {
@@ -471,6 +481,10 @@ function parseArgs(args: string[]): Options {
 			options.outDir = readValue(args, ++index, arg);
 		} else if (arg === "--source-kind") {
 			options.sourceKind = readSourceKind(readValue(args, ++index, arg));
+		} else if (arg === "--created-after") {
+			options.timeWindow.createdAtGte = parseCreatedTimestamp(readValue(args, ++index, arg), arg);
+		} else if (arg === "--created-before") {
+			options.timeWindow.createdAtLt = parseCreatedTimestamp(readValue(args, ++index, arg), arg);
 		} else if (arg === "--mode") {
 			const mode = readValue(args, ++index, arg);
 			if (mode !== "public") throw new Error(`Unsupported mode: ${mode}`);
@@ -483,6 +497,7 @@ function parseArgs(args: string[]): Options {
 	if (options.prod && options.deployment) {
 		throw new Error("Use either --prod or --deployment, not both.");
 	}
+	assertCreatedTimeWindow(options.timeWindow);
 	return options;
 }
 

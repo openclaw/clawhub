@@ -20,6 +20,10 @@ export type SnapshotManifestInput = {
 	modelNames: string[];
 	redactionPolicyVersion: string;
 	sourceTables: string[];
+	timeWindow?: {
+		createdAtGte: number | null;
+		createdAtLt: number | null;
+	};
 };
 
 export function buildSecurityDatasetManifest(input: SnapshotManifestInput) {
@@ -47,6 +51,10 @@ export function buildSecurityDatasetManifest(input: SnapshotManifestInput) {
 		redaction_policy_version: input.redactionPolicyVersion,
 		source_tables: input.sourceTables,
 		source_commit: input.repoGitSha,
+		created_time_window: {
+			created_at_gte: input.timeWindow?.createdAtGte ?? null,
+			created_at_lt: input.timeWindow?.createdAtLt ?? null,
+		},
 	};
 }
 

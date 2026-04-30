@@ -25,6 +25,7 @@ describe("security dataset manifest", () => {
 			modelNames: ["gpt-5-mini"],
 			redactionPolicyVersion: "public-signals-v1",
 			sourceTables: ["skillVersions", "packageReleases"],
+			timeWindow: { createdAtGte: 1777507200000, createdAtLt: 1780185600000 },
 		});
 
 		expect(manifest).toMatchObject({
@@ -32,6 +33,10 @@ describe("security dataset manifest", () => {
 			source_commit: "abcdef123456",
 			convex_deployment: "amantus:clawdhub:prod",
 			convex_project: "clawdhub",
+			created_time_window: {
+				created_at_gte: 1777507200000,
+				created_at_lt: 1780185600000,
+			},
 		});
 	});
 
