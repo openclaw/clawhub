@@ -89,11 +89,22 @@ describe("clawscan skilltester eval", () => {
   });
 
   it("defaults to the private HF eval_holdout dataset", () => {
-    const parsed = parseArgs(["--mock", "--limit", "2"]);
+    const previous = process.env.CLAWHUB_SECURITY_EVAL_HF_DATASET;
+    process.env.CLAWHUB_SECURITY_EVAL_HF_DATASET = "example/private-dataset";
 
-    expect(parsed.corpusFile).toBeNull();
-    expect(parsed.hfDataset).toBe("OpenClaw/clawhub-security-signals-private");
-    expect(parsed.hfConfig).toBe("default");
+    try {
+      const parsed = parseArgs(["--mock", "--limit", "2"]);
+
+      expect(parsed.corpusFile).toBeNull();
+      expect(parsed.hfDataset).toBe("example/private-dataset");
+      expect(parsed.hfConfig).toBe("default");
+    } finally {
+      if (previous === undefined) {
+        delete process.env.CLAWHUB_SECURITY_EVAL_HF_DATASET;
+      } else {
+        process.env.CLAWHUB_SECURITY_EVAL_HF_DATASET = previous;
+      }
+    }
   });
 
   it("converts HF eval_holdout rows into eval corpus rows", () => {
@@ -159,7 +170,7 @@ describe("clawscan skilltester eval", () => {
 
     const report = await runComparison({
       corpusFile: "/unused/corpus.jsonl",
-      hfDataset: "OpenClaw/clawhub-security-signals-private",
+      hfDataset: "example/private-dataset",
       hfConfig: "default",
       outputDir: "/unused/results",
       cacheDir: "/unused/cache",
