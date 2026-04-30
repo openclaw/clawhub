@@ -360,6 +360,10 @@ Assign each finding to one of these risk_bucket values:
 
 Do not classify a skill as suspicious only because it uses files, commands, credentials, network access, memory, package installs, provider APIs, or external tools. Judge whether those behaviors are coherent with the stated purpose and clearly disclosed.
 
+Purpose alignment is necessary but not sufficient. Treat high-impact authority as a concern when the artifacts do not clearly bound user approval, scope, reversibility, or containment. This includes actions that can mutate user data, third-party accounts, local environments, devices, deployments, public outputs, or persistent agent state.
+
+Treat the artifact's declared capability and credential contract as important evidence. If SKILL.md introduces sensitive authority such as account credentials, tokens, cookies, browser/session state, privileged config, broad file/system access, or persistent state that is not declared or clearly bounded by metadata, install specs, or capability signals, prefer "concern" over "note". Do not downgrade this merely because the skill's overall purpose is legitimate.
+
 Every "note" or "concern" MUST cite artifact evidence with:
 - path: a provided artifact path such as "SKILL.md", "metadata", "install spec", or a file path
 - snippet: a short quote or snippet from that artifact
