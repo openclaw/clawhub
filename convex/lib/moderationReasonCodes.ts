@@ -12,7 +12,7 @@ export type ModerationFinding = {
   evidence: string;
 };
 
-export const MODERATION_ENGINE_VERSION = "v2.4.7";
+export const MODERATION_ENGINE_VERSION = "v2.4.8";
 
 export const REASON_CODES = {
   DANGEROUS_EXEC: "suspicious.dangerous_exec",
@@ -23,6 +23,7 @@ export const REASON_CODES = {
   UNSAFE_BROWSER_TEXT_INPUT: "suspicious.unsafe_browser_text_input",
   EXPOSED_SECRET_LITERAL: "suspicious.exposed_secret_literal",
   CREDENTIAL_EXPOSURE_INSTRUCTIONS: "suspicious.credential_exposure_instructions",
+  HOST_PLATFORM_SOURCE_PATCH: "suspicious.host_platform_source_patch",
   CREDENTIAL_HARVEST: "suspicious.env_credential_access",
   EXFILTRATION: "suspicious.potential_exfiltration",
   OBFUSCATED_CODE: "suspicious.obfuscated_code",

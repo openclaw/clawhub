@@ -88,6 +88,11 @@ const GIT_REMOTE_CREDENTIAL_URL_PATTERN =
   /\bgit\s+remote\s+set-url\b[^\n]*https?:\/\/[^\s"'`]*\$(?:\{)?[A-Z_][A-Z0-9_]*(?:TOKEN|PAT|SECRET|KEY)[A-Z0-9_]*(?:\})?[^\s"'`]*@/i;
 const MEMORY_CREDENTIAL_STORAGE_PATTERN =
   /\bsave\s+(?:it|the\s+(?:token|secret|credential|key|pat))\s+to\s+(?:your\s+)?(?:memory|conversation|chat)\b/i;
+const HOST_PLATFORM_SOURCE_CONTEXT_PATTERN =
+  /\$[{]?OPENCLAW_DIR[}]?.{0,200}\/src\/|\/src\/agents\/|\/src\/tools\//is;
+const HOST_PLATFORM_PATCH_COMMAND_PATTERN =
+  /\b(?:sed\s+-i|perl\s+-0?pi|cp\s+|cat\s+>|python3?\b.{0,120}(?:write|replace))/i;
+const HOST_PLATFORM_REBUILD_PATTERN = /\b(?:pnpm\s+build|npm\s+run\s+build|bun\s+run\s+build)\b/i;
 
 function hasMaliciousInstallPrompt(content: string) {
   const hasTerminalInstruction =
@@ -153,6 +158,20 @@ function findCredentialExposureInstruction(content: string) {
     ) {
       return { line: i + 1, text: line };
     }
+  }
+  return null;
+}
+
+function findHostPlatformSourcePatch(content: string) {
+  if (!HOST_PLATFORM_SOURCE_CONTEXT_PATTERN.test(content)) return null;
+  if (!HOST_PLATFORM_REBUILD_PATTERN.test(content)) return null;
+
+  const lines = content.split("\n");
+  for (let i = 0; i < lines.length; i += 1) {
+    const line = lines[i] ?? "";
+    if (!HOST_PLATFORM_PATCH_COMMAND_PATTERN.test(line)) continue;
+    if (hasNearbyConfirmationGate(lines, i)) continue;
+    return { line: i + 1, text: line };
   }
   return null;
 }
@@ -442,6 +461,18 @@ function scanCodeFile(
       line: unsafeBrowserTextInput.line,
       message: "Shell positional input is typed into browser automation without validation.",
       evidence: unsafeBrowserTextInput.text,
+    });
+  }
+
+  const hostPlatformSourcePatch = findHostPlatformSourcePatch(content);
+  if (hostPlatformSourcePatch) {
+    addFinding(findings, {
+      code: REASON_CODES.HOST_PLATFORM_SOURCE_PATCH,
+      severity: "critical",
+      file: path,
+      line: hostPlatformSourcePatch.line,
+      message: "Install code patches host platform source and rebuilds without confirmation.",
+      evidence: hostPlatformSourcePatch.text,
     });
   }
 
