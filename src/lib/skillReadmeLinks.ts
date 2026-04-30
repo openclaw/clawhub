@@ -18,9 +18,7 @@ function isMarkdownUrlNode(node: unknown): node is MarkdownUrlNode {
   if (!node || typeof node !== "object") return false;
   const maybeNode = node as { type?: unknown; url?: unknown };
   return (
-    (maybeNode.type === "definition" ||
-      maybeNode.type === "image" ||
-      maybeNode.type === "link") &&
+    (maybeNode.type === "definition" || maybeNode.type === "image" || maybeNode.type === "link") &&
     typeof maybeNode.url === "string"
   );
 }
@@ -63,10 +61,7 @@ function resolveReadmeRelativePath(readmePath: string, targetPath: string) {
   return [...baseDir, ...normalizedTargetPath.split("/")].filter(Boolean).join("/");
 }
 
-export function rewriteSkillReadmeMarkdownUrl(
-  reference: string,
-  options: SkillReadmeLinkOptions,
-) {
+export function rewriteSkillReadmeMarkdownUrl(reference: string, options: SkillReadmeLinkOptions) {
   const trimmed = reference.trim();
   if (!trimmed) return null;
   if (trimmed.startsWith("#")) return reference;

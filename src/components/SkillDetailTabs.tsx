@@ -4,10 +4,7 @@ import remarkGfm from "remark-gfm";
 import type { PluggableList } from "unified";
 import type { Doc, Id } from "../../convex/_generated/dataModel";
 import { rehypeProxyImages } from "../lib/rehypeProxyImages";
-import {
-  remarkSkillReadmeLinks,
-  sanitizeRenderedSkillReadmeUrl,
-} from "../lib/skillReadmeLinks";
+import { remarkSkillReadmeLinks, sanitizeRenderedSkillReadmeUrl } from "../lib/skillReadmeLinks";
 import { SkillVersionsPanel } from "./SkillVersionsPanel";
 
 const REHYPE_PLUGINS = [rehypeProxyImages];
@@ -57,10 +54,7 @@ export function SkillDetailTabs({
 }: SkillDetailTabsProps) {
   const compareEnabled = (versions?.length ?? 0) > 1;
   const readmeRemarkPlugins = useMemo<PluggableList>(
-    () => [
-      remarkGfm,
-      [remarkSkillReadmeLinks, { readmePath: "SKILL.md", skillSlug: skill.slug }],
-    ],
+    () => [remarkGfm, [remarkSkillReadmeLinks, { readmePath: "SKILL.md", skillSlug: skill.slug }]],
     [skill.slug],
   );
 

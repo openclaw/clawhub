@@ -48,12 +48,8 @@ describe("SkillDetailTabs README markdown links", () => {
     const link = container.querySelector("a");
     const image = container.querySelector("img");
 
-    expect(link?.getAttribute("href")).toBe(
-      "/api/v1/skills/demo-skill/file?path=docs%2Fusage.md",
-    );
-    expect(image?.getAttribute("src")).toBe(
-      "/api/v1/skills/demo-skill/file?path=img%2Flogo.png",
-    );
+    expect(link?.getAttribute("href")).toBe("/api/v1/skills/demo-skill/file?path=docs%2Fusage.md");
+    expect(image?.getAttribute("src")).toBe("/api/v1/skills/demo-skill/file?path=img%2Flogo.png");
   });
 
   it("preserves safe non-file references and sanitizes traversal", () => {

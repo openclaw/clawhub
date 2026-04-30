@@ -1,8 +1,5 @@
 import { describe, expect, it } from "vitest";
-import {
-  rewriteSkillReadmeMarkdownUrl,
-  sanitizeRenderedSkillReadmeUrl,
-} from "./skillReadmeLinks";
+import { rewriteSkillReadmeMarkdownUrl, sanitizeRenderedSkillReadmeUrl } from "./skillReadmeLinks";
 
 const options = { readmePath: "SKILL.md", skillSlug: "demo-skill" };
 
@@ -38,9 +35,7 @@ describe("rewriteSkillReadmeMarkdownUrl", () => {
     expect(rewriteSkillReadmeMarkdownUrl("mailto:security@example.com", options)).toBe(
       "mailto:security@example.com",
     );
-    expect(rewriteSkillReadmeMarkdownUrl("tel:+15555550100", options)).toBe(
-      "tel:+15555550100",
-    );
+    expect(rewriteSkillReadmeMarkdownUrl("tel:+15555550100", options)).toBe("tel:+15555550100");
     expect(rewriteSkillReadmeMarkdownUrl("#usage", options)).toBe("#usage");
   });
 
