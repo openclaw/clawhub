@@ -32,6 +32,7 @@ export const REASON_CODES = {
   MANIFEST_PRIVILEGED_ALWAYS: "suspicious.privileged_always",
   MALICIOUS_INSTALL_PROMPT: "malicious.install_terminal_payload",
   KNOWN_BLOCKED_SIGNATURE: "malicious.known_blocked_signature",
+  DEP_NOT_FOUND: "suspicious.dep_not_found_on_registry",
 } as const;
 
 const MALICIOUS_CODES = new Set<string>([

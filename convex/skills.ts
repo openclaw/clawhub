@@ -26,6 +26,7 @@ import {
 import { getSkillBadgeMap, getSkillBadgeMaps, isSkillHighlighted } from "./lib/badges";
 import { scheduleNextBatchIfNeeded } from "./lib/batching";
 import { generateChangelogPreview as buildChangelogPreview } from "./lib/changelog";
+import { mergeDepRegistryFinding } from "./lib/depRegistryScan";
 import { embeddingVisibilityFor } from "./lib/embeddingVisibility";
 import {
   canHealSkillOwnershipByGitHubProviderAccountId,
@@ -158,6 +159,31 @@ const vtAnalysisValidator = v.object({
   source: v.optional(v.string()),
   scanner: v.optional(v.string()),
   engineStats: v.optional(vtEngineStatsValidator),
+  checkedAt: v.number(),
+});
+
+const depRegistryStatusValidator = v.union(
+  v.literal("clean"),
+  v.literal("suspicious"),
+  v.literal("error"),
+);
+
+const depRegistryValidator = v.union(v.literal("pypi"), v.literal("npm"), v.literal("cargo"));
+
+const depRegistryAnalysisValidator = v.object({
+  status: depRegistryStatusValidator,
+  results: v.array(
+    v.object({
+      name: v.string(),
+      registry: depRegistryValidator,
+      source: v.string(),
+      exists: v.boolean(),
+      httpStatus: v.optional(v.number()),
+    }),
+  ),
+  notFoundPackages: v.array(v.string()),
+  unresolvedPackages: v.array(v.string()),
+  summary: v.string(),
   checkedAt: v.number(),
 });
 
@@ -4056,6 +4082,41 @@ export const updateSkillVersionStaticScanInternal = internalMutation({
     }
 
     return { ok: true as const, status: args.staticScan.status };
+  },
+});
+
+export const updateVersionDepRegistryAnalysisInternal = internalMutation({
+  args: {
+    versionId: v.id("skillVersions"),
+    depRegistryAnalysis: depRegistryAnalysisValidator,
+  },
+  handler: async (ctx, args) => {
+    const version = await ctx.db.get(args.versionId);
+    if (!version) return { ok: true as const, skipped: "missing" as const };
+
+    const staticScan = mergeDepRegistryFinding({
+      staticScan: version.staticScan,
+      analysis: args.depRegistryAnalysis,
+      statusFromCodes: verdictFromCodes,
+      summarizeCodes: summarizeReasonCodes,
+    });
+    const versionPatch = {
+      depRegistryAnalysis: args.depRegistryAnalysis,
+      depRegistryScanStatus: args.depRegistryAnalysis.status,
+      staticScan,
+    };
+
+    await ctx.db.patch(version._id, versionPatch);
+    const updatedVersion = { ...version, ...versionPatch };
+
+    const skill = await ctx.db.get(version.skillId);
+    if (!skill) return { ok: true as const, skipped: "missing_skill" as const };
+    if (skill.latestVersionId !== version._id) {
+      return { ok: true as const, skipped: "not_latest" as const };
+    }
+
+    await patchStructuredModerationFromVersion(ctx, skill, updatedVersion);
+    return { ok: true as const, status: args.depRegistryAnalysis.status };
   },
 });
 

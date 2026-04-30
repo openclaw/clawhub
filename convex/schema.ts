@@ -29,6 +29,31 @@ const vtAnalysisValidator = v.object({
   checkedAt: v.number(),
 });
 
+const depRegistryStatusValidator = v.union(
+  v.literal("clean"),
+  v.literal("suspicious"),
+  v.literal("error"),
+);
+
+const depRegistryValidator = v.union(v.literal("pypi"), v.literal("npm"), v.literal("cargo"));
+
+const depRegistryAnalysisValidator = v.object({
+  status: depRegistryStatusValidator,
+  results: v.array(
+    v.object({
+      name: v.string(),
+      registry: depRegistryValidator,
+      source: v.string(),
+      exists: v.boolean(),
+      httpStatus: v.optional(v.number()),
+    }),
+  ),
+  notFoundPackages: v.array(v.string()),
+  unresolvedPackages: v.array(v.string()),
+  summary: v.string(),
+  checkedAt: v.number(),
+});
+
 const users = defineTable({
   name: v.optional(v.string()),
   image: v.optional(v.string()),
@@ -470,6 +495,8 @@ const skillVersions = defineTable({
     }),
   ),
   capabilityTags: v.optional(v.array(v.string())),
+  depRegistryAnalysis: v.optional(depRegistryAnalysisValidator),
+  depRegistryScanStatus: v.optional(depRegistryStatusValidator),
   staticScan: v.optional(
     v.object({
       status: v.union(v.literal("clean"), v.literal("suspicious"), v.literal("malicious")),
@@ -493,7 +520,16 @@ const skillVersions = defineTable({
   .index("by_skill", ["skillId"])
   .index("by_skill_version", ["skillId", "version"])
   .index("by_active_created", ["softDeletedAt", "createdAt"])
-  .index("by_sha256hash", ["sha256hash"]);
+  .index("by_sha256hash", ["sha256hash"])
+  .index("by_dep_registry_scan_status_and_created", ["depRegistryScanStatus", "createdAt"]);
+
+const depRegistryCache = defineTable({
+  registry: depRegistryValidator,
+  name: v.string(),
+  exists: v.boolean(),
+  httpStatus: v.number(),
+  checkedAt: v.number(),
+}).index("by_registry_name", ["registry", "name"]);
 
 const soulVersions = defineTable({
   soulId: v.id("souls"),
@@ -1374,6 +1410,7 @@ export default defineSchema({
   packageCapabilitySearchDigest,
   souls,
   skillVersions,
+  depRegistryCache,
   soulVersions,
   skillVersionFingerprints,
   skillBadges,
