@@ -72,22 +72,22 @@ Use `requires.env` for environment variables that must be present before the ski
 
 ### Full field reference
 
-| Field              | Type       | Description                                                     |
-| ------------------ | ---------- | --------------------------------------------------------------- |
-| `requires.env`     | `string[]` | Required environment variables your skill expects.              |
-| `requires.bins`    | `string[]` | CLI binaries that must all be installed.                        |
-| `requires.anyBins` | `string[]` | CLI binaries where at least one must exist.                     |
-| `requires.config`  | `string[]` | Config file paths your skill reads.                             |
-| `primaryEnv`       | `string`   | The main credential env var for your skill.                     |
+| Field              | Type       | Description                                                                                                                                  |
+| ------------------ | ---------- | -------------------------------------------------------------------------------------------------------------------------------------------- |
+| `requires.env`     | `string[]` | Required environment variables your skill expects.                                                                                           |
+| `requires.bins`    | `string[]` | CLI binaries that must all be installed.                                                                                                     |
+| `requires.anyBins` | `string[]` | CLI binaries where at least one must exist.                                                                                                  |
+| `requires.config`  | `string[]` | Config file paths your skill reads.                                                                                                          |
+| `primaryEnv`       | `string`   | The main credential env var for your skill.                                                                                                  |
 | `envVars`          | `array`    | Environment variable declarations with `name`, optional `required`, and optional `description`. Set `required: false` for optional env vars. |
-| `always`           | `boolean`  | If `true`, skill is always active (no explicit install needed). |
-| `skillKey`         | `string`   | Override the skill's invocation key.                            |
-| `emoji`            | `string`   | Display emoji for the skill.                                    |
-| `homepage`         | `string`   | URL to the skill's homepage or docs.                            |
-| `os`               | `string[]` | OS restrictions (e.g. `["macos"]`, `["linux"]`).                |
-| `install`          | `array`    | Install specs for dependencies (see below).                     |
-| `nix`              | `object`   | Nix plugin spec (see README).                                   |
-| `config`           | `object`   | Clawdbot config spec (see README).                              |
+| `always`           | `boolean`  | If `true`, skill is always active (no explicit install needed).                                                                              |
+| `skillKey`         | `string`   | Override the skill's invocation key.                                                                                                         |
+| `emoji`            | `string`   | Display emoji for the skill.                                                                                                                 |
+| `homepage`         | `string`   | URL to the skill's homepage or docs.                                                                                                         |
+| `os`               | `string[]` | OS restrictions (e.g. `["macos"]`, `["linux"]`).                                                                                             |
+| `install`          | `array`    | Install specs for dependencies (see below).                                                                                                  |
+| `nix`              | `object`   | Nix plugin spec (see README).                                                                                                                |
+| `config`           | `object`   | Clawdbot config spec (see README).                                                                                                           |
 
 ### Install specs
 
