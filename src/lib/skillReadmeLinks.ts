@@ -58,7 +58,7 @@ function resolveReadmeRelativePath(readmePath: string, targetPath: string) {
   if (!normalizedReadmePath || !normalizedTargetPath) return null;
 
   const baseDir = normalizedReadmePath.split("/").slice(0, -1);
-  return [...baseDir, ...normalizedTargetPath.split("/")].filter(Boolean).join("/");
+  return baseDir.concat(normalizedTargetPath.split("/")).filter(Boolean).join("/");
 }
 
 export function rewriteSkillReadmeMarkdownUrl(reference: string, options: SkillReadmeLinkOptions) {
