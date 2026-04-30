@@ -8,7 +8,9 @@ import {
   scheduleGitHubBackupDeletionForSkill,
   scheduleOwnerPublisherDigestSync,
   syncPackageSearchDigestForPackageId,
+  syncPackageSearchDigestsForOwnerPublisherId,
   syncPackageSearchDigestsForOwnerUserId,
+  syncSkillSearchDigestsForOwnerPublisherId,
 } from "./functions";
 
 describe("package digest sync", () => {
@@ -593,5 +595,69 @@ describe("publisher digest scheduling", () => {
     await expect(
       scheduleOwnerPublisherDigestSync({} as never, "publishers:demo" as never),
     ).resolves.toBeUndefined();
+  });
+
+  it("continues owner-publisher package digest sync one page at a time", async () => {
+    const paginate = vi.fn().mockResolvedValue({
+      page: [],
+      isDone: false,
+      continueCursor: "next-packages",
+    });
+    const ctx = {
+      db: {
+        query: vi.fn(() => ({
+          withIndex: vi.fn(() => ({ paginate })),
+        })),
+      },
+      scheduler: {
+        runAfter: vi.fn().mockResolvedValue(undefined),
+      },
+    };
+
+    await syncPackageSearchDigestsForOwnerPublisherId(
+      ctx as never,
+      "publishers:demo" as never,
+      "current-packages",
+    );
+
+    expect(paginate).toHaveBeenCalledTimes(1);
+    expect(paginate).toHaveBeenCalledWith({ cursor: "current-packages", numItems: 100 });
+    expect(ctx.scheduler.runAfter).toHaveBeenCalledWith(
+      0,
+      internal.functions.syncPackageSearchDigestsForOwnerPublisherIdInternal,
+      { ownerPublisherId: "publishers:demo", cursor: "next-packages" },
+    );
+  });
+
+  it("continues owner-publisher skill digest sync one page at a time", async () => {
+    const paginate = vi.fn().mockResolvedValue({
+      page: [],
+      isDone: false,
+      continueCursor: "next-skills",
+    });
+    const ctx = {
+      db: {
+        query: vi.fn(() => ({
+          withIndex: vi.fn(() => ({ paginate })),
+        })),
+      },
+      scheduler: {
+        runAfter: vi.fn().mockResolvedValue(undefined),
+      },
+    };
+
+    await syncSkillSearchDigestsForOwnerPublisherId(
+      ctx as never,
+      "publishers:demo" as never,
+      "current-skills",
+    );
+
+    expect(paginate).toHaveBeenCalledTimes(1);
+    expect(paginate).toHaveBeenCalledWith({ cursor: "current-skills", numItems: 100 });
+    expect(ctx.scheduler.runAfter).toHaveBeenCalledWith(
+      0,
+      internal.functions.syncSkillSearchDigestsForOwnerPublisherIdInternal,
+      { ownerPublisherId: "publishers:demo", cursor: "next-skills" },
+    );
   });
 });

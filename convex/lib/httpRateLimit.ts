@@ -222,9 +222,7 @@ function normalizeRateLimitKeyPart(value: string) {
 }
 
 function shouldTrustForwardedIps() {
-  const value = String(process.env.TRUST_FORWARDED_IPS ?? "")
-    .trim()
-    .toLowerCase();
+  const value = (process.env.TRUST_FORWARDED_IPS ?? "").trim().toLowerCase();
   // Hardening default: CF-only. Forwarded headers are trivial to spoof unless you
   // control the trusted proxy layer.
   if (!value) return false;
