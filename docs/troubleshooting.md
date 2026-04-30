@@ -27,6 +27,7 @@ read_when:
 - The CLI now includes retry hints in 429 errors (retry delay + remaining budget).
 - If many users share one egress IP (NAT/proxy), IP limit can be hit even with valid tokens.
 - For non-Cloudflare deploys behind trusted proxies, set `TRUST_FORWARDED_IPS=true` so forwarded client IPs can be used.
+- If no trusted client IP reaches ClawHub, anonymous downloads use endpoint-scoped fallback buckets, but search and write requests intentionally stay on the shared unknown-IP bucket until proxy headers are fixed.
 
 ## `search` / `install` fails with `fetch failed` behind a proxy
 

@@ -167,4 +167,5 @@ Proxy/IP caveat:
 
 - Default IP source is `cf-connecting-ip`.
 - For non-Cloudflare trusted proxy setups, set `TRUST_FORWARDED_IPS=true`.
+- If a trusted client IP is missing, anonymous downloads fall back to endpoint-scoped buckets to avoid unrelated packages sharing one `ip:unknown` download bucket.
 - If proxy headers are not forwarded/trusted correctly, multiple users may collapse into one IP and hit false-positive rate limits.
