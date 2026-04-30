@@ -79,7 +79,7 @@ const DESTRUCTIVE_DELETE_PATTERN =
 const SHELL_POSITIONAL_ASSIGNMENT_PATTERN =
   /^\s*([A-Z_][A-Z0-9_]*)=(["']?)\$(?:[1-9][0-9]*|@|\*)\2\s*(?:#.*)?$/gm;
 const SECRET_ASSIGNMENT_PATTERN =
-  /\b(?:api[_\s-]?(?:secret|key)|secret[_\s-]?key|access[_\s-]?token|auth[_\s-]?token|bearer[_\s-]?token|password)\b\s*[:=]\s*["'`]?([A-Za-z0-9][A-Za-z0-9._~+/=-]{15,})["'`]?/i;
+  /\b(?:[A-Za-z0-9]+[_\s-]+)*(?:(?:api|client|consumer)[_\s-]?(?:secret|key)|secret[_\s-]?key|access[_\s-]?(?:token|key|secret|grant)|auth[_\s-]?token|bearer[_\s-]?token|private[_\s-]?key|service[_\s-]?role[_\s-]?key|github[_\s-]?(?:pat|token)|password)\b\s*[:=]\s*["'`]?([A-Za-z0-9][A-Za-z0-9._~+/=-]{15,})["'`]?/i;
 const AUTH_HEADER_SECRET_PATTERN =
   /\b(?:authorization|x-api-key|x-api-secret)\b\s*[:=]\s*(?:Bearer\s+)?["'`]?([A-Za-z0-9][A-Za-z0-9._~+/=-]{15,})["'`]?/i;
 
@@ -136,6 +136,20 @@ function findHardcodedSecret(content: string) {
   return null;
 }
 
+function scanSecretLiteralFile(path: string, content: string, findings: ModerationFinding[]) {
+  const secretMatch = findHardcodedSecret(content);
+  if (!secretMatch) return;
+
+  addFinding(findings, {
+    code: REASON_CODES.EXPOSED_SECRET_LITERAL,
+    severity: "critical",
+    file: path,
+    line: secretMatch.line,
+    message: "File appears to expose a hardcoded API secret or token.",
+    evidence: secretMatch.text,
+  });
+}
+
 function hasNearbyConfirmationGate(lines: string[], commandIndex: number) {
   const start = Math.max(0, commandIndex - 8);
   const context = lines.slice(start, commandIndex + 1).join("\n");
@@ -163,7 +177,10 @@ function hasShellVariableValidation(content: string, variable: string, useIndex:
   const escaped = variable.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
   const beforeUse = content.slice(0, useIndex);
   const variableReference = String.raw`(?:\$\{${escaped}\}|\$${escaped})`;
-  const lengthCheck = new RegExp(String.raw`\$\{#${escaped}\}\s*(?:-[a-z]\s+)?(?:[<>!=]=?|-[gl][te])`, "m");
+  const lengthCheck = new RegExp(
+    String.raw`\$\{#${escaped}\}\s*(?:-[a-z]\s+)?(?:[<>!=]=?|-[gl][te])`,
+    "m",
+  );
   const controlCharStrip = new RegExp(
     String.raw`(?:tr\s+-d\s+["']?\\(?:000|x00).{0,80}\\(?:037|x1[fF]|177|x7[fF])|${escaped}\s*=.*tr\s+-d)`,
     "s",
@@ -173,7 +190,11 @@ function hasShellVariableValidation(content: string, variable: string, useIndex:
     "is",
   );
 
-  return lengthCheck.test(beforeUse) || controlCharStrip.test(beforeUse) || explicitValidation.test(beforeUse);
+  return (
+    lengthCheck.test(beforeUse) ||
+    controlCharStrip.test(beforeUse) ||
+    explicitValidation.test(beforeUse)
+  );
 }
 
 function findUnsafeBrowserTextInput(content: string) {
@@ -311,7 +332,10 @@ function addDeclaredEnvNamesFromList(names: Set<string>, value: unknown) {
   }
 }
 
-function collectDeclaredEnvNames(input: { frontmatter: Record<string, unknown>; metadata?: unknown }) {
+function collectDeclaredEnvNames(input: {
+  frontmatter: Record<string, unknown>;
+  metadata?: unknown;
+}) {
   const names = new Set<string>();
   const sources: unknown[] = [input.frontmatter, input.metadata];
 
@@ -482,18 +506,6 @@ function scanCodeFile(
 function scanMarkdownFile(path: string, content: string, findings: ModerationFinding[]) {
   if (!MARKDOWN_EXTENSION.test(path)) return;
 
-  const secretMatch = findHardcodedSecret(content);
-  if (secretMatch) {
-    addFinding(findings, {
-      code: REASON_CODES.EXPOSED_SECRET_LITERAL,
-      severity: "critical",
-      file: path,
-      line: secretMatch.line,
-      message: "Documentation appears to expose a hardcoded API secret or token.",
-      evidence: secretMatch.text,
-    });
-  }
-
   if (hasMaliciousInstallPrompt(content)) {
     const match = findFirstLine(
       content,
@@ -516,7 +528,8 @@ function scanMarkdownFile(path: string, content: string, findings: ModerationFin
       severity: "warn",
       file: path,
       line: destructiveDelete.line,
-      message: "Documentation contains a destructive delete command without an explicit confirmation gate.",
+      message:
+        "Documentation contains a destructive delete command without an explicit confirmation gate.",
       evidence: destructiveDelete.text,
     });
   }
@@ -592,7 +605,8 @@ function scanMarkdownFile(path: string, content: string, findings: ModerationFin
       severity: "critical",
       file: path,
       line: match.line,
-      message: "Example code exposes a concrete Google Sheets spreadsheet ID instead of a placeholder.",
+      message:
+        "Example code exposes a concrete Google Sheets spreadsheet ID instead of a placeholder.",
       evidence: match.text,
     });
     break;
@@ -679,6 +693,7 @@ export function runStaticModerationScan(input: StaticScanInput): StaticScanResul
   const declaredEnvNames = collectDeclaredEnvNames(input);
 
   for (const file of files) {
+    scanSecretLiteralFile(file.path, file.content, findings);
     scanCodeFile(file.path, file.content, findings, declaredEnvNames);
     scanMarkdownFile(file.path, file.content, findings);
     scanManifestFile(file.path, file.content, findings);

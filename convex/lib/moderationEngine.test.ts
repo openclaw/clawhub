@@ -50,6 +50,52 @@ describe("moderationEngine", () => {
     expect(result.findings[0]?.evidence).not.toContain(exposedSecret);
   });
 
+  it("flags hardcoded service credentials in code and text files", () => {
+    const openRouterKey = "sk-or-v1-abcdefghijklmnopqrstuvwxyz1234567890";
+    const storjAccessGrant = "1AbCdEfGhIjKlMnOpQrStUvWxYz0123456789+/=";
+    const result = runStaticModerationScan({
+      slug: "storj-agent",
+      displayName: "Storj Agent",
+      summary: "Upload files and post Twitter updates",
+      frontmatter: {},
+      metadata: {
+        requires: {
+          env: ["OPENROUTER_API_KEY", "STORJ_ACCESS_GRANT"],
+        },
+      },
+      files: [
+        { path: "mainapp.py", size: 256 },
+        { path: "twitterdata.txt", size: 128 },
+      ],
+      fileContents: [
+        {
+          path: "mainapp.py",
+          content: [
+            `OPENROUTER_API_KEY = "${openRouterKey}"`,
+            "SUPABASE_SERVICE_ROLE_KEY = os.environ['SUPABASE_SERVICE_ROLE_KEY']",
+          ].join("\n"),
+        },
+        {
+          path: "twitterdata.txt",
+          content: `STORJ_ACCESS_GRANT=${storjAccessGrant}`,
+        },
+      ],
+    });
+
+    expect(result.reasonCodes).toContain("suspicious.exposed_secret_literal");
+    expect(result.status).toBe("suspicious");
+    expect(result.findings.map((finding) => finding.file)).toEqual([
+      "mainapp.py",
+      "twitterdata.txt",
+    ]);
+    expect(result.findings.map((finding) => finding.evidence).join("\n")).not.toContain(
+      openRouterKey,
+    );
+    expect(result.findings.map((finding) => finding.evidence).join("\n")).not.toContain(
+      storjAccessGrant,
+    );
+  });
+
   it("does not flag placeholder or env-var secret examples", () => {
     const result = runStaticModerationScan({
       slug: "demo",
@@ -126,7 +172,7 @@ describe("moderationEngine", () => {
             'const scriptPath = path.join(__dirname, "init.py");',
             'execFileSync("python3", [scriptPath, ...args], {',
             '  encoding: "utf-8",',
-            '  timeout: 15000,',
+            "  timeout: 15000,",
             "});",
           ].join("\n"),
         },
