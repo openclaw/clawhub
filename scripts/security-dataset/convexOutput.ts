@@ -1,5 +1,5 @@
 export function parseConvexJson(output: string): unknown {
-	return parseConvexJsonMatching(output, () => true);
+	return parseConvexJsonMatching(output, isJsonValue);
 }
 
 export function parseConvexJsonMatching<T>(
@@ -22,6 +22,10 @@ export function parseConvexJsonMatching<T>(
 	}
 
 	throw new Error(`Unable to parse matching Convex JSON output (${output.length} bytes)`);
+}
+
+function isJsonValue(value: unknown): value is unknown {
+	return value !== undefined;
 }
 
 function findJsonValueEnd(output: string, start: number) {
