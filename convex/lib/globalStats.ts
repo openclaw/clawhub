@@ -11,7 +11,9 @@ type SkillVisibilityFields = Pick<
 type GlobalStatsReadCtx = Pick<MutationCtx | QueryCtx, "db">;
 type GlobalStatsWriteCtx = Pick<MutationCtx, "db">;
 
-export function isPublicSkillDoc(skill: SkillVisibilityFields | null | undefined) {
+export function isPublicSkillDoc<T extends SkillVisibilityFields>(
+  skill: T | null | undefined,
+): skill is T {
   if (!skill || skill.softDeletedAt) return false;
   if (skill.moderationStatus && skill.moderationStatus !== "active") return false;
   if (skill.moderationFlags?.includes("blocked.malware")) return false;
