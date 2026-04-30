@@ -86,6 +86,38 @@ const {
 const { rm, stat } = fsPromises;
 
 const mockLog = vi.spyOn(console, "log").mockImplementation(() => {});
+const trentHash = "a".repeat(64);
+
+function makeSkillMeta() {
+  return {
+    skill: {
+      slug: "demo",
+      displayName: "Demo",
+      summary: null,
+      tags: {},
+      stats: {},
+      createdAt: 0,
+      updatedAt: 0,
+    },
+    latestVersion: { version: "1.0.0" },
+    owner: null,
+    moderation: null,
+  };
+}
+
+function makeScanResponse(hash: string | null = trentHash) {
+  return {
+    skill: { slug: "demo", displayName: "Demo" },
+    version: { version: "1.0.0" },
+    moderation: null,
+    security: hash
+      ? {
+          sha256hash: hash,
+          scanners: {},
+        }
+      : null,
+  };
+}
 
 function makeOpts() {
   return makeGlobalOpts();
@@ -95,6 +127,8 @@ beforeEach(() => {
   mkdirMock.mockResolvedValue(undefined);
   rmMock.mockResolvedValue(undefined);
   statMock.mockRejectedValue(new Error("missing"));
+  mockIsInteractive.mockReturnValue(false);
+  mockPromptConfirm.mockResolvedValue(false);
   extractZipToDirMock.mockResolvedValue(undefined);
   hashSkillFilesMock.mockReturnValue({ fingerprint: "hash", files: [] });
   listTextFilesMock.mockResolvedValue([]);
@@ -275,6 +309,27 @@ describe("cmdUpdate", () => {
     expect(args?.path).toBe(`${ApiRoutes.skills}/${encodeURIComponent("demo")}`);
     expect(args?.url).toBeUndefined();
   });
+
+  it("skips an update when TrentClaw reports a vulnerable skill and the prompt is declined", async () => {
+    mockApiRequest
+      .mockResolvedValueOnce(makeSkillMeta())
+      .mockResolvedValueOnce(makeScanResponse())
+      .mockResolvedValueOnce({ skill_sha256: trentHash, verdict: "vulnerable" });
+    vi.mocked(readLockfile).mockResolvedValue({
+      version: 1,
+      skills: { demo: { version: "0.1.0", installedAt: 123 } },
+    });
+    mockIsInteractive.mockReturnValue(true);
+    mockPromptConfirm.mockResolvedValue(false);
+
+    await cmdUpdate(makeOpts(), "demo", {}, true);
+
+    expect(mockLog).toHaveBeenCalledWith(expect.stringContaining("Trent.AI"));
+    expect(mockPromptConfirm).toHaveBeenCalledWith("Update anyway?");
+    expect(mockLog).toHaveBeenCalledWith("demo: skipped");
+    expect(rm).not.toHaveBeenCalled();
+    expect(mockDownloadZip).not.toHaveBeenCalled();
+  });
 });
 
 describe("cmdInstall", () => {
@@ -308,6 +363,36 @@ describe("cmdInstall", () => {
     expect(requestArgs?.token).toBe("tkn");
     const [, zipArgs] = mockDownloadZip.mock.calls[0] ?? [];
     expect(zipArgs?.token).toBe("tkn");
+  });
+
+  it("requires confirmation before installing a TrentClaw vulnerable skill", async () => {
+    mockApiRequest
+      .mockResolvedValueOnce(makeSkillMeta())
+      .mockResolvedValueOnce(makeScanResponse())
+      .mockResolvedValueOnce({ skill_sha256: trentHash, verdict: "vulnerable" });
+    mockIsInteractive.mockReturnValue(true);
+    mockPromptConfirm.mockResolvedValue(false);
+
+    await expect(cmdInstall(makeOpts(), "demo")).rejects.toThrow(/cancelled/i);
+
+    expect(mockLog).toHaveBeenCalledWith(expect.stringContaining("Trent.AI"));
+    expect(mockLog).toHaveBeenCalledWith(expect.stringContaining("security vulnerabilities"));
+    expect(mockPromptConfirm).toHaveBeenCalledWith("Install anyway?");
+    expect(mockDownloadZip).not.toHaveBeenCalled();
+    expect(rm).not.toHaveBeenCalled();
+  });
+
+  it("requires --force for a TrentClaw malicious skill in non-interactive mode", async () => {
+    mockApiRequest
+      .mockResolvedValueOnce(makeSkillMeta())
+      .mockResolvedValueOnce(makeScanResponse())
+      .mockResolvedValueOnce({ skill_sha256: trentHash, verdict: "malicious" });
+
+    await expect(cmdInstall(makeOpts(), "demo")).rejects.toThrow(/--force/i);
+
+    expect(mockPromptConfirm).not.toHaveBeenCalled();
+    expect(mockDownloadZip).not.toHaveBeenCalled();
+    expect(rm).not.toHaveBeenCalled();
   });
 
   it("does not rm local directory when skill is malware-blocked (--force)", async () => {

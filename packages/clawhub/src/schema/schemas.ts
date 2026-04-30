@@ -264,6 +264,24 @@ export const ApiV1SkillResolveResponseSchema = type({
   latestVersion: type({ version: "string" }).or("null"),
 });
 
+export const ApiV1SkillScanResponseSchema = type({
+  skill: "unknown?",
+  version: "unknown?",
+  moderation: "unknown?",
+  security: type({
+    sha256hash: "string|null",
+    scanners: "unknown",
+  })
+    .or("null")
+    .optional(),
+});
+
+export const TrentSkillVerdictResponseSchema = type({
+  skill_sha256: "string",
+  verdict: '"benign"|"vulnerable"|"malicious"|"unknown"',
+});
+export type TrentSkillVerdictResponse = (typeof TrentSkillVerdictResponseSchema)[inferred];
+
 export const ApiV1PublishResponseSchema = type({
   ok: "true",
   skillId: "string",

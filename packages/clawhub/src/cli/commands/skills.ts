@@ -22,6 +22,13 @@ import {
 } from "../../skills.js";
 import { getOptionalAuthToken } from "../authToken.js";
 import { getRegistry } from "../registry.js";
+import {
+  fetchSkillSha256ForVersion,
+  fetchTrentSkillVerdict,
+  formatTrentWarning,
+  trentVerdictNeedsConfirmation,
+  type TrentVerdict,
+} from "../trent.js";
 import type { GlobalOpts, ResolveResult } from "../types.js";
 import { createSpinner, fail, formatError, isInteractive, promptConfirm } from "../ui.js";
 
@@ -133,6 +140,25 @@ export async function cmdInstall(
         },
         ApiV1SkillVersionResponseSchema,
       );
+    }
+
+    spinner.text = `Checking TrentClaw verdict for ${trimmed}@${resolvedVersion}`;
+    const trentVerdict = await getTrentVerdictForSkillVersion(
+      registry,
+      trimmed,
+      resolvedVersion,
+      token,
+    );
+    if (trentVerdictNeedsConfirmation(trentVerdict) && !force) {
+      spinner.stop();
+      console.log(formatTrentWarning(trimmed, trentVerdict));
+      if (isInteractive()) {
+        const confirm = await promptConfirm("Install anyway?");
+        if (!confirm) fail("Installation cancelled");
+        spinner.start(`Resolving ${trimmed}`);
+      } else {
+        fail("Use --force to install skills flagged by TrentClaw in non-interactive mode");
+      }
     }
 
     if (force) {
@@ -283,6 +309,33 @@ export async function cmdUpdate(
       } else if (matched && semver.valid(matched) && semver.gte(matched, targetVersion)) {
         spinner.succeed(`${entry}: up to date (${matched})`);
         continue;
+      }
+
+      if (spinner.isSpinning) {
+        spinner.text = `Checking TrentClaw verdict for ${entry}@${targetVersion}`;
+      } else {
+        spinner.start(`Checking TrentClaw verdict for ${entry}@${targetVersion}`);
+      }
+      const trentVerdict = await getTrentVerdictForSkillVersion(
+        registry,
+        entry,
+        targetVersion,
+        token,
+      );
+      if (trentVerdictNeedsConfirmation(trentVerdict) && !options.force) {
+        spinner.stop();
+        console.log(formatTrentWarning(entry, trentVerdict));
+        if (allowPrompt) {
+          const confirm = await promptConfirm("Update anyway?");
+          if (!confirm) {
+            console.log(`${entry}: skipped`);
+            continue;
+          }
+          spinner.start(`Updating ${entry} -> ${targetVersion}`);
+        } else {
+          console.log(`${entry}: skipped (use --force to update skills flagged by TrentClaw)`);
+          continue;
+        }
       }
 
       if (spinner.isSpinning) {
@@ -509,6 +562,21 @@ async function resolveSkillVersion(registry: string, slug: string, hash: string,
     { method: "GET", url: url.toString(), token },
     ApiV1SkillResolveResponseSchema,
   );
+}
+
+async function getTrentVerdictForSkillVersion(
+  registry: string,
+  slug: string,
+  version: string,
+  token?: string,
+): Promise<TrentVerdict | null> {
+  try {
+    const skillSha256 = await fetchSkillSha256ForVersion(registry, slug, version, token);
+    if (!skillSha256) return null;
+    return await fetchTrentSkillVerdict(skillSha256);
+  } catch {
+    return null;
+  }
 }
 
 async function fileExists(path: string) {
