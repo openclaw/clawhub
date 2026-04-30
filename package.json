@@ -12,6 +12,7 @@
 		"check:secrets": "bun scripts/check-staged-secrets.mjs",
 		"convex:deploy": "bunx convex deploy --typecheck=disable --yes",
 		"coverage": "vitest run --coverage",
+		"dataset:eval": "bun scripts/security-dataset/run-eval.ts",
 		"dataset:snapshot": "bun scripts/security-dataset/export-snapshot.ts",
 		"dataset:snapshot:prod:dry-run": "bun scripts/security-dataset/export-snapshot.ts --prod --limit 10 --dry-run",
 		"dev": "bun --bun vite dev --port 3000",
