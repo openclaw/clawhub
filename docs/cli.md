@@ -94,13 +94,16 @@ Stores your API token + cached registry URL.
 ### `search <query...>`
 
 - Calls `/api/v1/search?q=...`.
+- Search favors exact slug/name token matches before download popularity. A standalone slug token such as `map` matches `personal-map` more strongly than the substring inside `amap`.
+- Downloads are a small popularity prior, not a guarantee of top placement.
+- If a skill should appear but does not, run `clawhub inspect <slug>` while logged in to check owner-visible moderation diagnostics before renaming metadata.
 
 ### `explore`
 
-- Lists latest updated skills via `/api/v1/skills?limit=...` (sorted by `updatedAt` desc).
+- Lists newest skills via `/api/v1/skills?limit=...&sort=createdAt` (sorted by `createdAt` desc).
 - Flags:
   - `--limit <n>` (1-200, default: 25)
-  - `--sort newest|downloads|rating|installs|installsAllTime|trending` (default: newest)
+  - `--sort newest|updated|downloads|rating|installs|installsAllTime|trending` (default: newest)
   - `--json` (machine-readable output)
 - Output: `<slug>  v<version>  <age>  <summary>` (summary truncated to 50 chars).
 
@@ -148,18 +151,23 @@ Stores your API token + cached registry URL.
 - Requires semver: `--version 1.2.3`.
 - Publishing a skill means it is released under `MIT-0` on ClawHub.
 - Published skills are free to use, modify, and redistribute without attribution.
+- ClawHub does not support paid skills or per-skill pricing.
 - Legacy alias: `publish <path>`.
 
 ### `delete <slug>`
 
 - Soft-delete a skill (owner, moderator, or admin).
 - Calls `DELETE /api/v1/skills/{slug}`.
+- `--reason <text>` records a moderation note on the skill and audit log.
+- `--note <text>` is an alias for `--reason`.
 - `--yes` skips confirmation.
 
 ### `undelete <slug>`
 
 - Restore a hidden skill (owner, moderator, or admin).
 - Calls `POST /api/v1/skills/{slug}/undelete`.
+- `--reason <text>` records a moderation note on the skill and audit log.
+- `--note <text>` is an alias for `--reason`.
 - `--yes` skips confirmation.
 
 ### `hide <slug>`
@@ -211,6 +219,15 @@ Stores your API token + cached registry URL.
 - `--reason` records an optional ban reason.
 - `--yes` skips confirmation.
 
+### `unban-user <handleOrId>`
+
+- Unban a user and restore eligible skills (admin only).
+- Calls `POST /api/v1/users/unban`.
+- `--id` treats the argument as a user id instead of a handle.
+- `--fuzzy` resolves the handle via fuzzy user search (admin only).
+- `--reason` records an optional unban reason.
+- `--yes` skips confirmation.
+
 ### `set-role <handleOrId> <role>`
 
 - Change a user role (admin only).
@@ -218,6 +235,36 @@ Stores your API token + cached registry URL.
 - `--id` treats the argument as a user id instead of a handle.
 - `--fuzzy` resolves the handle via fuzzy user search (admin only).
 - `--yes` skips confirmation.
+
+### `package explore [query...]`
+
+- Browses or searches the unified package catalog via `GET /api/v1/packages` and `GET /api/v1/packages/search`.
+- Use this for plugins and other package-family entries; top-level `search` remains the skill search surface.
+- Flags:
+  - `--family skill|code-plugin|bundle-plugin`
+  - `--official`
+  - `--executes-code`
+  - `--limit <n>` (1-100, default: 25)
+  - `--json`
+
+Examples:
+
+```bash
+clawhub package explore --family code-plugin
+clawhub package explore episodic-claw --family code-plugin
+```
+
+### `package inspect <name>`
+
+- Fetches package metadata without installing.
+- Use this for plugin metadata, compatibility, verification, source, and version/file inspection.
+- `--version <version>`: inspect a specific version (default: latest).
+- `--tag <tag>`: inspect a tagged version (e.g. `latest`).
+- `--versions`: list version history (first page).
+- `--limit <n>`: max versions to list (1-100).
+- `--files`: list files for the selected version.
+- `--file <path>`: fetch raw file content (text files only; 200KB limit).
+- `--json`: machine-readable output.
 
 ### `package publish <source>`
 
@@ -236,6 +283,53 @@ Stores your API token + cached registry URL.
 - `--owner <handle>` lets admins publish under a shared owner account while keeping their own token as the actor.
 - Existing flags (`--family`, `--name`, `--version`, `--source-repo`, `--source-commit`, `--source-ref`, `--source-path`) still work as overrides.
 - Private GitHub repos require `GITHUB_TOKEN`.
+
+#### Recommended local flow
+
+Use `--dry-run` first so you can confirm the resolved package metadata and
+source attribution before creating a live release:
+
+```bash
+clawhub package publish ./my-plugin --family code-plugin --dry-run
+clawhub package publish ./my-plugin --family code-plugin
+```
+
+#### Minimal `package.json` for `--family code-plugin`
+
+External code plugins need a small amount of OpenClaw metadata in
+`package.json`. This minimal manifest is enough for a successful publish:
+
+```json
+{
+  "name": "@myorg/openclaw-my-plugin",
+  "version": "1.0.0",
+  "type": "module",
+  "openclaw": {
+    "extensions": ["./index.ts"],
+    "compat": {
+      "pluginApi": ">=2026.3.24-beta.2"
+    },
+    "build": {
+      "openclawVersion": "2026.3.24-beta.2"
+    }
+  }
+}
+```
+
+Required fields:
+
+- `openclaw.compat.pluginApi`
+- `openclaw.build.openclawVersion`
+
+Notes:
+
+- `package.json.version` is your package release version, but it is not used as
+  a fallback for OpenClaw compatibility/build validation.
+- `openclaw.compat.minGatewayVersion` and
+  `openclaw.build.pluginSdkVersion` are optional extras if you want to publish
+  more detailed compatibility metadata.
+- If you are using an older `clawhub` CLI release, upgrade before publishing so
+  the local preflight checks run before upload.
 
 #### GitHub Actions
 
@@ -258,7 +352,7 @@ on:
 jobs:
   dry-run:
     if: github.event_name == 'pull_request'
-    uses: openclaw/clawhub/.github/workflows/package-publish.yml@main
+    uses: openclaw/clawhub/.github/workflows/package-publish.yml@v0.12.0
     with:
       dry_run: true
 
@@ -267,7 +361,7 @@ jobs:
     permissions:
       contents: read
       id-token: write
-    uses: openclaw/clawhub/.github/workflows/package-publish.yml@main
+    uses: openclaw/clawhub/.github/workflows/package-publish.yml@v0.12.0
     with:
       dry_run: false
     secrets:
@@ -277,6 +371,7 @@ jobs:
 Notes:
 
 - The reusable workflow defaults `source` to the caller repo.
+- Pin the reusable workflow to a stable tag or full commit SHA. Do not run release publishing from `@main`.
 - `pull_request` should use `dry_run: true` so CI stays non-polluting.
 - Real publishes should be limited to trusted events such as `workflow_dispatch` or tag pushes.
 - Trusted publishing without a secret only works on `workflow_dispatch`; tag pushes still need `clawhub_token`.

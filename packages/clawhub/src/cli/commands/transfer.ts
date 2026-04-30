@@ -75,7 +75,7 @@ export async function cmdTransferRequest(
     inputAllowed,
     `Transfer ${slug} to @${toHandle}? Recipient must accept.`,
   );
-  if (!confirmed) return;
+  if (!confirmed) return undefined;
 
   const token = await requireAuthToken();
   const registry = await getRegistry(opts, { cache: true });
@@ -160,7 +160,7 @@ async function runTransferDecision(
     inputAllowed,
     `${spec.verb} transfer of ${slug}?`,
   );
-  if (!confirmed) return;
+  if (!confirmed) return undefined;
 
   const token = await requireAuthToken();
   const registry = await getRegistry(opts, { cache: true });

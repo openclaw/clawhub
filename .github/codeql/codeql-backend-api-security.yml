@@ -1,0 +1,76 @@
+name: clawhub-codeql-backend-api-security
+
+disable-default-queries: true
+
+queries:
+  - uses: security-extended
+
+query-filters:
+  - include:
+      precision:
+        - high
+        - very-high
+      tags contain: security
+      security-severity: /([7-9]|10)\.(\d)+/
+
+paths:
+  - convex/auth.config.ts
+  - convex/auth.ts
+  - convex/commentModeration.ts
+  - convex/http.ts
+  - convex/httpApi.ts
+  - convex/httpApiV1
+  - convex/packagePublishTokens.ts
+  - convex/packages.ts
+  - convex/publishers.ts
+  - convex/rateLimits.ts
+  - convex/rescanRequests.ts
+  - convex/skills.ts
+  - convex/skillTransfers.ts
+  - convex/tokens.ts
+  - convex/uploads.ts
+  - convex/vt.ts
+  - convex/webhooks.ts
+  - convex/lib/access.ts
+  - convex/lib/apiTokenAuth.ts
+  - convex/lib/commentScamPrompt.ts
+  - convex/lib/githubActionsOidc.ts
+  - convex/lib/httpHeaders.ts
+  - convex/lib/httpRateLimit.ts
+  - convex/lib/httpUtils.ts
+  - convex/lib/manualOverrides.ts
+  - convex/lib/moderation.ts
+  - convex/lib/moderationEngine.ts
+  - convex/lib/moderationReasonCodes.ts
+  - convex/lib/packageRegistry.ts
+  - convex/lib/packageSecurity.ts
+  - convex/lib/publishers.ts
+  - convex/lib/publishLimits.ts
+  - convex/lib/reporting.ts
+  - convex/lib/securityPrompt.ts
+  - convex/lib/skillPublish.ts
+  - convex/lib/skillSafety.ts
+  - convex/lib/staticPublishScan.ts
+  - convex/lib/tokens.ts
+  - convex/lib/webhooks.ts
+  - convex/model/packages/rescans.ts
+  - convex/model/rescans/policy.ts
+  - convex/model/skills/rescans.ts
+
+paths-ignore:
+  - "**/node_modules"
+  - "**/coverage"
+  - "**/dist"
+  - "**/dist/**"
+  - "**/*.generated.ts"
+  - "**/*.bundle.js"
+  - "**/*.test.ts"
+  - "**/*.test.tsx"
+  - "**/*.e2e.test.ts"
+  - "**/*.e2e.test.tsx"
+  - "**/*test-support*"
+  - "**/*test-helper*"
+  - "**/*mock*"
+  - "**/*fixture*"
+  - "**/*bench*"
+  - "convex/_generated/**"

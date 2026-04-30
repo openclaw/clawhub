@@ -87,7 +87,7 @@ bunx convex run --no-push devSeed:seedNixSkills
 bunx convex run --no-push devSeedExtra:seedExtraSkillsInternal
 
 # Refresh the cached skills count (required after seeding)
-bunx convex run --no-push statsMaintenance:updateGlobalStatsInternal
+bunx convex run --no-push statsMaintenance:updateGlobalStatsAction
 ```
 
 To reset and re-seed:
@@ -152,6 +152,30 @@ bun run --cwd packages/clawhub verify
 ```
 
 These are the same checks that run in CI (`.github/workflows/ci.yml`).
+
+### Blacksmith Testbox checks
+
+Maintainers with Blacksmith access can run the same checks in a warmed Testbox
+instead of spending local CPU:
+
+```bash
+export CLAWHUB_TESTBOX=1
+blacksmith testbox warmup ci-check-testbox.yml --ref main --idle-timeout 90
+bun run testbox:claim -- --id <tbx_id>
+bun run testbox:sanity -- --id <tbx_id>
+bun run testbox:run -- --id <tbx_id> -- bun run lint
+bun run testbox:run -- --id <tbx_id> -- bun run test
+bun run testbox:run -- --id <tbx_id> -- bun run build
+```
+
+Use the `tbx_...` id from the current warmup output. The wrapper refuses ids
+that are missing the local SSH key or were claimed by a different checkout.
+Use `CLAWHUB_LOCAL_CHECK_MODE=throttled` or `CLAWHUB_LOCAL_CHECK_MODE=full` as
+the explicit local escape hatch when you intentionally want laptop-side proof.
+If Blacksmith auth/org access is missing, report that instead of falling back
+to a broad local gate that can bog down a dev machine.
+For the initial bootstrap only, the Testbox workflow must land on `main` before
+`blacksmith testbox warmup ci-check-testbox.yml --ref <branch>` can dispatch it.
 
 **PR guidelines:**
 

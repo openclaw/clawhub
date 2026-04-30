@@ -1,0 +1,104 @@
+name: Update Convex AI Files
+
+on:
+  schedule:
+    # Midnight Pacific during daylight saving time. GitHub cron uses UTC.
+    - cron: "0 7 * * 1"
+  workflow_dispatch:
+
+concurrency:
+  group: update-convex-ai-files
+  cancel-in-progress: false
+
+env:
+  BUN_VERSION: "1.3.10"
+  UPDATE_BRANCH: automation/update-convex-ai-files
+
+jobs:
+  update:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: write
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6
+        with:
+          bun-version: ${{ env.BUN_VERSION }}
+
+      - name: Install dependencies
+        run: bun install --frozen-lockfile
+
+      - name: Update Convex AI files
+        run: |
+          "$(bun pm bin)/convex" ai-files update
+
+      - name: Check Convex AI files status
+        run: |
+          "$(bun pm bin)/convex" ai-files status
+
+      - name: Detect changes
+        id: changes
+        run: |
+          set -euo pipefail
+          if [[ -n "$(git status --porcelain)" ]]; then
+            echo "changed=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Commit and push update branch
+        if: steps.changes.outputs.changed == 'true'
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+          git checkout -B "$UPDATE_BRANCH"
+          git add AGENTS.md CLAUDE.md .agents/skills convex/_generated/ai/guidelines.md convex/_generated/ai/ai-files.state.json
+          git commit -m "chore: update Convex AI files"
+          git push --force-with-lease origin "$UPDATE_BRANCH"
+
+      - name: Open or update pull request
+        if: steps.changes.outputs.changed == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+
+          body_file="$(mktemp)"
+          {
+            printf '%s\n' '## Summary'
+            printf '\n'
+            printf '%s\n' '- refresh Convex-managed AI guidance files'
+            printf '%s\n' '- keep AGENTS.md / CLAUDE.md Convex sections in sync when Convex updates them'
+            printf '%s\n' '- update repo-local Convex developer skills under .agents/skills'
+            printf '\n'
+            printf '%s\n' '## Validation'
+            printf '\n'
+            # shellcheck disable=SC2016
+            printf '%s\n' '- `$(bun pm bin)/convex ai-files status`'
+          } > "$body_file"
+
+          if gh pr view "$UPDATE_BRANCH" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            gh pr edit "$UPDATE_BRANCH" \
+              --repo "$GITHUB_REPOSITORY" \
+              --title "[automation] Update Convex AI files" \
+              --body-file "$body_file"
+          else
+            gh pr create \
+              --repo "$GITHUB_REPOSITORY" \
+              --base main \
+              --head "$UPDATE_BRANCH" \
+              --title "[automation] Update Convex AI files" \
+              --body-file "$body_file"
+          fi

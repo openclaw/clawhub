@@ -782,7 +782,7 @@ function detectPackageFamily(
   if (explicit) return explicit;
   if (fileSet.has("openclaw.plugin.json")) return "code-plugin";
   if (fileSet.has("openclaw.bundle.json")) return "bundle-plugin";
-  fail("Could not detect package family. Use --family.");
+  return fail("Could not detect package family. Use --family.");
 }
 
 function parseTags(value: string) {
@@ -800,22 +800,32 @@ function parseCsv(value: string | undefined) {
     .filter(Boolean);
 }
 
+function applyGitHubSourcePath(
+  source: Awaited<ReturnType<typeof resolveSourceInput>>,
+  sourcePath: string | undefined,
+) {
+  const explicitPath = sourcePath?.trim();
+  if (!explicitPath || source.kind !== "github") return source;
+  return { ...source, path: explicitPath };
+}
+
 async function preparePackagePublishPlan(
   opts: GlobalOpts,
   sourceArg: string,
   options: PackagePublishOptions,
 ): Promise<PackagePublishPlan> {
   const resolvedSource = await resolveSourceInput(sourceArg, { workdir: opts.workdir });
-  let folder = resolvedSource.kind === "local" ? resolvedSource.path : "";
+  const sourceForFetch = applyGitHubSourcePath(resolvedSource, options.sourcePath);
+  let folder = sourceForFetch.kind === "local" ? sourceForFetch.path : "";
   let cleanup: (() => Promise<void>) | undefined;
   let inferredSource: InferredPublishSource | undefined;
 
-  if (resolvedSource.kind === "github") {
+  if (sourceForFetch.kind === "github") {
     const fetchSpinner = options.json
       ? null
-      : createSpinner(`Fetching ${resolvedSource.owner}/${resolvedSource.repo}`);
+      : createSpinner(`Fetching ${sourceForFetch.owner}/${sourceForFetch.repo}`);
     try {
-      const fetched = await fetchGitHubSource(resolvedSource);
+      const fetched = await fetchGitHubSource(sourceForFetch);
       folder = fetched.dir;
       cleanup = fetched.cleanup;
       inferredSource = fetched.source;
@@ -909,7 +919,7 @@ async function preparePackagePublishPlan(
         }
       : {}),
   };
-  const sourceLabel = describePublishSource(resolvedSource, source, folder);
+  const sourceLabel = describePublishSource(sourceForFetch, source, folder);
 
   return {
     folder,

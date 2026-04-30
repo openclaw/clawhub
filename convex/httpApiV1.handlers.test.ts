@@ -55,6 +55,26 @@ function findRateLimitCallArgs(mock: ReturnType<typeof vi.fn>) {
   return mock.mock.calls.map(([, args]) => args).find(isRateLimitArgs);
 }
 
+function makeCatalogItem(
+  name: string,
+  options: {
+    family: "code-plugin" | "bundle-plugin" | "skill";
+    updatedAt: number;
+    score?: number;
+  },
+) {
+  return {
+    name,
+    displayName: name,
+    family: options.family,
+    channel: "community",
+    isOfficial: false,
+    createdAt: options.updatedAt,
+    updatedAt: options.updatedAt,
+    ...(typeof options.score === "number" ? { score: options.score } : {}),
+  };
+}
+
 function makeCtx(partial: Record<string, unknown>) {
   const partialRunQuery =
     typeof partial.runQuery === "function"
@@ -410,9 +430,9 @@ describe("httpApiV1 handlers", () => {
 
   it("lists skills with resolved tags using batch query", async () => {
     const runQuery = vi.fn(async (_query: unknown, args: Record<string, unknown>) => {
-      if ("cursor" in args || "limit" in args) {
+      if ("cursor" in args || "numItems" in args) {
         return {
-          items: [
+          page: [
             {
               skill: {
                 _id: "skills:1",
@@ -448,9 +468,9 @@ describe("httpApiV1 handlers", () => {
 
   it("batches tag resolution across multiple skills into single query", async () => {
     const runQuery = vi.fn(async (_query: unknown, args: Record<string, unknown>) => {
-      if ("cursor" in args || "limit" in args) {
+      if ("cursor" in args || "numItems" in args) {
         return {
-          items: [
+          page: [
             {
               skill: {
                 _id: "skills:1",
@@ -703,18 +723,28 @@ describe("httpApiV1 handlers", () => {
   });
 
   it("lists skills supports sort aliases", async () => {
-    const checks: Array<[string, string]> = [
+    const checks: Array<[string, string | null]> = [
+      ["createdAt", "newest"],
+      ["created-at", "newest"],
+      ["newest", "newest"],
       ["rating", "stars"],
-      ["installs", "installsCurrent"],
-      ["installs-all-time", "installsAllTime"],
-      ["trending", "trending"],
+      ["installs", "installs"],
+      ["installs-all-time", "installs"],
+      ["unknown", "updated"],
+      ["trending", null],
     ];
 
     for (const [input, expected] of checks) {
       const runQuery = vi.fn(async (_query: unknown, args: Record<string, unknown>) => {
-        if ("sort" in args || "cursor" in args || "limit" in args) {
-          expect(args.sort).toBe(expected);
-          return { items: [], nextCursor: null };
+        if ("sort" in args || "cursor" in args || "numItems" in args || "limit" in args) {
+          if (expected === null) {
+            expect(args).not.toHaveProperty("sort");
+          } else {
+            expect(args.sort).toBe(expected);
+          }
+          return expected === null
+            ? { items: [], nextCursor: null }
+            : { page: [], nextCursor: null };
         }
         return null;
       });
@@ -729,9 +759,9 @@ describe("httpApiV1 handlers", () => {
 
   it("lists skills forwards nonSuspiciousOnly", async () => {
     const runQuery = vi.fn(async (_query: unknown, args: Record<string, unknown>) => {
-      if ("sort" in args || "cursor" in args || "limit" in args) {
+      if ("sort" in args || "cursor" in args || "numItems" in args) {
         expect(args.nonSuspiciousOnly).toBe(true);
-        return { items: [], nextCursor: null };
+        return { page: [], nextCursor: null };
       }
       return null;
     });
@@ -745,9 +775,9 @@ describe("httpApiV1 handlers", () => {
 
   it("lists skills forwards legacy nonSuspicious alias", async () => {
     const runQuery = vi.fn(async (_query: unknown, args: Record<string, unknown>) => {
-      if ("sort" in args || "cursor" in args || "limit" in args) {
+      if ("sort" in args || "cursor" in args || "numItems" in args) {
         expect(args.nonSuspiciousOnly).toBe(true);
-        return { items: [], nextCursor: null };
+        return { page: [], nextCursor: null };
       }
       return null;
     });
@@ -761,9 +791,9 @@ describe("httpApiV1 handlers", () => {
 
   it("lists skills prefers canonical nonSuspiciousOnly over legacy alias", async () => {
     const runQuery = vi.fn(async (_query: unknown, args: Record<string, unknown>) => {
-      if ("sort" in args || "cursor" in args || "limit" in args) {
+      if ("sort" in args || "cursor" in args || "numItems" in args) {
         expect(args.nonSuspiciousOnly).toBeUndefined();
-        return { items: [], nextCursor: null };
+        return { page: [], nextCursor: null };
       }
       return null;
     });
@@ -1896,15 +1926,10 @@ describe("httpApiV1 handlers", () => {
     expect(publishVersionForUser).toHaveBeenCalled();
   });
 
-  it("publish json accepts legacy clients that omit license terms", async () => {
+  it("publish json rejects omitted license terms", async () => {
     vi.mocked(requireApiTokenUser).mockResolvedValueOnce({
       userId: "users:1",
       user: { handle: "p" },
-    } as never);
-    vi.mocked(publishVersionForUser).mockResolvedValueOnce({
-      skillId: "s",
-      versionId: "v",
-      embeddingId: "e",
     } as never);
     const runMutation = vi.fn().mockResolvedValue(okRate());
     const body = JSON.stringify({
@@ -1930,7 +1955,9 @@ describe("httpApiV1 handlers", () => {
         body,
       }),
     );
-    expect(response.status).toBe(200);
+    expect(response.status).toBe(400);
+    expect(await response.text()).toMatch(/license terms must be accepted/i);
+    expect(publishVersionForUser).not.toHaveBeenCalled();
   });
 
   it("publish multipart succeeds", async () => {
@@ -1970,15 +1997,10 @@ describe("httpApiV1 handlers", () => {
     }
   });
 
-  it("publish multipart accepts legacy clients that omit license terms", async () => {
+  it("publish multipart rejects omitted license terms", async () => {
     vi.mocked(requireApiTokenUser).mockResolvedValueOnce({
       userId: "users:1",
       user: { handle: "p" },
-    } as never);
-    vi.mocked(publishVersionForUser).mockResolvedValueOnce({
-      skillId: "s",
-      versionId: "v",
-      embeddingId: "e",
     } as never);
     const runMutation = vi.fn().mockResolvedValue(okRate());
     const form = new FormData();
@@ -2001,7 +2023,9 @@ describe("httpApiV1 handlers", () => {
         body: form,
       }),
     );
-    expect(response.status).toBe(200);
+    expect(response.status).toBe(400);
+    expect(await response.text()).toMatch(/license terms must be accepted/i);
+    expect(publishVersionForUser).not.toHaveBeenCalled();
   });
 
   it("publish rejects explicit license refusal", async () => {
@@ -2107,6 +2131,7 @@ describe("httpApiV1 handlers", () => {
     expect(response.status).toBe(200);
     const json = await response.json();
     expect(json.user.handle).toBe("p");
+    expect(json.user.role).toBeNull();
   });
 
   it("delete and undelete require auth", async () => {
@@ -2141,18 +2166,118 @@ describe("httpApiV1 handlers", () => {
       new Request("https://example.com/api/v1/skills/demo", {
         method: "DELETE",
         headers: { Authorization: "Bearer clh_test" },
+        body: JSON.stringify({ reason: "legal hold" }),
       }),
     );
     expect(response.status).toBe(200);
+    expect(runMutation).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({
+        userId: "users:1",
+        slug: "demo",
+        deleted: true,
+        reason: "legal hold",
+      }),
+    );
 
     const response2 = await __handlers.skillsPostRouterV1Handler(
       makeCtx({ runMutation }),
       new Request("https://example.com/api/v1/skills/demo/undelete", {
         method: "POST",
         headers: { Authorization: "Bearer clh_test" },
+        body: JSON.stringify({ reason: "reviewed" }),
       }),
     );
     expect(response2.status).toBe(200);
+    expect(runMutation).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({
+        userId: "users:1",
+        slug: "demo",
+        deleted: false,
+        reason: "reviewed",
+      }),
+    );
+  });
+
+  it("skill rescan routes authenticated owners to the rescan mutation", async () => {
+    vi.mocked(requireApiTokenUser).mockResolvedValue({
+      userId: "users:1",
+      user: { handle: "p" },
+    } as never);
+    const runMutation = vi.fn(async (_mutation: unknown, args: Record<string, unknown>) => {
+      if ("key" in args) return okRate();
+      return {
+        ok: true,
+        targetKind: "skill",
+        name: args.slug,
+        version: "1.2.3",
+        status: "in_progress",
+        remainingRequests: 2,
+        maxRequests: 3,
+        pendingRequestId: "rescanRequests:1",
+      };
+    });
+
+    const response = await __handlers.skillsPostRouterV1Handler(
+      makeCtx({ runMutation }),
+      new Request("https://example.com/api/v1/skills/demo/rescan", {
+        method: "POST",
+        headers: { Authorization: "Bearer clh_test" },
+      }),
+    );
+
+    expect(response.status).toBe(200);
+    expect(await response.json()).toMatchObject({
+      ok: true,
+      targetKind: "skill",
+      name: "demo",
+      remainingRequests: 2,
+      maxRequests: 3,
+    });
+    expect(runMutation).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({ actorUserId: "users:1", slug: "demo" }),
+    );
+  });
+
+  it("package rescan routes authenticated owners to the rescan mutation", async () => {
+    vi.mocked(requireApiTokenUser).mockResolvedValue({
+      userId: "users:1",
+      user: { handle: "p" },
+    } as never);
+    const runMutation = vi.fn(async (_mutation: unknown, args: Record<string, unknown>) => {
+      if ("key" in args) return okRate();
+      return {
+        ok: true,
+        targetKind: "package",
+        name: args.name,
+        version: "1.2.3",
+        status: "in_progress",
+        remainingRequests: 2,
+        maxRequests: 3,
+        pendingRequestId: "rescanRequests:1",
+      };
+    });
+
+    const response = await __handlers.packagesPostRouterV1Handler(
+      makeCtx({ runMutation }),
+      new Request("https://example.com/api/v1/packages/%40scope%2Fdemo/rescan", {
+        method: "POST",
+        headers: { Authorization: "Bearer clh_test" },
+      }),
+    );
+
+    expect(response.status).toBe(200);
+    expect(await response.json()).toMatchObject({
+      ok: true,
+      targetKind: "package",
+      name: "@scope/demo",
+    });
+    expect(runMutation).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({ actorUserId: "users:1", name: "@scope/demo" }),
+    );
   });
 
   it("transfer request requires auth", async () => {
@@ -2396,6 +2521,71 @@ describe("httpApiV1 handlers", () => {
     );
   });
 
+  it("unban user requires auth", async () => {
+    vi.mocked(requireApiTokenUser).mockRejectedValueOnce(new Error("Unauthorized"));
+    const runMutation = vi.fn().mockResolvedValue(okRate());
+    const response = await __handlers.usersPostRouterV1Handler(
+      makeCtx({ runMutation }),
+      new Request("https://example.com/api/v1/users/unban", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ handle: "demo" }),
+      }),
+    );
+    expect(response.status).toBe(401);
+  });
+
+  it("unban user succeeds with handle", async () => {
+    vi.mocked(requireApiTokenUser).mockResolvedValue({
+      userId: "users:1",
+      user: { handle: "p" },
+    } as never);
+    const runQuery = vi.fn().mockResolvedValue({ _id: "users:2" });
+    const runMutation = vi
+      .fn()
+      .mockResolvedValueOnce(okRate())
+      .mockResolvedValueOnce({ ok: true, alreadyUnbanned: false, restoredSkills: 2 });
+    const response = await __handlers.usersPostRouterV1Handler(
+      makeCtx({ runQuery, runMutation }),
+      new Request("https://example.com/api/v1/users/unban", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ handle: "demo" }),
+      }),
+    );
+    expect(response.status).toBe(200);
+    const json = await response.json();
+    expect(json.restoredSkills).toBe(2);
+  });
+
+  it("unban user forwards reason", async () => {
+    vi.mocked(requireApiTokenUser).mockResolvedValue({
+      userId: "users:1",
+      user: { handle: "p" },
+    } as never);
+    const runQuery = vi.fn().mockResolvedValue({ _id: "users:2" });
+    const runMutation = vi
+      .fn()
+      .mockResolvedValueOnce(okRate())
+      .mockResolvedValueOnce({ ok: true, alreadyUnbanned: false, restoredSkills: 0 });
+    await __handlers.usersPostRouterV1Handler(
+      makeCtx({ runQuery, runMutation }),
+      new Request("https://example.com/api/v1/users/unban", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ handle: "demo", reason: "appeal accepted" }),
+      }),
+    );
+    expect(runMutation).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({
+        actorUserId: "users:1",
+        targetUserId: "users:2",
+        reason: "appeal accepted",
+      }),
+    );
+  });
+
   it("set role requires auth", async () => {
     vi.mocked(requireApiTokenUser).mockRejectedValueOnce(new Error("Unauthorized"));
     const runMutation = vi.fn().mockResolvedValue(okRate());
@@ -2492,7 +2682,11 @@ describe("httpApiV1 handlers", () => {
   });
 
   it("packages search forwards executesCode and capabilityTag", async () => {
-    const runQuery = vi.fn().mockResolvedValue([]);
+    const runQuery = vi.fn((_, args: Record<string, unknown>) => {
+      if ("paginationOpts" in args) return { page: [], isDone: true, continueCursor: "" };
+      if ("query" in args) return [];
+      return null;
+    });
     const runMutation = vi.fn().mockResolvedValue(okRate());
     const response = await __handlers.packagesGetRouterV1Handler(
       makeCtx({ runQuery, runMutation }),
@@ -2504,10 +2698,9 @@ describe("httpApiV1 handlers", () => {
     expect(runQuery).toHaveBeenCalledWith(
       expect.anything(),
       expect.objectContaining({
-        query: "test",
-        limit: 5,
         executesCode: true,
         capabilityTag: "tools",
+        paginationOpts: { cursor: null, numItems: 50 },
       }),
     );
     expect(findRateLimitCallArgs(runMutation)).toMatchObject({
@@ -2535,6 +2728,123 @@ describe("httpApiV1 handlers", () => {
     );
   });
 
+  it("plugins list defaults to plugin package families", async () => {
+    const codePlugin = {
+      name: "code-plugin",
+      displayName: "Code Plugin",
+      family: "code-plugin",
+      channel: "community",
+      isOfficial: false,
+      createdAt: 20,
+      updatedAt: 200,
+    };
+    const bundlePlugin = {
+      name: "bundle-plugin",
+      displayName: "Bundle Plugin",
+      family: "bundle-plugin",
+      channel: "community",
+      isOfficial: false,
+      createdAt: 10,
+      updatedAt: 100,
+    };
+    const runQuery = vi.fn((_, args: Record<string, unknown>) => {
+      if (args.family === "code-plugin") {
+        return { page: [codePlugin], isDone: true, continueCursor: "" };
+      }
+      if (args.family === "bundle-plugin") {
+        return { page: [bundlePlugin], isDone: true, continueCursor: "" };
+      }
+      throw new Error(`unexpected family ${String(args.family)}`);
+    });
+    const runMutation = vi.fn().mockResolvedValue(okRate());
+
+    const response = await __handlers.listPluginsV1Handler(
+      makeCtx({ runQuery, runMutation }),
+      new Request("https://example.com/api/v1/plugins?limit=7"),
+    );
+
+    expect(response.status).toBe(200);
+    expect((await response.json()).items.map((entry: { name: string }) => entry.name)).toEqual([
+      "code-plugin",
+      "bundle-plugin",
+    ]);
+    const families = runQuery.mock.calls.map(([, args]) => (args as { family?: string }).family);
+    expect(families).toEqual(["code-plugin", "bundle-plugin"]);
+    for (const [, args] of runQuery.mock.calls) {
+      expect(args).toEqual(
+        expect.objectContaining({
+          paginationOpts: { cursor: null, numItems: 7 },
+        }),
+      );
+    }
+  });
+
+  it("plugins list paginates with separate plugin family cursors", async () => {
+    const codeNewest = makeCatalogItem("code-newest", {
+      family: "code-plugin",
+      updatedAt: 300,
+    });
+    const codeOlder = makeCatalogItem("code-older", {
+      family: "code-plugin",
+      updatedAt: 100,
+    });
+    const bundleMiddle = makeCatalogItem("bundle-middle", {
+      family: "bundle-plugin",
+      updatedAt: 200,
+    });
+    const runQuery = vi.fn((_, args: Record<string, unknown>) => {
+      const pagination = args.paginationOpts as { cursor: string | null };
+      if (args.family === "code-plugin" && pagination.cursor === null) {
+        return { page: [codeNewest], isDone: false, continueCursor: "code-cursor" };
+      }
+      if (args.family === "code-plugin" && pagination.cursor === "code-cursor") {
+        return { page: [codeOlder], isDone: true, continueCursor: "" };
+      }
+      if (args.family === "bundle-plugin" && pagination.cursor === null) {
+        return { page: [bundleMiddle], isDone: true, continueCursor: "" };
+      }
+      throw new Error(`unexpected args ${JSON.stringify(args)}`);
+    });
+    const runMutation = vi.fn().mockResolvedValue(okRate());
+
+    const firstResponse = await __handlers.listPluginsV1Handler(
+      makeCtx({ runQuery, runMutation }),
+      new Request("https://example.com/api/v1/plugins?limit=1"),
+    );
+    expect(firstResponse.status).toBe(200);
+    const firstJson = await firstResponse.json();
+    expect(firstJson.items.map((entry: { name: string }) => entry.name)).toEqual(["code-newest"]);
+    expect(firstJson.nextCursor).toMatch(/^pkgplugins:/);
+
+    const secondUrl = new URL("https://example.com/api/v1/plugins");
+    secondUrl.searchParams.set("limit", "1");
+    secondUrl.searchParams.set("cursor", firstJson.nextCursor);
+    const secondResponse = await __handlers.listPluginsV1Handler(
+      makeCtx({ runQuery, runMutation }),
+      new Request(secondUrl),
+    );
+    expect(secondResponse.status).toBe(200);
+    const secondJson = await secondResponse.json();
+    expect(secondJson.items.map((entry: { name: string }) => entry.name)).toEqual([
+      "bundle-middle",
+    ]);
+
+    const packageCalls = runQuery.mock.calls
+      .map(([, args]) => args as { family?: string; paginationOpts?: { cursor: string | null } })
+      .filter((args) => args.family === "code-plugin" || args.family === "bundle-plugin");
+    expect(
+      packageCalls.map((args) => ({
+        family: args.family,
+        cursor: args.paginationOpts?.cursor ?? null,
+      })),
+    ).toEqual([
+      { family: "code-plugin", cursor: null },
+      { family: "bundle-plugin", cursor: null },
+      { family: "code-plugin", cursor: "code-cursor" },
+      { family: "bundle-plugin", cursor: null },
+    ]);
+  });
+
   it("packages search supports family=skill on the generic route", async () => {
     const runQuery = vi.fn().mockResolvedValue([]);
     const runMutation = vi.fn().mockResolvedValue(okRate());
@@ -2551,6 +2861,114 @@ describe("httpApiV1 handlers", () => {
         query: "demo",
       }),
     );
+  });
+
+  it("plugins search defaults to plugin package families", async () => {
+    const runQuery = vi.fn((_, args: Record<string, unknown>) => {
+      if (args.family === "code-plugin") {
+        return {
+          page: [
+            {
+              name: "weather-code",
+              displayName: "Weather Code",
+              family: "code-plugin",
+              channel: "community",
+              isOfficial: false,
+              createdAt: 10,
+              updatedAt: 100,
+            },
+          ],
+          isDone: true,
+          continueCursor: "",
+        };
+      }
+      if (args.family === "bundle-plugin") {
+        return {
+          page: [
+            {
+              name: "weather-bundle",
+              displayName: "Weather Bundle",
+              family: "bundle-plugin",
+              channel: "community",
+              isOfficial: false,
+              createdAt: 20,
+              updatedAt: 200,
+            },
+          ],
+          isDone: true,
+          continueCursor: "",
+        };
+      }
+      throw new Error(`unexpected family ${String(args.family)}`);
+    });
+    const runMutation = vi.fn().mockResolvedValue(okRate());
+
+    const response = await __handlers.pluginsGetRouterV1Handler(
+      makeCtx({ runQuery, runMutation }),
+      new Request("https://example.com/api/v1/plugins/search?q=weather&limit=7"),
+    );
+
+    expect(response.status).toBe(200);
+    expect(
+      (await response.json()).results.map(
+        (entry: { package: { name: string } }) => entry.package.name,
+      ),
+    ).toEqual(["weather-bundle", "weather-code"]);
+    const families = runQuery.mock.calls.map(([, args]) => (args as { family?: string }).family);
+    expect(families).toEqual(["code-plugin", "bundle-plugin"]);
+    for (const [, args] of runQuery.mock.calls) {
+      expect(args).toEqual(
+        expect.objectContaining({
+          paginationOpts: { cursor: null, numItems: 50 },
+        }),
+      );
+    }
+  });
+
+  it("plugins search dedupes and sorts results from both plugin families", async () => {
+    const runQuery = vi.fn((_, args: Record<string, unknown>) => {
+      if (args.family === "code-plugin") {
+        return {
+          page: [
+            makeCatalogItem("shared-plugin", { family: "code-plugin", updatedAt: 100 }),
+            makeCatalogItem("plugin-code", { family: "code-plugin", updatedAt: 50 }),
+          ],
+          isDone: true,
+          continueCursor: "",
+        };
+      }
+      if (args.family === "bundle-plugin") {
+        return {
+          page: [
+            makeCatalogItem("plugin-bundle", { family: "bundle-plugin", updatedAt: 80 }),
+            makeCatalogItem("shared-plugin", { family: "bundle-plugin", updatedAt: 60 }),
+          ],
+          isDone: true,
+          continueCursor: "",
+        };
+      }
+      throw new Error(`unexpected family ${String(args.family)}`);
+    });
+    const runMutation = vi.fn().mockResolvedValue(okRate());
+
+    const response = await __handlers.pluginsGetRouterV1Handler(
+      makeCtx({ runQuery, runMutation }),
+      new Request("https://example.com/api/v1/plugins/search?q=plugin&limit=3"),
+    );
+
+    expect(response.status).toBe(200);
+    expect(
+      (await response.json()).results.map(
+        (entry: { score: number; package: { family: string; name: string } }) => ({
+          family: entry.package.family,
+          name: entry.package.name,
+        }),
+      ),
+    ).toEqual([
+      { family: "bundle-plugin", name: "plugin-bundle" },
+      { family: "code-plugin", name: "plugin-code" },
+      { family: "code-plugin", name: "shared-plugin" },
+    ]);
   });
 
   it("packages list forwards viewerUserId for authenticated private package browsing", async () => {
@@ -2576,7 +2994,12 @@ describe("httpApiV1 handlers", () => {
 
   it("packages search forwards viewerUserId for authenticated private package search", async () => {
     vi.mocked(getAuthUserId).mockResolvedValue("users:owner" as never);
-    const runQuery = vi.fn().mockResolvedValue([]);
+    const runQuery = vi.fn((_, args: Record<string, unknown>) => {
+      if ("userId" in args) return { _id: args.userId };
+      if ("paginationOpts" in args) return { page: [], isDone: true, continueCursor: "" };
+      if ("query" in args) return [];
+      return null;
+    });
     const runMutation = vi.fn().mockResolvedValue(okRate());
 
     const response = await __handlers.packagesGetRouterV1Handler(
@@ -2588,9 +3011,9 @@ describe("httpApiV1 handlers", () => {
     expect(runQuery).toHaveBeenCalledWith(
       expect.anything(),
       expect.objectContaining({
-        query: "secret",
         channel: "private",
         viewerUserId: "users:owner",
+        paginationOpts: { cursor: null, numItems: 50 },
       }),
     );
   });
@@ -2622,7 +3045,8 @@ describe("httpApiV1 handlers", () => {
       if (query === internal.users.getByIdInternal) {
         throw new Error("Table mismatch");
       }
-      if ("query" in args && args.query === "secret") return [];
+      if ("paginationOpts" in args) return { page: [], isDone: true, continueCursor: "" };
+      if ("query" in args) return [];
       return null;
     });
     const runMutation = vi.fn().mockResolvedValue(okRate());
@@ -2640,9 +3064,9 @@ describe("httpApiV1 handlers", () => {
     expect(runQuery).toHaveBeenCalledWith(
       expect.anything(),
       expect.objectContaining({
-        query: "secret",
         channel: "community",
         viewerUserId: undefined,
+        paginationOpts: { cursor: null, numItems: 50 },
       }),
     );
   });
@@ -3286,6 +3710,9 @@ describe("httpApiV1 handlers", () => {
       "package/package.json",
     ]);
     expect(zipEntries["_meta.json"]).toBeUndefined();
+    expect(runMutation).toHaveBeenCalledWith(internal.packages.recordPackageDownloadInternal, {
+      packageId: "packages:1",
+    });
   });
 
   it("package download fails when any stored file is missing", async () => {
@@ -4071,6 +4498,34 @@ describe("httpApiV1 handlers", () => {
       }),
     );
     expect(setCall?.[1]).not.toHaveProperty("environment");
+  });
+
+  it("deletes a package", async () => {
+    vi.mocked(requireApiTokenUser).mockResolvedValue({
+      userId: "users:1",
+      user: { _id: "users:1", handle: "p" },
+    } as never);
+    const runMutation = vi.fn(async (_mutation: unknown, args: Record<string, unknown>) => {
+      if ("key" in args) return okRate();
+      return { ok: true };
+    });
+
+    const response = await __handlers.packagesDeleteRouterV1Handler(
+      makeCtx({ runMutation }),
+      new Request("https://example.com/api/v1/packages/%40openclaw%2Fdemo-plugin", {
+        method: "DELETE",
+        headers: { Authorization: "Bearer clh_test" },
+      }),
+    );
+
+    expect(response.status).toBe(200);
+    expect(runMutation).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({
+        userId: "users:1",
+        name: "@openclaw/demo-plugin",
+      }),
+    );
   });
 
   it("deletes trusted publisher config for a package", async () => {

@@ -36,12 +36,25 @@ describe("deriveModerationFlags", () => {
       skill: {
         slug: "test",
         displayName: "Test",
-        summary: "Send data to discord.gg/xyz",
+        summary: "Send data to https://discord.com/api/webhooks/123/token",
       },
       parsed: { frontmatter: {} },
       files: [],
     });
     expect(flags).toContain("suspicious.webhook");
+  });
+
+  test("does not flag generic webhook integrations", () => {
+    const flags = deriveModerationFlags({
+      skill: {
+        slug: "wordpress-api",
+        displayName: "WordPress API",
+        summary: "Manage WordPress REST API webhooks and Zapier callbacks.",
+      },
+      parsed: { frontmatter: {} },
+      files: [],
+    });
+    expect(flags).not.toContain("suspicious.webhook");
   });
 
   test("flags slack webhooks", () => {
@@ -194,7 +207,8 @@ describe("deriveModerationFlags", () => {
       skill: {
         slug: "test",
         displayName: "Test",
-        summary: "Malware stealer that posts to discord.gg webhooks via curl | bash from bit.ly",
+        summary:
+          "Malware stealer that posts to discord.gg/hook via curl | bash from bit.ly",
       },
       parsed: { frontmatter: {} },
       files: [],

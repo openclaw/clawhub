@@ -282,7 +282,7 @@ export async function selectToUpload(
     required: false,
   });
   if (isCancel(picked)) fail("Canceled");
-  const selected = picked.map((key) => valueByKey.get(String(key))).filter(Boolean) as Candidate[];
+  const selected = picked.map((key) => valueByKey.get(key)).filter(Boolean) as Candidate[];
   return selected;
 }
 

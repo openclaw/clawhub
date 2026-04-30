@@ -372,7 +372,7 @@ function parseDependencyDeclarations(input: unknown): Array<{
         version?: string;
         url?: string;
         repository?: string;
-      } = { name: String(obj.name).trim(), type: depType };
+      } = { name: obj.name.trim(), type: depType };
       if (typeof obj.version === "string") decl.version = obj.version.trim();
       if (typeof obj.url === "string") decl.url = obj.url.trim();
       if (typeof obj.repository === "string") decl.repository = obj.repository.trim();
@@ -432,7 +432,7 @@ function parseFrontmatterLevelDeclarations(
 
   // Parse primaryEnv from top-level frontmatter
   if (typeof frontmatter.primaryEnv === "string") {
-    metadata.primaryEnv = String(frontmatter.primaryEnv).trim();
+    metadata.primaryEnv = frontmatter.primaryEnv.trim();
   }
 
   const envVars = parseEnvVarDeclarations(frontmatter.env);
@@ -441,13 +441,13 @@ function parseFrontmatterLevelDeclarations(
   const dependencies = parseDependencyDeclarations(frontmatter.dependencies);
   if (dependencies.length > 0) metadata.dependencies = dependencies;
 
-  if (typeof frontmatter.author === "string") metadata.author = String(frontmatter.author).trim();
+  if (typeof frontmatter.author === "string") metadata.author = frontmatter.author.trim();
 
   const links = parseSkillLinks(frontmatter.links);
   if (links) metadata.links = links;
 
   if (typeof frontmatter.homepage === "string") {
-    metadata.homepage = String(frontmatter.homepage).trim();
+    metadata.homepage = frontmatter.homepage.trim();
   }
 
   return Object.keys(metadata).length > 0

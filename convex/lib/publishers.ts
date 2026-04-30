@@ -77,6 +77,34 @@ export function isPublisherRoleAllowed(role: PublisherRole, allowed: PublisherRo
   return allowed.some((candidate) => ranks[role] >= ranks[candidate]);
 }
 
+export type OwnedResourceActor = {
+  _id: Id<"users">;
+  role?: Doc<"users">["role"];
+};
+
+export async function assertCanManageOwnedResource(
+  ctx: DbCtx,
+  params: {
+    actor: OwnedResourceActor;
+    ownerUserId: Id<"users">;
+    ownerPublisherId?: Id<"publishers"> | null;
+    allowedPublisherRoles?: PublisherRole[];
+    allowPlatformAdmin?: boolean;
+  },
+) {
+  if (params.allowPlatformAdmin && params.actor.role === "admin") return;
+  if (params.ownerUserId === params.actor._id) return;
+  if (!params.ownerPublisherId) throw new ConvexError("Forbidden");
+
+  const membership = await getPublisherMembership(ctx, params.ownerPublisherId, params.actor._id);
+  if (
+    !membership ||
+    !isPublisherRoleAllowed(membership.role, params.allowedPublisherRoles ?? ["admin"])
+  ) {
+    throw new ConvexError("Forbidden");
+  }
+}
+
 export async function getPublisherByHandle(ctx: DbCtx, handle: string | undefined | null) {
   const normalized = normalizePublisherHandle(handle);
   if (!normalized) return null;

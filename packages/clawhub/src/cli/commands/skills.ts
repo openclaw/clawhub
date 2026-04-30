@@ -13,6 +13,7 @@ import {
 import {
   extractZipToDir,
   hashSkillFiles,
+  listManualSkills,
   listTextFiles,
   readLockfile,
   readSkillOrigin,
@@ -47,9 +48,8 @@ export async function cmdSearch(opts: GlobalOpts, query: string, limit?: number)
   try {
     const url = registryUrl(ApiRoutes.search, registry);
     url.searchParams.set("q", query);
-    if (typeof limit === "number" && Number.isFinite(limit)) {
-      url.searchParams.set("limit", String(limit));
-    }
+    const effectiveLimit = typeof limit === "number" && Number.isFinite(limit) ? limit : 25;
+    url.searchParams.set("limit", String(effectiveLimit));
     const result = await apiRequest(
       registry,
       { method: "GET", url: url.toString(), token },
@@ -317,12 +317,20 @@ export async function cmdUpdate(
 export async function cmdList(opts: GlobalOpts) {
   const lock = await readLockfile(opts.workdir);
   const entries = Object.entries(lock.skills);
-  if (entries.length === 0) {
+  const manualSkills = await listManualSkills(opts.dir, new Set(Object.keys(lock.skills)));
+  if (entries.length === 0 && manualSkills.length === 0) {
     console.log("No installed skills.");
     return;
   }
   for (const [slug, entry] of entries) {
     console.log(`${slug}  ${entry.version ?? "latest"}`);
+  }
+  if (manualSkills.length > 0) {
+    if (entries.length > 0) console.log();
+    console.log("Manually installed (not tracked by clawhub):");
+    for (const slug of manualSkills) {
+      console.log(`  ${slug}`);
+    }
   }
 }
 
@@ -367,6 +375,7 @@ export async function cmdUninstall(
 
 type ExploreSort = "newest" | "downloads" | "rating" | "installs" | "installsAllTime" | "trending";
 type ApiExploreSort =
+  | "createdAt"
   | "updated"
   | "downloads"
   | "stars"
@@ -454,7 +463,15 @@ function truncate(str: string, maxLen: number): string {
 
 function resolveExploreSort(raw?: string): { sort: ExploreSort; apiSort: ApiExploreSort } {
   const normalized = raw?.trim().toLowerCase();
-  if (!normalized || normalized === "newest" || normalized === "updated") {
+  if (
+    !normalized ||
+    normalized === "newest" ||
+    normalized === "createdat" ||
+    normalized === "created-at"
+  ) {
+    return { sort: "newest", apiSort: "createdAt" };
+  }
+  if (normalized === "updated") {
     return { sort: "newest", apiSort: "updated" };
   }
   if (normalized === "downloads" || normalized === "download") {
@@ -478,8 +495,8 @@ function resolveExploreSort(raw?: string): { sort: ExploreSort; apiSort: ApiExpl
   if (normalized === "trending") {
     return { sort: "trending", apiSort: "trending" };
   }
-  fail(
-    `Invalid sort "${raw}". Use newest, downloads, rating, installs, installsAllTime, or trending.`,
+  return fail(
+    `Invalid sort "${raw}". Use newest, updated, downloads, rating, installs, installsAllTime, or trending.`,
   );
 }
 

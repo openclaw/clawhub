@@ -3,11 +3,7 @@ import { internal } from "./_generated/api";
 import type { Doc } from "./_generated/dataModel";
 import type { ActionCtx } from "./_generated/server";
 import { internalAction, internalMutation, internalQuery } from "./functions";
-import {
-  countPublicSkillsForGlobalStats,
-  isPublicSkillDoc,
-  setGlobalPublicSkillsCount,
-} from "./lib/globalStats";
+import { isPublicSkillDoc, setGlobalPublicSkillsCount } from "./lib/globalStats";
 
 const DEFAULT_BATCH_SIZE = 200;
 const MAX_BATCH_SIZE = 1000;
@@ -189,8 +185,7 @@ function buildSkillStatPatch(skill: Doc<"skills">) {
   // nested `stats` object only for documents that pre-date the migration.
   const nextDownloads =
     typeof skill.statsDownloads === "number" ? skill.statsDownloads : stats.downloads;
-  const nextStars =
-    typeof skill.statsStars === "number" ? skill.statsStars : stats.stars;
+  const nextStars = typeof skill.statsStars === "number" ? skill.statsStars : stats.stars;
   const nextInstallsCurrent =
     typeof skill.statsInstallsCurrent === "number"
       ? skill.statsInstallsCurrent
@@ -279,7 +274,9 @@ export async function reconcileSkillStarCountsHandler(
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       .withIndex("by_skill", (q: any) => q.eq("skillId", skill._id))
       .collect();
-    const actualComments = commentRecords.filter((c: { softDeletedAt?: unknown }) => !c.softDeletedAt).length;
+    const actualComments = commentRecords.filter(
+      (c: { softDeletedAt?: unknown }) => !c.softDeletedAt,
+    ).length;
 
     // Check if stats are out of sync (compare against the canonical value
     // used by toPublicSkill: prefer top-level field, fall back to nested).
@@ -413,17 +410,5 @@ export const updateGlobalStatsAction = internalAction({
 
     await ctx.runMutation(internal.statsMaintenance.writeGlobalStatsInternal, { count: total });
     return { count: total };
-  },
-});
-
-/**
- * @deprecated Use updateGlobalStatsAction instead.
- * Kept as a manual emergency fallback only — do not re-add to crons.
- */
-export const updateGlobalStatsInternal = internalMutation({
-  args: {},
-  handler: async (ctx) => {
-    const count = await countPublicSkillsForGlobalStats(ctx);
-    await setGlobalPublicSkillsCount(ctx, count);
   },
 });

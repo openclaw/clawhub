@@ -144,13 +144,13 @@ export async function deletePackageSearchDigests(
   }
 }
 
-function hasDigestChanged<
-  TExisting extends Record<string, unknown>,
-  TFields extends Record<string, unknown>,
->(existing: TExisting, fields: TFields): boolean {
+function hasDigestChanged(
+  existing: Record<string, unknown>,
+  fields: Record<string, unknown>,
+): boolean {
   for (const key of Object.keys(fields)) {
-    const oldValue = (existing as Record<string, unknown>)[key];
-    const newValue = (fields as Record<string, unknown>)[key];
+    const oldValue = existing[key];
+    const newValue = fields[key];
     if (oldValue === newValue) continue;
     if (JSON.stringify(oldValue) !== JSON.stringify(newValue)) return true;
   }

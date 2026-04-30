@@ -1,4 +1,3 @@
-import { getAuthUserId } from "@convex-dev/auth/server";
 import {
   PackagePublishRequestSchema,
   PackageTrustedPublisherUpsertRequestSchema,
@@ -8,6 +7,7 @@ import {
 import { api, internal } from "../_generated/api";
 import type { Doc, Id } from "../_generated/dataModel";
 import type { ActionCtx } from "../_generated/server";
+import { getOptionalActiveAuthUserIdFromAction } from "../lib/access";
 import { getOptionalApiTokenUserId } from "../lib/apiTokenAuth";
 import {
   fetchGitHubRepositoryIdentity,
@@ -28,6 +28,7 @@ import {
   requireApiTokenUserOrResponse,
   requirePackagePublishAuthOrResponse,
   safeTextFileResponse,
+  softDeleteErrorToResponse,
   text,
   toOptionalNumber,
 } from "./shared";
@@ -61,6 +62,9 @@ const internalRefs = internal as unknown as {
     getReleaseByPackageAndVersionInternal: unknown;
     getReleaseByIdInternal: unknown;
     insertAuditLogInternal: unknown;
+    recordPackageDownloadInternal: unknown;
+    requestRescanForApiTokenInternal: unknown;
+    softDeletePackageInternal: unknown;
   };
   packagePublishTokens: {
     createInternal: unknown;
@@ -88,12 +92,8 @@ async function getOptionalViewerUserIdForRequest(ctx: ActionCtx, request: Reques
   const apiTokenUserId = await getOptionalApiTokenUserId(ctx, request);
   if (apiTokenUserId) return apiTokenUserId;
   try {
-    const userId = (await getAuthUserId(ctx)) ?? null;
+    const userId = (await getOptionalActiveAuthUserIdFromAction(ctx)) ?? null;
     if (!userId) return null;
-    const user = await runQueryRef<Doc<"users"> | null>(ctx, internal.users.getByIdInternal, {
-      userId,
-    });
-    if (!user || user.deletedAt || user.deactivatedAt) return null;
     return userId;
   } catch {
     // Public package reads should degrade to anonymous when cookie-backed auth is stale.
@@ -105,6 +105,7 @@ type PackageListQueryArgs = {
   family?: "skill" | "code-plugin" | "bundle-plugin";
   channel?: "official" | "community" | "private";
   isOfficial?: boolean;
+  highlightedOnly?: boolean;
   executesCode?: boolean;
   capabilityTag?: string;
   viewerUserId?: Id<"users">;
@@ -252,6 +253,11 @@ type UnifiedCatalogCursorState = {
   skills: CatalogSourceCursorState;
 };
 
+type PluginCatalogCursorState = {
+  codePlugins: CatalogSourceCursorState;
+  bundlePlugins: CatalogSourceCursorState;
+};
+
 type CatalogPageResult = {
   page: CatalogListItem[];
   isDone: boolean;
@@ -266,6 +272,7 @@ type CatalogSourceState = {
 };
 
 const UNIFIED_CATALOG_CURSOR_PREFIX = "pkgcatalog:";
+const PLUGIN_CATALOG_CURSOR_PREFIX = "pkgplugins:";
 
 function defaultCatalogSourceCursorState(): CatalogSourceCursorState {
   return { cursor: null, offset: 0, pageSize: null, done: false };
@@ -306,6 +313,42 @@ function decodeUnifiedCatalogCursor(raw: string | null | undefined): UnifiedCata
   }
 }
 
+function encodePluginCatalogCursor(state: PluginCatalogCursorState) {
+  return `${PLUGIN_CATALOG_CURSOR_PREFIX}${JSON.stringify(state)}`;
+}
+
+function decodePluginCatalogCursor(raw: string | null | undefined): PluginCatalogCursorState {
+  const normalize = (
+    input: Partial<CatalogSourceCursorState> | undefined,
+  ): CatalogSourceCursorState => ({
+    cursor: typeof input?.cursor === "string" ? input.cursor : null,
+    offset: typeof input?.offset === "number" && input.offset > 0 ? input.offset : 0,
+    pageSize: typeof input?.pageSize === "number" && input.pageSize > 0 ? input.pageSize : null,
+    done: input?.done === true,
+  });
+
+  if (!raw?.startsWith(PLUGIN_CATALOG_CURSOR_PREFIX)) {
+    return {
+      codePlugins: { ...defaultCatalogSourceCursorState(), cursor: raw ?? null },
+      bundlePlugins: defaultCatalogSourceCursorState(),
+    };
+  }
+  try {
+    const parsed = JSON.parse(
+      raw.slice(PLUGIN_CATALOG_CURSOR_PREFIX.length),
+    ) as Partial<PluginCatalogCursorState>;
+    return {
+      codePlugins: normalize(parsed.codePlugins),
+      bundlePlugins: normalize(parsed.bundlePlugins),
+    };
+  } catch {
+    return {
+      codePlugins: defaultCatalogSourceCursorState(),
+      bundlePlugins: defaultCatalogSourceCursorState(),
+    };
+  }
+}
+
 function initCatalogSource(state: CatalogSourceCursorState): CatalogSourceState {
   return {
     state: { ...state },
@@ -322,7 +365,7 @@ function finalizeCatalogSource(source: CatalogSourceState): CatalogSourceCursorS
       cursor: source.pageCursor,
       offset: source.index,
       pageSize: source.state.pageSize,
-      done: source.page.isDone,
+      done: false,
     };
   }
   return {
@@ -368,6 +411,102 @@ function compareCatalogItems(a: CatalogListItem, b: CatalogListItem) {
   if (a.createdAt !== b.createdAt) return b.createdAt - a.createdAt;
   if (a.family !== b.family) return a.family.localeCompare(b.family);
   return a.name.localeCompare(b.name);
+}
+
+const HTTP_PACKAGE_SEARCH_PAGE_SIZE = 50;
+const HTTP_PACKAGE_SEARCH_SCAN_PAGES = 20;
+
+function catalogSearchScore(item: CatalogListItem, queryText: string) {
+  const needle = queryText.toLowerCase();
+  const name = item.name.toLowerCase();
+  const display = item.displayName.toLowerCase();
+  const runtimeId = item.runtimeId?.toLowerCase() ?? "";
+  const summary = (item.summary ?? "").toLowerCase();
+  let score = 0;
+
+  if (name === needle) score += 200;
+  else if (name.startsWith(needle)) score += 120;
+  else if (name.includes(needle)) score += 80;
+
+  if (display === needle) score += 150;
+  else if (display.startsWith(needle)) score += 70;
+  else if (display.includes(needle)) score += 40;
+
+  if (runtimeId === needle) score += 180;
+  else if (runtimeId.startsWith(needle)) score += 90;
+  else if (runtimeId.includes(needle)) score += 45;
+
+  if (summary.includes(needle)) score += 20;
+  if ((item.capabilityTags ?? []).some((entry) => entry.toLowerCase().includes(needle))) {
+    score += 12;
+  }
+  if (item.isOfficial) score += 5;
+  return score;
+}
+
+function compareCatalogSearchEntries(a: CatalogSearchEntry, b: CatalogSearchEntry) {
+  return (
+    b.score - a.score ||
+    Number(b.package.isOfficial) - Number(a.package.isOfficial) ||
+    compareCatalogItems(a.package, b.package)
+  );
+}
+
+async function searchPackageCatalogByListing(
+  ctx: ActionCtx,
+  args: {
+    query: string;
+    limit: number;
+    family?: "skill" | "code-plugin" | "bundle-plugin";
+    channel?: "official" | "community" | "private";
+    isOfficial?: boolean;
+    highlightedOnly?: boolean;
+    executesCode?: boolean;
+    capabilityTag?: string;
+    viewerUserId?: Id<"users">;
+  },
+): Promise<CatalogSearchEntry[]> {
+  const queryText = args.query.trim().toLowerCase();
+  if (!queryText) return [];
+
+  const matches: CatalogSearchEntry[] = [];
+  const seen = new Set<string>();
+  let cursor: string | null = null;
+  let done = false;
+  let loops = 0;
+
+  while (!done && loops < HTTP_PACKAGE_SEARCH_SCAN_PAGES) {
+    loops += 1;
+    const result: {
+      page: CatalogListItem[];
+      isDone: boolean;
+      continueCursor: string | null;
+    } = await runQueryRef(ctx, internalRefs.packages.listPageForViewerInternal, {
+      family: args.family,
+      channel: args.channel,
+      isOfficial: args.isOfficial,
+      highlightedOnly: args.highlightedOnly,
+      executesCode: args.executesCode,
+      capabilityTag: args.capabilityTag,
+      viewerUserId: args.viewerUserId,
+      paginationOpts: { cursor, numItems: HTTP_PACKAGE_SEARCH_PAGE_SIZE },
+    });
+
+    for (const item of result.page) {
+      const key = `${item.family}:${item.name}`;
+      if (seen.has(key)) continue;
+      const score = catalogSearchScore(item, queryText);
+      if (score <= 0) continue;
+      seen.add(key);
+      matches.push({ score, package: item });
+    }
+
+    done = result.isDone;
+    cursor = result.continueCursor;
+    if (!cursor && !done) break;
+  }
+
+  return matches.sort(compareCatalogSearchEntries).slice(0, args.limit);
 }
 
 async function resolveSkillTags(
@@ -502,7 +641,7 @@ async function listPackages(
   ctx: ActionCtx,
   request: Request,
   family?: PackageListQueryArgs["family"],
-  options?: { includeSkills?: boolean },
+  options?: { includeSkills?: boolean; pluginFamilies?: Array<"code-plugin" | "bundle-plugin"> },
 ) {
   const rate = await applyRateLimit(ctx, request, "read");
   if (!rate.ok) return rate.response;
@@ -515,6 +654,11 @@ async function listPackages(
   const channelRaw = url.searchParams.get("channel")?.trim();
   const capabilityTag = url.searchParams.get("capabilityTag")?.trim() || undefined;
   const isOfficialRaw = url.searchParams.get("isOfficial");
+  const highlightedOnly =
+    url.searchParams.get("featured") === "true" ||
+    url.searchParams.get("featured") === "1" ||
+    url.searchParams.get("highlightedOnly") === "true" ||
+    url.searchParams.get("highlightedOnly") === "1";
   const executesCodeRaw = url.searchParams.get("executesCode");
   const effectiveFamily =
     family ??
@@ -539,6 +683,7 @@ async function listPackages(
     }>(ctx, apiRefs.skills.listPackageCatalogPage, {
       channel,
       isOfficial,
+      highlightedOnly: highlightedOnly || undefined,
       executesCode,
       capabilityTag,
       paginationOpts: { cursor, numItems: limit },
@@ -566,6 +711,7 @@ async function listPackages(
           }>(ctx, internalRefs.packages.listPageForViewerInternal, {
             channel,
             isOfficial,
+            highlightedOnly: highlightedOnly || undefined,
             executesCode,
             capabilityTag,
             viewerUserId: viewerUserId ?? undefined,
@@ -585,6 +731,7 @@ async function listPackages(
           }>(ctx, apiRefs.skills.listPackageCatalogPage, {
             channel,
             isOfficial,
+            highlightedOnly: highlightedOnly || undefined,
             executesCode,
             capabilityTag,
             paginationOpts: { cursor: pageCursor, numItems },
@@ -629,6 +776,85 @@ async function listPackages(
     );
   }
 
+  if (!effectiveFamily && options?.pluginFamilies?.length) {
+    const decodedCursor = decodePluginCatalogCursor(cursor);
+    const codePluginSource = initCatalogSource(decodedCursor.codePlugins);
+    const bundlePluginSource = initCatalogSource(decodedCursor.bundlePlugins);
+    const pageSize = limit;
+    const items: CatalogListItem[] = [];
+    const fetchPluginPage = async (
+      pluginFamily: "code-plugin" | "bundle-plugin",
+      pageCursor: string | null,
+      numItems: number,
+    ) => {
+      const result = await runQueryRef<{
+        page: CatalogListItem[];
+        isDone: boolean;
+        continueCursor: string | null;
+      }>(ctx, internalRefs.packages.listPageForViewerInternal, {
+        family: pluginFamily,
+        channel,
+        isOfficial,
+        highlightedOnly: highlightedOnly || undefined,
+        executesCode,
+        capabilityTag,
+        viewerUserId: viewerUserId ?? undefined,
+        paginationOpts: { cursor: pageCursor, numItems },
+      });
+      return {
+        page: result.page,
+        isDone: result.isDone,
+        continueCursor: result.continueCursor ?? "",
+      };
+    };
+
+    while (items.length < limit) {
+      const [codePluginCandidate, bundlePluginCandidate] = await Promise.all([
+        options.pluginFamilies.includes("code-plugin")
+          ? ensureCatalogSourcePage(codePluginSource, pageSize, (pageCursor, numItems) =>
+              fetchPluginPage("code-plugin", pageCursor, numItems),
+            )
+          : Promise.resolve(null),
+        options.pluginFamilies.includes("bundle-plugin")
+          ? ensureCatalogSourcePage(bundlePluginSource, pageSize, (pageCursor, numItems) =>
+              fetchPluginPage("bundle-plugin", pageCursor, numItems),
+            )
+          : Promise.resolve(null),
+      ]);
+
+      if (!codePluginCandidate && !bundlePluginCandidate) break;
+      if (
+        !bundlePluginCandidate ||
+        (codePluginCandidate &&
+          compareCatalogItems(codePluginCandidate, bundlePluginCandidate) <= 0)
+      ) {
+        items.push(codePluginCandidate!);
+        codePluginSource.index += 1;
+      } else {
+        items.push(bundlePluginCandidate);
+        bundlePluginSource.index += 1;
+      }
+    }
+
+    const nextState = {
+      codePlugins: finalizeCatalogSource(codePluginSource),
+      bundlePlugins: finalizeCatalogSource(bundlePluginSource),
+    };
+    const isDoneAll =
+      nextState.codePlugins.done &&
+      nextState.codePlugins.offset === 0 &&
+      nextState.bundlePlugins.done &&
+      nextState.bundlePlugins.offset === 0;
+    return json(
+      {
+        items,
+        nextCursor: isDoneAll ? null : encodePluginCatalogCursor(nextState),
+      },
+      200,
+      rate.headers,
+    );
+  }
+
   const result = await runQueryRef<{
     page: unknown[];
     isDone: boolean;
@@ -637,6 +863,7 @@ async function listPackages(
     family: effectiveFamily,
     channel,
     isOfficial,
+    highlightedOnly: highlightedOnly || undefined,
     executesCode,
     capabilityTag,
     viewerUserId: viewerUserId ?? undefined,
@@ -654,7 +881,10 @@ export async function listPackagesV1Handler(ctx: ActionCtx, request: Request) {
 }
 
 export async function listPluginsV1Handler(ctx: ActionCtx, request: Request) {
-  return await listPackages(ctx, request, undefined, { includeSkills: false });
+  return await listPackages(ctx, request, undefined, {
+    includeSkills: false,
+    pluginFamilies: ["code-plugin", "bundle-plugin"],
+  });
 }
 
 export async function listCodePluginsV1Handler(ctx: ActionCtx, request: Request) {
@@ -821,6 +1051,31 @@ export async function mintPublishTokenV1Handler(ctx: ActionCtx, request: Request
 
 export async function packagesPostRouterV1Handler(ctx: ActionCtx, request: Request) {
   const segments = getPathSegments(request, "/api/v1/packages/");
+  if (segments[1] === "rescan" && segments.length === 2) {
+    const rate = await applyRateLimit(ctx, request, "write");
+    if (!rate.ok) return rate.response;
+    const auth = await requireApiTokenUserOrResponse(ctx, request, rate.headers);
+    if (!auth.ok) return auth.response;
+
+    try {
+      const result = await runMutationRef(
+        ctx,
+        internalRefs.packages.requestRescanForApiTokenInternal,
+        {
+          actorUserId: auth.userId,
+          name: segments[0]!,
+        },
+      );
+      return json(result, 200, rate.headers);
+    } catch (error) {
+      return text(
+        error instanceof Error ? error.message : "Rescan request failed",
+        400,
+        rate.headers,
+      );
+    }
+  }
+
   if (segments[1] !== "trusted-publisher" || segments.length !== 2) {
     return text("Not found", 404);
   }
@@ -870,13 +1125,26 @@ export async function packagesPostRouterV1Handler(ctx: ActionCtx, request: Reque
 
 export async function packagesDeleteRouterV1Handler(ctx: ActionCtx, request: Request) {
   const segments = getPathSegments(request, "/api/v1/packages/");
-  if (segments[1] !== "trusted-publisher" || segments.length !== 2) {
-    return text("Not found", 404);
-  }
   const rate = await applyRateLimit(ctx, request, "write");
   if (!rate.ok) return rate.response;
   const auth = await requireApiTokenUserOrResponse(ctx, request, rate.headers);
   if (!auth.ok) return auth.response;
+
+  if (segments.length === 1) {
+    try {
+      await runMutationRef(ctx, internalRefs.packages.softDeletePackageInternal, {
+        userId: auth.userId,
+        name: segments[0]!,
+      });
+      return json({ ok: true }, 200, rate.headers);
+    } catch (error) {
+      return softDeleteErrorToResponse("package", error, rate.headers);
+    }
+  }
+
+  if (segments[1] !== "trusted-publisher" || segments.length !== 2) {
+    return text("Not found", 404, rate.headers);
+  }
 
   try {
     await runMutationRef(ctx, internalRefs.packages.deleteTrustedPublisherForUserInternal, {
@@ -1013,7 +1281,7 @@ async function getSkillVersionForRequest(
 async function searchPackages(
   ctx: ActionCtx,
   request: Request,
-  options?: { includeSkills?: boolean },
+  options?: { includeSkills?: boolean; pluginFamilies?: Array<"code-plugin" | "bundle-plugin"> },
 ) {
   const rate = await applyRateLimit(ctx, request, "read");
   if (!rate.ok) return rate.response;
@@ -1025,6 +1293,11 @@ async function searchPackages(
   const familyRaw = url.searchParams.get("family");
   const channelRaw = url.searchParams.get("channel");
   const isOfficialRaw = url.searchParams.get("isOfficial");
+  const highlightedOnly =
+    url.searchParams.get("featured") === "true" ||
+    url.searchParams.get("featured") === "1" ||
+    url.searchParams.get("highlightedOnly") === "true" ||
+    url.searchParams.get("highlightedOnly") === "1";
   const executesCodeRaw = url.searchParams.get("executesCode");
   const capabilityTag = url.searchParams.get("capabilityTag")?.trim() || undefined;
   const family =
@@ -1051,32 +1324,60 @@ async function searchPackages(
         limit,
         channel,
         isOfficial,
+        highlightedOnly: highlightedOnly || undefined,
         executesCode,
         capabilityTag,
       },
     );
   } else if (family || !includeSkills) {
-    results = await runQueryRef<CatalogSearchEntry[]>(
-      ctx,
-      internalRefs.packages.searchForViewerInternal,
-      {
+    if (!family && options?.pluginFamilies?.length) {
+      const pluginResults = await Promise.all(
+        options.pluginFamilies.map((pluginFamily) =>
+          searchPackageCatalogByListing(ctx, {
+            query: queryText,
+            limit,
+            family: pluginFamily,
+            channel,
+            isOfficial,
+            highlightedOnly: highlightedOnly || undefined,
+            executesCode,
+            capabilityTag,
+            viewerUserId: viewerUserId ?? undefined,
+          }),
+        ),
+      );
+      const seen = new Set<string>();
+      results = pluginResults
+        .flat()
+        .filter((entry) => {
+          const key = `${entry.package.family}:${entry.package.name}`;
+          if (seen.has(key)) return false;
+          seen.add(key);
+          return true;
+        })
+        .sort(compareCatalogSearchEntries)
+        .slice(0, limit);
+    } else {
+      results = await searchPackageCatalogByListing(ctx, {
         query: queryText,
         limit,
         family,
         channel,
         isOfficial,
+        highlightedOnly: highlightedOnly || undefined,
         executesCode,
         capabilityTag,
         viewerUserId: viewerUserId ?? undefined,
-      },
-    );
+      });
+    }
   } else {
     const [packageResults, skillResults] = await Promise.all([
-      runQueryRef<CatalogSearchEntry[]>(ctx, internalRefs.packages.searchForViewerInternal, {
+      searchPackageCatalogByListing(ctx, {
         query: queryText,
         limit,
         channel,
         isOfficial,
+        highlightedOnly: highlightedOnly || undefined,
         executesCode,
         capabilityTag,
         viewerUserId: viewerUserId ?? undefined,
@@ -1086,6 +1387,7 @@ async function searchPackages(
         limit,
         channel,
         isOfficial,
+        highlightedOnly: highlightedOnly || undefined,
         executesCode,
         capabilityTag,
       }),
@@ -1098,12 +1400,7 @@ async function searchPackages(
         seen.add(key);
         return true;
       })
-      .sort(
-        (a, b) =>
-          b.score - a.score ||
-          Number(b.package.isOfficial) - Number(a.package.isOfficial) ||
-          compareCatalogItems(a.package, b.package),
-      )
+      .sort(compareCatalogSearchEntries)
       .slice(0, limit);
   }
   return json({ results }, 200, rate.headers);
@@ -1393,6 +1690,13 @@ export async function packagesGetRouterV1Handler(ctx: ActionCtx, request: Reques
       });
     }
     const zip = buildDeterministicPackageZip(entries);
+    try {
+      await runMutationRef(ctx, internalRefs.packages.recordPackageDownloadInternal, {
+        packageId: publicPackage!._id,
+      });
+    } catch {
+      // Best-effort metric path; never fail package downloads.
+    }
     return new Response(new Blob([zip], { type: "application/zip" }), {
       status: 200,
       headers: mergeHeaders(
@@ -1413,7 +1717,10 @@ export async function pluginsGetRouterV1Handler(ctx: ActionCtx, request: Request
   const segments = getPathSegments(request, "/api/v1/plugins/");
   if (segments.length === 0) return text("Not found", 404);
   if (segments[0] === "search" && new URL(request.url).searchParams.has("q")) {
-    return await searchPackages(ctx, request, { includeSkills: false });
+    return await searchPackages(ctx, request, {
+      includeSkills: false,
+      pluginFamilies: ["code-plugin", "bundle-plugin"],
+    });
   }
   return text("Not found", 404);
 }

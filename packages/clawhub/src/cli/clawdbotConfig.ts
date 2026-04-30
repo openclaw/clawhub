@@ -178,7 +178,7 @@ function addConfigRoots(
 
   const extraDirs = config.skills?.load?.extraDirs ?? [];
   for (const dir of extraDirs) {
-    const resolved = resolveUserPath(String(dir));
+    const resolved = resolveUserPath(dir);
     if (!resolved) continue;
     const label = `${prefix}Extra: ${basename(resolved) || resolved}`;
     pushRoot(roots, labels, resolved, label);

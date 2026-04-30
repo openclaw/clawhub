@@ -19,7 +19,7 @@ vi.mock("../registry.js", () => registryMocks.moduleFactory());
 vi.mock("../../http.js", () => httpMocks.moduleFactory());
 vi.mock("../ui.js", () => uiMocks.moduleFactory());
 
-const { cmdBanUser, cmdSetRole } = await import("./moderation");
+const { cmdBanUser, cmdSetRole, cmdUnbanUser } = await import("./moderation");
 
 afterEach(() => {
   vi.clearAllMocks();
@@ -188,6 +188,108 @@ describe("cmdSetRole", () => {
         method: "POST",
         path: "/api/v1/users/role",
         body: { userId: "user_123", role: "admin" },
+      }),
+      expect.anything(),
+    );
+  });
+});
+
+describe("cmdUnbanUser", () => {
+  it("requires --yes when input is disabled", async () => {
+    await expect(cmdUnbanUser(makeGlobalOpts(), "demo", {}, false)).rejects.toThrow(/--yes/i);
+  });
+
+  it("posts handle payload", async () => {
+    httpMocks.apiRequest.mockResolvedValueOnce({
+      ok: true,
+      alreadyUnbanned: false,
+      restoredSkills: 1,
+    });
+    await cmdUnbanUser(makeGlobalOpts(), "hightower6eu", { yes: true }, false);
+    expect(httpMocks.apiRequest).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({
+        method: "POST",
+        path: "/api/v1/users/unban",
+        body: { handle: "hightower6eu" },
+      }),
+      expect.anything(),
+    );
+  });
+
+  it("includes reason when provided", async () => {
+    httpMocks.apiRequest.mockResolvedValueOnce({
+      ok: true,
+      alreadyUnbanned: false,
+      restoredSkills: 0,
+    });
+    await cmdUnbanUser(
+      makeGlobalOpts(),
+      "hightower6eu",
+      { yes: true, reason: "appeal accepted" },
+      false,
+    );
+    expect(httpMocks.apiRequest).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({
+        method: "POST",
+        path: "/api/v1/users/unban",
+        body: { handle: "hightower6eu", reason: "appeal accepted" },
+      }),
+      expect.anything(),
+    );
+  });
+
+  it("posts user id payload when --id is set", async () => {
+    httpMocks.apiRequest.mockResolvedValueOnce({
+      ok: true,
+      alreadyUnbanned: false,
+      restoredSkills: 0,
+    });
+    await cmdUnbanUser(makeGlobalOpts(), "user_123", { yes: true, id: true }, false);
+    expect(httpMocks.apiRequest).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({
+        method: "POST",
+        path: "/api/v1/users/unban",
+        body: { userId: "user_123" },
+      }),
+      expect.anything(),
+    );
+  });
+
+  it("resolves user via fuzzy search", async () => {
+    httpMocks.apiRequest
+      .mockResolvedValueOnce({
+        items: [
+          {
+            userId: "users_123",
+            handle: "moonshine-100rze",
+            displayName: null,
+            name: null,
+            role: "user",
+          },
+        ],
+        total: 1,
+      })
+      .mockResolvedValueOnce({ ok: true, alreadyUnbanned: false, restoredSkills: 0 });
+    await cmdUnbanUser(makeGlobalOpts(), "moonshine-100rze", { yes: true, fuzzy: true }, false);
+    expect(httpMocks.apiRequest).toHaveBeenNthCalledWith(
+      1,
+      expect.anything(),
+      expect.objectContaining({
+        method: "GET",
+        url: expect.stringContaining("/api/v1/users?"),
+      }),
+      expect.anything(),
+    );
+    expect(httpMocks.apiRequest).toHaveBeenNthCalledWith(
+      2,
+      expect.anything(),
+      expect.objectContaining({
+        method: "POST",
+        path: "/api/v1/users/unban",
+        body: { userId: "users_123" },
       }),
       expect.anything(),
     );

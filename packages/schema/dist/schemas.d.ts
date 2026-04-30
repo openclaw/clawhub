@@ -102,6 +102,7 @@ export declare const ApiCliPublishResponseSchema: import("arktype/internal/varia
 }, {}>;
 export declare const CliSkillDeleteRequestSchema: import("arktype/internal/variants/object.ts").ObjectType<{
     slug: string;
+    reason?: string | undefined;
 }, {}>;
 export type CliSkillDeleteRequest = (typeof CliSkillDeleteRequestSchema)[inferred];
 export declare const ApiCliSkillDeleteResponseSchema: import("arktype/internal/variants/object.ts").ObjectType<{
@@ -134,6 +135,7 @@ export declare const ApiV1WhoamiResponseSchema: import("arktype/internal/variant
         handle: string | null;
         displayName?: string | null | undefined;
         image?: string | null | undefined;
+        role?: "user" | "admin" | "moderator" | null | undefined;
     };
 }, {}>;
 export declare const ApiV1UserSearchResponseSchema: import("arktype/internal/variants/object.ts").ObjectType<{
@@ -276,6 +278,17 @@ export declare const ApiV1PublishResponseSchema: import("arktype/internal/varian
 export declare const ApiV1DeleteResponseSchema: import("arktype/internal/variants/object.ts").ObjectType<{
     ok: true;
 }, {}>;
+export declare const ApiV1RescanResponseSchema: import("arktype/internal/variants/object.ts").ObjectType<{
+    ok: true;
+    targetKind: "skill" | "package";
+    name: string;
+    version: string;
+    status: "in_progress" | "completed" | "failed";
+    remainingRequests: number;
+    maxRequests: number;
+    pendingRequestId?: string | undefined;
+}, {}>;
+export type ApiV1RescanResponse = (typeof ApiV1RescanResponseSchema)[inferred];
 export declare const ApiV1SkillRenameResponseSchema: import("arktype/internal/variants/object.ts").ObjectType<{
     ok: true;
     slug: string;

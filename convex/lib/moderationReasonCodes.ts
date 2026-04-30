@@ -12,13 +12,26 @@ export type ModerationFinding = {
   evidence: string;
 };
 
-export const MODERATION_ENGINE_VERSION = "v2.4.0";
+export const MODERATION_ENGINE_VERSION = "v2.4.22";
 
 export const REASON_CODES = {
   DANGEROUS_EXEC: "suspicious.dangerous_exec",
   DYNAMIC_CODE: "suspicious.dynamic_code_execution",
   GENERATED_SOURCE_TEMPLATE: "suspicious.generated_source_template_injection",
   EXPOSED_RESOURCE_IDENTIFIER: "suspicious.exposed_resource_identifier",
+  DESTRUCTIVE_DELETE_COMMAND: "suspicious.destructive_delete_command",
+  UNSAFE_BROWSER_TEXT_INPUT: "suspicious.unsafe_browser_text_input",
+  EXPOSED_SECRET_LITERAL: "suspicious.exposed_secret_literal",
+  CREDENTIAL_EXPOSURE_INSTRUCTIONS: "suspicious.credential_exposure_instructions",
+  BROWSER_CREDENTIAL_AUTOMATION: "suspicious.browser_credential_automation",
+  SECRET_ARGV_EXPOSURE: "suspicious.secret_argv_exposure",
+  HOST_PLATFORM_SOURCE_PATCH: "suspicious.host_platform_source_patch",
+  BROWSER_FILE_RENDER: "suspicious.browser_file_render",
+  UNSAFE_FILE_WRITE: "suspicious.unsafe_file_write",
+  INSECURE_TLS_VERIFICATION: "suspicious.insecure_tls_verification",
+  AUTONOMOUS_CREDENTIAL_EGRESS: "suspicious.autonomous_credential_egress",
+  HARDCODED_OPERATOR_BILLING: "suspicious.hardcoded_operator_billing",
+  REMOTE_RECIPE_EXECUTION: "suspicious.remote_recipe_execution",
   CREDENTIAL_HARVEST: "suspicious.env_credential_access",
   EXFILTRATION: "suspicious.potential_exfiltration",
   OBFUSCATED_CODE: "suspicious.obfuscated_code",
@@ -29,6 +42,7 @@ export const REASON_CODES = {
   MANIFEST_PRIVILEGED_ALWAYS: "suspicious.privileged_always",
   MALICIOUS_INSTALL_PROMPT: "malicious.install_terminal_payload",
   KNOWN_BLOCKED_SIGNATURE: "malicious.known_blocked_signature",
+  DEP_NOT_FOUND: "suspicious.dep_not_found_on_registry",
 } as const;
 
 const MALICIOUS_CODES = new Set<string>([

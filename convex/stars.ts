@@ -1,13 +1,14 @@
 import { v } from "convex/values";
+import { getOptionalActiveAuthUserId, requireUser } from "./lib/access";
 import { internalMutation, mutation, internalQuery, query } from "./functions";
-import { requireUser } from "./lib/access";
 import { toPublicSkill } from "./lib/public";
 import { insertStatEvent } from "./skillStatEvents";
 
 export const isStarred = query({
   args: { skillId: v.id("skills") },
   handler: async (ctx, args) => {
-    const { userId } = await requireUser(ctx);
+    const userId = await getOptionalActiveAuthUserId(ctx);
+    if (!userId) return false;
     const existing = await ctx.db
       .query("stars")
       .withIndex("by_skill_user", (q) => q.eq("skillId", args.skillId).eq("userId", userId))

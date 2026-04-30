@@ -13,11 +13,15 @@ import { extractResponseText } from "./lib/openaiResponse";
 import type { SkillEvalContext } from "./lib/securityPrompt";
 import {
   assembleEvalUserMessage,
+  assembleSkillEvalUserMessage,
   detectInjectionPatterns,
   getLlmEvalModel,
+  getLlmEvalReasoningEffort,
+  getLlmEvalServiceTier,
+  LEGACY_SECURITY_EVALUATOR_SYSTEM_PROMPT,
   LLM_EVAL_MAX_OUTPUT_TOKENS,
   parseLlmEvalResponse,
-  SECURITY_EVALUATOR_SYSTEM_PROMPT,
+  SKILL_SECURITY_EVALUATOR_SYSTEM_PROMPT,
 } from "./lib/securityPrompt";
 
 const internalRefs = internal as unknown as {
@@ -27,6 +31,12 @@ const internalRefs = internal as unknown as {
     updateReleaseLlmAnalysisInternal: unknown;
   };
 };
+
+const llmEvalModerationModeValidator = v.optional(
+  v.union(v.literal("normal"), v.literal("preserve")),
+);
+
+type LlmEvalModerationMode = "normal" | "preserve";
 
 async function runQueryRef<T>(
   ctx: { runQuery: (ref: never, args: never) => Promise<unknown> },
@@ -68,6 +78,7 @@ function verdictToStatus(verdict: string): string {
 export const evaluateWithLlm = internalAction({
   args: {
     versionId: v.id("skillVersions"),
+    moderationMode: llmEvalModerationModeValidator,
   },
   handler: async (ctx, args) => {
     const apiKey = process.env.OPENAI_API_KEY;
@@ -77,12 +88,15 @@ export const evaluateWithLlm = internalAction({
     }
 
     const model = getLlmEvalModel();
+    const reasoningEffort = getLlmEvalReasoningEffort();
+    const serviceTier = getLlmEvalServiceTier();
 
     // Store error helper
     const storeError = async (message: string) => {
       console.error(`[llmEval] ${message}`);
       await ctx.runMutation(internal.skills.updateVersionLlmAnalysisInternal, {
         versionId: args.versionId,
+        ...(args.moderationMode ? { moderationMode: args.moderationMode } : {}),
         llmAnalysis: {
           status: "error",
           summary: message,
@@ -174,10 +188,12 @@ export const evaluateWithLlm = internalAction({
       skillMdContent,
       fileContents,
       injectionSignals,
+      staticScan: version.staticScan,
+      capabilityTags: version.capabilityTags,
     };
 
     // 6. Assemble user message
-    const userMessage = assembleEvalUserMessage(evalCtx);
+    const userMessage = assembleSkillEvalUserMessage(evalCtx);
 
     // 7. Call OpenAI Responses API (with retry for rate limits)
     const MAX_RETRIES = 3;
@@ -185,8 +201,12 @@ export const evaluateWithLlm = internalAction({
     try {
       const body = JSON.stringify({
         model,
-        instructions: SECURITY_EVALUATOR_SYSTEM_PROMPT,
+        service_tier: serviceTier,
+        instructions: SKILL_SECURITY_EVALUATOR_SYSTEM_PROMPT,
         input: userMessage,
+        reasoning: {
+          effort: reasoningEffort,
+        },
         max_output_tokens: LLM_EVAL_MAX_OUTPUT_TOKENS,
         text: {
           format: {
@@ -251,6 +271,7 @@ export const evaluateWithLlm = internalAction({
     // 9. Store result
     await ctx.runMutation(internal.skills.updateVersionLlmAnalysisInternal, {
       versionId: args.versionId,
+      ...(args.moderationMode ? { moderationMode: args.moderationMode } : {}),
       llmAnalysis: {
         status: verdictToStatus(result.verdict),
         verdict: result.verdict,
@@ -259,6 +280,8 @@ export const evaluateWithLlm = internalAction({
         dimensions: result.dimensions,
         guidance: result.guidance,
         findings: result.findings || undefined,
+        agenticRiskFindings: result.agenticRiskFindings,
+        riskSummary: result.riskSummary,
         model,
         checkedAt: Date.now(),
       },
@@ -268,8 +291,8 @@ export const evaluateWithLlm = internalAction({
       `[llmEval] Evaluated ${skill.slug}@${version.version}: ${result.verdict} (${result.confidence} confidence)`,
     );
 
-    // Moderation visibility is finalized by VT results.
-    // LLM eval only stores analysis payload on the version.
+    // Normal writes recompute moderation in updateVersionLlmAnalysisInternal.
+    // Preserve mode stores analysis only for one-time backfills.
   },
 });
 
@@ -285,6 +308,8 @@ export const evaluatePackageReleaseWithLlm = internalAction({
     }
 
     const model = getLlmEvalModel();
+    const reasoningEffort = getLlmEvalReasoningEffort();
+    const serviceTier = getLlmEvalServiceTier();
     const storeError = async (message: string) => {
       console.error(`[llmEval:package] ${message}`);
       await runMutationRef(ctx, internalRefs.packages.updateReleaseLlmAnalysisInternal, {
@@ -375,8 +400,12 @@ export const evaluatePackageReleaseWithLlm = internalAction({
     try {
       const body = JSON.stringify({
         model,
-        instructions: SECURITY_EVALUATOR_SYSTEM_PROMPT,
+        service_tier: serviceTier,
+        instructions: LEGACY_SECURITY_EVALUATOR_SYSTEM_PROMPT,
         input: userMessage,
+        reasoning: {
+          effort: reasoningEffort,
+        },
         max_output_tokens: LLM_EVAL_MAX_OUTPUT_TOKENS,
         text: {
           format: {
@@ -490,10 +519,23 @@ export const evaluateBySlug = internalAction({
 // invocation so we don't hit Convex action timeouts.
 // ---------------------------------------------------------------------------
 
-export const backfillLlmEval = internalAction({
+type LlmBackfillBatch = {
+  skills: Array<{
+    versionId: Id<"skillVersions">;
+    slug: string;
+  }>;
+  nextCursor: number;
+  done: boolean;
+};
+
+export const backfillLlmEval: ReturnType<typeof internalAction> = internalAction({
   args: {
     cursor: v.optional(v.number()),
     batchSize: v.optional(v.number()),
+    delayMs: v.optional(v.number()),
+    dryRun: v.optional(v.boolean()),
+    maxToSchedule: v.optional(v.number()),
+    moderationMode: llmEvalModerationModeValidator,
     accTotal: v.optional(v.number()),
     accScheduled: v.optional(v.number()),
     accSkipped: v.optional(v.number()),
@@ -502,29 +544,54 @@ export const backfillLlmEval = internalAction({
   handler: async (ctx, args) => {
     const startTime = args.startTime ?? Date.now();
     const apiKey = process.env.OPENAI_API_KEY;
-    if (!apiKey) {
+    const dryRun = args.dryRun ?? false;
+    if (!dryRun && !apiKey) {
       console.log("[llmEval:backfill] OPENAI_API_KEY not configured");
       return { error: "OPENAI_API_KEY not configured" };
     }
 
-    const batchSize = args.batchSize ?? 25;
+    const requestedBatchSize = Math.max(1, Math.floor(args.batchSize ?? 25));
+    const maxToSchedule =
+      args.maxToSchedule === undefined ? undefined : Math.max(0, Math.floor(args.maxToSchedule));
     const cursor = args.cursor ?? 0;
+    const delayMs = Math.max(0, Math.floor(args.delayMs ?? 5_000));
+    const moderationMode: LlmEvalModerationMode = args.moderationMode ?? "normal";
     let accTotal = args.accTotal ?? 0;
     let accScheduled = args.accScheduled ?? 0;
     let accSkipped = args.accSkipped ?? 0;
+    const remaining =
+      maxToSchedule === undefined ? undefined : Math.max(0, maxToSchedule - accScheduled);
 
-    const batch = await ctx.runQuery(internal.skills.getActiveSkillBatchForLlmBackfillInternal, {
-      cursor,
-      batchSize,
-    });
+    if (remaining === 0) {
+      console.log("[llmEval:backfill] Schedule limit reached before fetching next batch");
+      return {
+        status: "limit_reached",
+        total: accTotal,
+        scheduled: accScheduled,
+        skipped: accSkipped,
+        cursor,
+        moderationMode,
+      };
+    }
+
+    const batchSize =
+      remaining === undefined ? requestedBatchSize : Math.min(requestedBatchSize, remaining);
+
+    const batch: LlmBackfillBatch = await ctx.runQuery(
+      internal.skills.getActiveSkillBatchForLlmBackfillInternal,
+      {
+        cursor,
+        batchSize,
+      },
+    );
 
     if (batch.skills.length === 0 && batch.done) {
       console.log("[llmEval:backfill] No more skills to evaluate");
-      return { total: accTotal, scheduled: accScheduled, skipped: accSkipped };
+      return { total: accTotal, scheduled: accScheduled, skipped: accSkipped, moderationMode };
     }
 
     console.log(
-      `[llmEval:backfill] Processing batch of ${batch.skills.length} skills (cursor=${cursor}, accumulated=${accTotal})`,
+      `[llmEval:backfill] Processing batch of ${batch.skills.length} skills (cursor=${cursor}, accumulated=${accTotal}, moderationMode=${moderationMode}, dryRun=${dryRun})`,
     );
 
     for (const { versionId, slug } of batch.skills) {
@@ -538,13 +605,35 @@ export const backfillLlmEval = internalAction({
         continue;
       }
 
-      // Schedule each evaluation as a separate action invocation
-      await ctx.scheduler.runAfter(0, internal.llmEval.evaluateWithLlm, { versionId });
+      // Schedule each evaluation as a separate action invocation.
+      if (!dryRun) {
+        await ctx.scheduler.runAfter(0, internal.llmEval.evaluateWithLlm, {
+          versionId,
+          moderationMode,
+        });
+      }
       accScheduled++;
-      console.log(`[llmEval:backfill] Scheduled eval for ${slug}`);
+      console.log(`[llmEval:backfill] ${dryRun ? "Would schedule" : "Scheduled"} eval for ${slug}`);
     }
 
     accTotal += batch.skills.length;
+    const hitLimit = maxToSchedule !== undefined && accScheduled >= maxToSchedule;
+
+    if (dryRun || hitLimit) {
+      const durationMs = Date.now() - startTime;
+      const result = {
+        status: dryRun ? "dry_run" : "limit_reached",
+        total: accTotal,
+        scheduled: accScheduled,
+        skipped: accSkipped,
+        nextCursor: batch.nextCursor,
+        done: batch.done,
+        durationMs,
+        moderationMode,
+      };
+      console.log("[llmEval:backfill] Paused:", result);
+      return result;
+    }
 
     if (!batch.done) {
       // Delay the next batch slightly to avoid overwhelming the scheduler
@@ -552,9 +641,12 @@ export const backfillLlmEval = internalAction({
       console.log(
         `[llmEval:backfill] Scheduling next batch (cursor=${batch.nextCursor}, total so far=${accTotal})`,
       );
-      await ctx.scheduler.runAfter(5_000, internal.llmEval.backfillLlmEval, {
+      await ctx.scheduler.runAfter(delayMs, internal.llmEval.backfillLlmEval, {
         cursor: batch.nextCursor,
-        batchSize,
+        batchSize: requestedBatchSize,
+        delayMs,
+        ...(maxToSchedule !== undefined ? { maxToSchedule } : {}),
+        moderationMode,
         accTotal,
         accScheduled,
         accSkipped,
@@ -569,6 +661,7 @@ export const backfillLlmEval = internalAction({
       scheduled: accScheduled,
       skipped: accSkipped,
       durationMs,
+      moderationMode,
     };
     console.log("[llmEval:backfill] Complete:", result);
     return result;

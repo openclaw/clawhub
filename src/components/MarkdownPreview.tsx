@@ -1,94 +1,107 @@
-import { parse } from "@create-markdown/core";
-import { blocksToHTML, renderAsync, shikiPlugin } from "@create-markdown/preview";
-import { useEffect, useRef, useState } from "react";
+import rehypeShikiFromHighlighter from "@shikijs/rehype/core";
+import { useEffect, useMemo, useState } from "react";
+import ReactMarkdown from "react-markdown";
+import rehypeRaw from "rehype-raw";
+import rehypeSanitize, { defaultSchema } from "rehype-sanitize";
+import remarkGfm from "remark-gfm";
+import type { PluggableList } from "unified";
+import { rehypeProxyImages } from "../lib/rehypeProxyImages";
 import { cn } from "../lib/utils";
 
 interface MarkdownPreviewProps {
   children: string;
   className?: string;
-  /** Enable Shiki syntax highlighting for code blocks (async). Default: true */
+  /** Enable Shiki syntax highlighting for fenced code blocks. Default: true. */
   highlight?: boolean;
 }
 
-/**
- * Auto-link bare URLs in HTML that aren't already inside anchor tags or attributes.
- * Matches http/https URLs in text nodes only (not inside tags).
- */
-function autolinkURLs(html: string): string {
-  // Split HTML into tags and text segments, then only linkify text segments
-  return html.replace(
-    /(<[^>]*>)|((https?:\/\/)[^\s<>"')\]]+)/gi,
-    (match, tag: string | undefined, url: string | undefined) => {
-      // If it's an HTML tag, leave it alone
-      if (tag) return tag;
-      // If it's a bare URL in text content, wrap it
-      if (url) {
-        // Trim trailing punctuation that's likely not part of the URL
-        const trailingPunct = /[.,;:!?)]+$/.exec(url);
-        const cleanUrl = trailingPunct ? url.slice(0, -trailingPunct[0].length) : url;
-        const suffix = trailingPunct ? trailingPunct[0] : "";
-        return `<a href="${cleanUrl}" target="_blank" rel="noopener noreferrer">${cleanUrl}</a>${suffix}`;
-      }
-      return match;
-    },
-  );
+const schema = {
+  ...defaultSchema,
+  tagNames: [...(defaultSchema.tagNames ?? []), "picture", "source"],
+  attributes: {
+    ...defaultSchema.attributes,
+    "*": [...(defaultSchema.attributes?.["*"] ?? []), "align"],
+    img: [...(defaultSchema.attributes?.img ?? []), "width", "height"],
+    source: ["media", "srcSet", "srcset", "type"],
+    picture: [],
+  },
+};
+
+// Order matters: rehype-sanitize runs BEFORE rehype-shiki so sanitize only
+// sees user-authored HTML; shiki's trusted styled output flows through after.
+// rehypeProxyImages rewrites after sanitize so we rewrite only already-safe
+// <img src="..."> nodes (sanitize strips event handlers, javascript: URLs).
+const baseRehype: PluggableList = [rehypeRaw, [rehypeSanitize, schema], rehypeProxyImages];
+
+const SHIKI_THEME = "github-dark";
+const SHIKI_LANGS = [
+  "bash",
+  "sh",
+  "shell",
+  "ts",
+  "tsx",
+  "js",
+  "jsx",
+  "json",
+  "yaml",
+  "md",
+  "python",
+  "nix",
+  "http",
+  "html",
+  "css",
+  "toml",
+  "rust",
+  "go",
+  "dockerfile",
+  "diff",
+];
+
+let highlighterPromise: Promise<unknown> | null = null;
+
+function loadHighlighter(): Promise<unknown> {
+  if (!highlighterPromise) {
+    highlighterPromise = import("shiki").then(({ createHighlighter }) =>
+      createHighlighter({
+        themes: [SHIKI_THEME],
+        langs: SHIKI_LANGS,
+      }),
+    );
+  }
+  return highlighterPromise;
 }
 
-/**
- * Rich markdown preview using @create-markdown/preview.
- * Renders markdown → HTML with optional Shiki syntax highlighting.
- * Falls back to synchronous (unhighlighted) rendering while Shiki loads.
- */
 export function MarkdownPreview({ children, className, highlight = true }: MarkdownPreviewProps) {
-  const containerRef = useRef<HTMLDivElement>(null);
-  // Initial sync render (no highlighting) for instant display
-  const [html, setHtml] = useState(() => {
-    try {
-      const blocks = parse(children);
-      return autolinkURLs(blocksToHTML(blocks));
-    } catch {
-      return "";
-    }
-  });
+  const [highlighter, setHighlighter] = useState<unknown>(null);
 
   useEffect(() => {
     let cancelled = false;
-
-    // Re-parse synchronously on content change
-    try {
-      const blocks = parse(children);
-      const syncHtml = autolinkURLs(blocksToHTML(blocks));
-      setHtml(syncHtml);
-
-      if (!highlight) return;
-
-      // Async render with Shiki syntax highlighting
-      void renderAsync(blocks, {
-        plugins: [shikiPlugin({ theme: "github-dark" })],
-      })
-        .then((highlighted) => {
-          if (!cancelled) {
-            setHtml(autolinkURLs(highlighted));
-          }
+    if (highlight) {
+      loadHighlighter()
+        .then((h) => {
+          if (!cancelled) setHighlighter(h);
         })
         .catch(() => {
-          // Shiki failed to load — keep the sync render
+          // Shiki failed to initialize — keep plain rendering.
         });
-    } catch {
-      // Parse failed — clear
-      setHtml("");
     }
-
     return () => {
       cancelled = true;
     };
-  }, [children, highlight]);
+  }, [highlight]);
+
+  const rehypePlugins = useMemo<PluggableList>(() => {
+    if (highlight && highlighter) {
+      return [...baseRehype, [rehypeShikiFromHighlighter, highlighter, { theme: SHIKI_THEME }]];
+    }
+    return baseRehype;
+  }, [highlight, highlighter]);
 
   return (
-    <div
-      ref={containerRef}
-      className={cn("markdown", className)}
-      dangerouslySetInnerHTML={{ __html: html }}
-    />
+    <div className={cn("markdown", className)}>
+      <ReactMarkdown remarkPlugins={[remarkGfm]} rehypePlugins={rehypePlugins}>
+        {children}
+      </ReactMarkdown>
+    </div>
   );
 }

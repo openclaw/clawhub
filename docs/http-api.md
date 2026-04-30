@@ -13,6 +13,10 @@ All v1 paths are under `/api/v1/...` and implemented by Convex HTTP routes (`con
 Legacy `/api/...` and `/api/cli/...` remain for compatibility (see `DEPRECATIONS.md`).
 OpenAPI: `/api/v1/openapi.json`.
 
+## Public catalog reuse
+
+Third-party directories may use the public read endpoints to list or search ClawHub skills. Please cache results, honor `429`/`Retry-After`, link users back to the canonical ClawHub listing (`https://clawhub.ai/<owner>/<slug>`), and avoid implying ClawHub endorsement of the third-party site. Do not attempt to mirror hidden, private, or moderation-blocked content outside the public API surface.
+
 ## Rate limits
 
 Enforcement model:
@@ -21,7 +25,7 @@ Enforcement model:
 - Authenticated requests (valid Bearer token): enforced per user bucket.
 - If token is missing/invalid, behavior falls back to IP enforcement.
 
-- Read: 180/min per IP, 900/min per key
+- Read: 600/min per IP, 2400/min per key
 - Write: 45/min per IP, 180/min per key
 - Download: 30/min per IP, 180/min per key (`/api/v1/download`)
 
@@ -63,6 +67,7 @@ IP source:
 
 - Uses `cf-connecting-ip` (Cloudflare) for client IP by default.
 - Set `TRUST_FORWARDED_IPS=true` to opt in to `x-forwarded-for`, `x-real-ip`, or `fly-client-ip` (non-Cloudflare deployments).
+- If no trusted client IP is available, anonymous download requests use an endpoint-scoped fallback bucket instead of one global `ip:unknown` bucket. Anonymous read/write requests still use the shared unknown bucket so missing-IP deployments remain visible and conservative.
 - If you run behind a reverse proxy/load balancer, ensure real client IP headers are preserved and trusted correctly, or rate limits may be too strict due to shared proxy IPs.
 
 ## Public endpoints (no auth)
@@ -97,6 +102,17 @@ Response:
 Notes:
 
 - Results are returned in relevance order (embedding similarity + exact slug/name token boosts + popularity prior from downloads).
+- Relevance is stronger than popularity. A precise slug or display-name token match can outrank a looser match with many more downloads.
+- ASCII text is tokenized on word and punctuation boundaries. For example, `personal-map` contains a standalone `map` token, while `amap-jsapi-skill` contains `amap`, `jsapi`, and `skill`; searching for `map` therefore gives `personal-map` a stronger lexical match than `amap-jsapi-skill`.
+- Downloads are used as a small log-scaled prior and tie-breaker, not as the primary ranking signal. High-download skills can rank lower when the query text is a weaker match.
+- Suspicious or hidden moderation state can remove a skill from public search depending on caller filters and current moderation status.
+
+Publisher discoverability guidance:
+
+- Put the terms users will literally search for in the display name, summary, and tags. Use a standalone slug token only when it is also a stable identity you want to keep.
+- Do not rename a slug just to chase one query unless the new slug is a better long-term canonical name. Old slugs become redirect aliases, but the canonical URL, displayed slug, and future search digests use the new slug.
+- Rename aliases preserve resolution for old URLs and installs that resolve through the registry, but search ranking is based on the canonical skill metadata after the rename has indexed. Existing stats stay with the skill.
+- If a skill is unexpectedly invisible, check moderation state first with `clawhub inspect <slug>` while logged in before changing ranking-related metadata.
 
 ### `GET /api/v1/skills`
 
@@ -104,13 +120,14 @@ Query params:
 
 - `limit` (optional): integer (1–200)
 - `cursor` (optional): pagination cursor for any non-`trending` sort
-- `sort` (optional): `updated` (default), `downloads`, `stars` (alias: `rating`), `installsCurrent` (alias: `installs`), `installsAllTime`, `trending`
+- `sort` (optional): `updated` (default), `createdAt` (alias: `newest`), `downloads`, `stars` (alias: `rating`), `installsCurrent` (alias: `installs`), `installsAllTime`, `trending`
 - `nonSuspiciousOnly` (optional): `true` to hide suspicious (`flagged.suspicious`) skills
 - `nonSuspicious` (optional): legacy alias for `nonSuspiciousOnly`
 
 Notes:
 
 - `trending` ranks by installs in the last 7 days (telemetry-based).
+- `createdAt` is stable for new-skill crawls; `updated` changes when existing skills are republished.
 - When `nonSuspiciousOnly=true`, cursor-based sorts may return fewer than `limit` items on a page because suspicious skills are filtered after page retrieval.
 - Use `nextCursor` to continue pagination when present. A short page does not by itself mean end-of-results.
 
@@ -445,6 +462,14 @@ Validation highlights:
 
 Soft-delete / restore a skill (owner, moderator, or admin).
 
+Optional JSON body:
+
+```json
+{ "reason": "Held for moderation pending legal review." }
+```
+
+When present, `reason` is stored as the skill moderation note and copied into the audit log.
+
 Status codes:
 
 - `200`: ok
@@ -509,6 +534,28 @@ Response:
 
 ```json
 { "ok": true, "alreadyBanned": false, "deletedSkills": 3 }
+```
+
+### `POST /api/v1/users/unban`
+
+Unban a user and restore eligible skills (admin only).
+
+Body:
+
+```json
+{ "handle": "user_handle", "reason": "optional unban reason" }
+```
+
+or
+
+```json
+{ "userId": "users_...", "reason": "optional unban reason" }
+```
+
+Response:
+
+```json
+{ "ok": true, "alreadyUnbanned": false, "restoredSkills": 3 }
 ```
 
 ### `POST /api/v1/users/role`

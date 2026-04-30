@@ -2,6 +2,7 @@
 import { stat } from "node:fs/promises";
 import { join, resolve } from "node:path";
 import { Command } from "commander";
+import { shouldShowAdminCommandsInHelp } from "./cli/adminHelp.js";
 import { getCliBuildLabel, getCliVersion } from "./cli/buildInfo.js";
 import { resolveClawdbotDefaultWorkspace } from "./cli/clawdbotConfig.js";
 import { cmdLoginFlow, cmdLogout, cmdWhoami } from "./cli/commands/auth.js";
@@ -12,7 +13,7 @@ import {
   cmdUnhideSkill,
 } from "./cli/commands/delete.js";
 import { cmdInspect } from "./cli/commands/inspect.js";
-import { cmdBanUser, cmdSetRole } from "./cli/commands/moderation.js";
+import { cmdBanUser, cmdSetRole, cmdUnbanUser } from "./cli/commands/moderation.js";
 import { cmdMergeSkill, cmdRenameSkill } from "./cli/commands/ownership.js";
 import {
   cmdExplorePackages,
@@ -23,6 +24,7 @@ import {
   cmdSetPackageTrustedPublisher,
 } from "./cli/commands/packages.js";
 import { cmdPublish } from "./cli/commands/publish.js";
+import { cmdRescanPackage, cmdRescanSkill } from "./cli/commands/rescan.js";
 import {
   cmdExplore,
   cmdInstall,
@@ -47,6 +49,9 @@ import { DEFAULT_REGISTRY, DEFAULT_SITE } from "./cli/registry.js";
 import type { GlobalOpts } from "./cli/types.js";
 import { fail } from "./cli/ui.js";
 import { readGlobalConfig } from "./config.js";
+
+const showAdminCommandsInHelp = await shouldShowAdminCommandsInHelp();
+const adminCommandOptions = showAdminCommandsInHelp ? undefined : { hidden: true };
 
 const program = new Command()
   .name("clawhub")
@@ -234,7 +239,7 @@ program
 
 program
   .command("list")
-  .description("List installed skills (from lockfile)")
+  .description("List installed skills (tracked and manually installed)")
   .action(async () => {
     const opts = await resolveGlobalOpts();
     await cmdList(opts);
@@ -297,6 +302,8 @@ program
   .command("delete")
   .description("Soft-delete a skill (owner, moderator, or admin)")
   .argument("<slug>", "Skill slug")
+  .option("--reason <text>", "Moderation note/reason")
+  .option("--note <text>", "Alias for --reason")
   .option("--yes", "Skip confirmation")
   .action(async (slug, options) => {
     const opts = await resolveGlobalOpts();
@@ -307,6 +314,8 @@ program
   .command("hide")
   .description("Hide a skill (owner, moderator, or admin)")
   .argument("<slug>", "Skill slug")
+  .option("--reason <text>", "Moderation note/reason")
+  .option("--note <text>", "Alias for --reason")
   .option("--yes", "Skip confirmation")
   .action(async (slug, options) => {
     const opts = await resolveGlobalOpts();
@@ -317,6 +326,8 @@ program
   .command("undelete")
   .description("Restore a hidden skill (owner, moderator, or admin)")
   .argument("<slug>", "Skill slug")
+  .option("--reason <text>", "Moderation note/reason")
+  .option("--note <text>", "Alias for --reason")
   .option("--yes", "Skip confirmation")
   .action(async (slug, options) => {
     const opts = await resolveGlobalOpts();
@@ -327,6 +338,8 @@ program
   .command("unhide")
   .description("Unhide a skill (owner, moderator, or admin)")
   .argument("<slug>", "Skill slug")
+  .option("--reason <text>", "Moderation note/reason")
+  .option("--note <text>", "Alias for --reason")
   .option("--yes", "Skip confirmation")
   .action(async (slug, options) => {
     const opts = await resolveGlobalOpts();
@@ -452,6 +465,17 @@ trustedPublisherCmd
     await cmdDeletePackageTrustedPublisher(opts, name, options);
   });
 
+packageCmd
+  .command("rescan")
+  .description("Request a security rescan for the latest published package release")
+  .argument("<name>", "Package name")
+  .option("--yes", "Skip confirmation")
+  .option("--json", "Output JSON")
+  .action(async (name, options) => {
+    const opts = await resolveGlobalOpts();
+    await cmdRescanPackage(opts, name, options, isInputAllowed());
+  });
+
 skill
   .command("rename")
   .description("Rename a published skill and keep the old slug as a redirect")
@@ -474,8 +498,19 @@ skill
     await cmdMergeSkill(opts, sourceSlug, targetSlug, options, isInputAllowed());
   });
 
+skill
+  .command("rescan")
+  .description("Request a security rescan for the latest published skill version")
+  .argument("<slug>", "Skill slug")
+  .option("--yes", "Skip confirmation")
+  .option("--json", "Output JSON")
+  .action(async (slug, options) => {
+    const opts = await resolveGlobalOpts();
+    await cmdRescanSkill(opts, slug, options, isInputAllowed());
+  });
+
 program
-  .command("ban-user")
+  .command("ban-user", adminCommandOptions)
   .description("Ban a user and delete owned skills (moderator/admin only)")
   .argument("<handleOrId>", "User handle (default) or user id")
   .option("--id", "Treat argument as user id")
@@ -488,7 +523,20 @@ program
   });
 
 program
-  .command("set-role")
+  .command("unban-user", adminCommandOptions)
+  .description("Unban a user and restore eligible skills (admin only)")
+  .argument("<handleOrId>", "User handle (default) or user id")
+  .option("--id", "Treat argument as user id")
+  .option("--fuzzy", "Resolve handle via fuzzy user search (admin only)")
+  .option("--reason <reason>", "Unban reason (optional)")
+  .option("--yes", "Skip confirmation")
+  .action(async (handleOrId, options) => {
+    const opts = await resolveGlobalOpts();
+    await cmdUnbanUser(opts, handleOrId, options, isInputAllowed());
+  });
+
+program
+  .command("set-role", adminCommandOptions)
   .description("Change a user role (admin only)")
   .argument("<handleOrId>", "User handle (default) or user id")
   .argument("<role>", "user | moderator | admin")

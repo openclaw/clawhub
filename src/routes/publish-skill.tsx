@@ -167,6 +167,7 @@ export function Upload() {
   const trimmedSlug = slug.trim();
   const trimmedName = displayName.trim();
   const trimmedChangelog = changelog.trim();
+  const trimmedVersion = version.trim();
   const slugAvailability = useQuery(
     api.skills.checkSlugAvailability,
     !isSoulMode && isAuthenticated && trimmedSlug && SLUG_PATTERN.test(trimmedSlug)
@@ -215,7 +216,7 @@ export function Upload() {
     if (changelogTouchedRef.current) return;
     if (trimmedChangelog) return;
     if (!trimmedSlug || !SLUG_PATTERN.test(trimmedSlug)) return;
-    if (!semver.valid(version)) return;
+    if (!semver.valid(trimmedVersion)) return;
     if (!hasRequiredFile) return;
     if (files.length === 0) return;
 
@@ -228,7 +229,7 @@ export function Upload() {
     const requiredFile = files[requiredIndex];
     if (!requiredFile) return;
 
-    const key = `${trimmedSlug}:${version}:${requiredFile.size}:${requiredFile.lastModified}:${normalizedPaths.length}`;
+    const key = `${trimmedSlug}:${trimmedVersion}:${requiredFile.size}:${requiredFile.lastModified}:${normalizedPaths.length}`;
     if (changelogKeyRef.current === key) return;
     changelogKeyRef.current = key;
 
@@ -240,7 +241,7 @@ export function Upload() {
         if (changelogRequestRef.current !== requestId) return null;
         return generateChangelogPreview({
           slug: trimmedSlug,
-          version,
+          version: trimmedVersion,
           readmeText: text.slice(0, 20_000),
           filePaths: normalizedPaths,
         });
@@ -264,7 +265,7 @@ export function Upload() {
     normalizedPaths,
     trimmedChangelog,
     trimmedSlug,
-    version,
+    trimmedVersion,
   ]);
   const parsedTags = useMemo(
     () =>
@@ -284,7 +285,7 @@ export function Upload() {
     if (!trimmedName) {
       issues.push("Display name is required.");
     }
-    if (!semver.valid(version)) {
+    if (!semver.valid(trimmedVersion)) {
       issues.push("Version must be valid semver (e.g. 1.0.0).");
     }
     if (parsedTags.length === 0) {
@@ -324,7 +325,7 @@ export function Upload() {
   }, [
     trimmedSlug,
     trimmedName,
-    version,
+    trimmedVersion,
     parsedTags.length,
     acceptedLicenseTerms,
     files,
@@ -348,7 +349,7 @@ export function Upload() {
             title={`Sign in to publish a ${contentLabel}`}
             description="You need to be signed in to publish skills on ClawHub."
           >
-            <SignInButton variant="outline">Sign in with GitHub</SignInButton>
+            <SignInButton />
           </EmptyState>
         </Container>
       </main>
@@ -434,7 +435,7 @@ export function Upload() {
         ownerHandle: isSoulMode ? undefined : ownerHandle || undefined,
         slug: trimmedSlug,
         displayName: trimmedName,
-        version,
+        version: trimmedVersion,
         changelog: trimmedChangelog,
         acceptLicenseTerms: isSoulMode ? undefined : acceptedLicenseTerms,
         tags: parsedTags,
@@ -445,7 +446,7 @@ export function Upload() {
       setHasAttempted(false);
       setChangelogSource("user");
       if (result) {
-        toast.success(`Published ${trimmedSlug}@${version}`);
+        toast.success(`Published ${trimmedSlug}@${trimmedVersion}`);
         const ownerParam = ownerHandle || me?.handle || (me?._id ? String(me._id) : "unknown");
         void navigate({
           to: isSoulMode ? "/souls/$slug" : "/$owner/$slug",
@@ -657,6 +658,10 @@ export function Upload() {
                     <p className="text-sm text-[color:var(--ink-soft)]">
                       All skills published on ClawHub are licensed under {PLATFORM_SKILL_LICENSE}.{" "}
                       {PLATFORM_SKILL_LICENSE_SUMMARY}
+                    </p>
+                    <p className="text-sm text-[color:var(--ink-soft)]">
+                      ClawHub does not support paid skills, per-skill pricing, or paywalled
+                      releases.
                     </p>
                     <label className="flex items-start gap-2 text-sm cursor-pointer">
                       <input

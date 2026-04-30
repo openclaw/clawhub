@@ -33,6 +33,14 @@ function mustGetToken() {
   return null;
 }
 
+function getAdminToken() {
+  return process.env.CLAWHUB_E2E_ADMIN_TOKEN?.trim() || null;
+}
+
+function getUserToken() {
+  return process.env.CLAWHUB_E2E_USER_TOKEN?.trim() || null;
+}
+
 function getRegistry() {
   return (
     process.env.CLAWHUB_REGISTRY?.trim() ||
@@ -73,7 +81,19 @@ function allowLiveMutations() {
   return value === "1" || value?.toLowerCase() === "true";
 }
 
+function shouldSeedRoleHelpTokens() {
+  const value = process.env.CLAWHUB_E2E_SEED_CLI_ROLE_HELP?.trim();
+  return value === "1" || value?.toLowerCase() === "true";
+}
+
 const itIfLiveMutations = allowLiveMutations() ? it : it.skip;
+const itIfAdminAndUserTokens =
+  (getAdminToken() && getUserToken()) || shouldSeedRoleHelpTokens() ? it : it.skip;
+
+type RoleHelpTokens = {
+  adminToken: string;
+  userToken: string;
+};
 
 async function makeTempConfig(registry: string, token: string | null) {
   const dir = await mkdtemp(join(tmpdir(), "clawhub-e2e-"));
@@ -84,6 +104,67 @@ async function makeTempConfig(registry: string, token: string | null) {
     "utf8",
   );
   return { dir, path };
+}
+
+async function resolveRoleHelpTokens(registry: string): Promise<RoleHelpTokens> {
+  const adminToken = getAdminToken();
+  const userToken = getUserToken();
+  if (adminToken && userToken) return { adminToken, userToken };
+
+  if (!shouldSeedRoleHelpTokens()) {
+    throw new Error(
+      "Missing CLAWHUB_E2E_ADMIN_TOKEN/CLAWHUB_E2E_USER_TOKEN or CLAWHUB_E2E_SEED_CLI_ROLE_HELP=1",
+    );
+  }
+  if (!isLocalRegistry(registry)) {
+    throw new Error("CLAWHUB_E2E_SEED_CLI_ROLE_HELP=1 only works against local registries");
+  }
+
+  const result = spawnSync(
+    "bunx",
+    ["convex", "run", "--no-push", "devSeed:seedCliRoleHelpFixtures"],
+    {
+      cwd: process.cwd(),
+      encoding: "utf8",
+      env: process.env,
+    },
+  );
+  if (result.status !== 0) {
+    throw new Error(`Failed to seed role help fixtures:\n${result.stderr || result.stdout}`);
+  }
+
+  const parsed = JSON.parse(extractLastJsonObject(result.stdout)) as {
+    admin?: { token?: unknown };
+    user?: { token?: unknown };
+  };
+  if (typeof parsed.admin?.token !== "string" || typeof parsed.user?.token !== "string") {
+    throw new Error("Role help fixture seed did not return admin and user tokens");
+  }
+  return { adminToken: parsed.admin.token, userToken: parsed.user.token };
+}
+
+function isLocalRegistry(registry: string) {
+  try {
+    const hostname = new URL(registry).hostname;
+    return hostname === "127.0.0.1" || hostname === "localhost" || hostname === "::1";
+  } catch {
+    return false;
+  }
+}
+
+function extractLastJsonObject(output: string) {
+  const trimmed = output.trim();
+  for (let index = 0; index < trimmed.length; index += 1) {
+    if (trimmed[index] !== "{") continue;
+    const candidate = trimmed.slice(index);
+    try {
+      JSON.parse(candidate);
+      return candidate;
+    } catch {
+      // Keep scanning for the actual JSON payload if Convex printed status lines first.
+    }
+  }
+  throw new Error(`No JSON object in convex run output:\n${output}`);
 }
 
 async function fetchWithTimeout(input: RequestInfo | URL, init?: RequestInit) {
@@ -194,6 +275,65 @@ describe("clawhub e2e", () => {
       expect(result.stderr).not.toMatch(/not logged in|unauthorized|error:/i);
     } finally {
       await rm(cfg.dir, { recursive: true, force: true });
+    }
+  });
+
+  itIfAdminAndUserTokens("shows staff CLI commands only in admin help", async () => {
+    const registry = getRegistry();
+    const site = getSite();
+    const { adminToken, userToken } = await resolveRoleHelpTokens(registry);
+
+    async function expectRole(token: string, expectedRole: "admin" | "user") {
+      const whoamiUrl = new URL(ApiRoutes.whoami, registry);
+      const response = await fetchWithTimeout(whoamiUrl.toString(), {
+        headers: { Accept: "application/json", Authorization: `Bearer ${token}` },
+      });
+      expect(response.ok).toBe(true);
+      const whoami = parseArk(
+        ApiV1WhoamiResponseSchema,
+        (await response.json()) as unknown,
+        "Whoami",
+      );
+      expect(whoami.user.role).toBe(expectedRole);
+    }
+
+    await expectRole(adminToken, "admin");
+    await expectRole(userToken, "user");
+
+    const adminCfg = await makeTempConfig(registry, adminToken);
+    const userCfg = await makeTempConfig(registry, userToken);
+    try {
+      const baseEnv = { ...process.env, CLAWHUB_DISABLE_TELEMETRY: "1" };
+      const adminResult = spawnSync(
+        "bun",
+        ["clawhub", "--registry", registry, "--site", site, "--help"],
+        {
+          cwd: process.cwd(),
+          env: { ...baseEnv, CLAWHUB_CONFIG_PATH: adminCfg.path },
+          encoding: "utf8",
+        },
+      );
+      const userResult = spawnSync(
+        "bun",
+        ["clawhub", "--registry", registry, "--site", site, "--help"],
+        {
+          cwd: process.cwd(),
+          env: { ...baseEnv, CLAWHUB_CONFIG_PATH: userCfg.path },
+          encoding: "utf8",
+        },
+      );
+
+      expect(adminResult.status).toBe(0);
+      expect(adminResult.stdout).toContain("ban-user");
+      expect(adminResult.stdout).toContain("unban-user");
+      expect(adminResult.stdout).toContain("set-role");
+      expect(userResult.status).toBe(0);
+      expect(userResult.stdout).not.toContain("ban-user");
+      expect(userResult.stdout).not.toContain("unban-user");
+      expect(userResult.stdout).not.toContain("set-role");
+    } finally {
+      await rm(adminCfg.dir, { recursive: true, force: true });
+      await rm(userCfg.dir, { recursive: true, force: true });
     }
   });
 

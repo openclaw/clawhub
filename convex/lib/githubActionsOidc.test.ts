@@ -1,8 +1,9 @@
 /* @vitest-environment node */
 
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   extractWorkflowFilenameFromWorkflowRef,
+  fetchGitHubRepositoryIdentity,
   verifyGitHubActionsTrustedPublishJwt,
   type TrustedGitHubActionsPublisher,
 } from "./githubActionsOidc";
@@ -30,6 +31,10 @@ const signingKeyPairPromise = crypto.subtle.generateKey(
   ["sign", "verify"],
 );
 
+afterEach(() => {
+  vi.unstubAllEnvs();
+});
+
 describe("extractWorkflowFilenameFromWorkflowRef", () => {
   it("extracts the workflow filename from workflow_ref", () => {
     expect(
@@ -38,6 +43,57 @@ describe("extractWorkflowFilenameFromWorkflowRef", () => {
         "openclaw/openclaw",
       ),
     ).toBe("plugin-clawhub-release.yml");
+  });
+});
+
+describe("fetchGitHubRepositoryIdentity", () => {
+  it("uses GITHUB_TOKEN for repository lookup when configured", async () => {
+    vi.stubEnv("GITHUB_TOKEN", "ghs_test_token");
+    const fetchMock = vi.fn(async () =>
+      Response.json({
+        id: 123,
+        full_name: "openclaw/clawhub",
+        owner: { login: "openclaw", id: 456 },
+      }),
+    );
+
+    await expect(fetchGitHubRepositoryIdentity("openclaw/clawhub", fetchMock)).resolves.toEqual({
+      repository: "openclaw/clawhub",
+      repositoryId: "123",
+      repositoryOwner: "openclaw",
+      repositoryOwnerId: "456",
+    });
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      "https://api.github.com/repos/openclaw/clawhub",
+      expect.objectContaining({
+        headers: expect.objectContaining({
+          Accept: "application/vnd.github+json",
+          Authorization: "Bearer ghs_test_token",
+          "User-Agent": "clawhub/package-trusted-publisher",
+        }),
+      }),
+    );
+  });
+
+  it("omits Authorization for repository lookup when GITHUB_TOKEN is blank", async () => {
+    vi.stubEnv("GITHUB_TOKEN", "   ");
+    const fetchMock = vi.fn(async () =>
+      Response.json({
+        id: 123,
+        full_name: "openclaw/clawhub",
+        owner: { login: "openclaw", id: 456 },
+      }),
+    );
+
+    await fetchGitHubRepositoryIdentity("openclaw/clawhub", fetchMock);
+
+    expect(fetchMock).toHaveBeenCalledWith("https://api.github.com/repos/openclaw/clawhub", {
+      headers: {
+        Accept: "application/vnd.github+json",
+        "User-Agent": "clawhub/package-trusted-publisher",
+      },
+    });
   });
 });
 

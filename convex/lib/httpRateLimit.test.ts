@@ -268,6 +268,50 @@ describe("applyRateLimit headers", () => {
     expect(result.response.headers.get("Retry-After")).toBe("30");
   });
 
+  it("scopes anonymous download fallback buckets when client ip is missing", async () => {
+    vi.spyOn(Date, "now").mockReturnValue(4_500_000);
+    const ctx = makeRateLimitCtx({
+      ip: {
+        allowed: true,
+        remaining: 19,
+        limit: 20,
+        resetAt: 4_530_000,
+      },
+    });
+    const request = new Request(
+      "https://example.com/api/v1/packages/tickflow-assist/download?version=0.2.10",
+    );
+
+    const result = await applyRateLimit(ctx, request, "download");
+
+    expect(result.ok).toBe(true);
+    const runMutation = (ctx as unknown as { runMutation: ReturnType<typeof vi.fn> }).runMutation;
+    const consumedKeys = runMutation.mock.calls.map(([, args]) => String(args.key));
+    expect(consumedKeys).toContain(
+      "ip:unknown:download:/api/v1/packages/tickflow-assist/download?version=0.2.10",
+    );
+  });
+
+  it("keeps non-download missing-ip anonymous requests on the shared unknown bucket", async () => {
+    vi.spyOn(Date, "now").mockReturnValue(4_600_000);
+    const ctx = makeRateLimitCtx({
+      ip: {
+        allowed: true,
+        remaining: 19,
+        limit: 20,
+        resetAt: 4_630_000,
+      },
+    });
+    const request = new Request("https://example.com/api/v1/search?q=demo");
+
+    const result = await applyRateLimit(ctx, request, "read");
+
+    expect(result.ok).toBe(true);
+    const runMutation = (ctx as unknown as { runMutation: ReturnType<typeof vi.fn> }).runMutation;
+    const consumedKeys = runMutation.mock.calls.map(([, args]) => String(args.key));
+    expect(consumedKeys).toContain("ip:unknown");
+  });
+
   it("falls back to ip enforcement when bearer token is invalid", async () => {
     vi.spyOn(Date, "now").mockReturnValue(5_000_000);
     const ctx = makeRateLimitCtx({

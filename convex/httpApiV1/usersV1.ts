@@ -24,6 +24,7 @@ export async function usersPostRouterV1Handler(ctx: ActionCtx, request: Request)
   const action = segments[0];
   if (
     action !== "ban" &&
+    action !== "unban" &&
     action !== "role" &&
     action !== "restore" &&
     action !== "reclaim" &&
@@ -99,6 +100,30 @@ export async function usersPostRouterV1Handler(ctx: ActionCtx, request: Request)
       return json(result, 200, rate.headers);
     } catch (error) {
       const message = error instanceof Error ? error.message : "Ban failed";
+      if (message.toLowerCase().includes("forbidden")) {
+        return text("Forbidden", 403, rate.headers);
+      }
+      if (message.toLowerCase().includes("not found")) {
+        return text(message, 404, rate.headers);
+      }
+      return text(message, 400, rate.headers);
+    }
+  }
+
+  if (action === "unban") {
+    const reason = reasonRaw.length > 0 ? reasonRaw : undefined;
+    if (reason && reason.length > 500) {
+      return text("Reason too long (max 500 chars)", 400, rate.headers);
+    }
+    try {
+      const result = await ctx.runMutation(internal.users.unbanUserInternal, {
+        actorUserId,
+        targetUserId,
+        reason,
+      });
+      return json(result, 200, rate.headers);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Unban failed";
       if (message.toLowerCase().includes("forbidden")) {
         return text("Forbidden", 403, rate.headers);
       }

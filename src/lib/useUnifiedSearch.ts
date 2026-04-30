@@ -1,9 +1,9 @@
 import { useAction } from "convex/react";
 import { useEffect, useRef, useState } from "react";
 import { api } from "../../convex/_generated/api";
-import { convexHttp } from "../convex/client";
 import { fetchPluginCatalog, type PackageListItem } from "./packageApi";
-import type { PublicUser } from "./publicUser";
+
+export type UnifiedSearchType = "all" | "skills" | "plugins";
 
 export type UnifiedSkillResult = {
   type: "skill";
@@ -27,35 +27,46 @@ export type UnifiedPluginResult = {
   plugin: PackageListItem;
 };
 
-export type UnifiedUserResult = {
-  type: "user";
-  user: PublicUser;
-};
+export type UnifiedResult = UnifiedSkillResult | UnifiedPluginResult;
 
-export type UnifiedResult = UnifiedSkillResult | UnifiedPluginResult | UnifiedUserResult;
+type UnifiedSearchOptions = {
+  debounceMs?: number;
+  enabled?: boolean;
+  limits?: {
+    skills?: number;
+    plugins?: number;
+  };
+};
 
 export function useUnifiedSearch(
   query: string,
-  activeType: "all" | "skills" | "plugins" | "users",
+  activeType: UnifiedSearchType,
+  options: UnifiedSearchOptions = {},
 ) {
   const searchSkills = useAction(api.search.searchSkills);
   const [results, setResults] = useState<UnifiedResult[]>([]);
+  const [skillResults, setSkillResults] = useState<UnifiedSkillResult[]>([]);
+  const [pluginResults, setPluginResults] = useState<UnifiedPluginResult[]>([]);
   const [skillCount, setSkillCount] = useState(0);
   const [pluginCount, setPluginCount] = useState(0);
-  const [userCount, setUserCount] = useState(0);
   const [isSearching, setIsSearching] = useState(false);
   const requestRef = useRef(0);
+  const debounceMs = options.debounceMs ?? 300;
+  const enabled = options.enabled ?? true;
+  const skillLimit = options.limits?.skills ?? 25;
+  const pluginLimit = options.limits?.plugins ?? 25;
 
   useEffect(() => {
     const trimmed = query.trim();
-    if (!trimmed) {
+    if (!enabled || !trimmed) {
       requestRef.current += 1;
       setResults([]);
+      setSkillResults([]);
+      setPluginResults([]);
       setSkillCount(0);
       setPluginCount(0);
-      setUserCount(0);
       setIsSearching(false);
-      return;
+      return () => {};
     }
 
     requestRef.current += 1;
@@ -65,40 +76,34 @@ export function useUnifiedSearch(
     const handle = window.setTimeout(() => {
       void (async () => {
         try {
-          const promises: [
-            Promise<unknown> | null,
-            Promise<{ items: PackageListItem[] }> | null,
-            Promise<{ items: PublicUser[] }> | null,
-          ] = [null, null, null];
+          const promises: [Promise<unknown> | null, Promise<{ items: PackageListItem[] }> | null] =
+            [null, null];
 
           if (activeType === "all" || activeType === "skills") {
             promises[0] = searchSkills({
               query: trimmed,
-              limit: 25,
+              limit: skillLimit,
               nonSuspiciousOnly: true,
             });
           }
 
           if (activeType === "all" || activeType === "plugins") {
-            promises[1] = fetchPluginCatalog({ q: trimmed, limit: 25 });
+            promises[1] = fetchPluginCatalog({ q: trimmed, limit: pluginLimit });
           }
 
-          if (activeType === "all" || activeType === "users") {
-            promises[2] = convexHttp.query(api.users.listPublic, { search: trimmed, limit: 25 });
-          }
-
-          const settled = await Promise.allSettled(
-            promises.map((p) => p ?? Promise.resolve(null)),
-          );
+          const settled = await Promise.allSettled(promises.map((p) => p ?? Promise.resolve(null)));
 
           if (requestId !== requestRef.current) return;
 
           const skillsRaw = settled[0].status === "fulfilled" ? settled[0].value : null;
           const pluginsRaw = settled[1].status === "fulfilled" ? settled[1].value : null;
-          const usersRaw = settled[2].status === "fulfilled" ? settled[2].value : null;
 
-          const skillResults: UnifiedSkillResult[] = (
-            (skillsRaw as Array<{ skill: UnifiedSkillResult["skill"]; ownerHandle: string | null; score: number }>) ?? []
+          const nextSkillResults: UnifiedSkillResult[] = (
+            (skillsRaw as Array<{
+              skill: UnifiedSkillResult["skill"];
+              ownerHandle: string | null;
+              score: number;
+            }>) ?? []
           ).map((entry) => ({
             type: "skill" as const,
             skill: entry.skill,
@@ -106,32 +111,25 @@ export function useUnifiedSearch(
             score: entry.score,
           }));
 
-          const pluginResults: UnifiedPluginResult[] = (
+          const nextPluginResults: UnifiedPluginResult[] = (
             (pluginsRaw as { items: PackageListItem[] })?.items ?? []
           ).map((item) => ({
             type: "plugin" as const,
             plugin: item,
           }));
 
-          setSkillCount(skillResults.length);
-          setPluginCount(pluginResults.length);
-          const userResults: UnifiedUserResult[] = (
-            (usersRaw as { items: PublicUser[] })?.items ?? []
-          ).map((user) => ({
-            type: "user" as const,
-            user,
-          }));
-          setUserCount(userResults.length);
+          setSkillCount(nextSkillResults.length);
+          setPluginCount(nextPluginResults.length);
+          setSkillResults(nextSkillResults);
+          setPluginResults(nextPluginResults);
 
           const merged: UnifiedResult[] = [];
           if (activeType === "all") {
-            merged.push(...skillResults, ...pluginResults, ...userResults);
+            merged.push(...nextSkillResults, ...nextPluginResults);
           } else if (activeType === "skills") {
-            merged.push(...skillResults);
-          } else if (activeType === "plugins") {
-            merged.push(...pluginResults);
+            merged.push(...nextSkillResults);
           } else {
-            merged.push(...userResults);
+            merged.push(...nextPluginResults);
           }
 
           setResults(merged);
@@ -139,9 +137,10 @@ export function useUnifiedSearch(
           console.error("Unified search failed:", error);
           if (requestId === requestRef.current) {
             setResults([]);
+            setSkillResults([]);
+            setPluginResults([]);
             setSkillCount(0);
             setPluginCount(0);
-            setUserCount(0);
           }
         } finally {
           if (requestId === requestRef.current) {
@@ -149,10 +148,10 @@ export function useUnifiedSearch(
           }
         }
       })();
-    }, 300);
+    }, debounceMs);
 
     return () => window.clearTimeout(handle);
-  }, [query, activeType, searchSkills]);
+  }, [query, activeType, searchSkills, debounceMs, enabled, skillLimit, pluginLimit]);
 
-  return { results, skillCount, pluginCount, userCount, isSearching };
+  return { results, skillResults, pluginResults, skillCount, pluginCount, isSearching };
 }

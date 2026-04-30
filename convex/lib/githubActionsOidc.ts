@@ -217,10 +217,7 @@ export async function fetchGitHubRepositoryIdentity(
     throw new Error(`Invalid GitHub repository: ${repository}`);
   }
   const response = await fetchImpl(`https://api.github.com/repos/${normalizedRepository}`, {
-    headers: {
-      Accept: "application/vnd.github+json",
-      "User-Agent": "clawhub/package-trusted-publisher",
-    },
+    headers: buildGitHubRepositoryLookupHeaders(),
   });
   if (!response.ok) {
     throw new Error(
@@ -240,6 +237,18 @@ export async function fetchGitHubRepositoryIdentity(
     repositoryOwner: ownerLogin,
     repositoryOwnerId: requireClaimString(body.owner?.id, "owner.id"),
   };
+}
+
+function buildGitHubRepositoryLookupHeaders() {
+  const headers: Record<string, string> = {
+    Accept: "application/vnd.github+json",
+    "User-Agent": "clawhub/package-trusted-publisher",
+  };
+  const token = process.env.GITHUB_TOKEN?.trim();
+  if (token) {
+    headers.Authorization = `Bearer ${token}`;
+  }
+  return headers;
 }
 
 export function normalizeGitHubRepository(repository: string) {
@@ -279,8 +288,8 @@ function decodeJwt(jwt: string) {
   const parts = jwt.trim().split(".");
   if (parts.length !== 3) throw new Error("Invalid GitHub OIDC token format");
   const [encodedHeader, encodedPayload, encodedSignature] = parts;
-  const header = parseJsonSegment<JwtHeader>(encodedHeader, "header");
-  const payload = parseJsonSegment<JwtPayload>(encodedPayload, "payload");
+  const header = parseJsonSegment(encodedHeader, "header") as JwtHeader;
+  const payload = parseJsonSegment(encodedPayload, "payload") as JwtPayload;
   return {
     header,
     payload,
@@ -289,9 +298,9 @@ function decodeJwt(jwt: string) {
   };
 }
 
-function parseJsonSegment<T>(segment: string, label: string) {
+function parseJsonSegment(segment: string, label: string): unknown {
   try {
-    return JSON.parse(new TextDecoder().decode(base64UrlToBytes(segment))) as T;
+    return JSON.parse(new TextDecoder().decode(base64UrlToBytes(segment)));
   } catch {
     throw new Error(`Invalid GitHub OIDC ${label}`);
   }

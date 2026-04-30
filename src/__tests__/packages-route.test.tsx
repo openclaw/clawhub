@@ -5,6 +5,7 @@ import type { ComponentType, ReactNode } from "react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const fetchPluginCatalogMock = vi.fn();
+const fetchFeaturedPluginsMock = vi.fn();
 const isRateLimitedPackageApiErrorMock = vi.fn(
   (error: unknown) =>
     typeof error === "object" && error !== null && (error as { status?: number }).status === 429,
@@ -57,6 +58,10 @@ vi.mock("../lib/packageApi", () => ({
   isRateLimitedPackageApiError: (error: unknown) => isRateLimitedPackageApiErrorMock(error),
 }));
 
+vi.mock("../lib/featuredCatalog", () => ({
+  fetchFeaturedPlugins: (...args: unknown[]) => fetchFeaturedPluginsMock(...args),
+}));
+
 async function loadRoute() {
   return (await import("../routes/plugins/index")).Route as unknown as {
     __config: {
@@ -70,6 +75,7 @@ async function loadRoute() {
 describe("plugins route", () => {
   beforeEach(() => {
     fetchPluginCatalogMock.mockReset();
+    fetchFeaturedPluginsMock.mockReset();
     isRateLimitedPackageApiErrorMock.mockClear();
     navigateMock.mockReset();
     searchMock = {};
@@ -92,6 +98,7 @@ describe("plugins route", () => {
       family: undefined,
       q: "demo",
       cursor: undefined,
+      featured: undefined,
       verified: undefined,
       executesCode: undefined,
     });
@@ -211,12 +218,29 @@ describe("plugins route", () => {
     );
   });
 
+  it("selects featured from the sort group", async () => {
+    const route = await loadRoute();
+    const Component = route.__config.component as ComponentType;
+
+    render(<Component />);
+
+    fireEvent.click(screen.getByRole("radio", { name: "Featured" }));
+
+    expect(navigateMock).toHaveBeenCalled();
+    const lastCall = navigateMock.mock.calls.at(-1)?.[0] as {
+      search: (prev: Record<string, unknown>) => Record<string, unknown>;
+    };
+    expect(lastCall.search({ family: "code-plugin", cursor: "cursor:current" })).toEqual({
+      family: undefined,
+      cursor: undefined,
+      featured: true,
+    });
+  });
+
   it("returns a retryable empty state when the catalog is rate limited", async () => {
     fetchPluginCatalogMock.mockRejectedValue({ status: 429, retryAfterSeconds: 22 });
     const route = await loadRoute();
-    const loader = route.__config.loader as (args: {
-      deps: Record<string, unknown>;
-    }) => Promise<{
+    const loader = route.__config.loader as (args: { deps: Record<string, unknown> }) => Promise<{
       items: Array<{ name: string }>;
       nextCursor: string | null;
       rateLimited: boolean;
@@ -237,9 +261,7 @@ describe("plugins route", () => {
   it("flags API errors for filtered catalog requests", async () => {
     fetchPluginCatalogMock.mockRejectedValue(new Error("boom"));
     const route = await loadRoute();
-    const loader = route.__config.loader as (args: {
-      deps: Record<string, unknown>;
-    }) => Promise<{
+    const loader = route.__config.loader as (args: { deps: Record<string, unknown> }) => Promise<{
       items: Array<{ name: string }>;
       nextCursor: string | null;
       rateLimited: boolean;

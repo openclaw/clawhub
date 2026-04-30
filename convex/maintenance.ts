@@ -541,6 +541,70 @@ export const applySkillCapabilityTagsInternal = internalMutation({
   },
 });
 
+export const softDeleteSkillVersionsInternal = internalMutation({
+  args: {
+    actorUserId: v.id("users"),
+    slug: v.string(),
+    versionIds: v.array(v.id("skillVersions")),
+    reason: v.string(),
+  },
+  handler: async (ctx, args) => {
+    const actor = await ctx.db.get(args.actorUserId);
+    if (!actor || actor.deletedAt || actor.deactivatedAt) {
+      throw new ConvexError("Actor not found");
+    }
+    assertRole(actor, ["admin", "moderator"]);
+
+    const slug = args.slug.trim().toLowerCase();
+    if (!slug) throw new ConvexError("Slug required");
+    if (args.versionIds.length === 0) throw new ConvexError("versionIds required");
+
+    const skill = await ctx.db
+      .query("skills")
+      .withIndex("by_slug", (q) => q.eq("slug", slug))
+      .unique();
+    if (!skill) throw new ConvexError("Skill not found");
+
+    const latestId = skill.latestVersionId ?? skill.tags.latest;
+    const now = Date.now();
+    const deleted: string[] = [];
+    const skipped: Array<{ versionId: string; reason: string }> = [];
+
+    for (const versionId of new Set(args.versionIds)) {
+      const version = await ctx.db.get(versionId);
+      if (!version || version.skillId !== skill._id) {
+        skipped.push({ versionId, reason: "missing_or_wrong_skill" });
+        continue;
+      }
+      if (version._id === latestId) {
+        throw new ConvexError("Refusing to soft-delete latest skill version");
+      }
+      if (version.softDeletedAt) {
+        skipped.push({ versionId, reason: "already_deleted" });
+        continue;
+      }
+      await ctx.db.patch(version._id, { softDeletedAt: now });
+      deleted.push(version.version);
+    }
+
+    await ctx.db.insert("auditLogs", {
+      actorUserId: actor._id,
+      action: "skill_versions.soft_delete",
+      targetType: "skill",
+      targetId: skill._id,
+      metadata: {
+        slug,
+        deleted,
+        skipped,
+        reason: args.reason,
+      },
+      createdAt: now,
+    });
+
+    return { ok: true as const, slug, deleted, skipped };
+  },
+});
+
 export async function backfillSkillCapabilityTagsInternalHandler(
   ctx: ActionCtx,
   args: {
@@ -1962,6 +2026,20 @@ export const backfillLatestVersionSummaryInternal = internalMutation({
     }
 
     return { patched, isDone, scanned: page.length };
+  },
+});
+
+// Repair stale skill-level moderation that was sourced from a non-latest version.
+// Run once after deploying the latest-version moderation fix:
+//   npx convex run maintenance:backfillLatestSkillModeration --prod
+export const backfillLatestSkillModeration: ReturnType<typeof action> = action({
+  args: {
+    batchSize: v.optional(v.number()),
+  },
+  handler: async (ctx, args) => {
+    const { user } = await requireUserFromAction(ctx);
+    assertRole(user, ["admin"]);
+    return await ctx.runMutation(internal.skills.backfillLatestSkillModerationInternal, args);
   },
 });
 

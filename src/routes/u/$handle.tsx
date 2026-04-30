@@ -244,7 +244,7 @@ function InstalledSection(props: {
                     <div key={`${root.rootId}:${entry.skill.slug}`} className="telemetry-skill-row">
                       <a
                         className="telemetry-skill-link"
-                        href={`/${encodeURIComponent(String(entry.skill.ownerUserId))}/${entry.skill.slug}`}
+                        href={`/${encodeURIComponent(entry.skill.ownerUserId)}/${entry.skill.slug}`}
                       >
                         <span>{entry.skill.displayName}</span>
                         <span className="telemetry-skill-slug">/{entry.skill.slug}</span>

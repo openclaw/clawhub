@@ -15,6 +15,7 @@ export async function whoamiV1Handler(ctx: ActionCtx, request: Request) {
           handle: user.handle ?? null,
           displayName: user.displayName ?? null,
           image: user.image ?? null,
+          role: user.role ?? null,
         },
       },
       200,

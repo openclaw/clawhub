@@ -255,6 +255,7 @@ export async function fetchPackages(params: {
   cursor?: string;
   family?: "skill" | "code-plugin" | "bundle-plugin";
   isOfficial?: boolean;
+  featured?: boolean;
   executesCode?: boolean;
   capabilityTag?: string;
   limit?: number;
@@ -267,6 +268,7 @@ export async function fetchPackages(params: {
     if (typeof params.isOfficial === "boolean") {
       url.searchParams.set("isOfficial", String(params.isOfficial));
     }
+    if (params.featured) url.searchParams.set("featured", "true");
     if (typeof params.executesCode === "boolean") {
       url.searchParams.set("executesCode", String(params.executesCode));
     }
@@ -287,6 +289,7 @@ export async function fetchPackages(params: {
   if (typeof params.isOfficial === "boolean") {
     url.searchParams.set("isOfficial", String(params.isOfficial));
   }
+  if (params.featured) url.searchParams.set("featured", "true");
   if (typeof params.executesCode === "boolean") {
     url.searchParams.set("executesCode", String(params.executesCode));
   }
@@ -299,6 +302,7 @@ export async function fetchPluginCatalog(params: {
   cursor?: string;
   family?: PluginFamily;
   isOfficial?: boolean;
+  featured?: boolean;
   executesCode?: boolean;
   limit?: number;
 }): Promise<PluginCatalogResult> {
@@ -308,6 +312,7 @@ export async function fetchPluginCatalog(params: {
       cursor: params.cursor,
       family: params.family,
       isOfficial: params.isOfficial,
+      featured: params.featured,
       executesCode: params.executesCode,
       limit: params.limit,
     });
@@ -332,6 +337,7 @@ export async function fetchPluginCatalog(params: {
     if (typeof params.isOfficial === "boolean") {
       url.searchParams.set("isOfficial", String(params.isOfficial));
     }
+    if (params.featured) url.searchParams.set("featured", "true");
     if (typeof params.executesCode === "boolean") {
       url.searchParams.set("executesCode", String(params.executesCode));
     }
@@ -339,7 +345,9 @@ export async function fetchPluginCatalog(params: {
       results?: Array<{ score: number; package: PackageListItem }>;
     }>(url);
     return {
-      items: (response?.results ?? []).map((entry) => entry?.package).filter(Boolean) as PackageListItem[],
+      items: (response?.results ?? [])
+        .map((entry) => entry?.package)
+        .filter(Boolean) as PackageListItem[],
       nextCursor: null,
     };
   }
@@ -350,6 +358,7 @@ export async function fetchPluginCatalog(params: {
   if (typeof params.isOfficial === "boolean") {
     url.searchParams.set("isOfficial", String(params.isOfficial));
   }
+  if (params.featured) url.searchParams.set("featured", "true");
   if (typeof params.executesCode === "boolean") {
     url.searchParams.set("executesCode", String(params.executesCode));
   }
@@ -370,7 +379,10 @@ export async function fetchPackageDetail(name: string): Promise<PackageDetailRes
   return (await response.json()) as PackageDetailResponse;
 }
 
-export async function fetchPackageVersion(name: string, version: string): Promise<PackageVersionDetail | null> {
+export async function fetchPackageVersion(
+  name: string,
+  version: string,
+): Promise<PackageVersionDetail | null> {
   try {
     const url = await packageApiUrl(
       `${ApiRoutes.packages}/${encodeURIComponent(name)}/versions/${encodeURIComponent(version)}`,
@@ -382,13 +394,16 @@ export async function fetchPackageVersion(name: string, version: string): Promis
   }
 }
 
-export async function fetchPackageReadme(name: string, version?: string | null): Promise<string | null> {
+export async function fetchPackageReadme(
+  name: string,
+  version?: string | null,
+): Promise<string | null> {
   const url = await packageApiUrl(`${ApiRoutes.packages}/${encodeURIComponent(name)}/file`);
   url.searchParams.set("path", "README.md");
   if (version) url.searchParams.set("version", version);
   const response = await packageFetch(url, "text/plain");
   if (response.ok) return await response.text();
-  if (response.status === 404 || response.status === 423) {
+  if (response.status === 403 || response.status === 404 || response.status === 423) {
     return null;
   }
   throw await createPackageApiError(response);

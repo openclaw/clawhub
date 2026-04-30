@@ -113,7 +113,8 @@ See also: [acceptable-usage.md](./acceptable-usage.md) for the marketplace polic
 - If GitHub responds `403` or `429`, publish fails with:
   - `GitHub API rate limit exceeded — please try again in a few minutes`
 - To reduce rate-limit failures, set `GITHUB_TOKEN` in Convex env for authenticated
-  GitHub API requests.
+  GitHub API requests. The same token is used for trusted-publisher repository
+  identity lookups.
 
 ## Empty-skill cleanup (backfill)
 

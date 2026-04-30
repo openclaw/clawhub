@@ -1,0 +1,39 @@
+name: clawhub-codeql-repository-automation-security
+
+disable-default-queries: true
+
+queries:
+  - uses: security-extended
+
+query-filters:
+  - include:
+      precision:
+        - high
+        - very-high
+      tags contain: security
+      security-severity: /([7-9]|10)\.(\d)+/
+
+paths:
+  - scripts/check-staged-secrets.mjs
+  - scripts/clawhub-cli-npm-release-check.mjs
+  - scripts/github
+  - scripts/verify-convex-contract.ts
+  - scripts/copy-og-assets.ts
+  - scripts/check-peer-deps.ts
+
+paths-ignore:
+  - "**/node_modules"
+  - "**/coverage"
+  - "**/dist"
+  - "**/dist/**"
+  - "**/*.generated.ts"
+  - "**/*.bundle.js"
+  - "**/*.test.ts"
+  - "**/*.test.tsx"
+  - "**/*.e2e.test.ts"
+  - "**/*.e2e.test.tsx"
+  - "**/*test-support*"
+  - "**/*test-helper*"
+  - "**/*mock*"
+  - "**/*fixture*"
+  - "**/*bench*"

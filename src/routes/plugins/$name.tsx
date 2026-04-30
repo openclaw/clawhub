@@ -1,13 +1,20 @@
-import { createFileRoute, Link } from "@tanstack/react-router";
-import { AlertTriangle, ExternalLink, Copy, Check, Download } from "lucide-react";
-import { useState } from "react";
+import { createFileRoute, Link, Outlet, useRouterState } from "@tanstack/react-router";
+import { useMutation, useQuery } from "convex/react";
+import { AlertTriangle, ExternalLink, Download } from "lucide-react";
+import type { ComponentProps } from "react";
+import { toast } from "sonner";
+import { api } from "../../../convex/_generated/api";
+import type { Id } from "../../../convex/_generated/dataModel";
+import { DetailHero, DetailPageShell } from "../../components/DetailPageShell";
+import { DetailSecuritySummary } from "../../components/DetailSecuritySummary";
 import { EmptyState } from "../../components/EmptyState";
+import { InstallCopyButton } from "../../components/InstallCopyButton";
 import { Container } from "../../components/layout/Container";
 import { MarkdownPreview } from "../../components/MarkdownPreview";
-import { SecurityScanResults } from "../../components/SkillSecurityScanResults";
 import { Badge } from "../../components/ui/badge";
 import { Button } from "../../components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "../../components/ui/card";
+import { getUserFacingConvexError } from "../../lib/convexError";
 import { formatRetryDelay } from "../../lib/formatRetryDelay";
 import {
   fetchPackageDetail,
@@ -19,13 +26,12 @@ import {
   type PackageVersionDetail,
 } from "../../lib/packageApi";
 import { familyLabel } from "../../lib/packageLabels";
+import { useAuthStatus } from "../../lib/useAuthStatus";
 
-type PluginDetailRateLimitState =
-  | {
-      scope: "detail" | "metadata";
-      retryAfterSeconds: number | null;
-    }
-  | null;
+type PluginDetailRateLimitState = {
+  scope: "detail" | "metadata";
+  retryAfterSeconds: number | null;
+} | null;
 
 type PluginDetailLoaderData = {
   detail: PackageDetailResponse;
@@ -143,63 +149,6 @@ function VerifiedBadge() {
   );
 }
 
-function fallbackCopy(text: string): boolean {
-  const textarea = document.createElement("textarea");
-  textarea.value = text;
-  textarea.style.position = "fixed";
-  textarea.style.opacity = "0";
-  document.body.appendChild(textarea);
-  textarea.select();
-  try {
-    const ok = document.execCommand("copy");
-    return ok;
-  } catch {
-    return false;
-  } finally {
-    document.body.removeChild(textarea);
-  }
-}
-
-function CopyButton({ text }: { text: string }) {
-  const [state, setState] = useState<"idle" | "copied" | "failed">("idle");
-  return (
-    <Button
-      variant="outline"
-      size="sm"
-      className="w-full shrink-0 sm:w-auto"
-      onClick={() => {
-        if (navigator.clipboard?.writeText) {
-          void navigator.clipboard
-            .writeText(text)
-            .then(() => {
-              setState("copied");
-              setTimeout(() => setState("idle"), 2000);
-            })
-            .catch(() => {
-              if (fallbackCopy(text)) {
-                setState("copied");
-                setTimeout(() => setState("idle"), 2000);
-              } else {
-                setState("failed");
-                setTimeout(() => setState("idle"), 2000);
-              }
-            });
-        } else if (fallbackCopy(text)) {
-          setState("copied");
-          setTimeout(() => setState("idle"), 2000);
-        } else {
-          setState("failed");
-          setTimeout(() => setState("idle"), 2000);
-        }
-      }}
-      aria-label="Copy to clipboard"
-    >
-      {state === "copied" ? <Check className="h-3.5 w-3.5" /> : <Copy className="h-3.5 w-3.5" />}
-      {state === "copied" ? "Copied" : state === "failed" ? "Failed" : "Copy"}
-    </Button>
-  );
-}
-
 const CAPABILITY_LABELS: Record<string, string> = {
   executesCode: "Executes code",
   runtimeId: "Runtime ID",
@@ -234,6 +183,17 @@ function isEmptyObject(obj: unknown): boolean {
 function PluginDetailRoute() {
   const { name } = Route.useParams();
   const { detail, version, readme, rateLimited } = Route.useLoaderData() as PluginDetailLoaderData;
+  const pathname = useRouterState({ select: (state) => state.location.pathname });
+  const { isAuthenticated } = useAuthStatus();
+  const requestPluginRescan = useMutation(api.packages.requestRescan);
+  const rescanState = useQuery(
+    api.packages.getOwnerRescanStateByName,
+    isAuthenticated && detail.package ? { name: detail.package.name } : "skip",
+  ) as ComponentProps<typeof DetailSecuritySummary>["rescanState"] | undefined;
+
+  if (pathname.includes("/security/")) {
+    return <Outlet />;
+  }
 
   if (rateLimited?.scope === "detail") {
     return (
@@ -271,6 +231,11 @@ function PluginDetailRoute() {
   const pkg = detail.package;
   const owner = detail.owner;
   const latestRelease = version?.version ?? null;
+  const isDownloadBlocked =
+    pkg.verification?.scanStatus === "malicious" ||
+    latestRelease?.verification?.scanStatus === "malicious" ||
+    latestRelease?.vtAnalysis?.status === "malicious" ||
+    latestRelease?.vtAnalysis?.verdict === "malicious";
   const installSnippet =
     pkg.family === "code-plugin"
       ? `openclaw plugins install clawhub:${pkg.name}`
@@ -281,6 +246,26 @@ function PluginDetailRoute() {
   const capabilities = latestRelease?.capabilities ?? pkg.capabilities;
   const compatibility = latestRelease?.compatibility ?? pkg.compatibility;
   const verification = latestRelease?.verification ?? pkg.verification;
+  const requestRescan = async () => {
+    const packageId = (pkg as { _id?: Id<"packages"> })._id;
+    if (!packageId) {
+      toast.error("Could not request a rescan for this plugin.");
+      return;
+    }
+    try {
+      await requestPluginRescan({ packageId });
+      toast.success("Rescan requested.", {
+        action: {
+          label: "Dashboard",
+          onClick: () => {
+            window.location.href = "/dashboard";
+          },
+        },
+      });
+    } catch (error) {
+      toast.error(getUserFacingConvexError(error, "Could not request a rescan."));
+    }
+  };
 
   const capEntries = capabilities
     ? Object.entries(capabilities).filter(
@@ -294,12 +279,61 @@ function PluginDetailRoute() {
     : [];
 
   return (
-    <main className="section">
-        <div className="flex min-w-0 flex-col gap-5">
-          {/* Header card */}
-          <Card>
-            <CardContent>
-              <div className="flex flex-wrap gap-1.5 mb-2">
+    <main className="section detail-page-section">
+      <DetailPageShell>
+        <DetailHero
+          main={
+            <div className="skill-hero-title">
+              <div className="skill-hero-title-row">
+                <h1 className="skill-page-title">{pkg.displayName}</h1>
+                {pkg.latestVersion ? (
+                  <span className="plugin-version-badge">v{pkg.latestVersion}</span>
+                ) : null}
+                {pkg.latestVersion && !isDownloadBlocked ? (
+                  <div className="skill-title-actions">
+                    <Button asChild variant="outline" size="sm" className="no-underline">
+                      <a href={getPackageDownloadPath(name, pkg.latestVersion)}>
+                        <Download className="h-3.5 w-3.5" aria-hidden="true" />
+                        Download
+                      </a>
+                    </Button>
+                  </div>
+                ) : null}
+                {isDownloadBlocked ? (
+                  <div className="skill-title-actions">
+                    <Badge variant="destructive">Download blocked</Badge>
+                  </div>
+                ) : null}
+              </div>
+              <p className="section-subtitle">{pkg.summary ?? "No summary provided."}</p>
+
+              <div className="skill-hero-inline-meta">
+                <div className="skill-hero-stats-row">
+                  <span className="stat font-mono text-xs">{pkg.name}</span>
+                  {pkg.runtimeId ? (
+                    <>
+                      <span className="text-ink-soft opacity-40">·</span>
+                      <span className="stat">
+                        runtime <span className="font-mono text-xs">{pkg.runtimeId}</span>
+                      </span>
+                    </>
+                  ) : null}
+                  {owner?.handle ? (
+                    <>
+                      <span className="text-ink-soft opacity-40">·</span>
+                      <Link
+                        to="/u/$handle"
+                        params={{ handle: owner.handle }}
+                        className="text-[color:var(--accent)] hover:underline"
+                      >
+                        by @{owner.handle}
+                      </Link>
+                    </>
+                  ) : null}
+                </div>
+              </div>
+
+              <div className="skill-hero-badges">
                 <Badge>{familyLabel(pkg.family)}</Badge>
                 {verification?.tier ? (
                   <Badge variant="compact">{verification.tier.replace(/-/g, " ")}</Badge>
@@ -312,86 +346,75 @@ function PluginDetailRoute() {
                     <VerifiedBadge />
                   </Badge>
                 ) : null}
-              </div>
-              <h1 className="mb-1 break-words font-display text-2xl font-bold text-[color:var(--ink)]">
-                {pkg.displayName}
-                {pkg.latestVersion ? (
-                  <span className="ml-2 inline-block rounded-[var(--radius-pill)] bg-[color:var(--surface-muted)] px-2 py-0.5 text-xs font-semibold text-[color:var(--ink-soft)]">
-                    v{pkg.latestVersion}
-                  </span>
-                ) : null}
-              </h1>
-              <p className="mb-2 break-words text-sm text-[color:var(--ink-soft)]">
-                {pkg.summary ?? "No summary provided."}
-              </p>
-              <div className="flex min-w-0 flex-wrap items-center gap-2 text-sm text-[color:var(--ink-soft)]">
-                <span className="break-all font-mono text-xs">{pkg.name}</span>
-                {pkg.runtimeId ? (
-                  <>
-                    <span className="opacity-40">&middot;</span>
-                    <span>
-                      runtime <span className="break-all font-mono text-xs">{pkg.runtimeId}</span>
-                    </span>
-                  </>
-                ) : null}
-                {owner?.handle ? (
-                  <>
-                    <span className="opacity-40">&middot;</span>
-                    <Link
-                      to="/u/$handle"
-                      params={{ handle: owner.handle }}
-                      className="text-[color:var(--accent)] hover:underline"
-                    >
-                      by @{owner.handle}
-                    </Link>
-                  </>
+                {pkg.family === "code-plugin" && !pkg.isOfficial ? (
+                  <Badge variant="accent">
+                    Community code plugin. Review compatibility and verification before install.
+                  </Badge>
                 ) : null}
               </div>
-
-              {pkg.family === "code-plugin" && !pkg.isOfficial ? (
-                <Badge variant="accent" className="mt-3 self-start">
-                  Community code plugin. Review compatibility and verification before install.
-                </Badge>
-              ) : null}
-
-              {/* Install */}
-              <div className="mt-4">
-                <div className="flex flex-col gap-3 rounded-[var(--radius-sm)] border border-[color:var(--line)] bg-[color:var(--surface-muted)] p-3 sm:flex-row sm:items-center sm:gap-2">
-                  <pre className="plugin-detail-code-block min-w-0 flex-1 font-mono text-xs text-[color:var(--ink)]">
+            </div>
+          }
+        >
+          <div className="skill-hero-action-grid">
+            {latestRelease ? (
+              <DetailSecuritySummary
+                scannerBasePath={`/plugins/${encodeURIComponent(name)}/security`}
+                sha256hash={latestRelease.sha256hash ?? null}
+                vtAnalysis={latestRelease.vtAnalysis ?? null}
+                llmAnalysis={latestRelease.llmAnalysis ?? null}
+                staticScan={latestRelease.staticScan ?? null}
+                rescanState={rescanState ?? null}
+                onRequestRescan={rescanState ? requestRescan : null}
+              />
+            ) : null}
+            <Card className="skill-install-command-card">
+              <CardHeader>
+                <CardTitle>Install</CardTitle>
+              </CardHeader>
+              <CardContent>
+                <div className="skill-install-command-wrap">
+                  <pre className="skill-install-command">
                     <code>{installSnippet}</code>
                   </pre>
-                  <CopyButton text={installSnippet} />
+                  <InstallCopyButton
+                    text={installSnippet}
+                    ariaLabel="Copy plugin install command"
+                    showLabel={false}
+                    className="skill-install-command-inline-button"
+                  />
                 </div>
-              </div>
+              </CardContent>
+            </Card>
+          </div>
 
-              {/* Latest Release */}
-              {pkg.latestVersion ? (
-                <div className="mt-3 flex flex-col gap-3 rounded-[var(--radius-sm)] border border-[color:var(--line)] bg-[color:var(--surface-muted)] px-3 py-3 sm:flex-row sm:items-center sm:justify-between sm:py-2">
-                  <span className="text-sm">
-                    Latest release: <strong>v{pkg.latestVersion}</strong>
-                  </span>
-                  <Button asChild variant="outline" size="sm" className="w-full no-underline sm:w-auto">
-                    <a href={getPackageDownloadPath(name, pkg.latestVersion)}>
-                      <Download className="h-3.5 w-3.5" aria-hidden="true" />
-                      Download zip
-                    </a>
-                  </Button>
-                </div>
-              ) : null}
-            </CardContent>
-          </Card>
+          {readme ? (
+            <Card className="tab-card">
+              <CardHeader>
+                <CardTitle>README</CardTitle>
+              </CardHeader>
+              <CardContent>
+                <MarkdownPreview>{readme}</MarkdownPreview>
+              </CardContent>
+            </Card>
+          ) : null}
 
           {/* Capabilities */}
           {capEntries.length > 0 ? (
             <Card>
               <CardHeader className="gap-3 sm:flex-row sm:items-center sm:justify-between">
                 <CardTitle>Capabilities</CardTitle>
-                <CopyButton text={JSON.stringify(capabilities, null, 2)} />
+                <InstallCopyButton
+                  text={JSON.stringify(capabilities, null, 2)}
+                  ariaLabel="Copy capabilities JSON"
+                />
               </CardHeader>
               <CardContent>
                 <dl className="flex flex-col gap-3 text-sm">
                   {capEntries.map(([key, value]) => (
-                    <div key={key} className="flex flex-col gap-1.5 border-b border-[color:var(--line)] pb-3 last:border-b-0 last:pb-0 sm:grid sm:grid-cols-[minmax(140px,220px)_1fr] sm:gap-x-4 sm:gap-y-0">
+                    <div
+                      key={key}
+                      className="flex flex-col gap-1.5 border-b border-[color:var(--line)] pb-3 last:border-b-0 last:pb-0 sm:grid sm:grid-cols-[minmax(140px,220px)_1fr] sm:gap-x-4 sm:gap-y-0"
+                    >
                       <dt className="font-semibold text-[color:var(--ink-soft)] sm:pr-2">
                         {CAPABILITY_LABELS[key] ?? key}
                       </dt>
@@ -428,35 +451,27 @@ function PluginDetailRoute() {
             <Card>
               <CardHeader className="gap-3 sm:flex-row sm:items-center sm:justify-between">
                 <CardTitle>Compatibility</CardTitle>
-                <CopyButton text={JSON.stringify(compatibility, null, 2)} />
+                <InstallCopyButton
+                  text={JSON.stringify(compatibility, null, 2)}
+                  ariaLabel="Copy compatibility JSON"
+                />
               </CardHeader>
               <CardContent>
                 <dl className="flex flex-col gap-3 text-sm">
                   {compatEntries.map(([key, value]) => (
-                    <div key={key} className="flex flex-col gap-1.5 border-b border-[color:var(--line)] pb-3 last:border-b-0 last:pb-0 sm:grid sm:grid-cols-[minmax(140px,220px)_1fr] sm:gap-x-4 sm:gap-y-0">
+                    <div
+                      key={key}
+                      className="flex flex-col gap-1.5 border-b border-[color:var(--line)] pb-3 last:border-b-0 last:pb-0 sm:grid sm:grid-cols-[minmax(140px,220px)_1fr] sm:gap-x-4 sm:gap-y-0"
+                    >
                       <dt className="font-semibold text-[color:var(--ink-soft)] sm:pr-2">
                         {key.replace(/([A-Z])/g, " $1").replace(/^./, (s) => s.toUpperCase())}
                       </dt>
                       <dd className="min-w-0 break-all font-mono text-xs text-[color:var(--ink)]">
-                        {String(value)}
+                        {value}
                       </dd>
                     </div>
                   ))}
                 </dl>
-              </CardContent>
-            </Card>
-          ) : null}
-
-          {/* Security Scan */}
-          {latestRelease ? (
-            <Card>
-              <CardContent>
-                <SecurityScanResults
-                  sha256hash={latestRelease.sha256hash ?? undefined}
-                  vtAnalysis={latestRelease.vtAnalysis ?? undefined}
-                  llmAnalysis={latestRelease.llmAnalysis ?? undefined}
-                  staticFindings={latestRelease.staticScan?.findings ?? []}
-                />
               </CardContent>
             </Card>
           ) : null}
@@ -558,7 +573,10 @@ function PluginDetailRoute() {
               <CardContent>
                 <dl className="flex flex-col gap-3 text-sm">
                   {Object.entries(pkg.tags).map(([key, value]) => (
-                    <div key={key} className="flex flex-col gap-1.5 border-b border-[color:var(--line)] pb-3 last:border-b-0 last:pb-0 sm:grid sm:grid-cols-[minmax(140px,220px)_1fr] sm:gap-x-4 sm:gap-y-0">
+                    <div
+                      key={key}
+                      className="flex flex-col gap-1.5 border-b border-[color:var(--line)] pb-3 last:border-b-0 last:pb-0 sm:grid sm:grid-cols-[minmax(140px,220px)_1fr] sm:gap-x-4 sm:gap-y-0"
+                    >
                       <dt className="font-semibold text-[color:var(--ink-soft)]">{key}</dt>
                       <dd className="min-w-0 break-all font-mono text-xs text-[color:var(--ink)]">
                         {value}
@@ -569,16 +587,8 @@ function PluginDetailRoute() {
               </CardContent>
             </Card>
           ) : null}
-
-          {/* Readme */}
-          {readme ? (
-            <Card>
-              <CardContent>
-                <MarkdownPreview>{readme}</MarkdownPreview>
-              </CardContent>
-            </Card>
-          ) : null}
-        </div>
+        </DetailHero>
+      </DetailPageShell>
     </main>
   );
 }

@@ -64,14 +64,23 @@ function SoulsHoldingPage() {
         </div>
         <div className="skill-card-tags">
           <Button asChild variant="primary">
-            <Link to="/skills" search={{ q: undefined, sort: "downloads", dir: "desc", highlighted: undefined, nonSuspicious: true, view: undefined, focus: undefined }}>
+            <Link
+              to="/skills"
+              search={{
+                q: undefined,
+                sort: "downloads",
+                dir: "desc",
+                highlighted: undefined,
+                nonSuspicious: true,
+                view: undefined,
+                focus: undefined,
+              }}
+            >
               Browse Skills
             </Link>
           </Button>
           <Button asChild>
-            <Link to="/users" search={{ q: undefined }}>
-              Browse Users
-            </Link>
+            <Link to="/users">Browse Users</Link>
           </Button>
         </div>
       </section>

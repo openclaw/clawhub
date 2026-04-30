@@ -11,7 +11,9 @@ type SkillVisibilityFields = Pick<
 type GlobalStatsReadCtx = Pick<MutationCtx | QueryCtx, "db">;
 type GlobalStatsWriteCtx = Pick<MutationCtx, "db">;
 
-export function isPublicSkillDoc(skill: SkillVisibilityFields | null | undefined) {
+export function isPublicSkillDoc<T extends SkillVisibilityFields>(
+  skill: T | null | undefined,
+): skill is T {
   if (!skill || skill.softDeletedAt) return false;
   if (skill.moderationStatus && skill.moderationStatus !== "active") return false;
   if (skill.moderationFlags?.includes("blocked.malware")) return false;
@@ -50,18 +52,6 @@ export function isGlobalStatsStorageNotReadyError(error: unknown) {
     message.includes("does not exist") ||
     message.includes("unknown")
   );
-}
-
-export async function countPublicSkillsForGlobalStats(ctx: GlobalStatsReadCtx) {
-  const digests = await ctx.db
-    .query("skillSearchDigest")
-    .withIndex("by_active_updated", (q) => q.eq("softDeletedAt", undefined))
-    .collect();
-  let count = 0;
-  for (const digest of digests) {
-    if (isPublicSkillDoc(digest)) count += 1;
-  }
-  return count;
 }
 
 export async function setGlobalPublicSkillsCount(
@@ -117,9 +107,8 @@ export async function adjustGlobalPublicSkillsCount(
   }
 
   if (!existing) {
-    // No baseline yet (e.g. fresh deploy). Initialize via full recount once.
-    const count = await countPublicSkillsForGlobalStats(ctx);
-    await setGlobalPublicSkillsCount(ctx, count, now);
+    // No baseline yet. The paginated stats maintenance action reconciles the full count.
+    await setGlobalPublicSkillsCount(ctx, Math.max(0, normalizedDelta), now);
     return;
   }
 

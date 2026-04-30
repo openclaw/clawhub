@@ -149,12 +149,7 @@ export function CliAuth({ navigate = (url: string) => window.location.assign(url
                   </button>
                 </p>
               ) : null}
-              <SignInButton
-                variant="primary"
-                disabled={isLoading}
-              >
-                Sign in with GitHub
-              </SignInButton>
+              <SignInButton disabled={isLoading} />
             </CardContent>
           </Card>
         </Container>
