@@ -127,8 +127,11 @@ describe("clawhub-schema", () => {
   });
 
   it("parses delete request payload", () => {
-    expect(parseArk(CliSkillDeleteRequestSchema, { slug: "demo" }, "Delete")).toEqual({
+    expect(
+      parseArk(CliSkillDeleteRequestSchema, { slug: "demo", reason: "legal hold" }, "Delete"),
+    ).toEqual({
       slug: "demo",
+      reason: "legal hold",
     });
   });
 });

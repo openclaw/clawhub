@@ -7105,6 +7105,7 @@ export const setSkillSoftDeletedInternal = internalMutation({
     userId: v.id("users"),
     slug: v.string(),
     deleted: v.boolean(),
+    reason: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
     const user = await ctx.db.get(args.userId);
@@ -7124,6 +7125,7 @@ export const setSkillSoftDeletedInternal = internalMutation({
     }
 
     const now = Date.now();
+    const note = args.reason ? trimManualOverrideNote(args.reason) : undefined;
     const patch: Partial<Doc<"skills">> = {
       softDeletedAt: args.deleted ? now : undefined,
       moderationStatus: args.deleted ? "hidden" : "active",
@@ -7132,6 +7134,7 @@ export const setSkillSoftDeletedInternal = internalMutation({
       lastReviewedAt: now,
       updatedAt: now,
     };
+    if (note) patch.moderationNotes = note;
     const nextSkill = { ...skill, ...patch };
     await ctx.db.patch(skill._id, patch);
     await adjustGlobalPublicCountForSkillChange(ctx, skill, nextSkill);
@@ -7143,7 +7146,11 @@ export const setSkillSoftDeletedInternal = internalMutation({
       action: args.deleted ? "skill.delete" : "skill.undelete",
       targetType: "skill",
       targetId: skill._id,
-      metadata: { slug, softDeletedAt: args.deleted ? now : null },
+      metadata: {
+        slug,
+        softDeletedAt: args.deleted ? now : null,
+        ...(note ? { reason: note } : {}),
+      },
       createdAt: now,
     });
 

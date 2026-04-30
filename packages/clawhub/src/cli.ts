@@ -301,6 +301,8 @@ program
   .command("delete")
   .description("Soft-delete a skill (owner, moderator, or admin)")
   .argument("<slug>", "Skill slug")
+  .option("--reason <text>", "Moderation note/reason")
+  .option("--note <text>", "Alias for --reason")
   .option("--yes", "Skip confirmation")
   .action(async (slug, options) => {
     const opts = await resolveGlobalOpts();
@@ -311,6 +313,8 @@ program
   .command("hide")
   .description("Hide a skill (owner, moderator, or admin)")
   .argument("<slug>", "Skill slug")
+  .option("--reason <text>", "Moderation note/reason")
+  .option("--note <text>", "Alias for --reason")
   .option("--yes", "Skip confirmation")
   .action(async (slug, options) => {
     const opts = await resolveGlobalOpts();
@@ -321,6 +325,8 @@ program
   .command("undelete")
   .description("Restore a hidden skill (owner, moderator, or admin)")
   .argument("<slug>", "Skill slug")
+  .option("--reason <text>", "Moderation note/reason")
+  .option("--note <text>", "Alias for --reason")
   .option("--yes", "Skip confirmation")
   .action(async (slug, options) => {
     const opts = await resolveGlobalOpts();
@@ -331,6 +337,8 @@ program
   .command("unhide")
   .description("Unhide a skill (owner, moderator, or admin)")
   .argument("<slug>", "Skill slug")
+  .option("--reason <text>", "Moderation note/reason")
+  .option("--note <text>", "Alias for --reason")
   .option("--yes", "Skip confirmation")
   .action(async (slug, options) => {
     const opts = await resolveGlobalOpts();

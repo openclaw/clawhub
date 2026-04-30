@@ -151,7 +151,7 @@ export function createHttpClient(options: HttpClientOptions = {}): HttpClient {
       const headers: Record<string, string> = { Accept: "application/json" };
       if (args.token) headers.Authorization = `Bearer ${args.token}`;
       let body: string | undefined;
-      if (args.method === "POST") {
+      if (args.body !== undefined || args.method === "POST") {
         headers["Content-Type"] = "application/json";
         body = JSON.stringify(args.body ?? {});
       }
@@ -523,7 +523,7 @@ async function fetchJsonViaCurl(
     ...headers,
     url,
   ];
-  if (args.method === "POST") {
+  if (args.body !== undefined || args.method === "POST") {
     curlArgs.push("-H", "Content-Type: application/json");
     curlArgs.push("--data-binary", JSON.stringify(args.body ?? {}));
   }

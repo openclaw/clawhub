@@ -1177,10 +1177,13 @@ export async function skillsPostRouterV1Handler(ctx: ActionCtx, request: Request
   if (segments.length === 2 && action === "undelete") {
     try {
       const { userId } = await requireApiTokenUser(ctx, request);
+      const body = await readOptionalJson(request);
+      const reason = optionalStringField(body, "reason");
       await ctx.runMutation(internal.skills.setSkillSoftDeletedInternal, {
         userId,
         slug,
         deleted: false,
+        reason,
       });
       return json({ ok: true }, 200, rate.headers);
     } catch (error) {
@@ -1237,13 +1240,28 @@ export async function skillsDeleteRouterV1Handler(ctx: ActionCtx, request: Reque
   const slug = segments[0]?.trim().toLowerCase() ?? "";
   try {
     const { userId } = await requireApiTokenUser(ctx, request);
+    const body = await readOptionalJson(request);
+    const reason = optionalStringField(body, "reason");
     await ctx.runMutation(internal.skills.setSkillSoftDeletedInternal, {
       userId,
       slug,
       deleted: true,
+      reason,
     });
     return json({ ok: true }, 200, rate.headers);
   } catch (error) {
     return softDeleteErrorToResponse("skill", error, rate.headers);
   }
+}
+
+async function readOptionalJson(request: Request): Promise<unknown> {
+  const raw = await request.text();
+  if (!raw.trim()) return undefined;
+  return JSON.parse(raw) as unknown;
+}
+
+function optionalStringField(value: unknown, key: string): string | undefined {
+  if (!value || typeof value !== "object") return undefined;
+  const field = (value as Record<string, unknown>)[key];
+  return typeof field === "string" ? field : undefined;
 }

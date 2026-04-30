@@ -101,6 +101,7 @@ export const ApiCliPublishResponseSchema = type({
 
 export const CliSkillDeleteRequestSchema = type({
   slug: "string",
+  reason: "string?",
 });
 export type CliSkillDeleteRequest = (typeof CliSkillDeleteRequestSchema)[inferred];
 

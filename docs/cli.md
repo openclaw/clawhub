@@ -151,12 +151,16 @@ Stores your API token + cached registry URL.
 
 - Soft-delete a skill (owner, moderator, or admin).
 - Calls `DELETE /api/v1/skills/{slug}`.
+- `--reason <text>` records a moderation note on the skill and audit log.
+- `--note <text>` is an alias for `--reason`.
 - `--yes` skips confirmation.
 
 ### `undelete <slug>`
 
 - Restore a hidden skill (owner, moderator, or admin).
 - Calls `POST /api/v1/skills/{slug}/undelete`.
+- `--reason <text>` records a moderation note on the skill and audit log.
+- `--note <text>` is an alias for `--reason`.
 - `--yes` skips confirmation.
 
 ### `hide <slug>`

@@ -462,6 +462,14 @@ Validation highlights:
 
 Soft-delete / restore a skill (owner, moderator, or admin).
 
+Optional JSON body:
+
+```json
+{ "reason": "Held for moderation pending legal review." }
+```
+
+When present, `reason` is stored as the skill moderation note and copied into the audit log.
+
 Status codes:
 
 - `200`: ok
