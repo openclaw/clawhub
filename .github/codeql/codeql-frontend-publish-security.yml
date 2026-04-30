@@ -15,6 +15,7 @@ query-filters:
 
 paths:
   - src/components/DetailSecuritySummary.tsx
+  - src/components/MarkdownPreview.tsx
   - src/components/PackageSourceChooser.tsx
   - src/components/SecurityScannerPage.tsx
   - src/components/SkillSecurityScanResults.tsx
@@ -22,6 +23,7 @@ paths:
   - src/lib/packageApi.ts
   - src/lib/packageUpload.ts
   - src/lib/pluginPublishPrefill.ts
+  - src/lib/rehypeProxyImages.ts
   - src/lib/roles.ts
   - src/lib/uploadFiles.ts
   - src/lib/uploadUtils.ts

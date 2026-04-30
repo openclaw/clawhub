@@ -17,6 +17,10 @@ concurrency:
   group: deploy-production
   cancel-in-progress: true
 
+permissions:
+  contents: read
+  statuses: read
+
 jobs:
   validate-deploy-request:
     runs-on: ubuntu-latest
@@ -133,7 +137,7 @@ jobs:
             if ! state="$(gh api "repos/$GITHUB_REPOSITORY/commits/$GITHUB_SHA/status" \
               --jq '.statuses[] | select(.context == env.VERCEL_STATUS_CONTEXT) | .state' \
               2>/dev/null | head -n1)"; then
-              echo "GitHub status check failed for $GITHUB_SHA; retrying..."
+              echo "GitHub status check failed for $GITHUB_SHA on attempt $attempt; retrying..."
               sleep 10
               continue
             fi
@@ -148,10 +152,10 @@ jobs:
                 exit 1
                 ;;
               pending)
-                echo "Vercel deployment pending for $GITHUB_SHA; waiting..."
+                echo "Vercel deployment pending for $GITHUB_SHA on attempt $attempt; waiting..."
                 ;;
               *)
-                echo "Vercel status for $GITHUB_SHA not published yet; waiting..."
+                echo "Vercel status for $GITHUB_SHA not published yet on attempt $attempt; waiting..."
                 ;;
             esac
 
