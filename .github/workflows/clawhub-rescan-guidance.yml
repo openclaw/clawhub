@@ -27,7 +27,7 @@ jobs:
       CLAWHUB_RESCAN_GUIDANCE_APPLY: "1"
       ISSUE_NUMBER: ${{ github.event.issue.number || github.event.inputs.issue }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
       - name: Comment when rescan guidance label is present
         run: |
