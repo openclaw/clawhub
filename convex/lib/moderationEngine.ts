@@ -93,6 +93,12 @@ const HOST_PLATFORM_SOURCE_CONTEXT_PATTERN =
 const HOST_PLATFORM_PATCH_COMMAND_PATTERN =
   /\b(?:sed\s+-i|perl\s+-0?pi|cp\s+|cat\s+>|python3?\b.{0,120}(?:write|replace))/i;
 const HOST_PLATFORM_REBUILD_PATTERN = /\b(?:pnpm\s+build|npm\s+run\s+build|bun\s+run\s+build)\b/i;
+const BROWSER_USE_PASSWORD_ARGV_PATTERN =
+  /\bbrowser-use\s+input\b[^\n]*(?:password|passwd|\$[A-Z_]*(?:PASSWORD|PASS|PWD)[A-Z0-9_]*|<password>|\{password\})/i;
+const BROWSER_USE_AUTH_EVAL_PATTERN = /\bbrowser-use\s+(?:eval|python)\b/i;
+const AUTHENTICATED_MAIL_CONTEXT_PATTERN = /\b(?:mail\.google\.com|gmail|webmail|mailbox|inbox)\b/i;
+const PERSISTENCE_SCHEDULER_PATTERN =
+  /\b(?:launchctl\s+load|crontab\b|LaunchAgents\/|systemctl\s+(?:--user\s+)?enable)\b/i;
 
 function hasMaliciousInstallPrompt(content: string) {
   const hasTerminalInstruction =
@@ -159,6 +165,31 @@ function findCredentialExposureInstruction(content: string) {
       return { line: i + 1, text: line };
     }
   }
+  return null;
+}
+
+function findBrowserCredentialAutomation(content: string) {
+  const lines = content.split("\n");
+  for (let i = 0; i < lines.length; i += 1) {
+    const line = lines[i] ?? "";
+    if (BROWSER_USE_PASSWORD_ARGV_PATTERN.test(line)) {
+      return { line: i + 1, text: line };
+    }
+  }
+
+  if (
+    BROWSER_USE_AUTH_EVAL_PATTERN.test(content) &&
+    AUTHENTICATED_MAIL_CONTEXT_PATTERN.test(content) &&
+    PERSISTENCE_SCHEDULER_PATTERN.test(content)
+  ) {
+    for (let i = 0; i < lines.length; i += 1) {
+      const line = lines[i] ?? "";
+      if (BROWSER_USE_AUTH_EVAL_PATTERN.test(line) || PERSISTENCE_SCHEDULER_PATTERN.test(line)) {
+        return { line: i + 1, text: line };
+      }
+    }
+  }
+
   return null;
 }
 
@@ -567,6 +598,18 @@ function scanMarkdownFile(path: string, content: string, findings: ModerationFin
       line: credentialExposure.line,
       message: "Instructions expose credentials through shell, git config, or agent memory.",
       evidence: credentialExposure.text,
+    });
+  }
+
+  const browserCredentialAutomation = findBrowserCredentialAutomation(content);
+  if (browserCredentialAutomation) {
+    addFinding(findings, {
+      code: REASON_CODES.BROWSER_CREDENTIAL_AUTOMATION,
+      severity: "critical",
+      file: path,
+      line: browserCredentialAutomation.line,
+      message: "Browser automation instructions expose credentials or persist authenticated eval.",
+      evidence: browserCredentialAutomation.text,
     });
   }
 

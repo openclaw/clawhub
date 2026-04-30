@@ -144,6 +144,73 @@ describe("moderationEngine", () => {
     expect(result.status).toBe("suspicious");
   });
 
+  it("flags browser automation that puts passwords in argv", () => {
+    const result = runStaticModerationScan({
+      slug: "email-daily-summary",
+      displayName: "Email Daily Summary",
+      summary: "Summarize webmail",
+      frontmatter: {},
+      metadata: {},
+      files: [{ path: "SKILL.md", size: 512 }],
+      fileContents: [
+        {
+          path: "SKILL.md",
+          content: [
+            "Open https://mail.google.com and select the password input.",
+            'browser-use input 4 "your-password"',
+          ].join("\n"),
+        },
+      ],
+    });
+
+    expect(result.reasonCodes).toContain("suspicious.browser_credential_automation");
+    expect(result.status).toBe("suspicious");
+  });
+
+  it("flags persisted browser-use eval against authenticated mail contexts", () => {
+    const result = runStaticModerationScan({
+      slug: "email-daily-summary",
+      displayName: "Email Daily Summary",
+      summary: "Summarize webmail",
+      frontmatter: {},
+      metadata: {},
+      files: [{ path: "SKILL.md", size: 512 }],
+      fileContents: [
+        {
+          path: "SKILL.md",
+          content: [
+            "Use browser-use after logging into mail.google.com.",
+            'browser-use eval "Array.from(document.querySelectorAll(".mail")).map(x => x.textContent)"',
+            "launchctl load ~/Library/LaunchAgents/com.email.dailysummary.plist",
+          ].join("\n"),
+        },
+      ],
+    });
+
+    expect(result.reasonCodes).toContain("suspicious.browser_credential_automation");
+    expect(result.status).toBe("suspicious");
+  });
+
+  it("does not flag ordinary browser-use navigation docs", () => {
+    const result = runStaticModerationScan({
+      slug: "browser-helper",
+      displayName: "Browser Helper",
+      summary: "Open docs",
+      frontmatter: {},
+      metadata: {},
+      files: [{ path: "SKILL.md", size: 128 }],
+      fileContents: [
+        {
+          path: "SKILL.md",
+          content: "Run `browser-use open https://example.com/docs` to review the page.",
+        },
+      ],
+    });
+
+    expect(result.reasonCodes).not.toContain("suspicious.browser_credential_automation");
+    expect(result.status).toBe("clean");
+  });
+
   it("flags dynamic eval usage as suspicious", () => {
     const result = runStaticModerationScan({
       slug: "demo",
