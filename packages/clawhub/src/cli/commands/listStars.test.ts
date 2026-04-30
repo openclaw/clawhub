@@ -13,10 +13,6 @@ vi.mock("../registry.js", () => ({
 }));
 
 const mockApiRequest = vi.fn();
-vi.mock("../../http.js", () => ({
-    apiRequest: (registry: unknown, args: unknown, schema?: unknown) =>
-        mockApiRequest(registry, args, schema),
-}));
 
 const mockFail = vi.fn((message: string) => {
     throw new Error(message);

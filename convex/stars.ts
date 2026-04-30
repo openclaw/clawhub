@@ -117,13 +117,22 @@ export const listStarsByUserInternal = internalQuery({
 
     let cursor = null;
     const BATCH_SIZE = 20;
+    // Cap total star rows scanned to prevent unbounded reads when many starred
+    // skills are hidden or deleted. Allow up to 4x the requested limit before
+    // giving up so sparse accounts still get a full page in most cases.
+    const MAX_SCAN = limit * 4;
+    let scanned = 0;
 
-    while (skills.length < limit) {
+    while (skills.length < limit && scanned < MAX_SCAN) {
+      const remaining = MAX_SCAN - scanned;
+      const batchSize = Math.min(BATCH_SIZE, remaining);
       const batch = await ctx.db
         .query("stars")
         .withIndex("by_user", (q) => q.eq("userId", args.userId))
         .order("desc")
-        .paginate({ numItems: BATCH_SIZE, cursor });
+        .paginate({ numItems: batchSize, cursor });
+
+      scanned += batch.page.length;
 
       for (const star of batch.page) {
         if (skills.length >= limit) break;
