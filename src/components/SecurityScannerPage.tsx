@@ -7,13 +7,14 @@ import {
   hasClawScanRiskReview,
   type LlmAnalysis,
   type StaticFinding,
+  type TrentAnalysis,
   type VtAnalysis,
 } from "./SkillSecurityScanResults";
 import { Badge } from "./ui/badge";
 import { Button } from "./ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "./ui/card";
 
-export type ScannerSlug = "virustotal" | "openclaw" | "static-analysis";
+export type ScannerSlug = "virustotal" | "trentclaw" | "openclaw" | "static-analysis";
 
 type OwnerRef = {
   _id?: string;
@@ -36,6 +37,7 @@ type SecurityScannerPageProps = {
   entity: EntityRef;
   sha256hash?: string | null;
   vtAnalysis?: VtAnalysis | null;
+  trentAnalysis?: TrentAnalysis | null;
   llmAnalysis?: LlmAnalysis | null;
   staticScan?: {
     status: string;
@@ -50,12 +52,14 @@ type SecurityScannerPageProps = {
 
 const SCANNER_LABELS: Record<ScannerSlug, string> = {
   virustotal: "VirusTotal",
+  trentclaw: "TrentClaw",
   openclaw: "ClawScan",
   "static-analysis": "Static analysis",
 };
 
 const SCANNER_SUMMARIES: Record<ScannerSlug, string> = {
   virustotal: "External malware reputation and Code Insight signals for this exact artifact hash.",
+  trentclaw: "Trent.AI verdict for this exact OpenClaw skill hash.",
   openclaw: "ClawHub's context-aware review of the artifact, metadata, and declared behavior.",
   "static-analysis": "Deterministic local checks for risky code patterns and metadata mismatches.",
 };
@@ -109,6 +113,8 @@ function MetadataRow({ label, children }: { label: string; children: ReactNode }
 function getScannerStatus(props: SecurityScannerPageProps) {
   if (props.scanner === "virustotal")
     return props.vtAnalysis?.verdict ?? props.vtAnalysis?.status ?? "pending";
+  if (props.scanner === "trentclaw")
+    return props.trentAnalysis?.verdict ?? (props.sha256hash ? "unknown" : "pending");
   if (props.scanner === "openclaw")
     return props.llmAnalysis?.verdict ?? props.llmAnalysis?.status ?? "pending";
   return props.staticScan?.status ?? "pending";
@@ -116,6 +122,7 @@ function getScannerStatus(props: SecurityScannerPageProps) {
 
 function getCheckedAt(props: SecurityScannerPageProps) {
   if (props.scanner === "virustotal") return props.vtAnalysis?.checkedAt ?? null;
+  if (props.scanner === "trentclaw") return props.trentAnalysis?.checkedAt ?? null;
   if (props.scanner === "openclaw") return props.llmAnalysis?.checkedAt ?? null;
   return props.staticScan?.checkedAt ?? null;
 }
@@ -247,6 +254,9 @@ export function SecurityScannerPage(props: SecurityScannerPageProps) {
   const statusInfo = getScanStatusInfo(status);
   const checkedAt = getCheckedAt(props);
   const vtUrl = props.sha256hash ? `https://www.virustotal.com/gui/file/${props.sha256hash}` : null;
+  const trentUrl = props.sha256hash
+    ? `https://api.trent.ai/v1/humber-agent/openclaw/skills/verdict/${props.sha256hash}`
+    : null;
   const sourceRepo = formatValue(
     props.source?.repository ?? props.source?.repo ?? props.source?.url,
   );
@@ -335,6 +345,40 @@ export function SecurityScannerPage(props: SecurityScannerPageProps) {
                             className="inline-flex items-center gap-1 break-all text-[color:var(--accent)] hover:underline"
                           >
                             View on VirusTotal
+                            <ExternalLink className="h-3 w-3" aria-hidden="true" />
+                          </a>
+                        ) : (
+                          "Unavailable until an artifact hash is recorded."
+                        )}
+                      </DetailRow>
+                    </>
+                  ) : null}
+
+                  {props.scanner === "trentclaw" ? (
+                    <>
+                      <DetailRow label="Hash">
+                        {props.sha256hash ? (
+                          <span className="inline-flex max-w-full items-center gap-2 break-all font-mono text-xs">
+                            <Fingerprint className="h-3.5 w-3.5 shrink-0" aria-hidden="true" />
+                            {props.sha256hash}
+                          </span>
+                        ) : (
+                          "No artifact hash recorded."
+                        )}
+                      </DetailRow>
+                      <DetailRow label="Verdict">
+                        {props.trentAnalysis?.verdict ?? "Unknown"}
+                      </DetailRow>
+                      <DetailRow label="Source">Trent.AI OpenClaw skill verdict API</DetailRow>
+                      <DetailRow label="Verdict API">
+                        {trentUrl ? (
+                          <a
+                            href={trentUrl}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="inline-flex items-center gap-1 break-all text-[color:var(--accent)] hover:underline"
+                          >
+                            View API response
                             <ExternalLink className="h-3 w-3" aria-hidden="true" />
                           </a>
                         ) : (

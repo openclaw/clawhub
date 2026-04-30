@@ -3,6 +3,7 @@ import {
   getScanStatusInfo,
   type LlmAnalysis,
   type StaticFinding,
+  type TrentAnalysis,
   type VtAnalysis,
 } from "./SkillSecurityScanResults";
 import { Badge, type BadgeProps } from "./ui/badge";
@@ -32,6 +33,8 @@ type DetailSecuritySummaryProps = {
   scannerBasePath: string;
   sha256hash?: string | null;
   vtAnalysis?: VtAnalysis | null;
+  showTrentClaw?: boolean;
+  trentAnalysis?: TrentAnalysis | null;
   llmAnalysis?: LlmAnalysis | null;
   staticScan?: {
     status: string;
@@ -56,9 +59,14 @@ function badgeVariantForScanStatus(status: string): BadgeProps["variant"] {
   const normalized = status.toLowerCase();
   if (normalized === "clean" || normalized === "benign") return "success";
   if (normalized === "cleared") return "success";
-  if (normalized === "suspicious") return "warning";
+  if (normalized === "suspicious" || normalized === "vulnerable") return "warning";
   if (normalized === "malicious" || normalized === "error") return "destructive";
-  if (normalized === "pending" || normalized === "queued" || normalized === "loading") {
+  if (
+    normalized === "pending" ||
+    normalized === "queued" ||
+    normalized === "loading" ||
+    normalized === "unknown"
+  ) {
     return "pending";
   }
   return "compact";
@@ -93,7 +101,10 @@ function rescanDisabledReason(state: DetailRescanState | null | undefined) {
 
 export function DetailSecuritySummary({
   scannerBasePath,
+  sha256hash,
   vtAnalysis,
+  showTrentClaw = false,
+  trentAnalysis,
   llmAnalysis,
   staticScan,
   suppressScanResults = false,
@@ -105,6 +116,9 @@ export function DetailSecuritySummary({
   const vtStatus = suppressScanResults
     ? "cleared"
     : vtAnalysis?.verdict ?? vtAnalysis?.status ?? "pending";
+  const trentStatus = suppressScanResults
+    ? "cleared"
+    : trentAnalysis?.verdict ?? (sha256hash ? "unknown" : "pending");
   const llmStatus = suppressScanResults
     ? "cleared"
     : llmAnalysis?.verdict ?? llmAnalysis?.status ?? "pending";
@@ -154,6 +168,13 @@ export function DetailSecuritySummary({
             <p className="m-0 text-sm text-[color:var(--ink-soft)]">{suppressedMessage}</p>
           ) : null}
           <ScannerRow href={`${scannerBasePath}/virustotal`} label="VirusTotal" status={vtStatus} />
+          {showTrentClaw ? (
+            <ScannerRow
+              href={`${scannerBasePath}/trentclaw`}
+              label="TrentClaw"
+              status={trentStatus}
+            />
+          ) : null}
           <ScannerRow href={`${scannerBasePath}/openclaw`} label="ClawScan" status={llmStatus} />
           <ScannerRow
             href={`${scannerBasePath}/static-analysis`}

@@ -59,6 +59,12 @@ export type VtAnalysis = {
   checkedAt: number;
 };
 
+export type TrentAnalysis = {
+  skillSha256: string;
+  verdict: "benign" | "vulnerable" | "malicious" | "unknown";
+  checkedAt: number;
+};
+
 export type LlmAnalysis = {
   status: string;
   verdict?: string;
@@ -121,6 +127,8 @@ export function getScanStatusInfo(status: string) {
     case "benign":
     case "clean":
       return { label: "Benign", className: "scan-status-clean" };
+    case "vulnerable":
+      return { label: "Vulnerable", className: "scan-status-suspicious" };
     case "cleared":
       return { label: "Cleared", className: "scan-status-clean" };
     case "malicious":
@@ -132,6 +140,8 @@ export function getScanStatusInfo(status: string) {
     case "pending":
     case "not_found":
       return { label: "Pending", className: "scan-status-pending" };
+    case "unknown":
+      return { label: "Unknown", className: "scan-status-pending" };
     case "error":
     case "failed":
       return { label: "Error", className: "scan-status-error" };

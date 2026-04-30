@@ -397,6 +397,8 @@ export function SkillDetailPage({
       )}/${encodeURIComponent(skill.slug)}/security`}
       sha256hash={latestVersion.sha256hash ?? null}
       vtAnalysis={latestVersion.vtAnalysis ?? null}
+      showTrentClaw
+      trentAnalysis={latestVersion.trentAnalysis ?? null}
       llmAnalysis={latestVersion.llmAnalysis ?? null}
       staticScan={latestVersion.staticScan ?? null}
       suppressScanResults={suppressVersionScanResults}

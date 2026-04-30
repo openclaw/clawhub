@@ -246,6 +246,32 @@ describe("SecurityScanResults static guidance", () => {
     expect(screen.getByText("requires.env: TODOIST_API_TOKEN")).toBeTruthy();
   });
 
+  it("shows TrentClaw verdict details on the dedicated scanner page", () => {
+    render(
+      <SecurityScannerPage
+        scanner="trentclaw"
+        entity={{
+          kind: "skill",
+          title: "Todo Guard",
+          name: "todo-guard",
+          version: "1.0.0",
+          detailPath: "/local/todo-guard",
+        }}
+        sha256hash={"b".repeat(64)}
+        trentAnalysis={{
+          skillSha256: "b".repeat(64),
+          verdict: "vulnerable",
+          checkedAt: 1,
+        }}
+      />,
+    );
+
+    expect(screen.getByRole("heading", { name: "TrentClaw security" })).toBeTruthy();
+    expect(screen.getAllByText("Vulnerable").length).toBeGreaterThan(0);
+    expect(screen.getByText("Trent.AI OpenClaw skill verdict API")).toBeTruthy();
+    expect(screen.getByRole("link", { name: /View API response/i })).toBeTruthy();
+  });
+
   it("keeps plugins with legacy ClawScan analysis on the generic detail page", () => {
     render(
       <SecurityScannerPage

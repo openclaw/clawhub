@@ -8,7 +8,12 @@ import {
 import { buildSkillMeta } from "../../../../lib/og";
 import { fetchSkillPageData } from "../../../../lib/skillPage";
 
-const SCANNERS = new Set<ScannerSlug>(["virustotal", "openclaw", "static-analysis"]);
+const SCANNERS = new Set<ScannerSlug>([
+  "virustotal",
+  "trentclaw",
+  "openclaw",
+  "static-analysis",
+]);
 
 function parseScanner(scanner: string): ScannerSlug {
   if (SCANNERS.has(scanner as ScannerSlug)) return scanner as ScannerSlug;
@@ -50,9 +55,11 @@ export const Route = createFileRoute("/$owner/$slug/security/$scanner")({
     const scannerLabel =
       scanner === "virustotal"
         ? "VirusTotal"
-        : scanner === "openclaw"
-          ? "ClawScan"
-          : "Static analysis";
+        : scanner === "trentclaw"
+          ? "TrentClaw"
+          : scanner === "openclaw"
+            ? "ClawScan"
+            : "Static analysis";
     const meta = buildSkillMeta({
       slug: params.slug,
       owner: loaderData?.owner ?? params.owner,
@@ -114,6 +121,7 @@ function SkillSecurityScannerRoute() {
       }}
       sha256hash={latestVersion.sha256hash ?? null}
       vtAnalysis={latestVersion.vtAnalysis ?? null}
+      trentAnalysis={latestVersion.trentAnalysis ?? null}
       llmAnalysis={latestVersion.llmAnalysis ?? null}
       staticScan={latestVersion.staticScan ?? null}
     />

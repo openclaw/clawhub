@@ -74,9 +74,11 @@ export const Route = createFileRoute("/plugins/$name/security/$scanner")({
     const scannerLabel =
       scanner === "virustotal"
         ? "VirusTotal"
-        : scanner === "openclaw"
-          ? "ClawScan"
-          : "Static analysis";
+        : scanner === "trentclaw"
+          ? "TrentClaw"
+          : scanner === "openclaw"
+            ? "ClawScan"
+            : "Static analysis";
     return {
       meta: [
         {

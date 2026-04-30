@@ -5,6 +5,23 @@ import { describe, expect, it, vi } from "vitest";
 import { DetailSecuritySummary } from "./DetailSecuritySummary";
 
 describe("DetailSecuritySummary", () => {
+  it("shows TrentClaw vulnerable verdicts as warning badges", () => {
+    render(
+      <DetailSecuritySummary
+        scannerBasePath="/steipete/weather/security"
+        sha256hash={"a".repeat(64)}
+        showTrentClaw
+        trentAnalysis={{
+          skillSha256: "a".repeat(64),
+          verdict: "vulnerable",
+          checkedAt: 1,
+        }}
+      />,
+    );
+
+    expect(screen.getByRole("link", { name: /TrentClaw.*Vulnerable/i })).toBeTruthy();
+  });
+
   it("shows a disabled spinner button while a rescan is in progress", () => {
     render(
       <DetailSecuritySummary
