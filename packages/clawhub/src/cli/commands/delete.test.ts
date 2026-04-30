@@ -43,12 +43,65 @@ describe("delete/undelete", () => {
     );
   });
 
+  it("passes a moderation reason on delete", async () => {
+    httpMocks.apiRequest.mockResolvedValueOnce({ ok: true });
+    await cmdDeleteSkill(makeGlobalOpts(), "demo", { yes: true, reason: "legal hold" }, false);
+    expect(httpMocks.apiRequest).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({
+        method: "DELETE",
+        path: "/api/v1/skills/demo",
+        body: { reason: "legal hold" },
+      }),
+      expect.anything(),
+    );
+  });
+
+  it("supports --note as a reason alias", async () => {
+    httpMocks.apiRequest.mockResolvedValueOnce({ ok: true });
+    await cmdHideSkill(makeGlobalOpts(), "demo", { yes: true, note: "legal notice" }, false);
+    expect(httpMocks.apiRequest).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({
+        method: "DELETE",
+        path: "/api/v1/skills/demo",
+        body: { reason: "legal notice" },
+      }),
+      expect.anything(),
+    );
+  });
+
+  it("rejects conflicting reason aliases", async () => {
+    await expect(
+      cmdHideSkill(
+        makeGlobalOpts(),
+        "demo",
+        { yes: true, reason: "legal hold", note: "different" },
+        false,
+      ),
+    ).rejects.toThrow(/only one/i);
+  });
+
   it("calls undelete endpoint with --yes", async () => {
     httpMocks.apiRequest.mockResolvedValueOnce({ ok: true });
     await cmdUndeleteSkill(makeGlobalOpts(), "demo", { yes: true }, false);
     expect(httpMocks.apiRequest).toHaveBeenCalledWith(
       expect.anything(),
       expect.objectContaining({ method: "POST", path: "/api/v1/skills/demo/undelete" }),
+      expect.anything(),
+    );
+  });
+
+  it("passes a moderation reason on undelete", async () => {
+    httpMocks.apiRequest.mockResolvedValueOnce({ ok: true });
+    await cmdUndeleteSkill(makeGlobalOpts(), "demo", { yes: true, reason: "reviewed" }, false);
+    expect(httpMocks.apiRequest).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({
+        method: "POST",
+        path: "/api/v1/skills/demo/undelete",
+        body: { reason: "reviewed" },
+      }),
       expect.anything(),
     );
   });

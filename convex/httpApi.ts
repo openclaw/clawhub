@@ -183,7 +183,7 @@ async function cliPublishHandler(ctx: ActionCtx, request: Request) {
 }
 
 function hasAcceptedLegacyLicenseTerms(acceptLicenseTerms: boolean | undefined) {
-  return acceptLicenseTerms !== false;
+  return acceptLicenseTerms === true;
 }
 
 export const cliPublishHttp = httpAction(cliPublishHandler);
@@ -203,6 +203,7 @@ async function cliSkillDeleteHandler(ctx: ActionCtx, request: Request, deleted: 
       userId,
       slug: args.slug,
       deleted,
+      reason: args.reason,
     });
     const ok = parseArk(ApiCliSkillDeleteResponseSchema, { ok: true }, "Delete response");
     return json(ok);

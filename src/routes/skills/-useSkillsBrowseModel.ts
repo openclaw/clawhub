@@ -15,6 +15,7 @@ export type SkillsSearchState = {
   sort?: SortKey;
   dir?: SortDir;
   highlighted?: boolean;
+  featured?: boolean;
   nonSuspicious?: boolean;
   tag?: string;
   view?: SkillsView;
@@ -57,7 +58,7 @@ export function useSkillsBrowseModel({
   const navigateTimer = useRef<number>(0);
 
   const view: SkillsView = search.view ?? "list";
-  const highlightedOnly = search.highlighted ?? false;
+  const featuredOnly = search.featured ?? search.highlighted ?? false;
   const nonSuspiciousOnly = search.nonSuspicious ?? false;
   const capabilityTag = search.tag;
   const searchSkills = useAction(api.search.searchSkills);
@@ -72,7 +73,7 @@ export function useSkillsBrowseModel({
   const listSort = toListSort(sort);
   const dir = parseDir(search.dir, sort);
   const searchKey = trimmedQuery
-    ? `${trimmedQuery}::${highlightedOnly ? "1" : "0"}::${nonSuspiciousOnly ? "1" : "0"}::${capabilityTag ?? ""}`
+    ? `${trimmedQuery}::${featuredOnly ? "1" : "0"}::${nonSuspiciousOnly ? "1" : "0"}::${capabilityTag ?? ""}`
     : "";
 
   // One-shot paginated fetches (no reactive subscription)
@@ -89,7 +90,7 @@ export function useSkillsBrowseModel({
           numItems: pageSize,
           sort: listSort,
           dir,
-          highlightedOnly,
+          highlightedOnly: featuredOnly,
           nonSuspiciousOnly,
           capabilityTag,
         });
@@ -105,7 +106,7 @@ export function useSkillsBrowseModel({
         setListStatus(cursor ? "idle" : "done");
       }
     },
-    [capabilityTag, dir, highlightedOnly, listSort, nonSuspiciousOnly],
+    [capabilityTag, dir, featuredOnly, listSort, nonSuspiciousOnly],
   );
 
   // Reset and fetch first page when sort/dir/filters change
@@ -146,7 +147,7 @@ export function useSkillsBrowseModel({
   }, [searchKey]);
 
   useEffect(() => {
-    if (!hasQuery) return;
+    if (!hasQuery) return () => {};
     searchRequest.current += 1;
     const requestId = searchRequest.current;
     setIsSearching(true);
@@ -155,7 +156,7 @@ export function useSkillsBrowseModel({
         try {
           const data = (await searchSkills({
             query: trimmedQuery,
-            highlightedOnly,
+            highlightedOnly: featuredOnly,
             nonSuspiciousOnly,
             capabilityTag,
             limit: searchLimit,
@@ -174,7 +175,7 @@ export function useSkillsBrowseModel({
   }, [
     capabilityTag,
     hasQuery,
-    highlightedOnly,
+    featuredOnly,
     nonSuspiciousOnly,
     searchLimit,
     searchSkills,
@@ -197,7 +198,8 @@ export function useSkillsBrowseModel({
   const sorted = useMemo(() => {
     if (isOtherCategory) {
       return baseItems.filter((entry) => {
-        const text = `${entry.skill.displayName} ${entry.skill.summary ?? ""} ${entry.skill.slug}`.toLowerCase();
+        const text =
+          `${entry.skill.displayName} ${entry.skill.summary ?? ""} ${entry.skill.slug}`.toLowerCase();
         return !ALL_CATEGORY_KEYWORDS.some((kw) => text.includes(kw));
       });
     }
@@ -269,9 +271,9 @@ export function useSkillsBrowseModel({
   }, [isLoadingMore]);
 
   useEffect(() => {
-    if (!canLoadMore || typeof IntersectionObserver === "undefined") return;
+    if (!canLoadMore || typeof IntersectionObserver === "undefined") return () => {};
     const target = loadMoreRef.current;
-    if (!target) return;
+    if (!target) return () => {};
     const observer = new IntersectionObserver(
       (entries) => {
         if (entries.some((entry) => entry.isIntersecting)) {
@@ -319,11 +321,12 @@ export function useSkillsBrowseModel({
     [navigate],
   );
 
-  const onToggleHighlighted = useCallback(() => {
+  const onToggleFeatured = useCallback(() => {
     void navigate({
       search: (prev) => ({
         ...prev,
-        highlighted: prev.highlighted ? undefined : true,
+        featured: prev.featured || prev.highlighted ? undefined : true,
+        highlighted: undefined,
       }),
       replace: true,
     });
@@ -375,7 +378,7 @@ export function useSkillsBrowseModel({
   }, [navigate]);
 
   const activeFilters: string[] = [];
-  if (highlightedOnly) activeFilters.push("highlighted");
+  if (featuredOnly) activeFilters.push("featured");
   if (nonSuspiciousOnly) activeFilters.push("non-suspicious");
   if (capabilityTag) activeFilters.push(SKILL_CAPABILITY_LABELS[capabilityTag] ?? capabilityTag);
 
@@ -399,7 +402,7 @@ export function useSkillsBrowseModel({
     canLoadMore,
     dir,
     hasQuery,
-    highlightedOnly,
+    featuredOnly,
     isLoadingMore,
     isLoadingSkills,
     loadMore,
@@ -409,7 +412,7 @@ export function useSkillsBrowseModel({
     onQueryChange,
     onSortChange,
     onToggleDir,
-    onToggleHighlighted,
+    onToggleFeatured,
     onToggleNonSuspicious,
     onToggleView,
     query,

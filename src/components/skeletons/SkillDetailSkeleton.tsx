@@ -2,71 +2,64 @@ import { Skeleton } from "../ui/skeleton";
 
 export function SkillDetailSkeleton() {
   return (
-    <div className="mx-auto max-w-page-max px-7 py-10">
-      {/* Breadcrumb */}
-      <Skeleton className="mb-6 h-4 w-48" />
-
-      <div className="grid grid-cols-1 gap-8 lg:grid-cols-[1fr_340px]">
-        {/* Main column */}
-        <div className="flex flex-col gap-6">
-          {/* Header */}
-          <div className="flex flex-col gap-3">
-            <div className="flex items-center gap-3">
-              <Skeleton className="h-8 w-64" />
-              <Skeleton className="h-6 w-16 rounded-[var(--radius-pill)]" />
+    <div className="skill-detail-stack">
+      <div className="rounded-[var(--r-md)] border border-[color:var(--line)] bg-[color:var(--surface)] p-5">
+        <div className="flex flex-col gap-5 lg:flex-row lg:items-start lg:justify-between">
+          <div className="min-w-0 flex-1 space-y-4">
+            <Skeleton className="h-4 w-48" />
+            <div className="space-y-3">
+              <div className="flex flex-wrap items-center gap-3">
+                <Skeleton className="h-9 w-full max-w-[360px]" />
+                <Skeleton className="h-6 w-20 rounded-[var(--r-pill)]" />
+              </div>
+              <Skeleton className="h-5 w-full max-w-[680px]" />
+              <Skeleton className="h-5 w-3/4 max-w-[520px]" />
             </div>
-            <Skeleton className="h-5 w-full max-w-lg" />
-            {/* Meta row */}
-            <div className="flex items-center gap-4">
-              <Skeleton className="h-6 w-6 rounded-full" />
+            <div className="flex flex-wrap items-center gap-4">
+              <Skeleton className="h-8 w-8 rounded-full" />
               <Skeleton className="h-4 w-24" />
-              <Skeleton className="h-4 w-16" />
+              <Skeleton className="h-4 w-28" />
               <Skeleton className="h-4 w-20" />
             </div>
           </div>
-
-          {/* README skeleton */}
-          <div className="flex flex-col gap-3 rounded-[var(--radius-md)] border border-[color:var(--line)] bg-[color:var(--surface)] p-6">
-            <Skeleton className="h-6 w-32" />
-            <Skeleton className="h-4 w-full" />
-            <Skeleton className="h-4 w-full" />
-            <Skeleton className="h-4 w-3/4" />
-            <Skeleton className="mt-2 h-4 w-full" />
-            <Skeleton className="h-4 w-5/6" />
-            <Skeleton className="h-4 w-2/3" />
-          </div>
-
-          {/* Tabs skeleton */}
-          <div className="flex gap-2">
-            <Skeleton className="h-[44px] w-24 rounded-[var(--radius-pill)]" />
-            <Skeleton className="h-[44px] w-28 rounded-[var(--radius-pill)]" />
-            <Skeleton className="h-[44px] w-24 rounded-[var(--radius-pill)]" />
-          </div>
-        </div>
-
-        {/* Sidebar */}
-        <div className="flex flex-col gap-5">
-          {/* Install card */}
-          <div className="flex flex-col gap-3 rounded-[var(--radius-md)] border border-[color:var(--line)] bg-[color:var(--surface)] p-5">
-            <Skeleton className="h-4 w-20" />
-            <Skeleton className="h-10 w-full rounded-[var(--radius-sm)]" />
-            <Skeleton className="h-10 w-full rounded-[var(--radius-pill)]" />
-          </div>
-          {/* Stats card */}
-          <div className="flex flex-col gap-3 rounded-[var(--radius-md)] border border-[color:var(--line)] bg-[color:var(--surface)] p-5">
-            <Skeleton className="h-4 w-16" />
+          <div className="w-full space-y-3 lg:max-w-[360px]">
+            <Skeleton className="h-12 w-full rounded-[var(--r-sm)]" />
+            <Skeleton className="h-12 w-full rounded-[var(--r-pill)]" />
             <div className="grid grid-cols-3 gap-3">
-              <Skeleton className="h-12" />
-              <Skeleton className="h-12" />
-              <Skeleton className="h-12" />
+              <Skeleton className="h-14" />
+              <Skeleton className="h-14" />
+              <Skeleton className="h-14" />
             </div>
           </div>
-          {/* Security card */}
-          <div className="flex flex-col gap-3 rounded-[var(--radius-md)] border border-[color:var(--line)] bg-[color:var(--surface)] p-5">
-            <Skeleton className="h-4 w-24" />
-            <Skeleton className="h-8 w-full" />
+        </div>
+      </div>
+
+      <div className="detail-layout">
+        <div className="detail-main">
+          <div className="rounded-[var(--r-md)] border border-[color:var(--line)] bg-[color:var(--surface)] p-5">
+            <div className="mb-4 flex flex-wrap gap-2">
+              <Skeleton className="h-10 w-24 rounded-[var(--r-pill)]" />
+              <Skeleton className="h-10 w-20 rounded-[var(--r-pill)]" />
+              <Skeleton className="h-10 w-24 rounded-[var(--r-pill)]" />
+            </div>
+            <div className="space-y-3">
+              <Skeleton className="h-6 w-40" />
+              <Skeleton className="h-4 w-full" />
+              <Skeleton className="h-4 w-full" />
+              <Skeleton className="h-4 w-11/12" />
+              <Skeleton className="h-4 w-5/6" />
+              <Skeleton className="mt-5 h-5 w-52" />
+              <Skeleton className="h-4 w-full" />
+              <Skeleton className="h-4 w-3/4" />
+            </div>
+          </div>
+
+          <div className="rounded-[var(--r-md)] border border-[color:var(--line)] bg-[color:var(--surface)] p-5">
+            <Skeleton className="mb-3 h-6 w-28" />
+            <Skeleton className="h-4 w-2/3" />
           </div>
         </div>
+
       </div>
     </div>
   );

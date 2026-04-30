@@ -1,9 +1,9 @@
 import type { Scheduler } from "convex/server";
 
-export function scheduleNextBatchIfNeeded<TArgs extends { cursor?: string }>(
+export function scheduleNextBatchIfNeeded(
   scheduler: Scheduler,
   fn: unknown,
-  args: TArgs,
+  args: { cursor?: string } & Record<string, unknown>,
   isDone: boolean,
   continueCursor: string | null,
 ) {

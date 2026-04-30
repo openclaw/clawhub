@@ -22,7 +22,7 @@ export async function cmdLoginFlow(
     fail("Token required (use --token or remove --no-browser)");
   }
 
-  const label = String(options.label ?? "CLI token").trim() || "CLI token";
+  const label = (options.label ?? "CLI token").trim() || "CLI token";
   const receiver = await startLoopbackAuthServer();
   const discovery = await discoverRegistryFromSite(opts.site).catch(() => null);
   const authBase = discovery?.authBase?.trim() || opts.site;

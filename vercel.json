@@ -1,4 +1,25 @@
 {
+  "headers": [
+    {
+      "source": "/(.*)",
+      "headers": [
+        {
+          "key": "Content-Security-Policy",
+          "value": "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: https:; font-src 'self' data:; connect-src 'self' https: wss:; object-src 'none'; base-uri 'self'; frame-ancestors 'none'; form-action 'self'; upgrade-insecure-requests"
+        },
+        { "key": "X-Content-Type-Options", "value": "nosniff" },
+        { "key": "X-Frame-Options", "value": "DENY" },
+        { "key": "Referrer-Policy", "value": "strict-origin-when-cross-origin" },
+        {
+          "key": "Permissions-Policy",
+          "value": "camera=(), microphone=(), geolocation=(), payment=(), usb=()"
+        },
+        { "key": "Cross-Origin-Opener-Policy", "value": "same-origin" },
+        { "key": "Cross-Origin-Resource-Policy", "value": "same-origin" },
+        { "key": "X-XSS-Protection", "value": "0" }
+      ]
+    }
+  ],
   "redirects": [
     {
       "source": "/",
@@ -30,5 +51,31 @@
       "source": "/api/:path*",
       "destination": "https://wry-manatee-359.convex.site/api/:path*"
     }
-  ]
+  ],
+  "images": {
+    "sizes": [256, 640, 1024, 1920],
+    "formats": ["image/webp"],
+    "minimumCacheTTL": 86400,
+    "dangerouslyAllowSVG": true,
+    "contentDispositionType": "attachment",
+    "contentSecurityPolicy": "default-src 'self'; script-src 'none'; sandbox;",
+    "remotePatterns": [
+      { "protocol": "https", "hostname": "raw.githubusercontent.com" },
+      { "protocol": "https", "hostname": "user-images.githubusercontent.com" },
+      { "protocol": "https", "hostname": "avatars.githubusercontent.com" },
+      { "protocol": "https", "hostname": "camo.githubusercontent.com" },
+      { "protocol": "https", "hostname": "github.com" },
+      { "protocol": "https", "hostname": "raw.github.com" },
+      { "protocol": "https", "hostname": "img.shields.io" },
+      { "protocol": "https", "hostname": "shields.io" },
+      { "protocol": "https", "hostname": "cdn.jsdelivr.net" },
+      { "protocol": "https", "hostname": "i.imgur.com" },
+      { "protocol": "https", "hostname": "codecov.io" },
+      { "protocol": "https", "hostname": "coveralls.io" },
+      { "protocol": "https", "hostname": "codefactor.io" },
+      { "protocol": "https", "hostname": "badgen.net" },
+      { "protocol": "https", "hostname": "flat.badgen.net" },
+      { "protocol": "https", "hostname": "gitlab.com" }
+    ]
+  }
 }

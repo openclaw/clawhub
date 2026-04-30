@@ -1,0 +1,59 @@
+name: clawhub-codeql-cli-package-security
+
+disable-default-queries: true
+
+queries:
+  - uses: security-extended
+
+query-filters:
+  - include:
+      precision:
+        - high
+        - very-high
+      tags contain: security
+      security-severity: /([7-9]|10)\.(\d)+/
+
+paths:
+  - packages/clawhub/src/browserAuth.ts
+  - packages/clawhub/src/http.ts
+  - packages/clawhub/src/cli/adminHelp.ts
+  - packages/clawhub/src/cli/authToken.ts
+  - packages/clawhub/src/cli/clawdbotConfig.ts
+  - packages/clawhub/src/cli/commands/auth.ts
+  - packages/clawhub/src/cli/commands/delete.ts
+  - packages/clawhub/src/cli/commands/github.ts
+  - packages/clawhub/src/cli/commands/moderation.ts
+  - packages/clawhub/src/cli/commands/ownership.ts
+  - packages/clawhub/src/cli/commands/packages.ts
+  - packages/clawhub/src/cli/commands/publish.ts
+  - packages/clawhub/src/cli/commands/rescan.ts
+  - packages/clawhub/src/cli/commands/sync.ts
+  - packages/clawhub/src/cli/commands/transfer.ts
+  - packages/clawhub/src/cli/scanSkills.ts
+  - packages/clawhub/src/schema/openclawContract.ts
+  - packages/clawhub/src/schema/packages.ts
+  - packages/clawhub/src/schema/routes.ts
+  - packages/clawhub/src/schema/schemas.ts
+  - packages/clawhub/src/schema/textFiles.ts
+  - packages/schema/src/openclawContract.ts
+  - packages/schema/src/packages.ts
+  - packages/schema/src/routes.ts
+  - packages/schema/src/schemas.ts
+  - packages/schema/src/textFiles.ts
+
+paths-ignore:
+  - "**/node_modules"
+  - "**/coverage"
+  - "**/dist"
+  - "**/dist/**"
+  - "**/*.generated.ts"
+  - "**/*.bundle.js"
+  - "**/*.test.ts"
+  - "**/*.test.tsx"
+  - "**/*.e2e.test.ts"
+  - "**/*.e2e.test.tsx"
+  - "**/*test-support*"
+  - "**/*test-helper*"
+  - "**/*mock*"
+  - "**/*fixture*"
+  - "**/*bench*"

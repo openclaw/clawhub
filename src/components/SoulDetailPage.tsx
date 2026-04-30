@@ -95,20 +95,21 @@ export function SoulDetailPage({ slug }: SoulDetailPageProps) {
   }, [ensureSoulSeeds]);
 
   useEffect(() => {
-    if (!latestVersion) return;
-    setReadme(null);
-    setReadmeError(null);
     let cancelled = false;
-    void getReadme({ versionId: latestVersion._id })
-      .then((data) => {
-        if (cancelled) return;
-        setReadme(data.text);
-      })
-      .catch((error) => {
-        if (cancelled) return;
-        setReadmeError(error instanceof Error ? error.message : "Failed to load SOUL.md");
-        setReadme(null);
-      });
+    if (latestVersion) {
+      setReadme(null);
+      setReadmeError(null);
+      void getReadme({ versionId: latestVersion._id })
+        .then((data) => {
+          if (cancelled) return;
+          setReadme(data.text);
+        })
+        .catch((error) => {
+          if (cancelled) return;
+          setReadmeError(error instanceof Error ? error.message : "Failed to load SOUL.md");
+          setReadme(null);
+        });
+    }
     return () => {
       cancelled = true;
     };

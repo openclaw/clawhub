@@ -18,7 +18,7 @@ export async function cmdStarSkill(
   if (!options.yes) {
     if (!allowPrompt) fail("Pass --yes (no input)");
     const ok = await promptConfirm(`Star ${slug}?`);
-    if (!ok) return;
+    if (!ok) return undefined;
   }
 
   const token = await requireAuthToken();

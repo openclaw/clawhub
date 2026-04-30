@@ -33,6 +33,8 @@ function isMissingTableError(error: unknown, table: string) {
 
 type PackageDigestSyncCtx = Pick<MutationCtx, "db">;
 type OwnerPublisherDigestScheduleCtx = Pick<Partial<MutationCtx>, "scheduler">;
+type GitHubBackupDeletionCtx = Pick<MutationCtx, "db" | "scheduler">;
+const OWNER_PUBLISHER_DIGEST_PAGE_SIZE = 100;
 type LatestPackageRelease = Pick<
   Doc<"packageReleases">,
   | "_id"
@@ -170,22 +172,25 @@ export async function syncPackageSearchDigestsForOwnerUserId(
 }
 
 export async function syncPackageSearchDigestsForOwnerPublisherId(
-  ctx: PackageDigestSyncCtx,
+  ctx: PackageDigestSyncCtx & OwnerPublisherDigestScheduleCtx,
   ownerPublisherId: Id<"publishers"> | null | undefined,
+  cursor: string | null = null,
 ) {
   if (!ownerPublisherId) return;
-  let cursor: string | null = null;
   try {
-    while (true) {
-      const page = await ctx.db
-        .query("packages")
-        .withIndex("by_owner_publisher", (q) => q.eq("ownerPublisherId", ownerPublisherId))
-        .paginate({ cursor, numItems: 100 });
-      for (const pkg of page.page) {
-        await syncPackageSearchDigest(ctx, pkg);
-      }
-      if (page.isDone) break;
-      cursor = page.continueCursor;
+    const page = await ctx.db
+      .query("packages")
+      .withIndex("by_owner_publisher", (q) => q.eq("ownerPublisherId", ownerPublisherId))
+      .paginate({ cursor, numItems: OWNER_PUBLISHER_DIGEST_PAGE_SIZE });
+    for (const pkg of page.page) {
+      await syncPackageSearchDigest(ctx, pkg);
+    }
+    if (!page.isDone && ctx.scheduler && page.continueCursor) {
+      await ctx.scheduler.runAfter(
+        0,
+        internal.functions.syncPackageSearchDigestsForOwnerPublisherIdInternal,
+        { ownerPublisherId, cursor: page.continueCursor },
+      );
     }
   } catch (error) {
     if (isMissingTableError(error, "packages")) return;
@@ -213,23 +218,55 @@ async function syncSkillSearchDigestForSkill(
   });
 }
 
+export function isGitHubMirrorEligibleSkillDoc(
+  skill: Pick<Doc<"skills">, "softDeletedAt" | "moderationStatus"> | null | undefined,
+) {
+  if (!skill || skill.softDeletedAt) return false;
+  return (
+    skill.moderationStatus === undefined ||
+    skill.moderationStatus === null ||
+    skill.moderationStatus === "active"
+  );
+}
+
+export async function scheduleGitHubBackupDeletionForSkill(
+  ctx: GitHubBackupDeletionCtx,
+  skill: Pick<
+    Doc<"skills">,
+    "slug" | "ownerPublisherId" | "ownerUserId" | "softDeletedAt" | "moderationStatus"
+  >,
+) {
+  const owner = await getOwnerPublisher(ctx, {
+    ownerPublisherId: skill.ownerPublisherId,
+    ownerUserId: skill.ownerUserId,
+  });
+  const ownerHandle = owner?.handle ?? String(skill.ownerPublisherId ?? skill.ownerUserId);
+  await ctx.scheduler.runAfter(0, internal.githubBackupsNode.deleteGitHubBackupForSlugInternal, {
+    ownerHandle,
+    slug: skill.slug,
+  });
+}
+
 export async function syncSkillSearchDigestsForOwnerPublisherId(
-  ctx: PackageDigestSyncCtx,
+  ctx: PackageDigestSyncCtx & OwnerPublisherDigestScheduleCtx,
   ownerPublisherId: Id<"publishers"> | null | undefined,
+  cursor: string | null = null,
 ) {
   if (!ownerPublisherId) return;
-  let cursor: string | null = null;
   try {
-    while (true) {
-      const page = await ctx.db
-        .query("skills")
-        .withIndex("by_owner_publisher", (q) => q.eq("ownerPublisherId", ownerPublisherId))
-        .paginate({ cursor, numItems: 100 });
-      for (const skill of page.page) {
-        await syncSkillSearchDigestForSkill(ctx, skill);
-      }
-      if (page.isDone) break;
-      cursor = page.continueCursor;
+    const page = await ctx.db
+      .query("skills")
+      .withIndex("by_owner_publisher", (q) => q.eq("ownerPublisherId", ownerPublisherId))
+      .paginate({ cursor, numItems: OWNER_PUBLISHER_DIGEST_PAGE_SIZE });
+    for (const skill of page.page) {
+      await syncSkillSearchDigestForSkill(ctx, skill);
+    }
+    if (!page.isDone && ctx.scheduler && page.continueCursor) {
+      await ctx.scheduler.runAfter(
+        0,
+        internal.functions.syncSkillSearchDigestsForOwnerPublisherIdInternal,
+        { ownerPublisherId, cursor: page.continueCursor },
+      );
     }
   } catch (error) {
     if (isMissingTableError(error, "skills")) return;
@@ -257,18 +294,28 @@ export async function scheduleOwnerPublisherDigestSync(
 export const syncPackageSearchDigestsForOwnerPublisherIdInternal = rawInternalMutation({
   args: {
     ownerPublisherId: v.id("publishers"),
+    cursor: v.optional(v.union(v.string(), v.null())),
   },
   handler: async (ctx, args) => {
-    await syncPackageSearchDigestsForOwnerPublisherId(ctx, args.ownerPublisherId);
+    await syncPackageSearchDigestsForOwnerPublisherId(
+      ctx,
+      args.ownerPublisherId,
+      args.cursor ?? null,
+    );
   },
 });
 
 export const syncSkillSearchDigestsForOwnerPublisherIdInternal = rawInternalMutation({
   args: {
     ownerPublisherId: v.id("publishers"),
+    cursor: v.optional(v.union(v.string(), v.null())),
   },
   handler: async (ctx, args) => {
-    await syncSkillSearchDigestsForOwnerPublisherId(ctx, args.ownerPublisherId);
+    await syncSkillSearchDigestsForOwnerPublisherId(
+      ctx,
+      args.ownerPublisherId,
+      args.cursor ?? null,
+    );
   },
 });
 
@@ -324,12 +371,20 @@ export async function repointPackageLatestRelease(
 
 triggers.register("skills", async (ctx, change) => {
   if (change.operation === "delete") {
+    await scheduleGitHubBackupDeletionForSkill(ctx, change.oldDoc);
     const existing = await ctx.db
       .query("skillSearchDigest")
       .withIndex("by_skill", (q) => q.eq("skillId", change.id))
       .unique();
     if (existing) await ctx.db.delete(existing._id);
   } else {
+    if (
+      change.operation === "update" &&
+      isGitHubMirrorEligibleSkillDoc(change.oldDoc) &&
+      !isGitHubMirrorEligibleSkillDoc(change.newDoc)
+    ) {
+      await scheduleGitHubBackupDeletionForSkill(ctx, change.oldDoc);
+    }
     await syncSkillSearchDigestForSkill(ctx, change.newDoc);
   }
 });

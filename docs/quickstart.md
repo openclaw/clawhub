@@ -106,7 +106,54 @@ bun clawhub skill publish . \
   --changelog "Initial release"
 ```
 
-## 5) Sync local skills (auto-publish new/changed)
+## 5) Publish a code plugin
+
+Create a plugin folder with a `package.json` that includes the required OpenClaw
+publish metadata:
+
+```bash
+mkdir -p /tmp/clawhub-plugin-demo && cd /tmp/clawhub-plugin-demo
+cat > package.json <<'EOF'
+{
+  "name": "@demo/openclaw-plugin-demo",
+  "version": "0.1.0",
+  "type": "module",
+  "openclaw": {
+    "extensions": ["./index.ts"],
+    "compat": {
+      "pluginApi": ">=2026.3.24-beta.2"
+    },
+    "build": {
+      "openclawVersion": "2026.3.24-beta.2"
+    }
+  }
+}
+EOF
+```
+
+Preview the resolved publish payload first:
+
+```bash
+bun clawhub package publish . --family code-plugin --dry-run
+```
+
+Then publish:
+
+```bash
+bun clawhub package publish . --family code-plugin
+```
+
+Notes:
+
+- `openclaw.compat.pluginApi` and `openclaw.build.openclawVersion` are required
+  for `code-plugin` publishes.
+- `package.json.version` does not replace either required OpenClaw field.
+- Add `openclaw.compat.minGatewayVersion` and
+  `openclaw.build.pluginSdkVersion` when you want to expose fuller
+  compatibility/build metadata, but they are not required for a successful
+  publish.
+
+## 6) Sync local skills (auto-publish new/changed)
 
 `sync` scans for local skill folders and publishes the ones that aren’t “synced” yet.
 

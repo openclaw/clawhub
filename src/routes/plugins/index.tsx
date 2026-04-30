@@ -14,6 +14,7 @@ type PluginSearchState = {
   q?: string;
   cursor?: string;
   family?: "code-plugin" | "bundle-plugin";
+  featured?: boolean;
   verified?: boolean;
   executesCode?: boolean;
 };
@@ -43,14 +44,16 @@ export const Route = createFileRoute("/plugins/")({
       search.family === "code-plugin" || search.family === "bundle-plugin"
         ? search.family
         : undefined,
+    featured:
+      search.featured === true || search.featured === "true" || search.featured === "1"
+        ? true
+        : undefined,
     verified:
       search.verified === true || search.verified === "true" || search.verified === "1"
         ? true
         : undefined,
     executesCode:
-      search.executesCode === true ||
-      search.executesCode === "true" ||
-      search.executesCode === "1"
+      search.executesCode === true || search.executesCode === "true" || search.executesCode === "1"
         ? true
         : undefined,
   }),
@@ -61,6 +64,7 @@ export const Route = createFileRoute("/plugins/")({
         q: deps.q,
         cursor: deps.q ? undefined : deps.cursor,
         family: deps.family,
+        featured: deps.featured,
         isOfficial: deps.verified,
         executesCode: deps.executesCode,
         limit: 50,
@@ -100,14 +104,14 @@ function PluginsIndex() {
   const search = Route.useSearch();
   const navigate = Route.useNavigate();
   const loaderData = Route.useLoaderData() as PluginsLoaderData | undefined;
-  
+
   // Defensive handling for when loader data is unavailable (SSR errors, etc.)
   const items = loaderData?.items ?? [];
   const nextCursor = loaderData?.nextCursor ?? null;
   const rateLimited = loaderData?.rateLimited ?? false;
   const retryAfterSeconds = loaderData?.retryAfterSeconds ?? null;
   const apiError = loaderData?.apiError ?? !loaderData;
-  
+
   const [query, setQuery] = useState(search.q ?? "");
   const [sidebarOpen, setSidebarOpen] = useState(false);
 
@@ -136,12 +140,24 @@ function PluginsIndex() {
   };
 
   const handleFamilySort = (value: string) => {
-    const family =
-      value === "code-plugin" || value === "bundle-plugin" ? value : undefined;
+    if (value === "featured") {
+      void navigate({
+        search: (prev) => ({
+          ...prev,
+          cursor: undefined,
+          featured: true,
+          family: undefined,
+        }),
+      });
+      return;
+    }
+
+    const family = value === "code-plugin" || value === "bundle-plugin" ? value : undefined;
     void navigate({
       search: (prev) => ({
         ...prev,
         cursor: undefined,
+        featured: undefined,
         family: family as "code-plugin" | "bundle-plugin" | undefined,
       }),
     });
@@ -200,11 +216,12 @@ function PluginsIndex() {
       <div className={`browse-layout${sidebarOpen ? " sidebar-open" : ""}`}>
         <BrowseSidebar
           sortOptions={[
+            { value: "featured", label: "Featured" },
             { value: "all", label: "All types" },
             { value: "code-plugin", label: "Code plugins" },
             { value: "bundle-plugin", label: "Bundle plugins" },
           ]}
-          activeSort={search.family ?? "all"}
+          activeSort={search.featured ? "featured" : (search.family ?? "all")}
           onSortChange={handleFamilySort}
           filters={[
             { key: "verified", label: "Verified only", active: search.verified ?? false },
@@ -231,9 +248,7 @@ function PluginsIndex() {
             <div className="empty-state">
               <AlertTriangle size={20} aria-hidden="true" />
               <p className="empty-state-title">Plugin catalog is temporarily unavailable</p>
-              <p className="empty-state-body">
-                Try again {formatRetryDelay(retryAfterSeconds)}.
-              </p>
+              <p className="empty-state-body">Try again {formatRetryDelay(retryAfterSeconds)}.</p>
             </div>
           ) : items.length === 0 ? (
             <div className="empty-state">

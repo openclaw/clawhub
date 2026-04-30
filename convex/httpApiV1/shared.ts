@@ -331,7 +331,7 @@ export function parsePublishBody(body: unknown) {
 }
 
 export function softDeleteErrorToResponse(
-  entity: "skill" | "soul",
+  entity: "skill" | "soul" | "package",
   error: unknown,
   headers: HeadersInit,
 ) {

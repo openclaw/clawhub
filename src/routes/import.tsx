@@ -227,7 +227,7 @@ export function ImportGitHub() {
             description="You need to be signed in to import skills from GitHub."
           >
             {!isLoading ? (
-              <SignInButton variant="outline">Sign in with GitHub</SignInButton>
+              <SignInButton />
             ) : null}
           </EmptyState>
         </Container>
@@ -463,7 +463,7 @@ export function ImportGitHub() {
                   >
                     <input
                       type="checkbox"
-                      checked={Boolean(selected[file.path])}
+                      checked={selected[file.path]}
                       onChange={() =>
                         setSelected((prev) => ({ ...prev, [file.path]: !prev[file.path] }))
                       }

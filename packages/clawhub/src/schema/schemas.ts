@@ -101,6 +101,7 @@ export const ApiCliPublishResponseSchema = type({
 
 export const CliSkillDeleteRequestSchema = type({
   slug: "string",
+  reason: "string?",
 });
 export type CliSkillDeleteRequest = (typeof CliSkillDeleteRequestSchema)[inferred];
 
@@ -134,6 +135,7 @@ export const ApiV1WhoamiResponseSchema = type({
     handle: "string|null",
     displayName: "string|null?",
     image: "string|null?",
+    role: '"admin"|"moderator"|"user"|null?',
   },
 });
 
@@ -273,6 +275,18 @@ export const ApiV1DeleteResponseSchema = type({
   ok: "true",
 });
 
+export const ApiV1RescanResponseSchema = type({
+  ok: "true",
+  targetKind: '"skill"|"package"',
+  name: "string",
+  version: "string",
+  status: '"in_progress"|"completed"|"failed"',
+  remainingRequests: "number",
+  maxRequests: "number",
+  pendingRequestId: "string?",
+});
+export type ApiV1RescanResponse = (typeof ApiV1RescanResponseSchema)[inferred];
+
 export const ApiV1SkillRenameResponseSchema = type({
   ok: "true",
   slug: "string",
@@ -327,6 +341,12 @@ export const ApiV1BanUserResponseSchema = type({
   deletedSkills: "number",
 });
 
+export const ApiV1UnbanUserResponseSchema = type({
+  ok: "true",
+  alreadyUnbanned: "boolean",
+  restoredSkills: "number?",
+});
+
 export const ApiV1SetRoleResponseSchema = type({
   ok: "true",
   role: '"admin"|"moderator"|"user"',
@@ -376,6 +396,13 @@ export const ClawdisRequiresSchema = type({
 });
 export type ClawdisRequires = (typeof ClawdisRequiresSchema)[inferred];
 
+export const EnvVarDeclarationSchema = type({
+  name: "string",
+  required: "boolean?",
+  description: "string?",
+});
+export type EnvVarDeclaration = (typeof EnvVarDeclarationSchema)[inferred];
+
 export const ClawdisSkillMetadataSchema = type({
   always: "boolean?",
   skillKey: "string?",
@@ -385,5 +412,6 @@ export const ClawdisSkillMetadataSchema = type({
   os: "string[]?",
   requires: ClawdisRequiresSchema.optional(),
   install: SkillInstallSpecSchema.array().optional(),
+  envVars: EnvVarDeclarationSchema.array().optional(),
 });
 export type ClawdisSkillMetadata = (typeof ClawdisSkillMetadataSchema)[inferred];

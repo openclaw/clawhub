@@ -79,7 +79,7 @@ describe("cmdPublish", () => {
       expect(payload.acceptLicenseTerms).toBe(true);
       expect(payload.tags).toEqual(["latest"]);
       const files = publishForm.getAll("files") as Array<Blob & { name?: string }>;
-      expect(files.map((file) => String(file.name ?? "")).sort()).toEqual(["SKILL.md", "notes.md"]);
+      expect(files.map((file) => file.name ?? "").sort()).toEqual(["SKILL.md", "notes.md"]);
     } finally {
       await rm(workdir, { recursive: true, force: true });
     }

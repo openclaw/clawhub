@@ -29,5 +29,5 @@ export function isDevRuntime() {
   if (nodeEnv) {
     return nodeEnv !== "production";
   }
-  return Boolean(import.meta.env.DEV);
+  return import.meta.env.DEV;
 }

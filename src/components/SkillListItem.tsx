@@ -1,11 +1,11 @@
 import { Link } from "@tanstack/react-router";
-import { Package, Star } from "lucide-react";
-import { MarketplaceIcon } from "./MarketplaceIcon";
-import { Badge } from "./ui/badge";
+import { ArrowDownToLine, Star } from "lucide-react";
 import { getSkillBadges } from "../lib/badges";
 import { formatCompactStat } from "../lib/numberFormat";
 import type { PublicPublisher, PublicSkill } from "../lib/publicUser";
 import { timeAgo } from "../lib/timeAgo";
+import { MarketplaceIcon } from "./MarketplaceIcon";
+import { Badge } from "./ui/badge";
 
 type SkillListItemProps = {
   skill: PublicSkill;
@@ -44,7 +44,8 @@ export function SkillListItem({ skill, ownerHandle, owner }: SkillListItemProps)
             <Star size={14} aria-hidden="true" /> {formatCompactStat(skill.stats.stars)}
           </span>
           <span className="skill-list-item-meta-item">
-            <Package size={14} aria-hidden="true" /> {formatCompactStat(skill.stats.downloads)}
+            <ArrowDownToLine size={14} aria-hidden="true" />{" "}
+            {formatCompactStat(skill.stats.downloads)}
           </span>
         </div>
       </div>

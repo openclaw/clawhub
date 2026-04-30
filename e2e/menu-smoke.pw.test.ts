@@ -1,7 +1,7 @@
 import { expect, test } from "@playwright/test";
 import { expectHealthyPage, trackRuntimeErrors } from "./helpers/runtimeErrors";
 
-const navLabels = ["Skills", "Plugins", "Search"];
+const navLabels = ["Skills", "Plugins"];
 
 test("skills loads without error", async ({ page }) => {
   const errors = trackRuntimeErrors(page);
@@ -13,7 +13,7 @@ test("skills loads without error", async ({ page }) => {
 test("souls loads without error", async ({ page }) => {
   const errors = trackRuntimeErrors(page);
   await page.goto("/souls", { waitUntil: "domcontentloaded" });
-  await expect(page.locator("h1", { hasText: "Souls" })).toBeVisible();
+  await expect(page.locator("h1", { hasText: "SOUL.md discovery is on deck" })).toBeVisible();
   await expectHealthyPage(page, errors);
 });
 
@@ -34,11 +34,6 @@ test("header menu routes render", async ({ page }) => {
     if (label === "Plugins") {
       await expect(page).toHaveURL(/\/plugins(\?|$)/);
       await expect(page.locator("h1", { hasText: "Plugins" })).toBeVisible();
-    }
-
-    if (label === "Search") {
-      await expect(page).toHaveURL(/\/skills(\?|$)/);
-      await expect(page.locator("h1", { hasText: "Skills" })).toBeVisible();
     }
   }
 

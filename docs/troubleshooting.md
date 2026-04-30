@@ -27,6 +27,7 @@ read_when:
 - The CLI now includes retry hints in 429 errors (retry delay + remaining budget).
 - If many users share one egress IP (NAT/proxy), IP limit can be hit even with valid tokens.
 - For non-Cloudflare deploys behind trusted proxies, set `TRUST_FORWARDED_IPS=true` so forwarded client IPs can be used.
+- If no trusted client IP reaches ClawHub, anonymous downloads use endpoint-scoped fallback buckets, but search and write requests intentionally stay on the shared unknown-IP bucket until proxy headers are fixed.
 
 ## `search` / `install` fails with `fetch failed` behind a proxy
 
@@ -55,7 +56,7 @@ The CLI respects `HTTPS_PROXY`, `HTTP_PROXY`, `https_proxy`, and `http_proxy`.
 
 ## `publish` fails with `GitHub API rate limit exceeded`
 
-- This is the GitHub account-age gate lookup hitting unauthenticated limits.
+- This is a GitHub publish-gate lookup hitting unauthenticated limits.
 - Set `GITHUB_TOKEN` in Convex environment to use authenticated GitHub API limits.
 - Retry publish after a short wait if the limit was already exhausted.
 

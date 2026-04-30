@@ -5,7 +5,7 @@ import { corsHeaders, mergeHeaders } from "./httpHeaders";
 
 const RATE_LIMIT_WINDOW_MS = 60_000;
 export const RATE_LIMITS = {
-  read: { ip: 180, key: 900 },
+  read: { ip: 600, key: 2400 },
   write: { ip: 45, key: 180 },
   download: { ip: 30, key: 180 },
 } as const;
@@ -60,7 +60,11 @@ export async function applyRateLimit(
   }
 
   // Anonymous requests remain IP-enforced.
-  const ipResult = await checkRateLimit(ctx, `ip:${ip}`, RATE_LIMITS[kind].ip);
+  const ipResult = await checkRateLimit(
+    ctx,
+    getAnonymousRateLimitKey(request, kind, ip),
+    RATE_LIMITS[kind].ip,
+  );
   const headers = rateHeaders(ipResult);
 
   if (!ipResult.allowed) {
@@ -89,6 +93,12 @@ export async function applyRateLimit(
   }
 
   return { ok: true, headers };
+}
+
+function getAnonymousRateLimitKey(request: Request, kind: keyof typeof RATE_LIMITS, ip: string) {
+  if (ip !== "unknown") return `ip:${ip}`;
+  if (kind !== "download") return "ip:unknown";
+  return `ip:unknown:download:${getDownloadRateLimitScope(request)}`;
 }
 
 export function getClientIp(request: Request) {
@@ -189,10 +199,30 @@ function splitFirstIp(header: string | null) {
   return trimmed || null;
 }
 
+function getDownloadRateLimitScope(request: Request) {
+  try {
+    const url = new URL(request.url);
+    const path = normalizeRateLimitKeyPart(url.pathname.replace(/\/{2,}/g, "/") || "/");
+    const params = new URLSearchParams();
+
+    for (const name of ["slug", "version", "tag"] as const) {
+      const value = url.searchParams.get(name)?.trim();
+      if (value) params.set(name, normalizeRateLimitKeyPart(value));
+    }
+
+    const query = params.toString();
+    return query ? `${path}?${query}` : path;
+  } catch {
+    return "unknown";
+  }
+}
+
+function normalizeRateLimitKeyPart(value: string) {
+  return value.slice(0, 500);
+}
+
 function shouldTrustForwardedIps() {
-  const value = String(process.env.TRUST_FORWARDED_IPS ?? "")
-    .trim()
-    .toLowerCase();
+  const value = (process.env.TRUST_FORWARDED_IPS ?? "").trim().toLowerCase();
   // Hardening default: CF-only. Forwarded headers are trivial to spoof unless you
   // control the trusted proxy layer.
   if (!value) return false;

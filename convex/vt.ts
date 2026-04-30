@@ -2,8 +2,10 @@ import { v } from "convex/values";
 import { internal } from "./_generated/api";
 import type { Doc, Id } from "./_generated/dataModel";
 import type { ActionCtx } from "./_generated/server";
-import { action, internalAction, internalMutation } from "./functions";
+import { internalAction, internalMutation } from "./functions";
 import { buildDeterministicPackageZip, buildDeterministicZip } from "./lib/skillZip";
+
+const SHA256_HASH_PATTERN = /^[a-f0-9]{64}$/i;
 
 const internalRefs = internal as unknown as {
   packages: {
@@ -166,6 +168,16 @@ type PackageReleaseScanDoc = Pick<
 >;
 type PackageScanDoc = Pick<Doc<"packages">, "family" | "isOfficial">;
 
+function normalizeVtEngineStats(stats?: VTAnalysisStats | null) {
+  if (!stats) return undefined;
+  return {
+    malicious: stats.malicious,
+    suspicious: stats.suspicious,
+    undetected: stats.undetected,
+    harmless: stats.harmless,
+  };
+}
+
 function buildPackageUndetectedFallbackAnalysis(
   release: PackageReleaseScanDoc,
   pkg: PackageScanDoc,
@@ -203,11 +215,14 @@ function buildPackageScanAnalysisFromVtResult(
   );
   if (aiResult) {
     const verdict = normalizeVerdict(aiResult.verdict);
+    const stats = vtResult.data.attributes.last_analysis_stats;
     return {
       status: verdictToStatus(verdict),
       verdict: aiResult.verdict,
       analysis: aiResult.analysis,
       source: aiResult.source,
+      scanner: "code_insight",
+      engineStats: normalizeVtEngineStats(stats),
       checkedAt: Date.now(),
     };
   }
@@ -368,13 +383,16 @@ async function activateSkillWhenVtUnavailable(ctx: ActionCtx, skillId: Id<"skill
   await ctx.runMutation(internal.skills.setSkillModerationStatusActiveInternal, { skillId });
 }
 
-export const fetchResults = action({
+export const fetchResults = internalAction({
   args: {
     sha256hash: v.optional(v.string()),
   },
   handler: async (_ctx, args) => {
     if (!args.sha256hash) {
       return { status: "not_found" };
+    }
+    if (!SHA256_HASH_PATTERN.test(args.sha256hash)) {
+      return { status: "error", message: "Invalid SHA-256 hash" };
     }
 
     const apiKey = process.env.VT_API_KEY;
@@ -511,6 +529,7 @@ export const scanWithVirusTotal = internalAction({
         );
 
         if (aiResult) {
+          const stats = existingFile.data.attributes.last_analysis_stats;
           // File exists and has AI analysis - use the verdict
           const verdict = normalizeVerdict(aiResult.verdict);
           const status = verdictToStatus(verdict);
@@ -526,6 +545,8 @@ export const scanWithVirusTotal = internalAction({
               verdict: aiResult.verdict,
               analysis: aiResult.analysis,
               source: aiResult.source,
+              scanner: "code_insight",
+              engineStats: normalizeVtEngineStats(stats),
               checkedAt: Date.now(),
             },
           });
@@ -766,6 +787,11 @@ export const pollPackageReleaseScanResults = internalAction({
               attempt: attempt + 1,
             },
           );
+        } else {
+          await runMutationRef(ctx, internalRefs.packages.updateReleaseScanResultsInternal, {
+            releaseId: args.releaseId,
+            vtAnalysis: { status: "stale", checkedAt: Date.now() },
+          });
         }
         return;
       }
@@ -790,6 +816,11 @@ export const pollPackageReleaseScanResults = internalAction({
             attempt: attempt + 1,
           },
         );
+      } else {
+        await runMutationRef(ctx, internalRefs.packages.updateReleaseScanResultsInternal, {
+          releaseId: args.releaseId,
+          vtAnalysis: { status: "stale", checkedAt: Date.now() },
+        });
       }
     } catch (error) {
       console.error(`[vt:package] Error polling ${release.sha256hash}:`, error);
@@ -803,6 +834,11 @@ export const pollPackageReleaseScanResults = internalAction({
             attempt: attempt + 1,
           },
         );
+      } else {
+        await runMutationRef(ctx, internalRefs.packages.updateReleaseScanResultsInternal, {
+          releaseId: args.releaseId,
+          vtAnalysis: { status: "error", checkedAt: Date.now() },
+        });
       }
     }
   },
@@ -914,6 +950,7 @@ export const pollPendingScans = internalAction({
               vtAnalysis: {
                 status,
                 source,
+                engineStats: normalizeVtEngineStats(stats),
                 checkedAt: Date.now(),
               },
             });
@@ -952,6 +989,7 @@ export const pollPendingScans = internalAction({
         // We have a verdict - update the skill
         const verdict = normalizeVerdict(aiResult.verdict);
         const status = verdictToStatus(verdict);
+        const stats = vtResult.data.attributes.last_analysis_stats;
 
         console.log(
           `[vt:pollPendingScans] Hash ${sha256hash} verdict: ${verdict} -> status: ${status}`,
@@ -965,6 +1003,8 @@ export const pollPendingScans = internalAction({
             verdict: aiResult.verdict,
             analysis: aiResult.analysis,
             source: aiResult.source,
+            scanner: "code_insight",
+            engineStats: normalizeVtEngineStats(stats),
             checkedAt: Date.now(),
           },
         });
@@ -1046,6 +1086,7 @@ async function requestRescan(apiKey: string, sha256hash: string): Promise<boolea
 }
 
 export const __test = {
+  normalizeVtEngineStats,
   statusFromAvStats,
   shouldActivateWhenVtUnavailable,
 };
@@ -1249,6 +1290,7 @@ export const rescanActiveSkills = internalAction({
             vtAnalysis: {
               status,
               source,
+              engineStats: normalizeVtEngineStats(stats),
               checkedAt: Date.now(),
             },
           });
@@ -1278,6 +1320,7 @@ export const rescanActiveSkills = internalAction({
 
         const verdict = normalizeVerdict(aiResult.verdict);
         const status = verdictToStatus(verdict);
+        const stats = vtResult.data.attributes.last_analysis_stats;
 
         await ctx.runMutation(internal.skills.updateVersionScanResultsInternal, {
           versionId,
@@ -1286,6 +1329,8 @@ export const rescanActiveSkills = internalAction({
             verdict: aiResult.verdict,
             analysis: aiResult.analysis,
             source: aiResult.source,
+            scanner: "code_insight",
+            engineStats: normalizeVtEngineStats(stats),
             checkedAt: Date.now(),
           },
         });
@@ -1576,6 +1621,7 @@ export const backfillActiveSkillsVTCache = internalAction({
         // Update the version with VT analysis
         const verdict = normalizeVerdict(aiResult.verdict);
         const status = verdictToStatus(verdict);
+        const stats = vtResult.data.attributes.last_analysis_stats;
 
         await ctx.runMutation(internal.skills.updateVersionScanResultsInternal, {
           versionId,
@@ -1585,6 +1631,8 @@ export const backfillActiveSkillsVTCache = internalAction({
             verdict: aiResult.verdict,
             analysis: aiResult.analysis,
             source: aiResult.source,
+            scanner: "code_insight",
+            engineStats: normalizeVtEngineStats(stats),
             checkedAt: Date.now(),
           },
         });

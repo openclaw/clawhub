@@ -1,0 +1,16 @@
+name: clawhub-codeql-actions-security
+
+disable-default-queries: true
+
+queries:
+  - uses: security-extended
+
+query-filters:
+  - include:
+      precision:
+        - high
+        - very-high
+      tags contain: security
+
+paths:
+  - .github/workflows

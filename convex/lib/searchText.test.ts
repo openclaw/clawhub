@@ -13,17 +13,18 @@ describe("searchText", () => {
     ]);
   });
 
-  it("matchesExactTokens requires at least one query token to prefix-match", () => {
+  it("matchesExactTokens requires every query token to prefix-match", () => {
     const queryTokens = tokenize("Remind Me");
     expect(matchesExactTokens(queryTokens, ["Remind Me", "/remind-me", "Short summary"])).toBe(
       true,
     );
-    // "Reminder" starts with "remind", so it matches with prefix matching
+    // "Reminder" starts with "remind", but no token matches "me".
     expect(matchesExactTokens(queryTokens, ["Reminder tool", "/reminder", "Short summary"])).toBe(
-      true,
+      false,
     );
-    // Matches because "remind" token is present
-    expect(matchesExactTokens(queryTokens, ["Remind tool", "/remind", "Short summary"])).toBe(true);
+    expect(matchesExactTokens(queryTokens, ["Remind tool", "/remind", "Short summary"])).toBe(
+      false,
+    );
     // No matching tokens at all
     expect(matchesExactTokens(queryTokens, ["Other tool", "/other", "Short summary"])).toBe(false);
   });

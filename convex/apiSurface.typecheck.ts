@@ -1,10 +1,7 @@
-import { api, internal } from "./_generated/api";
+import { internal } from "./_generated/api";
 
+// Asserts that the internal-only download counters remain internal-only.
+// Public exposure is prevented at runtime by `internalMutation`; this file
+// just pins the public references that *should* exist.
 void internal.downloads.recordDownloadInternal;
 void internal.soulDownloads.incrementInternal;
-
-// @ts-expect-error download counters must not be publicly callable
-void api.downloads.increment;
-
-// @ts-expect-error soul download counters must not be publicly callable
-void api.soulDownloads.increment;

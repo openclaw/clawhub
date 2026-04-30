@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { mkdir, readdir, readFile, writeFile } from "node:fs/promises";
+import { access, mkdir, readdir, readFile, writeFile } from "node:fs/promises";
 import { dirname, join, relative, resolve, sep } from "node:path";
 import { unzipSync } from "fflate";
 import ignore from "ignore";
@@ -133,9 +133,9 @@ export async function readSkillOrigin(skillFolder: string): Promise<SkillOrigin 
       }
       return {
         version: 1,
-        registry: String(parsed.registry),
-        slug: String(parsed.slug),
-        installedVersion: String(parsed.installedVersion),
+        registry: parsed.registry,
+        slug: parsed.slug,
+        installedVersion: parsed.installedVersion,
         installedAt: parsed.installedAt,
       };
     } catch {
@@ -191,4 +191,47 @@ async function addIgnoreFile(ig: ReturnType<typeof ignore>, path: string) {
   } catch {
     // optional
   }
+}
+
+export async function listManualSkills(skillsDir: string, lockedSlugs: Set<string>) {
+  const manual: string[] = [];
+  let entries;
+  try {
+    entries = await readdir(skillsDir, { withFileTypes: true });
+  } catch (error) {
+    if (isMissingPathError(error)) return manual;
+    throw error;
+  }
+
+  for (const entry of entries) {
+    if (!entry.isDirectory()) continue;
+    if (entry.name.startsWith(".")) continue;
+    if (lockedSlugs.has(entry.name)) continue;
+    if (await hasSkillMetadata(join(skillsDir, entry.name))) {
+      manual.push(entry.name);
+    }
+  }
+  return manual.sort((a, b) => a.localeCompare(b));
+}
+
+async function hasSkillMetadata(skillDir: string) {
+  const candidates = [
+    join(skillDir, "SKILL.md"),
+    join(skillDir, DOT_DIR, "origin.json"),
+    join(skillDir, LEGACY_DOT_DIR, "origin.json"),
+  ];
+  for (const path of candidates) {
+    try {
+      await access(path);
+      return true;
+    } catch (error) {
+      if (!isMissingPathError(error)) throw error;
+    }
+  }
+  return false;
+}
+
+function isMissingPathError(error: unknown) {
+  const code = (error as NodeJS.ErrnoException | undefined)?.code;
+  return code === "ENOENT" || code === "ENOTDIR";
 }

@@ -6,7 +6,7 @@ import { api } from "../../../convex/_generated/api";
 import { BrowseSidebar } from "../../components/BrowseSidebar";
 import { SKILL_CATEGORIES } from "../../lib/categories";
 import { formatCompactStat } from "../../lib/numberFormat";
-import { parseSort } from "./-params";
+import { parseDir, parseSort } from "./-params";
 import { SkillsResults } from "./-SkillsResults";
 import { useSkillsBrowseModel, type SkillsSearchState } from "./-useSkillsBrowseModel";
 
@@ -29,6 +29,10 @@ export const Route = createFileRoute("/skills/")({
         search.highlighted === "1" || search.highlighted === "true" || search.highlighted === true
           ? true
           : undefined,
+      featured:
+        search.featured === "1" || search.featured === "true" || search.featured === true
+          ? true
+          : undefined,
       nonSuspicious:
         search.nonSuspicious === "1" ||
         search.nonSuspicious === "true" ||
@@ -41,7 +45,9 @@ export const Route = createFileRoute("/skills/")({
   },
   beforeLoad: ({ search }) => {
     const hasQuery = Boolean(search.q?.trim());
-    if (hasQuery || search.sort) return;
+    if (hasQuery || search.sort || search.featured || search.highlighted || search.nonSuspicious) {
+      return;
+    }
     throw redirect({
       to: "/skills",
       search: {
@@ -49,6 +55,7 @@ export const Route = createFileRoute("/skills/")({
         sort: "downloads",
         dir: search.dir || undefined,
         highlighted: search.highlighted || undefined,
+        featured: search.featured || undefined,
         nonSuspicious: search.nonSuspicious || undefined,
         view: search.view || undefined,
         focus: search.focus || undefined,
@@ -64,8 +71,7 @@ export function SkillsIndex() {
   const search = Route.useSearch();
   const searchInputRef = useRef<HTMLInputElement>(null);
   const totalSkills = useQuery(api.skills.countPublicSkills);
-  const totalSkillsText =
-    typeof totalSkills === "number" ? formatCompactStat(totalSkills) : null;
+  const totalSkillsText = typeof totalSkills === "number" ? formatCompactStat(totalSkills) : null;
   const [sidebarOpen, setSidebarOpen] = useState(false);
 
   const model = useSkillsBrowseModel({
@@ -80,11 +86,49 @@ export function SkillsIndex() {
 
   const handleFilterToggle = useCallback(
     (key: string) => {
-      if (key === "highlighted") model.onToggleHighlighted();
-      else if (key === "nonSuspicious") model.onToggleNonSuspicious();
+      if (key === "nonSuspicious") model.onToggleNonSuspicious();
     },
-    [model.onToggleHighlighted, model.onToggleNonSuspicious],
+    [model.onToggleNonSuspicious],
   );
+
+  const handleSortChange = useCallback(
+    (value: string) => {
+      if (value === "featured") {
+        if (!model.featuredOnly) model.onToggleFeatured();
+        return;
+      }
+
+      if (model.featuredOnly) {
+        const nextSort = parseSort(value);
+        void navigate({
+          search: (prev) => ({
+            ...prev,
+            sort: nextSort,
+            dir: parseDir(prev.dir, nextSort),
+            featured: undefined,
+            highlighted: undefined,
+          }),
+          replace: true,
+        });
+        return;
+      }
+
+      model.onSortChange(value);
+    },
+    [model.featuredOnly, model.onSortChange, model.onToggleFeatured, navigate],
+  );
+
+  const handleClear = useCallback(() => {
+    model.onQueryChange("");
+    if (model.featuredOnly) model.onToggleFeatured();
+    if (model.nonSuspiciousOnly) model.onToggleNonSuspicious();
+  }, [
+    model.featuredOnly,
+    model.onQueryChange,
+    model.onToggleFeatured,
+    model.onToggleNonSuspicious,
+    model.nonSuspiciousOnly,
+  ]);
 
   const handleCategoryChange = useCallback(
     (slug: string | undefined) => {
@@ -103,9 +147,8 @@ export function SkillsIndex() {
   const activeCategory = useMemo(() => {
     if (!model.query) return undefined;
     return (
-      SKILL_CATEGORIES.find((c) =>
-        c.keywords.some((k) => k === model.query.trim().toLowerCase()),
-      )?.slug ?? undefined
+      SKILL_CATEGORIES.find((c) => c.keywords.some((k) => k === model.query.trim().toLowerCase()))
+        ?.slug ?? undefined
     );
   }, [model.query]);
 
@@ -122,9 +165,7 @@ export function SkillsIndex() {
         </button>
         <h1 className="browse-title">
           Skills
-          {totalSkillsText ? (
-            <span className="browse-count">{totalSkillsText}</span>
-          ) : null}
+          {totalSkillsText ? <span className="browse-count">{totalSkillsText}</span> : null}
         </h1>
       </div>
       <div className="browse-page-search">
@@ -142,11 +183,10 @@ export function SkillsIndex() {
           categories={SKILL_CATEGORIES}
           activeCategory={activeCategory}
           onCategoryChange={handleCategoryChange}
-          sortOptions={sortOptionsWithRelevance}
-          activeSort={model.sort}
-          onSortChange={model.onSortChange}
+          sortOptions={[{ value: "featured", label: "Featured" }, ...sortOptionsWithRelevance]}
+          activeSort={model.featuredOnly ? "featured" : model.sort}
+          onSortChange={handleSortChange}
           filters={[
-            { key: "highlighted", label: "Staff picks", active: model.highlightedOnly },
             { key: "nonSuspicious", label: "Hide suspicious", active: model.nonSuspiciousOnly },
           ]}
           onFilterToggle={handleFilterToggle}
@@ -154,19 +194,9 @@ export function SkillsIndex() {
         <div className="browse-results">
           <div className="browse-results-toolbar">
             <span className="browse-results-count">
-              {model.isLoadingSkills
-                ? "\u2014"
-                : `${model.sorted.length} results`}
-              {(model.hasQuery || model.highlightedOnly || model.nonSuspiciousOnly) ? (
-                <button
-                  className="browse-clear-btn"
-                  type="button"
-                  onClick={() => {
-                    model.onQueryChange("");
-                    if (model.highlightedOnly) model.onToggleHighlighted();
-                    if (model.nonSuspiciousOnly) model.onToggleNonSuspicious();
-                  }}
-                >
+              {model.isLoadingSkills ? "\u2014" : `${model.sorted.length} results`}
+              {model.hasQuery || model.featuredOnly || model.nonSuspiciousOnly ? (
+                <button className="browse-clear-btn" type="button" onClick={handleClear}>
                   Clear
                 </button>
               ) : null}

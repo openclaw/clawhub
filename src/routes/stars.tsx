@@ -32,7 +32,7 @@ function Stars() {
             title="Sign in to see your highlights"
             description="Star skills for quick access later."
           >
-            <SignInButton variant="outline">Sign in with GitHub</SignInButton>
+            <SignInButton />
           </EmptyState>
         </div>
       </main>

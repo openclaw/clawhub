@@ -33,6 +33,7 @@ const clearSkillManualOverrideHandler = (
 const updateVersionLlmAnalysisInternalHandler = (
   updateVersionLlmAnalysisInternal as unknown as WrappedHandler<{
     versionId: string;
+    moderationMode?: "normal" | "preserve";
     llmAnalysis: Record<string, unknown>;
   }>
 )._handler;
@@ -53,6 +54,16 @@ function makeCtx(params: { skill: Record<string, unknown>; version?: Record<stri
       return {
         withIndex: vi.fn(() => ({
           collect: vi.fn(async () => [params.skill]),
+        })),
+      };
+    }
+
+    if (table === "rescanRequests") {
+      return {
+        withIndex: vi.fn(() => ({
+          order: vi.fn(() => ({
+            take: vi.fn(async () => []),
+          })),
         })),
       };
     }
@@ -386,6 +397,54 @@ describe("skills manual overrides", () => {
     });
   });
 
+  it("can store llm backfill results without syncing moderation", async () => {
+    const now = 1_700_000_250_000;
+    vi.spyOn(Date, "now").mockReturnValue(now);
+
+    const skill = {
+      _id: "skills:1",
+      ownerUserId: "users:owner",
+      latestVersionId: "skillVersions:7",
+      softDeletedAt: undefined,
+      moderationStatus: "active",
+      moderationReason: undefined,
+      moderationVerdict: undefined,
+      moderationFlags: undefined,
+    };
+    const version = {
+      _id: "skillVersions:7",
+      skillId: "skills:1",
+      staticScan: undefined,
+      vtAnalysis: undefined,
+      llmAnalysis: undefined,
+    };
+
+    const { ctx, patch, get, query } = makeCtx({ skill, version });
+
+    await updateVersionLlmAnalysisInternalHandler(ctx, {
+      versionId: "skillVersions:7",
+      moderationMode: "preserve",
+      llmAnalysis: {
+        status: "malicious",
+        verdict: "malicious",
+        checkedAt: now,
+      },
+    });
+
+    expect(patch).toHaveBeenCalledTimes(1);
+    expect(patch).toHaveBeenCalledWith("skillVersions:7", {
+      llmAnalysis: {
+        status: "malicious",
+        verdict: "malicious",
+        checkedAt: now,
+      },
+    });
+    expect(get).toHaveBeenCalledTimes(1);
+    expect(get).toHaveBeenCalledWith("skillVersions:7");
+    expect(get).not.toHaveBeenCalledWith("skills:1");
+    expect(query).not.toHaveBeenCalled();
+  });
+
   it("updates global public count when llm scan sync restores a skill to active", async () => {
     const now = 1_700_000_300_000;
     vi.spyOn(Date, "now").mockReturnValue(now);
@@ -423,6 +482,68 @@ describe("skills manual overrides", () => {
       expect.objectContaining({
         activeSkillsCount: 2,
         updatedAt: now,
+      }),
+    );
+  });
+
+  it("clears legacy suspicious state when LLM corroborates clean VT Code Insight-only suspicious", async () => {
+    const now = 1_700_000_400_000;
+    vi.spyOn(Date, "now").mockReturnValue(now);
+
+    const skill = {
+      _id: "skills:1",
+      ownerUserId: "users:owner",
+      latestVersionId: "skillVersions:9",
+      softDeletedAt: undefined,
+      moderationStatus: "hidden",
+      moderationReason: "scanner.vt.suspicious",
+      moderationVerdict: "suspicious",
+      moderationFlags: ["flagged.suspicious"],
+    };
+    const version = {
+      _id: "skillVersions:9",
+      skillId: "skills:1",
+      staticScan: {
+        status: "clean",
+        reasonCodes: [],
+        findings: [],
+        summary: "",
+        engineVersion: "v2.1.1",
+        checkedAt: now - 200,
+      },
+      vtAnalysis: {
+        status: "suspicious",
+        scanner: "code_insight",
+        engineStats: {
+          malicious: 0,
+          suspicious: 0,
+          harmless: 12,
+          undetected: 54,
+        },
+        checkedAt: now - 100,
+      },
+      llmAnalysis: undefined,
+    };
+
+    const { ctx, patch } = makeCtx({ skill, version });
+
+    await updateVersionLlmAnalysisInternalHandler(ctx, {
+      versionId: "skillVersions:9",
+      llmAnalysis: {
+        status: "clean",
+        checkedAt: now,
+      },
+    });
+
+    expect(patch).toHaveBeenCalledWith(
+      "skills:1",
+      expect.objectContaining({
+        moderationStatus: "active",
+        moderationReason: "scanner.aggregate.clean",
+        moderationFlags: undefined,
+        moderationVerdict: "clean",
+        moderationReasonCodes: undefined,
+        isSuspicious: false,
       }),
     );
   });

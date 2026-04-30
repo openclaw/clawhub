@@ -25,15 +25,14 @@ const MAX_PRUNE_BATCH_SIZE = 100;
 type BackupPageItem =
   | {
       kind: "ok";
+      versionId: Doc<"skillVersions">["_id"];
       slug: string;
       version: string;
       displayName: string;
       ownerHandle: string;
-      files: Doc<"skillVersions">["files"];
       publishedAt: number;
     }
   | { kind: "missingLatestVersion" }
-  | { kind: "missingVersionDoc" }
   | { kind: "missingOwner" };
 
 export type GitHubBackupSyncStats = {
@@ -136,7 +135,7 @@ export async function syncGitHubBackupsInternalHandler(
 
     for (const item of page.items) {
       if (item.kind !== "ok") {
-        if (item.kind === "missingLatestVersion" || item.kind === "missingVersionDoc") {
+        if (item.kind === "missingLatestVersion") {
           stats.skillsMissingVersion += 1;
         } else if (item.kind === "missingOwner") {
           stats.skillsMissingOwner += 1;
@@ -152,6 +151,14 @@ export async function syncGitHubBackupsInternalHandler(
           continue;
         }
 
+        const version = (await ctx.runQuery(internal.skills.getVersionByIdInternal, {
+          versionId: item.versionId,
+        })) as Doc<"skillVersions"> | null;
+        if (!version) {
+          stats.skillsMissingVersion += 1;
+          continue;
+        }
+
         if (!dryRun) {
           await backupSkillToGitHub(
             ctx,
@@ -160,7 +167,7 @@ export async function syncGitHubBackupsInternalHandler(
               version: item.version,
               displayName: item.displayName,
               ownerHandle: item.ownerHandle,
-              files: item.files,
+              files: version.files,
               publishedAt: item.publishedAt,
             },
             context,

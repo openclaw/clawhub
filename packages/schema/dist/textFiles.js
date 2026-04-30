@@ -15,6 +15,7 @@ const RAW_TEXT_FILE_EXTENSIONS = [
     "jsx",
     "py",
     "sh",
+    "r",
     "rb",
     "go",
     "rs",

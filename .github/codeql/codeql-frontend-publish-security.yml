@@ -1,0 +1,57 @@
+name: clawhub-codeql-frontend-publish-security
+
+disable-default-queries: true
+
+queries:
+  - uses: security-extended
+
+query-filters:
+  - include:
+      precision:
+        - high
+        - very-high
+      tags contain: security
+      security-severity: /([7-9]|10)\.(\d)+/
+
+paths:
+  - src/components/DetailSecuritySummary.tsx
+  - src/components/MarkdownPreview.tsx
+  - src/components/PackageSourceChooser.tsx
+  - src/components/SecurityScannerPage.tsx
+  - src/components/SkillSecurityScanResults.tsx
+  - src/lib/authErrorMessage.ts
+  - src/lib/packageApi.ts
+  - src/lib/packageUpload.ts
+  - src/lib/pluginPublishPrefill.ts
+  - src/lib/rehypeProxyImages.ts
+  - src/lib/roles.ts
+  - src/lib/uploadFiles.ts
+  - src/lib/uploadUtils.ts
+  - src/lib/useAuthError.ts
+  - src/lib/useAuthStatus.ts
+  - src/routes/admin.tsx
+  - src/routes/cli/auth.tsx
+  - src/routes/packages/new.tsx
+  - src/routes/publish-plugin.tsx
+  - src/routes/publish-skill.tsx
+  - src/routes/upload.tsx
+  - src/routes/upload
+  - src/routes/$owner/$slug/security
+  - src/routes/plugins/$name/security
+
+paths-ignore:
+  - "**/node_modules"
+  - "**/coverage"
+  - "**/dist"
+  - "**/dist/**"
+  - "**/*.generated.ts"
+  - "**/*.bundle.js"
+  - "**/*.test.ts"
+  - "**/*.test.tsx"
+  - "**/*.e2e.test.ts"
+  - "**/*.e2e.test.tsx"
+  - "**/*test-support*"
+  - "**/*test-helper*"
+  - "**/*mock*"
+  - "**/*fixture*"
+  - "**/*bench*"

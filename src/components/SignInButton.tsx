@@ -12,14 +12,16 @@ type SignInButtonProps = Omit<ButtonProps, "onClick" | "type"> & {
 
 export function SignInButton({
   redirectTo,
-  children = "Sign in with GitHub",
+  children = "Sign In",
   ...props
 }: SignInButtonProps) {
   const { signIn } = useAuthActions();
 
   return (
     <Button
+      {...props}
       type="button"
+      variant="primary"
       onClick={() => {
         clearAuthError();
         const next = redirectTo ?? getCurrentRelativeUrl();
@@ -35,7 +37,6 @@ export function SignInButton({
             );
           });
       }}
-      {...props}
     >
       {children}
     </Button>

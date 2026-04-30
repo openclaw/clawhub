@@ -1,4 +1,4 @@
-import { createFileRoute, Link } from "@tanstack/react-router";
+import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { useMutation, useQuery } from "convex/react";
 import { useEffect, useState } from "react";
 import { api } from "../../convex/_generated/api";
@@ -12,6 +12,8 @@ import {
   isSkillHighlighted,
   isSkillOfficial,
 } from "../lib/badges";
+import { familyLabel } from "../lib/packageLabels";
+import type { PublicPublisher } from "../lib/publicUser";
 import { isAdmin, isModerator } from "../lib/roles";
 import { useAuthStatus } from "../lib/useAuthStatus";
 
@@ -75,6 +77,13 @@ type SkillBySlugResult = {
   } | null;
 } | null;
 
+type PluginByNameResult = {
+  package: Doc<"packages">;
+  latestRelease: Doc<"packageReleases"> | null;
+  owner: PublicPublisher | null;
+  highlighted: { byUserId: Id<"users">; at: number } | null;
+} | null;
+
 function resolveOwnerParam(
   handle: string | null | undefined,
   ownerId?: Id<"users"> | Id<"publishers">,
@@ -99,6 +108,7 @@ function promptUnbanReason(label: string) {
 export const Route = createFileRoute("/management")({
   validateSearch: (search) => ({
     skill: typeof search.skill === "string" && search.skill.trim() ? search.skill : undefined,
+    plugin: typeof search.plugin === "string" && search.plugin.trim() ? search.plugin : undefined,
   }),
   component: Management,
 });
@@ -106,14 +116,20 @@ export const Route = createFileRoute("/management")({
 function Management() {
   const { me } = useAuthStatus();
   const search = Route.useSearch();
+  const navigate = useNavigate();
   const staff = isModerator(me);
   const admin = isAdmin(me);
 
   const selectedSlug = search.skill?.trim();
+  const selectedPluginName = search.plugin?.trim();
   const selectedSkill = useQuery(
     api.skills.getBySlugForStaff,
     staff && selectedSlug ? { slug: selectedSlug, auditLogLimit: SKILL_AUDIT_LOG_LIMIT } : "skip",
   ) as SkillBySlugResult | undefined;
+  const selectedPlugin = useQuery(
+    api.packages.getByNameForStaff,
+    staff && selectedPluginName ? { name: selectedPluginName } : "skip",
+  ) as PluginByNameResult | undefined;
   const selectedSkillId = selectedSkill?.skill?._id ?? null;
   const recentVersions = useQuery(api.skills.listRecentVersions, staff ? { limit: 20 } : "skip") as
     | RecentVersionEntry[]
@@ -130,6 +146,7 @@ function Management() {
   const banUser = useMutation(api.users.banUser);
   const unbanUser = useMutation(api.users.unbanUser);
   const setBatch = useMutation(api.skills.setBatch);
+  const setPackageBatch = useMutation(api.packages.setBatch);
   const setSoftDeleted = useMutation(api.skills.setSoftDeleted);
   const hardDelete = useMutation(api.skills.hardDelete);
   const changeOwner = useMutation(api.skills.changeOwner);
@@ -145,6 +162,7 @@ function Management() {
   const [reportSearchDebounced, setReportSearchDebounced] = useState("");
   const [userSearch, setUserSearch] = useState("");
   const [userSearchDebounced, setUserSearchDebounced] = useState("");
+  const [pluginSearch, setPluginSearch] = useState(selectedPluginName ?? "");
   const [skillOverrideNote, setSkillOverrideNote] = useState("");
 
   const userQuery = userSearchDebounced.trim();
@@ -165,6 +183,10 @@ function Management() {
   useEffect(() => {
     setSkillOverrideNote("");
   }, [selectedSkillId]);
+
+  useEffect(() => {
+    setPluginSearch(selectedPluginName ?? "");
+  }, [selectedPluginName]);
 
   useEffect(() => {
     const handle = setTimeout(() => setReportSearchDebounced(reportSearch), 250);
@@ -257,15 +279,22 @@ function Management() {
       .catch((error) => window.alert(formatMutationError(error)));
   };
 
+  const managePlugin = () => {
+    const name = pluginSearch.trim();
+    if (!name) return;
+    void navigate({
+      to: "/management",
+      search: { skill: undefined, plugin: name },
+    });
+  };
+
   return (
     <main className="section">
       <h1 className="section-title">Management console</h1>
       <p className="section-subtitle">Moderation, curation, and ownership tools.</p>
 
       <Card>
-        <h2 className="section-title text-[1.2rem] m-0">
-          Reported skills
-        </h2>
+        <h2 className="section-title text-[1.2rem] m-0">Reported skills</h2>
         <div className="management-controls">
           <div className="management-control management-search">
             <span className="mono">Filter</span>
@@ -318,14 +347,12 @@ function Management() {
                         ))}
                       </div>
                     ) : (
-                      <div className="section-subtitle m-0">
-                        No report reasons yet.
-                      </div>
+                      <div className="section-subtitle m-0">No report reasons yet.</div>
                     )}
                   </div>
                   <div className="management-actions">
                     <Button asChild>
-                      <Link to="/management" search={{ skill: skill.slug }}>
+                      <Link to="/management" search={{ skill: skill.slug, plugin: undefined }}>
                         Manage
                       </Link>
                     </Button>
@@ -365,13 +392,11 @@ function Management() {
       </Card>
 
       <Card className="mt-5">
-        <h2 className="section-title text-[1.2rem] m-0">
-          Skill tools
-        </h2>
+        <h2 className="section-title text-[1.2rem] m-0">Skill tools</h2>
         {selectedSlug ? (
           <div className="section-subtitle mt-2">
             Managing "{selectedSlug}" ·{" "}
-            <Link to="/management" search={{ skill: undefined }}>
+            <Link to="/management" search={{ skill: undefined, plugin: undefined }}>
               Clear selection
             </Link>
           </div>
@@ -417,16 +442,12 @@ function Management() {
                     {skill.moderationFlags?.length ? (
                       <div className="management-tags">
                         {skill.moderationFlags.map((flag: string) => (
-                          <Badge key={flag}>
-                            {flag}
-                          </Badge>
+                          <Badge key={flag}>{flag}</Badge>
                         ))}
                       </div>
                     ) : null}
                     <div className="management-sublist">
-                      <div className="section-subtitle m-0">
-                        Manual overrides
-                      </div>
+                      <div className="section-subtitle m-0">Manual overrides</div>
                       <section className="management-override-panel">
                         <div className="management-report-item">
                           <span className="management-report-meta">Current override</span>
@@ -478,18 +499,14 @@ function Management() {
                       </section>
                     </div>
                     <div className="management-sublist">
-                      <div className="section-subtitle m-0">
-                        Recent audit activity
-                      </div>
+                      <div className="section-subtitle m-0">Recent audit activity</div>
                       <section className="management-override-panel management-audit-panel">
                         <div className="management-report-item">
                           <span className="management-report-meta">Window</span>
                           <span>Last {SKILL_AUDIT_LOG_LIMIT} entries for this skill.</span>
                         </div>
                         {auditLogs.length === 0 ? (
-                          <div className="section-subtitle m-0">
-                            No audit activity yet.
-                          </div>
+                          <div className="section-subtitle m-0">No audit activity yet.</div>
                         ) : (
                           <div className="management-audit-list">
                             {auditLogs.map((entry) => {
@@ -590,10 +607,7 @@ function Management() {
                   </div>
                   <div className="management-actions management-action-grid">
                     <Button asChild className="management-action-btn">
-                      <Link
-                        to="/$owner/$slug"
-                        params={{ owner: ownerParam, slug: skill.slug }}
-                      >
+                      <Link to="/$owner/$slug" params={{ owner: ownerParam, slug: skill.slug }}>
                         View
                       </Link>
                     </Button>
@@ -693,9 +707,115 @@ function Management() {
       </Card>
 
       <Card className="mt-5">
-        <h2 className="section-title text-[1.2rem] m-0">
-          Duplicate candidates
-        </h2>
+        <h2 className="section-title text-[1.2rem] m-0">Plugin tools</h2>
+        <div className="management-controls">
+          <div className="management-control management-search">
+            <span className="mono">Package</span>
+            <input
+              type="search"
+              placeholder="@scope/plugin-name or package-name"
+              value={pluginSearch}
+              onChange={(event) => setPluginSearch(event.target.value)}
+              onKeyDown={(event) => {
+                if (event.key === "Enter") {
+                  event.preventDefault();
+                  managePlugin();
+                }
+              }}
+            />
+          </div>
+          <Button type="button" onClick={managePlugin} disabled={!pluginSearch.trim()}>
+            Manage
+          </Button>
+        </div>
+        {selectedPluginName ? (
+          <div className="section-subtitle mt-2">
+            Managing "{selectedPluginName}" ·{" "}
+            <Link to="/management" search={{ skill: undefined, plugin: undefined }}>
+              Clear selection
+            </Link>
+          </div>
+        ) : null}
+        <div className="management-list">
+          {!selectedPluginName ? (
+            <div className="stat">Enter a plugin package name to open tooling here.</div>
+          ) : selectedPlugin === undefined ? (
+            <div className="stat">Loading plugin…</div>
+          ) : !selectedPlugin?.package ? (
+            <div className="stat">No plugin found for "{selectedPluginName}".</div>
+          ) : (
+            (() => {
+              const plugin = selectedPlugin.package;
+              const owner = selectedPlugin.owner;
+              const latestRelease = selectedPlugin.latestRelease;
+              const isHighlighted = Boolean(selectedPlugin.highlighted);
+
+              return (
+                <div key={plugin._id} className="management-item management-item-detail">
+                  <div className="management-item-main">
+                    <Link to="/plugins/$name" params={{ name: plugin.name }}>
+                      {plugin.displayName}
+                    </Link>
+                    <div className="section-subtitle m-0">
+                      {owner?.handle ? `@${owner.handle}` : "unknown owner"} ·{" "}
+                      {familyLabel(plugin.family)} · v{latestRelease?.version ?? "—"} · updated{" "}
+                      {formatTimestamp(plugin.updatedAt)}
+                      {plugin.softDeletedAt ? " · hidden" : ""}
+                      {isHighlighted ? " · highlighted" : ""}
+                    </div>
+                    <div className="management-tags">
+                      <Badge>{plugin.channel}</Badge>
+                      {plugin.isOfficial ? <Badge>official</Badge> : null}
+                      {plugin.executesCode ? <Badge>executes code</Badge> : null}
+                      {plugin.runtimeId ? <Badge>{plugin.runtimeId}</Badge> : null}
+                    </div>
+                    <div className="management-sublist">
+                      <div className="management-report-item">
+                        <span className="management-report-meta">Package name</span>
+                        <span className="mono">{plugin.name}</span>
+                      </div>
+                      <div className="management-report-item">
+                        <span className="management-report-meta">Summary</span>
+                        <span>{plugin.summary ?? "No summary provided."}</span>
+                      </div>
+                      <div className="management-report-item">
+                        <span className="management-report-meta">Featured state</span>
+                        <span>
+                          {isHighlighted
+                            ? `Highlighted ${formatTimestamp(selectedPlugin.highlighted?.at ?? 0)}`
+                            : "Not highlighted"}
+                        </span>
+                      </div>
+                    </div>
+                  </div>
+                  <div className="management-actions management-action-grid">
+                    <Button asChild className="management-action-btn">
+                      <Link to="/plugins/$name" params={{ name: plugin.name }}>
+                        View
+                      </Link>
+                    </Button>
+                    <Button
+                      className="management-action-btn"
+                      type="button"
+                      onClick={() =>
+                        void setPackageBatch({
+                          packageId: plugin._id,
+                          batch: isHighlighted ? undefined : "highlighted",
+                        }).catch((error) => window.alert(formatMutationError(error)))
+                      }
+                    >
+                      {isHighlighted ? "Unhighlight" : "Highlight"}
+                    </Button>
+                  </div>
+                </div>
+              );
+            })()
+          )}
+        </div>
+      </Card>
+
+      <Card className="mt-5">
+        <h2 className="section-title text-[1.2rem] m-0">Duplicate candidates</h2>
         <div className="management-list">
           {duplicateCandidates.length === 0 ? (
             <div className="stat">No duplicate candidates.</div>
@@ -784,9 +904,7 @@ function Management() {
       </Card>
 
       <Card className="mt-5">
-        <h2 className="section-title text-[1.2rem] m-0">
-          Recent pushes
-        </h2>
+        <h2 className="section-title text-[1.2rem] m-0">Recent pushes</h2>
         <div className="management-list">
           {recentVersions.length === 0 ? (
             <div className="stat">No recent versions.</div>
@@ -802,7 +920,10 @@ function Management() {
                 <div className="management-actions">
                   {entry.skill ? (
                     <Button asChild>
-                      <Link to="/management" search={{ skill: entry.skill.slug }}>
+                      <Link
+                        to="/management"
+                        search={{ skill: entry.skill.slug, plugin: undefined }}
+                      >
                         Manage
                       </Link>
                     </Button>
@@ -832,9 +953,7 @@ function Management() {
 
       {admin ? (
         <Card className="mt-5">
-          <h2 className="section-title text-[1.2rem] m-0">
-            Users
-          </h2>
+          <h2 className="section-title text-[1.2rem] m-0">Users</h2>
           <div className="management-controls">
             <div className="management-control management-search">
               <span className="mono">Filter</span>

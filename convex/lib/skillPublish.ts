@@ -1,5 +1,5 @@
-import { ConvexError } from "convex/values";
 import { normalizeTextContentType } from "clawhub-schema";
+import { ConvexError } from "convex/values";
 import semver from "semver";
 import { api, internal } from "../_generated/api";
 import type { Doc, Id } from "../_generated/dataModel";
@@ -330,6 +330,10 @@ export async function publishVersionForUser(
   });
 
   await ctx.scheduler.runAfter(0, internal.llmEval.evaluateWithLlm, {
+    versionId: publishResult.versionId,
+  });
+
+  await ctx.scheduler.runAfter(0, internal.depRegistryScan.checkDependencyRegistries, {
     versionId: publishResult.versionId,
   });
 

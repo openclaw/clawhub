@@ -44,7 +44,7 @@ export async function cmdRenameSkill(
     inputAllowed,
     `Rename ${slug} to ${newSlug}? Old slug will redirect.`,
   );
-  if (!confirmed) return;
+  if (!confirmed) return undefined;
 
   const token = await requireAuthToken();
   const registry = await getRegistry(opts, { cache: true });
@@ -86,7 +86,7 @@ export async function cmdMergeSkill(
     inputAllowed,
     `Merge ${sourceSlug} into ${targetSlug}? Source slug will redirect and stop listing publicly.`,
   );
-  if (!confirmed) return;
+  if (!confirmed) return undefined;
 
   const token = await requireAuthToken();
   const registry = await getRegistry(opts, { cache: true });

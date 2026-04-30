@@ -1,11 +1,15 @@
-import { api, internal } from "../_generated/api";
 import { normalizeTextContentType } from "clawhub-schema";
+import { api, internal } from "../_generated/api";
 import type { Doc, Id } from "../_generated/dataModel";
 import type { ActionCtx } from "../_generated/server";
 import { getOptionalApiTokenUserId, requireApiTokenUser } from "../lib/apiTokenAuth";
 import { applyRateLimit, parseBearerToken } from "../lib/httpRateLimit";
 import { parseBooleanQueryParam, resolveBooleanQueryParam } from "../lib/httpUtils";
-import type { LlmEvalDimension } from "../lib/securityPrompt";
+import type {
+  LlmAgenticRiskFinding,
+  LlmEvalDimension,
+  LlmRiskSummary,
+} from "../lib/securityPrompt";
 import { publishVersionForUser } from "../skills";
 import {
   MAX_RAW_FILE_BYTES,
@@ -225,11 +229,23 @@ type SkillSecuritySnapshot = {
       dimensions: LlmEvalDimension[] | null;
       guidance: string | null;
       findings: string | null;
+      agenticRiskFindings: LlmAgenticRiskFinding[] | null;
+      riskSummary: LlmRiskSummary | null;
       model: string | null;
       checkedAt: number | null;
     } | null;
   };
 };
+
+const internalRefs = internal as unknown as {
+  skills: {
+    requestRescanForApiTokenInternal: unknown;
+  };
+};
+
+async function runMutationRef<T>(ctx: ActionCtx, ref: unknown, args: unknown): Promise<T> {
+  return (await ctx.runMutation(ref as never, args as never)) as T;
+}
 
 function isDefinitiveSecurityStatus(
   status: NormalizedSecurityStatus | null | undefined,
@@ -277,9 +293,7 @@ function mergeSecurityStatuses(statuses: NormalizedSecurityStatus[]) {
   );
 }
 
-function hasLlmDimensionWarnings(
-  dimensions: LlmEvalDimension[] | undefined,
-) {
+function hasLlmDimensionWarnings(dimensions: LlmEvalDimension[] | undefined) {
   if (!Array.isArray(dimensions)) return false;
   return dimensions.some((dimension) => {
     if (!dimension || typeof dimension !== "object") return false;
@@ -364,6 +378,8 @@ function buildSkillSecuritySnapshot(
             dimensions: llm.dimensions ?? null,
             guidance: llm.guidance ?? null,
             findings: llm.findings ?? null,
+            agenticRiskFindings: llm.agenticRiskFindings ?? null,
+            riskSummary: llm.riskSummary ?? null,
             model: llm.model ?? null,
             checkedAt: llm.checkedAt ?? null,
           }
@@ -431,6 +447,7 @@ export async function resolveSkillVersionV1Handler(ctx: ActionCtx, request: Requ
 }
 
 type SkillListSort =
+  | "createdAt"
   | "updated"
   | "downloads"
   | "stars"
@@ -438,8 +455,13 @@ type SkillListSort =
   | "installsAllTime"
   | "trending";
 
+type PublicListSort = "newest" | "updated" | "downloads" | "stars" | "installs";
+
 function parseListSort(value: string | null): SkillListSort {
   const normalized = value?.trim().toLowerCase();
+  if (normalized === "createdat" || normalized === "created-at" || normalized === "newest") {
+    return "createdAt";
+  }
   if (normalized === "downloads") return "downloads";
   if (normalized === "stars" || normalized === "rating") return "stars";
   if (
@@ -457,6 +479,13 @@ function parseListSort(value: string | null): SkillListSort {
   return "updated";
 }
 
+function toPublicListSort(sort: Exclude<SkillListSort, "trending">): PublicListSort {
+  if (sort === "createdAt") return "newest";
+  if (sort === "updated") return "updated";
+  if (sort === "downloads" || sort === "stars") return sort;
+  return "installs";
+}
+
 export async function listSkillsV1Handler(ctx: ActionCtx, request: Request) {
   const rate = await applyRateLimit(ctx, request, "read");
   if (!rate.ok) return rate.response;
@@ -471,12 +500,24 @@ export async function listSkillsV1Handler(ctx: ActionCtx, request: Request) {
     url.searchParams.get("nonSuspicious"),
   );
 
-  const result = (await ctx.runQuery(api.skills.listPublicPage, {
-    limit,
-    cursor,
-    sort,
-    nonSuspiciousOnly: nonSuspiciousOnly || undefined,
-  })) as ListSkillsResult;
+  let result: ListSkillsResult;
+  if (sort === "trending") {
+    result = (await ctx.runQuery(api.skills.listPublicTrendingPage, {
+      limit,
+      nonSuspiciousOnly: nonSuspiciousOnly || undefined,
+    })) as ListSkillsResult;
+  } else {
+    const pageResult = (await ctx.runQuery(api.skills.listPublicPageV4, {
+      cursor,
+      numItems: limit,
+      sort: toPublicListSort(sort),
+      nonSuspiciousOnly: nonSuspiciousOnly || undefined,
+    })) as { page?: ListSkillsResult["items"]; nextCursor?: string | null };
+    result = {
+      items: pageResult.page ?? [],
+      nextCursor: pageResult.nextCursor ?? null,
+    };
+  }
 
   // Batch resolve all tags in a single query instead of N queries
   const resolvedTagsList = await resolveTagsBatch(
@@ -704,7 +745,7 @@ export async function skillsGetRouterV1Handler(ctx: ActionCtx, request: Request)
               summary: mod.summary,
               engineVersion: mod.engineVersion,
               updatedAt: mod.updatedAt,
-              evidence: sanitizeEvidence(mod.evidence, Boolean(isOwner || isStaff)),
+              evidence: sanitizeEvidence(mod.evidence, isOwner || isStaff),
               legacyReason: isOwner || isStaff ? mod.reason : null,
             }
           : null,
@@ -938,7 +979,7 @@ export async function publishSkillV1Handler(ctx: ActionCtx, request: Request) {
 }
 
 function hasAcceptedLegacyLicenseTerms(acceptLicenseTerms: boolean | undefined) {
-  return acceptLicenseTerms !== false;
+  return acceptLicenseTerms === true;
 }
 
 type TransferDecisionAction = "accept" | "reject" | "cancel";
@@ -1136,14 +1177,40 @@ export async function skillsPostRouterV1Handler(ctx: ActionCtx, request: Request
   if (segments.length === 2 && action === "undelete") {
     try {
       const { userId } = await requireApiTokenUser(ctx, request);
+      const body = await readOptionalJson(request);
+      const reason = optionalStringField(body, "reason");
       await ctx.runMutation(internal.skills.setSkillSoftDeletedInternal, {
         userId,
         slug,
         deleted: false,
+        reason,
       });
       return json({ ok: true }, 200, rate.headers);
     } catch (error) {
       return softDeleteErrorToResponse("skill", error, rate.headers);
+    }
+  }
+
+  if (segments.length === 2 && action === "rescan") {
+    if (!slug) return text("Slug required", 400, rate.headers);
+    const auth = await requireApiTokenUserOrResponse(ctx, request, rate.headers);
+    if (!auth.ok) return auth.response;
+    try {
+      const result = await runMutationRef(
+        ctx,
+        internalRefs.skills.requestRescanForApiTokenInternal,
+        {
+          actorUserId: auth.userId,
+          slug,
+        },
+      );
+      return json(result, 200, rate.headers);
+    } catch (error) {
+      return text(
+        error instanceof Error ? error.message : "Rescan request failed",
+        400,
+        rate.headers,
+      );
     }
   }
 
@@ -1173,13 +1240,28 @@ export async function skillsDeleteRouterV1Handler(ctx: ActionCtx, request: Reque
   const slug = segments[0]?.trim().toLowerCase() ?? "";
   try {
     const { userId } = await requireApiTokenUser(ctx, request);
+    const body = await readOptionalJson(request);
+    const reason = optionalStringField(body, "reason");
     await ctx.runMutation(internal.skills.setSkillSoftDeletedInternal, {
       userId,
       slug,
       deleted: true,
+      reason,
     });
     return json({ ok: true }, 200, rate.headers);
   } catch (error) {
     return softDeleteErrorToResponse("skill", error, rate.headers);
   }
+}
+
+async function readOptionalJson(request: Request): Promise<unknown> {
+  const raw = await request.text();
+  if (!raw.trim()) return undefined;
+  return JSON.parse(raw) as unknown;
+}
+
+function optionalStringField(value: unknown, key: string): string | undefined {
+  if (!value || typeof value !== "object") return undefined;
+  const field = (value as Record<string, unknown>)[key];
+  return typeof field === "string" ? field : undefined;
 }

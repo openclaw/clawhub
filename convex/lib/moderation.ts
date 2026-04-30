@@ -11,8 +11,12 @@ const FLAG_RULES: Array<{ flag: string; pattern: RegExp }> = [
   // Malicious intent keywords
   { flag: "suspicious.keyword", pattern: /(malware|stealer|phish|phishing|keylogger)/i },
 
-  // Data exfiltration patterns - webhooks are unusual in skills
-  { flag: "suspicious.webhook", pattern: /(discord\.gg|webhook|hooks\.slack)/i },
+  // Data exfiltration patterns - flag explicit Discord/Slack webhook endpoints,
+  // not legitimate integrations that mention generic webhook support.
+  {
+    flag: "suspicious.webhook",
+    pattern: /(discord\.gg\/|discord\.com\/api\/webhooks|discordapp\.com\/api\/webhooks|hooks\.slack)/i,
+  },
 
   // Arbitrary code execution - curl | bash is dangerous
   { flag: "suspicious.script", pattern: /(curl[^\n]+\|\s*(sh|bash))/i },

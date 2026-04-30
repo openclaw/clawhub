@@ -1,6 +1,6 @@
 import { v } from "convex/values";
 import { internal } from "./_generated/api";
-import type { Doc, Id } from "./_generated/dataModel";
+import type { Id } from "./_generated/dataModel";
 import { action, internalMutation, internalQuery } from "./functions";
 import { assertRole, requireUserFromAction } from "./lib/access";
 
@@ -17,11 +17,9 @@ type BackupPageItem =
       displayName: string;
       version: string;
       ownerHandle: string;
-      files: Doc<"skillVersions">["files"];
       publishedAt: number;
     }
   | { kind: "missingLatestVersion"; skillId: Id<"skills"> }
-  | { kind: "missingVersionDoc"; skillId: Id<"skills">; versionId: Id<"skillVersions"> }
   | { kind: "missingOwner"; skillId: Id<"skills">; ownerUserId: Id<"users"> };
 
 type BackupPageResult = {
@@ -57,49 +55,52 @@ export const getGitHubBackupPageInternal = internalQuery({
   },
   handler: async (ctx, args): Promise<BackupPageResult> => {
     const batchSize = clampInt(args.batchSize ?? DEFAULT_BATCH_SIZE, 1, MAX_BATCH_SIZE);
-    const { page, isDone, continueCursor } = await ctx.db
-      .query("skills")
-      .order("asc")
-      .paginate({ cursor: args.cursor ?? null, numItems: batchSize });
+    let pageResult;
+    try {
+      pageResult = await ctx.db
+        .query("skillSearchDigest")
+        .order("asc")
+        .paginate({ cursor: args.cursor ?? null, numItems: batchSize });
+    } catch (error) {
+      if (!args.cursor || !isStaleCursorError(error)) throw error;
+      pageResult = await ctx.db
+        .query("skillSearchDigest")
+        .order("asc")
+        .paginate({ cursor: null, numItems: batchSize });
+    }
 
     const items: BackupPageItem[] = [];
-    for (const skill of page) {
-      if (!isPubliclyAvailableSkill(skill)) continue;
-      if (!skill.latestVersionId) {
-        items.push({ kind: "missingLatestVersion", skillId: skill._id });
+    for (const digest of pageResult.page) {
+      if (!isPubliclyAvailableSkill(digest)) continue;
+      if (!digest.latestVersionId || !digest.latestVersionSummary) {
+        items.push({ kind: "missingLatestVersion", skillId: digest.skillId });
         continue;
       }
 
-      const version = await ctx.db.get(skill.latestVersionId);
-      if (!version) {
+      if (digest.ownerHandle === undefined) {
         items.push({
-          kind: "missingVersionDoc",
-          skillId: skill._id,
-          versionId: skill.latestVersionId,
+          kind: "missingOwner",
+          skillId: digest.skillId,
+          ownerUserId: digest.ownerUserId,
         });
         continue;
       }
 
-      const owner = await ctx.db.get(skill.ownerUserId);
-      if (!owner || owner.deletedAt || owner.deactivatedAt) {
-        items.push({ kind: "missingOwner", skillId: skill._id, ownerUserId: skill.ownerUserId });
-        continue;
-      }
-
+      const ownerHandle =
+        digest.ownerHandle || String(digest.ownerPublisherId ?? digest.ownerUserId);
       items.push({
         kind: "ok",
-        skillId: skill._id,
-        versionId: version._id,
-        slug: skill.slug,
-        displayName: skill.displayName,
-        version: version.version,
-        ownerHandle: owner.handle ?? owner._id,
-        files: version.files,
-        publishedAt: version.createdAt,
+        skillId: digest.skillId,
+        versionId: digest.latestVersionId,
+        slug: digest.slug,
+        displayName: digest.displayName,
+        version: digest.latestVersionSummary.version,
+        ownerHandle,
+        publishedAt: digest.latestVersionSummary.createdAt,
       });
     }
 
-    return { items, cursor: continueCursor, isDone };
+    return { items, cursor: pageResult.continueCursor, isDone: pageResult.isDone };
   },
 });
 
@@ -112,6 +113,19 @@ function isPubliclyAvailableSkill(skill: {
     skill.moderationStatus === undefined ||
     skill.moderationStatus === null ||
     skill.moderationStatus === "active"
+  );
+}
+
+function isStaleCursorError(error: unknown) {
+  const message =
+    typeof error === "string"
+      ? error
+      : error && typeof error === "object" && "message" in error
+        ? String((error as { message?: unknown }).message)
+        : "";
+  return (
+    message.includes("Failed to parse cursor") ||
+    message.includes("cursor is from a different query")
   );
 }
 

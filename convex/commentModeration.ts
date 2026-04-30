@@ -229,7 +229,7 @@ export async function applyCommentScamResultInternalHandler(
     ok: true,
     shouldBan,
     banned: !banResult.alreadyBanned,
-    alreadyBanned: Boolean(banResult.alreadyBanned),
+    alreadyBanned: banResult.alreadyBanned,
     protectedRole: false,
     wouldBan: false,
   };

@@ -9,11 +9,12 @@ import {
   ShieldOff,
   UserX,
 } from 'lucide-react';
+import type { ReactNode } from 'react';
 import { Badge } from '../components/ui/badge';
 import { Button } from '../components/ui/button';
 import { getSiteMode, getSiteName, getSiteUrlForMode } from '../lib/site';
 
-export function renderWithInlineCode(text: string): (string | JSX.Element)[] {
+export function renderWithInlineCode(text: string): ReactNode[] {
   const parts = text.split(/(`[^`]+`)/g);
   return parts.map((part, i) => {
     if (part.startsWith('`') && part.endsWith('`')) {

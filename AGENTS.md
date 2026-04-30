@@ -15,6 +15,7 @@
 - `bun run preview` — preview built app.
 - `bunx convex dev` — Convex dev deployment + function watcher.
 - `bunx convex codegen` — regenerate `convex/_generated`.
+- `bun run format:check` — formatting check.
 - `bun run lint` — Biome + oxlint (type-aware).
 - `bun run test` — Vitest (unit tests).
 - `bun run coverage` — coverage run; keep global >= 80%.
@@ -37,10 +38,12 @@
 
 - Commit messages: Conventional Commits (`feat:`, `fix:`, `chore:`, `docs:`…).
 - Keep changes scoped; avoid repo-wide search/replace.
+- Before commit/PR handoff, run `bun run format:check` and `bun run lint`; include commands run in the PR summary.
 - PRs: include summary + test commands run. Add screenshots for UI changes.
 - Before merging any PR, verify TypeScript cleanly with `bunx tsc -p packages/schema/tsconfig.json --noEmit` and `bunx tsc -p packages/clawhub/tsconfig.json --noEmit`; if Convex code changed, also run the repo typecheck path used by deploy so `bunx convex deploy` will not fail on `tsc`.
 - GitHub comments: for multiline `gh` comments/close messages, use `--body-file`, `--input`, or stdin/heredoc with real newlines; never pass literal `\\n` in shell strings.
 - Reject PRs that add skills into source code/repo content directly (for example under `skills/` or seed-only additions intended as published skills). Skills must be uploaded/published via CLI.
+- Repo-local Convex developer skills under `.agents/skills/convex*/` are allowed when they support working on this codebase; keep top-level `skills/` reserved for installed/published skill content and ignored by git.
 
 ## Production Release
 
@@ -89,11 +92,13 @@
 - **Before writing or reviewing Convex queries, check deployment health.** Run `bunx convex insights` to check for OCC conflicts, `bytesReadLimit`, and `documentsReadLimit` errors. Run `bunx convex logs --failure` to see individual error messages and stack traces. This helps identify which functions are causing bandwidth issues so you can prioritize fixes.
 
 <!-- convex-ai-start -->
+
 This project uses [Convex](https://convex.dev) as its backend.
 
 When working on Convex code, **always read `convex/_generated/ai/guidelines.md` first** for important guidelines on how to correctly use Convex APIs and patterns. The file contains rules that override what you may have learned about Convex from training data.
 
 Convex agent skills for common tasks can be installed by running `npx convex ai-files install`.
+
 <!-- convex-ai-end -->
 
 ## Stat Field Migration Rules
@@ -101,11 +106,11 @@ Convex agent skills for common tasks can be installed by running `npx convex ai-
 The `skills` table maintains two parallel sets of stat fields as part of an in-progress field migration:
 
 | Legacy (nested, `@deprecated`) | Top-level (source of truth, indexable) |
-|---|---|
-| `stats.downloads` | `statsDownloads` |
-| `stats.stars` | `statsStars` |
-| `stats.installsCurrent` | `statsInstallsCurrent` |
-| `stats.installsAllTime` | `statsInstallsAllTime` |
+| ------------------------------ | -------------------------------------- |
+| `stats.downloads`              | `statsDownloads`                       |
+| `stats.stars`                  | `statsStars`                           |
+| `stats.installsCurrent`        | `statsInstallsCurrent`                 |
+| `stats.installsAllTime`        | `statsInstallsAllTime`                 |
 
 **Rules:**
 

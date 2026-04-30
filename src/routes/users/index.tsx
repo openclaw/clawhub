@@ -1,38 +1,26 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { Search } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
 import { api } from "../../../convex/_generated/api";
-import { UserListItem } from "../../components/UserListItem";
 import { Card } from "../../components/ui/card";
+import { UserListItem } from "../../components/UserListItem";
 import { convexHttp } from "../../convex/client";
 import type { PublicUser } from "../../lib/publicUser";
-
-type UserSearchState = {
-  q?: string;
-};
 
 type UsersLoaderResult = { items: PublicUser[]; total: number };
 
 export const Route = createFileRoute("/users/")({
-  validateSearch: (search): UserSearchState => ({
-    q: typeof search.q === "string" && search.q.trim() ? search.q.trim() : undefined,
-  }),
   component: UsersIndex,
 });
 
 function UsersIndex() {
-  const search = Route.useSearch();
-  const navigate = Route.useNavigate();
-  const [query, setQuery] = useState(search.q ?? "");
   const [result, setResult] = useState<UsersLoaderResult | undefined>(undefined);
   const [loading, setLoading] = useState(true);
 
-  const fetchUsers = useCallback(async (q?: string) => {
+  const fetchUsers = useCallback(async () => {
     setLoading(true);
     try {
       const data = await convexHttp.query(api.users.listPublic, {
         limit: 48,
-        search: q,
       });
       setResult(data as UsersLoaderResult);
     } finally {
@@ -41,9 +29,8 @@ function UsersIndex() {
   }, []);
 
   useEffect(() => {
-    setQuery(search.q ?? "");
-    void fetchUsers(search.q);
-  }, [search.q, fetchUsers]);
+    void fetchUsers();
+  }, [fetchUsers]);
 
   const users = result?.items ?? [];
 
@@ -57,25 +44,6 @@ function UsersIndex() {
           ) : null}
         </h1>
       </div>
-      <form
-        className="browse-page-search"
-        onSubmit={(event) => {
-          event.preventDefault();
-          void navigate({
-            search: {
-              q: query.trim() || undefined,
-            },
-          });
-        }}
-      >
-        <Search size={15} className="navbar-search-icon" aria-hidden="true" />
-        <input
-          className="browse-search-input"
-          placeholder="Search users..."
-          value={query}
-          onChange={(event) => setQuery(event.target.value)}
-        />
-      </form>
 
       <div className="browse-results">
         <div className="browse-results-toolbar">
@@ -90,8 +58,7 @@ function UsersIndex() {
           </Card>
         ) : users.length === 0 ? (
           <div className="empty-state">
-            <p className="empty-state-title">No users found</p>
-            <p className="empty-state-body">Try a different handle or name.</p>
+            <p className="empty-state-title">No users yet</p>
           </div>
         ) : (
           <div className="results-list">

@@ -509,7 +509,7 @@ describe("comments mutations", () => {
       if (id === "skills:1") {
         return { _id: "skills:1", softDeletedAt: undefined, moderationStatus: "active" };
       }
-      if (String(id).startsWith("comments:reported-")) return reportedComment;
+      if (id.startsWith("comments:reported-")) return reportedComment;
       if (id === "skills:active") {
         return { _id: "skills:active", softDeletedAt: undefined, moderationStatus: "active" };
       }

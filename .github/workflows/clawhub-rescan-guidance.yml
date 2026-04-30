@@ -1,0 +1,57 @@
+name: ClawHub Rescan Guidance
+
+on:
+  issues:
+    types: [labeled]
+  workflow_dispatch:
+    inputs:
+      issue:
+        description: "Issue number to check"
+        required: true
+        type: string
+
+permissions:
+  contents: read
+  issues: write
+
+concurrency:
+  group: clawhub-rescan-guidance-${{ github.event.issue.number || github.event.inputs.issue }}
+  cancel-in-progress: false
+
+jobs:
+  rescan-guidance:
+    runs-on: ubuntu-latest
+    if: "${{ github.event_name == 'workflow_dispatch' || github.event.label.name == 'r: rescan-guidance' }}"
+    env:
+      CLAWHUB_RESCAN_GUIDANCE_APPLY: "1"
+      ISSUE_NUMBER: ${{ github.event.issue.number || github.event.inputs.issue }}
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+
+      - uses: actions/create-github-app-token@v3
+        id: app-token
+        continue-on-error: true
+        with:
+          app-id: "2729701"
+          private-key: ${{ secrets.GH_APP_PRIVATE_KEY }}
+
+      - uses: actions/create-github-app-token@v3
+        id: app-token-fallback
+        continue-on-error: true
+        if: steps.app-token.outcome == 'failure'
+        with:
+          app-id: "2971289"
+          private-key: ${{ secrets.GH_APP_PRIVATE_KEY_FALLBACK }}
+
+      - name: Comment when rescan guidance label is present
+        env:
+          GH_TOKEN: ${{ steps.app-token.outputs.token || steps.app-token-fallback.outputs.token || github.token }}
+        run: |
+          node scripts/github/clawhub-rescan-auto-response.mjs \
+            --repo "$GITHUB_REPOSITORY" \
+            --issue "$ISSUE_NUMBER" \
+            --comment-for-labeled-issue \
+            --apply

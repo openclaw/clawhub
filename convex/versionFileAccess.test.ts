@@ -92,6 +92,7 @@ describe("version file access actions", () => {
   it("allows owners to read hidden skill versions", async () => {
     vi.mocked(getAuthUserId).mockResolvedValue("users:owner" as never);
     const ctx = makeActionCtx({
+      actor: { _id: "users:owner", role: "user" },
       version: makeSkillVersion(),
       skill: {
         _id: "skills:1",
@@ -133,6 +134,7 @@ describe("version file access actions", () => {
   it("allows owners to read hidden skill files", async () => {
     vi.mocked(getAuthUserId).mockResolvedValue("users:owner" as never);
     const ctx = makeActionCtx({
+      actor: { _id: "users:owner", role: "user" },
       version: makeSkillVersion(),
       skill: {
         _id: "skills:1",

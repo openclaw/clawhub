@@ -1,8 +1,33 @@
+import { createRequire } from "node:module";
 import { defineConfig } from "vitest/config";
 
+const require = createRequire(import.meta.url);
+const testingLibraryRequire = createRequire(require.resolve("@testing-library/react"));
+
 export default defineConfig({
+  resolve: {
+    dedupe: ["react", "react-dom"],
+    alias: [
+      {
+        find: "react/jsx-dev-runtime",
+        replacement: testingLibraryRequire.resolve("react/jsx-dev-runtime"),
+      },
+      {
+        find: "react/jsx-runtime",
+        replacement: testingLibraryRequire.resolve("react/jsx-runtime"),
+      },
+      { find: "react-dom/client", replacement: testingLibraryRequire.resolve("react-dom/client") },
+      { find: "react-dom", replacement: testingLibraryRequire.resolve("react-dom") },
+      { find: "react", replacement: testingLibraryRequire.resolve("react") },
+    ],
+  },
   test: {
     environment: "jsdom",
+    environmentOptions: {
+      jsdom: {
+        url: "http://localhost/",
+      },
+    },
     globals: true,
     setupFiles: ["./vitest.setup.ts"],
     testTimeout: 15_000,

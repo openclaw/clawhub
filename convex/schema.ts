@@ -12,6 +12,76 @@ const manualModerationOverride = v.object({
   updatedAt: v.number(),
 });
 
+const vtEngineStatsValidator = v.object({
+  malicious: v.optional(v.number()),
+  suspicious: v.optional(v.number()),
+  undetected: v.optional(v.number()),
+  harmless: v.optional(v.number()),
+});
+
+const vtAnalysisValidator = v.object({
+  status: v.string(),
+  verdict: v.optional(v.string()),
+  analysis: v.optional(v.string()),
+  source: v.optional(v.string()),
+  scanner: v.optional(v.string()),
+  engineStats: v.optional(vtEngineStatsValidator),
+  checkedAt: v.number(),
+});
+
+const depRegistryStatusValidator = v.union(
+  v.literal("clean"),
+  v.literal("suspicious"),
+  v.literal("error"),
+);
+
+const depRegistryValidator = v.union(v.literal("pypi"), v.literal("npm"), v.literal("cargo"));
+
+const depRegistryAnalysisValidator = v.object({
+  status: depRegistryStatusValidator,
+  results: v.array(
+    v.object({
+      name: v.string(),
+      registry: depRegistryValidator,
+      source: v.string(),
+      exists: v.boolean(),
+      httpStatus: v.optional(v.number()),
+    }),
+  ),
+  notFoundPackages: v.array(v.string()),
+  unresolvedPackages: v.array(v.string()),
+  summary: v.string(),
+  checkedAt: v.number(),
+});
+
+const llmAgenticRiskEvidenceValidator = v.object({
+  path: v.string(),
+  snippet: v.string(),
+  explanation: v.string(),
+});
+
+const llmAgenticRiskFindingValidator = v.object({
+  categoryId: v.string(),
+  categoryLabel: v.string(),
+  riskBucket: v.union(
+    v.literal("abnormal_behavior_control"),
+    v.literal("permission_boundary"),
+    v.literal("sensitive_data_protection"),
+  ),
+  status: v.union(v.literal("none"), v.literal("note"), v.literal("concern")),
+  severity: v.string(),
+  confidence: v.union(v.literal("high"), v.literal("medium"), v.literal("low")),
+  evidence: v.optional(llmAgenticRiskEvidenceValidator),
+  userImpact: v.string(),
+  recommendation: v.string(),
+});
+
+const llmRiskSummaryBucketValidator = v.object({
+  status: v.union(v.literal("none"), v.literal("note"), v.literal("concern")),
+  summary: v.string(),
+  highestSeverity: v.optional(v.string()),
+});
+
 const users = defineTable({
   name: v.optional(v.string()),
   image: v.optional(v.string()),
@@ -429,15 +499,7 @@ const skillVersions = defineTable({
   createdAt: v.number(),
   softDeletedAt: v.optional(v.number()),
   sha256hash: v.optional(v.string()),
-  vtAnalysis: v.optional(
-    v.object({
-      status: v.string(),
-      verdict: v.optional(v.string()),
-      analysis: v.optional(v.string()),
-      source: v.optional(v.string()),
-      checkedAt: v.number(),
-    }),
-  ),
+  vtAnalysis: v.optional(vtAnalysisValidator),
   llmAnalysis: v.optional(
     v.object({
       status: v.string(),
@@ -456,11 +518,21 @@ const skillVersions = defineTable({
       ),
       guidance: v.optional(v.string()),
       findings: v.optional(v.string()),
+      agenticRiskFindings: v.optional(v.array(llmAgenticRiskFindingValidator)),
+      riskSummary: v.optional(
+        v.object({
+          abnormal_behavior_control: llmRiskSummaryBucketValidator,
+          permission_boundary: llmRiskSummaryBucketValidator,
+          sensitive_data_protection: llmRiskSummaryBucketValidator,
+        }),
+      ),
       model: v.optional(v.string()),
       checkedAt: v.number(),
     }),
   ),
   capabilityTags: v.optional(v.array(v.string())),
+  depRegistryAnalysis: v.optional(depRegistryAnalysisValidator),
+  depRegistryScanStatus: v.optional(depRegistryStatusValidator),
   staticScan: v.optional(
     v.object({
       status: v.union(v.literal("clean"), v.literal("suspicious"), v.literal("malicious")),
@@ -483,7 +555,17 @@ const skillVersions = defineTable({
 })
   .index("by_skill", ["skillId"])
   .index("by_skill_version", ["skillId", "version"])
-  .index("by_sha256hash", ["sha256hash"]);
+  .index("by_active_created", ["softDeletedAt", "createdAt"])
+  .index("by_sha256hash", ["sha256hash"])
+  .index("by_dep_registry_scan_status_and_created", ["depRegistryScanStatus", "createdAt"]);
+
+const depRegistryCache = defineTable({
+  registry: depRegistryValidator,
+  name: v.string(),
+  exists: v.boolean(),
+  httpStatus: v.number(),
+  checkedAt: v.number(),
+}).index("by_registry_name", ["registry", "name"]);
 
 const soulVersions = defineTable({
   soulId: v.id("souls"),
@@ -536,6 +618,16 @@ const skillBadges = defineTable({
 })
   .index("by_skill", ["skillId"])
   .index("by_skill_kind", ["skillId", "kind"])
+  .index("by_kind_at", ["kind", "at"]);
+
+const packageBadges = defineTable({
+  packageId: v.id("packages"),
+  kind: v.union(v.literal("highlighted")),
+  byUserId: v.id("users"),
+  at: v.number(),
+})
+  .index("by_package", ["packageId"])
+  .index("by_package_kind", ["packageId", "kind"])
   .index("by_kind_at", ["kind", "at"]);
 
 const soulVersionFingerprints = defineTable({
@@ -704,15 +796,7 @@ const packageReleases = defineTable({
   capabilities: packageCapabilitiesValidator,
   verification: packageVerificationValidator,
   sha256hash: v.optional(v.string()),
-  vtAnalysis: v.optional(
-    v.object({
-      status: v.string(),
-      verdict: v.optional(v.string()),
-      analysis: v.optional(v.string()),
-      source: v.optional(v.string()),
-      checkedAt: v.number(),
-    }),
-  ),
+  vtAnalysis: v.optional(vtAnalysisValidator),
   llmAnalysis: v.optional(
     v.object({
       status: v.string(),
@@ -762,6 +846,7 @@ const packageReleases = defineTable({
 })
   .index("by_package", ["packageId"])
   .index("by_package_active_created", ["packageId", "softDeletedAt", "createdAt"])
+  .index("by_active_created", ["softDeletedAt", "createdAt"])
   .index("by_package_version", ["packageId", "version"])
   .index("by_sha256hash", ["sha256hash"]);
 
@@ -1199,6 +1284,28 @@ const vtScanLogs = defineTable({
   createdAt: v.number(),
 }).index("by_type_date", ["type", "createdAt"]);
 
+const rescanRequests = defineTable({
+  targetKind: v.union(v.literal("skill"), v.literal("plugin")),
+  skillId: v.optional(v.id("skills")),
+  skillVersionId: v.optional(v.id("skillVersions")),
+  packageId: v.optional(v.id("packages")),
+  packageReleaseId: v.optional(v.id("packageReleases")),
+  targetVersion: v.string(),
+  requestedByUserId: v.id("users"),
+  ownerUserId: v.id("users"),
+  ownerPublisherId: v.optional(v.id("publishers")),
+  status: v.union(v.literal("in_progress"), v.literal("completed"), v.literal("failed")),
+  error: v.optional(v.string()),
+  createdAt: v.number(),
+  updatedAt: v.number(),
+  completedAt: v.optional(v.number()),
+})
+  .index("by_skill_version", ["targetKind", "skillVersionId", "createdAt"])
+  .index("by_skill_version_status", ["targetKind", "skillVersionId", "status", "createdAt"])
+  .index("by_package_release", ["targetKind", "packageReleaseId", "createdAt"])
+  .index("by_package_release_status", ["targetKind", "packageReleaseId", "status", "createdAt"])
+  .index("by_requester", ["requestedByUserId", "createdAt"]);
+
 const apiTokens = defineTable({
   userId: v.id("users"),
   label: v.string(),
@@ -1334,10 +1441,12 @@ export default defineSchema({
   packageReleases,
   packageTrustedPublishers,
   packagePublishTokens,
+  packageBadges,
   packageSearchDigest,
   packageCapabilitySearchDigest,
   souls,
   skillVersions,
+  depRegistryCache,
   soulVersions,
   skillVersionFingerprints,
   skillBadges,
@@ -1360,6 +1469,7 @@ export default defineSchema({
   soulStars,
   auditLogs,
   vtScanLogs,
+  rescanRequests,
   apiTokens,
   rateLimits,
   downloadDedupes,

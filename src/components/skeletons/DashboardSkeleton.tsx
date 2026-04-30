@@ -2,38 +2,37 @@ import { Skeleton } from "../ui/skeleton";
 
 export function DashboardSkeleton() {
   return (
-    <div className="mx-auto max-w-page-max px-7 py-10">
-      {/* Header */}
-      <div className="mb-8 flex items-center justify-between">
-        <Skeleton className="h-8 w-52" />
-        <div className="flex gap-3">
-          <Skeleton className="h-[44px] w-32 rounded-[var(--radius-pill)]" />
-          <Skeleton className="h-[44px] w-36 rounded-[var(--radius-pill)]" />
+    <main className="section">
+      <div className="dashboard-header">
+        <div className="grid gap-2">
+          <Skeleton className="h-8 w-36" />
+          <Skeleton className="h-4 w-72 max-w-full" />
         </div>
       </div>
 
-      {/* Stats row */}
-      <div className="mb-8 grid grid-cols-2 gap-4 sm:grid-cols-4">
-        {Array.from({ length: 4 }, (_, i) => (
+      <div className="dashboard-owner-grid">
+        {["skills", "plugins"].map((section) => (
           <div
-            key={i}
-            className="flex flex-col gap-2 rounded-[var(--radius-md)] border border-[color:var(--line)] bg-[color:var(--surface)] p-5"
+            key={section}
+            className="dashboard-owner-panel flex w-full flex-col gap-3 rounded-[var(--radius-md)] border border-[color:var(--line)] bg-[color:var(--surface)] p-space-5"
           >
-            <Skeleton className="h-4 w-20" />
-            <Skeleton className="h-7 w-16" />
+            <div className="dashboard-section-header">
+              <Skeleton className="h-7 w-24" />
+              <Skeleton className="h-[34px] w-28 rounded-[var(--r-btn)]" />
+            </div>
+            <div className="dashboard-list">
+              {Array.from({ length: section === "skills" ? 2 : 3 }, (_, index) => (
+                <div key={index} className="dashboard-list-row">
+                  <Skeleton className="h-5 w-48 max-w-full" />
+                  <Skeleton className="h-5 w-96 max-w-full" />
+                  <Skeleton className="h-8 w-24 rounded-[var(--radius-pill)]" />
+                  <Skeleton className="h-8 w-8 rounded-[var(--r-btn)]" />
+                </div>
+              ))}
+            </div>
           </div>
         ))}
       </div>
-
-      {/* Publisher tabs */}
-      <Skeleton className="mb-6 h-[44px] w-64 rounded-[var(--radius-pill)]" />
-
-      {/* Table skeleton */}
-      <div className="flex flex-col gap-3">
-        {Array.from({ length: 5 }, (_, i) => (
-          <Skeleton key={i} className="h-16 w-full rounded-[var(--radius-sm)]" />
-        ))}
-      </div>
-    </div>
+    </main>
   );
 }

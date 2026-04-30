@@ -115,7 +115,9 @@ export function tokenize(value: string): string[] {
 
   const tokens: string[] = [];
 
-  const parts = normalized.split(/([^\u4e00-\u9fff\u3400-\u4dbf\u3041-\u3096\u30a1-\u30fa\uac00-\ud7af]+)/g);
+  const parts = normalized.split(
+    /([^\u4e00-\u9fff\u3400-\u4dbf\u3041-\u3096\u30a1-\u30fa\uac00-\ud7af]+)/g,
+  );
 
   for (const part of parts) {
     if (!part.trim()) continue;
@@ -141,8 +143,8 @@ export function matchesExactTokens(
   if (!text) return false;
   const textTokens = tokenize(text);
   if (textTokens.length === 0) return false;
-  // Require at least one token to prefix-match, allowing vector similarity to determine relevance
-  return queryTokens.some((queryToken) =>
+  // Require every query token to prefix-match so partial matches do not crowd out better results.
+  return queryTokens.every((queryToken) =>
     textTokens.some((textToken) => textToken.startsWith(queryToken)),
   );
 }

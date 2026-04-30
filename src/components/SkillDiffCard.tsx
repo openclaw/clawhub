@@ -232,7 +232,7 @@ export function SkillDiffCard({ skill, versions, variant = "card" }: SkillDiffCa
   }, [getFileText, leftVersionId, rightVersionId, selectedItem]);
 
   useEffect(() => {
-    if (!monaco || typeof document === "undefined") return;
+    if (!monaco || typeof document === "undefined") return () => {};
     const syncTheme = () => applyMonacoTheme(monaco);
     const observer = new MutationObserver(syncTheme);
     observer.observe(document.documentElement, {
@@ -248,7 +248,7 @@ export function SkillDiffCard({ skill, versions, variant = "card" }: SkillDiffCa
   }, [monaco]);
 
   useEffect(() => {
-    if (typeof window === "undefined") return;
+    if (typeof window === "undefined") return () => {};
     const mediaQuery = window.matchMedia(`(max-width: ${MOBILE_DIFF_BREAKPOINT}px)`);
     const syncViewMode = () => {
       if (!userSelectedViewModeRef.current) {

@@ -55,8 +55,6 @@ const SOULS_SEARCH = {
 
 const USERS_SEARCH = { q: undefined } as const;
 
-const MANAGEMENT_SEARCH = { skill: undefined } as const;
-
 // ---------------------------------------------------------------------------
 // Primary nav items (desktop tabs row + mobile dropdown top section)
 // These map to the "content-type" tabs: Skills | Plugins | Souls
@@ -101,7 +99,7 @@ export const PRIMARY_NAV_ITEMS: NavItem[] = [
 ];
 
 // ---------------------------------------------------------------------------
-// Secondary nav items (secondary tabs row + mobile dropdown lower section)
+// Secondary nav items (desktop secondary tabs + mobile dropdown section)
 // ---------------------------------------------------------------------------
 
 export const SECONDARY_NAV_ITEMS: NavItem[] = [
@@ -122,31 +120,6 @@ export const SECONDARY_NAV_ITEMS: NavItem[] = [
     soulModeOnly: false,
     soulModeHide: true,
   },
-  {
-    label: "Stars",
-    to: "/stars",
-    authRequired: true,
-    staffOnly: false,
-    soulModeOnly: false,
-    soulModeHide: false,
-  },
-  {
-    label: "Dashboard",
-    to: "/dashboard",
-    authRequired: true,
-    staffOnly: false,
-    soulModeOnly: false,
-    soulModeHide: false,
-  },
-  {
-    label: "Management",
-    to: "/management",
-    search: MANAGEMENT_SEARCH,
-    authRequired: true,
-    staffOnly: true,
-    soulModeOnly: false,
-    soulModeHide: false,
-  },
 ];
 
 // ---------------------------------------------------------------------------
@@ -159,7 +132,13 @@ export interface FooterNavSection {
 }
 
 export type FooterNavItem =
-  | { kind: "link"; label: string; to: string; search?: Record<string, unknown>; featureFlag?: boolean }
+  | {
+      kind: "link";
+      label: string;
+      to: string;
+      search?: Record<string, unknown>;
+      featureFlag?: boolean;
+    }
   | { kind: "external"; label: string; href: string; featureFlag?: boolean }
   | { kind: "text"; label: string; featureFlag?: boolean };
 
@@ -169,7 +148,13 @@ export const FOOTER_NAV_SECTIONS: FooterNavSection[] = [
     items: [
       { kind: "link", label: "Skills", to: "/skills", search: SKILLS_SEARCH },
       { kind: "link", label: "Plugins", to: "/plugins" },
-      { kind: "link", label: "Souls", to: "/souls", search: SOULS_SEARCH, featureFlag: FEATURE_SOULS },
+      {
+        kind: "link",
+        label: "Souls",
+        to: "/souls",
+        search: SOULS_SEARCH,
+        featureFlag: FEATURE_SOULS,
+      },
     ],
   },
   {

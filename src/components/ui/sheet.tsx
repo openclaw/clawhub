@@ -2,6 +2,7 @@ import * as DialogPrimitive from "@radix-ui/react-dialog";
 import { X } from "lucide-react";
 import * as React from "react";
 import { cn } from "../../lib/utils";
+import { Button } from "./button";
 
 const Sheet = DialogPrimitive.Root;
 const SheetTrigger = DialogPrimitive.Trigger;
@@ -27,16 +28,19 @@ SheetOverlay.displayName = DialogPrimitive.Overlay.displayName;
 
 interface SheetContentProps extends React.ComponentPropsWithoutRef<typeof DialogPrimitive.Content> {
   side?: "top" | "right" | "bottom" | "left";
+  showCloseButton?: boolean;
 }
 
 const SheetContent = React.forwardRef<
   React.ElementRef<typeof DialogPrimitive.Content>,
   SheetContentProps
->(({ className, children, side = "right", ...props }, ref) => (
+>(({ className, children, side = "right", showCloseButton = true, ...props }, ref) => (
   <SheetPortal>
     <SheetOverlay />
     <DialogPrimitive.Content
       ref={ref}
+      data-slot="sheet-content"
+      data-side={side}
       className={cn(
         "fixed z-80 flex flex-col gap-4 border-[color:var(--line)] bg-[color:var(--bg)] p-6 shadow-[var(--shadow)] transition-transform duration-300 ease-out",
         side === "right" &&
@@ -51,10 +55,18 @@ const SheetContent = React.forwardRef<
       )}
       {...props}
     >
-      <DialogPrimitive.Close className="absolute top-4 right-4 rounded-[var(--radius-sm)] p-1 text-[color:var(--ink-soft)] opacity-70 transition-opacity hover:opacity-100 focus:outline-none focus:ring-2 focus:ring-[color:var(--accent)]/35">
-        <X className="h-5 w-5" />
-        <span className="sr-only">Close</span>
-      </DialogPrimitive.Close>
+      {showCloseButton && (
+        <DialogPrimitive.Close asChild>
+          <Button
+            variant="ghost"
+            size="icon-sm"
+            className="absolute top-4 right-4 text-[color:var(--ink-soft)] opacity-70 transition-opacity hover:opacity-100"
+          >
+            <X className="h-5 w-5" />
+            <span className="sr-only">Close</span>
+          </Button>
+        </DialogPrimitive.Close>
+      )}
       {children}
     </DialogPrimitive.Content>
   </SheetPortal>

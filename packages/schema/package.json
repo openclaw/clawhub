@@ -1,38 +1,38 @@
 {
-  "name": "clawhub-schema",
-  "version": "0.0.2",
-  "private": true,
-  "files": [
-    "dist",
-    "README.md"
-  ],
-  "type": "module",
-  "exports": {
-    ".": {
-      "types": "./dist/index.d.ts",
-      "default": "./dist/index.js"
-    },
-    "./licenseConstants": {
-      "types": "./dist/licenseConstants.d.ts",
-      "default": "./dist/licenseConstants.js"
-    },
-    "./routes": {
-      "types": "./dist/routes.d.ts",
-      "default": "./dist/routes.js"
-    },
-    "./textFiles": {
-      "types": "./dist/textFiles.d.ts",
-      "default": "./dist/textFiles.js"
-    }
-  },
-  "scripts": {
-    "build": "tsc -p tsconfig.json",
-    "prepublishOnly": "npm run build"
-  },
-  "dependencies": {
-    "arktype": "^2.2.0"
-  },
-  "devDependencies": {
-    "typescript": "^5.9.3"
-  }
+	"name": "clawhub-schema",
+	"version": "0.0.2",
+	"private": true,
+	"files": [
+		"dist",
+		"README.md"
+	],
+	"type": "module",
+	"exports": {
+		".": {
+			"types": "./dist/index.d.ts",
+			"default": "./dist/index.js"
+		},
+		"./licenseConstants": {
+			"types": "./dist/licenseConstants.d.ts",
+			"default": "./dist/licenseConstants.js"
+		},
+		"./routes": {
+			"types": "./dist/routes.d.ts",
+			"default": "./dist/routes.js"
+		},
+		"./textFiles": {
+			"types": "./dist/textFiles.d.ts",
+			"default": "./dist/textFiles.js"
+		}
+	},
+	"scripts": {
+		"build": "tsc -p tsconfig.json",
+		"prepublishOnly": "npm run build"
+	},
+	"dependencies": {
+		"arktype": "^2.2.0"
+	},
+	"devDependencies": {
+		"typescript": "6.0.3"
+	}
 }

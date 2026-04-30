@@ -15,17 +15,17 @@ const isRateLimitedPackageApiErrorMock = vi.fn(
   (error: unknown) =>
     typeof error === "object" && error !== null && (error as { status?: number }).status === 429,
 );
+const useQueryMock = vi.fn();
+const useAuthStatusMock = vi.fn();
 
 type PluginDetailLoaderData = {
   detail: PackageDetailResponse;
   version: PackageVersionDetail | null;
   readme: string | null;
-  rateLimited:
-    | {
-        scope: "detail" | "metadata";
-        retryAfterSeconds: number | null;
-      }
-    | null;
+  rateLimited: {
+    scope: "detail" | "metadata";
+    retryAfterSeconds: number | null;
+  } | null;
 };
 
 let paramsMock = { name: "demo-plugin" };
@@ -59,6 +59,14 @@ vi.mock("@tanstack/react-router", () => ({
     useParams: () => paramsMock,
     useLoaderData: () => loaderDataMock,
   }),
+  useRouterState: ({
+    select,
+  }: {
+    select?: (state: { location: { pathname: string } }) => string;
+  }) =>
+    select
+      ? select({ location: { pathname: `/plugins/${paramsMock.name}` } })
+      : `/plugins/${paramsMock.name}`,
   Link: ({
     children,
     to,
@@ -71,6 +79,15 @@ vi.mock("@tanstack/react-router", () => ({
       {children}
     </a>
   ),
+}));
+
+vi.mock("convex/react", () => ({
+  useQuery: (...args: unknown[]) => useQueryMock(...args),
+  useMutation: () => vi.fn(),
+}));
+
+vi.mock("../lib/useAuthStatus", () => ({
+  useAuthStatus: () => useAuthStatusMock(),
 }));
 
 vi.mock("../lib/packageApi", () => ({
@@ -86,7 +103,13 @@ vi.mock("../lib/packageApi", () => ({
 }));
 
 vi.mock("../components/MarkdownPreview", () => ({
-  MarkdownPreview: ({ children }: { children: string; className?: string; highlight?: boolean }) => <div>{children}</div>,
+  MarkdownPreview: ({
+    children,
+  }: {
+    children: string;
+    className?: string;
+    highlight?: boolean;
+  }) => <div>{children}</div>,
 }));
 
 async function loadRoute() {
@@ -128,6 +151,14 @@ describe("plugin detail route", () => {
       rateLimited: null,
     };
     isRateLimitedPackageApiErrorMock.mockClear();
+    useQueryMock.mockReset();
+    useQueryMock.mockReturnValue(undefined);
+    useAuthStatusMock.mockReset();
+    useAuthStatusMock.mockReturnValue({
+      isAuthenticated: false,
+      isLoading: false,
+      me: null,
+    });
   });
 
   it("hides download actions when the plugin has no latest release", async () => {
@@ -188,9 +219,78 @@ describe("plugin detail route", () => {
 
     render(<Component />);
 
-    expect(screen.getByText("Security Scan")).toBeTruthy();
+    expect(screen.getByText("Security Scans")).toBeTruthy();
     expect(screen.getAllByText("VirusTotal").length).toBeGreaterThan(0);
-    expect(screen.getAllByText("OpenClaw").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("ClawScan").length).toBeGreaterThan(0);
+    expect(screen.getByRole("link", { name: /VirusTotal.*Benign/i }).getAttribute("href")).toBe(
+      "/plugins/demo-plugin/security/virustotal",
+    );
+    expect(
+      screen.getByRole("link", { name: /Static analysis.*Benign/i }).getAttribute("href"),
+    ).toBe("/plugins/demo-plugin/security/static-analysis");
+
+    const securityHeading = screen.getByText("Security Scans");
+    const installHeading = screen.getByRole("heading", { name: "Install" });
+    const capabilitiesHeading = screen.getByRole("heading", { name: "Capabilities" });
+    expect(
+      securityHeading.compareDocumentPosition(capabilitiesHeading) &
+        Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
+    expect(
+      installHeading.compareDocumentPosition(capabilitiesHeading) &
+        Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
+  });
+
+  it("shows owner-only plugin rescan state in the security summary", async () => {
+    useAuthStatusMock.mockReturnValue({
+      isAuthenticated: true,
+      isLoading: false,
+      me: { _id: "users:1" },
+    });
+    useQueryMock.mockReturnValue({
+      maxRequests: 3,
+      requestCount: 1,
+      remainingRequests: 2,
+      canRequest: true,
+      inProgressRequest: null,
+      latestRequest: null,
+    });
+    loaderDataMock = {
+      detail: loaderDataMock.detail,
+      version: {
+        package: {
+          name: "demo-plugin",
+          displayName: "Demo Plugin",
+          family: "code-plugin",
+        },
+        version: {
+          version: "1.0.0",
+          createdAt: 1,
+          changelog: "Initial release",
+          distTags: ["latest"],
+          files: [],
+          compatibility: null,
+          capabilities: null,
+          verification: null,
+          sha256hash: "a".repeat(64),
+          vtAnalysis: null,
+          llmAnalysis: null,
+          staticScan: null,
+        },
+      },
+      readme: null,
+      rateLimited: null,
+    };
+
+    const route = await loadRoute();
+    const Component = route.__config.component as ComponentType;
+
+    render(<Component />);
+
+    expect(screen.getByRole("button", { name: "Rescan" })).toBeTruthy();
+    expect(screen.queryByText("Owner rescan")).toBeNull();
+    expect(screen.queryByText("2/3 rescans left")).toBeNull();
   });
 
   it("shows a retryable empty state when the detail lookup is rate limited", async () => {

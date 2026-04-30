@@ -1,9 +1,8 @@
-import { getAuthUserId } from "@convex-dev/auth/server";
 import { ConvexError, v } from "convex/values";
 import type { Doc, Id } from "./_generated/dataModel";
 import type { MutationCtx } from "./_generated/server";
 import { internalMutation, internalQuery, mutation, query } from "./functions";
-import { assertAdmin, requireUser } from "./lib/access";
+import { assertAdmin, getOptionalActiveAuthUserId, requireUser } from "./lib/access";
 import { toPublicPublisher } from "./lib/public";
 import {
   ensurePersonalPublisherForUser,
@@ -404,7 +403,7 @@ export const resolvePublishTargetForUserInternal = internalMutation({
 export const listMine = query({
   args: {},
   handler: async (ctx) => {
-    const userId = await getAuthUserId(ctx);
+    const userId = await getOptionalActiveAuthUserId(ctx);
     if (!userId) return [];
     const user = await ctx.db.get(userId);
     if (!user || user.deletedAt || user.deactivatedAt) return [];

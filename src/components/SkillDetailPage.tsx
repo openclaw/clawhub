@@ -1,17 +1,21 @@
 import { useNavigate } from "@tanstack/react-router";
 import type { ClawdisSkillMetadata } from "clawhub-schema";
 import { useAction, useMutation, useQuery } from "convex/react";
+import type { ComponentProps } from "react";
 import { useEffect, useMemo, useState } from "react";
+import { toast } from "sonner";
 import { api } from "../../convex/_generated/api";
 import type { Doc, Id } from "../../convex/_generated/dataModel";
+import { getUserFacingConvexError } from "../lib/convexError";
 import { canManageSkill, isModerator } from "../lib/roles";
 import type { SkillBySlugResult, SkillPageInitialData } from "../lib/skillPage";
 import { useAuthStatus } from "../lib/useAuthStatus";
-import { Card } from "./ui/card";
 import { ClientOnly } from "./ClientOnly";
+import { DetailBody, DetailPageShell } from "./DetailPageShell";
+import { DetailSecuritySummary } from "./DetailSecuritySummary";
+import { SkillDetailSkeleton } from "./skeletons/SkillDetailSkeleton";
 import { SkillCommentsPanel } from "./SkillCommentsPanel";
 import { SkillDetailTabs, type DetailTab } from "./SkillDetailTabs";
-import { SkillMetadataSidebar } from "./SkillMetadataSidebar";
 import {
   buildSkillHref,
   formatConfigSnippet,
@@ -22,15 +26,21 @@ import {
 import { SkillHeader } from "./SkillHeader";
 import { SkillOwnershipPanel } from "./SkillOwnershipPanel";
 import { SkillReportDialog } from "./SkillReportDialog";
+import { Badge } from "./ui/badge";
+import { Button } from "./ui/button";
+import { Card, CardContent, CardHeader, CardTitle } from "./ui/card";
 
 type SkillDetailPageProps = {
   slug: string;
   canonicalOwner?: string;
   redirectToCanonical?: boolean;
   initialData?: SkillPageInitialData | null;
+  mode?: "detail" | "settings";
 };
 
 type SkillFile = Doc<"skillVersions">["files"][number];
+
+const SHOW_SKILL_COMMENTS = false;
 
 function formatReportError(error: unknown) {
   if (error && typeof error === "object" && "data" in error) {
@@ -65,6 +75,7 @@ export function SkillDetailPage({
   canonicalOwner,
   redirectToCanonical,
   initialData,
+  mode = "detail",
 }: SkillDetailPageProps) {
   const navigate = useNavigate();
   const { isAuthenticated, me } = useAuthStatus();
@@ -83,6 +94,7 @@ export function SkillDetailPage({
   const reportSkill = useMutation(api.skills.report);
   const updateTags = useMutation(api.skills.updateTags);
   const deleteTags = useMutation(api.skills.deleteTags);
+  const requestRescan = useMutation(api.skills.requestRescan);
   const getReadme = useAction(api.skills.getReadme);
   const myPublishers = useQuery(api.publishers.listMine) as
     | Array<{ publisher: { _id: Id<"publishers"> }; role: string }>
@@ -145,6 +157,11 @@ export function SkillDetailPage({
         : { ownerUserId: skill.ownerUserId, limit: 100 }
       : "skip",
   ) as Array<{ _id: Id<"skills">; slug: string; displayName: string }> | undefined;
+  const canViewOwnerRescanState = isOwner || me?.role === "admin";
+  const rescanState = useQuery(
+    api.skills.getRescanState,
+    canViewOwnerRescanState && skill ? { skillId: skill._id } : "skip",
+  ) as ComponentProps<typeof DetailSecuritySummary>["rescanState"] | undefined;
 
   const ownerHandle = owner?.handle ?? null;
   const ownerParam = ownerHandle?.trim().toLowerCase() || (owner?._id ? String(owner._id) : null);
@@ -236,28 +253,28 @@ export function SkillDetailPage({
   }, [navigate, ownerParam, slug, wantsCanonicalRedirect]);
 
   useEffect(() => {
-    if (!latestVersion) return;
-    if (loadedReadmeVersionId === latestVersion._id && (readme !== null || readmeError !== null)) {
-      return;
-    }
-
-    setReadme(null);
-    setReadmeError(null);
-    setLoadedReadmeVersionId(latestVersion._id);
     let cancelled = false;
+    if (
+      latestVersion &&
+      !(loadedReadmeVersionId === latestVersion._id && (readme !== null || readmeError !== null))
+    ) {
+      setReadme(null);
+      setReadmeError(null);
+      setLoadedReadmeVersionId(latestVersion._id);
 
-    void getReadme({ versionId: latestVersion._id })
-      .then((data) => {
-        if (cancelled) return;
-        setReadme(data.text);
-        setLoadedReadmeVersionId(latestVersion._id);
-      })
-      .catch((error) => {
-        if (cancelled) return;
-        setReadmeError(error instanceof Error ? error.message : "Failed to load README");
-        setReadme(null);
-        setLoadedReadmeVersionId(latestVersion._id);
-      });
+      void getReadme({ versionId: latestVersion._id })
+        .then((data) => {
+          if (cancelled) return;
+          setReadme(data.text);
+          setLoadedReadmeVersionId(latestVersion._id);
+        })
+        .catch((error) => {
+          if (cancelled) return;
+          setReadmeError(error instanceof Error ? error.message : "Failed to load README");
+          setReadme(null);
+          setLoadedReadmeVersionId(latestVersion._id);
+        });
+    }
 
     return () => {
       cancelled = true;
@@ -328,29 +345,72 @@ export function SkillDetailPage({
     }
   };
 
+  const submitRescanRequest = async () => {
+    if (!skill) return;
+    try {
+      await requestRescan({ skillId: skill._id });
+      toast.success("Rescan requested.", {
+        action: {
+          label: "Dashboard",
+          onClick: () => {
+            window.location.href = "/dashboard";
+          },
+        },
+      });
+    } catch (error) {
+      toast.error(getUserFacingConvexError(error, "Could not request a rescan."));
+    }
+  };
+
   if (isLoadingSkill || wantsCanonicalRedirect) {
     return (
-      <main className="section">
-        <Card>
-          <div className="loading-indicator">Loading skill…</div>
-        </Card>
+      <main className="section detail-page-section" aria-busy="true">
+        <div role="status" aria-label="Loading skill details">
+          <SkillDetailSkeleton />
+        </div>
       </main>
     );
   }
 
   if (result === null || !skill) {
     return (
-      <main className="section">
+      <main className="section detail-page-section">
         <Card>Skill not found.</Card>
       </main>
     );
   }
 
   const tagEntries = Object.entries(skill.tags ?? {}) as Array<[string, Id<"skillVersions">]>;
+  const latestTagVersionId = latestVersion?._id ?? skill.latestVersionId ?? null;
+  const currentTagEntries =
+    latestTagVersionId === null
+      ? tagEntries
+      : tagEntries.filter(([, versionId]) => versionId === latestTagVersionId);
+  const historicalTagEntries =
+    latestTagVersionId === null
+      ? []
+      : tagEntries.filter(([, versionId]) => versionId !== latestTagVersionId);
+  const securitySummary = latestVersion ? (
+    <DetailSecuritySummary
+      scannerBasePath={`/${encodeURIComponent(
+        ownerParam ?? ownerHandle ?? "unknown",
+      )}/${encodeURIComponent(skill.slug)}/security`}
+      sha256hash={latestVersion.sha256hash ?? null}
+      vtAnalysis={latestVersion.vtAnalysis ?? null}
+      llmAnalysis={latestVersion.llmAnalysis ?? null}
+      staticScan={latestVersion.staticScan ?? null}
+      suppressScanResults={suppressVersionScanResults}
+      suppressedMessage={scanResultsSuppressedMessage}
+      rescanState={rescanState ?? null}
+      onRequestRescan={canViewOwnerRescanState ? submitRescanRequest : null}
+    />
+  ) : null;
+  const detailPath = `/${encodeURIComponent(ownerParam ?? ownerHandle ?? "unknown")}/${encodeURIComponent(skill.slug)}`;
+  const settingsHref = canManage ? `${detailPath}/settings` : null;
 
   return (
-    <main className="section">
-      <div className="skill-detail-stack">
+    <main className="section detail-page-section">
+      <DetailPageShell>
         <SkillHeader
           skill={skill}
           owner={owner}
@@ -378,101 +438,183 @@ export function SkillDetailPage({
           hasPluginBundle={hasPluginBundle}
           configRequirements={configRequirements}
           cliHelp={cliHelp}
-          tagEntries={tagEntries}
-          versionById={versionById}
-          tagName={tagName}
-          onTagNameChange={setTagName}
-          tagVersionId={tagVersionId}
-          onTagVersionChange={setTagVersionId}
-          onTagSubmit={submitTag}
-          onTagDelete={deleteTag}
-          tagVersions={versions ?? []}
           clawdis={clawdis}
           osLabels={osLabels}
-        />
+          priorityContent={securitySummary}
+          settingsHref={settingsHref}
+        >
+          {mode === "detail" ? (
+            <>
+              {nixSnippet ? (
+                <Card>
+                  <h3 className="m-0 text-[length:var(--text-base)] font-semibold">
+                    Install via Nix
+                  </h3>
+                  <pre className="hero-install-code mt-2">{nixSnippet}</pre>
+                </Card>
+              ) : null}
 
-        {isOwner && skill ? (
-          <SkillOwnershipPanel
-            skillId={skill._id}
-            slug={skill.slug}
-            ownerHandle={ownerHandle}
-            ownerId={owner?._id ?? null}
-            ownedSkills={(ownedSkills ?? []).filter((entry) => entry._id !== skill._id)}
-          />
-        ) : null}
+              {configExample ? (
+                <Card>
+                  <h3 className="m-0 text-[length:var(--text-base)] font-semibold">
+                    Config example
+                  </h3>
+                  <pre className="hero-install-code mt-2">{configExample}</pre>
+                </Card>
+              ) : null}
 
-        <SkillMetadataSidebar
-          skill={skill}
-          latestVersion={latestVersion}
-          owner={owner}
-          ownerHandle={ownerHandle}
-          clawdis={clawdis}
-          osLabels={osLabels}
-          tagEntries={tagEntries}
-          isMalwareBlocked={modInfo?.isMalwareBlocked}
-          isRemoved={modInfo?.isRemoved}
-          nixPlugin={nixPlugin}
-        />
+              <SkillDetailTabs
+                activeTab={activeTab}
+                setActiveTab={setActiveTab}
+                onCompareIntent={() => setShouldPrefetchCompare(true)}
+                readmeContent={readmeContent}
+                readmeError={readmeError}
+                latestFiles={latestFiles}
+                latestVersionId={latestVersion?._id ?? null}
+                skill={skill as Doc<"skills">}
+                diffVersions={diffVersions}
+                versions={versions}
+                nixPlugin={Boolean(nixPlugin)}
+                suppressVersionScanResults={suppressVersionScanResults}
+                scanResultsSuppressedMessage={scanResultsSuppressedMessage}
+              />
 
-        <div className="detail-content-full">
-          {nixSnippet ? (
-            <Card>
-              <h3 className="m-0 text-[length:var(--text-base)] font-semibold">
-                Install via Nix
-              </h3>
-              <pre className="hero-install-code mt-2">
-                {nixSnippet}
-              </pre>
-            </Card>
+              <Card className="skill-tag-card">
+                <CardHeader>
+                  <CardTitle>Version tags</CardTitle>
+                </CardHeader>
+                <CardContent>
+                  <div className="skill-tag-row">
+                    {currentTagEntries.length === 0 ? (
+                      <span className="section-subtitle m-0">No tags yet.</span>
+                    ) : (
+                      currentTagEntries.map(([tag, versionId]) => (
+                        <Badge key={tag}>
+                          {tag}
+                          <span className="tag-meta">
+                            v{versionById.get(versionId)?.version ?? versionId}
+                          </span>
+                          {canManage && tag !== "latest" ? (
+                            <button
+                              type="button"
+                              className="tag-delete"
+                              onClick={() => deleteTag(tag)}
+                              aria-label={`Delete tag ${tag}`}
+                              title={`Delete tag "${tag}"`}
+                            >
+                              x
+                            </button>
+                          ) : null}
+                        </Badge>
+                      ))
+                    )}
+                  </div>
+
+                  {canManage && historicalTagEntries.length > 0 ? (
+                    <div className="skill-tag-history">
+                      <div className="skill-tag-history-label">Historical tags</div>
+                      <div className="skill-tag-row">
+                        {historicalTagEntries.map(([tag, versionId]) => (
+                          <Badge key={tag}>
+                            {tag}
+                            <span className="tag-meta">
+                              v{versionById.get(versionId)?.version ?? versionId}
+                            </span>
+                            {tag !== "latest" ? (
+                              <button
+                                type="button"
+                                className="tag-delete"
+                                onClick={() => deleteTag(tag)}
+                                aria-label={`Delete tag ${tag}`}
+                                title={`Delete tag "${tag}"`}
+                              >
+                                x
+                              </button>
+                            ) : null}
+                          </Badge>
+                        ))}
+                      </div>
+                    </div>
+                  ) : null}
+
+                  {canManage ? (
+                    <form
+                      onSubmit={(event) => {
+                        event.preventDefault();
+                        submitTag();
+                      }}
+                      className="tag-form"
+                    >
+                      <input
+                        aria-label="Tag name"
+                        className="search-input"
+                        name="tagName"
+                        value={tagName}
+                        onChange={(event) => setTagName(event.target.value)}
+                        placeholder="latest..."
+                      />
+                      <select
+                        aria-label="Tag version"
+                        className="search-input"
+                        name="tagVersion"
+                        value={tagVersionId ?? ""}
+                        onChange={(event) =>
+                          setTagVersionId(event.target.value as Id<"skillVersions">)
+                        }
+                      >
+                        {(versions ?? []).map((version) => (
+                          <option key={version._id} value={version._id}>
+                            v{version.version}
+                          </option>
+                        ))}
+                      </select>
+                      <Button type="submit">Update Tag</Button>
+                    </form>
+                  ) : null}
+                </CardContent>
+              </Card>
+
+              {SHOW_SKILL_COMMENTS ? (
+                <ClientOnly
+                  fallback={
+                    <Card>
+                      <h2 className="section-title text-[1.2rem] m-0">Comments</h2>
+                      <p className="section-subtitle mt-3 mb-0">Loading comments...</p>
+                    </Card>
+                  }
+                >
+                  <SkillCommentsPanel
+                    skillId={skill._id}
+                    isAuthenticated={isAuthenticated}
+                    me={me ?? null}
+                  />
+                </ClientOnly>
+              ) : null}
+            </>
           ) : null}
+        </SkillHeader>
 
-          {configExample ? (
-            <Card>
-              <h3 className="m-0 text-[length:var(--text-base)] font-semibold">
-                Config example
-              </h3>
-              <pre className="hero-install-code mt-2">
-                {configExample}
-              </pre>
-            </Card>
-          ) : null}
-
-          <SkillDetailTabs
-            activeTab={activeTab}
-            setActiveTab={setActiveTab}
-            onCompareIntent={() => setShouldPrefetchCompare(true)}
-            readmeContent={readmeContent}
-            readmeError={readmeError}
-            latestFiles={latestFiles}
-            latestVersionId={latestVersion?._id ?? null}
-            skill={skill as Doc<"skills">}
-            diffVersions={diffVersions}
-            versions={versions}
-            nixPlugin={Boolean(nixPlugin)}
-            suppressVersionScanResults={suppressVersionScanResults}
-            scanResultsSuppressedMessage={scanResultsSuppressedMessage}
-          />
-
-          <ClientOnly
-            fallback={
+        {mode === "settings" ? (
+          <DetailBody>
+            {isOwner && skill ? (
+              <SkillOwnershipPanel
+                skillId={skill._id}
+                slug={skill.slug}
+                ownerHandle={ownerHandle}
+                ownerId={owner?._id ?? null}
+                ownedSkills={(ownedSkills ?? []).filter((entry) => entry._id !== skill._id)}
+              />
+            ) : (
               <Card>
-                <h2 className="section-title text-[1.2rem] m-0">
-                  Comments
-                </h2>
+                <h2 className="section-title text-[1.2rem] m-0">Settings unavailable</h2>
                 <p className="section-subtitle mt-3 mb-0">
-                  Loading comments...
+                  Only the skill owner can manage these settings.
                 </p>
               </Card>
-            }
-          >
-            <SkillCommentsPanel
-              skillId={skill._id}
-              isAuthenticated={isAuthenticated}
-              me={me ?? null}
-            />
-          </ClientOnly>
-        </div>
-      </div>
+            )}
+          </DetailBody>
+        ) : null}
+      </DetailPageShell>
 
       <SkillReportDialog
         isOpen={isAuthenticated && isReportDialogOpen}

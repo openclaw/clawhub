@@ -3,13 +3,86 @@
 import { describe, expect, it, vi } from "vitest";
 import { internal } from "./_generated/api";
 import {
+  isGitHubMirrorEligibleSkillDoc,
   repointPackageLatestRelease,
+  scheduleGitHubBackupDeletionForSkill,
   scheduleOwnerPublisherDigestSync,
   syncPackageSearchDigestForPackageId,
+  syncPackageSearchDigestsForOwnerPublisherId,
   syncPackageSearchDigestsForOwnerUserId,
+  syncSkillSearchDigestsForOwnerPublisherId,
 } from "./functions";
 
 describe("package digest sync", () => {
+  it("identifies GitHub mirror eligibility from skill visibility fields", () => {
+    expect(isGitHubMirrorEligibleSkillDoc({ softDeletedAt: undefined })).toBe(true);
+    expect(
+      isGitHubMirrorEligibleSkillDoc({
+        softDeletedAt: undefined,
+        moderationStatus: "active",
+      }),
+    ).toBe(true);
+    expect(
+      isGitHubMirrorEligibleSkillDoc({
+        softDeletedAt: undefined,
+        moderationStatus: "hidden",
+      }),
+    ).toBe(false);
+    expect(
+      isGitHubMirrorEligibleSkillDoc({
+        softDeletedAt: undefined,
+        moderationStatus: "removed",
+      }),
+    ).toBe(false);
+    expect(isGitHubMirrorEligibleSkillDoc({ softDeletedAt: 123 })).toBe(false);
+  });
+
+  it("schedules GitHub mirror deletion for a skill using the owner handle", async () => {
+    const ctx = {
+      db: {
+        get: vi.fn(async (id: string) => {
+          if (id === "users:owner") {
+            return {
+              _id: "users:owner",
+              handle: "alice",
+              deletedAt: undefined,
+              deactivatedAt: undefined,
+            };
+          }
+          return null;
+        }),
+        query: vi.fn(() => ({
+          withIndex: vi.fn(() => ({
+            unique: vi.fn().mockResolvedValue(null),
+          })),
+        })),
+      },
+      scheduler: {
+        runAfter: vi.fn(),
+      },
+    };
+
+    await scheduleGitHubBackupDeletionForSkill(
+      ctx as never,
+      {
+        slug: "hidden-skill",
+        ownerUserId: "users:owner",
+        ownerPublisherId: undefined,
+        softDeletedAt: 123,
+        moderationStatus: "hidden",
+      } as never,
+    );
+
+    expect(ctx.scheduler.runAfter).toHaveBeenCalledWith(
+      0,
+      internal.githubBackupsNode.deleteGitHubBackupForSlugInternal,
+      {
+        ownerHandle: "alice",
+        slug: "hidden-skill",
+      },
+    );
+  });
+
   it("clears latestVersion when the current package release is soft-deleted", async () => {
     const pkg = {
       _id: "packages:demo",
@@ -522,5 +595,69 @@ describe("publisher digest scheduling", () => {
     await expect(
       scheduleOwnerPublisherDigestSync({} as never, "publishers:demo" as never),
     ).resolves.toBeUndefined();
+  });
+
+  it("continues owner-publisher package digest sync one page at a time", async () => {
+    const paginate = vi.fn().mockResolvedValue({
+      page: [],
+      isDone: false,
+      continueCursor: "next-packages",
+    });
+    const ctx = {
+      db: {
+        query: vi.fn(() => ({
+          withIndex: vi.fn(() => ({ paginate })),
+        })),
+      },
+      scheduler: {
+        runAfter: vi.fn().mockResolvedValue(undefined),
+      },
+    };
+
+    await syncPackageSearchDigestsForOwnerPublisherId(
+      ctx as never,
+      "publishers:demo" as never,
+      "current-packages",
+    );
+
+    expect(paginate).toHaveBeenCalledTimes(1);
+    expect(paginate).toHaveBeenCalledWith({ cursor: "current-packages", numItems: 100 });
+    expect(ctx.scheduler.runAfter).toHaveBeenCalledWith(
+      0,
+      internal.functions.syncPackageSearchDigestsForOwnerPublisherIdInternal,
+      { ownerPublisherId: "publishers:demo", cursor: "next-packages" },
+    );
+  });
+
+  it("continues owner-publisher skill digest sync one page at a time", async () => {
+    const paginate = vi.fn().mockResolvedValue({
+      page: [],
+      isDone: false,
+      continueCursor: "next-skills",
+    });
+    const ctx = {
+      db: {
+        query: vi.fn(() => ({
+          withIndex: vi.fn(() => ({ paginate })),
+        })),
+      },
+      scheduler: {
+        runAfter: vi.fn().mockResolvedValue(undefined),
+      },
+    };
+
+    await syncSkillSearchDigestsForOwnerPublisherId(
+      ctx as never,
+      "publishers:demo" as never,
+      "current-skills",
+    );
+
+    expect(paginate).toHaveBeenCalledTimes(1);
+    expect(paginate).toHaveBeenCalledWith({ cursor: "current-skills", numItems: 100 });
+    expect(ctx.scheduler.runAfter).toHaveBeenCalledWith(
+      0,
+      internal.functions.syncSkillSearchDigestsForOwnerPublisherIdInternal,
+      { ownerPublisherId: "publishers:demo", cursor: "next-skills" },
+    );
   });
 });

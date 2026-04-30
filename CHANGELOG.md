@@ -2,14 +2,38 @@
 
 ## Unreleased
 
+### Fixes
+
+- CLI/moderation: allow `delete`, `hide`, `undelete`, and `unhide` to record moderation reasons in skill notes and audit logs for legal or policy reviews (thanks @steipete).
+- API: raise public read rate limits to reduce false-positive 429s from browser pages and production smoke tests (thanks @steipete).
+- Moderation: calibrate VirusTotal Code Insight suspicious verdicts so uncorroborated AI-only findings do not keep otherwise clean skills quarantined (#1830, #1841) (thanks @deepujain).
+
+## 0.11.0 - 2026-04-28
+
 ### Changed
 
+- Docs: clarify that ClawHub does not support paid skills, per-skill pricing, or paywalled releases (#1752, #1844) (thanks @deepujain).
+- API docs: clarify how third-party directories can reuse public ClawHub catalog endpoints while respecting rate limits and canonical links (#1825, #1845) (thanks @deepujain).
+- Packages docs: document the required fields for code-plugin package publish flows (#1802) (thanks @deepujain).
 - Search: add CJK tokenization support (Chinese/Japanese/Korean) with Intl.Segmenter plus fallback behavior to improve skill query matching (#1596) (thanks @pq-dong).
 - Stats: centralize migrated skill stat fallback reads through `readCanonicalStat()` and add schema/agent guardrails to discourage direct legacy nested-field access (#1709) (thanks @momothemage).
 
 ### Fixes
 
+- Packages: use the configured `GITHUB_TOKEN` for trusted-publisher repository identity lookups to avoid anonymous GitHub API rate limits during publish setup (#1820, #1846) (thanks @deepujain).
+- Packages: keep package search fallback scans bounded, stop scanning after the requested result limit, and keep direct plugin-name matches scoped to the requested package family (OpenClaw #64025).
+- Moderation: stop flagging declared env vars sent to their intended API while preserving broad env scraping and exfiltration findings (#1803) (thanks @deepujain).
+- Moderation: stop treating generic webhook integration docs as suspicious unless they include explicit Discord or Slack webhook endpoints (#1716) (thanks @langningchen-openclaw).
+- Search: increase initial vector candidate pools and align CLI search's default limit with the web UI so high-scoring matches are not missed at small limits (#1375, #1429) (thanks @tjefferson).
+- Search: fall back to lexical skill search when embedding generation fails instead of returning empty skill results (#1291) (thanks @goulonghui).
+- Search: rank exact slug matches above longer slugs that merely contain all query tokens (#1130) (thanks @QuinnH496).
+- Search: widen lexical fallback coverage and scan recently created skills so newly published skills can be found before embeddings rank well (#1185, #1200) (thanks @thirumaleshp).
+- Search: preserve vector scores across candidate expansion and require all query tokens to match exact-token filters so relevant skills are not crowded out (#1759, #1762) (thanks @LinPower).
 - Stats maintenance: keep skill stat migration fields synchronized by treating top-level stat fields as canonical during backfill/reconcile fallback reads (#1704) (thanks @momothemage).
+- Skill install: render OpenClaw CLI commands with the bare slug that the current CLI accepts (#1807).
+- Skills: keep historical tags out of public skill detail surfaces while preserving manager visibility (#1804) (thanks @deepujain).
+- Skills moderation: keep hash-based scanner callbacks from overwriting skill-level moderation for older versions (#1805) (thanks @deepujain).
+- Skills: prevent backport publishes from clobbering `latest` state and guard malformed persisted latest semver values during publish comparisons (#1832) (thanks @momothemage).
 
 ## 0.10.0 - 2026-04-05
 

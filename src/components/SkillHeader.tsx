@@ -1,13 +1,16 @@
-import type { ClawdisSkillMetadata } from "clawhub-schema";
 import { Link } from "@tanstack/react-router";
-import { Package } from "lucide-react";
+import type { ClawdisSkillMetadata } from "clawhub-schema";
+import { PLATFORM_SKILL_LICENSE } from "clawhub-schema/licenseConstants";
+import { Calendar, Download, History, Package, Scale, Settings, Star, Upload } from "lucide-react";
+import type { ReactNode } from "react";
 import type { Doc, Id } from "../../convex/_generated/dataModel";
 import { getSkillBadges } from "../lib/badges";
 import { formatCompactStat, formatSkillStatsTriplet } from "../lib/numberFormat";
 import type { PublicPublisher, PublicSkill } from "../lib/publicUser";
-
-import { type LlmAnalysis, SecurityScanResults } from "./SkillSecurityScanResults";
+import { timeAgo } from "../lib/timeAgo";
+import { DetailHero } from "./DetailPageShell";
 import { SkillInstallCard } from "./SkillInstallCard";
+import { SkillCommandLineCard } from "./SkillInstallSurface";
 import { Badge } from "./ui/badge";
 import { Button } from "./ui/button";
 import { UserBadge } from "./UserBadge";
@@ -62,17 +65,11 @@ type SkillHeaderProps = {
   hasPluginBundle: boolean;
   configRequirements: ClawdisSkillMetadata["config"] | undefined;
   cliHelp: string | undefined;
-  tagEntries: Array<[string, Id<"skillVersions">]>;
-  versionById: Map<Id<"skillVersions">, Doc<"skillVersions">>;
-  tagName: string;
-  onTagNameChange: (value: string) => void;
-  tagVersionId: Id<"skillVersions"> | "";
-  onTagVersionChange: (value: Id<"skillVersions"> | "") => void;
-  onTagSubmit: () => void;
-  onTagDelete: (tag: string) => void;
-  tagVersions: Doc<"skillVersions">[];
   clawdis: ClawdisSkillMetadata | undefined;
   osLabels: string[];
+  priorityContent?: ReactNode;
+  settingsHref?: string | null;
+  children?: ReactNode;
 };
 
 export function SkillHeader({
@@ -102,27 +99,14 @@ export function SkillHeader({
   hasPluginBundle,
   configRequirements,
   cliHelp,
-  tagEntries,
-  versionById,
-  tagName,
-  onTagNameChange,
-  tagVersionId,
-  onTagVersionChange,
-  onTagSubmit,
-  onTagDelete,
-  tagVersions,
   clawdis,
   osLabels,
+  priorityContent,
+  settingsHref,
+  children,
 }: SkillHeaderProps) {
   const formattedStats = formatSkillStatsTriplet(skill.stats);
-  const suppressScanResults =
-    !isStaff &&
-    Boolean(modInfo?.overrideActive) &&
-    !modInfo?.isMalwareBlocked &&
-    !modInfo?.isSuspicious;
-  const overrideScanMessage = suppressScanResults
-    ? "Security findings were reviewed by staff and cleared for public use."
-    : null;
+  const installOwnerId = owner?._id ?? skill.ownerPublisherId ?? skill.ownerUserId ?? null;
 
   return (
     <>
@@ -134,16 +118,6 @@ export function SkillHeader({
               Your skill is being scanned by VirusTotal. It will be visible to others once the scan
               completes. This usually takes up to 5 minutes — grab a coffee or exfoliate your shell
               while you wait.
-            </p>
-          </div>
-        </div>
-      ) : modInfo?.isMalwareBlocked ? (
-        <div className="pending-banner pending-banner-blocked">
-          <div className="pending-banner-content">
-            <strong>Skill blocked — malicious content detected</strong>
-            <p>
-              ClawHub Security flagged this skill as malicious. Downloads are disabled. Review the
-              scan results below.
             </p>
           </div>
         </div>
@@ -186,18 +160,59 @@ export function SkillHeader({
         </div>
       ) : null}
 
-      <div className="card skill-hero">
-        <div className={`skill-hero-top${hasPluginBundle ? " has-plugin" : ""}`}>
-          <div className="skill-hero-header">
+      <DetailHero
+        topClassName={hasPluginBundle ? "has-plugin" : undefined}
+        main={
+          <>
             <div className="skill-hero-title">
               <div className="skill-hero-title-row">
-                <h1 className="section-title m-0">
-                  {skill.displayName}
-                </h1>
+                <h1 className="skill-page-title">{skill.displayName}</h1>
                 {latestVersion?.version ? (
                   <span className="plugin-version-badge">v{latestVersion.version}</span>
                 ) : null}
                 {nixPlugin ? <Badge variant="accent">Plugin bundle (nix)</Badge> : null}
+                {isAuthenticated || canManage || isStaff || settingsHref ? (
+                  <div className="skill-title-actions">
+                    {isAuthenticated ? (
+                      <>
+                        <button
+                          className={`star-toggle${isStarred ? " is-active" : ""}`}
+                          type="button"
+                          onClick={onToggleStar}
+                          aria-label={isStarred ? "Unstar skill" : "Star skill"}
+                        >
+                          <Star size={16} aria-hidden="true" />
+                        </button>
+                        <Button variant="ghost" size="sm" type="button" onClick={onOpenReport}>
+                          Report
+                        </Button>
+                      </>
+                    ) : null}
+                    {isStaff ? (
+                      <Button asChild variant="outline" size="sm">
+                        <Link to="/management" search={{ skill: skill.slug, plugin: undefined }}>
+                          Manage
+                        </Link>
+                      </Button>
+                    ) : null}
+                    {canManage ? (
+                      <Button asChild variant="outline" size="sm" className="skill-settings-link">
+                        <Link to="/publish-skill" search={{ updateSlug: skill.slug }}>
+                          <Upload size={14} aria-hidden="true" />
+                          New Version
+                        </Link>
+                      </Button>
+                    ) : null}
+                    {settingsHref ? (
+                      <Button asChild variant="outline" size="sm" className="skill-settings-link">
+                        <a href={settingsHref}>
+                          <Settings size={14} aria-hidden="true" />
+                          Settings
+                        </a>
+                      </Button>
+                    ) : null}
+                  </div>
+                ) : null}
               </div>
               <p className="section-subtitle">{skill.summary ?? "No summary provided."}</p>
 
@@ -212,13 +227,35 @@ export function SkillHeader({
 
               <div className="skill-hero-inline-meta">
                 <div className="skill-hero-stats-row">
-                  <span className="stat">⭐ {formattedStats.stars}</span>
+                  <span className="stat">
+                    <Star size={14} aria-hidden="true" /> {formattedStats.stars}
+                  </span>
                   <span className="text-ink-soft opacity-40">·</span>
-                  <span className="stat"><Package size={14} aria-hidden="true" /> {formattedStats.downloads}</span>
+                  <span className="stat">
+                    <Download size={14} aria-hidden="true" /> {formattedStats.downloads}
+                  </span>
                   <span className="text-ink-soft opacity-40">·</span>
-                  <span className="stat">{formatCompactStat(skill.stats.installsCurrent ?? 0)} current</span>
+                  <span className="stat">
+                    <Package size={14} aria-hidden="true" /> {skill.stats.versions ?? 0} versions
+                  </span>
                   <span className="text-ink-soft opacity-40">·</span>
-                  <span className="stat">{formattedStats.installsAllTime} all-time</span>
+                  <span className="stat">
+                    <History size={14} aria-hidden="true" />{" "}
+                    {formatCompactStat(skill.stats.installsCurrent ?? 0)} current
+                  </span>
+                  <span className="text-ink-soft opacity-40">·</span>
+                  <span className="stat">
+                    <History size={14} aria-hidden="true" /> {formattedStats.installsAllTime}{" "}
+                    all-time
+                  </span>
+                  <span className="text-ink-soft opacity-40">·</span>
+                  <span className="stat">
+                    <Calendar size={14} aria-hidden="true" /> Updated {timeAgo(skill.updatedAt)}
+                  </span>
+                  <span className="text-ink-soft opacity-40">·</span>
+                  <span className="stat">
+                    <Scale size={14} aria-hidden="true" /> {PLATFORM_SKILL_LICENSE}
+                  </span>
                 </div>
                 <div className="skill-hero-meta-row">
                   <UserBadge
@@ -269,155 +306,62 @@ export function SkillHeader({
                 ) : null}
               </div>
             </div>
-            <div className="skill-hero-sidebar">
-              <div className="skill-actions">
-                {isAuthenticated ? (
-                  <button
-                    className={`star-toggle${isStarred ? " is-active" : ""}`}
-                    type="button"
-                    onClick={onToggleStar}
-                    aria-label={isStarred ? "Unstar skill" : "Star skill"}
-                  >
-                    <span aria-hidden="true">★</span>
-                  </button>
-                ) : null}
-                {isAuthenticated ? (
-                  <Button variant="ghost" size="sm" type="button" onClick={onOpenReport}>
-                    Report
-                  </Button>
-                ) : null}
-                {isStaff ? (
-                  <Button asChild size="sm">
-                    <Link to="/management" search={{ skill: skill.slug }}>
-                      Manage
-                    </Link>
-                  </Button>
-                ) : null}
-              </div>
-            </div>
-          </div>
+          </>
+        }
+      >
+        <div className="skill-hero-action-grid">
+          {priorityContent}
+          <SkillCommandLineCard
+            slug={skill.slug}
+            displayName={skill.displayName}
+            ownerHandle={ownerHandle}
+            ownerId={installOwnerId}
+            clawdis={clawdis}
+          />
+        </div>
 
-          {/* Security scan — full width below the header columns */}
-          {suppressScanResults ? (
-            <div className="skill-hero-note">{overrideScanMessage}</div>
-          ) : latestVersion?.sha256hash ||
-            latestVersion?.llmAnalysis ||
-            (latestVersion?.staticScan?.findings?.length ?? 0) > 0 ||
-            (latestVersion?.capabilityTags?.length ?? 0) > 0 ? (
-            <div className="skill-hero-scan-row">
-              <SecurityScanResults
-                sha256hash={latestVersion?.sha256hash}
-                vtAnalysis={latestVersion?.vtAnalysis}
-                llmAnalysis={latestVersion?.llmAnalysis as LlmAnalysis | undefined}
-                staticFindings={latestVersion?.staticScan?.findings}
-                capabilityTags={latestVersion?.capabilityTags}
-              />
-              <p className="scan-disclaimer">
-                Like a lobster shell, security has layers — review code before you run it.
-              </p>
+        {children}
+
+        {hasPluginBundle ? (
+          <div className="skill-panel bundle-card">
+            <div className="bundle-header">
+              <div className="bundle-title">Plugin bundle (nix)</div>
+              <div className="bundle-subtitle">Skill pack · CLI binary · Config</div>
             </div>
-          ) : null}
-          {hasPluginBundle ? (
-            <div className="skill-panel bundle-card">
-              <div className="bundle-header">
-                <div className="bundle-title">Plugin bundle (nix)</div>
-                <div className="bundle-subtitle">Skill pack · CLI binary · Config</div>
-              </div>
-              <div className="bundle-includes">
-                <span>SKILL.md</span>
-                <span>CLI</span>
-                <span>Config</span>
-              </div>
-              {configRequirements ? (
-                <div className="bundle-section">
-                  <div className="bundle-section-title">Config requirements</div>
-                  <div className="bundle-meta">
-                    {configRequirements.requiredEnv?.length ? (
-                      <div className="stat">
-                        <strong>Required env</strong>
-                        <span>{configRequirements.requiredEnv.join(", ")}</span>
-                      </div>
-                    ) : null}
-                    {configRequirements.stateDirs?.length ? (
-                      <div className="stat">
-                        <strong>State dirs</strong>
-                        <span>{configRequirements.stateDirs.join(", ")}</span>
-                      </div>
-                    ) : null}
-                  </div>
+            <div className="bundle-includes">
+              <span>SKILL.md</span>
+              <span>CLI</span>
+              <span>Config</span>
+            </div>
+            {configRequirements ? (
+              <div className="bundle-section">
+                <div className="bundle-section-title">Config requirements</div>
+                <div className="bundle-meta">
+                  {configRequirements.requiredEnv?.length ? (
+                    <div className="stat">
+                      <strong>Required env</strong>
+                      <span>{configRequirements.requiredEnv.join(", ")}</span>
+                    </div>
+                  ) : null}
+                  {configRequirements.stateDirs?.length ? (
+                    <div className="stat">
+                      <strong>State dirs</strong>
+                      <span>{configRequirements.stateDirs.join(", ")}</span>
+                    </div>
+                  ) : null}
                 </div>
-              ) : null}
-              {cliHelp ? (
-                <details className="bundle-section bundle-details">
-                  <summary>CLI help (from plugin)</summary>
-                  <pre className="hero-install-code mono">{cliHelp}</pre>
-                </details>
-              ) : null}
-            </div>
-          ) : null}
-          <SkillInstallCard clawdis={clawdis} osLabels={osLabels} />
-        </div>
-
-        <div className="skill-tag-row">
-          {tagEntries.length === 0 ? (
-            <span className="section-subtitle m-0">
-              No tags yet.
-            </span>
-          ) : (
-            tagEntries.map(([tag, versionId]) => (
-              <Badge key={tag}>
-                {tag}
-                <span className="tag-meta">
-                  v{versionById.get(versionId)?.version ?? versionId}
-                </span>
-                {canManage && tag !== "latest" ? (
-                  <button
-                    type="button"
-                    className="tag-delete"
-                    onClick={() => onTagDelete(tag)}
-                    aria-label={`Delete tag ${tag}`}
-                    title={`Delete tag "${tag}"`}
-                  >
-                    ×
-                  </button>
-                ) : null}
-              </Badge>
-            ))
-          )}
-        </div>
-
-        {canManage ? (
-          <form
-            onSubmit={(event) => {
-              event.preventDefault();
-              onTagSubmit();
-            }}
-            className="tag-form"
-          >
-            <input
-              className="search-input"
-              value={tagName}
-              onChange={(event) => onTagNameChange(event.target.value)}
-              placeholder="latest"
-            />
-            <select
-              className="search-input"
-              value={tagVersionId ?? ""}
-              onChange={(event) => onTagVersionChange(event.target.value as Id<"skillVersions">)}
-            >
-              {tagVersions.map((version) => (
-                <option key={version._id} value={version._id}>
-                  v{version.version}
-                </option>
-              ))}
-            </select>
-            <Button type="submit">
-              Update tag
-            </Button>
-          </form>
+              </div>
+            ) : null}
+            {cliHelp ? (
+              <details className="bundle-section bundle-details">
+                <summary>CLI help (from plugin)</summary>
+                <pre className="hero-install-code mono">{cliHelp}</pre>
+              </details>
+            ) : null}
+          </div>
         ) : null}
-
-      </div>
+        <SkillInstallCard clawdis={clawdis} osLabels={osLabels} />
+      </DetailHero>
     </>
   );
 }

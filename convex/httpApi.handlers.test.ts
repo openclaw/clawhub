@@ -422,13 +422,8 @@ describe("httpApi handlers", () => {
     expect(json.skillId).toBe("s");
   });
 
-  it("cliPublishHttp accepts legacy clients that omit license terms", async () => {
+  it("cliPublishHttp rejects omitted license terms", async () => {
     vi.mocked(requireApiTokenUser).mockResolvedValueOnce({ userId: "user1" } as never);
-    vi.mocked(publishVersionForUser).mockResolvedValueOnce({
-      skillId: "s",
-      versionId: "v",
-      embeddingId: "e",
-    } as never);
     const request = new Request("https://x/api/cli/publish", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -441,7 +436,9 @@ describe("httpApi handlers", () => {
       }),
     });
     const response = await __handlers.cliPublishHandler(makeCtx({}), request);
-    expect(response.status).toBe(200);
+    expect(response.status).toBe(400);
+    expect(await response.text()).toMatch(/license terms must be accepted/i);
+    expect(publishVersionForUser).not.toHaveBeenCalled();
   });
 
   it("cliPublishHttp rejects explicit license refusal", async () => {

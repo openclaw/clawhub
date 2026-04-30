@@ -123,6 +123,7 @@ const insertReleaseInternalHandler = (
       capabilities?: unknown;
       verification?: unknown;
       staticScan?: unknown;
+      allowExistingRelease?: boolean;
       extractedPackageJson?: unknown;
       extractedPluginManifest?: unknown;
       normalizedBundleManifest?: unknown;
@@ -577,16 +578,40 @@ function makeInsertReleaseCtx(
         }
         if (table === "packageReleases") {
           return {
-            withIndex: vi.fn((indexName: string) => {
+            withIndex: vi.fn(
+              (
+                indexName: string,
+                buildQuery?: (q: { eq: (field: string, value: unknown) => unknown }) => unknown,
+              ) => {
               if (indexName === "by_package") {
                 return {
                   collect: vi.fn().mockResolvedValue(priorReleases),
                 };
               }
+              if (indexName === "by_package_version") {
+                const filters = new Map<string, unknown>();
+                const query = {
+                  eq(field: string, value: unknown) {
+                    filters.set(field, value);
+                    return query;
+                  },
+                };
+                buildQuery?.(query);
+                return {
+                  unique: vi.fn().mockResolvedValue(
+                    priorReleases.find(
+                      (release) =>
+                        release.packageId === filters.get("packageId") &&
+                        release.version === filters.get("version"),
+                    ) ?? null,
+                  ),
+                };
+              }
               return {
                 unique: vi.fn().mockResolvedValue(null),
               };
-            }),
+              },
+            ),
           };
         }
         throw new Error(`Unexpected table ${table}`);
@@ -956,36 +981,11 @@ describe("packages public queries", () => {
     expect(result.page.map((entry) => entry.name)).toEqual(["official-demo"]);
   });
 
-  it("keeps scanning official-only listings without a family filter", async () => {
-    const { ctx } = makeDigestCtx({
+  it("uses the official index for official-only listings without a family filter", async () => {
+    const { ctx, indexNames, paginate } = makeDigestCtx({
       pages: [
         {
-          page: [makeDigest("noise-1", { isOfficial: false })],
-          isDone: false,
-          continueCursor: "cursor:1",
-        },
-        {
-          page: [makeDigest("noise-2", { isOfficial: false })],
-          isDone: false,
-          continueCursor: "cursor:2",
-        },
-        {
-          page: [makeDigest("noise-3", { isOfficial: false })],
-          isDone: false,
-          continueCursor: "cursor:3",
-        },
-        {
-          page: [makeDigest("noise-4", { isOfficial: false })],
-          isDone: false,
-          continueCursor: "cursor:4",
-        },
-        {
-          page: [makeDigest("noise-5", { isOfficial: false })],
-          isDone: false,
-          continueCursor: "cursor:5",
-        },
-        {
-          page: [makeDigest("official-late", { isOfficial: true, updatedAt: 10 })],
+          page: [makeDigest("official-late", { isOfficial: true })],
           isDone: true,
           continueCursor: "",
         },
@@ -998,6 +998,8 @@ describe("packages public queries", () => {
     });
 
     expect(result.page.map((entry) => entry.name)).toEqual(["official-late"]);
+    expect(indexNames).toEqual(["by_active_official_updated"]);
+    expect(paginate).toHaveBeenCalledTimes(1);
   });
 
   it("filters private packages and capability flags in public search", async () => {
@@ -1270,6 +1272,60 @@ describe("packages public queries", () => {
     expect(ctx.db.query).toHaveBeenCalledWith("packageSearchDigest");
   });
 
+  it("keeps direct package-name matches scoped to the requested family", async () => {
+    const exactPkg = makePackageDoc({
+      _id: "packages:code",
+      name: "demo-plugin",
+      normalizedName: "demo-plugin",
+      family: "code-plugin",
+    });
+    const exactDigest = makeDigest("demo-plugin", {
+      packageId: "packages:code",
+      family: "code-plugin",
+    });
+    const { ctx } = makeDigestCtx({
+      pages: [],
+      exactPackages: [exactPkg],
+      exactDigests: [exactDigest],
+    });
+
+    const result = await searchPublicHandler(ctx, {
+      query: "demo-plugin",
+      family: "bundle-plugin",
+      limit: 1,
+    });
+
+    expect(result).toEqual([]);
+  });
+
+  it("stops fallback scanning after enough package search matches", async () => {
+    const { ctx, paginate } = makeDigestCtx({
+      pages: [
+        {
+          page: [
+            makeDigest("demo-alpha", { updatedAt: 20 }),
+            makeDigest("demo-beta", { updatedAt: 10 }),
+          ],
+          isDone: false,
+          continueCursor: "cursor:1",
+        },
+        {
+          page: [makeDigest("demo-gamma")],
+          isDone: true,
+          continueCursor: "",
+        },
+      ],
+    });
+
+    const result = await searchPublicHandler(ctx, {
+      query: "demo",
+      limit: 2,
+    });
+
+    expect(result.map((entry) => entry.package.name)).toEqual(["demo-alpha", "demo-beta"]);
+    expect(paginate).toHaveBeenCalledTimes(1);
+  });
+
   it("keeps spaced queries on the scan path without throwing", async () => {
     const { ctx } = makeDigestCtx({
       pages: [
@@ -1321,7 +1377,7 @@ describe("packages public queries", () => {
     expect(ctx.db.query).not.toHaveBeenCalledWith("publisherMembers");
   });
 
-  it("caps public list scans below the Convex read limit budget", async () => {
+  it("keeps public list pages to one paginated query per invocation", async () => {
     const { ctx, paginate } = makeDigestCtx({
       pages: Array.from({ length: 120 }, (_, index) => ({
         page: [makeDigest(`noise-${index}`, { executesCode: false })],
@@ -1336,7 +1392,10 @@ describe("packages public queries", () => {
     });
 
     expect(result.page).toEqual([]);
-    expect(paginate).toHaveBeenCalledTimes(100);
+    expect(result.isDone).toBe(false);
+    expect(result.continueCursor).toBeTruthy();
+    expect(paginate).toHaveBeenCalledTimes(1);
+    expect(paginate).toHaveBeenCalledWith({ cursor: null, numItems: 100 });
   });
 
   it("caps public search scans below the Convex read limit budget", async () => {
@@ -1355,7 +1414,7 @@ describe("packages public queries", () => {
     });
 
     expect(result).toEqual([]);
-    expect(paginate).toHaveBeenCalledTimes(150);
+    expect(paginate).toHaveBeenCalledTimes(5);
   });
 
   it("uses the official index for no-family official search filters", async () => {
@@ -1977,6 +2036,66 @@ describe("packages public queries", () => {
     });
   });
 
+  it("rejects duplicate package versions by default", async () => {
+    const ctx = makeInsertReleaseCtx(makePackageDoc(), [
+      makeReleaseDoc({
+        _id: "packageReleases:existing",
+        version: "1.0.0",
+        integritySha256: "abc123",
+      }),
+    ]);
+
+    await expect(
+      insertReleaseInternalHandler(ctx, {
+        actorUserId: "users:owner",
+        ownerUserId: "users:owner",
+        name: "demo-plugin",
+        displayName: "Demo Plugin",
+        family: "code-plugin",
+        version: "1.0.0",
+        changelog: "retry",
+        tags: ["latest"],
+        summary: "demo",
+        files: [],
+        integritySha256: "abc123",
+      }),
+    ).rejects.toThrow("Version 1.0.0 already exists");
+  });
+
+  it("treats matching workflow duplicate package releases as idempotent", async () => {
+    const ctx = makeInsertReleaseCtx(makePackageDoc(), [
+      makeReleaseDoc({
+        _id: "packageReleases:existing",
+        version: "1.0.0",
+        integritySha256: "abc123",
+      }),
+    ]);
+
+    await expect(
+      insertReleaseInternalHandler(ctx, {
+        actorUserId: "users:owner",
+        ownerUserId: "users:owner",
+        name: "demo-plugin",
+        displayName: "Demo Plugin",
+        family: "code-plugin",
+        version: "1.0.0",
+        changelog: "retry",
+        tags: ["latest"],
+        summary: "demo",
+        files: [],
+        integritySha256: "abc123",
+        allowExistingRelease: true,
+      }),
+    ).resolves.toMatchObject({
+      ok: true,
+      packageId: "packages:demo",
+      releaseId: "packageReleases:existing",
+    });
+
+    expect(ctx.insert).not.toHaveBeenCalled();
+    expect(ctx.patch).not.toHaveBeenCalled();
+  });
+
   it("adds a latest tag when an untagged promoted release becomes the package latest", async () => {
     const ctx = makeInsertReleaseCtx(
       makePackageDoc({
@@ -2560,6 +2679,15 @@ describe("packages public queries", () => {
                 })),
               };
             }
+            if (table === "rescanRequests") {
+              return {
+                withIndex: vi.fn(() => ({
+                  order: vi.fn(() => ({
+                    take: vi.fn().mockResolvedValue([]),
+                  })),
+                })),
+              };
+            }
             throw new Error(`Unexpected table ${table}`);
           }),
         },
@@ -2825,7 +2953,18 @@ describe("package scan backfill", () => {
             if (id === "packages:demo") return pkg;
             return null;
           }),
-          query: vi.fn(),
+          query: vi.fn((table: string) => {
+            if (table === "rescanRequests") {
+              return {
+                withIndex: vi.fn(() => ({
+                  order: vi.fn(() => ({
+                    take: vi.fn(async () => []),
+                  })),
+                })),
+              };
+            }
+            throw new Error(`Unexpected query table: ${table}`);
+          }),
           insert: vi.fn(),
           patch,
           replace: vi.fn(),
