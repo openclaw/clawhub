@@ -33,7 +33,7 @@
 		"verify:convex-contract": "bun scripts/verify-convex-contract.ts"
 	},
 	"dependencies": {
-		"@auth/core": "^0.37.4",
+		"@auth/core": "^0.41.2",
 		"@convex-dev/auth": "0.0.92",
 		"@create-markdown/core": "^2.0.2",
 		"@create-markdown/preview": "^2.0.2",
