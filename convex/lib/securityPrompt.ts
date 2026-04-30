@@ -380,9 +380,17 @@ Assign each finding to one of these risk_bucket values:
 
 Do not classify a skill as suspicious only because it uses files, commands, credentials, network access, memory, package installs, provider APIs, or external tools. Judge whether those behaviors are coherent with the stated purpose and clearly disclosed.
 
+Expected, disclosed, purpose-aligned integration behavior should usually be a note, not a concern, and notes alone should not make the final verdict suspicious unless they combine into concrete ambiguity or overbreadth. Apply these calibrations:
+- CLI/package install or local command execution is a note when it is central to the stated purpose. Escalate only when hidden, unrelated, auto-executed, privileged, obfuscated, or paired with concrete untrusted provenance risk.
+- API keys, OAuth, login, cookies, or provider credentials are notes when they are expected for the integrated service and the artifacts do not show logging, hardcoding, unrelated access, unexpected transmission, or over-scoped use.
+- External API/provider calls are notes when disclosed and purpose-aligned. Escalate only when hidden, unrelated, automatic with sensitive local/user data, or materially misrepresented.
+- Downloads and file writes are notes when user-directed and scoped. Escalate for path traversal, protected-path writes, silent execution, unsafe file handling, or automatic sharing.
+- Treat command examples, option catalogs, and CLI reference docs as capability documentation, not proof the agent will execute every listed command. Escalate destructive, bulk, publish, or force/no-confirm commands only when the instructions encourage automatic/proactive execution, suppress user review, hide impact, or make the high-impact path the default workflow.
+- When the supplied artifact set is only SKILL.md, do not make a suspicious verdict solely because referenced helper scripts, package files, or lockfiles are absent from the scan context. Missing helper files may be a concern only when the provided artifact manifest claims the runnable package is complete, the skill instructs automatic execution of unreviewed code, or the missing code is combined with concrete high-impact authority such as credential misuse, protected-path writes, or unbounded account mutation.
+
 Purpose alignment is necessary but not sufficient. Treat high-impact authority as a concern when the artifacts do not clearly bound user approval, scope, reversibility, or containment. This includes actions that can mutate user data, third-party accounts, local environments, devices, deployments, public outputs, or persistent agent state.
 
-Treat the artifact's declared capability and credential contract as important evidence. If SKILL.md introduces sensitive authority such as account credentials, tokens, cookies, browser/session state, privileged config, broad file/system access, or persistent state that is not declared or clearly bounded by metadata, install specs, or capability signals, prefer "concern" over "note". Do not downgrade this merely because the skill's overall purpose is legitimate.
+Treat the artifact's declared capability and credential contract as important evidence, but distinguish registry metadata gaps from actual unsafe behavior. If SKILL.md introduces sensitive authority such as unrelated credentials, over-scoped tokens, cookies/session state, privileged config, broad file/system access, or persistent state that is not declared or clearly bounded by metadata, install specs, or capability signals, prefer "concern" over "note". If the only issue is that a purpose-aligned optional credential or install method is under-declared in metadata, keep it as a note unless there is concrete evidence of leakage, hidden use, or broader authority.
 
 Every "note" or "concern" MUST cite artifact evidence with:
 - path: a provided artifact path such as "SKILL.md", "metadata", "install spec", or a file path
@@ -398,6 +406,7 @@ Do not create findings from intuition, popularity, missing runtime probes, or un
 - malicious: artifacts show intentional misdirection or fundamentally incompatible behavior across multiple high-impact categories.
 
 The bar for malicious is high. Shell commands, network calls, file I/O, credentials, or install steps are not malicious by themselves; classify based on purpose fit, scope, provenance, and artifact evidence.
+The bar for suspicious is lower than malicious but still requires at least one material concern or a clearly compounding pattern. A coherent skill with only purpose-aligned notes should remain benign with clear user guidance.
 
 ## Output format
 
