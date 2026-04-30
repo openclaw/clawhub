@@ -12,101 +12,101 @@
 /scripts/github/clawhub-rescan-auto-response.mjs @openclaw/openclaw-secops
 
 # Backend auth, API, publish, upload, moderation, and scan enforcement.
-/convex/schema.ts @openclaw/openclaw-secops
-/convex/auth.config.ts @openclaw/openclaw-secops
-/convex/auth.ts @openclaw/openclaw-secops
-/convex/commentModeration.ts @openclaw/openclaw-secops
-/convex/http.ts @openclaw/openclaw-secops
-/convex/httpApi.ts @openclaw/openclaw-secops
-/convex/httpApiV1/ @openclaw/openclaw-secops
-/convex/packagePublishTokens.ts @openclaw/openclaw-secops
-/convex/packages.ts @openclaw/openclaw-secops
-/convex/publishers.ts @openclaw/openclaw-secops
-/convex/rateLimits.ts @openclaw/openclaw-secops
-/convex/rescanRequests.ts @openclaw/openclaw-secops
-/convex/skills.ts @openclaw/openclaw-secops
-/convex/skillTransfers.ts @openclaw/openclaw-secops
-/convex/tokens.ts @openclaw/openclaw-secops
-/convex/uploads.ts @openclaw/openclaw-secops
-/convex/vt.ts @openclaw/openclaw-secops
-/convex/webhooks.ts @openclaw/openclaw-secops
-/convex/lib/access.ts @openclaw/openclaw-secops
-/convex/lib/apiTokenAuth.ts @openclaw/openclaw-secops
-/convex/lib/commentScamPrompt.ts @openclaw/openclaw-secops
-/convex/lib/githubActionsOidc.ts @openclaw/openclaw-secops
-/convex/lib/httpHeaders.ts @openclaw/openclaw-secops
-/convex/lib/httpRateLimit.ts @openclaw/openclaw-secops
-/convex/lib/manualOverrides.ts @openclaw/openclaw-secops
-/convex/lib/moderation.ts @openclaw/openclaw-secops
-/convex/lib/moderationEngine.ts @openclaw/openclaw-secops
-/convex/lib/moderationReasonCodes.ts @openclaw/openclaw-secops
-/convex/lib/packageRegistry.ts @openclaw/openclaw-secops
-/convex/lib/packageSecurity.ts @openclaw/openclaw-secops
-/convex/lib/publishers.ts @openclaw/openclaw-secops
-/convex/lib/publishLimits.ts @openclaw/openclaw-secops
-/convex/lib/reporting.ts @openclaw/openclaw-secops
-/convex/lib/securityPrompt.ts @openclaw/openclaw-secops
-/convex/lib/skillCapabilityTags.ts @openclaw/openclaw-secops
-/convex/lib/skillPublish.ts @openclaw/openclaw-secops
-/convex/lib/skillSafety.ts @openclaw/openclaw-secops
-/convex/lib/staticPublishScan.ts @openclaw/openclaw-secops
-/convex/lib/tokens.ts @openclaw/openclaw-secops
-/convex/lib/webhooks.ts @openclaw/openclaw-secops
-/convex/model/packages/rescans.ts @openclaw/openclaw-secops
-/convex/model/rescans/policy.ts @openclaw/openclaw-secops
-/convex/model/skills/rescans.ts @openclaw/openclaw-secops
+/convex/schema.ts @openclaw/openclaw-secops @Patrick-Erichsen
+/convex/auth.config.ts @openclaw/openclaw-secops @Patrick-Erichsen
+/convex/auth.ts @openclaw/openclaw-secops @Patrick-Erichsen
+/convex/commentModeration.ts @openclaw/openclaw-secops @Patrick-Erichsen
+/convex/http.ts @openclaw/openclaw-secops @Patrick-Erichsen
+/convex/httpApi.ts @openclaw/openclaw-secops @Patrick-Erichsen
+/convex/httpApiV1/ @openclaw/openclaw-secops @Patrick-Erichsen
+/convex/packagePublishTokens.ts @openclaw/openclaw-secops @Patrick-Erichsen
+/convex/packages.ts @openclaw/openclaw-secops @Patrick-Erichsen
+/convex/publishers.ts @openclaw/openclaw-secops @Patrick-Erichsen
+/convex/rateLimits.ts @openclaw/openclaw-secops @Patrick-Erichsen
+/convex/rescanRequests.ts @openclaw/openclaw-secops @Patrick-Erichsen
+/convex/skills.ts @openclaw/openclaw-secops @Patrick-Erichsen
+/convex/skillTransfers.ts @openclaw/openclaw-secops @Patrick-Erichsen
+/convex/tokens.ts @openclaw/openclaw-secops @Patrick-Erichsen
+/convex/uploads.ts @openclaw/openclaw-secops @Patrick-Erichsen
+/convex/vt.ts @openclaw/openclaw-secops @Patrick-Erichsen
+/convex/webhooks.ts @openclaw/openclaw-secops @Patrick-Erichsen
+/convex/lib/access.ts @openclaw/openclaw-secops @Patrick-Erichsen
+/convex/lib/apiTokenAuth.ts @openclaw/openclaw-secops @Patrick-Erichsen
+/convex/lib/commentScamPrompt.ts @openclaw/openclaw-secops @Patrick-Erichsen
+/convex/lib/githubActionsOidc.ts @openclaw/openclaw-secops @Patrick-Erichsen
+/convex/lib/httpHeaders.ts @openclaw/openclaw-secops @Patrick-Erichsen
+/convex/lib/httpRateLimit.ts @openclaw/openclaw-secops @Patrick-Erichsen
+/convex/lib/manualOverrides.ts @openclaw/openclaw-secops @Patrick-Erichsen
+/convex/lib/moderation.ts @openclaw/openclaw-secops @Patrick-Erichsen
+/convex/lib/moderationEngine.ts @openclaw/openclaw-secops @Patrick-Erichsen
+/convex/lib/moderationReasonCodes.ts @openclaw/openclaw-secops @Patrick-Erichsen
+/convex/lib/packageRegistry.ts @openclaw/openclaw-secops @Patrick-Erichsen
+/convex/lib/packageSecurity.ts @openclaw/openclaw-secops @Patrick-Erichsen
+/convex/lib/publishers.ts @openclaw/openclaw-secops @Patrick-Erichsen
+/convex/lib/publishLimits.ts @openclaw/openclaw-secops @Patrick-Erichsen
+/convex/lib/reporting.ts @openclaw/openclaw-secops @Patrick-Erichsen
+/convex/lib/securityPrompt.ts @openclaw/openclaw-secops @Patrick-Erichsen
+/convex/lib/skillCapabilityTags.ts @openclaw/openclaw-secops @Patrick-Erichsen
+/convex/lib/skillPublish.ts @openclaw/openclaw-secops @Patrick-Erichsen
+/convex/lib/skillSafety.ts @openclaw/openclaw-secops @Patrick-Erichsen
+/convex/lib/staticPublishScan.ts @openclaw/openclaw-secops @Patrick-Erichsen
+/convex/lib/tokens.ts @openclaw/openclaw-secops @Patrick-Erichsen
+/convex/lib/webhooks.ts @openclaw/openclaw-secops @Patrick-Erichsen
+/convex/model/packages/rescans.ts @openclaw/openclaw-secops @Patrick-Erichsen
+/convex/model/rescans/policy.ts @openclaw/openclaw-secops @Patrick-Erichsen
+/convex/model/skills/rescans.ts @openclaw/openclaw-secops @Patrick-Erichsen
 
 # Frontend auth, admin, publish, upload, and security-review surfaces.
-/src/lib/packageApi.ts @openclaw/openclaw-secops
-/src/lib/packageUpload.ts @openclaw/openclaw-secops
-/src/lib/roles.ts @openclaw/openclaw-secops
-/src/lib/uploadFiles.ts @openclaw/openclaw-secops
-/src/lib/uploadUtils.ts @openclaw/openclaw-secops
-/src/routes/admin.tsx @openclaw/openclaw-secops
-/src/routes/cli/auth.tsx @openclaw/openclaw-secops
-/src/routes/packages/new.tsx @openclaw/openclaw-secops
-/src/routes/publish-plugin.tsx @openclaw/openclaw-secops
-/src/routes/publish-skill.tsx @openclaw/openclaw-secops
-/src/routes/upload.tsx @openclaw/openclaw-secops
-/src/routes/upload/ @openclaw/openclaw-secops
-/src/routes/$owner/$slug/security/ @openclaw/openclaw-secops
-/src/routes/plugins/$name/security/ @openclaw/openclaw-secops
+/src/lib/packageApi.ts @openclaw/openclaw-secops @Patrick-Erichsen
+/src/lib/packageUpload.ts @openclaw/openclaw-secops @Patrick-Erichsen
+/src/lib/roles.ts @openclaw/openclaw-secops @Patrick-Erichsen
+/src/lib/uploadFiles.ts @openclaw/openclaw-secops @Patrick-Erichsen
+/src/lib/uploadUtils.ts @openclaw/openclaw-secops @Patrick-Erichsen
+/src/routes/admin.tsx @openclaw/openclaw-secops @Patrick-Erichsen
+/src/routes/cli/auth.tsx @openclaw/openclaw-secops @Patrick-Erichsen
+/src/routes/packages/new.tsx @openclaw/openclaw-secops @Patrick-Erichsen
+/src/routes/publish-plugin.tsx @openclaw/openclaw-secops @Patrick-Erichsen
+/src/routes/publish-skill.tsx @openclaw/openclaw-secops @Patrick-Erichsen
+/src/routes/upload.tsx @openclaw/openclaw-secops @Patrick-Erichsen
+/src/routes/upload/ @openclaw/openclaw-secops @Patrick-Erichsen
+/src/routes/$owner/$slug/security/ @openclaw/openclaw-secops @Patrick-Erichsen
+/src/routes/plugins/$name/security/ @openclaw/openclaw-secops @Patrick-Erichsen
 
 # CLI auth, admin, publishing, ownership, and package-contract surfaces.
-/packages/clawhub/src/browserAuth.ts @openclaw/openclaw-secops
-/packages/clawhub/src/http.ts @openclaw/openclaw-secops
-/packages/clawhub/src/cli/adminHelp.ts @openclaw/openclaw-secops
-/packages/clawhub/src/cli/authToken.ts @openclaw/openclaw-secops
-/packages/clawhub/src/cli/clawdbotConfig.ts @openclaw/openclaw-secops
-/packages/clawhub/src/cli/commands/auth.ts @openclaw/openclaw-secops
-/packages/clawhub/src/cli/commands/delete.ts @openclaw/openclaw-secops
-/packages/clawhub/src/cli/commands/github.ts @openclaw/openclaw-secops
-/packages/clawhub/src/cli/commands/moderation.ts @openclaw/openclaw-secops
-/packages/clawhub/src/cli/commands/ownership.ts @openclaw/openclaw-secops
-/packages/clawhub/src/cli/commands/packages.ts @openclaw/openclaw-secops
-/packages/clawhub/src/cli/commands/publish.ts @openclaw/openclaw-secops
-/packages/clawhub/src/cli/commands/rescan.ts @openclaw/openclaw-secops
-/packages/clawhub/src/cli/commands/transfer.ts @openclaw/openclaw-secops
-/packages/clawhub/src/cli/commands/sync.ts @openclaw/openclaw-secops
-/packages/clawhub/src/cli/scanSkills.ts @openclaw/openclaw-secops
-/packages/clawhub/src/schema/openclawContract.ts @openclaw/openclaw-secops
-/packages/clawhub/src/schema/packages.ts @openclaw/openclaw-secops
-/packages/clawhub/src/schema/routes.ts @openclaw/openclaw-secops
-/packages/clawhub/src/schema/schemas.ts @openclaw/openclaw-secops
-/packages/clawhub/src/schema/textFiles.ts @openclaw/openclaw-secops
-/packages/schema/src/openclawContract.ts @openclaw/openclaw-secops
-/packages/schema/src/packages.ts @openclaw/openclaw-secops
-/packages/schema/src/routes.ts @openclaw/openclaw-secops
-/packages/schema/src/schemas.ts @openclaw/openclaw-secops
-/packages/schema/src/textFiles.ts @openclaw/openclaw-secops
+/packages/clawhub/src/browserAuth.ts @openclaw/openclaw-secops @Patrick-Erichsen
+/packages/clawhub/src/http.ts @openclaw/openclaw-secops @Patrick-Erichsen
+/packages/clawhub/src/cli/adminHelp.ts @openclaw/openclaw-secops @Patrick-Erichsen
+/packages/clawhub/src/cli/authToken.ts @openclaw/openclaw-secops @Patrick-Erichsen
+/packages/clawhub/src/cli/clawdbotConfig.ts @openclaw/openclaw-secops @Patrick-Erichsen
+/packages/clawhub/src/cli/commands/auth.ts @openclaw/openclaw-secops @Patrick-Erichsen
+/packages/clawhub/src/cli/commands/delete.ts @openclaw/openclaw-secops @Patrick-Erichsen
+/packages/clawhub/src/cli/commands/github.ts @openclaw/openclaw-secops @Patrick-Erichsen
+/packages/clawhub/src/cli/commands/moderation.ts @openclaw/openclaw-secops @Patrick-Erichsen
+/packages/clawhub/src/cli/commands/ownership.ts @openclaw/openclaw-secops @Patrick-Erichsen
+/packages/clawhub/src/cli/commands/packages.ts @openclaw/openclaw-secops @Patrick-Erichsen
+/packages/clawhub/src/cli/commands/publish.ts @openclaw/openclaw-secops @Patrick-Erichsen
+/packages/clawhub/src/cli/commands/rescan.ts @openclaw/openclaw-secops @Patrick-Erichsen
+/packages/clawhub/src/cli/commands/transfer.ts @openclaw/openclaw-secops @Patrick-Erichsen
+/packages/clawhub/src/cli/commands/sync.ts @openclaw/openclaw-secops @Patrick-Erichsen
+/packages/clawhub/src/cli/scanSkills.ts @openclaw/openclaw-secops @Patrick-Erichsen
+/packages/clawhub/src/schema/openclawContract.ts @openclaw/openclaw-secops @Patrick-Erichsen
+/packages/clawhub/src/schema/packages.ts @openclaw/openclaw-secops @Patrick-Erichsen
+/packages/clawhub/src/schema/routes.ts @openclaw/openclaw-secops @Patrick-Erichsen
+/packages/clawhub/src/schema/schemas.ts @openclaw/openclaw-secops @Patrick-Erichsen
+/packages/clawhub/src/schema/textFiles.ts @openclaw/openclaw-secops @Patrick-Erichsen
+/packages/schema/src/openclawContract.ts @openclaw/openclaw-secops @Patrick-Erichsen
+/packages/schema/src/packages.ts @openclaw/openclaw-secops @Patrick-Erichsen
+/packages/schema/src/routes.ts @openclaw/openclaw-secops @Patrick-Erichsen
+/packages/schema/src/schemas.ts @openclaw/openclaw-secops @Patrick-Erichsen
+/packages/schema/src/textFiles.ts @openclaw/openclaw-secops @Patrick-Erichsen
 
 # Security, auth, API, webhook, and deployment documentation.
-/docs/acceptable-usage.md @openclaw/openclaw-secops
-/docs/api.md @openclaw/openclaw-secops
-/docs/auth.md @openclaw/openclaw-secops
-/docs/deploy.md @openclaw/openclaw-secops
-/docs/github-import.md @openclaw/openclaw-secops
-/docs/http-api.md @openclaw/openclaw-secops
-/docs/security.md @openclaw/openclaw-secops
-/docs/webhook.md @openclaw/openclaw-secops
-/public/api/v1/openapi.json @openclaw/openclaw-secops
+/docs/acceptable-usage.md @openclaw/openclaw-secops @Patrick-Erichsen
+/docs/api.md @openclaw/openclaw-secops @Patrick-Erichsen
+/docs/auth.md @openclaw/openclaw-secops @Patrick-Erichsen
+/docs/deploy.md @openclaw/openclaw-secops @Patrick-Erichsen
+/docs/github-import.md @openclaw/openclaw-secops @Patrick-Erichsen
+/docs/http-api.md @openclaw/openclaw-secops @Patrick-Erichsen
+/docs/security.md @openclaw/openclaw-secops @Patrick-Erichsen
+/docs/webhook.md @openclaw/openclaw-secops @Patrick-Erichsen
+/public/api/v1/openapi.json @openclaw/openclaw-secops @Patrick-Erichsen
