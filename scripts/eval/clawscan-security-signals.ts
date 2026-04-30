@@ -33,8 +33,8 @@ const HF_DATASET_ENV_VAR = "CLAWHUB_SECURITY_EVAL_HF_DATASET";
 const DEFAULT_HF_CONFIG = "default";
 const DEFAULT_HF_SPLIT = "eval_holdout";
 const HF_SPLITS = new Set(["train", "validation", "test", "eval_holdout"]);
-const DEFAULT_OUTPUT_DIR = "eval/results/clawscan-skilltester";
-const DEFAULT_CACHE_DIR = "eval/cache/clawscan-skilltester";
+const DEFAULT_OUTPUT_DIR = "eval/results/clawscan-security-signals";
+const DEFAULT_CACHE_DIR = "eval/cache/clawscan-security-signals";
 const DEFAULT_CONCURRENCY = 1;
 const REPORT_SCHEMA_VERSION = "1.2";
 
@@ -49,7 +49,7 @@ function sha256(value: string) {
 
 export type CorpusRow = {
   schema_version?: string;
-  corpus?: "skilltester-clawhub";
+  corpus?: "clawhub-security-signals";
   source: string;
   content_status: string;
   resolved: {
@@ -64,7 +64,7 @@ export type CorpusRow = {
     skill_md_content?: string;
     missing_reason?: string;
   };
-  skilltester: {
+  securitySignals: {
     summary: {
       skill_name?: string;
       full_name?: string;
@@ -103,7 +103,7 @@ type HfDatasetRowsResponse = {
   error?: string;
 };
 
-type HfEvalHoldoutRow = {
+type HfSecuritySignalsRow = {
   uuid?: string;
   skill?: string;
   label?: string;
@@ -337,7 +337,7 @@ export type RunComparisonOptions = {
   concurrency?: number;
   limit?: number;
   targets?: string[];
-  skilltesterRiskyOnly?: boolean;
+  securitySignalsRiskyOnly?: boolean;
   useCache: boolean;
   mock: boolean;
   writeReports: boolean;
@@ -415,8 +415,8 @@ function rowTargetKeys(row: CorpusRow) {
   const owner = row.resolved.owner;
   const slug = row.resolved.slug;
   const version = row.resolved.version;
-  const summary = row.skilltester.summary;
-  const urls = row.skilltester.source_urls;
+  const summary = row.securitySignals.summary;
+  const urls = row.securitySignals.source_urls;
 
   if (owner && slug && version) keys.add(`${owner}/${slug}@${version}`);
   if (owner && slug) keys.add(`${owner}/${slug}`);
@@ -451,7 +451,7 @@ export function selectCorpusRowsByTargets(rows: CorpusRow[], targets: string[]) 
   return selected;
 }
 
-export function selectCorpusRowsBySkillTesterRisk(rows: CorpusRow[], enabled: boolean) {
+export function selectCorpusRowsBySecuritySignalRisk(rows: CorpusRow[], enabled: boolean) {
   if (!enabled) return rows;
   return rows.filter((row) => {
     const reference = normalizeReferenceVerdict(row);
@@ -461,8 +461,8 @@ export function selectCorpusRowsBySkillTesterRisk(rows: CorpusRow[], enabled: bo
 
 function timestampFromRow(row: CorpusRow) {
   const raw = firstString(
-    row.skilltester.timestamps.evaluation_timestamp,
-    row.skilltester.timestamps.summary_updated_at,
+    row.securitySignals.timestamps.evaluation_timestamp,
+    row.securitySignals.timestamps.summary_updated_at,
   );
   const parsed = raw ? Date.parse(raw) : Number.NaN;
   return Number.isFinite(parsed) ? parsed : 0;
@@ -477,8 +477,8 @@ function riskBucketForCategory(categoryId: string): ClawScanRiskBucket {
 function scoreFromRow(row: CorpusRow) {
   return (
     asNumber(row.reference_labels.security_score) ??
-    asNumber(row.skilltester.security.score) ??
-    asNumber(row.skilltester.scores.security)
+    asNumber(row.securitySignals.security.score) ??
+    asNumber(row.securitySignals.scores.security)
   );
 }
 
@@ -490,9 +490,9 @@ export function normalizeReferenceVerdict(row: CorpusRow): {
 } {
   const securityLevel = firstString(
     row.reference_labels.security_level,
-    row.skilltester.security.level,
-    row.skilltester.scores.security_level,
-    row.skilltester.summary.security_level,
+    row.securitySignals.security.level,
+    row.securitySignals.scores.security_level,
+    row.securitySignals.summary.security_level,
   );
   const securityScore = scoreFromRow(row);
 
@@ -554,7 +554,7 @@ export async function readCorpusJsonl(corpusFile: string): Promise<CorpusRow[]> 
     });
 }
 
-function normalizedHfLabel(row: HfEvalHoldoutRow): NormalizedVerdict {
+function normalizedHfLabel(row: HfSecuritySignalsRow): NormalizedVerdict {
   const label = firstString(row.label, row.metadata?.label?.source)?.toLowerCase();
   if (label === "clean" || label === "benign") return "benign";
   if (label === "suspicious") return "suspicious";
@@ -577,7 +577,7 @@ function securityLevelForHfLabel(label: NormalizedVerdict): string | undefined {
 }
 
 function securityScoreForHfRow(
-  row: HfEvalHoldoutRow,
+  row: HfSecuritySignalsRow,
   label: NormalizedVerdict,
 ): number | undefined {
   const score =
@@ -600,8 +600,8 @@ function securityScoreForHfRow(
   return undefined;
 }
 
-export function corpusRowFromHfEvalHoldoutRow(
-  row: HfEvalHoldoutRow,
+export function corpusRowFromHfSecuritySignalsRow(
+  row: HfSecuritySignalsRow,
   index = 0,
   split = DEFAULT_HF_SPLIT,
 ): CorpusRow {
@@ -619,7 +619,7 @@ export function corpusRowFromHfEvalHoldoutRow(
 
   return {
     schema_version: "hf-clawhub-security-signals-eval-holdout-v1",
-    corpus: "skilltester-clawhub",
+    corpus: "clawhub-security-signals",
     source: "HuggingFace",
     content_status: skill ? "fetched" : "missing",
     resolved: {
@@ -634,7 +634,7 @@ export function corpusRowFromHfEvalHoldoutRow(
       skill_md_content: skill,
       missing_reason: skill ? undefined : "No skill text present in HF eval_holdout row.",
     },
-    skilltester: {
+    securitySignals: {
       summary: {
         skill_name: slug,
         full_name: firstString(source.public_name, slug),
@@ -671,7 +671,7 @@ function hfAuthToken() {
   );
 }
 
-async function fetchHfEvalHoldoutRows(options: {
+async function fetchHfSecuritySignalsRows(options: {
   dataset: string;
   config: string;
   split: string;
@@ -719,7 +719,11 @@ async function fetchHfEvalHoldoutRows(options: {
     total = body.num_rows_total ?? offset + pageRows.length;
     rows.push(
       ...pageRows.map((entry, index) =>
-        corpusRowFromHfEvalHoldoutRow(entry.row as HfEvalHoldoutRow, offset + index, options.split),
+        corpusRowFromHfSecuritySignalsRow(
+          entry.row as HfSecuritySignalsRow,
+          offset + index,
+          options.split,
+        ),
       ),
     );
     offset += pageRows.length;
@@ -746,7 +750,7 @@ async function loadRows(
     throw new Error(`Set ${HF_DATASET_ENV_VAR}, pass --hf-dataset <id>, or pass --corpus <path>.`);
   }
   const fetchAll = Boolean(options.targets?.length) || options.limit === undefined;
-  const rows = await fetchHfEvalHoldoutRows({
+  const rows = await fetchHfSecuritySignalsRows({
     dataset: options.hfDataset,
     config: options.hfConfig,
     split: options.hfSplit,
@@ -768,8 +772,8 @@ export function buildSkillEvalContextFromRow(row: CorpusRow): SkillEvalContext |
   const clawdis = parseClawdisMetadata(frontmatter);
   const clawdisRecord = asRecord(clawdis) ?? {};
   const links = asRecord(clawdisRecord.links) ?? {};
-  const summarySkill = asRecord(row.skilltester.summary);
-  const detailSkill = asRecord(row.skilltester.detail_skill);
+  const summarySkill = asRecord(row.securitySignals.summary);
+  const detailSkill = asRecord(row.securitySignals.detail_skill);
   const slug = row.resolved.slug ?? asString(summarySkill?.slug) ?? "unknown-skill";
   const displayName =
     firstString(
@@ -787,18 +791,25 @@ export function buildSkillEvalContextFromRow(row: CorpusRow): SkillEvalContext |
   return {
     slug,
     displayName,
-    ownerUserId: row.resolved.owner ?? "skilltester-corpus",
+    ownerUserId: row.resolved.owner ?? "security-signals-corpus",
     version: row.resolved.version ?? "unknown",
     createdAt: timestampFromRow(row),
     summary,
     source:
       getFrontmatterValue(frontmatter, "source") ??
-      firstString(row.skilltester.source_urls.skill_url, row.skilltester.source_urls.result_url),
+      firstString(
+        row.securitySignals.source_urls.skill_url,
+        row.securitySignals.source_urls.result_url,
+      ),
     homepage:
       getFrontmatterValue(frontmatter, "homepage") ??
       getFrontmatterValue(frontmatter, "website") ??
       getFrontmatterValue(frontmatter, "url") ??
-      firstString(clawdisRecord.homepage, links.homepage, row.skilltester.source_urls.skill_url),
+      firstString(
+        clawdisRecord.homepage,
+        links.homepage,
+        row.securitySignals.source_urls.skill_url,
+      ),
     parsed: {
       frontmatter,
       metadata,
@@ -1081,7 +1092,7 @@ function summarizePromptRun(kind: PromptKind, result: PromptRunResult): PromptRu
 
 function rowId(row: CorpusRow) {
   const owner = row.resolved.owner ?? "unknown-owner";
-  const slug = row.resolved.slug ?? row.skilltester.summary.skill_name ?? "unknown-skill";
+  const slug = row.resolved.slug ?? row.securitySignals.summary.skill_name ?? "unknown-skill";
   const version = row.resolved.version ?? "unknown-version";
   return `${owner}/${slug}@${version}`;
 }
@@ -1557,7 +1568,7 @@ function generateMarkdownReport(report: EvalReport) {
   const oldMetrics = report.prompts.old.metrics;
   const newMetrics = report.prompts.new.metrics;
   const lines = [
-    "# ClawScan Eval Report",
+    "# ClawScan Security Signals Eval Report",
     "",
     `Generated: ${report.generatedAt}`,
     `Corpus: ${report.corpusFile}`,
@@ -1683,9 +1694,9 @@ export async function runComparison(
   const allRows = input.rows;
   const corpusSchemaVersion = firstString(...allRows.map((row) => row.schema_version));
   const targetedRows = selectCorpusRowsByTargets(allRows, options.targets ?? []);
-  const referenceFilteredRows = selectCorpusRowsBySkillTesterRisk(
+  const referenceFilteredRows = selectCorpusRowsBySecuritySignalRisk(
     targetedRows,
-    options.skilltesterRiskyOnly ?? false,
+    options.securitySignalsRiskyOnly ?? false,
   );
   const rows =
     typeof options.limit === "number"
@@ -1701,7 +1712,7 @@ export async function runComparison(
     if (!context) {
       skipped.push({
         id: rowId(row),
-        slug: row.resolved.slug ?? row.skilltester.summary.skill_name ?? "unknown-skill",
+        slug: row.resolved.slug ?? row.securitySignals.summary.skill_name ?? "unknown-skill",
         reason: row.artifact.missing_reason ?? row.content_status,
       });
       continue;
@@ -1736,10 +1747,10 @@ export async function runComparison(
 }
 
 function printHelp() {
-  console.log(`Usage: bun scripts/eval/clawscan-skilltester.ts [options]
+  console.log(`Usage: bun scripts/eval/clawscan-security-signals.ts [options]
 
 Options:
-  --corpus <path>       Local SkillTester corpus JSONL path. When omitted, loads HF ${HF_DATASET_ENV_VAR}/${DEFAULT_HF_SPLIT}.
+  --corpus <path>       Local ClawHub security signals corpus JSONL path. When omitted, loads HF ${HF_DATASET_ENV_VAR}/${DEFAULT_HF_SPLIT}.
   --hf-dataset <id>     Hugging Face dataset id (default: ${HF_DATASET_ENV_VAR})
   --hf-config <name>    Hugging Face dataset config (default: ${DEFAULT_HF_CONFIG})
   --hf-split <name>     Hugging Face split: train, validation, test, or eval_holdout (default: ${DEFAULT_HF_SPLIT})
@@ -1748,9 +1759,9 @@ Options:
   --limit <n>           Evaluate only the first n corpus rows
   --concurrency <n>     Number of corpus rows to evaluate at once (default: ${DEFAULT_CONCURRENCY})
   --target <id>         Evaluate matching corpus row(s). Repeatable.
-                        Matches owner/slug@version, owner/slug, slug@version, slug, SkillTester skill_name, or source URL.
+                        Matches owner/slug@version, owner/slug, slug@version, slug, security signal skill_name, or source URL.
   --risky-only
-                        Evaluate only rows SkillTester labels suspicious/malicious or scores below 80
+                        Evaluate only rows ClawHub security signals labels suspicious/malicious or scores below 80
   --model <name>        OpenAI model (default: OPENAI_EVAL_MODEL or ${getLlmEvalModel()})
   --reasoning-effort <effort>
                         Reasoning effort (default: OPENAI_EVAL_REASONING_EFFORT or ${getLlmEvalReasoningEffort()})
@@ -1775,7 +1786,7 @@ export function parseArgs(argv: string[]): CliOptions {
     serviceTier: getLlmEvalServiceTier(),
     concurrency: DEFAULT_CONCURRENCY,
     targets: [],
-    skilltesterRiskyOnly: false,
+    securitySignalsRiskyOnly: false,
     useCache: true,
     mock: false,
     writeReports: true,
@@ -1840,9 +1851,9 @@ export function parseArgs(argv: string[]): CliOptions {
         i += 1;
         break;
       case "--risky-only":
-      case "--skilltester-risky-only":
+      case "--security-signals-risky-only":
       case "--reference-risky-only":
-        options.skilltesterRiskyOnly = true;
+        options.securitySignalsRiskyOnly = true;
         break;
       case "--model":
         if (!next) throw new Error("--model requires a model name");

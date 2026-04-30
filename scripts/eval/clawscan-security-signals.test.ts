@@ -5,18 +5,18 @@ import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import {
   buildSkillEvalContextFromRow,
-  corpusRowFromHfEvalHoldoutRow,
+  corpusRowFromHfSecuritySignalsRow,
   parseArgs,
   readCorpusJsonl,
   runComparison,
   type CorpusRow,
-} from "./clawscan-skilltester";
+} from "./clawscan-security-signals";
 
 function corpusRow(overrides: Partial<CorpusRow> = {}): CorpusRow {
   return {
-    schema_version: "skilltester-clawhub-corpus-v1",
-    corpus: "skilltester-clawhub",
-    source: "SkillTester",
+    schema_version: "clawhub-security-signals-corpus-v1",
+    corpus: "clawhub-security-signals",
+    source: "ClawHub security signals",
     content_status: "fetched",
     resolved: {
       owner: "openclaw",
@@ -30,7 +30,7 @@ function corpusRow(overrides: Partial<CorpusRow> = {}): CorpusRow {
       skill_md_content:
         "---\nname: Demo Skill\ndescription: Helps inspect local project files.\n---\nUse this skill to inspect project files with user approval.",
     },
-    skilltester: {
+    securitySignals: {
       summary: {
         skill_name: "demo-skill",
         full_name: "OpenClaw Demo Skill",
@@ -61,11 +61,11 @@ function corpusRow(overrides: Partial<CorpusRow> = {}): CorpusRow {
   };
 }
 
-describe("clawscan skilltester eval", () => {
+describe("clawscan security signals eval", () => {
   it("parses data source CLI flags", () => {
     const parsed = parseArgs([
       "--corpus",
-      "../clawhub-security/eval/corpora/skilltester-clawhub/corpus.jsonl",
+      "../clawhub-security/eval/corpora/clawhub-security-signals/corpus.jsonl",
       "--output-dir",
       "/tmp/clawscan-results",
       "--cache-dir",
@@ -81,7 +81,7 @@ describe("clawscan skilltester eval", () => {
       "--mock",
     ]);
 
-    expect(parsed.corpusFile).toContain("skilltester-clawhub/corpus.jsonl");
+    expect(parsed.corpusFile).toContain("clawhub-security-signals/corpus.jsonl");
     expect(parsed.outputDir).toBe("/tmp/clawscan-results");
     expect(parsed.cacheDir).toBe("/tmp/clawscan-cache");
     expect(parsed.limit).toBe(2);
@@ -112,14 +112,14 @@ describe("clawscan skilltester eval", () => {
   });
 
   it("converts HF eval_holdout rows into eval corpus rows", () => {
-    const converted = corpusRowFromHfEvalHoldoutRow(
+    const converted = corpusRowFromHfSecuritySignalsRow(
       {
         uuid: "row-1",
         skill: "---\nname: HF Skill\n---\nUse the skill carefully.",
         label: "suspicious",
         metadata: {
           source: {
-            source_table: "skilltesterCorpus",
+            source_table: "securitySignalsCorpus",
             public_name: "HF Skill",
             public_slug: "hf-skill",
             version: "1.2.3",
@@ -135,7 +135,7 @@ describe("clawscan skilltester eval", () => {
       source: "HuggingFace",
       content_status: "fetched",
       resolved: {
-        owner: "skilltesterCorpus",
+        owner: "securitySignalsCorpus",
         slug: "hf-skill",
         version: "1.2.3",
       },
@@ -189,7 +189,7 @@ describe("clawscan skilltester eval", () => {
       rows: [fetched, missing],
     });
 
-    expect(report.corpusSchemaVersion).toBe("skilltester-clawhub-corpus-v1");
+    expect(report.corpusSchemaVersion).toBe("clawhub-security-signals-corpus-v1");
     expect(report.counts).toMatchObject({
       corpusRows: 2,
       evaluatedRows: 1,
