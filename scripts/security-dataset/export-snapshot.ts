@@ -90,7 +90,7 @@ function runConvexPage(
 	if (options.prod) commandArgs.push("--prod");
 	if (options.deployment) commandArgs.push("--deployment", options.deployment);
 	if (options.push) commandArgs.push("--push", "--typecheck=disable");
-	commandArgs.push("securityDataset:listArtifactExportPage", JSON.stringify(args));
+	commandArgs.push("securityDataset:listArtifactExportPageInternal", JSON.stringify(args));
 
 	const result = spawnSync("bunx", commandArgs, {
 		cwd: process.cwd(),

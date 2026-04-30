@@ -492,6 +492,7 @@ const skillVersions = defineTable({
 })
   .index("by_skill", ["skillId"])
   .index("by_skill_version", ["skillId", "version"])
+  .index("by_active_created", ["softDeletedAt", "createdAt"])
   .index("by_sha256hash", ["sha256hash"]);
 
 const soulVersions = defineTable({
@@ -773,6 +774,7 @@ const packageReleases = defineTable({
 })
   .index("by_package", ["packageId"])
   .index("by_package_active_created", ["packageId", "softDeletedAt", "createdAt"])
+  .index("by_active_created", ["softDeletedAt", "createdAt"])
   .index("by_package_version", ["packageId", "version"])
   .index("by_sha256hash", ["sha256hash"]);
 

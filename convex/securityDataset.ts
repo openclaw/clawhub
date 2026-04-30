@@ -2,13 +2,13 @@ import { paginationOptsValidator } from "convex/server";
 import { v } from "convex/values";
 import type { Doc } from "./_generated/dataModel";
 import type { QueryCtx } from "./_generated/server";
-import { query } from "./functions";
+import { internalQuery } from "./functions";
 
 const MAX_EXPORT_PAGE_SIZE = 50;
 type StoredVtAnalysis = Doc<"skillVersions">["vtAnalysis"];
 type StoredLlmAnalysis = Doc<"skillVersions">["llmAnalysis"];
 
-export const listArtifactExportPage = query({
+export const listArtifactExportPageInternal = internalQuery({
 	args: {
 		sourceKind: v.union(v.literal("skill"), v.literal("package")),
 		mode: v.optional(v.literal("public")),
@@ -20,7 +20,11 @@ export const listArtifactExportPage = query({
 			numItems: Math.min(args.paginationOpts.numItems, MAX_EXPORT_PAGE_SIZE),
 		};
 		if (args.sourceKind === "skill") {
-			const page = await ctx.db.query("skillVersions").order("asc").paginate(paginationOpts);
+			const page = await ctx.db
+				.query("skillVersions")
+				.withIndex("by_active_created", (q) => q.eq("softDeletedAt", undefined))
+				.order("asc")
+				.paginate(paginationOpts);
 			return {
 				page: await skillVersionPageToExportRows(ctx, page.page),
 				isDone: page.isDone,
@@ -29,7 +33,11 @@ export const listArtifactExportPage = query({
 			};
 		}
 
-		const page = await ctx.db.query("packageReleases").order("asc").paginate(paginationOpts);
+		const page = await ctx.db
+			.query("packageReleases")
+			.withIndex("by_active_created", (q) => q.eq("softDeletedAt", undefined))
+			.order("asc")
+			.paginate(paginationOpts);
 		return {
 			page: await packageReleasePageToExportRows(ctx, page.page),
 			isDone: page.isDone,
@@ -42,7 +50,6 @@ export const listArtifactExportPage = query({
 async function skillVersionPageToExportRows(ctx: QueryCtx, versions: Array<Doc<"skillVersions">>) {
 	const rows = [];
 	for (const version of versions) {
-		if (version.softDeletedAt) continue;
 		const skill = await ctx.db.get(version.skillId);
 		if (!skill || skill.softDeletedAt) continue;
 		rows.push({
@@ -85,9 +92,8 @@ async function packageReleasePageToExportRows(
 ) {
 	const rows = [];
 	for (const release of releases) {
-		if (release.softDeletedAt) continue;
 		const pkg = await ctx.db.get(release.packageId);
-		if (!pkg || pkg.softDeletedAt) continue;
+		if (!pkg || pkg.softDeletedAt || pkg.channel === "private") continue;
 		rows.push({
 			sourceKind: "package" as const,
 			sourceDocId: release._id,
