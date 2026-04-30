@@ -319,37 +319,6 @@ export function SecurityScannerPage(props: SecurityScannerPageProps) {
                     </>
                   ) : null}
 
-                  {props.scanner === "openclaw" ? (
-                    <>
-                      <DetailRow label="Verdict">
-                        {props.llmAnalysis?.verdict ?? props.llmAnalysis?.status ?? "Pending"}
-                      </DetailRow>
-                      <DetailRow label="Confidence">
-                        {props.llmAnalysis?.confidence ?? "Not reported"}
-                      </DetailRow>
-                      <DetailRow label="Model">
-                        {props.llmAnalysis?.model ?? "Not reported"}
-                      </DetailRow>
-                      <DetailRow label="Review scope">
-                        Artifact-based informational review only. ClawScan reviews supplied
-                        artifacts and existing scan signals; it does not execute the skill or run
-                        runtime probes.
-                      </DetailRow>
-                      <DetailRow label="Summary">
-                        {props.llmAnalysis?.summary ??
-                          "No ClawScan analysis has been recorded yet."}
-                      </DetailRow>
-                      <DetailRow label="Guidance">{props.llmAnalysis?.guidance ?? null}</DetailRow>
-                      <DetailRow label="Findings">
-                        {props.llmAnalysis?.findings ? (
-                          <pre className="m-0 whitespace-pre-wrap break-words font-mono text-xs">
-                            {props.llmAnalysis.findings}
-                          </pre>
-                        ) : null}
-                      </DetailRow>
-                    </>
-                  ) : null}
-
                   {props.scanner === "static-analysis" ? (
                     <>
                       <DetailRow label="Summary">
@@ -384,41 +353,6 @@ export function SecurityScannerPage(props: SecurityScannerPageProps) {
                 </dl>
               </CardContent>
             </Card>
-
-            {props.scanner === "openclaw" &&
-            props.llmAnalysis &&
-            hasClawScanRiskReview(props.llmAnalysis) ? (
-              <Card>
-                <CardHeader>
-                  <CardTitle>Findings</CardTitle>
-                </CardHeader>
-                <CardContent>
-                  <ClawScanRiskReview analysis={props.llmAnalysis} showTitle={false} />
-                </CardContent>
-              </Card>
-            ) : null}
-
-            {props.scanner === "openclaw" && props.llmAnalysis?.dimensions?.length ? (
-              <Card>
-                <CardHeader>
-                  <CardTitle>Review Dimensions</CardTitle>
-                </CardHeader>
-                <CardContent>
-                  <dl className="flex flex-col gap-3">
-                    {props.llmAnalysis.dimensions.map((dimension) => (
-                      <DetailRow key={dimension.name} label={dimension.label}>
-                        <div className="flex flex-col gap-1">
-                          <Badge variant="compact" className="w-fit">
-                            {dimension.rating}
-                          </Badge>
-                          <span>{dimension.detail}</span>
-                        </div>
-                      </DetailRow>
-                    ))}
-                  </dl>
-                </CardContent>
-              </Card>
-            ) : null}
 
             {props.scanner === "static-analysis" && props.staticScan?.findings?.length ? (
               <Card>
