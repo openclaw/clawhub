@@ -570,7 +570,7 @@ export const softDeleteSkillVersionsInternal = internalMutation({
     const deleted: string[] = [];
     const skipped: Array<{ versionId: string; reason: string }> = [];
 
-    for (const versionId of [...new Set(args.versionIds)]) {
+    for (const versionId of new Set(args.versionIds)) {
       const version = await ctx.db.get(versionId);
       if (!version || version.skillId !== skill._id) {
         skipped.push({ versionId, reason: "missing_or_wrong_skill" });
