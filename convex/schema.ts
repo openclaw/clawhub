@@ -43,15 +43,6 @@ const llmAgenticRiskFindingValidator = v.object({
     v.literal("permission_boundary"),
     v.literal("sensitive_data_protection"),
   ),
-  supportingLens: v.optional(
-    v.union(
-      v.literal("dangerous-calls"),
-      v.literal("dependency-risk"),
-      v.literal("permission-boundary"),
-      v.literal("sensitive-info-leak"),
-      v.literal("social-engineering"),
-    ),
-  ),
   status: v.union(v.literal("none"), v.literal("note"), v.literal("concern")),
   severity: v.string(),
   confidence: v.union(v.literal("high"), v.literal("medium"), v.literal("low")),

@@ -33,6 +33,7 @@ const clearSkillManualOverrideHandler = (
 const updateVersionLlmAnalysisInternalHandler = (
   updateVersionLlmAnalysisInternal as unknown as WrappedHandler<{
     versionId: string;
+    moderationMode?: "normal" | "preserve";
     llmAnalysis: Record<string, unknown>;
   }>
 )._handler;
@@ -394,6 +395,54 @@ describe("skills manual overrides", () => {
         checkedAt: 200,
       },
     });
+  });
+
+  it("can store llm backfill results without syncing moderation", async () => {
+    const now = 1_700_000_250_000;
+    vi.spyOn(Date, "now").mockReturnValue(now);
+
+    const skill = {
+      _id: "skills:1",
+      ownerUserId: "users:owner",
+      latestVersionId: "skillVersions:7",
+      softDeletedAt: undefined,
+      moderationStatus: "active",
+      moderationReason: undefined,
+      moderationVerdict: undefined,
+      moderationFlags: undefined,
+    };
+    const version = {
+      _id: "skillVersions:7",
+      skillId: "skills:1",
+      staticScan: undefined,
+      vtAnalysis: undefined,
+      llmAnalysis: undefined,
+    };
+
+    const { ctx, patch, get, query } = makeCtx({ skill, version });
+
+    await updateVersionLlmAnalysisInternalHandler(ctx, {
+      versionId: "skillVersions:7",
+      moderationMode: "preserve",
+      llmAnalysis: {
+        status: "malicious",
+        verdict: "malicious",
+        checkedAt: now,
+      },
+    });
+
+    expect(patch).toHaveBeenCalledTimes(1);
+    expect(patch).toHaveBeenCalledWith("skillVersions:7", {
+      llmAnalysis: {
+        status: "malicious",
+        verdict: "malicious",
+        checkedAt: now,
+      },
+    });
+    expect(get).toHaveBeenCalledTimes(1);
+    expect(get).toHaveBeenCalledWith("skillVersions:7");
+    expect(get).not.toHaveBeenCalledWith("skills:1");
+    expect(query).not.toHaveBeenCalled();
   });
 
   it("updates global public count when llm scan sync restores a skill to active", async () => {

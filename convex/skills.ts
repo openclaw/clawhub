@@ -4837,6 +4837,7 @@ export const updateVersionScanResultsInternal = internalMutation({
 export const updateVersionLlmAnalysisInternal = internalMutation({
   args: {
     versionId: v.id("skillVersions"),
+    moderationMode: v.optional(v.union(v.literal("normal"), v.literal("preserve"))),
     llmAnalysis: v.object({
       status: v.string(),
       verdict: v.optional(v.string()),
@@ -4863,15 +4864,6 @@ export const updateVersionLlmAnalysisInternal = internalMutation({
               v.literal("abnormal_behavior_control"),
               v.literal("permission_boundary"),
               v.literal("sensitive_data_protection"),
-            ),
-            supportingLens: v.optional(
-              v.union(
-                v.literal("dangerous-calls"),
-                v.literal("dependency-risk"),
-                v.literal("permission-boundary"),
-                v.literal("sensitive-info-leak"),
-                v.literal("social-engineering"),
-              ),
             ),
             status: v.union(v.literal("none"), v.literal("note"), v.literal("concern")),
             severity: v.string(),
@@ -4916,6 +4908,8 @@ export const updateVersionLlmAnalysisInternal = internalMutation({
     if (!version) return;
     const nextVersion = { ...version, llmAnalysis: args.llmAnalysis };
     await ctx.db.patch(args.versionId, { llmAnalysis: args.llmAnalysis });
+    if (args.moderationMode === "preserve") return;
+
     await finalizeInProgressRescanRequestsForTarget(
       ctx,
       { kind: "skill", artifactId: version._id },

@@ -3,8 +3,8 @@ import { describe, expect, it } from "vitest";
 import {
   AGENTIC_RISK_CATEGORIES,
   CLAWSCAN_RISK_BUCKETS,
-  SAFETEST_SUPPORTING_LENSES,
   assembleSkillEvalUserMessage,
+  getLlmEvalServiceTier,
   parseLlmEvalResponse,
   SKILL_SECURITY_EVALUATOR_SYSTEM_PROMPT,
   type SkillEvalContext,
@@ -77,7 +77,6 @@ function newResponse(overrides: Record<string, unknown> = {}) {
         category_id: "ASI03",
         category_label: "Identity and Privilege Abuse",
         risk_bucket: "permission_boundary",
-        supporting_lens: "permission-boundary",
         status: "note",
         severity: "medium",
         confidence: "medium",
@@ -146,14 +145,13 @@ describe("securityPrompt", () => {
     expect(parsed?.riskSummary).toBeUndefined();
   });
 
-  it("parses SkillTester ASI findings and the three-bucket risk summary", () => {
+  it("parses ASI findings and the three-bucket risk summary", () => {
     const parsed = parseLlmEvalResponse(newResponse());
 
     expect(parsed?.agenticRiskFindings?.[0]).toMatchObject({
       categoryId: "ASI03",
       categoryLabel: "Identity and Privilege Abuse",
       riskBucket: "permission_boundary",
-      supportingLens: "permission-boundary",
       status: "note",
       evidence: {
         path: "SKILL.md",
@@ -165,6 +163,25 @@ describe("securityPrompt", () => {
       "permission_boundary",
       "sensitive_data_protection",
     ]);
+  });
+
+  it("defaults LLM evals to OpenAI priority service tier", () => {
+    const previous = process.env.OPENAI_EVAL_SERVICE_TIER;
+    delete process.env.OPENAI_EVAL_SERVICE_TIER;
+
+    try {
+      expect(getLlmEvalServiceTier()).toBe("priority");
+      process.env.OPENAI_EVAL_SERVICE_TIER = "flex";
+      expect(getLlmEvalServiceTier()).toBe("flex");
+      process.env.OPENAI_EVAL_SERVICE_TIER = "not-a-tier";
+      expect(getLlmEvalServiceTier()).toBe("priority");
+    } finally {
+      if (previous === undefined) {
+        delete process.env.OPENAI_EVAL_SERVICE_TIER;
+      } else {
+        process.env.OPENAI_EVAL_SERVICE_TIER = previous;
+      }
+    }
   });
 
   it("rejects note and concern findings without concrete evidence", () => {
@@ -189,7 +206,7 @@ describe("securityPrompt", () => {
     expect(parsed).toBeNull();
   });
 
-  it("documents ASI coverage, SafeTest lenses, ClawScan buckets, and runtime-claim prohibitions", () => {
+  it("documents ASI coverage, ClawScan buckets, and runtime-claim prohibitions", () => {
     for (const category of AGENTIC_RISK_CATEGORIES) {
       expect(SKILL_SECURITY_EVALUATOR_SYSTEM_PROMPT).toContain(category.id);
       expect(SKILL_SECURITY_EVALUATOR_SYSTEM_PROMPT).toContain(category.label);
@@ -197,12 +214,8 @@ describe("securityPrompt", () => {
     for (const bucket of CLAWSCAN_RISK_BUCKETS) {
       expect(SKILL_SECURITY_EVALUATOR_SYSTEM_PROMPT).toContain(bucket);
     }
-    for (const lens of SAFETEST_SUPPORTING_LENSES) {
-      expect(SKILL_SECURITY_EVALUATOR_SYSTEM_PROMPT).toContain(lens);
-    }
     expect(SKILL_SECURITY_EVALUATOR_SYSTEM_PROMPT).toContain("Do not execute code");
     expect(SKILL_SECURITY_EVALUATOR_SYSTEM_PROMPT).toContain("not assessable without execution");
-    expect(SKILL_SECURITY_EVALUATOR_SYSTEM_PROMPT).toContain("Do not use Agent Audit");
     expect(SKILL_SECURITY_EVALUATOR_SYSTEM_PROMPT).toContain("purpose-aligned");
     expect(SKILL_SECURITY_EVALUATOR_SYSTEM_PROMPT).toContain("purpose-mismatched");
   });

@@ -25,7 +25,6 @@ type LlmAgenticRiskFinding = {
   categoryId: string;
   categoryLabel: string;
   riskBucket: ClawScanRiskBucket;
-  supportingLens?: string;
   status: AgenticRiskStatus;
   severity: string;
   confidence: string;
@@ -164,18 +163,19 @@ const CLAWSCAN_RISK_BUCKET_LABELS: Record<ClawScanRiskBucket, string> = {
   sensitive_data_protection: "Sensitive data protection",
 };
 
+const CLAWSCAN_RISK_BUCKET_SUBTITLES: Record<ClawScanRiskBucket, string> = {
+  abnormal_behavior_control:
+    "Checks for instructions or behavior that redirect the agent, misuse tools, execute unexpected code, cascade across systems, exploit user trust, or continue outside the intended task.",
+  permission_boundary:
+    "Checks whether tool use, credentials, dependencies, identity, account access, or inter-agent boundaries are broader than the stated purpose.",
+  sensitive_data_protection:
+    "Checks for exposed credentials, poisoned memory or context, unclear communication boundaries, or sensitive data that could leave the user's control.",
+};
+
 const AGENTIC_RISK_STATUS_LABELS: Record<AgenticRiskStatus, string> = {
   none: "No evidence",
   note: "Note",
   concern: "Concern",
-};
-
-const SAFETEST_LENS_LABELS: Record<string, string> = {
-  "dangerous-calls": "Dangerous calls",
-  "dependency-risk": "Dependency risk",
-  "permission-boundary": "Permission boundary",
-  "sensitive-info-leak": "Sensitive information leak",
-  "social-engineering": "Social engineering",
 };
 
 function formatSecurityLabel(value?: string | null) {
@@ -189,7 +189,7 @@ function formatSecurityLabel(value?: string | null) {
 
 function getRiskStatusClass(status: AgenticRiskStatus, severity?: string) {
   if (status === "none") return "scan-status-clean";
-  if (status === "note") return "scan-status-pending";
+  if (status === "note") return "";
   const normalizedSeverity = severity?.toLowerCase();
   if (normalizedSeverity === "critical" || normalizedSeverity === "high") {
     return "scan-status-malicious";
@@ -205,112 +205,121 @@ function getVisibleAgenticRiskFindings(analysis: LlmAnalysis) {
 
 export function hasClawScanRiskReview(analysis?: LlmAnalysis | null) {
   if (!analysis) return false;
-  return Boolean(analysis.riskSummary || getVisibleAgenticRiskFindings(analysis).length > 0);
+  return getVisibleAgenticRiskFindings(analysis).length > 0;
 }
 
 function RiskStatusBadge({ status, severity }: { status: AgenticRiskStatus; severity?: string }) {
   return (
-    <span className={`scan-result-status ${getRiskStatusClass(status, severity)}`}>
+    <Badge variant="compact" className={`agentic-risk-chip ${getRiskStatusClass(status, severity)}`}>
+      <span className="agentic-risk-chip-key">Status</span>
       {AGENTIC_RISK_STATUS_LABELS[status] ?? status}
-    </span>
+    </Badge>
+  );
+}
+
+function RiskInfoBadge({ label, value }: { label: string; value?: string | null }) {
+  if (!value) return null;
+  return (
+    <Badge variant="compact" className="agentic-risk-chip">
+      <span className="agentic-risk-chip-key">{label}</span>
+      {value}
+    </Badge>
+  );
+}
+
+function RiskBucketLabel({ bucket }: { bucket: ClawScanRiskBucket }) {
+  return <div className="clawscan-risk-bucket-label">{CLAWSCAN_RISK_BUCKET_LABELS[bucket]}</div>;
+}
+
+function AgenticRiskFindingCard({
+  finding,
+  index,
+}: {
+  finding: LlmAgenticRiskFinding;
+  index: number;
+}) {
+  const evidence = finding.evidence;
+  if (!evidence) return null;
+  const severity = formatSecurityLabel(finding.severity);
+  const confidence = formatSecurityLabel(finding.confidence);
+
+  return (
+    <div
+      key={`${finding.categoryId}-${finding.riskBucket}-${index}`}
+      className="agentic-risk-finding"
+    >
+      <div className="agentic-risk-finding-header">
+        <div className="agentic-risk-finding-title">{finding.categoryLabel}</div>
+        <div className="agentic-risk-finding-chips">
+          <RiskInfoBadge label="Severity" value={severity} />
+          <RiskInfoBadge label="Confidence" value={confidence} />
+          <RiskStatusBadge status={finding.status} severity={finding.severity} />
+        </div>
+      </div>
+      <div className="agentic-risk-evidence">
+        <div className="agentic-risk-evidence-path">{evidence.path}</div>
+        <pre className="agentic-risk-evidence-snippet">{evidence.snippet}</pre>
+        <p className="agentic-risk-evidence-explanation">{evidence.explanation}</p>
+      </div>
+      {finding.userImpact ? (
+        <div className="agentic-risk-impact">
+          <span>User impact</span>
+          {finding.userImpact}
+        </div>
+      ) : null}
+      {finding.recommendation ? (
+        <div className="agentic-risk-recommendation">
+          <span>Recommendation</span>
+          {finding.recommendation}
+        </div>
+      ) : null}
+    </div>
   );
 }
 
 export function ClawScanRiskReview({
   analysis,
   showTitle = true,
+  findingsTitle = "Findings",
 }: {
   analysis: LlmAnalysis;
   showTitle?: boolean;
+  findingsTitle?: string;
 }) {
   const visibleFindings = getVisibleAgenticRiskFindings(analysis);
-  const hasRiskSummary = Boolean(analysis.riskSummary);
-  if (!hasRiskSummary && visibleFindings.length === 0) return null;
+  if (visibleFindings.length === 0) return null;
 
   return (
     <div className="clawscan-risk-review">
-      {showTitle ? <div className="scan-findings-title">Security Buckets</div> : null}
+      {showTitle ? <div className="scan-findings-title">{findingsTitle}</div> : null}
       <p className="clawscan-scope-note">
         Artifact-based informational review of SKILL.md, metadata, install specs, static scan
         signals, and capability signals. ClawScan does not execute the skill or run runtime probes.
       </p>
-      {analysis.riskSummary ? (
-        <div className="clawscan-risk-buckets">
-          {CLAWSCAN_RISK_BUCKET_ORDER.map((bucket) => {
-            const summary = analysis.riskSummary?.[bucket];
-            if (!summary) return null;
-            const highestSeverity = formatSecurityLabel(summary.highestSeverity);
-            return (
-              <div key={bucket} className="clawscan-risk-bucket">
-                <div className="clawscan-risk-bucket-header">
-                  <div className="clawscan-risk-bucket-label">
-                    {CLAWSCAN_RISK_BUCKET_LABELS[bucket]}
-                  </div>
-                  <RiskStatusBadge status={summary.status} severity={summary.highestSeverity} />
-                </div>
-                {highestSeverity && highestSeverity !== "None" ? (
-                  <div className="clawscan-risk-severity">Highest severity: {highestSeverity}</div>
-                ) : null}
-                {summary.summary ? (
-                  <p className="clawscan-risk-summary-text">{summary.summary}</p>
-                ) : null}
+      <div className="agentic-risk-finding-groups">
+        {CLAWSCAN_RISK_BUCKET_ORDER.map((bucket) => {
+          const bucketFindings = visibleFindings.filter((finding) => finding.riskBucket === bucket);
+          if (bucketFindings.length === 0) return null;
+
+          return (
+            <section key={bucket} className="agentic-risk-finding-group">
+              <div className="agentic-risk-finding-group-header">
+                <RiskBucketLabel bucket={bucket} />
+                <p>{CLAWSCAN_RISK_BUCKET_SUBTITLES[bucket]}</p>
               </div>
-            );
-          })}
-        </div>
-      ) : null}
-      {visibleFindings.length > 0 ? (
-        <div className="agentic-risk-findings">
-          <div className="scan-findings-title">Evidence-backed notes and concerns</div>
-          {visibleFindings.map((finding, index) => {
-            const evidence = finding.evidence;
-            if (!evidence) return null;
-            const lens = formatSecurityLabel(
-              finding.supportingLens
-                ? (SAFETEST_LENS_LABELS[finding.supportingLens] ?? finding.supportingLens)
-                : null,
-            );
-            const severity = formatSecurityLabel(finding.severity);
-            const confidence = formatSecurityLabel(finding.confidence);
-            return (
-              <div
-                key={`${finding.categoryId}-${finding.riskBucket}-${index}`}
-                className="agentic-risk-finding"
-              >
-                <div className="agentic-risk-finding-header">
-                  <div className="agentic-risk-finding-title">
-                    {CLAWSCAN_RISK_BUCKET_LABELS[finding.riskBucket]}
-                  </div>
-                  <RiskStatusBadge status={finding.status} severity={finding.severity} />
-                </div>
-                <div className="agentic-risk-finding-meta">
-                  {finding.categoryLabel}
-                  {severity ? ` - ${severity}` : ""}
-                  {confidence ? ` - ${confidence} confidence` : ""}
-                  {lens ? ` - ${lens}` : ""}
-                </div>
-                <div className="agentic-risk-evidence">
-                  <div className="agentic-risk-evidence-path">{evidence.path}</div>
-                  <pre className="agentic-risk-evidence-snippet">{evidence.snippet}</pre>
-                  <p className="agentic-risk-evidence-explanation">{evidence.explanation}</p>
-                </div>
-                {finding.userImpact ? (
-                  <div className="agentic-risk-impact">
-                    <span>User impact</span>
-                    {finding.userImpact}
-                  </div>
-                ) : null}
-                {finding.recommendation ? (
-                  <div className="agentic-risk-recommendation">
-                    <span>Recommendation</span>
-                    {finding.recommendation}
-                  </div>
-                ) : null}
+              <div className="agentic-risk-findings">
+                {bucketFindings.map((finding, index) => (
+                  <AgenticRiskFindingCard
+                    key={`${finding.categoryId}-${finding.riskBucket}-${index}`}
+                    finding={finding}
+                    index={index}
+                  />
+                ))}
               </div>
-            );
-          })}
-        </div>
-      ) : null}
+            </section>
+          );
+        })}
+      </div>
     </div>
   );
 }

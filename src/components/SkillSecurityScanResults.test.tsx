@@ -31,7 +31,6 @@ const clawScanAnalysis: LlmAnalysis = {
       categoryId: "ASI03",
       categoryLabel: "Identity and Privilege Abuse",
       riskBucket: "permission_boundary",
-      supportingLens: "permission-boundary",
       status: "note",
       severity: "low",
       confidence: "medium",
@@ -47,7 +46,6 @@ const clawScanAnalysis: LlmAnalysis = {
       categoryId: "ASI07",
       categoryLabel: "Insecure Inter-Agent Communication",
       riskBucket: "sensitive_data_protection",
-      supportingLens: "sensitive-info-leak",
       status: "concern",
       severity: "critical",
       confidence: "high",
@@ -160,10 +158,10 @@ describe("SecurityScanResults static guidance", () => {
 
     fireEvent.click(screen.getByRole("button", { name: /Collects workspace secrets/i }));
 
-    expect(screen.getByText("Security Buckets")).toBeTruthy();
-    expect(screen.getByText("Abnormal behavior control")).toBeTruthy();
+    expect(screen.getByText("Findings")).toBeTruthy();
+    expect(screen.getByText("Permission boundary")).toBeTruthy();
     expect(screen.getAllByText("Sensitive data protection").length).toBeGreaterThan(0);
-    expect(screen.getByText("Evidence-backed notes and concerns")).toBeTruthy();
+    expect(screen.getByText(/Checks whether tool use/i)).toBeTruthy();
     expect(screen.getByText("SKILL.md")).toBeTruthy();
     expect(screen.getByText(/curl https:\/\/collect\.example\/upload/)).toBeTruthy();
     expect(screen.getAllByText("User impact").length).toBeGreaterThan(0);
@@ -197,7 +195,7 @@ describe("SecurityScanResults static guidance", () => {
 
     expect(screen.getByText("Purpose & Capability")).toBeTruthy();
     expect(screen.getByText("No mismatch found.")).toBeTruthy();
-    expect(screen.queryByText("Security Buckets")).toBeNull();
+    expect(screen.queryByText("Findings")).toBeNull();
   });
 
   it("shows ClawScan buckets on the dedicated ClawScan report page", () => {
@@ -215,9 +213,15 @@ describe("SecurityScanResults static guidance", () => {
       />,
     );
 
-    expect(screen.getByText("Review scope")).toBeTruthy();
-    expect(screen.getByText(/it does not execute the skill or run runtime probes/i)).toBeTruthy();
-    expect(screen.getByRole("heading", { name: "Security Buckets" })).toBeTruthy();
+    expect(screen.getByRole("heading", { name: "Todo Guard" })).toBeTruthy();
+    expect(screen.getByText(/ClawScan verdict for this artifact-based review/i)).toBeTruthy();
+    expect(screen.getByRole("heading", { name: "Analysis" })).toBeTruthy();
+    expect(screen.getByText(/Collects workspace secrets/i)).toBeTruthy();
+    expect(screen.getByRole("heading", { name: "Findings (2)" })).toBeTruthy();
+    expect(screen.getByRole("heading", { name: "Scan Metadata" })).toBeTruthy();
+    expect(screen.queryByText("Legacy dimensions")).toBeNull();
+    expect(screen.queryByText("Scanner")).toBeNull();
+    expect(screen.queryByText("Review scope")).toBeNull();
     expect(screen.getAllByText("Permission boundary").length).toBeGreaterThan(0);
     expect(screen.getByText("metadata")).toBeTruthy();
     expect(screen.getByText("requires.env: TODOIST_API_TOKEN")).toBeTruthy();

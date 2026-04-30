@@ -6,6 +6,7 @@ import {
   findUnsupportedRuntimeClaims,
   normalizeReferenceVerdict,
   runComparison,
+  selectCorpusRowsBySkillTesterRisk,
   selectCorpusRowsByTargets,
   type PromptRunRequest,
   type PromptRunResult,
@@ -159,6 +160,55 @@ function asiResponse(verdict: "benign" | "suspicious" | "malicious") {
   });
 }
 
+function cliFalsePositiveResponse() {
+  return JSON.stringify({
+    verdict: "suspicious",
+    confidence: "medium",
+    summary: "A benign CLI helper was treated as suspicious because it installs a global npm CLI.",
+    dimensions: {
+      install_runtime: {
+        status: "concern",
+        detail: "Install: `npm install -g demo-cli`",
+      },
+    },
+    agentic_risk_findings: [
+      {
+        category_id: "ASI04",
+        category_label: "Agentic Dependency and Integration Trust",
+        risk_bucket: "permission_boundary",
+        status: "concern",
+        severity: "medium",
+        confidence: "medium",
+        evidence: {
+          path: "SKILL.md",
+          snippet: "Install: `npm install -g demo-cli`",
+          explanation: "Fixture evidence for CLI install false-positive clustering.",
+        },
+        user_impact: "Users may be warned about an expected CLI dependency.",
+        recommendation: "Treat purpose-aligned CLI installs as notes when disclosed.",
+      },
+    ],
+    risk_summary: {
+      abnormal_behavior_control: {
+        status: "none",
+        highest_severity: "none",
+        summary: "No concern.",
+      },
+      permission_boundary: {
+        status: "concern",
+        highest_severity: "medium",
+        summary: "CLI install concern.",
+      },
+      sensitive_data_protection: {
+        status: "none",
+        highest_severity: "none",
+        summary: "No concern.",
+      },
+    },
+    user_guidance: "Fixture guidance.",
+  });
+}
+
 describe("ClawScan SkillTester eval harness", () => {
   it("normalizes SkillTester reference labels and scores", () => {
     expect(
@@ -240,6 +290,7 @@ describe("ClawScan SkillTester eval harness", () => {
         cacheDir: "unused",
         model: "test-model",
         reasoningEffort: "xhigh",
+        serviceTier: "priority",
         useCache: false,
         mock: false,
         writeReports: false,
@@ -258,6 +309,7 @@ describe("ClawScan SkillTester eval harness", () => {
     expect(report).toMatchObject({
       model: "test-model",
       reasoningEffort: "xhigh",
+      serviceTier: "priority",
     });
     expect(report.prompts.old.metrics.falsePositivesOnBenign).toBe(1);
     expect(report.prompts.old.metrics.riskyReferenceDetected).toBe(0);
@@ -265,6 +317,62 @@ describe("ClawScan SkillTester eval harness", () => {
     expect(report.prompts.new.metrics.riskyReferenceDetected).toBe(1);
     expect(report.prompts.new.metrics.evidenceQuality.evidenceBackedFindings).toBe(1);
     expect(JSON.stringify(report)).not.toContain(["supply", "chain"].join("_"));
+  });
+
+  it("runs rows with bounded concurrency and clusters false-positive themes", async () => {
+    const rows = [
+      makeRow({ slug: "cli-demo", securityLevel: "High" }),
+      makeRow({ slug: "safe-a", securityLevel: "High" }),
+      makeRow({ slug: "safe-b", securityLevel: "High" }),
+    ];
+    const activeBySlug = new Map<string, number>();
+    let maxActiveRows = 0;
+    const runner = async (request: PromptRunRequest): Promise<PromptRunResult> => {
+      const slug = request.row.resolved.slug ?? "unknown";
+      activeBySlug.set(slug, (activeBySlug.get(slug) ?? 0) + 1);
+      maxActiveRows = Math.max(maxActiveRows, activeBySlug.size);
+      await new Promise((resolve) => setTimeout(resolve, 10));
+      activeBySlug.set(slug, (activeBySlug.get(slug) ?? 1) - 1);
+      if (activeBySlug.get(slug) === 0) activeBySlug.delete(slug);
+
+      return {
+        raw:
+          request.kind === "new" && slug === "cli-demo"
+            ? cliFalsePositiveResponse()
+            : request.kind === "new"
+              ? asiResponse("benign")
+              : legacyResponse("benign"),
+        cache: "disabled",
+      };
+    };
+
+    const report = await runComparison(
+      {
+        corpusFile: "fixture.jsonl",
+        outputDir: "unused",
+        cacheDir: "unused",
+        model: "test-model",
+        reasoningEffort: "xhigh",
+        concurrency: 2,
+        useCache: false,
+        mock: false,
+        writeReports: false,
+        rows,
+      },
+      runner,
+    );
+
+    expect(report.concurrency).toBe(2);
+    expect(maxActiveRows).toBeGreaterThan(1);
+    expect(maxActiveRows).toBeLessThanOrEqual(2);
+    expect(report.prompts.new.metrics.falsePositivesOnBenign).toBe(1);
+    expect(report.falsePositiveAnalysis.new.themes.map((theme) => theme.id)).toContain(
+      "cli_install_or_execution_surface",
+    );
+    expect(report.falsePositiveAnalysis.new.suggestedFewShotCandidates[0]).toMatchObject({
+      rowId: "acme/cli-demo@1.0.0",
+      referenceVerdict: "benign",
+    });
   });
 
   it("selects a specific corpus row by stable target aliases", () => {
@@ -282,5 +390,52 @@ describe("ClawScan SkillTester eval harness", () => {
     expect(() => selectCorpusRowsByTargets(rows, ["missing-demo"])).toThrow(
       "No corpus row matched",
     );
+  });
+
+  it("can restrict comparisons to SkillTester risky reference rows", async () => {
+    const rows = [
+      makeRow({ slug: "benign-demo", securityLevel: "High" }),
+      makeRow({ slug: "review-demo", securityLevel: "Needs review" }),
+      makeRow({ slug: "risky-demo", securityLevel: "Dangerous" }),
+      makeRow({ slug: "unknown-demo" }),
+    ];
+    expect(selectCorpusRowsBySkillTesterRisk(rows, true).map((row) => row.resolved.slug)).toEqual([
+      "review-demo",
+      "risky-demo",
+    ]);
+
+    const seenSlugs: string[] = [];
+    const runner = async (request: PromptRunRequest): Promise<PromptRunResult> => {
+      seenSlugs.push(`${request.kind}:${request.row.resolved.slug}`);
+      return {
+        raw: request.kind === "new" ? asiResponse("suspicious") : legacyResponse("suspicious"),
+        cache: "disabled",
+      };
+    };
+
+    const report = await runComparison(
+      {
+        corpusFile: "fixture.jsonl",
+        outputDir: "unused",
+        cacheDir: "unused",
+        model: "test-model",
+        reasoningEffort: "xhigh",
+        skilltesterRiskyOnly: true,
+        limit: 1,
+        useCache: false,
+        mock: false,
+        writeReports: false,
+        rows,
+      },
+      runner,
+    );
+
+    expect(report.counts.evaluatedRows).toBe(1);
+    expect(report.rows[0]).toMatchObject({
+      id: "acme/review-demo@1.0.0",
+      reference: { verdict: "suspicious" },
+      new: { verdict: "suspicious" },
+    });
+    expect(new Set(seenSlugs)).toEqual(new Set(["old:review-demo", "new:review-demo"]));
   });
 });
