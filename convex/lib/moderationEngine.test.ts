@@ -286,7 +286,9 @@ describe("moderationEngine", () => {
       summary: "Manage tasks via the Todoist API",
       frontmatter: {},
       metadata: {
-        envVars: [{ name: "TODOIST_PROJECT_ID", required: false }],
+        openclaw: {
+          envVars: [{ name: "TODOIST_PROJECT_ID", required: false }],
+        },
       },
       files: [{ path: "index.ts", size: 128 }],
       fileContents: [

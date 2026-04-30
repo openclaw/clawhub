@@ -372,6 +372,23 @@ function addDeclaredEnvNamesFromList(names: Set<string>, value: unknown) {
   }
 }
 
+function addDeclaredEnvNamesFromRecord(names: Set<string>, record: Record<string, unknown>) {
+  const requires =
+    record.requires && typeof record.requires === "object" && !Array.isArray(record.requires)
+      ? (record.requires as Record<string, unknown>)
+      : undefined;
+
+  addDeclaredEnvName(names, record.primaryEnv);
+  addDeclaredEnvNamesFromList(names, record.envVars);
+  addDeclaredEnvNamesFromList(names, record.env);
+  addDeclaredEnvNamesFromList(names, requires?.env);
+}
+
+function addDeclaredEnvNamesFromManifestBlock(names: Set<string>, value: unknown) {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return;
+  addDeclaredEnvNamesFromRecord(names, value as Record<string, unknown>);
+}
+
 function collectDeclaredEnvNames(input: {
   frontmatter: Record<string, unknown>;
   metadata?: unknown;
@@ -382,15 +399,18 @@ function collectDeclaredEnvNames(input: {
   for (const source of sources) {
     if (!source || typeof source !== "object" || Array.isArray(source)) continue;
     const record = source as Record<string, unknown>;
-    const requires =
-      record.requires && typeof record.requires === "object" && !Array.isArray(record.requires)
-        ? (record.requires as Record<string, unknown>)
-        : undefined;
 
-    addDeclaredEnvName(names, record.primaryEnv);
-    addDeclaredEnvNamesFromList(names, record.envVars);
-    addDeclaredEnvNamesFromList(names, record.env);
-    addDeclaredEnvNamesFromList(names, requires?.env);
+    addDeclaredEnvNamesFromRecord(names, record);
+    addDeclaredEnvNamesFromManifestBlock(names, record.openclaw);
+    addDeclaredEnvNamesFromManifestBlock(names, record.clawdis);
+    addDeclaredEnvNamesFromManifestBlock(names, record.clawdbot);
+
+    if (record.metadata && typeof record.metadata === "object" && !Array.isArray(record.metadata)) {
+      const metadata = record.metadata as Record<string, unknown>;
+      addDeclaredEnvNamesFromManifestBlock(names, metadata.openclaw);
+      addDeclaredEnvNamesFromManifestBlock(names, metadata.clawdis);
+      addDeclaredEnvNamesFromManifestBlock(names, metadata.clawdbot);
+    }
   }
 
   return names;
