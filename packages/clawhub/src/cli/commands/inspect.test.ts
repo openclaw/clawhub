@@ -132,6 +132,80 @@ describe("cmdInspect", () => {
     expect(mockLog).toHaveBeenCalledWith("Model: gpt-5.2");
   });
 
+  it("prints skill moderation status without requiring a version fetch", async () => {
+    httpMocks.apiRequest.mockResolvedValueOnce({
+      skill: {
+        slug: "demo",
+        displayName: "Demo",
+        summary: null,
+        tags: { latest: "2.0.0" },
+        stats: {},
+        createdAt: 1,
+        updatedAt: 2,
+      },
+      latestVersion: { version: "2.0.0", createdAt: 3, changelog: "init", license: "MIT-0" },
+      owner: null,
+      moderation: {
+        isSuspicious: true,
+        isMalwareBlocked: false,
+        verdict: "suspicious",
+        reasonCodes: ["network-send", "credential-pattern"],
+        updatedAt: 1_700_000_000_000,
+        engineVersion: "scanner-v2",
+        summary: "Found credential-like configuration and outbound network behavior.",
+      },
+    });
+
+    await cmdInspect(makeGlobalOpts(), "demo");
+
+    expect(httpMocks.apiRequest).toHaveBeenCalledTimes(1);
+    expect(mockLog).toHaveBeenCalledWith("Moderation: SUSPICIOUS");
+    expect(mockLog).toHaveBeenCalledWith("Reasons: network-send, credential-pattern");
+    expect(mockLog).toHaveBeenCalledWith("Moderation Updated: 2023-11-14T22:13:20.000Z");
+    expect(mockLog).toHaveBeenCalledWith("Moderation Engine: scanner-v2");
+    expect(mockLog).toHaveBeenCalledWith(
+      "Moderation Summary: Found credential-like configuration and outbound network behavior.",
+    );
+  });
+
+  it("includes moderation metadata in inspect JSON output", async () => {
+    httpMocks.apiRequest.mockResolvedValueOnce({
+      skill: {
+        slug: "demo",
+        displayName: "Demo",
+        summary: null,
+        tags: {},
+        stats: {},
+        createdAt: 1,
+        updatedAt: 2,
+      },
+      latestVersion: null,
+      owner: null,
+      moderation: {
+        isSuspicious: false,
+        isMalwareBlocked: false,
+        verdict: "clean",
+        reasonCodes: [],
+        updatedAt: null,
+        engineVersion: null,
+        summary: null,
+      },
+    });
+
+    await cmdInspect(makeGlobalOpts(), "demo", { json: true });
+
+    const output = JSON.parse(String(mockLog.mock.calls[0]?.[0]));
+    expect(output.moderation).toEqual({
+      isSuspicious: false,
+      isMalwareBlocked: false,
+      verdict: "clean",
+      reasonCodes: [],
+      updatedAt: null,
+      engineVersion: null,
+      summary: null,
+    });
+  });
+
   it("rejects when both version and tag are provided", async () => {
     await expect(
       cmdInspect(makeGlobalOpts(), "demo", { version: "1.0.0", tag: "latest" }),

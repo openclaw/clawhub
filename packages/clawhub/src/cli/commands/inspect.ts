@@ -36,6 +36,16 @@ type SecurityStatus = {
   model: string | null;
 };
 
+type ModerationStatus = {
+  isSuspicious: boolean;
+  isMalwareBlocked: boolean;
+  verdict?: "clean" | "suspicious" | "malicious";
+  reasonCodes?: string[];
+  updatedAt?: number | null;
+  engineVersion?: string | null;
+  summary?: string | null;
+};
+
 export async function cmdInspect(opts: GlobalOpts, slug: string, options: InspectOptions = {}) {
   const trimmed = slug.trim();
   if (!trimmed) fail("Slug required");
@@ -121,6 +131,7 @@ export async function cmdInspect(opts: GlobalOpts, slug: string, options: Inspec
       skill: skillResult.skill,
       latestVersion: skillResult.latestVersion,
       owner: skillResult.owner,
+      moderation: skillResult.moderation ?? null,
       version: versionResult?.version ?? null,
       versions: versionsList?.items ?? null,
       file: options.file ? { path: options.file, content: fileContent } : null,
@@ -140,6 +151,7 @@ export async function cmdInspect(opts: GlobalOpts, slug: string, options: Inspec
           (versionResult?.version as { license?: string | null } | undefined)?.license ?? null,
         owner: skillResult.owner,
       });
+      printModerationSummary(skillResult.moderation ?? null);
     }
 
     if (shouldPrintMeta && versionResult?.version) {
@@ -234,6 +246,60 @@ function printVersionSummary(version: unknown) {
   if (typeof entry.changelog === "string" && entry.changelog.trim()) {
     console.log(`Changelog: ${truncate(entry.changelog, 120)}`);
   }
+}
+
+function printModerationSummary(moderation: unknown) {
+  const status = normalizeModeration(moderation);
+  if (!status) return;
+  const label = status.isMalwareBlocked
+    ? "MALICIOUS"
+    : status.isSuspicious
+      ? "SUSPICIOUS"
+      : (status.verdict ?? "clean").toUpperCase();
+  console.log(`Moderation: ${label}`);
+  if (status.reasonCodes?.length) {
+    console.log(`Reasons: ${status.reasonCodes.join(", ")}`);
+  }
+  if (typeof status.updatedAt === "number") {
+    console.log(`Moderation Updated: ${formatTimestamp(status.updatedAt)}`);
+  }
+  if (status.engineVersion) {
+    console.log(`Moderation Engine: ${status.engineVersion}`);
+  }
+  if (status.summary) {
+    console.log(`Moderation Summary: ${truncate(status.summary, 160)}`);
+  }
+}
+
+function normalizeModeration(moderation: unknown): ModerationStatus | null {
+  if (!moderation || typeof moderation !== "object") return null;
+  const value = moderation as {
+    isSuspicious?: unknown;
+    isMalwareBlocked?: unknown;
+    verdict?: unknown;
+    reasonCodes?: unknown;
+    updatedAt?: unknown;
+    engineVersion?: unknown;
+    summary?: unknown;
+  };
+  if (typeof value.isSuspicious !== "boolean") return null;
+  if (typeof value.isMalwareBlocked !== "boolean") return null;
+  const verdict =
+    value.verdict === "clean" || value.verdict === "suspicious" || value.verdict === "malicious"
+      ? value.verdict
+      : undefined;
+  const reasonCodes = Array.isArray(value.reasonCodes)
+    ? value.reasonCodes.filter((reason): reason is string => typeof reason === "string")
+    : undefined;
+  return {
+    isSuspicious: value.isSuspicious,
+    isMalwareBlocked: value.isMalwareBlocked,
+    verdict,
+    reasonCodes,
+    updatedAt: typeof value.updatedAt === "number" ? value.updatedAt : null,
+    engineVersion: typeof value.engineVersion === "string" ? value.engineVersion : null,
+    summary: typeof value.summary === "string" && value.summary.trim() ? value.summary : null,
+  };
 }
 
 function normalizeTags(tags: unknown): Record<string, string> {
