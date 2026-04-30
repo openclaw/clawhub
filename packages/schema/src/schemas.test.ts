@@ -60,6 +60,22 @@ describe("clawhub-schema", () => {
     expect(payload.source?.repo).toBe("example/demo");
   });
 
+  it("accepts publish payloads with an owner handle", () => {
+    const payload = parseArk(
+      CliPublishRequestSchema,
+      {
+        slug: "demo",
+        displayName: "Demo",
+        ownerHandle: "openclaw",
+        version: "1.0.0",
+        changelog: "",
+        files: [{ path: "SKILL.md", size: 1, storageId: "s", sha256: "x" }],
+      },
+      "Publish payload",
+    );
+    expect(payload.ownerHandle).toBe("openclaw");
+  });
+
   it("parses well-known config", () => {
     expect(
       parseArk(WellKnownConfigSchema, { registry: "https://example.convex.site" }, "WellKnown"),

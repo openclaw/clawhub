@@ -78,6 +78,7 @@ export declare const CliPublishRequestSchema: import("arktype/internal/variants/
         sha256: string;
         contentType?: string | undefined;
     }[];
+    ownerHandle?: string | undefined;
     acceptLicenseTerms?: boolean | undefined;
     tags?: string[] | undefined;
     source?: {
@@ -277,6 +278,17 @@ export declare const ApiV1PublishResponseSchema: import("arktype/internal/varian
 export declare const ApiV1DeleteResponseSchema: import("arktype/internal/variants/object.ts").ObjectType<{
     ok: true;
 }, {}>;
+export declare const ApiV1RescanResponseSchema: import("arktype/internal/variants/object.ts").ObjectType<{
+    ok: true;
+    targetKind: "skill" | "package";
+    name: string;
+    version: string;
+    status: "in_progress" | "completed" | "failed";
+    remainingRequests: number;
+    maxRequests: number;
+    pendingRequestId?: string | undefined;
+}, {}>;
+export type ApiV1RescanResponse = (typeof ApiV1RescanResponseSchema)[inferred];
 export declare const ApiV1SkillRenameResponseSchema: import("arktype/internal/variants/object.ts").ObjectType<{
     ok: true;
     slug: string;

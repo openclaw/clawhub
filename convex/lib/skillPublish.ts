@@ -52,6 +52,7 @@ export type PublishResult = {
 export type PublishVersionArgs = {
   slug: string;
   displayName: string;
+  ownerHandle?: string;
   version: string;
   changelog: string;
   tags?: string[];

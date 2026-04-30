@@ -16,6 +16,7 @@ export async function cmdPublish(
   options: {
     slug?: string;
     name?: string;
+    owner?: string;
     version?: string;
     changelog?: string;
     tags?: string;
@@ -35,6 +36,7 @@ export async function cmdPublish(
 
   const slug = options.slug ?? sanitizeSlug(basename(folder));
   const displayName = options.name ?? titleCase(basename(folder));
+  const ownerHandle = options.owner?.trim().replace(/^@+/, "");
   const version = options.version;
   const changelog = options.changelog ?? "";
   const tagsValue = options.tags ?? "latest";
@@ -69,6 +71,7 @@ export async function cmdPublish(
       JSON.stringify({
         slug,
         displayName,
+        ...(ownerHandle ? { ownerHandle } : {}),
         version,
         changelog,
         acceptLicenseTerms: true,
