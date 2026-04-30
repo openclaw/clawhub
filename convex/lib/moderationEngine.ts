@@ -215,6 +215,73 @@ function findLineAtIndex(content: string, index: number) {
   return { line, text: content.slice(lineStart, lineEnd) };
 }
 
+function findCallEnd(content: string, openParenIndex: number) {
+  let depth = 0;
+  let quote: '"' | "'" | "`" | undefined;
+  let escaped = false;
+
+  for (let i = openParenIndex; i < content.length; i += 1) {
+    const char = content[i];
+    if (quote) {
+      if (escaped) {
+        escaped = false;
+        continue;
+      }
+      if (char === "\\") {
+        escaped = true;
+        continue;
+      }
+      if (char === quote) quote = undefined;
+      continue;
+    }
+
+    if (char === '"' || char === "'" || char === "`") {
+      quote = char;
+      continue;
+    }
+    if (char === "(") depth += 1;
+    if (char === ")") {
+      depth -= 1;
+      if (depth === 0) return i + 1;
+    }
+  }
+
+  return content.length;
+}
+
+function isSafeLiteralExecFileCall(callText: string) {
+  const match = callText.match(/\b(execFile|execFileSync)\s*\(\s*(["'])([^"']+)\2\s*,\s*\[/);
+  if (!match) return false;
+  if (/\bshell\s*:\s*true\b/.test(callText)) return false;
+
+  const executable = match[3]?.trim().toLowerCase();
+  if (!executable) return false;
+  const basename = executable.split(/[\\/]/).at(-1) ?? executable;
+  return !/^(?:sh|bash|zsh|fish|cmd|powershell|pwsh)$/.test(basename);
+}
+
+function findDangerousChildProcessCall(content: string) {
+  if (!/child_process/.test(content)) return null;
+
+  const execPattern = /\b(exec|execSync|spawn|spawnSync|execFile|execFileSync)\s*\(/g;
+  for (const match of content.matchAll(execPattern)) {
+    const callName = match[1];
+    const callIndex = match.index;
+    if (callIndex === undefined || !callName) continue;
+
+    if (callName === "execFile" || callName === "execFileSync") {
+      const openParenIndex = content.indexOf("(", callIndex);
+      const callEnd = findCallEnd(content, openParenIndex);
+      const callText = content.slice(callIndex, callEnd);
+      if (isSafeLiteralExecFileCall(callText)) continue;
+    }
+
+    return findLineAtIndex(content, callIndex);
+  }
+
+  return null;
+}
+
 function normalizeEnvName(value: unknown) {
   if (typeof value !== "string") return undefined;
   const trimmed = value.trim();
@@ -292,17 +359,15 @@ function scanCodeFile(
 ) {
   if (!CODE_EXTENSION.test(path)) return;
 
-  const hasChildProcess = /child_process/.test(content);
-  const execPattern = /\b(exec|execSync|spawn|spawnSync|execFile|execFileSync)\s*\(/;
-  if (hasChildProcess && execPattern.test(content)) {
-    const match = findFirstLine(content, execPattern);
+  const dangerousChildProcessCall = findDangerousChildProcessCall(content);
+  if (dangerousChildProcessCall) {
     addFinding(findings, {
       code: REASON_CODES.DANGEROUS_EXEC,
       severity: "critical",
       file: path,
-      line: match.line,
+      line: dangerousChildProcessCall.line,
       message: "Shell command execution detected (child_process).",
-      evidence: match.text,
+      evidence: dangerousChildProcessCall.text,
     });
   }
 

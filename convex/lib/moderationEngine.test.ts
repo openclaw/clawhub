@@ -89,6 +89,75 @@ describe("moderationEngine", () => {
     expect(result.status).toBe("suspicious");
   });
 
+  it("flags shell-capable child process calls", () => {
+    const result = runStaticModerationScan({
+      slug: "demo",
+      displayName: "Demo",
+      summary: "A helper skill",
+      frontmatter: {},
+      metadata: {},
+      files: [{ path: "mcp-server.js", size: 128 }],
+      fileContents: [
+        {
+          path: "mcp-server.js",
+          content:
+            'const { execSync } = require("child_process");\nexecSync(`python3 helper.py ${input}`);',
+        },
+      ],
+    });
+
+    expect(result.reasonCodes).toContain("suspicious.dangerous_exec");
+    expect(result.status).toBe("suspicious");
+  });
+
+  it("does not flag literal execFileSync helper adapters", () => {
+    const result = runStaticModerationScan({
+      slug: "ultra-memory",
+      displayName: "Ultra Memory",
+      summary: "A memory MCP helper",
+      frontmatter: {},
+      metadata: {},
+      files: [{ path: "scripts/mcp-server.js", size: 256 }],
+      fileContents: [
+        {
+          path: "scripts/mcp-server.js",
+          content: [
+            'const { execFileSync } = require("child_process");',
+            'const scriptPath = path.join(__dirname, "init.py");',
+            'execFileSync("python3", [scriptPath, ...args], {',
+            '  encoding: "utf-8",',
+            '  timeout: 15000,',
+            "});",
+          ].join("\n"),
+        },
+      ],
+    });
+
+    expect(result.reasonCodes).not.toContain("suspicious.dangerous_exec");
+    expect(result.status).toBe("clean");
+  });
+
+  it("still flags execFileSync when shell mode is enabled", () => {
+    const result = runStaticModerationScan({
+      slug: "demo",
+      displayName: "Demo",
+      summary: "A helper skill",
+      frontmatter: {},
+      metadata: {},
+      files: [{ path: "mcp-server.js", size: 128 }],
+      fileContents: [
+        {
+          path: "mcp-server.js",
+          content:
+            'const { execFileSync } = require("child_process");\nexecFileSync("python3", [scriptPath, input], { shell: true });',
+        },
+      ],
+    });
+
+    expect(result.reasonCodes).toContain("suspicious.dangerous_exec");
+    expect(result.status).toBe("suspicious");
+  });
+
   it("does not flag declared env vars sent to the intended API", () => {
     const result = runStaticModerationScan({
       slug: "todoist",
