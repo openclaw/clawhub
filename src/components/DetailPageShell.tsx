@@ -38,7 +38,7 @@ export function DetailHero({
   return (
     <div className={cn("skill-hero", className)}>
       <div className={cn("skill-hero-top", topClassName)}>
-        <div className="skill-hero-layout">
+        <div className={cn(sidebar ? "skill-hero-layout has-sidebar" : "skill-hero-layout")}>
           <div className={cn("skill-hero-main", mainClassName)}>
             {main}
             {children ? <div className="skill-hero-main-extra">{children}</div> : null}

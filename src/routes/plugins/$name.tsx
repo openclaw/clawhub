@@ -354,40 +354,39 @@ function PluginDetailRoute() {
               </div>
             </div>
           }
-          sidebar={
-            <>
-              {latestRelease ? (
-                <DetailSecuritySummary
-                  scannerBasePath={`/plugins/${encodeURIComponent(name)}/security`}
-                  sha256hash={latestRelease.sha256hash ?? null}
-                  vtAnalysis={latestRelease.vtAnalysis ?? null}
-                  llmAnalysis={latestRelease.llmAnalysis ?? null}
-                  staticScan={latestRelease.staticScan ?? null}
-                  rescanState={rescanState ?? null}
-                  onRequestRescan={rescanState ? requestRescan : null}
-                />
-              ) : null}
-              <Card className="skill-install-command-card">
-                <CardHeader>
-                  <CardTitle>Install</CardTitle>
-                </CardHeader>
-                <CardContent>
-                  <div className="skill-install-command-wrap">
-                    <pre className="skill-install-command">
-                      <code>{installSnippet}</code>
-                    </pre>
-                    <InstallCopyButton
-                      text={installSnippet}
-                      ariaLabel="Copy plugin install command"
-                      showLabel={false}
-                      className="skill-install-command-inline-button"
-                    />
-                  </div>
-                </CardContent>
-              </Card>
-            </>
-          }
         >
+          <div className="skill-hero-action-grid">
+            {latestRelease ? (
+              <DetailSecuritySummary
+                scannerBasePath={`/plugins/${encodeURIComponent(name)}/security`}
+                sha256hash={latestRelease.sha256hash ?? null}
+                vtAnalysis={latestRelease.vtAnalysis ?? null}
+                llmAnalysis={latestRelease.llmAnalysis ?? null}
+                staticScan={latestRelease.staticScan ?? null}
+                rescanState={rescanState ?? null}
+                onRequestRescan={rescanState ? requestRescan : null}
+              />
+            ) : null}
+            <Card className="skill-install-command-card">
+              <CardHeader>
+                <CardTitle>Install</CardTitle>
+              </CardHeader>
+              <CardContent>
+                <div className="skill-install-command-wrap">
+                  <pre className="skill-install-command">
+                    <code>{installSnippet}</code>
+                  </pre>
+                  <InstallCopyButton
+                    text={installSnippet}
+                    ariaLabel="Copy plugin install command"
+                    showLabel={false}
+                    className="skill-install-command-inline-button"
+                  />
+                </div>
+              </CardContent>
+            </Card>
+          </div>
+
           {readme ? (
             <Card className="tab-card">
               <CardHeader>

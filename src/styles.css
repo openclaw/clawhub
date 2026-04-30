@@ -3389,9 +3389,14 @@ code {
 
 .skill-hero-layout {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(300px, 360px);
+  grid-template-columns: minmax(0, 1fr);
   align-items: start;
   gap: 24px;
+  min-width: 0;
+}
+
+.skill-hero-layout.has-sidebar {
+  grid-template-columns: minmax(0, 1fr) minmax(300px, 360px);
 }
 
 .skill-hero-main {
@@ -3402,7 +3407,7 @@ code {
 
 .skill-hero-main-extra {
   display: grid;
-  gap: 32px;
+  gap: 24px;
   min-width: 0;
 }
 
@@ -3473,6 +3478,18 @@ code {
 .skill-hero-content {
   display: grid;
   gap: 16px;
+}
+
+.skill-hero-action-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(360px, 100%), 1fr));
+  gap: 16px;
+  align-items: stretch;
+  min-width: 0;
+}
+
+.skill-hero-action-grid > * {
+  min-width: 0;
 }
 
 .bundle-card {
@@ -3679,7 +3696,10 @@ code {
   padding: 20px;
   border-radius: var(--radius-md);
   border: 1px solid var(--line);
-  background: var(--surface);
+  background:
+    linear-gradient(180deg, color-mix(in srgb, var(--surface) 96%, white), var(--surface)),
+    var(--surface);
+  box-shadow: var(--shadow-card);
   min-width: 0;
 }
 
@@ -3900,7 +3920,10 @@ code {
   padding: 20px;
   border-radius: var(--radius-md);
   border: 1px solid var(--line);
-  background: var(--surface);
+  background:
+    linear-gradient(180deg, color-mix(in srgb, var(--surface) 96%, white), var(--surface)),
+    var(--surface);
+  box-shadow: var(--shadow-card);
 }
 
 .skill-install-command-header {
@@ -4014,14 +4037,8 @@ code {
 }
 
 @media (max-width: 1024px) {
-  .skill-hero-layout {
+  .skill-hero-layout.has-sidebar {
     grid-template-columns: 1fr;
-  }
-}
-
-@media (min-width: 1025px) {
-  .skill-detail-stack > .detail-layout {
-    width: calc(100% - 384px);
   }
 }
 
@@ -4941,7 +4958,7 @@ code {
     justify-content: flex-start;
   }
 
-  .skill-hero-layout {
+  .skill-hero-layout.has-sidebar {
     grid-template-columns: 1fr;
   }
 

@@ -67,7 +67,7 @@ type SkillHeaderProps = {
   cliHelp: string | undefined;
   clawdis: ClawdisSkillMetadata | undefined;
   osLabels: string[];
-  sidebarContent?: ReactNode;
+  priorityContent?: ReactNode;
   settingsHref?: string | null;
   children?: ReactNode;
 };
@@ -101,7 +101,7 @@ export function SkillHeader({
   cliHelp,
   clawdis,
   osLabels,
-  sidebarContent,
+  priorityContent,
   settingsHref,
   children,
 }: SkillHeaderProps) {
@@ -171,8 +171,23 @@ export function SkillHeader({
                   <span className="plugin-version-badge">v{latestVersion.version}</span>
                 ) : null}
                 {nixPlugin ? <Badge variant="accent">Plugin bundle (nix)</Badge> : null}
-                {canManage || isStaff || settingsHref ? (
+                {isAuthenticated || canManage || isStaff || settingsHref ? (
                   <div className="skill-title-actions">
+                    {isAuthenticated ? (
+                      <>
+                        <button
+                          className={`star-toggle${isStarred ? " is-active" : ""}`}
+                          type="button"
+                          onClick={onToggleStar}
+                          aria-label={isStarred ? "Unstar skill" : "Star skill"}
+                        >
+                          <Star size={16} aria-hidden="true" />
+                        </button>
+                        <Button variant="ghost" size="sm" type="button" onClick={onOpenReport}>
+                          Report
+                        </Button>
+                      </>
+                    ) : null}
                     {isStaff ? (
                       <Button asChild variant="outline" size="sm">
                         <Link to="/management" search={{ skill: skill.slug, plugin: undefined }}>
@@ -293,34 +308,18 @@ export function SkillHeader({
             </div>
           </>
         }
-        sidebar={
-          <>
-            {isAuthenticated ? (
-              <div className="skill-actions">
-                <button
-                  className={`star-toggle${isStarred ? " is-active" : ""}`}
-                  type="button"
-                  onClick={onToggleStar}
-                  aria-label={isStarred ? "Unstar skill" : "Star skill"}
-                >
-                  <Star size={16} aria-hidden="true" />
-                </button>
-                <Button variant="ghost" size="sm" type="button" onClick={onOpenReport}>
-                  Report
-                </Button>
-              </div>
-            ) : null}
-            {sidebarContent}
-            <SkillCommandLineCard
-              slug={skill.slug}
-              displayName={skill.displayName}
-              ownerHandle={ownerHandle}
-              ownerId={installOwnerId}
-              clawdis={clawdis}
-            />
-          </>
-        }
       >
+        <div className="skill-hero-action-grid">
+          {priorityContent}
+          <SkillCommandLineCard
+            slug={skill.slug}
+            displayName={skill.displayName}
+            ownerHandle={ownerHandle}
+            ownerId={installOwnerId}
+            clawdis={clawdis}
+          />
+        </div>
+
         {children}
 
         {hasPluginBundle ? (

@@ -238,6 +238,15 @@ describe("SkillDetailPage", () => {
     expect(screen.getByRole("link", { name: /Static analysis.*Pending/i })).toBeTruthy();
     expect(screen.queryByText(/Like a lobster shell, security has layers/i)).toBeNull();
     expect(screen.queryByRole("button", { name: "Rescan" })).toBeNull();
+
+    const installHeading = screen.getAllByRole("heading", { name: "Install" })[0];
+    const filesTab = screen.getByRole("button", { name: "Files" });
+    expect(
+      installHeading.compareDocumentPosition(filesTab) & Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
+    expect(
+      securityHeading.compareDocumentPosition(filesTab) & Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
   });
 
   it("applies staff-cleared moderation overrides to the public security summary", async () => {

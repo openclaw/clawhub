@@ -217,4 +217,18 @@ describe("restored UI design contract", () => {
     expect(darkRatio).toBeGreaterThanOrEqual(7);
     expect(lightRatio).toBeGreaterThanOrEqual(7);
   });
+
+  it("keeps detail heroes full width unless an explicit sidebar is present", () => {
+    const shellSource = read("src/components/DetailPageShell.tsx");
+    const css = styles();
+
+    expect(shellSource).toContain('"skill-hero-layout has-sidebar"');
+    expect(cssRule(css, ".skill-hero-layout")).toContain("grid-template-columns: minmax(0, 1fr)");
+    expect(cssRule(css, ".skill-hero-layout.has-sidebar")).toContain(
+      "grid-template-columns: minmax(0, 1fr) minmax(300px, 360px)",
+    );
+    expect(cssRule(css, ".skill-hero-action-grid")).toContain(
+      "grid-template-columns: repeat(auto-fit, minmax(min(360px, 100%), 1fr))",
+    );
+  });
 });

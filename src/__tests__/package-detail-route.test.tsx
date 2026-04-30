@@ -228,6 +228,18 @@ describe("plugin detail route", () => {
     expect(
       screen.getByRole("link", { name: /Static analysis.*Benign/i }).getAttribute("href"),
     ).toBe("/plugins/demo-plugin/security/static-analysis");
+
+    const securityHeading = screen.getByText("Security Scans");
+    const installHeading = screen.getByRole("heading", { name: "Install" });
+    const capabilitiesHeading = screen.getByRole("heading", { name: "Capabilities" });
+    expect(
+      securityHeading.compareDocumentPosition(capabilitiesHeading) &
+        Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
+    expect(
+      installHeading.compareDocumentPosition(capabilitiesHeading) &
+        Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
   });
 
   it("shows owner-only plugin rescan state in the security summary", async () => {

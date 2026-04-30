@@ -440,7 +440,7 @@ export function SkillDetailPage({
           cliHelp={cliHelp}
           clawdis={clawdis}
           osLabels={osLabels}
-          sidebarContent={securitySummary}
+          priorityContent={securitySummary}
           settingsHref={settingsHref}
         >
           {mode === "detail" ? (
