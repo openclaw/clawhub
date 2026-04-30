@@ -83,10 +83,10 @@ type SnapshotWriters = {
 };
 
 const DEFAULT_PAGE_SIZE = 50;
-const DEFAULT_BATCH_PAGES = 10;
+const DEFAULT_BATCH_PAGES = 5;
 const DEFAULT_CONCURRENCY = 6;
 const DEFAULT_SHARDS = 12;
-const DEFAULT_MAX_CONVEX_ATTEMPTS = 4;
+const DEFAULT_MAX_CONVEX_ATTEMPTS = 6;
 const DEFAULT_OUT_DIR = ".data/security-dataset/snapshots";
 const CONVEX_RUN_MAX_BUFFER_BYTES = 128 * 1024 * 1024;
 const SOURCE_KINDS: SourceKind[] = ["skill", "package"];
