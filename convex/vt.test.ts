@@ -1,7 +1,12 @@
 /* @vitest-environment node */
 
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { __test, pollPackageReleaseScanResults, scanPackageReleaseWithVirusTotal } from "./vt";
+import {
+  __test,
+  fetchResults,
+  pollPackageReleaseScanResults,
+  scanPackageReleaseWithVirusTotal,
+} from "./vt";
 
 type WrappedHandler<TArgs, TResult> = {
   _handler: (ctx: unknown, args: TArgs) => Promise<TResult>;
@@ -18,6 +23,13 @@ const pollPackageReleaseScanResultsHandler = (
   pollPackageReleaseScanResults as unknown as WrappedHandler<
     { releaseId: string; attempt?: number },
     void
+  >
+)._handler;
+
+const fetchResultsHandler = (
+  fetchResults as unknown as WrappedHandler<
+    { sha256hash?: string },
+    { status: string; message?: string; url?: string }
   >
 )._handler;
 
@@ -150,6 +162,48 @@ describe("vt AV engine fallback verdicts", () => {
         undetected: 40,
       }),
     ).toBeNull();
+  });
+});
+
+describe("vt result lookup", () => {
+  it("rejects non-SHA-256 lookup input before calling VirusTotal", async () => {
+    process.env.VT_API_KEY = "test-key";
+    const fetchMock = vi.fn();
+    vi.stubGlobal("fetch", fetchMock);
+
+    const result = await fetchResultsHandler({} as never, { sha256hash: "../domains/google.com" });
+
+    expect(result).toEqual({ status: "error", message: "Invalid SHA-256 hash" });
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it("looks up only the intended VirusTotal file endpoint for valid hashes", async () => {
+    process.env.VT_API_KEY = "test-key";
+    const hash = "a".repeat(64);
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        data: {
+          attributes: {
+            last_analysis_stats: {
+              malicious: 0,
+              suspicious: 0,
+              harmless: 1,
+              undetected: 20,
+            },
+          },
+        },
+      }),
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    const result = await fetchResultsHandler({} as never, { sha256hash: hash });
+
+    expect(result.status).toBe("clean");
+    expect(fetchMock).toHaveBeenCalledWith(`https://www.virustotal.com/api/v3/files/${hash}`, {
+      method: "GET",
+      headers: { "x-apikey": "test-key" },
+    });
   });
 });
 

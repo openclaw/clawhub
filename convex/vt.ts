@@ -2,8 +2,10 @@ import { v } from "convex/values";
 import { internal } from "./_generated/api";
 import type { Doc, Id } from "./_generated/dataModel";
 import type { ActionCtx } from "./_generated/server";
-import { action, internalAction, internalMutation } from "./functions";
+import { internalAction, internalMutation } from "./functions";
 import { buildDeterministicPackageZip, buildDeterministicZip } from "./lib/skillZip";
+
+const SHA256_HASH_PATTERN = /^[a-f0-9]{64}$/i;
 
 const internalRefs = internal as unknown as {
   packages: {
@@ -381,13 +383,16 @@ async function activateSkillWhenVtUnavailable(ctx: ActionCtx, skillId: Id<"skill
   await ctx.runMutation(internal.skills.setSkillModerationStatusActiveInternal, { skillId });
 }
 
-export const fetchResults = action({
+export const fetchResults = internalAction({
   args: {
     sha256hash: v.optional(v.string()),
   },
   handler: async (_ctx, args) => {
     if (!args.sha256hash) {
       return { status: "not_found" };
+    }
+    if (!SHA256_HASH_PATTERN.test(args.sha256hash)) {
+      return { status: "error", message: "Invalid SHA-256 hash" };
     }
 
     const apiKey = process.env.VT_API_KEY;
