@@ -239,7 +239,7 @@ Query params:
 Returns version metadata + files list.
 
 - `version.security` includes normalized scan verification status and scanner details
-  (VirusTotal + LLM), when available.
+  (VirusTotal, TrentClaw, ClawScan/LLM, and static analysis), when available.
 
 ### `GET /api/v1/skills/{slug}/scan`
 
@@ -253,7 +253,8 @@ Query params:
 Notes:
 
 - If neither `version` nor `tag` is provided, uses the latest version.
-- Includes normalized verification status plus scanner-specific details.
+- Includes normalized verification status plus scanner-specific details, including TrentClaw
+  verdicts when they have been fetched for the skill hash.
 - `security.capabilityTags` includes deterministic capability/risk labels such as
   `crypto`, `requires-wallet`, `can-make-purchases`, `can-sign-transactions`,
   `requires-oauth-token`, and `posts-externally` when detected.

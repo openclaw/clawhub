@@ -10,6 +10,7 @@ import type {
   LlmEvalDimension,
   LlmRiskSummary,
 } from "../lib/securityPrompt";
+import { normalizeTrentSkillVerdictForSecurity } from "../lib/trent";
 import { publishVersionForUser } from "../skills";
 import {
   MAX_RAW_FILE_BYTES,
@@ -91,6 +92,7 @@ type PublicSkillVersionResponse = {
   softDeletedAt?: number;
   sha256hash?: string;
   vtAnalysis?: Doc<"skillVersions">["vtAnalysis"];
+  trentAnalysis?: Doc<"skillVersions">["trentAnalysis"];
   llmAnalysis?: Doc<"skillVersions">["llmAnalysis"];
   staticScan?: PublicSkillVersionStaticScan;
   capabilityTags?: string[];
@@ -220,6 +222,12 @@ type SkillSecuritySnapshot = {
       source: string | null;
       checkedAt: number | null;
     } | null;
+    trent: {
+      verdict: "benign" | "vulnerable" | "malicious" | "unknown";
+      normalizedStatus: NormalizedSecurityStatus;
+      skillSha256: string;
+      checkedAt: number | null;
+    } | null;
     llm: {
       status: string;
       verdict: string | null;
@@ -268,6 +276,7 @@ function normalizeSecurityStatus(value: string | null | undefined): NormalizedSe
     case "clean":
       return "clean";
     case "suspicious":
+    case "vulnerable":
       return "suspicious";
     case "malicious":
       return "malicious";
@@ -305,37 +314,51 @@ function hasLlmDimensionWarnings(dimensions: LlmEvalDimension[] | undefined) {
 function buildSkillSecuritySnapshot(
   version: Pick<
     PublicSkillVersionResponse,
-    "sha256hash" | "vtAnalysis" | "llmAnalysis" | "staticScan" | "capabilityTags"
+    | "sha256hash"
+    | "vtAnalysis"
+    | "trentAnalysis"
+    | "llmAnalysis"
+    | "staticScan"
+    | "capabilityTags"
   >,
 ): SkillSecuritySnapshot | null {
   const capabilityTags = version.capabilityTags ?? [];
   const sha256hash = version.sha256hash ?? null;
   const vt = version.vtAnalysis;
+  const trent = version.trentAnalysis;
   const llm = version.llmAnalysis;
   const staticScan = version.staticScan;
 
-  if (!sha256hash && !vt && !llm && !staticScan && capabilityTags.length === 0) return null;
+  if (!sha256hash && !vt && !trent && !llm && !staticScan && capabilityTags.length === 0) {
+    return null;
+  }
 
   const staticStatus = staticScan ? normalizeSecurityStatus(staticScan.status) : null;
   const vtStatus = vt ? normalizeSecurityStatus(vt.verdict ?? vt.status) : null;
+  const trentStatus = trent ? normalizeTrentSkillVerdictForSecurity(trent.verdict) : null;
   const llmStatus = llm ? normalizeSecurityStatus(llm.verdict ?? llm.status) : null;
 
   const statuses: NormalizedSecurityStatus[] = [];
   if (staticStatus) statuses.push(staticStatus);
   if (vtStatus) statuses.push(vtStatus);
+  if (trentStatus) statuses.push(trentStatus);
   if (llmStatus) statuses.push(llmStatus);
   if (statuses.length === 0 && sha256hash) statuses.push("pending");
   const status = mergeSecurityStatuses(statuses);
   const hasScanResult =
     isDefinitiveSecurityStatus(staticStatus) ||
     isDefinitiveSecurityStatus(vtStatus) ||
+    isDefinitiveSecurityStatus(trentStatus) ||
     isDefinitiveSecurityStatus(llmStatus);
   const hasWarnings =
     status === "suspicious" || status === "malicious" || hasLlmDimensionWarnings(llm?.dimensions);
 
-  const checkedAtCandidates = [staticScan?.checkedAt, vt?.checkedAt, llm?.checkedAt].filter(
-    (value): value is number => typeof value === "number",
-  );
+  const checkedAtCandidates = [
+    staticScan?.checkedAt,
+    vt?.checkedAt,
+    trent?.checkedAt,
+    llm?.checkedAt,
+  ].filter((value): value is number => typeof value === "number");
   const checkedAt = checkedAtCandidates.length > 0 ? Math.max(...checkedAtCandidates) : null;
 
   return {
@@ -366,6 +389,14 @@ function buildSkillSecuritySnapshot(
             analysis: vt.analysis ?? null,
             source: vt.source ?? null,
             checkedAt: vt.checkedAt ?? null,
+          }
+        : null,
+      trent: trent
+        ? {
+            verdict: trent.verdict,
+            normalizedStatus: trentStatus ?? "pending",
+            skillSha256: trent.skillSha256,
+            checkedAt: trent.checkedAt ?? null,
           }
         : null,
       llm: llm

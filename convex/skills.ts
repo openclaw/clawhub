@@ -161,6 +161,17 @@ const vtAnalysisValidator = v.object({
   checkedAt: v.number(),
 });
 
+const trentAnalysisValidator = v.object({
+  skillSha256: v.string(),
+  verdict: v.union(
+    v.literal("benign"),
+    v.literal("vulnerable"),
+    v.literal("malicious"),
+    v.literal("unknown"),
+  ),
+  checkedAt: v.number(),
+});
+
 const depRegistryStatusValidator = v.union(
   v.literal("clean"),
   v.literal("suspicious"),
@@ -1162,6 +1173,7 @@ type PublicSkillVersion = {
   capabilityTags?: string[];
   sha256hash?: string;
   vtAnalysis?: Doc<"skillVersions">["vtAnalysis"];
+  trentAnalysis?: Doc<"skillVersions">["trentAnalysis"];
   llmAnalysis?: Doc<"skillVersions">["llmAnalysis"];
   staticScan?: {
     status: NonNullable<Doc<"skillVersions">["staticScan"]>["status"];
@@ -1374,6 +1386,7 @@ function toPublicSkillVersion(
     capabilityTags: version.capabilityTags,
     sha256hash: version.sha256hash,
     vtAnalysis: version.vtAnalysis,
+    trentAnalysis: version.trentAnalysis,
     llmAnalysis: version.llmAnalysis,
     staticScan: version.staticScan
       ? {
@@ -4353,6 +4366,9 @@ export const dispatchSkillRescanInternal: ReturnType<typeof internalAction> = in
       await ctx.runAction(internal.vt.scanWithVirusTotal, {
         versionId: args.versionId,
       });
+      await ctx.runAction(internal.trent.scanSkillVersionWithTrentClaw, {
+        versionId: args.versionId,
+      });
       await ctx.runAction(internal.llmEval.evaluateWithLlm, {
         versionId: args.versionId,
       });
@@ -4876,6 +4892,7 @@ export const updateVersionScanResultsInternal = internalMutation({
     versionId: v.id("skillVersions"),
     sha256hash: v.optional(v.string()),
     vtAnalysis: v.optional(vtAnalysisValidator),
+    trentAnalysis: v.optional(trentAnalysisValidator),
   },
   handler: async (ctx, args) => {
     const version = await ctx.db.get(args.versionId);
@@ -4887,6 +4904,9 @@ export const updateVersionScanResultsInternal = internalMutation({
     }
     if (args.vtAnalysis !== undefined) {
       patch.vtAnalysis = args.vtAnalysis;
+    }
+    if (args.trentAnalysis !== undefined) {
+      patch.trentAnalysis = args.trentAnalysis;
     }
 
     if (Object.keys(patch).length > 0) {

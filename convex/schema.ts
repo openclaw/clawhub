@@ -29,6 +29,17 @@ const vtAnalysisValidator = v.object({
   checkedAt: v.number(),
 });
 
+const trentAnalysisValidator = v.object({
+  skillSha256: v.string(),
+  verdict: v.union(
+    v.literal("benign"),
+    v.literal("vulnerable"),
+    v.literal("malicious"),
+    v.literal("unknown"),
+  ),
+  checkedAt: v.number(),
+});
+
 const depRegistryStatusValidator = v.union(
   v.literal("clean"),
   v.literal("suspicious"),
@@ -500,6 +511,7 @@ const skillVersions = defineTable({
   softDeletedAt: v.optional(v.number()),
   sha256hash: v.optional(v.string()),
   vtAnalysis: v.optional(vtAnalysisValidator),
+  trentAnalysis: v.optional(trentAnalysisValidator),
   llmAnalysis: v.optional(
     v.object({
       status: v.string(),

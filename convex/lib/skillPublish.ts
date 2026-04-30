@@ -329,6 +329,10 @@ export async function publishVersionForUser(
     versionId: publishResult.versionId,
   });
 
+  await ctx.scheduler.runAfter(0, internal.trent.scanSkillVersionWithTrentClaw, {
+    versionId: publishResult.versionId,
+  });
+
   await ctx.scheduler.runAfter(0, internal.llmEval.evaluateWithLlm, {
     versionId: publishResult.versionId,
   });
