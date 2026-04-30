@@ -168,6 +168,82 @@ describe("cmdInspect", () => {
     );
   });
 
+  it("fetches owner moderation diagnostics when authenticated", async () => {
+    authTokenMocks.getOptionalAuthToken.mockResolvedValueOnce("tkn");
+    httpMocks.apiRequest
+      .mockResolvedValueOnce({
+        skill: {
+          slug: "demo",
+          displayName: "Demo",
+          summary: null,
+          tags: { latest: "2.0.0" },
+          stats: {},
+          createdAt: 1,
+          updatedAt: 2,
+        },
+        latestVersion: { version: "2.0.0", createdAt: 3, changelog: "init", license: "MIT-0" },
+        owner: null,
+        moderation: null,
+      })
+      .mockResolvedValueOnce({
+        moderation: {
+          isSuspicious: true,
+          isMalwareBlocked: false,
+          verdict: "suspicious",
+          reasonCodes: ["suspicious.dynamic_code_execution"],
+          updatedAt: 1_700_000_000_000,
+          engineVersion: "scanner-v2",
+          summary: "Detected dynamic code execution.",
+          legacyReason: "quality.low",
+          evidence: [],
+        },
+      });
+
+    await cmdInspect(makeGlobalOpts(), "demo");
+
+    expect(httpMocks.apiRequest).toHaveBeenCalledTimes(2);
+    expect(httpMocks.apiRequest.mock.calls[1]?.[1]).toMatchObject({
+      method: "GET",
+      path: `${ApiRoutes.skills}/${encodeURIComponent("demo")}/moderation`,
+      token: "tkn",
+    });
+    expect(mockLog).toHaveBeenCalledWith("Moderation: SUSPICIOUS");
+    expect(mockLog).toHaveBeenCalledWith("Reasons: suspicious.dynamic_code_execution");
+    expect(mockLog).toHaveBeenCalledWith("Moderation Reason: quality.low");
+    expect(mockLog).toHaveBeenCalledWith(
+      "Visibility Guidance: publish a substantive update that passes quality assessment, then re-run inspect.",
+    );
+  });
+
+  it("prints owner moderation diagnostics when public detail is hidden", async () => {
+    authTokenMocks.getOptionalAuthToken.mockResolvedValueOnce("tkn");
+    httpMocks.apiRequest
+      .mockRejectedValueOnce(new Error("Skill is hidden by quality checks."))
+      .mockResolvedValueOnce({
+        moderation: {
+          isSuspicious: true,
+          isMalwareBlocked: false,
+          verdict: "suspicious",
+          reasonCodes: [],
+          updatedAt: null,
+          engineVersion: null,
+          summary: null,
+          legacyReason: "quality.low",
+          evidence: [],
+        },
+      });
+
+    await cmdInspect(makeGlobalOpts(), "demo");
+
+    expect(httpMocks.apiRequest).toHaveBeenCalledTimes(2);
+    expect(mockLog).toHaveBeenCalledWith("demo is not publicly visible.");
+    expect(mockLog).toHaveBeenCalledWith("Detail: Skill is hidden by quality checks.");
+    expect(mockLog).toHaveBeenCalledWith("Moderation Reason: quality.low");
+    expect(mockLog).toHaveBeenCalledWith(
+      "Visibility Guidance: publish a substantive update that passes quality assessment, then re-run inspect.",
+    );
+  });
+
   it("includes moderation metadata in inspect JSON output", async () => {
     httpMocks.apiRequest.mockResolvedValueOnce({
       skill: {

@@ -3,6 +3,7 @@ import {
   ApiRoutes,
   PLATFORM_SKILL_LICENSE,
   PLATFORM_SKILL_LICENSE_SUMMARY,
+  ApiV1SkillModerationResponseSchema,
   ApiV1SkillResponseSchema,
   ApiV1SkillVersionListResponseSchema,
   ApiV1SkillVersionResponseSchema,
@@ -44,7 +45,12 @@ type ModerationStatus = {
   updatedAt?: number | null;
   engineVersion?: string | null;
   summary?: string | null;
+  legacyReason?: string | null;
 };
+
+type ModerationDiagnostics = {
+  moderation: unknown;
+} | null;
 
 export async function cmdInspect(opts: GlobalOpts, slug: string, options: InspectOptions = {}) {
   const trimmed = slug.trim();
@@ -55,16 +61,39 @@ export async function cmdInspect(opts: GlobalOpts, slug: string, options: Inspec
   const registry = await getRegistry(opts, { cache: true });
   const spinner = createSpinner("Fetching skill");
   try {
-    const skillResult = await apiRequest(
-      registry,
-      { method: "GET", path: `${ApiRoutes.skills}/${encodeURIComponent(trimmed)}`, token },
-      ApiV1SkillResponseSchema,
-    );
+    let skillResult: Awaited<ReturnType<typeof fetchSkillDetail>> | null = null;
+    let moderationDiagnostics: ModerationDiagnostics = null;
+    try {
+      skillResult = await fetchSkillDetail(registry, trimmed, token);
+    } catch (error) {
+      moderationDiagnostics = await fetchModerationDiagnostics(registry, trimmed, token);
+      if (moderationDiagnostics?.moderation) {
+        spinner.stop();
+        const output = {
+          skill: null,
+          latestVersion: null,
+          owner: null,
+          moderation: moderationDiagnostics.moderation,
+          version: null,
+          versions: null,
+          file: null,
+        };
+        if (options.json) {
+          console.log(JSON.stringify(output, null, 2));
+          return;
+        }
+        printHiddenSkillModeration(trimmed, moderationDiagnostics.moderation, formatError(error));
+        return;
+      }
+      throw error;
+    }
 
     if (!skillResult.skill) {
       spinner.fail("Skill not found");
       return;
     }
+
+    moderationDiagnostics = await fetchModerationDiagnostics(registry, trimmed, token);
 
     const skill = skillResult.skill;
     const tags = normalizeTags(skill.tags);
@@ -131,7 +160,7 @@ export async function cmdInspect(opts: GlobalOpts, slug: string, options: Inspec
       skill: skillResult.skill,
       latestVersion: skillResult.latestVersion,
       owner: skillResult.owner,
-      moderation: skillResult.moderation ?? null,
+      moderation: moderationDiagnostics?.moderation ?? skillResult.moderation ?? null,
       version: versionResult?.version ?? null,
       versions: versionsList?.items ?? null,
       file: options.file ? { path: options.file, content: fileContent } : null,
@@ -151,7 +180,7 @@ export async function cmdInspect(opts: GlobalOpts, slug: string, options: Inspec
           (versionResult?.version as { license?: string | null } | undefined)?.license ?? null,
         owner: skillResult.owner,
       });
-      printModerationSummary(skillResult.moderation ?? null);
+      printModerationSummary(moderationDiagnostics?.moderation ?? skillResult.moderation ?? null);
     }
 
     if (shouldPrintMeta && versionResult?.version) {
@@ -193,6 +222,41 @@ export async function cmdInspect(opts: GlobalOpts, slug: string, options: Inspec
     spinner.fail(formatError(error));
     throw error;
   }
+}
+
+function fetchSkillDetail(registry: string, slug: string, token: string | undefined) {
+  return apiRequest(
+    registry,
+    { method: "GET", path: `${ApiRoutes.skills}/${encodeURIComponent(slug)}`, token },
+    ApiV1SkillResponseSchema,
+  );
+}
+
+async function fetchModerationDiagnostics(
+  registry: string,
+  slug: string,
+  token: string | undefined,
+): Promise<ModerationDiagnostics> {
+  if (!token) return null;
+  try {
+    return await apiRequest(
+      registry,
+      {
+        method: "GET",
+        path: `${ApiRoutes.skills}/${encodeURIComponent(slug)}/moderation`,
+        token,
+      },
+      ApiV1SkillModerationResponseSchema,
+    );
+  } catch {
+    return null;
+  }
+}
+
+function printHiddenSkillModeration(slug: string, moderation: unknown, detailError: string) {
+  console.log(`${slug} is not publicly visible.`);
+  console.log(`Detail: ${detailError}`);
+  printModerationSummary(moderation);
 }
 
 function printSkillSummary(result: {
@@ -260,6 +324,9 @@ function printModerationSummary(moderation: unknown) {
   if (status.reasonCodes?.length) {
     console.log(`Reasons: ${status.reasonCodes.join(", ")}`);
   }
+  if (status.legacyReason) {
+    console.log(`Moderation Reason: ${status.legacyReason}`);
+  }
   if (typeof status.updatedAt === "number") {
     console.log(`Moderation Updated: ${formatTimestamp(status.updatedAt)}`);
   }
@@ -268,6 +335,11 @@ function printModerationSummary(moderation: unknown) {
   }
   if (status.summary) {
     console.log(`Moderation Summary: ${truncate(status.summary, 160)}`);
+  }
+  if (status.legacyReason === "quality.low") {
+    console.log(
+      "Visibility Guidance: publish a substantive update that passes quality assessment, then re-run inspect.",
+    );
   }
 }
 
@@ -281,6 +353,7 @@ function normalizeModeration(moderation: unknown): ModerationStatus | null {
     updatedAt?: unknown;
     engineVersion?: unknown;
     summary?: unknown;
+    legacyReason?: unknown;
   };
   if (typeof value.isSuspicious !== "boolean") return null;
   if (typeof value.isMalwareBlocked !== "boolean") return null;
@@ -299,6 +372,7 @@ function normalizeModeration(moderation: unknown): ModerationStatus | null {
     updatedAt: typeof value.updatedAt === "number" ? value.updatedAt : null,
     engineVersion: typeof value.engineVersion === "string" ? value.engineVersion : null,
     summary: typeof value.summary === "string" && value.summary.trim() ? value.summary : null,
+    legacyReason: typeof value.legacyReason === "string" ? value.legacyReason : null,
   };
 }
 
