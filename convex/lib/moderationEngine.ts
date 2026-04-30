@@ -81,7 +81,7 @@ const DESTRUCTIVE_DELETE_PATTERN =
 const SHELL_POSITIONAL_ASSIGNMENT_PATTERN =
   /^\s*([A-Z_][A-Z0-9_]*)=(["']?)\$(?:[1-9][0-9]*|@|\*)\2\s*(?:#.*)?$/gm;
 const SECRET_ASSIGNMENT_PATTERN =
-  /\b(?:[A-Za-z0-9]+[_\s-]+)*(?:(?:api|client|consumer)[_\s-]?(?:secret|key|token)|secret[_\s-]?key|access[_\s-]?(?:token|key|secret|grant)|auth[_\s-]?token|bearer[_\s-]?token|private[_\s-]?key|service[_\s-]?role[_\s-]?key|github[_\s-]?(?:pat|token)|password)\b\s*[:=]\s*["'`]?([A-Za-z0-9][A-Za-z0-9._~+/=-]{15,})["'`]?/i;
+  /\b(?:[A-Za-z0-9]+[_\s-]+)*(?:(?:api|client|consumer)[_\s-]?(?:secret|key|token)|secret[_\s-]?key|access[_\s-]?(?:token|key|secret|grant)|auth[_\s-]?token|bearer(?:[_\s-]?token)?|private[_\s-]?key|service[_\s-]?role[_\s-]?key|github[_\s-]?(?:pat|token)|(?:openrouter|supabase|storj)[_\s-]?(?:key|token|secret|access[_\s-]?grant)|password)\b\s*[:=]\s*["'`]?([A-Za-z0-9][A-Za-z0-9._~+/=-]{15,})["'`]?/i;
 const AUTH_HEADER_SECRET_PATTERN =
   /\b(?:authorization|x-api-key|x-api-secret)\b\s*[:=]\s*(?:Bearer\s+)?["'`]?([A-Za-z0-9][A-Za-z0-9._~+/=-]{15,})["'`]?/i;
 const SHELL_CREDENTIAL_VARIABLE_PATTERN =
@@ -127,6 +127,12 @@ const FFMPEG_FORCE_OUTPUT_PATTERN =
   /subprocess\.run\s*\(\s*\[[\s\S]{0,1000}["']ffmpeg["'][\s\S]{0,1000}["']-y["'][\s\S]{0,1000}str\s*\(\s*output_path\s*\)/i;
 const OUTPUT_PATH_GUARD_PATTERN =
   /TemporaryDirectory|mkdtemp|tempfile\.|resolve\s*\(\s*\).*relative_to|is_relative_to\s*\(/i;
+const PYTHON_AGENT_FILENAME_PATTERN =
+  /\b(?:filename\s*:\s*str|req\.filename|filename\s*=|["']filename["'])\b/i;
+const PYTHON_RCLONE_FILENAME_SINK_PATTERN =
+  /(?:rclone_dir\s*\/\s*filename|f["']\.\/\{filename\}|open\s*\(\s*temp_file_path\s*,|subprocess\.run\s*\([\s\S]{0,1000}["']\.\/rclone["'])/i;
+const PYTHON_FILENAME_GUARD_PATTERN =
+  /\b(?:secure_filename|basename\s*\(|Path\s*\(\s*filename\s*\)\.name|filename\s*=\s*Path\s*\(\s*filename\s*\)\.name|resolve\s*\(\s*\).*relative_to|is_relative_to\s*\(|["']\.\.["']\s+in\s+filename|["']\/["']\s+in\s+filename)/i;
 const PYTHON_CREDENTIAL_ENV_PATTERN =
   /\b(?:os\.environ(?:\.get)?|os\.getenv|getenv)\s*(?:\[\s*|\(\s*)["'][A-Za-z_][A-Za-z0-9_]*(?:PASS|PASSWORD|SECRET|TOKEN|KEY)[A-Za-z0-9_]*["']/i;
 const PYTHON_URL_ENV_PATTERN =
@@ -481,6 +487,17 @@ function findUnsafeAgentControlledFileWrite(content: string) {
   return findFirstLine(content, /subprocess\.run\s*\(|["']-y["']|output_path\s*=/);
 }
 
+function findUnsafePythonRcloneFilename(content: string) {
+  if (!PYTHON_AGENT_FILENAME_PATTERN.test(content)) return null;
+  if (!/\brclone\b/.test(content) || !/subprocess\.run\s*\(/.test(content)) return null;
+  if (!PYTHON_RCLONE_FILENAME_SINK_PATTERN.test(content)) return null;
+  if (PYTHON_FILENAME_GUARD_PATTERN.test(content)) return null;
+  return findFirstLine(
+    content,
+    /rclone_dir\s*\/\s*filename|f["']\.\/\{filename\}|subprocess\.run\s*\(/,
+  );
+}
+
 function findPythonCredentialPostToEnvUrl(content: string) {
   if (!PYTHON_CREDENTIAL_ENV_PATTERN.test(content)) return null;
   if (!PYTHON_URL_ENV_PATTERN.test(content)) return null;
@@ -684,6 +701,18 @@ function scanCodeFile(
       line: unsafeAgentControlledFileWrite.line,
       message: "Agent-controlled output path is passed to an overwrite-capable subprocess.",
       evidence: unsafeAgentControlledFileWrite.text,
+    });
+  }
+
+  const unsafePythonRcloneFilename = findUnsafePythonRcloneFilename(content);
+  if (unsafePythonRcloneFilename) {
+    addFinding(findings, {
+      code: REASON_CODES.UNSAFE_FILE_WRITE,
+      severity: "critical",
+      file: path,
+      line: unsafePythonRcloneFilename.line,
+      message: "Agent-controlled filename is written and passed to rclone without path validation.",
+      evidence: unsafePythonRcloneFilename.text,
     });
   }
 

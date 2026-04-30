@@ -124,6 +124,31 @@ describe("moderationEngine", () => {
     );
   });
 
+  it("flags provider-specific key aliases used for hardcoded credentials", () => {
+    const result = runStaticModerationScan({
+      slug: "storj-agent",
+      displayName: "Storj Agent",
+      summary: "Upload paid files",
+      frontmatter: {},
+      metadata: {},
+      files: [{ path: "mainapp.py", size: 256 }],
+      fileContents: [
+        {
+          path: "mainapp.py",
+          content: [
+            'OPENROUTER_KEY = "fixture_openrouter_secret_1234567890"',
+            'SUPABASE_KEY = "fixture_supabase_secret_1234567890"',
+            'BEARER = "fixture_bearer_secret_1234567890"',
+          ].join("\n"),
+        },
+      ],
+    });
+
+    expect(result.reasonCodes).toContain("suspicious.exposed_secret_literal");
+    expect(result.status).toBe("suspicious");
+    expect(result.findings.map((finding) => finding.evidence).join("\n")).toContain("[REDACTED]");
+  });
+
   it("does not flag placeholder or env-var secret examples", () => {
     const result = runStaticModerationScan({
       slug: "demo",
@@ -517,6 +542,63 @@ describe("moderationEngine", () => {
             "with tempfile.TemporaryDirectory() as safe_dir:",
             "  output_path = Path(safe_dir) / 'voice.ogg'",
             "  subprocess.run(['ffmpeg', '-y', '-i', str(tmp_mp3), str(output_path)], check=True)",
+          ].join("\n"),
+        },
+      ],
+    });
+
+    expect(result.reasonCodes).not.toContain("suspicious.unsafe_file_write");
+    expect(result.status).toBe("clean");
+  });
+
+  it("flags agent-controlled filenames passed to rclone subprocesses", () => {
+    const result = runStaticModerationScan({
+      slug: "storj-agent",
+      displayName: "Storj Agent",
+      summary: "Upload paid files",
+      frontmatter: {},
+      metadata: {},
+      files: [{ path: "services/tasking.py", size: 512 }],
+      fileContents: [
+        {
+          path: "services/tasking.py",
+          content: [
+            "def upload_file_rclone(data_base64: str, filename: str):",
+            '    rclone_dir = Path(".") / "rclone-v1.73.1-linux-amd64"',
+            "    temp_file_path = rclone_dir / filename",
+            '    with open(temp_file_path, "wb") as f:',
+            "        f.write(base64.b64decode(data_base64))",
+            "    command = ['./rclone', 'copy', f'./{filename}', 'storjy:firstbucket']",
+            "    return subprocess.run(command, cwd=rclone_dir, capture_output=True)",
+          ].join("\n"),
+        },
+      ],
+    });
+
+    expect(result.reasonCodes).toContain("suspicious.unsafe_file_write");
+    expect(result.status).toBe("suspicious");
+  });
+
+  it("does not flag rclone uploads after filename basename normalization", () => {
+    const result = runStaticModerationScan({
+      slug: "safe-storj",
+      displayName: "Safe Storj",
+      summary: "Upload paid files",
+      frontmatter: {},
+      metadata: {},
+      files: [{ path: "services/tasking.py", size: 512 }],
+      fileContents: [
+        {
+          path: "services/tasking.py",
+          content: [
+            "def upload_file_rclone(data_base64: str, filename: str):",
+            "    safe_name = Path(filename).name",
+            '    rclone_dir = Path(".") / "rclone-v1.73.1-linux-amd64"',
+            "    temp_file_path = rclone_dir / safe_name",
+            '    with open(temp_file_path, "wb") as f:',
+            "        f.write(base64.b64decode(data_base64))",
+            "    command = ['./rclone', 'copy', f'./{safe_name}', 'storjy:firstbucket']",
+            "    return subprocess.run(command, cwd=rclone_dir, capture_output=True)",
           ].join("\n"),
         },
       ],
