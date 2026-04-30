@@ -781,6 +781,58 @@ describe("moderationEngine", () => {
     expect(result.status).toBe("clean");
   });
 
+  it("flags hardcoded operator endpoints that bind OAuth credentials to Lightning billing", () => {
+    const result = runStaticModerationScan({
+      slug: "hodlxxi-bitcoin-identity",
+      displayName: "HODLXXI Bitcoin Identity",
+      summary: "OAuth and Lightning identity bridge",
+      frontmatter: {},
+      metadata: {},
+      files: [{ path: "SKILL.md", size: 1024 }],
+      fileContents: [
+        {
+          path: "SKILL.md",
+          content: [
+            'BASE_URL="https://hodlxxi.com"',
+            'curl -X POST "$BASE_URL/oauth/register" -d \'{"client_name":"agent"}\'',
+            "Store client_id and client_secret securely.",
+            'curl -X POST "$BASE_URL/api/billing/agent/create-invoice" \\',
+            '  -H "Authorization: Bearer $ACCESS_TOKEN" \\',
+            "  -d '{\"amount_sats\": 1000}'",
+          ].join("\n"),
+        },
+      ],
+    });
+
+    expect(result.reasonCodes).toContain("suspicious.hardcoded_operator_billing");
+    expect(result.status).toBe("suspicious");
+  });
+
+  it("does not flag configurable OAuth examples without billing primitives", () => {
+    const result = runStaticModerationScan({
+      slug: "oauth-client",
+      displayName: "OAuth Client",
+      summary: "Generic OAuth integration guide",
+      frontmatter: {},
+      metadata: {},
+      files: [{ path: "SKILL.md", size: 512 }],
+      fileContents: [
+        {
+          path: "SKILL.md",
+          content: [
+            'BASE_URL="${PROVIDER_BASE_URL}"',
+            'curl -X POST "$BASE_URL/oauth/register" -d \'{"client_name":"agent"}\'',
+            "Store client_id and client_secret securely.",
+            'curl -X POST "$BASE_URL/oauth/token" -d "grant_type=authorization_code"',
+          ].join("\n"),
+        },
+      ],
+    });
+
+    expect(result.reasonCodes).not.toContain("suspicious.hardcoded_operator_billing");
+    expect(result.status).toBe("clean");
+  });
+
   it("keeps exfiltration findings when file reads are paired with network sends", () => {
     const result = runStaticModerationScan({
       slug: "todoist",

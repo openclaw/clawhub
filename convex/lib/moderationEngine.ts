@@ -140,6 +140,13 @@ const CREDENTIAL_BEARING_AGENT_PATTERN =
   /\b(?:X-API-Key|api_key|API_KEY|VDOOB_API_KEY|AGENT_ID|agent_config\.json)\b/i;
 const AUTONOMOUS_ANSWER_EGRESS_PATTERN =
   /\b(?:requests|session|client)\.post\s*\([\s\S]{0,1000}(?:submit-answer|agent-withdrawals|agents\/register|messages\/agent)|\b(?:submit_answer|answer_question|act_cron_check)\b/i;
+const HARDCODED_OPERATOR_BASE_URL_PATTERN =
+  /\bBASE_URL\s*=\s*["']https:\/\/(?!your-|example\.|localhost\b|127\.0\.0\.1\b)[A-Za-z0-9.-]+\.[A-Za-z]{2,}(?::\d+)?(?:\/[^"']*)?["']/i;
+const OAUTH_CLIENT_SECRET_FLOW_PATTERN =
+  /\b(?:oauth\/register|oauth\/token|client_secret|Authorization:\s*Bearer|ACCESS_TOKEN)\b/i;
+const LIGHTNING_BILLING_FLOW_PATTERN =
+  /\b(?:billing\/agent\/(?:create|check)-invoice|amount_sats|LNURL|Lightning|PAYG)\b/i;
+const OUTBOUND_POST_PATTERN = /\b(?:curl\s+-X\s+POST|requests\.post\s*\(|fetch\s*\()/i;
 
 function hasMaliciousInstallPrompt(content: string) {
   const hasTerminalInstruction =
@@ -482,6 +489,14 @@ function findAutonomousCredentialEgress(files: TextFile[]) {
   return { file: fallback.path, line: 1, text: fallback.content.split("\n")[0] ?? "" };
 }
 
+function findHardcodedOperatorBillingEndpoint(content: string) {
+  if (!HARDCODED_OPERATOR_BASE_URL_PATTERN.test(content)) return null;
+  if (!OAUTH_CLIENT_SECRET_FLOW_PATTERN.test(content)) return null;
+  if (!LIGHTNING_BILLING_FLOW_PATTERN.test(content)) return null;
+  if (!OUTBOUND_POST_PATTERN.test(content)) return null;
+  return findFirstLine(content, HARDCODED_OPERATOR_BASE_URL_PATTERN);
+}
+
 function normalizeEnvName(value: unknown) {
   if (typeof value !== "string") return undefined;
   const trimmed = value.trim();
@@ -734,6 +749,19 @@ function scanCodeFile(
     });
   }
 
+  const hardcodedOperatorBilling = findHardcodedOperatorBillingEndpoint(content);
+  if (hardcodedOperatorBilling) {
+    addFinding(findings, {
+      code: REASON_CODES.HARDCODED_OPERATOR_BILLING,
+      severity: "critical",
+      file: path,
+      line: hardcodedOperatorBilling.line,
+      message:
+        "Hardcoded operator endpoint combines OAuth credentials with Lightning billing calls.",
+      evidence: hardcodedOperatorBilling.text,
+    });
+  }
+
   const hasProcessEnv = /process\.env/.test(content);
   if (hasProcessEnv && hasNetworkSend) {
     const referencedEnvNames = collectReferencedEnvNames(content);
@@ -807,6 +835,19 @@ function scanMarkdownFile(path: string, content: string, findings: ModerationFin
       line: secretArgvExposure.line,
       message: "Instructions pass high-value credentials through process argv.",
       evidence: secretArgvExposure.text,
+    });
+  }
+
+  const hardcodedOperatorBilling = findHardcodedOperatorBillingEndpoint(content);
+  if (hardcodedOperatorBilling) {
+    addFinding(findings, {
+      code: REASON_CODES.HARDCODED_OPERATOR_BILLING,
+      severity: "critical",
+      file: path,
+      line: hardcodedOperatorBilling.line,
+      message:
+        "Hardcoded operator endpoint combines OAuth credentials with Lightning billing calls.",
+      evidence: hardcodedOperatorBilling.text,
     });
   }
 
