@@ -8,6 +8,11 @@ updates:
       time: "09:00"
       timezone: "America/Los_Angeles"
     open-pull-requests-limit: 10
+    ignore:
+      - dependency-name: "@auth/core"
+        update-types:
+          - "version-update:semver-minor"
+          - "version-update:semver-major"
     groups:
       production-minor-and-patch:
         dependency-type: "production"
