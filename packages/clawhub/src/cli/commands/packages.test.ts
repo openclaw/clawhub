@@ -4,6 +4,7 @@ import { spawnSync } from "node:child_process";
 import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { zipSync } from "fflate";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   createAuthTokenModuleMocks,
@@ -1016,6 +1017,96 @@ describe("package commands", () => {
       });
       dateSpy.mockRestore();
     } finally {
+      await rm(workdir, { recursive: true, force: true });
+    }
+  });
+
+  it("uses --source-path as the package folder for GitHub shorthand sources", async () => {
+    const workdir = await makeTmpWorkdir();
+    const originalFetch = globalThis.fetch;
+    const commit = "0123456789abcdef0123456789abcdef01234567";
+    const archiveBytes = zipSync({
+      "repo-root/plugins/demo/package.json": new TextEncoder().encode(
+        makeCodePluginPackageJson({
+          name: "@scope/demo-plugin",
+          displayName: "Demo Plugin",
+          version: "1.0.0",
+        }),
+      ),
+      "repo-root/plugins/demo/openclaw.plugin.json": new TextEncoder().encode(
+        JSON.stringify({ id: "demo.plugin" }),
+      ),
+      "repo-root/plugins/demo/dist/index.js": new TextEncoder().encode("export {};\n"),
+      "repo-root/other/package.json": new TextEncoder().encode('{"name":"wrong"}\n'),
+    });
+    const archiveBody = archiveBytes.buffer.slice(
+      archiveBytes.byteOffset,
+      archiveBytes.byteOffset + archiveBytes.byteLength,
+    ) as ArrayBuffer;
+    const fetchMock = vi.fn<typeof fetch>(async (input) => {
+      const url = input instanceof Request ? input.url : input.toString();
+      if (url.endsWith("/repos/owner/repo/commits/main")) {
+        return new Response(JSON.stringify({ sha: commit }), {
+          status: 200,
+          headers: { "content-type": "application/json" },
+        });
+      }
+      if (url.endsWith(`/repos/owner/repo/zipball/${commit}`)) {
+        return new Response(archiveBody, {
+          status: 200,
+          headers: { "content-type": "application/zip" },
+        });
+      }
+      throw new Error(`Unexpected fetch: ${url}`);
+    });
+
+    Object.defineProperty(globalThis, "fetch", {
+      value: fetchMock,
+      configurable: true,
+      writable: true,
+    });
+    const dateSpy = vi.spyOn(Date, "now").mockReturnValue(555_555_555);
+
+    try {
+      httpMocks.apiRequestForm.mockResolvedValueOnce({
+        ok: true,
+        packageId: "pkg_1",
+        releaseId: "rel_1",
+      });
+
+      await cmdPublishPackage(makeOpts(workdir), "owner/repo@main", {
+        sourcePath: "plugins/demo",
+      });
+
+      expect(getUploadedFileNames()).toEqual([
+        "dist/index.js",
+        "openclaw.plugin.json",
+        "package.json",
+      ]);
+      expect(getPublishPayload()).toEqual({
+        name: "@scope/demo-plugin",
+        displayName: "Demo Plugin",
+        family: "code-plugin",
+        version: "1.0.0",
+        changelog: "",
+        tags: ["latest"],
+        source: {
+          kind: "github",
+          url: "https://github.com/owner/repo",
+          repo: "owner/repo",
+          ref: "main",
+          commit,
+          path: "plugins/demo",
+          importedAt: 555_555_555,
+        },
+      });
+    } finally {
+      Object.defineProperty(globalThis, "fetch", {
+        value: originalFetch,
+        configurable: true,
+        writable: true,
+      });
+      dateSpy.mockRestore();
       await rm(workdir, { recursive: true, force: true });
     }
   });
