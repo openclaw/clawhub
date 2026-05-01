@@ -24,6 +24,7 @@ const packageApiRefs = api as unknown as {
     setModerationVerdict: unknown;
     getStorePackMigrationStatus: unknown;
     backfillStorePackArtifacts: unknown;
+    revokeStorePackArtifact: unknown;
   };
 };
 
@@ -131,6 +132,13 @@ function promptUnbanReason(label: string) {
   return trimmed.length > 0 ? trimmed : undefined;
 }
 
+function promptStorePackRevocationReason(label: string) {
+  const result = window.prompt(`Revoke StorePack for ${label}. Reason required.`);
+  if (result === null) return null;
+  const trimmed = result.trim();
+  return trimmed.length > 0 ? trimmed : null;
+}
+
 export const Route = createFileRoute("/management")({
   validateSearch: (search) => ({
     skill: typeof search.skill === "string" && search.skill.trim() ? search.skill : undefined,
@@ -180,6 +188,9 @@ function Management() {
     verdict: PackageScanStatus;
     note?: string;
   }) => Promise<unknown>;
+  const revokeStorePackArtifact = useMutation(
+    packageApiRefs.packages.revokeStorePackArtifact as never,
+  ) as unknown as (args: { releaseId: Id<"packageReleases">; reason?: string }) => Promise<unknown>;
   const backfillStorePackArtifacts = useAction(
     packageApiRefs.packages.backfillStorePackArtifacts as never,
   ) as unknown as (args: { limit?: number }) => Promise<unknown>;
@@ -890,9 +901,11 @@ function Management() {
                       <div className="management-report-item">
                         <span className="management-report-meta">StorePack</span>
                         <span>
-                          {latestRelease?.storepackStorageId
-                            ? `${latestRelease.storepackFileCount ?? 0} files · ${latestRelease.storepackSha256?.slice(0, 12) ?? "no digest"}`
-                            : "Missing StorePack artifact"}
+                          {latestRelease?.storepackRevokedAt
+                            ? `Revoked ${formatTimestamp(latestRelease.storepackRevokedAt)}`
+                            : latestRelease?.storepackStorageId
+                              ? `${latestRelease.storepackFileCount ?? 0} files · ${latestRelease.storepackSha256?.slice(0, 12) ?? "no digest"}`
+                              : "Missing StorePack artifact"}
                         </span>
                       </div>
                       <div className="management-report-item">
@@ -980,6 +993,27 @@ function Management() {
                       }
                     >
                       {isHighlighted ? "Unhighlight" : "Highlight"}
+                    </Button>
+                    <Button
+                      className="management-action-btn"
+                      type="button"
+                      disabled={
+                        !latestRelease?.storepackStorageId ||
+                        Boolean(latestRelease.storepackRevokedAt)
+                      }
+                      onClick={() => {
+                        if (!latestRelease?._id) return;
+                        const reason = promptStorePackRevocationReason(
+                          `${plugin.name}@${latestRelease.version}`,
+                        );
+                        if (!reason) return;
+                        void revokeStorePackArtifact({
+                          releaseId: latestRelease._id,
+                          reason,
+                        }).catch((error) => window.alert(formatMutationError(error)));
+                      }}
+                    >
+                      Revoke StorePack
                     </Button>
                   </div>
                 </div>
