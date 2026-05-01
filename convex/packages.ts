@@ -39,6 +39,10 @@ import {
   readOptionalTextFile,
   summarizePackageForSearch,
 } from "./lib/packageRegistry";
+import {
+  getPackageStorePackEnvironmentFlags,
+  getPackageStorePackHostTargetKeys,
+} from "./lib/packageSearchDigest";
 import { isPackageBlockedFromPublic, resolvePackageReleaseScanStatus } from "./lib/packageSecurity";
 import { toPublicPublisher } from "./lib/public";
 import {
@@ -218,6 +222,11 @@ type PublicPageCursorState = {
   offset: number;
   pageSize: number | null;
   done: boolean;
+};
+
+type StorePackIndexFilter = {
+  kind: "host-target" | "environment";
+  key: string;
 };
 const PUBLIC_PAGE_CURSOR_PREFIX = "pkgpage:";
 
@@ -542,6 +551,50 @@ async function toDashboardPackageListItem(
           }
         : null,
   };
+}
+
+async function replaceStorePackSearchIndexRows(
+  ctx: MutationCtx,
+  pkg: Doc<"packages">,
+  release: Doc<"packageReleases">,
+) {
+  const existing = await ctx.db
+    .query("packageStorePackSearchIndex")
+    .withIndex("by_release", (q) => q.eq("releaseId", release._id))
+    .collect();
+  for (const row of existing) {
+    await ctx.db.delete(row._id);
+  }
+  if (
+    pkg.softDeletedAt ||
+    release.softDeletedAt ||
+    release.storepackRevokedAt ||
+    !release.storepackStorageId
+  ) {
+    return;
+  }
+
+  const now = Date.now();
+  const rows = [
+    ...getPackageStorePackHostTargetKeys(release).map((key) => ({
+      kind: "host-target" as const,
+      key,
+    })),
+    ...getPackageStorePackEnvironmentFlags(release).map((key) => ({
+      kind: "environment" as const,
+      key,
+    })),
+  ];
+  for (const row of rows) {
+    await ctx.db.insert("packageStorePackSearchIndex", {
+      packageId: pkg._id,
+      releaseId: release._id,
+      kind: row.kind,
+      key: row.key,
+      updatedAt: pkg.updatedAt,
+      createdAt: now,
+    });
+  }
 }
 
 async function listDashboardPackagesForOwnerPublisher(
@@ -1498,6 +1551,16 @@ export const listPageForViewerInternal = internalQuery({
   },
 });
 
+function getStorePackIndexFilter(args: { hostTarget?: string; environment?: string }) {
+  if (args.hostTarget) {
+    return { kind: "host-target" as const, key: args.hostTarget };
+  }
+  if (args.environment) {
+    return { kind: "environment" as const, key: args.environment };
+  }
+  return null;
+}
+
 async function listPackagePageImpl(
   ctx: DbReaderCtx,
   args: {
@@ -1528,6 +1591,11 @@ async function listPackagePageImpl(
       numItems: targetCount,
     });
     return { page, isDone: true, continueCursor: "" };
+  }
+
+  const storePackIndexFilter = getStorePackIndexFilter(args);
+  if (storePackIndexFilter) {
+    return await listPackagePageByStorePackIndex(ctx, args, storePackIndexFilter, canViewPackage);
   }
 
   const collected: PublicPackageListItem[] = [];
@@ -1575,6 +1643,92 @@ async function listPackagePageImpl(
     if (typeof isOfficial === "boolean" && digest.isOfficial !== isOfficial) {
       continue;
     }
+    if (!digestMatchesFilters(digest, args)) continue;
+    collected.push(toPublicPackageListItem(digest));
+    if (collected.length >= targetCount) {
+      const nextOffset = index + 1;
+      const nextState =
+        nextOffset < page.page.length
+          ? {
+              cursor: pageCursor,
+              offset: nextOffset,
+              pageSize: effectivePageSize,
+              done: page.isDone,
+            }
+          : {
+              cursor: page.continueCursor,
+              offset: 0,
+              pageSize: effectivePageSize,
+              done: page.isDone,
+            };
+      return {
+        page: collected,
+        isDone: nextState.done && nextState.offset === 0,
+        continueCursor: encodePublicPageCursor(nextState),
+      };
+    }
+  }
+
+  return {
+    page: collected,
+    isDone: page.isDone,
+    continueCursor: encodePublicPageCursor({
+      cursor: page.continueCursor,
+      offset: 0,
+      pageSize: effectivePageSize,
+      done: page.isDone,
+    }),
+  };
+}
+
+async function listPackagePageByStorePackIndex(
+  ctx: DbReaderCtx,
+  args: {
+    family?: PackageFamily;
+    channel?: PackageChannel;
+    isOfficial?: boolean;
+    executesCode?: boolean;
+    capabilityTag?: string;
+    hostTarget?: string;
+    environment?: string;
+    paginationOpts: { cursor: string | null; numItems: number };
+  },
+  filter: StorePackIndexFilter,
+  canViewPackage: (digest: PackageDigestLike) => Promise<boolean>,
+) {
+  const targetCount = args.paginationOpts.numItems;
+  const collected: PublicPackageListItem[] = [];
+  const decodedCursor = decodePublicPageCursor(args.paginationOpts.cursor);
+  if (decodedCursor.done && decodedCursor.offset === 0) {
+    return { page: collected, isDone: true, continueCursor: "" };
+  }
+  const pageCursor = decodedCursor.cursor;
+  const offset = decodedCursor.offset;
+  const effectivePageSize = Math.min(
+    MAX_PUBLIC_LIST_PAGE_SIZE,
+    Math.max(
+      targetCount,
+      decodedCursor.pageSize ?? 0,
+      offset > 0 ? offset + targetCount : targetCount,
+    ),
+  );
+  const page = await ctx.db
+    .query("packageStorePackSearchIndex")
+    .withIndex("by_kind_key_updated", (q) => q.eq("kind", filter.kind).eq("key", filter.key))
+    .order("desc")
+    .paginate({ cursor: pageCursor, numItems: effectivePageSize });
+
+  for (let index = offset; index < page.page.length; index += 1) {
+    const row = page.page[index];
+    const digest = await ctx.db
+      .query("packageSearchDigest")
+      .withIndex("by_package", (q) => q.eq("packageId", row.packageId))
+      .unique();
+    if (!digest || digest.softDeletedAt) continue;
+    if (!(await canViewPackage(digest))) continue;
+    if (args.family && digest.family !== args.family) continue;
+    if (args.channel && digest.channel !== args.channel) continue;
+    if (typeof args.isOfficial === "boolean" && digest.isOfficial !== args.isOfficial) continue;
     if (!digestMatchesFilters(digest, args)) continue;
     collected.push(toPublicPackageListItem(digest));
     if (collected.length >= targetCount) {
@@ -3000,6 +3154,10 @@ export const attachStorePackArtifactInternal = internalMutation({
     if (!release || release.packageId !== args.packageId || release.softDeletedAt) {
       throw new ConvexError("Package release not found");
     }
+    const pkg = await ctx.db.get(args.packageId);
+    if (!pkg || pkg.softDeletedAt) {
+      throw new ConvexError("Plugin package not found");
+    }
     const now = Date.now();
     const existing = await ctx.db
       .query("packageReleaseArtifacts")
@@ -3021,7 +3179,7 @@ export const attachStorePackArtifactInternal = internalMutation({
       status: "active",
       createdAt: now,
     });
-    await ctx.db.patch(args.releaseId, {
+    const releasePatch = {
       storepackStorageId: args.storageId,
       storepackSha256: args.sha256,
       storepackSize: args.size,
@@ -3036,7 +3194,12 @@ export const attachStorePackArtifactInternal = internalMutation({
       storepackRevocationReason: undefined,
       hostTargetsSummary: args.hostTargets,
       environmentSummary: args.environment,
-    });
+    } satisfies Partial<Doc<"packageReleases">>;
+    await ctx.db.patch(args.releaseId, releasePatch);
+    await replaceStorePackSearchIndexRows(ctx, pkg, {
+      ...release,
+      ...releasePatch,
+    } as Doc<"packageReleases">);
   },
 });
 
@@ -3092,6 +3255,12 @@ async function revokeStorePackArtifactForRelease(
     storepackRevokedByUserId: release.storepackRevokedByUserId ?? actor._id,
     ...(reason ? { storepackRevocationReason: reason } : {}),
   });
+  await replaceStorePackSearchIndexRows(ctx, pkg, {
+    ...release,
+    storepackRevokedAt: release.storepackRevokedAt ?? now,
+    storepackRevokedByUserId: release.storepackRevokedByUserId ?? actor._id,
+    ...(reason ? { storepackRevocationReason: reason } : {}),
+  } as Doc<"packageReleases">);
   await ctx.db.insert("auditLogs", {
     actorUserId: actor._id,
     action: "package.storepack.revoked",

@@ -87,6 +87,24 @@ export function extractPackageStorePackDigestFields(
       environmentFlags: [],
     };
   }
+  return {
+    storepackAvailable: Boolean(release.storepackStorageId),
+    hostTargetKeys: getPackageStorePackHostTargetKeys(release),
+    environmentFlags: getPackageStorePackEnvironmentFlags(release),
+  };
+}
+
+export function getPackageStorePackHostTargetKeys(release: Doc<"packageReleases">) {
+  return [
+    ...new Set(
+      (release.hostTargetsSummary ?? []).map((target) =>
+        [target.os, target.arch, target.libc].filter(Boolean).join("-"),
+      ),
+    ),
+  ];
+}
+
+export function getPackageStorePackEnvironmentFlags(release: Doc<"packageReleases">) {
   const environment = release.environmentSummary;
   const flags = [
     environment?.requiresLocalDesktop ? "desktop" : null,
@@ -98,17 +116,7 @@ export function extractPackageStorePackDigestFields(
     ...(environment?.requiresOsPermissions ?? []).map((permission) => `permission:${permission}`),
     ...(environment?.knownUnsupported ?? []).map((target) => `unsupported:${target}`),
   ].filter((flag): flag is string => Boolean(flag));
-  return {
-    storepackAvailable: Boolean(release.storepackStorageId),
-    hostTargetKeys: [
-      ...new Set(
-        (release.hostTargetsSummary ?? []).map((target) =>
-          [target.os, target.arch, target.libc].filter(Boolean).join("-"),
-        ),
-      ),
-    ],
-    environmentFlags: [...new Set(flags)],
-  };
+  return [...new Set(flags)];
 }
 
 export async function upsertPackageSearchDigest(

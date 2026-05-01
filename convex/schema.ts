@@ -942,6 +942,19 @@ const packageReleaseArtifacts = defineTable({
   .index("by_target_key", ["targetKey"])
   .index("by_status", ["status"]);
 
+const packageStorePackSearchIndex = defineTable({
+  packageId: v.id("packages"),
+  releaseId: v.id("packageReleases"),
+  kind: v.union(v.literal("host-target"), v.literal("environment")),
+  key: v.string(),
+  updatedAt: v.number(),
+  createdAt: v.number(),
+})
+  .index("by_release", ["releaseId"])
+  .index("by_package", ["packageId"])
+  .index("by_package_kind_key", ["packageId", "kind", "key"])
+  .index("by_kind_key_updated", ["kind", "key", "updatedAt"]);
+
 const packageTrustedPublishers = defineTable({
   packageId: v.id("packages"),
   provider: v.literal("github-actions"),
@@ -1538,6 +1551,7 @@ export default defineSchema({
   packages,
   packageReleases,
   packageReleaseArtifacts,
+  packageStorePackSearchIndex,
   packageTrustedPublishers,
   packagePublishTokens,
   packageBadges,

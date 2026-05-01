@@ -67,6 +67,8 @@ const listPublicPageHandler = (
       isOfficial?: boolean;
       executesCode?: boolean;
       capabilityTag?: string;
+      hostTarget?: string;
+      environment?: string;
       paginationOpts: { cursor: string | null; numItems: number };
     },
     { page: Array<{ name: string }>; isDone: boolean; continueCursor: string }
@@ -325,6 +327,11 @@ function makeDigestCtx(options: {
     isDone: boolean;
     continueCursor: string;
   }>;
+  storePackPages?: Array<{
+    page: Array<Record<string, unknown>>;
+    isDone: boolean;
+    continueCursor: string;
+  }>;
   exactPackages?: Array<Record<string, unknown>>;
   exactDigests?: Array<Record<string, unknown>>;
   publisherMemberships?: Record<string, "owner" | "admin" | "publisher">;
@@ -357,6 +364,7 @@ function makeDigestCtx(options: {
 
   setPages("packageSearchDigest", options.pages ?? []);
   setPages("packageCapabilitySearchDigest", options.capabilityPages ?? []);
+  setPages("packageStorePackSearchIndex", options.storePackPages ?? []);
 
   const paginate = vi.fn();
   const paginateForTable = (table: string) =>
@@ -537,6 +545,12 @@ function makeDigestCtx(options: {
                 }
                 return withIndex(table, indexName);
               },
+            };
+          }
+          if (table === "packageStorePackSearchIndex") {
+            tableNames.push(table);
+            return {
+              withIndex: (indexName: string) => withIndex(table, indexName),
             };
           }
           if (table !== "packageCapabilitySearchDigest") {
@@ -1137,6 +1151,43 @@ describe("packages public queries", () => {
     expect(result.page.map((entry) => entry.name)).toEqual(["exec-demo"]);
     expect(tableNames).toEqual(["packageSearchDigest"]);
     expect(indexNames).toEqual(["by_active_executes_updated"]);
+  });
+
+  it("uses the StorePack index for host-target public listings", async () => {
+    const digest = makeDigest("darwin-demo", {
+      packageId: "packages:darwin-demo",
+      storepackAvailable: true,
+      hostTargetKeys: ["darwin-arm64"],
+    });
+    const { ctx, indexNames, tableNames } = makeDigestCtx({
+      storePackPages: [
+        {
+          page: [
+            {
+              _id: "packageStorePackSearchIndex:1",
+              packageId: "packages:darwin-demo",
+              releaseId: "packageReleases:darwin-demo",
+              kind: "host-target",
+              key: "darwin-arm64",
+              updatedAt: 10,
+              createdAt: 10,
+            },
+          ],
+          isDone: true,
+          continueCursor: "",
+        },
+      ],
+      exactDigests: [digest],
+    });
+
+    const result = await listPublicPageHandler(ctx, {
+      hostTarget: "darwin-arm64",
+      paginationOpts: { cursor: null, numItems: 10 },
+    });
+
+    expect(result.page.map((entry) => entry.name)).toEqual(["darwin-demo"]);
+    expect(tableNames).toEqual(["packageStorePackSearchIndex", "packageSearchDigest"]);
+    expect(indexNames).toEqual(["by_kind_key_updated"]);
   });
 
   it("uses capability digests for capability-tagged package search", async () => {
