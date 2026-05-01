@@ -2333,6 +2333,7 @@ describe("packages public queries", () => {
       },
       storage: {
         get: vi.fn(),
+        store: vi.fn().mockResolvedValue("storage:storepack"),
       },
     };
 
@@ -2415,6 +2416,7 @@ describe("packages public queries", () => {
       },
       storage: {
         get: vi.fn(),
+        store: vi.fn().mockResolvedValue("storage:storepack"),
       },
     };
 
@@ -2560,6 +2562,7 @@ describe("packages public queries", () => {
           const content = files.get(storageId);
           return content ? new Blob([content]) : null;
         }),
+        store: vi.fn().mockResolvedValue("storage:storepack"),
       },
     };
 
@@ -2585,21 +2588,21 @@ describe("packages public queries", () => {
             path: "package.json",
             size: 1,
             storageId: "storage:package",
-            sha256: "package",
+            sha256: "d76e6b15f66d5a8c2749d7030c6e40db76659c40f3dfa5c4933be591848c0982",
             contentType: "application/json",
           },
           {
             path: "openclaw.plugin.json",
             size: 1,
             storageId: "storage:manifest",
-            sha256: "manifest",
+            sha256: "5610853567158c5b3c5ec97a2d76fcb33ebe0d965e9e6516f387cc3de817eb78",
             contentType: "application/json",
           },
           {
             path: "dist/index.js",
             size: 1,
             storageId: "storage:code",
-            sha256: "code",
+            sha256: "42d6cead6d2a563483e07881281dabe3a21c964e5522eb690ab0406528943ab3",
             contentType: "application/javascript",
           },
         ],
