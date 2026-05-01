@@ -140,7 +140,7 @@ describe("plugins publish route", () => {
     expect(archiveClick).not.toHaveBeenCalled();
   });
 
-  it("opens only the archive picker when clicking Browse files", () => {
+  it("opens only the archive picker when clicking Upload ZIP/TGZ", () => {
     renderPublishRoute();
 
     const [archiveInput, directoryInput] = getFileInputs();
@@ -149,7 +149,10 @@ describe("plugins publish route", () => {
     archiveInput.click = archiveClick;
     directoryInput.click = directoryClick;
 
-    fireEvent.click(screen.getByRole("button", { name: "Browse files" }));
+    expect(archiveInput.getAttribute("accept")).toContain(".zip");
+    expect(archiveInput.getAttribute("accept")).toContain(".tgz");
+
+    fireEvent.click(screen.getByRole("button", { name: "Upload ZIP/TGZ" }));
 
     expect(archiveClick).toHaveBeenCalledTimes(1);
     expect(directoryClick).not.toHaveBeenCalled();
@@ -394,7 +397,7 @@ describe("plugins publish route", () => {
       expect((screen.getAllByRole("combobox")[0] as HTMLSelectElement).value).toBe("bundle-plugin");
       expect(screen.getByDisplayValue("openclaw-bundle")).toBeTruthy();
       expect(screen.getByDisplayValue("desktop, mobile")).toBeTruthy();
-      expect(screen.getByText(/Browse files/i)).toBeTruthy();
+      expect(screen.getByText(/Upload ZIP\/TGZ/i)).toBeTruthy();
       expect(screen.getByText(/Choose folder/i)).toBeTruthy();
     });
 

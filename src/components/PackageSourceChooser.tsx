@@ -55,6 +55,7 @@ export function PackageSourceChooser(props: {
         className="hidden"
         type="file"
         multiple
+        aria-label="Package archive input"
         accept=".zip,.tgz,.tar.gz,application/zip,application/gzip,application/x-gzip,application/x-tar"
         onChange={(event) => {
           const selected = Array.from(event.target.files ?? []);
@@ -107,16 +108,26 @@ export function PackageSourceChooser(props: {
             </span>
           </div>
           <span className="max-w-md text-sm text-[color:var(--ink-soft)]">
-            Drag a folder, zip, or tgz here. We inspect the package to unlock and prefill the rest
-            of the form.
+            Drag a package archive, folder, zip, or tgz here. ClawHub expands the source package,
+            ignores local junk, then generates the StorePack itself.
           </span>
-          <div className="flex gap-2 pt-2">
+          <div className="flex flex-wrap justify-center gap-2 pt-2">
             <Button variant="outline" size="sm" onClick={() => archiveInputRef.current?.click()}>
-              Browse files
+              Upload ZIP/TGZ
             </Button>
             <Button variant="ghost" size="sm" onClick={() => directoryInputRef.current?.click()}>
               Choose folder
             </Button>
+          </div>
+          <div className="grid max-w-xl gap-2 pt-2 text-left text-xs text-[color:var(--ink-soft)] sm:grid-cols-2">
+            <div className="rounded-[var(--radius-sm)] border border-[color:var(--line)] bg-[color:var(--surface)] p-3">
+              <strong className="block text-[color:var(--ink)]">archive upload</strong>
+              <span>.zip, .tgz, and .tar.gz are expanded before publish.</span>
+            </div>
+            <div className="rounded-[var(--radius-sm)] border border-[color:var(--line)] bg-[color:var(--surface)] p-3">
+              <strong className="block text-[color:var(--ink)]">folder upload</strong>
+              <span>directory picks preserve paths for manifest and package detection.</span>
+            </div>
           </div>
         </div>
       </div>
