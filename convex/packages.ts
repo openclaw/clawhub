@@ -121,6 +121,7 @@ const PACKAGE_MODERATION_REVIEW_STATUSES = [
   "malicious",
   "not-run",
 ] as const;
+const PACKAGE_MODERATION_COUNT_STATUSES = [...PACKAGE_MODERATION_REVIEW_STATUSES, "clean"] as const;
 const PACKAGE_MODERATION_FAMILIES = ["code-plugin", "bundle-plugin"] as const;
 const REQUIRED_STOREPACK_HOST_TARGETS = ["darwin-arm64", "linux-x64-glibc", "win32-x64"] as const;
 
@@ -1464,12 +1465,14 @@ export const listModerationQueueForStaff = query({
             : null,
       });
     }
+    const counts = await getPackageModerationQueueCounts(ctx, 100);
 
     return {
       items,
       status: args.status ?? "needs-review",
       limit,
       hasMore: page.length > limit,
+      counts,
     };
   },
 });
@@ -1482,6 +1485,50 @@ export const listOfficialMigrationReadinessForStaff = query({
     return await buildOfficialMigrationReadiness(ctx);
   },
 });
+
+async function getPackageModerationQueueCounts(ctx: QueryCtx, cap: number) {
+  const countForStatus = async (status: (typeof PACKAGE_MODERATION_COUNT_STATUSES)[number]) => {
+    const rows = (
+      await Promise.all(
+        PACKAGE_MODERATION_FAMILIES.map((family) =>
+          ctx.db
+            .query("packageSearchDigest")
+            .withIndex("by_active_family_scan_status_updated", (q) =>
+              q.eq("softDeletedAt", undefined).eq("family", family).eq("scanStatus", status),
+            )
+            .take(cap + 1),
+        ),
+      )
+    ).flat();
+    return {
+      value: Math.min(rows.length, cap),
+      capped: rows.length > cap,
+    };
+  };
+
+  const pending = await countForStatus("pending");
+  const suspicious = await countForStatus("suspicious");
+  const malicious = await countForStatus("malicious");
+  const notRun = await countForStatus("not-run");
+  const clean = await countForStatus("clean");
+  const reviewValue = pending.value + suspicious.value + malicious.value + notRun.value;
+  return {
+    "needs-review": {
+      value: Math.min(reviewValue, cap),
+      capped:
+        reviewValue > cap ||
+        pending.capped ||
+        suspicious.capped ||
+        malicious.capped ||
+        notRun.capped,
+    },
+    pending,
+    suspicious,
+    malicious,
+    "not-run": notRun,
+    clean,
+  };
+}
 
 export const listOfficialMigrationReadinessForStaffInternal = internalQuery({
   args: {},

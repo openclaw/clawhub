@@ -76,6 +76,7 @@ type ModerationQueueResult = {
   status: QueueStatus;
   limit: number;
   hasMore: boolean;
+  counts?: Record<QueueStatus, { value: number; capped: boolean }>;
 };
 
 const QUEUE_STATUSES: Array<{ value: QueueStatus; label: string }> = [
@@ -178,6 +179,9 @@ export function PluginModerationRoute() {
               {QUEUE_STATUSES.map((entry) => (
                 <option key={entry.value} value={entry.value}>
                   {entry.label}
+                  {queue?.counts?.[entry.value]
+                    ? ` (${formatQueueCount(queue.counts[entry.value])})`
+                    : ""}
                 </option>
               ))}
             </select>
@@ -195,6 +199,24 @@ export function PluginModerationRoute() {
           </label>
         </div>
       </Card>
+
+      {queue?.counts ? (
+        <div className="mb-5 grid gap-3 md:grid-cols-3 xl:grid-cols-6">
+          {QUEUE_STATUSES.map((entry) => (
+            <button
+              key={entry.value}
+              className="rounded-[var(--radius-sm)] border border-[color:var(--line)] bg-[color:var(--surface)] p-3 text-left transition hover:border-[color:var(--accent)]"
+              type="button"
+              onClick={() => setStatus(entry.value)}
+            >
+              <span className="management-report-meta">{entry.label}</span>
+              <strong className="mt-1 block text-lg text-[color:var(--ink)]">
+                {formatQueueCount(queue.counts?.[entry.value])}
+              </strong>
+            </button>
+          ))}
+        </div>
+      ) : null}
 
       <div className="grid gap-4">
         {(queue?.items ?? []).map((item) => (
@@ -398,4 +420,9 @@ function formatArtifactDigest(item: ModerationQueueItem) {
 function formatMutationError(error: unknown) {
   if (error instanceof Error) return error.message;
   return String(error);
+}
+
+function formatQueueCount(count: { value: number; capped: boolean } | undefined) {
+  if (!count) return "0";
+  return `${count.value}${count.capped ? "+" : ""}`;
 }

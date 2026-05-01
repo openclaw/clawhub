@@ -60,6 +60,14 @@ describe("plugin moderation route", () => {
       status: "needs-review",
       limit: 30,
       hasMore: false,
+      counts: {
+        "needs-review": { value: 3, capped: false },
+        pending: { value: 1, capped: false },
+        suspicious: { value: 2, capped: false },
+        malicious: { value: 0, capped: false },
+        "not-run": { value: 0, capped: false },
+        clean: { value: 100, capped: true },
+      },
       items: [
         {
           packageId: "packages:1",
@@ -134,6 +142,8 @@ describe("plugin moderation route", () => {
     expect(screen.getByText("zip aaaaaaaaaaaa / manifest bbbbbbbbbbbb")).toBeTruthy();
     expect(screen.getByText("darwin-arm64")).toBeTruthy();
     expect(screen.getByText("linux-x64-glibc")).toBeTruthy();
+    expect(screen.getByText("100+")).toBeTruthy();
+    expect(screen.getByText("Needs review")).toBeTruthy();
     expect(screen.getByRole("link", { name: "Manage" }).getAttribute("href")).toBe("/management");
   });
 
