@@ -1,4 +1,4 @@
-import { createFileRoute, Link } from "@tanstack/react-router";
+import { createFileRoute, Link, Outlet, useRouterState } from "@tanstack/react-router";
 import { useQuery } from "convex/react";
 import { api } from "../../../convex/_generated/api";
 import { ManagementAccessNotice } from "../../components/ManagementAccessNotice";
@@ -27,6 +27,12 @@ export const Route = createFileRoute("/management/migrations")({
 });
 
 export function OfficialMigrationRoute() {
+  const pathname = useRouterState({ select: (state) => state.location.pathname });
+  if (pathname !== "/management/migrations") return <Outlet />;
+  return <OfficialMigrationConsole />;
+}
+
+function OfficialMigrationConsole() {
   const { me } = useAuthStatus();
   const staff = isModerator(me);
   const readiness = useQuery(

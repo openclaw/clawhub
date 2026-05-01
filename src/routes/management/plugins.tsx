@@ -1,4 +1,4 @@
-import { createFileRoute, Link } from "@tanstack/react-router";
+import { createFileRoute, Link, Outlet, useRouterState } from "@tanstack/react-router";
 import { useQuery } from "convex/react";
 import { useState } from "react";
 import { api } from "../../../convex/_generated/api";
@@ -77,6 +77,12 @@ export const Route = createFileRoute("/management/plugins")({
 });
 
 export function PluginManagementRoute() {
+  const pathname = useRouterState({ select: (state) => state.location.pathname });
+  if (pathname !== "/management/plugins") return <Outlet />;
+  return <PluginManagementConsole />;
+}
+
+function PluginManagementConsole() {
   const { me } = useAuthStatus();
   const staff = isModerator(me);
   const [status, setStatus] = useState<QueueStatus>("needs-review");

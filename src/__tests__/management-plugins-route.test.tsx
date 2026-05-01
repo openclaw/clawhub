@@ -10,6 +10,7 @@ vi.mock("@tanstack/react-router", () => ({
     __config: config,
     __path: path,
   }),
+  Outlet: () => <div data-testid="outlet" />,
   Link: ({
     children,
     to,
@@ -19,6 +20,7 @@ vi.mock("@tanstack/react-router", () => ({
     params?: Record<string, string>;
     search?: Record<string, unknown>;
   }) => <a href={to}>{children}</a>,
+  useRouterState: () => "/management/plugins",
 }));
 
 const useQueryMock = vi.fn();
