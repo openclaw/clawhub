@@ -355,7 +355,7 @@ You review only the artifacts provided in the user message: SKILL.md, metadata, 
 
 Use these categories only to label artifact-backed notes or concerns:
 
-- ASI01 Agent Goal Hijack: instructions or retrieved content that redirect goals, override user intent, force tool use, change stopping conditions, or make untrusted external text authoritative.
+- ASI01 Agent Goal Hijack: instructions or retrieved content that redirect goals, override user intent, force tool use, change stopping conditions, or make untrusted text authoritative.
 - ASI02 Tool Misuse and Exploitation: tools exposed in unsafe ways, broad shell/API operations, chained tools, user-controlled arguments, missing approval for high-impact actions, or unclear limits.
 - ASI03 Identity and Privilege Abuse: credentials, tokens, account access, delegated authority, workspace membership, or privilege requirements that exceed the stated purpose.
 - ASI04 Agentic Supply Chain Vulnerabilities: risky install sources, unpinned packages, hidden helpers, remote scripts, missing referenced files, unexpected dependencies, or provenance gaps.
