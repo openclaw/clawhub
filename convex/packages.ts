@@ -121,9 +121,11 @@ const internalRefs = internal as unknown as {
     backfillPackageReleaseScansInternal: unknown;
     revokeStorePackArtifactForStaffInternal: unknown;
     getStorePackBackfillBatchInternal: unknown;
+    getStorePackBackfillFailureBatchInternal: unknown;
     getStorePackSearchIndexBackfillBatchInternal: unknown;
     syncStorePackSearchIndexForReleaseInternal: unknown;
     backfillStorePackSearchIndexInternal: unknown;
+    retryStorePackBackfillFailuresInternal: unknown;
     scanPackageReleaseStaticallyInternal: unknown;
     recordStorePackBackfillAttemptInternal: unknown;
     insertReleaseInternal: unknown;
@@ -246,6 +248,17 @@ type PublicPageCursorState = {
 type StorePackIndexFilter = {
   kind: "host-target" | "environment";
   key: string;
+};
+type StorePackBackfillBatchEntry = {
+  package: {
+    _id: Id<"packages">;
+    name: string;
+    ownerPublisherId?: Id<"publishers">;
+    ownerUserId: Id<"users">;
+    channel: "official" | "community" | "private";
+    family: "skill" | "code-plugin" | "bundle-plugin";
+  };
+  release: Doc<"packageReleases">;
 };
 const PUBLIC_PAGE_CURSOR_PREFIX = "pkgpage:";
 
@@ -2891,6 +2904,41 @@ export const getStorePackBackfillBatchInternal = internalQuery({
   },
 });
 
+export const getStorePackBackfillFailureBatchInternal = internalQuery({
+  args: { limit: v.number() },
+  handler: async (ctx, args) => {
+    const limit = Math.max(1, Math.min(args.limit, 50));
+    const failures = await ctx.db
+      .query("packageStorePackBackfillFailures")
+      .withIndex("by_open_failed_at", (q) => q.eq("resolvedAt", undefined))
+      .order("desc")
+      .take(limit * 3);
+    const batch: StorePackBackfillBatchEntry[] = [];
+    for (const failure of failures) {
+      if (batch.length >= limit) break;
+      const [release, pkg] = await Promise.all([
+        ctx.db.get(failure.releaseId),
+        ctx.db.get(failure.packageId),
+      ]);
+      if (!release || release.softDeletedAt || release.storepackStorageId) continue;
+      if (!pkg || pkg.softDeletedAt || pkg.family === "skill") continue;
+      if (release.packageId !== pkg._id) continue;
+      batch.push({
+        package: {
+          _id: pkg._id,
+          name: pkg.name,
+          ownerPublisherId: pkg.ownerPublisherId,
+          ownerUserId: pkg.ownerUserId,
+          channel: pkg.channel,
+          family: pkg.family,
+        },
+        release,
+      });
+    }
+    return batch;
+  },
+});
+
 export const recordStorePackBackfillAttemptInternal = internalMutation({
   args: {
     packageId: v.id("packages"),
@@ -2947,6 +2995,77 @@ export const recordStorePackBackfillAttemptInternal = internalMutation({
   },
 });
 
+async function buildStorePackArtifactsForBatch(
+  ctx: Pick<ActionCtx, "runMutation" | "storage">,
+  batch: StorePackBackfillBatchEntry[],
+) {
+  const results = [];
+  for (const entry of batch) {
+    try {
+      const storepack = await buildAndStorePackageReleaseStorePack(ctx, {
+        packageId: entry.package._id,
+        releaseId: entry.release._id,
+        name: entry.package.name,
+        owner: null,
+        version: entry.release.version,
+        family: entry.package.family,
+        channel: entry.package.channel,
+        source: entry.release.source,
+        compatibility: entry.release.compatibility,
+        capabilities: entry.release.capabilities,
+        verification: entry.release.verification,
+        files: entry.release.files,
+      });
+      await runMutationRef(ctx, internalRefs.packages.attachStorePackArtifactInternal, {
+        packageId: entry.package._id,
+        releaseId: entry.release._id,
+        storageId: storepack.storageId,
+        sha256: storepack.sha256,
+        size: storepack.size,
+        fileCount: storepack.fileCount,
+        manifestSha256: storepack.manifestSha256,
+        hostTargets: storepack.hostTargets,
+        environment: storepack.environment,
+        builtAt: storepack.builtAt,
+      });
+      await runMutationRef(ctx, internalRefs.packages.recordStorePackBackfillAttemptInternal, {
+        packageId: entry.package._id,
+        releaseId: entry.release._id,
+        name: entry.package.name,
+        version: entry.release.version,
+        ok: true,
+      });
+      results.push({
+        ok: true as const,
+        packageId: entry.package._id,
+        releaseId: entry.release._id,
+        name: entry.package.name,
+        version: entry.release.version,
+        sha256: storepack.sha256,
+      });
+    } catch (error) {
+      const message = errorMessage(error);
+      await runMutationRef(ctx, internalRefs.packages.recordStorePackBackfillAttemptInternal, {
+        packageId: entry.package._id,
+        releaseId: entry.release._id,
+        name: entry.package.name,
+        version: entry.release.version,
+        ok: false,
+        error: message,
+      });
+      results.push({
+        ok: false as const,
+        packageId: entry.package._id,
+        releaseId: entry.release._id,
+        name: entry.package.name,
+        version: entry.release.version,
+        error: message,
+      });
+    }
+  }
+  return results;
+}
+
 export const backfillStorePackArtifactsInternal = internalAction({
   args: {
     actorUserId: v.optional(v.id("users")),
@@ -2954,83 +3073,12 @@ export const backfillStorePackArtifactsInternal = internalAction({
   },
   handler: async (ctx, args) => {
     const limit = Math.max(1, Math.min(args.limit ?? 10, 50));
-    const batch = await runQueryRef<
-      Array<{
-        package: {
-          _id: Id<"packages">;
-          name: string;
-          ownerPublisherId?: Id<"publishers">;
-          ownerUserId: Id<"users">;
-          channel: "official" | "community" | "private";
-          family: "skill" | "code-plugin" | "bundle-plugin";
-        };
-        release: Doc<"packageReleases">;
-      }>
-    >(ctx, internalRefs.packages.getStorePackBackfillBatchInternal, { limit });
-    const results = [];
-    for (const entry of batch) {
-      try {
-        const storepack = await buildAndStorePackageReleaseStorePack(ctx, {
-          packageId: entry.package._id,
-          releaseId: entry.release._id,
-          name: entry.package.name,
-          owner: null,
-          version: entry.release.version,
-          family: entry.package.family,
-          channel: entry.package.channel,
-          source: entry.release.source,
-          compatibility: entry.release.compatibility,
-          capabilities: entry.release.capabilities,
-          verification: entry.release.verification,
-          files: entry.release.files,
-        });
-        await runMutationRef(ctx, internalRefs.packages.attachStorePackArtifactInternal, {
-          packageId: entry.package._id,
-          releaseId: entry.release._id,
-          storageId: storepack.storageId,
-          sha256: storepack.sha256,
-          size: storepack.size,
-          fileCount: storepack.fileCount,
-          manifestSha256: storepack.manifestSha256,
-          hostTargets: storepack.hostTargets,
-          environment: storepack.environment,
-          builtAt: storepack.builtAt,
-        });
-        await runMutationRef(ctx, internalRefs.packages.recordStorePackBackfillAttemptInternal, {
-          packageId: entry.package._id,
-          releaseId: entry.release._id,
-          name: entry.package.name,
-          version: entry.release.version,
-          ok: true,
-        });
-        results.push({
-          ok: true as const,
-          packageId: entry.package._id,
-          releaseId: entry.release._id,
-          name: entry.package.name,
-          version: entry.release.version,
-          sha256: storepack.sha256,
-        });
-      } catch (error) {
-        const message = errorMessage(error);
-        await runMutationRef(ctx, internalRefs.packages.recordStorePackBackfillAttemptInternal, {
-          packageId: entry.package._id,
-          releaseId: entry.release._id,
-          name: entry.package.name,
-          version: entry.release.version,
-          ok: false,
-          error: message,
-        });
-        results.push({
-          ok: false as const,
-          packageId: entry.package._id,
-          releaseId: entry.release._id,
-          name: entry.package.name,
-          version: entry.release.version,
-          error: message,
-        });
-      }
-    }
+    const batch = await runQueryRef<StorePackBackfillBatchEntry[]>(
+      ctx,
+      internalRefs.packages.getStorePackBackfillBatchInternal,
+      { limit },
+    );
+    const results = await buildStorePackArtifactsForBatch(ctx, batch);
     if (args.actorUserId) {
       await runMutationRef(ctx, internalRefs.packages.insertAuditLogInternal, {
         actorUserId: args.actorUserId,
@@ -3054,12 +3102,63 @@ export const backfillStorePackArtifactsInternal = internalAction({
   },
 });
 
+export const retryStorePackBackfillFailuresInternal = internalAction({
+  args: {
+    actorUserId: v.id("users"),
+    limit: v.optional(v.number()),
+  },
+  handler: async (ctx, args) => {
+    const actor = await runQueryRef<Doc<"users"> | null>(ctx, internalRefs.users.getByIdInternal, {
+      userId: args.actorUserId,
+    });
+    if (!actor) throw new ConvexError("Actor not found");
+    assertAdmin(actor);
+    const limit = Math.max(1, Math.min(args.limit ?? 10, 50));
+    const batch = await runQueryRef<StorePackBackfillBatchEntry[]>(
+      ctx,
+      internalRefs.packages.getStorePackBackfillFailureBatchInternal,
+      { limit },
+    );
+    const results = await buildStorePackArtifactsForBatch(ctx, batch);
+    await runMutationRef(ctx, internalRefs.packages.insertAuditLogInternal, {
+      actorUserId: args.actorUserId,
+      action: "package.storepack.retryFailures",
+      targetType: "package",
+      targetId: "storepack",
+      metadata: {
+        requestedLimit: limit,
+        processed: results.length,
+        succeeded: results.filter((result) => result.ok).length,
+        failed: results.filter((result) => !result.ok).length,
+      },
+    });
+    return {
+      processed: results.length,
+      succeeded: results.filter((result) => result.ok).length,
+      failed: results.filter((result) => !result.ok).length,
+      results,
+    };
+  },
+});
+
 export const backfillStorePackArtifacts = action({
   args: { limit: v.optional(v.number()) },
   handler: async (ctx, args) => {
     const { user, userId } = await requireUserFromAction(ctx);
     assertAdmin(user);
     return await runActionRef(ctx, internalRefs.packages.backfillStorePackArtifactsInternal, {
+      actorUserId: userId,
+      limit: args.limit,
+    });
+  },
+});
+
+export const retryStorePackBackfillFailures = action({
+  args: { limit: v.optional(v.number()) },
+  handler: async (ctx, args) => {
+    const { user, userId } = await requireUserFromAction(ctx);
+    assertAdmin(user);
+    return await runActionRef(ctx, internalRefs.packages.retryStorePackBackfillFailuresInternal, {
       actorUserId: userId,
       limit: args.limit,
     });

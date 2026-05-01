@@ -25,6 +25,7 @@ import {
   cmdPackageStorePackBackfill,
   cmdPackageStorePackIndexBackfill,
   cmdPackageStorePackMigrationStatus,
+  cmdPackageStorePackRetryFailures,
   cmdPackageStorePackRevoke,
   cmdPublishPackage,
   cmdSetPackageTrustedPublisher,
@@ -482,6 +483,16 @@ packageStorePackCmd
   .action(async (options) => {
     const opts = await resolveGlobalOpts();
     await cmdPackageStorePackBackfill(opts, options);
+  });
+
+packageStorePackCmd
+  .command("retry-failures")
+  .description("Retry failed StorePack artifact builds")
+  .option("--limit <n>", "Batch size", (value) => Number.parseInt(value, 10), 10)
+  .option("--json", "Output JSON")
+  .action(async (options) => {
+    const opts = await resolveGlobalOpts();
+    await cmdPackageStorePackRetryFailures(opts, options);
   });
 
 packageStorePackCmd

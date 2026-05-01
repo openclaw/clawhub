@@ -64,6 +64,7 @@ const internalRefs = internal as unknown as {
     deleteTrustedPublisherForUserInternal: unknown;
     backfillStorePackArtifactsInternal: unknown;
     backfillStorePackSearchIndexInternal: unknown;
+    retryStorePackBackfillFailuresInternal: unknown;
     getStorePackMigrationStatusInternal: unknown;
     revokeStorePackArtifactForStaffInternal: unknown;
     getReleasesByIdsInternal: unknown;
@@ -1265,6 +1266,38 @@ export async function packagesPostRouterV1Handler(ctx: ActionCtx, request: Reque
     } catch (error) {
       return text(
         error instanceof Error ? error.message : "StorePack index backfill failed",
+        400,
+        rate.headers,
+      );
+    }
+  }
+
+  if (segments[0] === "storepack" && segments[1] === "retry-failures" && segments.length === 2) {
+    const rate = await applyRateLimit(ctx, request, "write");
+    if (!rate.ok) return rate.response;
+    const auth = await requireApiTokenUserOrResponse(ctx, request, rate.headers);
+    if (!auth.ok) return auth.response;
+    const admin = requireAdminOrResponse(auth.user, rate.headers);
+    if (!admin.ok) return admin.response;
+    const body = await request.json().catch(() => ({}));
+    const rawLimit =
+      body && typeof body === "object" && "limit" in body
+        ? Number((body as { limit?: unknown }).limit)
+        : undefined;
+    const limit = Number.isFinite(rawLimit) ? rawLimit : undefined;
+    try {
+      const result = await runActionRef(
+        ctx,
+        internalRefs.packages.retryStorePackBackfillFailuresInternal,
+        {
+          actorUserId: auth.userId,
+          ...(limit ? { limit } : {}),
+        },
+      );
+      return json(result, 200, rate.headers);
+    } catch (error) {
+      return text(
+        error instanceof Error ? error.message : "StorePack failure retry failed",
         400,
         rate.headers,
       );

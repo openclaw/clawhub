@@ -26,6 +26,7 @@ const useActionMock = vi.fn();
 const useAuthStatusMock = vi.fn();
 const backfillArtifacts = vi.fn();
 const backfillIndex = vi.fn();
+const retryFailures = vi.fn();
 
 vi.mock("convex/react", () => ({
   ConvexReactClient: class {},
@@ -50,13 +51,17 @@ describe("StorePack management route", () => {
     useAuthStatusMock.mockReset();
     backfillArtifacts.mockReset();
     backfillIndex.mockReset();
+    retryFailures.mockReset();
 
     useAuthStatusMock.mockReturnValue({
       isAuthenticated: true,
       isLoading: false,
       me: { _id: "users:admin", role: "admin" },
     });
-    useActionMock.mockReturnValueOnce(backfillArtifacts).mockReturnValueOnce(backfillIndex);
+    useActionMock
+      .mockReturnValueOnce(backfillArtifacts)
+      .mockReturnValueOnce(backfillIndex)
+      .mockReturnValueOnce(retryFailures);
     useQueryMock.mockReturnValue({
       missingSample: [
         {
@@ -104,6 +109,7 @@ describe("StorePack management route", () => {
     expect(screen.getByText("Failed artifact builds")).toBeTruthy();
     expect(screen.getByText(/Invalid StorePack file path/)).toBeTruthy();
     expect(screen.getByText("Build missing artifacts")).toBeTruthy();
+    expect(screen.getByText("Retry failed builds")).toBeTruthy();
     expect(screen.getByText("Rebuild lookup index")).toBeTruthy();
 
     fireEvent.click(screen.getByRole("button", { name: "Dry-run sample" }));
@@ -123,6 +129,22 @@ describe("StorePack management route", () => {
 
     expect(screen.getByText("read only")).toBeTruthy();
     expect(screen.queryByText("Build missing artifacts")).toBeNull();
+    expect(screen.queryByText("Retry failed builds")).toBeNull();
     expect(screen.queryByText("Rebuild lookup index")).toBeNull();
+  });
+
+  it("confirms and runs failed build retries for admins", async () => {
+    retryFailures.mockResolvedValueOnce({ processed: 1, succeeded: 1, failed: 0 });
+    vi.spyOn(window, "confirm").mockReturnValueOnce(true);
+
+    renderRoute();
+
+    fireEvent.click(screen.getByRole("button", { name: "Retry failed builds" }));
+
+    expect(window.confirm).toHaveBeenCalledWith(
+      expect.stringContaining("Retry failed StorePack artifact builds"),
+    );
+    expect(retryFailures).toHaveBeenCalledWith({ limit: 10 });
+    expect(await screen.findByText(/processed 1 - succeeded 1 - failed 0/i)).toBeTruthy();
   });
 });

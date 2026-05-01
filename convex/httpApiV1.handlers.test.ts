@@ -4233,6 +4233,38 @@ describe("httpApiV1 handlers", () => {
     });
   });
 
+  it("storepack failure retry dispatches the admin action", async () => {
+    vi.mocked(requireApiTokenUser).mockResolvedValue({
+      userId: "users:admin",
+      user: { _id: "users:admin", role: "admin" },
+    } as never);
+    const runAction = vi.fn().mockResolvedValue({
+      processed: 1,
+      succeeded: 1,
+      failed: 0,
+      results: [],
+    });
+    const runMutation = vi.fn().mockResolvedValue(okRate());
+
+    const response = await __handlers.packagesPostRouterV1Handler(
+      makeCtx({ runAction, runMutation }),
+      new Request("https://example.com/api/v1/packages/storepack/retry-failures", {
+        method: "POST",
+        body: JSON.stringify({ limit: 1 }),
+      }),
+    );
+
+    expect(response.status).toBe(200);
+    expect(runAction).toHaveBeenCalledWith(expect.anything(), {
+      actorUserId: "users:admin",
+      limit: 1,
+    });
+    await expect(response.json()).resolves.toMatchObject({
+      processed: 1,
+      succeeded: 1,
+    });
+  });
+
   it("storepack revoke dispatches the moderator mutation", async () => {
     vi.mocked(requireApiTokenUser).mockResolvedValue({
       userId: "users:moderator",

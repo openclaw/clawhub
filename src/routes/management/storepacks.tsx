@@ -14,6 +14,7 @@ const packageApiRefs = api as unknown as {
     getStorePackMigrationStatus: unknown;
     backfillStorePackArtifacts: unknown;
     backfillStorePackSearchIndex: unknown;
+    retryStorePackBackfillFailures: unknown;
   };
 };
 
@@ -80,12 +81,15 @@ export function StorePackManagementRoute() {
   const backfillStorePackSearchIndex = useAction(
     packageApiRefs.packages.backfillStorePackSearchIndex as never,
   ) as unknown as (args: { limit?: number; cursor?: string }) => Promise<unknown>;
+  const retryStorePackBackfillFailures = useAction(
+    packageApiRefs.packages.retryStorePackBackfillFailures as never,
+  ) as unknown as (args: { limit?: number }) => Promise<unknown>;
 
   const [batchLimit, setBatchLimit] = useState(10);
   const [indexCursor, setIndexCursor] = useState("");
   const [dryRunRows, setDryRunRows] = useState<StorePackMigrationStatus["missingSample"]>([]);
   const [lastResult, setLastResult] = useState<{
-    kind: "artifact-backfill" | "index-backfill";
+    kind: "artifact-backfill" | "failure-retry" | "index-backfill";
     result: StorePackBackfillResult;
   } | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -124,6 +128,22 @@ export function StorePackManagementRoute() {
     void backfillStorePackArtifacts({ limit })
       .then((result) => {
         setLastResult({ kind: "artifact-backfill", result: result as StorePackBackfillResult });
+      })
+      .catch((requestError) => setError(formatMutationError(requestError)));
+  };
+
+  const runFailureRetry = () => {
+    if (
+      !window.confirm(
+        `Retry failed StorePack artifact builds for up to ${limit} releases?\n\nThis writes StorePack metadata in Convex and updates the failure ledger.`,
+      )
+    ) {
+      return;
+    }
+    setError(null);
+    void retryStorePackBackfillFailures({ limit })
+      .then((result) => {
+        setLastResult({ kind: "failure-retry", result: result as StorePackBackfillResult });
       })
       .catch((requestError) => setError(formatMutationError(requestError)));
   };
@@ -237,6 +257,9 @@ export function StorePackManagementRoute() {
               <>
                 <Button type="button" onClick={runArtifactBackfill}>
                   Build missing artifacts
+                </Button>
+                <Button type="button" variant="outline" onClick={runFailureRetry}>
+                  Retry failed builds
                 </Button>
                 <Button type="button" onClick={runIndexBackfill}>
                   Rebuild lookup index

@@ -310,6 +310,14 @@ clawhub package explore episodic-claw --family code-plugin
 - `--cursor <cursor>` continues from the previous batch response.
 - `--json` emits the raw response.
 
+### `package storepack-admin retry-failures`
+
+- Admin-only batch retry for failed StorePack artifact builds.
+- Calls `POST /api/v1/packages/storepack/retry-failures`.
+- Requires an API token for an admin user.
+- `--limit <n>` controls batch size.
+- `--json` emits the raw response.
+
 ### `package storepack-admin revoke <name> <version>`
 
 - Moderator/admin revocation path for a published StorePack artifact.

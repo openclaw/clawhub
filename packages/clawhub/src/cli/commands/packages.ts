@@ -781,6 +781,31 @@ export async function cmdPackageStorePackBackfill(
   console.log(`Failed: ${formatUnknownScalar(result.failed)}`);
 }
 
+export async function cmdPackageStorePackRetryFailures(
+  opts: GlobalOpts,
+  options: PackageStorePackMigrationOptions = {},
+) {
+  const token = await requireAuthToken();
+  const registry = await getRegistry(opts, { cache: true });
+  const result = await apiRequest<Record<string, unknown>>(registry, {
+    method: "POST",
+    path: `${ApiRoutes.packages}/storepack/retry-failures`,
+    token,
+    body:
+      typeof options.limit === "number" && Number.isFinite(options.limit)
+        ? { limit: options.limit }
+        : {},
+  });
+  if (options.json) {
+    process.stdout.write(`${JSON.stringify(result, null, 2)}\n`);
+    return;
+  }
+  console.log("StorePack failure retry");
+  console.log(`Processed: ${formatUnknownScalar(result.processed)}`);
+  console.log(`Succeeded: ${formatUnknownScalar(result.succeeded)}`);
+  console.log(`Failed: ${formatUnknownScalar(result.failed)}`);
+}
+
 export async function cmdPackageStorePackIndexBackfill(
   opts: GlobalOpts,
   options: PackageStorePackMigrationOptions = {},

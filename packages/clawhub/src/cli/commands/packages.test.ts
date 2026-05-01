@@ -36,6 +36,7 @@ const {
   cmdPackageStorePackBackfill,
   cmdPackageStorePackIndexBackfill,
   cmdPackageStorePackMigrationStatus,
+  cmdPackageStorePackRetryFailures,
   cmdPackageStorePackRevoke,
   cmdInspectPackageStorePack,
   cmdPublishPackage,
@@ -501,6 +502,32 @@ describe("package commands", () => {
     );
     expect(mockLog).toHaveBeenCalledWith("StorePack index backfill");
     expect(mockLog).toHaveBeenCalledWith("Next cursor: cursor:2");
+  });
+
+  it("retries failed StorePack backfill batches for admins", async () => {
+    httpMocks.apiRequest.mockResolvedValueOnce({
+      processed: 1,
+      succeeded: 1,
+      failed: 0,
+      results: [],
+    });
+
+    await cmdPackageStorePackRetryFailures(makeOpts(), { limit: 1 });
+
+    expect(httpMocks.apiRequest).toHaveBeenCalledWith(
+      "https://clawhub.ai",
+      {
+        method: "POST",
+        path: "/api/v1/packages/storepack/retry-failures",
+        token: "tkn",
+        body: { limit: 1 },
+      },
+      undefined,
+    );
+    expect(mockLog).toHaveBeenCalledWith("StorePack failure retry");
+    expect(mockLog).toHaveBeenCalledWith("Processed: 1");
+    expect(mockLog).toHaveBeenCalledWith("Succeeded: 1");
+    expect(mockLog).toHaveBeenCalledWith("Failed: 0");
   });
 
   it("revokes StorePack artifacts for moderators", async () => {
