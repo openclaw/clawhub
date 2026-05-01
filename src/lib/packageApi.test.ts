@@ -11,10 +11,13 @@ vi.mock("@tanstack/react-start/server", () => ({
 import {
   fetchPackageDetail,
   fetchPackageReadme,
+  fetchPackageStorePack,
+  fetchPackageStorePackManifest,
   fetchPackageVersion,
   fetchPluginCatalog,
   fetchPackages,
   getPackageDownloadPath,
+  getPackageStorePackPath,
   PackageApiError,
 } from "./packageApi";
 
@@ -374,6 +377,59 @@ describe("fetchPackages", () => {
     );
   });
 
+  it("fetches package StorePack details from the encoded release route", async () => {
+    vi.stubEnv("VITE_CONVEX_URL", "https://registry.example");
+    const fetchMock = vi.spyOn(globalThis, "fetch").mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          package: {
+            name: "@openclaw/kitchen-sink",
+            displayName: "Kitchen Sink",
+            family: "code-plugin",
+          },
+          version: { version: "1.0.0", createdAt: 1 },
+          storepack: { available: true, specVersion: 1, sha256: "a".repeat(64), size: 12 },
+          links: {
+            download: "/api/v1/packages/%40openclaw%2Fkitchen-sink/download?version=1.0.0",
+            immutable: `/api/v1/storepacks/${"a".repeat(64)}`,
+            manifest:
+              "/api/v1/packages/%40openclaw%2Fkitchen-sink/versions/1.0.0/storepack/manifest",
+          },
+        }),
+        { status: 200 },
+      ),
+    );
+
+    const result = await fetchPackageStorePack("@openclaw/kitchen-sink", "1.0.0+build/meta");
+
+    expect(result?.storepack.sha256).toBe("a".repeat(64));
+    expect(fetchMock.mock.calls[0]?.[0]).toBe(
+      "https://registry.example/api/v1/packages/%40openclaw%2Fkitchen-sink/versions/1.0.0%2Bbuild%2Fmeta/storepack",
+    );
+  });
+
+  it("fetches package StorePack manifests from the encoded release route", async () => {
+    vi.stubEnv("VITE_CONVEX_URL", "https://registry.example");
+    const fetchMock = vi.spyOn(globalThis, "fetch").mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          package: { name: "demo-plugin", displayName: "Demo Plugin", family: "code-plugin" },
+          version: { version: "1.0.0", createdAt: 1 },
+          storepack: { available: true, specVersion: 1, sha256: "b".repeat(64), size: 12 },
+          manifest: { kind: "openclaw.storepack", specVersion: 1 },
+        }),
+        { status: 200 },
+      ),
+    );
+
+    const result = await fetchPackageStorePackManifest("demo-plugin", "1.0.0");
+
+    expect(result?.manifest).toEqual({ kind: "openclaw.storepack", specVersion: 1 });
+    expect(fetchMock.mock.calls[0]?.[0]).toBe(
+      "https://registry.example/api/v1/packages/demo-plugin/versions/1.0.0/storepack/manifest",
+    );
+  });
+
   it("returns null when no supported README variant exists", async () => {
     vi.stubEnv("VITE_CONVEX_URL", "https://registry.example");
     const fetchMock = vi
@@ -418,6 +474,12 @@ describe("fetchPackages", () => {
     );
     expect(getPackageDownloadPath("private-plugin")).toBe(
       "/api/v1/packages/private-plugin/download",
+    );
+    expect(getPackageStorePackPath("@openclaw/kitchen-sink", "1.0.0+build/meta")).toBe(
+      "/api/v1/packages/%40openclaw%2Fkitchen-sink/versions/1.0.0%2Bbuild%2Fmeta/storepack",
+    );
+    expect(getPackageStorePackPath("@openclaw/kitchen-sink", "1.0.0", "manifest")).toBe(
+      "/api/v1/packages/%40openclaw%2Fkitchen-sink/versions/1.0.0/storepack/manifest",
     );
   });
 });

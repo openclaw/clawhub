@@ -4,6 +4,8 @@ import {
   PublishTokenMintRequestSchema,
   parseArk,
 } from "clawhub-schema";
+import { ApiRoutes } from "clawhub-schema/routes";
+import { unzipSync } from "fflate";
 import { api, internal } from "../_generated/api";
 import type { Doc, Id } from "../_generated/dataModel";
 import type { ActionCtx } from "../_generated/server";
@@ -259,6 +261,13 @@ function toPublicStorePack(release: ReleaseLike | null | undefined) {
     environment: release.environmentSummary ?? null,
     runtimeBundles: [],
   };
+}
+
+async function readStorePackManifest(blob: Blob) {
+  const entries = unzipSync(new Uint8Array(await blob.arrayBuffer()));
+  const manifestBytes = entries["package/STOREPACK.json"];
+  if (!manifestBytes) throw new Error("Missing StorePack manifest");
+  return JSON.parse(new TextDecoder().decode(manifestBytes)) as Record<string, unknown>;
 }
 
 function requireModeratorOrResponse(
@@ -1806,6 +1815,91 @@ export async function packagesGetRouterV1Handler(ctx: ActionCtx, request: Reques
           distTags: release.distTags ?? [],
         })),
         nextCursor: result.isDone ? null : result.continueCursor,
+      },
+      200,
+      rate.headers,
+    );
+  }
+
+  if (
+    segments[1] === "versions" &&
+    segments[2] &&
+    segments[3] === "storepack" &&
+    (segments.length === 4 || (segments[4] === "manifest" && segments.length === 5))
+  ) {
+    if (!publicPackage) return text("StorePack not available", 404, rate.headers);
+    const result = (await runQueryRef(
+      ctx,
+      internalRefs.packages.getVersionByNameForViewerInternal,
+      {
+        name: packageName,
+        version: segments[2],
+        viewerUserId: viewerUserId ?? undefined,
+      },
+    )) as { package: PublicPackageDocLike; version: ReleaseLike } | null;
+    if (!result) return text("Version not found", 404, rate.headers);
+
+    const storepack = toPublicStorePack(result.version);
+    if (result.version.storepackRevokedAt) return text("StorePack revoked", 410, rate.headers);
+    if (!storepack.available) return text("StorePack not available", 404, rate.headers);
+
+    const securityBlock = getReleaseSecurityBlock(result.version);
+    if (securityBlock) return text(securityBlock.message, securityBlock.status, rate.headers);
+
+    if (segments[4] === "manifest") {
+      if (!result.version.storepackStorageId) {
+        return text("StorePack not available", 404, rate.headers);
+      }
+      const blob = await ctx.storage.get(result.version.storepackStorageId);
+      if (!blob) return text("Missing stored StorePack artifact", 500, rate.headers);
+      try {
+        const manifest = await readStorePackManifest(blob);
+        return json(
+          {
+            package: {
+              name: result.package.name,
+              displayName: result.package.displayName,
+              family: result.package.family,
+            },
+            version: result.version.version,
+            storepack,
+            manifest,
+          },
+          200,
+          rate.headers,
+        );
+      } catch (error) {
+        return text(
+          error instanceof Error ? error.message : "Invalid StorePack manifest",
+          500,
+          rate.headers,
+        );
+      }
+    }
+
+    return json(
+      {
+        package: {
+          name: result.package.name,
+          displayName: result.package.displayName,
+          family: result.package.family,
+        },
+        version: {
+          version: result.version.version,
+          createdAt: result.version.createdAt,
+          distTags: result.version.distTags ?? [],
+          verification: result.version.verification ?? null,
+          sha256hash: result.version.sha256hash ?? null,
+          vtAnalysis: result.version.vtAnalysis ?? null,
+          llmAnalysis: result.version.llmAnalysis ?? null,
+          staticScan: result.version.staticScan ?? null,
+        },
+        storepack,
+        links: {
+          download: `${ApiRoutes.packages}/${encodeURIComponent(result.package.name)}/download?version=${encodeURIComponent(result.version.version)}`,
+          immutable: storepack.sha256 ? `/api/v1/storepacks/${storepack.sha256}` : null,
+          manifest: `${ApiRoutes.packages}/${encodeURIComponent(result.package.name)}/versions/${encodeURIComponent(result.version.version)}/storepack/manifest`,
+        },
       },
       200,
       rate.headers,

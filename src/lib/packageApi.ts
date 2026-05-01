@@ -10,7 +10,7 @@ import { getRequiredRuntimeEnv, getRuntimeEnv } from "./runtimeEnv";
 
 export type PackageStorePackSummary = {
   available: boolean;
-  specVersion: number;
+  specVersion: number | null;
   sha256: string | null;
   size: number | null;
   format: string | null;
@@ -127,6 +127,34 @@ export type PackageVersionDetail = {
   } | null;
 };
 
+export type PackageStorePackReleaseDetail = {
+  package: {
+    name: string;
+    displayName: string;
+    family: "skill" | "code-plugin" | "bundle-plugin";
+  };
+  version: {
+    version: string;
+    createdAt: number;
+    distTags?: string[];
+    verification?: PackageVerificationSummary | null;
+    sha256hash?: string | null;
+    vtAnalysis?: NonNullable<PackageVersionDetail["version"]>["vtAnalysis"];
+    llmAnalysis?: NonNullable<PackageVersionDetail["version"]>["llmAnalysis"];
+    staticScan?: NonNullable<PackageVersionDetail["version"]>["staticScan"];
+  };
+  storepack: PackageStorePackSummary;
+  links: {
+    download: string;
+    immutable: string | null;
+    manifest: string;
+  };
+};
+
+export type PackageStorePackManifestDetail = Omit<PackageStorePackReleaseDetail, "links"> & {
+  manifest: Record<string, unknown>;
+};
+
 type PluginFamily = "code-plugin" | "bundle-plugin";
 
 type PluginCatalogResult = {
@@ -215,6 +243,13 @@ export function getPackageDownloadPath(name: string, version?: string | null) {
   const path = normalizeApiPath(`${ApiRoutes.packages}/${encodeURIComponent(name)}/download`);
   if (!version) return path;
   return `${path}?version=${encodeURIComponent(version)}`;
+}
+
+export function getPackageStorePackPath(name: string, version: string, suffix?: "manifest") {
+  const path = normalizeApiPath(
+    `${ApiRoutes.packages}/${encodeURIComponent(name)}/versions/${encodeURIComponent(version)}/storepack`,
+  );
+  return suffix ? `${path}/${suffix}` : path;
 }
 
 async function getForwardedHeaders() {
@@ -442,6 +477,30 @@ export async function fetchPackageVersion(
     return await fetchJson<PackageVersionDetail>(url);
   } catch {
     // Return null on API error to prevent SSR crashes
+    return null;
+  }
+}
+
+export async function fetchPackageStorePack(
+  name: string,
+  version: string,
+): Promise<PackageStorePackReleaseDetail | null> {
+  try {
+    const url = await packageApiUrl(getPackageStorePackPath(name, version));
+    return await fetchJson<PackageStorePackReleaseDetail>(url);
+  } catch {
+    return null;
+  }
+}
+
+export async function fetchPackageStorePackManifest(
+  name: string,
+  version: string,
+): Promise<PackageStorePackManifestDetail | null> {
+  try {
+    const url = await packageApiUrl(getPackageStorePackPath(name, version, "manifest"));
+    return await fetchJson<PackageStorePackManifestDetail>(url);
+  } catch {
     return null;
   }
 }

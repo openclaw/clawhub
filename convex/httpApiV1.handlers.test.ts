@@ -1,5 +1,5 @@
 /* @vitest-environment node */
-import { unzipSync } from "fflate";
+import { unzipSync, zipSync } from "fflate";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { internal } from "./_generated/api";
 import { RATE_LIMITS } from "./lib/httpRateLimit";
@@ -3793,6 +3793,173 @@ describe("httpApiV1 handlers", () => {
     expect(runMutation).toHaveBeenCalledWith(internal.packages.recordPackageDownloadInternal, {
       packageId: "packages:1",
     });
+  });
+
+  it("returns release StorePack metadata without reading the artifact blob", async () => {
+    const runMutation = vi.fn().mockResolvedValue(okRate());
+    const runQuery = vi.fn(async (_query: unknown, args: Record<string, unknown>) => {
+      if ("version" in args) {
+        return {
+          package: {
+            _id: "packages:1",
+            name: "@openclaw/kitchen-sink",
+            displayName: "Kitchen Sink",
+            family: "code-plugin",
+          },
+          version: {
+            _id: "packageReleases:1",
+            version: "1.0.0",
+            createdAt: 1,
+            changelog: "init",
+            files: [],
+            storepackStorageId: "storage:storepack",
+            storepackSha256: "ab".repeat(32),
+            storepackSize: 13,
+            storepackSpecVersion: 1,
+            storepackFileCount: 3,
+            storepackManifestSha256: "cd".repeat(32),
+            hostTargetsSummary: [{ os: "darwin", arch: "arm64", supportState: "supported" }],
+            environmentSummary: { requiresLocalDesktop: true },
+          },
+        };
+      }
+      if ("name" in args) {
+        return {
+          package: {
+            _id: "packages:1",
+            name: "@openclaw/kitchen-sink",
+            displayName: "Kitchen Sink",
+            family: "code-plugin",
+            tags: {},
+            latestReleaseId: "packageReleases:1",
+            channel: "official",
+            isOfficial: true,
+            createdAt: 1,
+            updatedAt: 1,
+          },
+          latestRelease: null,
+          owner: { _id: "publishers:openclaw", handle: "openclaw" },
+        };
+      }
+      return null;
+    });
+    const storageGet = vi.fn();
+
+    const response = await __handlers.packagesGetRouterV1Handler(
+      makeCtx({
+        runQuery,
+        runMutation,
+        storage: {
+          get: storageGet,
+        },
+      }),
+      new Request(
+        "https://example.com/api/v1/packages/%40openclaw%2Fkitchen-sink/versions/1.0.0/storepack",
+      ),
+    );
+
+    expect(response.status).toBe(200);
+    const body = await response.json();
+    expect(body.storepack).toMatchObject({
+      available: true,
+      sha256: "ab".repeat(32),
+      size: 13,
+      fileCount: 3,
+      manifestSha256: "cd".repeat(32),
+    });
+    expect(body.links).toEqual({
+      download: "/api/v1/packages/%40openclaw%2Fkitchen-sink/download?version=1.0.0",
+      immutable: `/api/v1/storepacks/${"ab".repeat(32)}`,
+      manifest: "/api/v1/packages/%40openclaw%2Fkitchen-sink/versions/1.0.0/storepack/manifest",
+    });
+    expect(storageGet).not.toHaveBeenCalled();
+  });
+
+  it("returns a release StorePack manifest from the stored artifact", async () => {
+    const manifest = {
+      kind: "openclaw.storepack",
+      specVersion: 1,
+      package: { name: "@openclaw/kitchen-sink", version: "1.0.0" },
+      files: [{ path: "package.json", sha256: "a".repeat(64), size: 2 }],
+    };
+    const zip = zipSync({
+      "package/STOREPACK.json": new TextEncoder().encode(JSON.stringify(manifest)),
+    });
+    const runMutation = vi.fn().mockResolvedValue(okRate());
+    const runQuery = vi.fn(async (_query: unknown, args: Record<string, unknown>) => {
+      if ("version" in args) {
+        return {
+          package: {
+            _id: "packages:1",
+            name: "@openclaw/kitchen-sink",
+            displayName: "Kitchen Sink",
+            family: "code-plugin",
+          },
+          version: {
+            _id: "packageReleases:1",
+            version: "1.0.0",
+            createdAt: 1,
+            changelog: "init",
+            files: [],
+            storepackStorageId: "storage:storepack",
+            storepackSha256: "ab".repeat(32),
+            storepackSize: zip.byteLength,
+            storepackSpecVersion: 1,
+            storepackFileCount: 2,
+          },
+        };
+      }
+      if ("name" in args) {
+        return {
+          package: {
+            _id: "packages:1",
+            name: "@openclaw/kitchen-sink",
+            displayName: "Kitchen Sink",
+            family: "code-plugin",
+            tags: {},
+            latestReleaseId: "packageReleases:1",
+            channel: "official",
+            isOfficial: true,
+            createdAt: 1,
+            updatedAt: 1,
+          },
+          latestRelease: null,
+          owner: { _id: "publishers:openclaw", handle: "openclaw" },
+        };
+      }
+      return null;
+    });
+    const storageGet = vi.fn(async (storageId: string) => {
+      if (storageId === "storage:storepack") {
+        return new Blob([zip], { type: "application/zip" });
+      }
+      throw new Error(`unexpected storage read: ${storageId}`);
+    });
+
+    const response = await __handlers.packagesGetRouterV1Handler(
+      makeCtx({
+        runQuery,
+        runMutation,
+        storage: {
+          get: storageGet,
+        },
+      }),
+      new Request(
+        "https://example.com/api/v1/packages/%40openclaw%2Fkitchen-sink/versions/1.0.0/storepack/manifest",
+      ),
+    );
+
+    expect(response.status).toBe(200);
+    const body = await response.json();
+    expect(body.package).toEqual({
+      name: "@openclaw/kitchen-sink",
+      displayName: "Kitchen Sink",
+      family: "code-plugin",
+    });
+    expect(body.version).toBe("1.0.0");
+    expect(body.storepack.sha256).toBe("ab".repeat(32));
+    expect(body.manifest).toEqual(manifest);
+    expect(storageGet).toHaveBeenCalledWith("storage:storepack");
   });
 
   it("package download refuses revoked StorePack artifacts", async () => {
