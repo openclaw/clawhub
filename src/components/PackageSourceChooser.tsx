@@ -22,12 +22,23 @@ export function PackageSourceChooser(props: {
   validationError: string | null;
   codePluginFieldIssues: string[];
   codePluginCompatibility: PackageCompatibility | null;
+  hostTargets?: string;
   onPickFiles: (selected: File[]) => Promise<void>;
 }) {
   const [isDragging, setIsDragging] = useState(false);
   const archiveInputRef = useRef<HTMLInputElement | null>(null);
   const directoryInputRef = useRef<HTMLInputElement | null>(null);
   const isMetadataLocked = props.files.length === 0 || Boolean(props.validationError);
+  const hostTargetLabels =
+    props.hostTargets
+      ?.split(",")
+      .map((target) => target.trim())
+      .filter(Boolean) ?? [];
+  const effectiveHostTargets =
+    hostTargetLabels.length > 0
+      ? hostTargetLabels
+      : ["darwin-arm64", "linux-x64-glibc", "win32-x64"];
+  const environmentSignals = deriveEnvironmentSignals(props.normalizedPaths);
 
   const setDirectoryInputRef = (node: HTMLInputElement | null) => {
     directoryInputRef.current = node;
@@ -174,6 +185,49 @@ export function PackageSourceChooser(props: {
           Compatibility: {formatPackageCompatibility(props.codePluginCompatibility)}
         </p>
       ) : null}
+      {props.normalizedPaths.length > 0 ? (
+        <div className="rounded-[var(--radius-sm)] border border-[color:var(--line)] bg-[color:var(--surface-muted)] px-4 py-3">
+          <div className="flex items-center justify-between gap-3">
+            <strong className="text-sm text-[color:var(--ink)]">StorePack readiness</strong>
+            <span className="text-xs text-[color:var(--ink-soft)]">generated on publish</span>
+          </div>
+          <div className="mt-2 flex flex-wrap gap-1.5">
+            <Badge>Deterministic archive</Badge>
+            <Badge>Generated manifest</Badge>
+            {effectiveHostTargets.map((target) => (
+              <Badge key={target} variant="compact">
+                {target}
+              </Badge>
+            ))}
+            {environmentSignals.map((signal) => (
+              <Badge key={signal} variant="compact">
+                {signal}
+              </Badge>
+            ))}
+          </div>
+          <p className="mt-2 text-sm text-[color:var(--ink-soft)]">
+            ClawHub will package these files with a StorePack manifest, host target summary, file
+            digests, and environment hints for OpenClaw clients.
+          </p>
+        </div>
+      ) : null}
     </Card>
   );
+}
+
+function deriveEnvironmentSignals(paths: string[]) {
+  const lowerPaths = paths.map((path) => path.toLowerCase());
+  const signals = [
+    lowerPaths.some((path) => path.includes("playwright") || path.includes("browser"))
+      ? "browser"
+      : null,
+    lowerPaths.some((path) => path.includes("desktop") || path.includes("imessage"))
+      ? "desktop"
+      : null,
+    lowerPaths.some((path) => path.includes("audio") || path.includes("microphone"))
+      ? "audio"
+      : null,
+    "network",
+  ].filter((signal): signal is string => Boolean(signal));
+  return [...new Set(signals)];
 }

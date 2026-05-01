@@ -180,6 +180,7 @@ export function PublishPluginRoute() {
           validationError={validationError}
           codePluginFieldIssues={codePluginFieldIssues}
           codePluginCompatibility={codePluginCompatibility}
+          hostTargets={hostTargets}
           onPickFiles={onPickFiles}
         />
 
