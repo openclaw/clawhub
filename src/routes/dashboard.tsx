@@ -17,6 +17,7 @@ import {
 } from "../components/ui/dropdown-menu";
 import { Tooltip, TooltipContent, TooltipTrigger } from "../components/ui/tooltip";
 import { getUserFacingConvexError } from "../lib/convexError";
+import { deriveStorePackLifecycle } from "../lib/packageLifecycle";
 
 const emptyPluginPublishSearch = {
   ownerHandle: undefined,
@@ -91,6 +92,19 @@ type DashboardPackage = {
     vtStatus: string | null;
     llmStatus: string | null;
     staticScanStatus: "clean" | "suspicious" | "malicious" | null;
+    storepackAvailable: boolean;
+    storepackSha256: string | null;
+    hostTargets: Array<{
+      os: "darwin" | "linux" | "win32";
+      arch: "arm64" | "x64";
+      libc?: "glibc" | "musl";
+    }> | null;
+    environment: {
+      requiresLocalDesktop?: boolean;
+      requiresBrowser?: boolean;
+      requiresAudioDevice?: boolean;
+      requiresNetwork?: boolean;
+    } | null;
   } | null;
   rescanState?: DashboardRescanState | null;
 };
@@ -366,6 +380,34 @@ function packageDashboardStatus(pkg: DashboardPackage): {
   description: string;
   variant: "default" | "pending" | "warning" | "destructive" | "success";
 } {
+  const lifecycle = deriveStorePackLifecycle({
+    available: pkg.latestRelease?.storepackAvailable ?? false,
+    verificationScanStatus: pkg.scanStatus,
+    vtStatus: pkg.latestRelease?.vtStatus,
+    llmStatus: pkg.latestRelease?.llmStatus,
+    staticScanStatus: pkg.latestRelease?.staticScanStatus,
+  });
+  if (lifecycle.state === "storepack-missing") {
+    return {
+      label: lifecycle.label,
+      description: lifecycle.description,
+      variant: "warning",
+    };
+  }
+  if (lifecycle.state === "scan-pending") {
+    return {
+      label: lifecycle.label,
+      description: lifecycle.description,
+      variant: "pending",
+    };
+  }
+  if (lifecycle.state === "ready") {
+    return {
+      label: lifecycle.label,
+      description: lifecycle.description,
+      variant: "success",
+    };
+  }
   const releaseStatuses = new Set([
     pkg.latestRelease?.vtStatus,
     pkg.latestRelease?.llmStatus,
@@ -435,7 +477,7 @@ function PackageRow({ pkg }: { pkg: DashboardPackage; ownerHandle: string }) {
 }
 
 function canShowDashboardRescan(statusLabel: string, state: DashboardRescanState | null) {
-  if (statusLabel === "Visible") return false;
+  if (statusLabel === "Visible" || statusLabel === "Ready") return false;
   if (!state) return true;
   return state.canRequest && !state.inProgressRequest && state.remainingRequests > 0;
 }

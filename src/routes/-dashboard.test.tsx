@@ -92,13 +92,17 @@ type TestPackage = {
     versions: number;
   };
   verification: null;
-  scanStatus: "suspicious" | "malicious";
+  scanStatus: "clean" | "suspicious" | "malicious";
   latestRelease: {
     version: string;
     createdAt: number;
     vtStatus: string | null;
     llmStatus: string | null;
     staticScanStatus: "clean" | "suspicious" | "malicious" | null;
+    storepackAvailable: boolean;
+    storepackSha256: string | null;
+    hostTargets: null;
+    environment: null;
   };
   rescanState: TestSkill["rescanState"];
 };
@@ -179,6 +183,10 @@ function createPackage(overrides?: Partial<TestPackage>): TestPackage {
       vtStatus: "malicious",
       llmStatus: "malicious",
       staticScanStatus: "malicious",
+      storepackAvailable: true,
+      storepackSha256: "a".repeat(64),
+      hostTargets: null,
+      environment: null,
     },
     rescanState: {
       maxRequests: 3,
@@ -269,6 +277,32 @@ describe("Dashboard minimal rows", () => {
     expect(screen.queryByRole("link", { name: /new version/i })).toBeNull();
     expect(screen.queryByRole("link", { name: /new release/i })).toBeNull();
     expect(screen.queryByRole("link", { name: /^view$/i })).toBeNull();
+  });
+
+  it("surfaces missing StorePack artifacts in plugin dashboard status", () => {
+    arrangeDashboard({
+      packages: [
+        createPackage({
+          scanStatus: "clean",
+          latestRelease: {
+            version: "1.0.0",
+            createdAt: 1,
+            vtStatus: "clean",
+            llmStatus: "clean",
+            staticScanStatus: "clean",
+            storepackAvailable: false,
+            storepackSha256: null,
+            hostTargets: null,
+            environment: null,
+          },
+        }),
+      ],
+    });
+
+    renderDashboard();
+
+    expect(screen.getByText("StorePack missing")).toBeTruthy();
+    expect(screen.getByRole("button", { name: "StorePack missing status reason" })).toBeTruthy();
   });
 
   it("does not render column titles, scanner details, or plugin metadata chips", () => {
