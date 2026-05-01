@@ -1865,80 +1865,18 @@ export const dryRunStorePackMigrationRunForStaff = query({
   handler: async (ctx, args) => {
     const { user } = await requireUser(ctx);
     assertAdmin(user);
+    return await getStorePackMigrationDryRun(ctx, args.operation, args.limit, args.cursor);
+  },
+});
 
-    const limit = Math.max(1, Math.min(Math.trunc(args.limit ?? 10), 100));
-    if (args.operation === "artifact-backfill") {
-      const status = await getStorePackMigrationStatusForLimit(ctx, limit);
-      return {
-        operation: args.operation,
-        limit,
-        cursor: null,
-        continueCursor: null,
-        isDone: status.missingSample.length === 0,
-        candidates: status.missingSample,
-        candidateCount: status.missingSample.length,
-        failureCount: status.failureSampleSize,
-      };
-    }
-    if (args.operation === "failure-retry") {
-      const failures = await ctx.db
-        .query("packageStorePackBackfillFailures")
-        .withIndex("by_open_failed_at", (q) => q.eq("resolvedAt", undefined))
-        .order("desc")
-        .take(limit);
-      return {
-        operation: args.operation,
-        limit,
-        cursor: null,
-        continueCursor: null,
-        isDone: failures.length === 0,
-        candidates: failures.map((failure) => ({
-          failureId: failure._id,
-          packageId: failure.packageId,
-          releaseId: failure.releaseId,
-          name: failure.name,
-          version: failure.version,
-          error: failure.error,
-          attemptCount: failure.attemptCount,
-          lastFailedAt: failure.lastFailedAt,
-        })),
-        candidateCount: failures.length,
-        failureCount: failures.length,
-      };
-    }
-
-    const page = await ctx.db
-      .query("packageReleases")
-      .withIndex("by_storepack_built_at")
-      .order("desc")
-      .paginate({ cursor: args.cursor ?? null, numItems: limit });
-    const candidates = [];
-    for (const release of page.page) {
-      if (release.softDeletedAt || !release.storepackStorageId || release.storepackRevokedAt) {
-        continue;
-      }
-      const pkg = await ctx.db.get(release.packageId);
-      if (!pkg || pkg.softDeletedAt || pkg.family === "skill") continue;
-      candidates.push({
-        releaseId: release._id,
-        packageId: pkg._id,
-        name: pkg.name,
-        displayName: pkg.displayName,
-        version: release.version,
-        storepackSha256: release.storepackSha256 ?? null,
-        storepackBuiltAt: release.storepackBuiltAt ?? null,
-      });
-    }
-    return {
-      operation: args.operation,
-      limit,
-      cursor: args.cursor ?? null,
-      continueCursor: page.continueCursor,
-      isDone: page.isDone,
-      candidates,
-      candidateCount: candidates.length,
-      failureCount: 0,
-    };
+export const dryRunStorePackMigrationRunForStaffInternal = internalQuery({
+  args: {
+    operation: storePackMigrationRunOperationValidator,
+    limit: v.optional(v.number()),
+    cursor: v.optional(v.string()),
+  },
+  handler: async (ctx, args) => {
+    return await getStorePackMigrationDryRun(ctx, args.operation, args.limit, args.cursor);
   },
 });
 
@@ -1950,36 +1888,17 @@ export const listStorePackMigrationRunsForStaff = query({
   handler: async (ctx, args) => {
     const { user } = await requireUser(ctx);
     assertAdmin(user);
+    return await listStorePackMigrationRuns(ctx, args.status, args.limit);
+  },
+});
 
-    const limit = Math.max(1, Math.min(Math.trunc(args.limit ?? 20), 100));
-    const statusFilter = args.status;
-    const queryBuilder = statusFilter
-      ? ctx.db
-          .query("storePackMigrationRuns")
-          .withIndex("by_status_created_at", (q) => q.eq("status", statusFilter))
-      : ctx.db.query("storePackMigrationRuns").withIndex("by_created_at");
-    const runs = await queryBuilder.order("desc").take(limit);
-    const items = [];
-    for (const run of runs) {
-      const actor = await ctx.db.get(run.actorUserId);
-      items.push({
-        ...run,
-        actor: actor
-          ? {
-              userId: actor._id,
-              handle: actor.handle ?? null,
-              name: actor.name ?? null,
-              role: actor.role ?? null,
-            }
-          : null,
-      });
-    }
-    return {
-      items,
-      limit,
-      status: args.status ?? null,
-      hasMore: runs.length >= limit,
-    };
+export const listStorePackMigrationRunsForStaffInternal = internalQuery({
+  args: {
+    status: v.optional(storePackMigrationRunStatusValidator),
+    limit: v.optional(v.number()),
+  },
+  handler: async (ctx, args) => {
+    return await listStorePackMigrationRuns(ctx, args.status, args.limit);
   },
 });
 
@@ -2001,25 +1920,31 @@ export const startStorePackMigrationRun = mutation({
   handler: async (ctx, args) => {
     const { user, userId } = await requireUser(ctx);
     assertAdmin(user);
+    return await startStorePackMigrationRunForActor(
+      ctx,
+      userId,
+      args.operation,
+      args.limit,
+      args.cursor,
+    );
+  },
+});
 
-    const limit = Math.max(1, Math.min(Math.trunc(args.limit ?? 10), 100));
-    const now = Date.now();
-    const runId = await ctx.db.insert("storePackMigrationRuns", {
-      actorUserId: userId,
-      operation: args.operation,
-      status: "pending",
-      limit,
-      cursor: args.cursor?.trim() || undefined,
-      processed: 0,
-      generated: 0,
-      skipped: 0,
-      failed: 0,
-      bytesGenerated: 0,
-      failureCounts: {},
-      createdAt: now,
-      updatedAt: now,
-    });
-    return await ctx.db.get(runId);
+export const startStorePackMigrationRunInternal = internalMutation({
+  args: {
+    actorUserId: v.id("users"),
+    operation: storePackMigrationRunOperationValidator,
+    limit: v.optional(v.number()),
+    cursor: v.optional(v.string()),
+  },
+  handler: async (ctx, args) => {
+    return await startStorePackMigrationRunForActor(
+      ctx,
+      args.actorUserId,
+      args.operation,
+      args.limit,
+      args.cursor,
+    );
   },
 });
 
@@ -2084,90 +2009,108 @@ export const continueStorePackMigrationRun = action({
   handler: async (ctx, args) => {
     const { user, userId } = await requireUserFromAction(ctx);
     assertAdmin(user);
-    const run = await runQueryRef<Doc<"storePackMigrationRuns"> | null>(
-      ctx,
-      internalRefs.packages.getStorePackMigrationRunInternal,
-      { runId: args.runId },
-    );
-    if (!run) throw new ConvexError("StorePack migration run not found");
-    if (run.status === "completed") return { run, result: null };
-    if (run.status === "running") throw new ConvexError("StorePack migration run already running");
+    return await continueStorePackMigrationRunForActor(ctx, userId, args.runId);
+  },
+});
 
-    const now = Date.now();
-    await runMutationRef(ctx, internalRefs.packages.patchStorePackMigrationRunInternal, {
-      runId: run._id,
-      status: "running" satisfies StorePackMigrationRunStatus,
-      startedAt: run.startedAt ?? now,
-      clearLastError: true,
-      clearCompletedAt: true,
-    });
+export const continueStorePackMigrationRunInternal = internalAction({
+  args: {
+    actorUserId: v.id("users"),
+    runId: v.id("storePackMigrationRuns"),
+  },
+  handler: async (ctx, args) => {
+    return await continueStorePackMigrationRunForActor(ctx, args.actorUserId, args.runId);
+  },
+});
 
-    try {
-      const result =
-        run.operation === "artifact-backfill"
+async function continueStorePackMigrationRunForActor(
+  ctx: ActionCtx,
+  actorUserId: Id<"users">,
+  runId: Id<"storePackMigrationRuns">,
+) {
+  const run = await runQueryRef<Doc<"storePackMigrationRuns"> | null>(
+    ctx,
+    internalRefs.packages.getStorePackMigrationRunInternal,
+    { runId },
+  );
+  if (!run) throw new ConvexError("StorePack migration run not found");
+  if (run.status === "completed") return { run, result: null };
+  if (run.status === "running") throw new ConvexError("StorePack migration run already running");
+
+  const now = Date.now();
+  await runMutationRef(ctx, internalRefs.packages.patchStorePackMigrationRunInternal, {
+    runId: run._id,
+    status: "running" satisfies StorePackMigrationRunStatus,
+    startedAt: run.startedAt ?? now,
+    clearLastError: true,
+    clearCompletedAt: true,
+  });
+
+  try {
+    const result =
+      run.operation === "artifact-backfill"
+        ? await runActionRef<StorePackMigrationBatchResult>(
+            ctx,
+            internalRefs.packages.backfillStorePackArtifactsInternal,
+            {
+              actorUserId,
+              limit: run.limit,
+            },
+          )
+        : run.operation === "failure-retry"
           ? await runActionRef<StorePackMigrationBatchResult>(
               ctx,
-              internalRefs.packages.backfillStorePackArtifactsInternal,
+              internalRefs.packages.retryStorePackBackfillFailuresInternal,
               {
-                actorUserId: userId,
+                actorUserId,
                 limit: run.limit,
               },
             )
-          : run.operation === "failure-retry"
-            ? await runActionRef<StorePackMigrationBatchResult>(
-                ctx,
-                internalRefs.packages.retryStorePackBackfillFailuresInternal,
-                {
-                  actorUserId: userId,
-                  limit: run.limit,
-                },
-              )
-            : await runActionRef<StorePackMigrationBatchResult>(
-                ctx,
-                internalRefs.packages.backfillStorePackSearchIndexInternal,
-                {
-                  actorUserId: userId,
-                  limit: run.limit,
-                  cursor: run.continueCursor ?? run.cursor,
-                },
-              );
-      const summary = summarizeStorePackMigrationBatchResult(run.operation, result);
-      const completed =
-        run.operation !== "search-index-backfill" || summary.isDone || !summary.continueCursor;
-      const updatedRun = await runMutationRef<Doc<"storePackMigrationRuns"> | null>(
-        ctx,
-        internalRefs.packages.patchStorePackMigrationRunInternal,
-        {
-          runId: run._id,
-          status: completed ? "completed" : "pending",
-          continueCursor: summary.continueCursor,
-          isDone: summary.isDone ?? completed,
-          processedDelta: summary.processed,
-          generatedDelta: summary.generated,
-          skippedDelta: summary.skipped,
-          failedDelta: summary.failed,
-          bytesGeneratedDelta: summary.bytesGenerated,
-          failureCounts: summary.failureCounts,
-          ...(completed ? { completedAt: Date.now() } : { clearCompletedAt: true }),
-        },
-      );
-      return { run: updatedRun, result };
-    } catch (error) {
-      const message = errorMessage(error);
-      const failedRun = await runMutationRef<Doc<"storePackMigrationRuns"> | null>(
-        ctx,
-        internalRefs.packages.patchStorePackMigrationRunInternal,
-        {
-          runId: run._id,
-          status: "failed",
-          lastError: message,
-          completedAt: Date.now(),
-        },
-      );
-      return { run: failedRun, result: null, error: message };
-    }
-  },
-});
+          : await runActionRef<StorePackMigrationBatchResult>(
+              ctx,
+              internalRefs.packages.backfillStorePackSearchIndexInternal,
+              {
+                actorUserId,
+                limit: run.limit,
+                cursor: run.continueCursor ?? run.cursor,
+              },
+            );
+    const summary = summarizeStorePackMigrationBatchResult(run.operation, result);
+    const completed =
+      run.operation !== "search-index-backfill" || summary.isDone || !summary.continueCursor;
+    const updatedRun = await runMutationRef<Doc<"storePackMigrationRuns"> | null>(
+      ctx,
+      internalRefs.packages.patchStorePackMigrationRunInternal,
+      {
+        runId: run._id,
+        status: completed ? "completed" : "pending",
+        continueCursor: summary.continueCursor,
+        isDone: summary.isDone ?? completed,
+        processedDelta: summary.processed,
+        generatedDelta: summary.generated,
+        skippedDelta: summary.skipped,
+        failedDelta: summary.failed,
+        bytesGeneratedDelta: summary.bytesGenerated,
+        failureCounts: summary.failureCounts,
+        ...(completed ? { completedAt: Date.now() } : { clearCompletedAt: true }),
+      },
+    );
+    return { run: updatedRun, result };
+  } catch (error) {
+    const message = errorMessage(error);
+    const failedRun = await runMutationRef<Doc<"storePackMigrationRuns"> | null>(
+      ctx,
+      internalRefs.packages.patchStorePackMigrationRunInternal,
+      {
+        runId: run._id,
+        status: "failed",
+        lastError: message,
+        completedAt: Date.now(),
+      },
+    );
+    return { run: failedRun, result: null, error: message };
+  }
+}
 
 export const getStorePackMigrationStatusInternal = internalQuery({
   args: { limit: v.optional(v.number()) },
@@ -2292,6 +2235,149 @@ async function getStorePackMigrationStatusForLimit(
     ),
     sampleLimit: limit,
   };
+}
+
+async function getStorePackMigrationDryRun(
+  ctx: DbReaderCtx,
+  operation: StorePackMigrationRunOperation,
+  requestedLimit: number | undefined,
+  cursor?: string,
+) {
+  const limit = Math.max(1, Math.min(requestedLimit ?? 10, 100));
+  if (operation === "artifact-backfill") {
+    const status = await getStorePackMigrationStatusForLimit(ctx, limit);
+    return {
+      operation,
+      limit,
+      cursor: null,
+      continueCursor: null,
+      isDone: status.missingSample.length === 0,
+      candidates: status.missingSample,
+      candidateCount: status.missingSample.length,
+      failureCount: status.failureSampleSize,
+    };
+  }
+  if (operation === "failure-retry") {
+    const failures = await ctx.db
+      .query("packageStorePackBackfillFailures")
+      .withIndex("by_open_failed_at", (q) => q.eq("resolvedAt", undefined))
+      .order("desc")
+      .take(limit);
+    return {
+      operation,
+      limit,
+      cursor: null,
+      continueCursor: null,
+      isDone: failures.length === 0,
+      candidates: failures.map((failure) => ({
+        failureId: failure._id,
+        packageId: failure.packageId,
+        releaseId: failure.releaseId,
+        name: failure.name,
+        version: failure.version,
+        error: failure.error,
+        attemptCount: failure.attemptCount,
+        lastFailedAt: failure.lastFailedAt,
+      })),
+      candidateCount: failures.length,
+      failureCount: failures.length,
+    };
+  }
+
+  const page = await ctx.db
+    .query("packageReleases")
+    .withIndex("by_storepack_built_at")
+    .order("desc")
+    .paginate({ cursor: cursor ?? null, numItems: limit });
+  const candidates = [];
+  for (const release of page.page) {
+    if (release.softDeletedAt || !release.storepackStorageId || release.storepackRevokedAt) {
+      continue;
+    }
+    const pkg = await ctx.db.get(release.packageId);
+    if (!pkg || pkg.softDeletedAt || pkg.family === "skill") continue;
+    candidates.push({
+      releaseId: release._id,
+      packageId: pkg._id,
+      name: pkg.name,
+      displayName: pkg.displayName,
+      version: release.version,
+      storepackSha256: release.storepackSha256 ?? null,
+      storepackBuiltAt: release.storepackBuiltAt ?? null,
+    });
+  }
+  return {
+    operation,
+    limit,
+    cursor: cursor ?? null,
+    continueCursor: page.continueCursor,
+    isDone: page.isDone,
+    candidates,
+    candidateCount: candidates.length,
+    failureCount: 0,
+  };
+}
+
+async function listStorePackMigrationRuns(
+  ctx: DbReaderCtx,
+  status: StorePackMigrationRunStatus | undefined,
+  requestedLimit: number | undefined,
+) {
+  const limit = Math.max(1, Math.min(requestedLimit ?? 20, 100));
+  const queryBuilder = status
+    ? ctx.db
+        .query("storePackMigrationRuns")
+        .withIndex("by_status_created_at", (q) => q.eq("status", status))
+    : ctx.db.query("storePackMigrationRuns").withIndex("by_created_at");
+  const runs = await queryBuilder.order("desc").take(limit);
+  const items = [];
+  for (const run of runs) {
+    const actor = await ctx.db.get(run.actorUserId);
+    items.push({
+      ...run,
+      actor: actor
+        ? {
+            userId: actor._id,
+            handle: actor.handle ?? null,
+            name: actor.name ?? null,
+            role: actor.role ?? null,
+          }
+        : null,
+    });
+  }
+  return {
+    items,
+    limit,
+    status: status ?? null,
+    hasMore: runs.length >= limit,
+  };
+}
+
+async function startStorePackMigrationRunForActor(
+  ctx: MutationCtx,
+  actorUserId: Id<"users">,
+  operation: StorePackMigrationRunOperation,
+  requestedLimit: number | undefined,
+  cursor?: string,
+) {
+  const limit = Math.max(1, Math.min(requestedLimit ?? 10, 100));
+  const now = Date.now();
+  const runId = await ctx.db.insert("storePackMigrationRuns", {
+    actorUserId,
+    operation,
+    status: "pending",
+    limit,
+    cursor: cursor?.trim() || undefined,
+    processed: 0,
+    generated: 0,
+    skipped: 0,
+    failed: 0,
+    bytesGenerated: 0,
+    failureCounts: {},
+    createdAt: now,
+    updatedAt: now,
+  });
+  return await ctx.db.get(runId);
 }
 
 function summarizeStorePackMigrationBatchResult(
