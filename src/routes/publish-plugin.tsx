@@ -352,28 +352,37 @@ export function PublishPluginRoute() {
   );
 
   const onPickFiles = async (selected: File[]) => {
-    const expanded = await expandFilesWithReport(selected, {
-      includeBinaryArchiveFiles: true,
-    });
-    const filtered = await filterIgnoredPackageFiles(expanded.files);
-    const normalized = normalizePackageUploadFiles(filtered.files);
-    const nextIgnoredPaths = [
-      ...new Set([...expanded.ignoredMacJunkPaths, ...filtered.ignoredPaths]),
-    ];
-    setFiles(filtered.files);
-    setIgnoredPaths(nextIgnoredPaths);
-    setError(null);
-    const prefill = await derivePluginPrefill(normalized);
-    setDetectedPrefillFields(listPrefilledFields(prefill));
-    setCodePluginFieldIssues(prefill.missingRequiredFields ?? []);
-    setCodePluginCompatibility(prefill.compatibility ?? null);
-    if (prefill.family) setFamily(prefill.family);
-    if (prefill.name) setName(prefill.name);
-    if (prefill.displayName) setDisplayName(prefill.displayName);
-    if (prefill.version) setVersion(prefill.version);
-    if (prefill.sourceRepo) setSourceRepo(prefill.sourceRepo);
-    if (prefill.bundleFormat) setBundleFormat(prefill.bundleFormat);
-    if (prefill.hostTargets) setHostTargets(prefill.hostTargets);
+    try {
+      const expanded = await expandFilesWithReport(selected, {
+        includeBinaryArchiveFiles: true,
+      });
+      const filtered = await filterIgnoredPackageFiles(expanded.files);
+      const normalized = normalizePackageUploadFiles(filtered.files);
+      const nextIgnoredPaths = [
+        ...new Set([...expanded.ignoredMacJunkPaths, ...filtered.ignoredPaths]),
+      ];
+      setFiles(filtered.files);
+      setIgnoredPaths(nextIgnoredPaths);
+      setError(null);
+      const prefill = await derivePluginPrefill(normalized);
+      setDetectedPrefillFields(listPrefilledFields(prefill));
+      setCodePluginFieldIssues(prefill.missingRequiredFields ?? []);
+      setCodePluginCompatibility(prefill.compatibility ?? null);
+      if (prefill.family) setFamily(prefill.family);
+      if (prefill.name) setName(prefill.name);
+      if (prefill.displayName) setDisplayName(prefill.displayName);
+      if (prefill.version) setVersion(prefill.version);
+      if (prefill.sourceRepo) setSourceRepo(prefill.sourceRepo);
+      if (prefill.bundleFormat) setBundleFormat(prefill.bundleFormat);
+      if (prefill.hostTargets) setHostTargets(prefill.hostTargets);
+    } catch (pickError) {
+      setFiles([]);
+      setIgnoredPaths([]);
+      setDetectedPrefillFields([]);
+      setCodePluginFieldIssues([]);
+      setCodePluginCompatibility(null);
+      setError(formatPublishError(pickError));
+    }
   };
 
   useEffect(() => {
