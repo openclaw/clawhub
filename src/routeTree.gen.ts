@@ -33,6 +33,7 @@ import { Route as PluginsNameRouteImport } from './routes/plugins/$name'
 import { Route as PackagesNewRouteImport } from './routes/packages/new'
 import { Route as PackagesNameRouteImport } from './routes/packages/$name'
 import { Route as OrgsHandleRouteImport } from './routes/orgs/$handle'
+import { Route as ManagementStorepacksRouteImport } from './routes/management/storepacks'
 import { Route as CliAuthRouteImport } from './routes/cli/auth'
 import { Route as OwnerSlugRouteImport } from './routes/$owner/$slug'
 import { Route as OwnerSlugSettingsRouteImport } from './routes/$owner/$slug/settings'
@@ -160,6 +161,11 @@ const OrgsHandleRoute = OrgsHandleRouteImport.update({
   path: '/orgs/$handle',
   getParentRoute: () => rootRouteImport,
 } as any)
+const ManagementStorepacksRoute = ManagementStorepacksRouteImport.update({
+  id: '/storepacks',
+  path: '/storepacks',
+  getParentRoute: () => ManagementRoute,
+} as any)
 const CliAuthRoute = CliAuthRouteImport.update({
   id: '/cli/auth',
   path: '/cli/auth',
@@ -200,7 +206,7 @@ export interface FileRoutesByFullPath {
   '/admin': typeof AdminRoute
   '/dashboard': typeof DashboardRoute
   '/import': typeof ImportRoute
-  '/management': typeof ManagementRoute
+  '/management': typeof ManagementRouteWithChildren
   '/publish-plugin': typeof PublishPluginRoute
   '/publish-skill': typeof PublishSkillRoute
   '/search': typeof SearchRoute
@@ -209,6 +215,7 @@ export interface FileRoutesByFullPath {
   '/upload': typeof UploadRoute
   '/$owner/$slug': typeof OwnerSlugRouteWithChildren
   '/cli/auth': typeof CliAuthRoute
+  '/management/storepacks': typeof ManagementStorepacksRoute
   '/orgs/$handle': typeof OrgsHandleRoute
   '/packages/$name': typeof PackagesNameRoute
   '/packages/new': typeof PackagesNewRoute
@@ -232,7 +239,7 @@ export interface FileRoutesByTo {
   '/admin': typeof AdminRoute
   '/dashboard': typeof DashboardRoute
   '/import': typeof ImportRoute
-  '/management': typeof ManagementRoute
+  '/management': typeof ManagementRouteWithChildren
   '/publish-plugin': typeof PublishPluginRoute
   '/publish-skill': typeof PublishSkillRoute
   '/search': typeof SearchRoute
@@ -241,6 +248,7 @@ export interface FileRoutesByTo {
   '/upload': typeof UploadRoute
   '/$owner/$slug': typeof OwnerSlugRouteWithChildren
   '/cli/auth': typeof CliAuthRoute
+  '/management/storepacks': typeof ManagementStorepacksRoute
   '/orgs/$handle': typeof OrgsHandleRoute
   '/packages/$name': typeof PackagesNameRoute
   '/packages/new': typeof PackagesNewRoute
@@ -265,7 +273,7 @@ export interface FileRoutesById {
   '/admin': typeof AdminRoute
   '/dashboard': typeof DashboardRoute
   '/import': typeof ImportRoute
-  '/management': typeof ManagementRoute
+  '/management': typeof ManagementRouteWithChildren
   '/publish-plugin': typeof PublishPluginRoute
   '/publish-skill': typeof PublishSkillRoute
   '/search': typeof SearchRoute
@@ -274,6 +282,7 @@ export interface FileRoutesById {
   '/upload': typeof UploadRoute
   '/$owner/$slug': typeof OwnerSlugRouteWithChildren
   '/cli/auth': typeof CliAuthRoute
+  '/management/storepacks': typeof ManagementStorepacksRoute
   '/orgs/$handle': typeof OrgsHandleRoute
   '/packages/$name': typeof PackagesNameRoute
   '/packages/new': typeof PackagesNewRoute
@@ -308,6 +317,7 @@ export interface FileRouteTypes {
     | '/upload'
     | '/$owner/$slug'
     | '/cli/auth'
+    | '/management/storepacks'
     | '/orgs/$handle'
     | '/packages/$name'
     | '/packages/new'
@@ -340,6 +350,7 @@ export interface FileRouteTypes {
     | '/upload'
     | '/$owner/$slug'
     | '/cli/auth'
+    | '/management/storepacks'
     | '/orgs/$handle'
     | '/packages/$name'
     | '/packages/new'
@@ -372,6 +383,7 @@ export interface FileRouteTypes {
     | '/upload'
     | '/$owner/$slug'
     | '/cli/auth'
+    | '/management/storepacks'
     | '/orgs/$handle'
     | '/packages/$name'
     | '/packages/new'
@@ -396,7 +408,7 @@ export interface RootRouteChildren {
   AdminRoute: typeof AdminRoute
   DashboardRoute: typeof DashboardRoute
   ImportRoute: typeof ImportRoute
-  ManagementRoute: typeof ManagementRoute
+  ManagementRoute: typeof ManagementRouteWithChildren
   PublishPluginRoute: typeof PublishPluginRoute
   PublishSkillRoute: typeof PublishSkillRoute
   SearchRoute: typeof SearchRoute
@@ -589,6 +601,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof OrgsHandleRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/management/storepacks': {
+      id: '/management/storepacks'
+      path: '/storepacks'
+      fullPath: '/management/storepacks'
+      preLoaderRoute: typeof ManagementStorepacksRouteImport
+      parentRoute: typeof ManagementRoute
+    }
     '/cli/auth': {
       id: '/cli/auth'
       path: '/cli/auth'
@@ -634,6 +653,18 @@ declare module '@tanstack/react-router' {
   }
 }
 
+interface ManagementRouteChildren {
+  ManagementStorepacksRoute: typeof ManagementStorepacksRoute
+}
+
+const ManagementRouteChildren: ManagementRouteChildren = {
+  ManagementStorepacksRoute: ManagementStorepacksRoute,
+}
+
+const ManagementRouteWithChildren = ManagementRoute._addFileChildren(
+  ManagementRouteChildren,
+)
+
 interface OwnerSlugRouteChildren {
   OwnerSlugSettingsRoute: typeof OwnerSlugSettingsRoute
   OwnerSlugSecurityScannerRoute: typeof OwnerSlugSecurityScannerRoute
@@ -668,7 +699,7 @@ const rootRouteChildren: RootRouteChildren = {
   AdminRoute: AdminRoute,
   DashboardRoute: DashboardRoute,
   ImportRoute: ImportRoute,
-  ManagementRoute: ManagementRoute,
+  ManagementRoute: ManagementRouteWithChildren,
   PublishPluginRoute: PublishPluginRoute,
   PublishSkillRoute: PublishSkillRoute,
   SearchRoute: SearchRoute,

@@ -422,7 +422,18 @@ function Management() {
       <p className="section-subtitle">Moderation, curation, and ownership tools.</p>
 
       <Card className="mb-5">
-        <h2 className="section-title text-[1.2rem] m-0">StorePack migration</h2>
+        <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
+          <div>
+            <h2 className="section-title text-[1.2rem] m-0">StorePack migration</h2>
+            <p className="section-subtitle m-0">
+              Quick status snapshot. Use the dedicated StorePack page for dry-run and cursor
+              controls.
+            </p>
+          </div>
+          <Button asChild variant="outline" size="sm">
+            <Link to="/management/storepacks">Open StorePack ops</Link>
+          </Button>
+        </div>
         <div className="management-sublist">
           <div className="management-report-item">
             <span className="management-report-meta">Sample coverage</span>
