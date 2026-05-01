@@ -29,20 +29,8 @@ jobs:
 
       - uses: ./.github/actions/setup-bun
 
-      - name: Peer deps
-        run: bun run check:peers
-
-      - name: Audit dependencies
-        run: bun audit
-
-      - name: Format
-        run: bun run format:check
-
-      - name: Lint
-        run: bun run lint
-
-      - name: Dead code
-        run: bun run deadcode:ci
+      - name: Static checks
+        run: bun run ci:static
 
   unit:
     name: unit
@@ -55,7 +43,7 @@ jobs:
       - uses: ./.github/actions/setup-bun
 
       - name: Coverage
-        run: bun run coverage
+        run: bun run ci:unit
 
   packages:
     name: packages
@@ -67,11 +55,8 @@ jobs:
 
       - uses: ./.github/actions/setup-bun
 
-      - name: Build schema package
-        run: bun run --cwd packages/schema build
-
-      - name: Verify ClawHub CLI package
-        run: bun run --cwd packages/clawhub verify
+      - name: Package checks
+        run: bun run ci:packages
 
   types-build:
     name: types-build
@@ -83,14 +68,8 @@ jobs:
 
       - uses: ./.github/actions/setup-bun
 
-      - name: Typecheck
-        run: |
-          bunx tsc --noEmit
-          bunx tsc -p packages/schema/tsconfig.json --noEmit
-          bunx tsc -p packages/clawhub/tsconfig.json --noEmit
-
-      - name: Build app
-        run: bun run build
+      - name: Typecheck and build
+        run: bun run ci:types-build
 
   e2e-http:
     name: e2e-http
@@ -103,7 +82,7 @@ jobs:
       - uses: ./.github/actions/setup-bun
 
       - name: HTTP e2e
-        run: bun run test:e2e
+        run: bun run ci:e2e-http
 
   playwright:
     name: playwright
@@ -118,11 +97,8 @@ jobs:
       - name: Install Playwright browsers
         run: bunx playwright install --with-deps chromium webkit
 
-      - name: Build app
-        run: bun run build
-
       - name: Browser e2e
-        run: bun run test:pw
+        run: bun run ci:playwright
 
       - name: Upload Playwright report
         if: ${{ !cancelled() }}
