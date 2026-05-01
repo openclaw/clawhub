@@ -2356,7 +2356,7 @@ export const backfillDigestNormalizedSearchFields = internalMutation({
       );
     }
 
-    return { patched, isDone, scanned: page.length };
+    return { patched, isDone, scanned: page.length, cursor: continueCursor };
   },
 });
 
