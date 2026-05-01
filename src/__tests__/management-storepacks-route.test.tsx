@@ -25,15 +25,16 @@ vi.mock("@tanstack/react-router", () => ({
 
 const useQueryMock = vi.fn();
 const useActionMock = vi.fn();
+const useMutationMock = vi.fn();
 const useAuthStatusMock = vi.fn();
-const backfillArtifacts = vi.fn();
-const backfillIndex = vi.fn();
-const retryFailures = vi.fn();
+const startMigrationRun = vi.fn();
+const continueMigrationRun = vi.fn();
 
 vi.mock("convex/react", () => ({
   ConvexReactClient: class {},
   useQuery: (...args: unknown[]) => useQueryMock(...args),
   useAction: () => useActionMock(),
+  useMutation: () => useMutationMock(),
 }));
 
 vi.mock("../lib/useAuthStatus", () => ({
@@ -50,21 +51,20 @@ describe("StorePack management route", () => {
   beforeEach(() => {
     useQueryMock.mockReset();
     useActionMock.mockReset();
+    useMutationMock.mockReset();
     useAuthStatusMock.mockReset();
-    backfillArtifacts.mockReset();
-    backfillIndex.mockReset();
-    retryFailures.mockReset();
+    startMigrationRun.mockReset();
+    continueMigrationRun.mockReset();
 
     useAuthStatusMock.mockReturnValue({
       isAuthenticated: true,
       isLoading: false,
       me: { _id: "users:admin", role: "admin" },
     });
-    useActionMock
-      .mockReturnValueOnce(backfillArtifacts)
-      .mockReturnValueOnce(backfillIndex)
-      .mockReturnValueOnce(retryFailures);
-    useQueryMock.mockReturnValue({
+    useActionMock.mockReturnValue(continueMigrationRun);
+    useMutationMock.mockReturnValue(startMigrationRun);
+
+    const migrationStatus = {
       missingSample: [
         {
           releaseId: "packageReleases:1",
@@ -95,6 +95,45 @@ describe("StorePack management route", () => {
       generatedStorePackSampleSize: 3,
       generatedStorePackBytes: 4096,
       sampleLimit: 25,
+    };
+    const migrationRunList = {
+      items: [
+        {
+          _id: "storePackMigrationRuns:1",
+          actorUserId: "users:admin",
+          operation: "failure-retry",
+          status: "pending",
+          limit: 10,
+          processed: 0,
+          generated: 0,
+          skipped: 0,
+          failed: 0,
+          bytesGenerated: 0,
+          failureCounts: {},
+          createdAt: Date.UTC(2026, 0, 3),
+          updatedAt: Date.UTC(2026, 0, 3),
+          actor: { userId: "users:admin", handle: "admin", name: "Admin", role: "admin" },
+        },
+      ],
+      limit: 12,
+      status: null,
+      hasMore: false,
+    };
+    const dryRunResult = {
+      operation: "artifact-backfill",
+      limit: 10,
+      cursor: null,
+      continueCursor: null,
+      isDone: false,
+      candidates: migrationStatus.missingSample,
+      candidateCount: 1,
+      failureCount: 1,
+    };
+    useQueryMock.mockImplementation((_ref: unknown, args: unknown) => {
+      if (args === "skip") return undefined;
+      if (args && typeof args === "object" && "operation" in args) return dryRunResult;
+      if (args && typeof args === "object" && "limit" in args) return migrationRunList;
+      return migrationStatus;
     });
   });
 
@@ -114,12 +153,12 @@ describe("StorePack management route", () => {
     expect(screen.getByText("4.0KB")).toBeTruthy();
     expect(screen.getByText("Failed artifact builds")).toBeTruthy();
     expect(screen.getByText(/Invalid StorePack file path/)).toBeTruthy();
-    expect(screen.getByText("Build missing artifacts")).toBeTruthy();
-    expect(screen.getByText("Retry failed builds")).toBeTruthy();
-    expect(screen.getByText("Rebuild lookup index")).toBeTruthy();
+    expect(screen.getByText("Create migration run")).toBeTruthy();
+    expect(screen.getByText("Run next batch")).toBeTruthy();
+    expect(screen.getByText("Migration runs")).toBeTruthy();
     expect(screen.getAllByText("Details").length).toBeGreaterThanOrEqual(2);
 
-    fireEvent.click(screen.getByRole("button", { name: "Dry-run sample" }));
+    fireEvent.click(screen.getByRole("button", { name: "Dry-run operation" }));
 
     expect(screen.getAllByText("Demo Plugin").length).toBeGreaterThan(0);
     expect(screen.getAllByText(/demo-plugin@1\.2\.3/i).length).toBeGreaterThan(0);
@@ -135,9 +174,8 @@ describe("StorePack management route", () => {
     renderRoute();
 
     expect(screen.getByText("read only")).toBeTruthy();
-    expect(screen.queryByText("Build missing artifacts")).toBeNull();
-    expect(screen.queryByText("Retry failed builds")).toBeNull();
-    expect(screen.queryByText("Rebuild lookup index")).toBeNull();
+    expect(screen.queryByText("Create migration run")).toBeNull();
+    expect(screen.queryByText("Run next batch")).toBeNull();
   });
 
   it("explains missing management role for non-staff users", () => {
@@ -154,18 +192,42 @@ describe("StorePack management route", () => {
     expect(useQueryMock).toHaveBeenCalledWith(expect.anything(), "skip");
   });
 
-  it("confirms and runs failed build retries for admins", async () => {
-    retryFailures.mockResolvedValueOnce({ processed: 1, succeeded: 1, failed: 0 });
+  it("confirms and creates migration runs for admins", async () => {
+    startMigrationRun.mockResolvedValueOnce({
+      _id: "storePackMigrationRuns:2",
+      operation: "artifact-backfill",
+      status: "pending",
+    });
     vi.spyOn(window, "confirm").mockReturnValueOnce(true);
 
     renderRoute();
 
-    fireEvent.click(screen.getByRole("button", { name: "Retry failed builds" }));
+    fireEvent.click(screen.getByRole("button", { name: "Create migration run" }));
 
     expect(window.confirm).toHaveBeenCalledWith(
-      expect.stringContaining("Retry failed StorePack artifact builds"),
+      expect.stringContaining("Create a artifact backfill migration run"),
     );
-    expect(retryFailures).toHaveBeenCalledWith({ limit: 10 });
+    expect(startMigrationRun).toHaveBeenCalledWith({ operation: "artifact-backfill", limit: 10 });
+    expect(await screen.findByText(/created storePackMigrationRuns:2/i)).toBeTruthy();
+  });
+
+  it("confirms and continues migration run batches for admins", async () => {
+    continueMigrationRun.mockResolvedValueOnce({
+      run: {
+        _id: "storePackMigrationRuns:1",
+        operation: "failure-retry",
+        status: "completed",
+      },
+      result: { processed: 1, succeeded: 1, failed: 0 },
+    });
+    vi.spyOn(window, "confirm").mockReturnValueOnce(true);
+
+    renderRoute();
+
+    fireEvent.click(screen.getByRole("button", { name: "Run next batch" }));
+
+    expect(window.confirm).toHaveBeenCalledWith(expect.stringContaining("Run next failure retry"));
+    expect(continueMigrationRun).toHaveBeenCalledWith({ runId: "storePackMigrationRuns:1" });
     expect(await screen.findByText(/processed 1 - succeeded 1 - failed 0/i)).toBeTruthy();
   });
 });

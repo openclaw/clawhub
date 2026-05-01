@@ -1,5 +1,5 @@
 import { createFileRoute, Link, Outlet, useRouterState } from "@tanstack/react-router";
-import { useAction, useQuery } from "convex/react";
+import { useAction, useMutation, useQuery } from "convex/react";
 import { useState } from "react";
 import { api } from "../../../convex/_generated/api";
 import type { Id } from "../../../convex/_generated/dataModel";
@@ -15,11 +15,16 @@ import { useAuthStatus } from "../../lib/useAuthStatus";
 const packageApiRefs = api as unknown as {
   packages: {
     getStorePackMigrationStatus: unknown;
-    backfillStorePackArtifacts: unknown;
-    backfillStorePackSearchIndex: unknown;
-    retryStorePackBackfillFailures: unknown;
+    dryRunStorePackMigrationRunForStaff: unknown;
+    listStorePackMigrationRunsForStaff: unknown;
+    startStorePackMigrationRun: unknown;
+    continueStorePackMigrationRun: unknown;
   };
 };
+
+type StorePackMigrationOperation = "artifact-backfill" | "failure-retry" | "search-index-backfill";
+
+type StorePackMigrationRunStatus = "pending" | "running" | "completed" | "failed";
 
 type StorePackMigrationStatus = {
   missingSample: Array<{
@@ -70,6 +75,72 @@ type StorePackBackfillResult = {
   }>;
 };
 
+type StorePackMigrationDryRunCandidate = {
+  failureId?: Id<"packageStorePackBackfillFailures">;
+  releaseId?: Id<"packageReleases">;
+  packageId?: Id<"packages">;
+  name?: string;
+  displayName?: string;
+  version?: string;
+  error?: string;
+  attemptCount?: number;
+  lastFailedAt?: number;
+  storepackSha256?: string | null;
+  storepackBuiltAt?: number | null;
+};
+
+type StorePackMigrationDryRun = {
+  operation: StorePackMigrationOperation;
+  limit: number;
+  cursor: string | null;
+  continueCursor: string | null;
+  isDone: boolean;
+  candidates: StorePackMigrationDryRunCandidate[];
+  candidateCount: number;
+  failureCount: number;
+};
+
+type StorePackMigrationRun = {
+  _id: Id<"storePackMigrationRuns">;
+  actorUserId: Id<"users">;
+  operation: StorePackMigrationOperation;
+  status: StorePackMigrationRunStatus;
+  limit: number;
+  cursor?: string;
+  continueCursor?: string;
+  isDone?: boolean;
+  processed: number;
+  generated: number;
+  skipped: number;
+  failed: number;
+  bytesGenerated: number;
+  failureCounts: Record<string, number>;
+  lastError?: string;
+  startedAt?: number;
+  completedAt?: number;
+  createdAt: number;
+  updatedAt: number;
+  actor?: {
+    userId: Id<"users">;
+    handle?: string | null;
+    name?: string | null;
+    role?: string | null;
+  } | null;
+};
+
+type StorePackMigrationRunList = {
+  items: StorePackMigrationRun[];
+  limit: number;
+  status: StorePackMigrationRunStatus | null;
+  hasMore: boolean;
+};
+
+type StorePackMigrationRunResult = {
+  run: StorePackMigrationRun | null;
+  result: StorePackBackfillResult | null;
+  error?: string;
+};
+
 export const Route = createFileRoute("/management/storepacks")({
   component: StorePackManagementRoute,
 });
@@ -88,23 +159,41 @@ function StorePackManagementConsole() {
     packageApiRefs.packages.getStorePackMigrationStatus as never,
     staff ? {} : "skip",
   ) as StorePackMigrationStatus | undefined;
-  const backfillStorePackArtifacts = useAction(
-    packageApiRefs.packages.backfillStorePackArtifacts as never,
-  ) as unknown as (args: { limit?: number }) => Promise<unknown>;
-  const backfillStorePackSearchIndex = useAction(
-    packageApiRefs.packages.backfillStorePackSearchIndex as never,
-  ) as unknown as (args: { limit?: number; cursor?: string }) => Promise<unknown>;
-  const retryStorePackBackfillFailures = useAction(
-    packageApiRefs.packages.retryStorePackBackfillFailures as never,
-  ) as unknown as (args: { limit?: number }) => Promise<unknown>;
+  const migrationRuns = useQuery(
+    packageApiRefs.packages.listStorePackMigrationRunsForStaff as never,
+    staff ? ({ limit: 12 } as never) : "skip",
+  ) as StorePackMigrationRunList | undefined;
 
+  const [operation, setOperation] = useState<StorePackMigrationOperation>("artifact-backfill");
   const [batchLimit, setBatchLimit] = useState(10);
   const [indexCursor, setIndexCursor] = useState("");
-  const [dryRunRows, setDryRunRows] = useState<StorePackMigrationStatus["missingSample"]>([]);
-  const [lastResult, setLastResult] = useState<{
-    kind: "artifact-backfill" | "failure-retry" | "index-backfill";
-    result: StorePackBackfillResult;
+  const [dryRunArgs, setDryRunArgs] = useState<{
+    operation: StorePackMigrationOperation;
+    limit: number;
+    cursor?: string;
   } | null>(null);
+  const dryRun = useQuery(
+    packageApiRefs.packages.dryRunStorePackMigrationRunForStaff as never,
+    staff && dryRunArgs ? (dryRunArgs as never) : "skip",
+  ) as StorePackMigrationDryRun | undefined;
+  const startMigrationRun = useMutation(
+    packageApiRefs.packages.startStorePackMigrationRun as never,
+  ) as unknown as (args: {
+    operation: StorePackMigrationOperation;
+    limit?: number;
+    cursor?: string;
+  }) => Promise<StorePackMigrationRun | null>;
+  const continueMigrationRun = useAction(
+    packageApiRefs.packages.continueStorePackMigrationRun as never,
+  ) as unknown as (args: {
+    runId: Id<"storePackMigrationRuns">;
+  }) => Promise<StorePackMigrationRunResult>;
+  const [lastResult, setLastResult] = useState<{
+    kind: StorePackMigrationOperation;
+    result: StorePackBackfillResult | null;
+    run: StorePackMigrationRun | null;
+  } | null>(null);
+  const [activeRunId, setActiveRunId] = useState<Id<"storePackMigrationRuns"> | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   if (!staff) {
@@ -122,60 +211,59 @@ function StorePackManagementConsole() {
 
   const runDryRun = () => {
     setError(null);
-    setDryRunRows((migration?.missingSample ?? []).slice(0, limit));
-  };
-
-  const runArtifactBackfill = () => {
-    if (
-      !window.confirm(
-        `Build StorePack artifacts for up to ${limit} legacy releases?\n\nThis writes StorePack metadata in Convex.`,
-      )
-    ) {
-      return;
-    }
-    setError(null);
-    void backfillStorePackArtifacts({ limit })
-      .then((result) => {
-        setLastResult({ kind: "artifact-backfill", result: result as StorePackBackfillResult });
-      })
-      .catch((requestError) => setError(formatMutationError(requestError)));
-  };
-
-  const runFailureRetry = () => {
-    if (
-      !window.confirm(
-        `Retry failed StorePack artifact builds for up to ${limit} releases?\n\nThis writes StorePack metadata in Convex and updates the failure ledger.`,
-      )
-    ) {
-      return;
-    }
-    setError(null);
-    void retryStorePackBackfillFailures({ limit })
-      .then((result) => {
-        setLastResult({ kind: "failure-retry", result: result as StorePackBackfillResult });
-      })
-      .catch((requestError) => setError(formatMutationError(requestError)));
-  };
-
-  const runIndexBackfill = () => {
-    if (
-      !window.confirm(
-        `Rebuild StorePack search index rows for up to ${limit} releases?\n\nThis writes StorePack lookup rows in Convex.`,
-      )
-    ) {
-      return;
-    }
-    setError(null);
-    void backfillStorePackSearchIndex({
+    setDryRunArgs({
+      operation,
       limit,
-      ...(indexCursor.trim() ? { cursor: indexCursor.trim() } : {}),
+      ...(operation === "search-index-backfill" && indexCursor.trim()
+        ? { cursor: indexCursor.trim() }
+        : {}),
+    });
+  };
+
+  const createMigrationRun = () => {
+    if (
+      !window.confirm(
+        `Create a ${formatOperation(operation)} migration run for up to ${limit} releases?\n\nThis writes an operator run record in Convex but does not execute the batch yet.`,
+      )
+    ) {
+      return;
+    }
+    setError(null);
+    void startMigrationRun({
+      operation,
+      limit,
+      ...(operation === "search-index-backfill" && indexCursor.trim()
+        ? { cursor: indexCursor.trim() }
+        : {}),
     })
-      .then((result) => {
-        const typedResult = result as StorePackBackfillResult;
-        setLastResult({ kind: "index-backfill", result: typedResult });
-        if (typedResult.continueCursor) setIndexCursor(typedResult.continueCursor);
+      .then((run) => {
+        setLastResult({ kind: operation, result: null, run });
       })
       .catch((requestError) => setError(formatMutationError(requestError)));
+  };
+
+  const runMigrationBatch = (run: StorePackMigrationRun) => {
+    if (
+      !window.confirm(
+        `Run next ${formatOperation(run.operation)} batch?\n\nRun: ${run._id}\nLimit: ${run.limit}\nCursor: ${run.continueCursor ?? run.cursor ?? "start"}\n\nThis writes StorePack migration data in Convex.`,
+      )
+    ) {
+      return;
+    }
+    setError(null);
+    setActiveRunId(run._id);
+    void continueMigrationRun({ runId: run._id })
+      .then((result) => {
+        setLastResult({
+          kind: result.run?.operation ?? run.operation,
+          result: result.result,
+          run: result.run,
+        });
+        if (result.run?.continueCursor) setIndexCursor(result.run.continueCursor);
+        if (result.error) setError(result.error);
+      })
+      .catch((requestError) => setError(formatMutationError(requestError)))
+      .finally(() => setActiveRunId(null));
   };
 
   return (
@@ -241,6 +329,20 @@ function StorePackManagementConsole() {
 
           <div className="management-tool-grid">
             <label className="management-control management-control-stack">
+              <span className="mono">operation</span>
+              <select
+                className="management-field"
+                value={operation}
+                onChange={(event) =>
+                  setOperation(event.target.value as StorePackMigrationOperation)
+                }
+              >
+                <option value="artifact-backfill">artifact backfill</option>
+                <option value="failure-retry">failure retry</option>
+                <option value="search-index-backfill">search index backfill</option>
+              </select>
+            </label>
+            <label className="management-control management-control-stack">
               <span className="mono">batch limit</span>
               <input
                 className="management-field"
@@ -264,20 +366,12 @@ function StorePackManagementConsole() {
 
           <div className="management-actions management-actions-start">
             <Button type="button" variant="outline" onClick={runDryRun}>
-              Dry-run sample
+              Dry-run operation
             </Button>
             {admin ? (
-              <>
-                <Button type="button" onClick={runArtifactBackfill}>
-                  Build missing artifacts
-                </Button>
-                <Button type="button" variant="outline" onClick={runFailureRetry}>
-                  Retry failed builds
-                </Button>
-                <Button type="button" onClick={runIndexBackfill}>
-                  Rebuild lookup index
-                </Button>
-              </>
+              <Button type="button" onClick={createMigrationRun}>
+                Create migration run
+              </Button>
             ) : null}
           </div>
 
@@ -285,28 +379,57 @@ function StorePackManagementConsole() {
           {lastResult ? (
             <div className="management-report-item">
               <span className="management-report-meta">
-                Last {lastResult.kind.replace("-", " ")}
+                Last {formatOperation(lastResult.kind)}
               </span>
-              <span>
-                processed {lastResult.result.processed ?? "?"} - succeeded{" "}
-                {lastResult.result.succeeded ?? "?"} - failed {lastResult.result.failed ?? "?"}
-                {lastResult.result.continueCursor
-                  ? ` - next cursor ${lastResult.result.continueCursor}`
-                  : ""}
-              </span>
+              {lastResult.result ? (
+                <span>
+                  processed {lastResult.result.processed ?? "?"} - succeeded{" "}
+                  {lastResult.result.succeeded ?? "?"} - failed {lastResult.result.failed ?? "?"}
+                  {lastResult.result.continueCursor
+                    ? ` - next cursor ${lastResult.result.continueCursor}`
+                    : ""}
+                </span>
+              ) : (
+                <span>
+                  created {lastResult.run?._id ?? "migration run"} with status{" "}
+                  {lastResult.run?.status ?? "pending"}
+                </span>
+              )}
             </div>
           ) : null}
         </div>
       </Card>
 
-      {dryRunRows.length > 0 ? (
+      {dryRunArgs ? (
         <Card className="mt-5">
           <h2 className="m-0 font-display text-xl font-bold text-[color:var(--ink)]">
-            Dry-run sample
+            Dry-run result
           </h2>
-          <MigrationRows rows={dryRunRows} />
+          {dryRun === undefined ? (
+            <div className="stat mt-3">Loading dry-run candidates...</div>
+          ) : (
+            <DryRunResult result={dryRun} />
+          )}
         </Card>
       ) : null}
+
+      <Card className="mt-5">
+        <h2 className="m-0 font-display text-xl font-bold text-[color:var(--ink)]">
+          Migration runs
+        </h2>
+        {migrationRuns === undefined ? (
+          <div className="stat mt-3">Loading migration run ledger...</div>
+        ) : migrationRuns.items.length === 0 ? (
+          <div className="stat mt-3">No StorePack migration runs have been created yet.</div>
+        ) : (
+          <MigrationRunRows
+            rows={migrationRuns.items}
+            admin={admin}
+            activeRunId={activeRunId}
+            onContinue={runMigrationBatch}
+          />
+        )}
+      </Card>
 
       <Card className="mt-5">
         <h2 className="m-0 font-display text-xl font-bold text-[color:var(--ink)]">
@@ -355,6 +478,146 @@ function MigrationRows(props: { rows: StorePackMigrationStatus["missingSample"] 
       {props.rows.map((entry) => (
         <MigrationRow key={entry.releaseId} entry={entry} />
       ))}
+    </div>
+  );
+}
+
+function DryRunResult(props: { result: StorePackMigrationDryRun }) {
+  const result = props.result;
+  return (
+    <div className="mt-3 flex flex-col gap-3">
+      <div className="management-report-item">
+        <span className="management-report-meta">operation</span>
+        <span>
+          {formatOperation(result.operation)} - {result.candidateCount} candidates
+          {result.continueCursor ? ` - next cursor ${result.continueCursor}` : ""}
+          {result.isDone ? " - done" : ""}
+        </span>
+      </div>
+      {result.candidates.length === 0 ? (
+        <div className="stat">No candidates found for this dry-run.</div>
+      ) : (
+        <div className="management-list">
+          {result.candidates.map((candidate, index) => (
+            <DryRunCandidateRow
+              key={candidate.failureId ?? candidate.releaseId ?? `${result.operation}-${index}`}
+              candidate={candidate}
+            />
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function DryRunCandidateRow(props: { candidate: StorePackMigrationDryRunCandidate }) {
+  const candidate = props.candidate;
+  const title = candidate.displayName ?? candidate.name ?? "StorePack candidate";
+  return (
+    <div className="management-item">
+      <div className="management-item-main">
+        <div className="flex flex-wrap items-center gap-2">
+          {candidate.name ? (
+            <Link to="/plugins/$name" params={{ name: candidate.name }}>
+              {title}
+            </Link>
+          ) : (
+            <strong>{title}</strong>
+          )}
+          {candidate.error ? <Badge variant="destructive">failed</Badge> : null}
+        </div>
+        <div className="section-subtitle m-0">
+          {candidate.name ?? candidate.packageId ?? "package"}@{candidate.version ?? "unknown"}
+          {candidate.attemptCount ? ` - ${candidate.attemptCount} attempts` : ""}
+        </div>
+        {candidate.error ? (
+          <div className="management-report-item">
+            <span className="management-report-meta">last error</span>
+            <span>{candidate.error}</span>
+          </div>
+        ) : null}
+      </div>
+      {candidate.releaseId ? (
+        <div className="management-actions">
+          <Button asChild size="sm" variant="outline">
+            <Link
+              to="/management/storepacks/releases/$releaseId"
+              params={{ releaseId: candidate.releaseId }}
+              search={{ skill: undefined, plugin: undefined }}
+            >
+              Details
+            </Link>
+          </Button>
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
+function MigrationRunRows(props: {
+  rows: StorePackMigrationRun[];
+  admin: boolean;
+  activeRunId: Id<"storePackMigrationRuns"> | null;
+  onContinue: (run: StorePackMigrationRun) => void;
+}) {
+  return (
+    <div className="management-list mt-3">
+      {props.rows.map((run) => (
+        <MigrationRunRow
+          key={run._id}
+          run={run}
+          admin={props.admin}
+          active={props.activeRunId === run._id}
+          onContinue={props.onContinue}
+        />
+      ))}
+    </div>
+  );
+}
+
+function MigrationRunRow(props: {
+  run: StorePackMigrationRun;
+  admin: boolean;
+  active: boolean;
+  onContinue: (run: StorePackMigrationRun) => void;
+}) {
+  const run = props.run;
+  const canContinue = props.admin && run.status !== "completed" && run.status !== "running";
+  return (
+    <div className="management-item">
+      <div className="management-item-main">
+        <div className="flex flex-wrap items-center gap-2">
+          <strong>{formatOperation(run.operation)}</strong>
+          <Badge variant={run.status === "failed" ? "destructive" : "compact"}>{run.status}</Badge>
+        </div>
+        <div className="section-subtitle m-0">
+          limit {run.limit} - processed {run.processed} - generated {run.generated} - skipped{" "}
+          {run.skipped} - failed {run.failed}
+        </div>
+        <div className="section-subtitle m-0">
+          created {formatTimestamp(run.createdAt)}
+          {run.actor?.handle ? ` by @${run.actor.handle}` : ""}
+          {run.continueCursor ? ` - next cursor ${run.continueCursor}` : ""}
+        </div>
+        {run.lastError ? (
+          <div className="management-report-item">
+            <span className="management-report-meta">last error</span>
+            <span>{run.lastError}</span>
+          </div>
+        ) : null}
+      </div>
+      {canContinue ? (
+        <div className="management-actions">
+          <Button
+            type="button"
+            size="sm"
+            onClick={() => props.onContinue(run)}
+            disabled={props.active}
+          >
+            {props.active ? "Running..." : "Run next batch"}
+          </Button>
+        </div>
+      ) : null}
     </div>
   );
 }
@@ -484,6 +747,10 @@ function formatBytesCompact(value: number) {
 
 function formatTimestamp(value: number) {
   return new Date(value).toLocaleString();
+}
+
+function formatOperation(value: StorePackMigrationOperation) {
+  return value.replaceAll("-", " ");
 }
 
 function formatMutationError(error: unknown) {
