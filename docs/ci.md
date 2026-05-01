@@ -14,13 +14,17 @@ status checks are precise:
 - `packages` builds `packages/schema` and verifies the ClawHub CLI package.
 - `types-build` typechecks the app, schema package, and CLI package, then builds
   the app.
-- `e2e-http` runs the HTTP end-to-end suite.
+- `e2e-http` runs the secretless HTTP and CLI end-to-end subset.
 - `playwright-smoke` builds the app and runs a chromium browser smoke against the
   public read backend.
 
 For local reproduction, run the matching `ci:*` package scripts. `bun run ci:pr`
 matches the non-browser PR gates. `bun run ci:playwright-smoke` assumes the
 chromium Playwright browser has already been installed.
+
+The full `bun run test:e2e` suite includes token-backed CLI flows. Keep that for
+local or secret-backed validation; PR CI should not require a developer auth
+token or a local global ClawHub config.
 
 ## Required Checks
 
