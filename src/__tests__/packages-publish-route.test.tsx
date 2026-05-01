@@ -234,6 +234,57 @@ describe("plugins publish route", () => {
     });
   });
 
+  it("previews the generated StorePack manifest before publish", async () => {
+    renderPublishRoute();
+
+    const packageJson = withRelativePath(
+      new File(
+        [
+          makeCodePluginPackageJson({
+            name: "demo-plugin",
+            displayName: "Demo Plugin",
+            version: "1.2.3",
+            repository: "https://github.com/openclaw/demo-plugin.git",
+          }),
+        ],
+        "package.json",
+        { type: "application/json" },
+      ),
+      "demo-plugin/package.json",
+    );
+    const manifest = withRelativePath(
+      new File(['{"id":"demo.plugin"}'], "openclaw.plugin.json", { type: "application/json" }),
+      "demo-plugin/openclaw.plugin.json",
+    );
+    const dist = withRelativePath(
+      new File(["export const demo = true;\n"], "index.js", { type: "text/javascript" }),
+      "demo-plugin/dist/index.js",
+    );
+    const suppliedStorePack = withRelativePath(
+      new File(['{"kind":"user.supplied"}'], "STOREPACK.json", { type: "application/json" }),
+      "demo-plugin/STOREPACK.json",
+    );
+
+    fireEvent.change(getFileInput(), {
+      target: { files: [packageJson, manifest, dist, suppliedStorePack] },
+    });
+
+    await waitFor(() => {
+      expect(screen.getByRole("heading", { name: "StorePack preview" })).toBeTruthy();
+    });
+
+    expect(screen.getByText("4 files including STOREPACK.json")).toBeTruthy();
+    expect(screen.getAllByText("darwin-arm64").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("linux-x64-glibc").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("win32-x64").length).toBeGreaterThan(0);
+    expect(
+      screen.getByText("STOREPACK.json supplied by package will be replaced by ClawHub."),
+    ).toBeTruthy();
+    expect(screen.getByText(/"kind": "openclaw\.storepack"/i)).toBeTruthy();
+    expect(screen.getByText(/"sha256": "computed-on-publish"/i)).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Copy StorePack preview manifest" })).toBeTruthy();
+  });
+
   it("surfaces missing OpenClaw compatibility metadata before publish", async () => {
     renderPublishRoute();
 
@@ -275,8 +326,8 @@ describe("plugins publish route", () => {
       expect(screen.getByText(/Missing required OpenClaw package metadata:/i)).toBeTruthy();
     });
 
-    expect(screen.getByText(/openclaw\.compat\.pluginApi/i)).toBeTruthy();
-    expect(screen.getByText(/openclaw\.build\.openclawVersion/i)).toBeTruthy();
+    expect(screen.getAllByText(/openclaw\.compat\.pluginApi/i).length).toBeGreaterThan(0);
+    expect(screen.getAllByText(/openclaw\.build\.openclawVersion/i).length).toBeGreaterThan(0);
     const docsLink = screen.getByRole("link", { name: /Plugin Setup and Config/i });
     expect(docsLink.getAttribute("href")).toBe(
       "https://docs.openclaw.ai/plugins/sdk-setup#package-metadata",
@@ -297,7 +348,7 @@ describe("plugins publish route", () => {
     fireEvent.change(getFileInput(), { target: { files: [bigFile] } });
 
     await waitFor(() => {
-      expect(screen.getByText(/Each file must be 10MB or smaller/i)).toBeTruthy();
+      expect(screen.getAllByText(/Each file must be 10MB or smaller/i).length).toBeGreaterThan(0);
     });
 
     const summaryBorders = document.querySelectorAll(".border-emerald-300\\/40");
@@ -533,7 +584,9 @@ describe("plugins publish route", () => {
     fireEvent.change(getFileInput(), { target: { files: [packageJson, manifest, huge] } });
 
     await waitFor(() => {
-      expect(screen.getByText(/Each file must be 10MB or smaller: plugin\.wasm/i)).toBeTruthy();
+      expect(
+        screen.getAllByText(/Each file must be 10MB or smaller: plugin\.wasm/i).length,
+      ).toBeGreaterThan(0);
     });
     expect(screen.getByRole("button", { name: "Publish" }).getAttribute("disabled")).not.toBeNull();
     expect(publishRelease).not.toHaveBeenCalled();

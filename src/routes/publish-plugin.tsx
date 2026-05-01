@@ -6,6 +6,7 @@ import semver from "semver";
 import { toast } from "sonner";
 import { api } from "../../convex/_generated/api";
 import { MAX_PUBLISH_FILE_BYTES, MAX_PUBLISH_TOTAL_BYTES } from "../../convex/lib/publishLimits";
+import { InstallCopyButton } from "../components/InstallCopyButton";
 import { Container } from "../components/layout/Container";
 import { PackageSourceChooser } from "../components/PackageSourceChooser";
 import { Badge } from "../components/ui/badge";
@@ -43,6 +44,203 @@ const apiRefs = api as unknown as {
     publishRelease: unknown;
   };
 };
+
+type StorePackPreviewFile = {
+  path: string;
+  size: number;
+  contentType?: string;
+};
+
+type StorePackPreview = {
+  manifest: Record<string, unknown>;
+  manifestJson: string;
+  publishFiles: StorePackPreviewFile[];
+  finalFileCount: number;
+  selectedBytes: number;
+  hostTargets: string[];
+  environment: string[];
+  blockers: string[];
+  warnings: string[];
+};
+
+const DEFAULT_STOREPACK_TARGETS = ["darwin-arm64", "linux-x64-glibc", "win32-x64"];
+
+function splitHostTargets(value: string) {
+  return value
+    .split(",")
+    .map((entry) => entry.trim())
+    .filter(Boolean);
+}
+
+function inferPreviewEnvironment(paths: string[]) {
+  const lowerPaths = paths.map((path) => path.toLowerCase());
+  const environment = [
+    "network",
+    lowerPaths.some((path) => path.includes("playwright") || path.includes("browser"))
+      ? "browser"
+      : null,
+    lowerPaths.some((path) => path.includes("desktop") || path.includes("imessage"))
+      ? "local desktop"
+      : null,
+    lowerPaths.some((path) => path.includes("audio") || path.includes("microphone"))
+      ? "audio device"
+      : null,
+  ].filter((entry): entry is string => Boolean(entry));
+  return [...new Set(environment)];
+}
+
+function hostTargetPreviewObjects(targets: string[], compatibility: PackageCompatibility | null) {
+  return targets.map((target) => {
+    const parts = target.toLowerCase().split(/[-_/]/).filter(Boolean);
+    const os = parts.find((part) => part === "darwin" || part === "linux" || part === "win32");
+    const arch = parts.find((part) => part === "arm64" || part === "x64");
+    const libc = parts.find((part) => part === "glibc" || part === "musl");
+    return {
+      target,
+      ...(os ? { os } : {}),
+      ...(arch ? { arch } : {}),
+      ...(libc ? { libc } : {}),
+      supportState: os && arch ? "supported" : "setup-required",
+      ...(compatibility?.minGatewayVersion
+        ? { openclawRange: compatibility.minGatewayVersion }
+        : {}),
+      ...(compatibility?.pluginApiRange ? { pluginApiRange: compatibility.pluginApiRange } : {}),
+    };
+  });
+}
+
+function formatPreviewBytes(value: number) {
+  if (value < 1024) return `${value}B`;
+  if (value < 1024 * 1024) return `${(value / 1024).toFixed(1)}KB`;
+  return `${(value / (1024 * 1024)).toFixed(1)}MB`;
+}
+
+function buildStorePackPreview(input: {
+  files: File[];
+  normalizedPaths: string[];
+  family: "code-plugin" | "bundle-plugin";
+  name: string;
+  displayName: string;
+  ownerHandle: string;
+  version: string;
+  changelog: string;
+  sourceRepo: string;
+  sourceCommit: string;
+  sourceRef: string;
+  sourcePath: string;
+  bundleFormat: string;
+  hostTargets: string;
+  compatibility: PackageCompatibility | null;
+  codePluginFieldIssues: string[];
+  validationError: string | null;
+}): StorePackPreview | null {
+  if (input.files.length === 0) return null;
+
+  const normalized = normalizePackageUploadFiles(input.files);
+  const publishFiles = normalized
+    .filter((entry) => entry.path.toLowerCase() !== "storepack.json")
+    .map((entry) => ({
+      path: entry.path,
+      size: entry.file.size,
+      ...(entry.file.type ? { contentType: entry.file.type } : {}),
+    }))
+    .sort((a, b) => a.path.localeCompare(b.path));
+  const selectedBytes = publishFiles.reduce((sum, file) => sum + file.size, 0);
+  const suppliedStorePack = normalized.some(
+    (entry) => entry.path.toLowerCase() === "storepack.json",
+  );
+  const rawTargets = input.family === "bundle-plugin" ? splitHostTargets(input.hostTargets) : [];
+  const hostTargets = rawTargets.length > 0 ? rawTargets : DEFAULT_STOREPACK_TARGETS;
+  const environment = inferPreviewEnvironment(input.normalizedPaths);
+  const blockers = [
+    input.validationError,
+    input.name.trim() ? null : "Plugin name is required.",
+    input.version.trim() ? null : "Version is required.",
+    input.family === "code-plugin" && !input.sourceRepo.trim() ? "Source repo is required." : null,
+    input.family === "code-plugin" && !input.sourceCommit.trim()
+      ? "Source commit is required."
+      : null,
+    ...input.codePluginFieldIssues.map((field) => `Missing package metadata: ${field}.`),
+  ].filter((entry): entry is string => Boolean(entry));
+  const warnings = [
+    input.changelog.trim() ? null : "Changelog is empty.",
+    suppliedStorePack ? "STOREPACK.json supplied by package will be replaced by ClawHub." : null,
+    rawTargets.length === 0 && input.family === "bundle-plugin"
+      ? "No bundle host targets provided; ClawHub will fall back to the default host matrix."
+      : null,
+  ].filter((entry): entry is string => Boolean(entry));
+  const source =
+    input.sourceRepo.trim() && input.sourceCommit.trim()
+      ? {
+          kind: "github",
+          repo: input.sourceRepo.trim(),
+          ref: input.sourceRef.trim() || input.sourceCommit.trim(),
+          commit: input.sourceCommit.trim(),
+          path: input.sourcePath.trim() || ".",
+        }
+      : null;
+  const manifest: Record<string, unknown> = {
+    specVersion: 1,
+    kind: "openclaw.storepack",
+    package: {
+      name: input.name.trim() || "unresolved",
+      displayName: input.displayName.trim() || input.name.trim() || "unresolved",
+      owner: input.ownerHandle.trim() || "resolved-on-publish",
+      slug: input.name.trim() || "unresolved",
+      version: input.version.trim() || "unresolved",
+      family: input.family,
+      channel: "community",
+    },
+    release: {
+      packageId: "assigned-on-publish",
+      releaseId: "assigned-on-publish",
+      publishedAt: "assigned-on-publish",
+      source,
+    },
+    artifact: {
+      format: "zip",
+      root: "package/",
+      specVersion: 1,
+      contentSha256: "computed-on-publish",
+      fileCount: publishFiles.length,
+    },
+    files: publishFiles.map((file) => ({
+      path: file.path,
+      size: file.size,
+      sha256: "computed-on-publish",
+      ...(file.contentType ? { contentType: file.contentType } : {}),
+    })),
+    compatibility: input.compatibility ?? null,
+    capabilities:
+      input.family === "bundle-plugin"
+        ? {
+            format: input.bundleFormat.trim() || null,
+            hostTargets,
+          }
+        : null,
+    verification: { scanStatus: "pending" },
+    hostTargets: hostTargetPreviewObjects(hostTargets, input.compatibility),
+    environment: {
+      requiresNetwork: true,
+      requiresBrowser: environment.includes("browser"),
+      requiresLocalDesktop: environment.includes("local desktop"),
+      requiresAudioDevice: environment.includes("audio device"),
+    },
+    runtimeBundles: [],
+  };
+
+  return {
+    manifest,
+    manifestJson: JSON.stringify(manifest, null, 2),
+    publishFiles,
+    finalFileCount: publishFiles.length + 1,
+    selectedBytes,
+    hostTargets,
+    environment,
+    blockers,
+    warnings,
+  };
+}
 
 export function PublishPluginRoute() {
   const search = useSearch({ from: "/publish-plugin" });
@@ -111,6 +309,47 @@ export function PublishPluginRoute() {
   const isMetadataLocked = files.length === 0;
   const isSubmitting = status !== null;
   const metadataDisabled = isMetadataLocked || isSubmitting;
+  const storePackPreview = useMemo(
+    () =>
+      buildStorePackPreview({
+        files,
+        normalizedPaths,
+        family,
+        name,
+        displayName,
+        ownerHandle,
+        version,
+        changelog,
+        sourceRepo,
+        sourceCommit,
+        sourceRef,
+        sourcePath,
+        bundleFormat,
+        hostTargets,
+        compatibility: codePluginCompatibility,
+        codePluginFieldIssues,
+        validationError,
+      }),
+    [
+      files,
+      normalizedPaths,
+      family,
+      name,
+      displayName,
+      ownerHandle,
+      version,
+      changelog,
+      sourceRepo,
+      sourceCommit,
+      sourceRef,
+      sourcePath,
+      bundleFormat,
+      hostTargets,
+      codePluginCompatibility,
+      codePluginFieldIssues,
+      validationError,
+    ],
+  );
 
   const onPickFiles = async (selected: File[]) => {
     const expanded = await expandFilesWithReport(selected, {
@@ -183,6 +422,95 @@ export function PublishPluginRoute() {
           hostTargets={hostTargets}
           onPickFiles={onPickFiles}
         />
+
+        {storePackPreview ? (
+          <Card className="mb-5">
+            <div className="flex flex-col gap-4">
+              <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                <div>
+                  <h2 className="m-0 font-display text-xl font-bold text-[color:var(--ink)]">
+                    StorePack preview
+                  </h2>
+                  <p className="mt-1 text-sm text-[color:var(--ink-soft)]">
+                    This is the generated package contract ClawHub will build on publish.
+                  </p>
+                </div>
+                <InstallCopyButton
+                  text={storePackPreview.manifestJson}
+                  ariaLabel="Copy StorePack preview manifest"
+                />
+              </div>
+
+              <dl className="grid gap-3 text-sm sm:grid-cols-3">
+                <div className="rounded-[var(--radius-sm)] border border-[color:var(--line)] p-3">
+                  <dt className="mb-1 text-[color:var(--ink-soft)]">Final archive</dt>
+                  <dd className="font-semibold text-[color:var(--ink)]">
+                    {storePackPreview.finalFileCount} files including STOREPACK.json
+                  </dd>
+                </div>
+                <div className="rounded-[var(--radius-sm)] border border-[color:var(--line)] p-3">
+                  <dt className="mb-1 text-[color:var(--ink-soft)]">Selected size</dt>
+                  <dd className="font-semibold text-[color:var(--ink)]">
+                    {formatPreviewBytes(storePackPreview.selectedBytes)}
+                  </dd>
+                </div>
+                <div className="rounded-[var(--radius-sm)] border border-[color:var(--line)] p-3">
+                  <dt className="mb-1 text-[color:var(--ink-soft)]">Publish state</dt>
+                  <dd className="font-semibold text-[color:var(--ink)]">
+                    {storePackPreview.blockers.length > 0 ? "Blocked" : "Ready"}
+                  </dd>
+                </div>
+              </dl>
+
+              <div className="flex flex-wrap gap-1.5">
+                {storePackPreview.hostTargets.map((target) => (
+                  <Badge key={target} variant="compact">
+                    {target}
+                  </Badge>
+                ))}
+                {storePackPreview.environment.map((signal) => (
+                  <Badge key={signal} variant="compact">
+                    {signal}
+                  </Badge>
+                ))}
+              </div>
+
+              {storePackPreview.blockers.length > 0 ? (
+                <div className="rounded-[var(--radius-sm)] border border-red-300/50 bg-red-50 p-3 text-sm text-red-900 dark:border-red-500/30 dark:bg-red-950/30 dark:text-red-100">
+                  <strong>Blocking issues</strong>
+                  <ul className="mt-2 list-disc pl-5">
+                    {storePackPreview.blockers.map((blocker) => (
+                      <li key={blocker}>{blocker}</li>
+                    ))}
+                  </ul>
+                </div>
+              ) : null}
+
+              {storePackPreview.warnings.length > 0 ? (
+                <div className="rounded-[var(--radius-sm)] border border-amber-300/50 bg-amber-50 p-3 text-sm text-amber-900 dark:border-amber-500/30 dark:bg-amber-950/30 dark:text-amber-100">
+                  <strong>Warnings</strong>
+                  <ul className="mt-2 list-disc pl-5">
+                    {storePackPreview.warnings.map((warning) => (
+                      <li key={warning}>{warning}</li>
+                    ))}
+                  </ul>
+                </div>
+              ) : null}
+
+              <div>
+                <div className="mb-2 flex items-center justify-between gap-3">
+                  <strong className="text-sm text-[color:var(--ink)]">STOREPACK.json</strong>
+                  <span className="text-xs text-[color:var(--ink-soft)]">
+                    digests computed after upload
+                  </span>
+                </div>
+                <pre className="max-h-[420px] overflow-auto rounded-[var(--radius-sm)] border border-[color:var(--line)] bg-[color:var(--surface-muted)] p-4 text-xs leading-5 text-[color:var(--ink)]">
+                  <code>{storePackPreview.manifestJson}</code>
+                </pre>
+              </div>
+            </div>
+          </Card>
+        ) : null}
 
         <Card
           className={isMetadataLocked ? "pointer-events-none opacity-60" : ""}
