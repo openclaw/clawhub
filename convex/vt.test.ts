@@ -4,13 +4,19 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   __test,
   fetchResults,
+  pollPendingScans,
   pollPackageReleaseScanResults,
+  scanWithVirusTotal,
   scanPackageReleaseWithVirusTotal,
 } from "./vt";
 
 type WrappedHandler<TArgs, TResult> = {
   _handler: (ctx: unknown, args: TArgs) => Promise<TResult>;
 };
+
+const scanWithVirusTotalHandler = (
+  scanWithVirusTotal as unknown as WrappedHandler<{ versionId: string }, void>
+)._handler;
 
 const scanPackageReleaseWithVirusTotalHandler = (
   scanPackageReleaseWithVirusTotal as unknown as WrappedHandler<
@@ -33,6 +39,13 @@ const fetchResultsHandler = (
   >
 )._handler;
 
+const pollPendingScansHandler = (
+  pollPendingScans as unknown as WrappedHandler<
+    { batchSize?: number },
+    { processed: number; updated: number; staled?: number; healthy: boolean; queueSize?: number }
+  >
+)._handler;
+
 const originalVtApiKey = process.env.VT_API_KEY;
 
 afterEach(() => {
@@ -45,61 +58,57 @@ afterEach(() => {
   vi.unstubAllGlobals();
 });
 
-describe("vt activation fallback", () => {
-  it("activates only VT-pending hidden skills", () => {
-    expect(
-      __test.shouldActivateWhenVtUnavailable({
-        moderationStatus: "hidden",
-        moderationReason: "pending.scan",
-      }),
-    ).toBe(true);
+describe("vt unavailable fallback", () => {
+  it("does not activate a skill when VT is not configured", async () => {
+    delete process.env.VT_API_KEY;
+    const ctx = {
+      runQuery: vi.fn(),
+      runMutation: vi.fn(),
+    };
 
-    expect(
-      __test.shouldActivateWhenVtUnavailable({
-        moderationStatus: "hidden",
-        moderationReason: "scanner.vt.pending",
-      }),
-    ).toBe(true);
+    await scanWithVirusTotalHandler(ctx as never, { versionId: "skillVersions:demo" });
 
-    expect(
-      __test.shouldActivateWhenVtUnavailable({
-        moderationStatus: "hidden",
-        moderationReason: "pending.scan.stale",
-      }),
-    ).toBe(true);
+    expect(ctx.runQuery).not.toHaveBeenCalled();
+    expect(ctx.runMutation).not.toHaveBeenCalled();
   });
 
-  it("does not activate quality or scanner-hidden skills", () => {
-    expect(
-      __test.shouldActivateWhenVtUnavailable({
-        moderationStatus: "hidden",
-        moderationReason: "quality.low",
-      }),
-    ).toBe(false);
+  it("marks stale pending scans without activating hidden skills", async () => {
+    process.env.VT_API_KEY = "test-key";
+    const fetchMock = vi.fn().mockResolvedValue({ status: 404, ok: false });
+    vi.stubGlobal("fetch", fetchMock);
 
-    expect(
-      __test.shouldActivateWhenVtUnavailable({
-        moderationStatus: "hidden",
-        moderationReason: "scanner.llm.malicious",
-      }),
-    ).toBe(false);
-  });
+    const runQuery = vi
+      .fn()
+      .mockResolvedValueOnce({
+        queueSize: 1,
+        staleCount: 0,
+        veryStaleCount: 0,
+        oldestAgeMinutes: 5,
+        healthy: true,
+      })
+      .mockResolvedValueOnce([
+        {
+          skillId: "skills:pending",
+          versionId: "skillVersions:pending",
+          sha256hash: "a".repeat(64),
+          checkCount: 9,
+        },
+      ]);
+    const runMutation = vi.fn(async () => null);
 
-  it("does not activate blocked or already-active skills", () => {
-    expect(
-      __test.shouldActivateWhenVtUnavailable({
-        moderationStatus: "hidden",
-        moderationReason: "pending.scan",
-        moderationFlags: ["blocked.malware"],
-      }),
-    ).toBe(false);
+    const result = await pollPendingScansHandler({ runQuery, runMutation } as never, {
+      batchSize: 1,
+    });
 
-    expect(
-      __test.shouldActivateWhenVtUnavailable({
-        moderationStatus: "active",
-        moderationReason: "pending.scan",
-      }),
-    ).toBe(false);
+    expect(result).toMatchObject({ processed: 1, updated: 0, staled: 1 });
+    expect(runMutation).toHaveBeenCalledTimes(2);
+    expect(runMutation).toHaveBeenNthCalledWith(1, expect.anything(), {
+      skillId: "skills:pending",
+    });
+    expect(runMutation).toHaveBeenNthCalledWith(2, expect.anything(), {
+      versionId: "skillVersions:pending",
+      vtAnalysis: { status: "stale", checkedAt: expect.any(Number) },
+    });
   });
 });
 
