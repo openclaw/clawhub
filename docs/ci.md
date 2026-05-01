@@ -15,11 +15,12 @@ status checks are precise:
 - `types-build` typechecks the app, schema package, and CLI package, then builds
   the app.
 - `e2e-http` runs the HTTP end-to-end suite.
-- `playwright` builds the app and runs the Playwright browser suite.
+- `playwright-smoke` builds the app and runs a chromium browser smoke against the
+  public read backend.
 
 For local reproduction, run the matching `ci:*` package scripts. `bun run ci:pr`
-matches the non-browser PR gates. `bun run ci:playwright` assumes Playwright
-browsers have already been installed.
+matches the non-browser PR gates. `bun run ci:playwright-smoke` assumes the
+chromium Playwright browser has already been installed.
 
 ## Required Checks
 
@@ -30,11 +31,15 @@ GitHub rulesets should require these status checks on `main`:
 - `CI / packages`
 - `CI / types-build`
 - `CI / e2e-http`
-- `CI / playwright`
+- `CI / playwright-smoke`
 - `Security Gate: Secret Scanning / Scan for Verified Secrets`
 
 `CodeQL Light` is path-filtered and skipped for draft pull requests, so it should
 not be marked required unless an always-present aggregate job is added.
+
+The full multi-browser Playwright suite is not a required PR check yet. It still
+needs stable read fixtures or a dedicated backend fixture before it can be a hard
+gate without coupling every PR to live data and mobile-browser variance.
 
 Production-only checks stay in the manual deploy workflow:
 

@@ -84,8 +84,8 @@ jobs:
       - name: HTTP e2e
         run: bun run ci:e2e-http
 
-  playwright:
-    name: playwright
+  playwright-smoke:
+    name: playwright-smoke
     runs-on: ubuntu-latest
     timeout-minutes: 25
 
@@ -95,10 +95,10 @@ jobs:
       - uses: ./.github/actions/setup-bun
 
       - name: Install Playwright browsers
-        run: bunx playwright install --with-deps chromium webkit
+        run: bunx playwright install --with-deps chromium
 
       - name: Browser e2e
-        run: bun run ci:playwright
+        run: bun run ci:playwright-smoke
 
       - name: Upload Playwright report
         if: ${{ !cancelled() }}
