@@ -56,6 +56,9 @@ export type PackageListItem = {
   capabilityTags?: string[];
   executesCode?: boolean;
   verificationTier?: string | null;
+  storepackAvailable?: boolean;
+  hostTargetKeys?: string[];
+  environmentFlags?: string[];
   storepack?: PackageStorePackSummary;
 };
 
@@ -293,6 +296,8 @@ export async function fetchPackages(params: {
   featured?: boolean;
   executesCode?: boolean;
   capabilityTag?: string;
+  hostTarget?: string;
+  environment?: string;
   limit?: number;
 }) {
   if (params.q?.trim()) {
@@ -308,6 +313,8 @@ export async function fetchPackages(params: {
       url.searchParams.set("executesCode", String(params.executesCode));
     }
     if (params.capabilityTag) url.searchParams.set("capabilityTag", params.capabilityTag);
+    if (params.hostTarget) url.searchParams.set("hostTarget", params.hostTarget);
+    if (params.environment) url.searchParams.set("environment", params.environment);
     return await fetchJson<{ results: Array<{ score: number; package: PackageListItem }> }>(url);
   }
 
@@ -329,6 +336,8 @@ export async function fetchPackages(params: {
     url.searchParams.set("executesCode", String(params.executesCode));
   }
   if (params.capabilityTag) url.searchParams.set("capabilityTag", params.capabilityTag);
+  if (params.hostTarget) url.searchParams.set("hostTarget", params.hostTarget);
+  if (params.environment) url.searchParams.set("environment", params.environment);
   return await fetchJson<{ items: PackageListItem[]; nextCursor: string | null }>(url);
 }
 
@@ -339,6 +348,8 @@ export async function fetchPluginCatalog(params: {
   isOfficial?: boolean;
   featured?: boolean;
   executesCode?: boolean;
+  hostTarget?: string;
+  environment?: string;
   limit?: number;
 }): Promise<PluginCatalogResult> {
   if (params.family) {
@@ -349,6 +360,8 @@ export async function fetchPluginCatalog(params: {
       isOfficial: params.isOfficial,
       featured: params.featured,
       executesCode: params.executesCode,
+      hostTarget: params.hostTarget,
+      environment: params.environment,
       limit: params.limit,
     });
     if (hasOwnProperty(response, "results") && Array.isArray(response.results)) {
@@ -376,6 +389,8 @@ export async function fetchPluginCatalog(params: {
     if (typeof params.executesCode === "boolean") {
       url.searchParams.set("executesCode", String(params.executesCode));
     }
+    if (params.hostTarget) url.searchParams.set("hostTarget", params.hostTarget);
+    if (params.environment) url.searchParams.set("environment", params.environment);
     const response = await fetchJson<{
       results?: Array<{ score: number; package: PackageListItem }>;
     }>(url);
@@ -397,6 +412,8 @@ export async function fetchPluginCatalog(params: {
   if (typeof params.executesCode === "boolean") {
     url.searchParams.set("executesCode", String(params.executesCode));
   }
+  if (params.hostTarget) url.searchParams.set("hostTarget", params.hostTarget);
+  if (params.environment) url.searchParams.set("environment", params.environment);
   const result = await fetchJson<PluginCatalogResult>(url);
   return {
     items: result?.items ?? [],

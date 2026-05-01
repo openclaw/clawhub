@@ -111,6 +111,8 @@ type PackageListQueryArgs = {
   highlightedOnly?: boolean;
   executesCode?: boolean;
   capabilityTag?: string;
+  hostTarget?: string;
+  environment?: string;
   viewerUserId?: Id<"users">;
   paginationOpts: { cursor: string | null; numItems: number };
 };
@@ -289,6 +291,9 @@ type CatalogListItem = {
   capabilityTags?: string[];
   executesCode?: boolean;
   verificationTier?: string | null;
+  storepackAvailable?: boolean;
+  hostTargetKeys?: string[];
+  environmentFlags?: string[];
 };
 
 type CatalogSearchEntry = { score: number; package: CatalogListItem };
@@ -515,6 +520,8 @@ async function searchPackageCatalogByListing(
     highlightedOnly?: boolean;
     executesCode?: boolean;
     capabilityTag?: string;
+    hostTarget?: string;
+    environment?: string;
     viewerUserId?: Id<"users">;
   },
 ): Promise<CatalogSearchEntry[]> {
@@ -540,6 +547,8 @@ async function searchPackageCatalogByListing(
       highlightedOnly: args.highlightedOnly,
       executesCode: args.executesCode,
       capabilityTag: args.capabilityTag,
+      hostTarget: args.hostTarget,
+      environment: args.environment,
       viewerUserId: args.viewerUserId,
       paginationOpts: { cursor, numItems: HTTP_PACKAGE_SEARCH_PAGE_SIZE },
     });
@@ -705,6 +714,8 @@ async function listPackages(
   const familyRaw = url.searchParams.get("family");
   const channelRaw = url.searchParams.get("channel")?.trim();
   const capabilityTag = url.searchParams.get("capabilityTag")?.trim() || undefined;
+  const hostTarget = url.searchParams.get("hostTarget")?.trim() || undefined;
+  const environment = url.searchParams.get("environment")?.trim() || undefined;
   const isOfficialRaw = url.searchParams.get("isOfficial");
   const highlightedOnly =
     url.searchParams.get("featured") === "true" ||
@@ -717,7 +728,10 @@ async function listPackages(
     (familyRaw === "skill" || familyRaw === "code-plugin" || familyRaw === "bundle-plugin"
       ? familyRaw
       : undefined);
-  const includeSkills = options?.includeSkills ?? effectiveFamily === undefined;
+  const packageOnlyFilters = Boolean(hostTarget || environment);
+  const includeSkills = packageOnlyFilters
+    ? false
+    : (options?.includeSkills ?? effectiveFamily === undefined);
   const channel =
     channelRaw === "official" || channelRaw === "community" || channelRaw === "private"
       ? channelRaw
@@ -728,6 +742,9 @@ async function listPackages(
     executesCodeRaw === "true" ? true : executesCodeRaw === "false" ? false : undefined;
 
   if (effectiveFamily === "skill") {
+    if (packageOnlyFilters) {
+      return json({ items: [], nextCursor: null }, 200, rate.headers);
+    }
     const result = await runQueryRef<{
       page: CatalogListItem[];
       isDone: boolean;
@@ -766,6 +783,8 @@ async function listPackages(
             highlightedOnly: highlightedOnly || undefined,
             executesCode,
             capabilityTag,
+            hostTarget,
+            environment,
             viewerUserId: viewerUserId ?? undefined,
             paginationOpts: { cursor: pageCursor, numItems },
           });
@@ -850,6 +869,8 @@ async function listPackages(
         highlightedOnly: highlightedOnly || undefined,
         executesCode,
         capabilityTag,
+        hostTarget,
+        environment,
         viewerUserId: viewerUserId ?? undefined,
         paginationOpts: { cursor: pageCursor, numItems },
       });
@@ -918,6 +939,8 @@ async function listPackages(
     highlightedOnly: highlightedOnly || undefined,
     executesCode,
     capabilityTag,
+    hostTarget,
+    environment,
     viewerUserId: viewerUserId ?? undefined,
     paginationOpts: { cursor, numItems: limit },
   } satisfies PackageListQueryArgs);
@@ -1384,11 +1407,16 @@ async function searchPackages(
     url.searchParams.get("highlightedOnly") === "1";
   const executesCodeRaw = url.searchParams.get("executesCode");
   const capabilityTag = url.searchParams.get("capabilityTag")?.trim() || undefined;
+  const hostTarget = url.searchParams.get("hostTarget")?.trim() || undefined;
+  const environment = url.searchParams.get("environment")?.trim() || undefined;
   const family =
     familyRaw === "skill" || familyRaw === "code-plugin" || familyRaw === "bundle-plugin"
       ? familyRaw
       : undefined;
-  const includeSkills = options?.includeSkills ?? family === undefined;
+  const packageOnlyFilters = Boolean(hostTarget || environment);
+  const includeSkills = packageOnlyFilters
+    ? false
+    : (options?.includeSkills ?? family === undefined);
   const channel =
     channelRaw === "official" || channelRaw === "community" || channelRaw === "private"
       ? channelRaw
@@ -1400,6 +1428,9 @@ async function searchPackages(
 
   let results: CatalogSearchEntry[];
   if (family === "skill") {
+    if (packageOnlyFilters) {
+      return json({ results: [] }, 200, rate.headers);
+    }
     results = await runQueryRef<CatalogSearchEntry[]>(
       ctx,
       apiRefs.skills.searchPackageCatalogPublic,
@@ -1426,6 +1457,8 @@ async function searchPackages(
             highlightedOnly: highlightedOnly || undefined,
             executesCode,
             capabilityTag,
+            hostTarget,
+            environment,
             viewerUserId: viewerUserId ?? undefined,
           }),
         ),
@@ -1451,6 +1484,8 @@ async function searchPackages(
         highlightedOnly: highlightedOnly || undefined,
         executesCode,
         capabilityTag,
+        hostTarget,
+        environment,
         viewerUserId: viewerUserId ?? undefined,
       });
     }
@@ -1464,6 +1499,8 @@ async function searchPackages(
         highlightedOnly: highlightedOnly || undefined,
         executesCode,
         capabilityTag,
+        hostTarget,
+        environment,
         viewerUserId: viewerUserId ?? undefined,
       }),
       runQueryRef<CatalogSearchEntry[]>(ctx, apiRefs.skills.searchPackageCatalogPublic, {

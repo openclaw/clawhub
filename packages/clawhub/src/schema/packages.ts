@@ -204,6 +204,9 @@ export const PackageListItemSchema = type({
   capabilityTags: "string[]?",
   executesCode: "boolean?",
   verificationTier: PackageVerificationTierSchema.or("null").optional(),
+  storepackAvailable: "boolean?",
+  hostTargetKeys: "string[]?",
+  environmentFlags: "string[]?",
   storepack: PackageStorePackSummarySchema.optional(),
 });
 export type PackageListItem = (typeof PackageListItemSchema)[inferred];

@@ -229,6 +229,9 @@ export declare const PackageListItemSchema: import("arktype/internal/variants/ob
     capabilityTags?: string[] | undefined;
     executesCode?: boolean | undefined;
     verificationTier?: "structural" | "source-linked" | "provenance-verified" | "rebuild-verified" | null | undefined;
+    storepackAvailable?: boolean | undefined;
+    hostTargetKeys?: string[] | undefined;
+    environmentFlags?: string[] | undefined;
     storepack?: {
         available: boolean;
         specVersion: number | null;
@@ -279,6 +282,9 @@ export declare const ApiV1PackageListResponseSchema: import("arktype/internal/va
         capabilityTags?: string[] | undefined;
         executesCode?: boolean | undefined;
         verificationTier?: "structural" | "source-linked" | "provenance-verified" | "rebuild-verified" | null | undefined;
+        storepackAvailable?: boolean | undefined;
+        hostTargetKeys?: string[] | undefined;
+        environmentFlags?: string[] | undefined;
         storepack?: {
             available: boolean;
             specVersion: number | null;
@@ -333,6 +339,9 @@ export declare const ApiV1PackageSearchResponseSchema: import("arktype/internal/
             capabilityTags?: string[] | undefined;
             executesCode?: boolean | undefined;
             verificationTier?: "structural" | "source-linked" | "provenance-verified" | "rebuild-verified" | null | undefined;
+            storepackAvailable?: boolean | undefined;
+            hostTargetKeys?: string[] | undefined;
+            environmentFlags?: string[] | undefined;
             storepack?: {
                 available: boolean;
                 specVersion: number | null;

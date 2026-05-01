@@ -177,6 +177,9 @@ type PublicPackageListItem = {
   capabilityTags: string[];
   executesCode: boolean;
   verificationTier: PackageVerificationTier | null;
+  storepackAvailable: boolean;
+  hostTargetKeys: string[];
+  environmentFlags: string[];
 };
 
 type PackageBadgeKind = Doc<"packageBadges">["kind"];
@@ -202,6 +205,9 @@ type PackageDigestLike = Pick<
   | "executesCode"
   | "verificationTier"
   | "scanStatus"
+  | "storepackAvailable"
+  | "hostTargetKeys"
+  | "environmentFlags"
   | "softDeletedAt"
 > & {
   capabilityTag?: string;
@@ -393,6 +399,8 @@ function digestMatchesFilters(
   args: {
     executesCode?: boolean;
     capabilityTag?: string;
+    hostTarget?: string;
+    environment?: string;
   },
 ) {
   if (
@@ -402,9 +410,13 @@ function digestMatchesFilters(
     return false;
   }
   if (args.capabilityTag) {
-    if (digest.capabilityTag) return digest.capabilityTag === args.capabilityTag;
-    return (digest.capabilityTags ?? []).includes(args.capabilityTag);
+    const matchesCapability = digest.capabilityTag
+      ? digest.capabilityTag === args.capabilityTag
+      : (digest.capabilityTags ?? []).includes(args.capabilityTag);
+    if (!matchesCapability) return false;
   }
+  if (args.hostTarget && !(digest.hostTargetKeys ?? []).includes(args.hostTarget)) return false;
+  if (args.environment && !(digest.environmentFlags ?? []).includes(args.environment)) return false;
   return true;
 }
 
@@ -416,6 +428,8 @@ function digestMatchesSearchFilters(
     isOfficial?: boolean;
     executesCode?: boolean;
     capabilityTag?: string;
+    hostTarget?: string;
+    environment?: string;
   },
 ) {
   if (args.family && digest.family !== args.family) return false;
@@ -472,6 +486,9 @@ function toPublicPackageListItem(digest: PackageDigestLike): PublicPackageListIt
     capabilityTags: digest.capabilityTags ?? [],
     executesCode: digest.executesCode ?? false,
     verificationTier: digest.verificationTier ?? null,
+    storepackAvailable: digest.storepackAvailable ?? false,
+    hostTargetKeys: digest.hostTargetKeys ?? [],
+    environmentFlags: digest.environmentFlags ?? [],
   };
 }
 
@@ -994,6 +1011,8 @@ async function fetchHighlightedPackageDigests(
     isOfficial?: boolean;
     executesCode?: boolean;
     capabilityTag?: string;
+    hostTarget?: string;
+    environment?: string;
     viewerUserId?: Id<"users">;
   },
 ) {
@@ -1026,6 +1045,8 @@ async function fetchHighlightedPackagePage(
     isOfficial?: boolean;
     executesCode?: boolean;
     capabilityTag?: string;
+    hostTarget?: string;
+    environment?: string;
     viewerUserId?: Id<"users">;
     numItems: number;
   },
@@ -1376,6 +1397,8 @@ export const listPublicPage = query({
     highlightedOnly: v.optional(v.boolean()),
     executesCode: v.optional(v.boolean()),
     capabilityTag: v.optional(v.string()),
+    hostTarget: v.optional(v.string()),
+    environment: v.optional(v.string()),
     paginationOpts: paginationOptsValidator,
   },
   handler: async (ctx, args) => {
@@ -1395,6 +1418,8 @@ export const listPageForViewerInternal = internalQuery({
     highlightedOnly: v.optional(v.boolean()),
     executesCode: v.optional(v.boolean()),
     capabilityTag: v.optional(v.string()),
+    hostTarget: v.optional(v.string()),
+    environment: v.optional(v.string()),
     viewerUserId: v.optional(v.id("users")),
     paginationOpts: paginationOptsValidator,
   },
@@ -1412,6 +1437,8 @@ async function listPackagePageImpl(
     highlightedOnly?: boolean;
     executesCode?: boolean;
     capabilityTag?: string;
+    hostTarget?: string;
+    environment?: string;
     viewerUserId?: Id<"users">;
     paginationOpts: { cursor: string | null; numItems: number };
   },
@@ -1530,6 +1557,8 @@ export const searchPublic = query({
     highlightedOnly: v.optional(v.boolean()),
     executesCode: v.optional(v.boolean()),
     capabilityTag: v.optional(v.string()),
+    hostTarget: v.optional(v.string()),
+    environment: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
     return await searchPackagesImpl(ctx, args);
@@ -1550,6 +1579,8 @@ export const searchForViewerInternal = internalQuery({
     highlightedOnly: v.optional(v.boolean()),
     executesCode: v.optional(v.boolean()),
     capabilityTag: v.optional(v.string()),
+    hostTarget: v.optional(v.string()),
+    environment: v.optional(v.string()),
     viewerUserId: v.optional(v.id("users")),
   },
   handler: async (ctx, args) => {
@@ -1568,6 +1599,8 @@ async function searchPackagesImpl(
     highlightedOnly?: boolean;
     executesCode?: boolean;
     capabilityTag?: string;
+    hostTarget?: string;
+    environment?: string;
     viewerUserId?: Id<"users">;
   },
 ) {
