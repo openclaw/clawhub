@@ -27,7 +27,20 @@ type StorePackMigrationStatus = {
     createdAt: number;
     fileCount: number;
   }>;
+  failureSample: Array<{
+    failureId: Id<"packageStorePackBackfillFailures">;
+    releaseId: Id<"packageReleases">;
+    packageId: Id<"packages">;
+    name: string;
+    version: string;
+    error: string;
+    attemptCount: number;
+    firstFailedAt: number;
+    lastAttemptAt: number;
+    lastFailedAt: number;
+  }>;
   missingSampleSize: number;
+  failureSampleSize: number;
   generatedStorePackSampleSize: number;
   generatedStorePackBytes: number;
   sampleLimit: number;
@@ -151,7 +164,7 @@ export function StorePackManagementRoute() {
         </Button>
       </div>
 
-      <div className="grid gap-4 md:grid-cols-4">
+      <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-5">
         <MetricCard
           label="Sample coverage"
           value={coverage === null ? "unknown" : `${coverage}%`}
@@ -161,6 +174,11 @@ export function StorePackManagementRoute() {
           label="Missing sample"
           value={migration ? String(migration.missingSampleSize) : "..."}
           detail="eligible releases without artifacts"
+        />
+        <MetricCard
+          label="Open failures"
+          value={migration ? String(migration.failureSampleSize) : "..."}
+          detail="recent failed artifact builds"
         />
         <MetricCard
           label="Generated sample"
@@ -266,6 +284,19 @@ export function StorePackManagementRoute() {
           <MigrationRows rows={migration.missingSample} />
         )}
       </Card>
+
+      <Card className="mt-5">
+        <h2 className="m-0 font-display text-xl font-bold text-[color:var(--ink)]">
+          Failed artifact builds
+        </h2>
+        {migration === undefined ? (
+          <div className="stat mt-3">Loading failure ledger...</div>
+        ) : migration.failureSample.length === 0 ? (
+          <div className="stat mt-3">No open StorePack backfill failures in the sample.</div>
+        ) : (
+          <FailureRows rows={migration.failureSample} />
+        )}
+      </Card>
     </main>
   );
 }
@@ -294,6 +325,44 @@ function MigrationRows(props: { rows: StorePackMigrationStatus["missingSample"] 
             <div className="section-subtitle m-0">
               {entry.name}@{entry.version} - {entry.fileCount} files - published{" "}
               {formatTimestamp(entry.createdAt)}
+            </div>
+          </div>
+          <div className="management-actions">
+            <Button asChild size="sm" variant="outline">
+              <Link to="/management" search={{ skill: undefined, plugin: entry.name }}>
+                Manage
+              </Link>
+            </Button>
+            <Button asChild size="sm" variant="ghost">
+              <Link
+                to="/plugins/$name/releases/$version"
+                params={{ name: entry.name, version: entry.version }}
+              >
+                Release
+              </Link>
+            </Button>
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function FailureRows(props: { rows: StorePackMigrationStatus["failureSample"] }) {
+  return (
+    <div className="management-list mt-3">
+      {props.rows.map((entry) => (
+        <div key={entry.failureId} className="management-item">
+          <div className="management-item-main">
+            <Link to="/plugins/$name" params={{ name: entry.name }}>
+              {entry.name}@{entry.version}
+            </Link>
+            <div className="section-subtitle m-0">
+              {entry.attemptCount} attempts - last failed {formatTimestamp(entry.lastFailedAt)}
+            </div>
+            <div className="management-report-item">
+              <span className="management-report-meta">last error</span>
+              <span>{entry.error}</span>
             </div>
           </div>
           <div className="management-actions">

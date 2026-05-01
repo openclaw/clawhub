@@ -125,6 +125,7 @@ const internalRefs = internal as unknown as {
     syncStorePackSearchIndexForReleaseInternal: unknown;
     backfillStorePackSearchIndexInternal: unknown;
     scanPackageReleaseStaticallyInternal: unknown;
+    recordStorePackBackfillAttemptInternal: unknown;
     insertReleaseInternal: unknown;
     getPackageByNameInternal: unknown;
     getTrustedPublisherByPackageIdInternal: unknown;
@@ -1574,10 +1575,28 @@ async function getStorePackMigrationStatusForLimit(
   const storepackArtifactRows = recentArtifactRows
     .filter((artifact) => artifact.kind === "storepack")
     .slice(0, limit);
+  const failureRows = await ctx.db
+    .query("packageStorePackBackfillFailures")
+    .withIndex("by_open_failed_at", (q) => q.eq("resolvedAt", undefined))
+    .order("desc")
+    .take(limit);
 
   return {
     missingSample: missingRows,
     missingSampleSize: missingRows.length,
+    failureSample: failureRows.map((failure) => ({
+      failureId: failure._id,
+      packageId: failure.packageId,
+      releaseId: failure.releaseId,
+      name: failure.name,
+      version: failure.version,
+      error: failure.error,
+      attemptCount: failure.attemptCount,
+      firstFailedAt: failure.firstFailedAt,
+      lastAttemptAt: failure.lastAttemptAt,
+      lastFailedAt: failure.lastFailedAt,
+    })),
+    failureSampleSize: failureRows.length,
     generatedStorePackSampleSize: storepackArtifactRows.length,
     generatedStorePackBytes: storepackArtifactRows.reduce(
       (sum, artifact) => sum + artifact.size,
@@ -2872,6 +2891,62 @@ export const getStorePackBackfillBatchInternal = internalQuery({
   },
 });
 
+export const recordStorePackBackfillAttemptInternal = internalMutation({
+  args: {
+    packageId: v.id("packages"),
+    releaseId: v.id("packageReleases"),
+    name: v.string(),
+    version: v.string(),
+    ok: v.boolean(),
+    error: v.optional(v.string()),
+  },
+  handler: async (ctx, args) => {
+    const now = Date.now();
+    const existing = await ctx.db
+      .query("packageStorePackBackfillFailures")
+      .withIndex("by_release", (q) => q.eq("releaseId", args.releaseId))
+      .unique();
+
+    if (args.ok) {
+      if (existing && !existing.resolvedAt) {
+        await ctx.db.patch(existing._id, {
+          lastAttemptAt: now,
+          resolvedAt: now,
+        });
+      }
+      return { ok: true as const, resolved: Boolean(existing && !existing.resolvedAt) };
+    }
+
+    const error = args.error?.trim() || "StorePack backfill failed";
+    if (existing) {
+      await ctx.db.patch(existing._id, {
+        packageId: args.packageId,
+        name: args.name,
+        version: args.version,
+        error,
+        attemptCount: existing.attemptCount + 1,
+        lastAttemptAt: now,
+        lastFailedAt: now,
+        resolvedAt: undefined,
+      });
+      return { ok: true as const, failureId: existing._id };
+    }
+
+    const failureId = await ctx.db.insert("packageStorePackBackfillFailures", {
+      packageId: args.packageId,
+      releaseId: args.releaseId,
+      name: args.name,
+      version: args.version,
+      error,
+      attemptCount: 1,
+      firstFailedAt: now,
+      lastAttemptAt: now,
+      lastFailedAt: now,
+    });
+    return { ok: true as const, failureId };
+  },
+});
+
 export const backfillStorePackArtifactsInternal = internalAction({
   args: {
     actorUserId: v.optional(v.id("users")),
@@ -2921,6 +2996,13 @@ export const backfillStorePackArtifactsInternal = internalAction({
           environment: storepack.environment,
           builtAt: storepack.builtAt,
         });
+        await runMutationRef(ctx, internalRefs.packages.recordStorePackBackfillAttemptInternal, {
+          packageId: entry.package._id,
+          releaseId: entry.release._id,
+          name: entry.package.name,
+          version: entry.release.version,
+          ok: true,
+        });
         results.push({
           ok: true as const,
           packageId: entry.package._id,
@@ -2930,13 +3012,22 @@ export const backfillStorePackArtifactsInternal = internalAction({
           sha256: storepack.sha256,
         });
       } catch (error) {
+        const message = errorMessage(error);
+        await runMutationRef(ctx, internalRefs.packages.recordStorePackBackfillAttemptInternal, {
+          packageId: entry.package._id,
+          releaseId: entry.release._id,
+          name: entry.package.name,
+          version: entry.release.version,
+          ok: false,
+          error: message,
+        });
         results.push({
           ok: false as const,
           packageId: entry.package._id,
           releaseId: entry.release._id,
           name: entry.package.name,
           version: entry.release.version,
-          error: errorMessage(error),
+          error: message,
         });
       }
     }

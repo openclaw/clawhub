@@ -942,6 +942,22 @@ const packageReleaseArtifacts = defineTable({
   .index("by_target_key", ["targetKey"])
   .index("by_status", ["status"]);
 
+const packageStorePackBackfillFailures = defineTable({
+  packageId: v.id("packages"),
+  releaseId: v.id("packageReleases"),
+  name: v.string(),
+  version: v.string(),
+  error: v.string(),
+  attemptCount: v.number(),
+  firstFailedAt: v.number(),
+  lastAttemptAt: v.number(),
+  lastFailedAt: v.number(),
+  resolvedAt: v.optional(v.number()),
+})
+  .index("by_release", ["releaseId"])
+  .index("by_package_failed_at", ["packageId", "lastFailedAt"])
+  .index("by_open_failed_at", ["resolvedAt", "lastFailedAt"]);
+
 const packageStorePackSearchIndex = defineTable({
   packageId: v.id("packages"),
   releaseId: v.id("packageReleases"),
@@ -1557,6 +1573,7 @@ export default defineSchema({
   packages,
   packageReleases,
   packageReleaseArtifacts,
+  packageStorePackBackfillFailures,
   packageStorePackSearchIndex,
   packageTrustedPublishers,
   packagePublishTokens,

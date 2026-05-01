@@ -69,7 +69,22 @@ describe("StorePack management route", () => {
           fileCount: 3,
         },
       ],
+      failureSample: [
+        {
+          failureId: "packageStorePackBackfillFailures:1",
+          releaseId: "packageReleases:2",
+          packageId: "packages:2",
+          name: "broken-plugin",
+          version: "0.1.0",
+          error: "Invalid StorePack file path",
+          attemptCount: 2,
+          firstFailedAt: Date.UTC(2026, 0, 1),
+          lastAttemptAt: Date.UTC(2026, 0, 2),
+          lastFailedAt: Date.UTC(2026, 0, 2),
+        },
+      ],
       missingSampleSize: 1,
+      failureSampleSize: 1,
       generatedStorePackSampleSize: 3,
       generatedStorePackBytes: 4096,
       sampleLimit: 25,
@@ -86,6 +101,8 @@ describe("StorePack management route", () => {
     expect(screen.getByRole("heading", { name: "StorePack operations" })).toBeTruthy();
     expect(screen.getByText("75%")).toBeTruthy();
     expect(screen.getByText("4.0KB")).toBeTruthy();
+    expect(screen.getByText("Failed artifact builds")).toBeTruthy();
+    expect(screen.getByText(/Invalid StorePack file path/)).toBeTruthy();
     expect(screen.getByText("Build missing artifacts")).toBeTruthy();
     expect(screen.getByText("Rebuild lookup index")).toBeTruthy();
 
