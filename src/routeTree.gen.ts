@@ -33,6 +33,7 @@ import { Route as PluginsNameRouteImport } from './routes/plugins/$name'
 import { Route as PackagesNewRouteImport } from './routes/packages/new'
 import { Route as PackagesNameRouteImport } from './routes/packages/$name'
 import { Route as OrgsHandleRouteImport } from './routes/orgs/$handle'
+import { Route as ManagementUsersRouteImport } from './routes/management/users'
 import { Route as ManagementStorepacksRouteImport } from './routes/management/storepacks'
 import { Route as ManagementPluginsRouteImport } from './routes/management/plugins'
 import { Route as ManagementModerationRouteImport } from './routes/management/moderation'
@@ -167,6 +168,11 @@ const OrgsHandleRoute = OrgsHandleRouteImport.update({
   path: '/orgs/$handle',
   getParentRoute: () => rootRouteImport,
 } as any)
+const ManagementUsersRoute = ManagementUsersRouteImport.update({
+  id: '/users',
+  path: '/users',
+  getParentRoute: () => ManagementRoute,
+} as any)
 const ManagementStorepacksRoute = ManagementStorepacksRouteImport.update({
   id: '/storepacks',
   path: '/storepacks',
@@ -257,6 +263,7 @@ export interface FileRoutesByFullPath {
   '/management/moderation': typeof ManagementModerationRoute
   '/management/plugins': typeof ManagementPluginsRouteWithChildren
   '/management/storepacks': typeof ManagementStorepacksRouteWithChildren
+  '/management/users': typeof ManagementUsersRoute
   '/orgs/$handle': typeof OrgsHandleRoute
   '/packages/$name': typeof PackagesNameRoute
   '/packages/new': typeof PackagesNewRoute
@@ -296,6 +303,7 @@ export interface FileRoutesByTo {
   '/management/moderation': typeof ManagementModerationRoute
   '/management/plugins': typeof ManagementPluginsRouteWithChildren
   '/management/storepacks': typeof ManagementStorepacksRouteWithChildren
+  '/management/users': typeof ManagementUsersRoute
   '/orgs/$handle': typeof OrgsHandleRoute
   '/packages/$name': typeof PackagesNameRoute
   '/packages/new': typeof PackagesNewRoute
@@ -336,6 +344,7 @@ export interface FileRoutesById {
   '/management/moderation': typeof ManagementModerationRoute
   '/management/plugins': typeof ManagementPluginsRouteWithChildren
   '/management/storepacks': typeof ManagementStorepacksRouteWithChildren
+  '/management/users': typeof ManagementUsersRoute
   '/orgs/$handle': typeof OrgsHandleRoute
   '/packages/$name': typeof PackagesNameRoute
   '/packages/new': typeof PackagesNewRoute
@@ -377,6 +386,7 @@ export interface FileRouteTypes {
     | '/management/moderation'
     | '/management/plugins'
     | '/management/storepacks'
+    | '/management/users'
     | '/orgs/$handle'
     | '/packages/$name'
     | '/packages/new'
@@ -416,6 +426,7 @@ export interface FileRouteTypes {
     | '/management/moderation'
     | '/management/plugins'
     | '/management/storepacks'
+    | '/management/users'
     | '/orgs/$handle'
     | '/packages/$name'
     | '/packages/new'
@@ -455,6 +466,7 @@ export interface FileRouteTypes {
     | '/management/moderation'
     | '/management/plugins'
     | '/management/storepacks'
+    | '/management/users'
     | '/orgs/$handle'
     | '/packages/$name'
     | '/packages/new'
@@ -675,6 +687,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof OrgsHandleRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/management/users': {
+      id: '/management/users'
+      path: '/users'
+      fullPath: '/management/users'
+      preLoaderRoute: typeof ManagementUsersRouteImport
+      parentRoute: typeof ManagementRoute
+    }
     '/management/storepacks': {
       id: '/management/storepacks'
       path: '/storepacks'
@@ -809,6 +828,7 @@ interface ManagementRouteChildren {
   ManagementModerationRoute: typeof ManagementModerationRoute
   ManagementPluginsRoute: typeof ManagementPluginsRouteWithChildren
   ManagementStorepacksRoute: typeof ManagementStorepacksRouteWithChildren
+  ManagementUsersRoute: typeof ManagementUsersRoute
 }
 
 const ManagementRouteChildren: ManagementRouteChildren = {
@@ -816,6 +836,7 @@ const ManagementRouteChildren: ManagementRouteChildren = {
   ManagementModerationRoute: ManagementModerationRoute,
   ManagementPluginsRoute: ManagementPluginsRouteWithChildren,
   ManagementStorepacksRoute: ManagementStorepacksRouteWithChildren,
+  ManagementUsersRoute: ManagementUsersRoute,
 }
 
 const ManagementRouteWithChildren = ManagementRoute._addFileChildren(

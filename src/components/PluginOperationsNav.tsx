@@ -1,9 +1,9 @@
 import { Link } from "@tanstack/react-router";
-import { DatabaseZap, Gauge, ListChecks, ShieldCheck, UploadCloud } from "lucide-react";
+import { DatabaseZap, Gauge, ListChecks, ShieldCheck, UploadCloud, UserCog } from "lucide-react";
 import type React from "react";
 import { Badge } from "./ui/badge";
 
-type OperationKey = "publish" | "plugins" | "moderation" | "storepacks" | "migrations";
+type OperationKey = "publish" | "plugins" | "moderation" | "storepacks" | "migrations" | "users";
 
 const pluginPublishSearch = {
   ownerHandle: undefined,
@@ -25,7 +25,7 @@ export function PluginOperationsNav({ current }: { current?: OperationKey }) {
           Publisher, moderation, artifact, and migration surfaces for the ClawHub plugin platform.
         </p>
       </div>
-      <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-5">
+      <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-6">
         <OperationLink
           current={current === "publish"}
           icon={<UploadCloud className="h-4 w-4" aria-hidden="true" />}
@@ -79,6 +79,17 @@ export function PluginOperationsNav({ current }: { current?: OperationKey }) {
         >
           <Link to="/management/migrations" search={{ skill: undefined, plugin: undefined }}>
             Open readiness
+          </Link>
+        </OperationLink>
+        <OperationLink
+          current={current === "users"}
+          icon={<UserCog className="h-4 w-4" aria-hidden="true" />}
+          title="User roles"
+          path="/management/users"
+          description="Find users, grant moderator/admin roles, and manage account bans."
+        >
+          <Link to="/management/users" search={{ skill: undefined, plugin: undefined }}>
+            Open users
           </Link>
         </OperationLink>
       </div>
