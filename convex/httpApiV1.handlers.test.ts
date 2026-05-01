@@ -3931,7 +3931,13 @@ describe("httpApiV1 handlers", () => {
     });
     const storageGet = vi.fn(async (storageId: string) => {
       if (storageId === "storage:storepack") {
-        return new Blob([zip], { type: "application/zip" });
+        const zipBlobPart = zip.buffer.slice(
+          zip.byteOffset,
+          zip.byteOffset + zip.byteLength,
+        ) as ArrayBuffer;
+        return new Blob([zipBlobPart], {
+          type: "application/zip",
+        });
       }
       throw new Error(`unexpected storage read: ${storageId}`);
     });
@@ -4163,6 +4169,34 @@ describe("httpApiV1 handlers", () => {
     await expect(response.json()).resolves.toMatchObject({
       generatedStorePackSampleSize: 1,
       sampleLimit: 7,
+    });
+  });
+
+  it("storepack migration readiness requires an admin API token", async () => {
+    vi.mocked(requireApiTokenUser).mockResolvedValue({
+      userId: "users:admin",
+      user: { _id: "users:admin", role: "admin" },
+    } as never);
+    const runQuery = vi.fn(async (_query: unknown, args: Record<string, unknown>) => {
+      if (isRateLimitArgs(args)) return okRate();
+      return {
+        items: [{ bundledPluginId: "opik", readinessState: "ready-for-openclaw" }],
+        readyCount: 1,
+        blockedCount: 0,
+        generatedAt: 1,
+      };
+    });
+    const runMutation = vi.fn().mockResolvedValue(okRate());
+
+    const response = await __handlers.packagesGetRouterV1Handler(
+      makeCtx({ runQuery, runMutation }),
+      new Request("https://example.com/api/v1/packages/storepack/migration-readiness"),
+    );
+
+    expect(response.status).toBe(200);
+    await expect(response.json()).resolves.toMatchObject({
+      readyCount: 1,
+      items: [{ bundledPluginId: "opik" }],
     });
   });
 

@@ -24,6 +24,7 @@ import {
   cmdDeletePackageTrustedPublisher,
   cmdPackageStorePackBackfill,
   cmdPackageStorePackIndexBackfill,
+  cmdPackageStorePackMigrationReadiness,
   cmdPackageStorePackMigrationStatus,
   cmdPackageStorePackRetryFailures,
   cmdPackageStorePackRevoke,
@@ -473,6 +474,15 @@ packageStorePackCmd
   .action(async (options) => {
     const opts = await resolveGlobalOpts();
     await cmdPackageStorePackMigrationStatus(opts, options);
+  });
+
+packageStorePackCmd
+  .command("readiness")
+  .description("Show official OpenClaw plugin migration readiness")
+  .option("--json", "Output JSON")
+  .action(async (options) => {
+    const opts = await resolveGlobalOpts();
+    await cmdPackageStorePackMigrationReadiness(opts, options);
   });
 
 packageStorePackCmd

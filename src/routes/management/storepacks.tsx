@@ -182,7 +182,9 @@ export function StorePackManagementRoute() {
           </p>
         </div>
         <Button asChild variant="outline" size="sm">
-          <Link to="/management">Back to management</Link>
+          <Link to="/management" search={{ skill: undefined, plugin: undefined }}>
+            Back to management
+          </Link>
         </Button>
       </div>
 

@@ -293,6 +293,14 @@ clawhub package explore episodic-claw --family code-plugin
 - `--limit <n>` controls sample size.
 - `--json` emits the raw response.
 
+### `package storepack-admin readiness`
+
+- Admin-only readiness check for the official OpenClaw bundled plugin migration targets.
+- Calls `GET /api/v1/packages/storepack/migration-readiness`.
+- Requires an API token for an admin user.
+- Prints each target package, readiness state, and blocker list.
+- `--json` emits the raw response.
+
 ### `package storepack-admin backfill`
 
 - Admin-only batch builder for legacy plugin releases missing stored StorePack artifacts.

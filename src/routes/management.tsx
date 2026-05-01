@@ -428,10 +428,14 @@ function ManagementConsole() {
         </div>
         <div className="flex flex-wrap gap-2">
           <Button asChild variant="outline" size="sm">
-            <Link to="/management/moderation">Open moderation queue</Link>
+            <Link to="/management/moderation" search={{ skill: undefined, plugin: undefined }}>
+              Open moderation queue
+            </Link>
           </Button>
           <Button asChild variant="outline" size="sm">
-            <Link to="/management/migrations">Open migration readiness</Link>
+            <Link to="/management/migrations" search={{ skill: undefined, plugin: undefined }}>
+              Open migration readiness
+            </Link>
           </Button>
         </div>
       </div>
@@ -446,7 +450,9 @@ function ManagementConsole() {
             </p>
           </div>
           <Button asChild variant="outline" size="sm">
-            <Link to="/management/storepacks">Open StorePack ops</Link>
+            <Link to="/management/storepacks" search={{ skill: undefined, plugin: undefined }}>
+              Open StorePack ops
+            </Link>
           </Button>
         </div>
         <div className="management-sublist">

@@ -106,10 +106,14 @@ export function OfficialMigrationRoute() {
         </div>
         <div className="flex flex-wrap gap-2">
           <Button asChild variant="outline" size="sm">
-            <Link to="/management">Back to management</Link>
+            <Link to="/management" search={{ skill: undefined, plugin: undefined }}>
+              Back to management
+            </Link>
           </Button>
           <Button asChild variant="outline" size="sm">
-            <Link to="/management/storepacks">StorePack ops</Link>
+            <Link to="/management/storepacks" search={{ skill: undefined, plugin: undefined }}>
+              StorePack ops
+            </Link>
           </Button>
         </div>
       </div>

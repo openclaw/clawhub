@@ -1410,123 +1410,133 @@ export const listOfficialMigrationReadinessForStaff = query({
   handler: async (ctx) => {
     const { user } = await requireUser(ctx);
     assertModerator(user);
-
-    const rows = [];
-    for (const target of OFFICIAL_OPENCLAW_PLUGIN_MIGRATION_TARGETS) {
-      const pkg = await getPackageByNormalizedName(
-        ctx,
-        normalizePackageName(target.desiredPackageName),
-      );
-      const latestRelease = pkg?.latestReleaseId ? await ctx.db.get(pkg.latestReleaseId) : null;
-      const release = latestRelease && !latestRelease.softDeletedAt ? latestRelease : null;
-      const hostTargetKeys = release ? getPackageStorePackHostTargetKeys(release) : [];
-      const environmentFlags = release ? getPackageStorePackEnvironmentFlags(release) : [];
-      const missingHostTargets = target.requiredHostTargets.filter(
-        (required) => !hostTargetKeys.includes(required),
-      );
-      const scanStatus =
-        release?.verification?.scanStatus ??
-        release?.staticScan?.verdict ??
-        pkg?.scanStatus ??
-        "not-run";
-      const releaseSource =
-        release?.source && typeof release.source === "object"
-          ? (release.source as { repo?: string; commit?: string; ref?: string; path?: string })
-          : null;
-      const sourceRepo = releaseSource?.repo ?? pkg?.sourceRepo ?? target.sourceRepo;
-      const sourceCommit = releaseSource?.commit ?? null;
-      const sourceRef = releaseSource?.ref ?? null;
-      const sourcePath = releaseSource?.path ?? target.sourcePath;
-      const blockers = [
-        pkg ? null : "package-missing",
-        pkg && pkg.family !== "code-plugin" ? "not-code-plugin" : null,
-        release ? null : "release-missing",
-        release && !release.storepackStorageId ? "storepack-missing" : null,
-        release?.storepackRevokedAt ? "storepack-revoked" : null,
-        missingHostTargets.length > 0 ? "host-matrix-incomplete" : null,
-        release && environmentFlags.length === 0 ? "environment-metadata-missing" : null,
-        sourceRepo ? null : "source-repo-missing",
-        sourceCommit || sourceRef ? null : "source-ref-missing",
-        scanStatus === "malicious" || scanStatus === "suspicious" || scanStatus === "pending"
-          ? "scan-blocked"
-          : null,
-        scanStatus === "not-run" ? "scan-not-run" : null,
-      ].filter((entry): entry is string => Boolean(entry));
-
-      const readinessState = !pkg
-        ? "package-missing"
-        : !release
-          ? "release-missing"
-          : !release.storepackStorageId
-            ? "storepack-missing"
-            : missingHostTargets.length > 0 || environmentFlags.length === 0
-              ? "metadata-incomplete"
-              : scanStatus === "malicious" ||
-                  scanStatus === "suspicious" ||
-                  scanStatus === "pending" ||
-                  scanStatus === "not-run"
-                ? "scan-blocked"
-                : "ready-for-openclaw";
-
-      rows.push({
-        bundledPluginId: target.bundledPluginId,
-        displayName: target.displayName,
-        desiredPackageName: target.desiredPackageName,
-        publisherHandle: target.publisherHandle,
-        sourceRepo,
-        sourcePath,
-        sourceCommit,
-        sourceRef,
-        requiredHostTargets: [...target.requiredHostTargets],
-        readinessState,
-        blockers,
-        gates: {
-          packageExists: Boolean(pkg),
-          releaseExists: Boolean(release),
-          storepackAvailable: Boolean(release?.storepackStorageId && !release.storepackRevokedAt),
-          hostMatrixComplete: missingHostTargets.length === 0,
-          environmentComplete: environmentFlags.length > 0,
-          sourceLinked: Boolean(sourceRepo && (sourceCommit || sourceRef)),
-          scanClear: scanStatus === "clean",
-          runtimeBundleStatus: "not-required",
-        },
-        package: pkg
-          ? {
-              packageId: pkg._id,
-              name: pkg.name,
-              displayName: pkg.displayName,
-              family: pkg.family,
-              runtimeId: pkg.runtimeId ?? null,
-              channel: pkg.channel,
-              isOfficial: pkg.isOfficial,
-              scanStatus: pkg.scanStatus ?? "not-run",
-              updatedAt: pkg.updatedAt,
-            }
-          : null,
-        latestRelease: release
-          ? {
-              releaseId: release._id,
-              version: release.version,
-              createdAt: release.createdAt,
-              storepackSha256: release.storepackSha256 ?? null,
-              storepackFileCount: release.storepackFileCount ?? null,
-              storepackRevokedAt: release.storepackRevokedAt,
-              hostTargetKeys,
-              environmentFlags,
-              scanStatus,
-            }
-          : null,
-      });
-    }
-
-    return {
-      items: rows,
-      readyCount: rows.filter((row) => row.readinessState === "ready-for-openclaw").length,
-      blockedCount: rows.filter((row) => row.readinessState !== "ready-for-openclaw").length,
-      generatedAt: Date.now(),
-    };
+    return await buildOfficialMigrationReadiness(ctx);
   },
 });
+
+export const listOfficialMigrationReadinessForStaffInternal = internalQuery({
+  args: {},
+  handler: async (ctx) => {
+    return await buildOfficialMigrationReadiness(ctx);
+  },
+});
+
+async function buildOfficialMigrationReadiness(ctx: QueryCtx) {
+  const rows = [];
+  for (const target of OFFICIAL_OPENCLAW_PLUGIN_MIGRATION_TARGETS) {
+    const pkg = await getPackageByNormalizedName(
+      ctx,
+      normalizePackageName(target.desiredPackageName),
+    );
+    const latestRelease = pkg?.latestReleaseId ? await ctx.db.get(pkg.latestReleaseId) : null;
+    const release = latestRelease && !latestRelease.softDeletedAt ? latestRelease : null;
+    const hostTargetKeys = release ? getPackageStorePackHostTargetKeys(release) : [];
+    const environmentFlags = release ? getPackageStorePackEnvironmentFlags(release) : [];
+    const missingHostTargets = target.requiredHostTargets.filter(
+      (required) => !hostTargetKeys.includes(required),
+    );
+    const scanStatus =
+      release?.verification?.scanStatus ??
+      release?.staticScan?.status ??
+      pkg?.scanStatus ??
+      "not-run";
+    const releaseSource =
+      release?.source && typeof release.source === "object"
+        ? (release.source as { repo?: string; commit?: string; ref?: string; path?: string })
+        : null;
+    const sourceRepo = releaseSource?.repo ?? pkg?.sourceRepo ?? target.sourceRepo;
+    const sourceCommit = releaseSource?.commit ?? null;
+    const sourceRef = releaseSource?.ref ?? null;
+    const sourcePath = releaseSource?.path ?? target.sourcePath;
+    const blockers = [
+      pkg ? null : "package-missing",
+      pkg && pkg.family !== "code-plugin" ? "not-code-plugin" : null,
+      release ? null : "release-missing",
+      release && !release.storepackStorageId ? "storepack-missing" : null,
+      release?.storepackRevokedAt ? "storepack-revoked" : null,
+      missingHostTargets.length > 0 ? "host-matrix-incomplete" : null,
+      release && environmentFlags.length === 0 ? "environment-metadata-missing" : null,
+      sourceRepo ? null : "source-repo-missing",
+      sourceCommit || sourceRef ? null : "source-ref-missing",
+      scanStatus === "malicious" || scanStatus === "suspicious" || scanStatus === "pending"
+        ? "scan-blocked"
+        : null,
+      scanStatus === "not-run" ? "scan-not-run" : null,
+    ].filter((entry): entry is string => Boolean(entry));
+
+    const readinessState = !pkg
+      ? "package-missing"
+      : !release
+        ? "release-missing"
+        : !release.storepackStorageId
+          ? "storepack-missing"
+          : missingHostTargets.length > 0 || environmentFlags.length === 0
+            ? "metadata-incomplete"
+            : scanStatus === "malicious" ||
+                scanStatus === "suspicious" ||
+                scanStatus === "pending" ||
+                scanStatus === "not-run"
+              ? "scan-blocked"
+              : "ready-for-openclaw";
+
+    rows.push({
+      bundledPluginId: target.bundledPluginId,
+      displayName: target.displayName,
+      desiredPackageName: target.desiredPackageName,
+      publisherHandle: target.publisherHandle,
+      sourceRepo,
+      sourcePath,
+      sourceCommit,
+      sourceRef,
+      requiredHostTargets: [...target.requiredHostTargets],
+      readinessState,
+      blockers,
+      gates: {
+        packageExists: Boolean(pkg),
+        releaseExists: Boolean(release),
+        storepackAvailable: Boolean(release?.storepackStorageId && !release.storepackRevokedAt),
+        hostMatrixComplete: missingHostTargets.length === 0,
+        environmentComplete: environmentFlags.length > 0,
+        sourceLinked: Boolean(sourceRepo && (sourceCommit || sourceRef)),
+        scanClear: scanStatus === "clean",
+        runtimeBundleStatus: "not-required",
+      },
+      package: pkg
+        ? {
+            packageId: pkg._id,
+            name: pkg.name,
+            displayName: pkg.displayName,
+            family: pkg.family,
+            runtimeId: pkg.runtimeId ?? null,
+            channel: pkg.channel,
+            isOfficial: pkg.isOfficial,
+            scanStatus: pkg.scanStatus ?? "not-run",
+            updatedAt: pkg.updatedAt,
+          }
+        : null,
+      latestRelease: release
+        ? {
+            releaseId: release._id,
+            version: release.version,
+            createdAt: release.createdAt,
+            storepackSha256: release.storepackSha256 ?? null,
+            storepackFileCount: release.storepackFileCount ?? null,
+            storepackRevokedAt: release.storepackRevokedAt,
+            hostTargetKeys,
+            environmentFlags,
+            scanStatus,
+          }
+        : null,
+    });
+  }
+
+  return {
+    items: rows,
+    readyCount: rows.filter((row) => row.readinessState === "ready-for-openclaw").length,
+    blockedCount: rows.filter((row) => row.readinessState !== "ready-for-openclaw").length,
+    generatedAt: Date.now(),
+  };
+}
 
 export const getByNameForViewerInternal = internalQuery({
   args: {

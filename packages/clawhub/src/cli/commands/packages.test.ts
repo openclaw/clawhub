@@ -35,6 +35,7 @@ const {
   cmdInspectPackage,
   cmdPackageStorePackBackfill,
   cmdPackageStorePackIndexBackfill,
+  cmdPackageStorePackMigrationReadiness,
   cmdPackageStorePackMigrationStatus,
   cmdPackageStorePackRetryFailures,
   cmdPackageStorePackRevoke,
@@ -451,6 +452,39 @@ describe("package commands", () => {
     expect(url.searchParams.get("limit")).toBe("25");
     expect(mockWrite.mock.calls.map((call) => String(call[0])).join("")).toContain(
       "generatedStorePackSampleSize",
+    );
+  });
+
+  it("fetches official plugin migration readiness for admins", async () => {
+    httpMocks.apiRequest.mockResolvedValueOnce({
+      items: [
+        {
+          bundledPluginId: "opik",
+          desiredPackageName: "@opik/opik-openclaw",
+          readinessState: "storepack-missing",
+          blockers: ["storepack-missing"],
+        },
+      ],
+      readyCount: 0,
+      blockedCount: 1,
+      generatedAt: 1,
+    });
+
+    await cmdPackageStorePackMigrationReadiness(makeOpts());
+
+    expect(httpMocks.apiRequest).toHaveBeenCalledWith(
+      "https://clawhub.ai",
+      {
+        method: "GET",
+        path: "/api/v1/packages/storepack/migration-readiness",
+        token: "tkn",
+      },
+      undefined,
+    );
+    expect(mockLog).toHaveBeenCalledWith("StorePack migration readiness");
+    expect(mockLog).toHaveBeenCalledWith("Ready: 0");
+    expect(mockLog).toHaveBeenCalledWith(
+      "opik: storepack-missing -> @opik/opik-openclaw [storepack-missing]",
     );
   });
 

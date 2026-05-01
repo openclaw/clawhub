@@ -86,7 +86,7 @@ export function PluginModerationRoute() {
   const [activeWrite, setActiveWrite] = useState<string | null>(null);
   const queue = useQuery(
     packageApiRefs.packages.listModerationQueueForStaff as never,
-    staff ? { status, limit } : "skip",
+    staff ? ({ status, limit } as never) : "skip",
   ) as ModerationQueueResult | undefined;
   const setModerationVerdict = useMutation(
     packageApiRefs.packages.setModerationVerdict as never,
@@ -138,7 +138,9 @@ export function PluginModerationRoute() {
           </p>
         </div>
         <Button asChild variant="outline" size="sm">
-          <Link to="/management">Back to management</Link>
+          <Link to="/management" search={{ skill: undefined, plugin: undefined }}>
+            Back to management
+          </Link>
         </Button>
       </div>
 

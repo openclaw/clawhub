@@ -66,6 +66,7 @@ const internalRefs = internal as unknown as {
     backfillStorePackSearchIndexInternal: unknown;
     retryStorePackBackfillFailuresInternal: unknown;
     getStorePackMigrationStatusInternal: unknown;
+    listOfficialMigrationReadinessForStaffInternal: unknown;
     revokeStorePackArtifactForStaffInternal: unknown;
     getReleasesByIdsInternal: unknown;
     getReleaseByPackageAndVersionInternal: unknown;
@@ -1729,6 +1730,24 @@ export async function packagesGetRouterV1Handler(ctx: ActionCtx, request: Reques
       ctx,
       internalRefs.packages.getStorePackMigrationStatusInternal,
       { limit },
+    );
+    return json(result, 200, rate.headers);
+  }
+  if (
+    segments[0] === "storepack" &&
+    segments[1] === "migration-readiness" &&
+    segments.length === 2
+  ) {
+    const rate = await applyRateLimit(ctx, request, "read");
+    if (!rate.ok) return rate.response;
+    const auth = await requireApiTokenUserOrResponse(ctx, request, rate.headers);
+    if (!auth.ok) return auth.response;
+    const admin = requireAdminOrResponse(auth.user, rate.headers);
+    if (!admin.ok) return admin.response;
+    const result = await runQueryRef(
+      ctx,
+      internalRefs.packages.listOfficialMigrationReadinessForStaffInternal,
+      {},
     );
     return json(result, 200, rate.headers);
   }
