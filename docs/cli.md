@@ -237,6 +237,8 @@ Stores your API token + cached registry URL.
   - `--family skill|code-plugin|bundle-plugin`
   - `--official`
   - `--executes-code`
+  - `--host-target <target>` (for example `darwin-arm64`, `linux-x64-glibc`, `win32-x64`)
+  - `--environment <flag>` (for example `browser`, `desktop`, `network`)
   - `--limit <n>` (1-100, default: 25)
   - `--json`
 
@@ -244,13 +246,15 @@ Examples:
 
 ```bash
 clawhub package explore --family code-plugin
+clawhub package explore --family code-plugin --host-target darwin-arm64
+clawhub package explore browser --family code-plugin --environment browser
 clawhub package explore episodic-claw --family code-plugin
 ```
 
 ### `package inspect <name>`
 
 - Fetches package metadata without installing.
-- Use this for plugin metadata, compatibility, verification, source, and version/file inspection.
+- Use this for plugin metadata, StorePack availability, compatibility, verification, source, and version/file inspection.
 - `--version <version>`: inspect a specific version (default: latest).
 - `--tag <tag>`: inspect a tagged version (e.g. `latest`).
 - `--versions`: list version history (first page).
@@ -258,6 +262,44 @@ clawhub package explore episodic-claw --family code-plugin
 - `--files`: list files for the selected version.
 - `--file <path>`: fetch raw file content (text files only; 200KB limit).
 - `--json`: machine-readable output.
+
+### `package download <name>`
+
+- Downloads the selected package release as a StorePack archive.
+- Calls `GET /api/v1/packages/{name}/download`.
+- Defaults to the latest release.
+- `--version <version>`: download a specific version.
+- `--tag <tag>`: download a tagged version.
+- `-o, --output <path>`: output path. Defaults to `<name>.storepack.zip`.
+- `--json`: print the output path, StorePack SHA-256 header, and spec version.
+
+### `package verify <file>`
+
+- Verifies a downloaded StorePack ZIP.
+- Requires `package/STOREPACK.json` inside the archive.
+- `--sha256 <digest>`: also compare the full archive SHA-256.
+- `--json`: machine-readable output.
+
+### `package storepack <name>`
+
+- Alias-style StorePack download command for operators who want the artifact noun first.
+- Accepts the same `--version`, `--tag`, `--output`, and `--json` flags as `package download`.
+
+### `package storepack-admin status`
+
+- Admin-only migration status check.
+- Calls `GET /api/v1/packages/storepack/migration-status`.
+- Requires an API token for an admin user.
+- `--limit <n>` controls sample size.
+- `--json` emits the raw response.
+
+### `package storepack-admin backfill`
+
+- Admin-only batch builder for legacy plugin releases missing stored StorePack artifacts.
+- Calls `POST /api/v1/packages/storepack/backfill`.
+- Requires an API token for an admin user.
+- `--limit <n>` controls batch size.
+- `--json` emits the raw response.
 
 ### `package publish <source>`
 

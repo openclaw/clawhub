@@ -293,15 +293,22 @@ Query params:
 - `isOfficial` (optional): `true` or `false`
 - `executesCode` (optional): `true` or `false`
 - `capabilityTag` (optional): capability filter for plugin packages
+- `hostTarget` (optional): StorePack host target key, e.g. `darwin-arm64`, `linux-x64-glibc`, `win32-x64`
+- `environment` (optional): StorePack environment flag, e.g. `browser`, `desktop`, `network`
 
 Notes:
 
 - `GET /api/v1/code-plugins` and `GET /api/v1/bundle-plugins` remain fixed-family aliases.
 - Skill entries stay backed by the skill registry and can still be published only through `POST /api/v1/skills`.
 - `POST /api/v1/packages` is still only for code-plugin and bundle-plugin releases.
+- StorePack-only filters return plugin package entries and exclude skill-backed catalog entries.
 - Anonymous callers only see public package channels.
 - Authenticated callers can see private packages for publishers they belong to in list/search results.
 - `channel=private` only returns packages the authenticated caller can read.
+- Package list items include StorePack summary signals when available:
+  - `storepackAvailable`
+  - `hostTargetKeys`
+  - `environmentFlags`
 
 ### `GET /api/v1/packages/search`
 
@@ -316,9 +323,12 @@ Query params:
 - `isOfficial` (optional): `true` or `false`
 - `executesCode` (optional): `true` or `false`
 - `capabilityTag` (optional): capability filter for plugin packages
+- `hostTarget` (optional): StorePack host target key
+- `environment` (optional): StorePack environment flag
 
 Notes:
 
+- StorePack-only filters return plugin package entries and exclude skill-backed catalog entries.
 - Anonymous callers only see public package channels.
 - Authenticated callers can search private packages for publishers they belong to.
 - `channel=private` only returns packages the authenticated caller can read.
@@ -386,8 +396,10 @@ Notes:
 
 - Defaults to the latest release.
 - Skills redirect to `GET /api/v1/download`.
-- Plugin/package archives are zip files with a `package/` root so they install directly in OpenClaw without repacking.
-- Registry-only metadata is not injected into the downloaded archive.
+- Plugin/package archives are StorePack zip files with a `package/` root and a generated `package/STOREPACK.json` manifest.
+- Stored StorePack artifacts are served when available; legacy releases fall back to deterministic package ZIP assembly.
+- Response headers include `X-ClawHub-StorePack-Sha256` and `X-ClawHub-StorePack-Spec-Version` when a stored StorePack is served.
+- Publisher-supplied `STOREPACK.json` files are ignored during StorePack generation.
 - Pending VirusTotal scans do not block downloads; malicious releases return `403`.
 - Private packages return `404` unless the caller is the owner.
 
@@ -455,8 +467,27 @@ Validation highlights:
 - `family` must be `code-plugin` or `bundle-plugin`.
 - Code plugins require `package.json`, `openclaw.plugin.json`, source repo metadata, source commit metadata, and config schema metadata.
 - Bundle plugins require at least one host target.
+- Successful publishes generate and store a StorePack artifact for the release.
+- Release detail responses include `version.storepack` with digest, size, file count, host targets, environment summary, and runtime bundle placeholders.
 - Only trusted publishers may publish to the `official` channel.
 - On-behalf publishes still validate official-channel eligibility against the target owner account.
+
+### `GET /api/v1/packages/storepack/migration-status`
+
+Admin-only StorePack migration status.
+
+- Requires Bearer token auth.
+- Caller must be an admin.
+- `limit` (optional): sample size for generated StorePack artifact statistics.
+
+### `POST /api/v1/packages/storepack/backfill`
+
+Admin-only StorePack backfill batch for legacy plugin releases.
+
+- Requires Bearer token auth.
+- Caller must be an admin.
+- JSON body: `{ "limit": 10 }`.
+- Builds missing StorePack artifacts for eligible code-plugin and bundle-plugin releases.
 
 ### `DELETE /api/v1/skills/{slug}` / `POST /api/v1/skills/{slug}/undelete`
 
