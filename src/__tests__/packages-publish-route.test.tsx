@@ -288,6 +288,102 @@ describe("plugins publish route", () => {
     expect(screen.getByRole("button", { name: "Copy StorePack preview manifest" })).toBeTruthy();
   });
 
+  it("imports a StorePack archive as package source before publish", async () => {
+    renderPublishRoute();
+
+    const storepackManifest = withRelativePath(
+      new File(
+        [
+          JSON.stringify({
+            kind: "openclaw.storepack",
+            package: {
+              name: "demo-plugin",
+              displayName: "Demo Plugin",
+              version: "1.2.3",
+              family: "code-plugin",
+            },
+            release: {
+              source: {
+                repo: "openclaw/demo-plugin",
+                commit: "abc123",
+                ref: "refs/tags/v1.2.3",
+                path: ".",
+              },
+            },
+            hostTargets: [
+              { os: "darwin", arch: "arm64" },
+              { os: "linux", arch: "x64", libc: "glibc" },
+            ],
+          }),
+        ],
+        "STOREPACK.json",
+        { type: "application/json" },
+      ),
+      "demo.storepack/STOREPACK.json",
+    );
+    const packageJson = withRelativePath(
+      new File(
+        [
+          makeCodePluginPackageJson({
+            name: "demo-plugin",
+            displayName: "Demo Plugin",
+            version: "1.2.3",
+            repository: "https://github.com/openclaw/demo-plugin.git",
+          }),
+        ],
+        "package.json",
+        { type: "application/json" },
+      ),
+      "demo.storepack/package/package.json",
+    );
+    const pluginManifest = withRelativePath(
+      new File(['{"id":"demo.plugin"}'], "openclaw.plugin.json", { type: "application/json" }),
+      "demo.storepack/package/openclaw.plugin.json",
+    );
+
+    fireEvent.change(getFileInput(), {
+      target: { files: [storepackManifest, packageJson, pluginManifest] },
+    });
+
+    await waitFor(() => {
+      expect(screen.getByText("StorePack import")).toBeTruthy();
+      expect(screen.getByDisplayValue("demo-plugin")).toBeTruthy();
+      expect(screen.getByDisplayValue("Demo Plugin")).toBeTruthy();
+      expect(screen.getByDisplayValue("1.2.3")).toBeTruthy();
+      expect(screen.getByDisplayValue("abc123")).toBeTruthy();
+    });
+
+    fireEvent.change(screen.getByPlaceholderText("Changelog"), {
+      target: { value: "Imported StorePack" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Publish" }));
+
+    await waitFor(() => {
+      expect(publishRelease).toHaveBeenCalledTimes(1);
+    });
+
+    expect(publishRelease).toHaveBeenCalledWith({
+      payload: expect.objectContaining({
+        name: "demo-plugin",
+        version: "1.2.3",
+        source: expect.objectContaining({
+          repo: "openclaw/demo-plugin",
+          commit: "abc123",
+          ref: "refs/tags/v1.2.3",
+        }),
+        files: expect.arrayContaining([
+          expect.objectContaining({ path: "package.json" }),
+          expect.objectContaining({ path: "openclaw.plugin.json" }),
+        ]),
+      }),
+    });
+    const payload = publishRelease.mock.calls[0]?.[0]?.payload as {
+      files: Array<{ path: string }>;
+    };
+    expect(payload.files.some((file) => file.path.toLowerCase() === "storepack.json")).toBe(false);
+    expect(payload.files.some((file) => file.path.startsWith("package/"))).toBe(false);
+  });
+
   it("surfaces missing OpenClaw compatibility metadata before publish", async () => {
     renderPublishRoute();
 

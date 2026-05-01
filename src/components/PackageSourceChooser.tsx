@@ -2,6 +2,7 @@ import type { PackageCompatibility } from "clawhub-schema";
 import { Package } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { formatPackageCompatibility } from "../lib/pluginPublishPrefill";
+import type { StorePackImportSummary } from "../lib/storepackImport";
 import { expandDroppedItems } from "../lib/uploadFiles";
 import { formatBytes } from "../routes/upload/-utils";
 import { Badge } from "./ui/badge";
@@ -22,6 +23,7 @@ export function PackageSourceChooser(props: {
   validationError: string | null;
   codePluginFieldIssues: string[];
   codePluginCompatibility: PackageCompatibility | null;
+  storePackImport: StorePackImportSummary | null;
   hostTargets?: string;
   onPickFiles: (selected: File[]) => Promise<void>;
 }) {
@@ -186,6 +188,7 @@ export function PackageSourceChooser(props: {
               {props.ignoredPaths.length > 0 ? (
                 <Badge>Ignored {props.ignoredPaths.length} files</Badge>
               ) : null}
+              {props.storePackImport ? <Badge>StorePack import</Badge> : null}
             </div>
           </>
         )}
@@ -232,8 +235,9 @@ export function PackageSourceChooser(props: {
             ))}
           </div>
           <p className="mt-2 text-sm text-[color:var(--ink-soft)]">
-            ClawHub will package these files with a StorePack manifest, host target summary, file
-            digests, and environment hints for OpenClaw clients.
+            {props.storePackImport
+              ? `Imported ${props.storePackImport.packageFileCount} package files from a StorePack archive. ClawHub will rebuild the canonical manifest and digests on publish.`
+              : "ClawHub will package these files with a StorePack manifest, host target summary, file digests, and environment hints for OpenClaw clients."}
           </p>
         </div>
       ) : null}

@@ -22,6 +22,7 @@ import {
   normalizePackageUploadFiles,
 } from "../lib/packageUpload";
 import { derivePluginPrefill, listPrefilledFields } from "../lib/pluginPublishPrefill";
+import { normalizeStorePackImport, type StorePackImportSummary } from "../lib/storepackImport";
 import { expandFilesWithReport } from "../lib/uploadFiles";
 import { useAuthStatus } from "../lib/useAuthStatus";
 import { formatPublishError, hashFile, uploadFile } from "./upload/-utils";
@@ -278,6 +279,7 @@ export function PublishPluginRoute() {
   const [hostTargets, setHostTargets] = useState("");
   const [files, setFiles] = useState<File[]>([]);
   const [ignoredPaths, setIgnoredPaths] = useState<string[]>([]);
+  const [storePackImport, setStorePackImport] = useState<StorePackImportSummary | null>(null);
   const [detectedPrefillFields, setDetectedPrefillFields] = useState<string[]>([]);
   const [codePluginFieldIssues, setCodePluginFieldIssues] = useState<string[]>([]);
   const [codePluginCompatibility, setCodePluginCompatibility] =
@@ -369,27 +371,46 @@ export function PublishPluginRoute() {
         includeBinaryArchiveFiles: true,
       });
       const filtered = await filterIgnoredPackageFiles(expanded.files);
-      const normalized = normalizePackageUploadFiles(filtered.files);
+      const imported = await normalizeStorePackImport(filtered.files);
+      const selectedFiles = imported.summary ? imported.files : filtered.files;
+      const normalized = normalizePackageUploadFiles(selectedFiles);
       const nextIgnoredPaths = [
         ...new Set([...expanded.ignoredMacJunkPaths, ...filtered.ignoredPaths]),
       ];
-      setFiles(filtered.files);
+      setFiles(selectedFiles);
       setIgnoredPaths(nextIgnoredPaths);
+      setStorePackImport(imported.summary);
       setError(null);
       const prefill = await derivePluginPrefill(normalized);
       setDetectedPrefillFields(listPrefilledFields(prefill));
       setCodePluginFieldIssues(prefill.missingRequiredFields ?? []);
       setCodePluginCompatibility(prefill.compatibility ?? null);
-      if (prefill.family) setFamily(prefill.family);
-      if (prefill.name) setName(prefill.name);
-      if (prefill.displayName) setDisplayName(prefill.displayName);
-      if (prefill.version) setVersion(prefill.version);
-      if (prefill.sourceRepo) setSourceRepo(prefill.sourceRepo);
+      if (imported.summary?.family ?? prefill.family) {
+        setFamily((imported.summary?.family ?? prefill.family) as "code-plugin" | "bundle-plugin");
+      }
+      if (imported.summary?.packageName ?? prefill.name) {
+        setName(imported.summary?.packageName ?? prefill.name ?? "");
+      }
+      if (imported.summary?.displayName ?? prefill.displayName) {
+        setDisplayName(imported.summary?.displayName ?? prefill.displayName ?? "");
+      }
+      if (imported.summary?.version ?? prefill.version) {
+        setVersion(imported.summary?.version ?? prefill.version ?? "");
+      }
+      if (imported.summary?.sourceRepo ?? prefill.sourceRepo) {
+        setSourceRepo(imported.summary?.sourceRepo ?? prefill.sourceRepo ?? "");
+      }
+      if (imported.summary?.sourceCommit) setSourceCommit(imported.summary.sourceCommit);
+      if (imported.summary?.sourceRef) setSourceRef(imported.summary.sourceRef);
+      if (imported.summary?.sourcePath) setSourcePath(imported.summary.sourcePath);
       if (prefill.bundleFormat) setBundleFormat(prefill.bundleFormat);
-      if (prefill.hostTargets) setHostTargets(prefill.hostTargets);
+      if (imported.summary?.hostTargets.length) {
+        setHostTargets(imported.summary.hostTargets.join(", "));
+      } else if (prefill.hostTargets) setHostTargets(prefill.hostTargets);
     } catch (pickError) {
       setFiles([]);
       setIgnoredPaths([]);
+      setStorePackImport(null);
       setDetectedPrefillFields([]);
       setCodePluginFieldIssues([]);
       setCodePluginCompatibility(null);
@@ -440,6 +461,7 @@ export function PublishPluginRoute() {
           validationError={validationError}
           codePluginFieldIssues={codePluginFieldIssues}
           codePluginCompatibility={codePluginCompatibility}
+          storePackImport={storePackImport}
           hostTargets={hostTargets}
           onPickFiles={onPickFiles}
         />
