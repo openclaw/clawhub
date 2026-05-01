@@ -1,4 +1,4 @@
-import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
+import { createFileRoute, Link, Outlet, useNavigate, useRouterState } from "@tanstack/react-router";
 import { useAction, useMutation, useQuery } from "convex/react";
 import { useEffect, useState } from "react";
 import { api } from "../../convex/_generated/api";
@@ -159,10 +159,16 @@ export const Route = createFileRoute("/management")({
     skill: typeof search.skill === "string" && search.skill.trim() ? search.skill : undefined,
     plugin: typeof search.plugin === "string" && search.plugin.trim() ? search.plugin : undefined,
   }),
-  component: Management,
+  component: ManagementRouteComponent,
 });
 
-function Management() {
+function ManagementRouteComponent() {
+  const pathname = useRouterState({ select: (state) => state.location.pathname });
+  if (pathname !== "/management") return <Outlet />;
+  return <ManagementConsole />;
+}
+
+function ManagementConsole() {
   const { me } = useAuthStatus();
   const search = Route.useSearch();
   const navigate = useNavigate();
@@ -420,9 +426,14 @@ function Management() {
           <h1 className="section-title">Management console</h1>
           <p className="section-subtitle">Moderation, curation, and ownership tools.</p>
         </div>
-        <Button asChild variant="outline" size="sm">
-          <Link to="/management/moderation">Open moderation queue</Link>
-        </Button>
+        <div className="flex flex-wrap gap-2">
+          <Button asChild variant="outline" size="sm">
+            <Link to="/management/moderation">Open moderation queue</Link>
+          </Button>
+          <Button asChild variant="outline" size="sm">
+            <Link to="/management/migrations">Open migration readiness</Link>
+          </Button>
+        </div>
       </div>
 
       <Card className="mb-5">
