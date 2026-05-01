@@ -148,13 +148,20 @@ function RootDocument({ children }: { children: React.ReactNode }) {
             }}
           />
           <ClientOnly>
-            <Analytics />
+            <ProductionAnalytics />
           </ClientOnly>
         </AppProviders>
         <Scripts />
       </body>
     </html>
   );
+}
+
+function ProductionAnalytics() {
+  if (typeof window === "undefined") return null;
+  const hostname = window.location.hostname.toLowerCase();
+  if (hostname !== "clawhub.ai" && hostname !== "www.clawhub.ai") return null;
+  return <Analytics />;
 }
 
 /** Resets the error boundary whenever the route pathname changes. */
