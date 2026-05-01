@@ -68,6 +68,13 @@ crons.interval(
 // Daily re-scan of all active skills at 3am UTC
 crons.daily("vt-daily-rescan", { hourUTC: 3, minuteUTC: 0 }, internal.vt.rescanActiveSkills, {});
 
+crons.daily(
+  "trentclaw-daily-refresh",
+  { hourUTC: 3, minuteUTC: 30 },
+  internal.trent.refreshStaleTrentClawVerdicts,
+  { batchSize: 50 },
+);
+
 crons.interval(
   "download-dedupe-prune",
   { hours: 24 },

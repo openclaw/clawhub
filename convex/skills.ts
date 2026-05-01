@@ -4907,6 +4907,8 @@ export const updateVersionScanResultsInternal = internalMutation({
     }
     if (args.trentAnalysis !== undefined) {
       patch.trentAnalysis = args.trentAnalysis;
+      patch.trentVerdict = args.trentAnalysis.verdict;
+      patch.trentCheckedAt = args.trentAnalysis.checkedAt;
     }
 
     if (Object.keys(patch).length > 0) {
@@ -4917,6 +4919,44 @@ export const updateVersionScanResultsInternal = internalMutation({
         { ...version, ...patch },
       );
     }
+  },
+});
+
+export const getTrentRescanCandidatesInternal = internalQuery({
+  args: { limit: v.optional(v.number()), staleBefore: v.optional(v.number()) },
+  handler: async (ctx, args) => {
+    const limit = Math.min(Math.max(args.limit ?? 50, 1), 200);
+    const staleBefore = args.staleBefore ?? Date.now() - 7 * 24 * 60 * 60 * 1000;
+    const seen = new Set<Id<"skillVersions">>();
+    const candidates: Array<Id<"skillVersions">> = [];
+
+    const push = (version: Doc<"skillVersions">) => {
+      if (seen.has(version._id)) return;
+      seen.add(version._id);
+      candidates.push(version._id);
+    };
+
+    const unscanned = await ctx.db
+      .query("skillVersions")
+      .withIndex("by_trent_verdict_and_checked", (q) => q.eq("trentVerdict", undefined))
+      .take(limit);
+    for (const version of unscanned) push(version);
+    if (candidates.length >= limit) return candidates.slice(0, limit);
+
+    const unknown = await ctx.db
+      .query("skillVersions")
+      .withIndex("by_trent_verdict_and_checked", (q) => q.eq("trentVerdict", "unknown"))
+      .take(limit - candidates.length);
+    for (const version of unknown) push(version);
+    if (candidates.length >= limit) return candidates.slice(0, limit);
+
+    const stale = await ctx.db
+      .query("skillVersions")
+      .withIndex("by_trent_checked", (q) => q.lt("trentCheckedAt", staleBefore))
+      .take(limit - candidates.length);
+    for (const version of stale) push(version);
+
+    return candidates.slice(0, limit);
   },
 });
 

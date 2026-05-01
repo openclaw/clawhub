@@ -132,6 +132,51 @@ describe("cmdInspect", () => {
     expect(mockLog).toHaveBeenCalledWith("Model: gpt-5.2");
   });
 
+  it("prints TrentClaw scanner status from the security snapshot", async () => {
+    httpMocks.apiRequest
+      .mockResolvedValueOnce({
+        skill: {
+          slug: "demo",
+          displayName: "Demo",
+          summary: null,
+          tags: { latest: "2.0.0" },
+          stats: {},
+          createdAt: 1,
+          updatedAt: 2,
+        },
+        latestVersion: { version: "2.0.0", createdAt: 3, changelog: "init", license: "MIT-0" },
+        owner: null,
+      })
+      .mockResolvedValueOnce({
+        skill: { slug: "demo", displayName: "Demo" },
+        version: {
+          version: "2.0.0",
+          createdAt: 3,
+          changelog: "init",
+          files: [],
+          security: {
+            status: "suspicious",
+            hasWarnings: true,
+            checkedAt: 1_700_000_000_000,
+            model: null,
+            scanners: {
+              trent: {
+                verdict: "vulnerable",
+                normalizedStatus: "suspicious",
+                skillSha256: "a".repeat(64),
+                checkedAt: 1_700_000_500_000,
+              },
+            },
+          },
+        },
+      });
+
+    await cmdInspect(makeGlobalOpts(), "demo", { version: "2.0.0" });
+
+    expect(mockLog).toHaveBeenCalledWith("TrentClaw: VULNERABLE");
+    expect(mockLog).toHaveBeenCalledWith("TrentClaw Checked: 2023-11-14T22:21:40.000Z");
+  });
+
   it("prints skill moderation status without requiring a version fetch", async () => {
     httpMocks.apiRequest.mockResolvedValueOnce({
       skill: {

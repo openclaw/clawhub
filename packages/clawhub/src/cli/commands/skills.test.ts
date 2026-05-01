@@ -382,13 +382,27 @@ describe("cmdInstall", () => {
     expect(rm).not.toHaveBeenCalled();
   });
 
-  it("requires --force for a TrentClaw malicious skill in non-interactive mode", async () => {
+  it("blocks a TrentClaw malicious skill even in non-interactive mode", async () => {
     mockApiRequest
       .mockResolvedValueOnce(makeSkillMeta())
       .mockResolvedValueOnce(makeScanResponse())
       .mockResolvedValueOnce({ skill_sha256: trentHash, verdict: "malicious" });
 
-    await expect(cmdInstall(makeOpts(), "demo")).rejects.toThrow(/--force/i);
+    await expect(cmdInstall(makeOpts(), "demo")).rejects.toThrow(/malicious/i);
+
+    expect(mockPromptConfirm).not.toHaveBeenCalled();
+    expect(mockDownloadZip).not.toHaveBeenCalled();
+    expect(rm).not.toHaveBeenCalled();
+  });
+
+  it("blocks a TrentClaw malicious skill even with --force", async () => {
+    vi.mocked(stat).mockResolvedValue({} as unknown as Awaited<ReturnType<typeof stat>>);
+    mockApiRequest
+      .mockResolvedValueOnce(makeSkillMeta())
+      .mockResolvedValueOnce(makeScanResponse())
+      .mockResolvedValueOnce({ skill_sha256: trentHash, verdict: "malicious" });
+
+    await expect(cmdInstall(makeOpts(), "demo", undefined, true)).rejects.toThrow(/malicious/i);
 
     expect(mockPromptConfirm).not.toHaveBeenCalled();
     expect(mockDownloadZip).not.toHaveBeenCalled();

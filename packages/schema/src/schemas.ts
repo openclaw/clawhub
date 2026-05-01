@@ -250,6 +250,7 @@ export const SecurityStatusSchema = type({
   hasWarnings: "boolean",
   checkedAt: "number|null",
   model: "string|null",
+  scanners: "unknown?",
 });
 
 export const ApiV1SkillVersionResponseSchema = type({

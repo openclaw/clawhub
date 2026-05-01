@@ -35,6 +35,10 @@ type SecurityStatus = {
   hasWarnings: boolean;
   checkedAt: number | null;
   model: string | null;
+  trent: {
+    verdict: "benign" | "vulnerable" | "malicious" | "unknown";
+    checkedAt: number | null;
+  } | null;
 };
 
 type ModerationStatus = {
@@ -436,6 +440,12 @@ function printSecuritySummary(version: unknown) {
   if (sec.model) {
     console.log(`Model: ${sec.model}`);
   }
+  if (sec.trent) {
+    console.log(`TrentClaw: ${sec.trent.verdict.toUpperCase()}`);
+    if (typeof sec.trent.checkedAt === "number") {
+      console.log(`TrentClaw Checked: ${formatTimestamp(sec.trent.checkedAt)}`);
+    }
+  }
 }
 
 function normalizeSecurity(security: unknown): SecurityStatus | null {
@@ -445,6 +455,7 @@ function normalizeSecurity(security: unknown): SecurityStatus | null {
     hasWarnings?: unknown;
     checkedAt?: unknown;
     model?: unknown;
+    scanners?: unknown;
   };
   if (
     value.status !== "clean" &&
@@ -463,6 +474,27 @@ function normalizeSecurity(security: unknown): SecurityStatus | null {
     hasWarnings: value.hasWarnings,
     checkedAt,
     model,
+    trent: extractTrentScanner(value.scanners),
+  };
+}
+
+function extractTrentScanner(scanners: unknown): SecurityStatus["trent"] {
+  if (!scanners || typeof scanners !== "object") return null;
+  const trent = (scanners as { trent?: unknown }).trent;
+  if (!trent || typeof trent !== "object") return null;
+  const verdict = (trent as { verdict?: unknown }).verdict;
+  if (
+    verdict !== "benign" &&
+    verdict !== "vulnerable" &&
+    verdict !== "malicious" &&
+    verdict !== "unknown"
+  ) {
+    return null;
+  }
+  const checkedAt = (trent as { checkedAt?: unknown }).checkedAt;
+  return {
+    verdict,
+    checkedAt: typeof checkedAt === "number" ? checkedAt : null,
   };
 }
 

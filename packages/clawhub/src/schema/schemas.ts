@@ -244,6 +244,14 @@ export const ApiV1SkillVersionListResponseSchema = type({
   nextCursor: "string|null",
 });
 
+export const SecurityStatusSchema = type({
+  status: '"clean"|"suspicious"|"malicious"|"pending"|"error"',
+  hasWarnings: "boolean",
+  checkedAt: "number|null",
+  model: "string|null",
+  scanners: "unknown?",
+});
+
 export const ApiV1SkillVersionResponseSchema = type({
   version: type({
     version: "string",
@@ -252,6 +260,7 @@ export const ApiV1SkillVersionResponseSchema = type({
     changelogSource: '"auto"|"user"|null?',
     license: '"MIT-0"|null?',
     files: "unknown?",
+    security: SecurityStatusSchema.optional(),
   }).or("null"),
   skill: type({
     slug: "string",

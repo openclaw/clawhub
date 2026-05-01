@@ -512,6 +512,15 @@ const skillVersions = defineTable({
   sha256hash: v.optional(v.string()),
   vtAnalysis: v.optional(vtAnalysisValidator),
   trentAnalysis: v.optional(trentAnalysisValidator),
+  trentVerdict: v.optional(
+    v.union(
+      v.literal("benign"),
+      v.literal("vulnerable"),
+      v.literal("malicious"),
+      v.literal("unknown"),
+    ),
+  ),
+  trentCheckedAt: v.optional(v.number()),
   llmAnalysis: v.optional(
     v.object({
       status: v.string(),
@@ -569,6 +578,8 @@ const skillVersions = defineTable({
   .index("by_skill_version", ["skillId", "version"])
   .index("by_active_created", ["softDeletedAt", "createdAt"])
   .index("by_sha256hash", ["sha256hash"])
+  .index("by_trent_verdict_and_checked", ["trentVerdict", "trentCheckedAt"])
+  .index("by_trent_checked", ["trentCheckedAt"])
   .index("by_dep_registry_scan_status_and_created", ["depRegistryScanStatus", "createdAt"]);
 
 const depRegistryCache = defineTable({

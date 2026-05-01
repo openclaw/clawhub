@@ -34,7 +34,9 @@ export function parseTrentSkillVerdictPayload(
   return { skill_sha256: skillSha256.toLowerCase(), verdict };
 }
 
-export function normalizeTrentSkillVerdictForSecurity(verdict: TrentSkillVerdict) {
+export function normalizeTrentSkillVerdictForSecurity(
+  verdict: TrentSkillVerdict,
+): "clean" | "suspicious" | "malicious" | "pending" {
   switch (verdict) {
     case "benign":
       return "clean" as const;
@@ -44,5 +46,9 @@ export function normalizeTrentSkillVerdictForSecurity(verdict: TrentSkillVerdict
       return "malicious" as const;
     case "unknown":
       return "pending" as const;
+    default: {
+      const exhaustive: never = verdict;
+      return exhaustive;
+    }
   }
 }

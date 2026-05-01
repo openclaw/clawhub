@@ -26,6 +26,7 @@ import {
   fetchSkillSha256ForVersion,
   fetchTrentSkillVerdict,
   formatTrentWarning,
+  trentVerdictMustBlock,
   trentVerdictNeedsConfirmation,
   type TrentVerdict,
 } from "../trent.js";
@@ -149,6 +150,11 @@ export async function cmdInstall(
       resolvedVersion,
       token,
     );
+    if (trentVerdictMustBlock(trentVerdict)) {
+      spinner.stop();
+      console.log(formatTrentWarning(trimmed, trentVerdict));
+      fail("TrentClaw blocked installation because this skill was flagged as malicious");
+    }
     if (trentVerdictNeedsConfirmation(trentVerdict) && !force) {
       spinner.stop();
       console.log(formatTrentWarning(trimmed, trentVerdict));
@@ -322,6 +328,12 @@ export async function cmdUpdate(
         targetVersion,
         token,
       );
+      if (trentVerdictMustBlock(trentVerdict)) {
+        spinner.stop();
+        console.log(formatTrentWarning(entry, trentVerdict));
+        console.log(`${entry}: skipped (TrentClaw flagged this version as malicious)`);
+        continue;
+      }
       if (trentVerdictNeedsConfirmation(trentVerdict) && !options.force) {
         spinner.stop();
         console.log(formatTrentWarning(entry, trentVerdict));

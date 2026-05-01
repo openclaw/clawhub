@@ -8,12 +8,19 @@ import {
 
 export type TrentVerdict = TrentSkillVerdictResponse["verdict"];
 
-const TRENT_SKILL_VERDICT_BASE_URL =
-  "https://api.trent.ai/v1/humber-agent/openclaw/skills/verdict";
+const TRENT_SKILL_VERDICT_BASE_URL = "https://api.trent.ai/v1/humber-agent/openclaw/skills/verdict";
 const SHA256_PATTERN = /^[a-f0-9]{64}$/i;
 
-export function trentVerdictNeedsConfirmation(verdict: TrentVerdict | null | undefined) {
-  return verdict === "vulnerable" || verdict === "malicious";
+export function trentVerdictNeedsConfirmation(
+  verdict: TrentVerdict | null | undefined,
+): verdict is "vulnerable" {
+  return verdict === "vulnerable";
+}
+
+export function trentVerdictMustBlock(
+  verdict: TrentVerdict | null | undefined,
+): verdict is "malicious" {
+  return verdict === "malicious";
 }
 
 export function formatTrentWarning(slug: string, verdict: TrentVerdict) {
@@ -28,7 +35,7 @@ export function formatTrentWarning(slug: string, verdict: TrentVerdict) {
   if (verdict === "malicious") {
     return (
       `\nWarning: "${slug}" was analysed by Trent.AI and was found to be malicious.\n` +
-      "This indicates actively dangerous behavior. Do not install this skill unless you fully understand and accept the risk.\n"
+      "This indicates actively dangerous behavior. ClawHub will not install this skill.\n"
     );
   }
 

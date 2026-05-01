@@ -1,8 +1,5 @@
 import { createFileRoute, notFound } from "@tanstack/react-router";
-import {
-  SecurityScannerPage,
-  type ScannerSlug,
-} from "../../../../components/SecurityScannerPage";
+import { SecurityScannerPage, type ScannerSlug } from "../../../../components/SecurityScannerPage";
 import {
   fetchPackageDetail,
   fetchPackageVersion,
@@ -74,11 +71,9 @@ export const Route = createFileRoute("/plugins/$name/security/$scanner")({
     const scannerLabel =
       scanner === "virustotal"
         ? "VirusTotal"
-        : scanner === "trentclaw"
-          ? "TrentClaw"
-          : scanner === "openclaw"
-            ? "ClawScan"
-            : "Static analysis";
+        : scanner === "openclaw"
+          ? "ClawScan"
+          : "Static analysis";
     return {
       meta: [
         {

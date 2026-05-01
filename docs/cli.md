@@ -114,8 +114,9 @@ Stores your API token + cached registry URL.
 ### `install <slug>`
 
 - Resolves latest version via `/api/v1/skills/<slug>`.
-- Checks the resolved version hash with TrentClaw before download. Vulnerable or malicious
-  TrentClaw verdicts require interactive confirmation, or `--force` in non-interactive mode.
+- Checks the resolved version hash with TrentClaw before download. Vulnerable TrentClaw
+  verdicts require interactive confirmation, or `--force` in non-interactive mode. Malicious
+  verdicts are blocked.
 - Downloads zip via `/api/v1/download`.
 - Extracts into `<workdir>/<dir>/<slug>`.
 - Writes:
@@ -139,8 +140,9 @@ Stores your API token + cached registry URL.
 - If fingerprint does not match:
   - refuses by default
   - overwrites with `--force` (or prompt, if interactive)
-- Checks the target version hash with TrentClaw before replacing local files. Vulnerable or
-  malicious TrentClaw verdicts require interactive confirmation, or `--force` in non-interactive mode.
+- Checks the target version hash with TrentClaw before replacing local files. Vulnerable
+  TrentClaw verdicts require interactive confirmation, or `--force` in non-interactive mode.
+  Malicious verdicts are skipped.
 
 ### `skill publish <path>`
 
