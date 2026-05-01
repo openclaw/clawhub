@@ -8,12 +8,14 @@ import { api } from "../../convex/_generated/api";
 import { MAX_PUBLISH_FILE_BYTES, MAX_PUBLISH_TOTAL_BYTES } from "../../convex/lib/publishLimits";
 import { InstallCopyButton } from "../components/InstallCopyButton";
 import { Container } from "../components/layout/Container";
+import { PackageLifecyclePanel } from "../components/PackageLifecyclePanel";
 import { PackageSourceChooser } from "../components/PackageSourceChooser";
 import { Badge } from "../components/ui/badge";
 import { Button } from "../components/ui/button";
 import { Card } from "../components/ui/card";
 import { Input } from "../components/ui/input";
 import { Textarea } from "../components/ui/textarea";
+import { derivePublishLifecycle } from "../lib/packageLifecycle";
 import {
   buildPackageUploadEntries,
   filterIgnoredPackageFiles,
@@ -350,6 +352,16 @@ export function PublishPluginRoute() {
       validationError,
     ],
   );
+  const publishLifecycle = useMemo(
+    () =>
+      derivePublishLifecycle({
+        hasFiles: files.length > 0,
+        isAuthenticated,
+        blockers: storePackPreview?.blockers ?? [],
+        status,
+      }),
+    [files.length, isAuthenticated, storePackPreview, status],
+  );
 
   const onPickFiles = async (selected: File[]) => {
     try {
@@ -432,6 +444,10 @@ export function PublishPluginRoute() {
           onPickFiles={onPickFiles}
         />
 
+        <div className="mb-5">
+          <PackageLifecyclePanel lifecycle={publishLifecycle} title="Plugin release lifecycle" />
+        </div>
+
         {storePackPreview ? (
           <Card className="mb-5">
             <div className="flex flex-col gap-4">
@@ -466,7 +482,7 @@ export function PublishPluginRoute() {
                 <div className="rounded-[var(--radius-sm)] border border-[color:var(--line)] p-3">
                   <dt className="mb-1 text-[color:var(--ink-soft)]">Publish state</dt>
                   <dd className="font-semibold text-[color:var(--ink)]">
-                    {storePackPreview.blockers.length > 0 ? "Blocked" : "Ready"}
+                    {publishLifecycle.label}
                   </dd>
                 </div>
               </dl>

@@ -11,6 +11,7 @@ import { EmptyState } from "../../components/EmptyState";
 import { InstallCopyButton } from "../../components/InstallCopyButton";
 import { Container } from "../../components/layout/Container";
 import { MarkdownPreview } from "../../components/MarkdownPreview";
+import { PackageLifecyclePanel } from "../../components/PackageLifecyclePanel";
 import { Badge } from "../../components/ui/badge";
 import { Button } from "../../components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "../../components/ui/card";
@@ -27,6 +28,7 @@ import {
   type PackageVersionDetail,
 } from "../../lib/packageApi";
 import { familyLabel } from "../../lib/packageLabels";
+import { deriveStorePackLifecycle } from "../../lib/packageLifecycle";
 import { useAuthStatus } from "../../lib/useAuthStatus";
 
 type PluginDetailRateLimitState = {
@@ -279,6 +281,15 @@ function PluginDetailRoute() {
   const storepack: PackageStorePackSummary | null =
     latestRelease?.storepack ?? packageStorepack ?? null;
   const storepackEnvironment = storePackEnvironmentLabels(storepack);
+  const lifecycle = deriveStorePackLifecycle({
+    available: storepack?.available ?? false,
+    verificationScanStatus: latestRelease?.verification?.scanStatus ?? pkg.verification?.scanStatus,
+    vtStatus: latestRelease?.vtAnalysis?.status,
+    vtVerdict: latestRelease?.vtAnalysis?.verdict,
+    llmStatus: latestRelease?.llmAnalysis?.status,
+    llmVerdict: latestRelease?.llmAnalysis?.verdict,
+    staticScanStatus: latestRelease?.staticScan?.status,
+  });
   const requestRescan = async () => {
     const packageId = (pkg as { _id?: Id<"packages"> })._id;
     if (!packageId) {
@@ -418,6 +429,9 @@ function PluginDetailRoute() {
                 </div>
               </CardContent>
             </Card>
+            {latestRelease ? (
+              <PackageLifecyclePanel lifecycle={lifecycle} title="Release lifecycle" compact />
+            ) : null}
           </div>
 
           {readme ? (

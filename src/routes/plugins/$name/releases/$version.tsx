@@ -2,6 +2,7 @@ import { createFileRoute, Link } from "@tanstack/react-router";
 import { ArrowLeft, Download, FileJson, Fingerprint, ShieldCheck, Terminal } from "lucide-react";
 import { InstallCopyButton } from "../../../../components/InstallCopyButton";
 import { Container } from "../../../../components/layout/Container";
+import { PackageLifecyclePanel } from "../../../../components/PackageLifecyclePanel";
 import { Badge } from "../../../../components/ui/badge";
 import { Button } from "../../../../components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "../../../../components/ui/card";
@@ -17,6 +18,7 @@ import {
   type PackageStorePackReleaseDetail,
   type PackageStorePackSummary,
 } from "../../../../lib/packageApi";
+import { deriveStorePackLifecycle } from "../../../../lib/packageLifecycle";
 
 type PluginReleaseLoaderData = {
   detail: PackageDetailResponse;
@@ -133,6 +135,15 @@ function PluginReleaseRoute() {
       ? `clawhub package storepack ${pkg.name} --version ${version}\nclawhub package verify ${pkg.name.replaceAll("/", "-")}.storepack.zip --sha256 ${storepack.sha256}`
       : null;
   const environment = storePackEnvironmentLabels(storepack);
+  const lifecycle = deriveStorePackLifecycle({
+    available: storepack?.available ?? false,
+    verificationScanStatus: release?.version.verification?.scanStatus,
+    vtStatus: release?.version.vtAnalysis?.status,
+    vtVerdict: release?.version.vtAnalysis?.verdict,
+    llmStatus: release?.version.llmAnalysis?.status,
+    llmVerdict: release?.version.llmAnalysis?.verdict,
+    staticScanStatus: release?.version.staticScan?.status,
+  });
 
   if (rateLimited) {
     return (
@@ -278,6 +289,8 @@ function PluginReleaseRoute() {
             </div>
 
             <aside className="flex min-w-0 flex-col gap-4">
+              <PackageLifecyclePanel lifecycle={lifecycle} title="Lifecycle" compact />
+
               <Card>
                 <CardHeader>
                   <CardTitle className="flex items-center gap-2">

@@ -7,6 +7,7 @@ import { ManagementAccessNotice } from "../../components/ManagementAccessNotice"
 import { Badge } from "../../components/ui/badge";
 import { Button } from "../../components/ui/button";
 import { Card } from "../../components/ui/card";
+import { deriveStorePackLifecycle } from "../../lib/packageLifecycle";
 import { isAdmin, isModerator } from "../../lib/roles";
 import { useAuthStatus } from "../../lib/useAuthStatus";
 
@@ -28,6 +29,10 @@ type StorePackMigrationStatus = {
     version: string;
     createdAt: number;
     fileCount: number;
+    storepackAvailable?: boolean;
+    storepackBuiltAt?: number | null;
+    storepackSha256?: string | null;
+    storepackRevokedAt?: number | null;
   }>;
   failureSample: Array<{
     failureId: Id<"packageStorePackBackfillFailures">;
@@ -337,33 +342,50 @@ function MigrationRows(props: { rows: StorePackMigrationStatus["missingSample"] 
   return (
     <div className="management-list mt-3">
       {props.rows.map((entry) => (
-        <div key={entry.releaseId} className="management-item">
-          <div className="management-item-main">
-            <Link to="/plugins/$name" params={{ name: entry.name }}>
-              {entry.displayName}
-            </Link>
-            <div className="section-subtitle m-0">
-              {entry.name}@{entry.version} - {entry.fileCount} files - published{" "}
-              {formatTimestamp(entry.createdAt)}
-            </div>
-          </div>
-          <div className="management-actions">
-            <Button asChild size="sm" variant="outline">
-              <Link to="/management" search={{ skill: undefined, plugin: entry.name }}>
-                Manage
-              </Link>
-            </Button>
-            <Button asChild size="sm" variant="ghost">
-              <Link
-                to="/plugins/$name/releases/$version"
-                params={{ name: entry.name, version: entry.version }}
-              >
-                Release
-              </Link>
-            </Button>
-          </div>
-        </div>
+        <MigrationRow key={entry.releaseId} entry={entry} />
       ))}
+    </div>
+  );
+}
+
+function MigrationRow(props: { entry: StorePackMigrationStatus["missingSample"][number] }) {
+  const entry = props.entry;
+  const lifecycle = deriveStorePackLifecycle({
+    available: entry.storepackAvailable ?? false,
+    revokedAt: entry.storepackRevokedAt,
+  });
+  return (
+    <div className="management-item">
+      <div className="management-item-main">
+        <div className="flex flex-wrap items-center gap-2">
+          <Link to="/plugins/$name" params={{ name: entry.name }}>
+            {entry.displayName}
+          </Link>
+          <Badge variant={lifecycle.severity === "danger" ? "destructive" : "accent"}>
+            {lifecycle.label}
+          </Badge>
+        </div>
+        <div className="section-subtitle m-0">
+          {entry.name}@{entry.version} - {entry.fileCount} files - published{" "}
+          {formatTimestamp(entry.createdAt)}
+        </div>
+        <div className="section-subtitle m-0">{lifecycle.action ?? lifecycle.description}</div>
+      </div>
+      <div className="management-actions">
+        <Button asChild size="sm" variant="outline">
+          <Link to="/management" search={{ skill: undefined, plugin: entry.name }}>
+            Manage
+          </Link>
+        </Button>
+        <Button asChild size="sm" variant="ghost">
+          <Link
+            to="/plugins/$name/releases/$version"
+            params={{ name: entry.name, version: entry.version }}
+          >
+            Release
+          </Link>
+        </Button>
+      </div>
     </div>
   );
 }
@@ -372,36 +394,54 @@ function FailureRows(props: { rows: StorePackMigrationStatus["failureSample"] })
   return (
     <div className="management-list mt-3">
       {props.rows.map((entry) => (
-        <div key={entry.failureId} className="management-item">
-          <div className="management-item-main">
-            <Link to="/plugins/$name" params={{ name: entry.name }}>
-              {entry.name}@{entry.version}
-            </Link>
-            <div className="section-subtitle m-0">
-              {entry.attemptCount} attempts - last failed {formatTimestamp(entry.lastFailedAt)}
-            </div>
-            <div className="management-report-item">
-              <span className="management-report-meta">last error</span>
-              <span>{entry.error}</span>
-            </div>
-          </div>
-          <div className="management-actions">
-            <Button asChild size="sm" variant="outline">
-              <Link to="/management" search={{ skill: undefined, plugin: entry.name }}>
-                Manage
-              </Link>
-            </Button>
-            <Button asChild size="sm" variant="ghost">
-              <Link
-                to="/plugins/$name/releases/$version"
-                params={{ name: entry.name, version: entry.version }}
-              >
-                Release
-              </Link>
-            </Button>
-          </div>
-        </div>
+        <FailureRow key={entry.failureId} entry={entry} />
       ))}
+    </div>
+  );
+}
+
+function FailureRow(props: { entry: StorePackMigrationStatus["failureSample"][number] }) {
+  const entry = props.entry;
+  const lifecycle = deriveStorePackLifecycle({
+    available: false,
+    buildError: entry.error,
+  });
+  return (
+    <div className="management-item">
+      <div className="management-item-main">
+        <div className="flex flex-wrap items-center gap-2">
+          <Link to="/plugins/$name" params={{ name: entry.name }}>
+            {entry.name}@{entry.version}
+          </Link>
+          <Badge variant="destructive">{lifecycle.label}</Badge>
+        </div>
+        <div className="section-subtitle m-0">
+          {entry.attemptCount} attempts - last failed {formatTimestamp(entry.lastFailedAt)}
+        </div>
+        <div className="management-report-item">
+          <span className="management-report-meta">next action</span>
+          <span>{lifecycle.action}</span>
+        </div>
+        <div className="management-report-item">
+          <span className="management-report-meta">last error</span>
+          <span>{entry.error}</span>
+        </div>
+      </div>
+      <div className="management-actions">
+        <Button asChild size="sm" variant="outline">
+          <Link to="/management" search={{ skill: undefined, plugin: entry.name }}>
+            Manage
+          </Link>
+        </Button>
+        <Button asChild size="sm" variant="ghost">
+          <Link
+            to="/plugins/$name/releases/$version"
+            params={{ name: entry.name, version: entry.version }}
+          >
+            Release
+          </Link>
+        </Button>
+      </div>
     </div>
   );
 }
