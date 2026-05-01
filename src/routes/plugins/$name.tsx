@@ -23,6 +23,7 @@ import {
   getPackageDownloadPath,
   isRateLimitedPackageApiError,
   type PackageDetailResponse,
+  type PackageStorePackSummary,
   type PackageVersionDetail,
 } from "../../lib/packageApi";
 import { familyLabel } from "../../lib/packageLabels";
@@ -180,6 +181,34 @@ function isEmptyObject(obj: unknown): boolean {
   return Object.keys(obj).length === 0;
 }
 
+function formatStorePackTarget(
+  target: NonNullable<PackageStorePackSummary["hostTargets"]>[number],
+) {
+  return [target.os, target.arch, target.libc].filter(Boolean).join("-");
+}
+
+function formatStorePackBytes(value: number | null | undefined) {
+  if (!value || value <= 0) return "unknown";
+  if (value < 1024) return `${value}B`;
+  if (value < 1024 * 1024) return `${(value / 1024).toFixed(1)}KB`;
+  return `${(value / (1024 * 1024)).toFixed(1)}MB`;
+}
+
+function storePackEnvironmentLabels(storepack: PackageStorePackSummary | null | undefined) {
+  const environment = storepack?.environment;
+  if (!environment) return [];
+  return [
+    environment.requiresLocalDesktop ? "local desktop" : null,
+    environment.requiresBrowser ? "browser" : null,
+    environment.requiresAudioDevice ? "audio device" : null,
+    environment.requiresNetwork ? "network" : null,
+    environment.supportsRemoteHost ? "remote host" : null,
+    ...(environment.requiresExternalServices ?? []).map((service) => `service:${service}`),
+    ...(environment.requiresOsPermissions ?? []).map((permission) => `permission:${permission}`),
+    ...(environment.knownUnsupported ?? []).map((target) => `unsupported:${target}`),
+  ].filter((label): label is string => Boolean(label));
+}
+
 function PluginDetailRoute() {
   const { name } = Route.useParams();
   const { detail, version, readme, rateLimited } = Route.useLoaderData() as PluginDetailLoaderData;
@@ -246,6 +275,10 @@ function PluginDetailRoute() {
   const capabilities = latestRelease?.capabilities ?? pkg.capabilities;
   const compatibility = latestRelease?.compatibility ?? pkg.compatibility;
   const verification = latestRelease?.verification ?? pkg.verification;
+  const packageStorepack = (pkg as typeof pkg & { storepack?: PackageStorePackSummary }).storepack;
+  const storepack: PackageStorePackSummary | null =
+    latestRelease?.storepack ?? packageStorepack ?? null;
+  const storepackEnvironment = storePackEnvironmentLabels(storepack);
   const requestRescan = async () => {
     const packageId = (pkg as { _id?: Id<"packages"> })._id;
     if (!packageId) {
@@ -394,6 +427,69 @@ function PluginDetailRoute() {
               </CardHeader>
               <CardContent>
                 <MarkdownPreview>{readme}</MarkdownPreview>
+              </CardContent>
+            </Card>
+          ) : null}
+
+          {storepack ? (
+            <Card>
+              <CardHeader className="gap-3 sm:flex-row sm:items-center sm:justify-between">
+                <CardTitle>StorePack</CardTitle>
+                {storepack.available && storepack.sha256 ? (
+                  <InstallCopyButton text={storepack.sha256} ariaLabel="Copy StorePack SHA-256" />
+                ) : null}
+              </CardHeader>
+              <CardContent>
+                <dl className="flex flex-col gap-3 text-sm">
+                  <div className="flex flex-col gap-1.5 border-b border-[color:var(--line)] pb-3 sm:grid sm:grid-cols-[minmax(140px,220px)_1fr] sm:gap-x-4 sm:gap-y-0">
+                    <dt className="font-semibold text-[color:var(--ink-soft)]">Artifact</dt>
+                    <dd className="text-[color:var(--ink)]">
+                      {storepack.available
+                        ? `${storepack.format ?? "zip"} / ${formatStorePackBytes(
+                            storepack.size,
+                          )} / ${storepack.fileCount ?? 0} files`
+                        : "Not generated yet"}
+                    </dd>
+                  </div>
+                  {storepack.sha256 ? (
+                    <div className="flex flex-col gap-1.5 border-b border-[color:var(--line)] pb-3 sm:grid sm:grid-cols-[minmax(140px,220px)_1fr] sm:gap-x-4 sm:gap-y-0">
+                      <dt className="font-semibold text-[color:var(--ink-soft)]">SHA-256</dt>
+                      <dd className="min-w-0 break-all font-mono text-xs text-[color:var(--ink)]">
+                        {storepack.sha256}
+                      </dd>
+                    </div>
+                  ) : null}
+                  {storepack.hostTargets?.length ? (
+                    <div className="flex flex-col gap-1.5 border-b border-[color:var(--line)] pb-3 sm:grid sm:grid-cols-[minmax(140px,220px)_1fr] sm:gap-x-4 sm:gap-y-0">
+                      <dt className="font-semibold text-[color:var(--ink-soft)]">Host targets</dt>
+                      <dd className="flex flex-wrap gap-1.5">
+                        {storepack.hostTargets.map((target) => (
+                          <Badge key={formatStorePackTarget(target)} variant="compact">
+                            {formatStorePackTarget(target)}
+                          </Badge>
+                        ))}
+                      </dd>
+                    </div>
+                  ) : null}
+                  {storepackEnvironment.length ? (
+                    <div className="flex flex-col gap-1.5 border-b border-[color:var(--line)] pb-3 sm:grid sm:grid-cols-[minmax(140px,220px)_1fr] sm:gap-x-4 sm:gap-y-0">
+                      <dt className="font-semibold text-[color:var(--ink-soft)]">Environment</dt>
+                      <dd className="flex flex-wrap gap-1.5">
+                        {storepackEnvironment.map((label) => (
+                          <Badge key={label} variant="compact">
+                            {label}
+                          </Badge>
+                        ))}
+                      </dd>
+                    </div>
+                  ) : null}
+                  {storepack.buildVersion ? (
+                    <div className="flex flex-col gap-1.5 last:border-b-0 last:pb-0 sm:grid sm:grid-cols-[minmax(140px,220px)_1fr] sm:gap-x-4 sm:gap-y-0">
+                      <dt className="font-semibold text-[color:var(--ink-soft)]">Builder</dt>
+                      <dd className="text-[color:var(--ink)]">{storepack.buildVersion}</dd>
+                    </div>
+                  ) : null}
+                </dl>
               </CardContent>
             </Card>
           ) : null}
