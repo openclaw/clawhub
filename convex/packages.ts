@@ -85,13 +85,22 @@ const vtAnalysisValidator = v.object({
   engineStats: v.optional(vtEngineStatsValidator),
   checkedAt: v.number(),
 });
+const packageScanStatusArgValidator = v.union(
+  v.literal("clean"),
+  v.literal("suspicious"),
+  v.literal("malicious"),
+  v.literal("pending"),
+  v.literal("not-run"),
+);
 const internalRefs = internal as unknown as {
   llmEval: {
     evaluatePackageReleaseWithLlm: unknown;
   };
   packages: {
     attachStorePackArtifactInternal: unknown;
+    backfillStorePackArtifactsInternal: unknown;
     backfillPackageReleaseScansInternal: unknown;
+    getStorePackBackfillBatchInternal: unknown;
     scanPackageReleaseStaticallyInternal: unknown;
     insertReleaseInternal: unknown;
     getPackageByNameInternal: unknown;
@@ -293,6 +302,10 @@ type DashboardPackageListItem = {
     vtStatus: string | null;
     llmStatus: string | null;
     staticScanStatus: "clean" | "suspicious" | "malicious" | null;
+    storepackAvailable: boolean;
+    storepackSha256: string | null;
+    hostTargets: Doc<"packageReleases">["hostTargetsSummary"] | null;
+    environment: Doc<"packageReleases">["environmentSummary"] | null;
   } | null;
 };
 
@@ -502,6 +515,10 @@ async function toDashboardPackageListItem(
             vtStatus: latestRelease.vtAnalysis?.status ?? null,
             llmStatus: latestRelease.llmAnalysis?.status ?? null,
             staticScanStatus: latestRelease.staticScan?.status ?? null,
+            storepackAvailable: Boolean(latestRelease.storepackStorageId),
+            storepackSha256: latestRelease.storepackSha256 ?? null,
+            hostTargets: latestRelease.hostTargetsSummary ?? null,
+            environment: latestRelease.environmentSummary ?? null,
           }
         : null,
   };
@@ -1248,6 +1265,79 @@ export const getVersionByNameForViewerInternal = internalQuery({
     };
   },
 });
+
+async function buildStorePackMigrationRows(ctx: DbReaderCtx, releases: Doc<"packageReleases">[]) {
+  const rows = [];
+  for (const release of releases) {
+    const pkg = await ctx.db.get(release.packageId);
+    if (!pkg || pkg.softDeletedAt || pkg.family === "skill") continue;
+    rows.push({
+      releaseId: release._id,
+      packageId: pkg._id,
+      name: pkg.name,
+      displayName: pkg.displayName,
+      family: pkg.family,
+      channel: pkg.channel,
+      version: release.version,
+      createdAt: release.createdAt,
+      fileCount: release.files.length,
+      storepackAvailable: Boolean(release.storepackStorageId),
+      storepackBuiltAt: release.storepackBuiltAt ?? null,
+      storepackSha256: release.storepackSha256 ?? null,
+    });
+  }
+  return rows;
+}
+
+export const getStorePackMigrationStatus = query({
+  args: { limit: v.optional(v.number()) },
+  handler: async (ctx, args) => {
+    const { user } = await requireUser(ctx);
+    assertModerator(user);
+    return await getStorePackMigrationStatusForLimit(ctx, args.limit);
+  },
+});
+
+export const getStorePackMigrationStatusInternal = internalQuery({
+  args: { limit: v.optional(v.number()) },
+  handler: async (ctx, args) => {
+    return await getStorePackMigrationStatusForLimit(ctx, args.limit);
+  },
+});
+
+async function getStorePackMigrationStatusForLimit(
+  ctx: DbReaderCtx,
+  requestedLimit: number | undefined,
+) {
+  const limit = Math.max(1, Math.min(requestedLimit ?? 25, 100));
+  const missingCandidates = await ctx.db
+    .query("packageReleases")
+    .withIndex("by_storepack_built_at", (q) => q.eq("storepackBuiltAt", undefined))
+    .take(limit * 4);
+  const missingRows = await buildStorePackMigrationRows(
+    ctx,
+    missingCandidates.filter((release) => !release.softDeletedAt).slice(0, limit),
+  );
+  const recentArtifactRows = await ctx.db
+    .query("packageReleaseArtifacts")
+    .withIndex("by_status", (q) => q.eq("status", "active"))
+    .order("desc")
+    .take(limit * 4);
+  const storepackArtifactRows = recentArtifactRows
+    .filter((artifact) => artifact.kind === "storepack")
+    .slice(0, limit);
+
+  return {
+    missingSample: missingRows,
+    missingSampleSize: missingRows.length,
+    generatedStorePackSampleSize: storepackArtifactRows.length,
+    generatedStorePackBytes: storepackArtifactRows.reduce(
+      (sum, artifact) => sum + artifact.size,
+      0,
+    ),
+    sampleLimit: limit,
+  };
+}
 
 export const list = query({
   args: {
@@ -2391,6 +2481,139 @@ export const publishRelease = action({
   },
 });
 
+export const getStorePackBackfillBatchInternal = internalQuery({
+  args: { limit: v.number() },
+  handler: async (ctx, args) => {
+    const limit = Math.max(1, Math.min(args.limit, 50));
+    const candidates = await ctx.db
+      .query("packageReleases")
+      .withIndex("by_storepack_built_at", (q) => q.eq("storepackBuiltAt", undefined))
+      .take(limit * 4);
+    const batch = [];
+    for (const release of candidates) {
+      if (batch.length >= limit) break;
+      if (release.softDeletedAt) continue;
+      const pkg = await ctx.db.get(release.packageId);
+      if (!pkg || pkg.softDeletedAt || pkg.family === "skill") continue;
+      batch.push({
+        package: {
+          _id: pkg._id,
+          name: pkg.name,
+          ownerPublisherId: pkg.ownerPublisherId,
+          ownerUserId: pkg.ownerUserId,
+          channel: pkg.channel,
+          family: pkg.family,
+        },
+        release,
+      });
+    }
+    return batch;
+  },
+});
+
+export const backfillStorePackArtifactsInternal = internalAction({
+  args: {
+    actorUserId: v.optional(v.id("users")),
+    limit: v.optional(v.number()),
+  },
+  handler: async (ctx, args) => {
+    const limit = Math.max(1, Math.min(args.limit ?? 10, 50));
+    const batch = await runQueryRef<
+      Array<{
+        package: {
+          _id: Id<"packages">;
+          name: string;
+          ownerPublisherId?: Id<"publishers">;
+          ownerUserId: Id<"users">;
+          channel: "official" | "community" | "private";
+          family: "skill" | "code-plugin" | "bundle-plugin";
+        };
+        release: Doc<"packageReleases">;
+      }>
+    >(ctx, internalRefs.packages.getStorePackBackfillBatchInternal, { limit });
+    const results = [];
+    for (const entry of batch) {
+      try {
+        const storepack = await buildAndStorePackageReleaseStorePack(ctx, {
+          packageId: entry.package._id,
+          releaseId: entry.release._id,
+          name: entry.package.name,
+          owner: null,
+          version: entry.release.version,
+          family: entry.package.family,
+          channel: entry.package.channel,
+          source: entry.release.source,
+          compatibility: entry.release.compatibility,
+          capabilities: entry.release.capabilities,
+          verification: entry.release.verification,
+          files: entry.release.files,
+        });
+        await runMutationRef(ctx, internalRefs.packages.attachStorePackArtifactInternal, {
+          packageId: entry.package._id,
+          releaseId: entry.release._id,
+          storageId: storepack.storageId,
+          sha256: storepack.sha256,
+          size: storepack.size,
+          fileCount: storepack.fileCount,
+          manifestSha256: storepack.manifestSha256,
+          hostTargets: storepack.hostTargets,
+          environment: storepack.environment,
+          builtAt: storepack.builtAt,
+        });
+        results.push({
+          ok: true as const,
+          packageId: entry.package._id,
+          releaseId: entry.release._id,
+          name: entry.package.name,
+          version: entry.release.version,
+          sha256: storepack.sha256,
+        });
+      } catch (error) {
+        results.push({
+          ok: false as const,
+          packageId: entry.package._id,
+          releaseId: entry.release._id,
+          name: entry.package.name,
+          version: entry.release.version,
+          error: errorMessage(error),
+        });
+      }
+    }
+    if (args.actorUserId) {
+      await runMutationRef(ctx, internalRefs.packages.insertAuditLogInternal, {
+        actorUserId: args.actorUserId,
+        action: "package.storepack.backfill",
+        targetType: "package",
+        targetId: "storepack",
+        metadata: {
+          requestedLimit: limit,
+          processed: results.length,
+          succeeded: results.filter((result) => result.ok).length,
+          failed: results.filter((result) => !result.ok).length,
+        },
+      });
+    }
+    return {
+      processed: results.length,
+      succeeded: results.filter((result) => result.ok).length,
+      failed: results.filter((result) => !result.ok).length,
+      results,
+    };
+  },
+});
+
+export const backfillStorePackArtifacts = action({
+  args: { limit: v.optional(v.number()) },
+  handler: async (ctx, args) => {
+    const { user, userId } = await requireUserFromAction(ctx);
+    assertAdmin(user);
+    return await runActionRef(ctx, internalRefs.packages.backfillStorePackArtifactsInternal, {
+      actorUserId: userId,
+      limit: args.limit,
+    });
+  },
+});
+
 export const insertReleaseInternal = internalMutation({
   args: {
     actorUserId: v.id("users"),
@@ -3111,6 +3334,68 @@ export const requestRescan = mutation({
         artifactId: target.release._id,
       })),
     };
+  },
+});
+
+export const setModerationVerdict = mutation({
+  args: {
+    packageId: v.id("packages"),
+    verdict: packageScanStatusArgValidator,
+    note: v.optional(v.string()),
+  },
+  handler: async (ctx, args) => {
+    const { user } = await requireUser(ctx);
+    assertModerator(user);
+    const pkg = await ctx.db.get(args.packageId);
+    if (!pkg || pkg.softDeletedAt || pkg.family === "skill") {
+      throw new ConvexError("Plugin not found");
+    }
+    const now = Date.now();
+    const note = args.note?.trim() || undefined;
+    const nextVerification = pkg.verification
+      ? {
+          ...pkg.verification,
+          scanStatus: args.verdict,
+          summary:
+            note ?? pkg.verification.summary ?? `Moderator marked this plugin ${args.verdict}.`,
+        }
+      : undefined;
+    await ctx.db.patch(pkg._id, {
+      scanStatus: args.verdict,
+      ...(nextVerification ? { verification: nextVerification } : {}),
+      updatedAt: now,
+    });
+    if (pkg.latestReleaseId) {
+      const latestRelease = await ctx.db.get(pkg.latestReleaseId);
+      if (latestRelease && !latestRelease.softDeletedAt) {
+        const releaseVerification = latestRelease.verification
+          ? {
+              ...latestRelease.verification,
+              scanStatus: args.verdict,
+              summary:
+                note ??
+                latestRelease.verification.summary ??
+                `Moderator marked this release ${args.verdict}.`,
+            }
+          : undefined;
+        await ctx.db.patch(latestRelease._id, {
+          ...(releaseVerification ? { verification: releaseVerification } : {}),
+        });
+      }
+    }
+    await ctx.db.insert("auditLogs", {
+      actorUserId: user._id,
+      action: "package.moderation.verdict",
+      targetType: "package",
+      targetId: pkg._id,
+      metadata: {
+        verdict: args.verdict,
+        previousVerdict: pkg.scanStatus,
+        ...(note ? { note } : {}),
+      },
+      createdAt: now,
+    });
+    return { ok: true as const, verdict: args.verdict };
   },
 });
 

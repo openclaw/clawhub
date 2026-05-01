@@ -910,7 +910,8 @@ const packageReleases = defineTable({
   .index("by_package_active_created", ["packageId", "softDeletedAt", "createdAt"])
   .index("by_active_created", ["softDeletedAt", "createdAt"])
   .index("by_package_version", ["packageId", "version"])
-  .index("by_sha256hash", ["sha256hash"]);
+  .index("by_sha256hash", ["sha256hash"])
+  .index("by_storepack_built_at", ["storepackBuiltAt"]);
 
 const packageReleaseArtifacts = defineTable({
   packageId: v.id("packages"),
