@@ -1,4 +1,4 @@
-import { createFileRoute, Link } from "@tanstack/react-router";
+import { createFileRoute, Link, Outlet, useRouterState } from "@tanstack/react-router";
 import { useAction, useQuery } from "convex/react";
 import { useState } from "react";
 import { api } from "../../../convex/_generated/api";
@@ -75,6 +75,12 @@ export const Route = createFileRoute("/management/storepacks")({
 });
 
 export function StorePackManagementRoute() {
+  const pathname = useRouterState({ select: (state) => state.location.pathname });
+  if (pathname !== "/management/storepacks") return <Outlet />;
+  return <StorePackManagementConsole />;
+}
+
+function StorePackManagementConsole() {
   const { me } = useAuthStatus();
   const staff = isModerator(me);
   const admin = isAdmin(me);
@@ -378,6 +384,15 @@ function MigrationRow(props: { entry: StorePackMigrationStatus["missingSample"][
       </div>
       <div className="management-actions">
         <Button asChild size="sm" variant="outline">
+          <Link
+            to="/management/storepacks/releases/$releaseId"
+            params={{ releaseId: entry.releaseId }}
+            search={{ skill: undefined, plugin: undefined }}
+          >
+            Details
+          </Link>
+        </Button>
+        <Button asChild size="sm" variant="outline">
           <Link to="/management" search={{ skill: undefined, plugin: entry.name }}>
             Manage
           </Link>
@@ -433,6 +448,15 @@ function FailureRow(props: { entry: StorePackMigrationStatus["failureSample"][nu
         </div>
       </div>
       <div className="management-actions">
+        <Button asChild size="sm" variant="outline">
+          <Link
+            to="/management/storepacks/releases/$releaseId"
+            params={{ releaseId: entry.releaseId }}
+            search={{ skill: undefined, plugin: undefined }}
+          >
+            Details
+          </Link>
+        </Button>
         <Button asChild size="sm" variant="outline">
           <Link to="/management" search={{ skill: undefined, plugin: entry.name }}>
             Manage

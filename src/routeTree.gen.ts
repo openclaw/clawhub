@@ -44,6 +44,7 @@ import { Route as ManagementMigrationsBundledPluginIdRouteImport } from './route
 import { Route as OwnerSlugSettingsRouteImport } from './routes/$owner/$slug/settings'
 import { Route as PluginsNameSecurityScannerRouteImport } from './routes/plugins/$name/security/$scanner'
 import { Route as PluginsNameReleasesVersionRouteImport } from './routes/plugins/$name/releases/$version'
+import { Route as ManagementStorepacksReleasesReleaseIdRouteImport } from './routes/management/storepacks/releases/$releaseId'
 import { Route as OwnerSlugSecurityScannerRouteImport } from './routes/$owner/$slug/security/$scanner'
 
 const UploadRoute = UploadRouteImport.update({
@@ -224,6 +225,12 @@ const PluginsNameReleasesVersionRoute =
     path: '/releases/$version',
     getParentRoute: () => PluginsNameRoute,
   } as any)
+const ManagementStorepacksReleasesReleaseIdRoute =
+  ManagementStorepacksReleasesReleaseIdRouteImport.update({
+    id: '/releases/$releaseId',
+    path: '/releases/$releaseId',
+    getParentRoute: () => ManagementStorepacksRoute,
+  } as any)
 const OwnerSlugSecurityScannerRoute =
   OwnerSlugSecurityScannerRouteImport.update({
     id: '/security/$scanner',
@@ -249,7 +256,7 @@ export interface FileRoutesByFullPath {
   '/management/migrations': typeof ManagementMigrationsRouteWithChildren
   '/management/moderation': typeof ManagementModerationRoute
   '/management/plugins': typeof ManagementPluginsRouteWithChildren
-  '/management/storepacks': typeof ManagementStorepacksRoute
+  '/management/storepacks': typeof ManagementStorepacksRouteWithChildren
   '/orgs/$handle': typeof OrgsHandleRoute
   '/packages/$name': typeof PackagesNameRoute
   '/packages/new': typeof PackagesNewRoute
@@ -266,6 +273,7 @@ export interface FileRoutesByFullPath {
   '/management/migrations/$bundledPluginId': typeof ManagementMigrationsBundledPluginIdRoute
   '/management/plugins/$name': typeof ManagementPluginsNameRoute
   '/$owner/$slug/security/$scanner': typeof OwnerSlugSecurityScannerRoute
+  '/management/storepacks/releases/$releaseId': typeof ManagementStorepacksReleasesReleaseIdRoute
   '/plugins/$name/releases/$version': typeof PluginsNameReleasesVersionRoute
   '/plugins/$name/security/$scanner': typeof PluginsNameSecurityScannerRoute
 }
@@ -287,7 +295,7 @@ export interface FileRoutesByTo {
   '/management/migrations': typeof ManagementMigrationsRouteWithChildren
   '/management/moderation': typeof ManagementModerationRoute
   '/management/plugins': typeof ManagementPluginsRouteWithChildren
-  '/management/storepacks': typeof ManagementStorepacksRoute
+  '/management/storepacks': typeof ManagementStorepacksRouteWithChildren
   '/orgs/$handle': typeof OrgsHandleRoute
   '/packages/$name': typeof PackagesNameRoute
   '/packages/new': typeof PackagesNewRoute
@@ -304,6 +312,7 @@ export interface FileRoutesByTo {
   '/management/migrations/$bundledPluginId': typeof ManagementMigrationsBundledPluginIdRoute
   '/management/plugins/$name': typeof ManagementPluginsNameRoute
   '/$owner/$slug/security/$scanner': typeof OwnerSlugSecurityScannerRoute
+  '/management/storepacks/releases/$releaseId': typeof ManagementStorepacksReleasesReleaseIdRoute
   '/plugins/$name/releases/$version': typeof PluginsNameReleasesVersionRoute
   '/plugins/$name/security/$scanner': typeof PluginsNameSecurityScannerRoute
 }
@@ -326,7 +335,7 @@ export interface FileRoutesById {
   '/management/migrations': typeof ManagementMigrationsRouteWithChildren
   '/management/moderation': typeof ManagementModerationRoute
   '/management/plugins': typeof ManagementPluginsRouteWithChildren
-  '/management/storepacks': typeof ManagementStorepacksRoute
+  '/management/storepacks': typeof ManagementStorepacksRouteWithChildren
   '/orgs/$handle': typeof OrgsHandleRoute
   '/packages/$name': typeof PackagesNameRoute
   '/packages/new': typeof PackagesNewRoute
@@ -343,6 +352,7 @@ export interface FileRoutesById {
   '/management/migrations/$bundledPluginId': typeof ManagementMigrationsBundledPluginIdRoute
   '/management/plugins/$name': typeof ManagementPluginsNameRoute
   '/$owner/$slug/security/$scanner': typeof OwnerSlugSecurityScannerRoute
+  '/management/storepacks/releases/$releaseId': typeof ManagementStorepacksReleasesReleaseIdRoute
   '/plugins/$name/releases/$version': typeof PluginsNameReleasesVersionRoute
   '/plugins/$name/security/$scanner': typeof PluginsNameSecurityScannerRoute
 }
@@ -383,6 +393,7 @@ export interface FileRouteTypes {
     | '/management/migrations/$bundledPluginId'
     | '/management/plugins/$name'
     | '/$owner/$slug/security/$scanner'
+    | '/management/storepacks/releases/$releaseId'
     | '/plugins/$name/releases/$version'
     | '/plugins/$name/security/$scanner'
   fileRoutesByTo: FileRoutesByTo
@@ -421,6 +432,7 @@ export interface FileRouteTypes {
     | '/management/migrations/$bundledPluginId'
     | '/management/plugins/$name'
     | '/$owner/$slug/security/$scanner'
+    | '/management/storepacks/releases/$releaseId'
     | '/plugins/$name/releases/$version'
     | '/plugins/$name/security/$scanner'
   id:
@@ -459,6 +471,7 @@ export interface FileRouteTypes {
     | '/management/migrations/$bundledPluginId'
     | '/management/plugins/$name'
     | '/$owner/$slug/security/$scanner'
+    | '/management/storepacks/releases/$releaseId'
     | '/plugins/$name/releases/$version'
     | '/plugins/$name/security/$scanner'
   fileRoutesById: FileRoutesById
@@ -739,6 +752,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof PluginsNameReleasesVersionRouteImport
       parentRoute: typeof PluginsNameRoute
     }
+    '/management/storepacks/releases/$releaseId': {
+      id: '/management/storepacks/releases/$releaseId'
+      path: '/releases/$releaseId'
+      fullPath: '/management/storepacks/releases/$releaseId'
+      preLoaderRoute: typeof ManagementStorepacksReleasesReleaseIdRouteImport
+      parentRoute: typeof ManagementStorepacksRoute
+    }
     '/$owner/$slug/security/$scanner': {
       id: '/$owner/$slug/security/$scanner'
       path: '/security/$scanner'
@@ -772,18 +792,30 @@ const ManagementPluginsRouteChildren: ManagementPluginsRouteChildren = {
 const ManagementPluginsRouteWithChildren =
   ManagementPluginsRoute._addFileChildren(ManagementPluginsRouteChildren)
 
+interface ManagementStorepacksRouteChildren {
+  ManagementStorepacksReleasesReleaseIdRoute: typeof ManagementStorepacksReleasesReleaseIdRoute
+}
+
+const ManagementStorepacksRouteChildren: ManagementStorepacksRouteChildren = {
+  ManagementStorepacksReleasesReleaseIdRoute:
+    ManagementStorepacksReleasesReleaseIdRoute,
+}
+
+const ManagementStorepacksRouteWithChildren =
+  ManagementStorepacksRoute._addFileChildren(ManagementStorepacksRouteChildren)
+
 interface ManagementRouteChildren {
   ManagementMigrationsRoute: typeof ManagementMigrationsRouteWithChildren
   ManagementModerationRoute: typeof ManagementModerationRoute
   ManagementPluginsRoute: typeof ManagementPluginsRouteWithChildren
-  ManagementStorepacksRoute: typeof ManagementStorepacksRoute
+  ManagementStorepacksRoute: typeof ManagementStorepacksRouteWithChildren
 }
 
 const ManagementRouteChildren: ManagementRouteChildren = {
   ManagementMigrationsRoute: ManagementMigrationsRouteWithChildren,
   ManagementModerationRoute: ManagementModerationRoute,
   ManagementPluginsRoute: ManagementPluginsRouteWithChildren,
-  ManagementStorepacksRoute: ManagementStorepacksRoute,
+  ManagementStorepacksRoute: ManagementStorepacksRouteWithChildren,
 }
 
 const ManagementRouteWithChildren = ManagementRoute._addFileChildren(

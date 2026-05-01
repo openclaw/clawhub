@@ -1717,6 +1717,109 @@ export const getStorePackMigrationStatus = query({
   },
 });
 
+export const getStorePackReleaseForStaff = query({
+  args: { releaseId: v.id("packageReleases") },
+  handler: async (ctx, args) => {
+    const { user } = await requireUser(ctx);
+    assertModerator(user);
+
+    const release = await ctx.db.get(args.releaseId);
+    if (!release || release.softDeletedAt) return null;
+    const pkg = await ctx.db.get(release.packageId);
+    if (!pkg || pkg.softDeletedAt || pkg.family === "skill") return null;
+
+    const [artifacts, failures, searchIndexRows] = await Promise.all([
+      ctx.db
+        .query("packageReleaseArtifacts")
+        .withIndex("by_release", (q) => q.eq("releaseId", release._id))
+        .collect(),
+      ctx.db
+        .query("packageStorePackBackfillFailures")
+        .withIndex("by_release", (q) => q.eq("releaseId", release._id))
+        .collect(),
+      ctx.db
+        .query("packageStorePackSearchIndex")
+        .withIndex("by_release", (q) => q.eq("releaseId", release._id))
+        .collect(),
+    ]);
+
+    return {
+      package: {
+        packageId: pkg._id,
+        name: pkg.name,
+        displayName: pkg.displayName,
+        family: pkg.family,
+        channel: pkg.channel,
+        isOfficial: pkg.isOfficial,
+        scanStatus: pkg.scanStatus ?? "not-run",
+        updatedAt: pkg.updatedAt,
+      },
+      release: {
+        releaseId: release._id,
+        version: release.version,
+        createdAt: release.createdAt,
+        fileCount: release.files.length,
+        fileSample: release.files.slice(0, 50).map((file) => ({
+          path: file.path,
+          size: file.size,
+          sha256: file.sha256,
+        })),
+        storepackStorageId: release.storepackStorageId ?? null,
+        storepackSha256: release.storepackSha256 ?? null,
+        storepackSize: release.storepackSize ?? null,
+        storepackSpecVersion: release.storepackSpecVersion ?? null,
+        storepackFormat: release.storepackFormat ?? null,
+        storepackFileCount: release.storepackFileCount ?? null,
+        storepackManifestSha256: release.storepackManifestSha256 ?? null,
+        storepackBuiltAt: release.storepackBuiltAt ?? null,
+        storepackBuildVersion: release.storepackBuildVersion ?? null,
+        storepackRevokedAt: release.storepackRevokedAt ?? null,
+        storepackRevocationReason: release.storepackRevocationReason ?? null,
+        hostTargetsSummary: release.hostTargetsSummary ?? [],
+        environmentSummary: release.environmentSummary ?? null,
+        source: packageReleaseSourceSummary(release.source),
+        verificationScanStatus: release.verification?.scanStatus ?? null,
+        vtStatus: release.vtAnalysis?.status ?? null,
+        vtVerdict: release.vtAnalysis?.verdict ?? null,
+        llmStatus: release.llmAnalysis?.status ?? null,
+        llmVerdict: release.llmAnalysis?.verdict ?? null,
+        staticScanStatus: release.staticScan?.status ?? null,
+        staticScanSummary: release.staticScan?.summary ?? null,
+        staticScanReasonCodes: release.staticScan?.reasonCodes ?? [],
+      },
+      artifacts: artifacts.map((artifact) => ({
+        artifactId: artifact._id,
+        kind: artifact.kind,
+        targetKey: artifact.targetKey ?? null,
+        storageId: artifact.storageId,
+        sha256: artifact.sha256,
+        size: artifact.size,
+        format: artifact.format,
+        status: artifact.status,
+        createdAt: artifact.createdAt,
+        revokedAt: artifact.revokedAt ?? null,
+        revocationReason: artifact.revocationReason ?? null,
+      })),
+      failures: failures.map((failure) => ({
+        failureId: failure._id,
+        error: failure.error,
+        attemptCount: failure.attemptCount,
+        firstFailedAt: failure.firstFailedAt,
+        lastAttemptAt: failure.lastAttemptAt,
+        lastFailedAt: failure.lastFailedAt,
+        resolvedAt: failure.resolvedAt ?? null,
+      })),
+      searchIndexRows: searchIndexRows.map((row) => ({
+        rowId: row._id,
+        kind: row.kind,
+        key: row.key,
+        updatedAt: row.updatedAt,
+        createdAt: row.createdAt,
+      })),
+    };
+  },
+});
+
 export const getStorePackMigrationStatusInternal = internalQuery({
   args: { limit: v.optional(v.number()) },
   handler: async (ctx, args) => {

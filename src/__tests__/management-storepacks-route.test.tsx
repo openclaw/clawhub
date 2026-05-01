@@ -10,6 +10,7 @@ vi.mock("@tanstack/react-router", () => ({
     __config: config,
     __path: path,
   }),
+  Outlet: () => <div data-testid="outlet" />,
   Link: ({
     children,
     to,
@@ -19,6 +20,7 @@ vi.mock("@tanstack/react-router", () => ({
     params?: Record<string, string>;
     search?: Record<string, unknown>;
   }) => <a href={to}>{children}</a>,
+  useRouterState: () => "/management/storepacks",
 }));
 
 const useQueryMock = vi.fn();
@@ -115,6 +117,7 @@ describe("StorePack management route", () => {
     expect(screen.getByText("Build missing artifacts")).toBeTruthy();
     expect(screen.getByText("Retry failed builds")).toBeTruthy();
     expect(screen.getByText("Rebuild lookup index")).toBeTruthy();
+    expect(screen.getAllByText("Details").length).toBeGreaterThanOrEqual(2);
 
     fireEvent.click(screen.getByRole("button", { name: "Dry-run sample" }));
 
