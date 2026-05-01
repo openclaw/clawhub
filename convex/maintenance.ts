@@ -14,7 +14,11 @@ import {
 } from "./lib/skillQuality";
 import { hashSkillFiles, isTextFile } from "./lib/skills";
 import { computeIsSuspicious } from "./lib/skillSafety";
-import { extractDigestFields, normalizeSkillSearchText } from "./lib/skillSearchDigest";
+import {
+  extractDigestFields,
+  getFirstSearchToken,
+  normalizeSkillSearchText,
+} from "./lib/skillSearchDigest";
 import { generateSkillSummary } from "./lib/skillSummary";
 
 const DEFAULT_BATCH_SIZE = 50;
@@ -2334,14 +2338,23 @@ export const backfillDigestNormalizedSearchFields = internalMutation({
     let patched = 0;
     for (const digest of page) {
       const normalizedSlug = normalizeSkillSearchText(digest.slug);
+      const normalizedSlugFirstToken = getFirstSearchToken(digest.slug);
       const normalizedDisplayName = normalizeSkillSearchText(digest.displayName);
+      const normalizedDisplayNameFirstToken = getFirstSearchToken(digest.displayName);
       if (
         digest.normalizedSlug === normalizedSlug &&
-        digest.normalizedDisplayName === normalizedDisplayName
+        digest.normalizedSlugFirstToken === normalizedSlugFirstToken &&
+        digest.normalizedDisplayName === normalizedDisplayName &&
+        digest.normalizedDisplayNameFirstToken === normalizedDisplayNameFirstToken
       ) {
         continue;
       }
-      await ctx.db.patch(digest._id, { normalizedSlug, normalizedDisplayName });
+      await ctx.db.patch(digest._id, {
+        normalizedSlug,
+        normalizedSlugFirstToken,
+        normalizedDisplayName,
+        normalizedDisplayNameFirstToken,
+      });
       patched++;
     }
 

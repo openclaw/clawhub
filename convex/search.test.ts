@@ -153,7 +153,12 @@ describe("search helpers", () => {
       scienceClawSkills.map((skill) => skill.slug),
     );
     expect(ctx.usedIndexes).toEqual(
-      expect.arrayContaining(["by_active_normalized_slug", "by_active_normalized_display_name"]),
+      expect.arrayContaining([
+        "by_active_normalized_slug",
+        "by_active_normalized_display_name",
+        "by_active_normalized_slug_first_token",
+        "by_active_normalized_display_name_first_token",
+      ]),
     );
   });
 
@@ -1411,11 +1416,14 @@ function makeLexicalCtx(params: {
 }
 
 function makeDirectPrefixCtx(skills: Array<ReturnType<typeof makeSkillDoc>>) {
+  const firstToken = (value: string) => value.toLowerCase().match(/[a-z0-9]+/)?.[0];
   const digestRows = skills.map((skill) => ({
     ...skill,
     skillId: skill._id,
     normalizedSlug: skill.slug.toLowerCase(),
+    normalizedSlugFirstToken: firstToken(skill.slug),
     normalizedDisplayName: skill.displayName.toLowerCase(),
+    normalizedDisplayNameFirstToken: firstToken(skill.displayName),
     ownerHandle: "owner",
     ownerName: "Owner",
     ownerDisplayName: "Owner",
@@ -1442,9 +1450,15 @@ function makeDirectPrefixCtx(skills: Array<ReturnType<typeof makeSkillDoc>>) {
             builder(q);
             return {
               take: vi.fn(async () => {
-                const field = index.includes("slug") ? "normalizedSlug" : "normalizedDisplayName";
+                const field = index.includes("first_token")
+                  ? index.includes("slug")
+                    ? "normalizedSlugFirstToken"
+                    : "normalizedDisplayNameFirstToken"
+                  : index.includes("slug")
+                    ? "normalizedSlug"
+                    : "normalizedDisplayName";
                 const prefix = range[field] ?? "";
-                return digestRows.filter((digest) => digest[field].startsWith(prefix));
+                return digestRows.filter((digest) => (digest[field] ?? "").startsWith(prefix));
               }),
             };
           },

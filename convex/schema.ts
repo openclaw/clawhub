@@ -673,8 +673,10 @@ const skillSearchDigest = defineTable({
   skillId: v.id("skills"),
   slug: v.string(),
   normalizedSlug: v.optional(v.string()),
+  normalizedSlugFirstToken: v.optional(v.string()),
   displayName: v.string(),
   normalizedDisplayName: v.optional(v.string()),
+  normalizedDisplayNameFirstToken: v.optional(v.string()),
   summary: v.optional(v.string()),
   ownerUserId: v.id("users"),
   ownerPublisherId: v.optional(v.id("publishers")),
@@ -717,6 +719,11 @@ const skillSearchDigest = defineTable({
   .index("by_active_name", ["softDeletedAt", "displayName"])
   .index("by_active_normalized_slug", ["softDeletedAt", "normalizedSlug"])
   .index("by_active_normalized_display_name", ["softDeletedAt", "normalizedDisplayName"])
+  .index("by_active_normalized_slug_first_token", ["softDeletedAt", "normalizedSlugFirstToken"])
+  .index("by_active_normalized_display_name_first_token", [
+    "softDeletedAt",
+    "normalizedDisplayNameFirstToken",
+  ])
   .index("by_active_stats_downloads", ["softDeletedAt", "statsDownloads", "updatedAt"])
   .index("by_active_stats_stars", ["softDeletedAt", "statsStars", "updatedAt"])
   .index("by_active_stats_installs_all_time", [
@@ -732,6 +739,16 @@ const skillSearchDigest = defineTable({
     "softDeletedAt",
     "isSuspicious",
     "normalizedDisplayName",
+  ])
+  .index("by_nonsuspicious_normalized_slug_first_token", [
+    "softDeletedAt",
+    "isSuspicious",
+    "normalizedSlugFirstToken",
+  ])
+  .index("by_nonsuspicious_normalized_display_name_first_token", [
+    "softDeletedAt",
+    "isSuspicious",
+    "normalizedDisplayNameFirstToken",
   ])
   .index("by_nonsuspicious_downloads", [
     "softDeletedAt",
