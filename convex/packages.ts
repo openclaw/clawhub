@@ -106,6 +106,9 @@ const internalRefs = internal as unknown as {
     backfillPackageReleaseScansInternal: unknown;
     revokeStorePackArtifactForStaffInternal: unknown;
     getStorePackBackfillBatchInternal: unknown;
+    getStorePackSearchIndexBackfillBatchInternal: unknown;
+    syncStorePackSearchIndexForReleaseInternal: unknown;
+    backfillStorePackSearchIndexInternal: unknown;
     scanPackageReleaseStaticallyInternal: unknown;
     insertReleaseInternal: unknown;
     getPackageByNameInternal: unknown;
@@ -2867,6 +2870,114 @@ export const backfillStorePackArtifacts = action({
     return await runActionRef(ctx, internalRefs.packages.backfillStorePackArtifactsInternal, {
       actorUserId: userId,
       limit: args.limit,
+    });
+  },
+});
+
+export const getStorePackSearchIndexBackfillBatchInternal = internalQuery({
+  args: {
+    cursor: v.optional(v.string()),
+    limit: v.number(),
+  },
+  handler: async (ctx, args) => {
+    const page = await ctx.db
+      .query("packageReleases")
+      .withIndex("by_storepack_built_at")
+      .order("desc")
+      .paginate({
+        cursor: args.cursor ?? null,
+        numItems: Math.max(1, Math.min(args.limit, 100)),
+      });
+    return {
+      releases: page.page
+        .filter(
+          (release) =>
+            !release.softDeletedAt && release.storepackStorageId && !release.storepackRevokedAt,
+        )
+        .map((release) => ({ releaseId: release._id })),
+      continueCursor: page.continueCursor,
+      isDone: page.isDone,
+    };
+  },
+});
+
+export const syncStorePackSearchIndexForReleaseInternal = internalMutation({
+  args: { releaseId: v.id("packageReleases") },
+  handler: async (ctx, args) => {
+    const release = await ctx.db.get(args.releaseId);
+    if (!release || release.softDeletedAt || !release.storepackStorageId) {
+      return { ok: true as const, skipped: true as const, reason: "release-not-indexable" };
+    }
+    const pkg = await ctx.db.get(release.packageId);
+    if (!pkg || pkg.softDeletedAt || pkg.family === "skill") {
+      return { ok: true as const, skipped: true as const, reason: "package-not-indexable" };
+    }
+    await replaceStorePackSearchIndexRows(ctx, pkg, release);
+    return { ok: true as const, skipped: false as const, releaseId: release._id };
+  },
+});
+
+export const backfillStorePackSearchIndexInternal = internalAction({
+  args: {
+    actorUserId: v.id("users"),
+    limit: v.optional(v.number()),
+    cursor: v.optional(v.string()),
+  },
+  handler: async (ctx, args) => {
+    const actor = await runQueryRef<Doc<"users"> | null>(ctx, internalRefs.users.getByIdInternal, {
+      userId: args.actorUserId,
+    });
+    if (!actor) throw new ConvexError("Actor not found");
+    assertAdmin(actor);
+    const limit = Math.max(1, Math.min(args.limit ?? 25, 100));
+    const batch = await runQueryRef<{
+      releases: Array<{ releaseId: Id<"packageReleases"> }>;
+      continueCursor: string;
+      isDone: boolean;
+    }>(ctx, internalRefs.packages.getStorePackSearchIndexBackfillBatchInternal, {
+      limit,
+      cursor: args.cursor,
+    });
+    const results = [];
+    for (const release of batch.releases) {
+      try {
+        const result = await runMutationRef(
+          ctx,
+          internalRefs.packages.syncStorePackSearchIndexForReleaseInternal,
+          { releaseId: release.releaseId },
+        );
+        results.push({ releaseId: release.releaseId, ok: true as const, result });
+      } catch (error) {
+        results.push({
+          releaseId: release.releaseId,
+          ok: false as const,
+          error: errorMessage(error),
+        });
+      }
+    }
+    return {
+      processed: results.length,
+      succeeded: results.filter((result) => result.ok).length,
+      failed: results.filter((result) => !result.ok).length,
+      results,
+      continueCursor: batch.continueCursor,
+      isDone: batch.isDone,
+    };
+  },
+});
+
+export const backfillStorePackSearchIndex = action({
+  args: {
+    limit: v.optional(v.number()),
+    cursor: v.optional(v.string()),
+  },
+  handler: async (ctx, args) => {
+    const { user, userId } = await requireUserFromAction(ctx);
+    assertAdmin(user);
+    return await runActionRef(ctx, internalRefs.packages.backfillStorePackSearchIndexInternal, {
+      actorUserId: userId,
+      limit: args.limit,
+      cursor: args.cursor,
     });
   },
 });

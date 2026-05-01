@@ -61,6 +61,7 @@ const internalRefs = internal as unknown as {
     setTrustedPublisherForUserInternal: unknown;
     deleteTrustedPublisherForUserInternal: unknown;
     backfillStorePackArtifactsInternal: unknown;
+    backfillStorePackSearchIndexInternal: unknown;
     getStorePackMigrationStatusInternal: unknown;
     revokeStorePackArtifactForStaffInternal: unknown;
     getReleasesByIdsInternal: unknown;
@@ -1218,6 +1219,43 @@ export async function packagesPostRouterV1Handler(ctx: ActionCtx, request: Reque
     } catch (error) {
       return text(
         error instanceof Error ? error.message : "StorePack backfill failed",
+        400,
+        rate.headers,
+      );
+    }
+  }
+
+  if (segments[0] === "storepack" && segments[1] === "index-backfill" && segments.length === 2) {
+    const rate = await applyRateLimit(ctx, request, "write");
+    if (!rate.ok) return rate.response;
+    const auth = await requireApiTokenUserOrResponse(ctx, request, rate.headers);
+    if (!auth.ok) return auth.response;
+    const admin = requireAdminOrResponse(auth.user, rate.headers);
+    if (!admin.ok) return admin.response;
+    const body = await request.json().catch(() => ({}));
+    const rawLimit =
+      body && typeof body === "object" && "limit" in body
+        ? Number((body as { limit?: unknown }).limit)
+        : undefined;
+    const cursor =
+      body && typeof body === "object" && typeof (body as { cursor?: unknown }).cursor === "string"
+        ? (body as { cursor: string }).cursor
+        : undefined;
+    const limit = Number.isFinite(rawLimit) ? rawLimit : undefined;
+    try {
+      const result = await runActionRef(
+        ctx,
+        internalRefs.packages.backfillStorePackSearchIndexInternal,
+        {
+          actorUserId: auth.userId,
+          ...(limit ? { limit } : {}),
+          ...(cursor ? { cursor } : {}),
+        },
+      );
+      return json(result, 200, rate.headers);
+    } catch (error) {
+      return text(
+        error instanceof Error ? error.message : "StorePack index backfill failed",
         400,
         rate.headers,
       );

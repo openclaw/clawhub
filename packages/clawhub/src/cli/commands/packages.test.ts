@@ -34,6 +34,7 @@ const {
   cmdGetPackageTrustedPublisher,
   cmdInspectPackage,
   cmdPackageStorePackBackfill,
+  cmdPackageStorePackIndexBackfill,
   cmdPackageStorePackMigrationStatus,
   cmdPackageStorePackRevoke,
   cmdPublishPackage,
@@ -375,6 +376,32 @@ describe("package commands", () => {
     );
     expect(mockLog).toHaveBeenCalledWith("StorePack backfill");
     expect(mockLog).toHaveBeenCalledWith("Succeeded: 2");
+  });
+
+  it("runs StorePack index backfill batches for admins", async () => {
+    httpMocks.apiRequest.mockResolvedValueOnce({
+      processed: 2,
+      succeeded: 2,
+      failed: 0,
+      results: [],
+      continueCursor: "cursor:2",
+      isDone: false,
+    });
+
+    await cmdPackageStorePackIndexBackfill(makeOpts(), { limit: 2, cursor: "cursor:1" });
+
+    expect(httpMocks.apiRequest).toHaveBeenCalledWith(
+      "https://clawhub.ai",
+      {
+        method: "POST",
+        path: "/api/v1/packages/storepack/index-backfill",
+        token: "tkn",
+        body: { limit: 2, cursor: "cursor:1" },
+      },
+      undefined,
+    );
+    expect(mockLog).toHaveBeenCalledWith("StorePack index backfill");
+    expect(mockLog).toHaveBeenCalledWith("Next cursor: cursor:2");
   });
 
   it("revokes StorePack artifacts for moderators", async () => {

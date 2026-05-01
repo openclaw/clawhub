@@ -22,6 +22,7 @@ import {
   cmdDownloadPackage,
   cmdDeletePackageTrustedPublisher,
   cmdPackageStorePackBackfill,
+  cmdPackageStorePackIndexBackfill,
   cmdPackageStorePackMigrationStatus,
   cmdPackageStorePackRevoke,
   cmdPublishPackage,
@@ -468,6 +469,17 @@ packageStorePackCmd
   .action(async (options) => {
     const opts = await resolveGlobalOpts();
     await cmdPackageStorePackBackfill(opts, options);
+  });
+
+packageStorePackCmd
+  .command("index-backfill")
+  .description("Backfill StorePack host and environment lookup indexes")
+  .option("--limit <n>", "Batch size", (value) => Number.parseInt(value, 10), 25)
+  .option("--cursor <cursor>", "Continue cursor from the previous batch")
+  .option("--json", "Output JSON")
+  .action(async (options) => {
+    const opts = await resolveGlobalOpts();
+    await cmdPackageStorePackIndexBackfill(opts, options);
   });
 
 packageStorePackCmd

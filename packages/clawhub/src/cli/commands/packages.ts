@@ -95,6 +95,7 @@ type PackageVerifyOptions = {
 
 type PackageStorePackMigrationOptions = {
   limit?: number;
+  cursor?: string;
   json?: boolean;
 };
 
@@ -699,6 +700,35 @@ export async function cmdPackageStorePackBackfill(
   console.log(`Processed: ${formatUnknownScalar(result.processed)}`);
   console.log(`Succeeded: ${formatUnknownScalar(result.succeeded)}`);
   console.log(`Failed: ${formatUnknownScalar(result.failed)}`);
+}
+
+export async function cmdPackageStorePackIndexBackfill(
+  opts: GlobalOpts,
+  options: PackageStorePackMigrationOptions = {},
+) {
+  const token = await requireAuthToken();
+  const registry = await getRegistry(opts, { cache: true });
+  const result = await apiRequest<Record<string, unknown>>(registry, {
+    method: "POST",
+    path: `${ApiRoutes.packages}/storepack/index-backfill`,
+    token,
+    body: {
+      ...(typeof options.limit === "number" && Number.isFinite(options.limit)
+        ? { limit: options.limit }
+        : {}),
+      ...(options.cursor?.trim() ? { cursor: options.cursor.trim() } : {}),
+    },
+  });
+  if (options.json) {
+    process.stdout.write(`${JSON.stringify(result, null, 2)}\n`);
+    return;
+  }
+  console.log("StorePack index backfill");
+  console.log(`Processed: ${formatUnknownScalar(result.processed)}`);
+  console.log(`Succeeded: ${formatUnknownScalar(result.succeeded)}`);
+  console.log(`Failed: ${formatUnknownScalar(result.failed)}`);
+  console.log(`Next cursor: ${formatUnknownScalar(result.continueCursor)}`);
+  console.log(`Done: ${formatUnknownScalar(result.isDone)}`);
 }
 
 export async function cmdPackageStorePackRevoke(
