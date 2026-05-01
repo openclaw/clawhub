@@ -3,6 +3,7 @@ import { useMutation, useQuery } from "convex/react";
 import { useState } from "react";
 import { api } from "../../../convex/_generated/api";
 import type { Id } from "../../../convex/_generated/dataModel";
+import { ManagementAccessNotice } from "../../components/ManagementAccessNotice";
 import { Badge } from "../../components/ui/badge";
 import { Button } from "../../components/ui/button";
 import { Card } from "../../components/ui/card";
@@ -96,11 +97,7 @@ export function PluginModerationRoute() {
   }) => Promise<unknown>;
 
   if (!staff) {
-    return (
-      <main className="section">
-        <Card>Management only.</Card>
-      </main>
-    );
+    return <ManagementAccessNotice me={me} />;
   }
 
   const normalizedLimit = Math.max(1, Math.min(limit, 100));

@@ -143,7 +143,8 @@ describe("plugin moderation route", () => {
 
     renderRoute();
 
-    expect(screen.getByText("Management only.")).toBeTruthy();
+    expect(screen.getByText("Management access required")).toBeTruthy();
+    expect(screen.getByText(/role user/i)).toBeTruthy();
     expect(useQueryMock).toHaveBeenCalledWith(expect.anything(), "skip");
   });
 });

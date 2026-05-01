@@ -133,6 +133,20 @@ describe("StorePack management route", () => {
     expect(screen.queryByText("Rebuild lookup index")).toBeNull();
   });
 
+  it("explains missing management role for non-staff users", () => {
+    useAuthStatusMock.mockReturnValue({
+      isAuthenticated: true,
+      isLoading: false,
+      me: { _id: "users:member", role: "user" },
+    });
+
+    renderRoute();
+
+    expect(screen.getByText("Management access required")).toBeTruthy();
+    expect(screen.getByText(/role user/i)).toBeTruthy();
+    expect(useQueryMock).toHaveBeenCalledWith(expect.anything(), "skip");
+  });
+
   it("confirms and runs failed build retries for admins", async () => {
     retryFailures.mockResolvedValueOnce({ processed: 1, succeeded: 1, failed: 0 });
     vi.spyOn(window, "confirm").mockReturnValueOnce(true);

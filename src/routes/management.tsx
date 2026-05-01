@@ -3,6 +3,7 @@ import { useAction, useMutation, useQuery } from "convex/react";
 import { useEffect, useState } from "react";
 import { api } from "../../convex/_generated/api";
 import type { Doc, Id } from "../../convex/_generated/dataModel";
+import { ManagementAccessNotice } from "../components/ManagementAccessNotice";
 import { Badge } from "../components/ui/badge";
 import { Button } from "../components/ui/button";
 import { Card } from "../components/ui/card";
@@ -283,11 +284,7 @@ function Management() {
   }, [userSearch]);
 
   if (!staff) {
-    return (
-      <main className="section">
-        <Card>Management only.</Card>
-      </main>
-    );
+    return <ManagementAccessNotice me={me} />;
   }
 
   if (!recentVersions || !reportedSkills || !duplicateCandidates) {

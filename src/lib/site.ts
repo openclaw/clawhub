@@ -23,8 +23,8 @@ export function normalizeClawHubSiteOrigin(value?: string | null) {
 
 export function getClawHubSiteUrl() {
   return (
-    normalizeClawHubSiteOrigin(getRuntimeEnv("VITE_SITE_URL")) ??
     getLocalBrowserOrigin() ??
+    normalizeClawHubSiteOrigin(getRuntimeEnv("VITE_SITE_URL")) ??
     DEFAULT_CLAWHUB_SITE_URL
   );
 }
