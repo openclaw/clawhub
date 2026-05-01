@@ -37,6 +37,7 @@ import { Route as CliAuthRouteImport } from './routes/cli/auth'
 import { Route as OwnerSlugRouteImport } from './routes/$owner/$slug'
 import { Route as OwnerSlugSettingsRouteImport } from './routes/$owner/$slug/settings'
 import { Route as PluginsNameSecurityScannerRouteImport } from './routes/plugins/$name/security/$scanner'
+import { Route as PluginsNameReleasesVersionRouteImport } from './routes/plugins/$name/releases/$version'
 import { Route as OwnerSlugSecurityScannerRouteImport } from './routes/$owner/$slug/security/$scanner'
 
 const UploadRoute = UploadRouteImport.update({
@@ -180,6 +181,12 @@ const PluginsNameSecurityScannerRoute =
     path: '/security/$scanner',
     getParentRoute: () => PluginsNameRoute,
   } as any)
+const PluginsNameReleasesVersionRoute =
+  PluginsNameReleasesVersionRouteImport.update({
+    id: '/releases/$version',
+    path: '/releases/$version',
+    getParentRoute: () => PluginsNameRoute,
+  } as any)
 const OwnerSlugSecurityScannerRoute =
   OwnerSlugSecurityScannerRouteImport.update({
     id: '/security/$scanner',
@@ -216,6 +223,7 @@ export interface FileRoutesByFullPath {
   '/users/': typeof UsersIndexRoute
   '/$owner/$slug/settings': typeof OwnerSlugSettingsRoute
   '/$owner/$slug/security/$scanner': typeof OwnerSlugSecurityScannerRoute
+  '/plugins/$name/releases/$version': typeof PluginsNameReleasesVersionRoute
   '/plugins/$name/security/$scanner': typeof PluginsNameSecurityScannerRoute
 }
 export interface FileRoutesByTo {
@@ -247,6 +255,7 @@ export interface FileRoutesByTo {
   '/users': typeof UsersIndexRoute
   '/$owner/$slug/settings': typeof OwnerSlugSettingsRoute
   '/$owner/$slug/security/$scanner': typeof OwnerSlugSecurityScannerRoute
+  '/plugins/$name/releases/$version': typeof PluginsNameReleasesVersionRoute
   '/plugins/$name/security/$scanner': typeof PluginsNameSecurityScannerRoute
 }
 export interface FileRoutesById {
@@ -279,6 +288,7 @@ export interface FileRoutesById {
   '/users/': typeof UsersIndexRoute
   '/$owner/$slug/settings': typeof OwnerSlugSettingsRoute
   '/$owner/$slug/security/$scanner': typeof OwnerSlugSecurityScannerRoute
+  '/plugins/$name/releases/$version': typeof PluginsNameReleasesVersionRoute
   '/plugins/$name/security/$scanner': typeof PluginsNameSecurityScannerRoute
 }
 export interface FileRouteTypes {
@@ -312,6 +322,7 @@ export interface FileRouteTypes {
     | '/users/'
     | '/$owner/$slug/settings'
     | '/$owner/$slug/security/$scanner'
+    | '/plugins/$name/releases/$version'
     | '/plugins/$name/security/$scanner'
   fileRoutesByTo: FileRoutesByTo
   to:
@@ -343,6 +354,7 @@ export interface FileRouteTypes {
     | '/users'
     | '/$owner/$slug/settings'
     | '/$owner/$slug/security/$scanner'
+    | '/plugins/$name/releases/$version'
     | '/plugins/$name/security/$scanner'
   id:
     | '__root__'
@@ -374,6 +386,7 @@ export interface FileRouteTypes {
     | '/users/'
     | '/$owner/$slug/settings'
     | '/$owner/$slug/security/$scanner'
+    | '/plugins/$name/releases/$version'
     | '/plugins/$name/security/$scanner'
   fileRoutesById: FileRoutesById
 }
@@ -604,6 +617,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof PluginsNameSecurityScannerRouteImport
       parentRoute: typeof PluginsNameRoute
     }
+    '/plugins/$name/releases/$version': {
+      id: '/plugins/$name/releases/$version'
+      path: '/releases/$version'
+      fullPath: '/plugins/$name/releases/$version'
+      preLoaderRoute: typeof PluginsNameReleasesVersionRouteImport
+      parentRoute: typeof PluginsNameRoute
+    }
     '/$owner/$slug/security/$scanner': {
       id: '/$owner/$slug/security/$scanner'
       path: '/security/$scanner'
@@ -629,10 +649,12 @@ const OwnerSlugRouteWithChildren = OwnerSlugRoute._addFileChildren(
 )
 
 interface PluginsNameRouteChildren {
+  PluginsNameReleasesVersionRoute: typeof PluginsNameReleasesVersionRoute
   PluginsNameSecurityScannerRoute: typeof PluginsNameSecurityScannerRoute
 }
 
 const PluginsNameRouteChildren: PluginsNameRouteChildren = {
+  PluginsNameReleasesVersionRoute: PluginsNameReleasesVersionRoute,
   PluginsNameSecurityScannerRoute: PluginsNameSecurityScannerRoute,
 }
 

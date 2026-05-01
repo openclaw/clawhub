@@ -220,7 +220,7 @@ function PluginDetailRoute() {
     isAuthenticated && detail.package ? { name: detail.package.name } : "skip",
   ) as ComponentProps<typeof DetailSecuritySummary>["rescanState"] | undefined;
 
-  if (pathname.includes("/security/")) {
+  if (pathname.includes("/security/") || pathname.includes("/releases/")) {
     return <Outlet />;
   }
 
@@ -490,6 +490,24 @@ function PluginDetailRoute() {
                     </div>
                   ) : null}
                 </dl>
+                {latestRelease?.version && storepack.available ? (
+                  <div className="mt-4 flex flex-wrap gap-2 border-t border-[color:var(--line)] pt-4">
+                    <Button asChild variant="outline" size="sm">
+                      <Link
+                        to="/plugins/$name/releases/$version"
+                        params={{ name: pkg.name, version: latestRelease.version }}
+                      >
+                        Inspect release
+                      </Link>
+                    </Button>
+                    <Button asChild variant="ghost" size="sm">
+                      <a href={getPackageDownloadPath(pkg.name, latestRelease.version)}>
+                        <Download size={16} />
+                        Download StorePack
+                      </a>
+                    </Button>
+                  </div>
+                ) : null}
               </CardContent>
             </Card>
           ) : null}
