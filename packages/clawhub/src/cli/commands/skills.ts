@@ -39,6 +39,27 @@ function isSafeSkillSlug(slug: string) {
   return Boolean(slug) && !slug.includes("/") && !slug.includes("\\") && !slug.includes("..");
 }
 
+function isPinnedSkillEntry(entry?: { pinned?: boolean | null }) {
+  return entry?.pinned === true;
+}
+
+function withPinnedMetadata(
+  version: string | null,
+  installedAt: number,
+  existing?: { pinned?: boolean; pinReason?: string },
+) {
+  return {
+    version,
+    installedAt,
+    ...(existing?.pinned ? { pinned: true } : {}),
+    ...(existing?.pinned && existing.pinReason ? { pinReason: existing.pinReason } : {}),
+  };
+}
+
+function formatPinnedDetails(entry?: { pinReason?: string }) {
+  return entry?.pinReason ? ` (${entry.pinReason})` : "";
+}
+
 export async function cmdSearch(opts: GlobalOpts, query: string, limit?: number) {
   if (!query) fail("Query required");
 
@@ -152,11 +173,12 @@ export async function cmdInstall(
     });
 
     const lock = await readLockfile(opts.workdir);
-    lock.skills[trimmed] = {
-      version: resolvedVersion,
-      installedAt: Date.now(),
-    };
+    const existingEntry = lock.skills[trimmed];
+    lock.skills[trimmed] = withPinnedMetadata(resolvedVersion, Date.now(), existingEntry);
     await writeLockfile(opts.workdir, lock);
+    if (isPinnedSkillEntry(existingEntry)) {
+      console.log(`${trimmed} is pinned; reinstall will not change pin state`);
+    }
     spinner.succeed(`OK. Installed ${trimmed} -> ${target}`);
   } catch (error) {
     spinner.fail(formatError(error));
@@ -176,14 +198,30 @@ export async function cmdUpdate(
   if (slug && all) fail("Use either <slug> or --all");
   if (options.version && !slug) fail("--version requires a single <slug>");
   if (options.version && !semver.valid(options.version)) fail("--version must be valid semver");
+  const lock = await readLockfile(opts.workdir);
+  if (slug && isPinnedSkillEntry(lock.skills[slug])) {
+    fail(`skill "${slug}" is pinned; run \`clawhub unpin ${slug}\` first`);
+  }
   const allowPrompt = isInteractive() && inputAllowed;
 
   const token = await getOptionalAuthToken();
 
   const registry = await getRegistry(opts, { cache: true });
-  const lock = await readLockfile(opts.workdir);
-  const slugs = slug ? [slug] : Object.keys(lock.skills).filter(isSafeSkillSlug);
+  const requestedSlugs = slug ? [slug] : Object.keys(lock.skills).filter(isSafeSkillSlug);
+  const skippedPinned = slug
+    ? []
+    : requestedSlugs.filter((entry) => isPinnedSkillEntry(lock.skills[entry]));
+  const slugs = slug
+    ? requestedSlugs
+    : requestedSlugs.filter((entry) => !isPinnedSkillEntry(lock.skills[entry]));
   if (slugs.length === 0) {
+    if (skippedPinned.length > 0) {
+      const suffix = skippedPinned.length === 1 ? "" : "s";
+      console.log(
+        `Skipped ${skippedPinned.length} pinned skill${suffix}: ${skippedPinned.join(", ")}`,
+      );
+      return;
+    }
     console.log("No installed skills.");
     return;
   }
@@ -247,10 +285,11 @@ export async function cmdUpdate(
       const matched = resolveResult.match?.version ?? null;
 
       if (matched && lock.skills[entry]?.version !== matched) {
-        lock.skills[entry] = {
-          version: matched,
-          installedAt: lock.skills[entry]?.installedAt ?? Date.now(),
-        };
+        lock.skills[entry] = withPinnedMetadata(
+          matched,
+          lock.skills[entry]?.installedAt ?? Date.now(),
+          lock.skills[entry],
+        );
       }
 
       if (!latest) {
@@ -303,7 +342,7 @@ export async function cmdUpdate(
         installedAt: existingOrigin?.installedAt ?? Date.now(),
       });
 
-      lock.skills[entry] = { version: targetVersion, installedAt: Date.now() };
+      lock.skills[entry] = withPinnedMetadata(targetVersion, Date.now(), lock.skills[entry]);
       spinner.succeed(`${entry}: updated -> ${targetVersion}`);
     } catch (error) {
       spinner.fail(formatError(error));
@@ -312,6 +351,12 @@ export async function cmdUpdate(
   }
 
   await writeLockfile(opts.workdir, lock);
+  if (skippedPinned.length > 0) {
+    const suffix = skippedPinned.length === 1 ? "" : "s";
+    console.log(
+      `Skipped ${skippedPinned.length} pinned skill${suffix}: ${skippedPinned.join(", ")}`,
+    );
+  }
 }
 
 export async function cmdList(opts: GlobalOpts) {
@@ -323,7 +368,8 @@ export async function cmdList(opts: GlobalOpts) {
     return;
   }
   for (const [slug, entry] of entries) {
-    console.log(`${slug}  ${entry.version ?? "latest"}`);
+    const pinned = isPinnedSkillEntry(entry) ? `  pinned${formatPinnedDetails(entry)}` : "";
+    console.log(`${slug}  ${entry.version ?? "latest"}${pinned}`);
   }
   if (manualSkills.length > 0) {
     if (entries.length > 0) console.log();
@@ -332,6 +378,46 @@ export async function cmdList(opts: GlobalOpts) {
       console.log(`  ${slug}`);
     }
   }
+}
+
+export async function cmdPin(
+  opts: GlobalOpts,
+  slug: string,
+  options: { reason?: string } = {},
+) {
+  const trimmed = normalizeSkillSlugOrFail(slug);
+  const lock = await readLockfile(opts.workdir);
+  const existing = lock.skills[trimmed];
+  if (!existing) fail(`Not installed: ${trimmed}`);
+
+  const reason = options.reason?.trim() || existing.pinReason;
+  if (isPinnedSkillEntry(existing) && reason === existing.pinReason) {
+    console.log(`Skill "${trimmed}" is already pinned${reason ? `: ${reason}` : ""}`);
+    return;
+  }
+
+  lock.skills[trimmed] = {
+    ...existing,
+    pinned: true,
+    ...(reason ? { pinReason: reason } : {}),
+  };
+  await writeLockfile(opts.workdir, lock);
+  console.log(`Pinned ${trimmed}${reason ? `: ${reason}` : ""}`);
+}
+
+export async function cmdUnpin(opts: GlobalOpts, slug: string) {
+  const trimmed = normalizeSkillSlugOrFail(slug);
+  const lock = await readLockfile(opts.workdir);
+  const existing = lock.skills[trimmed];
+  if (!existing) fail(`Not installed: ${trimmed}`);
+  if (!isPinnedSkillEntry(existing)) fail(`Skill "${trimmed}" is not pinned`);
+
+  lock.skills[trimmed] = {
+    version: existing.version,
+    installedAt: existing.installedAt,
+  };
+  await writeLockfile(opts.workdir, lock);
+  console.log(`Unpinned ${trimmed}`);
 }
 
 export async function cmdUninstall(
