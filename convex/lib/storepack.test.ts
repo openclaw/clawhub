@@ -113,7 +113,10 @@ describe("storepack", () => {
     const unzipped = unzipSync(built.bytes);
     const manifest = JSON.parse(decoder.decode(unzipped["package/STOREPACK.json"]));
 
-    expect(Object.keys(unzipped).sort()).toEqual(["package/STOREPACK.json", "package/package.json"]);
+    expect(Object.keys(unzipped).sort()).toEqual([
+      "package/STOREPACK.json",
+      "package/package.json",
+    ]);
     expect(manifest.forged).toBeUndefined();
     expect(manifest.files).toHaveLength(1);
     expect(built.fileCount).toBe(2);

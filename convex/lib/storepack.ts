@@ -104,11 +104,7 @@ function stringArray(value: unknown) {
 }
 
 function normalizeHostTarget(raw: string): StorePackHostTarget | null {
-  const parts = raw
-    .trim()
-    .toLowerCase()
-    .split(/[-_/]/)
-    .filter(Boolean);
+  const parts = raw.trim().toLowerCase().split(/[-_/]/).filter(Boolean);
   const os = parts.find((part) => part === "darwin" || part === "linux" || part === "win32");
   const arch = parts.find((part) => part === "arm64" || part === "x64");
   const libc = parts.find((part) => part === "glibc" || part === "musl");

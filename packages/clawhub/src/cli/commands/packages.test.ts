@@ -306,9 +306,7 @@ describe("package commands", () => {
       const sha256 = createHash("sha256").update(zip).digest("hex");
 
       await cmdVerifyPackageStorePack(file, { sha256, json: true });
-      expect(mockWrite.mock.calls.map((call) => String(call[0])).join("")).toContain(
-        `"ok": true`,
-      );
+      expect(mockWrite.mock.calls.map((call) => String(call[0])).join("")).toContain(`"ok": true`);
       await expect(cmdVerifyPackageStorePack(file, { sha256: "0".repeat(64) })).rejects.toThrow(
         "StorePack digest mismatch",
       );
