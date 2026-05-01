@@ -106,6 +106,11 @@ type PackageStorePackMigrationOptions = {
   json?: boolean;
 };
 
+type PackageStorePackMigrationRunOptions = PackageStorePackMigrationOptions & {
+  operation?: string;
+  status?: string;
+};
+
 type PackageStorePackRevokeOptions = {
   reason?: string;
   json?: boolean;
@@ -795,6 +800,122 @@ export async function cmdPackageStorePackMigrationReadiness(
   }
 }
 
+export async function cmdPackageStorePackMigrationDryRun(
+  opts: GlobalOpts,
+  options: PackageStorePackMigrationRunOptions = {},
+) {
+  const token = await requireAuthToken();
+  const registry = await getRegistry(opts, { cache: true });
+  const url = registryUrl(`${ApiRoutes.packages}/storepack/migration-runs/dry-run`, registry);
+  url.searchParams.set("operation", options.operation?.trim() || "artifact-backfill");
+  if (typeof options.limit === "number" && Number.isFinite(options.limit)) {
+    url.searchParams.set("limit", String(options.limit));
+  }
+  if (options.cursor?.trim()) url.searchParams.set("cursor", options.cursor.trim());
+  const result = await apiRequest<Record<string, unknown>>(registry, {
+    method: "GET",
+    url: url.toString(),
+    token,
+  });
+  if (options.json) {
+    process.stdout.write(`${JSON.stringify(result, null, 2)}\n`);
+    return;
+  }
+  console.log("StorePack migration dry-run");
+  console.log(`Operation: ${formatUnknownScalar(result.operation)}`);
+  console.log(`Candidates: ${formatUnknownScalar(result.candidateCount)}`);
+  console.log(`Open failures: ${formatUnknownScalar(result.failureCount)}`);
+  console.log(`Next cursor: ${formatUnknownScalar(result.continueCursor)}`);
+  console.log(`Done: ${formatUnknownScalar(result.isDone)}`);
+}
+
+export async function cmdPackageStorePackMigrationRuns(
+  opts: GlobalOpts,
+  options: PackageStorePackMigrationRunOptions = {},
+) {
+  const token = await requireAuthToken();
+  const registry = await getRegistry(opts, { cache: true });
+  const url = registryUrl(`${ApiRoutes.packages}/storepack/migration-runs`, registry);
+  if (typeof options.limit === "number" && Number.isFinite(options.limit)) {
+    url.searchParams.set("limit", String(options.limit));
+  }
+  if (options.status?.trim()) url.searchParams.set("status", options.status.trim());
+  const result = await apiRequest<
+    { items?: Array<Record<string, unknown>> } & Record<string, unknown>
+  >(registry, {
+    method: "GET",
+    url: url.toString(),
+    token,
+  });
+  if (options.json) {
+    process.stdout.write(`${JSON.stringify(result, null, 2)}\n`);
+    return;
+  }
+  console.log("StorePack migration runs");
+  for (const run of result.items ?? []) {
+    console.log(formatStorePackMigrationRunLine(run));
+  }
+}
+
+export async function cmdPackageStorePackMigrationRunCreate(
+  opts: GlobalOpts,
+  options: PackageStorePackMigrationRunOptions = {},
+) {
+  const token = await requireAuthToken();
+  const registry = await getRegistry(opts, { cache: true });
+  const result = await apiRequest<Record<string, unknown>>(registry, {
+    method: "POST",
+    path: `${ApiRoutes.packages}/storepack/migration-runs`,
+    token,
+    body: {
+      operation: options.operation?.trim() || "artifact-backfill",
+      ...(typeof options.limit === "number" && Number.isFinite(options.limit)
+        ? { limit: options.limit }
+        : {}),
+      ...(options.cursor?.trim() ? { cursor: options.cursor.trim() } : {}),
+    },
+  });
+  if (options.json) {
+    process.stdout.write(`${JSON.stringify(result, null, 2)}\n`);
+    return;
+  }
+  console.log("StorePack migration run created");
+  console.log(formatStorePackMigrationRunLine(result));
+}
+
+export async function cmdPackageStorePackMigrationRunContinue(
+  opts: GlobalOpts,
+  runId: string,
+  options: Pick<PackageStorePackMigrationRunOptions, "json"> = {},
+) {
+  const trimmedRunId = runId.trim();
+  if (!trimmedRunId) fail("Run id required");
+  const token = await requireAuthToken();
+  const registry = await getRegistry(opts, { cache: true });
+  const result = await apiRequest<{
+    run?: Record<string, unknown> | null;
+    result?: Record<string, unknown> | null;
+    error?: string;
+  }>(registry, {
+    method: "POST",
+    path: `${ApiRoutes.packages}/storepack/migration-runs/${encodeURIComponent(trimmedRunId)}/continue`,
+    token,
+  });
+  if (options.json) {
+    process.stdout.write(`${JSON.stringify(result, null, 2)}\n`);
+    return;
+  }
+  console.log("StorePack migration run continued");
+  if (result.run) console.log(formatStorePackMigrationRunLine(result.run));
+  if (result.result) {
+    console.log(`Processed: ${formatUnknownScalar(result.result.processed)}`);
+    console.log(`Succeeded: ${formatUnknownScalar(result.result.succeeded)}`);
+    console.log(`Failed: ${formatUnknownScalar(result.result.failed)}`);
+    console.log(`Next cursor: ${formatUnknownScalar(result.result.continueCursor)}`);
+  }
+  if (result.error) console.log(`Error: ${result.error}`);
+}
+
 export async function cmdPackageStorePackBackfill(
   opts: GlobalOpts,
   options: PackageStorePackMigrationOptions = {},
@@ -971,6 +1092,16 @@ function formatUnknownScalar(value: unknown) {
   if (typeof value === "number" && Number.isFinite(value)) return String(value);
   if (typeof value === "boolean") return String(value);
   return "unknown";
+}
+
+function formatStorePackMigrationRunLine(run: Record<string, unknown>) {
+  const id = formatUnknownScalar(run._id);
+  const operation = formatUnknownScalar(run.operation);
+  const status = formatUnknownScalar(run.status);
+  const processed = formatUnknownScalar(run.processed);
+  const failed = formatUnknownScalar(run.failed);
+  const cursor = formatUnknownScalar(run.continueCursor ?? run.cursor);
+  return `${id}  ${operation}  ${status}  processed=${processed} failed=${failed} cursor=${cursor}`;
 }
 
 function formatPackageLine(item: {

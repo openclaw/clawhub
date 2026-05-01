@@ -35,7 +35,11 @@ const {
   cmdInspectPackage,
   cmdPackageStorePackBackfill,
   cmdPackageStorePackIndexBackfill,
+  cmdPackageStorePackMigrationDryRun,
   cmdPackageStorePackMigrationReadiness,
+  cmdPackageStorePackMigrationRunContinue,
+  cmdPackageStorePackMigrationRunCreate,
+  cmdPackageStorePackMigrationRuns,
   cmdPackageStorePackMigrationStatus,
   cmdPackageStorePackRetryFailures,
   cmdPackageStorePackRevoke,
@@ -486,6 +490,118 @@ describe("package commands", () => {
     expect(mockLog).toHaveBeenCalledWith(
       "opik: storepack-missing -> @opik/opik-openclaw [storepack-missing]",
     );
+  });
+
+  it("fetches StorePack migration dry-run candidates for admins", async () => {
+    httpMocks.apiRequest.mockResolvedValueOnce({
+      operation: "artifact-backfill",
+      candidateCount: 1,
+      failureCount: 0,
+      isDone: false,
+      candidates: [{ name: "demo-plugin", version: "1.0.0" }],
+    });
+
+    await cmdPackageStorePackMigrationDryRun(makeOpts(), {
+      operation: "artifact-backfill",
+      limit: 5,
+      json: true,
+    });
+
+    const request = httpMocks.apiRequest.mock.calls[0]?.[1] as
+      | { method?: string; url?: string; token?: string }
+      | undefined;
+    expect(request?.method).toBe("GET");
+    expect(request?.token).toBe("tkn");
+    const url = new URL(String(request?.url));
+    expect(url.pathname).toBe("/api/v1/packages/storepack/migration-runs/dry-run");
+    expect(url.searchParams.get("operation")).toBe("artifact-backfill");
+    expect(url.searchParams.get("limit")).toBe("5");
+    expect(mockWrite.mock.calls.map((call) => String(call[0])).join("")).toContain(
+      "candidateCount",
+    );
+  });
+
+  it("lists StorePack migration runs for admins", async () => {
+    httpMocks.apiRequest.mockResolvedValueOnce({
+      items: [
+        {
+          _id: "storePackMigrationRuns:1",
+          operation: "failure-retry",
+          status: "pending",
+          processed: 0,
+          failed: 0,
+        },
+      ],
+    });
+
+    await cmdPackageStorePackMigrationRuns(makeOpts(), { status: "pending", limit: 10 });
+
+    const request = httpMocks.apiRequest.mock.calls[0]?.[1] as
+      | { method?: string; url?: string; token?: string }
+      | undefined;
+    expect(request?.method).toBe("GET");
+    const url = new URL(String(request?.url));
+    expect(url.pathname).toBe("/api/v1/packages/storepack/migration-runs");
+    expect(url.searchParams.get("status")).toBe("pending");
+    expect(url.searchParams.get("limit")).toBe("10");
+    expect(mockLog).toHaveBeenCalledWith("StorePack migration runs");
+    expect(mockLog).toHaveBeenCalledWith(
+      "storePackMigrationRuns:1  failure-retry  pending  processed=0 failed=0 cursor=unknown",
+    );
+  });
+
+  it("creates and continues StorePack migration runs for admins", async () => {
+    httpMocks.apiRequest
+      .mockResolvedValueOnce({
+        _id: "storePackMigrationRuns:1",
+        operation: "search-index-backfill",
+        status: "pending",
+        processed: 0,
+        failed: 0,
+        cursor: "cursor:1",
+      })
+      .mockResolvedValueOnce({
+        run: {
+          _id: "storePackMigrationRuns:1",
+          operation: "search-index-backfill",
+          status: "completed",
+          processed: 2,
+          failed: 0,
+        },
+        result: { processed: 2, succeeded: 2, failed: 0 },
+      });
+
+    await cmdPackageStorePackMigrationRunCreate(makeOpts(), {
+      operation: "search-index-backfill",
+      limit: 2,
+      cursor: "cursor:1",
+    });
+    await cmdPackageStorePackMigrationRunContinue(makeOpts(), "storePackMigrationRuns:1");
+
+    expect(httpMocks.apiRequest).toHaveBeenNthCalledWith(
+      1,
+      "https://clawhub.ai",
+      {
+        method: "POST",
+        path: "/api/v1/packages/storepack/migration-runs",
+        token: "tkn",
+        body: { operation: "search-index-backfill", limit: 2, cursor: "cursor:1" },
+      },
+      undefined,
+    );
+    expect(httpMocks.apiRequest).toHaveBeenNthCalledWith(
+      2,
+      "https://clawhub.ai",
+      {
+        method: "POST",
+        path: "/api/v1/packages/storepack/migration-runs/storePackMigrationRuns%3A1/continue",
+        token: "tkn",
+      },
+      undefined,
+    );
+    expect(mockLog).toHaveBeenCalledWith("StorePack migration run created");
+    expect(mockLog).toHaveBeenCalledWith("StorePack migration run continued");
+    expect(mockLog).toHaveBeenCalledWith("Processed: 2");
   });
 
   it("runs StorePack backfill batches for admins", async () => {

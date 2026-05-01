@@ -24,6 +24,10 @@ import {
   cmdDeletePackageTrustedPublisher,
   cmdPackageStorePackBackfill,
   cmdPackageStorePackIndexBackfill,
+  cmdPackageStorePackMigrationDryRun,
+  cmdPackageStorePackMigrationRunContinue,
+  cmdPackageStorePackMigrationRunCreate,
+  cmdPackageStorePackMigrationRuns,
   cmdPackageStorePackMigrationReadiness,
   cmdPackageStorePackMigrationStatus,
   cmdPackageStorePackRetryFailures,
@@ -483,6 +487,59 @@ packageStorePackCmd
   .action(async (options) => {
     const opts = await resolveGlobalOpts();
     await cmdPackageStorePackMigrationReadiness(opts, options);
+  });
+
+packageStorePackCmd
+  .command("dry-run")
+  .description("Preview StorePack migration run candidates")
+  .option(
+    "--operation <operation>",
+    "artifact-backfill, failure-retry, or search-index-backfill",
+    "artifact-backfill",
+  )
+  .option("--limit <n>", "Sample size", (value) => Number.parseInt(value, 10), 10)
+  .option("--cursor <cursor>", "Continue cursor for search-index-backfill")
+  .option("--json", "Output JSON")
+  .action(async (options) => {
+    const opts = await resolveGlobalOpts();
+    await cmdPackageStorePackMigrationDryRun(opts, options);
+  });
+
+packageStorePackCmd
+  .command("runs")
+  .description("List StorePack migration run records")
+  .option("--status <status>", "pending, running, completed, or failed")
+  .option("--limit <n>", "Run limit", (value) => Number.parseInt(value, 10), 20)
+  .option("--json", "Output JSON")
+  .action(async (options) => {
+    const opts = await resolveGlobalOpts();
+    await cmdPackageStorePackMigrationRuns(opts, options);
+  });
+
+packageStorePackCmd
+  .command("create-run")
+  .description("Create a persistent StorePack migration run")
+  .option(
+    "--operation <operation>",
+    "artifact-backfill, failure-retry, or search-index-backfill",
+    "artifact-backfill",
+  )
+  .option("--limit <n>", "Batch size", (value) => Number.parseInt(value, 10), 10)
+  .option("--cursor <cursor>", "Initial cursor for search-index-backfill")
+  .option("--json", "Output JSON")
+  .action(async (options) => {
+    const opts = await resolveGlobalOpts();
+    await cmdPackageStorePackMigrationRunCreate(opts, options);
+  });
+
+packageStorePackCmd
+  .command("continue-run")
+  .description("Execute the next batch for a StorePack migration run")
+  .argument("<run-id>", "Migration run id")
+  .option("--json", "Output JSON")
+  .action(async (runId, options) => {
+    const opts = await resolveGlobalOpts();
+    await cmdPackageStorePackMigrationRunContinue(opts, runId, options);
   });
 
 packageStorePackCmd
