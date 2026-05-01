@@ -129,6 +129,50 @@ function uniqueTargets(targets: StorePackHostTarget[]) {
   return result;
 }
 
+function normalizeStorePackFilePath(path: string) {
+  const normalizedSeparators = path.trim().replaceAll("\\", "/");
+  if (!normalizedSeparators) return null;
+  if (
+    Array.from(normalizedSeparators).some((character) => {
+      const codePoint = character.codePointAt(0) ?? 0;
+      return codePoint <= 31 || codePoint === 127;
+    })
+  ) {
+    return null;
+  }
+  if (normalizedSeparators.startsWith("/") || normalizedSeparators.startsWith("//")) return null;
+  if (/^[a-zA-Z]:($|\/)/.test(normalizedSeparators)) return null;
+  if (normalizedSeparators.endsWith("/")) return null;
+
+  const segments = normalizedSeparators.split("/").filter(Boolean);
+  if (segments.length === 0) return null;
+  if (segments.some((segment) => segment === "." || segment === "..")) return null;
+
+  return segments.join("/");
+}
+
+function normalizeStorePackFiles(files: StorePackFile[]) {
+  const seen = new Map<string, string>();
+  const publishFiles: StorePackFile[] = [];
+  for (const file of files) {
+    const path = normalizeStorePackFilePath(file.path);
+    if (!path) {
+      throw new Error(`Invalid StorePack file path: ${file.path}`);
+    }
+    if (path.toLowerCase() === STOREPACK_MANIFEST_PATH.toLowerCase()) {
+      continue;
+    }
+    const collisionKey = path.toLowerCase();
+    const existingPath = seen.get(collisionKey);
+    if (existingPath) {
+      throw new Error(`Duplicate StorePack file path: ${existingPath} and ${path}`);
+    }
+    seen.set(collisionKey, path);
+    publishFiles.push({ ...file, path });
+  }
+  return publishFiles;
+}
+
 export function deriveStorePackHostTargets(input: {
   capabilities?: unknown;
   compatibility?: unknown;
@@ -204,9 +248,7 @@ export function deriveStorePackEnvironment(input: {
 }
 
 export async function buildStorePack(input: StorePackInput): Promise<BuiltStorePack> {
-  const publishFiles = input.files.filter(
-    (file) => file.path.trim().toLowerCase() !== STOREPACK_MANIFEST_PATH.toLowerCase(),
-  );
+  const publishFiles = normalizeStorePackFiles(input.files);
   const hostTargets = deriveStorePackHostTargets({
     capabilities: input.capabilities,
     compatibility: input.compatibility,

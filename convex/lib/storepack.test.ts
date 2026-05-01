@@ -123,6 +123,65 @@ describe("storepack", () => {
     expect(built.fileCount).toBe(2);
   });
 
+  it("normalizes archive separators before packing files", async () => {
+    const built = await makeStorePack({
+      files: [
+        {
+          path: "dist\\index.js",
+          size: 17,
+          sha256: "index-sha",
+          bytes: encoder.encode("export default {};"),
+        },
+      ],
+    });
+    const unzipped = unzipSync(built.bytes);
+    const manifest = JSON.parse(decoder.decode(unzipped[`package/${STOREPACK_MANIFEST_PATH}`]));
+
+    expect(Object.keys(unzipped).sort()).toEqual([
+      "package/STOREPACK.json",
+      "package/dist/index.js",
+    ]);
+    expect(manifest.files.map((file: { path: string }) => file.path)).toEqual(["dist/index.js"]);
+  });
+
+  it("rejects archive paths that can escape the package root", async () => {
+    for (const path of ["../evil.js", "dist/../../evil.js", "/tmp/evil.js", "C:\\tmp\\evil.js"]) {
+      await expect(
+        makeStorePack({
+          files: [
+            {
+              path,
+              size: 4,
+              sha256: "evil-sha",
+              bytes: encoder.encode("evil"),
+            },
+          ],
+        }),
+      ).rejects.toThrow("Invalid StorePack file path");
+    }
+  });
+
+  it("rejects case-insensitive duplicate archive paths", async () => {
+    await expect(
+      makeStorePack({
+        files: [
+          {
+            path: "dist/index.js",
+            size: 17,
+            sha256: "index-sha",
+            bytes: encoder.encode("export default {};"),
+          },
+          {
+            path: "dist/INDEX.js",
+            size: 17,
+            sha256: "index-upper-sha",
+            bytes: encoder.encode("export default {};"),
+          },
+        ],
+      }),
+    ).rejects.toThrow("Duplicate StorePack file path");
+  });
+
   it("packs a kitchen-sink OpenClaw plugin with cross-platform signals", async () => {
     const input = await makeKitchenSinkStorePackInput();
     const built = await buildStorePack(input);
