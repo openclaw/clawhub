@@ -8,6 +8,39 @@ import { ApiRoutes } from "clawhub-schema/routes";
 import { hasOwnProperty } from "./hasOwnProperty";
 import { getRequiredRuntimeEnv, getRuntimeEnv } from "./runtimeEnv";
 
+export type PackageStorePackSummary = {
+  available: boolean;
+  specVersion: number;
+  sha256: string | null;
+  size: number | null;
+  format: string | null;
+  fileCount: number | null;
+  manifestSha256: string | null;
+  builtAt: number | null;
+  buildVersion: string | null;
+  hostTargets?: Array<{
+    os: "darwin" | "linux" | "win32";
+    arch: "arm64" | "x64";
+    libc?: "glibc" | "musl";
+    nodeRange?: string;
+    openclawRange?: string;
+    pluginApiRange?: string;
+    supportState?: "supported" | "setup-required" | "unsupported";
+    unsupportedReason?: string;
+  }>;
+  environment: {
+    requiresLocalDesktop?: boolean;
+    requiresBrowser?: boolean;
+    requiresAudioDevice?: boolean;
+    requiresNetwork?: boolean;
+    requiresExternalServices?: string[];
+    requiresOsPermissions?: string[];
+    supportsRemoteHost?: boolean;
+    knownUnsupported?: string[];
+  } | null;
+  runtimeBundles: unknown[];
+};
+
 export type PackageListItem = {
   name: string;
   displayName: string;
@@ -23,6 +56,7 @@ export type PackageListItem = {
   capabilityTags?: string[];
   executesCode?: boolean;
   verificationTier?: string | null;
+  storepack?: PackageStorePackSummary;
 };
 
 export type PackageDetailResponse = ApiV1PackageResponse;
@@ -86,6 +120,7 @@ export type PackageVersionDetail = {
       engineVersion: string;
       checkedAt: number;
     } | null;
+    storepack?: PackageStorePackSummary;
   } | null;
 };
 

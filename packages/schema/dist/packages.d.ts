@@ -110,6 +110,61 @@ export declare const PackageStaticScanSchema: import("arktype/internal/variants/
     checkedAt: number;
 }, {}>;
 export type PackageStaticScan = (typeof PackageStaticScanSchema)[inferred];
+export declare const PackageHostTargetSchema: import("arktype/internal/variants/object.ts").ObjectType<{
+    os: "darwin" | "linux" | "win32";
+    arch: "arm64" | "x64";
+    libc?: "glibc" | "musl" | undefined;
+    nodeRange?: string | undefined;
+    openclawRange?: string | undefined;
+    pluginApiRange?: string | undefined;
+    supportState?: "supported" | "setup-required" | "unsupported" | undefined;
+    unsupportedReason?: string | undefined;
+}, {}>;
+export type PackageHostTarget = (typeof PackageHostTargetSchema)[inferred];
+export declare const PackageEnvironmentSummarySchema: import("arktype/internal/variants/object.ts").ObjectType<{
+    requiresLocalDesktop?: boolean | undefined;
+    requiresBrowser?: boolean | undefined;
+    requiresAudioDevice?: boolean | undefined;
+    requiresNetwork?: boolean | undefined;
+    requiresExternalServices?: string[] | undefined;
+    requiresOsPermissions?: string[] | undefined;
+    supportsRemoteHost?: boolean | undefined;
+    knownUnsupported?: string[] | undefined;
+}, {}>;
+export type PackageEnvironmentSummary = (typeof PackageEnvironmentSummarySchema)[inferred];
+export declare const PackageStorePackSummarySchema: import("arktype/internal/variants/object.ts").ObjectType<{
+    available: boolean;
+    specVersion: number | null;
+    format: string | null;
+    sha256: string | null;
+    size: number | null;
+    fileCount: number | null;
+    manifestSha256: string | null;
+    builtAt: number | null;
+    buildVersion: string | null;
+    hostTargets: {
+        os: "darwin" | "linux" | "win32";
+        arch: "arm64" | "x64";
+        libc?: "glibc" | "musl" | undefined;
+        nodeRange?: string | undefined;
+        openclawRange?: string | undefined;
+        pluginApiRange?: string | undefined;
+        supportState?: "supported" | "setup-required" | "unsupported" | undefined;
+        unsupportedReason?: string | undefined;
+    }[];
+    environment: {
+        requiresLocalDesktop?: boolean | undefined;
+        requiresBrowser?: boolean | undefined;
+        requiresAudioDevice?: boolean | undefined;
+        requiresNetwork?: boolean | undefined;
+        requiresExternalServices?: string[] | undefined;
+        requiresOsPermissions?: string[] | undefined;
+        supportsRemoteHost?: boolean | undefined;
+        knownUnsupported?: string[] | undefined;
+    } | null;
+    runtimeBundles: unknown[];
+}, {}>;
+export type PackageStorePackSummary = (typeof PackageStorePackSummarySchema)[inferred];
 export declare const BundlePublishMetadataSchema: import("arktype/internal/variants/object.ts").ObjectType<{
     id?: string | undefined;
     format?: string | undefined;
@@ -174,6 +229,38 @@ export declare const PackageListItemSchema: import("arktype/internal/variants/ob
     capabilityTags?: string[] | undefined;
     executesCode?: boolean | undefined;
     verificationTier?: "structural" | "source-linked" | "provenance-verified" | "rebuild-verified" | null | undefined;
+    storepack?: {
+        available: boolean;
+        specVersion: number | null;
+        format: string | null;
+        sha256: string | null;
+        size: number | null;
+        fileCount: number | null;
+        manifestSha256: string | null;
+        builtAt: number | null;
+        buildVersion: string | null;
+        hostTargets: {
+            os: "darwin" | "linux" | "win32";
+            arch: "arm64" | "x64";
+            libc?: "glibc" | "musl" | undefined;
+            nodeRange?: string | undefined;
+            openclawRange?: string | undefined;
+            pluginApiRange?: string | undefined;
+            supportState?: "supported" | "setup-required" | "unsupported" | undefined;
+            unsupportedReason?: string | undefined;
+        }[];
+        environment: {
+            requiresLocalDesktop?: boolean | undefined;
+            requiresBrowser?: boolean | undefined;
+            requiresAudioDevice?: boolean | undefined;
+            requiresNetwork?: boolean | undefined;
+            requiresExternalServices?: string[] | undefined;
+            requiresOsPermissions?: string[] | undefined;
+            supportsRemoteHost?: boolean | undefined;
+            knownUnsupported?: string[] | undefined;
+        } | null;
+        runtimeBundles: unknown[];
+    } | undefined;
 }, {}>;
 export type PackageListItem = (typeof PackageListItemSchema)[inferred];
 export declare const ApiV1PackageListResponseSchema: import("arktype/internal/variants/object.ts").ObjectType<{
@@ -192,6 +279,38 @@ export declare const ApiV1PackageListResponseSchema: import("arktype/internal/va
         capabilityTags?: string[] | undefined;
         executesCode?: boolean | undefined;
         verificationTier?: "structural" | "source-linked" | "provenance-verified" | "rebuild-verified" | null | undefined;
+        storepack?: {
+            available: boolean;
+            specVersion: number | null;
+            format: string | null;
+            sha256: string | null;
+            size: number | null;
+            fileCount: number | null;
+            manifestSha256: string | null;
+            builtAt: number | null;
+            buildVersion: string | null;
+            hostTargets: {
+                os: "darwin" | "linux" | "win32";
+                arch: "arm64" | "x64";
+                libc?: "glibc" | "musl" | undefined;
+                nodeRange?: string | undefined;
+                openclawRange?: string | undefined;
+                pluginApiRange?: string | undefined;
+                supportState?: "supported" | "setup-required" | "unsupported" | undefined;
+                unsupportedReason?: string | undefined;
+            }[];
+            environment: {
+                requiresLocalDesktop?: boolean | undefined;
+                requiresBrowser?: boolean | undefined;
+                requiresAudioDevice?: boolean | undefined;
+                requiresNetwork?: boolean | undefined;
+                requiresExternalServices?: string[] | undefined;
+                requiresOsPermissions?: string[] | undefined;
+                supportsRemoteHost?: boolean | undefined;
+                knownUnsupported?: string[] | undefined;
+            } | null;
+            runtimeBundles: unknown[];
+        } | undefined;
     }[];
     nextCursor: string | null;
 }, {}>;
@@ -214,6 +333,38 @@ export declare const ApiV1PackageSearchResponseSchema: import("arktype/internal/
             capabilityTags?: string[] | undefined;
             executesCode?: boolean | undefined;
             verificationTier?: "structural" | "source-linked" | "provenance-verified" | "rebuild-verified" | null | undefined;
+            storepack?: {
+                available: boolean;
+                specVersion: number | null;
+                format: string | null;
+                sha256: string | null;
+                size: number | null;
+                fileCount: number | null;
+                manifestSha256: string | null;
+                builtAt: number | null;
+                buildVersion: string | null;
+                hostTargets: {
+                    os: "darwin" | "linux" | "win32";
+                    arch: "arm64" | "x64";
+                    libc?: "glibc" | "musl" | undefined;
+                    nodeRange?: string | undefined;
+                    openclawRange?: string | undefined;
+                    pluginApiRange?: string | undefined;
+                    supportState?: "supported" | "setup-required" | "unsupported" | undefined;
+                    unsupportedReason?: string | undefined;
+                }[];
+                environment: {
+                    requiresLocalDesktop?: boolean | undefined;
+                    requiresBrowser?: boolean | undefined;
+                    requiresAudioDevice?: boolean | undefined;
+                    requiresNetwork?: boolean | undefined;
+                    requiresExternalServices?: string[] | undefined;
+                    requiresOsPermissions?: string[] | undefined;
+                    supportsRemoteHost?: boolean | undefined;
+                    knownUnsupported?: string[] | undefined;
+                } | null;
+                runtimeBundles: unknown[];
+            } | undefined;
         };
     }[];
 }, {}>;
@@ -268,6 +419,38 @@ export declare const ApiV1PackageResponseSchema: import("arktype/internal/varian
             hasProvenance?: boolean | undefined;
             scanStatus?: "clean" | "suspicious" | "malicious" | "pending" | "not-run" | undefined;
         } | null | undefined;
+        storepack?: {
+            available: boolean;
+            specVersion: number | null;
+            format: string | null;
+            sha256: string | null;
+            size: number | null;
+            fileCount: number | null;
+            manifestSha256: string | null;
+            builtAt: number | null;
+            buildVersion: string | null;
+            hostTargets: {
+                os: "darwin" | "linux" | "win32";
+                arch: "arm64" | "x64";
+                libc?: "glibc" | "musl" | undefined;
+                nodeRange?: string | undefined;
+                openclawRange?: string | undefined;
+                pluginApiRange?: string | undefined;
+                supportState?: "supported" | "setup-required" | "unsupported" | undefined;
+                unsupportedReason?: string | undefined;
+            }[];
+            environment: {
+                requiresLocalDesktop?: boolean | undefined;
+                requiresBrowser?: boolean | undefined;
+                requiresAudioDevice?: boolean | undefined;
+                requiresNetwork?: boolean | undefined;
+                requiresExternalServices?: string[] | undefined;
+                requiresOsPermissions?: string[] | undefined;
+                supportsRemoteHost?: boolean | undefined;
+                knownUnsupported?: string[] | undefined;
+            } | null;
+            runtimeBundles: unknown[];
+        } | undefined;
         stats?: {
             downloads: number;
             installs: number;
@@ -379,6 +562,38 @@ export declare const ApiV1PackageVersionResponseSchema: import("arktype/internal
             engineVersion: string;
             checkedAt: number;
         } | null | undefined;
+        storepack?: {
+            available: boolean;
+            specVersion: number | null;
+            format: string | null;
+            sha256: string | null;
+            size: number | null;
+            fileCount: number | null;
+            manifestSha256: string | null;
+            builtAt: number | null;
+            buildVersion: string | null;
+            hostTargets: {
+                os: "darwin" | "linux" | "win32";
+                arch: "arm64" | "x64";
+                libc?: "glibc" | "musl" | undefined;
+                nodeRange?: string | undefined;
+                openclawRange?: string | undefined;
+                pluginApiRange?: string | undefined;
+                supportState?: "supported" | "setup-required" | "unsupported" | undefined;
+                unsupportedReason?: string | undefined;
+            }[];
+            environment: {
+                requiresLocalDesktop?: boolean | undefined;
+                requiresBrowser?: boolean | undefined;
+                requiresAudioDevice?: boolean | undefined;
+                requiresNetwork?: boolean | undefined;
+                requiresExternalServices?: string[] | undefined;
+                requiresOsPermissions?: string[] | undefined;
+                supportsRemoteHost?: boolean | undefined;
+                knownUnsupported?: string[] | undefined;
+            } | null;
+            runtimeBundles: unknown[];
+        } | undefined;
     } | null;
 }, {}>;
 export type ApiV1PackageVersionResponse = (typeof ApiV1PackageVersionResponseSchema)[inferred];

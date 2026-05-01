@@ -19,9 +19,11 @@ import {
   cmdExplorePackages,
   cmdGetPackageTrustedPublisher,
   cmdInspectPackage,
+  cmdDownloadPackage,
   cmdDeletePackageTrustedPublisher,
   cmdPublishPackage,
   cmdSetPackageTrustedPublisher,
+  cmdVerifyPackageStorePack,
 } from "./cli/commands/packages.js";
 import { cmdPublish } from "./cli/commands/publish.js";
 import { cmdRescanPackage, cmdRescanSkill } from "./cli/commands/rescan.js";
@@ -397,6 +399,42 @@ packageCmd
   .action(async (name, options) => {
     const opts = await resolveGlobalOpts();
     await cmdInspectPackage(opts, name, options);
+  });
+
+packageCmd
+  .command("download")
+  .description("Download a package StorePack artifact")
+  .argument("<name>", "Package name")
+  .option("--version <version>", "Version to download")
+  .option("--tag <tag>", "Tag to download")
+  .option("-o, --output <path>", "Output path")
+  .option("--json", "Output JSON")
+  .action(async (name, options) => {
+    const opts = await resolveGlobalOpts();
+    await cmdDownloadPackage(opts, name, options);
+  });
+
+packageCmd
+  .command("verify")
+  .description("Verify a downloaded StorePack artifact")
+  .argument("<file>", "StorePack ZIP path")
+  .option("--sha256 <digest>", "Expected StorePack SHA-256")
+  .option("--json", "Output JSON")
+  .action(async (file, options) => {
+    await cmdVerifyPackageStorePack(file, options);
+  });
+
+packageCmd
+  .command("storepack")
+  .description("Alias for package download")
+  .argument("<name>", "Package name")
+  .option("--version <version>", "Version to download")
+  .option("--tag <tag>", "Tag to download")
+  .option("-o, --output <path>", "Output path")
+  .option("--json", "Output JSON")
+  .action(async (name, options) => {
+    const opts = await resolveGlobalOpts();
+    await cmdDownloadPackage(opts, name, options);
   });
 
 packageCmd

@@ -55,6 +55,7 @@ import {
 import { tokenize } from "./lib/searchText";
 import { hashSkillFiles } from "./lib/skills";
 import { runStaticPublishScan } from "./lib/staticPublishScan";
+import { buildStorePack, sha256Hex, toArrayBuffer } from "./lib/storepack";
 import { getLatestPackageRescanTarget, insertPackageRescanRequest } from "./model/packages/rescans";
 import {
   assertCanRequestRescan,
@@ -89,6 +90,7 @@ const internalRefs = internal as unknown as {
     evaluatePackageReleaseWithLlm: unknown;
   };
   packages: {
+    attachStorePackArtifactInternal: unknown;
     backfillPackageReleaseScansInternal: unknown;
     scanPackageReleaseStaticallyInternal: unknown;
     insertReleaseInternal: unknown;
@@ -2185,6 +2187,33 @@ async function publishPackageImpl(
     source: effectiveSource,
   });
 
+  const storepack = await buildAndStorePackageReleaseStorePack(ctx, {
+    packageId: publishResult.packageId,
+    releaseId: publishResult.releaseId,
+    name,
+    owner: payload.ownerHandle ?? null,
+    version,
+    family,
+    channel: payload.channel ?? existingPackage?.channel ?? "community",
+    source: effectiveSource,
+    compatibility: codeArtifacts?.compatibility ?? bundleArtifacts?.compatibility,
+    capabilities: codeArtifacts?.capabilities ?? bundleArtifacts?.capabilities,
+    verification,
+    files,
+  });
+  await runMutationRef(ctx, internalRefs.packages.attachStorePackArtifactInternal, {
+    packageId: publishResult.packageId,
+    releaseId: publishResult.releaseId,
+    storageId: storepack.storageId,
+    sha256: storepack.sha256,
+    size: storepack.size,
+    fileCount: storepack.fileCount,
+    manifestSha256: storepack.manifestSha256,
+    hostTargets: storepack.hostTargets,
+    environment: storepack.environment,
+    builtAt: storepack.builtAt,
+  });
+
   if (auth.kind === "github-actions") {
     await runMutationRef(ctx, internalRefs.packagePublishTokens.revokeInternal, {
       tokenId: auth.publishToken._id,
@@ -2239,6 +2268,69 @@ async function publishPackageImpl(
   });
 
   return publishResult;
+}
+
+async function buildAndStorePackageReleaseStorePack(
+  ctx: Pick<ActionCtx, "storage">,
+  input: {
+    packageId: Id<"packages">;
+    releaseId: Id<"packageReleases">;
+    name: string;
+    owner: string | null;
+    version: string;
+    family: "skill" | "code-plugin" | "bundle-plugin";
+    channel: "official" | "community" | "private";
+    source?: unknown;
+    compatibility?: unknown;
+    capabilities?: unknown;
+    verification?: unknown;
+    files: Array<{
+      path: string;
+      size: number;
+      storageId: string;
+      sha256: string;
+      contentType?: string;
+    }>;
+  },
+) {
+  const files = [];
+  for (const file of input.files) {
+    const blob = await ctx.storage.get(file.storageId as Id<"_storage">);
+    if (!blob) throw new ConvexError(`Missing stored package file: ${file.path}`);
+    const bytes = new Uint8Array(await blob.arrayBuffer());
+    const actualSha256 = await sha256Hex(bytes);
+    if (actualSha256 !== file.sha256) {
+      throw new ConvexError(`Stored package file hash mismatch: ${file.path}`);
+    }
+    files.push({
+      path: file.path,
+      size: file.size,
+      sha256: file.sha256,
+      bytes,
+      ...(file.contentType ? { contentType: file.contentType } : {}),
+    });
+  }
+  const builtAt = Date.now();
+  const storepack = await buildStorePack({
+    packageId: input.packageId,
+    releaseId: input.releaseId,
+    name: input.name,
+    owner: input.owner,
+    slug: input.name,
+    version: input.version,
+    family: input.family,
+    channel: input.channel,
+    publishedAt: builtAt,
+    source: input.source,
+    compatibility: input.compatibility,
+    capabilities: input.capabilities,
+    verification: input.verification,
+    files,
+  });
+  const storageId = await ctx.storage.store(
+    new Blob([toArrayBuffer(storepack.bytes)], { type: "application/zip" }),
+  );
+  return { ...storepack, storageId, builtAt };
 }
 
 export const publishPackage = action({
@@ -2563,6 +2655,62 @@ export const insertReleaseInternal = internalMutation({
     };
   },
 });
+
+export const attachStorePackArtifactInternal = internalMutation({
+  args: {
+    packageId: v.id("packages"),
+    releaseId: v.id("packageReleases"),
+    storageId: v.id("_storage"),
+    sha256: v.string(),
+    size: v.number(),
+    fileCount: v.number(),
+    manifestSha256: v.string(),
+    hostTargets: v.array(v.any()),
+    environment: v.any(),
+    builtAt: v.number(),
+  },
+  handler: async (ctx, args) => {
+    const release = await ctx.db.get(args.releaseId);
+    if (!release || release.packageId !== args.packageId || release.softDeletedAt) {
+      throw new ConvexError("Package release not found");
+    }
+    const now = Date.now();
+    const existing = await ctx.db
+      .query("packageReleaseArtifacts")
+      .withIndex("by_release", (q) => q.eq("releaseId", args.releaseId))
+      .collect();
+    for (const artifact of existing) {
+      if (artifact.kind === "storepack" && artifact.status === "active") {
+        await ctx.db.patch(artifact._id, { status: "superseded" });
+      }
+    }
+    await ctx.db.insert("packageReleaseArtifacts", {
+      packageId: args.packageId,
+      releaseId: args.releaseId,
+      kind: "storepack",
+      storageId: args.storageId,
+      sha256: args.sha256,
+      size: args.size,
+      format: "zip",
+      status: "active",
+      createdAt: now,
+    });
+    await ctx.db.patch(args.releaseId, {
+      storepackStorageId: args.storageId,
+      storepackSha256: args.sha256,
+      storepackSize: args.size,
+      storepackSpecVersion: 1,
+      storepackFormat: "zip",
+      storepackFileCount: args.fileCount,
+      storepackManifestSha256: args.manifestSha256,
+      storepackBuiltAt: args.builtAt,
+      storepackBuildVersion: "clawhub-storepack-v1",
+      hostTargetsSummary: args.hostTargets,
+      environmentSummary: args.environment,
+    });
+  },
+});
+
 function isReleaseActive(release: Doc<"packageReleases"> | null | undefined) {
   return Boolean(release && !release.softDeletedAt);
 }

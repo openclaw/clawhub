@@ -29,6 +29,30 @@ const vtAnalysisValidator = v.object({
   checkedAt: v.number(),
 });
 
+const packageHostTargetValidator = v.object({
+  os: v.union(v.literal("darwin"), v.literal("linux"), v.literal("win32")),
+  arch: v.union(v.literal("arm64"), v.literal("x64")),
+  libc: v.optional(v.union(v.literal("glibc"), v.literal("musl"))),
+  nodeRange: v.optional(v.string()),
+  openclawRange: v.optional(v.string()),
+  pluginApiRange: v.optional(v.string()),
+  supportState: v.optional(
+    v.union(v.literal("supported"), v.literal("setup-required"), v.literal("unsupported")),
+  ),
+  unsupportedReason: v.optional(v.string()),
+});
+
+const packageEnvironmentSummaryValidator = v.object({
+  requiresLocalDesktop: v.optional(v.boolean()),
+  requiresBrowser: v.optional(v.boolean()),
+  requiresAudioDevice: v.optional(v.boolean()),
+  requiresNetwork: v.optional(v.boolean()),
+  requiresExternalServices: v.optional(v.array(v.string())),
+  requiresOsPermissions: v.optional(v.array(v.string())),
+  supportsRemoteHost: v.optional(v.boolean()),
+  knownUnsupported: v.optional(v.array(v.string())),
+});
+
 const depRegistryStatusValidator = v.union(
   v.literal("clean"),
   v.literal("suspicious"),
@@ -822,6 +846,17 @@ const packageReleases = defineTable({
   compatibility: packageCompatibilityValidator,
   capabilities: packageCapabilitiesValidator,
   verification: packageVerificationValidator,
+  storepackStorageId: v.optional(v.id("_storage")),
+  storepackSha256: v.optional(v.string()),
+  storepackSize: v.optional(v.number()),
+  storepackSpecVersion: v.optional(v.number()),
+  storepackFormat: v.optional(v.literal("zip")),
+  storepackFileCount: v.optional(v.number()),
+  storepackManifestSha256: v.optional(v.string()),
+  storepackBuiltAt: v.optional(v.number()),
+  storepackBuildVersion: v.optional(v.string()),
+  hostTargetsSummary: v.optional(v.array(packageHostTargetValidator)),
+  environmentSummary: v.optional(packageEnvironmentSummaryValidator),
   sha256hash: v.optional(v.string()),
   vtAnalysis: v.optional(vtAnalysisValidator),
   llmAnalysis: v.optional(
@@ -876,6 +911,29 @@ const packageReleases = defineTable({
   .index("by_active_created", ["softDeletedAt", "createdAt"])
   .index("by_package_version", ["packageId", "version"])
   .index("by_sha256hash", ["sha256hash"]);
+
+const packageReleaseArtifacts = defineTable({
+  packageId: v.id("packages"),
+  releaseId: v.id("packageReleases"),
+  kind: v.union(
+    v.literal("storepack"),
+    v.literal("runtime-bundle"),
+    v.literal("scan-report"),
+    v.literal("sbom"),
+  ),
+  targetKey: v.optional(v.string()),
+  storageId: v.id("_storage"),
+  sha256: v.string(),
+  size: v.number(),
+  format: v.string(),
+  createdAt: v.number(),
+  status: v.union(v.literal("active"), v.literal("superseded"), v.literal("revoked")),
+})
+  .index("by_release", ["releaseId"])
+  .index("by_package_kind", ["packageId", "kind"])
+  .index("by_sha256", ["sha256"])
+  .index("by_target_key", ["targetKey"])
+  .index("by_status", ["status"]);
 
 const packageTrustedPublishers = defineTable({
   packageId: v.id("packages"),
@@ -1466,6 +1524,7 @@ export default defineSchema({
   skillSlugAliases,
   packages,
   packageReleases,
+  packageReleaseArtifacts,
   packageTrustedPublishers,
   packagePublishTokens,
   packageBadges,

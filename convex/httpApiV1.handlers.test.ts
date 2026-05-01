@@ -3715,6 +3715,86 @@ describe("httpApiV1 handlers", () => {
     });
   });
 
+  it("package download serves the stored StorePack artifact when present", async () => {
+    const runMutation = vi.fn().mockResolvedValue(okRate());
+    const runQuery = vi.fn(async (_query: unknown, args: Record<string, unknown>) => {
+      if ("name" in args) {
+        return {
+          package: {
+            _id: "packages:1",
+            name: "@openclaw/kitchen-sink",
+            displayName: "Kitchen Sink",
+            family: "code-plugin",
+            tags: {},
+            latestReleaseId: "packageReleases:1",
+            channel: "official",
+            isOfficial: true,
+            createdAt: 1,
+            updatedAt: 1,
+          },
+          latestRelease: null,
+          owner: { _id: "publishers:openclaw", handle: "openclaw" },
+        };
+      }
+      if ("releaseId" in args) {
+        return {
+          _id: "packageReleases:1",
+          version: "1.0.0",
+          createdAt: 1,
+          changelog: "init",
+          files: [
+            {
+              path: "package.json",
+              size: 2,
+              sha256: "a".repeat(64),
+              storageId: "storage:file",
+              contentType: "application/json",
+            },
+          ],
+          storepackStorageId: "storage:storepack",
+          storepackSha256: "ab".repeat(32),
+          storepackSize: 13,
+          storepackSpecVersion: 1,
+        };
+      }
+      return null;
+    });
+    const storageGet = vi.fn(async (storageId: string) => {
+      if (storageId === "storage:storepack") {
+        return new Blob(["storepack zip"], { type: "application/zip" });
+      }
+      throw new Error(`unexpected storage read: ${storageId}`);
+    });
+
+    const response = await __handlers.packagesGetRouterV1Handler(
+      makeCtx({
+        runQuery,
+        runMutation,
+        storage: {
+          get: storageGet,
+        },
+      }),
+      new Request("https://example.com/api/v1/packages/%40openclaw%2Fkitchen-sink/download"),
+    );
+
+    expect(response.status).toBe(200);
+    expect(await response.text()).toBe("storepack zip");
+    expect(storageGet).toHaveBeenCalledTimes(1);
+    expect(storageGet).toHaveBeenCalledWith("storage:storepack");
+    expect(response.headers.get("Content-Disposition")).toBe(
+      'attachment; filename="@openclaw-kitchen-sink-1.0.0.storepack.zip"',
+    );
+    expect(response.headers.get("ETag")).toBe(`"sha256:${"ab".repeat(32)}"`);
+    expect(response.headers.get("Digest")).toBe(
+      `sha-256=${Buffer.from("ab".repeat(32), "hex").toString("base64")}`,
+    );
+    expect(response.headers.get("X-ClawHub-StorePack-Sha256")).toBe("ab".repeat(32));
+    expect(response.headers.get("X-ClawHub-StorePack-Spec-Version")).toBe("1");
+    expect(runMutation).toHaveBeenCalledWith(internal.packages.recordPackageDownloadInternal, {
+      packageId: "packages:1",
+    });
+  });
+
   it("package download fails when any stored file is missing", async () => {
     const runMutation = vi.fn().mockResolvedValue(okRate());
     const runQuery = vi.fn(async (_query: unknown, args: Record<string, unknown>) => {

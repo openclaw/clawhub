@@ -1,7 +1,8 @@
 /* @vitest-environment node */
 
 import { spawnSync } from "node:child_process";
-import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
+import { createHash } from "node:crypto";
+import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { zipSync } from "fflate";
@@ -28,11 +29,13 @@ vi.mock("../ui.js", () => uiMocks.moduleFactory());
 
 const {
   cmdDeletePackageTrustedPublisher,
+  cmdDownloadPackage,
   cmdExplorePackages,
   cmdGetPackageTrustedPublisher,
   cmdInspectPackage,
   cmdPublishPackage,
   cmdSetPackageTrustedPublisher,
+  cmdVerifyPackageStorePack,
 } = await import("./packages");
 
 const mockLog = vi.spyOn(console, "log").mockImplementation(() => {});
@@ -205,6 +208,113 @@ describe("package commands", () => {
     expect(url.searchParams.get("path")).toBe("README.md");
     expect(url.searchParams.get("tag")).toBe("latest");
     expect(url.searchParams.get("version")).toBeNull();
+  });
+
+  it("prints StorePack metadata while inspecting a package", async () => {
+    httpMocks.apiRequest.mockResolvedValueOnce({
+      package: {
+        name: "demo",
+        displayName: "Demo",
+        family: "code-plugin",
+        runtimeId: "demo.plugin",
+        channel: "community",
+        isOfficial: false,
+        summary: null,
+        latestVersion: "2.0.0",
+        createdAt: 1,
+        updatedAt: 2,
+        tags: { latest: "2.0.0" },
+        compatibility: null,
+        capabilities: { executesCode: true },
+        verification: {
+          tier: "structural",
+          scope: "artifact-only",
+        },
+        storepack: {
+          available: true,
+          specVersion: 1,
+          format: "zip",
+          sha256: "a".repeat(64),
+          size: 123,
+          fileCount: 3,
+          manifestSha256: "b".repeat(64),
+          builtAt: 1_763_000_000_000,
+          buildVersion: "clawhub-storepack-v1",
+          hostTargets: [
+            { os: "darwin", arch: "arm64", supportState: "supported" },
+            { os: "linux", arch: "x64", libc: "glibc", supportState: "supported" },
+          ],
+          environment: { requiresNetwork: true },
+          runtimeBundles: [],
+        },
+      },
+      owner: null,
+    });
+
+    await cmdInspectPackage(makeOpts(), "demo", {});
+
+    expect(mockLog).toHaveBeenCalledWith("StorePack: available");
+    expect(mockLog).toHaveBeenCalledWith(`StorePack SHA-256: ${"a".repeat(64)}`);
+    expect(mockLog).toHaveBeenCalledWith("StorePack Targets: darwin-arm64, linux-x64-glibc");
+  });
+
+  it("downloads a StorePack package archive", async () => {
+    const workdir = await makeTmpWorkdir();
+    const bytes = new Uint8Array([1, 2, 3, 4]);
+    const fetchMock = vi.fn(async () => {
+      return new Response(bytes, {
+        headers: {
+          "content-disposition": 'attachment; filename="demo.storepack.zip"',
+          "x-clawhub-storepack-sha256": "c".repeat(64),
+          "x-clawhub-storepack-spec-version": "1",
+        },
+      });
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    try {
+      await cmdDownloadPackage(makeOpts(workdir), "demo", { json: true });
+
+      expect(fetchMock).toHaveBeenCalledWith(
+        new URL("https://clawhub.ai/api/v1/packages/demo/download"),
+        expect.objectContaining({
+          headers: expect.objectContaining({ Accept: "application/zip" }),
+        }),
+      );
+      expect(await readFile(join(workdir, "demo.storepack.zip"))).toEqual(Buffer.from(bytes));
+      expect(mockWrite.mock.calls.map((call) => String(call[0])).join("")).toContain(
+        `"storepackSha256": "${"c".repeat(64)}"`,
+      );
+    } finally {
+      await rm(workdir, { recursive: true, force: true });
+    }
+  });
+
+  it("verifies StorePack archives and rejects digest mismatches", async () => {
+    const workdir = await makeTmpWorkdir();
+    try {
+      const zip = zipSync({
+        "package/STOREPACK.json": new TextEncoder().encode(
+          JSON.stringify({
+            specVersion: 1,
+            package: { name: "demo", version: "1.0.0" },
+          }),
+        ),
+        "package/package.json": new TextEncoder().encode("{}"),
+      });
+      const file = join(workdir, "demo.storepack.zip");
+      await writeFile(file, zip);
+      const sha256 = createHash("sha256").update(zip).digest("hex");
+
+      await cmdVerifyPackageStorePack(file, { sha256, json: true });
+      expect(mockWrite.mock.calls.map((call) => String(call[0])).join("")).toContain(
+        `"ok": true`,
+      );
+      await expect(cmdVerifyPackageStorePack(file, { sha256: "0".repeat(64) })).rejects.toThrow(
+        "StorePack digest mismatch",
+      );
+    } finally {
+      await rm(workdir, { recursive: true, force: true });
+    }
   });
 
   it("publishes a code plugin package with an exact explicit payload", async () => {

@@ -1,5 +1,7 @@
-import { readFile, readdir, stat } from "node:fs/promises";
+import { createHash } from "node:crypto";
+import { mkdir, readFile, readdir, stat, writeFile } from "node:fs/promises";
 import { basename, join, relative, resolve, sep } from "node:path";
+import { unzipSync } from "fflate";
 import ignore from "ignore";
 import mime from "mime";
 import semver from "semver";
@@ -18,6 +20,7 @@ import {
   type PackageCapabilitySummary,
   type PackageCompatibility,
   type PackageFamily,
+  type PackageStorePackSummary,
   type PackageTrustedPublisher,
   type PackageVerificationSummary,
   validateOpenClawExternalCodePluginPackageJson,
@@ -73,6 +76,18 @@ type PackagePublishOptions = {
   sourceRef?: string;
   sourcePath?: string;
   dryRun?: boolean;
+  json?: boolean;
+};
+
+type PackageDownloadOptions = {
+  version?: string;
+  tag?: string;
+  output?: string;
+  json?: boolean;
+};
+
+type PackageVerifyOptions = {
+  sha256?: string;
   json?: boolean;
 };
 
@@ -310,12 +325,14 @@ export async function cmdInspectPackage(
 
     if (shouldPrintMeta && versionResult?.version) {
       printVersionSummary(versionResult.version);
+      printStorePack(versionResult.version.storepack);
       printCompatibility(
         versionResult.version.compatibility ?? detail.package.compatibility ?? null,
       );
       printCapabilities(versionResult.version.capabilities ?? detail.package.capabilities ?? null);
       printVerification(versionResult.version.verification ?? detail.package.verification ?? null);
     } else if (shouldPrintMeta) {
+      printStorePack(detail.package.storepack);
       printCompatibility(detail.package.compatibility ?? null);
       printCapabilities(detail.package.capabilities ?? null);
       printVerification(detail.package.verification ?? null);
@@ -536,6 +553,82 @@ export async function cmdPublishPackage(
   }
 }
 
+export async function cmdDownloadPackage(
+  opts: GlobalOpts,
+  packageName: string,
+  options: PackageDownloadOptions = {},
+) {
+  const trimmed = normalizePackageNameOrFail(packageName);
+  if (options.version && options.tag) fail("Use either --version or --tag");
+  const token = await getOptionalAuthToken();
+  const registry = await getRegistry(opts, { cache: true });
+  const url = registryUrl(`${ApiRoutes.packages}/${encodeURIComponent(trimmed)}/download`, registry);
+  if (options.version) url.searchParams.set("version", options.version);
+  if (options.tag) url.searchParams.set("tag", options.tag);
+  const spinner = options.json ? null : createSpinner("Downloading StorePack");
+  try {
+    const response = await fetch(url, {
+      headers: {
+        Accept: "application/zip",
+        ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      },
+    });
+    if (!response.ok) {
+      throw new Error((await response.text()) || `Download failed (${response.status})`);
+    }
+    const bytes = new Uint8Array(await response.arrayBuffer());
+    const sha256 = sha256Hex(bytes);
+    const filename =
+      options.output?.trim() ||
+      filenameFromContentDisposition(response.headers.get("content-disposition")) ||
+      `${trimmed.replaceAll("/", "-")}.storepack.zip`;
+    const outputPath = resolve(opts.workdir, filename);
+    await mkdir(resolve(outputPath, ".."), { recursive: true }).catch(() => undefined);
+    await writeFile(outputPath, bytes);
+    spinner?.succeed(`Downloaded ${outputPath}`);
+    const result = {
+      path: outputPath,
+      bytes: bytes.byteLength,
+      sha256,
+      storepackSha256: response.headers.get("x-clawhub-storepack-sha256"),
+      specVersion: response.headers.get("x-clawhub-storepack-spec-version"),
+    };
+    if (options.json) process.stdout.write(`${JSON.stringify(result, null, 2)}\n`);
+  } catch (error) {
+    spinner?.fail(formatError(error));
+    throw error;
+  }
+}
+
+export async function cmdVerifyPackageStorePack(filePath: string, options: PackageVerifyOptions = {}) {
+  const bytes = new Uint8Array(await readFile(resolve(filePath)));
+  const sha256 = sha256Hex(bytes);
+  const zipEntries = unzipSync(bytes);
+  const manifestBytes = zipEntries["package/STOREPACK.json"];
+  if (!manifestBytes) fail("Missing package/STOREPACK.json");
+  const manifestText = new TextDecoder().decode(manifestBytes);
+  const manifest = JSON.parse(manifestText) as Record<string, unknown>;
+  const expected = options.sha256?.trim();
+  const ok = expected ? sha256 === expected : true;
+  const result = {
+    ok,
+    sha256,
+    expectedSha256: expected || null,
+    specVersion: manifest.specVersion ?? null,
+    package: manifest.package ?? null,
+    fileCount: Object.keys(zipEntries).length,
+  };
+  if (options.json) {
+    process.stdout.write(`${JSON.stringify(result, null, 2)}\n`);
+    return;
+  }
+  console.log(`StorePack: ${ok ? "ok" : "mismatch"}`);
+  console.log(`SHA-256: ${sha256}`);
+  if (expected) console.log(`Expected: ${expected}`);
+  console.log(`Spec: ${String(manifest.specVersion ?? "unknown")}`);
+  if (!ok) fail("StorePack digest mismatch");
+}
+
 async function apiRequestPackageDetail(registry: string, name: string, token?: string) {
   return await apiRequest(
     registry,
@@ -702,6 +795,21 @@ function printVerification(verification: PackageVerificationSummary | null | und
   if (verification.scanStatus) console.log(`Scan: ${verification.scanStatus}`);
 }
 
+function printStorePack(storepack: PackageStorePackSummary | null | undefined) {
+  if (!storepack) return;
+  console.log(`StorePack: ${storepack.available ? "available" : "unavailable"}`);
+  if (!storepack.available) return;
+  if (storepack.sha256) console.log(`StorePack SHA-256: ${storepack.sha256}`);
+  if (typeof storepack.size === "number") console.log(`StorePack Size: ${storepack.size}B`);
+  if (storepack.specVersion) console.log(`StorePack Spec: v${storepack.specVersion}`);
+  if (storepack.hostTargets?.length) {
+    const targets = storepack.hostTargets
+      .map((target) => [target.os, target.arch, target.libc].filter(Boolean).join("-"))
+      .join(", ");
+    console.log(`StorePack Targets: ${targets}`);
+  }
+}
+
 function normalizeTags(tags: unknown): Record<string, string> {
   if (!tags || typeof tags !== "object") return {};
   const resolved: Record<string, string> = {};
@@ -756,6 +864,15 @@ function truncate(value: string, max: number) {
 
 function formatTimestamp(value: number) {
   return new Date(value).toISOString();
+}
+
+function sha256Hex(bytes: Uint8Array) {
+  return createHash("sha256").update(bytes).digest("hex");
+}
+
+function filenameFromContentDisposition(value: string | null) {
+  const match = value?.match(/filename="([^"]+)"/i);
+  return match?.[1] ? basename(match[1]) : null;
 }
 
 async function readJsonFile(path: string) {

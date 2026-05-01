@@ -157,6 +157,17 @@ type ReleaseLike = {
   compatibility?: Doc<"packageReleases">["compatibility"];
   capabilities?: Doc<"packageReleases">["capabilities"];
   verification?: Doc<"packageReleases">["verification"];
+  storepackStorageId?: Id<"_storage">;
+  storepackSha256?: string;
+  storepackSize?: number;
+  storepackSpecVersion?: number;
+  storepackFormat?: "zip";
+  storepackFileCount?: number;
+  storepackManifestSha256?: string;
+  storepackBuiltAt?: number;
+  storepackBuildVersion?: string;
+  hostTargetsSummary?: Doc<"packageReleases">["hostTargetsSummary"];
+  environmentSummary?: Doc<"packageReleases">["environmentSummary"];
   sha256hash?: string;
   vtAnalysis?: Doc<"packageReleases">["vtAnalysis"];
   llmAnalysis?: Doc<"packageReleases">["llmAnalysis"];
@@ -199,6 +210,44 @@ function toPublicTrustedPublisher(trustedPublisher: PackageTrustedPublisherLike 
 
 function getReleaseSecurityBlock(release: ReleaseLike) {
   return getPackageDownloadSecurityBlock(release);
+}
+
+function toPublicStorePack(release: ReleaseLike | null | undefined) {
+  if (!release?.storepackStorageId || !release.storepackSha256 || !release.storepackSize) {
+    return {
+      available: false,
+      specVersion: null,
+      format: null,
+      sha256: null,
+      size: null,
+      fileCount: null,
+      manifestSha256: null,
+      builtAt: null,
+      buildVersion: null,
+      hostTargets: release?.hostTargetsSummary ?? [],
+      environment: release?.environmentSummary ?? null,
+      runtimeBundles: [],
+    };
+  }
+  return {
+    available: true,
+    specVersion: release.storepackSpecVersion ?? 1,
+    format: release.storepackFormat ?? "zip",
+    sha256: release.storepackSha256,
+    size: release.storepackSize,
+    fileCount: release.storepackFileCount ?? null,
+    manifestSha256: release.storepackManifestSha256 ?? null,
+    builtAt: release.storepackBuiltAt ?? null,
+    buildVersion: release.storepackBuildVersion ?? null,
+    hostTargets: release.hostTargetsSummary ?? [],
+    environment: release.environmentSummary ?? null,
+    runtimeBundles: [],
+  };
+}
+
+function sha256DigestHeader(hex: string) {
+  const bytes = hex.match(/.{1,2}/g)?.map((part) => Number.parseInt(part, 16)) ?? [];
+  return `sha-256=${btoa(String.fromCharCode(...bytes))}`;
 }
 
 async function resolvePackageTags(
@@ -1451,6 +1500,7 @@ export async function packagesGetRouterV1Handler(ctx: ActionCtx, request: Reques
         package: {
           ...publicPackage!,
           tags: await resolvePackageTags(ctx, publicPackage!.tags),
+          storepack: toPublicStorePack(packageDetail?.latestRelease),
         },
         owner: packageOwner
           ? {
@@ -1607,6 +1657,7 @@ export async function packagesGetRouterV1Handler(ctx: ActionCtx, request: Reques
           vtAnalysis: result.version.vtAnalysis ?? null,
           llmAnalysis: result.version.llmAnalysis ?? null,
           staticScan: result.version.staticScan ?? null,
+          storepack: toPublicStorePack(result.version),
         },
       },
       200,
@@ -1680,6 +1731,33 @@ export async function packagesGetRouterV1Handler(ctx: ActionCtx, request: Reques
     if (!release) return text("Version not found", 404, rate.headers);
     const securityBlock = getReleaseSecurityBlock(release);
     if (securityBlock) return text(securityBlock.message, securityBlock.status, rate.headers);
+    if (release.storepackStorageId && release.storepackSha256 && release.storepackSize) {
+      const blob = await ctx.storage.get(release.storepackStorageId);
+      if (!blob) return text("Missing stored StorePack artifact", 500, rate.headers);
+      try {
+        await runMutationRef(ctx, internalRefs.packages.recordPackageDownloadInternal, {
+          packageId: publicPackage!._id,
+        });
+      } catch {
+        // Best-effort metric path; never fail package downloads.
+      }
+      return new Response(blob, {
+        status: 200,
+        headers: mergeHeaders(
+          rate.headers,
+          {
+            "Content-Type": "application/zip",
+            "Content-Length": String(release.storepackSize),
+            "Content-Disposition": `attachment; filename="${publicPackage!.name.replaceAll("/", "-")}-${release.version}.storepack.zip"`,
+            ETag: `"sha256:${release.storepackSha256}"`,
+            Digest: sha256DigestHeader(release.storepackSha256),
+            "X-ClawHub-StorePack-Sha256": release.storepackSha256,
+            "X-ClawHub-StorePack-Spec-Version": String(release.storepackSpecVersion ?? 1),
+          },
+          corsHeaders(),
+        ),
+      });
+    }
     const entries: Array<{ path: string; bytes: Uint8Array }> = [];
     for (const file of release.files) {
       const blob = await ctx.storage.get(file.storageId);

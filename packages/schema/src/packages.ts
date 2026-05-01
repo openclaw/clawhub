@@ -115,6 +115,46 @@ export const PackageStaticScanSchema = type({
 });
 export type PackageStaticScan = (typeof PackageStaticScanSchema)[inferred];
 
+export const PackageHostTargetSchema = type({
+  os: '"darwin"|"linux"|"win32"',
+  arch: '"arm64"|"x64"',
+  libc: '"glibc"|"musl"?',
+  nodeRange: "string?",
+  openclawRange: "string?",
+  pluginApiRange: "string?",
+  supportState: '"supported"|"setup-required"|"unsupported"?',
+  unsupportedReason: "string?",
+});
+export type PackageHostTarget = (typeof PackageHostTargetSchema)[inferred];
+
+export const PackageEnvironmentSummarySchema = type({
+  requiresLocalDesktop: "boolean?",
+  requiresBrowser: "boolean?",
+  requiresAudioDevice: "boolean?",
+  requiresNetwork: "boolean?",
+  requiresExternalServices: "string[]?",
+  requiresOsPermissions: "string[]?",
+  supportsRemoteHost: "boolean?",
+  knownUnsupported: "string[]?",
+});
+export type PackageEnvironmentSummary = (typeof PackageEnvironmentSummarySchema)[inferred];
+
+export const PackageStorePackSummarySchema = type({
+  available: "boolean",
+  specVersion: "number|null",
+  format: "string|null",
+  sha256: "string|null",
+  size: "number|null",
+  fileCount: "number|null",
+  manifestSha256: "string|null",
+  builtAt: "number|null",
+  buildVersion: "string|null",
+  hostTargets: PackageHostTargetSchema.array(),
+  environment: PackageEnvironmentSummarySchema.or("null"),
+  runtimeBundles: "unknown[]",
+});
+export type PackageStorePackSummary = (typeof PackageStorePackSummarySchema)[inferred];
+
 export const BundlePublishMetadataSchema = type({
   id: "string?",
   format: "string?",
@@ -164,6 +204,7 @@ export const PackageListItemSchema = type({
   capabilityTags: "string[]?",
   executesCode: "boolean?",
   verificationTier: PackageVerificationTierSchema.or("null").optional(),
+  storepack: PackageStorePackSummarySchema.optional(),
 });
 export type PackageListItem = (typeof PackageListItemSchema)[inferred];
 
@@ -198,6 +239,7 @@ export const ApiV1PackageResponseSchema = type({
     compatibility: PackageCompatibilitySchema.or("null").optional(),
     capabilities: PackageCapabilitySummarySchema.or("null").optional(),
     verification: PackageVerificationSummarySchema.or("null").optional(),
+    storepack: PackageStorePackSummarySchema.optional(),
     stats: PackageStatsSchema.optional(),
   }).or("null"),
   owner: type({
@@ -239,6 +281,7 @@ export const ApiV1PackageVersionResponseSchema = type({
     vtAnalysis: PackageVtAnalysisSchema.or("null").optional(),
     llmAnalysis: PackageLlmAnalysisSchema.or("null").optional(),
     staticScan: PackageStaticScanSchema.or("null").optional(),
+    storepack: PackageStorePackSummarySchema.optional(),
   }).or("null"),
 });
 export type ApiV1PackageVersionResponse = (typeof ApiV1PackageVersionResponseSchema)[inferred];
