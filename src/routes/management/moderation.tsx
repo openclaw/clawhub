@@ -49,6 +49,25 @@ type ModerationQueueItem = {
     storepackRevokedAt?: number;
     storepackSha256?: string;
     storepackFileCount?: number;
+    storepackSize?: number;
+    storepackManifestSha256?: string;
+    source: {
+      kind: string | null;
+      repo: string | null;
+      url: string | null;
+      ref: string | null;
+      commit: string | null;
+      path: string | null;
+    } | null;
+    verificationScanStatus: string | null;
+    vtStatus: string | null;
+    vtVerdict: string | null;
+    llmStatus: string | null;
+    llmVerdict: string | null;
+    llmSummary: string | null;
+    staticScanStatus: "clean" | "suspicious" | "malicious" | null;
+    staticScanSummary: string | null;
+    staticScanReasonCodes: string[];
   } | null;
 };
 
@@ -216,6 +235,11 @@ export function PluginModerationRoute() {
               <div className="management-tool-grid">
                 <ReportField label="owner" value={formatOwner(item)} />
                 <ReportField
+                  label="source"
+                  value={formatSourceState(item)}
+                  tone={item.latestRelease?.source?.repo ? undefined : "warn"}
+                />
+                <ReportField
                   label="StorePack"
                   value={formatStorePackState(item)}
                   tone={item.storepackAvailable ? undefined : "warn"}
@@ -228,6 +252,21 @@ export function PluginModerationRoute() {
                     timeStyle: "short",
                   })}
                 />
+              </div>
+
+              <div className="management-tool-grid">
+                <ReportField
+                  label="scan rollup"
+                  value={formatScanRollup(item)}
+                  tone={item.scanStatus === "malicious" ? "warn" : undefined}
+                />
+                <ReportField
+                  label="static scan"
+                  value={formatStaticScan(item)}
+                  tone={item.latestRelease?.staticScanStatus === "malicious" ? "warn" : undefined}
+                />
+                <ReportField label="LLM review" value={formatLlmReview(item)} />
+                <ReportField label="digest" value={formatArtifactDigest(item)} />
               </div>
 
               {item.summary ? (
@@ -312,6 +351,48 @@ function formatStorePackState(item: ModerationQueueItem) {
     );
   }
   return "missing artifact";
+}
+
+function formatSourceState(item: ModerationQueueItem) {
+  const source = item.latestRelease?.source;
+  if (!source?.repo) return item.ownerHandle ? `owned by ${item.ownerHandle}` : "missing source";
+  return [source.repo, source.ref ?? source.commit?.slice(0, 12), source.path]
+    .filter(Boolean)
+    .join(" / ");
+}
+
+function formatScanRollup(item: ModerationQueueItem) {
+  const releaseStatus = item.latestRelease?.verificationScanStatus;
+  return [
+    item.scanStatus,
+    releaseStatus && releaseStatus !== item.scanStatus ? releaseStatus : null,
+  ]
+    .filter(Boolean)
+    .join(" / ");
+}
+
+function formatStaticScan(item: ModerationQueueItem) {
+  const release = item.latestRelease;
+  if (!release?.staticScanStatus) return "not run";
+  const reasonCodes = release.staticScanReasonCodes.slice(0, 2).join(", ");
+  return [release.staticScanStatus, reasonCodes || release.staticScanSummary]
+    .filter(Boolean)
+    .join(" / ");
+}
+
+function formatLlmReview(item: ModerationQueueItem) {
+  const release = item.latestRelease;
+  if (!release?.llmStatus) return "not run";
+  return [release.llmStatus, release.llmVerdict, release.llmSummary].filter(Boolean).join(" / ");
+}
+
+function formatArtifactDigest(item: ModerationQueueItem) {
+  const digest = item.latestRelease?.storepackSha256?.slice(0, 12);
+  const manifestDigest = item.latestRelease?.storepackManifestSha256?.slice(0, 12);
+  if (!digest && !manifestDigest) return "missing";
+  return [digest ? `zip ${digest}` : null, manifestDigest ? `manifest ${manifestDigest}` : null]
+    .filter(Boolean)
+    .join(" / ");
 }
 
 function formatMutationError(error: unknown) {

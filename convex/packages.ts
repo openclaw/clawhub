@@ -112,6 +112,27 @@ const PACKAGE_MODERATION_REVIEW_STATUSES = [
 ] as const;
 const PACKAGE_MODERATION_FAMILIES = ["code-plugin", "bundle-plugin"] as const;
 const REQUIRED_STOREPACK_HOST_TARGETS = ["darwin-arm64", "linux-x64-glibc", "win32-x64"] as const;
+
+function packageReleaseSourceSummary(source: unknown) {
+  if (!source || typeof source !== "object") return null;
+  const candidate = source as {
+    kind?: unknown;
+    repo?: unknown;
+    url?: unknown;
+    ref?: unknown;
+    commit?: unknown;
+    path?: unknown;
+  };
+  return {
+    kind: typeof candidate.kind === "string" ? candidate.kind : null,
+    repo: typeof candidate.repo === "string" ? candidate.repo : null,
+    url: typeof candidate.url === "string" ? candidate.url : null,
+    ref: typeof candidate.ref === "string" ? candidate.ref : null,
+    commit: typeof candidate.commit === "string" ? candidate.commit : null,
+    path: typeof candidate.path === "string" ? candidate.path : null,
+  };
+}
+
 const OFFICIAL_OPENCLAW_PLUGIN_MIGRATION_TARGETS = [
   {
     bundledPluginId: "apify",
@@ -1391,6 +1412,18 @@ export const listModerationQueueForStaff = query({
                 storepackRevokedAt: latestRelease.storepackRevokedAt,
                 storepackSha256: latestRelease.storepackSha256,
                 storepackFileCount: latestRelease.storepackFileCount,
+                storepackSize: latestRelease.storepackSize,
+                storepackManifestSha256: latestRelease.storepackManifestSha256,
+                source: packageReleaseSourceSummary(latestRelease.source),
+                verificationScanStatus: latestRelease.verification?.scanStatus ?? null,
+                vtStatus: latestRelease.vtAnalysis?.status ?? null,
+                vtVerdict: latestRelease.vtAnalysis?.verdict ?? null,
+                llmStatus: latestRelease.llmAnalysis?.status ?? null,
+                llmVerdict: latestRelease.llmAnalysis?.verdict ?? null,
+                llmSummary: latestRelease.llmAnalysis?.summary ?? null,
+                staticScanStatus: latestRelease.staticScan?.status ?? null,
+                staticScanSummary: latestRelease.staticScan?.summary ?? null,
+                staticScanReasonCodes: latestRelease.staticScan?.reasonCodes ?? [],
               }
             : null,
       });

@@ -87,6 +87,25 @@ describe("plugin moderation route", () => {
             storepackAvailable: true,
             storepackSha256: "a".repeat(64),
             storepackFileCount: 4,
+            storepackSize: 2048,
+            storepackManifestSha256: "b".repeat(64),
+            source: {
+              kind: "github",
+              repo: "openclaw/demo-plugin",
+              url: "https://github.com/openclaw/demo-plugin",
+              ref: "refs/tags/v1.2.3",
+              commit: "abc1234567890",
+              path: ".",
+            },
+            verificationScanStatus: "suspicious",
+            vtStatus: "clean",
+            vtVerdict: "clean",
+            llmStatus: "clean",
+            llmVerdict: "clean",
+            llmSummary: "No policy findings.",
+            staticScanStatus: "suspicious",
+            staticScanSummary: "Dynamic execution found.",
+            staticScanReasonCodes: ["suspicious.dynamic_code_execution"],
           },
         },
       ],
@@ -106,9 +125,13 @@ describe("plugin moderation route", () => {
     expect(screen.getByText("/management/storepacks")).toBeTruthy();
     expect(screen.getByText("/management/migrations")).toBeTruthy();
     expect(screen.getByText("Demo Plugin")).toBeTruthy();
-    expect(screen.getByText("suspicious")).toBeTruthy();
+    expect(screen.getAllByText("suspicious").length).toBeGreaterThan(0);
     expect(screen.getByText("Code Plugin")).toBeTruthy();
     expect(screen.getByText("4 files / aaaaaaaaaaaa")).toBeTruthy();
+    expect(screen.getByText("openclaw/demo-plugin / refs/tags/v1.2.3 / .")).toBeTruthy();
+    expect(screen.getByText("suspicious / suspicious.dynamic_code_execution")).toBeTruthy();
+    expect(screen.getByText("clean / clean / No policy findings.")).toBeTruthy();
+    expect(screen.getByText("zip aaaaaaaaaaaa / manifest bbbbbbbbbbbb")).toBeTruthy();
     expect(screen.getByText("darwin-arm64")).toBeTruthy();
     expect(screen.getByText("linux-x64-glibc")).toBeTruthy();
     expect(screen.getByRole("link", { name: "Manage" }).getAttribute("href")).toBe("/management");
