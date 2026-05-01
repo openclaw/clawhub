@@ -604,6 +604,66 @@ describe("package commands", () => {
     }
   });
 
+  it("publishes a code plugin package from a zip archive", async () => {
+    const workdir = await makeTmpWorkdir();
+    let dateSpy: { mockRestore: () => void } | undefined;
+    try {
+      const archive = join(workdir, "demo-plugin.zip");
+      const archiveBytes = zipSync({
+        "demo-plugin/package.json": new TextEncoder().encode(
+          makeCodePluginPackageJson({
+            name: "@scope/demo-plugin",
+            displayName: "Demo Plugin",
+            version: "1.0.0",
+          }),
+        ),
+        "demo-plugin/openclaw.plugin.json": new TextEncoder().encode(
+          JSON.stringify({ id: "demo.plugin" }),
+        ),
+        "demo-plugin/dist/index.js": new TextEncoder().encode("export const demo = true;\n"),
+      });
+      await writeFile(archive, archiveBytes);
+      dateSpy = vi.spyOn(Date, "now").mockReturnValue(123_456_789);
+
+      httpMocks.apiRequestForm.mockResolvedValueOnce({
+        ok: true,
+        packageId: "pkg_archive",
+        releaseId: "rel_archive",
+      });
+
+      await cmdPublishPackage(makeOpts(workdir), "demo-plugin.zip", {
+        sourceRepo: "openclaw/demo-plugin",
+        sourceCommit: "abc123",
+      });
+
+      expect(getPublishPayload()).toMatchObject({
+        name: "@scope/demo-plugin",
+        displayName: "Demo Plugin",
+        family: "code-plugin",
+        version: "1.0.0",
+        source: {
+          kind: "github",
+          url: "https://github.com/openclaw/demo-plugin",
+          repo: "openclaw/demo-plugin",
+          commit: "abc123",
+          path: ".",
+          importedAt: 123_456_789,
+        },
+      });
+      expect(getUploadedFileNames()).toEqual([
+        "dist/index.js",
+        "openclaw.plugin.json",
+        "package.json",
+      ]);
+      expect(uiMocks.spinner.succeed).toHaveBeenCalledWith(
+        "OK. Published @scope/demo-plugin@1.0.0 (rel_archive)",
+      );
+    } finally {
+      dateSpy?.mockRestore();
+      await rm(workdir, { recursive: true, force: true });
+    }
+  });
+
   it("mints a short-lived publish token from GitHub Actions OIDC in CI", async () => {
     const workdir = await makeTmpWorkdir();
     try {

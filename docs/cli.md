@@ -323,6 +323,7 @@ clawhub package explore episodic-claw --family code-plugin
 - Publishes a code plugin or bundle plugin via `POST /api/v1/packages`.
 - `<source>` accepts:
   - Local folder path: `./my-plugin`
+  - Local package archive: `./my-plugin.zip`, `./my-plugin.tgz`, or `./my-plugin.tar.gz`
   - GitHub repo: `owner/repo` or `owner/repo@ref`
   - GitHub URL: `https://github.com/owner/repo`
 - Metadata is auto-detected from `package.json`, `openclaw.plugin.json`, and `openclaw.bundle.json`.

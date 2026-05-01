@@ -1,7 +1,8 @@
 import { createHash } from "node:crypto";
-import { mkdir, readFile, readdir, stat, writeFile } from "node:fs/promises";
-import { basename, join, relative, resolve, sep } from "node:path";
-import { unzipSync } from "fflate";
+import { mkdir, mkdtemp, readFile, readdir, rm, stat, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { basename, dirname, join, relative, resolve, sep } from "node:path";
+import { gunzipSync, unzipSync } from "fflate";
 import ignore from "ignore";
 import mime from "mime";
 import semver from "semver";
@@ -1168,18 +1169,25 @@ async function preparePackagePublishPlan(
       throw error;
     }
   } else {
-    const folderStat = await stat(folder).catch(() => null);
-    if (!folderStat || !folderStat.isDirectory()) fail("Path must be a folder");
-
-    const localGitInfo = resolveLocalGitInfo(folder);
-    if (localGitInfo) {
-      inferredSource = {
-        repo: localGitInfo.repo,
-        commit: localGitInfo.commit,
-        ref: localGitInfo.ref,
-        path: localGitInfo.path,
-        ...(localGitInfo.repo ? { url: `https://github.com/${localGitInfo.repo}` } : {}),
-      };
+    const sourceStat = await stat(folder).catch(() => null);
+    if (!sourceStat) fail("Path must be a folder or package archive");
+    if (sourceStat.isFile()) {
+      const extracted = await extractPackageArchive(folder);
+      folder = extracted.folder;
+      cleanup = extracted.cleanup;
+    } else if (sourceStat.isDirectory()) {
+      const localGitInfo = resolveLocalGitInfo(folder);
+      if (localGitInfo) {
+        inferredSource = {
+          repo: localGitInfo.repo,
+          commit: localGitInfo.commit,
+          ref: localGitInfo.ref,
+          path: localGitInfo.path,
+          ...(localGitInfo.repo ? { url: `https://github.com/${localGitInfo.repo}` } : {}),
+        };
+      }
+    } else {
+      fail("Path must be a folder or package archive");
     }
   }
 
@@ -1433,7 +1441,7 @@ function describePublishSource(
       sourceInput.path !== "." ? `:${sourceInput.path}` : ""
     }`;
   }
-  return `local:${folder}`;
+  return `local:${sourceInput.path || folder}`;
 }
 
 function printPackageDryRun(params: {
@@ -1477,6 +1485,43 @@ function formatByteCount(value: number) {
   return `${(value / (1024 * 1024)).toFixed(1)} MB`;
 }
 
+async function extractPackageArchive(archivePath: string) {
+  const archiveName = basename(archivePath);
+  const lower = archiveName.toLowerCase();
+  const bytes = new Uint8Array(await readFile(archivePath));
+  const entries = lower.endsWith(".zip")
+    ? Object.entries(unzipSync(bytes)).map(([path, data]) => ({ path, data }))
+    : lower.endsWith(".tgz") || lower.endsWith(".tar.gz")
+      ? untar(gunzipSync(bytes))
+      : fail("Path must be a folder or .zip/.tgz package archive");
+  const normalizedEntries = stripSingleArchiveRoot(entries);
+  if (normalizedEntries.length === 0) fail("Package archive does not contain any files");
+
+  const tempDir = await mkdtemp(join(tmpdir(), "clawhub-package-publish-"));
+  try {
+    for (const entry of normalizedEntries) {
+      const relPath = normalizeArchivePath(entry.path);
+      if (!relPath) continue;
+      const destination = resolve(tempDir, relPath);
+      if (!destination.startsWith(`${tempDir}${sep}`)) {
+        throw new Error(`Unsafe archive path: ${entry.path}`);
+      }
+      await mkdir(dirname(destination), { recursive: true });
+      await writeFile(destination, entry.data);
+    }
+  } catch (error) {
+    await rm(tempDir, { recursive: true, force: true });
+    throw error;
+  }
+
+  return {
+    folder: tempDir,
+    cleanup: async () => {
+      await rm(tempDir, { recursive: true, force: true });
+    },
+  };
+}
+
 async function listPackageFiles(root: string) {
   const files: PackageFile[] = [];
   const absRoot = resolve(root);
@@ -1495,6 +1540,35 @@ async function listPackageFiles(root: string) {
     });
   });
   return files;
+}
+
+function stripSingleArchiveRoot(entries: Array<{ path: string; data: Uint8Array }>) {
+  const normalized = entries
+    .map((entry) => ({ path: normalizeArchivePath(entry.path), data: entry.data }))
+    .filter((entry) => entry.path && !entry.path.endsWith("/"));
+  const partsList = normalized.map((entry) => entry.path.split("/").filter(Boolean));
+  if (partsList.length === 0 || partsList.some((parts) => parts.length < 2)) return normalized;
+
+  const first = partsList[0]?.[0];
+  if (!first || !partsList.every((parts) => parts[0] === first)) return normalized;
+  return normalized.map((entry) => ({
+    path: entry.path.split("/").slice(1).join("/"),
+    data: entry.data,
+  }));
+}
+
+function normalizeArchivePath(path: string) {
+  const normalized = path
+    .replaceAll("\u0000", "")
+    .replaceAll("\\", "/")
+    .trim()
+    .replace(/^\.\/+/, "")
+    .replace(/^\/+/, "");
+  const parts = normalized.split("/").filter(Boolean);
+  if (parts.some((part) => part === "." || part === "..")) {
+    throw new Error(`Unsafe archive path: ${path}`);
+  }
+  return parts.join("/");
 }
 
 function normalizePath(path: string) {
@@ -1525,4 +1599,34 @@ async function addIgnoreFile(ig: ReturnType<typeof ignore>, path: string) {
   } catch {
     // optional
   }
+}
+
+function untar(bytes: Uint8Array) {
+  const entries: Array<{ path: string; data: Uint8Array }> = [];
+  let offset = 0;
+  while (offset + 512 <= bytes.length) {
+    const header = bytes.subarray(offset, offset + 512);
+    if (header.every((byte) => byte === 0)) break;
+    const name = readTarString(header.subarray(0, 100));
+    const size = readTarOctal(header.subarray(124, 136));
+    const typeflag = header[156];
+    offset += 512;
+    const data = bytes.subarray(offset, offset + size);
+    offset += Math.ceil(size / 512) * 512;
+    if (!name || typeflag === 53) continue;
+    entries.push({ path: name, data });
+  }
+  return entries;
+}
+
+function readTarString(bytes: Uint8Array) {
+  const end = bytes.indexOf(0);
+  const slice = end === -1 ? bytes : bytes.subarray(0, end);
+  return new TextDecoder().decode(slice).trim();
+}
+
+function readTarOctal(bytes: Uint8Array) {
+  const raw = readTarString(bytes).replaceAll("\u0000", "").trim();
+  if (!raw) return 0;
+  return Number.parseInt(raw, 8);
 }
