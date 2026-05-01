@@ -104,6 +104,10 @@ describe("StorePack management route", () => {
     renderRoute();
 
     expect(screen.getByRole("heading", { name: "StorePack operations" })).toBeTruthy();
+    expect(screen.getByText("Plugin operations")).toBeTruthy();
+    expect(screen.getByText("/publish-plugin")).toBeTruthy();
+    expect(screen.getByText("/management/moderation")).toBeTruthy();
+    expect(screen.getByText("/management/migrations")).toBeTruthy();
     expect(screen.getByText("75%")).toBeTruthy();
     expect(screen.getByText("4.0KB")).toBeTruthy();
     expect(screen.getByText("Failed artifact builds")).toBeTruthy();

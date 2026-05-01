@@ -4,6 +4,7 @@ import { useState } from "react";
 import { api } from "../../../convex/_generated/api";
 import type { Id } from "../../../convex/_generated/dataModel";
 import { ManagementAccessNotice } from "../../components/ManagementAccessNotice";
+import { PluginOperationsNav } from "../../components/PluginOperationsNav";
 import { Badge } from "../../components/ui/badge";
 import { Button } from "../../components/ui/button";
 import { Card } from "../../components/ui/card";
@@ -187,6 +188,8 @@ export function StorePackManagementRoute() {
           </Link>
         </Button>
       </div>
+
+      <PluginOperationsNav current="storepacks" />
 
       <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-5">
         <MetricCard

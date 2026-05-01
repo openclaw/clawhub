@@ -101,6 +101,10 @@ describe("plugin moderation route", () => {
     renderRoute();
 
     expect(screen.getByRole("heading", { name: "Plugin moderation" })).toBeTruthy();
+    expect(screen.getByText("Plugin operations")).toBeTruthy();
+    expect(screen.getByText("/publish-plugin")).toBeTruthy();
+    expect(screen.getByText("/management/storepacks")).toBeTruthy();
+    expect(screen.getByText("/management/migrations")).toBeTruthy();
     expect(screen.getByText("Demo Plugin")).toBeTruthy();
     expect(screen.getByText("suspicious")).toBeTruthy();
     expect(screen.getByText("Code Plugin")).toBeTruthy();

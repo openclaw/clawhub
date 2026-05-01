@@ -154,6 +154,10 @@ describe("official migration readiness route", () => {
     renderRoute();
 
     expect(screen.getByRole("heading", { name: "OpenClaw migration readiness" })).toBeTruthy();
+    expect(screen.getByText("Plugin operations")).toBeTruthy();
+    expect(screen.getByText("/publish-plugin")).toBeTruthy();
+    expect(screen.getByText("/management/moderation")).toBeTruthy();
+    expect(screen.getByText("/management/storepacks")).toBeTruthy();
     expect(screen.getByText("Opik")).toBeTruthy();
     expect(screen.getByText("QQbot")).toBeTruthy();
     expect(screen.getByText("ready for openclaw")).toBeTruthy();

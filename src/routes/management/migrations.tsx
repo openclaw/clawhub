@@ -3,6 +3,7 @@ import { useQuery } from "convex/react";
 import { api } from "../../../convex/_generated/api";
 import type { Id } from "../../../convex/_generated/dataModel";
 import { ManagementAccessNotice } from "../../components/ManagementAccessNotice";
+import { PluginOperationsNav } from "../../components/PluginOperationsNav";
 import { Badge } from "../../components/ui/badge";
 import { Button } from "../../components/ui/button";
 import { Card } from "../../components/ui/card";
@@ -117,6 +118,8 @@ export function OfficialMigrationRoute() {
           </Button>
         </div>
       </div>
+
+      <PluginOperationsNav current="migrations" />
 
       <div className="grid gap-4 md:grid-cols-3">
         <MetricCard

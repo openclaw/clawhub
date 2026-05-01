@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { api } from "../../convex/_generated/api";
 import type { Doc, Id } from "../../convex/_generated/dataModel";
 import { ManagementAccessNotice } from "../components/ManagementAccessNotice";
+import { PluginOperationsNav } from "../components/PluginOperationsNav";
 import { Badge } from "../components/ui/badge";
 import { Button } from "../components/ui/button";
 import { Card } from "../components/ui/card";
@@ -439,6 +440,8 @@ function ManagementConsole() {
           </Button>
         </div>
       </div>
+
+      <PluginOperationsNav />
 
       <Card className="mb-5">
         <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
