@@ -6,6 +6,7 @@ const DEFAULT_CLAWHUB_SITE_URL = "https://clawhub.ai";
 const DEFAULT_ONLYCRABS_SITE_URL = "https://onlycrabs.ai";
 const DEFAULT_ONLYCRABS_HOST = "onlycrabs.ai";
 const LEGACY_CLAWDHUB_HOSTS = new Set(["clawdhub.com", "www.clawdhub.com", "auth.clawdhub.com"]);
+const LOCAL_HOSTS = new Set(["localhost", "127.0.0.1", "0.0.0.0"]);
 
 export function normalizeClawHubSiteOrigin(value?: string | null) {
   if (!value) return null;
@@ -21,7 +22,11 @@ export function normalizeClawHubSiteOrigin(value?: string | null) {
 }
 
 export function getClawHubSiteUrl() {
-  return normalizeClawHubSiteOrigin(getRuntimeEnv("VITE_SITE_URL")) ?? DEFAULT_CLAWHUB_SITE_URL;
+  return (
+    normalizeClawHubSiteOrigin(getRuntimeEnv("VITE_SITE_URL")) ??
+    getLocalBrowserOrigin() ??
+    DEFAULT_CLAWHUB_SITE_URL
+  );
 }
 
 export function getOnlyCrabsSiteUrl() {
@@ -32,11 +37,7 @@ export function getOnlyCrabsSiteUrl() {
   if (siteUrl) {
     try {
       const url = new URL(siteUrl);
-      if (
-        url.hostname === "localhost" ||
-        url.hostname === "127.0.0.1" ||
-        url.hostname === "0.0.0.0"
-      ) {
+      if (LOCAL_HOSTS.has(url.hostname)) {
         return url.origin;
       }
     } catch {
@@ -97,4 +98,10 @@ export function getSiteDescription(mode: SiteMode = getSiteMode()) {
 
 export function getSiteUrlForMode(mode: SiteMode = getSiteMode()) {
   return mode === "souls" ? getOnlyCrabsSiteUrl() : getClawHubSiteUrl();
+}
+
+function getLocalBrowserOrigin() {
+  if (typeof window === "undefined") return null;
+  const { hostname, origin } = window.location;
+  return LOCAL_HOSTS.has(hostname) ? origin : null;
 }

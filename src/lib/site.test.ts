@@ -49,6 +49,13 @@ describe("site helpers", () => {
     });
   });
 
+  it("uses the current browser origin for local ClawHub previews", () => {
+    vi.stubGlobal("window", {
+      location: { hostname: "127.0.0.1", origin: "http://127.0.0.1:3000" },
+    } as unknown as Window);
+    expect(getClawHubSiteUrl()).toBe("http://127.0.0.1:3000");
+  });
+
   it("picks SoulHub URL from explicit env", () => {
     withServerEnv({ VITE_SOULHUB_SITE_URL: "https://souls.example.com" }, () => {
       expect(getOnlyCrabsSiteUrl()).toBe("https://souls.example.com");
