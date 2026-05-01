@@ -66,6 +66,11 @@ const internalRefs = internal as unknown as {
     backfillStorePackSearchIndexInternal: unknown;
     retryStorePackBackfillFailuresInternal: unknown;
     getStorePackMigrationStatusInternal: unknown;
+    dryRunStorePackMigrationRunForStaffInternal: unknown;
+    listStorePackMigrationRunsForStaffInternal: unknown;
+    getStorePackMigrationRunInternal: unknown;
+    startStorePackMigrationRunInternal: unknown;
+    continueStorePackMigrationRunInternal: unknown;
     listOfficialMigrationReadinessForStaffInternal: unknown;
     revokeStorePackArtifactForStaffInternal: unknown;
     getReleasesByIdsInternal: unknown;
@@ -123,6 +128,23 @@ type PackageListQueryArgs = {
   viewerUserId?: Id<"users">;
   paginationOpts: { cursor: string | null; numItems: number };
 };
+
+type StorePackMigrationOperation = "artifact-backfill" | "failure-retry" | "search-index-backfill";
+type StorePackMigrationStatus = "pending" | "running" | "completed" | "failed";
+
+function parseStorePackMigrationOperation(raw: unknown): StorePackMigrationOperation | null {
+  if (raw === "artifact-backfill" || raw === "failure-retry" || raw === "search-index-backfill") {
+    return raw;
+  }
+  return null;
+}
+
+function parseStorePackMigrationStatus(raw: unknown): StorePackMigrationStatus | undefined {
+  if (raw === "pending" || raw === "running" || raw === "completed" || raw === "failed") {
+    return raw;
+  }
+  return undefined;
+}
 
 type SkillPackageDocLike = {
   _id: Id<"skills">;
@@ -1204,6 +1226,70 @@ export async function mintPublishTokenV1Handler(ctx: ActionCtx, request: Request
 
 export async function packagesPostRouterV1Handler(ctx: ActionCtx, request: Request) {
   const segments = getPathSegments(request, "/api/v1/packages/");
+  if (segments[0] === "storepack" && segments[1] === "migration-runs" && segments.length === 2) {
+    const rate = await applyRateLimit(ctx, request, "write");
+    if (!rate.ok) return rate.response;
+    const auth = await requireApiTokenUserOrResponse(ctx, request, rate.headers);
+    if (!auth.ok) return auth.response;
+    const admin = requireAdminOrResponse(auth.user, rate.headers);
+    if (!admin.ok) return admin.response;
+    const body = await request.json().catch(() => ({}));
+    const operation = parseStorePackMigrationOperation(
+      body && typeof body === "object" ? (body as { operation?: unknown }).operation : undefined,
+    );
+    if (!operation) return text("Invalid StorePack migration operation", 400, rate.headers);
+    const rawLimit =
+      body && typeof body === "object" && "limit" in body
+        ? Number((body as { limit?: unknown }).limit)
+        : undefined;
+    const cursor =
+      body && typeof body === "object" && typeof (body as { cursor?: unknown }).cursor === "string"
+        ? (body as { cursor: string }).cursor
+        : undefined;
+    const result = await runMutationRef(
+      ctx,
+      internalRefs.packages.startStorePackMigrationRunInternal,
+      {
+        actorUserId: auth.userId,
+        operation,
+        ...(Number.isFinite(rawLimit) ? { limit: rawLimit } : {}),
+        ...(cursor ? { cursor } : {}),
+      },
+    );
+    return json(result, 200, rate.headers);
+  }
+
+  if (
+    segments[0] === "storepack" &&
+    segments[1] === "migration-runs" &&
+    segments[3] === "continue" &&
+    segments.length === 4
+  ) {
+    const rate = await applyRateLimit(ctx, request, "write");
+    if (!rate.ok) return rate.response;
+    const auth = await requireApiTokenUserOrResponse(ctx, request, rate.headers);
+    if (!auth.ok) return auth.response;
+    const admin = requireAdminOrResponse(auth.user, rate.headers);
+    if (!admin.ok) return admin.response;
+    try {
+      const result = await runActionRef(
+        ctx,
+        internalRefs.packages.continueStorePackMigrationRunInternal,
+        {
+          actorUserId: auth.userId,
+          runId: segments[2] as Id<"storePackMigrationRuns">,
+        },
+      );
+      return json(result, 200, rate.headers);
+    } catch (error) {
+      return text(
+        error instanceof Error ? error.message : "StorePack migration run failed",
+        400,
+        rate.headers,
+      );
+    }
+  }
+
   if (segments[0] === "storepack" && segments[1] === "backfill" && segments.length === 2) {
     const rate = await applyRateLimit(ctx, request, "write");
     if (!rate.ok) return rate.response;
@@ -1731,6 +1817,63 @@ export async function packagesGetRouterV1Handler(ctx: ActionCtx, request: Reques
       internalRefs.packages.getStorePackMigrationStatusInternal,
       { limit },
     );
+    return json(result, 200, rate.headers);
+  }
+  if (
+    segments[0] === "storepack" &&
+    segments[1] === "migration-runs" &&
+    segments[2] === "dry-run" &&
+    segments.length === 3
+  ) {
+    const rate = await applyRateLimit(ctx, request, "read");
+    if (!rate.ok) return rate.response;
+    const auth = await requireApiTokenUserOrResponse(ctx, request, rate.headers);
+    if (!auth.ok) return auth.response;
+    const admin = requireAdminOrResponse(auth.user, rate.headers);
+    if (!admin.ok) return admin.response;
+    const search = new URL(request.url).searchParams;
+    const operation = parseStorePackMigrationOperation(search.get("operation"));
+    if (!operation) return text("Invalid StorePack migration operation", 400, rate.headers);
+    const result = await runQueryRef(
+      ctx,
+      internalRefs.packages.dryRunStorePackMigrationRunForStaffInternal,
+      {
+        operation,
+        limit: toOptionalNumber(search.get("limit")) ?? undefined,
+        cursor: search.get("cursor") || undefined,
+      },
+    );
+    return json(result, 200, rate.headers);
+  }
+  if (segments[0] === "storepack" && segments[1] === "migration-runs" && segments.length === 2) {
+    const rate = await applyRateLimit(ctx, request, "read");
+    if (!rate.ok) return rate.response;
+    const auth = await requireApiTokenUserOrResponse(ctx, request, rate.headers);
+    if (!auth.ok) return auth.response;
+    const admin = requireAdminOrResponse(auth.user, rate.headers);
+    if (!admin.ok) return admin.response;
+    const search = new URL(request.url).searchParams;
+    const result = await runQueryRef(
+      ctx,
+      internalRefs.packages.listStorePackMigrationRunsForStaffInternal,
+      {
+        status: parseStorePackMigrationStatus(search.get("status")),
+        limit: toOptionalNumber(search.get("limit")) ?? undefined,
+      },
+    );
+    return json(result, 200, rate.headers);
+  }
+  if (segments[0] === "storepack" && segments[1] === "migration-runs" && segments.length === 3) {
+    const rate = await applyRateLimit(ctx, request, "read");
+    if (!rate.ok) return rate.response;
+    const auth = await requireApiTokenUserOrResponse(ctx, request, rate.headers);
+    if (!auth.ok) return auth.response;
+    const admin = requireAdminOrResponse(auth.user, rate.headers);
+    if (!admin.ok) return admin.response;
+    const result = await runQueryRef(ctx, internalRefs.packages.getStorePackMigrationRunInternal, {
+      runId: segments[2] as Id<"storePackMigrationRuns">,
+    });
+    if (!result) return text("StorePack migration run not found", 404, rate.headers);
     return json(result, 200, rate.headers);
   }
   if (

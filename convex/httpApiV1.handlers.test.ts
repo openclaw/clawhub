@@ -4200,6 +4200,109 @@ describe("httpApiV1 handlers", () => {
     });
   });
 
+  it("storepack migration run dry-run and list routes require an admin API token", async () => {
+    vi.mocked(requireApiTokenUser).mockResolvedValue({
+      userId: "users:admin",
+      user: { _id: "users:admin", role: "admin" },
+    } as never);
+    const runQuery = vi.fn(async (_query: unknown, args: Record<string, unknown>) => {
+      if (isRateLimitArgs(args)) return okRate();
+      if (args.operation) {
+        return {
+          operation: args.operation,
+          limit: args.limit,
+          candidates: [{ name: "demo-plugin", version: "1.0.0" }],
+          candidateCount: 1,
+        };
+      }
+      return {
+        items: [{ _id: "storePackMigrationRuns:1", status: "pending" }],
+        limit: args.limit,
+        status: args.status ?? null,
+      };
+    });
+    const runMutation = vi.fn().mockResolvedValue(okRate());
+
+    const dryRunResponse = await __handlers.packagesGetRouterV1Handler(
+      makeCtx({ runQuery, runMutation }),
+      new Request(
+        "https://example.com/api/v1/packages/storepack/migration-runs/dry-run?operation=artifact-backfill&limit=5",
+      ),
+    );
+    const listResponse = await __handlers.packagesGetRouterV1Handler(
+      makeCtx({ runQuery, runMutation }),
+      new Request(
+        "https://example.com/api/v1/packages/storepack/migration-runs?status=pending&limit=10",
+      ),
+    );
+
+    expect(dryRunResponse.status).toBe(200);
+    await expect(dryRunResponse.json()).resolves.toMatchObject({
+      operation: "artifact-backfill",
+      candidateCount: 1,
+    });
+    expect(listResponse.status).toBe(200);
+    await expect(listResponse.json()).resolves.toMatchObject({
+      items: [{ _id: "storePackMigrationRuns:1" }],
+      status: "pending",
+    });
+  });
+
+  it("storepack migration run create and continue routes dispatch admin operations", async () => {
+    vi.mocked(requireApiTokenUser).mockResolvedValue({
+      userId: "users:admin",
+      user: { _id: "users:admin", role: "admin" },
+    } as never);
+    const runMutation = vi.fn(async (_mutation: unknown, args: Record<string, unknown>) => {
+      if (isRateLimitArgs(args)) return okRate();
+      return {
+        _id: "storePackMigrationRuns:1",
+        actorUserId: args.actorUserId,
+        operation: args.operation,
+        status: "pending",
+        limit: args.limit,
+      };
+    });
+    const runAction = vi.fn().mockResolvedValue({
+      run: { _id: "storePackMigrationRuns:1", status: "completed" },
+      result: { processed: 1, succeeded: 1, failed: 0 },
+    });
+
+    const createResponse = await __handlers.packagesPostRouterV1Handler(
+      makeCtx({ runAction, runMutation }),
+      new Request("https://example.com/api/v1/packages/storepack/migration-runs", {
+        method: "POST",
+        body: JSON.stringify({ operation: "failure-retry", limit: 3 }),
+      }),
+    );
+    const continueResponse = await __handlers.packagesPostRouterV1Handler(
+      makeCtx({ runAction, runMutation }),
+      new Request(
+        "https://example.com/api/v1/packages/storepack/migration-runs/storePackMigrationRuns:1/continue",
+        { method: "POST" },
+      ),
+    );
+
+    expect(createResponse.status).toBe(200);
+    expect(runMutation).toHaveBeenCalledWith(expect.anything(), {
+      actorUserId: "users:admin",
+      operation: "failure-retry",
+      limit: 3,
+    });
+    await expect(createResponse.json()).resolves.toMatchObject({
+      _id: "storePackMigrationRuns:1",
+      operation: "failure-retry",
+    });
+    expect(continueResponse.status).toBe(200);
+    expect(runAction).toHaveBeenCalledWith(expect.anything(), {
+      actorUserId: "users:admin",
+      runId: "storePackMigrationRuns:1",
+    });
+    await expect(continueResponse.json()).resolves.toMatchObject({
+      result: { processed: 1 },
+    });
+  });
+
   it("storepack backfill dispatches the admin action", async () => {
     vi.mocked(requireApiTokenUser).mockResolvedValue({
       userId: "users:admin",
