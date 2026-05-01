@@ -23,6 +23,7 @@ import {
   cmdDeletePackageTrustedPublisher,
   cmdPackageStorePackBackfill,
   cmdPackageStorePackMigrationStatus,
+  cmdPackageStorePackRevoke,
   cmdPublishPackage,
   cmdSetPackageTrustedPublisher,
   cmdVerifyPackageStorePack,
@@ -467,6 +468,18 @@ packageStorePackCmd
   .action(async (options) => {
     const opts = await resolveGlobalOpts();
     await cmdPackageStorePackBackfill(opts, options);
+  });
+
+packageStorePackCmd
+  .command("revoke")
+  .description("Revoke a published StorePack artifact")
+  .argument("<name>", "Package name")
+  .argument("<version>", "Package version")
+  .option("--reason <text>", "Moderation reason")
+  .option("--json", "Output JSON")
+  .action(async (name, version, options) => {
+    const opts = await resolveGlobalOpts();
+    await cmdPackageStorePackRevoke(opts, name, version, options);
   });
 
 packageCmd

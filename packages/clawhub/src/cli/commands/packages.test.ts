@@ -35,6 +35,7 @@ const {
   cmdInspectPackage,
   cmdPackageStorePackBackfill,
   cmdPackageStorePackMigrationStatus,
+  cmdPackageStorePackRevoke,
   cmdPublishPackage,
   cmdSetPackageTrustedPublisher,
   cmdVerifyPackageStorePack,
@@ -374,6 +375,35 @@ describe("package commands", () => {
     );
     expect(mockLog).toHaveBeenCalledWith("StorePack backfill");
     expect(mockLog).toHaveBeenCalledWith("Succeeded: 2");
+  });
+
+  it("revokes StorePack artifacts for moderators", async () => {
+    httpMocks.apiRequest.mockResolvedValueOnce({
+      ok: true,
+      packageId: "packages:1",
+      releaseId: "packageReleases:1",
+      version: "1.0.0",
+      sha256: "d".repeat(64),
+      revokedArtifactCount: 1,
+    });
+
+    await cmdPackageStorePackRevoke(makeOpts(), "@openclaw/kitchen-sink", "1.0.0", {
+      reason: "malware confirmed",
+    });
+
+    expect(httpMocks.apiRequest).toHaveBeenCalledWith(
+      "https://clawhub.ai",
+      {
+        method: "POST",
+        path: "/api/v1/packages/%40openclaw%2Fkitchen-sink/versions/1.0.0/storepack/revoke",
+        token: "tkn",
+        body: { reason: "malware confirmed" },
+      },
+      undefined,
+    );
+    expect(mockLog).toHaveBeenCalledWith("StorePack revoked");
+    expect(mockLog).toHaveBeenCalledWith(`SHA-256: ${"d".repeat(64)}`);
+    expect(mockLog).toHaveBeenCalledWith("Revoked artifacts: 1");
   });
 
   it("publishes a code plugin package with an exact explicit payload", async () => {

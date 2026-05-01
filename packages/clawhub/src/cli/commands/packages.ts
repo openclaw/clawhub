@@ -98,6 +98,11 @@ type PackageStorePackMigrationOptions = {
   json?: boolean;
 };
 
+type PackageStorePackRevokeOptions = {
+  reason?: string;
+  json?: boolean;
+};
+
 type PackageTrustedPublisherGetOptions = {
   json?: boolean;
 };
@@ -694,6 +699,35 @@ export async function cmdPackageStorePackBackfill(
   console.log(`Processed: ${formatUnknownScalar(result.processed)}`);
   console.log(`Succeeded: ${formatUnknownScalar(result.succeeded)}`);
   console.log(`Failed: ${formatUnknownScalar(result.failed)}`);
+}
+
+export async function cmdPackageStorePackRevoke(
+  opts: GlobalOpts,
+  packageName: string,
+  version: string,
+  options: PackageStorePackRevokeOptions = {},
+) {
+  const trimmed = normalizePackageNameOrFail(packageName);
+  const trimmedVersion = version.trim();
+  if (!trimmedVersion) fail("Version required");
+  const token = await requireAuthToken();
+  const registry = await getRegistry(opts, { cache: true });
+  const reason = options.reason?.trim();
+  const result = await apiRequest<Record<string, unknown>>(registry, {
+    method: "POST",
+    path: `${ApiRoutes.packages}/${encodeURIComponent(trimmed)}/versions/${encodeURIComponent(trimmedVersion)}/storepack/revoke`,
+    token,
+    body: reason ? { reason } : {},
+  });
+  if (options.json) {
+    process.stdout.write(`${JSON.stringify(result, null, 2)}\n`);
+    return;
+  }
+  console.log("StorePack revoked");
+  console.log(`Package: ${trimmed}`);
+  console.log(`Version: ${formatUnknownScalar(result.version ?? trimmedVersion)}`);
+  console.log(`SHA-256: ${formatUnknownScalar(result.sha256)}`);
+  console.log(`Revoked artifacts: ${formatUnknownScalar(result.revokedArtifactCount)}`);
 }
 
 async function apiRequestPackageDetail(registry: string, name: string, token?: string) {
