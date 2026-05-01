@@ -489,6 +489,24 @@ Admin-only StorePack backfill batch for legacy plugin releases.
 - JSON body: `{ "limit": 10 }`.
 - Builds missing StorePack artifacts for eligible code-plugin and bundle-plugin releases.
 
+### `POST /api/v1/packages/storepack/index-backfill`
+
+Admin-only StorePack lookup-index backfill batch.
+
+- Requires Bearer token auth.
+- Caller must be an admin.
+- JSON body: `{ "limit": 25, "cursor": "<previous continueCursor>" }`.
+- Rebuilds host-target and environment lookup rows for releases with stored, non-revoked StorePack artifacts.
+
+### `POST /api/v1/packages/{name}/versions/{version}/storepack/revoke`
+
+Moderator/admin StorePack revocation for a specific package release.
+
+- Requires Bearer token auth.
+- Caller must be an admin or moderator.
+- JSON body: `{ "reason": "Malware confirmed" }`.
+- Marks the active StorePack artifact revoked and blocks package download and digest-addressed StorePack download paths.
+
 ### `DELETE /api/v1/skills/{slug}` / `POST /api/v1/skills/{slug}/undelete`
 
 Soft-delete / restore a skill (owner, moderator, or admin).

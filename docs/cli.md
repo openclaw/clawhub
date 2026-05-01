@@ -301,6 +301,23 @@ clawhub package explore episodic-claw --family code-plugin
 - `--limit <n>` controls batch size.
 - `--json` emits the raw response.
 
+### `package storepack-admin index-backfill`
+
+- Admin-only batch builder for StorePack host-target and environment lookup indexes.
+- Calls `POST /api/v1/packages/storepack/index-backfill`.
+- Requires an API token for an admin user.
+- `--limit <n>` controls batch size.
+- `--cursor <cursor>` continues from the previous batch response.
+- `--json` emits the raw response.
+
+### `package storepack-admin revoke <name> <version>`
+
+- Moderator/admin revocation path for a published StorePack artifact.
+- Calls `POST /api/v1/packages/{name}/versions/{version}/storepack/revoke`.
+- Requires an API token for an admin or moderator user.
+- `--reason <text>` records the moderation reason.
+- `--json` emits the raw response.
+
 ### `package publish <source>`
 
 - Publishes a code plugin or bundle plugin via `POST /api/v1/packages`.
