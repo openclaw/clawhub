@@ -1064,6 +1064,12 @@ const packageSearchDigest = defineTable({
     "executesCode",
     "updatedAt",
   ])
+  .index("by_active_family_scan_status_updated", [
+    "softDeletedAt",
+    "family",
+    "scanStatus",
+    "updatedAt",
+  ])
   .index("by_active_channel_executes_updated", [
     "softDeletedAt",
     "channel",

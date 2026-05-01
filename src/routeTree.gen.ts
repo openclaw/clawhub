@@ -34,6 +34,7 @@ import { Route as PackagesNewRouteImport } from './routes/packages/new'
 import { Route as PackagesNameRouteImport } from './routes/packages/$name'
 import { Route as OrgsHandleRouteImport } from './routes/orgs/$handle'
 import { Route as ManagementStorepacksRouteImport } from './routes/management/storepacks'
+import { Route as ManagementModerationRouteImport } from './routes/management/moderation'
 import { Route as CliAuthRouteImport } from './routes/cli/auth'
 import { Route as OwnerSlugRouteImport } from './routes/$owner/$slug'
 import { Route as OwnerSlugSettingsRouteImport } from './routes/$owner/$slug/settings'
@@ -166,6 +167,11 @@ const ManagementStorepacksRoute = ManagementStorepacksRouteImport.update({
   path: '/storepacks',
   getParentRoute: () => ManagementRoute,
 } as any)
+const ManagementModerationRoute = ManagementModerationRouteImport.update({
+  id: '/moderation',
+  path: '/moderation',
+  getParentRoute: () => ManagementRoute,
+} as any)
 const CliAuthRoute = CliAuthRouteImport.update({
   id: '/cli/auth',
   path: '/cli/auth',
@@ -215,6 +221,7 @@ export interface FileRoutesByFullPath {
   '/upload': typeof UploadRoute
   '/$owner/$slug': typeof OwnerSlugRouteWithChildren
   '/cli/auth': typeof CliAuthRoute
+  '/management/moderation': typeof ManagementModerationRoute
   '/management/storepacks': typeof ManagementStorepacksRoute
   '/orgs/$handle': typeof OrgsHandleRoute
   '/packages/$name': typeof PackagesNameRoute
@@ -248,6 +255,7 @@ export interface FileRoutesByTo {
   '/upload': typeof UploadRoute
   '/$owner/$slug': typeof OwnerSlugRouteWithChildren
   '/cli/auth': typeof CliAuthRoute
+  '/management/moderation': typeof ManagementModerationRoute
   '/management/storepacks': typeof ManagementStorepacksRoute
   '/orgs/$handle': typeof OrgsHandleRoute
   '/packages/$name': typeof PackagesNameRoute
@@ -282,6 +290,7 @@ export interface FileRoutesById {
   '/upload': typeof UploadRoute
   '/$owner/$slug': typeof OwnerSlugRouteWithChildren
   '/cli/auth': typeof CliAuthRoute
+  '/management/moderation': typeof ManagementModerationRoute
   '/management/storepacks': typeof ManagementStorepacksRoute
   '/orgs/$handle': typeof OrgsHandleRoute
   '/packages/$name': typeof PackagesNameRoute
@@ -317,6 +326,7 @@ export interface FileRouteTypes {
     | '/upload'
     | '/$owner/$slug'
     | '/cli/auth'
+    | '/management/moderation'
     | '/management/storepacks'
     | '/orgs/$handle'
     | '/packages/$name'
@@ -350,6 +360,7 @@ export interface FileRouteTypes {
     | '/upload'
     | '/$owner/$slug'
     | '/cli/auth'
+    | '/management/moderation'
     | '/management/storepacks'
     | '/orgs/$handle'
     | '/packages/$name'
@@ -383,6 +394,7 @@ export interface FileRouteTypes {
     | '/upload'
     | '/$owner/$slug'
     | '/cli/auth'
+    | '/management/moderation'
     | '/management/storepacks'
     | '/orgs/$handle'
     | '/packages/$name'
@@ -608,6 +620,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ManagementStorepacksRouteImport
       parentRoute: typeof ManagementRoute
     }
+    '/management/moderation': {
+      id: '/management/moderation'
+      path: '/moderation'
+      fullPath: '/management/moderation'
+      preLoaderRoute: typeof ManagementModerationRouteImport
+      parentRoute: typeof ManagementRoute
+    }
     '/cli/auth': {
       id: '/cli/auth'
       path: '/cli/auth'
@@ -654,10 +673,12 @@ declare module '@tanstack/react-router' {
 }
 
 interface ManagementRouteChildren {
+  ManagementModerationRoute: typeof ManagementModerationRoute
   ManagementStorepacksRoute: typeof ManagementStorepacksRoute
 }
 
 const ManagementRouteChildren: ManagementRouteChildren = {
+  ManagementModerationRoute: ManagementModerationRoute,
   ManagementStorepacksRoute: ManagementStorepacksRoute,
 }
 

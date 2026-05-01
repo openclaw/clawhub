@@ -418,8 +418,15 @@ function Management() {
 
   return (
     <main className="section">
-      <h1 className="section-title">Management console</h1>
-      <p className="section-subtitle">Moderation, curation, and ownership tools.</p>
+      <div className="mb-5 flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
+        <div>
+          <h1 className="section-title">Management console</h1>
+          <p className="section-subtitle">Moderation, curation, and ownership tools.</p>
+        </div>
+        <Button asChild variant="outline" size="sm">
+          <Link to="/management/moderation">Open moderation queue</Link>
+        </Button>
+      </div>
 
       <Card className="mb-5">
         <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">

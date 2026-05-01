@@ -96,6 +96,21 @@ const packageScanStatusArgValidator = v.union(
   v.literal("pending"),
   v.literal("not-run"),
 );
+const packageModerationQueueStatusArgValidator = v.union(
+  v.literal("needs-review"),
+  v.literal("clean"),
+  v.literal("suspicious"),
+  v.literal("malicious"),
+  v.literal("pending"),
+  v.literal("not-run"),
+);
+const PACKAGE_MODERATION_REVIEW_STATUSES = [
+  "pending",
+  "suspicious",
+  "malicious",
+  "not-run",
+] as const;
+const PACKAGE_MODERATION_FAMILIES = ["code-plugin", "bundle-plugin"] as const;
 const internalRefs = internal as unknown as {
   llmEval: {
     evaluatePackageReleaseWithLlm: unknown;
@@ -1229,6 +1244,92 @@ export const getByNameForStaff = query({
             at: highlighted.at,
           }
         : null,
+    };
+  },
+});
+
+export const listModerationQueueForStaff = query({
+  args: {
+    status: v.optional(packageModerationQueueStatusArgValidator),
+    limit: v.optional(v.number()),
+  },
+  handler: async (ctx, args) => {
+    const { user } = await requireUser(ctx);
+    assertModerator(user);
+
+    const limit = Math.max(1, Math.min(Math.floor(args.limit ?? 30), 100));
+    const statuses =
+      !args.status || args.status === "needs-review"
+        ? PACKAGE_MODERATION_REVIEW_STATUSES
+        : [args.status];
+    const perQueryLimit = limit + 1;
+    const digests = (
+      await Promise.all(
+        PACKAGE_MODERATION_FAMILIES.flatMap((family) =>
+          statuses.map((status) =>
+            ctx.db
+              .query("packageSearchDigest")
+              .withIndex("by_active_family_scan_status_updated", (q) =>
+                q.eq("softDeletedAt", undefined).eq("family", family).eq("scanStatus", status),
+              )
+              .order("desc")
+              .take(perQueryLimit),
+          ),
+        ),
+      )
+    ).flat();
+    const page = digests
+      .sort((a, b) => b.updatedAt - a.updatedAt)
+      .filter((digest, index, all) => {
+        return all.findIndex((candidate) => candidate.packageId === digest.packageId) === index;
+      })
+      .slice(0, limit + 1);
+
+    const items = [];
+    for (const digest of page.slice(0, limit)) {
+      const pkg = await ctx.db.get(digest.packageId);
+      const latestRelease = pkg?.latestReleaseId ? await ctx.db.get(pkg.latestReleaseId) : null;
+      items.push({
+        packageId: digest.packageId,
+        name: digest.name,
+        normalizedName: digest.normalizedName,
+        displayName: digest.displayName,
+        family: digest.family,
+        channel: digest.channel,
+        isOfficial: digest.isOfficial,
+        ownerHandle: digest.ownerHandle,
+        ownerKind: digest.ownerKind,
+        summary: digest.summary,
+        latestVersion: digest.latestVersion,
+        runtimeId: digest.runtimeId,
+        executesCode: digest.executesCode,
+        verificationTier: digest.verificationTier,
+        storepackAvailable: digest.storepackAvailable,
+        hostTargetKeys: digest.hostTargetKeys ?? [],
+        environmentFlags: digest.environmentFlags ?? [],
+        scanStatus: digest.scanStatus ?? "not-run",
+        createdAt: digest.createdAt,
+        updatedAt: digest.updatedAt,
+        latestRelease:
+          latestRelease && !latestRelease.softDeletedAt
+            ? {
+                releaseId: latestRelease._id,
+                version: latestRelease.version,
+                createdAt: latestRelease.createdAt,
+                storepackAvailable: Boolean(latestRelease.storepackStorageId),
+                storepackRevokedAt: latestRelease.storepackRevokedAt,
+                storepackSha256: latestRelease.storepackSha256,
+                storepackFileCount: latestRelease.storepackFileCount,
+              }
+            : null,
+      });
+    }
+
+    return {
+      items,
+      status: args.status ?? "needs-review",
+      limit,
+      hasMore: page.length > limit,
     };
   },
 });
