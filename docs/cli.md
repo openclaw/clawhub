@@ -301,30 +301,69 @@ clawhub package explore episodic-claw --family code-plugin
 - Prints each target package, readiness state, and blocker list.
 - `--json` emits the raw response.
 
+### `package storepack-admin dry-run`
+
+- Admin-only preview for a persistent StorePack migration run.
+- Calls `GET /api/v1/packages/storepack/migration-runs/dry-run`.
+- Requires an API token for an admin user.
+- `--operation <operation>` accepts `artifact-backfill`, `failure-retry`, or `search-index-backfill`.
+- `--limit <n>` controls candidate sample or batch size.
+- `--cursor <cursor>` previews a later search-index batch.
+- `--json` emits the raw response.
+
+### `package storepack-admin runs`
+
+- Admin-only run ledger for StorePack migration operations.
+- Calls `GET /api/v1/packages/storepack/migration-runs`.
+- Requires an API token for an admin user.
+- `--status <status>` filters by `pending`, `running`, `completed`, or `failed`.
+- `--limit <n>` controls run count.
+- `--json` emits the raw response.
+
+### `package storepack-admin create-run`
+
+- Admin-only creation path for a durable StorePack migration run.
+- Calls `POST /api/v1/packages/storepack/migration-runs`.
+- Requires an API token for an admin user.
+- `--operation <operation>` accepts `artifact-backfill`, `failure-retry`, or `search-index-backfill`.
+- `--limit <n>` controls batch size for each continuation.
+- `--cursor <cursor>` sets the initial search-index cursor.
+- `--json` emits the raw response.
+
+### `package storepack-admin continue-run <run-id>`
+
+- Admin-only execution path for the next bounded batch of a migration run.
+- Calls `POST /api/v1/packages/storepack/migration-runs/{runId}/continue`.
+- Requires an API token for an admin user.
+- `--json` emits the raw response.
+
 ### `package storepack-admin backfill`
 
-- Admin-only batch builder for legacy plugin releases missing stored StorePack artifacts.
+- Admin-only direct batch builder for legacy plugin releases missing stored StorePack artifacts.
 - Calls `POST /api/v1/packages/storepack/backfill`.
 - Requires an API token for an admin user.
 - `--limit <n>` controls batch size.
 - `--json` emits the raw response.
+- Prefer `dry-run`, `create-run`, and `continue-run` for coordinated migrations; use direct backfill for focused repair.
 
 ### `package storepack-admin index-backfill`
 
-- Admin-only batch builder for StorePack host-target and environment lookup indexes.
+- Admin-only direct batch builder for StorePack host-target and environment lookup indexes.
 - Calls `POST /api/v1/packages/storepack/index-backfill`.
 - Requires an API token for an admin user.
 - `--limit <n>` controls batch size.
 - `--cursor <cursor>` continues from the previous batch response.
 - `--json` emits the raw response.
+- Prefer the `search-index-backfill` migration-run operation for coordinated index migrations.
 
 ### `package storepack-admin retry-failures`
 
-- Admin-only batch retry for failed StorePack artifact builds.
+- Admin-only direct batch retry for failed StorePack artifact builds.
 - Calls `POST /api/v1/packages/storepack/retry-failures`.
 - Requires an API token for an admin user.
 - `--limit <n>` controls batch size.
 - `--json` emits the raw response.
+- Prefer the `failure-retry` migration-run operation for coordinated retries.
 
 ### `package storepack-admin revoke <name> <version>`
 

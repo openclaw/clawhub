@@ -53,12 +53,16 @@ The dashboard should answer:
 
 Admin actions:
 
-- build missing StorePack artifacts in bounded batches
+- preview migration candidates without writing
+- create persistent migration runs
+- execute one bounded batch at a time
+- build missing StorePack artifacts in bounded repair batches
 - rebuild StorePack host/environment index rows
 - retry failed builds
 - inspect failed release ids and reason codes
 
-Every batch must be bounded. Avoid unbounded table scans and avoid any
+Every batch must be bounded and tied to a visible run record when the operation
+is part of a coordinated migration. Avoid unbounded table scans and avoid any
 operation that makes a partial migration silently look complete.
 
 ## CLI Admin Commands
@@ -69,19 +73,38 @@ Status:
 clawhub package storepack-admin status --json
 ```
 
-Build missing artifacts:
+Preview a coordinated migration:
+
+```bash
+clawhub package storepack-admin dry-run --operation artifact-backfill --limit 25
+```
+
+Create and continue a durable run:
+
+```bash
+clawhub package storepack-admin create-run --operation artifact-backfill --limit 25
+clawhub package storepack-admin continue-run <run-id>
+```
+
+List run history:
+
+```bash
+clawhub package storepack-admin runs --status failed --json
+```
+
+Direct repair for missing artifacts:
 
 ```bash
 clawhub package storepack-admin backfill --limit 25
 ```
 
-Rebuild search index:
+Direct search-index repair:
 
 ```bash
 clawhub package storepack-admin index-backfill --limit 100
 ```
 
-Retry failures:
+Direct failure retry:
 
 ```bash
 clawhub package storepack-admin retry-failures --limit 25
@@ -93,7 +116,9 @@ Revoke an artifact:
 clawhub package storepack-admin revoke <name> <version> --reason "reason code or note"
 ```
 
-Use `--json` for automation and audit capture.
+Use `--json` for automation and audit capture. For production-sized work, prefer
+`dry-run` -> `create-run` -> repeated `continue-run` over the direct repair
+commands.
 
 ## Moderation Console
 

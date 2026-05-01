@@ -480,6 +480,54 @@ Admin-only StorePack migration status.
 - Caller must be an admin.
 - `limit` (optional): sample size for generated StorePack artifact statistics.
 
+### `GET /api/v1/packages/storepack/migration-runs/dry-run`
+
+Admin-only preview for a persistent StorePack migration run.
+
+- Requires Bearer token auth.
+- Caller must be an admin.
+- Query params:
+  - `operation`: `artifact-backfill`, `failure-retry`, or `search-index-backfill`.
+  - `limit` (optional): sample size.
+  - `cursor` (optional): search-index continuation cursor.
+- Returns candidate rows and the cursor state without mutating data.
+
+### `GET /api/v1/packages/storepack/migration-runs`
+
+Admin-only StorePack migration run ledger.
+
+- Requires Bearer token auth.
+- Caller must be an admin.
+- Query params:
+  - `status` (optional): `pending`, `running`, `completed`, or `failed`.
+  - `limit` (optional): max run records.
+
+### `GET /api/v1/packages/storepack/migration-runs/{runId}`
+
+Admin-only StorePack migration run detail.
+
+- Requires Bearer token auth.
+- Caller must be an admin.
+- Returns `404` when the run id does not exist.
+
+### `POST /api/v1/packages/storepack/migration-runs`
+
+Admin-only StorePack migration run creation.
+
+- Requires Bearer token auth.
+- Caller must be an admin.
+- JSON body: `{ "operation": "artifact-backfill", "limit": 10, "cursor": "optional" }`.
+- Creates a durable `pending` run. It does not execute the batch until `continue` is called.
+
+### `POST /api/v1/packages/storepack/migration-runs/{runId}/continue`
+
+Admin-only execution path for one bounded StorePack migration batch.
+
+- Requires Bearer token auth.
+- Caller must be an admin.
+- Runs one batch for the selected migration run and updates processed/generated/skipped/failed counters.
+- Returns the updated run and the batch result. Failed runs store `lastError`.
+
 ### `POST /api/v1/packages/storepack/backfill`
 
 Admin-only StorePack backfill batch for legacy plugin releases.
@@ -488,6 +536,7 @@ Admin-only StorePack backfill batch for legacy plugin releases.
 - Caller must be an admin.
 - JSON body: `{ "limit": 10 }`.
 - Builds missing StorePack artifacts for eligible code-plugin and bundle-plugin releases.
+- Prefer migration runs for coordinated production work; use this direct endpoint for focused repair.
 
 ### `POST /api/v1/packages/storepack/index-backfill`
 
@@ -497,6 +546,16 @@ Admin-only StorePack lookup-index backfill batch.
 - Caller must be an admin.
 - JSON body: `{ "limit": 25, "cursor": "<previous continueCursor>" }`.
 - Rebuilds host-target and environment lookup rows for releases with stored, non-revoked StorePack artifacts.
+- Prefer the `search-index-backfill` migration-run operation for coordinated production work.
+
+### `POST /api/v1/packages/storepack/retry-failures`
+
+Admin-only retry path for failed StorePack artifact builds.
+
+- Requires Bearer token auth.
+- Caller must be an admin.
+- JSON body: `{ "limit": 10 }`.
+- Prefer the `failure-retry` migration-run operation for coordinated production work.
 
 ### `POST /api/v1/packages/{name}/versions/{version}/storepack/revoke`
 
