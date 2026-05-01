@@ -18,6 +18,7 @@ export declare const ApiRoutes: {
     readonly skills: "/api/v1/skills";
     readonly plugins: "/api/v1/plugins";
     readonly packages: "/api/v1/packages";
+    readonly storepacks: "/api/v1/storepacks";
     readonly codePlugins: "/api/v1/code-plugins";
     readonly bundlePlugins: "/api/v1/bundle-plugins";
     readonly stars: "/api/v1/stars";

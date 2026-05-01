@@ -3795,6 +3795,121 @@ describe("httpApiV1 handlers", () => {
     });
   });
 
+  it("serves StorePack artifacts by digest with immutable cache headers", async () => {
+    const sha256 = "ab".repeat(32);
+    const runMutation = vi.fn().mockResolvedValue(okRate());
+    const runQuery = vi.fn(async (_query: unknown, args: Record<string, unknown>) => {
+      if (args.sha256 === sha256) {
+        return {
+          status: "ok",
+          artifact: {
+            storageId: "storage:storepack",
+            sha256,
+            size: 13,
+            format: "zip",
+          },
+          package: {
+            _id: "packages:1",
+            name: "@openclaw/kitchen-sink",
+          },
+          release: {
+            _id: "packageReleases:1",
+            version: "1.0.0",
+            storepackSpecVersion: 1,
+          },
+        };
+      }
+      return null;
+    });
+    const storageGet = vi.fn(async () => new Blob(["storepack zip"], { type: "application/zip" }));
+
+    const response = await __handlers.storepacksGetRouterV1Handler(
+      makeCtx({
+        runQuery,
+        runMutation,
+        storage: { get: storageGet },
+      }),
+      new Request(`https://example.com/api/v1/storepacks/${sha256}`),
+    );
+
+    expect(response.status).toBe(200);
+    expect(await response.text()).toBe("storepack zip");
+    expect(response.headers.get("Cache-Control")).toBe("public, max-age=31536000, immutable");
+    expect(response.headers.get("ETag")).toBe(`"sha256:${sha256}"`);
+    expect(response.headers.get("Digest")).toBe(
+      `sha-256=${Buffer.from(sha256, "hex").toString("base64")}`,
+    );
+    expect(storageGet).toHaveBeenCalledWith("storage:storepack");
+    expect(runMutation).toHaveBeenCalledWith(internal.packages.recordPackageDownloadInternal, {
+      packageId: "packages:1",
+    });
+  });
+
+  it("supports HEAD for digest-addressed StorePack artifacts without recording a download", async () => {
+    const sha256 = "cd".repeat(32);
+    const runMutation = vi.fn().mockResolvedValue(okRate());
+    const runQuery = vi.fn(async (_query: unknown, args: Record<string, unknown>) => {
+      if (args.sha256 === sha256) {
+        return {
+          status: "ok",
+          artifact: {
+            storageId: "storage:storepack",
+            sha256,
+            size: 13,
+            format: "zip",
+          },
+          package: {
+            _id: "packages:1",
+            name: "demo",
+          },
+          release: {
+            _id: "packageReleases:1",
+            version: "1.0.0",
+            storepackSpecVersion: 1,
+          },
+        };
+      }
+      return null;
+    });
+    const storageGet = vi.fn(async () => new Blob(["storepack zip"], { type: "application/zip" }));
+
+    const response = await __handlers.storepacksGetRouterV1Handler(
+      makeCtx({
+        runQuery,
+        runMutation,
+        storage: { get: storageGet },
+      }),
+      new Request(`https://example.com/api/v1/storepacks/${sha256}`, { method: "HEAD" }),
+    );
+
+    expect(response.status).toBe(200);
+    expect(await response.text()).toBe("");
+    expect(response.headers.get("Content-Length")).toBe("13");
+    expect(response.headers.get("Cache-Control")).toBe("public, max-age=31536000, immutable");
+    expect(storageGet).toHaveBeenCalledWith("storage:storepack");
+    expect(
+      runMutation.mock.calls.some(
+        ([ref]) => ref === internal.packages.recordPackageDownloadInternal,
+      ),
+    ).toBe(false);
+  });
+
+  it("returns gone for revoked digest-addressed StorePack artifacts", async () => {
+    const sha256 = "ef".repeat(32);
+    const runMutation = vi.fn().mockResolvedValue(okRate());
+    const runQuery = vi.fn(async (_query: unknown, args: Record<string, unknown>) => {
+      if (args.sha256 === sha256) return { status: "revoked" };
+      return null;
+    });
+
+    const response = await __handlers.storepacksGetRouterV1Handler(
+      makeCtx({ runQuery, runMutation, storage: { get: vi.fn() } }),
+      new Request(`https://example.com/api/v1/storepacks/${sha256}`),
+    );
+
+    expect(response.status).toBe(410);
+  });
+
   it("storepack migration status requires an admin API token", async () => {
     vi.mocked(requireApiTokenUser).mockResolvedValue({
       userId: "users:admin",

@@ -1326,6 +1326,68 @@ export const getStorePackMigrationStatusInternal = internalQuery({
   },
 });
 
+export const getStorePackArtifactByShaForViewerInternal = internalQuery({
+  args: {
+    sha256: v.string(),
+    viewerUserId: v.optional(v.id("users")),
+  },
+  handler: async (ctx, args) => {
+    const sha256 = args.sha256.trim().toLowerCase();
+    if (!/^[a-f0-9]{64}$/.test(sha256)) return null;
+    const artifacts = await ctx.db
+      .query("packageReleaseArtifacts")
+      .withIndex("by_sha256", (q) => q.eq("sha256", sha256))
+      .take(20);
+    let sawRevoked = false;
+    const membershipCache = new Map<string, Promise<boolean>>();
+    for (const artifact of artifacts) {
+      if (artifact.kind !== "storepack") continue;
+      if (artifact.status === "revoked") {
+        sawRevoked = true;
+        continue;
+      }
+      if (artifact.status !== "active") continue;
+      const [pkg, release] = await Promise.all([
+        ctx.db.get(artifact.packageId),
+        ctx.db.get(artifact.releaseId),
+      ]);
+      if (!pkg || pkg.softDeletedAt || !release || release.softDeletedAt) continue;
+      if (release.packageId !== pkg._id || release.storepackSha256 !== sha256) continue;
+      const canRead = await canViewerReadPackage(
+        ctx,
+        {
+          channel: pkg.channel,
+          scanStatus: pkg.scanStatus,
+          ownerUserId: pkg.ownerUserId,
+          ownerPublisherId: pkg.ownerPublisherId,
+        },
+        args.viewerUserId,
+        membershipCache,
+      );
+      if (!canRead) continue;
+      return {
+        status: "ok" as const,
+        artifact: {
+          storageId: artifact.storageId,
+          sha256: artifact.sha256,
+          size: artifact.size,
+          format: artifact.format,
+        },
+        package: {
+          _id: pkg._id,
+          name: pkg.name,
+        },
+        release: {
+          _id: release._id,
+          version: release.version,
+          storepackSpecVersion: release.storepackSpecVersion,
+        },
+      };
+    }
+    return sawRevoked ? { status: "revoked" as const } : null;
+  },
+});
+
 async function getStorePackMigrationStatusForLimit(
   ctx: DbReaderCtx,
   requestedLimit: number | undefined,

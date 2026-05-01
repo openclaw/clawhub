@@ -38,6 +38,7 @@ import {
   soulsPostRouterV1Http,
   starsDeleteRouterV1Http,
   starsPostRouterV1Http,
+  storepacksGetRouterV1Http,
   transfersGetRouterV1Http,
   usersListV1Http,
   usersPostRouterV1Http,
@@ -113,6 +114,12 @@ http.route({
   pathPrefix: `${ApiRoutes.plugins}/`,
   method: "GET",
   handler: pluginsGetRouterV1Http,
+});
+
+http.route({
+  pathPrefix: "/api/v1/storepacks/",
+  method: "GET",
+  handler: storepacksGetRouterV1Http,
 });
 
 http.route({

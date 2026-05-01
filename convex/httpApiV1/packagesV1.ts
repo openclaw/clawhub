@@ -54,6 +54,7 @@ const internalRefs = internal as unknown as {
     listVersionsForViewerInternal: unknown;
     getPackageByNameInternal: unknown;
     getTrustedPublisherByPackageIdInternal: unknown;
+    getStorePackArtifactByShaForViewerInternal: unknown;
     getVersionByNameForViewerInternal: unknown;
     publishPackageForUserInternal: unknown;
     publishPackageForTrustedPublisherInternal: unknown;
@@ -255,6 +256,31 @@ function sha256DigestHeader(hex: string) {
   return `sha-256=${btoa(String.fromCharCode(...bytes))}`;
 }
 
+function normalizeStorePackSha256(raw: string | undefined) {
+  const sha256 = raw?.trim().toLowerCase();
+  return sha256 && /^[a-f0-9]{64}$/.test(sha256) ? sha256 : null;
+}
+
+function storePackArtifactHeaders(input: {
+  packageName: string;
+  version: string;
+  sha256: string;
+  size: number;
+  specVersion?: number;
+  immutable?: boolean;
+}) {
+  return {
+    "Content-Type": "application/zip",
+    "Content-Length": String(input.size),
+    "Content-Disposition": `attachment; filename="${input.packageName.replaceAll("/", "-")}-${input.version}.storepack.zip"`,
+    ETag: `"sha256:${input.sha256}"`,
+    Digest: sha256DigestHeader(input.sha256),
+    ...(input.immutable ? { "Cache-Control": "public, max-age=31536000, immutable" } : {}),
+    "X-ClawHub-StorePack-Sha256": input.sha256,
+    "X-ClawHub-StorePack-Spec-Version": String(input.specVersion ?? 1),
+  };
+}
+
 async function resolvePackageTags(
   ctx: ActionCtx,
   tags: Record<string, Id<"packageReleases">>,
@@ -297,6 +323,29 @@ type CatalogListItem = {
 };
 
 type CatalogSearchEntry = { score: number; package: CatalogListItem };
+
+type StorePackArtifactLookup =
+  | {
+      status: "ok";
+      artifact: {
+        storageId: Id<"_storage">;
+        sha256: string;
+        size: number;
+        format: string;
+      };
+      package: {
+        _id: Id<"packages">;
+        name: string;
+      };
+      release: {
+        _id: Id<"packageReleases">;
+        version: string;
+        storepackSpecVersion?: number;
+      };
+    }
+  | {
+      status: "revoked";
+    };
 
 type CatalogSourceCursorState = {
   cursor: string | null;
@@ -1832,15 +1881,13 @@ export async function packagesGetRouterV1Handler(ctx: ActionCtx, request: Reques
         status: 200,
         headers: mergeHeaders(
           rate.headers,
-          {
-            "Content-Type": "application/zip",
-            "Content-Length": String(release.storepackSize),
-            "Content-Disposition": `attachment; filename="${publicPackage!.name.replaceAll("/", "-")}-${release.version}.storepack.zip"`,
-            ETag: `"sha256:${release.storepackSha256}"`,
-            Digest: sha256DigestHeader(release.storepackSha256),
-            "X-ClawHub-StorePack-Sha256": release.storepackSha256,
-            "X-ClawHub-StorePack-Spec-Version": String(release.storepackSpecVersion ?? 1),
-          },
+          storePackArtifactHeaders({
+            packageName: publicPackage!.name,
+            version: release.version,
+            sha256: release.storepackSha256,
+            size: release.storepackSize,
+            specVersion: release.storepackSpecVersion,
+          }),
           corsHeaders(),
         ),
       });
@@ -1876,6 +1923,52 @@ export async function packagesGetRouterV1Handler(ctx: ActionCtx, request: Reques
   }
 
   return text("Not found", 404, rate.headers);
+}
+
+export async function storepacksGetRouterV1Handler(ctx: ActionCtx, request: Request) {
+  const segments = getPathSegments(request, "/api/v1/storepacks/");
+  if (segments.length !== 1) return text("Not found", 404);
+  const sha256 = normalizeStorePackSha256(segments[0]);
+  if (!sha256) return text("Invalid StorePack digest", 400);
+  const rate = await applyRateLimit(ctx, request, "download");
+  if (!rate.ok) return rate.response;
+  const viewerUserId = await getOptionalViewerUserIdForRequest(ctx, request);
+  const lookup = await runQueryRef<StorePackArtifactLookup | null>(
+    ctx,
+    internalRefs.packages.getStorePackArtifactByShaForViewerInternal,
+    {
+      sha256,
+      viewerUserId: viewerUserId ?? undefined,
+    },
+  );
+  if (!lookup) return text("StorePack not found", 404, rate.headers);
+  if (lookup.status === "revoked") return text("StorePack revoked", 410, rate.headers);
+  const blob = await ctx.storage.get(lookup.artifact.storageId);
+  if (!blob) return text("Missing stored StorePack artifact", 500, rate.headers);
+  if (request.method !== "HEAD") {
+    try {
+      await runMutationRef(ctx, internalRefs.packages.recordPackageDownloadInternal, {
+        packageId: lookup.package._id,
+      });
+    } catch {
+      // Best-effort metric path; never fail StorePack downloads.
+    }
+  }
+  return new Response(request.method === "HEAD" ? null : blob, {
+    status: 200,
+    headers: mergeHeaders(
+      rate.headers,
+      storePackArtifactHeaders({
+        packageName: lookup.package.name,
+        version: lookup.release.version,
+        sha256: lookup.artifact.sha256,
+        size: lookup.artifact.size,
+        specVersion: lookup.release.storepackSpecVersion,
+        immutable: true,
+      }),
+      corsHeaders(),
+    ),
+  });
 }
 
 export async function pluginsGetRouterV1Handler(ctx: ActionCtx, request: Request) {
