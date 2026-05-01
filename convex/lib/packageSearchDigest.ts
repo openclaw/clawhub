@@ -56,6 +56,9 @@ export type PackageSearchDigestFields = Pick<Doc<"packages">, (typeof SHARED_KEY
   ownerHandle?: string;
   ownerKind?: "user" | "org";
   verificationTier?: Doc<"packageSearchDigest">["verificationTier"];
+  storepackAvailable?: boolean;
+  hostTargetKeys?: string[];
+  environmentFlags?: string[];
 };
 
 type PackageCapabilitySearchDigestFields = Pick<
@@ -71,6 +74,40 @@ export function extractPackageDigestFields(pkg: Doc<"packages">): PackageSearchD
     packageId: pkg._id,
     latestVersion: pkg.latestVersionSummary?.version,
     verificationTier: pkg.verification?.tier,
+  };
+}
+
+export function extractPackageStorePackDigestFields(
+  release: Doc<"packageReleases"> | null | undefined,
+): Pick<PackageSearchDigestFields, "storepackAvailable" | "hostTargetKeys" | "environmentFlags"> {
+  if (!release || release.softDeletedAt) {
+    return {
+      storepackAvailable: false,
+      hostTargetKeys: [],
+      environmentFlags: [],
+    };
+  }
+  const environment = release.environmentSummary;
+  const flags = [
+    environment?.requiresLocalDesktop ? "desktop" : null,
+    environment?.requiresBrowser ? "browser" : null,
+    environment?.requiresAudioDevice ? "audio" : null,
+    environment?.requiresNetwork ? "network" : null,
+    environment?.supportsRemoteHost ? "remote-host" : null,
+    ...(environment?.requiresExternalServices ?? []).map((service) => `service:${service}`),
+    ...(environment?.requiresOsPermissions ?? []).map((permission) => `permission:${permission}`),
+    ...(environment?.knownUnsupported ?? []).map((target) => `unsupported:${target}`),
+  ].filter((flag): flag is string => Boolean(flag));
+  return {
+    storepackAvailable: Boolean(release.storepackStorageId),
+    hostTargetKeys: [
+      ...new Set(
+        (release.hostTargetsSummary ?? []).map((target) =>
+          [target.os, target.arch, target.libc].filter(Boolean).join("-"),
+        ),
+      ),
+    ],
+    environmentFlags: [...new Set(flags)],
   };
 }
 

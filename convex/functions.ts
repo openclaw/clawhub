@@ -17,6 +17,7 @@ import type { MutationCtx } from "./_generated/server";
 import {
   deletePackageSearchDigests,
   extractPackageDigestFields,
+  extractPackageStorePackDigestFields,
   upsertPackageSearchDigest,
 } from "./lib/packageSearchDigest";
 import { getOwnerPublisher } from "./lib/publishers";
@@ -130,6 +131,7 @@ async function syncPackageSearchDigest(
   });
   await upsertPackageSearchDigest(ctx, {
     ...fields,
+    ...extractPackageStorePackDigestFields(latestRelease),
     latestVersion:
       latestRelease && !latestRelease.softDeletedAt ? latestRelease.version : undefined,
     ownerHandle: owner?.handle ?? "",
