@@ -104,6 +104,10 @@ Auth required:
 - `GET /api/v1/transfers/outgoing`
 - `GET /api/v1/whoami`
 
+Admin only:
+
+- `POST /api/v1/users/reserve` reserves root slugs and private no-release package placeholders for an owner handle.
+
 ## Legacy
 
 Legacy `/api/*` and `/api/cli/*` still available. See `DEPRECATIONS.md`.

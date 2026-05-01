@@ -6353,6 +6353,79 @@ export const reclaimSlugInternal = internalMutation({
   },
 });
 
+export const reserveSlugInternal = internalMutation({
+  args: {
+    actorUserId: v.id("users"),
+    slug: v.string(),
+    rightfulOwnerUserId: v.id("users"),
+    reason: v.optional(v.string()),
+  },
+  handler: async (ctx, args) => {
+    const actor = await ctx.db.get(args.actorUserId);
+    if (!actor || actor.deletedAt || actor.deactivatedAt) throw new Error("User not found");
+    assertAdmin(actor);
+
+    const slug = args.slug.trim().toLowerCase();
+    if (!slug) throw new Error("Slug required");
+
+    const rightfulOwner = await ctx.db.get(args.rightfulOwnerUserId);
+    if (!rightfulOwner || rightfulOwner.deletedAt || rightfulOwner.deactivatedAt) {
+      throw new Error("Rightful owner not found");
+    }
+
+    const now = Date.now();
+    const existingSkill = await ctx.db
+      .query("skills")
+      .withIndex("by_slug", (q) => q.eq("slug", slug))
+      .unique();
+
+    if (existingSkill) {
+      if (existingSkill.ownerUserId !== args.rightfulOwnerUserId) {
+        throw new Error("Slug already exists and belongs to another owner");
+      }
+
+      await releaseActiveReservationsForSlug(ctx, slug, now);
+      await ctx.db.insert("auditLogs", {
+        actorUserId: args.actorUserId,
+        action: "slug.reserve",
+        targetType: "slug",
+        targetId: slug,
+        metadata: {
+          slug,
+          rightfulOwnerUserId: args.rightfulOwnerUserId,
+          action: "already_owned",
+          reason: args.reason || undefined,
+        },
+        createdAt: now,
+      });
+      return { ok: true as const, action: "already_owned" as const };
+    }
+
+    await upsertReservedSlugForRightfulOwner(ctx, {
+      slug,
+      rightfulOwnerUserId: args.rightfulOwnerUserId,
+      deletedAt: now,
+      expiresAt: now + SLUG_RESERVATION_MS,
+      reason: args.reason || "slug.reserved",
+    });
+
+    await ctx.db.insert("auditLogs", {
+      actorUserId: args.actorUserId,
+      action: "slug.reserve",
+      targetType: "slug",
+      targetId: slug,
+      metadata: {
+        slug,
+        rightfulOwnerUserId: args.rightfulOwnerUserId,
+        reason: args.reason || undefined,
+      },
+      createdAt: now,
+    });
+
+    return { ok: true as const, action: "reserved" as const };
+  },
+});
+
 export const setDuplicate = mutation({
   args: { skillId: v.id("skills"), canonicalSlug: v.optional(v.string()) },
   handler: async (ctx, args) => {

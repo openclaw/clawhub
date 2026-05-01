@@ -12,6 +12,7 @@ import {
   publishPackageForUserInternal,
   getVersionByName,
   insertReleaseInternal,
+  reservePackageNameInternal,
   listPublicPage,
   listPageForViewerInternal,
   listVersions,
@@ -132,6 +133,21 @@ const insertReleaseInternalHandler = (
       source?: unknown;
     },
     unknown
+  >
+)._handler;
+const reservePackageNameInternalHandler = (
+  reservePackageNameInternal as unknown as WrappedHandler<
+    {
+      actorUserId: string;
+      ownerUserId: string;
+      ownerPublisherId?: string;
+      name: string;
+      displayName?: string;
+      summary?: string;
+      family?: "skill" | "code-plugin" | "bundle-plugin";
+      reason?: string;
+    },
+    { ok: true; action: string; packageId: string; name: string }
   >
 )._handler;
 const searchPublicHandler = (
@@ -637,6 +653,58 @@ function makeInsertReleaseCtx(
       replace: vi.fn(),
       delete: vi.fn(),
       normalizeId: vi.fn(),
+    },
+  };
+}
+
+function makeReservePackageNameCtx(options?: {
+  existing?: Record<string, unknown> | null;
+  actor?: Record<string, unknown> | null;
+  owner?: Record<string, unknown> | null;
+  ownerPublisher?: Record<string, unknown> | null;
+}) {
+  const insert = vi
+    .fn()
+    .mockResolvedValueOnce("packages:reserved")
+    .mockResolvedValueOnce("auditLogs:reserved");
+  return {
+    insert,
+    ctx: {
+      db: {
+        get: vi.fn(async (id: string) => {
+          if (id === "users:admin") {
+            return options?.actor ?? { _id: id, role: "admin" };
+          }
+          if (id === "users:openclaw") {
+            return options?.owner ?? { _id: id, role: "user" };
+          }
+          if (id === "publishers:openclaw") {
+            return (
+              options?.ownerPublisher ?? {
+                _id: id,
+                kind: "org",
+                handle: "openclaw",
+                displayName: "OpenClaw",
+                trustedPublisher: true,
+              }
+            );
+          }
+          return null;
+        }),
+        query: vi.fn((table: string) => {
+          if (table !== "packages") throw new Error(`Unexpected table ${table}`);
+          return {
+            withIndex: vi.fn(() => ({
+              unique: vi.fn().mockResolvedValue(options?.existing ?? null),
+            })),
+          };
+        }),
+        insert,
+        patch: vi.fn(),
+        replace: vi.fn(),
+        delete: vi.fn(),
+        normalizeId: vi.fn(),
+      },
     },
   };
 }
@@ -1721,6 +1789,117 @@ describe("packages public queries", () => {
         name: "demo-plugin",
       }),
     ).rejects.toThrow("Forbidden");
+  });
+
+  it("reserves private package placeholders without releases", async () => {
+    const { ctx, insert } = makeReservePackageNameCtx();
+
+    await expect(
+      reservePackageNameInternalHandler(ctx, {
+        actorUserId: "users:admin",
+        ownerUserId: "users:openclaw",
+        ownerPublisherId: "publishers:openclaw",
+        name: " @openclaw/diffs ",
+        reason: "reserve official plugin",
+      }),
+    ).resolves.toMatchObject({
+      ok: true,
+      action: "reserved",
+      packageId: "packages:reserved",
+      name: "@openclaw/diffs",
+    });
+
+    expect(insert).toHaveBeenCalledWith(
+      "packages",
+      expect.objectContaining({
+        name: "@openclaw/diffs",
+        normalizedName: "@openclaw/diffs",
+        displayName: "@openclaw/diffs",
+        ownerUserId: "users:openclaw",
+        ownerPublisherId: "publishers:openclaw",
+        family: "code-plugin",
+        channel: "private",
+        isOfficial: false,
+        tags: {},
+        stats: { downloads: 0, installs: 0, stars: 0, versions: 0 },
+      }),
+    );
+    expect(insert).not.toHaveBeenCalledWith("packageReleases", expect.anything());
+  });
+
+  it("rejects reserving package names owned by another publisher", async () => {
+    const { ctx } = makeReservePackageNameCtx({
+      existing: makePackageDoc({
+        ownerUserId: "users:other",
+        ownerPublisherId: "publishers:other",
+      }),
+    });
+
+    await expect(
+      reservePackageNameInternalHandler(ctx, {
+        actorUserId: "users:admin",
+        ownerUserId: "users:openclaw",
+        ownerPublisherId: "publishers:openclaw",
+        name: "@openclaw/diffs",
+      }),
+    ).rejects.toThrow("Package already exists and belongs to another publisher");
+  });
+
+  it("lets owners publish real releases into reserved package placeholders", async () => {
+    const ctx = makeInsertReleaseCtx(
+      makePackageDoc({
+        name: "@openclaw/diffs",
+        normalizedName: "@openclaw/diffs",
+        ownerUserId: "users:openclaw",
+        ownerPublisherId: "publishers:openclaw",
+        family: "bundle-plugin",
+        channel: "private",
+        isOfficial: false,
+        latestReleaseId: undefined,
+        latestVersionSummary: undefined,
+        tags: {},
+        stats: { downloads: 0, installs: 0, stars: 0, versions: 0 },
+      }),
+      [],
+      {
+        "users:admin": { _id: "users:admin", role: "admin", trustedPublisher: false },
+        "users:openclaw": { _id: "users:openclaw", role: "user", trustedPublisher: false },
+        "publishers:openclaw": {
+          _id: "publishers:openclaw",
+          kind: "org",
+          handle: "openclaw",
+          displayName: "OpenClaw",
+          trustedPublisher: true,
+        },
+      },
+    );
+
+    await insertReleaseInternalHandler(ctx, {
+      actorUserId: "users:admin",
+      ownerUserId: "users:openclaw",
+      ownerPublisherId: "publishers:openclaw",
+      name: "@openclaw/diffs",
+      displayName: "@openclaw/diffs",
+      family: "code-plugin",
+      version: "1.0.0",
+      changelog: "init",
+      tags: [],
+      summary: "diff tools",
+      files: [],
+      integritySha256: "abc123",
+    });
+
+    expect(ctx.patch).toHaveBeenCalledWith(
+      "packages:demo",
+      expect.objectContaining({
+        family: "code-plugin",
+        channel: "official",
+        isOfficial: true,
+        latestReleaseId: "packageReleases:new",
+        tags: { latest: "packageReleases:new" },
+        stats: { downloads: 0, installs: 0, stars: 0, versions: 1 },
+      }),
+    );
   });
 
   it("rejects family changes on an existing package name", async () => {

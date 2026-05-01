@@ -594,6 +594,15 @@ legacy shared user/personal publisher, the endpoint migrates it into an org publ
 - Body: `{ "handle": "openclaw", "displayName": "OpenClaw", "trusted": true }`
 - Response: `{ "ok": true, "publisherId": "...", "handle": "openclaw", "created": true, "migrated": false, "trusted": true }`
 
+### `POST /api/v1/users/reserve`
+
+Admin-only. Reserves root slugs and package names for a rightful owner without publishing a
+release. Package names become private placeholder packages with no release rows, so the same
+owner can later publish the real code-plugin or bundle-plugin release into that name.
+
+- Body: `{ "handle": "openclaw", "slugs": ["diffs"], "packageNames": ["@openclaw/diffs"], "reason": "reserved for official OpenClaw plugin" }`
+- Response: `{ "ok": true, "succeeded": 2, "failed": 0, "results": [{ "kind": "slug", "name": "diffs", "ok": true, "action": "reserved" }] }`
+
 ### Owner slug management endpoints
 
 - `POST /api/v1/skills/{slug}/rename`

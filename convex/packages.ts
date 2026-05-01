@@ -280,6 +280,7 @@ type PackagePublishAuthContext =
       publishToken: Doc<"packagePublishTokens">;
     };
 type PackageTrustedPublisherDoc = Doc<"packageTrustedPublishers">;
+type PackageDoc = Doc<"packages">;
 type PublicPackageListItem = {
   name: string;
   displayName: string;
@@ -299,6 +300,35 @@ type PublicPackageListItem = {
   hostTargetKeys: string[];
   environmentFlags: string[];
 };
+
+function getPackageOwnerKey(
+  pkg: Pick<PackageDoc, "ownerUserId" | "ownerPublisherId">,
+  options?: {
+    nextOwnerPublisherId?: Id<"publishers">;
+    ownerPublisher?: Doc<"publishers"> | null;
+  },
+) {
+  if (pkg.ownerPublisherId) return `publisher:${pkg.ownerPublisherId}`;
+  if (
+    options?.nextOwnerPublisherId &&
+    options.ownerPublisher?.kind === "user" &&
+    options.ownerPublisher.linkedUserId === pkg.ownerUserId
+  ) {
+    return `publisher:${options.nextOwnerPublisherId}`;
+  }
+  return `user:${pkg.ownerUserId}`;
+}
+
+function getRequestedPackageOwnerKey(args: {
+  ownerUserId: Id<"users">;
+  ownerPublisherId?: Id<"publishers">;
+}) {
+  return args.ownerPublisherId ? `publisher:${args.ownerPublisherId}` : `user:${args.ownerUserId}`;
+}
+
+function isReservedPackagePlaceholder(pkg: PackageDoc | null | undefined) {
+  return Boolean(pkg && !pkg.latestReleaseId && !pkg.latestVersionSummary);
+}
 
 type PackageBadgeKind = Doc<"packageBadges">["kind"];
 type PackageDigestLike = Pick<
@@ -376,14 +406,6 @@ type StorePackBackfillBatchEntry = {
   release: Doc<"packageReleases">;
 };
 const PUBLIC_PAGE_CURSOR_PREFIX = "pkgpage:";
-
-function stringifyId(value: Id<"users"> | Id<"publishers">): string {
-  return value;
-}
-
-function stringifyOptionalId(value: Id<"publishers"> | null | undefined): string | null {
-  return value ? stringifyId(value) : null;
-}
 
 async function runQueryRef<T>(
   ctx: { runQuery: (ref: never, args: never) => Promise<unknown> },
@@ -4104,6 +4126,116 @@ export const backfillStorePackSearchIndexInternal = internalAction({
   },
 });
 
+export const reservePackageNameInternal = internalMutation({
+  args: {
+    actorUserId: v.id("users"),
+    ownerUserId: v.id("users"),
+    ownerPublisherId: v.optional(v.id("publishers")),
+    name: v.string(),
+    displayName: v.optional(v.string()),
+    summary: v.optional(v.string()),
+    family: v.optional(
+      v.union(v.literal("skill"), v.literal("code-plugin"), v.literal("bundle-plugin")),
+    ),
+    reason: v.optional(v.string()),
+  },
+  handler: async (ctx, args) => {
+    const now = Date.now();
+    const actor = await ctx.db.get(args.actorUserId);
+    if (!actor || actor.deletedAt || actor.deactivatedAt) throw new ConvexError("Unauthorized");
+    assertAdmin(actor);
+
+    const owner = await ctx.db.get(args.ownerUserId);
+    if (!owner || owner.deletedAt || owner.deactivatedAt) {
+      throw new ConvexError("Owner user not found");
+    }
+
+    const ownerPublisher = args.ownerPublisherId ? await ctx.db.get(args.ownerPublisherId) : null;
+    if (args.ownerPublisherId && (!ownerPublisher || ownerPublisher.deletedAt)) {
+      throw new ConvexError("Owner publisher not found");
+    }
+
+    const normalizedName = normalizePackageName(args.name);
+    const family = args.family ?? "code-plugin";
+    const existing = await getPackageByNormalizedName(ctx, normalizedName);
+    if (existing) {
+      const existingOwnerKey = getPackageOwnerKey(existing, {
+        nextOwnerPublisherId: args.ownerPublisherId,
+        ownerPublisher,
+      });
+      const nextOwnerKey = getRequestedPackageOwnerKey({
+        ownerUserId: args.ownerUserId,
+        ownerPublisherId: args.ownerPublisherId,
+      });
+      if (existingOwnerKey !== nextOwnerKey) {
+        throw new ConvexError("Package already exists and belongs to another publisher");
+      }
+
+      await ctx.db.insert("auditLogs", {
+        actorUserId: args.actorUserId,
+        action: "package.reserve",
+        targetType: "package",
+        targetId: existing._id,
+        metadata: {
+          name: normalizedName,
+          ownerUserId: args.ownerUserId,
+          ownerPublisherId: args.ownerPublisherId,
+          action: "already_owned",
+          reason: args.reason || undefined,
+        },
+        createdAt: now,
+      });
+
+      return {
+        ok: true as const,
+        action: "already_owned" as const,
+        packageId: existing._id,
+        name: normalizedName,
+      };
+    }
+
+    const packageId = await ctx.db.insert("packages", {
+      name: normalizedName,
+      normalizedName,
+      displayName: args.displayName?.trim() || normalizedName,
+      summary: args.summary?.trim() || "Reserved for an official OpenClaw plugin.",
+      ownerUserId: args.ownerUserId,
+      ownerPublisherId: args.ownerPublisherId,
+      family,
+      channel: "private",
+      isOfficial: false,
+      tags: {},
+      capabilityTags: [],
+      executesCode: false,
+      stats: { downloads: 0, installs: 0, stars: 0, versions: 0 },
+      createdAt: now,
+      updatedAt: now,
+    });
+
+    await ctx.db.insert("auditLogs", {
+      actorUserId: args.actorUserId,
+      action: "package.reserve",
+      targetType: "package",
+      targetId: packageId,
+      metadata: {
+        name: normalizedName,
+        ownerUserId: args.ownerUserId,
+        ownerPublisherId: args.ownerPublisherId,
+        family,
+        reason: args.reason || undefined,
+      },
+      createdAt: now,
+    });
+
+    return {
+      ok: true as const,
+      action: "reserved" as const,
+      packageId,
+      name: normalizedName,
+    };
+  },
+});
+
 export const backfillStorePackSearchIndex = action({
   args: {
     limit: v.optional(v.number()),
@@ -4189,36 +4321,32 @@ export const insertReleaseInternal = internalMutation({
       throw new ConvexError("Only trusted publishers may publish to the official channel");
     }
     const existing = await getPackageByNormalizedName(ctx, normalizedName);
+    const existingIsReservation = isReservedPackagePlaceholder(existing);
     const nextChannel =
       args.channel ??
-      (existing?.channel === "private" ? "private" : publisherTrusted ? "official" : "community");
+      (existing?.channel === "private" && !existingIsReservation
+        ? "private"
+        : publisherTrusted
+          ? "official"
+          : "community");
     const nextIsOfficial = nextChannel === "official";
-    const nextOwnerPublisherId = stringifyOptionalId(args.ownerPublisherId ?? null);
-    const nextOwnerUserId = stringifyId(args.ownerUserId);
     const nextNameLabel = typeof args.name === "string" ? args.name : "<unknown>";
     const nextRuntimeIdLabel = typeof args.runtimeId === "string" ? args.runtimeId : "<unknown>";
     const nextVersionLabel = typeof args.version === "string" ? args.version : "<unknown>";
     if (existing) {
-      const existingIsLegacyPersonalPackage =
-        !existing.ownerPublisherId &&
-        Boolean(
-          args.ownerPublisherId &&
-          ownerPublisher?.kind === "user" &&
-          ownerPublisher.linkedUserId === existing.ownerUserId,
-        );
-      const existingOwnerKey = existing.ownerPublisherId
-        ? `publisher:${existing.ownerPublisherId}`
-        : existingIsLegacyPersonalPackage
-          ? `publisher:${nextOwnerPublisherId}`
-          : `user:${existing.ownerUserId}`;
-      const nextOwnerKey = nextOwnerPublisherId
-        ? `publisher:${nextOwnerPublisherId}`
-        : `user:${nextOwnerUserId}`;
+      const existingOwnerKey = getPackageOwnerKey(existing, {
+        nextOwnerPublisherId: args.ownerPublisherId,
+        ownerPublisher,
+      });
+      const nextOwnerKey = getRequestedPackageOwnerKey({
+        ownerUserId: args.ownerUserId,
+        ownerPublisherId: args.ownerPublisherId,
+      });
       if (existingOwnerKey !== nextOwnerKey) {
         throw new ConvexError("Package already exists and belongs to another publisher");
       }
     }
-    if (existing && existing.family !== args.family) {
+    if (existing && existing.family !== args.family && !existingIsReservation) {
       throw new ConvexError(
         `Package "${nextNameLabel}" already exists as a ${existing.family}; family changes are not allowed`,
       );
@@ -4344,6 +4472,7 @@ export const insertReleaseInternal = internalMutation({
       displayName: args.displayName,
       ownerUserId: args.ownerUserId,
       ownerPublisherId: args.ownerPublisherId ?? pkg.ownerPublisherId,
+      family: existingIsReservation ? args.family : pkg.family,
       summary: shouldPromoteLatest ? args.summary : pkg.summary,
       sourceRepo: args.sourceRepo,
       runtimeId: shouldPromoteLatest ? args.runtimeId : pkg.runtimeId,

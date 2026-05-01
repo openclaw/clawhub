@@ -51,6 +51,12 @@ function hasSlugArgs(args: unknown): args is { slug: string } {
   return typeof value.slug === "string";
 }
 
+function hasPackageNameArgs(args: unknown): args is { name: string } {
+  if (!args || typeof args !== "object") return false;
+  const value = args as Record<string, unknown>;
+  return typeof value.name === "string";
+}
+
 function findRateLimitCallArgs(mock: ReturnType<typeof vi.fn>) {
   return mock.mock.calls.map(([, args]) => args).find(isRateLimitArgs);
 }
@@ -248,6 +254,80 @@ describe("httpApiV1 handlers", () => {
       rightfulOwnerUserId: "users:target",
       reason: "r",
       transferRootSlugOnly: true,
+    });
+  });
+
+  it("users/reserve forbids non-admin api tokens", async () => {
+    const runQuery = vi.fn();
+    const runAction = vi.fn();
+    const runMutation = vi.fn().mockResolvedValue(okRate());
+    vi.mocked(requireApiTokenUser).mockResolvedValue({
+      userId: "users:actor",
+      user: { _id: "users:actor", role: "user" },
+    } as never);
+
+    const response = await __handlers.usersPostRouterV1Handler(
+      makeCtx({ runQuery, runAction, runMutation }),
+      new Request("https://example.com/api/v1/users/reserve", {
+        method: "POST",
+        body: JSON.stringify({ handle: "target", slugs: ["a"] }),
+      }),
+    );
+    expect(response.status).toBe(403);
+    expect(runQuery).not.toHaveBeenCalled();
+  });
+
+  it("users/reserve reserves slugs and package names for admin", async () => {
+    const runMutation = vi.fn(async (_mutation: unknown, args: Record<string, unknown>) => {
+      if (isRateLimitArgs(args)) return okRate();
+      return { ok: true, action: "reserved" };
+    });
+    let handleLookupCount = 0;
+    const runQuery = vi.fn(async (_query: unknown, args: Record<string, unknown>) => {
+      if (args.handle === "target" && handleLookupCount === 0) {
+        handleLookupCount += 1;
+        return { _id: "users:target" };
+      }
+      if (args.handle === "target") {
+        return { _id: "publishers:target", handle: "target" };
+      }
+      return null;
+    });
+    vi.mocked(requireApiTokenUser).mockResolvedValue({
+      userId: "users:admin",
+      user: { _id: "users:admin", role: "admin" },
+    } as never);
+
+    const response = await __handlers.usersPostRouterV1Handler(
+      makeCtx({ runQuery, runAction: vi.fn(), runMutation }),
+      new Request("https://example.com/api/v1/users/reserve", {
+        method: "POST",
+        body: JSON.stringify({
+          handle: "Target",
+          slugs: [" A "],
+          packageNames: [" @openclaw/a "],
+          reason: "r",
+        }),
+      }),
+    );
+    if (response.status !== 200) throw new Error(await response.text());
+
+    const slugCalls = runMutation.mock.calls.filter(([, args]) => hasSlugArgs(args));
+    const packageCalls = runMutation.mock.calls.filter(([, args]) => hasPackageNameArgs(args));
+    expect(slugCalls).toHaveLength(1);
+    expect(slugCalls[0]?.[1]).toMatchObject({
+      actorUserId: "users:admin",
+      slug: "a",
+      rightfulOwnerUserId: "users:target",
+      reason: "r",
+    });
+    expect(packageCalls).toHaveLength(1);
+    expect(packageCalls[0]?.[1]).toMatchObject({
+      actorUserId: "users:admin",
+      ownerUserId: "users:target",
+      ownerPublisherId: "publishers:target",
+      name: "@openclaw/a",
+      reason: "r",
     });
   });
 
