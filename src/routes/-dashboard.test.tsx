@@ -268,6 +268,14 @@ describe("Dashboard minimal rows", () => {
     expect(document.querySelectorAll(".animate-pulse").length).toBeGreaterThan(0);
   });
 
+  it("links new publishers to plugin publishing from the empty state", () => {
+    arrangeDashboard({ skills: [], packages: [] });
+
+    renderDashboard();
+
+    expect(screen.getByRole("link", { name: "Publish a Plugin" })).toBeTruthy();
+  });
+
   it("does not render row-level actions", () => {
     arrangeDashboard({ skills: [createSkill()], packages: [createPackage()] });
 

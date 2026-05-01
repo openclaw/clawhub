@@ -19,6 +19,15 @@ import { Tooltip, TooltipContent, TooltipTrigger } from "../components/ui/toolti
 import { getUserFacingConvexError } from "../lib/convexError";
 import { deriveStorePackLifecycle } from "../lib/packageLifecycle";
 
+type PluginPublishSearch = {
+  ownerHandle: string | undefined;
+  name: string | undefined;
+  displayName: string | undefined;
+  family: "code-plugin" | "bundle-plugin" | undefined;
+  nextVersion: string | undefined;
+  sourceRepo: string | undefined;
+};
+
 const emptyPluginPublishSearch = {
   ownerHandle: undefined,
   name: undefined,
@@ -26,7 +35,7 @@ const emptyPluginPublishSearch = {
   family: undefined,
   nextVersion: undefined,
   sourceRepo: undefined,
-} as const;
+} satisfies PluginPublishSearch;
 
 type DashboardSkill = Pick<
   Doc<"skills">,
@@ -216,6 +225,11 @@ export function Dashboard() {
               </Link>
             </Button>
             <Button asChild>
+              <Link to="/publish-plugin" search={{ ...emptyPluginPublishSearch, ownerHandle }}>
+                Publish a Plugin
+              </Link>
+            </Button>
+            <Button asChild>
               <Link
                 to="/skills"
                 search={{
@@ -334,6 +348,7 @@ function SkillRow({ skill, ownerHandle }: { skill: DashboardSkill; ownerHandle: 
         settingsHref={settingsHref}
         statusLabel={status.label}
         rescanState={skill.rescanState ?? null}
+        releaseLink={null}
       />
     </div>
   );
@@ -448,7 +463,7 @@ function packageDashboardStatus(pkg: DashboardPackage): {
   };
 }
 
-function PackageRow({ pkg }: { pkg: DashboardPackage; ownerHandle: string }) {
+function PackageRow({ pkg, ownerHandle }: { pkg: DashboardPackage; ownerHandle: string }) {
   const status = packageDashboardStatus(pkg);
 
   return (
@@ -471,6 +486,18 @@ function PackageRow({ pkg }: { pkg: DashboardPackage; ownerHandle: string }) {
         settingsHref={`/plugins/${encodeURIComponent(pkg.name)}`}
         statusLabel={status.label}
         rescanState={pkg.rescanState ?? null}
+        releaseLink={{
+          to: "/publish-plugin",
+          search: {
+            ...emptyPluginPublishSearch,
+            ownerHandle,
+            name: pkg.name,
+            displayName: pkg.displayName,
+            family: pkg.family === "bundle-plugin" ? "bundle-plugin" : "code-plugin",
+            nextVersion: undefined,
+            sourceRepo: pkg.sourceRepo ?? undefined,
+          },
+        }}
       />
     </div>
   );
@@ -489,6 +516,7 @@ function RowMenu({
   settingsHref,
   statusLabel,
   rescanState,
+  releaseLink,
 }: {
   kind: "skill" | "plugin";
   targetId: string;
@@ -496,6 +524,16 @@ function RowMenu({
   settingsHref: string;
   statusLabel: string;
   rescanState: DashboardRescanState | null;
+  releaseLink: {
+    to: "/publish-plugin";
+    search: PluginPublishSearch & {
+      ownerHandle: string;
+      name: string;
+      displayName: string;
+      family: "code-plugin" | "bundle-plugin";
+      sourceRepo?: string;
+    };
+  } | null;
 }) {
   const requestSkillRescan = useMutation(api.skills.requestRescan);
   const requestPluginRescan = useMutation(api.packages.requestRescan);
@@ -546,6 +584,14 @@ function RowMenu({
               Settings
             </a>
           </DropdownMenuItem>
+          {releaseLink ? (
+            <DropdownMenuItem asChild>
+              <Link to={releaseLink.to} search={releaseLink.search}>
+                <Plus className="h-4 w-4" aria-hidden="true" />
+                New release
+              </Link>
+            </DropdownMenuItem>
+          ) : null}
           {showRescanItem ? (
             <DropdownMenuItem
               disabled={isRequesting || isScanInProgress}
