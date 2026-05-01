@@ -167,6 +167,9 @@ describe("official migration readiness route", () => {
     expect(screen.getAllByRole("link", { name: "Plugin page" })[0]?.getAttribute("href")).toBe(
       "/plugins/$name",
     );
+    expect(screen.getAllByRole("link", { name: "Details" })[0]?.getAttribute("href")).toBe(
+      "/management/migrations/$bundledPluginId",
+    );
   });
 
   it("explains missing management role for non-staff users", () => {

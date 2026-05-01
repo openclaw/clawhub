@@ -1,12 +1,18 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useQuery } from "convex/react";
 import { api } from "../../../convex/_generated/api";
-import type { Id } from "../../../convex/_generated/dataModel";
 import { ManagementAccessNotice } from "../../components/ManagementAccessNotice";
 import { PluginOperationsNav } from "../../components/PluginOperationsNav";
 import { Badge } from "../../components/ui/badge";
 import { Button } from "../../components/ui/button";
 import { Card } from "../../components/ui/card";
+import {
+  formatReadinessSource,
+  formatReadinessStorePack,
+  type MigrationReadinessItem,
+  type MigrationReadinessResult,
+  readinessStateLabel,
+} from "../../lib/officialMigrationReadiness";
 import { isModerator } from "../../lib/roles";
 import { useAuthStatus } from "../../lib/useAuthStatus";
 
@@ -14,67 +20,6 @@ const packageApiRefs = api as unknown as {
   packages: {
     listOfficialMigrationReadinessForStaff: unknown;
   };
-};
-
-type MigrationReadinessState =
-  | "package-missing"
-  | "release-missing"
-  | "storepack-missing"
-  | "metadata-incomplete"
-  | "scan-blocked"
-  | "ready-for-openclaw";
-
-type MigrationReadinessItem = {
-  bundledPluginId: string;
-  displayName: string;
-  desiredPackageName: string;
-  publisherHandle: string;
-  sourceRepo: string | null;
-  sourcePath: string;
-  sourceCommit: string | null;
-  sourceRef: string | null;
-  requiredHostTargets: string[];
-  readinessState: MigrationReadinessState;
-  blockers: string[];
-  gates: {
-    packageExists: boolean;
-    releaseExists: boolean;
-    storepackAvailable: boolean;
-    hostMatrixComplete: boolean;
-    environmentComplete: boolean;
-    sourceLinked: boolean;
-    scanClear: boolean;
-    runtimeBundleStatus: string;
-  };
-  package: {
-    packageId: Id<"packages">;
-    name: string;
-    displayName: string;
-    family: "skill" | "code-plugin" | "bundle-plugin";
-    runtimeId: string | null;
-    channel: "official" | "community" | "private";
-    isOfficial: boolean;
-    scanStatus: string;
-    updatedAt: number;
-  } | null;
-  latestRelease: {
-    releaseId: Id<"packageReleases">;
-    version: string;
-    createdAt: number;
-    storepackSha256: string | null;
-    storepackFileCount: number | null;
-    storepackRevokedAt?: number;
-    hostTargetKeys: string[];
-    environmentFlags: string[];
-    scanStatus: string;
-  } | null;
-};
-
-type MigrationReadinessResult = {
-  items: MigrationReadinessItem[];
-  readyCount: number;
-  blockedCount: number;
-  generatedAt: number;
 };
 
 export const Route = createFileRoute("/management/migrations")({
@@ -165,7 +110,7 @@ function MigrationCard(props: { item: MigrationReadinessItem }) {
                 {item.displayName}
               </h2>
               <Badge variant={ready ? "compact" : "accent"}>
-                {item.readinessState.replaceAll("-", " ")}
+                {readinessStateLabel(item.readinessState)}
               </Badge>
               {item.package?.isOfficial ? <Badge variant="compact">official</Badge> : null}
             </div>
@@ -189,6 +134,15 @@ function MigrationCard(props: { item: MigrationReadinessItem }) {
                 </Link>
               </Button>
             ) : null}
+            <Button asChild variant="ghost" size="sm">
+              <Link
+                to="/management/migrations/$bundledPluginId"
+                params={{ bundledPluginId: item.bundledPluginId }}
+                search={{ skill: undefined, plugin: undefined }}
+              >
+                Details
+              </Link>
+            </Button>
           </div>
         </div>
 
@@ -196,7 +150,7 @@ function MigrationCard(props: { item: MigrationReadinessItem }) {
           <ReportField label="publisher" value={`@${item.publisherHandle}`} />
           <ReportField
             label="source"
-            value={formatSource(item)}
+            value={formatReadinessSource(item)}
             tone={item.gates.sourceLinked ? undefined : "warn"}
           />
           <ReportField
@@ -206,7 +160,7 @@ function MigrationCard(props: { item: MigrationReadinessItem }) {
           />
           <ReportField
             label="StorePack"
-            value={formatStorePack(item)}
+            value={formatReadinessStorePack(item)}
             tone={item.gates.storepackAvailable ? undefined : "warn"}
           />
         </div>
@@ -286,19 +240,6 @@ function Gate(props: { label: string; ok: boolean }) {
       </span>
     </div>
   );
-}
-
-function formatStorePack(item: MigrationReadinessItem) {
-  if (item.latestRelease?.storepackRevokedAt) return "revoked";
-  if (!item.latestRelease?.storepackSha256) return "missing";
-  const digest = item.latestRelease.storepackSha256.slice(0, 12);
-  const count = item.latestRelease.storepackFileCount;
-  return [count ? `${count} files` : null, digest].filter(Boolean).join(" / ");
-}
-
-function formatSource(item: MigrationReadinessItem) {
-  const ref = item.sourceCommit ?? item.sourceRef;
-  return `${item.sourceRepo ?? "missing"}${ref ? ` @ ${ref.slice(0, 12)}` : ""}`;
 }
 
 function formatTimestamp(value: number) {

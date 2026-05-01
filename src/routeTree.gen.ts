@@ -38,6 +38,7 @@ import { Route as ManagementModerationRouteImport } from './routes/management/mo
 import { Route as ManagementMigrationsRouteImport } from './routes/management/migrations'
 import { Route as CliAuthRouteImport } from './routes/cli/auth'
 import { Route as OwnerSlugRouteImport } from './routes/$owner/$slug'
+import { Route as ManagementMigrationsBundledPluginIdRouteImport } from './routes/management/migrations/$bundledPluginId'
 import { Route as OwnerSlugSettingsRouteImport } from './routes/$owner/$slug/settings'
 import { Route as PluginsNameSecurityScannerRouteImport } from './routes/plugins/$name/security/$scanner'
 import { Route as PluginsNameReleasesVersionRouteImport } from './routes/plugins/$name/releases/$version'
@@ -188,6 +189,12 @@ const OwnerSlugRoute = OwnerSlugRouteImport.update({
   path: '/$owner/$slug',
   getParentRoute: () => rootRouteImport,
 } as any)
+const ManagementMigrationsBundledPluginIdRoute =
+  ManagementMigrationsBundledPluginIdRouteImport.update({
+    id: '/$bundledPluginId',
+    path: '/$bundledPluginId',
+    getParentRoute: () => ManagementMigrationsRoute,
+  } as any)
 const OwnerSlugSettingsRoute = OwnerSlugSettingsRouteImport.update({
   id: '/settings',
   path: '/settings',
@@ -227,7 +234,7 @@ export interface FileRoutesByFullPath {
   '/upload': typeof UploadRoute
   '/$owner/$slug': typeof OwnerSlugRouteWithChildren
   '/cli/auth': typeof CliAuthRoute
-  '/management/migrations': typeof ManagementMigrationsRoute
+  '/management/migrations': typeof ManagementMigrationsRouteWithChildren
   '/management/moderation': typeof ManagementModerationRoute
   '/management/storepacks': typeof ManagementStorepacksRoute
   '/orgs/$handle': typeof OrgsHandleRoute
@@ -243,6 +250,7 @@ export interface FileRoutesByFullPath {
   '/souls/': typeof SoulsIndexRoute
   '/users/': typeof UsersIndexRoute
   '/$owner/$slug/settings': typeof OwnerSlugSettingsRoute
+  '/management/migrations/$bundledPluginId': typeof ManagementMigrationsBundledPluginIdRoute
   '/$owner/$slug/security/$scanner': typeof OwnerSlugSecurityScannerRoute
   '/plugins/$name/releases/$version': typeof PluginsNameReleasesVersionRoute
   '/plugins/$name/security/$scanner': typeof PluginsNameSecurityScannerRoute
@@ -262,7 +270,7 @@ export interface FileRoutesByTo {
   '/upload': typeof UploadRoute
   '/$owner/$slug': typeof OwnerSlugRouteWithChildren
   '/cli/auth': typeof CliAuthRoute
-  '/management/migrations': typeof ManagementMigrationsRoute
+  '/management/migrations': typeof ManagementMigrationsRouteWithChildren
   '/management/moderation': typeof ManagementModerationRoute
   '/management/storepacks': typeof ManagementStorepacksRoute
   '/orgs/$handle': typeof OrgsHandleRoute
@@ -278,6 +286,7 @@ export interface FileRoutesByTo {
   '/souls': typeof SoulsIndexRoute
   '/users': typeof UsersIndexRoute
   '/$owner/$slug/settings': typeof OwnerSlugSettingsRoute
+  '/management/migrations/$bundledPluginId': typeof ManagementMigrationsBundledPluginIdRoute
   '/$owner/$slug/security/$scanner': typeof OwnerSlugSecurityScannerRoute
   '/plugins/$name/releases/$version': typeof PluginsNameReleasesVersionRoute
   '/plugins/$name/security/$scanner': typeof PluginsNameSecurityScannerRoute
@@ -298,7 +307,7 @@ export interface FileRoutesById {
   '/upload': typeof UploadRoute
   '/$owner/$slug': typeof OwnerSlugRouteWithChildren
   '/cli/auth': typeof CliAuthRoute
-  '/management/migrations': typeof ManagementMigrationsRoute
+  '/management/migrations': typeof ManagementMigrationsRouteWithChildren
   '/management/moderation': typeof ManagementModerationRoute
   '/management/storepacks': typeof ManagementStorepacksRoute
   '/orgs/$handle': typeof OrgsHandleRoute
@@ -314,6 +323,7 @@ export interface FileRoutesById {
   '/souls/': typeof SoulsIndexRoute
   '/users/': typeof UsersIndexRoute
   '/$owner/$slug/settings': typeof OwnerSlugSettingsRoute
+  '/management/migrations/$bundledPluginId': typeof ManagementMigrationsBundledPluginIdRoute
   '/$owner/$slug/security/$scanner': typeof OwnerSlugSecurityScannerRoute
   '/plugins/$name/releases/$version': typeof PluginsNameReleasesVersionRoute
   '/plugins/$name/security/$scanner': typeof PluginsNameSecurityScannerRoute
@@ -351,6 +361,7 @@ export interface FileRouteTypes {
     | '/souls/'
     | '/users/'
     | '/$owner/$slug/settings'
+    | '/management/migrations/$bundledPluginId'
     | '/$owner/$slug/security/$scanner'
     | '/plugins/$name/releases/$version'
     | '/plugins/$name/security/$scanner'
@@ -386,6 +397,7 @@ export interface FileRouteTypes {
     | '/souls'
     | '/users'
     | '/$owner/$slug/settings'
+    | '/management/migrations/$bundledPluginId'
     | '/$owner/$slug/security/$scanner'
     | '/plugins/$name/releases/$version'
     | '/plugins/$name/security/$scanner'
@@ -421,6 +433,7 @@ export interface FileRouteTypes {
     | '/souls/'
     | '/users/'
     | '/$owner/$slug/settings'
+    | '/management/migrations/$bundledPluginId'
     | '/$owner/$slug/security/$scanner'
     | '/plugins/$name/releases/$version'
     | '/plugins/$name/security/$scanner'
@@ -660,6 +673,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof OwnerSlugRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/management/migrations/$bundledPluginId': {
+      id: '/management/migrations/$bundledPluginId'
+      path: '/$bundledPluginId'
+      fullPath: '/management/migrations/$bundledPluginId'
+      preLoaderRoute: typeof ManagementMigrationsBundledPluginIdRouteImport
+      parentRoute: typeof ManagementMigrationsRoute
+    }
     '/$owner/$slug/settings': {
       id: '/$owner/$slug/settings'
       path: '/settings'
@@ -691,14 +711,26 @@ declare module '@tanstack/react-router' {
   }
 }
 
+interface ManagementMigrationsRouteChildren {
+  ManagementMigrationsBundledPluginIdRoute: typeof ManagementMigrationsBundledPluginIdRoute
+}
+
+const ManagementMigrationsRouteChildren: ManagementMigrationsRouteChildren = {
+  ManagementMigrationsBundledPluginIdRoute:
+    ManagementMigrationsBundledPluginIdRoute,
+}
+
+const ManagementMigrationsRouteWithChildren =
+  ManagementMigrationsRoute._addFileChildren(ManagementMigrationsRouteChildren)
+
 interface ManagementRouteChildren {
-  ManagementMigrationsRoute: typeof ManagementMigrationsRoute
+  ManagementMigrationsRoute: typeof ManagementMigrationsRouteWithChildren
   ManagementModerationRoute: typeof ManagementModerationRoute
   ManagementStorepacksRoute: typeof ManagementStorepacksRoute
 }
 
 const ManagementRouteChildren: ManagementRouteChildren = {
-  ManagementMigrationsRoute: ManagementMigrationsRoute,
+  ManagementMigrationsRoute: ManagementMigrationsRouteWithChildren,
   ManagementModerationRoute: ManagementModerationRoute,
   ManagementStorepacksRoute: ManagementStorepacksRoute,
 }
