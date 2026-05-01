@@ -3795,6 +3795,67 @@ describe("httpApiV1 handlers", () => {
     });
   });
 
+  it("storepack migration status requires an admin API token", async () => {
+    vi.mocked(requireApiTokenUser).mockResolvedValue({
+      userId: "users:admin",
+      user: { _id: "users:admin", role: "admin" },
+    } as never);
+    const runQuery = vi.fn(async (_query: unknown, args: Record<string, unknown>) => {
+      if (isRateLimitArgs(args)) return okRate();
+      return {
+        missingSample: [],
+        missingSampleSize: 0,
+        generatedStorePackSampleSize: 1,
+        generatedStorePackBytes: 1024,
+        sampleLimit: args.limit,
+      };
+    });
+    const runMutation = vi.fn().mockResolvedValue(okRate());
+
+    const response = await __handlers.packagesGetRouterV1Handler(
+      makeCtx({ runQuery, runMutation }),
+      new Request("https://example.com/api/v1/packages/storepack/migration-status?limit=7"),
+    );
+
+    expect(response.status).toBe(200);
+    await expect(response.json()).resolves.toMatchObject({
+      generatedStorePackSampleSize: 1,
+      sampleLimit: 7,
+    });
+  });
+
+  it("storepack backfill dispatches the admin action", async () => {
+    vi.mocked(requireApiTokenUser).mockResolvedValue({
+      userId: "users:admin",
+      user: { _id: "users:admin", role: "admin" },
+    } as never);
+    const runAction = vi.fn().mockResolvedValue({
+      processed: 2,
+      succeeded: 2,
+      failed: 0,
+      results: [],
+    });
+    const runMutation = vi.fn().mockResolvedValue(okRate());
+
+    const response = await __handlers.packagesPostRouterV1Handler(
+      makeCtx({ runAction, runMutation }),
+      new Request("https://example.com/api/v1/packages/storepack/backfill", {
+        method: "POST",
+        body: JSON.stringify({ limit: 2 }),
+      }),
+    );
+
+    expect(response.status).toBe(200);
+    expect(runAction).toHaveBeenCalledWith(expect.anything(), {
+      actorUserId: "users:admin",
+      limit: 2,
+    });
+    await expect(response.json()).resolves.toMatchObject({
+      processed: 2,
+      succeeded: 2,
+    });
+  });
+
   it("package download fails when any stored file is missing", async () => {
     const runMutation = vi.fn().mockResolvedValue(okRate());
     const runQuery = vi.fn(async (_query: unknown, args: Record<string, unknown>) => {
