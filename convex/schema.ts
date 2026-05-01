@@ -855,6 +855,9 @@ const packageReleases = defineTable({
   storepackManifestSha256: v.optional(v.string()),
   storepackBuiltAt: v.optional(v.number()),
   storepackBuildVersion: v.optional(v.string()),
+  storepackRevokedAt: v.optional(v.number()),
+  storepackRevokedByUserId: v.optional(v.id("users")),
+  storepackRevocationReason: v.optional(v.string()),
   hostTargetsSummary: v.optional(v.array(packageHostTargetValidator)),
   environmentSummary: v.optional(packageEnvironmentSummaryValidator),
   sha256hash: v.optional(v.string()),
@@ -929,6 +932,9 @@ const packageReleaseArtifacts = defineTable({
   format: v.string(),
   createdAt: v.number(),
   status: v.union(v.literal("active"), v.literal("superseded"), v.literal("revoked")),
+  revokedAt: v.optional(v.number()),
+  revokedByUserId: v.optional(v.id("users")),
+  revocationReason: v.optional(v.string()),
 })
   .index("by_release", ["releaseId"])
   .index("by_package_kind", ["packageId", "kind"])

@@ -149,6 +149,23 @@ export async function syncPackageSearchDigestForPackageId(
   await syncPackageSearchDigest(ctx, pkg);
 }
 
+function packageReleaseDigestFieldsChanged(
+  oldDoc: Doc<"packageReleases">,
+  newDoc: Doc<"packageReleases">,
+) {
+  return (
+    oldDoc.softDeletedAt !== newDoc.softDeletedAt ||
+    oldDoc.storepackStorageId !== newDoc.storepackStorageId ||
+    oldDoc.storepackSha256 !== newDoc.storepackSha256 ||
+    oldDoc.storepackBuiltAt !== newDoc.storepackBuiltAt ||
+    oldDoc.storepackRevokedAt !== newDoc.storepackRevokedAt ||
+    JSON.stringify(oldDoc.hostTargetsSummary ?? []) !==
+      JSON.stringify(newDoc.hostTargetsSummary ?? []) ||
+    JSON.stringify(oldDoc.environmentSummary ?? null) !==
+      JSON.stringify(newDoc.environmentSummary ?? null)
+  );
+}
+
 export async function syncPackageSearchDigestsForOwnerUserId(
   ctx: PackageDigestSyncCtx,
   ownerUserId: Id<"users"> | null | undefined,
@@ -404,7 +421,7 @@ triggers.register("packageReleases", async (ctx, change) => {
   if (change.operation === "insert") return;
   if (
     change.operation === "update" &&
-    change.oldDoc.softDeletedAt === change.newDoc.softDeletedAt
+    !packageReleaseDigestFieldsChanged(change.oldDoc, change.newDoc)
   ) {
     return;
   }

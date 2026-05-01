@@ -80,7 +80,7 @@ export function extractPackageDigestFields(pkg: Doc<"packages">): PackageSearchD
 export function extractPackageStorePackDigestFields(
   release: Doc<"packageReleases"> | null | undefined,
 ): Pick<PackageSearchDigestFields, "storepackAvailable" | "hostTargetKeys" | "environmentFlags"> {
-  if (!release || release.softDeletedAt) {
+  if (!release || release.softDeletedAt || release.storepackRevokedAt) {
     return {
       storepackAvailable: false,
       hostTargetKeys: [],

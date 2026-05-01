@@ -100,6 +100,7 @@ const internalRefs = internal as unknown as {
     attachStorePackArtifactInternal: unknown;
     backfillStorePackArtifactsInternal: unknown;
     backfillPackageReleaseScansInternal: unknown;
+    revokeStorePackArtifactForStaffInternal: unknown;
     getStorePackBackfillBatchInternal: unknown;
     scanPackageReleaseStaticallyInternal: unknown;
     insertReleaseInternal: unknown;
@@ -532,7 +533,9 @@ async function toDashboardPackageListItem(
             vtStatus: latestRelease.vtAnalysis?.status ?? null,
             llmStatus: latestRelease.llmAnalysis?.status ?? null,
             staticScanStatus: latestRelease.staticScan?.status ?? null,
-            storepackAvailable: Boolean(latestRelease.storepackStorageId),
+            storepackAvailable: Boolean(
+              latestRelease.storepackStorageId && !latestRelease.storepackRevokedAt,
+            ),
             storepackSha256: latestRelease.storepackSha256 ?? null,
             hostTargets: latestRelease.hostTargetsSummary ?? null,
             environment: latestRelease.environmentSummary ?? null,
@@ -1302,9 +1305,10 @@ async function buildStorePackMigrationRows(ctx: DbReaderCtx, releases: Doc<"pack
       version: release.version,
       createdAt: release.createdAt,
       fileCount: release.files.length,
-      storepackAvailable: Boolean(release.storepackStorageId),
+      storepackAvailable: Boolean(release.storepackStorageId && !release.storepackRevokedAt),
       storepackBuiltAt: release.storepackBuiltAt ?? null,
       storepackSha256: release.storepackSha256 ?? null,
+      storepackRevokedAt: release.storepackRevokedAt ?? null,
     });
   }
   return rows;
@@ -1353,6 +1357,10 @@ export const getStorePackArtifactByShaForViewerInternal = internalQuery({
       ]);
       if (!pkg || pkg.softDeletedAt || !release || release.softDeletedAt) continue;
       if (release.packageId !== pkg._id || release.storepackSha256 !== sha256) continue;
+      if (release.storepackRevokedAt) {
+        sawRevoked = true;
+        continue;
+      }
       const canRead = await canViewerReadPackage(
         ctx,
         {
@@ -3023,8 +3031,135 @@ export const attachStorePackArtifactInternal = internalMutation({
       storepackManifestSha256: args.manifestSha256,
       storepackBuiltAt: args.builtAt,
       storepackBuildVersion: "clawhub-storepack-v1",
+      storepackRevokedAt: undefined,
+      storepackRevokedByUserId: undefined,
+      storepackRevocationReason: undefined,
       hostTargetsSummary: args.hostTargets,
       environmentSummary: args.environment,
+    });
+  },
+});
+
+async function revokeStorePackArtifactForRelease(
+  ctx: MutationCtx,
+  input: {
+    releaseId: Id<"packageReleases">;
+    actorUserId: Id<"users">;
+    reason?: string;
+  },
+) {
+  const [actor, release] = await Promise.all([
+    ctx.db.get(input.actorUserId),
+    ctx.db.get(input.releaseId),
+  ]);
+  if (!actor) throw new ConvexError("Actor not found");
+  assertModerator(actor);
+  if (!release || release.softDeletedAt) throw new ConvexError("Package release not found");
+  const pkg = await ctx.db.get(release.packageId);
+  if (!pkg || pkg.softDeletedAt || pkg.family === "skill") {
+    throw new ConvexError("Plugin package not found");
+  }
+  if (!release.storepackStorageId || !release.storepackSha256) {
+    throw new ConvexError("StorePack artifact not found");
+  }
+
+  const now = Date.now();
+  const reason = input.reason?.trim() || undefined;
+  const artifacts = await ctx.db
+    .query("packageReleaseArtifacts")
+    .withIndex("by_release", (q) => q.eq("releaseId", release._id))
+    .collect();
+  let revokedArtifactCount = 0;
+  for (const artifact of artifacts) {
+    if (
+      artifact.kind !== "storepack" ||
+      artifact.status !== "active" ||
+      artifact.sha256 !== release.storepackSha256
+    ) {
+      continue;
+    }
+    await ctx.db.patch(artifact._id, {
+      status: "revoked",
+      revokedAt: now,
+      revokedByUserId: actor._id,
+      ...(reason ? { revocationReason: reason } : {}),
+    });
+    revokedArtifactCount += 1;
+  }
+
+  await ctx.db.patch(release._id, {
+    storepackRevokedAt: release.storepackRevokedAt ?? now,
+    storepackRevokedByUserId: release.storepackRevokedByUserId ?? actor._id,
+    ...(reason ? { storepackRevocationReason: reason } : {}),
+  });
+  await ctx.db.insert("auditLogs", {
+    actorUserId: actor._id,
+    action: "package.storepack.revoked",
+    targetType: "packageRelease",
+    targetId: release._id,
+    metadata: {
+      packageId: pkg._id,
+      packageName: pkg.name,
+      version: release.version,
+      sha256: release.storepackSha256,
+      alreadyRevoked: Boolean(release.storepackRevokedAt),
+      revokedArtifactCount,
+      ...(reason ? { reason } : {}),
+    },
+    createdAt: now,
+  });
+
+  return {
+    ok: true as const,
+    packageId: pkg._id,
+    releaseId: release._id,
+    version: release.version,
+    sha256: release.storepackSha256,
+    alreadyRevoked: Boolean(release.storepackRevokedAt),
+    revokedArtifactCount,
+  };
+}
+
+export const revokeStorePackArtifact = mutation({
+  args: {
+    releaseId: v.id("packageReleases"),
+    reason: v.optional(v.string()),
+  },
+  handler: async (ctx, args) => {
+    const { user } = await requireUser(ctx);
+    return await revokeStorePackArtifactForRelease(ctx, {
+      releaseId: args.releaseId,
+      actorUserId: user._id,
+      reason: args.reason,
+    });
+  },
+});
+
+export const revokeStorePackArtifactForStaffInternal = internalMutation({
+  args: {
+    actorUserId: v.id("users"),
+    name: v.string(),
+    version: v.string(),
+    reason: v.optional(v.string()),
+  },
+  handler: async (ctx, args) => {
+    const normalizedName = normalizePackageName(args.name);
+    if (!normalizedName) throw new ConvexError("Package name required");
+    const pkg = await getPackageByNormalizedName(ctx, normalizedName);
+    if (!pkg || pkg.softDeletedAt || pkg.family === "skill") {
+      throw new ConvexError("Plugin package not found");
+    }
+    const release = await ctx.db
+      .query("packageReleases")
+      .withIndex("by_package_version", (q) =>
+        q.eq("packageId", pkg._id).eq("version", args.version),
+      )
+      .unique();
+    if (!release || release.softDeletedAt) throw new ConvexError("Package release not found");
+    return await revokeStorePackArtifactForRelease(ctx, {
+      releaseId: release._id,
+      actorUserId: args.actorUserId,
+      reason: args.reason,
     });
   },
 });

@@ -62,6 +62,7 @@ const internalRefs = internal as unknown as {
     deleteTrustedPublisherForUserInternal: unknown;
     backfillStorePackArtifactsInternal: unknown;
     getStorePackMigrationStatusInternal: unknown;
+    revokeStorePackArtifactForStaffInternal: unknown;
     getReleasesByIdsInternal: unknown;
     getReleaseByPackageAndVersionInternal: unknown;
     getReleaseByIdInternal: unknown;
@@ -172,6 +173,9 @@ type ReleaseLike = {
   storepackManifestSha256?: string;
   storepackBuiltAt?: number;
   storepackBuildVersion?: string;
+  storepackRevokedAt?: number;
+  storepackRevokedByUserId?: Id<"users">;
+  storepackRevocationReason?: string;
   hostTargetsSummary?: Doc<"packageReleases">["hostTargetsSummary"];
   environmentSummary?: Doc<"packageReleases">["environmentSummary"];
   sha256hash?: string;
@@ -219,7 +223,12 @@ function getReleaseSecurityBlock(release: ReleaseLike) {
 }
 
 function toPublicStorePack(release: ReleaseLike | null | undefined) {
-  if (!release?.storepackStorageId || !release.storepackSha256 || !release.storepackSize) {
+  if (
+    !release?.storepackStorageId ||
+    !release.storepackSha256 ||
+    !release.storepackSize ||
+    release.storepackRevokedAt
+  ) {
     return {
       available: false,
       specVersion: null,
@@ -249,6 +258,14 @@ function toPublicStorePack(release: ReleaseLike | null | undefined) {
     environment: release.environmentSummary ?? null,
     runtimeBundles: [],
   };
+}
+
+function requireModeratorOrResponse(
+  user: { role?: string | null | undefined },
+  headers: HeadersInit,
+) {
+  if (user.role === "admin" || user.role === "moderator") return { ok: true as const };
+  return { ok: false as const, response: text("Forbidden", 403, headers) };
 }
 
 function sha256DigestHeader(hex: string) {
@@ -1207,6 +1224,44 @@ export async function packagesPostRouterV1Handler(ctx: ActionCtx, request: Reque
     }
   }
 
+  if (
+    segments[1] === "versions" &&
+    segments[3] === "storepack" &&
+    segments[4] === "revoke" &&
+    segments.length === 5
+  ) {
+    const rate = await applyRateLimit(ctx, request, "write");
+    if (!rate.ok) return rate.response;
+    const auth = await requireApiTokenUserOrResponse(ctx, request, rate.headers);
+    if (!auth.ok) return auth.response;
+    const moderator = requireModeratorOrResponse(auth.user, rate.headers);
+    if (!moderator.ok) return moderator.response;
+    const body = await request.json().catch(() => ({}));
+    const reason =
+      body && typeof body === "object" && typeof (body as { reason?: unknown }).reason === "string"
+        ? (body as { reason: string }).reason.trim()
+        : undefined;
+    try {
+      const result = await runMutationRef(
+        ctx,
+        internalRefs.packages.revokeStorePackArtifactForStaffInternal,
+        {
+          actorUserId: auth.userId,
+          name: segments[0]!,
+          version: segments[2]!,
+          ...(reason ? { reason } : {}),
+        },
+      );
+      return json(result, 200, rate.headers);
+    } catch (error) {
+      return text(
+        error instanceof Error ? error.message : "StorePack revoke failed",
+        400,
+        rate.headers,
+      );
+    }
+  }
+
   if (segments[1] === "rescan" && segments.length === 2) {
     const rate = await applyRateLimit(ctx, request, "write");
     if (!rate.ok) return rate.response;
@@ -1867,6 +1922,7 @@ export async function packagesGetRouterV1Handler(ctx: ActionCtx, request: Reques
     if (!release) return text("Version not found", 404, rate.headers);
     const securityBlock = getReleaseSecurityBlock(release);
     if (securityBlock) return text(securityBlock.message, securityBlock.status, rate.headers);
+    if (release.storepackRevokedAt) return text("StorePack revoked", 410, rate.headers);
     if (release.storepackStorageId && release.storepackSha256 && release.storepackSize) {
       const blob = await ctx.storage.get(release.storepackStorageId);
       if (!blob) return text("Missing stored StorePack artifact", 500, rate.headers);

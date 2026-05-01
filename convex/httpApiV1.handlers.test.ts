@@ -3795,6 +3795,66 @@ describe("httpApiV1 handlers", () => {
     });
   });
 
+  it("package download refuses revoked StorePack artifacts", async () => {
+    const runMutation = vi.fn().mockResolvedValue(okRate());
+    const runQuery = vi.fn(async (_query: unknown, args: Record<string, unknown>) => {
+      if ("name" in args) {
+        return {
+          package: {
+            _id: "packages:1",
+            name: "@openclaw/kitchen-sink",
+            displayName: "Kitchen Sink",
+            family: "code-plugin",
+            tags: {},
+            latestReleaseId: "packageReleases:1",
+            channel: "official",
+            isOfficial: true,
+            createdAt: 1,
+            updatedAt: 1,
+          },
+          latestRelease: null,
+          owner: { _id: "publishers:openclaw", handle: "openclaw" },
+        };
+      }
+      if ("releaseId" in args) {
+        return {
+          _id: "packageReleases:1",
+          version: "1.0.0",
+          createdAt: 1,
+          changelog: "init",
+          files: [],
+          storepackStorageId: "storage:storepack",
+          storepackSha256: "ab".repeat(32),
+          storepackSize: 13,
+          storepackSpecVersion: 1,
+          storepackRevokedAt: 1_763_000_000_000,
+        };
+      }
+      return null;
+    });
+    const storageGet = vi.fn();
+
+    const response = await __handlers.packagesGetRouterV1Handler(
+      makeCtx({
+        runQuery,
+        runMutation,
+        storage: {
+          get: storageGet,
+        },
+      }),
+      new Request("https://example.com/api/v1/packages/%40openclaw%2Fkitchen-sink/download"),
+    );
+
+    expect(response.status).toBe(410);
+    expect(await response.text()).toBe("StorePack revoked");
+    expect(storageGet).not.toHaveBeenCalled();
+    expect(
+      runMutation.mock.calls.some(
+        ([ref]) => ref === internal.packages.recordPackageDownloadInternal,
+      ),
+    ).toBe(false);
+  });
+
   it("serves StorePack artifacts by digest with immutable cache headers", async () => {
     const sha256 = "ab".repeat(32);
     const runMutation = vi.fn().mockResolvedValue(okRate());
@@ -3968,6 +4028,48 @@ describe("httpApiV1 handlers", () => {
     await expect(response.json()).resolves.toMatchObject({
       processed: 2,
       succeeded: 2,
+    });
+  });
+
+  it("storepack revoke dispatches the moderator mutation", async () => {
+    vi.mocked(requireApiTokenUser).mockResolvedValue({
+      userId: "users:moderator",
+      user: { _id: "users:moderator", role: "moderator" },
+    } as never);
+    const runMutation = vi.fn(async (_mutation: unknown, args: Record<string, unknown>) => {
+      if (isRateLimitArgs(args)) return okRate();
+      return {
+        ok: true,
+        packageId: "packages:1",
+        releaseId: "packageReleases:1",
+        version: "1.0.0",
+        sha256: "ab".repeat(32),
+        revokedArtifactCount: 1,
+      };
+    });
+
+    const response = await __handlers.packagesPostRouterV1Handler(
+      makeCtx({ runMutation }),
+      new Request(
+        "https://example.com/api/v1/packages/%40openclaw%2Fkitchen-sink/versions/1.0.0/storepack/revoke",
+        {
+          method: "POST",
+          body: JSON.stringify({ reason: "malware confirmed" }),
+        },
+      ),
+    );
+
+    if (response.status !== 200) throw new Error(await response.text());
+    expect(await response.json()).toMatchObject({
+      ok: true,
+      releaseId: "packageReleases:1",
+      revokedArtifactCount: 1,
+    });
+    expect(runMutation).toHaveBeenCalledWith(expect.anything(), {
+      actorUserId: "users:moderator",
+      name: "@openclaw/kitchen-sink",
+      version: "1.0.0",
+      reason: "malware confirmed",
     });
   });
 
