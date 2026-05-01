@@ -1,4 +1,4 @@
-export type SiteMode = "skills" | "souls";
+type SiteMode = "skills" | "souls";
 
 import { getRuntimeEnv } from "./runtimeEnv";
 

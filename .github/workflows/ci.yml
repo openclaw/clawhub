@@ -32,6 +32,9 @@ jobs:
       - name: Lint
         run: bun run lint
 
+      - name: Dead code
+        run: bun run deadcode:ci
+
       - name: Test
         run: bun run test
         env:

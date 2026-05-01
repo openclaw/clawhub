@@ -1444,7 +1444,7 @@ function makeDirectPrefixCtx(skills: Array<ReturnType<typeof makeSkillDoc>>) {
               take: vi.fn(async () => {
                 const field = index.includes("slug") ? "normalizedSlug" : "normalizedDisplayName";
                 const prefix = range[field] ?? "";
-                return digestRows.filter((digest) => String(digest[field]).startsWith(prefix));
+                return digestRows.filter((digest) => digest[field].startsWith(prefix));
               }),
             };
           },

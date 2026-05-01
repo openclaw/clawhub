@@ -27,7 +27,7 @@ export type UnifiedPluginResult = {
   plugin: PackageListItem;
 };
 
-export type UnifiedResult = UnifiedSkillResult | UnifiedPluginResult;
+type UnifiedResult = UnifiedSkillResult | UnifiedPluginResult;
 
 type UnifiedSearchOptions = {
   debounceMs?: number;
