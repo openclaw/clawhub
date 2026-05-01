@@ -374,6 +374,8 @@ packageCmd
   .option("--family <family>", "skill|code-plugin|bundle-plugin")
   .option("--official", "Only official packages")
   .option("--executes-code", "Only packages that execute code")
+  .option("--host-target <target>", "Filter by StorePack host target, e.g. darwin-arm64")
+  .option("--environment <flag>", "Filter by StorePack environment flag, e.g. browser")
   .option(
     "--limit <n>",
     "Number of packages to show (max 100)",

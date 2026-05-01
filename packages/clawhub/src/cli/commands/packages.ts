@@ -56,6 +56,8 @@ type PackageExploreOptions = {
   family?: PackageFamily;
   official?: boolean;
   executesCode?: boolean;
+  hostTarget?: string;
+  environment?: string;
   limit?: number;
   json?: boolean;
 };
@@ -192,6 +194,8 @@ export async function cmdExplorePackages(
       if (typeof options.executesCode === "boolean") {
         url.searchParams.set("executesCode", String(options.executesCode));
       }
+      if (options.hostTarget) url.searchParams.set("hostTarget", options.hostTarget);
+      if (options.environment) url.searchParams.set("environment", options.environment);
       const result = await apiRequest(
         registry,
         { method: "GET", url: url.toString(), token },
@@ -225,6 +229,8 @@ export async function cmdExplorePackages(
     if (typeof options.executesCode === "boolean") {
       url.searchParams.set("executesCode", String(options.executesCode));
     }
+    if (options.hostTarget) url.searchParams.set("hostTarget", options.hostTarget);
+    if (options.environment) url.searchParams.set("environment", options.environment);
     const result = await apiRequest(
       registry,
       { method: "GET", url: url.toString(), token },

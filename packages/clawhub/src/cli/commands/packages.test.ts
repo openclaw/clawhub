@@ -142,6 +142,8 @@ describe("package commands", () => {
     await cmdExplorePackages(makeOpts(), "demo plugin", {
       family: "code-plugin",
       executesCode: true,
+      hostTarget: "darwin-arm64",
+      environment: "browser",
     });
 
     const request = httpMocks.apiRequest.mock.calls[0]?.[1] as { url?: string } | undefined;
@@ -150,6 +152,8 @@ describe("package commands", () => {
     expect(url.searchParams.get("q")).toBe("demo plugin");
     expect(url.searchParams.get("family")).toBe("code-plugin");
     expect(url.searchParams.get("executesCode")).toBe("true");
+    expect(url.searchParams.get("hostTarget")).toBe("darwin-arm64");
+    expect(url.searchParams.get("environment")).toBe("browser");
   });
 
   it("supports skill family package browse requests", async () => {
@@ -158,12 +162,19 @@ describe("package commands", () => {
       nextCursor: null,
     });
 
-    await cmdExplorePackages(makeOpts(), "", { family: "skill", limit: 7 });
+    await cmdExplorePackages(makeOpts(), "", {
+      family: "skill",
+      hostTarget: "linux-x64-glibc",
+      environment: "desktop",
+      limit: 7,
+    });
 
     const request = httpMocks.apiRequest.mock.calls[0]?.[1] as { url?: string } | undefined;
     const url = new URL(String(request?.url));
     expect(url.pathname).toBe("/api/v1/packages");
     expect(url.searchParams.get("family")).toBe("skill");
+    expect(url.searchParams.get("hostTarget")).toBe("linux-x64-glibc");
+    expect(url.searchParams.get("environment")).toBe("desktop");
     expect(url.searchParams.get("limit")).toBe("7");
   });
 
