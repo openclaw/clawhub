@@ -971,6 +971,39 @@ const packageStorePackSearchIndex = defineTable({
   .index("by_package_kind_key", ["packageId", "kind", "key"])
   .index("by_kind_key_updated", ["kind", "key", "updatedAt"]);
 
+const storePackMigrationRuns = defineTable({
+  actorUserId: v.id("users"),
+  operation: v.union(
+    v.literal("artifact-backfill"),
+    v.literal("failure-retry"),
+    v.literal("search-index-backfill"),
+  ),
+  status: v.union(
+    v.literal("pending"),
+    v.literal("running"),
+    v.literal("completed"),
+    v.literal("failed"),
+  ),
+  limit: v.number(),
+  cursor: v.optional(v.string()),
+  continueCursor: v.optional(v.string()),
+  isDone: v.optional(v.boolean()),
+  processed: v.number(),
+  generated: v.number(),
+  skipped: v.number(),
+  failed: v.number(),
+  bytesGenerated: v.number(),
+  failureCounts: v.record(v.string(), v.number()),
+  lastError: v.optional(v.string()),
+  startedAt: v.optional(v.number()),
+  completedAt: v.optional(v.number()),
+  createdAt: v.number(),
+  updatedAt: v.number(),
+})
+  .index("by_created_at", ["createdAt"])
+  .index("by_status_created_at", ["status", "createdAt"])
+  .index("by_actor_created_at", ["actorUserId", "createdAt"]);
+
 const packageTrustedPublishers = defineTable({
   packageId: v.id("packages"),
   provider: v.literal("github-actions"),
@@ -1575,6 +1608,7 @@ export default defineSchema({
   packageReleaseArtifacts,
   packageStorePackBackfillFailures,
   packageStorePackSearchIndex,
+  storePackMigrationRuns,
   packageTrustedPublishers,
   packagePublishTokens,
   packageBadges,
