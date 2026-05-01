@@ -2,6 +2,7 @@
 
 import { unzipSync } from "fflate";
 import { describe, expect, it } from "vitest";
+import { makeKitchenSinkStorePackInput } from "./__fixtures__/storepackKitchenSink";
 import {
   buildStorePack,
   deriveStorePackEnvironment,
@@ -120,6 +121,68 @@ describe("storepack", () => {
     expect(manifest.forged).toBeUndefined();
     expect(manifest.files).toHaveLength(1);
     expect(built.fileCount).toBe(2);
+  });
+
+  it("packs a kitchen-sink OpenClaw plugin with cross-platform signals", async () => {
+    const input = await makeKitchenSinkStorePackInput();
+    const built = await buildStorePack(input);
+    const unzipped = unzipSync(built.bytes);
+    const manifest = JSON.parse(decoder.decode(unzipped[`package/${STOREPACK_MANIFEST_PATH}`]));
+    const packageJson = JSON.parse(decoder.decode(unzipped["package/package.json"]));
+
+    expect(Object.keys(unzipped).sort()).toEqual([
+      "package/STOREPACK.json",
+      "package/browser/playwright-smoke.ts",
+      "package/dist/index.js",
+      "package/dist/setup.js",
+      "package/openclaw.plugin.json",
+      "package/package.json",
+    ]);
+    expect(packageJson.openclaw.extensions).toEqual(["./dist/index.js"]);
+    expect(manifest.hostTargets).toEqual([
+      {
+        os: "darwin",
+        arch: "arm64",
+        supportState: "supported",
+        openclawRange: ">=2026.5.0",
+        pluginApiRange: "^1.0.0",
+      },
+      {
+        os: "darwin",
+        arch: "x64",
+        supportState: "supported",
+        openclawRange: ">=2026.5.0",
+        pluginApiRange: "^1.0.0",
+      },
+      {
+        os: "linux",
+        arch: "x64",
+        libc: "glibc",
+        supportState: "supported",
+        openclawRange: ">=2026.5.0",
+        pluginApiRange: "^1.0.0",
+      },
+      {
+        os: "win32",
+        arch: "x64",
+        supportState: "supported",
+        openclawRange: ">=2026.5.0",
+        pluginApiRange: "^1.0.0",
+      },
+    ]);
+    expect(manifest.environment).toEqual({
+      requiresNetwork: true,
+      requiresBrowser: true,
+      requiresLocalDesktop: true,
+      requiresAudioDevice: true,
+      requiresExternalServices: ["github", "openai"],
+    });
+    expect(built.hostTargets.map((target) => [target.os, target.arch, target.libc])).toEqual([
+      ["darwin", "arm64", undefined],
+      ["darwin", "x64", undefined],
+      ["linux", "x64", "glibc"],
+      ["win32", "x64", undefined],
+    ]);
   });
 
   it("derives host targets and environment cues from package capabilities", () => {
