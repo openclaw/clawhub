@@ -22,6 +22,7 @@ vi.mock("@tanstack/react-router", () => ({
       component?: unknown;
       head?: unknown;
     }) => ({ __config: config }),
+  notFound: () => ({ notFound: true }),
   redirect: (options: unknown) => ({ redirect: options }),
 }));
 
@@ -91,6 +92,12 @@ describe("skill route loader", () => {
 
   it("allows raw publisher ids in beforeLoad", () => {
     expect(() => runBeforeLoad({ owner: "publishers:abc123", slug: "weather" })).not.toThrow();
+  });
+
+  it("blocks static asset paths from the skill route", async () => {
+    await expect(runBeforeLoad({ owner: "assets", slug: "index-old.js" })).rejects.toEqual({
+      notFound: true,
+    });
   });
 
   beforeEach(() => {

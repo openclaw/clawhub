@@ -9,11 +9,16 @@ import { SkillDetailPage } from "../../components/SkillDetailPage";
 import { buildSkillMeta } from "../../lib/og";
 import { fetchSkillPageData } from "../../lib/skillPage";
 
+const RESERVED_OWNER_ROUTE_SEGMENTS = new Set(["api", "assets", "og"]);
+
 export const Route = createFileRoute("/$owner/$slug")({
   beforeLoad: ({ params }) => {
     const isHandle = /^[a-zA-Z0-9_][a-zA-Z0-9_-]*$/.test(params.owner);
     const isOwnerId = params.owner.startsWith("users:") || params.owner.startsWith("publishers:");
-    if (!isHandle && !isOwnerId) {
+    const isReservedInfrastructurePath = RESERVED_OWNER_ROUTE_SEGMENTS.has(
+      params.owner.toLowerCase(),
+    );
+    if ((!isHandle && !isOwnerId) || isReservedInfrastructurePath) {
       throw notFound();
     }
   },
