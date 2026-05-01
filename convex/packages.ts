@@ -3411,9 +3411,9 @@ export const setModerationVerdict = mutation({
                 `Moderator marked this release ${args.verdict}.`,
             }
           : undefined;
-        await ctx.db.patch(latestRelease._id, {
-          ...(releaseVerification ? { verification: releaseVerification } : {}),
-        });
+        if (releaseVerification) {
+          await ctx.db.patch(latestRelease._id, { verification: releaseVerification });
+        }
       }
     }
     await ctx.db.insert("auditLogs", {
