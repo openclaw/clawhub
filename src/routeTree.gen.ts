@@ -34,10 +34,12 @@ import { Route as PackagesNewRouteImport } from './routes/packages/new'
 import { Route as PackagesNameRouteImport } from './routes/packages/$name'
 import { Route as OrgsHandleRouteImport } from './routes/orgs/$handle'
 import { Route as ManagementStorepacksRouteImport } from './routes/management/storepacks'
+import { Route as ManagementPluginsRouteImport } from './routes/management/plugins'
 import { Route as ManagementModerationRouteImport } from './routes/management/moderation'
 import { Route as ManagementMigrationsRouteImport } from './routes/management/migrations'
 import { Route as CliAuthRouteImport } from './routes/cli/auth'
 import { Route as OwnerSlugRouteImport } from './routes/$owner/$slug'
+import { Route as ManagementPluginsNameRouteImport } from './routes/management/plugins/$name'
 import { Route as ManagementMigrationsBundledPluginIdRouteImport } from './routes/management/migrations/$bundledPluginId'
 import { Route as OwnerSlugSettingsRouteImport } from './routes/$owner/$slug/settings'
 import { Route as PluginsNameSecurityScannerRouteImport } from './routes/plugins/$name/security/$scanner'
@@ -169,6 +171,11 @@ const ManagementStorepacksRoute = ManagementStorepacksRouteImport.update({
   path: '/storepacks',
   getParentRoute: () => ManagementRoute,
 } as any)
+const ManagementPluginsRoute = ManagementPluginsRouteImport.update({
+  id: '/plugins',
+  path: '/plugins',
+  getParentRoute: () => ManagementRoute,
+} as any)
 const ManagementModerationRoute = ManagementModerationRouteImport.update({
   id: '/moderation',
   path: '/moderation',
@@ -188,6 +195,11 @@ const OwnerSlugRoute = OwnerSlugRouteImport.update({
   id: '/$owner/$slug',
   path: '/$owner/$slug',
   getParentRoute: () => rootRouteImport,
+} as any)
+const ManagementPluginsNameRoute = ManagementPluginsNameRouteImport.update({
+  id: '/$name',
+  path: '/$name',
+  getParentRoute: () => ManagementPluginsRoute,
 } as any)
 const ManagementMigrationsBundledPluginIdRoute =
   ManagementMigrationsBundledPluginIdRouteImport.update({
@@ -236,6 +248,7 @@ export interface FileRoutesByFullPath {
   '/cli/auth': typeof CliAuthRoute
   '/management/migrations': typeof ManagementMigrationsRouteWithChildren
   '/management/moderation': typeof ManagementModerationRoute
+  '/management/plugins': typeof ManagementPluginsRouteWithChildren
   '/management/storepacks': typeof ManagementStorepacksRoute
   '/orgs/$handle': typeof OrgsHandleRoute
   '/packages/$name': typeof PackagesNameRoute
@@ -251,6 +264,7 @@ export interface FileRoutesByFullPath {
   '/users/': typeof UsersIndexRoute
   '/$owner/$slug/settings': typeof OwnerSlugSettingsRoute
   '/management/migrations/$bundledPluginId': typeof ManagementMigrationsBundledPluginIdRoute
+  '/management/plugins/$name': typeof ManagementPluginsNameRoute
   '/$owner/$slug/security/$scanner': typeof OwnerSlugSecurityScannerRoute
   '/plugins/$name/releases/$version': typeof PluginsNameReleasesVersionRoute
   '/plugins/$name/security/$scanner': typeof PluginsNameSecurityScannerRoute
@@ -272,6 +286,7 @@ export interface FileRoutesByTo {
   '/cli/auth': typeof CliAuthRoute
   '/management/migrations': typeof ManagementMigrationsRouteWithChildren
   '/management/moderation': typeof ManagementModerationRoute
+  '/management/plugins': typeof ManagementPluginsRouteWithChildren
   '/management/storepacks': typeof ManagementStorepacksRoute
   '/orgs/$handle': typeof OrgsHandleRoute
   '/packages/$name': typeof PackagesNameRoute
@@ -287,6 +302,7 @@ export interface FileRoutesByTo {
   '/users': typeof UsersIndexRoute
   '/$owner/$slug/settings': typeof OwnerSlugSettingsRoute
   '/management/migrations/$bundledPluginId': typeof ManagementMigrationsBundledPluginIdRoute
+  '/management/plugins/$name': typeof ManagementPluginsNameRoute
   '/$owner/$slug/security/$scanner': typeof OwnerSlugSecurityScannerRoute
   '/plugins/$name/releases/$version': typeof PluginsNameReleasesVersionRoute
   '/plugins/$name/security/$scanner': typeof PluginsNameSecurityScannerRoute
@@ -309,6 +325,7 @@ export interface FileRoutesById {
   '/cli/auth': typeof CliAuthRoute
   '/management/migrations': typeof ManagementMigrationsRouteWithChildren
   '/management/moderation': typeof ManagementModerationRoute
+  '/management/plugins': typeof ManagementPluginsRouteWithChildren
   '/management/storepacks': typeof ManagementStorepacksRoute
   '/orgs/$handle': typeof OrgsHandleRoute
   '/packages/$name': typeof PackagesNameRoute
@@ -324,6 +341,7 @@ export interface FileRoutesById {
   '/users/': typeof UsersIndexRoute
   '/$owner/$slug/settings': typeof OwnerSlugSettingsRoute
   '/management/migrations/$bundledPluginId': typeof ManagementMigrationsBundledPluginIdRoute
+  '/management/plugins/$name': typeof ManagementPluginsNameRoute
   '/$owner/$slug/security/$scanner': typeof OwnerSlugSecurityScannerRoute
   '/plugins/$name/releases/$version': typeof PluginsNameReleasesVersionRoute
   '/plugins/$name/security/$scanner': typeof PluginsNameSecurityScannerRoute
@@ -347,6 +365,7 @@ export interface FileRouteTypes {
     | '/cli/auth'
     | '/management/migrations'
     | '/management/moderation'
+    | '/management/plugins'
     | '/management/storepacks'
     | '/orgs/$handle'
     | '/packages/$name'
@@ -362,6 +381,7 @@ export interface FileRouteTypes {
     | '/users/'
     | '/$owner/$slug/settings'
     | '/management/migrations/$bundledPluginId'
+    | '/management/plugins/$name'
     | '/$owner/$slug/security/$scanner'
     | '/plugins/$name/releases/$version'
     | '/plugins/$name/security/$scanner'
@@ -383,6 +403,7 @@ export interface FileRouteTypes {
     | '/cli/auth'
     | '/management/migrations'
     | '/management/moderation'
+    | '/management/plugins'
     | '/management/storepacks'
     | '/orgs/$handle'
     | '/packages/$name'
@@ -398,6 +419,7 @@ export interface FileRouteTypes {
     | '/users'
     | '/$owner/$slug/settings'
     | '/management/migrations/$bundledPluginId'
+    | '/management/plugins/$name'
     | '/$owner/$slug/security/$scanner'
     | '/plugins/$name/releases/$version'
     | '/plugins/$name/security/$scanner'
@@ -419,6 +441,7 @@ export interface FileRouteTypes {
     | '/cli/auth'
     | '/management/migrations'
     | '/management/moderation'
+    | '/management/plugins'
     | '/management/storepacks'
     | '/orgs/$handle'
     | '/packages/$name'
@@ -434,6 +457,7 @@ export interface FileRouteTypes {
     | '/users/'
     | '/$owner/$slug/settings'
     | '/management/migrations/$bundledPluginId'
+    | '/management/plugins/$name'
     | '/$owner/$slug/security/$scanner'
     | '/plugins/$name/releases/$version'
     | '/plugins/$name/security/$scanner'
@@ -645,6 +669,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ManagementStorepacksRouteImport
       parentRoute: typeof ManagementRoute
     }
+    '/management/plugins': {
+      id: '/management/plugins'
+      path: '/plugins'
+      fullPath: '/management/plugins'
+      preLoaderRoute: typeof ManagementPluginsRouteImport
+      parentRoute: typeof ManagementRoute
+    }
     '/management/moderation': {
       id: '/management/moderation'
       path: '/moderation'
@@ -672,6 +703,13 @@ declare module '@tanstack/react-router' {
       fullPath: '/$owner/$slug'
       preLoaderRoute: typeof OwnerSlugRouteImport
       parentRoute: typeof rootRouteImport
+    }
+    '/management/plugins/$name': {
+      id: '/management/plugins/$name'
+      path: '/$name'
+      fullPath: '/management/plugins/$name'
+      preLoaderRoute: typeof ManagementPluginsNameRouteImport
+      parentRoute: typeof ManagementPluginsRoute
     }
     '/management/migrations/$bundledPluginId': {
       id: '/management/migrations/$bundledPluginId'
@@ -723,15 +761,28 @@ const ManagementMigrationsRouteChildren: ManagementMigrationsRouteChildren = {
 const ManagementMigrationsRouteWithChildren =
   ManagementMigrationsRoute._addFileChildren(ManagementMigrationsRouteChildren)
 
+interface ManagementPluginsRouteChildren {
+  ManagementPluginsNameRoute: typeof ManagementPluginsNameRoute
+}
+
+const ManagementPluginsRouteChildren: ManagementPluginsRouteChildren = {
+  ManagementPluginsNameRoute: ManagementPluginsNameRoute,
+}
+
+const ManagementPluginsRouteWithChildren =
+  ManagementPluginsRoute._addFileChildren(ManagementPluginsRouteChildren)
+
 interface ManagementRouteChildren {
   ManagementMigrationsRoute: typeof ManagementMigrationsRouteWithChildren
   ManagementModerationRoute: typeof ManagementModerationRoute
+  ManagementPluginsRoute: typeof ManagementPluginsRouteWithChildren
   ManagementStorepacksRoute: typeof ManagementStorepacksRoute
 }
 
 const ManagementRouteChildren: ManagementRouteChildren = {
   ManagementMigrationsRoute: ManagementMigrationsRouteWithChildren,
   ManagementModerationRoute: ManagementModerationRoute,
+  ManagementPluginsRoute: ManagementPluginsRouteWithChildren,
   ManagementStorepacksRoute: ManagementStorepacksRoute,
 }
 

@@ -1,9 +1,9 @@
 import { Link } from "@tanstack/react-router";
-import { DatabaseZap, Gauge, ShieldCheck, UploadCloud } from "lucide-react";
+import { DatabaseZap, Gauge, ListChecks, ShieldCheck, UploadCloud } from "lucide-react";
 import type React from "react";
 import { Badge } from "./ui/badge";
 
-type OperationKey = "publish" | "moderation" | "storepacks" | "migrations";
+type OperationKey = "publish" | "plugins" | "moderation" | "storepacks" | "migrations";
 
 const pluginPublishSearch = {
   ownerHandle: undefined,
@@ -25,7 +25,7 @@ export function PluginOperationsNav({ current }: { current?: OperationKey }) {
           Publisher, moderation, artifact, and migration surfaces for the ClawHub plugin platform.
         </p>
       </div>
-      <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+      <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-5">
         <OperationLink
           current={current === "publish"}
           icon={<UploadCloud className="h-4 w-4" aria-hidden="true" />}
@@ -35,6 +35,17 @@ export function PluginOperationsNav({ current }: { current?: OperationKey }) {
         >
           <Link to="/publish-plugin" search={pluginPublishSearch}>
             Open publish
+          </Link>
+        </OperationLink>
+        <OperationLink
+          current={current === "plugins"}
+          icon={<ListChecks className="h-4 w-4" aria-hidden="true" />}
+          title="Plugin management"
+          path="/management/plugins"
+          description="Open package drilldowns with release, StorePack, badge, and verdict controls."
+        >
+          <Link to="/management/plugins" search={{ skill: undefined, plugin: undefined }}>
+            Open plugins
           </Link>
         </OperationLink>
         <OperationLink
