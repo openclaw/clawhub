@@ -66,6 +66,12 @@ type StorePackPreview = {
   warnings: string[];
 };
 
+type StorePackIntakeGate = {
+  label: string;
+  status: "ready" | "review" | "blocked" | "pending";
+  detail: string;
+};
+
 const DEFAULT_STOREPACK_TARGETS = ["darwin-arm64", "linux-x64-glibc", "win32-x64"];
 
 function splitHostTargets(value: string) {
@@ -243,6 +249,98 @@ function buildStorePackPreview(input: {
     blockers,
     warnings,
   };
+}
+
+function buildStorePackIntakeGates(input: {
+  preview: StorePackPreview;
+  family: "code-plugin" | "bundle-plugin";
+  sourceRepo: string;
+  sourceCommit: string;
+  sourceRef: string;
+}) {
+  const hasSource = Boolean(input.sourceRepo.trim() && input.sourceCommit.trim());
+  const defaultMatrix =
+    input.family === "bundle-plugin" &&
+    input.preview.hostTargets.length === DEFAULT_STOREPACK_TARGETS.length &&
+    input.preview.hostTargets.every((target, index) => target === DEFAULT_STOREPACK_TARGETS[index]);
+  return [
+    {
+      label: "Archive contract",
+      status: input.preview.blockers.length > 0 ? "blocked" : "ready",
+      detail:
+        input.preview.blockers.length > 0
+          ? "Resolve blocking metadata before ClawHub can build the canonical StorePack."
+          : `${input.preview.finalFileCount} files will be packaged with a generated manifest and digests.`,
+    },
+    {
+      label: "Source provenance",
+      status: hasSource ? "ready" : "blocked",
+      detail: hasSource
+        ? `${input.sourceRepo.trim()} @ ${input.sourceRef.trim() || input.sourceCommit.trim()}`
+        : "Code plugins require a source repository and exact commit for review and future rebuild checks.",
+    },
+    {
+      label: "Platform matrix",
+      status: defaultMatrix ? "review" : "ready",
+      detail: defaultMatrix
+        ? "Default macOS/Linux/Windows targets are selected. Confirm native dependencies before publish."
+        : input.preview.hostTargets.join(", "),
+    },
+    {
+      label: "Environment needs",
+      status: input.preview.environment.length > 0 ? "ready" : "review",
+      detail:
+        input.preview.environment.length > 0
+          ? input.preview.environment.join(", ")
+          : "No environment signals detected beyond package metadata.",
+    },
+    {
+      label: "Security review",
+      status: "pending",
+      detail:
+        "Static, malware, and policy checks run after publish before public install confidence.",
+    },
+    {
+      label: "Moderation handoff",
+      status: "pending",
+      detail:
+        "Staff can review this release from /management/moderation if scans or metadata need attention.",
+    },
+  ] satisfies StorePackIntakeGate[];
+}
+
+function StorePackIntakeReview({ gates }: { gates: StorePackIntakeGate[] }) {
+  return (
+    <Card className="mb-5">
+      <div className="flex flex-col gap-4">
+        <div>
+          <h2 className="m-0 font-display text-xl font-bold text-[color:var(--ink)]">
+            StorePack intake review
+          </h2>
+          <p className="mt-1 text-sm text-[color:var(--ink-soft)]">
+            ClawHub checks the package contract, source provenance, platform coverage, environment
+            needs, and moderation handoff before public install confidence.
+          </p>
+        </div>
+        <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+          {gates.map((gate) => (
+            <div
+              key={gate.label}
+              className="rounded-[var(--radius-sm)] border border-[color:var(--line)] bg-[color:var(--surface-muted)] p-3"
+            >
+              <div className="mb-2 flex items-start justify-between gap-3">
+                <strong className="text-sm text-[color:var(--ink)]">{gate.label}</strong>
+                <Badge variant={gate.status === "blocked" ? "accent" : "compact"}>
+                  {gate.status}
+                </Badge>
+              </div>
+              <p className="m-0 text-sm text-[color:var(--ink-soft)]">{gate.detail}</p>
+            </div>
+          ))}
+        </div>
+      </div>
+    </Card>
+  );
 }
 
 export function PublishPluginRoute() {
@@ -469,6 +567,18 @@ export function PublishPluginRoute() {
         <div className="mb-5">
           <PackageLifecyclePanel lifecycle={publishLifecycle} title="Plugin release lifecycle" />
         </div>
+
+        {storePackPreview ? (
+          <StorePackIntakeReview
+            gates={buildStorePackIntakeGates({
+              preview: storePackPreview,
+              family,
+              sourceRepo,
+              sourceCommit,
+              sourceRef,
+            })}
+          />
+        ) : null}
 
         {storePackPreview ? (
           <Card className="mb-5">

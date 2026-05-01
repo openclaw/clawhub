@@ -276,6 +276,11 @@ describe("plugins publish route", () => {
       expect(screen.getByRole("heading", { name: "StorePack preview" })).toBeTruthy();
     });
 
+    expect(screen.getByRole("heading", { name: "StorePack intake review" })).toBeTruthy();
+    expect(screen.getByText("Archive contract")).toBeTruthy();
+    expect(screen.getByText("Source provenance")).toBeTruthy();
+    expect(screen.getByText("Platform matrix")).toBeTruthy();
+    expect(screen.getByText("Security review")).toBeTruthy();
     expect(screen.getByText("4 files including STOREPACK.json")).toBeTruthy();
     expect(screen.getAllByText("darwin-arm64").length).toBeGreaterThan(0);
     expect(screen.getAllByText("linux-x64-glibc").length).toBeGreaterThan(0);
