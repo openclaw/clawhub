@@ -18,8 +18,9 @@ import { cmdMergeSkill, cmdRenameSkill } from "./cli/commands/ownership.js";
 import {
   cmdExplorePackages,
   cmdGetPackageTrustedPublisher,
-  cmdInspectPackage,
   cmdDownloadPackage,
+  cmdInspectPackage,
+  cmdInspectPackageStorePack,
   cmdDeletePackageTrustedPublisher,
   cmdPackageStorePackBackfill,
   cmdPackageStorePackIndexBackfill,
@@ -445,6 +446,18 @@ packageCmd
     }
     const opts = await resolveGlobalOpts();
     await cmdDownloadPackage(opts, name, options);
+  });
+
+packageCmd
+  .command("storepack-inspect")
+  .description("Inspect a remote StorePack artifact")
+  .argument("<name>", "Package name")
+  .option("--version <version>", "Version to inspect (default: latest)")
+  .option("--manifest", "Print the generated STOREPACK.json")
+  .option("--json", "Output JSON")
+  .action(async (name, options) => {
+    const opts = await resolveGlobalOpts();
+    await cmdInspectPackageStorePack(opts, name, options);
   });
 
 const packageStorePackCmd = packageCmd

@@ -88,6 +88,12 @@ type PackageDownloadOptions = {
   json?: boolean;
 };
 
+type PackageStorePackInspectOptions = {
+  version?: string;
+  manifest?: boolean;
+  json?: boolean;
+};
+
 type PackageVerifyOptions = {
   sha256?: string;
   json?: boolean;
@@ -123,6 +129,18 @@ type PackageFile = {
   relPath: string;
   bytes: Uint8Array;
   contentType?: string;
+};
+
+type PackageStorePackInspectResponse = {
+  package: { name: string; displayName: string; family: PackageFamily };
+  version: string | { version: string; createdAt?: number };
+  storepack: PackageStorePackSummary;
+  links?: {
+    download?: string;
+    immutable?: string | null;
+    manifest?: string;
+  };
+  manifest?: Record<string, unknown>;
 };
 
 type InferredPublishSource = {
@@ -618,6 +636,65 @@ export async function cmdDownloadPackage(
     spinner?.fail(formatError(error));
     throw error;
   }
+}
+
+async function resolvePackageStorePackVersion(
+  registry: string,
+  packageName: string,
+  token: string | null,
+  options: PackageStorePackInspectOptions,
+) {
+  if (options.version?.trim()) return options.version.trim();
+  const detail = await apiRequest(
+    registry,
+    {
+      method: "GET",
+      path: `${ApiRoutes.packages}/${encodeURIComponent(packageName)}`,
+      ...(token ? { token } : {}),
+    },
+    ApiV1PackageResponseSchema,
+  );
+  if (!detail.package) fail(`Package not found: ${packageName}`);
+  const version = detail.package.latestVersion;
+  if (!version) fail(`Package has no published versions: ${packageName}`);
+  return version;
+}
+
+export async function cmdInspectPackageStorePack(
+  opts: GlobalOpts,
+  packageName: string,
+  options: PackageStorePackInspectOptions = {},
+) {
+  const trimmed = normalizePackageNameOrFail(packageName);
+  const token = (await getOptionalAuthToken()) ?? null;
+  const registry = await getRegistry(opts, { cache: true });
+  const version = await resolvePackageStorePackVersion(registry, trimmed, token, options);
+  const response = await apiRequest<PackageStorePackInspectResponse>(registry, {
+    method: "GET",
+    path: `${ApiRoutes.packages}/${encodeURIComponent(trimmed)}/versions/${encodeURIComponent(version)}/storepack${
+      options.manifest ? "/manifest" : ""
+    }`,
+    ...(token ? { token } : {}),
+  });
+
+  if (options.json) {
+    process.stdout.write(`${JSON.stringify(response, null, 2)}\n`);
+    return;
+  }
+
+  if (options.manifest) {
+    process.stdout.write(`${JSON.stringify(response.manifest ?? {}, null, 2)}\n`);
+    return;
+  }
+
+  const responseVersion =
+    typeof response.version === "string" ? response.version : response.version.version;
+  console.log(`${response.package.name}@${responseVersion}`);
+  printStorePack(response.storepack);
+  if (response.links?.download) console.log(`StorePack Download: ${response.links.download}`);
+  if (response.links?.immutable)
+    console.log(`StorePack Immutable URL: ${response.links.immutable}`);
+  if (response.links?.manifest) console.log(`StorePack Manifest URL: ${response.links.manifest}`);
 }
 
 export async function cmdVerifyPackageStorePack(

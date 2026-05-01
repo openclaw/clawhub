@@ -37,6 +37,7 @@ const {
   cmdPackageStorePackIndexBackfill,
   cmdPackageStorePackMigrationStatus,
   cmdPackageStorePackRevoke,
+  cmdInspectPackageStorePack,
   cmdPublishPackage,
   cmdSetPackageTrustedPublisher,
   cmdVerifyPackageStorePack,
@@ -271,6 +272,104 @@ describe("package commands", () => {
     expect(mockLog).toHaveBeenCalledWith("StorePack: available");
     expect(mockLog).toHaveBeenCalledWith(`StorePack SHA-256: ${"a".repeat(64)}`);
     expect(mockLog).toHaveBeenCalledWith("StorePack Targets: darwin-arm64, linux-x64-glibc");
+  });
+
+  it("inspects remote StorePack metadata by package version", async () => {
+    httpMocks.apiRequest.mockResolvedValueOnce({
+      package: {
+        name: "@openclaw/kitchen-sink",
+        displayName: "Kitchen Sink",
+        family: "code-plugin",
+      },
+      version: { version: "1.0.0", createdAt: 1 },
+      storepack: {
+        available: true,
+        specVersion: 1,
+        format: "zip",
+        sha256: "a".repeat(64),
+        size: 123,
+        fileCount: 3,
+        manifestSha256: "b".repeat(64),
+        builtAt: 1_763_000_000_000,
+        buildVersion: "clawhub-storepack-v1",
+        hostTargets: [{ os: "darwin", arch: "arm64", supportState: "supported" }],
+        environment: { requiresNetwork: true },
+        runtimeBundles: [],
+      },
+      links: {
+        download: "/api/v1/packages/%40openclaw%2Fkitchen-sink/download?version=1.0.0",
+        immutable: `/api/v1/storepacks/${"a".repeat(64)}`,
+        manifest: "/api/v1/packages/%40openclaw%2Fkitchen-sink/versions/1.0.0/storepack/manifest",
+      },
+    });
+
+    await cmdInspectPackageStorePack(makeOpts(), "@openclaw/kitchen-sink", { version: "1.0.0" });
+
+    expect(httpMocks.apiRequest).toHaveBeenCalledWith(
+      "https://clawhub.ai",
+      {
+        method: "GET",
+        path: "/api/v1/packages/%40openclaw%2Fkitchen-sink/versions/1.0.0/storepack",
+      },
+      undefined,
+    );
+    expect(mockLog).toHaveBeenCalledWith("@openclaw/kitchen-sink@1.0.0");
+    expect(mockLog).toHaveBeenCalledWith(`StorePack SHA-256: ${"a".repeat(64)}`);
+  });
+
+  it("prints remote StorePack manifests and resolves latest versions", async () => {
+    httpMocks.apiRequest
+      .mockResolvedValueOnce({
+        package: {
+          name: "demo",
+          displayName: "Demo",
+          family: "code-plugin",
+          runtimeId: "demo.plugin",
+          channel: "community",
+          isOfficial: false,
+          summary: null,
+          latestVersion: "2.0.0",
+          createdAt: 1,
+          updatedAt: 2,
+          tags: { latest: "2.0.0" },
+          compatibility: null,
+          capabilities: { executesCode: true },
+          verification: {
+            tier: "structural",
+            scope: "artifact-only",
+          },
+        },
+        owner: null,
+      })
+      .mockResolvedValueOnce({
+        package: { name: "demo", displayName: "Demo", family: "code-plugin" },
+        version: "2.0.0",
+        storepack: {
+          available: true,
+          specVersion: 1,
+          format: "zip",
+          sha256: "c".repeat(64),
+          size: 123,
+          fileCount: 3,
+          manifestSha256: "d".repeat(64),
+          builtAt: 1_763_000_000_000,
+          buildVersion: "clawhub-storepack-v1",
+          hostTargets: [],
+          environment: null,
+          runtimeBundles: [],
+        },
+        manifest: { kind: "openclaw.storepack", specVersion: 1 },
+      });
+
+    await cmdInspectPackageStorePack(makeOpts(), "demo", { manifest: true });
+
+    const manifestCall = httpMocks.apiRequest.mock.calls[1];
+    if (!manifestCall) throw new Error("Missing StorePack manifest request");
+    const manifestRequest = manifestCall[1] as { path?: string };
+    expect(manifestRequest.path).toBe("/api/v1/packages/demo/versions/2.0.0/storepack/manifest");
+    expect(mockWrite.mock.calls.map((call) => String(call[0])).join("")).toContain(
+      `"kind": "openclaw.storepack"`,
+    );
   });
 
   it("downloads a StorePack package archive", async () => {
