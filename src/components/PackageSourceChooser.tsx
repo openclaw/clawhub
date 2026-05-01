@@ -1,6 +1,6 @@
 import type { PackageCompatibility } from "clawhub-schema";
 import { Package } from "lucide-react";
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { formatPackageCompatibility } from "../lib/pluginPublishPrefill";
 import { expandDroppedItems } from "../lib/uploadFiles";
 import { formatBytes } from "../routes/upload/-utils";
@@ -26,6 +26,7 @@ export function PackageSourceChooser(props: {
   onPickFiles: (selected: File[]) => Promise<void>;
 }) {
   const [isDragging, setIsDragging] = useState(false);
+  const [isClientReady, setIsClientReady] = useState(false);
   const archiveInputRef = useRef<HTMLInputElement | null>(null);
   const directoryInputRef = useRef<HTMLInputElement | null>(null);
   const isMetadataLocked = props.files.length === 0 || Boolean(props.validationError);
@@ -48,8 +49,12 @@ export function PackageSourceChooser(props: {
     }
   };
 
+  useEffect(() => {
+    setIsClientReady(true);
+  }, []);
+
   return (
-    <Card className="mb-5">
+    <Card className="mb-5" data-upload-ready={isClientReady ? "true" : "false"}>
       <input
         ref={archiveInputRef}
         className="hidden"
@@ -112,10 +117,20 @@ export function PackageSourceChooser(props: {
             ignores local junk, then generates the StorePack itself.
           </span>
           <div className="flex flex-wrap justify-center gap-2 pt-2">
-            <Button variant="outline" size="sm" onClick={() => archiveInputRef.current?.click()}>
+            <Button
+              variant="outline"
+              size="sm"
+              disabled={!isClientReady}
+              onClick={() => archiveInputRef.current?.click()}
+            >
               Upload ZIP/TGZ
             </Button>
-            <Button variant="ghost" size="sm" onClick={() => directoryInputRef.current?.click()}>
+            <Button
+              variant="ghost"
+              size="sm"
+              disabled={!isClientReady}
+              onClick={() => directoryInputRef.current?.click()}
+            >
               Choose folder
             </Button>
           </div>
