@@ -21,6 +21,8 @@ import {
   cmdInspectPackage,
   cmdDownloadPackage,
   cmdDeletePackageTrustedPublisher,
+  cmdPackageStorePackBackfill,
+  cmdPackageStorePackMigrationStatus,
   cmdPublishPackage,
   cmdSetPackageTrustedPublisher,
   cmdVerifyPackageStorePack,
@@ -426,15 +428,43 @@ packageCmd
 
 packageCmd
   .command("storepack")
-  .description("Alias for package download")
-  .argument("<name>", "Package name")
+  .description("Download StorePack artifacts or run StorePack admin workflows")
+  .argument("[name]", "Package name")
   .option("--version <version>", "Version to download")
   .option("--tag <tag>", "Tag to download")
   .option("-o, --output <path>", "Output path")
   .option("--json", "Output JSON")
   .action(async (name, options) => {
+    if (!name) {
+      packageCmd.commands.find((command) => command.name() === "storepack")?.help();
+      return;
+    }
     const opts = await resolveGlobalOpts();
     await cmdDownloadPackage(opts, name, options);
+  });
+
+const packageStorePackCmd = packageCmd
+  .command("storepack-admin")
+  .description("Admin StorePack migration controls");
+
+packageStorePackCmd
+  .command("status")
+  .description("Show StorePack migration status")
+  .option("--limit <n>", "Sample limit", (value) => Number.parseInt(value, 10), 25)
+  .option("--json", "Output JSON")
+  .action(async (options) => {
+    const opts = await resolveGlobalOpts();
+    await cmdPackageStorePackMigrationStatus(opts, options);
+  });
+
+packageStorePackCmd
+  .command("backfill")
+  .description("Build StorePack artifacts for legacy plugin releases")
+  .option("--limit <n>", "Batch size", (value) => Number.parseInt(value, 10), 10)
+  .option("--json", "Output JSON")
+  .action(async (options) => {
+    const opts = await resolveGlobalOpts();
+    await cmdPackageStorePackBackfill(opts, options);
   });
 
 packageCmd

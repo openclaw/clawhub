@@ -26,6 +26,7 @@ import {
   json,
   resolveTagsBatch,
   requireApiTokenUserOrResponse,
+  requireAdminOrResponse,
   requirePackagePublishAuthOrResponse,
   safeTextFileResponse,
   softDeleteErrorToResponse,
@@ -58,6 +59,8 @@ const internalRefs = internal as unknown as {
     publishPackageForTrustedPublisherInternal: unknown;
     setTrustedPublisherForUserInternal: unknown;
     deleteTrustedPublisherForUserInternal: unknown;
+    backfillStorePackArtifactsInternal: unknown;
+    getStorePackMigrationStatusInternal: unknown;
     getReleasesByIdsInternal: unknown;
     getReleaseByPackageAndVersionInternal: unknown;
     getReleaseByIdInternal: unknown;
@@ -1100,6 +1103,38 @@ export async function mintPublishTokenV1Handler(ctx: ActionCtx, request: Request
 
 export async function packagesPostRouterV1Handler(ctx: ActionCtx, request: Request) {
   const segments = getPathSegments(request, "/api/v1/packages/");
+  if (segments[0] === "storepack" && segments[1] === "backfill" && segments.length === 2) {
+    const rate = await applyRateLimit(ctx, request, "write");
+    if (!rate.ok) return rate.response;
+    const auth = await requireApiTokenUserOrResponse(ctx, request, rate.headers);
+    if (!auth.ok) return auth.response;
+    const admin = requireAdminOrResponse(auth.user, rate.headers);
+    if (!admin.ok) return admin.response;
+    const body = await request.json().catch(() => ({}));
+    const rawLimit =
+      body && typeof body === "object" && "limit" in body
+        ? Number((body as { limit?: unknown }).limit)
+        : undefined;
+    const limit = Number.isFinite(rawLimit) ? rawLimit : undefined;
+    try {
+      const result = await runActionRef(
+        ctx,
+        internalRefs.packages.backfillStorePackArtifactsInternal,
+        {
+          actorUserId: auth.userId,
+          ...(limit ? { limit } : {}),
+        },
+      );
+      return json(result, 200, rate.headers);
+    } catch (error) {
+      return text(
+        error instanceof Error ? error.message : "StorePack backfill failed",
+        400,
+        rate.headers,
+      );
+    }
+  }
+
   if (segments[1] === "rescan" && segments.length === 2) {
     const rate = await applyRateLimit(ctx, request, "write");
     if (!rate.ok) return rate.response;
@@ -1460,6 +1495,21 @@ export async function packagesGetRouterV1Handler(ctx: ActionCtx, request: Reques
   if (segments.length === 0) return text("Not found", 404);
   if (segments[0] === "search" && new URL(request.url).searchParams.has("q")) {
     return await searchPackages(ctx, request, { includeSkills: true });
+  }
+  if (segments[0] === "storepack" && segments[1] === "migration-status" && segments.length === 2) {
+    const rate = await applyRateLimit(ctx, request, "read");
+    if (!rate.ok) return rate.response;
+    const auth = await requireApiTokenUserOrResponse(ctx, request, rate.headers);
+    if (!auth.ok) return auth.response;
+    const admin = requireAdminOrResponse(auth.user, rate.headers);
+    if (!admin.ok) return admin.response;
+    const limit = toOptionalNumber(new URL(request.url).searchParams.get("limit")) ?? undefined;
+    const result = await runQueryRef(
+      ctx,
+      internalRefs.packages.getStorePackMigrationStatusInternal,
+      { limit },
+    );
+    return json(result, 200, rate.headers);
   }
 
   const rateKind = segments[1] === "download" ? "download" : "read";
