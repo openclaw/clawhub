@@ -1,8 +1,8 @@
 import { Link } from "@tanstack/react-router";
+import type { PackageListItem } from "../lib/packageApi";
+import { familyLabel } from "../lib/packageLabels";
 import { MarketplaceIcon } from "./MarketplaceIcon";
 import { Badge } from "./ui/badge";
-import { familyLabel } from "../lib/packageLabels";
-import type { PackageListItem } from "../lib/packageApi";
 
 type PluginListItemProps = {
   item: PackageListItem;
@@ -10,7 +10,12 @@ type PluginListItemProps = {
 
 export function PluginListItem({ item }: PluginListItemProps) {
   return (
-    <Link to="/plugins/$name" params={{ name: item.name }} className="skill-list-item" aria-label={`Plugin: ${item.displayName}`}>
+    <Link
+      to="/plugins/$name"
+      params={{ name: item.name }}
+      className="skill-list-item"
+      aria-label={`Plugin: ${item.displayName}`}
+    >
       <MarketplaceIcon kind="plugin" label={item.displayName} />
       <div className="skill-list-item-body">
         <div className="skill-list-item-main">
@@ -24,7 +29,9 @@ export function PluginListItem({ item }: PluginListItemProps) {
           <Badge variant="compact">{familyLabel(item.family)}</Badge>
           {item.isOfficial ? <Badge variant="accent">Verified</Badge> : null}
         </div>
-        <p className="skill-list-item-summary">{item.summary ?? "Plugin package for agent workflows."}</p>
+        <p className="skill-list-item-summary">
+          {item.summary ?? "Plugin package for agent workflows."}
+        </p>
         <div className="skill-list-item-meta">
           <span className="skill-list-item-meta-item">Plugin</span>
           {item.latestVersion ? (

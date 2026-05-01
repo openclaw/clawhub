@@ -37,7 +37,7 @@ Auth-aware enforcement:
 - Authenticated requests (valid Bearer token): per user bucket.
 - Missing/invalid token falls back to IP enforcement.
 
-- Read: 180/min per IP, 900/min per key
+- Read: 600/min per IP, 2400/min per key
 - Write: 45/min per IP, 180/min per key
 
 Headers: `X-RateLimit-Limit`, `X-RateLimit-Remaining`, `X-RateLimit-Reset`, `RateLimit-Limit`, `RateLimit-Remaining`, `RateLimit-Reset`, `Retry-After` (on 429).

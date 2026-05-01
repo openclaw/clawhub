@@ -1,10 +1,7 @@
 import { createFileRoute, notFound, redirect } from "@tanstack/react-router";
 import { useQuery } from "convex/react";
 import { api } from "../../../../../convex/_generated/api";
-import {
-  SecurityScannerPage,
-  type ScannerSlug,
-} from "../../../../components/SecurityScannerPage";
+import { SecurityScannerPage, type ScannerSlug } from "../../../../components/SecurityScannerPage";
 import { buildSkillMeta } from "../../../../lib/og";
 import { fetchSkillPageData } from "../../../../lib/skillPage";
 

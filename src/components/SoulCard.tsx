@@ -1,7 +1,7 @@
 import { Link } from "@tanstack/react-router";
 import type { ReactNode } from "react";
-import { MarketplaceIcon } from "./MarketplaceIcon";
 import type { PublicSoul } from "../lib/publicUser";
+import { MarketplaceIcon } from "./MarketplaceIcon";
 
 type SoulCardProps = {
   soul: PublicSoul;

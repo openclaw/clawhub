@@ -15,7 +15,7 @@ import { Badge } from "./ui/badge";
 import { Button } from "./ui/button";
 import { UserBadge } from "./UserBadge";
 
-export type SkillModerationInfo = {
+type SkillModerationInfo = {
   isPendingScan: boolean;
   isMalwareBlocked: boolean;
   isSuspicious: boolean;
@@ -126,8 +126,8 @@ export function SkillHeader({
           <div className="pending-banner-content">
             <strong>Skill flagged — review recommended</strong>
             <p>
-              ClawHub Security found sensitive or high-impact capabilities. Review the scan
-              results before using.
+              ClawHub Security found sensitive or high-impact capabilities. Review the scan results
+              before using.
             </p>
             {canManage ? (
               <p className="pending-banner-appeal">

@@ -42,9 +42,11 @@ export async function adjustUserSkillStatsForSkillChange(
 
   if (prevOwnerId && prevOwnerId === nextOwnerId) {
     await patchUserStats(ctx, prevOwnerId, {
-      publishedSkills: (nextContribution?.publishedSkills ?? 0) - (prevContribution?.publishedSkills ?? 0),
+      publishedSkills:
+        (nextContribution?.publishedSkills ?? 0) - (prevContribution?.publishedSkills ?? 0),
       totalStars: (nextContribution?.totalStars ?? 0) - (prevContribution?.totalStars ?? 0),
-      totalDownloads: (nextContribution?.totalDownloads ?? 0) - (prevContribution?.totalDownloads ?? 0),
+      totalDownloads:
+        (nextContribution?.totalDownloads ?? 0) - (prevContribution?.totalDownloads ?? 0),
     });
     return;
   }

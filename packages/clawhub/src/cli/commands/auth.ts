@@ -42,11 +42,7 @@ export async function cmdLoginFlow(
   await cmdLogin({ ...opts, registry, registrySource }, result.token, inputAllowed);
 }
 
-export async function cmdLogin(
-  opts: GlobalOpts,
-  tokenFlag: string | undefined,
-  inputAllowed: boolean,
-) {
+async function cmdLogin(opts: GlobalOpts, tokenFlag: string | undefined, inputAllowed: boolean) {
   if (!tokenFlag && !inputAllowed) fail("Token required (use --token or remove --no-input)");
 
   const token = tokenFlag || (await promptHidden("ClawHub token: "));

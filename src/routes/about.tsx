@@ -1,23 +1,15 @@
-import { createFileRoute, Link } from '@tanstack/react-router';
-import type { LucideIcon } from 'lucide-react';
-import {
-  Banknote,
-  Drama,
-  Eye,
-  EyeOff,
-  ImageOff,
-  ShieldOff,
-  UserX,
-} from 'lucide-react';
-import type { ReactNode } from 'react';
-import { Badge } from '../components/ui/badge';
-import { Button } from '../components/ui/button';
-import { getSiteMode, getSiteName, getSiteUrlForMode } from '../lib/site';
+import { createFileRoute, Link } from "@tanstack/react-router";
+import type { LucideIcon } from "lucide-react";
+import { Banknote, Drama, Eye, EyeOff, ImageOff, ShieldOff, UserX } from "lucide-react";
+import type { ReactNode } from "react";
+import { Badge } from "../components/ui/badge";
+import { Button } from "../components/ui/button";
+import { getSiteMode, getSiteName, getSiteUrlForMode } from "../lib/site";
 
 export function renderWithInlineCode(text: string): ReactNode[] {
   const parts = text.split(/(`[^`]+`)/g);
   return parts.map((part, i) => {
-    if (part.startsWith('`') && part.endsWith('`')) {
+    if (part.startsWith("`") && part.endsWith("`")) {
       return (
         <code key={i} className="about-inline-code">
           {part.slice(1, -1)}
@@ -30,68 +22,68 @@ export function renderWithInlineCode(text: string): ReactNode[] {
 
 const prohibitedCategories: { title: string; icon: LucideIcon; examples: string }[] = [
   {
-    title: 'Bypass and unauthorized access',
+    title: "Bypass and unauthorized access",
     icon: ShieldOff,
     examples:
-      'Auth bypass, account takeover, CAPTCHA bypass, Cloudflare or anti-bot evasion, rate-limit bypass, reusable session theft, live call or agent takeover.',
+      "Auth bypass, account takeover, CAPTCHA bypass, Cloudflare or anti-bot evasion, rate-limit bypass, reusable session theft, live call or agent takeover.",
   },
   {
-    title: 'Platform abuse and ban evasion',
+    title: "Platform abuse and ban evasion",
     icon: UserX,
     examples:
-      'Stealth accounts after bans, account warming/farming, fake engagement, multi-account automation, spam posting, marketplace or social automation built to avoid detection.',
+      "Stealth accounts after bans, account warming/farming, fake engagement, multi-account automation, spam posting, marketplace or social automation built to avoid detection.",
   },
   {
-    title: 'Fraud and deception',
+    title: "Fraud and deception",
     icon: Banknote,
     examples:
-      'Fake certificates, fake invoices, deceptive payment flows, fake social proof, scam outreach, or synthetic-identity workflows built to create accounts for fraud.',
+      "Fake certificates, fake invoices, deceptive payment flows, fake social proof, scam outreach, or synthetic-identity workflows built to create accounts for fraud.",
   },
   {
-    title: 'Privacy-invasive surveillance',
+    title: "Privacy-invasive surveillance",
     icon: Eye,
     examples:
-      'Mass contact scraping for spam, doxxing, stalking, covert monitoring, biometric / face-matching workflows without clear consent, or buying, publishing, downloading, or operationalizing leaked data or breach dumps.',
+      "Mass contact scraping for spam, doxxing, stalking, covert monitoring, biometric / face-matching workflows without clear consent, or buying, publishing, downloading, or operationalizing leaked data or breach dumps.",
   },
   {
-    title: 'Non-consensual impersonation',
+    title: "Non-consensual impersonation",
     icon: Drama,
     examples:
-      'Face swap, digital twins, cloned influencers, fake personas, or other identity manipulation used to impersonate or mislead.',
+      "Face swap, digital twins, cloned influencers, fake personas, or other identity manipulation used to impersonate or mislead.",
   },
   {
-    title: 'Explicit sexual content',
+    title: "Explicit sexual content",
     icon: ImageOff,
     examples:
-      'NSFW image, video, or text generation, especially wrappers around third-party APIs with safety checks disabled.',
+      "NSFW image, video, or text generation, especially wrappers around third-party APIs with safety checks disabled.",
   },
   {
-    title: 'Hidden or misleading execution',
+    title: "Hidden or misleading execution",
     icon: EyeOff,
     examples:
-      'Obfuscated install commands, `curl | sh`, undeclared secret requirements, undeclared private-key use, or remote `npx @latest` execution without reviewability.',
+      "Obfuscated install commands, `curl | sh`, undeclared secret requirements, undeclared private-key use, or remote `npx @latest` execution without reviewability.",
   },
 ];
 
 const recentPatterns = [
-  'Create stealth seller accounts after marketplace bans.',
-  'Modify Telegram pairing so unapproved users automatically receive pairing codes.',
-  'Cultivate Reddit or Twitter accounts with undetectable automation.',
-  'Generate professional certificates or invoices for arbitrary use.',
-  'Generate NSFW content with safety checks disabled.',
-  'Scrape leads, enrich contacts, and launch cold outreach at scale.',
-  'Buy, publish, or download leaked data or breach dumps.',
-  'Bulk-create email or social accounts with synthetic identities or CAPTCHA solving.',
+  "Create stealth seller accounts after marketplace bans.",
+  "Modify Telegram pairing so unapproved users automatically receive pairing codes.",
+  "Cultivate Reddit or Twitter accounts with undetectable automation.",
+  "Generate professional certificates or invoices for arbitrary use.",
+  "Generate NSFW content with safety checks disabled.",
+  "Scrape leads, enrich contacts, and launch cold outreach at scale.",
+  "Buy, publish, or download leaked data or breach dumps.",
+  "Bulk-create email or social accounts with synthetic identities or CAPTCHA solving.",
 ];
 
-export const Route = createFileRoute('/about')({
+export const Route = createFileRoute("/about")({
   head: () => {
     const mode = getSiteMode();
     const siteName = getSiteName(mode);
     const siteUrl = getSiteUrlForMode(mode);
     const title = `About · ${siteName}`;
     const description =
-      'What ClawHub allows, what we do not host, and the abuse patterns that lead to removal or account bans.';
+      "What ClawHub allows, what we do not host, and the abuse patterns that lead to removal or account bans.";
 
     return {
       links: [
@@ -102,11 +94,11 @@ export const Route = createFileRoute('/about')({
       ],
       meta: [
         { title },
-        { name: 'description', content: description },
-        { property: 'og:title', content: title },
-        { property: 'og:description', content: description },
-        { property: 'og:type', content: 'website' },
-        { property: 'og:url', content: `${siteUrl}/about` },
+        { name: "description", content: description },
+        { property: "og:title", content: title },
+        { property: "og:description", content: description },
+        { property: "og:type", content: "website" },
+        { property: "og:url", content: `${siteUrl}/about` },
       ],
     };
   },
@@ -125,9 +117,9 @@ function AboutPage() {
             </div>
             <h1 className="about-title">What ClawHub will not host</h1>
             <p className="about-lead">
-              ClawHub is for useful agent tooling, not abuse workflows. If a skill is built to
-              evade defenses, scam people, invade privacy, or enable non-consensual behavior, it
-              does not belong here.
+              ClawHub is for useful agent tooling, not abuse workflows. If a skill is built to evade
+              defenses, scam people, invade privacy, or enable non-consensual behavior, it does not
+              belong here.
             </p>
           </div>
         </section>
@@ -203,9 +195,7 @@ function AboutPage() {
           </p>
           <div className="skill-card-tags">
             <Button asChild variant="primary">
-              <Link to="/skills">
-                Browse Skills
-              </Link>
+              <Link to="/skills">Browse Skills</Link>
             </Button>
             <Button asChild>
               <a

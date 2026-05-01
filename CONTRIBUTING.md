@@ -145,7 +145,9 @@ clawhub publish <path-to-skill-directory>
 ## Before Submitting a PR
 
 ```bash
+bun run format:check # oxfmt
 bun run lint       # oxlint
+bun run deadcode:ci # Knip files/deps/exports
 bun run test       # Vitest (80% coverage threshold)
 bun run build      # Vite + Nitro
 bun run --cwd packages/clawhub verify

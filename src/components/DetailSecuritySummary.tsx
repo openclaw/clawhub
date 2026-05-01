@@ -19,7 +19,7 @@ type RescanRequest = {
   completedAt?: number;
 };
 
-export type DetailRescanState = {
+type DetailRescanState = {
   maxRequests: number;
   requestCount: number;
   remainingRequests: number;
@@ -104,10 +104,10 @@ export function DetailSecuritySummary({
   const [isRequestingRescan, setIsRequestingRescan] = useState(false);
   const vtStatus = suppressScanResults
     ? "cleared"
-    : vtAnalysis?.verdict ?? vtAnalysis?.status ?? "pending";
+    : (vtAnalysis?.verdict ?? vtAnalysis?.status ?? "pending");
   const llmStatus = suppressScanResults
     ? "cleared"
-    : llmAnalysis?.verdict ?? llmAnalysis?.status ?? "pending";
+    : (llmAnalysis?.verdict ?? llmAnalysis?.status ?? "pending");
   const staticStatus = suppressScanResults ? "cleared" : statusFromStaticScan(staticScan);
   const rescanButtonDisabledReason = rescanDisabledReason(rescanState);
   const isScanInProgress = Boolean(rescanState?.inProgressRequest);

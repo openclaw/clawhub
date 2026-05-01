@@ -8,7 +8,7 @@ const GITHUB_API = "https://api.github.com";
 const GITHUB_HOSTS = new Set(["github.com", "www.github.com"]);
 const ZIP_USER_AGENT = "clawhub/package-publish";
 
-export type ResolvedPublishSource =
+type ResolvedPublishSource =
   | {
       kind: "local";
       path: string;
@@ -22,7 +22,7 @@ export type ResolvedPublishSource =
       url: string;
     };
 
-export type LocalGitInfo = {
+type LocalGitInfo = {
   root: string;
   path: string;
   repo?: string;
@@ -30,7 +30,7 @@ export type LocalGitInfo = {
   ref?: string;
 };
 
-export type FetchedGitHubSource = {
+type FetchedGitHubSource = {
   dir: string;
   source: {
     kind: "github";

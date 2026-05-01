@@ -4,6 +4,8 @@
 
 ### Fixes
 
+- CLI/moderation: allow `delete`, `hide`, `undelete`, and `unhide` to record moderation reasons in skill notes and audit logs for legal or policy reviews (thanks @steipete).
+- API: raise public read rate limits to reduce false-positive 429s from browser pages and production smoke tests (thanks @steipete).
 - Moderation: calibrate VirusTotal Code Insight suspicious verdicts so uncorroborated AI-only findings do not keep otherwise clean skills quarantined (#1830, #1841) (thanks @deepujain).
 
 ## 0.11.0 - 2026-04-28

@@ -1,7 +1,7 @@
 import { createServer } from "node:http";
 import type { AddressInfo } from "node:net";
 
-export type LoopbackAuthResult = {
+type LoopbackAuthResult = {
   token: string;
   registry?: string;
   state?: string;

@@ -14,8 +14,8 @@ import {
   sortVersionsBySemver,
 } from "../lib/diffing";
 import { isDarkThemeResolved, onThemeChange } from "../lib/theme";
-import { Button } from "./ui/button";
 import { ClientOnly } from "./ClientOnly";
+import { Button } from "./ui/button";
 
 type SkillDiffCardProps = {
   skill: Doc<"skills">;
@@ -283,12 +283,8 @@ export function SkillDiffCard({ skill, versions, variant = "card" }: SkillDiffCa
     <div className={containerClass}>
       <div className="diff-header">
         <div>
-          <h2 className="section-title text-[1.2rem] m-0">
-            Compare versions
-          </h2>
-          <p className="section-subtitle m-0">
-            Inline or side-by-side diff for any file.
-          </p>
+          <h2 className="section-title text-[1.2rem] m-0">Compare versions</h2>
+          <p className="section-subtitle m-0">Inline or side-by-side diff for any file.</p>
         </div>
         {!diffUnavailable ? (
           <fieldset className="diff-toggle-group">

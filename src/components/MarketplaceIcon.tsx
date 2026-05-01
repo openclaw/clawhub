@@ -33,12 +33,7 @@ function getIcon(kind: MarketplaceIconProps["kind"]) {
   }
 }
 
-export function MarketplaceIcon({
-  kind,
-  label,
-  imageUrl,
-  size = "sm",
-}: MarketplaceIconProps) {
+export function MarketplaceIcon({ kind, label, imageUrl, size = "sm" }: MarketplaceIconProps) {
   const Icon = getIcon(kind);
   const tone = hashTone(label);
 

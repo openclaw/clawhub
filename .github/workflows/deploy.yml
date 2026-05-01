@@ -166,7 +166,7 @@ jobs:
           exit 1
 
       - name: Install Playwright browser
-        if: needs.validate-deploy-request.outputs.run_smoke == 'true'
+        if: needs.validate-deploy-request.outputs.run_smoke == 'true' && needs.validate-deploy-request.outputs.deploy_frontend == 'true'
         run: bunx playwright install --with-deps chromium webkit
 
       - name: Smoke test production HTTP
@@ -174,11 +174,11 @@ jobs:
         run: bun run test:e2e:prod-http
 
       - name: Write authenticated storage state
-        if: needs.validate-deploy-request.outputs.run_smoke == 'true' && env.PLAYWRIGHT_AUTH_STORAGE_STATE_JSON != ''
+        if: needs.validate-deploy-request.outputs.run_smoke == 'true' && needs.validate-deploy-request.outputs.deploy_frontend == 'true' && env.PLAYWRIGHT_AUTH_STORAGE_STATE_JSON != ''
         run: |
           echo "$PLAYWRIGHT_AUTH_STORAGE_STATE_JSON" > "$RUNNER_TEMP/playwright-auth.json"
           echo "PLAYWRIGHT_AUTH_STORAGE_STATE=$RUNNER_TEMP/playwright-auth.json" >> "$GITHUB_ENV"
 
       - name: Smoke test production UI
-        if: needs.validate-deploy-request.outputs.run_smoke == 'true'
-        run: bunx playwright test e2e/menu-smoke.pw.test.ts e2e/publish-entry-workflows.pw.test.ts e2e/upload-auth-smoke.pw.test.ts
+        if: needs.validate-deploy-request.outputs.run_smoke == 'true' && needs.validate-deploy-request.outputs.deploy_frontend == 'true'
+        run: bunx playwright test --workers=1 e2e/menu-smoke.pw.test.ts e2e/publish-entry-workflows.pw.test.ts e2e/upload-auth-smoke.pw.test.ts

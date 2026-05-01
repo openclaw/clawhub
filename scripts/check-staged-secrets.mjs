@@ -35,13 +35,14 @@ const SECRET_PATTERNS = [
 ];
 
 function getStagedPaths() {
-  const output = execFileSync("git", ["diff", "--cached", "--name-only", "--diff-filter=ACMR", "-z"], {
-    encoding: "buffer",
-  });
-  return output
-    .toString("utf8")
-    .split("\0")
-    .filter(Boolean);
+  const output = execFileSync(
+    "git",
+    ["diff", "--cached", "--name-only", "--diff-filter=ACMR", "-z"],
+    {
+      encoding: "buffer",
+    },
+  );
+  return output.toString("utf8").split("\0").filter(Boolean);
 }
 
 function isAllowedExamplePath(path) {
@@ -49,7 +50,9 @@ function isAllowedExamplePath(path) {
 }
 
 function isDisallowedPath(path) {
-  return DISALLOWED_PATH_PATTERNS.some((pattern) => pattern.test(path)) && !isAllowedExamplePath(path);
+  return (
+    DISALLOWED_PATH_PATTERNS.some((pattern) => pattern.test(path)) && !isAllowedExamplePath(path)
+  );
 }
 
 function getStagedFileContent(path) {
@@ -100,7 +103,9 @@ if (findings.length === 0) {
 }
 
 console.error("Secret scan blocked this commit.");
-console.error("Remove the secret, move it to local env/config, or add `secret-scan: allow` next to an intentional test fixture.");
+console.error(
+  "Remove the secret, move it to local env/config, or add `secret-scan: allow` next to an intentional test fixture.",
+);
 console.error("");
 for (const finding of findings) {
   console.error(`- ${finding.path}: ${finding.reason}`);

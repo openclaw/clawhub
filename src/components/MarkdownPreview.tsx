@@ -4,7 +4,6 @@ import ReactMarkdown from "react-markdown";
 import rehypeRaw from "rehype-raw";
 import rehypeSanitize, { defaultSchema } from "rehype-sanitize";
 import remarkGfm from "remark-gfm";
-import type { HighlighterGeneric } from "shiki";
 import type { PluggableList } from "unified";
 import { rehypeProxyImages } from "../lib/rehypeProxyImages";
 import { cn } from "../lib/utils";
@@ -32,11 +31,7 @@ const schema = {
 // sees user-authored HTML; shiki's trusted styled output flows through after.
 // rehypeProxyImages rewrites after sanitize so we rewrite only already-safe
 // <img src="..."> nodes (sanitize strips event handlers, javascript: URLs).
-const baseRehype: PluggableList = [
-  rehypeRaw,
-  [rehypeSanitize, schema],
-  rehypeProxyImages,
-];
+const baseRehype: PluggableList = [rehypeRaw, [rehypeSanitize, schema], rehypeProxyImages];
 
 const SHIKI_THEME = "github-dark";
 const SHIKI_LANGS = [
@@ -62,24 +57,22 @@ const SHIKI_LANGS = [
   "diff",
 ];
 
-type AnyHighlighter = HighlighterGeneric<string, string>;
-let highlighterPromise: Promise<AnyHighlighter> | null = null;
+let highlighterPromise: Promise<unknown> | null = null;
 
-function loadHighlighter(): Promise<AnyHighlighter> {
+function loadHighlighter(): Promise<unknown> {
   if (!highlighterPromise) {
-    highlighterPromise = import("shiki").then(
-      ({ createHighlighter }) =>
-        createHighlighter({
-          themes: [SHIKI_THEME],
-          langs: SHIKI_LANGS,
-        }) as Promise<AnyHighlighter>,
+    highlighterPromise = import("shiki").then(({ createHighlighter }) =>
+      createHighlighter({
+        themes: [SHIKI_THEME],
+        langs: SHIKI_LANGS,
+      }),
     );
   }
   return highlighterPromise;
 }
 
 export function MarkdownPreview({ children, className, highlight = true }: MarkdownPreviewProps) {
-  const [highlighter, setHighlighter] = useState<AnyHighlighter | null>(null);
+  const [highlighter, setHighlighter] = useState<unknown>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -99,10 +92,7 @@ export function MarkdownPreview({ children, className, highlight = true }: Markd
 
   const rehypePlugins = useMemo<PluggableList>(() => {
     if (highlight && highlighter) {
-      return [
-        ...baseRehype,
-        [rehypeShikiFromHighlighter, highlighter, { theme: SHIKI_THEME }],
-      ];
+      return [...baseRehype, [rehypeShikiFromHighlighter, highlighter, { theme: SHIKI_THEME }]];
     }
     return baseRehype;
   }, [highlight, highlighter]);

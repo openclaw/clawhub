@@ -14,6 +14,7 @@ import type { SkillEvalContext } from "./lib/securityPrompt";
 import {
   assembleEvalUserMessage,
   assembleSkillEvalUserMessage,
+  applyInjectionSignalFloor,
   detectInjectionPatterns,
   getLlmEvalModel,
   getLlmEvalReasoningEffort,
@@ -260,13 +261,15 @@ export const evaluateWithLlm = internalAction({
     }
 
     // 8. Parse response
-    const result = parseLlmEvalResponse(raw);
+    const parsedResult = parseLlmEvalResponse(raw);
 
-    if (!result) {
+    if (!parsedResult) {
       console.error(`[llmEval] Raw response (first 500 chars): ${raw.slice(0, 500)}`);
       await storeError("Failed to parse LLM evaluation response");
       return;
     }
+
+    const result = applyInjectionSignalFloor(parsedResult, injectionSignals);
 
     // 9. Store result
     await ctx.runMutation(internal.skills.updateVersionLlmAnalysisInternal, {
@@ -455,11 +458,12 @@ export const evaluatePackageReleaseWithLlm = internalAction({
       return;
     }
 
-    const result = parseLlmEvalResponse(raw);
-    if (!result) {
+    const parsedResult = parseLlmEvalResponse(raw);
+    if (!parsedResult) {
       await storeError("Failed to parse LLM evaluation response");
       return;
     }
+    const result = applyInjectionSignalFloor(parsedResult, injectionSignals);
 
     await runMutationRef(ctx, internalRefs.packages.updateReleaseLlmAnalysisInternal, {
       releaseId: args.releaseId,

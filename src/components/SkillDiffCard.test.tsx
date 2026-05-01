@@ -20,12 +20,7 @@ vi.mock("@monaco-editor/react", () => ({
   }: {
     className?: string;
     options?: { renderSideBySide?: boolean; useInlineViewWhenSpaceIsLimited?: boolean };
-  }) => (
-    <MockDiffEditor
-      className={className}
-      options={options}
-    />
-  ),
+  }) => <MockDiffEditor className={className} options={options} />,
   useMonaco: () => null,
 }));
 

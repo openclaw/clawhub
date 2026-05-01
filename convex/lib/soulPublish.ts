@@ -1,5 +1,5 @@
-import { ConvexError } from "convex/values";
 import { normalizeTextContentType } from "clawhub-schema";
+import { ConvexError } from "convex/values";
 import semver from "semver";
 import { internal } from "../_generated/api";
 import type { Doc, Id } from "../_generated/dataModel";

@@ -1,7 +1,6 @@
 import { v } from "convex/values";
 import { internal } from "./_generated/api";
 import type { Doc, Id } from "./_generated/dataModel";
-import type { ActionCtx } from "./_generated/server";
 import { internalAction, internalMutation } from "./functions";
 import { buildDeterministicPackageZip, buildDeterministicZip } from "./lib/skillZip";
 
@@ -255,13 +254,6 @@ type PendingScanSkill = {
   checkCount: number;
 };
 
-type SkillActivationCandidate = {
-  moderationStatus?: string;
-  moderationReason?: string;
-  moderationFlags?: string[];
-  softDeletedAt?: number;
-};
-
 type PollPendingScansResult = {
   processed: number;
   updated: number;
@@ -355,16 +347,6 @@ type SyncModerationReasonsResult = {
   done: boolean;
 };
 
-const VT_PENDING_REASONS = new Set(["pending.scan", "scanner.vt.pending", "pending.scan.stale"]);
-
-function shouldActivateWhenVtUnavailable(skill: SkillActivationCandidate | null | undefined) {
-  if (!skill || skill.softDeletedAt) return false;
-  if (skill.moderationFlags?.includes("blocked.malware")) return false;
-  if (skill.moderationStatus === "active") return false;
-  const reason = skill.moderationReason;
-  return typeof reason === "string" && VT_PENDING_REASONS.has(reason);
-}
-
 function statusFromAvStats(
   stats?: VTAnalysisStats | null,
 ): "malicious" | "suspicious" | "clean" | null {
@@ -374,13 +356,6 @@ function statusFromAvStats(
   // Keep this aligned with fetchResults: undetected-only should stay pending.
   if (stats.harmless > 0) return "clean";
   return null;
-}
-
-async function activateSkillWhenVtUnavailable(ctx: ActionCtx, skillId: Id<"skills">) {
-  const skill = await ctx.runQuery(internal.skills.getSkillByIdInternal, { skillId });
-  if (!shouldActivateWhenVtUnavailable(skill)) return;
-
-  await ctx.runMutation(internal.skills.setSkillModerationStatusActiveInternal, { skillId });
 }
 
 export const fetchResults = internalAction({
@@ -456,13 +431,7 @@ export const scanWithVirusTotal = internalAction({
   handler: async (ctx, args) => {
     const apiKey = process.env.VT_API_KEY;
     if (!apiKey) {
-      console.log("VT_API_KEY not configured, skipping scan — activating skill");
-      const version = await ctx.runQuery(internal.skills.getVersionByIdInternal, {
-        versionId: args.versionId,
-      });
-      if (version) {
-        await activateSkillWhenVtUnavailable(ctx, version.skillId);
-      }
+      console.log("VT_API_KEY not configured, skipping skill scan without activation");
       return;
     }
 
@@ -922,7 +891,6 @@ export const pollPendingScans = internalAction({
               versionId,
               vtAnalysis: { status: "stale", checkedAt: Date.now() },
             });
-            await activateSkillWhenVtUnavailable(ctx, skillId);
             staled++;
           }
           continue;
@@ -980,7 +948,6 @@ export const pollPendingScans = internalAction({
               versionId,
               vtAnalysis: { status: "stale", checkedAt: Date.now() },
             });
-            await activateSkillWhenVtUnavailable(ctx, skillId);
             staled++;
           }
           continue;
@@ -1088,7 +1055,6 @@ async function requestRescan(apiKey: string, sha256hash: string): Promise<boolea
 export const __test = {
   normalizeVtEngineStats,
   statusFromAvStats,
-  shouldActivateWhenVtUnavailable,
 };
 
 /**

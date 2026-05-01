@@ -1,6 +1,6 @@
 import { Link } from "@tanstack/react-router";
-import { MarketplaceIcon } from "./MarketplaceIcon";
 import type { PublicUser } from "../lib/publicUser";
+import { MarketplaceIcon } from "./MarketplaceIcon";
 
 type UserListItemProps = {
   user: PublicUser;
@@ -13,7 +13,12 @@ export function UserListItem({ user }: UserListItemProps) {
   const displayName = user.displayName ?? user.name ?? handle;
 
   return (
-    <Link to="/u/$handle" params={{ handle }} className="skill-list-item user-list-item" aria-label={`User: ${displayName}`}>
+    <Link
+      to="/u/$handle"
+      params={{ handle }}
+      className="skill-list-item user-list-item"
+      aria-label={`User: ${displayName}`}
+    >
       <MarketplaceIcon kind="user" label={displayName} imageUrl={user.image} />
       <div className="skill-list-item-body">
         <div className="skill-list-item-main">

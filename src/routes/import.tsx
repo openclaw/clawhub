@@ -226,9 +226,7 @@ export function ImportGitHub() {
             title={isLoading ? "Loading..." : "Sign in to import and publish skills"}
             description="You need to be signed in to import skills from GitHub."
           >
-            {!isLoading ? (
-              <SignInButton />
-            ) : null}
+            {!isLoading ? <SignInButton /> : null}
           </EmptyState>
         </Container>
       </main>

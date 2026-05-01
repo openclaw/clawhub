@@ -22,7 +22,7 @@ function shortCommit(value: string) {
   return trimmed.slice(0, 8);
 }
 
-export function getCliCommit() {
+function getCliCommit() {
   const candidates = [
     process.env.CLAWHUB_COMMIT,
     process.env.CLAWDHUB_COMMIT,

@@ -285,10 +285,11 @@ describe("maintenance backfill", () => {
       });
     const runMutation = vi.fn().mockResolvedValue({ ok: true });
 
-    const result = await backfillUserStatsInternalHandler(
-      { runQuery, runMutation } as never,
-      { batchSize: 10, skillBatchSize: 50, maxBatches: 1 },
-    );
+    const result = await backfillUserStatsInternalHandler({ runQuery, runMutation } as never, {
+      batchSize: 10,
+      skillBatchSize: 50,
+      maxBatches: 1,
+    });
 
     expect(result).toEqual({
       ok: true,
@@ -299,10 +300,14 @@ describe("maintenance backfill", () => {
       isDone: true,
       cursor: null,
     });
-    expect(runQuery).toHaveBeenNthCalledWith(1, internal.maintenance.getUserStatsBackfillPageInternal, {
-      cursor: undefined,
-      batchSize: 10,
-    });
+    expect(runQuery).toHaveBeenNthCalledWith(
+      1,
+      internal.maintenance.getUserStatsBackfillPageInternal,
+      {
+        cursor: undefined,
+        batchSize: 10,
+      },
+    );
     expect(runQuery).toHaveBeenNthCalledWith(
       2,
       internal.maintenance.getUserOwnedSkillsBackfillPageInternal,

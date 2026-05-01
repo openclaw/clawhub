@@ -6,7 +6,7 @@ import {
 
 type JsonRecord = Record<string, unknown>;
 
-export type PluginPublishPrefill = {
+type PluginPublishPrefill = {
   family?: "code-plugin" | "bundle-plugin";
   name?: string;
   displayName?: string;

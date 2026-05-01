@@ -92,7 +92,7 @@ type SecurityScanResultsProps = {
   variant?: "panel" | "badge";
 };
 
-export function VirusTotalIcon({ className }: { className?: string }) {
+function VirusTotalIcon({ className }: { className?: string }) {
   return (
     <svg
       className={className}
@@ -112,7 +112,7 @@ export function VirusTotalIcon({ className }: { className?: string }) {
   );
 }
 
-export function ClawScanIcon({ className }: { className?: string }) {
+function ClawScanIcon({ className }: { className?: string }) {
   return <ShieldCheck className={className} aria-label="ClawScan" />;
 }
 

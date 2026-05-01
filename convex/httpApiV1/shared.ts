@@ -35,9 +35,7 @@ export function safeTextFileResponse(params: {
   const headers = mergeHeaders(
     params.headers,
     {
-      "Content-Type": contentType
-        ? `${contentType}; charset=utf-8`
-        : "text/plain; charset=utf-8",
+      "Content-Type": contentType ? `${contentType}; charset=utf-8` : "text/plain; charset=utf-8",
       "Cache-Control": "private, max-age=60",
       ETag: params.sha256,
       "X-Content-SHA256": params.sha256,

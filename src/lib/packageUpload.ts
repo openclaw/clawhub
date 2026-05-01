@@ -1,5 +1,5 @@
-import ignore from "ignore";
 import { normalizeTextContentType } from "clawhub-schema/textFiles";
+import ignore from "ignore";
 
 type NormalizePackageUploadPathOptions = {
   stripTopLevelFolder?: boolean;
@@ -12,9 +12,7 @@ type UploadablePackageFile = {
   webkitRelativePath?: string;
 };
 
-export type NormalizedPackageUploadFile<
-  TFile extends UploadablePackageFile = UploadablePackageFile,
-> = {
+type NormalizedPackageUploadFile<TFile extends UploadablePackageFile = UploadablePackageFile> = {
   file: TFile;
   path: string;
 };

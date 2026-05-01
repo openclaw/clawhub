@@ -1,4 +1,4 @@
-export type DeploymentDriftInfo = {
+type DeploymentDriftInfo = {
   expectedBuildSha: string | null;
   actualBuildSha: string | null;
   hasMismatch: boolean;

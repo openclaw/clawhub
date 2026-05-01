@@ -134,10 +134,7 @@ const profile = useQuery(api.users.getProfile, { userId: selectedId! });
 
 ```ts
 // Good: skip when there is nothing to fetch
-const profile = useQuery(
-  api.users.getProfile,
-  selectedId ? { userId: selectedId } : "skip",
-);
+const profile = useQuery(api.users.getProfile, selectedId ? { userId: selectedId } : "skip");
 ```
 
 ### 4. Isolate frequently-updated fields into separate documents

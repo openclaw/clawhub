@@ -49,9 +49,9 @@ async function loadRoute() {
 
 async function runBeforeLoad(params: { owner: string; slug: string }) {
   const route = await loadRoute();
-  const beforeLoad = route.__config.beforeLoad as ((args: {
-    params: { owner: string; slug: string };
-  }) => unknown) | undefined;
+  const beforeLoad = route.__config.beforeLoad as
+    | ((args: { params: { owner: string; slug: string } }) => unknown)
+    | undefined;
   return beforeLoad?.({ params });
 }
 

@@ -2166,18 +2166,38 @@ describe("httpApiV1 handlers", () => {
       new Request("https://example.com/api/v1/skills/demo", {
         method: "DELETE",
         headers: { Authorization: "Bearer clh_test" },
+        body: JSON.stringify({ reason: "legal hold" }),
       }),
     );
     expect(response.status).toBe(200);
+    expect(runMutation).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({
+        userId: "users:1",
+        slug: "demo",
+        deleted: true,
+        reason: "legal hold",
+      }),
+    );
 
     const response2 = await __handlers.skillsPostRouterV1Handler(
       makeCtx({ runMutation }),
       new Request("https://example.com/api/v1/skills/demo/undelete", {
         method: "POST",
         headers: { Authorization: "Bearer clh_test" },
+        body: JSON.stringify({ reason: "reviewed" }),
       }),
     );
     expect(response2.status).toBe(200);
+    expect(runMutation).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({
+        userId: "users:1",
+        slug: "demo",
+        deleted: false,
+        reason: "reviewed",
+      }),
+    );
   });
 
   it("skill rescan routes authenticated owners to the rescan mutation", async () => {

@@ -207,8 +207,7 @@ describe("deriveModerationFlags", () => {
       skill: {
         slug: "test",
         displayName: "Test",
-        summary:
-          "Malware stealer that posts to discord.gg/hook via curl | bash from bit.ly",
+        summary: "Malware stealer that posts to discord.gg/hook via curl | bash from bit.ly",
       },
       parsed: { frontmatter: {} },
       files: [],

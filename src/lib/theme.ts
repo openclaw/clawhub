@@ -1,10 +1,10 @@
 import { useEffect, useState } from "react";
 
-export type ThemeName = "claw";
-export type ThemeMode = "system" | "light" | "dark";
-export type ResolvedTheme = "light" | "dark";
+type ThemeName = "claw";
+type ThemeMode = "system" | "light" | "dark";
+type ResolvedTheme = "light" | "dark";
 
-export type ThemeSelection = {
+type ThemeSelection = {
   theme: ThemeName;
   mode: ThemeMode;
 };
@@ -135,7 +135,7 @@ function storedSelectionUsesUnsupportedTheme(): boolean {
   return Boolean(legacyTheme && !VALID_THEME_MODES.has(legacyTheme as ThemeMode));
 }
 
-export function cleanupLegacyVisualSettings(): boolean {
+function cleanupLegacyVisualSettings(): boolean {
   if (typeof window === "undefined") return false;
 
   const hasLegacyStorage = LEGACY_VISUAL_STORAGE_KEYS.some(
@@ -206,12 +206,12 @@ function resolveMode(mode: ThemeMode): ResolvedTheme {
   return window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
 }
 
-export function resolveTheme(theme: ThemeName, mode: ThemeMode): ResolvedTheme {
+function resolveTheme(theme: ThemeName, mode: ThemeMode): ResolvedTheme {
   void theme;
   return resolveMode(mode);
 }
 
-export function isDarkResolvedTheme(resolvedTheme: string | null | undefined): boolean {
+function isDarkResolvedTheme(resolvedTheme: string | null | undefined): boolean {
   return resolvedTheme === "dark";
 }
 
@@ -226,7 +226,7 @@ export function applyTheme(selectionOrMode: ThemeSelection | ThemeMode, theme: T
   applyThemeSelection(selection);
 }
 
-export function applyThemeSelection(selection: ThemeSelection) {
+function applyThemeSelection(selection: ThemeSelection) {
   if (typeof document === "undefined") return;
   const resolved = resolveTheme(selection.theme, selection.mode);
   document.documentElement.dataset.theme = resolved;

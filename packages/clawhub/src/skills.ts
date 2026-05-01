@@ -58,7 +58,7 @@ export async function listTextFiles(root: string) {
   return files;
 }
 
-export type SkillFileHash = { path: string; sha256: string; size: number };
+type SkillFileHash = { path: string; sha256: string; size: number };
 
 export function sha256Hex(bytes: Uint8Array) {
   return createHash("sha256").update(bytes).digest("hex");

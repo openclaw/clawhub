@@ -5,7 +5,6 @@ import { cn } from "../../lib/utils";
 import { Button } from "./button";
 
 const Sheet = DialogPrimitive.Root;
-const SheetTrigger = DialogPrimitive.Trigger;
 const SheetClose = DialogPrimitive.Close;
 const SheetPortal = DialogPrimitive.Portal;
 
@@ -78,11 +77,6 @@ const SheetHeader = ({ className, ...props }: React.HTMLAttributes<HTMLDivElemen
 );
 SheetHeader.displayName = "SheetHeader";
 
-const SheetFooter = ({ className, ...props }: React.HTMLAttributes<HTMLDivElement>) => (
-  <div className={cn("flex items-center justify-end gap-2", className)} {...props} />
-);
-SheetFooter.displayName = "SheetFooter";
-
 const SheetTitle = React.forwardRef<
   React.ElementRef<typeof DialogPrimitive.Title>,
   React.ComponentPropsWithoutRef<typeof DialogPrimitive.Title>
@@ -107,15 +101,4 @@ const SheetDescription = React.forwardRef<
 ));
 SheetDescription.displayName = DialogPrimitive.Description.displayName;
 
-export {
-  Sheet,
-  SheetPortal,
-  SheetOverlay,
-  SheetTrigger,
-  SheetClose,
-  SheetContent,
-  SheetHeader,
-  SheetFooter,
-  SheetTitle,
-  SheetDescription,
-};
+export { Sheet, SheetClose, SheetContent, SheetHeader, SheetTitle, SheetDescription };

@@ -1,8 +1,5 @@
 import { createFileRoute, notFound } from "@tanstack/react-router";
-import {
-  SecurityScannerPage,
-  type ScannerSlug,
-} from "../../../../components/SecurityScannerPage";
+import { SecurityScannerPage, type ScannerSlug } from "../../../../components/SecurityScannerPage";
 import {
   fetchPackageDetail,
   fetchPackageVersion,

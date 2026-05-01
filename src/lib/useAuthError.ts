@@ -6,33 +6,29 @@ let authError: string | null = null;
 const listeners = new Set<() => void>();
 
 function emitChange() {
-	for (const listener of listeners) listener();
+  for (const listener of listeners) listener();
 }
 
 function subscribe(listener: () => void) {
-	listeners.add(listener);
-	return () => listeners.delete(listener);
+  listeners.add(listener);
+  return () => listeners.delete(listener);
 }
 
 export function getAuthErrorSnapshot() {
-	return authError;
+  return authError;
 }
 
 export function setAuthError(error: string | null) {
-	if (authError === error) return;
-	authError = error;
-	emitChange();
+  if (authError === error) return;
+  authError = error;
+  emitChange();
 }
 
 export function clearAuthError() {
-	setAuthError(null);
+  setAuthError(null);
 }
 
 export function useAuthError() {
-	const error = useSyncExternalStore(
-		subscribe,
-		getAuthErrorSnapshot,
-		getAuthErrorSnapshot,
-	);
-	return { error, clear: clearAuthError };
+  const error = useSyncExternalStore(subscribe, getAuthErrorSnapshot, getAuthErrorSnapshot);
+  return { error, clear: clearAuthError };
 }

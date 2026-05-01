@@ -4,6 +4,7 @@ import { describe, expect, it, vi } from "vitest";
 import { tokenize } from "./lib/searchText";
 import {
   __test,
+  directPrefixSkillMatches,
   hydrateResults,
   lexicalFallbackSouls,
   lexicalFallbackSkills,
@@ -41,6 +42,8 @@ const searchSoulsHandler = (
   }>
 )._handler;
 const lexicalFallbackSkillsHandler = (lexicalFallbackSkills as unknown as WrappedHandler)._handler;
+const directPrefixSkillMatchesHandler = (directPrefixSkillMatches as unknown as WrappedHandler)
+  ._handler;
 const lexicalFallbackSoulsHandler = (
   lexicalFallbackSouls as unknown as WrappedHandler<{ soul: { slug: string; _id: string } }>
 )._handler;
@@ -65,7 +68,11 @@ describe("search helpers", () => {
       },
     ];
     // Slug-like queries now do an indexed exact-slug lookup before lexical fallback.
-    const runQuery = vi.fn().mockResolvedValueOnce(null).mockResolvedValueOnce(fallback);
+    const runQuery = vi
+      .fn()
+      .mockResolvedValueOnce(null) // getExactSkillSlugMatch
+      .mockResolvedValueOnce([]) // directPrefixSkillMatches
+      .mockResolvedValueOnce(fallback); // lexicalFallbackSkills
 
     const result = await searchSkillsHandler(
       {
@@ -97,6 +104,7 @@ describe("search helpers", () => {
     const runQuery = vi
       .fn()
       .mockResolvedValueOnce(null) // getExactSkillSlugMatch
+      .mockResolvedValueOnce([]) // directPrefixSkillMatches
       .mockResolvedValueOnce(fallback); // lexicalFallbackSkills
 
     const result = await searchSkillsHandler(
@@ -113,6 +121,44 @@ describe("search helpers", () => {
     expect(runQuery).toHaveBeenLastCalledWith(
       expect.anything(),
       expect.objectContaining({ query: "orf", queryTokens: ["orf"] }),
+    );
+  });
+
+  it("uses normalized prefix matches so lowercase name queries do not depend on vector recall", async () => {
+    const scienceClawSkills = [
+      "ScienceClaw: Query (Dry Run)",
+      "ScienceClaw: Multi-Agent Investigation",
+      "ScienceClaw: Agent Status",
+      "ScienceClaw: Local File Investigation",
+      "ScienceClaw: Post to Infinite",
+      "ScienceClaw: Watch (Live Collaboration)",
+    ].map((displayName, index) =>
+      makeSkillDoc({
+        id: `skills:scienceclaw-${index}`,
+        slug: displayName
+          .toLowerCase()
+          .replace(/[^a-z0-9]+/g, "-")
+          .replace(/^-|-$/g, ""),
+        displayName,
+      }),
+    );
+    const ctx = makeDirectPrefixCtx(scienceClawSkills);
+
+    const result = await directPrefixSkillMatchesHandler(ctx, {
+      query: "scienceclaw",
+      limit: 10,
+    });
+
+    expect(result.map((entry) => entry.skill.slug)).toEqual(
+      scienceClawSkills.map((skill) => skill.slug),
+    );
+    expect(ctx.usedIndexes).toEqual(
+      expect.arrayContaining([
+        "by_active_normalized_slug",
+        "by_active_normalized_display_name",
+        "by_active_normalized_slug_first_token",
+        "by_active_normalized_display_name_first_token",
+      ]),
     );
   });
 
@@ -267,6 +313,7 @@ describe("search helpers", () => {
     const runQuery = vi
       .fn()
       .mockResolvedValueOnce(null) // getExactSkillSlugMatch
+      .mockResolvedValueOnce([]) // directPrefixSkillMatches
       .mockResolvedValueOnce(vectorEntries) // hydrateResults
       .mockResolvedValueOnce(fallbackEntries); // lexicalFallbackSkills
 
@@ -320,6 +367,7 @@ describe("search helpers", () => {
     const runQuery = vi
       .fn()
       .mockResolvedValueOnce(null) // getExactSkillSlugMatch
+      .mockResolvedValueOnce([]) // directPrefixSkillMatches
       .mockResolvedValueOnce(vectorEntries) // hydrateResults
       .mockResolvedValueOnce(fallbackEntries); // lexicalFallbackSkills
 
@@ -336,7 +384,7 @@ describe("search helpers", () => {
       { query: "image", limit: 25 },
     );
 
-    expect(runQuery).toHaveBeenCalledTimes(3);
+    expect(runQuery).toHaveBeenCalledTimes(4);
     expect(runQuery).toHaveBeenLastCalledWith(
       expect.anything(),
       expect.objectContaining({ query: "image", limit: 400 }),
@@ -376,6 +424,7 @@ describe("search helpers", () => {
     const runQuery = vi
       .fn()
       .mockResolvedValueOnce(exactSlugEntry)
+      .mockResolvedValueOnce([])
       .mockResolvedValueOnce(vectorEntries)
       .mockResolvedValueOnce([]);
 
@@ -394,7 +443,7 @@ describe("search helpers", () => {
 
     expect(result).toHaveLength(10);
     expect(result[0].skill.slug).toBe("skill-downloader");
-    expect(runQuery).toHaveBeenCalledTimes(3);
+    expect(runQuery).toHaveBeenCalledTimes(4);
   });
 
   it("omits exact slug injection when nonSuspiciousOnly excludes it", async () => {
@@ -418,6 +467,7 @@ describe("search helpers", () => {
     const runQuery = vi
       .fn()
       .mockResolvedValueOnce(null)
+      .mockResolvedValueOnce([])
       .mockResolvedValueOnce(vectorEntries)
       .mockResolvedValueOnce([]);
 
@@ -469,6 +519,7 @@ describe("search helpers", () => {
     const runQuery = vi
       .fn()
       .mockResolvedValueOnce(exactSlugEntry)
+      .mockResolvedValueOnce([])
       .mockResolvedValueOnce(vectorEntries)
       .mockResolvedValueOnce([]);
 
@@ -490,6 +541,7 @@ describe("search helpers", () => {
     const runQuery = vi
       .fn()
       .mockResolvedValueOnce(null)
+      .mockResolvedValueOnce([])
       .mockResolvedValueOnce([
         {
           embeddingId: "skillEmbeddings:crypto",
@@ -573,6 +625,7 @@ describe("search helpers", () => {
     const runQuery = vi
       .fn()
       .mockResolvedValueOnce(exactSlugEntry)
+      .mockResolvedValueOnce([])
       .mockResolvedValueOnce(vectorEntries)
       .mockResolvedValueOnce([]);
 
@@ -610,6 +663,7 @@ describe("search helpers", () => {
     const runQuery = vi
       .fn()
       .mockResolvedValueOnce(null)
+      .mockResolvedValueOnce([])
       .mockImplementationOnce(async (_ref: unknown, args: { skipExactSlugLookup?: boolean }) => {
         expect(args.skipExactSlugLookup).toBe(true);
         return fallbackEntries;
@@ -1075,6 +1129,7 @@ describe("search helpers", () => {
 
     const runQuery = vi
       .fn()
+      .mockResolvedValueOnce([]) // directPrefixSkillMatches
       .mockResolvedValueOnce([
         {
           embeddingId: "skillEmbeddings:a",
@@ -1350,6 +1405,64 @@ function makeLexicalCtx(params: {
           };
         }
         throw new Error(`Unexpected table ${table}`);
+      }),
+      get: vi.fn(async (id: string) => {
+        if (id.startsWith("users:")) return { _id: id, handle: "owner" };
+        if (id.startsWith("skillVersions:")) return { _id: id, version: "1.0.0" };
+        return null;
+      }),
+    },
+  };
+}
+
+function makeDirectPrefixCtx(skills: Array<ReturnType<typeof makeSkillDoc>>) {
+  const firstToken = (value: string) => value.toLowerCase().match(/[a-z0-9]+/)?.[0];
+  const digestRows = skills.map((skill) => ({
+    ...skill,
+    skillId: skill._id,
+    normalizedSlug: skill.slug.toLowerCase(),
+    normalizedSlugFirstToken: firstToken(skill.slug),
+    normalizedDisplayName: skill.displayName.toLowerCase(),
+    normalizedDisplayNameFirstToken: firstToken(skill.displayName),
+    ownerHandle: "owner",
+    ownerName: "Owner",
+    ownerDisplayName: "Owner",
+    ownerImage: undefined,
+  }));
+  const usedIndexes: string[] = [];
+  return {
+    usedIndexes,
+    db: {
+      query: vi.fn((table: string) => {
+        if (table !== "skillSearchDigest") throw new Error(`Unexpected table ${table}`);
+        return {
+          withIndex: (index: string, builder: (q: unknown) => unknown) => {
+            usedIndexes.push(index);
+            const range: Record<string, string> = {};
+            const q = {
+              eq: () => q,
+              gte: (field: string, value: string) => {
+                range[field] = value;
+                return q;
+              },
+              lt: () => q,
+            };
+            builder(q);
+            return {
+              take: vi.fn(async () => {
+                const field = index.includes("first_token")
+                  ? index.includes("slug")
+                    ? "normalizedSlugFirstToken"
+                    : "normalizedDisplayNameFirstToken"
+                  : index.includes("slug")
+                    ? "normalizedSlug"
+                    : "normalizedDisplayName";
+                const prefix = range[field] ?? "";
+                return digestRows.filter((digest) => (digest[field] ?? "").startsWith(prefix));
+              }),
+            };
+          },
+        };
       }),
       get: vi.fn(async (id: string) => {
         if (id.startsWith("users:")) return { _id: id, handle: "owner" };

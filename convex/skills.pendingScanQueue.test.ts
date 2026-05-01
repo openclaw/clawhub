@@ -5,11 +5,11 @@ vi.mock("@convex-dev/auth/server", () => ({
   authTables: {},
 }));
 
+import { MODERATION_ENGINE_VERSION } from "./lib/moderationReasonCodes";
 import {
   getActiveSkillBatchForStaticScanBackfillInternal,
   getPendingScanSkillsInternal,
 } from "./skills";
-import { MODERATION_ENGINE_VERSION } from "./lib/moderationReasonCodes";
 
 type PendingScanResult = Array<{
   skillId: string;

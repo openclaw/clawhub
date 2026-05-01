@@ -63,8 +63,6 @@ const writeSkillOriginMock = vi.spyOn(skillStore, "writeSkillOrigin");
 const mkdirMock = fsMocks.mkdir;
 const rmMock = fsMocks.rm;
 const statMock = fsMocks.stat;
-const commandSkillsModuleSpecifier = "./skills.js?command-skills-test" as string;
-
 const {
   clampLimit,
   cmdExplore,
@@ -73,7 +71,7 @@ const {
   cmdUninstall,
   cmdUpdate,
   formatExploreLine,
-} = (await import(commandSkillsModuleSpecifier)) as typeof import("./skills");
+} = await import("./skills.js");
 const {
   extractZipToDir,
   hashSkillFiles,

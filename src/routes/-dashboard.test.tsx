@@ -242,7 +242,9 @@ describe("Dashboard minimal rows", () => {
     expect(screen.getByText("Blocked")).toBeTruthy();
     expect(screen.getByRole("button", { name: "Suspicious status reason" })).toBeTruthy();
     expect(screen.getByRole("button", { name: "Blocked status reason" })).toBeTruthy();
-    expect(screen.getByRole("button", { name: "Open actions for Local Flagged Skill" })).toBeTruthy();
+    expect(
+      screen.getByRole("button", { name: "Open actions for Local Flagged Skill" }),
+    ).toBeTruthy();
     expect(
       screen.getByRole("button", { name: "Open actions for Local Flagged Runtime Plugin" }),
     ).toBeTruthy();
@@ -289,5 +291,4 @@ describe("Dashboard minimal rows", () => {
     expect(screen.queryByText("2/3 rescans left")).toBeNull();
     expect(screen.queryByText("Limit reached (3/3)")).toBeNull();
   });
-
 });

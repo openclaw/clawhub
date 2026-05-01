@@ -25,9 +25,8 @@ export function UserBadge({
   link = true,
   showName = false,
 }: UserBadgeProps) {
-  const userName = hasOwnProperty(user, "name") && typeof user.name === "string"
-    ? user.name.trim()
-    : undefined;
+  const userName =
+    hasOwnProperty(user, "name") && typeof user.name === "string" ? user.name.trim() : undefined;
   const displayName = user?.displayName?.trim() || userName || null;
   const handle = user?.handle ?? fallbackHandle ?? null;
   const href =
@@ -51,8 +50,8 @@ export function UserBadge({
   // PublicPublisher has linkedUserId
   const userId =
     user && hasOwnProperty(user, "kind")
-      ? (user as PublicPublisher).linkedUserId ?? null
-      : user?._id ?? null;
+      ? ((user as PublicPublisher).linkedUserId ?? null)
+      : (user?._id ?? null);
 
   const badge = (
     <span className={`user-badge user-badge-${size}`}>
@@ -128,24 +127,31 @@ function UserStatsTooltipContent({
             {displayName}
           </span>
         )}
-        {handle && (
-          <span className="text-fs-xs text-ink-soft">@{handle}</span>
-        )}
+        {handle && <span className="text-fs-xs text-ink-soft">@{handle}</span>}
       </div>
       <div className="border-t border-line flex items-center gap-space-3 px-3 py-2">
         {stats === null ? (
           <span className="text-fs-xs text-ink-soft">Loading...</span>
         ) : (
           <>
-            <span className="flex items-center gap-1 text-fs-xs text-ink-soft" title="Published skills">
+            <span
+              className="flex items-center gap-1 text-fs-xs text-ink-soft"
+              title="Published skills"
+            >
               <Package size={12} />
               {formatCompactStat(stats.publishedSkills)}
             </span>
-            <span className="flex items-center gap-1 text-fs-xs text-ink-soft" title="Stars received">
+            <span
+              className="flex items-center gap-1 text-fs-xs text-ink-soft"
+              title="Stars received"
+            >
               <Star size={12} />
               {formatCompactStat(stats.totalStars)}
             </span>
-            <span className="flex items-center gap-1 text-fs-xs text-ink-soft" title="Total downloads">
+            <span
+              className="flex items-center gap-1 text-fs-xs text-ink-soft"
+              title="Total downloads"
+            >
               <Download size={12} />
               {formatCompactStat(stats.totalDownloads)}
             </span>

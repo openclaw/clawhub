@@ -55,10 +55,9 @@ vi.mock("../../components/layout/Container", () => ({
 }));
 
 vi.mock("../../components/SignInButton", () => ({
-  SignInButton: ({
-    children,
-    ...props
-  }: React.ButtonHTMLAttributes<HTMLButtonElement>) => <button {...props}>{children}</button>,
+  SignInButton: ({ children, ...props }: React.ButtonHTMLAttributes<HTMLButtonElement>) => (
+    <button {...props}>{children}</button>
+  ),
 }));
 
 vi.mock("../../components/ui/card", () => ({

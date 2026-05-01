@@ -18,7 +18,7 @@ const TEXT_TYPES = new Map([
   ["svg", "image/svg+xml"],
 ]);
 
-export type ExpandFilesReport = {
+type ExpandFilesReport = {
   files: File[];
   ignoredMacJunkPaths: string[];
 };

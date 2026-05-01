@@ -41,7 +41,8 @@ function handleRollupWarning(
 
 type SourceReplacement = readonly [from: string, to: string];
 
-const reflectHas = (target: string, key: string) => `Reflect.has(${target}, ${JSON.stringify(key)})`;
+const reflectHas = (target: string, key: string) =>
+  `Reflect.has(${target}, ${JSON.stringify(key)})`;
 
 const arkSafariInOperatorFixes = [
   {
@@ -89,15 +90,21 @@ const arkSafariInOperatorFixes = [
   },
   {
     suffix: "/node_modules/@ark/schema/out/node.js",
-    replacements: [['"value" in transformedInner', reflectHas("transformedInner", "value")]] satisfies SourceReplacement[],
+    replacements: [
+      ['"value" in transformedInner', reflectHas("transformedInner", "value")],
+    ] satisfies SourceReplacement[],
   },
   {
     suffix: "/node_modules/@ark/schema/out/scope.js",
-    replacements: [['"branches" in schema', reflectHas("schema", "branches")]] satisfies SourceReplacement[],
+    replacements: [
+      ['"branches" in schema', reflectHas("schema", "branches")],
+    ] satisfies SourceReplacement[],
   },
   {
     suffix: "/node_modules/@ark/schema/out/structure/optional.js",
-    replacements: [['"default" in this.inner', reflectHas("this.inner", "default")]] satisfies SourceReplacement[],
+    replacements: [
+      ['"default" in this.inner', reflectHas("this.inner", "default")],
+    ] satisfies SourceReplacement[],
   },
   {
     suffix: "/node_modules/@ark/schema/out/structure/sequence.js",
@@ -112,11 +119,15 @@ const arkSafariInOperatorFixes = [
   },
   {
     suffix: "/node_modules/@ark/schema/out/structure/prop.js",
-    replacements: [['"default" in this.inner', reflectHas("this.inner", "default")]] satisfies SourceReplacement[],
+    replacements: [
+      ['"default" in this.inner', reflectHas("this.inner", "default")],
+    ] satisfies SourceReplacement[],
   },
   {
     suffix: "/node_modules/@ark/schema/out/shared/implement.js",
-    replacements: [['"description" in ctx', reflectHas("ctx", "description")]] satisfies SourceReplacement[],
+    replacements: [
+      ['"description" in ctx', reflectHas("ctx", "description")],
+    ] satisfies SourceReplacement[],
   },
   {
     suffix: "/node_modules/@ark/schema/out/shared/errors.js",

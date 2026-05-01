@@ -9,7 +9,7 @@ import { Button } from "./ui/button";
 import { Card } from "./ui/card";
 
 const OPENCLAW_PLUGIN_PACKAGE_METADATA_DOCS_URL =
-  'https://docs.openclaw.ai/plugins/sdk-setup#package-metadata';
+  "https://docs.openclaw.ai/plugins/sdk-setup#package-metadata";
 
 export function PackageSourceChooser(props: {
   files: File[];

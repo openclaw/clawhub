@@ -2,8 +2,7 @@ import { getUserFacingConvexError } from "./convexError";
 
 export const BANNED_SIGN_IN_MESSAGE =
   "This account has been banned and cannot sign in. If you believe this is a mistake, please contact security@openclaw.ai and we will review it.";
-export const DELETED_SIGN_IN_MESSAGE =
-  "This account has been permanently deleted and cannot sign in.";
+const DELETED_SIGN_IN_MESSAGE = "This account has been permanently deleted and cannot sign in.";
 export const ACCESS_DENIED_SIGN_IN_MESSAGE =
   "Sign in was denied. If this account was disabled or banned in error, please contact security@openclaw.ai.";
 

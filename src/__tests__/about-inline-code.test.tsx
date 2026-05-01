@@ -26,9 +26,7 @@ describe("renderWithInlineCode", () => {
   });
 
   it("handles multiple code spans in a single string", () => {
-    const el = renderToContainer(
-      "Use `curl | sh` or `npx @latest` for setup."
-    );
+    const el = renderToContainer("Use `curl | sh` or `npx @latest` for setup.");
     const codes = el.querySelectorAll("code");
     expect(codes).toHaveLength(2);
     expect(codes[0].textContent).toBe("curl | sh");

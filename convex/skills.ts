@@ -7105,6 +7105,7 @@ export const setSkillSoftDeletedInternal = internalMutation({
     userId: v.id("users"),
     slug: v.string(),
     deleted: v.boolean(),
+    reason: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
     const user = await ctx.db.get(args.userId);
@@ -7124,6 +7125,7 @@ export const setSkillSoftDeletedInternal = internalMutation({
     }
 
     const now = Date.now();
+    const note = args.reason ? trimManualOverrideNote(args.reason) : undefined;
     const patch: Partial<Doc<"skills">> = {
       softDeletedAt: args.deleted ? now : undefined,
       moderationStatus: args.deleted ? "hidden" : "active",
@@ -7132,6 +7134,7 @@ export const setSkillSoftDeletedInternal = internalMutation({
       lastReviewedAt: now,
       updatedAt: now,
     };
+    if (note) patch.moderationNotes = note;
     const nextSkill = { ...skill, ...patch };
     await ctx.db.patch(skill._id, patch);
     await adjustGlobalPublicCountForSkillChange(ctx, skill, nextSkill);
@@ -7143,11 +7146,72 @@ export const setSkillSoftDeletedInternal = internalMutation({
       action: args.deleted ? "skill.delete" : "skill.undelete",
       targetType: "skill",
       targetId: skill._id,
-      metadata: { slug, softDeletedAt: args.deleted ? now : null },
+      metadata: {
+        slug,
+        softDeletedAt: args.deleted ? now : null,
+        ...(note ? { reason: note } : {}),
+      },
       createdAt: now,
     });
 
     return { ok: true as const };
+  },
+});
+
+export const hideSkillForSecurityRedactionInternal = internalMutation({
+  args: {
+    actorUserId: v.id("users"),
+    slug: v.string(),
+    reason: v.string(),
+  },
+  handler: async (ctx, args) => {
+    const actor = await ctx.db.get(args.actorUserId);
+    if (!actor || actor.deletedAt || actor.deactivatedAt) throw new Error("Actor not found");
+
+    const slug = args.slug.trim().toLowerCase();
+    if (!slug) throw new Error("Slug required");
+
+    const skill = await ctx.db
+      .query("skills")
+      .withIndex("by_slug", (q) => q.eq("slug", slug))
+      .unique();
+    if (!skill) throw new Error("Skill not found");
+    if (skill.softDeletedAt) return { ok: true as const, changed: false as const };
+
+    const now = Date.now();
+    const note = trimManualOverrideNote(args.reason);
+    if (!note) throw new Error("Reason required");
+
+    const patch: Partial<Doc<"skills">> = {
+      softDeletedAt: now,
+      moderationStatus: "hidden",
+      moderationReason: "security.redaction",
+      moderationNotes: note,
+      hiddenAt: now,
+      hiddenBy: actor._id,
+      lastReviewedAt: now,
+      updatedAt: now,
+    };
+    const nextSkill = { ...skill, ...patch };
+    await ctx.db.patch(skill._id, patch);
+    await adjustGlobalPublicCountForSkillChange(ctx, skill, nextSkill);
+    await adjustUserSkillStatsForSkillChange(ctx, skill, nextSkill);
+    await setSkillEmbeddingsSoftDeleted(ctx, skill._id, true, now);
+
+    await ctx.db.insert("auditLogs", {
+      actorUserId: actor._id,
+      action: "skill.delete.security_redaction",
+      targetType: "skill",
+      targetId: skill._id,
+      metadata: {
+        slug,
+        softDeletedAt: now,
+        reason: note,
+      },
+      createdAt: now,
+    });
+
+    return { ok: true as const, changed: true as const };
   },
 });
 

@@ -1,18 +1,15 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import {
-  dispatchPackageRescanInternal,
-  requestRescan as requestPackageRescan,
-} from "./packages";
-import {
-  dispatchSkillRescanInternal,
-  getRescanState as getSkillRescanState,
-  requestRescan as requestSkillRescan,
-} from "./skills";
 import { requireUser } from "./lib/access";
 import {
   finalizeInProgressRescanRequestsForTarget,
   MAX_OWNER_RESCAN_REQUESTS_PER_RELEASE,
 } from "./model/rescans/policy";
+import { dispatchPackageRescanInternal, requestRescan as requestPackageRescan } from "./packages";
+import {
+  dispatchSkillRescanInternal,
+  getRescanState as getSkillRescanState,
+  requestRescan as requestSkillRescan,
+} from "./skills";
 
 vi.mock("./lib/access", () => ({
   requireUser: vi.fn(),
@@ -172,7 +169,9 @@ function createDb(options?: {
           const constraints: Record<string, unknown> = {};
           build(chainEq(constraints));
           const matched = requests
-            .filter((request) => matches(request as unknown as Record<string, unknown>, constraints))
+            .filter((request) =>
+              matches(request as unknown as Record<string, unknown>, constraints),
+            )
             .sort((a, b) => b.createdAt - a.createdAt);
           return {
             order: () => ({

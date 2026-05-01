@@ -39,15 +39,15 @@ const DEFAULT_SOUL_DESCRIPTION = "SoulHub — the home for SOUL.md bundles and p
 const OG_SKILL_IMAGE_LAYOUT_VERSION = "5";
 const OG_SOUL_IMAGE_LAYOUT_VERSION = "1";
 
-export function getSiteUrl() {
+function getSiteUrl() {
   return getClawHubSiteUrl();
 }
 
-export function getSoulSiteUrl() {
+function getSoulSiteUrl() {
   return getOnlyCrabsSiteUrl();
 }
 
-export function getApiBase() {
+function getApiBase() {
   const explicit = getRuntimeEnv("VITE_CONVEX_SITE_URL");
   return explicit || getSiteUrl();
 }
