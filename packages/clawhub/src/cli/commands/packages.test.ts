@@ -33,6 +33,8 @@ const {
   cmdExplorePackages,
   cmdGetPackageTrustedPublisher,
   cmdInspectPackage,
+  cmdPackageStorePackBackfill,
+  cmdPackageStorePackMigrationStatus,
   cmdPublishPackage,
   cmdSetPackageTrustedPublisher,
   cmdVerifyPackageStorePack,
@@ -313,6 +315,54 @@ describe("package commands", () => {
     } finally {
       await rm(workdir, { recursive: true, force: true });
     }
+  });
+
+  it("fetches StorePack migration status for admins", async () => {
+    httpMocks.apiRequest.mockResolvedValueOnce({
+      missingSample: [],
+      missingSampleSize: 0,
+      generatedStorePackSampleSize: 2,
+      generatedStorePackBytes: 2048,
+      sampleLimit: 25,
+    });
+
+    await cmdPackageStorePackMigrationStatus(makeOpts(), { limit: 25, json: true });
+
+    const request = httpMocks.apiRequest.mock.calls[0]?.[1] as
+      | { method?: string; url?: string; token?: string }
+      | undefined;
+    expect(request?.method).toBe("GET");
+    expect(request?.token).toBe("tkn");
+    const url = new URL(String(request?.url));
+    expect(url.pathname).toBe("/api/v1/packages/storepack/migration-status");
+    expect(url.searchParams.get("limit")).toBe("25");
+    expect(mockWrite.mock.calls.map((call) => String(call[0])).join("")).toContain(
+      "generatedStorePackSampleSize",
+    );
+  });
+
+  it("runs StorePack backfill batches for admins", async () => {
+    httpMocks.apiRequest.mockResolvedValueOnce({
+      processed: 2,
+      succeeded: 2,
+      failed: 0,
+      results: [],
+    });
+
+    await cmdPackageStorePackBackfill(makeOpts(), { limit: 2 });
+
+    expect(httpMocks.apiRequest).toHaveBeenCalledWith(
+      "https://clawhub.ai",
+      {
+        method: "POST",
+        path: "/api/v1/packages/storepack/backfill",
+        token: "tkn",
+        body: { limit: 2 },
+      },
+      undefined,
+    );
+    expect(mockLog).toHaveBeenCalledWith("StorePack backfill");
+    expect(mockLog).toHaveBeenCalledWith("Succeeded: 2");
   });
 
   it("publishes a code plugin package with an exact explicit payload", async () => {
