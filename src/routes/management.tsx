@@ -24,6 +24,7 @@ const packageApiRefs = api as unknown as {
     setModerationVerdict: unknown;
     getStorePackMigrationStatus: unknown;
     backfillStorePackArtifacts: unknown;
+    backfillStorePackSearchIndex: unknown;
     revokeStorePackArtifact: unknown;
   };
 };
@@ -109,6 +110,15 @@ type StorePackMigrationStatus = {
   sampleLimit: number;
 };
 
+type StorePackBackfillResult = {
+  processed?: number;
+  succeeded?: number;
+  failed?: number;
+  skipped?: number;
+  isDone?: boolean;
+  continueCursor?: string | null;
+};
+
 type PackageScanStatus = "clean" | "suspicious" | "malicious" | "pending" | "not-run";
 
 function resolveOwnerParam(
@@ -137,6 +147,10 @@ function promptStorePackRevocationReason(label: string) {
   if (result === null) return null;
   const trimmed = result.trim();
   return trimmed.length > 0 ? trimmed : null;
+}
+
+function promptStorePackBackfill(label: string) {
+  return window.confirm(`${label}\n\nThis writes StorePack metadata in Convex. Continue?`);
 }
 
 export const Route = createFileRoute("/management")({
@@ -194,6 +208,9 @@ function Management() {
   const backfillStorePackArtifacts = useAction(
     packageApiRefs.packages.backfillStorePackArtifacts as never,
   ) as unknown as (args: { limit?: number }) => Promise<unknown>;
+  const backfillStorePackSearchIndex = useAction(
+    packageApiRefs.packages.backfillStorePackSearchIndex as never,
+  ) as unknown as (args: { limit?: number; cursor?: string }) => Promise<unknown>;
   const setSoftDeleted = useMutation(api.skills.setSoftDeleted);
   const hardDelete = useMutation(api.skills.hardDelete);
   const changeOwner = useMutation(api.skills.changeOwner);
@@ -213,6 +230,12 @@ function Management() {
   const [pluginModerationVerdict, setPluginModerationVerdict] =
     useState<PackageScanStatus>("clean");
   const [pluginModerationNote, setPluginModerationNote] = useState("");
+  const [storePackBackfillLimit, setStorePackBackfillLimit] = useState(10);
+  const [storePackIndexCursor, setStorePackIndexCursor] = useState("");
+  const [storePackLastResult, setStorePackLastResult] = useState<{
+    kind: "artifact-backfill" | "index-backfill";
+    result: StorePackBackfillResult;
+  } | null>(null);
   const [skillOverrideNote, setSkillOverrideNote] = useState("");
 
   const userQuery = userSearchDebounced.trim();
@@ -348,6 +371,51 @@ function Management() {
     });
   };
 
+  const storePackSampleTotal = storePackMigration
+    ? storePackMigration.missingSampleSize + storePackMigration.generatedStorePackSampleSize
+    : 0;
+  const storePackSampleCoverage =
+    storePackSampleTotal > 0 && storePackMigration
+      ? Math.round((storePackMigration.generatedStorePackSampleSize / storePackSampleTotal) * 100)
+      : null;
+
+  const runStorePackArtifactBackfill = () => {
+    const limit = Math.max(1, Math.min(storePackBackfillLimit, 100));
+    if (!promptStorePackBackfill(`Build StorePack artifacts for up to ${limit} legacy releases?`)) {
+      return;
+    }
+    void backfillStorePackArtifacts({ limit })
+      .then((result) => {
+        setStorePackLastResult({
+          kind: "artifact-backfill",
+          result: result as StorePackBackfillResult,
+        });
+      })
+      .catch((error) => window.alert(formatMutationError(error)));
+  };
+
+  const runStorePackIndexBackfill = () => {
+    const limit = Math.max(1, Math.min(storePackBackfillLimit, 100));
+    if (
+      !promptStorePackBackfill(`Rebuild StorePack search index rows for up to ${limit} releases?`)
+    ) {
+      return;
+    }
+    void backfillStorePackSearchIndex({
+      limit,
+      ...(storePackIndexCursor.trim() ? { cursor: storePackIndexCursor.trim() } : {}),
+    })
+      .then((result) => {
+        const typedResult = result as StorePackBackfillResult;
+        setStorePackLastResult({
+          kind: "index-backfill",
+          result: typedResult,
+        });
+        if (typedResult.continueCursor) setStorePackIndexCursor(typedResult.continueCursor);
+      })
+      .catch((error) => window.alert(formatMutationError(error)));
+  };
+
   return (
     <main className="section">
       <h1 className="section-title">Management console</h1>
@@ -356,6 +424,16 @@ function Management() {
       <Card className="mb-5">
         <h2 className="section-title text-[1.2rem] m-0">StorePack migration</h2>
         <div className="management-sublist">
+          <div className="management-report-item">
+            <span className="management-report-meta">Sample coverage</span>
+            <span>
+              {storePackMigration
+                ? storePackSampleCoverage === null
+                  ? "No sampled releases yet"
+                  : `${storePackSampleCoverage}% generated across ${storePackSampleTotal} sampled releases`
+                : "Loading..."}
+            </span>
+          </div>
           <div className="management-report-item">
             <span className="management-report-meta">Missing sample</span>
             <span>
@@ -382,7 +460,10 @@ function Management() {
                     {entry.name}@{entry.version}
                   </span>
                   <span>
-                    {entry.fileCount} files · published {formatTimestamp(entry.createdAt)}
+                    {entry.fileCount} files · published {formatTimestamp(entry.createdAt)} ·{" "}
+                    <Link to="/management" search={{ skill: undefined, plugin: entry.name }}>
+                      manage
+                    </Link>
                   </span>
                 </div>
               ))}
@@ -390,17 +471,52 @@ function Management() {
           ) : null}
         </div>
         {admin ? (
-          <div className="management-actions management-actions-start mt-3">
-            <Button
-              type="button"
-              onClick={() =>
-                void backfillStorePackArtifacts({ limit: 10 }).catch((error) =>
-                  window.alert(formatMutationError(error)),
-                )
-              }
-            >
-              Backfill 10
-            </Button>
+          <div className="mt-3 flex flex-col gap-3">
+            <div className="management-tool-grid">
+              <label className="management-control management-control-stack">
+                <span className="mono">batch limit</span>
+                <input
+                  className="management-field"
+                  type="number"
+                  min={1}
+                  max={100}
+                  value={storePackBackfillLimit}
+                  onChange={(event) =>
+                    setStorePackBackfillLimit(Number.parseInt(event.target.value, 10) || 1)
+                  }
+                />
+              </label>
+              <label className="management-control management-control-stack">
+                <span className="mono">index cursor</span>
+                <input
+                  className="management-field"
+                  value={storePackIndexCursor}
+                  onChange={(event) => setStorePackIndexCursor(event.target.value)}
+                  placeholder="optional continue cursor"
+                />
+              </label>
+            </div>
+            <div className="management-actions management-actions-start">
+              <Button type="button" onClick={runStorePackArtifactBackfill}>
+                Build missing artifacts
+              </Button>
+              <Button type="button" onClick={runStorePackIndexBackfill}>
+                Rebuild lookup index
+              </Button>
+            </div>
+            {storePackLastResult ? (
+              <div className="management-report-item">
+                <span className="management-report-meta">
+                  Last {storePackLastResult.kind.replace("-", " ")}
+                </span>
+                <span>
+                  processed {storePackLastResult.result.processed ?? "?"} · succeeded{" "}
+                  {storePackLastResult.result.succeeded ?? "?"} · failed{" "}
+                  {storePackLastResult.result.failed ?? "?"}
+                  {storePackLastResult.result.isDone === false ? " · more available" : ""}
+                </span>
+              </div>
+            ) : null}
           </div>
         ) : null}
       </Card>
@@ -982,6 +1098,16 @@ function Management() {
                         View
                       </Link>
                     </Button>
+                    {latestRelease?.version ? (
+                      <Button asChild className="management-action-btn">
+                        <Link
+                          to="/plugins/$name/releases/$version"
+                          params={{ name: plugin.name, version: latestRelease.version }}
+                        >
+                          Inspect StorePack
+                        </Link>
+                      </Button>
+                    ) : null}
                     <Button
                       className="management-action-btn"
                       type="button"
