@@ -1,5 +1,5 @@
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
-import { useMutation, useQuery } from "convex/react";
+import { useAction, useMutation, useQuery } from "convex/react";
 import { useEffect, useState } from "react";
 import { api } from "../../convex/_generated/api";
 import type { Doc, Id } from "../../convex/_generated/dataModel";
@@ -18,6 +18,14 @@ import { isAdmin, isModerator } from "../lib/roles";
 import { useAuthStatus } from "../lib/useAuthStatus";
 
 const SKILL_AUDIT_LOG_LIMIT = 10;
+
+const packageApiRefs = api as unknown as {
+  packages: {
+    setModerationVerdict: unknown;
+    getStorePackMigrationStatus: unknown;
+    backfillStorePackArtifacts: unknown;
+  };
+};
 
 type ManagementUserSummary = {
   _id: Id<"users">;
@@ -84,6 +92,24 @@ type PluginByNameResult = {
   highlighted: { byUserId: Id<"users">; at: number } | null;
 } | null;
 
+type StorePackMigrationStatus = {
+  missingSample: Array<{
+    releaseId: Id<"packageReleases">;
+    packageId: Id<"packages">;
+    name: string;
+    displayName: string;
+    version: string;
+    createdAt: number;
+    fileCount: number;
+  }>;
+  missingSampleSize: number;
+  generatedStorePackSampleSize: number;
+  generatedStorePackBytes: number;
+  sampleLimit: number;
+};
+
+type PackageScanStatus = "clean" | "suspicious" | "malicious" | "pending" | "not-run";
+
 function resolveOwnerParam(
   handle: string | null | undefined,
   ownerId?: Id<"users"> | Id<"publishers">,
@@ -147,6 +173,16 @@ function Management() {
   const unbanUser = useMutation(api.users.unbanUser);
   const setBatch = useMutation(api.skills.setBatch);
   const setPackageBatch = useMutation(api.packages.setBatch);
+  const setPackageModerationVerdict = useMutation(
+    packageApiRefs.packages.setModerationVerdict as never,
+  ) as unknown as (args: {
+    packageId: Id<"packages">;
+    verdict: PackageScanStatus;
+    note?: string;
+  }) => Promise<unknown>;
+  const backfillStorePackArtifacts = useAction(
+    packageApiRefs.packages.backfillStorePackArtifacts as never,
+  ) as unknown as (args: { limit?: number }) => Promise<unknown>;
   const setSoftDeleted = useMutation(api.skills.setSoftDeleted);
   const hardDelete = useMutation(api.skills.hardDelete);
   const changeOwner = useMutation(api.skills.changeOwner);
@@ -163,6 +199,9 @@ function Management() {
   const [userSearch, setUserSearch] = useState("");
   const [userSearchDebounced, setUserSearchDebounced] = useState("");
   const [pluginSearch, setPluginSearch] = useState(selectedPluginName ?? "");
+  const [pluginModerationVerdict, setPluginModerationVerdict] =
+    useState<PackageScanStatus>("clean");
+  const [pluginModerationNote, setPluginModerationNote] = useState("");
   const [skillOverrideNote, setSkillOverrideNote] = useState("");
 
   const userQuery = userSearchDebounced.trim();
@@ -170,6 +209,10 @@ function Management() {
     api.users.list,
     admin ? { limit: 200, search: userQuery || undefined } : "skip",
   ) as { items: Doc<"users">[]; total: number } | undefined;
+  const storePackMigration = useQuery(
+    packageApiRefs.packages.getStorePackMigrationStatus as never,
+    staff ? {} : "skip",
+  ) as StorePackMigrationStatus | undefined;
 
   const selectedOwnerUserId = selectedSkill?.skill?.ownerUserId ?? null;
   const selectedCanonicalSlug = selectedSkill?.canonical?.skill?.slug ?? "";
@@ -187,6 +230,13 @@ function Management() {
   useEffect(() => {
     setPluginSearch(selectedPluginName ?? "");
   }, [selectedPluginName]);
+
+  useEffect(() => {
+    setPluginModerationVerdict(
+      (selectedPlugin?.package?.scanStatus ?? "clean") as PackageScanStatus,
+    );
+    setPluginModerationNote("");
+  }, [selectedPlugin?.package?._id, selectedPlugin?.package?.scanStatus]);
 
   useEffect(() => {
     const handle = setTimeout(() => setReportSearchDebounced(reportSearch), 250);
@@ -254,7 +304,6 @@ function Management() {
         : "No users yet."
       : ""
     : "Loading users…";
-
   const applySkillOverride = () => {
     if (!selectedSkill?.skill) return;
     void setSkillManualOverride({
@@ -292,6 +341,58 @@ function Management() {
     <main className="section">
       <h1 className="section-title">Management console</h1>
       <p className="section-subtitle">Moderation, curation, and ownership tools.</p>
+
+      <Card className="mb-5">
+        <h2 className="section-title text-[1.2rem] m-0">StorePack migration</h2>
+        <div className="management-sublist">
+          <div className="management-report-item">
+            <span className="management-report-meta">Missing sample</span>
+            <span>
+              {storePackMigration
+                ? `${storePackMigration.missingSampleSize} releases in the current sample`
+                : "Loading..."}
+            </span>
+          </div>
+          <div className="management-report-item">
+            <span className="management-report-meta">Generated sample</span>
+            <span>
+              {storePackMigration
+                ? `${storePackMigration.generatedStorePackSampleSize} artifacts / ${formatBytesCompact(
+                    storePackMigration.generatedStorePackBytes,
+                  )}`
+                : "Loading..."}
+            </span>
+          </div>
+          {storePackMigration?.missingSample?.length ? (
+            <div className="management-sublist">
+              {storePackMigration.missingSample.slice(0, 5).map((entry) => (
+                <div key={entry.releaseId} className="management-report-item">
+                  <span className="management-report-meta">
+                    {entry.name}@{entry.version}
+                  </span>
+                  <span>
+                    {entry.fileCount} files · published {formatTimestamp(entry.createdAt)}
+                  </span>
+                </div>
+              ))}
+            </div>
+          ) : null}
+        </div>
+        {admin ? (
+          <div className="management-actions management-actions-start mt-3">
+            <Button
+              type="button"
+              onClick={() =>
+                void backfillStorePackArtifacts({ limit: 10 }).catch((error) =>
+                  window.alert(formatMutationError(error)),
+                )
+              }
+            >
+              Backfill 10
+            </Button>
+          </div>
+        ) : null}
+      </Card>
 
       <Card>
         <h2 className="section-title text-[1.2rem] m-0">Reported skills</h2>
@@ -786,6 +887,80 @@ function Management() {
                             : "Not highlighted"}
                         </span>
                       </div>
+                      <div className="management-report-item">
+                        <span className="management-report-meta">StorePack</span>
+                        <span>
+                          {latestRelease?.storepackStorageId
+                            ? `${latestRelease.storepackFileCount ?? 0} files · ${latestRelease.storepackSha256?.slice(0, 12) ?? "no digest"}`
+                            : "Missing StorePack artifact"}
+                        </span>
+                      </div>
+                      <div className="management-report-item">
+                        <span className="management-report-meta">Host targets</span>
+                        <span>
+                          {latestRelease?.hostTargetsSummary?.length
+                            ? latestRelease.hostTargetsSummary
+                                .map((target) =>
+                                  [target.os, target.arch, target.libc].filter(Boolean).join("-"),
+                                )
+                                .join(", ")
+                            : "No target summary yet"}
+                        </span>
+                      </div>
+                      <div className="management-report-item">
+                        <span className="management-report-meta">Environment</span>
+                        <span>{formatEnvironmentSummary(latestRelease?.environmentSummary)}</span>
+                      </div>
+                      <div className="management-report-item">
+                        <span className="management-report-meta">Moderation</span>
+                        <span>{plugin.scanStatus}</span>
+                      </div>
+                      <section className="management-override-panel">
+                        <div className="management-tool-grid">
+                          <label className="management-control management-control-stack">
+                            <span className="mono">verdict</span>
+                            <select
+                              className="management-field"
+                              value={pluginModerationVerdict}
+                              onChange={(event) =>
+                                setPluginModerationVerdict(event.target.value as PackageScanStatus)
+                              }
+                            >
+                              <option value="clean">clean</option>
+                              <option value="suspicious">suspicious</option>
+                              <option value="malicious">malicious</option>
+                              <option value="pending">pending</option>
+                              <option value="not-run">not-run</option>
+                            </select>
+                          </label>
+                          <label className="management-control management-control-stack">
+                            <span className="mono">note</span>
+                            <input
+                              className="management-field"
+                              value={pluginModerationNote}
+                              onChange={(event) => setPluginModerationNote(event.target.value)}
+                              placeholder="Audit note"
+                            />
+                          </label>
+                        </div>
+                        <div className="management-actions management-actions-start">
+                          <Button
+                            type="button"
+                            disabled={!pluginModerationNote.trim()}
+                            onClick={() =>
+                              void setPackageModerationVerdict({
+                                packageId: plugin._id,
+                                verdict: pluginModerationVerdict,
+                                note: pluginModerationNote.trim(),
+                              })
+                                .then(() => setPluginModerationNote(""))
+                                .catch((error) => window.alert(formatMutationError(error)))
+                            }
+                          >
+                            Save verdict
+                          </Button>
+                        </div>
+                      </section>
                     </div>
                   </div>
                   <div className="management-actions management-action-grid">
@@ -1045,6 +1220,26 @@ function Management() {
       ) : null}
     </main>
   );
+}
+
+function formatBytesCompact(value: number) {
+  if (!Number.isFinite(value) || value <= 0) return "0B";
+  if (value < 1024) return `${value}B`;
+  if (value < 1024 * 1024) return `${(value / 1024).toFixed(1)}KB`;
+  return `${(value / (1024 * 1024)).toFixed(1)}MB`;
+}
+
+function formatEnvironmentSummary(environment: Doc<"packageReleases">["environmentSummary"]) {
+  if (!environment) return "No environment summary yet";
+  const labels = [
+    environment.requiresLocalDesktop ? "desktop" : null,
+    environment.requiresBrowser ? "browser" : null,
+    environment.requiresAudioDevice ? "audio" : null,
+    environment.requiresNetwork ? "network" : null,
+    ...(environment.requiresExternalServices ?? []).map((service) => `service:${service}`),
+    ...(environment.requiresOsPermissions ?? []).map((permission) => `permission:${permission}`),
+  ].filter(Boolean);
+  return labels.length > 0 ? labels.join(", ") : "No special environment requirements";
 }
 
 function formatTimestamp(value: number) {
