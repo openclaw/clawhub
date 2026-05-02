@@ -525,7 +525,7 @@ Publishes a code-plugin or bundle-plugin release.
 Validation highlights:
 
 - `family` must be `code-plugin` or `bundle-plugin`.
-- Code plugins require `package.json`, `openclaw.plugin.json`, source repo metadata, source commit metadata, and config schema metadata.
+- Code plugins require `package.json`, `openclaw.plugin.json`, source repo metadata, source commit metadata, config schema metadata, and explicit `openclaw.hostTargets`.
 - Bundle plugins require at least one host target.
 - Only trusted publishers may publish to the `official` channel.
 - On-behalf publishes still validate official-channel eligibility against the target owner account.

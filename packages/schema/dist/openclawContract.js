@@ -1,6 +1,7 @@
 export const OPENCLAW_EXTERNAL_CODE_PLUGIN_REQUIRED_FIELD_PATHS = [
     "openclaw.compat.pluginApi",
     "openclaw.build.openclawVersion",
+    "openclaw.hostTargets",
 ];
 function isRecord(value) {
     return Boolean(value) && typeof value === "object" && !Array.isArray(value);
@@ -8,13 +9,21 @@ function isRecord(value) {
 function getTrimmedString(value) {
     return typeof value === "string" && value.trim() ? value.trim() : undefined;
 }
+function getTrimmedStringList(value) {
+    if (!Array.isArray(value))
+        return [];
+    return value
+        .filter((entry) => typeof entry === "string")
+        .map((entry) => entry.trim())
+        .filter(Boolean);
+}
 function readOpenClawBlock(packageJson) {
     const root = isRecord(packageJson) ? packageJson : undefined;
     const openclaw = isRecord(root?.openclaw) ? root.openclaw : undefined;
     const compat = isRecord(openclaw?.compat) ? openclaw.compat : undefined;
     const build = isRecord(openclaw?.build) ? openclaw.build : undefined;
     const install = isRecord(openclaw?.install) ? openclaw.install : undefined;
-    return { root, compat, build, install };
+    return { root, openclaw, compat, build, install };
 }
 export function normalizeOpenClawExternalPluginCompatibility(packageJson) {
     const { root, compat, build, install } = readOpenClawBlock(packageJson);
@@ -40,13 +49,16 @@ export function normalizeOpenClawExternalPluginCompatibility(packageJson) {
     return Object.keys(compatibility).length > 0 ? compatibility : undefined;
 }
 export function listMissingOpenClawExternalCodePluginFieldPaths(packageJson) {
-    const { compat, build } = readOpenClawBlock(packageJson);
+    const { openclaw, compat, build } = readOpenClawBlock(packageJson);
     const missing = [];
     if (!getTrimmedString(compat?.pluginApi)) {
         missing.push("openclaw.compat.pluginApi");
     }
     if (!getTrimmedString(build?.openclawVersion)) {
         missing.push("openclaw.build.openclawVersion");
+    }
+    if (getTrimmedStringList(openclaw?.hostTargets).length === 0) {
+        missing.push("openclaw.hostTargets");
     }
     return missing;
 }

@@ -97,6 +97,7 @@ function makeCodePluginPackageJson(overrides: Record<string, unknown>) {
   return JSON.stringify({
     openclaw: {
       extensions: ["./dist/index.js"],
+      hostTargets: ["darwin-arm64", "linux-x64", "win32-x64"],
       compat: {
         pluginApi: ">=2026.3.24-beta.2",
       },
@@ -1018,6 +1019,45 @@ describe("package commands", () => {
         }),
       ).rejects.toThrow(
         "openclaw.compat.pluginApi is required for external code plugins published to ClawHub.",
+      );
+      expect(httpMocks.apiRequestForm).not.toHaveBeenCalled();
+    } finally {
+      await rm(workdir, { recursive: true, force: true });
+    }
+  });
+
+  it("rejects code-plugin publish when host targets are missing", async () => {
+    const workdir = await makeTmpWorkdir();
+    try {
+      const folder = join(workdir, "demo-plugin");
+      await mkdir(folder, { recursive: true });
+      await writeFile(
+        join(folder, "package.json"),
+        JSON.stringify({
+          name: "demo-plugin",
+          displayName: "Demo Plugin",
+          version: "1.0.0",
+          openclaw: {
+            extensions: ["./index.ts"],
+            compat: { pluginApi: ">=2026.3.24-beta.2" },
+            build: { openclawVersion: "2026.3.24-beta.2" },
+          },
+        }),
+        "utf8",
+      );
+      await writeFile(
+        join(folder, "openclaw.plugin.json"),
+        JSON.stringify({ id: "demo.plugin", configSchema: { type: "object" } }),
+        "utf8",
+      );
+
+      await expect(
+        cmdPublishPackage(makeOpts(workdir), "demo-plugin", {
+          sourceRepo: "openclaw/demo-plugin",
+          sourceCommit: "abc123",
+        }),
+      ).rejects.toThrow(
+        "openclaw.hostTargets is required for external code plugins published to ClawHub.",
       );
       expect(httpMocks.apiRequestForm).not.toHaveBeenCalled();
     } finally {

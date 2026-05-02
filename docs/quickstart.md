@@ -145,9 +145,11 @@ bun clawhub package publish . --family code-plugin
 
 Notes:
 
-- `openclaw.compat.pluginApi` and `openclaw.build.openclawVersion` are required
-  for `code-plugin` publishes.
+- `openclaw.compat.pluginApi`, `openclaw.build.openclawVersion`, and
+  `openclaw.hostTargets` are required for `code-plugin` publishes.
 - `package.json.version` does not replace either required OpenClaw field.
+- `openclaw.hostTargets` should list concrete host targets such as
+  `darwin-arm64`, `linux-x64`, or `win32-x64`.
 - Add `openclaw.compat.minGatewayVersion` and
   `openclaw.build.pluginSdkVersion` when you want to expose fuller
   compatibility/build metadata, but they are not required for a successful

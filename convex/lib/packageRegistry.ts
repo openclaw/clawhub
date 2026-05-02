@@ -231,6 +231,10 @@ export function extractCodePluginArtifacts(params: {
   const commandNames = uniq(normalizeNamedList(params.pluginManifest.commands));
   const serviceNames = uniq(normalizeNamedList(params.pluginManifest.services));
   const bundledSkills = uniq(normalizeNamedList(params.pluginManifest.bundledSkills));
+  const hostTargets = uniq(normalizeStringList(openclaw?.hostTargets));
+  if (hostTargets.length === 0) {
+    throw new ConvexError("Code plugins must declare openclaw.hostTargets");
+  }
 
   const httpRouteCount = Array.isArray(params.pluginManifest.httpRoutes)
     ? params.pluginManifest.httpRoutes.length
@@ -267,6 +271,7 @@ export function extractCodePluginArtifacts(params: {
     commandNames,
     serviceNames,
     httpRouteCount,
+    hostTargets,
   };
 
   capabilities.capabilityTags = uniq([
@@ -275,6 +280,7 @@ export function extractCodePluginArtifacts(params: {
     ...channels.map((entry) => `channel:${entry}`),
     ...providers.map((entry) => `provider:${entry}`),
     ...(capabilities.setupEntry ? ["setup"] : []),
+    ...hostTargets.map((entry) => `host:${entry}`),
     ...(toolNames.length > 0 ? ["tools"] : []),
   ]);
 

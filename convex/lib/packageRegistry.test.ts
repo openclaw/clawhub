@@ -17,6 +17,7 @@ describe("packageRegistry", () => {
         name: "@scope/demo-plugin",
         openclaw: {
           extensions: ["./dist/index.js"],
+          hostTargets: ["darwin-arm64", "linux-x64"],
           compat: {
             pluginApi: "^1.2.0",
             minGatewayVersion: "2026.3.0",
@@ -49,7 +50,9 @@ describe("packageRegistry", () => {
     expect(result.compatibility?.pluginApiRange).toBe("^1.2.0");
     expect(result.compatibility?.minGatewayVersion).toBe("2026.3.0");
     expect(result.capabilities.executesCode).toBe(true);
+    expect(result.capabilities.hostTargets).toEqual(["darwin-arm64", "linux-x64"]);
     expect(result.capabilities.toolNames).toContain("demoTool");
+    expect(result.capabilities.capabilityTags).toContain("host:darwin-arm64");
     expect(result.verification.tier).toBe("source-linked");
     expect(result.verification.scanStatus).toBe("not-run");
   });
