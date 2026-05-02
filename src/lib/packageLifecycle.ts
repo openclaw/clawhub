@@ -1,4 +1,4 @@
-export type PackageLifecycleState =
+type PackageLifecycleState =
   | "needs-input"
   | "metadata-blocked"
   | "ready-to-submit"
@@ -11,17 +11,17 @@ export type PackageLifecycleState =
   | "blocked"
   | "failed";
 
-export type PackageLifecycleSeverity = "neutral" | "info" | "success" | "warning" | "danger";
+type PackageLifecycleSeverity = "neutral" | "info" | "success" | "warning" | "danger";
 
-export type PackageLifecycleStepStatus = "waiting" | "active" | "done" | "blocked";
+type PackageLifecycleStepStatus = "waiting" | "active" | "done" | "blocked";
 
-export type PackageLifecycleStep = {
+type PackageLifecycleStep = {
   key: string;
   label: string;
   status: PackageLifecycleStepStatus;
 };
 
-export type PackageLifecycle = {
+type PackageLifecycle = {
   state: PackageLifecycleState;
   label: string;
   description: string;

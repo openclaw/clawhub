@@ -1,4 +1,4 @@
-export type GitHubPackageSource = {
+type GitHubPackageSource = {
   repo: string;
   url: string;
   ref: string;
@@ -6,7 +6,7 @@ export type GitHubPackageSource = {
   path: string;
 };
 
-export type GitHubPackageSourceResult = {
+type GitHubPackageSourceResult = {
   files: File[];
   source: GitHubPackageSource;
 };
@@ -309,8 +309,3 @@ function decodePathSegment(segment: string) {
     throw new Error("Invalid GitHub URL.");
   }
 }
-
-export const __test = {
-  parseGitHubPackageUrl,
-  normalizeRepoPath,
-};

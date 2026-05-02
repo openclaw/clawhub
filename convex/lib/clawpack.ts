@@ -1,10 +1,9 @@
 import { buildDeterministicPackageZip } from "./skillZip";
 
-export const CLAWPACK_SPEC_VERSION = 1;
-export const CLAWPACK_BUILD_VERSION = "clawhub-clawpack-v1";
+const CLAWPACK_SPEC_VERSION = 1;
 export const CLAWPACK_MANIFEST_PATH = "CLAWPACK.json";
 
-export type ClawPackHostTarget = {
+type ClawPackHostTarget = {
   os: "darwin" | "linux" | "win32";
   arch: "arm64" | "x64";
   libc?: "glibc" | "musl";
@@ -15,7 +14,7 @@ export type ClawPackHostTarget = {
   unsupportedReason?: string;
 };
 
-export type ClawPackEnvironmentSummary = {
+type ClawPackEnvironmentSummary = {
   requiresLocalDesktop?: boolean;
   requiresBrowser?: boolean;
   requiresAudioDevice?: boolean;
@@ -51,7 +50,7 @@ export type ClawPackInput = {
   files: ClawPackFile[];
 };
 
-export type BuiltClawPack = {
+type BuiltClawPack = {
   bytes: Uint8Array;
   sha256: string;
   size: number;

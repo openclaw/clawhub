@@ -1,6 +1,6 @@
 import type { Id } from "../../convex/_generated/dataModel";
 
-export type MigrationReadinessState =
+type MigrationReadinessState =
   | "package-missing"
   | "release-missing"
   | "clawpack-missing"

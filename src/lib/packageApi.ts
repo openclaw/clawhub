@@ -1,5 +1,4 @@
 import type {
-  ApiV1PackageVersionListResponse,
   ApiV1PackageResponse,
   PackageCapabilitySummary,
   PackageCompatibility,
@@ -9,7 +8,7 @@ import { ApiRoutes } from "clawhub-schema/routes";
 import { hasOwnProperty } from "./hasOwnProperty";
 import { getRequiredRuntimeEnv, getRuntimeEnv } from "./runtimeEnv";
 
-export type PackageClawPackSummary = {
+type PackageClawPackSummary = {
   available: boolean;
   specVersion: number | null;
   sha256: string | null;
@@ -64,8 +63,6 @@ export type PackageListItem = {
 };
 
 export type PackageDetailResponse = ApiV1PackageResponse;
-
-export type PackageVersionListItem = ApiV1PackageVersionListResponse["items"][number];
 
 export type PackageVersionDetail = {
   package: {
@@ -130,7 +127,7 @@ export type PackageVersionDetail = {
   } | null;
 };
 
-export type PackageClawPackReleaseDetail = {
+type PackageClawPackReleaseDetail = {
   package: {
     name: string;
     displayName: string;
@@ -154,7 +151,7 @@ export type PackageClawPackReleaseDetail = {
   };
 };
 
-export type PackageClawPackManifestDetail = Omit<PackageClawPackReleaseDetail, "links"> & {
+type PackageClawPackManifestDetail = Omit<PackageClawPackReleaseDetail, "links"> & {
   manifest: Record<string, unknown>;
 };
 
@@ -507,16 +504,6 @@ export async function fetchPackageVersion(
     // Return null on API error to prevent SSR crashes
     return null;
   }
-}
-
-export async function fetchPackageVersions(
-  name: string,
-  params: { limit?: number; cursor?: string | null } = {},
-): Promise<ApiV1PackageVersionListResponse> {
-  const url = await packageApiUrl(`${ApiRoutes.packages}/${encodeURIComponent(name)}/versions`);
-  if (typeof params.limit === "number") url.searchParams.set("limit", String(params.limit));
-  if (params.cursor) url.searchParams.set("cursor", params.cursor);
-  return await fetchJson<ApiV1PackageVersionListResponse>(url);
 }
 
 export async function fetchPackageClawPack(
