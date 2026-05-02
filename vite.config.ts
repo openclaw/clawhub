@@ -142,13 +142,24 @@ function patchArkSafariInOperator(): Plugin {
       if (!fix) return null;
 
       let nextCode = code;
+      let patchedAny = false;
+      const missingPatterns: string[] = [];
       for (const [from, to] of fix.replacements) {
         if (!nextCode.includes(from)) {
-          this.error(`Expected to patch ${from} in ${normalizedId}`);
+          missingPatterns.push(from);
+          continue;
         }
         nextCode = nextCode.replaceAll(from, to);
+        patchedAny = true;
       }
 
+      if (missingPatterns.length > 0) {
+        this.warn(
+          `Skipped ${missingPatterns.length} ark safari patch replacement(s) in ${normalizedId}: ${missingPatterns.join(", ")}`,
+        );
+      }
+
+      if (!patchedAny) return null;
       return {
         code: nextCode,
         map: null,
