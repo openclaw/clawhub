@@ -211,7 +211,7 @@ export function SkillHeader({
                 </h1>
                 {nixPlugin ? <span className="tag tag-accent">Plugin bundle (nix)</span> : null}
               </div>
-              <p className="section-subtitle">
+              <div className="section-subtitle">
                 {isSummaryEditing ? (
                   <form
                     onSubmit={(event) => {
@@ -260,7 +260,7 @@ export function SkillHeader({
                     )}
                   </>
                 )}
-              </p>
+              </div>
 
               {isStaff && staffModerationNote ? (
                 <div className="skill-hero-note">{staffModerationNote}</div>
