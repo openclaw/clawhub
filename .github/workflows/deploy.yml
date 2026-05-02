@@ -18,7 +18,7 @@ concurrency:
   cancel-in-progress: true
 
 permissions:
-  contents: read
+  contents: write
   statuses: read
 
 jobs:
@@ -125,6 +125,7 @@ jobs:
         run: bun run verify:convex-contract -- --prod
 
       - name: Wait for Vercel production deployment
+        id: vercel
         if: needs.validate-deploy-request.outputs.deploy_frontend == 'true'
         env:
           GH_TOKEN: ${{ github.token }}
@@ -134,17 +135,26 @@ jobs:
         run: |
           set -euo pipefail
           for attempt in {1..90}; do
-            if ! state="$(gh api "repos/$GITHUB_REPOSITORY/commits/$GITHUB_SHA/status" \
-              --jq '.statuses[] | select(.context == env.VERCEL_STATUS_CONTEXT) | .state' \
+            if ! status_json="$(gh api "repos/$GITHUB_REPOSITORY/commits/$GITHUB_SHA/status" \
+              --jq '.statuses[] | select(.context == env.VERCEL_STATUS_CONTEXT) | {state, target_url, description} | @base64' \
               2>/dev/null | head -n1)"; then
               echo "GitHub status check failed for $GITHUB_SHA on attempt $attempt; retrying..."
               sleep 10
               continue
             fi
 
+            if [[ -z "$status_json" ]]; then
+              state=""
+              target_url=""
+            else
+              state="$(printf '%s' "$status_json" | base64 -d | jq -r '.state // ""')"
+              target_url="$(printf '%s' "$status_json" | base64 -d | jq -r '.target_url // ""')"
+            fi
+
             case "$state" in
               success)
                 echo "Vercel production deployment ready for $GITHUB_SHA"
+                echo "deployment_url=$target_url" >> "$GITHUB_OUTPUT"
                 exit 0
                 ;;
               failure|error)
@@ -182,3 +192,23 @@ jobs:
       - name: Smoke test production UI
         if: needs.validate-deploy-request.outputs.run_smoke == 'true' && needs.validate-deploy-request.outputs.deploy_frontend == 'true'
         run: bunx playwright test --workers=1 e2e/menu-smoke.pw.test.ts e2e/publish-entry-workflows.pw.test.ts e2e/upload-auth-smoke.pw.test.ts
+
+      - name: Tag production frontend deployment
+        if: needs.validate-deploy-request.outputs.deploy_frontend == 'true'
+        env:
+          DEPLOY_TARGET: ${{ needs.validate-deploy-request.outputs.target }}
+          DEPLOYMENT_URL: ${{ steps.vercel.outputs.deployment_url }}
+        run: |
+          set -euo pipefail
+          tag_name="deploy/prod/$(date -u +"%Y%m%d-%H%M%SZ")-${GITHUB_SHA::7}"
+          run_url="${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}"
+
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git tag -a "$tag_name" "$GITHUB_SHA" \
+            -m "Production frontend deploy $tag_name" \
+            -m "SHA: $GITHUB_SHA" \
+            -m "Target: $DEPLOY_TARGET" \
+            -m "Vercel: ${DEPLOYMENT_URL:-unknown}" \
+            -m "Run: $run_url"
+          git push origin "refs/tags/$tag_name"
