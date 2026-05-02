@@ -20,21 +20,21 @@ import {
   cmdGetPackageTrustedPublisher,
   cmdDownloadPackage,
   cmdInspectPackage,
-  cmdInspectPackageStorePack,
+  cmdInspectPackageClawPack,
   cmdDeletePackageTrustedPublisher,
-  cmdPackageStorePackBackfill,
-  cmdPackageStorePackIndexBackfill,
-  cmdPackageStorePackMigrationDryRun,
-  cmdPackageStorePackMigrationRunContinue,
-  cmdPackageStorePackMigrationRunCreate,
-  cmdPackageStorePackMigrationRuns,
-  cmdPackageStorePackMigrationReadiness,
-  cmdPackageStorePackMigrationStatus,
-  cmdPackageStorePackRetryFailures,
-  cmdPackageStorePackRevoke,
+  cmdPackageClawPackBackfill,
+  cmdPackageClawPackIndexBackfill,
+  cmdPackageClawPackMigrationDryRun,
+  cmdPackageClawPackMigrationRunContinue,
+  cmdPackageClawPackMigrationRunCreate,
+  cmdPackageClawPackMigrationRuns,
+  cmdPackageClawPackMigrationReadiness,
+  cmdPackageClawPackMigrationStatus,
+  cmdPackageClawPackRetryFailures,
+  cmdPackageClawPackRevoke,
   cmdPublishPackage,
   cmdSetPackageTrustedPublisher,
-  cmdVerifyPackageStorePack,
+  cmdVerifyPackageClawPack,
 } from "./cli/commands/packages.js";
 import { cmdPublish } from "./cli/commands/publish.js";
 import { cmdRescanPackage, cmdRescanSkill } from "./cli/commands/rescan.js";
@@ -383,8 +383,8 @@ packageCmd
   .option("--family <family>", "skill|code-plugin|bundle-plugin")
   .option("--official", "Only official packages")
   .option("--executes-code", "Only packages that execute code")
-  .option("--host-target <target>", "Filter by StorePack host target, e.g. darwin-arm64")
-  .option("--environment <flag>", "Filter by StorePack environment flag, e.g. browser")
+  .option("--host-target <target>", "Filter by Claw Pack host target, e.g. darwin-arm64")
+  .option("--environment <flag>", "Filter by Claw Pack environment flag, e.g. browser")
   .option(
     "--limit <n>",
     "Number of packages to show (max 100)",
@@ -416,7 +416,7 @@ packageCmd
 
 packageCmd
   .command("download")
-  .description("Download a package StorePack artifact")
+  .description("Download a package Claw Pack artifact")
   .argument("<name>", "Package name")
   .option("--version <version>", "Version to download")
   .option("--tag <tag>", "Tag to download")
@@ -429,17 +429,17 @@ packageCmd
 
 packageCmd
   .command("verify")
-  .description("Verify a downloaded StorePack artifact")
-  .argument("<file>", "StorePack ZIP path")
-  .option("--sha256 <digest>", "Expected StorePack SHA-256")
+  .description("Verify a downloaded Claw Pack artifact")
+  .argument("<file>", "Claw Pack ZIP path")
+  .option("--sha256 <digest>", "Expected Claw Pack SHA-256")
   .option("--json", "Output JSON")
   .action(async (file, options) => {
-    await cmdVerifyPackageStorePack(file, options);
+    await cmdVerifyPackageClawPack(file, options);
   });
 
 packageCmd
-  .command("storepack")
-  .description("Download StorePack artifacts or run StorePack admin workflows")
+  .command("clawpack")
+  .description("Download Claw Pack artifacts")
   .argument("[name]", "Package name")
   .option("--version <version>", "Version to download")
   .option("--tag <tag>", "Tag to download")
@@ -447,7 +447,7 @@ packageCmd
   .option("--json", "Output JSON")
   .action(async (name, options) => {
     if (!name) {
-      packageCmd.commands.find((command) => command.name() === "storepack")?.help();
+      packageCmd.commands.find((command) => command.name() === "clawpack")?.help();
       return;
     }
     const opts = await resolveGlobalOpts();
@@ -455,43 +455,43 @@ packageCmd
   });
 
 packageCmd
-  .command("storepack-inspect")
-  .description("Inspect a remote StorePack artifact")
+  .command("clawpack-inspect")
+  .description("Inspect a remote Claw Pack artifact")
   .argument("<name>", "Package name")
   .option("--version <version>", "Version to inspect (default: latest)")
-  .option("--manifest", "Print the generated STOREPACK.json")
+  .option("--manifest", "Print the generated CLAWPACK.json")
   .option("--json", "Output JSON")
   .action(async (name, options) => {
     const opts = await resolveGlobalOpts();
-    await cmdInspectPackageStorePack(opts, name, options);
+    await cmdInspectPackageClawPack(opts, name, options);
   });
 
-const packageStorePackCmd = packageCmd
-  .command("storepack-admin")
-  .description("Admin StorePack migration controls");
+const packageClawPackCmd = packageCmd
+  .command("clawpack-admin")
+  .description("Admin Claw Pack migration controls");
 
-packageStorePackCmd
+packageClawPackCmd
   .command("status")
-  .description("Show StorePack migration status")
+  .description("Show Claw Pack migration status")
   .option("--limit <n>", "Sample limit", (value) => Number.parseInt(value, 10), 25)
   .option("--json", "Output JSON")
   .action(async (options) => {
     const opts = await resolveGlobalOpts();
-    await cmdPackageStorePackMigrationStatus(opts, options);
+    await cmdPackageClawPackMigrationStatus(opts, options);
   });
 
-packageStorePackCmd
+packageClawPackCmd
   .command("readiness")
   .description("Show official OpenClaw plugin migration readiness")
   .option("--json", "Output JSON")
   .action(async (options) => {
     const opts = await resolveGlobalOpts();
-    await cmdPackageStorePackMigrationReadiness(opts, options);
+    await cmdPackageClawPackMigrationReadiness(opts, options);
   });
 
-packageStorePackCmd
+packageClawPackCmd
   .command("dry-run")
-  .description("Preview StorePack migration run candidates")
+  .description("Preview Claw Pack migration run candidates")
   .option(
     "--operation <operation>",
     "artifact-backfill, failure-retry, or search-index-backfill",
@@ -502,23 +502,23 @@ packageStorePackCmd
   .option("--json", "Output JSON")
   .action(async (options) => {
     const opts = await resolveGlobalOpts();
-    await cmdPackageStorePackMigrationDryRun(opts, options);
+    await cmdPackageClawPackMigrationDryRun(opts, options);
   });
 
-packageStorePackCmd
+packageClawPackCmd
   .command("runs")
-  .description("List StorePack migration run records")
+  .description("List Claw Pack migration run records")
   .option("--status <status>", "pending, running, completed, or failed")
   .option("--limit <n>", "Run limit", (value) => Number.parseInt(value, 10), 20)
   .option("--json", "Output JSON")
   .action(async (options) => {
     const opts = await resolveGlobalOpts();
-    await cmdPackageStorePackMigrationRuns(opts, options);
+    await cmdPackageClawPackMigrationRuns(opts, options);
   });
 
-packageStorePackCmd
+packageClawPackCmd
   .command("create-run")
-  .description("Create a persistent StorePack migration run")
+  .description("Create a persistent Claw Pack migration run")
   .option(
     "--operation <operation>",
     "artifact-backfill, failure-retry, or search-index-backfill",
@@ -529,60 +529,60 @@ packageStorePackCmd
   .option("--json", "Output JSON")
   .action(async (options) => {
     const opts = await resolveGlobalOpts();
-    await cmdPackageStorePackMigrationRunCreate(opts, options);
+    await cmdPackageClawPackMigrationRunCreate(opts, options);
   });
 
-packageStorePackCmd
+packageClawPackCmd
   .command("continue-run")
-  .description("Execute the next batch for a StorePack migration run")
+  .description("Execute the next batch for a Claw Pack migration run")
   .argument("<run-id>", "Migration run id")
   .option("--json", "Output JSON")
   .action(async (runId, options) => {
     const opts = await resolveGlobalOpts();
-    await cmdPackageStorePackMigrationRunContinue(opts, runId, options);
+    await cmdPackageClawPackMigrationRunContinue(opts, runId, options);
   });
 
-packageStorePackCmd
+packageClawPackCmd
   .command("backfill")
-  .description("Build StorePack artifacts for legacy plugin releases")
+  .description("Build Claw Pack artifacts for plugin releases")
   .option("--limit <n>", "Batch size", (value) => Number.parseInt(value, 10), 10)
   .option("--json", "Output JSON")
   .action(async (options) => {
     const opts = await resolveGlobalOpts();
-    await cmdPackageStorePackBackfill(opts, options);
+    await cmdPackageClawPackBackfill(opts, options);
   });
 
-packageStorePackCmd
+packageClawPackCmd
   .command("retry-failures")
-  .description("Retry failed StorePack artifact builds")
+  .description("Retry failed Claw Pack artifact builds")
   .option("--limit <n>", "Batch size", (value) => Number.parseInt(value, 10), 10)
   .option("--json", "Output JSON")
   .action(async (options) => {
     const opts = await resolveGlobalOpts();
-    await cmdPackageStorePackRetryFailures(opts, options);
+    await cmdPackageClawPackRetryFailures(opts, options);
   });
 
-packageStorePackCmd
+packageClawPackCmd
   .command("index-backfill")
-  .description("Backfill StorePack host and environment lookup indexes")
+  .description("Backfill Claw Pack host and environment lookup indexes")
   .option("--limit <n>", "Batch size", (value) => Number.parseInt(value, 10), 25)
   .option("--cursor <cursor>", "Continue cursor from the previous batch")
   .option("--json", "Output JSON")
   .action(async (options) => {
     const opts = await resolveGlobalOpts();
-    await cmdPackageStorePackIndexBackfill(opts, options);
+    await cmdPackageClawPackIndexBackfill(opts, options);
   });
 
-packageStorePackCmd
+packageClawPackCmd
   .command("revoke")
-  .description("Revoke a published StorePack artifact")
+  .description("Revoke a published Claw Pack artifact")
   .argument("<name>", "Package name")
   .argument("<version>", "Package version")
   .option("--reason <text>", "Moderation reason")
   .option("--json", "Output JSON")
   .action(async (name, version, options) => {
     const opts = await resolveGlobalOpts();
-    await cmdPackageStorePackRevoke(opts, name, version, options);
+    await cmdPackageClawPackRevoke(opts, name, version, options);
   });
 
 packageCmd

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { normalizeStorePackImport } from "./storepackImport";
+import { normalizeClawPackImport } from "./clawpackImport";
 
 function withRelativePath(file: File, path: string) {
   Object.defineProperty(file, "webkitRelativePath", {
@@ -9,13 +9,13 @@ function withRelativePath(file: File, path: string) {
   return file;
 }
 
-describe("storepack import", () => {
-  it("unwraps package files and prefill metadata from a StorePack archive", async () => {
+describe("clawpack import", () => {
+  it("unwraps package files and prefill metadata from a Claw Pack archive", async () => {
     const manifest = withRelativePath(
       new File(
         [
           JSON.stringify({
-            kind: "openclaw.storepack",
+            kind: "openclaw.clawpack",
             package: {
               name: "demo-plugin",
               displayName: "Demo Plugin",
@@ -36,21 +36,21 @@ describe("storepack import", () => {
             ],
           }),
         ],
-        "STOREPACK.json",
+        "CLAWPACK.json",
         { type: "application/json" },
       ),
-      "demo.storepack/STOREPACK.json",
+      "demo.clawpack/CLAWPACK.json",
     );
     const packageJson = withRelativePath(
       new File(['{"name":"demo-plugin"}'], "package.json", { type: "application/json" }),
-      "demo.storepack/package/package.json",
+      "demo.clawpack/package/package.json",
     );
     const pluginManifest = withRelativePath(
       new File(['{"id":"demo.plugin"}'], "openclaw.plugin.json", { type: "application/json" }),
-      "demo.storepack/package/openclaw.plugin.json",
+      "demo.clawpack/package/openclaw.plugin.json",
     );
 
-    const imported = await normalizeStorePackImport([manifest, packageJson, pluginManifest]);
+    const imported = await normalizeClawPackImport([manifest, packageJson, pluginManifest]);
 
     expect(imported.summary).toMatchObject({
       packageName: "demo-plugin",
@@ -70,14 +70,14 @@ describe("storepack import", () => {
     ]);
   });
 
-  it("rejects malformed StorePack manifests", async () => {
-    const manifest = new File(['{"kind":"other"}'], "STOREPACK.json", {
+  it("rejects malformed Claw Pack manifests", async () => {
+    const manifest = new File(['{"kind":"other"}'], "CLAWPACK.json", {
       type: "application/json",
     });
     const packageJson = new File(["{}"], "package/package.json", { type: "application/json" });
 
-    await expect(normalizeStorePackImport([manifest, packageJson])).rejects.toThrow(
-      /not an OpenClaw StorePack/i,
+    await expect(normalizeClawPackImport([manifest, packageJson])).rejects.toThrow(
+      /not an OpenClaw Claw Pack/i,
     );
   });
 });

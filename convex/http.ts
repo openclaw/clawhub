@@ -38,7 +38,7 @@ import {
   soulsPostRouterV1Http,
   starsDeleteRouterV1Http,
   starsPostRouterV1Http,
-  storepacksGetRouterV1Http,
+  clawpacksGetRouterV1Http,
   transfersGetRouterV1Http,
   usersListV1Http,
   usersPostRouterV1Http,
@@ -117,9 +117,9 @@ http.route({
 });
 
 http.route({
-  pathPrefix: "/api/v1/storepacks/",
+  pathPrefix: "/api/v1/clawpacks/",
   method: "GET",
-  handler: storepacksGetRouterV1Http,
+  handler: clawpacksGetRouterV1Http,
 });
 
 http.route({

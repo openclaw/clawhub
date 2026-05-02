@@ -2,29 +2,27 @@ import { createFileRoute, Link } from "@tanstack/react-router";
 import { ArrowLeft, Download, FileJson, Fingerprint, ShieldCheck, Terminal } from "lucide-react";
 import { InstallCopyButton } from "../../../../components/InstallCopyButton";
 import { Container } from "../../../../components/layout/Container";
-import { PackageLifecyclePanel } from "../../../../components/PackageLifecyclePanel";
 import { Badge } from "../../../../components/ui/badge";
 import { Button } from "../../../../components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "../../../../components/ui/card";
 import {
   fetchPackageDetail,
-  fetchPackageStorePack,
-  fetchPackageStorePackManifest,
+  fetchPackageClawPack,
+  fetchPackageClawPackManifest,
   getPackageDownloadPath,
-  getPackageStorePackPath,
+  getPackageClawPackPath,
   isRateLimitedPackageApiError,
   type PackageDetailResponse,
-  type PackageStorePackManifestDetail,
-  type PackageStorePackReleaseDetail,
-  type PackageStorePackSummary,
+  type PackageClawPackManifestDetail,
+  type PackageClawPackReleaseDetail,
+  type PackageClawPackSummary,
 } from "../../../../lib/packageApi";
-import { deriveStorePackLifecycle } from "../../../../lib/packageLifecycle";
 
 type PluginReleaseLoaderData = {
   detail: PackageDetailResponse;
   resolvedName: string;
-  release: PackageStorePackReleaseDetail | null;
-  manifest: PackageStorePackManifestDetail | null;
+  release: PackageClawPackReleaseDetail | null;
+  manifest: PackageClawPackManifestDetail | null;
   rateLimited: boolean;
 };
 
@@ -61,8 +59,8 @@ export const Route = createFileRoute("/plugins/$name/releases/$version")({
 
     try {
       const [release, manifest] = await Promise.all([
-        fetchPackageStorePack(resolvedName, params.version),
-        fetchPackageStorePackManifest(resolvedName, params.version),
+        fetchPackageClawPack(resolvedName, params.version),
+        fetchPackageClawPackManifest(resolvedName, params.version),
       ]);
       return { detail, resolvedName, release, manifest, rateLimited: false };
     } catch (error) {
@@ -75,32 +73,32 @@ export const Route = createFileRoute("/plugins/$name/releases/$version")({
   head: ({ params, loaderData }) => ({
     meta: [
       {
-        title: `${loaderData?.detail.package?.displayName ?? params.name} ${params.version} StorePack`,
+        title: `${loaderData?.detail.package?.displayName ?? params.name} ${params.version} Claw Pack`,
       },
       {
         name: "description",
-        content: `StorePack artifact details for ${loaderData?.detail.package?.displayName ?? params.name} ${params.version}.`,
+        content: `Claw Pack artifact details for ${loaderData?.detail.package?.displayName ?? params.name} ${params.version}.`,
       },
     ],
   }),
   component: PluginReleaseRoute,
 });
 
-function formatStorePackTarget(
-  target: NonNullable<PackageStorePackSummary["hostTargets"]>[number],
+function formatClawPackTarget(
+  target: NonNullable<PackageClawPackSummary["hostTargets"]>[number],
 ) {
   return [target.os, target.arch, target.libc].filter(Boolean).join("-");
 }
 
-function formatStorePackBytes(value: number | null | undefined) {
+function formatClawPackBytes(value: number | null | undefined) {
   if (!value || value <= 0) return "unknown";
   if (value < 1024) return `${value}B`;
   if (value < 1024 * 1024) return `${(value / 1024).toFixed(1)}KB`;
   return `${(value / (1024 * 1024)).toFixed(1)}MB`;
 }
 
-function storePackEnvironmentLabels(storepack: PackageStorePackSummary | null | undefined) {
-  const environment = storepack?.environment;
+function clawPackEnvironmentLabels(clawpack: PackageClawPackSummary | null | undefined) {
+  const environment = clawpack?.environment;
   if (!environment) return [];
   return [
     environment.requiresLocalDesktop ? "local desktop" : null,
@@ -123,27 +121,18 @@ function PluginReleaseRoute() {
   const { name, version } = Route.useParams();
   const { detail, resolvedName, release, manifest, rateLimited } = Route.useLoaderData();
   const pkg = detail.package;
-  const storepack = release?.storepack ?? manifest?.storepack ?? null;
+  const clawpack = release?.clawpack ?? manifest?.clawpack ?? null;
   const manifestJson = manifest?.manifest ? JSON.stringify(manifest.manifest, null, 2) : null;
   const downloadPath =
     release?.links.download ?? (pkg ? getPackageDownloadPath(pkg.name, version) : null);
   const manifestPath =
     release?.links.manifest ??
-    (pkg ? getPackageStorePackPath(pkg.name, version, "manifest") : null);
+    (pkg ? getPackageClawPackPath(pkg.name, version, "manifest") : null);
   const verifyCommand =
-    storepack?.sha256 && pkg
-      ? `clawhub package storepack ${pkg.name} --version ${version}\nclawhub package verify ${pkg.name.replaceAll("/", "-")}.storepack.zip --sha256 ${storepack.sha256}`
+    clawpack?.sha256 && pkg
+      ? `clawhub package download ${pkg.name} --version ${version}\nclawhub package verify ${pkg.name.replaceAll("/", "-")}.clawpack.zip --sha256 ${clawpack.sha256}`
       : null;
-  const environment = storePackEnvironmentLabels(storepack);
-  const lifecycle = deriveStorePackLifecycle({
-    available: storepack?.available ?? false,
-    verificationScanStatus: release?.version.verification?.scanStatus,
-    vtStatus: release?.version.vtAnalysis?.status,
-    vtVerdict: release?.version.vtAnalysis?.verdict,
-    llmStatus: release?.version.llmAnalysis?.status,
-    llmVerdict: release?.version.llmAnalysis?.verdict,
-    staticScanStatus: release?.version.staticScan?.status,
-  });
+  const environment = clawPackEnvironmentLabels(clawpack);
 
   if (rateLimited) {
     return (
@@ -151,7 +140,7 @@ function PluginReleaseRoute() {
         <Container size="narrow">
           <Card>
             <CardHeader>
-              <CardTitle>StorePack temporarily unavailable</CardTitle>
+              <CardTitle>Claw Pack temporarily unavailable</CardTitle>
             </CardHeader>
             <CardContent>
               <p className="text-sm text-[color:var(--ink-soft)]">
@@ -164,13 +153,13 @@ function PluginReleaseRoute() {
     );
   }
 
-  if (!pkg || !storepack?.available) {
+  if (!pkg || !clawpack?.available) {
     return (
       <main className="section">
         <Container size="narrow">
           <Card>
             <CardHeader>
-              <CardTitle>StorePack unavailable</CardTitle>
+              <CardTitle>Claw Pack unavailable</CardTitle>
             </CardHeader>
             <CardContent>
               <Button asChild variant="outline" size="sm">
@@ -200,7 +189,7 @@ function PluginReleaseRoute() {
             <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
               <div className="min-w-0">
                 <div className="mb-2 flex flex-wrap items-center gap-2">
-                  <Badge variant="accent">StorePack</Badge>
+                  <Badge variant="accent">Claw Pack</Badge>
                   <Badge variant="compact">v{version}</Badge>
                   {pkg.family !== "skill" ? <Badge variant="compact">{pkg.family}</Badge> : null}
                 </div>
@@ -237,8 +226,8 @@ function PluginReleaseRoute() {
               <Card>
                 <CardHeader className="gap-3 sm:flex-row sm:items-center sm:justify-between">
                   <CardTitle>Artifact</CardTitle>
-                  {storepack.sha256 ? (
-                    <InstallCopyButton text={storepack.sha256} ariaLabel="Copy StorePack SHA-256" />
+                  {clawpack.sha256 ? (
+                    <InstallCopyButton text={clawpack.sha256} ariaLabel="Copy Claw Pack SHA-256" />
                   ) : null}
                 </CardHeader>
                 <CardContent>
@@ -246,26 +235,26 @@ function PluginReleaseRoute() {
                     <div className="rounded-[var(--radius-sm)] border border-[color:var(--line)] p-3">
                       <dt className="mb-1 text-[color:var(--ink-soft)]">Format</dt>
                       <dd className="font-semibold text-[color:var(--ink)]">
-                        {storepack.format ?? "zip"} / spec {storepack.specVersion ?? "unknown"}
+                        {clawpack.format ?? "zip"} / spec {clawpack.specVersion ?? "unknown"}
                       </dd>
                     </div>
                     <div className="rounded-[var(--radius-sm)] border border-[color:var(--line)] p-3">
                       <dt className="mb-1 text-[color:var(--ink-soft)]">Size</dt>
                       <dd className="font-semibold text-[color:var(--ink)]">
-                        {formatStorePackBytes(storepack.size)} / {storepack.fileCount ?? 0} files
+                        {formatClawPackBytes(clawpack.size)} / {clawpack.fileCount ?? 0} files
                       </dd>
                     </div>
                     <div className="rounded-[var(--radius-sm)] border border-[color:var(--line)] p-3 sm:col-span-2">
                       <dt className="mb-1 text-[color:var(--ink-soft)]">SHA-256</dt>
                       <dd className="break-all font-mono text-xs text-[color:var(--ink)]">
-                        {storepack.sha256}
+                        {clawpack.sha256}
                       </dd>
                     </div>
-                    {storepack.manifestSha256 ? (
+                    {clawpack.manifestSha256 ? (
                       <div className="rounded-[var(--radius-sm)] border border-[color:var(--line)] p-3 sm:col-span-2">
                         <dt className="mb-1 text-[color:var(--ink-soft)]">Manifest SHA-256</dt>
                         <dd className="break-all font-mono text-xs text-[color:var(--ink)]">
-                          {storepack.manifestSha256}
+                          {clawpack.manifestSha256}
                         </dd>
                       </div>
                     ) : null}
@@ -276,8 +265,8 @@ function PluginReleaseRoute() {
               {manifestJson ? (
                 <Card>
                   <CardHeader className="gap-3 sm:flex-row sm:items-center sm:justify-between">
-                    <CardTitle>STOREPACK.json</CardTitle>
-                    <InstallCopyButton text={manifestJson} ariaLabel="Copy StorePack manifest" />
+                    <CardTitle>CLAWPACK.json</CardTitle>
+                    <InstallCopyButton text={manifestJson} ariaLabel="Copy Claw Pack manifest" />
                   </CardHeader>
                   <CardContent>
                     <pre className="max-h-[520px] overflow-auto rounded-[var(--radius-sm)] border border-[color:var(--line)] bg-[color:var(--surface-muted)] p-4 text-xs leading-5 text-[color:var(--ink)]">
@@ -289,8 +278,6 @@ function PluginReleaseRoute() {
             </div>
 
             <aside className="flex min-w-0 flex-col gap-4">
-              <PackageLifecyclePanel lifecycle={lifecycle} title="Lifecycle" compact />
-
               <Card>
                 <CardHeader>
                   <CardTitle className="flex items-center gap-2">
@@ -306,7 +293,7 @@ function PluginReleaseRoute() {
                       </pre>
                       <InstallCopyButton
                         text={verifyCommand}
-                        ariaLabel="Copy StorePack CLI commands"
+                        ariaLabel="Copy Claw Pack CLI commands"
                         showLabel={false}
                         className="skill-install-command-inline-button"
                       />
@@ -324,10 +311,10 @@ function PluginReleaseRoute() {
                 </CardHeader>
                 <CardContent>
                   <div className="flex flex-wrap gap-1.5">
-                    {storepack.hostTargets?.length
-                      ? storepack.hostTargets.map((target) => (
-                          <Badge key={formatStorePackTarget(target)} variant="compact">
-                            {formatStorePackTarget(target)}
+                    {clawpack.hostTargets?.length
+                      ? clawpack.hostTargets.map((target) => (
+                          <Badge key={formatClawPackTarget(target)} variant="compact">
+                            {formatClawPackTarget(target)}
                           </Badge>
                         ))
                       : "No host targets recorded"}

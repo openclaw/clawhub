@@ -19,7 +19,7 @@ export const ApiRoutes = {
   skills: "/api/v1/skills",
   plugins: "/api/v1/plugins",
   packages: "/api/v1/packages",
-  storepacks: "/api/v1/storepacks",
+  clawpacks: "/api/v1/clawpacks",
   codePlugins: "/api/v1/code-plugins",
   bundlePlugins: "/api/v1/bundle-plugins",
   stars: "/api/v1/stars",

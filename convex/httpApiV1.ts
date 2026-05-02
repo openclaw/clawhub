@@ -10,7 +10,7 @@ import {
   packagesPostRouterV1Handler,
   pluginsGetRouterV1Handler,
   publishPackageV1Handler,
-  storepacksGetRouterV1Handler,
+  clawpacksGetRouterV1Handler,
 } from "./httpApiV1/packagesV1";
 import {
   listSkillsV1Handler,
@@ -39,7 +39,7 @@ export const packagesGetRouterV1Http = httpAction(packagesGetRouterV1Handler);
 export const packagesPostRouterV1Http = httpAction(packagesPostRouterV1Handler);
 export const packagesDeleteRouterV1Http = httpAction(packagesDeleteRouterV1Handler);
 export const pluginsGetRouterV1Http = httpAction(pluginsGetRouterV1Handler);
-export const storepacksGetRouterV1Http = httpAction(storepacksGetRouterV1Handler);
+export const clawpacksGetRouterV1Http = httpAction(clawpacksGetRouterV1Handler);
 export const publishPackageV1Http = httpAction(publishPackageV1Handler);
 export const mintPublishTokenV1Http = httpAction(mintPublishTokenV1Handler);
 export const listCodePluginsV1Http = httpAction(listCodePluginsV1Handler);
@@ -74,7 +74,7 @@ export const __handlers = {
   packagesPostRouterV1Handler,
   packagesDeleteRouterV1Handler,
   pluginsGetRouterV1Handler,
-  storepacksGetRouterV1Handler,
+  clawpacksGetRouterV1Handler,
   publishPackageV1Handler,
   mintPublishTokenV1Handler,
   listCodePluginsV1Handler,

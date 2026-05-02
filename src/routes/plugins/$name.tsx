@@ -11,24 +11,26 @@ import { EmptyState } from "../../components/EmptyState";
 import { InstallCopyButton } from "../../components/InstallCopyButton";
 import { Container } from "../../components/layout/Container";
 import { MarkdownPreview } from "../../components/MarkdownPreview";
-import { PackageLifecyclePanel } from "../../components/PackageLifecyclePanel";
 import { Badge } from "../../components/ui/badge";
 import { Button } from "../../components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "../../components/ui/card";
 import { getUserFacingConvexError } from "../../lib/convexError";
 import { formatRetryDelay } from "../../lib/formatRetryDelay";
+import { formatCompactStat } from "../../lib/numberFormat";
 import {
   fetchPackageDetail,
   fetchPackageReadme,
   fetchPackageVersion,
+  fetchPackageVersions,
   getPackageDownloadPath,
   isRateLimitedPackageApiError,
   type PackageDetailResponse,
-  type PackageStorePackSummary,
+  type PackageClawPackSummary,
   type PackageVersionDetail,
+  type PackageVersionListItem,
 } from "../../lib/packageApi";
 import { familyLabel } from "../../lib/packageLabels";
-import { deriveStorePackLifecycle } from "../../lib/packageLifecycle";
+import { timeAgo } from "../../lib/timeAgo";
 import { useAuthStatus } from "../../lib/useAuthStatus";
 
 type PluginDetailRateLimitState = {
@@ -39,6 +41,7 @@ type PluginDetailRateLimitState = {
 type PluginDetailLoaderData = {
   detail: PackageDetailResponse;
   version: PackageVersionDetail | null;
+  versions: PackageVersionListItem[];
   readme: string | null;
   rateLimited: PluginDetailRateLimitState;
 };
@@ -62,6 +65,7 @@ export const Route = createFileRoute("/plugins/$name")({
           return {
             detail: { package: null, owner: null },
             version: null,
+            versions: [],
             readme: null,
             rateLimited: {
               scope: "detail",
@@ -80,23 +84,25 @@ export const Route = createFileRoute("/plugins/$name")({
     }
 
     if (!detail.package) {
-      return { detail, version: null, readme: null, rateLimited: null };
+      return { detail, version: null, versions: [], readme: null, rateLimited: null };
     }
 
     try {
-      const [version, readme] = await Promise.all([
+      const [version, versions, readme] = await Promise.all([
         detail.package.latestVersion
           ? fetchPackageVersion(resolvedName, detail.package.latestVersion)
           : Promise.resolve(null),
+        fetchPackageVersions(resolvedName, { limit: 8 }),
         fetchPackageReadme(resolvedName),
       ]);
 
-      return { detail, version, readme, rateLimited: null };
+      return { detail, version, versions: versions.items, readme, rateLimited: null };
     } catch (error) {
       if (isRateLimitedPackageApiError(error)) {
         return {
           detail,
           version: null,
+          versions: [],
           readme: null,
           rateLimited: {
             scope: "metadata",
@@ -183,21 +189,21 @@ function isEmptyObject(obj: unknown): boolean {
   return Object.keys(obj).length === 0;
 }
 
-function formatStorePackTarget(
-  target: NonNullable<PackageStorePackSummary["hostTargets"]>[number],
+function formatClawPackTarget(
+  target: NonNullable<PackageClawPackSummary["hostTargets"]>[number],
 ) {
   return [target.os, target.arch, target.libc].filter(Boolean).join("-");
 }
 
-function formatStorePackBytes(value: number | null | undefined) {
+function formatClawPackBytes(value: number | null | undefined) {
   if (!value || value <= 0) return "unknown";
   if (value < 1024) return `${value}B`;
   if (value < 1024 * 1024) return `${(value / 1024).toFixed(1)}KB`;
   return `${(value / (1024 * 1024)).toFixed(1)}MB`;
 }
 
-function storePackEnvironmentLabels(storepack: PackageStorePackSummary | null | undefined) {
-  const environment = storepack?.environment;
+function clawPackEnvironmentLabels(clawpack: PackageClawPackSummary | null | undefined) {
+  const environment = clawpack?.environment;
   if (!environment) return [];
   return [
     environment.requiresLocalDesktop ? "local desktop" : null,
@@ -211,9 +217,14 @@ function storePackEnvironmentLabels(storepack: PackageStorePackSummary | null | 
   ].filter((label): label is string => Boolean(label));
 }
 
+function formatPackageCount(value: number | undefined | null) {
+  return formatCompactStat(value ?? 0);
+}
+
 function PluginDetailRoute() {
   const { name } = Route.useParams();
-  const { detail, version, readme, rateLimited } = Route.useLoaderData() as PluginDetailLoaderData;
+  const { detail, version, versions, readme, rateLimited } =
+    Route.useLoaderData() as PluginDetailLoaderData;
   const pathname = useRouterState({ select: (state) => state.location.pathname });
   const { isAuthenticated } = useAuthStatus();
   const requestPluginRescan = useMutation(api.packages.requestRescan);
@@ -277,19 +288,10 @@ function PluginDetailRoute() {
   const capabilities = latestRelease?.capabilities ?? pkg.capabilities;
   const compatibility = latestRelease?.compatibility ?? pkg.compatibility;
   const verification = latestRelease?.verification ?? pkg.verification;
-  const packageStorepack = (pkg as typeof pkg & { storepack?: PackageStorePackSummary }).storepack;
-  const storepack: PackageStorePackSummary | null =
-    latestRelease?.storepack ?? packageStorepack ?? null;
-  const storepackEnvironment = storePackEnvironmentLabels(storepack);
-  const lifecycle = deriveStorePackLifecycle({
-    available: storepack?.available ?? false,
-    verificationScanStatus: latestRelease?.verification?.scanStatus ?? pkg.verification?.scanStatus,
-    vtStatus: latestRelease?.vtAnalysis?.status,
-    vtVerdict: latestRelease?.vtAnalysis?.verdict,
-    llmStatus: latestRelease?.llmAnalysis?.status,
-    llmVerdict: latestRelease?.llmAnalysis?.verdict,
-    staticScanStatus: latestRelease?.staticScan?.status,
-  });
+  const packageStorepack = (pkg as typeof pkg & { clawpack?: PackageClawPackSummary }).clawpack;
+  const clawpack: PackageClawPackSummary | null =
+    latestRelease?.clawpack ?? packageStorepack ?? null;
+  const clawpackEnvironment = clawPackEnvironmentLabels(clawpack);
   const requestRescan = async () => {
     const packageId = (pkg as { _id?: Id<"packages"> })._id;
     if (!packageId) {
@@ -362,6 +364,16 @@ function PluginDetailRoute() {
                       </span>
                     </>
                   ) : null}
+                  {pkg.stats ? (
+                    <>
+                      <span className="text-ink-soft opacity-40">·</span>
+                      <span className="stat">
+                        {formatPackageCount(pkg.stats.downloads)} downloads
+                      </span>
+                      <span className="text-ink-soft opacity-40">·</span>
+                      <span className="stat">{formatPackageCount(pkg.stats.versions)} versions</span>
+                    </>
+                  ) : null}
                   {owner?.handle ? (
                     <>
                       <span className="text-ink-soft opacity-40">·</span>
@@ -429,10 +441,135 @@ function PluginDetailRoute() {
                 </div>
               </CardContent>
             </Card>
-            {latestRelease ? (
-              <PackageLifecyclePanel lifecycle={lifecycle} title="Release lifecycle" compact />
-            ) : null}
           </div>
+
+          {clawpack ? (
+            <Card>
+              <CardHeader className="gap-3 sm:flex-row sm:items-center sm:justify-between">
+                <CardTitle>Claw Pack</CardTitle>
+                {clawpack.available && clawpack.sha256 ? (
+                  <InstallCopyButton text={clawpack.sha256} ariaLabel="Copy Claw Pack SHA-256" />
+                ) : null}
+              </CardHeader>
+              <CardContent>
+                <dl className="flex flex-col gap-3 text-sm">
+                  <div className="flex flex-col gap-1.5 border-b border-[color:var(--line)] pb-3 sm:grid sm:grid-cols-[minmax(140px,220px)_1fr] sm:gap-x-4 sm:gap-y-0">
+                    <dt className="font-semibold text-[color:var(--ink-soft)]">Artifact</dt>
+                    <dd className="text-[color:var(--ink)]">
+                      {clawpack.available
+                        ? `${clawpack.format ?? "zip"} / ${formatClawPackBytes(
+                            clawpack.size,
+                          )} / ${clawpack.fileCount ?? 0} files`
+                        : "Not generated yet"}
+                    </dd>
+                  </div>
+                  {clawpack.sha256 ? (
+                    <div className="flex flex-col gap-1.5 border-b border-[color:var(--line)] pb-3 sm:grid sm:grid-cols-[minmax(140px,220px)_1fr] sm:gap-x-4 sm:gap-y-0">
+                      <dt className="font-semibold text-[color:var(--ink-soft)]">SHA-256</dt>
+                      <dd className="min-w-0 break-all font-mono text-xs text-[color:var(--ink)]">
+                        {clawpack.sha256}
+                      </dd>
+                    </div>
+                  ) : null}
+                  {clawpack.hostTargets?.length ? (
+                    <div className="flex flex-col gap-1.5 border-b border-[color:var(--line)] pb-3 sm:grid sm:grid-cols-[minmax(140px,220px)_1fr] sm:gap-x-4 sm:gap-y-0">
+                      <dt className="font-semibold text-[color:var(--ink-soft)]">Host targets</dt>
+                      <dd className="flex flex-wrap gap-1.5">
+                        {clawpack.hostTargets.map((target) => (
+                          <Badge key={formatClawPackTarget(target)} variant="compact">
+                            {formatClawPackTarget(target)}
+                          </Badge>
+                        ))}
+                      </dd>
+                    </div>
+                  ) : null}
+                  {clawpackEnvironment.length ? (
+                    <div className="flex flex-col gap-1.5 border-b border-[color:var(--line)] pb-3 sm:grid sm:grid-cols-[minmax(140px,220px)_1fr] sm:gap-x-4 sm:gap-y-0">
+                      <dt className="font-semibold text-[color:var(--ink-soft)]">Environment</dt>
+                      <dd className="flex flex-wrap gap-1.5">
+                        {clawpackEnvironment.map((label) => (
+                          <Badge key={label} variant="compact">
+                            {label}
+                          </Badge>
+                        ))}
+                      </dd>
+                    </div>
+                  ) : null}
+                  {clawpack.buildVersion ? (
+                    <div className="flex flex-col gap-1.5 last:border-b-0 last:pb-0 sm:grid sm:grid-cols-[minmax(140px,220px)_1fr] sm:gap-x-4 sm:gap-y-0">
+                      <dt className="font-semibold text-[color:var(--ink-soft)]">Builder</dt>
+                      <dd className="text-[color:var(--ink)]">{clawpack.buildVersion}</dd>
+                    </div>
+                  ) : null}
+                </dl>
+                {latestRelease?.version && clawpack.available ? (
+                  <div className="mt-4 flex flex-wrap gap-2 border-t border-[color:var(--line)] pt-4">
+                    <Button asChild variant="outline" size="sm">
+                      <Link
+                        to="/plugins/$name/releases/$version"
+                        params={{ name: pkg.name, version: latestRelease.version }}
+                      >
+                        Artifact details
+                      </Link>
+                    </Button>
+                    <Button asChild variant="ghost" size="sm">
+                      <a href={getPackageDownloadPath(pkg.name, latestRelease.version)}>
+                        <Download size={16} />
+                        Download Claw Pack
+                      </a>
+                    </Button>
+                  </div>
+                ) : null}
+              </CardContent>
+            </Card>
+          ) : null}
+
+          {versions.length ? (
+            <Card>
+              <CardHeader>
+                <CardTitle>Versions</CardTitle>
+              </CardHeader>
+              <CardContent>
+                <div className="flex flex-col divide-y divide-[color:var(--line)]">
+                  {versions.map((item) => (
+                    <div
+                      key={item.version}
+                      className="flex flex-col gap-3 py-3 first:pt-0 last:pb-0 sm:flex-row sm:items-center sm:justify-between"
+                    >
+                      <div className="min-w-0">
+                        <div className="flex flex-wrap items-center gap-2">
+                          <Link
+                            to="/plugins/$name/releases/$version"
+                            params={{ name: pkg.name, version: item.version }}
+                            className="font-mono text-sm font-semibold text-[color:var(--ink)] hover:text-[color:var(--accent)]"
+                          >
+                            {item.version}
+                          </Link>
+                          {item.distTags?.map((tag) => (
+                            <Badge key={`${item.version}-${tag}`} variant="compact">
+                              {tag}
+                            </Badge>
+                          ))}
+                        </div>
+                        <p className="mt-1 line-clamp-2 text-sm text-[color:var(--ink-soft)]">
+                          {item.changelog || "No changelog provided."}
+                        </p>
+                        <p className="mt-1 text-xs text-[color:var(--ink-soft)]">
+                          published {timeAgo(item.createdAt)}
+                        </p>
+                      </div>
+                      <Button asChild variant="outline" size="sm" className="shrink-0">
+                        <a href={getPackageDownloadPath(pkg.name, item.version)}>
+                          <Download size={16} />
+                          Download
+                        </a>
+                      </Button>
+                    </div>
+                  ))}
+                </div>
+              </CardContent>
+            </Card>
+          ) : null}
 
           {readme ? (
             <Card className="tab-card">
@@ -441,87 +578,6 @@ function PluginDetailRoute() {
               </CardHeader>
               <CardContent>
                 <MarkdownPreview>{readme}</MarkdownPreview>
-              </CardContent>
-            </Card>
-          ) : null}
-
-          {storepack ? (
-            <Card>
-              <CardHeader className="gap-3 sm:flex-row sm:items-center sm:justify-between">
-                <CardTitle>StorePack</CardTitle>
-                {storepack.available && storepack.sha256 ? (
-                  <InstallCopyButton text={storepack.sha256} ariaLabel="Copy StorePack SHA-256" />
-                ) : null}
-              </CardHeader>
-              <CardContent>
-                <dl className="flex flex-col gap-3 text-sm">
-                  <div className="flex flex-col gap-1.5 border-b border-[color:var(--line)] pb-3 sm:grid sm:grid-cols-[minmax(140px,220px)_1fr] sm:gap-x-4 sm:gap-y-0">
-                    <dt className="font-semibold text-[color:var(--ink-soft)]">Artifact</dt>
-                    <dd className="text-[color:var(--ink)]">
-                      {storepack.available
-                        ? `${storepack.format ?? "zip"} / ${formatStorePackBytes(
-                            storepack.size,
-                          )} / ${storepack.fileCount ?? 0} files`
-                        : "Not generated yet"}
-                    </dd>
-                  </div>
-                  {storepack.sha256 ? (
-                    <div className="flex flex-col gap-1.5 border-b border-[color:var(--line)] pb-3 sm:grid sm:grid-cols-[minmax(140px,220px)_1fr] sm:gap-x-4 sm:gap-y-0">
-                      <dt className="font-semibold text-[color:var(--ink-soft)]">SHA-256</dt>
-                      <dd className="min-w-0 break-all font-mono text-xs text-[color:var(--ink)]">
-                        {storepack.sha256}
-                      </dd>
-                    </div>
-                  ) : null}
-                  {storepack.hostTargets?.length ? (
-                    <div className="flex flex-col gap-1.5 border-b border-[color:var(--line)] pb-3 sm:grid sm:grid-cols-[minmax(140px,220px)_1fr] sm:gap-x-4 sm:gap-y-0">
-                      <dt className="font-semibold text-[color:var(--ink-soft)]">Host targets</dt>
-                      <dd className="flex flex-wrap gap-1.5">
-                        {storepack.hostTargets.map((target) => (
-                          <Badge key={formatStorePackTarget(target)} variant="compact">
-                            {formatStorePackTarget(target)}
-                          </Badge>
-                        ))}
-                      </dd>
-                    </div>
-                  ) : null}
-                  {storepackEnvironment.length ? (
-                    <div className="flex flex-col gap-1.5 border-b border-[color:var(--line)] pb-3 sm:grid sm:grid-cols-[minmax(140px,220px)_1fr] sm:gap-x-4 sm:gap-y-0">
-                      <dt className="font-semibold text-[color:var(--ink-soft)]">Environment</dt>
-                      <dd className="flex flex-wrap gap-1.5">
-                        {storepackEnvironment.map((label) => (
-                          <Badge key={label} variant="compact">
-                            {label}
-                          </Badge>
-                        ))}
-                      </dd>
-                    </div>
-                  ) : null}
-                  {storepack.buildVersion ? (
-                    <div className="flex flex-col gap-1.5 last:border-b-0 last:pb-0 sm:grid sm:grid-cols-[minmax(140px,220px)_1fr] sm:gap-x-4 sm:gap-y-0">
-                      <dt className="font-semibold text-[color:var(--ink-soft)]">Builder</dt>
-                      <dd className="text-[color:var(--ink)]">{storepack.buildVersion}</dd>
-                    </div>
-                  ) : null}
-                </dl>
-                {latestRelease?.version && storepack.available ? (
-                  <div className="mt-4 flex flex-wrap gap-2 border-t border-[color:var(--line)] pt-4">
-                    <Button asChild variant="outline" size="sm">
-                      <Link
-                        to="/plugins/$name/releases/$version"
-                        params={{ name: pkg.name, version: latestRelease.version }}
-                      >
-                        Inspect release
-                      </Link>
-                    </Button>
-                    <Button asChild variant="ghost" size="sm">
-                      <a href={getPackageDownloadPath(pkg.name, latestRelease.version)}>
-                        <Download size={16} />
-                        Download StorePack
-                      </a>
-                    </Button>
-                  </div>
-                ) : null}
               </CardContent>
             </Card>
           ) : null}

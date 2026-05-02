@@ -3795,7 +3795,7 @@ describe("httpApiV1 handlers", () => {
     });
   });
 
-  it("package download serves the stored StorePack artifact when present", async () => {
+  it("package download serves the stored Claw Pack artifact when present", async () => {
     const runMutation = vi.fn().mockResolvedValue(okRate());
     const runQuery = vi.fn(async (_query: unknown, args: Record<string, unknown>) => {
       if ("name" in args) {
@@ -3831,7 +3831,7 @@ describe("httpApiV1 handlers", () => {
               contentType: "application/json",
             },
           ],
-          storepackStorageId: "storage:storepack",
+          storepackStorageId: "storage:clawpack",
           storepackSha256: "ab".repeat(32),
           storepackSize: 13,
           storepackSpecVersion: 1,
@@ -3840,8 +3840,8 @@ describe("httpApiV1 handlers", () => {
       return null;
     });
     const storageGet = vi.fn(async (storageId: string) => {
-      if (storageId === "storage:storepack") {
-        return new Blob(["storepack zip"], { type: "application/zip" });
+      if (storageId === "storage:clawpack") {
+        return new Blob(["clawpack zip"], { type: "application/zip" });
       }
       throw new Error(`unexpected storage read: ${storageId}`);
     });
@@ -3858,24 +3858,24 @@ describe("httpApiV1 handlers", () => {
     );
 
     expect(response.status).toBe(200);
-    expect(await response.text()).toBe("storepack zip");
+    expect(await response.text()).toBe("clawpack zip");
     expect(storageGet).toHaveBeenCalledTimes(1);
-    expect(storageGet).toHaveBeenCalledWith("storage:storepack");
+    expect(storageGet).toHaveBeenCalledWith("storage:clawpack");
     expect(response.headers.get("Content-Disposition")).toBe(
-      'attachment; filename="@openclaw-kitchen-sink-1.0.0.storepack.zip"',
+      'attachment; filename="@openclaw-kitchen-sink-1.0.0.clawpack.zip"',
     );
     expect(response.headers.get("ETag")).toBe(`"sha256:${"ab".repeat(32)}"`);
     expect(response.headers.get("Digest")).toBe(
       `sha-256=${Buffer.from("ab".repeat(32), "hex").toString("base64")}`,
     );
-    expect(response.headers.get("X-ClawHub-StorePack-Sha256")).toBe("ab".repeat(32));
-    expect(response.headers.get("X-ClawHub-StorePack-Spec-Version")).toBe("1");
+    expect(response.headers.get("X-ClawHub-ClawPack-Sha256")).toBe("ab".repeat(32));
+    expect(response.headers.get("X-ClawHub-ClawPack-Spec-Version")).toBe("1");
     expect(runMutation).toHaveBeenCalledWith(internal.packages.recordPackageDownloadInternal, {
       packageId: "packages:1",
     });
   });
 
-  it("returns release StorePack metadata without reading the artifact blob", async () => {
+  it("returns release Claw Pack metadata without reading the artifact blob", async () => {
     const runMutation = vi.fn().mockResolvedValue(okRate());
     const runQuery = vi.fn(async (_query: unknown, args: Record<string, unknown>) => {
       if ("version" in args) {
@@ -3892,7 +3892,7 @@ describe("httpApiV1 handlers", () => {
             createdAt: 1,
             changelog: "init",
             files: [],
-            storepackStorageId: "storage:storepack",
+            storepackStorageId: "storage:clawpack",
             storepackSha256: "ab".repeat(32),
             storepackSize: 13,
             storepackSpecVersion: 1,
@@ -3934,13 +3934,13 @@ describe("httpApiV1 handlers", () => {
         },
       }),
       new Request(
-        "https://example.com/api/v1/packages/%40openclaw%2Fkitchen-sink/versions/1.0.0/storepack",
+        "https://example.com/api/v1/packages/%40openclaw%2Fkitchen-sink/versions/1.0.0/clawpack",
       ),
     );
 
     expect(response.status).toBe(200);
     const body = await response.json();
-    expect(body.storepack).toMatchObject({
+    expect(body.clawpack).toMatchObject({
       available: true,
       sha256: "ab".repeat(32),
       size: 13,
@@ -3949,21 +3949,21 @@ describe("httpApiV1 handlers", () => {
     });
     expect(body.links).toEqual({
       download: "/api/v1/packages/%40openclaw%2Fkitchen-sink/download?version=1.0.0",
-      immutable: `/api/v1/storepacks/${"ab".repeat(32)}`,
-      manifest: "/api/v1/packages/%40openclaw%2Fkitchen-sink/versions/1.0.0/storepack/manifest",
+      immutable: `/api/v1/clawpacks/${"ab".repeat(32)}`,
+      manifest: "/api/v1/packages/%40openclaw%2Fkitchen-sink/versions/1.0.0/clawpack/manifest",
     });
     expect(storageGet).not.toHaveBeenCalled();
   });
 
-  it("returns a release StorePack manifest from the stored artifact", async () => {
+  it("returns a release Claw Pack manifest from the stored artifact", async () => {
     const manifest = {
-      kind: "openclaw.storepack",
+      kind: "openclaw.clawpack",
       specVersion: 1,
       package: { name: "@openclaw/kitchen-sink", version: "1.0.0" },
       files: [{ path: "package.json", sha256: "a".repeat(64), size: 2 }],
     };
     const zip = zipSync({
-      "package/STOREPACK.json": new TextEncoder().encode(JSON.stringify(manifest)),
+      "package/CLAWPACK.json": new TextEncoder().encode(JSON.stringify(manifest)),
     });
     const runMutation = vi.fn().mockResolvedValue(okRate());
     const runQuery = vi.fn(async (_query: unknown, args: Record<string, unknown>) => {
@@ -3981,7 +3981,7 @@ describe("httpApiV1 handlers", () => {
             createdAt: 1,
             changelog: "init",
             files: [],
-            storepackStorageId: "storage:storepack",
+            storepackStorageId: "storage:clawpack",
             storepackSha256: "ab".repeat(32),
             storepackSize: zip.byteLength,
             storepackSpecVersion: 1,
@@ -4010,7 +4010,7 @@ describe("httpApiV1 handlers", () => {
       return null;
     });
     const storageGet = vi.fn(async (storageId: string) => {
-      if (storageId === "storage:storepack") {
+      if (storageId === "storage:clawpack") {
         const zipBlobPart = zip.buffer.slice(
           zip.byteOffset,
           zip.byteOffset + zip.byteLength,
@@ -4031,7 +4031,7 @@ describe("httpApiV1 handlers", () => {
         },
       }),
       new Request(
-        "https://example.com/api/v1/packages/%40openclaw%2Fkitchen-sink/versions/1.0.0/storepack/manifest",
+        "https://example.com/api/v1/packages/%40openclaw%2Fkitchen-sink/versions/1.0.0/clawpack/manifest",
       ),
     );
 
@@ -4043,12 +4043,12 @@ describe("httpApiV1 handlers", () => {
       family: "code-plugin",
     });
     expect(body.version).toBe("1.0.0");
-    expect(body.storepack.sha256).toBe("ab".repeat(32));
+    expect(body.clawpack.sha256).toBe("ab".repeat(32));
     expect(body.manifest).toEqual(manifest);
-    expect(storageGet).toHaveBeenCalledWith("storage:storepack");
+    expect(storageGet).toHaveBeenCalledWith("storage:clawpack");
   });
 
-  it("package download refuses revoked StorePack artifacts", async () => {
+  it("package download refuses revoked Claw Pack artifacts", async () => {
     const runMutation = vi.fn().mockResolvedValue(okRate());
     const runQuery = vi.fn(async (_query: unknown, args: Record<string, unknown>) => {
       if ("name" in args) {
@@ -4076,7 +4076,7 @@ describe("httpApiV1 handlers", () => {
           createdAt: 1,
           changelog: "init",
           files: [],
-          storepackStorageId: "storage:storepack",
+          storepackStorageId: "storage:clawpack",
           storepackSha256: "ab".repeat(32),
           storepackSize: 13,
           storepackSpecVersion: 1,
@@ -4099,7 +4099,7 @@ describe("httpApiV1 handlers", () => {
     );
 
     expect(response.status).toBe(410);
-    expect(await response.text()).toBe("StorePack revoked");
+    expect(await response.text()).toBe("Claw Pack revoked");
     expect(storageGet).not.toHaveBeenCalled();
     expect(
       runMutation.mock.calls.some(
@@ -4108,7 +4108,7 @@ describe("httpApiV1 handlers", () => {
     ).toBe(false);
   });
 
-  it("serves StorePack artifacts by digest with immutable cache headers", async () => {
+  it("serves Claw Pack artifacts by digest with immutable cache headers", async () => {
     const sha256 = "ab".repeat(32);
     const runMutation = vi.fn().mockResolvedValue(okRate());
     const runQuery = vi.fn(async (_query: unknown, args: Record<string, unknown>) => {
@@ -4116,7 +4116,7 @@ describe("httpApiV1 handlers", () => {
         return {
           status: "ok",
           artifact: {
-            storageId: "storage:storepack",
+            storageId: "storage:clawpack",
             sha256,
             size: 13,
             format: "zip",
@@ -4134,31 +4134,31 @@ describe("httpApiV1 handlers", () => {
       }
       return null;
     });
-    const storageGet = vi.fn(async () => new Blob(["storepack zip"], { type: "application/zip" }));
+    const storageGet = vi.fn(async () => new Blob(["clawpack zip"], { type: "application/zip" }));
 
-    const response = await __handlers.storepacksGetRouterV1Handler(
+    const response = await __handlers.clawpacksGetRouterV1Handler(
       makeCtx({
         runQuery,
         runMutation,
         storage: { get: storageGet },
       }),
-      new Request(`https://example.com/api/v1/storepacks/${sha256}`),
+      new Request(`https://example.com/api/v1/clawpacks/${sha256}`),
     );
 
     expect(response.status).toBe(200);
-    expect(await response.text()).toBe("storepack zip");
+    expect(await response.text()).toBe("clawpack zip");
     expect(response.headers.get("Cache-Control")).toBe("public, max-age=31536000, immutable");
     expect(response.headers.get("ETag")).toBe(`"sha256:${sha256}"`);
     expect(response.headers.get("Digest")).toBe(
       `sha-256=${Buffer.from(sha256, "hex").toString("base64")}`,
     );
-    expect(storageGet).toHaveBeenCalledWith("storage:storepack");
+    expect(storageGet).toHaveBeenCalledWith("storage:clawpack");
     expect(runMutation).toHaveBeenCalledWith(internal.packages.recordPackageDownloadInternal, {
       packageId: "packages:1",
     });
   });
 
-  it("supports HEAD for digest-addressed StorePack artifacts without recording a download", async () => {
+  it("supports HEAD for digest-addressed Claw Pack artifacts without recording a download", async () => {
     const sha256 = "cd".repeat(32);
     const runMutation = vi.fn().mockResolvedValue(okRate());
     const runQuery = vi.fn(async (_query: unknown, args: Record<string, unknown>) => {
@@ -4166,7 +4166,7 @@ describe("httpApiV1 handlers", () => {
         return {
           status: "ok",
           artifact: {
-            storageId: "storage:storepack",
+            storageId: "storage:clawpack",
             sha256,
             size: 13,
             format: "zip",
@@ -4184,22 +4184,22 @@ describe("httpApiV1 handlers", () => {
       }
       return null;
     });
-    const storageGet = vi.fn(async () => new Blob(["storepack zip"], { type: "application/zip" }));
+    const storageGet = vi.fn(async () => new Blob(["clawpack zip"], { type: "application/zip" }));
 
-    const response = await __handlers.storepacksGetRouterV1Handler(
+    const response = await __handlers.clawpacksGetRouterV1Handler(
       makeCtx({
         runQuery,
         runMutation,
         storage: { get: storageGet },
       }),
-      new Request(`https://example.com/api/v1/storepacks/${sha256}`, { method: "HEAD" }),
+      new Request(`https://example.com/api/v1/clawpacks/${sha256}`, { method: "HEAD" }),
     );
 
     expect(response.status).toBe(200);
     expect(await response.text()).toBe("");
     expect(response.headers.get("Content-Length")).toBe("13");
     expect(response.headers.get("Cache-Control")).toBe("public, max-age=31536000, immutable");
-    expect(storageGet).toHaveBeenCalledWith("storage:storepack");
+    expect(storageGet).toHaveBeenCalledWith("storage:clawpack");
     expect(
       runMutation.mock.calls.some(
         ([ref]) => ref === internal.packages.recordPackageDownloadInternal,
@@ -4207,7 +4207,7 @@ describe("httpApiV1 handlers", () => {
     ).toBe(false);
   });
 
-  it("returns gone for revoked digest-addressed StorePack artifacts", async () => {
+  it("returns gone for revoked digest-addressed Claw Pack artifacts", async () => {
     const sha256 = "ef".repeat(32);
     const runMutation = vi.fn().mockResolvedValue(okRate());
     const runQuery = vi.fn(async (_query: unknown, args: Record<string, unknown>) => {
@@ -4215,15 +4215,15 @@ describe("httpApiV1 handlers", () => {
       return null;
     });
 
-    const response = await __handlers.storepacksGetRouterV1Handler(
+    const response = await __handlers.clawpacksGetRouterV1Handler(
       makeCtx({ runQuery, runMutation, storage: { get: vi.fn() } }),
-      new Request(`https://example.com/api/v1/storepacks/${sha256}`),
+      new Request(`https://example.com/api/v1/clawpacks/${sha256}`),
     );
 
     expect(response.status).toBe(410);
   });
 
-  it("storepack migration status requires an admin API token", async () => {
+  it("clawpack migration status requires an admin API token", async () => {
     vi.mocked(requireApiTokenUser).mockResolvedValue({
       userId: "users:admin",
       user: { _id: "users:admin", role: "admin" },
@@ -4242,7 +4242,7 @@ describe("httpApiV1 handlers", () => {
 
     const response = await __handlers.packagesGetRouterV1Handler(
       makeCtx({ runQuery, runMutation }),
-      new Request("https://example.com/api/v1/packages/storepack/migration-status?limit=7"),
+      new Request("https://example.com/api/v1/packages/clawpack/migration-status?limit=7"),
     );
 
     expect(response.status).toBe(200);
@@ -4252,7 +4252,7 @@ describe("httpApiV1 handlers", () => {
     });
   });
 
-  it("storepack migration readiness requires an admin API token", async () => {
+  it("clawpack migration readiness requires an admin API token", async () => {
     vi.mocked(requireApiTokenUser).mockResolvedValue({
       userId: "users:admin",
       user: { _id: "users:admin", role: "admin" },
@@ -4270,7 +4270,7 @@ describe("httpApiV1 handlers", () => {
 
     const response = await __handlers.packagesGetRouterV1Handler(
       makeCtx({ runQuery, runMutation }),
-      new Request("https://example.com/api/v1/packages/storepack/migration-readiness"),
+      new Request("https://example.com/api/v1/packages/clawpack/migration-readiness"),
     );
 
     expect(response.status).toBe(200);
@@ -4280,7 +4280,7 @@ describe("httpApiV1 handlers", () => {
     });
   });
 
-  it("storepack migration run dry-run and list routes require an admin API token", async () => {
+  it("clawpack migration run dry-run and list routes require an admin API token", async () => {
     vi.mocked(requireApiTokenUser).mockResolvedValue({
       userId: "users:admin",
       user: { _id: "users:admin", role: "admin" },
@@ -4306,13 +4306,13 @@ describe("httpApiV1 handlers", () => {
     const dryRunResponse = await __handlers.packagesGetRouterV1Handler(
       makeCtx({ runQuery, runMutation }),
       new Request(
-        "https://example.com/api/v1/packages/storepack/migration-runs/dry-run?operation=artifact-backfill&limit=5",
+        "https://example.com/api/v1/packages/clawpack/migration-runs/dry-run?operation=artifact-backfill&limit=5",
       ),
     );
     const listResponse = await __handlers.packagesGetRouterV1Handler(
       makeCtx({ runQuery, runMutation }),
       new Request(
-        "https://example.com/api/v1/packages/storepack/migration-runs?status=pending&limit=10",
+        "https://example.com/api/v1/packages/clawpack/migration-runs?status=pending&limit=10",
       ),
     );
 
@@ -4328,7 +4328,7 @@ describe("httpApiV1 handlers", () => {
     });
   });
 
-  it("storepack migration run create and continue routes dispatch admin operations", async () => {
+  it("clawpack migration run create and continue routes dispatch admin operations", async () => {
     vi.mocked(requireApiTokenUser).mockResolvedValue({
       userId: "users:admin",
       user: { _id: "users:admin", role: "admin" },
@@ -4350,7 +4350,7 @@ describe("httpApiV1 handlers", () => {
 
     const createResponse = await __handlers.packagesPostRouterV1Handler(
       makeCtx({ runAction, runMutation }),
-      new Request("https://example.com/api/v1/packages/storepack/migration-runs", {
+      new Request("https://example.com/api/v1/packages/clawpack/migration-runs", {
         method: "POST",
         body: JSON.stringify({ operation: "failure-retry", limit: 3 }),
       }),
@@ -4358,7 +4358,7 @@ describe("httpApiV1 handlers", () => {
     const continueResponse = await __handlers.packagesPostRouterV1Handler(
       makeCtx({ runAction, runMutation }),
       new Request(
-        "https://example.com/api/v1/packages/storepack/migration-runs/storePackMigrationRuns:1/continue",
+        "https://example.com/api/v1/packages/clawpack/migration-runs/storePackMigrationRuns:1/continue",
         { method: "POST" },
       ),
     );
@@ -4383,7 +4383,7 @@ describe("httpApiV1 handlers", () => {
     });
   });
 
-  it("storepack backfill dispatches the admin action", async () => {
+  it("clawpack backfill dispatches the admin action", async () => {
     vi.mocked(requireApiTokenUser).mockResolvedValue({
       userId: "users:admin",
       user: { _id: "users:admin", role: "admin" },
@@ -4398,7 +4398,7 @@ describe("httpApiV1 handlers", () => {
 
     const response = await __handlers.packagesPostRouterV1Handler(
       makeCtx({ runAction, runMutation }),
-      new Request("https://example.com/api/v1/packages/storepack/backfill", {
+      new Request("https://example.com/api/v1/packages/clawpack/backfill", {
         method: "POST",
         body: JSON.stringify({ limit: 2 }),
       }),
@@ -4415,7 +4415,7 @@ describe("httpApiV1 handlers", () => {
     });
   });
 
-  it("storepack index backfill dispatches the admin action", async () => {
+  it("clawpack index backfill dispatches the admin action", async () => {
     vi.mocked(requireApiTokenUser).mockResolvedValue({
       userId: "users:admin",
       user: { _id: "users:admin", role: "admin" },
@@ -4432,7 +4432,7 @@ describe("httpApiV1 handlers", () => {
 
     const response = await __handlers.packagesPostRouterV1Handler(
       makeCtx({ runAction, runMutation }),
-      new Request("https://example.com/api/v1/packages/storepack/index-backfill", {
+      new Request("https://example.com/api/v1/packages/clawpack/index-backfill", {
         method: "POST",
         body: JSON.stringify({ limit: 2, cursor: "cursor:1" }),
       }),
@@ -4450,7 +4450,7 @@ describe("httpApiV1 handlers", () => {
     });
   });
 
-  it("storepack failure retry dispatches the admin action", async () => {
+  it("clawpack failure retry dispatches the admin action", async () => {
     vi.mocked(requireApiTokenUser).mockResolvedValue({
       userId: "users:admin",
       user: { _id: "users:admin", role: "admin" },
@@ -4465,7 +4465,7 @@ describe("httpApiV1 handlers", () => {
 
     const response = await __handlers.packagesPostRouterV1Handler(
       makeCtx({ runAction, runMutation }),
-      new Request("https://example.com/api/v1/packages/storepack/retry-failures", {
+      new Request("https://example.com/api/v1/packages/clawpack/retry-failures", {
         method: "POST",
         body: JSON.stringify({ limit: 1 }),
       }),
@@ -4482,7 +4482,7 @@ describe("httpApiV1 handlers", () => {
     });
   });
 
-  it("storepack revoke dispatches the moderator mutation", async () => {
+  it("clawpack revoke dispatches the moderator mutation", async () => {
     vi.mocked(requireApiTokenUser).mockResolvedValue({
       userId: "users:moderator",
       user: { _id: "users:moderator", role: "moderator" },
@@ -4502,7 +4502,7 @@ describe("httpApiV1 handlers", () => {
     const response = await __handlers.packagesPostRouterV1Handler(
       makeCtx({ runMutation }),
       new Request(
-        "https://example.com/api/v1/packages/%40openclaw%2Fkitchen-sink/versions/1.0.0/storepack/revoke",
+        "https://example.com/api/v1/packages/%40openclaw%2Fkitchen-sink/versions/1.0.0/clawpack/revoke",
         {
           method: "POST",
           body: JSON.stringify({ reason: "malware confirmed" }),

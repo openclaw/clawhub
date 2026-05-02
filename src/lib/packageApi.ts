@@ -1,4 +1,5 @@
 import type {
+  ApiV1PackageVersionListResponse,
   ApiV1PackageResponse,
   PackageCapabilitySummary,
   PackageCompatibility,
@@ -8,7 +9,7 @@ import { ApiRoutes } from "clawhub-schema/routes";
 import { hasOwnProperty } from "./hasOwnProperty";
 import { getRequiredRuntimeEnv, getRuntimeEnv } from "./runtimeEnv";
 
-export type PackageStorePackSummary = {
+export type PackageClawPackSummary = {
   available: boolean;
   specVersion: number | null;
   sha256: string | null;
@@ -56,13 +57,15 @@ export type PackageListItem = {
   capabilityTags?: string[];
   executesCode?: boolean;
   verificationTier?: string | null;
-  storepackAvailable?: boolean;
+  clawpackAvailable?: boolean;
   hostTargetKeys?: string[];
   environmentFlags?: string[];
-  storepack?: PackageStorePackSummary;
+  clawpack?: PackageClawPackSummary;
 };
 
 export type PackageDetailResponse = ApiV1PackageResponse;
+
+export type PackageVersionListItem = ApiV1PackageVersionListResponse["items"][number];
 
 export type PackageVersionDetail = {
   package: {
@@ -123,11 +126,11 @@ export type PackageVersionDetail = {
       engineVersion: string;
       checkedAt: number;
     } | null;
-    storepack?: PackageStorePackSummary;
+    clawpack?: PackageClawPackSummary;
   } | null;
 };
 
-export type PackageStorePackReleaseDetail = {
+export type PackageClawPackReleaseDetail = {
   package: {
     name: string;
     displayName: string;
@@ -143,7 +146,7 @@ export type PackageStorePackReleaseDetail = {
     llmAnalysis?: NonNullable<PackageVersionDetail["version"]>["llmAnalysis"];
     staticScan?: NonNullable<PackageVersionDetail["version"]>["staticScan"];
   };
-  storepack: PackageStorePackSummary;
+  clawpack: PackageClawPackSummary;
   links: {
     download: string;
     immutable: string | null;
@@ -151,7 +154,7 @@ export type PackageStorePackReleaseDetail = {
   };
 };
 
-export type PackageStorePackManifestDetail = Omit<PackageStorePackReleaseDetail, "links"> & {
+export type PackageClawPackManifestDetail = Omit<PackageClawPackReleaseDetail, "links"> & {
   manifest: Record<string, unknown>;
 };
 
@@ -245,9 +248,9 @@ export function getPackageDownloadPath(name: string, version?: string | null) {
   return `${path}?version=${encodeURIComponent(version)}`;
 }
 
-export function getPackageStorePackPath(name: string, version: string, suffix?: "manifest") {
+export function getPackageClawPackPath(name: string, version: string, suffix?: "manifest") {
   const path = normalizeApiPath(
-    `${ApiRoutes.packages}/${encodeURIComponent(name)}/versions/${encodeURIComponent(version)}/storepack`,
+    `${ApiRoutes.packages}/${encodeURIComponent(name)}/versions/${encodeURIComponent(version)}/clawpack`,
   );
   return suffix ? `${path}/${suffix}` : path;
 }
@@ -481,25 +484,35 @@ export async function fetchPackageVersion(
   }
 }
 
-export async function fetchPackageStorePack(
+export async function fetchPackageVersions(
+  name: string,
+  params: { limit?: number; cursor?: string | null } = {},
+): Promise<ApiV1PackageVersionListResponse> {
+  const url = await packageApiUrl(`${ApiRoutes.packages}/${encodeURIComponent(name)}/versions`);
+  if (typeof params.limit === "number") url.searchParams.set("limit", String(params.limit));
+  if (params.cursor) url.searchParams.set("cursor", params.cursor);
+  return await fetchJson<ApiV1PackageVersionListResponse>(url);
+}
+
+export async function fetchPackageClawPack(
   name: string,
   version: string,
-): Promise<PackageStorePackReleaseDetail | null> {
+): Promise<PackageClawPackReleaseDetail | null> {
   try {
-    const url = await packageApiUrl(getPackageStorePackPath(name, version));
-    return await fetchJson<PackageStorePackReleaseDetail>(url);
+    const url = await packageApiUrl(getPackageClawPackPath(name, version));
+    return await fetchJson<PackageClawPackReleaseDetail>(url);
   } catch {
     return null;
   }
 }
 
-export async function fetchPackageStorePackManifest(
+export async function fetchPackageClawPackManifest(
   name: string,
   version: string,
-): Promise<PackageStorePackManifestDetail | null> {
+): Promise<PackageClawPackManifestDetail | null> {
   try {
-    const url = await packageApiUrl(getPackageStorePackPath(name, version, "manifest"));
-    return await fetchJson<PackageStorePackManifestDetail>(url);
+    const url = await packageApiUrl(getPackageClawPackPath(name, version, "manifest"));
+    return await fetchJson<PackageClawPackManifestDetail>(url);
   } catch {
     return null;
   }

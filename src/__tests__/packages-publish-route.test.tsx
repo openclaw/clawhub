@@ -237,7 +237,7 @@ describe("plugins publish route", () => {
     });
   });
 
-  it("previews the generated StorePack manifest before publish", async () => {
+  it("previews the generated Claw Pack manifest before publish", async () => {
     renderPublishRoute();
 
     const packageJson = withRelativePath(
@@ -263,44 +263,44 @@ describe("plugins publish route", () => {
       new File(["export const demo = true;\n"], "index.js", { type: "text/javascript" }),
       "demo-plugin/dist/index.js",
     );
-    const suppliedStorePack = withRelativePath(
-      new File(['{"kind":"user.supplied"}'], "STOREPACK.json", { type: "application/json" }),
-      "demo-plugin/STOREPACK.json",
+    const suppliedClawPack = withRelativePath(
+      new File(['{"kind":"user.supplied"}'], "CLAWPACK.json", { type: "application/json" }),
+      "demo-plugin/CLAWPACK.json",
     );
 
     fireEvent.change(getFileInput(), {
-      target: { files: [packageJson, manifest, dist, suppliedStorePack] },
+      target: { files: [packageJson, manifest, dist, suppliedClawPack] },
     });
 
     await waitFor(() => {
-      expect(screen.getByRole("heading", { name: "StorePack preview" })).toBeTruthy();
+      expect(screen.getByRole("heading", { name: "Claw Pack preview" })).toBeTruthy();
     });
 
-    expect(screen.getByRole("heading", { name: "StorePack intake review" })).toBeTruthy();
+    expect(screen.getByRole("heading", { name: "Claw Pack checks" })).toBeTruthy();
     expect(screen.getByText("Archive contract")).toBeTruthy();
     expect(screen.getByText("Source provenance")).toBeTruthy();
     expect(screen.getByText("Platform matrix")).toBeTruthy();
     expect(screen.getByText("Security review")).toBeTruthy();
-    expect(screen.getByText("4 files including STOREPACK.json")).toBeTruthy();
+    expect(screen.getByText("4 files including CLAWPACK.json")).toBeTruthy();
     expect(screen.getAllByText("darwin-arm64").length).toBeGreaterThan(0);
     expect(screen.getAllByText("linux-x64-glibc").length).toBeGreaterThan(0);
     expect(screen.getAllByText("win32-x64").length).toBeGreaterThan(0);
     expect(
-      screen.getByText("STOREPACK.json supplied by package will be replaced by ClawHub."),
+      screen.getByText("Existing pack manifest will be replaced by ClawHub."),
     ).toBeTruthy();
-    expect(screen.getByText(/"kind": "openclaw\.storepack"/i)).toBeTruthy();
+    expect(screen.getByText(/"kind": "openclaw\.clawpack"/i)).toBeTruthy();
     expect(screen.getByText(/"sha256": "computed-on-publish"/i)).toBeTruthy();
-    expect(screen.getByRole("button", { name: "Copy StorePack preview manifest" })).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Copy Claw Pack preview manifest" })).toBeTruthy();
   });
 
-  it("imports a StorePack archive as package source before publish", async () => {
+  it("imports a Claw Pack archive as package source before publish", async () => {
     renderPublishRoute();
 
-    const storepackManifest = withRelativePath(
+    const clawpackManifest = withRelativePath(
       new File(
         [
           JSON.stringify({
-            kind: "openclaw.storepack",
+            kind: "openclaw.clawpack",
             package: {
               name: "demo-plugin",
               displayName: "Demo Plugin",
@@ -321,10 +321,10 @@ describe("plugins publish route", () => {
             ],
           }),
         ],
-        "STOREPACK.json",
+        "CLAWPACK.json",
         { type: "application/json" },
       ),
-      "demo.storepack/STOREPACK.json",
+      "demo.clawpack/CLAWPACK.json",
     );
     const packageJson = withRelativePath(
       new File(
@@ -339,19 +339,19 @@ describe("plugins publish route", () => {
         "package.json",
         { type: "application/json" },
       ),
-      "demo.storepack/package/package.json",
+      "demo.clawpack/package/package.json",
     );
     const pluginManifest = withRelativePath(
       new File(['{"id":"demo.plugin"}'], "openclaw.plugin.json", { type: "application/json" }),
-      "demo.storepack/package/openclaw.plugin.json",
+      "demo.clawpack/package/openclaw.plugin.json",
     );
 
     fireEvent.change(getFileInput(), {
-      target: { files: [storepackManifest, packageJson, pluginManifest] },
+      target: { files: [clawpackManifest, packageJson, pluginManifest] },
     });
 
     await waitFor(() => {
-      expect(screen.getByText("StorePack import")).toBeTruthy();
+      expect(screen.getByText("Claw Pack import")).toBeTruthy();
       expect(screen.getByDisplayValue("demo-plugin")).toBeTruthy();
       expect(screen.getByDisplayValue("Demo Plugin")).toBeTruthy();
       expect(screen.getByDisplayValue("1.2.3")).toBeTruthy();
@@ -359,7 +359,7 @@ describe("plugins publish route", () => {
     });
 
     fireEvent.change(screen.getByPlaceholderText("Changelog"), {
-      target: { value: "Imported StorePack" },
+      target: { value: "Imported Claw Pack" },
     });
     fireEvent.click(screen.getByRole("button", { name: "Publish" }));
 
@@ -385,7 +385,7 @@ describe("plugins publish route", () => {
     const payload = publishRelease.mock.calls[0]?.[0]?.payload as {
       files: Array<{ path: string }>;
     };
-    expect(payload.files.some((file) => file.path.toLowerCase() === "storepack.json")).toBe(false);
+    expect(payload.files.some((file) => file.path.toLowerCase() === "clawpack.json")).toBe(false);
     expect(payload.files.some((file) => file.path.startsWith("package/"))).toBe(false);
   });
 
@@ -734,8 +734,11 @@ describe("plugins publish route", () => {
 
     fireEvent.click(screen.getByRole("button", { name: "Publish" }));
 
-    expect(
-      await screen.findByText(/Pending security checks and verification before public listing\./i),
-    ).toBeTruthy();
+    await waitFor(() => {
+      expect(
+        screen.getAllByText(/Pending security checks and verification before public listing\./i)
+          .length,
+      ).toBeGreaterThan(0);
+    });
   });
 });

@@ -2,7 +2,7 @@ import { normalizePackageUploadFiles } from "./packageUpload";
 
 type JsonRecord = Record<string, unknown>;
 
-export type StorePackImportSummary = {
+export type ClawPackImportSummary = {
   packageName?: string;
   displayName?: string;
   version?: string;
@@ -23,7 +23,7 @@ function getString(value: unknown) {
   return typeof value === "string" && value.trim() ? value.trim() : undefined;
 }
 
-function getStorePackTarget(value: unknown) {
+function getClawPackTarget(value: unknown) {
   if (!isRecord(value)) return null;
   const os = getString(value.os);
   const arch = getString(value.arch);
@@ -48,10 +48,13 @@ function hasGenericPackageRoot(files: Array<{ path: string }>) {
   });
 }
 
-export async function normalizeStorePackImport(files: File[]) {
+export async function normalizeClawPackImport(files: File[]) {
   const normalized = normalizePackageUploadFiles(files);
   const manifestEntry = normalized.find(
-    (entry) => entry.path.toLowerCase().split("/").at(-1) === "storepack.json",
+    (entry) => {
+      const fileName = entry.path.toLowerCase().split("/").at(-1);
+      return fileName === "clawpack.json";
+    },
   );
   if (!manifestEntry) return { files, summary: null };
 
@@ -62,12 +65,12 @@ export async function normalizeStorePackImport(files: File[]) {
     manifest = parsed;
   } catch {
     if (hasGenericPackageRoot(normalized)) return { files, summary: null };
-    throw new Error("STOREPACK.json is not a valid OpenClaw StorePack manifest.");
+    throw new Error("Claw Pack manifest is not valid JSON.");
   }
 
-  if (manifest.kind !== "openclaw.storepack") {
+  if (manifest.kind !== "openclaw.clawpack") {
     if (hasGenericPackageRoot(normalized)) return { files, summary: null };
-    throw new Error("STOREPACK.json is not an OpenClaw StorePack manifest.");
+    throw new Error("Manifest is not an OpenClaw Claw Pack.");
   }
 
   const manifestPath = manifestEntry.path;
@@ -80,7 +83,7 @@ export async function normalizeStorePackImport(files: File[]) {
     .map((entry) => createPathFile(entry.file, entry.path.slice(packageRoot.length)));
 
   if (packageFiles.length === 0) {
-    throw new Error("StorePack archive does not contain package files under package/.");
+    throw new Error("Claw Pack archive does not contain package files under package/.");
   }
 
   const packageInfo = isRecord(manifest.package) ? manifest.package : {};
@@ -88,7 +91,7 @@ export async function normalizeStorePackImport(files: File[]) {
   const sourceInfo = isRecord(releaseInfo.source) ? releaseInfo.source : {};
   const hostTargets = Array.isArray(manifest.hostTargets)
     ? manifest.hostTargets
-        .map(getStorePackTarget)
+        .map(getClawPackTarget)
         .filter((target): target is string => Boolean(target))
     : [];
   const family = getString(packageInfo.family);
@@ -106,6 +109,6 @@ export async function normalizeStorePackImport(files: File[]) {
       sourcePath: getString(sourceInfo.path),
       hostTargets,
       packageFileCount: packageFiles.length,
-    } satisfies StorePackImportSummary,
+    } satisfies ClawPackImportSummary,
   };
 }

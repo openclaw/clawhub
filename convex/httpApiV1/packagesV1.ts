@@ -249,7 +249,7 @@ function getReleaseSecurityBlock(release: ReleaseLike) {
   return getPackageDownloadSecurityBlock(release);
 }
 
-function toPublicStorePack(release: ReleaseLike | null | undefined) {
+function toPublicClawPack(release: ReleaseLike | null | undefined) {
   if (
     !release?.storepackStorageId ||
     !release.storepackSha256 ||
@@ -287,10 +287,10 @@ function toPublicStorePack(release: ReleaseLike | null | undefined) {
   };
 }
 
-async function readStorePackManifest(blob: Blob) {
+async function readClawPackManifest(blob: Blob) {
   const entries = unzipSync(new Uint8Array(await blob.arrayBuffer()));
-  const manifestBytes = entries["package/STOREPACK.json"];
-  if (!manifestBytes) throw new Error("Missing StorePack manifest");
+  const manifestBytes = entries["package/CLAWPACK.json"];
+  if (!manifestBytes) throw new Error("Missing Claw Pack manifest");
   return JSON.parse(new TextDecoder().decode(manifestBytes)) as Record<string, unknown>;
 }
 
@@ -307,12 +307,12 @@ function sha256DigestHeader(hex: string) {
   return `sha-256=${btoa(String.fromCharCode(...bytes))}`;
 }
 
-function normalizeStorePackSha256(raw: string | undefined) {
+function normalizeClawPackSha256(raw: string | undefined) {
   const sha256 = raw?.trim().toLowerCase();
   return sha256 && /^[a-f0-9]{64}$/.test(sha256) ? sha256 : null;
 }
 
-function storePackArtifactHeaders(input: {
+function clawPackArtifactHeaders(input: {
   packageName: string;
   version: string;
   sha256: string;
@@ -323,12 +323,12 @@ function storePackArtifactHeaders(input: {
   return {
     "Content-Type": "application/zip",
     "Content-Length": String(input.size),
-    "Content-Disposition": `attachment; filename="${input.packageName.replaceAll("/", "-")}-${input.version}.storepack.zip"`,
+    "Content-Disposition": `attachment; filename="${input.packageName.replaceAll("/", "-")}-${input.version}.clawpack.zip"`,
     ETag: `"sha256:${input.sha256}"`,
     Digest: sha256DigestHeader(input.sha256),
     ...(input.immutable ? { "Cache-Control": "public, max-age=31536000, immutable" } : {}),
-    "X-ClawHub-StorePack-Sha256": input.sha256,
-    "X-ClawHub-StorePack-Spec-Version": String(input.specVersion ?? 1),
+    "X-ClawHub-ClawPack-Sha256": input.sha256,
+    "X-ClawHub-ClawPack-Spec-Version": String(input.specVersion ?? 1),
   };
 }
 
@@ -368,14 +368,30 @@ type CatalogListItem = {
   capabilityTags?: string[];
   executesCode?: boolean;
   verificationTier?: string | null;
-  storepackAvailable?: boolean;
+  clawpackAvailable?: boolean;
   hostTargetKeys?: string[];
   environmentFlags?: string[];
 };
 
 type CatalogSearchEntry = { score: number; package: CatalogListItem };
 
-type StorePackArtifactLookup =
+function toPublicCatalogItem(item: CatalogListItem & Record<string, unknown>): CatalogListItem {
+  const { storepackAvailable, storepack, ...rest } = item;
+  return {
+    ...rest,
+    ...(typeof storepackAvailable === "boolean" ? { clawpackAvailable: storepackAvailable } : {}),
+    ...(storepack ? { clawpack: storepack } : {}),
+  } as CatalogListItem;
+}
+
+function toPublicCatalogSearchEntry(entry: CatalogSearchEntry): CatalogSearchEntry {
+  return {
+    ...entry,
+    package: toPublicCatalogItem(entry.package as CatalogListItem & Record<string, unknown>),
+  };
+}
+
+type ClawPackArtifactLookup =
   | {
       status: "ok";
       artifact: {
@@ -858,7 +874,10 @@ async function listPackages(
       paginationOpts: { cursor, numItems: limit },
     });
     return json(
-      { items: result.page, nextCursor: result.isDone ? null : result.continueCursor },
+      {
+        items: result.page.map((item) => toPublicCatalogItem(item as CatalogListItem & Record<string, unknown>)),
+        nextCursor: result.isDone ? null : result.continueCursor,
+      },
       200,
       rate.headers,
     );
@@ -939,7 +958,7 @@ async function listPackages(
       nextState.skills.offset === 0;
     return json(
       {
-        items,
+        items: items.map((item) => toPublicCatalogItem(item as CatalogListItem & Record<string, unknown>)),
         nextCursor: isDoneAll ? null : encodeUnifiedCatalogCursor(nextState),
       },
       200,
@@ -1020,7 +1039,7 @@ async function listPackages(
       nextState.bundlePlugins.offset === 0;
     return json(
       {
-        items,
+        items: items.map((item) => toPublicCatalogItem(item as CatalogListItem & Record<string, unknown>)),
         nextCursor: isDoneAll ? null : encodePluginCatalogCursor(nextState),
       },
       200,
@@ -1045,7 +1064,10 @@ async function listPackages(
     paginationOpts: { cursor, numItems: limit },
   } satisfies PackageListQueryArgs);
   return json(
-    { items: result.page, nextCursor: result.isDone ? null : result.continueCursor },
+    {
+      items: result.page.map((item) => toPublicCatalogItem(item as CatalogListItem & Record<string, unknown>)),
+      nextCursor: result.isDone ? null : result.continueCursor,
+    },
     200,
     rate.headers,
   );
@@ -1226,7 +1248,7 @@ export async function mintPublishTokenV1Handler(ctx: ActionCtx, request: Request
 
 export async function packagesPostRouterV1Handler(ctx: ActionCtx, request: Request) {
   const segments = getPathSegments(request, "/api/v1/packages/");
-  if (segments[0] === "storepack" && segments[1] === "migration-runs" && segments.length === 2) {
+  if (segments[0] === "clawpack" && segments[1] === "migration-runs" && segments.length === 2) {
     const rate = await applyRateLimit(ctx, request, "write");
     if (!rate.ok) return rate.response;
     const auth = await requireApiTokenUserOrResponse(ctx, request, rate.headers);
@@ -1237,7 +1259,7 @@ export async function packagesPostRouterV1Handler(ctx: ActionCtx, request: Reque
     const operation = parseStorePackMigrationOperation(
       body && typeof body === "object" ? (body as { operation?: unknown }).operation : undefined,
     );
-    if (!operation) return text("Invalid StorePack migration operation", 400, rate.headers);
+    if (!operation) return text("Invalid Claw Pack migration operation", 400, rate.headers);
     const rawLimit =
       body && typeof body === "object" && "limit" in body
         ? Number((body as { limit?: unknown }).limit)
@@ -1260,7 +1282,7 @@ export async function packagesPostRouterV1Handler(ctx: ActionCtx, request: Reque
   }
 
   if (
-    segments[0] === "storepack" &&
+    segments[0] === "clawpack" &&
     segments[1] === "migration-runs" &&
     segments[3] === "continue" &&
     segments.length === 4
@@ -1283,14 +1305,14 @@ export async function packagesPostRouterV1Handler(ctx: ActionCtx, request: Reque
       return json(result, 200, rate.headers);
     } catch (error) {
       return text(
-        error instanceof Error ? error.message : "StorePack migration run failed",
+        error instanceof Error ? error.message : "Claw Pack migration run failed",
         400,
         rate.headers,
       );
     }
   }
 
-  if (segments[0] === "storepack" && segments[1] === "backfill" && segments.length === 2) {
+  if (segments[0] === "clawpack" && segments[1] === "backfill" && segments.length === 2) {
     const rate = await applyRateLimit(ctx, request, "write");
     if (!rate.ok) return rate.response;
     const auth = await requireApiTokenUserOrResponse(ctx, request, rate.headers);
@@ -1315,14 +1337,14 @@ export async function packagesPostRouterV1Handler(ctx: ActionCtx, request: Reque
       return json(result, 200, rate.headers);
     } catch (error) {
       return text(
-        error instanceof Error ? error.message : "StorePack backfill failed",
+        error instanceof Error ? error.message : "Claw Pack backfill failed",
         400,
         rate.headers,
       );
     }
   }
 
-  if (segments[0] === "storepack" && segments[1] === "index-backfill" && segments.length === 2) {
+  if (segments[0] === "clawpack" && segments[1] === "index-backfill" && segments.length === 2) {
     const rate = await applyRateLimit(ctx, request, "write");
     if (!rate.ok) return rate.response;
     const auth = await requireApiTokenUserOrResponse(ctx, request, rate.headers);
@@ -1352,14 +1374,14 @@ export async function packagesPostRouterV1Handler(ctx: ActionCtx, request: Reque
       return json(result, 200, rate.headers);
     } catch (error) {
       return text(
-        error instanceof Error ? error.message : "StorePack index backfill failed",
+        error instanceof Error ? error.message : "Claw Pack index backfill failed",
         400,
         rate.headers,
       );
     }
   }
 
-  if (segments[0] === "storepack" && segments[1] === "retry-failures" && segments.length === 2) {
+  if (segments[0] === "clawpack" && segments[1] === "retry-failures" && segments.length === 2) {
     const rate = await applyRateLimit(ctx, request, "write");
     if (!rate.ok) return rate.response;
     const auth = await requireApiTokenUserOrResponse(ctx, request, rate.headers);
@@ -1384,7 +1406,7 @@ export async function packagesPostRouterV1Handler(ctx: ActionCtx, request: Reque
       return json(result, 200, rate.headers);
     } catch (error) {
       return text(
-        error instanceof Error ? error.message : "StorePack failure retry failed",
+        error instanceof Error ? error.message : "Claw Pack failure retry failed",
         400,
         rate.headers,
       );
@@ -1393,7 +1415,7 @@ export async function packagesPostRouterV1Handler(ctx: ActionCtx, request: Reque
 
   if (
     segments[1] === "versions" &&
-    segments[3] === "storepack" &&
+    (segments[3] === "clawpack") &&
     segments[4] === "revoke" &&
     segments.length === 5
   ) {
@@ -1422,7 +1444,7 @@ export async function packagesPostRouterV1Handler(ctx: ActionCtx, request: Reque
       return json(result, 200, rate.headers);
     } catch (error) {
       return text(
-        error instanceof Error ? error.message : "StorePack revoke failed",
+        error instanceof Error ? error.message : "Claw Pack revoke failed",
         400,
         rate.headers,
       );
@@ -1795,7 +1817,7 @@ async function searchPackages(
       .sort(compareCatalogSearchEntries)
       .slice(0, limit);
   }
-  return json({ results }, 200, rate.headers);
+  return json({ results: results.map(toPublicCatalogSearchEntry) }, 200, rate.headers);
 }
 
 export async function packagesGetRouterV1Handler(ctx: ActionCtx, request: Request) {
@@ -1804,7 +1826,7 @@ export async function packagesGetRouterV1Handler(ctx: ActionCtx, request: Reques
   if (segments[0] === "search" && new URL(request.url).searchParams.has("q")) {
     return await searchPackages(ctx, request, { includeSkills: true });
   }
-  if (segments[0] === "storepack" && segments[1] === "migration-status" && segments.length === 2) {
+  if (segments[0] === "clawpack" && segments[1] === "migration-status" && segments.length === 2) {
     const rate = await applyRateLimit(ctx, request, "read");
     if (!rate.ok) return rate.response;
     const auth = await requireApiTokenUserOrResponse(ctx, request, rate.headers);
@@ -1820,7 +1842,7 @@ export async function packagesGetRouterV1Handler(ctx: ActionCtx, request: Reques
     return json(result, 200, rate.headers);
   }
   if (
-    segments[0] === "storepack" &&
+    segments[0] === "clawpack" &&
     segments[1] === "migration-runs" &&
     segments[2] === "dry-run" &&
     segments.length === 3
@@ -1833,7 +1855,7 @@ export async function packagesGetRouterV1Handler(ctx: ActionCtx, request: Reques
     if (!admin.ok) return admin.response;
     const search = new URL(request.url).searchParams;
     const operation = parseStorePackMigrationOperation(search.get("operation"));
-    if (!operation) return text("Invalid StorePack migration operation", 400, rate.headers);
+    if (!operation) return text("Invalid Claw Pack migration operation", 400, rate.headers);
     const result = await runQueryRef(
       ctx,
       internalRefs.packages.dryRunStorePackMigrationRunForStaffInternal,
@@ -1845,7 +1867,7 @@ export async function packagesGetRouterV1Handler(ctx: ActionCtx, request: Reques
     );
     return json(result, 200, rate.headers);
   }
-  if (segments[0] === "storepack" && segments[1] === "migration-runs" && segments.length === 2) {
+  if (segments[0] === "clawpack" && segments[1] === "migration-runs" && segments.length === 2) {
     const rate = await applyRateLimit(ctx, request, "read");
     if (!rate.ok) return rate.response;
     const auth = await requireApiTokenUserOrResponse(ctx, request, rate.headers);
@@ -1863,7 +1885,7 @@ export async function packagesGetRouterV1Handler(ctx: ActionCtx, request: Reques
     );
     return json(result, 200, rate.headers);
   }
-  if (segments[0] === "storepack" && segments[1] === "migration-runs" && segments.length === 3) {
+  if (segments[0] === "clawpack" && segments[1] === "migration-runs" && segments.length === 3) {
     const rate = await applyRateLimit(ctx, request, "read");
     if (!rate.ok) return rate.response;
     const auth = await requireApiTokenUserOrResponse(ctx, request, rate.headers);
@@ -1873,11 +1895,11 @@ export async function packagesGetRouterV1Handler(ctx: ActionCtx, request: Reques
     const result = await runQueryRef(ctx, internalRefs.packages.getStorePackMigrationRunInternal, {
       runId: segments[2] as Id<"storePackMigrationRuns">,
     });
-    if (!result) return text("StorePack migration run not found", 404, rate.headers);
+    if (!result) return text("Claw Pack migration run not found", 404, rate.headers);
     return json(result, 200, rate.headers);
   }
   if (
-    segments[0] === "storepack" &&
+    segments[0] === "clawpack" &&
     segments[1] === "migration-readiness" &&
     segments.length === 2
   ) {
@@ -1933,7 +1955,7 @@ export async function packagesGetRouterV1Handler(ctx: ActionCtx, request: Reques
         package: {
           ...publicPackage!,
           tags: await resolvePackageTags(ctx, publicPackage!.tags),
-          storepack: toPublicStorePack(packageDetail?.latestRelease),
+          clawpack: toPublicClawPack(packageDetail?.latestRelease),
         },
         owner: packageOwner
           ? {
@@ -2016,13 +2038,14 @@ export async function packagesGetRouterV1Handler(ctx: ActionCtx, request: Reques
     );
   }
 
+  const artifactRoute = segments[3];
   if (
     segments[1] === "versions" &&
     segments[2] &&
-    segments[3] === "storepack" &&
+    artifactRoute === "clawpack" &&
     (segments.length === 4 || (segments[4] === "manifest" && segments.length === 5))
   ) {
-    if (!publicPackage) return text("StorePack not available", 404, rate.headers);
+    if (!publicPackage) return text("Claw Pack not available", 404, rate.headers);
     const result = (await runQueryRef(
       ctx,
       internalRefs.packages.getVersionByNameForViewerInternal,
@@ -2034,21 +2057,21 @@ export async function packagesGetRouterV1Handler(ctx: ActionCtx, request: Reques
     )) as { package: PublicPackageDocLike; version: ReleaseLike } | null;
     if (!result) return text("Version not found", 404, rate.headers);
 
-    const storepack = toPublicStorePack(result.version);
-    if (result.version.storepackRevokedAt) return text("StorePack revoked", 410, rate.headers);
-    if (!storepack.available) return text("StorePack not available", 404, rate.headers);
+    const clawpack = toPublicClawPack(result.version);
+    if (result.version.storepackRevokedAt) return text("Claw Pack revoked", 410, rate.headers);
+    if (!clawpack.available) return text("Claw Pack not available", 404, rate.headers);
 
     const securityBlock = getReleaseSecurityBlock(result.version);
     if (securityBlock) return text(securityBlock.message, securityBlock.status, rate.headers);
 
     if (segments[4] === "manifest") {
       if (!result.version.storepackStorageId) {
-        return text("StorePack not available", 404, rate.headers);
+        return text("Claw Pack not available", 404, rate.headers);
       }
       const blob = await ctx.storage.get(result.version.storepackStorageId);
-      if (!blob) return text("Missing stored StorePack artifact", 500, rate.headers);
+      if (!blob) return text("Missing stored Claw Pack artifact", 500, rate.headers);
       try {
-        const manifest = await readStorePackManifest(blob);
+        const manifest = await readClawPackManifest(blob);
         return json(
           {
             package: {
@@ -2057,7 +2080,7 @@ export async function packagesGetRouterV1Handler(ctx: ActionCtx, request: Reques
               family: result.package.family,
             },
             version: result.version.version,
-            storepack,
+            clawpack,
             manifest,
           },
           200,
@@ -2065,7 +2088,7 @@ export async function packagesGetRouterV1Handler(ctx: ActionCtx, request: Reques
         );
       } catch (error) {
         return text(
-          error instanceof Error ? error.message : "Invalid StorePack manifest",
+          error instanceof Error ? error.message : "Invalid Claw Pack manifest",
           500,
           rate.headers,
         );
@@ -2089,11 +2112,11 @@ export async function packagesGetRouterV1Handler(ctx: ActionCtx, request: Reques
           llmAnalysis: result.version.llmAnalysis ?? null,
           staticScan: result.version.staticScan ?? null,
         },
-        storepack,
+        clawpack,
         links: {
           download: `${ApiRoutes.packages}/${encodeURIComponent(result.package.name)}/download?version=${encodeURIComponent(result.version.version)}`,
-          immutable: storepack.sha256 ? `/api/v1/storepacks/${storepack.sha256}` : null,
-          manifest: `${ApiRoutes.packages}/${encodeURIComponent(result.package.name)}/versions/${encodeURIComponent(result.version.version)}/storepack/manifest`,
+          immutable: clawpack.sha256 ? `/api/v1/clawpacks/${clawpack.sha256}` : null,
+          manifest: `${ApiRoutes.packages}/${encodeURIComponent(result.package.name)}/versions/${encodeURIComponent(result.version.version)}/clawpack/manifest`,
         },
       },
       200,
@@ -2175,7 +2198,7 @@ export async function packagesGetRouterV1Handler(ctx: ActionCtx, request: Reques
           vtAnalysis: result.version.vtAnalysis ?? null,
           llmAnalysis: result.version.llmAnalysis ?? null,
           staticScan: result.version.staticScan ?? null,
-          storepack: toPublicStorePack(result.version),
+          clawpack: toPublicClawPack(result.version),
         },
       },
       200,
@@ -2249,10 +2272,10 @@ export async function packagesGetRouterV1Handler(ctx: ActionCtx, request: Reques
     if (!release) return text("Version not found", 404, rate.headers);
     const securityBlock = getReleaseSecurityBlock(release);
     if (securityBlock) return text(securityBlock.message, securityBlock.status, rate.headers);
-    if (release.storepackRevokedAt) return text("StorePack revoked", 410, rate.headers);
+    if (release.storepackRevokedAt) return text("Claw Pack revoked", 410, rate.headers);
     if (release.storepackStorageId && release.storepackSha256 && release.storepackSize) {
       const blob = await ctx.storage.get(release.storepackStorageId);
-      if (!blob) return text("Missing stored StorePack artifact", 500, rate.headers);
+      if (!blob) return text("Missing stored Claw Pack artifact", 500, rate.headers);
       try {
         await runMutationRef(ctx, internalRefs.packages.recordPackageDownloadInternal, {
           packageId: publicPackage!._id,
@@ -2264,7 +2287,7 @@ export async function packagesGetRouterV1Handler(ctx: ActionCtx, request: Reques
         status: 200,
         headers: mergeHeaders(
           rate.headers,
-          storePackArtifactHeaders({
+          clawPackArtifactHeaders({
             packageName: publicPackage!.name,
             version: release.version,
             sha256: release.storepackSha256,
@@ -2308,15 +2331,17 @@ export async function packagesGetRouterV1Handler(ctx: ActionCtx, request: Reques
   return text("Not found", 404, rate.headers);
 }
 
-export async function storepacksGetRouterV1Handler(ctx: ActionCtx, request: Request) {
-  const segments = getPathSegments(request, "/api/v1/storepacks/");
+export async function clawpacksGetRouterV1Handler(ctx: ActionCtx, request: Request) {
+  const path = new URL(request.url).pathname;
+  const prefix = "/api/v1/clawpacks/";
+  const segments = getPathSegments(request, prefix);
   if (segments.length !== 1) return text("Not found", 404);
-  const sha256 = normalizeStorePackSha256(segments[0]);
-  if (!sha256) return text("Invalid StorePack digest", 400);
+  const sha256 = normalizeClawPackSha256(segments[0]);
+  if (!sha256) return text("Invalid Claw Pack digest", 400);
   const rate = await applyRateLimit(ctx, request, "download");
   if (!rate.ok) return rate.response;
   const viewerUserId = await getOptionalViewerUserIdForRequest(ctx, request);
-  const lookup = await runQueryRef<StorePackArtifactLookup | null>(
+  const lookup = await runQueryRef<ClawPackArtifactLookup | null>(
     ctx,
     internalRefs.packages.getStorePackArtifactByShaForViewerInternal,
     {
@@ -2324,24 +2349,24 @@ export async function storepacksGetRouterV1Handler(ctx: ActionCtx, request: Requ
       viewerUserId: viewerUserId ?? undefined,
     },
   );
-  if (!lookup) return text("StorePack not found", 404, rate.headers);
-  if (lookup.status === "revoked") return text("StorePack revoked", 410, rate.headers);
+  if (!lookup) return text("Claw Pack not found", 404, rate.headers);
+  if (lookup.status === "revoked") return text("Claw Pack revoked", 410, rate.headers);
   const blob = await ctx.storage.get(lookup.artifact.storageId);
-  if (!blob) return text("Missing stored StorePack artifact", 500, rate.headers);
+  if (!blob) return text("Missing stored Claw Pack artifact", 500, rate.headers);
   if (request.method !== "HEAD") {
     try {
       await runMutationRef(ctx, internalRefs.packages.recordPackageDownloadInternal, {
         packageId: lookup.package._id,
       });
     } catch {
-      // Best-effort metric path; never fail StorePack downloads.
+      // Best-effort metric path; never fail Claw Pack downloads.
     }
   }
   return new Response(request.method === "HEAD" ? null : blob, {
     status: 200,
     headers: mergeHeaders(
       rate.headers,
-      storePackArtifactHeaders({
+      clawPackArtifactHeaders({
         packageName: lookup.package.name,
         version: lookup.release.version,
         sha256: lookup.artifact.sha256,

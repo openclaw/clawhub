@@ -57,8 +57,8 @@ async function makeStorePack(overrides: Partial<Parameters<typeof buildStorePack
   });
 }
 
-describe("storepack", () => {
-  it("builds a deterministic archive with a generated STOREPACK manifest", async () => {
+describe("clawpack", () => {
+  it("builds a deterministic archive with a generated CLAWPACK manifest", async () => {
     const first = await makeStorePack();
     const second = await makeStorePack();
     const unzipped = unzipSync(first.bytes);
@@ -67,13 +67,13 @@ describe("storepack", () => {
     expect(Array.from(first.bytes)).toEqual(Array.from(second.bytes));
     expect(first.sha256).toBe(second.sha256);
     expect(Object.keys(unzipped).sort()).toEqual([
-      "package/STOREPACK.json",
+      "package/CLAWPACK.json",
       "package/dist/index.js",
       "package/package.json",
     ]);
     expect(manifest).toMatchObject({
       specVersion: 1,
-      kind: "openclaw.storepack",
+      kind: "openclaw.clawpack",
       package: {
         name: "@openclaw/kitchen-sink",
         owner: "openclaw",
@@ -94,11 +94,11 @@ describe("storepack", () => {
     ]);
   });
 
-  it("ignores publisher supplied STOREPACK.json files", async () => {
+  it("ignores publisher supplied CLAWPACK.json files", async () => {
     const built = await makeStorePack({
       files: [
         {
-          path: "STOREPACK.json",
+          path: "CLAWPACK.json",
           size: 22,
           sha256: "attacker-sha",
           bytes: encoder.encode('{"forged": true}\n'),
@@ -112,10 +112,10 @@ describe("storepack", () => {
       ],
     });
     const unzipped = unzipSync(built.bytes);
-    const manifest = JSON.parse(decoder.decode(unzipped["package/STOREPACK.json"]));
+    const manifest = JSON.parse(decoder.decode(unzipped["package/CLAWPACK.json"]));
 
     expect(Object.keys(unzipped).sort()).toEqual([
-      "package/STOREPACK.json",
+      "package/CLAWPACK.json",
       "package/package.json",
     ]);
     expect(manifest.forged).toBeUndefined();
@@ -138,7 +138,7 @@ describe("storepack", () => {
     const manifest = JSON.parse(decoder.decode(unzipped[`package/${STOREPACK_MANIFEST_PATH}`]));
 
     expect(Object.keys(unzipped).sort()).toEqual([
-      "package/STOREPACK.json",
+      "package/CLAWPACK.json",
       "package/dist/index.js",
     ]);
     expect(manifest.files.map((file: { path: string }) => file.path)).toEqual(["dist/index.js"]);
@@ -157,7 +157,7 @@ describe("storepack", () => {
             },
           ],
         }),
-      ).rejects.toThrow("Invalid StorePack file path");
+      ).rejects.toThrow("Invalid Claw Pack file path");
     }
   });
 
@@ -179,7 +179,7 @@ describe("storepack", () => {
           },
         ],
       }),
-    ).rejects.toThrow("Duplicate StorePack file path");
+    ).rejects.toThrow("Duplicate Claw Pack file path");
   });
 
   it("packs a kitchen-sink OpenClaw plugin with cross-platform signals", async () => {
@@ -190,7 +190,7 @@ describe("storepack", () => {
     const packageJson = JSON.parse(decoder.decode(unzipped["package/package.json"]));
 
     expect(Object.keys(unzipped).sort()).toEqual([
-      "package/STOREPACK.json",
+      "package/CLAWPACK.json",
       "package/browser/playwright-smoke.ts",
       "package/dist/index.js",
       "package/dist/setup.js",

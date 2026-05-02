@@ -21,7 +21,7 @@ import {
   type PackageCapabilitySummary,
   type PackageCompatibility,
   type PackageFamily,
-  type PackageStorePackSummary,
+  type PackageClawPackSummary,
   type PackageTrustedPublisher,
   type PackageVerificationSummary,
   validateOpenClawExternalCodePluginPackageJson,
@@ -89,7 +89,7 @@ type PackageDownloadOptions = {
   json?: boolean;
 };
 
-type PackageStorePackInspectOptions = {
+type PackageClawPackInspectOptions = {
   version?: string;
   manifest?: boolean;
   json?: boolean;
@@ -100,18 +100,18 @@ type PackageVerifyOptions = {
   json?: boolean;
 };
 
-type PackageStorePackMigrationOptions = {
+type PackageClawPackMigrationOptions = {
   limit?: number;
   cursor?: string;
   json?: boolean;
 };
 
-type PackageStorePackMigrationRunOptions = PackageStorePackMigrationOptions & {
+type PackageClawPackMigrationRunOptions = PackageClawPackMigrationOptions & {
   operation?: string;
   status?: string;
 };
 
-type PackageStorePackRevokeOptions = {
+type PackageClawPackRevokeOptions = {
   reason?: string;
   json?: boolean;
 };
@@ -137,10 +137,10 @@ type PackageFile = {
   contentType?: string;
 };
 
-type PackageStorePackInspectResponse = {
+type PackageClawPackInspectResponse = {
   package: { name: string; displayName: string; family: PackageFamily };
   version: string | { version: string; createdAt?: number };
-  storepack: PackageStorePackSummary;
+  clawpack: PackageClawPackSummary;
   links?: {
     download?: string;
     immutable?: string | null;
@@ -366,14 +366,14 @@ export async function cmdInspectPackage(
 
     if (shouldPrintMeta && versionResult?.version) {
       printVersionSummary(versionResult.version);
-      printStorePack(versionResult.version.storepack);
+      printClawPack(versionResult.version.clawpack);
       printCompatibility(
         versionResult.version.compatibility ?? detail.package.compatibility ?? null,
       );
       printCapabilities(versionResult.version.capabilities ?? detail.package.capabilities ?? null);
       printVerification(versionResult.version.verification ?? detail.package.verification ?? null);
     } else if (shouldPrintMeta) {
-      printStorePack(detail.package.storepack);
+      printClawPack(detail.package.clawpack);
       printCompatibility(detail.package.compatibility ?? null);
       printCapabilities(detail.package.capabilities ?? null);
       printVerification(detail.package.verification ?? null);
@@ -609,7 +609,7 @@ export async function cmdDownloadPackage(
   );
   if (options.version) url.searchParams.set("version", options.version);
   if (options.tag) url.searchParams.set("tag", options.tag);
-  const spinner = options.json ? null : createSpinner("Downloading StorePack");
+  const spinner = options.json ? null : createSpinner("Downloading Claw Pack");
   try {
     const response = await fetch(url, {
       headers: {
@@ -625,7 +625,7 @@ export async function cmdDownloadPackage(
     const filename =
       options.output?.trim() ||
       filenameFromContentDisposition(response.headers.get("content-disposition")) ||
-      `${trimmed.replaceAll("/", "-")}.storepack.zip`;
+      `${trimmed.replaceAll("/", "-")}.clawpack.zip`;
     const outputPath = resolve(opts.workdir, filename);
     await mkdir(resolve(outputPath, ".."), { recursive: true }).catch(() => undefined);
     await writeFile(outputPath, bytes);
@@ -634,8 +634,8 @@ export async function cmdDownloadPackage(
       path: outputPath,
       bytes: bytes.byteLength,
       sha256,
-      storepackSha256: response.headers.get("x-clawhub-storepack-sha256"),
-      specVersion: response.headers.get("x-clawhub-storepack-spec-version"),
+      clawpackSha256: response.headers.get("x-clawhub-clawpack-sha256"),
+      specVersion: response.headers.get("x-clawhub-clawpack-spec-version"),
     };
     if (options.json) process.stdout.write(`${JSON.stringify(result, null, 2)}\n`);
   } catch (error) {
@@ -644,11 +644,11 @@ export async function cmdDownloadPackage(
   }
 }
 
-async function resolvePackageStorePackVersion(
+async function resolvePackageClawPackVersion(
   registry: string,
   packageName: string,
   token: string | null,
-  options: PackageStorePackInspectOptions,
+  options: PackageClawPackInspectOptions,
 ) {
   if (options.version?.trim()) return options.version.trim();
   const detail = await apiRequest(
@@ -666,18 +666,18 @@ async function resolvePackageStorePackVersion(
   return version;
 }
 
-export async function cmdInspectPackageStorePack(
+export async function cmdInspectPackageClawPack(
   opts: GlobalOpts,
   packageName: string,
-  options: PackageStorePackInspectOptions = {},
+  options: PackageClawPackInspectOptions = {},
 ) {
   const trimmed = normalizePackageNameOrFail(packageName);
   const token = (await getOptionalAuthToken()) ?? null;
   const registry = await getRegistry(opts, { cache: true });
-  const version = await resolvePackageStorePackVersion(registry, trimmed, token, options);
-  const response = await apiRequest<PackageStorePackInspectResponse>(registry, {
+  const version = await resolvePackageClawPackVersion(registry, trimmed, token, options);
+  const response = await apiRequest<PackageClawPackInspectResponse>(registry, {
     method: "GET",
-    path: `${ApiRoutes.packages}/${encodeURIComponent(trimmed)}/versions/${encodeURIComponent(version)}/storepack${
+    path: `${ApiRoutes.packages}/${encodeURIComponent(trimmed)}/versions/${encodeURIComponent(version)}/clawpack${
       options.manifest ? "/manifest" : ""
     }`,
     ...(token ? { token } : {}),
@@ -696,22 +696,22 @@ export async function cmdInspectPackageStorePack(
   const responseVersion =
     typeof response.version === "string" ? response.version : response.version.version;
   console.log(`${response.package.name}@${responseVersion}`);
-  printStorePack(response.storepack);
-  if (response.links?.download) console.log(`StorePack Download: ${response.links.download}`);
+  printClawPack(response.clawpack);
+  if (response.links?.download) console.log(`Claw Pack Download: ${response.links.download}`);
   if (response.links?.immutable)
-    console.log(`StorePack Immutable URL: ${response.links.immutable}`);
-  if (response.links?.manifest) console.log(`StorePack Manifest URL: ${response.links.manifest}`);
+    console.log(`Claw Pack Immutable URL: ${response.links.immutable}`);
+  if (response.links?.manifest) console.log(`Claw Pack Manifest URL: ${response.links.manifest}`);
 }
 
-export async function cmdVerifyPackageStorePack(
+export async function cmdVerifyPackageClawPack(
   filePath: string,
   options: PackageVerifyOptions = {},
 ) {
   const bytes = new Uint8Array(await readFile(resolve(filePath)));
   const sha256 = sha256Hex(bytes);
   const zipEntries = unzipSync(bytes);
-  const manifestBytes = zipEntries["package/STOREPACK.json"];
-  if (!manifestBytes) fail("Missing package/STOREPACK.json");
+  const manifestBytes = zipEntries["package/CLAWPACK.json"];
+  if (!manifestBytes) fail("Missing package/CLAWPACK.json");
   const manifestText = new TextDecoder().decode(manifestBytes);
   const manifest = JSON.parse(manifestText) as Record<string, unknown>;
   const expected = options.sha256?.trim();
@@ -728,20 +728,20 @@ export async function cmdVerifyPackageStorePack(
     process.stdout.write(`${JSON.stringify(result, null, 2)}\n`);
     return;
   }
-  console.log(`StorePack: ${ok ? "ok" : "mismatch"}`);
+  console.log(`Claw Pack: ${ok ? "ok" : "mismatch"}`);
   console.log(`SHA-256: ${sha256}`);
   if (expected) console.log(`Expected: ${expected}`);
   console.log(`Spec: ${formatUnknownScalar(manifest.specVersion)}`);
-  if (!ok) fail("StorePack digest mismatch");
+  if (!ok) fail("Claw Pack digest mismatch");
 }
 
-export async function cmdPackageStorePackMigrationStatus(
+export async function cmdPackageClawPackMigrationStatus(
   opts: GlobalOpts,
-  options: PackageStorePackMigrationOptions = {},
+  options: PackageClawPackMigrationOptions = {},
 ) {
   const token = await requireAuthToken();
   const registry = await getRegistry(opts, { cache: true });
-  const url = registryUrl(`${ApiRoutes.packages}/storepack/migration-status`, registry);
+  const url = registryUrl(`${ApiRoutes.packages}/clawpack/migration-status`, registry);
   if (typeof options.limit === "number" && Number.isFinite(options.limit)) {
     url.searchParams.set("limit", String(options.limit));
   }
@@ -754,16 +754,16 @@ export async function cmdPackageStorePackMigrationStatus(
     process.stdout.write(`${JSON.stringify(result, null, 2)}\n`);
     return;
   }
-  console.log("StorePack migration");
+  console.log("Claw Pack migration");
   console.log(`Missing sample: ${formatUnknownScalar(result.missingSampleSize)}`);
   console.log(`Open failures: ${formatUnknownScalar(result.failureSampleSize)}`);
-  console.log(`Generated sample: ${formatUnknownScalar(result.generatedStorePackSampleSize)}`);
-  console.log(`Generated bytes: ${formatUnknownScalar(result.generatedStorePackBytes)}`);
+  console.log(`Generated sample: ${formatUnknownScalar(result.generatedClawPackSampleSize)}`);
+  console.log(`Generated bytes: ${formatUnknownScalar(result.generatedClawPackBytes)}`);
 }
 
-export async function cmdPackageStorePackMigrationReadiness(
+export async function cmdPackageClawPackMigrationReadiness(
   opts: GlobalOpts,
-  options: Pick<PackageStorePackMigrationOptions, "json"> = {},
+  options: Pick<PackageClawPackMigrationOptions, "json"> = {},
 ) {
   const token = await requireAuthToken();
   const registry = await getRegistry(opts, { cache: true });
@@ -780,14 +780,14 @@ export async function cmdPackageStorePackMigrationReadiness(
     generatedAt?: number;
   }>(registry, {
     method: "GET",
-    path: `${ApiRoutes.packages}/storepack/migration-readiness`,
+    path: `${ApiRoutes.packages}/clawpack/migration-readiness`,
     token,
   });
   if (options.json) {
     process.stdout.write(`${JSON.stringify(result, null, 2)}\n`);
     return;
   }
-  console.log("StorePack migration readiness");
+  console.log("Claw Pack migration readiness");
   console.log(`Ready: ${formatUnknownScalar(result.readyCount)}`);
   console.log(`Blocked: ${formatUnknownScalar(result.blockedCount)}`);
   for (const item of result.items ?? []) {
@@ -800,13 +800,13 @@ export async function cmdPackageStorePackMigrationReadiness(
   }
 }
 
-export async function cmdPackageStorePackMigrationDryRun(
+export async function cmdPackageClawPackMigrationDryRun(
   opts: GlobalOpts,
-  options: PackageStorePackMigrationRunOptions = {},
+  options: PackageClawPackMigrationRunOptions = {},
 ) {
   const token = await requireAuthToken();
   const registry = await getRegistry(opts, { cache: true });
-  const url = registryUrl(`${ApiRoutes.packages}/storepack/migration-runs/dry-run`, registry);
+  const url = registryUrl(`${ApiRoutes.packages}/clawpack/migration-runs/dry-run`, registry);
   url.searchParams.set("operation", options.operation?.trim() || "artifact-backfill");
   if (typeof options.limit === "number" && Number.isFinite(options.limit)) {
     url.searchParams.set("limit", String(options.limit));
@@ -821,7 +821,7 @@ export async function cmdPackageStorePackMigrationDryRun(
     process.stdout.write(`${JSON.stringify(result, null, 2)}\n`);
     return;
   }
-  console.log("StorePack migration dry-run");
+  console.log("Claw Pack migration dry-run");
   console.log(`Operation: ${formatUnknownScalar(result.operation)}`);
   console.log(`Candidates: ${formatUnknownScalar(result.candidateCount)}`);
   console.log(`Open failures: ${formatUnknownScalar(result.failureCount)}`);
@@ -829,13 +829,13 @@ export async function cmdPackageStorePackMigrationDryRun(
   console.log(`Done: ${formatUnknownScalar(result.isDone)}`);
 }
 
-export async function cmdPackageStorePackMigrationRuns(
+export async function cmdPackageClawPackMigrationRuns(
   opts: GlobalOpts,
-  options: PackageStorePackMigrationRunOptions = {},
+  options: PackageClawPackMigrationRunOptions = {},
 ) {
   const token = await requireAuthToken();
   const registry = await getRegistry(opts, { cache: true });
-  const url = registryUrl(`${ApiRoutes.packages}/storepack/migration-runs`, registry);
+  const url = registryUrl(`${ApiRoutes.packages}/clawpack/migration-runs`, registry);
   if (typeof options.limit === "number" && Number.isFinite(options.limit)) {
     url.searchParams.set("limit", String(options.limit));
   }
@@ -851,21 +851,21 @@ export async function cmdPackageStorePackMigrationRuns(
     process.stdout.write(`${JSON.stringify(result, null, 2)}\n`);
     return;
   }
-  console.log("StorePack migration runs");
+  console.log("Claw Pack migration runs");
   for (const run of result.items ?? []) {
-    console.log(formatStorePackMigrationRunLine(run));
+    console.log(formatClawPackMigrationRunLine(run));
   }
 }
 
-export async function cmdPackageStorePackMigrationRunCreate(
+export async function cmdPackageClawPackMigrationRunCreate(
   opts: GlobalOpts,
-  options: PackageStorePackMigrationRunOptions = {},
+  options: PackageClawPackMigrationRunOptions = {},
 ) {
   const token = await requireAuthToken();
   const registry = await getRegistry(opts, { cache: true });
   const result = await apiRequest<Record<string, unknown>>(registry, {
     method: "POST",
-    path: `${ApiRoutes.packages}/storepack/migration-runs`,
+    path: `${ApiRoutes.packages}/clawpack/migration-runs`,
     token,
     body: {
       operation: options.operation?.trim() || "artifact-backfill",
@@ -879,14 +879,14 @@ export async function cmdPackageStorePackMigrationRunCreate(
     process.stdout.write(`${JSON.stringify(result, null, 2)}\n`);
     return;
   }
-  console.log("StorePack migration run created");
-  console.log(formatStorePackMigrationRunLine(result));
+  console.log("Claw Pack migration run created");
+  console.log(formatClawPackMigrationRunLine(result));
 }
 
-export async function cmdPackageStorePackMigrationRunContinue(
+export async function cmdPackageClawPackMigrationRunContinue(
   opts: GlobalOpts,
   runId: string,
-  options: Pick<PackageStorePackMigrationRunOptions, "json"> = {},
+  options: Pick<PackageClawPackMigrationRunOptions, "json"> = {},
 ) {
   const trimmedRunId = runId.trim();
   if (!trimmedRunId) fail("Run id required");
@@ -898,15 +898,15 @@ export async function cmdPackageStorePackMigrationRunContinue(
     error?: string;
   }>(registry, {
     method: "POST",
-    path: `${ApiRoutes.packages}/storepack/migration-runs/${encodeURIComponent(trimmedRunId)}/continue`,
+    path: `${ApiRoutes.packages}/clawpack/migration-runs/${encodeURIComponent(trimmedRunId)}/continue`,
     token,
   });
   if (options.json) {
     process.stdout.write(`${JSON.stringify(result, null, 2)}\n`);
     return;
   }
-  console.log("StorePack migration run continued");
-  if (result.run) console.log(formatStorePackMigrationRunLine(result.run));
+  console.log("Claw Pack migration run continued");
+  if (result.run) console.log(formatClawPackMigrationRunLine(result.run));
   if (result.result) {
     console.log(`Processed: ${formatUnknownScalar(result.result.processed)}`);
     console.log(`Succeeded: ${formatUnknownScalar(result.result.succeeded)}`);
@@ -916,15 +916,15 @@ export async function cmdPackageStorePackMigrationRunContinue(
   if (result.error) console.log(`Error: ${result.error}`);
 }
 
-export async function cmdPackageStorePackBackfill(
+export async function cmdPackageClawPackBackfill(
   opts: GlobalOpts,
-  options: PackageStorePackMigrationOptions = {},
+  options: PackageClawPackMigrationOptions = {},
 ) {
   const token = await requireAuthToken();
   const registry = await getRegistry(opts, { cache: true });
   const result = await apiRequest<Record<string, unknown>>(registry, {
     method: "POST",
-    path: `${ApiRoutes.packages}/storepack/backfill`,
+    path: `${ApiRoutes.packages}/clawpack/backfill`,
     token,
     body:
       typeof options.limit === "number" && Number.isFinite(options.limit)
@@ -935,21 +935,21 @@ export async function cmdPackageStorePackBackfill(
     process.stdout.write(`${JSON.stringify(result, null, 2)}\n`);
     return;
   }
-  console.log("StorePack backfill");
+  console.log("Claw Pack backfill");
   console.log(`Processed: ${formatUnknownScalar(result.processed)}`);
   console.log(`Succeeded: ${formatUnknownScalar(result.succeeded)}`);
   console.log(`Failed: ${formatUnknownScalar(result.failed)}`);
 }
 
-export async function cmdPackageStorePackRetryFailures(
+export async function cmdPackageClawPackRetryFailures(
   opts: GlobalOpts,
-  options: PackageStorePackMigrationOptions = {},
+  options: PackageClawPackMigrationOptions = {},
 ) {
   const token = await requireAuthToken();
   const registry = await getRegistry(opts, { cache: true });
   const result = await apiRequest<Record<string, unknown>>(registry, {
     method: "POST",
-    path: `${ApiRoutes.packages}/storepack/retry-failures`,
+    path: `${ApiRoutes.packages}/clawpack/retry-failures`,
     token,
     body:
       typeof options.limit === "number" && Number.isFinite(options.limit)
@@ -960,21 +960,21 @@ export async function cmdPackageStorePackRetryFailures(
     process.stdout.write(`${JSON.stringify(result, null, 2)}\n`);
     return;
   }
-  console.log("StorePack failure retry");
+  console.log("Claw Pack failure retry");
   console.log(`Processed: ${formatUnknownScalar(result.processed)}`);
   console.log(`Succeeded: ${formatUnknownScalar(result.succeeded)}`);
   console.log(`Failed: ${formatUnknownScalar(result.failed)}`);
 }
 
-export async function cmdPackageStorePackIndexBackfill(
+export async function cmdPackageClawPackIndexBackfill(
   opts: GlobalOpts,
-  options: PackageStorePackMigrationOptions = {},
+  options: PackageClawPackMigrationOptions = {},
 ) {
   const token = await requireAuthToken();
   const registry = await getRegistry(opts, { cache: true });
   const result = await apiRequest<Record<string, unknown>>(registry, {
     method: "POST",
-    path: `${ApiRoutes.packages}/storepack/index-backfill`,
+    path: `${ApiRoutes.packages}/clawpack/index-backfill`,
     token,
     body: {
       ...(typeof options.limit === "number" && Number.isFinite(options.limit)
@@ -987,7 +987,7 @@ export async function cmdPackageStorePackIndexBackfill(
     process.stdout.write(`${JSON.stringify(result, null, 2)}\n`);
     return;
   }
-  console.log("StorePack index backfill");
+  console.log("Claw Pack index backfill");
   console.log(`Processed: ${formatUnknownScalar(result.processed)}`);
   console.log(`Succeeded: ${formatUnknownScalar(result.succeeded)}`);
   console.log(`Failed: ${formatUnknownScalar(result.failed)}`);
@@ -995,11 +995,11 @@ export async function cmdPackageStorePackIndexBackfill(
   console.log(`Done: ${formatUnknownScalar(result.isDone)}`);
 }
 
-export async function cmdPackageStorePackRevoke(
+export async function cmdPackageClawPackRevoke(
   opts: GlobalOpts,
   packageName: string,
   version: string,
-  options: PackageStorePackRevokeOptions = {},
+  options: PackageClawPackRevokeOptions = {},
 ) {
   const trimmed = normalizePackageNameOrFail(packageName);
   const trimmedVersion = version.trim();
@@ -1009,7 +1009,7 @@ export async function cmdPackageStorePackRevoke(
   const reason = options.reason?.trim();
   const result = await apiRequest<Record<string, unknown>>(registry, {
     method: "POST",
-    path: `${ApiRoutes.packages}/${encodeURIComponent(trimmed)}/versions/${encodeURIComponent(trimmedVersion)}/storepack/revoke`,
+    path: `${ApiRoutes.packages}/${encodeURIComponent(trimmed)}/versions/${encodeURIComponent(trimmedVersion)}/clawpack/revoke`,
     token,
     body: reason ? { reason } : {},
   });
@@ -1017,7 +1017,7 @@ export async function cmdPackageStorePackRevoke(
     process.stdout.write(`${JSON.stringify(result, null, 2)}\n`);
     return;
   }
-  console.log("StorePack revoked");
+  console.log("Claw Pack revoked");
   console.log(`Package: ${trimmed}`);
   console.log(`Version: ${formatUnknownScalar(result.version ?? trimmedVersion)}`);
   console.log(`SHA-256: ${formatUnknownScalar(result.sha256)}`);
@@ -1094,7 +1094,7 @@ function formatUnknownScalar(value: unknown) {
   return "unknown";
 }
 
-function formatStorePackMigrationRunLine(run: Record<string, unknown>) {
+function formatClawPackMigrationRunLine(run: Record<string, unknown>) {
   const id = formatUnknownScalar(run._id);
   const operation = formatUnknownScalar(run.operation);
   const status = formatUnknownScalar(run.status);
@@ -1207,18 +1207,18 @@ function printVerification(verification: PackageVerificationSummary | null | und
   if (verification.scanStatus) console.log(`Scan: ${verification.scanStatus}`);
 }
 
-function printStorePack(storepack: PackageStorePackSummary | null | undefined) {
-  if (!storepack) return;
-  console.log(`StorePack: ${storepack.available ? "available" : "unavailable"}`);
-  if (!storepack.available) return;
-  if (storepack.sha256) console.log(`StorePack SHA-256: ${storepack.sha256}`);
-  if (typeof storepack.size === "number") console.log(`StorePack Size: ${storepack.size}B`);
-  if (storepack.specVersion) console.log(`StorePack Spec: v${storepack.specVersion}`);
-  if (storepack.hostTargets?.length) {
-    const targets = storepack.hostTargets
+function printClawPack(clawpack: PackageClawPackSummary | null | undefined) {
+  if (!clawpack) return;
+  console.log(`Claw Pack: ${clawpack.available ? "available" : "unavailable"}`);
+  if (!clawpack.available) return;
+  if (clawpack.sha256) console.log(`Claw Pack SHA-256: ${clawpack.sha256}`);
+  if (typeof clawpack.size === "number") console.log(`Claw Pack Size: ${clawpack.size}B`);
+  if (clawpack.specVersion) console.log(`Claw Pack Spec: v${clawpack.specVersion}`);
+  if (clawpack.hostTargets?.length) {
+    const targets = clawpack.hostTargets
       .map((target) => [target.os, target.arch, target.libc].filter(Boolean).join("-"))
       .join(", ");
-    console.log(`StorePack Targets: ${targets}`);
+    console.log(`Claw Pack Targets: ${targets}`);
   }
 }
 

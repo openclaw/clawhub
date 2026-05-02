@@ -1,8 +1,8 @@
 import { buildDeterministicPackageZip } from "./skillZip";
 
 export const STOREPACK_SPEC_VERSION = 1;
-export const STOREPACK_BUILD_VERSION = "clawhub-storepack-v1";
-export const STOREPACK_MANIFEST_PATH = "STOREPACK.json";
+export const STOREPACK_BUILD_VERSION = "clawhub-clawpack-v1";
+export const STOREPACK_MANIFEST_PATH = "CLAWPACK.json";
 
 export type StorePackHostTarget = {
   os: "darwin" | "linux" | "win32";
@@ -157,15 +157,16 @@ function normalizeStorePackFiles(files: StorePackFile[]) {
   for (const file of files) {
     const path = normalizeStorePackFilePath(file.path);
     if (!path) {
-      throw new Error(`Invalid StorePack file path: ${file.path}`);
+      throw new Error(`Invalid Claw Pack file path: ${file.path}`);
     }
-    if (path.toLowerCase() === STOREPACK_MANIFEST_PATH.toLowerCase()) {
+    const lowerPath = path.toLowerCase();
+    if (lowerPath === STOREPACK_MANIFEST_PATH.toLowerCase()) {
       continue;
     }
     const collisionKey = path.toLowerCase();
     const existingPath = seen.get(collisionKey);
     if (existingPath) {
-      throw new Error(`Duplicate StorePack file path: ${existingPath} and ${path}`);
+      throw new Error(`Duplicate Claw Pack file path: ${existingPath} and ${path}`);
     }
     seen.set(collisionKey, path);
     publishFiles.push({ ...file, path });
@@ -266,8 +267,8 @@ export async function buildStorePack(input: StorePackInput): Promise<BuiltStoreP
     }))
     .sort((a, b) => a.path.localeCompare(b.path));
   const manifest: Record<string, unknown> = {
-    specVersion: STOREPACK_SPEC_VERSION,
-    kind: "openclaw.storepack",
+      specVersion: STOREPACK_SPEC_VERSION,
+      kind: "openclaw.clawpack",
     package: {
       name: input.name,
       owner: input.owner ?? null,
