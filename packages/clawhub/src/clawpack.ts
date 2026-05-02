@@ -1,11 +1,11 @@
 import { gunzipSync } from "fflate";
 
-export type ClawPackEntry = {
+type ClawPackEntry = {
   path: string;
   bytes: Uint8Array;
 };
 
-export type ParsedClawPack = {
+type ParsedClawPack = {
   packageName: string;
   packageVersion: string;
   entries: ClawPackEntry[];

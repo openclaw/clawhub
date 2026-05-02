@@ -1008,7 +1008,7 @@ code {
   color: var(--ink) !important;
 }
 
-.github-sign-in-button svg {
+.github-sign-in-button .github-sign-in-logo {
   width: 22px;
   height: 22px;
 }
@@ -4892,7 +4892,7 @@ code {
     border-radius: var(--r-md) !important;
   }
 
-  .github-sign-in-button svg {
+  .github-sign-in-button .github-sign-in-logo {
     width: 24px;
     height: 24px;
   }
@@ -8453,7 +8453,7 @@ code {
   gap: var(--space-4);
   padding: var(--space-5);
   border: 1px solid var(--line);
-  border-radius: var(--r-xl);
+  border-radius: var(--r-lg);
   background:
     linear-gradient(180deg, color-mix(in srgb, var(--surface) 88%, transparent), transparent),
     color-mix(in srgb, var(--surface-muted) 58%, transparent);
@@ -8480,9 +8480,9 @@ code {
 .about-title {
   margin: 0;
   font-family: var(--font-display);
-  font-size: clamp(2.2rem, 5vw, 4rem);
+  font-size: 3.5rem;
   line-height: 0.98;
-  letter-spacing: -0.04em;
+  letter-spacing: 0;
 }
 
 .about-lead {
@@ -8497,7 +8497,7 @@ code {
   display: grid;
   gap: 12px;
   padding: 18px;
-  border-radius: 22px;
+  border-radius: var(--r-lg);
   border: 1px solid color-mix(in srgb, var(--line) 84%, transparent);
   background: color-mix(in srgb, var(--surface) 80%, transparent);
 }
@@ -8530,9 +8530,9 @@ code {
 
 .about-categories-header .home-section-title {
   max-width: 18ch;
-  font-size: clamp(1.9rem, 3vw, 2.6rem);
+  font-size: 2.35rem;
   line-height: 1.02;
-  letter-spacing: -0.035em;
+  letter-spacing: 0;
 }
 
 .about-grid,
@@ -8551,15 +8551,14 @@ code {
   grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
 }
 
-.about-rule-card,
-.about-pattern {
+.about-rule-card {
   display: flex;
   flex-direction: column;
   gap: 16px;
   min-height: 220px;
   padding: 28px 26px 24px;
   border: 1px solid var(--line);
-  border-radius: 22px;
+  border-radius: var(--r-lg);
   background: color-mix(in srgb, var(--surface) 88%, transparent);
   transition:
     border-color 0.25s,
@@ -8586,12 +8585,12 @@ code {
 .about-rule-card-icon {
   width: 36px;
   height: 36px;
-  border-radius: 8px;
+  border-radius: var(--r-sm);
   display: flex;
   align-items: center;
   justify-content: center;
   background: var(--accent-subtle);
-  border: 1.5px solid rgba(220, 38, 38, 0.25);
+  border: 1.5px solid color-mix(in srgb, var(--status-error-fg) 25%, var(--line));
   flex-shrink: 0;
   transition:
     background 0.2s,
@@ -8599,12 +8598,14 @@ code {
 }
 
 .about-rule-card-icon svg {
+  width: 18px;
+  height: 18px;
   color: var(--accent);
 }
 
 .about-rule-card:hover .about-rule-card-icon {
-  background: rgba(220, 38, 38, 0.18);
-  box-shadow: 0 0 14px rgba(220, 38, 38, 0.08);
+  background: var(--status-error-bg);
+  box-shadow: 0 0 14px color-mix(in srgb, var(--status-error-fg) 8%, transparent);
 }
 
 .about-rule-card :is(h2, h3) {
@@ -8613,7 +8614,7 @@ code {
   font-family: var(--font-display);
   font-weight: 600;
   line-height: 1.08;
-  letter-spacing: -0.03em;
+  letter-spacing: 0;
   color: var(--ink);
 }
 
@@ -8636,9 +8637,93 @@ code {
 
 .about-pattern {
   margin: 0;
+  display: grid;
+  grid-template-columns: auto 1fr;
+  align-items: start;
+  gap: 12px;
+  padding: 14px;
+  border: 1px solid var(--line);
+  border-radius: var(--r-md);
+  background: color-mix(in srgb, var(--surface) 82%, transparent);
   color: var(--ink-soft);
   line-height: 1.6;
   font-size: var(--fs-sm);
+}
+
+.about-pattern svg {
+  width: 16px;
+  height: 16px;
+  margin-top: 3px;
+  flex-shrink: 0;
+}
+
+.about-pattern-accepted svg {
+  color: var(--status-success-fg);
+}
+
+.about-pattern-rejected svg {
+  color: var(--status-error-fg);
+}
+
+.about-pattern-lanes {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: var(--space-4);
+}
+
+.about-patterns-header {
+  display: grid;
+  gap: var(--space-3);
+  max-width: 76ch;
+}
+
+.about-pattern-lane {
+  min-height: 100%;
+  padding: var(--space-5);
+  border-radius: var(--r-lg);
+  background: color-mix(in srgb, var(--surface) 88%, transparent);
+}
+
+.about-pattern-lane-header {
+  flex-direction: row;
+  align-items: flex-start;
+  gap: 14px;
+}
+
+.about-pattern-lane-header > div:last-child {
+  display: grid;
+  gap: 10px;
+}
+
+.about-pattern-lane-accepted {
+  border-color: color-mix(in srgb, var(--status-success-fg) 30%, var(--line));
+}
+
+.about-pattern-lane-accepted .about-rule-card-icon {
+  background: var(--status-success-bg);
+  border-color: color-mix(in srgb, var(--status-success-fg) 35%, var(--line));
+}
+
+.about-pattern-lane-accepted .about-rule-card-icon svg {
+  color: var(--status-success-fg);
+}
+
+.about-pattern-lane-rejected {
+  border-color: color-mix(in srgb, var(--status-error-fg) 30%, var(--line));
+}
+
+.about-pattern-lane-rejected .about-rule-card-icon {
+  background: var(--status-error-bg);
+  border-color: color-mix(in srgb, var(--status-error-fg) 35%, var(--line));
+}
+
+.about-pattern-lane-rejected .about-rule-card-icon svg {
+  color: var(--status-error-fg);
+}
+
+.about-pattern-lane .about-patterns {
+  grid-template-columns: 1fr;
+  gap: 12px;
 }
 
 .souls-coming-page {
@@ -8713,15 +8798,24 @@ code {
   .about-patterns {
     grid-template-columns: repeat(4, minmax(0, 1fr));
   }
+
+  .about-pattern-lanes {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
 }
 
 @media (max-width: 640px) {
   .about-bento,
   .about-grid,
   .about-patterns,
+  .about-pattern-lanes,
   .about-panel-categories .about-grid,
   .souls-coming-grid {
     grid-template-columns: 1fr;
+  }
+
+  .about-title {
+    font-size: 2.4rem;
   }
 }
 

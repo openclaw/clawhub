@@ -1,11 +1,11 @@
 import { gunzipSync } from "fflate";
 
-export type ClawPackEntry = {
+type ClawPackEntry = {
   path: string;
   bytes: Uint8Array;
 };
 
-export type ParsedClawPack = {
+type ParsedClawPack = {
   artifactSha256: string;
   npmIntegrity: string;
   npmShasum: string;
@@ -110,7 +110,7 @@ function parseTarEntries(bytes: Uint8Array): ClawPackEntry[] {
 async function digestBytes(algorithm: "SHA-1" | "SHA-256" | "SHA-512", bytes: Uint8Array) {
   const input = new Uint8Array(bytes.byteLength);
   input.set(bytes);
-  const digest = await crypto.subtle.digest(algorithm, input.buffer);
+  const digest = await crypto.subtle.digest(algorithm, input);
   return new Uint8Array(digest);
 }
 
