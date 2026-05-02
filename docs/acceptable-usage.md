@@ -1,5 +1,5 @@
 ---
-summary: "Marketplace policy: what ClawHub will not allow."
+summary: "Marketplace policy: what ClawHub allows and what it will not host."
 read_when:
   - Reviewing uploads for abuse or policy violations
   - Writing moderation docs or reviewer runbooks
@@ -8,9 +8,18 @@ read_when:
 
 # Acceptable Usage
 
-This page describes the kinds of skills and content ClawHub is not okay with.
+This page describes the kinds of skills and content ClawHub is okay with, and the abuse workflows it will not host.
 
 These rules are intentionally practical. We care most about end-to-end abuse workflows, not just isolated keywords. If a skill is built to evade defenses, abuse platforms, scam people, invade privacy, or enable non-consensual behavior, it does not belong on ClawHub.
+
+## Recent patterns we are explicitly okay with
+
+- Frontend and design-system work that uses real components, semantic tokens, accessible states, and tested user flows.
+- shadcn/ui composition that uses installed source components, project aliases, and documented variants instead of one-off markup.
+- UI5 JavaScript-to-TypeScript conversion that preserves comments, uses concrete UI5 types, and keeps generated control interfaces reviewable.
+- Defensive security review, moderation tooling, and abuse-detection prompts that show evidence and keep human approval boundaries clear.
+- Consent-based workflow automation for personal or team accounts with explicit credentials, transparent setup, and dry-run or preview modes.
+- Docs, migration runbooks, local developer utilities, and test fixtures scoped to the repository they support.
 
 ## Not okay
 
