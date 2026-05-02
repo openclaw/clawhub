@@ -5,6 +5,8 @@ import {
   type PackageChannel,
   type PackageFamily,
   type PackageModerationQueueStatus,
+  type PackageOfficialMigrationListPhase,
+  type PackageOfficialMigrationPhase,
   type PackagePublishRequest,
   type PackageVerificationTier,
 } from "clawhub-schema";
@@ -73,7 +75,19 @@ const MAX_SEARCH_SCAN_DOCUMENTS = 1_000;
 const MAX_SEARCH_SCAN_PAGES = 20;
 const MAX_DIRECT_PACKAGE_SEARCH_CANDIDATES = 20;
 const MAX_APPEAL_MESSAGE_LENGTH = 2_000;
+const MAX_OFFICIAL_MIGRATION_BLOCKERS = 20;
+const MAX_OFFICIAL_MIGRATION_FIELD_LENGTH = 300;
+const MAX_OFFICIAL_MIGRATION_NOTES_LENGTH = 2_000;
 const INITIAL_PACKAGE_VT_SCAN_DELAY_MS = 30_000;
+const packageOfficialMigrationPhaseValidator = v.union(
+  v.literal("planned"),
+  v.literal("published"),
+  v.literal("clawpack-ready"),
+  v.literal("legacy-zip-only"),
+  v.literal("metadata-ready"),
+  v.literal("blocked"),
+  v.literal("ready-for-openclaw"),
+);
 const vtEngineStatsValidator = v.object({
   malicious: v.optional(v.number()),
   suspicious: v.optional(v.number()),
@@ -235,6 +249,25 @@ type PackageAppealListItem = {
   resolvedAt?: number | null;
   resolvedBy?: Id<"users"> | null;
   resolutionNote?: string | null;
+};
+type PackageOfficialMigrationListItem = {
+  migrationId: Id<"officialPluginMigrations">;
+  bundledPluginId: string;
+  packageName: string;
+  packageId?: Id<"packages"> | null;
+  owner?: string | null;
+  sourceRepo?: string | null;
+  sourcePath?: string | null;
+  sourceCommit?: string | null;
+  phase: PackageOfficialMigrationPhase;
+  blockers: string[];
+  hostTargetsComplete: boolean;
+  scanClean: boolean;
+  moderationApproved: boolean;
+  runtimeBundlesReady: boolean;
+  notes?: string | null;
+  createdAt: number;
+  updatedAt: number;
 };
 type PackageModerationStatus = {
   package: {
@@ -2779,6 +2812,206 @@ export const resolvePackageAppealForUserInternal = internalMutation({
       releaseId: appeal.releaseId,
       status: args.status,
     };
+  },
+});
+
+function normalizeOfficialMigrationId(raw: string) {
+  const value = raw.trim().toLowerCase();
+  if (!value) throw new ConvexError("Bundled plugin id required");
+  if (value.length > MAX_OFFICIAL_MIGRATION_FIELD_LENGTH) {
+    throw new ConvexError("Bundled plugin id too long");
+  }
+  if (!/^[a-z0-9][a-z0-9._:-]*$/.test(value)) {
+    throw new ConvexError(
+      "Bundled plugin id must use letters, numbers, dot, dash, underscore, or colon.",
+    );
+  }
+  return value;
+}
+
+function normalizeOptionalMigrationText(raw: string | undefined) {
+  const value = raw?.trim();
+  if (!value) return undefined;
+  return value.slice(0, MAX_OFFICIAL_MIGRATION_FIELD_LENGTH);
+}
+
+function normalizeMigrationBlockers(raw: string[] | undefined) {
+  if (!raw) return undefined;
+  const blockers: string[] = [];
+  const seen = new Set<string>();
+  for (const blocker of raw) {
+    const value = blocker.trim().slice(0, MAX_OFFICIAL_MIGRATION_FIELD_LENGTH);
+    if (!value || seen.has(value)) continue;
+    seen.add(value);
+    blockers.push(value);
+    if (blockers.length >= MAX_OFFICIAL_MIGRATION_BLOCKERS) break;
+  }
+  return blockers;
+}
+
+function toPackageOfficialMigrationItem(
+  migration: Doc<"officialPluginMigrations">,
+): PackageOfficialMigrationListItem {
+  return {
+    migrationId: migration._id,
+    bundledPluginId: migration.bundledPluginId,
+    packageName: migration.packageName,
+    packageId: migration.packageId ?? null,
+    owner: migration.owner ?? null,
+    sourceRepo: migration.sourceRepo ?? null,
+    sourcePath: migration.sourcePath ?? null,
+    sourceCommit: migration.sourceCommit ?? null,
+    phase: migration.phase,
+    blockers: migration.blockers,
+    hostTargetsComplete: migration.hostTargetsComplete,
+    scanClean: migration.scanClean,
+    moderationApproved: migration.moderationApproved,
+    runtimeBundlesReady: migration.runtimeBundlesReady,
+    notes: migration.notes ?? null,
+    createdAt: migration.createdAt,
+    updatedAt: migration.updatedAt,
+  };
+}
+
+export const listOfficialPluginMigrationsInternal = internalQuery({
+  args: {
+    actorUserId: v.id("users"),
+    cursor: v.optional(v.union(v.string(), v.null())),
+    limit: v.optional(v.number()),
+    phase: v.optional(v.union(packageOfficialMigrationPhaseValidator, v.literal("all"))),
+  },
+  handler: async (ctx, args) => {
+    const actor = await ctx.db.get(args.actorUserId);
+    if (!actor || actor.deletedAt || actor.deactivatedAt) throw new ConvexError("Unauthorized");
+    assertModerator(actor);
+
+    const limit = Math.max(1, Math.min(Math.round(args.limit ?? 25), 100));
+    const phase: PackageOfficialMigrationListPhase = args.phase ?? "all";
+    const migrationQuery =
+      phase === "all"
+        ? ctx.db.query("officialPluginMigrations").withIndex("by_updatedAt", (q) => q)
+        : ctx.db
+            .query("officialPluginMigrations")
+            .withIndex("by_phase_updatedAt", (q) => q.eq("phase", phase));
+    const page = await migrationQuery.order("desc").paginate({
+      cursor: args.cursor ?? null,
+      numItems: limit,
+    });
+
+    return {
+      items: page.page.map(toPackageOfficialMigrationItem),
+      nextCursor: page.isDone ? null : page.continueCursor,
+      done: page.isDone,
+    };
+  },
+});
+
+export const upsertOfficialPluginMigrationForUserInternal = internalMutation({
+  args: {
+    actorUserId: v.id("users"),
+    bundledPluginId: v.string(),
+    packageName: v.string(),
+    owner: v.optional(v.string()),
+    sourceRepo: v.optional(v.string()),
+    sourcePath: v.optional(v.string()),
+    sourceCommit: v.optional(v.string()),
+    phase: v.optional(packageOfficialMigrationPhaseValidator),
+    blockers: v.optional(v.array(v.string())),
+    hostTargetsComplete: v.optional(v.boolean()),
+    scanClean: v.optional(v.boolean()),
+    moderationApproved: v.optional(v.boolean()),
+    runtimeBundlesReady: v.optional(v.boolean()),
+    notes: v.optional(v.string()),
+  },
+  handler: async (ctx, args) => {
+    const actor = await ctx.db.get(args.actorUserId);
+    if (!actor || actor.deletedAt || actor.deactivatedAt) throw new ConvexError("Unauthorized");
+    assertAdmin(actor);
+
+    const bundledPluginId = normalizeOfficialMigrationId(args.bundledPluginId);
+    const packageName = normalizePackageName(args.packageName);
+    const packageDoc = await ctx.db
+      .query("packages")
+      .withIndex("by_name", (q) => q.eq("normalizedName", packageName))
+      .unique();
+    const existing = await ctx.db
+      .query("officialPluginMigrations")
+      .withIndex("by_bundled_plugin", (q) => q.eq("bundledPluginId", bundledPluginId))
+      .unique();
+    const blockers = normalizeMigrationBlockers(args.blockers);
+    const now = Date.now();
+
+    if (existing) {
+      const patch: Partial<Doc<"officialPluginMigrations">> = {
+        packageName,
+        packageId: packageDoc && !packageDoc.softDeletedAt ? packageDoc._id : undefined,
+        owner: normalizeOptionalMigrationText(args.owner),
+        sourceRepo: normalizeOptionalMigrationText(args.sourceRepo),
+        sourcePath: normalizeOptionalMigrationText(args.sourcePath),
+        sourceCommit: normalizeOptionalMigrationText(args.sourceCommit),
+        phase: args.phase ?? existing.phase,
+        blockers: blockers ?? existing.blockers,
+        hostTargetsComplete: args.hostTargetsComplete ?? existing.hostTargetsComplete,
+        scanClean: args.scanClean ?? existing.scanClean,
+        moderationApproved: args.moderationApproved ?? existing.moderationApproved,
+        runtimeBundlesReady: args.runtimeBundlesReady ?? existing.runtimeBundlesReady,
+        notes: args.notes?.trim().slice(0, MAX_OFFICIAL_MIGRATION_NOTES_LENGTH),
+        updatedAt: now,
+      };
+      await ctx.db.patch(existing._id, patch);
+      const migration = { ...existing, ...patch } as Doc<"officialPluginMigrations">;
+      await ctx.db.insert("auditLogs", {
+        actorUserId: actor._id,
+        action: "package.official_migration.upsert",
+        targetType: "officialPluginMigration",
+        targetId: existing._id,
+        metadata: {
+          bundledPluginId,
+          packageName,
+          phase: migration.phase,
+          packageId: migration.packageId,
+        },
+        createdAt: now,
+      });
+      return { ok: true as const, migration: toPackageOfficialMigrationItem(migration) };
+    }
+
+    const phase: PackageOfficialMigrationPhase =
+      args.phase ?? (blockers && blockers.length > 0 ? "blocked" : "planned");
+    const migrationId = await ctx.db.insert("officialPluginMigrations", {
+      bundledPluginId,
+      packageName,
+      packageId: packageDoc && !packageDoc.softDeletedAt ? packageDoc._id : undefined,
+      owner: normalizeOptionalMigrationText(args.owner),
+      sourceRepo: normalizeOptionalMigrationText(args.sourceRepo),
+      sourcePath: normalizeOptionalMigrationText(args.sourcePath),
+      sourceCommit: normalizeOptionalMigrationText(args.sourceCommit),
+      phase,
+      blockers: blockers ?? [],
+      hostTargetsComplete: args.hostTargetsComplete ?? false,
+      scanClean: args.scanClean ?? false,
+      moderationApproved: args.moderationApproved ?? false,
+      runtimeBundlesReady: args.runtimeBundlesReady ?? false,
+      notes: args.notes?.trim().slice(0, MAX_OFFICIAL_MIGRATION_NOTES_LENGTH),
+      createdAt: now,
+      updatedAt: now,
+    });
+    const migration = (await ctx.db.get(migrationId))!;
+    await ctx.db.insert("auditLogs", {
+      actorUserId: actor._id,
+      action: "package.official_migration.upsert",
+      targetType: "officialPluginMigration",
+      targetId: migrationId,
+      metadata: {
+        bundledPluginId,
+        packageName,
+        phase,
+        packageId: migration.packageId,
+      },
+      createdAt: now,
+    });
+
+    return { ok: true as const, migration: toPackageOfficialMigrationItem(migration) };
   },
 });
 

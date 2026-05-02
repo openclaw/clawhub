@@ -17,7 +17,9 @@ import {
   triagePackageReportForUserInternal,
   submitPackageAppealForUserInternal,
   listPackageAppealsInternal,
+  listOfficialPluginMigrationsInternal,
   resolvePackageAppealForUserInternal,
+  upsertOfficialPluginMigrationForUserInternal,
   getVersionByName,
   insertReleaseInternal,
   listPackageModerationQueueInternal,
@@ -389,6 +391,45 @@ const backfillPackageArtifactKindsInternalHandler = (
       nextCursor: string | null;
       done: boolean;
       dryRun: boolean;
+    }
+  >
+)._handler;
+const listOfficialPluginMigrationsInternalHandler = (
+  listOfficialPluginMigrationsInternal as unknown as WrappedHandler<
+    {
+      actorUserId: string;
+      cursor?: string | null;
+      limit?: number;
+      phase?: "planned" | "blocked" | "ready-for-openclaw" | "all";
+    },
+    {
+      items: Array<{ bundledPluginId: string; packageName: string; phase: string }>;
+      nextCursor: string | null;
+      done: boolean;
+    }
+  >
+)._handler;
+const upsertOfficialPluginMigrationForUserInternalHandler = (
+  upsertOfficialPluginMigrationForUserInternal as unknown as WrappedHandler<
+    {
+      actorUserId: string;
+      bundledPluginId: string;
+      packageName: string;
+      owner?: string;
+      sourceRepo?: string;
+      sourcePath?: string;
+      sourceCommit?: string;
+      phase?: "planned" | "blocked" | "ready-for-openclaw";
+      blockers?: string[];
+      hostTargetsComplete?: boolean;
+      scanClean?: boolean;
+      moderationApproved?: boolean;
+      runtimeBundlesReady?: boolean;
+      notes?: string;
+    },
+    {
+      ok: true;
+      migration: { bundledPluginId: string; packageName: string; phase: string };
     }
   >
 )._handler;
@@ -3303,6 +3344,9 @@ describe("packages public queries", () => {
               })),
             };
           }),
+          replace: vi.fn(),
+          delete: vi.fn(),
+          normalizeId: vi.fn(),
         },
       } as never,
       { name: "demo-plugin" },
@@ -3972,6 +4016,130 @@ describe("packages public queries", () => {
         targetType: "packageAppeal",
       }),
     );
+  });
+
+  it("upserts official plugin migration rows for admins", async () => {
+    let insertedMigration: Record<string, unknown> | null = null;
+    const insert = vi.fn(async (table: string, doc: Record<string, unknown>) => {
+      if (table === "officialPluginMigrations") {
+        insertedMigration = doc;
+        return "officialPluginMigrations:1";
+      }
+      return "auditLogs:1";
+    });
+
+    const result = await upsertOfficialPluginMigrationForUserInternalHandler(
+      {
+        db: {
+          get: vi.fn(async (id: string) => {
+            if (id === "users:admin") return { _id: id, role: "admin" };
+            if (id === "officialPluginMigrations:1") {
+              return { _id: id, ...(insertedMigration ?? {}) };
+            }
+            return null;
+          }),
+          insert,
+          patch: vi.fn(),
+          replace: vi.fn(),
+          delete: vi.fn(),
+          normalizeId: vi.fn(),
+          query: vi.fn((table: string) => {
+            if (table === "packages") {
+              return {
+                withIndex: vi.fn(() => ({
+                  unique: vi.fn().mockResolvedValue(makePackageDoc({ _id: "packages:demo" })),
+                })),
+              };
+            }
+            if (table === "officialPluginMigrations") {
+              return {
+                withIndex: vi.fn(() => ({ unique: vi.fn().mockResolvedValue(null) })),
+              };
+            }
+            throw new Error(`Unexpected table ${table}`);
+          }),
+        },
+      } as never,
+      {
+        actorUserId: "users:admin",
+        bundledPluginId: "Core.Search",
+        packageName: "@scope/demo",
+        phase: "blocked",
+        blockers: ["missing ClawPack", "missing ClawPack"],
+        hostTargetsComplete: true,
+      },
+    );
+
+    expect(result).toMatchObject({
+      ok: true,
+      migration: {
+        bundledPluginId: "core.search",
+        packageName: "@scope/demo",
+        packageId: "packages:demo",
+        phase: "blocked",
+        blockers: ["missing ClawPack"],
+        hostTargetsComplete: true,
+      },
+    });
+    expect(insert).toHaveBeenCalledWith(
+      "auditLogs",
+      expect.objectContaining({ action: "package.official_migration.upsert" }),
+    );
+  });
+
+  it("lists official plugin migration rows for moderators", async () => {
+    const result = await listOfficialPluginMigrationsInternalHandler(
+      {
+        db: {
+          get: vi.fn(async (id: string) => {
+            if (id === "users:moderator") return { _id: id, role: "moderator" };
+            return null;
+          }),
+          query: vi.fn((table: string) => {
+            if (table !== "officialPluginMigrations") throw new Error(`Unexpected table ${table}`);
+            return {
+              withIndex: vi.fn(() => ({
+                order: vi.fn(() => ({
+                  paginate: vi.fn().mockResolvedValue({
+                    page: [
+                      {
+                        _id: "officialPluginMigrations:1",
+                        bundledPluginId: "core.search",
+                        packageName: "@scope/demo",
+                        packageId: "packages:demo",
+                        phase: "ready-for-openclaw",
+                        blockers: [],
+                        hostTargetsComplete: true,
+                        scanClean: true,
+                        moderationApproved: true,
+                        runtimeBundlesReady: false,
+                        createdAt: 100,
+                        updatedAt: 200,
+                      },
+                    ],
+                    continueCursor: null,
+                    isDone: true,
+                  }),
+                })),
+              })),
+            };
+          }),
+        },
+      } as never,
+      { actorUserId: "users:moderator", phase: "all", limit: 10 },
+    );
+
+    expect(result).toEqual({
+      items: [
+        expect.objectContaining({
+          bundledPluginId: "core.search",
+          packageName: "@scope/demo",
+          phase: "ready-for-openclaw",
+        }),
+      ],
+      nextCursor: null,
+      done: true,
+    });
   });
 });
 

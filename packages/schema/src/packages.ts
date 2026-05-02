@@ -86,8 +86,7 @@ export type PackageAppealListStatus = (typeof PackageAppealListStatusSchema)[inf
 export const PackageOfficialMigrationPhaseSchema = type(
   '"planned"|"published"|"clawpack-ready"|"legacy-zip-only"|"metadata-ready"|"blocked"|"ready-for-openclaw"',
 );
-export type PackageOfficialMigrationPhase =
-  (typeof PackageOfficialMigrationPhaseSchema)[inferred];
+export type PackageOfficialMigrationPhase = (typeof PackageOfficialMigrationPhaseSchema)[inferred];
 
 export const PackageOfficialMigrationListPhaseSchema =
   PackageOfficialMigrationPhaseSchema.or('"all"');
@@ -557,8 +556,7 @@ export const PackageOfficialMigrationItemSchema = type({
   createdAt: "number",
   updatedAt: "number",
 });
-export type PackageOfficialMigrationItem =
-  (typeof PackageOfficialMigrationItemSchema)[inferred];
+export type PackageOfficialMigrationItem = (typeof PackageOfficialMigrationItemSchema)[inferred];
 
 export const ApiV1PackageOfficialMigrationListResponseSchema = type({
   items: PackageOfficialMigrationItemSchema.array(),
