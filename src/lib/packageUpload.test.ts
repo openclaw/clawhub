@@ -92,16 +92,28 @@ describe("buildPackageUploadEntries", () => {
       .fn()
       .mockResolvedValueOnce("storage:1")
       .mockResolvedValueOnce("storage:2");
+    const onProgress = vi.fn();
 
     const uploaded = await buildPackageUploadEntries(files, {
       generateUploadUrl,
       hashFile,
       uploadFile,
+      onProgress,
     });
 
     expect(generateUploadUrl).toHaveBeenCalledTimes(2);
     expect(uploadFile).toHaveBeenNthCalledWith(1, "upload-1", files[0]);
     expect(uploadFile).toHaveBeenNthCalledWith(2, "upload-2", files[1]);
+    expect(onProgress).toHaveBeenNthCalledWith(1, {
+      current: 1,
+      total: 2,
+      path: "package.json",
+    });
+    expect(onProgress).toHaveBeenNthCalledWith(2, {
+      current: 2,
+      total: 2,
+      path: "dist/index.js",
+    });
     expect(uploaded.map((entry) => entry.path)).toEqual(["package.json", "dist/index.js"]);
   });
 

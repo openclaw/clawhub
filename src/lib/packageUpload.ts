@@ -119,6 +119,7 @@ export async function buildPackageUploadEntries<TFile extends UploadablePackageF
     generateUploadUrl: () => Promise<string>;
     hashFile: (file: TFile) => Promise<string>;
     uploadFile: (uploadUrl: string, file: TFile) => Promise<string>;
+    onProgress?: (progress: { current: number; total: number; path: string }) => void;
   },
 ) {
   const uploaded: Array<{
@@ -129,7 +130,9 @@ export async function buildPackageUploadEntries<TFile extends UploadablePackageF
     contentType?: string;
   }> = [];
 
-  for (const { file, path } of normalizePackageUploadFiles(files)) {
+  const normalizedFiles = normalizePackageUploadFiles(files);
+  for (const [index, { file, path }] of normalizedFiles.entries()) {
+    options.onProgress?.({ current: index + 1, total: normalizedFiles.length, path });
     const sha256 = await options.hashFile(file);
     const uploadUrl = await options.generateUploadUrl();
     const storageId = await options.uploadFile(uploadUrl, file);

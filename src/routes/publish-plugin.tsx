@@ -877,6 +877,11 @@ export function PublishPluginRoute() {
                         generateUploadUrl,
                         hashFile,
                         uploadFile,
+                        onProgress: (progress) => {
+                          setStatus(
+                            `Uploading file ${progress.current}/${progress.total}: ${progress.path}`,
+                          );
+                        },
                       });
                       setStatus("Publishing release...");
                       await publishRelease({
