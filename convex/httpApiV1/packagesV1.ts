@@ -2370,7 +2370,6 @@ export async function packagesGetRouterV1Handler(ctx: ActionCtx, request: Reques
 }
 
 export async function clawpacksGetRouterV1Handler(ctx: ActionCtx, request: Request) {
-  const path = new URL(request.url).pathname;
   const prefix = "/api/v1/clawpacks/";
   const segments = getPathSegments(request, prefix);
   if (segments.length !== 1) return text("Not found", 404);
