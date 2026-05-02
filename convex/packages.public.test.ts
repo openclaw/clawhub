@@ -18,6 +18,8 @@ import {
   listVersions,
   updateReleaseStaticScanInternal,
   softDeletePackageInternal,
+  transferPackageOwnerInternal,
+  repairPackageIdentityInternal,
   searchForViewerInternal,
   searchPublic,
 } from "./packages";
@@ -50,7 +52,10 @@ const listHandler = (
       name: string;
       pendingReview?: boolean;
       scanStatus?: string;
-      latestRelease: { vtStatus: string | null; staticScanStatus: string | null } | null;
+      latestRelease: {
+        vtStatus: string | null;
+        staticScanStatus: string | null;
+      } | null;
     }>
   >
 )._handler;
@@ -95,7 +100,11 @@ const listVersionsHandler = (
       name: string;
       paginationOpts: { cursor: string | null; numItems: number };
     },
-    { page: Array<{ version: string }>; isDone: boolean; continueCursor: string }
+    {
+      page: Array<{ version: string }>;
+      isDone: boolean;
+      continueCursor: string;
+    }
   >
 )._handler;
 const insertReleaseInternalHandler = (
@@ -261,7 +270,37 @@ const updateReleaseStaticScanInternalHandler = (
 const softDeletePackageInternalHandler = (
   softDeletePackageInternal as unknown as WrappedHandler<
     { userId: string; name: string },
-    { ok: true; packageId: string; releaseCount: number; alreadyDeleted: boolean }
+    {
+      ok: true;
+      packageId: string;
+      releaseCount: number;
+      alreadyDeleted: boolean;
+    }
+  >
+)._handler;
+const transferPackageOwnerInternalHandler = (
+  transferPackageOwnerInternal as unknown as WrappedHandler<
+    {
+      actorUserId: string;
+      name: string;
+      ownerUserId: string;
+      ownerPublisherId?: string;
+      channel?: "official" | "community" | "private";
+      reason?: string;
+    },
+    { ok: true; packageId: string; ownerPublisherId?: string; channel: string }
+  >
+)._handler;
+const repairPackageIdentityInternalHandler = (
+  repairPackageIdentityInternal as unknown as WrappedHandler<
+    {
+      actorUserId: string;
+      name: string;
+      nextName?: string;
+      nextRuntimeId?: string;
+      reason: string;
+    },
+    { ok: true; packageId: string; name: string; runtimeId?: string }
   >
 )._handler;
 
@@ -337,7 +376,11 @@ function makeReleaseDoc(overrides: Partial<Record<string, unknown>> = {}) {
 }
 
 function makeDigestCtx(options: {
-  pages?: Array<{ page: Array<Record<string, unknown>>; isDone: boolean; continueCursor: string }>;
+  pages?: Array<{
+    page: Array<Record<string, unknown>>;
+    isDone: boolean;
+    continueCursor: string;
+  }>;
   capabilityPages?: Array<{
     page: Array<Record<string, unknown>>;
     isDone: boolean;
@@ -356,7 +399,11 @@ function makeDigestCtx(options: {
     string,
     Map<
       string | null,
-      { page: Array<Record<string, unknown>>; isDone: boolean; continueCursor: string }
+      {
+        page: Array<Record<string, unknown>>;
+        isDone: boolean;
+        continueCursor: string;
+      }
     >
   >();
   const indexNames: string[] = [];
@@ -364,11 +411,19 @@ function makeDigestCtx(options: {
 
   const setPages = (
     table: string,
-    pages: Array<{ page: Array<Record<string, unknown>>; isDone: boolean; continueCursor: string }>,
+    pages: Array<{
+      page: Array<Record<string, unknown>>;
+      isDone: boolean;
+      continueCursor: string;
+    }>,
   ) => {
     const pageByCursor = new Map<
       string | null,
-      { page: Array<Record<string, unknown>>; isDone: boolean; continueCursor: string }
+      {
+        page: Array<Record<string, unknown>>;
+        isDone: boolean;
+        continueCursor: string;
+      }
     >();
     let cursor: string | null = null;
     for (const page of pages) {
@@ -709,11 +764,67 @@ function makeReservePackageNameCtx(options?: {
   };
 }
 
+function makeTransferPackageOwnerCtx(options?: {
+  pkg?: Record<string, unknown> | null;
+  actor?: Record<string, unknown> | null;
+  owner?: Record<string, unknown> | null;
+  ownerPublisher?: Record<string, unknown> | null;
+}) {
+  const pkg = options?.pkg ?? makePackageDoc();
+  const patch = vi.fn();
+  const insert = vi.fn();
+  return {
+    insert,
+    patch,
+    ctx: {
+      db: {
+        get: vi.fn(async (id: string) => {
+          if (id === "users:admin") {
+            return options?.actor ?? { _id: id, role: "admin" };
+          }
+          if (id === "users:openclaw") {
+            return options?.owner ?? { _id: id, role: "user" };
+          }
+          if (id === "publishers:openclaw") {
+            return (
+              options?.ownerPublisher ?? {
+                _id: id,
+                kind: "org",
+                handle: "openclaw",
+                displayName: "OpenClaw",
+                trustedPublisher: true,
+              }
+            );
+          }
+          return null;
+        }),
+        query: vi.fn((table: string) => {
+          if (table !== "packages") throw new Error(`Unexpected table ${table}`);
+          return {
+            withIndex: vi.fn(() => ({
+              unique: vi.fn().mockResolvedValue(pkg),
+            })),
+          };
+        }),
+        insert,
+        patch,
+        replace: vi.fn(),
+        delete: vi.fn(),
+        normalizeId: vi.fn(),
+      },
+    },
+  };
+}
+
 function makePackageCtx(options: {
   pkg?: Record<string, unknown> | null;
   latestRelease?: Record<string, unknown> | null;
   versionRelease?: Record<string, unknown> | null;
-  versionsPage?: { page: Array<Record<string, unknown>>; isDone: boolean; continueCursor: string };
+  versionsPage?: {
+    page: Array<Record<string, unknown>>;
+    isDone: boolean;
+    continueCursor: string;
+  };
   ownerPublisher?: Record<string, unknown> | null;
   viewerMembershipRole?: "owner" | "admin" | "publisher" | null;
 }) {
@@ -1522,7 +1633,12 @@ describe("packages public queries", () => {
   it("caps public search scans below the Convex read limit budget", async () => {
     const { ctx, paginate } = makeDigestCtx({
       pages: Array.from({ length: 170 }, (_, index) => ({
-        page: [makeDigest(`noise-${index}`, { executesCode: false, updatedAt: 10_000 - index })],
+        page: [
+          makeDigest(`noise-${index}`, {
+            executesCode: false,
+            updatedAt: 10_000 - index,
+          }),
+        ],
         isDone: false,
         continueCursor: `cursor:${index + 1}`,
       })),
@@ -1613,7 +1729,10 @@ describe("packages public queries", () => {
     });
 
     await expect(
-      getByNameHandler(ctx, { name: "demo-plugin", viewerUserId: "users:owner" } as never),
+      getByNameHandler(ctx, {
+        name: "demo-plugin",
+        viewerUserId: "users:owner",
+      } as never),
     ).resolves.toBeNull();
     await expect(
       listVersionsHandler(ctx, {
@@ -1750,7 +1869,11 @@ describe("packages public queries", () => {
     const { ctx, patch } = makeSoftDeletePackageCtx({
       releases: [
         makeReleaseDoc(),
-        makeReleaseDoc({ _id: "packageReleases:demo-2", version: "1.1.0", softDeletedAt: 123 }),
+        makeReleaseDoc({
+          _id: "packageReleases:demo-2",
+          version: "1.1.0",
+          softDeletedAt: 123,
+        }),
       ],
     });
 
@@ -1845,6 +1968,118 @@ describe("packages public queries", () => {
     ).rejects.toThrow("Package already exists and belongs to another publisher");
   });
 
+  it("lets admins transfer a package to a trusted publisher and make it official", async () => {
+    const { ctx, patch, insert } = makeTransferPackageOwnerCtx();
+
+    await expect(
+      transferPackageOwnerInternalHandler(ctx, {
+        actorUserId: "users:admin",
+        name: " demo-plugin ",
+        ownerUserId: "users:openclaw",
+        ownerPublisherId: "publishers:openclaw",
+        channel: "official",
+        reason: "move official plugin package under OpenClaw",
+      }),
+    ).resolves.toMatchObject({
+      ok: true,
+      packageId: "packages:demo",
+      ownerPublisherId: "publishers:openclaw",
+      channel: "official",
+    });
+
+    expect(patch).toHaveBeenCalledWith("packages:demo", {
+      ownerUserId: "users:openclaw",
+      ownerPublisherId: "publishers:openclaw",
+      channel: "official",
+      isOfficial: true,
+      updatedAt: expect.any(Number),
+    });
+    expect(insert).toHaveBeenCalledWith(
+      "auditLogs",
+      expect.objectContaining({
+        action: "package.owner.transfer",
+        targetType: "package",
+        targetId: "packages:demo",
+        metadata: expect.objectContaining({
+          name: "demo-plugin",
+          previousOwnerUserId: "users:owner",
+          nextOwnerUserId: "users:openclaw",
+          nextOwnerPublisherId: "publishers:openclaw",
+          previousChannel: "community",
+          nextChannel: "official",
+        }),
+      }),
+    );
+  });
+
+  it("lets admins repair a package name and runtime id with an audit trail", async () => {
+    const { ctx, patch, insert } = makeTransferPackageOwnerCtx({
+      pkg: makePackageDoc({
+        name: "whatsapp",
+        normalizedName: "whatsapp",
+        runtimeId: "whatsapp",
+      }),
+    });
+
+    await expect(
+      repairPackageIdentityInternalHandler(ctx, {
+        actorUserId: "users:admin",
+        name: "whatsapp",
+        nextName: "ivangdavila-whatsapp",
+        nextRuntimeId: "ivangdavila-whatsapp",
+        reason: "free official OpenClaw WhatsApp package id",
+      }),
+    ).resolves.toMatchObject({
+      ok: true,
+      packageId: "packages:demo",
+      name: "ivangdavila-whatsapp",
+      runtimeId: "ivangdavila-whatsapp",
+    });
+
+    expect(patch).toHaveBeenCalledWith("packages:demo", {
+      name: "ivangdavila-whatsapp",
+      normalizedName: "ivangdavila-whatsapp",
+      runtimeId: "ivangdavila-whatsapp",
+      updatedAt: expect.any(Number),
+    });
+    expect(insert).toHaveBeenCalledWith(
+      "auditLogs",
+      expect.objectContaining({
+        action: "package.identity.repair",
+        targetType: "package",
+        targetId: "packages:demo",
+        metadata: expect.objectContaining({
+          previousName: "whatsapp",
+          nextName: "ivangdavila-whatsapp",
+          previousRuntimeId: "whatsapp",
+          nextRuntimeId: "ivangdavila-whatsapp",
+        }),
+      }),
+    );
+  });
+
+  it("rejects official package transfers to untrusted publishers", async () => {
+    const { ctx } = makeTransferPackageOwnerCtx({
+      ownerPublisher: {
+        _id: "publishers:openclaw",
+        kind: "org",
+        handle: "openclaw",
+        displayName: "OpenClaw",
+        trustedPublisher: false,
+      },
+    });
+
+    await expect(
+      transferPackageOwnerInternalHandler(ctx, {
+        actorUserId: "users:admin",
+        name: "demo-plugin",
+        ownerUserId: "users:openclaw",
+        ownerPublisherId: "publishers:openclaw",
+        channel: "official",
+      }),
+    ).rejects.toThrow("Only trusted publishers may own official packages");
+  });
+
   it("lets owners publish real releases into reserved package placeholders", async () => {
     const ctx = makeInsertReleaseCtx(
       makePackageDoc({
@@ -1862,8 +2097,16 @@ describe("packages public queries", () => {
       }),
       [],
       {
-        "users:admin": { _id: "users:admin", role: "admin", trustedPublisher: false },
-        "users:openclaw": { _id: "users:openclaw", role: "user", trustedPublisher: false },
+        "users:admin": {
+          _id: "users:admin",
+          role: "admin",
+          trustedPublisher: false,
+        },
+        "users:openclaw": {
+          _id: "users:openclaw",
+          role: "user",
+          trustedPublisher: false,
+        },
         "publishers:openclaw": {
           _id: "publishers:openclaw",
           kind: "org",
@@ -1883,7 +2126,7 @@ describe("packages public queries", () => {
       family: "code-plugin",
       version: "1.0.0",
       changelog: "init",
-      tags: [],
+      tags: ["latest"],
       summary: "diff tools",
       files: [],
       integritySha256: "abc123",
@@ -1990,8 +2233,16 @@ describe("packages public queries", () => {
       }),
       [],
       {
-        "users:admin": { _id: "users:admin", role: "admin", trustedPublisher: false },
-        "users:openclaw": { _id: "users:openclaw", role: "user", trustedPublisher: true },
+        "users:admin": {
+          _id: "users:admin",
+          role: "admin",
+          trustedPublisher: false,
+        },
+        "users:openclaw": {
+          _id: "users:openclaw",
+          role: "user",
+          trustedPublisher: true,
+        },
       },
     );
 
@@ -2026,8 +2277,16 @@ describe("packages public queries", () => {
       }),
       [],
       {
-        "users:owner": { _id: "users:owner", role: "user", trustedPublisher: false },
-        "users:openclaw": { _id: "users:openclaw", role: "user", trustedPublisher: true },
+        "users:owner": {
+          _id: "users:owner",
+          role: "user",
+          trustedPublisher: false,
+        },
+        "users:openclaw": {
+          _id: "users:openclaw",
+          role: "user",
+          trustedPublisher: true,
+        },
       },
     );
 
@@ -2057,7 +2316,11 @@ describe("packages public queries", () => {
       }),
       [],
       {
-        "users:owner": { _id: "users:owner", role: "user", trustedPublisher: false },
+        "users:owner": {
+          _id: "users:owner",
+          role: "user",
+          trustedPublisher: false,
+        },
         "publishers:org": {
           _id: "publishers:org",
           kind: "org",
@@ -2095,7 +2358,11 @@ describe("packages public queries", () => {
       }),
       [],
       {
-        "users:owner": { _id: "users:owner", role: "user", trustedPublisher: false },
+        "users:owner": {
+          _id: "users:owner",
+          role: "user",
+          trustedPublisher: false,
+        },
         "publishers:owner": {
           _id: "publishers:owner",
           kind: "user",
@@ -2328,7 +2595,7 @@ describe("packages public queries", () => {
     expect(ctx.patch).not.toHaveBeenCalled();
   });
 
-  it("adds a latest tag when an untagged promoted release becomes the package latest", async () => {
+  it("keeps an initial beta-only package publish off latest", async () => {
     const ctx = makeInsertReleaseCtx(
       makePackageDoc({
         latestReleaseId: undefined,
@@ -2368,7 +2635,7 @@ describe("packages public queries", () => {
     expect(ctx.insert).toHaveBeenCalledWith(
       "packageReleases",
       expect.objectContaining({
-        distTags: ["beta", "latest"],
+        distTags: ["beta"],
         verification: expect.objectContaining({ scanStatus: "suspicious" }),
         staticScan: expect.objectContaining({ status: "suspicious" }),
       }),
@@ -2376,8 +2643,8 @@ describe("packages public queries", () => {
     expect(ctx.patch).toHaveBeenCalledWith(
       "packages:demo",
       expect.objectContaining({
-        latestReleaseId: "packageReleases:new",
-        tags: { beta: "packageReleases:new", latest: "packageReleases:new" },
+        latestReleaseId: undefined,
+        tags: { beta: "packageReleases:new" },
       }),
     );
   });
@@ -2721,6 +2988,7 @@ describe("packages public queries", () => {
               "storage:package",
               JSON.stringify({
                 name: "demo-plugin",
+                $schema: "https://json.schemastore.org/package",
                 openclaw: {
                   extensions: ["./dist/index.js"],
                   compat: { pluginApi: "^1.0.0" },
@@ -2731,7 +2999,15 @@ describe("packages public queries", () => {
             ],
             [
               "storage:manifest",
-              JSON.stringify({ id: "demo.plugin", tools: [{ name: "demoTool" }] }),
+              JSON.stringify({
+                id: "demo.plugin",
+                configSchema: {
+                  $defs: {
+                    secret: { $ref: "#/$defs/secret" },
+                  },
+                },
+                tools: [{ name: "demoTool" }],
+              }),
             ],
             [
               "storage:code",
@@ -2767,14 +3043,14 @@ describe("packages public queries", () => {
             path: "package.json",
             size: 1,
             storageId: "storage:package",
-            sha256: "d76e6b15f66d5a8c2749d7030c6e40db76659c40f3dfa5c4933be591848c0982",
+            sha256: "6eb6f88411091ea48eb66a990a5d83c45edb34b5a7d4db7b64ff618a82c951ef",
             contentType: "application/json",
           },
           {
             path: "openclaw.plugin.json",
             size: 1,
             storageId: "storage:manifest",
-            sha256: "5610853567158c5b3c5ec97a2d76fcb33ebe0d965e9e6516f387cc3de817eb78",
+            sha256: "765ff752ed0b735b69860133a82c088479f2ecd84abb7db0ee3edf412239ec9e",
             contentType: "application/json",
           },
           {
@@ -2789,6 +3065,23 @@ describe("packages public queries", () => {
     })) as Record<string, unknown>;
 
     expect(runMutation).toHaveBeenCalled();
+    const insertReleaseArgs = runMutation.mock.calls.find(
+      ([, args]) => typeof args === "object" && args !== null && "extractedPackageJson" in args,
+    )?.[1];
+    expect(insertReleaseArgs).toEqual(
+      expect.objectContaining({
+        extractedPackageJson: expect.objectContaining({
+          dollar_schema: "https://json.schemastore.org/package",
+        }),
+        extractedPluginManifest: expect.objectContaining({
+          configSchema: {
+            dollar_defs: {
+              secret: { dollar_ref: "#/$defs/secret" },
+            },
+          },
+        }),
+      }),
+    );
     expect(result.verification).toEqual(expect.objectContaining({ scanStatus: "pending" }));
     expect(result.staticScan).toEqual(
       expect.objectContaining({
@@ -2824,7 +3117,9 @@ describe("packages public queries", () => {
       },
     };
 
-    const result = await getByNameHandler(ctx as never, { name: "demo-plugin" });
+    const result = await getByNameHandler(ctx as never, {
+      name: "demo-plugin",
+    });
     expect(result?.package?.name).toBe("demo-plugin");
   });
 
@@ -2842,11 +3137,12 @@ describe("packages public queries", () => {
             if (table !== "packages") throw new Error(`Unexpected table ${table}`);
             return {
               withIndex: vi.fn(() => ({
-                unique: vi
-                  .fn()
-                  .mockResolvedValue(
-                    makePackageDoc({ ownerUserId: "users:owner", scanStatus: "pending" }),
-                  ),
+                unique: vi.fn().mockResolvedValue(
+                  makePackageDoc({
+                    ownerUserId: "users:owner",
+                    scanStatus: "pending",
+                  }),
+                ),
               })),
             };
           }),
@@ -2876,7 +3172,11 @@ describe("packages public queries", () => {
               return { _id: "users:owner", handle: "owner" };
             }
             if (id === "publishers:owner") {
-              return { _id: "publishers:owner", kind: "user", linkedUserId: "users:owner" };
+              return {
+                _id: "publishers:owner",
+                kind: "user",
+                linkedUserId: "users:owner",
+              };
             }
             return null;
           }),
@@ -2950,7 +3250,11 @@ describe("packages public queries", () => {
         db: {
           get: vi.fn(async (id: string) => {
             if (id === "publishers:owner") {
-              return { _id: "publishers:owner", kind: "user", linkedUserId: "users:owner" };
+              return {
+                _id: "publishers:owner",
+                kind: "user",
+                linkedUserId: "users:owner",
+              };
             }
             return null;
           }),

@@ -6,6 +6,7 @@ import {
   extractBundlePluginArtifacts,
   extractCodePluginArtifacts,
   summarizePackageForSearch,
+  toConvexSafeJsonValue,
 } from "./packageRegistry";
 
 describe("packageRegistry", () => {
@@ -156,5 +157,27 @@ describe("packageRegistry", () => {
         readmeText: "# Demo Plugin\n\nA longer package summary for search.\n",
       }),
     ).toBe("A longer package summary for search.");
+  });
+
+  it("normalizes JSON Schema keys for Convex metadata storage", () => {
+    expect(
+      toConvexSafeJsonValue({
+        configSchema: {
+          $defs: {
+            secret: {
+              anyOf: [{ $ref: "#/$defs/secretRef" }],
+            },
+          },
+        },
+      }),
+    ).toEqual({
+      configSchema: {
+        dollar_defs: {
+          secret: {
+            anyOf: [{ dollar_ref: "#/$defs/secretRef" }],
+          },
+        },
+      },
+    });
   });
 });
