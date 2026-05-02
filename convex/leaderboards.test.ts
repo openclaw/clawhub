@@ -1,9 +1,17 @@
 /* @vitest-environment node */
 import { describe, expect, it, vi } from "vitest";
-import { rebuildTrendingLeaderboardInternal } from "./leaderboards";
+import {
+  rebuildTrendingLeaderboardAction,
+  rebuildTrendingLeaderboardInternal,
+} from "./leaderboards";
 
-const handler = (
+const mutationHandler = (
   rebuildTrendingLeaderboardInternal as unknown as {
+    _handler: (ctx: unknown, args: { limit?: number }) => Promise<unknown>;
+  }
+)._handler;
+const actionHandler = (
+  rebuildTrendingLeaderboardAction as unknown as {
     _handler: (ctx: unknown, args: { limit?: number }) => Promise<unknown>;
   }
 )._handler;
@@ -30,11 +38,44 @@ describe("leaderboards.rebuildTrendingLeaderboardInternal", () => {
       },
     } as never;
 
-    const result = await handler(ctx, { limit: 500 });
+    const result = await mutationHandler(ctx, { limit: 500 });
 
     expect(runAfter).toHaveBeenCalledTimes(1);
     expect(runAfter.mock.calls[0]?.[0]).toBe(0);
     expect(runAfter.mock.calls[0]?.[2]).toEqual({ limit: 200 });
     expect(result).toEqual({ ok: true, count: 0, scheduled: true });
+  });
+
+  it("rebuild action pages daily stats instead of collecting a whole day", async () => {
+    const runQuery = vi.fn(async (_ref: unknown, args: Record<string, unknown>) => {
+      if (Array.isArray(args.entries)) return args.entries;
+      return {
+        rows: [
+          {
+            skillId: "skills:one",
+            installs: 1,
+            downloads: 2,
+          },
+        ],
+        isDone: true,
+        continueCursor: "",
+      };
+    });
+    const runMutation = vi.fn(async () => ({ ok: true }));
+
+    const result = await actionHandler(
+      {
+        runQuery,
+        runMutation,
+      },
+      { limit: 5 },
+    );
+
+    expect(result).toEqual({ ok: true, count: 1 });
+    expect(runQuery).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({ cursor: null, limit: 5000 }),
+    );
+    expect(runMutation).toHaveBeenCalledTimes(2);
   });
 });

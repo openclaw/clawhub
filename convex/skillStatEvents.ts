@@ -22,6 +22,7 @@ import { internal } from "./_generated/api";
 import type { Doc, Id } from "./_generated/dataModel";
 import type { MutationCtx } from "./_generated/server";
 import { internalAction, internalMutation, internalQuery } from "./functions";
+import { toDayKey } from "./lib/leaderboards";
 import { applySkillStatDeltas, bumpDailySkillStats } from "./lib/skillStats";
 import { adjustUserSkillStatsForSkillChange } from "./lib/userSkillStats";
 
@@ -203,7 +204,7 @@ function aggregateEvents(events: Doc<"skillStatEvents">[]): AggregatedDeltas {
 export const processSkillStatEventsInternal = internalMutation({
   args: { batchSize: v.optional(v.number()) },
   handler: async (ctx, args) => {
-    const batchSize = args.batchSize ?? 500;
+    const batchSize = Math.max(1, Math.min(args.batchSize ?? 100, 100));
     const now = Date.now();
 
     // Level 1: Fetch a batch of unprocessed events
@@ -359,15 +360,43 @@ export const applyAggregatedStatsAndUpdateCursor = internalMutation({
   },
   handler: async (ctx, args) => {
     const now = Date.now();
+    const dailyStats = new Map<
+      string,
+      { skillId: Id<"skills">; occurredAt: number; downloads: number; installs: number }
+    >();
 
-    // Update daily stats for trending/leaderboards
     for (const delta of args.skillDeltas) {
       for (const occurredAt of delta.downloadEvents) {
-        await bumpDailySkillStats(ctx, { skillId: delta.skillId, now: occurredAt, downloads: 1 });
+        const key = `${delta.skillId}:${toDayKey(occurredAt)}`;
+        const current = dailyStats.get(key) ?? {
+          skillId: delta.skillId,
+          occurredAt,
+          downloads: 0,
+          installs: 0,
+        };
+        current.downloads += 1;
+        dailyStats.set(key, current);
       }
       for (const occurredAt of delta.installNewEvents) {
-        await bumpDailySkillStats(ctx, { skillId: delta.skillId, now: occurredAt, installs: 1 });
+        const key = `${delta.skillId}:${toDayKey(occurredAt)}`;
+        const current = dailyStats.get(key) ?? {
+          skillId: delta.skillId,
+          occurredAt,
+          downloads: 0,
+          installs: 0,
+        };
+        current.installs += 1;
+        dailyStats.set(key, current);
       }
+    }
+
+    for (const stat of dailyStats.values()) {
+      await bumpDailySkillStats(ctx, {
+        skillId: stat.skillId,
+        now: stat.occurredAt,
+        downloads: stat.downloads,
+        installs: stat.installs,
+      });
     }
 
     // Update cursor position (upsert)

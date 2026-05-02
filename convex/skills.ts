@@ -124,8 +124,8 @@ const MAX_LIST_LIMIT = 50;
 const MAX_PUBLIC_LIST_LIMIT = 200;
 const MAX_LIST_BULK_LIMIT = 200;
 const MAX_LIST_TAKE = 1000;
-const MAX_SKILL_CATALOG_SCAN_DOCUMENTS = 30_000;
-const MAX_SKILL_CATALOG_SCAN_PAGES = 200;
+const MAX_SKILL_CATALOG_SCAN_DOCUMENTS = 2_000;
+const MAX_SKILL_CATALOG_SCAN_PAGES = 20;
 const MAX_SKILL_CATALOG_SEARCH_PAGE_SIZE = 200;
 const HARD_DELETE_BATCH_SIZE = 100;
 const HARD_DELETE_VERSION_BATCH_SIZE = 10;
@@ -3269,6 +3269,7 @@ export const listPackageCatalogPage = query({
       loops += 1;
       const effectivePageSize = Math.min(
         remainingScanBudget,
+        250,
         offset > 0 && pageSize
           ? Math.max(pageSize, offset + 1)
           : Math.max(targetCount * 3, targetCount),
