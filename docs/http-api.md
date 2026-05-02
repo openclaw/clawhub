@@ -440,6 +440,88 @@ Response:
 }
 ```
 
+### `GET /api/v1/packages/migrations`
+
+Staff endpoint for listing official OpenClaw plugin migration rows.
+
+Auth:
+
+- Requires an API token for a moderator or admin user.
+
+Query params:
+
+- `phase` (optional): `planned`, `published`, `clawpack-ready`,
+  `legacy-zip-only`, `metadata-ready`, `blocked`, `ready-for-openclaw`, or
+  `all` (default).
+- `limit` (optional): integer (1-100)
+- `cursor` (optional): pagination cursor
+
+Response:
+
+```json
+{
+  "items": [
+    {
+      "migrationId": "officialPluginMigrations:...",
+      "bundledPluginId": "core.search",
+      "packageName": "@openclaw/search-plugin",
+      "packageId": "packages:...",
+      "owner": "platform",
+      "sourceRepo": "openclaw/openclaw",
+      "sourcePath": "plugins/search",
+      "sourceCommit": "abc123",
+      "phase": "blocked",
+      "blockers": ["missing ClawPack"],
+      "hostTargetsComplete": true,
+      "scanClean": false,
+      "moderationApproved": false,
+      "runtimeBundlesReady": false,
+      "notes": null,
+      "createdAt": 1760000000000,
+      "updatedAt": 1760000000000
+    }
+  ],
+  "nextCursor": null,
+  "done": true
+}
+```
+
+### `POST /api/v1/packages/migrations`
+
+Admin endpoint for creating or updating an official plugin migration row.
+
+Auth:
+
+- Requires an API token for an admin user.
+
+Request body:
+
+```json
+{
+  "bundledPluginId": "core.search",
+  "packageName": "@openclaw/search-plugin",
+  "owner": "platform",
+  "sourceRepo": "openclaw/openclaw",
+  "sourcePath": "plugins/search",
+  "sourceCommit": "abc123",
+  "phase": "blocked",
+  "blockers": ["missing ClawPack"],
+  "hostTargetsComplete": true,
+  "scanClean": false,
+  "moderationApproved": false,
+  "runtimeBundlesReady": false,
+  "notes": "waiting on publisher upload"
+}
+```
+
+Notes:
+
+- `bundledPluginId` is normalized to lowercase and is the stable upsert key.
+- `packageName` is npm-name normalized; the package can be missing for planned
+  migrations.
+- This tracks migration readiness only. It does not mutate OpenClaw or generate
+  ClawPacks.
+
 ### `GET /api/v1/packages/moderation/queue`
 
 Moderator/admin endpoint for package release review queues.

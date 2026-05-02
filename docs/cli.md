@@ -522,6 +522,51 @@ Example:
 clawhub package migration-status @openclaw/example-plugin
 ```
 
+### `package migrations`
+
+- Staff command for listing durable official plugin migration rows.
+- Calls `GET /api/v1/packages/migrations`.
+- Flags:
+  - `--phase planned|published|clawpack-ready|legacy-zip-only|metadata-ready|blocked|ready-for-openclaw|all`: phase filter, default `all`.
+  - `--cursor <cursor>`: resume cursor from a previous page.
+  - `--limit <n>`: number of migrations to show, max 100.
+  - `--json`: machine-readable output.
+
+Examples:
+
+```bash
+clawhub package migrations
+clawhub package migrations --phase blocked --limit 50
+```
+
+### `package set-migration`
+
+- Admin command for creating or updating an official plugin migration row.
+- Calls `POST /api/v1/packages/migrations`.
+- Tracks the mapping from an old bundled OpenClaw plugin id to its future
+  ClawHub package, source location, phase, blockers, and readiness flags.
+- Flags:
+  - `--package <name>`: required ClawHub package name.
+  - `--owner <owner>`: operator/team owner.
+  - `--source-repo <repo>`: source repository.
+  - `--source-path <path>`: source path inside the repository.
+  - `--source-commit <sha>`: source commit SHA.
+  - `--phase <phase>`: planned, published, clawpack-ready, legacy-zip-only,
+    metadata-ready, blocked, or ready-for-openclaw.
+  - `--blockers <items>`: comma-separated blockers.
+  - `--host-targets-complete`: mark host target metadata complete.
+  - `--scan-clean`: mark scan state clean.
+  - `--moderation-approved`: mark moderation approved.
+  - `--runtime-bundles-ready`: mark runtime bundles ready.
+  - `--notes <text>`: operator notes.
+  - `--json`: machine-readable output.
+
+Example:
+
+```bash
+clawhub package set-migration core.search --package @openclaw/search-plugin --phase blocked --blockers "missing ClawPack"
+```
+
 ### `package publish <source>`
 
 - Publishes a code plugin or bundle plugin via `POST /api/v1/packages`.
