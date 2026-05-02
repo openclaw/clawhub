@@ -300,6 +300,9 @@ Query params:
   (optional): `true`/`1` shorthand for environment requirement tags
 - `externalService`, `binary`, `osPermission` (optional): shorthand for named
   environment requirement tags
+- `artifactKind` (optional): `legacy-zip` or `npm-pack`
+- `npmMirror` (optional): `true`/`1` to show ClawPack-backed package versions
+  available through the npm mirror
 
 Notes:
 
@@ -327,12 +330,17 @@ Query params:
   `requiresDesktop`, `requiresNativeDeps`, `requiresExternalService`,
   `requiresBinary`, `requiresOsPermission`, `externalService`, `binary`, and
   `osPermission` are accepted as shorthands for common capability tags
+- `artifactKind` (optional): `legacy-zip` or `npm-pack`
+- `npmMirror` (optional): `true`/`1` to search ClawPack-backed package versions
+  available through the npm mirror
 
 Notes:
 
 - Anonymous callers only see public package channels.
 - Authenticated callers can search private packages for publishers they belong to.
 - `channel=private` only returns packages the authenticated caller can read.
+- Artifact filters are backed by indexed capability tags:
+  `artifact:legacy-zip`, `artifact:npm-pack`, and `npm-mirror:available`.
 
 ### `GET /api/v1/packages/{name}`
 

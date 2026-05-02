@@ -241,6 +241,8 @@ Stores your API token + cached registry URL.
   - `--requires-browser`, `--requires-desktop`, `--requires-native-deps`
   - `--requires-external-service`, `--external-service <name>`
   - `--binary <name>`, `--os-permission <name>`
+  - `--artifact-kind legacy-zip|npm-pack`
+  - `--npm-mirror`
   - `--limit <n>` (1-100, default: 25)
   - `--json`
 
@@ -249,6 +251,8 @@ Examples:
 ```bash
 clawhub package explore --family code-plugin
 clawhub package explore --family code-plugin --os darwin --requires-desktop
+clawhub package explore --family code-plugin --artifact-kind npm-pack
+clawhub package explore --npm-mirror
 clawhub package explore episodic-claw --family code-plugin
 ```
 

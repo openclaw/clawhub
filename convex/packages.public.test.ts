@@ -135,6 +135,16 @@ const insertReleaseInternalHandler = (
       capabilities?: unknown;
       verification?: unknown;
       staticScan?: unknown;
+      artifactKind?: "legacy-zip" | "npm-pack";
+      clawpackStorageId?: string;
+      clawpackSha256?: string;
+      clawpackSize?: number;
+      clawpackFormat?: "tgz";
+      npmIntegrity?: string;
+      npmShasum?: string;
+      npmTarballName?: string;
+      npmUnpackedSize?: number;
+      npmFileCount?: number;
       allowExistingRelease?: boolean;
       extractedPackageJson?: unknown;
       extractedPluginManifest?: unknown;
@@ -2427,6 +2437,65 @@ describe("packages public queries", () => {
     );
   });
 
+  it("adds artifact capability tags for promoted ClawPack releases", async () => {
+    const ctx = makeInsertReleaseCtx(
+      makePackageDoc({
+        capabilityTags: ["channel:chat"],
+        executesCode: true,
+        tags: { latest: "packageReleases:demo-1" },
+        latestReleaseId: "packageReleases:demo-1",
+        stats: { downloads: 0, installs: 0, stars: 0, versions: 1 },
+      }),
+    );
+
+    await insertReleaseInternalHandler(ctx, {
+      actorUserId: "users:owner",
+      ownerUserId: "users:owner",
+      name: "demo-plugin",
+      displayName: "Demo Plugin",
+      family: "code-plugin",
+      version: "1.1.0",
+      changelog: "clawpack",
+      tags: ["latest"],
+      summary: "demo",
+      files: [],
+      integritySha256: "abc123",
+      artifactKind: "npm-pack",
+      clawpackStorageId: "storage:clawpack",
+      clawpackSha256: "a".repeat(64),
+      clawpackSize: 1024,
+      clawpackFormat: "tgz",
+      npmIntegrity: "sha512-demo",
+      npmShasum: "b".repeat(40),
+      npmTarballName: "demo-plugin-1.1.0.tgz",
+      capabilities: { capabilityTags: ["tools"], executesCode: true },
+    });
+
+    const expectedTags = ["tools", "artifact:npm-pack", "npm-mirror:available"];
+    expect(ctx.insert).toHaveBeenCalledWith(
+      "packageReleases",
+      expect.objectContaining({
+        artifactKind: "npm-pack",
+        capabilities: expect.objectContaining({ capabilityTags: expectedTags }),
+      }),
+    );
+    expect(ctx.patch).toHaveBeenCalledWith(
+      "packages:demo",
+      expect.objectContaining({
+        capabilityTags: expectedTags,
+        capabilities: expect.objectContaining({ capabilityTags: expectedTags }),
+        latestVersionSummary: expect.objectContaining({
+          capabilities: expect.objectContaining({ capabilityTags: expectedTags }),
+          artifact: expect.objectContaining({
+            kind: "npm-pack",
+            npmIntegrity: "sha512-demo",
+            npmShasum: "b".repeat(40),
+          }),
+        }),
+      }),
+    );
+  });
+
   it("keeps package summary pinned to the promoted release for non-latest publishes", async () => {
     const ctx = makeInsertReleaseCtx(
       makePackageDoc({
@@ -3440,6 +3509,7 @@ describe("package scan backfill", () => {
                         version: "1.0.0",
                         integritySha256: "legacy-sha",
                         artifactKind: undefined,
+                        capabilities: { capabilityTags: ["tools"], executesCode: true },
                       },
                     ],
                     continueCursor: null,
@@ -3455,16 +3525,87 @@ describe("package scan backfill", () => {
     );
 
     expect(result.updated).toBe(1);
-    expect(patch).toHaveBeenCalledWith("packageReleases:legacy", { artifactKind: "legacy-zip" });
+    const expectedTags = ["tools", "artifact:legacy-zip"];
+    expect(patch).toHaveBeenCalledWith("packageReleases:legacy", {
+      artifactKind: "legacy-zip",
+      capabilities: expect.objectContaining({ capabilityTags: expectedTags }),
+    });
     expect(patch).toHaveBeenCalledWith(
       "packages:demo",
       expect.objectContaining({
+        capabilityTags: expectedTags,
+        capabilities: expect.objectContaining({ capabilityTags: expectedTags }),
         latestVersionSummary: expect.objectContaining({
+          capabilities: expect.objectContaining({ capabilityTags: expectedTags }),
           artifact: {
             kind: "legacy-zip",
             sha256: "legacy-sha",
             format: "zip",
           },
+        }),
+      }),
+    );
+  });
+
+  it("labels latest legacy packages for artifact search even without release capabilities", async () => {
+    const patch = vi.fn();
+    const result = await backfillPackageArtifactKindsInternalHandler(
+      {
+        db: {
+          get: vi.fn(async (id: string) => {
+            if (id === "users:admin") return { _id: id, role: "admin" };
+            if (id === "packages:demo") {
+              return {
+                ...makePackageDoc({ capabilityTags: ["tools"] }),
+                _id: "packages:demo",
+                latestReleaseId: "packageReleases:legacy",
+                latestVersionSummary: { version: "1.0.0", changelog: "init" },
+              };
+            }
+            return null;
+          }),
+          insert: vi.fn(),
+          patch,
+          replace: vi.fn(),
+          delete: vi.fn(),
+          normalizeId: vi.fn(),
+          query: vi.fn((table: string) => {
+            if (table !== "packageReleases") throw new Error(`Unexpected table ${table}`);
+            return {
+              withIndex: vi.fn(() => ({
+                order: vi.fn(() => ({
+                  paginate: vi.fn().mockResolvedValue({
+                    page: [
+                      {
+                        _id: "packageReleases:legacy",
+                        packageId: "packages:demo",
+                        version: "1.0.0",
+                        integritySha256: "legacy-sha",
+                        artifactKind: undefined,
+                      },
+                    ],
+                    continueCursor: null,
+                    isDone: true,
+                  }),
+                })),
+              })),
+            };
+          }),
+        },
+      } as never,
+      { actorUserId: "users:admin", dryRun: false },
+    );
+
+    expect(result.updated).toBe(1);
+    expect(patch).toHaveBeenCalledWith("packageReleases:legacy", {
+      artifactKind: "legacy-zip",
+    });
+    expect(patch).toHaveBeenCalledWith(
+      "packages:demo",
+      expect.objectContaining({
+        capabilityTags: ["tools", "artifact:legacy-zip"],
+        latestVersionSummary: expect.objectContaining({
+          artifact: expect.objectContaining({ kind: "legacy-zip" }),
         }),
       }),
     );

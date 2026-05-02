@@ -2810,6 +2810,26 @@ describe("httpApiV1 handlers", () => {
     );
   });
 
+  it("packages search maps artifact filters to capability tags", async () => {
+    const runQuery = vi.fn((_, args: Record<string, unknown>) => {
+      if ("paginationOpts" in args) return { page: [], isDone: true, continueCursor: "" };
+      if ("query" in args) return [];
+      return null;
+    });
+    const runMutation = vi.fn().mockResolvedValue(okRate());
+    const response = await __handlers.packagesGetRouterV1Handler(
+      makeCtx({ runQuery, runMutation }),
+      new Request("https://example.com/api/v1/packages/search?q=test&artifactKind=npm-pack"),
+    );
+    if (response.status !== 200) throw new Error(await response.text());
+    expect(runQuery).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({
+        capabilityTag: "artifact:npm-pack",
+      }),
+    );
+  });
+
   it("packages list supports family=skill on the generic route", async () => {
     const runQuery = vi.fn().mockResolvedValue({ page: [], isDone: true, continueCursor: "" });
     const runMutation = vi.fn().mockResolvedValue(okRate());

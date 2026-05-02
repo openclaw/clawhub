@@ -74,6 +74,8 @@ type PackageExploreOptions = {
   externalService?: string;
   binary?: string;
   osPermission?: string;
+  artifactKind?: "legacy-zip" | "npm-pack";
+  npmMirror?: boolean;
   limit?: number;
   json?: boolean;
 };
@@ -220,6 +222,8 @@ function appendPackageExploreFilters(url: URL, options: PackageExploreOptions) {
   if (options.externalService) url.searchParams.set("externalService", options.externalService);
   if (options.binary) url.searchParams.set("binary", options.binary);
   if (options.osPermission) url.searchParams.set("osPermission", options.osPermission);
+  if (options.artifactKind) url.searchParams.set("artifactKind", options.artifactKind);
+  if (options.npmMirror) url.searchParams.set("npmMirror", "true");
 }
 
 type PrintableFile = {

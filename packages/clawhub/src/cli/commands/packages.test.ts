@@ -215,6 +215,8 @@ describe("package commands", () => {
       os: "darwin",
       requiresBrowser: true,
       externalService: "GitHub",
+      artifactKind: "npm-pack",
+      npmMirror: true,
     });
 
     const request = httpMocks.apiRequest.mock.calls[0]?.[1] as { url?: string } | undefined;
@@ -226,6 +228,8 @@ describe("package commands", () => {
     expect(url.searchParams.get("os")).toBe("darwin");
     expect(url.searchParams.get("requiresBrowser")).toBe("true");
     expect(url.searchParams.get("externalService")).toBe("GitHub");
+    expect(url.searchParams.get("artifactKind")).toBe("npm-pack");
+    expect(url.searchParams.get("npmMirror")).toBe("true");
   });
 
   it("supports skill family package browse requests", async () => {

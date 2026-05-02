@@ -146,6 +146,11 @@ function getCapabilityTagFromQueryParams(params: URLSearchParams) {
   const osPermission = params.get("osPermission")?.trim();
   if (osPermission) return `os-permission:${normalizeCapabilityTagSegment(osPermission)}`;
 
+  const artifactKind = params.get("artifactKind")?.trim();
+  if (artifactKind === "legacy-zip" || artifactKind === "npm-pack") {
+    return `artifact:${artifactKind}`;
+  }
+  if (getEnabledQueryFlag(params, "npmMirror")) return "npm-mirror:available";
   if (getEnabledQueryFlag(params, "requiresBrowser")) return "requires:browser";
   if (getEnabledQueryFlag(params, "requiresDesktop")) return "requires:desktop";
   if (getEnabledQueryFlag(params, "requiresNativeDeps")) return "requires:native-deps";

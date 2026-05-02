@@ -499,6 +499,38 @@ function packageArtifactSummary(
   };
 }
 
+function packageArtifactCapabilityTags(
+  release: Pick<Doc<"packageReleases">, "artifactKind" | "clawpackStorageId" | "npmIntegrity">,
+) {
+  const artifactKind =
+    release.artifactKind === "npm-pack" || release.clawpackStorageId || release.npmIntegrity
+      ? "npm-pack"
+      : "legacy-zip";
+  return artifactKind === "npm-pack"
+    ? ["artifact:npm-pack", "npm-mirror:available"]
+    : ["artifact:legacy-zip"];
+}
+
+function mergeArtifactCapabilityTags(
+  capabilityTags: Doc<"packageReleases">["capabilities"] extends { capabilityTags?: infer Tags }
+    ? Tags
+    : string[] | undefined,
+  release: Pick<Doc<"packageReleases">, "artifactKind" | "clawpackStorageId" | "npmIntegrity">,
+) {
+  return [...new Set([...(capabilityTags ?? []), ...packageArtifactCapabilityTags(release)])];
+}
+
+function withArtifactCapabilityTags(
+  capabilities: Doc<"packageReleases">["capabilities"],
+  release: Pick<Doc<"packageReleases">, "artifactKind" | "clawpackStorageId" | "npmIntegrity">,
+) {
+  if (!capabilities) return capabilities;
+  return {
+    ...capabilities,
+    capabilityTags: mergeArtifactCapabilityTags(capabilities.capabilityTags, release),
+  };
+}
+
 function digestMatchesFilters(
   digest: PackageDigestLike,
   args: {
@@ -1956,15 +1988,23 @@ export const backfillPackageArtifactKindsInternal = internalMutation({
       updated += 1;
       if (dryRun) continue;
 
+      const updatedRelease = { ...release, artifactKind };
+      const nextCapabilities = withArtifactCapabilityTags(release.capabilities, updatedRelease);
       const patch: Partial<Doc<"packageReleases">> = { artifactKind };
+      if (nextCapabilities !== release.capabilities) patch.capabilities = nextCapabilities;
       await ctx.db.patch(release._id, patch);
 
       const pkg = await ctx.db.get(release.packageId);
       if (pkg?.latestReleaseId !== release._id || !pkg.latestVersionSummary) continue;
-      const updatedRelease = { ...release, ...patch };
       await ctx.db.patch(pkg._id, {
+        capabilityTags: mergeArtifactCapabilityTags(
+          [...(pkg.capabilityTags ?? []), ...(nextCapabilities?.capabilityTags ?? [])],
+          updatedRelease,
+        ),
+        capabilities: nextCapabilities ?? pkg.capabilities,
         latestVersionSummary: {
           ...pkg.latestVersionSummary,
+          capabilities: nextCapabilities ?? pkg.latestVersionSummary.capabilities,
           artifact: packageArtifactSummary(updatedRelease),
         },
       });
@@ -2999,6 +3039,8 @@ export const insertReleaseInternal = internalMutation({
     if (args.channel === "official" && !publisherTrusted) {
       throw new ConvexError("Only trusted publishers may publish to the official channel");
     }
+    const nextCapabilities = withArtifactCapabilityTags(args.capabilities, args);
+    const nextCapabilityTags = mergeArtifactCapabilityTags(args.capabilities?.capabilityTags, args);
     const existing = await getPackageByNormalizedName(ctx, normalizedName);
     const existingIsReservation = isReservedPackagePlaceholder(existing);
     const nextChannel =
@@ -3068,10 +3110,10 @@ export const insertReleaseInternal = internalMutation({
         runtimeId: args.runtimeId,
         sourceRepo: args.sourceRepo,
         tags: {},
-        capabilityTags: args.capabilities?.capabilityTags,
-        executesCode: args.capabilities?.executesCode,
+        capabilityTags: nextCapabilityTags,
+        executesCode: nextCapabilities?.executesCode,
         compatibility: args.compatibility,
-        capabilities: args.capabilities,
+        capabilities: nextCapabilities,
         verification: args.verification,
         scanStatus: args.verification?.scanStatus,
         stats: { downloads: 0, installs: 0, stars: 0, versions: 0 },
@@ -3135,7 +3177,7 @@ export const insertReleaseInternal = internalMutation({
       extractedPluginManifest: args.extractedPluginManifest,
       normalizedBundleManifest: args.normalizedBundleManifest,
       compatibility: args.compatibility,
-      capabilities: args.capabilities,
+      capabilities: nextCapabilities,
       verification: args.verification,
       staticScan: args.staticScan,
       source: args.source,
@@ -3174,22 +3216,20 @@ export const insertReleaseInternal = internalMutation({
             createdAt: now,
             changelog: args.changelog,
             compatibility: args.compatibility,
-            capabilities: args.capabilities,
+            capabilities: nextCapabilities,
             verification: args.verification,
             artifact: packageArtifactSummary(args),
           }
         : pkg.latestVersionSummary,
       tags: nextTags,
-      capabilityTags: shouldPromoteLatest
-        ? (args.capabilities?.capabilityTags ?? pkg.capabilityTags)
-        : pkg.capabilityTags,
+      capabilityTags: shouldPromoteLatest ? nextCapabilityTags : pkg.capabilityTags,
       executesCode: shouldPromoteLatest
-        ? typeof args.capabilities?.executesCode === "boolean"
-          ? args.capabilities.executesCode
+        ? typeof nextCapabilities?.executesCode === "boolean"
+          ? nextCapabilities.executesCode
           : pkg.executesCode
         : pkg.executesCode,
       compatibility: shouldPromoteLatest ? args.compatibility : pkg.compatibility,
-      capabilities: shouldPromoteLatest ? args.capabilities : pkg.capabilities,
+      capabilities: shouldPromoteLatest ? nextCapabilities : pkg.capabilities,
       verification: shouldPromoteLatest ? args.verification : pkg.verification,
       scanStatus: shouldPromoteLatest ? args.verification?.scanStatus : pkg.scanStatus,
       stats: { ...pkg.stats, versions: (pkg.stats?.versions ?? 0) + 1 },

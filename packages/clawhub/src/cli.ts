@@ -387,6 +387,8 @@ packageCmd
   .option("--external-service <name>", "Filter by named external service")
   .option("--binary <name>", "Filter by required local binary")
   .option("--os-permission <name>", "Filter by required OS permission")
+  .option("--artifact-kind <kind>", "legacy-zip|npm-pack")
+  .option("--npm-mirror", "Only packages available through the npm mirror")
   .option(
     "--limit <n>",
     "Number of packages to show (max 100)",
