@@ -819,6 +819,8 @@ const packages = defineTable({
   verification: packageVerificationValidator,
   scanStatus: packageScanStatusValidator,
   stats: packageStatsValidator,
+  reportCount: v.optional(v.number()),
+  lastReportedAt: v.optional(v.number()),
   softDeletedAt: v.optional(v.number()),
   createdAt: v.number(),
   updatedAt: v.number(),
@@ -1287,6 +1289,21 @@ const skillReports = defineTable({
   .index("by_user", ["userId"])
   .index("by_skill_user", ["skillId", "userId"]);
 
+const packageReports = defineTable({
+  packageId: v.id("packages"),
+  releaseId: v.optional(v.id("packageReleases")),
+  version: v.optional(v.string()),
+  userId: v.id("users"),
+  reason: v.optional(v.string()),
+  createdAt: v.number(),
+})
+  .index("by_package", ["packageId"])
+  .index("by_package_createdAt", ["packageId", "createdAt"])
+  .index("by_release", ["releaseId"])
+  .index("by_createdAt", ["createdAt"])
+  .index("by_user", ["userId"])
+  .index("by_package_user", ["packageId", "userId"]);
+
 const soulComments = defineTable({
   soulId: v.id("souls"),
   userId: v.id("users"),
@@ -1526,6 +1543,7 @@ export default defineSchema({
   comments,
   commentReports,
   skillReports,
+  packageReports,
   soulComments,
   stars,
   soulStars,

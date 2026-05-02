@@ -15,6 +15,7 @@ import {
   ApiV1PackagePublishResponseSchema,
   ApiV1PackageReadinessResponseSchema,
   ApiV1PackageReleaseModerationResponseSchema,
+  ApiV1PackageReportResponseSchema,
   ApiV1PackageResponseSchema,
   ApiV1PackageSearchResponseSchema,
   ApiV1PackageTrustedPublisherResponseSchema,
@@ -120,6 +121,12 @@ type PackageVerifyOptions = {
 type PackageModerateOptions = {
   version?: string;
   state?: PackageReleaseModerationState;
+  reason?: string;
+  json?: boolean;
+};
+
+type PackageReportOptions = {
+  version?: string;
   reason?: string;
   json?: boolean;
 };
@@ -816,6 +823,50 @@ export async function cmdModeratePackageRelease(
   }
 }
 
+export async function cmdReportPackage(
+  opts: GlobalOpts,
+  packageName: string,
+  options: PackageReportOptions = {},
+) {
+  const trimmed = normalizePackageNameOrFail(packageName);
+  const reason = options.reason?.trim();
+  const version = options.version?.trim();
+  if (!reason) fail("--reason required");
+
+  const token = await requireAuthToken();
+  const registry = await getRegistry(opts, { cache: true });
+  const spinner = options.json ? null : createSpinner(`Reporting ${trimmed}`);
+  try {
+    const result = await apiRequest(
+      registry,
+      {
+        method: "POST",
+        path: `${ApiRoutes.packages}/${encodeURIComponent(trimmed)}/report`,
+        token,
+        body: {
+          reason,
+          ...(version ? { version } : {}),
+        },
+      },
+      ApiV1PackageReportResponseSchema,
+    );
+    spinner?.stop();
+    if (options.json) {
+      process.stdout.write(`${JSON.stringify(result, null, 2)}\n`);
+      return;
+    }
+    if (result.alreadyReported) {
+      console.log(`Already reported ${trimmed}.`);
+      return;
+    }
+    const versionSuffix = version ? `@${version}` : "";
+    console.log(`OK. Reported ${trimmed}${versionSuffix} for moderator review.`);
+  } catch (error) {
+    spinner?.fail(formatError(error));
+    throw error;
+  }
+}
+
 export async function cmdPackageModerationQueue(
   opts: GlobalOpts,
   options: PackageModerationQueueOptions = {},
@@ -857,6 +908,9 @@ export async function cmdPackageModerationQueue(
       console.log(
         `  ${item.family} ${item.channel} ${item.artifactKind ?? "unknown-artifact"}${item.isOfficial ? " official" : ""}`,
       );
+      if (item.reportCount > 0) {
+        console.log(`  reports: ${item.reportCount}`);
+      }
       if (item.sourceRepo || item.sourceCommit) {
         console.log(`  source: ${item.sourceRepo ?? "unknown"}@${item.sourceCommit ?? "unknown"}`);
       }

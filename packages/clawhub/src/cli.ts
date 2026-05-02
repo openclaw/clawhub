@@ -26,6 +26,7 @@ import {
   cmdPackageModerationQueue,
   cmdPackageReadiness,
   cmdPublishPackage,
+  cmdReportPackage,
   cmdSetPackageTrustedPublisher,
   cmdVerifyPackage,
 } from "./cli/commands/packages.js";
@@ -462,6 +463,18 @@ packageCmd
   .action(async (name, options) => {
     const opts = await resolveGlobalOpts();
     await cmdModeratePackageRelease(opts, name, options);
+  });
+
+packageCmd
+  .command("report")
+  .description("Report a package for moderator review")
+  .argument("<name>", "Package name")
+  .option("--version <version>", "Package version")
+  .requiredOption("--reason <text>", "Report reason")
+  .option("--json", "Output JSON")
+  .action(async (name, options) => {
+    const opts = await resolveGlobalOpts();
+    await cmdReportPackage(opts, name, options);
   });
 
 packageCmd

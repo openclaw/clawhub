@@ -332,6 +332,24 @@ Example:
 clawhub package moderate @openclaw/example-plugin --version 1.2.3 --state quarantined --reason "suspicious native payload"
 ```
 
+### `package report`
+
+- Authenticated command for reporting a package to moderators.
+- Calls `POST /api/v1/packages/{name}/report`.
+- Reports are package-level, optionally tied to a version, and feed
+  `package moderation-queue`.
+- Reports do not auto-hide packages or block downloads by themselves.
+- Flags:
+  - `--version <version>`: optional package version to attach to the report.
+  - `--reason <text>`: required report reason.
+  - `--json`: machine-readable output.
+
+Example:
+
+```bash
+clawhub package report @openclaw/example-plugin --version 1.2.3 --reason "suspicious native payload"
+```
+
 ### `package moderation-queue`
 
 - Moderator/admin command for reviewing package releases that need attention.

@@ -55,6 +55,7 @@ import {
   getPublishTotalSizeError,
   MAX_PUBLISH_TOTAL_BYTES,
 } from "./lib/publishLimits";
+import { MAX_ACTIVE_REPORTS_PER_USER, MAX_REPORT_REASON_LENGTH } from "./lib/reporting";
 import { tokenize } from "./lib/searchText";
 import { hashSkillFiles } from "./lib/skills";
 import { runStaticPublishScan } from "./lib/staticPublishScan";
@@ -188,6 +189,8 @@ type PackageModerationQueueItem = {
   moderationReason?: string | null;
   sourceRepo?: string | null;
   sourceCommit?: string | null;
+  reportCount: number;
+  lastReportedAt?: number | null;
   reasons: string[];
 };
 
@@ -223,6 +226,7 @@ function isReservedPackagePlaceholder(pkg: PackageDoc | null | undefined) {
 function getPackageModerationQueueReasons(
   release: Doc<"packageReleases">,
   scanStatus: PackageReleaseScanStatus,
+  reportCount = 0,
 ) {
   const reasons: string[] = [];
   if (release.manualModeration?.state) reasons.push(`manual:${release.manualModeration.state}`);
@@ -233,7 +237,15 @@ function getPackageModerationQueueReasons(
   if (release.vtAnalysis?.status === "suspicious" || release.vtAnalysis?.status === "malicious") {
     reasons.push(`vt:${release.vtAnalysis.status}`);
   }
+  if (reportCount > 0) reasons.push(`reports:${reportCount}`);
   return [...new Set(reasons)];
+}
+
+function shouldIncludePackageReportsInModerationQueue(
+  reportCount: number,
+  status: PackageModerationQueueStatus,
+) {
+  return reportCount > 0 && (status === "open" || status === "all");
 }
 
 function shouldIncludeReleaseInModerationQueue(
@@ -254,6 +266,39 @@ function shouldIncludeReleaseInModerationQueue(
     scanStatus === "malicious" ||
     scanStatus === "pending"
   );
+}
+
+function toPackageModerationQueueItem(
+  pkg: Doc<"packages">,
+  release: Doc<"packageReleases">,
+): PackageModerationQueueItem {
+  const scanStatus = resolvePackageReleaseScanStatus(release);
+  const reportCount = pkg.reportCount ?? 0;
+  const source = (release.source && typeof release.source === "object" ? release.source : {}) as {
+    repo?: unknown;
+    commit?: unknown;
+  };
+
+  return {
+    packageId: pkg._id,
+    releaseId: release._id,
+    name: pkg.name,
+    displayName: pkg.displayName,
+    family: pkg.family,
+    channel: pkg.channel,
+    isOfficial: pkg.isOfficial,
+    version: release.version,
+    createdAt: release.createdAt,
+    artifactKind: release.artifactKind ?? null,
+    scanStatus,
+    moderationState: release.manualModeration?.state ?? null,
+    moderationReason: release.manualModeration?.reason ?? null,
+    sourceRepo: typeof source.repo === "string" ? source.repo : null,
+    sourceCommit: typeof source.commit === "string" ? source.commit : null,
+    reportCount,
+    lastReportedAt: pkg.lastReportedAt ?? null,
+    reasons: getPackageModerationQueueReasons(release, scanStatus, reportCount),
+  };
 }
 
 type PackageBadgeKind = Doc<"packageBadges">["kind"];
@@ -2097,6 +2142,122 @@ export const moderatePackageReleaseForUserInternal = internalMutation({
   },
 });
 
+async function countActivePackageReportsForUser(ctx: MutationCtx, userId: Id<"users">) {
+  const reports = await ctx.db
+    .query("packageReports")
+    .withIndex("by_user", (q) => q.eq("userId", userId))
+    .collect();
+
+  let count = 0;
+  for (const report of reports) {
+    const pkg = await ctx.db.get(report.packageId);
+    if (!pkg || pkg.softDeletedAt) continue;
+    const owner = await ctx.db.get(pkg.ownerUserId);
+    if (!owner || owner.deletedAt || owner.deactivatedAt) continue;
+    count += 1;
+    if (count >= MAX_ACTIVE_REPORTS_PER_USER) break;
+  }
+
+  return count;
+}
+
+export const reportPackageForUserInternal = internalMutation({
+  args: {
+    actorUserId: v.id("users"),
+    name: v.string(),
+    version: v.optional(v.string()),
+    reason: v.string(),
+  },
+  handler: async (ctx, args) => {
+    const actor = await ctx.db.get(args.actorUserId);
+    if (!actor || actor.deletedAt || actor.deactivatedAt) {
+      throw new ConvexError("Unauthorized");
+    }
+
+    const pkg = await getPackageByNormalizedName(ctx, normalizePackageName(args.name));
+    if (!pkg || pkg.softDeletedAt) throw new ConvexError("Package not found");
+    if (!(await canViewerReadPackage(ctx, pkg, actor._id))) {
+      throw new ConvexError("Package not found");
+    }
+
+    const reason = args.reason.trim();
+    if (!reason) throw new ConvexError("Report reason required.");
+
+    const version = args.version?.trim();
+    let release: Doc<"packageReleases"> | null = null;
+    if (version) {
+      release = await ctx.db
+        .query("packageReleases")
+        .withIndex("by_package_version", (q) => q.eq("packageId", pkg._id).eq("version", version))
+        .unique();
+      if (!release || release.softDeletedAt) throw new ConvexError("Package version not found");
+    } else if (pkg.latestReleaseId) {
+      const latest = await ctx.db.get(pkg.latestReleaseId);
+      release = latest && !latest.softDeletedAt ? latest : null;
+    }
+
+    const existing = await ctx.db
+      .query("packageReports")
+      .withIndex("by_package_user", (q) => q.eq("packageId", pkg._id).eq("userId", actor._id))
+      .unique();
+    if (existing) {
+      return {
+        ok: true as const,
+        reported: false,
+        alreadyReported: true,
+        packageId: pkg._id,
+        releaseId: existing.releaseId ?? null,
+        reportCount: pkg.reportCount ?? 0,
+      };
+    }
+
+    const activeReports = await countActivePackageReportsForUser(ctx, actor._id);
+    if (activeReports >= MAX_ACTIVE_REPORTS_PER_USER) {
+      throw new ConvexError(
+        "Report limit reached. Please wait for moderation before reporting more.",
+      );
+    }
+
+    const now = Date.now();
+    await ctx.db.insert("packageReports", {
+      packageId: pkg._id,
+      ...(release ? { releaseId: release._id, version: release.version } : {}),
+      userId: actor._id,
+      reason: reason.slice(0, MAX_REPORT_REASON_LENGTH),
+      createdAt: now,
+    });
+
+    const nextReportCount = (pkg.reportCount ?? 0) + 1;
+    await ctx.db.patch(pkg._id, {
+      reportCount: nextReportCount,
+      lastReportedAt: now,
+    });
+
+    await ctx.db.insert("auditLogs", {
+      actorUserId: actor._id,
+      action: "package.report",
+      targetType: "package",
+      targetId: pkg._id,
+      metadata: {
+        packageName: pkg.name,
+        releaseId: release?._id ?? null,
+        version: release?.version ?? version ?? null,
+        reportCount: nextReportCount,
+      },
+      createdAt: now,
+    });
+
+    return {
+      ok: true as const,
+      reported: true,
+      alreadyReported: false,
+      packageId: pkg._id,
+      releaseId: release?._id ?? null,
+      reportCount: nextReportCount,
+    };
+  },
+});
+
 export const listPackageModerationQueueInternal = internalQuery({
   args: {
     actorUserId: v.id("users"),
@@ -2117,6 +2278,27 @@ export const listPackageModerationQueueInternal = internalQuery({
     let done = false;
     let scannedPages = 0;
     const items: PackageModerationQueueItem[] = [];
+    const seenReleaseIds = new Set<string>();
+
+    if (status === "open" || status === "all") {
+      const reports = await ctx.db
+        .query("packageReports")
+        .withIndex("by_createdAt", (q) => q)
+        .order("desc")
+        .take(limit * 3);
+
+      for (const report of reports) {
+        if (items.length >= limit) break;
+        const pkg = await ctx.db.get(report.packageId);
+        if (!pkg || pkg.softDeletedAt || pkg.family === "skill" || !pkg.latestReleaseId) continue;
+        const release = await ctx.db.get(pkg.latestReleaseId);
+        if (!release || release.softDeletedAt || seenReleaseIds.has(release._id)) continue;
+        const item = toPackageModerationQueueItem(pkg, release);
+        if (!shouldIncludePackageReportsInModerationQueue(item.reportCount, status)) continue;
+        seenReleaseIds.add(release._id);
+        items.push(item);
+      }
+    }
 
     while (items.length < limit && !done && scannedPages < 5) {
       const page = await ctx.db
@@ -2135,35 +2317,26 @@ export const listPackageModerationQueueInternal = internalQuery({
       for (const release of page.page) {
         if (items.length >= limit) break;
         const scanStatus = resolvePackageReleaseScanStatus(release);
-        if (!shouldIncludeReleaseInModerationQueue(release, scanStatus, status)) continue;
-
         const pkg = await ctx.db.get(release.packageId);
         if (!pkg || pkg.softDeletedAt || pkg.family === "skill") continue;
-        const source = (
-          release.source && typeof release.source === "object" ? release.source : {}
-        ) as {
-          repo?: unknown;
-          commit?: unknown;
-        };
-
-        items.push({
-          packageId: pkg._id,
-          releaseId: release._id,
-          name: pkg.name,
-          displayName: pkg.displayName,
-          family: pkg.family,
-          channel: pkg.channel,
-          isOfficial: pkg.isOfficial,
-          version: release.version,
-          createdAt: release.createdAt,
-          artifactKind: release.artifactKind ?? null,
+        const reportCount = pkg.reportCount ?? 0;
+        const releaseNeedsReview = shouldIncludeReleaseInModerationQueue(
+          release,
           scanStatus,
-          moderationState: release.manualModeration?.state ?? null,
-          moderationReason: release.manualModeration?.reason ?? null,
-          sourceRepo: typeof source.repo === "string" ? source.repo : null,
-          sourceCommit: typeof source.commit === "string" ? source.commit : null,
-          reasons: getPackageModerationQueueReasons(release, scanStatus),
-        });
+          status,
+        );
+        const packageReportsNeedReview = shouldIncludePackageReportsInModerationQueue(
+          reportCount,
+          status,
+        );
+        if (
+          !releaseNeedsReview &&
+          (!packageReportsNeedReview || pkg.latestReleaseId !== release._id)
+        )
+          continue;
+        if (seenReleaseIds.has(release._id)) continue;
+        seenReleaseIds.add(release._id);
+        items.push(toPackageModerationQueueItem(pkg, release));
       }
     }
 

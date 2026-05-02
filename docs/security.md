@@ -12,19 +12,21 @@ See also: [acceptable-usage.md](./acceptable-usage.md) for the marketplace polic
 
 ## Roles + permissions
 
-- user: upload skills/souls (subject to GitHub age gate), report skills/comments.
+- user: upload skills/souls (subject to GitHub age gate), report skills/comments/packages.
 - moderator: hide/restore skills, view hidden skills, unhide, soft-delete, ban users (except admins).
 - admin: all moderator actions + hard delete skills, change owners, change roles.
 
 ## Reporting + auto-hide
 
-- Reports are unique per user + target (skill/comment).
+- Reports are unique per user + target (skill/comment/package).
 - Report reason required (trimmed, max 500 chars). Abuse of reporting may result in account bans.
 - Per-user cap: 20 **active** reports.
   - Active skill report = skill exists, not soft-deleted, not `moderationStatus = removed`,
     and the owner is not banned.
   - Active comment report = comment exists, not soft-deleted, parent skill still active,
     and the comment author is not banned/deactivated.
+  - Active package report = package exists, not soft-deleted, and the owner is
+    not banned/deactivated.
 - Auto-hide: when unique reports exceed 3 (4th report):
   - skill report flow:
     - soft-delete skill (`softDeletedAt`)
@@ -36,6 +38,9 @@ See also: [acceptable-usage.md](./acceptable-usage.md) for the marketplace polic
     - soft-delete comment (`softDeletedAt`)
     - decrement comment stat via `uncomment` stat event
     - audit log entry: `comment.auto_hide`
+- Package reports feed `package moderation-queue` and audit `package.report`,
+  but do not auto-hide or block downloads. Moderators must explicitly approve,
+  quarantine, or revoke package releases.
 - Public queries hide non-active moderation statuses; staff can still access via
   staff-only queries and unhide/restore/delete/ban.
 - Skills directory supports an optional "Hide suspicious" filter to exclude

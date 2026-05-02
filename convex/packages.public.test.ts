@@ -11,6 +11,7 @@ import {
   publishPackage,
   publishPackageForTrustedPublisherInternal,
   publishPackageForUserInternal,
+  reportPackageForUserInternal,
   getVersionByName,
   insertReleaseInternal,
   listPackageModerationQueueInternal,
@@ -222,6 +223,24 @@ const publishPackageForTrustedPublisherInternalHandler = (
       payload: unknown;
     },
     unknown
+  >
+)._handler;
+const reportPackageForUserInternalHandler = (
+  reportPackageForUserInternal as unknown as WrappedHandler<
+    {
+      actorUserId: string;
+      name: string;
+      version?: string;
+      reason: string;
+    },
+    {
+      ok: true;
+      reported: boolean;
+      alreadyReported: boolean;
+      packageId: string;
+      releaseId: string | null;
+      reportCount: number;
+    }
   >
 )._handler;
 const getPackageReleaseScanBackfillBatchInternalHandler = (
@@ -3326,6 +3345,150 @@ describe("packages public queries", () => {
       }),
     ).rejects.toThrow("Unauthorized");
   });
+
+  it("records package reports for moderation", async () => {
+    const insert = vi.fn(async (table: string) =>
+      table === "packageReports" ? "packageReports:1" : "auditLogs:1",
+    );
+    const patch = vi.fn();
+    const reportReason = "x".repeat(520);
+
+    const result = await reportPackageForUserInternalHandler(
+      {
+        db: {
+          get: vi.fn(async (id: string) => {
+            if (id === "users:reporter") return { _id: id };
+            return null;
+          }),
+          query: vi.fn((table: string) => {
+            if (table === "packages") {
+              return {
+                withIndex: vi.fn(() => ({
+                  unique: vi.fn().mockResolvedValue(makePackageDoc()),
+                })),
+              };
+            }
+            if (table === "packageReleases") {
+              return {
+                withIndex: vi.fn(() => ({
+                  unique: vi.fn().mockResolvedValue(makeReleaseDoc({ version: "1.2.3" })),
+                })),
+              };
+            }
+            if (table === "packageReports") {
+              return {
+                withIndex: vi.fn((indexName: string) => {
+                  if (indexName === "by_user") {
+                    return { collect: vi.fn().mockResolvedValue([]) };
+                  }
+                  return { unique: vi.fn().mockResolvedValue(null) };
+                }),
+              };
+            }
+            throw new Error(`Unexpected table ${table}`);
+          }),
+          insert,
+          patch,
+          replace: vi.fn(),
+          delete: vi.fn(),
+          normalizeId: vi.fn(),
+        },
+      } as never,
+      {
+        actorUserId: "users:reporter",
+        name: "@scope/demo",
+        version: "1.2.3",
+        reason: reportReason,
+      },
+    );
+
+    expect(result).toMatchObject({
+      ok: true,
+      reported: true,
+      alreadyReported: false,
+      packageId: "packages:demo",
+      releaseId: "packageReleases:demo-1",
+      reportCount: 1,
+    });
+    expect(insert).toHaveBeenCalledWith("packageReports", {
+      packageId: "packages:demo",
+      releaseId: "packageReleases:demo-1",
+      version: "1.2.3",
+      userId: "users:reporter",
+      reason: "x".repeat(500),
+      createdAt: expect.any(Number),
+    });
+    expect(patch).toHaveBeenCalledWith("packages:demo", {
+      reportCount: 1,
+      lastReportedAt: expect.any(Number),
+    });
+    expect(insert).toHaveBeenCalledWith(
+      "auditLogs",
+      expect.objectContaining({
+        actorUserId: "users:reporter",
+        action: "package.report",
+        targetType: "package",
+        targetId: "packages:demo",
+      }),
+    );
+  });
+
+  it("dedupes package reports by user and package", async () => {
+    const insert = vi.fn();
+    const patch = vi.fn();
+
+    const result = await reportPackageForUserInternalHandler(
+      {
+        db: {
+          get: vi.fn(async (id: string) => {
+            if (id === "users:reporter") return { _id: id };
+            return null;
+          }),
+          query: vi.fn((table: string) => {
+            if (table === "packages") {
+              return {
+                withIndex: vi.fn(() => ({
+                  unique: vi.fn().mockResolvedValue(makePackageDoc({ reportCount: 2 })),
+                })),
+              };
+            }
+            if (table === "packageReports") {
+              return {
+                withIndex: vi.fn(() => ({
+                  unique: vi.fn().mockResolvedValue({
+                    _id: "packageReports:existing",
+                    packageId: "packages:demo",
+                    releaseId: "packageReleases:demo-1",
+                    userId: "users:reporter",
+                  }),
+                })),
+              };
+            }
+            throw new Error(`Unexpected table ${table}`);
+          }),
+          insert,
+          patch,
+          replace: vi.fn(),
+          delete: vi.fn(),
+          normalizeId: vi.fn(),
+        },
+      } as never,
+      {
+        actorUserId: "users:reporter",
+        name: "@scope/demo",
+        reason: "already reported",
+      },
+    );
+
+    expect(result).toMatchObject({
+      ok: true,
+      reported: false,
+      alreadyReported: true,
+      reportCount: 2,
+    });
+    expect(insert).not.toHaveBeenCalled();
+    expect(patch).not.toHaveBeenCalled();
+  });
 });
 
 describe("package scan backfill", () => {
@@ -3349,6 +3512,23 @@ describe("package scan backfill", () => {
             return null;
           }),
           query: vi.fn((table: string) => {
+            if (table === "packageReports") {
+              return {
+                withIndex: vi.fn(() => ({
+                  order: vi.fn(() => ({
+                    take: vi.fn().mockResolvedValue([
+                      {
+                        _id: "packageReports:1",
+                        packageId: "packages:demo",
+                        releaseId: "packageReleases:latest",
+                        userId: "users:reporter",
+                        createdAt: 500,
+                      },
+                    ]),
+                  })),
+                })),
+              };
+            }
             if (table !== "packageReleases") throw new Error(`Unexpected table ${table}`);
             return {
               withIndex: vi.fn(() => ({
@@ -3414,6 +3594,102 @@ describe("package scan backfill", () => {
       nextCursor: null,
       done: true,
     });
+  });
+
+  it("lists reported packages on their latest release for the moderation queue", async () => {
+    const result = await listPackageModerationQueueInternalHandler(
+      {
+        db: {
+          get: vi.fn(async (id: string) => {
+            if (id === "users:moderator") return { _id: id, role: "moderator" };
+            if (id === "packages:demo") {
+              return {
+                ...makePackageDoc({
+                  _id: "packages:demo",
+                  name: "@scope/demo",
+                  displayName: "Demo",
+                  family: "code-plugin",
+                  latestReleaseId: "packageReleases:latest",
+                  reportCount: 2,
+                  lastReportedAt: 456,
+                }),
+              };
+            }
+            if (id === "packageReleases:latest") {
+              return makeReleaseDoc({
+                _id: "packageReleases:latest",
+                packageId: "packages:demo",
+                version: "1.1.0",
+                createdAt: 101,
+                verification: { scanStatus: "clean" },
+              });
+            }
+            return null;
+          }),
+          query: vi.fn((table: string) => {
+            if (table === "packageReports") {
+              return {
+                withIndex: vi.fn(() => ({
+                  order: vi.fn(() => ({
+                    take: vi.fn().mockResolvedValue([
+                      {
+                        _id: "packageReports:1",
+                        packageId: "packages:demo",
+                        releaseId: "packageReleases:latest",
+                        userId: "users:reporter",
+                        createdAt: 500,
+                      },
+                    ]),
+                  })),
+                })),
+              };
+            }
+            if (table !== "packageReleases") throw new Error(`Unexpected table ${table}`);
+            return {
+              withIndex: vi.fn(() => ({
+                order: vi.fn(() => ({
+                  paginate: vi.fn().mockResolvedValue({
+                    page: [
+                      {
+                        ...makeReleaseDoc({
+                          _id: "packageReleases:old",
+                          packageId: "packages:demo",
+                          version: "1.0.0",
+                          createdAt: 100,
+                          verification: { scanStatus: "clean" },
+                        }),
+                      },
+                      {
+                        ...makeReleaseDoc({
+                          _id: "packageReleases:latest",
+                          packageId: "packages:demo",
+                          version: "1.1.0",
+                          createdAt: 101,
+                          verification: { scanStatus: "clean" },
+                        }),
+                      },
+                    ],
+                    continueCursor: null,
+                    isDone: true,
+                  }),
+                })),
+              })),
+            };
+          }),
+        },
+      } as never,
+      { actorUserId: "users:moderator", limit: 10, status: "open" },
+    );
+
+    expect(result.items).toEqual([
+      expect.objectContaining({
+        releaseId: "packageReleases:latest",
+        version: "1.1.0",
+        reportCount: 2,
+        lastReportedAt: 456,
+        reasons: ["reports:2"],
+      }),
+    ]);
   });
 
   it("dry-runs package artifact kind backfill without patching releases", async () => {

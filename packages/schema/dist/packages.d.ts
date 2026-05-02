@@ -473,6 +473,20 @@ export declare const PackageReleaseModerationRequestSchema: import("arktype/inte
     reason: string;
 }, {}>;
 export type PackageReleaseModerationRequest = (typeof PackageReleaseModerationRequestSchema)[inferred];
+export declare const PackageReportRequestSchema: import("arktype/internal/variants/object.ts").ObjectType<{
+    reason: string;
+    version?: string | undefined;
+}, {}>;
+export type PackageReportRequest = (typeof PackageReportRequestSchema)[inferred];
+export declare const ApiV1PackageReportResponseSchema: import("arktype/internal/variants/object.ts").ObjectType<{
+    ok: true;
+    reported: boolean;
+    alreadyReported: boolean;
+    packageId: string;
+    releaseId: string | null;
+    reportCount: number;
+}, {}>;
+export type ApiV1PackageReportResponse = (typeof ApiV1PackageReportResponseSchema)[inferred];
 export declare const PackageArtifactBackfillRequestSchema: import("arktype/internal/variants/object.ts").ObjectType<{
     cursor?: string | null | undefined;
     batchSize?: number | undefined;
@@ -527,12 +541,14 @@ export declare const ApiV1PackageModerationQueueResponseSchema: import("arktype/
         version: string;
         createdAt: number;
         scanStatus: "clean" | "suspicious" | "malicious" | "pending" | "not-run";
+        reportCount: number;
         reasons: string[];
         artifactKind?: "legacy-zip" | "npm-pack" | null | undefined;
         moderationState?: "approved" | "quarantined" | "revoked" | null | undefined;
         moderationReason?: string | null | undefined;
         sourceRepo?: string | null | undefined;
         sourceCommit?: string | null | undefined;
+        lastReportedAt?: number | null | undefined;
     }[];
     nextCursor: string | null;
     done: boolean;

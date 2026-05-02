@@ -456,10 +456,10 @@ Query params:
 
 Status meanings:
 
-- `open`: suspicious, malicious, pending, quarantined, or revoked releases.
+- `open`: suspicious, malicious, pending, quarantined, revoked, or reported releases.
 - `blocked`: quarantined, revoked, or malicious releases.
 - `manual`: any release with a manual moderation override.
-- `all`: any release with a manual override or non-clean scan state.
+- `all`: any release with a manual override, non-clean scan state, or package report.
 
 Response:
 
@@ -482,11 +482,43 @@ Response:
       "moderationReason": "manual review",
       "sourceRepo": "openclaw/example-plugin",
       "sourceCommit": "abc123",
-      "reasons": ["manual:quarantined", "scan:malicious"]
+      "reportCount": 2,
+      "lastReportedAt": 1730000001000,
+      "reasons": ["manual:quarantined", "scan:malicious", "reports:2"]
     }
   ],
   "nextCursor": null,
   "done": true
+}
+```
+
+### `POST /api/v1/packages/{name}/report`
+
+Report a package for moderator review. Reports are package-level, optionally
+linked to a version. They feed the moderation queue but do not auto-hide or
+block downloads by themselves; moderators should use release moderation to
+approve, quarantine, or revoke artifacts.
+
+Auth:
+
+- Requires an API token.
+
+Request:
+
+```json
+{ "reason": "Suspicious native binary", "version": "1.2.3" }
+```
+
+Response:
+
+```json
+{
+  "ok": true,
+  "reported": true,
+  "alreadyReported": false,
+  "packageId": "packages:...",
+  "releaseId": "packageReleases:...",
+  "reportCount": 1
 }
 ```
 

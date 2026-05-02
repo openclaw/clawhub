@@ -38,6 +38,7 @@ const {
   cmdPackageModerationQueue,
   cmdPackageReadiness,
   cmdPublishPackage,
+  cmdReportPackage,
   cmdSetPackageTrustedPublisher,
   cmdVerifyPackage,
 } = await import("./packages");
@@ -480,6 +481,37 @@ describe("package commands", () => {
     );
   });
 
+  it("reports packages for moderator review", async () => {
+    httpMocks.apiRequest.mockResolvedValueOnce({
+      ok: true,
+      reported: true,
+      alreadyReported: false,
+      packageId: "pkg_1",
+      releaseId: "rel_1",
+      reportCount: 1,
+    });
+
+    await cmdReportPackage(makeOpts(), "@scope/demo", {
+      version: "1.2.3",
+      reason: "suspicious native payload",
+    });
+
+    expect(httpMocks.apiRequest).toHaveBeenCalledWith(
+      "https://clawhub.ai",
+      {
+        method: "POST",
+        path: "/api/v1/packages/%40scope%2Fdemo/report",
+        token: "tkn",
+        body: {
+          reason: "suspicious native payload",
+          version: "1.2.3",
+        },
+      },
+      expect.anything(),
+    );
+    expect(mockLog).toHaveBeenCalledWith("OK. Reported @scope/demo@1.2.3 for moderator review.");
+  });
+
   it("lists the package moderation queue", async () => {
     httpMocks.apiRequest.mockResolvedValueOnce({
       items: [
@@ -499,6 +531,8 @@ describe("package commands", () => {
           moderationReason: "manual review",
           sourceRepo: "openclaw/demo",
           sourceCommit: "abc123",
+          reportCount: 0,
+          lastReportedAt: null,
           reasons: ["manual:quarantined", "scan:malicious"],
         },
       ],

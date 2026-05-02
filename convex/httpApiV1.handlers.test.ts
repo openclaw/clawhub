@@ -3813,6 +3813,8 @@ describe("httpApiV1 handlers", () => {
             moderationReason: "manual review",
             sourceRepo: "openclaw/demo-plugin",
             sourceCommit: "abc123",
+            reportCount: 0,
+            lastReportedAt: null,
             reasons: ["manual:quarantined", "scan:malicious"],
           },
         ],
@@ -3847,6 +3849,48 @@ describe("httpApiV1 handlers", () => {
       cursor: null,
       limit: 20,
       status: "blocked",
+    });
+  });
+
+  it("package report posts authenticated reports", async () => {
+    vi.mocked(requireApiTokenUser).mockResolvedValue({
+      userId: "users:reporter",
+      user: { _id: "users:reporter", role: "user" },
+    } as never);
+    const runMutation = vi.fn(async (_mutation: unknown, args: Record<string, unknown>) => {
+      if (isRateLimitArgs(args)) return okRate();
+      return {
+        ok: true,
+        reported: true,
+        alreadyReported: false,
+        packageId: "packages:1",
+        releaseId: "packageReleases:1",
+        reportCount: 1,
+      };
+    });
+
+    const response = await __handlers.packagesPostRouterV1Handler(
+      makeCtx({ runMutation }),
+      new Request("https://example.com/api/v1/packages/%40scope%2Fdemo/report", {
+        method: "POST",
+        headers: { Authorization: "Bearer clh_test" },
+        body: JSON.stringify({
+          reason: "suspicious native payload",
+          version: "1.2.3",
+        }),
+      }),
+    );
+
+    expect(response.status).toBe(200);
+    await expect(response.json()).resolves.toMatchObject({
+      reported: true,
+      reportCount: 1,
+    });
+    expect(runMutation).toHaveBeenCalledWith(internal.packages.reportPackageForUserInternal, {
+      actorUserId: "users:reporter",
+      name: "@scope/demo",
+      reason: "suspicious native payload",
+      version: "1.2.3",
     });
   });
 

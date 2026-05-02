@@ -310,6 +310,22 @@ export const PackageReleaseModerationRequestSchema = type({
 export type PackageReleaseModerationRequest =
   (typeof PackageReleaseModerationRequestSchema)[inferred];
 
+export const PackageReportRequestSchema = type({
+  reason: "string",
+  version: "string?",
+});
+export type PackageReportRequest = (typeof PackageReportRequestSchema)[inferred];
+
+export const ApiV1PackageReportResponseSchema = type({
+  ok: "true",
+  reported: "boolean",
+  alreadyReported: "boolean",
+  packageId: "string",
+  releaseId: "string|null",
+  reportCount: "number",
+});
+export type ApiV1PackageReportResponse = (typeof ApiV1PackageReportResponseSchema)[inferred];
+
 export const PackageArtifactBackfillRequestSchema = type({
   cursor: "string|null?",
   batchSize: "number?",
@@ -371,6 +387,8 @@ export const ApiV1PackageModerationQueueResponseSchema = type({
     moderationReason: "string|null?",
     sourceRepo: "string|null?",
     sourceCommit: "string|null?",
+    reportCount: "number",
+    lastReportedAt: "number|null?",
     reasons: "string[]",
   }).array(),
   nextCursor: "string|null",

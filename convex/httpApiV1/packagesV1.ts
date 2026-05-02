@@ -1,5 +1,6 @@
 import {
   PackageArtifactBackfillRequestSchema,
+  PackageReportRequestSchema,
   PackageReleaseModerationRequestSchema,
   PackagePublishRequestSchema,
   PackageTrustedPublisherUpsertRequestSchema,
@@ -70,6 +71,7 @@ const internalRefs = internal as unknown as {
     requestRescanForApiTokenInternal: unknown;
     softDeletePackageInternal: unknown;
     moderatePackageReleaseForUserInternal: unknown;
+    reportPackageForUserInternal: unknown;
     backfillPackageArtifactKindsInternal: unknown;
     listPackageModerationQueueInternal: unknown;
   };
@@ -1399,6 +1401,37 @@ export async function packagesPostRouterV1Handler(ctx: ActionCtx, request: Reque
     } catch (error) {
       return text(
         error instanceof Error ? error.message : "Package release moderation failed",
+        400,
+        rate.headers,
+      );
+    }
+  }
+
+  if (segments[1] === "report" && segments.length === 2) {
+    const rate = await applyRateLimit(ctx, request, "write");
+    if (!rate.ok) return rate.response;
+    const auth = await requireApiTokenUserOrResponse(ctx, request, rate.headers);
+    if (!auth.ok) return auth.response;
+
+    try {
+      const body = parseArk(
+        PackageReportRequestSchema,
+        await request.json(),
+        "Package report payload",
+      ) as {
+        reason: string;
+        version?: string;
+      };
+      const result = await runMutationRef(ctx, internalRefs.packages.reportPackageForUserInternal, {
+        actorUserId: auth.userId,
+        name: segments[0]!,
+        reason: body.reason,
+        ...(body.version ? { version: body.version } : {}),
+      });
+      return json(result, 200, rate.headers);
+    } catch (error) {
+      return text(
+        error instanceof Error ? error.message : "Package report failed",
         400,
         rate.headers,
       );
