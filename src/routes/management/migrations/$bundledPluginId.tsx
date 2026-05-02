@@ -9,6 +9,7 @@ import { Card } from "../../../components/ui/card";
 import {
   formatReadinessSource,
   formatReadinessStorePack,
+  readinessBlockerLabel,
   type MigrationReadinessItem,
   type MigrationReadinessResult,
   readinessStateLabel,
@@ -63,8 +64,8 @@ export function OfficialMigrationDetailPage(props: { bundledPluginId: string }) 
             </Link>
           </Button>
           <Button asChild variant="outline" size="sm">
-            <Link to="/management/storepacks" search={{ skill: undefined, plugin: undefined }}>
-              StorePack ops
+            <Link to="/management/clawpacks" search={{ skill: undefined, plugin: undefined }}>
+              Claw Pack ops
             </Link>
           </Button>
         </div>
@@ -136,7 +137,7 @@ function MigrationCandidateDetail(props: { item: MigrationReadinessItem }) {
             <ReportField label="publisher" value={`@${item.publisherHandle}`} />
             <ReportField label="source" value={formatReadinessSource(item)} />
             <ReportField label="source path" value={item.sourcePath || "."} />
-            <ReportField label="StorePack" value={formatReadinessStorePack(item)} />
+            <ReportField label="Claw Pack" value={formatReadinessStorePack(item)} />
             <ReportField
               label="latest release"
               value={item.latestRelease ? `v${item.latestRelease.version}` : "missing"}
@@ -164,7 +165,7 @@ function MigrationCandidateDetail(props: { item: MigrationReadinessItem }) {
         <div className="mt-3 grid gap-2 md:grid-cols-2 lg:grid-cols-3">
           <Gate label="Package exists" ok={item.gates.packageExists} />
           <Gate label="Release exists" ok={item.gates.releaseExists} />
-          <Gate label="StorePack active" ok={item.gates.storepackAvailable} />
+          <Gate label="Claw Pack active" ok={item.gates.storepackAvailable} />
           <Gate label="Host matrix complete" ok={item.gates.hostMatrixComplete} />
           <Gate label="Environment complete" ok={item.gates.environmentComplete} />
           <Gate label="Source linked" ok={item.gates.sourceLinked} />
@@ -196,7 +197,7 @@ function MigrationCandidateDetail(props: { item: MigrationReadinessItem }) {
           />
           <EvidenceList
             title="Blockers"
-            values={item.blockers.map((blocker) => blocker.replaceAll("-", " "))}
+            values={item.blockers.map(readinessBlockerLabel)}
             empty="no blockers"
           />
         </div>

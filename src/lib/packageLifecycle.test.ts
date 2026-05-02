@@ -1,8 +1,8 @@
 import { describe, expect, it } from "vitest";
-import { derivePublishLifecycle, deriveStorePackLifecycle } from "./packageLifecycle";
+import { derivePublishLifecycle, deriveClawPackLifecycle } from "./packageLifecycle";
 
 describe("package lifecycle", () => {
-  it("marks publish as blocked when StorePack preview has blockers", () => {
+  it("marks publish as blocked when Claw Pack preview has blockers", () => {
     const lifecycle = derivePublishLifecycle({
       hasFiles: true,
       isAuthenticated: true,
@@ -27,8 +27,8 @@ describe("package lifecycle", () => {
     expect(lifecycle.steps.find((step) => step.key === "scan")?.status).toBe("active");
   });
 
-  it("keeps built StorePacks pending until scans are clean", () => {
-    const lifecycle = deriveStorePackLifecycle({
+  it("keeps built Claw Packs pending until scans are clean", () => {
+    const lifecycle = deriveClawPackLifecycle({
       available: true,
       verificationScanStatus: "clean",
       vtStatus: "not-run",
@@ -39,8 +39,8 @@ describe("package lifecycle", () => {
     expect(lifecycle.action).toMatch(/Wait for scans/i);
   });
 
-  it("marks clean built StorePacks as ready", () => {
-    const lifecycle = deriveStorePackLifecycle({
+  it("marks clean built Claw Packs as ready", () => {
+    const lifecycle = deriveClawPackLifecycle({
       available: true,
       verificationScanStatus: "clean",
       vtStatus: "clean",
@@ -52,8 +52,8 @@ describe("package lifecycle", () => {
     expect(lifecycle.steps.every((step) => step.status === "done")).toBe(true);
   });
 
-  it("keeps suspicious StorePacks blocked even when the artifact exists", () => {
-    const lifecycle = deriveStorePackLifecycle({
+  it("keeps suspicious Claw Packs blocked even when the artifact exists", () => {
+    const lifecycle = deriveClawPackLifecycle({
       available: true,
       verificationScanStatus: "suspicious",
       vtStatus: "clean",

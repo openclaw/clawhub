@@ -118,16 +118,16 @@ export function PluginManagementDetailPage({ name }: { name: string }) {
       .finally(() => setActiveWrite(null));
   };
 
-  const revokeStorePack = () => {
+  const revokeClawPack = () => {
     if (!plugin || !release?._id) return;
     const reason = window.prompt(
-      `Revoke StorePack for ${plugin.name}@${release.version}. Reason required.`,
+      `Revoke Claw Pack for ${plugin.name}@${release.version}. Reason required.`,
     );
     const trimmed = reason?.trim();
     if (!trimmed) return;
     if (
       !window.confirm(
-        `Revoke StorePack artifact for ${plugin.name}@${release.version}?\n\nThis writes revocation metadata and an audit log in Convex.`,
+        `Revoke Claw Pack artifact for ${plugin.name}@${release.version}?\n\nThis writes revocation metadata and an audit log in Convex.`,
       )
     ) {
       return;
@@ -145,7 +145,7 @@ export function PluginManagementDetailPage({ name }: { name: string }) {
         <div>
           <h1 className="section-title">Plugin package detail</h1>
           <p className="section-subtitle">
-            Staff drilldown for release provenance, StorePack artifact state, moderation verdicts,
+            Staff drilldown for release provenance, Claw Pack artifact state, moderation verdicts,
             and package promotion controls.
           </p>
         </div>
@@ -241,7 +241,7 @@ export function PluginManagementDetailPage({ name }: { name: string }) {
           <div className="mt-5 grid gap-4 lg:grid-cols-2">
             <Card>
               <h2 className="m-0 font-display text-xl font-bold text-[color:var(--ink)]">
-                StorePack
+                Claw Pack
               </h2>
               <div className="management-sublist">
                 <ReportField label="state" value={formatStorePackState(release)} />
@@ -281,9 +281,9 @@ export function PluginManagementDetailPage({ name }: { name: string }) {
                 size="sm"
                 type="button"
                 variant="destructive"
-                onClick={revokeStorePack}
+                onClick={revokeClawPack}
               >
-                Revoke StorePack
+                Revoke Claw Pack
               </Button>
             </Card>
 

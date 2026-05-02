@@ -20,7 +20,7 @@ vi.mock("@tanstack/react-router", () => ({
     params?: Record<string, string>;
     search?: Record<string, unknown>;
   }) => <a href={to}>{children}</a>,
-  useRouterState: () => "/management/storepacks",
+  useRouterState: () => "/management/clawpacks",
 }));
 
 const useQueryMock = vi.fn();
@@ -41,13 +41,13 @@ vi.mock("../lib/useAuthStatus", () => ({
   useAuthStatus: () => useAuthStatusMock(),
 }));
 
-import { Route, StorePackManagementRoute } from "../routes/management/storepacks";
+import { Route, ClawPackManagementRoute } from "../routes/management/clawpacks";
 
 function renderRoute() {
-  render(createElement(StorePackManagementRoute as never));
+  render(createElement(ClawPackManagementRoute as never));
 }
 
-describe("StorePack management route", () => {
+describe("Claw Pack management route", () => {
   beforeEach(() => {
     useQueryMock.mockReset();
     useActionMock.mockReset();
@@ -83,7 +83,7 @@ describe("StorePack management route", () => {
           packageId: "packages:2",
           name: "broken-plugin",
           version: "0.1.0",
-          error: "Invalid StorePack file path",
+          error: "Invalid Claw Pack file path",
           attemptCount: 2,
           firstFailedAt: Date.UTC(2026, 0, 1),
           lastAttemptAt: Date.UTC(2026, 0, 2),
@@ -144,7 +144,7 @@ describe("StorePack management route", () => {
   it("renders migration status and dry-run sample rows", () => {
     renderRoute();
 
-    expect(screen.getByRole("heading", { name: "StorePack operations" })).toBeTruthy();
+    expect(screen.getByRole("heading", { name: "Claw Pack operations" })).toBeTruthy();
     expect(screen.getByText("Plugin operations")).toBeTruthy();
     expect(screen.getByText("/publish-plugin")).toBeTruthy();
     expect(screen.getByText("/management/moderation")).toBeTruthy();
@@ -152,7 +152,7 @@ describe("StorePack management route", () => {
     expect(screen.getByText("75%")).toBeTruthy();
     expect(screen.getByText("4.0KB")).toBeTruthy();
     expect(screen.getByText("Failed artifact builds")).toBeTruthy();
-    expect(screen.getByText(/Invalid StorePack file path/)).toBeTruthy();
+    expect(screen.getByText(/Invalid Claw Pack file path/)).toBeTruthy();
     expect(screen.getByText("Create migration run")).toBeTruthy();
     expect(screen.getByText("Run next batch")).toBeTruthy();
     expect(screen.getByText("Migration runs")).toBeTruthy();

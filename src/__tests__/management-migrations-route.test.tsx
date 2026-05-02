@@ -110,8 +110,8 @@ describe("official migration readiness route", () => {
           sourceCommit: null,
           sourceRef: null,
           requiredHostTargets: ["darwin-arm64", "linux-x64-glibc", "win32-x64"],
-          readinessState: "storepack-missing",
-          blockers: ["storepack-missing", "source-ref-missing"],
+          readinessState: "clawpack-missing",
+          blockers: ["clawpack-missing", "source-ref-missing"],
           gates: {
             packageExists: true,
             releaseExists: true,
@@ -159,13 +159,13 @@ describe("official migration readiness route", () => {
     expect(screen.getByText("Plugin operations")).toBeTruthy();
     expect(screen.getByText("/publish-plugin")).toBeTruthy();
     expect(screen.getByText("/management/moderation")).toBeTruthy();
-    expect(screen.getByText("/management/storepacks")).toBeTruthy();
+    expect(screen.getByText("/management/clawpacks")).toBeTruthy();
     expect(screen.getByText("Opik")).toBeTruthy();
     expect(screen.getByText("QQbot")).toBeTruthy();
     expect(screen.getByText("ready for openclaw")).toBeTruthy();
-    expect(screen.getByText("storepack missing")).toBeTruthy();
+    expect(screen.getByText("claw pack missing")).toBeTruthy();
     expect(screen.getByText("5 files / aaaaaaaaaaaa")).toBeTruthy();
-    expect(screen.getByText(/storepack missing, source ref missing/i)).toBeTruthy();
+    expect(screen.getByText(/claw pack missing, source ref missing/i)).toBeTruthy();
     expect(screen.getAllByRole("link", { name: "Plugin page" })[0]?.getAttribute("href")).toBe(
       "/plugins/$name",
     );

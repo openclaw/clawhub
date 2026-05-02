@@ -96,7 +96,7 @@ type PluginByNameResult = {
   highlighted: { byUserId: Id<"users">; at: number } | null;
 } | null;
 
-type StorePackMigrationStatus = {
+type ClawPackMigrationStatus = {
   missingSample: Array<{
     releaseId: Id<"packageReleases">;
     packageId: Id<"packages">;
@@ -112,7 +112,7 @@ type StorePackMigrationStatus = {
   sampleLimit: number;
 };
 
-type StorePackBackfillResult = {
+type ClawPackBackfillResult = {
   processed?: number;
   succeeded?: number;
   failed?: number;
@@ -145,14 +145,14 @@ function promptUnbanReason(label: string) {
 }
 
 function promptStorePackRevocationReason(label: string) {
-  const result = window.prompt(`Revoke StorePack for ${label}. Reason required.`);
+  const result = window.prompt(`Revoke Claw Pack for ${label}. Reason required.`);
   if (result === null) return null;
   const trimmed = result.trim();
   return trimmed.length > 0 ? trimmed : null;
 }
 
 function promptStorePackBackfill(label: string) {
-  return window.confirm(`${label}\n\nThis writes StorePack metadata in Convex. Continue?`);
+  return window.confirm(`${label}\n\nThis writes Claw Pack metadata in Convex. Continue?`);
 }
 
 export const Route = createFileRoute("/management")({
@@ -242,7 +242,7 @@ function ManagementConsole() {
   const [storePackIndexCursor, setStorePackIndexCursor] = useState("");
   const [storePackLastResult, setStorePackLastResult] = useState<{
     kind: "artifact-backfill" | "index-backfill";
-    result: StorePackBackfillResult;
+    result: ClawPackBackfillResult;
   } | null>(null);
   const [skillOverrideNote, setSkillOverrideNote] = useState("");
 
@@ -254,7 +254,7 @@ function ManagementConsole() {
   const storePackMigration = useQuery(
     packageApiRefs.packages.getStorePackMigrationStatus as never,
     staff ? {} : "skip",
-  ) as StorePackMigrationStatus | undefined;
+  ) as ClawPackMigrationStatus | undefined;
 
   const selectedOwnerUserId = selectedSkill?.skill?.ownerUserId ?? null;
   const selectedCanonicalSlug = selectedSkill?.canonical?.skill?.slug ?? "";
@@ -385,14 +385,14 @@ function ManagementConsole() {
 
   const runStorePackArtifactBackfill = () => {
     const limit = Math.max(1, Math.min(storePackBackfillLimit, 100));
-    if (!promptStorePackBackfill(`Build StorePack artifacts for up to ${limit} legacy releases?`)) {
+    if (!promptStorePackBackfill(`Build Claw Pack artifacts for up to ${limit} legacy releases?`)) {
       return;
     }
     void backfillStorePackArtifacts({ limit })
       .then((result) => {
         setStorePackLastResult({
           kind: "artifact-backfill",
-          result: result as StorePackBackfillResult,
+          result: result as ClawPackBackfillResult,
         });
       })
       .catch((error) => window.alert(formatMutationError(error)));
@@ -401,7 +401,7 @@ function ManagementConsole() {
   const runStorePackIndexBackfill = () => {
     const limit = Math.max(1, Math.min(storePackBackfillLimit, 100));
     if (
-      !promptStorePackBackfill(`Rebuild StorePack search index rows for up to ${limit} releases?`)
+      !promptStorePackBackfill(`Rebuild Claw Pack search index rows for up to ${limit} releases?`)
     ) {
       return;
     }
@@ -410,7 +410,7 @@ function ManagementConsole() {
       ...(storePackIndexCursor.trim() ? { cursor: storePackIndexCursor.trim() } : {}),
     })
       .then((result) => {
-        const typedResult = result as StorePackBackfillResult;
+        const typedResult = result as ClawPackBackfillResult;
         setStorePackLastResult({
           kind: "index-backfill",
           result: typedResult,
@@ -446,15 +446,15 @@ function ManagementConsole() {
       <Card className="mb-5">
         <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
           <div>
-            <h2 className="section-title text-[1.2rem] m-0">StorePack migration</h2>
+            <h2 className="section-title text-[1.2rem] m-0">Claw Pack migration</h2>
             <p className="section-subtitle m-0">
-              Quick status snapshot. Use the dedicated StorePack page for dry-run and cursor
+              Quick status snapshot. Use the dedicated Claw Pack page for dry-run and cursor
               controls.
             </p>
           </div>
           <Button asChild variant="outline" size="sm">
-            <Link to="/management/storepacks" search={{ skill: undefined, plugin: undefined }}>
-              Open StorePack ops
+            <Link to="/management/clawpacks" search={{ skill: undefined, plugin: undefined }}>
+              Open Claw Pack ops
             </Link>
           </Button>
         </div>
@@ -1050,13 +1050,13 @@ function ManagementConsole() {
                         </span>
                       </div>
                       <div className="management-report-item">
-                        <span className="management-report-meta">StorePack</span>
+                        <span className="management-report-meta">Claw Pack</span>
                         <span>
                           {latestRelease?.storepackRevokedAt
                             ? `Revoked ${formatTimestamp(latestRelease.storepackRevokedAt)}`
                             : latestRelease?.storepackStorageId
                               ? `${latestRelease.storepackFileCount ?? 0} files · ${latestRelease.storepackSha256?.slice(0, 12) ?? "no digest"}`
-                              : "Missing StorePack artifact"}
+                              : "Missing Claw Pack artifact"}
                         </span>
                       </div>
                       <div className="management-report-item">
@@ -1139,7 +1139,7 @@ function ManagementConsole() {
                           to="/plugins/$name/releases/$version"
                           params={{ name: plugin.name, version: latestRelease.version }}
                         >
-                          Inspect StorePack
+                          Inspect Claw Pack
                         </Link>
                       </Button>
                     ) : null}
@@ -1174,7 +1174,7 @@ function ManagementConsole() {
                         }).catch((error) => window.alert(formatMutationError(error)));
                       }}
                     >
-                      Revoke StorePack
+                      Revoke Claw Pack
                     </Button>
                   </div>
                 </div>

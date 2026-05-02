@@ -154,7 +154,7 @@ export function PluginModerationRoute() {
         <div>
           <h1 className="section-title">Plugin moderation</h1>
           <p className="section-subtitle">
-            Review code and bundle plugins by scan state, StorePack status, channel, and release
+            Review code and bundle plugins by scan state, Claw Pack status, channel, and release
             risk.
           </p>
         </div>
@@ -262,7 +262,7 @@ export function PluginModerationRoute() {
                   tone={item.latestRelease?.source?.repo ? undefined : "warn"}
                 />
                 <ReportField
-                  label="StorePack"
+                  label="Claw Pack"
                   value={formatStorePackState(item)}
                   tone={item.storepackAvailable ? undefined : "warn"}
                 />

@@ -3,7 +3,7 @@ import { DatabaseZap, Gauge, ListChecks, ShieldCheck, UploadCloud, UserCog } fro
 import type React from "react";
 import { Badge } from "./ui/badge";
 
-type OperationKey = "publish" | "plugins" | "moderation" | "storepacks" | "migrations" | "users";
+type OperationKey = "publish" | "plugins" | "moderation" | "clawpacks" | "migrations" | "users";
 
 const pluginPublishSearch = {
   ownerHandle: undefined,
@@ -31,7 +31,7 @@ export function PluginOperationsNav({ current }: { current?: OperationKey }) {
           icon={<UploadCloud className="h-4 w-4" aria-hidden="true" />}
           title="Publish plugin"
           path="/publish-plugin"
-          description="Upload a folder, zip, or StorePack archive and review the generated contract."
+          description="Upload a folder, zip, or Claw Pack archive and review the generated contract."
         >
           <Link to="/publish-plugin" search={pluginPublishSearch}>
             Open publish
@@ -42,7 +42,7 @@ export function PluginOperationsNav({ current }: { current?: OperationKey }) {
           icon={<ListChecks className="h-4 w-4" aria-hidden="true" />}
           title="Plugin management"
           path="/management/plugins"
-          description="Open package drilldowns with release, StorePack, badge, and verdict controls."
+          description="Open package drilldowns with release, Claw Pack, badge, and verdict controls."
         >
           <Link to="/management/plugins" search={{ skill: undefined, plugin: undefined }}>
             Open plugins
@@ -53,21 +53,21 @@ export function PluginOperationsNav({ current }: { current?: OperationKey }) {
           icon={<ShieldCheck className="h-4 w-4" aria-hidden="true" />}
           title="Plugin moderation"
           path="/management/moderation"
-          description="Review code and bundle plugins by scan state, StorePack status, and release risk."
+          description="Review code and bundle plugins by scan state, Claw Pack status, and release risk."
         >
           <Link to="/management/moderation" search={{ skill: undefined, plugin: undefined }}>
             Open queue
           </Link>
         </OperationLink>
         <OperationLink
-          current={current === "storepacks"}
+          current={current === "clawpacks"}
           icon={<DatabaseZap className="h-4 w-4" aria-hidden="true" />}
-          title="StorePack ops"
-          path="/management/storepacks"
+          title="Claw Pack ops"
+          path="/management/clawpacks"
           description="Dry-run migration samples, build artifacts, retry failures, and rebuild lookup rows."
         >
-          <Link to="/management/storepacks" search={{ skill: undefined, plugin: undefined }}>
-            Open StorePack ops
+          <Link to="/management/clawpacks" search={{ skill: undefined, plugin: undefined }}>
+            Open Claw Pack ops
           </Link>
         </OperationLink>
         <OperationLink

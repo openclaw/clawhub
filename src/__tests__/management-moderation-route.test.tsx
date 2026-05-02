@@ -124,13 +124,13 @@ describe("plugin moderation route", () => {
     expect(Route).toBeTruthy();
   });
 
-  it("renders plugin risk, StorePack, and compatibility context", () => {
+  it("renders plugin risk, Claw Pack, and compatibility context", () => {
     renderRoute();
 
     expect(screen.getByRole("heading", { name: "Plugin moderation" })).toBeTruthy();
     expect(screen.getByText("Plugin operations")).toBeTruthy();
     expect(screen.getByText("/publish-plugin")).toBeTruthy();
-    expect(screen.getByText("/management/storepacks")).toBeTruthy();
+    expect(screen.getByText("/management/clawpacks")).toBeTruthy();
     expect(screen.getByText("/management/migrations")).toBeTruthy();
     expect(screen.getByText("Demo Plugin")).toBeTruthy();
     expect(screen.getAllByText("suspicious").length).toBeGreaterThan(0);

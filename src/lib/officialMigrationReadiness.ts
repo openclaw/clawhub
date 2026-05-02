@@ -3,6 +3,7 @@ import type { Id } from "../../convex/_generated/dataModel";
 export type MigrationReadinessState =
   | "package-missing"
   | "release-missing"
+  | "clawpack-missing"
   | "storepack-missing"
   | "metadata-incomplete"
   | "scan-blocked"
@@ -62,7 +63,15 @@ export type MigrationReadinessResult = {
 };
 
 export function readinessStateLabel(state: MigrationReadinessState) {
+  if (state === "clawpack-missing" || state === "storepack-missing") return "claw pack missing";
   return state.replaceAll("-", " ");
+}
+
+export function readinessBlockerLabel(blocker: string) {
+  if (blocker === "clawpack-missing" || blocker === "storepack-missing") {
+    return "claw pack missing";
+  }
+  return blocker.replaceAll("-", " ");
 }
 
 export function formatReadinessStorePack(item: MigrationReadinessItem) {

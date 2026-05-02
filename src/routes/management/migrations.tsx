@@ -9,6 +9,7 @@ import { Card } from "../../components/ui/card";
 import {
   formatReadinessSource,
   formatReadinessStorePack,
+  readinessBlockerLabel,
   type MigrationReadinessItem,
   type MigrationReadinessResult,
   readinessStateLabel,
@@ -63,8 +64,8 @@ function OfficialMigrationConsole() {
             </Link>
           </Button>
           <Button asChild variant="outline" size="sm">
-            <Link to="/management/storepacks" search={{ skill: undefined, plugin: undefined }}>
-              StorePack ops
+            <Link to="/management/clawpacks" search={{ skill: undefined, plugin: undefined }}>
+              Claw Pack ops
             </Link>
           </Button>
         </div>
@@ -165,7 +166,7 @@ function MigrationCard(props: { item: MigrationReadinessItem }) {
             tone={item.latestRelease ? undefined : "warn"}
           />
           <ReportField
-            label="StorePack"
+            label="Claw Pack"
             value={formatReadinessStorePack(item)}
             tone={item.gates.storepackAvailable ? undefined : "warn"}
           />
@@ -174,7 +175,7 @@ function MigrationCard(props: { item: MigrationReadinessItem }) {
         <div className="grid gap-2 md:grid-cols-2 lg:grid-cols-4">
           <Gate label="Package" ok={item.gates.packageExists} />
           <Gate label="Release" ok={item.gates.releaseExists} />
-          <Gate label="StorePack" ok={item.gates.storepackAvailable} />
+          <Gate label="Claw Pack" ok={item.gates.storepackAvailable} />
           <Gate label="Host matrix" ok={item.gates.hostMatrixComplete} />
           <Gate label="Environment" ok={item.gates.environmentComplete} />
           <Gate label="Source" ok={item.gates.sourceLinked} />
@@ -202,7 +203,7 @@ function MigrationCard(props: { item: MigrationReadinessItem }) {
         {item.blockers.length > 0 ? (
           <div className="management-report-item">
             <span className="management-report-meta">blockers</span>
-            <span>{item.blockers.map((blocker) => blocker.replaceAll("-", " ")).join(", ")}</span>
+            <span>{item.blockers.map(readinessBlockerLabel).join(", ")}</span>
           </div>
         ) : null}
       </div>

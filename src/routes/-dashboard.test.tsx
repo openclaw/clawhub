@@ -287,7 +287,7 @@ describe("Dashboard minimal rows", () => {
     expect(screen.queryByRole("link", { name: /^view$/i })).toBeNull();
   });
 
-  it("surfaces missing StorePack artifacts in plugin dashboard status", () => {
+  it("surfaces missing Claw Pack artifacts in plugin dashboard status", () => {
     arrangeDashboard({
       packages: [
         createPackage({
@@ -309,8 +309,8 @@ describe("Dashboard minimal rows", () => {
 
     renderDashboard();
 
-    expect(screen.getByText("StorePack missing")).toBeTruthy();
-    expect(screen.getByRole("button", { name: "StorePack missing status reason" })).toBeTruthy();
+    expect(screen.getByText("Claw Pack missing")).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Claw Pack missing status reason" })).toBeTruthy();
   });
 
   it("does not render column titles, scanner details, or plugin metadata chips", () => {

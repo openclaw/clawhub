@@ -5,7 +5,7 @@ export type PackageLifecycleState =
   | "uploading"
   | "publishing"
   | "scan-pending"
-  | "storepack-missing"
+  | "clawpack-missing"
   | "ready"
   | "revoked"
   | "blocked"
@@ -113,8 +113,8 @@ export function derivePublishLifecycle(input: {
   if (input.status?.toLowerCase().includes("publishing")) {
     return lifecycle({
       state: "publishing",
-      label: "Building StorePack",
-      description: "ClawHub is creating the canonical StorePack artifact and release record.",
+      label: "Building Claw Pack",
+      description: "ClawHub is creating the canonical Claw Pack artifact and release record.",
       severity: "info",
       action: null,
       steps: [
@@ -166,7 +166,7 @@ export function derivePublishLifecycle(input: {
     return lifecycle({
       state: "metadata-blocked",
       label: "Blocked before publish",
-      description: "ClawHub can preview the StorePack, but required metadata is incomplete.",
+      description: "ClawHub can preview the Claw Pack, but required metadata is incomplete.",
       severity: "danger",
       action: input.blockers[0] ?? "Resolve the blocking metadata.",
       steps: [
@@ -182,7 +182,7 @@ export function derivePublishLifecycle(input: {
   return lifecycle({
     state: "ready-to-submit",
     label: "Ready to publish",
-    description: "Metadata and package files are ready for the canonical StorePack build.",
+    description: "Metadata and package files are ready for the canonical Claw Pack build.",
     severity: "success",
     action: "Publish to start build and security checks.",
     steps: [
@@ -195,7 +195,7 @@ export function derivePublishLifecycle(input: {
   });
 }
 
-export function deriveStorePackLifecycle(input: {
+export function deriveClawPackLifecycle(input: {
   available?: boolean | null;
   revokedAt?: number | null;
   buildError?: string | null;
@@ -210,7 +210,7 @@ export function deriveStorePackLifecycle(input: {
     return lifecycle({
       state: "revoked",
       label: "Revoked",
-      description: "This StorePack has been revoked and should not be installed.",
+      description: "This Claw Pack has been revoked and should not be installed.",
       severity: "danger",
       action: "Publish a replacement release or keep the artifact unavailable.",
       steps: [
@@ -229,7 +229,7 @@ export function deriveStorePackLifecycle(input: {
       label: "Build failed",
       description: input.buildError,
       severity: "danger",
-      action: "Retry the StorePack build after fixing the source package.",
+      action: "Retry the Claw Pack build after fixing the source package.",
       steps: [
         DONE_STEPS.upload,
         DONE_STEPS.manifest,
@@ -242,11 +242,11 @@ export function deriveStorePackLifecycle(input: {
 
   if (!input.available) {
     return lifecycle({
-      state: "storepack-missing",
-      label: "StorePack missing",
-      description: "The release exists but does not have a generated StorePack artifact yet.",
+      state: "clawpack-missing",
+      label: "Claw Pack missing",
+      description: "The release exists but does not have a generated Claw Pack artifact yet.",
       severity: "warning",
-      action: "Run or retry StorePack artifact backfill.",
+      action: "Run or retry Claw Pack artifact backfill.",
       steps: [
         DONE_STEPS.upload,
         step("manifest", "Manifest", "waiting"),
@@ -270,7 +270,7 @@ export function deriveStorePackLifecycle(input: {
     return lifecycle({
       state: "blocked",
       label: scanStatus === "malicious" ? "Blocked as malicious" : "Needs review",
-      description: "The StorePack exists, but security signals prevent a clean install decision.",
+      description: "The Claw Pack exists, but security signals prevent a clean install decision.",
       severity: "danger",
       action: "Open moderation evidence and resolve or revoke the artifact.",
       steps: [
@@ -288,7 +288,7 @@ export function deriveStorePackLifecycle(input: {
       state: "scan-pending",
       label: "Scan pending",
       description:
-        "The StorePack is built, but all security checks have not reached a clean state.",
+        "The Claw Pack is built, but all security checks have not reached a clean state.",
       severity: "warning",
       action: "Wait for scans or request a rescan if this is stale.",
       steps: [
@@ -304,7 +304,7 @@ export function deriveStorePackLifecycle(input: {
   return lifecycle({
     state: "ready",
     label: "Ready",
-    description: "The StorePack is built and current security signals are clean.",
+    description: "The Claw Pack is built and current security signals are clean.",
     severity: "success",
     action: null,
     steps: [

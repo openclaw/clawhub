@@ -54,7 +54,7 @@ export function PluginListItem({ item }: PluginListItemProps) {
           <span className="skill-list-item-name">{item.displayName}</span>
           <Badge variant="compact">{familyLabel(item.family)}</Badge>
           {item.isOfficial ? <Badge variant="accent">Verified</Badge> : null}
-          {item.storepackAvailable ? <Badge variant="accent">StorePack</Badge> : null}
+          {item.storepackAvailable ? <Badge variant="accent">Claw Pack</Badge> : null}
         </div>
         <p className="skill-list-item-summary">
           {item.summary ?? "Plugin package for agent workflows."}

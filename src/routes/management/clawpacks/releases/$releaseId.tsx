@@ -7,7 +7,7 @@ import { PluginOperationsNav } from "../../../../components/PluginOperationsNav"
 import { Badge } from "../../../../components/ui/badge";
 import { Button } from "../../../../components/ui/button";
 import { Card } from "../../../../components/ui/card";
-import { deriveStorePackLifecycle } from "../../../../lib/packageLifecycle";
+import { deriveClawPackLifecycle } from "../../../../lib/packageLifecycle";
 import { isModerator } from "../../../../lib/roles";
 import { useAuthStatus } from "../../../../lib/useAuthStatus";
 
@@ -26,7 +26,7 @@ type ReleaseSourceSummary = {
   path: string | null;
 } | null;
 
-type StorePackReleaseDetail = {
+type ClawPackReleaseDetail = {
   package: {
     packageId: Id<"packages">;
     name: string;
@@ -104,22 +104,22 @@ type StorePackReleaseDetail = {
   }>;
 } | null;
 
-export const Route = createFileRoute("/management/storepacks/releases/$releaseId")({
-  component: StorePackReleaseDetailRoute,
+export const Route = createFileRoute("/management/clawpacks/releases/$releaseId")({
+  component: ClawPackReleaseDetailRoute,
 });
 
-function StorePackReleaseDetailRoute() {
+function ClawPackReleaseDetailRoute() {
   const { releaseId } = Route.useParams();
-  return <StorePackReleaseDetailPage releaseId={releaseId as Id<"packageReleases">} />;
+  return <ClawPackReleaseDetailPage releaseId={releaseId as Id<"packageReleases">} />;
 }
 
-export function StorePackReleaseDetailPage(props: { releaseId: Id<"packageReleases"> }) {
+export function ClawPackReleaseDetailPage(props: { releaseId: Id<"packageReleases"> }) {
   const { me } = useAuthStatus();
   const staff = isModerator(me);
   const detail = useQuery(
     packageApiRefs.packages.getStorePackReleaseForStaff as never,
     staff ? ({ releaseId: props.releaseId } as never) : "skip",
-  ) as StorePackReleaseDetail | undefined;
+  ) as ClawPackReleaseDetail | undefined;
 
   if (!staff) {
     return <ManagementAccessNotice me={me} />;
@@ -129,15 +129,15 @@ export function StorePackReleaseDetailPage(props: { releaseId: Id<"packageReleas
     <main className="section">
       <div className="mb-4 flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
         <div>
-          <h1 className="section-title">StorePack release detail</h1>
+          <h1 className="section-title">Claw Pack release detail</h1>
           <p className="section-subtitle">
             Release-level artifact state, failure history, lookup rows, and provenance evidence.
           </p>
         </div>
         <div className="management-actions">
           <Button asChild variant="outline" size="sm">
-            <Link to="/management/storepacks" search={{ skill: undefined, plugin: undefined }}>
-              StorePack ops
+            <Link to="/management/clawpacks" search={{ skill: undefined, plugin: undefined }}>
+              Claw Pack ops
             </Link>
           </Button>
           {detail?.package ? (
@@ -154,22 +154,22 @@ export function StorePackReleaseDetailPage(props: { releaseId: Id<"packageReleas
         </div>
       </div>
 
-      <PluginOperationsNav current="storepacks" />
+      <PluginOperationsNav current="clawpacks" />
 
       {detail === undefined ? (
-        <Card>Loading StorePack release...</Card>
+        <Card>Loading Claw Pack release...</Card>
       ) : detail === null ? (
-        <Card>No plugin release found for this StorePack record.</Card>
+        <Card>No plugin release found for this Claw Pack record.</Card>
       ) : (
-        <StorePackReleaseDetailBody detail={detail} />
+        <ClawPackReleaseDetailBody detail={detail} />
       )}
     </main>
   );
 }
 
-function StorePackReleaseDetailBody(props: { detail: Exclude<StorePackReleaseDetail, null> }) {
+function ClawPackReleaseDetailBody(props: { detail: Exclude<ClawPackReleaseDetail, null> }) {
   const { detail } = props;
-  const lifecycle = deriveStorePackLifecycle({
+  const lifecycle = deriveClawPackLifecycle({
     available: Boolean(detail.release.storepackStorageId),
     revokedAt: detail.release.storepackRevokedAt ?? undefined,
     buildError: detail.failures[0]?.error,
@@ -212,7 +212,7 @@ function StorePackReleaseDetailBody(props: { detail: Exclude<StorePackReleaseDet
       <div className="grid gap-4 lg:grid-cols-2">
         <Card>
           <h3 className="m-0 font-display text-lg font-bold text-[color:var(--ink)]">
-            StorePack state
+            Claw Pack state
           </h3>
           <div className="management-sublist">
             <ReportField label="lifecycle" value={lifecycle.description} />
@@ -355,7 +355,7 @@ function StorePackReleaseDetailBody(props: { detail: Exclude<StorePackReleaseDet
               </div>
             ))
           ) : (
-            <div className="stat">No StorePack build failures recorded for this release.</div>
+            <div className="stat">No Claw Pack build failures recorded for this release.</div>
           )}
         </div>
       </Card>
@@ -449,7 +449,7 @@ function formatHostTarget(target: { os?: string; arch?: string; libc?: string })
 }
 
 function formatEnvironmentSummary(
-  environment: Exclude<StorePackReleaseDetail, null>["release"]["environmentSummary"],
+  environment: Exclude<ClawPackReleaseDetail, null>["release"]["environmentSummary"],
 ) {
   if (!environment) return [];
   return [

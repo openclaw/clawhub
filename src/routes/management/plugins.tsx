@@ -102,7 +102,7 @@ function PluginManagementConsole() {
         <div>
           <h1 className="section-title">Plugin management</h1>
           <p className="section-subtitle">
-            Staff package index for moderation queues, StorePack status, release provenance, and
+            Staff package index for moderation queues, Claw Pack status, release provenance, and
             direct package operations.
           </p>
         </div>
@@ -198,7 +198,7 @@ function PluginQueueCard({ item }: { item: PluginQueueItem }) {
                 release ? `${release.version} / ${formatTimestamp(release.createdAt)}` : "none"
               }
             />
-            <ReportField label="StorePack" value={formatStorePack(release, item)} />
+            <ReportField label="Claw Pack" value={formatStorePack(release, item)} />
             <ReportField label="source" value={formatSource(release?.source ?? null)} />
             <ReportField
               label="targets"

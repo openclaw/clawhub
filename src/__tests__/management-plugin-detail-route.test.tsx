@@ -27,7 +27,7 @@ const useMutationMock = vi.fn();
 const useAuthStatusMock = vi.fn();
 const setBatch = vi.fn();
 const setVerdict = vi.fn();
-const revokeStorePack = vi.fn();
+const revokeClawPack = vi.fn();
 
 vi.mock("convex/react", () => ({
   ConvexReactClient: class {},
@@ -52,7 +52,7 @@ describe("plugin management detail route", () => {
     useAuthStatusMock.mockReset();
     setBatch.mockReset();
     setVerdict.mockReset();
-    revokeStorePack.mockReset();
+    revokeClawPack.mockReset();
 
     useAuthStatusMock.mockReturnValue({
       isAuthenticated: true,
@@ -60,13 +60,13 @@ describe("plugin management detail route", () => {
       me: { _id: "users:mod", role: "moderator" },
     });
     useMutationMock.mockReturnValue((args: Record<string, unknown>) => {
-      if ("releaseId" in args) return revokeStorePack(args);
+      if ("releaseId" in args) return revokeClawPack(args);
       if ("verdict" in args) return setVerdict(args);
       return setBatch(args);
     });
     setBatch.mockResolvedValue({ ok: true });
     setVerdict.mockResolvedValue({ ok: true });
-    revokeStorePack.mockResolvedValue({ ok: true });
+    revokeClawPack.mockResolvedValue({ ok: true });
     useQueryMock.mockReturnValue({
       package: {
         _id: "packages:1",
@@ -126,7 +126,7 @@ describe("plugin management detail route", () => {
     expect(Route).toBeTruthy();
   });
 
-  it("renders package, StorePack, and release provenance details", () => {
+  it("renders package, Claw Pack, and release provenance details", () => {
     renderRoute();
 
     expect(screen.getByRole("heading", { name: "Plugin package detail" })).toBeTruthy();
@@ -168,16 +168,16 @@ describe("plugin management detail route", () => {
     );
   });
 
-  it("requires a revocation reason before StorePack writes", async () => {
+  it("requires a revocation reason before Claw Pack writes", async () => {
     vi.spyOn(window, "prompt").mockReturnValueOnce("bad artifact");
     vi.spyOn(window, "confirm").mockReturnValueOnce(true);
 
     renderRoute();
 
-    fireEvent.click(screen.getByRole("button", { name: "Revoke StorePack" }));
+    fireEvent.click(screen.getByRole("button", { name: "Revoke Claw Pack" }));
 
     await waitFor(() => {
-      expect(revokeStorePack).toHaveBeenCalledWith({
+      expect(revokeClawPack).toHaveBeenCalledWith({
         releaseId: "packageReleases:1",
         reason: "bad artifact",
       });

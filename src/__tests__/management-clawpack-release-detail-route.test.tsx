@@ -36,18 +36,18 @@ vi.mock("../lib/useAuthStatus", () => ({
 
 import {
   Route,
-  StorePackReleaseDetailPage,
-} from "../routes/management/storepacks/releases/$releaseId";
+  ClawPackReleaseDetailPage,
+} from "../routes/management/clawpacks/releases/$releaseId";
 
 function renderRoute() {
   render(
-    createElement(StorePackReleaseDetailPage as never, {
+    createElement(ClawPackReleaseDetailPage as never, {
       releaseId: "packageReleases:1",
     }),
   );
 }
 
-describe("StorePack release detail route", () => {
+describe("Claw Pack release detail route", () => {
   beforeEach(() => {
     useQueryMock.mockReset();
     useAuthStatusMock.mockReset();
@@ -152,7 +152,7 @@ describe("StorePack release detail route", () => {
   it("renders release artifact, failure, index, and provenance evidence", () => {
     renderRoute();
 
-    expect(screen.getByRole("heading", { name: "StorePack release detail" })).toBeTruthy();
+    expect(screen.getByRole("heading", { name: "Claw Pack release detail" })).toBeTruthy();
     expect(screen.getByText("Demo Plugin")).toBeTruthy();
     expect(screen.getByText("demo-plugin")).toBeTruthy();
     expect(screen.getByText("Artifact rows")).toBeTruthy();

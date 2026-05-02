@@ -17,7 +17,7 @@ import {
 } from "../components/ui/dropdown-menu";
 import { Tooltip, TooltipContent, TooltipTrigger } from "../components/ui/tooltip";
 import { getUserFacingConvexError } from "../lib/convexError";
-import { deriveStorePackLifecycle } from "../lib/packageLifecycle";
+import { deriveClawPackLifecycle } from "../lib/packageLifecycle";
 
 type PluginPublishSearch = {
   ownerHandle: string | undefined;
@@ -395,14 +395,14 @@ function packageDashboardStatus(pkg: DashboardPackage): {
   description: string;
   variant: "default" | "pending" | "warning" | "destructive" | "success";
 } {
-  const lifecycle = deriveStorePackLifecycle({
+  const lifecycle = deriveClawPackLifecycle({
     available: pkg.latestRelease?.storepackAvailable ?? false,
     verificationScanStatus: pkg.scanStatus,
     vtStatus: pkg.latestRelease?.vtStatus,
     llmStatus: pkg.latestRelease?.llmStatus,
     staticScanStatus: pkg.latestRelease?.staticScanStatus,
   });
-  if (lifecycle.state === "storepack-missing") {
+  if (lifecycle.state === "clawpack-missing") {
     return {
       label: lifecycle.label,
       description: lifecycle.description,
