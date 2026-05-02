@@ -99,8 +99,8 @@ type TestPackage = {
     vtStatus: string | null;
     llmStatus: string | null;
     staticScanStatus: "clean" | "suspicious" | "malicious" | null;
-    storepackAvailable: boolean;
-    storepackSha256: string | null;
+    clawpackAvailable: boolean;
+    clawpackSha256: string | null;
     hostTargets: null;
     environment: null;
   };
@@ -183,8 +183,8 @@ function createPackage(overrides?: Partial<TestPackage>): TestPackage {
       vtStatus: "malicious",
       llmStatus: "malicious",
       staticScanStatus: "malicious",
-      storepackAvailable: true,
-      storepackSha256: "a".repeat(64),
+      clawpackAvailable: true,
+      clawpackSha256: "a".repeat(64),
       hostTargets: null,
       environment: null,
     },
@@ -298,8 +298,8 @@ describe("Dashboard minimal rows", () => {
             vtStatus: "clean",
             llmStatus: "clean",
             staticScanStatus: "clean",
-            storepackAvailable: false,
-            storepackSha256: null,
+            clawpackAvailable: false,
+            clawpackSha256: null,
             hostTargets: null,
             environment: null,
           },

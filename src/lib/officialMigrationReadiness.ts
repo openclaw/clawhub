@@ -4,7 +4,6 @@ export type MigrationReadinessState =
   | "package-missing"
   | "release-missing"
   | "clawpack-missing"
-  | "storepack-missing"
   | "metadata-incomplete"
   | "scan-blocked"
   | "ready-for-openclaw";
@@ -24,7 +23,7 @@ export type MigrationReadinessItem = {
   gates: {
     packageExists: boolean;
     releaseExists: boolean;
-    storepackAvailable: boolean;
+    clawpackAvailable: boolean;
     hostMatrixComplete: boolean;
     environmentComplete: boolean;
     sourceLinked: boolean;
@@ -46,9 +45,9 @@ export type MigrationReadinessItem = {
     releaseId: Id<"packageReleases">;
     version: string;
     createdAt: number;
-    storepackSha256: string | null;
-    storepackFileCount: number | null;
-    storepackRevokedAt?: number;
+    clawpackSha256: string | null;
+    clawpackFileCount: number | null;
+    clawpackRevokedAt?: number;
     hostTargetKeys: string[];
     environmentFlags: string[];
     scanStatus: string;
@@ -63,22 +62,22 @@ export type MigrationReadinessResult = {
 };
 
 export function readinessStateLabel(state: MigrationReadinessState) {
-  if (state === "clawpack-missing" || state === "storepack-missing") return "claw pack missing";
+  if (state === "clawpack-missing") return "claw pack missing";
   return state.replaceAll("-", " ");
 }
 
 export function readinessBlockerLabel(blocker: string) {
-  if (blocker === "clawpack-missing" || blocker === "storepack-missing") {
+  if (blocker === "clawpack-missing") {
     return "claw pack missing";
   }
   return blocker.replaceAll("-", " ");
 }
 
 export function formatReadinessClawPack(item: MigrationReadinessItem) {
-  if (item.latestRelease?.storepackRevokedAt) return "revoked";
-  if (!item.latestRelease?.storepackSha256) return "missing";
-  const digest = item.latestRelease.storepackSha256.slice(0, 12);
-  const count = item.latestRelease.storepackFileCount;
+  if (item.latestRelease?.clawpackRevokedAt) return "revoked";
+  if (!item.latestRelease?.clawpackSha256) return "missing";
+  const digest = item.latestRelease.clawpackSha256.slice(0, 12);
+  const count = item.latestRelease.clawpackFileCount;
   return [count ? `${count} files` : null, digest].filter(Boolean).join(" / ");
 }
 

@@ -14,11 +14,11 @@ import { useAuthStatus } from "../../lib/useAuthStatus";
 
 const packageApiRefs = api as unknown as {
   packages: {
-    getStorePackMigrationStatus: unknown;
-    dryRunStorePackMigrationRunForStaff: unknown;
-    listStorePackMigrationRunsForStaff: unknown;
-    startStorePackMigrationRun: unknown;
-    continueStorePackMigrationRun: unknown;
+    getClawPackMigrationStatus: unknown;
+    dryRunClawPackMigrationRunForStaff: unknown;
+    listClawPackMigrationRunsForStaff: unknown;
+    startClawPackMigrationRun: unknown;
+    continueClawPackMigrationRun: unknown;
   };
 };
 
@@ -35,13 +35,13 @@ type ClawPackMigrationStatus = {
     version: string;
     createdAt: number;
     fileCount: number;
-    storepackAvailable?: boolean;
-    storepackBuiltAt?: number | null;
-    storepackSha256?: string | null;
-    storepackRevokedAt?: number | null;
+    clawpackAvailable?: boolean;
+    clawpackBuiltAt?: number | null;
+    clawpackSha256?: string | null;
+    clawpackRevokedAt?: number | null;
   }>;
   failureSample: Array<{
-    failureId: Id<"packageStorePackBackfillFailures">;
+    failureId: Id<"packageClawPackBackfillFailures">;
     releaseId: Id<"packageReleases">;
     packageId: Id<"packages">;
     name: string;
@@ -54,8 +54,8 @@ type ClawPackMigrationStatus = {
   }>;
   missingSampleSize: number;
   failureSampleSize: number;
-  generatedStorePackSampleSize: number;
-  generatedStorePackBytes: number;
+  generatedClawPackSampleSize: number;
+  generatedClawPackBytes: number;
   sampleLimit: number;
 };
 
@@ -76,7 +76,7 @@ type ClawPackBackfillResult = {
 };
 
 type ClawPackMigrationDryRunCandidate = {
-  failureId?: Id<"packageStorePackBackfillFailures">;
+  failureId?: Id<"packageClawPackBackfillFailures">;
   releaseId?: Id<"packageReleases">;
   packageId?: Id<"packages">;
   name?: string;
@@ -85,8 +85,8 @@ type ClawPackMigrationDryRunCandidate = {
   error?: string;
   attemptCount?: number;
   lastFailedAt?: number;
-  storepackSha256?: string | null;
-  storepackBuiltAt?: number | null;
+  clawpackSha256?: string | null;
+  clawpackBuiltAt?: number | null;
 };
 
 type ClawPackMigrationDryRun = {
@@ -101,7 +101,7 @@ type ClawPackMigrationDryRun = {
 };
 
 type ClawPackMigrationRun = {
-  _id: Id<"storePackMigrationRuns">;
+  _id: Id<"clawPackMigrationRuns">;
   actorUserId: Id<"users">;
   operation: ClawPackMigrationOperation;
   status: ClawPackMigrationRunStatus;
@@ -156,11 +156,11 @@ function ClawPackManagementConsole() {
   const staff = isModerator(me);
   const admin = isAdmin(me);
   const migration = useQuery(
-    packageApiRefs.packages.getStorePackMigrationStatus as never,
+    packageApiRefs.packages.getClawPackMigrationStatus as never,
     staff ? {} : "skip",
   ) as ClawPackMigrationStatus | undefined;
   const migrationRuns = useQuery(
-    packageApiRefs.packages.listStorePackMigrationRunsForStaff as never,
+    packageApiRefs.packages.listClawPackMigrationRunsForStaff as never,
     staff ? ({ limit: 12 } as never) : "skip",
   ) as ClawPackMigrationRunList | undefined;
 
@@ -173,27 +173,27 @@ function ClawPackManagementConsole() {
     cursor?: string;
   } | null>(null);
   const dryRun = useQuery(
-    packageApiRefs.packages.dryRunStorePackMigrationRunForStaff as never,
+    packageApiRefs.packages.dryRunClawPackMigrationRunForStaff as never,
     staff && dryRunArgs ? (dryRunArgs as never) : "skip",
   ) as ClawPackMigrationDryRun | undefined;
   const startMigrationRun = useMutation(
-    packageApiRefs.packages.startStorePackMigrationRun as never,
+    packageApiRefs.packages.startClawPackMigrationRun as never,
   ) as unknown as (args: {
     operation: ClawPackMigrationOperation;
     limit?: number;
     cursor?: string;
   }) => Promise<ClawPackMigrationRun | null>;
   const continueMigrationRun = useAction(
-    packageApiRefs.packages.continueStorePackMigrationRun as never,
+    packageApiRefs.packages.continueClawPackMigrationRun as never,
   ) as unknown as (args: {
-    runId: Id<"storePackMigrationRuns">;
+    runId: Id<"clawPackMigrationRuns">;
   }) => Promise<ClawPackMigrationRunResult>;
   const [lastResult, setLastResult] = useState<{
     kind: ClawPackMigrationOperation;
     result: ClawPackBackfillResult | null;
     run: ClawPackMigrationRun | null;
   } | null>(null);
-  const [activeRunId, setActiveRunId] = useState<Id<"storePackMigrationRuns"> | null>(null);
+  const [activeRunId, setActiveRunId] = useState<Id<"clawPackMigrationRuns"> | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   if (!staff) {
@@ -202,11 +202,11 @@ function ClawPackManagementConsole() {
 
   const limit = Math.max(1, Math.min(batchLimit, 100));
   const sampleTotal = migration
-    ? migration.missingSampleSize + migration.generatedStorePackSampleSize
+    ? migration.missingSampleSize + migration.generatedClawPackSampleSize
     : 0;
   const coverage =
     migration && sampleTotal > 0
-      ? Math.round((migration.generatedStorePackSampleSize / sampleTotal) * 100)
+      ? Math.round((migration.generatedClawPackSampleSize / sampleTotal) * 100)
       : null;
 
   const runDryRun = () => {
@@ -303,12 +303,12 @@ function ClawPackManagementConsole() {
         />
         <MetricCard
           label="Generated sample"
-          value={migration ? String(migration.generatedStorePackSampleSize) : "..."}
+          value={migration ? String(migration.generatedClawPackSampleSize) : "..."}
           detail="sampled releases with artifacts"
         />
         <MetricCard
           label="Generated bytes"
-          value={migration ? formatBytesCompact(migration.generatedStorePackBytes) : "..."}
+          value={migration ? formatBytesCompact(migration.generatedClawPackBytes) : "..."}
           detail="stored Claw Pack sample size"
         />
       </div>
@@ -555,7 +555,7 @@ function DryRunCandidateRow(props: { candidate: ClawPackMigrationDryRunCandidate
 function MigrationRunRows(props: {
   rows: ClawPackMigrationRun[];
   admin: boolean;
-  activeRunId: Id<"storePackMigrationRuns"> | null;
+  activeRunId: Id<"clawPackMigrationRuns"> | null;
   onContinue: (run: ClawPackMigrationRun) => void;
 }) {
   return (
@@ -623,8 +623,8 @@ function MigrationRunRow(props: {
 function MigrationRow(props: { entry: ClawPackMigrationStatus["missingSample"][number] }) {
   const entry = props.entry;
   const lifecycle = deriveClawPackLifecycle({
-    available: entry.storepackAvailable ?? false,
-    revokedAt: entry.storepackRevokedAt,
+    available: entry.clawpackAvailable ?? false,
+    revokedAt: entry.clawpackRevokedAt,
   });
   return (
     <div className="management-item">

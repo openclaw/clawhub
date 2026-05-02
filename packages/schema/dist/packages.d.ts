@@ -132,7 +132,7 @@ export declare const PackageEnvironmentSummarySchema: import("arktype/internal/v
     knownUnsupported?: string[] | undefined;
 }, {}>;
 export type PackageEnvironmentSummary = (typeof PackageEnvironmentSummarySchema)[inferred];
-export declare const PackageStorePackSummarySchema: import("arktype/internal/variants/object.ts").ObjectType<{
+export declare const PackageClawPackSummarySchema: import("arktype/internal/variants/object.ts").ObjectType<{
     available: boolean;
     specVersion: number | null;
     format: string | null;
@@ -164,7 +164,7 @@ export declare const PackageStorePackSummarySchema: import("arktype/internal/var
     } | null;
     runtimeBundles: unknown[];
 }, {}>;
-export type PackageStorePackSummary = (typeof PackageStorePackSummarySchema)[inferred];
+export type PackageClawPackSummary = (typeof PackageClawPackSummarySchema)[inferred];
 export declare const BundlePublishMetadataSchema: import("arktype/internal/variants/object.ts").ObjectType<{
     id?: string | undefined;
     format?: string | undefined;
@@ -229,10 +229,10 @@ export declare const PackageListItemSchema: import("arktype/internal/variants/ob
     capabilityTags?: string[] | undefined;
     executesCode?: boolean | undefined;
     verificationTier?: "structural" | "source-linked" | "provenance-verified" | "rebuild-verified" | null | undefined;
-    storepackAvailable?: boolean | undefined;
+    clawpackAvailable?: boolean | undefined;
     hostTargetKeys?: string[] | undefined;
     environmentFlags?: string[] | undefined;
-    storepack?: {
+    clawpack?: {
         available: boolean;
         specVersion: number | null;
         format: string | null;
@@ -282,10 +282,10 @@ export declare const ApiV1PackageListResponseSchema: import("arktype/internal/va
         capabilityTags?: string[] | undefined;
         executesCode?: boolean | undefined;
         verificationTier?: "structural" | "source-linked" | "provenance-verified" | "rebuild-verified" | null | undefined;
-        storepackAvailable?: boolean | undefined;
+        clawpackAvailable?: boolean | undefined;
         hostTargetKeys?: string[] | undefined;
         environmentFlags?: string[] | undefined;
-        storepack?: {
+        clawpack?: {
             available: boolean;
             specVersion: number | null;
             format: string | null;
@@ -339,10 +339,10 @@ export declare const ApiV1PackageSearchResponseSchema: import("arktype/internal/
             capabilityTags?: string[] | undefined;
             executesCode?: boolean | undefined;
             verificationTier?: "structural" | "source-linked" | "provenance-verified" | "rebuild-verified" | null | undefined;
-            storepackAvailable?: boolean | undefined;
+            clawpackAvailable?: boolean | undefined;
             hostTargetKeys?: string[] | undefined;
             environmentFlags?: string[] | undefined;
-            storepack?: {
+            clawpack?: {
                 available: boolean;
                 specVersion: number | null;
                 format: string | null;
@@ -428,7 +428,7 @@ export declare const ApiV1PackageResponseSchema: import("arktype/internal/varian
             hasProvenance?: boolean | undefined;
             scanStatus?: "clean" | "suspicious" | "malicious" | "pending" | "not-run" | undefined;
         } | null | undefined;
-        storepack?: {
+        clawpack?: {
             available: boolean;
             specVersion: number | null;
             format: string | null;
@@ -571,7 +571,7 @@ export declare const ApiV1PackageVersionResponseSchema: import("arktype/internal
             engineVersion: string;
             checkedAt: number;
         } | null | undefined;
-        storepack?: {
+        clawpack?: {
             available: boolean;
             specVersion: number | null;
             format: string | null;

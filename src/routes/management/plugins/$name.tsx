@@ -17,7 +17,7 @@ const packageApiRefs = api as unknown as {
   packages: {
     getByNameForStaff: unknown;
     setModerationVerdict: unknown;
-    revokeStorePackArtifact: unknown;
+    revokeClawPackArtifact: unknown;
   };
 };
 
@@ -55,7 +55,7 @@ export function PluginManagementDetailPage({ name }: { name: string }) {
     note?: string;
   }) => Promise<unknown>;
   const revokeClawPackArtifact = useMutation(
-    packageApiRefs.packages.revokeStorePackArtifact as never,
+    packageApiRefs.packages.revokeClawPackArtifact as never,
   ) as unknown as (args: { releaseId: Id<"packageReleases">; reason?: string }) => Promise<unknown>;
 
   const [verdict, setVerdict] = useState<PackageScanStatus>("clean");
@@ -247,23 +247,21 @@ export function PluginManagementDetailPage({ name }: { name: string }) {
                 <ReportField label="state" value={formatClawPackState(release)} />
                 <ReportField
                   label="zip digest"
-                  value={release?.storepackSha256 ?? "missing"}
-                  mono={Boolean(release?.storepackSha256)}
+                  value={release?.clawpackSha256 ?? "missing"}
+                  mono={Boolean(release?.clawpackSha256)}
                 />
                 <ReportField
                   label="manifest digest"
-                  value={release?.storepackManifestSha256 ?? "missing"}
-                  mono={Boolean(release?.storepackManifestSha256)}
+                  value={release?.clawpackManifestSha256 ?? "missing"}
+                  mono={Boolean(release?.clawpackManifestSha256)}
                 />
                 <ReportField
                   label="files"
-                  value={release?.storepackFileCount ? String(release.storepackFileCount) : "none"}
+                  value={release?.clawpackFileCount ? String(release.clawpackFileCount) : "none"}
                 />
                 <ReportField
                   label="size"
-                  value={
-                    release?.storepackSize ? formatBytesCompact(release.storepackSize) : "none"
-                  }
+                  value={release?.clawpackSize ? formatBytesCompact(release.clawpackSize) : "none"}
                 />
                 <ReportField
                   label="host targets"
@@ -276,8 +274,8 @@ export function PluginManagementDetailPage({ name }: { name: string }) {
               </div>
               <Button
                 className="self-start"
-                disabled={!release?.storepackStorageId || Boolean(release.storepackRevokedAt)}
-                loading={activeWrite === "storepack"}
+                disabled={!release?.clawpackStorageId || Boolean(release.clawpackRevokedAt)}
+                loading={activeWrite === "clawpack"}
                 size="sm"
                 type="button"
                 variant="destructive"
@@ -369,9 +367,9 @@ function scanBadgeVariant(status: PackageScanStatus) {
 
 function formatClawPackState(release: Doc<"packageReleases"> | null | undefined) {
   if (!release) return "no release";
-  if (release.storepackRevokedAt) return `revoked ${formatTimestamp(release.storepackRevokedAt)}`;
-  if (release.storepackStorageId)
-    return `active ${formatTimestamp(release.storepackBuiltAt ?? release.createdAt)}`;
+  if (release.clawpackRevokedAt) return `revoked ${formatTimestamp(release.clawpackRevokedAt)}`;
+  if (release.clawpackStorageId)
+    return `active ${formatTimestamp(release.clawpackBuiltAt ?? release.createdAt)}`;
   return "missing";
 }
 

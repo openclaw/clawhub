@@ -34,7 +34,7 @@ type PluginQueueItem = {
   runtimeId?: string;
   executesCode?: boolean;
   verificationTier?: string;
-  storepackAvailable?: boolean;
+  clawpackAvailable?: boolean;
   hostTargetKeys: string[];
   environmentFlags: string[];
   scanStatus: PackageScanStatus;
@@ -43,10 +43,10 @@ type PluginQueueItem = {
     releaseId: Id<"packageReleases">;
     version: string;
     createdAt: number;
-    storepackAvailable: boolean;
-    storepackRevokedAt?: number;
-    storepackSha256?: string;
-    storepackFileCount?: number;
+    clawpackAvailable: boolean;
+    clawpackRevokedAt?: number;
+    clawpackSha256?: string;
+    clawpackFileCount?: number;
     source: {
       repo: string | null;
       ref: string | null;
@@ -258,11 +258,11 @@ function scanBadgeVariant(status: PackageScanStatus) {
 }
 
 function formatClawPack(release: PluginQueueItem["latestRelease"], item: PluginQueueItem) {
-  if (release?.storepackRevokedAt) return `revoked ${formatTimestamp(release.storepackRevokedAt)}`;
-  if (release?.storepackAvailable || item.storepackAvailable) {
+  if (release?.clawpackRevokedAt) return `revoked ${formatTimestamp(release.clawpackRevokedAt)}`;
+  if (release?.clawpackAvailable || item.clawpackAvailable) {
     return [
-      release?.storepackFileCount ? `${release.storepackFileCount} files` : "available",
-      release?.storepackSha256 ? release.storepackSha256.slice(0, 12) : null,
+      release?.clawpackFileCount ? `${release.clawpackFileCount} files` : "available",
+      release?.clawpackSha256 ? release.clawpackSha256.slice(0, 12) : null,
     ]
       .filter(Boolean)
       .join(" / ");

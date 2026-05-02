@@ -525,7 +525,7 @@ describe("package commands", () => {
     httpMocks.apiRequest.mockResolvedValueOnce({
       items: [
         {
-          _id: "storePackMigrationRuns:1",
+          _id: "clawPackMigrationRuns:1",
           operation: "failure-retry",
           status: "pending",
           processed: 0,
@@ -546,14 +546,14 @@ describe("package commands", () => {
     expect(url.searchParams.get("limit")).toBe("10");
     expect(mockLog).toHaveBeenCalledWith("Claw Pack migration runs");
     expect(mockLog).toHaveBeenCalledWith(
-      "storePackMigrationRuns:1  failure-retry  pending  processed=0 failed=0 cursor=unknown",
+      "clawPackMigrationRuns:1  failure-retry  pending  processed=0 failed=0 cursor=unknown",
     );
   });
 
   it("creates and continues Claw Pack migration runs for admins", async () => {
     httpMocks.apiRequest
       .mockResolvedValueOnce({
-        _id: "storePackMigrationRuns:1",
+        _id: "clawPackMigrationRuns:1",
         operation: "search-index-backfill",
         status: "pending",
         processed: 0,
@@ -562,7 +562,7 @@ describe("package commands", () => {
       })
       .mockResolvedValueOnce({
         run: {
-          _id: "storePackMigrationRuns:1",
+          _id: "clawPackMigrationRuns:1",
           operation: "search-index-backfill",
           status: "completed",
           processed: 2,
@@ -576,7 +576,7 @@ describe("package commands", () => {
       limit: 2,
       cursor: "cursor:1",
     });
-    await cmdPackageClawPackMigrationRunContinue(makeOpts(), "storePackMigrationRuns:1");
+    await cmdPackageClawPackMigrationRunContinue(makeOpts(), "clawPackMigrationRuns:1");
 
     expect(httpMocks.apiRequest).toHaveBeenNthCalledWith(
       1,
@@ -594,7 +594,7 @@ describe("package commands", () => {
       "https://clawhub.ai",
       {
         method: "POST",
-        path: "/api/v1/packages/clawpack/migration-runs/storePackMigrationRuns%3A1/continue",
+        path: "/api/v1/packages/clawpack/migration-runs/clawPackMigrationRuns%3A1/continue",
         token: "tkn",
       },
       undefined,

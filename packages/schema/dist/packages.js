@@ -106,7 +106,7 @@ export const PackageEnvironmentSummarySchema = type({
     supportsRemoteHost: "boolean?",
     knownUnsupported: "string[]?",
 });
-export const PackageStorePackSummarySchema = type({
+export const PackageClawPackSummarySchema = type({
     available: "boolean",
     specVersion: "number|null",
     format: "string|null",
@@ -163,10 +163,10 @@ export const PackageListItemSchema = type({
     capabilityTags: "string[]?",
     executesCode: "boolean?",
     verificationTier: PackageVerificationTierSchema.or("null").optional(),
-    storepackAvailable: "boolean?",
+    clawpackAvailable: "boolean?",
     hostTargetKeys: "string[]?",
     environmentFlags: "string[]?",
-    storepack: PackageStorePackSummarySchema.optional(),
+    clawpack: PackageClawPackSummarySchema.optional(),
 });
 export const ApiV1PackageListResponseSchema = type({
     items: PackageListItemSchema.array(),
@@ -195,7 +195,7 @@ export const ApiV1PackageResponseSchema = type({
         compatibility: PackageCompatibilitySchema.or("null").optional(),
         capabilities: PackageCapabilitySummarySchema.or("null").optional(),
         verification: PackageVerificationSummarySchema.or("null").optional(),
-        storepack: PackageStorePackSummarySchema.optional(),
+        clawpack: PackageClawPackSummarySchema.optional(),
         stats: PackageStatsSchema.optional(),
     }).or("null"),
     owner: type({
@@ -232,7 +232,7 @@ export const ApiV1PackageVersionResponseSchema = type({
         vtAnalysis: PackageVtAnalysisSchema.or("null").optional(),
         llmAnalysis: PackageLlmAnalysisSchema.or("null").optional(),
         staticScan: PackageStaticScanSchema.or("null").optional(),
-        storepack: PackageStorePackSummarySchema.optional(),
+        clawpack: PackageClawPackSummarySchema.optional(),
     }).or("null"),
 });
 export const ApiV1PackagePublishResponseSchema = type({

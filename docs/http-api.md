@@ -293,20 +293,20 @@ Query params:
 - `isOfficial` (optional): `true` or `false`
 - `executesCode` (optional): `true` or `false`
 - `capabilityTag` (optional): capability filter for plugin packages
-- `hostTarget` (optional): StorePack host target key, e.g. `darwin-arm64`, `linux-x64-glibc`, `win32-x64`
-- `environment` (optional): StorePack environment flag, e.g. `browser`, `desktop`, `network`
+- `hostTarget` (optional): ClawPack host target key, e.g. `darwin-arm64`, `linux-x64-glibc`, `win32-x64`
+- `environment` (optional): ClawPack environment flag, e.g. `browser`, `desktop`, `network`
 
 Notes:
 
 - `GET /api/v1/code-plugins` and `GET /api/v1/bundle-plugins` remain fixed-family aliases.
 - Skill entries stay backed by the skill registry and can still be published only through `POST /api/v1/skills`.
 - `POST /api/v1/packages` is still only for code-plugin and bundle-plugin releases.
-- StorePack-only filters return plugin package entries and exclude skill-backed catalog entries.
+- ClawPack-only filters return plugin package entries and exclude skill-backed catalog entries.
 - Anonymous callers only see public package channels.
 - Authenticated callers can see private packages for publishers they belong to in list/search results.
 - `channel=private` only returns packages the authenticated caller can read.
-- Package list items include StorePack summary signals when available:
-  - `storepackAvailable`
+- Package list items include ClawPack summary signals when available:
+  - `clawpackAvailable`
   - `hostTargetKeys`
   - `environmentFlags`
 
@@ -323,12 +323,12 @@ Query params:
 - `isOfficial` (optional): `true` or `false`
 - `executesCode` (optional): `true` or `false`
 - `capabilityTag` (optional): capability filter for plugin packages
-- `hostTarget` (optional): StorePack host target key
-- `environment` (optional): StorePack environment flag
+- `hostTarget` (optional): ClawPack host target key
+- `environment` (optional): ClawPack environment flag
 
 Notes:
 
-- StorePack-only filters return plugin package entries and exclude skill-backed catalog entries.
+- ClawPack-only filters return plugin package entries and exclude skill-backed catalog entries.
 - Anonymous callers only see public package channels.
 - Authenticated callers can search private packages for publishers they belong to.
 - `channel=private` only returns packages the authenticated caller can read.
@@ -396,10 +396,10 @@ Notes:
 
 - Defaults to the latest release.
 - Skills redirect to `GET /api/v1/download`.
-- Plugin/package archives are StorePack zip files with a `package/` root and a generated `package/STOREPACK.json` manifest.
-- Stored StorePack artifacts are served when available; legacy releases fall back to deterministic package ZIP assembly.
-- Response headers include `X-ClawHub-StorePack-Sha256` and `X-ClawHub-StorePack-Spec-Version` when a stored StorePack is served.
-- Publisher-supplied `STOREPACK.json` files are ignored during StorePack generation.
+- Plugin/package archives are ClawPack zip files with a `package/` root and a generated `package/CLAWPACK.json` manifest.
+- Stored ClawPack artifacts are served when available; legacy releases fall back to deterministic package ZIP assembly.
+- Response headers include `X-ClawHub-ClawPack-Sha256` and `X-ClawHub-ClawPack-Spec-Version` when a stored ClawPack is served.
+- Publisher-supplied `CLAWPACK.json` files are ignored during ClawPack generation.
 - Pending VirusTotal scans do not block downloads; malicious releases return `403`.
 - Private packages return `404` unless the caller is the owner.
 
@@ -467,22 +467,22 @@ Validation highlights:
 - `family` must be `code-plugin` or `bundle-plugin`.
 - Code plugins require `package.json`, `openclaw.plugin.json`, source repo metadata, source commit metadata, and config schema metadata.
 - Bundle plugins require at least one host target.
-- Successful publishes generate and store a StorePack artifact for the release.
-- Release detail responses include `version.storepack` with digest, size, file count, host targets, environment summary, and runtime bundle placeholders.
+- Successful publishes generate and store a ClawPack artifact for the release.
+- Release detail responses include `version.clawpack` with digest, size, file count, host targets, environment summary, and runtime bundle placeholders.
 - Only trusted publishers may publish to the `official` channel.
 - On-behalf publishes still validate official-channel eligibility against the target owner account.
 
-### `GET /api/v1/packages/storepack/migration-status`
+### `GET /api/v1/packages/clawpack/migration-status`
 
-Admin-only StorePack migration status.
+Admin-only ClawPack migration status.
 
 - Requires Bearer token auth.
 - Caller must be an admin.
-- `limit` (optional): sample size for generated StorePack artifact statistics.
+- `limit` (optional): sample size for generated ClawPack artifact statistics.
 
-### `GET /api/v1/packages/storepack/migration-runs/dry-run`
+### `GET /api/v1/packages/clawpack/migration-runs/dry-run`
 
-Admin-only preview for a persistent StorePack migration run.
+Admin-only preview for a persistent ClawPack migration run.
 
 - Requires Bearer token auth.
 - Caller must be an admin.
@@ -492,9 +492,9 @@ Admin-only preview for a persistent StorePack migration run.
   - `cursor` (optional): search-index continuation cursor.
 - Returns candidate rows and the cursor state without mutating data.
 
-### `GET /api/v1/packages/storepack/migration-runs`
+### `GET /api/v1/packages/clawpack/migration-runs`
 
-Admin-only StorePack migration run ledger.
+Admin-only ClawPack migration run ledger.
 
 - Requires Bearer token auth.
 - Caller must be an admin.
@@ -502,69 +502,69 @@ Admin-only StorePack migration run ledger.
   - `status` (optional): `pending`, `running`, `completed`, or `failed`.
   - `limit` (optional): max run records.
 
-### `GET /api/v1/packages/storepack/migration-runs/{runId}`
+### `GET /api/v1/packages/clawpack/migration-runs/{runId}`
 
-Admin-only StorePack migration run detail.
+Admin-only ClawPack migration run detail.
 
 - Requires Bearer token auth.
 - Caller must be an admin.
 - Returns `404` when the run id does not exist.
 
-### `POST /api/v1/packages/storepack/migration-runs`
+### `POST /api/v1/packages/clawpack/migration-runs`
 
-Admin-only StorePack migration run creation.
+Admin-only ClawPack migration run creation.
 
 - Requires Bearer token auth.
 - Caller must be an admin.
 - JSON body: `{ "operation": "artifact-backfill", "limit": 10, "cursor": "optional" }`.
 - Creates a durable `pending` run. It does not execute the batch until `continue` is called.
 
-### `POST /api/v1/packages/storepack/migration-runs/{runId}/continue`
+### `POST /api/v1/packages/clawpack/migration-runs/{runId}/continue`
 
-Admin-only execution path for one bounded StorePack migration batch.
+Admin-only execution path for one bounded ClawPack migration batch.
 
 - Requires Bearer token auth.
 - Caller must be an admin.
 - Runs one batch for the selected migration run and updates processed/generated/skipped/failed counters.
 - Returns the updated run and the batch result. Failed runs store `lastError`.
 
-### `POST /api/v1/packages/storepack/backfill`
+### `POST /api/v1/packages/clawpack/backfill`
 
-Admin-only StorePack backfill batch for legacy plugin releases.
+Admin-only ClawPack backfill batch for legacy plugin releases.
 
 - Requires Bearer token auth.
 - Caller must be an admin.
 - JSON body: `{ "limit": 10 }`.
-- Builds missing StorePack artifacts for eligible code-plugin and bundle-plugin releases.
+- Builds missing ClawPack artifacts for eligible code-plugin and bundle-plugin releases.
 - Prefer migration runs for coordinated production work; use this direct endpoint for focused repair.
 
-### `POST /api/v1/packages/storepack/index-backfill`
+### `POST /api/v1/packages/clawpack/index-backfill`
 
-Admin-only StorePack lookup-index backfill batch.
+Admin-only ClawPack lookup-index backfill batch.
 
 - Requires Bearer token auth.
 - Caller must be an admin.
 - JSON body: `{ "limit": 25, "cursor": "<previous continueCursor>" }`.
-- Rebuilds host-target and environment lookup rows for releases with stored, non-revoked StorePack artifacts.
+- Rebuilds host-target and environment lookup rows for releases with stored, non-revoked ClawPack artifacts.
 - Prefer the `search-index-backfill` migration-run operation for coordinated production work.
 
-### `POST /api/v1/packages/storepack/retry-failures`
+### `POST /api/v1/packages/clawpack/retry-failures`
 
-Admin-only retry path for failed StorePack artifact builds.
+Admin-only retry path for failed ClawPack artifact builds.
 
 - Requires Bearer token auth.
 - Caller must be an admin.
 - JSON body: `{ "limit": 10 }`.
 - Prefer the `failure-retry` migration-run operation for coordinated production work.
 
-### `POST /api/v1/packages/{name}/versions/{version}/storepack/revoke`
+### `POST /api/v1/packages/{name}/versions/{version}/clawpack/revoke`
 
-Moderator/admin StorePack revocation for a specific package release.
+Moderator/admin ClawPack revocation for a specific package release.
 
 - Requires Bearer token auth.
 - Caller must be an admin or moderator.
 - JSON body: `{ "reason": "Malware confirmed" }`.
-- Marks the active StorePack artifact revoked and blocks package download and digest-addressed StorePack download paths.
+- Marks the active ClawPack artifact revoked and blocks package download and digest-addressed ClawPack download paths.
 
 ### `DELETE /api/v1/skills/{slug}` / `POST /api/v1/skills/{slug}/undelete`
 

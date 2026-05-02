@@ -846,18 +846,18 @@ const packageReleases = defineTable({
   compatibility: packageCompatibilityValidator,
   capabilities: packageCapabilitiesValidator,
   verification: packageVerificationValidator,
-  storepackStorageId: v.optional(v.id("_storage")),
-  storepackSha256: v.optional(v.string()),
-  storepackSize: v.optional(v.number()),
-  storepackSpecVersion: v.optional(v.number()),
-  storepackFormat: v.optional(v.literal("zip")),
-  storepackFileCount: v.optional(v.number()),
-  storepackManifestSha256: v.optional(v.string()),
-  storepackBuiltAt: v.optional(v.number()),
-  storepackBuildVersion: v.optional(v.string()),
-  storepackRevokedAt: v.optional(v.number()),
-  storepackRevokedByUserId: v.optional(v.id("users")),
-  storepackRevocationReason: v.optional(v.string()),
+  clawpackStorageId: v.optional(v.id("_storage")),
+  clawpackSha256: v.optional(v.string()),
+  clawpackSize: v.optional(v.number()),
+  clawpackSpecVersion: v.optional(v.number()),
+  clawpackFormat: v.optional(v.literal("zip")),
+  clawpackFileCount: v.optional(v.number()),
+  clawpackManifestSha256: v.optional(v.string()),
+  clawpackBuiltAt: v.optional(v.number()),
+  clawpackBuildVersion: v.optional(v.string()),
+  clawpackRevokedAt: v.optional(v.number()),
+  clawpackRevokedByUserId: v.optional(v.id("users")),
+  clawpackRevocationReason: v.optional(v.string()),
   hostTargetsSummary: v.optional(v.array(packageHostTargetValidator)),
   environmentSummary: v.optional(packageEnvironmentSummaryValidator),
   sha256hash: v.optional(v.string()),
@@ -914,13 +914,13 @@ const packageReleases = defineTable({
   .index("by_active_created", ["softDeletedAt", "createdAt"])
   .index("by_package_version", ["packageId", "version"])
   .index("by_sha256hash", ["sha256hash"])
-  .index("by_storepack_built_at", ["storepackBuiltAt"]);
+  .index("by_clawpack_built_at", ["clawpackBuiltAt"]);
 
 const packageReleaseArtifacts = defineTable({
   packageId: v.id("packages"),
   releaseId: v.id("packageReleases"),
   kind: v.union(
-    v.literal("storepack"),
+    v.literal("clawpack"),
     v.literal("runtime-bundle"),
     v.literal("scan-report"),
     v.literal("sbom"),
@@ -942,7 +942,7 @@ const packageReleaseArtifacts = defineTable({
   .index("by_target_key", ["targetKey"])
   .index("by_status", ["status"]);
 
-const packageStorePackBackfillFailures = defineTable({
+const packageClawPackBackfillFailures = defineTable({
   packageId: v.id("packages"),
   releaseId: v.id("packageReleases"),
   name: v.string(),
@@ -958,7 +958,7 @@ const packageStorePackBackfillFailures = defineTable({
   .index("by_package_failed_at", ["packageId", "lastFailedAt"])
   .index("by_open_failed_at", ["resolvedAt", "lastFailedAt"]);
 
-const packageStorePackSearchIndex = defineTable({
+const packageClawPackSearchIndex = defineTable({
   packageId: v.id("packages"),
   releaseId: v.id("packageReleases"),
   kind: v.union(v.literal("host-target"), v.literal("environment")),
@@ -971,7 +971,7 @@ const packageStorePackSearchIndex = defineTable({
   .index("by_package_kind_key", ["packageId", "kind", "key"])
   .index("by_kind_key_updated", ["kind", "key", "updatedAt"]);
 
-const storePackMigrationRuns = defineTable({
+const clawPackMigrationRuns = defineTable({
   actorUserId: v.id("users"),
   operation: v.union(
     v.literal("artifact-backfill"),
@@ -1066,7 +1066,7 @@ const packageSearchDigest = defineTable({
   capabilityTags: v.optional(v.array(v.string())),
   executesCode: v.optional(v.boolean()),
   verificationTier: v.optional(packageVerificationTierValidator),
-  storepackAvailable: v.optional(v.boolean()),
+  clawpackAvailable: v.optional(v.boolean()),
   hostTargetKeys: v.optional(v.array(v.string())),
   environmentFlags: v.optional(v.array(v.string())),
   scanStatus: packageScanStatusValidator,
@@ -1161,7 +1161,7 @@ const packageCapabilitySearchDigest = defineTable({
   capabilityTag: v.string(),
   executesCode: v.optional(v.boolean()),
   verificationTier: v.optional(packageVerificationTierValidator),
-  storepackAvailable: v.optional(v.boolean()),
+  clawpackAvailable: v.optional(v.boolean()),
   hostTargetKeys: v.optional(v.array(v.string())),
   environmentFlags: v.optional(v.array(v.string())),
   scanStatus: packageScanStatusValidator,
@@ -1606,9 +1606,9 @@ export default defineSchema({
   packages,
   packageReleases,
   packageReleaseArtifacts,
-  packageStorePackBackfillFailures,
-  packageStorePackSearchIndex,
-  storePackMigrationRuns,
+  packageClawPackBackfillFailures,
+  packageClawPackSearchIndex,
+  clawPackMigrationRuns,
   packageTrustedPublishers,
   packagePublishTokens,
   packageBadges,

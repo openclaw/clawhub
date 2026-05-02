@@ -24,10 +24,10 @@ const SKILL_AUDIT_LOG_LIMIT = 10;
 const packageApiRefs = api as unknown as {
   packages: {
     setModerationVerdict: unknown;
-    getStorePackMigrationStatus: unknown;
-    backfillStorePackArtifacts: unknown;
-    backfillStorePackSearchIndex: unknown;
-    revokeStorePackArtifact: unknown;
+    getClawPackMigrationStatus: unknown;
+    backfillClawPackArtifacts: unknown;
+    backfillClawPackSearchIndex: unknown;
+    revokeClawPackArtifact: unknown;
   };
 };
 
@@ -107,8 +107,8 @@ type ClawPackMigrationStatus = {
     fileCount: number;
   }>;
   missingSampleSize: number;
-  generatedStorePackSampleSize: number;
-  generatedStorePackBytes: number;
+  generatedClawPackSampleSize: number;
+  generatedClawPackBytes: number;
   sampleLimit: number;
 };
 
@@ -211,13 +211,13 @@ function ManagementConsole() {
     note?: string;
   }) => Promise<unknown>;
   const revokeClawPackArtifact = useMutation(
-    packageApiRefs.packages.revokeStorePackArtifact as never,
+    packageApiRefs.packages.revokeClawPackArtifact as never,
   ) as unknown as (args: { releaseId: Id<"packageReleases">; reason?: string }) => Promise<unknown>;
   const backfillClawPackArtifacts = useAction(
-    packageApiRefs.packages.backfillStorePackArtifacts as never,
+    packageApiRefs.packages.backfillClawPackArtifacts as never,
   ) as unknown as (args: { limit?: number }) => Promise<unknown>;
   const backfillClawPackSearchIndex = useAction(
-    packageApiRefs.packages.backfillStorePackSearchIndex as never,
+    packageApiRefs.packages.backfillClawPackSearchIndex as never,
   ) as unknown as (args: { limit?: number; cursor?: string }) => Promise<unknown>;
   const setSoftDeleted = useMutation(api.skills.setSoftDeleted);
   const hardDelete = useMutation(api.skills.hardDelete);
@@ -252,7 +252,7 @@ function ManagementConsole() {
     admin ? { limit: 200, search: userQuery || undefined } : "skip",
   ) as { items: Doc<"users">[]; total: number } | undefined;
   const clawPackMigration = useQuery(
-    packageApiRefs.packages.getStorePackMigrationStatus as never,
+    packageApiRefs.packages.getClawPackMigrationStatus as never,
     staff ? {} : "skip",
   ) as ClawPackMigrationStatus | undefined;
 
@@ -376,11 +376,11 @@ function ManagementConsole() {
   };
 
   const clawPackSampleTotal = clawPackMigration
-    ? clawPackMigration.missingSampleSize + clawPackMigration.generatedStorePackSampleSize
+    ? clawPackMigration.missingSampleSize + clawPackMigration.generatedClawPackSampleSize
     : 0;
   const clawPackSampleCoverage =
     clawPackSampleTotal > 0 && clawPackMigration
-      ? Math.round((clawPackMigration.generatedStorePackSampleSize / clawPackSampleTotal) * 100)
+      ? Math.round((clawPackMigration.generatedClawPackSampleSize / clawPackSampleTotal) * 100)
       : null;
 
   const runClawPackArtifactBackfill = () => {
@@ -481,8 +481,8 @@ function ManagementConsole() {
             <span className="management-report-meta">Generated sample</span>
             <span>
               {clawPackMigration
-                ? `${clawPackMigration.generatedStorePackSampleSize} artifacts / ${formatBytesCompact(
-                    clawPackMigration.generatedStorePackBytes,
+                ? `${clawPackMigration.generatedClawPackSampleSize} artifacts / ${formatBytesCompact(
+                    clawPackMigration.generatedClawPackBytes,
                   )}`
                 : "Loading..."}
             </span>
@@ -1052,10 +1052,10 @@ function ManagementConsole() {
                       <div className="management-report-item">
                         <span className="management-report-meta">Claw Pack</span>
                         <span>
-                          {latestRelease?.storepackRevokedAt
-                            ? `Revoked ${formatTimestamp(latestRelease.storepackRevokedAt)}`
-                            : latestRelease?.storepackStorageId
-                              ? `${latestRelease.storepackFileCount ?? 0} files · ${latestRelease.storepackSha256?.slice(0, 12) ?? "no digest"}`
+                          {latestRelease?.clawpackRevokedAt
+                            ? `Revoked ${formatTimestamp(latestRelease.clawpackRevokedAt)}`
+                            : latestRelease?.clawpackStorageId
+                              ? `${latestRelease.clawpackFileCount ?? 0} files · ${latestRelease.clawpackSha256?.slice(0, 12) ?? "no digest"}`
                               : "Missing Claw Pack artifact"}
                         </span>
                       </div>
@@ -1159,8 +1159,8 @@ function ManagementConsole() {
                       className="management-action-btn"
                       type="button"
                       disabled={
-                        !latestRelease?.storepackStorageId ||
-                        Boolean(latestRelease.storepackRevokedAt)
+                        !latestRelease?.clawpackStorageId ||
+                        Boolean(latestRelease.clawpackRevokedAt)
                       }
                       onClick={() => {
                         if (!latestRelease?._id) return;

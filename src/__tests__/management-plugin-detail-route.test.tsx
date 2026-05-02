@@ -98,12 +98,12 @@ describe("plugin management detail route", () => {
         files: [],
         tags: ["latest"],
         createdAt: Date.UTC(2026, 0, 1),
-        storepackStorageId: "storage:1",
-        storepackSha256: "a".repeat(64),
-        storepackManifestSha256: "b".repeat(64),
-        storepackFileCount: 4,
-        storepackSize: 4096,
-        storepackBuiltAt: Date.UTC(2026, 0, 3),
+        clawpackStorageId: "storage:1",
+        clawpackSha256: "a".repeat(64),
+        clawpackManifestSha256: "b".repeat(64),
+        clawpackFileCount: 4,
+        clawpackSize: 4096,
+        clawpackBuiltAt: Date.UTC(2026, 0, 3),
         hostTargetsSummary: [{ os: "darwin", arch: "arm64" }],
         environmentSummary: { requiresNetwork: true, requiresExternalServices: ["opik"] },
         source: {
@@ -152,7 +152,7 @@ describe("plugin management detail route", () => {
     renderRoute();
 
     fireEvent.change(screen.getByPlaceholderText("Required"), {
-      target: { value: "reviewed storepack and source" },
+      target: { value: "reviewed clawpack and source" },
     });
     fireEvent.click(screen.getByRole("button", { name: "Save verdict" }));
 
@@ -160,7 +160,7 @@ describe("plugin management detail route", () => {
       expect(setVerdict).toHaveBeenCalledWith({
         packageId: "packages:1",
         verdict: "suspicious",
-        note: "reviewed storepack and source",
+        note: "reviewed clawpack and source",
       });
     });
     expect(window.confirm).toHaveBeenCalledWith(

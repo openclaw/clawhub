@@ -1,29 +1,29 @@
 ---
-summary: "StorePack artifact contract, integrity model, and download behavior."
+summary: "ClawPack artifact contract, integrity model, and download behavior."
 read_when:
   - Working on plugin artifact storage
   - Changing package download APIs
-  - Debugging StorePack verification
+  - Debugging ClawPack verification
 ---
 
-# StorePack
+# ClawPack
 
-StorePack is ClawHub's stored artifact format for plugin releases. A StorePack
+ClawPack is ClawHub's stored artifact format for plugin releases. A ClawPack
 is a deterministic ZIP archive built by ClawHub from publisher-provided package
-source. Publishers may upload `STOREPACK.json`, but ClawHub ignores it and
+source. Publishers may upload `CLAWPACK.json`, but ClawHub ignores it and
 generates the canonical manifest itself.
 
-StorePack is not OpenClaw install support by itself. OpenClaw consumption is a
+ClawPack is not OpenClaw install support by itself. OpenClaw consumption is a
 future downstream step. This repository owns artifact creation, storage,
 moderation, API, CLI, and operator readiness surfaces.
 
 ## Contract
 
-Every active StorePack has:
+Every active ClawPack has:
 
 - a canonical package name
 - a release version
-- `package/STOREPACK.json`
+- `package/CLAWPACK.json`
 - normalized package files under `package/`
 - a SHA-256 digest of the final ZIP bytes
 - a manifest SHA-256 digest
@@ -39,7 +39,7 @@ and status.
 
 ## Manifest
 
-`package/STOREPACK.json` describes the archive ClawHub actually produced. It
+`package/CLAWPACK.json` describes the archive ClawHub actually produced. It
 includes package identity, source attribution, compatibility, host targets,
 environment requirements, and file summaries.
 
@@ -63,7 +63,7 @@ The artifact builder must:
 - reject unsafe archive paths, absolute paths, and traversal paths
 - normalize path separators
 - ignore local junk such as dependency folders and build cache files
-- ignore publisher-provided `STOREPACK.json`
+- ignore publisher-provided `CLAWPACK.json`
 - sort manifest entries deterministically
 - build deterministic ZIP bytes
 - hash the final archive bytes
@@ -76,16 +76,16 @@ The artifact builder must:
 Public download routes return stored artifacts, not regenerated archives.
 
 - `GET /api/v1/packages/{name}/download`
-- `GET /api/v1/packages/{name}/versions/{version}/storepack`
-- `GET /api/v1/storepacks/{sha256}`
+- `GET /api/v1/packages/{name}/versions/{version}/clawpack`
+- `GET /api/v1/clawpacks/{sha256}`
 
 Expected headers:
 
 ```http
 ETag: "sha256:<hex>"
 Digest: sha-256=<base64>
-X-ClawHub-StorePack-Sha256: <hex>
-X-ClawHub-StorePack-Spec-Version: 1
+X-ClawHub-ClawPack-Sha256: <hex>
+X-ClawHub-ClawPack-Spec-Version: 1
 X-ClawHub-Artifact-Status: active
 ```
 
@@ -103,17 +103,17 @@ Inspect:
 
 ```bash
 clawhub package inspect <name> --version <version>
-clawhub package storepack <name> --version <version> --json
+clawhub package clawpack <name> --version <version> --json
 ```
 
 Verify a downloaded artifact:
 
 ```bash
-clawhub package verify <file>.storepack.zip --sha256 <digest>
+clawhub package verify <file>.clawpack.zip --sha256 <digest>
 ```
 
 The verifier checks the archive digest when `--sha256` is provided and confirms
-that `package/STOREPACK.json` exists.
+that `package/CLAWPACK.json` exists.
 
 ## Storage
 
@@ -132,7 +132,7 @@ Common failure states:
 - metadata validation blocked publish
 - archive expansion failed
 - unsafe path rejected
-- StorePack build failed
+- ClawPack build failed
 - Convex storage write failed
 - artifact row write failed
 - search index backfill failed

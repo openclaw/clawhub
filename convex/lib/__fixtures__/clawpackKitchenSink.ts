@@ -1,5 +1,5 @@
-import type { StorePackFile, StorePackInput } from "../storepack";
-import { sha256Hex } from "../storepack";
+import type { ClawPackFile, ClawPackInput } from "../clawpack";
+import { sha256Hex } from "../clawpack";
 
 const encoder = new TextEncoder();
 
@@ -7,7 +7,7 @@ async function fixtureFile(
   path: string,
   source: string,
   contentType?: string,
-): Promise<StorePackFile> {
+): Promise<ClawPackFile> {
   const bytes = encoder.encode(source);
   return {
     path,
@@ -18,7 +18,7 @@ async function fixtureFile(
   };
 }
 
-export async function makeKitchenSinkStorePackInput(): Promise<StorePackInput> {
+export async function makeKitchenSinkClawPackInput(): Promise<ClawPackInput> {
   return {
     packageId: "pkg_kitchen_sink",
     releaseId: "rel_kitchen_sink",

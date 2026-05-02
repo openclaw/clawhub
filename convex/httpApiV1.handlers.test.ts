@@ -3831,10 +3831,10 @@ describe("httpApiV1 handlers", () => {
               contentType: "application/json",
             },
           ],
-          storepackStorageId: "storage:clawpack",
-          storepackSha256: "ab".repeat(32),
-          storepackSize: 13,
-          storepackSpecVersion: 1,
+          clawpackStorageId: "storage:clawpack",
+          clawpackSha256: "ab".repeat(32),
+          clawpackSize: 13,
+          clawpackSpecVersion: 1,
         };
       }
       return null;
@@ -3892,12 +3892,12 @@ describe("httpApiV1 handlers", () => {
             createdAt: 1,
             changelog: "init",
             files: [],
-            storepackStorageId: "storage:clawpack",
-            storepackSha256: "ab".repeat(32),
-            storepackSize: 13,
-            storepackSpecVersion: 1,
-            storepackFileCount: 3,
-            storepackManifestSha256: "cd".repeat(32),
+            clawpackStorageId: "storage:clawpack",
+            clawpackSha256: "ab".repeat(32),
+            clawpackSize: 13,
+            clawpackSpecVersion: 1,
+            clawpackFileCount: 3,
+            clawpackManifestSha256: "cd".repeat(32),
             hostTargetsSummary: [{ os: "darwin", arch: "arm64", supportState: "supported" }],
             environmentSummary: { requiresLocalDesktop: true },
           },
@@ -3981,11 +3981,11 @@ describe("httpApiV1 handlers", () => {
             createdAt: 1,
             changelog: "init",
             files: [],
-            storepackStorageId: "storage:clawpack",
-            storepackSha256: "ab".repeat(32),
-            storepackSize: zip.byteLength,
-            storepackSpecVersion: 1,
-            storepackFileCount: 2,
+            clawpackStorageId: "storage:clawpack",
+            clawpackSha256: "ab".repeat(32),
+            clawpackSize: zip.byteLength,
+            clawpackSpecVersion: 1,
+            clawpackFileCount: 2,
           },
         };
       }
@@ -4076,11 +4076,11 @@ describe("httpApiV1 handlers", () => {
           createdAt: 1,
           changelog: "init",
           files: [],
-          storepackStorageId: "storage:clawpack",
-          storepackSha256: "ab".repeat(32),
-          storepackSize: 13,
-          storepackSpecVersion: 1,
-          storepackRevokedAt: 1_763_000_000_000,
+          clawpackStorageId: "storage:clawpack",
+          clawpackSha256: "ab".repeat(32),
+          clawpackSize: 13,
+          clawpackSpecVersion: 1,
+          clawpackRevokedAt: 1_763_000_000_000,
         };
       }
       return null;
@@ -4128,7 +4128,7 @@ describe("httpApiV1 handlers", () => {
           release: {
             _id: "packageReleases:1",
             version: "1.0.0",
-            storepackSpecVersion: 1,
+            clawpackSpecVersion: 1,
           },
         };
       }
@@ -4178,7 +4178,7 @@ describe("httpApiV1 handlers", () => {
           release: {
             _id: "packageReleases:1",
             version: "1.0.0",
-            storepackSpecVersion: 1,
+            clawpackSpecVersion: 1,
           },
         };
       }
@@ -4233,8 +4233,8 @@ describe("httpApiV1 handlers", () => {
       return {
         missingSample: [],
         missingSampleSize: 0,
-        generatedStorePackSampleSize: 1,
-        generatedStorePackBytes: 1024,
+        generatedClawPackSampleSize: 1,
+        generatedClawPackBytes: 1024,
         sampleLimit: args.limit,
       };
     });
@@ -4263,8 +4263,8 @@ describe("httpApiV1 handlers", () => {
         items: [
           {
             bundledPluginId: "opik",
-            readinessState: "storepack-missing",
-            blockers: ["storepack-missing"],
+            readinessState: "clawpack-missing",
+            blockers: ["clawpack-missing"],
           },
         ],
         readyCount: 1,
@@ -4302,7 +4302,7 @@ describe("httpApiV1 handlers", () => {
         };
       }
       return {
-        items: [{ _id: "storePackMigrationRuns:1", status: "pending" }],
+        items: [{ _id: "clawPackMigrationRuns:1", status: "pending" }],
         limit: args.limit,
         status: args.status ?? null,
       };
@@ -4329,7 +4329,7 @@ describe("httpApiV1 handlers", () => {
     });
     expect(listResponse.status).toBe(200);
     await expect(listResponse.json()).resolves.toMatchObject({
-      items: [{ _id: "storePackMigrationRuns:1" }],
+      items: [{ _id: "clawPackMigrationRuns:1" }],
       status: "pending",
     });
   });
@@ -4342,7 +4342,7 @@ describe("httpApiV1 handlers", () => {
     const runMutation = vi.fn(async (_mutation: unknown, args: Record<string, unknown>) => {
       if (isRateLimitArgs(args)) return okRate();
       return {
-        _id: "storePackMigrationRuns:1",
+        _id: "clawPackMigrationRuns:1",
         actorUserId: args.actorUserId,
         operation: args.operation,
         status: "pending",
@@ -4350,7 +4350,7 @@ describe("httpApiV1 handlers", () => {
       };
     });
     const runAction = vi.fn().mockResolvedValue({
-      run: { _id: "storePackMigrationRuns:1", status: "completed" },
+      run: { _id: "clawPackMigrationRuns:1", status: "completed" },
       result: { processed: 1, succeeded: 1, failed: 0 },
     });
 
@@ -4364,7 +4364,7 @@ describe("httpApiV1 handlers", () => {
     const continueResponse = await __handlers.packagesPostRouterV1Handler(
       makeCtx({ runAction, runMutation }),
       new Request(
-        "https://example.com/api/v1/packages/clawpack/migration-runs/storePackMigrationRuns:1/continue",
+        "https://example.com/api/v1/packages/clawpack/migration-runs/clawPackMigrationRuns:1/continue",
         { method: "POST" },
       ),
     );
@@ -4376,13 +4376,13 @@ describe("httpApiV1 handlers", () => {
       limit: 3,
     });
     await expect(createResponse.json()).resolves.toMatchObject({
-      _id: "storePackMigrationRuns:1",
+      _id: "clawPackMigrationRuns:1",
       operation: "failure-retry",
     });
     expect(continueResponse.status).toBe(200);
     expect(runAction).toHaveBeenCalledWith(expect.anything(), {
       actorUserId: "users:admin",
-      runId: "storePackMigrationRuns:1",
+      runId: "clawPackMigrationRuns:1",
     });
     await expect(continueResponse.json()).resolves.toMatchObject({
       result: { processed: 1 },

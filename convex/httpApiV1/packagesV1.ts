@@ -56,23 +56,23 @@ const internalRefs = internal as unknown as {
     listVersionsForViewerInternal: unknown;
     getPackageByNameInternal: unknown;
     getTrustedPublisherByPackageIdInternal: unknown;
-    getStorePackArtifactByShaForViewerInternal: unknown;
+    getClawPackArtifactByShaForViewerInternal: unknown;
     getVersionByNameForViewerInternal: unknown;
     publishPackageForUserInternal: unknown;
     publishPackageForTrustedPublisherInternal: unknown;
     setTrustedPublisherForUserInternal: unknown;
     deleteTrustedPublisherForUserInternal: unknown;
-    backfillStorePackArtifactsInternal: unknown;
-    backfillStorePackSearchIndexInternal: unknown;
-    retryStorePackBackfillFailuresInternal: unknown;
-    getStorePackMigrationStatusInternal: unknown;
-    dryRunStorePackMigrationRunForStaffInternal: unknown;
-    listStorePackMigrationRunsForStaffInternal: unknown;
-    getStorePackMigrationRunInternal: unknown;
-    startStorePackMigrationRunInternal: unknown;
-    continueStorePackMigrationRunInternal: unknown;
+    backfillClawPackArtifactsInternal: unknown;
+    backfillClawPackSearchIndexInternal: unknown;
+    retryClawPackBackfillFailuresInternal: unknown;
+    getClawPackMigrationStatusInternal: unknown;
+    dryRunClawPackMigrationRunForStaffInternal: unknown;
+    listClawPackMigrationRunsForStaffInternal: unknown;
+    getClawPackMigrationRunInternal: unknown;
+    startClawPackMigrationRunInternal: unknown;
+    continueClawPackMigrationRunInternal: unknown;
     listOfficialMigrationReadinessForStaffInternal: unknown;
-    revokeStorePackArtifactForStaffInternal: unknown;
+    revokeClawPackArtifactForStaffInternal: unknown;
     getReleasesByIdsInternal: unknown;
     getReleaseByPackageAndVersionInternal: unknown;
     getReleaseByIdInternal: unknown;
@@ -129,17 +129,17 @@ type PackageListQueryArgs = {
   paginationOpts: { cursor: string | null; numItems: number };
 };
 
-type StorePackMigrationOperation = "artifact-backfill" | "failure-retry" | "search-index-backfill";
-type StorePackMigrationStatus = "pending" | "running" | "completed" | "failed";
+type ClawPackMigrationOperation = "artifact-backfill" | "failure-retry" | "search-index-backfill";
+type ClawPackMigrationStatus = "pending" | "running" | "completed" | "failed";
 
-function parseStorePackMigrationOperation(raw: unknown): StorePackMigrationOperation | null {
+function parseClawPackMigrationOperation(raw: unknown): ClawPackMigrationOperation | null {
   if (raw === "artifact-backfill" || raw === "failure-retry" || raw === "search-index-backfill") {
     return raw;
   }
   return null;
 }
 
-function parseStorePackMigrationStatus(raw: unknown): StorePackMigrationStatus | undefined {
+function parseClawPackMigrationStatus(raw: unknown): ClawPackMigrationStatus | undefined {
   if (raw === "pending" || raw === "running" || raw === "completed" || raw === "failed") {
     return raw;
   }
@@ -191,18 +191,18 @@ type ReleaseLike = {
   compatibility?: Doc<"packageReleases">["compatibility"];
   capabilities?: Doc<"packageReleases">["capabilities"];
   verification?: Doc<"packageReleases">["verification"];
-  storepackStorageId?: Id<"_storage">;
-  storepackSha256?: string;
-  storepackSize?: number;
-  storepackSpecVersion?: number;
-  storepackFormat?: "zip";
-  storepackFileCount?: number;
-  storepackManifestSha256?: string;
-  storepackBuiltAt?: number;
-  storepackBuildVersion?: string;
-  storepackRevokedAt?: number;
-  storepackRevokedByUserId?: Id<"users">;
-  storepackRevocationReason?: string;
+  clawpackStorageId?: Id<"_storage">;
+  clawpackSha256?: string;
+  clawpackSize?: number;
+  clawpackSpecVersion?: number;
+  clawpackFormat?: "zip";
+  clawpackFileCount?: number;
+  clawpackManifestSha256?: string;
+  clawpackBuiltAt?: number;
+  clawpackBuildVersion?: string;
+  clawpackRevokedAt?: number;
+  clawpackRevokedByUserId?: Id<"users">;
+  clawpackRevocationReason?: string;
   hostTargetsSummary?: Doc<"packageReleases">["hostTargetsSummary"];
   environmentSummary?: Doc<"packageReleases">["environmentSummary"];
   sha256hash?: string;
@@ -251,10 +251,10 @@ function getReleaseSecurityBlock(release: ReleaseLike) {
 
 function toPublicClawPack(release: ReleaseLike | null | undefined) {
   if (
-    !release?.storepackStorageId ||
-    !release.storepackSha256 ||
-    !release.storepackSize ||
-    release.storepackRevokedAt
+    !release?.clawpackStorageId ||
+    !release.clawpackSha256 ||
+    !release.clawpackSize ||
+    release.clawpackRevokedAt
   ) {
     return {
       available: false,
@@ -273,14 +273,14 @@ function toPublicClawPack(release: ReleaseLike | null | undefined) {
   }
   return {
     available: true,
-    specVersion: release.storepackSpecVersion ?? 1,
-    format: release.storepackFormat ?? "zip",
-    sha256: release.storepackSha256,
-    size: release.storepackSize,
-    fileCount: release.storepackFileCount ?? null,
-    manifestSha256: release.storepackManifestSha256 ?? null,
-    builtAt: release.storepackBuiltAt ?? null,
-    buildVersion: release.storepackBuildVersion ?? null,
+    specVersion: release.clawpackSpecVersion ?? 1,
+    format: release.clawpackFormat ?? "zip",
+    sha256: release.clawpackSha256,
+    size: release.clawpackSize,
+    fileCount: release.clawpackFileCount ?? null,
+    manifestSha256: release.clawpackManifestSha256 ?? null,
+    builtAt: release.clawpackBuiltAt ?? null,
+    buildVersion: release.clawpackBuildVersion ?? null,
     hostTargets: release.hostTargetsSummary ?? [],
     environment: release.environmentSummary ?? null,
     runtimeBundles: [],
@@ -376,11 +376,11 @@ type CatalogListItem = {
 type CatalogSearchEntry = { score: number; package: CatalogListItem };
 
 function toPublicCatalogItem(item: CatalogListItem & Record<string, unknown>): CatalogListItem {
-  const { storepackAvailable, storepack, ...rest } = item;
+  const { clawpackAvailable, clawpack, ...rest } = item;
   return {
     ...rest,
-    ...(typeof storepackAvailable === "boolean" ? { clawpackAvailable: storepackAvailable } : {}),
-    ...(storepack ? { clawpack: storepack } : {}),
+    ...(typeof clawpackAvailable === "boolean" ? { clawpackAvailable: clawpackAvailable } : {}),
+    ...(clawpack ? { clawpack: clawpack } : {}),
   } as CatalogListItem;
 }
 
@@ -392,16 +392,16 @@ function toPublicCatalogSearchEntry(entry: CatalogSearchEntry): CatalogSearchEnt
 }
 
 function toPublicClawPackMigrationStatus(result: Record<string, unknown>) {
-  const { generatedStorePackSampleSize, generatedStorePackBytes, ...rest } = result;
+  const { generatedClawPackSampleSize, generatedClawPackBytes, ...rest } = result;
   return {
     ...rest,
-    generatedClawPackSampleSize: generatedStorePackSampleSize,
-    generatedClawPackBytes: generatedStorePackBytes,
+    generatedClawPackSampleSize: generatedClawPackSampleSize,
+    generatedClawPackBytes: generatedClawPackBytes,
   };
 }
 
 function toPublicClawPackReadinessLabel(value: unknown) {
-  return value === "storepack-missing" ? "clawpack-missing" : value;
+  return value === "clawpack-missing" ? "clawpack-missing" : value;
 }
 
 function toPublicClawPackReadinessResult(result: Record<string, unknown>) {
@@ -437,7 +437,7 @@ type ClawPackArtifactLookup =
       release: {
         _id: Id<"packageReleases">;
         version: string;
-        storepackSpecVersion?: number;
+        clawpackSpecVersion?: number;
       };
     }
   | {
@@ -1294,7 +1294,7 @@ export async function packagesPostRouterV1Handler(ctx: ActionCtx, request: Reque
     const admin = requireAdminOrResponse(auth.user, rate.headers);
     if (!admin.ok) return admin.response;
     const body = await request.json().catch(() => ({}));
-    const operation = parseStorePackMigrationOperation(
+    const operation = parseClawPackMigrationOperation(
       body && typeof body === "object" ? (body as { operation?: unknown }).operation : undefined,
     );
     if (!operation) return text("Invalid Claw Pack migration operation", 400, rate.headers);
@@ -1308,7 +1308,7 @@ export async function packagesPostRouterV1Handler(ctx: ActionCtx, request: Reque
         : undefined;
     const result = await runMutationRef(
       ctx,
-      internalRefs.packages.startStorePackMigrationRunInternal,
+      internalRefs.packages.startClawPackMigrationRunInternal,
       {
         actorUserId: auth.userId,
         operation,
@@ -1334,10 +1334,10 @@ export async function packagesPostRouterV1Handler(ctx: ActionCtx, request: Reque
     try {
       const result = await runActionRef(
         ctx,
-        internalRefs.packages.continueStorePackMigrationRunInternal,
+        internalRefs.packages.continueClawPackMigrationRunInternal,
         {
           actorUserId: auth.userId,
-          runId: segments[2] as Id<"storePackMigrationRuns">,
+          runId: segments[2] as Id<"clawPackMigrationRuns">,
         },
       );
       return json(result, 200, rate.headers);
@@ -1366,7 +1366,7 @@ export async function packagesPostRouterV1Handler(ctx: ActionCtx, request: Reque
     try {
       const result = await runActionRef(
         ctx,
-        internalRefs.packages.backfillStorePackArtifactsInternal,
+        internalRefs.packages.backfillClawPackArtifactsInternal,
         {
           actorUserId: auth.userId,
           ...(limit ? { limit } : {}),
@@ -1402,7 +1402,7 @@ export async function packagesPostRouterV1Handler(ctx: ActionCtx, request: Reque
     try {
       const result = await runActionRef(
         ctx,
-        internalRefs.packages.backfillStorePackSearchIndexInternal,
+        internalRefs.packages.backfillClawPackSearchIndexInternal,
         {
           actorUserId: auth.userId,
           ...(limit ? { limit } : {}),
@@ -1435,7 +1435,7 @@ export async function packagesPostRouterV1Handler(ctx: ActionCtx, request: Reque
     try {
       const result = await runActionRef(
         ctx,
-        internalRefs.packages.retryStorePackBackfillFailuresInternal,
+        internalRefs.packages.retryClawPackBackfillFailuresInternal,
         {
           actorUserId: auth.userId,
           ...(limit ? { limit } : {}),
@@ -1471,7 +1471,7 @@ export async function packagesPostRouterV1Handler(ctx: ActionCtx, request: Reque
     try {
       const result = await runMutationRef(
         ctx,
-        internalRefs.packages.revokeStorePackArtifactForStaffInternal,
+        internalRefs.packages.revokeClawPackArtifactForStaffInternal,
         {
           actorUserId: auth.userId,
           name: segments[0]!,
@@ -1874,7 +1874,7 @@ export async function packagesGetRouterV1Handler(ctx: ActionCtx, request: Reques
     const limit = toOptionalNumber(new URL(request.url).searchParams.get("limit")) ?? undefined;
     const result = (await runQueryRef(
       ctx,
-      internalRefs.packages.getStorePackMigrationStatusInternal,
+      internalRefs.packages.getClawPackMigrationStatusInternal,
       { limit },
     )) as Record<string, unknown>;
     return json(toPublicClawPackMigrationStatus(result), 200, rate.headers);
@@ -1892,11 +1892,11 @@ export async function packagesGetRouterV1Handler(ctx: ActionCtx, request: Reques
     const admin = requireAdminOrResponse(auth.user, rate.headers);
     if (!admin.ok) return admin.response;
     const search = new URL(request.url).searchParams;
-    const operation = parseStorePackMigrationOperation(search.get("operation"));
+    const operation = parseClawPackMigrationOperation(search.get("operation"));
     if (!operation) return text("Invalid Claw Pack migration operation", 400, rate.headers);
     const result = await runQueryRef(
       ctx,
-      internalRefs.packages.dryRunStorePackMigrationRunForStaffInternal,
+      internalRefs.packages.dryRunClawPackMigrationRunForStaffInternal,
       {
         operation,
         limit: toOptionalNumber(search.get("limit")) ?? undefined,
@@ -1915,9 +1915,9 @@ export async function packagesGetRouterV1Handler(ctx: ActionCtx, request: Reques
     const search = new URL(request.url).searchParams;
     const result = await runQueryRef(
       ctx,
-      internalRefs.packages.listStorePackMigrationRunsForStaffInternal,
+      internalRefs.packages.listClawPackMigrationRunsForStaffInternal,
       {
-        status: parseStorePackMigrationStatus(search.get("status")),
+        status: parseClawPackMigrationStatus(search.get("status")),
         limit: toOptionalNumber(search.get("limit")) ?? undefined,
       },
     );
@@ -1930,8 +1930,8 @@ export async function packagesGetRouterV1Handler(ctx: ActionCtx, request: Reques
     if (!auth.ok) return auth.response;
     const admin = requireAdminOrResponse(auth.user, rate.headers);
     if (!admin.ok) return admin.response;
-    const result = await runQueryRef(ctx, internalRefs.packages.getStorePackMigrationRunInternal, {
-      runId: segments[2] as Id<"storePackMigrationRuns">,
+    const result = await runQueryRef(ctx, internalRefs.packages.getClawPackMigrationRunInternal, {
+      runId: segments[2] as Id<"clawPackMigrationRuns">,
     });
     if (!result) return text("Claw Pack migration run not found", 404, rate.headers);
     return json(result, 200, rate.headers);
@@ -2096,17 +2096,17 @@ export async function packagesGetRouterV1Handler(ctx: ActionCtx, request: Reques
     if (!result) return text("Version not found", 404, rate.headers);
 
     const clawpack = toPublicClawPack(result.version);
-    if (result.version.storepackRevokedAt) return text("Claw Pack revoked", 410, rate.headers);
+    if (result.version.clawpackRevokedAt) return text("Claw Pack revoked", 410, rate.headers);
     if (!clawpack.available) return text("Claw Pack not available", 404, rate.headers);
 
     const securityBlock = getReleaseSecurityBlock(result.version);
     if (securityBlock) return text(securityBlock.message, securityBlock.status, rate.headers);
 
     if (segments[4] === "manifest") {
-      if (!result.version.storepackStorageId) {
+      if (!result.version.clawpackStorageId) {
         return text("Claw Pack not available", 404, rate.headers);
       }
-      const blob = await ctx.storage.get(result.version.storepackStorageId);
+      const blob = await ctx.storage.get(result.version.clawpackStorageId);
       if (!blob) return text("Missing stored Claw Pack artifact", 500, rate.headers);
       try {
         const manifest = await readClawPackManifest(blob);
@@ -2310,9 +2310,9 @@ export async function packagesGetRouterV1Handler(ctx: ActionCtx, request: Reques
     if (!release) return text("Version not found", 404, rate.headers);
     const securityBlock = getReleaseSecurityBlock(release);
     if (securityBlock) return text(securityBlock.message, securityBlock.status, rate.headers);
-    if (release.storepackRevokedAt) return text("Claw Pack revoked", 410, rate.headers);
-    if (release.storepackStorageId && release.storepackSha256 && release.storepackSize) {
-      const blob = await ctx.storage.get(release.storepackStorageId);
+    if (release.clawpackRevokedAt) return text("Claw Pack revoked", 410, rate.headers);
+    if (release.clawpackStorageId && release.clawpackSha256 && release.clawpackSize) {
+      const blob = await ctx.storage.get(release.clawpackStorageId);
       if (!blob) return text("Missing stored Claw Pack artifact", 500, rate.headers);
       try {
         await runMutationRef(ctx, internalRefs.packages.recordPackageDownloadInternal, {
@@ -2328,9 +2328,9 @@ export async function packagesGetRouterV1Handler(ctx: ActionCtx, request: Reques
           clawPackArtifactHeaders({
             packageName: publicPackage!.name,
             version: release.version,
-            sha256: release.storepackSha256,
-            size: release.storepackSize,
-            specVersion: release.storepackSpecVersion,
+            sha256: release.clawpackSha256,
+            size: release.clawpackSize,
+            specVersion: release.clawpackSpecVersion,
           }),
           corsHeaders(),
         ),
@@ -2380,7 +2380,7 @@ export async function clawpacksGetRouterV1Handler(ctx: ActionCtx, request: Reque
   const viewerUserId = await getOptionalViewerUserIdForRequest(ctx, request);
   const lookup = await runQueryRef<ClawPackArtifactLookup | null>(
     ctx,
-    internalRefs.packages.getStorePackArtifactByShaForViewerInternal,
+    internalRefs.packages.getClawPackArtifactByShaForViewerInternal,
     {
       sha256,
       viewerUserId: viewerUserId ?? undefined,
@@ -2408,7 +2408,7 @@ export async function clawpacksGetRouterV1Handler(ctx: ActionCtx, request: Reque
         version: lookup.release.version,
         sha256: lookup.artifact.sha256,
         size: lookup.artifact.size,
-        specVersion: lookup.release.storepackSpecVersion,
+        specVersion: lookup.release.clawpackSpecVersion,
         immutable: true,
       }),
       corsHeaders(),

@@ -165,7 +165,7 @@ function MigrationCandidateDetail(props: { item: MigrationReadinessItem }) {
         <div className="mt-3 grid gap-2 md:grid-cols-2 lg:grid-cols-3">
           <Gate label="Package exists" ok={item.gates.packageExists} />
           <Gate label="Release exists" ok={item.gates.releaseExists} />
-          <Gate label="Claw Pack active" ok={item.gates.storepackAvailable} />
+          <Gate label="Claw Pack active" ok={item.gates.clawpackAvailable} />
           <Gate label="Host matrix complete" ok={item.gates.hostMatrixComplete} />
           <Gate label="Environment complete" ok={item.gates.environmentComplete} />
           <Gate label="Source linked" ok={item.gates.sourceLinked} />

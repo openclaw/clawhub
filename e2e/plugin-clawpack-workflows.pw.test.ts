@@ -33,12 +33,12 @@ function makePluginZip() {
         }),
       ),
       "demo-plugin/dist/index.js": encoder.encode("export const demo = true;\n"),
-      "demo-plugin/STOREPACK.json": encoder.encode('{"forged": true}\n'),
+      "demo-plugin/CLAWPACK.json": encoder.encode('{"forged": true}\n'),
     }),
   );
 }
 
-test("publisher can upload an archive and inspect the StorePack preview", async ({ page }) => {
+test("publisher can upload an archive and inspect the ClawPack preview", async ({ page }) => {
   const errors = trackRuntimeErrors(page);
 
   await page.goto("/publish-plugin", { waitUntil: "domcontentloaded" });
@@ -58,10 +58,10 @@ test("publisher can upload an archive and inspect the StorePack preview", async 
   await expect(page.getByPlaceholder("Source repo (owner/repo)")).toHaveValue(
     "openclaw/demo-plugin",
   );
-  await expect(page.getByRole("heading", { name: "StorePack preview" })).toBeVisible();
-  await expect(page.getByText('"kind": "openclaw.storepack"')).toBeVisible();
+  await expect(page.getByRole("heading", { name: "ClawPack preview" })).toBeVisible();
+  await expect(page.getByText('"kind": "openclaw.clawpack"')).toBeVisible();
   await expect(
-    page.getByText("STOREPACK.json supplied by package will be replaced by ClawHub."),
+    page.getByText("CLAWPACK.json supplied by package will be replaced by ClawHub."),
   ).toBeVisible();
   await expect(page.getByRole("main").getByRole("button", { name: "Publish" })).toBeDisabled();
   await expectHealthyPage(page, errors);
@@ -72,8 +72,8 @@ test("management child routes stay on the management URL and show access diagnos
 }) => {
   const errors = trackRuntimeErrors(page);
 
-  await page.goto("/management/storepacks", { waitUntil: "domcontentloaded" });
-  await expect(page).toHaveURL(/\/management\/storepacks$/);
+  await page.goto("/management/clawpacks", { waitUntil: "domcontentloaded" });
+  await expect(page).toHaveURL(/\/management\/clawpacks$/);
   await expect(page.getByText("Management access required")).toBeVisible();
 
   await page.goto("/management/moderation", { waitUntil: "domcontentloaded" });

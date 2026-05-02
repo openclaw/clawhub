@@ -101,8 +101,8 @@ type DashboardPackage = {
     vtStatus: string | null;
     llmStatus: string | null;
     staticScanStatus: "clean" | "suspicious" | "malicious" | null;
-    storepackAvailable: boolean;
-    storepackSha256: string | null;
+    clawpackAvailable: boolean;
+    clawpackSha256: string | null;
     hostTargets: Array<{
       os: "darwin" | "linux" | "win32";
       arch: "arm64" | "x64";
@@ -396,7 +396,7 @@ function packageDashboardStatus(pkg: DashboardPackage): {
   variant: "default" | "pending" | "warning" | "destructive" | "success";
 } {
   const lifecycle = deriveClawPackLifecycle({
-    available: pkg.latestRelease?.storepackAvailable ?? false,
+    available: pkg.latestRelease?.clawpackAvailable ?? false,
     verificationScanStatus: pkg.scanStatus,
     vtStatus: pkg.latestRelease?.vtStatus,
     llmStatus: pkg.latestRelease?.llmStatus,

@@ -2,7 +2,7 @@
 summary: "ClawHub-only readiness tracking for future OpenClaw bundled plugin externalization."
 read_when:
   - Planning OpenClaw plugin externalization
-  - Reviewing StorePack migration readiness
+  - Reviewing ClawPack migration readiness
   - Exporting operator status reports
 ---
 
@@ -22,7 +22,7 @@ Use:
 CLI:
 
 ```bash
-clawhub package storepack-admin readiness --json
+clawhub package clawpack-admin readiness --json
 ```
 
 ## Readiness Object
@@ -37,7 +37,7 @@ Each candidate should track:
 - source commit or ref
 - current ClawHub package id
 - latest release id and version
-- StorePack digest
+- ClawPack digest
 - host matrix completeness
 - environment metadata completeness
 - scan state
@@ -54,7 +54,7 @@ A candidate is not ready until all gates are green:
 
 - package exists
 - latest release exists
-- active StorePack exists
+- active ClawPack exists
 - digest-addressed download works
 - source repo, path, and commit are recorded
 - host targets are complete
@@ -74,7 +74,7 @@ Use explicit states:
 planned
 package-missing
 release-missing
-storepack-missing
+clawpack-missing
 metadata-incomplete
 scan-blocked
 moderation-blocked
@@ -90,7 +90,7 @@ Do not show `ready-for-openclaw` unless every required gate is satisfied.
 1. Open `/management/migrations`.
 2. Review each candidate state.
 3. Open the package or release links where available.
-4. Fix ClawHub-side metadata, publishing, StorePack, moderation, or docs gaps.
+4. Fix ClawHub-side metadata, publishing, ClawPack, moderation, or docs gaps.
 5. Export readiness for planning.
 6. Use the export as input to future OpenClaw work.
 
@@ -102,14 +102,14 @@ The export is a planning artifact, not an OpenClaw change request by itself.
 - open OpenClaw pull requests
 - remove bundled plugin code
 - auto-publish packages without human-owned source attribution
-- mark a candidate ready while StorePack or moderation is missing
+- mark a candidate ready while ClawPack or moderation is missing
 - hide blockers behind a single percentage score
 
 ## Suggested Blocker Codes
 
 - `package-missing`
 - `release-missing`
-- `storepack-missing`
+- `clawpack-missing`
 - `digest-download-failed`
 - `source-metadata-missing`
 - `host-matrix-incomplete`

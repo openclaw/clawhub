@@ -168,14 +168,14 @@ function MigrationCard(props: { item: MigrationReadinessItem }) {
           <ReportField
             label="Claw Pack"
             value={formatReadinessClawPack(item)}
-            tone={item.gates.storepackAvailable ? undefined : "warn"}
+            tone={item.gates.clawpackAvailable ? undefined : "warn"}
           />
         </div>
 
         <div className="grid gap-2 md:grid-cols-2 lg:grid-cols-4">
           <Gate label="Package" ok={item.gates.packageExists} />
           <Gate label="Release" ok={item.gates.releaseExists} />
-          <Gate label="Claw Pack" ok={item.gates.storepackAvailable} />
+          <Gate label="Claw Pack" ok={item.gates.clawpackAvailable} />
           <Gate label="Host matrix" ok={item.gates.hostMatrixComplete} />
           <Gate label="Environment" ok={item.gates.environmentComplete} />
           <Gate label="Source" ok={item.gates.sourceLinked} />

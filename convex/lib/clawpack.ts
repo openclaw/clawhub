@@ -1,10 +1,10 @@
 import { buildDeterministicPackageZip } from "./skillZip";
 
-export const STOREPACK_SPEC_VERSION = 1;
-export const STOREPACK_BUILD_VERSION = "clawhub-clawpack-v1";
-export const STOREPACK_MANIFEST_PATH = "CLAWPACK.json";
+export const CLAWPACK_SPEC_VERSION = 1;
+export const CLAWPACK_BUILD_VERSION = "clawhub-clawpack-v1";
+export const CLAWPACK_MANIFEST_PATH = "CLAWPACK.json";
 
-export type StorePackHostTarget = {
+export type ClawPackHostTarget = {
   os: "darwin" | "linux" | "win32";
   arch: "arm64" | "x64";
   libc?: "glibc" | "musl";
@@ -15,7 +15,7 @@ export type StorePackHostTarget = {
   unsupportedReason?: string;
 };
 
-export type StorePackEnvironmentSummary = {
+export type ClawPackEnvironmentSummary = {
   requiresLocalDesktop?: boolean;
   requiresBrowser?: boolean;
   requiresAudioDevice?: boolean;
@@ -26,7 +26,7 @@ export type StorePackEnvironmentSummary = {
   knownUnsupported?: string[];
 };
 
-export type StorePackFile = {
+export type ClawPackFile = {
   path: string;
   size: number;
   sha256: string;
@@ -34,7 +34,7 @@ export type StorePackFile = {
   contentType?: string;
 };
 
-export type StorePackInput = {
+export type ClawPackInput = {
   packageId: string;
   releaseId: string;
   name: string;
@@ -48,18 +48,18 @@ export type StorePackInput = {
   compatibility?: unknown;
   capabilities?: unknown;
   verification?: unknown;
-  files: StorePackFile[];
+  files: ClawPackFile[];
 };
 
-export type BuiltStorePack = {
+export type BuiltClawPack = {
   bytes: Uint8Array;
   sha256: string;
   size: number;
   fileCount: number;
   manifestSha256: string;
   manifest: Record<string, unknown>;
-  hostTargets: StorePackHostTarget[];
-  environment: StorePackEnvironmentSummary;
+  hostTargets: ClawPackHostTarget[];
+  environment: ClawPackEnvironmentSummary;
 };
 
 const textEncoder = new TextEncoder();
@@ -103,7 +103,7 @@ function stringArray(value: unknown) {
     : [];
 }
 
-function normalizeHostTarget(raw: string): StorePackHostTarget | null {
+function normalizeHostTarget(raw: string): ClawPackHostTarget | null {
   const parts = raw.trim().toLowerCase().split(/[-_/]/).filter(Boolean);
   const os = parts.find((part) => part === "darwin" || part === "linux" || part === "win32");
   const arch = parts.find((part) => part === "arm64" || part === "x64");
@@ -117,9 +117,9 @@ function normalizeHostTarget(raw: string): StorePackHostTarget | null {
   };
 }
 
-function uniqueTargets(targets: StorePackHostTarget[]) {
+function uniqueTargets(targets: ClawPackHostTarget[]) {
   const seen = new Set<string>();
-  const result: StorePackHostTarget[] = [];
+  const result: ClawPackHostTarget[] = [];
   for (const target of targets) {
     const key = [target.os, target.arch, target.libc ?? ""].join("-");
     if (seen.has(key)) continue;
@@ -129,7 +129,7 @@ function uniqueTargets(targets: StorePackHostTarget[]) {
   return result;
 }
 
-function normalizeStorePackFilePath(path: string) {
+function normalizeClawPackFilePath(path: string) {
   const normalizedSeparators = path.trim().replaceAll("\\", "/");
   if (!normalizedSeparators) return null;
   if (
@@ -151,16 +151,16 @@ function normalizeStorePackFilePath(path: string) {
   return segments.join("/");
 }
 
-function normalizeStorePackFiles(files: StorePackFile[]) {
+function normalizeClawPackFiles(files: ClawPackFile[]) {
   const seen = new Map<string, string>();
-  const publishFiles: StorePackFile[] = [];
+  const publishFiles: ClawPackFile[] = [];
   for (const file of files) {
-    const path = normalizeStorePackFilePath(file.path);
+    const path = normalizeClawPackFilePath(file.path);
     if (!path) {
       throw new Error(`Invalid Claw Pack file path: ${file.path}`);
     }
     const lowerPath = path.toLowerCase();
-    if (lowerPath === STOREPACK_MANIFEST_PATH.toLowerCase()) {
+    if (lowerPath === CLAWPACK_MANIFEST_PATH.toLowerCase()) {
       continue;
     }
     const collisionKey = path.toLowerCase();
@@ -174,16 +174,16 @@ function normalizeStorePackFiles(files: StorePackFile[]) {
   return publishFiles;
 }
 
-export function deriveStorePackHostTargets(input: {
+export function deriveClawPackHostTargets(input: {
   capabilities?: unknown;
   compatibility?: unknown;
-}): StorePackHostTarget[] {
+}): ClawPackHostTarget[] {
   const capabilities = asRecord(input.capabilities);
   const compatibility = asRecord(input.compatibility);
   const targetStrings = stringArray(capabilities.hostTargets);
   const fromCapabilities = targetStrings
     .map(normalizeHostTarget)
-    .filter((target): target is StorePackHostTarget => Boolean(target));
+    .filter((target): target is ClawPackHostTarget => Boolean(target));
   if (fromCapabilities.length > 0) {
     return uniqueTargets(
       fromCapabilities.map((target) => ({
@@ -219,10 +219,10 @@ export function deriveStorePackHostTargets(input: {
   ];
 }
 
-export function deriveStorePackEnvironment(input: {
+export function deriveClawPackEnvironment(input: {
   capabilities?: unknown;
   files: Array<{ path: string }>;
-}): StorePackEnvironmentSummary {
+}): ClawPackEnvironmentSummary {
   const capabilities = asRecord(input.capabilities);
   const capabilityTags = stringArray(capabilities.capabilityTags).map((tag) => tag.toLowerCase());
   const fileNames = input.files.map((file) => file.path.toLowerCase());
@@ -248,13 +248,13 @@ export function deriveStorePackEnvironment(input: {
   };
 }
 
-export async function buildStorePack(input: StorePackInput): Promise<BuiltStorePack> {
-  const publishFiles = normalizeStorePackFiles(input.files);
-  const hostTargets = deriveStorePackHostTargets({
+export async function buildClawPack(input: ClawPackInput): Promise<BuiltClawPack> {
+  const publishFiles = normalizeClawPackFiles(input.files);
+  const hostTargets = deriveClawPackHostTargets({
     capabilities: input.capabilities,
     compatibility: input.compatibility,
   });
-  const environment = deriveStorePackEnvironment({
+  const environment = deriveClawPackEnvironment({
     capabilities: input.capabilities,
     files: publishFiles,
   });
@@ -267,7 +267,7 @@ export async function buildStorePack(input: StorePackInput): Promise<BuiltStoreP
     }))
     .sort((a, b) => a.path.localeCompare(b.path));
   const manifest: Record<string, unknown> = {
-    specVersion: STOREPACK_SPEC_VERSION,
+    specVersion: CLAWPACK_SPEC_VERSION,
     kind: "openclaw.clawpack",
     package: {
       name: input.name,
@@ -286,7 +286,7 @@ export async function buildStorePack(input: StorePackInput): Promise<BuiltStoreP
     artifact: {
       format: "zip",
       root: "package/",
-      specVersion: STOREPACK_SPEC_VERSION,
+      specVersion: CLAWPACK_SPEC_VERSION,
       contentSha256: await sha256Hex(
         textEncoder.encode(
           stableJson(fileManifest.map((file) => ({ path: file.path, sha256: file.sha256 }))),
@@ -305,7 +305,7 @@ export async function buildStorePack(input: StorePackInput): Promise<BuiltStoreP
   const manifestBytes = textEncoder.encode(stableJson(manifest));
   const manifestSha256 = await sha256Hex(manifestBytes);
   const bytes = buildDeterministicPackageZip([
-    { path: STOREPACK_MANIFEST_PATH, bytes: manifestBytes },
+    { path: CLAWPACK_MANIFEST_PATH, bytes: manifestBytes },
     ...publishFiles.map((file) => ({ path: file.path, bytes: file.bytes })),
   ]);
   const sha256 = await sha256Hex(bytes);

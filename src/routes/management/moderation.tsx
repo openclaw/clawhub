@@ -36,7 +36,7 @@ type ModerationQueueItem = {
   runtimeId?: string;
   executesCode?: boolean;
   verificationTier?: string;
-  storepackAvailable?: boolean;
+  clawpackAvailable?: boolean;
   hostTargetKeys: string[];
   environmentFlags: string[];
   scanStatus: PackageScanStatus;
@@ -45,12 +45,12 @@ type ModerationQueueItem = {
     releaseId: Id<"packageReleases">;
     version: string;
     createdAt: number;
-    storepackAvailable: boolean;
-    storepackRevokedAt?: number;
-    storepackSha256?: string;
-    storepackFileCount?: number;
-    storepackSize?: number;
-    storepackManifestSha256?: string;
+    clawpackAvailable: boolean;
+    clawpackRevokedAt?: number;
+    clawpackSha256?: string;
+    clawpackFileCount?: number;
+    clawpackSize?: number;
+    clawpackManifestSha256?: string;
     source: {
       kind: string | null;
       repo: string | null;
@@ -264,7 +264,7 @@ export function PluginModerationRoute() {
                 <ReportField
                   label="Claw Pack"
                   value={formatClawPackState(item)}
-                  tone={item.storepackAvailable ? undefined : "warn"}
+                  tone={item.clawpackAvailable ? undefined : "warn"}
                 />
                 <ReportField label="verification" value={item.verificationTier ?? "unverified"} />
                 <ReportField
@@ -362,12 +362,12 @@ function formatOwner(item: ModerationQueueItem) {
 }
 
 function formatClawPackState(item: ModerationQueueItem) {
-  if (item.latestRelease?.storepackRevokedAt) {
-    return `revoked ${new Date(item.latestRelease.storepackRevokedAt).toLocaleDateString()}`;
+  if (item.latestRelease?.clawpackRevokedAt) {
+    return `revoked ${new Date(item.latestRelease.clawpackRevokedAt).toLocaleDateString()}`;
   }
-  if (item.latestRelease?.storepackAvailable || item.storepackAvailable) {
-    const digest = item.latestRelease?.storepackSha256?.slice(0, 12);
-    const count = item.latestRelease?.storepackFileCount;
+  if (item.latestRelease?.clawpackAvailable || item.clawpackAvailable) {
+    const digest = item.latestRelease?.clawpackSha256?.slice(0, 12);
+    const count = item.latestRelease?.clawpackFileCount;
     return (
       [count ? `${count} files` : null, digest ?? null].filter(Boolean).join(" / ") || "stored"
     );
@@ -409,8 +409,8 @@ function formatLlmReview(item: ModerationQueueItem) {
 }
 
 function formatArtifactDigest(item: ModerationQueueItem) {
-  const digest = item.latestRelease?.storepackSha256?.slice(0, 12);
-  const manifestDigest = item.latestRelease?.storepackManifestSha256?.slice(0, 12);
+  const digest = item.latestRelease?.clawpackSha256?.slice(0, 12);
+  const manifestDigest = item.latestRelease?.clawpackManifestSha256?.slice(0, 12);
   if (!digest && !manifestDigest) return "missing";
   return [digest ? `zip ${digest}` : null, manifestDigest ? `manifest ${manifestDigest}` : null]
     .filter(Boolean)

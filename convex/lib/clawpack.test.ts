@@ -2,19 +2,19 @@
 
 import { unzipSync } from "fflate";
 import { describe, expect, it } from "vitest";
-import { makeKitchenSinkStorePackInput } from "./__fixtures__/storepackKitchenSink";
+import { makeKitchenSinkClawPackInput } from "./__fixtures__/clawpackKitchenSink";
 import {
-  buildStorePack,
-  deriveStorePackEnvironment,
-  deriveStorePackHostTargets,
-  STOREPACK_MANIFEST_PATH,
-} from "./storepack";
+  buildClawPack,
+  deriveClawPackEnvironment,
+  deriveClawPackHostTargets,
+  CLAWPACK_MANIFEST_PATH,
+} from "./clawpack";
 
 const encoder = new TextEncoder();
 const decoder = new TextDecoder();
 
-async function makeStorePack(overrides: Partial<Parameters<typeof buildStorePack>[0]> = {}) {
-  return await buildStorePack({
+async function makeClawPack(overrides: Partial<Parameters<typeof buildClawPack>[0]> = {}) {
+  return await buildClawPack({
     packageId: "pkg_123",
     releaseId: "rel_123",
     name: "@openclaw/kitchen-sink",
@@ -59,10 +59,10 @@ async function makeStorePack(overrides: Partial<Parameters<typeof buildStorePack
 
 describe("clawpack", () => {
   it("builds a deterministic archive with a generated CLAWPACK manifest", async () => {
-    const first = await makeStorePack();
-    const second = await makeStorePack();
+    const first = await makeClawPack();
+    const second = await makeClawPack();
     const unzipped = unzipSync(first.bytes);
-    const manifest = JSON.parse(decoder.decode(unzipped[`package/${STOREPACK_MANIFEST_PATH}`]));
+    const manifest = JSON.parse(decoder.decode(unzipped[`package/${CLAWPACK_MANIFEST_PATH}`]));
 
     expect(Array.from(first.bytes)).toEqual(Array.from(second.bytes));
     expect(first.sha256).toBe(second.sha256);
@@ -95,7 +95,7 @@ describe("clawpack", () => {
   });
 
   it("ignores publisher supplied CLAWPACK.json files", async () => {
-    const built = await makeStorePack({
+    const built = await makeClawPack({
       files: [
         {
           path: "CLAWPACK.json",
@@ -121,7 +121,7 @@ describe("clawpack", () => {
   });
 
   it("normalizes archive separators before packing files", async () => {
-    const built = await makeStorePack({
+    const built = await makeClawPack({
       files: [
         {
           path: "dist\\index.js",
@@ -132,7 +132,7 @@ describe("clawpack", () => {
       ],
     });
     const unzipped = unzipSync(built.bytes);
-    const manifest = JSON.parse(decoder.decode(unzipped[`package/${STOREPACK_MANIFEST_PATH}`]));
+    const manifest = JSON.parse(decoder.decode(unzipped[`package/${CLAWPACK_MANIFEST_PATH}`]));
 
     expect(Object.keys(unzipped).sort()).toEqual([
       "package/CLAWPACK.json",
@@ -144,7 +144,7 @@ describe("clawpack", () => {
   it("rejects archive paths that can escape the package root", async () => {
     for (const path of ["../evil.js", "dist/../../evil.js", "/tmp/evil.js", "C:\\tmp\\evil.js"]) {
       await expect(
-        makeStorePack({
+        makeClawPack({
           files: [
             {
               path,
@@ -160,7 +160,7 @@ describe("clawpack", () => {
 
   it("rejects case-insensitive duplicate archive paths", async () => {
     await expect(
-      makeStorePack({
+      makeClawPack({
         files: [
           {
             path: "dist/index.js",
@@ -180,10 +180,10 @@ describe("clawpack", () => {
   });
 
   it("packs a kitchen-sink OpenClaw plugin with cross-platform signals", async () => {
-    const input = await makeKitchenSinkStorePackInput();
-    const built = await buildStorePack(input);
+    const input = await makeKitchenSinkClawPackInput();
+    const built = await buildClawPack(input);
     const unzipped = unzipSync(built.bytes);
-    const manifest = JSON.parse(decoder.decode(unzipped[`package/${STOREPACK_MANIFEST_PATH}`]));
+    const manifest = JSON.parse(decoder.decode(unzipped[`package/${CLAWPACK_MANIFEST_PATH}`]));
     const packageJson = JSON.parse(decoder.decode(unzipped["package/package.json"]));
 
     expect(Object.keys(unzipped).sort()).toEqual([
@@ -243,7 +243,7 @@ describe("clawpack", () => {
 
   it("derives host targets and environment cues from package capabilities", () => {
     expect(
-      deriveStorePackHostTargets({
+      deriveClawPackHostTargets({
         capabilities: {
           hostTargets: ["Darwin/ARM64", "linux-x64-musl", "bad-target", "linux-x64-musl"],
         },
@@ -271,7 +271,7 @@ describe("clawpack", () => {
     ]);
 
     expect(
-      deriveStorePackEnvironment({
+      deriveClawPackEnvironment({
         capabilities: {
           capabilityTags: ["browser", "desktop", "audio", "service:slack"],
         },

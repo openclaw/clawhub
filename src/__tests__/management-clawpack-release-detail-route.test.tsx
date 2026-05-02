@@ -77,17 +77,17 @@ describe("Claw Pack release detail route", () => {
           { path: "SKILL.md", size: 1200, sha256: "c".repeat(64) },
           { path: "plugin.json", size: 400, sha256: "d".repeat(64) },
         ],
-        storepackStorageId: "storage:1",
-        storepackSha256: "a".repeat(64),
-        storepackSize: 4096,
-        storepackSpecVersion: 1,
-        storepackFormat: "zip",
-        storepackFileCount: 2,
-        storepackManifestSha256: "b".repeat(64),
-        storepackBuiltAt: Date.UTC(2026, 0, 3),
-        storepackBuildVersion: "clawhub-storepack-v1",
-        storepackRevokedAt: null,
-        storepackRevocationReason: null,
+        clawpackStorageId: "storage:1",
+        clawpackSha256: "a".repeat(64),
+        clawpackSize: 4096,
+        clawpackSpecVersion: 1,
+        clawpackFormat: "zip",
+        clawpackFileCount: 2,
+        clawpackManifestSha256: "b".repeat(64),
+        clawpackBuiltAt: Date.UTC(2026, 0, 3),
+        clawpackBuildVersion: "clawhub-clawpack-v1",
+        clawpackRevokedAt: null,
+        clawpackRevocationReason: null,
         hostTargetsSummary: [{ os: "darwin", arch: "arm64" }],
         environmentSummary: { requiresNetwork: true, requiresExternalServices: ["opik"] },
         source: {
@@ -110,7 +110,7 @@ describe("Claw Pack release detail route", () => {
       artifacts: [
         {
           artifactId: "packageReleaseArtifacts:1",
-          kind: "storepack",
+          kind: "clawpack",
           targetKey: null,
           storageId: "storage:1",
           sha256: "a".repeat(64),
@@ -124,7 +124,7 @@ describe("Claw Pack release detail route", () => {
       ],
       failures: [
         {
-          failureId: "packageStorePackBackfillFailures:1",
+          failureId: "packageClawPackBackfillFailures:1",
           error: "previous zip build failed",
           attemptCount: 2,
           firstFailedAt: Date.UTC(2026, 0, 1),
@@ -135,7 +135,7 @@ describe("Claw Pack release detail route", () => {
       ],
       searchIndexRows: [
         {
-          rowId: "packageStorePackSearchIndex:1",
+          rowId: "packageClawPackSearchIndex:1",
           kind: "host-target",
           key: "darwin-arm64",
           updatedAt: Date.UTC(2026, 0, 3),

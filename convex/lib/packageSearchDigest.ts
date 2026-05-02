@@ -56,7 +56,7 @@ export type PackageSearchDigestFields = Pick<Doc<"packages">, (typeof SHARED_KEY
   ownerHandle?: string;
   ownerKind?: "user" | "org";
   verificationTier?: Doc<"packageSearchDigest">["verificationTier"];
-  storepackAvailable?: boolean;
+  clawpackAvailable?: boolean;
   hostTargetKeys?: string[];
   environmentFlags?: string[];
 };
@@ -77,24 +77,24 @@ export function extractPackageDigestFields(pkg: Doc<"packages">): PackageSearchD
   };
 }
 
-export function extractPackageStorePackDigestFields(
+export function extractPackageClawPackDigestFields(
   release: Doc<"packageReleases"> | null | undefined,
-): Pick<PackageSearchDigestFields, "storepackAvailable" | "hostTargetKeys" | "environmentFlags"> {
-  if (!release || release.softDeletedAt || release.storepackRevokedAt) {
+): Pick<PackageSearchDigestFields, "clawpackAvailable" | "hostTargetKeys" | "environmentFlags"> {
+  if (!release || release.softDeletedAt || release.clawpackRevokedAt) {
     return {
-      storepackAvailable: false,
+      clawpackAvailable: false,
       hostTargetKeys: [],
       environmentFlags: [],
     };
   }
   return {
-    storepackAvailable: Boolean(release.storepackStorageId),
-    hostTargetKeys: getPackageStorePackHostTargetKeys(release),
-    environmentFlags: getPackageStorePackEnvironmentFlags(release),
+    clawpackAvailable: Boolean(release.clawpackStorageId),
+    hostTargetKeys: getPackageClawPackHostTargetKeys(release),
+    environmentFlags: getPackageClawPackEnvironmentFlags(release),
   };
 }
 
-export function getPackageStorePackHostTargetKeys(release: Doc<"packageReleases">) {
+export function getPackageClawPackHostTargetKeys(release: Doc<"packageReleases">) {
   return [
     ...new Set(
       (release.hostTargetsSummary ?? []).map((target) =>
@@ -104,7 +104,7 @@ export function getPackageStorePackHostTargetKeys(release: Doc<"packageReleases"
   ];
 }
 
-export function getPackageStorePackEnvironmentFlags(release: Doc<"packageReleases">) {
+export function getPackageClawPackEnvironmentFlags(release: Doc<"packageReleases">) {
   const environment = release.environmentSummary;
   const flags = [
     environment?.requiresLocalDesktop ? "desktop" : null,

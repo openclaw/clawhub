@@ -343,7 +343,7 @@ function makeDigestCtx(options: {
     isDone: boolean;
     continueCursor: string;
   }>;
-  storePackPages?: Array<{
+  clawPackPages?: Array<{
     page: Array<Record<string, unknown>>;
     isDone: boolean;
     continueCursor: string;
@@ -380,7 +380,7 @@ function makeDigestCtx(options: {
 
   setPages("packageSearchDigest", options.pages ?? []);
   setPages("packageCapabilitySearchDigest", options.capabilityPages ?? []);
-  setPages("packageStorePackSearchIndex", options.storePackPages ?? []);
+  setPages("packageClawPackSearchIndex", options.clawPackPages ?? []);
 
   const paginate = vi.fn();
   const paginateForTable = (table: string) =>
@@ -563,7 +563,7 @@ function makeDigestCtx(options: {
               },
             };
           }
-          if (table === "packageStorePackSearchIndex") {
+          if (table === "packageClawPackSearchIndex") {
             tableNames.push(table);
             return {
               withIndex: (indexName: string) => withIndex(table, indexName),
@@ -1221,18 +1221,18 @@ describe("packages public queries", () => {
     expect(indexNames).toEqual(["by_active_executes_updated"]);
   });
 
-  it("uses the StorePack index for host-target public listings", async () => {
+  it("uses the ClawPack index for host-target public listings", async () => {
     const digest = makeDigest("darwin-demo", {
       packageId: "packages:darwin-demo",
-      storepackAvailable: true,
+      clawpackAvailable: true,
       hostTargetKeys: ["darwin-arm64"],
     });
     const { ctx, indexNames, tableNames } = makeDigestCtx({
-      storePackPages: [
+      clawPackPages: [
         {
           page: [
             {
-              _id: "packageStorePackSearchIndex:1",
+              _id: "packageClawPackSearchIndex:1",
               packageId: "packages:darwin-demo",
               releaseId: "packageReleases:darwin-demo",
               kind: "host-target",
@@ -1254,7 +1254,7 @@ describe("packages public queries", () => {
     });
 
     expect(result.page.map((entry) => entry.name)).toEqual(["darwin-demo"]);
-    expect(tableNames).toEqual(["packageStorePackSearchIndex", "packageSearchDigest"]);
+    expect(tableNames).toEqual(["packageClawPackSearchIndex", "packageSearchDigest"]);
     expect(indexNames).toEqual(["by_kind_key_updated"]);
   });
 
@@ -2512,7 +2512,7 @@ describe("packages public queries", () => {
       },
       storage: {
         get: vi.fn(),
-        store: vi.fn().mockResolvedValue("storage:storepack"),
+        store: vi.fn().mockResolvedValue("storage:clawpack"),
       },
     };
 
@@ -2595,7 +2595,7 @@ describe("packages public queries", () => {
       },
       storage: {
         get: vi.fn(),
-        store: vi.fn().mockResolvedValue("storage:storepack"),
+        store: vi.fn().mockResolvedValue("storage:clawpack"),
       },
     };
 
@@ -2741,7 +2741,7 @@ describe("packages public queries", () => {
           const content = files.get(storageId);
           return content ? new Blob([content]) : null;
         }),
-        store: vi.fn().mockResolvedValue("storage:storepack"),
+        store: vi.fn().mockResolvedValue("storage:clawpack"),
       },
     };
 

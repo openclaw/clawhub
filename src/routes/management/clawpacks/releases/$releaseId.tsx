@@ -13,7 +13,7 @@ import { useAuthStatus } from "../../../../lib/useAuthStatus";
 
 const packageApiRefs = api as unknown as {
   packages: {
-    getStorePackReleaseForStaff: unknown;
+    getClawPackReleaseForStaff: unknown;
   };
 };
 
@@ -43,17 +43,17 @@ type ClawPackReleaseDetail = {
     createdAt: number;
     fileCount: number;
     fileSample: Array<{ path: string; size: number; sha256: string }>;
-    storepackStorageId: Id<"_storage"> | null;
-    storepackSha256: string | null;
-    storepackSize: number | null;
-    storepackSpecVersion: number | null;
-    storepackFormat: string | null;
-    storepackFileCount: number | null;
-    storepackManifestSha256: string | null;
-    storepackBuiltAt: number | null;
-    storepackBuildVersion: string | null;
-    storepackRevokedAt: number | null;
-    storepackRevocationReason: string | null;
+    clawpackStorageId: Id<"_storage"> | null;
+    clawpackSha256: string | null;
+    clawpackSize: number | null;
+    clawpackSpecVersion: number | null;
+    clawpackFormat: string | null;
+    clawpackFileCount: number | null;
+    clawpackManifestSha256: string | null;
+    clawpackBuiltAt: number | null;
+    clawpackBuildVersion: string | null;
+    clawpackRevokedAt: number | null;
+    clawpackRevocationReason: string | null;
     hostTargetsSummary: Array<{ os?: string; arch?: string; libc?: string }>;
     environmentSummary: {
       requiresLocalDesktop?: boolean;
@@ -87,7 +87,7 @@ type ClawPackReleaseDetail = {
     revocationReason: string | null;
   }>;
   failures: Array<{
-    failureId: Id<"packageStorePackBackfillFailures">;
+    failureId: Id<"packageClawPackBackfillFailures">;
     error: string;
     attemptCount: number;
     firstFailedAt: number;
@@ -96,7 +96,7 @@ type ClawPackReleaseDetail = {
     resolvedAt: number | null;
   }>;
   searchIndexRows: Array<{
-    rowId: Id<"packageStorePackSearchIndex">;
+    rowId: Id<"packageClawPackSearchIndex">;
     kind: string;
     key: string;
     updatedAt: number;
@@ -117,7 +117,7 @@ export function ClawPackReleaseDetailPage(props: { releaseId: Id<"packageRelease
   const { me } = useAuthStatus();
   const staff = isModerator(me);
   const detail = useQuery(
-    packageApiRefs.packages.getStorePackReleaseForStaff as never,
+    packageApiRefs.packages.getClawPackReleaseForStaff as never,
     staff ? ({ releaseId: props.releaseId } as never) : "skip",
   ) as ClawPackReleaseDetail | undefined;
 
@@ -170,8 +170,8 @@ export function ClawPackReleaseDetailPage(props: { releaseId: Id<"packageRelease
 function ClawPackReleaseDetailBody(props: { detail: Exclude<ClawPackReleaseDetail, null> }) {
   const { detail } = props;
   const lifecycle = deriveClawPackLifecycle({
-    available: Boolean(detail.release.storepackStorageId),
-    revokedAt: detail.release.storepackRevokedAt ?? undefined,
+    available: Boolean(detail.release.clawpackStorageId),
+    revokedAt: detail.release.clawpackRevokedAt ?? undefined,
     buildError: detail.failures[0]?.error,
   });
   return (
@@ -219,40 +219,40 @@ function ClawPackReleaseDetailBody(props: { detail: Exclude<ClawPackReleaseDetai
             <ReportField
               label="built"
               value={
-                detail.release.storepackBuiltAt
-                  ? formatTimestamp(detail.release.storepackBuiltAt)
+                detail.release.clawpackBuiltAt
+                  ? formatTimestamp(detail.release.clawpackBuiltAt)
                   : "missing"
               }
             />
-            <ReportField label="format" value={detail.release.storepackFormat ?? "missing"} />
+            <ReportField label="format" value={detail.release.clawpackFormat ?? "missing"} />
             <ReportField
               label="zip digest"
-              value={detail.release.storepackSha256 ?? "missing"}
-              mono={Boolean(detail.release.storepackSha256)}
+              value={detail.release.clawpackSha256 ?? "missing"}
+              mono={Boolean(detail.release.clawpackSha256)}
             />
             <ReportField
               label="manifest digest"
-              value={detail.release.storepackManifestSha256 ?? "missing"}
-              mono={Boolean(detail.release.storepackManifestSha256)}
+              value={detail.release.clawpackManifestSha256 ?? "missing"}
+              mono={Boolean(detail.release.clawpackManifestSha256)}
             />
             <ReportField
               label="size"
               value={
-                detail.release.storepackSize
-                  ? formatBytesCompact(detail.release.storepackSize)
+                detail.release.clawpackSize
+                  ? formatBytesCompact(detail.release.clawpackSize)
                   : "missing"
               }
             />
             <ReportField
               label="files"
-              value={detail.release.storepackFileCount?.toString() ?? "missing"}
+              value={detail.release.clawpackFileCount?.toString() ?? "missing"}
             />
             <ReportField
               label="revocation"
               value={
-                detail.release.storepackRevokedAt
-                  ? `${formatTimestamp(detail.release.storepackRevokedAt)} - ${
-                      detail.release.storepackRevocationReason ?? "no reason"
+                detail.release.clawpackRevokedAt
+                  ? `${formatTimestamp(detail.release.clawpackRevokedAt)} - ${
+                      detail.release.clawpackRevocationReason ?? "no reason"
                     }`
                   : "none"
               }

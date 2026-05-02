@@ -1,14 +1,14 @@
 ---
-summary: "Staff runbook for StorePack migration, moderation, retry, and revocation."
+summary: "Staff runbook for ClawPack migration, moderation, retry, and revocation."
 read_when:
-  - Operating StorePack backfills
+  - Operating ClawPack backfills
   - Moderating plugin artifacts
   - Debugging failed package artifact builds
 ---
 
-# StorePack Operations
+# ClawPack Operations
 
-StorePack operations are staff-only surfaces for migration, moderation,
+ClawPack operations are staff-only surfaces for migration, moderation,
 artifact recovery, and revocation. They exist so operators do not have to edit
 Convex documents manually.
 
@@ -16,7 +16,7 @@ Current management entry points:
 
 ```text
 /management
-/management/storepacks
+/management/clawpacks
 /management/moderation
 /management/migrations
 ```
@@ -26,25 +26,25 @@ not a generic broken page.
 
 ## Roles
 
-- moderators can review plugin risk and revoke StorePack artifacts
+- moderators can review plugin risk and revoke ClawPack artifacts
 - admins can run migration and backfill operations
 - normal publishers can publish their own plugins but cannot mutate staff state
 
 Live Convex mutations and deploys should be confirmed before running in a
 shared or production deployment.
 
-## StorePack Ops Dashboard
+## ClawPack Ops Dashboard
 
 Use:
 
 ```text
-/management/storepacks
+/management/clawpacks
 ```
 
 The dashboard should answer:
 
 - how many plugin releases exist
-- how many have StorePack artifacts
+- how many have ClawPack artifacts
 - how many are missing artifacts
 - how many artifacts are revoked
 - how many builds failed
@@ -56,8 +56,8 @@ Admin actions:
 - preview migration candidates without writing
 - create persistent migration runs
 - execute one bounded batch at a time
-- build missing StorePack artifacts in bounded repair batches
-- rebuild StorePack host/environment index rows
+- build missing ClawPack artifacts in bounded repair batches
+- rebuild ClawPack host/environment index rows
 - retry failed builds
 - inspect failed release ids and reason codes
 
@@ -70,50 +70,50 @@ operation that makes a partial migration silently look complete.
 Status:
 
 ```bash
-clawhub package storepack-admin status --json
+clawhub package clawpack-admin status --json
 ```
 
 Preview a coordinated migration:
 
 ```bash
-clawhub package storepack-admin dry-run --operation artifact-backfill --limit 25
+clawhub package clawpack-admin dry-run --operation artifact-backfill --limit 25
 ```
 
 Create and continue a durable run:
 
 ```bash
-clawhub package storepack-admin create-run --operation artifact-backfill --limit 25
-clawhub package storepack-admin continue-run <run-id>
+clawhub package clawpack-admin create-run --operation artifact-backfill --limit 25
+clawhub package clawpack-admin continue-run <run-id>
 ```
 
 List run history:
 
 ```bash
-clawhub package storepack-admin runs --status failed --json
+clawhub package clawpack-admin runs --status failed --json
 ```
 
 Direct repair for missing artifacts:
 
 ```bash
-clawhub package storepack-admin backfill --limit 25
+clawhub package clawpack-admin backfill --limit 25
 ```
 
 Direct search-index repair:
 
 ```bash
-clawhub package storepack-admin index-backfill --limit 100
+clawhub package clawpack-admin index-backfill --limit 100
 ```
 
 Direct failure retry:
 
 ```bash
-clawhub package storepack-admin retry-failures --limit 25
+clawhub package clawpack-admin retry-failures --limit 25
 ```
 
 Revoke an artifact:
 
 ```bash
-clawhub package storepack-admin revoke <name> <version> --reason "reason code or note"
+clawhub package clawpack-admin revoke <name> <version> --reason "reason code or note"
 ```
 
 Use `--json` for automation and audit capture. For production-sized work, prefer
@@ -133,13 +133,13 @@ Moderators should see plugin releases by risk and operational state:
 - pending review
 - suspicious scan
 - malicious scan
-- missing StorePack
-- failed StorePack build
+- missing ClawPack
+- failed ClawPack build
 - revoked
 - official review
 - metadata incomplete
 
-The queue should show source facts, StorePack digest, scan summaries, LLM/static
+The queue should show source facts, ClawPack digest, scan summaries, LLM/static
 verdicts, VirusTotal status where present, and latest release state.
 
 Destructive actions require a reason. Revocation reason should be visible to
@@ -158,7 +158,7 @@ Revocation must update:
 - revoking user id
 - reason text
 
-All StorePack download paths must block revoked artifacts.
+All ClawPack download paths must block revoked artifacts.
 
 ## Retry and Recovery
 
@@ -202,4 +202,4 @@ Before production operations:
 5. Confirm before any write action.
 6. Recheck status after the batch.
 
-Do not run StorePack migrations as a single unbounded backfill.
+Do not run ClawPack migrations as a single unbounded backfill.

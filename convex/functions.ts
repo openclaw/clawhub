@@ -17,7 +17,7 @@ import type { MutationCtx } from "./_generated/server";
 import {
   deletePackageSearchDigests,
   extractPackageDigestFields,
-  extractPackageStorePackDigestFields,
+  extractPackageClawPackDigestFields,
   upsertPackageSearchDigest,
 } from "./lib/packageSearchDigest";
 import { getOwnerPublisher } from "./lib/publishers";
@@ -131,7 +131,7 @@ async function syncPackageSearchDigest(
   });
   await upsertPackageSearchDigest(ctx, {
     ...fields,
-    ...extractPackageStorePackDigestFields(latestRelease),
+    ...extractPackageClawPackDigestFields(latestRelease),
     latestVersion:
       latestRelease && !latestRelease.softDeletedAt ? latestRelease.version : undefined,
     ownerHandle: owner?.handle ?? "",
@@ -155,10 +155,10 @@ function packageReleaseDigestFieldsChanged(
 ) {
   return (
     oldDoc.softDeletedAt !== newDoc.softDeletedAt ||
-    oldDoc.storepackStorageId !== newDoc.storepackStorageId ||
-    oldDoc.storepackSha256 !== newDoc.storepackSha256 ||
-    oldDoc.storepackBuiltAt !== newDoc.storepackBuiltAt ||
-    oldDoc.storepackRevokedAt !== newDoc.storepackRevokedAt ||
+    oldDoc.clawpackStorageId !== newDoc.clawpackStorageId ||
+    oldDoc.clawpackSha256 !== newDoc.clawpackSha256 ||
+    oldDoc.clawpackBuiltAt !== newDoc.clawpackBuiltAt ||
+    oldDoc.clawpackRevokedAt !== newDoc.clawpackRevokedAt ||
     JSON.stringify(oldDoc.hostTargetsSummary ?? []) !==
       JSON.stringify(newDoc.hostTargetsSummary ?? []) ||
     JSON.stringify(oldDoc.environmentSummary ?? null) !==

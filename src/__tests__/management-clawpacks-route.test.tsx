@@ -78,7 +78,7 @@ describe("Claw Pack management route", () => {
       ],
       failureSample: [
         {
-          failureId: "packageStorePackBackfillFailures:1",
+          failureId: "packageClawPackBackfillFailures:1",
           releaseId: "packageReleases:2",
           packageId: "packages:2",
           name: "broken-plugin",
@@ -92,14 +92,14 @@ describe("Claw Pack management route", () => {
       ],
       missingSampleSize: 1,
       failureSampleSize: 1,
-      generatedStorePackSampleSize: 3,
-      generatedStorePackBytes: 4096,
+      generatedClawPackSampleSize: 3,
+      generatedClawPackBytes: 4096,
       sampleLimit: 25,
     };
     const migrationRunList = {
       items: [
         {
-          _id: "storePackMigrationRuns:1",
+          _id: "clawPackMigrationRuns:1",
           actorUserId: "users:admin",
           operation: "failure-retry",
           status: "pending",
@@ -194,7 +194,7 @@ describe("Claw Pack management route", () => {
 
   it("confirms and creates migration runs for admins", async () => {
     startMigrationRun.mockResolvedValueOnce({
-      _id: "storePackMigrationRuns:2",
+      _id: "clawPackMigrationRuns:2",
       operation: "artifact-backfill",
       status: "pending",
     });
@@ -208,13 +208,13 @@ describe("Claw Pack management route", () => {
       expect.stringContaining("Create a artifact backfill migration run"),
     );
     expect(startMigrationRun).toHaveBeenCalledWith({ operation: "artifact-backfill", limit: 10 });
-    expect(await screen.findByText(/created storePackMigrationRuns:2/i)).toBeTruthy();
+    expect(await screen.findByText(/created clawPackMigrationRuns:2/i)).toBeTruthy();
   });
 
   it("confirms and continues migration run batches for admins", async () => {
     continueMigrationRun.mockResolvedValueOnce({
       run: {
-        _id: "storePackMigrationRuns:1",
+        _id: "clawPackMigrationRuns:1",
         operation: "failure-retry",
         status: "completed",
       },
@@ -227,7 +227,7 @@ describe("Claw Pack management route", () => {
     fireEvent.click(screen.getByRole("button", { name: "Run next batch" }));
 
     expect(window.confirm).toHaveBeenCalledWith(expect.stringContaining("Run next failure retry"));
-    expect(continueMigrationRun).toHaveBeenCalledWith({ runId: "storePackMigrationRuns:1" });
+    expect(continueMigrationRun).toHaveBeenCalledWith({ runId: "clawPackMigrationRuns:1" });
     expect(await screen.findByText(/processed 1 - succeeded 1 - failed 0/i)).toBeTruthy();
   });
 });

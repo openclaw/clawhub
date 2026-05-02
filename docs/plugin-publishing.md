@@ -1,5 +1,5 @@
 ---
-summary: "Publisher workflow for code-plugin and bundle-plugin StorePack releases."
+summary: "Publisher workflow for code-plugin and bundle-plugin ClawPack releases."
 read_when:
   - Publishing plugin packages
   - Updating the publish UI
@@ -10,7 +10,7 @@ read_when:
 
 ClawHub supports plugin package publishing for `code-plugin` and
 `bundle-plugin` families. Publishing creates a package release and, when source
-validation passes, a stored StorePack artifact.
+validation passes, a stored ClawPack artifact.
 
 This is ClawHub-only. It does not remove bundled plugins from OpenClaw and does
 not mean OpenClaw can install the artifact yet.
@@ -31,7 +31,7 @@ The publish page accepts:
 - folder upload
 
 The page expands package source in the browser, normalizes paths, ignores local
-junk, extracts package metadata, and previews the StorePack manifest ClawHub
+junk, extracts package metadata, and previews the ClawPack manifest ClawHub
 will generate.
 
 Publisher checks should make these facts obvious before publish:
@@ -128,7 +128,7 @@ After publish, ClawHub should expose:
 
 - package URL
 - release URL
-- StorePack digest when available
+- ClawPack digest when available
 - moderation state
 - scan state
 - next action for the publisher
@@ -145,7 +145,7 @@ Published is not the same thing as publicly installable.
 - invalid version
 - unsupported package family
 - unknown source attribution
-- empty StorePack file list
+- empty ClawPack file list
 - storage failure after validation
 
 Errors should include file or field context. Vague "invalid package" messages

@@ -26,6 +26,7 @@ import {
   requireUser,
   requireUserFromAction,
 } from "./lib/access";
+import { buildClawPack, sha256Hex, toArrayBuffer } from "./lib/clawpack";
 import { requireGitHubAccountAge } from "./lib/githubAccount";
 import { normalizeGitHubRepository } from "./lib/githubActionsOidc";
 import {
@@ -40,8 +41,8 @@ import {
   summarizePackageForSearch,
 } from "./lib/packageRegistry";
 import {
-  getPackageStorePackEnvironmentFlags,
-  getPackageStorePackHostTargetKeys,
+  getPackageClawPackEnvironmentFlags,
+  getPackageClawPackHostTargetKeys,
 } from "./lib/packageSearchDigest";
 import { isPackageBlockedFromPublic, resolvePackageReleaseScanStatus } from "./lib/packageSecurity";
 import { toPublicPublisher } from "./lib/public";
@@ -59,7 +60,6 @@ import {
 import { tokenize } from "./lib/searchText";
 import { hashSkillFiles } from "./lib/skills";
 import { runStaticPublishScan } from "./lib/staticPublishScan";
-import { buildStorePack, sha256Hex, toArrayBuffer } from "./lib/storepack";
 import { getLatestPackageRescanTarget, insertPackageRescanRequest } from "./model/packages/rescans";
 import {
   assertCanRequestRescan,
@@ -104,12 +104,12 @@ const packageModerationQueueStatusArgValidator = v.union(
   v.literal("pending"),
   v.literal("not-run"),
 );
-const storePackMigrationRunOperationValidator = v.union(
+const clawPackMigrationRunOperationValidator = v.union(
   v.literal("artifact-backfill"),
   v.literal("failure-retry"),
   v.literal("search-index-backfill"),
 );
-const storePackMigrationRunStatusValidator = v.union(
+const clawPackMigrationRunStatusValidator = v.union(
   v.literal("pending"),
   v.literal("running"),
   v.literal("completed"),
@@ -123,7 +123,7 @@ const PACKAGE_MODERATION_REVIEW_STATUSES = [
 ] as const;
 const PACKAGE_MODERATION_COUNT_STATUSES = [...PACKAGE_MODERATION_REVIEW_STATUSES, "clean"] as const;
 const PACKAGE_MODERATION_FAMILIES = ["code-plugin", "bundle-plugin"] as const;
-const REQUIRED_STOREPACK_HOST_TARGETS = ["darwin-arm64", "linux-x64-glibc", "win32-x64"] as const;
+const REQUIRED_CLAWPACK_HOST_TARGETS = ["darwin-arm64", "linux-x64-glibc", "win32-x64"] as const;
 
 function packageReleaseSourceSummary(source: unknown) {
   if (!source || typeof source !== "object") return null;
@@ -153,7 +153,7 @@ const OFFICIAL_OPENCLAW_PLUGIN_MIGRATION_TARGETS = [
     publisherHandle: "apify",
     sourceRepo: "apify/apify-openclaw-plugin",
     sourcePath: ".",
-    requiredHostTargets: REQUIRED_STOREPACK_HOST_TARGETS,
+    requiredHostTargets: REQUIRED_CLAWPACK_HOST_TARGETS,
   },
   {
     bundledPluginId: "codex-app-server",
@@ -162,7 +162,7 @@ const OFFICIAL_OPENCLAW_PLUGIN_MIGRATION_TARGETS = [
     publisherHandle: "pwrdrvr",
     sourceRepo: "pwrdrvr/openclaw-codex-app-server",
     sourcePath: ".",
-    requiredHostTargets: REQUIRED_STOREPACK_HOST_TARGETS,
+    requiredHostTargets: REQUIRED_CLAWPACK_HOST_TARGETS,
   },
   {
     bundledPluginId: "dingtalk",
@@ -171,7 +171,7 @@ const OFFICIAL_OPENCLAW_PLUGIN_MIGRATION_TARGETS = [
     publisherHandle: "largezhou",
     sourceRepo: "largezhou/openclaw-dingtalk",
     sourcePath: ".",
-    requiredHostTargets: REQUIRED_STOREPACK_HOST_TARGETS,
+    requiredHostTargets: REQUIRED_CLAWPACK_HOST_TARGETS,
   },
   {
     bundledPluginId: "opik",
@@ -180,7 +180,7 @@ const OFFICIAL_OPENCLAW_PLUGIN_MIGRATION_TARGETS = [
     publisherHandle: "opik",
     sourceRepo: "comet-ml/opik-openclaw",
     sourcePath: ".",
-    requiredHostTargets: REQUIRED_STOREPACK_HOST_TARGETS,
+    requiredHostTargets: REQUIRED_CLAWPACK_HOST_TARGETS,
   },
   {
     bundledPluginId: "qqbot",
@@ -189,7 +189,7 @@ const OFFICIAL_OPENCLAW_PLUGIN_MIGRATION_TARGETS = [
     publisherHandle: "tencent-connect",
     sourceRepo: "tencent-connect/openclaw-qqbot",
     sourcePath: ".",
-    requiredHostTargets: REQUIRED_STOREPACK_HOST_TARGETS,
+    requiredHostTargets: REQUIRED_CLAWPACK_HOST_TARGETS,
   },
   {
     bundledPluginId: "wecom",
@@ -198,7 +198,7 @@ const OFFICIAL_OPENCLAW_PLUGIN_MIGRATION_TARGETS = [
     publisherHandle: "wecom",
     sourceRepo: "WecomTeam/wecom-openclaw-plugin",
     sourcePath: ".",
-    requiredHostTargets: REQUIRED_STOREPACK_HOST_TARGETS,
+    requiredHostTargets: REQUIRED_CLAWPACK_HOST_TARGETS,
   },
 ] as const;
 const internalRefs = internal as unknown as {
@@ -206,20 +206,20 @@ const internalRefs = internal as unknown as {
     evaluatePackageReleaseWithLlm: unknown;
   };
   packages: {
-    attachStorePackArtifactInternal: unknown;
-    backfillStorePackArtifactsInternal: unknown;
+    attachClawPackArtifactInternal: unknown;
+    backfillClawPackArtifactsInternal: unknown;
     backfillPackageReleaseScansInternal: unknown;
-    revokeStorePackArtifactForStaffInternal: unknown;
-    getStorePackBackfillBatchInternal: unknown;
-    getStorePackBackfillFailureBatchInternal: unknown;
-    getStorePackSearchIndexBackfillBatchInternal: unknown;
-    syncStorePackSearchIndexForReleaseInternal: unknown;
-    backfillStorePackSearchIndexInternal: unknown;
-    retryStorePackBackfillFailuresInternal: unknown;
-    getStorePackMigrationRunInternal: unknown;
-    patchStorePackMigrationRunInternal: unknown;
+    revokeClawPackArtifactForStaffInternal: unknown;
+    getClawPackBackfillBatchInternal: unknown;
+    getClawPackBackfillFailureBatchInternal: unknown;
+    getClawPackSearchIndexBackfillBatchInternal: unknown;
+    syncClawPackSearchIndexForReleaseInternal: unknown;
+    backfillClawPackSearchIndexInternal: unknown;
+    retryClawPackBackfillFailuresInternal: unknown;
+    getClawPackMigrationRunInternal: unknown;
+    patchClawPackMigrationRunInternal: unknown;
     scanPackageReleaseStaticallyInternal: unknown;
-    recordStorePackBackfillAttemptInternal: unknown;
+    recordClawPackBackfillAttemptInternal: unknown;
     insertReleaseInternal: unknown;
     getPackageByNameInternal: unknown;
     getTrustedPublisherByPackageIdInternal: unknown;
@@ -296,7 +296,7 @@ type PublicPackageListItem = {
   capabilityTags: string[];
   executesCode: boolean;
   verificationTier: PackageVerificationTier | null;
-  storepackAvailable: boolean;
+  clawpackAvailable: boolean;
   hostTargetKeys: string[];
   environmentFlags: string[];
 };
@@ -353,7 +353,7 @@ type PackageDigestLike = Pick<
   | "executesCode"
   | "verificationTier"
   | "scanStatus"
-  | "storepackAvailable"
+  | "clawpackAvailable"
   | "hostTargetKeys"
   | "environmentFlags"
   | "softDeletedAt"
@@ -367,34 +367,34 @@ type PublicPageCursorState = {
   done: boolean;
 };
 
-type StorePackIndexFilter = {
+type ClawPackIndexFilter = {
   kind: "host-target" | "environment";
   key: string;
 };
-const STOREPACK_MIGRATION_RUN_STATUSES = ["pending", "running", "completed", "failed"] as const;
-const STOREPACK_MIGRATION_RUN_OPERATIONS = [
+const CLAWPACK_MIGRATION_RUN_STATUSES = ["pending", "running", "completed", "failed"] as const;
+const CLAWPACK_MIGRATION_RUN_OPERATIONS = [
   "artifact-backfill",
   "failure-retry",
   "search-index-backfill",
 ] as const;
-type StorePackMigrationRunStatus = (typeof STOREPACK_MIGRATION_RUN_STATUSES)[number];
-type StorePackMigrationRunOperation = (typeof STOREPACK_MIGRATION_RUN_OPERATIONS)[number];
-type StorePackMigrationBatchResultRow = {
+type ClawPackMigrationRunStatus = (typeof CLAWPACK_MIGRATION_RUN_STATUSES)[number];
+type ClawPackMigrationRunOperation = (typeof CLAWPACK_MIGRATION_RUN_OPERATIONS)[number];
+type ClawPackMigrationBatchResultRow = {
   ok: boolean;
   size?: number;
   error?: string;
   result?: { skipped?: boolean; reason?: string };
 };
-type StorePackMigrationBatchResult = {
+type ClawPackMigrationBatchResult = {
   processed?: number;
   succeeded?: number;
   failed?: number;
   skipped?: number;
-  results?: StorePackMigrationBatchResultRow[];
+  results?: ClawPackMigrationBatchResultRow[];
   continueCursor?: string | null;
   isDone?: boolean;
 };
-type StorePackBackfillBatchEntry = {
+type ClawPackBackfillBatchEntry = {
   package: {
     _id: Id<"packages">;
     name: string;
@@ -487,8 +487,8 @@ type DashboardPackageListItem = {
     vtStatus: string | null;
     llmStatus: string | null;
     staticScanStatus: "clean" | "suspicious" | "malicious" | null;
-    storepackAvailable: boolean;
-    storepackSha256: string | null;
+    clawpackAvailable: boolean;
+    clawpackSha256: string | null;
     hostTargets: Doc<"packageReleases">["hostTargetsSummary"] | null;
     environment: Doc<"packageReleases">["environmentSummary"] | null;
   } | null;
@@ -665,7 +665,7 @@ function toPublicPackageListItem(digest: PackageDigestLike): PublicPackageListIt
     capabilityTags: digest.capabilityTags ?? [],
     executesCode: digest.executesCode ?? false,
     verificationTier: digest.verificationTier ?? null,
-    storepackAvailable: digest.storepackAvailable ?? false,
+    clawpackAvailable: digest.clawpackAvailable ?? false,
     hostTargetKeys: digest.hostTargetKeys ?? [],
     environmentFlags: digest.environmentFlags ?? [],
   };
@@ -711,10 +711,10 @@ async function toDashboardPackageListItem(
             vtStatus: latestRelease.vtAnalysis?.status ?? null,
             llmStatus: latestRelease.llmAnalysis?.status ?? null,
             staticScanStatus: latestRelease.staticScan?.status ?? null,
-            storepackAvailable: Boolean(
-              latestRelease.storepackStorageId && !latestRelease.storepackRevokedAt,
+            clawpackAvailable: Boolean(
+              latestRelease.clawpackStorageId && !latestRelease.clawpackRevokedAt,
             ),
-            storepackSha256: latestRelease.storepackSha256 ?? null,
+            clawpackSha256: latestRelease.clawpackSha256 ?? null,
             hostTargets: latestRelease.hostTargetsSummary ?? null,
             environment: latestRelease.environmentSummary ?? null,
           }
@@ -722,13 +722,13 @@ async function toDashboardPackageListItem(
   };
 }
 
-async function replaceStorePackSearchIndexRows(
+async function replaceClawPackSearchIndexRows(
   ctx: MutationCtx,
   pkg: Doc<"packages">,
   release: Doc<"packageReleases">,
 ) {
   const existing = await ctx.db
-    .query("packageStorePackSearchIndex")
+    .query("packageClawPackSearchIndex")
     .withIndex("by_release", (q) => q.eq("releaseId", release._id))
     .collect();
   for (const row of existing) {
@@ -737,25 +737,25 @@ async function replaceStorePackSearchIndexRows(
   if (
     pkg.softDeletedAt ||
     release.softDeletedAt ||
-    release.storepackRevokedAt ||
-    !release.storepackStorageId
+    release.clawpackRevokedAt ||
+    !release.clawpackStorageId
   ) {
     return;
   }
 
   const now = Date.now();
   const rows = [
-    ...getPackageStorePackHostTargetKeys(release).map((key) => ({
+    ...getPackageClawPackHostTargetKeys(release).map((key) => ({
       kind: "host-target" as const,
       key,
     })),
-    ...getPackageStorePackEnvironmentFlags(release).map((key) => ({
+    ...getPackageClawPackEnvironmentFlags(release).map((key) => ({
       kind: "environment" as const,
       key,
     })),
   ];
   for (const row of rows) {
-    await ctx.db.insert("packageStorePackSearchIndex", {
+    await ctx.db.insert("packageClawPackSearchIndex", {
       packageId: pkg._id,
       releaseId: release._id,
       kind: row.kind,
@@ -1455,7 +1455,7 @@ export const listModerationQueueForStaff = query({
         runtimeId: digest.runtimeId,
         executesCode: digest.executesCode,
         verificationTier: digest.verificationTier,
-        storepackAvailable: digest.storepackAvailable,
+        clawpackAvailable: digest.clawpackAvailable,
         hostTargetKeys: digest.hostTargetKeys ?? [],
         environmentFlags: digest.environmentFlags ?? [],
         scanStatus: digest.scanStatus ?? "not-run",
@@ -1467,12 +1467,12 @@ export const listModerationQueueForStaff = query({
                 releaseId: latestRelease._id,
                 version: latestRelease.version,
                 createdAt: latestRelease.createdAt,
-                storepackAvailable: Boolean(latestRelease.storepackStorageId),
-                storepackRevokedAt: latestRelease.storepackRevokedAt,
-                storepackSha256: latestRelease.storepackSha256,
-                storepackFileCount: latestRelease.storepackFileCount,
-                storepackSize: latestRelease.storepackSize,
-                storepackManifestSha256: latestRelease.storepackManifestSha256,
+                clawpackAvailable: Boolean(latestRelease.clawpackStorageId),
+                clawpackRevokedAt: latestRelease.clawpackRevokedAt,
+                clawpackSha256: latestRelease.clawpackSha256,
+                clawpackFileCount: latestRelease.clawpackFileCount,
+                clawpackSize: latestRelease.clawpackSize,
+                clawpackManifestSha256: latestRelease.clawpackManifestSha256,
                 source: packageReleaseSourceSummary(latestRelease.source),
                 verificationScanStatus: latestRelease.verification?.scanStatus ?? null,
                 vtStatus: latestRelease.vtAnalysis?.status ?? null,
@@ -1568,8 +1568,8 @@ async function buildOfficialMigrationReadiness(ctx: QueryCtx) {
     );
     const latestRelease = pkg?.latestReleaseId ? await ctx.db.get(pkg.latestReleaseId) : null;
     const release = latestRelease && !latestRelease.softDeletedAt ? latestRelease : null;
-    const hostTargetKeys = release ? getPackageStorePackHostTargetKeys(release) : [];
-    const environmentFlags = release ? getPackageStorePackEnvironmentFlags(release) : [];
+    const hostTargetKeys = release ? getPackageClawPackHostTargetKeys(release) : [];
+    const environmentFlags = release ? getPackageClawPackEnvironmentFlags(release) : [];
     const missingHostTargets = target.requiredHostTargets.filter(
       (required) => !hostTargetKeys.includes(required),
     );
@@ -1590,8 +1590,8 @@ async function buildOfficialMigrationReadiness(ctx: QueryCtx) {
       pkg ? null : "package-missing",
       pkg && pkg.family !== "code-plugin" ? "not-code-plugin" : null,
       release ? null : "release-missing",
-      release && !release.storepackStorageId ? "storepack-missing" : null,
-      release?.storepackRevokedAt ? "storepack-revoked" : null,
+      release && !release.clawpackStorageId ? "clawpack-missing" : null,
+      release?.clawpackRevokedAt ? "clawpack-revoked" : null,
       missingHostTargets.length > 0 ? "host-matrix-incomplete" : null,
       release && environmentFlags.length === 0 ? "environment-metadata-missing" : null,
       sourceRepo ? null : "source-repo-missing",
@@ -1606,8 +1606,8 @@ async function buildOfficialMigrationReadiness(ctx: QueryCtx) {
       ? "package-missing"
       : !release
         ? "release-missing"
-        : !release.storepackStorageId
-          ? "storepack-missing"
+        : !release.clawpackStorageId
+          ? "clawpack-missing"
           : missingHostTargets.length > 0 || environmentFlags.length === 0
             ? "metadata-incomplete"
             : scanStatus === "malicious" ||
@@ -1632,7 +1632,7 @@ async function buildOfficialMigrationReadiness(ctx: QueryCtx) {
       gates: {
         packageExists: Boolean(pkg),
         releaseExists: Boolean(release),
-        storepackAvailable: Boolean(release?.storepackStorageId && !release.storepackRevokedAt),
+        clawpackAvailable: Boolean(release?.clawpackStorageId && !release.clawpackRevokedAt),
         hostMatrixComplete: missingHostTargets.length === 0,
         environmentComplete: environmentFlags.length > 0,
         sourceLinked: Boolean(sourceRepo && (sourceCommit || sourceRef)),
@@ -1657,9 +1657,9 @@ async function buildOfficialMigrationReadiness(ctx: QueryCtx) {
             releaseId: release._id,
             version: release.version,
             createdAt: release.createdAt,
-            storepackSha256: release.storepackSha256 ?? null,
-            storepackFileCount: release.storepackFileCount ?? null,
-            storepackRevokedAt: release.storepackRevokedAt,
+            clawpackSha256: release.clawpackSha256 ?? null,
+            clawpackFileCount: release.clawpackFileCount ?? null,
+            clawpackRevokedAt: release.clawpackRevokedAt,
             hostTargetKeys,
             environmentFlags,
             scanStatus,
@@ -1789,7 +1789,7 @@ export const getVersionByNameForViewerInternal = internalQuery({
   },
 });
 
-async function buildStorePackMigrationRows(ctx: DbReaderCtx, releases: Doc<"packageReleases">[]) {
+async function buildClawPackMigrationRows(ctx: DbReaderCtx, releases: Doc<"packageReleases">[]) {
   const rows = [];
   for (const release of releases) {
     const pkg = await ctx.db.get(release.packageId);
@@ -1804,25 +1804,25 @@ async function buildStorePackMigrationRows(ctx: DbReaderCtx, releases: Doc<"pack
       version: release.version,
       createdAt: release.createdAt,
       fileCount: release.files.length,
-      storepackAvailable: Boolean(release.storepackStorageId && !release.storepackRevokedAt),
-      storepackBuiltAt: release.storepackBuiltAt ?? null,
-      storepackSha256: release.storepackSha256 ?? null,
-      storepackRevokedAt: release.storepackRevokedAt ?? null,
+      clawpackAvailable: Boolean(release.clawpackStorageId && !release.clawpackRevokedAt),
+      clawpackBuiltAt: release.clawpackBuiltAt ?? null,
+      clawpackSha256: release.clawpackSha256 ?? null,
+      clawpackRevokedAt: release.clawpackRevokedAt ?? null,
     });
   }
   return rows;
 }
 
-export const getStorePackMigrationStatus = query({
+export const getClawPackMigrationStatus = query({
   args: { limit: v.optional(v.number()) },
   handler: async (ctx, args) => {
     const { user } = await requireUser(ctx);
     assertModerator(user);
-    return await getStorePackMigrationStatusForLimit(ctx, args.limit);
+    return await getClawPackMigrationStatusForLimit(ctx, args.limit);
   },
 });
 
-export const getStorePackReleaseForStaff = query({
+export const getClawPackReleaseForStaff = query({
   args: { releaseId: v.id("packageReleases") },
   handler: async (ctx, args) => {
     const { user } = await requireUser(ctx);
@@ -1839,11 +1839,11 @@ export const getStorePackReleaseForStaff = query({
         .withIndex("by_release", (q) => q.eq("releaseId", release._id))
         .collect(),
       ctx.db
-        .query("packageStorePackBackfillFailures")
+        .query("packageClawPackBackfillFailures")
         .withIndex("by_release", (q) => q.eq("releaseId", release._id))
         .collect(),
       ctx.db
-        .query("packageStorePackSearchIndex")
+        .query("packageClawPackSearchIndex")
         .withIndex("by_release", (q) => q.eq("releaseId", release._id))
         .collect(),
     ]);
@@ -1869,17 +1869,17 @@ export const getStorePackReleaseForStaff = query({
           size: file.size,
           sha256: file.sha256,
         })),
-        storepackStorageId: release.storepackStorageId ?? null,
-        storepackSha256: release.storepackSha256 ?? null,
-        storepackSize: release.storepackSize ?? null,
-        storepackSpecVersion: release.storepackSpecVersion ?? null,
-        storepackFormat: release.storepackFormat ?? null,
-        storepackFileCount: release.storepackFileCount ?? null,
-        storepackManifestSha256: release.storepackManifestSha256 ?? null,
-        storepackBuiltAt: release.storepackBuiltAt ?? null,
-        storepackBuildVersion: release.storepackBuildVersion ?? null,
-        storepackRevokedAt: release.storepackRevokedAt ?? null,
-        storepackRevocationReason: release.storepackRevocationReason ?? null,
+        clawpackStorageId: release.clawpackStorageId ?? null,
+        clawpackSha256: release.clawpackSha256 ?? null,
+        clawpackSize: release.clawpackSize ?? null,
+        clawpackSpecVersion: release.clawpackSpecVersion ?? null,
+        clawpackFormat: release.clawpackFormat ?? null,
+        clawpackFileCount: release.clawpackFileCount ?? null,
+        clawpackManifestSha256: release.clawpackManifestSha256 ?? null,
+        clawpackBuiltAt: release.clawpackBuiltAt ?? null,
+        clawpackBuildVersion: release.clawpackBuildVersion ?? null,
+        clawpackRevokedAt: release.clawpackRevokedAt ?? null,
+        clawpackRevocationReason: release.clawpackRevocationReason ?? null,
         hostTargetsSummary: release.hostTargetsSummary ?? [],
         environmentSummary: release.environmentSummary ?? null,
         source: packageReleaseSourceSummary(release.source),
@@ -1925,54 +1925,54 @@ export const getStorePackReleaseForStaff = query({
   },
 });
 
-export const dryRunStorePackMigrationRunForStaff = query({
+export const dryRunClawPackMigrationRunForStaff = query({
   args: {
-    operation: storePackMigrationRunOperationValidator,
+    operation: clawPackMigrationRunOperationValidator,
     limit: v.optional(v.number()),
     cursor: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
     const { user } = await requireUser(ctx);
     assertAdmin(user);
-    return await getStorePackMigrationDryRun(ctx, args.operation, args.limit, args.cursor);
+    return await getClawPackMigrationDryRun(ctx, args.operation, args.limit, args.cursor);
   },
 });
 
-export const dryRunStorePackMigrationRunForStaffInternal = internalQuery({
+export const dryRunClawPackMigrationRunForStaffInternal = internalQuery({
   args: {
-    operation: storePackMigrationRunOperationValidator,
+    operation: clawPackMigrationRunOperationValidator,
     limit: v.optional(v.number()),
     cursor: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
-    return await getStorePackMigrationDryRun(ctx, args.operation, args.limit, args.cursor);
+    return await getClawPackMigrationDryRun(ctx, args.operation, args.limit, args.cursor);
   },
 });
 
-export const listStorePackMigrationRunsForStaff = query({
+export const listClawPackMigrationRunsForStaff = query({
   args: {
-    status: v.optional(storePackMigrationRunStatusValidator),
+    status: v.optional(clawPackMigrationRunStatusValidator),
     limit: v.optional(v.number()),
   },
   handler: async (ctx, args) => {
     const { user } = await requireUser(ctx);
     assertAdmin(user);
-    return await listStorePackMigrationRuns(ctx, args.status, args.limit);
+    return await listClawPackMigrationRuns(ctx, args.status, args.limit);
   },
 });
 
-export const listStorePackMigrationRunsForStaffInternal = internalQuery({
+export const listClawPackMigrationRunsForStaffInternal = internalQuery({
   args: {
-    status: v.optional(storePackMigrationRunStatusValidator),
+    status: v.optional(clawPackMigrationRunStatusValidator),
     limit: v.optional(v.number()),
   },
   handler: async (ctx, args) => {
-    return await listStorePackMigrationRuns(ctx, args.status, args.limit);
+    return await listClawPackMigrationRuns(ctx, args.status, args.limit);
   },
 });
 
-export const getStorePackMigrationRun = query({
-  args: { runId: v.id("storePackMigrationRuns") },
+export const getClawPackMigrationRun = query({
+  args: { runId: v.id("clawPackMigrationRuns") },
   handler: async (ctx, args) => {
     const { user } = await requireUser(ctx);
     assertAdmin(user);
@@ -1980,16 +1980,16 @@ export const getStorePackMigrationRun = query({
   },
 });
 
-export const startStorePackMigrationRun = mutation({
+export const startClawPackMigrationRun = mutation({
   args: {
-    operation: storePackMigrationRunOperationValidator,
+    operation: clawPackMigrationRunOperationValidator,
     limit: v.optional(v.number()),
     cursor: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
     const { user, userId } = await requireUser(ctx);
     assertAdmin(user);
-    return await startStorePackMigrationRunForActor(
+    return await startClawPackMigrationRunForActor(
       ctx,
       userId,
       args.operation,
@@ -1999,15 +1999,15 @@ export const startStorePackMigrationRun = mutation({
   },
 });
 
-export const startStorePackMigrationRunInternal = internalMutation({
+export const startClawPackMigrationRunInternal = internalMutation({
   args: {
     actorUserId: v.id("users"),
-    operation: storePackMigrationRunOperationValidator,
+    operation: clawPackMigrationRunOperationValidator,
     limit: v.optional(v.number()),
     cursor: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
-    return await startStorePackMigrationRunForActor(
+    return await startClawPackMigrationRunForActor(
       ctx,
       args.actorUserId,
       args.operation,
@@ -2017,17 +2017,17 @@ export const startStorePackMigrationRunInternal = internalMutation({
   },
 });
 
-export const getStorePackMigrationRunInternal = internalQuery({
-  args: { runId: v.id("storePackMigrationRuns") },
+export const getClawPackMigrationRunInternal = internalQuery({
+  args: { runId: v.id("clawPackMigrationRuns") },
   handler: async (ctx, args) => {
     return await ctx.db.get(args.runId);
   },
 });
 
-export const patchStorePackMigrationRunInternal = internalMutation({
+export const patchClawPackMigrationRunInternal = internalMutation({
   args: {
-    runId: v.id("storePackMigrationRuns"),
-    status: v.optional(storePackMigrationRunStatusValidator),
+    runId: v.id("clawPackMigrationRuns"),
+    status: v.optional(clawPackMigrationRunStatusValidator),
     cursor: v.optional(v.string()),
     continueCursor: v.optional(v.string()),
     isDone: v.optional(v.boolean()),
@@ -2045,12 +2045,12 @@ export const patchStorePackMigrationRunInternal = internalMutation({
   },
   handler: async (ctx, args) => {
     const run = await ctx.db.get(args.runId);
-    if (!run) throw new ConvexError("StorePack migration run not found");
+    if (!run) throw new ConvexError("ClawPack migration run not found");
     const failureCounts = { ...run.failureCounts };
     for (const [key, count] of Object.entries(args.failureCounts ?? {})) {
       failureCounts[key] = (failureCounts[key] ?? 0) + count;
     }
-    const patch: Partial<Doc<"storePackMigrationRuns">> = {
+    const patch: Partial<Doc<"clawPackMigrationRuns">> = {
       updatedAt: Date.now(),
       processed: run.processed + Math.max(0, Math.trunc(args.processedDelta ?? 0)),
       generated: run.generated + Math.max(0, Math.trunc(args.generatedDelta ?? 0)),
@@ -2073,43 +2073,43 @@ export const patchStorePackMigrationRunInternal = internalMutation({
   },
 });
 
-export const continueStorePackMigrationRun = action({
-  args: { runId: v.id("storePackMigrationRuns") },
+export const continueClawPackMigrationRun = action({
+  args: { runId: v.id("clawPackMigrationRuns") },
   handler: async (ctx, args) => {
     const { user, userId } = await requireUserFromAction(ctx);
     assertAdmin(user);
-    return await continueStorePackMigrationRunForActor(ctx, userId, args.runId);
+    return await continueClawPackMigrationRunForActor(ctx, userId, args.runId);
   },
 });
 
-export const continueStorePackMigrationRunInternal = internalAction({
+export const continueClawPackMigrationRunInternal = internalAction({
   args: {
     actorUserId: v.id("users"),
-    runId: v.id("storePackMigrationRuns"),
+    runId: v.id("clawPackMigrationRuns"),
   },
   handler: async (ctx, args) => {
-    return await continueStorePackMigrationRunForActor(ctx, args.actorUserId, args.runId);
+    return await continueClawPackMigrationRunForActor(ctx, args.actorUserId, args.runId);
   },
 });
 
-async function continueStorePackMigrationRunForActor(
+async function continueClawPackMigrationRunForActor(
   ctx: ActionCtx,
   actorUserId: Id<"users">,
-  runId: Id<"storePackMigrationRuns">,
+  runId: Id<"clawPackMigrationRuns">,
 ) {
-  const run = await runQueryRef<Doc<"storePackMigrationRuns"> | null>(
+  const run = await runQueryRef<Doc<"clawPackMigrationRuns"> | null>(
     ctx,
-    internalRefs.packages.getStorePackMigrationRunInternal,
+    internalRefs.packages.getClawPackMigrationRunInternal,
     { runId },
   );
-  if (!run) throw new ConvexError("StorePack migration run not found");
+  if (!run) throw new ConvexError("ClawPack migration run not found");
   if (run.status === "completed") return { run, result: null };
-  if (run.status === "running") throw new ConvexError("StorePack migration run already running");
+  if (run.status === "running") throw new ConvexError("ClawPack migration run already running");
 
   const now = Date.now();
-  await runMutationRef(ctx, internalRefs.packages.patchStorePackMigrationRunInternal, {
+  await runMutationRef(ctx, internalRefs.packages.patchClawPackMigrationRunInternal, {
     runId: run._id,
-    status: "running" satisfies StorePackMigrationRunStatus,
+    status: "running" satisfies ClawPackMigrationRunStatus,
     startedAt: run.startedAt ?? now,
     clearLastError: true,
     clearCompletedAt: true,
@@ -2118,38 +2118,38 @@ async function continueStorePackMigrationRunForActor(
   try {
     const result =
       run.operation === "artifact-backfill"
-        ? await runActionRef<StorePackMigrationBatchResult>(
+        ? await runActionRef<ClawPackMigrationBatchResult>(
             ctx,
-            internalRefs.packages.backfillStorePackArtifactsInternal,
+            internalRefs.packages.backfillClawPackArtifactsInternal,
             {
               actorUserId,
               limit: run.limit,
             },
           )
         : run.operation === "failure-retry"
-          ? await runActionRef<StorePackMigrationBatchResult>(
+          ? await runActionRef<ClawPackMigrationBatchResult>(
               ctx,
-              internalRefs.packages.retryStorePackBackfillFailuresInternal,
+              internalRefs.packages.retryClawPackBackfillFailuresInternal,
               {
                 actorUserId,
                 limit: run.limit,
               },
             )
-          : await runActionRef<StorePackMigrationBatchResult>(
+          : await runActionRef<ClawPackMigrationBatchResult>(
               ctx,
-              internalRefs.packages.backfillStorePackSearchIndexInternal,
+              internalRefs.packages.backfillClawPackSearchIndexInternal,
               {
                 actorUserId,
                 limit: run.limit,
                 cursor: run.continueCursor ?? run.cursor,
               },
             );
-    const summary = summarizeStorePackMigrationBatchResult(run.operation, result);
+    const summary = summarizeClawPackMigrationBatchResult(run.operation, result);
     const completed =
       run.operation !== "search-index-backfill" || summary.isDone || !summary.continueCursor;
-    const updatedRun = await runMutationRef<Doc<"storePackMigrationRuns"> | null>(
+    const updatedRun = await runMutationRef<Doc<"clawPackMigrationRuns"> | null>(
       ctx,
-      internalRefs.packages.patchStorePackMigrationRunInternal,
+      internalRefs.packages.patchClawPackMigrationRunInternal,
       {
         runId: run._id,
         status: completed ? "completed" : "pending",
@@ -2167,9 +2167,9 @@ async function continueStorePackMigrationRunForActor(
     return { run: updatedRun, result };
   } catch (error) {
     const message = errorMessage(error);
-    const failedRun = await runMutationRef<Doc<"storePackMigrationRuns"> | null>(
+    const failedRun = await runMutationRef<Doc<"clawPackMigrationRuns"> | null>(
       ctx,
-      internalRefs.packages.patchStorePackMigrationRunInternal,
+      internalRefs.packages.patchClawPackMigrationRunInternal,
       {
         runId: run._id,
         status: "failed",
@@ -2181,14 +2181,14 @@ async function continueStorePackMigrationRunForActor(
   }
 }
 
-export const getStorePackMigrationStatusInternal = internalQuery({
+export const getClawPackMigrationStatusInternal = internalQuery({
   args: { limit: v.optional(v.number()) },
   handler: async (ctx, args) => {
-    return await getStorePackMigrationStatusForLimit(ctx, args.limit);
+    return await getClawPackMigrationStatusForLimit(ctx, args.limit);
   },
 });
 
-export const getStorePackArtifactByShaForViewerInternal = internalQuery({
+export const getClawPackArtifactByShaForViewerInternal = internalQuery({
   args: {
     sha256: v.string(),
     viewerUserId: v.optional(v.id("users")),
@@ -2203,7 +2203,7 @@ export const getStorePackArtifactByShaForViewerInternal = internalQuery({
     let sawRevoked = false;
     const membershipCache = new Map<string, Promise<boolean>>();
     for (const artifact of artifacts) {
-      if (artifact.kind !== "storepack") continue;
+      if (artifact.kind !== "clawpack") continue;
       if (artifact.status === "revoked") {
         sawRevoked = true;
         continue;
@@ -2214,8 +2214,8 @@ export const getStorePackArtifactByShaForViewerInternal = internalQuery({
         ctx.db.get(artifact.releaseId),
       ]);
       if (!pkg || pkg.softDeletedAt || !release || release.softDeletedAt) continue;
-      if (release.packageId !== pkg._id || release.storepackSha256 !== sha256) continue;
-      if (release.storepackRevokedAt) {
+      if (release.packageId !== pkg._id || release.clawpackSha256 !== sha256) continue;
+      if (release.clawpackRevokedAt) {
         sawRevoked = true;
         continue;
       }
@@ -2246,7 +2246,7 @@ export const getStorePackArtifactByShaForViewerInternal = internalQuery({
         release: {
           _id: release._id,
           version: release.version,
-          storepackSpecVersion: release.storepackSpecVersion,
+          clawpackSpecVersion: release.clawpackSpecVersion,
         },
       };
     }
@@ -2254,16 +2254,16 @@ export const getStorePackArtifactByShaForViewerInternal = internalQuery({
   },
 });
 
-async function getStorePackMigrationStatusForLimit(
+async function getClawPackMigrationStatusForLimit(
   ctx: DbReaderCtx,
   requestedLimit: number | undefined,
 ) {
   const limit = Math.max(1, Math.min(requestedLimit ?? 25, 100));
   const missingCandidates = await ctx.db
     .query("packageReleases")
-    .withIndex("by_storepack_built_at", (q) => q.eq("storepackBuiltAt", undefined))
+    .withIndex("by_clawpack_built_at", (q) => q.eq("clawpackBuiltAt", undefined))
     .take(limit * 4);
-  const missingRows = await buildStorePackMigrationRows(
+  const missingRows = await buildClawPackMigrationRows(
     ctx,
     missingCandidates.filter((release) => !release.softDeletedAt).slice(0, limit),
   );
@@ -2272,11 +2272,11 @@ async function getStorePackMigrationStatusForLimit(
     .withIndex("by_status", (q) => q.eq("status", "active"))
     .order("desc")
     .take(limit * 4);
-  const storepackArtifactRows = recentArtifactRows
-    .filter((artifact) => artifact.kind === "storepack")
+  const clawpackArtifactRows = recentArtifactRows
+    .filter((artifact) => artifact.kind === "clawpack")
     .slice(0, limit);
   const failureRows = await ctx.db
-    .query("packageStorePackBackfillFailures")
+    .query("packageClawPackBackfillFailures")
     .withIndex("by_open_failed_at", (q) => q.eq("resolvedAt", undefined))
     .order("desc")
     .take(limit);
@@ -2297,24 +2297,21 @@ async function getStorePackMigrationStatusForLimit(
       lastFailedAt: failure.lastFailedAt,
     })),
     failureSampleSize: failureRows.length,
-    generatedStorePackSampleSize: storepackArtifactRows.length,
-    generatedStorePackBytes: storepackArtifactRows.reduce(
-      (sum, artifact) => sum + artifact.size,
-      0,
-    ),
+    generatedClawPackSampleSize: clawpackArtifactRows.length,
+    generatedClawPackBytes: clawpackArtifactRows.reduce((sum, artifact) => sum + artifact.size, 0),
     sampleLimit: limit,
   };
 }
 
-async function getStorePackMigrationDryRun(
+async function getClawPackMigrationDryRun(
   ctx: DbReaderCtx,
-  operation: StorePackMigrationRunOperation,
+  operation: ClawPackMigrationRunOperation,
   requestedLimit: number | undefined,
   cursor?: string,
 ) {
   const limit = Math.max(1, Math.min(requestedLimit ?? 10, 100));
   if (operation === "artifact-backfill") {
-    const status = await getStorePackMigrationStatusForLimit(ctx, limit);
+    const status = await getClawPackMigrationStatusForLimit(ctx, limit);
     return {
       operation,
       limit,
@@ -2328,7 +2325,7 @@ async function getStorePackMigrationDryRun(
   }
   if (operation === "failure-retry") {
     const failures = await ctx.db
-      .query("packageStorePackBackfillFailures")
+      .query("packageClawPackBackfillFailures")
       .withIndex("by_open_failed_at", (q) => q.eq("resolvedAt", undefined))
       .order("desc")
       .take(limit);
@@ -2355,12 +2352,12 @@ async function getStorePackMigrationDryRun(
 
   const page = await ctx.db
     .query("packageReleases")
-    .withIndex("by_storepack_built_at")
+    .withIndex("by_clawpack_built_at")
     .order("desc")
     .paginate({ cursor: cursor ?? null, numItems: limit });
   const candidates = [];
   for (const release of page.page) {
-    if (release.softDeletedAt || !release.storepackStorageId || release.storepackRevokedAt) {
+    if (release.softDeletedAt || !release.clawpackStorageId || release.clawpackRevokedAt) {
       continue;
     }
     const pkg = await ctx.db.get(release.packageId);
@@ -2371,8 +2368,8 @@ async function getStorePackMigrationDryRun(
       name: pkg.name,
       displayName: pkg.displayName,
       version: release.version,
-      storepackSha256: release.storepackSha256 ?? null,
-      storepackBuiltAt: release.storepackBuiltAt ?? null,
+      clawpackSha256: release.clawpackSha256 ?? null,
+      clawpackBuiltAt: release.clawpackBuiltAt ?? null,
     });
   }
   return {
@@ -2387,17 +2384,17 @@ async function getStorePackMigrationDryRun(
   };
 }
 
-async function listStorePackMigrationRuns(
+async function listClawPackMigrationRuns(
   ctx: DbReaderCtx,
-  status: StorePackMigrationRunStatus | undefined,
+  status: ClawPackMigrationRunStatus | undefined,
   requestedLimit: number | undefined,
 ) {
   const limit = Math.max(1, Math.min(requestedLimit ?? 20, 100));
   const queryBuilder = status
     ? ctx.db
-        .query("storePackMigrationRuns")
+        .query("clawPackMigrationRuns")
         .withIndex("by_status_created_at", (q) => q.eq("status", status))
-    : ctx.db.query("storePackMigrationRuns").withIndex("by_created_at");
+    : ctx.db.query("clawPackMigrationRuns").withIndex("by_created_at");
   const runs = await queryBuilder.order("desc").take(limit);
   const items = [];
   for (const run of runs) {
@@ -2422,16 +2419,16 @@ async function listStorePackMigrationRuns(
   };
 }
 
-async function startStorePackMigrationRunForActor(
+async function startClawPackMigrationRunForActor(
   ctx: MutationCtx,
   actorUserId: Id<"users">,
-  operation: StorePackMigrationRunOperation,
+  operation: ClawPackMigrationRunOperation,
   requestedLimit: number | undefined,
   cursor?: string,
 ) {
   const limit = Math.max(1, Math.min(requestedLimit ?? 10, 100));
   const now = Date.now();
-  const runId = await ctx.db.insert("storePackMigrationRuns", {
+  const runId = await ctx.db.insert("clawPackMigrationRuns", {
     actorUserId,
     operation,
     status: "pending",
@@ -2449,9 +2446,9 @@ async function startStorePackMigrationRunForActor(
   return await ctx.db.get(runId);
 }
 
-function summarizeStorePackMigrationBatchResult(
-  operation: StorePackMigrationRunOperation,
-  result: StorePackMigrationBatchResult,
+function summarizeClawPackMigrationBatchResult(
+  operation: ClawPackMigrationRunOperation,
+  result: ClawPackMigrationBatchResult,
 ) {
   const rows = result.results ?? [];
   const processed = Math.max(0, Math.trunc(result.processed ?? rows.length));
@@ -2555,7 +2552,7 @@ export const listPageForViewerInternal = internalQuery({
   },
 });
 
-function getStorePackIndexFilter(args: { hostTarget?: string; environment?: string }) {
+function getClawPackIndexFilter(args: { hostTarget?: string; environment?: string }) {
   if (args.hostTarget) {
     return { kind: "host-target" as const, key: args.hostTarget };
   }
@@ -2597,9 +2594,9 @@ async function listPackagePageImpl(
     return { page, isDone: true, continueCursor: "" };
   }
 
-  const storePackIndexFilter = getStorePackIndexFilter(args);
-  if (storePackIndexFilter) {
-    return await listPackagePageByStorePackIndex(ctx, args, storePackIndexFilter, canViewPackage);
+  const clawPackIndexFilter = getClawPackIndexFilter(args);
+  if (clawPackIndexFilter) {
+    return await listPackagePageByClawPackIndex(ctx, args, clawPackIndexFilter, canViewPackage);
   }
 
   const collected: PublicPackageListItem[] = [];
@@ -2685,7 +2682,7 @@ async function listPackagePageImpl(
   };
 }
 
-async function listPackagePageByStorePackIndex(
+async function listPackagePageByClawPackIndex(
   ctx: DbReaderCtx,
   args: {
     family?: PackageFamily;
@@ -2697,7 +2694,7 @@ async function listPackagePageByStorePackIndex(
     environment?: string;
     paginationOpts: { cursor: string | null; numItems: number };
   },
-  filter: StorePackIndexFilter,
+  filter: ClawPackIndexFilter,
   canViewPackage: (digest: PackageDigestLike) => Promise<boolean>,
 ) {
   const targetCount = args.paginationOpts.numItems;
@@ -2717,7 +2714,7 @@ async function listPackagePageByStorePackIndex(
     ),
   );
   const page = await ctx.db
-    .query("packageStorePackSearchIndex")
+    .query("packageClawPackSearchIndex")
     .withIndex("by_kind_key_updated", (q) => q.eq("kind", filter.kind).eq("key", filter.key))
     .order("desc")
     .paginate({ cursor: pageCursor, numItems: effectivePageSize });
@@ -3538,7 +3535,7 @@ async function publishPackageImpl(
     source: effectiveSource,
   });
 
-  const storepack = await buildAndStorePackageReleaseStorePack(ctx, {
+  const clawpack = await buildAndClawPackageReleaseClawPack(ctx, {
     packageId: publishResult.packageId,
     releaseId: publishResult.releaseId,
     name,
@@ -3552,17 +3549,17 @@ async function publishPackageImpl(
     verification,
     files,
   });
-  await runMutationRef(ctx, internalRefs.packages.attachStorePackArtifactInternal, {
+  await runMutationRef(ctx, internalRefs.packages.attachClawPackArtifactInternal, {
     packageId: publishResult.packageId,
     releaseId: publishResult.releaseId,
-    storageId: storepack.storageId,
-    sha256: storepack.sha256,
-    size: storepack.size,
-    fileCount: storepack.fileCount,
-    manifestSha256: storepack.manifestSha256,
-    hostTargets: storepack.hostTargets,
-    environment: storepack.environment,
-    builtAt: storepack.builtAt,
+    storageId: clawpack.storageId,
+    sha256: clawpack.sha256,
+    size: clawpack.size,
+    fileCount: clawpack.fileCount,
+    manifestSha256: clawpack.manifestSha256,
+    hostTargets: clawpack.hostTargets,
+    environment: clawpack.environment,
+    builtAt: clawpack.builtAt,
   });
 
   if (auth.kind === "github-actions") {
@@ -3621,7 +3618,7 @@ async function publishPackageImpl(
   return publishResult;
 }
 
-async function buildAndStorePackageReleaseStorePack(
+async function buildAndClawPackageReleaseClawPack(
   ctx: Pick<ActionCtx, "storage">,
   input: {
     packageId: Id<"packages">;
@@ -3662,7 +3659,7 @@ async function buildAndStorePackageReleaseStorePack(
     });
   }
   const builtAt = Date.now();
-  const storepack = await buildStorePack({
+  const clawpack = await buildClawPack({
     packageId: input.packageId,
     releaseId: input.releaseId,
     name: input.name,
@@ -3679,9 +3676,9 @@ async function buildAndStorePackageReleaseStorePack(
     files,
   });
   const storageId = await ctx.storage.store(
-    new Blob([toArrayBuffer(storepack.bytes)], { type: "application/zip" }),
+    new Blob([toArrayBuffer(clawpack.bytes)], { type: "application/zip" }),
   );
-  return { ...storepack, storageId, builtAt };
+  return { ...clawpack, storageId, builtAt };
 }
 
 export const publishPackage = action({
@@ -3742,13 +3739,13 @@ export const publishRelease = action({
   },
 });
 
-export const getStorePackBackfillBatchInternal = internalQuery({
+export const getClawPackBackfillBatchInternal = internalQuery({
   args: { limit: v.number() },
   handler: async (ctx, args) => {
     const limit = Math.max(1, Math.min(args.limit, 50));
     const candidates = await ctx.db
       .query("packageReleases")
-      .withIndex("by_storepack_built_at", (q) => q.eq("storepackBuiltAt", undefined))
+      .withIndex("by_clawpack_built_at", (q) => q.eq("clawpackBuiltAt", undefined))
       .take(limit * 4);
     const batch = [];
     for (const release of candidates) {
@@ -3772,23 +3769,23 @@ export const getStorePackBackfillBatchInternal = internalQuery({
   },
 });
 
-export const getStorePackBackfillFailureBatchInternal = internalQuery({
+export const getClawPackBackfillFailureBatchInternal = internalQuery({
   args: { limit: v.number() },
   handler: async (ctx, args) => {
     const limit = Math.max(1, Math.min(args.limit, 50));
     const failures = await ctx.db
-      .query("packageStorePackBackfillFailures")
+      .query("packageClawPackBackfillFailures")
       .withIndex("by_open_failed_at", (q) => q.eq("resolvedAt", undefined))
       .order("desc")
       .take(limit * 3);
-    const batch: StorePackBackfillBatchEntry[] = [];
+    const batch: ClawPackBackfillBatchEntry[] = [];
     for (const failure of failures) {
       if (batch.length >= limit) break;
       const [release, pkg] = await Promise.all([
         ctx.db.get(failure.releaseId),
         ctx.db.get(failure.packageId),
       ]);
-      if (!release || release.softDeletedAt || release.storepackStorageId) continue;
+      if (!release || release.softDeletedAt || release.clawpackStorageId) continue;
       if (!pkg || pkg.softDeletedAt || pkg.family === "skill") continue;
       if (release.packageId !== pkg._id) continue;
       batch.push({
@@ -3807,7 +3804,7 @@ export const getStorePackBackfillFailureBatchInternal = internalQuery({
   },
 });
 
-export const recordStorePackBackfillAttemptInternal = internalMutation({
+export const recordClawPackBackfillAttemptInternal = internalMutation({
   args: {
     packageId: v.id("packages"),
     releaseId: v.id("packageReleases"),
@@ -3819,7 +3816,7 @@ export const recordStorePackBackfillAttemptInternal = internalMutation({
   handler: async (ctx, args) => {
     const now = Date.now();
     const existing = await ctx.db
-      .query("packageStorePackBackfillFailures")
+      .query("packageClawPackBackfillFailures")
       .withIndex("by_release", (q) => q.eq("releaseId", args.releaseId))
       .unique();
 
@@ -3833,7 +3830,7 @@ export const recordStorePackBackfillAttemptInternal = internalMutation({
       return { ok: true as const, resolved: Boolean(existing && !existing.resolvedAt) };
     }
 
-    const error = args.error?.trim() || "StorePack backfill failed";
+    const error = args.error?.trim() || "ClawPack backfill failed";
     if (existing) {
       await ctx.db.patch(existing._id, {
         packageId: args.packageId,
@@ -3848,7 +3845,7 @@ export const recordStorePackBackfillAttemptInternal = internalMutation({
       return { ok: true as const, failureId: existing._id };
     }
 
-    const failureId = await ctx.db.insert("packageStorePackBackfillFailures", {
+    const failureId = await ctx.db.insert("packageClawPackBackfillFailures", {
       packageId: args.packageId,
       releaseId: args.releaseId,
       name: args.name,
@@ -3863,14 +3860,14 @@ export const recordStorePackBackfillAttemptInternal = internalMutation({
   },
 });
 
-async function buildStorePackArtifactsForBatch(
+async function buildClawPackArtifactsForBatch(
   ctx: Pick<ActionCtx, "runMutation" | "storage">,
-  batch: StorePackBackfillBatchEntry[],
+  batch: ClawPackBackfillBatchEntry[],
 ) {
   const results = [];
   for (const entry of batch) {
     try {
-      const storepack = await buildAndStorePackageReleaseStorePack(ctx, {
+      const clawpack = await buildAndClawPackageReleaseClawPack(ctx, {
         packageId: entry.package._id,
         releaseId: entry.release._id,
         name: entry.package.name,
@@ -3884,19 +3881,19 @@ async function buildStorePackArtifactsForBatch(
         verification: entry.release.verification,
         files: entry.release.files,
       });
-      await runMutationRef(ctx, internalRefs.packages.attachStorePackArtifactInternal, {
+      await runMutationRef(ctx, internalRefs.packages.attachClawPackArtifactInternal, {
         packageId: entry.package._id,
         releaseId: entry.release._id,
-        storageId: storepack.storageId,
-        sha256: storepack.sha256,
-        size: storepack.size,
-        fileCount: storepack.fileCount,
-        manifestSha256: storepack.manifestSha256,
-        hostTargets: storepack.hostTargets,
-        environment: storepack.environment,
-        builtAt: storepack.builtAt,
+        storageId: clawpack.storageId,
+        sha256: clawpack.sha256,
+        size: clawpack.size,
+        fileCount: clawpack.fileCount,
+        manifestSha256: clawpack.manifestSha256,
+        hostTargets: clawpack.hostTargets,
+        environment: clawpack.environment,
+        builtAt: clawpack.builtAt,
       });
-      await runMutationRef(ctx, internalRefs.packages.recordStorePackBackfillAttemptInternal, {
+      await runMutationRef(ctx, internalRefs.packages.recordClawPackBackfillAttemptInternal, {
         packageId: entry.package._id,
         releaseId: entry.release._id,
         name: entry.package.name,
@@ -3909,12 +3906,12 @@ async function buildStorePackArtifactsForBatch(
         releaseId: entry.release._id,
         name: entry.package.name,
         version: entry.release.version,
-        sha256: storepack.sha256,
-        size: storepack.size,
+        sha256: clawpack.sha256,
+        size: clawpack.size,
       });
     } catch (error) {
       const message = errorMessage(error);
-      await runMutationRef(ctx, internalRefs.packages.recordStorePackBackfillAttemptInternal, {
+      await runMutationRef(ctx, internalRefs.packages.recordClawPackBackfillAttemptInternal, {
         packageId: entry.package._id,
         releaseId: entry.release._id,
         name: entry.package.name,
@@ -3935,25 +3932,25 @@ async function buildStorePackArtifactsForBatch(
   return results;
 }
 
-export const backfillStorePackArtifactsInternal = internalAction({
+export const backfillClawPackArtifactsInternal = internalAction({
   args: {
     actorUserId: v.optional(v.id("users")),
     limit: v.optional(v.number()),
   },
   handler: async (ctx, args) => {
     const limit = Math.max(1, Math.min(args.limit ?? 10, 50));
-    const batch = await runQueryRef<StorePackBackfillBatchEntry[]>(
+    const batch = await runQueryRef<ClawPackBackfillBatchEntry[]>(
       ctx,
-      internalRefs.packages.getStorePackBackfillBatchInternal,
+      internalRefs.packages.getClawPackBackfillBatchInternal,
       { limit },
     );
-    const results = await buildStorePackArtifactsForBatch(ctx, batch);
+    const results = await buildClawPackArtifactsForBatch(ctx, batch);
     if (args.actorUserId) {
       await runMutationRef(ctx, internalRefs.packages.insertAuditLogInternal, {
         actorUserId: args.actorUserId,
-        action: "package.storepack.backfill",
+        action: "package.clawpack.backfill",
         targetType: "package",
-        targetId: "storepack",
+        targetId: "clawpack",
         metadata: {
           requestedLimit: limit,
           processed: results.length,
@@ -3971,7 +3968,7 @@ export const backfillStorePackArtifactsInternal = internalAction({
   },
 });
 
-export const retryStorePackBackfillFailuresInternal = internalAction({
+export const retryClawPackBackfillFailuresInternal = internalAction({
   args: {
     actorUserId: v.id("users"),
     limit: v.optional(v.number()),
@@ -3983,17 +3980,17 @@ export const retryStorePackBackfillFailuresInternal = internalAction({
     if (!actor) throw new ConvexError("Actor not found");
     assertAdmin(actor);
     const limit = Math.max(1, Math.min(args.limit ?? 10, 50));
-    const batch = await runQueryRef<StorePackBackfillBatchEntry[]>(
+    const batch = await runQueryRef<ClawPackBackfillBatchEntry[]>(
       ctx,
-      internalRefs.packages.getStorePackBackfillFailureBatchInternal,
+      internalRefs.packages.getClawPackBackfillFailureBatchInternal,
       { limit },
     );
-    const results = await buildStorePackArtifactsForBatch(ctx, batch);
+    const results = await buildClawPackArtifactsForBatch(ctx, batch);
     await runMutationRef(ctx, internalRefs.packages.insertAuditLogInternal, {
       actorUserId: args.actorUserId,
-      action: "package.storepack.retryFailures",
+      action: "package.clawpack.retryFailures",
       targetType: "package",
-      targetId: "storepack",
+      targetId: "clawpack",
       metadata: {
         requestedLimit: limit,
         processed: results.length,
@@ -4010,31 +4007,31 @@ export const retryStorePackBackfillFailuresInternal = internalAction({
   },
 });
 
-export const backfillStorePackArtifacts = action({
+export const backfillClawPackArtifacts = action({
   args: { limit: v.optional(v.number()) },
   handler: async (ctx, args) => {
     const { user, userId } = await requireUserFromAction(ctx);
     assertAdmin(user);
-    return await runActionRef(ctx, internalRefs.packages.backfillStorePackArtifactsInternal, {
+    return await runActionRef(ctx, internalRefs.packages.backfillClawPackArtifactsInternal, {
       actorUserId: userId,
       limit: args.limit,
     });
   },
 });
 
-export const retryStorePackBackfillFailures = action({
+export const retryClawPackBackfillFailures = action({
   args: { limit: v.optional(v.number()) },
   handler: async (ctx, args) => {
     const { user, userId } = await requireUserFromAction(ctx);
     assertAdmin(user);
-    return await runActionRef(ctx, internalRefs.packages.retryStorePackBackfillFailuresInternal, {
+    return await runActionRef(ctx, internalRefs.packages.retryClawPackBackfillFailuresInternal, {
       actorUserId: userId,
       limit: args.limit,
     });
   },
 });
 
-export const getStorePackSearchIndexBackfillBatchInternal = internalQuery({
+export const getClawPackSearchIndexBackfillBatchInternal = internalQuery({
   args: {
     cursor: v.optional(v.string()),
     limit: v.number(),
@@ -4042,7 +4039,7 @@ export const getStorePackSearchIndexBackfillBatchInternal = internalQuery({
   handler: async (ctx, args) => {
     const page = await ctx.db
       .query("packageReleases")
-      .withIndex("by_storepack_built_at")
+      .withIndex("by_clawpack_built_at")
       .order("desc")
       .paginate({
         cursor: args.cursor ?? null,
@@ -4052,7 +4049,7 @@ export const getStorePackSearchIndexBackfillBatchInternal = internalQuery({
       releases: page.page
         .filter(
           (release) =>
-            !release.softDeletedAt && release.storepackStorageId && !release.storepackRevokedAt,
+            !release.softDeletedAt && release.clawpackStorageId && !release.clawpackRevokedAt,
         )
         .map((release) => ({ releaseId: release._id })),
       continueCursor: page.continueCursor,
@@ -4061,23 +4058,23 @@ export const getStorePackSearchIndexBackfillBatchInternal = internalQuery({
   },
 });
 
-export const syncStorePackSearchIndexForReleaseInternal = internalMutation({
+export const syncClawPackSearchIndexForReleaseInternal = internalMutation({
   args: { releaseId: v.id("packageReleases") },
   handler: async (ctx, args) => {
     const release = await ctx.db.get(args.releaseId);
-    if (!release || release.softDeletedAt || !release.storepackStorageId) {
+    if (!release || release.softDeletedAt || !release.clawpackStorageId) {
       return { ok: true as const, skipped: true as const, reason: "release-not-indexable" };
     }
     const pkg = await ctx.db.get(release.packageId);
     if (!pkg || pkg.softDeletedAt || pkg.family === "skill") {
       return { ok: true as const, skipped: true as const, reason: "package-not-indexable" };
     }
-    await replaceStorePackSearchIndexRows(ctx, pkg, release);
+    await replaceClawPackSearchIndexRows(ctx, pkg, release);
     return { ok: true as const, skipped: false as const, releaseId: release._id };
   },
 });
 
-export const backfillStorePackSearchIndexInternal = internalAction({
+export const backfillClawPackSearchIndexInternal = internalAction({
   args: {
     actorUserId: v.id("users"),
     limit: v.optional(v.number()),
@@ -4094,7 +4091,7 @@ export const backfillStorePackSearchIndexInternal = internalAction({
       releases: Array<{ releaseId: Id<"packageReleases"> }>;
       continueCursor: string;
       isDone: boolean;
-    }>(ctx, internalRefs.packages.getStorePackSearchIndexBackfillBatchInternal, {
+    }>(ctx, internalRefs.packages.getClawPackSearchIndexBackfillBatchInternal, {
       limit,
       cursor: args.cursor,
     });
@@ -4103,7 +4100,7 @@ export const backfillStorePackSearchIndexInternal = internalAction({
       try {
         const result = await runMutationRef(
           ctx,
-          internalRefs.packages.syncStorePackSearchIndexForReleaseInternal,
+          internalRefs.packages.syncClawPackSearchIndexForReleaseInternal,
           { releaseId: release.releaseId },
         );
         results.push({ releaseId: release.releaseId, ok: true as const, result });
@@ -4236,7 +4233,7 @@ export const reservePackageNameInternal = internalMutation({
   },
 });
 
-export const backfillStorePackSearchIndex = action({
+export const backfillClawPackSearchIndex = action({
   args: {
     limit: v.optional(v.number()),
     cursor: v.optional(v.string()),
@@ -4244,7 +4241,7 @@ export const backfillStorePackSearchIndex = action({
   handler: async (ctx, args) => {
     const { user, userId } = await requireUserFromAction(ctx);
     assertAdmin(user);
-    return await runActionRef(ctx, internalRefs.packages.backfillStorePackSearchIndexInternal, {
+    return await runActionRef(ctx, internalRefs.packages.backfillClawPackSearchIndexInternal, {
       actorUserId: userId,
       limit: args.limit,
       cursor: args.cursor,
@@ -4514,7 +4511,7 @@ export const insertReleaseInternal = internalMutation({
   },
 });
 
-export const attachStorePackArtifactInternal = internalMutation({
+export const attachClawPackArtifactInternal = internalMutation({
   args: {
     packageId: v.id("packages"),
     releaseId: v.id("packageReleases"),
@@ -4542,14 +4539,14 @@ export const attachStorePackArtifactInternal = internalMutation({
       .withIndex("by_release", (q) => q.eq("releaseId", args.releaseId))
       .collect();
     for (const artifact of existing) {
-      if (artifact.kind === "storepack" && artifact.status === "active") {
+      if (artifact.kind === "clawpack" && artifact.status === "active") {
         await ctx.db.patch(artifact._id, { status: "superseded" });
       }
     }
     await ctx.db.insert("packageReleaseArtifacts", {
       packageId: args.packageId,
       releaseId: args.releaseId,
-      kind: "storepack",
+      kind: "clawpack",
       storageId: args.storageId,
       sha256: args.sha256,
       size: args.size,
@@ -4558,30 +4555,30 @@ export const attachStorePackArtifactInternal = internalMutation({
       createdAt: now,
     });
     const releasePatch = {
-      storepackStorageId: args.storageId,
-      storepackSha256: args.sha256,
-      storepackSize: args.size,
-      storepackSpecVersion: 1,
-      storepackFormat: "zip",
-      storepackFileCount: args.fileCount,
-      storepackManifestSha256: args.manifestSha256,
-      storepackBuiltAt: args.builtAt,
-      storepackBuildVersion: "clawhub-storepack-v1",
-      storepackRevokedAt: undefined,
-      storepackRevokedByUserId: undefined,
-      storepackRevocationReason: undefined,
+      clawpackStorageId: args.storageId,
+      clawpackSha256: args.sha256,
+      clawpackSize: args.size,
+      clawpackSpecVersion: 1,
+      clawpackFormat: "zip",
+      clawpackFileCount: args.fileCount,
+      clawpackManifestSha256: args.manifestSha256,
+      clawpackBuiltAt: args.builtAt,
+      clawpackBuildVersion: "clawhub-clawpack-v1",
+      clawpackRevokedAt: undefined,
+      clawpackRevokedByUserId: undefined,
+      clawpackRevocationReason: undefined,
       hostTargetsSummary: args.hostTargets,
       environmentSummary: args.environment,
     } satisfies Partial<Doc<"packageReleases">>;
     await ctx.db.patch(args.releaseId, releasePatch);
-    await replaceStorePackSearchIndexRows(ctx, pkg, {
+    await replaceClawPackSearchIndexRows(ctx, pkg, {
       ...release,
       ...releasePatch,
     } as Doc<"packageReleases">);
   },
 });
 
-async function revokeStorePackArtifactForRelease(
+async function revokeClawPackArtifactForRelease(
   ctx: MutationCtx,
   input: {
     releaseId: Id<"packageReleases">;
@@ -4600,8 +4597,8 @@ async function revokeStorePackArtifactForRelease(
   if (!pkg || pkg.softDeletedAt || pkg.family === "skill") {
     throw new ConvexError("Plugin package not found");
   }
-  if (!release.storepackStorageId || !release.storepackSha256) {
-    throw new ConvexError("StorePack artifact not found");
+  if (!release.clawpackStorageId || !release.clawpackSha256) {
+    throw new ConvexError("ClawPack artifact not found");
   }
 
   const now = Date.now();
@@ -4613,9 +4610,9 @@ async function revokeStorePackArtifactForRelease(
   let revokedArtifactCount = 0;
   for (const artifact of artifacts) {
     if (
-      artifact.kind !== "storepack" ||
+      artifact.kind !== "clawpack" ||
       artifact.status !== "active" ||
-      artifact.sha256 !== release.storepackSha256
+      artifact.sha256 !== release.clawpackSha256
     ) {
       continue;
     }
@@ -4629,27 +4626,27 @@ async function revokeStorePackArtifactForRelease(
   }
 
   await ctx.db.patch(release._id, {
-    storepackRevokedAt: release.storepackRevokedAt ?? now,
-    storepackRevokedByUserId: release.storepackRevokedByUserId ?? actor._id,
-    ...(reason ? { storepackRevocationReason: reason } : {}),
+    clawpackRevokedAt: release.clawpackRevokedAt ?? now,
+    clawpackRevokedByUserId: release.clawpackRevokedByUserId ?? actor._id,
+    ...(reason ? { clawpackRevocationReason: reason } : {}),
   });
-  await replaceStorePackSearchIndexRows(ctx, pkg, {
+  await replaceClawPackSearchIndexRows(ctx, pkg, {
     ...release,
-    storepackRevokedAt: release.storepackRevokedAt ?? now,
-    storepackRevokedByUserId: release.storepackRevokedByUserId ?? actor._id,
-    ...(reason ? { storepackRevocationReason: reason } : {}),
+    clawpackRevokedAt: release.clawpackRevokedAt ?? now,
+    clawpackRevokedByUserId: release.clawpackRevokedByUserId ?? actor._id,
+    ...(reason ? { clawpackRevocationReason: reason } : {}),
   } as Doc<"packageReleases">);
   await ctx.db.insert("auditLogs", {
     actorUserId: actor._id,
-    action: "package.storepack.revoked",
+    action: "package.clawpack.revoked",
     targetType: "packageRelease",
     targetId: release._id,
     metadata: {
       packageId: pkg._id,
       packageName: pkg.name,
       version: release.version,
-      sha256: release.storepackSha256,
-      alreadyRevoked: Boolean(release.storepackRevokedAt),
+      sha256: release.clawpackSha256,
+      alreadyRevoked: Boolean(release.clawpackRevokedAt),
       revokedArtifactCount,
       ...(reason ? { reason } : {}),
     },
@@ -4661,20 +4658,20 @@ async function revokeStorePackArtifactForRelease(
     packageId: pkg._id,
     releaseId: release._id,
     version: release.version,
-    sha256: release.storepackSha256,
-    alreadyRevoked: Boolean(release.storepackRevokedAt),
+    sha256: release.clawpackSha256,
+    alreadyRevoked: Boolean(release.clawpackRevokedAt),
     revokedArtifactCount,
   };
 }
 
-export const revokeStorePackArtifact = mutation({
+export const revokeClawPackArtifact = mutation({
   args: {
     releaseId: v.id("packageReleases"),
     reason: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
     const { user } = await requireUser(ctx);
-    return await revokeStorePackArtifactForRelease(ctx, {
+    return await revokeClawPackArtifactForRelease(ctx, {
       releaseId: args.releaseId,
       actorUserId: user._id,
       reason: args.reason,
@@ -4682,7 +4679,7 @@ export const revokeStorePackArtifact = mutation({
   },
 });
 
-export const revokeStorePackArtifactForStaffInternal = internalMutation({
+export const revokeClawPackArtifactForStaffInternal = internalMutation({
   args: {
     actorUserId: v.id("users"),
     name: v.string(),
@@ -4703,7 +4700,7 @@ export const revokeStorePackArtifactForStaffInternal = internalMutation({
       )
       .unique();
     if (!release || release.softDeletedAt) throw new ConvexError("Package release not found");
-    return await revokeStorePackArtifactForRelease(ctx, {
+    return await revokeClawPackArtifactForRelease(ctx, {
       releaseId: release._id,
       actorUserId: args.actorUserId,
       reason: args.reason,
