@@ -1964,7 +1964,7 @@ describe("packages public queries", () => {
       family: "code-plugin",
       version: "1.0.0",
       changelog: "init",
-      tags: [],
+      tags: ["latest"],
       summary: "diff tools",
       files: [],
       integritySha256: "abc123",
@@ -2409,7 +2409,7 @@ describe("packages public queries", () => {
     expect(ctx.patch).not.toHaveBeenCalled();
   });
 
-  it("adds a latest tag when an untagged promoted release becomes the package latest", async () => {
+  it("keeps an initial beta-only package publish off latest", async () => {
     const ctx = makeInsertReleaseCtx(
       makePackageDoc({
         latestReleaseId: undefined,
@@ -2449,7 +2449,7 @@ describe("packages public queries", () => {
     expect(ctx.insert).toHaveBeenCalledWith(
       "packageReleases",
       expect.objectContaining({
-        distTags: ["beta", "latest"],
+        distTags: ["beta"],
         verification: expect.objectContaining({ scanStatus: "suspicious" }),
         staticScan: expect.objectContaining({ status: "suspicious" }),
       }),
@@ -2457,8 +2457,8 @@ describe("packages public queries", () => {
     expect(ctx.patch).toHaveBeenCalledWith(
       "packages:demo",
       expect.objectContaining({
-        latestReleaseId: "packageReleases:new",
-        tags: { beta: "packageReleases:new", latest: "packageReleases:new" },
+        latestReleaseId: undefined,
+        tags: { beta: "packageReleases:new" },
       }),
     );
   });

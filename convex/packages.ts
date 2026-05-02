@@ -2683,7 +2683,7 @@ export const insertReleaseInternal = internalMutation({
           .collect()
       : [];
 
-    const shouldPromoteLatest = args.tags.includes("latest") || !existing?.latestReleaseId;
+    const shouldPromoteLatest = args.tags.includes("latest");
     const effectiveTags = shouldPromoteLatest
       ? Array.from(new Set([...args.tags, "latest"]))
       : args.tags;
@@ -3197,6 +3197,78 @@ export const setBatch = mutation({
       metadata: { highlighted: nextHighlighted },
       createdAt: now,
     });
+  },
+});
+
+export const removeBetaLatestPackageTagsInternal = internalMutation({
+  args: {
+    actorUserId: v.id("users"),
+    names: v.array(v.string()),
+    reason: v.optional(v.string()),
+  },
+  handler: async (ctx, args) => {
+    const actor = await ctx.db.get(args.actorUserId);
+    if (!actor || actor.deletedAt || actor.deactivatedAt) throw new ConvexError("Unauthorized");
+    assertAdmin(actor);
+
+    const results = [];
+    const now = Date.now();
+    for (const name of args.names) {
+      const normalizedName = normalizePackageName(name);
+      const pkg = await getPackageByNormalizedName(ctx, normalizedName);
+      if (!pkg || pkg.softDeletedAt || pkg.family === "skill") {
+        results.push({ name: normalizedName, ok: false as const, error: "Package not found" });
+        continue;
+      }
+      const latestReleaseId = pkg.latestReleaseId ?? pkg.tags.latest;
+      if (!latestReleaseId) {
+        results.push({ name: normalizedName, ok: true as const, changed: false });
+        continue;
+      }
+      const latestRelease = await ctx.db.get(latestReleaseId);
+      if (!latestRelease || latestRelease.softDeletedAt) {
+        results.push({
+          name: normalizedName,
+          ok: false as const,
+          error: "Latest release not found",
+        });
+        continue;
+      }
+      if (!latestRelease.version.includes("-")) {
+        results.push({
+          name: normalizedName,
+          ok: false as const,
+          error: `Latest release ${latestRelease.version} is not a prerelease`,
+        });
+        continue;
+      }
+
+      const nextTags = { ...pkg.tags };
+      delete nextTags.latest;
+      await ctx.db.patch(pkg._id, {
+        latestReleaseId: undefined,
+        latestVersionSummary: undefined,
+        tags: nextTags,
+        updatedAt: now,
+      });
+      await ctx.db.patch(latestRelease._id, {
+        distTags: (latestRelease.distTags ?? []).filter((tag) => tag !== "latest"),
+      });
+      await ctx.db.insert("auditLogs", {
+        actorUserId: args.actorUserId,
+        action: "package.tags.remove_beta_latest",
+        targetType: "package",
+        targetId: pkg._id,
+        metadata: {
+          name: normalizedName,
+          version: latestRelease.version,
+          reason: args.reason || undefined,
+        },
+        createdAt: now,
+      });
+      results.push({ name: normalizedName, ok: true as const, changed: true });
+    }
+    return { ok: true as const, results };
   },
 });
 
