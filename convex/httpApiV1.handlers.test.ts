@@ -4247,7 +4247,7 @@ describe("httpApiV1 handlers", () => {
 
     expect(response.status).toBe(200);
     await expect(response.json()).resolves.toMatchObject({
-      generatedStorePackSampleSize: 1,
+      generatedClawPackSampleSize: 1,
       sampleLimit: 7,
     });
   });
@@ -4260,7 +4260,13 @@ describe("httpApiV1 handlers", () => {
     const runQuery = vi.fn(async (_query: unknown, args: Record<string, unknown>) => {
       if (isRateLimitArgs(args)) return okRate();
       return {
-        items: [{ bundledPluginId: "opik", readinessState: "ready-for-openclaw" }],
+        items: [
+          {
+            bundledPluginId: "opik",
+            readinessState: "storepack-missing",
+            blockers: ["storepack-missing"],
+          },
+        ],
         readyCount: 1,
         blockedCount: 0,
         generatedAt: 1,
@@ -4276,7 +4282,7 @@ describe("httpApiV1 handlers", () => {
     expect(response.status).toBe(200);
     await expect(response.json()).resolves.toMatchObject({
       readyCount: 1,
-      items: [{ bundledPluginId: "opik" }],
+      items: [{ bundledPluginId: "opik", readinessState: "clawpack-missing" }],
     });
   });
 

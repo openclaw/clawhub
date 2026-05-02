@@ -391,6 +391,36 @@ function toPublicCatalogSearchEntry(entry: CatalogSearchEntry): CatalogSearchEnt
   };
 }
 
+function toPublicClawPackMigrationStatus(result: Record<string, unknown>) {
+  const { generatedStorePackSampleSize, generatedStorePackBytes, ...rest } = result;
+  return {
+    ...rest,
+    generatedClawPackSampleSize: generatedStorePackSampleSize,
+    generatedClawPackBytes: generatedStorePackBytes,
+  };
+}
+
+function toPublicClawPackReadinessLabel(value: unknown) {
+  return value === "storepack-missing" ? "clawpack-missing" : value;
+}
+
+function toPublicClawPackReadinessResult(result: Record<string, unknown>) {
+  const items = Array.isArray(result.items)
+    ? result.items.map((item) => {
+        if (!item || typeof item !== "object") return item;
+        const record = item as Record<string, unknown>;
+        return {
+          ...record,
+          readinessState: toPublicClawPackReadinessLabel(record.readinessState),
+          blockers: Array.isArray(record.blockers)
+            ? record.blockers.map(toPublicClawPackReadinessLabel)
+            : record.blockers,
+        };
+      })
+    : result.items;
+  return { ...result, items };
+}
+
 type ClawPackArtifactLookup =
   | {
       status: "ok";
@@ -1834,12 +1864,12 @@ export async function packagesGetRouterV1Handler(ctx: ActionCtx, request: Reques
     const admin = requireAdminOrResponse(auth.user, rate.headers);
     if (!admin.ok) return admin.response;
     const limit = toOptionalNumber(new URL(request.url).searchParams.get("limit")) ?? undefined;
-    const result = await runQueryRef(
+    const result = (await runQueryRef(
       ctx,
       internalRefs.packages.getStorePackMigrationStatusInternal,
       { limit },
-    );
-    return json(result, 200, rate.headers);
+    )) as Record<string, unknown>;
+    return json(toPublicClawPackMigrationStatus(result), 200, rate.headers);
   }
   if (
     segments[0] === "clawpack" &&
@@ -1909,12 +1939,12 @@ export async function packagesGetRouterV1Handler(ctx: ActionCtx, request: Reques
     if (!auth.ok) return auth.response;
     const admin = requireAdminOrResponse(auth.user, rate.headers);
     if (!admin.ok) return admin.response;
-    const result = await runQueryRef(
+    const result = (await runQueryRef(
       ctx,
       internalRefs.packages.listOfficialMigrationReadinessForStaffInternal,
       {},
-    );
-    return json(result, 200, rate.headers);
+    )) as Record<string, unknown>;
+    return json(toPublicClawPackReadinessResult(result), 200, rate.headers);
   }
 
   const rateKind = segments[1] === "download" ? "download" : "read";

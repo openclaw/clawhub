@@ -33,20 +33,20 @@ const {
   cmdExplorePackages,
   cmdGetPackageTrustedPublisher,
   cmdInspectPackage,
-  cmdPackageStorePackBackfill,
-  cmdPackageStorePackIndexBackfill,
-  cmdPackageStorePackMigrationDryRun,
-  cmdPackageStorePackMigrationReadiness,
-  cmdPackageStorePackMigrationRunContinue,
-  cmdPackageStorePackMigrationRunCreate,
-  cmdPackageStorePackMigrationRuns,
-  cmdPackageStorePackMigrationStatus,
-  cmdPackageStorePackRetryFailures,
-  cmdPackageStorePackRevoke,
-  cmdInspectPackageStorePack,
+  cmdPackageClawPackBackfill,
+  cmdPackageClawPackIndexBackfill,
+  cmdPackageClawPackMigrationDryRun,
+  cmdPackageClawPackMigrationReadiness,
+  cmdPackageClawPackMigrationRunContinue,
+  cmdPackageClawPackMigrationRunCreate,
+  cmdPackageClawPackMigrationRuns,
+  cmdPackageClawPackMigrationStatus,
+  cmdPackageClawPackRetryFailures,
+  cmdPackageClawPackRevoke,
+  cmdInspectPackageClawPack,
   cmdPublishPackage,
   cmdSetPackageTrustedPublisher,
-  cmdVerifyPackageStorePack,
+  cmdVerifyPackageClawPack,
 } = await import("./packages");
 
 const mockLog = vi.spyOn(console, "log").mockImplementation(() => {});
@@ -232,7 +232,7 @@ describe("package commands", () => {
     expect(url.searchParams.get("version")).toBeNull();
   });
 
-  it("prints StorePack metadata while inspecting a package", async () => {
+  it("prints Claw Pack metadata while inspecting a package", async () => {
     httpMocks.apiRequest.mockResolvedValueOnce({
       package: {
         name: "demo",
@@ -252,7 +252,7 @@ describe("package commands", () => {
           tier: "structural",
           scope: "artifact-only",
         },
-        storepack: {
+        clawpack: {
           available: true,
           specVersion: 1,
           format: "zip",
@@ -261,7 +261,7 @@ describe("package commands", () => {
           fileCount: 3,
           manifestSha256: "b".repeat(64),
           builtAt: 1_763_000_000_000,
-          buildVersion: "clawhub-storepack-v1",
+          buildVersion: "clawhub-clawpack-v1",
           hostTargets: [
             { os: "darwin", arch: "arm64", supportState: "supported" },
             { os: "linux", arch: "x64", libc: "glibc", supportState: "supported" },
@@ -275,12 +275,12 @@ describe("package commands", () => {
 
     await cmdInspectPackage(makeOpts(), "demo", {});
 
-    expect(mockLog).toHaveBeenCalledWith("StorePack: available");
-    expect(mockLog).toHaveBeenCalledWith(`StorePack SHA-256: ${"a".repeat(64)}`);
-    expect(mockLog).toHaveBeenCalledWith("StorePack Targets: darwin-arm64, linux-x64-glibc");
+    expect(mockLog).toHaveBeenCalledWith("Claw Pack: available");
+    expect(mockLog).toHaveBeenCalledWith(`Claw Pack SHA-256: ${"a".repeat(64)}`);
+    expect(mockLog).toHaveBeenCalledWith("Claw Pack Targets: darwin-arm64, linux-x64-glibc");
   });
 
-  it("inspects remote StorePack metadata by package version", async () => {
+  it("inspects remote Claw Pack metadata by package version", async () => {
     httpMocks.apiRequest.mockResolvedValueOnce({
       package: {
         name: "@openclaw/kitchen-sink",
@@ -288,7 +288,7 @@ describe("package commands", () => {
         family: "code-plugin",
       },
       version: { version: "1.0.0", createdAt: 1 },
-      storepack: {
+      clawpack: {
         available: true,
         specVersion: 1,
         format: "zip",
@@ -297,33 +297,33 @@ describe("package commands", () => {
         fileCount: 3,
         manifestSha256: "b".repeat(64),
         builtAt: 1_763_000_000_000,
-        buildVersion: "clawhub-storepack-v1",
+        buildVersion: "clawhub-clawpack-v1",
         hostTargets: [{ os: "darwin", arch: "arm64", supportState: "supported" }],
         environment: { requiresNetwork: true },
         runtimeBundles: [],
       },
       links: {
         download: "/api/v1/packages/%40openclaw%2Fkitchen-sink/download?version=1.0.0",
-        immutable: `/api/v1/storepacks/${"a".repeat(64)}`,
-        manifest: "/api/v1/packages/%40openclaw%2Fkitchen-sink/versions/1.0.0/storepack/manifest",
+        immutable: `/api/v1/clawpacks/${"a".repeat(64)}`,
+        manifest: "/api/v1/packages/%40openclaw%2Fkitchen-sink/versions/1.0.0/clawpack/manifest",
       },
     });
 
-    await cmdInspectPackageStorePack(makeOpts(), "@openclaw/kitchen-sink", { version: "1.0.0" });
+    await cmdInspectPackageClawPack(makeOpts(), "@openclaw/kitchen-sink", { version: "1.0.0" });
 
     expect(httpMocks.apiRequest).toHaveBeenCalledWith(
       "https://clawhub.ai",
       {
         method: "GET",
-        path: "/api/v1/packages/%40openclaw%2Fkitchen-sink/versions/1.0.0/storepack",
+        path: "/api/v1/packages/%40openclaw%2Fkitchen-sink/versions/1.0.0/clawpack",
       },
       undefined,
     );
     expect(mockLog).toHaveBeenCalledWith("@openclaw/kitchen-sink@1.0.0");
-    expect(mockLog).toHaveBeenCalledWith(`StorePack SHA-256: ${"a".repeat(64)}`);
+    expect(mockLog).toHaveBeenCalledWith(`Claw Pack SHA-256: ${"a".repeat(64)}`);
   });
 
-  it("prints remote StorePack manifests and resolves latest versions", async () => {
+  it("prints remote Claw Pack manifests and resolves latest versions", async () => {
     httpMocks.apiRequest
       .mockResolvedValueOnce({
         package: {
@@ -350,7 +350,7 @@ describe("package commands", () => {
       .mockResolvedValueOnce({
         package: { name: "demo", displayName: "Demo", family: "code-plugin" },
         version: "2.0.0",
-        storepack: {
+        clawpack: {
           available: true,
           specVersion: 1,
           format: "zip",
@@ -359,34 +359,34 @@ describe("package commands", () => {
           fileCount: 3,
           manifestSha256: "d".repeat(64),
           builtAt: 1_763_000_000_000,
-          buildVersion: "clawhub-storepack-v1",
+          buildVersion: "clawhub-clawpack-v1",
           hostTargets: [],
           environment: null,
           runtimeBundles: [],
         },
-        manifest: { kind: "openclaw.storepack", specVersion: 1 },
+        manifest: { kind: "openclaw.clawpack", specVersion: 1 },
       });
 
-    await cmdInspectPackageStorePack(makeOpts(), "demo", { manifest: true });
+    await cmdInspectPackageClawPack(makeOpts(), "demo", { manifest: true });
 
     const manifestCall = httpMocks.apiRequest.mock.calls[1];
-    if (!manifestCall) throw new Error("Missing StorePack manifest request");
+    if (!manifestCall) throw new Error("Missing Claw Pack manifest request");
     const manifestRequest = manifestCall[1] as { path?: string };
-    expect(manifestRequest.path).toBe("/api/v1/packages/demo/versions/2.0.0/storepack/manifest");
+    expect(manifestRequest.path).toBe("/api/v1/packages/demo/versions/2.0.0/clawpack/manifest");
     expect(mockWrite.mock.calls.map((call) => String(call[0])).join("")).toContain(
-      `"kind": "openclaw.storepack"`,
+      `"kind": "openclaw.clawpack"`,
     );
   });
 
-  it("downloads a StorePack package archive", async () => {
+  it("downloads a Claw Pack package archive", async () => {
     const workdir = await makeTmpWorkdir();
     const bytes = new Uint8Array([1, 2, 3, 4]);
     const fetchMock = vi.fn(async () => {
       return new Response(bytes, {
         headers: {
-          "content-disposition": 'attachment; filename="demo.storepack.zip"',
-          "x-clawhub-storepack-sha256": "c".repeat(64),
-          "x-clawhub-storepack-spec-version": "1",
+          "content-disposition": 'attachment; filename="demo.clawpack.zip"',
+          "x-clawhub-clawpack-sha256": "c".repeat(64),
+          "x-clawhub-clawpack-spec-version": "1",
         },
       });
     });
@@ -400,20 +400,20 @@ describe("package commands", () => {
           headers: expect.objectContaining({ Accept: "application/zip" }),
         }),
       );
-      expect(await readFile(join(workdir, "demo.storepack.zip"))).toEqual(Buffer.from(bytes));
+      expect(await readFile(join(workdir, "demo.clawpack.zip"))).toEqual(Buffer.from(bytes));
       expect(mockWrite.mock.calls.map((call) => String(call[0])).join("")).toContain(
-        `"storepackSha256": "${"c".repeat(64)}"`,
+        `"clawpackSha256": "${"c".repeat(64)}"`,
       );
     } finally {
       await rm(workdir, { recursive: true, force: true });
     }
   });
 
-  it("verifies StorePack archives and rejects digest mismatches", async () => {
+  it("verifies Claw Pack archives and rejects digest mismatches", async () => {
     const workdir = await makeTmpWorkdir();
     try {
       const zip = zipSync({
-        "package/STOREPACK.json": new TextEncoder().encode(
+        "package/CLAWPACK.json": new TextEncoder().encode(
           JSON.stringify({
             specVersion: 1,
             package: { name: "demo", version: "1.0.0" },
@@ -421,30 +421,30 @@ describe("package commands", () => {
         ),
         "package/package.json": new TextEncoder().encode("{}"),
       });
-      const file = join(workdir, "demo.storepack.zip");
+      const file = join(workdir, "demo.clawpack.zip");
       await writeFile(file, zip);
       const sha256 = createHash("sha256").update(zip).digest("hex");
 
-      await cmdVerifyPackageStorePack(file, { sha256, json: true });
+      await cmdVerifyPackageClawPack(file, { sha256, json: true });
       expect(mockWrite.mock.calls.map((call) => String(call[0])).join("")).toContain(`"ok": true`);
-      await expect(cmdVerifyPackageStorePack(file, { sha256: "0".repeat(64) })).rejects.toThrow(
-        "StorePack digest mismatch",
+      await expect(cmdVerifyPackageClawPack(file, { sha256: "0".repeat(64) })).rejects.toThrow(
+        "Claw Pack digest mismatch",
       );
     } finally {
       await rm(workdir, { recursive: true, force: true });
     }
   });
 
-  it("fetches StorePack migration status for admins", async () => {
+  it("fetches Claw Pack migration status for admins", async () => {
     httpMocks.apiRequest.mockResolvedValueOnce({
       missingSample: [],
       missingSampleSize: 0,
-      generatedStorePackSampleSize: 2,
-      generatedStorePackBytes: 2048,
+      generatedClawPackSampleSize: 2,
+      generatedClawPackBytes: 2048,
       sampleLimit: 25,
     });
 
-    await cmdPackageStorePackMigrationStatus(makeOpts(), { limit: 25, json: true });
+    await cmdPackageClawPackMigrationStatus(makeOpts(), { limit: 25, json: true });
 
     const request = httpMocks.apiRequest.mock.calls[0]?.[1] as
       | { method?: string; url?: string; token?: string }
@@ -452,10 +452,10 @@ describe("package commands", () => {
     expect(request?.method).toBe("GET");
     expect(request?.token).toBe("tkn");
     const url = new URL(String(request?.url));
-    expect(url.pathname).toBe("/api/v1/packages/storepack/migration-status");
+    expect(url.pathname).toBe("/api/v1/packages/clawpack/migration-status");
     expect(url.searchParams.get("limit")).toBe("25");
     expect(mockWrite.mock.calls.map((call) => String(call[0])).join("")).toContain(
-      "generatedStorePackSampleSize",
+      "generatedClawPackSampleSize",
     );
   });
 
@@ -465,8 +465,8 @@ describe("package commands", () => {
         {
           bundledPluginId: "opik",
           desiredPackageName: "@opik/opik-openclaw",
-          readinessState: "storepack-missing",
-          blockers: ["storepack-missing"],
+          readinessState: "clawpack-missing",
+          blockers: ["clawpack-missing"],
         },
       ],
       readyCount: 0,
@@ -474,25 +474,25 @@ describe("package commands", () => {
       generatedAt: 1,
     });
 
-    await cmdPackageStorePackMigrationReadiness(makeOpts());
+    await cmdPackageClawPackMigrationReadiness(makeOpts());
 
     expect(httpMocks.apiRequest).toHaveBeenCalledWith(
       "https://clawhub.ai",
       {
         method: "GET",
-        path: "/api/v1/packages/storepack/migration-readiness",
+        path: "/api/v1/packages/clawpack/migration-readiness",
         token: "tkn",
       },
       undefined,
     );
-    expect(mockLog).toHaveBeenCalledWith("StorePack migration readiness");
+    expect(mockLog).toHaveBeenCalledWith("Claw Pack migration readiness");
     expect(mockLog).toHaveBeenCalledWith("Ready: 0");
     expect(mockLog).toHaveBeenCalledWith(
-      "opik: storepack-missing -> @opik/opik-openclaw [storepack-missing]",
+      "opik: clawpack-missing -> @opik/opik-openclaw [clawpack-missing]",
     );
   });
 
-  it("fetches StorePack migration dry-run candidates for admins", async () => {
+  it("fetches Claw Pack migration dry-run candidates for admins", async () => {
     httpMocks.apiRequest.mockResolvedValueOnce({
       operation: "artifact-backfill",
       candidateCount: 1,
@@ -501,7 +501,7 @@ describe("package commands", () => {
       candidates: [{ name: "demo-plugin", version: "1.0.0" }],
     });
 
-    await cmdPackageStorePackMigrationDryRun(makeOpts(), {
+    await cmdPackageClawPackMigrationDryRun(makeOpts(), {
       operation: "artifact-backfill",
       limit: 5,
       json: true,
@@ -513,7 +513,7 @@ describe("package commands", () => {
     expect(request?.method).toBe("GET");
     expect(request?.token).toBe("tkn");
     const url = new URL(String(request?.url));
-    expect(url.pathname).toBe("/api/v1/packages/storepack/migration-runs/dry-run");
+    expect(url.pathname).toBe("/api/v1/packages/clawpack/migration-runs/dry-run");
     expect(url.searchParams.get("operation")).toBe("artifact-backfill");
     expect(url.searchParams.get("limit")).toBe("5");
     expect(mockWrite.mock.calls.map((call) => String(call[0])).join("")).toContain(
@@ -521,7 +521,7 @@ describe("package commands", () => {
     );
   });
 
-  it("lists StorePack migration runs for admins", async () => {
+  it("lists Claw Pack migration runs for admins", async () => {
     httpMocks.apiRequest.mockResolvedValueOnce({
       items: [
         {
@@ -534,23 +534,23 @@ describe("package commands", () => {
       ],
     });
 
-    await cmdPackageStorePackMigrationRuns(makeOpts(), { status: "pending", limit: 10 });
+    await cmdPackageClawPackMigrationRuns(makeOpts(), { status: "pending", limit: 10 });
 
     const request = httpMocks.apiRequest.mock.calls[0]?.[1] as
       | { method?: string; url?: string; token?: string }
       | undefined;
     expect(request?.method).toBe("GET");
     const url = new URL(String(request?.url));
-    expect(url.pathname).toBe("/api/v1/packages/storepack/migration-runs");
+    expect(url.pathname).toBe("/api/v1/packages/clawpack/migration-runs");
     expect(url.searchParams.get("status")).toBe("pending");
     expect(url.searchParams.get("limit")).toBe("10");
-    expect(mockLog).toHaveBeenCalledWith("StorePack migration runs");
+    expect(mockLog).toHaveBeenCalledWith("Claw Pack migration runs");
     expect(mockLog).toHaveBeenCalledWith(
       "storePackMigrationRuns:1  failure-retry  pending  processed=0 failed=0 cursor=unknown",
     );
   });
 
-  it("creates and continues StorePack migration runs for admins", async () => {
+  it("creates and continues Claw Pack migration runs for admins", async () => {
     httpMocks.apiRequest
       .mockResolvedValueOnce({
         _id: "storePackMigrationRuns:1",
@@ -571,19 +571,19 @@ describe("package commands", () => {
         result: { processed: 2, succeeded: 2, failed: 0 },
       });
 
-    await cmdPackageStorePackMigrationRunCreate(makeOpts(), {
+    await cmdPackageClawPackMigrationRunCreate(makeOpts(), {
       operation: "search-index-backfill",
       limit: 2,
       cursor: "cursor:1",
     });
-    await cmdPackageStorePackMigrationRunContinue(makeOpts(), "storePackMigrationRuns:1");
+    await cmdPackageClawPackMigrationRunContinue(makeOpts(), "storePackMigrationRuns:1");
 
     expect(httpMocks.apiRequest).toHaveBeenNthCalledWith(
       1,
       "https://clawhub.ai",
       {
         method: "POST",
-        path: "/api/v1/packages/storepack/migration-runs",
+        path: "/api/v1/packages/clawpack/migration-runs",
         token: "tkn",
         body: { operation: "search-index-backfill", limit: 2, cursor: "cursor:1" },
       },
@@ -594,17 +594,17 @@ describe("package commands", () => {
       "https://clawhub.ai",
       {
         method: "POST",
-        path: "/api/v1/packages/storepack/migration-runs/storePackMigrationRuns%3A1/continue",
+        path: "/api/v1/packages/clawpack/migration-runs/storePackMigrationRuns%3A1/continue",
         token: "tkn",
       },
       undefined,
     );
-    expect(mockLog).toHaveBeenCalledWith("StorePack migration run created");
-    expect(mockLog).toHaveBeenCalledWith("StorePack migration run continued");
+    expect(mockLog).toHaveBeenCalledWith("Claw Pack migration run created");
+    expect(mockLog).toHaveBeenCalledWith("Claw Pack migration run continued");
     expect(mockLog).toHaveBeenCalledWith("Processed: 2");
   });
 
-  it("runs StorePack backfill batches for admins", async () => {
+  it("runs Claw Pack backfill batches for admins", async () => {
     httpMocks.apiRequest.mockResolvedValueOnce({
       processed: 2,
       succeeded: 2,
@@ -612,23 +612,23 @@ describe("package commands", () => {
       results: [],
     });
 
-    await cmdPackageStorePackBackfill(makeOpts(), { limit: 2 });
+    await cmdPackageClawPackBackfill(makeOpts(), { limit: 2 });
 
     expect(httpMocks.apiRequest).toHaveBeenCalledWith(
       "https://clawhub.ai",
       {
         method: "POST",
-        path: "/api/v1/packages/storepack/backfill",
+        path: "/api/v1/packages/clawpack/backfill",
         token: "tkn",
         body: { limit: 2 },
       },
       undefined,
     );
-    expect(mockLog).toHaveBeenCalledWith("StorePack backfill");
+    expect(mockLog).toHaveBeenCalledWith("Claw Pack backfill");
     expect(mockLog).toHaveBeenCalledWith("Succeeded: 2");
   });
 
-  it("runs StorePack index backfill batches for admins", async () => {
+  it("runs Claw Pack index backfill batches for admins", async () => {
     httpMocks.apiRequest.mockResolvedValueOnce({
       processed: 2,
       succeeded: 2,
@@ -638,23 +638,23 @@ describe("package commands", () => {
       isDone: false,
     });
 
-    await cmdPackageStorePackIndexBackfill(makeOpts(), { limit: 2, cursor: "cursor:1" });
+    await cmdPackageClawPackIndexBackfill(makeOpts(), { limit: 2, cursor: "cursor:1" });
 
     expect(httpMocks.apiRequest).toHaveBeenCalledWith(
       "https://clawhub.ai",
       {
         method: "POST",
-        path: "/api/v1/packages/storepack/index-backfill",
+        path: "/api/v1/packages/clawpack/index-backfill",
         token: "tkn",
         body: { limit: 2, cursor: "cursor:1" },
       },
       undefined,
     );
-    expect(mockLog).toHaveBeenCalledWith("StorePack index backfill");
+    expect(mockLog).toHaveBeenCalledWith("Claw Pack index backfill");
     expect(mockLog).toHaveBeenCalledWith("Next cursor: cursor:2");
   });
 
-  it("retries failed StorePack backfill batches for admins", async () => {
+  it("retries failed Claw Pack backfill batches for admins", async () => {
     httpMocks.apiRequest.mockResolvedValueOnce({
       processed: 1,
       succeeded: 1,
@@ -662,25 +662,25 @@ describe("package commands", () => {
       results: [],
     });
 
-    await cmdPackageStorePackRetryFailures(makeOpts(), { limit: 1 });
+    await cmdPackageClawPackRetryFailures(makeOpts(), { limit: 1 });
 
     expect(httpMocks.apiRequest).toHaveBeenCalledWith(
       "https://clawhub.ai",
       {
         method: "POST",
-        path: "/api/v1/packages/storepack/retry-failures",
+        path: "/api/v1/packages/clawpack/retry-failures",
         token: "tkn",
         body: { limit: 1 },
       },
       undefined,
     );
-    expect(mockLog).toHaveBeenCalledWith("StorePack failure retry");
+    expect(mockLog).toHaveBeenCalledWith("Claw Pack failure retry");
     expect(mockLog).toHaveBeenCalledWith("Processed: 1");
     expect(mockLog).toHaveBeenCalledWith("Succeeded: 1");
     expect(mockLog).toHaveBeenCalledWith("Failed: 0");
   });
 
-  it("revokes StorePack artifacts for moderators", async () => {
+  it("revokes Claw Pack artifacts for moderators", async () => {
     httpMocks.apiRequest.mockResolvedValueOnce({
       ok: true,
       packageId: "packages:1",
@@ -690,7 +690,7 @@ describe("package commands", () => {
       revokedArtifactCount: 1,
     });
 
-    await cmdPackageStorePackRevoke(makeOpts(), "@openclaw/kitchen-sink", "1.0.0", {
+    await cmdPackageClawPackRevoke(makeOpts(), "@openclaw/kitchen-sink", "1.0.0", {
       reason: "malware confirmed",
     });
 
@@ -698,13 +698,13 @@ describe("package commands", () => {
       "https://clawhub.ai",
       {
         method: "POST",
-        path: "/api/v1/packages/%40openclaw%2Fkitchen-sink/versions/1.0.0/storepack/revoke",
+        path: "/api/v1/packages/%40openclaw%2Fkitchen-sink/versions/1.0.0/clawpack/revoke",
         token: "tkn",
         body: { reason: "malware confirmed" },
       },
       undefined,
     );
-    expect(mockLog).toHaveBeenCalledWith("StorePack revoked");
+    expect(mockLog).toHaveBeenCalledWith("Claw Pack revoked");
     expect(mockLog).toHaveBeenCalledWith(`SHA-256: ${"d".repeat(64)}`);
     expect(mockLog).toHaveBeenCalledWith("Revoked artifacts: 1");
   });
