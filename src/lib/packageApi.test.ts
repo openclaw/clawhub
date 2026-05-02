@@ -16,7 +16,10 @@ import {
   fetchPackageVersion,
   fetchPluginCatalog,
   fetchPackages,
+  getPackageApiHref,
+  getPackageClawPackHref,
   getPackageDownloadPath,
+  getPackageDownloadHref,
   getPackageClawPackPath,
   PackageApiError,
 } from "./packageApi";
@@ -480,6 +483,20 @@ describe("fetchPackages", () => {
     );
     expect(getPackageClawPackPath("@openclaw/kitchen-sink", "1.0.0", "manifest")).toBe(
       "/api/v1/packages/%40openclaw%2Fkitchen-sink/versions/1.0.0/clawpack/manifest",
+    );
+  });
+
+  it("builds absolute package asset hrefs from the Convex site URL", () => {
+    vi.stubEnv("VITE_CONVEX_SITE_URL", "https://registry.example");
+
+    expect(getPackageApiHref("/api/v1/packages/private-plugin/download")).toBe(
+      "https://registry.example/api/v1/packages/private-plugin/download",
+    );
+    expect(getPackageDownloadHref("private-plugin", "1.0.0")).toBe(
+      "https://registry.example/api/v1/packages/private-plugin/download?version=1.0.0",
+    );
+    expect(getPackageClawPackHref("@openclaw/kitchen-sink", "1.0.0", "manifest")).toBe(
+      "https://registry.example/api/v1/packages/%40openclaw%2Fkitchen-sink/versions/1.0.0/clawpack/manifest",
     );
   });
 });

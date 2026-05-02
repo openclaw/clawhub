@@ -9,8 +9,9 @@ import {
   fetchPackageDetail,
   fetchPackageClawPack,
   fetchPackageClawPackManifest,
-  getPackageDownloadPath,
-  getPackageClawPackPath,
+  getPackageApiHref,
+  getPackageClawPackHref,
+  getPackageDownloadHref,
   isRateLimitedPackageApiError,
   type PackageDetailResponse,
   type PackageClawPackManifestDetail,
@@ -121,10 +122,16 @@ function PluginReleaseRoute() {
   const pkg = detail.package;
   const clawpack = release?.clawpack ?? manifest?.clawpack ?? null;
   const manifestJson = manifest?.manifest ? JSON.stringify(manifest.manifest, null, 2) : null;
-  const downloadPath =
-    release?.links.download ?? (pkg ? getPackageDownloadPath(pkg.name, version) : null);
-  const manifestPath =
-    release?.links.manifest ?? (pkg ? getPackageClawPackPath(pkg.name, version, "manifest") : null);
+  const downloadPath = release?.links.download
+    ? getPackageApiHref(release.links.download)
+    : pkg
+      ? getPackageDownloadHref(pkg.name, version)
+      : null;
+  const manifestPath = release?.links.manifest
+    ? getPackageApiHref(release.links.manifest)
+    : pkg
+      ? getPackageClawPackHref(pkg.name, version, "manifest")
+      : null;
   const verifyCommand =
     clawpack?.sha256 && pkg
       ? `clawhub package download ${pkg.name} --version ${version}\nclawhub package verify ${pkg.name.replaceAll("/", "-")}.clawpack.zip --sha256 ${clawpack.sha256}`

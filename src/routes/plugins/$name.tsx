@@ -22,7 +22,7 @@ import {
   fetchPackageReadme,
   fetchPackageVersion,
   fetchPackageVersions,
-  getPackageDownloadPath,
+  getPackageDownloadHref,
   isRateLimitedPackageApiError,
   type PackageDetailResponse,
   type PackageClawPackSummary,
@@ -286,9 +286,9 @@ function PluginDetailRoute() {
   const capabilities = latestRelease?.capabilities ?? pkg.capabilities;
   const compatibility = latestRelease?.compatibility ?? pkg.compatibility;
   const verification = latestRelease?.verification ?? pkg.verification;
-  const packageStorepack = (pkg as typeof pkg & { clawpack?: PackageClawPackSummary }).clawpack;
+  const packageClawPack = (pkg as typeof pkg & { clawpack?: PackageClawPackSummary }).clawpack;
   const clawpack: PackageClawPackSummary | null =
-    latestRelease?.clawpack ?? packageStorepack ?? null;
+    latestRelease?.clawpack ?? packageClawPack ?? null;
   const clawpackEnvironment = clawPackEnvironmentLabels(clawpack);
   const requestRescan = async () => {
     const packageId = (pkg as { _id?: Id<"packages"> })._id;
@@ -336,7 +336,7 @@ function PluginDetailRoute() {
                 {pkg.latestVersion && !isDownloadBlocked ? (
                   <div className="skill-title-actions">
                     <Button asChild variant="outline" size="sm" className="no-underline">
-                      <a href={getPackageDownloadPath(name, pkg.latestVersion)}>
+                      <a href={getPackageDownloadHref(name, pkg.latestVersion)}>
                         <Download className="h-3.5 w-3.5" aria-hidden="true" />
                         Download
                       </a>
@@ -513,7 +513,7 @@ function PluginDetailRoute() {
                       </Link>
                     </Button>
                     <Button asChild variant="ghost" size="sm">
-                      <a href={getPackageDownloadPath(pkg.name, latestRelease.version)}>
+                      <a href={getPackageDownloadHref(pkg.name, latestRelease.version)}>
                         <Download size={16} />
                         Download Claw Pack
                       </a>
@@ -559,7 +559,7 @@ function PluginDetailRoute() {
                         </p>
                       </div>
                       <Button asChild variant="outline" size="sm" className="shrink-0">
-                        <a href={getPackageDownloadPath(pkg.name, item.version)}>
+                        <a href={getPackageDownloadHref(pkg.name, item.version)}>
                           <Download size={16} />
                           Download
                         </a>

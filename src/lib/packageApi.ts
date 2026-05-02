@@ -248,11 +248,36 @@ export function getPackageDownloadPath(name: string, version?: string | null) {
   return `${path}?version=${encodeURIComponent(version)}`;
 }
 
+export function getPackageApiHref(path: string) {
+  try {
+    return new URL(path).toString();
+  } catch {
+    // Relative API links are expected here.
+  }
+  const normalizedPath = normalizeApiPath(path);
+  const base = resolveAbsoluteBaseUrl(
+    getRuntimeEnv("VITE_CONVEX_SITE_URL"),
+    getRuntimeEnv("VITE_CONVEX_URL"),
+  );
+  if (base) return new URL(normalizedPath, base).toString();
+  if (typeof window !== "undefined")
+    return new URL(normalizedPath, window.location.origin).toString();
+  return normalizedPath;
+}
+
+export function getPackageDownloadHref(name: string, version?: string | null) {
+  return getPackageApiHref(getPackageDownloadPath(name, version));
+}
+
 export function getPackageClawPackPath(name: string, version: string, suffix?: "manifest") {
   const path = normalizeApiPath(
     `${ApiRoutes.packages}/${encodeURIComponent(name)}/versions/${encodeURIComponent(version)}/clawpack`,
   );
   return suffix ? `${path}/${suffix}` : path;
+}
+
+export function getPackageClawPackHref(name: string, version: string, suffix?: "manifest") {
+  return getPackageApiHref(getPackageClawPackPath(name, version, suffix));
 }
 
 async function getForwardedHeaders() {
