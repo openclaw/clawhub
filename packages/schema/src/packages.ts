@@ -83,6 +83,17 @@ export type PackageAppealStatus = (typeof PackageAppealStatusSchema)[inferred];
 export const PackageAppealListStatusSchema = PackageAppealStatusSchema.or('"all"');
 export type PackageAppealListStatus = (typeof PackageAppealListStatusSchema)[inferred];
 
+export const PackageOfficialMigrationPhaseSchema = type(
+  '"planned"|"published"|"clawpack-ready"|"legacy-zip-only"|"metadata-ready"|"blocked"|"ready-for-openclaw"',
+);
+export type PackageOfficialMigrationPhase =
+  (typeof PackageOfficialMigrationPhaseSchema)[inferred];
+
+export const PackageOfficialMigrationListPhaseSchema =
+  PackageOfficialMigrationPhaseSchema.or('"all"');
+export type PackageOfficialMigrationListPhase =
+  (typeof PackageOfficialMigrationListPhaseSchema)[inferred];
+
 export const PackageArtifactSummarySchema = type({
   kind: PackageArtifactKindSchema,
   sha256: "string?",
@@ -508,6 +519,61 @@ export const ApiV1PackageReadinessResponseSchema = type({
   blockers: "string[]",
 });
 export type ApiV1PackageReadinessResponse = (typeof ApiV1PackageReadinessResponseSchema)[inferred];
+
+export const PackageOfficialMigrationUpsertRequestSchema = type({
+  bundledPluginId: "string",
+  packageName: "string",
+  owner: "string?",
+  sourceRepo: "string?",
+  sourcePath: "string?",
+  sourceCommit: "string?",
+  phase: PackageOfficialMigrationPhaseSchema.optional(),
+  blockers: "string[]?",
+  hostTargetsComplete: "boolean?",
+  scanClean: "boolean?",
+  moderationApproved: "boolean?",
+  runtimeBundlesReady: "boolean?",
+  notes: "string?",
+});
+export type PackageOfficialMigrationUpsertRequest =
+  (typeof PackageOfficialMigrationUpsertRequestSchema)[inferred];
+
+export const PackageOfficialMigrationItemSchema = type({
+  migrationId: "string",
+  bundledPluginId: "string",
+  packageName: "string",
+  packageId: "string|null?",
+  owner: "string|null?",
+  sourceRepo: "string|null?",
+  sourcePath: "string|null?",
+  sourceCommit: "string|null?",
+  phase: PackageOfficialMigrationPhaseSchema,
+  blockers: "string[]",
+  hostTargetsComplete: "boolean",
+  scanClean: "boolean",
+  moderationApproved: "boolean",
+  runtimeBundlesReady: "boolean",
+  notes: "string|null?",
+  createdAt: "number",
+  updatedAt: "number",
+});
+export type PackageOfficialMigrationItem =
+  (typeof PackageOfficialMigrationItemSchema)[inferred];
+
+export const ApiV1PackageOfficialMigrationListResponseSchema = type({
+  items: PackageOfficialMigrationItemSchema.array(),
+  nextCursor: "string|null",
+  done: "boolean",
+});
+export type ApiV1PackageOfficialMigrationListResponse =
+  (typeof ApiV1PackageOfficialMigrationListResponseSchema)[inferred];
+
+export const ApiV1PackageOfficialMigrationResponseSchema = type({
+  ok: "true",
+  migration: PackageOfficialMigrationItemSchema,
+});
+export type ApiV1PackageOfficialMigrationResponse =
+  (typeof ApiV1PackageOfficialMigrationResponseSchema)[inferred];
 
 export const PackageModerationQueueStatusSchema = type('"open"|"blocked"|"manual"|"all"');
 export type PackageModerationQueueStatus = (typeof PackageModerationQueueStatusSchema)[inferred];

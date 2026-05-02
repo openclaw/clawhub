@@ -1326,6 +1326,37 @@ const packageAppeals = defineTable({
   .index("by_status_createdAt", ["status", "createdAt"])
   .index("by_user_createdAt", ["userId", "createdAt"]);
 
+const officialPluginMigrations = defineTable({
+  bundledPluginId: v.string(),
+  packageName: v.string(),
+  packageId: v.optional(v.id("packages")),
+  owner: v.optional(v.string()),
+  sourceRepo: v.optional(v.string()),
+  sourcePath: v.optional(v.string()),
+  sourceCommit: v.optional(v.string()),
+  phase: v.union(
+    v.literal("planned"),
+    v.literal("published"),
+    v.literal("clawpack-ready"),
+    v.literal("legacy-zip-only"),
+    v.literal("metadata-ready"),
+    v.literal("blocked"),
+    v.literal("ready-for-openclaw"),
+  ),
+  blockers: v.array(v.string()),
+  hostTargetsComplete: v.boolean(),
+  scanClean: v.boolean(),
+  moderationApproved: v.boolean(),
+  runtimeBundlesReady: v.boolean(),
+  notes: v.optional(v.string()),
+  createdAt: v.number(),
+  updatedAt: v.number(),
+})
+  .index("by_bundled_plugin", ["bundledPluginId"])
+  .index("by_package_name", ["packageName"])
+  .index("by_phase_updatedAt", ["phase", "updatedAt"])
+  .index("by_updatedAt", ["updatedAt"]);
+
 const soulComments = defineTable({
   soulId: v.id("souls"),
   userId: v.id("users"),
@@ -1567,6 +1598,7 @@ export default defineSchema({
   skillReports,
   packageReports,
   packageAppeals,
+  officialPluginMigrations,
   soulComments,
   stars,
   soulStars,
