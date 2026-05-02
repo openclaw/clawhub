@@ -200,15 +200,39 @@ jobs:
           DEPLOYMENT_URL: ${{ steps.vercel.outputs.deployment_url }}
         run: |
           set -euo pipefail
+          deployed_at="$(date -u +"%Y-%m-%dT%H:%M:%SZ")"
           tag_name="deploy/prod/$(date -u +"%Y%m%d-%H%M%SZ")-${GITHUB_SHA::7}"
+          version_prefix="prod/v$(date -u +"%Y.%m.%d")."
           run_url="${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}"
 
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+          next_version=1
+          while IFS= read -r existing_tag; do
+            existing_tag="${existing_tag#refs/tags/}"
+            existing_tag="${existing_tag%\^\{\}}"
+            suffix="${existing_tag##*.}"
+            if [[ "$existing_tag" == "$version_prefix"* && "$suffix" =~ ^[0-9]+$ && "$suffix" -ge "$next_version" ]]; then
+              next_version=$((suffix + 1))
+            fi
+          done < <(git ls-remote --tags origin "refs/tags/${version_prefix}*" | awk '{print $2}' | sort -u)
+          version_tag="${version_prefix}${next_version}"
+
           git tag -a "$tag_name" "$GITHUB_SHA" \
             -m "Production frontend deploy $tag_name" \
             -m "SHA: $GITHUB_SHA" \
+            -m "Version: $version_tag" \
+            -m "Deployed at: $deployed_at" \
             -m "Target: $DEPLOY_TARGET" \
             -m "Vercel: ${DEPLOYMENT_URL:-unknown}" \
             -m "Run: $run_url"
-          git push origin "refs/tags/$tag_name"
+          git tag -a "$version_tag" "$GITHUB_SHA" \
+            -m "Production frontend deploy $version_tag" \
+            -m "SHA: $GITHUB_SHA" \
+            -m "Timestamp tag: $tag_name" \
+            -m "Deployed at: $deployed_at" \
+            -m "Target: $DEPLOY_TARGET" \
+            -m "Vercel: ${DEPLOYMENT_URL:-unknown}" \
+            -m "Run: $run_url"
+          git push origin "refs/tags/$tag_name" "refs/tags/$version_tag"

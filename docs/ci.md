@@ -51,10 +51,15 @@ Production-only checks stay in the manual deploy workflow:
 - `bun run test:e2e:prod-http`
 - production Playwright smoke tests
 
-Successful `full` and `frontend` production deploys create an immutable
-annotated Git tag named `deploy/prod/YYYYMMDD-HHMMSSZ-<sha7>`. The tag points to
-the deployed commit and records the GitHub Actions run plus the Vercel deployment
-URL when GitHub's Vercel status exposes it.
+Successful `full` and `frontend` production deploys create two annotated Git
+tags:
+
+- `deploy/prod/YYYYMMDD-HHMMSSZ-<sha7>`: immutable audit tag with exact deploy
+  time and commit.
+- `prod/vYYYY.MM.DD.N`: clean human rollback tag, incremented per UTC day.
+
+Both tags point to the deployed commit and record the GitHub Actions run plus the
+Vercel deployment URL when GitHub's Vercel status exposes it.
 
 Use these tags as the audit map for rollback selection. Vercel traffic rollback
 still happens through Vercel's deployment rollback/promote controls; the Git tag
