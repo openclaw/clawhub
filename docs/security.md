@@ -48,6 +48,9 @@ See also: [acceptable-usage.md](./acceptable-usage.md) for the marketplace polic
   API/CLI, including open report count, latest release moderation state, and
   download-block reasons. Reporter identities and report bodies remain staff
   intake data.
+- Package owners and publisher members can submit one open appeal per moderated
+  package release. Appeals are audit-logged and do not automatically approve or
+  unblock a release.
 - Public queries hide non-active moderation statuses; staff can still access via
   staff-only queries and unhide/restore/delete/ban.
 - Skills directory supports an optional "Hide suspicious" filter to exclude

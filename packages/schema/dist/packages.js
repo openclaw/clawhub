@@ -50,6 +50,7 @@ export const PackageArtifactKindSchema = type('"legacy-zip"|"npm-pack"');
 export const PackageReleaseModerationStateSchema = type('"approved"|"quarantined"|"revoked"');
 export const PackageReportStatusSchema = type('"open"|"triaged"|"dismissed"');
 export const PackageReportListStatusSchema = PackageReportStatusSchema.or('"all"');
+export const PackageAppealStatusSchema = type('"open"|"accepted"|"rejected"');
 export const PackageArtifactSummarySchema = type({
     kind: PackageArtifactKindSchema,
     sha256: "string?",
@@ -266,6 +267,19 @@ export const ApiV1PackageReportResponseSchema = type({
 export const PackageReportTriageRequestSchema = type({
     status: PackageReportStatusSchema,
     note: "string?",
+});
+export const PackageAppealRequestSchema = type({
+    version: "string",
+    message: "string",
+});
+export const ApiV1PackageAppealResponseSchema = type({
+    ok: "true",
+    submitted: "boolean",
+    alreadyOpen: "boolean",
+    appealId: "string",
+    packageId: "string",
+    releaseId: "string",
+    status: PackageAppealStatusSchema,
 });
 export const ApiV1PackageReportListResponseSchema = type({
     items: type({

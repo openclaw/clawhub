@@ -29,6 +29,7 @@ vi.mock("../ui.js", () => uiMocks.moduleFactory());
 
 const {
   cmdDeletePackageTrustedPublisher,
+  cmdAppealPackage,
   cmdDownloadPackage,
   cmdExplorePackages,
   cmdGetPackageTrustedPublisher,
@@ -513,6 +514,38 @@ describe("package commands", () => {
       expect.anything(),
     );
     expect(mockLog).toHaveBeenCalledWith("OK. Reported @scope/demo@1.2.3 for moderator review.");
+  });
+
+  it("submits package appeals", async () => {
+    httpMocks.apiRequest.mockResolvedValueOnce({
+      ok: true,
+      submitted: true,
+      alreadyOpen: false,
+      appealId: "packageAppeals:1",
+      packageId: "pkg_1",
+      releaseId: "rel_1",
+      status: "open",
+    });
+
+    await cmdAppealPackage(makeOpts(), "@scope/demo", {
+      version: "1.2.3",
+      message: "please review",
+    });
+
+    expect(httpMocks.apiRequest).toHaveBeenCalledWith(
+      "https://clawhub.ai",
+      {
+        method: "POST",
+        path: "/api/v1/packages/%40scope%2Fdemo/appeal",
+        token: "tkn",
+        body: {
+          version: "1.2.3",
+          message: "please review",
+        },
+      },
+      expect.anything(),
+    );
+    expect(mockLog).toHaveBeenCalledWith("OK. Appeal submitted: packageAppeals:1");
   });
 
   it("lists package reports", async () => {

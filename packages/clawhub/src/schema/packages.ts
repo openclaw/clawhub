@@ -77,6 +77,9 @@ export type PackageReportStatus = (typeof PackageReportStatusSchema)[inferred];
 export const PackageReportListStatusSchema = PackageReportStatusSchema.or('"all"');
 export type PackageReportListStatus = (typeof PackageReportListStatusSchema)[inferred];
 
+export const PackageAppealStatusSchema = type('"open"|"accepted"|"rejected"');
+export type PackageAppealStatus = (typeof PackageAppealStatusSchema)[inferred];
+
 export const PackageArtifactSummarySchema = type({
   kind: PackageArtifactKindSchema,
   sha256: "string?",
@@ -331,6 +334,23 @@ export const PackageReportTriageRequestSchema = type({
   note: "string?",
 });
 export type PackageReportTriageRequest = (typeof PackageReportTriageRequestSchema)[inferred];
+
+export const PackageAppealRequestSchema = type({
+  version: "string",
+  message: "string",
+});
+export type PackageAppealRequest = (typeof PackageAppealRequestSchema)[inferred];
+
+export const ApiV1PackageAppealResponseSchema = type({
+  ok: "true",
+  submitted: "boolean",
+  alreadyOpen: "boolean",
+  appealId: "string",
+  packageId: "string",
+  releaseId: "string",
+  status: PackageAppealStatusSchema,
+});
+export type ApiV1PackageAppealResponse = (typeof ApiV1PackageAppealResponseSchema)[inferred];
 
 export const ApiV1PackageReportListResponseSchema = type({
   items: type({

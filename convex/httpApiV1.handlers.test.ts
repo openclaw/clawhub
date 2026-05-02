@@ -4035,6 +4035,46 @@ describe("httpApiV1 handlers", () => {
     );
   });
 
+  it("package appeal posts owner appeal requests", async () => {
+    vi.mocked(requireApiTokenUser).mockResolvedValue({
+      userId: "users:owner",
+      user: { _id: "users:owner", role: "user" },
+    } as never);
+    const runMutation = vi.fn(async (_mutation: unknown, args: Record<string, unknown>) => {
+      if (isRateLimitArgs(args)) return okRate();
+      return {
+        ok: true,
+        submitted: true,
+        alreadyOpen: false,
+        appealId: "packageAppeals:1",
+        packageId: "packages:1",
+        releaseId: "packageReleases:1",
+        status: "open",
+      };
+    });
+
+    const response = await __handlers.packagesPostRouterV1Handler(
+      makeCtx({ runMutation }),
+      new Request("https://example.com/api/v1/packages/%40scope%2Fdemo/appeal", {
+        method: "POST",
+        headers: { Authorization: "Bearer clh_test" },
+        body: JSON.stringify({ version: "1.2.3", message: "please review" }),
+      }),
+    );
+
+    expect(response.status).toBe(200);
+    await expect(response.json()).resolves.toMatchObject({
+      submitted: true,
+      appealId: "packageAppeals:1",
+    });
+    expect(runMutation).toHaveBeenCalledWith(internal.packages.submitPackageAppealForUserInternal, {
+      actorUserId: "users:owner",
+      name: "@scope/demo",
+      version: "1.2.3",
+      message: "please review",
+    });
+  });
+
   it("package artifact backfill posts admin dry-run requests", async () => {
     vi.mocked(requireApiTokenUser).mockResolvedValue({
       userId: "users:admin",

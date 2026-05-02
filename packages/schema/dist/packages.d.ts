@@ -61,6 +61,8 @@ export declare const PackageReportStatusSchema: import("arktype/internal/variant
 export type PackageReportStatus = (typeof PackageReportStatusSchema)[inferred];
 export declare const PackageReportListStatusSchema: import("arktype/internal/variants/string.ts").StringType<"open" | "triaged" | "dismissed" | "all", {}>;
 export type PackageReportListStatus = (typeof PackageReportListStatusSchema)[inferred];
+export declare const PackageAppealStatusSchema: import("arktype/internal/variants/string.ts").StringType<"open" | "accepted" | "rejected", {}>;
+export type PackageAppealStatus = (typeof PackageAppealStatusSchema)[inferred];
 export declare const PackageArtifactSummarySchema: import("arktype/internal/variants/object.ts").ObjectType<{
     kind: "legacy-zip" | "npm-pack";
     sha256?: string | undefined;
@@ -496,6 +498,21 @@ export declare const PackageReportTriageRequestSchema: import("arktype/internal/
     note?: string | undefined;
 }, {}>;
 export type PackageReportTriageRequest = (typeof PackageReportTriageRequestSchema)[inferred];
+export declare const PackageAppealRequestSchema: import("arktype/internal/variants/object.ts").ObjectType<{
+    version: string;
+    message: string;
+}, {}>;
+export type PackageAppealRequest = (typeof PackageAppealRequestSchema)[inferred];
+export declare const ApiV1PackageAppealResponseSchema: import("arktype/internal/variants/object.ts").ObjectType<{
+    ok: true;
+    submitted: boolean;
+    alreadyOpen: boolean;
+    appealId: string;
+    packageId: string;
+    releaseId: string;
+    status: "open" | "accepted" | "rejected";
+}, {}>;
+export type ApiV1PackageAppealResponse = (typeof ApiV1PackageAppealResponseSchema)[inferred];
 export declare const ApiV1PackageReportListResponseSchema: import("arktype/internal/variants/object.ts").ObjectType<{
     items: {
         reportId: string;

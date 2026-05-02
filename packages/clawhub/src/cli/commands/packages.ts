@@ -10,6 +10,7 @@ import {
   ApiRoutes,
   ApiV1PackageArtifactBackfillResponseSchema,
   ApiV1PackageArtifactResponseSchema,
+  ApiV1PackageAppealResponseSchema,
   ApiV1PackageListResponseSchema,
   ApiV1PackageModerationStatusResponseSchema,
   ApiV1PackageModerationQueueResponseSchema,
@@ -133,6 +134,12 @@ type PackageModerateOptions = {
 type PackageReportOptions = {
   version?: string;
   reason?: string;
+  json?: boolean;
+};
+
+type PackageAppealOptions = {
+  version?: string;
+  message?: string;
   json?: boolean;
 };
 
@@ -883,6 +890,49 @@ export async function cmdReportPackage(
     }
     const versionSuffix = version ? `@${version}` : "";
     console.log(`OK. Reported ${trimmed}${versionSuffix} for moderator review.`);
+  } catch (error) {
+    spinner?.fail(formatError(error));
+    throw error;
+  }
+}
+
+export async function cmdAppealPackage(
+  opts: GlobalOpts,
+  packageName: string,
+  options: PackageAppealOptions = {},
+) {
+  const trimmed = normalizePackageNameOrFail(packageName);
+  const version = options.version?.trim();
+  const message = options.message?.trim();
+  if (!version) fail("--version required");
+  if (!message) fail("--message required");
+
+  const token = await requireAuthToken();
+  const registry = await getRegistry(opts, { cache: true });
+  const spinner = options.json
+    ? null
+    : createSpinner(`Submitting appeal for ${trimmed}@${version}`);
+  try {
+    const result = await apiRequest(
+      registry,
+      {
+        method: "POST",
+        path: `${ApiRoutes.packages}/${encodeURIComponent(trimmed)}/appeal`,
+        token,
+        body: { version, message },
+      },
+      ApiV1PackageAppealResponseSchema,
+    );
+    spinner?.stop();
+    if (options.json) {
+      process.stdout.write(`${JSON.stringify(result, null, 2)}\n`);
+      return;
+    }
+    if (result.alreadyOpen) {
+      console.log(`Already has an open appeal: ${result.appealId}`);
+      return;
+    }
+    console.log(`OK. Appeal submitted: ${result.appealId}`);
   } catch (error) {
     spinner?.fail(formatError(error));
     throw error;

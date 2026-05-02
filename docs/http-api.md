@@ -522,6 +522,40 @@ Response:
 }
 ```
 
+### `POST /api/v1/packages/{name}/appeal`
+
+Package owner/publisher endpoint for appealing moderation on a release.
+
+Auth:
+
+- Requires an API token for the package owner or publisher member.
+
+Request:
+
+```json
+{
+  "version": "1.2.3",
+  "message": "The native binary is signed and matches the linked source release."
+}
+```
+
+Appeals are accepted only for releases that are quarantined, revoked,
+suspicious, or malicious. ClawHub keeps one open appeal per release.
+
+Response:
+
+```json
+{
+  "ok": true,
+  "submitted": true,
+  "alreadyOpen": false,
+  "appealId": "packageAppeals:...",
+  "packageId": "packages:...",
+  "releaseId": "packageReleases:...",
+  "status": "open"
+}
+```
+
 ### `GET /api/v1/packages/reports`
 
 Moderator/admin endpoint for package report intake.

@@ -1,6 +1,7 @@
 import {
   PackageArtifactBackfillRequestSchema,
   ApiV1PackageModerationStatusResponseSchema,
+  PackageAppealRequestSchema,
   PackageReportRequestSchema,
   PackageReportTriageRequestSchema,
   PackageReleaseModerationRequestSchema,
@@ -78,6 +79,7 @@ const internalRefs = internal as unknown as {
     listPackageReportsInternal: unknown;
     triagePackageReportForUserInternal: unknown;
     getPackageModerationStatusForUserInternal: unknown;
+    submitPackageAppealForUserInternal: unknown;
     backfillPackageArtifactKindsInternal: unknown;
     listPackageModerationQueueInternal: unknown;
   };
@@ -1492,6 +1494,41 @@ export async function packagesPostRouterV1Handler(ctx: ActionCtx, request: Reque
     } catch (error) {
       return text(
         error instanceof Error ? error.message : "Package report failed",
+        400,
+        rate.headers,
+      );
+    }
+  }
+
+  if (segments[1] === "appeal" && segments.length === 2) {
+    const rate = await applyRateLimit(ctx, request, "write");
+    if (!rate.ok) return rate.response;
+    const auth = await requireApiTokenUserOrResponse(ctx, request, rate.headers);
+    if (!auth.ok) return auth.response;
+
+    try {
+      const body = parseArk(
+        PackageAppealRequestSchema,
+        await request.json(),
+        "Package appeal payload",
+      ) as {
+        version: string;
+        message: string;
+      };
+      const result = await runMutationRef(
+        ctx,
+        internalRefs.packages.submitPackageAppealForUserInternal,
+        {
+          actorUserId: auth.userId,
+          name: segments[0]!,
+          version: body.version,
+          message: body.message,
+        },
+      );
+      return json(result, 200, rate.headers);
+    } catch (error) {
+      return text(
+        error instanceof Error ? error.message : "Package appeal failed",
         400,
         rate.headers,
       );

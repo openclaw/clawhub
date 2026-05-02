@@ -17,6 +17,7 @@ import { cmdBanUser, cmdSetRole, cmdUnbanUser } from "./cli/commands/moderation.
 import { cmdMergeSkill, cmdRenameSkill } from "./cli/commands/ownership.js";
 import {
   cmdBackfillPackageArtifacts,
+  cmdAppealPackage,
   cmdDownloadPackage,
   cmdExplorePackages,
   cmdGetPackageTrustedPublisher,
@@ -478,6 +479,18 @@ packageCmd
   .action(async (name, options) => {
     const opts = await resolveGlobalOpts();
     await cmdReportPackage(opts, name, options);
+  });
+
+packageCmd
+  .command("appeal")
+  .description("Appeal moderation for a package release")
+  .argument("<name>", "Package name")
+  .requiredOption("--version <version>", "Package version")
+  .requiredOption("--message <text>", "Appeal message")
+  .option("--json", "Output JSON")
+  .action(async (name, options) => {
+    const opts = await resolveGlobalOpts();
+    await cmdAppealPackage(opts, name, options);
   });
 
 packageCmd

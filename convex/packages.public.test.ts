@@ -15,6 +15,7 @@ import {
   getPackageModerationStatusForUserInternal,
   reportPackageForUserInternal,
   triagePackageReportForUserInternal,
+  submitPackageAppealForUserInternal,
   getVersionByName,
   insertReleaseInternal,
   listPackageModerationQueueInternal,
@@ -287,6 +288,25 @@ const getPackageModerationStatusForUserInternalHandler = (
     {
       package: { name: string; reportCount: number };
       latestRelease: { version: string; scanStatus: string; blockedFromDownload: boolean } | null;
+    }
+  >
+)._handler;
+const submitPackageAppealForUserInternalHandler = (
+  submitPackageAppealForUserInternal as unknown as WrappedHandler<
+    {
+      actorUserId: string;
+      name: string;
+      version: string;
+      message: string;
+    },
+    {
+      ok: true;
+      submitted: boolean;
+      alreadyOpen: boolean;
+      appealId: string;
+      packageId: string;
+      releaseId: string;
+      status: string;
     }
   >
 )._handler;
@@ -3710,6 +3730,98 @@ describe("packages public queries", () => {
         reasons: ["manual:quarantined", "scan:malicious", "reports:2"],
       },
     });
+  });
+
+  it("submits owner appeals for quarantined package releases", async () => {
+    const insert = vi.fn(async (table: string) =>
+      table === "packageAppeals" ? "packageAppeals:1" : "auditLogs:1",
+    );
+
+    const result = await submitPackageAppealForUserInternalHandler(
+      {
+        db: {
+          get: vi.fn(async (id: string) => {
+            if (id === "users:owner") return { _id: id, role: "user" };
+            return null;
+          }),
+          query: vi.fn((table: string) => {
+            if (table === "packages") {
+              return {
+                withIndex: vi.fn(() => ({
+                  unique: vi.fn().mockResolvedValue(
+                    makePackageDoc({
+                      name: "@scope/demo",
+                      ownerUserId: "users:owner",
+                    }),
+                  ),
+                })),
+              };
+            }
+            if (table === "packageReleases") {
+              return {
+                withIndex: vi.fn(() => ({
+                  unique: vi.fn().mockResolvedValue(
+                    makeReleaseDoc({
+                      version: "1.2.3",
+                      manualModeration: {
+                        state: "quarantined",
+                        reason: "manual review",
+                        reviewerUserId: "users:moderator",
+                        updatedAt: 2,
+                      },
+                    }),
+                  ),
+                })),
+              };
+            }
+            if (table === "packageAppeals") {
+              return {
+                withIndex: vi.fn(() => ({
+                  order: vi.fn(() => ({
+                    first: vi.fn().mockResolvedValue(null),
+                  })),
+                })),
+              };
+            }
+            throw new Error(`Unexpected table ${table}`);
+          }),
+          insert,
+          patch: vi.fn(),
+          replace: vi.fn(),
+          delete: vi.fn(),
+          normalizeId: vi.fn(),
+        },
+      } as never,
+      {
+        actorUserId: "users:owner",
+        name: "@scope/demo",
+        version: "1.2.3",
+        message: "please review",
+      },
+    );
+
+    expect(result).toMatchObject({
+      ok: true,
+      submitted: true,
+      appealId: "packageAppeals:1",
+      status: "open",
+    });
+    expect(insert).toHaveBeenCalledWith("packageAppeals", {
+      packageId: "packages:demo",
+      releaseId: "packageReleases:demo-1",
+      version: "1.2.3",
+      userId: "users:owner",
+      message: "please review",
+      status: "open",
+      createdAt: expect.any(Number),
+    });
+    expect(insert).toHaveBeenCalledWith(
+      "auditLogs",
+      expect.objectContaining({
+        action: "package.appeal.submit",
+        targetType: "packageAppeal",
+      }),
+    );
   });
 });
 

@@ -72,6 +72,7 @@ const MAX_SEARCH_PAGE_SIZE = 200;
 const MAX_SEARCH_SCAN_DOCUMENTS = 1_000;
 const MAX_SEARCH_SCAN_PAGES = 20;
 const MAX_DIRECT_PACKAGE_SEARCH_CANDIDATES = 20;
+const MAX_APPEAL_MESSAGE_LENGTH = 2_000;
 const INITIAL_PACKAGE_VT_SCAN_DELAY_MS = 30_000;
 const vtEngineStatsValidator = v.object({
   malicious: v.optional(v.number()),
@@ -2537,6 +2538,101 @@ export const getPackageModerationStatusForUserInternal = internalQuery({
         scanStatus: latestReleaseStatus?.scanStatus ?? pkg.scanStatus,
       },
       latestRelease: latestReleaseStatus,
+    };
+  },
+});
+
+export const submitPackageAppealForUserInternal = internalMutation({
+  args: {
+    actorUserId: v.id("users"),
+    name: v.string(),
+    version: v.string(),
+    message: v.string(),
+  },
+  handler: async (ctx, args) => {
+    const actor = await ctx.db.get(args.actorUserId);
+    if (!actor || actor.deletedAt || actor.deactivatedAt) throw new ConvexError("Unauthorized");
+
+    const pkg = await getPackageByNormalizedName(ctx, normalizePackageName(args.name));
+    if (!pkg || pkg.softDeletedAt) throw new ConvexError("Package not found");
+    if (!(await viewerCanAccessPackageOwner(ctx, pkg, actor._id))) {
+      throw new ConvexError("Unauthorized");
+    }
+
+    const version = args.version.trim();
+    if (!version) throw new ConvexError("Package version required");
+    const release = await ctx.db
+      .query("packageReleases")
+      .withIndex("by_package_version", (q) => q.eq("packageId", pkg._id).eq("version", version))
+      .unique();
+    if (!release || release.softDeletedAt) throw new ConvexError("Package version not found");
+
+    const scanStatus = resolvePackageReleaseScanStatus(release);
+    const moderationState = release.manualModeration?.state ?? null;
+    const isAppealable =
+      moderationState === "quarantined" ||
+      moderationState === "revoked" ||
+      scanStatus === "suspicious" ||
+      scanStatus === "malicious";
+    if (!isAppealable) throw new ConvexError("Package release is not in an appealable state");
+
+    const message = args.message.trim();
+    if (!message) throw new ConvexError("Appeal message required.");
+
+    const existingOpenAppeal = await ctx.db
+      .query("packageAppeals")
+      .withIndex("by_release_status_createdAt", (q) =>
+        q.eq("releaseId", release._id).eq("status", "open"),
+      )
+      .order("desc")
+      .first();
+    if (existingOpenAppeal) {
+      return {
+        ok: true as const,
+        submitted: false,
+        alreadyOpen: true,
+        appealId: existingOpenAppeal._id,
+        packageId: pkg._id,
+        releaseId: release._id,
+        status: existingOpenAppeal.status,
+      };
+    }
+
+    const now = Date.now();
+    const appealId = await ctx.db.insert("packageAppeals", {
+      packageId: pkg._id,
+      releaseId: release._id,
+      version: release.version,
+      userId: actor._id,
+      message: message.slice(0, MAX_APPEAL_MESSAGE_LENGTH),
+      status: "open",
+      createdAt: now,
+    });
+
+    await ctx.db.insert("auditLogs", {
+      actorUserId: actor._id,
+      action: "package.appeal.submit",
+      targetType: "packageAppeal",
+      targetId: appealId,
+      metadata: {
+        packageId: pkg._id,
+        releaseId: release._id,
+        packageName: pkg.name,
+        version: release.version,
+        moderationState,
+        scanStatus,
+      },
+      createdAt: now,
+    });
+
+    return {
+      ok: true as const,
+      submitted: true,
+      alreadyOpen: false,
+      appealId,
+      packageId: pkg._id,
+      releaseId: release._id,
+      status: "open" as const,
     };
   },
 });

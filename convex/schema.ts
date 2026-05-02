@@ -1309,6 +1309,22 @@ const packageReports = defineTable({
   .index("by_user", ["userId"])
   .index("by_package_user", ["packageId", "userId"]);
 
+const packageAppeals = defineTable({
+  packageId: v.id("packages"),
+  releaseId: v.id("packageReleases"),
+  version: v.string(),
+  userId: v.id("users"),
+  message: v.string(),
+  status: v.union(v.literal("open"), v.literal("accepted"), v.literal("rejected")),
+  resolvedAt: v.optional(v.number()),
+  resolvedBy: v.optional(v.id("users")),
+  resolutionNote: v.optional(v.string()),
+  createdAt: v.number(),
+})
+  .index("by_release_status_createdAt", ["releaseId", "status", "createdAt"])
+  .index("by_status_createdAt", ["status", "createdAt"])
+  .index("by_user_createdAt", ["userId", "createdAt"]);
+
 const soulComments = defineTable({
   soulId: v.id("souls"),
   userId: v.id("users"),
@@ -1549,6 +1565,7 @@ export default defineSchema({
   commentReports,
   skillReports,
   packageReports,
+  packageAppeals,
   soulComments,
   stars,
   soulStars,
