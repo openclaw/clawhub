@@ -48,17 +48,30 @@ clawhub package inspect @openclaw/example-plugin
 clawhub package publish openclaw/example-plugin
 clawhub package publish openclaw/example-plugin@v1.0.0
 clawhub package publish https://github.com/openclaw/example-plugin --dry-run
+clawhub package publish ./example-plugin-1.0.0.tgz --dry-run
 clawhub package publish ./example-plugin
 ```
 
 ## Publish code plugins
 
-For local plugin folders, start with a dry run:
+For ClawPack publish, create the npm-pack tarball yourself and upload that
+exact `.tgz`:
+
+```bash
+npm pack
+clawhub package publish ./my-plugin-1.0.0.tgz --family code-plugin --dry-run
+clawhub package publish ./my-plugin-1.0.0.tgz --family code-plugin
+```
+
+For legacy local plugin folders, start with a dry run:
 
 ```bash
 clawhub package publish ./my-plugin --family code-plugin --dry-run
 clawhub package publish ./my-plugin --family code-plugin
 ```
+
+Folder publish does not run `npm pack` for you. It remains the compatibility
+path for old ZIP-based package downloads.
 
 `code-plugin` packages must declare these `package.json` fields:
 

@@ -264,9 +264,15 @@ clawhub package explore episodic-claw --family code-plugin
 - Publishes a code plugin or bundle plugin via `POST /api/v1/packages`.
 - `<source>` accepts:
   - Local folder path: `./my-plugin`
+  - Local ClawPack npm-pack tarball: `./my-plugin-1.2.3.tgz`
   - GitHub repo: `owner/repo` or `owner/repo@ref`
   - GitHub URL: `https://github.com/owner/repo`
 - Metadata is auto-detected from `package.json`, `openclaw.plugin.json`, and `openclaw.bundle.json`.
+- `.tgz` sources are treated as ClawPack. The CLI uploads the exact npm-pack
+  bytes and uses the extracted `package/` contents only for validation and
+  metadata prefill.
+- Local folders are still uploaded as extracted files and served through the
+  legacy ZIP compatibility path. The CLI does not run `npm pack` for you.
 - For GitHub sources, source attribution is auto-populated from the repo, resolved commit, ref, and subpath.
 - For local folders, source attribution is auto-detected from local git when the origin remote points at GitHub.
 - External code plugins must declare `openclaw.compat.pluginApi` and `openclaw.build.openclawVersion` explicitly.
@@ -281,6 +287,16 @@ clawhub package explore episodic-claw --family code-plugin
 
 Use `--dry-run` first so you can confirm the resolved package metadata and
 source attribution before creating a live release:
+
+```bash
+npm pack
+clawhub package publish ./my-plugin-1.2.3.tgz --family code-plugin --dry-run
+clawhub package publish ./my-plugin-1.2.3.tgz --family code-plugin
+```
+
+#### Legacy local folder flow
+
+Use this only when you intentionally want the old ZIP compatibility path:
 
 ```bash
 clawhub package publish ./my-plugin --family code-plugin --dry-run

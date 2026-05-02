@@ -347,12 +347,40 @@ Notes:
 
 ### `GET /api/v1/packages/{name}/versions/{version}`
 
-Returns one package version, including file metadata, compatibility, capabilities, verification, and scan data.
+Returns one package version, including file metadata, compatibility,
+capabilities, verification, artifact metadata, and scan data.
 
 Notes:
 
+- `version.artifact.kind` is `legacy-zip` for old-world package archives or
+  `npm-pack` for ClawPack-backed releases.
+- ClawPack releases include npm-compatible `npmIntegrity`, `npmShasum`, and
+  `npmTarballName` fields.
 - `version.sha256hash`, `version.vtAnalysis`, `version.llmAnalysis`, and `version.staticScan` are included when scan data exists.
 - Private packages return `404` unless the caller can read the owning publisher.
+
+### `GET /api/v1/packages/{name}/versions/{version}/artifact`
+
+Returns the explicit artifact resolver metadata for a package version.
+
+Notes:
+
+- Legacy package versions return a `legacy-zip` artifact and a legacy ZIP
+  `downloadUrl`.
+- ClawPack versions return an `npm-pack` artifact, npm integrity fields, a
+  `tarballUrl`, and the legacy ZIP compatibility URL.
+- This is the OpenClaw resolver surface; it avoids guessing archive format from
+  a shared URL.
+
+### `GET /api/v1/packages/{name}/versions/{version}/artifact/download`
+
+Downloads the version artifact through the explicit resolver path.
+
+Notes:
+
+- ClawPack versions stream the exact uploaded npm-pack `.tgz` bytes.
+- Legacy ZIP versions redirect to `/api/v1/packages/{name}/download?version=`.
+- Uses the download rate bucket.
 
 ### `GET /api/v1/packages/{name}/file`
 
@@ -375,7 +403,7 @@ Notes:
 
 ### `GET /api/v1/packages/{name}/download`
 
-Downloads a deterministic package archive for a package release.
+Downloads the legacy deterministic ZIP archive for a package release.
 
 Query params:
 
@@ -386,10 +414,35 @@ Notes:
 
 - Defaults to the latest release.
 - Skills redirect to `GET /api/v1/download`.
-- Plugin/package archives are zip files with a `package/` root so they install directly in OpenClaw without repacking.
+- Plugin/package archives are zip files with a `package/` root so old OpenClaw
+  clients keep working.
+- This route stays ZIP-only. It does not stream ClawPack `.tgz` files.
+- Responses include `ETag`, `Digest`, `X-ClawHub-Artifact-Type`, and
+  `X-ClawHub-Artifact-Sha256` headers for resolver integrity checks.
 - Registry-only metadata is not injected into the downloaded archive.
 - Pending VirusTotal scans do not block downloads; malicious releases return `403`.
 - Private packages return `404` unless the caller is the owner.
+
+### `GET /api/npm/{package}`
+
+Returns an npm-compatible packument for ClawPack-backed package versions.
+
+Notes:
+
+- Only versions with uploaded ClawPack npm-pack tarballs are listed.
+- Legacy ZIP-only versions are intentionally omitted.
+- `dist.tarball`, `dist.integrity`, and `dist.shasum` use npm-compatible
+  fields so users can point npm at the mirror if they choose.
+
+### `GET /api/npm/{package}/-/{tarball}.tgz`
+
+Streams the exact uploaded ClawPack tarball bytes for npm mirror clients.
+
+Notes:
+
+- Uses the download rate bucket.
+- Download headers include ClawHub SHA-256 plus npm integrity/shasum metadata.
+- Moderation and private package access checks still apply.
 
 ### `GET /api/v1/resolve`
 
