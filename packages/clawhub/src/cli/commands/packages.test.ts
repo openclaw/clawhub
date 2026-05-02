@@ -108,6 +108,11 @@ function getUploadedClawPackNames() {
     .sort();
 }
 
+function getUploadedClawPacks() {
+  const form = getPublishForm();
+  return form.getAll("clawpack") as Array<Blob & { name?: string }>;
+}
+
 function makeCodePluginPackageJson(overrides: Record<string, unknown>) {
   return JSON.stringify({
     openclaw: {
@@ -1015,6 +1020,7 @@ describe("package commands", () => {
           name: "@scope/demo-plugin",
           displayName: "Demo Plugin",
           version: "1.0.0",
+          files: ["dist", "openclaw.plugin.json"],
         }),
         "utf8",
       );
@@ -1057,8 +1063,12 @@ describe("package commands", () => {
           importedAt: 123_456_789,
         },
       });
-      expect(getUploadedFileNames()).toEqual([
-        ".gitignore",
+      expect(getUploadedFileNames()).toEqual([]);
+      expect(getUploadedClawPackNames()).toEqual(["scope-demo-plugin-1.0.0.tgz"]);
+      const uploadedPack = getUploadedClawPacks()[0];
+      if (!uploadedPack) throw new Error("Missing uploaded ClawPack");
+      const parsed = parseClawPack(new Uint8Array(await uploadedPack.arrayBuffer()));
+      expect(parsed.entries.map((entry) => entry.path).sort()).toEqual([
         "dist/index.js",
         "openclaw.plugin.json",
         "package.json",
@@ -1714,9 +1724,10 @@ describe("package commands", () => {
       await mkdir(join(folder, "dist"), { recursive: true });
       await mkdir(join(folder, "node_modules", "pkg"), { recursive: true });
       await mkdir(join(folder, ".git"), { recursive: true });
+      await mkdir(join(folder, ".codex-plugin"), { recursive: true });
       await writeFile(
         join(folder, "package.json"),
-        makeCodePluginPackageJson({
+        JSON.stringify({
           name: "ignored-plugin",
           displayName: "Ignored Plugin",
           version: "1.0.0",
@@ -1726,6 +1737,11 @@ describe("package commands", () => {
       await writeFile(
         join(folder, "openclaw.plugin.json"),
         JSON.stringify({ id: "ignored.plugin" }),
+        "utf8",
+      );
+      await writeFile(
+        join(folder, ".codex-plugin", "plugin.json"),
+        JSON.stringify({ name: "Ignored Plugin", skills: ["skills"] }),
         "utf8",
       );
       await writeFile(join(folder, ".clawhubignore"), "ignored.txt\n", "utf8");
@@ -1751,6 +1767,7 @@ describe("package commands", () => {
 
       expect(getUploadedFileNames()).toEqual([
         ".clawhubignore",
+        ".codex-plugin/plugin.json",
         "dist/index.js",
         "openclaw.plugin.json",
         "package.json",
@@ -2054,11 +2071,8 @@ describe("package commands", () => {
         sourcePath: "plugins/demo",
       });
 
-      expect(getUploadedFileNames()).toEqual([
-        "dist/index.js",
-        "openclaw.plugin.json",
-        "package.json",
-      ]);
+      expect(getUploadedFileNames()).toEqual([]);
+      expect(getUploadedClawPackNames()).toEqual(["scope-demo-plugin-1.0.0.tgz"]);
       expect(getPublishPayload()).toEqual({
         name: "@scope/demo-plugin",
         displayName: "Demo Plugin",

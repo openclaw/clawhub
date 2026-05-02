@@ -1,6 +1,7 @@
 import { spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
-import { mkdir, readFile, readdir, stat, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, readdir, rm, stat, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
 import { basename, dirname, join, relative, resolve, sep } from "node:path";
 import ignore from "ignore";
 import mime from "mime";
@@ -297,6 +298,13 @@ type PackagePublishPlan = {
     files: number;
     totalBytes: number;
   };
+};
+
+type PackedClawPack = {
+  path: string;
+  file: PackageFile;
+  parsed: ReturnType<typeof parseClawPack>;
+  identity: ArtifactIdentity;
 };
 
 function appendPackageExploreFilters(url: URL, options: PackageExploreOptions) {
@@ -669,57 +677,87 @@ export async function cmdPackPackage(
 
   const spinner = options.json ? null : createSpinner(`Packing ${packageName}@${packageVersion}`);
   try {
-    const result = spawnSync(
-      "npm",
-      ["pack", sourcePath, "--json", "--ignore-scripts", "--pack-destination", packDestination],
-      {
-        cwd: opts.workdir,
-        encoding: "utf8",
-      },
-    );
-    if (result.error) throw result.error;
-    if (result.status !== 0) {
-      fail((result.stderr || result.stdout || "npm pack failed").trim());
-    }
-
-    let npmOutput: Array<{ filename?: string }> = [];
-    try {
-      npmOutput = JSON.parse(result.stdout) as Array<{ filename?: string }>;
-    } catch {
-      fail("npm pack did not return JSON output");
-    }
-    const filename = npmOutput[0]?.filename;
-    if (!filename) fail("npm pack did not return a tarball filename");
-
-    const packPath = resolve(packDestination, filename);
-    const bytes = new Uint8Array(await readFile(packPath));
-    assertClawPackSize(bytes.byteLength, basename(packPath));
-    const parsed = parseClawPack(bytes);
-    const identity = computeArtifactIdentity(bytes);
+    const packed = await createClawPackFromFolder({
+      sourcePath,
+      packDestination,
+      cwd: opts.workdir,
+    });
     const output = {
-      path: packPath,
-      name: parsed.packageName,
-      version: parsed.packageVersion,
-      size: bytes.byteLength,
-      files: parsed.entries.length,
-      sha256: identity.sha256,
-      npmIntegrity: identity.npmIntegrity,
-      npmShasum: identity.npmShasum,
+      path: packed.path,
+      name: packed.parsed.packageName,
+      version: packed.parsed.packageVersion,
+      size: packed.file.bytes.byteLength,
+      files: packed.parsed.entries.length,
+      sha256: packed.identity.sha256,
+      npmIntegrity: packed.identity.npmIntegrity,
+      npmShasum: packed.identity.npmShasum,
     };
 
-    spinner?.succeed(`Packed ${parsed.packageName}@${parsed.packageVersion} -> ${packPath}`);
+    spinner?.succeed(
+      `Packed ${packed.parsed.packageName}@${packed.parsed.packageVersion} -> ${packed.path}`,
+    );
     if (options.json) {
       process.stdout.write(`${JSON.stringify(output, null, 2)}\n`);
     } else {
-      console.log(`Path: ${packPath}`);
-      console.log(`Size: ${bytes.byteLength} bytes`);
-      console.log(`SHA-256: ${identity.sha256}`);
-      console.log(`npm integrity: ${identity.npmIntegrity}`);
+      console.log(`Path: ${packed.path}`);
+      console.log(`Size: ${packed.file.bytes.byteLength} bytes`);
+      console.log(`SHA-256: ${packed.identity.sha256}`);
+      console.log(`npm integrity: ${packed.identity.npmIntegrity}`);
     }
   } catch (error) {
     spinner?.fail(formatError(error));
     throw error;
   }
+}
+
+async function createClawPackFromFolder(options: {
+  sourcePath: string;
+  packDestination: string;
+  cwd: string;
+}): Promise<PackedClawPack> {
+  const result = spawnSync(
+    "npm",
+    [
+      "pack",
+      options.sourcePath,
+      "--json",
+      "--ignore-scripts",
+      "--pack-destination",
+      options.packDestination,
+    ],
+    {
+      cwd: options.cwd,
+      encoding: "utf8",
+    },
+  );
+  if (result.error) throw result.error;
+  if (result.status !== 0) {
+    fail((result.stderr || result.stdout || "npm pack failed").trim());
+  }
+
+  let npmOutput: Array<{ filename?: string }> = [];
+  try {
+    npmOutput = JSON.parse(result.stdout) as Array<{ filename?: string }>;
+  } catch {
+    fail("npm pack did not return JSON output");
+  }
+  const filename = npmOutput[0]?.filename;
+  if (!filename) fail("npm pack did not return a tarball filename");
+
+  const packPath = resolve(options.packDestination, filename);
+  const bytes = new Uint8Array(await readFile(packPath));
+  assertClawPackSize(bytes.byteLength, basename(packPath));
+  const parsed = parseClawPack(bytes);
+  return {
+    path: packPath,
+    file: {
+      relPath: basename(packPath),
+      bytes,
+      contentType: "application/octet-stream",
+    },
+    parsed,
+    identity: computeArtifactIdentity(bytes),
+  };
 }
 
 export async function cmdPublishPackage(
@@ -2085,6 +2123,13 @@ async function preparePackagePublishPlan(
   let inferredSource: InferredPublishSource | undefined;
   let clawpackOnDisk: PackageFile | undefined;
   let parsedClawpack: ReturnType<typeof parseClawPack> | undefined;
+  const addCleanup = (next: () => Promise<void>) => {
+    const previous = cleanup;
+    cleanup = async () => {
+      await next();
+      await previous?.();
+    };
+  };
 
   if (sourceForFetch.kind === "github") {
     const fetchSpinner = options.json
@@ -2129,7 +2174,7 @@ async function preparePackagePublishPlan(
     }
   }
 
-  const filesOnDisk = parsedClawpack
+  let filesOnDisk = parsedClawpack
     ? parsedClawpack.entries.map((entry) => ({
         relPath: entry.path,
         bytes: entry.bytes,
@@ -2183,6 +2228,39 @@ async function preparePackagePublishPlan(
     if (validation.issues.length > 0) {
       fail(validation.issues.map((issue) => issue.message).join(" "));
     }
+  }
+
+  if (family === "code-plugin" && !clawpackOnDisk) {
+    const packDestination = await mkdtemp(join(tmpdir(), "clawhub-clawpack-"));
+    let packed: PackedClawPack;
+    try {
+      packed = await createClawPackFromFolder({
+        sourcePath: folder,
+        packDestination,
+        cwd: opts.workdir,
+      });
+      if (packed.parsed.packageName !== name) {
+        fail(`ClawPack package name mismatch: expected ${name}, got ${packed.parsed.packageName}`);
+      }
+      if (packed.parsed.packageVersion !== version) {
+        fail(
+          `ClawPack package version mismatch: expected ${version}, got ${packed.parsed.packageVersion}`,
+        );
+      }
+    } catch (error) {
+      await rm(packDestination, { recursive: true, force: true });
+      throw error;
+    }
+    addCleanup(async () => {
+      await rm(packDestination, { recursive: true, force: true });
+    });
+    parsedClawpack = packed.parsed;
+    clawpackOnDisk = packed.file;
+    filesOnDisk = packed.parsed.entries.map((entry) => ({
+      relPath: entry.path,
+      bytes: entry.bytes,
+      contentType: mime.getType(entry.path) ?? "application/octet-stream",
+    }));
   }
 
   const payload: PackagePublishPayload = {
