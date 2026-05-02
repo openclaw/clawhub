@@ -20,6 +20,8 @@ export function PackageSourceChooser(props: {
   ignoredPaths: string[];
   sourceUrl: string;
   sourceUrlError: string | null;
+  sourceUrlStatus: string | null;
+  sourceUrlBusy: boolean;
   intakeStatus: string | null;
   detectedPrefillFields: string[];
   family: "code-plugin" | "bundle-plugin";
@@ -29,7 +31,7 @@ export function PackageSourceChooser(props: {
   clawPackImport: ClawPackImportSummary | null;
   hostTargets?: string;
   onSourceUrlChange: (value: string) => void;
-  onApplySourceUrl: () => void;
+  onApplySourceUrl: () => void | Promise<void>;
   onPickFiles: (selected: File[]) => Promise<void>;
 }) {
   const [isDragging, setIsDragging] = useState(false);
@@ -118,10 +120,22 @@ export function PackageSourceChooser(props: {
                 placeholder="https://github.com/owner/repo"
                 aria-label="GitHub plugin source URL"
               />
-              <Button variant="outline" size="sm" onClick={props.onApplySourceUrl}>
-                Use URL
+              <Button
+                variant="outline"
+                size="sm"
+                disabled={props.sourceUrlBusy}
+                onClick={() => {
+                  void props.onApplySourceUrl();
+                }}
+              >
+                {props.sourceUrlBusy ? "Fetching" : "Use URL"}
               </Button>
             </div>
+            {props.sourceUrlStatus ? (
+              <p className="m-0 mt-2 text-xs text-[color:var(--ink-soft)]">
+                {props.sourceUrlStatus}
+              </p>
+            ) : null}
             {props.sourceUrlError ? (
               <p className="m-0 mt-2 text-xs text-red-700 dark:text-red-200">
                 {props.sourceUrlError}

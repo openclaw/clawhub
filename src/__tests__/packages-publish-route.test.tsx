@@ -65,6 +65,24 @@ function makeCodePluginPackageJson(overrides: Record<string, unknown>) {
   });
 }
 
+function jsonResponse(body: unknown, status = 200) {
+  return new Response(JSON.stringify(body), {
+    status,
+    headers: { "content-type": "application/json" },
+  });
+}
+
+function textResponse(body: string, contentType = "text/plain") {
+  return new Response(body, {
+    status: 200,
+    headers: { "content-type": contentType },
+  });
+}
+
+function byteLength(value: string) {
+  return new TextEncoder().encode(value).byteLength;
+}
+
 function getFileInput() {
   const input = document.querySelector('input[type="file"]');
   if (!(input instanceof HTMLInputElement)) throw new Error("Missing file input");
@@ -232,6 +250,125 @@ describe("plugins publish route", () => {
           expect.objectContaining({ path: "package.json" }),
           expect.objectContaining({ path: "openclaw.plugin.json" }),
           expect.objectContaining({ path: "dist/index.js" }),
+        ]),
+      }),
+    });
+  });
+
+  it("fetches a GitHub URL, fills the form, and publishes the resolved package files", async () => {
+    const commit = "a".repeat(40);
+    const tree = "b".repeat(40);
+    const blob = "c".repeat(40);
+    const packageJsonBody = makeCodePluginPackageJson({
+      name: "github-plugin",
+      displayName: "GitHub Plugin",
+      version: "2.0.0",
+      repository: "https://github.com/owner/repo.git",
+    });
+    const pluginManifestBody = '{"id":"github.plugin","name":"GitHub Plugin"}';
+    const sourceBody = "export const githubPlugin = true;\n";
+    fetchMock.mockImplementation(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      if (url === "https://api.github.com/repos/owner/repo/commits/main") {
+        return jsonResponse({ sha: commit, commit: { tree: { sha: tree } } });
+      }
+      if (url.startsWith("https://api.github.com/repos/owner/repo/commits/")) {
+        return jsonResponse({}, 404);
+      }
+      if (url === `https://api.github.com/repos/owner/repo/git/trees/${tree}?recursive=1`) {
+        return jsonResponse({
+          tree: [
+            {
+              path: "packages/demo/package.json",
+              type: "blob",
+              sha: blob,
+              size: byteLength(packageJsonBody),
+            },
+            {
+              path: "packages/demo/openclaw.plugin.json",
+              type: "blob",
+              sha: blob,
+              size: byteLength(pluginManifestBody),
+            },
+            {
+              path: "packages/demo/index.ts",
+              type: "blob",
+              sha: blob,
+              size: byteLength(sourceBody),
+            },
+            { path: "other/package.json", type: "blob", sha: blob, size: 2 },
+          ],
+        });
+      }
+      if (
+        url === `https://raw.githubusercontent.com/owner/repo/${commit}/packages/demo/package.json`
+      ) {
+        return textResponse(packageJsonBody, "application/json");
+      }
+      if (
+        url ===
+        `https://raw.githubusercontent.com/owner/repo/${commit}/packages/demo/openclaw.plugin.json`
+      ) {
+        return textResponse(pluginManifestBody, "application/json");
+      }
+      if (url === `https://raw.githubusercontent.com/owner/repo/${commit}/packages/demo/index.ts`) {
+        return textResponse(sourceBody, "text/plain");
+      }
+      if (url === "https://upload.local") {
+        return {
+          ok: true,
+          json: async () => ({
+            storageId: `storage:${((init?.body as File | undefined)?.name ?? "unknown").replaceAll("/", "_")}`,
+          }),
+        };
+      }
+      throw new Error(`unexpected fetch ${url}`);
+    });
+
+    renderPublishRoute();
+
+    fireEvent.change(screen.getByLabelText("GitHub plugin source URL"), {
+      target: { value: "https://github.com/owner/repo/tree/main/packages/demo" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Use URL" }));
+
+    await waitFor(() => {
+      expect(screen.getByText(/Fetched 3 files from owner\/repo/i)).toBeTruthy();
+      expect(screen.getByDisplayValue("github-plugin")).toBeTruthy();
+      expect(screen.getByDisplayValue("GitHub Plugin")).toBeTruthy();
+      expect(screen.getByDisplayValue("2.0.0")).toBeTruthy();
+      expect(screen.getByDisplayValue(commit)).toBeTruthy();
+      expect(screen.getByDisplayValue("packages/demo")).toBeTruthy();
+    });
+
+    fireEvent.change(screen.getByPlaceholderText("Changelog"), {
+      target: { value: "Fetched from GitHub" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Publish" }));
+
+    await waitFor(() => {
+      expect(publishRelease).toHaveBeenCalledTimes(1);
+    });
+
+    expect(generateUploadUrl).toHaveBeenCalledTimes(3);
+    expect(publishRelease).toHaveBeenCalledWith({
+      payload: expect.objectContaining({
+        name: "github-plugin",
+        displayName: "GitHub Plugin",
+        family: "code-plugin",
+        version: "2.0.0",
+        changelog: "Fetched from GitHub",
+        source: expect.objectContaining({
+          repo: "owner/repo",
+          url: "https://github.com/owner/repo",
+          ref: "main",
+          commit,
+          path: "packages/demo",
+        }),
+        files: expect.arrayContaining([
+          expect.objectContaining({ path: "package.json" }),
+          expect.objectContaining({ path: "openclaw.plugin.json" }),
+          expect.objectContaining({ path: "index.ts" }),
         ]),
       }),
     });

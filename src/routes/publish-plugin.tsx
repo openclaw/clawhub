@@ -16,6 +16,10 @@ import { Input } from "../components/ui/input";
 import { Textarea } from "../components/ui/textarea";
 import { normalizeClawPackImport, type ClawPackImportSummary } from "../lib/clawpackImport";
 import {
+  fetchGitHubPackageSource,
+  type GitHubPackageSourceProgress,
+} from "../lib/githubPackageSource";
+import {
   buildPackageUploadEntries,
   filterIgnoredPackageFiles,
   normalizePackageUploadFiles,
@@ -64,13 +68,6 @@ type ClawPackPreview = {
   warnings: string[];
 };
 
-type GitHubSourceDraft = {
-  repo: string;
-  ref: string;
-  path: string;
-  url: string;
-};
-
 type ClawPackIntakeGate = {
   label: string;
   status: "ready" | "review" | "blocked" | "pending";
@@ -78,36 +75,6 @@ type ClawPackIntakeGate = {
 };
 
 const DEFAULT_CLAWPACK_TARGETS = ["darwin-arm64", "linux-x64-glibc", "win32-x64"];
-
-function parseGitHubSourceUrl(raw: string): GitHubSourceDraft | null {
-  const value = raw.trim();
-  if (!value) return null;
-  try {
-    const url = new URL(value.replace(/^git@github\.com:/i, "https://github.com/"));
-    if (url.hostname !== "github.com" && url.hostname !== "www.github.com") return null;
-    const segments = url.pathname
-      .replace(/\.git$/i, "")
-      .split("/")
-      .filter(Boolean)
-      .map((segment) => decodeURIComponent(segment));
-    const [owner, repo, kind, ...rest] = segments;
-    if (!owner || !repo) return null;
-    let ref = "";
-    let path = ".";
-    if ((kind === "tree" || kind === "blob") && rest.length > 0) {
-      ref = rest[0] ?? "";
-      path = rest.slice(1).join("/") || ".";
-    }
-    return {
-      repo: `${owner}/${repo}`,
-      ref,
-      path,
-      url: `https://github.com/${owner}/${repo}`,
-    };
-  } catch {
-    return null;
-  }
-}
 
 function splitHostTargets(value: string) {
   return value
@@ -157,6 +124,21 @@ function formatPreviewBytes(value: number) {
   if (value < 1024) return `${value}B`;
   if (value < 1024 * 1024) return `${(value / 1024).toFixed(1)}KB`;
   return `${(value / (1024 * 1024)).toFixed(1)}MB`;
+}
+
+function formatGitHubSourceProgress(progress: GitHubPackageSourceProgress) {
+  if (progress.phase === "resolving") return "Resolving GitHub repo and commit...";
+  if (progress.phase === "listing") return "Reading GitHub package file list...";
+  if (progress.phase === "downloading") {
+    const count =
+      typeof progress.current === "number" && typeof progress.total === "number"
+        ? `${progress.current}/${progress.total}`
+        : "";
+    return `Downloading GitHub files${count ? ` ${count}` : ""}${
+      progress.path ? `: ${progress.path}` : ""
+    }`;
+  }
+  return "Fetching GitHub package...";
 }
 
 function buildClawPackPreview(input: {
@@ -407,6 +389,8 @@ export function PublishPluginRoute() {
     search.sourceRepo ? `https://github.com/${search.sourceRepo}` : "",
   );
   const [sourceUrlError, setSourceUrlError] = useState<string | null>(null);
+  const [sourceUrlStatus, setSourceUrlStatus] = useState<string | null>(null);
+  const [sourceUrlBusy, setSourceUrlBusy] = useState(false);
   const [intakeStatus, setIntakeStatus] = useState<string | null>(null);
   const [ignoredPaths, setIgnoredPaths] = useState<string[]>([]);
   const [clawPackImport, setClawPackImport] = useState<ClawPackImportSummary | null>(null);
@@ -550,17 +534,36 @@ export function PublishPluginRoute() {
     }
   };
 
-  const onApplySourceUrl = () => {
-    const parsed = parseGitHubSourceUrl(sourceUrl);
-    if (!parsed) {
+  const onApplySourceUrl = async () => {
+    if (!sourceUrl.trim()) {
       setSourceUrlError("Paste a GitHub repo, tree, or blob URL.");
       return;
     }
-    setSourceUrlError(null);
-    setSourceRepo(parsed.repo);
-    setSourceRef(parsed.ref);
-    setSourcePath(parsed.path);
-    toast.success("Source URL added. Upload the package files next.");
+    try {
+      setSourceUrlBusy(true);
+      setSourceUrlError(null);
+      setSourceUrlStatus("Resolving GitHub URL...");
+      const imported = await fetchGitHubPackageSource(sourceUrl, {
+        maxFileBytes: MAX_PUBLISH_FILE_BYTES,
+        maxTotalBytes: MAX_PUBLISH_TOTAL_BYTES,
+        onProgress: (progress) => setSourceUrlStatus(formatGitHubSourceProgress(progress)),
+      });
+      setSourceUrlStatus(`Preparing ${imported.files.length} GitHub files for review...`);
+      await onPickFiles(imported.files);
+      setSourceRepo(imported.source.repo);
+      setSourceCommit(imported.source.commit);
+      setSourceRef(imported.source.ref);
+      setSourcePath(imported.source.path);
+      setSourceUrl(imported.source.url);
+      setSourceUrlStatus(`Fetched ${imported.files.length} files from ${imported.source.repo}.`);
+      setIntakeStatus("GitHub package ready for review.");
+      toast.success("GitHub package fetched. Review the inferred details.");
+    } catch (sourceError) {
+      setSourceUrlStatus(null);
+      setSourceUrlError(formatPublishError(sourceError));
+    } finally {
+      setSourceUrlBusy(false);
+    }
   };
 
   useEffect(() => {
@@ -626,6 +629,8 @@ export function PublishPluginRoute() {
           ignoredPaths={ignoredPaths}
           sourceUrl={sourceUrl}
           sourceUrlError={sourceUrlError}
+          sourceUrlStatus={sourceUrlStatus}
+          sourceUrlBusy={sourceUrlBusy}
           intakeStatus={intakeStatus}
           detectedPrefillFields={detectedPrefillFields}
           family={family}
