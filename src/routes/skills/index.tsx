@@ -79,7 +79,7 @@ export function SkillsIndex() {
             <h1 className="font-display text-2xl font-bold text-[color:var(--ink)]">
               Skills
               <span className="ml-2 text-lg font-normal text-[color:var(--ink-soft)] opacity-70">
-                ({model.hasQuery || model.highlightedOnly || model.nonSuspiciousOnly
+                ({model.hasQuery || model.highlightedOnly || model.nonSuspiciousOnly || model.query === "__other__"
                   ? model.sorted.length.toLocaleString("en-US")
                   : totalSkillsText ?? "…"})
               </span>
