@@ -1567,11 +1567,16 @@ export async function packagesPostRouterV1Handler(ctx: ActionCtx, request: Reque
     }
   }
 
+  const packageRoute = parsePackagePathSegments(segments);
+  if (!packageRoute) return text("Not found", 404);
+  const packageName = packageRoute.packageName;
+  const packageSegments = packageRoute.rest;
+
   if (
-    segments[1] === "versions" &&
-    segments[2] &&
-    segments[3] === "moderation" &&
-    segments.length === 4
+    packageSegments[0] === "versions" &&
+    packageSegments[1] &&
+    packageSegments[2] === "moderation" &&
+    packageSegments.length === 3
   ) {
     const rate = await applyRateLimit(ctx, request, "write");
     if (!rate.ok) return rate.response;
@@ -1592,8 +1597,8 @@ export async function packagesPostRouterV1Handler(ctx: ActionCtx, request: Reque
         internalRefs.packages.moderatePackageReleaseForUserInternal,
         {
           actorUserId: auth.userId,
-          name: segments[0]!,
-          version: segments[2],
+          name: packageName,
+          version: packageSegments[1],
           state: body.state,
           reason: body.reason,
         },
@@ -1608,7 +1613,7 @@ export async function packagesPostRouterV1Handler(ctx: ActionCtx, request: Reque
     }
   }
 
-  if (segments[1] === "report" && segments.length === 2) {
+  if (packageSegments[0] === "report" && packageSegments.length === 1) {
     const rate = await applyRateLimit(ctx, request, "write");
     if (!rate.ok) return rate.response;
     const auth = await requireApiTokenUserOrResponse(ctx, request, rate.headers);
@@ -1625,7 +1630,7 @@ export async function packagesPostRouterV1Handler(ctx: ActionCtx, request: Reque
       };
       const result = await runMutationRef(ctx, internalRefs.packages.reportPackageForUserInternal, {
         actorUserId: auth.userId,
-        name: segments[0]!,
+        name: packageName,
         reason: body.reason,
         ...(body.version ? { version: body.version } : {}),
       });
@@ -1639,7 +1644,7 @@ export async function packagesPostRouterV1Handler(ctx: ActionCtx, request: Reque
     }
   }
 
-  if (segments[1] === "appeal" && segments.length === 2) {
+  if (packageSegments[0] === "appeal" && packageSegments.length === 1) {
     const rate = await applyRateLimit(ctx, request, "write");
     if (!rate.ok) return rate.response;
     const auth = await requireApiTokenUserOrResponse(ctx, request, rate.headers);
@@ -1659,7 +1664,7 @@ export async function packagesPostRouterV1Handler(ctx: ActionCtx, request: Reque
         internalRefs.packages.submitPackageAppealForUserInternal,
         {
           actorUserId: auth.userId,
-          name: segments[0]!,
+          name: packageName,
           version: body.version,
           message: body.message,
         },
@@ -1674,7 +1679,7 @@ export async function packagesPostRouterV1Handler(ctx: ActionCtx, request: Reque
     }
   }
 
-  if (segments[1] === "rescan" && segments.length === 2) {
+  if (packageSegments[0] === "rescan" && packageSegments.length === 1) {
     const rate = await applyRateLimit(ctx, request, "write");
     if (!rate.ok) return rate.response;
     const auth = await requireApiTokenUserOrResponse(ctx, request, rate.headers);
@@ -1686,7 +1691,7 @@ export async function packagesPostRouterV1Handler(ctx: ActionCtx, request: Reque
         internalRefs.packages.requestRescanForApiTokenInternal,
         {
           actorUserId: auth.userId,
-          name: segments[0]!,
+          name: packageName,
         },
       );
       return json(result, 200, rate.headers);
@@ -1699,7 +1704,7 @@ export async function packagesPostRouterV1Handler(ctx: ActionCtx, request: Reque
     }
   }
 
-  if (segments[1] !== "trusted-publisher" || segments.length !== 2) {
+  if (packageSegments[0] !== "trusted-publisher" || packageSegments.length !== 1) {
     return text("Not found", 404);
   }
   const rate = await applyRateLimit(ctx, request, "write");
@@ -1723,7 +1728,7 @@ export async function packagesPostRouterV1Handler(ctx: ActionCtx, request: Reque
       internalRefs.packages.setTrustedPublisherForUserInternal,
       {
         actorUserId: auth.userId,
-        packageName: segments[0]!,
+        packageName,
         repository: repositoryIdentity.repository,
         repositoryId: repositoryIdentity.repositoryId,
         repositoryOwner: repositoryIdentity.repositoryOwner,
@@ -1748,16 +1753,20 @@ export async function packagesPostRouterV1Handler(ctx: ActionCtx, request: Reque
 
 export async function packagesDeleteRouterV1Handler(ctx: ActionCtx, request: Request) {
   const segments = getPathSegments(request, "/api/v1/packages/");
+  const packageRoute = parsePackagePathSegments(segments);
+  if (!packageRoute) return text("Not found", 404);
+  const packageName = packageRoute.packageName;
+  const packageSegments = packageRoute.rest;
   const rate = await applyRateLimit(ctx, request, "write");
   if (!rate.ok) return rate.response;
   const auth = await requireApiTokenUserOrResponse(ctx, request, rate.headers);
   if (!auth.ok) return auth.response;
 
-  if (segments.length === 1) {
+  if (packageSegments.length === 0) {
     try {
       await runMutationRef(ctx, internalRefs.packages.softDeletePackageInternal, {
         userId: auth.userId,
-        name: segments[0]!,
+        name: packageName,
       });
       return json({ ok: true }, 200, rate.headers);
     } catch (error) {
@@ -1765,14 +1774,14 @@ export async function packagesDeleteRouterV1Handler(ctx: ActionCtx, request: Req
     }
   }
 
-  if (segments[1] !== "trusted-publisher" || segments.length !== 2) {
+  if (packageSegments[0] !== "trusted-publisher" || packageSegments.length !== 1) {
     return text("Not found", 404, rate.headers);
   }
 
   try {
     await runMutationRef(ctx, internalRefs.packages.deleteTrustedPublisherForUserInternal, {
       actorUserId: auth.userId,
-      packageName: segments[0]!,
+      packageName,
     });
     return json({ ok: true }, 200, rate.headers);
   } catch (error) {
@@ -2129,7 +2138,12 @@ export async function packagesGetRouterV1Handler(ctx: ActionCtx, request: Reques
     return json(parsed, 200, rate.headers);
   }
 
-  if (segments[1] === "moderation" && segments.length === 2) {
+  const packageRoute = parsePackagePathSegments(segments);
+  if (!packageRoute) return text("Not found", 404);
+  const packageName = packageRoute.packageName;
+  const packageSegments = packageRoute.rest;
+
+  if (packageSegments[0] === "moderation" && packageSegments.length === 1) {
     const rate = await applyRateLimit(ctx, request, "read");
     if (!rate.ok) return rate.response;
     const auth = await requireApiTokenUserOrResponse(ctx, request, rate.headers);
@@ -2141,7 +2155,7 @@ export async function packagesGetRouterV1Handler(ctx: ActionCtx, request: Reques
         internalRefs.packages.getPackageModerationStatusForUserInternal,
         {
           actorUserId: auth.userId,
-          name: segments[0]!,
+          name: packageName,
         },
       );
       const parsed = parseArk(
@@ -2160,13 +2174,14 @@ export async function packagesGetRouterV1Handler(ctx: ActionCtx, request: Reques
   }
 
   const rateKind =
-    segments[1] === "download" || segments[3] === "artifact" || segments[4] === "download"
+    packageSegments[0] === "download" ||
+    packageSegments[2] === "artifact" ||
+    packageSegments[3] === "download"
       ? "download"
       : "read";
   const rate = await applyRateLimit(ctx, request, rateKind);
   if (!rate.ok) return rate.response;
 
-  const packageName = segments[0] ?? "";
   const viewerUserId = await getOptionalViewerUserIdForRequest(ctx, request);
   const detail = (await runQueryRef(ctx, internalRefs.packages.getByNameForViewerInternal, {
     name: packageName,
@@ -2182,7 +2197,7 @@ export async function packagesGetRouterV1Handler(ctx: ActionCtx, request: Reques
   const publicPackage = packageDetail?.package ?? null;
   const packageOwner = packageDetail?.owner ?? null;
 
-  if (segments.length === 1) {
+  if (packageSegments.length === 0) {
     if (skillDetail?.skill) {
       return json(
         toSkillPackageDetail(
@@ -2214,7 +2229,7 @@ export async function packagesGetRouterV1Handler(ctx: ActionCtx, request: Reques
     );
   }
 
-  if (segments[1] === "trusted-publisher" && segments.length === 2) {
+  if (packageSegments[0] === "trusted-publisher" && packageSegments.length === 1) {
     if (!publicPackage) return text("Not found", 404, rate.headers);
     const trustedPublisher = await runQueryRef<PackageTrustedPublisherLike | null>(
       ctx,
@@ -2228,12 +2243,12 @@ export async function packagesGetRouterV1Handler(ctx: ActionCtx, request: Reques
     );
   }
 
-  if (segments[1] === "readiness" && segments.length === 2) {
+  if (packageSegments[0] === "readiness" && packageSegments.length === 1) {
     if (!publicPackage) return text("Not found", 404, rate.headers);
     return json(buildPackageReadiness(publicPackage), 200, rate.headers);
   }
 
-  if (segments[1] === "versions" && segments.length === 2) {
+  if (packageSegments[0] === "versions" && packageSegments.length === 1) {
     const limit = Math.max(
       1,
       Math.min(toOptionalNumber(new URL(request.url).searchParams.get("limit")) ?? 25, 100),
@@ -2287,20 +2302,20 @@ export async function packagesGetRouterV1Handler(ctx: ActionCtx, request: Reques
     );
   }
 
-  if (segments[1] === "versions" && segments[2] && segments[3] === "artifact") {
+  if (packageSegments[0] === "versions" && packageSegments[1] && packageSegments[2] === "artifact") {
     if (skillDetail?.skill) return text("Artifact not found", 404, rate.headers);
     const result = (await runQueryRef(
       ctx,
-      internalRefs.packages.getVersionByNameForViewerInternal,
+        internalRefs.packages.getVersionByNameForViewerInternal,
       {
         name: packageName,
-        version: segments[2],
+        version: packageSegments[1],
         viewerUserId: viewerUserId ?? undefined,
       },
     )) as { package: PublicPackageDocLike; version: ReleaseLike } | null;
     const release = result?.version ?? null;
     if (!release) return text("Version not found", 404, rate.headers);
-    if (segments[4] === "download") {
+    if (packageSegments[3] === "download") {
       if (release.artifactKind === "npm-pack") {
         return await streamClawPackRelease(ctx, rate.headers, publicPackage!, release);
       }
@@ -2332,14 +2347,14 @@ export async function packagesGetRouterV1Handler(ctx: ActionCtx, request: Reques
     );
   }
 
-  if (segments[1] === "versions" && segments[2]) {
+  if (packageSegments[0] === "versions" && packageSegments[1]) {
     if (skillDetail?.skill) {
       const version = (await runQueryRef(
         ctx,
         internalRefs.skills.getVersionBySkillAndVersionInternal,
         {
           skillId: skillDetail.skill._id,
-          version: segments[2],
+          version: packageSegments[1],
         },
       )) as SkillVersionLike | null;
       if (!version || version.softDeletedAt) return text("Version not found", 404, rate.headers);
@@ -2374,10 +2389,10 @@ export async function packagesGetRouterV1Handler(ctx: ActionCtx, request: Reques
     }
     const result = (await runQueryRef(
       ctx,
-      internalRefs.packages.getVersionByNameForViewerInternal,
+        internalRefs.packages.getVersionByNameForViewerInternal,
       {
         name: packageName,
-        version: segments[2],
+        version: packageSegments[1],
         viewerUserId: viewerUserId ?? undefined,
       },
     )) as { package: PublicPackageDocLike; version: ReleaseLike } | null;
@@ -2415,7 +2430,7 @@ export async function packagesGetRouterV1Handler(ctx: ActionCtx, request: Reques
     );
   }
 
-  if (segments[1] === "file") {
+  if (packageSegments[0] === "file") {
     const path = new URL(request.url).searchParams.get("path")?.trim();
     if (!path) return text("Missing path", 400, rate.headers);
     if (skillDetail?.skill) {
@@ -2463,7 +2478,7 @@ export async function packagesGetRouterV1Handler(ctx: ActionCtx, request: Reques
     });
   }
 
-  if (segments[1] === "download") {
+  if (packageSegments[0] === "download") {
     if (skillDetail?.skill) {
       const url = new URL("/api/v1/download", request.url);
       url.searchParams.set("slug", skillDetail.skill.slug);
@@ -2521,6 +2536,11 @@ export async function packagesGetRouterV1Handler(ctx: ActionCtx, request: Reques
 
 function parseNpmMirrorPath(request: Request) {
   const segments = getPathSegments(request, "/api/npm/");
+  if (segments.length === 0) return null;
+  return parsePackagePathSegments(segments);
+}
+
+function parsePackagePathSegments(segments: string[]) {
   if (segments.length === 0) return null;
   if (segments[0]?.startsWith("@")) {
     if (segments[0].includes("/")) {

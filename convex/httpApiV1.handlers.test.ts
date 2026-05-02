@@ -3735,6 +3735,77 @@ describe("httpApiV1 handlers", () => {
     });
   });
 
+  it("package artifact endpoint accepts split scoped package paths", async () => {
+    const runQuery = vi.fn(async (_query: unknown, args: Record<string, unknown>) => {
+      if ("name" in args && !("version" in args)) {
+        return {
+          package: {
+            _id: "packages:demo-plugin",
+            name: "@scope/demo-plugin",
+            displayName: "Demo Plugin",
+            family: "code-plugin",
+            tags: { latest: "packageReleases:1" },
+            latestReleaseId: "packageReleases:1",
+            channel: "community",
+            isOfficial: false,
+            createdAt: 1,
+            updatedAt: 1,
+          },
+          latestRelease: null,
+          owner: { _id: "publishers:demo", handle: "demo" },
+        };
+      }
+      if ("name" in args && "version" in args) {
+        return {
+          package: {
+            _id: "packages:demo-plugin",
+            name: "@scope/demo-plugin",
+            displayName: "Demo Plugin",
+            family: "code-plugin",
+          },
+          version: {
+            _id: "packageReleases:1",
+            packageId: "packages:demo-plugin",
+            version: "1.0.0",
+            createdAt: 1,
+            changelog: "Initial release",
+            distTags: ["latest"],
+            files: [],
+            artifactKind: "npm-pack",
+            clawpackStorageId: "storage:clawpack",
+            clawpackSha256: "c".repeat(64),
+            clawpackSize: 123,
+            clawpackFormat: "tgz",
+            npmIntegrity: "sha512-demo",
+            npmShasum: "d".repeat(40),
+            npmTarballName: "scope-demo-plugin-1.0.0.tgz",
+          },
+        };
+      }
+      return null;
+    });
+    const runMutation = vi.fn().mockResolvedValue(okRate());
+
+    const response = await __handlers.packagesGetRouterV1Handler(
+      makeCtx({ runQuery, runMutation }),
+      new Request("https://example.com/api/v1/packages/@scope/demo-plugin/versions/1.0.0/artifact"),
+    );
+
+    expect(response.status).toBe(200);
+    expect(runQuery).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({ name: "@scope/demo-plugin", version: "1.0.0" }),
+    );
+    await expect(response.json()).resolves.toMatchObject({
+      package: { name: "@scope/demo-plugin" },
+      artifact: {
+        kind: "npm-pack",
+        tarballUrl:
+          "https://example.com/api/npm/@scope/demo-plugin/-/scope-demo-plugin-1.0.0.tgz",
+      },
+    });
+  });
+
   it("package readiness reports official OpenClaw blockers", async () => {
     const runQuery = vi.fn(async (_query: unknown, args: Record<string, unknown>) => {
       if ("name" in args) {
