@@ -1136,8 +1136,9 @@ function ManagementConsole() {
                     {latestRelease?.version ? (
                       <Button asChild className="management-action-btn">
                         <Link
-                          to="/plugins/$name/releases/$version"
-                          params={{ name: plugin.name, version: latestRelease.version }}
+                          to="/management/clawpacks/releases/$releaseId"
+                          params={{ releaseId: latestRelease._id }}
+                          search={{ skill: undefined, plugin: undefined }}
                         >
                           Inspect Claw Pack
                         </Link>

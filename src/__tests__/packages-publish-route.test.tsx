@@ -260,11 +260,10 @@ describe("plugins publish route", () => {
       }),
     });
     expect(screen.getByText("demo-plugin@1.2.3")).toBeTruthy();
-    expect(screen.getByRole("link", { name: "View release" }).getAttribute("href")).toBe(
-      "/plugins/demo-plugin/releases/1.2.3",
-    );
-    expect(screen.getByRole("link", { name: "Download Claw Pack" }).getAttribute("href")).toContain(
-      "/api/v1/packages/demo-plugin/download?version=1.2.3",
+    expect(screen.queryByRole("link", { name: "View release" })).toBeNull();
+    expect(screen.queryByRole("link", { name: "Download Claw Pack" })).toBeNull();
+    expect(screen.getByRole("link", { name: "Open dashboard" }).getAttribute("href")).toBe(
+      "/dashboard",
     );
   });
 

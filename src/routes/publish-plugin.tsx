@@ -19,7 +19,6 @@ import {
   fetchGitHubPackageSource,
   type GitHubPackageSourceProgress,
 } from "../lib/githubPackageSource";
-import { getPackageDownloadHref } from "../lib/packageApi";
 import {
   buildPackageUploadEntries,
   filterIgnoredPackageFiles,
@@ -131,10 +130,6 @@ function formatPreviewBytes(value: number) {
   if (value < 1024) return `${value}B`;
   if (value < 1024 * 1024) return `${(value / 1024).toFixed(1)}KB`;
   return `${(value / (1024 * 1024)).toFixed(1)}MB`;
-}
-
-function pluginReleasePath(name: string, version: string) {
-  return `/plugins/${encodeURIComponent(name)}/releases/${encodeURIComponent(version)}`;
 }
 
 function formatGitHubSourceProgress(progress: GitHubPackageSourceProgress) {
@@ -768,23 +763,13 @@ export function PublishPluginRoute() {
                   {publishSuccess.name}@{publishSuccess.version}
                 </h2>
                 <p className="m-0 text-sm text-[color:var(--ink-soft)]">
-                  The Claw Pack was accepted and stored. Background scans can still update public
-                  confidence, but the release page and artifact endpoint are ready.
+                  The Claw Pack was accepted and stored. Public plugin pages are unchanged while
+                  review, scanning, and rollout controls stay behind management surfaces.
                 </p>
               </div>
               <div className="flex flex-wrap gap-2">
                 <Button asChild variant="primary" size="sm">
-                  <a href={pluginReleasePath(publishSuccess.name, publishSuccess.version)}>
-                    View release
-                  </a>
-                </Button>
-                <Button asChild variant="outline" size="sm">
-                  <a href={`/plugins/${encodeURIComponent(publishSuccess.name)}`}>View plugin</a>
-                </Button>
-                <Button asChild variant="ghost" size="sm">
-                  <a href={getPackageDownloadHref(publishSuccess.name, publishSuccess.version)}>
-                    Download Claw Pack
-                  </a>
+                  <a href="/dashboard">Open dashboard</a>
                 </Button>
               </div>
             </div>

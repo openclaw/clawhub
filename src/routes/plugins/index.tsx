@@ -17,32 +17,7 @@ type PluginSearchState = {
   featured?: boolean;
   verified?: boolean;
   executesCode?: boolean;
-  hostTarget?: "darwin-arm64" | "linux-x64-glibc" | "win32-x64";
-  environment?: "browser" | "desktop" | "network";
 };
-
-const HOST_TARGET_FILTERS = {
-  mac: "darwin-arm64",
-  linux: "linux-x64-glibc",
-  windows: "win32-x64",
-} as const;
-
-const ENVIRONMENT_FILTERS = {
-  browser: "browser",
-  desktop: "desktop",
-  network: "network",
-} as const;
-
-type HostTargetFilterKey = keyof typeof HOST_TARGET_FILTERS;
-type EnvironmentFilterKey = keyof typeof ENVIRONMENT_FILTERS;
-
-function isHostTargetFilterKey(key: string): key is HostTargetFilterKey {
-  return key in HOST_TARGET_FILTERS;
-}
-
-function isEnvironmentFilterKey(key: string): key is EnvironmentFilterKey {
-  return key in ENVIRONMENT_FILTERS;
-}
 
 type PluginsLoaderData = {
   items: PackageListItem[];
@@ -81,18 +56,6 @@ export const Route = createFileRoute("/plugins/")({
       search.executesCode === true || search.executesCode === "true" || search.executesCode === "1"
         ? true
         : undefined,
-    hostTarget:
-      search.hostTarget === "darwin-arm64" ||
-      search.hostTarget === "linux-x64-glibc" ||
-      search.hostTarget === "win32-x64"
-        ? search.hostTarget
-        : undefined,
-    environment:
-      search.environment === "browser" ||
-      search.environment === "desktop" ||
-      search.environment === "network"
-        ? search.environment
-        : undefined,
   }),
   loaderDeps: ({ search }) => search,
   loader: async ({ deps }): Promise<PluginsLoaderData> => {
@@ -104,8 +67,6 @@ export const Route = createFileRoute("/plugins/")({
         featured: deps.featured,
         isOfficial: deps.verified,
         executesCode: deps.executesCode,
-        hostTarget: deps.hostTarget,
-        environment: deps.environment,
         limit: 50,
       });
 
@@ -173,24 +134,6 @@ function PluginsIndex() {
           ...prev,
           cursor: undefined,
           executesCode: prev.executesCode ? undefined : true,
-        }),
-      });
-    } else if (isHostTargetFilterKey(key)) {
-      const hostTarget = HOST_TARGET_FILTERS[key];
-      void navigate({
-        search: (prev) => ({
-          ...prev,
-          cursor: undefined,
-          hostTarget: prev.hostTarget === hostTarget ? undefined : hostTarget,
-        }),
-      });
-    } else if (isEnvironmentFilterKey(key)) {
-      const environment = ENVIRONMENT_FILTERS[key];
-      void navigate({
-        search: (prev) => ({
-          ...prev,
-          cursor: undefined,
-          environment: prev.environment === environment ? undefined : environment,
         }),
       });
     }
@@ -283,36 +226,6 @@ function PluginsIndex() {
           filters={[
             { key: "verified", label: "Verified only", active: search.verified ?? false },
             { key: "executesCode", label: "Executes code", active: search.executesCode ?? false },
-            {
-              key: "mac",
-              label: "macOS ready",
-              active: search.hostTarget === HOST_TARGET_FILTERS.mac,
-            },
-            {
-              key: "linux",
-              label: "Linux ready",
-              active: search.hostTarget === HOST_TARGET_FILTERS.linux,
-            },
-            {
-              key: "windows",
-              label: "Windows ready",
-              active: search.hostTarget === HOST_TARGET_FILTERS.windows,
-            },
-            {
-              key: "browser",
-              label: "Browser needed",
-              active: search.environment === ENVIRONMENT_FILTERS.browser,
-            },
-            {
-              key: "desktop",
-              label: "Desktop needed",
-              active: search.environment === ENVIRONMENT_FILTERS.desktop,
-            },
-            {
-              key: "network",
-              label: "Network needed",
-              active: search.environment === ENVIRONMENT_FILTERS.network,
-            },
           ]}
           onFilterToggle={handleFilterToggle}
         />

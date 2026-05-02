@@ -658,14 +658,6 @@ function MigrationRow(props: { entry: ClawPackMigrationStatus["missingSample"][n
             Manage
           </Link>
         </Button>
-        <Button asChild size="sm" variant="ghost">
-          <Link
-            to="/plugins/$name/releases/$version"
-            params={{ name: entry.name, version: entry.version }}
-          >
-            Release
-          </Link>
-        </Button>
       </div>
     </div>
   );
@@ -721,14 +713,6 @@ function FailureRow(props: { entry: ClawPackMigrationStatus["failureSample"][num
         <Button asChild size="sm" variant="outline">
           <Link to="/management" search={{ skill: undefined, plugin: entry.name }}>
             Manage
-          </Link>
-        </Button>
-        <Button asChild size="sm" variant="ghost">
-          <Link
-            to="/plugins/$name/releases/$version"
-            params={{ name: entry.name, version: entry.version }}
-          >
-            Release
           </Link>
         </Button>
       </div>

@@ -7,10 +7,8 @@ import {
   fetchPackageDetail,
   fetchPackageReadme,
   fetchPackageVersion,
-  fetchPackageVersions,
   type PackageDetailResponse,
   type PackageVersionDetail,
-  type PackageVersionListItem,
 } from "../lib/packageApi";
 
 const isRateLimitedPackageApiErrorMock = vi.fn(
@@ -23,7 +21,6 @@ const useAuthStatusMock = vi.fn();
 type PluginDetailLoaderData = {
   detail: PackageDetailResponse;
   version: PackageVersionDetail | null;
-  versions: PackageVersionListItem[];
   readme: string | null;
   rateLimited: {
     scope: "detail" | "metadata";
@@ -52,7 +49,6 @@ let loaderDataMock: PluginDetailLoaderData = {
     owner: null,
   },
   version: null,
-  versions: [],
   readme: null as string | null,
   rateLimited: null,
 };
@@ -98,9 +94,8 @@ vi.mock("../lib/packageApi", () => ({
   fetchPackageDetail: vi.fn(),
   fetchPackageReadme: vi.fn(),
   fetchPackageVersion: vi.fn(),
-  fetchPackageVersions: vi.fn(),
   isRateLimitedPackageApiError: (error: unknown) => isRateLimitedPackageApiErrorMock(error),
-  getPackageDownloadHref: vi.fn((name: string, version?: string | null) =>
+  getPackageDownloadPath: vi.fn((name: string, version?: string | null) =>
     version
       ? `/api/v1/packages/${name}/download?version=${version}`
       : `/api/v1/packages/${name}/download`,
@@ -132,8 +127,6 @@ describe("plugin detail route", () => {
     vi.mocked(fetchPackageDetail).mockReset();
     vi.mocked(fetchPackageReadme).mockReset();
     vi.mocked(fetchPackageVersion).mockReset();
-    vi.mocked(fetchPackageVersions).mockReset();
-    vi.mocked(fetchPackageVersions).mockResolvedValue({ items: [], nextCursor: null });
     loaderDataMock = {
       detail: {
         package: {
@@ -154,7 +147,6 @@ describe("plugin detail route", () => {
         owner: null,
       },
       version: null,
-      versions: [],
       readme: null,
       rateLimited: null,
     };
@@ -219,7 +211,6 @@ describe("plugin detail route", () => {
         },
       },
       readme: null,
-      versions: [],
       rateLimited: null,
     };
 
@@ -289,7 +280,6 @@ describe("plugin detail route", () => {
         },
       },
       readme: null,
-      versions: [],
       rateLimited: null,
     };
 
@@ -307,7 +297,6 @@ describe("plugin detail route", () => {
     loaderDataMock = {
       detail: { package: null, owner: null },
       version: null,
-      versions: [],
       readme: null,
       rateLimited: {
         scope: "detail",
@@ -333,7 +322,6 @@ describe("plugin detail route", () => {
     const fetchPackageDetailMock = vi.mocked(fetchPackageDetail);
     const fetchPackageReadmeMock = vi.mocked(fetchPackageReadme);
     const fetchPackageVersionMock = vi.mocked(fetchPackageVersion);
-    const fetchPackageVersionsMock = vi.mocked(fetchPackageVersions);
 
     fetchPackageDetailMock.mockResolvedValueOnce({
       package: {
@@ -355,7 +343,6 @@ describe("plugin detail route", () => {
     });
     fetchPackageReadmeMock.mockRejectedValueOnce({ status: 429, retryAfterSeconds: 11 });
     fetchPackageVersionMock.mockRejectedValueOnce({ status: 429, retryAfterSeconds: 11 });
-    fetchPackageVersionsMock.mockResolvedValueOnce({ items: [], nextCursor: null });
 
     const result = await loader({ params: { name: "demo-plugin" } });
 
@@ -378,7 +365,6 @@ describe("plugin detail route", () => {
     const fetchPackageDetailMock = vi.mocked(fetchPackageDetail);
     const fetchPackageReadmeMock = vi.mocked(fetchPackageReadme);
     const fetchPackageVersionMock = vi.mocked(fetchPackageVersion);
-    const fetchPackageVersionsMock = vi.mocked(fetchPackageVersions);
 
     fetchPackageDetailMock
       .mockResolvedValueOnce({ package: null, owner: null })
@@ -402,10 +388,6 @@ describe("plugin detail route", () => {
       });
     fetchPackageReadmeMock.mockResolvedValueOnce("README");
     fetchPackageVersionMock.mockResolvedValueOnce({ package: null, version: null });
-    fetchPackageVersionsMock.mockResolvedValueOnce({
-      items: [],
-      nextCursor: null,
-    });
 
     const result = await loader({ params: { name: "matrix" } });
 
@@ -413,7 +395,6 @@ describe("plugin detail route", () => {
     expect(fetchPackageDetailMock).toHaveBeenNthCalledWith(2, "@openclaw/matrix");
     expect(fetchPackageReadmeMock).toHaveBeenCalledWith("@openclaw/matrix");
     expect(fetchPackageVersionMock).toHaveBeenCalledWith("@openclaw/matrix", "2026.3.22");
-    expect(fetchPackageVersionsMock).toHaveBeenCalledWith("@openclaw/matrix", { limit: 8 });
     expect(result.detail.package?.name).toBe("@openclaw/matrix");
     expect(result.rateLimited).toBeNull();
   });

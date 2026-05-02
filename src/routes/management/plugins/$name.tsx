@@ -218,10 +218,11 @@ export function PluginManagementDetailPage({ name }: { name: string }) {
                 {release?.version ? (
                   <Button asChild className="management-action-btn" size="sm" variant="outline">
                     <Link
-                      to="/plugins/$name/releases/$version"
-                      params={{ name: plugin.name, version: release.version }}
+                      to="/management/clawpacks/releases/$releaseId"
+                      params={{ releaseId: release._id }}
+                      search={{ skill: undefined, plugin: undefined }}
                     >
-                      Release page
+                      Release detail
                     </Link>
                   </Button>
                 ) : null}

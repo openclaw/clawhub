@@ -44,7 +44,6 @@ import { Route as ManagementPluginsNameRouteImport } from './routes/management/p
 import { Route as ManagementMigrationsBundledPluginIdRouteImport } from './routes/management/migrations/$bundledPluginId'
 import { Route as OwnerSlugSettingsRouteImport } from './routes/$owner/$slug/settings'
 import { Route as PluginsNameSecurityScannerRouteImport } from './routes/plugins/$name/security/$scanner'
-import { Route as PluginsNameReleasesVersionRouteImport } from './routes/plugins/$name/releases/$version'
 import { Route as ManagementClawpacksReleasesReleaseIdRouteImport } from './routes/management/clawpacks/releases/$releaseId'
 import { Route as OwnerSlugSecurityScannerRouteImport } from './routes/$owner/$slug/security/$scanner'
 
@@ -225,12 +224,6 @@ const PluginsNameSecurityScannerRoute =
     path: '/security/$scanner',
     getParentRoute: () => PluginsNameRoute,
   } as any)
-const PluginsNameReleasesVersionRoute =
-  PluginsNameReleasesVersionRouteImport.update({
-    id: '/releases/$version',
-    path: '/releases/$version',
-    getParentRoute: () => PluginsNameRoute,
-  } as any)
 const ManagementClawpacksReleasesReleaseIdRoute =
   ManagementClawpacksReleasesReleaseIdRouteImport.update({
     id: '/releases/$releaseId',
@@ -281,7 +274,6 @@ export interface FileRoutesByFullPath {
   '/management/plugins/$name': typeof ManagementPluginsNameRoute
   '/$owner/$slug/security/$scanner': typeof OwnerSlugSecurityScannerRoute
   '/management/clawpacks/releases/$releaseId': typeof ManagementClawpacksReleasesReleaseIdRoute
-  '/plugins/$name/releases/$version': typeof PluginsNameReleasesVersionRoute
   '/plugins/$name/security/$scanner': typeof PluginsNameSecurityScannerRoute
 }
 export interface FileRoutesByTo {
@@ -321,7 +313,6 @@ export interface FileRoutesByTo {
   '/management/plugins/$name': typeof ManagementPluginsNameRoute
   '/$owner/$slug/security/$scanner': typeof OwnerSlugSecurityScannerRoute
   '/management/clawpacks/releases/$releaseId': typeof ManagementClawpacksReleasesReleaseIdRoute
-  '/plugins/$name/releases/$version': typeof PluginsNameReleasesVersionRoute
   '/plugins/$name/security/$scanner': typeof PluginsNameSecurityScannerRoute
 }
 export interface FileRoutesById {
@@ -362,7 +353,6 @@ export interface FileRoutesById {
   '/management/plugins/$name': typeof ManagementPluginsNameRoute
   '/$owner/$slug/security/$scanner': typeof OwnerSlugSecurityScannerRoute
   '/management/clawpacks/releases/$releaseId': typeof ManagementClawpacksReleasesReleaseIdRoute
-  '/plugins/$name/releases/$version': typeof PluginsNameReleasesVersionRoute
   '/plugins/$name/security/$scanner': typeof PluginsNameSecurityScannerRoute
 }
 export interface FileRouteTypes {
@@ -404,7 +394,6 @@ export interface FileRouteTypes {
     | '/management/plugins/$name'
     | '/$owner/$slug/security/$scanner'
     | '/management/clawpacks/releases/$releaseId'
-    | '/plugins/$name/releases/$version'
     | '/plugins/$name/security/$scanner'
   fileRoutesByTo: FileRoutesByTo
   to:
@@ -444,7 +433,6 @@ export interface FileRouteTypes {
     | '/management/plugins/$name'
     | '/$owner/$slug/security/$scanner'
     | '/management/clawpacks/releases/$releaseId'
-    | '/plugins/$name/releases/$version'
     | '/plugins/$name/security/$scanner'
   id:
     | '__root__'
@@ -484,7 +472,6 @@ export interface FileRouteTypes {
     | '/management/plugins/$name'
     | '/$owner/$slug/security/$scanner'
     | '/management/clawpacks/releases/$releaseId'
-    | '/plugins/$name/releases/$version'
     | '/plugins/$name/security/$scanner'
   fileRoutesById: FileRoutesById
 }
@@ -764,13 +751,6 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof PluginsNameSecurityScannerRouteImport
       parentRoute: typeof PluginsNameRoute
     }
-    '/plugins/$name/releases/$version': {
-      id: '/plugins/$name/releases/$version'
-      path: '/releases/$version'
-      fullPath: '/plugins/$name/releases/$version'
-      preLoaderRoute: typeof PluginsNameReleasesVersionRouteImport
-      parentRoute: typeof PluginsNameRoute
-    }
     '/management/clawpacks/releases/$releaseId': {
       id: '/management/clawpacks/releases/$releaseId'
       path: '/releases/$releaseId'
@@ -858,12 +838,10 @@ const OwnerSlugRouteWithChildren = OwnerSlugRoute._addFileChildren(
 )
 
 interface PluginsNameRouteChildren {
-  PluginsNameReleasesVersionRoute: typeof PluginsNameReleasesVersionRoute
   PluginsNameSecurityScannerRoute: typeof PluginsNameSecurityScannerRoute
 }
 
 const PluginsNameRouteChildren: PluginsNameRouteChildren = {
-  PluginsNameReleasesVersionRoute: PluginsNameReleasesVersionRoute,
   PluginsNameSecurityScannerRoute: PluginsNameSecurityScannerRoute,
 }
 

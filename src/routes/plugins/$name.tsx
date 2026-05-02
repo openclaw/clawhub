@@ -16,21 +16,16 @@ import { Button } from "../../components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "../../components/ui/card";
 import { getUserFacingConvexError } from "../../lib/convexError";
 import { formatRetryDelay } from "../../lib/formatRetryDelay";
-import { formatCompactStat } from "../../lib/numberFormat";
 import {
   fetchPackageDetail,
   fetchPackageReadme,
   fetchPackageVersion,
-  fetchPackageVersions,
-  getPackageDownloadHref,
+  getPackageDownloadPath,
   isRateLimitedPackageApiError,
   type PackageDetailResponse,
-  type PackageClawPackSummary,
   type PackageVersionDetail,
-  type PackageVersionListItem,
 } from "../../lib/packageApi";
 import { familyLabel } from "../../lib/packageLabels";
-import { timeAgo } from "../../lib/timeAgo";
 import { useAuthStatus } from "../../lib/useAuthStatus";
 
 type PluginDetailRateLimitState = {
@@ -41,7 +36,6 @@ type PluginDetailRateLimitState = {
 type PluginDetailLoaderData = {
   detail: PackageDetailResponse;
   version: PackageVersionDetail | null;
-  versions: PackageVersionListItem[];
   readme: string | null;
   rateLimited: PluginDetailRateLimitState;
 };
@@ -65,7 +59,6 @@ export const Route = createFileRoute("/plugins/$name")({
           return {
             detail: { package: null, owner: null },
             version: null,
-            versions: [],
             readme: null,
             rateLimited: {
               scope: "detail",
@@ -84,25 +77,23 @@ export const Route = createFileRoute("/plugins/$name")({
     }
 
     if (!detail.package) {
-      return { detail, version: null, versions: [], readme: null, rateLimited: null };
+      return { detail, version: null, readme: null, rateLimited: null };
     }
 
     try {
-      const [version, versions, readme] = await Promise.all([
+      const [version, readme] = await Promise.all([
         detail.package.latestVersion
           ? fetchPackageVersion(resolvedName, detail.package.latestVersion)
           : Promise.resolve(null),
-        fetchPackageVersions(resolvedName, { limit: 8 }),
         fetchPackageReadme(resolvedName),
       ]);
 
-      return { detail, version, versions: versions.items, readme, rateLimited: null };
+      return { detail, version, readme, rateLimited: null };
     } catch (error) {
       if (isRateLimitedPackageApiError(error)) {
         return {
           detail,
           version: null,
-          versions: [],
           readme: null,
           rateLimited: {
             scope: "metadata",
@@ -189,40 +180,9 @@ function isEmptyObject(obj: unknown): boolean {
   return Object.keys(obj).length === 0;
 }
 
-function formatClawPackTarget(target: NonNullable<PackageClawPackSummary["hostTargets"]>[number]) {
-  return [target.os, target.arch, target.libc].filter(Boolean).join("-");
-}
-
-function formatClawPackBytes(value: number | null | undefined) {
-  if (!value || value <= 0) return "unknown";
-  if (value < 1024) return `${value}B`;
-  if (value < 1024 * 1024) return `${(value / 1024).toFixed(1)}KB`;
-  return `${(value / (1024 * 1024)).toFixed(1)}MB`;
-}
-
-function clawPackEnvironmentLabels(clawpack: PackageClawPackSummary | null | undefined) {
-  const environment = clawpack?.environment;
-  if (!environment) return [];
-  return [
-    environment.requiresLocalDesktop ? "local desktop" : null,
-    environment.requiresBrowser ? "browser" : null,
-    environment.requiresAudioDevice ? "audio device" : null,
-    environment.requiresNetwork ? "network" : null,
-    environment.supportsRemoteHost ? "remote host" : null,
-    ...(environment.requiresExternalServices ?? []).map((service) => `service:${service}`),
-    ...(environment.requiresOsPermissions ?? []).map((permission) => `permission:${permission}`),
-    ...(environment.knownUnsupported ?? []).map((target) => `unsupported:${target}`),
-  ].filter((label): label is string => Boolean(label));
-}
-
-function formatPackageCount(value: number | undefined | null) {
-  return formatCompactStat(value ?? 0);
-}
-
 function PluginDetailRoute() {
   const { name } = Route.useParams();
-  const { detail, version, versions, readme, rateLimited } =
-    Route.useLoaderData() as PluginDetailLoaderData;
+  const { detail, version, readme, rateLimited } = Route.useLoaderData() as PluginDetailLoaderData;
   const pathname = useRouterState({ select: (state) => state.location.pathname });
   const { isAuthenticated } = useAuthStatus();
   const requestPluginRescan = useMutation(api.packages.requestRescan);
@@ -231,7 +191,7 @@ function PluginDetailRoute() {
     isAuthenticated && detail.package ? { name: detail.package.name } : "skip",
   ) as ComponentProps<typeof DetailSecuritySummary>["rescanState"] | undefined;
 
-  if (pathname.includes("/security/") || pathname.includes("/releases/")) {
+  if (pathname.includes("/security/")) {
     return <Outlet />;
   }
 
@@ -286,10 +246,6 @@ function PluginDetailRoute() {
   const capabilities = latestRelease?.capabilities ?? pkg.capabilities;
   const compatibility = latestRelease?.compatibility ?? pkg.compatibility;
   const verification = latestRelease?.verification ?? pkg.verification;
-  const packageClawPack = (pkg as typeof pkg & { clawpack?: PackageClawPackSummary }).clawpack;
-  const clawpack: PackageClawPackSummary | null =
-    latestRelease?.clawpack ?? packageClawPack ?? null;
-  const clawpackEnvironment = clawPackEnvironmentLabels(clawpack);
   const requestRescan = async () => {
     const packageId = (pkg as { _id?: Id<"packages"> })._id;
     if (!packageId) {
@@ -336,7 +292,7 @@ function PluginDetailRoute() {
                 {pkg.latestVersion && !isDownloadBlocked ? (
                   <div className="skill-title-actions">
                     <Button asChild variant="outline" size="sm" className="no-underline">
-                      <a href={getPackageDownloadHref(name, pkg.latestVersion)}>
+                      <a href={getPackageDownloadPath(name, pkg.latestVersion)}>
                         <Download className="h-3.5 w-3.5" aria-hidden="true" />
                         Download
                       </a>
@@ -359,18 +315,6 @@ function PluginDetailRoute() {
                       <span className="text-ink-soft opacity-40">·</span>
                       <span className="stat">
                         runtime <span className="font-mono text-xs">{pkg.runtimeId}</span>
-                      </span>
-                    </>
-                  ) : null}
-                  {pkg.stats ? (
-                    <>
-                      <span className="text-ink-soft opacity-40">·</span>
-                      <span className="stat">
-                        {formatPackageCount(pkg.stats.downloads)} downloads
-                      </span>
-                      <span className="text-ink-soft opacity-40">·</span>
-                      <span className="stat">
-                        {formatPackageCount(pkg.stats.versions)} versions
                       </span>
                     </>
                   ) : null}
@@ -442,134 +386,6 @@ function PluginDetailRoute() {
               </CardContent>
             </Card>
           </div>
-
-          {clawpack ? (
-            <Card>
-              <CardHeader className="gap-3 sm:flex-row sm:items-center sm:justify-between">
-                <CardTitle>Claw Pack</CardTitle>
-                {clawpack.available && clawpack.sha256 ? (
-                  <InstallCopyButton text={clawpack.sha256} ariaLabel="Copy Claw Pack SHA-256" />
-                ) : null}
-              </CardHeader>
-              <CardContent>
-                <dl className="flex flex-col gap-3 text-sm">
-                  <div className="flex flex-col gap-1.5 border-b border-[color:var(--line)] pb-3 sm:grid sm:grid-cols-[minmax(140px,220px)_1fr] sm:gap-x-4 sm:gap-y-0">
-                    <dt className="font-semibold text-[color:var(--ink-soft)]">Artifact</dt>
-                    <dd className="text-[color:var(--ink)]">
-                      {clawpack.available
-                        ? `${clawpack.format ?? "zip"} / ${formatClawPackBytes(
-                            clawpack.size,
-                          )} / ${clawpack.fileCount ?? 0} files`
-                        : "Not generated yet"}
-                    </dd>
-                  </div>
-                  {clawpack.sha256 ? (
-                    <div className="flex flex-col gap-1.5 border-b border-[color:var(--line)] pb-3 sm:grid sm:grid-cols-[minmax(140px,220px)_1fr] sm:gap-x-4 sm:gap-y-0">
-                      <dt className="font-semibold text-[color:var(--ink-soft)]">SHA-256</dt>
-                      <dd className="min-w-0 break-all font-mono text-xs text-[color:var(--ink)]">
-                        {clawpack.sha256}
-                      </dd>
-                    </div>
-                  ) : null}
-                  {clawpack.hostTargets?.length ? (
-                    <div className="flex flex-col gap-1.5 border-b border-[color:var(--line)] pb-3 sm:grid sm:grid-cols-[minmax(140px,220px)_1fr] sm:gap-x-4 sm:gap-y-0">
-                      <dt className="font-semibold text-[color:var(--ink-soft)]">Host targets</dt>
-                      <dd className="flex flex-wrap gap-1.5">
-                        {clawpack.hostTargets.map((target) => (
-                          <Badge key={formatClawPackTarget(target)} variant="compact">
-                            {formatClawPackTarget(target)}
-                          </Badge>
-                        ))}
-                      </dd>
-                    </div>
-                  ) : null}
-                  {clawpackEnvironment.length ? (
-                    <div className="flex flex-col gap-1.5 border-b border-[color:var(--line)] pb-3 sm:grid sm:grid-cols-[minmax(140px,220px)_1fr] sm:gap-x-4 sm:gap-y-0">
-                      <dt className="font-semibold text-[color:var(--ink-soft)]">Environment</dt>
-                      <dd className="flex flex-wrap gap-1.5">
-                        {clawpackEnvironment.map((label) => (
-                          <Badge key={label} variant="compact">
-                            {label}
-                          </Badge>
-                        ))}
-                      </dd>
-                    </div>
-                  ) : null}
-                  {clawpack.buildVersion ? (
-                    <div className="flex flex-col gap-1.5 last:border-b-0 last:pb-0 sm:grid sm:grid-cols-[minmax(140px,220px)_1fr] sm:gap-x-4 sm:gap-y-0">
-                      <dt className="font-semibold text-[color:var(--ink-soft)]">Builder</dt>
-                      <dd className="text-[color:var(--ink)]">{clawpack.buildVersion}</dd>
-                    </div>
-                  ) : null}
-                </dl>
-                {latestRelease?.version && clawpack.available ? (
-                  <div className="mt-4 flex flex-wrap gap-2 border-t border-[color:var(--line)] pt-4">
-                    <Button asChild variant="outline" size="sm">
-                      <Link
-                        to="/plugins/$name/releases/$version"
-                        params={{ name: pkg.name, version: latestRelease.version }}
-                      >
-                        Artifact details
-                      </Link>
-                    </Button>
-                    <Button asChild variant="ghost" size="sm">
-                      <a href={getPackageDownloadHref(pkg.name, latestRelease.version)}>
-                        <Download size={16} />
-                        Download Claw Pack
-                      </a>
-                    </Button>
-                  </div>
-                ) : null}
-              </CardContent>
-            </Card>
-          ) : null}
-
-          {versions.length ? (
-            <Card>
-              <CardHeader>
-                <CardTitle>Versions</CardTitle>
-              </CardHeader>
-              <CardContent>
-                <div className="flex flex-col divide-y divide-[color:var(--line)]">
-                  {versions.map((item) => (
-                    <div
-                      key={item.version}
-                      className="flex flex-col gap-3 py-3 first:pt-0 last:pb-0 sm:flex-row sm:items-center sm:justify-between"
-                    >
-                      <div className="min-w-0">
-                        <div className="flex flex-wrap items-center gap-2">
-                          <Link
-                            to="/plugins/$name/releases/$version"
-                            params={{ name: pkg.name, version: item.version }}
-                            className="font-mono text-sm font-semibold text-[color:var(--ink)] hover:text-[color:var(--accent)]"
-                          >
-                            {item.version}
-                          </Link>
-                          {item.distTags?.map((tag) => (
-                            <Badge key={`${item.version}-${tag}`} variant="compact">
-                              {tag}
-                            </Badge>
-                          ))}
-                        </div>
-                        <p className="mt-1 line-clamp-2 text-sm text-[color:var(--ink-soft)]">
-                          {item.changelog || "No changelog provided."}
-                        </p>
-                        <p className="mt-1 text-xs text-[color:var(--ink-soft)]">
-                          published {timeAgo(item.createdAt)}
-                        </p>
-                      </div>
-                      <Button asChild variant="outline" size="sm" className="shrink-0">
-                        <a href={getPackageDownloadHref(pkg.name, item.version)}>
-                          <Download size={16} />
-                          Download
-                        </a>
-                      </Button>
-                    </div>
-                  ))}
-                </div>
-              </CardContent>
-            </Card>
-          ) : null}
 
           {readme ? (
             <Card className="tab-card">

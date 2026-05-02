@@ -199,10 +199,11 @@ function ClawPackReleaseDetailBody(props: { detail: Exclude<ClawPackReleaseDetai
             </Button>
             <Button asChild className="management-action-btn" size="sm" variant="outline">
               <Link
-                to="/plugins/$name/releases/$version"
-                params={{ name: detail.package.name, version: detail.release.version }}
+                to="/management/plugins/$name"
+                params={{ name: detail.package.name }}
+                search={{ skill: undefined, plugin: undefined }}
               >
-                Release page
+                Plugin staff page
               </Link>
             </Button>
           </div>

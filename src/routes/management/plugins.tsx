@@ -228,10 +228,11 @@ function PluginQueueCard({ item }: { item: PluginQueueItem }) {
           {release?.version ? (
             <Button asChild className="management-action-btn" size="sm" variant="ghost">
               <Link
-                to="/plugins/$name/releases/$version"
-                params={{ name: item.name, version: release.version }}
+                to="/management/clawpacks/releases/$releaseId"
+                params={{ releaseId: release.releaseId }}
+                search={{ skill: undefined, plugin: undefined }}
               >
-                Release
+                Release detail
               </Link>
             </Button>
           ) : null}
