@@ -5289,9 +5289,9 @@ describe("httpApiV1 handlers", () => {
         }),
       }),
     );
-    const payload = (
-      runAction.mock.calls[0]?.[1] as { payload?: { files?: Array<{ path: string }> } }
-    ).payload;
+    const actionCall = runAction.mock.calls[0];
+    expect(actionCall).toBeTruthy();
+    const payload = (actionCall[1] as { payload?: { files?: Array<{ path: string }> } }).payload;
     expect(payload?.files?.map((file) => file.path)).not.toContain("dist/index.js");
   });
 
