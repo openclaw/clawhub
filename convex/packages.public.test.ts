@@ -18,6 +18,7 @@ import {
   listVersions,
   updateReleaseStaticScanInternal,
   softDeletePackageInternal,
+  transferPackageOwnerInternal,
   searchForViewerInternal,
   searchPublic,
 } from "./packages";
@@ -260,6 +261,19 @@ const softDeletePackageInternalHandler = (
   softDeletePackageInternal as unknown as WrappedHandler<
     { userId: string; name: string },
     { ok: true; packageId: string; releaseCount: number; alreadyDeleted: boolean }
+  >
+)._handler;
+const transferPackageOwnerInternalHandler = (
+  transferPackageOwnerInternal as unknown as WrappedHandler<
+    {
+      actorUserId: string;
+      name: string;
+      ownerUserId: string;
+      ownerPublisherId?: string;
+      channel?: "official" | "community" | "private";
+      reason?: string;
+    },
+    { ok: true; packageId: string; ownerPublisherId?: string; channel: string }
   >
 )._handler;
 
@@ -687,6 +701,58 @@ function makeReservePackageNameCtx(options?: {
         }),
         insert,
         patch: vi.fn(),
+        replace: vi.fn(),
+        delete: vi.fn(),
+        normalizeId: vi.fn(),
+      },
+    },
+  };
+}
+
+function makeTransferPackageOwnerCtx(options?: {
+  pkg?: Record<string, unknown> | null;
+  actor?: Record<string, unknown> | null;
+  owner?: Record<string, unknown> | null;
+  ownerPublisher?: Record<string, unknown> | null;
+}) {
+  const pkg = options?.pkg ?? makePackageDoc();
+  const patch = vi.fn();
+  const insert = vi.fn();
+  return {
+    insert,
+    patch,
+    ctx: {
+      db: {
+        get: vi.fn(async (id: string) => {
+          if (id === "users:admin") {
+            return options?.actor ?? { _id: id, role: "admin" };
+          }
+          if (id === "users:openclaw") {
+            return options?.owner ?? { _id: id, role: "user" };
+          }
+          if (id === "publishers:openclaw") {
+            return (
+              options?.ownerPublisher ?? {
+                _id: id,
+                kind: "org",
+                handle: "openclaw",
+                displayName: "OpenClaw",
+                trustedPublisher: true,
+              }
+            );
+          }
+          return null;
+        }),
+        query: vi.fn((table: string) => {
+          if (table !== "packages") throw new Error(`Unexpected table ${table}`);
+          return {
+            withIndex: vi.fn(() => ({
+              unique: vi.fn().mockResolvedValue(pkg),
+            })),
+          };
+        }),
+        insert,
+        patch,
         replace: vi.fn(),
         delete: vi.fn(),
         normalizeId: vi.fn(),
@@ -1792,6 +1858,72 @@ describe("packages public queries", () => {
         name: "@openclaw/diffs",
       }),
     ).rejects.toThrow("Package already exists and belongs to another publisher");
+  });
+
+  it("lets admins transfer a package to a trusted publisher and make it official", async () => {
+    const { ctx, patch, insert } = makeTransferPackageOwnerCtx();
+
+    await expect(
+      transferPackageOwnerInternalHandler(ctx, {
+        actorUserId: "users:admin",
+        name: " demo-plugin ",
+        ownerUserId: "users:openclaw",
+        ownerPublisherId: "publishers:openclaw",
+        channel: "official",
+        reason: "move official plugin package under OpenClaw",
+      }),
+    ).resolves.toMatchObject({
+      ok: true,
+      packageId: "packages:demo",
+      ownerPublisherId: "publishers:openclaw",
+      channel: "official",
+    });
+
+    expect(patch).toHaveBeenCalledWith("packages:demo", {
+      ownerUserId: "users:openclaw",
+      ownerPublisherId: "publishers:openclaw",
+      channel: "official",
+      isOfficial: true,
+      updatedAt: expect.any(Number),
+    });
+    expect(insert).toHaveBeenCalledWith(
+      "auditLogs",
+      expect.objectContaining({
+        action: "package.owner.transfer",
+        targetType: "package",
+        targetId: "packages:demo",
+        metadata: expect.objectContaining({
+          name: "demo-plugin",
+          previousOwnerUserId: "users:owner",
+          nextOwnerUserId: "users:openclaw",
+          nextOwnerPublisherId: "publishers:openclaw",
+          previousChannel: "community",
+          nextChannel: "official",
+        }),
+      }),
+    );
+  });
+
+  it("rejects official package transfers to untrusted publishers", async () => {
+    const { ctx } = makeTransferPackageOwnerCtx({
+      ownerPublisher: {
+        _id: "publishers:openclaw",
+        kind: "org",
+        handle: "openclaw",
+        displayName: "OpenClaw",
+        trustedPublisher: false,
+      },
+    });
+
+    await expect(
+      transferPackageOwnerInternalHandler(ctx, {
+        actorUserId: "users:admin",
+        name: "demo-plugin",
+        ownerUserId: "users:openclaw",
+        ownerPublisherId: "publishers:openclaw",
+        channel: "official",
+      }),
+    ).rejects.toThrow("Only trusted publishers may own official packages");
   });
 
   it("lets owners publish real releases into reserved package placeholders", async () => {

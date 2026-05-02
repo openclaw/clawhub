@@ -2431,6 +2431,81 @@ export const reservePackageNameInternal = internalMutation({
   },
 });
 
+export const transferPackageOwnerInternal = internalMutation({
+  args: {
+    actorUserId: v.id("users"),
+    name: v.string(),
+    ownerUserId: v.id("users"),
+    ownerPublisherId: v.optional(v.id("publishers")),
+    channel: v.optional(
+      v.union(v.literal("official"), v.literal("community"), v.literal("private")),
+    ),
+    reason: v.optional(v.string()),
+  },
+  handler: async (ctx, args) => {
+    const now = Date.now();
+    const actor = await ctx.db.get(args.actorUserId);
+    if (!actor || actor.deletedAt || actor.deactivatedAt) throw new ConvexError("Unauthorized");
+    assertAdmin(actor);
+
+    const owner = await ctx.db.get(args.ownerUserId);
+    if (!owner || owner.deletedAt || owner.deactivatedAt) {
+      throw new ConvexError("Owner user not found");
+    }
+
+    const ownerPublisher = args.ownerPublisherId ? await ctx.db.get(args.ownerPublisherId) : null;
+    if (args.ownerPublisherId && (!ownerPublisher || ownerPublisher.deletedAt)) {
+      throw new ConvexError("Owner publisher not found");
+    }
+
+    const normalizedName = normalizePackageName(args.name);
+    const pkg = await getPackageByNormalizedName(ctx, normalizedName);
+    if (!pkg || pkg.softDeletedAt) throw new ConvexError("Package not found");
+
+    const nextChannel = args.channel ?? pkg.channel;
+    const publisherTrusted = ownerPublisher?.trustedPublisher ?? owner.trustedPublisher;
+    if (nextChannel === "official" && !publisherTrusted) {
+      throw new ConvexError("Only trusted publishers may own official packages");
+    }
+
+    await ctx.db.patch(pkg._id, {
+      ownerUserId: args.ownerUserId,
+      ownerPublisherId: args.ownerPublisherId,
+      channel: nextChannel,
+      isOfficial: nextChannel === "official",
+      updatedAt: now,
+    });
+
+    await ctx.db.insert("auditLogs", {
+      actorUserId: args.actorUserId,
+      action: "package.owner.transfer",
+      targetType: "package",
+      targetId: pkg._id,
+      metadata: {
+        name: normalizedName,
+        previousOwnerUserId: pkg.ownerUserId,
+        previousOwnerPublisherId: pkg.ownerPublisherId,
+        nextOwnerUserId: args.ownerUserId,
+        nextOwnerPublisherId: args.ownerPublisherId,
+        previousChannel: pkg.channel,
+        nextChannel,
+        reason: args.reason || undefined,
+      },
+      createdAt: now,
+    });
+
+    return {
+      ok: true as const,
+      packageId: pkg._id,
+      name: normalizedName,
+      ownerUserId: args.ownerUserId,
+      ownerPublisherId: args.ownerPublisherId,
+      channel: nextChannel,
+      isOfficial: nextChannel === "official",
+    };
+  },
+});
+
 export const insertReleaseInternal = internalMutation({
   args: {
     actorUserId: v.id("users"),
