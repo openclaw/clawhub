@@ -83,6 +83,12 @@ function byteLength(value: string) {
   return new TextEncoder().encode(value).byteLength;
 }
 
+function fetchInputUrl(input: RequestInfo | URL) {
+  if (typeof input === "string") return input;
+  if (input instanceof URL) return input.toString();
+  return input.url;
+}
+
 function getFileInput() {
   const input = document.querySelector('input[type="file"]');
   if (!(input instanceof HTMLInputElement)) throw new Error("Missing file input");
@@ -275,7 +281,7 @@ describe("plugins publish route", () => {
     const pluginManifestBody = '{"id":"github.plugin","name":"GitHub Plugin"}';
     const sourceBody = "export const githubPlugin = true;\n";
     fetchMock.mockImplementation(async (input: RequestInfo | URL, init?: RequestInit) => {
-      const url = String(input);
+      const url = fetchInputUrl(input);
       if (url === "https://api.github.com/repos/owner/repo/commits/main") {
         return jsonResponse({ sha: commit, commit: { tree: { sha: tree } } });
       }

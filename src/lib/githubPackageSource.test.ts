@@ -19,11 +19,17 @@ function textResponse(body: string, contentType = "text/plain") {
   });
 }
 
+function fetchInputUrl(input: RequestInfo | URL) {
+  if (typeof input === "string") return input;
+  if (input instanceof URL) return input.toString();
+  return input.url;
+}
+
 describe("fetchGitHubPackageSource", () => {
   it("resolves a repo URL, downloads package files, and reports source metadata", async () => {
     const progress: string[] = [];
     const fetcher = vi.fn(async (input: RequestInfo | URL) => {
-      const url = String(input);
+      const url = fetchInputUrl(input);
       if (url === "https://api.github.com/repos/owner/repo") {
         return jsonResponse({ default_branch: "main" });
       }
@@ -68,7 +74,7 @@ describe("fetchGitHubPackageSource", () => {
 
   it("handles branch names with slashes and trims tree URL paths", async () => {
     const fetcher = vi.fn(async (input: RequestInfo | URL) => {
-      const url = String(input);
+      const url = fetchInputUrl(input);
       if (url === "https://api.github.com/repos/owner/repo/commits/feature%2Fnew-ui") {
         return jsonResponse({ sha: COMMIT, commit: { tree: { sha: TREE } } });
       }
@@ -107,7 +113,7 @@ describe("fetchGitHubPackageSource", () => {
 
   it("rejects oversized GitHub packages before downloading files", async () => {
     const fetcher = vi.fn(async (input: RequestInfo | URL) => {
-      const url = String(input);
+      const url = fetchInputUrl(input);
       if (url === "https://api.github.com/repos/owner/repo") {
         return jsonResponse({ default_branch: "main" });
       }
