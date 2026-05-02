@@ -38,6 +38,7 @@ import {
   normalizePublishFiles,
   readOptionalTextFile,
   summarizePackageForSearch,
+  toConvexSafeJsonValue,
 } from "./lib/packageRegistry";
 import { isPackageBlockedFromPublic, resolvePackageReleaseScanStatus } from "./lib/packageSecurity";
 import { toPublicPublisher } from "./lib/public";
@@ -2111,6 +2112,10 @@ async function publishPackageImpl(
   );
 
   const packageJson = maybeParseJson(packageJsonEntry?.text);
+  const pluginManifest = maybeParseJson(pluginManifestEntry?.text);
+  const bundleManifest = maybeParseJson(bundleManifestEntry?.text);
+  const storedPluginManifest = toConvexSafeJsonValue(pluginManifest);
+  const storedBundleManifest = toConvexSafeJsonValue(bundleManifest);
   if (packageJson) ensurePluginNameMatchesPackage(name, packageJson);
 
   const bundleArtifacts =
@@ -2118,7 +2123,7 @@ async function publishPackageImpl(
       ? extractBundlePluginArtifacts({
           packageName: name,
           packageJson,
-          bundleManifest: maybeParseJson(bundleManifestEntry?.text),
+          bundleManifest,
           bundleMetadata: payload.bundle,
           source: effectiveSource,
         })
@@ -2134,7 +2139,7 @@ async function publishPackageImpl(
               throw new ConvexError("package.json is required for code plugins");
             })(),
           pluginManifest:
-            maybeParseJson(pluginManifestEntry?.text) ??
+            pluginManifest ??
             (() => {
               throw new ConvexError("openclaw.plugin.json is required for code plugins");
             })(),
@@ -2153,8 +2158,8 @@ async function publishPackageImpl(
     summary,
     metadata: {
       packageJson,
-      pluginManifest: maybeParseJson(pluginManifestEntry?.text),
-      bundleManifest: maybeParseJson(bundleManifestEntry?.text),
+      pluginManifest,
+      bundleManifest,
       source: effectiveSource,
     },
     files,
@@ -2200,10 +2205,8 @@ async function publishPackageImpl(
       auth.kind === "github-actions" ||
       (auth.kind === "user" && manualOverrideReason?.startsWith("GitHub Actions ")),
     extractedPackageJson: packageJson,
-    extractedPluginManifest:
-      family === "code-plugin" ? maybeParseJson(pluginManifestEntry?.text) : undefined,
-    normalizedBundleManifest:
-      family === "bundle-plugin" ? maybeParseJson(bundleManifestEntry?.text) : undefined,
+    extractedPluginManifest: family === "code-plugin" ? storedPluginManifest : undefined,
+    normalizedBundleManifest: family === "bundle-plugin" ? storedBundleManifest : undefined,
     source: effectiveSource,
   });
 

@@ -359,3 +359,18 @@ export function maybeParseJson(text: string | null | undefined) {
   if (!trimmed) return undefined;
   return parseJsonFile(trimmed, "JSON file");
 }
+
+export function toConvexSafeJsonValue(value: unknown): unknown {
+  if (Array.isArray(value)) return value.map((item) => toConvexSafeJsonValue(item));
+  if (!isRecord(value)) return value;
+  return Object.fromEntries(
+    Object.entries(value).map(([key, nested]) => [
+      key.startsWith("$")
+        ? `dollar_${key.slice(1)}`
+        : key.startsWith("_")
+          ? `underscore_${key.slice(1)}`
+          : key,
+      toConvexSafeJsonValue(nested),
+    ]),
+  );
+}
