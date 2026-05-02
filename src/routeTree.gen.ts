@@ -34,10 +34,10 @@ import { Route as PackagesNewRouteImport } from './routes/packages/new'
 import { Route as PackagesNameRouteImport } from './routes/packages/$name'
 import { Route as OrgsHandleRouteImport } from './routes/orgs/$handle'
 import { Route as ManagementUsersRouteImport } from './routes/management/users'
-import { Route as ManagementClawpacksRouteImport } from './routes/management/clawpacks'
 import { Route as ManagementPluginsRouteImport } from './routes/management/plugins'
 import { Route as ManagementModerationRouteImport } from './routes/management/moderation'
 import { Route as ManagementMigrationsRouteImport } from './routes/management/migrations'
+import { Route as ManagementClawpacksRouteImport } from './routes/management/clawpacks'
 import { Route as CliAuthRouteImport } from './routes/cli/auth'
 import { Route as OwnerSlugRouteImport } from './routes/$owner/$slug'
 import { Route as ManagementPluginsNameRouteImport } from './routes/management/plugins/$name'
@@ -173,11 +173,6 @@ const ManagementUsersRoute = ManagementUsersRouteImport.update({
   path: '/users',
   getParentRoute: () => ManagementRoute,
 } as any)
-const ManagementClawpacksRoute = ManagementClawpacksRouteImport.update({
-  id: '/clawpacks',
-  path: '/clawpacks',
-  getParentRoute: () => ManagementRoute,
-} as any)
 const ManagementPluginsRoute = ManagementPluginsRouteImport.update({
   id: '/plugins',
   path: '/plugins',
@@ -191,6 +186,11 @@ const ManagementModerationRoute = ManagementModerationRouteImport.update({
 const ManagementMigrationsRoute = ManagementMigrationsRouteImport.update({
   id: '/migrations',
   path: '/migrations',
+  getParentRoute: () => ManagementRoute,
+} as any)
+const ManagementClawpacksRoute = ManagementClawpacksRouteImport.update({
+  id: '/clawpacks',
+  path: '/clawpacks',
   getParentRoute: () => ManagementRoute,
 } as any)
 const CliAuthRoute = CliAuthRouteImport.update({
@@ -259,10 +259,10 @@ export interface FileRoutesByFullPath {
   '/upload': typeof UploadRoute
   '/$owner/$slug': typeof OwnerSlugRouteWithChildren
   '/cli/auth': typeof CliAuthRoute
+  '/management/clawpacks': typeof ManagementClawpacksRouteWithChildren
   '/management/migrations': typeof ManagementMigrationsRouteWithChildren
   '/management/moderation': typeof ManagementModerationRoute
   '/management/plugins': typeof ManagementPluginsRouteWithChildren
-  '/management/clawpacks': typeof ManagementClawpacksRouteWithChildren
   '/management/users': typeof ManagementUsersRoute
   '/orgs/$handle': typeof OrgsHandleRoute
   '/packages/$name': typeof PackagesNameRoute
@@ -299,10 +299,10 @@ export interface FileRoutesByTo {
   '/upload': typeof UploadRoute
   '/$owner/$slug': typeof OwnerSlugRouteWithChildren
   '/cli/auth': typeof CliAuthRoute
+  '/management/clawpacks': typeof ManagementClawpacksRouteWithChildren
   '/management/migrations': typeof ManagementMigrationsRouteWithChildren
   '/management/moderation': typeof ManagementModerationRoute
   '/management/plugins': typeof ManagementPluginsRouteWithChildren
-  '/management/clawpacks': typeof ManagementClawpacksRouteWithChildren
   '/management/users': typeof ManagementUsersRoute
   '/orgs/$handle': typeof OrgsHandleRoute
   '/packages/$name': typeof PackagesNameRoute
@@ -340,10 +340,10 @@ export interface FileRoutesById {
   '/upload': typeof UploadRoute
   '/$owner/$slug': typeof OwnerSlugRouteWithChildren
   '/cli/auth': typeof CliAuthRoute
+  '/management/clawpacks': typeof ManagementClawpacksRouteWithChildren
   '/management/migrations': typeof ManagementMigrationsRouteWithChildren
   '/management/moderation': typeof ManagementModerationRoute
   '/management/plugins': typeof ManagementPluginsRouteWithChildren
-  '/management/clawpacks': typeof ManagementClawpacksRouteWithChildren
   '/management/users': typeof ManagementUsersRoute
   '/orgs/$handle': typeof OrgsHandleRoute
   '/packages/$name': typeof PackagesNameRoute
@@ -382,10 +382,10 @@ export interface FileRouteTypes {
     | '/upload'
     | '/$owner/$slug'
     | '/cli/auth'
+    | '/management/clawpacks'
     | '/management/migrations'
     | '/management/moderation'
     | '/management/plugins'
-    | '/management/clawpacks'
     | '/management/users'
     | '/orgs/$handle'
     | '/packages/$name'
@@ -422,10 +422,10 @@ export interface FileRouteTypes {
     | '/upload'
     | '/$owner/$slug'
     | '/cli/auth'
+    | '/management/clawpacks'
     | '/management/migrations'
     | '/management/moderation'
     | '/management/plugins'
-    | '/management/clawpacks'
     | '/management/users'
     | '/orgs/$handle'
     | '/packages/$name'
@@ -462,10 +462,10 @@ export interface FileRouteTypes {
     | '/upload'
     | '/$owner/$slug'
     | '/cli/auth'
+    | '/management/clawpacks'
     | '/management/migrations'
     | '/management/moderation'
     | '/management/plugins'
-    | '/management/clawpacks'
     | '/management/users'
     | '/orgs/$handle'
     | '/packages/$name'
@@ -694,13 +694,6 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ManagementUsersRouteImport
       parentRoute: typeof ManagementRoute
     }
-    '/management/clawpacks': {
-      id: '/management/clawpacks'
-      path: '/clawpacks'
-      fullPath: '/management/clawpacks'
-      preLoaderRoute: typeof ManagementClawpacksRouteImport
-      parentRoute: typeof ManagementRoute
-    }
     '/management/plugins': {
       id: '/management/plugins'
       path: '/plugins'
@@ -720,6 +713,13 @@ declare module '@tanstack/react-router' {
       path: '/migrations'
       fullPath: '/management/migrations'
       preLoaderRoute: typeof ManagementMigrationsRouteImport
+      parentRoute: typeof ManagementRoute
+    }
+    '/management/clawpacks': {
+      id: '/management/clawpacks'
+      path: '/clawpacks'
+      fullPath: '/management/clawpacks'
+      preLoaderRoute: typeof ManagementClawpacksRouteImport
       parentRoute: typeof ManagementRoute
     }
     '/cli/auth': {
@@ -788,6 +788,18 @@ declare module '@tanstack/react-router' {
   }
 }
 
+interface ManagementClawpacksRouteChildren {
+  ManagementClawpacksReleasesReleaseIdRoute: typeof ManagementClawpacksReleasesReleaseIdRoute
+}
+
+const ManagementClawpacksRouteChildren: ManagementClawpacksRouteChildren = {
+  ManagementClawpacksReleasesReleaseIdRoute:
+    ManagementClawpacksReleasesReleaseIdRoute,
+}
+
+const ManagementClawpacksRouteWithChildren =
+  ManagementClawpacksRoute._addFileChildren(ManagementClawpacksRouteChildren)
+
 interface ManagementMigrationsRouteChildren {
   ManagementMigrationsBundledPluginIdRoute: typeof ManagementMigrationsBundledPluginIdRoute
 }
@@ -811,31 +823,19 @@ const ManagementPluginsRouteChildren: ManagementPluginsRouteChildren = {
 const ManagementPluginsRouteWithChildren =
   ManagementPluginsRoute._addFileChildren(ManagementPluginsRouteChildren)
 
-interface ManagementClawpacksRouteChildren {
-  ManagementClawpacksReleasesReleaseIdRoute: typeof ManagementClawpacksReleasesReleaseIdRoute
-}
-
-const ManagementClawpacksRouteChildren: ManagementClawpacksRouteChildren = {
-  ManagementClawpacksReleasesReleaseIdRoute:
-    ManagementClawpacksReleasesReleaseIdRoute,
-}
-
-const ManagementClawpacksRouteWithChildren =
-  ManagementClawpacksRoute._addFileChildren(ManagementClawpacksRouteChildren)
-
 interface ManagementRouteChildren {
+  ManagementClawpacksRoute: typeof ManagementClawpacksRouteWithChildren
   ManagementMigrationsRoute: typeof ManagementMigrationsRouteWithChildren
   ManagementModerationRoute: typeof ManagementModerationRoute
   ManagementPluginsRoute: typeof ManagementPluginsRouteWithChildren
-  ManagementClawpacksRoute: typeof ManagementClawpacksRouteWithChildren
   ManagementUsersRoute: typeof ManagementUsersRoute
 }
 
 const ManagementRouteChildren: ManagementRouteChildren = {
+  ManagementClawpacksRoute: ManagementClawpacksRouteWithChildren,
   ManagementMigrationsRoute: ManagementMigrationsRouteWithChildren,
   ManagementModerationRoute: ManagementModerationRoute,
   ManagementPluginsRoute: ManagementPluginsRouteWithChildren,
-  ManagementClawpacksRoute: ManagementClawpacksRouteWithChildren,
   ManagementUsersRoute: ManagementUsersRoute,
 }
 
