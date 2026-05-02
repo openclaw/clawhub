@@ -170,6 +170,7 @@ const blockedRate = () => ({
 });
 
 beforeEach(() => {
+  vi.unstubAllEnvs();
   vi.mocked(getAuthUserId).mockReset();
   vi.mocked(getAuthUserId).mockResolvedValue(null);
   vi.mocked(getOptionalApiTokenUserId).mockReset();
@@ -4532,6 +4533,140 @@ describe("httpApiV1 handlers", () => {
             shasum: "d".repeat(40),
           },
           dependencies: { semver: "^7.0.0" },
+        },
+      },
+    });
+  });
+
+  it("npm mirror uses the public host when requests arrive through Convex rewrites", async () => {
+    const runQuery = vi.fn(async (_query: unknown, args: Record<string, unknown>) => {
+      if ("name" in args && !("paginationOpts" in args)) {
+        return {
+          package: {
+            _id: "packages:demo-plugin",
+            name: "demo-plugin",
+            displayName: "Demo Plugin",
+            family: "code-plugin",
+            tags: { latest: "packageReleases:1" },
+            latestReleaseId: "packageReleases:1",
+            channel: "community",
+            isOfficial: false,
+            summary: "Demo package",
+            createdAt: 1,
+            updatedAt: 1,
+          },
+          latestRelease: null,
+          owner: null,
+        };
+      }
+      if ("paginationOpts" in args) {
+        return {
+          page: [
+            {
+              _id: "packageReleases:1",
+              packageId: "packages:demo-plugin",
+              version: "1.0.0",
+              createdAt: 1,
+              changelog: "Initial release",
+              distTags: ["latest"],
+              files: [],
+              artifactKind: "npm-pack",
+              clawpackStorageId: "storage:clawpack",
+              npmIntegrity: "sha512-demo",
+              npmShasum: "d".repeat(40),
+              npmTarballName: "demo-plugin-1.0.0.tgz",
+            },
+          ],
+          isDone: true,
+          continueCursor: null,
+        };
+      }
+      return null;
+    });
+    const runMutation = vi.fn().mockResolvedValue(okRate());
+
+    const response = await __handlers.npmMirrorGetHandler(
+      makeCtx({ runQuery, runMutation }),
+      new Request("https://wry-manatee-359.convex.site/api/npm/demo-plugin", {
+        headers: {
+          "x-forwarded-host": "clawhub.ai",
+          "x-forwarded-proto": "https",
+        },
+      }),
+    );
+
+    expect(response.status).toBe(200);
+    await expect(response.json()).resolves.toMatchObject({
+      versions: {
+        "1.0.0": {
+          dist: {
+            tarball: "https://clawhub.ai/api/npm/demo-plugin/-/demo-plugin-1.0.0.tgz",
+          },
+        },
+      },
+    });
+  });
+
+  it("npm mirror falls back to clawhub.ai for production Convex artifact URLs", async () => {
+    vi.stubEnv("CONVEX_DEPLOYMENT", "prod:wry-manatee-359");
+    const runQuery = vi.fn(async (_query: unknown, args: Record<string, unknown>) => {
+      if ("name" in args && !("paginationOpts" in args)) {
+        return {
+          package: {
+            _id: "packages:demo-plugin",
+            name: "demo-plugin",
+            displayName: "Demo Plugin",
+            family: "code-plugin",
+            tags: { latest: "packageReleases:1" },
+            latestReleaseId: "packageReleases:1",
+            channel: "community",
+            isOfficial: false,
+            summary: "Demo package",
+            createdAt: 1,
+            updatedAt: 1,
+          },
+          latestRelease: null,
+          owner: null,
+        };
+      }
+      if ("paginationOpts" in args) {
+        return {
+          page: [
+            {
+              _id: "packageReleases:1",
+              packageId: "packages:demo-plugin",
+              version: "1.0.0",
+              createdAt: 1,
+              changelog: "Initial release",
+              distTags: ["latest"],
+              files: [],
+              artifactKind: "npm-pack",
+              clawpackStorageId: "storage:clawpack",
+              npmIntegrity: "sha512-demo",
+              npmShasum: "d".repeat(40),
+              npmTarballName: "demo-plugin-1.0.0.tgz",
+            },
+          ],
+          isDone: true,
+          continueCursor: null,
+        };
+      }
+      return null;
+    });
+    const runMutation = vi.fn().mockResolvedValue(okRate());
+
+    const response = await __handlers.npmMirrorGetHandler(
+      makeCtx({ runQuery, runMutation }),
+      new Request("https://wry-manatee-359.convex.site/api/npm/demo-plugin"),
+    );
+
+    expect(response.status).toBe(200);
+    await expect(response.json()).resolves.toMatchObject({
+      versions: {
+        "1.0.0": {
+          dist: {
+            tarball: "https://clawhub.ai/api/npm/demo-plugin/-/demo-plugin-1.0.0.tgz",
+          },
         },
       },
     });
