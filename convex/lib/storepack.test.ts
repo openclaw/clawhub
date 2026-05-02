@@ -114,10 +114,7 @@ describe("clawpack", () => {
     const unzipped = unzipSync(built.bytes);
     const manifest = JSON.parse(decoder.decode(unzipped["package/CLAWPACK.json"]));
 
-    expect(Object.keys(unzipped).sort()).toEqual([
-      "package/CLAWPACK.json",
-      "package/package.json",
-    ]);
+    expect(Object.keys(unzipped).sort()).toEqual(["package/CLAWPACK.json", "package/package.json"]);
     expect(manifest.forged).toBeUndefined();
     expect(manifest.files).toHaveLength(1);
     expect(built.fileCount).toBe(2);

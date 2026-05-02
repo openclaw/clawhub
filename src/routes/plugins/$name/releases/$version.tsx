@@ -84,9 +84,7 @@ export const Route = createFileRoute("/plugins/$name/releases/$version")({
   component: PluginReleaseRoute,
 });
 
-function formatClawPackTarget(
-  target: NonNullable<PackageClawPackSummary["hostTargets"]>[number],
-) {
+function formatClawPackTarget(target: NonNullable<PackageClawPackSummary["hostTargets"]>[number]) {
   return [target.os, target.arch, target.libc].filter(Boolean).join("-");
 }
 
@@ -126,8 +124,7 @@ function PluginReleaseRoute() {
   const downloadPath =
     release?.links.download ?? (pkg ? getPackageDownloadPath(pkg.name, version) : null);
   const manifestPath =
-    release?.links.manifest ??
-    (pkg ? getPackageClawPackPath(pkg.name, version, "manifest") : null);
+    release?.links.manifest ?? (pkg ? getPackageClawPackPath(pkg.name, version, "manifest") : null);
   const verifyCommand =
     clawpack?.sha256 && pkg
       ? `clawhub package download ${pkg.name} --version ${version}\nclawhub package verify ${pkg.name.replaceAll("/", "-")}.clawpack.zip --sha256 ${clawpack.sha256}`

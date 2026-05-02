@@ -50,12 +50,10 @@ function hasGenericPackageRoot(files: Array<{ path: string }>) {
 
 export async function normalizeClawPackImport(files: File[]) {
   const normalized = normalizePackageUploadFiles(files);
-  const manifestEntry = normalized.find(
-    (entry) => {
-      const fileName = entry.path.toLowerCase().split("/").at(-1);
-      return fileName === "clawpack.json";
-    },
-  );
+  const manifestEntry = normalized.find((entry) => {
+    const fileName = entry.path.toLowerCase().split("/").at(-1);
+    return fileName === "clawpack.json";
+  });
   if (!manifestEntry) return { files, summary: null };
 
   let manifest: JsonRecord;

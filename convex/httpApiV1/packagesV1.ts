@@ -905,7 +905,9 @@ async function listPackages(
     });
     return json(
       {
-        items: result.page.map((item) => toPublicCatalogItem(item as CatalogListItem & Record<string, unknown>)),
+        items: result.page.map((item) =>
+          toPublicCatalogItem(item as CatalogListItem & Record<string, unknown>),
+        ),
         nextCursor: result.isDone ? null : result.continueCursor,
       },
       200,
@@ -988,7 +990,9 @@ async function listPackages(
       nextState.skills.offset === 0;
     return json(
       {
-        items: items.map((item) => toPublicCatalogItem(item as CatalogListItem & Record<string, unknown>)),
+        items: items.map((item) =>
+          toPublicCatalogItem(item as CatalogListItem & Record<string, unknown>),
+        ),
         nextCursor: isDoneAll ? null : encodeUnifiedCatalogCursor(nextState),
       },
       200,
@@ -1069,7 +1073,9 @@ async function listPackages(
       nextState.bundlePlugins.offset === 0;
     return json(
       {
-        items: items.map((item) => toPublicCatalogItem(item as CatalogListItem & Record<string, unknown>)),
+        items: items.map((item) =>
+          toPublicCatalogItem(item as CatalogListItem & Record<string, unknown>),
+        ),
         nextCursor: isDoneAll ? null : encodePluginCatalogCursor(nextState),
       },
       200,
@@ -1095,7 +1101,9 @@ async function listPackages(
   } satisfies PackageListQueryArgs);
   return json(
     {
-      items: result.page.map((item) => toPublicCatalogItem(item as CatalogListItem & Record<string, unknown>)),
+      items: result.page.map((item) =>
+        toPublicCatalogItem(item as CatalogListItem & Record<string, unknown>),
+      ),
       nextCursor: result.isDone ? null : result.continueCursor,
     },
     200,
@@ -1445,7 +1453,7 @@ export async function packagesPostRouterV1Handler(ctx: ActionCtx, request: Reque
 
   if (
     segments[1] === "versions" &&
-    (segments[3] === "clawpack") &&
+    segments[3] === "clawpack" &&
     segments[4] === "revoke" &&
     segments.length === 5
   ) {

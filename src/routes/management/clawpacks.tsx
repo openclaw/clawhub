@@ -272,8 +272,8 @@ function ClawPackManagementConsole() {
         <div>
           <h1 className="section-title">Claw Pack operations</h1>
           <p className="section-subtitle">
-            Migration status, dry-run sampling, cursor resume, and rebuild controls for plugin
-            Claw Pack artifacts.
+            Migration status, dry-run sampling, cursor resume, and rebuild controls for plugin Claw
+            Pack artifacts.
           </p>
         </div>
         <Button asChild variant="outline" size="sm">
@@ -333,9 +333,7 @@ function ClawPackManagementConsole() {
               <select
                 className="management-field"
                 value={operation}
-                onChange={(event) =>
-                  setOperation(event.target.value as ClawPackMigrationOperation)
-                }
+                onChange={(event) => setOperation(event.target.value as ClawPackMigrationOperation)}
               >
                 <option value="artifact-backfill">artifact backfill</option>
                 <option value="failure-retry">failure retry</option>

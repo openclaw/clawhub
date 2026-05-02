@@ -285,9 +285,7 @@ describe("plugins publish route", () => {
     expect(screen.getAllByText("darwin-arm64").length).toBeGreaterThan(0);
     expect(screen.getAllByText("linux-x64-glibc").length).toBeGreaterThan(0);
     expect(screen.getAllByText("win32-x64").length).toBeGreaterThan(0);
-    expect(
-      screen.getByText("Existing pack manifest will be replaced by ClawHub."),
-    ).toBeTruthy();
+    expect(screen.getByText("Existing pack manifest will be replaced by ClawHub.")).toBeTruthy();
     expect(screen.getByText(/"kind": "openclaw\.clawpack"/i)).toBeTruthy();
     expect(screen.getByText(/"sha256": "computed-on-publish"/i)).toBeTruthy();
     expect(screen.getByRole("button", { name: "Copy Claw Pack preview manifest" })).toBeTruthy();

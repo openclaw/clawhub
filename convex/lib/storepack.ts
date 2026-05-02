@@ -267,8 +267,8 @@ export async function buildStorePack(input: StorePackInput): Promise<BuiltStoreP
     }))
     .sort((a, b) => a.path.localeCompare(b.path));
   const manifest: Record<string, unknown> = {
-      specVersion: STOREPACK_SPEC_VERSION,
-      kind: "openclaw.clawpack",
+    specVersion: STOREPACK_SPEC_VERSION,
+    kind: "openclaw.clawpack",
     package: {
       name: input.name,
       owner: input.owner ?? null,

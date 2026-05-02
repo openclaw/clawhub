@@ -1,8 +1,8 @@
 import type { PackageCompatibility } from "clawhub-schema";
 import { GitBranch, Package, UploadCloud } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
-import { formatPackageCompatibility } from "../lib/pluginPublishPrefill";
 import type { ClawPackImportSummary } from "../lib/clawpackImport";
+import { formatPackageCompatibility } from "../lib/pluginPublishPrefill";
 import { expandDroppedItems } from "../lib/uploadFiles";
 import { formatBytes } from "../routes/upload/-utils";
 import { Badge } from "./ui/badge";
@@ -190,11 +190,11 @@ export function PackageSourceChooser(props: {
           </div>
           <div className="grid max-w-xl gap-2 pt-2 text-left text-xs text-[color:var(--ink-soft)] sm:grid-cols-2">
             <div className="rounded-[var(--radius-sm)] border border-[color:var(--line)] bg-[color:var(--surface)] p-3">
-            <strong className="block text-[color:var(--ink)]">archive upload</strong>
+              <strong className="block text-[color:var(--ink)]">archive upload</strong>
               <span>.zip, .tgz, and .tar.gz are expanded before publish.</span>
             </div>
             <div className="rounded-[var(--radius-sm)] border border-[color:var(--line)] bg-[color:var(--surface)] p-3">
-            <strong className="block text-[color:var(--ink)]">folder upload</strong>
+              <strong className="block text-[color:var(--ink)]">folder upload</strong>
               <span>directory picks preserve paths for manifest and package detection.</span>
             </div>
           </div>

@@ -14,13 +14,13 @@ import { Button } from "../components/ui/button";
 import { Card } from "../components/ui/card";
 import { Input } from "../components/ui/input";
 import { Textarea } from "../components/ui/textarea";
+import { normalizeClawPackImport, type ClawPackImportSummary } from "../lib/clawpackImport";
 import {
   buildPackageUploadEntries,
   filterIgnoredPackageFiles,
   normalizePackageUploadFiles,
 } from "../lib/packageUpload";
 import { derivePluginPrefill, listPrefilledFields } from "../lib/pluginPublishPrefill";
-import { normalizeClawPackImport, type ClawPackImportSummary } from "../lib/clawpackImport";
 import { expandFilesWithReport } from "../lib/uploadFiles";
 import { useAuthStatus } from "../lib/useAuthStatus";
 import { formatPublishError, hashFile, uploadFile } from "./upload/-utils";
@@ -190,9 +190,7 @@ function buildClawPackPreview(input: {
     }))
     .sort((a, b) => a.path.localeCompare(b.path));
   const selectedBytes = publishFiles.reduce((sum, file) => sum + file.size, 0);
-  const suppliedClawPack = normalized.some(
-    (entry) => entry.path.toLowerCase() === "clawpack.json",
-  );
+  const suppliedClawPack = normalized.some((entry) => entry.path.toLowerCase() === "clawpack.json");
   const rawTargets = input.family === "bundle-plugin" ? splitHostTargets(input.hostTargets) : [];
   const hostTargets = rawTargets.length > 0 ? rawTargets : DEFAULT_CLAWPACK_TARGETS;
   const environment = inferPreviewEnvironment(input.normalizedPaths);
@@ -405,7 +403,9 @@ export function PublishPluginRoute() {
   const [bundleFormat, setBundleFormat] = useState("");
   const [hostTargets, setHostTargets] = useState("");
   const [files, setFiles] = useState<File[]>([]);
-  const [sourceUrl, setSourceUrl] = useState(search.sourceRepo ? `https://github.com/${search.sourceRepo}` : "");
+  const [sourceUrl, setSourceUrl] = useState(
+    search.sourceRepo ? `https://github.com/${search.sourceRepo}` : "",
+  );
   const [sourceUrlError, setSourceUrlError] = useState<string | null>(null);
   const [intakeStatus, setIntakeStatus] = useState<string | null>(null);
   const [ignoredPaths, setIgnoredPaths] = useState<string[]>([]);
@@ -484,15 +484,12 @@ export function PublishPluginRoute() {
       validationError,
     ],
   );
-  const publishLifecycle = useMemo(
-    () => {
-      if (status) return { label: status };
-      if (!files.length) return { label: "Waiting for files" };
-      if (clawPackPreview?.blockers.length) return { label: "Needs details" };
-      return { label: "Ready to publish" };
-    },
-    [files.length, clawPackPreview, status],
-  );
+  const publishLifecycle = useMemo(() => {
+    if (status) return { label: status };
+    if (!files.length) return { label: "Waiting for files" };
+    if (clawPackPreview?.blockers.length) return { label: "Needs details" };
+    return { label: "Ready to publish" };
+  }, [files.length, clawPackPreview, status]);
 
   const onPickFiles = async (selected: File[]) => {
     try {

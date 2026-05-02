@@ -189,9 +189,7 @@ function isEmptyObject(obj: unknown): boolean {
   return Object.keys(obj).length === 0;
 }
 
-function formatClawPackTarget(
-  target: NonNullable<PackageClawPackSummary["hostTargets"]>[number],
-) {
+function formatClawPackTarget(target: NonNullable<PackageClawPackSummary["hostTargets"]>[number]) {
   return [target.os, target.arch, target.libc].filter(Boolean).join("-");
 }
 
@@ -371,7 +369,9 @@ function PluginDetailRoute() {
                         {formatPackageCount(pkg.stats.downloads)} downloads
                       </span>
                       <span className="text-ink-soft opacity-40">·</span>
-                      <span className="stat">{formatPackageCount(pkg.stats.versions)} versions</span>
+                      <span className="stat">
+                        {formatPackageCount(pkg.stats.versions)} versions
+                      </span>
                     </>
                   ) : null}
                   {owner?.handle ? (
