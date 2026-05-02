@@ -53,6 +53,33 @@ export declare const PackageStatsSchema: import("arktype/internal/variants/objec
     versions: number;
 }, {}>;
 export type PackageStats = (typeof PackageStatsSchema)[inferred];
+export declare const PackageArtifactKindSchema: import("arktype/internal/variants/string.ts").StringType<"legacy-zip" | "npm-pack", {}>;
+export type PackageArtifactKind = (typeof PackageArtifactKindSchema)[inferred];
+export declare const PackageArtifactSummarySchema: import("arktype/internal/variants/object.ts").ObjectType<{
+    kind: "legacy-zip" | "npm-pack";
+    sha256?: string | undefined;
+    size?: number | undefined;
+    format?: string | undefined;
+    npmIntegrity?: string | undefined;
+    npmShasum?: string | undefined;
+    npmTarballName?: string | undefined;
+    npmUnpackedSize?: number | undefined;
+    npmFileCount?: number | undefined;
+}, {}>;
+export type PackageArtifactSummary = (typeof PackageArtifactSummarySchema)[inferred];
+export declare const PackagePublishArtifactSchema: import("arktype/internal/variants/object.ts").ObjectType<{
+    kind: "npm-pack";
+    storageId: string;
+    sha256: string;
+    size: number;
+    format: "tgz";
+    npmIntegrity: string;
+    npmShasum: string;
+    npmTarballName: string;
+    npmUnpackedSize: number;
+    npmFileCount: number;
+}, {}>;
+export type PackagePublishArtifact = (typeof PackagePublishArtifactSchema)[inferred];
 export declare const PackageVtAnalysisSchema: import("arktype/internal/variants/object.ts").ObjectType<{
     status: string;
     checkedAt: number;
@@ -156,6 +183,18 @@ export declare const PackagePublishRequestSchema: import("arktype/internal/varia
         id?: string | undefined;
         format?: string | undefined;
         hostTargets?: string[] | undefined;
+    } | undefined;
+    artifact?: {
+        kind: "npm-pack";
+        storageId: string;
+        sha256: string;
+        size: number;
+        format: "tgz";
+        npmIntegrity: string;
+        npmShasum: string;
+        npmTarballName: string;
+        npmUnpackedSize: number;
+        npmFileCount: number;
     } | undefined;
 }, {}>;
 export type PackagePublishRequest = (typeof PackagePublishRequestSchema)[inferred];
@@ -268,6 +307,17 @@ export declare const ApiV1PackageResponseSchema: import("arktype/internal/varian
             hasProvenance?: boolean | undefined;
             scanStatus?: "clean" | "suspicious" | "malicious" | "pending" | "not-run" | undefined;
         } | null | undefined;
+        artifact?: {
+            kind: "legacy-zip" | "npm-pack";
+            sha256?: string | undefined;
+            size?: number | undefined;
+            format?: string | undefined;
+            npmIntegrity?: string | undefined;
+            npmShasum?: string | undefined;
+            npmTarballName?: string | undefined;
+            npmUnpackedSize?: number | undefined;
+            npmFileCount?: number | undefined;
+        } | null | undefined;
         stats?: {
             downloads: number;
             installs: number;
@@ -339,6 +389,17 @@ export declare const ApiV1PackageVersionResponseSchema: import("arktype/internal
             sourceTag?: string | undefined;
             hasProvenance?: boolean | undefined;
             scanStatus?: "clean" | "suspicious" | "malicious" | "pending" | "not-run" | undefined;
+        } | null | undefined;
+        artifact?: {
+            kind: "legacy-zip" | "npm-pack";
+            sha256?: string | undefined;
+            size?: number | undefined;
+            format?: string | undefined;
+            npmIntegrity?: string | undefined;
+            npmShasum?: string | undefined;
+            npmTarballName?: string | undefined;
+            npmUnpackedSize?: number | undefined;
+            npmFileCount?: number | undefined;
         } | null | undefined;
         sha256hash?: string | undefined;
         vtAnalysis?: {

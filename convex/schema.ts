@@ -221,6 +221,20 @@ const packageStatsValidator = v.object({
   versions: v.number(),
 });
 
+const packageArtifactSummaryValidator = v.optional(
+  v.object({
+    kind: v.union(v.literal("legacy-zip"), v.literal("npm-pack")),
+    sha256: v.optional(v.string()),
+    size: v.optional(v.number()),
+    format: v.optional(v.string()),
+    npmIntegrity: v.optional(v.string()),
+    npmShasum: v.optional(v.string()),
+    npmTarballName: v.optional(v.string()),
+    npmUnpackedSize: v.optional(v.number()),
+    npmFileCount: v.optional(v.number()),
+  }),
+);
+
 const packageCompatibilityValidator = v.optional(
   v.object({
     pluginApiRange: v.optional(v.string()),
@@ -785,6 +799,7 @@ const packages = defineTable({
       compatibility: packageCompatibilityValidator,
       capabilities: packageCapabilitiesValidator,
       verification: packageVerificationValidator,
+      artifact: packageArtifactSummaryValidator,
     }),
   ),
   tags: v.record(v.string(), v.id("packageReleases")),
@@ -816,6 +831,16 @@ const packageReleases = defineTable({
   distTags: v.array(v.string()),
   files: packageFilesValidator,
   integritySha256: v.string(),
+  artifactKind: v.optional(v.union(v.literal("legacy-zip"), v.literal("npm-pack"))),
+  clawpackStorageId: v.optional(v.id("_storage")),
+  clawpackSha256: v.optional(v.string()),
+  clawpackSize: v.optional(v.number()),
+  clawpackFormat: v.optional(v.literal("tgz")),
+  npmIntegrity: v.optional(v.string()),
+  npmShasum: v.optional(v.string()),
+  npmTarballName: v.optional(v.string()),
+  npmUnpackedSize: v.optional(v.number()),
+  npmFileCount: v.optional(v.number()),
   extractedPackageJson: v.optional(v.any()),
   extractedPluginManifest: v.optional(v.any()),
   normalizedBundleManifest: v.optional(v.any()),

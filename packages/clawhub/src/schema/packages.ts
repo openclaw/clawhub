@@ -65,6 +65,36 @@ export const PackageStatsSchema = type({
 });
 export type PackageStats = (typeof PackageStatsSchema)[inferred];
 
+export const PackageArtifactKindSchema = type('"legacy-zip"|"npm-pack"');
+export type PackageArtifactKind = (typeof PackageArtifactKindSchema)[inferred];
+
+export const PackageArtifactSummarySchema = type({
+  kind: PackageArtifactKindSchema,
+  sha256: "string?",
+  size: "number?",
+  format: "string?",
+  npmIntegrity: "string?",
+  npmShasum: "string?",
+  npmTarballName: "string?",
+  npmUnpackedSize: "number?",
+  npmFileCount: "number?",
+});
+export type PackageArtifactSummary = (typeof PackageArtifactSummarySchema)[inferred];
+
+export const PackagePublishArtifactSchema = type({
+  kind: '"npm-pack"',
+  storageId: "string",
+  sha256: "string",
+  size: "number",
+  format: '"tgz"',
+  npmIntegrity: "string",
+  npmShasum: "string",
+  npmTarballName: "string",
+  npmUnpackedSize: "number",
+  npmFileCount: "number",
+});
+export type PackagePublishArtifact = (typeof PackagePublishArtifactSchema)[inferred];
+
 export const PackageVtAnalysisSchema = type({
   status: "string",
   verdict: "string?",
@@ -145,6 +175,7 @@ export const PackagePublishRequestSchema = type({
   tags: "string[]?",
   source: PublishSourceSchema.optional(),
   bundle: BundlePublishMetadataSchema.optional(),
+  artifact: PackagePublishArtifactSchema.optional(),
   files: CliPublishFileSchema.array(),
 });
 export type PackagePublishRequest = (typeof PackagePublishRequestSchema)[inferred];
@@ -196,6 +227,7 @@ export const ApiV1PackageResponseSchema = type({
     compatibility: PackageCompatibilitySchema.or("null").optional(),
     capabilities: PackageCapabilitySummarySchema.or("null").optional(),
     verification: PackageVerificationSummarySchema.or("null").optional(),
+    artifact: PackageArtifactSummarySchema.or("null").optional(),
     stats: PackageStatsSchema.optional(),
   }).or("null"),
   owner: type({
@@ -230,6 +262,7 @@ export const ApiV1PackageVersionResponseSchema = type({
     compatibility: PackageCompatibilitySchema.or("null").optional(),
     capabilities: PackageCapabilitySummarySchema.or("null").optional(),
     verification: PackageVerificationSummarySchema.or("null").optional(),
+    artifact: PackageArtifactSummarySchema.or("null").optional(),
     sha256hash: "string?",
     vtAnalysis: PackageVtAnalysisSchema.or("null").optional(),
     llmAnalysis: PackageLlmAnalysisSchema.or("null").optional(),
