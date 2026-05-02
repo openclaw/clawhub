@@ -4,7 +4,7 @@ import { spawnSync } from "node:child_process";
 import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { zipSync } from "fflate";
+import { gzipSync, zipSync } from "fflate";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   createAuthTokenModuleMocks,
@@ -82,6 +82,13 @@ function getUploadedFileNames() {
     .sort();
 }
 
+function getUploadedClawPackNames() {
+  const form = getPublishForm();
+  return (form.getAll("clawpack") as Array<Blob & { name?: string }>)
+    .map((file) => file.name ?? "")
+    .sort();
+}
+
 function makeCodePluginPackageJson(overrides: Record<string, unknown>) {
   return JSON.stringify({
     openclaw: {
@@ -95,6 +102,57 @@ function makeCodePluginPackageJson(overrides: Record<string, unknown>) {
     },
     ...overrides,
   });
+}
+
+const TAR_BLOCK_SIZE = 512;
+
+function writeTarString(target: Uint8Array, offset: number, width: number, value: string) {
+  const encoded = new TextEncoder().encode(value);
+  target.set(encoded.subarray(0, width), offset);
+}
+
+function tarOctal(value: number, width: number) {
+  return value.toString(8).padStart(width - 1, "0") + "\0";
+}
+
+function tarFile(path: string, content: string) {
+  const bytes = new TextEncoder().encode(content);
+  const header = new Uint8Array(TAR_BLOCK_SIZE);
+  writeTarString(header, 0, 100, path);
+  writeTarString(header, 100, 8, tarOctal(0o644, 8));
+  writeTarString(header, 108, 8, tarOctal(0, 8));
+  writeTarString(header, 116, 8, tarOctal(0, 8));
+  writeTarString(header, 124, 12, tarOctal(bytes.byteLength, 12));
+  writeTarString(header, 136, 12, tarOctal(0, 12));
+  header.fill(0x20, 148, 156);
+  header[156] = "0".charCodeAt(0);
+  writeTarString(header, 257, 6, "ustar");
+  writeTarString(header, 263, 2, "00");
+
+  let checksum = 0;
+  for (const byte of header) checksum += byte;
+  writeTarString(header, 148, 8, tarOctal(checksum, 8));
+
+  const paddedSize = Math.ceil(bytes.byteLength / TAR_BLOCK_SIZE) * TAR_BLOCK_SIZE;
+  const body = new Uint8Array(paddedSize);
+  body.set(bytes);
+  return [header, body];
+}
+
+function npmPackFixture(files: Record<string, string>) {
+  const parts: Uint8Array[] = [];
+  for (const [path, content] of Object.entries(files)) {
+    parts.push(...tarFile(path, content));
+  }
+  parts.push(new Uint8Array(TAR_BLOCK_SIZE), new Uint8Array(TAR_BLOCK_SIZE));
+  const size = parts.reduce((sum, part) => sum + part.byteLength, 0);
+  const tar = new Uint8Array(size);
+  let offset = 0;
+  for (const part of parts) {
+    tar.set(part, offset);
+    offset += part.byteLength;
+  }
+  return gzipSync(tar);
 }
 
 afterEach(() => {
@@ -273,6 +331,63 @@ describe("package commands", () => {
       expect(uiMocks.spinner.fail).not.toHaveBeenCalled();
       expect(mockLog).not.toHaveBeenCalled();
       expect(mockWrite).not.toHaveBeenCalled();
+      dateSpy.mockRestore();
+    } finally {
+      await rm(workdir, { recursive: true, force: true });
+    }
+  });
+
+  it("publishes a ClawPack tarball without uploading extracted files", async () => {
+    const workdir = await makeTmpWorkdir();
+    const dateSpy = vi.spyOn(Date, "now").mockReturnValue(123_456_789);
+    try {
+      const packName = "demo-plugin-1.0.0.tgz";
+      await writeFile(
+        join(workdir, packName),
+        npmPackFixture({
+          "package/package.json": makeCodePluginPackageJson({
+            name: "@scope/demo-plugin",
+            displayName: "Demo Plugin",
+            version: "1.0.0",
+          }),
+          "package/openclaw.plugin.json": JSON.stringify({ id: "demo.plugin" }),
+          "package/dist/index.js": "export const demo = true;\n",
+        }),
+      );
+
+      httpMocks.apiRequestForm.mockResolvedValueOnce({
+        ok: true,
+        packageId: "pkg_1",
+        releaseId: "rel_1",
+      });
+
+      await cmdPublishPackage(makeOpts(workdir), packName, {
+        sourceRepo: "openclaw/demo-plugin",
+        sourceCommit: "abc123",
+      });
+
+      expect(getPublishPayload()).toEqual({
+        name: "@scope/demo-plugin",
+        displayName: "Demo Plugin",
+        family: "code-plugin",
+        version: "1.0.0",
+        changelog: "",
+        tags: ["latest"],
+        source: {
+          kind: "github",
+          url: "https://github.com/openclaw/demo-plugin",
+          repo: "openclaw/demo-plugin",
+          ref: "abc123",
+          commit: "abc123",
+          path: ".",
+          importedAt: 123_456_789,
+        },
+      });
+      expect(getUploadedClawPackNames()).toEqual([packName]);
+      expect(getUploadedFileNames()).toEqual([]);
+      expect(uiMocks.spinner.succeed).toHaveBeenCalledWith(
+        "OK. Published @scope/demo-plugin@1.0.0 (rel_1)",
+      );
       dateSpy.mockRestore();
     } finally {
       await rm(workdir, { recursive: true, force: true });
