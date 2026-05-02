@@ -223,7 +223,7 @@ export const ApiV1PackageVersionResponseSchema = type({
         capabilities: PackageCapabilitySummarySchema.or("null").optional(),
         verification: PackageVerificationSummarySchema.or("null").optional(),
         artifact: PackageArtifactSummarySchema.or("null").optional(),
-        sha256hash: "string?",
+        sha256hash: "string|null?",
         vtAnalysis: PackageVtAnalysisSchema.or("null").optional(),
         llmAnalysis: PackageLlmAnalysisSchema.or("null").optional(),
         staticScan: PackageStaticScanSchema.or("null").optional(),

@@ -415,7 +415,7 @@ export declare const ApiV1PackageVersionResponseSchema: import("arktype/internal
             npmUnpackedSize?: number | undefined;
             npmFileCount?: number | undefined;
         } | null | undefined;
-        sha256hash?: string | undefined;
+        sha256hash?: string | null | undefined;
         vtAnalysis?: {
             status: string;
             checkedAt: number;
