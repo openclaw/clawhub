@@ -54,7 +54,7 @@ export function PluginManagementDetailPage({ name }: { name: string }) {
     verdict: PackageScanStatus;
     note?: string;
   }) => Promise<unknown>;
-  const revokeStorePackArtifact = useMutation(
+  const revokeClawPackArtifact = useMutation(
     packageApiRefs.packages.revokeStorePackArtifact as never,
   ) as unknown as (args: { releaseId: Id<"packageReleases">; reason?: string }) => Promise<unknown>;
 
@@ -133,8 +133,8 @@ export function PluginManagementDetailPage({ name }: { name: string }) {
       return;
     }
     setError(null);
-    setActiveWrite("storepack");
-    void revokeStorePackArtifact({ releaseId: release._id, reason: trimmed })
+    setActiveWrite("clawpack");
+    void revokeClawPackArtifact({ releaseId: release._id, reason: trimmed })
       .catch((requestError) => setError(formatMutationError(requestError)))
       .finally(() => setActiveWrite(null));
   };
@@ -244,7 +244,7 @@ export function PluginManagementDetailPage({ name }: { name: string }) {
                 Claw Pack
               </h2>
               <div className="management-sublist">
-                <ReportField label="state" value={formatStorePackState(release)} />
+                <ReportField label="state" value={formatClawPackState(release)} />
                 <ReportField
                   label="zip digest"
                   value={release?.storepackSha256 ?? "missing"}
@@ -367,7 +367,7 @@ function scanBadgeVariant(status: PackageScanStatus) {
   return "pending";
 }
 
-function formatStorePackState(release: Doc<"packageReleases"> | null | undefined) {
+function formatClawPackState(release: Doc<"packageReleases"> | null | undefined) {
   if (!release) return "no release";
   if (release.storepackRevokedAt) return `revoked ${formatTimestamp(release.storepackRevokedAt)}`;
   if (release.storepackStorageId)

@@ -74,7 +74,7 @@ export function readinessBlockerLabel(blocker: string) {
   return blocker.replaceAll("-", " ");
 }
 
-export function formatReadinessStorePack(item: MigrationReadinessItem) {
+export function formatReadinessClawPack(item: MigrationReadinessItem) {
   if (item.latestRelease?.storepackRevokedAt) return "revoked";
   if (!item.latestRelease?.storepackSha256) return "missing";
   const digest = item.latestRelease.storepackSha256.slice(0, 12);

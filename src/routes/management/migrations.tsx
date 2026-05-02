@@ -8,7 +8,7 @@ import { Button } from "../../components/ui/button";
 import { Card } from "../../components/ui/card";
 import {
   formatReadinessSource,
-  formatReadinessStorePack,
+  formatReadinessClawPack,
   readinessBlockerLabel,
   type MigrationReadinessItem,
   type MigrationReadinessResult,
@@ -167,7 +167,7 @@ function MigrationCard(props: { item: MigrationReadinessItem }) {
           />
           <ReportField
             label="Claw Pack"
-            value={formatReadinessStorePack(item)}
+            value={formatReadinessClawPack(item)}
             tone={item.gates.storepackAvailable ? undefined : "warn"}
           />
         </div>

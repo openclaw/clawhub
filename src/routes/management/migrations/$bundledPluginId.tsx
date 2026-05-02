@@ -8,7 +8,7 @@ import { Button } from "../../../components/ui/button";
 import { Card } from "../../../components/ui/card";
 import {
   formatReadinessSource,
-  formatReadinessStorePack,
+  formatReadinessClawPack,
   readinessBlockerLabel,
   type MigrationReadinessItem,
   type MigrationReadinessResult,
@@ -137,7 +137,7 @@ function MigrationCandidateDetail(props: { item: MigrationReadinessItem }) {
             <ReportField label="publisher" value={`@${item.publisherHandle}`} />
             <ReportField label="source" value={formatReadinessSource(item)} />
             <ReportField label="source path" value={item.sourcePath || "."} />
-            <ReportField label="Claw Pack" value={formatReadinessStorePack(item)} />
+            <ReportField label="Claw Pack" value={formatReadinessClawPack(item)} />
             <ReportField
               label="latest release"
               value={item.latestRelease ? `v${item.latestRelease.version}` : "missing"}

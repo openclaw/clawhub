@@ -198,7 +198,7 @@ function PluginQueueCard({ item }: { item: PluginQueueItem }) {
                 release ? `${release.version} / ${formatTimestamp(release.createdAt)}` : "none"
               }
             />
-            <ReportField label="Claw Pack" value={formatStorePack(release, item)} />
+            <ReportField label="Claw Pack" value={formatClawPack(release, item)} />
             <ReportField label="source" value={formatSource(release?.source ?? null)} />
             <ReportField
               label="targets"
@@ -257,7 +257,7 @@ function scanBadgeVariant(status: PackageScanStatus) {
   return "pending";
 }
 
-function formatStorePack(release: PluginQueueItem["latestRelease"], item: PluginQueueItem) {
+function formatClawPack(release: PluginQueueItem["latestRelease"], item: PluginQueueItem) {
   if (release?.storepackRevokedAt) return `revoked ${formatTimestamp(release.storepackRevokedAt)}`;
   if (release?.storepackAvailable || item.storepackAvailable) {
     return [

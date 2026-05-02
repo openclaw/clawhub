@@ -263,7 +263,7 @@ export function PluginModerationRoute() {
                 />
                 <ReportField
                   label="Claw Pack"
-                  value={formatStorePackState(item)}
+                  value={formatClawPackState(item)}
                   tone={item.storepackAvailable ? undefined : "warn"}
                 />
                 <ReportField label="verification" value={item.verificationTier ?? "unverified"} />
@@ -361,7 +361,7 @@ function formatOwner(item: ModerationQueueItem) {
   return `${handle}${item.ownerKind ? ` (${item.ownerKind})` : ""}`;
 }
 
-function formatStorePackState(item: ModerationQueueItem) {
+function formatClawPackState(item: ModerationQueueItem) {
   if (item.latestRelease?.storepackRevokedAt) {
     return `revoked ${new Date(item.latestRelease.storepackRevokedAt).toLocaleDateString()}`;
   }

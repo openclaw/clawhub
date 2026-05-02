@@ -144,14 +144,14 @@ function promptUnbanReason(label: string) {
   return trimmed.length > 0 ? trimmed : undefined;
 }
 
-function promptStorePackRevocationReason(label: string) {
+function promptClawPackRevocationReason(label: string) {
   const result = window.prompt(`Revoke Claw Pack for ${label}. Reason required.`);
   if (result === null) return null;
   const trimmed = result.trim();
   return trimmed.length > 0 ? trimmed : null;
 }
 
-function promptStorePackBackfill(label: string) {
+function promptClawPackBackfill(label: string) {
   return window.confirm(`${label}\n\nThis writes Claw Pack metadata in Convex. Continue?`);
 }
 
@@ -210,13 +210,13 @@ function ManagementConsole() {
     verdict: PackageScanStatus;
     note?: string;
   }) => Promise<unknown>;
-  const revokeStorePackArtifact = useMutation(
+  const revokeClawPackArtifact = useMutation(
     packageApiRefs.packages.revokeStorePackArtifact as never,
   ) as unknown as (args: { releaseId: Id<"packageReleases">; reason?: string }) => Promise<unknown>;
-  const backfillStorePackArtifacts = useAction(
+  const backfillClawPackArtifacts = useAction(
     packageApiRefs.packages.backfillStorePackArtifacts as never,
   ) as unknown as (args: { limit?: number }) => Promise<unknown>;
-  const backfillStorePackSearchIndex = useAction(
+  const backfillClawPackSearchIndex = useAction(
     packageApiRefs.packages.backfillStorePackSearchIndex as never,
   ) as unknown as (args: { limit?: number; cursor?: string }) => Promise<unknown>;
   const setSoftDeleted = useMutation(api.skills.setSoftDeleted);
@@ -238,9 +238,9 @@ function ManagementConsole() {
   const [pluginModerationVerdict, setPluginModerationVerdict] =
     useState<PackageScanStatus>("clean");
   const [pluginModerationNote, setPluginModerationNote] = useState("");
-  const [storePackBackfillLimit, setStorePackBackfillLimit] = useState(10);
-  const [storePackIndexCursor, setStorePackIndexCursor] = useState("");
-  const [storePackLastResult, setStorePackLastResult] = useState<{
+  const [clawPackBackfillLimit, setClawPackBackfillLimit] = useState(10);
+  const [clawPackIndexCursor, setClawPackIndexCursor] = useState("");
+  const [clawPackLastResult, setClawPackLastResult] = useState<{
     kind: "artifact-backfill" | "index-backfill";
     result: ClawPackBackfillResult;
   } | null>(null);
@@ -251,7 +251,7 @@ function ManagementConsole() {
     api.users.list,
     admin ? { limit: 200, search: userQuery || undefined } : "skip",
   ) as { items: Doc<"users">[]; total: number } | undefined;
-  const storePackMigration = useQuery(
+  const clawPackMigration = useQuery(
     packageApiRefs.packages.getStorePackMigrationStatus as never,
     staff ? {} : "skip",
   ) as ClawPackMigrationStatus | undefined;
@@ -375,22 +375,22 @@ function ManagementConsole() {
     });
   };
 
-  const storePackSampleTotal = storePackMigration
-    ? storePackMigration.missingSampleSize + storePackMigration.generatedStorePackSampleSize
+  const clawPackSampleTotal = clawPackMigration
+    ? clawPackMigration.missingSampleSize + clawPackMigration.generatedStorePackSampleSize
     : 0;
-  const storePackSampleCoverage =
-    storePackSampleTotal > 0 && storePackMigration
-      ? Math.round((storePackMigration.generatedStorePackSampleSize / storePackSampleTotal) * 100)
+  const clawPackSampleCoverage =
+    clawPackSampleTotal > 0 && clawPackMigration
+      ? Math.round((clawPackMigration.generatedStorePackSampleSize / clawPackSampleTotal) * 100)
       : null;
 
-  const runStorePackArtifactBackfill = () => {
-    const limit = Math.max(1, Math.min(storePackBackfillLimit, 100));
-    if (!promptStorePackBackfill(`Build Claw Pack artifacts for up to ${limit} legacy releases?`)) {
+  const runClawPackArtifactBackfill = () => {
+    const limit = Math.max(1, Math.min(clawPackBackfillLimit, 100));
+    if (!promptClawPackBackfill(`Build Claw Pack artifacts for up to ${limit} legacy releases?`)) {
       return;
     }
-    void backfillStorePackArtifacts({ limit })
+    void backfillClawPackArtifacts({ limit })
       .then((result) => {
-        setStorePackLastResult({
+        setClawPackLastResult({
           kind: "artifact-backfill",
           result: result as ClawPackBackfillResult,
         });
@@ -398,24 +398,24 @@ function ManagementConsole() {
       .catch((error) => window.alert(formatMutationError(error)));
   };
 
-  const runStorePackIndexBackfill = () => {
-    const limit = Math.max(1, Math.min(storePackBackfillLimit, 100));
+  const runClawPackIndexBackfill = () => {
+    const limit = Math.max(1, Math.min(clawPackBackfillLimit, 100));
     if (
-      !promptStorePackBackfill(`Rebuild Claw Pack search index rows for up to ${limit} releases?`)
+      !promptClawPackBackfill(`Rebuild Claw Pack search index rows for up to ${limit} releases?`)
     ) {
       return;
     }
-    void backfillStorePackSearchIndex({
+    void backfillClawPackSearchIndex({
       limit,
-      ...(storePackIndexCursor.trim() ? { cursor: storePackIndexCursor.trim() } : {}),
+      ...(clawPackIndexCursor.trim() ? { cursor: clawPackIndexCursor.trim() } : {}),
     })
       .then((result) => {
         const typedResult = result as ClawPackBackfillResult;
-        setStorePackLastResult({
+        setClawPackLastResult({
           kind: "index-backfill",
           result: typedResult,
         });
-        if (typedResult.continueCursor) setStorePackIndexCursor(typedResult.continueCursor);
+        if (typedResult.continueCursor) setClawPackIndexCursor(typedResult.continueCursor);
       })
       .catch((error) => window.alert(formatMutationError(error)));
   };
@@ -462,34 +462,34 @@ function ManagementConsole() {
           <div className="management-report-item">
             <span className="management-report-meta">Sample coverage</span>
             <span>
-              {storePackMigration
-                ? storePackSampleCoverage === null
+              {clawPackMigration
+                ? clawPackSampleCoverage === null
                   ? "No sampled releases yet"
-                  : `${storePackSampleCoverage}% generated across ${storePackSampleTotal} sampled releases`
+                  : `${clawPackSampleCoverage}% generated across ${clawPackSampleTotal} sampled releases`
                 : "Loading..."}
             </span>
           </div>
           <div className="management-report-item">
             <span className="management-report-meta">Missing sample</span>
             <span>
-              {storePackMigration
-                ? `${storePackMigration.missingSampleSize} releases in the current sample`
+              {clawPackMigration
+                ? `${clawPackMigration.missingSampleSize} releases in the current sample`
                 : "Loading..."}
             </span>
           </div>
           <div className="management-report-item">
             <span className="management-report-meta">Generated sample</span>
             <span>
-              {storePackMigration
-                ? `${storePackMigration.generatedStorePackSampleSize} artifacts / ${formatBytesCompact(
-                    storePackMigration.generatedStorePackBytes,
+              {clawPackMigration
+                ? `${clawPackMigration.generatedStorePackSampleSize} artifacts / ${formatBytesCompact(
+                    clawPackMigration.generatedStorePackBytes,
                   )}`
                 : "Loading..."}
             </span>
           </div>
-          {storePackMigration?.missingSample?.length ? (
+          {clawPackMigration?.missingSample?.length ? (
             <div className="management-sublist">
-              {storePackMigration.missingSample.slice(0, 5).map((entry) => (
+              {clawPackMigration.missingSample.slice(0, 5).map((entry) => (
                 <div key={entry.releaseId} className="management-report-item">
                   <span className="management-report-meta">
                     {entry.name}@{entry.version}
@@ -515,9 +515,9 @@ function ManagementConsole() {
                   type="number"
                   min={1}
                   max={100}
-                  value={storePackBackfillLimit}
+                  value={clawPackBackfillLimit}
                   onChange={(event) =>
-                    setStorePackBackfillLimit(Number.parseInt(event.target.value, 10) || 1)
+                    setClawPackBackfillLimit(Number.parseInt(event.target.value, 10) || 1)
                   }
                 />
               </label>
@@ -525,30 +525,30 @@ function ManagementConsole() {
                 <span className="mono">index cursor</span>
                 <input
                   className="management-field"
-                  value={storePackIndexCursor}
-                  onChange={(event) => setStorePackIndexCursor(event.target.value)}
+                  value={clawPackIndexCursor}
+                  onChange={(event) => setClawPackIndexCursor(event.target.value)}
                   placeholder="optional continue cursor"
                 />
               </label>
             </div>
             <div className="management-actions management-actions-start">
-              <Button type="button" onClick={runStorePackArtifactBackfill}>
+              <Button type="button" onClick={runClawPackArtifactBackfill}>
                 Build missing artifacts
               </Button>
-              <Button type="button" onClick={runStorePackIndexBackfill}>
+              <Button type="button" onClick={runClawPackIndexBackfill}>
                 Rebuild lookup index
               </Button>
             </div>
-            {storePackLastResult ? (
+            {clawPackLastResult ? (
               <div className="management-report-item">
                 <span className="management-report-meta">
-                  Last {storePackLastResult.kind.replace("-", " ")}
+                  Last {clawPackLastResult.kind.replace("-", " ")}
                 </span>
                 <span>
-                  processed {storePackLastResult.result.processed ?? "?"} · succeeded{" "}
-                  {storePackLastResult.result.succeeded ?? "?"} · failed{" "}
-                  {storePackLastResult.result.failed ?? "?"}
-                  {storePackLastResult.result.isDone === false ? " · more available" : ""}
+                  processed {clawPackLastResult.result.processed ?? "?"} · succeeded{" "}
+                  {clawPackLastResult.result.succeeded ?? "?"} · failed{" "}
+                  {clawPackLastResult.result.failed ?? "?"}
+                  {clawPackLastResult.result.isDone === false ? " · more available" : ""}
                 </span>
               </div>
             ) : null}
@@ -1164,11 +1164,11 @@ function ManagementConsole() {
                       }
                       onClick={() => {
                         if (!latestRelease?._id) return;
-                        const reason = promptStorePackRevocationReason(
+                        const reason = promptClawPackRevocationReason(
                           `${plugin.name}@${latestRelease.version}`,
                         );
                         if (!reason) return;
-                        void revokeStorePackArtifact({
+                        void revokeClawPackArtifact({
                           releaseId: latestRelease._id,
                           reason,
                         }).catch((error) => window.alert(formatMutationError(error)));
