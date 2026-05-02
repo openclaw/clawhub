@@ -8,6 +8,7 @@ import { Dashboard } from "./dashboard";
 
 const mocks = vi.hoisted(() => ({
   useQuery: vi.fn(),
+  usePaginatedQuery: vi.fn(),
   useMutation: vi.fn(),
   toastSuccess: vi.fn(),
   toastError: vi.fn(),
@@ -15,6 +16,7 @@ const mocks = vi.hoisted(() => ({
 
 vi.mock("convex/react", () => ({
   useQuery: (...args: unknown[]) => mocks.useQuery(...args),
+  usePaginatedQuery: (...args: unknown[]) => mocks.usePaginatedQuery(...args),
   useMutation: (...args: unknown[]) => mocks.useMutation(...args),
 }));
 
@@ -200,15 +202,18 @@ function arrangeDashboard({
   packages?: TestPackage[];
 }) {
   let unscopedQueryCount = 0;
-  let scopedQueryCount = 0;
+  mocks.usePaginatedQuery.mockReturnValue({
+    results: skills,
+    status: "Exhausted",
+    loadMore: vi.fn(),
+  });
   mocks.useQuery.mockImplementation((_fn: unknown, args: unknown) => {
     if (args === "skip") return undefined;
     if (args === undefined) {
       unscopedQueryCount += 1;
       return unscopedQueryCount % 2 === 1 ? me : publishers;
     }
-    scopedQueryCount += 1;
-    return scopedQueryCount % 2 === 1 ? skills : packages;
+    return packages;
   });
 }
 
@@ -223,6 +228,12 @@ function renderDashboard() {
 describe("Dashboard minimal rows", () => {
   beforeEach(() => {
     mocks.useQuery.mockReset();
+    mocks.usePaginatedQuery.mockReset();
+    mocks.usePaginatedQuery.mockReturnValue({
+      results: [],
+      status: "LoadingFirstPage",
+      loadMore: vi.fn(),
+    });
     mocks.useMutation.mockReset();
     mocks.useMutation.mockReturnValue(vi.fn().mockResolvedValue({}));
     mocks.toastSuccess.mockReset();

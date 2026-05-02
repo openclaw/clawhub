@@ -1,6 +1,6 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
-import { useMutation, useQuery } from "convex/react";
-import { Clock, Info, MoreVertical, Plus, RotateCw, Settings } from "lucide-react";
+import { useMutation, usePaginatedQuery, useQuery } from "convex/react";
+import { Clock, Info, Loader2, MoreVertical, Plus, RotateCw, Settings } from "lucide-react";
 import { useEffect, useState } from "react";
 import { toast } from "sonner";
 import { api } from "../../convex/_generated/api";
@@ -137,16 +137,22 @@ export function Dashboard() {
   const selectedPublisher =
     publishers?.find((entry) => entry.publisher._id === selectedPublisherId) ?? null;
 
-  const mySkills = useQuery(
-    api.skills.list,
+  const skillsQueryArgs =
     selectedPublisher?.publisher.kind === "user" && me?._id
-      ? { ownerUserId: me._id, limit: 100 }
+      ? { ownerUserId: me._id }
       : selectedPublisherId
-        ? { ownerPublisherId: selectedPublisherId as Doc<"publishers">["_id"], limit: 100 }
+        ? { ownerPublisherId: selectedPublisherId as Doc<"publishers">["_id"] }
         : me?._id
-          ? { ownerUserId: me._id, limit: 100 }
-          : "skip",
-  ) as DashboardSkill[] | undefined;
+          ? { ownerUserId: me._id }
+          : "skip";
+  const {
+    results: paginatedSkills,
+    status: skillsStatus,
+    loadMore,
+  } = usePaginatedQuery(api.skills.listDashboardPaginated, skillsQueryArgs, {
+    initialNumItems: 50,
+  });
+  const mySkills = paginatedSkills as DashboardSkill[] | undefined;
   const myPackages = useQuery(
     api.packages.list,
     selectedPublisherId
@@ -179,7 +185,7 @@ export function Dashboard() {
 
   const skills = mySkills ?? [];
   const packages = myPackages ?? [];
-  const isLoading = mySkills === undefined;
+  const isLoading = skillsStatus === "LoadingFirstPage";
   const ownerHandle =
     selectedPublisher?.publisher.handle ?? me.handle ?? me.name ?? me.displayName ?? me._id;
 
@@ -256,6 +262,17 @@ export function Dashboard() {
                 {skills.map((skill) => (
                   <SkillRow key={skill._id} skill={skill} ownerHandle={ownerHandle} />
                 ))}
+              </div>
+            )}
+            {skills.length > 0 && skillsStatus === "CanLoadMore" && (
+              <div className="mt-4 flex justify-center">
+                <Button onClick={() => loadMore(50)}>Load More</Button>
+              </div>
+            )}
+            {skillsStatus === "LoadingMore" && (
+              <div className="mt-4 flex items-center justify-center gap-2 text-sm text-muted-foreground">
+                <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />
+                <span>Loading more skills...</span>
               </div>
             )}
           </section>

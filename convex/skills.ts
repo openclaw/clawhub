@@ -2344,6 +2344,88 @@ export const list = query({
   },
 });
 
+async function mapDashboardSkillPage(
+  ctx: QueryCtx,
+  skills: Doc<"skills">[],
+  isOwnDashboard: boolean,
+) {
+  const withBadges = await attachBadgesToSkills(ctx, skills);
+
+  if (isOwnDashboard) {
+    return await Promise.all(
+      withBadges.map(async (skill) => await toDashboardSkillListItem(ctx, skill)),
+    );
+  }
+
+  const visibleSkills = await filterSkillsByActiveOwner(ctx, withBadges);
+  return visibleSkills
+    .map((skill) => toPublicSkill(skill))
+    .filter((skill): skill is NonNullable<typeof skill> => Boolean(skill));
+}
+
+export const listDashboardPaginated = query({
+  args: {
+    ownerUserId: v.optional(v.id("users")),
+    ownerPublisherId: v.optional(v.id("publishers")),
+    paginationOpts: paginationOptsValidator,
+  },
+  handler: async (ctx, args) => {
+    const ownerPublisherId = args.ownerPublisherId;
+    if (ownerPublisherId) {
+      const userId = await getOptionalActiveAuthUserId(ctx);
+      const ownerPublisher = await ctx.db.get(ownerPublisherId);
+      const membership =
+        userId &&
+        (await ctx.db
+          .query("publisherMembers")
+          .withIndex("by_publisher_user", (q) =>
+            q.eq("publisherId", ownerPublisherId).eq("userId", userId),
+          )
+          .unique());
+      const isOwnDashboard = Boolean(
+        membership ||
+        (userId && ownerPublisher?.kind === "user" && ownerPublisher.linkedUserId === userId),
+      );
+
+      const result =
+        isOwnDashboard && ownerPublisher?.kind === "user" && ownerPublisher.linkedUserId
+          ? await ctx.db
+              .query("skills")
+              .withIndex("by_owner_active_updated", (q) =>
+                q.eq("ownerUserId", ownerPublisher.linkedUserId!).eq("softDeletedAt", undefined),
+              )
+              .order("desc")
+              .paginate(args.paginationOpts)
+          : await ctx.db
+              .query("skills")
+              .withIndex("by_owner_publisher_active_updated", (q) =>
+                q.eq("ownerPublisherId", ownerPublisherId).eq("softDeletedAt", undefined),
+              )
+              .order("desc")
+              .paginate(args.paginationOpts);
+      const page = await mapDashboardSkillPage(ctx, result.page, isOwnDashboard);
+      return { ...result, page };
+    }
+
+    const ownerUserId = args.ownerUserId;
+    if (ownerUserId) {
+      const userId = await getOptionalActiveAuthUserId(ctx);
+      const isOwnDashboard = Boolean(userId && userId === ownerUserId);
+      const result = await ctx.db
+        .query("skills")
+        .withIndex("by_owner_active_updated", (q) =>
+          q.eq("ownerUserId", ownerUserId).eq("softDeletedAt", undefined),
+        )
+        .order("desc")
+        .paginate(args.paginationOpts);
+      const page = await mapDashboardSkillPage(ctx, result.page, isOwnDashboard);
+      return { ...result, page };
+    }
+
+    return { page: [], isDone: true as const, continueCursor: "" };
+  },
+});
+
 export const listWithLatest = query({
   args: {
     batch: v.optional(v.string()),
