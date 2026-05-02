@@ -19,6 +19,7 @@ import {
   fetchGitHubPackageSource,
   type GitHubPackageSourceProgress,
 } from "../lib/githubPackageSource";
+import { getPackageDownloadHref } from "../lib/packageApi";
 import {
   buildPackageUploadEntries,
   filterIgnoredPackageFiles,
@@ -74,6 +75,12 @@ type ClawPackIntakeGate = {
   detail: string;
 };
 
+type PublishSuccess = {
+  name: string;
+  version: string;
+  releaseId?: string;
+};
+
 const DEFAULT_CLAWPACK_TARGETS = ["darwin-arm64", "linux-x64-glibc", "win32-x64"];
 
 function splitHostTargets(value: string) {
@@ -124,6 +131,10 @@ function formatPreviewBytes(value: number) {
   if (value < 1024) return `${value}B`;
   if (value < 1024 * 1024) return `${(value / 1024).toFixed(1)}KB`;
   return `${(value / (1024 * 1024)).toFixed(1)}MB`;
+}
+
+function pluginReleasePath(name: string, version: string) {
+  return `/plugins/${encodeURIComponent(name)}/releases/${encodeURIComponent(version)}`;
 }
 
 function formatGitHubSourceProgress(progress: GitHubPackageSourceProgress) {
@@ -400,6 +411,7 @@ export function PublishPluginRoute() {
     useState<PackageCompatibility | null>(null);
   const [status, setStatus] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [publishSuccess, setPublishSuccess] = useState<PublishSuccess | null>(null);
 
   const totalBytes = useMemo(() => files.reduce((sum, file) => sum + file.size, 0), [files]);
   const normalizedPaths = useMemo(
@@ -491,6 +503,7 @@ export function PublishPluginRoute() {
         ...new Set([...expanded.ignoredMacJunkPaths, ...filtered.ignoredPaths]),
       ];
       setFiles(selectedFiles);
+      setPublishSuccess(null);
       setIgnoredPaths(nextIgnoredPaths);
       setClawPackImport(imported.summary);
       setError(null);
@@ -524,6 +537,7 @@ export function PublishPluginRoute() {
       setIntakeStatus("Package ready for review.");
     } catch (pickError) {
       setFiles([]);
+      setPublishSuccess(null);
       setIgnoredPaths([]);
       setClawPackImport(null);
       setDetectedPrefillFields([]);
@@ -745,6 +759,38 @@ export function PublishPluginRoute() {
           </Card>
         ) : null}
 
+        {publishSuccess ? (
+          <Card className="mb-5 border-emerald-300/50 bg-emerald-50 dark:border-emerald-500/30 dark:bg-emerald-950/30">
+            <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
+              <div>
+                <Badge variant="compact">Published</Badge>
+                <h2 className="mt-2 mb-1 font-display text-xl font-bold text-[color:var(--ink)]">
+                  {publishSuccess.name}@{publishSuccess.version}
+                </h2>
+                <p className="m-0 text-sm text-[color:var(--ink-soft)]">
+                  The Claw Pack was accepted and stored. Background scans can still update public
+                  confidence, but the release page and artifact endpoint are ready.
+                </p>
+              </div>
+              <div className="flex flex-wrap gap-2">
+                <Button asChild variant="primary" size="sm">
+                  <a href={pluginReleasePath(publishSuccess.name, publishSuccess.version)}>
+                    View release
+                  </a>
+                </Button>
+                <Button asChild variant="outline" size="sm">
+                  <a href={`/plugins/${encodeURIComponent(publishSuccess.name)}`}>View plugin</a>
+                </Button>
+                <Button asChild variant="ghost" size="sm">
+                  <a href={getPackageDownloadHref(publishSuccess.name, publishSuccess.version)}>
+                    Download Claw Pack
+                  </a>
+                </Button>
+              </div>
+            </div>
+          </Card>
+        ) : null}
+
         <Card
           className={isMetadataLocked ? "pointer-events-none opacity-60" : ""}
           aria-disabled={isMetadataLocked}
@@ -871,8 +917,11 @@ export function PublishPluginRoute() {
                         );
                         return;
                       }
+                      const publishName = name.trim();
+                      const publishVersion = version.trim();
                       setStatus("Uploading files...");
                       setError(null);
+                      setPublishSuccess(null);
                       const uploaded = await buildPackageUploadEntries(files, {
                         generateUploadUrl,
                         hashFile,
@@ -884,13 +933,13 @@ export function PublishPluginRoute() {
                         },
                       });
                       setStatus("Publishing release...");
-                      await publishRelease({
+                      const result = await publishRelease({
                         payload: {
-                          name: name.trim(),
+                          name: publishName,
                           displayName: displayName.trim() || undefined,
                           ownerHandle: ownerHandle || undefined,
                           family,
-                          version: version.trim(),
+                          version: publishVersion,
                           changelog: changelog.trim(),
                           ...(sourceRepo.trim() && sourceCommit.trim()
                             ? {
@@ -924,6 +973,17 @@ export function PublishPluginRoute() {
                       setStatus(
                         "Published. Pending security checks and verification before public listing.",
                       );
+                      setPublishSuccess({
+                        name: publishName,
+                        version: publishVersion,
+                        releaseId:
+                          typeof result === "object" &&
+                          result !== null &&
+                          "releaseId" in result &&
+                          typeof result.releaseId === "string"
+                            ? result.releaseId
+                            : undefined,
+                      });
                     } catch (publishError) {
                       toast.error(formatPublishError(publishError));
                       setStatus(null);
