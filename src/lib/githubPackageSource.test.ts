@@ -81,7 +81,9 @@ describe("fetchGitHubPackageSource", () => {
           ],
         });
       }
-      if (url === `https://raw.githubusercontent.com/owner/repo/${COMMIT}/plugins/demo/package.json`) {
+      if (
+        url === `https://raw.githubusercontent.com/owner/repo/${COMMIT}/plugins/demo/package.json`
+      ) {
         return textResponse('{"name":"demo"}', "application/json");
       }
       if (
@@ -100,10 +102,7 @@ describe("fetchGitHubPackageSource", () => {
 
     expect(result.source.ref).toBe("feature/new-ui");
     expect(result.source.path).toBe("plugins/demo");
-    expect(result.files.map((file) => file.name)).toEqual([
-      "openclaw.plugin.json",
-      "package.json",
-    ]);
+    expect(result.files.map((file) => file.name)).toEqual(["openclaw.plugin.json", "package.json"]);
   });
 
   it("rejects oversized GitHub packages before downloading files", async () => {

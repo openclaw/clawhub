@@ -81,7 +81,9 @@ export async function fetchGitHubPackageSource(
 
   const maxFiles = options.maxFiles ?? DEFAULT_MAX_FILES;
   if (selected.length > maxFiles) {
-    throw new Error(`GitHub path has too many files (${selected.length}). Upload an archive instead.`);
+    throw new Error(
+      `GitHub path has too many files (${selected.length}). Upload an archive instead.`,
+    );
   }
 
   const maxFileBytes = options.maxFileBytes ?? DEFAULT_MAX_FILE_BYTES;
@@ -203,9 +205,12 @@ async function fetchDefaultBranch(owner: string, repo: string, fetcher: Fetcher)
 }
 
 async function tryFetchCommit(owner: string, repo: string, ref: string, fetcher: Fetcher) {
-  const response = await fetcher(`${GITHUB_API}/repos/${owner}/${repo}/commits/${encodeURIComponent(ref)}`, {
-    headers: githubHeaders(),
-  });
+  const response = await fetcher(
+    `${GITHUB_API}/repos/${owner}/${repo}/commits/${encodeURIComponent(ref)}`,
+    {
+      headers: githubHeaders(),
+    },
+  );
   if (!response.ok) return null;
   return parseCommitResponse((await response.json()) as GitHubCommitResponse);
 }
