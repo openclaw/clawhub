@@ -286,6 +286,7 @@ type PackagePublishPlan = {
   cleanup?: () => Promise<void>;
   filesOnDisk: PackageFile[];
   clawpackOnDisk?: PackageFile;
+  packageJson?: unknown;
   payload: PackagePublishPayload;
   compatibility?: PackageCompatibility;
   sourceLabel: string;
@@ -796,6 +797,16 @@ export async function cmdPublishPackage(
         });
       }
       return;
+    }
+
+    if (plan.payload.family === "code-plugin") {
+      const validation = validateOpenClawExternalCodePluginPackageContents(
+        plan.packageJson,
+        plan.filesOnDisk.map((file) => file.relPath),
+      );
+      if (validation.issues.length > 0) {
+        fail(validation.issues.map((issue) => issue.message).join(" "));
+      }
     }
 
     const registry = await getRegistry(opts, { cache: true });
@@ -2239,7 +2250,7 @@ async function preparePackagePublishPlan(
   if (family === "code-plugin") {
     if (!fileSet.has("package.json")) fail("package.json required");
     if (!source) fail("--source-repo and --source-commit required for code plugins");
-    const validation = validateOpenClawExternalCodePluginPackageContents(packageJson, fileSet);
+    const validation = validateOpenClawExternalCodePluginPackageJson(packageJson);
     if (validation.issues.length > 0) {
       fail(validation.issues.map((issue) => issue.message).join(" "));
     }
@@ -2306,6 +2317,7 @@ async function preparePackagePublishPlan(
     cleanup,
     filesOnDisk,
     clawpackOnDisk,
+    packageJson,
     payload,
     compatibility:
       family === "code-plugin"
