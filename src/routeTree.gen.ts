@@ -35,9 +35,12 @@ import { Route as PackagesNameRouteImport } from './routes/packages/$name'
 import { Route as OrgsHandleRouteImport } from './routes/orgs/$handle'
 import { Route as CliAuthRouteImport } from './routes/cli/auth'
 import { Route as OwnerSlugRouteImport } from './routes/$owner/$slug'
+import { Route as PluginsScopeNameRouteImport } from './routes/plugins/$scope/$name'
+import { Route as PackagesScopeNameRouteImport } from './routes/packages/$scope/$name'
 import { Route as OwnerSlugSettingsRouteImport } from './routes/$owner/$slug/settings'
 import { Route as PluginsNameSecurityScannerRouteImport } from './routes/plugins/$name/security/$scanner'
 import { Route as OwnerSlugSecurityScannerRouteImport } from './routes/$owner/$slug/security/$scanner'
+import { Route as PluginsScopeNameSecurityScannerRouteImport } from './routes/plugins/$scope/$name/security/$scanner'
 
 const UploadRoute = UploadRouteImport.update({
   id: '/upload',
@@ -169,6 +172,16 @@ const OwnerSlugRoute = OwnerSlugRouteImport.update({
   path: '/$owner/$slug',
   getParentRoute: () => rootRouteImport,
 } as any)
+const PluginsScopeNameRoute = PluginsScopeNameRouteImport.update({
+  id: '/plugins/$scope/$name',
+  path: '/plugins/$scope/$name',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const PackagesScopeNameRoute = PackagesScopeNameRouteImport.update({
+  id: '/packages/$scope/$name',
+  path: '/packages/$scope/$name',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const OwnerSlugSettingsRoute = OwnerSlugSettingsRouteImport.update({
   id: '/settings',
   path: '/settings',
@@ -185,6 +198,12 @@ const OwnerSlugSecurityScannerRoute =
     id: '/security/$scanner',
     path: '/security/$scanner',
     getParentRoute: () => OwnerSlugRoute,
+  } as any)
+const PluginsScopeNameSecurityScannerRoute =
+  PluginsScopeNameSecurityScannerRouteImport.update({
+    id: '/security/$scanner',
+    path: '/security/$scanner',
+    getParentRoute: () => PluginsScopeNameRoute,
   } as any)
 
 export interface FileRoutesByFullPath {
@@ -215,8 +234,11 @@ export interface FileRoutesByFullPath {
   '/souls/': typeof SoulsIndexRoute
   '/users/': typeof UsersIndexRoute
   '/$owner/$slug/settings': typeof OwnerSlugSettingsRoute
+  '/packages/$scope/$name': typeof PackagesScopeNameRoute
+  '/plugins/$scope/$name': typeof PluginsScopeNameRouteWithChildren
   '/$owner/$slug/security/$scanner': typeof OwnerSlugSecurityScannerRoute
   '/plugins/$name/security/$scanner': typeof PluginsNameSecurityScannerRoute
+  '/plugins/$scope/$name/security/$scanner': typeof PluginsScopeNameSecurityScannerRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
@@ -246,8 +268,11 @@ export interface FileRoutesByTo {
   '/souls': typeof SoulsIndexRoute
   '/users': typeof UsersIndexRoute
   '/$owner/$slug/settings': typeof OwnerSlugSettingsRoute
+  '/packages/$scope/$name': typeof PackagesScopeNameRoute
+  '/plugins/$scope/$name': typeof PluginsScopeNameRouteWithChildren
   '/$owner/$slug/security/$scanner': typeof OwnerSlugSecurityScannerRoute
   '/plugins/$name/security/$scanner': typeof PluginsNameSecurityScannerRoute
+  '/plugins/$scope/$name/security/$scanner': typeof PluginsScopeNameSecurityScannerRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
@@ -278,8 +303,11 @@ export interface FileRoutesById {
   '/souls/': typeof SoulsIndexRoute
   '/users/': typeof UsersIndexRoute
   '/$owner/$slug/settings': typeof OwnerSlugSettingsRoute
+  '/packages/$scope/$name': typeof PackagesScopeNameRoute
+  '/plugins/$scope/$name': typeof PluginsScopeNameRouteWithChildren
   '/$owner/$slug/security/$scanner': typeof OwnerSlugSecurityScannerRoute
   '/plugins/$name/security/$scanner': typeof PluginsNameSecurityScannerRoute
+  '/plugins/$scope/$name/security/$scanner': typeof PluginsScopeNameSecurityScannerRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
@@ -311,8 +339,11 @@ export interface FileRouteTypes {
     | '/souls/'
     | '/users/'
     | '/$owner/$slug/settings'
+    | '/packages/$scope/$name'
+    | '/plugins/$scope/$name'
     | '/$owner/$slug/security/$scanner'
     | '/plugins/$name/security/$scanner'
+    | '/plugins/$scope/$name/security/$scanner'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
@@ -342,8 +373,11 @@ export interface FileRouteTypes {
     | '/souls'
     | '/users'
     | '/$owner/$slug/settings'
+    | '/packages/$scope/$name'
+    | '/plugins/$scope/$name'
     | '/$owner/$slug/security/$scanner'
     | '/plugins/$name/security/$scanner'
+    | '/plugins/$scope/$name/security/$scanner'
   id:
     | '__root__'
     | '/'
@@ -373,8 +407,11 @@ export interface FileRouteTypes {
     | '/souls/'
     | '/users/'
     | '/$owner/$slug/settings'
+    | '/packages/$scope/$name'
+    | '/plugins/$scope/$name'
     | '/$owner/$slug/security/$scanner'
     | '/plugins/$name/security/$scanner'
+    | '/plugins/$scope/$name/security/$scanner'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
@@ -404,6 +441,8 @@ export interface RootRouteChildren {
   SkillsIndexRoute: typeof SkillsIndexRoute
   SoulsIndexRoute: typeof SoulsIndexRoute
   UsersIndexRoute: typeof UsersIndexRoute
+  PackagesScopeNameRoute: typeof PackagesScopeNameRoute
+  PluginsScopeNameRoute: typeof PluginsScopeNameRouteWithChildren
 }
 
 declare module '@tanstack/react-router' {
@@ -590,6 +629,20 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof OwnerSlugRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/plugins/$scope/$name': {
+      id: '/plugins/$scope/$name'
+      path: '/plugins/$scope/$name'
+      fullPath: '/plugins/$scope/$name'
+      preLoaderRoute: typeof PluginsScopeNameRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/packages/$scope/$name': {
+      id: '/packages/$scope/$name'
+      path: '/packages/$scope/$name'
+      fullPath: '/packages/$scope/$name'
+      preLoaderRoute: typeof PackagesScopeNameRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/$owner/$slug/settings': {
       id: '/$owner/$slug/settings'
       path: '/settings'
@@ -610,6 +663,13 @@ declare module '@tanstack/react-router' {
       fullPath: '/$owner/$slug/security/$scanner'
       preLoaderRoute: typeof OwnerSlugSecurityScannerRouteImport
       parentRoute: typeof OwnerSlugRoute
+    }
+    '/plugins/$scope/$name/security/$scanner': {
+      id: '/plugins/$scope/$name/security/$scanner'
+      path: '/security/$scanner'
+      fullPath: '/plugins/$scope/$name/security/$scanner'
+      preLoaderRoute: typeof PluginsScopeNameSecurityScannerRouteImport
+      parentRoute: typeof PluginsScopeNameRoute
     }
   }
 }
@@ -640,6 +700,17 @@ const PluginsNameRouteWithChildren = PluginsNameRoute._addFileChildren(
   PluginsNameRouteChildren,
 )
 
+interface PluginsScopeNameRouteChildren {
+  PluginsScopeNameSecurityScannerRoute: typeof PluginsScopeNameSecurityScannerRoute
+}
+
+const PluginsScopeNameRouteChildren: PluginsScopeNameRouteChildren = {
+  PluginsScopeNameSecurityScannerRoute: PluginsScopeNameSecurityScannerRoute,
+}
+
+const PluginsScopeNameRouteWithChildren =
+  PluginsScopeNameRoute._addFileChildren(PluginsScopeNameRouteChildren)
+
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   AboutRoute: AboutRoute,
@@ -667,6 +738,8 @@ const rootRouteChildren: RootRouteChildren = {
   SkillsIndexRoute: SkillsIndexRoute,
   SoulsIndexRoute: SoulsIndexRoute,
   UsersIndexRoute: UsersIndexRoute,
+  PackagesScopeNameRoute: PackagesScopeNameRoute,
+  PluginsScopeNameRoute: PluginsScopeNameRouteWithChildren,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)
