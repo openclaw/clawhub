@@ -735,37 +735,6 @@ function compareCatalogItems(a: CatalogListItem, b: CatalogListItem) {
   return a.name.localeCompare(b.name);
 }
 
-const HTTP_PACKAGE_SEARCH_PAGE_SIZE = 50;
-const HTTP_PACKAGE_SEARCH_SCAN_PAGES = 20;
-
-function catalogSearchScore(item: CatalogListItem, queryText: string) {
-  const needle = queryText.toLowerCase();
-  const name = item.name.toLowerCase();
-  const display = item.displayName.toLowerCase();
-  const runtimeId = item.runtimeId?.toLowerCase() ?? "";
-  const summary = (item.summary ?? "").toLowerCase();
-  let score = 0;
-
-  if (name === needle) score += 200;
-  else if (name.startsWith(needle)) score += 120;
-  else if (name.includes(needle)) score += 80;
-
-  if (display === needle) score += 150;
-  else if (display.startsWith(needle)) score += 70;
-  else if (display.includes(needle)) score += 40;
-
-  if (runtimeId === needle) score += 180;
-  else if (runtimeId.startsWith(needle)) score += 90;
-  else if (runtimeId.includes(needle)) score += 45;
-
-  if (summary.includes(needle)) score += 20;
-  if ((item.capabilityTags ?? []).some((entry) => entry.toLowerCase().includes(needle))) {
-    score += 12;
-  }
-  if (item.isOfficial) score += 5;
-  return score;
-}
-
 function compareCatalogSearchEntries(a: CatalogSearchEntry, b: CatalogSearchEntry) {
   return (
     b.score - a.score ||
@@ -774,7 +743,7 @@ function compareCatalogSearchEntries(a: CatalogSearchEntry, b: CatalogSearchEntr
   );
 }
 
-async function searchPackageCatalogByListing(
+async function searchPackageCatalog(
   ctx: ActionCtx,
   args: {
     query: string;
@@ -788,22 +757,12 @@ async function searchPackageCatalogByListing(
     viewerUserId?: Id<"users">;
   },
 ): Promise<CatalogSearchEntry[]> {
-  const queryText = args.query.trim().toLowerCase();
-  if (!queryText) return [];
-
-  const matches: CatalogSearchEntry[] = [];
-  const seen = new Set<string>();
-  let cursor: string | null = null;
-  let done = false;
-  let loops = 0;
-
-  while (!done && loops < HTTP_PACKAGE_SEARCH_SCAN_PAGES) {
-    loops += 1;
-    const result: {
-      page: CatalogListItem[];
-      isDone: boolean;
-      continueCursor: string | null;
-    } = await runQueryRef(ctx, internalRefs.packages.listPageForViewerInternal, {
+  return await runQueryRef<CatalogSearchEntry[]>(
+    ctx,
+    internalRefs.packages.searchForViewerInternal,
+    {
+      query: args.query,
+      limit: args.limit,
       family: args.family,
       channel: args.channel,
       isOfficial: args.isOfficial,
@@ -811,24 +770,8 @@ async function searchPackageCatalogByListing(
       executesCode: args.executesCode,
       capabilityTag: args.capabilityTag,
       viewerUserId: args.viewerUserId,
-      paginationOpts: { cursor, numItems: HTTP_PACKAGE_SEARCH_PAGE_SIZE },
-    });
-
-    for (const item of result.page) {
-      const key = `${item.family}:${item.name}`;
-      if (seen.has(key)) continue;
-      const score = catalogSearchScore(item, queryText);
-      if (score <= 0) continue;
-      seen.add(key);
-      matches.push({ score, package: item });
-    }
-
-    done = result.isDone;
-    cursor = result.continueCursor;
-    if (!cursor && !done) break;
-  }
-
-  return matches.sort(compareCatalogSearchEntries).slice(0, args.limit);
+    },
+  );
 }
 
 async function resolveSkillTags(
@@ -2027,7 +1970,7 @@ async function searchPackages(
     if (!family && options?.pluginFamilies?.length) {
       const pluginResults = await Promise.all(
         options.pluginFamilies.map((pluginFamily) =>
-          searchPackageCatalogByListing(ctx, {
+          searchPackageCatalog(ctx, {
             query: queryText,
             limit,
             family: pluginFamily,
@@ -2052,7 +1995,7 @@ async function searchPackages(
         .sort(compareCatalogSearchEntries)
         .slice(0, limit);
     } else {
-      results = await searchPackageCatalogByListing(ctx, {
+      results = await searchPackageCatalog(ctx, {
         query: queryText,
         limit,
         family,
@@ -2066,7 +2009,7 @@ async function searchPackages(
     }
   } else {
     const [packageResults, skillResults] = await Promise.all([
-      searchPackageCatalogByListing(ctx, {
+      searchPackageCatalog(ctx, {
         query: queryText,
         limit,
         channel,

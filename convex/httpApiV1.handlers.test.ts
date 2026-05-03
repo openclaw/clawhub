@@ -2821,7 +2821,6 @@ describe("httpApiV1 handlers", () => {
 
   it("packages search forwards executesCode and capabilityTag", async () => {
     const runQuery = vi.fn((_, args: Record<string, unknown>) => {
-      if ("paginationOpts" in args) return { page: [], isDone: true, continueCursor: "" };
       if ("query" in args) return [];
       return null;
     });
@@ -2833,12 +2832,12 @@ describe("httpApiV1 handlers", () => {
       ),
     );
     if (response.status !== 200) throw new Error(await response.text());
-    expect(runQuery).toHaveBeenCalledWith(
-      expect.anything(),
+    expect(runQuery.mock.calls.map(([, args]) => args)).toContainEqual(
       expect.objectContaining({
+        query: "test",
+        limit: 5,
         executesCode: true,
         capabilityTag: "tools",
-        paginationOpts: { cursor: null, numItems: 50 },
       }),
     );
     expect(findRateLimitCallArgs(runMutation)).toMatchObject({
@@ -2850,7 +2849,6 @@ describe("httpApiV1 handlers", () => {
 
   it("packages search maps environment filters to capability tags", async () => {
     const runQuery = vi.fn((_, args: Record<string, unknown>) => {
-      if ("paginationOpts" in args) return { page: [], isDone: true, continueCursor: "" };
       if ("query" in args) return [];
       return null;
     });
@@ -2860,8 +2858,7 @@ describe("httpApiV1 handlers", () => {
       new Request("https://example.com/api/v1/packages/search?q=test&requiresBrowser=true"),
     );
     if (response.status !== 200) throw new Error(await response.text());
-    expect(runQuery).toHaveBeenCalledWith(
-      expect.anything(),
+    expect(runQuery.mock.calls.map(([, args]) => args)).toContainEqual(
       expect.objectContaining({
         capabilityTag: "requires:browser",
       }),
@@ -2870,7 +2867,6 @@ describe("httpApiV1 handlers", () => {
 
   it("packages search maps artifact filters to capability tags", async () => {
     const runQuery = vi.fn((_, args: Record<string, unknown>) => {
-      if ("paginationOpts" in args) return { page: [], isDone: true, continueCursor: "" };
       if ("query" in args) return [];
       return null;
     });
@@ -2880,8 +2876,7 @@ describe("httpApiV1 handlers", () => {
       new Request("https://example.com/api/v1/packages/search?q=test&artifactKind=npm-pack"),
     );
     if (response.status !== 200) throw new Error(await response.text());
-    expect(runQuery).toHaveBeenCalledWith(
-      expect.anything(),
+    expect(runQuery.mock.calls.map(([, args]) => args)).toContainEqual(
       expect.objectContaining({
         capabilityTag: "artifact:npm-pack",
       }),
@@ -3044,9 +3039,10 @@ describe("httpApiV1 handlers", () => {
   it("plugins search defaults to plugin package families", async () => {
     const runQuery = vi.fn((_, args: Record<string, unknown>) => {
       if (args.family === "code-plugin") {
-        return {
-          page: [
-            {
+        return [
+          {
+            score: 10,
+            package: {
               name: "weather-code",
               displayName: "Weather Code",
               family: "code-plugin",
@@ -3055,15 +3051,14 @@ describe("httpApiV1 handlers", () => {
               createdAt: 10,
               updatedAt: 100,
             },
-          ],
-          isDone: true,
-          continueCursor: "",
-        };
+          },
+        ];
       }
       if (args.family === "bundle-plugin") {
-        return {
-          page: [
-            {
+        return [
+          {
+            score: 10,
+            package: {
               name: "weather-bundle",
               displayName: "Weather Bundle",
               family: "bundle-plugin",
@@ -3072,10 +3067,8 @@ describe("httpApiV1 handlers", () => {
               createdAt: 20,
               updatedAt: 200,
             },
-          ],
-          isDone: true,
-          continueCursor: "",
-        };
+          },
+        ];
       }
       throw new Error(`unexpected family ${String(args.family)}`);
     });
@@ -3097,7 +3090,8 @@ describe("httpApiV1 handlers", () => {
     for (const [, args] of runQuery.mock.calls) {
       expect(args).toEqual(
         expect.objectContaining({
-          paginationOpts: { cursor: null, numItems: 50 },
+          query: "weather",
+          limit: 7,
         }),
       );
     }
@@ -3106,24 +3100,31 @@ describe("httpApiV1 handlers", () => {
   it("plugins search dedupes and sorts results from both plugin families", async () => {
     const runQuery = vi.fn((_, args: Record<string, unknown>) => {
       if (args.family === "code-plugin") {
-        return {
-          page: [
-            makeCatalogItem("shared-plugin", { family: "code-plugin", updatedAt: 100 }),
-            makeCatalogItem("plugin-code", { family: "code-plugin", updatedAt: 50 }),
-          ],
-          isDone: true,
-          continueCursor: "",
-        };
+        return [
+          {
+            score: 10,
+            package: makeCatalogItem("shared-plugin", { family: "code-plugin", updatedAt: 100 }),
+          },
+          {
+            score: 50,
+            package: makeCatalogItem("plugin-code", { family: "code-plugin", updatedAt: 50 }),
+          },
+        ];
       }
       if (args.family === "bundle-plugin") {
-        return {
-          page: [
-            makeCatalogItem("plugin-bundle", { family: "bundle-plugin", updatedAt: 80 }),
-            makeCatalogItem("shared-plugin", { family: "bundle-plugin", updatedAt: 60 }),
-          ],
-          isDone: true,
-          continueCursor: "",
-        };
+        return [
+          {
+            score: 70,
+            package: makeCatalogItem("plugin-bundle", { family: "bundle-plugin", updatedAt: 80 }),
+          },
+          {
+            score: 10,
+            package: makeCatalogItem("shared-plugin", {
+              family: "bundle-plugin",
+              updatedAt: 60,
+            }),
+          },
+        ];
       }
       throw new Error(`unexpected family ${String(args.family)}`);
     });
@@ -3174,7 +3175,6 @@ describe("httpApiV1 handlers", () => {
     vi.mocked(getAuthUserId).mockResolvedValue("users:owner" as never);
     const runQuery = vi.fn((_, args: Record<string, unknown>) => {
       if ("userId" in args) return { _id: args.userId };
-      if ("paginationOpts" in args) return { page: [], isDone: true, continueCursor: "" };
       if ("query" in args) return [];
       return null;
     });
@@ -3186,12 +3186,11 @@ describe("httpApiV1 handlers", () => {
     );
 
     expect(response.status).toBe(200);
-    expect(runQuery).toHaveBeenCalledWith(
-      expect.anything(),
+    expect(runQuery.mock.calls.map(([, args]) => args)).toContainEqual(
       expect.objectContaining({
+        query: "secret",
         channel: "private",
         viewerUserId: "users:owner",
-        paginationOpts: { cursor: null, numItems: 50 },
       }),
     );
   });
@@ -3223,7 +3222,6 @@ describe("httpApiV1 handlers", () => {
       if (query === internal.users.getByIdInternal) {
         throw new Error("Table mismatch");
       }
-      if ("paginationOpts" in args) return { page: [], isDone: true, continueCursor: "" };
       if ("query" in args) return [];
       return null;
     });
@@ -3239,12 +3237,11 @@ describe("httpApiV1 handlers", () => {
       internal.users.getByIdInternal,
       expect.objectContaining({ userId: "users:broken" }),
     );
-    expect(runQuery).toHaveBeenCalledWith(
-      expect.anything(),
+    expect(runQuery.mock.calls.map(([, args]) => args)).toContainEqual(
       expect.objectContaining({
+        query: "secret",
         channel: "community",
         viewerUserId: undefined,
-        paginationOpts: { cursor: null, numItems: 50 },
       }),
     );
   });
