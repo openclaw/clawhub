@@ -116,6 +116,11 @@ describe("RATE_LIMITS", () => {
     expect(RATE_LIMITS.download.ip).toBeGreaterThanOrEqual(180);
     expect(RATE_LIMITS.download.key).toBeGreaterThanOrEqual(720);
   });
+
+  it("keeps authenticated write bursts release-friendly", () => {
+    expect(RATE_LIMITS.write.ip).toBeLessThanOrEqual(45);
+    expect(RATE_LIMITS.write.key).toBeGreaterThanOrEqual(2400);
+  });
 });
 
 describe("applyRateLimit headers", () => {
