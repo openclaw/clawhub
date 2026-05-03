@@ -11,3 +11,4 @@ export declare const OPENCLAW_EXTERNAL_CODE_PLUGIN_REQUIRED_FIELD_PATHS: readonl
 export declare function normalizeOpenClawExternalPluginCompatibility(packageJson: unknown): PackageCompatibility | undefined;
 export declare function listMissingOpenClawExternalCodePluginFieldPaths(packageJson: unknown): string[];
 export declare function validateOpenClawExternalCodePluginPackageJson(packageJson: unknown): OpenClawExternalCodePluginValidation;
+export declare function validateOpenClawExternalCodePluginPackageContents(packageJson: unknown, filePaths: Iterable<string>): OpenClawExternalCodePluginValidation;

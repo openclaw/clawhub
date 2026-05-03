@@ -47,6 +47,7 @@ import {
   type PackageReleaseModerationState,
   type PackageTrustedPublisher,
   type PackageVerificationSummary,
+  validateOpenClawExternalCodePluginPackageContents,
   validateOpenClawExternalCodePluginPackageJson,
 } from "../../schema/index.js";
 import { getOptionalAuthToken, requireAuthToken } from "../authToken.js";
@@ -682,6 +683,13 @@ export async function cmdPackPackage(
       packDestination,
       cwd: opts.workdir,
     });
+    const contentValidation = validateOpenClawExternalCodePluginPackageContents(
+      packed.parsed.packageJson,
+      packed.parsed.entries.map((entry) => entry.path),
+    );
+    if (contentValidation.issues.length > 0) {
+      fail(contentValidation.issues.map((issue) => issue.message).join(" "));
+    }
     const output = {
       path: packed.path,
       name: packed.parsed.packageName,
@@ -2231,7 +2239,7 @@ async function preparePackagePublishPlan(
   if (family === "code-plugin") {
     if (!fileSet.has("package.json")) fail("package.json required");
     if (!source) fail("--source-repo and --source-commit required for code plugins");
-    const validation = validateOpenClawExternalCodePluginPackageJson(packageJson);
+    const validation = validateOpenClawExternalCodePluginPackageContents(packageJson, fileSet);
     if (validation.issues.length > 0) {
       fail(validation.issues.map((issue) => issue.message).join(" "));
     }

@@ -1237,6 +1237,46 @@ describe("package commands", () => {
     }
   });
 
+  it("rejects a code plugin ClawPack with TypeScript entries and no compiled runtime", async () => {
+    const workdir = await makeTmpWorkdir();
+    try {
+      const packName = "demo-plugin-1.0.0.tgz";
+      await writeFile(
+        join(workdir, packName),
+        npmPackFixture({
+          "package/package.json": makeCodePluginPackageJson({
+            name: "@scope/demo-plugin",
+            displayName: "Demo Plugin",
+            version: "1.0.0",
+            openclaw: {
+              extensions: ["./index.ts"],
+              compat: {
+                pluginApi: ">=2026.3.24-beta.2",
+              },
+              build: {
+                openclawVersion: "2026.3.24-beta.2",
+              },
+            },
+          }),
+          "package/openclaw.plugin.json": JSON.stringify({ id: "demo.plugin" }),
+          "package/index.ts": "export const demo = true;\n",
+        }),
+      );
+
+      await expect(
+        cmdPublishPackage(makeOpts(workdir), packName, {
+          sourceRepo: "openclaw/demo-plugin",
+          sourceCommit: "abc123",
+        }),
+      ).rejects.toThrow(
+        "@scope/demo-plugin requires compiled runtime output for TypeScript entry ./index.ts",
+      );
+      expect(httpMocks.apiRequestForm).not.toHaveBeenCalled();
+    } finally {
+      await rm(workdir, { recursive: true, force: true });
+    }
+  });
+
   it("rejects a ClawPack tarball without openclaw.plugin.json", async () => {
     const workdir = await makeTmpWorkdir();
     try {
@@ -1622,7 +1662,7 @@ describe("package commands", () => {
     const workdir = await makeTmpWorkdir();
     try {
       const folder = join(workdir, "demo-plugin");
-      await mkdir(folder, { recursive: true });
+      await mkdir(join(folder, "dist"), { recursive: true });
       await writeFile(
         join(folder, "package.json"),
         makeCodePluginPackageJson({ name: "demo-plugin", version: "1.0.0" }),
@@ -1708,7 +1748,7 @@ describe("package commands", () => {
     const workdir = await makeTmpWorkdir();
     try {
       const folder = join(workdir, "demo-plugin");
-      await mkdir(folder, { recursive: true });
+      await mkdir(join(folder, "dist"), { recursive: true });
       await writeFile(
         join(folder, "package.json"),
         JSON.stringify({
@@ -1729,6 +1769,7 @@ describe("package commands", () => {
         JSON.stringify({ id: "demo.plugin", configSchema: { type: "object" } }),
         "utf8",
       );
+      await writeFile(join(folder, "dist", "index.js"), "export const demo = true;\n", "utf8");
 
       httpMocks.apiRequestForm.mockResolvedValueOnce({
         ok: true,

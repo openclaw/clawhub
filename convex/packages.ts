@@ -1,6 +1,7 @@
 import {
   PackagePublishRequestSchema,
   parseArk,
+  validateOpenClawExternalCodePluginPackageContents,
   type PackageArtifactSummary,
   type PackageChannel,
   type PackageFamily,
@@ -3462,6 +3463,15 @@ async function publishPackageImpl(
   if (packageJson) ensurePluginNameMatchesPackage(name, packageJson);
   if (!pluginManifest) {
     throw new ConvexError("openclaw.plugin.json is required for plugin packages");
+  }
+  if (family === "code-plugin") {
+    const validation = validateOpenClawExternalCodePluginPackageContents(
+      packageJson,
+      files.map((file) => file.path),
+    );
+    if (validation.issues.length > 0) {
+      throw new ConvexError(validation.issues.map((issue) => issue.message).join(" "));
+    }
   }
   if (payload.artifact?.kind === "npm-pack") {
     if (!packageJson) throw new ConvexError("ClawPack must contain package.json");
