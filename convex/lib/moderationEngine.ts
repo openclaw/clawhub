@@ -115,6 +115,10 @@ const SHELL_BASE64_FILE_READ_PATTERN =
   /(?:\bcat\s+["']?\$[A-Za-z_][A-Za-z0-9_]*["']?\s*\|\s*base64\b|\bbase64\b[^\n]{0,80}["']?\$[A-Za-z_][A-Za-z0-9_]*["']?)/i;
 const SHELL_NETWORK_UPLOAD_PATTERN =
   /\bcurl\b[\s\S]{0,1600}(?:--data(?:-binary|-raw)?\b|-d\b|--form\b|-F\b|--upload-file\b|Authorization\s*:)/i;
+const PYTHON_BASE64_FILE_READ_PATTERN =
+  /base64\.b64encode\s*\(\s*(?:[A-Za-z_][A-Za-z0-9_]*\.read_bytes\s*\(\s*\)|Path\s*\([^)]*\)\.read_bytes\s*\(\s*\)|open\s*\([^)]*["']rb["'][\s\S]{0,120}\.read\s*\(\s*\))/i;
+const PYTHON_NETWORK_UPLOAD_PATTERN =
+  /\b(?:requests|session|self\.session|client|httpx\.(?:post|request))\.post\s*\([\s\S]{0,1600}(?:json\s*=|data\s*=|files\s*=|headers\s*=|Authorization)/i;
 const PLAYWRIGHT_CHROMIUM_PATTERN = /\b(?:playwright\.)?chromium\.launch\s*\(/i;
 const FILE_URL_BROWSER_NAVIGATION_PATTERN = /\bpage\.goto\s*\([^)]*file:\/\//i;
 const SVG_HTML_INTERPOLATION_PATTERN =
@@ -487,6 +491,12 @@ function findShellBase64FileUpload(content: string) {
   return findFirstLine(content, SHELL_BASE64_FILE_READ_PATTERN);
 }
 
+function findPythonBase64FileUpload(content: string) {
+  if (!/base64\.b64encode/i.test(content)) return null;
+  if (!PYTHON_NETWORK_UPLOAD_PATTERN.test(content)) return null;
+  return findFirstLine(content, PYTHON_BASE64_FILE_READ_PATTERN);
+}
+
 function findUnsafeBrowserFileRender(content: string) {
   if (!PLAYWRIGHT_CHROMIUM_PATTERN.test(content)) return null;
   if (!FILE_URL_BROWSER_NAVIGATION_PATTERN.test(content)) return null;
@@ -837,6 +847,18 @@ function scanCodeFile(
       line: shellBase64FileUpload.line,
       message: "Shell script base64-encodes a local file and sends it over the network.",
       evidence: shellBase64FileUpload.text,
+    });
+  }
+
+  const pythonBase64FileUpload = findPythonBase64FileUpload(content);
+  if (pythonBase64FileUpload) {
+    addFinding(findings, {
+      code: REASON_CODES.EXFILTRATION,
+      severity: "critical",
+      file: path,
+      line: pythonBase64FileUpload.line,
+      message: "Python code base64-encodes a local file and sends it over the network.",
+      evidence: pythonBase64FileUpload.text,
     });
   }
 
