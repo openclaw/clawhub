@@ -19,12 +19,16 @@ export const getRateLimitStatusInternal = internalQuery({
       return { allowed: false, remaining: 0, limit: args.limit, resetAt };
     }
 
-    const rows = await ctx.db
+    const legacyRows = await ctx.db
       .query("rateLimits")
       .withIndex("by_key_window", (q) => q.eq("key", args.key).eq("windowStart", windowStart))
       .collect();
+    const shardRows = await ctx.db
+      .query("rateLimitShards")
+      .withIndex("by_key_window", (q) => q.eq("key", args.key).eq("windowStart", windowStart))
+      .collect();
 
-    const count = rows.reduce((sum, row) => sum + row.count, 0);
+    const count = [...legacyRows, ...shardRows].reduce((sum, row) => sum + row.count, 0);
     const allowed = count < args.limit;
     return {
       allowed,
@@ -53,14 +57,14 @@ export const consumeRateLimitInternal = internalMutation({
     const shard = Math.max(0, Math.floor(args.shard ?? 0));
 
     const existing = await ctx.db
-      .query("rateLimits")
+      .query("rateLimitShards")
       .withIndex("by_key_window_shard", (q) =>
         q.eq("key", args.key).eq("windowStart", windowStart).eq("shard", shard),
       )
       .unique();
 
     if (!existing) {
-      await ctx.db.insert("rateLimits", {
+      await ctx.db.insert("rateLimitShards", {
         key: args.key,
         windowStart,
         shard,

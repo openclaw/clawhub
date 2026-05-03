@@ -1466,8 +1466,18 @@ const rateLimits = defineTable({
   updatedAt: v.number(),
 })
   .index("by_key_window", ["key", "windowStart"])
-  .index("by_key_window_shard", ["key", "windowStart", "shard"])
   .index("by_key", ["key"]);
+
+const rateLimitShards = defineTable({
+  key: v.string(),
+  windowStart: v.number(),
+  shard: v.number(),
+  count: v.number(),
+  limit: v.number(),
+  updatedAt: v.number(),
+})
+  .index("by_key_window", ["key", "windowStart"])
+  .index("by_key_window_shard", ["key", "windowStart", "shard"]);
 
 const downloadDedupes = defineTable({
   skillId: v.id("skills"),
@@ -1617,6 +1627,7 @@ export default defineSchema({
   rescanRequests,
   apiTokens,
   rateLimits,
+  rateLimitShards,
   downloadDedupes,
   reservedSlugs,
   reservedHandles,

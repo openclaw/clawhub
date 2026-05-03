@@ -25,9 +25,11 @@ describe("rate limit sharding", () => {
   it("sums all shards when checking status", async () => {
     const ctx = {
       db: {
-        query: vi.fn(() => ({
+        query: vi.fn((table: string) => ({
           withIndex: vi.fn(() => ({
-            collect: vi.fn(async () => [{ count: 3 }, { count: 4 }, { count: 5 }]),
+            collect: vi.fn(async () =>
+              table === "rateLimits" ? [{ count: 3 }] : [{ count: 4 }, { count: 5 }],
+            ),
           })),
         })),
       },
@@ -80,7 +82,7 @@ describe("rate limit sharding", () => {
 
     expect(withIndex).toHaveBeenCalledWith("by_key_window_shard", expect.any(Function));
     expect(insert).toHaveBeenCalledWith(
-      "rateLimits",
+      "rateLimitShards",
       expect.objectContaining({
         key: "ip:test",
         shard: 7,
