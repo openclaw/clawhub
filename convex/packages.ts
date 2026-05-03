@@ -71,8 +71,6 @@ import {
 
 const MAX_PUBLIC_LIST_PAGE_SIZE = 200;
 const MAX_SEARCH_PAGE_SIZE = 200;
-const MAX_SEARCH_SCAN_DOCUMENTS = 1_000;
-const MAX_SEARCH_SCAN_PAGES = 20;
 const MAX_DIRECT_PACKAGE_SEARCH_CANDIDATES = 20;
 const MAX_APPEAL_MESSAGE_LENGTH = 2_000;
 const MAX_OFFICIAL_MIGRATION_BLOCKERS = 20;
@@ -1854,43 +1852,22 @@ async function searchPackagesImpl(
   }
 
   if (matches.length < targetCount) {
-    const pageSize = Math.min(MAX_SEARCH_PAGE_SIZE, Math.max(targetCount * 5, 50));
-    let cursor: string | null = null;
-    let done = false;
-    let loops = 0;
-    let remainingScanBudget = MAX_SEARCH_SCAN_DOCUMENTS;
+    const scanLimit = Math.min(MAX_SEARCH_PAGE_SIZE, Math.max(targetCount * 5, 50));
+    const digests: PackageDigestLike[] = await buildSearchDigestQuery()
+      .order("desc")
+      .take(scanLimit);
 
-    while (
-      matches.length < targetCount &&
-      !done &&
-      loops < MAX_SEARCH_SCAN_PAGES &&
-      remainingScanBudget > 0
-    ) {
-      loops += 1;
-      const effectivePageSize = Math.min(pageSize, remainingScanBudget);
-      if (effectivePageSize <= 0) break;
-      remainingScanBudget -= effectivePageSize;
-      const page: {
-        page: PackageDigestLike[];
-        isDone: boolean;
-        continueCursor: string;
-      } = await buildSearchDigestQuery()
-        .order("desc")
-        .paginate({ cursor, numItems: effectivePageSize });
-      for (const digest of page.page) {
-        if (!(await canViewPackage(digest))) continue;
-        if (!digestMatchesSearchFilters(digest, args)) continue;
-        const score = packageSearchScore(digest, queryText);
-        if (score <= 0 || seen.has(digest.packageId)) continue;
-        seen.add(digest.packageId);
-        matches.push({
-          score,
-          package: toPublicPackageListItem(digest),
-        });
-        if (matches.length >= targetCount) break;
-      }
-      done = page.isDone;
-      cursor = page.continueCursor;
+    for (const digest of digests) {
+      if (!(await canViewPackage(digest))) continue;
+      if (!digestMatchesSearchFilters(digest, args)) continue;
+      const score = packageSearchScore(digest, queryText);
+      if (score <= 0 || seen.has(digest.packageId)) continue;
+      seen.add(digest.packageId);
+      matches.push({
+        score,
+        package: toPublicPackageListItem(digest),
+      });
+      if (matches.length >= targetCount) break;
     }
   }
 

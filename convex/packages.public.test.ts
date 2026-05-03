@@ -630,6 +630,7 @@ function makeDigestCtx(options: {
       }
     >
   >();
+  const rowsByTable = new Map<string, Array<Record<string, unknown>>>();
   const indexNames: string[] = [];
   const tableNames: string[] = [];
 
@@ -655,12 +656,17 @@ function makeDigestCtx(options: {
       cursor = page.continueCursor || null;
     }
     pageByTable.set(table, pageByCursor);
+    rowsByTable.set(
+      table,
+      pages.flatMap((page) => page.page),
+    );
   };
 
   setPages("packageSearchDigest", options.pages ?? []);
   setPages("packageCapabilitySearchDigest", options.capabilityPages ?? []);
 
   const paginate = vi.fn();
+  const take = vi.fn();
   const paginateForTable = (table: string) =>
     vi.fn(async (args: { cursor: string | null }) => {
       paginate(args);
@@ -680,6 +686,19 @@ function makeDigestCtx(options: {
     paginateByTable.set(table, next);
     return next;
   };
+  const takeForTable = (table: string) =>
+    vi.fn(async (limit: number) => {
+      take(limit);
+      return (rowsByTable.get(table) ?? []).slice(0, limit);
+    });
+  const takeByTable = new Map<string, ReturnType<typeof vi.fn>>();
+  const getTake = (table: string) => {
+    const existing = takeByTable.get(table);
+    if (existing) return existing;
+    const next = takeForTable(table);
+    takeByTable.set(table, next);
+    return next;
+  };
 
   const withIndex = vi.fn((table: string, indexName: string) => {
     indexNames.push(indexName);
@@ -690,6 +709,7 @@ function makeDigestCtx(options: {
         ordered = true;
         return {
           paginate: getPaginate(table),
+          take: getTake(table),
         };
       }),
     };
@@ -699,6 +719,7 @@ function makeDigestCtx(options: {
     indexNames,
     tableNames,
     paginate,
+    take,
     ctx: {
       db: {
         query: vi.fn((table: string) => {
@@ -1490,8 +1511,8 @@ describe("packages public queries", () => {
     expect(result.map((entry) => entry.package.name)).toEqual(["secret-tools"]);
   });
 
-  it("uses a fresh search digest query for each fallback scan page", async () => {
-    const { ctx, paginate } = makeDigestCtx({
+  it("uses one bounded digest take for fallback search", async () => {
+    const { ctx, paginate, take } = makeDigestCtx({
       pages: [
         {
           page: [makeDigest("first-page-miss")],
@@ -1513,7 +1534,9 @@ describe("packages public queries", () => {
     });
 
     expect(result.map((entry) => entry.package.name)).toEqual(["needle-plugin"]);
-    expect(paginate).toHaveBeenCalledTimes(2);
+    expect(paginate).not.toHaveBeenCalled();
+    expect(take).toHaveBeenCalledTimes(1);
+    expect(take).toHaveBeenCalledWith(50);
   });
 
   it("allows org collaborators to search their private packages", async () => {
@@ -1609,11 +1632,11 @@ describe("packages public queries", () => {
     expect(indexNames).toEqual(["by_active_tag_executes_updated"]);
   });
 
-  it("keeps searching beyond the first digest page", async () => {
+  it("bounds fallback search to the first digest take window", async () => {
     const olderMatch = makeDigest("demo-plugin", {
       updatedAt: 10,
     });
-    const { ctx } = makeDigestCtx({
+    const { ctx, paginate, take } = makeDigestCtx({
       pages: [
         {
           page: Array.from({ length: 200 }, (_, index) =>
@@ -1635,7 +1658,10 @@ describe("packages public queries", () => {
       limit: 10,
     });
 
-    expect(result.map((entry) => entry.package.name)).toContain("demo-plugin");
+    expect(result).toEqual([]);
+    expect(paginate).not.toHaveBeenCalled();
+    expect(take).toHaveBeenCalledTimes(1);
+    expect(take).toHaveBeenCalledWith(50);
   });
 
   it("includes exact package-name matches before digest scanning", async () => {
@@ -1647,7 +1673,7 @@ describe("packages public queries", () => {
     const exactDigest = makeDigest("demo-plugin", {
       packageId: "packages:exact",
     });
-    const { ctx, paginate } = makeDigestCtx({
+    const { ctx, take } = makeDigestCtx({
       pages: [],
       exactPackages: [exactPkg],
       exactDigests: [exactDigest],
@@ -1659,7 +1685,7 @@ describe("packages public queries", () => {
     });
 
     expect(result.map((entry) => entry.package.name)).toEqual(["demo-plugin"]);
-    expect(paginate).toHaveBeenCalledTimes(1);
+    expect(take).toHaveBeenCalledTimes(1);
     expect(ctx.db.query).toHaveBeenCalledWith("packageSearchDigest");
   });
 
@@ -1674,7 +1700,7 @@ describe("packages public queries", () => {
       packageId: "packages:runtime",
       runtimeId: "demo.plugin",
     });
-    const { ctx, paginate } = makeDigestCtx({
+    const { ctx, take } = makeDigestCtx({
       pages: [],
       exactPackages: [exactPkg],
       exactDigests: [exactDigest],
@@ -1686,7 +1712,7 @@ describe("packages public queries", () => {
     });
 
     expect(result.map((entry) => entry.package.name)).toEqual(["runtime-demo"]);
-    expect(paginate).toHaveBeenCalledTimes(1);
+    expect(take).toHaveBeenCalledTimes(1);
     expect(ctx.db.query).toHaveBeenCalledWith("packageSearchDigest");
   });
 
@@ -1699,7 +1725,7 @@ describe("packages public queries", () => {
     const prefixDigest = makeDigest("demo-prefix", {
       packageId: "packages:prefix",
     });
-    const { ctx, paginate } = makeDigestCtx({
+    const { ctx, take } = makeDigestCtx({
       pages: [],
       exactPackages: [prefixPkg],
       exactDigests: [prefixDigest],
@@ -1711,7 +1737,7 @@ describe("packages public queries", () => {
     });
 
     expect(result.map((entry) => entry.package.name)).toEqual(["demo-prefix"]);
-    expect(paginate).toHaveBeenCalledTimes(1);
+    expect(take).toHaveBeenCalledTimes(1);
     expect(ctx.db.query).toHaveBeenCalledWith("packageSearchDigest");
   });
 
@@ -1742,7 +1768,7 @@ describe("packages public queries", () => {
   });
 
   it("stops fallback scanning after enough package search matches", async () => {
-    const { ctx, paginate } = makeDigestCtx({
+    const { ctx, take } = makeDigestCtx({
       pages: [
         {
           page: [
@@ -1766,7 +1792,8 @@ describe("packages public queries", () => {
     });
 
     expect(result.map((entry) => entry.package.name)).toEqual(["demo-alpha", "demo-beta"]);
-    expect(paginate).toHaveBeenCalledTimes(1);
+    expect(take).toHaveBeenCalledTimes(1);
+    expect(take).toHaveBeenCalledWith(50);
   });
 
   it("keeps spaced queries on the scan path without throwing", async () => {
@@ -1842,7 +1869,7 @@ describe("packages public queries", () => {
   });
 
   it("caps public search scans below the Convex read limit budget", async () => {
-    const { ctx, paginate } = makeDigestCtx({
+    const { ctx, paginate, take } = makeDigestCtx({
       pages: Array.from({ length: 170 }, (_, index) => ({
         page: [
           makeDigest(`noise-${index}`, {
@@ -1862,7 +1889,9 @@ describe("packages public queries", () => {
     });
 
     expect(result).toEqual([]);
-    expect(paginate).toHaveBeenCalledTimes(5);
+    expect(paginate).not.toHaveBeenCalled();
+    expect(take).toHaveBeenCalledTimes(1);
+    expect(take).toHaveBeenCalledWith(200);
   });
 
   it("uses the official index for no-family official search filters", async () => {
