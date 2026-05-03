@@ -456,8 +456,16 @@ export function maybeParseJson(text: string | null | undefined) {
   return parseJsonFile(trimmed, "JSON file");
 }
 
-export function toConvexSafeJsonValue(value: unknown): unknown {
-  if (Array.isArray(value)) return value.map((item) => toConvexSafeJsonValue(item));
+export function toConvexSafeJsonValue(
+  value: unknown,
+  options: { maxDepth?: number } = {},
+  depth = 0,
+): unknown {
+  const maxDepth = options.maxDepth ?? Number.POSITIVE_INFINITY;
+  if (depth >= maxDepth) return "[truncated]";
+  if (Array.isArray(value)) {
+    return value.map((item) => toConvexSafeJsonValue(item, options, depth + 1));
+  }
   if (!isRecord(value)) return value;
   return Object.fromEntries(
     Object.entries(value).map(([key, nested]) => [
@@ -466,7 +474,7 @@ export function toConvexSafeJsonValue(value: unknown): unknown {
         : key.startsWith("_")
           ? `underscore_${key.slice(1)}`
           : key,
-      toConvexSafeJsonValue(nested),
+      toConvexSafeJsonValue(nested, options, depth + 1),
     ]),
   );
 }

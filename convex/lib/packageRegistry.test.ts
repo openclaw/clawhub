@@ -235,4 +235,35 @@ describe("packageRegistry", () => {
       },
     });
   });
+
+  it("truncates deeply nested metadata before Convex storage", () => {
+    expect(
+      toConvexSafeJsonValue(
+        {
+          channelConfigs: {
+            discord: {
+              schema: {
+                properties: {
+                  auth: {
+                    anyOf: [{ properties: { token: { type: "string" } } }],
+                  },
+                },
+              },
+            },
+          },
+        },
+        { maxDepth: 5 },
+      ),
+    ).toEqual({
+      channelConfigs: {
+        discord: {
+          schema: {
+            properties: {
+              auth: "[truncated]",
+            },
+          },
+        },
+      },
+    });
+  });
 });

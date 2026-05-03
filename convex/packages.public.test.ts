@@ -3221,6 +3221,12 @@ describe("packages public queries", () => {
         .mockResolvedValueOnce(trustedPublisher)
         .mockResolvedValueOnce({
           _id: "users:owner",
+          role: "user",
+          githubCreatedAt: Date.now() - 20 * 24 * 60 * 60 * 1000,
+        })
+        .mockResolvedValueOnce({
+          _id: "users:owner",
+          role: "user",
           githubCreatedAt: Date.now() - 20 * 24 * 60 * 60 * 1000,
         })
         .mockResolvedValueOnce(null),
@@ -3259,12 +3265,88 @@ describe("packages public queries", () => {
     );
   });
 
+  it("lets admins user-publish trusted packages without a manual override reason", async () => {
+    const runMutation = vi.fn(async (_ref: unknown, args: unknown) => {
+      if (
+        typeof args === "object" &&
+        args !== null &&
+        "actorUserId" in args &&
+        "minimumRole" in args
+      ) {
+        return { publisherId: "publishers:openclaw" };
+      }
+      return null;
+    });
+    const trustedPublisher = {
+      _id: "packageTrustedPublishers:1",
+      packageId: "packages:demo",
+      provider: "github-actions",
+      repository: "openclaw/openclaw",
+      repositoryId: "1",
+      repositoryOwner: "openclaw",
+      repositoryOwnerId: "2",
+      workflowFilename: "plugin-clawhub-release.yml",
+      environment: "clawhub-release",
+    };
+    const ctx = {
+      runQuery: vi
+        .fn()
+        .mockResolvedValueOnce(makePackageDoc({ family: "bundle-plugin" }))
+        .mockResolvedValueOnce(trustedPublisher)
+        .mockResolvedValueOnce({
+          _id: "users:admin",
+          role: "admin",
+          githubCreatedAt: Date.now() - 20 * 24 * 60 * 60 * 1000,
+        })
+        .mockResolvedValueOnce({
+          _id: "users:admin",
+          role: "admin",
+          githubCreatedAt: Date.now() - 20 * 24 * 60 * 60 * 1000,
+        })
+        .mockResolvedValueOnce(null),
+      runMutation,
+      scheduler: {
+        runAfter: vi.fn(),
+      },
+      storage: {
+        get: vi.fn(),
+      },
+    };
+
+    await expect(
+      publishPackageForUserInternalHandler(ctx as never, {
+        actorUserId: "users:admin",
+        payload: {
+          name: "@openclaw/discord",
+          family: "bundle-plugin",
+          version: "2026.5.3-beta.2",
+          changelog: "tag publish",
+          bundle: { hostTargets: ["desktop"] },
+          source: {
+            kind: "github",
+            url: "https://github.com/openclaw/openclaw",
+            repo: "openclaw/openclaw",
+            ref: "refs/tags/plugins-2026.5.3-beta.2",
+            commit: "abc123",
+            path: "extensions/discord",
+            importedAt: Date.now(),
+          },
+          files: [],
+        },
+      }),
+    ).rejects.toThrow("openclaw.plugin.json is required");
+  });
+
   it("scans plugin publishes and forwards scan status to insertReleaseInternal", async () => {
     const runMutation = vi.fn(async (_ref: unknown, args: unknown) => args);
     const ctx = {
       runQuery: vi
         .fn()
         .mockResolvedValueOnce(null)
+        .mockResolvedValueOnce({
+          _id: "users:owner",
+          githubCreatedAt: Date.now() - 20 * 24 * 60 * 60 * 1000,
+        })
         .mockResolvedValueOnce({
           _id: "users:owner",
           githubCreatedAt: Date.now() - 20 * 24 * 60 * 60 * 1000,
@@ -3381,6 +3463,11 @@ describe("packages public queries", () => {
         .mockResolvedValueOnce(null)
         .mockResolvedValueOnce({
           _id: "users:steipete",
+          githubCreatedAt: Date.now() - 20 * 24 * 60 * 60 * 1000,
+        })
+        .mockResolvedValueOnce({
+          _id: "users:steipete",
+          role: "admin",
           githubCreatedAt: Date.now() - 20 * 24 * 60 * 60 * 1000,
         })
         .mockResolvedValueOnce(null),

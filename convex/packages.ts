@@ -76,6 +76,7 @@ const MAX_APPEAL_MESSAGE_LENGTH = 2_000;
 const MAX_OFFICIAL_MIGRATION_BLOCKERS = 20;
 const MAX_OFFICIAL_MIGRATION_FIELD_LENGTH = 300;
 const MAX_OFFICIAL_MIGRATION_NOTES_LENGTH = 2_000;
+const MAX_STORED_PACKAGE_METADATA_DEPTH = 10;
 const REAL_BUNDLE_MANIFESTS = [
   { path: ".codex-plugin/plugin.json", format: "codex" },
   { path: ".claude-plugin/plugin.json", format: "claude" },
@@ -3377,6 +3378,9 @@ async function publishPackageImpl(
   } else {
     actorUserId = auth.actorUserId;
     await requireGitHubAccountAge(ctx, actorUserId);
+    const actor = await runQueryRef<Doc<"users"> | null>(ctx, internalRefs.users.getByIdInternal, {
+      userId: actorUserId,
+    });
     const ownerHandle = payload.ownerHandle ?? inferOwnerHandleFromScopedPackageName(name);
     const ownerTarget = await runMutationRef<{
       publisherId: Id<"publishers">;
@@ -3388,7 +3392,7 @@ async function publishPackageImpl(
     });
     ownerUserId = ownerTarget?.linkedUserId ?? actorUserId;
     ownerPublisherId = ownerTarget?.publisherId;
-    if (existingTrustedPublisher && !manualOverrideReason) {
+    if (existingTrustedPublisher && !manualOverrideReason && actor?.role !== "admin") {
       throw new ConvexError(
         "Manual publishes for packages with trusted publisher config require manualOverrideReason",
       );
@@ -3446,8 +3450,15 @@ async function publishPackageImpl(
   const packageJson = maybeParseJson(packageJsonEntry?.text);
   const pluginManifest = maybeParseJson(pluginManifestEntry?.text);
   const bundleManifest = maybeParseJson(bundleManifestEntry?.text);
-  const storedPluginManifest = toConvexSafeJsonValue(pluginManifest);
-  const storedBundleManifest = toConvexSafeJsonValue(bundleManifest);
+  const storedPackageJson = toConvexSafeJsonValue(packageJson, {
+    maxDepth: MAX_STORED_PACKAGE_METADATA_DEPTH,
+  });
+  const storedPluginManifest = toConvexSafeJsonValue(pluginManifest, {
+    maxDepth: MAX_STORED_PACKAGE_METADATA_DEPTH,
+  });
+  const storedBundleManifest = toConvexSafeJsonValue(bundleManifest, {
+    maxDepth: MAX_STORED_PACKAGE_METADATA_DEPTH,
+  });
   if (packageJson) ensurePluginNameMatchesPackage(name, packageJson);
   if (!pluginManifest) {
     throw new ConvexError("openclaw.plugin.json is required for plugin packages");
@@ -3560,7 +3571,7 @@ async function publishPackageImpl(
     allowExistingRelease:
       auth.kind === "github-actions" ||
       (auth.kind === "user" && manualOverrideReason?.startsWith("GitHub Actions ")),
-    extractedPackageJson: packageJson,
+    extractedPackageJson: storedPackageJson,
     extractedPluginManifest: family === "code-plugin" ? storedPluginManifest : undefined,
     normalizedBundleManifest: family === "bundle-plugin" ? storedBundleManifest : undefined,
     source: effectiveSource,
