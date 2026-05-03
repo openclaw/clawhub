@@ -1821,20 +1821,21 @@ async function searchPackagesImpl(
       }));
   }
 
-  const builder = args.capabilityTag
-    ? buildPackageCapabilityDigestQuery(ctx, {
-        capabilityTag: args.capabilityTag,
-        family: args.family,
-        channel: args.channel,
-        isOfficial: args.isOfficial,
-        executesCode: args.executesCode,
-      })
-    : buildPackageDigestQuery(ctx, {
-        family: args.family,
-        channel: args.channel,
-        isOfficial: args.isOfficial,
-        executesCode: args.executesCode,
-      });
+  const buildSearchDigestQuery = () =>
+    args.capabilityTag
+      ? buildPackageCapabilityDigestQuery(ctx, {
+          capabilityTag: args.capabilityTag,
+          family: args.family,
+          channel: args.channel,
+          isOfficial: args.isOfficial,
+          executesCode: args.executesCode,
+        })
+      : buildPackageDigestQuery(ctx, {
+          family: args.family,
+          channel: args.channel,
+          isOfficial: args.isOfficial,
+          executesCode: args.executesCode,
+        });
   const matches: Array<{ score: number; package: PublicPackageListItem }> = [];
   const seen = new Set<string>();
   const directDigests = args.capabilityTag
@@ -1873,7 +1874,9 @@ async function searchPackagesImpl(
         page: PackageDigestLike[];
         isDone: boolean;
         continueCursor: string;
-      } = await builder.order("desc").paginate({ cursor, numItems: effectivePageSize });
+      } = await buildSearchDigestQuery()
+        .order("desc")
+        .paginate({ cursor, numItems: effectivePageSize });
       for (const digest of page.page) {
         if (!(await canViewPackage(digest))) continue;
         if (!digestMatchesSearchFilters(digest, args)) continue;

@@ -683,10 +683,15 @@ function makeDigestCtx(options: {
 
   const withIndex = vi.fn((table: string, indexName: string) => {
     indexNames.push(indexName);
+    let ordered = false;
     return {
-      order: vi.fn(() => ({
-        paginate: getPaginate(table),
-      })),
+      order: vi.fn(() => {
+        if (ordered) throw new Error("query builder reused after iteration");
+        ordered = true;
+        return {
+          paginate: getPaginate(table),
+        };
+      }),
     };
   });
 
@@ -1483,6 +1488,32 @@ describe("packages public queries", () => {
     });
 
     expect(result.map((entry) => entry.package.name)).toEqual(["secret-tools"]);
+  });
+
+  it("uses a fresh search digest query for each fallback scan page", async () => {
+    const { ctx, paginate } = makeDigestCtx({
+      pages: [
+        {
+          page: [makeDigest("first-page-miss")],
+          isDone: false,
+          continueCursor: "next",
+        },
+        {
+          page: [makeDigest("needle-plugin")],
+          isDone: true,
+          continueCursor: "",
+        },
+      ],
+    });
+
+    const result = await searchForViewerInternalHandler(ctx, {
+      query: "needle",
+      family: "code-plugin",
+      limit: 2,
+    });
+
+    expect(result.map((entry) => entry.package.name)).toEqual(["needle-plugin"]);
+    expect(paginate).toHaveBeenCalledTimes(2);
   });
 
   it("allows org collaborators to search their private packages", async () => {
