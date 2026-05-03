@@ -919,9 +919,7 @@ const packageStatEvents = defineTable({
   kind: v.literal("download"),
   occurredAt: v.number(),
   processedAt: v.optional(v.number()),
-})
-  .index("by_unprocessed", ["processedAt"])
-  .index("by_package", ["packageId"]);
+}).index("by_unprocessed", ["processedAt"]);
 
 const packageTrustedPublishers = defineTable({
   packageId: v.id("packages"),
