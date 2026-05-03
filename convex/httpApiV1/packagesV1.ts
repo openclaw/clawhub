@@ -2549,25 +2549,40 @@ function parseNpmMirrorPath(request: Request) {
   return parsePackagePathSegments(segments);
 }
 
+function decodePackagePathSegment(segment: string) {
+  let decoded = segment;
+  for (let i = 0; i < 2 && decoded.includes("%"); i += 1) {
+    try {
+      const next = decodeURIComponent(decoded);
+      if (next === decoded) break;
+      decoded = next;
+    } catch {
+      break;
+    }
+  }
+  return decoded;
+}
+
 function parsePackagePathSegments(segments: string[]) {
   if (segments.length === 0) return null;
-  if (segments[0]?.startsWith("@")) {
-    if (segments[0].includes("/")) {
-      const [scope, name] = segments[0].split("/");
+  const firstSegment = decodePackagePathSegment(segments[0]!);
+  if (firstSegment.startsWith("@")) {
+    if (firstSegment.includes("/")) {
+      const [scope, name, ...encodedRest] = firstSegment.split("/");
       if (!scope || !name) return null;
       return {
         packageName: `${scope}/${name}`,
-        rest: segments.slice(1),
+        rest: [...encodedRest, ...segments.slice(1)],
       };
     }
     if (segments.length < 2) return null;
     return {
-      packageName: `${segments[0]}/${segments[1]}`,
+      packageName: `${firstSegment}/${decodePackagePathSegment(segments[1]!)}`,
       rest: segments.slice(2),
     };
   }
   return {
-    packageName: segments[0]!,
+    packageName: firstSegment,
     rest: segments.slice(1),
   };
 }
