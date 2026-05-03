@@ -8217,6 +8217,32 @@ code {
   color: var(--ink-soft);
 }
 
+.search-load-more {
+  display: flex;
+  justify-content: center;
+  margin-top: var(--space-4);
+}
+
+.search-load-more-button {
+  min-height: 38px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-pill);
+  background: var(--surface);
+  color: var(--ink);
+  cursor: pointer;
+  font-size: var(--fs-sm);
+  font-weight: 700;
+  padding: 0 var(--space-4);
+  transition:
+    background-color 0.15s ease,
+    border-color 0.15s ease;
+}
+
+.search-load-more-button:hover {
+  border-color: color-mix(in srgb, var(--ink) 18%, var(--line));
+  background: var(--surface-raised);
+}
+
 @media (max-width: 760px) {
   .search-page-form {
     flex-direction: column;
