@@ -3775,6 +3775,142 @@ describe("httpApiV1 handlers", () => {
     });
   });
 
+  it("package artifact endpoint exposes legacy zip resolver compatibility aliases", async () => {
+    const runQuery = vi.fn(async (_query: unknown, args: Record<string, unknown>) => {
+      if ("name" in args && !("version" in args)) {
+        return {
+          package: {
+            _id: "packages:demo-plugin",
+            name: "demo-plugin",
+            displayName: "Demo Plugin",
+            family: "code-plugin",
+            tags: { latest: "packageReleases:1" },
+            latestReleaseId: "packageReleases:1",
+            channel: "community",
+            isOfficial: false,
+            createdAt: 1,
+            updatedAt: 1,
+          },
+          latestRelease: null,
+          owner: { _id: "publishers:demo", handle: "demo" },
+        };
+      }
+      if ("name" in args && "version" in args) {
+        return {
+          package: {
+            _id: "packages:demo-plugin",
+            name: "demo-plugin",
+            displayName: "Demo Plugin",
+            family: "code-plugin",
+          },
+          version: {
+            _id: "packageReleases:1",
+            packageId: "packages:demo-plugin",
+            version: "1.0.0",
+            createdAt: 1,
+            changelog: "Initial release",
+            distTags: ["latest"],
+            files: [],
+            artifactKind: "legacy-zip",
+            integritySha256: "a".repeat(64),
+            sha256hash: "b".repeat(64),
+          },
+        };
+      }
+      return null;
+    });
+    const runMutation = vi.fn().mockResolvedValue(okRate());
+
+    const response = await __handlers.packagesGetRouterV1Handler(
+      makeCtx({ runQuery, runMutation }),
+      new Request("https://example.com/api/v1/packages/demo-plugin/versions/1.0.0/artifact"),
+    );
+
+    expect(response.status).toBe(200);
+    await expect(response.json()).resolves.toMatchObject({
+      package: { name: "demo-plugin" },
+      version: "1.0.0",
+      artifact: {
+        kind: "legacy-zip",
+        sha256: "b".repeat(64),
+        format: "zip",
+        source: "clawhub",
+        artifactKind: "legacy-zip",
+        artifactSha256: "b".repeat(64),
+        packageName: "demo-plugin",
+        version: "1.0.0",
+        downloadUrl: "https://example.com/api/v1/packages/demo-plugin/download?version=1.0.0",
+        legacyDownloadUrl: "https://example.com/api/v1/packages/demo-plugin/download?version=1.0.0",
+      },
+    });
+  });
+
+  it("package artifact endpoint omits legacy zip archive aliases when archive hash is missing", async () => {
+    const runQuery = vi.fn(async (_query: unknown, args: Record<string, unknown>) => {
+      if ("name" in args && !("version" in args)) {
+        return {
+          package: {
+            _id: "packages:demo-plugin",
+            name: "demo-plugin",
+            displayName: "Demo Plugin",
+            family: "code-plugin",
+            tags: { latest: "packageReleases:1" },
+            latestReleaseId: "packageReleases:1",
+            channel: "community",
+            isOfficial: false,
+            createdAt: 1,
+            updatedAt: 1,
+          },
+          latestRelease: null,
+          owner: { _id: "publishers:demo", handle: "demo" },
+        };
+      }
+      if ("name" in args && "version" in args) {
+        return {
+          package: {
+            _id: "packages:demo-plugin",
+            name: "demo-plugin",
+            displayName: "Demo Plugin",
+            family: "code-plugin",
+          },
+          version: {
+            _id: "packageReleases:1",
+            packageId: "packages:demo-plugin",
+            version: "1.0.0",
+            createdAt: 1,
+            changelog: "Initial release",
+            distTags: ["latest"],
+            files: [],
+            artifactKind: "legacy-zip",
+            integritySha256: "a".repeat(64),
+          },
+        };
+      }
+      return null;
+    });
+    const runMutation = vi.fn().mockResolvedValue(okRate());
+
+    const response = await __handlers.packagesGetRouterV1Handler(
+      makeCtx({ runQuery, runMutation }),
+      new Request("https://example.com/api/v1/packages/demo-plugin/versions/1.0.0/artifact"),
+    );
+
+    expect(response.status).toBe(200);
+    const body = await response.json();
+    expect(body).toMatchObject({
+      artifact: {
+        kind: "legacy-zip",
+        format: "zip",
+        source: "clawhub",
+        artifactKind: "legacy-zip",
+        packageName: "demo-plugin",
+        version: "1.0.0",
+      },
+    });
+    expect(body.artifact).not.toHaveProperty("sha256");
+    expect(body.artifact).not.toHaveProperty("artifactSha256");
+  });
+
   it("package artifact endpoint accepts split scoped package paths", async () => {
     const runQuery = vi.fn(async (_query: unknown, args: Record<string, unknown>) => {
       if ("name" in args && !("version" in args)) {

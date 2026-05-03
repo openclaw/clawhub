@@ -364,7 +364,7 @@ function getReleaseSecurityBlock(release: ReleaseLike) {
   return getPackageDownloadSecurityBlock(release);
 }
 
-function toReleaseArtifact(release: ReleaseLike) {
+function toReleaseArtifact(release: ReleaseLike, packageName?: string) {
   if (release.artifactKind === "npm-pack") {
     return {
       kind: "npm-pack" as const,
@@ -378,10 +378,16 @@ function toReleaseArtifact(release: ReleaseLike) {
       npmFileCount: release.npmFileCount,
     };
   }
+  const sha256 = release.sha256hash;
   return {
     kind: "legacy-zip" as const,
-    sha256: release.integritySha256 ?? release.sha256hash,
+    ...(sha256 ? { sha256 } : {}),
     format: "zip",
+    source: "clawhub" as const,
+    artifactKind: "legacy-zip" as const,
+    ...(sha256 ? { artifactSha256: sha256 } : {}),
+    packageName,
+    version: release.version,
   };
 }
 
@@ -2347,7 +2353,7 @@ export async function packagesGetRouterV1Handler(ctx: ActionCtx, request: Reques
         },
         version: release.version,
         artifact: {
-          ...toReleaseArtifact(release),
+          ...toReleaseArtifact(release, publicPackage!.name),
           ...releaseArtifactUrls(request, publicPackage!.name, release),
         },
       },
@@ -2427,7 +2433,7 @@ export async function packagesGetRouterV1Handler(ctx: ActionCtx, request: Reques
           compatibility: result.version.compatibility ?? null,
           capabilities: result.version.capabilities ?? null,
           verification: result.version.verification ?? null,
-          artifact: toReleaseArtifact(result.version),
+          artifact: toReleaseArtifact(result.version, result.package.name),
           sha256hash: result.version.sha256hash ?? null,
           vtAnalysis: result.version.vtAnalysis ?? null,
           llmAnalysis: result.version.llmAnalysis ?? null,
@@ -2669,7 +2675,7 @@ export async function npmMirrorGetHandler(ctx: ActionCtx, request: Request) {
 
   const versions = Object.fromEntries(
     releases.map((release) => {
-      const artifact = toReleaseArtifact(release);
+      const artifact = toReleaseArtifact(release, detail.package!.name);
       const urls = releaseArtifactUrls(request, detail.package!.name, release);
       return [
         release.version,

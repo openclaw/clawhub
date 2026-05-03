@@ -64,6 +64,11 @@ export const PackageArtifactSummarySchema = type({
     npmTarballName: "string?",
     npmUnpackedSize: "number?",
     npmFileCount: "number?",
+    source: '"clawhub"?',
+    artifactKind: PackageArtifactKindSchema.optional(),
+    artifactSha256: "string?",
+    packageName: "string?",
+    version: "string?",
 });
 export const PackagePublishArtifactSchema = type({
     kind: '"npm-pack"',
@@ -249,6 +254,11 @@ export const ApiV1PackageArtifactResponseSchema = type({
         downloadUrl: "string",
         tarballUrl: "string?",
         legacyDownloadUrl: "string?",
+        source: '"clawhub"?',
+        artifactKind: PackageArtifactKindSchema.optional(),
+        artifactSha256: "string?",
+        packageName: "string?",
+        version: "string?",
     }),
 });
 export const PackageReleaseModerationRequestSchema = type({
