@@ -103,6 +103,11 @@ export const PackageArtifactSummarySchema = type({
   npmTarballName: "string?",
   npmUnpackedSize: "number?",
   npmFileCount: "number?",
+  source: '"clawhub"?',
+  artifactKind: PackageArtifactKindSchema.optional(),
+  artifactSha256: "string?",
+  packageName: "string?",
+  version: "string?",
 });
 export type PackageArtifactSummary = (typeof PackageArtifactSummarySchema)[inferred];
 
@@ -315,6 +320,11 @@ export const ApiV1PackageArtifactResponseSchema = type({
     downloadUrl: "string",
     tarballUrl: "string?",
     legacyDownloadUrl: "string?",
+    source: '"clawhub"?',
+    artifactKind: PackageArtifactKindSchema.optional(),
+    artifactSha256: "string?",
+    packageName: "string?",
+    version: "string?",
   }),
 });
 export type ApiV1PackageArtifactResponse = (typeof ApiV1PackageArtifactResponseSchema)[inferred];

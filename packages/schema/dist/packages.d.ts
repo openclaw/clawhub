@@ -79,6 +79,11 @@ export declare const PackageArtifactSummarySchema: import("arktype/internal/vari
     npmTarballName?: string | undefined;
     npmUnpackedSize?: number | undefined;
     npmFileCount?: number | undefined;
+    source?: "clawhub" | undefined;
+    artifactKind?: "legacy-zip" | "npm-pack" | undefined;
+    artifactSha256?: string | undefined;
+    packageName?: string | undefined;
+    version?: string | undefined;
 }, {}>;
 export type PackageArtifactSummary = (typeof PackageArtifactSummarySchema)[inferred];
 export declare const PackagePublishArtifactSchema: import("arktype/internal/variants/object.ts").ObjectType<{
@@ -331,6 +336,11 @@ export declare const ApiV1PackageResponseSchema: import("arktype/internal/varian
             npmTarballName?: string | undefined;
             npmUnpackedSize?: number | undefined;
             npmFileCount?: number | undefined;
+            source?: "clawhub" | undefined;
+            artifactKind?: "legacy-zip" | "npm-pack" | undefined;
+            artifactSha256?: string | undefined;
+            packageName?: string | undefined;
+            version?: string | undefined;
         } | null | undefined;
         stats?: {
             downloads: number;
@@ -414,6 +424,11 @@ export declare const ApiV1PackageVersionResponseSchema: import("arktype/internal
             npmTarballName?: string | undefined;
             npmUnpackedSize?: number | undefined;
             npmFileCount?: number | undefined;
+            source?: "clawhub" | undefined;
+            artifactKind?: "legacy-zip" | "npm-pack" | undefined;
+            artifactSha256?: string | undefined;
+            packageName?: string | undefined;
+            version?: string | undefined;
         } | null | undefined;
         sha256hash?: string | null | undefined;
         vtAnalysis?: {
@@ -477,6 +492,11 @@ export declare const ApiV1PackageArtifactResponseSchema: import("arktype/interna
         npmFileCount?: number | undefined;
         tarballUrl?: string | undefined;
         legacyDownloadUrl?: string | undefined;
+        source?: "clawhub" | undefined;
+        artifactKind?: "legacy-zip" | "npm-pack" | undefined;
+        artifactSha256?: string | undefined;
+        packageName?: string | undefined;
+        version?: string | undefined;
     };
 }, {}>;
 export type ApiV1PackageArtifactResponse = (typeof ApiV1PackageArtifactResponseSchema)[inferred];
