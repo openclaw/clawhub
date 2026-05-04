@@ -1,6 +1,7 @@
 # Packaged Convex Components
 
-Read this file when the user wants a reusable npm package or a component shared across multiple apps.
+Read this file when the user wants a reusable npm package or a component shared
+across multiple apps.
 
 ## When to Choose This
 
@@ -11,12 +12,14 @@ Read this file when the user wants a reusable npm package or a component shared 
 ## Default Approach
 
 - Prefer starting from `npx create-convex@latest --component` when possible
-- Keep the official authoring docs as the source of truth for package layout and exports
+- Keep the official authoring docs as the source of truth for package layout and
+  exports
 - Validate the bundled package through an example app, not just the source files
 
 ## Build Flow
 
-When building a packaged component, make sure the bundled output exists before the example app tries to consume it.
+When building a packaged component, make sure the bundled output exists before
+the example app tries to consume it.
 
 Recommended order:
 

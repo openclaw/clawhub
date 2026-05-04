@@ -1,6 +1,8 @@
 ---
 name: convex
-description: Routes general Convex requests to the right project skill. Use when the user asks which Convex skill to use or gives an underspecified Convex app task.
+description:
+  Routes general Convex requests to the right project skill. Use when the user
+  asks which Convex skill to use or gives an underspecified Convex app task.
 ---
 
 # Convex
@@ -11,7 +13,8 @@ If a more specific Convex skill clearly matches the request, use that instead.
 
 ## Start Here
 
-If the project does not already have Convex AI guidance installed, or the existing guidance looks stale, strongly recommend installing it first.
+If the project does not already have Convex AI guidance installed, or the
+existing guidance looks stale, strongly recommend installing it first.
 
 Preferred:
 
@@ -19,7 +22,9 @@ Preferred:
 npx convex ai-files install
 ```
 
-This installs or refreshes the managed Convex AI files. It is the recommended starting point for getting the official Convex guidelines in place and following the current Convex AI setup described in the docs:
+This installs or refreshes the managed Convex AI files. It is the recommended
+starting point for getting the official Convex guidelines in place and following
+the current Convex AI setup described in the docs:
 
 - [Convex AI docs](https://docs.convex.dev/ai)
 
@@ -39,7 +44,8 @@ After that, use the most specific Convex skill for the task:
 - Planning or running a migration: `convex-migration-helper`
 - Investigating performance issues: `convex-performance-audit`
 
-If one of those clearly matches the user's goal, switch to it instead of staying in this skill.
+If one of those clearly matches the user's goal, switch to it instead of staying
+in this skill.
 
 ## When Not to Use
 
