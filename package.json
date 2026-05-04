@@ -111,7 +111,7 @@
     "@types/semver": "^7.7.1",
     "@vitejs/plugin-react": "6.0.1",
     "@vitest/coverage-v8": "^4.1.5",
-    "jsdom": "^29.1.0",
+    "jsdom": "^29.1.1",
     "nitro": "3.0.260429-beta",
     "only-allow": "^1.2.2",
     "oxfmt": "0.47.0",
