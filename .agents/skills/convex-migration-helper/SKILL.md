@@ -1,6 +1,9 @@
 ---
 name: convex-migration-helper
-description: Plans Convex schema and data migrations with widen-migrate-narrow and @convex-dev/migrations. Use for breaking schema changes, backfills, table reshaping, or zero-downtime rollouts.
+description:
+  Plans Convex schema and data migrations with widen-migrate-narrow and
+  @convex-dev/migrations. Use for breaking schema changes, backfills, table
+  reshaping, or zero-downtime rollouts.
 ---
 
 # Convex Migration Helper
@@ -27,25 +30,32 @@ Safely migrate Convex schemas and data when making breaking changes.
 
 ### Schema Validation Drives the Workflow
 
-Convex will not let you deploy a schema that does not match the data at rest. This is the fundamental constraint that shapes every migration:
+Convex will not let you deploy a schema that does not match the data at rest.
+This is the fundamental constraint that shapes every migration:
 
 - You cannot add a required field if existing documents don't have it
 - You cannot change a field's type if existing documents have the old type
 - You cannot remove a field from the schema if existing documents still have it
 
-This means migrations follow a predictable pattern: **widen the schema, migrate the data, narrow the schema**.
+This means migrations follow a predictable pattern: **widen the schema, migrate
+the data, narrow the schema**.
 
 ### Online Migrations
 
-Convex migrations run online, meaning the app continues serving requests while data is updated asynchronously in batches. During the migration window, your code must handle both old and new data formats.
+Convex migrations run online, meaning the app continues serving requests while
+data is updated asynchronously in batches. During the migration window, your
+code must handle both old and new data formats.
 
 ### Prefer New Fields Over Changing Types
 
-When changing the shape of data, create a new field rather than modifying an existing one. This makes the transition safer and easier to roll back.
+When changing the shape of data, create a new field rather than modifying an
+existing one. This makes the transition safer and easier to roll back.
 
 ### Don't Delete Data
 
-Unless you are certain, prefer deprecating fields over deleting them. Mark the field as `v.optional` and add a code comment explaining it is deprecated and why it existed.
+Unless you are certain, prefer deprecating fields over deleting them. Mark the
+field as `v.optional` and add a code comment explaining it is deprecated and why
+it existed.
 
 ## Safe Changes (No Migration Needed)
 
@@ -88,7 +98,8 @@ Every breaking migration follows the same multi-deploy pattern:
 
 **Deploy 1 - Widen the schema:**
 
-1. Update schema to allow both old and new formats (e.g., add optional new field)
+1. Update schema to allow both old and new formats (e.g., add optional new
+   field)
 2. Update code to handle both formats when reading
 3. Update code to write the new format for new documents
 4. Deploy
@@ -106,13 +117,18 @@ Every breaking migration follows the same multi-deploy pattern:
 
 ## Using the Migrations Component
 
-For any non-trivial migration, use the [`@convex-dev/migrations`](https://www.convex.dev/components/migrations) component. It handles batching, cursor-based pagination, state tracking, resume from failure, dry runs, and progress monitoring.
+For any non-trivial migration, use the
+[`@convex-dev/migrations`](https://www.convex.dev/components/migrations)
+component. It handles batching, cursor-based pagination, state tracking, resume
+from failure, dry runs, and progress monitoring.
 
-See `references/migrations-component.md` for installation, setup, defining and running migrations, dry runs, status monitoring, and configuration options.
+See `references/migrations-component.md` for installation, setup, defining and
+running migrations, dry runs, status monitoring, and configuration options.
 
 ## Common Migration Patterns
 
-See `references/migration-patterns.md` for complete patterns with code examples covering:
+See `references/migration-patterns.md` for complete patterns with code examples
+covering:
 
 - Adding a required field
 - Deleting a field
@@ -125,12 +141,23 @@ See `references/migration-patterns.md` for complete patterns with code examples 
 
 ## Common Pitfalls
 
-1. **Making a field required before migrating data**: Convex rejects the deploy because existing documents lack the field. Always widen the schema first.
-2. **Using `.collect()` on large tables**: Hits transaction limits or causes timeouts. Use the migrations component for proper batched pagination. `.collect()` is only safe for tables you know are small.
-3. **Not writing the new format before migrating**: Documents created during the migration window will be missed, leaving unmigrated data after the migration "completes."
-4. **Skipping the dry run**: Use `dryRun: true` to validate migration logic before committing changes to production data. Catches bugs before they touch real documents.
-5. **Deleting fields prematurely**: Prefer deprecating with `v.optional` and a comment. Only delete after you are confident the data is no longer needed and no code references it.
-6. **Using crons for migration batches**: The migrations component handles batching via recursive scheduling internally. Crons require manual cleanup and an extra deploy to remove.
+1. **Making a field required before migrating data**: Convex rejects the deploy
+   because existing documents lack the field. Always widen the schema first.
+2. **Using `.collect()` on large tables**: Hits transaction limits or causes
+   timeouts. Use the migrations component for proper batched pagination.
+   `.collect()` is only safe for tables you know are small.
+3. **Not writing the new format before migrating**: Documents created during the
+   migration window will be missed, leaving unmigrated data after the migration
+   "completes."
+4. **Skipping the dry run**: Use `dryRun: true` to validate migration logic
+   before committing changes to production data. Catches bugs before they touch
+   real documents.
+5. **Deleting fields prematurely**: Prefer deprecating with `v.optional` and a
+   comment. Only delete after you are confident the data is no longer needed and
+   no code references it.
+6. **Using crons for migration batches**: The migrations component handles
+   batching via recursive scheduling internally. Crons require manual cleanup
+   and an extra deploy to remove.
 
 ## Migration Checklist
 
