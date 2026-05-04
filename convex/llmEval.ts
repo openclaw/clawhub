@@ -39,6 +39,47 @@ const llmEvalModerationModeValidator = v.optional(
 
 type LlmEvalModerationMode = "normal" | "preserve";
 
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return Boolean(value && typeof value === "object" && !Array.isArray(value));
+}
+
+function parseJsonRecord(text: string | undefined): Record<string, unknown> {
+  if (!text) return {};
+  try {
+    const parsed = JSON.parse(text) as unknown;
+    return isRecord(parsed) ? parsed : {};
+  } catch {
+    return {};
+  }
+}
+
+function normalizeStringList(value: unknown): string[] {
+  if (!Array.isArray(value)) return [];
+  return value
+    .map((entry) => (typeof entry === "string" ? entry.trim() : ""))
+    .filter((entry) => entry.length > 0);
+}
+
+export function buildOpenClawMetadataForEval(packageJsonText: string | undefined) {
+  const packageJson = parseJsonRecord(packageJsonText);
+  const openclaw = isRecord(packageJson.openclaw) ? packageJson.openclaw : {};
+  const environment = isRecord(openclaw.environment) ? openclaw.environment : {};
+  const optionalEnv = normalizeStringList(environment.optionalEnv);
+  const requiredEnv = normalizeStringList(environment.requiredEnv);
+  const configPaths = normalizeStringList(environment.configPaths);
+  const envVars = [
+    ...requiredEnv.map((name) => ({ name, required: true })),
+    ...optionalEnv.map((name) => ({ name, required: false })),
+  ];
+
+  return {
+    ...openclaw,
+    ...(envVars.length > 0 ? { envVars } : {}),
+    ...(requiredEnv.length > 0 ? { primaryEnv: requiredEnv[0] } : {}),
+    ...(configPaths.length > 0 ? { requires: { config: configPaths } } : {}),
+  };
+}
+
 async function runQueryRef<T>(
   ctx: { runQuery: (ref: never, args: never) => Promise<unknown> },
   ref: unknown,
@@ -362,10 +403,10 @@ export const evaluatePackageReleaseWithLlm = internalAction({
       }
     }
 
+    const packageJsonText = fileContents.find(
+      (entry) => entry.path.toLowerCase() === "package.json",
+    )?.content;
     if (!readmeContent) {
-      const packageJsonText = fileContents.find(
-        (entry) => entry.path.toLowerCase() === "package.json",
-      )?.content;
       readmeContent =
         packageJsonText ?? `# ${pkg.displayName}\n\n${release.summary ?? pkg.summary ?? pkg.name}`;
     }
@@ -389,6 +430,7 @@ export const evaluatePackageReleaseWithLlm = internalAction({
           capabilities: release.capabilities,
           verification: release.verification,
           staticScan: release.staticScan,
+          openclaw: buildOpenClawMetadataForEval(packageJsonText),
         },
       },
       files: release.files.map((f) => ({ path: f.path, size: f.size })),

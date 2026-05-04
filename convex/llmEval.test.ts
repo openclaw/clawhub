@@ -1,7 +1,7 @@
 /* @vitest-environment node */
 
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { backfillLlmEval } from "./llmEval";
+import { backfillLlmEval, buildOpenClawMetadataForEval } from "./llmEval";
 
 type WrappedHandler<TArgs, TResult> = {
   _handler: (ctx: unknown, args: TArgs) => Promise<TResult>;
@@ -115,6 +115,33 @@ describe("llm eval backfill", () => {
       nextCursor: 42,
       done: false,
       moderationMode: "preserve",
+    });
+  });
+});
+
+describe("package OpenClaw metadata for LLM eval", () => {
+  it("maps package openclaw.environment declarations into scanner requirements metadata", () => {
+    const metadata = buildOpenClawMetadataForEval(
+      JSON.stringify({
+        openclaw: {
+          environment: {
+            requiredEnv: ["REQUIRED_TOKEN"],
+            optionalEnv: ["OPTIONAL_API_KEY"],
+            configPaths: ["~/.openclaw/agents/main/agent/models.json"],
+          },
+        },
+      }),
+    );
+
+    expect(metadata).toMatchObject({
+      primaryEnv: "REQUIRED_TOKEN",
+      envVars: [
+        { name: "REQUIRED_TOKEN", required: true },
+        { name: "OPTIONAL_API_KEY", required: false },
+      ],
+      requires: {
+        config: ["~/.openclaw/agents/main/agent/models.json"],
+      },
     });
   });
 });
