@@ -28,7 +28,11 @@ import {
   soulsGetRouterV1Handler,
   soulsPostRouterV1Handler,
 } from "./httpApiV1/soulsV1";
-import { starsDeleteRouterV1Handler, starsPostRouterV1Handler } from "./httpApiV1/starsV1";
+import { 
+  starsDeleteRouterV1Handler, 
+  starsGetRouterV1Handler, 
+  starsPostRouterV1Handler 
+} from "./httpApiV1/starsV1";
 import { transfersGetRouterV1Handler } from "./httpApiV1/transfersV1";
 import { usersListV1Handler, usersPostRouterV1Handler } from "./httpApiV1/usersV1";
 import { whoamiV1Handler } from "./httpApiV1/whoamiV1";
@@ -60,6 +64,7 @@ export const soulsPostRouterV1Http = httpAction(soulsPostRouterV1Handler);
 export const soulsDeleteRouterV1Http = httpAction(soulsDeleteRouterV1Handler);
 
 export const starsPostRouterV1Http = httpAction(starsPostRouterV1Handler);
+export const starsGetRouterV1Http = httpAction(starsGetRouterV1Handler);
 export const starsDeleteRouterV1Http = httpAction(starsDeleteRouterV1Handler);
 export const transfersGetRouterV1Http = httpAction(transfersGetRouterV1Handler);
 
@@ -92,6 +97,7 @@ export const __handlers = {
   soulsPostRouterV1Handler,
   soulsDeleteRouterV1Handler,
   starsPostRouterV1Handler,
+  starsGetRouterV1Handler,
   starsDeleteRouterV1Handler,
   transfersGetRouterV1Handler,
   whoamiV1Handler,

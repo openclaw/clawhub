@@ -2,7 +2,7 @@ import { internal } from "../_generated/api";
 import type { ActionCtx } from "../_generated/server";
 import { requireApiTokenUser } from "../lib/apiTokenAuth";
 import { applyRateLimit } from "../lib/httpRateLimit";
-import { getPathSegments, json, text } from "./shared";
+import { getPathSegments, json, resolveTagsBatch, text, toOptionalNumber } from "./shared";
 
 export async function starsPostRouterV1Handler(ctx: ActionCtx, request: Request) {
   const rate = await applyRateLimit(ctx, request, "write");
@@ -48,6 +48,43 @@ export async function starsDeleteRouterV1Handler(ctx: ActionCtx, request: Reques
       skillId: skill._id,
     });
     return json(result, 200, rate.headers);
+  } catch {
+    return text("Unauthorized", 401, rate.headers);
+  }
+}
+
+export async function starsGetRouterV1Handler(ctx: ActionCtx, request: Request) {
+  const rate = await applyRateLimit(ctx, request, "read");
+  if (!rate.ok) return rate.response;
+
+  try {
+    const { userId } = await requireApiTokenUser(ctx, request);
+
+    const url = new URL(request.url);
+    const rawLimit = toOptionalNumber(url.searchParams.get("limit"));
+    const limit = rawLimit !== undefined ? Math.min(Math.max(1, rawLimit), 200) : undefined;
+
+    const result = await ctx.runQuery(internal.stars.listStarsByUserInternal, {
+      userId,
+      limit,
+    });
+
+    const resolvedTagsList = await resolveTagsBatch(
+      ctx,
+      result.items.map((item) => item.tags),
+    );
+
+    const items = result.items.map((item, idx) => ({
+      slug: item.slug,
+      displayName: item.displayName,
+      summary: item.summary ?? null,
+      tags: resolvedTagsList[idx],
+      stats: item.stats,
+      createdAt: item.createdAt,
+      updatedAt: item.updatedAt,
+    }));
+
+    return json({ items }, 200, rate.headers);
   } catch {
     return text("Unauthorized", 401, rate.headers);
   }
