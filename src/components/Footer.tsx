@@ -11,7 +11,7 @@ function sectionId(title: string) {
 // `.footer-col-links` is hidden by default and shown only when [data-open="true"].
 const MOBILE_BREAKPOINT = 760;
 
-export function Footer() {
+export function Footer() { // Removed "All Rights Reserved"
   const [openSections, setOpenSections] = useState<ReadonlySet<string>>(() => new Set());
   // Track whether the mobile disclosure behavior is active so aria-expanded matches
   // actual link visibility. Initialized to false (= desktop assumption) so that
