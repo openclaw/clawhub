@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+### Added
+
+- Local dev: support Ollama embeddings for anonymous Convex deployments and add `setup:local-embeddings` to configure searchable seed data without an OpenAI key (#2012) (thanks @fuller-stack-dev).
+
 ### Fixes
 
 - CLI/moderation: allow `delete`, `hide`, `undelete`, and `unhide` to record moderation reasons in skill notes and audit logs for legal or policy reviews (thanks @steipete).
