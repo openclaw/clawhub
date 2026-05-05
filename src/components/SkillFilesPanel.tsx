@@ -11,10 +11,7 @@ type SkillFilesPanelProps = {
   latestFiles: SkillFile[];
 };
 
-export function SkillFilesPanel({
-  versionId,
-  latestFiles,
-}: SkillFilesPanelProps) {
+export function SkillFilesPanel({ versionId, latestFiles }: SkillFilesPanelProps) {
   const getFileText = useAction(api.skills.getFileText);
   const [selectedPath, setSelectedPath] = useState<string | null>(null);
   const [fileContent, setFileContent] = useState<string | null>(null);
@@ -89,12 +86,8 @@ export function SkillFilesPanel({
       <div className="file-browser">
         <div className="file-list">
           <div className="file-list-header">
-            <h3 className="section-title text-[1.05rem] m-0">
-              Files
-            </h3>
-            <span className="section-subtitle m-0">
-              {latestFiles.length} total
-            </span>
+            <h3 className="section-title text-[1.05rem] m-0">Files</h3>
+            <span className="section-subtitle m-0">{latestFiles.length} total</span>
           </div>
           <div className="file-list-body">
             {latestFiles.length === 0 ? (

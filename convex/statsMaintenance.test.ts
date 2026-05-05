@@ -215,7 +215,7 @@ describe("reconcileSkillStarCounts", () => {
     // it should NOT trigger a patch based on the star count alone.
     const skill = {
       _id: "skills:1",
-      statsStars: 5,           // canonical value — correct
+      statsStars: 5, // canonical value — correct
       stats: { stars: 99, comments: 0 }, // legacy value — stale, but not reconcile's concern
     };
 
@@ -249,7 +249,7 @@ describe("reconcileSkillStarCounts", () => {
   it("patches both statsStars and stats.stars when canonical value drifts from actual count", async () => {
     const skill = {
       _id: "skills:1",
-      statsStars: 10,           // canonical value — out of sync with actual
+      statsStars: 10, // canonical value — out of sync with actual
       stats: { stars: 10, comments: 0 },
     };
 
@@ -259,10 +259,13 @@ describe("reconcileSkillStarCounts", () => {
 
     expect(result.scanned).toBe(1);
     expect(result.patched).toBe(1);
-    expect(patch).toHaveBeenCalledWith("skills:1", expect.objectContaining({
-      statsStars: 7,
-      stats: expect.objectContaining({ stars: 7 }),
-    }));
+    expect(patch).toHaveBeenCalledWith(
+      "skills:1",
+      expect.objectContaining({
+        statsStars: 7,
+        stats: expect.objectContaining({ stars: 7 }),
+      }),
+    );
   });
 
   it("patches when comment count drifts even if star count is correct", async () => {
@@ -278,9 +281,12 @@ describe("reconcileSkillStarCounts", () => {
 
     expect(result.scanned).toBe(1);
     expect(result.patched).toBe(1);
-    expect(patch).toHaveBeenCalledWith("skills:1", expect.objectContaining({
-      stats: expect.objectContaining({ comments: 3 }),
-    }));
+    expect(patch).toHaveBeenCalledWith(
+      "skills:1",
+      expect.objectContaining({
+        stats: expect.objectContaining({ comments: 3 }),
+      }),
+    );
   });
 
   it("skips soft-deleted skills", async () => {

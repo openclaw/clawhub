@@ -228,9 +228,7 @@ export function Dashboard() {
       <div className="dashboard-header">
         <div>
           <h1 className="section-title m-0">Dashboard</h1>
-          <p className="section-subtitle m-0">
-            View your published skills and plugins.
-          </p>
+          <p className="section-subtitle m-0">View your published skills and plugins.</p>
         </div>
       </div>
 
@@ -306,11 +304,7 @@ function SkillRow({ skill, ownerHandle }: { skill: DashboardSkill; ownerHandle: 
     <div className="dashboard-list-row">
       <div className="dashboard-list-primary">
         <div className="dashboard-list-title">
-          <Link
-            to="/$owner/$slug"
-            params={detailParams}
-            className="dashboard-skill-name"
-          >
+          <Link to="/$owner/$slug" params={detailParams} className="dashboard-skill-name">
             {skill.displayName}
           </Link>
         </div>

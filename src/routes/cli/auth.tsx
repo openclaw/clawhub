@@ -18,7 +18,9 @@ type CliAuthProps = {
   navigate?: (url: string) => void;
 };
 
-export function CliAuth({ navigate = (url: string) => window.location.assign(url) }: CliAuthProps = {}) {
+export function CliAuth({
+  navigate = (url: string) => window.location.assign(url),
+}: CliAuthProps = {}) {
   const { isAuthenticated, isLoading, me } = useAuthStatus();
   const { error: authError, clear: clearAuthError } = useAuthError();
   const createToken = useMutation(api.tokens.create);
@@ -79,7 +81,17 @@ export function CliAuth({ navigate = (url: string) => window.location.assign(url
       setStatus(message);
       setToken(null);
     });
-  }, [createToken, isAuthenticated, label, me, navigate, redirectUri, registry, safeRedirect, state]);
+  }, [
+    createToken,
+    isAuthenticated,
+    label,
+    me,
+    navigate,
+    redirectUri,
+    registry,
+    safeRedirect,
+    state,
+  ]);
 
   if (!safeRedirect) {
     return (
@@ -169,9 +181,9 @@ export function CliAuth({ navigate = (url: string) => window.location.assign(url
             {token ? (
               <div className="text-sm text-[color:var(--ink-soft)] overflow-x-auto">
                 <div className="mb-2">
-              If the redirect did not complete, copy this token and run{" "}
-              <code>clawhub login --token &lt;token&gt;</code>:
-            </div>
+                  If the redirect did not complete, copy this token and run{" "}
+                  <code>clawhub login --token &lt;token&gt;</code>:
+                </div>
                 <code className="font-mono text-xs">{token}</code>
                 {callbackUrl ? (
                   <div className="mt-2">

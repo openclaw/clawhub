@@ -114,9 +114,7 @@ function UserProfile() {
         <>
           {published.length > 0 ? (
             <>
-              <h2 className="home-section-title mb-3">
-                Published ({published.length})
-              </h2>
+              <h2 className="home-section-title mb-3">Published ({published.length})</h2>
               {isLoadingPublished ? (
                 <Card>
                   <div className="loading-indicator">Loading published skills...</div>
@@ -131,9 +129,7 @@ function UserProfile() {
             </>
           ) : null}
 
-          <h2 className="home-section-title mb-3">
-            Stars ({skills.length})
-          </h2>
+          <h2 className="home-section-title mb-3">Stars ({skills.length})</h2>
           {isLoadingSkills ? (
             <Card>
               <div className="loading-indicator">Loading stars...</div>
@@ -164,9 +160,7 @@ function InstalledSection(props: {
   if (data === undefined) {
     return (
       <>
-        <h2 className="section-title text-xl">
-          Installed
-        </h2>
+        <h2 className="section-title text-xl">Installed</h2>
         <Card>
           <div className="loading-indicator">Loading telemetry…</div>
         </Card>
@@ -177,9 +171,7 @@ function InstalledSection(props: {
   if (data === null) {
     return (
       <>
-        <h2 className="section-title text-xl">
-          Installed
-        </h2>
+        <h2 className="section-title text-xl">Installed</h2>
         <Card>Sign in to view your installed skills.</Card>
       </>
     );
@@ -187,9 +179,7 @@ function InstalledSection(props: {
 
   return (
     <>
-      <h2 className="section-title text-xl">
-        Installed
-      </h2>
+      <h2 className="section-title text-xl">Installed</h2>
       <p className="section-subtitle max-w-[760px]">
         Private view. Only you can see your folders/roots. Everyone else only sees aggregated
         install counts per skill.
@@ -214,9 +204,7 @@ function InstalledSection(props: {
 
       {showRaw ? (
         <Card className="telemetry-json mb-4">
-          <pre className="mono m-0 whitespace-pre-wrap">
-            {JSON.stringify(data, null, 2)}
-          </pre>
+          <pre className="mono m-0 whitespace-pre-wrap">{JSON.stringify(data, null, 2)}</pre>
         </Card>
       ) : null}
 

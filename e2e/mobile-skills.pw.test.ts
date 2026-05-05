@@ -3,10 +3,7 @@ import { expectHealthyPage, trackRuntimeErrors } from "./helpers/runtimeErrors";
 
 // Only run in mobile projects — skip on desktop
 test.beforeEach(({}, testInfo) => {
-  test.skip(
-    !testInfo.project.name.includes("mobile"),
-    "mobile-only test",
-  );
+  test.skip(!testInfo.project.name.includes("mobile"), "mobile-only test");
 });
 
 test("browse page has no horizontal overflow on mobile", async ({ page }) => {
@@ -75,12 +72,13 @@ test("skill detail page has no horizontal overflow on mobile", async ({ page, re
   };
   const ownerHandle = payload.owner?.handle?.trim();
   const slug = payload.skill?.slug?.trim();
-  test.skip(!ownerHandle || !slug || !payload.skill?.displayName, "fixture missing owner handle, slug, or displayName");
+  test.skip(
+    !ownerHandle || !slug || !payload.skill?.displayName,
+    "fixture missing owner handle, slug, or displayName",
+  );
 
   await page.goto(`/${ownerHandle}/${slug}`, { waitUntil: "domcontentloaded" });
-  await expect(
-    page.getByRole("heading", { name: payload.skill!.displayName! }),
-  ).toBeVisible();
+  await expect(page.getByRole("heading", { name: payload.skill!.displayName! })).toBeVisible();
 
   const scrollWidth = await page.evaluate(() => document.documentElement.scrollWidth);
   const clientWidth = await page.evaluate(() => document.documentElement.clientWidth);

@@ -145,8 +145,7 @@ export async function buildRescanState(
     maxRequests: MAX_OWNER_RESCAN_REQUESTS_PER_RELEASE,
     requestCount,
     remainingRequests: Math.max(0, MAX_OWNER_RESCAN_REQUESTS_PER_RELEASE - requestCount),
-    canRequest:
-      requestCount < MAX_OWNER_RESCAN_REQUESTS_PER_RELEASE && inProgressRequest === null,
+    canRequest: requestCount < MAX_OWNER_RESCAN_REQUESTS_PER_RELEASE && inProgressRequest === null,
     inProgressRequest: serializeRescanRequest(inProgressRequest),
     latestRequest: serializeRescanRequest(requests[0] ?? null),
   };

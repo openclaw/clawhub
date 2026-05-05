@@ -1,5 +1,5 @@
-import ignore from "ignore";
 import { normalizeTextContentType } from "clawhub-schema/textFiles";
+import ignore from "ignore";
 
 type NormalizePackageUploadPathOptions = {
   stripTopLevelFolder?: boolean;

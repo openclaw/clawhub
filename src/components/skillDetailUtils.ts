@@ -256,7 +256,9 @@ export function formatOpenClawPrompt({
     lines.push(`Config paths to check: ${clawdis.requires.config.join(", ")}`);
   }
 
-  lines.push("Use only the metadata you can verify from ClawHub; do not invent missing requirements.");
+  lines.push(
+    "Use only the metadata you can verify from ClawHub; do not invent missing requirements.",
+  );
   lines.push("Ask before making any broader environment changes.");
   return lines.join("\n");
 }

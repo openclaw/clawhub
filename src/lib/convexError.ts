@@ -28,10 +28,7 @@ export function getUserFacingConvexError(error: unknown, fallback: string) {
 
   if (hasOwnProperty(maybe, "data")) {
     if (typeof maybe.data === "string") candidates.push(maybe.data);
-    if (
-      hasOwnProperty(maybe.data, "message") &&
-      typeof maybe.data.message === "string"
-    ) {
+    if (hasOwnProperty(maybe.data, "message") && typeof maybe.data.message === "string") {
       candidates.push(maybe.data.message);
     }
   }

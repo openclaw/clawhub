@@ -314,12 +314,7 @@ function hasLlmDimensionWarnings(dimensions: LlmEvalDimension[] | undefined) {
 function buildSkillSecuritySnapshot(
   version: Pick<
     PublicSkillVersionResponse,
-    | "sha256hash"
-    | "vtAnalysis"
-    | "trentAnalysis"
-    | "llmAnalysis"
-    | "staticScan"
-    | "capabilityTags"
+    "sha256hash" | "vtAnalysis" | "trentAnalysis" | "llmAnalysis" | "staticScan" | "capabilityTags"
   >,
 ): SkillSecuritySnapshot | null {
   const capabilityTags = version.capabilityTags ?? [];

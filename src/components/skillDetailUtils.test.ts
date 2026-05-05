@@ -13,7 +13,9 @@ describe("skill detail install helpers", () => {
   const ownerPublisherId = "publishers:1" as Id<"publishers">;
 
   it("prefers the owner handle for install targets", () => {
-    expect(buildSkillInstallTarget("steipete", ownerPublisherId, "weather")).toBe("steipete/weather");
+    expect(buildSkillInstallTarget("steipete", ownerPublisherId, "weather")).toBe(
+      "steipete/weather",
+    );
   });
 
   it("falls back to owner id and then plain slug", () => {
@@ -23,11 +25,15 @@ describe("skill detail install helpers", () => {
 
   it("formats the OpenClaw and ClawHub commands", () => {
     expect(formatOpenClawInstallCommand("weather")).toBe("openclaw skills install weather");
-    expect(formatClawHubInstallCommand("weather", "npm")).toBe("npx clawhub@latest install weather");
+    expect(formatClawHubInstallCommand("weather", "npm")).toBe(
+      "npx clawhub@latest install weather",
+    );
     expect(formatClawHubInstallCommand("weather", "pnpm")).toBe(
       "pnpm dlx clawhub@latest install weather",
     );
-    expect(formatClawHubInstallCommand("weather", "bun")).toBe("bunx clawhub@latest install weather");
+    expect(formatClawHubInstallCommand("weather", "bun")).toBe(
+      "bunx clawhub@latest install weather",
+    );
   });
 
   it("builds the install-and-setup prompt from known metadata only", () => {

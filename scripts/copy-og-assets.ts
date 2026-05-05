@@ -25,10 +25,14 @@ const resvgWasmSource = await resolveExistingPath(
   nodeModuleCandidates("@resvg/resvg-wasm/index_bg.wasm"),
 );
 const bricolage800Source = await resolveExistingPath(
-  nodeModuleCandidates("@fontsource/bricolage-grotesque/files/bricolage-grotesque-latin-800-normal.woff2"),
+  nodeModuleCandidates(
+    "@fontsource/bricolage-grotesque/files/bricolage-grotesque-latin-800-normal.woff2",
+  ),
 );
 const bricolage500Source = await resolveExistingPath(
-  nodeModuleCandidates("@fontsource/bricolage-grotesque/files/bricolage-grotesque-latin-500-normal.woff2"),
+  nodeModuleCandidates(
+    "@fontsource/bricolage-grotesque/files/bricolage-grotesque-latin-500-normal.woff2",
+  ),
 );
 const ibmPlex500Source = await resolveExistingPath(
   nodeModuleCandidates("@fontsource/ibm-plex-mono/files/ibm-plex-mono-latin-500-normal.woff2"),

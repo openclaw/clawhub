@@ -1,19 +1,11 @@
 import { createFileRoute, notFound, redirect } from "@tanstack/react-router";
 import { useQuery } from "convex/react";
 import { api } from "../../../../../convex/_generated/api";
-import {
-  SecurityScannerPage,
-  type ScannerSlug,
-} from "../../../../components/SecurityScannerPage";
+import { SecurityScannerPage, type ScannerSlug } from "../../../../components/SecurityScannerPage";
 import { buildSkillMeta } from "../../../../lib/og";
 import { fetchSkillPageData } from "../../../../lib/skillPage";
 
-const SCANNERS = new Set<ScannerSlug>([
-  "virustotal",
-  "trentclaw",
-  "openclaw",
-  "static-analysis",
-]);
+const SCANNERS = new Set<ScannerSlug>(["virustotal", "trentclaw", "openclaw", "static-analysis"]);
 
 function parseScanner(scanner: string): ScannerSlug {
   if (SCANNERS.has(scanner as ScannerSlug)) return scanner as ScannerSlug;

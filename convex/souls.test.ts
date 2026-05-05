@@ -10,7 +10,8 @@ const insertVersionHandler = (insertVersion as unknown as WrappedHandler<Record<
 const getSoulBySlugInternalHandler = (
   getSoulBySlugInternal as unknown as WrappedHandler<{ slug: string }>
 )._handler;
-const listHandler = (list as unknown as WrappedHandler<{ ownerUserId?: string; limit?: number }>)._handler;
+const listHandler = (list as unknown as WrappedHandler<{ ownerUserId?: string; limit?: number }>)
+  ._handler;
 
 describe("souls.insertVersion", () => {
   it("throws a soul-specific ownership error for non-owners", async () => {

@@ -252,9 +252,9 @@ describe("SkillsIndex", () => {
       await vi.runAllTimersAsync();
     });
 
-    const titles = Array.from(
-      document.querySelectorAll(".skill-list-item-name"),
-    ).map((node) => node.textContent);
+    const titles = Array.from(document.querySelectorAll(".skill-list-item-name")).map(
+      (node) => node.textContent,
+    );
 
     expect(titles[0]).toBe("Older High Score");
     expect(titles[1]).toBe("Newer Low Score");

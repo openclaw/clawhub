@@ -59,7 +59,6 @@ export function SkillDetailSkeleton() {
             <Skeleton className="h-4 w-2/3" />
           </div>
         </div>
-
       </div>
     </div>
   );

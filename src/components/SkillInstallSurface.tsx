@@ -129,8 +129,8 @@ export function SkillInstallSurface({
           <p className="skill-install-kicker">OpenClaw Prompt Flow</p>
           <h3 className="skill-install-panel-title">Install with OpenClaw</h3>
           <p className="skill-install-panel-copy">
-            Best for remote or guided setup. Copy the exact prompt, then paste it into OpenClaw
-            for <code translate="no">{installTarget}</code>.
+            Best for remote or guided setup. Copy the exact prompt, then paste it into OpenClaw for{" "}
+            <code translate="no">{installTarget}</code>.
           </p>
         </div>
 
@@ -207,9 +207,7 @@ export function SkillCommandLineCard({
             type="button"
             role="tab"
             aria-selected={activeInstallTab === "prompt"}
-            className={`install-switcher-pill${
-              activeInstallTab === "prompt" ? " is-active" : ""
-            }`}
+            className={`install-switcher-pill${activeInstallTab === "prompt" ? " is-active" : ""}`}
             onClick={() => setActiveInstallTab("prompt")}
           >
             Prompt
@@ -230,9 +228,7 @@ export function SkillCommandLineCard({
         <InstallCopyButton
           text={activeInstallTab === "prompt" ? promptPreview : openClawCommand}
           ariaLabel={
-            activeInstallTab === "prompt"
-              ? "Copy OpenClaw prompt"
-              : "Copy OpenClaw CLI command"
+            activeInstallTab === "prompt" ? "Copy OpenClaw prompt" : "Copy OpenClaw CLI command"
           }
           className="skill-install-command-inline-button"
           showLabel={false}

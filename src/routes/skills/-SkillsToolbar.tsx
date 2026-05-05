@@ -16,7 +16,6 @@ import {
 } from "lucide-react";
 import type { RefObject } from "react";
 import { useMemo } from "react";
-import { SKILL_CATEGORIES, type SkillCategory } from "../../lib/categories";
 import { Button } from "../../components/ui/button";
 import { Input } from "../../components/ui/input";
 import {
@@ -26,6 +25,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "../../components/ui/select";
+import { SKILL_CATEGORIES, type SkillCategory } from "../../lib/categories";
 import { type SortDir, type SortKey } from "./-params";
 
 type SkillsToolbarProps = {
@@ -89,9 +89,8 @@ export function SkillsToolbar({
   const activeCategory = useMemo(() => {
     if (query === "__other__") return "other";
     if (!query) return undefined;
-    return SKILL_CATEGORIES.find((c) =>
-      c.keywords.some((k) => k === query.trim().toLowerCase()),
-    )?.slug;
+    return SKILL_CATEGORIES.find((c) => c.keywords.some((k) => k === query.trim().toLowerCase()))
+      ?.slug;
   }, [query]);
 
   const handleCategoryChange = (cat: SkillCategory | undefined) => {

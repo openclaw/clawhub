@@ -1,7 +1,7 @@
 import type { RefObject } from "react";
 import { SkillCard } from "../../components/SkillCard";
-import { SkillListItem } from "../../components/SkillListItem";
 import { getPlatformLabels } from "../../components/skillDetailUtils";
+import { SkillListItem } from "../../components/SkillListItem";
 import { SkillStatsTripletLine } from "../../components/SkillStats";
 import { Button } from "../../components/ui/button";
 import { UserBadge } from "../../components/UserBadge";
@@ -52,7 +52,9 @@ export function SkillsResults({
         <div className="empty-state">
           <p className="empty-state-title">No skills found</p>
           <p className="empty-state-body">
-            {hasQuery ? "Try a different search term or remove filters." : "No skills have been published yet."}
+            {hasQuery
+              ? "Try a different search term or remove filters."
+              : "No skills have been published yet."}
           </p>
         </div>
       ) : view === "cards" ? (
@@ -108,10 +110,7 @@ export function SkillsResults({
       )}
 
       {canLoadMore || isLoadingMore ? (
-        <div
-          ref={canAutoLoad ? loadMoreRef : null}
-          className="card mt-4 flex justify-center"
-        >
+        <div ref={canAutoLoad ? loadMoreRef : null} className="card mt-4 flex justify-center">
           {canAutoLoad ? (
             isLoadingMore ? (
               "Loading more..."

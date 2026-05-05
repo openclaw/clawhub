@@ -10,14 +10,14 @@ This document outlines the design rules, patterns, and guidelines for the ClawHu
 
 ClawHub uses a strict **3-5 color palette** based on the OpenClaw brand:
 
-| Token | Light Mode | Dark Mode | Usage |
-|-------|------------|-----------|-------|
-| `--accent` | `#dc2626` | `#dc2626` | Primary actions, interactive elements, emphasis |
-| `--accent-deep` | `#b91c1c` | `#ef4444` | Hover states, secondary emphasis |
-| `--ink` | `#0a0a0a` | `#fafafa` | Primary text |
-| `--ink-soft` | `#525252` | `#a1a1a1` | Secondary text, descriptions |
-| `--surface` | `#ffffff` | `#121212` | Card backgrounds, elevated surfaces |
-| `--bg` | `#fafafa` | `#0a0a0a` | Page background |
+| Token           | Light Mode | Dark Mode | Usage                                           |
+| --------------- | ---------- | --------- | ----------------------------------------------- |
+| `--accent`      | `#dc2626`  | `#dc2626` | Primary actions, interactive elements, emphasis |
+| `--accent-deep` | `#b91c1c`  | `#ef4444` | Hover states, secondary emphasis                |
+| `--ink`         | `#0a0a0a`  | `#fafafa` | Primary text                                    |
+| `--ink-soft`    | `#525252`  | `#a1a1a1` | Secondary text, descriptions                    |
+| `--surface`     | `#ffffff`  | `#121212` | Card backgrounds, elevated surfaces             |
+| `--bg`          | `#fafafa`  | `#0a0a0a` | Page background                                 |
 
 ### Rules
 
@@ -33,21 +33,21 @@ ClawHub uses a strict **3-5 color palette** based on the OpenClaw brand:
 ### Font Stack
 
 ```css
---font-sans: 'Geist', system-ui, sans-serif;
---font-mono: 'Geist Mono', monospace;
---font-display: 'Geist', system-ui, sans-serif;
+--font-sans: "Geist", system-ui, sans-serif;
+--font-mono: "Geist Mono", monospace;
+--font-display: "Geist", system-ui, sans-serif;
 ```
 
 ### Scale
 
-| Token | Size | Usage |
-|-------|------|-------|
-| `--fs-xs` | 0.75rem (12px) | Labels, badges, metadata |
-| `--fs-sm` | 0.875rem (14px) | Body text, descriptions |
-| `--fs-base` | 1rem (16px) | Default body text |
-| `--fs-md` | 1.125rem (18px) | Subheadings |
-| `--fs-lg` | 1.25rem (20px) | Section titles |
-| `--fs-xl` | 1.5rem (24px) | Page headings |
+| Token       | Size            | Usage                    |
+| ----------- | --------------- | ------------------------ |
+| `--fs-xs`   | 0.75rem (12px)  | Labels, badges, metadata |
+| `--fs-sm`   | 0.875rem (14px) | Body text, descriptions  |
+| `--fs-base` | 1rem (16px)     | Default body text        |
+| `--fs-md`   | 1.125rem (18px) | Subheadings              |
+| `--fs-lg`   | 1.25rem (20px)  | Section titles           |
+| `--fs-xl`   | 1.5rem (24px)   | Page headings            |
 
 ### Rules
 
@@ -72,25 +72,24 @@ Use this hierarchy for layout decisions:
 ### Spacing Scale
 
 ```css
---space-1: 0.25rem   /* 4px */
---space-2: 0.5rem    /* 8px */
---space-3: 0.75rem   /* 12px */
---space-4: 1rem      /* 16px */
---space-5: 1.5rem    /* 24px */
---space-6: 2rem      /* 32px */
+--space-1: 0.25rem /* 4px */ --space-2: 0.5rem /* 8px */ --space-3: 0.75rem /* 12px */
+  --space-4: 1rem /* 16px */ --space-5: 1.5rem /* 24px */ --space-6: 2rem /* 32px */;
 ```
 
 ### Grid Patterns
 
 #### Auto-fit Grid (Recommended for Cards)
+
 ```css
 grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
 ```
+
 - Automatically adjusts columns based on container width
 - Prevents orphan items on partial rows
 - Maintains consistent card widths
 
 #### Fixed Grid (When exact columns needed)
+
 ```css
 /* 3-column at desktop, 2 at tablet, 1 at mobile */
 grid-template-columns: repeat(3, minmax(0, 1fr));
@@ -106,11 +105,11 @@ grid-template-columns: repeat(3, minmax(0, 1fr));
 
 ### Container Widths
 
-| Size | Max Width | Usage |
-|------|-----------|-------|
-| Default | `--page-max` (1200px) | Standard pages |
-| Narrow | `--page-narrow` (720px) | Reading content, forms |
-| Wide | Full width | Dashboards, data tables |
+| Size    | Max Width               | Usage                   |
+| ------- | ----------------------- | ----------------------- |
+| Default | `--page-max` (1200px)   | Standard pages          |
+| Narrow  | `--page-narrow` (720px) | Reading content, forms  |
+| Wide    | Full width              | Dashboards, data tables |
 
 ---
 
@@ -128,20 +127,22 @@ grid-template-columns: repeat(3, minmax(0, 1fr));
 ```
 
 **Rules:**
+
 - Always use `display: flex; flex-direction: column;` for consistent height
 - Add `flex: 1` to content area for equal-height cards in grids
 - Include hover state with `border-color` and subtle `box-shadow`
 
 ### Buttons
 
-| Variant | Usage |
-|---------|-------|
-| `primary` | Main actions (Submit, Save, Download) |
-| `secondary` | Alternative actions |
-| `ghost` | Tertiary actions, navigation |
-| `destructive` | Delete, remove, dangerous actions |
+| Variant       | Usage                                 |
+| ------------- | ------------------------------------- |
+| `primary`     | Main actions (Submit, Save, Download) |
+| `secondary`   | Alternative actions                   |
+| `ghost`       | Tertiary actions, navigation          |
+| `destructive` | Delete, remove, dangerous actions     |
 
 **Rules:**
+
 - Always include visible focus state
 - Minimum touch target: 44x44px on mobile
 - Include `aria-label` when icon-only
@@ -314,17 +315,22 @@ grid-template-columns: repeat(3, minmax(0, 1fr));
 
 ```css
 /* Component */
-.component-name { }
+.component-name {
+}
 
 /* Component modifier */
-.component-name.variant { }
+.component-name.variant {
+}
 
 /* Component child */
-.component-name-child { }
+.component-name-child {
+}
 
 /* State */
-.component-name.is-active { }
-.component-name[data-state="open"] { }
+.component-name.is-active {
+}
+.component-name[data-state="open"] {
+}
 ```
 
 ### File Organization

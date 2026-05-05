@@ -1,8 +1,8 @@
 import { Link } from "@tanstack/react-router";
 import type { ReactNode } from "react";
+import type { PublicSkill } from "../lib/publicUser";
 import { MarketplaceIcon } from "./MarketplaceIcon";
 import { Badge } from "./ui/badge";
-import type { PublicSkill } from "../lib/publicUser";
 
 type SkillCardProps = {
   skill: PublicSkill;
@@ -33,9 +33,7 @@ export function SkillCard({
       {hasTags ? (
         <div className="skill-card-tags">
           {badges.map((label) => (
-            <Badge key={label}>
-              {label}
-            </Badge>
+            <Badge key={label}>{label}</Badge>
           ))}
           {chip ? <Badge variant="accent">{chip}</Badge> : null}
           {platformLabels?.map((label) => (

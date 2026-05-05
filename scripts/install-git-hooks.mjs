@@ -33,9 +33,13 @@ const hookSnippet = `
 `;
 
 if (!existsSync(preCommitPath)) {
-  writeFileSync(preCommitPath, `#!/bin/sh
+  writeFileSync(
+    preCommitPath,
+    `#!/bin/sh
 set -eu${hookSnippet}
-`, "utf8");
+`,
+    "utf8",
+  );
   chmodSync(preCommitPath, 0o755);
   process.exit(0);
 }
@@ -45,6 +49,10 @@ if (existing.includes("pre-commit-secret-scan")) {
   process.exit(0);
 }
 
-writeFileSync(preCommitPath, `${existing.trimEnd()}${hookSnippet}
-`, "utf8");
+writeFileSync(
+  preCommitPath,
+  `${existing.trimEnd()}${hookSnippet}
+`,
+  "utf8",
+);
 chmodSync(preCommitPath, 0o755);

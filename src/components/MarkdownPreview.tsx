@@ -32,11 +32,7 @@ const schema = {
 // sees user-authored HTML; shiki's trusted styled output flows through after.
 // rehypeProxyImages rewrites after sanitize so we rewrite only already-safe
 // <img src="..."> nodes (sanitize strips event handlers, javascript: URLs).
-const baseRehype: PluggableList = [
-  rehypeRaw,
-  [rehypeSanitize, schema],
-  rehypeProxyImages,
-];
+const baseRehype: PluggableList = [rehypeRaw, [rehypeSanitize, schema], rehypeProxyImages];
 
 const SHIKI_THEME = "github-dark";
 const SHIKI_LANGS = [
@@ -99,10 +95,7 @@ export function MarkdownPreview({ children, className, highlight = true }: Markd
 
   const rehypePlugins = useMemo<PluggableList>(() => {
     if (highlight && highlighter) {
-      return [
-        ...baseRehype,
-        [rehypeShikiFromHighlighter, highlighter, { theme: SHIKI_THEME }],
-      ];
+      return [...baseRehype, [rehypeShikiFromHighlighter, highlighter, { theme: SHIKI_THEME }]];
     }
     return baseRehype;
   }, [highlight, highlighter]);

@@ -62,11 +62,7 @@ describe("clawhub rescan auto-response classifier", () => {
       "Skill flagged as suspicious",
       "This skill should be clean now. Please tell me how to clear the flag.",
     ],
-    [
-      1903,
-      "supicious flag on plugin",
-      "The plugin is incorrectly flagged and needs a fresh scan.",
-    ],
+    [1903, "supicious flag on plugin", "The plugin is incorrectly flagged and needs a fresh scan."],
   ])("matches explicit rescan/re-evaluation request #%s", (number, title, body) => {
     const result = classifyRescanRequest(issue({ number, title, body }));
 

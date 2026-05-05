@@ -1,8 +1,5 @@
 import { describe, expect, it } from "vitest";
-import {
-  normalizeTrentSkillVerdictForSecurity,
-  parseTrentSkillVerdictPayload,
-} from "./trent";
+import { normalizeTrentSkillVerdictForSecurity, parseTrentSkillVerdictPayload } from "./trent";
 
 const hash = "a".repeat(64);
 

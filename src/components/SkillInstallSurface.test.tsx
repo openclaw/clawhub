@@ -11,13 +11,7 @@ vi.mock("./ui/dropdown-menu", () => ({
   DropdownMenu: ({ children }: { children: ReactNode }) => <div>{children}</div>,
   DropdownMenuTrigger: ({ children }: { children: ReactNode }) => <div>{children}</div>,
   DropdownMenuContent: ({ children }: { children: ReactNode }) => <div>{children}</div>,
-  DropdownMenuItem: ({
-    children,
-    onSelect,
-  }: {
-    children: ReactNode;
-    onSelect?: () => void;
-  }) => (
+  DropdownMenuItem: ({ children, onSelect }: { children: ReactNode; onSelect?: () => void }) => (
     <button type="button" onClick={() => onSelect?.()}>
       {children}
     </button>
@@ -85,9 +79,7 @@ describe("SkillInstallSurface", () => {
     expect(screen.getByText("openclaw skills install weather")).toBeTruthy();
     expect(screen.queryByText("npx clawhub@latest install weather")).toBeNull();
     expect(screen.getByRole("tab", { name: "CLI" }).getAttribute("aria-selected")).toBe("true");
-    expect(screen.getByRole("tab", { name: "Prompt" }).getAttribute("aria-selected")).toBe(
-      "false",
-    );
+    expect(screen.getByRole("tab", { name: "Prompt" }).getAttribute("aria-selected")).toBe("false");
 
     fireEvent.click(screen.getByRole("button", { name: "Copy OpenClaw CLI command" }));
 
@@ -98,9 +90,7 @@ describe("SkillInstallSurface", () => {
     fireEvent.click(screen.getByRole("tab", { name: "Prompt" }));
 
     expect(screen.getByText(/Install the skill "Weather"/i)).toBeTruthy();
-    expect(screen.getByRole("tab", { name: "Prompt" }).getAttribute("aria-selected")).toBe(
-      "true",
-    );
+    expect(screen.getByRole("tab", { name: "Prompt" }).getAttribute("aria-selected")).toBe("true");
 
     fireEvent.click(screen.getByRole("button", { name: "Copy OpenClaw prompt" }));
 

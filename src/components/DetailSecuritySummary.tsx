@@ -115,13 +115,13 @@ export function DetailSecuritySummary({
   const [isRequestingRescan, setIsRequestingRescan] = useState(false);
   const vtStatus = suppressScanResults
     ? "cleared"
-    : vtAnalysis?.verdict ?? vtAnalysis?.status ?? "pending";
+    : (vtAnalysis?.verdict ?? vtAnalysis?.status ?? "pending");
   const trentStatus = suppressScanResults
     ? "cleared"
-    : trentAnalysis?.verdict ?? (sha256hash ? "unknown" : "pending");
+    : (trentAnalysis?.verdict ?? (sha256hash ? "unknown" : "pending"));
   const llmStatus = suppressScanResults
     ? "cleared"
-    : llmAnalysis?.verdict ?? llmAnalysis?.status ?? "pending";
+    : (llmAnalysis?.verdict ?? llmAnalysis?.status ?? "pending");
   const staticStatus = suppressScanResults ? "cleared" : statusFromStaticScan(staticScan);
   const rescanButtonDisabledReason = rescanDisabledReason(rescanState);
   const isScanInProgress = Boolean(rescanState?.inProgressRequest);

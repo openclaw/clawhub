@@ -2,8 +2,8 @@
 
 import { getAuthUserId } from "@convex-dev/auth/server";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { isStarred } from "./stars";
 import { isStarred as isSoulStarred } from "./soulStars";
+import { isStarred } from "./stars";
 
 vi.mock("@convex-dev/auth/server", () => ({
   getAuthUserId: vi.fn(),
