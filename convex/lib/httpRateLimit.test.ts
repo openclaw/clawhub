@@ -119,18 +119,18 @@ describe("getClientIp", () => {
 
 describe("RATE_LIMITS", () => {
   it("keeps anonymous download bursts installation-friendly", () => {
-    expect(RATE_LIMITS.download.ip).toBeGreaterThanOrEqual(180);
-    expect(RATE_LIMITS.download.key).toBeGreaterThanOrEqual(720);
+    expect(RATE_LIMITS.download.ip).toBeGreaterThanOrEqual(1200);
+    expect(RATE_LIMITS.download.key).toBeGreaterThanOrEqual(6000);
   });
 
   it("keeps authenticated write bursts release-friendly", () => {
-    expect(RATE_LIMITS.write.ip).toBeLessThanOrEqual(45);
-    expect(RATE_LIMITS.write.key).toBeGreaterThanOrEqual(2400);
+    expect(RATE_LIMITS.write.ip).toBeGreaterThanOrEqual(300);
+    expect(RATE_LIMITS.write.key).toBeGreaterThanOrEqual(3000);
   });
 
   it("allows trusted publish token mint bursts from shared CI egress", () => {
-    expect(RATE_LIMITS.trustedPublish.ip).toBeGreaterThanOrEqual(600);
-    expect(RATE_LIMITS.trustedPublish.key).toBeGreaterThanOrEqual(2400);
+    expect(RATE_LIMITS.trustedPublish.ip).toBeGreaterThanOrEqual(3000);
+    expect(RATE_LIMITS.trustedPublish.key).toBeGreaterThanOrEqual(12000);
   });
 
   it("gives admin API tokens a larger authenticated bucket", () => {
@@ -326,7 +326,7 @@ describe("applyRateLimit headers", () => {
       .filter((args) => "key" in args && "limit" in args);
     expect(rateLimitStatusCalls).toContainEqual(
       expect.objectContaining({
-        key: "user:users_123",
+        key: "user:users_123:write",
         limit: RATE_LIMITS.write.adminKey,
       }),
     );
@@ -392,7 +392,76 @@ describe("applyRateLimit headers", () => {
     );
   });
 
-  it("keeps non-download missing-ip anonymous requests on the shared unknown bucket", async () => {
+  it("scopes known-ip anonymous buckets by rate limit kind", async () => {
+    vi.spyOn(Date, "now").mockReturnValue(4_550_000);
+    const readCtx = makeRateLimitCtx({
+      ip: {
+        allowed: true,
+        remaining: 19,
+        limit: RATE_LIMITS.read.ip,
+        resetAt: 4_580_000,
+      },
+    });
+    const downloadCtx = makeRateLimitCtx({
+      ip: {
+        allowed: true,
+        remaining: 19,
+        limit: RATE_LIMITS.download.ip,
+        resetAt: 4_580_000,
+      },
+    });
+    const request = new Request("https://example.com/api/v1/packages/demo/download", {
+      headers: { "cf-connecting-ip": "203.0.113.1" },
+    });
+
+    await applyRateLimit(readCtx, request, "read");
+    await applyRateLimit(downloadCtx, request, "download");
+
+    const readMutation = (readCtx as unknown as { runMutation: ReturnType<typeof vi.fn> })
+      .runMutation;
+    const downloadMutation = (downloadCtx as unknown as { runMutation: ReturnType<typeof vi.fn> })
+      .runMutation;
+    expect(readMutation.mock.calls.map(([, args]) => String(args.key))).toContain(
+      "ip:203.0.113.1:read",
+    );
+    expect(downloadMutation.mock.calls.map(([, args]) => String(args.key))).toContain(
+      "ip:203.0.113.1:download",
+    );
+  });
+
+  it("scopes authenticated buckets by rate limit kind", async () => {
+    vi.spyOn(Date, "now").mockReturnValue(4_575_000);
+    const ctx = makeRateLimitCtx({
+      ip: {
+        allowed: true,
+        remaining: 19,
+        limit: RATE_LIMITS.read.ip,
+        resetAt: 4_600_000,
+      },
+      user: {
+        allowed: true,
+        remaining: 42,
+        limit: RATE_LIMITS.download.key,
+        resetAt: 4_600_000,
+      },
+    });
+    const request = new Request("https://example.com/api/v1/packages/demo/download", {
+      headers: {
+        authorization: "Bearer clh_token",
+        "cf-connecting-ip": "203.0.113.1",
+      },
+    });
+
+    const result = await applyRateLimit(ctx, request, "download");
+
+    expect(result.ok).toBe(true);
+    const runMutation = (ctx as unknown as { runMutation: ReturnType<typeof vi.fn> }).runMutation;
+    expect(runMutation.mock.calls.map(([, args]) => String(args.key))).toContain(
+      "user:users_123:download",
+    );
+  });
+
+  it("scopes non-download missing-ip anonymous requests by rate limit kind", async () => {
     vi.spyOn(Date, "now").mockReturnValue(4_600_000);
     const ctx = makeRateLimitCtx({
       ip: {
@@ -409,7 +478,7 @@ describe("applyRateLimit headers", () => {
     expect(result.ok).toBe(true);
     const runMutation = (ctx as unknown as { runMutation: ReturnType<typeof vi.fn> }).runMutation;
     const consumedKeys = runMutation.mock.calls.map(([, args]) => String(args.key));
-    expect(consumedKeys).toContain("ip:unknown");
+    expect(consumedKeys).toContain("ip:unknown:read");
   });
 
   it("falls back to ip enforcement when bearer token is invalid", async () => {
