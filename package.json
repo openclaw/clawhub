@@ -39,6 +39,7 @@
     "preinstall": "bunx only-allow bun",
     "preview": "bun --bun vite preview",
     "release:clawhub:cli:npm:check": "node scripts/clawhub-cli-npm-release-check.mjs",
+    "setup:local-embeddings": "node scripts/setup-local-embeddings.mjs",
     "test": "vitest run",
     "test:e2e": "vitest run -c vitest.e2e.config.ts",
     "test:e2e:local": "bash scripts/run-playwright-local.sh",

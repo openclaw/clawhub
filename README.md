@@ -112,6 +112,7 @@ bunx convex dev
 bun run dev
 
 # seed sample data
+bun run setup:local-embeddings
 bunx convex run --no-push devSeed:seedNixSkills
 ```
 
@@ -128,7 +129,10 @@ For full setup instructions (env vars, GitHub OAuth, JWT keys, database seeding)
 - `SITE_URL`: App URL (local: `http://localhost:3000`).
 - `AUTH_GITHUB_ID` / `AUTH_GITHUB_SECRET`: GitHub OAuth App.
 - `JWT_PRIVATE_KEY` / `JWKS`: Convex Auth keys.
-- `OPENAI_API_KEY`: embeddings for search + indexing.
+- `OPENAI_API_KEY`: hosted/prod embeddings and optional AI features.
+- Local anonymous Convex deployments use Ollama embeddings when OpenAI is absent. Run
+  `bun run setup:local-embeddings` before seeding, or see
+  [`docs/local-embeddings.md`](docs/local-embeddings.md).
 
 ## Nix plugins (nixmode skills)
 

@@ -4,10 +4,10 @@ import type { Id } from "./_generated/dataModel";
 import type { ActionCtx, MutationCtx } from "./_generated/server";
 import { internalMutation as rawInternalMutation } from "./_generated/server";
 import { internalAction, internalMutation } from "./functions";
-import { EMBEDDING_DIMENSIONS } from "./lib/embeddings";
+import { EMBEDDING_DIMENSIONS, generateEmbedding } from "./lib/embeddings";
 import { normalizePackageName } from "./lib/packageRegistry";
 import { ensurePersonalPublisherForUser } from "./lib/publishers";
-import { parseClawdisMetadata, parseFrontmatter } from "./lib/skills";
+import { buildEmbeddingText, parseClawdisMetadata, parseFrontmatter } from "./lib/skills";
 import { generateToken, hashToken } from "./lib/tokens";
 import { MAX_OWNER_RESCAN_REQUESTS_PER_RELEASE } from "./model/rescans/policy";
 
@@ -518,6 +518,31 @@ function injectMetadata(rawSkillMd: string, metadata: Record<string, unknown>) {
   )}${rawSkillMd.slice(frontmatterEnd)}`;
 }
 
+function zeroEmbedding() {
+  return Array.from({ length: EMBEDDING_DIMENSIONS }, () => 0);
+}
+
+async function generateSeedEmbedding(args: {
+  frontmatter: Record<string, unknown>;
+  label: string;
+  skillMd: string;
+}) {
+  const text = buildEmbeddingText({
+    frontmatter: args.frontmatter,
+    readme: args.skillMd,
+    otherFiles: [],
+  });
+  try {
+    return await generateEmbedding(text);
+  } catch (error) {
+    console.warn(
+      `Dev seed embedding generation failed for ${args.label}; using zero vector`,
+      error,
+    );
+    return zeroEmbedding();
+  }
+}
+
 async function seedNixSkillsHandler(
   ctx: ActionCtx,
   args: SeedActionArgs,
@@ -529,6 +554,11 @@ async function seedNixSkillsHandler(
     const frontmatter = parseFrontmatter(skillMd);
     const clawdis = parseClawdisMetadata(frontmatter);
     const storageId = await ctx.storage.store(new Blob([skillMd], { type: "text/markdown" }));
+    const embedding = await generateSeedEmbedding({
+      frontmatter,
+      label: spec.slug,
+      skillMd,
+    });
 
     const result: SeedMutationResult = await ctx.runMutation(internal.devSeed.seedSkillMutation, {
       reset: args.reset,
@@ -541,6 +571,7 @@ async function seedNixSkillsHandler(
       displayName: spec.displayName,
       summary: spec.summary,
       version: spec.version,
+      embedding,
     });
 
     results.push({ slug: spec.slug, ...result });
@@ -569,6 +600,11 @@ async function seedNixSkillsHandler(
       flaggedPluginReadme: FLAGGED_PLUGIN_README,
       scannedPluginStorageId,
       scannedPluginReadme: SCANNED_PLUGIN_README,
+      scannedSkillEmbedding: await generateSeedEmbedding({
+        frontmatter: parseFrontmatter(SCANNED_SKILL_MD),
+        label: SCANNED_SKILL_SLUG,
+        skillMd: SCANNED_SKILL_MD,
+      }),
     },
   );
   results.push({ slug: FLAGGED_SKILL_SLUG, ...fixtureResult });
@@ -620,6 +656,11 @@ async function seedPadelSkillHandler(
   const frontmatter = parseFrontmatter(skillMd);
   const clawdis = parseClawdisMetadata(frontmatter);
   const storageId = await ctx.storage.store(new Blob([skillMd], { type: "text/markdown" }));
+  const embedding = await generateSeedEmbedding({
+    frontmatter,
+    label: spec.slug,
+    skillMd,
+  });
 
   return (await ctx.runMutation(internal.devSeed.seedSkillMutation, {
     reset: args.reset,
@@ -632,6 +673,7 @@ async function seedPadelSkillHandler(
     displayName: spec.displayName,
     summary: spec.summary,
     version: spec.version,
+    embedding,
   })) as SeedMutationResult;
 }
 
@@ -1058,6 +1100,7 @@ type SeedRescanUxFixturesArgs = {
   flaggedSkillMd: string;
   scannedSkillStorageId: Id<"_storage">;
   scannedSkillMd: string;
+  scannedSkillEmbedding: number[];
   flaggedPluginStorageId: Id<"_storage">;
   flaggedPluginReadme: string;
   scannedPluginStorageId: Id<"_storage">;
@@ -1280,7 +1323,7 @@ export async function seedRescanUxFixturesHandler(
     skillId: scannedSkillId,
     versionId: scannedSkillVersionId,
     ownerId: userId,
-    embedding: Array.from({ length: EMBEDDING_DIMENSIONS }, () => 0),
+    embedding: args.scannedSkillEmbedding,
     isLatest: true,
     isApproved: true,
     visibility: "latest-approved",
@@ -1593,6 +1636,7 @@ export const seedRescanUxFixturesMutation = internalMutation({
     flaggedSkillMd: v.string(),
     scannedSkillStorageId: v.id("_storage"),
     scannedSkillMd: v.string(),
+    scannedSkillEmbedding: v.array(v.number()),
     flaggedPluginStorageId: v.id("_storage"),
     flaggedPluginReadme: v.string(),
     scannedPluginStorageId: v.id("_storage"),
@@ -1769,10 +1813,16 @@ export const seedAgenticRiskDemoSkill: ReturnType<typeof internalAction> = inter
     const storageId = await ctx.storage.store(
       new Blob([SCANNED_SKILL_MD], { type: "text/markdown" }),
     );
+    const embedding = await generateSeedEmbedding({
+      frontmatter: parseFrontmatter(SCANNED_SKILL_MD),
+      label: SCANNED_SKILL_SLUG,
+      skillMd: SCANNED_SKILL_MD,
+    });
     return await ctx.runMutation(internal.devSeed.seedAgenticRiskDemoSkillMutation, {
       reset: args.reset,
       storageId,
       skillMd: SCANNED_SKILL_MD,
+      embedding,
     });
   },
 });
@@ -1782,6 +1832,7 @@ export const seedAgenticRiskDemoSkillMutation = internalMutation({
     reset: v.optional(v.boolean()),
     storageId: v.id("_storage"),
     skillMd: v.string(),
+    embedding: v.array(v.number()),
   },
   handler: async (ctx, args) => {
     const existing = await findScannedSkillFixture(ctx);
@@ -1873,7 +1924,7 @@ export const seedAgenticRiskDemoSkillMutation = internalMutation({
       skillId: scannedSkillId,
       versionId: scannedSkillVersionId,
       ownerId: userId,
-      embedding: Array.from({ length: EMBEDDING_DIMENSIONS }, () => 0),
+      embedding: args.embedding,
       isLatest: true,
       isApproved: true,
       visibility: "latest-approved",
@@ -1995,6 +2046,7 @@ export const seedSkillMutation = internalMutation({
     displayName: v.string(),
     summary: v.optional(v.string()),
     version: v.string(),
+    embedding: v.array(v.number()),
   },
   handler: async (ctx, args) => {
     const now = Date.now();
@@ -2080,7 +2132,7 @@ export const seedSkillMutation = internalMutation({
       skillId,
       versionId,
       ownerId: userId,
-      embedding: Array.from({ length: EMBEDDING_DIMENSIONS }, () => 0),
+      embedding: args.embedding,
       isLatest: true,
       isApproved: true,
       visibility: "latest-approved",

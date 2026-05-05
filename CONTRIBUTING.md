@@ -12,6 +12,7 @@ Welcome! ClawHub is the public skill registry for [OpenClaw](https://github.com/
 
 - [Bun](https://bun.sh/) (Convex CLI runs via `bunx`, no global install needed)
 - [Node.js](https://nodejs.org/) v18, 20, 22, or 24 (required by the local Convex backend; v25+ is not yet supported)
+- [Ollama](https://ollama.com/download) is recommended for local search embeddings without an OpenAI API key
 
 ### Install and configure
 
@@ -26,6 +27,7 @@ Edit `.env.local` with the following values for **local Convex**:
 # Frontend
 VITE_CONVEX_URL=http://127.0.0.1:3210
 VITE_CONVEX_SITE_URL=http://127.0.0.1:3210
+CONVEX_SITE_URL=http://127.0.0.1:3210
 SITE_URL=http://localhost:3000
 
 # Deployment used by `bunx convex dev`
@@ -57,6 +59,20 @@ bunx convex env set AUTH_GITHUB_SECRET <your-client-secret>
 bunx convex env set SITE_URL http://localhost:3000
 ```
 
+### Local embeddings
+
+Local anonymous Convex deployments use Ollama for embeddings when `OPENAI_API_KEY` is not set. This keeps local search and publish flows useful without requiring every contributor to create an OpenAI key.
+
+With the backend running and Ollama started, run:
+
+```bash
+bun run setup:local-embeddings
+```
+
+This pulls `qwen3-embedding:4b` and sets the Convex backend env vars for local embeddings. Use this before seeding; seed actions generate real vectors when a provider is available.
+
+Hosted Convex dev deployments cannot reach your laptop's `localhost:11434`. For hosted dev, set `OPENAI_API_KEY` or point `OLLAMA_EMBEDDING_BASE_URL` at a reachable Ollama host. See [`docs/local-embeddings.md`](docs/local-embeddings.md) for the full behavior and troubleshooting notes.
+
 ### JWT keys (for Convex Auth)
 
 With the backend still running, generate the signing keys:
@@ -80,6 +96,9 @@ Change the port if 3000 is already in use, and update `SITE_URL` in both `.env.l
 Populate sample data so the UI isn't empty:
 
 ```bash
+# Recommended before the first seed when using local embeddings.
+bun run setup:local-embeddings
+
 # 3 sample skills (padel, gohome, xuezh)
 bunx convex run --no-push devSeed:seedNixSkills
 
@@ -100,12 +119,15 @@ bunx convex run --no-push devSeed:seedNixSkills '{"reset": true}'
 
 These features degrade gracefully without their keys:
 
-| Variable                                                                  | Purpose                                                   |
-| ------------------------------------------------------------------------- | --------------------------------------------------------- |
-| `OPENAI_API_KEY`                                                          | Embeddings and vector search (falls back to zero vectors) |
-| `VT_API_KEY`                                                              | VirusTotal malware scanning                               |
-| `DISCORD_WEBHOOK_URL`                                                     | Discord notifications                                     |
-| `GITHUB_APP_ID` / `GITHUB_APP_PRIVATE_KEY` / `GITHUB_APP_INSTALLATION_ID` | GitHub backup sync                                        |
+| Variable                                                                  | Purpose                                                 |
+| ------------------------------------------------------------------------- | ------------------------------------------------------- |
+| `OPENAI_API_KEY`                                                          | Hosted/prod OpenAI embeddings and optional AI features  |
+| `EMBEDDING_PROVIDER=ollama`                                               | Force Ollama embeddings instead of provider auto-detect |
+| `OLLAMA_EMBEDDING_MODEL`                                                  | Ollama embedding model; default is `qwen3-embedding:4b` |
+| `OLLAMA_EMBEDDING_BASE_URL`                                               | Ollama URL reachable from the Convex runtime            |
+| `VT_API_KEY`                                                              | VirusTotal malware scanning                             |
+| `DISCORD_WEBHOOK_URL`                                                     | Discord notifications                                   |
+| `GITHUB_APP_ID` / `GITHUB_APP_PRIVATE_KEY` / `GITHUB_APP_INSTALLATION_ID` | GitHub backup sync                                      |
 
 ## CLI Development
 

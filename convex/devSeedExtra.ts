@@ -11,7 +11,8 @@ import { internal } from "./_generated/api";
 import type { Id } from "./_generated/dataModel";
 import type { ActionCtx } from "./_generated/server";
 import { internalAction, internalMutation } from "./functions";
-import { parseClawdisMetadata, parseFrontmatter } from "./lib/skills";
+import { EMBEDDING_DIMENSIONS, generateEmbedding } from "./lib/embeddings";
+import { buildEmbeddingText, parseClawdisMetadata, parseFrontmatter } from "./lib/skills";
 
 type SeedSkillSpec = {
   slug: string;
@@ -474,6 +475,31 @@ function injectMetadata(rawSkillMd: string, metadata: Record<string, unknown>) {
   )}${rawSkillMd.slice(frontmatterEnd)}`;
 }
 
+function zeroEmbedding() {
+  return Array.from({ length: EMBEDDING_DIMENSIONS }, () => 0);
+}
+
+async function generateSeedEmbedding(args: {
+  frontmatter: Record<string, unknown>;
+  label: string;
+  skillMd: string;
+}) {
+  const text = buildEmbeddingText({
+    frontmatter: args.frontmatter,
+    readme: args.skillMd,
+    otherFiles: [],
+  });
+  try {
+    return await generateEmbedding(text);
+  } catch (error) {
+    console.warn(
+      `Extra dev seed embedding generation failed for ${args.label}; using zero vector`,
+      error,
+    );
+    return zeroEmbedding();
+  }
+}
+
 function randomStats() {
   return {
     downloads: Math.floor(Math.random() * 5000),
@@ -523,6 +549,11 @@ export const seedExtraSkillsInternal = internalAction({
       const frontmatter = parseFrontmatter(skillMd);
       const clawdis = parseClawdisMetadata(frontmatter);
       const storageId = await ctx.storage.store(new Blob([skillMd], { type: "text/markdown" }));
+      const embedding = await generateSeedEmbedding({
+        frontmatter,
+        label: spec.slug,
+        skillMd,
+      });
 
       const result = (await ctx.runMutation(internal.devSeed.seedSkillMutation, {
         reset: args.reset,
@@ -535,6 +566,7 @@ export const seedExtraSkillsInternal = internalAction({
         displayName: spec.displayName,
         summary: spec.summary,
         version: spec.version,
+        embedding,
       })) as { ok: boolean; skipped?: boolean; skillId?: string };
 
       // Apply random stats after creation (only if not skipped)

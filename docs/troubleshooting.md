@@ -54,6 +54,26 @@ The CLI respects `HTTPS_PROXY`, `HTTP_PROXY`, `https_proxy`, and `http_proxy`.
 - Set `OPENAI_API_KEY` in the Convex environment (not only locally).
 - Re-run `bunx convex dev` / `bunx convex deploy` after setting env.
 
+For local development, you can use Ollama instead:
+
+- Start Ollama.
+- Run `bun run setup:local-embeddings`.
+- The model must return 1536-dimensional embeddings to match the Convex vector index.
+- Hosted Convex dev deployments cannot reach your laptop's `localhost:11434`; use a tunnel or another reachable Ollama URL.
+- See [`docs/local-embeddings.md`](local-embeddings.md) for provider selection details.
+
+## Local search returns no skills
+
+- If you seeded before enabling local embeddings, reset and seed again:
+
+```bash
+bun run setup:local-embeddings
+bunx convex run --no-push devSeed:seedNixSkills '{"reset": true}'
+```
+
+- Confirm Ollama is running if you are using local anonymous Convex.
+- For hosted Convex dev deployments, set `OPENAI_API_KEY` or point `OLLAMA_EMBEDDING_BASE_URL` at a network-reachable Ollama server.
+
 ## `publish` fails with `GitHub API rate limit exceeded`
 
 - This is a GitHub publish-gate lookup hitting unauthenticated limits.

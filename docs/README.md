@@ -15,9 +15,10 @@ Reading order (new contributor):
 4. `docs/skill-format.md`: what a “skill” is on disk + on the registry.
 5. `docs/cli.md`: CLI reference (flags, config, lockfiles, sync rules).
 6. `docs/http-api.md`: HTTP endpoints used by the CLI + public API.
-7. `docs/auth.md`: GitHub OAuth + API tokens + CLI loopback login.
-8. `docs/deploy.md`: Convex + Vercel deployment + rewrites.
-9. `docs/troubleshooting.md`: common failure modes.
+7. `docs/local-embeddings.md`: local Ollama embeddings for search and seed data.
+8. `docs/auth.md`: GitHub OAuth + API tokens + CLI loopback login.
+9. `docs/deploy.md`: Convex + Vercel deployment + rewrites.
+10. `docs/troubleshooting.md`: common failure modes.
 
 Feature/ops docs (already present):
 

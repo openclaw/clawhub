@@ -446,7 +446,11 @@ function formatEmbeddingError(error: unknown) {
     if (error.message.includes("OPENAI_API_KEY")) {
       return "OPENAI_API_KEY is not configured.";
     }
-    if (error.message.startsWith("Embedding failed")) {
+    if (
+      error.message.startsWith("Embedding failed") ||
+      error.message.startsWith("OpenAI embedding") ||
+      error.message.startsWith("Ollama embedding")
+    ) {
       return error.message;
     }
   }

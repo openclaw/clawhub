@@ -12,7 +12,7 @@ read_when:
 - Bun
 - Convex CLI (`bunx convex ...`)
 - GitHub OAuth App (for login)
-- OpenAI key (for embeddings/search)
+- Ollama for local embeddings, or an OpenAI key for hosted/prod embeddings
 
 ## 1) Local dev (web + Convex)
 
@@ -27,6 +27,12 @@ bun run dev
 bunx convex dev
 ```
 
+For local search without an OpenAI key, start Ollama and run:
+
+```bash
+bun run setup:local-embeddings
+```
+
 ## 2) Auth setup (GitHub OAuth + Convex Auth keys)
 
 Fill in `.env.local`:
@@ -36,7 +42,7 @@ Fill in `.env.local`:
 - `VITE_CONVEX_URL`
 - `VITE_CONVEX_SITE_URL`
 - `CONVEX_SITE_URL` (same as `VITE_CONVEX_SITE_URL`)
-- `OPENAI_API_KEY`
+- `OPENAI_API_KEY` for hosted/prod embeddings, or the local Ollama fallback below
 
 Generate Convex Auth keys for your deployment:
 
@@ -45,6 +51,8 @@ bunx auth --deployment-name <deployment> --web-server-url http://localhost:3000
 ```
 
 Then paste the printed `JWT_PRIVATE_KEY` + `JWKS` into `.env.local` (and ensure the deployment got them too).
+
+Local anonymous Convex deployments automatically use Ollama when OpenAI is absent. The setup command pulls `qwen3-embedding:4b` and sets the backend env explicitly. If Convex functions are running in a hosted dev deployment, `localhost` is the Convex runtime, not your laptop. Use `OPENAI_API_KEY` or a network-reachable `OLLAMA_EMBEDDING_BASE_URL` for that setup.
 
 ## 3) CLI: login + basic commands
 
