@@ -13,7 +13,7 @@ import {
 type PluginSearchState = {
   q?: string;
   cursor?: string;
-  family?: "code-plugin" | "bundle-plugin";
+  family?: "code-plugin";
   featured?: boolean;
   verified?: boolean;
   executesCode?: boolean;
@@ -40,10 +40,7 @@ export const Route = createFileRoute("/plugins/")({
   validateSearch: (search): PluginSearchState => ({
     q: typeof search.q === "string" && search.q.trim() ? search.q.trim() : undefined,
     cursor: typeof search.cursor === "string" && search.cursor ? search.cursor : undefined,
-    family:
-      search.family === "code-plugin" || search.family === "bundle-plugin"
-        ? search.family
-        : undefined,
+    family: search.family === "code-plugin" ? search.family : undefined,
     featured:
       search.featured === true || search.featured === "true" || search.featured === "1"
         ? true
@@ -63,7 +60,7 @@ export const Route = createFileRoute("/plugins/")({
       const data = await fetchPluginCatalog({
         q: deps.q,
         cursor: deps.q ? undefined : deps.cursor,
-        family: deps.family,
+        family: deps.family ?? "code-plugin",
         featured: deps.featured,
         isOfficial: deps.verified,
         executesCode: deps.executesCode,
@@ -152,13 +149,13 @@ function PluginsIndex() {
       return;
     }
 
-    const family = value === "code-plugin" || value === "bundle-plugin" ? value : undefined;
+    const family = value === "code-plugin" ? value : undefined;
     void navigate({
       search: (prev) => ({
         ...prev,
         cursor: undefined,
         featured: undefined,
-        family: family as "code-plugin" | "bundle-plugin" | undefined,
+        family,
       }),
     });
   };
@@ -217,11 +214,9 @@ function PluginsIndex() {
         <BrowseSidebar
           sortOptions={[
             { value: "featured", label: "Featured" },
-            { value: "all", label: "All types" },
             { value: "code-plugin", label: "Code plugins" },
-            { value: "bundle-plugin", label: "Bundle plugins" },
           ]}
-          activeSort={search.featured ? "featured" : (search.family ?? "all")}
+          activeSort={search.featured ? "featured" : "code-plugin"}
           onSortChange={handleFamilySort}
           filters={[
             { key: "verified", label: "Verified only", active: search.verified ?? false },

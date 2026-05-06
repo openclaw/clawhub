@@ -6,6 +6,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const navigateMock = vi.fn();
 let searchMock: { q?: string; type?: "all" | "skills" | "plugins" } = {};
+const useUnifiedSearchMock = vi.fn();
 
 vi.mock("@tanstack/react-router", () => ({
   createFileRoute: () => (config: { component?: unknown; validateSearch?: unknown }) => ({
@@ -16,14 +17,7 @@ vi.mock("@tanstack/react-router", () => ({
 }));
 
 vi.mock("../lib/useUnifiedSearch", () => ({
-  useUnifiedSearch: () => ({
-    results: [],
-    skillResults: [],
-    pluginResults: [],
-    skillCount: 0,
-    pluginCount: 0,
-    isSearching: false,
-  }),
+  useUnifiedSearch: (...args: unknown[]) => useUnifiedSearchMock(...args),
 }));
 
 vi.mock("../components/PluginListItem", () => ({
@@ -52,6 +46,15 @@ describe("search route", () => {
   beforeEach(() => {
     searchMock = { q: "first" };
     navigateMock.mockReset();
+    useUnifiedSearchMock.mockReset();
+    useUnifiedSearchMock.mockReturnValue({
+      results: [],
+      skillResults: [],
+      pluginResults: [],
+      skillCount: 0,
+      pluginCount: 0,
+      isSearching: false,
+    });
   });
 
   it("keeps the input synced with query param changes while mounted", async () => {
@@ -80,5 +83,44 @@ describe("search route", () => {
     render(<Component />);
 
     expect(screen.queryByRole("button", { name: /users/i })).toBeNull();
+  });
+
+  it("can request more results from global search", async () => {
+    searchMock = { q: "weather", type: "skills" };
+    useUnifiedSearchMock.mockReturnValue({
+      results: Array.from({ length: 25 }, (_, index) => ({
+        type: "skill",
+        skill: {
+          _id: `skill-${index}`,
+          slug: `weather-${index}`,
+          displayName: `Weather ${index}`,
+          ownerUserId: "users:1",
+          stats: { downloads: 0, stars: 0 },
+          updatedAt: 1,
+          createdAt: 1,
+        },
+        ownerHandle: "clawhub",
+        score: 1,
+      })),
+      skillResults: [],
+      pluginResults: [],
+      skillCount: 25,
+      pluginCount: 0,
+      isSearching: false,
+    });
+    const route = await loadRoute();
+    const Component = route.__config.component as ComponentType;
+
+    render(<Component />);
+
+    expect(useUnifiedSearchMock).toHaveBeenLastCalledWith("weather", "skills", {
+      limits: { skills: 25, plugins: 25 },
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: "Load more" }));
+
+    expect(useUnifiedSearchMock).toHaveBeenLastCalledWith("weather", "skills", {
+      limits: { skills: 50, plugins: 50 },
+    });
   });
 });

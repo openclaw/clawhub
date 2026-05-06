@@ -32,6 +32,21 @@ jobs:
         with:
           bun-version: ${{ env.BUN_VERSION }}
 
+      - uses: actions/create-github-app-token@v3
+        id: app-token
+        continue-on-error: true
+        with:
+          app-id: "2729701"
+          private-key: ${{ secrets.GH_APP_PRIVATE_KEY }}
+
+      - uses: actions/create-github-app-token@v3
+        id: app-token-fallback
+        continue-on-error: true
+        if: steps.app-token.outcome == 'failure'
+        with:
+          app-id: "2971289"
+          private-key: ${{ secrets.GH_APP_PRIVATE_KEY_FALLBACK }}
+
       - name: Install dependencies
         run: bun install --frozen-lockfile
 
@@ -71,7 +86,7 @@ jobs:
       - name: Open or update pull request
         if: steps.changes.outputs.changed == 'true'
         env:
-          GH_TOKEN: ${{ github.token }}
+          GH_TOKEN: ${{ steps.app-token.outputs.token || steps.app-token-fallback.outputs.token || github.token }}
         run: |
           set -euo pipefail
 

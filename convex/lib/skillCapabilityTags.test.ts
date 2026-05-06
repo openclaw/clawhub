@@ -90,6 +90,18 @@ describe("deriveSkillCapabilityTags", () => {
     expect(tags).toEqual([]);
   });
 
+  it("does not treat generic pay attention wording as a purchase signal", () => {
+    const tags = deriveSkillCapabilityTags({
+      slug: "alon-fact-check",
+      displayName: "Alon Fact Check",
+      frontmatter: {},
+      readmeText: "Pay attention to dates — a source from 2020 may not be current.",
+      fileContents: [],
+    });
+
+    expect(tags).toEqual([]);
+  });
+
   it("still detects token swap wording as a crypto signal", () => {
     const tags = deriveSkillCapabilityTags({
       slug: "token-router",

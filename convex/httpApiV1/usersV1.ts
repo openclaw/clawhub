@@ -28,6 +28,7 @@ export async function usersPostRouterV1Handler(ctx: ActionCtx, request: Request)
     action !== "role" &&
     action !== "restore" &&
     action !== "reclaim" &&
+    action !== "reserve" &&
     action !== "publisher"
   ) {
     return text("Not found", 404, rate.headers);
@@ -53,6 +54,12 @@ export async function usersPostRouterV1Handler(ctx: ActionCtx, request: Request)
     const admin = requireAdminOrResponse(actorUser, rate.headers);
     if (!admin.ok) return admin.response;
     return handleAdminReclaim(ctx, request, payload, actorUserId, rate.headers);
+  }
+
+  if (action === "reserve") {
+    const admin = requireAdminOrResponse(actorUser, rate.headers);
+    if (!admin.ok) return admin.response;
+    return handleAdminReserve(ctx, payload, actorUserId, rate.headers);
   }
 
   if (action === "publisher") {
@@ -243,6 +250,91 @@ async function handleAdminReclaim(
     } catch (error) {
       const message = error instanceof Error ? error.message : "Reclaim failed";
       results.push({ slug, ok: false, error: message });
+    }
+  }
+
+  const succeeded = results.filter((r) => r.ok).length;
+  const failed = results.filter((r) => !r.ok).length;
+
+  return json({ ok: true, results, succeeded, failed }, 200, headers);
+}
+
+/**
+ * POST /api/v1/users/reserve
+ * Admin-only: reserve root slugs and package names for a rightful owner.
+ * Package reservations are private placeholder packages with no releases.
+ * Body: { handle: string, slugs?: string[], packageNames?: string[], reason?: string }
+ */
+async function handleAdminReserve(
+  ctx: ActionCtx,
+  payload: Record<string, unknown>,
+  actorUserId: Id<"users">,
+  headers: HeadersInit,
+) {
+  const handle = typeof payload.handle === "string" ? payload.handle.trim().toLowerCase() : "";
+  if (!handle) return text("Missing handle", 400, headers);
+
+  const slugs = Array.isArray(payload.slugs)
+    ? payload.slugs.filter((s): s is string => typeof s === "string")
+    : [];
+  const packageNames = Array.isArray(payload.packageNames)
+    ? payload.packageNames.filter((s): s is string => typeof s === "string")
+    : [];
+  const total = slugs.length + packageNames.length;
+  if (total === 0) return text("Missing slugs or packageNames array", 400, headers);
+  if (total > 200) return text("Too many reservations (max 200)", 400, headers);
+
+  const reason = typeof payload.reason === "string" ? payload.reason.trim() : undefined;
+
+  const targetUser = await ctx.runQuery(api.users.getByHandle, { handle });
+  if (!targetUser?._id) return text("User not found", 404, headers);
+
+  const targetPublisher = (await ctx.runQuery(internal.publishers.getByHandleInternal, {
+    handle,
+  })) as { _id?: Id<"publishers">; deletedAt?: number; deactivatedAt?: number } | null;
+  const ownerPublisherId =
+    targetPublisher?._id && !targetPublisher.deletedAt && !targetPublisher.deactivatedAt
+      ? targetPublisher._id
+      : undefined;
+
+  const results: Array<{
+    kind: "slug" | "package";
+    name: string;
+    ok: boolean;
+    action?: string;
+    error?: string;
+  }> = [];
+
+  for (const slug of slugs) {
+    const name = slug.trim().toLowerCase();
+    try {
+      const result = (await ctx.runMutation(internal.skills.reserveSlugInternal, {
+        actorUserId,
+        slug: name,
+        rightfulOwnerUserId: targetUser._id,
+        reason,
+      })) as { action?: string };
+      results.push({ kind: "slug", name, ok: true, action: result.action });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Slug reservation failed";
+      results.push({ kind: "slug", name, ok: false, error: message });
+    }
+  }
+
+  for (const packageName of packageNames) {
+    const name = packageName.trim();
+    try {
+      const result = (await ctx.runMutation(internal.packages.reservePackageNameInternal, {
+        actorUserId,
+        ownerUserId: targetUser._id,
+        ownerPublisherId,
+        name,
+        reason,
+      })) as { action?: string };
+      results.push({ kind: "package", name, ok: true, action: result.action });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Package reservation failed";
+      results.push({ kind: "package", name, ok: false, error: message });
     }
   }
 

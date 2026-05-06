@@ -147,16 +147,37 @@ export function toOptionalNumber(value: string | null) {
 export async function resolveSoulTagsBatch(
   ctx: ActionCtx,
   tagsList: Array<Record<string, Id<"soulVersions">>>,
+  latestVersions?: Array<LatestVersionTag<"soulVersions">>,
 ): Promise<Array<Record<string, string>>> {
-  return resolveVersionTagsBatch(ctx, tagsList, internal.souls.getVersionsByIdsInternal);
+  return resolveVersionTagsBatch(
+    ctx,
+    tagsList,
+    internal.souls.getVersionsByIdsInternal,
+    latestVersions,
+  );
 }
 
 export async function resolveTagsBatch(
   ctx: ActionCtx,
   tagsList: Array<Record<string, Id<"skillVersions">>>,
+  latestVersions?: Array<LatestVersionTag<"skillVersions">>,
 ): Promise<Array<Record<string, string>>> {
-  return resolveVersionTagsBatch(ctx, tagsList, internal.skills.getVersionsByIdsInternal);
+  return resolveVersionTagsBatch(
+    ctx,
+    tagsList,
+    internal.skills.getVersionsByIdsInternal,
+    latestVersions,
+  );
 }
+
+type LatestVersionTag<TTable extends "skillVersions" | "soulVersions"> =
+  | {
+      _id: Id<TTable>;
+      version?: string;
+      softDeletedAt?: unknown;
+    }
+  | null
+  | undefined;
 
 /**
  * Batch resolve version tags to version strings.
@@ -170,13 +191,25 @@ export async function resolveVersionTagsBatch<TTable extends "skillVersions" | "
   ctx: ActionCtx,
   tagsList: Array<Record<string, Id<TTable>>>,
   getVersionsByIdsQuery: unknown,
+  latestVersions?: Array<LatestVersionTag<TTable>>,
 ): Promise<Array<Record<string, string>>> {
   const allVersionIds = new Set<Id<TTable>>();
-  for (const tags of tagsList) {
-    for (const versionId of Object.values(tags)) allVersionIds.add(versionId);
-  }
+  const preResolvedTags = tagsList.map((tags, idx) => {
+    const resolved: Record<string, string> = {};
+    const latest = latestVersions?.[idx];
+    for (const [tag, versionId] of Object.entries(tags)) {
+      if (latest?._id === versionId && latest.version && !latest.softDeletedAt) {
+        resolved[tag] = latest.version;
+      } else {
+        allVersionIds.add(versionId);
+      }
+    }
+    return resolved;
+  });
 
-  if (allVersionIds.size === 0) return tagsList.map(() => ({}));
+  if (allVersionIds.size === 0) {
+    return preResolvedTags;
+  }
 
   const versionIds = [...allVersionIds].sort() as Array<Id<TTable>>;
   const versions =
@@ -191,9 +224,10 @@ export async function resolveVersionTagsBatch<TTable extends "skillVersions" | "
     if (!v?.softDeletedAt) versionMap.set(v._id, v.version);
   }
 
-  return tagsList.map((tags) => {
-    const resolved: Record<string, string> = {};
+  return tagsList.map((tags, idx) => {
+    const resolved = { ...preResolvedTags[idx] };
     for (const [tag, versionId] of Object.entries(tags)) {
+      if (resolved[tag]) continue;
       const version = versionMap.get(versionId);
       if (version) resolved[tag] = version;
     }
@@ -234,22 +268,7 @@ function toFileLike(entry: FormDataEntryValue): FileLikeEntry | null {
 export async function parseMultipartPublish(
   ctx: ActionCtx,
   request: Request,
-): Promise<{
-  slug: string;
-  displayName: string;
-  version: string;
-  changelog: string;
-  acceptLicenseTerms?: boolean;
-  tags?: string[];
-  forkOf?: { slug: string; version?: string };
-  files: Array<{
-    path: string;
-    size: number;
-    storageId: Id<"_storage">;
-    sha256: string;
-    contentType?: string;
-  }>;
-}> {
+): Promise<ReturnType<typeof parsePublishBody>> {
   const form = await request.formData();
   const payloadRaw = form.get("payload");
   if (!payloadRaw || typeof payloadRaw !== "string") {
@@ -291,6 +310,7 @@ export async function parseMultipartPublish(
   const body = {
     slug: payload.slug,
     displayName: payload.displayName,
+    ...(typeof payload.ownerHandle === "string" ? { ownerHandle: payload.ownerHandle } : {}),
     version: payload.version,
     changelog: typeof payload.changelog === "string" ? payload.changelog : "",
     ...(hasAcceptLicenseTerms ? { acceptLicenseTerms: payload.acceptLicenseTerms } : {}),
@@ -310,6 +330,7 @@ export function parsePublishBody(body: unknown) {
   return {
     slug: parsed.slug,
     displayName: parsed.displayName,
+    ownerHandle: parsed.ownerHandle?.trim().replace(/^@+/, "") || undefined,
     version: parsed.version,
     changelog: parsed.changelog,
     acceptLicenseTerms: parsed.acceptLicenseTerms,

@@ -66,7 +66,8 @@ const WALLET_PATTERNS = [
 ] satisfies RegExp[];
 
 const PURCHASE_PATTERNS = [
-  /\bpay(?:ment|ments)?\b/,
+  /\bpayments?\b/,
+  /\bpay\s+(?:for|with|using|via|in)\b/,
   /\bpaid automatically\b/,
   /\bpay per call\b/,
   /\bmicro-?payments?\b/,

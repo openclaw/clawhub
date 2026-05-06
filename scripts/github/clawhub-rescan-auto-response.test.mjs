@@ -182,13 +182,10 @@ describe("clawhub rescan auto-response classifier", () => {
           body: rescanGuidanceComment,
           bodySha256: expect.any(String),
         },
-        {
-          type: "close",
-          stateReason: "not_planned",
-        },
       ],
     });
-    expect(rescanGuidanceComment).toContain("reopen this issue");
+    expect(rescanGuidanceComment).toContain("This issue is staying open");
+    expect(rescanGuidanceComment).not.toContain("reopen this issue");
   });
 
   it("does not plan comments without the guidance label", () => {

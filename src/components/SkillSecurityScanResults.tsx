@@ -98,7 +98,7 @@ type SecurityScanResultsProps = {
   variant?: "panel" | "badge";
 };
 
-export function VirusTotalIcon({ className }: { className?: string }) {
+function VirusTotalIcon({ className }: { className?: string }) {
   return (
     <svg
       className={className}
@@ -118,7 +118,7 @@ export function VirusTotalIcon({ className }: { className?: string }) {
   );
 }
 
-export function ClawScanIcon({ className }: { className?: string }) {
+function ClawScanIcon({ className }: { className?: string }) {
   return <ShieldCheck className={className} aria-label="ClawScan" />;
 }
 
@@ -134,7 +134,7 @@ export function getScanStatusInfo(status: string) {
     case "malicious":
       return { label: "Malicious", className: "scan-status-malicious" };
     case "suspicious":
-      return { label: "Suspicious", className: "scan-status-suspicious" };
+      return { label: "Review", className: "scan-status-suspicious" };
     case "loading":
       return { label: "Loading...", className: "scan-status-pending" };
     case "pending":
@@ -404,7 +404,7 @@ function LlmAnalysisDetail({ analysis }: { analysis: LlmAnalysis }) {
               {verdict === "malicious"
                 ? "Do not install this skill"
                 : verdict === "suspicious"
-                  ? "What to consider before installing"
+                  ? "Review before installing"
                   : "Assessment"}
             </div>
             {analysis.guidance}

@@ -80,6 +80,7 @@ export const PublishSourceSchema = type({
 export const CliPublishRequestSchema = type({
   slug: "string",
   displayName: "string",
+  ownerHandle: "string?",
   version: "string",
   changelog: "string",
   acceptLicenseTerms: "boolean?",
@@ -101,6 +102,7 @@ export const ApiCliPublishResponseSchema = type({
 
 export const CliSkillDeleteRequestSchema = type({
   slug: "string",
+  reason: "string?",
 });
 export type CliSkillDeleteRequest = (typeof CliSkillDeleteRequestSchema)[inferred];
 

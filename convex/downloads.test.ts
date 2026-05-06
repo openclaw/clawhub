@@ -62,7 +62,7 @@ describe("downloads helpers", () => {
     expect(__test.getDownloadIdentityValue(request, null)).toBeNull();
   });
 
-  it("records zip downloads through the internal mutation path", async () => {
+  it("schedules zip download stats outside the response path", async () => {
     class MockResponse {
       status: number;
       headers: Headers;
@@ -103,12 +103,14 @@ describe("downloads helpers", () => {
       if (isRateLimitArgs(args)) return okRate();
       return { mutation, args };
     });
+    const runAfter = vi.fn();
     const storageGet = vi.fn().mockResolvedValue(new Blob(["hello"], { type: "text/markdown" }));
 
     const response = await downloadZipHandler(
       {
         runQuery,
         runMutation,
+        scheduler: { runAfter },
         storage: { get: storageGet },
       } as unknown as ActionCtx,
       new Request("https://example.com/api/v1/download?slug=demo", {
@@ -120,7 +122,7 @@ describe("downloads helpers", () => {
     expect(response.headers.get("Content-Type")).toBe("application/zip");
     expect(storageGet).toHaveBeenCalledWith("_storage:1");
 
-    const recordCalls = runMutation.mock.calls.filter(([, args]) => {
+    const recordCalls = runAfter.mock.calls.filter(([, , args]) => {
       if (!args || typeof args !== "object") return false;
       const value = args as Record<string, unknown>;
       return (
@@ -130,7 +132,10 @@ describe("downloads helpers", () => {
       );
     });
     expect(recordCalls).toHaveLength(1);
-    expect(recordCalls[0]?.[1]).toEqual({
+    expect(recordCalls[0]?.[0]).toEqual(expect.any(Number));
+    expect(recordCalls[0]?.[0]).toBeGreaterThanOrEqual(0);
+    expect(recordCalls[0]?.[0]).toBeLessThan(60_000);
+    expect(recordCalls[0]?.[2]).toEqual({
       skillId: "skills:1",
       identityHash: expect.any(String),
       hourStart: expect.any(Number),

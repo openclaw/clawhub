@@ -78,6 +78,7 @@ type HttpClient = {
   apiRequestForm<T>(registry: string, args: FormRequestArgs): Promise<T>;
   apiRequestForm<T>(registry: string, args: FormRequestArgs, schema: ArkValidator<T>): Promise<T>;
   fetchText(registry: string, args: TextRequestArgs): Promise<string>;
+  fetchBinary(registry: string, args: TextRequestArgs): Promise<Uint8Array>;
   downloadZip(
     registry: string,
     args: { slug: string; version?: string; token?: string },
@@ -151,7 +152,7 @@ export function createHttpClient(options: HttpClientOptions = {}): HttpClient {
       const headers: Record<string, string> = { Accept: "application/json" };
       if (args.token) headers.Authorization = `Bearer ${args.token}`;
       let body: string | undefined;
-      if (args.method === "POST") {
+      if (args.body !== undefined || args.method === "POST") {
         headers["Content-Type"] = "application/json";
         body = JSON.stringify(args.body ?? {});
       }
@@ -229,6 +230,28 @@ export function createHttpClient(options: HttpClientOptions = {}): HttpClient {
     });
   }
 
+  async function fetchBinaryRequest(registry: string, args: TextRequestArgs): Promise<Uint8Array> {
+    const url = "url" in args ? args.url : registryUrl(args.path, registry).toString();
+    return await runWithRetries(async () => {
+      if (deps.runtime === "bun") {
+        return await fetchBinaryViaCurl(deps, url, args.token);
+      }
+
+      const headers: Record<string, string> = {};
+      if (args.token) headers.Authorization = `Bearer ${args.token}`;
+      const response = await fetchWithTimeout(deps, url, { method: "GET", headers });
+      if (!response.ok) {
+        throwHttpStatusError(
+          response.status,
+          await readResponseTextSafe(response),
+          response.headers,
+          deps.now,
+        );
+      }
+      return new Uint8Array(await response.arrayBuffer());
+    });
+  }
+
   async function downloadZipRequest(
     registry: string,
     args: { slug: string; version?: string; token?: string },
@@ -260,6 +283,7 @@ export function createHttpClient(options: HttpClientOptions = {}): HttpClient {
     apiRequest,
     apiRequestForm,
     fetchText: fetchTextRequest,
+    fetchBinary: fetchBinaryRequest,
     downloadZip: downloadZipRequest,
   };
 }
@@ -319,6 +343,10 @@ export async function apiRequestForm<T>(
 
 export async function fetchText(registry: string, args: TextRequestArgs): Promise<string> {
   return await defaultHttpClient.fetchText(registry, args);
+}
+
+export async function fetchBinary(registry: string, args: TextRequestArgs): Promise<Uint8Array> {
+  return await defaultHttpClient.fetchBinary(registry, args);
 }
 
 export async function downloadZip(
@@ -523,7 +551,7 @@ async function fetchJsonViaCurl(
     ...headers,
     url,
   ];
-  if (args.method === "POST") {
+  if (args.body !== undefined || args.method === "POST") {
     curlArgs.push("-H", "Content-Type: application/json");
     curlArgs.push("--data-binary", JSON.stringify(args.body ?? {}));
   }

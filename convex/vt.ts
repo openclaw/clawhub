@@ -1,11 +1,13 @@
 import { v } from "convex/values";
 import { internal } from "./_generated/api";
 import type { Doc, Id } from "./_generated/dataModel";
-import type { ActionCtx } from "./_generated/server";
 import { internalAction, internalMutation } from "./functions";
 import { buildDeterministicPackageZip, buildDeterministicZip } from "./lib/skillZip";
 
 const SHA256_HASH_PATTERN = /^[a-f0-9]{64}$/i;
+const VIRUSTOTAL_FILES_URL = "https://www.virustotal.com/api/v3/files";
+const VIRUSTOTAL_UPLOAD_URL = "https://www.virustotal.com/api/v3/files/upload_url";
+const VIRUSTOTAL_DIRECT_UPLOAD_LIMIT_BYTES = 32 * 1024 * 1024;
 
 const internalRefs = internal as unknown as {
   packages: {
@@ -166,7 +168,30 @@ type PackageReleaseScanDoc = Pick<
   Doc<"packageReleases">,
   "verification" | "llmAnalysis" | "staticScan"
 >;
-type PackageScanDoc = Pick<Doc<"packages">, "family" | "isOfficial">;
+type PackageScanDoc = Pick<Doc<"packages">, "family" | "isOfficial" | "name">;
+
+type VirusTotalUploadResponse = Response;
+
+type PackageScanArtifact =
+  | {
+      ok: true;
+      kind: "legacy-zip" | "clawpack";
+      bytes: Uint8Array;
+      sha256hash: string;
+      fileName: string;
+      contentType: string;
+    }
+  | {
+      ok: false;
+      missingFiles: number;
+      fileCount: number;
+    };
+
+function bytesToArrayBuffer(bytes: Uint8Array): ArrayBuffer {
+  const copy = new Uint8Array(bytes.byteLength);
+  copy.set(bytes);
+  return copy.buffer;
+}
 
 function normalizeVtEngineStats(stats?: VTAnalysisStats | null) {
   if (!stats) return undefined;
@@ -253,13 +278,6 @@ type PendingScanSkill = {
   versionId: Id<"skillVersions"> | null;
   sha256hash: string | null;
   checkCount: number;
-};
-
-type SkillActivationCandidate = {
-  moderationStatus?: string;
-  moderationReason?: string;
-  moderationFlags?: string[];
-  softDeletedAt?: number;
 };
 
 type PollPendingScansResult = {
@@ -355,16 +373,6 @@ type SyncModerationReasonsResult = {
   done: boolean;
 };
 
-const VT_PENDING_REASONS = new Set(["pending.scan", "scanner.vt.pending", "pending.scan.stale"]);
-
-function shouldActivateWhenVtUnavailable(skill: SkillActivationCandidate | null | undefined) {
-  if (!skill || skill.softDeletedAt) return false;
-  if (skill.moderationFlags?.includes("blocked.malware")) return false;
-  if (skill.moderationStatus === "active") return false;
-  const reason = skill.moderationReason;
-  return typeof reason === "string" && VT_PENDING_REASONS.has(reason);
-}
-
 function statusFromAvStats(
   stats?: VTAnalysisStats | null,
 ): "malicious" | "suspicious" | "clean" | null {
@@ -376,11 +384,52 @@ function statusFromAvStats(
   return null;
 }
 
-async function activateSkillWhenVtUnavailable(ctx: ActionCtx, skillId: Id<"skills">) {
-  const skill = await ctx.runQuery(internal.skills.getSkillByIdInternal, { skillId });
-  if (!shouldActivateWhenVtUnavailable(skill)) return;
+async function sha256Hex(bytes: Uint8Array) {
+  const hashBuffer = await crypto.subtle.digest("SHA-256", bytesToArrayBuffer(bytes));
+  return Array.from(new Uint8Array(hashBuffer))
+    .map((b) => b.toString(16).padStart(2, "0"))
+    .join("");
+}
 
-  await ctx.runMutation(internal.skills.setSkillModerationStatusActiveInternal, { skillId });
+async function getVirusTotalUploadUrl(apiKey: string) {
+  const response = await fetch(VIRUSTOTAL_UPLOAD_URL, {
+    method: "GET",
+    headers: {
+      "x-apikey": apiKey,
+    },
+  });
+
+  if (!response.ok) {
+    const error = await response.text();
+    throw new Error(`VT upload URL error: ${response.status} - ${error}`);
+  }
+
+  const result = (await response.json()) as { data?: unknown };
+  if (typeof result.data !== "string" || !result.data) {
+    throw new Error("VT upload URL response did not include a usable URL");
+  }
+  return result.data;
+}
+
+async function uploadFileToVirusTotal(
+  apiKey: string,
+  bytes: Uint8Array,
+  fileName: string,
+  contentType: string,
+): Promise<VirusTotalUploadResponse> {
+  const uploadUrl =
+    bytes.byteLength > VIRUSTOTAL_DIRECT_UPLOAD_LIMIT_BYTES
+      ? await getVirusTotalUploadUrl(apiKey)
+      : VIRUSTOTAL_FILES_URL;
+  const formData = new FormData();
+  formData.append("file", new Blob([bytesToArrayBuffer(bytes)], { type: contentType }), fileName);
+  return await fetch(uploadUrl, {
+    method: "POST",
+    headers: {
+      "x-apikey": apiKey,
+    },
+    body: formData,
+  });
 }
 
 export const fetchResults = internalAction({
@@ -456,13 +505,7 @@ export const scanWithVirusTotal = internalAction({
   handler: async (ctx, args) => {
     const apiKey = process.env.VT_API_KEY;
     if (!apiKey) {
-      console.log("VT_API_KEY not configured, skipping scan — activating skill");
-      const version = await ctx.runQuery(internal.skills.getVersionByIdInternal, {
-        versionId: args.versionId,
-      });
-      if (version) {
-        await activateSkillWhenVtUnavailable(ctx, version.skillId);
-      }
+      console.log("VT_API_KEY not configured, skipping skill scan without activation");
       return;
     }
 
@@ -508,10 +551,7 @@ export const scanWithVirusTotal = internalAction({
     });
 
     // Calculate SHA-256 of the ZIP (this hash includes _meta.json)
-    const hashBuffer = await crypto.subtle.digest("SHA-256", zipArray);
-    const sha256hash = Array.from(new Uint8Array(hashBuffer))
-      .map((b) => b.toString(16).padStart(2, "0"))
-      .join("");
+    const sha256hash = await sha256Hex(zipArray);
 
     // Update version with hash
     await ctx.runMutation(internal.skills.updateVersionScanResultsInternal, {
@@ -572,19 +612,13 @@ export const scanWithVirusTotal = internalAction({
       // Continue to upload even if check fails
     }
 
-    // Upload file to VirusTotal (v3 API)
-    const formData = new FormData();
-    const blob = new Blob([zipArray], { type: "application/zip" });
-    formData.append("file", blob, "skill.zip");
-
     try {
-      const response = await fetch("https://www.virustotal.com/api/v3/files", {
-        method: "POST",
-        headers: {
-          "x-apikey": apiKey,
-        },
-        body: formData,
-      });
+      const response = await uploadFileToVirusTotal(
+        apiKey,
+        zipArray,
+        "skill.zip",
+        "application/zip",
+      );
 
       if (!response.ok) {
         const error = await response.text();
@@ -608,6 +642,63 @@ export const scanWithVirusTotal = internalAction({
 
 const PACKAGE_SCAN_RETRY_DELAY_MS = 5 * 60 * 1000;
 const PACKAGE_SCAN_MAX_ATTEMPTS = 10;
+
+async function readPackageScanArtifact(
+  ctx: { storage: { get: (id: Id<"_storage">) => Promise<Blob | null> } },
+  release: Doc<"packageReleases">,
+  packageName: string,
+): Promise<PackageScanArtifact> {
+  if (release.artifactKind === "npm-pack") {
+    if (!release.clawpackStorageId) {
+      return { ok: false, missingFiles: 1, fileCount: 1 };
+    }
+
+    const content = await ctx.storage.get(release.clawpackStorageId);
+    if (!content) {
+      return { ok: false, missingFiles: 1, fileCount: 1 };
+    }
+
+    const bytes = new Uint8Array(await content.arrayBuffer());
+    return {
+      ok: true,
+      kind: "clawpack",
+      bytes,
+      sha256hash: await sha256Hex(bytes),
+      fileName:
+        release.npmTarballName ??
+        `${packageName.replace(/^@/, "").replaceAll("/", "-")}-${release.version}.tgz`,
+      contentType: "application/gzip",
+    };
+  }
+
+  const entries: Array<{ path: string; bytes: Uint8Array }> = [];
+  let missingFiles = 0;
+  for (const file of release.files) {
+    const content = await ctx.storage.get(file.storageId);
+    if (!content) {
+      missingFiles += 1;
+      continue;
+    }
+    entries.push({
+      path: file.path,
+      bytes: new Uint8Array(await content.arrayBuffer()),
+    });
+  }
+
+  if (entries.length === 0 || missingFiles > 0) {
+    return { ok: false, missingFiles, fileCount: release.files.length };
+  }
+
+  const bytes = buildDeterministicPackageZip(entries);
+  return {
+    ok: true,
+    kind: "legacy-zip",
+    bytes,
+    sha256hash: await sha256Hex(bytes),
+    fileName: "package.zip",
+    contentType: "application/zip",
+  };
+}
 
 export const scanPackageReleaseWithVirusTotal = internalAction({
   args: {
@@ -638,22 +729,10 @@ export const scanPackageReleaseWithVirusTotal = internalAction({
     }
 
     const attempt = args.attempt ?? 1;
-    const entries: Array<{ path: string; bytes: Uint8Array }> = [];
-    let missingFiles = 0;
-    for (const file of release.files) {
-      const content = await ctx.storage.get(file.storageId);
-      if (!content) {
-        missingFiles += 1;
-        continue;
-      }
-      entries.push({
-        path: file.path,
-        bytes: new Uint8Array(await content.arrayBuffer()),
-      });
-    }
-    if (entries.length === 0 || missingFiles > 0) {
+    const artifact = await readPackageScanArtifact(ctx, release, pkg.name);
+    if (!artifact.ok) {
       console.warn(
-        `[vt:package] Release ${args.releaseId} missing ${missingFiles}/${release.files.length} files, retrying`,
+        `[vt:package] Release ${args.releaseId} missing ${artifact.missingFiles}/${artifact.fileCount} scan artifact file(s), retrying`,
       );
       if (attempt < PACKAGE_SCAN_MAX_ATTEMPTS) {
         await runAfterRef(
@@ -669,19 +748,13 @@ export const scanPackageReleaseWithVirusTotal = internalAction({
       return;
     }
 
-    const zipArray = buildDeterministicPackageZip(entries);
-    const hashBuffer = await crypto.subtle.digest("SHA-256", zipArray);
-    const sha256hash = Array.from(new Uint8Array(hashBuffer))
-      .map((b) => b.toString(16).padStart(2, "0"))
-      .join("");
-
     await runMutationRef(ctx, internalRefs.packages.updateReleaseScanResultsInternal, {
       releaseId: args.releaseId,
-      sha256hash,
+      sha256hash: artifact.sha256hash,
     });
 
     try {
-      const existingFile = await checkExistingFile(apiKey, sha256hash);
+      const existingFile = await checkExistingFile(apiKey, artifact.sha256hash);
       const vtAnalysis = existingFile
         ? buildPackageScanAnalysisFromVtResult(release, pkg, existingFile)
         : null;
@@ -697,16 +770,13 @@ export const scanPackageReleaseWithVirusTotal = internalAction({
       console.error("[vt:package] Error checking existing file in VT:", error);
     }
 
-    const formData = new FormData();
-    const blob = new Blob([zipArray], { type: "application/zip" });
-    formData.append("file", blob, "package.zip");
-
     try {
-      const response = await fetch("https://www.virustotal.com/api/v3/files", {
-        method: "POST",
-        headers: { "x-apikey": apiKey },
-        body: formData,
-      });
+      const response = await uploadFileToVirusTotal(
+        apiKey,
+        artifact.bytes,
+        artifact.fileName,
+        artifact.contentType,
+      );
 
       if (!response.ok) {
         const error = await response.text();
@@ -736,7 +806,7 @@ export const scanPackageReleaseWithVirusTotal = internalAction({
       );
 
       console.log(
-        `[vt:package] Uploaded ${pkg.name}@${release.version} for scanning (${sha256hash})`,
+        `[vt:package] Uploaded ${pkg.name}@${release.version} ${artifact.kind} for scanning (${artifact.sha256hash})`,
       );
     } catch (error) {
       console.error("[vt:package] Failed to upload to VirusTotal:", error);
@@ -922,7 +992,6 @@ export const pollPendingScans = internalAction({
               versionId,
               vtAnalysis: { status: "stale", checkedAt: Date.now() },
             });
-            await activateSkillWhenVtUnavailable(ctx, skillId);
             staled++;
           }
           continue;
@@ -980,7 +1049,6 @@ export const pollPendingScans = internalAction({
               versionId,
               vtAnalysis: { status: "stale", checkedAt: Date.now() },
             });
-            await activateSkillWhenVtUnavailable(ctx, skillId);
             staled++;
           }
           continue;
@@ -1086,9 +1154,11 @@ async function requestRescan(apiKey: string, sha256hash: string): Promise<boolea
 }
 
 export const __test = {
+  VIRUSTOTAL_DIRECT_UPLOAD_LIMIT_BYTES,
   normalizeVtEngineStats,
+  sha256Hex,
   statusFromAvStats,
-  shouldActivateWhenVtUnavailable,
+  uploadFileToVirusTotal,
 };
 
 /**

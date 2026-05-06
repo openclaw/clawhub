@@ -252,7 +252,7 @@ describe("Header", () => {
     expect(signInButton.querySelector(".sign-in-compact-copy")?.textContent).toBe("GitHub");
   });
 
-  it("keeps inline search and content nav visible in the compact header", () => {
+  it("keeps inline search and moves content nav into the compact menu", () => {
     const css = compactHeaderCss();
 
     expect(css).toContain(".navbar-search-wrap");
@@ -262,11 +262,10 @@ describe("Header", () => {
     expect(css).toContain(".navbar-search-mobile-trigger");
     expect(css).toContain("display: none;");
     expect(css).toContain(".navbar-tabs {");
-    expect(css).toContain("display: flex;");
-    expect(css).toContain(".navbar-tabs-secondary");
+    expect(css).toContain("display: none;");
+    expect(css).toContain(".nav-mobile {");
     expect(css).toContain("display: inline-flex;");
     expect(css).not.toContain(".navbar-search {\n    display: none;");
-    expect(css).not.toContain(".navbar-tabs {\n    display: none;");
   });
 
   it("aligns the restored header shell to the browse page width", () => {
@@ -276,7 +275,7 @@ describe("Header", () => {
     expect(css).toContain(".navbar-inner {\n  width: 100%;\n  max-width: var(--page-max);");
     expect(css).toContain("margin: 0 auto;\n  padding: 0 var(--space-5);");
     expect(compactCss).toContain("padding: 10px 16px;");
-    expect(compactCss).toContain("scroll-padding-inline: 16px;");
+    expect(compactCss).toContain(".navbar-tabs {\n    display: none;");
     expect(css).not.toContain(".navbar-inner,\n  .section.detail-page-section");
   });
 

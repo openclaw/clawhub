@@ -304,20 +304,16 @@ describe("plugins publish route", () => {
     expect(summaryBorders.length).toBe(0);
   });
 
-  it("publishes a bundle plugin folder with bundle metadata", async () => {
+  it("does not expose the staged bundle plugin publish mode", async () => {
     renderPublishRoute();
 
     const packageJson = withRelativePath(
       new File(
         [
-          JSON.stringify({
+          makeCodePluginPackageJson({
             name: "demo-bundle",
             displayName: "Demo Bundle",
             version: "0.4.0",
-            openclaw: {
-              bundleFormat: "openclaw-bundle",
-              hostTargets: ["desktop", "mobile"],
-            },
           }),
         ],
         "package.json",
@@ -326,56 +322,34 @@ describe("plugins publish route", () => {
       "demo-bundle/package.json",
     );
     const manifest = withRelativePath(
-      new File(['{"id":"demo.bundle"}'], "openclaw.bundle.json", { type: "application/json" }),
-      "demo-bundle/openclaw.bundle.json",
+      new File(['{"id":"demo.bundle"}'], "openclaw.plugin.json", { type: "application/json" }),
+      "demo-bundle/openclaw.plugin.json",
+    );
+    const bundleMarker = withRelativePath(
+      new File(['{"name":"Demo Bundle"}'], "plugin.json", { type: "application/json" }),
+      "demo-bundle/.codex-plugin/plugin.json",
     );
     const binary = withRelativePath(
       new File([new Uint8Array([1, 2, 3])], "plugin.wasm", { type: "application/wasm" }),
       "demo-bundle/dist/plugin.wasm",
     );
 
-    fireEvent.change(getFileInput(), { target: { files: [packageJson, manifest, binary] } });
+    fireEvent.change(getFileInput(), {
+      target: { files: [packageJson, manifest, bundleMarker, binary] },
+    });
 
     await waitFor(() => {
       expect(screen.getByDisplayValue("demo-bundle")).toBeTruthy();
       expect(screen.getByDisplayValue("Demo Bundle")).toBeTruthy();
       expect(screen.getByDisplayValue("0.4.0")).toBeTruthy();
-      expect((screen.getAllByRole("combobox")[0] as HTMLSelectElement).value).toBe("bundle-plugin");
-      expect(screen.getByDisplayValue("openclaw-bundle")).toBeTruthy();
-      expect(screen.getByDisplayValue("desktop, mobile")).toBeTruthy();
+      expect((screen.getAllByRole("combobox")[0] as HTMLSelectElement).value).toBe("code-plugin");
+      expect(screen.queryByText("Bundle plugin")).toBeNull();
+      expect(screen.getByText("Agent metadata")).toBeTruthy();
+      expect(screen.queryByPlaceholderText("Bundle format")).toBeNull();
       expect(screen.getByText(/Browse files/i)).toBeTruthy();
       expect(screen.getByText(/Choose folder/i)).toBeTruthy();
     });
-
-    fireEvent.change(screen.getByPlaceholderText("Changelog"), {
-      target: { value: "Bundle release" },
-    });
-
-    fireEvent.click(screen.getByRole("button", { name: "Publish" }));
-
-    await waitFor(() => {
-      expect(publishRelease).toHaveBeenCalledTimes(1);
-    });
-
-    expect(generateUploadUrl).toHaveBeenCalledTimes(3);
-    expect(publishRelease).toHaveBeenCalledWith({
-      payload: expect.objectContaining({
-        name: "demo-bundle",
-        displayName: "Demo Bundle",
-        family: "bundle-plugin",
-        version: "0.4.0",
-        changelog: "Bundle release",
-        bundle: {
-          format: "openclaw-bundle",
-          hostTargets: ["desktop", "mobile"],
-        },
-        files: expect.arrayContaining([
-          expect.objectContaining({ path: "package.json" }),
-          expect.objectContaining({ path: "openclaw.bundle.json" }),
-          expect.objectContaining({ path: "dist/plugin.wasm" }),
-        ]),
-      }),
-    });
+    expect(publishRelease).not.toHaveBeenCalled();
   });
 
   it("prefills metadata from a wrapped GitHub release package", async () => {

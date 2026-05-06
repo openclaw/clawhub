@@ -7,6 +7,7 @@ import {
   getClawHubSiteUrl,
   getOnlyCrabsHost,
   getOnlyCrabsSiteUrl,
+  isClawHubHost,
   getSiteDescription,
   getSiteMode,
   getSiteName,
@@ -86,6 +87,14 @@ describe("site helpers", () => {
       expect(detectSiteModeFromUrl("souls.example.com")).toBe("souls");
       expect(detectSiteModeFromUrl("https://clawhub.ai")).toBe("skills");
     });
+  });
+
+  it("accepts both ClawHub domains as ClawHub hosts", () => {
+    expect(isClawHubHost("clawhub.ai")).toBe(true);
+    expect(isClawHubHost("www.clawhub.ai")).toBe(true);
+    expect(isClawHubHost("hub.openclaw.ai")).toBe(true);
+    expect(isClawHubHost("clawdhub.com")).toBe(false);
+    expect(isClawHubHost("example.com")).toBe(false);
   });
 
   it("detects site mode from window when available", () => {

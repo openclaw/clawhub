@@ -1,13 +1,16 @@
 import { internal } from "../_generated/api";
+import type { Doc } from "../_generated/dataModel";
 import type { ActionCtx } from "../_generated/server";
-import { getOptionalApiTokenUserId } from "./apiTokenAuth";
+import { getOptionalApiTokenUser } from "./apiTokenAuth";
 import { corsHeaders, mergeHeaders } from "./httpHeaders";
 
 const RATE_LIMIT_WINDOW_MS = 60_000;
+const RATE_LIMIT_SHARDS = 64;
 export const RATE_LIMITS = {
-  read: { ip: 180, key: 900 },
-  write: { ip: 45, key: 180 },
-  download: { ip: 30, key: 180 },
+  read: { ip: 3000, key: 12000, adminKey: 120000 },
+  write: { ip: 300, key: 3000, adminKey: 30000 },
+  trustedPublish: { ip: 3000, key: 12000, adminKey: 120000 },
+  download: { ip: 1200, key: 6000, adminKey: 60000 },
 } as const;
 
 type RateLimitResult = {
@@ -22,20 +25,26 @@ export async function applyRateLimit(
   request: Request,
   kind: keyof typeof RATE_LIMITS,
 ): Promise<{ ok: true; headers: HeadersInit } | { ok: false; response: Response }> {
-  const userId = await getOptionalApiTokenUserId(ctx, request);
+  const auth = await getOptionalApiTokenUser(ctx, request);
   const ip = getClientIp(request) ?? "unknown";
   const ipSource = getClientIpSource(request);
   const hasClientIp = ip !== "unknown";
 
   // Authenticated requests are enforced and consumed by user bucket only to
   // avoid draining shared IP quota.
-  if (userId) {
-    const userResult = await checkRateLimit(ctx, `user:${userId}`, RATE_LIMITS[kind].key);
+  if (auth) {
+    const userLimit = getAuthenticatedRateLimit(kind, auth.user);
+    const userResult = await checkRateLimit(
+      ctx,
+      getAuthenticatedRateLimitKey(auth.userId, kind),
+      userLimit,
+    );
     const headers = rateHeaders(userResult);
     if (!userResult.allowed) {
       console.info("rate_limit_denied", {
         kind,
         auth: true,
+        admin: auth.user.role === "admin",
         userAllowed: false,
         ipAllowed: null,
         ipSource,
@@ -96,9 +105,20 @@ export async function applyRateLimit(
 }
 
 function getAnonymousRateLimitKey(request: Request, kind: keyof typeof RATE_LIMITS, ip: string) {
-  if (ip !== "unknown") return `ip:${ip}`;
-  if (kind !== "download") return "ip:unknown";
+  if (ip !== "unknown") return `ip:${ip}:${kind}`;
+  if (kind !== "download") return `ip:unknown:${kind}`;
   return `ip:unknown:download:${getDownloadRateLimitScope(request)}`;
+}
+
+function getAuthenticatedRateLimitKey(userId: string, kind: keyof typeof RATE_LIMITS) {
+  return `user:${userId}:${kind}`;
+}
+
+function getAuthenticatedRateLimit(
+  kind: keyof typeof RATE_LIMITS,
+  user: Pick<Doc<"users">, "role">,
+) {
+  return user.role === "admin" ? RATE_LIMITS[kind].adminKey : RATE_LIMITS[kind].key;
 }
 
 export function getClientIp(request: Request) {
@@ -147,6 +167,7 @@ async function checkRateLimit(
       key,
       limit,
       windowMs: RATE_LIMIT_WINDOW_MS,
+      shard: Math.floor(Math.random() * RATE_LIMIT_SHARDS),
     })) as { allowed: boolean; remaining: number };
   } catch (error) {
     if (isRateLimitWriteConflict(error)) {
@@ -162,7 +183,7 @@ async function checkRateLimit(
 
   return {
     allowed: result.allowed,
-    remaining: result.remaining,
+    remaining: Math.max(0, status.remaining - 1),
     limit: status.limit,
     resetAt: status.resetAt,
   };
@@ -233,7 +254,7 @@ function shouldTrustForwardedIps() {
 function isRateLimitWriteConflict(error: unknown) {
   if (!(error instanceof Error)) return false;
   return (
-    error.message.includes("rateLimits") &&
+    (error.message.includes("rateLimits") || error.message.includes("rateLimitShards")) &&
     error.message.includes("changed while this mutation was being run")
   );
 }

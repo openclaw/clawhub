@@ -1,4 +1,4 @@
-import { createFileRoute, Link, Outlet, useRouterState } from "@tanstack/react-router";
+import { createFileRoute, Link, Outlet, redirect, useRouterState } from "@tanstack/react-router";
 import { useMutation, useQuery } from "convex/react";
 import { AlertTriangle, ExternalLink, Download } from "lucide-react";
 import type { ComponentProps } from "react";
@@ -16,9 +16,11 @@ import { Button } from "../../components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "../../components/ui/card";
 import { getUserFacingConvexError } from "../../lib/convexError";
 import { formatRetryDelay } from "../../lib/formatRetryDelay";
+import { getOpenClawPackageCandidateNames } from "../../lib/openClawExtensionSlugs";
 import {
   fetchPackageDetail,
   fetchPackageReadme,
+  getPackageArtifactDownloadPath,
   fetchPackageVersion,
   getPackageDownloadPath,
   isRateLimitedPackageApiError,
@@ -26,6 +28,11 @@ import {
   type PackageVersionDetail,
 } from "../../lib/packageApi";
 import { familyLabel } from "../../lib/packageLabels";
+import {
+  buildPluginDetailHref,
+  buildPluginSecurityBaseHref,
+  parseScopedPackageName,
+} from "../../lib/pluginRoutes";
 import { useAuthStatus } from "../../lib/useAuthStatus";
 
 type PluginDetailRateLimitState = {
@@ -33,90 +40,111 @@ type PluginDetailRateLimitState = {
   retryAfterSeconds: number | null;
 } | null;
 
-type PluginDetailLoaderData = {
+export type PluginDetailLoaderData = {
   detail: PackageDetailResponse;
   version: PackageVersionDetail | null;
   readme: string | null;
   rateLimited: PluginDetailRateLimitState;
 };
 
-export const Route = createFileRoute("/plugins/$name")({
-  loader: async ({ params }): Promise<PluginDetailLoaderData> => {
-    const requestedName = params.name;
-    const candidateNames = requestedName.includes("/")
-      ? [requestedName]
-      : [requestedName, `@openclaw/${requestedName}`];
+export async function loadPluginDetail(requestedName: string): Promise<PluginDetailLoaderData> {
+  const candidateNames = getOpenClawPackageCandidateNames(requestedName);
 
-    let resolvedName = requestedName;
-    let detail: PackageDetailResponse = { package: null, owner: null };
+  let resolvedName = requestedName;
+  let detail: PackageDetailResponse = { package: null, owner: null };
 
-    for (const candidateName of candidateNames) {
-      let candidateDetail: PackageDetailResponse;
-      try {
-        candidateDetail = await fetchPackageDetail(candidateName);
-      } catch (error) {
-        if (isRateLimitedPackageApiError(error)) {
-          return {
-            detail: { package: null, owner: null },
-            version: null,
-            readme: null,
-            rateLimited: {
-              scope: "detail",
-              retryAfterSeconds: error.retryAfterSeconds,
-            },
-          };
-        }
-        throw error;
-      }
-      if (candidateDetail.package) {
-        detail = candidateDetail;
-        resolvedName = candidateName;
-        break;
-      }
-      detail = candidateDetail;
-    }
-
-    if (!detail.package) {
-      return { detail, version: null, readme: null, rateLimited: null };
-    }
-
+  for (const candidateName of candidateNames) {
+    let candidateDetail: PackageDetailResponse;
     try {
-      const [version, readme] = await Promise.all([
-        detail.package.latestVersion
-          ? fetchPackageVersion(resolvedName, detail.package.latestVersion)
-          : Promise.resolve(null),
-        fetchPackageReadme(resolvedName),
-      ]);
-
-      return { detail, version, readme, rateLimited: null };
+      candidateDetail = await fetchPackageDetail(candidateName);
     } catch (error) {
       if (isRateLimitedPackageApiError(error)) {
         return {
-          detail,
+          detail: { package: null, owner: null },
           version: null,
           readme: null,
           rateLimited: {
-            scope: "metadata",
+            scope: "detail",
             retryAfterSeconds: error.retryAfterSeconds,
           },
         };
       }
       throw error;
     }
-  },
-  head: ({ params, loaderData }) => ({
+    if (candidateDetail.package) {
+      detail = candidateDetail;
+      resolvedName = candidateName;
+      break;
+    }
+    detail = candidateDetail;
+  }
+
+  if (!detail.package) {
+    return { detail, version: null, readme: null, rateLimited: null };
+  }
+
+  try {
+    const [version, readme] = await Promise.all([
+      detail.package.latestVersion
+        ? fetchPackageVersion(resolvedName, detail.package.latestVersion)
+        : Promise.resolve(null),
+      fetchPackageReadme(resolvedName),
+    ]);
+
+    return { detail, version, readme, rateLimited: null };
+  } catch (error) {
+    if (isRateLimitedPackageApiError(error)) {
+      return {
+        detail,
+        version: null,
+        readme: null,
+        rateLimited: {
+          scope: "metadata",
+          retryAfterSeconds: error.retryAfterSeconds,
+        },
+      };
+    }
+    throw error;
+  }
+}
+
+export function pluginDetailHead(name: string, loaderData?: PluginDetailLoaderData) {
+  return {
     meta: [
       {
         title: loaderData?.detail.package?.displayName
           ? `${loaderData.detail.package.displayName} · Plugins`
-          : params.name,
+          : name,
       },
       {
         name: "description",
-        content: loaderData?.detail.package?.summary ?? `Plugin ${params.name}`,
+        content: loaderData?.detail.package?.summary ?? `Plugin ${name}`,
       },
     ],
-  }),
+  };
+}
+
+export const Route = createFileRoute("/plugins/$name")({
+  beforeLoad: ({ location, params }) => {
+    if (parseScopedPackageName(params.name)) {
+      const encodedSecurityPrefix = `/plugins/${encodeURIComponent(params.name)}/security/`;
+      if (location.pathname.startsWith(encodedSecurityPrefix)) {
+        throw redirect({
+          href: `${buildPluginSecurityBaseHref(params.name)}/${location.pathname.slice(
+            encodedSecurityPrefix.length,
+          )}`,
+          statusCode: 308,
+        });
+      }
+
+      throw redirect({
+        href: buildPluginDetailHref(params.name),
+        statusCode: 308,
+      });
+    }
+  },
+  loader: async ({ params }) => loadPluginDetail(params.name),
+  head: ({ params, loaderData }) => pluginDetailHead(params.name, loaderData),
   component: PluginDetailRoute,
 });
 
@@ -175,14 +203,41 @@ function formatCapabilityValue(value: unknown): string {
   return JSON.stringify(value);
 }
 
+function formatArtifactSize(value: number | null | undefined): string | null {
+  if (typeof value !== "number" || !Number.isFinite(value) || value < 0) return null;
+  if (value < 1024) return `${value} B`;
+  const units = ["KB", "MB", "GB"] as const;
+  let size = value / 1024;
+  let unitIndex = 0;
+  while (size >= 1024 && unitIndex < units.length - 1) {
+    size /= 1024;
+    unitIndex += 1;
+  }
+  return `${size >= 10 ? size.toFixed(0) : size.toFixed(1)} ${units[unitIndex]}`;
+}
+
 function isEmptyObject(obj: unknown): boolean {
   if (!obj || typeof obj !== "object") return true;
   return Object.keys(obj).length === 0;
 }
 
 function PluginDetailRoute() {
-  const { name } = Route.useParams();
-  const { detail, version, readme, rateLimited } = Route.useLoaderData() as PluginDetailLoaderData;
+  return (
+    <PluginDetailPage
+      name={Route.useParams().name}
+      loaderData={Route.useLoaderData() as PluginDetailLoaderData}
+    />
+  );
+}
+
+export function PluginDetailPage({
+  name,
+  loaderData,
+}: {
+  name: string;
+  loaderData: PluginDetailLoaderData;
+}) {
+  const { detail, version, readme, rateLimited } = loaderData;
   const pathname = useRouterState({ select: (state) => state.location.pathname });
   const { isAuthenticated } = useAuthStatus();
   const requestPluginRescan = useMutation(api.packages.requestRescan);
@@ -240,12 +295,17 @@ function PluginDetailRoute() {
     pkg.family === "code-plugin"
       ? `openclaw plugins install clawhub:${pkg.name}`
       : pkg.family === "bundle-plugin"
-        ? `openclaw bundles install clawhub:${pkg.name}`
+        ? `openclaw plugins install clawhub:${pkg.name}`
         : `openclaw skills install ${pkg.name}`;
 
   const capabilities = latestRelease?.capabilities ?? pkg.capabilities;
   const compatibility = latestRelease?.compatibility ?? pkg.compatibility;
   const verification = latestRelease?.verification ?? pkg.verification;
+  const artifact = latestRelease?.artifact ?? pkg.artifact ?? null;
+  const downloadPath =
+    pkg.latestVersion && latestRelease?.version && artifact?.kind === "npm-pack"
+      ? getPackageArtifactDownloadPath(pkg.name, latestRelease.version)
+      : getPackageDownloadPath(pkg.name, pkg.latestVersion);
   const requestRescan = async () => {
     const packageId = (pkg as { _id?: Id<"packages"> })._id;
     if (!packageId) {
@@ -292,7 +352,7 @@ function PluginDetailRoute() {
                 {pkg.latestVersion && !isDownloadBlocked ? (
                   <div className="skill-title-actions">
                     <Button asChild variant="outline" size="sm" className="no-underline">
-                      <a href={getPackageDownloadPath(name, pkg.latestVersion)}>
+                      <a href={downloadPath}>
                         <Download className="h-3.5 w-3.5" aria-hidden="true" />
                         Download
                       </a>
@@ -358,7 +418,7 @@ function PluginDetailRoute() {
           <div className="skill-hero-action-grid">
             {latestRelease ? (
               <DetailSecuritySummary
-                scannerBasePath={`/plugins/${encodeURIComponent(name)}/security`}
+                scannerBasePath={buildPluginSecurityBaseHref(name)}
                 sha256hash={latestRelease.sha256hash ?? null}
                 vtAnalysis={latestRelease.vtAnalysis ?? null}
                 llmAnalysis={latestRelease.llmAnalysis ?? null}
@@ -385,6 +445,65 @@ function PluginDetailRoute() {
                 </div>
               </CardContent>
             </Card>
+            {artifact ? (
+              <Card>
+                <CardHeader>
+                  <CardTitle>Artifact</CardTitle>
+                </CardHeader>
+                <CardContent>
+                  <div className="flex flex-col gap-3 text-sm">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <Badge>{artifact.kind === "npm-pack" ? "ClawPack" : "Legacy ZIP"}</Badge>
+                      {artifact.kind === "npm-pack" ? (
+                        <span className="text-[color:var(--ink-soft)]">npm pack .tgz</span>
+                      ) : (
+                        <span className="text-[color:var(--ink-soft)]">
+                          Not upgraded to the latest OpenClaw plugin architecture.
+                        </span>
+                      )}
+                    </div>
+                    {artifact.kind === "legacy-zip" ? (
+                      <p className="text-sm text-[color:var(--ink-soft)]">
+                        This plugin uses the legacy ZIP path and may have compatibility issues until
+                        the publisher uploads a ClawPack.
+                      </p>
+                    ) : null}
+                    {artifact.kind === "npm-pack" ? (
+                      <dl className="grid gap-2 sm:grid-cols-[minmax(120px,160px)_1fr]">
+                        {artifact.npmTarballName ? (
+                          <>
+                            <dt className="font-semibold text-[color:var(--ink-soft)]">Tarball</dt>
+                            <dd className="break-all font-mono text-xs">
+                              {artifact.npmTarballName}
+                            </dd>
+                          </>
+                        ) : null}
+                        {formatArtifactSize(artifact.size) ? (
+                          <>
+                            <dt className="font-semibold text-[color:var(--ink-soft)]">Size</dt>
+                            <dd>{formatArtifactSize(artifact.size)}</dd>
+                          </>
+                        ) : null}
+                        {typeof artifact.npmFileCount === "number" ? (
+                          <>
+                            <dt className="font-semibold text-[color:var(--ink-soft)]">Files</dt>
+                            <dd>{artifact.npmFileCount}</dd>
+                          </>
+                        ) : null}
+                        {artifact.npmIntegrity ? (
+                          <>
+                            <dt className="font-semibold text-[color:var(--ink-soft)]">
+                              Integrity
+                            </dt>
+                            <dd className="break-all font-mono text-xs">{artifact.npmIntegrity}</dd>
+                          </>
+                        ) : null}
+                      </dl>
+                    ) : null}
+                  </div>
+                </CardContent>
+              </Card>
+            ) : null}
           </div>
 
           {readme ? (

@@ -1,10 +1,58 @@
 # Changelog
 
-## Unreleased
+## 0.12.3 - 2026-05-06
+
+### Fixes
+
+- CLI/API: allow skill publishes to target an org/user publisher with `--owner` / `ownerHandle`, and keep root `SKILL.md` publishable even when broad ignore rules match Markdown files (thanks @deepujain).
+- Packages: expose owned plugin/package soft-delete in the CLI and dashboard, keep moderator takedown access, and remove deleted packages from package search surfaces (thanks @Patrick-Erichsen).
+- Packages: support monorepo package publishes, infer package owners from scoped names, and keep dry-run publishes metadata-only.
+- Packages: validate code-plugin runtime entries against extracted files, allow admin plugin release publishes, and raise trusted-publish/admin API rate limits for legitimate publish bursts.
+- API/Search: return lean skill list payloads, route package search through digest indexes, decode scoped package paths, and bound fallback scans to reduce production read pressure.
+- Web: restore skill downloads and search paging, canonicalize scoped plugin paths, and improve mobile layout responsiveness.
+- Security: add scanner checks for confirmation bypasses and Python file upload exfiltration while reducing generic false-positive package tags.
+
+## 0.12.2 - 2026-05-02
+
+### Fixes
+
+- CLI: publish code plugins as clawpacks and allow legacy package downloads to keep older install flows working.
+- API: resolve scoped package routes and accept scoped npm packuments.
+- Schema: allow nullable package SHA values in package responses and refresh generated schema artifacts.
+
+## 0.12.1 - 2026-05-02
+
+### Added
+
+- Packages: add clawpack parsing, uploads, mirror artifact routes, artifact downloads, release moderation, reports, appeals, and official migration management across API, dashboard, and CLI.
+- Security: add ClawScan security surfaces, owner rescan guidance, scanner-specific report pages, security dataset snapshots, and redacted skill-content exports.
+- CLI: add unban support, moderation diagnostics in `inspect`, manual skill-directory listing, package environment filters, and package migration-status commands.
+- Web: add skills/plugins search typeahead, featured plugin curation, plugin management tools, skill upload shortcuts, and dashboard pagination.
+
+### Fixes
+
+- API: raise public read rate limits to reduce false-positive 429s from browser pages and production smoke tests (thanks @steipete).
+- CLI/moderation: allow `delete`, `hide`, `undelete`, and `unhide` to record moderation reasons in skill notes and audit logs for legal or policy reviews (thanks @steipete).
+- Packages: make package publish retries idempotent, constrain catalog queries, keep package list queries single-page, count package archive downloads, and keep beta plugin packages off `latest`.
+- Search: add soul lexical fallback, non-suspicious digest indexes, normalized skill prefix recall, and more stable relevance recall windows.
+- Security: broaden static scanner coverage for unsafe credential, subprocess, browser-file, provider-secret, and remote-recipe patterns while hardening prompt-boundary handling.
+- Deploy/CI: harden production smoke checks, expand PR validation coverage, add dead-code gates, and stabilize CodeQL light coverage.
+- Dependencies: pin `undici` on the Node 20-compatible line after reverting the incompatible v8 update.
+
+## 0.12.0 - 2026-04-28
+
+### Added
+
+- Security: add owner rescan requests, owner flagged inventory, scanner-specific security pages, and in-progress scan states.
+- UI: adopt shadcn-managed primitives and polish the rescan/security surfaces for mobile.
 
 ### Fixes
 
 - Moderation: calibrate VirusTotal Code Insight suspicious verdicts so uncorroborated AI-only findings do not keep otherwise clean skills quarantined (#1830, #1841) (thanks @deepujain).
+- Security: flag exposed secrets in skill docs and normalize VirusTotal engine stats before caching.
+- Packages: constrain plugin catalog queries and avoid catalog/package-list query limits.
+- Auth: tolerate stale auth state when reading star status.
+- CI: harden and debounce ClawSweeper dispatch workflows and fix production smoke coverage.
 
 ## 0.11.0 - 2026-04-28
 

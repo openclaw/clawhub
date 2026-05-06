@@ -4,7 +4,6 @@ import ReactMarkdown from "react-markdown";
 import rehypeRaw from "rehype-raw";
 import rehypeSanitize, { defaultSchema } from "rehype-sanitize";
 import remarkGfm from "remark-gfm";
-import type { HighlighterGeneric } from "shiki";
 import type { PluggableList } from "unified";
 import { rehypeProxyImages } from "../lib/rehypeProxyImages";
 import { cn } from "../lib/utils";
@@ -58,24 +57,22 @@ const SHIKI_LANGS = [
   "diff",
 ];
 
-type AnyHighlighter = HighlighterGeneric<string, string>;
-let highlighterPromise: Promise<AnyHighlighter> | null = null;
+let highlighterPromise: Promise<unknown> | null = null;
 
-function loadHighlighter(): Promise<AnyHighlighter> {
+function loadHighlighter(): Promise<unknown> {
   if (!highlighterPromise) {
-    highlighterPromise = import("shiki").then(
-      ({ createHighlighter }) =>
-        createHighlighter({
-          themes: [SHIKI_THEME],
-          langs: SHIKI_LANGS,
-        }) as Promise<AnyHighlighter>,
+    highlighterPromise = import("shiki").then(({ createHighlighter }) =>
+      createHighlighter({
+        themes: [SHIKI_THEME],
+        langs: SHIKI_LANGS,
+      }),
     );
   }
   return highlighterPromise;
 }
 
 export function MarkdownPreview({ children, className, highlight = true }: MarkdownPreviewProps) {
-  const [highlighter, setHighlighter] = useState<AnyHighlighter | null>(null);
+  const [highlighter, setHighlighter] = useState<unknown>(null);
 
   useEffect(() => {
     let cancelled = false;

@@ -32,6 +32,7 @@ export const REASON_CODES = {
   AUTONOMOUS_CREDENTIAL_EGRESS: "suspicious.autonomous_credential_egress",
   HARDCODED_OPERATOR_BILLING: "suspicious.hardcoded_operator_billing",
   REMOTE_RECIPE_EXECUTION: "suspicious.remote_recipe_execution",
+  CONFIRMATION_BYPASS: "suspicious.confirmation_bypass",
   CREDENTIAL_HARVEST: "suspicious.env_credential_access",
   EXFILTRATION: "suspicious.potential_exfiltration",
   OBFUSCATED_CODE: "suspicious.obfuscated_code",

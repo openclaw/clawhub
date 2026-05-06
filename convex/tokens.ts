@@ -4,6 +4,8 @@ import { internalMutation, internalQuery, mutation, query } from "./functions";
 import { requireUser } from "./lib/access";
 import { generateToken, hashToken } from "./lib/tokens";
 
+const TOKEN_TOUCH_MIN_INTERVAL_MS = 15 * 60_000;
+
 export const listMine = query({
   args: {},
   handler: async (ctx) => {
@@ -72,9 +74,11 @@ export const getByHashInternal = internalQuery({
 export const touchInternal = internalMutation({
   args: { tokenId: v.id("apiTokens") },
   handler: async (ctx, args) => {
+    const now = Date.now();
     const token = await ctx.db.get(args.tokenId);
     if (!token || token.revokedAt) return;
-    await ctx.db.patch(token._id, { lastUsedAt: Date.now() });
+    if (token.lastUsedAt && now - token.lastUsedAt < TOKEN_TOUCH_MIN_INTERVAL_MS) return;
+    await ctx.db.patch(token._id, { lastUsedAt: now });
   },
 });
 

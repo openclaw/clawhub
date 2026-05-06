@@ -3,7 +3,7 @@ import type { Id } from "../../convex/_generated/dataModel";
 import { getClawHubSiteUrl } from "../lib/site";
 
 export type SkillPromptMode = "install-only" | "install-and-setup";
-export type SkillPackageManager = "npm" | "pnpm" | "bun";
+type SkillPackageManager = "npm" | "pnpm" | "bun";
 
 function assertNever(value: never): never {
   throw new Error(`Unsupported package manager: ${String(value)}`);
@@ -126,7 +126,7 @@ export function formatOsList(os?: string[]) {
   });
 }
 
-export function formatSystemsList(systems?: string[]): string[] {
+function formatSystemsList(systems?: string[]): string[] {
   if (!systems?.length) return [];
   const labels: Record<string, string> = {
     "aarch64-darwin": "macOS ARM64",

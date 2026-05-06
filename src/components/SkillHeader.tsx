@@ -7,6 +7,7 @@ import type { Doc, Id } from "../../convex/_generated/dataModel";
 import { getSkillBadges } from "../lib/badges";
 import { formatCompactStat, formatSkillStatsTriplet } from "../lib/numberFormat";
 import type { PublicPublisher, PublicSkill } from "../lib/publicUser";
+import { getRuntimeEnv } from "../lib/runtimeEnv";
 import { timeAgo } from "../lib/timeAgo";
 import { DetailHero } from "./DetailPageShell";
 import { SkillInstallCard } from "./SkillInstallCard";
@@ -15,7 +16,7 @@ import { Badge } from "./ui/badge";
 import { Button } from "./ui/button";
 import { UserBadge } from "./UserBadge";
 
-export type SkillModerationInfo = {
+type SkillModerationInfo = {
   isPendingScan: boolean;
   isMalwareBlocked: boolean;
   isSuspicious: boolean;
@@ -107,6 +108,13 @@ export function SkillHeader({
 }: SkillHeaderProps) {
   const formattedStats = formatSkillStatsTriplet(skill.stats);
   const installOwnerId = owner?._id ?? skill.ownerPublisherId ?? skill.ownerUserId ?? null;
+  const convexSiteUrl = getRuntimeEnv("VITE_CONVEX_SITE_URL") ?? "https://clawhub.ai";
+  const downloadHref =
+    latestVersion && !nixPlugin
+      ? `${convexSiteUrl}/api/v1/download?slug=${encodeURIComponent(skill.slug)}`
+      : null;
+  const hasTitleActions =
+    Boolean(downloadHref) || isAuthenticated || canManage || isStaff || Boolean(settingsHref);
 
   return (
     <>
@@ -124,10 +132,10 @@ export function SkillHeader({
       ) : modInfo?.isSuspicious ? (
         <div className="pending-banner pending-banner-warning">
           <div className="pending-banner-content">
-            <strong>Skill flagged — suspicious patterns detected</strong>
+            <strong>Skill flagged — review recommended</strong>
             <p>
-              ClawHub Security flagged this skill as suspicious. Review the scan results before
-              using.
+              ClawHub Security found sensitive or high-impact capabilities. Review the scan results
+              before using.
             </p>
             {canManage ? (
               <p className="pending-banner-appeal">
@@ -171,8 +179,16 @@ export function SkillHeader({
                   <span className="plugin-version-badge">v{latestVersion.version}</span>
                 ) : null}
                 {nixPlugin ? <Badge variant="accent">Plugin bundle (nix)</Badge> : null}
-                {isAuthenticated || canManage || isStaff || settingsHref ? (
+                {hasTitleActions ? (
                   <div className="skill-title-actions">
+                    {downloadHref ? (
+                      <Button asChild variant="outline" size="sm" className="skill-settings-link">
+                        <a href={downloadHref}>
+                          <Download size={14} aria-hidden="true" />
+                          Download zip
+                        </a>
+                      </Button>
+                    ) : null}
                     {isAuthenticated ? (
                       <>
                         <button

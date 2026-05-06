@@ -8,7 +8,7 @@ import { FEATURE_SOULS } from "./features";
 /** Lucide icon name used as a key to look up the component at render time. */
 export type NavIconName = "wrench" | "plug" | "ghost";
 
-export interface NavItem {
+interface NavItem {
   /** Visible link text */
   label: string;
   /** Route path passed to `<Link to>` */
@@ -126,12 +126,12 @@ export const SECONDARY_NAV_ITEMS: NavItem[] = [
 // Footer sections
 // ---------------------------------------------------------------------------
 
-export interface FooterNavSection {
+interface FooterNavSection {
   title: string;
   items: FooterNavItem[];
 }
 
-export type FooterNavItem =
+type FooterNavItem =
   | {
       kind: "link";
       label: string;

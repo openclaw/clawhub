@@ -5,7 +5,7 @@ type SlugAvailabilityResult = {
   url: string | null;
 } | null;
 
-export type PublicSlugCollision = {
+type PublicSlugCollision = {
   message: string;
   url: string | null;
 };

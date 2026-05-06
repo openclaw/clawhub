@@ -19,12 +19,12 @@ export const getRateLimitStatusInternal = internalQuery({
       return { allowed: false, remaining: 0, limit: args.limit, resetAt };
     }
 
-    const existing = await ctx.db
-      .query("rateLimits")
+    const shardRows = await ctx.db
+      .query("rateLimitShards")
       .withIndex("by_key_window", (q) => q.eq("key", args.key).eq("windowStart", windowStart))
-      .unique();
+      .collect();
 
-    const count = existing?.count ?? 0;
+    const count = shardRows.reduce((sum, row) => sum + row.count, 0);
     const allowed = count < args.limit;
     return {
       allowed,
@@ -45,26 +45,25 @@ export const consumeRateLimitInternal = internalMutation({
     key: v.string(),
     limit: v.number(),
     windowMs: v.number(),
+    shard: v.optional(v.number()),
   },
   handler: async (ctx, args) => {
     const now = Date.now();
     const windowStart = Math.floor(now / args.windowMs) * args.windowMs;
+    const shard = Math.max(0, Math.floor(args.shard ?? 0));
 
     const existing = await ctx.db
-      .query("rateLimits")
-      .withIndex("by_key_window", (q) => q.eq("key", args.key).eq("windowStart", windowStart))
-      .unique();
-
-    // Double-check: another request may have consumed the last token
-    // between our query and this mutation
-    if (existing && existing.count >= args.limit) {
-      return { allowed: false, remaining: 0 };
-    }
+      .query("rateLimitShards")
+      .withIndex("by_key_window_shard", (q) =>
+        q.eq("key", args.key).eq("windowStart", windowStart).eq("shard", shard),
+      )
+      .first();
 
     if (!existing) {
-      await ctx.db.insert("rateLimits", {
+      await ctx.db.insert("rateLimitShards", {
         key: args.key,
         windowStart,
+        shard,
         count: 1,
         limit: args.limit,
         updatedAt: now,
@@ -79,7 +78,7 @@ export const consumeRateLimitInternal = internalMutation({
     });
     return {
       allowed: true,
-      remaining: Math.max(0, args.limit - existing.count - 1),
+      remaining: Math.max(0, args.limit - 1),
     };
   },
 });

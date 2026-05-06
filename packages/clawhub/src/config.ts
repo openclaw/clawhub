@@ -22,7 +22,7 @@ function isNonFatalChmodError(error: unknown): boolean {
   return code === "EPERM" || code === "ENOTSUP" || code === "EOPNOTSUPP" || code === "EINVAL";
 }
 
-export function getGlobalConfigPath() {
+function getGlobalConfigPath() {
   const override =
     process.env.CLAWHUB_CONFIG_PATH?.trim() ?? process.env.CLAWDHUB_CONFIG_PATH?.trim();
   if (override) return resolve(override);

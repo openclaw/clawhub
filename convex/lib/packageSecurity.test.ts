@@ -47,4 +47,25 @@ describe("packageSecurity", () => {
       } as never),
     ).toBe("suspicious");
   });
+
+  it("lets manual package moderation approve or block releases", () => {
+    expect(
+      resolvePackageReleaseScanStatus({
+        staticScan: { status: "malicious" },
+        manualModeration: { state: "approved" },
+      } as never),
+    ).toBe("clean");
+
+    expect(
+      getPackageDownloadSecurityBlock({
+        verification: { scanStatus: "clean" },
+        manualModeration: { state: "quarantined" },
+      } as never),
+    ).toEqual(
+      expect.objectContaining({
+        status: 403,
+        message: expect.stringContaining("quarantined"),
+      }),
+    );
+  });
 });

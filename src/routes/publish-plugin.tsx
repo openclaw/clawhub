@@ -28,10 +28,7 @@ export const Route = createFileRoute("/publish-plugin")({
     ownerHandle: typeof search.ownerHandle === "string" ? search.ownerHandle : undefined,
     name: typeof search.name === "string" ? search.name : undefined,
     displayName: typeof search.displayName === "string" ? search.displayName : undefined,
-    family:
-      search.family === "code-plugin" || search.family === "bundle-plugin"
-        ? search.family
-        : undefined,
+    family: search.family === "code-plugin" ? search.family : undefined,
     nextVersion: typeof search.nextVersion === "string" ? search.nextVersion : undefined,
     sourceRepo: typeof search.sourceRepo === "string" ? search.sourceRepo : undefined,
   }),
@@ -43,6 +40,8 @@ const apiRefs = api as unknown as {
     publishRelease: unknown;
   };
 };
+
+const SHOW_CLAWPACK_ONBOARDING_BANNER = false;
 
 export function PublishPluginRoute() {
   const search = useSearch({ from: "/publish-plugin" });
@@ -62,9 +61,7 @@ export function PublishPluginRoute() {
   const publishRelease = useAction(apiRefs.packages.publishRelease as never) as unknown as (args: {
     payload: unknown;
   }) => Promise<unknown>;
-  const [family, setFamily] = useState<"code-plugin" | "bundle-plugin">(
-    search.family === "bundle-plugin" ? "bundle-plugin" : "code-plugin",
-  );
+  const [family, setFamily] = useState<"code-plugin" | "bundle-plugin">("code-plugin");
   const [name, setName] = useState(search.name ?? "");
   const [displayName, setDisplayName] = useState(search.displayName ?? "");
   const [ownerHandle, setOwnerHandle] = useState(search.ownerHandle ?? "");
@@ -128,7 +125,7 @@ export function PublishPluginRoute() {
     setDetectedPrefillFields(listPrefilledFields(prefill));
     setCodePluginFieldIssues(prefill.missingRequiredFields ?? []);
     setCodePluginCompatibility(prefill.compatibility ?? null);
-    if (prefill.family) setFamily(prefill.family);
+    if (prefill.family === "code-plugin") setFamily(prefill.family);
     if (prefill.name) setName(prefill.name);
     if (prefill.displayName) setDisplayName(prefill.displayName);
     if (prefill.version) setVersion(prefill.version);
@@ -154,7 +151,7 @@ export function PublishPluginRoute() {
             {search.name ? "Publish Plugin Release" : "Publish Plugin"}
           </h1>
           <p className="text-sm text-[color:var(--ink-soft)]">
-            Publish a native code plugin or bundle plugin release.
+            Publish a native code plugin release.
           </p>
           <p className="text-sm text-[color:var(--ink-soft)]">
             New releases stay private until automated security checks and verification finish.
@@ -168,6 +165,18 @@ export function PublishPluginRoute() {
             </p>
           ) : null}
         </header>
+
+        {SHOW_CLAWPACK_ONBOARDING_BANNER ? (
+          <Card className="mb-5 border-[rgba(255,107,74,0.3)] bg-[rgba(255,107,74,0.06)]">
+            <p className="text-sm font-medium text-[color:var(--ink)]">
+              ClawPack publishing is moving to npm-pack .tgz uploads.
+            </p>
+            <p className="mt-1 text-sm text-[color:var(--ink-soft)]">
+              Use the CLI for exact ClawPack bytes while the web uploader remains on the legacy
+              compatibility path.
+            </p>
+          </Card>
+        ) : null}
 
         <PackageSourceChooser
           files={files}
@@ -203,7 +212,6 @@ export function PublishPluginRoute() {
               onChange={(event) => setFamily(event.target.value as never)}
             >
               <option value="code-plugin">Code plugin</option>
-              <option value="bundle-plugin">Bundle plugin</option>
             </select>
             <Input
               placeholder="Plugin name"

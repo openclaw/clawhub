@@ -20,7 +20,7 @@ type RescanRequest = {
   completedAt?: number;
 };
 
-export type DetailRescanState = {
+type DetailRescanState = {
   maxRequests: number;
   requestCount: number;
   remainingRequests: number;

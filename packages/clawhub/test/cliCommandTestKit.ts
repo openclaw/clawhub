@@ -22,6 +22,7 @@ export function createHttpModuleMocks() {
   const apiRequest = vi.fn();
   const apiRequestForm = vi.fn();
   const downloadZip = vi.fn();
+  const fetchBinary = vi.fn();
   const fetchText = vi.fn();
   const registryUrl = vi.fn(buildRegistryUrl);
 
@@ -29,6 +30,7 @@ export function createHttpModuleMocks() {
     apiRequest,
     apiRequestForm,
     downloadZip,
+    fetchBinary,
     fetchText,
     registryUrl,
     moduleFactory: () => ({
@@ -37,6 +39,7 @@ export function createHttpModuleMocks() {
       apiRequestForm: (registry: unknown, args: unknown, schema?: unknown) =>
         apiRequestForm(registry, args, schema),
       downloadZip: (registry: unknown, args: unknown) => downloadZip(registry, args),
+      fetchBinary: (registry: unknown, args: unknown) => fetchBinary(registry, args),
       fetchText: (registry: unknown, args: unknown) => fetchText(registry, args),
       registryUrl: (...args: [string, string]) => registryUrl(...args),
     }),

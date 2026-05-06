@@ -43,3 +43,5 @@ skills-lock.json
 !.agents/skills/blacksmith-testbox/**
 skills/*
 .codex/*
+!.codex/environments/
+!.codex/environments/environment.toml

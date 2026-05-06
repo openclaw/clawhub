@@ -115,6 +115,10 @@ const SHELL_BASE64_FILE_READ_PATTERN =
   /(?:\bcat\s+["']?\$[A-Za-z_][A-Za-z0-9_]*["']?\s*\|\s*base64\b|\bbase64\b[^\n]{0,80}["']?\$[A-Za-z_][A-Za-z0-9_]*["']?)/i;
 const SHELL_NETWORK_UPLOAD_PATTERN =
   /\bcurl\b[\s\S]{0,1600}(?:--data(?:-binary|-raw)?\b|-d\b|--form\b|-F\b|--upload-file\b|Authorization\s*:)/i;
+const PYTHON_BASE64_FILE_READ_PATTERN =
+  /base64\.b64encode\s*\(\s*(?:[A-Za-z_][A-Za-z0-9_]*\.read_bytes\s*\(\s*\)|Path\s*\([^)]*\)\.read_bytes\s*\(\s*\)|open\s*\([^)]*["']rb["'][\s\S]{0,120}\.read\s*\(\s*\))/i;
+const PYTHON_NETWORK_UPLOAD_PATTERN =
+  /\b(?:requests|session|self\.session|client|httpx\.(?:post|request))\.post\s*\([\s\S]{0,1600}(?:json\s*=|data\s*=|files\s*=|headers\s*=|Authorization)/i;
 const PLAYWRIGHT_CHROMIUM_PATTERN = /\b(?:playwright\.)?chromium\.launch\s*\(/i;
 const FILE_URL_BROWSER_NAVIGATION_PATTERN = /\bpage\.goto\s*\([^)]*file:\/\//i;
 const SVG_HTML_INTERPOLATION_PATTERN =
@@ -161,6 +165,13 @@ const MUTABLE_RECIPE_STORE_PATTERN =
   /\b(?:error-patterns\.json|recipes?\.json|safe_auto|fix_recipe_id|["']command["'])\b/i;
 const TEMPLATED_SUBPROCESS_EXECUTION_PATTERN =
   /\bsubstitute_params\s*\([\s\S]{0,500}\b(?:shlex\.split|subprocess\.run)\b|\b(?:shlex\.split|subprocess\.run)\b[\s\S]{0,500}\bsubstitute_params\s*\(/i;
+const CONFIRMATION_BYPASS_TRIGGER_PATTERN =
+  /\b(?:OPENCLAW_AGENT_CALL|SAFE_EXEC_AUTO_CONFIRM|SAFEXEC_CONTEXT|I understand the risk)\b/i;
+const RISK_CONFIRMATION_CONTEXT_PATTERN =
+  /\b(?:critical|high|medium|risk|approval|approve|confirm|confirmation|read\s+-p)\b/i;
+const DIRECT_COMMAND_EVAL_PATTERN = /\beval\s+["']?\$command\b/i;
+const HIGH_RISK_CONTEXT_EVAL_PATTERN =
+  /\b(?:critical|high|medium)\b[\s\S]{0,900}\beval\s+["']?\$command\b|\bI understand the risk\b[\s\S]{0,1200}\beval\s+["']?\$command\b/i;
 
 function hasMaliciousInstallPrompt(content: string) {
   const hasTerminalInstruction =
@@ -480,6 +491,12 @@ function findShellBase64FileUpload(content: string) {
   return findFirstLine(content, SHELL_BASE64_FILE_READ_PATTERN);
 }
 
+function findPythonBase64FileUpload(content: string) {
+  if (!/base64\.b64encode/i.test(content)) return null;
+  if (!PYTHON_NETWORK_UPLOAD_PATTERN.test(content)) return null;
+  return findFirstLine(content, PYTHON_BASE64_FILE_READ_PATTERN);
+}
+
 function findUnsafeBrowserFileRender(content: string) {
   if (!PLAYWRIGHT_CHROMIUM_PATTERN.test(content)) return null;
   if (!FILE_URL_BROWSER_NAVIGATION_PATTERN.test(content)) return null;
@@ -557,6 +574,17 @@ function findHardcodedOperatorBillingEndpoint(content: string) {
   if (!LIGHTNING_BILLING_FLOW_PATTERN.test(content)) return null;
   if (!OUTBOUND_POST_PATTERN.test(content)) return null;
   return findFirstLine(content, HARDCODED_OPERATOR_BASE_URL_PATTERN);
+}
+
+function findConfirmationBypass(content: string) {
+  if (!CONFIRMATION_BYPASS_TRIGGER_PATTERN.test(content)) return null;
+  if (!RISK_CONFIRMATION_CONTEXT_PATTERN.test(content)) return null;
+  if (!DIRECT_COMMAND_EVAL_PATTERN.test(content)) return null;
+  if (!HIGH_RISK_CONTEXT_EVAL_PATTERN.test(content)) return null;
+  return findFirstLine(
+    content,
+    /SAFEXEC_CONTEXT|I understand the risk|OPENCLAW_AGENT_CALL|SAFE_EXEC_AUTO_CONFIRM|eval\s+["']?\$command/,
+  );
 }
 
 function normalizeEnvName(value: unknown) {
@@ -756,6 +784,18 @@ function scanCodeFile(
     });
   }
 
+  const confirmationBypass = findConfirmationBypass(content);
+  if (confirmationBypass) {
+    addFinding(findings, {
+      code: REASON_CODES.CONFIRMATION_BYPASS,
+      severity: "critical",
+      file: path,
+      line: confirmationBypass.line,
+      message: "Risky command approval can be bypassed through environment or context signals.",
+      evidence: confirmationBypass.text,
+    });
+  }
+
   if (/stratum\+tcp|stratum\+ssl|coinhive|cryptonight|xmrig/i.test(content)) {
     const match = findFirstLine(content, /stratum\+tcp|stratum\+ssl|coinhive|cryptonight|xmrig/i);
     addFinding(findings, {
@@ -807,6 +847,18 @@ function scanCodeFile(
       line: shellBase64FileUpload.line,
       message: "Shell script base64-encodes a local file and sends it over the network.",
       evidence: shellBase64FileUpload.text,
+    });
+  }
+
+  const pythonBase64FileUpload = findPythonBase64FileUpload(content);
+  if (pythonBase64FileUpload) {
+    addFinding(findings, {
+      code: REASON_CODES.EXFILTRATION,
+      severity: "critical",
+      file: path,
+      line: pythonBase64FileUpload.line,
+      message: "Python code base64-encodes a local file and sends it over the network.",
+      evidence: pythonBase64FileUpload.text,
     });
   }
 

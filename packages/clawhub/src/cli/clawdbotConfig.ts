@@ -30,7 +30,7 @@ type ClawdbotConfig = {
   };
 };
 
-export type ClawdbotSkillRoots = {
+type ClawdbotSkillRoots = {
   roots: string[];
   labels: Record<string, string>;
 };

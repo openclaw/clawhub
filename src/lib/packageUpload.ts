@@ -12,9 +12,7 @@ type UploadablePackageFile = {
   webkitRelativePath?: string;
 };
 
-export type NormalizedPackageUploadFile<
-  TFile extends UploadablePackageFile = UploadablePackageFile,
-> = {
+type NormalizedPackageUploadFile<TFile extends UploadablePackageFile = UploadablePackageFile> = {
   file: TFile;
   path: string;
 };
@@ -22,7 +20,9 @@ export type NormalizedPackageUploadFile<
 const KNOWN_PACKAGE_ROOT_PATHS = new Set([
   "package.json",
   "openclaw.plugin.json",
-  "openclaw.bundle.json",
+  ".codex-plugin/plugin.json",
+  ".claude-plugin/plugin.json",
+  ".cursor-plugin/plugin.json",
   "README.md",
   "readme.md",
   "README.mdx",

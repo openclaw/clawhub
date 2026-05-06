@@ -37,7 +37,7 @@ Auth-aware enforcement:
 - Authenticated requests (valid Bearer token): per user bucket.
 - Missing/invalid token falls back to IP enforcement.
 
-- Read: 180/min per IP, 900/min per key
+- Read: 600/min per IP, 2400/min per key
 - Write: 45/min per IP, 180/min per key
 
 Headers: `X-RateLimit-Limit`, `X-RateLimit-Remaining`, `X-RateLimit-Reset`, `RateLimit-Limit`, `RateLimit-Remaining`, `RateLimit-Reset`, `Retry-After` (on 429).
@@ -88,11 +88,16 @@ Public read:
 - `GET /api/v1/skills/{slug}/file?path=&version=&tag=`
 - `GET /api/v1/resolve?slug=&hash=`
 - `GET /api/v1/download?slug=&version=&tag=`
+- `GET /api/v1/packages/{name}/versions/{version}/artifact`
+- `GET /api/v1/packages/{name}/versions/{version}/artifact/download`
+- `GET /api/npm/{package}`
+- `GET /api/npm/{package}/-/{tarball}.tgz`
 
 Auth required:
 
 - `POST /api/v1/skills` (publish, multipart preferred)
 - `DELETE /api/v1/skills/{slug}`
+- `DELETE /api/v1/packages/{name}`
 - `POST /api/v1/skills/{slug}/undelete`
 - `POST /api/v1/skills/{slug}/rename`
 - `POST /api/v1/skills/{slug}/merge`
@@ -103,6 +108,10 @@ Auth required:
 - `GET /api/v1/transfers/incoming`
 - `GET /api/v1/transfers/outgoing`
 - `GET /api/v1/whoami`
+
+Admin only:
+
+- `POST /api/v1/users/reserve` reserves root slugs and private no-release package placeholders for an owner handle.
 
 ## Legacy
 

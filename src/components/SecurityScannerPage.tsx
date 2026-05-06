@@ -228,9 +228,12 @@ function OpenClawSecurityReport(props: SecurityScannerPageProps) {
 }
 
 function LegacyOpenClawDetails({ analysis }: { analysis?: LlmAnalysis | null }) {
+  const verdict = analysis?.verdict ?? analysis?.status ?? "Pending";
+  const verdictInfo = getScanStatusInfo(verdict);
+
   return (
     <>
-      <DetailRow label="Verdict">{analysis?.verdict ?? analysis?.status ?? "Pending"}</DetailRow>
+      <DetailRow label="Verdict">{verdictInfo.label}</DetailRow>
       <DetailRow label="Confidence">{analysis?.confidence ?? "Not reported"}</DetailRow>
       <DetailRow label="Model">{analysis?.model ?? "Not reported"}</DetailRow>
       <DetailRow label="Summary">

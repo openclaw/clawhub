@@ -1,9 +1,21 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 import type { LucideIcon } from "lucide-react";
-import { Banknote, Drama, Eye, EyeOff, ImageOff, ShieldOff, UserX } from "lucide-react";
+import {
+  Banknote,
+  Ban,
+  CheckCircle2,
+  Drama,
+  Eye,
+  EyeOff,
+  ImageOff,
+  ShieldCheck,
+  ShieldOff,
+  UserX,
+} from "lucide-react";
 import type { ReactNode } from "react";
 import { Badge } from "../components/ui/badge";
 import { Button } from "../components/ui/button";
+import { Card, CardContent, CardHeader, CardTitle } from "../components/ui/card";
 import { getSiteMode, getSiteName, getSiteUrlForMode } from "../lib/site";
 
 export function renderWithInlineCode(text: string): ReactNode[] {
@@ -65,7 +77,16 @@ const prohibitedCategories: { title: string; icon: LucideIcon; examples: string 
   },
 ];
 
-const recentPatterns = [
+const acceptedPatterns = [
+  "Frontend and design-system work that uses real components, semantic tokens, accessible states, and tested user flows.",
+  "shadcn/ui composition that uses installed source components, project aliases, and documented variants instead of one-off markup.",
+  "UI5 JavaScript-to-TypeScript conversion that preserves comments, uses concrete UI5 types, and keeps generated control interfaces reviewable.",
+  "Defensive security review, moderation tooling, and abuse-detection prompts that show evidence and keep human approval boundaries clear.",
+  "Consent-based workflow automation for personal or team accounts with explicit credentials, transparent setup, and dry-run or preview modes.",
+  "Docs, migration runbooks, local developer utilities, and test fixtures scoped to the repository they support.",
+];
+
+const rejectedPatterns = [
   "Create stealth seller accounts after marketplace bans.",
   "Modify Telegram pairing so unapproved users automatically receive pairing codes.",
   "Cultivate Reddit or Twitter accounts with undetectable automation.",
@@ -117,9 +138,9 @@ function AboutPage() {
             </div>
             <h1 className="about-title">What ClawHub will not host</h1>
             <p className="about-lead">
-              ClawHub is for useful agent tooling, not abuse workflows. If a skill is built to evade
-              defenses, scam people, invade privacy, or enable non-consensual behavior, it does not
-              belong here.
+              ClawHub is for useful, reviewable agent tooling. Skills that improve developer
+              workflows, migrations, security review, or product implementation belong here. Abuse
+              workflows do not.
             </p>
           </div>
         </section>
@@ -142,30 +163,74 @@ function AboutPage() {
             {prohibitedCategories.map((category) => {
               const Icon = category.icon;
               return (
-                <article key={category.title} className="about-rule-card">
-                  <div className="about-rule-card-header">
+                <Card key={category.title} className="about-rule-card">
+                  <CardHeader className="about-rule-card-header">
                     <div className="about-rule-card-icon">
-                      <Icon size={18} />
+                      <Icon />
                     </div>
-                    <h3>{category.title}</h3>
-                  </div>
-                  <p>{renderWithInlineCode(category.examples)}</p>
-                </article>
+                    <CardTitle>{category.title}</CardTitle>
+                  </CardHeader>
+                  <CardContent>
+                    <p>{renderWithInlineCode(category.examples)}</p>
+                  </CardContent>
+                </Card>
               );
             })}
           </div>
         </section>
 
         <section className="about-panel about-panel-patterns">
-          <div className="home-section-header">
-            <h2 className="home-section-title">Recent patterns we are explicitly not okay with</h2>
+          <div className="about-patterns-header">
+            <div className="skill-card-tags">
+              <Badge variant="success">Okay</Badge>
+              <Badge variant="destructive">Not okay</Badge>
+            </div>
+            <h2 className="home-section-title">Recent patterns we are explicitly okay with</h2>
+            <p className="about-panel-copy">
+              The line is intent and execution. Reviewable tooling for real work stays; tooling
+              optimized for evasion, deception, or non-consensual use gets rejected.
+            </p>
           </div>
-          <div className="about-patterns">
-            {recentPatterns.map((pattern) => (
-              <div key={pattern} className="about-pattern">
-                {pattern}
-              </div>
-            ))}
+          <div className="about-pattern-lanes">
+            <Card className="about-pattern-lane about-pattern-lane-accepted">
+              <CardHeader className="about-pattern-lane-header">
+                <div className="about-rule-card-icon">
+                  <CheckCircle2 />
+                </div>
+                <div>
+                  <Badge variant="success">Allowed</Badge>
+                  <CardTitle>Useful, consent-based tooling</CardTitle>
+                </div>
+              </CardHeader>
+              <CardContent className="about-patterns">
+                {acceptedPatterns.map((pattern) => (
+                  <div key={pattern} className="about-pattern about-pattern-accepted">
+                    <ShieldCheck />
+                    <span>{pattern}</span>
+                  </div>
+                ))}
+              </CardContent>
+            </Card>
+
+            <Card className="about-pattern-lane about-pattern-lane-rejected">
+              <CardHeader className="about-pattern-lane-header">
+                <div className="about-rule-card-icon">
+                  <Ban />
+                </div>
+                <div>
+                  <Badge variant="destructive">Rejected</Badge>
+                  <CardTitle>Abuse workflows in disguise</CardTitle>
+                </div>
+              </CardHeader>
+              <CardContent className="about-patterns">
+                {rejectedPatterns.map((pattern) => (
+                  <div key={pattern} className="about-pattern about-pattern-rejected">
+                    <ShieldOff />
+                    <span>{pattern}</span>
+                  </div>
+                ))}
+              </CardContent>
+            </Card>
           </div>
         </section>
 

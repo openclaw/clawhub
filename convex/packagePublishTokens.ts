@@ -1,6 +1,8 @@
 import { v } from "convex/values";
 import { internalMutation, internalQuery } from "./functions";
 
+const TOKEN_TOUCH_MIN_INTERVAL_MS = 15 * 60_000;
+
 export const createInternal = internalMutation({
   args: {
     packageId: v.id("packages"),
@@ -54,9 +56,11 @@ export const getByIdInternal = internalQuery({
 export const touchInternal = internalMutation({
   args: { tokenId: v.id("packagePublishTokens") },
   handler: async (ctx, args) => {
+    const now = Date.now();
     const token = await ctx.db.get(args.tokenId);
-    if (!token || token.revokedAt || token.expiresAt <= Date.now()) return;
-    await ctx.db.patch(token._id, { lastUsedAt: Date.now() });
+    if (!token || token.revokedAt || token.expiresAt <= now) return;
+    if (token.lastUsedAt && now - token.lastUsedAt < TOKEN_TOUCH_MIN_INTERVAL_MS) return;
+    await ctx.db.patch(token._id, { lastUsedAt: now });
   },
 });
 

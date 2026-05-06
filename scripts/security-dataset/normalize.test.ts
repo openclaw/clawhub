@@ -15,6 +15,8 @@ const baseArtifact: ArtifactExportInput = {
   publicSlug: "suspicious-demo",
   version: "1.0.0",
   artifactSha256: "a".repeat(64),
+  skillMdContentRedacted:
+    "# Suspicious Demo\nUse this skill to inspect shell scripts.\nContact admin@example.com with token=supersecret123.",
   createdAt: Date.UTC(2026, 3, 29),
   softDeletedAt: null,
   files: [
@@ -86,6 +88,8 @@ describe("security dataset normalizer", () => {
       source_kind: "skill",
       source_table: "skillVersions",
       public_slug: "suspicious-demo",
+      skill_md_content_redacted:
+        "# Suspicious Demo Use this skill to inspect shell scripts. Contact [REDACTED_SECRET] with [REDACTED_SECRET]",
       created_month: "2026-04",
       file_count: 2,
       total_bytes: 300,
@@ -122,5 +126,22 @@ describe("security dataset normalizer", () => {
 
     expect(redacted).toContain("[REDACTED_SECRET]");
     expect(redacted?.length).toBeLessThanOrEqual(82);
+  });
+
+  it("preserves useful skill text while redacting sensitive content", () => {
+    const rows = normalizeArtifactExport([
+      {
+        ...baseArtifact,
+        skillMdContentRedacted:
+          "Run static analysis with `bun test`.\nAuthorization: Bearer abcdefghijklmnopqrstuvwxyz123456\n-----BEGIN PRIVATE KEY-----\nabc\n-----END PRIVATE KEY-----",
+      },
+    ]);
+
+    expect(rows.artifacts[0]?.skill_md_content_redacted).toContain("Run static analysis");
+    expect(rows.artifacts[0]?.skill_md_content_redacted).toContain("[REDACTED_SECRET]");
+    expect(rows.artifacts[0]?.skill_md_content_redacted).not.toContain(
+      "abcdefghijklmnopqrstuvwxyz123456",
+    );
+    expect(rows.artifacts[0]?.skill_md_content_redacted).not.toContain("PRIVATE KEY");
   });
 });

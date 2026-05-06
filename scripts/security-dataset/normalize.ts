@@ -76,6 +76,7 @@ export type ArtifactExportInput = {
   publicSlug: string | null;
   version: string;
   artifactSha256: string | null;
+  skillMdContentRedacted?: string | null;
   createdAt: number;
   softDeletedAt: number | null;
   files: ExportFileInput[];
@@ -100,6 +101,7 @@ export type ArtifactRow = {
   public_slug: string | null;
   version: string;
   artifact_sha256: string | null;
+  skill_md_content_redacted?: string | null;
   created_at: number;
   created_month: string;
   soft_deleted: boolean;
@@ -171,12 +173,18 @@ export type NormalizedDatasetRows = {
 
 const SPLIT_VERSION = "sha256-v1";
 const MAX_REDACTED_TEXT_LENGTH = 240;
+const MAX_REDACTED_SKILL_CONTENT_LENGTH = 120_000;
 
 const SECRET_PATTERNS: RegExp[] = [
+  /\b[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}\b/gi,
   /\bgh[pousr]_[A-Za-z0-9_]{20,}\b/g,
   /\bsk-[A-Za-z0-9_-]{20,}\b/g,
   /\bAKIA[0-9A-Z]{16}\b/g,
-  /\b(?:api[_-]?key|token|secret|password)\s*[:=]\s*["']?[^"',\s]{8,}/gi,
+  /\b(?:api[_-]?key|token|secret|password|passwd|pwd|authorization code|auth code)\s*[:=]\s*["']?[^"',\s;)`]{6,}/gi,
+  /\b(?:authorization|x-api-key)\s*[:=]\s*["']?(?:bearer|basic)?\s+[A-Za-z0-9._~+/=-]{12,}/gi,
+  /-----BEGIN [A-Z0-9 ]*(?:PRIVATE KEY|CERTIFICATE)-----[\s\S]*?-----END [A-Z0-9 ]*(?:PRIVATE KEY|CERTIFICATE)-----/g,
+  /\bhttps?:\/\/[^/\s:@]+:[^/\s@]+@[^\s)'"`]+/gi,
+  /(["'`])(?=[A-Za-z0-9+/=_-]{32,}\1)(?=.*[A-Z])(?=.*[a-z])(?=.*\d)[A-Za-z0-9+/=_-]+\1/g,
 ];
 
 export function hashString(value: string) {
@@ -196,6 +204,10 @@ export function redactText(value: string | null | undefined, maxLength = MAX_RED
   redacted = redacted.replace(/\s+/g, " ").trim();
   if (redacted.length <= maxLength) return redacted;
   return `${redacted.slice(0, maxLength - 1)}...`;
+}
+
+export function redactSkillContent(value: string | null | undefined) {
+  return redactText(value, MAX_REDACTED_SKILL_CONTENT_LENGTH);
 }
 
 export function normalizeArtifactExport(inputs: ArtifactExportInput[]): NormalizedDatasetRows {
@@ -244,6 +256,9 @@ function buildArtifactRow(input: ArtifactExportInput, artifactId: string): Artif
     public_slug: input.publicSlug,
     version: input.version,
     artifact_sha256: input.artifactSha256,
+    ...(input.sourceKind === "skill" && input.skillMdContentRedacted
+      ? { skill_md_content_redacted: redactSkillContent(input.skillMdContentRedacted) }
+      : {}),
     created_at: input.createdAt,
     created_month: createdMonth(input.createdAt),
     soft_deleted: input.softDeletedAt !== null,

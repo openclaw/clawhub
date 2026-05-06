@@ -47,6 +47,17 @@ export type PackageVersionDetail = {
     compatibility?: PackageCompatibility | null;
     capabilities?: PackageCapabilitySummary | null;
     verification?: PackageVerificationSummary | null;
+    artifact?: {
+      kind: "legacy-zip" | "npm-pack";
+      sha256?: string;
+      size?: number;
+      format?: string;
+      npmIntegrity?: string;
+      npmShasum?: string;
+      npmTarballName?: string;
+      npmUnpackedSize?: number;
+      npmFileCount?: number;
+    } | null;
     sha256hash?: string | null;
     vtAnalysis?: {
       status: string;
@@ -177,6 +188,14 @@ export function getPackageDownloadPath(name: string, version?: string | null) {
   const path = normalizeApiPath(`${ApiRoutes.packages}/${encodeURIComponent(name)}/download`);
   if (!version) return path;
   return `${path}?version=${encodeURIComponent(version)}`;
+}
+
+export function getPackageArtifactDownloadPath(name: string, version: string) {
+  return normalizeApiPath(
+    `${ApiRoutes.packages}/${encodeURIComponent(name)}/versions/${encodeURIComponent(
+      version,
+    )}/artifact/download`,
+  );
 }
 
 async function getForwardedHeaders() {

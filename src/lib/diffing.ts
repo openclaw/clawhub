@@ -4,20 +4,20 @@ export const MAX_DIFF_FILE_BYTES = 200 * 1024;
 
 type TagMap<IdType extends string> = Record<string, IdType>;
 
-export type VersionEntry<IdType extends string = string> = {
+type VersionEntry<IdType extends string = string> = {
   id: IdType;
   version: string;
 };
 
-export type FileMeta = {
+type FileMeta = {
   path: string;
   sha256: string;
   size: number;
 };
 
-export type FileDiffStatus = "added" | "removed" | "changed" | "same";
+type FileDiffStatus = "added" | "removed" | "changed" | "same";
 
-export type FileDiffItem = {
+type FileDiffItem = {
   path: string;
   status: FileDiffStatus;
   left?: FileMeta;

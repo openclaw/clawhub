@@ -52,6 +52,7 @@ type ListSkillsResult = {
       latestVersionId?: Id<"skillVersions">;
     };
     latestVersion: {
+      _id: Id<"skillVersions">;
       version: string;
       createdAt: number;
       changelog: string;
@@ -533,14 +534,18 @@ export async function listSkillsV1Handler(ctx: ActionCtx, request: Request) {
       nonSuspiciousOnly: nonSuspiciousOnly || undefined,
     })) as ListSkillsResult;
   } else {
-    const pageResult = (await ctx.runQuery(api.skills.listPublicPageV4, {
+    const pageResult = (await ctx.runQuery(api.skills.listPublicApiPageV1, {
       cursor,
       numItems: limit,
       sort: toPublicListSort(sort),
       nonSuspiciousOnly: nonSuspiciousOnly || undefined,
-    })) as { page?: ListSkillsResult["items"]; nextCursor?: string | null };
+    })) as {
+      items?: ListSkillsResult["items"];
+      page?: ListSkillsResult["items"];
+      nextCursor?: string | null;
+    };
     result = {
-      items: pageResult.page ?? [],
+      items: pageResult.items ?? pageResult.page ?? [],
       nextCursor: pageResult.nextCursor ?? null,
     };
   }
@@ -549,6 +554,7 @@ export async function listSkillsV1Handler(ctx: ActionCtx, request: Request) {
   const resolvedTagsList = await resolveTagsBatch(
     ctx,
     result.items.map((item) => item.skill.tags),
+    result.items.map((item) => item.latestVersion),
   );
 
   const items = result.items.map((item, idx) => ({
@@ -647,7 +653,7 @@ export async function skillsGetRouterV1Handler(ctx: ActionCtx, request: Request)
       return text("Skill not found", 404, rate.headers);
     }
 
-    const [tags] = await resolveTagsBatch(ctx, [result.skill.tags]);
+    const [tags] = await resolveTagsBatch(ctx, [result.skill.tags], [result.latestVersion]);
     return json(
       {
         skill: {
@@ -984,7 +990,7 @@ export async function publishSkillV1Handler(ctx: ActionCtx, request: Request) {
       if (!hasAcceptedLegacyLicenseTerms(payload.acceptLicenseTerms)) {
         return text("MIT-0 license terms must be accepted to publish skills", 400, rate.headers);
       }
-      const result = await publishVersionForUser(ctx, userId, payload);
+      const result = await publishSkillPayloadForApiUser(ctx, userId, payload);
       return json({ ok: true, ...result }, 200, rate.headers);
     }
 
@@ -993,7 +999,7 @@ export async function publishSkillV1Handler(ctx: ActionCtx, request: Request) {
       if (!hasAcceptedLegacyLicenseTerms(payload.acceptLicenseTerms)) {
         return text("MIT-0 license terms must be accepted to publish skills", 400, rate.headers);
       }
-      const result = await publishVersionForUser(ctx, userId, payload);
+      const result = await publishSkillPayloadForApiUser(ctx, userId, payload);
       return json({ ok: true, ...result }, 200, rate.headers);
     }
   } catch (error) {
@@ -1002,6 +1008,25 @@ export async function publishSkillV1Handler(ctx: ActionCtx, request: Request) {
   }
 
   return text("Unsupported content type", 415, rate.headers);
+}
+
+async function publishSkillPayloadForApiUser(
+  ctx: ActionCtx,
+  userId: Id<"users">,
+  payload: ReturnType<typeof parsePublishBody>,
+) {
+  const { ownerHandle, ...publishPayload } = payload;
+  if (!ownerHandle) {
+    return await publishVersionForUser(ctx, userId, publishPayload);
+  }
+  const target = (await ctx.runMutation(internal.publishers.resolvePublishTargetForUserInternal, {
+    actorUserId: userId,
+    ownerHandle,
+    minimumRole: "publisher",
+  })) as { publisherId: Id<"publishers"> };
+  return await publishVersionForUser(ctx, userId, publishPayload, {
+    ownerPublisherId: target.publisherId,
+  });
 }
 
 function hasAcceptedLegacyLicenseTerms(acceptLicenseTerms: boolean | undefined) {
@@ -1203,10 +1228,13 @@ export async function skillsPostRouterV1Handler(ctx: ActionCtx, request: Request
   if (segments.length === 2 && action === "undelete") {
     try {
       const { userId } = await requireApiTokenUser(ctx, request);
+      const body = await readOptionalJson(request);
+      const reason = optionalStringField(body, "reason");
       await ctx.runMutation(internal.skills.setSkillSoftDeletedInternal, {
         userId,
         slug,
         deleted: false,
+        reason,
       });
       return json({ ok: true }, 200, rate.headers);
     } catch (error) {
@@ -1263,13 +1291,28 @@ export async function skillsDeleteRouterV1Handler(ctx: ActionCtx, request: Reque
   const slug = segments[0]?.trim().toLowerCase() ?? "";
   try {
     const { userId } = await requireApiTokenUser(ctx, request);
+    const body = await readOptionalJson(request);
+    const reason = optionalStringField(body, "reason");
     await ctx.runMutation(internal.skills.setSkillSoftDeletedInternal, {
       userId,
       slug,
       deleted: true,
+      reason,
     });
     return json({ ok: true }, 200, rate.headers);
   } catch (error) {
     return softDeleteErrorToResponse("skill", error, rate.headers);
   }
+}
+
+async function readOptionalJson(request: Request): Promise<unknown> {
+  const raw = await request.text();
+  if (!raw.trim()) return undefined;
+  return JSON.parse(raw) as unknown;
+}
+
+function optionalStringField(value: unknown, key: string): string | undefined {
+  if (!value || typeof value !== "object") return undefined;
+  const field = (value as Record<string, unknown>)[key];
+  return typeof field === "string" ? field : undefined;
 }

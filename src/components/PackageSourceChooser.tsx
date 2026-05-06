@@ -139,8 +139,10 @@ export function PackageSourceChooser(props: {
               {props.normalizedPathSet.has("openclaw.plugin.json") ? (
                 <Badge>Plugin manifest</Badge>
               ) : null}
-              {props.normalizedPathSet.has("openclaw.bundle.json") ? (
-                <Badge>Bundle manifest</Badge>
+              {props.normalizedPathSet.has(".codex-plugin/plugin.json") ||
+              props.normalizedPathSet.has(".claude-plugin/plugin.json") ||
+              props.normalizedPathSet.has(".cursor-plugin/plugin.json") ? (
+                <Badge>Agent metadata</Badge>
               ) : null}
               {props.normalizedPathSet.has("readme.md") ||
               props.normalizedPathSet.has("readme.mdx") ? (

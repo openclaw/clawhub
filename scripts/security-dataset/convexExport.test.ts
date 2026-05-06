@@ -33,7 +33,14 @@ describe("Convex export dataset ingestion", () => {
           version: "1.0.0",
           createdAt: 2,
           sha256hash: "skill-sha",
-          files: [{ path: "SKILL.md", size: 12, sha256: "file-sha" }],
+          files: [
+            {
+              path: "SKILL.md",
+              size: 12,
+              sha256: "file-sha",
+              content: "Use this skill safely. password=supersecret123",
+            },
+          ],
           llmAnalysis: {
             status: "suspicious",
             verdict: "suspicious",
@@ -110,6 +117,7 @@ describe("Convex export dataset ingestion", () => {
         reasonCodes: ["network.exfiltration"],
       },
       llmAnalysis: { model: "gpt-test" },
+      skillMdContentRedacted: "Use this skill safely. [REDACTED_SECRET]",
     });
   });
 

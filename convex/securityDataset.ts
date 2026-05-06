@@ -2,7 +2,7 @@ import { paginationOptsValidator } from "convex/server";
 import { v } from "convex/values";
 import { internal } from "./_generated/api";
 import type { Doc } from "./_generated/dataModel";
-import type { QueryCtx } from "./_generated/server";
+import type { ActionCtx, QueryCtx } from "./_generated/server";
 import { internalAction, internalQuery } from "./functions";
 
 const MAX_EXPORT_PAGE_SIZE = 50;
@@ -21,6 +21,18 @@ type ArtifactExportPage = {
   continueCursor: string;
   exportMode: "public";
 };
+
+const SECRET_PATTERNS: RegExp[] = [
+  /\b[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}\b/gi,
+  /\bgh[pousr]_[A-Za-z0-9_]{20,}\b/g,
+  /\bsk-[A-Za-z0-9_-]{20,}\b/g,
+  /\bAKIA[0-9A-Z]{16}\b/g,
+  /\b(?:api[_-]?key|token|secret|password|passwd|pwd|authorization code|auth code)\s*[:=]\s*["']?[^"',\s;)`]{6,}/gi,
+  /\b(?:authorization|x-api-key)\s*[:=]\s*["']?(?:bearer|basic)?\s+[A-Za-z0-9._~+/=-]{12,}/gi,
+  /-----BEGIN [A-Z0-9 ]*(?:PRIVATE KEY|CERTIFICATE)-----[\s\S]*?-----END [A-Z0-9 ]*(?:PRIVATE KEY|CERTIFICATE)-----/g,
+  /\bhttps?:\/\/[^/\s:@]+:[^/\s@]+@[^\s)'"`]+/gi,
+  /(["'`])(?=[A-Za-z0-9+/=_-]{32,}\1)(?=.*[A-Z])(?=.*[a-z])(?=.*\d)[A-Za-z0-9+/=_-]+\1/g,
+];
 
 export const listArtifactExportPageInternal = internalQuery({
   args: {
@@ -122,7 +134,7 @@ export const listArtifactExportBatchInternal = internalAction({
       if (isDone) break;
     }
     return {
-      page,
+      page: await enrichAndSanitizeArtifactRows(ctx, page),
       isDone,
       continueCursor: cursor,
       exportMode: args.mode ?? "public",
@@ -265,8 +277,49 @@ function sanitizeFiles(files: Array<Doc<"skillVersions">["files"][number]>) {
     path: file.path,
     size: file.size,
     sha256: file.sha256,
+    storageId: file.storageId,
     contentType: file.contentType ?? null,
   }));
+}
+
+async function enrichAndSanitizeArtifactRows(ctx: ActionCtx, rows: ArtifactExportRow[]) {
+  return await Promise.all(
+    rows.map(async (row) => {
+      const skillContent =
+        row.sourceKind === "skill" ? await readRedactedSkillMdContent(ctx, row.files) : null;
+      return {
+        ...row,
+        ...(skillContent ? { skillMdContentRedacted: skillContent } : {}),
+        files: row.files.map(({ storageId: _storageId, ...file }) => file),
+      };
+    }),
+  );
+}
+
+async function readRedactedSkillMdContent(
+  ctx: Pick<ActionCtx, "storage">,
+  files: Array<{ path: string; storageId?: unknown }>,
+) {
+  const skillFile = files.find((file) => {
+    const path = file.path.toLowerCase();
+    return path === "skill.md" || path.endsWith("/skill.md");
+  });
+  if (!skillFile || typeof skillFile.storageId !== "string") return null;
+  const blob = await ctx.storage.get(skillFile.storageId as never);
+  if (!blob) return null;
+  return redactSkillContent(await blob.text());
+}
+
+function redactSkillContent(value: string) {
+  let redacted = "";
+  for (let index = 0; index < value.length; index += 1) {
+    const code = value.charCodeAt(index);
+    redacted += code < 32 && code !== 9 && code !== 10 && code !== 13 ? " " : value.charAt(index);
+  }
+  for (const pattern of SECRET_PATTERNS) {
+    redacted = redacted.replace(pattern, "[REDACTED_SECRET]");
+  }
+  return redacted.trim();
 }
 
 function normalizeVtAnalysis(analysis: StoredVtAnalysis) {

@@ -8,16 +8,28 @@ import {
 import { SkillDetailPage } from "../../components/SkillDetailPage";
 import { buildSkillMeta } from "../../lib/og";
 import { fetchSkillPageData } from "../../lib/skillPage";
+import { resolveOpenClawPluginSlug } from "../../lib/slugRoute";
 
 export const Route = createFileRoute("/$owner/$slug")({
   beforeLoad: ({ params }) => {
     const isHandle = /^[a-zA-Z0-9_][a-zA-Z0-9_-]*$/.test(params.owner);
+    const isScope = /^@[a-zA-Z0-9_][a-zA-Z0-9_-]*$/.test(params.owner);
     const isOwnerId = params.owner.startsWith("users:") || params.owner.startsWith("publishers:");
-    if (!isHandle && !isOwnerId) {
+    if (!isHandle && !isScope && !isOwnerId) {
       throw notFound();
     }
   },
   loader: async ({ params }) => {
+    const pluginTarget = await resolveOpenClawPluginSlug(params.slug, params.owner);
+    if (pluginTarget) {
+      throw redirect({
+        href: pluginTarget.href,
+        replace: true,
+      });
+    }
+
+    if (params.owner.startsWith("@")) throw notFound();
+
     const data = await fetchSkillPageData(params.slug);
     const canonicalOwner = data.initialData?.result?.owner?.handle ?? null;
     const canonicalSlug = data.initialData?.result?.resolvedSlug ?? params.slug;

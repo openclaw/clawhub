@@ -102,11 +102,10 @@ describe("restored UI design contract", () => {
     const compact = cssMediaContaining(css, "(max-width: 760px)", [
       "grid-template-columns: 56px minmax(0, 1fr) 56px",
       ".navbar-search {\n    display: flex;",
-      ".navbar-tabs {\n    display: flex;",
-      ".navbar-tabs-secondary {\n    display: inline-flex;",
+      ".navbar-tabs {\n    display: none;",
+      ".nav-mobile {\n    display: inline-flex;",
     ]);
     expect(compact).not.toContain(".navbar-search {\n    display: none;");
-    expect(compact).not.toContain(".navbar-tabs {\n    display: none;");
   });
 
   it("requires the restored home hero, carousel, category grid, and Trending Now sections", () => {

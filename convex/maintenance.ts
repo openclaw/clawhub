@@ -14,7 +14,11 @@ import {
 } from "./lib/skillQuality";
 import { hashSkillFiles, isTextFile } from "./lib/skills";
 import { computeIsSuspicious } from "./lib/skillSafety";
-import { extractDigestFields } from "./lib/skillSearchDigest";
+import {
+  extractDigestFields,
+  getFirstSearchToken,
+  normalizeSkillSearchText,
+} from "./lib/skillSearchDigest";
 import { generateSkillSummary } from "./lib/skillSummary";
 
 const DEFAULT_BATCH_SIZE = 50;
@@ -2312,6 +2316,62 @@ export const backfillDigestIsSuspicious = internalMutation({
     }
 
     return { patched, isDone, scanned: page.length };
+  },
+});
+
+// Backfill normalized search fields on skillSearchDigest for indexed prefix search.
+// Run: npx convex run maintenance:backfillDigestNormalizedSearchFields --prod
+export const backfillDigestNormalizedSearchFields = internalMutation({
+  args: {
+    cursor: v.optional(v.string()),
+    batchSize: v.optional(v.number()),
+    delayMs: v.optional(v.number()),
+    scheduleNext: v.optional(v.boolean()),
+  },
+  handler: async (ctx, args) => {
+    const batchSize = clampInt(args.batchSize ?? 100, 10, 200);
+    const delayMs = args.delayMs ?? 500;
+    const { page, continueCursor, isDone } = await ctx.db
+      .query("skillSearchDigest")
+      .paginate({ cursor: args.cursor ?? null, numItems: batchSize });
+
+    let patched = 0;
+    for (const digest of page) {
+      const normalizedSlug = normalizeSkillSearchText(digest.slug);
+      const normalizedSlugFirstToken = getFirstSearchToken(digest.slug);
+      const normalizedDisplayName = normalizeSkillSearchText(digest.displayName);
+      const normalizedDisplayNameFirstToken = getFirstSearchToken(digest.displayName);
+      if (
+        digest.normalizedSlug === normalizedSlug &&
+        digest.normalizedSlugFirstToken === normalizedSlugFirstToken &&
+        digest.normalizedDisplayName === normalizedDisplayName &&
+        digest.normalizedDisplayNameFirstToken === normalizedDisplayNameFirstToken
+      ) {
+        continue;
+      }
+      await ctx.db.patch(digest._id, {
+        normalizedSlug,
+        normalizedSlugFirstToken,
+        normalizedDisplayName,
+        normalizedDisplayNameFirstToken,
+      });
+      patched++;
+    }
+
+    if (!isDone && args.scheduleNext !== false) {
+      await ctx.scheduler.runAfter(
+        delayMs,
+        internal.maintenance.backfillDigestNormalizedSearchFields,
+        {
+          cursor: continueCursor,
+          batchSize: args.batchSize,
+          delayMs: args.delayMs,
+          scheduleNext: args.scheduleNext,
+        },
+      );
+    }
+
+    return { patched, isDone, scanned: page.length, cursor: continueCursor };
   },
 });
 

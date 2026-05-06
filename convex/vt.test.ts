@@ -4,13 +4,19 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   __test,
   fetchResults,
+  pollPendingScans,
   pollPackageReleaseScanResults,
+  scanWithVirusTotal,
   scanPackageReleaseWithVirusTotal,
 } from "./vt";
 
 type WrappedHandler<TArgs, TResult> = {
   _handler: (ctx: unknown, args: TArgs) => Promise<TResult>;
 };
+
+const scanWithVirusTotalHandler = (
+  scanWithVirusTotal as unknown as WrappedHandler<{ versionId: string }, void>
+)._handler;
 
 const scanPackageReleaseWithVirusTotalHandler = (
   scanPackageReleaseWithVirusTotal as unknown as WrappedHandler<
@@ -33,6 +39,13 @@ const fetchResultsHandler = (
   >
 )._handler;
 
+const pollPendingScansHandler = (
+  pollPendingScans as unknown as WrappedHandler<
+    { batchSize?: number },
+    { processed: number; updated: number; staled?: number; healthy: boolean; queueSize?: number }
+  >
+)._handler;
+
 const originalVtApiKey = process.env.VT_API_KEY;
 
 afterEach(() => {
@@ -45,61 +58,57 @@ afterEach(() => {
   vi.unstubAllGlobals();
 });
 
-describe("vt activation fallback", () => {
-  it("activates only VT-pending hidden skills", () => {
-    expect(
-      __test.shouldActivateWhenVtUnavailable({
-        moderationStatus: "hidden",
-        moderationReason: "pending.scan",
-      }),
-    ).toBe(true);
+describe("vt unavailable fallback", () => {
+  it("does not activate a skill when VT is not configured", async () => {
+    delete process.env.VT_API_KEY;
+    const ctx = {
+      runQuery: vi.fn(),
+      runMutation: vi.fn(),
+    };
 
-    expect(
-      __test.shouldActivateWhenVtUnavailable({
-        moderationStatus: "hidden",
-        moderationReason: "scanner.vt.pending",
-      }),
-    ).toBe(true);
+    await scanWithVirusTotalHandler(ctx as never, { versionId: "skillVersions:demo" });
 
-    expect(
-      __test.shouldActivateWhenVtUnavailable({
-        moderationStatus: "hidden",
-        moderationReason: "pending.scan.stale",
-      }),
-    ).toBe(true);
+    expect(ctx.runQuery).not.toHaveBeenCalled();
+    expect(ctx.runMutation).not.toHaveBeenCalled();
   });
 
-  it("does not activate quality or scanner-hidden skills", () => {
-    expect(
-      __test.shouldActivateWhenVtUnavailable({
-        moderationStatus: "hidden",
-        moderationReason: "quality.low",
-      }),
-    ).toBe(false);
+  it("marks stale pending scans without activating hidden skills", async () => {
+    process.env.VT_API_KEY = "test-key";
+    const fetchMock = vi.fn().mockResolvedValue({ status: 404, ok: false });
+    vi.stubGlobal("fetch", fetchMock);
 
-    expect(
-      __test.shouldActivateWhenVtUnavailable({
-        moderationStatus: "hidden",
-        moderationReason: "scanner.llm.malicious",
-      }),
-    ).toBe(false);
-  });
+    const runQuery = vi
+      .fn()
+      .mockResolvedValueOnce({
+        queueSize: 1,
+        staleCount: 0,
+        veryStaleCount: 0,
+        oldestAgeMinutes: 5,
+        healthy: true,
+      })
+      .mockResolvedValueOnce([
+        {
+          skillId: "skills:pending",
+          versionId: "skillVersions:pending",
+          sha256hash: "a".repeat(64),
+          checkCount: 9,
+        },
+      ]);
+    const runMutation = vi.fn(async () => null);
 
-  it("does not activate blocked or already-active skills", () => {
-    expect(
-      __test.shouldActivateWhenVtUnavailable({
-        moderationStatus: "hidden",
-        moderationReason: "pending.scan",
-        moderationFlags: ["blocked.malware"],
-      }),
-    ).toBe(false);
+    const result = await pollPendingScansHandler({ runQuery, runMutation } as never, {
+      batchSize: 1,
+    });
 
-    expect(
-      __test.shouldActivateWhenVtUnavailable({
-        moderationStatus: "active",
-        moderationReason: "pending.scan",
-      }),
-    ).toBe(false);
+    expect(result).toMatchObject({ processed: 1, updated: 0, staled: 1 });
+    expect(runMutation).toHaveBeenCalledTimes(2);
+    expect(runMutation).toHaveBeenNthCalledWith(1, expect.anything(), {
+      skillId: "skills:pending",
+    });
+    expect(runMutation).toHaveBeenNthCalledWith(2, expect.anything(), {
+      versionId: "skillVersions:pending",
+      vtAnalysis: { status: "stale", checkedAt: expect.any(Number) },
+    });
   });
 });
 
@@ -287,6 +296,110 @@ describe("package VT retries", () => {
       releaseId: "packageReleases:demo",
       attempt: 2,
     });
+  });
+
+  it("uploads the exact ClawPack tarball for package scans", async () => {
+    process.env.VT_API_KEY = "test-key";
+    const clawpackBytes = new TextEncoder().encode("exact clawpack tgz bytes");
+    const clawpackSha256 = await __test.sha256Hex(clawpackBytes);
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(new Response("", { status: 404 }))
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify({ data: { id: "analysis-clawpack" } }), { status: 200 }),
+      );
+    vi.stubGlobal("fetch", fetchMock);
+
+    const runMutation = vi.fn(async () => null);
+    const scheduler = { runAfter: vi.fn(async () => null) };
+    await scanPackageReleaseWithVirusTotalHandler(
+      {
+        runQuery: vi
+          .fn()
+          .mockResolvedValueOnce({
+            _id: "packageReleases:demo",
+            packageId: "packages:demo",
+            version: "1.2.3",
+            artifactKind: "npm-pack",
+            clawpackStorageId: "storage:clawpack",
+            npmTarballName: "demo-plugin-1.2.3.tgz",
+            files: [
+              { path: "package.json", storageId: "storage:pkg" },
+              { path: "openclaw.plugin.json", storageId: "storage:plugin" },
+            ],
+          })
+          .mockResolvedValueOnce({
+            _id: "packages:demo",
+            name: "demo-plugin",
+            family: "code-plugin",
+            isOfficial: true,
+          }),
+        runMutation,
+        scheduler,
+        storage: {
+          get: vi.fn(async (storageId) => {
+            if (storageId === "storage:clawpack") {
+              return new Blob([clawpackBytes], { type: "application/gzip" });
+            }
+            return null;
+          }),
+        },
+      } as never,
+      { releaseId: "packageReleases:demo" },
+    );
+
+    expect(runMutation).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({
+        releaseId: "packageReleases:demo",
+        sha256hash: clawpackSha256,
+      }),
+    );
+    expect(fetchMock).toHaveBeenNthCalledWith(
+      1,
+      `https://www.virustotal.com/api/v3/files/${clawpackSha256}`,
+      expect.objectContaining({ method: "GET" }),
+    );
+    const uploadOptions = fetchMock.mock.calls[1]?.[1] as { body?: FormData } | undefined;
+    const uploadedFile = uploadOptions?.body?.get("file") as File | null;
+    expect(uploadedFile?.name).toBe("demo-plugin-1.2.3.tgz");
+    expect(await uploadedFile?.text()).toBe("exact clawpack tgz bytes");
+    expect(scheduler.runAfter).toHaveBeenCalledWith(5 * 60 * 1000, expect.anything(), {
+      releaseId: "packageReleases:demo",
+      attempt: 1,
+    });
+  });
+
+  it("uses VirusTotal large-file upload URLs above the direct upload limit", async () => {
+    process.env.VT_API_KEY = "test-key";
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify({ data: "https://upload.example.test/vt" }), { status: 200 }),
+      )
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify({ data: { id: "analysis-large" } }), { status: 200 }),
+      );
+    vi.stubGlobal("fetch", fetchMock);
+
+    const response = await __test.uploadFileToVirusTotal(
+      "test-key",
+      new Uint8Array(__test.VIRUSTOTAL_DIRECT_UPLOAD_LIMIT_BYTES + 1),
+      "large.tgz",
+      "application/gzip",
+    );
+
+    expect(response.ok).toBe(true);
+    expect(fetchMock).toHaveBeenNthCalledWith(
+      1,
+      "https://www.virustotal.com/api/v3/files/upload_url",
+      expect.objectContaining({ method: "GET" }),
+    );
+    expect(fetchMock).toHaveBeenNthCalledWith(
+      2,
+      "https://upload.example.test/vt",
+      expect.objectContaining({ method: "POST" }),
+    );
   });
 
   it("uses existing AV engine verdicts for packages without re-uploading", async () => {

@@ -1,4 +1,4 @@
-export type SiteMode = "skills" | "souls";
+type SiteMode = "skills" | "souls";
 
 import { getRuntimeEnv } from "./runtimeEnv";
 
@@ -6,6 +6,7 @@ const DEFAULT_CLAWHUB_SITE_URL = "https://clawhub.ai";
 const DEFAULT_ONLYCRABS_SITE_URL = "https://onlycrabs.ai";
 const DEFAULT_ONLYCRABS_HOST = "onlycrabs.ai";
 const LEGACY_CLAWDHUB_HOSTS = new Set(["clawdhub.com", "www.clawdhub.com", "auth.clawdhub.com"]);
+const OPENCLAW_CLAWHUB_HOSTS = new Set(["hub.openclaw.ai"]);
 
 export function normalizeClawHubSiteOrigin(value?: string | null) {
   if (!value) return null;
@@ -18,6 +19,16 @@ export function normalizeClawHubSiteOrigin(value?: string | null) {
   } catch {
     return null;
   }
+}
+
+export function isClawHubHost(host?: string | null) {
+  if (!host) return false;
+  const normalized = host.toLowerCase();
+  return (
+    normalized === "clawhub.ai" ||
+    normalized === "www.clawhub.ai" ||
+    OPENCLAW_CLAWHUB_HOSTS.has(normalized)
+  );
 }
 
 export function getClawHubSiteUrl() {

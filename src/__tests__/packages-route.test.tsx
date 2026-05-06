@@ -104,6 +104,22 @@ describe("plugins route", () => {
     });
   });
 
+  it("rejects bundle family filter while bundle UX is hidden", async () => {
+    const route = await loadRoute();
+    const validateSearch = route.__config.validateSearch as (
+      search: Record<string, unknown>,
+    ) => Record<string, unknown>;
+
+    expect(validateSearch({ family: "bundle-plugin", q: "demo" })).toEqual({
+      family: undefined,
+      q: "demo",
+      cursor: undefined,
+      featured: undefined,
+      verified: undefined,
+      executesCode: undefined,
+    });
+  });
+
   it("forwards opaque cursors through the loader", async () => {
     fetchPluginCatalogMock.mockResolvedValue({ items: [], nextCursor: "cursor:next" });
     const route = await loadRoute();
@@ -211,7 +227,7 @@ describe("plugins route", () => {
 
     expect(fetchPluginCatalogMock).toHaveBeenCalledWith(
       expect.objectContaining({
-        family: undefined,
+        family: "code-plugin",
         isOfficial: true,
         limit: 50,
       }),

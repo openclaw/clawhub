@@ -53,6 +53,52 @@ export declare const PackageStatsSchema: import("arktype/internal/variants/objec
     versions: number;
 }, {}>;
 export type PackageStats = (typeof PackageStatsSchema)[inferred];
+export declare const PackageArtifactKindSchema: import("arktype/internal/variants/string.ts").StringType<"legacy-zip" | "npm-pack", {}>;
+export type PackageArtifactKind = (typeof PackageArtifactKindSchema)[inferred];
+export declare const PackageReleaseModerationStateSchema: import("arktype/internal/variants/string.ts").StringType<"approved" | "quarantined" | "revoked", {}>;
+export type PackageReleaseModerationState = (typeof PackageReleaseModerationStateSchema)[inferred];
+export declare const PackageReportStatusSchema: import("arktype/internal/variants/string.ts").StringType<"open" | "triaged" | "dismissed", {}>;
+export type PackageReportStatus = (typeof PackageReportStatusSchema)[inferred];
+export declare const PackageReportListStatusSchema: import("arktype/internal/variants/string.ts").StringType<"open" | "triaged" | "dismissed" | "all", {}>;
+export type PackageReportListStatus = (typeof PackageReportListStatusSchema)[inferred];
+export declare const PackageAppealStatusSchema: import("arktype/internal/variants/string.ts").StringType<"open" | "accepted" | "rejected", {}>;
+export type PackageAppealStatus = (typeof PackageAppealStatusSchema)[inferred];
+export declare const PackageAppealListStatusSchema: import("arktype/internal/variants/string.ts").StringType<"open" | "all" | "accepted" | "rejected", {}>;
+export type PackageAppealListStatus = (typeof PackageAppealListStatusSchema)[inferred];
+export declare const PackageOfficialMigrationPhaseSchema: import("arktype/internal/variants/string.ts").StringType<"planned" | "published" | "clawpack-ready" | "legacy-zip-only" | "metadata-ready" | "blocked" | "ready-for-openclaw", {}>;
+export type PackageOfficialMigrationPhase = (typeof PackageOfficialMigrationPhaseSchema)[inferred];
+export declare const PackageOfficialMigrationListPhaseSchema: import("arktype/internal/variants/string.ts").StringType<"all" | "planned" | "published" | "clawpack-ready" | "legacy-zip-only" | "metadata-ready" | "blocked" | "ready-for-openclaw", {}>;
+export type PackageOfficialMigrationListPhase = (typeof PackageOfficialMigrationListPhaseSchema)[inferred];
+export declare const PackageArtifactSummarySchema: import("arktype/internal/variants/object.ts").ObjectType<{
+    kind: "legacy-zip" | "npm-pack";
+    sha256?: string | undefined;
+    size?: number | undefined;
+    format?: string | undefined;
+    npmIntegrity?: string | undefined;
+    npmShasum?: string | undefined;
+    npmTarballName?: string | undefined;
+    npmUnpackedSize?: number | undefined;
+    npmFileCount?: number | undefined;
+    source?: "clawhub" | undefined;
+    artifactKind?: "legacy-zip" | "npm-pack" | undefined;
+    artifactSha256?: string | undefined;
+    packageName?: string | undefined;
+    version?: string | undefined;
+}, {}>;
+export type PackageArtifactSummary = (typeof PackageArtifactSummarySchema)[inferred];
+export declare const PackagePublishArtifactSchema: import("arktype/internal/variants/object.ts").ObjectType<{
+    kind: "npm-pack";
+    storageId: string;
+    sha256: string;
+    size: number;
+    format: "tgz";
+    npmIntegrity: string;
+    npmShasum: string;
+    npmTarballName: string;
+    npmUnpackedSize: number;
+    npmFileCount: number;
+}, {}>;
+export type PackagePublishArtifact = (typeof PackagePublishArtifactSchema)[inferred];
 export declare const PackageVtAnalysisSchema: import("arktype/internal/variants/object.ts").ObjectType<{
     status: string;
     checkedAt: number;
@@ -156,6 +202,18 @@ export declare const PackagePublishRequestSchema: import("arktype/internal/varia
         id?: string | undefined;
         format?: string | undefined;
         hostTargets?: string[] | undefined;
+    } | undefined;
+    artifact?: {
+        kind: "npm-pack";
+        storageId: string;
+        sha256: string;
+        size: number;
+        format: "tgz";
+        npmIntegrity: string;
+        npmShasum: string;
+        npmTarballName: string;
+        npmUnpackedSize: number;
+        npmFileCount: number;
     } | undefined;
 }, {}>;
 export type PackagePublishRequest = (typeof PackagePublishRequestSchema)[inferred];
@@ -268,6 +326,22 @@ export declare const ApiV1PackageResponseSchema: import("arktype/internal/varian
             hasProvenance?: boolean | undefined;
             scanStatus?: "clean" | "suspicious" | "malicious" | "pending" | "not-run" | undefined;
         } | null | undefined;
+        artifact?: {
+            kind: "legacy-zip" | "npm-pack";
+            sha256?: string | undefined;
+            size?: number | undefined;
+            format?: string | undefined;
+            npmIntegrity?: string | undefined;
+            npmShasum?: string | undefined;
+            npmTarballName?: string | undefined;
+            npmUnpackedSize?: number | undefined;
+            npmFileCount?: number | undefined;
+            source?: "clawhub" | undefined;
+            artifactKind?: "legacy-zip" | "npm-pack" | undefined;
+            artifactSha256?: string | undefined;
+            packageName?: string | undefined;
+            version?: string | undefined;
+        } | null | undefined;
         stats?: {
             downloads: number;
             installs: number;
@@ -340,7 +414,23 @@ export declare const ApiV1PackageVersionResponseSchema: import("arktype/internal
             hasProvenance?: boolean | undefined;
             scanStatus?: "clean" | "suspicious" | "malicious" | "pending" | "not-run" | undefined;
         } | null | undefined;
-        sha256hash?: string | undefined;
+        artifact?: {
+            kind: "legacy-zip" | "npm-pack";
+            sha256?: string | undefined;
+            size?: number | undefined;
+            format?: string | undefined;
+            npmIntegrity?: string | undefined;
+            npmShasum?: string | undefined;
+            npmTarballName?: string | undefined;
+            npmUnpackedSize?: number | undefined;
+            npmFileCount?: number | undefined;
+            source?: "clawhub" | undefined;
+            artifactKind?: "legacy-zip" | "npm-pack" | undefined;
+            artifactSha256?: string | undefined;
+            packageName?: string | undefined;
+            version?: string | undefined;
+        } | null | undefined;
+        sha256hash?: string | null | undefined;
         vtAnalysis?: {
             status: string;
             checkedAt: number;
@@ -382,6 +472,327 @@ export declare const ApiV1PackageVersionResponseSchema: import("arktype/internal
     } | null;
 }, {}>;
 export type ApiV1PackageVersionResponse = (typeof ApiV1PackageVersionResponseSchema)[inferred];
+export declare const ApiV1PackageArtifactResponseSchema: import("arktype/internal/variants/object.ts").ObjectType<{
+    package: {
+        name: string;
+        displayName: string;
+        family: "skill" | "code-plugin" | "bundle-plugin";
+    };
+    version: string;
+    artifact: {
+        kind: "legacy-zip" | "npm-pack";
+        downloadUrl: string;
+        sha256?: string | undefined;
+        size?: number | undefined;
+        format?: string | undefined;
+        npmIntegrity?: string | undefined;
+        npmShasum?: string | undefined;
+        npmTarballName?: string | undefined;
+        npmUnpackedSize?: number | undefined;
+        npmFileCount?: number | undefined;
+        tarballUrl?: string | undefined;
+        legacyDownloadUrl?: string | undefined;
+        source?: "clawhub" | undefined;
+        artifactKind?: "legacy-zip" | "npm-pack" | undefined;
+        artifactSha256?: string | undefined;
+        packageName?: string | undefined;
+        version?: string | undefined;
+    };
+}, {}>;
+export type ApiV1PackageArtifactResponse = (typeof ApiV1PackageArtifactResponseSchema)[inferred];
+export declare const PackageReleaseModerationRequestSchema: import("arktype/internal/variants/object.ts").ObjectType<{
+    state: "approved" | "quarantined" | "revoked";
+    reason: string;
+}, {}>;
+export type PackageReleaseModerationRequest = (typeof PackageReleaseModerationRequestSchema)[inferred];
+export declare const PackageReportRequestSchema: import("arktype/internal/variants/object.ts").ObjectType<{
+    reason: string;
+    version?: string | undefined;
+}, {}>;
+export type PackageReportRequest = (typeof PackageReportRequestSchema)[inferred];
+export declare const ApiV1PackageReportResponseSchema: import("arktype/internal/variants/object.ts").ObjectType<{
+    ok: true;
+    reported: boolean;
+    alreadyReported: boolean;
+    packageId: string;
+    releaseId: string | null;
+    reportCount: number;
+}, {}>;
+export type ApiV1PackageReportResponse = (typeof ApiV1PackageReportResponseSchema)[inferred];
+export declare const PackageReportTriageRequestSchema: import("arktype/internal/variants/object.ts").ObjectType<{
+    status: "open" | "triaged" | "dismissed";
+    note?: string | undefined;
+}, {}>;
+export type PackageReportTriageRequest = (typeof PackageReportTriageRequestSchema)[inferred];
+export declare const PackageAppealRequestSchema: import("arktype/internal/variants/object.ts").ObjectType<{
+    version: string;
+    message: string;
+}, {}>;
+export type PackageAppealRequest = (typeof PackageAppealRequestSchema)[inferred];
+export declare const ApiV1PackageAppealResponseSchema: import("arktype/internal/variants/object.ts").ObjectType<{
+    ok: true;
+    submitted: boolean;
+    alreadyOpen: boolean;
+    appealId: string;
+    packageId: string;
+    releaseId: string;
+    status: "open" | "accepted" | "rejected";
+}, {}>;
+export type ApiV1PackageAppealResponse = (typeof ApiV1PackageAppealResponseSchema)[inferred];
+export declare const PackageAppealResolveRequestSchema: import("arktype/internal/variants/object.ts").ObjectType<{
+    status: "open" | "accepted" | "rejected";
+    note?: string | undefined;
+}, {}>;
+export type PackageAppealResolveRequest = (typeof PackageAppealResolveRequestSchema)[inferred];
+export declare const ApiV1PackageAppealListResponseSchema: import("arktype/internal/variants/object.ts").ObjectType<{
+    items: {
+        appealId: string;
+        packageId: string;
+        releaseId: string;
+        name: string;
+        displayName: string;
+        family: "skill" | "code-plugin" | "bundle-plugin";
+        version: string;
+        message: string;
+        status: "open" | "accepted" | "rejected";
+        createdAt: number;
+        submitter: {
+            userId: string;
+            handle?: string | null | undefined;
+            displayName?: string | null | undefined;
+        };
+        resolvedAt?: number | null | undefined;
+        resolvedBy?: string | null | undefined;
+        resolutionNote?: string | null | undefined;
+    }[];
+    nextCursor: string | null;
+    done: boolean;
+}, {}>;
+export type ApiV1PackageAppealListResponse = (typeof ApiV1PackageAppealListResponseSchema)[inferred];
+export declare const ApiV1PackageAppealResolveResponseSchema: import("arktype/internal/variants/object.ts").ObjectType<{
+    ok: true;
+    appealId: string;
+    packageId: string;
+    releaseId: string;
+    status: "open" | "accepted" | "rejected";
+}, {}>;
+export type ApiV1PackageAppealResolveResponse = (typeof ApiV1PackageAppealResolveResponseSchema)[inferred];
+export declare const ApiV1PackageReportListResponseSchema: import("arktype/internal/variants/object.ts").ObjectType<{
+    items: {
+        reportId: string;
+        packageId: string;
+        name: string;
+        displayName: string;
+        family: "skill" | "code-plugin" | "bundle-plugin";
+        status: "open" | "triaged" | "dismissed";
+        createdAt: number;
+        reporter: {
+            userId: string;
+            handle?: string | null | undefined;
+            displayName?: string | null | undefined;
+        };
+        releaseId?: string | null | undefined;
+        version?: string | null | undefined;
+        reason?: string | null | undefined;
+        triagedAt?: number | null | undefined;
+        triagedBy?: string | null | undefined;
+        triageNote?: string | null | undefined;
+    }[];
+    nextCursor: string | null;
+    done: boolean;
+}, {}>;
+export type ApiV1PackageReportListResponse = (typeof ApiV1PackageReportListResponseSchema)[inferred];
+export declare const ApiV1PackageReportTriageResponseSchema: import("arktype/internal/variants/object.ts").ObjectType<{
+    ok: true;
+    reportId: string;
+    packageId: string;
+    status: "open" | "triaged" | "dismissed";
+    reportCount: number;
+}, {}>;
+export type ApiV1PackageReportTriageResponse = (typeof ApiV1PackageReportTriageResponseSchema)[inferred];
+export declare const ApiV1PackageModerationStatusResponseSchema: import("arktype/internal/variants/object.ts").ObjectType<{
+    package: {
+        packageId: string;
+        name: string;
+        displayName: string;
+        family: "skill" | "code-plugin" | "bundle-plugin";
+        channel: "official" | "community" | "private";
+        isOfficial: boolean;
+        reportCount: number;
+        lastReportedAt?: number | null | undefined;
+        scanStatus?: "clean" | "suspicious" | "malicious" | "pending" | "not-run" | undefined;
+    };
+    latestRelease: {
+        releaseId: string;
+        version: string;
+        scanStatus: "clean" | "suspicious" | "malicious" | "pending" | "not-run";
+        blockedFromDownload: boolean;
+        reasons: string[];
+        createdAt: number;
+        artifactKind?: "legacy-zip" | "npm-pack" | null | undefined;
+        moderationState?: "approved" | "quarantined" | "revoked" | null | undefined;
+        moderationReason?: string | null | undefined;
+    } | null;
+}, {}>;
+export type ApiV1PackageModerationStatusResponse = (typeof ApiV1PackageModerationStatusResponseSchema)[inferred];
+export declare const PackageArtifactBackfillRequestSchema: import("arktype/internal/variants/object.ts").ObjectType<{
+    cursor?: string | null | undefined;
+    batchSize?: number | undefined;
+    dryRun?: boolean | undefined;
+}, {}>;
+export type PackageArtifactBackfillRequest = (typeof PackageArtifactBackfillRequestSchema)[inferred];
+export declare const ApiV1PackageArtifactBackfillResponseSchema: import("arktype/internal/variants/object.ts").ObjectType<{
+    ok: true;
+    scanned: number;
+    updated: number;
+    nextCursor: string | null;
+    done: boolean;
+    dryRun: boolean;
+}, {}>;
+export type ApiV1PackageArtifactBackfillResponse = (typeof ApiV1PackageArtifactBackfillResponseSchema)[inferred];
+export declare const PackageReadinessCheckSchema: import("arktype/internal/variants/object.ts").ObjectType<{
+    id: string;
+    label: string;
+    status: "warn" | "fail" | "pass";
+    message: string;
+}, {}>;
+export type PackageReadinessCheck = (typeof PackageReadinessCheckSchema)[inferred];
+export declare const ApiV1PackageReadinessResponseSchema: import("arktype/internal/variants/object.ts").ObjectType<{
+    package: {
+        name: string;
+        displayName: string;
+        family: "skill" | "code-plugin" | "bundle-plugin";
+        isOfficial: boolean;
+        latestVersion?: string | null | undefined;
+    };
+    ready: boolean;
+    checks: {
+        id: string;
+        label: string;
+        status: "warn" | "fail" | "pass";
+        message: string;
+    }[];
+    blockers: string[];
+}, {}>;
+export type ApiV1PackageReadinessResponse = (typeof ApiV1PackageReadinessResponseSchema)[inferred];
+export declare const PackageOfficialMigrationUpsertRequestSchema: import("arktype/internal/variants/object.ts").ObjectType<{
+    bundledPluginId: string;
+    packageName: string;
+    owner?: string | undefined;
+    sourceRepo?: string | undefined;
+    sourcePath?: string | undefined;
+    sourceCommit?: string | undefined;
+    phase?: "planned" | "published" | "clawpack-ready" | "legacy-zip-only" | "metadata-ready" | "blocked" | "ready-for-openclaw" | undefined;
+    blockers?: string[] | undefined;
+    hostTargetsComplete?: boolean | undefined;
+    scanClean?: boolean | undefined;
+    moderationApproved?: boolean | undefined;
+    runtimeBundlesReady?: boolean | undefined;
+    notes?: string | undefined;
+}, {}>;
+export type PackageOfficialMigrationUpsertRequest = (typeof PackageOfficialMigrationUpsertRequestSchema)[inferred];
+export declare const PackageOfficialMigrationItemSchema: import("arktype/internal/variants/object.ts").ObjectType<{
+    migrationId: string;
+    bundledPluginId: string;
+    packageName: string;
+    phase: "planned" | "published" | "clawpack-ready" | "legacy-zip-only" | "metadata-ready" | "blocked" | "ready-for-openclaw";
+    blockers: string[];
+    hostTargetsComplete: boolean;
+    scanClean: boolean;
+    moderationApproved: boolean;
+    runtimeBundlesReady: boolean;
+    createdAt: number;
+    updatedAt: number;
+    packageId?: string | null | undefined;
+    owner?: string | null | undefined;
+    sourceRepo?: string | null | undefined;
+    sourcePath?: string | null | undefined;
+    sourceCommit?: string | null | undefined;
+    notes?: string | null | undefined;
+}, {}>;
+export type PackageOfficialMigrationItem = (typeof PackageOfficialMigrationItemSchema)[inferred];
+export declare const ApiV1PackageOfficialMigrationListResponseSchema: import("arktype/internal/variants/object.ts").ObjectType<{
+    items: {
+        migrationId: string;
+        bundledPluginId: string;
+        packageName: string;
+        phase: "planned" | "published" | "clawpack-ready" | "legacy-zip-only" | "metadata-ready" | "blocked" | "ready-for-openclaw";
+        blockers: string[];
+        hostTargetsComplete: boolean;
+        scanClean: boolean;
+        moderationApproved: boolean;
+        runtimeBundlesReady: boolean;
+        createdAt: number;
+        updatedAt: number;
+        packageId?: string | null | undefined;
+        owner?: string | null | undefined;
+        sourceRepo?: string | null | undefined;
+        sourcePath?: string | null | undefined;
+        sourceCommit?: string | null | undefined;
+        notes?: string | null | undefined;
+    }[];
+    nextCursor: string | null;
+    done: boolean;
+}, {}>;
+export type ApiV1PackageOfficialMigrationListResponse = (typeof ApiV1PackageOfficialMigrationListResponseSchema)[inferred];
+export declare const ApiV1PackageOfficialMigrationResponseSchema: import("arktype/internal/variants/object.ts").ObjectType<{
+    ok: true;
+    migration: {
+        migrationId: string;
+        bundledPluginId: string;
+        packageName: string;
+        phase: "planned" | "published" | "clawpack-ready" | "legacy-zip-only" | "metadata-ready" | "blocked" | "ready-for-openclaw";
+        blockers: string[];
+        hostTargetsComplete: boolean;
+        scanClean: boolean;
+        moderationApproved: boolean;
+        runtimeBundlesReady: boolean;
+        createdAt: number;
+        updatedAt: number;
+        packageId?: string | null | undefined;
+        owner?: string | null | undefined;
+        sourceRepo?: string | null | undefined;
+        sourcePath?: string | null | undefined;
+        sourceCommit?: string | null | undefined;
+        notes?: string | null | undefined;
+    };
+}, {}>;
+export type ApiV1PackageOfficialMigrationResponse = (typeof ApiV1PackageOfficialMigrationResponseSchema)[inferred];
+export declare const PackageModerationQueueStatusSchema: import("arktype/internal/variants/string.ts").StringType<"open" | "all" | "blocked" | "manual", {}>;
+export type PackageModerationQueueStatus = (typeof PackageModerationQueueStatusSchema)[inferred];
+export declare const ApiV1PackageModerationQueueResponseSchema: import("arktype/internal/variants/object.ts").ObjectType<{
+    items: {
+        packageId: string;
+        releaseId: string;
+        name: string;
+        displayName: string;
+        family: "skill" | "code-plugin" | "bundle-plugin";
+        channel: "official" | "community" | "private";
+        isOfficial: boolean;
+        version: string;
+        createdAt: number;
+        scanStatus: "clean" | "suspicious" | "malicious" | "pending" | "not-run";
+        reportCount: number;
+        reasons: string[];
+        artifactKind?: "legacy-zip" | "npm-pack" | null | undefined;
+        moderationState?: "approved" | "quarantined" | "revoked" | null | undefined;
+        moderationReason?: string | null | undefined;
+        sourceRepo?: string | null | undefined;
+        sourceCommit?: string | null | undefined;
+        lastReportedAt?: number | null | undefined;
+    }[];
+    nextCursor: string | null;
+    done: boolean;
+}, {}>;
+export type ApiV1PackageModerationQueueResponse = (typeof ApiV1PackageModerationQueueResponseSchema)[inferred];
+export declare const ApiV1PackageReleaseModerationResponseSchema: import("arktype/internal/variants/object.ts").ObjectType<{
+    ok: true;
+    packageId: string;
+    releaseId: string;
+    state: "approved" | "quarantined" | "revoked";
+    scanStatus: "clean" | "malicious";
+}, {}>;
+export type ApiV1PackageReleaseModerationResponse = (typeof ApiV1PackageReleaseModerationResponseSchema)[inferred];
 export declare const ApiV1PackagePublishResponseSchema: import("arktype/internal/variants/object.ts").ObjectType<{
     ok: true;
     packageId: string;

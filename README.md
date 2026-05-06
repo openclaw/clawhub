@@ -111,8 +111,11 @@ bunx convex dev
 # terminal B: web app (port 3000)
 bun run dev
 
+# detached/Codex worktree preview
+bun run dev:worktree
+
 # seed sample data
-bunx convex run --no-push devSeed:seedNixSkills
+bun run seed:dev
 ```
 
 For full setup instructions (env vars, GitHub OAuth, JWT keys, database seeding), see [CONTRIBUTING.md](CONTRIBUTING.md).

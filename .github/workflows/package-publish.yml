@@ -57,6 +57,10 @@ on:
         description: Optional source ref override for local-folder publishes.
         required: false
         type: string
+      source_path:
+        description: Optional source path inside the repository for monorepo package publishes.
+        required: false
+        type: string
       clawhub_version:
         description: Legacy npm CLI version input. Kept for compatibility; the workflow now runs the checked-out source.
         required: false
@@ -223,6 +227,7 @@ jobs:
           INPUT_SOURCE_REPO: ${{ inputs.source_repo }}
           INPUT_SOURCE_COMMIT: ${{ inputs.source_commit }}
           INPUT_SOURCE_REF: ${{ inputs.source_ref }}
+          INPUT_SOURCE_PATH: ${{ inputs.source_path }}
           INPUT_SITE: ${{ inputs.site }}
           INPUT_REGISTRY: ${{ inputs.registry }}
           CLAWHUB_TOKEN: ${{ secrets.clawhub_token }}
@@ -287,6 +292,7 @@ jobs:
           source_repo = os.environ["INPUT_SOURCE_REPO"].strip()
           source_commit = os.environ["INPUT_SOURCE_COMMIT"].strip()
           source_ref = os.environ["INPUT_SOURCE_REF"].strip()
+          source_path = os.environ["INPUT_SOURCE_PATH"].strip()
           if source_repo:
               cmd += ["--source-repo", source_repo]
           if source_commit:
@@ -297,6 +303,8 @@ jobs:
               github_ref = os.environ["GITHUB_REF"].strip()
               if github_ref:
                   cmd += ["--source-ref", github_ref]
+          if source_path:
+              cmd += ["--source-path", source_path]
           if os.environ["INPUT_DRY_RUN"] != "true" and os.environ["CLAWHUB_TOKEN"].strip():
               cmd += [
                   "--manual-override-reason",

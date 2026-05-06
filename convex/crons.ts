@@ -33,6 +33,13 @@ crons.interval(
   {},
 );
 
+crons.interval(
+  "package-stat-events",
+  { minutes: 15 },
+  internal.packages.processPackageStatEventsInternal,
+  { batchSize: 500 },
+);
+
 // Syncs accumulated stat deltas to skill documents every 6 hours.
 // Runs infrequently to avoid thundering-herd reactive query invalidation.
 // Uses processedAt field to track progress (independent of the action cursor).
@@ -40,7 +47,7 @@ crons.interval(
   "skill-doc-stat-sync",
   { hours: 6 },
   internal.skillStatEvents.processSkillStatEventsInternal,
-  { batchSize: 500 },
+  { batchSize: 100 },
 );
 
 crons.interval(

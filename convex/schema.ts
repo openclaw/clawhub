@@ -234,6 +234,20 @@ const packageStatsValidator = v.object({
   versions: v.number(),
 });
 
+const packageArtifactSummaryValidator = v.optional(
+  v.object({
+    kind: v.union(v.literal("legacy-zip"), v.literal("npm-pack")),
+    sha256: v.optional(v.string()),
+    size: v.optional(v.number()),
+    format: v.optional(v.string()),
+    npmIntegrity: v.optional(v.string()),
+    npmShasum: v.optional(v.string()),
+    npmTarballName: v.optional(v.string()),
+    npmUnpackedSize: v.optional(v.number()),
+    npmFileCount: v.optional(v.number()),
+  }),
+);
+
 const packageCompatibilityValidator = v.optional(
   v.object({
     pluginApiRange: v.optional(v.string()),
@@ -313,6 +327,13 @@ const packageScanStatusValidator = v.optional(
     v.literal("not-run"),
   ),
 );
+
+const packageReleaseModerationOverrideValidator = v.object({
+  state: v.union(v.literal("approved"), v.literal("quarantined"), v.literal("revoked")),
+  reason: v.string(),
+  reviewerUserId: v.id("users"),
+  updatedAt: v.number(),
+});
 
 const packageFilesValidator = v.array(
   v.object({
@@ -413,6 +434,8 @@ const skills = defineTable({
   .index("by_slug", ["slug"])
   .index("by_owner", ["ownerUserId"])
   .index("by_owner_publisher", ["ownerPublisherId"])
+  .index("by_owner_active_updated", ["ownerUserId", "softDeletedAt", "updatedAt"])
+  .index("by_owner_publisher_active_updated", ["ownerPublisherId", "softDeletedAt", "updatedAt"])
   .index("by_updated", ["updatedAt"])
   .index("by_stats_downloads", ["statsDownloads", "updatedAt"])
   .index("by_stats_stars", ["statsStars", "updatedAt"])
@@ -705,7 +728,11 @@ const embeddingSkillMap = defineTable({
 const skillSearchDigest = defineTable({
   skillId: v.id("skills"),
   slug: v.string(),
+  normalizedSlug: v.optional(v.string()),
+  normalizedSlugFirstToken: v.optional(v.string()),
   displayName: v.string(),
+  normalizedDisplayName: v.optional(v.string()),
+  normalizedDisplayNameFirstToken: v.optional(v.string()),
   summary: v.optional(v.string()),
   ownerUserId: v.id("users"),
   ownerPublisherId: v.optional(v.id("publishers")),
@@ -746,6 +773,13 @@ const skillSearchDigest = defineTable({
   .index("by_active_updated", ["softDeletedAt", "updatedAt"])
   .index("by_active_created", ["softDeletedAt", "createdAt"])
   .index("by_active_name", ["softDeletedAt", "displayName"])
+  .index("by_active_normalized_slug", ["softDeletedAt", "normalizedSlug"])
+  .index("by_active_normalized_display_name", ["softDeletedAt", "normalizedDisplayName"])
+  .index("by_active_normalized_slug_first_token", ["softDeletedAt", "normalizedSlugFirstToken"])
+  .index("by_active_normalized_display_name_first_token", [
+    "softDeletedAt",
+    "normalizedDisplayNameFirstToken",
+  ])
   .index("by_active_stats_downloads", ["softDeletedAt", "statsDownloads", "updatedAt"])
   .index("by_active_stats_stars", ["softDeletedAt", "statsStars", "updatedAt"])
   .index("by_active_stats_installs_all_time", [
@@ -756,6 +790,22 @@ const skillSearchDigest = defineTable({
   .index("by_nonsuspicious_updated", ["softDeletedAt", "isSuspicious", "updatedAt"])
   .index("by_nonsuspicious_created", ["softDeletedAt", "isSuspicious", "createdAt"])
   .index("by_nonsuspicious_name", ["softDeletedAt", "isSuspicious", "displayName"])
+  .index("by_nonsuspicious_normalized_slug", ["softDeletedAt", "isSuspicious", "normalizedSlug"])
+  .index("by_nonsuspicious_normalized_display_name", [
+    "softDeletedAt",
+    "isSuspicious",
+    "normalizedDisplayName",
+  ])
+  .index("by_nonsuspicious_normalized_slug_first_token", [
+    "softDeletedAt",
+    "isSuspicious",
+    "normalizedSlugFirstToken",
+  ])
+  .index("by_nonsuspicious_normalized_display_name_first_token", [
+    "softDeletedAt",
+    "isSuspicious",
+    "normalizedDisplayNameFirstToken",
+  ])
   .index("by_nonsuspicious_downloads", [
     "softDeletedAt",
     "isSuspicious",
@@ -791,6 +841,7 @@ const packages = defineTable({
       compatibility: packageCompatibilityValidator,
       capabilities: packageCapabilitiesValidator,
       verification: packageVerificationValidator,
+      artifact: packageArtifactSummaryValidator,
     }),
   ),
   tags: v.record(v.string(), v.id("packageReleases")),
@@ -801,6 +852,8 @@ const packages = defineTable({
   verification: packageVerificationValidator,
   scanStatus: packageScanStatusValidator,
   stats: packageStatsValidator,
+  reportCount: v.optional(v.number()),
+  lastReportedAt: v.optional(v.number()),
   softDeletedAt: v.optional(v.number()),
   createdAt: v.number(),
   updatedAt: v.number(),
@@ -822,6 +875,16 @@ const packageReleases = defineTable({
   distTags: v.array(v.string()),
   files: packageFilesValidator,
   integritySha256: v.string(),
+  artifactKind: v.optional(v.union(v.literal("legacy-zip"), v.literal("npm-pack"))),
+  clawpackStorageId: v.optional(v.id("_storage")),
+  clawpackSha256: v.optional(v.string()),
+  clawpackSize: v.optional(v.number()),
+  clawpackFormat: v.optional(v.literal("tgz")),
+  npmIntegrity: v.optional(v.string()),
+  npmShasum: v.optional(v.string()),
+  npmTarballName: v.optional(v.string()),
+  npmUnpackedSize: v.optional(v.number()),
+  npmFileCount: v.optional(v.number()),
   extractedPackageJson: v.optional(v.any()),
   extractedPluginManifest: v.optional(v.any()),
   normalizedBundleManifest: v.optional(v.any()),
@@ -871,6 +934,7 @@ const packageReleases = defineTable({
       checkedAt: v.number(),
     }),
   ),
+  manualModeration: v.optional(packageReleaseModerationOverrideValidator),
   source: v.optional(v.any()),
   createdBy: v.id("users"),
   publishActor: packagePublishActorValidator,
@@ -882,6 +946,13 @@ const packageReleases = defineTable({
   .index("by_active_created", ["softDeletedAt", "createdAt"])
   .index("by_package_version", ["packageId", "version"])
   .index("by_sha256hash", ["sha256hash"]);
+
+const packageStatEvents = defineTable({
+  packageId: v.id("packages"),
+  kind: v.literal("download"),
+  occurredAt: v.number(),
+  processedAt: v.optional(v.number()),
+}).index("by_unprocessed", ["processedAt"]);
 
 const packageTrustedPublishers = defineTable({
   packageId: v.id("packages"),
@@ -1258,6 +1329,74 @@ const skillReports = defineTable({
   .index("by_user", ["userId"])
   .index("by_skill_user", ["skillId", "userId"]);
 
+const packageReports = defineTable({
+  packageId: v.id("packages"),
+  releaseId: v.optional(v.id("packageReleases")),
+  version: v.optional(v.string()),
+  userId: v.id("users"),
+  reason: v.optional(v.string()),
+  status: v.union(v.literal("open"), v.literal("triaged"), v.literal("dismissed")),
+  triagedAt: v.optional(v.number()),
+  triagedBy: v.optional(v.id("users")),
+  triageNote: v.optional(v.string()),
+  createdAt: v.number(),
+})
+  .index("by_package", ["packageId"])
+  .index("by_package_createdAt", ["packageId", "createdAt"])
+  .index("by_release", ["releaseId"])
+  .index("by_createdAt", ["createdAt"])
+  .index("by_status_createdAt", ["status", "createdAt"])
+  .index("by_user", ["userId"])
+  .index("by_package_user", ["packageId", "userId"]);
+
+const packageAppeals = defineTable({
+  packageId: v.id("packages"),
+  releaseId: v.id("packageReleases"),
+  version: v.string(),
+  userId: v.id("users"),
+  message: v.string(),
+  status: v.union(v.literal("open"), v.literal("accepted"), v.literal("rejected")),
+  resolvedAt: v.optional(v.number()),
+  resolvedBy: v.optional(v.id("users")),
+  resolutionNote: v.optional(v.string()),
+  createdAt: v.number(),
+})
+  .index("by_release_status_createdAt", ["releaseId", "status", "createdAt"])
+  .index("by_createdAt", ["createdAt"])
+  .index("by_status_createdAt", ["status", "createdAt"])
+  .index("by_user_createdAt", ["userId", "createdAt"]);
+
+const officialPluginMigrations = defineTable({
+  bundledPluginId: v.string(),
+  packageName: v.string(),
+  packageId: v.optional(v.id("packages")),
+  owner: v.optional(v.string()),
+  sourceRepo: v.optional(v.string()),
+  sourcePath: v.optional(v.string()),
+  sourceCommit: v.optional(v.string()),
+  phase: v.union(
+    v.literal("planned"),
+    v.literal("published"),
+    v.literal("clawpack-ready"),
+    v.literal("legacy-zip-only"),
+    v.literal("metadata-ready"),
+    v.literal("blocked"),
+    v.literal("ready-for-openclaw"),
+  ),
+  blockers: v.array(v.string()),
+  hostTargetsComplete: v.boolean(),
+  scanClean: v.boolean(),
+  moderationApproved: v.boolean(),
+  runtimeBundlesReady: v.boolean(),
+  notes: v.optional(v.string()),
+  createdAt: v.number(),
+  updatedAt: v.number(),
+})
+  .index("by_bundled_plugin", ["bundledPluginId"])
+  .index("by_package_name", ["packageName"])
+  .index("by_phase_updatedAt", ["phase", "updatedAt"])
+  .index("by_updatedAt", ["updatedAt"]);
+
 const soulComments = defineTable({
   soulId: v.id("souls"),
   userId: v.id("users"),
@@ -1354,12 +1493,24 @@ const apiTokens = defineTable({
 const rateLimits = defineTable({
   key: v.string(),
   windowStart: v.number(),
+  shard: v.optional(v.number()),
   count: v.number(),
   limit: v.number(),
   updatedAt: v.number(),
 })
   .index("by_key_window", ["key", "windowStart"])
   .index("by_key", ["key"]);
+
+const rateLimitShards = defineTable({
+  key: v.string(),
+  windowStart: v.number(),
+  shard: v.number(),
+  count: v.number(),
+  limit: v.number(),
+  updatedAt: v.number(),
+})
+  .index("by_key_window", ["key", "windowStart"])
+  .index("by_key_window_shard", ["key", "windowStart", "shard"]);
 
 const downloadDedupes = defineTable({
   skillId: v.id("skills"),
@@ -1472,6 +1623,7 @@ export default defineSchema({
   skillSlugAliases,
   packages,
   packageReleases,
+  packageStatEvents,
   packageTrustedPublishers,
   packagePublishTokens,
   packageBadges,
@@ -1497,6 +1649,9 @@ export default defineSchema({
   comments,
   commentReports,
   skillReports,
+  packageReports,
+  packageAppeals,
+  officialPluginMigrations,
   soulComments,
   stars,
   soulStars,
@@ -1505,6 +1660,7 @@ export default defineSchema({
   rescanRequests,
   apiTokens,
   rateLimits,
+  rateLimitShards,
   downloadDedupes,
   reservedSlugs,
   reservedHandles,

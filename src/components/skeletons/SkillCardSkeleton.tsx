@@ -1,6 +1,6 @@
 import { Skeleton } from "../ui/skeleton";
 
-export function SkillCardSkeleton() {
+function SkillCardSkeleton() {
   return (
     <div className="flex w-full flex-col gap-3 rounded-[var(--radius-md)] border border-[color:var(--line)] bg-[color:var(--surface)] p-[22px]">
       {/* Title */}

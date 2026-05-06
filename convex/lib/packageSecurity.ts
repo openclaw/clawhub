@@ -4,7 +4,7 @@ export type PackageScanStatus = Doc<"packages">["scanStatus"];
 
 type PackageReleaseSecurityLike = Pick<
   Doc<"packageReleases">,
-  "sha256hash" | "vtAnalysis" | "verification" | "staticScan"
+  "sha256hash" | "vtAnalysis" | "verification" | "staticScan" | "manualModeration"
 >;
 
 export function normalizePackageScanStatus(status: string | null | undefined): PackageScanStatus {
@@ -23,6 +23,14 @@ export function normalizePackageScanStatus(status: string | null | undefined): P
 export function resolvePackageReleaseScanStatus(
   release: PackageReleaseSecurityLike,
 ): Exclude<PackageScanStatus, undefined> {
+  if (release.manualModeration?.state === "approved") return "clean";
+  if (
+    release.manualModeration?.state === "quarantined" ||
+    release.manualModeration?.state === "revoked"
+  ) {
+    return "malicious";
+  }
+
   const staticStatus = normalizePackageScanStatus(release.staticScan?.status);
   if (staticStatus === "malicious") return "malicious";
   if (staticStatus === "suspicious") return "suspicious";
@@ -47,6 +55,20 @@ export function isPackageBlockedFromPublic(scanStatus: PackageScanStatus) {
 }
 
 export function getPackageDownloadSecurityBlock(release: PackageReleaseSecurityLike) {
+  if (release.manualModeration?.state === "quarantined") {
+    return {
+      status: 403,
+      message: "Blocked: this package release is quarantined by ClawHub moderation.",
+    };
+  }
+
+  if (release.manualModeration?.state === "revoked") {
+    return {
+      status: 403,
+      message: "Blocked: this package release has been revoked by ClawHub moderation.",
+    };
+  }
+
   const scanStatus = resolvePackageReleaseScanStatus(release);
 
   if (scanStatus === "malicious") {

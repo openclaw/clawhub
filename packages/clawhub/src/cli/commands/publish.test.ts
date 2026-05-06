@@ -114,6 +114,77 @@ describe("cmdPublish", () => {
     }
   });
 
+  it("still publishes a root SKILL.md hidden by broad ignore patterns", async () => {
+    const workdir = await makeTmpWorkdir();
+    try {
+      const folder = join(workdir, "ignored-manifest");
+      await mkdir(folder, { recursive: true });
+      await writeFile(join(folder, ".gitignore"), "*.md\n", "utf8");
+      await writeFile(join(folder, "SKILL.md"), "# Skill\n", "utf8");
+      await writeFile(join(folder, "notes.md"), "ignored notes\n", "utf8");
+
+      httpMocks.apiRequestForm.mockResolvedValueOnce({
+        ok: true,
+        skillId: "skill_1",
+        versionId: "ver_1",
+      });
+
+      await cmdPublish(makeOpts(workdir), "ignored-manifest", {
+        slug: "ignored-manifest",
+        name: "Ignored Manifest",
+        version: "1.0.0",
+        changelog: "",
+        tags: "latest",
+      });
+
+      const publishCall = httpMocks.apiRequestForm.mock.calls.find((call) => {
+        const req = call[1] as { path?: string } | undefined;
+        return req?.path === "/api/v1/skills";
+      });
+      if (!publishCall) throw new Error("Missing publish call");
+      const publishForm = (publishCall[1] as { form?: FormData }).form as FormData;
+      const files = publishForm.getAll("files") as Array<Blob & { name?: string }>;
+      expect(files.map((file) => file.name ?? "")).toEqual(["SKILL.md"]);
+    } finally {
+      await rm(workdir, { recursive: true, force: true });
+    }
+  });
+
+  it("includes owner handle for org-owned skill publishes", async () => {
+    const workdir = await makeTmpWorkdir();
+    try {
+      const folder = join(workdir, "org-skill");
+      await mkdir(folder, { recursive: true });
+      await writeFile(join(folder, "SKILL.md"), "# Skill\n", "utf8");
+
+      httpMocks.apiRequestForm.mockResolvedValueOnce({
+        ok: true,
+        skillId: "skill_1",
+        versionId: "ver_2",
+      });
+
+      await cmdPublish(makeOpts(workdir), "org-skill", {
+        owner: "@openclaw",
+        version: "1.0.1",
+        changelog: "",
+        tags: "latest",
+      });
+
+      const publishCall = httpMocks.apiRequestForm.mock.calls.find((call) => {
+        const req = call[1] as { path?: string } | undefined;
+        return req?.path === "/api/v1/skills";
+      });
+      if (!publishCall) throw new Error("Missing publish call");
+      const publishForm = (publishCall[1] as { form?: FormData }).form as FormData;
+      const payloadEntry = publishForm.get("payload");
+      if (typeof payloadEntry !== "string") throw new Error("Missing publish payload");
+      const payload = JSON.parse(payloadEntry);
+      expect(payload.ownerHandle).toBe("openclaw");
+    } finally {
+      await rm(workdir, { recursive: true, force: true });
+    }
+  });
+
   it('rejects plugin folders with guidance to use "clawhub package publish"', async () => {
     const workdir = await makeTmpWorkdir();
     try {

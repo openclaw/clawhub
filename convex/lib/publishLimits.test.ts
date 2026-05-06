@@ -1,8 +1,10 @@
 import { describe, expect, it } from "vitest";
 import {
   findOversizedPublishFile,
+  getClawPackSizeError,
   getPublishFileSizeError,
   getPublishTotalSizeError,
+  MAX_CLAWPACK_BYTES,
   MAX_PUBLISH_FILE_BYTES,
 } from "./publishLimits";
 
@@ -24,5 +26,13 @@ describe("publishLimits", () => {
       'File "dist/plugin.wasm" exceeds 10MB limit',
     );
     expect(getPublishTotalSizeError("package")).toBe("Package exceeds 50MB limit");
+    expect(getClawPackSizeError("demo-1.0.0.tgz")).toBe(
+      'ClawPack "demo-1.0.0.tgz" exceeds 120MB limit',
+    );
+  });
+
+  it("keeps the ClawPack tarball limit separate from legacy file limits", () => {
+    expect(MAX_CLAWPACK_BYTES).toBe(120 * 1024 * 1024);
+    expect(MAX_CLAWPACK_BYTES).toBeGreaterThan(MAX_PUBLISH_FILE_BYTES);
   });
 });

@@ -78,7 +78,7 @@ export const rescanGuidanceComment = [
   "- Skill: `clawhub skill rescan <slug>`",
   "- Plugin/package: `clawhub package rescan <name>`",
   "",
-  "If the content or metadata changed, publish the fixed version first, then request the rescan for the latest release. I'm closing this issue after posting this guidance. If you're still having trouble after rescanning, please reopen this issue with the ClawHub URL, version, and latest scan result.",
+  "If the content or metadata changed, publish the fixed version first, then request the rescan for the latest release. This issue is staying open so you can reply with the ClawHub URL, version, and latest scan result if the flag remains or the rescan path is blocked.",
 ].join("\n");
 
 function normalizeLabel(label) {
@@ -252,10 +252,6 @@ export function planCommentForLabeledIssue(issue) {
         type: "comment",
         body: rescanGuidanceComment,
         bodySha256: commentHash(rescanGuidanceComment),
-      },
-      {
-        type: "close",
-        stateReason: "not_planned",
       },
     ],
   };

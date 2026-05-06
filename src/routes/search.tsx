@@ -12,6 +12,8 @@ import {
   type UnifiedSkillResult,
 } from "../lib/useUnifiedSearch";
 
+const SEARCH_PAGE_SIZE = 25;
+
 type SearchState = {
   q?: string;
   type?: UnifiedSearchType;
@@ -30,15 +32,32 @@ function UnifiedSearchPage() {
   const navigate = useNavigate();
   const activeType = search.type ?? "all";
   const [query, setQuery] = useState(search.q ?? "");
+  const [resultLimit, setResultLimit] = useState(SEARCH_PAGE_SIZE);
 
   useEffect(() => {
     setQuery(search.q ?? "");
   }, [search.q]);
 
+  useEffect(() => {
+    setResultLimit(SEARCH_PAGE_SIZE);
+  }, [search.q, activeType]);
+
   const { results, skillCount, pluginCount, isSearching } = useUnifiedSearch(
     search.q ?? "",
     activeType,
+    {
+      limits: {
+        skills: resultLimit,
+        plugins: resultLimit,
+      },
+    },
   );
+  const canLoadMore =
+    search.q &&
+    !isSearching &&
+    ((activeType === "all" && (skillCount >= resultLimit || pluginCount >= resultLimit)) ||
+      (activeType === "skills" && skillCount >= resultLimit) ||
+      (activeType === "plugins" && pluginCount >= resultLimit));
 
   const handleSearch = (e: React.FormEvent) => {
     e.preventDefault();
@@ -121,15 +140,28 @@ function UnifiedSearchPage() {
           <p className="text-ink-soft">No results found for "{search.q}"</p>
         </Card>
       ) : (
-        <div className="results-list">
-          {results.map((item) =>
-            item.type === "skill" ? (
-              <SkillResultRow key={`skill-${item.skill._id}`} result={item} />
-            ) : (
-              <PluginResultRow key={`plugin-${item.plugin.name}`} result={item} />
-            ),
-          )}
-        </div>
+        <>
+          <div className="results-list">
+            {results.map((item) =>
+              item.type === "skill" ? (
+                <SkillResultRow key={`skill-${item.skill._id}`} result={item} />
+              ) : (
+                <PluginResultRow key={`plugin-${item.plugin.name}`} result={item} />
+              ),
+            )}
+          </div>
+          {canLoadMore ? (
+            <div className="search-load-more">
+              <button
+                type="button"
+                className="search-load-more-button"
+                onClick={() => setResultLimit((limit) => limit + SEARCH_PAGE_SIZE)}
+              >
+                Load more
+              </button>
+            </div>
+          ) : null}
+        </>
       )}
     </main>
   );

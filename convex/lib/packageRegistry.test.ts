@@ -6,9 +6,17 @@ import {
   extractBundlePluginArtifacts,
   extractCodePluginArtifacts,
   summarizePackageForSearch,
+  toConvexSafeJsonValue,
+  tryNormalizePackageName,
 } from "./packageRegistry";
 
 describe("packageRegistry", () => {
+  it("can validate package names without throwing", () => {
+    expect(tryNormalizePackageName("@OpenClaw/Discord")).toBe("@openclaw/discord");
+    expect(tryNormalizePackageName("openclaw/discord")).toBeNull();
+    expect(tryNormalizePackageName("   ")).toBeNull();
+  });
+
   it("extracts code plugin compatibility and capabilities", () => {
     const result = extractCodePluginArtifacts({
       packageName: "@scope/demo-plugin",
@@ -16,6 +24,15 @@ describe("packageRegistry", () => {
         name: "@scope/demo-plugin",
         openclaw: {
           extensions: ["./dist/index.js"],
+          hostTargets: ["darwin-arm64", "linux-x64"],
+          environment: {
+            browser: true,
+            desktop: { required: true },
+            nativeDependencies: ["sharp"],
+            externalServices: [{ name: "GitHub" }],
+            osPermissions: ["screen-recording"],
+            binaries: ["ffmpeg"],
+          },
           compat: {
             pluginApi: "^1.2.0",
             minGatewayVersion: "2026.3.0",
@@ -48,9 +65,52 @@ describe("packageRegistry", () => {
     expect(result.compatibility?.pluginApiRange).toBe("^1.2.0");
     expect(result.compatibility?.minGatewayVersion).toBe("2026.3.0");
     expect(result.capabilities.executesCode).toBe(true);
+    expect(result.capabilities.hostTargets).toEqual(["darwin-arm64", "linux-x64"]);
     expect(result.capabilities.toolNames).toContain("demoTool");
+    expect(result.capabilities.capabilityTags).toContain("host:darwin-arm64");
+    expect(result.capabilities.capabilityTags).toContain("host-os:darwin");
+    expect(result.capabilities.capabilityTags).toContain("host-arch:arm64");
+    expect(result.capabilities.capabilityTags).toContain("host-os:linux");
+    expect(result.capabilities.capabilityTags).toContain("host-arch:x64");
+    expect(result.capabilities.capabilityTags).toContain("environment:declared");
+    expect(result.capabilities.capabilityTags).toContain("requires:browser");
+    expect(result.capabilities.capabilityTags).toContain("requires:desktop");
+    expect(result.capabilities.capabilityTags).toContain("requires:native-deps");
+    expect(result.capabilities.capabilityTags).toContain("native-dep:sharp");
+    expect(result.capabilities.capabilityTags).toContain("requires:external-service");
+    expect(result.capabilities.capabilityTags).toContain("external-service:github");
+    expect(result.capabilities.capabilityTags).toContain("os-permission:screen-recording");
+    expect(result.capabilities.capabilityTags).toContain("binary:ffmpeg");
     expect(result.verification.tier).toBe("source-linked");
     expect(result.verification.scanStatus).toBe("not-run");
+  });
+
+  it("allows missing host and environment metadata for code plugins", () => {
+    const result = extractCodePluginArtifacts({
+      packageName: "demo-plugin",
+      packageJson: {
+        name: "demo-plugin",
+        openclaw: {
+          extensions: ["./dist/index.js"],
+          compat: { pluginApi: "^1.0.0" },
+          build: { openclawVersion: "2026.3.14" },
+          configSchema: { type: "object" },
+        },
+      },
+      pluginManifest: { id: "demo.plugin" },
+      source: {
+        kind: "github",
+        url: "https://github.com/openclaw/demo-plugin",
+        repo: "openclaw/demo-plugin",
+        ref: "refs/tags/v1.0.0",
+        commit: "abc123",
+        path: ".",
+        importedAt: Date.now(),
+      },
+    });
+
+    expect(result.capabilities.hostTargets).toEqual([]);
+    expect(result.capabilities.capabilityTags).not.toContain("environment:declared");
   });
 
   it("requires source metadata for code plugins", () => {
@@ -118,6 +178,7 @@ describe("packageRegistry", () => {
           },
         },
       },
+      pluginManifest: { id: "matrix-bundle" },
       bundleManifest: {
         hostTargets: ["openclaw"],
       },
@@ -128,13 +189,15 @@ describe("packageRegistry", () => {
     expect(result.compatibility?.builtWithOpenClawVersion).toBe("2026.3.13");
   });
 
-  it("requires host targets for bundle plugins", () => {
-    expect(() =>
-      extractBundlePluginArtifacts({
-        packageName: "demo-bundle",
-        packageJson: { name: "demo-bundle" },
-      }),
-    ).toThrow("host target");
+  it("allows bundle plugins without host targets", () => {
+    const result = extractBundlePluginArtifacts({
+      packageName: "demo-bundle",
+      packageJson: { name: "demo-bundle" },
+      pluginManifest: { id: "demo-bundle" },
+    });
+
+    expect(result.capabilities.hostTargets).toEqual([]);
+    expect(result.capabilities.capabilityTags).toContain("bundle-only");
   });
 
   it("validates package name consistency and summary extraction", () => {
@@ -156,5 +219,58 @@ describe("packageRegistry", () => {
         readmeText: "# Demo Plugin\n\nA longer package summary for search.\n",
       }),
     ).toBe("A longer package summary for search.");
+  });
+
+  it("normalizes JSON Schema keys for Convex metadata storage", () => {
+    expect(
+      toConvexSafeJsonValue({
+        configSchema: {
+          $defs: {
+            secret: {
+              anyOf: [{ $ref: "#/$defs/secretRef" }],
+            },
+          },
+        },
+      }),
+    ).toEqual({
+      configSchema: {
+        dollar_defs: {
+          secret: {
+            anyOf: [{ dollar_ref: "#/$defs/secretRef" }],
+          },
+        },
+      },
+    });
+  });
+
+  it("truncates deeply nested metadata before Convex storage", () => {
+    expect(
+      toConvexSafeJsonValue(
+        {
+          channelConfigs: {
+            discord: {
+              schema: {
+                properties: {
+                  auth: {
+                    anyOf: [{ properties: { token: { type: "string" } } }],
+                  },
+                },
+              },
+            },
+          },
+        },
+        { maxDepth: 5 },
+      ),
+    ).toEqual({
+      channelConfigs: {
+        discord: {
+          schema: {
+            properties: {
+              auth: "[truncated]",
+            },
+          },
+        },
+      },
+    });
   });
 });

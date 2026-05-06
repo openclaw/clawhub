@@ -124,8 +124,8 @@ const MAX_LIST_LIMIT = 50;
 const MAX_PUBLIC_LIST_LIMIT = 200;
 const MAX_LIST_BULK_LIMIT = 200;
 const MAX_LIST_TAKE = 1000;
-const MAX_SKILL_CATALOG_SCAN_DOCUMENTS = 30_000;
-const MAX_SKILL_CATALOG_SCAN_PAGES = 200;
+const MAX_SKILL_CATALOG_SCAN_DOCUMENTS = 500;
+const MAX_SKILL_CATALOG_SCAN_PAGES = 6;
 const MAX_SKILL_CATALOG_SEARCH_PAGE_SIZE = 200;
 const HARD_DELETE_BATCH_SIZE = 100;
 const HARD_DELETE_VERSION_BATCH_SIZE = 10;
@@ -2357,6 +2357,88 @@ export const list = query({
   },
 });
 
+async function mapDashboardSkillPage(
+  ctx: QueryCtx,
+  skills: Doc<"skills">[],
+  isOwnDashboard: boolean,
+) {
+  const withBadges = await attachBadgesToSkills(ctx, skills);
+
+  if (isOwnDashboard) {
+    return await Promise.all(
+      withBadges.map(async (skill) => await toDashboardSkillListItem(ctx, skill)),
+    );
+  }
+
+  const visibleSkills = await filterSkillsByActiveOwner(ctx, withBadges);
+  return visibleSkills
+    .map((skill) => toPublicSkill(skill))
+    .filter((skill): skill is NonNullable<typeof skill> => Boolean(skill));
+}
+
+export const listDashboardPaginated = query({
+  args: {
+    ownerUserId: v.optional(v.id("users")),
+    ownerPublisherId: v.optional(v.id("publishers")),
+    paginationOpts: paginationOptsValidator,
+  },
+  handler: async (ctx, args) => {
+    const ownerPublisherId = args.ownerPublisherId;
+    if (ownerPublisherId) {
+      const userId = await getOptionalActiveAuthUserId(ctx);
+      const ownerPublisher = await ctx.db.get(ownerPublisherId);
+      const membership =
+        userId &&
+        (await ctx.db
+          .query("publisherMembers")
+          .withIndex("by_publisher_user", (q) =>
+            q.eq("publisherId", ownerPublisherId).eq("userId", userId),
+          )
+          .unique());
+      const isOwnDashboard = Boolean(
+        membership ||
+        (userId && ownerPublisher?.kind === "user" && ownerPublisher.linkedUserId === userId),
+      );
+
+      const result =
+        isOwnDashboard && ownerPublisher?.kind === "user" && ownerPublisher.linkedUserId
+          ? await ctx.db
+              .query("skills")
+              .withIndex("by_owner_active_updated", (q) =>
+                q.eq("ownerUserId", ownerPublisher.linkedUserId!).eq("softDeletedAt", undefined),
+              )
+              .order("desc")
+              .paginate(args.paginationOpts)
+          : await ctx.db
+              .query("skills")
+              .withIndex("by_owner_publisher_active_updated", (q) =>
+                q.eq("ownerPublisherId", ownerPublisherId).eq("softDeletedAt", undefined),
+              )
+              .order("desc")
+              .paginate(args.paginationOpts);
+      const page = await mapDashboardSkillPage(ctx, result.page, isOwnDashboard);
+      return { ...result, page };
+    }
+
+    const ownerUserId = args.ownerUserId;
+    if (ownerUserId) {
+      const userId = await getOptionalActiveAuthUserId(ctx);
+      const isOwnDashboard = Boolean(userId && userId === ownerUserId);
+      const result = await ctx.db
+        .query("skills")
+        .withIndex("by_owner_active_updated", (q) =>
+          q.eq("ownerUserId", ownerUserId).eq("softDeletedAt", undefined),
+        )
+        .order("desc")
+        .paginate(args.paginationOpts);
+      const page = await mapDashboardSkillPage(ctx, result.page, isOwnDashboard);
+      return { ...result, page };
+    }
+
+    return { page: [], isDone: true as const, continueCursor: "" };
+  },
+});
+
 export const listWithLatest = query({
   args: {
     batch: v.optional(v.string()),
@@ -3032,6 +3114,81 @@ function buildPublicSkillEntryFromDigest(
   };
 }
 
+function buildPublicSkillApiListEntryFromDigest(digest: Doc<"skillSearchDigest">) {
+  const publicSkill = toPublicSkill(digestToHydratableSkill(digest));
+  if (!publicSkill) return null;
+  const ownerInfo = digestToOwnerInfo(digest);
+  if (!ownerInfo?.owner) return null;
+  const latestVersion =
+    digest.latestVersionSummary && digest.latestVersionId
+      ? toPublicSkillListVersionFromSummary(digest.latestVersionSummary, digest.latestVersionId)
+      : null;
+
+  return {
+    skill: {
+      _id: publicSkill._id,
+      slug: publicSkill.slug,
+      displayName: publicSkill.displayName,
+      summary: publicSkill.summary,
+      tags: publicSkill.tags,
+      stats: publicSkill.stats,
+      createdAt: publicSkill.createdAt,
+      updatedAt: publicSkill.updatedAt,
+      latestVersionId: publicSkill.latestVersionId,
+    },
+    latestVersion,
+  };
+}
+
+export const listPublicApiPageV1 = query({
+  args: {
+    cursor: v.optional(v.string()),
+    numItems: v.optional(v.number()),
+    sort: v.optional(
+      v.union(
+        v.literal("newest"),
+        v.literal("updated"),
+        v.literal("downloads"),
+        v.literal("installs"),
+        v.literal("stars"),
+        v.literal("name"),
+      ),
+    ),
+    dir: v.optional(v.union(v.literal("asc"), v.literal("desc"))),
+    nonSuspiciousOnly: v.optional(v.boolean()),
+  },
+  handler: async (ctx, args) => {
+    const sort = args.sort ?? "newest";
+    const dir = args.dir ?? (sort === "name" ? "asc" : "desc");
+    const numItems = clampInt(args.numItems ?? 25, 1, MAX_PUBLIC_LIST_LIMIT);
+    const indexName = args.nonSuspiciousOnly
+      ? NONSUSPICIOUS_SORT_INDEXES[sort]
+      : SORT_INDEXES[sort];
+    const eqPrefix: IndexKey = args.nonSuspiciousOnly ? [undefined, false] : [undefined];
+    const decodedCursor = args.cursor ? decodeIndexKey(args.cursor) : null;
+    const isFirstPage = !decodedCursor;
+    const result = await getPage(ctx, {
+      table: "skillSearchDigest",
+      startIndexKey: decodedCursor ?? eqPrefix,
+      startInclusive: isFirstPage,
+      endIndexKey: eqPrefix,
+      endInclusive: true,
+      absoluteMaxRows: numItems,
+      order: dir,
+      index: indexName,
+      schema,
+    });
+    const items = result.page
+      .map((digest) => buildPublicSkillApiListEntryFromDigest(digest))
+      .filter((item): item is NonNullable<typeof item> => item !== null);
+    const nextCursor =
+      result.hasMore && result.indexKeys.length > 0
+        ? encodeIndexKey(result.indexKeys[result.indexKeys.length - 1])
+        : null;
+    return { items, nextCursor };
+  },
+});
+
 type PublicSkillCatalogItem = {
   name: string;
   displayName: string;
@@ -3200,6 +3357,7 @@ export const listPackageCatalogPage = query({
       loops += 1;
       const effectivePageSize = Math.min(
         remainingScanBudget,
+        250,
         offset > 0 && pageSize
           ? Math.max(pageSize, offset + 1)
           : Math.max(targetCount * 3, targetCount),
@@ -3836,7 +3994,7 @@ export const getActiveSkillBatchForLlmBackfillInternal = internalQuery({
     batchSize: v.optional(v.number()),
   },
   handler: async (ctx, args) => {
-    const batchSize = args.batchSize ?? 10;
+    const batchSize = clampInt(args.batchSize ?? 10, 1, 50);
     const cursor = args.cursor ?? 0;
 
     // Use built-in by_creation_time index for stable cursor-based pagination
@@ -6448,6 +6606,79 @@ export const reclaimSlugInternal = internalMutation({
   },
 });
 
+export const reserveSlugInternal = internalMutation({
+  args: {
+    actorUserId: v.id("users"),
+    slug: v.string(),
+    rightfulOwnerUserId: v.id("users"),
+    reason: v.optional(v.string()),
+  },
+  handler: async (ctx, args) => {
+    const actor = await ctx.db.get(args.actorUserId);
+    if (!actor || actor.deletedAt || actor.deactivatedAt) throw new Error("User not found");
+    assertAdmin(actor);
+
+    const slug = args.slug.trim().toLowerCase();
+    if (!slug) throw new Error("Slug required");
+
+    const rightfulOwner = await ctx.db.get(args.rightfulOwnerUserId);
+    if (!rightfulOwner || rightfulOwner.deletedAt || rightfulOwner.deactivatedAt) {
+      throw new Error("Rightful owner not found");
+    }
+
+    const now = Date.now();
+    const existingSkill = await ctx.db
+      .query("skills")
+      .withIndex("by_slug", (q) => q.eq("slug", slug))
+      .unique();
+
+    if (existingSkill) {
+      if (existingSkill.ownerUserId !== args.rightfulOwnerUserId) {
+        throw new Error("Slug already exists and belongs to another owner");
+      }
+
+      await releaseActiveReservationsForSlug(ctx, slug, now);
+      await ctx.db.insert("auditLogs", {
+        actorUserId: args.actorUserId,
+        action: "slug.reserve",
+        targetType: "slug",
+        targetId: slug,
+        metadata: {
+          slug,
+          rightfulOwnerUserId: args.rightfulOwnerUserId,
+          action: "already_owned",
+          reason: args.reason || undefined,
+        },
+        createdAt: now,
+      });
+      return { ok: true as const, action: "already_owned" as const };
+    }
+
+    await upsertReservedSlugForRightfulOwner(ctx, {
+      slug,
+      rightfulOwnerUserId: args.rightfulOwnerUserId,
+      deletedAt: now,
+      expiresAt: now + SLUG_RESERVATION_MS,
+      reason: args.reason || "slug.reserved",
+    });
+
+    await ctx.db.insert("auditLogs", {
+      actorUserId: args.actorUserId,
+      action: "slug.reserve",
+      targetType: "slug",
+      targetId: slug,
+      metadata: {
+        slug,
+        rightfulOwnerUserId: args.rightfulOwnerUserId,
+        reason: args.reason || undefined,
+      },
+      createdAt: now,
+    });
+
+    return { ok: true as const, action: "reserved" as const };
+  },
+});
+
 export const setDuplicate = mutation({
   args: { skillId: v.id("skills"), canonicalSlug: v.optional(v.string()) },
   handler: async (ctx, args) => {
@@ -7200,6 +7431,7 @@ export const setSkillSoftDeletedInternal = internalMutation({
     userId: v.id("users"),
     slug: v.string(),
     deleted: v.boolean(),
+    reason: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
     const user = await ctx.db.get(args.userId);
@@ -7219,6 +7451,7 @@ export const setSkillSoftDeletedInternal = internalMutation({
     }
 
     const now = Date.now();
+    const note = args.reason ? trimManualOverrideNote(args.reason) : undefined;
     const patch: Partial<Doc<"skills">> = {
       softDeletedAt: args.deleted ? now : undefined,
       moderationStatus: args.deleted ? "hidden" : "active",
@@ -7227,6 +7460,7 @@ export const setSkillSoftDeletedInternal = internalMutation({
       lastReviewedAt: now,
       updatedAt: now,
     };
+    if (note) patch.moderationNotes = note;
     const nextSkill = { ...skill, ...patch };
     await ctx.db.patch(skill._id, patch);
     await adjustGlobalPublicCountForSkillChange(ctx, skill, nextSkill);
@@ -7238,11 +7472,72 @@ export const setSkillSoftDeletedInternal = internalMutation({
       action: args.deleted ? "skill.delete" : "skill.undelete",
       targetType: "skill",
       targetId: skill._id,
-      metadata: { slug, softDeletedAt: args.deleted ? now : null },
+      metadata: {
+        slug,
+        softDeletedAt: args.deleted ? now : null,
+        ...(note ? { reason: note } : {}),
+      },
       createdAt: now,
     });
 
     return { ok: true as const };
+  },
+});
+
+export const hideSkillForSecurityRedactionInternal = internalMutation({
+  args: {
+    actorUserId: v.id("users"),
+    slug: v.string(),
+    reason: v.string(),
+  },
+  handler: async (ctx, args) => {
+    const actor = await ctx.db.get(args.actorUserId);
+    if (!actor || actor.deletedAt || actor.deactivatedAt) throw new Error("Actor not found");
+
+    const slug = args.slug.trim().toLowerCase();
+    if (!slug) throw new Error("Slug required");
+
+    const skill = await ctx.db
+      .query("skills")
+      .withIndex("by_slug", (q) => q.eq("slug", slug))
+      .unique();
+    if (!skill) throw new Error("Skill not found");
+    if (skill.softDeletedAt) return { ok: true as const, changed: false as const };
+
+    const now = Date.now();
+    const note = trimManualOverrideNote(args.reason);
+    if (!note) throw new Error("Reason required");
+
+    const patch: Partial<Doc<"skills">> = {
+      softDeletedAt: now,
+      moderationStatus: "hidden",
+      moderationReason: "security.redaction",
+      moderationNotes: note,
+      hiddenAt: now,
+      hiddenBy: actor._id,
+      lastReviewedAt: now,
+      updatedAt: now,
+    };
+    const nextSkill = { ...skill, ...patch };
+    await ctx.db.patch(skill._id, patch);
+    await adjustGlobalPublicCountForSkillChange(ctx, skill, nextSkill);
+    await adjustUserSkillStatsForSkillChange(ctx, skill, nextSkill);
+    await setSkillEmbeddingsSoftDeleted(ctx, skill._id, true, now);
+
+    await ctx.db.insert("auditLogs", {
+      actorUserId: actor._id,
+      action: "skill.delete.security_redaction",
+      targetType: "skill",
+      targetId: skill._id,
+      metadata: {
+        slug,
+        softDeletedAt: now,
+        reason: note,
+      },
+      createdAt: now,
+    });
+
+    return { ok: true as const, changed: true as const };
   },
 });
 

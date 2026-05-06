@@ -120,6 +120,8 @@ cat > package.json <<'EOF'
   "type": "module",
   "openclaw": {
     "extensions": ["./index.ts"],
+    "hostTargets": ["darwin-arm64"],
+    "environment": {},
     "compat": {
       "pluginApi": ">=2026.3.24-beta.2"
     },
@@ -148,6 +150,8 @@ Notes:
 - `openclaw.compat.pluginApi` and `openclaw.build.openclawVersion` are required
   for `code-plugin` publishes.
 - `package.json.version` does not replace either required OpenClaw field.
+- `openclaw.hostTargets` and `openclaw.environment` are optional compatibility
+  metadata. Include them only when they add useful install context.
 - Add `openclaw.compat.minGatewayVersion` and
   `openclaw.build.pluginSdkVersion` when you want to expose fuller
   compatibility/build metadata, but they are not required for a successful

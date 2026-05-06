@@ -12,19 +12,21 @@ See also: [acceptable-usage.md](./acceptable-usage.md) for the marketplace polic
 
 ## Roles + permissions
 
-- user: upload skills/souls (subject to GitHub age gate), report skills/comments.
+- user: upload skills/souls (subject to GitHub age gate), report skills/comments/packages.
 - moderator: hide/restore skills, view hidden skills, unhide, soft-delete, ban users (except admins).
 - admin: all moderator actions + hard delete skills, change owners, change roles.
 
 ## Reporting + auto-hide
 
-- Reports are unique per user + target (skill/comment).
+- Reports are unique per user + target (skill/comment/package).
 - Report reason required (trimmed, max 500 chars). Abuse of reporting may result in account bans.
 - Per-user cap: 20 **active** reports.
   - Active skill report = skill exists, not soft-deleted, not `moderationStatus = removed`,
     and the owner is not banned.
   - Active comment report = comment exists, not soft-deleted, parent skill still active,
     and the comment author is not banned/deactivated.
+  - Active package report = package exists, not soft-deleted, and the owner is
+    not banned/deactivated.
 - Auto-hide: when unique reports exceed 3 (4th report):
   - skill report flow:
     - soft-delete skill (`softDeletedAt`)
@@ -36,6 +38,22 @@ See also: [acceptable-usage.md](./acceptable-usage.md) for the marketplace polic
     - soft-delete comment (`softDeletedAt`)
     - decrement comment stat via `uncomment` stat event
     - audit log entry: `comment.auto_hide`
+- Package reports feed `package moderation-queue` and audit `package.report`,
+  but do not auto-hide or block downloads. Moderators must explicitly approve,
+  quarantine, or revoke package releases.
+- Package reports can be moved to `triaged` or `dismissed` with a moderator
+  note. Only `open` reports count toward `packages.reportCount` and user active
+  report limits; triaging a report decrements the open count.
+- Package owners and publisher members can read package moderation status via
+  API/CLI, including open report count, latest release moderation state, and
+  download-block reasons. Reporter identities and report bodies remain staff
+  intake data.
+- Package owners and publisher members can submit one open appeal per moderated
+  package release. Appeals are audit-logged and do not automatically approve or
+  unblock a release.
+- Moderators can accept, reject, or reopen appeals with a resolution note.
+  Appeal resolution is audit-logged and intentionally separate from changing
+  release moderation state.
 - Public queries hide non-active moderation statuses; staff can still access via
   staff-only queries and unhide/restore/delete/ban.
 - Skills directory supports an optional "Hide suspicious" filter to exclude
@@ -52,6 +70,10 @@ See also: [acceptable-usage.md](./acceptable-usage.md) for the marketplace polic
   integration require explicit maintainer/security approval of the third-party trust boundary.
 - Package/plugin scan backfills now also recompute deterministic static scan results for older releases,
   so legacy plugin versions can surface OpenClaw scan findings without republishing.
+- ClawPack package releases keep static/LLM scan inputs intentionally metadata-only for now:
+  `package.json`, `openclaw.plugin.json`, package/source metadata, and release facts. VirusTotal
+  scans the exact uploaded `.tgz`; ClawHub does not currently run deep static/LLM scans across every
+  tarball file.
 - Source-linked packages can fall back to a clean package verdict when VirusTotal only returns
   undetected engine results, provided the LLM scan is clean and static scan is non-malicious. This
   avoids indefinite pending scans when VT Code Insight never materializes.
