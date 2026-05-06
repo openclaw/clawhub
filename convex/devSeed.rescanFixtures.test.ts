@@ -1,6 +1,21 @@
 import { describe, expect, it } from "vitest";
-import { seedRescanUxFixturesHandler } from "./devSeed";
+import {
+  seedFeaturedPluginPackagesMutation,
+  seedRescanUxFixturesHandler,
+  seedSkillMutation,
+} from "./devSeed";
 import { MAX_OWNER_RESCAN_REQUESTS_PER_RELEASE } from "./model/rescans/policy";
+
+type WrappedHandler<TArgs> = {
+  _handler: (ctx: unknown, args: TArgs) => Promise<unknown>;
+};
+
+const seedSkillMutationHandler = (
+  seedSkillMutation as unknown as WrappedHandler<Record<string, unknown>>
+)._handler;
+const seedFeaturedPluginPackagesHandler = (
+  seedFeaturedPluginPackagesMutation as unknown as WrappedHandler<Record<string, unknown>>
+)._handler;
 
 function chainEq(constraints: Record<string, unknown>) {
   return {
@@ -18,6 +33,7 @@ function matches(doc: Record<string, unknown>, constraints: Record<string, unkno
 function createDb() {
   const tables: Record<string, Array<Record<string, unknown> & { _id: string }>> = {};
   const counters: Record<string, number> = {};
+  const operations: Array<{ type: "delete"; table: string; id: string }> = [];
 
   const list = (table: string) => {
     tables[table] ??= [];
@@ -25,7 +41,8 @@ function createDb() {
   };
 
   const db = {
-    get: async (id: string) => {
+    get: async (arg0: string, arg1?: string) => {
+      const id = arg1 ?? arg0;
       const table = id.split(":")[0] ?? "";
       return list(table).find((doc) => doc._id === id) ?? null;
     },
@@ -39,17 +56,38 @@ function createDb() {
       list(table).push(inserted);
       return inserted._id;
     },
-    patch: async (id: string, patch: Record<string, unknown>) => {
+    patch: async (
+      arg0: string,
+      arg1: string | Record<string, unknown>,
+      arg2?: Record<string, unknown>,
+    ) => {
+      const id = arg2 ? (arg1 as string) : arg0;
+      const patch = arg2 ?? (arg1 as Record<string, unknown>);
       const table = id.split(":")[0] ?? "";
       const doc = list(table).find((candidate) => candidate._id === id);
       if (doc) Object.assign(doc, patch);
     },
-    delete: async (id: string) => {
+    replace: async (
+      arg0: string,
+      arg1: string | Record<string, unknown>,
+      arg2?: Record<string, unknown>,
+    ) => {
+      const id = arg2 ? (arg1 as string) : arg0;
+      const replacement = arg2 ?? (arg1 as Record<string, unknown>);
       const table = id.split(":")[0] ?? "";
+      const rows = list(table);
+      const index = rows.findIndex((doc) => doc._id === id);
+      if (index !== -1) rows[index] = { ...rows[index], ...replacement, _id: id };
+    },
+    delete: async (arg0: string, arg1?: string) => {
+      const id = arg1 ?? arg0;
+      const table = id.split(":")[0] ?? "";
+      operations.push({ type: "delete", table, id });
       const rows = list(table);
       const index = rows.findIndex((doc) => doc._id === id);
       if (index !== -1) rows.splice(index, 1);
     },
+    normalizeId: (tableName: string, id: string) => (id.startsWith(`${tableName}:`) ? id : null),
     query: (table: string) => ({
       withIndex: (_name: string, build: (q: ReturnType<typeof chainEq>) => unknown) => {
         const constraints: Record<string, unknown> = {};
@@ -59,15 +97,25 @@ function createDb() {
         return {
           collect: async () => matched(),
           unique: async () => matched()[0] ?? null,
+          paginate: async () => ({
+            page: matched(),
+            isDone: true,
+            continueCursor: null,
+          }),
           order: () => ({
             collect: async () => matched(),
+            paginate: async () => ({
+              page: matched(),
+              isDone: true,
+              continueCursor: null,
+            }),
           }),
         };
       },
     }),
   };
 
-  return { db, tables };
+  return { db, tables, operations };
 }
 
 describe("devSeed rescan UX fixtures", () => {
@@ -171,5 +219,97 @@ describe("devSeed rescan UX fixtures", () => {
       tables.rescanRequests?.filter((request) => request.targetKind === "plugin") ?? [];
     expect(skillRequests).toHaveLength(1);
     expect(pluginRequests).toHaveLength(MAX_OWNER_RESCAN_REQUESTS_PER_RELEASE);
+  });
+});
+
+describe("devSeed local catalog fixtures", () => {
+  function seedSkillArgs(storageId: string) {
+    const clawdis = {
+      os: ["linux"],
+      nix: {
+        plugin: "github:example/catalog-demo",
+        systems: ["x86_64-linux"],
+      },
+    };
+    return {
+      storageId,
+      metadata: { clawdbot: { nix: clawdis.nix } },
+      frontmatter: { name: "catalog-demo", description: "Catalog demo" },
+      clawdis,
+      skillMd: "# Catalog demo",
+      slug: "catalog-demo",
+      displayName: "Catalog Demo",
+      summary: "Seeded catalog demo.",
+      version: "0.1.0",
+    };
+  }
+
+  it("resets core skill fixtures without stale badges or embedding maps", async () => {
+    const { db, tables } = createDb();
+    const ctx = { db, scheduler: { runAfter: async () => null } };
+
+    await seedSkillMutationHandler(ctx as never, seedSkillArgs("storage:first") as never);
+    await seedSkillMutationHandler(
+      ctx as never,
+      { ...seedSkillArgs("storage:second"), reset: true } as never,
+    );
+
+    expect(tables.skills).toHaveLength(1);
+    expect(tables.skillVersions).toHaveLength(1);
+    expect(tables.skillEmbeddings).toHaveLength(1);
+    expect(tables.embeddingSkillMap).toHaveLength(1);
+    expect(tables.skillBadges).toHaveLength(1);
+    expect(tables.skillSearchDigest).toHaveLength(1);
+    expect(tables.skills?.[0]?.latestVersionSummary).toBeUndefined();
+    expect(tables.skillSearchDigest?.[0]?.latestVersionSummary).toBeUndefined();
+    expect(tables.skillVersions?.[0]).toEqual(
+      expect.objectContaining({
+        parsed: expect.objectContaining({
+          clawdis: expect.objectContaining({
+            os: ["linux"],
+            nix: expect.objectContaining({ systems: ["x86_64-linux"] }),
+          }),
+        }),
+      }),
+    );
+  });
+
+  it("resets featured plugin fixtures without stale package badges", async () => {
+    const { db, tables, operations } = createDb();
+    const ctx = { db, scheduler: { runAfter: async () => null } };
+    const args = {
+      packages: [
+        {
+          name: "@local/catalog-plugin",
+          displayName: "Catalog Plugin",
+          summary: "Seeded catalog plugin.",
+          version: "1.0.0",
+          runtimeId: "catalog-plugin",
+          sourceRepo: "openclaw/catalog-plugin",
+          isOfficial: false,
+          capabilityTags: ["catalog"],
+          stats: { downloads: 1, installs: 1, stars: 1, versions: 1 },
+          storageId: "storage:plugin",
+          readmeSize: 16,
+        },
+      ],
+    };
+
+    await seedFeaturedPluginPackagesHandler(ctx as never, args as never);
+    const oldPackageId = tables.packages?.[0]?._id;
+    const oldReleaseId = tables.packageReleases?.[0]?._id;
+    await seedFeaturedPluginPackagesHandler(ctx as never, { ...args, reset: true } as never);
+
+    expect(tables.packages).toHaveLength(1);
+    expect(tables.packageReleases).toHaveLength(1);
+    expect(tables.packageBadges).toHaveLength(1);
+    const oldPackageDeleteIndex = operations.findIndex(
+      (op) => op.table === "packages" && op.id === oldPackageId,
+    );
+    const oldReleaseDeleteIndex = operations.findIndex(
+      (op) => op.table === "packageReleases" && op.id === oldReleaseId,
+    );
+    expect(oldPackageDeleteIndex).toBeGreaterThanOrEqual(0);
+    expect(oldReleaseDeleteIndex).toBeGreaterThan(oldPackageDeleteIndex);
   });
 });

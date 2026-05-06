@@ -787,6 +787,44 @@ async function deleteRescanRequestsForPackageRelease(ctx: MutationCtx, releaseId
   for (const request of requests) await ctx.db.delete(request._id);
 }
 
+async function deleteEmbeddingMapsForEmbedding(
+  ctx: MutationCtx,
+  embeddingId: Id<"skillEmbeddings">,
+) {
+  const maps = await ctx.db
+    .query("embeddingSkillMap")
+    .withIndex("by_embedding", (q) => q.eq("embeddingId", embeddingId))
+    .collect();
+  for (const map of maps) await ctx.db.delete(map._id);
+}
+
+async function deleteSkillEmbeddingsForSkill(ctx: MutationCtx, skillId: Id<"skills">) {
+  const embeddings = await ctx.db
+    .query("skillEmbeddings")
+    .withIndex("by_skill", (q) => q.eq("skillId", skillId))
+    .collect();
+  for (const embedding of embeddings) {
+    await deleteEmbeddingMapsForEmbedding(ctx, embedding._id);
+    await ctx.db.delete(embedding._id);
+  }
+}
+
+async function deleteSkillBadgesForSkill(ctx: MutationCtx, skillId: Id<"skills">) {
+  const badges = await ctx.db
+    .query("skillBadges")
+    .withIndex("by_skill", (q) => q.eq("skillId", skillId))
+    .collect();
+  for (const badge of badges) await ctx.db.delete(badge._id);
+}
+
+async function deletePackageBadgesForPackage(ctx: MutationCtx, packageId: Id<"packages">) {
+  const badges = await ctx.db
+    .query("packageBadges")
+    .withIndex("by_package", (q) => q.eq("packageId", packageId))
+    .collect();
+  for (const badge of badges) await ctx.db.delete(badge._id);
+}
+
 async function deleteSeedSkillFixture(ctx: MutationCtx) {
   const existing = await findSeedSkillFixture(ctx);
   if (!existing) return;
@@ -811,6 +849,7 @@ async function deleteSeedSkillFixture(ctx: MutationCtx) {
     for (const map of maps) await ctx.db.delete(map._id);
     await ctx.db.delete(embedding._id);
   }
+  await deleteSkillBadgesForSkill(ctx, existing._id);
   await ctx.db.delete(existing._id);
 }
 
@@ -845,6 +884,7 @@ async function deleteScannedSkillFixture(ctx: MutationCtx) {
     for (const map of maps) await ctx.db.delete(map._id);
     await ctx.db.delete(embedding._id);
   }
+  await deleteSkillBadgesForSkill(ctx, existing._id);
   await ctx.db.delete(existing._id);
 }
 
@@ -863,11 +903,12 @@ async function deleteSeedPluginFixtureByName(ctx: MutationCtx, name: string) {
     .query("packageReleases")
     .withIndex("by_package", (q) => q.eq("packageId", existing._id))
     .collect();
+  await deletePackageBadgesForPackage(ctx, existing._id);
+  await ctx.db.delete(existing._id);
   for (const release of releases) {
     await deleteRescanRequestsForPackageRelease(ctx, release._id);
     await ctx.db.delete(release._id);
   }
-  await ctx.db.delete(existing._id);
 }
 
 async function deleteSeedPluginFixture(ctx: MutationCtx) {
@@ -2117,13 +2158,8 @@ export const seedSkillMutation = internalMutation({
       for (const version of versions) {
         await ctx.db.delete(version._id);
       }
-      const embeddings = await ctx.db
-        .query("skillEmbeddings")
-        .withIndex("by_skill", (q) => q.eq("skillId", existing._id))
-        .collect();
-      for (const embedding of embeddings) {
-        await ctx.db.delete(embedding._id);
-      }
+      await deleteSkillEmbeddingsForSkill(ctx, existing._id);
+      await deleteSkillBadgesForSkill(ctx, existing._id);
       await ctx.db.delete(existing._id);
     }
 
