@@ -1,5 +1,15 @@
 import { isCancel, select } from "@clack/prompts";
-import { apiRequest, registryUrl } from "../../http.js";
+import { requireAuthToken } from "../../../clawhub/src/cli/authToken.js";
+import { getRegistry } from "../../../clawhub/src/cli/registry.js";
+import type { GlobalOpts } from "../../../clawhub/src/cli/types.js";
+import {
+  createSpinner,
+  fail,
+  formatError,
+  isInteractive,
+  promptConfirm,
+} from "../../../clawhub/src/cli/ui.js";
+import { apiRequest, registryUrl } from "../../../clawhub/src/http.js";
 import {
   ApiRoutes,
   ApiV1BanUserResponseSchema,
@@ -7,11 +17,7 @@ import {
   ApiV1UnbanUserResponseSchema,
   ApiV1UserSearchResponseSchema,
   parseArk,
-} from "../../schema/index.js";
-import { requireAuthToken } from "../authToken.js";
-import { getRegistry } from "../registry.js";
-import type { GlobalOpts } from "../types.js";
-import { createSpinner, fail, formatError, isInteractive, promptConfirm } from "../ui.js";
+} from "../../../clawhub/src/schema/index.js";
 
 export async function cmdBanUser(
   opts: GlobalOpts,
@@ -267,8 +273,8 @@ function formatUserLabel(user: UserSearchItem) {
   const handle = user.handle ? `@${user.handle}` : "unknown";
   const name = user.displayName ?? user.name;
   const role = user.role ? ` (${user.role})` : "";
-  const label = name ? `${handle} — ${name}` : handle;
-  return `${label}${role} · ${user.userId}`;
+  const label = name ? `${handle} - ${name}` : handle;
+  return `${label}${role} - ${user.userId}`;
 }
 
 function formatUserList(users: UserSearchItem[]) {

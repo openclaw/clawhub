@@ -2,12 +2,6 @@
 import { stat } from "node:fs/promises";
 import { join, resolve } from "node:path";
 import { Command } from "commander";
-import {
-  type CommandAudience,
-  createCommandPathRegistry,
-  resolveHelpRole,
-  shouldShowAudienceInHelp,
-} from "./cli/adminHelp.js";
 import { getCliBuildLabel, getCliVersion } from "./cli/buildInfo.js";
 import { resolveClawdbotDefaultWorkspace } from "./cli/clawdbotConfig.js";
 import { cmdLoginFlow, cmdLogout, cmdWhoami } from "./cli/commands/auth.js";
@@ -18,47 +12,29 @@ import {
   cmdUnhideSkill,
 } from "./cli/commands/delete.js";
 import { cmdInspect } from "./cli/commands/inspect.js";
-import { cmdBanUser, cmdSetRole, cmdUnbanUser } from "./cli/commands/moderation.js";
 import { cmdMergeSkill, cmdRenameSkill } from "./cli/commands/ownership.js";
 import {
-  cmdBackfillPackageArtifacts,
   cmdAppealPackage,
   cmdDeletePackage,
   cmdDownloadPackage,
   cmdExplorePackages,
   cmdGetPackageTrustedPublisher,
   cmdInspectPackage,
-  cmdDeletePackageTrustedPublisher,
-  cmdListPackageReports,
-  cmdListPackageAppeals,
-  cmdListPackageMigrations,
-  cmdModeratePackageRelease,
   cmdPackageModerationStatus,
-  cmdPackageModerationQueue,
   cmdPackageMigrationStatus,
   cmdPackageReadiness,
   cmdPackPackage,
   cmdPublishPackage,
   cmdReportPackage,
-  cmdResolvePackageAppeal,
-  cmdSetPackageTrustedPublisher,
-  cmdTriagePackageReport,
-  cmdUpsertPackageMigration,
   cmdVerifyPackage,
 } from "./cli/commands/packages.js";
 import { cmdPublish } from "./cli/commands/publish.js";
 import { cmdRescanPackage, cmdRescanSkill } from "./cli/commands/rescan.js";
 import {
-  cmdAppealSkill,
   cmdExplore,
   cmdInstall,
-  cmdListSkillAppeals,
-  cmdListSkillReports,
-  cmdReportSkill,
-  cmdResolveSkillAppeal,
   cmdList,
   cmdSearch,
-  cmdTriageSkillReport,
   cmdUninstall,
   cmdUpdate,
 } from "./cli/commands/skills.js";
@@ -102,35 +78,12 @@ const program = new Command()
 
 configureCommanderHelp(program);
 
-const commandPaths = createCommandPathRegistry();
-const commandsWithAudience: Array<{ command: Command; audience: CommandAudience }> = [];
-
-function registerCommand(
-  parent: Command,
-  path: readonly string[],
-  audience: CommandAudience = "public",
-) {
-  commandPaths.add(path);
-  return registerCommandGroup(parent, path, audience);
+function registerCommand(parent: Command, path: readonly string[]) {
+  return parent.command(path.at(-1) ?? "");
 }
 
-function registerCommandGroup(
-  parent: Command,
-  path: readonly string[],
-  audience: CommandAudience = "public",
-) {
-  const command = parent.command(path.at(-1) ?? "");
-  commandsWithAudience.push({ command, audience });
-  return command;
-}
-
-function applyCommandAudienceVisibility(audienceRole: Awaited<ReturnType<typeof resolveHelpRole>>) {
-  for (const { command, audience } of commandsWithAudience) {
-    (command as unknown as { _hidden: boolean })._hidden = !shouldShowAudienceInHelp(
-      audience,
-      audienceRole,
-    );
-  }
+function registerCommandGroup(parent: Command, path: readonly string[]) {
+  return parent.command(path.at(-1) ?? "");
 }
 
 async function resolveGlobalOpts(): Promise<GlobalOpts> {
@@ -341,7 +294,7 @@ registerCommand(program, ["publish"])
   });
 
 registerCommand(program, ["delete"])
-  .description("Soft-delete a skill (owner, moderator, or admin)")
+  .description("Soft-delete one of your skills")
   .argument("<slug>", "Skill slug")
   .option("--reason <text>", "Moderation note/reason")
   .option("--note <text>", "Alias for --reason")
@@ -352,7 +305,7 @@ registerCommand(program, ["delete"])
   });
 
 registerCommand(program, ["hide"])
-  .description("Hide a skill (owner, moderator, or admin)")
+  .description("Hide one of your skills")
   .argument("<slug>", "Skill slug")
   .option("--reason <text>", "Moderation note/reason")
   .option("--note <text>", "Alias for --reason")
@@ -363,7 +316,7 @@ registerCommand(program, ["hide"])
   });
 
 registerCommand(program, ["undelete"])
-  .description("Restore a hidden skill (owner, moderator, or admin)")
+  .description("Restore one of your hidden skills")
   .argument("<slug>", "Skill slug")
   .option("--reason <text>", "Moderation note/reason")
   .option("--note <text>", "Alias for --reason")
@@ -374,7 +327,7 @@ registerCommand(program, ["undelete"])
   });
 
 registerCommand(program, ["unhide"])
-  .description("Unhide a skill (owner, moderator, or admin)")
+  .description("Unhide one of your skills")
   .argument("<slug>", "Skill slug")
   .option("--reason <text>", "Moderation note/reason")
   .option("--note <text>", "Alias for --reason")
@@ -398,86 +351,6 @@ registerCommand(skill, ["skill", "publish"])
   .action(async (folder, options) => {
     const opts = await resolveGlobalOpts();
     await cmdPublish(opts, folder, options);
-  });
-
-registerCommand(skill, ["skill", "report"])
-  .description("Report a skill for moderator review")
-  .argument("<slug>", "Skill slug")
-  .option("--version <version>", "Skill version")
-  .requiredOption("--reason <text>", "Report reason")
-  .option("--json", "Output JSON")
-  .action(async (slug, options) => {
-    const opts = await resolveGlobalOpts();
-    await cmdReportSkill(opts, slug, options);
-  });
-
-registerCommand(skill, ["skill", "appeal"])
-  .description("Appeal moderation for a skill")
-  .argument("<slug>", "Skill slug")
-  .option("--version <version>", "Skill version")
-  .requiredOption("--message <text>", "Appeal message")
-  .option("--json", "Output JSON")
-  .action(async (slug, options) => {
-    const opts = await resolveGlobalOpts();
-    await cmdAppealSkill(opts, slug, options);
-  });
-
-registerCommand(skill, ["skill", "reports"], "moderator")
-  .description("List skill reports for moderator review")
-  .option("--status <status>", "open|confirmed|dismissed|all", "open")
-  .option("--cursor <cursor>", "Resume cursor")
-  .option(
-    "--limit <n>",
-    "Number of reports to show (max 200)",
-    (value) => Number.parseInt(value, 10),
-    25,
-  )
-  .option("--json", "Output JSON")
-  .action(async (options) => {
-    const opts = await resolveGlobalOpts();
-    await cmdListSkillReports(opts, options);
-  });
-
-registerCommand(skill, ["skill", "triage-report"], "moderator")
-  .description("Resolve or reopen a skill report")
-  .argument("<report-id>", "Skill report id")
-  .requiredOption("--status <status>", "open|confirmed|dismissed")
-  .option("--action <action>", "Final action: none|hide")
-  .option("--note <text>", "Review note; required unless reopening")
-  .option("--yes", "Skip confirmation for artifact availability changes")
-  .option("--json", "Output JSON")
-  .action(async (reportId, options) => {
-    const opts = await resolveGlobalOpts();
-    await cmdTriageSkillReport(opts, reportId, options);
-  });
-
-registerCommand(skill, ["skill", "appeals"], "moderator")
-  .description("List skill appeals for moderator review")
-  .option("--status <status>", "open|accepted|rejected|all", "open")
-  .option("--cursor <cursor>", "Resume cursor")
-  .option(
-    "--limit <n>",
-    "Number of appeals to show (max 200)",
-    (value) => Number.parseInt(value, 10),
-    25,
-  )
-  .option("--json", "Output JSON")
-  .action(async (options) => {
-    const opts = await resolveGlobalOpts();
-    await cmdListSkillAppeals(opts, options);
-  });
-
-registerCommand(skill, ["skill", "resolve-appeal"], "moderator")
-  .description("Resolve or reopen a skill appeal")
-  .argument("<appeal-id>", "Skill appeal id")
-  .requiredOption("--status <status>", "open|accepted|rejected")
-  .option("--action <action>", "Final action: none|restore")
-  .option("--note <text>", "Resolution note; required unless reopening")
-  .option("--yes", "Skip confirmation for artifact availability changes")
-  .option("--json", "Output JSON")
-  .action(async (appealId, options) => {
-    const opts = await resolveGlobalOpts();
-    await cmdResolveSkillAppeal(opts, appealId, options);
   });
 
 const packageCmd = registerCommandGroup(program, ["package"]).description(
@@ -572,18 +445,6 @@ registerCommand(packageCmd, ["package", "delete"])
     await cmdDeletePackage(opts, name, options, isInputAllowed());
   });
 
-registerCommand(packageCmd, ["package", "moderate"], "moderator")
-  .description("Set package release moderation state")
-  .argument("<name>", "Package name")
-  .requiredOption("--version <version>", "Package version")
-  .requiredOption("--state <state>", "approved|quarantined|revoked")
-  .requiredOption("--reason <text>", "Moderation note/reason")
-  .option("--json", "Output JSON")
-  .action(async (name, options) => {
-    const opts = await resolveGlobalOpts();
-    await cmdModeratePackageRelease(opts, name, options);
-  });
-
 registerCommand(packageCmd, ["package", "report"])
   .description("Report a package for moderator review")
   .argument("<name>", "Package name")
@@ -606,99 +467,13 @@ registerCommand(packageCmd, ["package", "appeal"])
     await cmdAppealPackage(opts, name, options);
   });
 
-registerCommand(packageCmd, ["package", "appeals"], "moderator")
-  .description("List package appeals for moderator review")
-  .option("--status <status>", "open|accepted|rejected|all", "open")
-  .option("--cursor <cursor>", "Resume cursor")
-  .option(
-    "--limit <n>",
-    "Number of appeals to show (max 100)",
-    (value) => Number.parseInt(value, 10),
-    25,
-  )
-  .option("--json", "Output JSON")
-  .action(async (options) => {
-    const opts = await resolveGlobalOpts();
-    await cmdListPackageAppeals(opts, options);
-  });
-
-registerCommand(packageCmd, ["package", "resolve-appeal"], "moderator")
-  .description("Resolve or reopen a package appeal")
-  .argument("<appeal-id>", "Package appeal id")
-  .requiredOption("--status <status>", "open|accepted|rejected")
-  .option("--action <action>", "Final action: none|approve")
-  .option("--note <text>", "Resolution note; required unless reopening")
-  .option("--yes", "Skip confirmation for artifact availability changes")
-  .option("--json", "Output JSON")
-  .action(async (appealId, options) => {
-    const opts = await resolveGlobalOpts();
-    await cmdResolvePackageAppeal(opts, appealId, options);
-  });
-
-registerCommand(packageCmd, ["package", "reports"], "moderator")
-  .description("List package reports for moderator review")
-  .option("--status <status>", "open|confirmed|dismissed|all", "open")
-  .option("--cursor <cursor>", "Resume cursor")
-  .option(
-    "--limit <n>",
-    "Number of reports to show (max 100)",
-    (value) => Number.parseInt(value, 10),
-    25,
-  )
-  .option("--json", "Output JSON")
-  .action(async (options) => {
-    const opts = await resolveGlobalOpts();
-    await cmdListPackageReports(opts, options);
-  });
-
-registerCommand(packageCmd, ["package", "triage-report"], "moderator")
-  .description("Resolve or reopen a package report")
-  .argument("<report-id>", "Package report id")
-  .requiredOption("--status <status>", "open|confirmed|dismissed")
-  .option("--action <action>", "Final action: none|quarantine|revoke")
-  .option("--note <text>", "Review note; required unless reopening")
-  .option("--yes", "Skip confirmation for artifact availability changes")
-  .option("--json", "Output JSON")
-  .action(async (reportId, options) => {
-    const opts = await resolveGlobalOpts();
-    await cmdTriagePackageReport(opts, reportId, options);
-  });
-
 registerCommand(packageCmd, ["package", "moderation-status"])
-  .description("Show owner/moderator package moderation status")
+  .description("Show package moderation status")
   .argument("<name>", "Package name")
   .option("--json", "Output JSON")
   .action(async (name, options) => {
     const opts = await resolveGlobalOpts();
     await cmdPackageModerationStatus(opts, name, options);
-  });
-
-registerCommand(packageCmd, ["package", "moderation-queue"], "moderator")
-  .description("List package releases that need moderation")
-  .option("--status <status>", "open|blocked|manual|all", "open")
-  .option("--cursor <cursor>", "Resume cursor")
-  .option(
-    "--limit <n>",
-    "Number of releases to show (max 100)",
-    (value) => Number.parseInt(value, 10),
-    25,
-  )
-  .option("--json", "Output JSON")
-  .action(async (options) => {
-    const opts = await resolveGlobalOpts();
-    await cmdPackageModerationQueue(opts, options);
-  });
-
-registerCommand(packageCmd, ["package", "backfill-artifacts"], "admin")
-  .description("Backfill missing package artifact-kind metadata (admin only)")
-  .option("--cursor <cursor>", "Resume cursor")
-  .option("--batch-size <n>", "Batch size", (value) => Number.parseInt(value, 10))
-  .option("--all", "Continue until all pages are processed")
-  .option("--apply", "Write changes; defaults to dry-run")
-  .option("--json", "Output JSON")
-  .action(async (options) => {
-    const opts = await resolveGlobalOpts();
-    await cmdBackfillPackageArtifacts(opts, options);
   });
 
 registerCommand(packageCmd, ["package", "readiness"])
@@ -719,50 +494,6 @@ registerCommand(packageCmd, ["package", "migration-status"])
     await cmdPackageMigrationStatus(opts, name, options);
   });
 
-registerCommand(packageCmd, ["package", "migrations"], "moderator")
-  .description("List official plugin migration rows")
-  .option(
-    "--phase <phase>",
-    "planned|published|clawpack-ready|legacy-zip-only|metadata-ready|blocked|ready-for-openclaw|all",
-    "all",
-  )
-  .option("--cursor <cursor>", "Resume cursor")
-  .option(
-    "--limit <n>",
-    "Number of migrations to show (max 100)",
-    (value) => Number.parseInt(value, 10),
-    25,
-  )
-  .option("--json", "Output JSON")
-  .action(async (options) => {
-    const opts = await resolveGlobalOpts();
-    await cmdListPackageMigrations(opts, options);
-  });
-
-registerCommand(packageCmd, ["package", "set-migration"], "admin")
-  .description("Create or update an official plugin migration row")
-  .argument("<bundled-plugin-id>", "Bundled OpenClaw plugin id")
-  .requiredOption("--package <name>", "ClawHub package name")
-  .option("--owner <owner>", "Migration owner")
-  .option("--source-repo <repo>", "Source repository")
-  .option("--source-path <path>", "Source path inside repository")
-  .option("--source-commit <sha>", "Source commit SHA")
-  .option(
-    "--phase <phase>",
-    "planned|published|clawpack-ready|legacy-zip-only|metadata-ready|blocked|ready-for-openclaw",
-  )
-  .option("--blockers <items>", "Comma-separated migration blockers")
-  .option("--host-targets-complete", "Mark host target metadata complete")
-  .option("--scan-clean", "Mark scan state clean")
-  .option("--moderation-approved", "Mark moderation approved")
-  .option("--runtime-bundles-ready", "Mark runtime bundles ready")
-  .option("--notes <text>", "Operator notes")
-  .option("--json", "Output JSON")
-  .action(async (bundledPluginId, options) => {
-    const opts = await resolveGlobalOpts();
-    await cmdUpsertPackageMigration(opts, bundledPluginId, options);
-  });
-
 registerCommand(packageCmd, ["package", "pack"])
   .description("Create a ClawPack npm tarball from a plugin package folder")
   .argument("<source>", "Package folder path")
@@ -779,7 +510,7 @@ registerCommand(packageCmd, ["package", "publish"])
   .option("--family <family>", "code-plugin|bundle-plugin")
   .option("--name <name>", "Package name")
   .option("--display-name <name>", "Display name")
-  .option("--owner <handle>", "Publish under this owner handle (admin only)")
+  .option("--owner <handle>", "Publish under this owner/publisher handle")
   .option("--version <version>", "Version")
   .option("--changelog <text>", "Changelog text")
   .option(
@@ -812,27 +543,6 @@ registerCommand(trustedPublisherCmd, ["package", "trusted-publisher", "get"])
   .action(async (name, options) => {
     const opts = await resolveGlobalOpts();
     await cmdGetPackageTrustedPublisher(opts, name, options);
-  });
-
-registerCommand(trustedPublisherCmd, ["package", "trusted-publisher", "set"], "admin")
-  .description("Attach or replace trusted publisher config for a package")
-  .argument("<name>", "Package name")
-  .requiredOption("--repository <repo>", "GitHub repo (owner/repo or URL)")
-  .requiredOption("--workflow-filename <file>", "Workflow filename, for example publish.yml")
-  .option("--environment <name>", "Optional GitHub environment name to pin")
-  .option("--json", "Output JSON")
-  .action(async (name, options) => {
-    const opts = await resolveGlobalOpts();
-    await cmdSetPackageTrustedPublisher(opts, name, options);
-  });
-
-registerCommand(trustedPublisherCmd, ["package", "trusted-publisher", "delete"], "admin")
-  .description("Remove trusted publisher config from a package")
-  .argument("<name>", "Package name")
-  .option("--json", "Output JSON")
-  .action(async (name, options) => {
-    const opts = await resolveGlobalOpts();
-    await cmdDeletePackageTrustedPublisher(opts, name, options);
   });
 
 registerCommand(packageCmd, ["package", "rescan"])
@@ -873,42 +583,6 @@ registerCommand(skill, ["skill", "rescan"])
   .action(async (slug, options) => {
     const opts = await resolveGlobalOpts();
     await cmdRescanSkill(opts, slug, options, isInputAllowed());
-  });
-
-registerCommand(program, ["ban-user"], "moderator")
-  .description("Ban a user and delete owned skills (moderator/admin only)")
-  .argument("<handleOrId>", "User handle (default) or user id")
-  .option("--id", "Treat argument as user id")
-  .option("--fuzzy", "Resolve handle via fuzzy user search (admin only)")
-  .option("--reason <reason>", "Ban reason (optional)")
-  .option("--yes", "Skip confirmation")
-  .action(async (handleOrId, options) => {
-    const opts = await resolveGlobalOpts();
-    await cmdBanUser(opts, handleOrId, options, isInputAllowed());
-  });
-
-registerCommand(program, ["unban-user"], "admin")
-  .description("Unban a user and restore eligible skills (admin only)")
-  .argument("<handleOrId>", "User handle (default) or user id")
-  .option("--id", "Treat argument as user id")
-  .option("--fuzzy", "Resolve handle via fuzzy user search (admin only)")
-  .option("--reason <reason>", "Unban reason (optional)")
-  .option("--yes", "Skip confirmation")
-  .action(async (handleOrId, options) => {
-    const opts = await resolveGlobalOpts();
-    await cmdUnbanUser(opts, handleOrId, options, isInputAllowed());
-  });
-
-registerCommand(program, ["set-role"], "admin")
-  .description("Change a user role (admin only)")
-  .argument("<handleOrId>", "User handle (default) or user id")
-  .argument("<role>", "user | moderator | admin")
-  .option("--id", "Treat argument as user id")
-  .option("--fuzzy", "Resolve handle via fuzzy user search (admin only)")
-  .option("--yes", "Skip confirmation")
-  .action(async (handleOrId, role, options) => {
-    const opts = await resolveGlobalOpts();
-    await cmdSetRole(opts, handleOrId, role, options, isInputAllowed());
   });
 
 const transfer = registerCommandGroup(program, ["transfer"]).description(
@@ -1020,8 +694,6 @@ program.action(async () => {
   program.outputHelp();
   process.exitCode = 0;
 });
-
-applyCommandAudienceVisibility(await resolveHelpRole({ commandPaths }));
 
 void program.parseAsync(process.argv).catch((error) => {
   const message = error instanceof Error ? error.message : String(error);

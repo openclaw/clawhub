@@ -7,17 +7,17 @@ import {
   createRegistryModuleMocks,
   createUiModuleMocks,
   makeGlobalOpts,
-} from "../../../test/cliCommandTestKit.js";
+} from "../../../clawhub/test/cliCommandTestKit.js";
 
 const authTokenMocks = createAuthTokenModuleMocks();
 const registryMocks = createRegistryModuleMocks();
 const httpMocks = createHttpModuleMocks();
 const uiMocks = createUiModuleMocks();
 
-vi.mock("../authToken.js", () => authTokenMocks.moduleFactory());
-vi.mock("../registry.js", () => registryMocks.moduleFactory());
-vi.mock("../../http.js", () => httpMocks.moduleFactory());
-vi.mock("../ui.js", () => uiMocks.moduleFactory());
+vi.mock("../../../clawhub/src/cli/authToken.js", () => authTokenMocks.moduleFactory());
+vi.mock("../../../clawhub/src/cli/registry.js", () => registryMocks.moduleFactory());
+vi.mock("../../../clawhub/src/http.js", () => httpMocks.moduleFactory());
+vi.mock("../../../clawhub/src/cli/ui.js", () => uiMocks.moduleFactory());
 
 const { cmdBanUser, cmdSetRole, cmdUnbanUser } = await import("./moderation");
 

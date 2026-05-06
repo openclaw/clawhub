@@ -1,0 +1,168 @@
+name: ClawHub Moderator CLI Release
+
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Moderator release tag, for example clawhub-mod-v0.1.0
+        required: true
+        type: string
+
+concurrency:
+  group: clawhub-mod-release-${{ inputs.tag }}
+  cancel-in-progress: false
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
+  NODE_VERSION: "24.x"
+  BUN_VERSION: "1.3.10"
+  PACKAGE_DIR: packages/clawhub-mod
+
+jobs:
+  release_clawhub_mod_cli:
+    runs-on: ubuntu-latest
+    environment: moderator-release
+    permissions:
+      contents: write
+    steps:
+      - name: Require main workflow ref
+        env:
+          WORKFLOW_REF: ${{ github.ref }}
+        run: |
+          set -euo pipefail
+          if [[ "${WORKFLOW_REF}" != "refs/heads/main" ]]; then
+            echo "Moderator release runs must be dispatched from main."
+            exit 1
+          fi
+
+      - name: Checkout release tag
+        uses: actions/checkout@v6
+        with:
+          ref: refs/tags/${{ inputs.tag }}
+          fetch-depth: 0
+
+      - name: Setup Node
+        uses: actions/setup-node@v6
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6
+        with:
+          bun-version: ${{ env.BUN_VERSION }}
+
+      - name: Install dependencies
+        run: bun install --frozen-lockfile
+
+      - name: Validate tag and package metadata
+        env:
+          RELEASE_TAG: ${{ inputs.tag }}
+        run: |
+          set -euo pipefail
+          RELEASE_SHA="$(git rev-parse HEAD)"
+          git fetch --no-tags origin +refs/heads/main:refs/remotes/origin/main
+          if ! git merge-base --is-ancestor "$RELEASE_SHA" origin/main; then
+            echo "Moderator release tag must point at a commit reachable from main." >&2
+            exit 1
+          fi
+          node --input-type=module <<'EOF'
+          import { readFileSync } from "node:fs";
+
+          const tag = process.env.RELEASE_TAG;
+          const pkg = JSON.parse(readFileSync(`${process.env.PACKAGE_DIR}/package.json`, "utf8"));
+          const version = String(pkg.version ?? "").trim();
+          const expectedTag = `clawhub-mod-v${version}`;
+          if (!/^clawhub-mod-v\d+\.\d+\.\d+(?:[-+][0-9A-Za-z.-]+)?$/.test(tag)) {
+            throw new Error(`Moderator release tag must look like clawhub-mod-vX.Y.Z, got ${tag}`);
+          }
+          if (tag !== expectedTag) {
+            throw new Error(`Moderator release tag ${tag} must match ${expectedTag} from package.json`);
+          }
+          if (pkg.private !== true) {
+            throw new Error("@openclaw/clawhub-mod must remain private: true");
+          }
+          if (pkg.name !== "@openclaw/clawhub-mod") {
+            throw new Error(`Unexpected package name ${pkg.name}`);
+          }
+          console.log(`Preparing ${pkg.name}@${version} from ${tag}`);
+          EOF
+
+      - name: Verify moderator CLI package
+        run: bun run --cwd "$PACKAGE_DIR" verify
+
+      - name: Pack moderator CLI tarball
+        id: pack
+        env:
+          RELEASE_TAG: ${{ inputs.tag }}
+        run: |
+          set -euo pipefail
+          ARTIFACT_DIR="$RUNNER_TEMP/clawhub-mod-release"
+          rm -rf "$ARTIFACT_DIR"
+          mkdir -p "$ARTIFACT_DIR"
+
+          pushd "$PACKAGE_DIR" >/dev/null
+          PACK_JSON="$(npm pack --json --ignore-scripts)"
+          echo "$PACK_JSON"
+          PACK_PATH="$(printf '%s\n' "$PACK_JSON" | node --input-type=module -e 'const chunks=[]; process.stdin.on("data", (chunk) => chunks.push(chunk)); process.stdin.on("end", () => { const parsed = JSON.parse(Buffer.concat(chunks).toString("utf8")); const first = Array.isArray(parsed) ? parsed[0] : null; if (!first || typeof first.filename !== "string" || !first.filename) process.exit(1); process.stdout.write(first.filename); });')"
+          popd >/dev/null
+
+          if [[ -z "${PACK_PATH}" || ! -f "${PACKAGE_DIR}/${PACK_PATH}" ]]; then
+            echo "npm pack did not produce a tarball file." >&2
+            exit 1
+          fi
+
+          cp "${PACKAGE_DIR}/${PACK_PATH}" "$ARTIFACT_DIR/"
+          cp scripts/install-clawhub-mod.sh "$ARTIFACT_DIR/"
+          (cd "$ARTIFACT_DIR" && shasum -a 256 ./* > SHA256SUMS.txt)
+
+          PACKAGE_VERSION="$(node --input-type=module <<'EOF'
+          import { readFileSync } from "node:fs";
+
+          const pkg = JSON.parse(readFileSync(`${process.env.PACKAGE_DIR}/package.json`, "utf8"));
+          process.stdout.write(String(pkg.version ?? "").trim());
+          EOF
+          )"
+          RELEASE_SHA="$(git rev-parse HEAD)"
+          NOTES_FILE="$ARTIFACT_DIR/release-notes.md"
+          cat > "$NOTES_FILE" <<EOF
+          Moderator-only ClawHub operator CLI release.
+
+          - Package: @openclaw/clawhub-mod@${PACKAGE_VERSION}
+          - Commit: ${RELEASE_SHA}
+          - Install/upgrade:
+
+          \`\`\`bash
+          bash scripts/install-clawhub-mod.sh --tag ${RELEASE_TAG}
+          \`\`\`
+
+          This release is intentionally distributed as a GitHub Release asset, not npm.
+          EOF
+
+          echo "artifact_dir=$ARTIFACT_DIR" >> "$GITHUB_OUTPUT"
+          echo "notes_file=$NOTES_FILE" >> "$GITHUB_OUTPUT"
+          echo "package_version=$PACKAGE_VERSION" >> "$GITHUB_OUTPUT"
+
+      - name: Create or update draft GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ inputs.tag }}
+          RELEASE_TITLE: ClawHub Moderator CLI ${{ steps.pack.outputs.package_version }}
+          ARTIFACT_DIR: ${{ steps.pack.outputs.artifact_dir }}
+          NOTES_FILE: ${{ steps.pack.outputs.notes_file }}
+        run: |
+          set -euo pipefail
+          if gh release view "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            IS_DRAFT="$(gh release view "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" --json isDraft --jq .isDraft)"
+            if [[ "$IS_DRAFT" != "true" ]]; then
+              echo "Refusing to mutate non-draft moderator release ${RELEASE_TAG}." >&2
+              exit 1
+            fi
+            gh release upload "$RELEASE_TAG" "$ARTIFACT_DIR"/* --repo "$GITHUB_REPOSITORY" --clobber
+          else
+            gh release create "$RELEASE_TAG" "$ARTIFACT_DIR"/* \
+              --repo "$GITHUB_REPOSITORY" \
+              --draft \
+              --verify-tag \
+              --title "$RELEASE_TITLE" \
+              --notes-file "$NOTES_FILE"
+          fi

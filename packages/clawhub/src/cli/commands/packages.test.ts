@@ -29,30 +29,32 @@ vi.mock("../ui.js", () => uiMocks.moduleFactory());
 
 const {
   cmdDeletePackage,
-  cmdDeletePackageTrustedPublisher,
   cmdAppealPackage,
   cmdDownloadPackage,
   cmdExplorePackages,
   cmdGetPackageTrustedPublisher,
   cmdInspectPackage,
-  cmdBackfillPackageArtifacts,
-  cmdListPackageReports,
-  cmdListPackageAppeals,
-  cmdListPackageMigrations,
-  cmdModeratePackageRelease,
   cmdPackageModerationStatus,
-  cmdPackageModerationQueue,
   cmdPackageMigrationStatus,
   cmdPackageReadiness,
   cmdPackPackage,
   cmdPublishPackage,
   cmdReportPackage,
+  cmdVerifyPackage,
+} = await import("./packages");
+const {
+  cmdBackfillPackageArtifacts,
+  cmdDeletePackageTrustedPublisher,
+  cmdListPackageAppeals,
+  cmdListPackageMigrations,
+  cmdListPackageReports,
+  cmdModeratePackageRelease,
+  cmdPackageModerationQueue,
   cmdResolvePackageAppeal,
   cmdSetPackageTrustedPublisher,
   cmdTriagePackageReport,
   cmdUpsertPackageMigration,
-  cmdVerifyPackage,
-} = await import("./packages");
+} = await import("../../../../clawhub-mod/src/commands/packages");
 const { parseClawPack } = await import("../../clawpack");
 
 const mockLog = vi.spyOn(console, "log").mockImplementation(() => {});

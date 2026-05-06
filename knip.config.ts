@@ -84,6 +84,37 @@ const config = {
         "vitest*.ts!",
       ],
     },
+    "packages/clawhub-mod": {
+      entry: [
+        "bin/clawhub-mod.js!",
+        "scripts/build.mjs!",
+        "scripts/typecheck.mjs!",
+        "src/cli.ts!",
+        "../clawhub/src/cli/commands/auth.ts!",
+        "../clawhub/src/cli/commands/packages.ts!",
+        "vitest*.ts!",
+        ...(includeTests ? ["src/**/*.test.ts!"] : []),
+      ],
+      project: [
+        "bin/**/*.js!",
+        "scripts/**/*.{mjs,js,ts}!",
+        "src/**/*.ts!",
+        "../clawhub/src/**/*.ts!",
+        "vitest*.ts!",
+      ],
+      // The moderator build emits selected public CLI helpers into its own dist.
+      ignoreDependencies: [
+        "arktype",
+        "fflate",
+        "ignore",
+        "json5",
+        "mime",
+        "ora",
+        "p-retry",
+        "semver",
+        "undici",
+      ],
+    },
     "packages/schema": {
       entry: [
         "src/index.ts!",

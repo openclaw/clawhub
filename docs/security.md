@@ -19,12 +19,6 @@ See also: [acceptable-usage.md](./acceptable-usage.md) for the marketplace polic
 ## Reporting + auto-hide
 
 - Reports are unique per user + target (skill/comment/package).
-- Artifact moderation is intentionally separate from trust/identity governance:
-  skill and package/plugin reports and appeals are artifact moderation; org
-  claims, namespace disputes, verification, and official status are handled by
-  the trust/identity governance process.
-- A report is a user/community complaint about an artifact. An appeal is an
-  owner or publisher challenge to a moderation outcome.
 - Report reason required (trimmed, max 500 chars). Abuse of reporting may result in account bans.
 - Per-user cap: 20 **active** reports.
   - Active skill report = skill exists, not soft-deleted, not `moderationStatus = removed`,
@@ -44,9 +38,9 @@ See also: [acceptable-usage.md](./acceptable-usage.md) for the marketplace polic
     - soft-delete comment (`softDeletedAt`)
     - decrement comment stat via `uncomment` stat event
     - audit log entry: `comment.auto_hide`
-- Package reports feed `package moderation-queue` and audit `package.report`.
-  Moderators can review a formal report with an explicit final action to
-  quarantine or revoke the affected release.
+- Package reports feed `clawhub-mod package moderation-queue` and audit `package.report`,
+  but do not auto-hide or block downloads. Moderators can review a formal report
+  with an explicit final action to quarantine or revoke the affected release.
 - Package reports can be moved to `confirmed` or `dismissed` with a moderator
   note. Only `open` reports count toward `packages.reportCount` and user active
   report limits; confirming or dismissing a report decrements the open count.
