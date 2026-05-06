@@ -9,6 +9,8 @@ import { MODERATION_ENGINE_VERSION } from "./lib/moderationReasonCodes";
 import {
   getActiveSkillBatchForStaticScanBackfillInternal,
   getPendingScanSkillsInternal,
+  getTrentRescanCandidatesInternal,
+  markVersionTrentUnscannableInternal,
 } from "./skills";
 
 type PendingScanResult = Array<{
@@ -37,6 +39,20 @@ const getStaticScanBackfillBatchHandler = (
       nextCursor: number;
       done: boolean;
     }
+  >
+)._handler;
+
+const getTrentRescanCandidatesHandler = (
+  getTrentRescanCandidatesInternal as unknown as WrappedHandler<
+    { limit?: number; staleBefore?: number },
+    string[]
+  >
+)._handler;
+
+const markVersionTrentUnscannableHandler = (
+  markVersionTrentUnscannableInternal as unknown as WrappedHandler<
+    { versionId: string; checkedAt: number },
+    void
   >
 )._handler;
 
@@ -230,6 +246,86 @@ describe("skills.getPendingScanSkillsInternal", () => {
   });
 });
 
+describe("skills.getTrentRescanCandidatesInternal", () => {
+  it("only schedules active scannable Trent rows and gates unknown verdicts by staleness", async () => {
+    const versions = [
+      { _id: "skillVersions:active-unscanned" },
+      { _id: "skillVersions:soft-deleted", softDeletedAt: 10 },
+      { _id: "skillVersions:unscannable", trentScanState: "unscannable" },
+      { _id: "skillVersions:unknown-recent", trentVerdict: "unknown", trentCheckedAt: 900 },
+      { _id: "skillVersions:unknown-stale", trentVerdict: "unknown", trentCheckedAt: 100 },
+      { _id: "skillVersions:benign-stale", trentVerdict: "benign", trentCheckedAt: 50 },
+    ];
+    const ctx = { db: createTrentCandidateDb(versions) };
+
+    const result = await getTrentRescanCandidatesHandler(ctx, {
+      limit: 10,
+      staleBefore: 500,
+    });
+
+    expect(result).toEqual([
+      "skillVersions:active-unscanned",
+      "skillVersions:unknown-stale",
+      "skillVersions:benign-stale",
+    ]);
+  });
+});
+
+describe("skills.markVersionTrentUnscannableInternal", () => {
+  it("marks active unhashable versions with a terminal Trent scan state", async () => {
+    const patches: Array<Record<string, unknown>> = [];
+    const ctx = {
+      db: {
+        get: vi.fn(async () => ({ _id: "skillVersions:missing-files" })),
+        patch: vi.fn(async (_id: string, patch: Record<string, unknown>) => {
+          patches.push(patch);
+        }),
+        insert: vi.fn(),
+        replace: vi.fn(),
+        delete: vi.fn(),
+        query: vi.fn(),
+        normalizeId: vi.fn(() => null),
+        system: { get: vi.fn(), query: vi.fn() },
+      },
+    };
+
+    await markVersionTrentUnscannableHandler(ctx, {
+      versionId: "skillVersions:missing-files",
+      checkedAt: 123,
+    });
+
+    expect(patches).toEqual([
+      {
+        trentVerdict: "unknown",
+        trentCheckedAt: 123,
+        trentScanState: "unscannable",
+      },
+    ]);
+  });
+
+  it("does not mark soft-deleted versions", async () => {
+    const ctx = {
+      db: {
+        get: vi.fn(async () => ({ _id: "skillVersions:hidden", softDeletedAt: 10 })),
+        patch: vi.fn(),
+        insert: vi.fn(),
+        replace: vi.fn(),
+        delete: vi.fn(),
+        query: vi.fn(),
+        normalizeId: vi.fn(() => null),
+        system: { get: vi.fn(), query: vi.fn() },
+      },
+    };
+
+    await markVersionTrentUnscannableHandler(ctx, {
+      versionId: "skillVersions:hidden",
+      checkedAt: 123,
+    });
+
+    expect(ctx.db.patch).not.toHaveBeenCalled();
+  });
+});
+
 describe("skills.getActiveSkillBatchForStaticScanBackfillInternal", () => {
   it("includes latest active skills with missing or stale static scan engine versions", async () => {
     const skills = [
@@ -351,4 +447,55 @@ function makeSkill(
     latestVersionId: versionId,
     scanLastCheckedAt,
   };
+}
+
+function createTrentCandidateDb(versions: Array<Record<string, unknown>>) {
+  return {
+    query: vi.fn((table: string) => {
+      if (table !== "skillVersions") throw new Error(`unexpected table ${table}`);
+      return {
+        withIndex: (
+          indexName: string,
+          builder: (q: {
+            eq: (field: string, value: unknown) => unknown;
+            lt: (field: string, value: number) => unknown;
+          }) => unknown,
+        ) => {
+          const constraints: Record<string, unknown> = {};
+          const lessThan: Record<string, number> = {};
+          const query = {
+            eq(field: string, value: unknown) {
+              constraints[field] = value;
+              return query;
+            },
+            lt(field: string, value: number) {
+              lessThan[field] = value;
+              return query;
+            },
+          };
+          builder(query);
+          return {
+            take: async (limit: number) =>
+              versions
+                .filter((version) => matchesTrentCandidate(version, constraints, lessThan))
+                .slice(0, limit),
+          };
+        },
+      };
+    }),
+  };
+}
+
+function matchesTrentCandidate(
+  version: Record<string, unknown>,
+  constraints: Record<string, unknown>,
+  lessThan: Record<string, number>,
+) {
+  for (const [field, value] of Object.entries(constraints)) {
+    if (version[field] !== value) return false;
+  }
+  for (const [field, value] of Object.entries(lessThan)) {
+    if (typeof version[field] !== "number" || version[field] >= value) return false;
+  }
+  return true;
 }

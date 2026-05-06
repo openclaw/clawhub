@@ -40,6 +40,8 @@ const trentAnalysisValidator = v.object({
   checkedAt: v.number(),
 });
 
+const trentScanStateValidator = v.union(v.literal("unscannable"));
+
 const depRegistryStatusValidator = v.union(
   v.literal("clean"),
   v.literal("suspicious"),
@@ -521,6 +523,7 @@ const skillVersions = defineTable({
     ),
   ),
   trentCheckedAt: v.optional(v.number()),
+  trentScanState: v.optional(trentScanStateValidator),
   llmAnalysis: v.optional(
     v.object({
       status: v.string(),
@@ -580,6 +583,13 @@ const skillVersions = defineTable({
   .index("by_sha256hash", ["sha256hash"])
   .index("by_trent_verdict_and_checked", ["trentVerdict", "trentCheckedAt"])
   .index("by_trent_checked", ["trentCheckedAt"])
+  .index("by_active_trent_state_verdict_and_checked", [
+    "softDeletedAt",
+    "trentScanState",
+    "trentVerdict",
+    "trentCheckedAt",
+  ])
+  .index("by_active_trent_state_checked", ["softDeletedAt", "trentScanState", "trentCheckedAt"])
   .index("by_dep_registry_scan_status_and_created", ["depRegistryScanStatus", "createdAt"]);
 
 const depRegistryCache = defineTable({

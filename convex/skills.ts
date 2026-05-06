@@ -4901,6 +4901,7 @@ export const updateVersionScanResultsInternal = internalMutation({
     const patch: Partial<Doc<"skillVersions">> = {};
     if (args.sha256hash !== undefined) {
       patch.sha256hash = args.sha256hash;
+      patch.trentScanState = undefined;
     }
     if (args.vtAnalysis !== undefined) {
       patch.vtAnalysis = args.vtAnalysis;
@@ -4909,6 +4910,7 @@ export const updateVersionScanResultsInternal = internalMutation({
       patch.trentAnalysis = args.trentAnalysis;
       patch.trentVerdict = args.trentAnalysis.verdict;
       patch.trentCheckedAt = args.trentAnalysis.checkedAt;
+      patch.trentScanState = undefined;
     }
 
     if (Object.keys(patch).length > 0) {
@@ -4919,6 +4921,23 @@ export const updateVersionScanResultsInternal = internalMutation({
         { ...version, ...patch },
       );
     }
+  },
+});
+
+export const markVersionTrentUnscannableInternal = internalMutation({
+  args: {
+    versionId: v.id("skillVersions"),
+    checkedAt: v.number(),
+  },
+  handler: async (ctx, args) => {
+    const version = await ctx.db.get(args.versionId);
+    if (!version || version.softDeletedAt) return;
+
+    await ctx.db.patch(args.versionId, {
+      trentVerdict: "unknown",
+      trentCheckedAt: args.checkedAt,
+      trentScanState: "unscannable",
+    });
   },
 });
 
@@ -4938,21 +4957,37 @@ export const getTrentRescanCandidatesInternal = internalQuery({
 
     const unscanned = await ctx.db
       .query("skillVersions")
-      .withIndex("by_trent_verdict_and_checked", (q) => q.eq("trentVerdict", undefined))
+      .withIndex("by_active_trent_state_verdict_and_checked", (q) =>
+        q
+          .eq("softDeletedAt", undefined)
+          .eq("trentScanState", undefined)
+          .eq("trentVerdict", undefined),
+      )
       .take(limit);
     for (const version of unscanned) push(version);
     if (candidates.length >= limit) return candidates.slice(0, limit);
 
     const unknown = await ctx.db
       .query("skillVersions")
-      .withIndex("by_trent_verdict_and_checked", (q) => q.eq("trentVerdict", "unknown"))
+      .withIndex("by_active_trent_state_verdict_and_checked", (q) =>
+        q
+          .eq("softDeletedAt", undefined)
+          .eq("trentScanState", undefined)
+          .eq("trentVerdict", "unknown")
+          .lt("trentCheckedAt", staleBefore),
+      )
       .take(limit - candidates.length);
     for (const version of unknown) push(version);
     if (candidates.length >= limit) return candidates.slice(0, limit);
 
     const stale = await ctx.db
       .query("skillVersions")
-      .withIndex("by_trent_checked", (q) => q.lt("trentCheckedAt", staleBefore))
+      .withIndex("by_active_trent_state_checked", (q) =>
+        q
+          .eq("softDeletedAt", undefined)
+          .eq("trentScanState", undefined)
+          .lt("trentCheckedAt", staleBefore),
+      )
       .take(limit - candidates.length);
     for (const version of stale) push(version);
 

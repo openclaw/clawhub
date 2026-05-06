@@ -24,10 +24,15 @@ export const scanSkillVersionWithTrentClaw = internalAction({
       console.error(`[trent] Version ${args.versionId} not found for scanning`);
       return;
     }
+    if (version.softDeletedAt) return;
 
     const skillSha256 = await getOrComputeSkillSha256(ctx, version);
     if (!skillSha256) {
       console.warn(`[trent] Could not compute hash for version ${args.versionId}`);
+      await ctx.runMutation(internal.skills.markVersionTrentUnscannableInternal, {
+        versionId: args.versionId,
+        checkedAt: Date.now(),
+      });
       return;
     }
 

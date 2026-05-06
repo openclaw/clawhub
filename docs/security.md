@@ -46,6 +46,10 @@ See also: [acceptable-usage.md](./acceptable-usage.md) for the marketplace polic
 - New skill publishes now persist a deterministic static scan result on the version.
 - New skill publishes also query TrentClaw by the deterministic skill SHA256 and cache the
   verdict (`benign`, `vulnerable`, `malicious`, or `unknown`) on the version.
+- TrentClaw is an external `api.trent.ai` service. ClawHub sends the deterministic skill
+  artifact SHA256 to that service, not the skill source files or user credentials. CLI
+  install/update decisions may warn or block based on the returned verdict, so changes to this
+  integration require explicit maintainer/security approval of the third-party trust boundary.
 - Package/plugin scan backfills now also recompute deterministic static scan results for older releases,
   so legacy plugin versions can surface OpenClaw scan findings without republishing.
 - Source-linked packages can fall back to a clean package verdict when VirusTotal only returns
