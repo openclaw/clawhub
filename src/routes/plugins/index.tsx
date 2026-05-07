@@ -17,6 +17,7 @@ type PluginSearchState = {
   featured?: boolean;
   verified?: boolean;
   executesCode?: boolean;
+  view?: "list" | "cards";
 };
 
 type PluginsLoaderData = {
@@ -53,6 +54,7 @@ export const Route = createFileRoute("/plugins/")({
       search.executesCode === true || search.executesCode === "true" || search.executesCode === "1"
         ? true
         : undefined,
+    view: search.view === "cards" || search.view === "list" ? search.view : undefined,
   }),
   loaderDeps: ({ search }) => search,
   loader: async ({ deps }): Promise<PluginsLoaderData> => {
@@ -108,6 +110,7 @@ function PluginsIndex() {
   const rateLimited = loaderData?.rateLimited ?? false;
   const retryAfterSeconds = loaderData?.retryAfterSeconds ?? null;
   const apiError = loaderData?.apiError ?? !loaderData;
+  const view = search.view ?? "list";
 
   const [query, setQuery] = useState(search.q ?? "");
   const [sidebarOpen, setSidebarOpen] = useState(false);
@@ -171,6 +174,15 @@ function PluginsIndex() {
     });
   };
 
+  const handleToggleView = (nextView: "list" | "cards") => {
+    void navigate({
+      search: (prev) => ({
+        ...prev,
+        view: nextView === "list" ? undefined : nextView,
+      }),
+    });
+  };
+
   return (
     <main className="browse-page">
       <div className="browse-page-header">
@@ -182,7 +194,9 @@ function PluginsIndex() {
         >
           Filters
         </button>
-        <h1 className="browse-title">Plugins</h1>
+        <h1 className="browse-title">
+          Plugins <span className="browse-count">{items.length}</span>
+        </h1>
         <div className="browse-page-actions">
           <Button asChild variant="primary">
             <Link
@@ -227,8 +241,24 @@ function PluginsIndex() {
         <div className="browse-results">
           <div className="browse-results-toolbar">
             <span className="browse-results-count">
-              {items.length} plugin{items.length !== 1 ? "s" : ""}
+              {items.length} result{items.length !== 1 ? "s" : ""}
             </span>
+            <div className="browse-view-toggle">
+              <button
+                className={`browse-view-btn${view === "list" ? " is-active" : ""}`}
+                type="button"
+                onClick={view === "cards" ? () => handleToggleView("list") : undefined}
+              >
+                List
+              </button>
+              <button
+                className={`browse-view-btn${view === "cards" ? " is-active" : ""}`}
+                type="button"
+                onClick={view === "list" ? () => handleToggleView("cards") : undefined}
+              >
+                Cards
+              </button>
+            </div>
           </div>
 
           {apiError ? (
@@ -251,9 +281,13 @@ function PluginsIndex() {
               <p className="empty-state-body">Try a different search term or remove filters.</p>
             </div>
           ) : (
-            <div className="results-list">
+            <div className={view === "cards" ? "grid" : "results-list"}>
               {items.map((item) => (
-                <PluginListItem key={item.name} item={item} />
+                <PluginListItem
+                  key={item.name}
+                  item={item}
+                  variant={view === "cards" ? "card" : "list"}
+                />
               ))}
             </div>
           )}

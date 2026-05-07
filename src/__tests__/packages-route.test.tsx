@@ -101,6 +101,7 @@ describe("plugins route", () => {
       featured: undefined,
       verified: undefined,
       executesCode: undefined,
+      view: undefined,
     });
   });
 
@@ -117,7 +118,21 @@ describe("plugins route", () => {
       featured: undefined,
       verified: undefined,
       executesCode: undefined,
+      view: undefined,
     });
+  });
+
+  it("accepts the cards view in search state", async () => {
+    const route = await loadRoute();
+    const validateSearch = route.__config.validateSearch as (
+      search: Record<string, unknown>,
+    ) => Record<string, unknown>;
+
+    expect(validateSearch({ view: "cards" })).toEqual(
+      expect.objectContaining({
+        view: "cards",
+      }),
+    );
   });
 
   it("forwards opaque cursors through the loader", async () => {
@@ -175,6 +190,42 @@ describe("plugins route", () => {
     expect(lastCall.search({ family: "code-plugin" })).toEqual({
       family: "code-plugin",
       cursor: "cursor:next",
+    });
+  });
+
+  it("renders a title count and switches to card view", async () => {
+    loaderDataMock = {
+      items: [
+        {
+          name: "demo-plugin",
+          displayName: "Demo Plugin",
+          family: "code-plugin",
+          channel: "community",
+          isOfficial: false,
+          executesCode: true,
+          createdAt: 1,
+          updatedAt: 1,
+        },
+      ],
+      nextCursor: null,
+      rateLimited: false,
+      retryAfterSeconds: null,
+    };
+    const route = await loadRoute();
+    const Component = route.__config.component as ComponentType;
+
+    render(<Component />);
+
+    expect(screen.getByRole("heading", { name: "Plugins 1" })).toBeTruthy();
+
+    fireEvent.click(screen.getByRole("button", { name: "Cards" }));
+
+    expect(navigateMock).toHaveBeenCalled();
+    const lastCall = navigateMock.mock.calls.at(-1)?.[0] as {
+      search: (prev: Record<string, unknown>) => Record<string, unknown>;
+    };
+    expect(lastCall.search({})).toEqual({
+      view: "cards",
     });
   });
 

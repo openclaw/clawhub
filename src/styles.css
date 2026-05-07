@@ -2657,6 +2657,10 @@ code {
   transition: all 0.2s ease;
 }
 
+.plugin-card {
+  min-height: 180px;
+}
+
 .skill-card:hover {
   border-color: var(--border-ui-hover);
   transform: translateY(-2px);
@@ -7587,6 +7591,10 @@ code {
   display: inline-flex;
   align-items: center;
   gap: 4px;
+}
+
+.plugin-card-meta {
+  justify-content: flex-end;
 }
 
 .user-list-item .skill-list-item-owner {
