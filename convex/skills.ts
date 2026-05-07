@@ -8151,19 +8151,27 @@ export const setSkillSoftDeletedInternal = internalMutation({
     // state originates from moderation, scanning, merges, bans, or security
     // redaction — only moderators/admins may lift those.
     //
-    // Authorization is based on the *source of the hide*, not whether
-    // `moderationReason` happens to be populated:
+    // Authorization is based on the *source of the hide* (`hiddenBy`), plus
+    // an explicit deny list of `moderationReason` values that are known to
+    // be system- or admin-originated even when the raw `hiddenBy` happens
+    // to equal the owner (e.g. owner-initiated merges stamp both
+    // `hiddenBy = ownerUserId` AND `moderationReason = "owner.merged"` and
+    // must NOT be reversible through the generic undelete path).
     //
-    //   - `hiddenBy === args.userId` means the owner soft-deleted this record
-    //     themselves. This is the only self-service undelete case.
-    //   - A moderator hiding via `setSoftDeleted` records `hiddenBy = mod._id`
-    //     but does NOT write `moderationReason`, so a reason-only check would
-    //     let the owner reverse moderator decisions (the previous gate was
-    //     incorrect on this path).
-    //   - Merge soft-deletes via the owner (mergeOwnedSkillIntoCanonical) set
-    //     `hiddenBy = ownerUserId` AND `moderationReason = "owner.merged"`,
-    //     so we additionally require `moderationReason === undefined` to
-    //     prevent undelete from reversing merges through the wrong path.
+    //   - `hiddenBy === args.userId` is the necessary baseline. A moderator
+    //     hiding via `setSoftDeleted` records `hiddenBy = mod._id`, so the
+    //     owner simply fails this check. A security redaction / auto-ban
+    //     likewise records an admin/system actor, so those naturally fail.
+    //   - The deny list below catches the remaining paths where `hiddenBy`
+    //     may equal the owner (merges) or may be stale from a prior owner
+    //     delete while a later system patch wrote only `moderationReason`
+    //     without refreshing `hiddenBy` (e.g. `auto.reports`).
+    //   - Benign scanner / pipeline reasons such as `pending.scan`,
+    //     `scanner.aggregate.clean`, or `scanner.<scanner>.clean` describe
+    //     the skill's moderation state, not the cause of the current hide,
+    //     so they must NOT block owner self-restore. Requiring
+    //     `moderationReason === undefined` here previously broke the common
+    //     owner delete → owner undelete flow for every healthy skill.
     //   - If `hiddenBy` is somehow missing (legacy rows, manual override
     //     pathways that cleared it), fail closed and route the caller to a
     //     moderator.
@@ -8184,8 +8192,21 @@ export const setSkillSoftDeletedInternal = internalMutation({
         );
       }
 
+      // Reasons that indicate a system / admin / unreversible-by-owner hide,
+      // even when `hiddenBy` looks owner-ish (legacy rows, merges, or
+      // system patches that left `hiddenBy` stale).
+      const OWNER_UNDELETE_DENIED_REASONS = new Set<string>([
+        "owner.merged",
+        "auto.reports",
+        "manual.report",
+        "user.banned",
+        "security.redaction",
+        "pending.scan.stale",
+      ]);
+      const reason = skill.moderationReason as string | undefined;
       const ownerInitiatedHide =
-        skill.hiddenBy === args.userId && skill.moderationReason === undefined;
+        skill.hiddenBy === args.userId &&
+        (reason === undefined || !OWNER_UNDELETE_DENIED_REASONS.has(reason));
       if (!ownerInitiatedHide) {
         // Prefix with "Forbidden:" so HTTP boundary mappers
         // (softDeleteErrorToResponse) deterministically return 403 instead of
