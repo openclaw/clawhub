@@ -6125,6 +6125,16 @@ export const escalateByVtInternal = internalMutation({
     // Only hide for malicious — suspicious stays visible with a flag
     if (isMalicious) {
       basePatch.moderationStatus = "hidden";
+      // Security: reset hide provenance so the owner-undelete gate cannot
+      // mistake prior owner-initiated soft-deletes (hiddenBy === owner,
+      // moderationReason === undefined) for self-service state. The
+      // moderationReason is intentionally NOT overwritten here to preserve
+      // the aggregate LLM verdict (see function doc), but `blocked.malware`
+      // is stamped into moderationFlags above and `moderationVerdict` is
+      // "malicious", both of which the undelete gate also enforces.
+      basePatch.hiddenAt = now;
+      basePatch.hiddenBy = undefined;
+      basePatch.lastReviewedAt = now;
     } else if (nextVerdict === "clean" && !alreadyBlocked) {
       basePatch.moderationStatus = "active";
       basePatch.hiddenAt = undefined;
@@ -8158,6 +8168,22 @@ export const setSkillSoftDeletedInternal = internalMutation({
     //     pathways that cleared it), fail closed and route the caller to a
     //     moderator.
     if (!args.deleted && isOwner && !isModeratorOrAdmin) {
+      // Defense-in-depth: regardless of `hiddenBy`/`moderationReason`
+      // provenance, an owner must NEVER be able to restore a skill that any
+      // scanner has marked malicious. This closes a class of bugs where a
+      // stale owner-initiated hide is left in place while a later scanner
+      // escalation upgrades the verdict to malicious without rewriting
+      // provenance fields (e.g. the VT-only escalation path intentionally
+      // does not overwrite `moderationReason` to preserve the LLM verdict).
+      const moderationFlags = (skill.moderationFlags as string[] | undefined) ?? [];
+      const isMaliciousBlocked =
+        moderationFlags.includes("blocked.malware") || skill.moderationVerdict === "malicious";
+      if (isMaliciousBlocked) {
+        throw new ConvexError(
+          "Forbidden: This skill was blocked by automated malware detection and cannot be restored by the owner. Please contact a moderator.",
+        );
+      }
+
       const ownerInitiatedHide =
         skill.hiddenBy === args.userId && skill.moderationReason === undefined;
       if (!ownerInitiatedHide) {

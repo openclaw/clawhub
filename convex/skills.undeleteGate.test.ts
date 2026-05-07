@@ -268,6 +268,60 @@ describe("setSkillSoftDeletedInternal B1 undelete gate", () => {
     expect(patch).not.toHaveBeenCalled();
   });
 
+  // BLOCKER regression: VT-only escalation (escalateByVtInternal) hides a
+  // skill by stamping `blocked.malware` into moderationFlags and flipping
+  // moderationStatus to "hidden", but intentionally does NOT overwrite
+  // moderationReason (to preserve the aggregate LLM verdict). If the owner
+  // had previously owner-initiated-soft-deleted the skill, the stale
+  // provenance (`hiddenBy === owner`, `moderationReason === undefined`)
+  // would have matched the ownerInitiatedHide check. The gate must
+  // fail-closed on any malicious flag/verdict regardless of provenance.
+  it("rejects owner undelete when moderationFlags carries blocked.malware (scanner escalation over stale owner hide)", async () => {
+    const skill = makeSkill({
+      moderationReason: undefined,
+      hiddenBy: "users:owner",
+      moderationFlags: ["blocked.malware"],
+    });
+    const { ctx, patch, insert } = makeCtx({
+      skill,
+      actor: { _id: "users:owner", role: "user" },
+    });
+
+    await expect(
+      setSkillSoftDeletedInternalHandler(ctx, {
+        userId: "users:owner",
+        slug: "demo",
+        deleted: false,
+      }),
+    ).rejects.toThrow(/^Forbidden:/i);
+
+    expect(patch).not.toHaveBeenCalled();
+    expect(insert).not.toHaveBeenCalled();
+  });
+
+  it("rejects owner undelete when moderationVerdict is malicious (scanner escalation over stale owner hide)", async () => {
+    const skill = makeSkill({
+      moderationReason: undefined,
+      hiddenBy: "users:owner",
+      moderationVerdict: "malicious",
+    });
+    const { ctx, patch, insert } = makeCtx({
+      skill,
+      actor: { _id: "users:owner", role: "user" },
+    });
+
+    await expect(
+      setSkillSoftDeletedInternalHandler(ctx, {
+        userId: "users:owner",
+        slug: "demo",
+        deleted: false,
+      }),
+    ).rejects.toThrow(/malware/i);
+
+    expect(patch).not.toHaveBeenCalled();
+    expect(insert).not.toHaveBeenCalled();
+  });
+
   it("allows moderator to undelete moderator-hidden skill", async () => {
     const skill = makeSkill({ moderationReason: "manual.quality" });
     const { ctx, patch, insert } = makeCtx({
