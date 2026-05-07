@@ -10669,11 +10669,11 @@ code {
 
 /* ═══════════════════════════════════════════════════════════════════════
    BUTTON RADIUS CONSISTENCY
-   Single token for all buttons: --r-btn (4px — semi-rounded, not pill)
+   Single token for all buttons: --r-btn (matches search controls, not pills)
    ═══════════════════════════════════════════════════════════════════════ */
 
 :root {
-  --r-btn: 4px;
+  --r-btn: var(--r-sm);
 }
 
 /* Core buttons */

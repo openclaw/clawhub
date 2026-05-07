@@ -99,6 +99,7 @@ describe("restored UI design contract", () => {
     expect(themeControl).toContain("min-width: 154px");
     expect(themeControl).toContain("min-height: 50px");
     expect(themeControl).toContain("border: 1px solid var(--line)");
+    expect(css).toContain("--r-btn: var(--r-sm)");
 
     const compact = cssMediaContaining(css, "(max-width: 760px)", [
       "grid-template-columns: 56px minmax(0, 1fr) 56px",
