@@ -126,7 +126,7 @@ describe("getBySlug public moderation info", () => {
 
     expect(result.moderationInfo?.overrideActive).toBe(true);
     expect(result.moderationInfo?.summary).toBe(
-      "Security findings were reviewed by staff and cleared for public use.",
+      "Security findings were reviewed by moderators and cleared for public use.",
     );
   });
 });

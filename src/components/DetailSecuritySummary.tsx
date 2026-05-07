@@ -59,7 +59,8 @@ function badgeVariantForScanStatus(status: string): BadgeProps["variant"] {
   const normalized = status.toLowerCase();
   if (normalized === "clean" || normalized === "benign") return "success";
   if (normalized === "cleared") return "success";
-  if (normalized === "suspicious" || normalized === "vulnerable") return "warning";
+  if (normalized === "suspicious") return "default";
+  if (normalized === "vulnerable") return "warning";
   if (normalized === "malicious" || normalized === "error") return "destructive";
   if (
     normalized === "pending" ||

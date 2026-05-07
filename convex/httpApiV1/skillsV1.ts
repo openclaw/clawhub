@@ -1,9 +1,17 @@
-import { normalizeTextContentType } from "clawhub-schema";
+import {
+  SkillAppealRequestSchema,
+  SkillAppealResolveRequestSchema,
+  SkillReportTriageRequestSchema,
+  normalizeTextContentType,
+  parseArk,
+  type SkillAppealListStatus,
+  type SkillReportListStatus,
+} from "clawhub-schema";
 import { api, internal } from "../_generated/api";
 import type { Doc, Id } from "../_generated/dataModel";
 import type { ActionCtx } from "../_generated/server";
 import { getOptionalApiTokenUserId, requireApiTokenUser } from "../lib/apiTokenAuth";
-import { applyRateLimit, parseBearerToken } from "../lib/httpRateLimit";
+import { applyRateLimit } from "../lib/httpRateLimit";
 import { parseBooleanQueryParam, resolveBooleanQueryParam } from "../lib/httpUtils";
 import type {
   LlmAgenticRiskFinding,
@@ -248,9 +256,19 @@ type SkillSecuritySnapshot = {
 
 const internalRefs = internal as unknown as {
   skills: {
+    reportSkillForUserInternal: unknown;
+    listSkillReportsInternal: unknown;
+    triageSkillReportForUserInternal: unknown;
+    submitSkillAppealForUserInternal: unknown;
+    listSkillAppealsInternal: unknown;
+    resolveSkillAppealForUserInternal: unknown;
     requestRescanForApiTokenInternal: unknown;
   };
 };
+
+async function runQueryRef<T>(ctx: ActionCtx, ref: unknown, args: unknown): Promise<T> {
+  return (await ctx.runQuery(ref as never, args as never)) as T;
+}
 
 async function runMutationRef<T>(ctx: ActionCtx, ref: unknown, args: unknown): Promise<T> {
   return (await ctx.runMutation(ref as never, args as never)) as T;
@@ -645,6 +663,40 @@ export async function skillsGetRouterV1Handler(ctx: ActionCtx, request: Request)
   const second = segments[1];
   const third = segments[2];
 
+  if (segments[0] === "-" && segments[1] === "reports" && segments.length === 2) {
+    const auth = await requireApiTokenUserOrResponse(ctx, request, rate.headers);
+    if (!auth.ok) return auth.response;
+    const url = new URL(request.url);
+    const status = (url.searchParams.get("status")?.trim() || "open") as SkillReportListStatus;
+    if (!["open", "confirmed", "dismissed", "all"].includes(status)) {
+      return text("Invalid skill report status", 400, rate.headers);
+    }
+    const result = await runQueryRef(ctx, internalRefs.skills.listSkillReportsInternal, {
+      actorUserId: auth.userId,
+      status,
+      cursor: url.searchParams.get("cursor")?.trim() || null,
+      limit: toOptionalNumber(url.searchParams.get("limit")),
+    });
+    return json(result, 200, rate.headers);
+  }
+
+  if (segments[0] === "-" && segments[1] === "appeals" && segments.length === 2) {
+    const auth = await requireApiTokenUserOrResponse(ctx, request, rate.headers);
+    if (!auth.ok) return auth.response;
+    const url = new URL(request.url);
+    const status = (url.searchParams.get("status")?.trim() || "open") as SkillAppealListStatus;
+    if (!["open", "accepted", "rejected", "all"].includes(status)) {
+      return text("Invalid skill appeal status", 400, rate.headers);
+    }
+    const result = await runQueryRef(ctx, internalRefs.skills.listSkillAppealsInternal, {
+      actorUserId: auth.userId,
+      status,
+      cursor: url.searchParams.get("cursor")?.trim() || null,
+      limit: toOptionalNumber(url.searchParams.get("limit")),
+    });
+    return json(result, 200, rate.headers);
+  }
+
   if (segments.length === 1) {
     const result = (await ctx.runQuery(api.skills.getBySlug, { slug })) as GetBySlugResult;
     if (!result?.skill) {
@@ -975,12 +1027,8 @@ export async function publishSkillV1Handler(ctx: ActionCtx, request: Request) {
   const rate = await applyRateLimit(ctx, request, "write");
   if (!rate.ok) return rate.response;
 
-  try {
-    if (!parseBearerToken(request)) return text("Unauthorized", 401, rate.headers);
-  } catch {
-    return text("Unauthorized", 401, rate.headers);
-  }
-  const { userId } = await requireApiTokenUser(ctx, request);
+  const auth = await requireApiTokenUserOrResponse(ctx, request, rate.headers);
+  if (!auth.ok) return auth.response;
 
   const contentType = request.headers.get("content-type") ?? "";
   try {
@@ -990,7 +1038,7 @@ export async function publishSkillV1Handler(ctx: ActionCtx, request: Request) {
       if (!hasAcceptedLegacyLicenseTerms(payload.acceptLicenseTerms)) {
         return text("MIT-0 license terms must be accepted to publish skills", 400, rate.headers);
       }
-      const result = await publishSkillPayloadForApiUser(ctx, userId, payload);
+      const result = await publishSkillPayloadForApiUser(ctx, auth.userId, payload);
       return json({ ok: true, ...result }, 200, rate.headers);
     }
 
@@ -999,7 +1047,7 @@ export async function publishSkillV1Handler(ctx: ActionCtx, request: Request) {
       if (!hasAcceptedLegacyLicenseTerms(payload.acceptLicenseTerms)) {
         return text("MIT-0 license terms must be accepted to publish skills", 400, rate.headers);
       }
-      const result = await publishSkillPayloadForApiUser(ctx, userId, payload);
+      const result = await publishSkillPayloadForApiUser(ctx, auth.userId, payload);
       return json({ ok: true, ...result }, 200, rate.headers);
     }
   } catch (error) {
@@ -1038,8 +1086,10 @@ type TransferDecisionAction = "accept" | "reject" | "cancel";
 function transferErrorToResponse(error: unknown, headers: HeadersInit) {
   const message = error instanceof Error ? error.message : "Transfer failed";
   const lower = message.toLowerCase();
-  if (lower.includes("unauthorized")) return text("Unauthorized", 401, headers);
-  if (lower.includes("forbidden")) return text("Forbidden", 403, headers);
+  if (lower.includes("unauthorized"))
+    return text(formatAuthzMessage(error, "Unauthorized"), 401, headers);
+  if (lower.includes("forbidden"))
+    return text(formatAuthzMessage(error, "Forbidden"), 403, headers);
   if (lower.includes("not found")) return text(message, 404, headers);
   if (lower.includes("required") || lower.includes("invalid") || lower.includes("pending")) {
     return text(message, 400, headers);
@@ -1050,10 +1100,18 @@ function transferErrorToResponse(error: unknown, headers: HeadersInit) {
 function ownershipErrorToResponse(error: unknown, headers: HeadersInit) {
   const message = error instanceof Error ? error.message : "Skill update failed";
   const lower = message.toLowerCase();
-  if (lower.includes("unauthorized")) return text("Unauthorized", 401, headers);
-  if (lower.includes("forbidden")) return text("Forbidden", 403, headers);
+  if (lower.includes("unauthorized"))
+    return text(formatAuthzMessage(error, "Unauthorized"), 401, headers);
+  if (lower.includes("forbidden"))
+    return text(formatAuthzMessage(error, "Forbidden"), 403, headers);
   if (lower.includes("not found")) return text(message, 404, headers);
   return text(message, 400, headers);
+}
+
+function formatAuthzMessage(error: unknown, fallback: "Unauthorized" | "Forbidden") {
+  const message = error instanceof Error ? error.message.trim() : "";
+  if (!message || message.toLowerCase() === fallback.toLowerCase()) return fallback;
+  return message.replace(/^ConvexError:\s*/i, "").trim() || fallback;
 }
 
 async function resolveTransferContext(
@@ -1224,6 +1282,144 @@ export async function skillsPostRouterV1Handler(ctx: ActionCtx, request: Request
   const segments = getPathSegments(request, "/api/v1/skills/");
   const action = segments[1] ?? "";
   const slug = segments[0]?.trim().toLowerCase() ?? "";
+
+  if (
+    segments[0] === "-" &&
+    segments[1] === "reports" &&
+    segments[2] &&
+    segments[3] === "triage" &&
+    segments.length === 4
+  ) {
+    const auth = await requireApiTokenUserOrResponse(ctx, request, rate.headers);
+    if (!auth.ok) return auth.response;
+    try {
+      const body = parseArk(
+        SkillReportTriageRequestSchema,
+        await request.json(),
+        "Skill report triage payload",
+      ) as {
+        status: "open" | "confirmed" | "dismissed";
+        note?: string;
+        finalAction?: "none" | "hide";
+      };
+      const result = await runMutationRef(
+        ctx,
+        internalRefs.skills.triageSkillReportForUserInternal,
+        {
+          actorUserId: auth.userId,
+          reportId: segments[2] as Id<"skillReports">,
+          status: body.status,
+          ...(body.note ? { note: body.note } : {}),
+          ...(body.finalAction ? { finalAction: body.finalAction } : {}),
+        },
+      );
+      return json(result, 200, rate.headers);
+    } catch (error) {
+      return text(
+        error instanceof Error ? error.message : "Skill report triage failed",
+        400,
+        rate.headers,
+      );
+    }
+  }
+
+  if (
+    segments[0] === "-" &&
+    segments[1] === "appeals" &&
+    segments[2] &&
+    segments[3] === "resolve" &&
+    segments.length === 4
+  ) {
+    const auth = await requireApiTokenUserOrResponse(ctx, request, rate.headers);
+    if (!auth.ok) return auth.response;
+    try {
+      const body = parseArk(
+        SkillAppealResolveRequestSchema,
+        await request.json(),
+        "Skill appeal resolve payload",
+      ) as {
+        status: "open" | "accepted" | "rejected";
+        note?: string;
+        finalAction?: "none" | "restore";
+      };
+      const result = await runMutationRef(
+        ctx,
+        internalRefs.skills.resolveSkillAppealForUserInternal,
+        {
+          actorUserId: auth.userId,
+          appealId: segments[2] as Id<"skillAppeals">,
+          status: body.status,
+          ...(body.note ? { note: body.note } : {}),
+          ...(body.finalAction ? { finalAction: body.finalAction } : {}),
+        },
+      );
+      return json(result, 200, rate.headers);
+    } catch (error) {
+      return text(
+        error instanceof Error ? error.message : "Skill appeal resolve failed",
+        400,
+        rate.headers,
+      );
+    }
+  }
+
+  if (segments.length === 2 && action === "report") {
+    if (!slug) return text("Slug required", 400, rate.headers);
+    const auth = await requireApiTokenUserOrResponse(ctx, request, rate.headers);
+    if (!auth.ok) return auth.response;
+    const parsed = await parseJsonPayload(request, rate.headers);
+    if (!parsed.ok) return parsed.response;
+    const reason = typeof parsed.payload.reason === "string" ? parsed.payload.reason : "";
+    const version = typeof parsed.payload.version === "string" ? parsed.payload.version : undefined;
+    try {
+      const result = await runMutationRef(ctx, internalRefs.skills.reportSkillForUserInternal, {
+        actorUserId: auth.userId,
+        slug,
+        reason,
+        ...(version ? { version } : {}),
+      });
+      return json(result, 200, rate.headers);
+    } catch (error) {
+      return text(
+        error instanceof Error ? error.message : "Skill report failed",
+        400,
+        rate.headers,
+      );
+    }
+  }
+
+  if (segments.length === 2 && action === "appeal") {
+    if (!slug) return text("Slug required", 400, rate.headers);
+    const auth = await requireApiTokenUserOrResponse(ctx, request, rate.headers);
+    if (!auth.ok) return auth.response;
+    try {
+      const body = parseArk(
+        SkillAppealRequestSchema,
+        await request.json(),
+        "Skill appeal payload",
+      ) as {
+        version?: string;
+        message: string;
+      };
+      const result = await runMutationRef(
+        ctx,
+        internalRefs.skills.submitSkillAppealForUserInternal,
+        {
+          actorUserId: auth.userId,
+          slug,
+          ...(body.version ? { version: body.version } : {}),
+          message: body.message,
+        },
+      );
+      return json(result, 200, rate.headers);
+    } catch (error) {
+      return text(
+        error instanceof Error ? error.message : "Skill appeal failed",
+        400,
+        rate.headers,
+      );
+    }
+  }
 
   if (segments.length === 2 && action === "undelete") {
     try {

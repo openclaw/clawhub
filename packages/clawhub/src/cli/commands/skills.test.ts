@@ -64,10 +64,16 @@ const mkdirMock = fsMocks.mkdir;
 const rmMock = fsMocks.rm;
 const statMock = fsMocks.stat;
 const {
+  cmdAppealSkill,
   clampLimit,
   cmdExplore,
   cmdInstall,
+  cmdListSkillAppeals,
+  cmdListSkillReports,
+  cmdReportSkill,
+  cmdResolveSkillAppeal,
   cmdSearch,
+  cmdTriageSkillReport,
   cmdUninstall,
   cmdUpdate,
   formatExploreLine,
@@ -281,6 +287,189 @@ describe("cmdSearch", () => {
     const [, requestArgs] = mockApiRequest.mock.calls[0] ?? [];
     const url = new URL(String(requestArgs?.url));
     expect(url.searchParams.get("limit")).toBe("5");
+  });
+});
+
+describe("skill moderation commands", () => {
+  it("submits skill reports", async () => {
+    mockApiRequest.mockResolvedValueOnce({
+      ok: true,
+      reported: true,
+      alreadyReported: false,
+      reportId: "skillReports:1",
+      skillId: "skills:1",
+      reportCount: 1,
+    });
+
+    await cmdReportSkill(makeOpts(), "demo", { version: "1.0.0", reason: "suspicious files" });
+
+    expect(mockApiRequest).toHaveBeenCalledWith(
+      "https://clawhub.ai",
+      {
+        method: "POST",
+        path: "/api/v1/skills/demo/report",
+        token: "tkn",
+        body: { reason: "suspicious files", version: "1.0.0" },
+      },
+      expect.anything(),
+    );
+    expect(mockLog).toHaveBeenCalledWith("OK. Reported demo (skillReports:1).");
+  });
+
+  it("submits skill appeals", async () => {
+    mockApiRequest.mockResolvedValueOnce({
+      ok: true,
+      submitted: true,
+      alreadyOpen: false,
+      appealId: "skillAppeals:1",
+      skillId: "skills:1",
+      status: "open",
+    });
+
+    await cmdAppealSkill(makeOpts(), "demo", { message: "please review" });
+
+    expect(mockApiRequest).toHaveBeenCalledWith(
+      "https://clawhub.ai",
+      {
+        method: "POST",
+        path: "/api/v1/skills/demo/appeal",
+        token: "tkn",
+        body: { message: "please review" },
+      },
+      expect.anything(),
+    );
+    expect(mockLog).toHaveBeenCalledWith("OK. Appeal submitted for demo: skillAppeals:1");
+  });
+
+  it("lists skill reports", async () => {
+    mockApiRequest.mockResolvedValueOnce({
+      items: [
+        {
+          reportId: "skillReports:1",
+          skillId: "skills:1",
+          skillVersionId: "skillVersions:1",
+          slug: "demo",
+          displayName: "Demo",
+          version: "1.0.0",
+          reason: "suspicious",
+          status: "open",
+          createdAt: 1,
+          reporter: { userId: "users:reporter", handle: "reporter", displayName: "Reporter" },
+          triagedAt: null,
+          triagedBy: null,
+          triageNote: null,
+        },
+      ],
+      nextCursor: null,
+      done: true,
+    });
+
+    await cmdListSkillReports(makeOpts(), { status: "open", limit: 10 });
+
+    const request = mockApiRequest.mock.calls[0]?.[1] as { url?: string } | undefined;
+    const url = new URL(String(request?.url));
+    expect(url.pathname).toBe("/api/v1/skills/-/reports");
+    expect(url.searchParams.get("status")).toBe("open");
+    expect(url.searchParams.get("limit")).toBe("10");
+    expect(mockLog).toHaveBeenCalledWith("skillReports:1 open demo");
+  });
+
+  it("triages skill reports", async () => {
+    mockApiRequest.mockResolvedValueOnce({
+      ok: true,
+      reportId: "skillReports:1",
+      skillId: "skills:1",
+      status: "confirmed",
+      reportCount: 0,
+      actionTaken: "hide",
+    });
+
+    await cmdTriageSkillReport(makeOpts(), "skillReports:1", {
+      status: "confirmed",
+      note: "handled",
+      action: "hide",
+      yes: true,
+    });
+
+    expect(mockApiRequest).toHaveBeenCalledWith(
+      "https://clawhub.ai",
+      {
+        method: "POST",
+        path: "/api/v1/skills/-/reports/skillReports%3A1/triage",
+        token: "tkn",
+        body: { status: "confirmed", note: "handled", finalAction: "hide" },
+      },
+      expect.anything(),
+    );
+    expect(mockLog).toHaveBeenCalledWith(
+      "OK. Skill report skillReports:1 set to confirmed; action hide.",
+    );
+    expect(mockLog).toHaveBeenCalledWith("  - Hide the skill from public availability.");
+  });
+
+  it("lists skill appeals", async () => {
+    mockApiRequest.mockResolvedValueOnce({
+      items: [
+        {
+          appealId: "skillAppeals:1",
+          skillId: "skills:1",
+          skillVersionId: "skillVersions:1",
+          slug: "demo",
+          displayName: "Demo",
+          version: "1.0.0",
+          message: "please review",
+          status: "open",
+          createdAt: 1,
+          submitter: { userId: "users:owner", handle: "owner", displayName: "Owner" },
+          resolvedAt: null,
+          resolvedBy: null,
+          resolutionNote: null,
+        },
+      ],
+      nextCursor: null,
+      done: true,
+    });
+
+    await cmdListSkillAppeals(makeOpts(), { status: "open", limit: 10 });
+
+    const request = mockApiRequest.mock.calls[0]?.[1] as { url?: string } | undefined;
+    const url = new URL(String(request?.url));
+    expect(url.pathname).toBe("/api/v1/skills/-/appeals");
+    expect(url.searchParams.get("status")).toBe("open");
+    expect(url.searchParams.get("limit")).toBe("10");
+    expect(mockLog).toHaveBeenCalledWith("skillAppeals:1 open demo");
+  });
+
+  it("resolves skill appeals", async () => {
+    mockApiRequest.mockResolvedValueOnce({
+      ok: true,
+      appealId: "skillAppeals:1",
+      skillId: "skills:1",
+      status: "accepted",
+      actionTaken: "restore",
+    });
+
+    await cmdResolveSkillAppeal(makeOpts(), "skillAppeals:1", {
+      status: "accepted",
+      note: "scanner finding cleared",
+      action: "restore",
+      yes: true,
+    });
+
+    expect(mockApiRequest).toHaveBeenCalledWith(
+      "https://clawhub.ai",
+      {
+        method: "POST",
+        path: "/api/v1/skills/-/appeals/skillAppeals%3A1/resolve",
+        token: "tkn",
+        body: { status: "accepted", note: "scanner finding cleared", finalAction: "restore" },
+      },
+      expect.anything(),
+    );
+    expect(mockLog).toHaveBeenCalledWith(
+      "OK. Skill appeal skillAppeals:1 set to accepted; action restore.",
+    );
+    expect(mockLog).toHaveBeenCalledWith("  - Restore the skill to public availability.");
   });
 });
 

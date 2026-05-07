@@ -23,6 +23,14 @@ import {
   requireUser,
   requireUserFromAction,
 } from "./lib/access";
+import {
+  assertArtifactAppealFinalAction,
+  assertArtifactAppealTransition,
+  assertArtifactReportFinalAction,
+  assertArtifactReportTransition,
+  readArtifactReportStatus,
+  appendSkillModerationEventLog,
+} from "./lib/artifactModeration";
 import { getSkillBadgeMap, getSkillBadgeMaps, isSkillHighlighted } from "./lib/badges";
 import { scheduleNextBatchIfNeeded } from "./lib/batching";
 import { generateChangelogPreview as buildChangelogPreview } from "./lib/changelog";
@@ -132,6 +140,7 @@ const HARD_DELETE_VERSION_BATCH_SIZE = 10;
 const HARD_DELETE_LEADERBOARD_BATCH_SIZE = 25;
 const BAN_USER_SKILLS_BATCH_SIZE = 25;
 const MAX_REPORT_REASON_SAMPLE = 5;
+const MAX_APPEAL_MESSAGE_LENGTH = 2_000;
 const RATE_LIMIT_HOUR_MS = 60 * 60 * 1000;
 const RATE_LIMIT_DAY_MS = 24 * RATE_LIMIT_HOUR_MS;
 const SLUG_RESERVATION_DAYS = 90;
@@ -626,7 +635,11 @@ async function listSkillSlugAliasesForSkill(
     .collect();
 }
 
-async function resolveSkillBySlugOrAlias(ctx: Pick<QueryCtx | MutationCtx, "db">, slug: string) {
+async function resolveSkillBySlugOrAlias(
+  ctx: Pick<QueryCtx | MutationCtx, "db">,
+  slug: string,
+  options: { includeSoftDeleted?: boolean } = {},
+) {
   const normalizedSlug = normalizeSkillSlugKey(slug);
   if (!normalizedSlug) {
     return {
@@ -641,7 +654,7 @@ async function resolveSkillBySlugOrAlias(ctx: Pick<QueryCtx | MutationCtx, "db">
     .query("skills")
     .withIndex("by_slug", (q) => q.eq("slug", normalizedSlug))
     .unique();
-  if (directSkill && !directSkill.softDeletedAt) {
+  if (directSkill && (options.includeSoftDeleted || !directSkill.softDeletedAt)) {
     return {
       requestedSlug: normalizedSlug,
       resolvedSlug: directSkill.slug,
@@ -661,7 +674,7 @@ async function resolveSkillBySlugOrAlias(ctx: Pick<QueryCtx | MutationCtx, "db">
   }
 
   const skill = await ctx.db.get(alias.skillId);
-  if (!skill || skill.softDeletedAt) {
+  if (!skill || (!options.includeSoftDeleted && skill.softDeletedAt)) {
     return {
       requestedSlug: normalizedSlug,
       resolvedSlug: null,
@@ -1666,7 +1679,7 @@ export const getBySlug = query({
     const showModerationInfo = isOwner || isMalwareBlocked || isSuspicious || overrideActive;
     const publicModerationSummary =
       !isOwner && overrideActive && !isMalwareBlocked && !isSuspicious
-        ? "Security findings were reviewed by staff and cleared for public use."
+        ? "Security findings were reviewed by moderators and cleared for public use."
         : skill.moderationSummary;
     const moderationInfo = showModerationInfo
       ? {
@@ -2680,6 +2693,7 @@ async function countActiveReportsForUser(ctx: MutationCtx, userId: Id<"users">) 
 
   let count = 0;
   for (const report of reports) {
+    if (report.status && report.status !== "open") continue;
     const skill = await ctx.db.get(report.skillId);
     if (!skill) continue;
     if (skill.softDeletedAt) continue;
@@ -2718,10 +2732,12 @@ export const report = mutation({
     }
 
     const now = Date.now();
-    await ctx.db.insert("skillReports", {
+    const reportId = await ctx.db.insert("skillReports", {
       skillId: args.skillId,
+      ...(skill.latestVersionId ? { skillVersionId: skill.latestVersionId } : {}),
       userId,
       reason: reason.slice(0, MAX_REPORT_REASON_LENGTH),
+      status: "open",
       createdAt: now,
     });
 
@@ -2765,7 +2781,752 @@ export const report = mutation({
       });
     }
 
-    return { ok: true as const, reported: true, alreadyReported: false };
+    await appendSkillModerationEventLog(ctx, {
+      kind: "report",
+      reportId,
+      actorUserId: userId,
+      action: "skill.report.submit",
+      timelineMetadata: { skillId: skill._id, reportCount: nextReportCount },
+      auditAction: "skill.report",
+      auditTargetType: "skill",
+      auditTargetId: skill._id,
+      auditMetadata: { reportId, slug: skill.slug, reportCount: nextReportCount },
+      createdAt: now,
+    });
+
+    return { ok: true as const, reported: true, alreadyReported: false, reportId };
+  },
+});
+
+export const reportSkillForUserInternal = internalMutation({
+  args: {
+    actorUserId: v.id("users"),
+    slug: v.string(),
+    reason: v.string(),
+    version: v.optional(v.string()),
+  },
+  handler: async (ctx, args) => {
+    const actor = await ctx.db.get(args.actorUserId);
+    if (!actor || actor.deletedAt || actor.deactivatedAt) throw new ConvexError("Unauthorized");
+
+    const resolved = await resolveSkillBySlugOrAlias(ctx, args.slug);
+    const skill = resolved.skill;
+    if (!skill || skill.softDeletedAt || skill.moderationStatus === "removed") {
+      throw new ConvexError("Skill not found");
+    }
+    const reason = args.reason.trim();
+    if (!reason) throw new ConvexError("Report reason required.");
+
+    const version = args.version?.trim();
+    const skillVersion = version
+      ? await ctx.db
+          .query("skillVersions")
+          .withIndex("by_skill_version", (q) => q.eq("skillId", skill._id).eq("version", version))
+          .unique()
+      : skill.latestVersionId
+        ? await ctx.db.get(skill.latestVersionId)
+        : null;
+    if (version && (!skillVersion || skillVersion.softDeletedAt)) {
+      throw new ConvexError("Skill version not found");
+    }
+
+    const existing = await ctx.db
+      .query("skillReports")
+      .withIndex("by_skill_user", (q) => q.eq("skillId", skill._id).eq("userId", actor._id))
+      .unique();
+    if (existing) {
+      if ((existing.status ?? "open") !== "open") {
+        const activeReports = await countActiveReportsForUser(ctx, actor._id);
+        if (activeReports >= MAX_ACTIVE_REPORTS_PER_USER) {
+          throw new ConvexError(
+            "Report limit reached. Please wait for moderation before reporting more.",
+          );
+        }
+        const now = Date.now();
+        await ctx.db.patch(existing._id, {
+          ...(skillVersion
+            ? { skillVersionId: skillVersion._id, version: skillVersion.version }
+            : {}),
+          reason: reason.slice(0, MAX_REPORT_REASON_LENGTH),
+          status: "open",
+          triagedAt: undefined,
+          triagedBy: undefined,
+          triageNote: undefined,
+          createdAt: now,
+        });
+        const nextReportCount = (skill.reportCount ?? 0) + 1;
+        await ctx.db.patch(skill._id, {
+          reportCount: nextReportCount,
+          lastReportedAt: now,
+          updatedAt: now,
+        });
+        await appendSkillModerationEventLog(ctx, {
+          kind: "report",
+          reportId: existing._id,
+          actorUserId: actor._id,
+          action: "skill.report.reopen",
+          timelineMetadata: { skillId: skill._id, reportCount: nextReportCount },
+          auditAction: "skill.report.reopen",
+          auditTargetType: "skill",
+          auditTargetId: skill._id,
+          auditMetadata: {
+            reportId: existing._id,
+            slug: skill.slug,
+            version: skillVersion?.version ?? version ?? null,
+            reportCount: nextReportCount,
+          },
+          createdAt: now,
+        });
+        return {
+          ok: true as const,
+          reported: true,
+          alreadyReported: false,
+          reportId: existing._id,
+          skillId: skill._id,
+          reportCount: nextReportCount,
+        };
+      }
+      return {
+        ok: true as const,
+        reported: false,
+        alreadyReported: true,
+        reportId: existing._id,
+        skillId: skill._id,
+        reportCount: skill.reportCount ?? 0,
+      };
+    }
+
+    const activeReports = await countActiveReportsForUser(ctx, actor._id);
+    if (activeReports >= MAX_ACTIVE_REPORTS_PER_USER) {
+      throw new ConvexError(
+        "Report limit reached. Please wait for moderation before reporting more.",
+      );
+    }
+
+    const now = Date.now();
+    const reportId = await ctx.db.insert("skillReports", {
+      skillId: skill._id,
+      ...(skillVersion ? { skillVersionId: skillVersion._id, version: skillVersion.version } : {}),
+      userId: actor._id,
+      reason: reason.slice(0, MAX_REPORT_REASON_LENGTH),
+      status: "open",
+      createdAt: now,
+    });
+    const nextReportCount = (skill.reportCount ?? 0) + 1;
+    await ctx.db.patch(skill._id, {
+      reportCount: nextReportCount,
+      lastReportedAt: now,
+      updatedAt: now,
+    });
+    await appendSkillModerationEventLog(ctx, {
+      kind: "report",
+      reportId,
+      actorUserId: actor._id,
+      action: "skill.report.submit",
+      timelineMetadata: { skillId: skill._id, reportCount: nextReportCount },
+      auditAction: "skill.report",
+      auditTargetType: "skill",
+      auditTargetId: skill._id,
+      auditMetadata: {
+        reportId,
+        slug: skill.slug,
+        version: skillVersion?.version ?? version ?? null,
+        reportCount: nextReportCount,
+      },
+      createdAt: now,
+    });
+
+    return {
+      ok: true as const,
+      reported: true,
+      alreadyReported: false,
+      reportId,
+      skillId: skill._id,
+      reportCount: nextReportCount,
+    };
+  },
+});
+
+type SkillReportStatus = "open" | "confirmed" | "dismissed";
+type SkillAppealStatus = "open" | "accepted" | "rejected";
+type SkillReportFinalAction = "none" | "hide";
+type SkillAppealFinalAction = "none" | "restore";
+
+type SkillReportListItem = {
+  reportId: Id<"skillReports">;
+  skillId: Id<"skills">;
+  skillVersionId?: Id<"skillVersions"> | null;
+  slug: string;
+  displayName: string;
+  version?: string | null;
+  reason?: string | null;
+  status: SkillReportStatus;
+  createdAt: number;
+  reporter: {
+    userId: Id<"users">;
+    handle?: string | null;
+    displayName?: string | null;
+  };
+  triagedAt?: number | null;
+  triagedBy?: Id<"users"> | null;
+  triageNote?: string | null;
+  actionTaken?: SkillReportFinalAction | null;
+};
+
+type SkillAppealListItem = {
+  appealId: Id<"skillAppeals">;
+  skillId: Id<"skills">;
+  skillVersionId?: Id<"skillVersions"> | null;
+  slug: string;
+  displayName: string;
+  version?: string | null;
+  message: string;
+  status: SkillAppealStatus;
+  createdAt: number;
+  submitter: {
+    userId: Id<"users">;
+    handle?: string | null;
+    displayName?: string | null;
+  };
+  resolvedAt?: number | null;
+  resolvedBy?: Id<"users"> | null;
+  resolutionNote?: string | null;
+  actionTaken?: SkillAppealFinalAction | null;
+};
+
+function toSkillReportListItem(
+  skillReport: Doc<"skillReports">,
+  skill: Doc<"skills">,
+  reporter: Doc<"users"> | null,
+): SkillReportListItem {
+  return {
+    reportId: skillReport._id,
+    skillId: skill._id,
+    skillVersionId: skillReport.skillVersionId ?? null,
+    slug: skill.slug,
+    displayName: skill.displayName,
+    version: skillReport.version ?? null,
+    reason: skillReport.reason ?? null,
+    status: readArtifactReportStatus(skillReport.status),
+    createdAt: skillReport.createdAt,
+    reporter: {
+      userId: skillReport.userId,
+      handle: reporter?.handle ?? null,
+      displayName: reporter?.displayName ?? reporter?.name ?? null,
+    },
+    triagedAt: skillReport.triagedAt ?? null,
+    triagedBy: skillReport.triagedBy ?? null,
+    triageNote: skillReport.triageNote ?? null,
+    actionTaken: skillReport.actionTaken ?? null,
+  };
+}
+
+function toSkillAppealListItem(
+  appeal: Doc<"skillAppeals">,
+  skill: Doc<"skills">,
+  submitter: Doc<"users"> | null,
+): SkillAppealListItem {
+  return {
+    appealId: appeal._id,
+    skillId: skill._id,
+    skillVersionId: appeal.skillVersionId ?? null,
+    slug: skill.slug,
+    displayName: skill.displayName,
+    version: appeal.version ?? null,
+    message: appeal.message,
+    status: appeal.status,
+    createdAt: appeal.createdAt,
+    submitter: {
+      userId: appeal.userId,
+      handle: submitter?.handle ?? null,
+      displayName: submitter?.displayName ?? submitter?.name ?? null,
+    },
+    resolvedAt: appeal.resolvedAt ?? null,
+    resolvedBy: appeal.resolvedBy ?? null,
+    resolutionNote: appeal.resolutionNote ?? null,
+    actionTaken: appeal.actionTaken ?? null,
+  };
+}
+
+async function applySkillReportFinalAction(
+  ctx: MutationCtx,
+  params: {
+    actorUserId: Id<"users">;
+    skill: Doc<"skills">;
+    action: SkillReportFinalAction;
+    note: string;
+    reportId: Id<"skillReports">;
+    now: number;
+  },
+) {
+  if (params.action === "none") return;
+
+  const patch: Partial<Doc<"skills">> = {
+    softDeletedAt: params.now,
+    moderationStatus: "hidden",
+    moderationReason: "manual.report",
+    moderationNotes: trimManualOverrideNote(params.note),
+    hiddenAt: params.now,
+    hiddenBy: params.actorUserId,
+    lastReviewedAt: params.now,
+    updatedAt: params.now,
+  };
+  const nextSkill = { ...params.skill, ...patch };
+  await ctx.db.patch(params.skill._id, patch);
+  await adjustGlobalPublicCountForSkillChange(ctx, params.skill, nextSkill);
+  await setSkillEmbeddingsSoftDeleted(ctx, params.skill._id, true, params.now);
+
+  await ctx.db.insert("auditLogs", {
+    actorUserId: params.actorUserId,
+    action: "skill.report.final_action",
+    targetType: "skill",
+    targetId: params.skill._id,
+    metadata: {
+      slug: params.skill.slug,
+      reportId: params.reportId,
+      finalAction: params.action,
+      reason: patch.moderationNotes,
+    },
+    createdAt: params.now,
+  });
+}
+
+async function applySkillAppealFinalAction(
+  ctx: MutationCtx,
+  params: {
+    actorUserId: Id<"users">;
+    skill: Doc<"skills">;
+    action: SkillAppealFinalAction;
+    note: string;
+    appealId: Id<"skillAppeals">;
+    now: number;
+  },
+) {
+  if (params.action === "none") return;
+
+  const manualOverride = buildManualOverrideRecord({
+    note: params.note,
+    reviewerUserId: params.actorUserId,
+    updatedAt: params.now,
+  });
+  const moderationPatch = applyManualOverrideToSkillPatch({
+    basePatch: buildPreservedSkillModerationPatch(params.skill),
+    override: manualOverride,
+    now: params.now,
+  });
+  const patch: Partial<Doc<"skills">> = {
+    ...moderationPatch,
+    manualOverride,
+    softDeletedAt: undefined,
+    moderationStatus: "active",
+    hiddenAt: undefined,
+    hiddenBy: undefined,
+    lastReviewedAt: params.now,
+    updatedAt: params.now,
+  };
+  const nextSkill = { ...params.skill, ...patch };
+  await ctx.db.patch(params.skill._id, patch);
+  await adjustGlobalPublicCountForSkillChange(ctx, params.skill, nextSkill);
+  await setSkillEmbeddingsSoftDeleted(ctx, params.skill._id, false, params.now);
+
+  await ctx.db.insert("auditLogs", {
+    actorUserId: params.actorUserId,
+    action: "skill.appeal.final_action",
+    targetType: "skill",
+    targetId: params.skill._id,
+    metadata: {
+      slug: params.skill.slug,
+      appealId: params.appealId,
+      finalAction: params.action,
+      reason: manualOverride.note,
+    },
+    createdAt: params.now,
+  });
+}
+
+async function canUserAppealSkill(ctx: MutationCtx, skill: Doc<"skills">, userId: Id<"users">) {
+  if (skill.ownerUserId === userId) return true;
+  if (!skill.ownerPublisherId) return false;
+  const member = await ctx.db
+    .query("publisherMembers")
+    .withIndex("by_publisher_user", (q) =>
+      q.eq("publisherId", skill.ownerPublisherId!).eq("userId", userId),
+    )
+    .unique();
+  return Boolean(member);
+}
+
+async function getActiveSkillVersionForAppeal(
+  ctx: MutationCtx,
+  skill: Doc<"skills">,
+  version: string | undefined,
+) {
+  if (version?.trim()) {
+    const skillVersion = await ctx.db
+      .query("skillVersions")
+      .withIndex("by_skill_version", (q) => q.eq("skillId", skill._id).eq("version", version))
+      .unique();
+    if (!skillVersion || skillVersion.softDeletedAt)
+      throw new ConvexError("Skill version not found");
+    return skillVersion;
+  }
+  return skill.latestVersionId ? await ctx.db.get(skill.latestVersionId) : null;
+}
+
+export const submitSkillAppealForUserInternal = internalMutation({
+  args: {
+    actorUserId: v.id("users"),
+    slug: v.string(),
+    version: v.optional(v.string()),
+    message: v.string(),
+  },
+  handler: async (ctx, args) => {
+    const actor = await ctx.db.get(args.actorUserId);
+    if (!actor || actor.deletedAt || actor.deactivatedAt) throw new ConvexError("Unauthorized");
+
+    const resolved = await resolveSkillBySlugOrAlias(ctx, args.slug, {
+      includeSoftDeleted: true,
+    });
+    const skill = resolved.skill;
+    if (!skill) throw new ConvexError("Skill not found");
+    if (!(await canUserAppealSkill(ctx, skill, actor._id))) throw new ConvexError("Unauthorized");
+
+    const isAppealable =
+      skill.softDeletedAt ||
+      skill.moderationStatus === "hidden" ||
+      skill.moderationStatus === "removed" ||
+      skill.moderationVerdict === "suspicious" ||
+      skill.moderationVerdict === "malicious" ||
+      (skill.moderationReasonCodes?.length ?? 0) > 0 ||
+      (skill.moderationFlags?.length ?? 0) > 0;
+    if (!isAppealable) throw new ConvexError("Skill is not in an appealable state");
+
+    const message = args.message.trim();
+    if (!message) throw new ConvexError("Appeal message required.");
+    const version = args.version?.trim();
+    const skillVersion = await getActiveSkillVersionForAppeal(ctx, skill, version);
+
+    const existingOpenAppeal = await ctx.db
+      .query("skillAppeals")
+      .withIndex("by_skill_status_createdAt", (q) =>
+        q.eq("skillId", skill._id).eq("status", "open"),
+      )
+      .order("desc")
+      .first();
+    if (existingOpenAppeal) {
+      return {
+        ok: true as const,
+        submitted: false,
+        alreadyOpen: true,
+        appealId: existingOpenAppeal._id,
+        skillId: skill._id,
+        status: existingOpenAppeal.status,
+      };
+    }
+
+    const now = Date.now();
+    const appealId = await ctx.db.insert("skillAppeals", {
+      skillId: skill._id,
+      ...(skillVersion ? { skillVersionId: skillVersion._id, version: skillVersion.version } : {}),
+      userId: actor._id,
+      message: message.slice(0, MAX_APPEAL_MESSAGE_LENGTH),
+      status: "open",
+      createdAt: now,
+    });
+
+    await appendSkillModerationEventLog(ctx, {
+      kind: "appeal",
+      appealId,
+      actorUserId: actor._id,
+      action: "skill.appeal.submit",
+      timelineMetadata: {
+        skillId: skill._id,
+        slug: skill.slug,
+        moderationStatus: skill.moderationStatus ?? "active",
+        moderationVerdict: skill.moderationVerdict ?? null,
+      },
+      auditAction: "skill.appeal.submit",
+      auditTargetType: "skillAppeal",
+      auditTargetId: appealId,
+      auditMetadata: {
+        skillId: skill._id,
+        slug: skill.slug,
+        version: skillVersion?.version ?? null,
+      },
+      createdAt: now,
+    });
+
+    return {
+      ok: true as const,
+      submitted: true,
+      alreadyOpen: false,
+      appealId,
+      skillId: skill._id,
+      status: "open" as const,
+    };
+  },
+});
+
+export const listSkillReportsInternal = internalQuery({
+  args: {
+    actorUserId: v.id("users"),
+    cursor: v.optional(v.union(v.string(), v.null())),
+    limit: v.optional(v.number()),
+    status: v.optional(
+      v.union(v.literal("open"), v.literal("confirmed"), v.literal("dismissed"), v.literal("all")),
+    ),
+  },
+  handler: async (ctx, args) => {
+    const actor = await ctx.db.get(args.actorUserId);
+    if (!actor || actor.deletedAt || actor.deactivatedAt) throw new ConvexError("Unauthorized");
+    assertModerator(actor);
+
+    const limit = Math.max(1, Math.min(Math.round(args.limit ?? 25), 100));
+    const status = args.status ?? "open";
+    const reportQuery =
+      status === "all" || status === "open"
+        ? ctx.db.query("skillReports").withIndex("by_createdAt", (q) => q)
+        : ctx.db
+            .query("skillReports")
+            .withIndex("by_status_createdAt", (q) => q.eq("status", status));
+    const page = await reportQuery.order("desc").paginate({
+      cursor: args.cursor ?? null,
+      numItems: limit,
+    });
+
+    const items: SkillReportListItem[] = [];
+    for (const skillReport of page.page) {
+      if (status === "open" && (skillReport.status ?? "open") !== "open") continue;
+      const skill = await ctx.db.get(skillReport.skillId);
+      if (!skill) continue;
+      const reporter = await ctx.db.get(skillReport.userId);
+      items.push(toSkillReportListItem(skillReport, skill, reporter));
+    }
+
+    return { items, nextCursor: page.isDone ? null : page.continueCursor, done: page.isDone };
+  },
+});
+
+export const triageSkillReportForUserInternal = internalMutation({
+  args: {
+    actorUserId: v.id("users"),
+    reportId: v.id("skillReports"),
+    status: v.union(v.literal("open"), v.literal("confirmed"), v.literal("dismissed")),
+    note: v.optional(v.string()),
+    finalAction: v.optional(v.union(v.literal("none"), v.literal("hide"))),
+  },
+  handler: async (ctx, args) => {
+    const actor = await ctx.db.get(args.actorUserId);
+    if (!actor || actor.deletedAt || actor.deactivatedAt) throw new ConvexError("Unauthorized");
+    assertModerator(actor);
+
+    const skillReport = await ctx.db.get(args.reportId);
+    if (!skillReport) throw new ConvexError("Skill report not found");
+    const skill = await ctx.db.get(skillReport.skillId);
+    if (!skill) throw new ConvexError("Skill report not found");
+
+    const now = Date.now();
+    const previousStatus = readArtifactReportStatus(skillReport.status);
+    const nextStatus = args.status;
+    assertArtifactReportTransition(previousStatus, nextStatus);
+    const wasOpen = previousStatus === "open";
+    const willBeOpen = nextStatus === "open";
+    const note = args.note?.trim();
+    if (!willBeOpen && !note) throw new ConvexError("Review note required.");
+    const finalAction = args.finalAction ?? "none";
+    assertArtifactReportFinalAction(nextStatus, finalAction, ["hide"]);
+
+    await ctx.db.patch(skillReport._id, {
+      status: nextStatus,
+      triagedAt: willBeOpen ? undefined : now,
+      triagedBy: willBeOpen ? undefined : actor._id,
+      triageNote: willBeOpen ? undefined : note?.slice(0, MAX_REPORT_REASON_LENGTH),
+      actionTaken: willBeOpen ? undefined : finalAction,
+    });
+
+    let reportCount = skill.reportCount ?? 0;
+    if (wasOpen && !willBeOpen) reportCount = Math.max(0, reportCount - 1);
+    if (!wasOpen && willBeOpen) reportCount += 1;
+    if (reportCount !== (skill.reportCount ?? 0)) {
+      await ctx.db.patch(skill._id, {
+        reportCount,
+        ...(willBeOpen ? { lastReportedAt: now } : {}),
+        updatedAt: now,
+      });
+    }
+
+    await applySkillReportFinalAction(ctx, {
+      actorUserId: actor._id,
+      skill,
+      action: finalAction,
+      note: note ?? "",
+      reportId: skillReport._id,
+      now,
+    });
+
+    await appendSkillModerationEventLog(ctx, {
+      kind: "report",
+      reportId: skillReport._id,
+      actorUserId: actor._id,
+      action: "skill.report.triage",
+      timelineMetadata: { skillId: skill._id, status: args.status, finalAction },
+      auditAction: "skill.report.triage",
+      auditTargetType: "skillReport",
+      auditTargetId: skillReport._id,
+      auditMetadata: {
+        skillId: skill._id,
+        slug: skill.slug,
+        status: args.status,
+        finalAction,
+        reportCount,
+      },
+      createdAt: now,
+    });
+
+    return {
+      ok: true as const,
+      reportId: skillReport._id,
+      skillId: skill._id,
+      status: args.status,
+      reportCount,
+      actionTaken: finalAction,
+    };
+  },
+});
+
+export const listSkillAppealsInternal = internalQuery({
+  args: {
+    actorUserId: v.id("users"),
+    cursor: v.optional(v.union(v.string(), v.null())),
+    limit: v.optional(v.number()),
+    status: v.optional(
+      v.union(v.literal("open"), v.literal("accepted"), v.literal("rejected"), v.literal("all")),
+    ),
+  },
+  handler: async (ctx, args) => {
+    const actor = await ctx.db.get(args.actorUserId);
+    if (!actor || actor.deletedAt || actor.deactivatedAt) throw new ConvexError("Unauthorized");
+    assertModerator(actor);
+
+    const limit = Math.max(1, Math.min(Math.round(args.limit ?? 25), 100));
+    const status = args.status ?? "open";
+    const appealQuery =
+      status === "all"
+        ? ctx.db.query("skillAppeals").withIndex("by_createdAt", (q) => q)
+        : ctx.db
+            .query("skillAppeals")
+            .withIndex("by_status_createdAt", (q) => q.eq("status", status));
+    const page = await appealQuery.order("desc").paginate({
+      cursor: args.cursor ?? null,
+      numItems: limit,
+    });
+
+    const items: SkillAppealListItem[] = [];
+    for (const appeal of page.page) {
+      const skill = await ctx.db.get(appeal.skillId);
+      if (!skill) continue;
+      const submitter = await ctx.db.get(appeal.userId);
+      items.push(toSkillAppealListItem(appeal, skill, submitter));
+    }
+
+    return { items, nextCursor: page.isDone ? null : page.continueCursor, done: page.isDone };
+  },
+});
+
+export const resolveSkillAppealForUserInternal = internalMutation({
+  args: {
+    actorUserId: v.id("users"),
+    appealId: v.id("skillAppeals"),
+    status: v.union(v.literal("open"), v.literal("accepted"), v.literal("rejected")),
+    note: v.optional(v.string()),
+    finalAction: v.optional(v.union(v.literal("none"), v.literal("restore"))),
+  },
+  handler: async (ctx, args) => {
+    const actor = await ctx.db.get(args.actorUserId);
+    if (!actor || actor.deletedAt || actor.deactivatedAt) throw new ConvexError("Unauthorized");
+    assertModerator(actor);
+
+    const appeal = await ctx.db.get(args.appealId);
+    if (!appeal) throw new ConvexError("Skill appeal not found");
+    const skill = await ctx.db.get(appeal.skillId);
+    if (!skill) throw new ConvexError("Skill appeal not found");
+
+    const note = args.note?.trim();
+    const isOpen = args.status === "open";
+    assertArtifactAppealTransition(appeal.status, args.status);
+    if (!isOpen && !note) throw new ConvexError("Resolution note required.");
+    const finalAction = args.finalAction ?? "none";
+    assertArtifactAppealFinalAction(args.status, finalAction, ["restore"]);
+    const now = Date.now();
+
+    await ctx.db.patch(appeal._id, {
+      status: args.status,
+      resolvedAt: isOpen ? undefined : now,
+      resolvedBy: isOpen ? undefined : actor._id,
+      resolutionNote: isOpen ? undefined : note?.slice(0, MAX_APPEAL_MESSAGE_LENGTH),
+      actionTaken: isOpen ? undefined : finalAction,
+    });
+
+    await applySkillAppealFinalAction(ctx, {
+      actorUserId: actor._id,
+      skill,
+      action: finalAction,
+      note: note ?? "",
+      appealId: appeal._id,
+      now,
+    });
+
+    await appendSkillModerationEventLog(ctx, {
+      kind: "appeal",
+      appealId: appeal._id,
+      actorUserId: actor._id,
+      action: "skill.appeal.resolve",
+      timelineMetadata: { skillId: skill._id, status: args.status, finalAction },
+      auditAction: "skill.appeal.resolve",
+      auditTargetType: "skillAppeal",
+      auditTargetId: appeal._id,
+      auditMetadata: { skillId: skill._id, slug: skill.slug, status: args.status, finalAction },
+      createdAt: now,
+    });
+
+    return {
+      ok: true as const,
+      appealId: appeal._id,
+      skillId: skill._id,
+      status: args.status,
+      actionTaken: finalAction,
+    };
+  },
+});
+
+export const listSkillModerationEventLogsInternal = internalQuery({
+  args: {
+    actorUserId: v.id("users"),
+    kind: v.union(v.literal("report"), v.literal("appeal")),
+    reportId: v.optional(v.id("skillReports")),
+    appealId: v.optional(v.id("skillAppeals")),
+    limit: v.optional(v.number()),
+  },
+  handler: async (ctx, args) => {
+    const actor = await ctx.db.get(args.actorUserId);
+    if (!actor || actor.deletedAt || actor.deactivatedAt) throw new ConvexError("Unauthorized");
+    assertModerator(actor);
+
+    const limit = Math.max(1, Math.min(Math.round(args.limit ?? 50), 100));
+    if (args.kind === "report") {
+      if (!args.reportId) throw new ConvexError("reportId required");
+      return await ctx.db
+        .query("skillModerationEventLogs")
+        .withIndex("by_report_createdAt", (q) => q.eq("reportId", args.reportId))
+        .order("asc")
+        .take(limit);
+    }
+    if (!args.appealId) throw new ConvexError("appealId required");
+    return await ctx.db
+      .query("skillModerationEventLogs")
+      .withIndex("by_appeal_createdAt", (q) => q.eq("appealId", args.appealId))
+      .order("asc")
+      .take(limit);
   },
 });
 

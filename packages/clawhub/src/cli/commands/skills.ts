@@ -5,10 +5,22 @@ import { apiRequest, downloadZip, registryUrl } from "../../http.js";
 import {
   ApiRoutes,
   ApiV1SearchResponseSchema,
+  ApiV1SkillAppealListResponseSchema,
+  ApiV1SkillAppealResolveResponseSchema,
+  ApiV1SkillAppealResponseSchema,
   ApiV1SkillListResponseSchema,
+  ApiV1SkillReportListResponseSchema,
+  ApiV1SkillReportResponseSchema,
+  ApiV1SkillReportTriageResponseSchema,
   ApiV1SkillResolveResponseSchema,
   ApiV1SkillResponseSchema,
   ApiV1SkillVersionResponseSchema,
+  type SkillAppealListStatus,
+  type SkillAppealFinalAction,
+  type SkillAppealStatus,
+  type SkillReportFinalAction,
+  type SkillReportListStatus,
+  type SkillReportStatus,
 } from "../../schema/index.js";
 import {
   extractZipToDir,
@@ -20,7 +32,7 @@ import {
   writeLockfile,
   writeSkillOrigin,
 } from "../../skills.js";
-import { getOptionalAuthToken } from "../authToken.js";
+import { getOptionalAuthToken, requireAuthToken } from "../authToken.js";
 import { getRegistry } from "../registry.js";
 import {
   fetchSkillSha256ForVersion,
@@ -32,6 +44,55 @@ import {
 } from "../trent.js";
 import type { GlobalOpts, ResolveResult } from "../types.js";
 import { createSpinner, fail, formatError, isInteractive, promptConfirm } from "../ui.js";
+import {
+  appealModerationPlan,
+  presentModerationPlan,
+  reportModerationPlan,
+} from "./moderationPlan.js";
+
+type SkillReportOptions = {
+  version?: string;
+  reason?: string;
+  json?: boolean;
+};
+
+type SkillAppealOptions = {
+  version?: string;
+  message?: string;
+  json?: boolean;
+};
+
+type SkillReportListOptions = {
+  status?: SkillReportListStatus;
+  cursor?: string;
+  limit?: number;
+  json?: boolean;
+};
+
+type SkillReportTriageOptions = {
+  status?: SkillReportStatus;
+  action?: SkillReportFinalAction;
+  finalAction?: SkillReportFinalAction;
+  note?: string;
+  json?: boolean;
+  yes?: boolean;
+};
+
+type SkillAppealListOptions = {
+  status?: SkillAppealListStatus;
+  cursor?: string;
+  limit?: number;
+  json?: boolean;
+};
+
+type SkillAppealResolveOptions = {
+  status?: SkillAppealStatus;
+  action?: SkillAppealFinalAction;
+  finalAction?: SkillAppealFinalAction;
+  note?: string;
+  json?: boolean;
+  yes?: boolean;
+};
 
 function normalizeSkillSlugOrFail(raw: string) {
   const slug = raw.trim();
@@ -501,6 +562,258 @@ export function formatExploreLine(item: {
 export function clampLimit(limit: number, fallback = 25) {
   if (!Number.isFinite(limit)) return fallback;
   return Math.min(Math.max(1, limit), 200);
+}
+
+export async function cmdReportSkill(
+  opts: GlobalOpts,
+  slug: string,
+  options: SkillReportOptions = {},
+) {
+  const trimmed = normalizeSkillSlugOrFail(slug);
+  const reason = options.reason?.trim();
+  if (!reason) fail("--reason required");
+
+  const token = await requireAuthToken();
+  const registry = await getRegistry(opts, { cache: true });
+  const result = await apiRequest(
+    registry,
+    {
+      method: "POST",
+      path: `${ApiRoutes.skills}/${encodeURIComponent(trimmed)}/report`,
+      token,
+      body: {
+        reason,
+        ...(options.version?.trim() ? { version: options.version.trim() } : {}),
+      },
+    },
+    ApiV1SkillReportResponseSchema,
+  );
+
+  if (options.json) {
+    process.stdout.write(`${JSON.stringify(result, null, 2)}\n`);
+    return;
+  }
+  if (result.alreadyReported) {
+    console.log(`Already reported ${trimmed}.`);
+  } else {
+    console.log(`OK. Reported ${trimmed} (${result.reportId}).`);
+  }
+}
+
+export async function cmdAppealSkill(
+  opts: GlobalOpts,
+  slug: string,
+  options: SkillAppealOptions = {},
+) {
+  const trimmed = normalizeSkillSlugOrFail(slug);
+  const message = options.message?.trim();
+  if (!message) fail("--message required");
+
+  const token = await requireAuthToken();
+  const registry = await getRegistry(opts, { cache: true });
+  const result = await apiRequest(
+    registry,
+    {
+      method: "POST",
+      path: `${ApiRoutes.skills}/${encodeURIComponent(trimmed)}/appeal`,
+      token,
+      body: {
+        message,
+        ...(options.version?.trim() ? { version: options.version.trim() } : {}),
+      },
+    },
+    ApiV1SkillAppealResponseSchema,
+  );
+
+  if (options.json) {
+    process.stdout.write(`${JSON.stringify(result, null, 2)}\n`);
+    return;
+  }
+  if (result.alreadyOpen) {
+    console.log(`Appeal already open for ${trimmed}: ${result.appealId}`);
+  } else {
+    console.log(`OK. Appeal submitted for ${trimmed}: ${result.appealId}`);
+  }
+}
+
+export async function cmdListSkillReports(opts: GlobalOpts, options: SkillReportListOptions = {}) {
+  const status = options.status?.trim() || "open";
+  if (!["open", "confirmed", "dismissed", "all"].includes(status)) {
+    fail("--status must be open, confirmed, dismissed, or all");
+  }
+
+  const token = await requireAuthToken();
+  const registry = await getRegistry(opts, { cache: true });
+  const url = registryUrl(`${ApiRoutes.skills}/-/reports`, registry);
+  url.searchParams.set("status", status);
+  if (options.cursor?.trim()) url.searchParams.set("cursor", options.cursor.trim());
+  url.searchParams.set("limit", String(clampLimit(options.limit ?? 25, 25)));
+  const result = await apiRequest(
+    registry,
+    { method: "GET", url: url.toString(), token },
+    ApiV1SkillReportListResponseSchema,
+  );
+
+  if (options.json) {
+    process.stdout.write(`${JSON.stringify(result, null, 2)}\n`);
+    return;
+  }
+  if (result.items.length === 0) {
+    console.log("No skill reports found.");
+  } else {
+    for (const item of result.items) {
+      const reporter = item.reporter.handle ?? item.reporter.userId;
+      console.log(`${item.reportId} ${item.status} ${item.slug}`);
+      console.log(`  reporter: ${reporter}`);
+      if (item.reason) console.log(`  reason: ${item.reason}`);
+      if (item.triageNote) console.log(`  note: ${item.triageNote}`);
+    }
+  }
+  if (!result.done && result.nextCursor) console.log(`Next cursor: ${result.nextCursor}`);
+}
+
+export async function cmdTriageSkillReport(
+  opts: GlobalOpts,
+  reportId: string,
+  options: SkillReportTriageOptions = {},
+) {
+  const trimmed = reportId.trim();
+  if (!trimmed) fail("Report id required");
+  const statusValue = options.status?.trim();
+  if (!statusValue || !["open", "confirmed", "dismissed"].includes(statusValue)) {
+    fail("--status must be open, confirmed, or dismissed");
+  }
+  const status = statusValue as SkillReportStatus;
+  const finalAction = (options.finalAction ?? options.action)?.trim() as
+    | SkillReportFinalAction
+    | undefined;
+  if (finalAction && !["none", "hide"].includes(finalAction)) {
+    fail("--action must be none or hide");
+  }
+  const note = options.note?.trim();
+  if (status !== "open" && !note) fail("--note required unless reopening");
+
+  const token = await requireAuthToken();
+  const registry = await getRegistry(opts, { cache: true });
+  await presentModerationPlan(
+    reportModerationPlan({
+      entityLabel: "skill",
+      reportId: trimmed,
+      status,
+      finalAction: finalAction ?? "none",
+    }),
+    options,
+  );
+  const result = await apiRequest(
+    registry,
+    {
+      method: "POST",
+      path: `${ApiRoutes.skills}/-/reports/${encodeURIComponent(trimmed)}/triage`,
+      token,
+      body: {
+        status,
+        ...(note ? { note } : {}),
+        ...(finalAction ? { finalAction } : {}),
+      },
+    },
+    ApiV1SkillReportTriageResponseSchema,
+  );
+
+  if (options.json) {
+    process.stdout.write(`${JSON.stringify(result, null, 2)}\n`);
+    return;
+  }
+  const actionSuffix =
+    result.actionTaken && result.actionTaken !== "none" ? `; action ${result.actionTaken}` : "";
+  console.log(`OK. Skill report ${trimmed} set to ${result.status}${actionSuffix}.`);
+}
+
+export async function cmdListSkillAppeals(opts: GlobalOpts, options: SkillAppealListOptions = {}) {
+  const status = options.status?.trim() || "open";
+  if (!["open", "accepted", "rejected", "all"].includes(status)) {
+    fail("--status must be open, accepted, rejected, or all");
+  }
+
+  const token = await requireAuthToken();
+  const registry = await getRegistry(opts, { cache: true });
+  const url = registryUrl(`${ApiRoutes.skills}/-/appeals`, registry);
+  url.searchParams.set("status", status);
+  if (options.cursor?.trim()) url.searchParams.set("cursor", options.cursor.trim());
+  url.searchParams.set("limit", String(clampLimit(options.limit ?? 25, 25)));
+  const result = await apiRequest(
+    registry,
+    { method: "GET", url: url.toString(), token },
+    ApiV1SkillAppealListResponseSchema,
+  );
+
+  if (options.json) {
+    process.stdout.write(`${JSON.stringify(result, null, 2)}\n`);
+    return;
+  }
+  if (result.items.length === 0) {
+    console.log("No skill appeals found.");
+  } else {
+    for (const item of result.items) {
+      const submitter = item.submitter.handle ?? item.submitter.userId;
+      console.log(`${item.appealId} ${item.status} ${item.slug}`);
+      console.log(`  submitter: ${submitter}`);
+      console.log(`  message: ${item.message}`);
+      if (item.resolutionNote) console.log(`  note: ${item.resolutionNote}`);
+    }
+  }
+  if (!result.done && result.nextCursor) console.log(`Next cursor: ${result.nextCursor}`);
+}
+
+export async function cmdResolveSkillAppeal(
+  opts: GlobalOpts,
+  appealId: string,
+  options: SkillAppealResolveOptions = {},
+) {
+  const trimmed = appealId.trim();
+  if (!trimmed) fail("Appeal id required");
+  const statusValue = options.status?.trim();
+  if (!statusValue || !["open", "accepted", "rejected"].includes(statusValue)) {
+    fail("--status must be open, accepted, or rejected");
+  }
+  const status = statusValue as SkillAppealStatus;
+  const finalAction = (options.finalAction ?? options.action)?.trim() as
+    | SkillAppealFinalAction
+    | undefined;
+  if (finalAction && !["none", "restore"].includes(finalAction)) {
+    fail("--action must be none or restore");
+  }
+  const note = options.note?.trim();
+  if (status !== "open" && !note) fail("--note required unless reopening");
+
+  const token = await requireAuthToken();
+  const registry = await getRegistry(opts, { cache: true });
+  await presentModerationPlan(
+    appealModerationPlan({
+      entityLabel: "skill",
+      appealId: trimmed,
+      status,
+      finalAction: finalAction ?? "none",
+    }),
+    options,
+  );
+  const result = await apiRequest(
+    registry,
+    {
+      method: "POST",
+      path: `${ApiRoutes.skills}/-/appeals/${encodeURIComponent(trimmed)}/resolve`,
+      token,
+      body: { status, ...(note ? { note } : {}), ...(finalAction ? { finalAction } : {}) },
+    },
+    ApiV1SkillAppealResolveResponseSchema,
+  );
+
+  if (options.json) {
+    process.stdout.write(`${JSON.stringify(result, null, 2)}\n`);
+    return;
+  }
+  const actionSuffix =
+    result.actionTaken && result.actionTaken !== "none" ? `; action ${result.actionTaken}` : "";
+  console.log(`OK. Skill appeal ${trimmed} set to ${result.status}${actionSuffix}.`);
 }
 
 function formatRelativeTime(timestamp: number): string {

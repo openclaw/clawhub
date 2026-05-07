@@ -1,7 +1,11 @@
 import { ConvexAuthProvider, useAuthActions } from "@convex-dev/auth/react";
 import { useEffect, useRef } from "react";
 import { convex } from "../convex/client";
-import { getUserFacingAuthError, normalizeAuthErrorMessage } from "../lib/authErrorMessage";
+import {
+  AUTH_CODE_NO_SESSION_MESSAGE,
+  getUserFacingAuthError,
+  normalizeAuthErrorMessage,
+} from "../lib/authErrorMessage";
 import { clearAuthError, setAuthError } from "../lib/useAuthError";
 import { TooltipProvider } from "./ui/tooltip";
 import { UserBootstrap } from "./UserBootstrap";
@@ -38,7 +42,7 @@ export function AuthCodeHandler() {
     void signInWithCode(undefined, { code: pending.code })
       .then((result) => {
         if (result.signingIn === false) {
-          setAuthError("Sign in failed. Please try again.");
+          setAuthError(AUTH_CODE_NO_SESSION_MESSAGE);
         }
       })
       .catch((error) => {

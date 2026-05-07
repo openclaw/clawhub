@@ -1,7 +1,12 @@
 /* @vitest-environment jsdom */
 import { render, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { ACCESS_DENIED_SIGN_IN_MESSAGE, BANNED_SIGN_IN_MESSAGE } from "../lib/authErrorMessage";
+import {
+  ACCESS_DENIED_SIGN_IN_MESSAGE,
+  AUTH_CODE_NO_SESSION_MESSAGE,
+  BANNED_SIGN_IN_MESSAGE,
+  DELETED_SIGN_IN_MESSAGE,
+} from "../lib/authErrorMessage";
 import { getAuthErrorSnapshot, clearAuthError } from "../lib/useAuthError";
 import { AuthCodeHandler, AuthErrorHandler } from "./AppProviders";
 
@@ -62,14 +67,29 @@ describe("AuthCodeHandler", () => {
     });
   });
 
-  it("shows a generic error when sign-in finishes without a session", async () => {
+  it("warns about blocked accounts when sign-in finishes without a session", async () => {
     signInMock.mockResolvedValue({ signingIn: false });
     window.history.replaceState(null, "", "/sign-in?code=abc123");
 
     render(<AuthCodeHandler />);
 
     await waitFor(() => {
-      expect(getAuthErrorSnapshot()).toBe("Sign in failed. Please try again.");
+      expect(getAuthErrorSnapshot()).toBe(AUTH_CODE_NO_SESSION_MESSAGE);
+    });
+  });
+
+  it("surfaces deleted-account errors from code verification", async () => {
+    signInMock.mockRejectedValue(
+      new Error(
+        "[CONVEX A] Server Error Called by client ConvexError: This account has been permanently deleted and cannot be restored.",
+      ),
+    );
+    window.history.replaceState(null, "", "/sign-in?code=abc123");
+
+    render(<AuthCodeHandler />);
+
+    await waitFor(() => {
+      expect(getAuthErrorSnapshot()).toBe(DELETED_SIGN_IN_MESSAGE);
     });
   });
 });

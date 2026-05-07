@@ -12,6 +12,7 @@ read_when:
 - Convex Auth + GitHub OAuth App.
 - GitHub is the only supported login provider.
 - Disabled/banned accounts are blocked during OAuth completion and should surface a user-facing reason instead of a generic auth failure.
+- If OAuth returns without creating a session, the UI should tell users that deleted, banned, or disabled ClawHub accounts cannot sign in instead of silently returning to a logged-out state.
 - Env vars:
   - `AUTH_GITHUB_ID`
   - `AUTH_GITHUB_SECRET`
@@ -54,3 +55,7 @@ Override:
 
 - Tokens can be revoked in the web UI.
 - Revoked tokens return `401 Unauthorized` on CLI endpoints.
+- CLI/API auth failures should use actionable text, not a bare status word:
+  missing tokens should point to `clawhub login`, revoked/invalid tokens should
+  ask the user to log in again, and deleted/banned/disabled accounts should say
+  that the ClawHub account is not in good standing and cannot use API tokens.

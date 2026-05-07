@@ -4,6 +4,7 @@ import { useState } from "react";
 import { toast } from "sonner";
 import { api } from "../../convex/_generated/api";
 import type { Id } from "../../convex/_generated/dataModel";
+import { getUserFacingConvexError } from "../lib/convexError";
 import { buildSkillHref } from "./skillDetailUtils";
 import { Button } from "./ui/button";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "./ui/card";
@@ -33,15 +34,7 @@ type SkillOwnershipPanelProps = {
 };
 
 function formatMutationError(error: unknown) {
-  if (error instanceof Error) {
-    return error.message
-      .replace(/\[CONVEX[^\]]*\]\s*/g, "")
-      .replace(/\[Request ID:[^\]]*\]\s*/g, "")
-      .replace(/^Server Error Called by client\s*/i, "")
-      .replace(/^ConvexError:\s*/i, "")
-      .trim();
-  }
-  return "Request failed.";
+  return getUserFacingConvexError(error, "Request failed.");
 }
 
 export function SkillOwnershipPanel({

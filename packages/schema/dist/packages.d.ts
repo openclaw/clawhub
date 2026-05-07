@@ -57,12 +57,16 @@ export declare const PackageArtifactKindSchema: import("arktype/internal/variant
 export type PackageArtifactKind = (typeof PackageArtifactKindSchema)[inferred];
 export declare const PackageReleaseModerationStateSchema: import("arktype/internal/variants/string.ts").StringType<"approved" | "quarantined" | "revoked", {}>;
 export type PackageReleaseModerationState = (typeof PackageReleaseModerationStateSchema)[inferred];
-export declare const PackageReportStatusSchema: import("arktype/internal/variants/string.ts").StringType<"open" | "triaged" | "dismissed", {}>;
+export declare const PackageReportStatusSchema: import("arktype/internal/variants/string.ts").StringType<"open" | "confirmed" | "dismissed", {}>;
 export type PackageReportStatus = (typeof PackageReportStatusSchema)[inferred];
-export declare const PackageReportListStatusSchema: import("arktype/internal/variants/string.ts").StringType<"open" | "triaged" | "dismissed" | "all", {}>;
+export declare const PackageReportFinalActionSchema: import("arktype/internal/variants/string.ts").StringType<"none" | "quarantine" | "revoke", {}>;
+export type PackageReportFinalAction = (typeof PackageReportFinalActionSchema)[inferred];
+export declare const PackageReportListStatusSchema: import("arktype/internal/variants/string.ts").StringType<"open" | "confirmed" | "dismissed" | "all", {}>;
 export type PackageReportListStatus = (typeof PackageReportListStatusSchema)[inferred];
 export declare const PackageAppealStatusSchema: import("arktype/internal/variants/string.ts").StringType<"open" | "accepted" | "rejected", {}>;
 export type PackageAppealStatus = (typeof PackageAppealStatusSchema)[inferred];
+export declare const PackageAppealFinalActionSchema: import("arktype/internal/variants/string.ts").StringType<"none" | "approve", {}>;
+export type PackageAppealFinalAction = (typeof PackageAppealFinalActionSchema)[inferred];
 export declare const PackageAppealListStatusSchema: import("arktype/internal/variants/string.ts").StringType<"open" | "all" | "accepted" | "rejected", {}>;
 export type PackageAppealListStatus = (typeof PackageAppealListStatusSchema)[inferred];
 export declare const PackageOfficialMigrationPhaseSchema: import("arktype/internal/variants/string.ts").StringType<"planned" | "published" | "clawpack-ready" | "legacy-zip-only" | "metadata-ready" | "blocked" | "ready-for-openclaw", {}>;
@@ -520,8 +524,9 @@ export declare const ApiV1PackageReportResponseSchema: import("arktype/internal/
 }, {}>;
 export type ApiV1PackageReportResponse = (typeof ApiV1PackageReportResponseSchema)[inferred];
 export declare const PackageReportTriageRequestSchema: import("arktype/internal/variants/object.ts").ObjectType<{
-    status: "open" | "triaged" | "dismissed";
+    status: "open" | "confirmed" | "dismissed";
     note?: string | undefined;
+    finalAction?: "none" | "quarantine" | "revoke" | undefined;
 }, {}>;
 export type PackageReportTriageRequest = (typeof PackageReportTriageRequestSchema)[inferred];
 export declare const PackageAppealRequestSchema: import("arktype/internal/variants/object.ts").ObjectType<{
@@ -542,6 +547,7 @@ export type ApiV1PackageAppealResponse = (typeof ApiV1PackageAppealResponseSchem
 export declare const PackageAppealResolveRequestSchema: import("arktype/internal/variants/object.ts").ObjectType<{
     status: "open" | "accepted" | "rejected";
     note?: string | undefined;
+    finalAction?: "none" | "approve" | undefined;
 }, {}>;
 export type PackageAppealResolveRequest = (typeof PackageAppealResolveRequestSchema)[inferred];
 export declare const ApiV1PackageAppealListResponseSchema: import("arktype/internal/variants/object.ts").ObjectType<{
@@ -564,6 +570,7 @@ export declare const ApiV1PackageAppealListResponseSchema: import("arktype/inter
         resolvedAt?: number | null | undefined;
         resolvedBy?: string | null | undefined;
         resolutionNote?: string | null | undefined;
+        actionTaken?: "none" | "approve" | null | undefined;
     }[];
     nextCursor: string | null;
     done: boolean;
@@ -575,6 +582,7 @@ export declare const ApiV1PackageAppealResolveResponseSchema: import("arktype/in
     packageId: string;
     releaseId: string;
     status: "open" | "accepted" | "rejected";
+    actionTaken?: "none" | "approve" | undefined;
 }, {}>;
 export type ApiV1PackageAppealResolveResponse = (typeof ApiV1PackageAppealResolveResponseSchema)[inferred];
 export declare const ApiV1PackageReportListResponseSchema: import("arktype/internal/variants/object.ts").ObjectType<{
@@ -584,7 +592,7 @@ export declare const ApiV1PackageReportListResponseSchema: import("arktype/inter
         name: string;
         displayName: string;
         family: "skill" | "code-plugin" | "bundle-plugin";
-        status: "open" | "triaged" | "dismissed";
+        status: "open" | "confirmed" | "dismissed";
         createdAt: number;
         reporter: {
             userId: string;
@@ -597,6 +605,7 @@ export declare const ApiV1PackageReportListResponseSchema: import("arktype/inter
         triagedAt?: number | null | undefined;
         triagedBy?: string | null | undefined;
         triageNote?: string | null | undefined;
+        actionTaken?: "none" | "quarantine" | "revoke" | null | undefined;
     }[];
     nextCursor: string | null;
     done: boolean;
@@ -606,8 +615,9 @@ export declare const ApiV1PackageReportTriageResponseSchema: import("arktype/int
     ok: true;
     reportId: string;
     packageId: string;
-    status: "open" | "triaged" | "dismissed";
+    status: "open" | "confirmed" | "dismissed";
     reportCount: number;
+    actionTaken?: "none" | "quarantine" | "revoke" | undefined;
 }, {}>;
 export type ApiV1PackageReportTriageResponse = (typeof ApiV1PackageReportTriageResponseSchema)[inferred];
 export declare const ApiV1PackageModerationStatusResponseSchema: import("arktype/internal/variants/object.ts").ObjectType<{

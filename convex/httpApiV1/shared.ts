@@ -96,8 +96,8 @@ export async function requireApiTokenUserOrResponse(
   try {
     const auth = await requireApiTokenUser(ctx, request);
     return { ok: true as const, userId: auth.userId, user: auth.user as Doc<"users"> };
-  } catch {
-    return { ok: false as const, response: text("Unauthorized", 401, headers) };
+  } catch (error) {
+    return { ok: false as const, response: text(formatAuthFailure(error), 401, headers) };
   }
 }
 
@@ -108,8 +108,8 @@ export async function requirePackagePublishAuthOrResponse(
 ) {
   try {
     return { ok: true as const, auth: await requirePackagePublishAuth(ctx, request) };
-  } catch {
-    return { ok: false as const, response: text("Unauthorized", 401, headers) };
+  } catch (error) {
+    return { ok: false as const, response: text(formatAuthFailure(error), 401, headers) };
   }
 }
 
@@ -118,7 +118,7 @@ export function requireAdminOrResponse(user: Doc<"users">, headers: HeadersInit)
     assertAdmin(user);
     return { ok: true as const };
   } catch {
-    return { ok: false as const, response: text("Forbidden", 403, headers) };
+    return { ok: false as const, response: text("Admin role required.", 403, headers) };
   }
 }
 
@@ -357,11 +357,17 @@ export function softDeleteErrorToResponse(
   const message = error instanceof Error ? error.message : `${entity} delete failed`;
   const lower = message.toLowerCase();
 
-  if (lower.includes("unauthorized")) return text("Unauthorized", 401, headers);
+  if (lower.includes("unauthorized")) return text(formatAuthFailure(error), 401, headers);
   if (lower.includes("forbidden")) return text("Forbidden", 403, headers);
   if (lower.includes("not found")) return text(message, 404, headers);
   if (lower.includes("slug required")) return text("Slug required", 400, headers);
 
   // Unknown: server-side failure. Keep body generic.
   return text("Internal Server Error", 500, headers);
+}
+
+function formatAuthFailure(error: unknown) {
+  const message = error instanceof Error ? error.message.trim() : "";
+  if (!message || /^unauthorized$/i.test(message)) return "Unauthorized";
+  return message.replace(/^ConvexError:\s*/i, "").trim() || "Unauthorized";
 }

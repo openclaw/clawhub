@@ -27,6 +27,7 @@ Feature/ops docs (already present):
 - `docs/webhook.md`: Discord webhook events/payload.
 - `docs/diffing.md`: version-to-version diff UI spec.
 - `docs/manual-testing.md`: CLI smoke scripts.
+- `docs/slug-routing.md`: skill/plugin slug redirects + package URL contract.
 
 Docs tooling:
 

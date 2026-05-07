@@ -2,7 +2,7 @@ import { api, internal } from "../_generated/api";
 import type { Doc, Id } from "../_generated/dataModel";
 import type { ActionCtx } from "../_generated/server";
 import { requireApiTokenUser } from "../lib/apiTokenAuth";
-import { applyRateLimit, parseBearerToken } from "../lib/httpRateLimit";
+import { applyRateLimit } from "../lib/httpRateLimit";
 import { publishSoulVersionForUser } from "../souls";
 import {
   MAX_RAW_FILE_BYTES,
@@ -10,6 +10,7 @@ import {
   json,
   parseMultipartPublish,
   parsePublishBody,
+  requireApiTokenUserOrResponse,
   resolveSoulTagsBatch,
   safeTextFileResponse,
   softDeleteErrorToResponse,
@@ -283,25 +284,21 @@ export async function publishSoulV1Handler(ctx: ActionCtx, request: Request) {
   const rate = await applyRateLimit(ctx, request, "write");
   if (!rate.ok) return rate.response;
 
-  try {
-    if (!parseBearerToken(request)) return text("Unauthorized", 401, rate.headers);
-  } catch {
-    return text("Unauthorized", 401, rate.headers);
-  }
-  const { userId } = await requireApiTokenUser(ctx, request);
+  const auth = await requireApiTokenUserOrResponse(ctx, request, rate.headers);
+  if (!auth.ok) return auth.response;
 
   const contentType = request.headers.get("content-type") ?? "";
   try {
     if (contentType.includes("application/json")) {
       const body = await request.json();
       const payload = parsePublishBody(body);
-      const result = await publishSoulVersionForUser(ctx, userId, payload);
+      const result = await publishSoulVersionForUser(ctx, auth.userId, payload);
       return json({ ok: true, ...result }, 200, rate.headers);
     }
 
     if (contentType.includes("multipart/form-data")) {
       const payload = await parseMultipartPublish(ctx, request);
-      const result = await publishSoulVersionForUser(ctx, userId, payload);
+      const result = await publishSoulVersionForUser(ctx, auth.userId, payload);
       return json({ ok: true, ...result }, 200, rate.headers);
     }
   } catch (error) {

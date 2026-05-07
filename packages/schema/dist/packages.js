@@ -48,9 +48,11 @@ export const PackageStatsSchema = type({
 });
 export const PackageArtifactKindSchema = type('"legacy-zip"|"npm-pack"');
 export const PackageReleaseModerationStateSchema = type('"approved"|"quarantined"|"revoked"');
-export const PackageReportStatusSchema = type('"open"|"triaged"|"dismissed"');
+export const PackageReportStatusSchema = type('"open"|"confirmed"|"dismissed"');
+export const PackageReportFinalActionSchema = type('"none"|"quarantine"|"revoke"');
 export const PackageReportListStatusSchema = PackageReportStatusSchema.or('"all"');
 export const PackageAppealStatusSchema = type('"open"|"accepted"|"rejected"');
+export const PackageAppealFinalActionSchema = type('"none"|"approve"');
 export const PackageAppealListStatusSchema = PackageAppealStatusSchema.or('"all"');
 export const PackageOfficialMigrationPhaseSchema = type('"planned"|"published"|"clawpack-ready"|"legacy-zip-only"|"metadata-ready"|"blocked"|"ready-for-openclaw"');
 export const PackageOfficialMigrationListPhaseSchema = PackageOfficialMigrationPhaseSchema.or('"all"');
@@ -280,6 +282,7 @@ export const ApiV1PackageReportResponseSchema = type({
 export const PackageReportTriageRequestSchema = type({
     status: PackageReportStatusSchema,
     note: "string?",
+    finalAction: PackageReportFinalActionSchema.optional(),
 });
 export const PackageAppealRequestSchema = type({
     version: "string",
@@ -297,6 +300,7 @@ export const ApiV1PackageAppealResponseSchema = type({
 export const PackageAppealResolveRequestSchema = type({
     status: PackageAppealStatusSchema,
     note: "string?",
+    finalAction: PackageAppealFinalActionSchema.optional(),
 });
 export const ApiV1PackageAppealListResponseSchema = type({
     items: type({
@@ -318,6 +322,7 @@ export const ApiV1PackageAppealListResponseSchema = type({
         resolvedAt: "number|null?",
         resolvedBy: "string|null?",
         resolutionNote: "string|null?",
+        actionTaken: PackageAppealFinalActionSchema.or("null").optional(),
     }).array(),
     nextCursor: "string|null",
     done: "boolean",
@@ -328,6 +333,7 @@ export const ApiV1PackageAppealResolveResponseSchema = type({
     packageId: "string",
     releaseId: "string",
     status: PackageAppealStatusSchema,
+    actionTaken: PackageAppealFinalActionSchema.optional(),
 });
 export const ApiV1PackageReportListResponseSchema = type({
     items: type({
@@ -349,6 +355,7 @@ export const ApiV1PackageReportListResponseSchema = type({
         triagedAt: "number|null?",
         triagedBy: "string|null?",
         triageNote: "string|null?",
+        actionTaken: PackageReportFinalActionSchema.or("null").optional(),
     }).array(),
     nextCursor: "string|null",
     done: "boolean",
@@ -359,6 +366,7 @@ export const ApiV1PackageReportTriageResponseSchema = type({
     packageId: "string",
     status: PackageReportStatusSchema,
     reportCount: "number",
+    actionTaken: PackageReportFinalActionSchema.optional(),
 });
 export const ApiV1PackageModerationStatusResponseSchema = type({
     package: type({

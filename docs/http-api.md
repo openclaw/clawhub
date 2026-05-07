@@ -17,11 +17,9 @@ OpenAPI: `/api/v1/openapi.json`.
 
 Third-party directories may use the public read endpoints to list or search ClawHub skills. Please cache results, honor `429`/`Retry-After`, link users back to the canonical ClawHub listing (`https://clawhub.ai/<owner>/<slug>`), and avoid implying ClawHub endorsement of the third-party site. Do not attempt to mirror hidden, private, or moderation-blocked content outside the public API surface.
 
-Web slug shortcuts resolve across registry families. Root paths matching
-official OpenClaw extension slugs, such as `/codex` or `/anthropic`, redirect to
-the mapped OpenClaw plugin package. Other root paths may redirect to a canonical
-skill page. Owner-qualified OpenClaw extension paths such as `/openclaw/codex`
-also redirect to the plugin listing.
+Web slug shortcuts resolve across registry families. See `docs/slug-routing.md`
+for the route precedence, collision policy, and official OpenClaw extension
+alias contract.
 
 ## Rate limits
 
@@ -30,6 +28,10 @@ Enforcement model:
 - Anonymous requests: enforced per IP.
 - Authenticated requests (valid Bearer token): enforced per user bucket.
 - If token is missing/invalid, behavior falls back to IP enforcement.
+- Authenticated write endpoints should not return a bare `Unauthorized` when
+  the server knows the reason. Missing tokens, invalid/revoked tokens, and
+  deleted/banned/disabled accounts should each get actionable text so CLI
+  clients can tell users what blocked them.
 
 - Read: 600/min per IP, 2400/min per key
 - Write: 45/min per IP, 180/min per key
@@ -229,9 +231,138 @@ Response:
 
 Notes:
 
-- Owners and staff can access moderation details for hidden skills.
+- Owners and moderators can access moderation details for hidden skills.
 - Public callers only get `200` for already-flagged visible skills.
-- Evidence is redacted for public callers and only includes raw snippets for owners/staff.
+- Evidence is redacted for public callers and only includes raw snippets for owners/moderators.
+
+### `POST /api/v1/skills/{slug}/report`
+
+Report a skill for moderator review. Reports are skill-level, optionally linked
+to a version, and feed the skill report queue.
+
+Auth:
+
+- Requires an API token.
+
+Request:
+
+```json
+{ "reason": "Suspicious install step", "version": "1.2.3" }
+```
+
+Response:
+
+```json
+{
+  "ok": true,
+  "reported": true,
+  "alreadyReported": false,
+  "reportId": "skillReports:...",
+  "skillId": "skills:...",
+  "reportCount": 1
+}
+```
+
+### `POST /api/v1/skills/{slug}/appeal`
+
+Skill owner/publisher endpoint for appealing moderation on a skill.
+
+Auth:
+
+- Requires an API token for the skill owner or publisher member.
+
+Request:
+
+```json
+{ "version": "1.2.3", "message": "The flagged command is documented setup." }
+```
+
+Appeals are accepted for hidden, removed, suspicious, malicious, or
+scanner-flagged skill outcomes. ClawHub keeps one open appeal per skill.
+
+Response:
+
+```json
+{
+  "ok": true,
+  "submitted": true,
+  "alreadyOpen": false,
+  "appealId": "skillAppeals:...",
+  "skillId": "skills:...",
+  "status": "open"
+}
+```
+
+### `GET /api/v1/skills/-/reports`
+
+Moderator/admin endpoint for skill report intake.
+
+Query params:
+
+- `status` (optional): `open` (default), `confirmed`, `dismissed`, or `all`
+- `limit` (optional): integer (1-200)
+- `cursor` (optional): pagination cursor
+
+Response:
+
+```json
+{
+  "items": [
+    {
+      "reportId": "skillReports:...",
+      "skillId": "skills:...",
+      "skillVersionId": "skillVersions:...",
+      "slug": "gifgrep",
+      "displayName": "GifGrep",
+      "version": "1.2.3",
+      "reason": "Suspicious install step",
+      "status": "open",
+      "createdAt": 1730000000000,
+      "reporter": {
+        "userId": "users:...",
+        "handle": "reporter",
+        "displayName": "Reporter"
+      },
+      "triagedAt": null,
+      "triagedBy": null,
+      "triageNote": null
+    }
+  ],
+  "nextCursor": null,
+  "done": true
+}
+```
+
+### `POST /api/v1/skills/-/reports/{reportId}/triage`
+
+Moderator/admin endpoint for resolving or reopening skill reports.
+
+Request:
+
+```json
+{ "status": "confirmed", "note": "Reviewed and hid affected version.", "finalAction": "hide" }
+```
+
+`note` is required for `confirmed` and `dismissed`; it may be omitted when
+setting `status` back to `open`. Pass `finalAction: "hide"` with a triaged
+report to hide the skill in the same auditable workflow.
+
+### `GET /api/v1/skills/-/appeals`
+
+Moderator/admin endpoint for skill appeal intake.
+
+Query params:
+
+- `status` (optional): `open` (default), `accepted`, `rejected`, or `all`
+- `limit` (optional): integer (1-200)
+- `cursor` (optional): pagination cursor
+
+### `POST /api/v1/skills/-/appeals/{appealId}/resolve`
+
+Moderator/admin endpoint for accepting, rejecting, or reopening a skill appeal.
+`note` is required for `accepted` and `rejected`; it may be omitted when setting
+`status` back to `open`. Pass `finalAction: "restore"` with an accepted appeal
+to make the skill available again.
 
 ### `GET /api/v1/skills/{slug}/versions`
 
@@ -458,7 +589,7 @@ Response:
 
 ### `GET /api/v1/packages/migrations`
 
-Staff endpoint for listing official OpenClaw plugin migration rows.
+Moderator endpoint for listing official OpenClaw plugin migration rows.
 
 Auth:
 
@@ -706,13 +837,12 @@ Moderator/admin endpoint for accepting, rejecting, or reopening an appeal.
 Request:
 
 ```json
-{ "status": "rejected", "note": "Static finding still applies." }
+{ "status": "accepted", "note": "False positive confirmed.", "finalAction": "approve" }
 ```
 
 `note` is required for `accepted` and `rejected`; it may be omitted when
-setting `status` back to `open`. Resolving an appeal does not automatically
-change release moderation state; use release moderation to approve, quarantine,
-or revoke the artifact.
+setting `status` back to `open`. Pass `finalAction: "approve"` with an accepted
+appeal to approve the affected release in the same auditable workflow.
 
 Response:
 
@@ -736,7 +866,7 @@ Auth:
 
 Query params:
 
-- `status` (optional): `open` (default), `triaged`, `dismissed`, or `all`
+- `status` (optional): `open` (default), `confirmed`, `dismissed`, or `all`
 - `limit` (optional): integer (1-100)
 - `cursor` (optional): pagination cursor
 
@@ -773,7 +903,7 @@ Response:
 
 ### `GET /api/v1/packages/{name}/moderation`
 
-Owner/staff endpoint for package moderation visibility.
+Owner/moderator endpoint for package moderation visibility.
 
 Auth:
 
@@ -816,11 +946,17 @@ Moderator/admin endpoint for resolving or reopening package reports.
 Request:
 
 ```json
-{ "status": "triaged", "note": "Reviewed and quarantined affected release." }
+{
+  "status": "confirmed",
+  "note": "Reviewed and quarantined affected release.",
+  "finalAction": "quarantine"
+}
 ```
 
-`note` is required for `triaged` and `dismissed`; it may be omitted when
-setting `status` back to `open`.
+`note` is required for `confirmed` and `dismissed`; it may be omitted when
+setting `status` back to `open`. Pass `finalAction: "quarantine"` or
+`finalAction: "revoke"` with a confirmed report to apply release moderation in the
+same auditable workflow.
 
 Response:
 
@@ -829,7 +965,7 @@ Response:
   "ok": true,
   "reportId": "packageReports:...",
   "packageId": "packages:...",
-  "status": "triaged",
+  "status": "confirmed",
   "reportCount": 0
 }
 ```

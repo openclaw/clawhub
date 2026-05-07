@@ -138,8 +138,8 @@ async function cliWhoamiHandler(ctx: ActionCtx, request: Request) {
         image: user.image ?? null,
       },
     });
-  } catch {
-    return text("Unauthorized", 401);
+  } catch (error) {
+    return text(formatAuthFailure(error), 401);
   }
 }
 
@@ -152,8 +152,8 @@ async function cliUploadUrlHandler(ctx: ActionCtx, request: Request) {
       userId,
     });
     return json({ uploadUrl });
-  } catch {
-    return text("Unauthorized", 401);
+  } catch (error) {
+    return text(formatAuthFailure(error), 401);
   }
 }
 
@@ -177,7 +177,7 @@ async function cliPublishHandler(ctx: ActionCtx, request: Request) {
     return json({ ok: true, ...result });
   } catch (error) {
     const message = error instanceof Error ? error.message : "Publish failed";
-    if (message.toLowerCase().includes("unauthorized")) return text("Unauthorized", 401);
+    if (message.toLowerCase().includes("unauthorized")) return text(formatAuthFailure(error), 401);
     return text(message, 400);
   }
 }
@@ -209,7 +209,7 @@ async function cliSkillDeleteHandler(ctx: ActionCtx, request: Request, deleted: 
     return json(ok);
   } catch (error) {
     const message = error instanceof Error ? error.message : "Delete failed";
-    if (message.toLowerCase().includes("unauthorized")) return text("Unauthorized", 401);
+    if (message.toLowerCase().includes("unauthorized")) return text(formatAuthFailure(error), 401);
     return text(message, 400);
   }
 }
@@ -247,7 +247,7 @@ async function cliTelemetrySyncHandler(ctx: ActionCtx, request: Request) {
     return json(ok);
   } catch (error) {
     const message = error instanceof Error ? error.message : "Telemetry failed";
-    if (message.toLowerCase().includes("unauthorized")) return text("Unauthorized", 401);
+    if (message.toLowerCase().includes("unauthorized")) return text(formatAuthFailure(error), 401);
     return text(message, 400);
   }
 }
@@ -278,6 +278,12 @@ function text(value: string, status: number) {
       corsHeaders(),
     ),
   });
+}
+
+function formatAuthFailure(error: unknown) {
+  const message = error instanceof Error ? error.message.trim() : "";
+  if (!message || /^unauthorized$/i.test(message)) return "Unauthorized";
+  return message.replace(/^ConvexError:\s*/i, "").trim() || "Unauthorized";
 }
 
 function toOptionalNumber(value: string | null) {

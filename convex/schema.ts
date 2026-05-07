@@ -1320,14 +1320,62 @@ const commentReports = defineTable({
 
 const skillReports = defineTable({
   skillId: v.id("skills"),
+  skillVersionId: v.optional(v.id("skillVersions")),
+  version: v.optional(v.string()),
   userId: v.id("users"),
   reason: v.optional(v.string()),
+  status: v.optional(
+    v.union(
+      v.literal("open"),
+      v.literal("confirmed"),
+      v.literal("dismissed"),
+      v.literal("triaged"),
+    ),
+  ),
+  triagedAt: v.optional(v.number()),
+  triagedBy: v.optional(v.id("users")),
+  triageNote: v.optional(v.string()),
+  actionTaken: v.optional(v.union(v.literal("none"), v.literal("hide"))),
   createdAt: v.number(),
 })
   .index("by_skill", ["skillId"])
   .index("by_skill_createdAt", ["skillId", "createdAt"])
+  .index("by_createdAt", ["createdAt"])
+  .index("by_skill_status_createdAt", ["skillId", "status", "createdAt"])
+  .index("by_status_createdAt", ["status", "createdAt"])
   .index("by_user", ["userId"])
   .index("by_skill_user", ["skillId", "userId"]);
+
+const skillAppeals = defineTable({
+  skillId: v.id("skills"),
+  skillVersionId: v.optional(v.id("skillVersions")),
+  version: v.optional(v.string()),
+  userId: v.id("users"),
+  message: v.string(),
+  status: v.union(v.literal("open"), v.literal("accepted"), v.literal("rejected")),
+  resolvedAt: v.optional(v.number()),
+  resolvedBy: v.optional(v.id("users")),
+  resolutionNote: v.optional(v.string()),
+  actionTaken: v.optional(v.union(v.literal("none"), v.literal("restore"))),
+  createdAt: v.number(),
+})
+  .index("by_skill_status_createdAt", ["skillId", "status", "createdAt"])
+  .index("by_createdAt", ["createdAt"])
+  .index("by_status_createdAt", ["status", "createdAt"])
+  .index("by_user_createdAt", ["userId", "createdAt"]);
+
+const skillModerationEventLogs = defineTable({
+  kind: v.union(v.literal("report"), v.literal("appeal")),
+  reportId: v.optional(v.id("skillReports")),
+  appealId: v.optional(v.id("skillAppeals")),
+  actorUserId: v.id("users"),
+  action: v.string(),
+  metadata: v.optional(v.any()),
+  createdAt: v.number(),
+})
+  .index("by_report_createdAt", ["reportId", "createdAt"])
+  .index("by_appeal_createdAt", ["appealId", "createdAt"])
+  .index("by_actor_createdAt", ["actorUserId", "createdAt"]);
 
 const packageReports = defineTable({
   packageId: v.id("packages"),
@@ -1335,10 +1383,16 @@ const packageReports = defineTable({
   version: v.optional(v.string()),
   userId: v.id("users"),
   reason: v.optional(v.string()),
-  status: v.union(v.literal("open"), v.literal("triaged"), v.literal("dismissed")),
+  status: v.union(
+    v.literal("open"),
+    v.literal("confirmed"),
+    v.literal("dismissed"),
+    v.literal("triaged"),
+  ),
   triagedAt: v.optional(v.number()),
   triagedBy: v.optional(v.id("users")),
   triageNote: v.optional(v.string()),
+  actionTaken: v.optional(v.union(v.literal("none"), v.literal("quarantine"), v.literal("revoke"))),
   createdAt: v.number(),
 })
   .index("by_package", ["packageId"])
@@ -1359,12 +1413,26 @@ const packageAppeals = defineTable({
   resolvedAt: v.optional(v.number()),
   resolvedBy: v.optional(v.id("users")),
   resolutionNote: v.optional(v.string()),
+  actionTaken: v.optional(v.union(v.literal("none"), v.literal("approve"))),
   createdAt: v.number(),
 })
   .index("by_release_status_createdAt", ["releaseId", "status", "createdAt"])
   .index("by_createdAt", ["createdAt"])
   .index("by_status_createdAt", ["status", "createdAt"])
   .index("by_user_createdAt", ["userId", "createdAt"]);
+
+const packageModerationEventLogs = defineTable({
+  kind: v.union(v.literal("report"), v.literal("appeal")),
+  reportId: v.optional(v.id("packageReports")),
+  appealId: v.optional(v.id("packageAppeals")),
+  actorUserId: v.id("users"),
+  action: v.string(),
+  metadata: v.optional(v.any()),
+  createdAt: v.number(),
+})
+  .index("by_report_createdAt", ["reportId", "createdAt"])
+  .index("by_appeal_createdAt", ["appealId", "createdAt"])
+  .index("by_actor_createdAt", ["actorUserId", "createdAt"]);
 
 const officialPluginMigrations = defineTable({
   bundledPluginId: v.string(),
@@ -1649,8 +1717,11 @@ export default defineSchema({
   comments,
   commentReports,
   skillReports,
+  skillAppeals,
+  skillModerationEventLogs,
   packageReports,
   packageAppeals,
+  packageModerationEventLogs,
   officialPluginMigrations,
   soulComments,
   stars,

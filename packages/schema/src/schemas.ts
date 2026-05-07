@@ -237,6 +237,135 @@ export const ApiV1SkillModerationResponseSchema = type({
   }).or("null"),
 });
 
+export const SkillReportStatusSchema = type('"open"|"confirmed"|"dismissed"');
+export type SkillReportStatus = (typeof SkillReportStatusSchema)[inferred];
+export const SkillReportFinalActionSchema = type('"none"|"hide"');
+export type SkillReportFinalAction = (typeof SkillReportFinalActionSchema)[inferred];
+
+export const SkillReportListStatusSchema = SkillReportStatusSchema.or('"all"');
+export type SkillReportListStatus = (typeof SkillReportListStatusSchema)[inferred];
+
+export const SkillAppealStatusSchema = type('"open"|"accepted"|"rejected"');
+export type SkillAppealStatus = (typeof SkillAppealStatusSchema)[inferred];
+export const SkillAppealFinalActionSchema = type('"none"|"restore"');
+export type SkillAppealFinalAction = (typeof SkillAppealFinalActionSchema)[inferred];
+
+export const SkillAppealListStatusSchema = SkillAppealStatusSchema.or('"all"');
+export type SkillAppealListStatus = (typeof SkillAppealListStatusSchema)[inferred];
+
+export const SkillAppealRequestSchema = type({
+  version: "string?",
+  message: "string",
+});
+export type SkillAppealRequest = (typeof SkillAppealRequestSchema)[inferred];
+
+export const ApiV1SkillReportResponseSchema = type({
+  ok: "true",
+  reported: "boolean",
+  alreadyReported: "boolean",
+  reportId: "string",
+  skillId: "string",
+  reportCount: "number",
+});
+export type ApiV1SkillReportResponse = (typeof ApiV1SkillReportResponseSchema)[inferred];
+
+export const ApiV1SkillAppealResponseSchema = type({
+  ok: "true",
+  submitted: "boolean",
+  alreadyOpen: "boolean",
+  appealId: "string",
+  skillId: "string",
+  status: SkillAppealStatusSchema,
+});
+export type ApiV1SkillAppealResponse = (typeof ApiV1SkillAppealResponseSchema)[inferred];
+
+export const SkillReportTriageRequestSchema = type({
+  status: SkillReportStatusSchema,
+  note: "string?",
+  finalAction: SkillReportFinalActionSchema.optional(),
+});
+export type SkillReportTriageRequest = (typeof SkillReportTriageRequestSchema)[inferred];
+
+export const SkillAppealResolveRequestSchema = type({
+  status: SkillAppealStatusSchema,
+  note: "string?",
+  finalAction: SkillAppealFinalActionSchema.optional(),
+});
+export type SkillAppealResolveRequest = (typeof SkillAppealResolveRequestSchema)[inferred];
+
+export const ApiV1SkillReportListResponseSchema = type({
+  items: type({
+    reportId: "string",
+    skillId: "string",
+    skillVersionId: "string|null?",
+    slug: "string",
+    displayName: "string",
+    version: "string|null?",
+    reason: "string|null?",
+    status: SkillReportStatusSchema,
+    createdAt: "number",
+    reporter: type({
+      userId: "string",
+      handle: "string|null?",
+      displayName: "string|null?",
+    }),
+    triagedAt: "number|null?",
+    triagedBy: "string|null?",
+    triageNote: "string|null?",
+    actionTaken: SkillReportFinalActionSchema.or("null").optional(),
+  }).array(),
+  nextCursor: "string|null",
+  done: "boolean",
+});
+export type ApiV1SkillReportListResponse = (typeof ApiV1SkillReportListResponseSchema)[inferred];
+
+export const ApiV1SkillReportTriageResponseSchema = type({
+  ok: "true",
+  reportId: "string",
+  skillId: "string",
+  status: SkillReportStatusSchema,
+  reportCount: "number",
+  actionTaken: SkillReportFinalActionSchema.optional(),
+});
+export type ApiV1SkillReportTriageResponse =
+  (typeof ApiV1SkillReportTriageResponseSchema)[inferred];
+
+export const ApiV1SkillAppealListResponseSchema = type({
+  items: type({
+    appealId: "string",
+    skillId: "string",
+    skillVersionId: "string|null?",
+    slug: "string",
+    displayName: "string",
+    version: "string|null?",
+    message: "string",
+    status: SkillAppealStatusSchema,
+    createdAt: "number",
+    submitter: type({
+      userId: "string",
+      handle: "string|null?",
+      displayName: "string|null?",
+    }),
+    resolvedAt: "number|null?",
+    resolvedBy: "string|null?",
+    resolutionNote: "string|null?",
+    actionTaken: SkillAppealFinalActionSchema.or("null").optional(),
+  }).array(),
+  nextCursor: "string|null",
+  done: "boolean",
+});
+export type ApiV1SkillAppealListResponse = (typeof ApiV1SkillAppealListResponseSchema)[inferred];
+
+export const ApiV1SkillAppealResolveResponseSchema = type({
+  ok: "true",
+  appealId: "string",
+  skillId: "string",
+  status: SkillAppealStatusSchema,
+  actionTaken: SkillAppealFinalActionSchema.optional(),
+});
+export type ApiV1SkillAppealResolveResponse =
+  (typeof ApiV1SkillAppealResolveResponseSchema)[inferred];
+
 export const ApiV1SkillVersionListResponseSchema = type({
   items: type({
     version: "string",

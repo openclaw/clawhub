@@ -257,10 +257,30 @@ function parseRetryAfterSeconds(value: string | null): number | null {
 
 async function createPackageApiError(response: Response) {
   const body = (await response.text()).trim();
-  return new PackageApiError(body || `Request failed with status ${response.status}`, {
+  return new PackageApiError(normalizePackageApiErrorBody(response.status, body), {
     status: response.status,
     retryAfterSeconds: parseRetryAfterSeconds(response.headers.get("Retry-After")),
   });
+}
+
+function normalizePackageApiErrorBody(status: number, body: string) {
+  const lowered = body.toLowerCase();
+  if (body && lowered !== "unauthorized" && lowered !== "forbidden") {
+    if (status === 404 && lowered === "package not found") {
+      return "Package not found or not visible to this account.";
+    }
+    if (status === 404 && lowered === "skill not found") {
+      return "Skill not found or unavailable to this account.";
+    }
+    return body;
+  }
+  if (status === 401) {
+    return "Sign in required. If this ClawHub account was deleted, banned, or disabled, it cannot access private packages.";
+  }
+  if (status === 403) {
+    return "This ClawHub account does not have access to this package or action, or the account is not in good standing.";
+  }
+  return body || `Request failed with status ${status}`;
 }
 
 async function fetchJson<T>(url: URL): Promise<T> {

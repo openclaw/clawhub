@@ -29,30 +29,32 @@ vi.mock("../ui.js", () => uiMocks.moduleFactory());
 
 const {
   cmdDeletePackage,
-  cmdDeletePackageTrustedPublisher,
   cmdAppealPackage,
   cmdDownloadPackage,
   cmdExplorePackages,
   cmdGetPackageTrustedPublisher,
   cmdInspectPackage,
-  cmdBackfillPackageArtifacts,
-  cmdListPackageReports,
-  cmdListPackageAppeals,
-  cmdListPackageMigrations,
-  cmdModeratePackageRelease,
   cmdPackageModerationStatus,
-  cmdPackageModerationQueue,
   cmdPackageMigrationStatus,
   cmdPackageReadiness,
   cmdPackPackage,
   cmdPublishPackage,
   cmdReportPackage,
+  cmdVerifyPackage,
+} = await import("./packages");
+const {
+  cmdBackfillPackageArtifacts,
+  cmdDeletePackageTrustedPublisher,
+  cmdListPackageAppeals,
+  cmdListPackageMigrations,
+  cmdListPackageReports,
+  cmdModeratePackageRelease,
+  cmdPackageModerationQueue,
   cmdResolvePackageAppeal,
   cmdSetPackageTrustedPublisher,
   cmdTriagePackageReport,
   cmdUpsertPackageMigration,
-  cmdVerifyPackage,
-} = await import("./packages");
+} = await import("../../../../clawhub-mod/src/commands/packages");
 const { parseClawPack } = await import("../../clawpack");
 
 const mockLog = vi.spyOn(console, "log").mockImplementation(() => {});
@@ -655,12 +657,15 @@ describe("package commands", () => {
       appealId: "packageAppeals:1",
       packageId: "pkg_1",
       releaseId: "rel_1",
-      status: "rejected",
+      status: "accepted",
+      actionTaken: "approve",
     });
 
     await cmdResolvePackageAppeal(makeOpts(), "packageAppeals:1", {
-      status: "rejected",
-      note: "scanner finding still applies",
+      status: "accepted",
+      note: "scanner finding cleared",
+      action: "approve",
+      yes: true,
     });
 
     expect(httpMocks.apiRequest).toHaveBeenCalledWith(
@@ -670,13 +675,17 @@ describe("package commands", () => {
         path: "/api/v1/packages/appeals/packageAppeals%3A1/resolve",
         token: "tkn",
         body: {
-          status: "rejected",
-          note: "scanner finding still applies",
+          status: "accepted",
+          note: "scanner finding cleared",
+          finalAction: "approve",
         },
       },
       expect.anything(),
     );
-    expect(mockLog).toHaveBeenCalledWith("OK. Appeal packageAppeals:1 set to rejected.");
+    expect(mockLog).toHaveBeenCalledWith(
+      "OK. Appeal packageAppeals:1 set to accepted; action approve.",
+    );
+    expect(mockLog).toHaveBeenCalledWith("  - Approve the package release.");
   });
 
   it("lists package reports", async () => {
@@ -718,13 +727,16 @@ describe("package commands", () => {
       ok: true,
       reportId: "packageReports:1",
       packageId: "pkg_1",
-      status: "triaged",
+      status: "confirmed",
       reportCount: 0,
+      actionTaken: "quarantine",
     });
 
     await cmdTriagePackageReport(makeOpts(), "packageReports:1", {
-      status: "triaged",
+      status: "confirmed",
       note: "handled",
+      action: "quarantine",
+      yes: true,
     });
 
     expect(httpMocks.apiRequest).toHaveBeenCalledWith(
@@ -734,13 +746,17 @@ describe("package commands", () => {
         path: "/api/v1/packages/reports/packageReports%3A1/triage",
         token: "tkn",
         body: {
-          status: "triaged",
+          status: "confirmed",
           note: "handled",
+          finalAction: "quarantine",
         },
       },
       expect.anything(),
     );
-    expect(mockLog).toHaveBeenCalledWith("OK. Report packageReports:1 set to triaged.");
+    expect(mockLog).toHaveBeenCalledWith(
+      "OK. Report packageReports:1 set to confirmed; action quarantine.",
+    );
+    expect(mockLog).toHaveBeenCalledWith("  - Quarantine the package release.");
   });
 
   it("shows package moderation status", async () => {

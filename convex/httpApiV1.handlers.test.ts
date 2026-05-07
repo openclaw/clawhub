@@ -1064,6 +1064,53 @@ describe("httpApiV1 handlers", () => {
     });
   });
 
+  it("get skill treats reports as a valid slug", async () => {
+    const runQuery = vi.fn(async (_query: unknown, args: Record<string, unknown>) => {
+      if ("slug" in args) {
+        return {
+          skill: {
+            _id: "skills:1",
+            slug: "reports",
+            displayName: "Reports",
+            summary: "s",
+            tags: { latest: "versions:1" },
+            stats: { downloads: 0, stars: 0, versions: 1, comments: 0 },
+            createdAt: 1,
+            updatedAt: 2,
+          },
+          latestVersion: {
+            version: "1.0.0",
+            createdAt: 3,
+            changelog: "c",
+            files: [],
+          },
+          owner: null,
+          moderationInfo: {
+            isSuspicious: false,
+            isMalwareBlocked: false,
+            verdict: "clean",
+            reasonCodes: [],
+            summary: null,
+            engineVersion: null,
+            updatedAt: null,
+          },
+        };
+      }
+      if ("versionIds" in args) {
+        return [{ _id: "versions:1", version: "1.0.0", softDeletedAt: undefined }];
+      }
+      return null;
+    });
+    const runMutation = vi.fn().mockResolvedValue(okRate());
+    const response = await __handlers.skillsGetRouterV1Handler(
+      makeCtx({ runQuery, runMutation }),
+      new Request("https://example.com/api/v1/skills/reports"),
+    );
+    expect(response.status).toBe(200);
+    const json = await response.json();
+    expect(json.skill.slug).toBe("reports");
+  });
+
   it("get moderation returns redacted evidence for public flagged skill", async () => {
     let slugCalls = 0;
     const runQuery = vi.fn(async (_query: unknown, args: Record<string, unknown>) => {
@@ -1237,6 +1284,285 @@ describe("httpApiV1 handlers", () => {
     );
 
     expect(response.status).toBe(404);
+  });
+
+  it("skill reports lists moderator intake", async () => {
+    vi.mocked(requireApiTokenUser).mockResolvedValue({
+      userId: "users:moderator",
+      user: { _id: "users:moderator", role: "moderator" },
+    } as never);
+    const runQuery = vi.fn(async (_query: unknown, args: Record<string, unknown>) => {
+      if (isRateLimitArgs(args)) return okRate();
+      return {
+        items: [
+          {
+            reportId: "skillReports:1",
+            skillId: "skills:1",
+            skillVersionId: "skillVersions:1",
+            slug: "demo",
+            displayName: "Demo",
+            version: "1.0.0",
+            reason: "suspicious",
+            status: "open",
+            createdAt: 123,
+            reporter: { userId: "users:reporter", handle: "reporter", displayName: "Reporter" },
+            triagedAt: null,
+            triagedBy: null,
+            triageNote: null,
+          },
+        ],
+        nextCursor: null,
+        done: true,
+      };
+    });
+    const runMutation = vi.fn().mockResolvedValue(okRate());
+
+    const response = await __handlers.skillsGetRouterV1Handler(
+      makeCtx({ runQuery, runMutation }),
+      new Request("https://example.com/api/v1/skills/-/reports?status=open&limit=10", {
+        headers: { Authorization: "Bearer clh_test" },
+      }),
+    );
+
+    expect(response.status).toBe(200);
+    await expect(response.json()).resolves.toMatchObject({
+      items: [{ reportId: "skillReports:1", slug: "demo" }],
+    });
+    expect(runQuery).toHaveBeenCalledWith(
+      (internal as unknown as { skills: Record<string, unknown> }).skills.listSkillReportsInternal,
+      {
+        actorUserId: "users:moderator",
+        cursor: null,
+        limit: 10,
+        status: "open",
+      },
+    );
+  });
+
+  it("skill report posts user reports", async () => {
+    vi.mocked(requireApiTokenUser).mockResolvedValue({
+      userId: "users:reporter",
+      user: { _id: "users:reporter", role: "user" },
+    } as never);
+    const runMutation = vi.fn(async (_mutation: unknown, args: Record<string, unknown>) => {
+      if (isRateLimitArgs(args)) return okRate();
+      return {
+        ok: true,
+        reported: true,
+        alreadyReported: false,
+        reportId: "skillReports:1",
+        skillId: "skills:1",
+        reportCount: 1,
+      };
+    });
+
+    const response = await __handlers.skillsPostRouterV1Handler(
+      makeCtx({ runMutation }),
+      new Request("https://example.com/api/v1/skills/demo/report", {
+        method: "POST",
+        headers: { Authorization: "Bearer clh_test" },
+        body: JSON.stringify({ version: "1.0.0", reason: "suspicious files" }),
+      }),
+    );
+
+    expect(response.status).toBe(200);
+    await expect(response.json()).resolves.toMatchObject({
+      reported: true,
+      reportId: "skillReports:1",
+    });
+    expect(runMutation).toHaveBeenCalledWith(
+      (internal as unknown as { skills: Record<string, unknown> }).skills
+        .reportSkillForUserInternal,
+      {
+        actorUserId: "users:reporter",
+        slug: "demo",
+        version: "1.0.0",
+        reason: "suspicious files",
+      },
+    );
+  });
+
+  it("skill report triage posts moderator decisions", async () => {
+    vi.mocked(requireApiTokenUser).mockResolvedValue({
+      userId: "users:moderator",
+      user: { _id: "users:moderator", role: "moderator" },
+    } as never);
+    const runMutation = vi.fn(async (_mutation: unknown, args: Record<string, unknown>) => {
+      if (isRateLimitArgs(args)) return okRate();
+      return {
+        ok: true,
+        reportId: "skillReports:1",
+        skillId: "skills:1",
+        status: "confirmed",
+        reportCount: 0,
+      };
+    });
+
+    const response = await __handlers.skillsPostRouterV1Handler(
+      makeCtx({ runMutation }),
+      new Request("https://example.com/api/v1/skills/-/reports/skillReports%3A1/triage", {
+        method: "POST",
+        headers: { Authorization: "Bearer clh_test" },
+        body: JSON.stringify({ status: "confirmed", note: "handled", finalAction: "hide" }),
+      }),
+    );
+
+    expect(response.status).toBe(200);
+    await expect(response.json()).resolves.toMatchObject({ status: "confirmed" });
+    expect(runMutation).toHaveBeenCalledWith(
+      (internal as unknown as { skills: Record<string, unknown> }).skills
+        .triageSkillReportForUserInternal,
+      {
+        actorUserId: "users:moderator",
+        reportId: "skillReports:1",
+        status: "confirmed",
+        note: "handled",
+        finalAction: "hide",
+      },
+    );
+  });
+
+  it("skill appeal posts owner appeal requests", async () => {
+    vi.mocked(requireApiTokenUser).mockResolvedValue({
+      userId: "users:owner",
+      user: { _id: "users:owner", role: "user" },
+    } as never);
+    const runMutation = vi.fn(async (_mutation: unknown, args: Record<string, unknown>) => {
+      if (isRateLimitArgs(args)) return okRate();
+      return {
+        ok: true,
+        submitted: true,
+        alreadyOpen: false,
+        appealId: "skillAppeals:1",
+        skillId: "skills:1",
+        status: "open",
+      };
+    });
+
+    const response = await __handlers.skillsPostRouterV1Handler(
+      makeCtx({ runMutation }),
+      new Request("https://example.com/api/v1/skills/demo/appeal", {
+        method: "POST",
+        headers: { Authorization: "Bearer clh_test" },
+        body: JSON.stringify({ version: "1.0.0", message: "please review" }),
+      }),
+    );
+
+    expect(response.status).toBe(200);
+    await expect(response.json()).resolves.toMatchObject({
+      submitted: true,
+      appealId: "skillAppeals:1",
+    });
+    expect(runMutation).toHaveBeenCalledWith(
+      (internal as unknown as { skills: Record<string, unknown> }).skills
+        .submitSkillAppealForUserInternal,
+      {
+        actorUserId: "users:owner",
+        slug: "demo",
+        version: "1.0.0",
+        message: "please review",
+      },
+    );
+  });
+
+  it("skill appeals lists moderator intake", async () => {
+    vi.mocked(requireApiTokenUser).mockResolvedValue({
+      userId: "users:moderator",
+      user: { _id: "users:moderator", role: "moderator" },
+    } as never);
+    const runQuery = vi.fn(async (_query: unknown, args: Record<string, unknown>) => {
+      if (isRateLimitArgs(args)) return okRate();
+      return {
+        items: [
+          {
+            appealId: "skillAppeals:1",
+            skillId: "skills:1",
+            skillVersionId: "skillVersions:1",
+            slug: "demo",
+            displayName: "Demo",
+            version: "1.0.0",
+            message: "please review",
+            status: "open",
+            createdAt: 123,
+            submitter: { userId: "users:owner", handle: "owner", displayName: "Owner" },
+            resolvedAt: null,
+            resolvedBy: null,
+            resolutionNote: null,
+          },
+        ],
+        nextCursor: null,
+        done: true,
+      };
+    });
+    const runMutation = vi.fn().mockResolvedValue(okRate());
+
+    const response = await __handlers.skillsGetRouterV1Handler(
+      makeCtx({ runQuery, runMutation }),
+      new Request("https://example.com/api/v1/skills/-/appeals?status=open&limit=10", {
+        headers: { Authorization: "Bearer clh_test" },
+      }),
+    );
+
+    expect(response.status).toBe(200);
+    await expect(response.json()).resolves.toMatchObject({
+      items: [{ appealId: "skillAppeals:1", slug: "demo" }],
+    });
+    expect(runQuery).toHaveBeenCalledWith(
+      (internal as unknown as { skills: Record<string, unknown> }).skills.listSkillAppealsInternal,
+      {
+        actorUserId: "users:moderator",
+        cursor: null,
+        limit: 10,
+        status: "open",
+      },
+    );
+  });
+
+  it("skill appeal resolve posts moderator decisions", async () => {
+    vi.mocked(requireApiTokenUser).mockResolvedValue({
+      userId: "users:moderator",
+      user: { _id: "users:moderator", role: "moderator" },
+    } as never);
+    const runMutation = vi.fn(async (_mutation: unknown, args: Record<string, unknown>) => {
+      if (isRateLimitArgs(args)) return okRate();
+      return {
+        ok: true,
+        appealId: "skillAppeals:1",
+        skillId: "skills:1",
+        status: "accepted",
+        actionTaken: "restore",
+      };
+    });
+
+    const response = await __handlers.skillsPostRouterV1Handler(
+      makeCtx({ runMutation }),
+      new Request("https://example.com/api/v1/skills/-/appeals/skillAppeals%3A1/resolve", {
+        method: "POST",
+        headers: { Authorization: "Bearer clh_test" },
+        body: JSON.stringify({
+          status: "accepted",
+          note: "scanner finding cleared",
+          finalAction: "restore",
+        }),
+      }),
+    );
+
+    expect(response.status).toBe(200);
+    await expect(response.json()).resolves.toMatchObject({
+      status: "accepted",
+      actionTaken: "restore",
+    });
+    expect(runMutation).toHaveBeenCalledWith(
+      (internal as unknown as { skills: Record<string, unknown> }).skills
+        .resolveSkillAppealForUserInternal,
+      {
+        actorUserId: "users:moderator",
+        appealId: "skillAppeals:1",
+        status: "accepted",
+        note: "scanner finding cleared",
+        finalAction: "restore",
+      },
+    );
   });
 
   it("lists versions", async () => {
@@ -2422,13 +2748,18 @@ describe("httpApiV1 handlers", () => {
   });
 
   it("delete and undelete require auth", async () => {
-    vi.mocked(requireApiTokenUser).mockRejectedValueOnce(new Error("Unauthorized"));
+    vi.mocked(requireApiTokenUser).mockRejectedValueOnce(
+      new Error("Unauthorized: API token is invalid or revoked. Run `clawhub login` again."),
+    );
     const runMutation = vi.fn().mockResolvedValue(okRate());
     const response = await __handlers.skillsDeleteRouterV1Handler(
       makeCtx({ runMutation }),
       new Request("https://example.com/api/v1/skills/demo", { method: "DELETE" }),
     );
     expect(response.status).toBe(401);
+    expect(await response.text()).toBe(
+      "Unauthorized: API token is invalid or revoked. Run `clawhub login` again.",
+    );
 
     vi.mocked(requireApiTokenUser).mockRejectedValueOnce(new Error("Unauthorized"));
     const response2 = await __handlers.skillsPostRouterV1Handler(
@@ -4542,7 +4873,7 @@ describe("httpApiV1 handlers", () => {
         ok: true,
         reportId: "packageReports:1",
         packageId: "packages:1",
-        status: "triaged",
+        status: "confirmed",
         reportCount: 0,
       };
     });
@@ -4552,17 +4883,18 @@ describe("httpApiV1 handlers", () => {
       new Request("https://example.com/api/v1/packages/reports/packageReports%3A1/triage", {
         method: "POST",
         headers: { Authorization: "Bearer clh_test" },
-        body: JSON.stringify({ status: "triaged", note: "handled" }),
+        body: JSON.stringify({ status: "confirmed", note: "handled", finalAction: "quarantine" }),
       }),
     );
 
     expect(response.status).toBe(200);
-    await expect(response.json()).resolves.toMatchObject({ status: "triaged" });
+    await expect(response.json()).resolves.toMatchObject({ status: "confirmed" });
     expect(runMutation).toHaveBeenCalledWith(internal.packages.triagePackageReportForUserInternal, {
       actorUserId: "users:moderator",
       reportId: "packageReports:1",
-      status: "triaged",
+      status: "confirmed",
       note: "handled",
+      finalAction: "quarantine",
     });
   });
 
@@ -4724,7 +5056,8 @@ describe("httpApiV1 handlers", () => {
         appealId: "packageAppeals:1",
         packageId: "packages:1",
         releaseId: "packageReleases:1",
-        status: "rejected",
+        status: "accepted",
+        actionTaken: "approve",
       };
     });
 
@@ -4733,19 +5066,27 @@ describe("httpApiV1 handlers", () => {
       new Request("https://example.com/api/v1/packages/appeals/packageAppeals%3A1/resolve", {
         method: "POST",
         headers: { Authorization: "Bearer clh_test" },
-        body: JSON.stringify({ status: "rejected", note: "scanner finding still applies" }),
+        body: JSON.stringify({
+          status: "accepted",
+          note: "scanner finding cleared",
+          finalAction: "approve",
+        }),
       }),
     );
 
     expect(response.status).toBe(200);
-    await expect(response.json()).resolves.toMatchObject({ status: "rejected" });
+    await expect(response.json()).resolves.toMatchObject({
+      status: "accepted",
+      actionTaken: "approve",
+    });
     expect(runMutation).toHaveBeenCalledWith(
       internal.packages.resolvePackageAppealForUserInternal,
       {
         actorUserId: "users:moderator",
         appealId: "packageAppeals:1",
-        status: "rejected",
-        note: "scanner finding still applies",
+        status: "accepted",
+        note: "scanner finding cleared",
+        finalAction: "approve",
       },
     );
   });

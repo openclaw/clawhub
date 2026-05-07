@@ -206,6 +206,105 @@ export const ApiV1SkillModerationResponseSchema = type({
         }).array(),
     }).or("null"),
 });
+export const SkillReportStatusSchema = type('"open"|"confirmed"|"dismissed"');
+export const SkillReportFinalActionSchema = type('"none"|"hide"');
+export const SkillReportListStatusSchema = SkillReportStatusSchema.or('"all"');
+export const SkillAppealStatusSchema = type('"open"|"accepted"|"rejected"');
+export const SkillAppealFinalActionSchema = type('"none"|"restore"');
+export const SkillAppealListStatusSchema = SkillAppealStatusSchema.or('"all"');
+export const SkillAppealRequestSchema = type({
+    version: "string?",
+    message: "string",
+});
+export const ApiV1SkillReportResponseSchema = type({
+    ok: "true",
+    reported: "boolean",
+    alreadyReported: "boolean",
+    reportId: "string",
+    skillId: "string",
+    reportCount: "number",
+});
+export const ApiV1SkillAppealResponseSchema = type({
+    ok: "true",
+    submitted: "boolean",
+    alreadyOpen: "boolean",
+    appealId: "string",
+    skillId: "string",
+    status: SkillAppealStatusSchema,
+});
+export const SkillReportTriageRequestSchema = type({
+    status: SkillReportStatusSchema,
+    note: "string?",
+    finalAction: SkillReportFinalActionSchema.optional(),
+});
+export const SkillAppealResolveRequestSchema = type({
+    status: SkillAppealStatusSchema,
+    note: "string?",
+    finalAction: SkillAppealFinalActionSchema.optional(),
+});
+export const ApiV1SkillReportListResponseSchema = type({
+    items: type({
+        reportId: "string",
+        skillId: "string",
+        skillVersionId: "string|null?",
+        slug: "string",
+        displayName: "string",
+        version: "string|null?",
+        reason: "string|null?",
+        status: SkillReportStatusSchema,
+        createdAt: "number",
+        reporter: type({
+            userId: "string",
+            handle: "string|null?",
+            displayName: "string|null?",
+        }),
+        triagedAt: "number|null?",
+        triagedBy: "string|null?",
+        triageNote: "string|null?",
+        actionTaken: SkillReportFinalActionSchema.or("null").optional(),
+    }).array(),
+    nextCursor: "string|null",
+    done: "boolean",
+});
+export const ApiV1SkillReportTriageResponseSchema = type({
+    ok: "true",
+    reportId: "string",
+    skillId: "string",
+    status: SkillReportStatusSchema,
+    reportCount: "number",
+    actionTaken: SkillReportFinalActionSchema.optional(),
+});
+export const ApiV1SkillAppealListResponseSchema = type({
+    items: type({
+        appealId: "string",
+        skillId: "string",
+        skillVersionId: "string|null?",
+        slug: "string",
+        displayName: "string",
+        version: "string|null?",
+        message: "string",
+        status: SkillAppealStatusSchema,
+        createdAt: "number",
+        submitter: type({
+            userId: "string",
+            handle: "string|null?",
+            displayName: "string|null?",
+        }),
+        resolvedAt: "number|null?",
+        resolvedBy: "string|null?",
+        resolutionNote: "string|null?",
+        actionTaken: SkillAppealFinalActionSchema.or("null").optional(),
+    }).array(),
+    nextCursor: "string|null",
+    done: "boolean",
+});
+export const ApiV1SkillAppealResolveResponseSchema = type({
+    ok: "true",
+    appealId: "string",
+    skillId: "string",
+    status: SkillAppealStatusSchema,
+    actionTaken: SkillAppealFinalActionSchema.optional(),
+});
 export const ApiV1SkillVersionListResponseSchema = type({
     items: type({
         version: "string",

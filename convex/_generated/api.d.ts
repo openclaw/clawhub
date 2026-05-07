@@ -42,6 +42,7 @@ import type * as httpPreflight from "../httpPreflight.js";
 import type * as leaderboards from "../leaderboards.js";
 import type * as lib_access from "../lib/access.js";
 import type * as lib_apiTokenAuth from "../lib/apiTokenAuth.js";
+import type * as lib_artifactModeration from "../lib/artifactModeration.js";
 import type * as lib_badges from "../lib/badges.js";
 import type * as lib_batching from "../lib/batching.js";
 import type * as lib_changelog from "../lib/changelog.js";
@@ -171,6 +172,7 @@ declare const fullApi: ApiFromModules<{
   leaderboards: typeof leaderboards;
   "lib/access": typeof lib_access;
   "lib/apiTokenAuth": typeof lib_apiTokenAuth;
+  "lib/artifactModeration": typeof lib_artifactModeration;
   "lib/badges": typeof lib_badges;
   "lib/batching": typeof lib_batching;
   "lib/changelog": typeof lib_changelog;

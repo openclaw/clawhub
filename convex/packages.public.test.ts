@@ -274,7 +274,7 @@ const listPackageReportsInternalHandler = (
       actorUserId: string;
       cursor?: string | null;
       limit?: number;
-      status?: "open" | "triaged" | "dismissed" | "all";
+      status?: "open" | "confirmed" | "dismissed" | "all";
     },
     {
       items: Array<{ reportId: string; name: string; status: string; reason?: string | null }>;
@@ -288,8 +288,9 @@ const triagePackageReportForUserInternalHandler = (
     {
       actorUserId: string;
       reportId: string;
-      status: "open" | "triaged" | "dismissed";
+      status: "open" | "confirmed" | "dismissed";
       note?: string;
+      finalAction?: "none" | "quarantine" | "revoke";
     },
     {
       ok: true;
@@ -297,6 +298,7 @@ const triagePackageReportForUserInternalHandler = (
       packageId: string;
       status: string;
       reportCount: number;
+      actionTaken?: string;
     }
   >
 )._handler;
@@ -353,6 +355,7 @@ const resolvePackageAppealForUserInternalHandler = (
       appealId: string;
       status: "open" | "accepted" | "rejected";
       note?: string;
+      finalAction?: "none" | "approve";
     },
     {
       ok: true;
@@ -360,6 +363,7 @@ const resolvePackageAppealForUserInternalHandler = (
       packageId: string;
       releaseId: string;
       status: string;
+      actionTaken?: string;
     }
   >
 )._handler;
@@ -4066,7 +4070,7 @@ describe("packages public queries", () => {
       {
         actorUserId: "users:moderator",
         reportId: "packageReports:1",
-        status: "triaged",
+        status: "confirmed",
         note: "handled",
       },
     );
@@ -4074,14 +4078,15 @@ describe("packages public queries", () => {
     expect(result).toMatchObject({
       ok: true,
       reportId: "packageReports:1",
-      status: "triaged",
+      status: "confirmed",
       reportCount: 1,
     });
     expect(patch).toHaveBeenCalledWith("packageReports:1", {
-      status: "triaged",
+      status: "confirmed",
       triagedAt: expect.any(Number),
       triagedBy: "users:moderator",
       triageNote: "handled",
+      actionTaken: "none",
     });
     expect(patch).toHaveBeenCalledWith("packages:demo", { reportCount: 1 });
     expect(insert).toHaveBeenCalledWith(
@@ -4089,6 +4094,81 @@ describe("packages public queries", () => {
       expect.objectContaining({
         action: "package.report.triage",
         targetType: "packageReport",
+      }),
+    );
+  });
+
+  it("can quarantine a package release while triaging a valid report", async () => {
+    const patch = vi.fn();
+    const insert = vi.fn(async () => "auditLogs:1");
+    const pkg = makePackageDoc({ reportCount: 1, latestReleaseId: "packageReleases:demo-1" });
+    const release = makeReleaseDoc({
+      _id: "packageReleases:demo-1",
+      packageId: "packages:demo",
+      version: "1.2.3",
+      verification: { scanStatus: "clean" },
+    });
+
+    const result = await triagePackageReportForUserInternalHandler(
+      {
+        db: {
+          get: vi.fn(async (id: string) => {
+            if (id === "users:moderator") return { _id: id, role: "moderator" };
+            if (id === "packageReports:1") {
+              return {
+                _id: id,
+                packageId: "packages:demo",
+                releaseId: "packageReleases:demo-1",
+                version: "1.2.3",
+                userId: "users:reporter",
+                status: "open",
+                createdAt: 123,
+              };
+            }
+            if (id === "packages:demo") return pkg;
+            if (id === "packageReleases:demo-1") return release;
+            return null;
+          }),
+          patch,
+          insert,
+          query: vi.fn(),
+          replace: vi.fn(),
+          delete: vi.fn(),
+          normalizeId: vi.fn(),
+        },
+      } as never,
+      {
+        actorUserId: "users:moderator",
+        reportId: "packageReports:1",
+        status: "confirmed",
+        note: "confirmed malicious behavior",
+        finalAction: "quarantine",
+      },
+    );
+
+    expect(result).toMatchObject({
+      ok: true,
+      status: "confirmed",
+      actionTaken: "quarantine",
+    });
+    expect(patch).toHaveBeenCalledWith("packageReports:1", {
+      status: "confirmed",
+      triagedAt: expect.any(Number),
+      triagedBy: "users:moderator",
+      triageNote: "confirmed malicious behavior",
+      actionTaken: "quarantine",
+    });
+    expect(patch).toHaveBeenCalledWith(
+      "packageReleases:demo-1",
+      expect.objectContaining({
+        manualModeration: expect.objectContaining({ state: "quarantined" }),
+      }),
+    );
+    expect(insert).toHaveBeenCalledWith(
+      "auditLogs",
+      expect.objectContaining({
+        action: "package.release.moderation",
+        targetType: "packageRelease",
       }),
     );
   });
@@ -4347,12 +4427,95 @@ describe("packages public queries", () => {
       resolvedAt: expect.any(Number),
       resolvedBy: "users:moderator",
       resolutionNote: "scanner finding still applies",
+      actionTaken: "none",
     });
     expect(insert).toHaveBeenCalledWith(
       "auditLogs",
       expect.objectContaining({
         action: "package.appeal.resolve",
         targetType: "packageAppeal",
+      }),
+    );
+  });
+
+  it("can approve a package release while accepting an appeal", async () => {
+    const patch = vi.fn();
+    const insert = vi.fn(async () => "auditLogs:1");
+    const pkg = makePackageDoc({ name: "@scope/demo", latestReleaseId: "packageReleases:demo-1" });
+    const release = makeReleaseDoc({
+      _id: "packageReleases:demo-1",
+      packageId: "packages:demo",
+      version: "1.2.3",
+      manualModeration: {
+        state: "quarantined",
+        reason: "manual review",
+        reviewerUserId: "users:moderator",
+        updatedAt: 2,
+      },
+      verification: { scanStatus: "malicious" },
+    });
+
+    const result = await resolvePackageAppealForUserInternalHandler(
+      {
+        db: {
+          get: vi.fn(async (id: string) => {
+            if (id === "users:moderator") return { _id: id, role: "moderator" };
+            if (id === "packageAppeals:1") {
+              return {
+                _id: id,
+                packageId: "packages:demo",
+                releaseId: "packageReleases:demo-1",
+                version: "1.2.3",
+                userId: "users:owner",
+                message: "please review",
+                status: "open",
+                createdAt: 123,
+              };
+            }
+            if (id === "packages:demo") return pkg;
+            if (id === "packageReleases:demo-1") return release;
+            return null;
+          }),
+          patch,
+          insert,
+          query: vi.fn(),
+          replace: vi.fn(),
+          delete: vi.fn(),
+          normalizeId: vi.fn(),
+        },
+      } as never,
+      {
+        actorUserId: "users:moderator",
+        appealId: "packageAppeals:1",
+        status: "accepted",
+        note: "false positive confirmed",
+        finalAction: "approve",
+      },
+    );
+
+    expect(result).toMatchObject({
+      ok: true,
+      status: "accepted",
+      actionTaken: "approve",
+    });
+    expect(patch).toHaveBeenCalledWith("packageAppeals:1", {
+      status: "accepted",
+      resolvedAt: expect.any(Number),
+      resolvedBy: "users:moderator",
+      resolutionNote: "false positive confirmed",
+      actionTaken: "approve",
+    });
+    expect(patch).toHaveBeenCalledWith(
+      "packageReleases:demo-1",
+      expect.objectContaining({
+        manualModeration: expect.objectContaining({ state: "approved" }),
+      }),
+    );
+    expect(insert).toHaveBeenCalledWith(
+      "auditLogs",
+      expect.objectContaining({
+        action: "package.release.moderation",
+        targetType: "packageRelease",
       }),
     );
   });

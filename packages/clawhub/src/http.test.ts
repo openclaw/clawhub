@@ -208,6 +208,40 @@ describe("node http client", () => {
     expect(fetchImpl).toHaveBeenCalledTimes(3);
   });
 
+  it("expands generic auth and visibility failures into actionable messages", async () => {
+    const fetchImpl = vi
+      .fn()
+      .mockResolvedValueOnce({
+        ok: false,
+        status: 401,
+        headers: new Headers(),
+        text: async () => "Unauthorized",
+      })
+      .mockResolvedValueOnce({
+        ok: false,
+        status: 403,
+        headers: new Headers(),
+        text: async () => "Forbidden",
+      })
+      .mockResolvedValueOnce({
+        ok: false,
+        status: 404,
+        headers: new Headers(),
+        text: async () => "Package not found",
+      });
+    const client = createNodeClient({ fetchImpl: fetchImpl as unknown as typeof fetch });
+
+    await expect(
+      client.apiRequest("https://example.com", { method: "GET", path: "/auth" }),
+    ).rejects.toThrow(/clawhub login.*deleted, banned, or disabled/i);
+    await expect(
+      client.apiRequest("https://example.com", { method: "GET", path: "/forbidden" }),
+    ).rejects.toThrow(/account does not have access.*not in good standing/i);
+    await expect(
+      client.apiRequest("https://example.com", { method: "GET", path: "/missing" }),
+    ).rejects.toThrow(/Package not found or not visible to this account/i);
+  });
+
   it("downloads zip bytes and does not retry non-retryable errors", async () => {
     const fetchImpl = vi
       .fn()

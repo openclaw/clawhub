@@ -335,6 +335,39 @@ describe("fetchPackages", () => {
     });
   });
 
+  it("expands generic package API auth and visibility failures", async () => {
+    vi.stubEnv("VITE_CONVEX_URL", "https://registry.example");
+    vi.spyOn(globalThis, "fetch").mockResolvedValueOnce(
+      new Response("Unauthorized", { status: 401 }),
+    );
+
+    await expect(fetchPackages({ family: "code-plugin" })).rejects.toMatchObject({
+      message:
+        "Sign in required. If this ClawHub account was deleted, banned, or disabled, it cannot access private packages.",
+      status: 401,
+    });
+
+    vi.spyOn(globalThis, "fetch").mockResolvedValueOnce(
+      new Response("Package not found", { status: 404 }),
+    );
+    await expect(fetchPackages({ family: "code-plugin" })).rejects.toMatchObject({
+      message: "Package not found or not visible to this account.",
+      status: 404,
+    });
+  });
+
+  it("keeps specific package API denial bodies", async () => {
+    vi.stubEnv("VITE_CONVEX_URL", "https://registry.example");
+    vi.spyOn(globalThis, "fetch").mockResolvedValue(
+      new Response("Trusted publisher config is not set for this package", { status: 403 }),
+    );
+
+    await expect(fetchPackages({ family: "code-plugin" })).rejects.toMatchObject({
+      message: "Trusted publisher config is not set for this package",
+      status: 403,
+    });
+  });
+
   it("preserves retry metadata on rate-limited package detail failures", async () => {
     vi.stubEnv("VITE_CONVEX_URL", "https://registry.example");
     vi.spyOn(globalThis, "fetch").mockResolvedValue(

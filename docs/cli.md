@@ -8,6 +8,8 @@ read_when:
 # CLI
 
 CLI package: `packages/clawhub/` (published as `clawhub`, bin: `clawhub`).
+Platform moderator commands live in the private `packages/clawhub-mod/` package
+and are not part of the public npm CLI.
 
 From this repo you can run it via the wrapper script:
 
@@ -211,32 +213,6 @@ Stores your API token + cached registry URL.
   - `GET /api/v1/transfers/incoming`
   - `GET /api/v1/transfers/outgoing`
 
-### `ban-user <handleOrId>`
-
-- Ban a user and delete owned skills (moderator/admin only).
-- Calls `POST /api/v1/users/ban`.
-- `--id` treats the argument as a user id instead of a handle.
-- `--fuzzy` resolves the handle via fuzzy user search (admin only).
-- `--reason` records an optional ban reason.
-- `--yes` skips confirmation.
-
-### `unban-user <handleOrId>`
-
-- Unban a user and restore eligible skills (admin only).
-- Calls `POST /api/v1/users/unban`.
-- `--id` treats the argument as a user id instead of a handle.
-- `--fuzzy` resolves the handle via fuzzy user search (admin only).
-- `--reason` records an optional unban reason.
-- `--yes` skips confirmation.
-
-### `set-role <handleOrId> <role>`
-
-- Change a user role (admin only).
-- Calls `POST /api/v1/users/role`.
-- `--id` treats the argument as a user id instead of a handle.
-- `--fuzzy` resolves the handle via fuzzy user search (admin only).
-- `--yes` skips confirmation.
-
 ### `package explore [query...]`
 
 - Browses or searches the unified package catalog via `GET /api/v1/packages` and `GET /api/v1/packages/search`.
@@ -336,31 +312,12 @@ Example:
 clawhub package delete @openclaw/example-plugin --yes
 ```
 
-### `package moderate <name>`
-
-- Moderator/admin command for package release review.
-- Calls
-  `POST /api/v1/packages/{name}/versions/{version}/moderation`.
-- `approved` allows a release after review.
-- `quarantined` and `revoked` block artifact downloads.
-- Flags:
-  - `--version <version>`: required release version.
-  - `--state approved|quarantined|revoked`: required moderation state.
-  - `--reason <text>`: required audit note.
-  - `--json`: machine-readable output.
-
-Example:
-
-```bash
-clawhub package moderate @openclaw/example-plugin --version 1.2.3 --state quarantined --reason "suspicious native payload"
-```
-
 ### `package report`
 
 - Authenticated command for reporting a package to moderators.
 - Calls `POST /api/v1/packages/{name}/report`.
 - Reports are package-level, optionally tied to a version, and feed
-  `package moderation-queue`.
+  `clawhub-mod package moderation-queue`.
 - Reports do not auto-hide packages or block downloads by themselves.
 - Flags:
   - `--version <version>`: optional package version to attach to the report.
@@ -390,76 +347,9 @@ Example:
 clawhub package appeal @openclaw/example-plugin --version 1.2.3 --message "linked source release explains the native binary"
 ```
 
-### `package appeals`
-
-- Moderator/admin command for listing package appeals.
-- Calls `GET /api/v1/packages/appeals`.
-- Flags:
-  - `--status open|accepted|rejected|all`: appeal state filter, default `open`.
-  - `--cursor <cursor>`: resume cursor from a previous page.
-  - `--limit <n>`: number of appeals to show, max 100.
-  - `--json`: machine-readable output.
-
-Examples:
-
-```bash
-clawhub package appeals
-clawhub package appeals --status all --limit 50
-```
-
-### `package resolve-appeal`
-
-- Moderator/admin command for accepting, rejecting, or reopening a package
-  appeal.
-- Calls `POST /api/v1/packages/appeals/{appealId}/resolve`.
-- Resolving an appeal does not automatically change release moderation state;
-  use `package moderate` to approve, quarantine, or revoke the artifact.
-- Flags:
-  - `--status open|accepted|rejected`: required appeal state.
-  - `--note <text>`: required unless `--status open`.
-  - `--json`: machine-readable output.
-
-Example:
-
-```bash
-clawhub package resolve-appeal packageAppeals:abc --status rejected --note "static finding still applies"
-```
-
-### `package reports`
-
-- Moderator/admin command for listing package reports.
-- Calls `GET /api/v1/packages/reports`.
-- Flags:
-  - `--status open|triaged|dismissed|all`: report state filter, default `open`.
-  - `--cursor <cursor>`: resume cursor from a previous page.
-  - `--limit <n>`: number of reports to show, max 100.
-  - `--json`: machine-readable output.
-
-Examples:
-
-```bash
-clawhub package reports
-clawhub package reports --status all --limit 50
-```
-
-### `package triage-report`
-
-- Moderator/admin command for resolving or reopening package reports.
-- Calls `POST /api/v1/packages/reports/{reportId}/triage`.
-- Flags:
-  - `--status open|triaged|dismissed`: required report state.
-  - `--note <text>`: required unless `--status open`.
-  - `--json`: machine-readable output.
-
-Example:
-
-```bash
-clawhub package triage-report packageReports:abc --status triaged --note "quarantined affected release"
-```
-
 ### `package moderation-status`
 
-- Owner/staff command for checking package moderation visibility.
+- Owner command for checking package moderation visibility.
 - Calls `GET /api/v1/packages/{name}/moderation`.
 - Shows current package scan state, open report count, latest release manual
   moderation state, download block state, and moderation reasons.
@@ -470,47 +360,6 @@ Example:
 
 ```bash
 clawhub package moderation-status @openclaw/example-plugin
-```
-
-### `package moderation-queue`
-
-- Moderator/admin command for reviewing package releases that need attention.
-- Calls `GET /api/v1/packages/moderation/queue`.
-- Does not change release state; use `package moderate` for approve,
-  quarantine, or revoke actions.
-- Flags:
-  - `--status open|blocked|manual|all`: queue filter, default `open`.
-  - `--cursor <cursor>`: resume cursor from a previous page.
-  - `--limit <n>`: number of releases to show, max 100.
-  - `--json`: machine-readable output.
-
-Examples:
-
-```bash
-clawhub package moderation-queue
-clawhub package moderation-queue --status blocked --limit 50
-```
-
-### `package backfill-artifacts`
-
-- Admin command for labeling older package releases with explicit artifact-kind
-  metadata.
-- Calls `POST /api/v1/packages/backfill/artifacts`.
-- Defaults to dry-run. Pass `--apply` to write changes.
-- Labels releases without ClawPack storage as `legacy-zip`; releases that
-  already have ClawPack storage are repaired as `npm-pack`.
-- Flags:
-  - `--batch-size <n>`: number of releases to scan, max 500.
-  - `--cursor <cursor>`: resume cursor from a previous run.
-  - `--all`: continue until the backfill is done.
-  - `--apply`: write changes instead of dry-run.
-  - `--json`: machine-readable output.
-
-Examples:
-
-```bash
-clawhub package backfill-artifacts --batch-size 100
-clawhub package backfill-artifacts --all --apply
 ```
 
 ### `package readiness <name>`
@@ -545,51 +394,6 @@ Example:
 clawhub package migration-status @openclaw/example-plugin
 ```
 
-### `package migrations`
-
-- Staff command for listing durable official plugin migration rows.
-- Calls `GET /api/v1/packages/migrations`.
-- Flags:
-  - `--phase planned|published|clawpack-ready|legacy-zip-only|metadata-ready|blocked|ready-for-openclaw|all`: phase filter, default `all`.
-  - `--cursor <cursor>`: resume cursor from a previous page.
-  - `--limit <n>`: number of migrations to show, max 100.
-  - `--json`: machine-readable output.
-
-Examples:
-
-```bash
-clawhub package migrations
-clawhub package migrations --phase blocked --limit 50
-```
-
-### `package set-migration`
-
-- Admin command for creating or updating an official plugin migration row.
-- Calls `POST /api/v1/packages/migrations`.
-- Tracks the mapping from an old bundled OpenClaw plugin id to its future
-  ClawHub package, source location, phase, blockers, and readiness flags.
-- Flags:
-  - `--package <name>`: required ClawHub package name.
-  - `--owner <owner>`: operator/team owner.
-  - `--source-repo <repo>`: source repository.
-  - `--source-path <path>`: source path inside the repository.
-  - `--source-commit <sha>`: source commit SHA.
-  - `--phase <phase>`: planned, published, clawpack-ready, legacy-zip-only,
-    metadata-ready, blocked, or ready-for-openclaw.
-  - `--blockers <items>`: comma-separated blockers.
-  - `--host-targets-complete`: mark host target metadata complete.
-  - `--scan-clean`: mark scan state clean.
-  - `--moderation-approved`: mark moderation approved.
-  - `--runtime-bundles-ready`: mark runtime bundles ready.
-  - `--notes <text>`: operator notes.
-  - `--json`: machine-readable output.
-
-Example:
-
-```bash
-clawhub package set-migration core.search --package @openclaw/search-plugin --phase blocked --blockers "missing ClawPack"
-```
-
 ### `package publish <source>`
 
 - Publishes a code plugin or bundle plugin via `POST /api/v1/packages`.
@@ -614,7 +418,7 @@ clawhub package set-migration core.search --package @openclaw/search-plugin --ph
   Top-level `package.json.version` is not used as a fallback for publish validation.
 - `--dry-run` previews the resolved publish payload without uploading.
 - `--json` emits machine-readable output for CI.
-- `--owner <handle>` lets admins publish under a shared owner account while keeping their own token as the actor.
+- `--owner <handle>` publishes under a user or org publisher handle when the actor has publisher access.
 - Existing flags (`--family`, `--name`, `--version`, `--source-repo`, `--source-commit`, `--source-ref`, `--source-path`) still work as overrides.
 - Private GitHub repos require `GITHUB_TOKEN`.
 
