@@ -394,12 +394,11 @@ export const list = query({
 });
 
 export const listPublic = query({
-  args: { limit: v.optional(v.number()), search: v.optional(v.string()) },
+  args: { limit: v.optional(v.number()) },
   handler: async (ctx, args) => {
     const limit = clampInt(args.limit ?? 40, 1, 100);
     const result = await queryUsersForPublicList(ctx, {
       limit,
-      search: args.search,
     });
     return {
       items: result.items

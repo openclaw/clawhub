@@ -583,35 +583,33 @@ function makeInsertReleaseCtx(
                 indexName: string,
                 buildQuery?: (q: { eq: (field: string, value: unknown) => unknown }) => unknown,
               ) => {
-                if (indexName === "by_package") {
-                  return {
-                    collect: vi.fn().mockResolvedValue(priorReleases),
-                  };
-                }
-                if (indexName === "by_package_version") {
-                  const filters = new Map<string, unknown>();
-                  const query = {
-                    eq(field: string, value: unknown) {
-                      filters.set(field, value);
-                      return query;
-                    },
-                  };
-                  buildQuery?.(query);
-                  return {
-                    unique: vi
-                      .fn()
-                      .mockResolvedValue(
-                        priorReleases.find(
-                          (release) =>
-                            release.packageId === filters.get("packageId") &&
-                            release.version === filters.get("version"),
-                        ) ?? null,
-                      ),
-                  };
-                }
+              if (indexName === "by_package") {
                 return {
-                  unique: vi.fn().mockResolvedValue(null),
+                  collect: vi.fn().mockResolvedValue(priorReleases),
                 };
+              }
+              if (indexName === "by_package_version") {
+                const filters = new Map<string, unknown>();
+                const query = {
+                  eq(field: string, value: unknown) {
+                    filters.set(field, value);
+                    return query;
+                  },
+                };
+                buildQuery?.(query);
+                return {
+                  unique: vi.fn().mockResolvedValue(
+                    priorReleases.find(
+                      (release) =>
+                        release.packageId === filters.get("packageId") &&
+                        release.version === filters.get("version"),
+                    ) ?? null,
+                  ),
+                };
+              }
+              return {
+                unique: vi.fn().mockResolvedValue(null),
+              };
               },
             ),
           };

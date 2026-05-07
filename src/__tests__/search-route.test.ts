@@ -2,7 +2,6 @@ import { describe, expect, it, vi } from "vitest";
 
 process.env.VITE_CONVEX_URL = process.env.VITE_CONVEX_URL ?? "https://example.convex.cloud";
 
-
 vi.mock("../convex/client", () => ({
   convex: {},
   convexHttp: { query: vi.fn() },
@@ -51,10 +50,10 @@ describe("search route", () => {
     });
   });
 
-  it("accepts the users type filter", () => {
+  it("ignores the users type filter", () => {
     expect(runValidateSearch({ q: "vincent", type: "users" })).toEqual({
       q: "vincent",
-      type: "users",
+      type: undefined,
     });
   });
 

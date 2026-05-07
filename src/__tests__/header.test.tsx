@@ -1,9 +1,8 @@
 /* @vitest-environment jsdom */
 
-import { fireEvent, render, screen } from "@testing-library/react";
+import { fireEvent, render, screen, within } from "@testing-library/react";
 import type { ReactNode } from "react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import Header from "../components/Header";
 
 type HeaderAuthStatus = {
   isAuthenticated: boolean;
@@ -13,6 +12,52 @@ type HeaderAuthStatus = {
 
 const siteModeMock = vi.fn(() => "souls");
 const navigateMock = vi.fn();
+const { useUnifiedSearchMock } = vi.hoisted(() => ({
+  useUnifiedSearchMock: vi.fn(),
+}));
+
+const defaultUnifiedSearchResult = {
+  results: [],
+  skillResults: [
+    {
+      type: "skill",
+      ownerHandle: "local",
+      score: 10,
+      skill: {
+        _id: "skills:weather",
+        slug: "weather",
+        displayName: "Weather Skill",
+        ownerUserId: "users:local",
+        stats: { downloads: 1, stars: 2 },
+        createdAt: 1,
+        updatedAt: 2,
+      },
+    },
+  ],
+  pluginResults: [
+    {
+      type: "plugin",
+      plugin: {
+        name: "weather-plugin",
+        displayName: "Weather Plugin",
+        family: "code-plugin",
+        channel: "community",
+        isOfficial: false,
+        summary: "Plugin weather tools.",
+        ownerHandle: "local",
+        createdAt: 1,
+        updatedAt: 2,
+        latestVersion: "1.0.0",
+        capabilityTags: [],
+        executesCode: true,
+        verificationTier: null,
+      },
+    },
+  ],
+  skillCount: 1,
+  pluginCount: 1,
+  isSearching: false,
+};
 
 vi.mock("@tanstack/react-router", () => ({
   Link: (props: { children: ReactNode; className?: string; hash?: string; to?: string }) => (
@@ -90,6 +135,10 @@ vi.mock("../lib/gravatar", () => ({
   gravatarUrl: vi.fn(),
 }));
 
+vi.mock("../lib/useUnifiedSearch", () => ({
+  useUnifiedSearch: () => useUnifiedSearchMock(),
+}));
+
 vi.mock("../components/ui/dropdown-menu", () => ({
   DropdownMenu: ({ children }: { children: ReactNode }) => <div>{children}</div>,
   DropdownMenuContent: ({ children }: { children: ReactNode }) => <div>{children}</div>,
@@ -105,6 +154,8 @@ vi.mock("../components/ui/toggle-group", () => ({
   ),
 }));
 
+import Header from "../components/Header";
+
 describe("Header", () => {
   beforeEach(() => {
     authStatusMock.mockReturnValue({
@@ -113,6 +164,7 @@ describe("Header", () => {
       me: null,
     });
     siteModeMock.mockReturnValue("souls");
+    useUnifiedSearchMock.mockReturnValue(defaultUnifiedSearchResult);
   });
 
   it("hides Packages navigation in soul mode on mobile and desktop", () => {
@@ -136,7 +188,7 @@ describe("Header", () => {
     expect(screen.queryByText("Users")).toBeNull();
     expect(screen.queryByText("Dashboard")).toBeNull();
     expect(screen.queryByText("Manage")).toBeNull();
-    expect(screen.getByPlaceholderText("Search skills, plugins, users")).toBeTruthy();
+    expect(screen.getByPlaceholderText("Search skills and plugins")).toBeTruthy();
 
     fireEvent.click(screen.getByRole("button", { name: /Toggle theme\. Current: system/i }));
     expect(setModeMock).toHaveBeenCalledWith("dark");
@@ -146,6 +198,96 @@ describe("Header", () => {
     expect(screen.getAllByText("Home")).toHaveLength(1);
     expect(screen.getAllByText("Skills")).toHaveLength(2);
     expect(screen.getAllByText("Plugins")).toHaveLength(2);
+  });
+
+  it("shows grouped skills and plugins typeahead without users", () => {
+    siteModeMock.mockReturnValue("skills");
+    navigateMock.mockReset();
+
+    render(<Header />);
+
+    const input = screen.getByPlaceholderText("Search skills and plugins");
+    fireEvent.focus(input);
+    fireEvent.change(input, { target: { value: "weather" } });
+
+    const typeahead = screen.getByRole("listbox");
+    expect(within(typeahead).getByText("Skills")).toBeTruthy();
+    expect(screen.getByText("Weather Skill")).toBeTruthy();
+    expect(within(typeahead).getByText("Plugins")).toBeTruthy();
+    expect(screen.getByText("Weather Plugin")).toBeTruthy();
+    expect(within(typeahead).queryByText("Users")).toBeNull();
+    expect(within(typeahead).queryByText('See user results for "weather"')).toBeNull();
+
+    fireEvent.keyDown(input, { key: "ArrowDown" });
+    fireEvent.keyDown(input, { key: "Enter" });
+
+    expect(navigateMock).toHaveBeenCalledWith({
+      to: "/search",
+      search: { q: "weather", type: "skills" },
+    });
+  });
+
+  it("falls back to typed skill search when a typeahead skill has no owner handle", () => {
+    siteModeMock.mockReturnValue("skills");
+    navigateMock.mockReset();
+    useUnifiedSearchMock.mockReturnValue({
+      ...defaultUnifiedSearchResult,
+      skillResults: [
+        {
+          ...defaultUnifiedSearchResult.skillResults[0],
+          ownerHandle: null,
+          skill: {
+            ...defaultUnifiedSearchResult.skillResults[0].skill,
+            ownerUserId: "users:opaque-id",
+            ownerPublisherId: "publishers:opaque-id",
+          },
+        },
+      ],
+      pluginResults: [],
+      pluginCount: 0,
+    });
+
+    render(<Header />);
+
+    const input = screen.getByPlaceholderText("Search skills and plugins");
+    fireEvent.focus(input);
+    fireEvent.change(input, { target: { value: "weather" } });
+    fireEvent.click(screen.getByRole("option", { name: /Weather Skill/i }));
+
+    expect(navigateMock).toHaveBeenCalledWith({
+      to: "/search",
+      search: { q: "weather", type: "skills" },
+    });
+    expect(navigateMock).not.toHaveBeenCalledWith(
+      expect.objectContaining({
+        to: "/publishers%3Aopaque-id/weather",
+      }),
+    );
+  });
+
+  it("shows a single no-results state without section footers", () => {
+    siteModeMock.mockReturnValue("skills");
+    useUnifiedSearchMock.mockReturnValue({
+      results: [],
+      skillResults: [],
+      pluginResults: [],
+      skillCount: 0,
+      pluginCount: 0,
+      isSearching: false,
+    });
+
+    render(<Header />);
+
+    const input = screen.getByPlaceholderText("Search skills and plugins");
+    fireEvent.focus(input);
+    fireEvent.change(input, { target: { value: "zzzz" } });
+
+    const typeahead = screen.getByRole("listbox");
+    expect(within(typeahead).getByText('No skills or plugins found for "zzzz"')).toBeTruthy();
+    expect(within(typeahead).queryByText("Skills")).toBeNull();
+    expect(within(typeahead).queryByText("Plugins")).toBeNull();
+    expect(within(typeahead).queryByText('See skill results for "zzzz"')).toBeNull();
+    expect(within(typeahead).queryByText('See plugin results for "zzzz"')).toBeNull();
   });
 
   it("shows Home above Skills in the mobile menu", () => {

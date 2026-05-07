@@ -1,7 +1,7 @@
 import { useAuthActions } from "@convex-dev/auth/react";
 import { Link, useLocation, useNavigate } from "@tanstack/react-router";
-import { Ghost, Menu, Moon, Plug, Search, Sun, Wrench } from "lucide-react";
-import { type ComponentType, useMemo, useState } from "react";
+import { ArrowRight, Ghost, Menu, Moon, Plug, Search, Sun, Wrench } from "lucide-react";
+import { type ComponentType, useEffect, useMemo, useRef, useState } from "react";
 import { getUserFacingAuthError } from "../lib/authErrorMessage";
 import { gravatarUrl } from "../lib/gravatar";
 import { filterNavItems, type NavIconName, PRIMARY_NAV_ITEMS } from "../lib/nav-items";
@@ -10,6 +10,11 @@ import { getClawHubSiteUrl, getSiteMode, getSiteName } from "../lib/site";
 import { applyTheme, useThemeMode } from "../lib/theme";
 import { setAuthError, useAuthError } from "../lib/useAuthError";
 import { useAuthStatus } from "../lib/useAuthStatus";
+import {
+  useUnifiedSearch,
+  type UnifiedPluginResult,
+  type UnifiedSkillResult,
+} from "../lib/useUnifiedSearch";
 import { Button } from "./ui/button";
 import {
   DropdownMenu,
@@ -32,6 +37,24 @@ const NAV_ICONS: Record<NavIconName, ComponentType<{ size?: number; className?: 
   plug: Plug,
   ghost: Ghost,
 };
+
+type TypeaheadItem =
+  | {
+      kind: "skill";
+      key: string;
+      result: UnifiedSkillResult;
+    }
+  | {
+      kind: "plugin";
+      key: string;
+      result: UnifiedPluginResult;
+    }
+  | {
+      kind: "footer";
+      key: string;
+      section: "skills" | "plugins";
+      label: string;
+    };
 
 export default function Header() {
   const { isAuthenticated, isLoading, me } = useAuthStatus();
@@ -58,10 +81,67 @@ export default function Header() {
   const signInRedirectTo = getCurrentRelativeUrl();
 
   const [navSearchQuery, setNavSearchQuery] = useState("");
+  const [typeaheadOpen, setTypeaheadOpen] = useState(false);
+  const [typeaheadActiveIndex, setTypeaheadActiveIndex] = useState(0);
   const [mobileSearchOpen, setMobileSearchOpen] = useState(false);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+  const searchWrapRef = useRef<HTMLDivElement | null>(null);
   const ThemeModeIcon = getThemeModeIcon(mode);
   const nextThemeMode = getNextThemeMode(mode);
+  const trimmedNavSearchQuery = navSearchQuery.trim();
+  const showTypeahead = !isSoulMode && typeaheadOpen && trimmedNavSearchQuery.length > 0;
+  const {
+    skillResults,
+    skillCount,
+    pluginResults,
+    pluginCount,
+    isSearching: typeaheadSearching,
+  } = useUnifiedSearch(navSearchQuery, "all", {
+    debounceMs: 180,
+    enabled: showTypeahead,
+    limits: { skills: 4, plugins: 4 },
+  });
+  const typeaheadItems = useMemo<TypeaheadItem[]>(() => {
+    if (!showTypeahead) return [];
+    const items: TypeaheadItem[] = [];
+    for (const result of skillResults) {
+      items.push({ kind: "skill", key: `skill-${result.skill._id}`, result });
+    }
+    if (skillCount > 0) {
+      items.push({
+        kind: "footer",
+        key: "footer-skills",
+        section: "skills",
+        label: `See skill results for "${trimmedNavSearchQuery}"`,
+      });
+    }
+    for (const result of pluginResults) {
+      items.push({ kind: "plugin", key: `plugin-${result.plugin.name}`, result });
+    }
+    if (pluginCount > 0) {
+      items.push({
+        kind: "footer",
+        key: "footer-plugins",
+        section: "plugins",
+        label: `See plugin results for "${trimmedNavSearchQuery}"`,
+      });
+    }
+    return items;
+  }, [pluginCount, pluginResults, showTypeahead, skillCount, skillResults, trimmedNavSearchQuery]);
+
+  useEffect(() => {
+    setTypeaheadActiveIndex(0);
+  }, [trimmedNavSearchQuery]);
+
+  useEffect(() => {
+    if (!typeaheadOpen) return () => {};
+    const handlePointerDown = (event: PointerEvent) => {
+      if (searchWrapRef.current?.contains(event.target as Node)) return;
+      setTypeaheadOpen(false);
+    };
+    document.addEventListener("pointerdown", handlePointerDown);
+    return () => document.removeEventListener("pointerdown", handlePointerDown);
+  }, [typeaheadOpen]);
 
   const setThemeMode = (next: "system" | "light" | "dark") => {
     applyTheme(next, theme);
@@ -85,7 +165,70 @@ export default function Header() {
         : { q, type: undefined },
     });
     setNavSearchQuery("");
+    setTypeaheadOpen(false);
     setMobileSearchOpen(false);
+  };
+
+  const navigateToTypeaheadItem = (item: TypeaheadItem) => {
+    if (item.kind === "skill") {
+      const resultOwnerHandle = item.result.ownerHandle?.trim();
+      if (!resultOwnerHandle) {
+        void navigate({
+          to: "/search",
+          search: { q: trimmedNavSearchQuery, type: "skills" },
+        });
+        setNavSearchQuery("");
+        setTypeaheadOpen(false);
+        setMobileSearchOpen(false);
+        return;
+      }
+      void navigate({
+        to: `/${encodeURIComponent(resultOwnerHandle)}/${encodeURIComponent(item.result.skill.slug)}`,
+      });
+    } else if (item.kind === "plugin") {
+      void navigate({
+        to: "/plugins/$name",
+        params: { name: item.result.plugin.name },
+      });
+    } else {
+      void navigate({
+        to: "/search",
+        search: { q: trimmedNavSearchQuery, type: item.section },
+      });
+    }
+    setNavSearchQuery("");
+    setTypeaheadOpen(false);
+    setMobileSearchOpen(false);
+  };
+
+  const handleSearchKeyDown = (event: React.KeyboardEvent<HTMLInputElement>) => {
+    if (isSoulMode) return;
+    if (event.key === "Escape") {
+      setTypeaheadOpen(false);
+      return;
+    }
+    if (event.key !== "ArrowDown" && event.key !== "ArrowUp" && event.key !== "Enter") return;
+    if (!showTypeahead || typeaheadItems.length === 0) {
+      if (event.key === "ArrowDown" && trimmedNavSearchQuery) {
+        setTypeaheadOpen(true);
+        event.preventDefault();
+      }
+      return;
+    }
+    if (event.key === "ArrowDown") {
+      event.preventDefault();
+      setTypeaheadActiveIndex((index) => (index + 1) % typeaheadItems.length);
+    } else if (event.key === "ArrowUp") {
+      event.preventDefault();
+      setTypeaheadActiveIndex(
+        (index) => (index - 1 + typeaheadItems.length) % typeaheadItems.length,
+      );
+    } else if (event.key === "Enter") {
+      const activeItem = typeaheadItems[typeaheadActiveIndex];
+      if (!activeItem) return;
+      event.preventDefault();
+      navigateToTypeaheadItem(activeItem);
+    }
   };
 
   return (
@@ -172,22 +315,42 @@ export default function Header() {
             <span className="brand-name brand-name-responsive">{siteName}</span>
           </Link>
 
-          <form
-            className="navbar-search"
-            onSubmit={handleNavSearch}
-            role="search"
-            aria-label="Site search"
-          >
-            <Search size={16} className="navbar-search-icon" aria-hidden="true" />
-            <input
-              className="navbar-search-input"
-              type="search"
-              placeholder={isSoulMode ? "Search souls..." : "Search skills, plugins, users"}
-              value={navSearchQuery}
-              onChange={(e) => setNavSearchQuery(e.target.value)}
-              aria-label="Search"
-            />
-          </form>
+          <div className="navbar-search-wrap" ref={searchWrapRef}>
+            <form
+              className="navbar-search"
+              onSubmit={handleNavSearch}
+              role="search"
+              aria-label="Site search"
+            >
+              <Search size={16} className="navbar-search-icon" aria-hidden="true" />
+              <input
+                className="navbar-search-input"
+                type="search"
+                placeholder={isSoulMode ? "Search souls..." : "Search skills and plugins"}
+                value={navSearchQuery}
+                onChange={(e) => {
+                  setNavSearchQuery(e.target.value);
+                  setTypeaheadOpen(true);
+                }}
+                onFocus={() => setTypeaheadOpen(true)}
+                onKeyDown={handleSearchKeyDown}
+                aria-label="Search"
+                aria-expanded={showTypeahead}
+                aria-controls="navbar-search-typeahead"
+                autoComplete="off"
+              />
+            </form>
+            {showTypeahead ? (
+              <SearchTypeahead
+                activeIndex={typeaheadActiveIndex}
+                items={typeaheadItems}
+                loading={typeaheadSearching}
+                onHoverItem={setTypeaheadActiveIndex}
+                onSelectItem={navigateToTypeaheadItem}
+                query={trimmedNavSearchQuery}
+              />
+            ) : null}
+          </div>
 
           <nav className="navbar-top-links" aria-label="Primary">
             {isSoulMode ? (
@@ -305,7 +468,7 @@ export default function Header() {
             <input
               className="navbar-search-input"
               type="text"
-              placeholder={isSoulMode ? "Search souls..." : "Search skills, plugins, users"}
+              placeholder={isSoulMode ? "Search souls..." : "Search skills and plugins"}
               value={navSearchQuery}
               onChange={(e) => setNavSearchQuery(e.target.value)}
               autoFocus
@@ -315,6 +478,167 @@ export default function Header() {
       </div>
     </header>
   );
+}
+
+function SearchTypeahead({
+  activeIndex,
+  items,
+  loading,
+  onHoverItem,
+  onSelectItem,
+  query,
+}: {
+  activeIndex: number;
+  items: TypeaheadItem[];
+  loading: boolean;
+  onHoverItem: (index: number) => void;
+  onSelectItem: (item: TypeaheadItem) => void;
+  query: string;
+}) {
+  const skillItems = items.filter((item) => item.kind === "skill");
+  const pluginItems = items.filter((item) => item.kind === "plugin");
+  const footerItems = items.filter((item) => item.kind === "footer");
+  const skillsFooter = footerItems.find(
+    (item) => item.kind === "footer" && item.section === "skills",
+  );
+  const pluginsFooter = footerItems.find(
+    (item) => item.kind === "footer" && item.section === "plugins",
+  );
+  const hasMatches = skillItems.length > 0 || pluginItems.length > 0;
+
+  return (
+    <div className="navbar-search-typeahead" id="navbar-search-typeahead" role="listbox">
+      <TypeaheadSection
+        activeIndex={activeIndex}
+        items={items}
+        label="Skills"
+        sectionItems={skillItems}
+        footer={skillsFooter}
+        onHoverItem={onHoverItem}
+        onSelectItem={onSelectItem}
+      />
+      <TypeaheadSection
+        activeIndex={activeIndex}
+        items={items}
+        label="Plugins"
+        sectionItems={pluginItems}
+        footer={pluginsFooter}
+        onHoverItem={onHoverItem}
+        onSelectItem={onSelectItem}
+      />
+      {loading && !hasMatches ? (
+        <div className="navbar-search-typeahead-status">Searching...</div>
+      ) : null}
+      {!loading && !hasMatches ? (
+        <div className="navbar-search-typeahead-status">
+          No skills or plugins found for "{query}"
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
+function TypeaheadSection({
+  activeIndex,
+  footer,
+  items,
+  label,
+  onHoverItem,
+  onSelectItem,
+  sectionItems,
+}: {
+  activeIndex: number;
+  footer: TypeaheadItem | undefined;
+  items: TypeaheadItem[];
+  label: string;
+  onHoverItem: (index: number) => void;
+  onSelectItem: (item: TypeaheadItem) => void;
+  sectionItems: TypeaheadItem[];
+}) {
+  if (sectionItems.length === 0 && !footer) return null;
+  return (
+    <div className="navbar-search-typeahead-section">
+      <div className="navbar-search-typeahead-heading">{label}</div>
+      {sectionItems.map((item) => (
+        <TypeaheadRow
+          key={item.key}
+          active={items[activeIndex]?.key === item.key}
+          item={item}
+          index={items.findIndex((candidate) => candidate.key === item.key)}
+          onHoverItem={onHoverItem}
+          onSelectItem={onSelectItem}
+        />
+      ))}
+      {footer ? (
+        <TypeaheadRow
+          active={items[activeIndex]?.key === footer.key}
+          item={footer}
+          index={items.findIndex((candidate) => candidate.key === footer.key)}
+          onHoverItem={onHoverItem}
+          onSelectItem={onSelectItem}
+        />
+      ) : null}
+    </div>
+  );
+}
+
+function TypeaheadRow({
+  active,
+  index,
+  item,
+  onHoverItem,
+  onSelectItem,
+}: {
+  active: boolean;
+  index: number;
+  item: TypeaheadItem;
+  onHoverItem: (index: number) => void;
+  onSelectItem: (item: TypeaheadItem) => void;
+}) {
+  const body = getTypeaheadRowBody(item);
+  return (
+    <button
+      className={`navbar-search-typeahead-row${active ? " is-active" : ""}${item.kind === "footer" ? " is-footer" : ""}`}
+      type="button"
+      role="option"
+      aria-selected={active}
+      onMouseEnter={() => onHoverItem(index)}
+      onMouseDown={(event) => event.preventDefault()}
+      onClick={() => onSelectItem(item)}
+    >
+      {body.icon ? <span className="navbar-search-typeahead-icon">{body.icon}</span> : null}
+      <span className="navbar-search-typeahead-copy">
+        <span className="navbar-search-typeahead-title">{body.title}</span>
+        {body.meta ? <span className="navbar-search-typeahead-meta">{body.meta}</span> : null}
+      </span>
+      {item.kind === "footer" ? <ArrowRight size={14} aria-hidden="true" /> : null}
+    </button>
+  );
+}
+
+function getTypeaheadRowBody(item: TypeaheadItem) {
+  if (item.kind === "skill") {
+    const owner = item.result.ownerHandle ? `@${item.result.ownerHandle}` : "Skill";
+    return {
+      icon: "S",
+      title: item.result.skill.displayName,
+      meta: `${owner} / ${item.result.skill.slug}`,
+    };
+  }
+  if (item.kind === "plugin") {
+    return {
+      icon: "P",
+      title: item.result.plugin.displayName,
+      meta: item.result.plugin.ownerHandle
+        ? `@${item.result.plugin.ownerHandle} / ${item.result.plugin.name}`
+        : item.result.plugin.name,
+    };
+  }
+  return {
+    icon: null,
+    title: item.label,
+    meta: null,
+  };
 }
 
 function getCurrentRelativeUrl() {

@@ -5,24 +5,23 @@ import type { ComponentType, ReactNode } from "react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const navigateMock = vi.fn();
-let searchMock: { q?: string; type?: "all" | "skills" | "plugins" | "users" } = {};
+let searchMock: { q?: string; type?: "all" | "skills" | "plugins" } = {};
 
 vi.mock("@tanstack/react-router", () => ({
-  createFileRoute:
-    () =>
-    (config: { component?: unknown; validateSearch?: unknown }) => ({
-      __config: config,
-      useSearch: () => searchMock,
-    }),
+  createFileRoute: () => (config: { component?: unknown; validateSearch?: unknown }) => ({
+    __config: config,
+    useSearch: () => searchMock,
+  }),
   useNavigate: () => navigateMock,
 }));
 
 vi.mock("../lib/useUnifiedSearch", () => ({
   useUnifiedSearch: () => ({
     results: [],
+    skillResults: [],
+    pluginResults: [],
     skillCount: 0,
     pluginCount: 0,
-    userCount: 0,
     isSearching: false,
   }),
 }));
@@ -33,10 +32,6 @@ vi.mock("../components/PluginListItem", () => ({
 
 vi.mock("../components/SkillListItem", () => ({
   SkillListItem: ({ skill }: { skill: { slug: string } }) => <div>{skill.slug}</div>,
-}));
-
-vi.mock("../components/UserListItem", () => ({
-  UserListItem: ({ user }: { user: { _id: string } }) => <div>{user._id}</div>,
 }));
 
 vi.mock("../components/ui/card", () => ({
@@ -64,7 +59,7 @@ describe("search route", () => {
     const Component = route.__config.component as ComponentType;
     const rendered = render(<Component />);
 
-    const input = screen.getByPlaceholderText("Search skills, plugins, users...") as HTMLInputElement;
+    const input = screen.getByPlaceholderText("Search skills and plugins...") as HTMLInputElement;
     expect(input.value).toBe("first");
 
     fireEvent.change(input, { target: { value: "draft" } });
@@ -74,7 +69,16 @@ describe("search route", () => {
     rendered.rerender(<Component />);
 
     expect(
-      (screen.getByPlaceholderText("Search skills, plugins, users...") as HTMLInputElement).value,
+      (screen.getByPlaceholderText("Search skills and plugins...") as HTMLInputElement).value,
     ).toBe("second");
+  });
+
+  it("does not render a public users search tab", async () => {
+    const route = await loadRoute();
+    const Component = route.__config.component as ComponentType;
+
+    render(<Component />);
+
+    expect(screen.queryByRole("button", { name: /users/i })).toBeNull();
   });
 });

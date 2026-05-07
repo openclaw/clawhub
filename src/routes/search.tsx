@@ -3,28 +3,24 @@ import { Search } from "lucide-react";
 import { useEffect, useState } from "react";
 import { PluginListItem } from "../components/PluginListItem";
 import { SkillListItem } from "../components/SkillListItem";
-import { UserListItem } from "../components/UserListItem";
 import { Card } from "../components/ui/card";
-import type { PublicSkill, PublicUser } from "../lib/publicUser";
+import type { PublicSkill } from "../lib/publicUser";
 import {
   useUnifiedSearch,
+  type UnifiedSearchType,
   type UnifiedPluginResult,
   type UnifiedSkillResult,
-  type UnifiedUserResult,
 } from "../lib/useUnifiedSearch";
 
 type SearchState = {
   q?: string;
-  type?: "all" | "skills" | "plugins" | "users";
+  type?: UnifiedSearchType;
 };
 
 export const Route = createFileRoute("/search")({
   validateSearch: (search): SearchState => ({
     q: typeof search.q === "string" && search.q.trim() ? search.q : undefined,
-    type:
-      search.type === "skills" || search.type === "plugins" || search.type === "users"
-        ? search.type
-        : undefined,
+    type: search.type === "skills" || search.type === "plugins" ? search.type : undefined,
   }),
   component: UnifiedSearchPage,
 });
@@ -39,7 +35,7 @@ function UnifiedSearchPage() {
     setQuery(search.q ?? "");
   }, [search.q]);
 
-  const { results, skillCount, pluginCount, userCount, isSearching } = useUnifiedSearch(
+  const { results, skillCount, pluginCount, isSearching } = useUnifiedSearch(
     search.q ?? "",
     activeType,
   );
@@ -52,7 +48,7 @@ function UnifiedSearchPage() {
     });
   };
 
-  const setType = (type: "all" | "skills" | "plugins" | "users") => {
+  const setType = (type: UnifiedSearchType) => {
     void navigate({
       to: "/search",
       search: { q: search.q, type: type === "all" ? undefined : type },
@@ -74,11 +70,11 @@ function UnifiedSearchPage() {
 
       <form className="search-page-form" onSubmit={handleSearch}>
         <div className="browse-search-bar max-w-[560px] flex-1">
-            <Search size={16} className="navbar-search-icon" aria-hidden="true" />
+          <Search size={16} className="navbar-search-icon" aria-hidden="true" />
           <input
             className="browse-search-input"
             type="text"
-            placeholder="Search skills, plugins, users..."
+            placeholder="Search skills and plugins..."
             value={query}
             onChange={(e) => setQuery(e.target.value)}
             autoFocus
@@ -100,9 +96,7 @@ function UnifiedSearchPage() {
           onClick={() => setType("skills")}
         >
           Skills
-          {skillCount > 0 ? (
-            <span className="search-tab-count">{skillCount}</span>
-          ) : null}
+          {skillCount > 0 ? <span className="search-tab-count">{skillCount}</span> : null}
         </button>
         <button
           className={`search-tab${activeType === "plugins" ? " is-active" : ""}`}
@@ -110,17 +104,7 @@ function UnifiedSearchPage() {
           onClick={() => setType("plugins")}
         >
           Plugins
-          {pluginCount > 0 ? (
-            <span className="search-tab-count">{pluginCount}</span>
-          ) : null}
-        </button>
-        <button
-          className={`search-tab${activeType === "users" ? " is-active" : ""}`}
-          type="button"
-          onClick={() => setType("users")}
-        >
-          Users
-          {userCount > 0 ? <span className="search-tab-count">{userCount}</span> : null}
+          {pluginCount > 0 ? <span className="search-tab-count">{pluginCount}</span> : null}
         </button>
       </div>
 
@@ -130,9 +114,7 @@ function UnifiedSearchPage() {
         </Card>
       ) : !search.q ? (
         <Card className="text-center p-10">
-          <p className="text-ink-soft">
-            Enter a search term to find skills, plugins, and users
-          </p>
+          <p className="text-ink-soft">Enter a search term to find skills and plugins</p>
         </Card>
       ) : results.length === 0 ? (
         <Card className="text-center p-10">
@@ -143,10 +125,8 @@ function UnifiedSearchPage() {
           {results.map((item) =>
             item.type === "skill" ? (
               <SkillResultRow key={`skill-${item.skill._id}`} result={item} />
-            ) : item.type === "plugin" ? (
-              <PluginResultRow key={`plugin-${item.plugin.name}`} result={item} />
             ) : (
-              <UserResultRow key={`user-${item.user._id}`} result={item} />
+              <PluginResultRow key={`plugin-${item.plugin.name}`} result={item} />
             ),
           )}
         </div>
@@ -157,19 +137,9 @@ function UnifiedSearchPage() {
 
 function SkillResultRow({ result }: { result: UnifiedSkillResult }) {
   const skill = result.skill as unknown as PublicSkill;
-  return (
-    <SkillListItem
-      skill={skill}
-      ownerHandle={result.ownerHandle}
-    />
-  );
+  return <SkillListItem skill={skill} ownerHandle={result.ownerHandle} />;
 }
 
 function PluginResultRow({ result }: { result: UnifiedPluginResult }) {
   return <PluginListItem item={result.plugin} />;
-}
-
-function UserResultRow({ result }: { result: UnifiedUserResult }) {
-  const user = result.user as PublicUser;
-  return <UserListItem user={user} />;
 }
