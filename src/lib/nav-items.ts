@@ -163,13 +163,13 @@ export const FOOTER_NAV_SECTIONS: FooterNavSection[] = [
       {
         kind: "link",
         label: "Publish Skill",
-        to: "/publish-skill",
+        to: "/skills/publish",
         search: { updateSlug: undefined },
       },
       {
         kind: "link",
         label: "Publish Plugin",
-        to: "/publish-plugin",
+        to: "/plugins/publish",
         search: {
           ownerHandle: undefined,
           name: undefined,

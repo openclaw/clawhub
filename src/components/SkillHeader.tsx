@@ -213,7 +213,7 @@ export function SkillHeader({
                     ) : null}
                     {canManage ? (
                       <Button asChild variant="outline" size="sm" className="skill-settings-link">
-                        <Link to="/publish-skill" search={{ updateSlug: skill.slug }}>
+                        <Link to="/skills/publish" search={{ updateSlug: skill.slug }}>
                           <Upload size={14} aria-hidden="true" />
                           New Version
                         </Link>

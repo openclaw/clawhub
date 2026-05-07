@@ -19,24 +19,29 @@ vi.mock("@tanstack/react-router", () => ({
   }),
 }));
 
+vi.mock("@convex-dev/auth/react", () => ({
+  useAuthActions: () => ({ signIn: vi.fn() }),
+}));
+
 const generateUploadUrl = vi.fn();
 const publishRelease = vi.fn();
 const fetchMock = vi.fn();
 const useAuthStatusMock = vi.fn();
+const useQueryMock = vi.fn();
 const originalFetch = globalThis.fetch;
 
 vi.mock("convex/react", () => ({
   ConvexReactClient: class {},
   useMutation: () => generateUploadUrl,
   useAction: () => publishRelease,
-  useQuery: () => undefined,
+  useQuery: () => useQueryMock(),
 }));
 
 vi.mock("../lib/useAuthStatus", () => ({
   useAuthStatus: () => useAuthStatusMock(),
 }));
 
-import { PublishPluginRoute, Route } from "../routes/publish-plugin";
+import { PublishPluginRoute, Route } from "../routes/plugins/publish";
 
 function renderPublishRoute() {
   render(createElement(PublishPluginRoute as never));
@@ -81,12 +86,24 @@ describe("plugins publish route", () => {
     publishRelease.mockReset();
     fetchMock.mockReset();
     useAuthStatusMock.mockReset();
+    useQueryMock.mockReset();
 
     useAuthStatusMock.mockReturnValue({
       isAuthenticated: true,
       isLoading: false,
       me: { _id: "users:1" },
     });
+    useQueryMock.mockReturnValue([
+      {
+        publisher: {
+          _id: "publishers:vintageayu",
+          handle: "vintageayu",
+          displayName: "VintageAyu",
+          kind: "user",
+        },
+        role: "owner",
+      },
+    ]);
     generateUploadUrl.mockResolvedValue("https://upload.local");
     publishRelease.mockResolvedValue({ ok: true, packageId: "pkg:1", releaseId: "rel:1" });
     fetchMock.mockImplementation(async (_url: string, init?: RequestInit) => ({
@@ -110,8 +127,25 @@ describe("plugins publish route", () => {
     });
   });
 
-  it("registers the publish form on /publish-plugin", () => {
+  it("registers the publish form on /plugins/publish", () => {
     expect(Route).toBeTruthy();
+  });
+
+  it("requires sign-in before showing the plugin publish form", () => {
+    useAuthStatusMock.mockReturnValue({
+      isAuthenticated: false,
+      isLoading: false,
+      me: null,
+    });
+
+    renderPublishRoute();
+
+    expect(screen.getByText("Sign in to publish a plugin")).toBeTruthy();
+    expect(
+      screen.getByText("You need to be signed in to publish plugins on ClawHub."),
+    ).toBeTruthy();
+    expect(screen.queryByText(/Upload plugin code to detect the package shape/i)).toBeNull();
+    expect(screen.queryByPlaceholderText("Plugin name")).toBeNull();
   });
 
   it("keeps metadata inputs locked until plugin code is uploaded", () => {
@@ -283,6 +317,42 @@ describe("plugins publish route", () => {
     );
     expect(docsLink.getAttribute("target")).toBe("_blank");
     expect(docsLink.getAttribute("rel")).toBe("noopener noreferrer");
+    expect(screen.getByRole("button", { name: "Publish" }).getAttribute("disabled")).not.toBeNull();
+    expect(publishRelease).not.toHaveBeenCalled();
+  });
+
+  it("blocks scoped package names that do not match the selected owner", async () => {
+    renderPublishRoute();
+
+    const packageJson = withRelativePath(
+      new File(
+        [
+          makeCodePluginPackageJson({
+            name: "@openclaw/dronzer",
+            displayName: "Dronzer Controller",
+            version: "1.0.0",
+            repository: "https://github.com/VintageAyu/dronzerclaw.git",
+          }),
+        ],
+        "package.json",
+        { type: "application/json" },
+      ),
+      "dronzer/package.json",
+    );
+    const manifest = withRelativePath(
+      new File(['{"id":"dronzer"}'], "openclaw.plugin.json", { type: "application/json" }),
+      "dronzer/openclaw.plugin.json",
+    );
+
+    fireEvent.change(getFileInput(), { target: { files: [packageJson, manifest] } });
+
+    await waitFor(() => {
+      expect(screen.getByDisplayValue("@openclaw/dronzer")).toBeTruthy();
+      expect(
+        screen.getByText(/Package scope "@openclaw" must match selected owner "@vintageayu"/i),
+      ).toBeTruthy();
+    });
+
     expect(screen.getByRole("button", { name: "Publish" }).getAttribute("disabled")).not.toBeNull();
     expect(publishRelease).not.toHaveBeenCalled();
   });

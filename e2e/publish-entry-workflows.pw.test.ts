@@ -5,7 +5,7 @@ test("upload shows signed-out publish gate", async ({ page }) => {
   const errors = trackRuntimeErrors(page);
 
   await page.goto("/upload", { waitUntil: "domcontentloaded" });
-  await expect(page).toHaveURL(/\/publish-skill$/);
+  await expect(page).toHaveURL(/\/skills\/publish$/);
   await expect(page.getByText("Sign in to publish a skill")).toBeVisible();
   await expectHealthyPage(page, errors);
 });

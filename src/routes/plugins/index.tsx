@@ -186,7 +186,7 @@ function PluginsIndex() {
         <div className="browse-page-actions">
           <Button asChild variant="primary">
             <Link
-              to="/publish-plugin"
+              to="/plugins/publish"
               search={{
                 ownerHandle: undefined,
                 name: undefined,

@@ -58,12 +58,12 @@ describe("Footer", () => {
       within(publish as HTMLElement)
         .getByRole("link", { name: "Publish Skill" })
         .getAttribute("href"),
-    ).toBe("/publish-skill");
+    ).toBe("/skills/publish");
     expect(
       within(publish as HTMLElement)
         .getByRole("link", { name: "Publish Plugin" })
         .getAttribute("href"),
-    ).toBe("/publish-plugin");
+    ).toBe("/plugins/publish");
     expect(
       within(community as HTMLElement)
         .getByRole("link", { name: "GitHub" })

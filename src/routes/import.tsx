@@ -251,7 +251,7 @@ export function ImportGitHub() {
               <Badge variant="accent" className="mt-3 w-fit">
                 Skill-only import. Plugins are not supported here. Use{" "}
                 <Link
-                  to="/publish-plugin"
+                  to="/plugins/publish"
                   search={{
                     ownerHandle: undefined,
                     name: undefined,

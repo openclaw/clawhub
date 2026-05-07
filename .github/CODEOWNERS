@@ -66,8 +66,10 @@
 /src/routes/admin.tsx @openclaw/openclaw-secops @BunsDev
 /src/routes/cli/auth.tsx @openclaw/openclaw-secops @BunsDev
 /src/routes/packages/new.tsx @openclaw/openclaw-secops @BunsDev
+/src/routes/plugins/publish.tsx @openclaw/openclaw-secops @BunsDev
 /src/routes/publish-plugin.tsx @openclaw/openclaw-secops @BunsDev
 /src/routes/publish-skill.tsx @openclaw/openclaw-secops @BunsDev
+/src/routes/skills/publish.tsx @openclaw/openclaw-secops @BunsDev
 /src/routes/upload.tsx @openclaw/openclaw-secops @BunsDev
 /src/routes/upload/ @openclaw/openclaw-secops @BunsDev
 /src/routes/$owner/$slug/security/ @openclaw/openclaw-secops @BunsDev

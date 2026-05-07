@@ -1,5 +1,6 @@
 import {
   PackagePublishRequestSchema,
+  getPackageScopeOwnerMismatch,
   parseArk,
   validateOpenClawExternalCodePluginPackageContents,
   type PackageArtifactSummary,
@@ -2104,7 +2105,11 @@ export const insertAuditLogInternal = internalMutation({
   },
 });
 
-async function softDeletePackageDoc(ctx: Pick<MutationCtx, "db">, pkg: Doc<"packages">) {
+async function softDeletePackageDoc(
+  ctx: Pick<MutationCtx, "db">,
+  pkg: Doc<"packages">,
+  params: { actorUserId: Id<"users">; source: "cli" | "dashboard" },
+) {
   if (pkg.softDeletedAt) {
     return {
       ok: true as const,
@@ -2120,10 +2125,12 @@ async function softDeletePackageDoc(ctx: Pick<MutationCtx, "db">, pkg: Doc<"pack
     .withIndex("by_package", (q) => q.eq("packageId", pkg._id))
     .collect();
   let releaseCount = 0;
+  const deletedReleaseIds: Array<Id<"packageReleases">> = [];
   for (const release of releases) {
     if (release.softDeletedAt) continue;
     await ctx.db.patch(release._id, { softDeletedAt: now });
     releaseCount += 1;
+    deletedReleaseIds.push(release._id);
   }
 
   const packagePatch = {
@@ -2134,6 +2141,22 @@ async function softDeletePackageDoc(ctx: Pick<MutationCtx, "db">, pkg: Doc<"pack
   await upsertPackageSearchDigest(ctx, {
     ...extractPackageDigestFields(pkg),
     ...packagePatch,
+  });
+  await ctx.db.insert("auditLogs", {
+    actorUserId: params.actorUserId,
+    action: "package.delete",
+    targetType: "package",
+    targetId: pkg._id,
+    metadata: {
+      name: pkg.name,
+      normalizedName: pkg.normalizedName,
+      ownerUserId: pkg.ownerUserId,
+      ownerPublisherId: pkg.ownerPublisherId,
+      releaseCount,
+      releaseIds: deletedReleaseIds,
+      source: params.source,
+    },
+    createdAt: now,
   });
 
   return {
@@ -2170,7 +2193,7 @@ export const softDeletePackageInternal = internalMutation({
       });
     }
 
-    return await softDeletePackageDoc(ctx, pkg);
+    return await softDeletePackageDoc(ctx, pkg, { actorUserId: user._id, source: "cli" });
   },
 });
 
@@ -2194,7 +2217,7 @@ export const softDeletePackage = mutation({
       });
     }
 
-    return await softDeletePackageDoc(ctx, pkg);
+    return await softDeletePackageDoc(ctx, pkg, { actorUserId: user._id, source: "dashboard" });
   },
 });
 
@@ -3620,6 +3643,8 @@ async function publishPackageImpl(
     const actor = await runQueryRef<Doc<"users"> | null>(ctx, internalRefs.users.getByIdInternal, {
       userId: actorUserId,
     });
+    const ownerMismatch = getPackageScopeOwnerMismatch(name, payload.ownerHandle);
+    if (ownerMismatch) throw new ConvexError(ownerMismatch.message);
     const ownerHandle = payload.ownerHandle ?? inferOwnerHandleFromScopedPackageName(name);
     const ownerTarget = await runMutationRef<{
       publisherId: Id<"publishers">;
@@ -4164,11 +4189,14 @@ export const repairPackageIdentityInternal = internalMutation({
     if (typeof args.nextRuntimeId === "string") {
       const nextRuntimeId = args.nextRuntimeId.trim();
       if (!nextRuntimeId) throw new ConvexError("Runtime id required");
-      const runtimeCollision = await ctx.db
+      const runtimeCollisions = await ctx.db
         .query("packages")
         .withIndex("by_runtime_id", (q) => q.eq("runtimeId", nextRuntimeId))
-        .unique();
-      if (runtimeCollision && runtimeCollision._id !== pkg._id && !runtimeCollision.softDeletedAt) {
+        .collect();
+      const runtimeCollision = runtimeCollisions.find(
+        (candidate) => candidate._id !== pkg._id && !candidate.softDeletedAt,
+      );
+      if (runtimeCollision) {
         throw new ConvexError(`Plugin id "${nextRuntimeId}" is already claimed by another package`);
       }
       patch.runtimeId = nextRuntimeId;
@@ -4277,6 +4305,12 @@ export const insertReleaseInternal = internalMutation({
     const nextCapabilityTags = mergeArtifactCapabilityTags(args.capabilities?.capabilityTags, args);
     const existing = await getPackageByNormalizedName(ctx, normalizedName);
     const existingIsReservation = isReservedPackagePlaceholder(existing);
+    const nextNameLabel = typeof args.name === "string" ? args.name : "<unknown>";
+    if (existing?.softDeletedAt) {
+      throw new ConvexError(
+        `Package "${nextNameLabel}" was deleted. Restore it before publishing another release or choose a new package name.`,
+      );
+    }
     const nextChannel =
       args.channel ??
       (existing?.channel === "private" && !existingIsReservation
@@ -4285,7 +4319,6 @@ export const insertReleaseInternal = internalMutation({
           ? "official"
           : "community");
     const nextIsOfficial = nextChannel === "official";
-    const nextNameLabel = typeof args.name === "string" ? args.name : "<unknown>";
     const nextRuntimeIdLabel = typeof args.runtimeId === "string" ? args.runtimeId : "<unknown>";
     const nextVersionLabel = typeof args.version === "string" ? args.version : "<unknown>";
     if (existing) {
@@ -4318,11 +4351,14 @@ export const insertReleaseInternal = internalMutation({
       );
     }
     if (args.family === "code-plugin" && args.runtimeId) {
-      const runtimeCollision = await ctx.db
+      const runtimeCollisions = await ctx.db
         .query("packages")
         .withIndex("by_runtime_id", (q) => q.eq("runtimeId", args.runtimeId))
-        .unique();
-      if (runtimeCollision && runtimeCollision._id !== existing?._id) {
+        .collect();
+      const runtimeCollision = runtimeCollisions.find(
+        (candidate) => candidate._id !== existing?._id && !candidate.softDeletedAt,
+      );
+      if (runtimeCollision) {
         throw new ConvexError(
           `Plugin id "${nextRuntimeIdLabel}" is already claimed by another package`,
         );

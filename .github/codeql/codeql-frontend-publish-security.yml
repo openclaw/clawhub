@@ -32,8 +32,10 @@ paths:
   - src/routes/admin.tsx
   - src/routes/cli/auth.tsx
   - src/routes/packages/new.tsx
+  - src/routes/plugins/publish.tsx
   - src/routes/publish-plugin.tsx
   - src/routes/publish-skill.tsx
+  - src/routes/skills/publish.tsx
   - src/routes/upload.tsx
   - src/routes/upload
   - src/routes/$owner/$slug/security

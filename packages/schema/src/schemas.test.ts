@@ -2,6 +2,7 @@
 
 import { describe, expect, it } from "vitest";
 import { parseArk } from "./ark";
+import { getPackageScopeOwnerMismatch, inferPackageNameScope } from "./packages";
 import {
   ApiSearchResponseSchema,
   CliPublishRequestSchema,
@@ -74,6 +75,18 @@ describe("clawhub-schema", () => {
       "Publish payload",
     );
     expect(payload.ownerHandle).toBe("openclaw");
+  });
+
+  it("reports scoped package names that do not match the selected owner", () => {
+    expect(inferPackageNameScope("@openclaw/dronzer")).toBe("openclaw");
+    expect(getPackageScopeOwnerMismatch("@openclaw/dronzer", "openclaw")).toBeNull();
+    expect(getPackageScopeOwnerMismatch("@openclaw/dronzer", "@VintageAyu")).toEqual({
+      scope: "openclaw",
+      selectedOwner: "vintageayu",
+      suggestedName: "@vintageayu/dronzer",
+      message:
+        'Package scope "@openclaw" must match selected owner "@vintageayu". Select "@openclaw" or rename this package to "@vintageayu/dronzer".',
+    });
   });
 
   it("parses well-known config", () => {

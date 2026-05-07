@@ -11,7 +11,7 @@ export const Route = createFileRoute("/plugins/new")({
   }),
   beforeLoad: ({ search }) => {
     throw redirect({
-      to: "/publish-plugin",
+      to: "/plugins/publish",
       search,
     });
   },

@@ -204,7 +204,7 @@ export function Dashboard() {
           </p>
           <div className="flex gap-3 justify-center">
             <Button asChild variant="primary">
-              <Link to="/publish-skill" search={{ updateSlug: undefined }}>
+              <Link to="/skills/publish" search={{ updateSlug: undefined }}>
                 Publish a Skill
               </Link>
             </Button>
@@ -245,7 +245,7 @@ export function Dashboard() {
             <div className="dashboard-section-header">
               <h2 className="dashboard-collection-title">Skills</h2>
               <Button asChild size="sm" className="dashboard-section-action">
-                <Link to="/publish-skill" search={{ updateSlug: undefined }}>
+                <Link to="/skills/publish" search={{ updateSlug: undefined }}>
                   <Plus className="h-4 w-4" aria-hidden="true" />
                   New Skill
                 </Link>
@@ -284,7 +284,7 @@ export function Dashboard() {
             <div className="dashboard-section-header">
               <h2 className="dashboard-collection-title">Plugins</h2>
               <Button asChild size="sm" className="dashboard-section-action">
-                <Link to="/publish-plugin" search={{ ...emptyPluginPublishSearch, ownerHandle }}>
+                <Link to="/plugins/publish" search={{ ...emptyPluginPublishSearch, ownerHandle }}>
                   <Plus className="h-4 w-4" aria-hidden="true" />
                   New Plugin
                 </Link>

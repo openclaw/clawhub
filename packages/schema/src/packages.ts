@@ -1,6 +1,28 @@
 import { type inferred, type } from "arktype";
 import { CliPublishFileSchema, PublishSourceSchema } from "./schemas.js";
 
+export function normalizePackageOwnerHandle(handle: string | null | undefined) {
+  const normalized = handle?.trim().replace(/^@+/, "").toLowerCase();
+  return normalized || undefined;
+}
+
+export function inferPackageNameScope(name: string) {
+  return /^@([^/]+)\//.exec(name.trim().toLowerCase())?.[1];
+}
+
+export function getPackageScopeOwnerMismatch(name: string, ownerHandle: string | null | undefined) {
+  const scope = inferPackageNameScope(name);
+  const selectedOwner = normalizePackageOwnerHandle(ownerHandle);
+  if (!scope || !selectedOwner || scope === selectedOwner) return null;
+  const packageSlug = name.split("/").pop()?.trim() || "plugin-name";
+  return {
+    scope,
+    selectedOwner,
+    suggestedName: `@${selectedOwner}/${packageSlug}`,
+    message: `Package scope "@${scope}" must match selected owner "@${selectedOwner}". Select "@${scope}" or rename this package to "@${selectedOwner}/${packageSlug}".`,
+  };
+}
+
 export const PackageFamilySchema = type('"skill"|"code-plugin"|"bundle-plugin"');
 export type PackageFamily = (typeof PackageFamilySchema)[inferred];
 

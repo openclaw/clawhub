@@ -1,5 +1,25 @@
 import { type } from "arktype";
 import { CliPublishFileSchema, PublishSourceSchema } from "./schemas.js";
+export function normalizePackageOwnerHandle(handle) {
+    const normalized = handle?.trim().replace(/^@+/, "").toLowerCase();
+    return normalized || undefined;
+}
+export function inferPackageNameScope(name) {
+    return /^@([^/]+)\//.exec(name.trim().toLowerCase())?.[1];
+}
+export function getPackageScopeOwnerMismatch(name, ownerHandle) {
+    const scope = inferPackageNameScope(name);
+    const selectedOwner = normalizePackageOwnerHandle(ownerHandle);
+    if (!scope || !selectedOwner || scope === selectedOwner)
+        return null;
+    const packageSlug = name.split("/").pop()?.trim() || "plugin-name";
+    return {
+        scope,
+        selectedOwner,
+        suggestedName: `@${selectedOwner}/${packageSlug}`,
+        message: `Package scope "@${scope}" must match selected owner "@${selectedOwner}". Select "@${scope}" or rename this package to "@${selectedOwner}/${packageSlug}".`,
+    };
+}
 export const PackageFamilySchema = type('"skill"|"code-plugin"|"bundle-plugin"');
 export const PackageChannelSchema = type('"official"|"community"|"private"');
 export const PackageVerificationTierSchema = type('"structural"|"source-linked"|"provenance-verified"|"rebuild-verified"');

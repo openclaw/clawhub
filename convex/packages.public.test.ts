@@ -888,24 +888,64 @@ function makeInsertReleaseCtx(
   existing: Record<string, unknown> | null,
   priorReleases: Array<Record<string, unknown>> = [],
   recordsById: Record<string, Record<string, unknown>> = {},
+  runtimePackages: Array<Record<string, unknown>> = [],
 ) {
   const patch = vi.fn();
-  const insert = vi.fn().mockResolvedValueOnce("packageReleases:new");
+  let insertedPackage: Record<string, unknown> | null = null;
+  const insert = vi.fn(async (table: string, doc: Record<string, unknown>) => {
+    if (table === "packages") {
+      insertedPackage = makePackageDoc({
+        ...doc,
+        _id: "packages:new",
+        tags: {},
+        latestReleaseId: undefined,
+        latestVersionSummary: undefined,
+        stats: { downloads: 0, installs: 0, stars: 0, versions: 0 },
+      });
+      return "packages:new";
+    }
+    if (table === "packageReleases") return "packageReleases:new";
+    return `${table}:new`;
+  });
   return {
     patch,
     insert,
     db: {
       get: vi.fn(async (id: string) => {
         if (id in recordsById) return recordsById[id];
+        if (id === "packages:new") return insertedPackage;
         if (id === "users:owner") return { _id: id, role: "user", trustedPublisher: false };
         return null;
       }),
       query: vi.fn((table: string) => {
         if (table === "packages") {
           return {
-            withIndex: vi.fn((_indexName: string) => ({
-              unique: vi.fn().mockResolvedValue(existing),
-            })),
+            withIndex: vi.fn(
+              (
+                indexName: string,
+                buildQuery?: (q: { eq: (field: string, value: unknown) => unknown }) => unknown,
+              ) => {
+                const filters = new Map<string, unknown>();
+                const query = {
+                  eq(field: string, value: unknown) {
+                    filters.set(field, value);
+                    return query;
+                  },
+                };
+                buildQuery?.(query);
+                if (indexName === "by_runtime_id") {
+                  const runtimeId = filters.get("runtimeId");
+                  const matches = runtimePackages.filter((pkg) => pkg.runtimeId === runtimeId);
+                  return {
+                    collect: vi.fn().mockResolvedValue(matches),
+                    unique: vi.fn().mockResolvedValue(matches[0] ?? null),
+                  };
+                }
+                return {
+                  unique: vi.fn().mockResolvedValue(existing),
+                };
+              },
+            ),
           };
         }
         if (table === "packageReleases") {
@@ -1050,6 +1090,7 @@ function makeTransferPackageOwnerCtx(options?: {
           return {
             withIndex: vi.fn(() => ({
               unique: vi.fn().mockResolvedValue(pkg),
+              collect: vi.fn().mockResolvedValue(pkg ? [pkg] : []),
             })),
           };
         }),
@@ -2142,7 +2183,7 @@ describe("packages public queries", () => {
   });
 
   it("soft-deletes packages and active releases for the owner", async () => {
-    const { ctx, patch } = makeSoftDeletePackageCtx({
+    const { ctx, insert, patch } = makeSoftDeletePackageCtx({
       releases: [
         makeReleaseDoc(),
         makeReleaseDoc({
@@ -2180,6 +2221,25 @@ describe("packages public queries", () => {
         packageId: "packages:demo",
         softDeletedAt: expect.any(Number),
         updatedAt: expect.any(Number),
+      }),
+    );
+    expect(insert).toHaveBeenCalledWith(
+      "auditLogs",
+      expect.objectContaining({
+        actorUserId: "users:owner",
+        action: "package.delete",
+        targetType: "package",
+        targetId: "packages:demo",
+        metadata: expect.objectContaining({
+          name: "demo-plugin",
+          normalizedName: "demo-plugin",
+          ownerUserId: "users:owner",
+          ownerPublisherId: undefined,
+          releaseCount: 1,
+          releaseIds: ["packageReleases:demo-1"],
+          source: "cli",
+        }),
+        createdAt: expect.any(Number),
       }),
     );
   });
@@ -2538,6 +2598,68 @@ describe("packages public queries", () => {
     ).rejects.toThrow("family changes are not allowed");
   });
 
+  it("rejects new releases on a soft-deleted package", async () => {
+    const ctx = makeInsertReleaseCtx(makePackageDoc({ softDeletedAt: 123 }));
+
+    await expect(
+      insertReleaseInternalHandler(ctx, {
+        actorUserId: "users:owner",
+        ownerUserId: "users:owner",
+        name: "demo-plugin",
+        displayName: "Demo Plugin",
+        family: "code-plugin",
+        version: "1.0.1",
+        changelog: "try deleted package",
+        tags: ["latest"],
+        summary: "demo",
+        files: [],
+        integritySha256: "abc123",
+      }),
+    ).rejects.toThrow("Restore it before publishing another release");
+  });
+
+  it("rejects package scopes that do not match the selected owner handle", async () => {
+    const runMutation = vi.fn();
+    const ctx = {
+      runQuery: vi
+        .fn()
+        .mockResolvedValueOnce(null)
+        .mockResolvedValueOnce({
+          _id: "users:vintageayu",
+          githubCreatedAt: Date.now() - 20 * 24 * 60 * 60 * 1000,
+        })
+        .mockResolvedValueOnce({
+          _id: "users:vintageayu",
+          role: "user",
+          githubCreatedAt: Date.now() - 20 * 24 * 60 * 60 * 1000,
+        }),
+      runMutation,
+      scheduler: {
+        runAfter: vi.fn(),
+      },
+      storage: {
+        get: vi.fn(),
+      },
+    };
+
+    await expect(
+      publishPackageForUserInternalHandler(ctx as never, {
+        actorUserId: "users:vintageayu",
+        payload: {
+          name: "@openclaw/dronzer",
+          displayName: "Dronzer Controller",
+          ownerHandle: "vintageayu",
+          family: "code-plugin",
+          version: "1.0.0",
+          changelog: "init",
+          files: [],
+        },
+      }),
+    ).rejects.toThrow('Package scope "@openclaw" must match selected owner "@vintageayu"');
+
+    expect(runMutation).not.toHaveBeenCalled();
+  });
+
   it("rejects runtime id changes on an existing code plugin package", async () => {
     const ctx = makeInsertReleaseCtx(makePackageDoc({ runtimeId: "demo.plugin" }));
 
@@ -2557,6 +2679,64 @@ describe("packages public queries", () => {
         runtimeId: "other.plugin",
       }),
     ).rejects.toThrow("runtime id changes are not allowed");
+  });
+
+  it("rejects plugin id collisions with active packages", async () => {
+    const ctx = makeInsertReleaseCtx(null, [], {}, [
+      makePackageDoc({
+        _id: "packages:claimed",
+        name: "claimed-plugin",
+        normalizedName: "claimed-plugin",
+        runtimeId: "dronzer",
+        softDeletedAt: undefined,
+      }),
+    ]);
+
+    await expect(
+      insertReleaseInternalHandler(ctx, {
+        actorUserId: "users:owner",
+        ownerUserId: "users:owner",
+        name: "dronzerclaw",
+        displayName: "Dronzer Claw",
+        family: "code-plugin",
+        version: "1.0.0",
+        changelog: "init",
+        tags: ["latest"],
+        summary: "demo",
+        files: [],
+        integritySha256: "abc123",
+        runtimeId: "dronzer",
+      }),
+    ).rejects.toThrow('Plugin id "dronzer" is already claimed by another package');
+  });
+
+  it("allows plugin ids held only by soft-deleted packages", async () => {
+    const ctx = makeInsertReleaseCtx(null, [], {}, [
+      makePackageDoc({
+        _id: "packages:deleted",
+        name: "@openclaw/dronzer",
+        normalizedName: "@openclaw/dronzer",
+        runtimeId: "dronzer",
+        softDeletedAt: 123,
+      }),
+    ]);
+
+    await expect(
+      insertReleaseInternalHandler(ctx, {
+        actorUserId: "users:owner",
+        ownerUserId: "users:owner",
+        name: "dronzerclaw",
+        displayName: "Dronzer Claw",
+        family: "code-plugin",
+        version: "1.0.0",
+        changelog: "init",
+        tags: ["latest"],
+        summary: "demo",
+        files: [],
+        integritySha256: "abc123",
+        runtimeId: "dronzer",
+      }),
+    ).resolves.toMatchObject({ ok: true, packageId: "packages:new" });
   });
 
   it("promotes existing packages to official when publisher becomes trusted", async () => {
