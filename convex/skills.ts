@@ -8161,8 +8161,12 @@ export const setSkillSoftDeletedInternal = internalMutation({
       const ownerInitiatedHide =
         skill.hiddenBy === args.userId && skill.moderationReason === undefined;
       if (!ownerInitiatedHide) {
+        // Prefix with "Forbidden:" so HTTP boundary mappers
+        // (softDeleteErrorToResponse) deterministically return 403 instead of
+        // falling through to 500. The suffix is preserved for clients that
+        // surface a human-readable reason.
         throw new ConvexError(
-          "This skill was hidden by moderation and cannot be restored by the owner. Please contact a moderator.",
+          "Forbidden: This skill was hidden by moderation and cannot be restored by the owner. Please contact a moderator.",
         );
       }
     }

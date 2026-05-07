@@ -197,6 +197,29 @@ describe("setSkillSoftDeletedInternal B1 undelete gate", () => {
     expect(insert).not.toHaveBeenCalled();
   });
 
+  // Regression: the HTTP boundary (softDeleteErrorToResponse) relies on the
+  // "Forbidden:" prefix to map this denial to a deterministic 403 response
+  // instead of 500. If a refactor ever drops the prefix, this test fails
+  // loudly rather than silently regressing the HTTP contract.
+  it("owner undelete denial error message starts with 'Forbidden:' for HTTP mapping", async () => {
+    const skill = makeSkill({
+      moderationReason: undefined,
+      hiddenBy: "users:mod",
+    });
+    const { ctx } = makeCtx({
+      skill,
+      actor: { _id: "users:owner", role: "user" },
+    });
+
+    await expect(
+      setSkillSoftDeletedInternalHandler(ctx, {
+        userId: "users:owner",
+        slug: "demo",
+        deleted: false,
+      }),
+    ).rejects.toThrow(/^Forbidden:/i);
+  });
+
   // Legacy / manual-override rows can have hiddenBy === undefined while still
   // being in a hidden state. Fail closed: owners cannot self-restore without
   // a positive signal that they hid the record themselves.

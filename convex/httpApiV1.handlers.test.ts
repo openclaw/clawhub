@@ -6778,4 +6778,37 @@ describe("httpApiV1 handlers", () => {
     expect(unknown.status).toBe(500);
     expect(await unknown.text()).toBe("Internal Server Error");
   });
+
+  // Regression: owner undelete gate throws a ConvexError prefixed with
+  // "Forbidden:" so the HTTP layer returns a deterministic 403 and surfaces
+  // the actionable reason ("hidden by moderation") instead of falling through
+  // to a generic 500.
+  it("owner undelete denial returns 403 with moderation reason in body", async () => {
+    vi.mocked(requireApiTokenUser).mockResolvedValue({
+      userId: "users:owner",
+      user: { handle: "p" },
+    } as never);
+
+    const moderationMessage =
+      "Forbidden: This skill was hidden by moderation and cannot be restored by the owner. Please contact a moderator.";
+    const runMutationModerationDenied = vi.fn(
+      async (_query: unknown, args: Record<string, unknown>) => {
+        if ("key" in args) return okRate();
+        // Mirror ConvexError shape: Error subclass whose message carries the
+        // "Forbidden:" sentinel so softDeleteErrorToResponse routes to 403.
+        throw new Error(moderationMessage);
+      },
+    );
+
+    const response = await __handlers.skillsPostRouterV1Handler(
+      makeCtx({ runMutation: runMutationModerationDenied }),
+      new Request("https://example.com/api/v1/skills/demo/undelete", {
+        method: "POST",
+        headers: { Authorization: "Bearer clh_test" },
+      }),
+    );
+
+    expect(response.status).toBe(403);
+    expect(await response.text()).toBe(moderationMessage);
+  });
 });
