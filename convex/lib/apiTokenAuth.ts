@@ -29,13 +29,20 @@ const internalRefs = internal as unknown as {
   };
 };
 
+export const MISSING_API_TOKEN_MESSAGE =
+  "Unauthorized: API token is missing. Run `clawhub login` to authenticate.";
+export const INVALID_API_TOKEN_MESSAGE =
+  "Unauthorized: API token is invalid or revoked. Run `clawhub login` again.";
+export const BLOCKED_API_TOKEN_ACCOUNT_MESSAGE =
+  "Unauthorized: This ClawHub account is not in good standing and cannot use API tokens. If you believe this is a mistake, contact security@openclaw.ai.";
+
 export async function requireApiTokenUser(
   ctx: ActionCtx,
   request: Request,
 ): Promise<TokenAuthResult> {
   const header = request.headers.get("authorization") ?? request.headers.get("Authorization");
   const token = parseBearerToken(header);
-  if (!token) throw new ConvexError("Unauthorized");
+  if (!token) throw new ConvexError(MISSING_API_TOKEN_MESSAGE);
 
   const tokenHash = await hashToken(token);
   const apiToken = (await ctx.runQuery(
@@ -44,7 +51,7 @@ export async function requireApiTokenUser(
       tokenHash,
     } as never,
   )) as ApiTokenDoc | null;
-  if (!apiToken || apiToken.revokedAt) throw new ConvexError("Unauthorized");
+  if (!apiToken || apiToken.revokedAt) throw new ConvexError(INVALID_API_TOKEN_MESSAGE);
 
   const user = (await ctx.runQuery(
     internalRefs.tokens.getUserForTokenInternal as never,
@@ -52,7 +59,9 @@ export async function requireApiTokenUser(
       tokenId: apiToken._id,
     } as never,
   )) as Doc<"users"> | null;
-  if (!user || user.deletedAt || user.deactivatedAt) throw new ConvexError("Unauthorized");
+  if (!user || user.deletedAt || user.deactivatedAt) {
+    throw new ConvexError(BLOCKED_API_TOKEN_ACCOUNT_MESSAGE);
+  }
 
   try {
     await ctx.runMutation(
@@ -106,7 +115,7 @@ export async function requirePackagePublishAuth(
 ): Promise<UserPackagePublishAuthResult | PackagePublishTokenAuthResult> {
   const header = request.headers.get("authorization") ?? request.headers.get("Authorization");
   const token = parseBearerToken(header);
-  if (!token) throw new ConvexError("Unauthorized");
+  if (!token) throw new ConvexError(MISSING_API_TOKEN_MESSAGE);
 
   const tokenHash = await hashToken(token);
   const publishToken = (await ctx.runQuery(

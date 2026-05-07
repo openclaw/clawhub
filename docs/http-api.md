@@ -28,6 +28,10 @@ Enforcement model:
 - Anonymous requests: enforced per IP.
 - Authenticated requests (valid Bearer token): enforced per user bucket.
 - If token is missing/invalid, behavior falls back to IP enforcement.
+- Authenticated write endpoints should not return a bare `Unauthorized` when
+  the server knows the reason. Missing tokens, invalid/revoked tokens, and
+  deleted/banned/disabled accounts should each get actionable text so CLI
+  clients can tell users what blocked them.
 
 - Read: 600/min per IP, 2400/min per key
 - Write: 45/min per IP, 180/min per key

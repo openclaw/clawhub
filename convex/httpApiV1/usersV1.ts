@@ -1,7 +1,6 @@
 import { api, internal } from "../_generated/api";
 import type { Id } from "../_generated/dataModel";
 import type { ActionCtx } from "../_generated/server";
-import { requireApiTokenUser } from "../lib/apiTokenAuth";
 import { applyRateLimit } from "../lib/httpRateLimit";
 import {
   getPathSegments,
@@ -385,13 +384,9 @@ export async function usersListV1Handler(ctx: ActionCtx, request: Request) {
   const limitRaw = toOptionalNumber(url.searchParams.get("limit"));
   const query = url.searchParams.get("q") ?? url.searchParams.get("query") ?? "";
 
-  let actorUserId: Id<"users">;
-  try {
-    const auth = await requireApiTokenUser(ctx, request);
-    actorUserId = auth.userId;
-  } catch {
-    return text("Unauthorized", 401, rate.headers);
-  }
+  const auth = await requireApiTokenUserOrResponse(ctx, request, rate.headers);
+  if (!auth.ok) return auth.response;
+  const actorUserId = auth.userId;
 
   const limit = Math.min(Math.max(limitRaw ?? 20, 1), 200);
   try {
@@ -407,7 +402,7 @@ export async function usersListV1Handler(ctx: ActionCtx, request: Request) {
       return text("Forbidden", 403, rate.headers);
     }
     if (message.toLowerCase().includes("unauthorized")) {
-      return text("Unauthorized", 401, rate.headers);
+      return text(message, 401, rate.headers);
     }
     return text(message, 400, rate.headers);
   }

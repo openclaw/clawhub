@@ -2748,13 +2748,18 @@ describe("httpApiV1 handlers", () => {
   });
 
   it("delete and undelete require auth", async () => {
-    vi.mocked(requireApiTokenUser).mockRejectedValueOnce(new Error("Unauthorized"));
+    vi.mocked(requireApiTokenUser).mockRejectedValueOnce(
+      new Error("Unauthorized: API token is invalid or revoked. Run `clawhub login` again."),
+    );
     const runMutation = vi.fn().mockResolvedValue(okRate());
     const response = await __handlers.skillsDeleteRouterV1Handler(
       makeCtx({ runMutation }),
       new Request("https://example.com/api/v1/skills/demo", { method: "DELETE" }),
     );
     expect(response.status).toBe(401);
+    expect(await response.text()).toBe(
+      "Unauthorized: API token is invalid or revoked. Run `clawhub login` again.",
+    );
 
     vi.mocked(requireApiTokenUser).mockRejectedValueOnce(new Error("Unauthorized"));
     const response2 = await __handlers.skillsPostRouterV1Handler(

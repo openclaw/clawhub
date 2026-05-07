@@ -109,19 +109,25 @@ clawhub-mod set-role <handleOrId> <user|moderator|admin>
 Package moderation and operations:
 
 ```bash
-clawhub-mod package moderate <name> --version <version> --state approved|quarantined|revoked --reason <text>
-clawhub-mod package moderation-status <name>
-clawhub-mod package moderation-queue [--status open|blocked|manual|all]
-clawhub-mod package reports [--status open|confirmed|dismissed|all]
-clawhub-mod package triage-report <report-id> --status open|confirmed|dismissed [--note <text>] [--action none|quarantine|revoke] [--yes]
-clawhub-mod package appeals [--status open|accepted|rejected|all]
-clawhub-mod package resolve-appeal <appeal-id> --status open|accepted|rejected [--note <text>] [--action none|approve] [--yes]
-clawhub-mod package migrations [--phase <phase>]
-clawhub-mod package set-migration <bundled-plugin-id> --package <name>
-clawhub-mod package backfill-artifacts [--all] [--apply]
-clawhub-mod package trusted-publisher get <name>
-clawhub-mod package trusted-publisher set <name> --repository <owner/repo> --workflow-filename <file>
-clawhub-mod package trusted-publisher delete <name>
+clawhub-mod skills reports [--status open|confirmed|dismissed|all]
+clawhub-mod skills triage-report <report-id> --status open|confirmed|dismissed [--note <text>] [--action none|hide] [--yes]
+clawhub-mod skills appeals [--status open|accepted|rejected|all]
+clawhub-mod skills resolve-appeal <appeal-id> --status open|accepted|rejected [--note <text>] [--action none|restore] [--yes]
+
+clawhub-mod plugins moderate <name> --version <version> --state approved|quarantined|revoked --reason <text>
+clawhub-mod plugins status <name>
+clawhub-mod plugins queue [--status open|blocked|manual|all]
+clawhub-mod plugins reports [--status open|confirmed|dismissed|all]
+clawhub-mod plugins triage-report <report-id> --status open|confirmed|dismissed [--note <text>] [--action none|quarantine|revoke] [--yes]
+clawhub-mod plugins appeals [--status open|accepted|rejected|all]
+clawhub-mod plugins resolve-appeal <appeal-id> --status open|accepted|rejected [--note <text>] [--action none|approve] [--yes]
+
+clawhub-mod plugins migrations [--phase <phase>]
+clawhub-mod plugins set-migration <bundled-plugin-id> --package <name>
+clawhub-mod plugins backfill-artifacts [--all] [--apply]
+clawhub-mod plugins trusted-publisher get <name>
+clawhub-mod plugins trusted-publisher set <name> --repository <owner/repo> --workflow-filename <file>
+clawhub-mod plugins trusted-publisher delete <name>
 ```
 
-All package commands accept `--json` where the underlying endpoint supports machine-readable output.
+All skill and plugin commands accept `--json` where the underlying endpoint supports machine-readable output.

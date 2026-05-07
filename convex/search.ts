@@ -17,6 +17,7 @@ import {
   getFirstSearchToken,
   normalizeSkillSearchText,
 } from "./lib/skillSearchDigest";
+import { isSearchableSkillSlugShape, normalizeSkillSlug } from "./lib/skillSlugValidator";
 
 type OwnerInfo = { ownerHandle: string | null; owner: PublicPublisher | null };
 
@@ -134,7 +135,11 @@ function mergeUniqueBySkillId(primary: SkillSearchEntry[], fallback: SkillSearch
 }
 
 function isSlugLikeQuery(query: string) {
-  return /^[a-z0-9][a-z0-9-]*$/.test(query.trim().toLowerCase());
+  // Lenient shape check used by the read path: pattern + upper length cap only.
+  // The min-length floor and reserved-word blocklist are intentionally omitted
+  // so legacy rows (grandfathered short/reserved slugs) remain discoverable via
+  // the exact-slug fast path. Write paths still go through assertValidSkillSlug.
+  return isSearchableSkillSlugShape(query);
 }
 
 function prefixUpperBound(value: string) {
@@ -541,8 +546,11 @@ export const lexicalFallbackSkills = internalQuery({
     >();
 
     // Exact slug match via the skills table (only one row, cheap).
-    const slugQuery = args.query.trim().toLowerCase();
-    if (!args.skipExactSlugLookup && /^[a-z0-9][a-z0-9-]*$/.test(slugQuery)) {
+    // Use the lenient shape predicate so legacy rows with sub-min-length
+    // slugs stay discoverable; the caller in searchSkills already passes
+    // skipExactSlugLookup=true after running its own exact-slug lookup.
+    const slugQuery = normalizeSkillSlug(args.query);
+    if (!args.skipExactSlugLookup && isSearchableSkillSlugShape(slugQuery)) {
       const exactSlugSkill = await ctx.db
         .query("skills")
         .withIndex("by_slug", (q) => q.eq("slug", slugQuery))

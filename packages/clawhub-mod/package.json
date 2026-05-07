@@ -1,6 +1,6 @@
 {
   "name": "@openclaw/clawhub-mod",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "private": true,
   "description": "Moderator-only ClawHub operator CLI for platform moderation and package operations.",
   "homepage": "https://clawhub.ai",

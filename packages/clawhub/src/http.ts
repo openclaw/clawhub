@@ -444,7 +444,7 @@ function throwHttpStatusError(
 }
 
 function buildHttpErrorMessage(status: number, text: string, rateLimit: RateLimitInfo): string {
-  const base = text || `HTTP ${status}`;
+  const base = normalizeHttpErrorBody(status, text);
   const details: string[] = [];
   if (rateLimit.retryAfterSeconds !== undefined) {
     details.push(`retry in ${rateLimit.retryAfterSeconds}s`);
@@ -456,6 +456,28 @@ function buildHttpErrorMessage(status: number, text: string, rateLimit: RateLimi
     details.push(`reset in ${rateLimit.resetDelaySeconds}s`);
   }
   return details.length === 0 ? base : `${base} (${details.join(", ")})`;
+}
+
+function normalizeHttpErrorBody(status: number, text: string): string {
+  const body = text.trim();
+  const lowered = body.toLowerCase();
+  if (body && lowered !== "unauthorized" && lowered !== "forbidden") {
+    if (status === 404 && lowered === "package not found") {
+      return "Package not found or not visible to this account.";
+    }
+    if (status === 404 && lowered === "skill not found") {
+      return "Skill not found or unavailable to this account.";
+    }
+    return body;
+  }
+  if (status === 401) {
+    return "Authentication failed. Run `clawhub login` again. Deleted, banned, or disabled ClawHub accounts cannot use API tokens.";
+  }
+  if (status === 403) {
+    return "Permission denied. This account does not have access to this operation, or the account is not in good standing.";
+  }
+  if (body) return body;
+  return `HTTP ${status}`;
 }
 
 function parseRateLimitInfo(headers: HeaderSource, now: () => number): RateLimitInfo {

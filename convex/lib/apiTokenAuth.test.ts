@@ -1,5 +1,11 @@
 import { describe, expect, it, vi } from "vitest";
-import { getOptionalApiTokenUserId } from "./apiTokenAuth";
+import {
+  BLOCKED_API_TOKEN_ACCOUNT_MESSAGE,
+  INVALID_API_TOKEN_MESSAGE,
+  MISSING_API_TOKEN_MESSAGE,
+  getOptionalApiTokenUserId,
+  requireApiTokenUser,
+} from "./apiTokenAuth";
 import { hashToken } from "./tokens";
 
 describe("getOptionalApiTokenUserId", () => {
@@ -106,5 +112,47 @@ describe("getOptionalApiTokenUserId", () => {
 
     expect(userId).toBeNull();
     expect(ctx.runQuery).toHaveBeenCalledTimes(2);
+  });
+});
+
+describe("requireApiTokenUser", () => {
+  it("explains missing tokens", async () => {
+    const ctx = { runQuery: vi.fn(), runMutation: vi.fn() };
+
+    await expect(
+      requireApiTokenUser(ctx as never, new Request("https://example.com")),
+    ).rejects.toThrow(MISSING_API_TOKEN_MESSAGE);
+    expect(ctx.runQuery).not.toHaveBeenCalled();
+  });
+
+  it("explains invalid or revoked tokens", async () => {
+    const ctx = { runQuery: vi.fn().mockResolvedValue(null), runMutation: vi.fn() };
+
+    await expect(
+      requireApiTokenUser(
+        ctx as never,
+        new Request("https://example.com", { headers: { authorization: "Bearer token-5" } }),
+      ),
+    ).rejects.toThrow(INVALID_API_TOKEN_MESSAGE);
+  });
+
+  it("explains tokens whose account is not in good standing", async () => {
+    const ctx = {
+      runQuery: vi
+        .fn()
+        .mockImplementation(async (_fn, args: { tokenHash?: string; tokenId?: string }) => {
+          if (args.tokenHash) return { _id: "apiTokens_4", revokedAt: undefined };
+          if (args.tokenId) return { _id: "users_blocked", deletedAt: Date.now() };
+          return null;
+        }),
+      runMutation: vi.fn(),
+    };
+
+    await expect(
+      requireApiTokenUser(
+        ctx as never,
+        new Request("https://example.com", { headers: { authorization: "Bearer token-6" } }),
+      ),
+    ).rejects.toThrow(BLOCKED_API_TOKEN_ACCOUNT_MESSAGE);
   });
 });

@@ -12,6 +12,7 @@ import {
   isSkillHighlighted,
   isSkillOfficial,
 } from "../lib/badges";
+import { getUserFacingConvexError } from "../lib/convexError";
 import { familyLabel } from "../lib/packageLabels";
 import type { PublicPublisher } from "../lib/publicUser";
 import { isAdmin, isModerator } from "../lib/roles";
@@ -1052,10 +1053,7 @@ function formatTimestamp(value: number) {
 }
 
 function formatMutationError(error: unknown) {
-  if (error instanceof Error && error.message.trim()) {
-    return error.message.trim();
-  }
-  return "Request failed.";
+  return getUserFacingConvexError(error, "Request failed.");
 }
 
 function formatManualOverrideState(

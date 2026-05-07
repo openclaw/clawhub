@@ -11,7 +11,7 @@ import { api, internal } from "../_generated/api";
 import type { Doc, Id } from "../_generated/dataModel";
 import type { ActionCtx } from "../_generated/server";
 import { getOptionalApiTokenUserId, requireApiTokenUser } from "../lib/apiTokenAuth";
-import { applyRateLimit, parseBearerToken } from "../lib/httpRateLimit";
+import { applyRateLimit } from "../lib/httpRateLimit";
 import { parseBooleanQueryParam, resolveBooleanQueryParam } from "../lib/httpUtils";
 import type {
   LlmAgenticRiskFinding,
@@ -1002,12 +1002,8 @@ export async function publishSkillV1Handler(ctx: ActionCtx, request: Request) {
   const rate = await applyRateLimit(ctx, request, "write");
   if (!rate.ok) return rate.response;
 
-  try {
-    if (!parseBearerToken(request)) return text("Unauthorized", 401, rate.headers);
-  } catch {
-    return text("Unauthorized", 401, rate.headers);
-  }
-  const { userId } = await requireApiTokenUser(ctx, request);
+  const auth = await requireApiTokenUserOrResponse(ctx, request, rate.headers);
+  if (!auth.ok) return auth.response;
 
   const contentType = request.headers.get("content-type") ?? "";
   try {
@@ -1017,7 +1013,7 @@ export async function publishSkillV1Handler(ctx: ActionCtx, request: Request) {
       if (!hasAcceptedLegacyLicenseTerms(payload.acceptLicenseTerms)) {
         return text("MIT-0 license terms must be accepted to publish skills", 400, rate.headers);
       }
-      const result = await publishSkillPayloadForApiUser(ctx, userId, payload);
+      const result = await publishSkillPayloadForApiUser(ctx, auth.userId, payload);
       return json({ ok: true, ...result }, 200, rate.headers);
     }
 
@@ -1026,7 +1022,7 @@ export async function publishSkillV1Handler(ctx: ActionCtx, request: Request) {
       if (!hasAcceptedLegacyLicenseTerms(payload.acceptLicenseTerms)) {
         return text("MIT-0 license terms must be accepted to publish skills", 400, rate.headers);
       }
-      const result = await publishSkillPayloadForApiUser(ctx, userId, payload);
+      const result = await publishSkillPayloadForApiUser(ctx, auth.userId, payload);
       return json({ ok: true, ...result }, 200, rate.headers);
     }
   } catch (error) {
@@ -1065,8 +1061,10 @@ type TransferDecisionAction = "accept" | "reject" | "cancel";
 function transferErrorToResponse(error: unknown, headers: HeadersInit) {
   const message = error instanceof Error ? error.message : "Transfer failed";
   const lower = message.toLowerCase();
-  if (lower.includes("unauthorized")) return text("Unauthorized", 401, headers);
-  if (lower.includes("forbidden")) return text("Forbidden", 403, headers);
+  if (lower.includes("unauthorized"))
+    return text(formatAuthzMessage(error, "Unauthorized"), 401, headers);
+  if (lower.includes("forbidden"))
+    return text(formatAuthzMessage(error, "Forbidden"), 403, headers);
   if (lower.includes("not found")) return text(message, 404, headers);
   if (lower.includes("required") || lower.includes("invalid") || lower.includes("pending")) {
     return text(message, 400, headers);
@@ -1077,10 +1075,18 @@ function transferErrorToResponse(error: unknown, headers: HeadersInit) {
 function ownershipErrorToResponse(error: unknown, headers: HeadersInit) {
   const message = error instanceof Error ? error.message : "Skill update failed";
   const lower = message.toLowerCase();
-  if (lower.includes("unauthorized")) return text("Unauthorized", 401, headers);
-  if (lower.includes("forbidden")) return text("Forbidden", 403, headers);
+  if (lower.includes("unauthorized"))
+    return text(formatAuthzMessage(error, "Unauthorized"), 401, headers);
+  if (lower.includes("forbidden"))
+    return text(formatAuthzMessage(error, "Forbidden"), 403, headers);
   if (lower.includes("not found")) return text(message, 404, headers);
   return text(message, 400, headers);
+}
+
+function formatAuthzMessage(error: unknown, fallback: "Unauthorized" | "Forbidden") {
+  const message = error instanceof Error ? error.message.trim() : "";
+  if (!message || message.toLowerCase() === fallback.toLowerCase()) return fallback;
+  return message.replace(/^ConvexError:\s*/i, "").trim() || fallback;
 }
 
 async function resolveTransferContext(

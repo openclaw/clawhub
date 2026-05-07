@@ -236,12 +236,17 @@ describe("httpApi handlers", () => {
   });
 
   it("cliWhoamiHttp returns 401 on auth failure", async () => {
-    vi.mocked(requireApiTokenUser).mockRejectedValueOnce(new Error("Unauthorized"));
+    vi.mocked(requireApiTokenUser).mockRejectedValueOnce(
+      new Error(
+        "Unauthorized: This ClawHub account is not in good standing and cannot use API tokens. If you believe this is a mistake, contact security@openclaw.ai.",
+      ),
+    );
     const response = await __handlers.cliWhoamiHandler(
       makeCtx({}),
       new Request("https://x/api/cli/whoami"),
     );
     expect(response.status).toBe(401);
+    expect(await response.text()).toContain("not in good standing");
   });
 
   it("cliWhoamiHttp returns user payload on success", async () => {

@@ -55,3 +55,7 @@ Override:
 
 - Tokens can be revoked in the web UI.
 - Revoked tokens return `401 Unauthorized` on CLI endpoints.
+- CLI/API auth failures should use actionable text, not a bare status word:
+  missing tokens should point to `clawhub login`, revoked/invalid tokens should
+  ask the user to log in again, and deleted/banned/disabled accounts should say
+  that the ClawHub account is not in good standing and cannot use API tokens.
