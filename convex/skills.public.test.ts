@@ -506,12 +506,12 @@ describe("skills.getBySlug", () => {
 });
 
 describe("skill artifact moderation", () => {
-  it("lets owners appeal soft-deleted moderated skills", async () => {
+  it("lets owners appeal malicious moderated skills", async () => {
     const skill = makeSkill({
-      softDeletedAt: 123,
       moderationStatus: "hidden",
-      moderationReason: "scanner.llm.suspicious",
-      latestVersionId: undefined,
+      moderationReason: "scanner.llm.malicious",
+      moderationVerdict: "malicious",
+      latestVersionId: "skillVersions:1",
     });
     const insert = vi.fn(async (table: string) => {
       if (table === "skillAppeals") return "skillAppeals:1";
@@ -525,6 +525,22 @@ describe("skill artifact moderation", () => {
         db: {
           get: vi.fn(async (id: string) => {
             if (id === "users:1") return makeOwner("users:1", "owner");
+            if (id === "skillVersions:1") {
+              return {
+                _id: "skillVersions:1",
+                skillId: "skills:1",
+                version: "1.0.0",
+                staticScan: {
+                  status: "malicious",
+                  reasonCodes: ["malicious.test"],
+                  findings: [],
+                  summary: "Malicious",
+                  engineVersion: "test",
+                  checkedAt: 1,
+                },
+                createdAt: 1,
+              };
+            }
             return null;
           }),
           query: vi.fn((table: string) => {
@@ -569,6 +585,8 @@ describe("skill artifact moderation", () => {
     });
     expect(insert).toHaveBeenCalledWith("skillAppeals", {
       skillId: "skills:1",
+      skillVersionId: "skillVersions:1",
+      version: "1.0.0",
       userId: "users:1",
       message: "please review",
       status: "open",
@@ -582,6 +600,141 @@ describe("skill artifact moderation", () => {
         action: "skill.appeal.submit",
       }),
     );
+  });
+
+  it("rejects appeals for Review skills", async () => {
+    const skill = makeSkill({
+      moderationStatus: "active",
+      moderationReason: "scanner.llm.suspicious",
+      moderationVerdict: "suspicious",
+      latestVersionId: "skillVersions:1",
+    });
+
+    await expect(
+      submitSkillAppealForUserInternalHandler(
+        {
+          db: {
+            get: vi.fn(async (id: string) => {
+              if (id === "users:1") return makeOwner("users:1", "owner");
+              if (id === "skillVersions:1") {
+                return {
+                  _id: "skillVersions:1",
+                  skillId: "skills:1",
+                  version: "1.0.0",
+                  staticScan: {
+                    status: "suspicious",
+                    reasonCodes: ["suspicious.test"],
+                    findings: [],
+                    summary: "Review",
+                    engineVersion: "test",
+                    checkedAt: 1,
+                  },
+                  createdAt: 1,
+                };
+              }
+              return null;
+            }),
+            query: vi.fn((table: string) => {
+              if (table === "skills") {
+                return {
+                  withIndex: vi.fn(() => ({
+                    unique: vi.fn().mockResolvedValue(skill),
+                  })),
+                };
+              }
+              throw new Error(`Unexpected query table: ${table}`);
+            }),
+            insert: vi.fn(),
+            patch: vi.fn(),
+            replace: vi.fn(),
+            delete: vi.fn(),
+            normalizeId: vi.fn(),
+          },
+        } as never,
+        {
+          actorUserId: "users:1",
+          slug: "demo",
+          message: "please review",
+        },
+      ),
+    ).rejects.toThrow("Review is cautionary");
+  });
+
+  it("preserves owner appeals for legacy hidden skills with skill-row moderation state", async () => {
+    const skill = makeSkill({
+      softDeletedAt: 123,
+      moderationStatus: "hidden",
+      moderationReason: "manual.report",
+      latestVersionId: "skillVersions:1",
+    });
+    const insert = vi.fn(async (table: string) => {
+      if (table === "skillAppeals") return "skillAppeals:legacy";
+      if (table === "skillModerationEventLogs") return "skillModerationEventLogs:1";
+      if (table === "auditLogs") return "auditLogs:1";
+      throw new Error(`Unexpected insert table: ${table}`);
+    });
+
+    const result = await submitSkillAppealForUserInternalHandler(
+      {
+        db: {
+          get: vi.fn(async (id: string) => {
+            if (id === "users:1") return makeOwner("users:1", "owner");
+            if (id === "skillVersions:1") {
+              return {
+                _id: "skillVersions:1",
+                skillId: "skills:1",
+                version: "1.0.0",
+                staticScan: {
+                  status: "suspicious",
+                  reasonCodes: ["suspicious.test"],
+                  findings: [],
+                  summary: "Review",
+                  engineVersion: "test",
+                  checkedAt: 1,
+                },
+                createdAt: 1,
+              };
+            }
+            return null;
+          }),
+          query: vi.fn((table: string) => {
+            if (table === "skills") {
+              return {
+                withIndex: vi.fn(() => ({
+                  unique: vi.fn().mockResolvedValue(skill),
+                })),
+              };
+            }
+            if (table === "skillAppeals") {
+              return {
+                withIndex: vi.fn(() => ({
+                  order: vi.fn(() => ({
+                    first: vi.fn().mockResolvedValue(null),
+                  })),
+                })),
+              };
+            }
+            throw new Error(`Unexpected query table: ${table}`);
+          }),
+          insert,
+          patch: vi.fn(),
+          replace: vi.fn(),
+          delete: vi.fn(),
+          normalizeId: vi.fn(),
+        },
+      } as never,
+      {
+        actorUserId: "users:1",
+        slug: "demo",
+        message: "legacy false positive",
+      },
+    );
+
+    expect(result).toMatchObject({
+      ok: true,
+      submitted: true,
+      appealId: "skillAppeals:legacy",
+    });
   });
 
   it("keeps hidden skill reports visible in the moderator queue", async () => {

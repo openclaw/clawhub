@@ -240,6 +240,10 @@ export const SkillReportStatusSchema = type('"open"|"confirmed"|"dismissed"');
 export type SkillReportStatus = (typeof SkillReportStatusSchema)[inferred];
 export const SkillReportFinalActionSchema = type('"none"|"hide"');
 export type SkillReportFinalAction = (typeof SkillReportFinalActionSchema)[inferred];
+export const ModerationReviewVerdictSchema = type('"clean"|"review"|"malicious"|"unknown"');
+export type ModerationReviewVerdict = (typeof ModerationReviewVerdictSchema)[inferred];
+export const ModerationReviewConfidenceSchema = type('"low"|"medium"|"high"');
+export type ModerationReviewConfidence = (typeof ModerationReviewConfidenceSchema)[inferred];
 
 export const SkillReportListStatusSchema = SkillReportStatusSchema.or('"all"');
 export type SkillReportListStatus = (typeof SkillReportListStatusSchema)[inferred];
@@ -282,6 +286,9 @@ export const SkillReportTriageRequestSchema = type({
   status: SkillReportStatusSchema,
   note: "string?",
   finalAction: SkillReportFinalActionSchema.optional(),
+  reviewVerdict: ModerationReviewVerdictSchema.optional(),
+  reviewConfidence: ModerationReviewConfidenceSchema.optional(),
+  reviewCategories: "string[]?",
 });
 export type SkillReportTriageRequest = (typeof SkillReportTriageRequestSchema)[inferred];
 
@@ -289,6 +296,9 @@ export const SkillAppealResolveRequestSchema = type({
   status: SkillAppealStatusSchema,
   note: "string?",
   finalAction: SkillAppealFinalActionSchema.optional(),
+  reviewVerdict: ModerationReviewVerdictSchema.optional(),
+  reviewConfidence: ModerationReviewConfidenceSchema.optional(),
+  reviewCategories: "string[]?",
 });
 export type SkillAppealResolveRequest = (typeof SkillAppealResolveRequestSchema)[inferred];
 
@@ -312,6 +322,9 @@ export const ApiV1SkillReportListResponseSchema = type({
     triagedBy: "string|null?",
     triageNote: "string|null?",
     actionTaken: SkillReportFinalActionSchema.or("null").optional(),
+    reviewVerdict: ModerationReviewVerdictSchema.or("null").optional(),
+    reviewConfidence: ModerationReviewConfidenceSchema.or("null").optional(),
+    reviewCategories: "string[]?",
   }).array(),
   nextCursor: "string|null",
   done: "boolean",
@@ -325,6 +338,7 @@ export const ApiV1SkillReportTriageResponseSchema = type({
   status: SkillReportStatusSchema,
   reportCount: "number",
   actionTaken: SkillReportFinalActionSchema.optional(),
+  reviewVerdict: ModerationReviewVerdictSchema.optional(),
 });
 export type ApiV1SkillReportTriageResponse =
   (typeof ApiV1SkillReportTriageResponseSchema)[inferred];
@@ -349,6 +363,9 @@ export const ApiV1SkillAppealListResponseSchema = type({
     resolvedBy: "string|null?",
     resolutionNote: "string|null?",
     actionTaken: SkillAppealFinalActionSchema.or("null").optional(),
+    reviewVerdict: ModerationReviewVerdictSchema.or("null").optional(),
+    reviewConfidence: ModerationReviewConfidenceSchema.or("null").optional(),
+    reviewCategories: "string[]?",
   }).array(),
   nextCursor: "string|null",
   done: "boolean",
@@ -361,6 +378,7 @@ export const ApiV1SkillAppealResolveResponseSchema = type({
   skillId: "string",
   status: SkillAppealStatusSchema,
   actionTaken: SkillAppealFinalActionSchema.optional(),
+  reviewVerdict: ModerationReviewVerdictSchema.optional(),
 });
 export type ApiV1SkillAppealResolveResponse =
   (typeof ApiV1SkillAppealResolveResponseSchema)[inferred];

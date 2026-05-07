@@ -41,7 +41,7 @@ describe("manualOverrides", () => {
     expect(patch.moderationReasonCodes).toEqual(["suspicious.dynamic_code_execution"]);
   });
 
-  it("preserves malicious scanner state over a clean override", () => {
+  it("lets a clean override restore malicious scanner state", () => {
     const now = 1_700_000_100_000;
     const patch = applyManualOverrideToSkillPatch({
       basePatch: {
@@ -65,11 +65,11 @@ describe("manualOverrides", () => {
     });
 
     expect(patch).toMatchObject({
-      moderationStatus: "hidden",
-      moderationReason: "scanner.vt.malicious",
-      moderationVerdict: "malicious",
-      moderationFlags: ["blocked.malware"],
-      hiddenAt: now,
+      moderationStatus: "active",
+      moderationReason: "manual.override.clean",
+      moderationVerdict: "clean",
+      moderationFlags: undefined,
+      hiddenAt: undefined,
       lastReviewedAt: now,
       updatedAt: now,
     });

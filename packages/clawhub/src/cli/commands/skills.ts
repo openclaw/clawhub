@@ -66,6 +66,9 @@ type SkillReportTriageOptions = {
   action?: SkillReportFinalAction;
   finalAction?: SkillReportFinalAction;
   note?: string;
+  reviewVerdict?: string;
+  reviewConfidence?: string;
+  reviewCategories?: string;
   json?: boolean;
   yes?: boolean;
 };
@@ -82,9 +85,15 @@ type SkillAppealResolveOptions = {
   action?: SkillAppealFinalAction;
   finalAction?: SkillAppealFinalAction;
   note?: string;
+  reviewVerdict?: string;
+  reviewConfidence?: string;
+  reviewCategories?: string;
   json?: boolean;
   yes?: boolean;
 };
+
+type ModerationReviewVerdict = "clean" | "review" | "malicious" | "unknown";
+type ModerationReviewConfidence = "low" | "medium" | "high";
 
 function normalizeSkillSlugOrFail(raw: string) {
   const slug = raw.trim();
@@ -499,6 +508,47 @@ export function clampLimit(limit: number, fallback = 25) {
   return Math.min(Math.max(1, limit), 200);
 }
 
+function parseReviewFields(options: {
+  reviewVerdict?: string;
+  reviewConfidence?: string;
+  reviewCategories?: string;
+}) {
+  const reviewVerdict = parseReviewVerdict(options.reviewVerdict);
+  const reviewConfidence = parseReviewConfidence(options.reviewConfidence);
+  const reviewCategories = parseCsv(options.reviewCategories);
+  return {
+    ...(reviewVerdict ? { reviewVerdict } : {}),
+    ...(reviewConfidence ? { reviewConfidence } : {}),
+    ...(reviewCategories.length > 0 ? { reviewCategories } : {}),
+  };
+}
+
+function parseReviewVerdict(value: string | undefined): ModerationReviewVerdict | undefined {
+  const normalized = value?.trim();
+  if (!normalized) return undefined;
+  if (!["clean", "review", "malicious", "unknown"].includes(normalized)) {
+    fail("--review-verdict must be clean, review, malicious, or unknown");
+  }
+  return normalized as ModerationReviewVerdict;
+}
+
+function parseReviewConfidence(value: string | undefined): ModerationReviewConfidence | undefined {
+  const normalized = value?.trim();
+  if (!normalized) return undefined;
+  if (!["low", "medium", "high"].includes(normalized)) {
+    fail("--review-confidence must be low, medium, or high");
+  }
+  return normalized as ModerationReviewConfidence;
+}
+
+function parseCsv(value: string | undefined) {
+  if (!value) return [];
+  return value
+    .split(",")
+    .map((item) => item.trim())
+    .filter(Boolean);
+}
+
 export async function cmdReportSkill(
   opts: GlobalOpts,
   slug: string,
@@ -627,6 +677,7 @@ export async function cmdTriageSkillReport(
   }
   const note = options.note?.trim();
   if (status !== "open" && !note) fail("--note required unless reopening");
+  const reviewFields = parseReviewFields(options);
 
   const token = await requireAuthToken();
   const registry = await getRegistry(opts, { cache: true });
@@ -649,6 +700,7 @@ export async function cmdTriageSkillReport(
         status,
         ...(note ? { note } : {}),
         ...(finalAction ? { finalAction } : {}),
+        ...reviewFields,
       },
     },
     ApiV1SkillReportTriageResponseSchema,
@@ -660,7 +712,10 @@ export async function cmdTriageSkillReport(
   }
   const actionSuffix =
     result.actionTaken && result.actionTaken !== "none" ? `; action ${result.actionTaken}` : "";
-  console.log(`OK. Skill report ${trimmed} set to ${result.status}${actionSuffix}.`);
+  const verdictSuffix = result.reviewVerdict ? `; verdict ${result.reviewVerdict}` : "";
+  console.log(
+    `OK. Skill report ${trimmed} set to ${result.status}${actionSuffix}${verdictSuffix}.`,
+  );
 }
 
 export async function cmdListSkillAppeals(opts: GlobalOpts, options: SkillAppealListOptions = {}) {
@@ -719,6 +774,7 @@ export async function cmdResolveSkillAppeal(
   }
   const note = options.note?.trim();
   if (status !== "open" && !note) fail("--note required unless reopening");
+  const reviewFields = parseReviewFields(options);
 
   const token = await requireAuthToken();
   const registry = await getRegistry(opts, { cache: true });
@@ -737,7 +793,12 @@ export async function cmdResolveSkillAppeal(
       method: "POST",
       path: `${ApiRoutes.skills}/-/appeals/${encodeURIComponent(trimmed)}/resolve`,
       token,
-      body: { status, ...(note ? { note } : {}), ...(finalAction ? { finalAction } : {}) },
+      body: {
+        status,
+        ...(note ? { note } : {}),
+        ...(finalAction ? { finalAction } : {}),
+        ...reviewFields,
+      },
     },
     ApiV1SkillAppealResolveResponseSchema,
   );
@@ -748,7 +809,10 @@ export async function cmdResolveSkillAppeal(
   }
   const actionSuffix =
     result.actionTaken && result.actionTaken !== "none" ? `; action ${result.actionTaken}` : "";
-  console.log(`OK. Skill appeal ${trimmed} set to ${result.status}${actionSuffix}.`);
+  const verdictSuffix = result.reviewVerdict ? `; verdict ${result.reviewVerdict}` : "";
+  console.log(
+    `OK. Skill appeal ${trimmed} set to ${result.status}${actionSuffix}${verdictSuffix}.`,
+  );
 }
 
 function formatRelativeTime(timestamp: number): string {

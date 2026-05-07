@@ -62,6 +62,9 @@ type PackageAppealResolveOptions = {
   note?: string;
   action?: PackageAppealFinalAction;
   finalAction?: PackageAppealFinalAction;
+  reviewVerdict?: string;
+  reviewConfidence?: string;
+  reviewCategories?: string;
   yes?: boolean;
   json?: boolean;
 };
@@ -78,9 +81,15 @@ type PackageReportTriageOptions = {
   note?: string;
   action?: PackageReportFinalAction;
   finalAction?: PackageReportFinalAction;
+  reviewVerdict?: string;
+  reviewConfidence?: string;
+  reviewCategories?: string;
   yes?: boolean;
   json?: boolean;
 };
+
+type ModerationReviewVerdict = "clean" | "review" | "malicious" | "unknown";
+type ModerationReviewConfidence = "low" | "medium" | "high";
 
 type PackageModerationQueueOptions = {
   status?: PackageModerationQueueStatus;
@@ -94,6 +103,13 @@ type PackageBackfillArtifactsOptions = {
   batchSize?: number;
   apply?: boolean;
   all?: boolean;
+  json?: boolean;
+};
+
+type AppealCleanupOptions = {
+  limit?: number;
+  apply?: boolean;
+  rescan?: boolean;
   json?: boolean;
 };
 
@@ -300,6 +316,7 @@ export async function cmdResolvePackageAppeal(
   if (finalAction && !["none", "approve"].includes(finalAction)) {
     fail("--action must be none or approve");
   }
+  const reviewFields = parseReviewFields(options);
 
   await presentModerationPlan(
     appealModerationPlan({
@@ -325,6 +342,7 @@ export async function cmdResolvePackageAppeal(
           status,
           ...(note ? { note } : {}),
           ...(finalAction ? { finalAction } : {}),
+          ...reviewFields,
         },
       },
       ApiV1PackageAppealResolveResponseSchema,
@@ -336,7 +354,89 @@ export async function cmdResolvePackageAppeal(
     }
     const actionSuffix =
       result.actionTaken && result.actionTaken !== "none" ? `; action ${result.actionTaken}` : "";
-    console.log(`OK. Appeal ${trimmed} set to ${result.status}${actionSuffix}.`);
+    const verdictSuffix = result.reviewVerdict ? `; verdict ${result.reviewVerdict}` : "";
+    console.log(`OK. Appeal ${trimmed} set to ${result.status}${actionSuffix}${verdictSuffix}.`);
+  } catch (error) {
+    spinner?.fail(formatError(error));
+    throw error;
+  }
+}
+
+function printAppealCleanupResult(label: string, result: unknown) {
+  const item = result as {
+    scanned?: number;
+    rescanQueued?: number;
+    rescanSkipped?: number;
+    reviewAppealsClosed?: number;
+    cleanAppealsAccepted?: number;
+    maliciousAppealsKeptOpen?: number;
+    apply?: boolean;
+  };
+  console.log(
+    `${label}: scanned ${item.scanned ?? 0}; queued rescans ${item.rescanQueued ?? 0}; skipped rescans ${item.rescanSkipped ?? 0}`,
+  );
+  console.log(
+    `  closed Review appeals ${item.reviewAppealsClosed ?? 0}; accepted clean appeals ${item.cleanAppealsAccepted ?? 0}; kept malicious open ${item.maliciousAppealsKeptOpen ?? 0}`,
+  );
+  if (!item.apply) console.log("  dry run only; rerun with --apply to mutate");
+}
+
+export async function cmdCleanupReviewPackageAppeals(
+  opts: GlobalOpts,
+  options: AppealCleanupOptions = {},
+) {
+  const token = await requireAuthToken();
+  const registry = await getRegistry(opts, { cache: true });
+  const body = {
+    apply: options.apply === true,
+    rescan: options.rescan === true,
+    ...(typeof options.limit === "number" ? { limit: options.limit } : {}),
+  };
+  const spinner = options.json ? null : createSpinner("Cleaning package Review appeals");
+  try {
+    const result = await apiRequest<Record<string, unknown>>(registry, {
+      method: "POST",
+      path: `${ApiRoutes.packages}/appeals/cleanup-review`,
+      token,
+      body,
+    });
+    spinner?.stop();
+    if (options.json) {
+      process.stdout.write(`${JSON.stringify(result, null, 2)}\n`);
+      return;
+    }
+    printAppealCleanupResult("Package appeals", result);
+  } catch (error) {
+    spinner?.fail(formatError(error));
+    throw error;
+  }
+}
+
+export async function cmdCleanupReviewSkillAppeals(
+  opts: GlobalOpts,
+  options: AppealCleanupOptions = {},
+) {
+  const token = await requireAuthToken();
+  const registry = await getRegistry(opts, { cache: true });
+  const body = {
+    apply: options.apply === true,
+    rescan: options.rescan === true,
+    ...(typeof options.limit === "number" ? { limit: options.limit } : {}),
+  };
+  const spinner = options.json ? null : createSpinner("Cleaning skill Review appeals");
+  try {
+    const result = await apiRequest<Record<string, unknown>>(registry, {
+      method: "POST",
+      path: `${ApiRoutes.skills}/-/appeals/cleanup-review`,
+      token,
+      body,
+    });
+    spinner?.stop();
+    if (options.json) {
+      process.stdout.write(`${JSON.stringify(result, null, 2)}\n`);
+      return;
+    }
+    printAppealCleanupResult("Skill appeals", result);
   } catch (error) {
     spinner?.fail(formatError(error));
     throw error;
@@ -410,6 +510,7 @@ export async function cmdTriagePackageReport(
   if (finalAction && !["none", "quarantine", "revoke"].includes(finalAction)) {
     fail("--action must be none, quarantine, or revoke");
   }
+  const reviewFields = parseReviewFields(options);
 
   await presentModerationPlan(
     reportModerationPlan({
@@ -435,6 +536,7 @@ export async function cmdTriagePackageReport(
           status,
           ...(note ? { note } : {}),
           ...(finalAction ? { finalAction } : {}),
+          ...reviewFields,
         },
       },
       ApiV1PackageReportTriageResponseSchema,
@@ -446,7 +548,8 @@ export async function cmdTriagePackageReport(
     }
     const actionSuffix =
       result.actionTaken && result.actionTaken !== "none" ? `; action ${result.actionTaken}` : "";
-    console.log(`OK. Report ${trimmed} set to ${result.status}${actionSuffix}.`);
+    const verdictSuffix = result.reviewVerdict ? `; verdict ${result.reviewVerdict}` : "";
+    console.log(`OK. Report ${trimmed} set to ${result.status}${actionSuffix}${verdictSuffix}.`);
   } catch (error) {
     spinner?.fail(formatError(error));
     throw error;
@@ -710,6 +813,39 @@ function parseCsv(value: string | undefined) {
     .split(",")
     .map((item) => item.trim())
     .filter(Boolean);
+}
+
+function parseReviewFields(options: {
+  reviewVerdict?: string;
+  reviewConfidence?: string;
+  reviewCategories?: string;
+}) {
+  const reviewVerdict = parseReviewVerdict(options.reviewVerdict);
+  const reviewConfidence = parseReviewConfidence(options.reviewConfidence);
+  const reviewCategories = parseCsv(options.reviewCategories);
+  return {
+    ...(reviewVerdict ? { reviewVerdict } : {}),
+    ...(reviewConfidence ? { reviewConfidence } : {}),
+    ...(reviewCategories.length > 0 ? { reviewCategories } : {}),
+  };
+}
+
+function parseReviewVerdict(value: string | undefined): ModerationReviewVerdict | undefined {
+  const normalized = value?.trim();
+  if (!normalized) return undefined;
+  if (!["clean", "review", "malicious", "unknown"].includes(normalized)) {
+    fail("--review-verdict must be clean, review, malicious, or unknown");
+  }
+  return normalized as ModerationReviewVerdict;
+}
+
+function parseReviewConfidence(value: string | undefined): ModerationReviewConfidence | undefined {
+  const normalized = value?.trim();
+  if (!normalized) return undefined;
+  if (!["low", "medium", "high"].includes(normalized)) {
+    fail("--review-confidence must be low, medium, or high");
+  }
+  return normalized as ModerationReviewConfidence;
 }
 
 function printTrustedPublisher(config: PackageTrustedPublisher) {

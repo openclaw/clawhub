@@ -457,7 +457,7 @@ registerCommand(packageCmd, ["package", "report"])
   });
 
 registerCommand(packageCmd, ["package", "appeal"])
-  .description("Appeal moderation for a package release")
+  .description("Appeal malicious moderation for a package release")
   .argument("<name>", "Package name")
   .requiredOption("--version <version>", "Package version")
   .requiredOption("--message <text>", "Appeal message")

@@ -9,8 +9,14 @@ vi.mock("./lib/access", async () => {
 });
 
 const { requireUser } = await import("./lib/access");
-const { setSkillManualOverride, clearSkillManualOverride, updateVersionLlmAnalysisInternal } =
-  await import("./skills");
+const {
+  setSkillManualOverride,
+  clearSkillManualOverride,
+  resolveSkillAppealForUserInternal,
+  updateSkillVersionStaticScanInternal,
+  updateVersionScanResultsInternal,
+  updateVersionLlmAnalysisInternal,
+} = await import("./skills");
 
 type WrappedHandler<TArgs, TResult = unknown> = {
   _handler: (ctx: unknown, args: TArgs) => Promise<TResult>;
@@ -30,11 +36,51 @@ const clearSkillManualOverrideHandler = (
   }>
 )._handler;
 
+const resolveSkillAppealForUserInternalHandler = (
+  resolveSkillAppealForUserInternal as unknown as WrappedHandler<{
+    actorUserId: string;
+    appealId: string;
+    status: "open" | "accepted" | "rejected";
+    note?: string;
+    finalAction?: "none" | "restore";
+  }>
+)._handler;
+
 const updateVersionLlmAnalysisInternalHandler = (
   updateVersionLlmAnalysisInternal as unknown as WrappedHandler<{
     versionId: string;
     moderationMode?: "normal" | "preserve";
     llmAnalysis: Record<string, unknown>;
+  }>
+)._handler;
+
+const updateVersionScanResultsInternalHandler = (
+  updateVersionScanResultsInternal as unknown as WrappedHandler<{
+    versionId: string;
+    sha256hash?: string;
+    vtAnalysis?: Record<string, unknown>;
+  }>
+)._handler;
+
+const updateSkillVersionStaticScanInternalHandler = (
+  updateSkillVersionStaticScanInternal as unknown as WrappedHandler<{
+    skillId: string;
+    versionId: string;
+    staticScan: {
+      status: "clean" | "suspicious" | "malicious";
+      reasonCodes: string[];
+      findings: Array<{
+        code: string;
+        severity: "info" | "warn" | "critical";
+        file: string;
+        line: number;
+        message: string;
+        evidence: string;
+      }>;
+      summary: string;
+      engineVersion: string;
+      checkedAt: number;
+    };
   }>
 )._handler;
 
@@ -68,12 +114,44 @@ function makeCtx(params: { skill: Record<string, unknown>; version?: Record<stri
       };
     }
 
+    if (table === "skillReports" || table === "skillAppeals") {
+      return {
+        withIndex: vi.fn(() => ({
+          collect: vi.fn(async () => []),
+        })),
+      };
+    }
+    if (table === "skillEmbeddings") {
+      return {
+        withIndex: vi.fn(() => ({
+          collect: vi.fn(async () => []),
+        })),
+      };
+    }
+
     throw new Error(`Unexpected query table: ${table}`);
   });
   const get = vi.fn(async (id: string) => {
     if (id === params.skill._id) return params.skill;
     if (params.version && id === params.version._id) return params.version;
     if (params.version && id === params.skill.latestVersionId) return params.version;
+    if (id === params.skill.latestVersionId) {
+      return {
+        _id: id,
+        skillId: params.skill._id,
+        version: "1.0.0",
+        staticScan: {
+          status: params.skill.moderationVerdict ?? "suspicious",
+          reasonCodes: params.skill.moderationReasonCodes ?? ["suspicious.test"],
+          findings: [],
+          summary: "Scanner summary",
+          engineVersion: "test",
+          checkedAt: 1,
+        },
+        vtAnalysis: { status: params.skill.moderationVerdict ?? "suspicious", checkedAt: 1 },
+        createdAt: 1,
+      };
+    }
     return null;
   });
 
@@ -85,6 +163,101 @@ function makeCtx(params: { skill: Record<string, unknown>; version?: Record<stri
     insert,
     get,
     query,
+  };
+}
+
+function makeStatefulModerationLifecycleCtx(params: {
+  skill: Record<string, unknown>;
+  versions: Record<string, Record<string, unknown>>;
+}) {
+  const docs: Record<string, Record<string, unknown>> = {
+    [params.skill._id as string]: { ...params.skill },
+    ...Object.fromEntries(
+      Object.entries(params.versions).map(([id, version]) => [id, { ...version }]),
+    ),
+  };
+  const patch = vi.fn(async (id: string, value: Record<string, unknown>) => {
+    docs[id] = { ...docs[id], ...value };
+  });
+  const insert = vi.fn(async () => "auditLogs:1");
+  const query = vi.fn((table: string) => {
+    if (table === "globalStats") {
+      return {
+        withIndex: vi.fn(() => ({
+          unique: vi.fn(async () => ({ _id: "globalStats:1", activeSkillsCount: 1 })),
+        })),
+      };
+    }
+    if (table === "skills") {
+      return {
+        withIndex: vi.fn(() => ({
+          collect: vi.fn(async () => [docs[params.skill._id as string]]),
+        })),
+      };
+    }
+    if (table === "skillReports" || table === "skillAppeals") {
+      return {
+        withIndex: vi.fn(() => ({
+          collect: vi.fn(async () => []),
+        })),
+      };
+    }
+    if (table === "skillEmbeddings") {
+      return {
+        withIndex: vi.fn(() => ({
+          collect: vi.fn(async () => []),
+        })),
+      };
+    }
+    if (table === "rescanRequests") {
+      return {
+        withIndex: vi.fn(() => ({
+          order: vi.fn(() => ({
+            take: vi.fn(async () => []),
+          })),
+        })),
+      };
+    }
+    throw new Error(`Unexpected query table: ${table}`);
+  });
+  const get = vi.fn(async (id: string) => {
+    if (id === "users:moderator") return { _id: id, role: "moderator" };
+    if (id === "users:owner") return { _id: id, role: "user" };
+    return docs[id] ?? null;
+  });
+  const scheduler = { runAfter: vi.fn(async () => {}) };
+
+  return {
+    ctx: {
+      db: { get, patch, insert, query, normalizeId: vi.fn() },
+      scheduler,
+    } as never,
+    docs,
+    patch,
+    scheduler,
+  };
+}
+
+function staticScan(status: "clean" | "suspicious" | "malicious", checkedAt: number) {
+  return {
+    status,
+    reasonCodes: status === "clean" ? [] : [`${status}.test`],
+    findings:
+      status === "clean"
+        ? []
+        : [
+            {
+              code: `${status}.test`,
+              severity: status === "malicious" ? ("critical" as const) : ("warn" as const),
+              file: "SKILL.md",
+              line: 1,
+              message: `${status} finding`,
+              evidence: "test evidence",
+            },
+          ],
+    summary: `${status} summary`,
+    engineVersion: "test",
+    checkedAt,
   };
 }
 
@@ -142,12 +315,24 @@ describe("skills manual overrides", () => {
         isSuspicious: false,
       }),
     );
+    expect(patch).not.toHaveBeenCalledWith(
+      "skills:1",
+      expect.objectContaining({
+        manualOverride: undefined,
+      }),
+    );
     expect(insert).toHaveBeenCalledWith(
       "auditLogs",
       expect.objectContaining({
         action: "skill.manual_override.set",
         targetType: "skill",
         targetId: "skills:1",
+        metadata: expect.objectContaining({
+          verdict: "clean",
+          note: "reviewed locally",
+          previousVerdict: "suspicious",
+          versionId: "skillVersions:1",
+        }),
       }),
     );
   });
@@ -544,6 +729,173 @@ describe("skills manual overrides", () => {
         moderationVerdict: "clean",
         moderationReasonCodes: undefined,
         isSuspicious: false,
+      }),
+    );
+  });
+
+  it("keeps skill-level moderator approval across rescans and new versions", async () => {
+    const now = 1_700_000_500_000;
+    vi.spyOn(Date, "now").mockReturnValue(now);
+    vi.mocked(requireUser).mockResolvedValue({
+      userId: "users:moderator",
+      user: { _id: "users:moderator", role: "moderator" },
+    } as never);
+
+    const skill = {
+      _id: "skills:1",
+      ownerUserId: "users:owner",
+      latestVersionId: "skillVersions:1",
+      softDeletedAt: undefined,
+      moderationStatus: "hidden",
+      moderationReason: "scanner.static.malicious",
+      moderationVerdict: "malicious",
+      moderationFlags: ["malware.detected"],
+      moderationReasonCodes: ["malicious.test"],
+      moderationSourceVersionId: "skillVersions:1",
+      tags: {},
+      stats: { downloads: 0, installsCurrent: 0, installsAllTime: 0, stars: 0, versions: 1 },
+    };
+    const versionOne = {
+      _id: "skillVersions:1",
+      skillId: "skills:1",
+      version: "1.0.0",
+      staticScan: staticScan("malicious", now - 100),
+      createdAt: now - 100,
+    };
+    const versionTwo = {
+      _id: "skillVersions:2",
+      skillId: "skills:1",
+      version: "2.0.0",
+      staticScan: staticScan("clean", now - 50),
+      createdAt: now - 50,
+    };
+    const { ctx, docs, patch, scheduler } = makeStatefulModerationLifecycleCtx({
+      skill,
+      versions: {
+        "skillVersions:1": versionOne,
+        "skillVersions:2": versionTwo,
+      },
+    });
+
+    docs["skillAppeals:1"] = {
+      _id: "skillAppeals:1",
+      skillId: "skills:1",
+      skillVersionId: "skillVersions:1",
+      version: "1.0.0",
+      userId: "users:owner",
+      message: "false positive",
+      status: "open",
+      createdAt: now - 10,
+    };
+
+    await resolveSkillAppealForUserInternalHandler(ctx, {
+      actorUserId: "users:moderator",
+      appealId: "skillAppeals:1",
+      status: "accepted",
+      note: "false positive on version one",
+      finalAction: "restore",
+    });
+
+    expect(docs["skills:1"]).toMatchObject({
+      manualOverride: expect.objectContaining({
+        verdict: "clean",
+        note: "false positive on version one",
+        reviewerUserId: "users:moderator",
+        updatedAt: now,
+      }),
+      moderationStatus: "active",
+      moderationReason: "manual.override.clean",
+      moderationVerdict: "clean",
+      moderationSourceVersionId: "skillVersions:1",
+    });
+
+    await updateSkillVersionStaticScanInternalHandler(ctx, {
+      skillId: "skills:1",
+      versionId: "skillVersions:1",
+      staticScan: staticScan("malicious", now + 1),
+    });
+
+    expect(docs["skills:1"]).toMatchObject({
+      moderationStatus: "active",
+      moderationReason: "manual.override.clean",
+      moderationVerdict: "clean",
+      moderationSourceVersionId: "skillVersions:1",
+    });
+    expect(scheduler.runAfter).not.toHaveBeenCalled();
+
+    docs["skills:1"] = { ...docs["skills:1"], latestVersionId: "skillVersions:2" };
+
+    await updateSkillVersionStaticScanInternalHandler(ctx, {
+      skillId: "skills:1",
+      versionId: "skillVersions:2",
+      staticScan: staticScan("malicious", now + 2),
+    });
+
+    expect(docs["skills:1"]).toMatchObject({
+      moderationStatus: "active",
+      moderationReason: "manual.override.clean",
+      moderationVerdict: "clean",
+      moderationSourceVersionId: "skillVersions:2",
+    });
+    expect(scheduler.runAfter).not.toHaveBeenCalled();
+    expect(patch).toHaveBeenCalledWith(
+      "skills:1",
+      expect.objectContaining({
+        moderationStatus: "active",
+        moderationVerdict: "clean",
+        moderationReason: "manual.override.clean",
+      }),
+    );
+  });
+
+  it("does not resync skill moderation from VT bookkeeping writes before a final verdict", async () => {
+    const now = 1_700_000_600_000;
+    vi.spyOn(Date, "now").mockReturnValue(now);
+
+    const skill = {
+      _id: "skills:1",
+      ownerUserId: "users:owner",
+      latestVersionId: "skillVersions:1",
+      moderationStatus: "hidden",
+      moderationReason: "pending.scan",
+      moderationVerdict: "clean",
+      tags: {},
+      stats: { downloads: 0, installsCurrent: 0, installsAllTime: 0, stars: 0, versions: 1 },
+    };
+    const version = {
+      _id: "skillVersions:1",
+      skillId: "skills:1",
+      version: "1.0.0",
+      staticScan: staticScan("clean", now - 100),
+      createdAt: now - 100,
+    };
+    const { ctx, patch } = makeCtx({ skill, version });
+
+    await updateVersionScanResultsInternalHandler(ctx, {
+      versionId: "skillVersions:1",
+      sha256hash: "abc123",
+    });
+
+    expect(patch).toHaveBeenCalledWith("skillVersions:1", { sha256hash: "abc123" });
+    expect(patch).not.toHaveBeenCalledWith(
+      "skills:1",
+      expect.objectContaining({
+        moderationReason: "scanner.aggregate.clean",
+      }),
+    );
+
+    await updateVersionScanResultsInternalHandler(ctx, {
+      versionId: "skillVersions:1",
+      vtAnalysis: { status: "stale", checkedAt: now },
+    });
+
+    expect(patch).toHaveBeenCalledWith("skillVersions:1", {
+      vtAnalysis: { status: "stale", checkedAt: now },
+    });
+    expect(patch).not.toHaveBeenCalledWith(
+      "skills:1",
+      expect.objectContaining({
+        moderationReason: "scanner.aggregate.clean",
       }),
     );
   });

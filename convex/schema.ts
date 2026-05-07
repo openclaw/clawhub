@@ -1303,6 +1303,11 @@ const skillReports = defineTable({
   triagedBy: v.optional(v.id("users")),
   triageNote: v.optional(v.string()),
   actionTaken: v.optional(v.union(v.literal("none"), v.literal("hide"))),
+  reviewVerdict: v.optional(
+    v.union(v.literal("clean"), v.literal("review"), v.literal("malicious"), v.literal("unknown")),
+  ),
+  reviewConfidence: v.optional(v.union(v.literal("low"), v.literal("medium"), v.literal("high"))),
+  reviewCategories: v.optional(v.array(v.string())),
   createdAt: v.number(),
 })
   .index("by_skill", ["skillId"])
@@ -1324,6 +1329,11 @@ const skillAppeals = defineTable({
   resolvedBy: v.optional(v.id("users")),
   resolutionNote: v.optional(v.string()),
   actionTaken: v.optional(v.union(v.literal("none"), v.literal("restore"))),
+  reviewVerdict: v.optional(
+    v.union(v.literal("clean"), v.literal("review"), v.literal("malicious"), v.literal("unknown")),
+  ),
+  reviewConfidence: v.optional(v.union(v.literal("low"), v.literal("medium"), v.literal("high"))),
+  reviewCategories: v.optional(v.array(v.string())),
   createdAt: v.number(),
 })
   .index("by_skill_status_createdAt", ["skillId", "status", "createdAt"])
@@ -1360,6 +1370,11 @@ const packageReports = defineTable({
   triagedBy: v.optional(v.id("users")),
   triageNote: v.optional(v.string()),
   actionTaken: v.optional(v.union(v.literal("none"), v.literal("quarantine"), v.literal("revoke"))),
+  reviewVerdict: v.optional(
+    v.union(v.literal("clean"), v.literal("review"), v.literal("malicious"), v.literal("unknown")),
+  ),
+  reviewConfidence: v.optional(v.union(v.literal("low"), v.literal("medium"), v.literal("high"))),
+  reviewCategories: v.optional(v.array(v.string())),
   createdAt: v.number(),
 })
   .index("by_package", ["packageId"])
@@ -1381,6 +1396,11 @@ const packageAppeals = defineTable({
   resolvedBy: v.optional(v.id("users")),
   resolutionNote: v.optional(v.string()),
   actionTaken: v.optional(v.union(v.literal("none"), v.literal("approve"))),
+  reviewVerdict: v.optional(
+    v.union(v.literal("clean"), v.literal("review"), v.literal("malicious"), v.literal("unknown")),
+  ),
+  reviewConfidence: v.optional(v.union(v.literal("low"), v.literal("medium"), v.literal("high"))),
+  reviewCategories: v.optional(v.array(v.string())),
   createdAt: v.number(),
 })
   .index("by_release_status_createdAt", ["releaseId", "status", "createdAt"])

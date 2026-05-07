@@ -93,6 +93,7 @@ const internalRefs = internal as unknown as {
     getPackageModerationStatusForUserInternal: unknown;
     submitPackageAppealForUserInternal: unknown;
     listPackageAppealsInternal: unknown;
+    cleanupReviewPackageAppealsForUserInternal: unknown;
     resolvePackageAppealForUserInternal: unknown;
     listOfficialPluginMigrationsInternal: unknown;
     upsertOfficialPluginMigrationForUserInternal: unknown;
@@ -1428,6 +1429,38 @@ export async function mintPublishTokenV1Handler(ctx: ActionCtx, request: Request
 
 export async function packagesPostRouterV1Handler(ctx: ActionCtx, request: Request) {
   const segments = getPathSegments(request, "/api/v1/packages/");
+  if (segments[0] === "appeals" && segments[1] === "cleanup-review" && segments.length === 2) {
+    const rate = await applyRateLimit(ctx, request, "write");
+    if (!rate.ok) return rate.response;
+    const auth = await requireApiTokenUserOrResponse(ctx, request, rate.headers);
+    if (!auth.ok) return auth.response;
+
+    try {
+      const body = (await request.json().catch(() => ({}))) as {
+        apply?: boolean;
+        rescan?: boolean;
+        limit?: number;
+      };
+      const result = await runMutationRef(
+        ctx,
+        internalRefs.packages.cleanupReviewPackageAppealsForUserInternal,
+        {
+          actorUserId: auth.userId,
+          ...(typeof body.apply === "boolean" ? { apply: body.apply } : {}),
+          ...(typeof body.rescan === "boolean" ? { rescan: body.rescan } : {}),
+          ...(typeof body.limit === "number" ? { limit: body.limit } : {}),
+        },
+      );
+      return json(result, 200, rate.headers);
+    } catch (error) {
+      return text(
+        error instanceof Error ? error.message : "Package appeal cleanup failed",
+        400,
+        rate.headers,
+      );
+    }
+  }
+
   if (segments[0] === "backfill" && segments[1] === "artifacts" && segments.length === 2) {
     const rate = await applyRateLimit(ctx, request, "write");
     if (!rate.ok) return rate.response;
@@ -1519,6 +1552,9 @@ export async function packagesPostRouterV1Handler(ctx: ActionCtx, request: Reque
         status: "open" | "confirmed" | "dismissed";
         note?: string;
         finalAction?: "none" | "quarantine" | "revoke";
+        reviewVerdict?: "clean" | "review" | "malicious" | "unknown";
+        reviewConfidence?: "low" | "medium" | "high";
+        reviewCategories?: string[];
       };
       const result = await runMutationRef(
         ctx,
@@ -1529,6 +1565,9 @@ export async function packagesPostRouterV1Handler(ctx: ActionCtx, request: Reque
           status: body.status,
           ...(body.note ? { note: body.note } : {}),
           ...(body.finalAction ? { finalAction: body.finalAction } : {}),
+          ...(body.reviewVerdict ? { reviewVerdict: body.reviewVerdict } : {}),
+          ...(body.reviewConfidence ? { reviewConfidence: body.reviewConfidence } : {}),
+          ...(body.reviewCategories ? { reviewCategories: body.reviewCategories } : {}),
         },
       );
       return json(result, 200, rate.headers);
@@ -1561,6 +1600,9 @@ export async function packagesPostRouterV1Handler(ctx: ActionCtx, request: Reque
         status: "open" | "accepted" | "rejected";
         note?: string;
         finalAction?: "none" | "approve";
+        reviewVerdict?: "clean" | "review" | "malicious" | "unknown";
+        reviewConfidence?: "low" | "medium" | "high";
+        reviewCategories?: string[];
       };
       const result = await runMutationRef(
         ctx,
@@ -1571,6 +1613,9 @@ export async function packagesPostRouterV1Handler(ctx: ActionCtx, request: Reque
           status: body.status,
           ...(body.note ? { note: body.note } : {}),
           ...(body.finalAction ? { finalAction: body.finalAction } : {}),
+          ...(body.reviewVerdict ? { reviewVerdict: body.reviewVerdict } : {}),
+          ...(body.reviewConfidence ? { reviewConfidence: body.reviewConfidence } : {}),
+          ...(body.reviewCategories ? { reviewCategories: body.reviewCategories } : {}),
         },
       );
       return json(result, 200, rate.headers);

@@ -30,6 +30,9 @@ import {
   assertArtifactReportTransition,
   readArtifactReportStatus,
   appendSkillModerationEventLog,
+  artifactReviewConfidenceValidator,
+  artifactReviewVerdictValidator,
+  normalizeArtifactReviewFields,
 } from "./lib/artifactModeration";
 import { getSkillBadgeMap, getSkillBadgeMaps, isSkillHighlighted } from "./lib/badges";
 import { scheduleNextBatchIfNeeded } from "./lib/batching";
@@ -249,6 +252,16 @@ function normalizeAnalysisStatus(status: string | undefined) {
   return status?.trim().toLowerCase();
 }
 
+function isFinalScannerStatus(status: string | undefined) {
+  const normalized = normalizeAnalysisStatus(status);
+  return (
+    normalized === "clean" ||
+    normalized === "benign" ||
+    normalized === "suspicious" ||
+    normalized === "malicious"
+  );
+}
+
 function resolveScannerModerationReason(params: {
   vtStatus?: string;
   llmStatus?: string;
@@ -372,12 +385,23 @@ async function patchStructuredModerationFromVersion(
     now,
   });
 
+  const previousEffectiveStatus = (skill.moderationVerdict ?? "clean") as EffectiveArtifactStatus;
   const nextSkill = { ...skill, ...patch };
   await ctx.db.patch(skill._id, {
     ...patch,
     updatedAt: now,
   });
   await adjustGlobalPublicCountForSkillChange(ctx, skill, nextSkill);
+  const nextEffectiveStatus = effectiveStatusFromSkillModerationPatch(patch);
+  if (previousEffectiveStatus !== nextEffectiveStatus) {
+    await closeOpenSkillCasesForVersion(ctx, {
+      skill: nextSkill,
+      versionId: version._id,
+      effectiveStatus: nextEffectiveStatus,
+      source: "rescan",
+      now,
+    });
+  }
 }
 const TRUSTED_PUBLISHER_SKILL_THRESHOLD = 10;
 const LOW_TRUST_BURST_THRESHOLD_PER_HOUR = 8;
@@ -2839,6 +2863,10 @@ export const reportSkillForUserInternal = internalMutation({
           triagedAt: undefined,
           triagedBy: undefined,
           triageNote: undefined,
+          actionTaken: undefined,
+          reviewVerdict: undefined,
+          reviewConfidence: undefined,
+          reviewCategories: undefined,
           createdAt: now,
         });
         const nextReportCount = (skill.reportCount ?? 0) + 1;
@@ -2938,6 +2966,8 @@ type SkillReportStatus = "open" | "confirmed" | "dismissed";
 type SkillAppealStatus = "open" | "accepted" | "rejected";
 type SkillReportFinalAction = "none" | "hide";
 type SkillAppealFinalAction = "none" | "restore";
+type ModerationReviewVerdict = "clean" | "review" | "malicious" | "unknown";
+type ModerationReviewConfidence = "low" | "medium" | "high";
 
 type SkillReportListItem = {
   reportId: Id<"skillReports">;
@@ -2958,6 +2988,9 @@ type SkillReportListItem = {
   triagedBy?: Id<"users"> | null;
   triageNote?: string | null;
   actionTaken?: SkillReportFinalAction | null;
+  reviewVerdict?: ModerationReviewVerdict | null;
+  reviewConfidence?: ModerationReviewConfidence | null;
+  reviewCategories?: string[];
 };
 
 type SkillAppealListItem = {
@@ -2979,6 +3012,9 @@ type SkillAppealListItem = {
   resolvedBy?: Id<"users"> | null;
   resolutionNote?: string | null;
   actionTaken?: SkillAppealFinalAction | null;
+  reviewVerdict?: ModerationReviewVerdict | null;
+  reviewConfidence?: ModerationReviewConfidence | null;
+  reviewCategories?: string[];
 };
 
 function toSkillReportListItem(
@@ -3005,6 +3041,9 @@ function toSkillReportListItem(
     triagedBy: skillReport.triagedBy ?? null,
     triageNote: skillReport.triageNote ?? null,
     actionTaken: skillReport.actionTaken ?? null,
+    reviewVerdict: skillReport.reviewVerdict ?? null,
+    reviewConfidence: skillReport.reviewConfidence ?? null,
+    reviewCategories: skillReport.reviewCategories ?? [],
   };
 }
 
@@ -3032,6 +3071,9 @@ function toSkillAppealListItem(
     resolvedBy: appeal.resolvedBy ?? null,
     resolutionNote: appeal.resolutionNote ?? null,
     actionTaken: appeal.actionTaken ?? null,
+    reviewVerdict: appeal.reviewVerdict ?? null,
+    reviewConfidence: appeal.reviewConfidence ?? null,
+    reviewCategories: appeal.reviewCategories ?? [],
   };
 }
 
@@ -3040,6 +3082,7 @@ async function applySkillReportFinalAction(
   params: {
     actorUserId: Id<"users">;
     skill: Doc<"skills">;
+    versionId?: Id<"skillVersions">;
     action: SkillReportFinalAction;
     note: string;
     reportId: Id<"skillReports">;
@@ -3048,11 +3091,15 @@ async function applySkillReportFinalAction(
 ) {
   if (params.action === "none") return;
 
+  const version = await getSkillModerationVersionForCase(ctx, params.skill, params.versionId);
+
   const patch: Partial<Doc<"skills">> = {
     softDeletedAt: params.now,
     moderationStatus: "hidden",
+    moderationVerdict: "malicious",
     moderationReason: "manual.report",
     moderationNotes: trimManualOverrideNote(params.note),
+    moderationSourceVersionId: version?._id ?? params.skill.latestVersionId,
     hiddenAt: params.now,
     hiddenBy: params.actorUserId,
     lastReviewedAt: params.now,
@@ -3076,6 +3123,17 @@ async function applySkillReportFinalAction(
     },
     createdAt: params.now,
   });
+
+  if (version) {
+    await closeOpenSkillCasesForVersion(ctx, {
+      skill: { ...params.skill, ...patch },
+      versionId: version._id,
+      effectiveStatus: "malicious",
+      source: "moderator",
+      actorUserId: params.actorUserId,
+      now: params.now,
+    });
+  }
 }
 
 async function applySkillAppealFinalAction(
@@ -3083,6 +3141,7 @@ async function applySkillAppealFinalAction(
   params: {
     actorUserId: Id<"users">;
     skill: Doc<"skills">;
+    versionId?: Id<"skillVersions">;
     action: SkillAppealFinalAction;
     note: string;
     appealId: Id<"skillAppeals">;
@@ -3091,6 +3150,7 @@ async function applySkillAppealFinalAction(
 ) {
   if (params.action === "none") return;
 
+  const version = await getSkillModerationVersionForCase(ctx, params.skill, params.versionId);
   const manualOverride = buildManualOverrideRecord({
     note: params.note,
     reviewerUserId: params.actorUserId,
@@ -3125,10 +3185,223 @@ async function applySkillAppealFinalAction(
       slug: params.skill.slug,
       appealId: params.appealId,
       finalAction: params.action,
-      reason: manualOverride.note,
+      reason: trimManualOverrideNote(params.note),
     },
     createdAt: params.now,
   });
+
+  if (version) {
+    await closeOpenSkillCasesForVersion(ctx, {
+      skill: { ...params.skill, ...patch },
+      versionId: version._id,
+      effectiveStatus: "clean",
+      source: "moderator",
+      actorUserId: params.actorUserId,
+      now: params.now,
+    });
+  }
+}
+
+type ArtifactCaseCleanupSource = "rescan" | "moderator" | "bulk_cleanup";
+type EffectiveArtifactStatus = "clean" | "suspicious" | "malicious";
+
+function effectiveStatusFromSkillModerationPatch(patch: SkillModerationPatch) {
+  return (patch.moderationVerdict ?? "clean") as EffectiveArtifactStatus;
+}
+
+async function resolveEffectiveSkillVersionStatus(
+  ctx: MutationCtx,
+  skill: Doc<"skills">,
+  version: Doc<"skillVersions"> | null,
+  now: number,
+) {
+  if (skill.manualOverride) {
+    return effectiveStatusFromSkillModerationPatch(
+      applyManualOverrideToSkillPatch({
+        basePatch: buildPreservedSkillModerationPatch(skill),
+        override: skill.manualOverride,
+        now,
+      }),
+    );
+  }
+  if (!version) return "clean" as const;
+  if (
+    skill.moderationSourceVersionId === version._id &&
+    (skill.moderationVerdict === "clean" ||
+      skill.moderationVerdict === "suspicious" ||
+      skill.moderationVerdict === "malicious")
+  ) {
+    return skill.moderationVerdict;
+  }
+  const owner = skill.ownerUserId ? await ctx.db.get(skill.ownerUserId) : null;
+  return effectiveStatusFromSkillModerationPatch(
+    buildScannerModerationPatchFromVersion({
+      owner,
+      version,
+      now,
+    }),
+  );
+}
+
+async function getSkillModerationVersionForCase(
+  ctx: MutationCtx,
+  skill: Doc<"skills">,
+  versionId: Id<"skillVersions"> | undefined,
+) {
+  const targetVersionId = versionId ?? skill.latestVersionId;
+  if (!targetVersionId) return null;
+  const version = await ctx.db.get(targetVersionId);
+  if (!version || version.skillId !== skill._id || version.softDeletedAt) return null;
+  return version;
+}
+
+function defaultSkillCaseCleanupNote(params: {
+  source: ArtifactCaseCleanupSource;
+  effectiveStatus: EffectiveArtifactStatus;
+}) {
+  if (params.effectiveStatus === "malicious") {
+    return `Closed by ${params.source}: artifact is currently malicious.`;
+  }
+  if (params.effectiveStatus === "suspicious") {
+    return `Closed by ${params.source}: Review is a caution state, not a malicious block; only malicious artifacts are appealable.`;
+  }
+  return `Closed by ${params.source}: artifact is not currently malicious.`;
+}
+
+async function closeOpenSkillCasesForVersion(
+  ctx: MutationCtx,
+  params: {
+    skill: Doc<"skills">;
+    versionId: Id<"skillVersions">;
+    effectiveStatus: EffectiveArtifactStatus;
+    source: ArtifactCaseCleanupSource;
+    actorUserId?: Id<"users">;
+    now: number;
+    closeReports?: boolean;
+  },
+) {
+  const note = defaultSkillCaseCleanupNote(params);
+  const isMalicious = params.effectiveStatus === "malicious";
+  const reviewVerdict =
+    params.effectiveStatus === "clean"
+      ? ("clean" as const)
+      : params.effectiveStatus === "malicious"
+        ? ("malicious" as const)
+        : ("review" as const);
+
+  let closedReports = 0;
+  if (params.closeReports !== false) {
+    const reports = await ctx.db
+      .query("skillReports")
+      .withIndex("by_skill_status_createdAt", (q) =>
+        q.eq("skillId", params.skill._id).eq("status", "open"),
+      )
+      .collect();
+    for (const skillReport of reports) {
+      const matchesVersion =
+        skillReport.skillVersionId === params.versionId ||
+        (!skillReport.skillVersionId && params.skill.latestVersionId === params.versionId);
+      if (!matchesVersion) continue;
+      await ctx.db.patch(skillReport._id, {
+        status: isMalicious ? "confirmed" : "dismissed",
+        triagedAt: params.now,
+        triagedBy: params.actorUserId,
+        triageNote: note,
+        actionTaken: "none",
+        reviewVerdict,
+        reviewConfidence: params.source === "bulk_cleanup" ? "high" : undefined,
+      });
+      closedReports += 1;
+      if (params.actorUserId) {
+        await appendSkillModerationEventLog(ctx, {
+          kind: "report",
+          reportId: skillReport._id,
+          actorUserId: params.actorUserId,
+          action: "skill.report.auto_close",
+          timelineMetadata: {
+            skillId: params.skill._id,
+            status: isMalicious ? "confirmed" : "dismissed",
+            source: params.source,
+            effectiveStatus: params.effectiveStatus,
+            reviewVerdict,
+          },
+          auditAction: "skill.report.auto_close",
+          auditTargetType: "skillReport",
+          auditTargetId: skillReport._id,
+          auditMetadata: {
+            skillId: params.skill._id,
+            slug: params.skill.slug,
+            source: params.source,
+            effectiveStatus: params.effectiveStatus,
+            reviewVerdict,
+          },
+          createdAt: params.now,
+        });
+      }
+    }
+  }
+
+  const appeals = await ctx.db
+    .query("skillAppeals")
+    .withIndex("by_skill_status_createdAt", (q) =>
+      q.eq("skillId", params.skill._id).eq("status", "open"),
+    )
+    .collect();
+  let closedAppeals = 0;
+  for (const appeal of appeals) {
+    const matchesVersion =
+      appeal.skillVersionId === params.versionId ||
+      (!appeal.skillVersionId && params.skill.latestVersionId === params.versionId);
+    if (!matchesVersion) continue;
+    const appealStatus =
+      isMalicious || (params.source === "bulk_cleanup" && params.effectiveStatus === "suspicious")
+        ? "rejected"
+        : "accepted";
+    await ctx.db.patch(appeal._id, {
+      status: appealStatus,
+      resolvedAt: params.now,
+      resolvedBy: params.actorUserId,
+      resolutionNote: note,
+      actionTaken: "none",
+      reviewVerdict,
+      reviewConfidence: params.source === "bulk_cleanup" ? "high" : undefined,
+    });
+    closedAppeals += 1;
+    if (params.actorUserId) {
+      await appendSkillModerationEventLog(ctx, {
+        kind: "appeal",
+        appealId: appeal._id,
+        actorUserId: params.actorUserId,
+        action: "skill.appeal.auto_close",
+        timelineMetadata: {
+          skillId: params.skill._id,
+          status: appealStatus,
+          source: params.source,
+          effectiveStatus: params.effectiveStatus,
+          reviewVerdict,
+        },
+        auditAction: "skill.appeal.auto_close",
+        auditTargetType: "skillAppeal",
+        auditTargetId: appeal._id,
+        auditMetadata: {
+          skillId: params.skill._id,
+          slug: params.skill.slug,
+          source: params.source,
+          effectiveStatus: params.effectiveStatus,
+          reviewVerdict,
+        },
+        createdAt: params.now,
+      });
+    }
+  }
+
+  if (closedReports > 0) {
+    await ctx.db.patch(params.skill._id, {
+      reportCount: Math.max(0, (params.skill.reportCount ?? 0) - closedReports),
+      updatedAt: params.now,
+    });
+  }
+  return { closedReports, closedAppeals };
 }
 
 async function canUserAppealSkill(ctx: MutationCtx, skill: Doc<"skills">, userId: Id<"users">) {
@@ -3160,6 +3433,23 @@ async function getActiveSkillVersionForAppeal(
   return skill.latestVersionId ? await ctx.db.get(skill.latestVersionId) : null;
 }
 
+function isLegacySkillRowEffectivelyMaliciousForAppeal(
+  skill: Doc<"skills">,
+  explicitVersion: string | undefined,
+) {
+  if (explicitVersion?.trim()) return false;
+  if (skill.moderationVerdict === "malicious") return true;
+  if (skill.moderationFlags?.includes("blocked.malware")) return true;
+  if (skill.moderationReason?.endsWith(".malicious")) return true;
+  if (skill.moderationReason === "manual.report") return true;
+  if (skill.moderationVerdict === "suspicious" || isSkillSuspicious(skill)) return false;
+  return Boolean(
+    skill.softDeletedAt ||
+    skill.moderationStatus === "hidden" ||
+    skill.moderationStatus === "removed",
+  );
+}
+
 export const submitSkillAppealForUserInternal = internalMutation({
   args: {
     actorUserId: v.id("users"),
@@ -3178,20 +3468,24 @@ export const submitSkillAppealForUserInternal = internalMutation({
     if (!skill) throw new ConvexError("Skill not found");
     if (!(await canUserAppealSkill(ctx, skill, actor._id))) throw new ConvexError("Unauthorized");
 
-    const isAppealable =
-      skill.softDeletedAt ||
-      skill.moderationStatus === "hidden" ||
-      skill.moderationStatus === "removed" ||
-      skill.moderationVerdict === "suspicious" ||
-      skill.moderationVerdict === "malicious" ||
-      (skill.moderationReasonCodes?.length ?? 0) > 0 ||
-      (skill.moderationFlags?.length ?? 0) > 0;
-    if (!isAppealable) throw new ConvexError("Skill is not in an appealable state");
-
     const message = args.message.trim();
     if (!message) throw new ConvexError("Appeal message required.");
     const version = args.version?.trim();
     const skillVersion = await getActiveSkillVersionForAppeal(ctx, skill, version);
+    const effectiveStatus = await resolveEffectiveSkillVersionStatus(
+      ctx,
+      skill,
+      skillVersion,
+      Date.now(),
+    );
+    if (
+      effectiveStatus !== "malicious" &&
+      !isLegacySkillRowEffectivelyMaliciousForAppeal(skill, version)
+    ) {
+      throw new ConvexError(
+        "Skill is not in an appealable state. Review is cautionary; only malicious skills can be appealed.",
+      );
+    }
 
     const existingOpenAppeal = await ctx.db
       .query("skillAppeals")
@@ -3301,6 +3595,9 @@ export const triageSkillReportForUserInternal = internalMutation({
     status: v.union(v.literal("open"), v.literal("confirmed"), v.literal("dismissed")),
     note: v.optional(v.string()),
     finalAction: v.optional(v.union(v.literal("none"), v.literal("hide"))),
+    reviewVerdict: v.optional(artifactReviewVerdictValidator),
+    reviewConfidence: v.optional(artifactReviewConfidenceValidator),
+    reviewCategories: v.optional(v.array(v.string())),
   },
   handler: async (ctx, args) => {
     const actor = await ctx.db.get(args.actorUserId);
@@ -3322,6 +3619,13 @@ export const triageSkillReportForUserInternal = internalMutation({
     if (!willBeOpen && !note) throw new ConvexError("Review note required.");
     const finalAction = args.finalAction ?? "none";
     assertArtifactReportFinalAction(nextStatus, finalAction, ["hide"]);
+    const reviewFields = normalizeArtifactReviewFields({
+      clear: willBeOpen,
+      reviewVerdict: args.reviewVerdict,
+      reviewConfidence: args.reviewConfidence,
+      reviewCategories: args.reviewCategories,
+    });
+    const eventReviewFields = willBeOpen ? {} : reviewFields;
 
     await ctx.db.patch(skillReport._id, {
       status: nextStatus,
@@ -3329,6 +3633,7 @@ export const triageSkillReportForUserInternal = internalMutation({
       triagedBy: willBeOpen ? undefined : actor._id,
       triageNote: willBeOpen ? undefined : note?.slice(0, MAX_REPORT_REASON_LENGTH),
       actionTaken: willBeOpen ? undefined : finalAction,
+      ...reviewFields,
     });
 
     let reportCount = skill.reportCount ?? 0;
@@ -3344,7 +3649,8 @@ export const triageSkillReportForUserInternal = internalMutation({
 
     await applySkillReportFinalAction(ctx, {
       actorUserId: actor._id,
-      skill,
+      skill: { ...skill, reportCount },
+      versionId: skillReport.skillVersionId,
       action: finalAction,
       note: note ?? "",
       reportId: skillReport._id,
@@ -3356,7 +3662,12 @@ export const triageSkillReportForUserInternal = internalMutation({
       reportId: skillReport._id,
       actorUserId: actor._id,
       action: "skill.report.triage",
-      timelineMetadata: { skillId: skill._id, status: args.status, finalAction },
+      timelineMetadata: {
+        skillId: skill._id,
+        status: args.status,
+        finalAction,
+        ...eventReviewFields,
+      },
       auditAction: "skill.report.triage",
       auditTargetType: "skillReport",
       auditTargetId: skillReport._id,
@@ -3366,6 +3677,7 @@ export const triageSkillReportForUserInternal = internalMutation({
         status: args.status,
         finalAction,
         reportCount,
+        ...eventReviewFields,
       },
       createdAt: now,
     });
@@ -3377,6 +3689,7 @@ export const triageSkillReportForUserInternal = internalMutation({
       status: args.status,
       reportCount,
       actionTaken: finalAction,
+      ...(reviewFields.reviewVerdict ? { reviewVerdict: reviewFields.reviewVerdict } : {}),
     };
   },
 });
@@ -3420,6 +3733,101 @@ export const listSkillAppealsInternal = internalQuery({
   },
 });
 
+export const cleanupReviewSkillAppealsForUserInternal = internalMutation({
+  args: {
+    actorUserId: v.id("users"),
+    apply: v.optional(v.boolean()),
+    rescan: v.optional(v.boolean()),
+    limit: v.optional(v.number()),
+  },
+  handler: async (ctx, args) => {
+    const actor = await ctx.db.get(args.actorUserId);
+    if (!actor || actor.deletedAt || actor.deactivatedAt) throw new ConvexError("Unauthorized");
+    assertModerator(actor);
+
+    const apply = args.apply === true;
+    const rescan = args.rescan === true;
+    const limit = Math.max(1, Math.min(Math.round(args.limit ?? 100), 500));
+    const appeals = await ctx.db
+      .query("skillAppeals")
+      .withIndex("by_status_createdAt", (q) => q.eq("status", "open"))
+      .order("asc")
+      .take(limit);
+    const now = Date.now();
+    let scanned = 0;
+    let rescanQueued = 0;
+    let rescanSkipped = 0;
+    let reviewAppealsClosed = 0;
+    let cleanAppealsAccepted = 0;
+    let maliciousAppealsKeptOpen = 0;
+
+    for (const appeal of appeals) {
+      const skill = await ctx.db.get(appeal.skillId);
+      if (!skill) continue;
+      const version = await getSkillModerationVersionForCase(ctx, skill, appeal.skillVersionId);
+      const effectiveStatus = await resolveEffectiveSkillVersionStatus(ctx, skill, version, now);
+      scanned += 1;
+
+      if (apply && rescan && version) {
+        const inProgress = await ctx.db
+          .query("rescanRequests")
+          .withIndex("by_skill_version_status", (q) =>
+            q
+              .eq("targetKind", "skill")
+              .eq("skillVersionId", version._id)
+              .eq("status", "in_progress"),
+          )
+          .first();
+        if (inProgress) {
+          rescanSkipped += 1;
+        } else {
+          const requestId = await insertSkillRescanRequest(ctx, actor, { skill, version });
+          await ctx.scheduler.runAfter(0, internal.skills.dispatchSkillRescanInternal, {
+            requestId,
+            skillId: skill._id,
+            versionId: version._id,
+          });
+          rescanQueued += 1;
+        }
+      }
+
+      if (!version) continue;
+      if (effectiveStatus === "malicious") {
+        maliciousAppealsKeptOpen += 1;
+        continue;
+      }
+      if (!apply) {
+        if (effectiveStatus === "suspicious") reviewAppealsClosed += 1;
+        if (effectiveStatus === "clean") cleanAppealsAccepted += 1;
+        continue;
+      }
+      const result = await closeOpenSkillCasesForVersion(ctx, {
+        skill,
+        versionId: version._id,
+        effectiveStatus,
+        source: "bulk_cleanup",
+        actorUserId: actor._id,
+        now,
+        closeReports: false,
+      });
+      if (effectiveStatus === "suspicious") reviewAppealsClosed += result.closedAppeals;
+      if (effectiveStatus === "clean") cleanAppealsAccepted += result.closedAppeals;
+    }
+
+    return {
+      ok: true as const,
+      apply,
+      rescan,
+      scanned,
+      rescanQueued,
+      rescanSkipped,
+      reviewAppealsClosed,
+      cleanAppealsAccepted,
+      maliciousAppealsKeptOpen,
+    };
+  },
+});
+
 export const resolveSkillAppealForUserInternal = internalMutation({
   args: {
     actorUserId: v.id("users"),
@@ -3427,6 +3835,9 @@ export const resolveSkillAppealForUserInternal = internalMutation({
     status: v.union(v.literal("open"), v.literal("accepted"), v.literal("rejected")),
     note: v.optional(v.string()),
     finalAction: v.optional(v.union(v.literal("none"), v.literal("restore"))),
+    reviewVerdict: v.optional(artifactReviewVerdictValidator),
+    reviewConfidence: v.optional(artifactReviewConfidenceValidator),
+    reviewCategories: v.optional(v.array(v.string())),
   },
   handler: async (ctx, args) => {
     const actor = await ctx.db.get(args.actorUserId);
@@ -3445,6 +3856,13 @@ export const resolveSkillAppealForUserInternal = internalMutation({
     const finalAction = args.finalAction ?? "none";
     assertArtifactAppealFinalAction(args.status, finalAction, ["restore"]);
     const now = Date.now();
+    const reviewFields = normalizeArtifactReviewFields({
+      clear: isOpen,
+      reviewVerdict: args.reviewVerdict,
+      reviewConfidence: args.reviewConfidence,
+      reviewCategories: args.reviewCategories,
+    });
+    const eventReviewFields = isOpen ? {} : reviewFields;
 
     await ctx.db.patch(appeal._id, {
       status: args.status,
@@ -3452,11 +3870,13 @@ export const resolveSkillAppealForUserInternal = internalMutation({
       resolvedBy: isOpen ? undefined : actor._id,
       resolutionNote: isOpen ? undefined : note?.slice(0, MAX_APPEAL_MESSAGE_LENGTH),
       actionTaken: isOpen ? undefined : finalAction,
+      ...reviewFields,
     });
 
     await applySkillAppealFinalAction(ctx, {
       actorUserId: actor._id,
       skill,
+      versionId: appeal.skillVersionId,
       action: finalAction,
       note: note ?? "",
       appealId: appeal._id,
@@ -3468,11 +3888,22 @@ export const resolveSkillAppealForUserInternal = internalMutation({
       appealId: appeal._id,
       actorUserId: actor._id,
       action: "skill.appeal.resolve",
-      timelineMetadata: { skillId: skill._id, status: args.status, finalAction },
+      timelineMetadata: {
+        skillId: skill._id,
+        status: args.status,
+        finalAction,
+        ...eventReviewFields,
+      },
       auditAction: "skill.appeal.resolve",
       auditTargetType: "skillAppeal",
       auditTargetId: appeal._id,
-      auditMetadata: { skillId: skill._id, slug: skill.slug, status: args.status, finalAction },
+      auditMetadata: {
+        skillId: skill._id,
+        slug: skill.slug,
+        status: args.status,
+        finalAction,
+        ...eventReviewFields,
+      },
       createdAt: now,
     });
 
@@ -3482,6 +3913,7 @@ export const resolveSkillAppealForUserInternal = internalMutation({
       skillId: skill._id,
       status: args.status,
       actionTaken: finalAction,
+      ...(reviewFields.reviewVerdict ? { reviewVerdict: reviewFields.reviewVerdict } : {}),
     };
   },
 });
@@ -4978,6 +5410,7 @@ export const updateSkillVersionStaticScanInternal = internalMutation({
 
     const owner = skill.ownerUserId ? await ctx.db.get(skill.ownerUserId) : null;
     const now = Date.now();
+    const previousEffectiveStatus = (skill.moderationVerdict ?? "clean") as EffectiveArtifactStatus;
     const basePatch = buildScannerModerationPatchFromVersion({
       owner,
       version: updatedVersion,
@@ -4994,6 +5427,17 @@ export const updateSkillVersionStaticScanInternal = internalMutation({
     const nextSkill = { ...skill, ...patch };
     await ctx.db.patch(skill._id, patch);
     await adjustGlobalPublicCountForSkillChange(ctx, skill, nextSkill);
+    const nextEffectiveStatus = effectiveStatusFromSkillModerationPatch(patch);
+
+    if (previousEffectiveStatus !== nextEffectiveStatus) {
+      await closeOpenSkillCasesForVersion(ctx, {
+        skill: nextSkill,
+        versionId: version._id,
+        effectiveStatus: nextEffectiveStatus,
+        source: "rescan",
+        now,
+      });
+    }
 
     if (patch.moderationVerdict === "malicious" && skill.ownerUserId) {
       await ctx.scheduler.runAfter(0, internal.users.placeUserUnderModerationInternal, {
@@ -5809,12 +6253,21 @@ export const updateVersionScanResultsInternal = internalMutation({
     }
 
     if (Object.keys(patch).length > 0) {
+      const updatedVersion = { ...version, ...patch };
       await ctx.db.patch(args.versionId, patch);
       await finalizeInProgressRescanRequestsForTarget(
         ctx,
         { kind: "skill", artifactId: args.versionId },
-        { ...version, ...patch },
+        updatedVersion,
       );
+      const skill = await ctx.db.get(version.skillId);
+      if (
+        skill &&
+        skill.latestVersionId === version._id &&
+        isFinalScannerStatus(args.vtAnalysis?.status)
+      ) {
+        await patchStructuredModerationFromVersion(ctx, skill, updatedVersion);
+      }
     }
   },
 });
@@ -6588,24 +7041,33 @@ export const setSkillManualOverride = mutation({
     }
 
     const now = Date.now();
+    const version = await getSkillModerationVersionForCase(ctx, skill, undefined);
     const manualOverride = buildManualOverrideRecord({
       note: args.note,
       reviewerUserId: user._id,
       updatedAt: now,
     });
-
     const patch = applyManualOverrideToSkillPatch({
       basePatch: buildPreservedSkillModerationPatch(skill),
       override: manualOverride,
       now,
     });
-
     await ctx.db.patch(skill._id, {
       manualOverride,
       ...patch,
     });
     const nextSkill = { ...skill, manualOverride, ...patch };
     await adjustGlobalPublicCountForSkillChange(ctx, skill, nextSkill);
+    if (version) {
+      await closeOpenSkillCasesForVersion(ctx, {
+        skill: nextSkill,
+        versionId: version._id,
+        effectiveStatus: "clean",
+        source: "moderator",
+        actorUserId: user._id,
+        now,
+      });
+    }
 
     await ctx.db.insert("auditLogs", {
       actorUserId: user._id,
@@ -6617,6 +7079,7 @@ export const setSkillManualOverride = mutation({
         note: manualOverride.note,
         previousReason: skill.moderationReason ?? null,
         previousVerdict: skill.moderationVerdict ?? null,
+        versionId: version?._id ?? null,
       },
       createdAt: now,
     });
@@ -6636,13 +7099,12 @@ export const clearSkillManualOverride = mutation({
 
     const skill = await ctx.db.get(args.skillId);
     if (!skill) throw new ConvexError("Skill not found");
-    if (!skill.manualOverride) {
-      throw new ConvexError("Skill does not have a manual override.");
-    }
-
     const now = Date.now();
     const note = trimManualOverrideNote(args.note);
     const previousOverride = skill.manualOverride;
+    if (!previousOverride) {
+      throw new ConvexError("Skill does not have a manual override.");
+    }
 
     await ctx.db.patch(skill._id, {
       manualOverride: undefined,
@@ -7901,6 +8363,19 @@ export const insertVersion = internalMutation({
     }
 
     if (!skill) throw new Error("Skill creation failed");
+
+    const currentLatestVersion = skill.latestVersionId
+      ? await ctx.db.get(skill.latestVersionId)
+      : null;
+    if (
+      currentLatestVersion &&
+      (await resolveEffectiveSkillVersionStatus(ctx, skill, currentLatestVersion, now)) ===
+        "malicious"
+    ) {
+      throw new ConvexError(
+        "Cannot publish a new version while the latest version is marked malicious. Submit or resolve the moderation appeal first.",
+      );
+    }
 
     const existingVersion = await ctx.db
       .query("skillVersions")

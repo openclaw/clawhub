@@ -17,6 +17,7 @@ import {
   triagePackageReportForUserInternal,
   submitPackageAppealForUserInternal,
   listPackageAppealsInternal,
+  cleanupReviewPackageAppealsForUserInternal,
   listOfficialPluginMigrationsInternal,
   resolvePackageAppealForUserInternal,
   upsertOfficialPluginMigrationForUserInternal,
@@ -27,6 +28,7 @@ import {
   listPublicPage,
   listPageForViewerInternal,
   listVersions,
+  updateReleaseScanResultsInternal,
   updateReleaseStaticScanInternal,
   softDeletePackageInternal,
   transferPackageOwnerInternal,
@@ -367,6 +369,23 @@ const resolvePackageAppealForUserInternalHandler = (
     }
   >
 )._handler;
+const cleanupReviewPackageAppealsForUserInternalHandler = (
+  cleanupReviewPackageAppealsForUserInternal as unknown as WrappedHandler<
+    {
+      actorUserId: string;
+      apply?: boolean;
+      rescan?: boolean;
+      limit?: number;
+    },
+    {
+      ok: true;
+      apply: boolean;
+      reviewAppealsClosed: number;
+      cleanAppealsAccepted: number;
+      maliciousAppealsKeptOpen: number;
+    }
+  >
+)._handler;
 const getPackageReleaseScanBackfillBatchInternalHandler = (
   getPackageReleaseScanBackfillBatchInternal as unknown as WrappedHandler<
     {
@@ -494,6 +513,19 @@ const updateReleaseStaticScanInternalHandler = (
         }>;
         summary: string;
         engineVersion: string;
+        checkedAt: number;
+      };
+    },
+    unknown
+  >
+)._handler;
+const updateReleaseScanResultsInternalHandler = (
+  updateReleaseScanResultsInternal as unknown as WrappedHandler<
+    {
+      releaseId: string;
+      sha256hash?: string;
+      vtAnalysis?: {
+        status: string;
         checkedAt: number;
       };
     },
@@ -3027,6 +3059,51 @@ describe("packages public queries", () => {
     expect(ctx.patch).not.toHaveBeenCalled();
   });
 
+  it("keeps matching workflow retries idempotent when latest release is malicious", async () => {
+    const existingRelease = makeReleaseDoc({
+      _id: "packageReleases:existing",
+      version: "1.0.0",
+      integritySha256: "abc123",
+      staticScan: {
+        status: "malicious",
+        reasonCodes: ["malicious.test"],
+        findings: [],
+        summary: "malicious",
+        engineVersion: "test",
+        checkedAt: 1,
+      },
+    });
+    const ctx = makeInsertReleaseCtx(
+      makePackageDoc({ latestReleaseId: "packageReleases:existing" }),
+      [existingRelease],
+      { "packageReleases:existing": existingRelease },
+    );
+
+    await expect(
+      insertReleaseInternalHandler(ctx, {
+        actorUserId: "users:owner",
+        ownerUserId: "users:owner",
+        name: "demo-plugin",
+        displayName: "Demo Plugin",
+        family: "code-plugin",
+        version: "1.0.0",
+        changelog: "retry",
+        tags: ["latest"],
+        summary: "demo",
+        files: [],
+        integritySha256: "abc123",
+        allowExistingRelease: true,
+      }),
+    ).resolves.toMatchObject({
+      ok: true,
+      packageId: "packages:demo",
+      releaseId: "packageReleases:existing",
+    });
+
+    expect(ctx.insert).not.toHaveBeenCalled();
+    expect(ctx.patch).not.toHaveBeenCalled();
+  });
+
   it("keeps an initial beta-only package publish off latest", async () => {
     const ctx = makeInsertReleaseCtx(
       makePackageDoc({
@@ -4061,7 +4138,16 @@ describe("packages public queries", () => {
           }),
           patch,
           insert,
-          query: vi.fn(),
+          query: vi.fn((table: string) => {
+            if (table === "packageReports" || table === "packageAppeals") {
+              return {
+                withIndex: vi.fn(() => ({
+                  collect: vi.fn(async () => []),
+                })),
+              };
+            }
+            throw new Error(`Unexpected query table: ${table}`);
+          }),
           replace: vi.fn(),
           delete: vi.fn(),
           normalizeId: vi.fn(),
@@ -4131,7 +4217,16 @@ describe("packages public queries", () => {
           }),
           patch,
           insert,
-          query: vi.fn(),
+          query: vi.fn((table: string) => {
+            if (table === "packageReports" || table === "packageAppeals") {
+              return {
+                withIndex: vi.fn(() => ({
+                  collect: vi.fn(async () => []),
+                })),
+              };
+            }
+            throw new Error(`Unexpected query table: ${table}`);
+          }),
           replace: vi.fn(),
           delete: vi.fn(),
           normalizeId: vi.fn(),
@@ -4321,6 +4416,164 @@ describe("packages public queries", () => {
     );
   });
 
+  it("rejects owner appeals for Review package releases", async () => {
+    await expect(
+      submitPackageAppealForUserInternalHandler(
+        {
+          db: {
+            get: vi.fn(async (id: string) => {
+              if (id === "users:owner") return { _id: id, role: "user" };
+              return null;
+            }),
+            query: vi.fn((table: string) => {
+              if (table === "packages") {
+                return {
+                  withIndex: vi.fn(() => ({
+                    unique: vi.fn().mockResolvedValue(
+                      makePackageDoc({
+                        name: "@scope/demo",
+                        ownerUserId: "users:owner",
+                      }),
+                    ),
+                  })),
+                };
+              }
+              if (table === "packageReleases") {
+                return {
+                  withIndex: vi.fn(() => ({
+                    unique: vi.fn().mockResolvedValue(
+                      makeReleaseDoc({
+                        version: "1.2.3",
+                        staticScan: {
+                          status: "suspicious",
+                          reasonCodes: ["suspicious.test"],
+                          findings: [],
+                          summary: "Review",
+                          engineVersion: "test",
+                          checkedAt: 1,
+                        },
+                      }),
+                    ),
+                  })),
+                };
+              }
+              throw new Error(`Unexpected table ${table}`);
+            }),
+            insert: vi.fn(),
+            patch: vi.fn(),
+            replace: vi.fn(),
+            delete: vi.fn(),
+            normalizeId: vi.fn(),
+          },
+        } as never,
+        {
+          actorUserId: "users:owner",
+          name: "@scope/demo",
+          version: "1.2.3",
+          message: "please review",
+        },
+      ),
+    ).rejects.toThrow("Review is cautionary");
+  });
+
+  it("bulk-closes Review package appeals without resolving reports", async () => {
+    const patch = vi.fn();
+    const insert = vi.fn(async (table: string) => `${table}:1`);
+    let packageAppealQueries = 0;
+
+    const result = await cleanupReviewPackageAppealsForUserInternalHandler(
+      {
+        db: {
+          get: vi.fn(async (id: string) => {
+            if (id === "users:moderator") return { _id: id, role: "moderator" };
+            if (id === "packages:demo") return makePackageDoc({ name: "@scope/demo" });
+            if (id === "packageReleases:demo-1") {
+              return makeReleaseDoc({
+                staticScan: {
+                  status: "suspicious",
+                  reasonCodes: ["suspicious.test"],
+                  findings: [],
+                  summary: "Review",
+                  engineVersion: "test",
+                  checkedAt: 1,
+                },
+              });
+            }
+            return null;
+          }),
+          query: vi.fn((table: string) => {
+            if (table === "packageReports") {
+              throw new Error("bulk appeal cleanup must not query package reports");
+            }
+            if (table === "packageAppeals") {
+              packageAppealQueries += 1;
+              if (packageAppealQueries === 1) {
+                return {
+                  withIndex: vi.fn(() => ({
+                    order: vi.fn(() => ({
+                      take: vi.fn(async () => [
+                        {
+                          _id: "packageAppeals:1",
+                          packageId: "packages:demo",
+                          releaseId: "packageReleases:demo-1",
+                          version: "1.0.0",
+                          userId: "users:owner",
+                          message: "please review",
+                          status: "open",
+                          createdAt: 1,
+                        },
+                      ]),
+                    })),
+                  })),
+                };
+              }
+              return {
+                withIndex: vi.fn(() => ({
+                  collect: vi.fn(async () => [
+                    {
+                      _id: "packageAppeals:1",
+                      packageId: "packages:demo",
+                      releaseId: "packageReleases:demo-1",
+                      version: "1.0.0",
+                      userId: "users:owner",
+                      message: "please review",
+                      status: "open",
+                      createdAt: 1,
+                    },
+                  ]),
+                })),
+              };
+            }
+            throw new Error(`Unexpected table ${table}`);
+          }),
+          insert,
+          patch,
+          replace: vi.fn(),
+          delete: vi.fn(),
+          normalizeId: vi.fn(),
+        },
+        scheduler: { runAfter: vi.fn() },
+      } as never,
+      { actorUserId: "users:moderator", apply: true, rescan: false, limit: 10 },
+    );
+
+    expect(result).toMatchObject({
+      ok: true,
+      apply: true,
+      reviewAppealsClosed: 1,
+      cleanAppealsAccepted: 0,
+      maliciousAppealsKeptOpen: 0,
+    });
+    expect(patch).toHaveBeenCalledWith(
+      "packageAppeals:1",
+      expect.objectContaining({
+        status: "rejected",
+        reviewVerdict: "review",
+        reviewConfidence: "high",
+      }),
+    );
+  });
+
   it("lists package appeals for moderators", async () => {
     const result = await listPackageAppealsInternalHandler(
       {
@@ -4403,7 +4656,16 @@ describe("packages public queries", () => {
           }),
           patch,
           insert,
-          query: vi.fn(),
+          query: vi.fn((table: string) => {
+            if (table === "packageReports" || table === "packageAppeals") {
+              return {
+                withIndex: vi.fn(() => ({
+                  collect: vi.fn(async () => []),
+                })),
+              };
+            }
+            throw new Error(`Unexpected query table: ${table}`);
+          }),
           replace: vi.fn(),
           delete: vi.fn(),
           normalizeId: vi.fn(),
@@ -4478,7 +4740,16 @@ describe("packages public queries", () => {
           }),
           patch,
           insert,
-          query: vi.fn(),
+          query: vi.fn((table: string) => {
+            if (table === "packageReports" || table === "packageAppeals") {
+              return {
+                withIndex: vi.fn(() => ({
+                  collect: vi.fn(async () => []),
+                })),
+              };
+            }
+            throw new Error(`Unexpected query table: ${table}`);
+          }),
           replace: vi.fn(),
           delete: vi.fn(),
           normalizeId: vi.fn(),
@@ -5315,6 +5586,13 @@ describe("package scan backfill", () => {
                 })),
               };
             }
+            if (table === "packageReports" || table === "packageAppeals") {
+              return {
+                withIndex: vi.fn(() => ({
+                  collect: vi.fn(async () => []),
+                })),
+              };
+            }
             throw new Error(`Unexpected query table: ${table}`);
           }),
           insert: vi.fn(),
@@ -5356,5 +5634,53 @@ describe("package scan backfill", () => {
         }),
       }),
     );
+  });
+
+  it("does not clean up package cases from non-final VT status updates", async () => {
+    const patch = vi.fn();
+
+    await updateReleaseScanResultsInternalHandler(
+      {
+        db: {
+          get: vi.fn(async (id: string) => {
+            if (id === "packageReleases:demo-1") {
+              return makeReleaseDoc({
+                vtAnalysis: { status: "malicious", checkedAt: 1 },
+              });
+            }
+            throw new Error(`Unexpected get ${id}`);
+          }),
+          query: vi.fn((table: string) => {
+            if (table === "packageReports" || table === "packageAppeals") {
+              throw new Error("non-final VT updates must not clean up cases");
+            }
+            if (table === "rescanRequests") {
+              return {
+                withIndex: vi.fn(() => ({
+                  order: vi.fn(() => ({
+                    take: vi.fn(async () => []),
+                  })),
+                })),
+              };
+            }
+            throw new Error(`Unexpected query table: ${table}`);
+          }),
+          insert: vi.fn(),
+          patch,
+          replace: vi.fn(),
+          delete: vi.fn(),
+          normalizeId: vi.fn(),
+        },
+      } as never,
+      {
+        releaseId: "packageReleases:demo-1",
+        vtAnalysis: { status: "stale", checkedAt: 2 },
+      },
+    );
+
+    expect(patch).toHaveBeenCalledTimes(1);
+    expect(patch).toHaveBeenCalledWith("packageReleases:demo-1", {
+      vtAnalysis: { status: "stale", checkedAt: 2 },
+    });
   });
 });

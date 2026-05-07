@@ -53,12 +53,6 @@ function isScannerManagedReason(reason: string | undefined) {
 
 function shouldPreserveExistingLock(basePatch: SkillModerationPatch | undefined) {
   if (!basePatch) return false;
-  if (
-    basePatch.moderationVerdict === "malicious" ||
-    basePatch.moderationFlags?.includes("blocked.malware")
-  ) {
-    return true;
-  }
   if (basePatch.moderationStatus !== "hidden") return false;
   if (isManualOverrideReason(basePatch.moderationReason)) return false;
   return !isScannerManagedReason(basePatch.moderationReason);

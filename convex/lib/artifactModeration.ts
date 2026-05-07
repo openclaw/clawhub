@@ -1,10 +1,51 @@
-import { ConvexError, type Value } from "convex/values";
+import { ConvexError, v, type Value } from "convex/values";
 import type { Id } from "../_generated/dataModel";
 import type { MutationCtx } from "../_generated/server";
 
 export type ArtifactReportStatus = "open" | "confirmed" | "dismissed";
 export type StoredArtifactReportStatus = ArtifactReportStatus | "triaged";
 export type ArtifactAppealStatus = "open" | "accepted" | "rejected";
+export type ArtifactReviewVerdict = "clean" | "review" | "malicious" | "unknown";
+export type ArtifactReviewConfidence = "low" | "medium" | "high";
+
+export const artifactReviewVerdictValidator = v.union(
+  v.literal("clean"),
+  v.literal("review"),
+  v.literal("malicious"),
+  v.literal("unknown"),
+);
+export const artifactReviewConfidenceValidator = v.union(
+  v.literal("low"),
+  v.literal("medium"),
+  v.literal("high"),
+);
+
+export type ArtifactReviewFields = {
+  reviewVerdict?: ArtifactReviewVerdict;
+  reviewConfidence?: ArtifactReviewConfidence;
+  reviewCategories?: string[];
+};
+
+export function normalizeArtifactReviewFields(
+  params: ArtifactReviewFields & { clear: boolean },
+): ArtifactReviewFields {
+  if (params.clear) {
+    return {
+      reviewVerdict: undefined,
+      reviewConfidence: undefined,
+      reviewCategories: undefined,
+    };
+  }
+  const categories = params.reviewCategories
+    ?.map((category) => category.trim())
+    .filter(Boolean)
+    .slice(0, 20);
+  return {
+    ...(params.reviewVerdict ? { reviewVerdict: params.reviewVerdict } : {}),
+    ...(params.reviewConfidence ? { reviewConfidence: params.reviewConfidence } : {}),
+    ...(categories?.length ? { reviewCategories: categories } : {}),
+  };
+}
 
 type BaseArtifactModerationEventInput = {
   kind: "report" | "appeal";

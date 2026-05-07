@@ -75,6 +75,12 @@ export const PackageReportStatusSchema = type('"open"|"confirmed"|"dismissed"');
 export type PackageReportStatus = (typeof PackageReportStatusSchema)[inferred];
 export const PackageReportFinalActionSchema = type('"none"|"quarantine"|"revoke"');
 export type PackageReportFinalAction = (typeof PackageReportFinalActionSchema)[inferred];
+export const PackageModerationReviewVerdictSchema = type('"clean"|"review"|"malicious"|"unknown"');
+export type PackageModerationReviewVerdict =
+  (typeof PackageModerationReviewVerdictSchema)[inferred];
+export const PackageModerationReviewConfidenceSchema = type('"low"|"medium"|"high"');
+export type PackageModerationReviewConfidence =
+  (typeof PackageModerationReviewConfidenceSchema)[inferred];
 
 export const PackageReportListStatusSchema = PackageReportStatusSchema.or('"all"');
 export type PackageReportListStatus = (typeof PackageReportListStatusSchema)[inferred];
@@ -360,6 +366,9 @@ export const PackageReportTriageRequestSchema = type({
   status: PackageReportStatusSchema,
   note: "string?",
   finalAction: PackageReportFinalActionSchema.optional(),
+  reviewVerdict: PackageModerationReviewVerdictSchema.optional(),
+  reviewConfidence: PackageModerationReviewConfidenceSchema.optional(),
+  reviewCategories: "string[]?",
 });
 export type PackageReportTriageRequest = (typeof PackageReportTriageRequestSchema)[inferred];
 
@@ -384,6 +393,9 @@ export const PackageAppealResolveRequestSchema = type({
   status: PackageAppealStatusSchema,
   note: "string?",
   finalAction: PackageAppealFinalActionSchema.optional(),
+  reviewVerdict: PackageModerationReviewVerdictSchema.optional(),
+  reviewConfidence: PackageModerationReviewConfidenceSchema.optional(),
+  reviewCategories: "string[]?",
 });
 export type PackageAppealResolveRequest = (typeof PackageAppealResolveRequestSchema)[inferred];
 
@@ -408,6 +420,9 @@ export const ApiV1PackageAppealListResponseSchema = type({
     resolvedBy: "string|null?",
     resolutionNote: "string|null?",
     actionTaken: PackageAppealFinalActionSchema.or("null").optional(),
+    reviewVerdict: PackageModerationReviewVerdictSchema.or("null").optional(),
+    reviewConfidence: PackageModerationReviewConfidenceSchema.or("null").optional(),
+    reviewCategories: "string[]?",
   }).array(),
   nextCursor: "string|null",
   done: "boolean",
@@ -422,6 +437,7 @@ export const ApiV1PackageAppealResolveResponseSchema = type({
   releaseId: "string",
   status: PackageAppealStatusSchema,
   actionTaken: PackageAppealFinalActionSchema.optional(),
+  reviewVerdict: PackageModerationReviewVerdictSchema.optional(),
 });
 export type ApiV1PackageAppealResolveResponse =
   (typeof ApiV1PackageAppealResolveResponseSchema)[inferred];
@@ -447,6 +463,9 @@ export const ApiV1PackageReportListResponseSchema = type({
     triagedBy: "string|null?",
     triageNote: "string|null?",
     actionTaken: PackageReportFinalActionSchema.or("null").optional(),
+    reviewVerdict: PackageModerationReviewVerdictSchema.or("null").optional(),
+    reviewConfidence: PackageModerationReviewConfidenceSchema.or("null").optional(),
+    reviewCategories: "string[]?",
   }).array(),
   nextCursor: "string|null",
   done: "boolean",
@@ -461,6 +480,7 @@ export const ApiV1PackageReportTriageResponseSchema = type({
   status: PackageReportStatusSchema,
   reportCount: "number",
   actionTaken: PackageReportFinalActionSchema.optional(),
+  reviewVerdict: PackageModerationReviewVerdictSchema.optional(),
 });
 export type ApiV1PackageReportTriageResponse =
   (typeof ApiV1PackageReportTriageResponseSchema)[inferred];

@@ -139,15 +139,8 @@ export function SkillHeader({
             </p>
             {canManage ? (
               <p className="pending-banner-appeal">
-                If you believe this skill has been incorrectly flagged, please{" "}
-                <a
-                  href="https://github.com/openclaw/clawhub/issues"
-                  target="_blank"
-                  rel="noopener noreferrer"
-                >
-                  submit an issue on GitHub
-                </a>{" "}
-                and we'll break down why it was flagged and what you can do.
+                Review is a caution state, not a malicious block. Appeals are only available for
+                skills marked malicious.
               </p>
             ) : null}
           </div>

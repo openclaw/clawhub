@@ -253,6 +253,7 @@ const internalRefs = internal as unknown as {
     triageSkillReportForUserInternal: unknown;
     submitSkillAppealForUserInternal: unknown;
     listSkillAppealsInternal: unknown;
+    cleanupReviewSkillAppealsForUserInternal: unknown;
     resolveSkillAppealForUserInternal: unknown;
     requestRescanForApiTokenInternal: unknown;
   };
@@ -1253,6 +1254,40 @@ export async function skillsPostRouterV1Handler(ctx: ActionCtx, request: Request
 
   if (
     segments[0] === "-" &&
+    segments[1] === "appeals" &&
+    segments[2] === "cleanup-review" &&
+    segments.length === 3
+  ) {
+    const auth = await requireApiTokenUserOrResponse(ctx, request, rate.headers);
+    if (!auth.ok) return auth.response;
+    try {
+      const body = (await request.json().catch(() => ({}))) as {
+        apply?: boolean;
+        rescan?: boolean;
+        limit?: number;
+      };
+      const result = await runMutationRef(
+        ctx,
+        internalRefs.skills.cleanupReviewSkillAppealsForUserInternal,
+        {
+          actorUserId: auth.userId,
+          ...(typeof body.apply === "boolean" ? { apply: body.apply } : {}),
+          ...(typeof body.rescan === "boolean" ? { rescan: body.rescan } : {}),
+          ...(typeof body.limit === "number" ? { limit: body.limit } : {}),
+        },
+      );
+      return json(result, 200, rate.headers);
+    } catch (error) {
+      return text(
+        error instanceof Error ? error.message : "Skill appeal cleanup failed",
+        400,
+        rate.headers,
+      );
+    }
+  }
+
+  if (
+    segments[0] === "-" &&
     segments[1] === "reports" &&
     segments[2] &&
     segments[3] === "triage" &&
@@ -1269,6 +1304,9 @@ export async function skillsPostRouterV1Handler(ctx: ActionCtx, request: Request
         status: "open" | "confirmed" | "dismissed";
         note?: string;
         finalAction?: "none" | "hide";
+        reviewVerdict?: "clean" | "review" | "malicious" | "unknown";
+        reviewConfidence?: "low" | "medium" | "high";
+        reviewCategories?: string[];
       };
       const result = await runMutationRef(
         ctx,
@@ -1279,6 +1317,9 @@ export async function skillsPostRouterV1Handler(ctx: ActionCtx, request: Request
           status: body.status,
           ...(body.note ? { note: body.note } : {}),
           ...(body.finalAction ? { finalAction: body.finalAction } : {}),
+          ...(body.reviewVerdict ? { reviewVerdict: body.reviewVerdict } : {}),
+          ...(body.reviewConfidence ? { reviewConfidence: body.reviewConfidence } : {}),
+          ...(body.reviewCategories ? { reviewCategories: body.reviewCategories } : {}),
         },
       );
       return json(result, 200, rate.headers);
@@ -1309,6 +1350,9 @@ export async function skillsPostRouterV1Handler(ctx: ActionCtx, request: Request
         status: "open" | "accepted" | "rejected";
         note?: string;
         finalAction?: "none" | "restore";
+        reviewVerdict?: "clean" | "review" | "malicious" | "unknown";
+        reviewConfidence?: "low" | "medium" | "high";
+        reviewCategories?: string[];
       };
       const result = await runMutationRef(
         ctx,
@@ -1319,6 +1363,9 @@ export async function skillsPostRouterV1Handler(ctx: ActionCtx, request: Request
           status: body.status,
           ...(body.note ? { note: body.note } : {}),
           ...(body.finalAction ? { finalAction: body.finalAction } : {}),
+          ...(body.reviewVerdict ? { reviewVerdict: body.reviewVerdict } : {}),
+          ...(body.reviewConfidence ? { reviewConfidence: body.reviewConfidence } : {}),
+          ...(body.reviewCategories ? { reviewCategories: body.reviewCategories } : {}),
         },
       );
       return json(result, 200, rate.headers);

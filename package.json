@@ -20,6 +20,7 @@
     "ci:unit": "VITE_CONVEX_URL=https://example.invalid bun run coverage",
     "convex:deploy": "bunx convex deploy --typecheck=disable --yes",
     "coverage": "vitest run --coverage",
+    "dataset:moderation-decisions": "bun scripts/security-dataset/export-moderation-decisions.ts",
     "dataset:snapshot": "bun scripts/security-dataset/export-snapshot.ts",
     "dataset:snapshot:prod:dry-run": "bun scripts/security-dataset/export-snapshot.ts --prod --limit 10 --dry-run",
     "deadcode:ci": "bun run deadcode:knip",

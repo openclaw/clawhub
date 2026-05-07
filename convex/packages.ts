@@ -38,6 +38,9 @@ import {
   assertArtifactReportTransition,
   readArtifactReportStatus,
   appendPackageModerationEventLog,
+  artifactReviewConfidenceValidator,
+  artifactReviewVerdictValidator,
+  normalizeArtifactReviewFields,
 } from "./lib/artifactModeration";
 import { requireGitHubAccountAge } from "./lib/githubAccount";
 import { normalizeGitHubRepository } from "./lib/githubActionsOidc";
@@ -102,6 +105,37 @@ const packageOfficialMigrationPhaseValidator = v.union(
   v.literal("blocked"),
   v.literal("ready-for-openclaw"),
 );
+type ArtifactCaseCleanupSource = "rescan" | "moderator" | "bulk_cleanup";
+type EffectiveArtifactStatus = "clean" | "suspicious" | "malicious";
+
+function effectiveStatusFromPackageRelease(release: Doc<"packageReleases">) {
+  const status = resolvePackageReleaseScanStatus(release);
+  if (status === "malicious" || status === "suspicious") return status;
+  return "clean";
+}
+
+function isFinalScannerStatus(status: string | undefined) {
+  const normalized = status?.trim().toLowerCase();
+  return (
+    normalized === "clean" ||
+    normalized === "benign" ||
+    normalized === "suspicious" ||
+    normalized === "malicious"
+  );
+}
+
+function defaultPackageCaseCleanupNote(params: {
+  source: ArtifactCaseCleanupSource;
+  effectiveStatus: EffectiveArtifactStatus;
+}) {
+  if (params.effectiveStatus === "malicious") {
+    return `Closed by ${params.source}: package release is currently malicious.`;
+  }
+  if (params.effectiveStatus === "suspicious") {
+    return `Closed by ${params.source}: Review is a caution state, not a malicious block; only malicious package releases are appealable.`;
+  }
+  return `Closed by ${params.source}: package release is not currently malicious.`;
+}
 const vtEngineStatsValidator = v.object({
   malicious: v.optional(v.number()),
   suspicious: v.optional(v.number()),
@@ -214,6 +248,8 @@ type PackageReleaseModerationQueueDoc = Omit<Doc<"packageReleases">, "createdAt"
 type PackageReportStatus = "open" | "confirmed" | "dismissed";
 type PackageReportFinalAction = "none" | "quarantine" | "revoke";
 type PackageAppealFinalAction = "none" | "approve";
+type ModerationReviewVerdict = "clean" | "review" | "malicious" | "unknown";
+type ModerationReviewConfidence = "low" | "medium" | "high";
 type PackageModerationQueueItem = {
   packageId: Id<"packages">;
   releaseId: Id<"packageReleases">;
@@ -254,6 +290,9 @@ type PackageReportListItem = {
   triagedBy?: Id<"users"> | null;
   triageNote?: string | null;
   actionTaken?: PackageReportFinalAction | null;
+  reviewVerdict?: ModerationReviewVerdict | null;
+  reviewConfidence?: ModerationReviewConfidence | null;
+  reviewCategories?: string[];
 };
 type PackageAppealStatus = "open" | "accepted" | "rejected";
 type PackageAppealListItem = {
@@ -276,6 +315,9 @@ type PackageAppealListItem = {
   resolvedBy?: Id<"users"> | null;
   resolutionNote?: string | null;
   actionTaken?: PackageAppealFinalAction | null;
+  reviewVerdict?: ModerationReviewVerdict | null;
+  reviewConfidence?: ModerationReviewConfidence | null;
+  reviewCategories?: string[];
 };
 type PackageOfficialMigrationListItem = {
   migrationId: Id<"officialPluginMigrations">;
@@ -2312,6 +2354,14 @@ export const moderatePackageReleaseForUserInternal = internalMutation({
     await ctx.db.patch(release._id, patch);
     const updatedRelease = { ...release, ...patch } as Doc<"packageReleases">;
     await syncLatestPackageVerification(ctx, updatedRelease);
+    await closeOpenPackageCasesForRelease(ctx, {
+      pkg,
+      releaseId: release._id,
+      effectiveStatus: effectiveStatusFromPackageRelease(updatedRelease),
+      source: "moderator",
+      actorUserId: actor._id,
+      now,
+    });
     await ctx.db.insert("auditLogs", {
       actorUserId: actor._id,
       action: "package.release.moderation",
@@ -2373,6 +2423,14 @@ async function applyPackageReleaseModerationFinalAction(
   await ctx.db.patch(params.release._id, patch);
   const updatedRelease = { ...params.release, ...patch } as Doc<"packageReleases">;
   await syncLatestPackageVerification(ctx, updatedRelease);
+  await closeOpenPackageCasesForRelease(ctx, {
+    pkg: params.pkg,
+    releaseId: params.release._id,
+    effectiveStatus: effectiveStatusFromPackageRelease(updatedRelease),
+    source: "moderator",
+    actorUserId: params.actorUserId,
+    now: params.now,
+  });
   await ctx.db.insert("auditLogs", {
     actorUserId: params.actorUserId,
     action: "package.release.moderation",
@@ -2391,6 +2449,138 @@ async function applyPackageReleaseModerationFinalAction(
   });
 
   return { state: params.state, scanStatus };
+}
+
+async function closeOpenPackageCasesForRelease(
+  ctx: MutationCtx,
+  params: {
+    pkg: Doc<"packages">;
+    releaseId: Id<"packageReleases">;
+    effectiveStatus: EffectiveArtifactStatus;
+    source: ArtifactCaseCleanupSource;
+    actorUserId?: Id<"users">;
+    now: number;
+    closeReports?: boolean;
+  },
+) {
+  const note = defaultPackageCaseCleanupNote(params);
+  const isMalicious = params.effectiveStatus === "malicious";
+  const reviewVerdict =
+    params.effectiveStatus === "clean"
+      ? ("clean" as const)
+      : params.effectiveStatus === "malicious"
+        ? ("malicious" as const)
+        : ("review" as const);
+
+  let closedReports = 0;
+  if (params.closeReports !== false) {
+    const reports = await ctx.db
+      .query("packageReports")
+      .withIndex("by_release", (q) => q.eq("releaseId", params.releaseId))
+      .collect();
+    for (const report of reports) {
+      if ((report.status ?? "open") !== "open") continue;
+      await ctx.db.patch(report._id, {
+        status: isMalicious ? "confirmed" : "dismissed",
+        triagedAt: params.now,
+        triagedBy: params.actorUserId,
+        triageNote: note,
+        actionTaken: "none",
+        reviewVerdict,
+        reviewConfidence: params.source === "bulk_cleanup" ? "high" : undefined,
+      });
+      closedReports += 1;
+      if (params.actorUserId) {
+        await appendPackageModerationEventLog(ctx, {
+          kind: "report",
+          reportId: report._id,
+          actorUserId: params.actorUserId,
+          action: "package.report.auto_close",
+          timelineMetadata: {
+            packageId: params.pkg._id,
+            packageName: params.pkg.name,
+            releaseId: params.releaseId,
+            status: isMalicious ? "confirmed" : "dismissed",
+            source: params.source,
+            effectiveStatus: params.effectiveStatus,
+            reviewVerdict,
+          },
+          auditAction: "package.report.auto_close",
+          auditTargetType: "packageReport",
+          auditTargetId: report._id,
+          auditMetadata: {
+            packageId: params.pkg._id,
+            packageName: params.pkg.name,
+            releaseId: params.releaseId,
+            source: params.source,
+            effectiveStatus: params.effectiveStatus,
+            reviewVerdict,
+          },
+          createdAt: params.now,
+        });
+      }
+    }
+  }
+
+  const appeals = await ctx.db
+    .query("packageAppeals")
+    .withIndex("by_release_status_createdAt", (q) =>
+      q.eq("releaseId", params.releaseId).eq("status", "open"),
+    )
+    .collect();
+  let closedAppeals = 0;
+  for (const appeal of appeals) {
+    const appealStatus =
+      isMalicious || (params.source === "bulk_cleanup" && params.effectiveStatus === "suspicious")
+        ? "rejected"
+        : "accepted";
+    await ctx.db.patch(appeal._id, {
+      status: appealStatus,
+      resolvedAt: params.now,
+      resolvedBy: params.actorUserId,
+      resolutionNote: note,
+      actionTaken: "none",
+      reviewVerdict,
+      reviewConfidence: params.source === "bulk_cleanup" ? "high" : undefined,
+    });
+    closedAppeals += 1;
+    if (params.actorUserId) {
+      await appendPackageModerationEventLog(ctx, {
+        kind: "appeal",
+        appealId: appeal._id,
+        actorUserId: params.actorUserId,
+        action: "package.appeal.auto_close",
+        timelineMetadata: {
+          packageId: params.pkg._id,
+          packageName: params.pkg.name,
+          releaseId: params.releaseId,
+          status: appealStatus,
+          source: params.source,
+          effectiveStatus: params.effectiveStatus,
+          reviewVerdict,
+        },
+        auditAction: "package.appeal.auto_close",
+        auditTargetType: "packageAppeal",
+        auditTargetId: appeal._id,
+        auditMetadata: {
+          packageId: params.pkg._id,
+          packageName: params.pkg.name,
+          releaseId: params.releaseId,
+          source: params.source,
+          effectiveStatus: params.effectiveStatus,
+          reviewVerdict,
+        },
+        createdAt: params.now,
+      });
+    }
+  }
+
+  if (closedReports > 0) {
+    await ctx.db.patch(params.pkg._id, {
+      reportCount: Math.max(0, (params.pkg.reportCount ?? 0) - closedReports),
+    });
+  }
+  return { closedReports, closedAppeals };
 }
 
 async function countActivePackageReportsForUser(ctx: MutationCtx, userId: Id<"users">) {
@@ -2468,6 +2658,10 @@ export const reportPackageForUserInternal = internalMutation({
           triagedAt: undefined,
           triagedBy: undefined,
           triageNote: undefined,
+          actionTaken: undefined,
+          reviewVerdict: undefined,
+          reviewConfidence: undefined,
+          reviewCategories: undefined,
           createdAt: now,
         });
         const nextReportCount = (pkg.reportCount ?? 0) + 1;
@@ -2598,6 +2792,9 @@ function toPackageReportListItem(
     triagedBy: report.triagedBy ?? null,
     triageNote: report.triageNote ?? null,
     actionTaken: report.actionTaken ?? null,
+    reviewVerdict: report.reviewVerdict ?? null,
+    reviewConfidence: report.reviewConfidence ?? null,
+    reviewCategories: report.reviewCategories ?? [],
   };
 }
 
@@ -2653,6 +2850,9 @@ export const triagePackageReportForUserInternal = internalMutation({
     finalAction: v.optional(
       v.union(v.literal("none"), v.literal("quarantine"), v.literal("revoke")),
     ),
+    reviewVerdict: v.optional(artifactReviewVerdictValidator),
+    reviewConfidence: v.optional(artifactReviewConfidenceValidator),
+    reviewCategories: v.optional(v.array(v.string())),
   },
   handler: async (ctx, args) => {
     const actor = await ctx.db.get(args.actorUserId);
@@ -2674,6 +2874,13 @@ export const triagePackageReportForUserInternal = internalMutation({
     if (!willBeOpen && !note) throw new ConvexError("Review note required.");
     const finalAction = args.finalAction ?? "none";
     assertArtifactReportFinalAction(nextStatus, finalAction, ["quarantine", "revoke"]);
+    const reviewFields = normalizeArtifactReviewFields({
+      clear: willBeOpen,
+      reviewVerdict: args.reviewVerdict,
+      reviewConfidence: args.reviewConfidence,
+      reviewCategories: args.reviewCategories,
+    });
+    const eventReviewFields = willBeOpen ? {} : reviewFields;
 
     await ctx.db.patch(report._id, {
       status: nextStatus,
@@ -2681,6 +2888,7 @@ export const triagePackageReportForUserInternal = internalMutation({
       triagedBy: willBeOpen ? undefined : actor._id,
       triageNote: willBeOpen ? undefined : note?.slice(0, MAX_REPORT_REASON_LENGTH),
       actionTaken: willBeOpen ? undefined : finalAction,
+      ...reviewFields,
     });
 
     let reportCount = pkg.reportCount ?? 0;
@@ -2704,7 +2912,7 @@ export const triagePackageReportForUserInternal = internalMutation({
       moderatedRelease = release;
       await applyPackageReleaseModerationFinalAction(ctx, {
         actorUserId: actor._id,
-        pkg,
+        pkg: { ...pkg, reportCount },
         release,
         state: finalAction === "quarantine" ? "quarantined" : "revoked",
         reason: note ?? "",
@@ -2722,6 +2930,7 @@ export const triagePackageReportForUserInternal = internalMutation({
       releaseId: moderatedRelease?._id ?? report.releaseId ?? null,
       version: moderatedRelease?.version ?? report.version ?? null,
       reportCount,
+      ...eventReviewFields,
     };
     await appendPackageModerationEventLog(ctx, {
       kind: "report",
@@ -2743,6 +2952,7 @@ export const triagePackageReportForUserInternal = internalMutation({
       status: args.status,
       reportCount,
       actionTaken: finalAction,
+      ...(reviewFields.reviewVerdict ? { reviewVerdict: reviewFields.reviewVerdict } : {}),
     };
   },
 });
@@ -2831,12 +3041,11 @@ export const submitPackageAppealForUserInternal = internalMutation({
 
     const scanStatus = resolvePackageReleaseScanStatus(release);
     const moderationState = release.manualModeration?.state ?? null;
-    const isAppealable =
-      moderationState === "quarantined" ||
-      moderationState === "revoked" ||
-      scanStatus === "suspicious" ||
-      scanStatus === "malicious";
-    if (!isAppealable) throw new ConvexError("Package release is not in an appealable state");
+    if (scanStatus !== "malicious") {
+      throw new ConvexError(
+        "Package release is not in an appealable state. Review is cautionary; only malicious package releases can be appealed.",
+      );
+    }
 
     const message = args.message.trim();
     if (!message) throw new ConvexError("Appeal message required.");
@@ -2929,6 +3138,9 @@ function toPackageAppealListItem(
     resolvedBy: appeal.resolvedBy ?? null,
     resolutionNote: appeal.resolutionNote ?? null,
     actionTaken: appeal.actionTaken ?? null,
+    reviewVerdict: appeal.reviewVerdict ?? null,
+    reviewConfidence: appeal.reviewConfidence ?? null,
+    reviewCategories: appeal.reviewCategories ?? [],
   };
 }
 
@@ -2975,6 +3187,100 @@ export const listPackageAppealsInternal = internalQuery({
   },
 });
 
+export const cleanupReviewPackageAppealsForUserInternal = internalMutation({
+  args: {
+    actorUserId: v.id("users"),
+    apply: v.optional(v.boolean()),
+    rescan: v.optional(v.boolean()),
+    limit: v.optional(v.number()),
+  },
+  handler: async (ctx, args) => {
+    const actor = await ctx.db.get(args.actorUserId);
+    if (!actor || actor.deletedAt || actor.deactivatedAt) throw new ConvexError("Unauthorized");
+    assertModerator(actor);
+
+    const apply = args.apply === true;
+    const rescan = args.rescan === true;
+    const limit = Math.max(1, Math.min(Math.round(args.limit ?? 100), 500));
+    const appeals = await ctx.db
+      .query("packageAppeals")
+      .withIndex("by_status_createdAt", (q) => q.eq("status", "open"))
+      .order("asc")
+      .take(limit);
+    const now = Date.now();
+    let scanned = 0;
+    let rescanQueued = 0;
+    let rescanSkipped = 0;
+    let reviewAppealsClosed = 0;
+    let cleanAppealsAccepted = 0;
+    let maliciousAppealsKeptOpen = 0;
+
+    for (const appeal of appeals) {
+      const pkg = await ctx.db.get(appeal.packageId);
+      if (!pkg || pkg.softDeletedAt || pkg.family === "skill") continue;
+      const release = await ctx.db.get(appeal.releaseId);
+      if (!release || release.softDeletedAt) continue;
+      const effectiveStatus = effectiveStatusFromPackageRelease(release);
+      scanned += 1;
+
+      if (apply && rescan) {
+        const inProgress = await ctx.db
+          .query("rescanRequests")
+          .withIndex("by_package_release_status", (q) =>
+            q
+              .eq("targetKind", "plugin")
+              .eq("packageReleaseId", release._id)
+              .eq("status", "in_progress"),
+          )
+          .first();
+        if (inProgress) {
+          rescanSkipped += 1;
+        } else {
+          const requestId = await insertPackageRescanRequest(ctx, actor, { pkg, release });
+          await ctx.scheduler.runAfter(0, internal.packages.dispatchPackageRescanInternal, {
+            requestId,
+            releaseId: release._id,
+          });
+          rescanQueued += 1;
+        }
+      }
+
+      if (effectiveStatus === "malicious") {
+        maliciousAppealsKeptOpen += 1;
+        continue;
+      }
+      if (!apply) {
+        if (effectiveStatus === "suspicious") reviewAppealsClosed += 1;
+        if (effectiveStatus === "clean") cleanAppealsAccepted += 1;
+        continue;
+      }
+      const result = await closeOpenPackageCasesForRelease(ctx, {
+        pkg,
+        releaseId: release._id,
+        effectiveStatus,
+        source: "bulk_cleanup",
+        actorUserId: actor._id,
+        now,
+        closeReports: false,
+      });
+      if (effectiveStatus === "suspicious") reviewAppealsClosed += result.closedAppeals;
+      if (effectiveStatus === "clean") cleanAppealsAccepted += result.closedAppeals;
+    }
+
+    return {
+      ok: true as const,
+      apply,
+      rescan,
+      scanned,
+      rescanQueued,
+      rescanSkipped,
+      reviewAppealsClosed,
+      cleanAppealsAccepted,
+      maliciousAppealsKeptOpen,
+    };
+  },
+});
+
 export const resolvePackageAppealForUserInternal = internalMutation({
   args: {
     actorUserId: v.id("users"),
@@ -2982,6 +3288,9 @@ export const resolvePackageAppealForUserInternal = internalMutation({
     status: v.union(v.literal("open"), v.literal("accepted"), v.literal("rejected")),
     note: v.optional(v.string()),
     finalAction: v.optional(v.union(v.literal("none"), v.literal("approve"))),
+    reviewVerdict: v.optional(artifactReviewVerdictValidator),
+    reviewConfidence: v.optional(artifactReviewConfidenceValidator),
+    reviewCategories: v.optional(v.array(v.string())),
   },
   handler: async (ctx, args) => {
     const actor = await ctx.db.get(args.actorUserId);
@@ -3000,6 +3309,13 @@ export const resolvePackageAppealForUserInternal = internalMutation({
     const finalAction = args.finalAction ?? "none";
     assertArtifactAppealFinalAction(args.status, finalAction, ["approve"]);
     const now = Date.now();
+    const reviewFields = normalizeArtifactReviewFields({
+      clear: isOpen,
+      reviewVerdict: args.reviewVerdict,
+      reviewConfidence: args.reviewConfidence,
+      reviewCategories: args.reviewCategories,
+    });
+    const eventReviewFields = isOpen ? {} : reviewFields;
 
     await ctx.db.patch(appeal._id, {
       status: args.status,
@@ -3007,6 +3323,7 @@ export const resolvePackageAppealForUserInternal = internalMutation({
       resolvedBy: isOpen ? undefined : actor._id,
       resolutionNote: isOpen ? undefined : note?.slice(0, MAX_APPEAL_MESSAGE_LENGTH),
       actionTaken: isOpen ? undefined : finalAction,
+      ...reviewFields,
     });
 
     if (finalAction === "approve") {
@@ -3032,6 +3349,7 @@ export const resolvePackageAppealForUserInternal = internalMutation({
       version: appeal.version,
       status: args.status,
       finalAction,
+      ...eventReviewFields,
     };
     await appendPackageModerationEventLog(ctx, {
       kind: "appeal",
@@ -3053,6 +3371,7 @@ export const resolvePackageAppealForUserInternal = internalMutation({
       releaseId: appeal.releaseId,
       status: args.status,
       actionTaken: finalAction,
+      ...(reviewFields.reviewVerdict ? { reviewVerdict: reviewFields.reviewVerdict } : {}),
     };
   },
 });
@@ -4306,6 +4625,40 @@ export const insertReleaseInternal = internalMutation({
         `Package "${nextNameLabel}" already exists as a ${existing.family}; family changes are not allowed`,
       );
     }
+    if (existing) {
+      const releaseExists = await ctx.db
+        .query("packageReleases")
+        .withIndex("by_package_version", (q) =>
+          q.eq("packageId", existing._id).eq("version", args.version),
+        )
+        .unique();
+      if (releaseExists) {
+        if (
+          args.allowExistingRelease &&
+          !releaseExists.softDeletedAt &&
+          releaseExists.integritySha256 === args.integritySha256
+        ) {
+          return {
+            ok: true as const,
+            packageId: existing._id,
+            releaseId: releaseExists._id,
+          };
+        }
+        throw new ConvexError(`Version ${nextVersionLabel} already exists`);
+      }
+    }
+    if (existing?.latestReleaseId) {
+      const latestRelease = await ctx.db.get(existing.latestReleaseId);
+      if (
+        latestRelease &&
+        !latestRelease.softDeletedAt &&
+        effectiveStatusFromPackageRelease(latestRelease) === "malicious"
+      ) {
+        throw new ConvexError(
+          "Cannot publish a new version while the latest package release is marked malicious. Submit or resolve the moderation appeal first.",
+        );
+      }
+    }
     if (
       existing &&
       existing.family === "code-plugin" &&
@@ -4355,28 +4708,6 @@ export const insertReleaseInternal = internalMutation({
         updatedAt: now,
       }));
 
-    if (existing) {
-      const releaseExists = await ctx.db
-        .query("packageReleases")
-        .withIndex("by_package_version", (q) =>
-          q.eq("packageId", existing._id).eq("version", args.version),
-        )
-        .unique();
-      if (releaseExists) {
-        if (
-          args.allowExistingRelease &&
-          !releaseExists.softDeletedAt &&
-          releaseExists.integritySha256 === args.integritySha256
-        ) {
-          return {
-            ok: true as const,
-            packageId: existing._id,
-            releaseId: releaseExists._id,
-          };
-        }
-        throw new ConvexError(`Version ${nextVersionLabel} already exists`);
-      }
-    }
     const priorReleases = existing
       ? await ctx.db
           .query("packageReleases")
@@ -4477,7 +4808,9 @@ export const insertReleaseInternal = internalMutation({
     };
   },
 });
-function isReleaseActive(release: Doc<"packageReleases"> | null | undefined) {
+function isReleaseActive(
+  release: Doc<"packageReleases"> | null | undefined,
+): release is Doc<"packageReleases"> {
   return Boolean(release && !release.softDeletedAt);
 }
 
@@ -4520,6 +4853,7 @@ export const updateReleaseScanResultsInternal = internalMutation({
     const release = await ctx.db.get(args.releaseId);
     if (!release || release.softDeletedAt) return;
     const activeRelease = release;
+    const previousEffectiveStatus = effectiveStatusFromPackageRelease(activeRelease);
 
     const patch: Partial<Doc<"packageReleases">> = {};
     if (args.sha256hash !== undefined) patch.sha256hash = args.sha256hash;
@@ -4544,7 +4878,22 @@ export const updateReleaseScanResultsInternal = internalMutation({
         ...activeRelease,
         ...patch,
       } as Doc<"packageReleases">;
-      await syncLatestPackageVerification(ctx, updatedRelease);
+      if (isFinalScannerStatus(args.vtAnalysis.status)) {
+        await syncLatestPackageVerification(ctx, updatedRelease);
+        const nextEffectiveStatus = effectiveStatusFromPackageRelease(updatedRelease);
+        if (previousEffectiveStatus !== nextEffectiveStatus) {
+          const pkg = await ctx.db.get(updatedRelease.packageId);
+          if (pkg && !pkg.softDeletedAt) {
+            await closeOpenPackageCasesForRelease(ctx, {
+              pkg,
+              releaseId: updatedRelease._id,
+              effectiveStatus: nextEffectiveStatus,
+              source: "rescan",
+              now: Date.now(),
+            });
+          }
+        }
+      }
       await finalizeInProgressRescanRequestsForTarget(
         ctx,
         { kind: "plugin", artifactId: args.releaseId },
@@ -4581,8 +4930,22 @@ export const updateReleaseLlmAnalysisInternal = internalMutation({
   handler: async (ctx, args) => {
     const release = await ctx.db.get(args.releaseId);
     if (!isReleaseActive(release)) return;
+    const previousEffectiveStatus = effectiveStatusFromPackageRelease(release);
     const updatedRelease = { ...release, llmAnalysis: args.llmAnalysis };
     await ctx.db.patch(args.releaseId, { llmAnalysis: args.llmAnalysis });
+    const nextEffectiveStatus = effectiveStatusFromPackageRelease(updatedRelease);
+    if (previousEffectiveStatus !== nextEffectiveStatus) {
+      const pkg = await ctx.db.get(updatedRelease.packageId);
+      if (pkg && !pkg.softDeletedAt) {
+        await closeOpenPackageCasesForRelease(ctx, {
+          pkg,
+          releaseId: updatedRelease._id,
+          effectiveStatus: nextEffectiveStatus,
+          source: "rescan",
+          now: Date.now(),
+        });
+      }
+    }
     await finalizeInProgressRescanRequestsForTarget(
       ctx,
       { kind: "plugin", artifactId: args.releaseId },
@@ -4616,6 +4979,7 @@ export const updateReleaseStaticScanInternal = internalMutation({
     const release = await ctx.db.get(args.releaseId);
     if (!release || release.softDeletedAt) return;
     const activeRelease = release;
+    const previousEffectiveStatus = effectiveStatusFromPackageRelease(activeRelease);
 
     const patch: Partial<Doc<"packageReleases">> = {
       staticScan: args.staticScan,
@@ -4640,6 +5004,19 @@ export const updateReleaseStaticScanInternal = internalMutation({
       ...patch,
     } as Doc<"packageReleases">;
     await syncLatestPackageVerification(ctx, updatedRelease);
+    const nextEffectiveStatus = effectiveStatusFromPackageRelease(updatedRelease);
+    if (previousEffectiveStatus !== nextEffectiveStatus) {
+      const pkg = await ctx.db.get(updatedRelease.packageId);
+      if (pkg && !pkg.softDeletedAt) {
+        await closeOpenPackageCasesForRelease(ctx, {
+          pkg,
+          releaseId: updatedRelease._id,
+          effectiveStatus: nextEffectiveStatus,
+          source: "rescan",
+          now: Date.now(),
+        });
+      }
+    }
     await finalizeInProgressRescanRequestsForTarget(
       ctx,
       { kind: "plugin", artifactId: args.releaseId },

@@ -9,6 +9,12 @@ import {
   cmdPackageModerationStatus,
 } from "../../clawhub/src/cli/commands/packages.js";
 import {
+  cmdListSkillAppeals,
+  cmdListSkillReports,
+  cmdResolveSkillAppeal,
+  cmdTriageSkillReport,
+} from "../../clawhub/src/cli/commands/skills.js";
+import {
   configureCommanderHelp,
   styleEnvBlock,
   styleTitle,
@@ -20,6 +26,8 @@ import { getModeratorCliBuildLabel, getModeratorCliVersion } from "./buildInfo.j
 import { cmdBanUser, cmdSetRole, cmdUnbanUser } from "./commands/moderation.js";
 import {
   cmdBackfillPackageArtifacts,
+  cmdCleanupReviewPackageAppeals,
+  cmdCleanupReviewSkillAppeals,
   cmdDeletePackageTrustedPublisher,
   cmdListPackageAppeals,
   cmdListPackageMigrations,
@@ -326,6 +334,9 @@ packages
   .requiredOption("--status <status>", "open|accepted|rejected")
   .option("--note <text>", "Resolution note; required unless reopening")
   .option("--action <action>", "Final action: none|approve")
+  .option("--review-verdict <verdict>", "clean|review|malicious|unknown")
+  .option("--review-confidence <confidence>", "low|medium|high")
+  .option("--review-categories <items>", "Optional comma-separated review categories")
   .option("--yes", "Skip confirmation for artifact availability changes")
   .option("--json", "Output JSON")
   .action(async (appealId, options) => {
@@ -354,6 +365,9 @@ packages
   .requiredOption("--status <status>", "open|confirmed|dismissed")
   .option("--note <text>", "Review note; required unless reopening")
   .option("--action <action>", "Final action: none|quarantine|revoke")
+  .option("--review-verdict <verdict>", "clean|review|malicious|unknown")
+  .option("--review-confidence <confidence>", "low|medium|high")
+  .option("--review-categories <items>", "Optional comma-separated review categories")
   .option("--yes", "Skip confirmation for artifact availability changes")
   .option("--json", "Output JSON")
   .action(async (reportId, options) => {
@@ -415,6 +429,95 @@ packages
   .action(async (bundledPluginId, options) => {
     const opts = await resolveGlobalOpts();
     await cmdUpsertPackageMigration(opts, bundledPluginId, options);
+  });
+
+const skills = program
+  .command("skills")
+  .alias("skill")
+  .description("Platform skill moderation")
+  .showHelpAfterError()
+  .showSuggestionAfterError();
+
+skills
+  .command("reports")
+  .description("List skill reports for moderator review")
+  .option("--status <status>", "open|confirmed|dismissed|all", "open")
+  .option("--cursor <cursor>", "Resume cursor")
+  .option("--limit <n>", "Number of reports to show", (value) => Number.parseInt(value, 10))
+  .option("--json", "Output JSON")
+  .action(async (options) => {
+    const opts = await resolveGlobalOpts();
+    await cmdListSkillReports(opts, options);
+  });
+
+skills
+  .command("triage-report")
+  .description("Resolve or reopen a skill report")
+  .argument("<report-id>", "Skill report id")
+  .requiredOption("--status <status>", "open|confirmed|dismissed")
+  .option("--note <text>", "Review note; required unless reopening")
+  .option("--action <action>", "Final action: none|hide")
+  .option("--review-verdict <verdict>", "clean|review|malicious|unknown")
+  .option("--review-confidence <confidence>", "low|medium|high")
+  .option("--review-categories <items>", "Optional comma-separated review categories")
+  .option("--yes", "Skip confirmation for artifact availability changes")
+  .option("--json", "Output JSON")
+  .action(async (reportId, options) => {
+    const opts = await resolveGlobalOpts();
+    await cmdTriageSkillReport(opts, reportId, options);
+  });
+
+skills
+  .command("appeals")
+  .description("List skill appeals for moderator review")
+  .option("--status <status>", "open|accepted|rejected|all", "open")
+  .option("--cursor <cursor>", "Resume cursor")
+  .option("--limit <n>", "Number of appeals to show", (value) => Number.parseInt(value, 10))
+  .option("--json", "Output JSON")
+  .action(async (options) => {
+    const opts = await resolveGlobalOpts();
+    await cmdListSkillAppeals(opts, options);
+  });
+
+skills
+  .command("resolve-appeal")
+  .description("Resolve or reopen a skill appeal")
+  .argument("<appeal-id>", "Skill appeal id")
+  .requiredOption("--status <status>", "open|accepted|rejected")
+  .option("--note <text>", "Resolution note; required unless reopening")
+  .option("--action <action>", "Final action: none|restore")
+  .option("--review-verdict <verdict>", "clean|review|malicious|unknown")
+  .option("--review-confidence <confidence>", "low|medium|high")
+  .option("--review-categories <items>", "Optional comma-separated review categories")
+  .option("--yes", "Skip confirmation for artifact availability changes")
+  .option("--json", "Output JSON")
+  .action(async (appealId, options) => {
+    const opts = await resolveGlobalOpts();
+    await cmdResolveSkillAppeal(opts, appealId, options);
+  });
+
+skills
+  .command("cleanup-review-appeals")
+  .description("Rescan and bulk-close open skill appeals that are only in Review")
+  .option("--limit <n>", "Number of appeals to scan", (value) => Number.parseInt(value, 10))
+  .option("--rescan", "Queue rescans for open appeal artifacts")
+  .option("--apply", "Apply cleanup mutations; default is dry-run")
+  .option("--json", "Output JSON")
+  .action(async (options) => {
+    const opts = await resolveGlobalOpts();
+    await cmdCleanupReviewSkillAppeals(opts, options);
+  });
+
+packages
+  .command("cleanup-review-appeals")
+  .description("Rescan and bulk-close open package appeals that are only in Review")
+  .option("--limit <n>", "Number of appeals to scan", (value) => Number.parseInt(value, 10))
+  .option("--rescan", "Queue rescans for open appeal artifacts")
+  .option("--apply", "Apply cleanup mutations; default is dry-run")
+  .option("--json", "Output JSON")
+  .action(async (options) => {
+    const opts = await resolveGlobalOpts();
+    await cmdCleanupReviewPackageAppeals(opts, options);
   });
 
 const trustedPublisher = packages

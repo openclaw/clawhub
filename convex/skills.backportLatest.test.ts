@@ -190,6 +190,23 @@ function buildDb(skill: SkillDoc, captured: Captured) {
         // resolution, which then hits the synthesize fallback.
         return null;
       }
+      if (id === PREV_LATEST_VERSION_ID) {
+        return {
+          _id: PREV_LATEST_VERSION_ID,
+          skillId: SKILL_ID,
+          version: "2.0.0",
+          staticScan: {
+            status: "clean",
+            reasonCodes: [],
+            findings: [],
+            summary: "Clean",
+            engineVersion: "test",
+            checkedAt: 1,
+          },
+          createdAt: 1,
+          softDeletedAt: undefined,
+        };
+      }
       if (id === SKILL_ID) return skill;
       return null;
     }),
@@ -394,6 +411,20 @@ function buildCtx(skill: SkillDoc) {
 }
 
 describe("skills.insertVersion latest-tag protection", () => {
+  it("blocks publishing when the latest version has a manual malicious skill-row verdict", async () => {
+    const skill = buildExistingSkill({
+      moderationStatus: "hidden",
+      moderationReason: "manual.report",
+      moderationVerdict: "malicious",
+      moderationSourceVersionId: PREV_LATEST_VERSION_ID,
+    });
+    const { ctx } = buildCtx(skill);
+
+    await expect(
+      insertVersionHandler(ctx as never, buildPublishArgs({ version: "2.1.0" }) as never),
+    ).rejects.toThrow("latest version is marked malicious");
+  });
+
   it("promotes latest when publishing a strictly higher version", async () => {
     const skill = buildExistingSkill();
     const { ctx, captured } = buildCtx(skill);

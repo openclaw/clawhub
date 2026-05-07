@@ -11,7 +11,7 @@ import type {
 } from "./normalize";
 import { redactSkillContent } from "./normalize";
 
-type ConvexDoc = Record<string, unknown> & { _id?: unknown };
+export type ConvexDoc = Record<string, unknown> & { _id?: unknown };
 
 type ConvexExportTables = {
   skills: ConvexDoc[];
@@ -53,10 +53,13 @@ export function artifactInputsFromConvexExportTables(
   });
 }
 
-function readExportTable(
-  entries: Record<string, Uint8Array>,
-  table: (typeof REQUIRED_TABLES)[number],
-): ConvexDoc[] {
+export async function readConvexExportTablesFromZip(zipPath: string, tables: string[]) {
+  const zipBytes = new Uint8Array(await readFile(zipPath));
+  const entries = unzipSync(zipBytes);
+  return Object.fromEntries(tables.map((table) => [table, readExportTable(entries, table)]));
+}
+
+function readExportTable(entries: Record<string, Uint8Array>, table: string): ConvexDoc[] {
   const entryName = findExportTableEntry(Object.keys(entries), table);
   const bytes = entries[entryName];
   if (!bytes) throw new Error(`Convex export table entry disappeared: ${entryName}`);

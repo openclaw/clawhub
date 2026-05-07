@@ -36,11 +36,6 @@ convex/_generated/ai/*
 !convex/_generated/ai/ai-files.state.json
 skills-lock.json
 */skills/*
-!.agents/skills/
-!.agents/skills/convex*/
-!.agents/skills/convex*/**
-!.agents/skills/blacksmith-testbox/
-!.agents/skills/blacksmith-testbox/**
 skills/*
 .codex/*
 !.codex/environments/
