@@ -8126,8 +8126,27 @@ export const setSkillSoftDeletedInternal = internalMutation({
       .unique();
     if (!skill) throw new Error("Skill not found");
 
-    if (skill.ownerUserId !== args.userId) {
+    const isModeratorOrAdmin = user.role === "admin" || user.role === "moderator";
+    const isOwner = skill.ownerUserId === args.userId;
+
+    if (!isOwner && !isModeratorOrAdmin) {
+      // Preserve legacy behavior: delegate to assertModerator to produce the
+      // standard "Forbidden" error for non-owners without elevated roles.
       assertModerator(user);
+    }
+
+    // gate: when an owner (without moderator/admin privileges) attempts to
+    // undelete a skill, only allow it if the current hidden state was produced
+    // by the owner themselves (i.e. via `clawhub delete`). Any other hidden
+    // state originates from moderation, scanning, merges, bans, or security
+    // redaction — only moderators/admins may lift those.
+    if (!args.deleted && isOwner && !isModeratorOrAdmin) {
+      const reason = skill.moderationReason;
+      if (reason !== undefined) {
+        throw new ConvexError(
+          "This skill was hidden by moderation and cannot be restored by the owner. Please contact a moderator.",
+        );
+      }
     }
 
     const now = Date.now();
@@ -8155,6 +8174,7 @@ export const setSkillSoftDeletedInternal = internalMutation({
       metadata: {
         slug,
         softDeletedAt: args.deleted ? now : null,
+        actorRole: user.role ?? "user",
         ...(note ? { reason: note } : {}),
       },
       createdAt: now,
