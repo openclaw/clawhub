@@ -2665,7 +2665,7 @@ code {
 
 .skill-card-header {
   display: flex;
-  align-items: flex-start;
+  align-items: center;
   gap: 14px;
 }
 
@@ -2761,6 +2761,12 @@ code {
   margin-top: auto;
 }
 
+.skill-card-spaced-footer .skill-card-footer {
+  display: flex;
+  flex: 1;
+  margin-top: 0;
+}
+
 .skill-card-footer-inline {
   display: flex;
   align-items: center;
@@ -2775,8 +2781,53 @@ code {
   align-items: start;
 }
 
+.skill-card-spaced-footer .skill-card-footer-rows {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+}
+
 .skill-card-footer-rows .stat {
   justify-self: end;
+}
+
+.skill-card-spaced-footer .skill-card-footer-rows .stat {
+  align-self: stretch;
+  margin-top: auto;
+  padding-top: 8px;
+}
+
+.skill-card-statline,
+.skill-stats-triplet,
+.skill-stats-item {
+  display: inline-flex;
+  align-items: center;
+}
+
+.skill-card-statline {
+  width: 100%;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  gap: 8px;
+  color: var(--ink-soft);
+  font-size: var(--fs-xs);
+}
+
+.skill-card-updated {
+  color: color-mix(in srgb, var(--ink-soft) 78%, var(--surface));
+}
+
+.skill-card-statline-dot,
+.skill-stats-dot {
+  color: var(--ink-muted);
+}
+
+.skill-stats-triplet {
+  gap: 6px;
+}
+
+.skill-stats-item {
+  gap: 4px;
 }
 
 .user-badge {
