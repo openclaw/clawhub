@@ -56,7 +56,14 @@ export const Route = createFileRoute("/plugins/")({
         : undefined,
     view: search.view === "cards" || search.view === "list" ? search.view : undefined,
   }),
-  loaderDeps: ({ search }) => search,
+  loaderDeps: ({ search }) => ({
+    q: search.q,
+    cursor: search.cursor,
+    family: search.family,
+    featured: search.featured,
+    verified: search.verified,
+    executesCode: search.executesCode,
+  }),
   loader: async ({ deps }): Promise<PluginsLoaderData> => {
     try {
       const data = await fetchPluginCatalog({
