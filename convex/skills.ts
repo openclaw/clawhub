@@ -8140,9 +8140,27 @@ export const setSkillSoftDeletedInternal = internalMutation({
     // by the owner themselves (i.e. via `clawhub delete`). Any other hidden
     // state originates from moderation, scanning, merges, bans, or security
     // redaction — only moderators/admins may lift those.
+    //
+    // Authorization is based on the *source of the hide*, not whether
+    // `moderationReason` happens to be populated:
+    //
+    //   - `hiddenBy === args.userId` means the owner soft-deleted this record
+    //     themselves. This is the only self-service undelete case.
+    //   - A moderator hiding via `setSoftDeleted` records `hiddenBy = mod._id`
+    //     but does NOT write `moderationReason`, so a reason-only check would
+    //     let the owner reverse moderator decisions (the previous gate was
+    //     incorrect on this path).
+    //   - Merge soft-deletes via the owner (mergeOwnedSkillIntoCanonical) set
+    //     `hiddenBy = ownerUserId` AND `moderationReason = "owner.merged"`,
+    //     so we additionally require `moderationReason === undefined` to
+    //     prevent undelete from reversing merges through the wrong path.
+    //   - If `hiddenBy` is somehow missing (legacy rows, manual override
+    //     pathways that cleared it), fail closed and route the caller to a
+    //     moderator.
     if (!args.deleted && isOwner && !isModeratorOrAdmin) {
-      const reason = skill.moderationReason;
-      if (reason !== undefined) {
+      const ownerInitiatedHide =
+        skill.hiddenBy === args.userId && skill.moderationReason === undefined;
+      if (!ownerInitiatedHide) {
         throw new ConvexError(
           "This skill was hidden by moderation and cannot be restored by the owner. Please contact a moderator.",
         );

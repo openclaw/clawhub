@@ -140,8 +140,8 @@ describe("setSkillSoftDeletedInternal B1 undelete gate", () => {
     expect(patch).not.toHaveBeenCalled();
   });
 
-  it("allows owner undelete when moderationReason is undefined (self-initiated soft-delete)", async () => {
-    const skill = makeSkill({ moderationReason: undefined });
+  it("allows owner undelete when owner-initiated soft-delete (hiddenBy === owner, no moderationReason)", async () => {
+    const skill = makeSkill({ moderationReason: undefined, hiddenBy: "users:owner" });
     const { ctx, patch, insert } = makeCtx({
       skill,
       actor: { _id: "users:owner", role: "user" },
@@ -169,6 +169,80 @@ describe("setSkillSoftDeletedInternal B1 undelete gate", () => {
         actorUserId: "users:owner",
       }),
     );
+  });
+
+  // BLOCKER regression: the moderator UI path (setSoftDeleted) hides a skill
+  // without writing moderationReason, only hiddenBy. A gate that trusts
+  // moderationReason alone would let the owner reverse the moderator's
+  // decision. Authorization must be based on hiddenBy === owner.
+  it("rejects owner undelete when hidden by a moderator without moderationReason", async () => {
+    const skill = makeSkill({
+      moderationReason: undefined,
+      hiddenBy: "users:mod",
+    });
+    const { ctx, patch, insert } = makeCtx({
+      skill,
+      actor: { _id: "users:owner", role: "user" },
+    });
+
+    await expect(
+      setSkillSoftDeletedInternalHandler(ctx, {
+        userId: "users:owner",
+        slug: "demo",
+        deleted: false,
+      }),
+    ).rejects.toThrow(/moderation/i);
+
+    expect(patch).not.toHaveBeenCalled();
+    expect(insert).not.toHaveBeenCalled();
+  });
+
+  // Legacy / manual-override rows can have hiddenBy === undefined while still
+  // being in a hidden state. Fail closed: owners cannot self-restore without
+  // a positive signal that they hid the record themselves.
+  it("rejects owner undelete when hiddenBy is missing (legacy / override-cleared)", async () => {
+    const skill = makeSkill({
+      moderationReason: undefined,
+      hiddenBy: undefined,
+    });
+    const { ctx, patch } = makeCtx({
+      skill,
+      actor: { _id: "users:owner", role: "user" },
+    });
+
+    await expect(
+      setSkillSoftDeletedInternalHandler(ctx, {
+        userId: "users:owner",
+        slug: "demo",
+        deleted: false,
+      }),
+    ).rejects.toThrow(/moderation/i);
+
+    expect(patch).not.toHaveBeenCalled();
+  });
+
+  // Merging a skill into another (owner-initiated) sets hiddenBy === owner
+  // AND moderationReason === "owner.merged". The owner must NOT be able to
+  // reverse a merge through the generic undelete path.
+  it("rejects owner undelete when skill was soft-deleted by owner-initiated merge", async () => {
+    const skill = makeSkill({
+      moderationReason: "owner.merged",
+      hiddenBy: "users:owner",
+    });
+    const { ctx, patch } = makeCtx({
+      skill,
+      actor: { _id: "users:owner", role: "user" },
+    });
+
+    await expect(
+      setSkillSoftDeletedInternalHandler(ctx, {
+        userId: "users:owner",
+        slug: "demo",
+        deleted: false,
+      }),
+    ).rejects.toThrow(/moderation/i);
+
+    expect(patch).not.toHaveBeenCalled();
   });
 
   it("allows moderator to undelete moderator-hidden skill", async () => {
@@ -254,7 +328,7 @@ describe("setSkillSoftDeletedInternal B1 undelete gate", () => {
   });
 
   it("rejects non-owner non-moderator callers with Forbidden", async () => {
-    const skill = makeSkill({ moderationReason: undefined });
+    const skill = makeSkill({ moderationReason: undefined, hiddenBy: "users:owner" });
     const { ctx, patch } = makeCtx({
       skill,
       actor: { _id: "users:stranger", role: "user" },
