@@ -107,7 +107,11 @@ fi
 tarball="$(find "$tmpdir" -type f -name "*.tgz" -print | sort | head -n 1)"
 
 echo "Installing ${tarball}..."
-npm install -g "${tarball}" "${npm_args[@]}"
+if [[ "${#npm_args[@]}" -gt 0 ]]; then
+  npm install -g "${tarball}" "${npm_args[@]}"
+else
+  npm install -g "${tarball}"
+fi
 
 echo "Installed:"
 clawhub-mod --cli-version
