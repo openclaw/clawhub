@@ -120,6 +120,25 @@ bun run seed:dev
 
 For full setup instructions (env vars, GitHub OAuth, JWT keys, database seeding), see [CONTRIBUTING.md](CONTRIBUTING.md).
 
+### Local UI persona switcher
+
+For browser QA without GitHub OAuth, enable the local-only dev persona switcher:
+
+```bash
+bunx convex env set DEV_AUTH_ENABLED 1
+VITE_ENABLE_DEV_AUTH=1 bun run dev
+```
+
+If Convex Auth keys are not configured on the local deployment yet, run:
+
+```bash
+bunx @convex-dev/auth --web-server-url http://localhost:3000
+```
+
+On `localhost`, the app shows a bottom-right **Dev** control that can sign in as the seeded owner,
+user, or admin persona. This control is hidden unless `VITE_ENABLE_DEV_AUTH=1` is set and the
+backend rejects persona sign-in unless `DEV_AUTH_ENABLED=1` is set.
+
 ## Environment
 
 - `VITE_CONVEX_URL`: Convex deployment URL (`https://<deployment>.convex.cloud`).

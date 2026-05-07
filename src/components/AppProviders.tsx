@@ -7,6 +7,8 @@ import {
   normalizeAuthErrorMessage,
 } from "../lib/authErrorMessage";
 import { clearAuthError, setAuthError } from "../lib/useAuthError";
+import { ClientOnly } from "./ClientOnly";
+import { DevPersonaFab } from "./DevPersonaFab";
 import { TooltipProvider } from "./ui/tooltip";
 import { UserBootstrap } from "./UserBootstrap";
 
@@ -92,6 +94,9 @@ export function AppProviders({ children }: { children: React.ReactNode }) {
         <AuthErrorHandler />
         <UserBootstrap />
         {children}
+        <ClientOnly>
+          <DevPersonaFab />
+        </ClientOnly>
       </TooltipProvider>
     </ConvexAuthProvider>
   );
