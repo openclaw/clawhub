@@ -4,6 +4,7 @@
 
 ### Changes
 
+- Web: polish browse/listing surfaces across skills, plugins, and search, including plugin card view parity, clearer search controls, visible safety filtering, and more consistent card metadata treatment (#2084) (thanks @vyctorbrzezowski).
 - Web: rename the skills browse alternate view from Cards to Grid while keeping legacy `view=cards` URLs compatible (#2090) (thanks @vyctorbrzezowski).
 
 ### Fixes
