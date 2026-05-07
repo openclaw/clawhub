@@ -9,6 +9,12 @@ import {
   cmdPackageModerationStatus,
 } from "../../clawhub/src/cli/commands/packages.js";
 import {
+  cmdListSkillAppeals,
+  cmdListSkillReports,
+  cmdResolveSkillAppeal,
+  cmdTriageSkillReport,
+} from "../../clawhub/src/cli/commands/skills.js";
+import {
   configureCommanderHelp,
   styleEnvBlock,
   styleTitle,
@@ -261,200 +267,278 @@ program
     await cmdSetRole(opts, handleOrId, role, options, isInputAllowed());
   });
 
-const packages = program
-  .command("packages")
-  .alias("package")
-  .description("Platform package moderation and operations")
+const plugins = program
+  .command("plugins")
+  .alias("plugin")
+  .description("Plugin moderation and operations")
   .showHelpAfterError()
   .showSuggestionAfterError();
 
-packages
-  .command("moderate")
-  .description("Set package release moderation state")
-  .argument("<name>", "Package name")
-  .requiredOption("--version <version>", "Package version")
-  .requiredOption("--state <state>", "approved|quarantined|revoked")
-  .requiredOption("--reason <text>", "Moderation note/reason")
-  .option("--json", "Output JSON")
-  .action(async (name, options) => {
-    const opts = await resolveGlobalOpts();
-    await cmdModeratePackageRelease(opts, name, options);
-  });
-
-packages
-  .command("moderation-status")
-  .description("Show package moderation status")
-  .argument("<name>", "Package name")
-  .option("--json", "Output JSON")
-  .action(async (name, options) => {
-    const opts = await resolveGlobalOpts();
-    await cmdPackageModerationStatus(opts, name, options);
-  });
-
-packages
-  .command("moderation-queue")
-  .description("List package releases that need moderation")
-  .option("--status <status>", "open|blocked|manual|all", "open")
-  .option("--cursor <cursor>", "Resume cursor")
-  .option("--limit <n>", "Number of releases to show (max 100)", (value) =>
-    Number.parseInt(value, 10),
-  )
-  .option("--json", "Output JSON")
-  .action(async (options) => {
-    const opts = await resolveGlobalOpts();
-    await cmdPackageModerationQueue(opts, options);
-  });
-
-packages
-  .command("appeals")
-  .description("List package appeals for moderator review")
-  .option("--status <status>", "open|accepted|rejected|all", "open")
-  .option("--cursor <cursor>", "Resume cursor")
-  .option("--limit <n>", "Number of appeals to show (max 100)", (value) =>
-    Number.parseInt(value, 10),
-  )
-  .option("--json", "Output JSON")
-  .action(async (options) => {
-    const opts = await resolveGlobalOpts();
-    await cmdListPackageAppeals(opts, options);
-  });
-
-packages
-  .command("resolve-appeal")
-  .description("Resolve or reopen a package appeal")
-  .argument("<appeal-id>", "Package appeal id")
-  .requiredOption("--status <status>", "open|accepted|rejected")
-  .option("--note <text>", "Resolution note; required unless reopening")
-  .option("--action <action>", "Final action: none|approve")
-  .option("--yes", "Skip confirmation for artifact availability changes")
-  .option("--json", "Output JSON")
-  .action(async (appealId, options) => {
-    const opts = await resolveGlobalOpts();
-    await cmdResolvePackageAppeal(opts, appealId, options);
-  });
-
-packages
-  .command("reports")
-  .description("List package reports for moderator review")
-  .option("--status <status>", "open|confirmed|dismissed|all", "open")
-  .option("--cursor <cursor>", "Resume cursor")
-  .option("--limit <n>", "Number of reports to show (max 100)", (value) =>
-    Number.parseInt(value, 10),
-  )
-  .option("--json", "Output JSON")
-  .action(async (options) => {
-    const opts = await resolveGlobalOpts();
-    await cmdListPackageReports(opts, options);
-  });
-
-packages
-  .command("triage-report")
-  .description("Resolve or reopen a package report")
-  .argument("<report-id>", "Package report id")
-  .requiredOption("--status <status>", "open|confirmed|dismissed")
-  .option("--note <text>", "Review note; required unless reopening")
-  .option("--action <action>", "Final action: none|quarantine|revoke")
-  .option("--yes", "Skip confirmation for artifact availability changes")
-  .option("--json", "Output JSON")
-  .action(async (reportId, options) => {
-    const opts = await resolveGlobalOpts();
-    await cmdTriagePackageReport(opts, reportId, options);
-  });
-
-packages
-  .command("backfill-artifacts")
-  .description("Backfill missing package artifact-kind metadata")
-  .option("--cursor <cursor>", "Resume cursor")
-  .option("--batch-size <n>", "Batch size", (value) => Number.parseInt(value, 10))
-  .option("--all", "Continue until all pages are processed")
-  .option("--apply", "Write changes; defaults to dry-run")
-  .option("--json", "Output JSON")
-  .action(async (options) => {
-    const opts = await resolveGlobalOpts();
-    await cmdBackfillPackageArtifacts(opts, options);
-  });
-
-packages
-  .command("migrations")
-  .description("List official plugin migration rows")
-  .option(
-    "--phase <phase>",
-    "planned|published|clawpack-ready|legacy-zip-only|metadata-ready|blocked|ready-for-openclaw|all",
-    "all",
-  )
-  .option("--cursor <cursor>", "Resume cursor")
-  .option("--limit <n>", "Number of migrations to show (max 100)", (value) =>
-    Number.parseInt(value, 10),
-  )
-  .option("--json", "Output JSON")
-  .action(async (options) => {
-    const opts = await resolveGlobalOpts();
-    await cmdListPackageMigrations(opts, options);
-  });
-
-packages
-  .command("set-migration")
-  .description("Create or update an official plugin migration row")
-  .argument("<bundled-plugin-id>", "Bundled OpenClaw plugin id")
-  .requiredOption("--package <name>", "ClawHub package name")
-  .option("--owner <owner>", "Migration owner")
-  .option("--source-repo <repo>", "Source repository")
-  .option("--source-path <path>", "Source path inside repository")
-  .option("--source-commit <sha>", "Source commit SHA")
-  .option(
-    "--phase <phase>",
-    "planned|published|clawpack-ready|legacy-zip-only|metadata-ready|blocked|ready-for-openclaw",
-  )
-  .option("--blockers <items>", "Comma-separated migration blockers")
-  .option("--host-targets-complete", "Mark host target metadata complete")
-  .option("--scan-clean", "Mark scan state clean")
-  .option("--moderation-approved", "Mark moderation approved")
-  .option("--runtime-bundles-ready", "Mark runtime bundles ready")
-  .option("--notes <text>", "Operator notes")
-  .option("--json", "Output JSON")
-  .action(async (bundledPluginId, options) => {
-    const opts = await resolveGlobalOpts();
-    await cmdUpsertPackageMigration(opts, bundledPluginId, options);
-  });
-
-const trustedPublisher = packages
-  .command("trusted-publisher")
-  .description("Manage package trusted publisher config")
+const skills = program
+  .command("skills")
+  .alias("skill")
+  .description("Skill artifact moderation")
   .showHelpAfterError()
   .showSuggestionAfterError();
 
-trustedPublisher
-  .command("get")
-  .description("Show trusted publisher config for a package")
-  .argument("<name>", "Package name")
-  .option("--json", "Output JSON")
-  .action(async (name, options) => {
-    const opts = await resolveGlobalOpts();
-    await cmdGetPackageTrustedPublisher(opts, name, options);
-  });
+registerPluginOperations(plugins);
+registerPluginModerationCommands(plugins);
+registerPluginGovernanceCommands(plugins);
+registerSkillModerationCommands(skills);
 
-trustedPublisher
-  .command("set")
-  .description("Attach or replace trusted publisher config for a package")
-  .argument("<name>", "Package name")
-  .requiredOption("--repository <repo>", "GitHub repo (owner/repo or URL)")
-  .requiredOption("--workflow-filename <file>", "Workflow filename, for example publish.yml")
-  .option("--environment <name>", "Optional GitHub environment name to pin")
-  .option("--json", "Output JSON")
-  .action(async (name, options) => {
-    const opts = await resolveGlobalOpts();
-    await cmdSetPackageTrustedPublisher(opts, name, options);
-  });
+function registerPluginGovernanceCommands(command: Command) {
+  command
+    .command("backfill-artifacts")
+    .description("Backfill missing plugin artifact-kind metadata")
+    .option("--cursor <cursor>", "Resume cursor")
+    .option("--batch-size <n>", "Batch size", (value) => Number.parseInt(value, 10))
+    .option("--all", "Continue until all pages are processed")
+    .option("--apply", "Write changes; defaults to dry-run")
+    .option("--json", "Output JSON")
+    .action(async (options) => {
+      const opts = await resolveGlobalOpts();
+      await cmdBackfillPackageArtifacts(opts, options);
+    });
 
-trustedPublisher
-  .command("delete")
-  .description("Remove trusted publisher config from a package")
-  .argument("<name>", "Package name")
-  .option("--json", "Output JSON")
-  .action(async (name, options) => {
-    const opts = await resolveGlobalOpts();
-    await cmdDeletePackageTrustedPublisher(opts, name, options);
-  });
+  command
+    .command("migrations")
+    .description("List official plugin migration rows")
+    .option(
+      "--phase <phase>",
+      "planned|published|clawpack-ready|legacy-zip-only|metadata-ready|blocked|ready-for-openclaw|all",
+      "all",
+    )
+    .option("--cursor <cursor>", "Resume cursor")
+    .option("--limit <n>", "Number of migrations to show (max 100)", (value) =>
+      Number.parseInt(value, 10),
+    )
+    .option("--json", "Output JSON")
+    .action(async (options) => {
+      const opts = await resolveGlobalOpts();
+      await cmdListPackageMigrations(opts, options);
+    });
+
+  command
+    .command("set-migration")
+    .description("Create or update an official plugin migration row")
+    .argument("<bundled-plugin-id>", "Bundled OpenClaw plugin id")
+    .requiredOption("--package <name>", "ClawHub package name")
+    .option("--owner <owner>", "Migration owner")
+    .option("--source-repo <repo>", "Source repository")
+    .option("--source-path <path>", "Source path inside repository")
+    .option("--source-commit <sha>", "Source commit SHA")
+    .option(
+      "--phase <phase>",
+      "planned|published|clawpack-ready|legacy-zip-only|metadata-ready|blocked|ready-for-openclaw",
+    )
+    .option("--blockers <items>", "Comma-separated migration blockers")
+    .option("--host-targets-complete", "Mark host target metadata complete")
+    .option("--scan-clean", "Mark scan state clean")
+    .option("--moderation-approved", "Mark moderation approved")
+    .option("--runtime-bundles-ready", "Mark runtime bundles ready")
+    .option("--notes <text>", "Operator notes")
+    .option("--json", "Output JSON")
+    .action(async (bundledPluginId, options) => {
+      const opts = await resolveGlobalOpts();
+      await cmdUpsertPackageMigration(opts, bundledPluginId, options);
+    });
+
+  const trustedPublisher = command
+    .command("trusted-publisher")
+    .description("Manage plugin trusted publisher config")
+    .showHelpAfterError()
+    .showSuggestionAfterError();
+
+  trustedPublisher
+    .command("get")
+    .description("Show trusted publisher config for a plugin package")
+    .argument("<name>", "Plugin package name")
+    .option("--json", "Output JSON")
+    .action(async (name, options) => {
+      const opts = await resolveGlobalOpts();
+      await cmdGetPackageTrustedPublisher(opts, name, options);
+    });
+
+  trustedPublisher
+    .command("set")
+    .description("Attach or replace trusted publisher config for a plugin package")
+    .argument("<name>", "Plugin package name")
+    .requiredOption("--repository <repo>", "GitHub repo (owner/repo or URL)")
+    .requiredOption("--workflow-filename <file>", "Workflow filename, for example publish.yml")
+    .option("--environment <name>", "Optional GitHub environment name to pin")
+    .option("--json", "Output JSON")
+    .action(async (name, options) => {
+      const opts = await resolveGlobalOpts();
+      await cmdSetPackageTrustedPublisher(opts, name, options);
+    });
+
+  trustedPublisher
+    .command("delete")
+    .description("Remove trusted publisher config from a plugin package")
+    .argument("<name>", "Plugin package name")
+    .option("--json", "Output JSON")
+    .action(async (name, options) => {
+      const opts = await resolveGlobalOpts();
+      await cmdDeletePackageTrustedPublisher(opts, name, options);
+    });
+}
+
+function registerPluginModerationCommands(command: Command) {
+  command
+    .command("reports")
+    .description("List plugin reports for moderator review")
+    .option("--status <status>", "open|confirmed|dismissed|all", "open")
+    .option("--cursor <cursor>", "Resume cursor")
+    .option("--limit <n>", "Number of reports to show (max 100)", (value) =>
+      Number.parseInt(value, 10),
+    )
+    .option("--json", "Output JSON")
+    .action(async (options) => {
+      const opts = await resolveGlobalOpts();
+      await cmdListPackageReports(opts, options);
+    });
+
+  command
+    .command("triage-report")
+    .description("Resolve or reopen a plugin report")
+    .argument("<report-id>", "Plugin report id")
+    .requiredOption("--status <status>", "open|confirmed|dismissed")
+    .option("--note <text>", "Review note; required unless reopening")
+    .option("--action <action>", "Final action: none|quarantine|revoke")
+    .option("--yes", "Skip confirmation for artifact availability changes")
+    .option("--json", "Output JSON")
+    .action(async (reportId, options) => {
+      const opts = await resolveGlobalOpts();
+      await cmdTriagePackageReport(opts, reportId, options);
+    });
+
+  command
+    .command("appeals")
+    .description("List plugin appeals for moderator review")
+    .option("--status <status>", "open|accepted|rejected|all", "open")
+    .option("--cursor <cursor>", "Resume cursor")
+    .option("--limit <n>", "Number of appeals to show (max 100)", (value) =>
+      Number.parseInt(value, 10),
+    )
+    .option("--json", "Output JSON")
+    .action(async (options) => {
+      const opts = await resolveGlobalOpts();
+      await cmdListPackageAppeals(opts, options);
+    });
+
+  command
+    .command("resolve-appeal")
+    .description("Resolve or reopen a plugin appeal")
+    .argument("<appeal-id>", "Plugin appeal id")
+    .requiredOption("--status <status>", "open|accepted|rejected")
+    .option("--note <text>", "Resolution note; required unless reopening")
+    .option("--action <action>", "Final action: none|approve")
+    .option("--yes", "Skip confirmation for artifact availability changes")
+    .option("--json", "Output JSON")
+    .action(async (appealId, options) => {
+      const opts = await resolveGlobalOpts();
+      await cmdResolvePackageAppeal(opts, appealId, options);
+    });
+}
+
+function registerPluginOperations(command: Command) {
+  command
+    .command("moderate")
+    .description("Set plugin release moderation state")
+    .argument("<name>", "Plugin package name")
+    .requiredOption("--version <version>", "Plugin package version")
+    .requiredOption("--state <state>", "approved|quarantined|revoked")
+    .requiredOption("--reason <text>", "Moderation note/reason")
+    .option("--json", "Output JSON")
+    .action(async (name, options) => {
+      const opts = await resolveGlobalOpts();
+      await cmdModeratePackageRelease(opts, name, options);
+    });
+
+  command
+    .command("status")
+    .alias("moderation-status")
+    .description("Show plugin moderation status")
+    .argument("<name>", "Plugin package name")
+    .option("--json", "Output JSON")
+    .action(async (name, options) => {
+      const opts = await resolveGlobalOpts();
+      await cmdPackageModerationStatus(opts, name, options);
+    });
+
+  command
+    .command("queue")
+    .alias("moderation-queue")
+    .description("List plugin releases that need moderation")
+    .option("--status <status>", "open|blocked|manual|all", "open")
+    .option("--cursor <cursor>", "Resume cursor")
+    .option("--limit <n>", "Number of releases to show (max 100)", (value) =>
+      Number.parseInt(value, 10),
+    )
+    .option("--json", "Output JSON")
+    .action(async (options) => {
+      const opts = await resolveGlobalOpts();
+      await cmdPackageModerationQueue(opts, options);
+    });
+}
+
+function registerSkillModerationCommands(command: Command) {
+  command
+    .command("reports")
+    .description("List skill reports for moderator review")
+    .option("--status <status>", "open|confirmed|dismissed|all", "open")
+    .option("--cursor <cursor>", "Resume cursor")
+    .option("--limit <n>", "Number of reports to show (max 200)", (value) =>
+      Number.parseInt(value, 10),
+    )
+    .option("--json", "Output JSON")
+    .action(async (options) => {
+      const opts = await resolveGlobalOpts();
+      await cmdListSkillReports(opts, options);
+    });
+
+  command
+    .command("triage-report")
+    .description("Resolve or reopen a skill report")
+    .argument("<report-id>", "Skill report id")
+    .requiredOption("--status <status>", "open|confirmed|dismissed")
+    .option("--note <text>", "Review note; required unless reopening")
+    .option("--action <action>", "Final action: none|hide")
+    .option("--yes", "Skip confirmation for artifact availability changes")
+    .option("--json", "Output JSON")
+    .action(async (reportId, options) => {
+      const opts = await resolveGlobalOpts();
+      await cmdTriageSkillReport(opts, reportId, options);
+    });
+
+  command
+    .command("appeals")
+    .description("List skill appeals for moderator review")
+    .option("--status <status>", "open|accepted|rejected|all", "open")
+    .option("--cursor <cursor>", "Resume cursor")
+    .option("--limit <n>", "Number of appeals to show (max 200)", (value) =>
+      Number.parseInt(value, 10),
+    )
+    .option("--json", "Output JSON")
+    .action(async (options) => {
+      const opts = await resolveGlobalOpts();
+      await cmdListSkillAppeals(opts, options);
+    });
+
+  command
+    .command("resolve-appeal")
+    .description("Resolve or reopen a skill appeal")
+    .argument("<appeal-id>", "Skill appeal id")
+    .requiredOption("--status <status>", "open|accepted|rejected")
+    .option("--note <text>", "Resolution note; required unless reopening")
+    .option("--action <action>", "Final action: none|restore")
+    .option("--yes", "Skip confirmation for artifact availability changes")
+    .option("--json", "Output JSON")
+    .action(async (appealId, options) => {
+      const opts = await resolveGlobalOpts();
+      await cmdResolveSkillAppeal(opts, appealId, options);
+    });
+}
 
 program.action(() => {
   program.outputHelp();

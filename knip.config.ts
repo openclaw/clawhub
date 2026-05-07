@@ -92,6 +92,7 @@ const config = {
         "src/cli.ts!",
         "../clawhub/src/cli/commands/auth.ts!",
         "../clawhub/src/cli/commands/packages.ts!",
+        "../clawhub/src/cli/commands/skills.ts!",
         "vitest*.ts!",
         ...(includeTests ? ["src/**/*.test.ts!"] : []),
       ],
