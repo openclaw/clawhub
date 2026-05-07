@@ -236,10 +236,14 @@ describe("setSkillSoftDeletedInternal B1 undelete gate", () => {
     );
   });
 
-  // Defense-in-depth: even when `hiddenBy` equals the owner (e.g. stale from
-  // a prior owner delete), an explicit system-origin `moderationReason` must
-  // still block owner self-restore.
-  it("rejects owner undelete when moderationReason is on the system-origin deny list (auto.reports)", async () => {
+  // BLOCKER regression: a moderator restore (`setSoftDeleted` with
+  // deleted=false) clears `hiddenBy` but does NOT clear `moderationReason`,
+  // so a row can carry a stale "auto.reports" reason while being
+  // moderationStatus="active". If the owner later self-deletes, the current
+  // hide is owner-initiated (hiddenBy === owner) and a later self-undelete
+  // must be allowed — the stale historical reason must not create a sticky
+  // 403 that requires moderator intervention.
+  it("allows owner undelete when hiddenBy === owner even though stale moderationReason is auto.reports", async () => {
     const skill = makeSkill({
       moderationReason: "auto.reports",
       hiddenBy: "users:owner",
@@ -255,10 +259,81 @@ describe("setSkillSoftDeletedInternal B1 undelete gate", () => {
         slug: "demo",
         deleted: false,
       }),
-    ).rejects.toThrow(/^Forbidden:/i);
+    ).resolves.toEqual({ ok: true });
 
-    expect(patch).not.toHaveBeenCalled();
-    expect(insert).not.toHaveBeenCalled();
+    expect(patch).toHaveBeenCalledWith(
+      "skills:1",
+      expect.objectContaining({
+        moderationStatus: "active",
+        softDeletedAt: undefined,
+      }),
+    );
+    expect(insert).toHaveBeenCalledWith(
+      "auditLogs",
+      expect.objectContaining({ action: "skill.undelete", actorUserId: "users:owner" }),
+    );
+  });
+
+  it("allows owner undelete when hiddenBy === owner even though stale moderationReason is manual.report", async () => {
+    const skill = makeSkill({
+      moderationReason: "manual.report",
+      hiddenBy: "users:owner",
+    });
+    const { ctx, patch } = makeCtx({
+      skill,
+      actor: { _id: "users:owner", role: "user" },
+    });
+
+    await expect(
+      setSkillSoftDeletedInternalHandler(ctx, {
+        userId: "users:owner",
+        slug: "demo",
+        deleted: false,
+      }),
+    ).resolves.toEqual({ ok: true });
+
+    expect(patch).toHaveBeenCalledWith(
+      "skills:1",
+      expect.objectContaining({
+        moderationStatus: "active",
+        softDeletedAt: undefined,
+      }),
+    );
+  });
+
+  // Data hygiene: when the owner self-deletes a skill that carried a stale
+  // moderation reason (e.g. left over from a previous moderator restore),
+  // the delete must clear `moderationReason` so future rows reflect the
+  // current hide's provenance rather than historical metadata.
+  it("owner self-delete clears stale moderationReason so subsequent undelete is clean", async () => {
+    const skill = makeSkill({
+      moderationStatus: "active",
+      softDeletedAt: undefined,
+      hiddenAt: undefined,
+      hiddenBy: undefined,
+      moderationReason: "auto.reports",
+    });
+    const { ctx, patch } = makeCtx({
+      skill,
+      actor: { _id: "users:owner", role: "user" },
+    });
+
+    await expect(
+      setSkillSoftDeletedInternalHandler(ctx, {
+        userId: "users:owner",
+        slug: "demo",
+        deleted: true,
+      }),
+    ).resolves.toEqual({ ok: true });
+
+    expect(patch).toHaveBeenCalledWith(
+      "skills:1",
+      expect.objectContaining({
+        moderationStatus: "hidden",
+        hiddenBy: "users:owner",
+        moderationReason: undefined,
+      }),
+    );
   });
 
   // BLOCKER regression: the moderator UI path (setSoftDeleted) hides a skill

@@ -8151,27 +8151,47 @@ export const setSkillSoftDeletedInternal = internalMutation({
     // state originates from moderation, scanning, merges, bans, or security
     // redaction — only moderators/admins may lift those.
     //
-    // Authorization is based on the *source of the hide* (`hiddenBy`), plus
-    // an explicit deny list of `moderationReason` values that are known to
-    // be system- or admin-originated even when the raw `hiddenBy` happens
-    // to equal the owner (e.g. owner-initiated merges stamp both
-    // `hiddenBy = ownerUserId` AND `moderationReason = "owner.merged"` and
-    // must NOT be reversible through the generic undelete path).
+    // Authorization is based on the *source of the current hide* (`hiddenBy`),
+    // plus a small deny list of `moderationReason` values that are truly
+    // bound to a non-owner current hide and therefore cannot be stale from
+    // historical moderation metadata.
     //
     //   - `hiddenBy === args.userId` is the necessary baseline. A moderator
     //     hiding via `setSoftDeleted` records `hiddenBy = mod._id`, so the
     //     owner simply fails this check. A security redaction / auto-ban
     //     likewise records an admin/system actor, so those naturally fail.
-    //   - The deny list below catches the remaining paths where `hiddenBy`
-    //     may equal the owner (merges) or may be stale from a prior owner
-    //     delete while a later system patch wrote only `moderationReason`
-    //     without refreshing `hiddenBy` (e.g. `auto.reports`).
+    //   - The deny list below is intentionally narrow: each entry is a
+    //     reason that is *only* set atomically with the current hide it
+    //     describes, so it cannot be leftover historical metadata:
+    //       * "owner.merged": merge mutation writes moderationReason,
+    //         softDeletedAt, and hiddenBy as a single atomic patch; there
+    //         is no flow that later restores the row while leaving this
+    //         reason stale.
+    //       * "user.banned": only written by the ban batch with
+    //         hiddenBy = admin; unban clears softDeletedAt and rewrites
+    //         moderationReason to "restored.unban", so a banned row never
+    //         survives into an active state with this reason.
+    //       * "security.redaction": paired with hiddenBy = security-admin;
+    //         there is no owner-reachable path that lifts redaction while
+    //         leaving this reason in place.
+    //     Notably EXCLUDED:
+    //       * "auto.reports" / "manual.report" — set by auto-hide or the
+    //         moderator report-triage flow, but `setSoftDeleted(deleted=
+    //         false)` (moderator restore) does NOT clear moderationReason.
+    //         That means a row can be `moderationStatus="active"` with a
+    //         stale `"auto.reports"` reason; if the owner later does a
+    //         normal self-delete, `hiddenBy` becomes the owner and the
+    //         current hide is owner-initiated, but the stale reason would
+    //         still block self-undelete. These are therefore enforced
+    //         solely via `hiddenBy !== owner` (auto.reports does not write
+    //         hiddenBy; manual.report writes hiddenBy = mod._id).
+    //       * "pending.scan.stale" / "pending.scan" / "scanner.*.*" — these
+    //         describe the skill's moderation state, not the cause of the
+    //         current hide, and must never block owner self-restore.
     //   - Benign scanner / pipeline reasons such as `pending.scan`,
     //     `scanner.aggregate.clean`, or `scanner.<scanner>.clean` describe
     //     the skill's moderation state, not the cause of the current hide,
-    //     so they must NOT block owner self-restore. Requiring
-    //     `moderationReason === undefined` here previously broke the common
-    //     owner delete → owner undelete flow for every healthy skill.
+    //     so they must NOT block owner self-restore.
     //   - If `hiddenBy` is somehow missing (legacy rows, manual override
     //     pathways that cleared it), fail closed and route the caller to a
     //     moderator.
@@ -8192,16 +8212,14 @@ export const setSkillSoftDeletedInternal = internalMutation({
         );
       }
 
-      // Reasons that indicate a system / admin / unreversible-by-owner hide,
-      // even when `hiddenBy` looks owner-ish (legacy rows, merges, or
-      // system patches that left `hiddenBy` stale).
+      // Reasons that are atomically bound to a non-owner current hide and
+      // therefore cannot survive as stale historical metadata on an
+      // owner-initiated hide. See the block comment above for why each is
+      // included, and why report-related reasons are intentionally NOT.
       const OWNER_UNDELETE_DENIED_REASONS = new Set<string>([
         "owner.merged",
-        "auto.reports",
-        "manual.report",
         "user.banned",
         "security.redaction",
-        "pending.scan.stale",
       ]);
       const reason = skill.moderationReason as string | undefined;
       const ownerInitiatedHide =
@@ -8229,6 +8247,16 @@ export const setSkillSoftDeletedInternal = internalMutation({
       updatedAt: now,
     };
     if (note) patch.moderationNotes = note;
+    // Data hygiene: when the owner self-deletes (not a moderator/admin acting
+    // via this internal entry point), reset any stale `moderationReason`
+    // that may have survived from prior moderation metadata (e.g. an
+    // `auto.reports` or `manual.report` reason that a moderator restore
+    // never cleared). This keeps the row's provenance fields consistent
+    // with the current hide (owner-initiated) and prevents a future
+    // owner-undelete from tripping on historical reasons.
+    if (args.deleted && isOwner && !isModeratorOrAdmin) {
+      patch.moderationReason = undefined;
+    }
     const nextSkill = { ...skill, ...patch };
     await ctx.db.patch(skill._id, patch);
     await adjustGlobalPublicCountForSkillChange(ctx, skill, nextSkill);
