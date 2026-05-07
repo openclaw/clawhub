@@ -444,6 +444,19 @@ export const ApiV1PackageReadinessResponseSchema = type({
     checks: PackageReadinessCheckSchema.array(),
     blockers: "string[]",
 });
+export const PackageTransferRequestSchema = type({
+    toOwner: "string",
+    reason: "string?",
+});
+export const ApiV1PackageTransferResponseSchema = type({
+    ok: "true",
+    packageId: "string",
+    name: "string",
+    ownerUserId: "string",
+    ownerPublisherId: "string?",
+    channel: PackageChannelSchema,
+    isOfficial: "boolean",
+});
 export const PackageOfficialMigrationUpsertRequestSchema = type({
     bundledPluginId: "string",
     packageName: "string",

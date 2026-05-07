@@ -693,6 +693,21 @@ export declare const ApiV1PackageReadinessResponseSchema: import("arktype/intern
     blockers: string[];
 }, {}>;
 export type ApiV1PackageReadinessResponse = (typeof ApiV1PackageReadinessResponseSchema)[inferred];
+export declare const PackageTransferRequestSchema: import("arktype/internal/variants/object.ts").ObjectType<{
+    toOwner: string;
+    reason?: string | undefined;
+}, {}>;
+export type PackageTransferRequest = (typeof PackageTransferRequestSchema)[inferred];
+export declare const ApiV1PackageTransferResponseSchema: import("arktype/internal/variants/object.ts").ObjectType<{
+    ok: true;
+    packageId: string;
+    name: string;
+    ownerUserId: string;
+    channel: "official" | "community" | "private";
+    isOfficial: boolean;
+    ownerPublisherId?: string | undefined;
+}, {}>;
+export type ApiV1PackageTransferResponse = (typeof ApiV1PackageTransferResponseSchema)[inferred];
 export declare const PackageOfficialMigrationUpsertRequestSchema: import("arktype/internal/variants/object.ts").ObjectType<{
     bundledPluginId: string;
     packageName: string;

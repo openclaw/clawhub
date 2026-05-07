@@ -93,8 +93,13 @@ export async function assertCanManageOwnedResource(
   },
 ) {
   if (params.allowPlatformAdmin && params.actor.role === "admin") return;
-  if (params.ownerUserId === params.actor._id) return;
-  if (!params.ownerPublisherId) throw new ConvexError("Forbidden");
+  if (!params.ownerPublisherId) {
+    if (params.ownerUserId === params.actor._id) return;
+    throw new ConvexError("Forbidden");
+  }
+
+  const publisher = await ctx.db.get(params.ownerPublisherId);
+  if (publisher?.kind === "user" && publisher.linkedUserId === params.actor._id) return;
 
   const membership = await getPublisherMembership(ctx, params.ownerPublisherId, params.actor._id);
   if (

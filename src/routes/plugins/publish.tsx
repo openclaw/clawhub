@@ -1,9 +1,5 @@
 import { createFileRoute, useSearch } from "@tanstack/react-router";
-import {
-  DocsLinks,
-  getPackageScopeOwnerMismatch,
-  type PackageCompatibility,
-} from "clawhub-schema";
+import { DocsLinks, getPackageScopeOwnerMismatch, type PackageCompatibility } from "clawhub-schema";
 import { useAction, useMutation, useQuery } from "convex/react";
 import { startTransition, useEffect, useMemo, useState } from "react";
 import semver from "semver";

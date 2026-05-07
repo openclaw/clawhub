@@ -26,6 +26,7 @@ import {
   cmdPackPackage,
   cmdPublishPackage,
   cmdReportPackage,
+  cmdTransferPackage,
   cmdVerifyPackage,
 } from "./cli/commands/packages.js";
 import { cmdPublish } from "./cli/commands/publish.js";
@@ -443,6 +444,17 @@ registerCommand(packageCmd, ["package", "delete"])
   .action(async (name, options) => {
     const opts = await resolveGlobalOpts();
     await cmdDeletePackage(opts, name, options, isInputAllowed());
+  });
+
+registerCommand(packageCmd, ["package", "transfer"])
+  .description("Transfer a plugin package to another publisher")
+  .argument("<name>", "Package name")
+  .requiredOption("--to <owner>", "Destination publisher handle")
+  .option("--reason <text>", "Audit reason")
+  .option("--json", "Output JSON")
+  .action(async (name, options) => {
+    const opts = await resolveGlobalOpts();
+    await cmdTransferPackage(opts, name, options);
   });
 
 registerCommand(packageCmd, ["package", "report"])

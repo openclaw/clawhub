@@ -5,6 +5,10 @@ import { internalMutation, internalQuery, mutation, query } from "./functions";
 import { assertAdmin, getOptionalActiveAuthUserId, requireUser } from "./lib/access";
 import { toPublicPublisher } from "./lib/public";
 import {
+  formatReservedPublicOwnerHandleMessage,
+  isReservedPublicOwnerHandle,
+} from "./lib/publicRouteReservations";
+import {
   ensurePersonalPublisherForUser,
   getActiveUserByHandleOrPersonalPublisher,
   getPublisherByHandle,
@@ -14,10 +18,6 @@ import {
   isPublisherRoleAllowed,
   normalizePublisherHandle,
 } from "./lib/publishers";
-import {
-  formatReservedPublicOwnerHandleMessage,
-  isReservedPublicOwnerHandle,
-} from "./lib/publicRouteReservations";
 
 const PUBLISHER_HANDLE_PATTERN = /^[a-z0-9](?:[a-z0-9-]{0,38}[a-z0-9])?$/;
 
@@ -392,11 +392,15 @@ export const resolvePublishTargetForUserInternal = internalMutation({
 
     const publisher = await getPublisherByHandle(ctx, requestedHandle);
     if (!publisher || publisher.deletedAt || publisher.deactivatedAt) {
-      throw new ConvexError(`Publisher "@${requestedHandle}" not found`);
+      throw new ConvexError(
+        `Publisher "@${requestedHandle}" not found. Create the "@${requestedHandle}" organization on ClawHub or choose a different owner.`,
+      );
     }
     const membership = await getPublisherMembership(ctx, publisher._id, actor._id);
     if (!membership || !isPublisherRoleAllowed(membership.role, [minimumRole])) {
-      throw new ConvexError(`Forbidden for "@${requestedHandle}"`);
+      throw new ConvexError(
+        `You do not have publish access for "@${requestedHandle}". Ask an owner or admin of "@${requestedHandle}" to add you.`,
+      );
     }
     return {
       publisherId: publisher._id,

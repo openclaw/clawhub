@@ -6541,6 +6541,56 @@ describe("httpApiV1 handlers", () => {
     );
   });
 
+  it("transfers a package through the public package transfer endpoint", async () => {
+    vi.mocked(requireApiTokenUser).mockResolvedValue({
+      userId: "users:vincent",
+      user: { _id: "users:vincent", handle: "vincentkoc" },
+    } as never);
+    const runMutation = vi.fn(async (_mutation: unknown, args: Record<string, unknown>) => {
+      if ("key" in args) return okRate();
+      return {
+        ok: true,
+        packageId: "packages:opik",
+        name: "@opik/opik-openclaw",
+        ownerUserId: "users:vincent",
+        ownerPublisherId: "publishers:opik",
+        channel: "community",
+        isOfficial: false,
+      };
+    });
+
+    const response = await __handlers.packagesPostRouterV1Handler(
+      makeCtx({ runMutation }),
+      new Request("https://example.com/api/v1/packages/%40opik%2Fopik-openclaw/transfer", {
+        method: "POST",
+        headers: {
+          Authorization: "Bearer clh_test",
+          "content-type": "application/json",
+        },
+        body: JSON.stringify({ toOwner: "opik" }),
+      }),
+    );
+
+    if (response.status !== 200) throw new Error(await response.text());
+    expect(await response.json()).toEqual({
+      ok: true,
+      packageId: "packages:opik",
+      name: "@opik/opik-openclaw",
+      ownerUserId: "users:vincent",
+      ownerPublisherId: "publishers:opik",
+      channel: "community",
+      isOfficial: false,
+    });
+    expect(runMutation).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({
+        actorUserId: "users:vincent",
+        name: "@opik/opik-openclaw",
+        toOwner: "opik",
+      }),
+    );
+  });
+
   it("sets trusted publisher config for a package without environment", async () => {
     vi.mocked(requireApiTokenUser).mockResolvedValue({
       userId: "users:1",

@@ -1,5 +1,6 @@
 import { getAuthUserId } from "@convex-dev/auth/server";
 import { describe, expect, it, vi } from "vitest";
+import { assertCanManageOwnedResource } from "./lib/publishers";
 import {
   addMember,
   listMine,
@@ -66,7 +67,9 @@ describe("publishers membership controls", () => {
   it("rejects org handles reserved for public routes", async () => {
     const ctx = {
       db: {
-        get: vi.fn(async (id: string) => (id === "users:admin" ? { _id: id, role: "admin" } : null)),
+        get: vi.fn(async (id: string) =>
+          id === "users:admin" ? { _id: id, role: "admin" } : null,
+        ),
         query: vi.fn(),
         insert: vi.fn(),
         patch: vi.fn(),
@@ -530,6 +533,71 @@ describe("publishers membership controls", () => {
         } as never,
       ),
     ).rejects.toThrow("Image must be a valid URL");
+  });
+});
+
+describe("publisher-owned resource authorization", () => {
+  function makeOwnerResourceCtx(options: {
+    publisher: Record<string, unknown> | null;
+    membership?: Record<string, unknown> | null;
+  }) {
+    return {
+      db: {
+        get: vi.fn(async (id: string) => {
+          if (id === "publishers:owner") return options.publisher;
+          return null;
+        }),
+        query: vi.fn((table: string) => {
+          if (table === "publisherMembers") {
+            return {
+              withIndex: vi.fn(() => ({
+                unique: vi.fn().mockResolvedValue(options.membership ?? null),
+              })),
+            };
+          }
+          throw new Error(`unexpected table ${table}`);
+        }),
+      },
+    };
+  }
+
+  it("does not let stale ownerUserId bypass org ownership", async () => {
+    const ctx = makeOwnerResourceCtx({
+      publisher: { _id: "publishers:owner", kind: "org", handle: "opik" },
+    });
+
+    await expect(
+      assertCanManageOwnedResource(
+        ctx as never,
+        {
+          actor: { _id: "users:vincent" },
+          ownerUserId: "users:vincent",
+          ownerPublisherId: "publishers:owner",
+        } as never,
+      ),
+    ).rejects.toThrow("Forbidden");
+  });
+
+  it("keeps linked users authorized for personal publishers", async () => {
+    const ctx = makeOwnerResourceCtx({
+      publisher: {
+        _id: "publishers:owner",
+        kind: "user",
+        handle: "vincentkoc",
+        linkedUserId: "users:vincent",
+      },
+    });
+
+    await expect(
+      assertCanManageOwnedResource(
+        ctx as never,
+        {
+          actor: { _id: "users:vincent" },
+          ownerUserId: "users:vincent",
+          ownerPublisherId: "publishers:owner",
+        } as never,
+      ),
+    ).resolves.toBeUndefined();
   });
 });
 

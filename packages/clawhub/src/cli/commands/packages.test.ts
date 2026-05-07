@@ -40,6 +40,7 @@ const {
   cmdPackPackage,
   cmdPublishPackage,
   cmdReportPackage,
+  cmdTransferPackage,
   cmdVerifyPackage,
 } = await import("./packages");
 const {
@@ -2471,6 +2472,32 @@ describe("package commands", () => {
         method: "DELETE",
         path: "/api/v1/packages/%40openclaw%2Fzalo",
         token: "tkn",
+      }),
+      expect.anything(),
+    );
+  });
+
+  it("transfers a package to another publisher", async () => {
+    httpMocks.apiRequest.mockResolvedValueOnce({
+      ok: true,
+      packageId: "packages:opik",
+      name: "@opik/opik-openclaw",
+      ownerUserId: "users:vincent",
+      ownerPublisherId: "publishers:opik",
+      channel: "community",
+      isOfficial: false,
+    });
+
+    await cmdTransferPackage(makeOpts(), "@opik/opik-openclaw", { to: "opik" });
+
+    expect(authTokenMocks.requireAuthToken).toHaveBeenCalled();
+    expect(httpMocks.apiRequest).toHaveBeenCalledWith(
+      "https://clawhub.ai",
+      expect.objectContaining({
+        method: "POST",
+        path: "/api/v1/packages/%40opik%2Fopik-openclaw/transfer",
+        token: "tkn",
+        body: { toOwner: "opik" },
       }),
       expect.anything(),
     );

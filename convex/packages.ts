@@ -59,8 +59,11 @@ import { isPackageBlockedFromPublic, resolvePackageReleaseScanStatus } from "./l
 import { toPublicPublisher } from "./lib/public";
 import {
   assertCanManageOwnedResource,
+  getPublisherByHandle,
   getOwnerPublisher,
   getPublisherMembership,
+  isPublisherRoleAllowed,
+  normalizePublisherHandle,
 } from "./lib/publishers";
 import {
   findOversizedPublishFile,
@@ -569,8 +572,7 @@ async function viewerCanAccessPackageOwner(
   membershipCache?: Map<string, Promise<boolean>>,
 ) {
   if (!viewerUserId) return false;
-  if (digest.ownerUserId === viewerUserId) return true;
-  if (!digest.ownerPublisherId) return false;
+  if (!digest.ownerPublisherId) return digest.ownerUserId === viewerUserId;
 
   const cacheKey = String(digest.ownerPublisherId);
   const cached = membershipCache?.get(cacheKey);
@@ -580,7 +582,11 @@ async function viewerCanAccessPackageOwner(
     Boolean,
   );
   membershipCache?.set(cacheKey, membershipPromise);
-  return await membershipPromise;
+  if (await membershipPromise) return true;
+
+  if (digest.ownerUserId !== viewerUserId) return false;
+  const ownerPublisher = await ctx.db.get(digest.ownerPublisherId);
+  return ownerPublisher?.kind === "user" && ownerPublisher.linkedUserId === viewerUserId;
 }
 
 async function canViewerReadPackage(
@@ -3645,15 +3651,36 @@ async function publishPackageImpl(
     });
     const ownerMismatch = getPackageScopeOwnerMismatch(name, payload.ownerHandle);
     if (ownerMismatch) throw new ConvexError(ownerMismatch.message);
-    const ownerHandle = payload.ownerHandle ?? inferOwnerHandleFromScopedPackageName(name);
-    const ownerTarget = await runMutationRef<{
+    const scopedOwnerHandle = inferOwnerHandleFromScopedPackageName(name);
+    const ownerHandle = normalizePublisherHandle(payload.ownerHandle) ?? scopedOwnerHandle;
+    let ownerTarget: {
       publisherId: Id<"publishers">;
       linkedUserId?: Id<"users">;
-    } | null>(ctx, internalRefs.publishers.resolvePublishTargetForUserInternal, {
-      actorUserId,
-      ownerHandle,
-      minimumRole: "publisher",
-    });
+    } | null;
+    try {
+      ownerTarget = await runMutationRef<{
+        publisherId: Id<"publishers">;
+        linkedUserId?: Id<"users">;
+      } | null>(ctx, internalRefs.publishers.resolvePublishTargetForUserInternal, {
+        actorUserId,
+        ownerHandle,
+        minimumRole: "publisher",
+      });
+    } catch (error) {
+      if (scopedOwnerHandle && error instanceof Error) {
+        if (/not found/i.test(error.message)) {
+          throw new ConvexError(
+            `This package name uses the "@${scopedOwnerHandle}" namespace, but that publisher does not exist on ClawHub. Create the "@${scopedOwnerHandle}" organization or choose a different package name.`,
+          );
+        }
+        if (/forbidden|publish access/i.test(error.message)) {
+          throw new ConvexError(
+            `This package name uses the "@${scopedOwnerHandle}" namespace, but you do not have publish access to that publisher. Ask an owner or admin of "@${scopedOwnerHandle}" to add you.`,
+          );
+        }
+      }
+      throw error;
+    }
     ownerUserId = ownerTarget?.linkedUserId ?? actorUserId;
     ownerPublisherId = ownerTarget?.publisherId;
     if (existingTrustedPublisher && !manualOverrideReason && actor?.role !== "admin") {
@@ -4074,6 +4101,174 @@ export const reservePackageNameInternal = internalMutation({
   },
 });
 
+async function patchPackageOwnerWithAudit(
+  ctx: Pick<MutationCtx, "db">,
+  args: {
+    actorUserId: Id<"users">;
+    pkg: Doc<"packages">;
+    owner: Doc<"users">;
+    ownerPublisher?: Doc<"publishers"> | null;
+    channel?: "official" | "community" | "private";
+    reason?: string;
+  },
+) {
+  const now = Date.now();
+  const nextChannel = args.channel ?? args.pkg.channel;
+  const publisherTrusted = args.ownerPublisher?.trustedPublisher ?? args.owner.trustedPublisher;
+  if (nextChannel === "official" && !publisherTrusted) {
+    throw new ConvexError("Only trusted publishers may own official packages");
+  }
+  const nextPackageFields = {
+    ownerUserId: args.owner._id,
+    ownerPublisherId: args.ownerPublisher?._id,
+    channel: nextChannel,
+    isOfficial: nextChannel === "official",
+    updatedAt: now,
+  };
+
+  await ctx.db.patch(args.pkg._id, nextPackageFields);
+  await upsertPackageSearchDigest(ctx, {
+    ...extractPackageDigestFields(args.pkg),
+    ...nextPackageFields,
+  });
+
+  await ctx.db.insert("auditLogs", {
+    actorUserId: args.actorUserId,
+    action: "package.owner.transfer",
+    targetType: "package",
+    targetId: args.pkg._id,
+    metadata: {
+      name: args.pkg.normalizedName,
+      previousOwnerUserId: args.pkg.ownerUserId,
+      previousOwnerPublisherId: args.pkg.ownerPublisherId,
+      nextOwnerUserId: args.owner._id,
+      nextOwnerPublisherId: args.ownerPublisher?._id,
+      previousChannel: args.pkg.channel,
+      nextChannel,
+      reason: args.reason || undefined,
+    },
+    createdAt: now,
+  });
+
+  return {
+    ok: true as const,
+    packageId: args.pkg._id,
+    name: args.pkg.normalizedName,
+    ownerUserId: args.owner._id,
+    ownerPublisherId: args.ownerPublisher?._id,
+    channel: nextChannel,
+    isOfficial: nextChannel === "official",
+  };
+}
+
+async function transferPackageOwnerForUser(
+  ctx: MutationCtx,
+  args: {
+    actorUserId: Id<"users">;
+    name: string;
+    toOwner: string;
+    reason?: string;
+  },
+) {
+  const actor = await ctx.db.get(args.actorUserId);
+  if (!actor || actor.deletedAt || actor.deactivatedAt) throw new ConvexError("Unauthorized");
+
+  const normalizedName = normalizePackageName(args.name);
+  const pkg = await getPackageByNormalizedName(ctx, normalizedName);
+  if (!pkg || pkg.softDeletedAt) throw new ConvexError("Package not found");
+  if (pkg.family === "skill") {
+    throw new ConvexError("Skill packages must use the skills transfer flow");
+  }
+
+  const scopedOwner = inferOwnerHandleFromScopedPackageName(normalizedName);
+  const destinationHandle = normalizePublisherHandle(args.toOwner);
+  if (!destinationHandle) throw new ConvexError("Destination owner is required");
+  if (scopedOwner && scopedOwner !== destinationHandle) {
+    throw new ConvexError(
+      `Package scope "@${scopedOwner}" can only be transferred to publisher "@${scopedOwner}".`,
+    );
+  }
+
+  if (pkg.ownerPublisherId) {
+    const sourcePublisher = await ctx.db.get(pkg.ownerPublisherId);
+    const sourceMembership = await getPublisherMembership(ctx, pkg.ownerPublisherId, actor._id);
+    const canManageSource =
+      actor.role === "admin" ||
+      sourcePublisher?.linkedUserId === actor._id ||
+      Boolean(sourceMembership && isPublisherRoleAllowed(sourceMembership.role, ["admin"]));
+    if (!canManageSource) {
+      throw new ConvexError("Forbidden");
+    }
+  } else {
+    await assertCanManageOwnedResource(ctx, {
+      actor,
+      ownerUserId: pkg.ownerUserId,
+      ownerPublisherId: pkg.ownerPublisherId,
+      allowedPublisherRoles: ["admin"],
+      allowPlatformAdmin: true,
+    });
+  }
+
+  const destinationPublisher = await getPublisherByHandle(ctx, destinationHandle);
+  if (
+    !destinationPublisher ||
+    destinationPublisher.deletedAt ||
+    destinationPublisher.deactivatedAt
+  ) {
+    throw new ConvexError(
+      `Publisher "@${destinationHandle}" not found. Create the "@${destinationHandle}" organization on ClawHub before transferring this package.`,
+    );
+  }
+
+  const destinationMembership = await getPublisherMembership(
+    ctx,
+    destinationPublisher._id,
+    actor._id,
+  );
+  const canManageDestination =
+    actor.role === "admin" ||
+    destinationPublisher.linkedUserId === actor._id ||
+    Boolean(destinationMembership && isPublisherRoleAllowed(destinationMembership.role, ["admin"]));
+  if (!canManageDestination) {
+    throw new ConvexError(
+      `You do not have admin access for "@${destinationHandle}". Ask an owner or admin to add you before transferring this package.`,
+    );
+  }
+
+  return await patchPackageOwnerWithAudit(ctx, {
+    actorUserId: actor._id,
+    pkg,
+    owner: actor,
+    ownerPublisher: destinationPublisher,
+    reason: args.reason,
+  });
+}
+
+export const transferPackageOwnerForUserInternal = internalMutation({
+  args: {
+    actorUserId: v.id("users"),
+    name: v.string(),
+    toOwner: v.string(),
+    reason: v.optional(v.string()),
+  },
+  handler: async (ctx, args) => await transferPackageOwnerForUser(ctx, args),
+});
+
+export const transferPackageOwner = mutation({
+  args: {
+    name: v.string(),
+    toOwner: v.string(),
+    reason: v.optional(v.string()),
+  },
+  handler: async (ctx, args) => {
+    const { user } = await requireUser(ctx);
+    return await transferPackageOwnerForUser(ctx, {
+      actorUserId: user._id,
+      ...args,
+    });
+  },
+});
+
 export const transferPackageOwnerInternal = internalMutation({
   args: {
     actorUserId: v.id("users"),
@@ -4086,7 +4281,6 @@ export const transferPackageOwnerInternal = internalMutation({
     reason: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
-    const now = Date.now();
     const actor = await ctx.db.get(args.actorUserId);
     if (!actor || actor.deletedAt || actor.deactivatedAt) throw new ConvexError("Unauthorized");
     assertAdmin(actor);
@@ -4105,47 +4299,14 @@ export const transferPackageOwnerInternal = internalMutation({
     const pkg = await getPackageByNormalizedName(ctx, normalizedName);
     if (!pkg || pkg.softDeletedAt) throw new ConvexError("Package not found");
 
-    const nextChannel = args.channel ?? pkg.channel;
-    const publisherTrusted = ownerPublisher?.trustedPublisher ?? owner.trustedPublisher;
-    if (nextChannel === "official" && !publisherTrusted) {
-      throw new ConvexError("Only trusted publishers may own official packages");
-    }
-
-    await ctx.db.patch(pkg._id, {
-      ownerUserId: args.ownerUserId,
-      ownerPublisherId: args.ownerPublisherId,
-      channel: nextChannel,
-      isOfficial: nextChannel === "official",
-      updatedAt: now,
-    });
-
-    await ctx.db.insert("auditLogs", {
+    return await patchPackageOwnerWithAudit(ctx, {
       actorUserId: args.actorUserId,
-      action: "package.owner.transfer",
-      targetType: "package",
-      targetId: pkg._id,
-      metadata: {
-        name: normalizedName,
-        previousOwnerUserId: pkg.ownerUserId,
-        previousOwnerPublisherId: pkg.ownerPublisherId,
-        nextOwnerUserId: args.ownerUserId,
-        nextOwnerPublisherId: args.ownerPublisherId,
-        previousChannel: pkg.channel,
-        nextChannel,
-        reason: args.reason || undefined,
-      },
-      createdAt: now,
+      pkg,
+      owner,
+      ownerPublisher,
+      channel: args.channel,
+      reason: args.reason,
     });
-
-    return {
-      ok: true as const,
-      packageId: pkg._id,
-      name: normalizedName,
-      ownerUserId: args.ownerUserId,
-      ownerPublisherId: args.ownerPublisherId,
-      channel: nextChannel,
-      isOfficial: nextChannel === "official",
-    };
   },
 });
 

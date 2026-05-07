@@ -562,6 +562,23 @@ export const ApiV1PackageReadinessResponseSchema = type({
 });
 export type ApiV1PackageReadinessResponse = (typeof ApiV1PackageReadinessResponseSchema)[inferred];
 
+export const PackageTransferRequestSchema = type({
+  toOwner: "string",
+  reason: "string?",
+});
+export type PackageTransferRequest = (typeof PackageTransferRequestSchema)[inferred];
+
+export const ApiV1PackageTransferResponseSchema = type({
+  ok: "true",
+  packageId: "string",
+  name: "string",
+  ownerUserId: "string",
+  ownerPublisherId: "string?",
+  channel: PackageChannelSchema,
+  isOfficial: "boolean",
+});
+export type ApiV1PackageTransferResponse = (typeof ApiV1PackageTransferResponseSchema)[inferred];
+
 export const PackageOfficialMigrationUpsertRequestSchema = type({
   bundledPluginId: "string",
   packageName: "string",

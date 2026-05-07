@@ -11,6 +11,7 @@ import {
 } from "./lib/access";
 import { syncGitHubProfile } from "./lib/githubAccount";
 import { toPublicUser } from "./lib/public";
+import { isReservedPublicOwnerHandle } from "./lib/publicRouteReservations";
 import {
   ensurePersonalPublisherForUser,
   getActiveUserByHandleOrPersonalPublisher,
@@ -23,7 +24,6 @@ import {
   normalizeReservedHandle,
   upsertReservedHandleForRightfulOwner,
 } from "./lib/reservedHandles";
-import { isReservedPublicOwnerHandle } from "./lib/publicRouteReservations";
 import { buildUserSearchResults } from "./lib/userSearch";
 import { insertStatEvent } from "./skillStatEvents";
 
