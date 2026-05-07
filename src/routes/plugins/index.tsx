@@ -1,5 +1,5 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
-import { AlertTriangle, Search } from "lucide-react";
+import { PackageSearch, Search } from "lucide-react";
 import { useEffect, useState } from "react";
 import { BrowseSidebar } from "../../components/BrowseSidebar";
 import { PluginListItem } from "../../components/PluginListItem";
@@ -270,7 +270,7 @@ function PluginsIndex() {
 
           {apiError ? (
             <div className="empty-state">
-              <AlertTriangle size={20} aria-hidden="true" />
+              <PackageSearch size={22} className="empty-state-icon" aria-hidden="true" />
               <p className="empty-state-title">Unable to load plugins</p>
               <p className="empty-state-body">
                 The plugin catalog is temporarily unavailable. Please try again later.
@@ -278,7 +278,7 @@ function PluginsIndex() {
             </div>
           ) : rateLimited ? (
             <div className="empty-state">
-              <AlertTriangle size={20} aria-hidden="true" />
+              <PackageSearch size={22} className="empty-state-icon" aria-hidden="true" />
               <p className="empty-state-title">Plugin catalog is temporarily unavailable</p>
               <p className="empty-state-body">Try again {formatRetryDelay(retryAfterSeconds)}.</p>
             </div>

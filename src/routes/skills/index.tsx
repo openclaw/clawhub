@@ -1,9 +1,10 @@
-import { createFileRoute, redirect } from "@tanstack/react-router";
+import { createFileRoute, Link, redirect } from "@tanstack/react-router";
 import { useQuery } from "convex/react";
 import { Search } from "lucide-react";
 import { useCallback, useMemo, useRef, useState } from "react";
 import { api } from "../../../convex/_generated/api";
 import { BrowseSidebar } from "../../components/BrowseSidebar";
+import { Button } from "../../components/ui/button";
 import { SKILL_CATEGORIES } from "../../lib/categories";
 import { formatCompactStat } from "../../lib/numberFormat";
 import { parseDir, parseSort } from "./-params";
@@ -164,6 +165,13 @@ export function SkillsIndex() {
           Skills
           {totalSkillsText ? <span className="browse-count">{totalSkillsText}</span> : null}
         </h1>
+        <div className="browse-page-actions">
+          <Button asChild variant="primary">
+            <Link to="/publish-skill" search={{ updateSlug: undefined }}>
+              Publish
+            </Link>
+          </Button>
+        </div>
       </div>
       <div className="browse-page-search">
         <Search size={15} className="navbar-search-icon" aria-hidden="true" />

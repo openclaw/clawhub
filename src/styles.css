@@ -7961,6 +7961,7 @@ code {
   display: flex;
   flex-direction: column;
   gap: var(--space-3);
+  padding-top: 4px;
   padding-right: 16px;
   border-right: 1px solid var(--line);
   max-height: calc(100vh - var(--browse-sticky-top) - var(--space-4));
@@ -8187,6 +8188,7 @@ code {
     max-height: none;
     border-right: none;
     border-bottom: 1px solid var(--line);
+    padding-top: 0;
     padding-right: 0;
     padding-bottom: 16px;
     flex-direction: row;
@@ -9086,6 +9088,12 @@ code {
   padding: var(--space-7) var(--space-5);
   border: 1px solid var(--line);
   border-radius: var(--r-sm);
+}
+
+.empty-state-icon {
+  display: block;
+  margin: 0 auto var(--space-3);
+  color: var(--ink-soft);
 }
 
 .empty-state-title {

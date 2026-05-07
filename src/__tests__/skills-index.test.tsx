@@ -260,7 +260,7 @@ describe("SkillsIndex", () => {
       await vi.runAllTimersAsync();
     });
 
-    const links = screen.getAllByRole("link");
+    const links = screen.getAllByRole("link").filter((link) => link.textContent?.includes("Skill"));
     expect(links[0]?.textContent).toContain("Skill B");
     expect(links[1]?.textContent).toContain("Skill A");
     expect(links[2]?.textContent).toContain("Skill C");
