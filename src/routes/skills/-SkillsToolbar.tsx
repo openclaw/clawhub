@@ -27,6 +27,7 @@ import {
 } from "../../components/ui/select";
 import { SKILL_CATEGORIES, type SkillCategory } from "../../lib/categories";
 import { type SortDir, type SortKey } from "./-params";
+import type { SkillsView } from "./-useSkillsBrowseModel";
 
 type SkillsToolbarProps = {
   searchInputRef: RefObject<HTMLInputElement | null>;
@@ -34,7 +35,7 @@ type SkillsToolbarProps = {
   hasQuery: boolean;
   sort: SortKey;
   dir: SortDir;
-  view: "cards" | "list";
+  view: SkillsView;
   highlightedOnly: boolean;
   nonSuspiciousOnly: boolean;
   capabilityTag?: string;
@@ -218,7 +219,7 @@ export function SkillsToolbar({
             type="button"
             onClick={view === "list" ? onToggleView : undefined}
             className={`inline-flex h-[30px] w-[30px] items-center justify-center rounded-full transition-colors ${
-              view === "cards"
+              view === "grid"
                 ? "bg-accent text-accent-fg"
                 : "text-[color:var(--ink-soft)] hover:text-[color:var(--ink)]"
             }`}
@@ -228,7 +229,7 @@ export function SkillsToolbar({
           </button>
           <button
             type="button"
-            onClick={view === "cards" ? onToggleView : undefined}
+            onClick={view === "grid" ? onToggleView : undefined}
             className={`inline-flex h-[30px] w-[30px] items-center justify-center rounded-full transition-colors ${
               view === "list"
                 ? "bg-accent text-accent-fg"

@@ -8,7 +8,11 @@ import { SKILL_CATEGORIES } from "../../lib/categories";
 import { formatCompactStat } from "../../lib/numberFormat";
 import { parseDir, parseSort } from "./-params";
 import { SkillsResults } from "./-SkillsResults";
-import { useSkillsBrowseModel, type SkillsSearchState } from "./-useSkillsBrowseModel";
+import {
+  normalizeSkillsView,
+  useSkillsBrowseModel,
+  type SkillsSearchState,
+} from "./-useSkillsBrowseModel";
 
 const SORT_OPTIONS = [
   { value: "downloads", label: "Most downloaded" },
@@ -39,7 +43,7 @@ export const Route = createFileRoute("/skills/")({
         search.nonSuspicious === true
           ? true
           : undefined,
-      view: search.view === "cards" || search.view === "list" ? search.view : undefined,
+      view: normalizeSkillsView(search.view),
       focus: search.focus === "search" ? "search" : undefined,
     };
   },
@@ -205,16 +209,16 @@ export function SkillsIndex() {
               <button
                 className={`browse-view-btn${model.view === "list" ? " is-active" : ""}`}
                 type="button"
-                onClick={model.view === "cards" ? model.onToggleView : undefined}
+                onClick={model.view === "grid" ? model.onToggleView : undefined}
               >
                 List
               </button>
               <button
-                className={`browse-view-btn${model.view === "cards" ? " is-active" : ""}`}
+                className={`browse-view-btn${model.view === "grid" ? " is-active" : ""}`}
                 type="button"
                 onClick={model.view === "list" ? model.onToggleView : undefined}
               >
-                Cards
+                Grid
               </button>
             </div>
           </div>

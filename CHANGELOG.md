@@ -4,6 +4,8 @@
 
 ### Changes
 
+- Web: rename the skills browse alternate view from Cards to Grid while keeping legacy `view=cards` URLs compatible (#2090) (thanks @vyctorbrzezowski).
+
 ### Fixes
 
 - Skills: repair publisher-owned skill merges, bound historical slug redirects, block protected slug namespaces, and expire owner-unpublished slug reservations after 30 days (#2115) (thanks @fuller-stack-dev).

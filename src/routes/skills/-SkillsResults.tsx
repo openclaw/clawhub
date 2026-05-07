@@ -7,11 +7,12 @@ import { Button } from "../../components/ui/button";
 import { UserBadge } from "../../components/UserBadge";
 import { getSkillBadges } from "../../lib/badges";
 import { buildSkillHref, type SkillListEntry } from "./-types";
+import type { SkillsView } from "./-useSkillsBrowseModel";
 
 type SkillsResultsProps = {
   isLoadingSkills: boolean;
   sorted: SkillListEntry[];
-  view: "cards" | "list";
+  view: SkillsView;
   listDoneLoading: boolean;
   hasQuery: boolean;
   canLoadMore: boolean;
@@ -57,7 +58,7 @@ export function SkillsResults({
               : "No skills have been published yet."}
           </p>
         </div>
-      ) : view === "cards" ? (
+      ) : view === "grid" ? (
         <div className="grid">
           {sorted.map((entry) => {
             const skill = entry.skill;

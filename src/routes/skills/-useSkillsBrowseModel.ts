@@ -8,7 +8,14 @@ import type { SkillListEntry, SkillSearchEntry } from "./-types";
 
 const pageSize = 25;
 
-type SkillsView = "cards" | "list";
+export type SkillsView = "grid" | "list";
+type LegacySkillsView = SkillsView | "cards";
+
+export function normalizeSkillsView(value: unknown): SkillsView | undefined {
+  if (value === "list") return "list";
+  if (value === "grid" || value === "cards") return "grid";
+  return undefined;
+}
 
 export type SkillsSearchState = {
   q?: string;
@@ -18,7 +25,7 @@ export type SkillsSearchState = {
   featured?: boolean;
   nonSuspicious?: boolean;
   tag?: string;
-  view?: SkillsView;
+  view?: LegacySkillsView;
   focus?: "search";
 };
 
@@ -57,7 +64,7 @@ export function useSkillsBrowseModel({
   const loadMoreInFlightRef = useRef(false);
   const navigateTimer = useRef<number>(0);
 
-  const view: SkillsView = search.view ?? "list";
+  const view: SkillsView = normalizeSkillsView(search.view) ?? "list";
   const featuredOnly = search.featured ?? search.highlighted ?? false;
   const nonSuspiciousOnly = search.nonSuspicious ?? false;
   const capabilityTag = search.tag;
@@ -371,7 +378,7 @@ export function useSkillsBrowseModel({
     void navigate({
       search: (prev) => ({
         ...prev,
-        view: prev.view === "cards" ? undefined : "cards",
+        view: normalizeSkillsView(prev.view) === "grid" ? undefined : "grid",
       }),
       replace: true,
     });
