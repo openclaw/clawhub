@@ -8,6 +8,7 @@
 
 ### Fixes
 
+- Docs/dev: document the local Convex site proxy URL and make worktree setup reject misconfigured local site URLs that break HTTP routes (#2060) (thanks @vyctorbrzezowski).
 - Skills: repair publisher-owned skill merges, bound historical slug redirects, block protected slug namespaces, and expire owner-unpublished slug reservations after 30 days (#2115) (thanks @fuller-stack-dev).
 - Web: restore dashboard skill metrics for owned skills and use pointer cursors on dropdown menu items (#2113) (thanks @fuller-stack-dev).
 - Skills: allow confirmed owner migration when republishing an existing skill to another publisher, preserving versions, stats, aliases, and audit history (#1998, #2102) (thanks @momothemage).
