@@ -357,8 +357,10 @@ export function softDeleteErrorToResponse(
   const message = error instanceof Error ? error.message : `${entity} delete failed`;
   const lower = message.toLowerCase();
 
-  if (lower.includes("unauthorized")) return text(formatAuthzMessage(error, "Unauthorized"), 401, headers);
-  if (lower.includes("forbidden")) return text(formatAuthzMessage(error, "Forbidden"), 403, headers);
+  if (lower.includes("unauthorized"))
+    return text(formatAuthzMessage(error, "Unauthorized"), 401, headers);
+  if (lower.includes("forbidden"))
+    return text(formatAuthzMessage(error, "Forbidden"), 403, headers);
   if (lower.includes("not found")) return text(message, 404, headers);
   if (lower.includes("slug required")) return text("Slug required", 400, headers);
 
@@ -379,10 +381,7 @@ function formatAuthFailure(error: unknown) {
 // - Otherwise returns the full message (minus the `ConvexError:` prefix) so
 //   CLI/API clients can surface actionable reasons such as
 //   "Forbidden: This skill was hidden by moderation ...".
-export function formatAuthzMessage(
-  error: unknown,
-  fallback: "Unauthorized" | "Forbidden",
-) {
+export function formatAuthzMessage(error: unknown, fallback: "Unauthorized" | "Forbidden") {
   const message = error instanceof Error ? error.message.trim() : "";
   if (!message) return fallback;
   const stripped = message.replace(/^ConvexError:\s*/i, "").trim();
