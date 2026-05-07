@@ -7898,7 +7898,7 @@ code {
   top: var(--browse-sticky-top);
   display: flex;
   flex-direction: column;
-  gap: var(--space-4);
+  gap: var(--space-3);
   padding-right: 16px;
   border-right: 1px solid var(--line);
   max-height: calc(100vh - var(--browse-sticky-top) - var(--space-4));
@@ -7909,19 +7909,24 @@ code {
 .sidebar-section {
   display: flex;
   flex-direction: column;
-  gap: 2px;
+  gap: 0;
   border: none;
   padding: 0;
   margin: 0;
 }
 
+.sidebar-section + .sidebar-section {
+  margin-top: var(--space-3);
+}
+
 .sidebar-title {
-  font-size: var(--fs-xs);
-  font-weight: 600;
+  font-size: 0.68rem;
+  font-weight: 700;
   text-transform: uppercase;
-  letter-spacing: 0.06em;
+  letter-spacing: 0.08em;
   color: var(--ink-soft);
-  padding: var(--space-1) 0;
+  opacity: 0.78;
+  padding: 2px 0 1px;
 }
 
 .sidebar-option {
@@ -7929,11 +7934,13 @@ code {
   display: flex;
   align-items: center;
   gap: var(--space-2);
-  padding: var(--space-2) 0;
+  padding: 5px 0;
   font-size: var(--fs-sm);
-  color: var(--ink-soft);
+  font-weight: 500;
+  line-height: 1.25;
+  color: color-mix(in srgb, var(--ink-soft) 82%, var(--ink));
   cursor: pointer;
-  min-height: 32px;
+  min-height: 28px;
 }
 
 .sidebar-option:hover {
@@ -7961,11 +7968,12 @@ code {
   display: flex;
   align-items: center;
   gap: var(--space-2);
-  padding: var(--space-2) 0;
+  padding: 5px 0;
   font-size: var(--fs-sm);
+  line-height: 1.25;
   color: var(--ink-soft);
   cursor: pointer;
-  min-height: 32px;
+  min-height: 28px;
 }
 
 .sidebar-checkbox:hover {
@@ -7990,6 +7998,14 @@ code {
   gap: 12px;
 }
 
+.browse-results-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
 .browse-results-count {
   display: flex;
   align-items: center;
@@ -8008,6 +8024,24 @@ code {
 
 .browse-clear-btn:hover {
   text-decoration: underline;
+}
+
+.browse-toolbar-checkbox {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  min-height: 30px;
+  color: var(--ink-soft);
+  cursor: pointer;
+  font-size: var(--fs-sm);
+}
+
+.browse-toolbar-checkbox:hover {
+  color: var(--ink);
+}
+
+.browse-toolbar-checkbox input[type="checkbox"] {
+  accent-color: var(--accent);
 }
 
 .browse-view-toggle {

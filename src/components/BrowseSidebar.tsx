@@ -28,8 +28,8 @@ type BrowseSidebarProps = {
   sortOptions: SortOption[];
   activeSort: string;
   onSortChange: (value: string) => void;
-  filters: FilterItem[];
-  onFilterToggle: (key: string) => void;
+  filters?: FilterItem[];
+  onFilterToggle?: (key: string) => void;
 };
 
 const CATEGORY_ICONS: Record<string, React.ReactNode> = {
@@ -50,9 +50,27 @@ export function BrowseSidebar({
   sortOptions,
   activeSort,
   onSortChange,
-  filters,
+  filters = [],
   onFilterToggle,
 }: BrowseSidebarProps) {
+  const filterSection =
+    filters.length && onFilterToggle ? (
+      <fieldset className="sidebar-section" aria-label="Toggle filters">
+        <legend className="sidebar-title">Filters</legend>
+        {filters.map((f) => (
+          <label key={f.key} className="sidebar-checkbox">
+            <input
+              type="checkbox"
+              checked={f.active}
+              onChange={() => onFilterToggle(f.key)}
+              aria-label={f.label}
+            />
+            <span>{f.label}</span>
+          </label>
+        ))}
+      </fieldset>
+    ) : null;
+
   return (
     <aside className="browse-sidebar" aria-label="Browse filters">
       <fieldset className="sidebar-section" role="radiogroup" aria-label="Sort order">
@@ -101,20 +119,7 @@ export function BrowseSidebar({
         </fieldset>
       ) : null}
 
-      <fieldset className="sidebar-section" aria-label="Toggle filters">
-        <legend className="sidebar-title">Filters</legend>
-        {filters.map((f) => (
-          <label key={f.key} className="sidebar-checkbox">
-            <input
-              type="checkbox"
-              checked={f.active}
-              onChange={() => onFilterToggle(f.key)}
-              aria-label={f.label}
-            />
-            <span>{f.label}</span>
-          </label>
-        ))}
-      </fieldset>
+      {filterSection}
     </aside>
   );
 }
