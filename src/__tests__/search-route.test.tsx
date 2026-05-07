@@ -89,6 +89,40 @@ describe("search route", () => {
     expect(screen.queryByRole("button", { name: /users/i })).toBeNull();
   });
 
+  it("shows zero counts consistently for active search tabs", async () => {
+    useUnifiedSearchMock.mockReturnValue({
+      results: [],
+      skillResults: [],
+      pluginResults: [{ type: "plugin", plugin: { name: "github-plugin" } }],
+      skillCount: 0,
+      pluginCount: 3,
+      isSearching: false,
+    });
+    const route = await loadRoute();
+    const Component = route.__config.component as ComponentType;
+
+    render(<Component />);
+
+    expect(screen.getByRole("button", { name: "All 3" })).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Skills 0" })).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Plugins 3" })).toBeTruthy();
+  });
+
+  it("clears the active search query from the input", async () => {
+    const route = await loadRoute();
+    const Component = route.__config.component as ComponentType;
+
+    render(<Component />);
+
+    fireEvent.click(screen.getByRole("button", { name: "Clear search" }));
+
+    expect(navigateMock).toHaveBeenCalledWith({
+      to: "/search",
+      search: { q: undefined, type: undefined },
+      replace: true,
+    });
+  });
+
   it("can request more results from global search", async () => {
     searchMock = { q: "weather", type: "skills" };
     useUnifiedSearchMock.mockReturnValue({
@@ -117,14 +151,14 @@ describe("search route", () => {
 
     render(<Component />);
 
-    expect(useUnifiedSearchMock).toHaveBeenLastCalledWith("weather", "skills", {
+    expect(useUnifiedSearchMock).toHaveBeenLastCalledWith("weather", "all", {
       limits: { skills: 25, plugins: 25 },
       nonSuspiciousOnly: true,
     });
 
     fireEvent.click(screen.getByRole("button", { name: "Load more" }));
 
-    expect(useUnifiedSearchMock).toHaveBeenLastCalledWith("weather", "skills", {
+    expect(useUnifiedSearchMock).toHaveBeenLastCalledWith("weather", "all", {
       limits: { skills: 50, plugins: 50 },
       nonSuspiciousOnly: true,
     });

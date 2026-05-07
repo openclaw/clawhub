@@ -8279,6 +8279,35 @@ code {
   margin-bottom: var(--space-5);
 }
 
+.search-page-field {
+  padding-right: var(--space-2);
+}
+
+.search-clear-button {
+  all: unset;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  border-radius: var(--r-sm);
+  color: var(--ink-soft);
+  cursor: pointer;
+  transition:
+    color var(--transition-fast),
+    background-color var(--transition-fast);
+}
+
+.search-clear-button:hover {
+  background: var(--surface-muted);
+  color: var(--ink);
+}
+
+.search-clear-button:focus-visible {
+  outline: 2px solid var(--input-focus-border);
+  outline-offset: 2px;
+}
+
 .search-tabs {
   display: flex;
   gap: 0;

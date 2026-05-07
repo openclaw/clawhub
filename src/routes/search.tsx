@@ -1,5 +1,5 @@
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
-import { Check, Search } from "lucide-react";
+import { Check, Search, X } from "lucide-react";
 import { useEffect, useState } from "react";
 import { PluginListItem } from "../components/PluginListItem";
 import { SkillListItem } from "../components/SkillListItem";
@@ -49,17 +49,24 @@ function UnifiedSearchPage() {
     setResultLimit(SEARCH_PAGE_SIZE);
   }, [search.q, activeType, nonSuspiciousOnly]);
 
-  const { results, skillCount, pluginCount, isSearching } = useUnifiedSearch(
-    search.q ?? "",
-    activeType,
-    {
-      limits: {
-        skills: resultLimit,
-        plugins: resultLimit,
-      },
-      nonSuspiciousOnly,
+  const {
+    results: allResults,
+    skillCount,
+    pluginCount,
+    isSearching,
+  } = useUnifiedSearch(search.q ?? "", "all", {
+    limits: {
+      skills: resultLimit,
+      plugins: resultLimit,
     },
-  );
+    nonSuspiciousOnly,
+  });
+  const results =
+    activeType === "all"
+      ? allResults
+      : allResults.filter((item) => item.type === (activeType === "skills" ? "skill" : "plugin"));
+  const showSearchCounts = Boolean(search.q);
+  const allCount = skillCount + pluginCount;
   const canLoadMore =
     search.q &&
     !isSearching &&
@@ -104,6 +111,15 @@ function UnifiedSearchPage() {
     });
   };
 
+  const clearSearch = () => {
+    setQuery("");
+    void navigate({
+      to: "/search",
+      search: { q: undefined, type: search.type },
+      replace: true,
+    });
+  };
+
   return (
     <main className="browse-page">
       <h1 className="browse-title mb-4">
@@ -117,7 +133,7 @@ function UnifiedSearchPage() {
       </h1>
 
       <form className="search-page-form" onSubmit={handleSearch}>
-        <div className="browse-search-bar max-w-[560px] flex-1">
+        <div className="browse-search-bar search-page-field max-w-[560px] flex-1">
           <Search size={16} className="navbar-search-icon" aria-hidden="true" />
           <input
             className="browse-search-input"
@@ -127,6 +143,16 @@ function UnifiedSearchPage() {
             onChange={(e) => setQuery(e.target.value)}
             autoFocus
           />
+          {query ? (
+            <button
+              className="search-clear-button"
+              type="button"
+              aria-label="Clear search"
+              onClick={clearSearch}
+            >
+              <X size={15} aria-hidden="true" />
+            </button>
+          ) : null}
         </div>
       </form>
 
@@ -136,23 +162,22 @@ function UnifiedSearchPage() {
           type="button"
           onClick={() => setType("all")}
         >
-          All
+          All {showSearchCounts ? <span className="search-tab-count">{allCount}</span> : null}
         </button>
         <button
           className={`search-tab${activeType === "skills" ? " is-active" : ""}`}
           type="button"
           onClick={() => setType("skills")}
         >
-          Skills
-          {skillCount > 0 ? <span className="search-tab-count">{skillCount}</span> : null}
+          Skills {showSearchCounts ? <span className="search-tab-count">{skillCount}</span> : null}
         </button>
         <button
           className={`search-tab${activeType === "plugins" ? " is-active" : ""}`}
           type="button"
           onClick={() => setType("plugins")}
         >
-          Plugins
-          {pluginCount > 0 ? <span className="search-tab-count">{pluginCount}</span> : null}
+          Plugins{" "}
+          {showSearchCounts ? <span className="search-tab-count">{pluginCount}</span> : null}
         </button>
       </div>
 

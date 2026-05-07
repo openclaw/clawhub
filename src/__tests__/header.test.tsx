@@ -225,7 +225,7 @@ describe("Header", () => {
     expect(screen.getAllByText("Docs")).toHaveLength(1);
     expect(screen.queryByText("Dashboard")).toBeNull();
     expect(screen.queryByText("Manage")).toBeNull();
-    expect(screen.getByPlaceholderText("Search skills, plugins, users")).toBeTruthy();
+    expect(screen.getByPlaceholderText("Search skills and plugins")).toBeTruthy();
 
     fireEvent.click(screen.getByRole("button", { name: /Cycle theme mode/i }));
     expect(setModeMock).toHaveBeenCalledWith("light");
@@ -287,7 +287,7 @@ describe("Header", () => {
 
     render(<Header />);
 
-    const input = screen.getByPlaceholderText("Search skills, plugins, users");
+    const input = screen.getByPlaceholderText("Search skills and plugins");
     fireEvent.focus(input);
     fireEvent.change(input, { target: { value: "weather" } });
 
@@ -330,7 +330,7 @@ describe("Header", () => {
 
     render(<Header />);
 
-    const input = screen.getByPlaceholderText("Search skills, plugins, users");
+    const input = screen.getByPlaceholderText("Search skills and plugins");
     fireEvent.focus(input);
     fireEvent.change(input, { target: { value: "weather" } });
     fireEvent.click(screen.getByRole("option", { name: /Weather Skill/i }));
@@ -359,7 +359,7 @@ describe("Header", () => {
 
     render(<Header />);
 
-    const input = screen.getByPlaceholderText("Search skills, plugins, users");
+    const input = screen.getByPlaceholderText("Search skills and plugins");
     fireEvent.focus(input);
     fireEvent.change(input, { target: { value: "zzzz" } });
 
