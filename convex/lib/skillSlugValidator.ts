@@ -105,7 +105,7 @@ const RESERVED_SKILL_SLUGS: ReadonlySet<string> = new Set([
   "false",
 ]);
 
-export interface ValidateSlugOptions {
+interface ValidateSlugOptions {
   /**
    * Bypass the reserved-word blocklist.
    * Intended for admin migrations / internal seeding only.
