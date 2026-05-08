@@ -86,12 +86,17 @@ describe("clawhub-schema", () => {
       selectedOwner: "vintageayu",
       suggestedName: "@vintageayu/dronzer",
       message:
-        `Package scope "@openclaw" must match selected owner "@vintageayu". Publish as "@openclaw" or rename this package to "@vintageayu/dronzer". Learn how publishing works: ${DocsLinks.clawhub.publishing}`,
+        `Package scope "@openclaw" must match selected owner "@vintageayu". Publish as "@openclaw" or rename this package to "@vintageayu/dronzer". Learn how publishing works: ${DocsLinks.clawhub.packageScopeFaq}`,
     });
   });
 
   it("builds OpenClaw docs URLs from normalized paths", () => {
     expect(openClawDocsUrl("/clawhub/publishing")).toBe(DocsLinks.clawhub.publishing);
+    expect(
+      openClawDocsUrl(
+        "clawhub/publishing#why-does-the-package-scope-need-to-match-the-selected-owner",
+      ),
+    ).toBe(DocsLinks.clawhub.packageScopeFaq);
     expect(openClawDocsUrl("plugins/sdk-setup#package-metadata")).toBe(
       DocsLinks.openclaw.pluginPackageMetadata,
     );

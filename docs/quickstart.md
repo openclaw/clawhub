@@ -1,172 +1,144 @@
 ---
-summary: "Local setup + CLI smoke: login, search, install, publish, sync."
+summary: "Start using ClawHub: find, install, update, and publish skills or plugins."
 read_when:
-  - First run / local dev setup
-  - Verifying end-to-end flows
+  - First time using ClawHub
+  - Installing a skill or plugin from the registry
+  - Publishing to ClawHub
 ---
 
 # Quickstart
 
-## 0) Prereqs
+ClawHub is a registry for OpenClaw skills and plugins.
 
-- Bun
-- Convex CLI (`bunx convex ...`)
-- GitHub OAuth App (for login)
-- OpenAI key (for embeddings/search)
+Use OpenClaw when you are installing things into OpenClaw. Use the `clawhub` CLI
+when you are signing in, publishing, managing your own listings, or using
+registry-specific workflows.
 
-## 1) Local dev (web + Convex)
+## Find and install a skill
+
+Search from OpenClaw:
 
 ```bash
-bun install
-cp .env.local.example .env.local
-
-# terminal A
-bun run dev
-
-# terminal B
-bunx convex dev
+openclaw skills search "calendar"
 ```
 
-## 2) Auth setup (GitHub OAuth + Convex Auth keys)
-
-Fill in `.env.local`:
-
-- `AUTH_GITHUB_ID`
-- `AUTH_GITHUB_SECRET`
-- `VITE_CONVEX_URL`
-- `VITE_CONVEX_SITE_URL`
-- `CONVEX_SITE_URL` (same as `VITE_CONVEX_SITE_URL`)
-- `OPENAI_API_KEY`
-
-Generate Convex Auth keys for your deployment:
+Install a skill:
 
 ```bash
-bunx auth --deployment-name <deployment> --web-server-url http://localhost:3000
+openclaw skills install <skill-slug>
 ```
 
-Then paste the printed `JWT_PRIVATE_KEY` + `JWKS` into `.env.local` (and ensure the deployment got them too).
-
-## 3) CLI: login + basic commands
-
-From this repo:
+Update installed skills:
 
 ```bash
-bun clawhub --help
-bun clawhub login
-bun clawhub whoami
-bun clawhub search gif --limit 5
+openclaw skills update --all
 ```
 
-Install a skill into `./skills/<slug>` (if Clawdbot is configured, installs into that workspace instead):
+OpenClaw records where the skill came from so later updates can continue to
+resolve through ClawHub.
+
+## Find and install a plugin
+
+Search from OpenClaw:
 
 ```bash
-bun clawhub install <slug>
-bun clawhub list
-bun clawhub uninstall <slug> --yes
+openclaw plugins search "calendar"
 ```
 
-You can also install into any folder:
+Install a ClawHub-hosted plugin with an explicit ClawHub source:
 
 ```bash
-bun clawhub install <slug> --workdir /tmp/clawhub-demo --dir skills
+openclaw plugins install clawhub:<package>
 ```
 
-Update:
+Update installed plugins:
 
 ```bash
-bun clawhub update --all
+openclaw plugins update --all
 ```
 
-## 4) Publish a skill
+Use the `clawhub:` prefix when you want OpenClaw to resolve the package through
+ClawHub rather than npm or another source.
 
-Create a folder containing `SKILL.md` (required) plus any supporting text files:
+## Sign in for publishing
+
+Install the ClawHub CLI:
 
 ```bash
-mkdir -p /tmp/clawhub-skill-demo && cd /tmp/clawhub-skill-demo
-cat > SKILL.md <<'EOF'
----
-name: Demo Skill
-description: Demo skill for local testing
----
-
-# Demo Skill
-
-Hello.
-EOF
+npm i -g clawhub
+# or
+pnpm add -g clawhub
 ```
 
-Publish:
+Sign in with GitHub:
 
 ```bash
-bun clawhub skill publish . \
-  --slug clawhub-demo-$(date +%s) \
-  --name "Demo $(date +%s)" \
+clawhub login
+clawhub whoami
+```
+
+Headless environments can use an API token from the ClawHub web UI:
+
+```bash
+clawhub login --token clh_...
+```
+
+## Publish a skill
+
+A skill is a folder with a required `SKILL.md` file and optional supporting
+files.
+
+```bash
+clawhub skill publish ./my-skill \
+  --slug my-skill \
+  --name "My Skill" \
   --version 1.0.0 \
-  --tags latest \
   --changelog "Initial release"
 ```
 
-## 5) Publish a code plugin
+Before publishing, check the metadata in `SKILL.md`. Declare required
+environment variables, tools, and permissions so users can understand what the
+skill needs before they install it. See [Skill format](./skill-format.md).
 
-Create a plugin folder with a `package.json` that includes the required OpenClaw
-publish metadata:
+## Publish a plugin
 
-```bash
-mkdir -p /tmp/clawhub-plugin-demo && cd /tmp/clawhub-plugin-demo
-cat > package.json <<'EOF'
-{
-  "name": "@demo/openclaw-plugin-demo",
-  "version": "0.1.0",
-  "type": "module",
-  "openclaw": {
-    "extensions": ["./index.ts"],
-    "hostTargets": ["darwin-arm64"],
-    "environment": {},
-    "compat": {
-      "pluginApi": ">=2026.3.24-beta.2"
-    },
-    "build": {
-      "openclawVersion": "2026.3.24-beta.2"
-    }
-  }
-}
-EOF
-```
-
-Preview the resolved publish payload first:
+Publish a plugin from a local folder, a GitHub repo, a GitHub ref, or an
+existing archive:
 
 ```bash
-bun clawhub package publish . --family code-plugin --dry-run
+clawhub package publish <source> --family code-plugin --dry-run
+clawhub package publish <source> --family code-plugin
 ```
 
-Then publish:
+Use `--dry-run` first to preview the resolved package metadata, compatibility
+fields, source attribution, and upload plan without publishing.
+
+Code plugins must include OpenClaw compatibility metadata in `package.json`,
+including `openclaw.compat.pluginApi` and `openclaw.build.openclawVersion`.
+
+## Sync skills you maintain
+
+`sync` scans skill folders and publishes new or changed skills that are not
+already synchronized.
 
 ```bash
-bun clawhub package publish . --family code-plugin
+clawhub sync --all --dry-run
+clawhub sync --all
 ```
 
-Notes:
+When you are signed in, `sync` may also send a minimal install snapshot for
+aggregate install counts. See [Telemetry](./telemetry.md) for what is reported
+and how to opt out.
 
-- `openclaw.compat.pluginApi` and `openclaw.build.openclawVersion` are required
-  for `code-plugin` publishes.
-- `package.json.version` does not replace either required OpenClaw field.
-- `openclaw.hostTargets` and `openclaw.environment` are optional compatibility
-  metadata. Include them only when they add useful install context.
-- Add `openclaw.compat.minGatewayVersion` and
-  `openclaw.build.pluginSdkVersion` when you want to expose fuller
-  compatibility/build metadata, but they are not required for a successful
-  publish.
+## Inspect before installing
 
-## 6) Sync local skills (auto-publish new/changed)
-
-`sync` scans for local skill folders and publishes the ones that aren’t “synced” yet.
+Before installing, use the ClawHub web page or CLI detail commands to inspect
+metadata, source links, versions, changelogs, and scan status:
 
 ```bash
-bun clawhub sync
+clawhub inspect <skill-slug>
+clawhub package inspect <package>
 ```
 
-Dry run + non-interactive:
-
-```bash
-bun clawhub sync --all --dry-run --no-input
-```
+Public listings show the latest scan state. Releases that are held or blocked by
+moderation may be hidden from search and install surfaces until resolved.

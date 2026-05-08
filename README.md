@@ -20,7 +20,7 @@ onlycrabs.ai is the **SOUL.md registry**: publish and share system lore the same
   <a href="https://clawhub.ai">ClawHub</a> ·
   <a href="https://onlycrabs.ai">onlycrabs.ai</a> ·
   <a href="VISION.md">Vision</a> ·
-  <a href="docs/README.md">Docs</a> ·
+  <a href="docs/clawhub.md">Docs</a> ·
   <a href="CONTRIBUTING.md">Contributing</a> ·
   <a href="https://discord.gg/clawd">Discord</a>
 </p>
@@ -93,8 +93,9 @@ Details: [`docs/telemetry.md`](docs/telemetry.md).
 - `src/` — TanStack Start app (routes, components, styles).
 - `convex/` — schema + queries/mutations/actions + HTTP API routes.
 - `packages/schema/` — shared API types/routes for the CLI and app.
-- [`docs/`](docs/README.md) — project documentation (architecture, CLI, auth, deployment, and more).
-- [`docs/spec.md`](docs/spec.md) — product + implementation spec (good first read).
+- [`docs/`](docs/README.md) — publishable ClawHub public/operator docs for users, publishers, API clients, and deploy operators.
+- [`specs/`](specs/README.md) — product specs, plans, regression notes, and design history.
+- [`specs/spec.md`](specs/spec.md) — product + implementation spec (good first read for maintainers).
 
 ## Local dev
 

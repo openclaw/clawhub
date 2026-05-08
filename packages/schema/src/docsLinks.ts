@@ -9,6 +9,9 @@ export const DocsLinks = {
   clawhub: {
     acceptableUsage: openClawDocsUrl("clawhub/acceptable-usage"),
     publishing: openClawDocsUrl("clawhub/publishing"),
+    packageScopeFaq: openClawDocsUrl(
+      "clawhub/publishing#why-does-the-package-scope-need-to-match-the-selected-owner",
+    ),
   },
   openclaw: {
     pluginPackageMetadata: openClawDocsUrl("plugins/sdk-setup#package-metadata"),

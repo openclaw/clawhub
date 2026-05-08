@@ -9,7 +9,7 @@ read_when:
 
 Base URL: `https://clawhub.ai` (default).
 
-All v1 paths are under `/api/v1/...` and implemented by Convex HTTP routes (`convex/http.ts`).
+All v1 paths are under `/api/v1/...`.
 Legacy `/api/...` and `/api/cli/...` remain for compatibility (see `DEPRECATIONS.md`).
 OpenAPI: `/api/v1/openapi.json`.
 
@@ -17,9 +17,9 @@ OpenAPI: `/api/v1/openapi.json`.
 
 Third-party directories may use the public read endpoints to list or search ClawHub skills. Please cache results, honor `429`/`Retry-After`, link users back to the canonical ClawHub listing (`https://clawhub.ai/<owner>/<slug>`), and avoid implying ClawHub endorsement of the third-party site. Do not attempt to mirror hidden, private, or moderation-blocked content outside the public API surface.
 
-Web slug shortcuts resolve across registry families. See `docs/slug-routing.md`
-for the route precedence, collision policy, and official OpenClaw extension
-alias contract.
+Web slug shortcuts resolve across registry families, but API clients should use
+the canonical URLs returned by read endpoints instead of reconstructing route
+precedence.
 
 ## Rate limits
 
@@ -74,9 +74,8 @@ Client guidance:
 IP source:
 
 - Uses `cf-connecting-ip` (Cloudflare) for client IP by default.
-- Set `TRUST_FORWARDED_IPS=true` to opt in to `x-forwarded-for`, `x-real-ip`, or `fly-client-ip` (non-Cloudflare deployments).
-- If no trusted client IP is available, anonymous download requests use an endpoint-scoped fallback bucket instead of one global `ip:unknown` bucket. Anonymous read/write requests still use the shared unknown bucket so missing-IP deployments remain visible and conservative.
-- If you run behind a reverse proxy/load balancer, ensure real client IP headers are preserved and trusted correctly, or rate limits may be too strict due to shared proxy IPs.
+- ClawHub uses trusted forwarding headers to identify client IPs at the edge.
+- If no trusted client IP is available, anonymous download requests use an endpoint-scoped fallback bucket instead of one global `ip:unknown` bucket. Anonymous read/write requests still use the shared unknown bucket so missing-IP routing remains visible and conservative.
 
 ## Public endpoints (no auth)
 

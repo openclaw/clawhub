@@ -1,36 +1,50 @@
 ---
-summary: "Documentation index + reading order."
+summary: "Public ClawHub docs index and reading order."
 read_when:
-  - New contributor onboarding
-  - Looking for the right doc
+  - Looking for the right public ClawHub doc
+  - Deciding whether content belongs in public docs or specs
 ---
 
 # Docs
 
-Reading order (new contributor):
+`docs/` is the publishable source for user-facing ClawHub pages that can be
+mirrored into the `ClawHub` tab on `docs.openclaw.ai`.
 
-1. `README.md` (repo root): run locally.
-2. `docs/quickstart.md`: end-to-end: search → install → publish → sync.
-3. `docs/architecture.md`: how the pieces fit (TanStack Start + Convex + CLI).
-4. `docs/skill-format.md`: what a “skill” is on disk + on the registry.
-5. `docs/publishing.md`: owner-scoped skill/plugin publishing flow.
-6. `docs/cli.md`: CLI reference (flags, config, lockfiles, sync rules).
-7. `docs/http-api.md`: HTTP endpoints used by the CLI + public API.
-8. `docs/auth.md`: GitHub OAuth + API tokens + CLI loopback login.
-9. `docs/deploy.md`: Convex + Vercel deployment + rewrites.
-10. `docs/troubleshooting.md`: common failure modes.
+Keep product, CLI, publisher, API, policy, security, and troubleshooting docs
+here. These pages should explain how people use ClawHub: discover, install,
+publish, inspect, report, moderate, and integrate with the registry.
 
-Feature/ops docs (already present):
+Use `specs/` for repository setup, production deploy runbooks, implementation
+plans, design rationale, regression notes, maintainer validation records, and
+internal subsystem intent. If a page tells someone how to run or deploy the
+ClawHub project itself, it belongs in `specs/`, not in the public OpenClaw docs
+tab.
 
-- `docs/spec.md`: product + implementation spec (data model + flows).
-- `docs/security.md`: moderation, reporting, bans, upload gating.
-- `docs/telemetry.md`: what `clawhub sync` reports; opt-out.
-- `docs/webhook.md`: Discord webhook events/payload.
-- `docs/diffing.md`: version-to-version diff UI spec.
-- `docs/manual-testing.md`: CLI smoke scripts.
-- `docs/slug-routing.md`: skill/plugin slug redirects + package URL contract.
-- `docs/publishing.md`: user-facing publish flow, owner scopes, and review state.
+Reading order:
 
-Docs tooling:
+1. `docs/clawhub.md`: public overview for discovery, install, publish, and trust.
+2. `docs/quickstart.md`: product quickstart for users and publishers.
+3. `docs/how-it-works.md`: listings, versions, installs, publishing, scans, and API access.
+4. `docs/publishing.md`: owner-scoped skill/plugin publishing flow.
+5. `docs/cli.md`: ClawHub CLI reference.
+6. `docs/skill-format.md`: skill bundle metadata and package shape.
+7. `docs/soul-format.md`: SOUL.md bundle format.
+8. `docs/auth.md`: GitHub OAuth, API tokens, and CLI login.
+9. `docs/telemetry.md`: what `clawhub sync` reports and how to opt out.
+10. `docs/troubleshooting.md`: user-facing CLI, install, publish, sync, update, and API fixes.
 
-- `docs/mintlify.md`: publish these docs with Mintlify.
+Policy, API, and trust docs:
+
+- `docs/acceptable-usage.md`: marketplace policy and enforcement boundaries.
+- `docs/api.md`: public REST API overview.
+- `docs/http-api.md`: detailed HTTP API reference.
+- `docs/security.md`: moderation, reporting, bans, upload gating, and scan outcomes.
+
+Maintainer records:
+
+- `specs/README.md`: index for specs, plans, deployment runbooks, webhook notes, regression notes, and design records.
+
+Publish flow:
+
+- Changes under `docs/` dispatch the OpenClaw docs sync workflow, which mirrors this directory into the `ClawHub` tab on `docs.openclaw.ai`.
+- `specs/` is intentionally not mirrored.

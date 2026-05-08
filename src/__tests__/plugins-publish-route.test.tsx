@@ -353,7 +353,7 @@ describe("plugins publish route", () => {
     });
 
     const docsLink = screen.getByRole("link", { name: /Learn how publishing works/i });
-    expect(docsLink.getAttribute("href")).toBe(DocsLinks.clawhub.publishing);
+    expect(docsLink.getAttribute("href")).toBe(DocsLinks.clawhub.packageScopeFaq);
     expect(docsLink.getAttribute("target")).toBe("_blank");
     expect(docsLink.getAttribute("rel")).toBe("noopener noreferrer");
     expect(screen.getByRole("button", { name: "Publish" }).getAttribute("disabled")).not.toBeNull();

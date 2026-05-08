@@ -243,7 +243,7 @@ export function PublishPluginRoute() {
               <Badge variant="accent">
                 <span>{ownerScopeError}</span>
                 <a
-                  href={DocsLinks.clawhub.publishing}
+                  href={DocsLinks.clawhub.packageScopeFaq}
                   target="_blank"
                   rel="noopener noreferrer"
                   className="underline underline-offset-2"

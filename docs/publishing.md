@@ -65,7 +65,9 @@ not control.
 
 If validation fails, the release is not created.
 
-## Common Scope Error
+## FAQ
+
+### Why does the package scope need to match the selected owner?
 
 If the package scope and selected owner do not match, ClawHub rejects the
 publish:
@@ -78,3 +80,6 @@ Publish as "@openclaw" or rename this package to "@vintageayu/dronzer".
 To fix it, either choose the owner named by the package scope, or rename the
 package so the scope matches the owner you can publish as.
 
+This protects org namespaces. A package named `@openclaw/dronzer` claims the
+`@openclaw` namespace, so only publishers with access to the `@openclaw` owner
+can publish it.

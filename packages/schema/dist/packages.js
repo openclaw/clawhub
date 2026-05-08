@@ -18,7 +18,7 @@ export function getPackageScopeOwnerMismatch(name, ownerHandle) {
         scope,
         selectedOwner,
         suggestedName: `@${selectedOwner}/${packageSlug}`,
-        message: `Package scope "@${scope}" must match selected owner "@${selectedOwner}". Publish as "@${scope}" or rename this package to "@${selectedOwner}/${packageSlug}". Learn how publishing works: ${DocsLinks.clawhub.publishing}`,
+        message: `Package scope "@${scope}" must match selected owner "@${selectedOwner}". Publish as "@${scope}" or rename this package to "@${selectedOwner}/${packageSlug}". Learn how publishing works: ${DocsLinks.clawhub.packageScopeFaq}`,
     };
 }
 export const PackageFamilySchema = type('"skill"|"code-plugin"|"bundle-plugin"');
