@@ -8,8 +8,8 @@ export function openClawDocsUrl(path: string) {
 export const DocsLinks = {
   clawhub: {
     acceptableUsage: openClawDocsUrl("clawhub/acceptable-usage"),
-    publishing: openClawDocsUrl("publishing"),
-    packageScopeFaq: openClawDocsUrl("publishing#package-scope-must-match-selected-owner"),
+    publishing: openClawDocsUrl("clawhub/publishing"),
+    packageScopeFaq: openClawDocsUrl("clawhub/publishing#package-scope-must-match-selected-owner"),
   },
   openclaw: {
     pluginPackageMetadata: openClawDocsUrl("plugins/sdk-setup#package-metadata"),

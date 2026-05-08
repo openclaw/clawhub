@@ -90,8 +90,8 @@ describe("clawhub-schema", () => {
   });
 
   it("builds OpenClaw docs URLs from normalized paths", () => {
-    expect(openClawDocsUrl("/publishing")).toBe(DocsLinks.clawhub.publishing);
-    expect(openClawDocsUrl("publishing#package-scope-must-match-selected-owner")).toBe(
+    expect(openClawDocsUrl("/clawhub/publishing")).toBe(DocsLinks.clawhub.publishing);
+    expect(openClawDocsUrl("clawhub/publishing#package-scope-must-match-selected-owner")).toBe(
       DocsLinks.clawhub.packageScopeFaq,
     );
     expect(openClawDocsUrl("plugins/sdk-setup#package-metadata")).toBe(
