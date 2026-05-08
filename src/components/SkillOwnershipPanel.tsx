@@ -5,9 +5,8 @@ import { toast } from "sonner";
 import { api } from "../../convex/_generated/api";
 import type { Id } from "../../convex/_generated/dataModel";
 import { getUserFacingConvexError } from "../lib/convexError";
-import { buildSkillHref } from "./skillDetailUtils";
+import { SettingsActionRow } from "./settings/SettingsActionRow";
 import { Button } from "./ui/button";
-import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "./ui/card";
 import {
   Dialog,
   DialogContent,
@@ -17,7 +16,6 @@ import {
   DialogTitle,
 } from "./ui/dialog";
 import { Input } from "./ui/input";
-import { Label } from "./ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "./ui/select";
 
 type OwnedSkillOption = {
@@ -32,10 +30,28 @@ type SkillOwnershipPanelProps = {
   ownerHandle: string | null;
   ownerId: Id<"users"> | Id<"publishers"> | null;
   ownedSkills: OwnedSkillOption[];
+  rescanState?: {
+    maxRequests: number;
+    requestCount: number;
+    remainingRequests: number;
+    canRequest: boolean;
+    inProgressRequest: { status: string } | null;
+  } | null;
+  onRequestRescan?: (() => Promise<void>) | null;
 };
 
 function formatMutationError(error: unknown) {
   return getUserFacingConvexError(error, "Request failed.");
+}
+
+function rescanDisabledReason(state: SkillOwnershipPanelProps["rescanState"]) {
+  if (!state) return null;
+  if (state.inProgressRequest) return "A rescan is already in progress.";
+  if (state.remainingRequests <= 0) {
+    return `Rescan limit reached (${state.requestCount}/${state.maxRequests}).`;
+  }
+  if (!state.canRequest) return "This release is not eligible for another rescan.";
+  return null;
 }
 
 export function SkillOwnershipPanel({
@@ -44,6 +60,8 @@ export function SkillOwnershipPanel({
   ownerHandle,
   ownerId,
   ownedSkills,
+  rescanState,
+  onRequestRescan,
 }: SkillOwnershipPanelProps) {
   const navigate = useNavigate();
   const renameOwnedSkill = useMutation(api.skills.renameOwnedSkill);
@@ -55,8 +73,25 @@ export function SkillOwnershipPanel({
   const [error, setError] = useState<string | null>(null);
   const [confirmRename, setConfirmRename] = useState(false);
   const [confirmMerge, setConfirmMerge] = useState(false);
+  const [isRequestingRescan, setIsRequestingRescan] = useState(false);
 
-  const ownerHref = (nextSlug: string) => buildSkillHref(ownerHandle, ownerId, nextSlug);
+  const rescanButtonDisabledReason = rescanDisabledReason(rescanState);
+  const isScanInProgress = Boolean(rescanState?.inProgressRequest);
+  const rescanButtonLabel = isScanInProgress
+    ? "Scanning"
+    : isRequestingRescan
+      ? "Requesting..."
+      : "Rescan";
+
+  async function handleRequestRescan() {
+    if (!onRequestRescan || rescanButtonDisabledReason || isRequestingRescan) return;
+    setIsRequestingRescan(true);
+    try {
+      await onRequestRescan();
+    } finally {
+      setIsRequestingRescan(false);
+    }
+  }
 
   const handleRename = async () => {
     const nextSlug = renameSlug.trim().toLowerCase();
@@ -109,53 +144,76 @@ export function SkillOwnershipPanel({
 
   return (
     <>
-      <Card
-        className="border-[color:var(--border-ui)]/30 bg-[color:var(--surface-muted)]/50"
-        data-skill-id={skillId}
-      >
-        <CardHeader>
-          <CardTitle className="text-base">Owner tools</CardTitle>
-          <CardDescription>
-            Rename the canonical slug or fold this listing into another one you own. Old slugs stay
-            as redirects and stop polluting search/list views.
-          </CardDescription>
-        </CardHeader>
-        <CardContent>
-          <div className="grid gap-4 sm:grid-cols-2">
-            {/* Rename */}
-            <div className="flex flex-col gap-2">
-              <Label>Rename slug</Label>
+      <div className="skill-admin-panel" data-skill-id={skillId}>
+        <SettingsActionRow
+          title="Publish a new version"
+          description="Upload a replacement release for this skill. New releases get a fresh scan."
+        >
+          <Button asChild variant="outline">
+            <a href={`/publish-skill?updateSlug=${encodeURIComponent(slug)}`}>New Version</a>
+          </Button>
+        </SettingsActionRow>
+
+        <SettingsActionRow
+          title="Request security rescan"
+          description="Ask ClawHub to re-run the scanners for the latest release."
+        >
+          {onRequestRescan ? (
+            <Button
+              type="button"
+              variant="outline"
+              loading={isRequestingRescan || isScanInProgress}
+              disabled={Boolean(rescanButtonDisabledReason)}
+              title={rescanButtonDisabledReason ?? undefined}
+              onClick={() => void handleRequestRescan()}
+            >
+              {rescanButtonLabel}
+            </Button>
+          ) : null}
+        </SettingsActionRow>
+
+        <SettingsActionRow
+          title="Rename slug"
+          description="Change the canonical URL slug. Old slugs stay as redirects."
+        >
+          <div className="skill-admin-row-controls">
+            <div className="skill-admin-control-line">
               <Input
+                aria-label="New slug"
                 value={renameSlug}
                 onChange={(event) => setRenameSlug(event.target.value)}
                 placeholder="new-slug"
                 autoComplete="off"
                 spellCheck={false}
               />
-              <span className="text-xs text-[color:var(--ink-soft)]">
-                Current page: {ownerHref(slug)}
-              </span>
-            </div>
-            <div className="flex flex-col gap-2">
-              <Label>Rename action</Label>
               <Button
                 variant="outline"
                 onClick={() => setConfirmRename(true)}
                 disabled={isSubmitting || renameSlug.trim().toLowerCase() === slug}
               >
-                Rename and redirect
+                Update
               </Button>
             </div>
+          </div>
+        </SettingsActionRow>
 
-            {/* Merge */}
-            <div className="flex flex-col gap-2">
-              <Label>Merge into</Label>
+        <SettingsActionRow
+          title="Merge listing"
+          description={
+            <p>
+              Fold this listing into another skill you own. The target remains live and this row is
+              hidden from search and browse.
+            </p>
+          }
+        >
+          <div className="skill-admin-row-controls">
+            <div className="skill-admin-control-line">
               <Select
                 value={ownedSkills.length === 0 ? "__none__" : mergeTargetSlug}
                 onValueChange={setMergeTargetSlug}
                 disabled={ownedSkills.length === 0 || isSubmitting}
               >
-                <SelectTrigger>
+                <SelectTrigger aria-label="Merge into">
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
@@ -169,28 +227,21 @@ export function SkillOwnershipPanel({
                   ))}
                 </SelectContent>
               </Select>
-            </div>
-            <div className="flex flex-col gap-2">
-              <Label>Merge action</Label>
               <Button
                 variant="outline"
                 onClick={() => setConfirmMerge(true)}
                 disabled={isSubmitting || !mergeTargetSlug}
               >
-                Merge into target
+                Update
               </Button>
             </div>
           </div>
+        </SettingsActionRow>
 
-          {error ? (
-            <p className="mt-3 text-sm font-medium text-red-600 dark:text-red-400">{error}</p>
-          ) : null}
-          <p className="mt-3 text-xs text-[color:var(--ink-soft)]">
-            Merge keeps the target live and hides this row. Versions and stats stay on the original
-            records for now.
-          </p>
-        </CardContent>
-      </Card>
+        {error ? (
+          <p className="text-sm font-medium text-red-600 dark:text-red-400">{error}</p>
+        ) : null}
+      </div>
 
       {/* Rename confirmation dialog */}
       <Dialog open={confirmRename} onOpenChange={setConfirmRename}>

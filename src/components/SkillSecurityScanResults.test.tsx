@@ -234,7 +234,7 @@ describe("SecurityScanResults static guidance", () => {
 
     expect(screen.getByRole("heading", { name: "Todo Guard" })).toBeTruthy();
     expect(screen.getAllByText("Review").length).toBeGreaterThan(0);
-    expect(screen.getByText(/ClawScan verdict for this skill/i)).toBeTruthy();
+    expect(screen.getByText(/Audited by ClawScan with a Review result/i)).toBeTruthy();
     expect(screen.getByRole("heading", { name: "Analysis" })).toBeTruthy();
     expect(screen.getByText(/Collects workspace secrets/i)).toBeTruthy();
     expect(screen.getByRole("heading", { name: "Findings (2)" })).toBeTruthy();
@@ -262,14 +262,14 @@ describe("SecurityScanResults static guidance", () => {
       />,
     );
 
-    expect(screen.getByRole("heading", { name: "ClawScan security" })).toBeTruthy();
+    expect(screen.getByRole("heading", { name: "Plugin Guard" })).toBeTruthy();
+    expect(screen.getByText(/Audited by ClawScan with a Benign result/i)).toBeTruthy();
     expect(screen.getByText("Legacy plugin analysis summary.")).toBeTruthy();
     expect(screen.getByText("Legacy plugin guidance.")).toBeTruthy();
     expect(screen.getByText("[legacy.rule] expected: Legacy finding text.")).toBeTruthy();
     expect(screen.getByText("Review Dimensions")).toBeTruthy();
     expect(screen.getByText("Purpose & Capability")).toBeTruthy();
     expect(screen.getByText("Legacy dimension detail.")).toBeTruthy();
-    expect(screen.queryByRole("heading", { name: "Plugin Guard" })).toBeNull();
     expect(screen.queryByRole("heading", { name: "Scan Metadata" })).toBeNull();
   });
 
@@ -288,11 +288,11 @@ describe("SecurityScanResults static guidance", () => {
       />,
     );
 
-    expect(screen.getByRole("heading", { name: "ClawScan security" })).toBeTruthy();
+    expect(screen.getByRole("heading", { name: "Legacy Skill" })).toBeTruthy();
+    expect(screen.getByText(/Audited by ClawScan with a Benign result/i)).toBeTruthy();
     expect(screen.getByText("Legacy plugin analysis summary.")).toBeTruthy();
     expect(screen.getByText("Review Dimensions")).toBeTruthy();
     expect(screen.getByText("Purpose & Capability")).toBeTruthy();
-    expect(screen.queryByRole("heading", { name: "Legacy Skill" })).toBeNull();
     expect(screen.queryByRole("heading", { name: "Scan Metadata" })).toBeNull();
   });
 
@@ -310,7 +310,8 @@ describe("SecurityScanResults static guidance", () => {
       />,
     );
 
-    expect(screen.getByRole("heading", { name: "ClawScan security" })).toBeTruthy();
+    expect(screen.getByRole("heading", { name: "Pending Skill" })).toBeTruthy();
+    expect(screen.getByText(/ClawScan audit pending with a Pending result/i)).toBeTruthy();
     expect(screen.getAllByText("Pending").length).toBeGreaterThan(0);
     expect(screen.getByText("No ClawScan analysis has been recorded yet.")).toBeTruthy();
     expect(screen.queryByText("Review Dimensions")).toBeNull();

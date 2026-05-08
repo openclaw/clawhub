@@ -1231,6 +1231,9 @@ type DashboardSkillListItem = {
   slug: string;
   displayName: string;
   summary?: string;
+  ownerPath: string;
+  detailHref: string;
+  settingsHref: string;
   ownerUserId: Id<"users">;
   ownerPublisherId?: Id<"publishers">;
   canonicalSkillId?: Id<"skills">;
@@ -1493,7 +1496,17 @@ async function toDashboardSkillListItem(
   ctx: QueryCtx,
   skill: Doc<"skills"> & { badges?: Doc<"skills">["badges"] },
 ): Promise<DashboardSkillListItem> {
-  const latestVersion = skill.latestVersionId ? await ctx.db.get(skill.latestVersionId) : null;
+  const [latestVersion, ownerPublisher] = await Promise.all([
+    skill.latestVersionId ? ctx.db.get(skill.latestVersionId) : null,
+    getOwnerPublisher(ctx, {
+      ownerPublisherId: skill.ownerPublisherId,
+      ownerUserId: skill.ownerUserId,
+    }),
+  ]);
+  const publicOwner = toPublicPublisher(ownerPublisher);
+  const ownerPath = publicOwner?.handle ?? String(publicOwner?._id ?? skill.ownerUserId);
+  const encodedOwnerPath = encodeURIComponent(ownerPath);
+  const encodedSlug = encodeURIComponent(skill.slug);
   const stats = {
     ...skill.stats,
     downloads: readCanonicalStat(skill, "downloads"),
@@ -1508,6 +1521,9 @@ async function toDashboardSkillListItem(
     slug: skill.slug,
     displayName: skill.displayName,
     summary: skill.summary,
+    ownerPath,
+    detailHref: `/${encodedOwnerPath}/${encodedSlug}`,
+    settingsHref: `/${encodedOwnerPath}/${encodedSlug}/settings`,
     ownerUserId: skill.ownerUserId,
     ownerPublisherId: skill.ownerPublisherId,
     canonicalSkillId: skill.canonicalSkillId,
@@ -7196,18 +7212,24 @@ export const changeOwner = mutation({
     if (!nextOwner || nextOwner.deletedAt || nextOwner.deactivatedAt)
       throw new Error("User not found");
 
-    if (skill.ownerUserId === args.ownerUserId) return;
+    const nextOwnerPublisher = await ensurePersonalPublisherForUser(ctx, nextOwner);
+    if (!nextOwnerPublisher) throw new Error("Owner publisher not found");
+    if (skill.ownerUserId === args.ownerUserId && skill.ownerPublisherId === nextOwnerPublisher._id)
+      return;
 
     const now = Date.now();
-    await ctx.db.patch(skill._id, {
+    const nextSkill = {
+      ...skill,
       ownerUserId: args.ownerUserId,
+      ownerPublisherId: nextOwnerPublisher._id,
+    };
+    await ctx.db.patch(skill._id, {
+      ownerUserId: nextSkill.ownerUserId,
+      ownerPublisherId: nextSkill.ownerPublisherId,
       lastReviewedAt: now,
       updatedAt: now,
     });
-    await adjustUserSkillStatsForSkillChange(ctx, skill, {
-      ...skill,
-      ownerUserId: args.ownerUserId,
-    });
+    await adjustUserSkillStatsForSkillChange(ctx, skill, nextSkill);
 
     const embeddings = await listSkillEmbeddingsForSkill(ctx, skill._id);
     for (const embedding of embeddings) {
@@ -7222,7 +7244,12 @@ export const changeOwner = mutation({
       action: "skill.owner.change",
       targetType: "skill",
       targetId: skill._id,
-      metadata: { from: skill.ownerUserId, to: args.ownerUserId },
+      metadata: {
+        from: skill.ownerUserId,
+        to: args.ownerUserId,
+        fromPublisherId: skill.ownerPublisherId ?? null,
+        toPublisherId: nextOwnerPublisher._id,
+      },
       createdAt: now,
     });
   },

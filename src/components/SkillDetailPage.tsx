@@ -1,13 +1,14 @@
 import { useNavigate } from "@tanstack/react-router";
 import type { ClawdisSkillMetadata } from "clawhub-schema";
 import { useAction, useMutation, useQuery } from "convex/react";
+import { ArrowLeft } from "lucide-react";
 import type { ComponentProps } from "react";
 import { useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
 import { api } from "../../convex/_generated/api";
 import type { Doc, Id } from "../../convex/_generated/dataModel";
 import { getUserFacingConvexError } from "../lib/convexError";
-import { canManageSkill, isModerator } from "../lib/roles";
+import { canManageSkill, isAdmin, isModerator } from "../lib/roles";
 import type { SkillBySlugResult, SkillPageInitialData } from "../lib/skillPage";
 import { useAuthStatus } from "../lib/useAuthStatus";
 import { ClientOnly } from "./ClientOnly";
@@ -26,10 +27,7 @@ import {
 import { SkillHeader } from "./SkillHeader";
 import { SkillOwnershipPanel } from "./SkillOwnershipPanel";
 import { SkillReportDialog } from "./SkillReportDialog";
-import { Badge } from "./ui/badge";
-import { Button } from "./ui/button";
-import { Card, CardContent, CardHeader, CardTitle } from "./ui/card";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "./ui/select";
+import { Card } from "./ui/card";
 
 type SkillDetailPageProps = {
   slug: string;
@@ -42,6 +40,12 @@ type SkillDetailPageProps = {
 type SkillFile = Doc<"skillVersions">["files"][number];
 
 const SHOW_SKILL_COMMENTS = false;
+
+function tabFromHash(hash: string): DetailTab {
+  const normalized = hash.replace(/^#/, "").toLowerCase();
+  if (normalized === "files") return "files";
+  return "readme";
+}
 
 function formatReportError(error: unknown) {
   if (error && typeof error === "object" && "data" in error) {
@@ -93,8 +97,6 @@ export function SkillDetailPage({
 
   const toggleStar = useMutation(api.stars.toggle);
   const reportSkill = useMutation(api.skills.report);
-  const updateTags = useMutation(api.skills.updateTags);
-  const deleteTags = useMutation(api.skills.deleteTags);
   const requestRescan = useMutation(api.skills.requestRescan);
   const getReadme = useAction(api.skills.getReadme);
   const myPublishers = useQuery(api.publishers.listMine) as
@@ -106,10 +108,7 @@ export function SkillDetailPage({
   const [loadedReadmeVersionId, setLoadedReadmeVersionId] = useState<Id<"skillVersions"> | null>(
     initialResult?.latestVersion?._id ?? null,
   );
-  const [tagName, setTagName] = useState("latest");
-  const [tagVersionId, setTagVersionId] = useState<Id<"skillVersions"> | "">("");
   const [activeTab, setActiveTab] = useState<DetailTab>("readme");
-  const [shouldPrefetchCompare, setShouldPrefetchCompare] = useState(false);
   const [isReportDialogOpen, setIsReportDialogOpen] = useState(false);
   const [reportReason, setReportReason] = useState("");
   const [reportError, setReportError] = useState<string | null>(null);
@@ -119,18 +118,6 @@ export function SkillDetailPage({
   const skill = result?.skill;
   const owner = result?.owner ?? null;
   const latestVersion = result?.latestVersion ?? null;
-
-  const versions = useQuery(
-    api.skills.listVersions,
-    skill ? { skillId: skill._id, limit: 50 } : "skip",
-  ) as Doc<"skillVersions">[] | undefined;
-  const shouldLoadDiffVersions = Boolean(
-    skill && (activeTab === "compare" || shouldPrefetchCompare),
-  );
-  const diffVersions = useQuery(
-    api.skills.listVersions,
-    shouldLoadDiffVersions && skill ? { skillId: skill._id, limit: 200 } : "skip",
-  ) as Doc<"skillVersions">[] | undefined;
 
   const isStarred = useQuery(
     api.stars.isStarred,
@@ -150,19 +137,20 @@ export function SkillDetailPage({
   const isOwner =
     Boolean(me && skill && me._id === skill.ownerUserId) ||
     Boolean(skill?.ownerPublisherId && myPublisherIds.has(skill.ownerPublisherId));
+  const canAccessSettings = isOwner || isAdmin(me);
   const ownedSkills = useQuery(
     api.skills.list,
-    isOwner && skill
+    canAccessSettings && skill
       ? skill.ownerPublisherId
         ? { ownerPublisherId: skill.ownerPublisherId, limit: 100 }
         : { ownerUserId: skill.ownerUserId, limit: 100 }
       : "skip",
   ) as Array<{ _id: Id<"skills">; slug: string; displayName: string }> | undefined;
-  const canViewOwnerRescanState = isOwner || me?.role === "admin";
+  const canViewOwnerRescanState = canAccessSettings;
   const rescanState = useQuery(
     api.skills.getRescanState,
     canViewOwnerRescanState && skill ? { skillId: skill._id } : "skip",
-  ) as ComponentProps<typeof DetailSecuritySummary>["rescanState"] | undefined;
+  ) as ComponentProps<typeof SkillOwnershipPanel>["rescanState"] | undefined;
 
   const ownerHandle = owner?.handle ?? null;
   const ownerParam = ownerHandle?.trim().toLowerCase() || (owner?._id ? String(owner._id) : null);
@@ -222,9 +210,7 @@ export function SkillDetailPage({
           : "Hidden from public view."
       : null);
 
-  const versionById = new Map<Id<"skillVersions">, Doc<"skillVersions">>(
-    (diffVersions ?? versions ?? []).map((version) => [version._id, version]),
-  );
+  const latestVersionId = latestVersion?._id ?? null;
 
   const clawdis = (latestVersion?.parsed as { clawdis?: ClawdisSkillMetadata } | undefined)
     ?.clawdis;
@@ -254,39 +240,45 @@ export function SkillDetailPage({
   }, [navigate, ownerParam, slug, wantsCanonicalRedirect]);
 
   useEffect(() => {
+    if (typeof window === "undefined") return undefined;
+    const syncTabFromHash = () => {
+      setActiveTab(tabFromHash(window.location.hash));
+    };
+    syncTabFromHash();
+    window.addEventListener("hashchange", syncTabFromHash);
+    return () => {
+      window.removeEventListener("hashchange", syncTabFromHash);
+    };
+  }, []);
+
+  useEffect(() => {
     let cancelled = false;
     if (
-      latestVersion &&
-      !(loadedReadmeVersionId === latestVersion._id && (readme !== null || readmeError !== null))
+      latestVersionId &&
+      !(loadedReadmeVersionId === latestVersionId && (readme !== null || readmeError !== null))
     ) {
       setReadme(null);
       setReadmeError(null);
-      setLoadedReadmeVersionId(latestVersion._id);
+      setLoadedReadmeVersionId(latestVersionId);
 
-      void getReadme({ versionId: latestVersion._id })
+      void getReadme({ versionId: latestVersionId })
         .then((data) => {
           if (cancelled) return;
           setReadme(data.text);
-          setLoadedReadmeVersionId(latestVersion._id);
+          setLoadedReadmeVersionId(latestVersionId);
         })
         .catch((error) => {
           if (cancelled) return;
           setReadmeError(error instanceof Error ? error.message : "Failed to load README");
           setReadme(null);
-          setLoadedReadmeVersionId(latestVersion._id);
+          setLoadedReadmeVersionId(latestVersionId);
         });
     }
 
     return () => {
       cancelled = true;
     };
-  }, [getReadme, latestVersion, loadedReadmeVersionId, readme, readmeError]);
-
-  useEffect(() => {
-    if (!tagVersionId && latestVersion) {
-      setTagVersionId(latestVersion._id);
-    }
-  }, [latestVersion, tagVersionId]);
+  }, [getReadme, latestVersionId, loadedReadmeVersionId, readme, readmeError]);
 
   const closeReportDialog = () => {
     setIsReportDialogOpen(false);
@@ -300,24 +292,6 @@ export function SkillDetailPage({
     setReportError(null);
     setIsSubmittingReport(false);
     setIsReportDialogOpen(true);
-  };
-
-  const submitTag = () => {
-    if (!skill) return;
-    if (!tagName.trim() || !tagVersionId) return;
-    void updateTags({
-      skillId: skill._id,
-      tags: [{ tag: tagName.trim(), versionId: tagVersionId }],
-    });
-  };
-
-  const deleteTag = (tag: string) => {
-    if (!skill) return;
-    if (!window.confirm(`Delete tag "${tag}"?`)) return;
-    void deleteTags({
-      skillId: skill._id,
-      tags: [tag],
-    });
   };
 
   const submitReport = async () => {
@@ -381,16 +355,6 @@ export function SkillDetailPage({
     );
   }
 
-  const tagEntries = Object.entries(skill.tags ?? {}) as Array<[string, Id<"skillVersions">]>;
-  const latestTagVersionId = latestVersion?._id ?? skill.latestVersionId ?? null;
-  const currentTagEntries =
-    latestTagVersionId === null
-      ? tagEntries
-      : tagEntries.filter(([, versionId]) => versionId === latestTagVersionId);
-  const historicalTagEntries =
-    latestTagVersionId === null
-      ? []
-      : tagEntries.filter(([, versionId]) => versionId !== latestTagVersionId);
   const securitySummary = latestVersion ? (
     <DetailSecuritySummary
       scannerBasePath={`/${encodeURIComponent(
@@ -402,12 +366,52 @@ export function SkillDetailPage({
       staticScan={latestVersion.staticScan ?? null}
       suppressScanResults={suppressVersionScanResults}
       suppressedMessage={scanResultsSuppressedMessage}
-      rescanState={rescanState ?? null}
-      onRequestRescan={canViewOwnerRescanState ? submitRescanRequest : null}
     />
   ) : null;
-  const detailPath = `/${encodeURIComponent(ownerParam ?? ownerHandle ?? "unknown")}/${encodeURIComponent(skill.slug)}`;
-  const settingsHref = canManage ? `${detailPath}/settings` : null;
+  const settingsPanel =
+    canAccessSettings && skill ? (
+      <SkillOwnershipPanel
+        skillId={skill._id}
+        slug={skill.slug}
+        ownerHandle={ownerHandle}
+        ownerId={owner?._id ?? null}
+        ownedSkills={(ownedSkills ?? []).filter((entry) => entry._id !== skill._id)}
+        rescanState={rescanState ?? null}
+        onRequestRescan={canViewOwnerRescanState ? submitRescanRequest : null}
+      />
+    ) : null;
+
+  if (mode === "settings") {
+    const detailHref = buildSkillHref(ownerHandle, owner?._id ?? null, skill.slug);
+
+    return (
+      <main className="section detail-page-section">
+        <DetailPageShell className="skill-settings-page">
+          <div className="skill-settings-page-header">
+            <a href={detailHref} className="skill-settings-back-link">
+              <ArrowLeft size={16} aria-hidden="true" />
+              Back to {skill.displayName}
+            </a>
+            <div>
+              <h1 className="skill-settings-page-title">Skill settings</h1>
+            </div>
+          </div>
+          <DetailBody>
+            {settingsPanel ? (
+              settingsPanel
+            ) : (
+              <Card>
+                <h2 className="section-title text-[1.2rem] m-0">Settings unavailable</h2>
+                <p className="section-subtitle mt-3 mb-0">
+                  Only the skill owner can manage these settings.
+                </p>
+              </Card>
+            )}
+          </DetailBody>
+        </DetailPageShell>
+      </main>
+    );
+  }
 
   return (
     <main className="section detail-page-section">
@@ -423,7 +427,7 @@ export function SkillDetailPage({
           isStaff={isStaff}
           isStarred={isStarred}
           onToggleStar={() => void toggleStar({ skillId: skill._id })}
-          onOpenReport={openReportDialog}
+          onOpenReport={isAuthenticated ? openReportDialog : null}
           forkOf={forkOf}
           forkOfLabel={forkOfLabel}
           forkOfHref={forkOfHref}
@@ -442,180 +446,53 @@ export function SkillDetailPage({
           clawdis={clawdis}
           osLabels={osLabels}
           priorityContent={securitySummary}
-          settingsHref={settingsHref}
+          settingsHref={
+            canAccessSettings
+              ? `${buildSkillHref(ownerHandle, owner?._id ?? null, skill.slug)}/settings`
+              : null
+          }
         >
-          {mode === "detail" ? (
-            <>
-              {nixSnippet ? (
-                <Card>
-                  <h3 className="m-0 text-[length:var(--text-base)] font-semibold">
-                    Install via Nix
-                  </h3>
-                  <pre className="hero-install-code mt-2">{nixSnippet}</pre>
-                </Card>
-              ) : null}
+          {nixSnippet ? (
+            <Card>
+              <h3 className="m-0 text-[length:var(--text-base)] font-semibold">Install via Nix</h3>
+              <pre className="hero-install-code mt-2">{nixSnippet}</pre>
+            </Card>
+          ) : null}
 
-              {configExample ? (
-                <Card>
-                  <h3 className="m-0 text-[length:var(--text-base)] font-semibold">
-                    Config example
-                  </h3>
-                  <pre className="hero-install-code mt-2">{configExample}</pre>
-                </Card>
-              ) : null}
+          {configExample ? (
+            <Card>
+              <h3 className="m-0 text-[length:var(--text-base)] font-semibold">Config example</h3>
+              <pre className="hero-install-code mt-2">{configExample}</pre>
+            </Card>
+          ) : null}
 
-              <SkillDetailTabs
-                activeTab={activeTab}
-                setActiveTab={setActiveTab}
-                onCompareIntent={() => setShouldPrefetchCompare(true)}
-                readmeContent={readmeContent}
-                readmeError={readmeError}
-                latestFiles={latestFiles}
-                latestVersionId={latestVersion?._id ?? null}
-                skill={skill as Doc<"skills">}
-                diffVersions={diffVersions}
-                versions={versions}
-                nixPlugin={Boolean(nixPlugin)}
-                suppressVersionScanResults={suppressVersionScanResults}
-                scanResultsSuppressedMessage={scanResultsSuppressedMessage}
+          <SkillDetailTabs
+            activeTab={activeTab}
+            setActiveTab={setActiveTab}
+            readmeContent={readmeContent}
+            readmeError={readmeError}
+            latestFiles={latestFiles}
+            latestVersionId={latestVersion?._id ?? null}
+            skill={skill as Doc<"skills">}
+          />
+
+          {SHOW_SKILL_COMMENTS ? (
+            <ClientOnly
+              fallback={
+                <Card>
+                  <h2 className="section-title text-[1.2rem] m-0">Comments</h2>
+                  <p className="section-subtitle mt-3 mb-0">Loading comments...</p>
+                </Card>
+              }
+            >
+              <SkillCommentsPanel
+                skillId={skill._id}
+                isAuthenticated={isAuthenticated}
+                me={me ?? null}
               />
-
-              <Card className="skill-tag-card">
-                <CardHeader>
-                  <CardTitle>Version tags</CardTitle>
-                </CardHeader>
-                <CardContent>
-                  <div className="skill-tag-row">
-                    {currentTagEntries.length === 0 ? (
-                      <span className="section-subtitle m-0">No tags yet.</span>
-                    ) : (
-                      currentTagEntries.map(([tag, versionId]) => (
-                        <Badge key={tag}>
-                          {tag}
-                          <span className="tag-meta">
-                            v{versionById.get(versionId)?.version ?? versionId}
-                          </span>
-                          {canManage && tag !== "latest" ? (
-                            <button
-                              type="button"
-                              className="tag-delete"
-                              onClick={() => deleteTag(tag)}
-                              aria-label={`Delete tag ${tag}`}
-                              title={`Delete tag "${tag}"`}
-                            >
-                              x
-                            </button>
-                          ) : null}
-                        </Badge>
-                      ))
-                    )}
-                  </div>
-
-                  {canManage && historicalTagEntries.length > 0 ? (
-                    <div className="skill-tag-history">
-                      <div className="skill-tag-history-label">Historical tags</div>
-                      <div className="skill-tag-row">
-                        {historicalTagEntries.map(([tag, versionId]) => (
-                          <Badge key={tag}>
-                            {tag}
-                            <span className="tag-meta">
-                              v{versionById.get(versionId)?.version ?? versionId}
-                            </span>
-                            {tag !== "latest" ? (
-                              <button
-                                type="button"
-                                className="tag-delete"
-                                onClick={() => deleteTag(tag)}
-                                aria-label={`Delete tag ${tag}`}
-                                title={`Delete tag "${tag}"`}
-                              >
-                                x
-                              </button>
-                            ) : null}
-                          </Badge>
-                        ))}
-                      </div>
-                    </div>
-                  ) : null}
-
-                  {canManage ? (
-                    <form
-                      onSubmit={(event) => {
-                        event.preventDefault();
-                        submitTag();
-                      }}
-                      className="tag-form"
-                    >
-                      <input
-                        aria-label="Tag name"
-                        className="search-input"
-                        name="tagName"
-                        value={tagName}
-                        onChange={(event) => setTagName(event.target.value)}
-                        placeholder="latest..."
-                      />
-                      <Select
-                        name="tagVersion"
-                        value={tagVersionId ?? undefined}
-                        onValueChange={(value) => setTagVersionId(value as Id<"skillVersions">)}
-                      >
-                        <SelectTrigger aria-label="Tag version" className="search-input">
-                          <SelectValue />
-                        </SelectTrigger>
-                        <SelectContent>
-                          {(versions ?? []).map((version) => (
-                            <SelectItem key={version._id} value={version._id}>
-                              v{version.version}
-                            </SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
-                      <Button type="submit">Update Tag</Button>
-                    </form>
-                  ) : null}
-                </CardContent>
-              </Card>
-
-              {SHOW_SKILL_COMMENTS ? (
-                <ClientOnly
-                  fallback={
-                    <Card>
-                      <h2 className="section-title text-[1.2rem] m-0">Comments</h2>
-                      <p className="section-subtitle mt-3 mb-0">Loading comments...</p>
-                    </Card>
-                  }
-                >
-                  <SkillCommentsPanel
-                    skillId={skill._id}
-                    isAuthenticated={isAuthenticated}
-                    me={me ?? null}
-                  />
-                </ClientOnly>
-              ) : null}
-            </>
+            </ClientOnly>
           ) : null}
         </SkillHeader>
-
-        {mode === "settings" ? (
-          <DetailBody>
-            {isOwner && skill ? (
-              <SkillOwnershipPanel
-                skillId={skill._id}
-                slug={skill.slug}
-                ownerHandle={ownerHandle}
-                ownerId={owner?._id ?? null}
-                ownedSkills={(ownedSkills ?? []).filter((entry) => entry._id !== skill._id)}
-              />
-            ) : (
-              <Card>
-                <h2 className="section-title text-[1.2rem] m-0">Settings unavailable</h2>
-                <p className="section-subtitle mt-3 mb-0">
-                  Only the skill owner can manage these settings.
-                </p>
-              </Card>
-            )}
-          </DetailBody>
-        ) : null}
       </DetailPageShell>
 
       <SkillReportDialog

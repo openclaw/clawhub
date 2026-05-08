@@ -1,6 +1,6 @@
 import { ShieldCheck } from "lucide-react";
 import { useState } from "react";
-import { Badge } from "./ui/badge";
+import { Badge, type BadgeProps } from "./ui/badge";
 
 type LlmAnalysisDimension = {
   name: string;
@@ -120,24 +120,48 @@ export function getScanStatusInfo(status: string) {
   switch (status.toLowerCase()) {
     case "benign":
     case "clean":
-      return { label: "Benign", className: "scan-status-clean" };
+      return { label: "Benign", className: "scan-status-clean", badgeVariant: "success" };
     case "cleared":
-      return { label: "Cleared", className: "scan-status-clean" };
+      return { label: "Cleared", className: "scan-status-clean", badgeVariant: "success" };
     case "malicious":
-      return { label: "Malicious", className: "scan-status-malicious" };
+      return {
+        label: "Malicious",
+        className: "scan-status-malicious",
+        badgeVariant: "destructive",
+      };
     case "suspicious":
-      return { label: "Review", className: "scan-status-suspicious" };
+      return { label: "Review", className: "scan-status-suspicious", badgeVariant: "warning" };
     case "loading":
-      return { label: "Loading...", className: "scan-status-pending" };
+      return { label: "Loading...", className: "scan-status-pending", badgeVariant: "pending" };
     case "pending":
     case "not_found":
-      return { label: "Pending", className: "scan-status-pending" };
+      return { label: "Pending", className: "scan-status-pending", badgeVariant: "pending" };
     case "error":
     case "failed":
-      return { label: "Error", className: "scan-status-error" };
+      return { label: "Error", className: "scan-status-error", badgeVariant: "destructive" };
     default:
-      return { label: status, className: "scan-status-unknown" };
+      return { label: status, className: "scan-status-unknown", badgeVariant: "default" };
   }
+}
+
+export function ScanResultBadge({
+  status,
+  label,
+  className,
+}: {
+  status: string;
+  label?: string;
+  className?: string;
+}) {
+  const statusInfo = getScanStatusInfo(status);
+  return (
+    <Badge
+      variant={statusInfo.badgeVariant as BadgeProps["variant"]}
+      className={`min-h-0 rounded-[4px] px-2.5 py-0.5 text-[0.78rem] leading-[1.3]${className ? ` ${className}` : ""}`}
+    >
+      {label ?? statusInfo.label}
+    </Badge>
+  );
 }
 
 function getDimensionIcon(rating: string) {
@@ -189,14 +213,14 @@ function formatSecurityLabel(value?: string | null) {
     .join(" ");
 }
 
-function getRiskStatusClass(status: AgenticRiskStatus, severity?: string) {
-  if (status === "none") return "scan-status-clean";
-  if (status === "note") return "";
+function getRiskStatusVariant(status: AgenticRiskStatus, severity?: string): BadgeProps["variant"] {
+  if (status === "none") return "success";
+  if (status === "note") return "compact";
   const normalizedSeverity = severity?.toLowerCase();
   if (normalizedSeverity === "critical" || normalizedSeverity === "high") {
-    return "scan-status-malicious";
+    return "destructive";
   }
-  return "scan-status-suspicious";
+  return "review";
 }
 
 function getVisibleAgenticRiskFindings(analysis: LlmAnalysis) {
@@ -212,12 +236,8 @@ export function hasClawScanRiskReview(analysis?: LlmAnalysis | null) {
 
 function RiskStatusBadge({ status, severity }: { status: AgenticRiskStatus; severity?: string }) {
   return (
-    <Badge
-      variant="compact"
-      className={`agentic-risk-chip ${getRiskStatusClass(status, severity)}`}
-    >
-      <span className="agentic-risk-chip-key">Status</span>
-      {AGENTIC_RISK_STATUS_LABELS[status] ?? status}
+    <Badge variant={getRiskStatusVariant(status, severity)}>
+      Status: {AGENTIC_RISK_STATUS_LABELS[status] ?? status}
     </Badge>
   );
 }
@@ -225,9 +245,8 @@ function RiskStatusBadge({ status, severity }: { status: AgenticRiskStatus; seve
 function RiskInfoBadge({ label, value }: { label: string; value?: string | null }) {
   if (!value) return null;
   return (
-    <Badge variant="compact" className="agentic-risk-chip">
-      <span className="agentic-risk-chip-key">{label}</span>
-      {value}
+    <Badge variant="compact">
+      {label}: {value}
     </Badge>
   );
 }
@@ -535,7 +554,6 @@ export function SecurityScanResults({
 
   const vtStatus = vtAnalysis?.status ?? "pending";
   const vtUrl = sha256hash ? `https://www.virustotal.com/gui/file/${sha256hash}` : null;
-  const vtStatusInfo = getScanStatusInfo(vtStatus);
   const isCodeInsight = vtAnalysis?.source === "code_insight";
   const aiAnalysis = vtAnalysis?.analysis;
 
@@ -548,7 +566,7 @@ export function SecurityScanResults({
         {sha256hash ? (
           <div className="version-scan-badge">
             <VirusTotalIcon className="version-scan-icon version-scan-icon-vt" />
-            <span className={vtStatusInfo.className}>{vtStatusInfo.label}</span>
+            <ScanResultBadge status={vtStatus} />
             {vtUrl ? (
               <a
                 href={vtUrl}
@@ -574,7 +592,7 @@ export function SecurityScanResults({
         {llmStatusInfo ? (
           <div className="version-scan-badge">
             <ClawScanIcon className="version-scan-icon version-scan-icon-oc" />
-            <span className={llmStatusInfo.className}>{llmStatusInfo.label}</span>
+            <ScanResultBadge status={llmVerdict ?? "pending"} />
             {scannerBasePath ? (
               <a
                 href={`${scannerBasePath}/openclaw`}
@@ -616,9 +634,7 @@ export function SecurityScanResults({
               <VirusTotalIcon className="scan-result-icon scan-result-icon-vt" />
               <span className="scan-result-scanner-name">VirusTotal</span>
             </div>
-            <div className={`scan-result-status ${vtStatusInfo.className}`}>
-              {vtStatusInfo.label}
-            </div>
+            <ScanResultBadge status={vtStatus} />
             {vtUrl ? (
               <a
                 href={vtUrl}
@@ -648,9 +664,7 @@ export function SecurityScanResults({
               <ClawScanIcon className="scan-result-icon scan-result-icon-oc" />
               <span className="scan-result-scanner-name">ClawScan</span>
             </div>
-            <div className={`scan-result-status ${llmStatusInfo.className}`}>
-              {llmStatusInfo.label}
-            </div>
+            <ScanResultBadge status={llmVerdict ?? "pending"} />
             {llmAnalysis.confidence ? (
               <span className="scan-result-confidence">{llmAnalysis.confidence} confidence</span>
             ) : null}
@@ -674,9 +688,10 @@ export function SecurityScanResults({
                 <div className="scan-result-scanner">
                   <span className="scan-result-scanner-name">Static analysis</span>
                 </div>
-                <div className="scan-result-status scan-status-suspicious">
-                  {staticFindings.length} finding{staticFindings.length === 1 ? "" : "s"}
-                </div>
+                <ScanResultBadge
+                  status="suspicious"
+                  label={`${staticFindings.length} finding${staticFindings.length === 1 ? "" : "s"}`}
+                />
                 <a href={`${scannerBasePath}/static-analysis`} className="scan-result-link">
                   Details →
                 </a>

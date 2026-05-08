@@ -10,22 +10,26 @@ function renderReadme(readmeContent: string) {
     <SkillDetailTabs
       activeTab="readme"
       setActiveTab={vi.fn()}
-      onCompareIntent={vi.fn()}
       readmeContent={readmeContent}
       readmeError={null}
       latestFiles={[]}
       latestVersionId={null}
       skill={{ slug: "api-gateway" } as Doc<"skills">}
-      diffVersions={[]}
-      versions={[]}
-      nixPlugin={false}
-      suppressVersionScanResults={false}
-      scanResultsSuppressedMessage={null}
     />,
   );
 }
 
 describe("SkillDetailTabs README links", () => {
+  it("uses the simplified detail tab order", () => {
+    renderReadme("# API Gateway");
+
+    expect(screen.getByRole("button", { name: "SKILL.md" })).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Files" })).toBeTruthy();
+    expect(screen.queryByRole("button", { name: "Settings" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Versions" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Compare" })).toBeNull();
+  });
+
   it("keeps relative skill README links inside the viewed skill", () => {
     const { container } = renderReadme(
       [

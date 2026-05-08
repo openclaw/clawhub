@@ -1,16 +1,17 @@
-import { ArrowLeft, Clock, ExternalLink, Fingerprint } from "lucide-react";
+import { Clock, ExternalLink, Fingerprint } from "lucide-react";
 import type { ReactNode } from "react";
 import type { Id } from "../../convex/_generated/dataModel";
+import { SidebarMetadata } from "./SidebarMetadata";
 import {
   ClawScanRiskReview,
   getScanStatusInfo,
   hasClawScanRiskReview,
+  ScanResultBadge,
   type LlmAnalysis,
   type StaticFinding,
   type VtAnalysis,
 } from "./SkillSecurityScanResults";
 import { Badge } from "./ui/badge";
-import { Button } from "./ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "./ui/card";
 
 export type ScannerSlug = "virustotal" | "openclaw" | "static-analysis";
@@ -54,17 +55,18 @@ const SCANNER_LABELS: Record<ScannerSlug, string> = {
   "static-analysis": "Static analysis",
 };
 
-const SCANNER_SUMMARIES: Record<ScannerSlug, string> = {
-  virustotal: "External malware reputation and Code Insight signals for this exact artifact hash.",
-  openclaw: "ClawHub's context-aware review of the artifact, metadata, and declared behavior.",
-  "static-analysis": "Deterministic local checks for risky code patterns and metadata mismatches.",
-};
-
 function formatTime(value?: number | null) {
   if (!value) return "Not checked yet";
   return new Intl.DateTimeFormat(undefined, {
     dateStyle: "medium",
     timeStyle: "short",
+  }).format(new Date(value));
+}
+
+function formatDate(value?: number | null) {
+  if (!value) return null;
+  return new Intl.DateTimeFormat(undefined, {
+    dateStyle: "medium",
   }).format(new Date(value));
 }
 
@@ -96,16 +98,6 @@ function DetailRow({ label, children }: { label: string; children: ReactNode }) 
   );
 }
 
-function MetadataRow({ label, children }: { label: string; children: ReactNode }) {
-  if (children === null || children === undefined || children === "") return null;
-  return (
-    <div className="security-report-metadata-row">
-      <dt>{label}</dt>
-      <dd>{children}</dd>
-    </div>
-  );
-}
-
 function getScannerStatus(props: SecurityScannerPageProps) {
   if (props.scanner === "virustotal")
     return props.vtAnalysis?.verdict ?? props.vtAnalysis?.status ?? "pending";
@@ -120,9 +112,63 @@ function getCheckedAt(props: SecurityScannerPageProps) {
   return props.staticScan?.checkedAt ?? null;
 }
 
-function OpenClawSecurityReport(props: SecurityScannerPageProps) {
-  const status = getScannerStatus(props);
+function scannerCrumbLabel(label: string) {
+  return label.toLowerCase();
+}
+
+function extractDetailPathParts(detailPath: string) {
+  return detailPath.split("/").filter(Boolean).map(decodeURIComponent);
+}
+
+function getOwnerLabel(entity: EntityRef) {
+  if (entity.owner?.handle) return entity.owner.handle;
+  const parts = extractDetailPathParts(entity.detailPath);
+  if (entity.kind === "skill") return parts[0] ?? "unknown";
+  return entity.owner?._id ?? "plugins";
+}
+
+function getSecurityHeroSubtext(label: string, status: string, checkedAt: number | null) {
   const statusInfo = getScanStatusInfo(status);
+  const checkedDate = formatDate(checkedAt);
+  if (!checkedDate) return `${label} audit pending with a ${statusInfo.label} result.`;
+  return `Audited by ${label} with a ${statusInfo.label} result on ${checkedDate}.`;
+}
+
+function SecurityScannerHero({ label, props }: { label: string; props: SecurityScannerPageProps }) {
+  const status = getScannerStatus(props);
+  const checkedAt = getCheckedAt(props);
+  const ownerLabel = getOwnerLabel(props.entity);
+  const listingLabel = props.entity.kind === "skill" ? "skills" : "plugins";
+  const ownerHref =
+    props.entity.kind === "skill" ? `/${encodeURIComponent(ownerLabel)}` : "/plugins";
+
+  return (
+    <header className="security-scan-hero">
+      <nav className="skill-hero-breadcrumbs" aria-label="Breadcrumb">
+        <a href={`/${listingLabel}`}>{listingLabel}</a>
+        <span aria-hidden="true">/</span>
+        <a href={ownerHref}>{ownerLabel}</a>
+        <span aria-hidden="true">/</span>
+        <a href={`/${listingLabel}`}>{listingLabel}</a>
+        <span aria-hidden="true">/</span>
+        <a href={props.entity.detailPath}>{props.entity.name}</a>
+        <span aria-hidden="true">/</span>
+        <span>{scannerCrumbLabel(label)}</span>
+      </nav>
+      <div className="security-scan-hero-heading">
+        <h1 className="skill-page-title">{props.entity.title}</h1>
+        <p className="security-scan-hero-subtext">
+          <ScanResultBadge status={status} />
+          <span>{getSecurityHeroSubtext(label, status, checkedAt)}</span>
+        </p>
+      </div>
+    </header>
+  );
+}
+
+function OpenClawSecurityReport(props: SecurityScannerPageProps) {
+  const label = SCANNER_LABELS[props.scanner];
+  const status = getScannerStatus(props);
   const checkedAt = getCheckedAt(props);
   const sourceRepo = formatValue(
     props.source?.repository ?? props.source?.repo ?? props.source?.url,
@@ -136,34 +182,12 @@ function OpenClawSecurityReport(props: SecurityScannerPageProps) {
     ).length ?? 0;
 
   return (
-    <main className="section security-report-section">
+    <main className="section detail-page-section security-report-section">
       <div className="security-report-shell">
-        <Button asChild variant="ghost" size="sm" className="w-fit">
-          <a href={props.entity.detailPath}>
-            <ArrowLeft className="h-3.5 w-3.5" aria-hidden="true" />
-            Back to {props.entity.kind}
-          </a>
-        </Button>
+        <SecurityScannerHero label={label} props={props} />
 
         <div className="security-report-layout">
           <div className="security-report-main">
-            <header className="security-report-header">
-              <div className="security-report-heading">
-                <div className="security-report-badges">
-                  {props.entity.version ? (
-                    <Badge variant="compact">v{props.entity.version}</Badge>
-                  ) : null}
-                </div>
-                <h1>{props.entity.title}</h1>
-                <div className="security-report-verdict-line">
-                  <Badge variant="compact" className={statusInfo.className}>
-                    {statusInfo.label}
-                  </Badge>
-                  <span>ClawScan verdict for this skill. Analyzed {formatTime(checkedAt)}.</span>
-                </div>
-              </div>
-            </header>
-
             <section className="security-report-analysis" aria-labelledby="analysis-heading">
               <h2 id="analysis-heading">Analysis</h2>
               <p>{props.llmAnalysis?.summary ?? "No ClawScan analysis has been recorded yet."}</p>
@@ -188,31 +212,47 @@ function OpenClawSecurityReport(props: SecurityScannerPageProps) {
           </div>
 
           <aside className="security-report-sidebar" aria-label="Scan metadata">
-            <h2>Scan Metadata</h2>
-            <dl className="security-report-metadata">
-              <MetadataRow label="Verdict">
-                <Badge variant="compact" className={statusInfo.className}>
-                  {statusInfo.label}
-                </Badge>
-              </MetadataRow>
-              <MetadataRow label="Confidence">
-                <Badge variant="compact">
-                  {formatBadgeValue(props.llmAnalysis?.confidence, "Not reported")}
-                </Badge>
-              </MetadataRow>
-              <MetadataRow label="Analyzed">
-                <span className="security-report-metadata-time">
-                  <Clock className="h-3.5 w-3.5" aria-hidden="true" />
-                  {formatTime(checkedAt)}
-                </span>
-              </MetadataRow>
-              <MetadataRow label="Findings">{visibleFindingCount}</MetadataRow>
-              <MetadataRow label="Version">{props.entity.version ?? "Latest"}</MetadataRow>
-              <MetadataRow label="Source repository">{sourceRepo}</MetadataRow>
-              <MetadataRow label="Source commit">
-                {sourceCommit ? <span className="font-mono text-xs">{sourceCommit}</span> : null}
-              </MetadataRow>
-            </dl>
+            <h2 className="sr-only">Scan Metadata</h2>
+            <SidebarMetadata
+              ariaLabel="Scan metadata"
+              density="compact"
+              blocks={[
+                { label: "Verdict", value: <ScanResultBadge status={status} /> },
+                {
+                  label: "Confidence",
+                  value: (
+                    <Badge
+                      variant="compact"
+                      className="min-h-0 rounded-[4px] px-2.5 py-0.5 text-[0.78rem] leading-[1.3]"
+                    >
+                      {formatBadgeValue(props.llmAnalysis?.confidence, "Not reported")}
+                    </Badge>
+                  ),
+                },
+                {
+                  label: "Analyzed",
+                  value: (
+                    <span className="sidebar-metadata-inline">
+                      <Clock className="h-3.5 w-3.5" aria-hidden="true" />
+                      {formatTime(checkedAt)}
+                    </span>
+                  ),
+                },
+                {
+                  grid: [
+                    { label: "Findings", value: visibleFindingCount },
+                    { label: "Version", value: props.entity.version ?? "Latest" },
+                  ],
+                },
+                { label: "Source repository", value: sourceRepo },
+                {
+                  label: "Source commit",
+                  value: sourceCommit ? (
+                    <span className="font-mono text-xs">{sourceCommit}</span>
+                  ) : null,
+                },
+              ]}
+            />
           </aside>
         </div>
       </div>
@@ -247,7 +287,6 @@ function LegacyOpenClawDetails({ analysis }: { analysis?: LlmAnalysis | null }) 
 export function SecurityScannerPage(props: SecurityScannerPageProps) {
   const label = SCANNER_LABELS[props.scanner];
   const status = getScannerStatus(props);
-  const statusInfo = getScanStatusInfo(status);
   const checkedAt = getCheckedAt(props);
   const vtUrl = props.sha256hash ? `https://www.virustotal.com/gui/file/${props.sha256hash}` : null;
   const sourceRepo = formatValue(
@@ -264,32 +303,9 @@ export function SecurityScannerPage(props: SecurityScannerPageProps) {
   }
 
   return (
-    <main className="section">
+    <main className="section detail-page-section">
       <div className="flex min-w-0 flex-col gap-5">
-        <div className="flex flex-col gap-3">
-          <Button asChild variant="ghost" size="sm" className="w-fit">
-            <a href={props.entity.detailPath}>
-              <ArrowLeft className="h-3.5 w-3.5" aria-hidden="true" />
-              Back to {props.entity.kind}
-            </a>
-          </Button>
-          <div className="flex flex-col gap-3">
-            <div className="min-w-0">
-              <div className="mb-2 flex flex-wrap items-center gap-2">
-                <Badge>{props.entity.kind === "skill" ? "Skill" : "Plugin"}</Badge>
-                {props.entity.version ? (
-                  <Badge variant="compact">v{props.entity.version}</Badge>
-                ) : null}
-              </div>
-              <h1 className="m-0 break-words font-display text-3xl font-bold text-[color:var(--ink)]">
-                {label} security
-              </h1>
-              <p className="mt-2 max-w-3xl text-sm text-[color:var(--ink-soft)]">
-                {props.entity.title} · {SCANNER_SUMMARIES[props.scanner]}
-              </p>
-            </div>
-          </div>
-        </div>
+        <SecurityScannerHero label={label} props={props} />
 
         <div className="security-scanner-layout">
           <div className="flex min-w-0 flex-col gap-5">
@@ -299,9 +315,7 @@ export function SecurityScannerPage(props: SecurityScannerPageProps) {
               </CardHeader>
               <CardContent>
                 <div className="flex flex-wrap items-center gap-2">
-                  <span className={`scan-result-status ${statusInfo.className}`}>
-                    {statusInfo.label}
-                  </span>
+                  <ScanResultBadge status={status} />
                   <span className="inline-flex items-center gap-1 text-xs text-[color:var(--ink-soft)]">
                     <Clock className="h-3.5 w-3.5" aria-hidden="true" />
                     {formatTime(checkedAt)}

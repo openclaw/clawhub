@@ -1,9 +1,11 @@
+import type { ReactNode } from "react";
 import type { Doc } from "../../convex/_generated/dataModel";
 import { getRuntimeEnv } from "../lib/runtimeEnv";
 import { type LlmAnalysis, SecurityScanResults } from "./SkillSecurityScanResults";
 
 type SkillVersionsPanelProps = {
   versions: Doc<"skillVersions">[] | undefined;
+  versionTags?: ReactNode;
   nixPlugin: boolean;
   skillSlug: string;
   suppressScanResults: boolean;
@@ -12,6 +14,7 @@ type SkillVersionsPanelProps = {
 
 export function SkillVersionsPanel({
   versions,
+  versionTags,
   nixPlugin,
   skillSlug,
   suppressScanResults,
@@ -33,6 +36,7 @@ export function SkillVersionsPanel({
           <p className="text-sm text-[color:var(--ink-soft)]">{suppressedMessage}</p>
         ) : null}
       </div>
+      {versionTags ? <div className="grid gap-3">{versionTags}</div> : null}
       <div className="max-h-[600px] overflow-y-auto">
         <div className="flex flex-col gap-3">
           {(versions ?? []).map((version) => (

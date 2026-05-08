@@ -15,6 +15,8 @@ type UserBadgeProps = {
   size?: "sm" | "md";
   link?: boolean;
   showName?: boolean;
+  showHandle?: boolean;
+  disableTooltip?: boolean;
 };
 
 export function UserBadge({
@@ -24,6 +26,8 @@ export function UserBadge({
   size = "sm",
   link = true,
   showName = false,
+  showHandle = true,
+  disableTooltip = false,
 }: UserBadgeProps) {
   const userName =
     hasOwnProperty(user, "name") && typeof user.name === "string" ? user.name.trim() : undefined;
@@ -53,8 +57,8 @@ export function UserBadge({
       ? ((user as PublicPublisher).linkedUserId ?? null)
       : (user?._id ?? null);
 
-  const badge = (
-    <span className={`user-badge user-badge-${size}`}>
+  const badgeContent = (
+    <>
       {prefix ? <span className="user-badge-prefix">{prefix}</span> : null}
       <span className="user-avatar" aria-hidden="true">
         {image ? (
@@ -66,22 +70,33 @@ export function UserBadge({
       {hasUsefulName ? (
         <>
           <span className="user-name">{displayName}</span>
-          <span className="user-name-sep" aria-hidden="true">
-            ·
-          </span>
+          {showHandle ? (
+            <span className="user-name-sep" aria-hidden="true">
+              ·
+            </span>
+          ) : null}
         </>
       ) : null}
-      {link && href ? (
+      {showHandle && link && href ? (
         <a className="user-handle" href={href}>
           {label}
         </a>
-      ) : (
+      ) : showHandle ? (
         <span className="user-handle">{label}</span>
-      )}
-    </span>
+      ) : null}
+    </>
   );
 
-  if (!userId) return badge;
+  const badge =
+    !showHandle && link && href ? (
+      <a className={`user-badge user-badge-${size} user-badge-link`} href={href}>
+        {badgeContent}
+      </a>
+    ) : (
+      <span className={`user-badge user-badge-${size}`}>{badgeContent}</span>
+    );
+
+  if (!userId || disableTooltip) return badge;
 
   return (
     <Tooltip>

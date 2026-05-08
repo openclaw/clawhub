@@ -4,6 +4,7 @@ import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import type { ReactNode } from "react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { SkillCommandLineCard, SkillInstallSurface } from "./SkillInstallSurface";
+import { TooltipProvider } from "./ui/tooltip";
 
 const writeTextMock = vi.fn();
 
@@ -68,12 +69,14 @@ describe("SkillInstallSurface", () => {
 
   it("defaults to CLI install and can copy the compact prompt tab", async () => {
     render(
-      <SkillCommandLineCard
-        slug="weather"
-        displayName="Weather"
-        ownerHandle="steipete"
-        ownerId={ownerPublisherId}
-      />,
+      <TooltipProvider>
+        <SkillCommandLineCard
+          slug="weather"
+          displayName="Weather"
+          ownerHandle="steipete"
+          ownerId={ownerPublisherId}
+        />
+      </TooltipProvider>,
     );
 
     expect(screen.getByText("openclaw skills install weather")).toBeTruthy();

@@ -51,13 +51,37 @@ const FLAGGED_PLUGIN_NAME = "local-flagged-runtime-plugin";
 const SCANNED_PLUGIN_NAME = "local-scanned-runtime-plugin";
 const FLAGGED_SKILL_MD = `---
 name: local-flagged-wallet-sync
-description: Local dev fixture for flagged dashboard and rescan UI.
+description: Reconcile local wallet exports against exchange activity and flag mismatched transfers.
 ---
 
 # Local Flagged Wallet Sync
 
-This seeded skill is intentionally flagged so local development can exercise owner-only recovery
-flows, dashboard unavailable states, and rescan request limits.
+Use this skill when a user wants to compare a local wallet transaction export with exchange
+activity and produce a concise reconciliation report.
+
+## Inputs
+
+- A local CSV or JSON export from the wallet app.
+- An optional exchange activity CSV for deposits, withdrawals, and fees.
+- The account, chain, and date range the user wants reviewed.
+
+## Workflow
+
+1. Ask the user to confirm which files should be read.
+2. Parse transaction hashes, timestamps, asset symbols, network names, and amounts.
+3. Match wallet transfers against exchange activity using transaction hash first, then timestamp
+   and amount when hashes are unavailable.
+4. Summarize matched transfers, missing counterparty records, fee discrepancies, and duplicate
+   entries.
+5. Produce a final report with unresolved items and the exact source rows that need manual review.
+
+## Safety
+
+- Never transmit wallet exports, API keys, seed phrases, private keys, or session files to an
+  external endpoint.
+- Treat all wallet and exchange data as sensitive user-provided financial information.
+- Do not make trading, tax, or legal recommendations; only reconcile records and explain
+  mismatches.
 `;
 const SCANNED_SKILL_MD = `---
 name: local-agentic-risk-demo
@@ -1004,6 +1028,129 @@ function clawScanRiskAnalysis(now: number) {
   };
 }
 
+function flaggedWalletClawScanAnalysis(now: number) {
+  return {
+    status: "suspicious",
+    verdict: "suspicious",
+    confidence: "high",
+    summary:
+      "The skill is purpose-aligned for wallet reconciliation and explicitly tells agents not to transmit sensitive financial data, but it handles wallet exports and exchange activity that users should review carefully before sharing.",
+    dimensions: [
+      {
+        name: "financial_data_scope",
+        label: "Financial Data Scope",
+        rating: "note",
+        detail:
+          "The workflow asks the agent to inspect local wallet and exchange exports without performing trades or making tax recommendations.",
+      },
+    ],
+    guidance:
+      "Use only with wallet exports and exchange files the user explicitly selects. Keep private keys, seed phrases, API credentials, and raw exports local, and review the final discrepancy report before sharing it outside the machine.",
+    findings:
+      "[suspicious.financial_data_review] expected: SKILL.md processes sensitive wallet and exchange records and should remain local-only.",
+    agenticRiskFindings: [
+      {
+        categoryId: "ASI03",
+        categoryLabel: "Identity and Privilege Abuse",
+        riskBucket: "permission_boundary" as const,
+        status: "note" as const,
+        severity: "low",
+        confidence: "high" as const,
+        evidence: {
+          path: "SKILL.md",
+          snippet:
+            "Ask the user to confirm which files should be read ... Parse transaction hashes, timestamps, asset symbols, network names, and amounts.",
+          explanation:
+            "The skill asks for explicit user confirmation before reading local wallet and exchange files.",
+        },
+        userImpact:
+          "Users keep control over which local financial records the agent reads during reconciliation.",
+        recommendation:
+          "Confirm the exact files and date range before running the workflow, especially when multiple wallet exports are present.",
+      },
+      {
+        categoryId: "ASI06",
+        categoryLabel: "Memory and Context Poisoning",
+        riskBucket: "sensitive_data_protection" as const,
+        status: "note" as const,
+        severity: "medium",
+        confidence: "high" as const,
+        evidence: {
+          path: "SKILL.md",
+          snippet:
+            "Treat all wallet and exchange data as sensitive user-provided financial information.",
+          explanation:
+            "The artifact correctly labels wallet exports and exchange activity as sensitive data.",
+        },
+        userImpact:
+          "Raw wallet exports may include addresses, transaction hashes, balances, counterparties, and exchange account activity.",
+        recommendation:
+          "Keep raw exports local, redact unnecessary rows before sharing reports, and avoid storing the full input files in long-term memory.",
+      },
+      {
+        categoryId: "ASI04",
+        categoryLabel: "Tool Misuse and Unintended Actions",
+        riskBucket: "abnormal_behavior_control" as const,
+        status: "note" as const,
+        severity: "low",
+        confidence: "medium" as const,
+        evidence: {
+          path: "SKILL.md",
+          snippet:
+            "Do not make trading, tax, or legal recommendations; only reconcile records and explain mismatches.",
+          explanation:
+            "The workflow draws a clear boundary between reconciliation and financial advice.",
+        },
+        userImpact:
+          "Users get record-matching support without the skill steering investment, tax, or legal decisions.",
+        recommendation:
+          "Keep final output limited to source rows, discrepancies, and manual-review notes.",
+      },
+      {
+        categoryId: "ASI07",
+        categoryLabel: "Insecure Inter-Agent Communication",
+        riskBucket: "sensitive_data_protection" as const,
+        status: "note" as const,
+        severity: "medium",
+        confidence: "medium" as const,
+        evidence: {
+          path: "SKILL.md",
+          snippet:
+            "Never transmit wallet exports, API keys, seed phrases, private keys, or session files to an external endpoint.",
+          explanation:
+            "The safety section forbids external transmission of sensitive wallet material.",
+        },
+        userImpact:
+          "The workflow is appropriate only while the agent keeps sensitive financial files on the user's machine.",
+        recommendation:
+          "Do not route the reconciliation through third-party services or sub-agents unless the user explicitly approves sanitized excerpts.",
+      },
+    ],
+    riskSummary: {
+      abnormal_behavior_control: {
+        status: "note" as const,
+        highestSeverity: "low",
+        summary:
+          "The workflow limits the agent to reconciliation and avoids trading, tax, or legal recommendations.",
+      },
+      permission_boundary: {
+        status: "note" as const,
+        highestSeverity: "low",
+        summary:
+          "The skill asks for explicit file confirmation before reading wallet and exchange exports.",
+      },
+      sensitive_data_protection: {
+        status: "note" as const,
+        highestSeverity: "medium",
+        summary:
+          "Wallet exports and exchange activity are sensitive and should stay local unless the user approves sanitized sharing.",
+      },
+    },
+    model: "local-dev-seed",
+    checkedAt: now,
+  };
+}
+
 async function insertCompletedRescanRequests(
   ctx: MutationCtx,
   params:
@@ -1079,11 +1226,57 @@ export async function seedRescanUxFixturesHandler(
     existingScannedPlugin &&
     !args.reset
   ) {
+    const now = Date.now();
+    const { userId, publisherId } = await ensureLocalSeedOwner(ctx);
+    const ownerPatch = { ownerUserId: userId, ownerPublisherId: publisherId, updatedAt: now };
+    for (const skill of [existingSkill, existingScannedSkill]) {
+      if (skill.ownerUserId !== userId || skill.ownerPublisherId !== publisherId) {
+        await ctx.db.patch(skill._id, ownerPatch);
+      }
+    }
+    for (const pkg of [existingPlugin, existingScannedPlugin]) {
+      if (pkg.ownerUserId !== userId || pkg.ownerPublisherId !== publisherId) {
+        await ctx.db.patch(pkg._id, ownerPatch);
+      }
+    }
+    if (existingSkill.latestVersionId) {
+      const latestVersion = await ctx.db.get(existingSkill.latestVersionId);
+      if (latestVersion) {
+        await ctx.db.patch(latestVersion._id, {
+          files: [
+            {
+              path: "SKILL.md",
+              size: args.flaggedSkillMd.length,
+              storageId: args.flaggedSkillStorageId,
+              sha256: "seeded-flagged-skill",
+              contentType: "text/markdown",
+            },
+          ],
+          parsed: {
+            frontmatter: {
+              name: FLAGGED_SKILL_SLUG,
+              description:
+                "Reconcile local wallet exports against exchange activity and flag mismatched transfers.",
+            },
+          },
+        });
+      }
+      if (
+        existingSkill.summary ===
+        "Seeded flagged skill for local owner inventory and rescan UI testing."
+      ) {
+        await ctx.db.patch(existingSkill._id, {
+          summary:
+            "Reconcile local wallet exports against exchange activity and flag mismatched transfers.",
+          updatedAt: now,
+        });
+      }
+    }
     return {
       ok: true,
       skipped: true,
-      ownerUserId: existingSkill.ownerUserId,
-      ownerPublisherId: existingSkill.ownerPublisherId ?? existingPlugin.ownerPublisherId,
+      ownerUserId: userId,
+      ownerPublisherId: publisherId,
       flaggedSkillId: existingSkill._id,
       flaggedSkillVersionId: existingSkill.latestVersionId,
       scannedSkillId: existingScannedSkill._id,
@@ -1109,7 +1302,8 @@ export async function seedRescanUxFixturesHandler(
   const skillId = await ctx.db.insert("skills", {
     slug: FLAGGED_SKILL_SLUG,
     displayName: "Local Flagged Wallet Sync",
-    summary: "Seeded flagged skill for local owner inventory and rescan UI testing.",
+    summary:
+      "Reconcile local wallet exports against exchange activity and flag mismatched transfers.",
     ownerUserId: userId,
     ownerPublisherId: publisherId,
     latestVersionId: undefined,
@@ -1157,7 +1351,8 @@ export async function seedRescanUxFixturesHandler(
     parsed: {
       frontmatter: {
         name: FLAGGED_SKILL_SLUG,
-        description: "Local dev fixture for flagged dashboard and rescan UI.",
+        description:
+          "Reconcile local wallet exports against exchange activity and flag mismatched transfers.",
       },
     },
     createdBy: userId,
@@ -1171,14 +1366,7 @@ export async function seedRescanUxFixturesHandler(
       source: "local-dev-seed",
       checkedAt: now,
     },
-    llmAnalysis: {
-      status: "suspicious",
-      verdict: "suspicious",
-      confidence: "high",
-      summary: "Local dev fixture intentionally flagged by OpenClaw.",
-      model: "local-dev-seed",
-      checkedAt: now,
-    },
+    llmAnalysis: flaggedWalletClawScanAnalysis(now),
     staticScan,
   });
   await ctx.db.patch(skillId, {
