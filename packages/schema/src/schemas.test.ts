@@ -2,7 +2,7 @@
 
 import { describe, expect, it } from "vitest";
 import { parseArk } from "./ark";
-import { DocsLinks } from "./docsLinks";
+import { DocsLinks, openClawDocsUrl } from "./docsLinks";
 import { getPackageScopeOwnerMismatch, inferPackageNameScope } from "./packages";
 import {
   ApiSearchResponseSchema,
@@ -88,6 +88,13 @@ describe("clawhub-schema", () => {
       message:
         `Package scope "@openclaw" must match selected owner "@vintageayu". Publish as "@openclaw" or rename this package to "@vintageayu/dronzer". Learn how publishing works: ${DocsLinks.clawhub.publishing}`,
     });
+  });
+
+  it("builds OpenClaw docs URLs from normalized paths", () => {
+    expect(openClawDocsUrl("/clawhub/publishing")).toBe(DocsLinks.clawhub.publishing);
+    expect(openClawDocsUrl("plugins/sdk-setup#package-metadata")).toBe(
+      DocsLinks.openclaw.pluginPackageMetadata,
+    );
   });
 
   it("parses well-known config", () => {

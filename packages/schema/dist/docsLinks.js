@@ -1,7 +1,7 @@
 export const OPENCLAW_DOCS_BASE_URL = "https://docs.openclaw.ai";
 export function openClawDocsUrl(path) {
     const trimmed = path.trim().replace(/^\/+/, "");
-    return `${OPENCLAW_DOCS_BASE_URL}/${trimmed}`;
+    return new URL(trimmed, `${OPENCLAW_DOCS_BASE_URL}/`).href;
 }
 export const DocsLinks = {
     clawhub: {
