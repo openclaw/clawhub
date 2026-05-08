@@ -1088,7 +1088,7 @@ describe("package commands", () => {
       await writeFile(
         join(folder, "package.json"),
         makeCodePluginPackageJson({
-          name: "@scope/demo-plugin",
+          name: "@openclaw/demo-plugin",
           displayName: "Demo Plugin",
           version: "1.0.0",
           files: ["dist", "openclaw.plugin.json"],
@@ -1117,7 +1117,7 @@ describe("package commands", () => {
       });
 
       expect(getPublishPayload()).toEqual({
-        name: "@scope/demo-plugin",
+        name: "@openclaw/demo-plugin",
         displayName: "Demo Plugin",
         ownerHandle: "openclaw",
         family: "code-plugin",
@@ -1135,7 +1135,7 @@ describe("package commands", () => {
         },
       });
       expect(getUploadedFileNames()).toEqual([]);
-      expect(getUploadedClawPackNames()).toEqual(["scope-demo-plugin-1.0.0.tgz"]);
+      expect(getUploadedClawPackNames()).toEqual(["openclaw-demo-plugin-1.0.0.tgz"]);
       const uploadedPack = getUploadedClawPacks()[0];
       if (!uploadedPack) throw new Error("Missing uploaded ClawPack");
       const parsed = parseClawPack(new Uint8Array(await uploadedPack.arrayBuffer()));
@@ -1145,12 +1145,49 @@ describe("package commands", () => {
         "package.json",
       ]);
       expect(uiMocks.spinner.succeed).toHaveBeenCalledWith(
-        "OK. Published @scope/demo-plugin@1.0.0 (rel_1)",
+        "OK. Published @openclaw/demo-plugin@1.0.0 (rel_1)",
       );
       expect(uiMocks.spinner.fail).not.toHaveBeenCalled();
       expect(mockLog).not.toHaveBeenCalled();
       expect(mockWrite).not.toHaveBeenCalled();
       dateSpy.mockRestore();
+    } finally {
+      await rm(workdir, { recursive: true, force: true });
+    }
+  });
+
+  it("rejects scoped package names that do not match the selected owner", async () => {
+    const workdir = await makeTmpWorkdir();
+    try {
+      const folder = join(workdir, "demo-plugin");
+      await mkdir(join(folder, "dist"), { recursive: true });
+      await writeFile(
+        join(folder, "package.json"),
+        makeCodePluginPackageJson({
+          name: "@openclaw/demo-plugin",
+          displayName: "Demo Plugin",
+          version: "1.0.0",
+          files: ["dist", "openclaw.plugin.json"],
+        }),
+        "utf8",
+      );
+      await writeFile(
+        join(folder, "openclaw.plugin.json"),
+        JSON.stringify({ id: "demo.plugin" }),
+        "utf8",
+      );
+      await writeFile(join(folder, "dist", "index.js"), "export const demo = true;\n", "utf8");
+
+      await expect(
+        cmdPublishPackage(makeOpts(workdir), "demo-plugin", {
+          owner: "patrick-erichsen-2",
+          sourceRepo: "openclaw/demo-plugin",
+          sourceCommit: "abc123",
+        }),
+      ).rejects.toThrow(
+        'Package scope "@openclaw" must match selected owner "@patrick-erichsen-2"',
+      );
+      expect(httpMocks.apiRequestForm).not.toHaveBeenCalled();
     } finally {
       await rm(workdir, { recursive: true, force: true });
     }
