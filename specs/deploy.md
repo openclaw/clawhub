@@ -1,16 +1,16 @@
 ---
-summary: "Deploy checklist: Convex backend + Vercel web app + /api rewrites."
-read_when:
-  - Shipping to production
-  - Debugging /api routing
+summary: "Maintainer deploy checklist: Convex backend, Vercel web app, CLI npm release, and /api rewrites."
 ---
 
 # Deploy
 
+This is a maintainer runbook for the ClawHub project. It is intentionally kept
+under `specs/` so it does not publish into the user-facing ClawHub docs tab.
+
 ClawHub is two deployables:
 
-- Web app (TanStack Start) → typically Vercel.
-- Convex backend → Convex deployment (serves `/api/...` routes).
+- Web app (TanStack Start) -> typically Vercel.
+- Convex backend -> Convex deployment (serves `/api/...` routes).
 
 ## 1) Deploy Convex
 
@@ -71,7 +71,7 @@ CLI release notes:
 
 That workflow assumes Vercel Git integration is enabled for this repo. It does
 not run `vercel deploy` directly; frontend-related steps wait for the GitHub
-commit status `Vercel – clawhub` for the selected SHA, then run smoke tests
+commit status `Vercel - clawhub` for the selected SHA, then run smoke tests
 against production.
 
 Ensure Convex env is set (auth + embeddings):
@@ -91,7 +91,7 @@ Ensure Convex env is set (auth + embeddings):
 Set env vars:
 
 - `VITE_CONVEX_URL`
-- `VITE_CONVEX_SITE_URL` (Convex “site” URL)
+- `VITE_CONVEX_SITE_URL` (Convex "site" URL)
 - `CONVEX_SITE_URL` (same value; used by auth provider config)
 - `SITE_URL` (web app URL)
 - `VITE_APP_BUILD_SHA` (set to the same commit SHA stamped into Convex)
@@ -112,60 +112,23 @@ This repo currently uses `vercel.json` rewrites:
 
 For self-host:
 
-- update `vercel.json` to your deployment’s Convex site URL.
+- update `vercel.json` to your deployment's Convex site URL.
 
 ## 4) Registry discovery
 
 The CLI can discover the API base from:
 
-- `/.well-known/clawhub.json` (preferred)
-- `/.well-known/clawdhub.json` (legacy)
+1. explicit CLI/env override
+2. configured registry URL
+3. site URL registry metadata
 
-If you don’t serve that file, users must set:
-
-```bash
-export CLAWHUB_REGISTRY=https://your-site.example
-```
+Keep production rewrites and discovery metadata aligned before release.
 
 ## 5) Post-deploy checks
 
-```bash
-curl -i "https://<site>/api/v1/search?q=test"
-curl -i "https://<site>/api/v1/skills/gifgrep"
-```
-
-Then:
-
-```bash
-clawhub login --site https://<site>
-clawhub whoami
-```
-
-Rate-limit sanity checks:
-
-```bash
-curl -i "https://<site>/api/v1/download?slug=gifgrep"
-```
-
-Confirm headers are present:
-
-- `X-RateLimit-Limit`, `X-RateLimit-Remaining`, `X-RateLimit-Reset`
-- `RateLimit-Limit`, `RateLimit-Remaining`, `RateLimit-Reset`
-- `Retry-After` on `429`
-
-Drift checks:
+Run the contract verifier and smoke tests against production after deploy:
 
 ```bash
 bun run verify:convex-contract -- --prod
 PLAYWRIGHT_BASE_URL=https://clawhub.ai bunx playwright test e2e/menu-smoke.pw.test.ts e2e/upload-auth-smoke.pw.test.ts
 ```
-
-The Playwright smoke suite should fail on visible error UI, page errors, and
-browser console errors.
-
-Proxy/IP caveat:
-
-- Default IP source is `cf-connecting-ip`.
-- For non-Cloudflare trusted proxy setups, set `TRUST_FORWARDED_IPS=true`.
-- If a trusted client IP is missing, anonymous downloads fall back to endpoint-scoped buckets to avoid unrelated packages sharing one `ip:unknown` download bucket.
-- If proxy headers are not forwarded/trusted correctly, multiple users may collapse into one IP and hit false-positive rate limits.

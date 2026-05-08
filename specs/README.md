@@ -26,6 +26,9 @@ into `docs/` and leave only the design record here.
 - `manual-testing.md`: maintainer CLI smoke checklist.
 - `mintlify.md`: docs publishing setup notes.
 - `openclaw-docs-extraction.md`: CLAW-89 extraction classification.
+- `deploy.md`: maintainer deploy checklist for the ClawHub project.
+- `security-moderation.md`: detailed moderation implementation and scanner behavior notes.
+- `webhook.md`: Discord webhook environment and payload notes.
 - `plans/plugins.md`: long-term OpenClaw plugin hosting plan.
 - `regression-notes/`: regression guard notes.
 - `superpowers/`: install-surface design history.

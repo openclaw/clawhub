@@ -1,20 +1,28 @@
 ---
 summary: "CLI reference: commands, flags, config, lockfile, sync behavior."
 read_when:
-  - Working on CLI behavior
-  - Debugging install/update/sync
+  - Using the ClawHub CLI
+  - Debugging install, update, publish, or sync
 ---
 
 # CLI
 
-CLI package: `packages/clawhub/` (published as `clawhub`, bin: `clawhub`).
-Platform moderator commands live in the private `packages/clawhub-mod/` package
-and are not part of the public npm CLI.
+CLI package: `clawhub`, bin: `clawhub`.
 
-From this repo you can run it via the wrapper script:
+Install it globally with npm or pnpm:
 
 ```bash
-bun clawhub --help
+npm i -g clawhub
+# or
+pnpm add -g clawhub
+```
+
+Then verify it:
+
+```bash
+clawhub --help
+clawhub login
+clawhub whoami
 ```
 
 ## Global flags
@@ -310,8 +318,8 @@ clawhub package delete @openclaw/example-plugin --yes
 
 - Authenticated command for reporting a package to moderators.
 - Calls `POST /api/v1/packages/{name}/report`.
-- Reports are package-level, optionally tied to a version, and feed
-  `clawhub-mod package moderation-queue`.
+- Reports are package-level, optionally tied to a version, and become visible
+  to moderators for review.
 - Reports do not auto-hide packages or block downloads by themselves.
 - Flags:
   - `--version <version>`: optional package version to attach to the report.

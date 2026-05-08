@@ -1,46 +1,47 @@
 ---
 summary: "Public ClawHub docs index and reading order."
 read_when:
-  - New contributor onboarding
-  - Looking for the right doc
+  - Looking for the right public ClawHub doc
+  - Deciding whether content belongs in public docs or specs
 ---
 
 # Docs
 
-`docs/` is the publishable source for ClawHub pages that can be mirrored into
-`docs.openclaw.ai`. Keep user, publisher, API, CLI, security, and operator docs
-here.
+`docs/` is the publishable source for user-facing ClawHub pages that can be
+mirrored into the `ClawHub` tab on `docs.openclaw.ai`.
 
-Use `specs/` for product specs, implementation plans, regression notes, design
-history, and maintainer-only validation records. If a page explains what users
-can do or how operators run ClawHub, it belongs in `docs/`; if it explains why a
-future or internal design exists, it belongs in `specs/`.
+Keep product, CLI, publisher, API, policy, security, and troubleshooting docs
+here. These pages should explain how people use ClawHub: discover, install,
+publish, inspect, report, moderate, and integrate with the registry.
+
+Use `specs/` for repository setup, production deploy runbooks, implementation
+plans, design rationale, regression notes, maintainer validation records, and
+internal subsystem intent. If a page tells someone how to run or deploy the
+ClawHub project itself, it belongs in `specs/`, not in the public OpenClaw docs
+tab.
 
 Reading order:
 
-1. `README.md` (repo root): run locally.
-2. `docs/clawhub.md`: public overview for ClawHub discovery, install, publish, and security.
-3. `docs/quickstart.md`: end-to-end: search, install, publish, sync.
-4. `docs/architecture.md`: how the pieces fit (TanStack Start + Convex + CLI).
-5. `docs/skill-format.md`: what a skill is on disk and on the registry.
-6. `docs/cli.md`: CLI reference (flags, config, lockfiles, sync rules).
-7. `docs/http-api.md`: HTTP endpoints used by the CLI and public API.
-8. `docs/auth.md`: GitHub OAuth + API tokens + CLI loopback login.
-9. `docs/deploy.md`: Convex + Vercel deployment + rewrites.
-10. `docs/troubleshooting.md`: common failure modes.
+1. `docs/clawhub.md`: public overview for discovery, install, publish, and trust.
+2. `docs/quickstart.md`: product quickstart for users and publishers.
+3. `docs/architecture.md`: product model for listings, versions, installs, publishing, scans, and API access.
+4. `docs/cli.md`: ClawHub CLI reference.
+5. `docs/skill-format.md`: skill bundle metadata and package shape.
+6. `docs/soul-format.md`: SOUL.md bundle format.
+7. `docs/auth.md`: GitHub OAuth, API tokens, and CLI login.
+8. `docs/telemetry.md`: what `clawhub sync` reports and how to opt out.
+9. `docs/troubleshooting.md`: user-facing CLI, install, publish, sync, update, and API fixes.
 
-Public/operator docs:
+Policy, API, and trust docs:
 
 - `docs/acceptable-usage.md`: marketplace policy and enforcement boundaries.
 - `docs/api.md`: public REST API overview.
-- `docs/security.md`: moderation, reporting, bans, upload gating.
-- `docs/telemetry.md`: what `clawhub sync` reports and how to opt out.
-- `docs/webhook.md`: Discord webhook events and payloads.
-- `docs/soul-format.md`: SOUL.md bundle format.
+- `docs/http-api.md`: detailed HTTP API reference.
+- `docs/security.md`: moderation, reporting, bans, upload gating, and scan outcomes.
 
 Maintainer records:
 
-- `specs/README.md`: index for specs, plans, regression notes, and design records.
+- `specs/README.md`: index for specs, plans, deployment runbooks, webhook notes, regression notes, and design records.
 
 Publish flow:
 
