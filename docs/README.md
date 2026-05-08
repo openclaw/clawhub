@@ -24,7 +24,7 @@ Reading order:
 
 1. `docs/clawhub.md`: public overview for discovery, install, publish, and trust.
 2. `docs/quickstart.md`: product quickstart for users and publishers.
-3. `docs/architecture.md`: product model for listings, versions, installs, publishing, scans, and API access.
+3. `docs/how-it-works.md`: listings, versions, installs, publishing, scans, and API access.
 4. `docs/cli.md`: ClawHub CLI reference.
 5. `docs/skill-format.md`: skill bundle metadata and package shape.
 6. `docs/soul-format.md`: SOUL.md bundle format.

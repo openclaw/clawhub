@@ -8,8 +8,7 @@ read_when:
 
 # Quickstart
 
-ClawHub is a registry for OpenClaw skills and plugins. You do not need to run
-the ClawHub website or backend to use it.
+ClawHub is a registry for OpenClaw skills and plugins.
 
 Use OpenClaw when you are installing things into OpenClaw. Use the `clawhub` CLI
 when you are signing in, publishing, managing your own listings, or using

@@ -1,8 +1,7 @@
 ---
-summary: "How ClawHub works as a product: registry records, install sources, publishing, scans, and updates."
+summary: "How ClawHub listings, versions, installs, publishing, scans, and updates work."
 read_when:
-  - Explaining the ClawHub product model
-  - Understanding how install, publish, update, and moderation fit together
+  - Understanding listings, versions, installs, publishing, and moderation
 ---
 
 # How ClawHub Works
