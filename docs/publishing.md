@@ -80,6 +80,17 @@ Publish as "@openclaw" or rename this package to "@vintageayu/dronzer".
 To fix it, either choose the owner named by the package scope, or rename the
 package so the scope matches the owner you can publish as.
 
+If the package name already has the right scope but the package is owned by the
+wrong publisher, transfer ownership instead:
+
+```sh
+clawhub package transfer @opik/opik-openclaw --to opik
+```
+
+Use package transfer only when you have admin access to both the current package
+owner and the destination publisher. It does not let you publish into a scope you
+cannot manage.
+
 This protects org namespaces. A package named `@openclaw/dronzer` claims the
 `@openclaw` namespace, so only publishers with access to the `@openclaw` owner
 can publish it.
