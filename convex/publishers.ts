@@ -14,6 +14,10 @@ import {
   isPublisherRoleAllowed,
   normalizePublisherHandle,
 } from "./lib/publishers";
+import {
+  formatReservedPublicOwnerHandleMessage,
+  isReservedPublicOwnerHandle,
+} from "./lib/publicRouteReservations";
 
 const PUBLISHER_HANDLE_PATTERN = /^[a-z0-9](?:[a-z0-9-]{0,38}[a-z0-9])?$/;
 
@@ -22,6 +26,9 @@ function validateHandle(rawHandle: string) {
   if (!handle) throw new ConvexError("Handle is required");
   if (!PUBLISHER_HANDLE_PATTERN.test(handle)) {
     throw new ConvexError("Handle must be lowercase, url-safe, and 2-40 characters");
+  }
+  if (isReservedPublicOwnerHandle(handle)) {
+    throw new ConvexError(formatReservedPublicOwnerHandleMessage(handle));
   }
   return handle;
 }

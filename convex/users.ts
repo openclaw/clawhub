@@ -23,6 +23,7 @@ import {
   normalizeReservedHandle,
   upsertReservedHandleForRightfulOwner,
 } from "./lib/reservedHandles";
+import { isReservedPublicOwnerHandle } from "./lib/publicRouteReservations";
 import { buildUserSearchResults } from "./lib/userSearch";
 import { insertStatEvent } from "./skillStatEvents";
 
@@ -233,6 +234,7 @@ async function canUserClaimHandle(
 ) {
   const normalizedHandle = normalizeReservedHandle(handle);
   if (!normalizedHandle) return false;
+  if (isReservedPublicOwnerHandle(normalizedHandle)) return false;
   if (await isHandleReservedForAnotherUser(ctx, normalizedHandle, userId)) return false;
 
   const publisher = await getPublisherByHandle(ctx, normalizedHandle);

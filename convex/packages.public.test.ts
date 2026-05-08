@@ -2660,6 +2660,31 @@ describe("packages public queries", () => {
     expect(runMutation).not.toHaveBeenCalled();
   });
 
+  it("rejects unscoped package names that collide with publish routes", async () => {
+    const ctx = {
+      runQuery: vi.fn(),
+      runMutation: vi.fn(),
+      scheduler: { runAfter: vi.fn() },
+      storage: { get: vi.fn() },
+    };
+
+    await expect(
+      publishPackageForUserInternalHandler(ctx as never, {
+        actorUserId: "users:owner",
+        payload: {
+          name: "publish",
+          displayName: "Publish",
+          family: "code-plugin",
+          version: "1.0.0",
+          changelog: "init",
+          files: [],
+        },
+      }),
+    ).rejects.toThrow('Package name "publish" is reserved for ClawHub routes');
+
+    expect(ctx.runMutation).not.toHaveBeenCalled();
+  });
+
   it("rejects runtime id changes on an existing code plugin package", async () => {
     const ctx = makeInsertReleaseCtx(makePackageDoc({ runtimeId: "demo.plugin" }));
 

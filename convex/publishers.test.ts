@@ -63,6 +63,27 @@ const updateProfileHandler = (
 )._handler;
 
 describe("publishers membership controls", () => {
+  it("rejects org handles reserved for public routes", async () => {
+    const ctx = {
+      db: {
+        get: vi.fn(async (id: string) => (id === "users:admin" ? { _id: id, role: "admin" } : null)),
+        query: vi.fn(),
+        insert: vi.fn(),
+        patch: vi.fn(),
+        delete: vi.fn(),
+        replace: vi.fn(),
+        normalizeId: vi.fn(),
+      },
+    };
+
+    await expect(
+      migrateLegacyPublisherHandleToOrgInternalHandler(ctx, {
+        actorUserId: "users:admin",
+        handle: "skills",
+      }),
+    ).rejects.toThrow('Handle "@skills" is reserved for ClawHub routes');
+  });
+
   it("prevents admins from promoting members to owner", async () => {
     vi.mocked(getAuthUserId).mockResolvedValue("users:admin" as never);
     const ctx = {
