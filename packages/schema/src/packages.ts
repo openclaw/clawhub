@@ -1,6 +1,9 @@
 import { type inferred, type } from "arktype";
 import { CliPublishFileSchema, PublishSourceSchema } from "./schemas.js";
 
+export const PACKAGE_PUBLISHING_DOCS_URL =
+  "https://github.com/openclaw/clawhub/blob/main/docs/publishing.md";
+
 export function normalizePackageOwnerHandle(handle: string | null | undefined) {
   const normalized = handle?.trim().replace(/^@+/, "").toLowerCase();
   return normalized || undefined;
@@ -19,7 +22,7 @@ export function getPackageScopeOwnerMismatch(name: string, ownerHandle: string |
     scope,
     selectedOwner,
     suggestedName: `@${selectedOwner}/${packageSlug}`,
-    message: `Package scope "@${scope}" must match selected owner "@${selectedOwner}". Publish as "@${scope}" or rename this package to "@${selectedOwner}/${packageSlug}".`,
+    message: `Package scope "@${scope}" must match selected owner "@${selectedOwner}". Publish as "@${scope}" or rename this package to "@${selectedOwner}/${packageSlug}". Learn how publishing works: ${PACKAGE_PUBLISHING_DOCS_URL}`,
   };
 }
 

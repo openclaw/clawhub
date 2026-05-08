@@ -1,5 +1,9 @@
 import { createFileRoute, useSearch } from "@tanstack/react-router";
-import { getPackageScopeOwnerMismatch, type PackageCompatibility } from "clawhub-schema";
+import {
+  getPackageScopeOwnerMismatch,
+  PACKAGE_PUBLISHING_DOCS_URL,
+  type PackageCompatibility,
+} from "clawhub-schema";
 import { useAction, useMutation, useQuery } from "convex/react";
 import { startTransition, useEffect, useMemo, useState } from "react";
 import semver from "semver";
@@ -44,8 +48,6 @@ const apiRefs = api as unknown as {
 };
 
 const SHOW_CLAWPACK_ONBOARDING_BANNER = false;
-const PUBLISHING_DOCS_URL = "https://github.com/openclaw/clawhub/blob/main/docs/publishing.md";
-
 export function PublishPluginRoute() {
   const search = useSearch({ from: "/plugins/publish" });
   const { isAuthenticated } = useAuthStatus();
@@ -241,7 +243,7 @@ export function PublishPluginRoute() {
               <Badge variant="accent">
                 <span>{ownerScopeError}</span>
                 <a
-                  href={PUBLISHING_DOCS_URL}
+                  href={PACKAGE_PUBLISHING_DOCS_URL}
                   target="_blank"
                   rel="noopener noreferrer"
                   className="underline underline-offset-2"
