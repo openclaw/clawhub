@@ -8,15 +8,9 @@ import { FEATURE_SOULS } from "./features";
 /** Lucide icon name used as a key to look up the component at render time. */
 export type NavIconName = "wrench" | "plug" | "ghost";
 
-interface NavItem {
+interface NavItemBase {
   /** Visible link text */
   label: string;
-  /** Route path passed to `<Link to>` */
-  to: string;
-  /** Optional search params object passed to `<Link search>` */
-  search?: Record<string, unknown>;
-  /** Optional lucide icon name shown beside the label in navbar tabs */
-  icon?: NavIconName;
   /** Link only shown when user is authenticated */
   authRequired: boolean;
   /** Link only shown for staff / moderator users */
@@ -30,6 +24,26 @@ interface NavItem {
   /** Feature flag that must be truthy for this item to show */
   featureFlag?: boolean;
 }
+
+interface RouteNavItem extends NavItemBase {
+  /** Route path passed to `<Link to>` */
+  to: string;
+  href?: never;
+  /** Optional search params object passed to `<Link search>` */
+  search?: Record<string, unknown>;
+  /** Optional lucide icon name shown beside the label in navbar tabs */
+  icon?: NavIconName;
+}
+
+interface ExternalNavItem extends NavItemBase {
+  /** External URL rendered as a normal anchor */
+  href: string;
+  to?: never;
+  search?: never;
+  icon?: never;
+}
+
+type NavItem = RouteNavItem | ExternalNavItem;
 
 // ---------------------------------------------------------------------------
 // Search-param shapes (kept here so Header, Footer, and mobile menu all agree)
@@ -115,6 +129,14 @@ export const SECONDARY_NAV_ITEMS: NavItem[] = [
   {
     label: "About",
     to: "/about",
+    authRequired: false,
+    staffOnly: false,
+    soulModeOnly: false,
+    soulModeHide: true,
+  },
+  {
+    label: "Docs",
+    href: "https://documentation.openclaw.ai/clawhub/",
     authRequired: false,
     staffOnly: false,
     soulModeOnly: false,
