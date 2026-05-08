@@ -3583,7 +3583,7 @@ export const listSkillReportsInternal = internalQuery({
     const limit = Math.max(1, Math.min(Math.round(args.limit ?? 25), 100));
     const status = args.status ?? "open";
     const reportQuery =
-      status === "all" || status === "open"
+      status === "all" || status === "open" || status === "confirmed"
         ? ctx.db.query("skillReports").withIndex("by_createdAt", (q) => q)
         : ctx.db
             .query("skillReports")
@@ -3596,6 +3596,9 @@ export const listSkillReportsInternal = internalQuery({
     const items: SkillReportListItem[] = [];
     for (const skillReport of page.page) {
       if (status === "open" && (skillReport.status ?? "open") !== "open") continue;
+      if (status === "confirmed" && readArtifactReportStatus(skillReport.status) !== "confirmed") {
+        continue;
+      }
       const skill = await ctx.db.get(skillReport.skillId);
       if (!skill) continue;
       const reporter = await ctx.db.get(skillReport.userId);

@@ -796,6 +796,71 @@ describe("skill artifact moderation", () => {
     ]);
   });
 
+  it("lists legacy triaged skill reports as confirmed", async () => {
+    const result = await listSkillReportsInternalHandler(
+      {
+        db: {
+          get: vi.fn(async (id: string) => {
+            if (id === "users:moderator") return { _id: id, role: "moderator" };
+            if (id === "skills:demo") return makeSkill({ _id: id, slug: "demo" });
+            if (id === "users:reporter") return makeOwner("users:reporter", "reporter");
+            return null;
+          }),
+          query: vi.fn((table: string) => {
+            if (table === "skillReports") {
+              return {
+                withIndex: vi.fn(() => ({
+                  order: vi.fn(() => ({
+                    paginate: vi.fn().mockResolvedValue({
+                      page: [
+                        {
+                          _id: "skillReports:legacy",
+                          skillId: "skills:demo",
+                          userId: "users:reporter",
+                          reason: "legacy triaged",
+                          status: "triaged",
+                          createdAt: 3,
+                        },
+                        {
+                          _id: "skillReports:confirmed",
+                          skillId: "skills:demo",
+                          userId: "users:reporter",
+                          reason: "confirmed",
+                          status: "confirmed",
+                          createdAt: 2,
+                        },
+                        {
+                          _id: "skillReports:dismissed",
+                          skillId: "skills:demo",
+                          userId: "users:reporter",
+                          reason: "dismissed",
+                          status: "dismissed",
+                          createdAt: 1,
+                        },
+                      ],
+                      isDone: true,
+                      continueCursor: "",
+                    }),
+                  })),
+                })),
+              };
+            }
+            throw new Error(`Unexpected query table: ${table}`);
+          }),
+        },
+      } as never,
+      {
+        actorUserId: "users:moderator",
+        status: "confirmed",
+      },
+    );
+
+    expect(result.items).toEqual([
+      expect.objectContaining({ reportId: "skillReports:legacy", status: "confirmed" }),
+      expect.objectContaining({ reportId: "skillReports:confirmed", status: "confirmed" }),
+    ]);
+  });
+
   it("can hide a skill while triaging a valid report", async () => {
     const skill = makeSkill({ reportCount: 1 });
     const patch = vi.fn();

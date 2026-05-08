@@ -4712,6 +4712,68 @@ describe("packages public queries", () => {
     });
   });
 
+  it("lists legacy triaged package reports as confirmed", async () => {
+    const result = await listPackageReportsInternalHandler(
+      {
+        db: {
+          get: vi.fn(async (id: string) => {
+            if (id === "users:moderator") return { _id: id, role: "moderator" };
+            if (id === "users:reporter") {
+              return { _id: id, handle: "reporter", displayName: "Reporter" };
+            }
+            if (id === "packages:demo") return makePackageDoc({ name: "@scope/demo" });
+            return null;
+          }),
+          query: vi.fn((table: string) => {
+            if (table !== "packageReports") throw new Error(`Unexpected table ${table}`);
+            return {
+              withIndex: vi.fn(() => ({
+                order: vi.fn(() => ({
+                  paginate: vi.fn().mockResolvedValue({
+                    page: [
+                      {
+                        _id: "packageReports:legacy",
+                        packageId: "packages:demo",
+                        userId: "users:reporter",
+                        reason: "legacy triaged",
+                        status: "triaged",
+                        createdAt: 3,
+                      },
+                      {
+                        _id: "packageReports:confirmed",
+                        packageId: "packages:demo",
+                        userId: "users:reporter",
+                        reason: "confirmed",
+                        status: "confirmed",
+                        createdAt: 2,
+                      },
+                      {
+                        _id: "packageReports:dismissed",
+                        packageId: "packages:demo",
+                        userId: "users:reporter",
+                        reason: "dismissed",
+                        status: "dismissed",
+                        createdAt: 1,
+                      },
+                    ],
+                    continueCursor: null,
+                    isDone: true,
+                  }),
+                })),
+              })),
+            };
+          }),
+        },
+      } as never,
+      { actorUserId: "users:moderator", status: "confirmed", limit: 10 },
+    );
+
+    expect(result.items).toEqual([
+      expect.objectContaining({ reportId: "packageReports:legacy", status: "confirmed" }),
+      expect.objectContaining({ reportId: "packageReports:confirmed", status: "confirmed" }),
+    ]);
+  });
+
   it("triages package reports and decrements open count", async () => {
     const patch = vi.fn();
     const insert = vi.fn(async () => "auditLogs:1");

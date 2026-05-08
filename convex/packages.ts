@@ -2844,7 +2844,7 @@ export const listPackageReportsInternal = internalQuery({
     const limit = Math.max(1, Math.min(Math.round(args.limit ?? 25), 100));
     const status = args.status ?? "open";
     const reportQuery =
-      status === "all"
+      status === "all" || status === "confirmed"
         ? ctx.db.query("packageReports").withIndex("by_createdAt", (q) => q)
         : ctx.db
             .query("packageReports")
@@ -2856,6 +2856,9 @@ export const listPackageReportsInternal = internalQuery({
 
     const items: PackageReportListItem[] = [];
     for (const report of page.page) {
+      if (status === "confirmed" && readArtifactReportStatus(report.status) !== "confirmed") {
+        continue;
+      }
       const pkg = await ctx.db.get(report.packageId);
       if (!pkg || pkg.softDeletedAt || pkg.family === "skill") continue;
       const reporter = await ctx.db.get(report.userId);
