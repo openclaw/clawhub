@@ -1,6 +1,6 @@
 import { type } from "arktype";
+import { DocsLinks } from "./docsLinks.js";
 import { CliPublishFileSchema, PublishSourceSchema } from "./schemas.js";
-export const PACKAGE_PUBLISHING_DOCS_URL = "https://github.com/openclaw/clawhub/blob/main/docs/publishing.md";
 export function normalizePackageOwnerHandle(handle) {
     const normalized = handle?.trim().replace(/^@+/, "").toLowerCase();
     return normalized || undefined;
@@ -18,7 +18,7 @@ export function getPackageScopeOwnerMismatch(name, ownerHandle) {
         scope,
         selectedOwner,
         suggestedName: `@${selectedOwner}/${packageSlug}`,
-        message: `Package scope "@${scope}" must match selected owner "@${selectedOwner}". Publish as "@${scope}" or rename this package to "@${selectedOwner}/${packageSlug}". Learn how publishing works: ${PACKAGE_PUBLISHING_DOCS_URL}`,
+        message: `Package scope "@${scope}" must match selected owner "@${selectedOwner}". Publish as "@${scope}" or rename this package to "@${selectedOwner}/${packageSlug}". Learn how publishing works: ${DocsLinks.clawhub.publishing}`,
     };
 }
 export const PackageFamilySchema = type('"skill"|"code-plugin"|"bundle-plugin"');

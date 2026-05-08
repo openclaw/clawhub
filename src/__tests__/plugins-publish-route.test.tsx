@@ -1,6 +1,7 @@
 /* @vitest-environment jsdom */
 
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { DocsLinks } from "clawhub-schema";
 import { createElement } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -312,9 +313,7 @@ describe("plugins publish route", () => {
     expect(screen.getByText(/openclaw\.compat\.pluginApi/i)).toBeTruthy();
     expect(screen.getByText(/openclaw\.build\.openclawVersion/i)).toBeTruthy();
     const docsLink = screen.getByRole("link", { name: /Plugin Setup and Config/i });
-    expect(docsLink.getAttribute("href")).toBe(
-      "https://docs.openclaw.ai/plugins/sdk-setup#package-metadata",
-    );
+    expect(docsLink.getAttribute("href")).toBe(DocsLinks.openclaw.pluginPackageMetadata);
     expect(docsLink.getAttribute("target")).toBe("_blank");
     expect(docsLink.getAttribute("rel")).toBe("noopener noreferrer");
     expect(screen.getByRole("button", { name: "Publish" }).getAttribute("disabled")).not.toBeNull();
@@ -354,9 +353,7 @@ describe("plugins publish route", () => {
     });
 
     const docsLink = screen.getByRole("link", { name: /Learn how publishing works/i });
-    expect(docsLink.getAttribute("href")).toBe(
-      "https://github.com/openclaw/clawhub/blob/main/docs/publishing.md",
-    );
+    expect(docsLink.getAttribute("href")).toBe(DocsLinks.clawhub.publishing);
     expect(docsLink.getAttribute("target")).toBe("_blank");
     expect(docsLink.getAttribute("rel")).toBe("noopener noreferrer");
     expect(screen.getByRole("button", { name: "Publish" }).getAttribute("disabled")).not.toBeNull();

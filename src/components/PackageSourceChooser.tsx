@@ -1,4 +1,4 @@
-import type { PackageCompatibility } from "clawhub-schema";
+import { DocsLinks, type PackageCompatibility } from "clawhub-schema";
 import { Package } from "lucide-react";
 import { useRef, useState } from "react";
 import { formatPackageCompatibility } from "../lib/pluginPublishPrefill";
@@ -7,9 +7,6 @@ import { formatBytes } from "../routes/upload/-utils";
 import { Badge } from "./ui/badge";
 import { Button } from "./ui/button";
 import { Card } from "./ui/card";
-
-const OPENCLAW_PLUGIN_PACKAGE_METADATA_DOCS_URL =
-  "https://docs.openclaw.ai/plugins/sdk-setup#package-metadata";
 
 export function PackageSourceChooser(props: {
   files: File[];
@@ -161,7 +158,7 @@ export function PackageSourceChooser(props: {
           Missing required OpenClaw package metadata: {props.codePluginFieldIssues.join(", ")}. Add
           these fields to <code>package.json</code> before publishing. See{" "}
           <a
-            href={OPENCLAW_PLUGIN_PACKAGE_METADATA_DOCS_URL}
+            href={DocsLinks.openclaw.pluginPackageMetadata}
             target="_blank"
             rel="noopener noreferrer"
             className="underline"

@@ -1,5 +1,4 @@
 import { type inferred } from "arktype";
-export declare const PACKAGE_PUBLISHING_DOCS_URL = "https://github.com/openclaw/clawhub/blob/main/docs/publishing.md";
 export declare function normalizePackageOwnerHandle(handle: string | null | undefined): string | undefined;
 export declare function inferPackageNameScope(name: string): string | undefined;
 export declare function getPackageScopeOwnerMismatch(name: string, ownerHandle: string | null | undefined): {

@@ -1,7 +1,7 @@
 import { createFileRoute, useSearch } from "@tanstack/react-router";
 import {
+  DocsLinks,
   getPackageScopeOwnerMismatch,
-  PACKAGE_PUBLISHING_DOCS_URL,
   type PackageCompatibility,
 } from "clawhub-schema";
 import { useAction, useMutation, useQuery } from "convex/react";
@@ -243,7 +243,7 @@ export function PublishPluginRoute() {
               <Badge variant="accent">
                 <span>{ownerScopeError}</span>
                 <a
-                  href={PACKAGE_PUBLISHING_DOCS_URL}
+                  href={DocsLinks.clawhub.publishing}
                   target="_blank"
                   rel="noopener noreferrer"
                   className="underline underline-offset-2"
