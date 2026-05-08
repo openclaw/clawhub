@@ -128,7 +128,7 @@ bun run --cwd packages/clawhub verify
 
 `bun test packages/clawhub/` is not the supported workflow. Source tests and built-artifact smoke tests are intentionally split.
 
-Manual smoke tests are documented in [`docs/manual-testing.md`](docs/manual-testing.md).
+Manual smoke tests are documented in [`specs/manual-testing.md`](specs/manual-testing.md).
 
 ## Skill & Soul Publishing
 
@@ -208,11 +208,12 @@ See [`docs/security.md`](docs/security.md) for moderation and upload gating deta
 ## Reading Order for New Contributors
 
 1. This file (local setup)
-2. [`docs/quickstart.md`](docs/quickstart.md) — end-to-end workflows
-3. [`docs/architecture.md`](docs/architecture.md) — system design
-4. [`docs/skill-format.md`](docs/skill-format.md) — skill structure
-5. [`docs/cli.md`](docs/cli.md) — CLI reference
-6. [`docs/http-api.md`](docs/http-api.md) — HTTP endpoints
-7. [`docs/auth.md`](docs/auth.md) — authentication
-8. [`docs/deploy.md`](docs/deploy.md) — deployment
-9. [`docs/troubleshooting.md`](docs/troubleshooting.md) — common issues
+2. [`docs/clawhub.md`](docs/clawhub.md) — public registry overview
+3. [`docs/quickstart.md`](docs/quickstart.md) — end-to-end workflows
+4. [`docs/architecture.md`](docs/architecture.md) — system design
+5. [`docs/skill-format.md`](docs/skill-format.md) — skill structure
+6. [`docs/cli.md`](docs/cli.md) — CLI reference
+7. [`docs/http-api.md`](docs/http-api.md) — HTTP endpoints
+8. [`docs/auth.md`](docs/auth.md) — authentication
+9. [`docs/deploy.md`](docs/deploy.md) — deployment
+10. [`docs/troubleshooting.md`](docs/troubleshooting.md) — common issues
