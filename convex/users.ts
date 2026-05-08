@@ -11,6 +11,7 @@ import {
 } from "./lib/access";
 import { syncGitHubProfile } from "./lib/githubAccount";
 import { toPublicUser } from "./lib/public";
+import { isReservedPublicOwnerHandle } from "./lib/publicRouteReservations";
 import {
   ensurePersonalPublisherForUser,
   getActiveUserByHandleOrPersonalPublisher,
@@ -233,6 +234,7 @@ async function canUserClaimHandle(
 ) {
   const normalizedHandle = normalizeReservedHandle(handle);
   if (!normalizedHandle) return false;
+  if (isReservedPublicOwnerHandle(normalizedHandle)) return false;
   if (await isHandleReservedForAnotherUser(ctx, normalizedHandle, userId)) return false;
 
   const publisher = await getPublisherByHandle(ctx, normalizedHandle);

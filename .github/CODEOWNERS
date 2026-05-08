@@ -5,7 +5,10 @@
 # If you add overlapping rules below the secops block, include @openclaw/openclaw-secops
 # on those entries too or you can silently remove required secops review.
 # Security-sensitive code, config, workflows, and docs require secops review.
+/.github/actions/ @openclaw/openclaw-secops
+/.github/actionlint.yaml @openclaw/openclaw-secops
 /.github/codeql/ @openclaw/openclaw-secops
+/.github/dependabot.yml @openclaw/openclaw-secops
 /.github/workflows/ @openclaw/openclaw-secops
 /scripts/check-staged-secrets.mjs @openclaw/openclaw-secops
 /scripts/clawhub-cli-npm-publish.sh @openclaw/openclaw-secops
@@ -66,8 +69,10 @@
 /src/routes/admin.tsx @openclaw/openclaw-secops @BunsDev
 /src/routes/cli/auth.tsx @openclaw/openclaw-secops @BunsDev
 /src/routes/packages/new.tsx @openclaw/openclaw-secops @BunsDev
+/src/routes/plugins/publish.tsx @openclaw/openclaw-secops @BunsDev
 /src/routes/publish-plugin.tsx @openclaw/openclaw-secops @BunsDev
 /src/routes/publish-skill.tsx @openclaw/openclaw-secops @BunsDev
+/src/routes/skills/publish.tsx @openclaw/openclaw-secops @BunsDev
 /src/routes/upload.tsx @openclaw/openclaw-secops @BunsDev
 /src/routes/upload/ @openclaw/openclaw-secops @BunsDev
 /src/routes/$owner/$slug/security/ @openclaw/openclaw-secops @BunsDev
@@ -106,8 +111,8 @@
 /docs/api.md @openclaw/openclaw-secops @Patrick-Erichsen
 /docs/auth.md @openclaw/openclaw-secops @Patrick-Erichsen
 /docs/deploy.md @openclaw/openclaw-secops @Patrick-Erichsen
-/docs/github-import.md @openclaw/openclaw-secops @Patrick-Erichsen
 /docs/http-api.md @openclaw/openclaw-secops @Patrick-Erichsen
 /docs/security.md @openclaw/openclaw-secops @Patrick-Erichsen
 /docs/webhook.md @openclaw/openclaw-secops @Patrick-Erichsen
+/specs/github-import.md @openclaw/openclaw-secops @Patrick-Erichsen
 /public/api/v1/openapi.json @openclaw/openclaw-secops @Patrick-Erichsen

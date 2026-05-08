@@ -10,6 +10,8 @@ concurrency:
   group: update-convex-ai-files
   cancel-in-progress: false
 
+permissions: {}
+
 env:
   BUN_VERSION: "1.3.10"
   UPDATE_BRANCH: automation/update-convex-ai-files

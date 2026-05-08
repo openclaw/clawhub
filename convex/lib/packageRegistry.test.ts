@@ -5,6 +5,7 @@ import {
   ensurePluginNameMatchesPackage,
   extractBundlePluginArtifacts,
   extractCodePluginArtifacts,
+  normalizePackageName,
   summarizePackageForSearch,
   toConvexSafeJsonValue,
   tryNormalizePackageName,
@@ -15,6 +16,11 @@ describe("packageRegistry", () => {
     expect(tryNormalizePackageName("@OpenClaw/Discord")).toBe("@openclaw/discord");
     expect(tryNormalizePackageName("openclaw/discord")).toBeNull();
     expect(tryNormalizePackageName("   ")).toBeNull();
+  });
+
+  it("reserves unscoped package names that collide with plugin routes", () => {
+    expect(() => normalizePackageName("publish")).toThrow("reserved for ClawHub routes");
+    expect(normalizePackageName("@demo/publish")).toBe("@demo/publish");
   });
 
   it("extracts code plugin compatibility and capabilities", () => {

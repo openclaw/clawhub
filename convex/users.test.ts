@@ -389,6 +389,30 @@ describe("ensureHandler", () => {
     });
   });
 
+  it("skips public route owner handles when deriving a handle", async () => {
+    const { ctx, patch } = makeCtx();
+    vi.mocked(requireUser).mockResolvedValue({
+      userId: "users:skills",
+      user: {
+        _creationTime: 1,
+        handle: undefined,
+        displayName: undefined,
+        name: "skills",
+        email: undefined,
+        role: "user",
+        createdAt: 1,
+      },
+    } as never);
+
+    await ensureHandler(ctx);
+
+    expect(patch).toHaveBeenCalledWith("users:skills", {
+      handle: "skills-2",
+      displayName: "skills-2",
+      updatedAt: expect.any(Number),
+    });
+  });
+
   it("repairs an existing handle that is no longer claimable", async () => {
     const { ctx, patch, query } = makeCtx();
     query.mockImplementation(((table: string) => {

@@ -1,4 +1,5 @@
 export { formatArkErrors, parseArk } from "./ark.js";
+export * from "./docsLinks.js";
 export * from "./license.js";
 export * from "./openclawContract.js";
 export * from "./packages.js";

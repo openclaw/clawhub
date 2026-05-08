@@ -1,7 +1,7 @@
 import { createFileRoute, Link, Outlet, redirect, useRouterState } from "@tanstack/react-router";
 import { useMutation, useQuery } from "convex/react";
 import { AlertTriangle, ExternalLink, Download } from "lucide-react";
-import type { ComponentProps } from "react";
+import { useState, type ComponentProps } from "react";
 import { toast } from "sonner";
 import { api } from "../../../convex/_generated/api";
 import type { Id } from "../../../convex/_generated/dataModel";
@@ -241,6 +241,20 @@ export function PluginDetailPage({
   const pathname = useRouterState({ select: (state) => state.location.pathname });
   const { isAuthenticated } = useAuthStatus();
   const requestPluginRescan = useMutation(api.packages.requestRescan);
+  const transferPackageOwner = useMutation(api.packages.transferPackageOwner);
+  const [transferOwner, setTransferOwner] = useState("");
+  const [isTransferring, setIsTransferring] = useState(false);
+  const publisherMemberships = useQuery(api.publishers.listMine, isAuthenticated ? {} : "skip") as
+    | Array<{
+        publisher: {
+          _id: Id<"publishers">;
+          handle: string;
+          displayName: string;
+          kind: "user" | "org";
+        };
+        role: "owner" | "admin" | "publisher";
+      }>
+    | undefined;
   const rescanState = useQuery(
     api.packages.getOwnerRescanStateByName,
     isAuthenticated && detail.package ? { name: detail.package.name } : "skip",
@@ -285,6 +299,19 @@ export function PluginDetailPage({
 
   const pkg = detail.package;
   const owner = detail.owner;
+  const scopedOwner = parseScopedPackageName(pkg.name)?.scope.replace(/^@+/, "") ?? null;
+  const publisherMembershipList = Array.isArray(publisherMemberships) ? publisherMemberships : [];
+  const manageablePublishers = publisherMembershipList.filter(
+    (entry) => entry.role === "owner" || entry.role === "admin",
+  );
+  const canManageCurrentOwner = Boolean(
+    owner?.handle && manageablePublishers.some((entry) => entry.publisher.handle === owner.handle),
+  );
+  const transferDestinations = scopedOwner
+    ? manageablePublishers.filter((entry) => entry.publisher.handle === scopedOwner)
+    : manageablePublishers.filter((entry) => entry.publisher.handle !== owner?.handle);
+  const canTransferPackage = canManageCurrentOwner && transferDestinations.length > 0;
+  const selectedTransferOwner = transferOwner || transferDestinations[0]?.publisher.handle || "";
   const latestRelease = version?.version ?? null;
   const isDownloadBlocked =
     pkg.verification?.scanStatus === "malicious" ||
@@ -324,6 +351,21 @@ export function PluginDetailPage({
       });
     } catch (error) {
       toast.error(getUserFacingConvexError(error, "Could not request a rescan."));
+    }
+  };
+  const transferPackage = async () => {
+    if (!selectedTransferOwner || isTransferring) return;
+    const confirmed = window.confirm(`Transfer ${pkg.name} to @${selectedTransferOwner}?`);
+    if (!confirmed) return;
+    setIsTransferring(true);
+    try {
+      await transferPackageOwner({ name: pkg.name, toOwner: selectedTransferOwner });
+      toast.success(`Transferred ${pkg.name} to @${selectedTransferOwner}.`);
+      window.location.reload();
+    } catch (error) {
+      toast.error(getUserFacingConvexError(error, "Could not transfer this plugin."));
+    } finally {
+      setIsTransferring(false);
     }
   };
 
@@ -500,6 +542,49 @@ export function PluginDetailPage({
                         ) : null}
                       </dl>
                     ) : null}
+                  </div>
+                </CardContent>
+              </Card>
+            ) : null}
+            {canManageCurrentOwner ? (
+              <Card>
+                <CardHeader>
+                  <CardTitle>Transfer ownership</CardTitle>
+                </CardHeader>
+                <CardContent>
+                  <div className="flex flex-col gap-3 text-sm">
+                    {scopedOwner ? (
+                      <p className="text-[color:var(--ink-soft)]">
+                        Scoped packages can only move to their matching publisher, @{scopedOwner}.
+                      </p>
+                    ) : null}
+                    <select
+                      className="w-full min-h-[44px] rounded-[var(--radius-sm)] border border-[rgba(29,59,78,0.22)] bg-[rgba(255,255,255,0.94)] px-3.5 py-[13px] text-[color:var(--ink)] transition-all duration-[180ms] ease-out focus:outline-none focus:border-[color-mix(in_srgb,var(--accent)_70%,white)] focus:shadow-[0_0_0_3px_color-mix(in_srgb,var(--accent)_22%,transparent)] dark:border-[rgba(255,255,255,0.12)] dark:bg-[rgba(14,28,37,0.84)]"
+                      value={selectedTransferOwner}
+                      disabled={!canTransferPackage || isTransferring}
+                      onChange={(event) => setTransferOwner(event.target.value)}
+                    >
+                      {transferDestinations.length ? (
+                        transferDestinations.map((entry) => (
+                          <option key={entry.publisher._id} value={entry.publisher.handle}>
+                            @{entry.publisher.handle} · {entry.role}
+                          </option>
+                        ))
+                      ) : (
+                        <option value="">
+                          {scopedOwner
+                            ? `No admin access to @${scopedOwner}`
+                            : "No destination publishers"}
+                        </option>
+                      )}
+                    </select>
+                    <Button
+                      type="button"
+                      disabled={!canTransferPackage || isTransferring}
+                      onClick={() => void transferPackage()}
+                    >
+                      {isTransferring ? "Transferring..." : "Transfer plugin"}
+                    </Button>
                   </div>
                 </CardContent>
               </Card>

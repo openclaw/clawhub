@@ -1,5 +1,26 @@
 import { type } from "arktype";
+import { DocsLinks } from "./docsLinks.js";
 import { CliPublishFileSchema, PublishSourceSchema } from "./schemas.js";
+export function normalizePackageOwnerHandle(handle) {
+    const normalized = handle?.trim().replace(/^@+/, "").toLowerCase();
+    return normalized || undefined;
+}
+export function inferPackageNameScope(name) {
+    return /^@([^/]+)\//.exec(name.trim().toLowerCase())?.[1];
+}
+export function getPackageScopeOwnerMismatch(name, ownerHandle) {
+    const scope = inferPackageNameScope(name);
+    const selectedOwner = normalizePackageOwnerHandle(ownerHandle);
+    if (!scope || !selectedOwner || scope === selectedOwner)
+        return null;
+    const packageSlug = name.split("/").pop()?.trim() || "plugin-name";
+    return {
+        scope,
+        selectedOwner,
+        suggestedName: `@${selectedOwner}/${packageSlug}`,
+        message: `Package scope "@${scope}" must match selected owner "@${selectedOwner}". Publish as "@${scope}" or rename this package to "@${selectedOwner}/${packageSlug}". More info: ${DocsLinks.clawhub.packageScopeFaq}`,
+    };
+}
 export const PackageFamilySchema = type('"skill"|"code-plugin"|"bundle-plugin"');
 export const PackageChannelSchema = type('"official"|"community"|"private"');
 export const PackageVerificationTierSchema = type('"structural"|"source-linked"|"provenance-verified"|"rebuild-verified"');
@@ -422,6 +443,19 @@ export const ApiV1PackageReadinessResponseSchema = type({
     ready: "boolean",
     checks: PackageReadinessCheckSchema.array(),
     blockers: "string[]",
+});
+export const PackageTransferRequestSchema = type({
+    toOwner: "string",
+    reason: "string?",
+});
+export const ApiV1PackageTransferResponseSchema = type({
+    ok: "true",
+    packageId: "string",
+    name: "string",
+    ownerUserId: "string",
+    ownerPublisherId: "string?",
+    channel: PackageChannelSchema,
+    isOfficial: "boolean",
 });
 export const PackageOfficialMigrationUpsertRequestSchema = type({
     bundledPluginId: "string",

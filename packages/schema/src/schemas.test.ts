@@ -2,6 +2,8 @@
 
 import { describe, expect, it } from "vitest";
 import { parseArk } from "./ark";
+import { DocsLinks, openClawDocsUrl } from "./docsLinks";
+import { getPackageScopeOwnerMismatch, inferPackageNameScope } from "./packages";
 import {
   ApiSearchResponseSchema,
   CliPublishRequestSchema,
@@ -74,6 +76,27 @@ describe("clawhub-schema", () => {
       "Publish payload",
     );
     expect(payload.ownerHandle).toBe("openclaw");
+  });
+
+  it("reports scoped package names that do not match the selected owner", () => {
+    expect(inferPackageNameScope("@openclaw/dronzer")).toBe("openclaw");
+    expect(getPackageScopeOwnerMismatch("@openclaw/dronzer", "openclaw")).toBeNull();
+    expect(getPackageScopeOwnerMismatch("@openclaw/dronzer", "@VintageAyu")).toEqual({
+      scope: "openclaw",
+      selectedOwner: "vintageayu",
+      suggestedName: "@vintageayu/dronzer",
+      message: `Package scope "@openclaw" must match selected owner "@vintageayu". Publish as "@openclaw" or rename this package to "@vintageayu/dronzer". More info: ${DocsLinks.clawhub.packageScopeFaq}`,
+    });
+  });
+
+  it("builds OpenClaw docs URLs from normalized paths", () => {
+    expect(openClawDocsUrl("/clawhub/publishing")).toBe(DocsLinks.clawhub.publishing);
+    expect(openClawDocsUrl("clawhub/publishing#package-scope-must-match-selected-owner")).toBe(
+      DocsLinks.clawhub.packageScopeFaq,
+    );
+    expect(openClawDocsUrl("plugins/sdk-setup#package-metadata")).toBe(
+      DocsLinks.openclaw.pluginPackageMetadata,
+    );
   });
 
   it("parses well-known config", () => {

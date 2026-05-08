@@ -6,7 +6,7 @@ export const Route = createFileRoute("/upload")({
   }),
   beforeLoad: ({ search }) => {
     throw redirect({
-      to: "/publish-skill",
+      to: "/skills/publish",
       search,
     });
   },

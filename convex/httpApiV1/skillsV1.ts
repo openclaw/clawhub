@@ -22,6 +22,7 @@ import { normalizeTrentSkillVerdictForSecurity } from "../lib/trent";
 import { publishVersionForUser } from "../skills";
 import {
   MAX_RAW_FILE_BYTES,
+  formatAuthzMessage,
   getPathSegments,
   json,
   parseJsonPayload,
@@ -1106,12 +1107,6 @@ function ownershipErrorToResponse(error: unknown, headers: HeadersInit) {
     return text(formatAuthzMessage(error, "Forbidden"), 403, headers);
   if (lower.includes("not found")) return text(message, 404, headers);
   return text(message, 400, headers);
-}
-
-function formatAuthzMessage(error: unknown, fallback: "Unauthorized" | "Forbidden") {
-  const message = error instanceof Error ? error.message.trim() : "";
-  if (!message || message.toLowerCase() === fallback.toLowerCase()) return fallback;
-  return message.replace(/^ConvexError:\s*/i, "").trim() || fallback;
 }
 
 async function resolveTransferContext(

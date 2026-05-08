@@ -29,6 +29,8 @@ import { Route as PluginsIndexRouteImport } from './routes/plugins/index'
 import { Route as PackagesIndexRouteImport } from './routes/packages/index'
 import { Route as UHandleRouteImport } from './routes/u/$handle'
 import { Route as SoulsSlugRouteImport } from './routes/souls/$slug'
+import { Route as SkillsPublishRouteImport } from './routes/skills/publish'
+import { Route as PluginsPublishRouteImport } from './routes/plugins/publish'
 import { Route as PluginsNewRouteImport } from './routes/plugins/new'
 import { Route as PluginsNameRouteImport } from './routes/plugins/$name'
 import { Route as PackagesNewRouteImport } from './routes/packages/new'
@@ -144,6 +146,16 @@ const SoulsSlugRoute = SoulsSlugRouteImport.update({
   path: '/souls/$slug',
   getParentRoute: () => rootRouteImport,
 } as any)
+const SkillsPublishRoute = SkillsPublishRouteImport.update({
+  id: '/skills/publish',
+  path: '/skills/publish',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const PluginsPublishRoute = PluginsPublishRouteImport.update({
+  id: '/plugins/publish',
+  path: '/plugins/publish',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const PluginsNewRoute = PluginsNewRouteImport.update({
   id: '/plugins/new',
   path: '/plugins/new',
@@ -240,6 +252,8 @@ export interface FileRoutesByFullPath {
   '/packages/new': typeof PackagesNewRoute
   '/plugins/$name': typeof PluginsNameRouteWithChildren
   '/plugins/new': typeof PluginsNewRoute
+  '/plugins/publish': typeof PluginsPublishRoute
+  '/skills/publish': typeof SkillsPublishRoute
   '/souls/$slug': typeof SoulsSlugRoute
   '/u/$handle': typeof UHandleRoute
   '/packages/': typeof PackagesIndexRoute
@@ -276,6 +290,8 @@ export interface FileRoutesByTo {
   '/packages/new': typeof PackagesNewRoute
   '/plugins/$name': typeof PluginsNameRouteWithChildren
   '/plugins/new': typeof PluginsNewRoute
+  '/plugins/publish': typeof PluginsPublishRoute
+  '/skills/publish': typeof SkillsPublishRoute
   '/souls/$slug': typeof SoulsSlugRoute
   '/u/$handle': typeof UHandleRoute
   '/packages': typeof PackagesIndexRoute
@@ -313,6 +329,8 @@ export interface FileRoutesById {
   '/packages/new': typeof PackagesNewRoute
   '/plugins/$name': typeof PluginsNameRouteWithChildren
   '/plugins/new': typeof PluginsNewRoute
+  '/plugins/publish': typeof PluginsPublishRoute
+  '/skills/publish': typeof SkillsPublishRoute
   '/souls/$slug': typeof SoulsSlugRoute
   '/u/$handle': typeof UHandleRoute
   '/packages/': typeof PackagesIndexRoute
@@ -351,6 +369,8 @@ export interface FileRouteTypes {
     | '/packages/new'
     | '/plugins/$name'
     | '/plugins/new'
+    | '/plugins/publish'
+    | '/skills/publish'
     | '/souls/$slug'
     | '/u/$handle'
     | '/packages/'
@@ -387,6 +407,8 @@ export interface FileRouteTypes {
     | '/packages/new'
     | '/plugins/$name'
     | '/plugins/new'
+    | '/plugins/publish'
+    | '/skills/publish'
     | '/souls/$slug'
     | '/u/$handle'
     | '/packages'
@@ -423,6 +445,8 @@ export interface FileRouteTypes {
     | '/packages/new'
     | '/plugins/$name'
     | '/plugins/new'
+    | '/plugins/publish'
+    | '/skills/publish'
     | '/souls/$slug'
     | '/u/$handle'
     | '/packages/'
@@ -460,6 +484,8 @@ export interface RootRouteChildren {
   PackagesNewRoute: typeof PackagesNewRoute
   PluginsNameRoute: typeof PluginsNameRouteWithChildren
   PluginsNewRoute: typeof PluginsNewRoute
+  PluginsPublishRoute: typeof PluginsPublishRoute
+  SkillsPublishRoute: typeof SkillsPublishRoute
   SoulsSlugRoute: typeof SoulsSlugRoute
   UHandleRoute: typeof UHandleRoute
   PackagesIndexRoute: typeof PackagesIndexRoute
@@ -611,6 +637,20 @@ declare module '@tanstack/react-router' {
       path: '/souls/$slug'
       fullPath: '/souls/$slug'
       preLoaderRoute: typeof SoulsSlugRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/skills/publish': {
+      id: '/skills/publish'
+      path: '/skills/publish'
+      fullPath: '/skills/publish'
+      preLoaderRoute: typeof SkillsPublishRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/plugins/publish': {
+      id: '/plugins/publish'
+      path: '/plugins/publish'
+      fullPath: '/plugins/publish'
+      preLoaderRoute: typeof PluginsPublishRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/plugins/new': {
@@ -773,6 +813,8 @@ const rootRouteChildren: RootRouteChildren = {
   PackagesNewRoute: PackagesNewRoute,
   PluginsNameRoute: PluginsNameRouteWithChildren,
   PluginsNewRoute: PluginsNewRoute,
+  PluginsPublishRoute: PluginsPublishRoute,
+  SkillsPublishRoute: SkillsPublishRoute,
   SoulsSlugRoute: SoulsSlugRoute,
   UHandleRoute: UHandleRoute,
   PackagesIndexRoute: PackagesIndexRoute,

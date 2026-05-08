@@ -1,0 +1,104 @@
+name: RFC
+description: Propose a ClawHub policy, product, trust, or interface decision for feedback.
+title: "RFC: "
+labels:
+  - "type: rfc"
+  - "status: review"
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Use RFCs for decisions that need visible feedback before they become policy, product behavior, or public API contract. Accepted repo RFC files live under `rfcs/`, not `docs/`, so draft/decision records do not publish to the docs site. Keep sensitive enforcement details, private reports, exploit specifics, and scanner thresholds out of the public issue.
+  - type: dropdown
+    id: area
+    attributes:
+      label: Area
+      description: Pick the primary area this RFC affects.
+      options:
+        - Moderation / policy
+        - Security / trust
+        - Product / UX
+        - API / CLI
+        - Documentation
+        - Other
+    validations:
+      required: true
+  - type: textarea
+    id: context
+    attributes:
+      label: Context
+      description: What problem, decision, or ambiguity does this RFC address?
+      placeholder: |
+        ClawHub needs a clearer policy for...
+    validations:
+      required: true
+  - type: textarea
+    id: goals
+    attributes:
+      label: Goals
+      description: What should this RFC achieve?
+      placeholder: |
+        - Make enforcement expectations understandable to users.
+        - Give moderators a consistent decision boundary.
+    validations:
+      required: true
+  - type: textarea
+    id: non_goals
+    attributes:
+      label: Non-goals
+      description: What is intentionally out of scope?
+      placeholder: |
+        - This RFC does not expose internal scanner thresholds.
+        - This RFC does not decide implementation details for every moderation tool.
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposal
+      description: Describe the proposed policy, behavior, or decision.
+      placeholder: |
+        ClawHub should...
+    validations:
+      required: true
+  - type: textarea
+    id: examples
+    attributes:
+      label: Examples
+      description: Give concrete allowed, not allowed, or edge-case examples.
+      placeholder: |
+        Allowed:
+        - Defensive security review with explicit scope and evidence.
+
+        Not allowed:
+        - Account takeover, evasion, or non-consensual surveillance workflows.
+
+        Edge cases:
+        - ...
+  - type: textarea
+    id: user_impact
+    attributes:
+      label: User impact
+      description: How does this affect authors, users, moderators, API consumers, or external contributors?
+      placeholder: |
+        Authors will...
+        Users will...
+        Moderators will...
+  - type: textarea
+    id: open_questions
+    attributes:
+      label: Open questions
+      description: What feedback would be most useful before a decision?
+      placeholder: |
+        - Should appeals be handled in-product, through GitHub, or both?
+        - What examples would make this clearer?
+    validations:
+      required: true
+  - type: input
+    id: feedback_deadline
+    attributes:
+      label: Feedback deadline
+      description: Use an absolute date. Normal RFCs should stay open for 7-14 days unless urgent.
+      placeholder: "YYYY-MM-DD"
+    validations:
+      required: true

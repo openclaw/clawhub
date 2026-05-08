@@ -7,6 +7,7 @@ import { assertModerator, requireUser, requireUserFromAction } from "./lib/acces
 import { embeddingVisibilityFor } from "./lib/embeddingVisibility";
 import { toPublicSoul, toPublicUser } from "./lib/public";
 import { getFrontmatterValue, hashSkillFiles } from "./lib/skills";
+import { assertValidSkillSlug, normalizeSkillSlug } from "./lib/skillSlugValidator";
 import { generateSoulChangelogPreview } from "./lib/soulChangelog";
 import { fetchText, type PublishResult, publishSoulVersionForUser } from "./lib/soulPublish";
 
@@ -70,15 +71,15 @@ function toPublicSoulVersion(
 }
 
 function normalizeSoulSlugKey(slug: string) {
-  return slug.trim().toLowerCase();
+  // Read-path normalization: lowercase + trim only. Intentionally lenient so
+  // that legacy rows (pre-validator) remain lookup-able.
+  return normalizeSkillSlug(slug);
 }
 
 function normalizeSoulSlugForWrite(slug: string) {
-  const normalized = normalizeSoulSlugKey(slug);
-  if (!normalized || !/^[a-z0-9][a-z0-9-]*$/.test(normalized)) {
-    throw new ConvexError("Slug must be lowercase and url-safe");
-  }
-  return normalized;
+  // Write-path: full validation (length, pattern, reserved words,
+  // no consecutive hyphens). Souls share the rules with skills.
+  return assertValidSkillSlug(slug);
 }
 
 export const getBySlug = query({
@@ -497,16 +498,28 @@ export const insertVersion = internalMutation({
   },
   handler: async (ctx, args) => {
     const userId = args.userId;
-    const slug = normalizeSoulSlugForWrite(args.slug);
+    // Lenient normalization first: we must look up the existing soul row
+    // before deciding whether to enforce the strict write-path validator.
+    // Owners of grandfathered slugs (reserved, <3 chars, >48 chars, or other
+    // pre-validator shapes) must remain able to publish new versions; the
+    // strict rules only apply when creating a brand new soul. The caller
+    // (publishSoulVersionForUser) performs the same split, but the mutation
+    // re-validates defensively because it can be invoked on its own.
+    const normalizedSlug = normalizeSkillSlug(args.slug);
+    if (!normalizedSlug) throw new ConvexError("Slug is required.");
     const user = await ctx.db.get(userId);
     if (!user || user.deletedAt || user.deactivatedAt) throw new Error("User not found");
 
     const soulMatches = await ctx.db
       .query("souls")
-      .withIndex("by_slug", (q) => q.eq("slug", slug))
+      .withIndex("by_slug", (q) => q.eq("slug", normalizedSlug))
       .order("desc")
       .take(2);
     let soul: Doc<"souls"> | null = soulMatches[0] ?? null;
+
+    // Only enforce the strict write-path rules when creating a new soul; for
+    // existing rows keep the already-persisted (possibly grandfathered) slug.
+    const slug = soul ? normalizedSlug : normalizeSoulSlugForWrite(args.slug);
 
     if (soul && soul.ownerUserId !== userId) {
       throw new ConvexError("Only the owner can publish soul updates");

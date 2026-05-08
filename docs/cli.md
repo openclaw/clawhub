@@ -1,20 +1,28 @@
 ---
 summary: "CLI reference: commands, flags, config, lockfile, sync behavior."
 read_when:
-  - Working on CLI behavior
-  - Debugging install/update/sync
+  - Using the ClawHub CLI
+  - Debugging install, update, publish, or sync
 ---
 
 # CLI
 
-CLI package: `packages/clawhub/` (published as `clawhub`, bin: `clawhub`).
-Platform moderator commands live in the private `packages/clawhub-mod/` package
-and are not part of the public npm CLI.
+CLI package: `clawhub`, bin: `clawhub`.
 
-From this repo you can run it via the wrapper script:
+Install it globally with npm or pnpm:
 
 ```bash
-bun clawhub --help
+npm i -g clawhub
+# or
+pnpm add -g clawhub
+```
+
+Then verify it:
+
+```bash
+clawhub --help
+clawhub login
+clawhub whoami
 ```
 
 ## Global flags
@@ -152,6 +160,7 @@ Stores your API token + cached registry URL.
 - Requires semver: `--version 1.2.3`.
 - `--owner <handle>` publishes under an org/user publisher handle when the
   actor has publisher access.
+- Owner and review behavior is explained in `docs/publishing.md`.
 - Publishing a skill means it is released under `MIT-0` on ClawHub.
 - Published skills are free to use, modify, and redistribute without attribution.
 - ClawHub does not support paid skills or per-skill pricing.
@@ -316,8 +325,8 @@ clawhub package delete @openclaw/example-plugin --yes
 
 - Authenticated command for reporting a package to moderators.
 - Calls `POST /api/v1/packages/{name}/report`.
-- Reports are package-level, optionally tied to a version, and feed
-  `clawhub-mod package moderation-queue`.
+- Reports are package-level, optionally tied to a version, and become visible
+  to moderators for review.
 - Reports do not auto-hide packages or block downloads by themselves.
 - Flags:
   - `--version <version>`: optional package version to attach to the report.
@@ -419,6 +428,7 @@ clawhub package migration-status @openclaw/example-plugin
 - `--dry-run` previews the resolved publish payload without uploading.
 - `--json` emits machine-readable output for CI.
 - `--owner <handle>` publishes under a user or org publisher handle when the actor has publisher access.
+- Scoped package names must match the selected owner. See `docs/publishing.md`.
 - Existing flags (`--family`, `--name`, `--version`, `--source-repo`, `--source-commit`, `--source-ref`, `--source-path`) still work as overrides.
 - Private GitHub repos require `GITHUB_TOKEN`.
 

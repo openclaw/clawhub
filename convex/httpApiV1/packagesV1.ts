@@ -10,6 +10,7 @@ import {
   PackageReportTriageRequestSchema,
   PackageReleaseModerationRequestSchema,
   PackagePublishRequestSchema,
+  PackageTransferRequestSchema,
   PackageTrustedPublisherUpsertRequestSchema,
   PublishTokenMintRequestSchema,
   parseArk,
@@ -78,6 +79,7 @@ const internalRefs = internal as unknown as {
     publishPackageForUserInternal: unknown;
     publishPackageForTrustedPublisherInternal: unknown;
     setTrustedPublisherForUserInternal: unknown;
+    transferPackageOwnerForUserInternal: unknown;
     deleteTrustedPublisherForUserInternal: unknown;
     getReleasesByIdsInternal: unknown;
     getReleaseByPackageAndVersionInternal: unknown;
@@ -1714,6 +1716,38 @@ export async function packagesPostRouterV1Handler(ctx: ActionCtx, request: Reque
     } catch (error) {
       return text(
         error instanceof Error ? error.message : "Rescan request failed",
+        400,
+        rate.headers,
+      );
+    }
+  }
+
+  if (packageSegments[0] === "transfer" && packageSegments.length === 1) {
+    const rate = await applyRateLimit(ctx, request, "write");
+    if (!rate.ok) return rate.response;
+    const auth = await requireApiTokenUserOrResponse(ctx, request, rate.headers);
+    if (!auth.ok) return auth.response;
+
+    try {
+      const body = parseArk(
+        PackageTransferRequestSchema,
+        await request.json(),
+        "Package transfer payload",
+      ) as { toOwner: string; reason?: string };
+      const result = await runMutationRef(
+        ctx,
+        internalRefs.packages.transferPackageOwnerForUserInternal,
+        {
+          actorUserId: auth.userId,
+          name: packageName,
+          toOwner: body.toOwner,
+          ...(body.reason ? { reason: body.reason } : {}),
+        },
+      );
+      return json(result, 200, rate.headers);
+    } catch (error) {
+      return text(
+        error instanceof Error ? error.message : "Package transfer failed",
         400,
         rate.headers,
       );

@@ -20,6 +20,7 @@ import {
   ApiV1PackageReportResponseSchema,
   ApiV1PackageResponseSchema,
   ApiV1PackageSearchResponseSchema,
+  ApiV1PackageTransferResponseSchema,
   ApiV1PackageTrustedPublisherResponseSchema,
   ApiV1PackageVersionListResponseSchema,
   ApiV1PackageVersionResponseSchema,
@@ -153,6 +154,12 @@ type PackageTrustedPublisherGetOptions = {
 
 type PackageDeleteOptions = {
   yes?: boolean;
+  json?: boolean;
+};
+
+type PackageTransferOptions = {
+  to: string;
+  reason?: string;
   json?: boolean;
 };
 
@@ -870,6 +877,44 @@ export async function cmdDeletePackage(
       ApiV1DeleteResponseSchema,
     );
     spinner.succeed(`OK. Deleted ${name}`);
+    if (options.json) {
+      console.log(JSON.stringify(result, null, 2));
+    }
+    return result;
+  } catch (error) {
+    spinner.fail(formatError(error));
+    throw error;
+  }
+}
+
+export async function cmdTransferPackage(
+  opts: GlobalOpts,
+  nameArg: string,
+  options: PackageTransferOptions,
+) {
+  const name = normalizePackageNameOrFail(nameArg);
+  const toOwner = options.to?.trim().replace(/^@+/, "").toLowerCase();
+  if (!toOwner) fail("--to required");
+  const reason = options.reason?.trim();
+
+  const token = await requireAuthToken();
+  const registry = await getRegistry(opts, { cache: true });
+  const spinner = createSpinner(`Transferring ${name} to @${toOwner}`);
+  try {
+    const result = await apiRequest(
+      registry,
+      {
+        method: "POST",
+        path: `${ApiRoutes.packages}/${encodeURIComponent(name)}/transfer`,
+        token,
+        body: {
+          toOwner,
+          ...(reason ? { reason } : {}),
+        },
+      },
+      ApiV1PackageTransferResponseSchema,
+    );
+    spinner.succeed(`OK. Transferred ${name} to @${toOwner}`);
     if (options.json) {
       console.log(JSON.stringify(result, null, 2));
     }

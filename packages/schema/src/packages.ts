@@ -1,5 +1,28 @@
 import { type inferred, type } from "arktype";
+import { DocsLinks } from "./docsLinks.js";
 import { CliPublishFileSchema, PublishSourceSchema } from "./schemas.js";
+
+export function normalizePackageOwnerHandle(handle: string | null | undefined) {
+  const normalized = handle?.trim().replace(/^@+/, "").toLowerCase();
+  return normalized || undefined;
+}
+
+export function inferPackageNameScope(name: string) {
+  return /^@([^/]+)\//.exec(name.trim().toLowerCase())?.[1];
+}
+
+export function getPackageScopeOwnerMismatch(name: string, ownerHandle: string | null | undefined) {
+  const scope = inferPackageNameScope(name);
+  const selectedOwner = normalizePackageOwnerHandle(ownerHandle);
+  if (!scope || !selectedOwner || scope === selectedOwner) return null;
+  const packageSlug = name.split("/").pop()?.trim() || "plugin-name";
+  return {
+    scope,
+    selectedOwner,
+    suggestedName: `@${selectedOwner}/${packageSlug}`,
+    message: `Package scope "@${scope}" must match selected owner "@${selectedOwner}". Publish as "@${scope}" or rename this package to "@${selectedOwner}/${packageSlug}". More info: ${DocsLinks.clawhub.packageScopeFaq}`,
+  };
+}
 
 export const PackageFamilySchema = type('"skill"|"code-plugin"|"bundle-plugin"');
 export type PackageFamily = (typeof PackageFamilySchema)[inferred];
@@ -538,6 +561,23 @@ export const ApiV1PackageReadinessResponseSchema = type({
   blockers: "string[]",
 });
 export type ApiV1PackageReadinessResponse = (typeof ApiV1PackageReadinessResponseSchema)[inferred];
+
+export const PackageTransferRequestSchema = type({
+  toOwner: "string",
+  reason: "string?",
+});
+export type PackageTransferRequest = (typeof PackageTransferRequestSchema)[inferred];
+
+export const ApiV1PackageTransferResponseSchema = type({
+  ok: "true",
+  packageId: "string",
+  name: "string",
+  ownerUserId: "string",
+  ownerPublisherId: "string?",
+  channel: PackageChannelSchema,
+  isOfficial: "boolean",
+});
+export type ApiV1PackageTransferResponse = (typeof ApiV1PackageTransferResponseSchema)[inferred];
 
 export const PackageOfficialMigrationUpsertRequestSchema = type({
   bundledPluginId: "string",

@@ -21,6 +21,8 @@ concurrency:
   group: clawhub-cli-npm-release-${{ inputs.tag }}
   cancel-in-progress: false
 
+permissions: {}
+
 env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
   NODE_VERSION: "24.x"

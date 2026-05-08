@@ -29,6 +29,7 @@ import {
   listVersions,
   updateReleaseStaticScanInternal,
   softDeletePackageInternal,
+  transferPackageOwnerForUserInternal,
   transferPackageOwnerInternal,
   repairPackageIdentityInternal,
   searchForViewerInternal,
@@ -524,6 +525,17 @@ const transferPackageOwnerInternalHandler = (
     { ok: true; packageId: string; ownerPublisherId?: string; channel: string }
   >
 )._handler;
+const transferPackageOwnerForUserInternalHandler = (
+  transferPackageOwnerForUserInternal as unknown as WrappedHandler<
+    {
+      actorUserId: string;
+      name: string;
+      toOwner: string;
+      reason?: string;
+    },
+    { ok: true; packageId: string; ownerPublisherId?: string; channel: string }
+  >
+)._handler;
 const repairPackageIdentityInternalHandler = (
   repairPackageIdentityInternal as unknown as WrappedHandler<
     {
@@ -888,24 +900,64 @@ function makeInsertReleaseCtx(
   existing: Record<string, unknown> | null,
   priorReleases: Array<Record<string, unknown>> = [],
   recordsById: Record<string, Record<string, unknown>> = {},
+  runtimePackages: Array<Record<string, unknown>> = [],
 ) {
   const patch = vi.fn();
-  const insert = vi.fn().mockResolvedValueOnce("packageReleases:new");
+  let insertedPackage: Record<string, unknown> | null = null;
+  const insert = vi.fn(async (table: string, doc: Record<string, unknown>) => {
+    if (table === "packages") {
+      insertedPackage = makePackageDoc({
+        ...doc,
+        _id: "packages:new",
+        tags: {},
+        latestReleaseId: undefined,
+        latestVersionSummary: undefined,
+        stats: { downloads: 0, installs: 0, stars: 0, versions: 0 },
+      });
+      return "packages:new";
+    }
+    if (table === "packageReleases") return "packageReleases:new";
+    return `${table}:new`;
+  });
   return {
     patch,
     insert,
     db: {
       get: vi.fn(async (id: string) => {
         if (id in recordsById) return recordsById[id];
+        if (id === "packages:new") return insertedPackage;
         if (id === "users:owner") return { _id: id, role: "user", trustedPublisher: false };
         return null;
       }),
       query: vi.fn((table: string) => {
         if (table === "packages") {
           return {
-            withIndex: vi.fn((_indexName: string) => ({
-              unique: vi.fn().mockResolvedValue(existing),
-            })),
+            withIndex: vi.fn(
+              (
+                indexName: string,
+                buildQuery?: (q: { eq: (field: string, value: unknown) => unknown }) => unknown,
+              ) => {
+                const filters = new Map<string, unknown>();
+                const query = {
+                  eq(field: string, value: unknown) {
+                    filters.set(field, value);
+                    return query;
+                  },
+                };
+                buildQuery?.(query);
+                if (indexName === "by_runtime_id") {
+                  const runtimeId = filters.get("runtimeId");
+                  const matches = runtimePackages.filter((pkg) => pkg.runtimeId === runtimeId);
+                  return {
+                    collect: vi.fn().mockResolvedValue(matches),
+                    unique: vi.fn().mockResolvedValue(matches[0] ?? null),
+                  };
+                }
+                return {
+                  unique: vi.fn().mockResolvedValue(existing),
+                };
+              },
+            ),
           };
         }
         if (table === "packageReleases") {
@@ -1018,6 +1070,7 @@ function makeTransferPackageOwnerCtx(options?: {
   ownerPublisher?: Record<string, unknown> | null;
 }) {
   const pkg = options?.pkg ?? makePackageDoc();
+  const packageSearchDigest = { _id: "packageSearchDigest:demo", packageId: pkg?._id };
   const patch = vi.fn();
   const insert = vi.fn();
   return {
@@ -1046,12 +1099,165 @@ function makeTransferPackageOwnerCtx(options?: {
           return null;
         }),
         query: vi.fn((table: string) => {
-          if (table !== "packages") throw new Error(`Unexpected table ${table}`);
-          return {
-            withIndex: vi.fn(() => ({
-              unique: vi.fn().mockResolvedValue(pkg),
-            })),
-          };
+          if (table === "packages") {
+            return {
+              withIndex: vi.fn(() => ({
+                unique: vi.fn().mockResolvedValue(pkg),
+                collect: vi.fn().mockResolvedValue(pkg ? [pkg] : []),
+              })),
+            };
+          }
+          if (table === "packageSearchDigest") {
+            return {
+              withIndex: vi.fn(() => ({
+                unique: vi.fn().mockResolvedValue(packageSearchDigest),
+              })),
+            };
+          }
+          if (table === "packageCapabilitySearchDigest") {
+            return {
+              withIndex: vi.fn(() => ({
+                collect: vi.fn().mockResolvedValue([]),
+              })),
+            };
+          }
+          throw new Error(`Unexpected table ${table}`);
+        }),
+        insert,
+        patch,
+        replace: vi.fn(),
+        delete: vi.fn(),
+        normalizeId: vi.fn(),
+      },
+    },
+  };
+}
+
+function makeUserTransferPackageOwnerCtx(options?: {
+  pkg?: Record<string, unknown> | null;
+  actor?: Record<string, unknown> | null;
+  destinationPublisher?: Record<string, unknown> | null;
+  sourceMembershipRole?: "owner" | "admin" | "publisher" | null;
+  destinationMembershipRole?: "owner" | "admin" | "publisher" | null;
+  trustedPublisher?: Record<string, unknown> | null;
+}) {
+  const pkg =
+    options?.pkg ??
+    makePackageDoc({
+      _id: "packages:opik",
+      name: "@opik/opik-openclaw",
+      normalizedName: "@opik/opik-openclaw",
+      ownerUserId: "users:vincent",
+      ownerPublisherId: "publishers:vincent",
+      stats: { downloads: 42, installs: 7, stars: 3, versions: 1 },
+    });
+  const actor = options?.actor ?? { _id: "users:vincent", role: "user" };
+  const destinationPublisher =
+    options?.destinationPublisher === undefined
+      ? {
+          _id: "publishers:opik",
+          kind: "org",
+          handle: "opik",
+          displayName: "Opik",
+          trustedPublisher: false,
+        }
+      : options.destinationPublisher;
+  const patch = vi.fn();
+  const insert = vi.fn();
+  const packageSearchDigest = { _id: "packageSearchDigest:opik", packageId: pkg?._id };
+  return {
+    insert,
+    patch,
+    pkg,
+    ctx: {
+      db: {
+        get: vi.fn(async (id: string) => {
+          if (id === "users:vincent") return actor;
+          if (id === "publishers:vincent") {
+            return {
+              _id: id,
+              kind: "user",
+              handle: "vincentkoc",
+              linkedUserId: "users:vincent",
+            };
+          }
+          if (id === "publishers:opik") return destinationPublisher;
+          if (id === "packageTrustedPublishers:opik") return options?.trustedPublisher ?? null;
+          return null;
+        }),
+        query: vi.fn((table: string) => {
+          if (table === "packages") {
+            return {
+              withIndex: vi.fn(() => ({
+                unique: vi.fn().mockResolvedValue(pkg),
+              })),
+            };
+          }
+          if (table === "packageSearchDigest") {
+            return {
+              withIndex: vi.fn(() => ({
+                unique: vi.fn().mockResolvedValue(packageSearchDigest),
+              })),
+            };
+          }
+          if (table === "packageCapabilitySearchDigest") {
+            return {
+              withIndex: vi.fn(() => ({
+                collect: vi.fn().mockResolvedValue([]),
+              })),
+            };
+          }
+          if (table === "publishers") {
+            return {
+              withIndex: vi.fn((_indexName: string, builder: (q: unknown) => unknown) => {
+                const terms: Record<string, unknown> = {};
+                builder({
+                  eq: (field: string, value: unknown) => {
+                    terms[field] = value;
+                    return {};
+                  },
+                });
+                return {
+                  unique: vi
+                    .fn()
+                    .mockResolvedValue(terms.handle === "opik" ? destinationPublisher : null),
+                };
+              }),
+            };
+          }
+          if (table === "publisherMembers") {
+            return {
+              withIndex: vi.fn((_indexName: string, builder: (q: unknown) => unknown) => {
+                const terms: Record<string, unknown> = {};
+                builder({
+                  eq: (field: string, value: unknown) => {
+                    terms[field] = value;
+                    return {
+                      eq: (nextField: string, nextValue: unknown) => {
+                        terms[nextField] = nextValue;
+                        return {};
+                      },
+                    };
+                  },
+                });
+                const publisherId = typeof terms.publisherId === "string" ? terms.publisherId : "";
+                const role =
+                  publisherId === "publishers:vincent"
+                    ? options?.sourceMembershipRole
+                    : publisherId === "publishers:opik"
+                      ? options?.destinationMembershipRole
+                      : null;
+                return {
+                  unique: vi
+                    .fn()
+                    .mockResolvedValue(
+                      role ? { _id: `publisherMembers:${publisherId}`, publisherId, role } : null,
+                    ),
+                };
+              }),
+            };
+          }
+          throw new Error(`Unexpected table ${table}`);
         }),
         insert,
         patch,
@@ -2142,7 +2348,7 @@ describe("packages public queries", () => {
   });
 
   it("soft-deletes packages and active releases for the owner", async () => {
-    const { ctx, patch } = makeSoftDeletePackageCtx({
+    const { ctx, insert, patch } = makeSoftDeletePackageCtx({
       releases: [
         makeReleaseDoc(),
         makeReleaseDoc({
@@ -2180,6 +2386,25 @@ describe("packages public queries", () => {
         packageId: "packages:demo",
         softDeletedAt: expect.any(Number),
         updatedAt: expect.any(Number),
+      }),
+    );
+    expect(insert).toHaveBeenCalledWith(
+      "auditLogs",
+      expect.objectContaining({
+        actorUserId: "users:owner",
+        action: "package.delete",
+        targetType: "package",
+        targetId: "packages:demo",
+        metadata: expect.objectContaining({
+          name: "demo-plugin",
+          normalizedName: "demo-plugin",
+          ownerUserId: "users:owner",
+          ownerPublisherId: undefined,
+          releaseCount: 1,
+          releaseIds: ["packageReleases:demo-1"],
+          source: "cli",
+        }),
+        createdAt: expect.any(Number),
       }),
     );
   });
@@ -2385,6 +2610,135 @@ describe("packages public queries", () => {
     );
   });
 
+  it("lets package owners transfer legacy scoped plugins to the matching org without changing package identity", async () => {
+    const trustedPublisher = {
+      _id: "packageTrustedPublishers:opik",
+      packageId: "packages:opik",
+      provider: "github-actions",
+      repository: "comet-ml/opik-openclaw",
+      repositoryId: "1",
+      repositoryOwner: "comet-ml",
+      repositoryOwnerId: "2",
+      workflowFilename: "publish-clawhub.yml",
+    };
+    const { ctx, patch, insert, pkg } = makeUserTransferPackageOwnerCtx({
+      destinationMembershipRole: "owner",
+      trustedPublisher,
+    });
+
+    await expect(
+      transferPackageOwnerForUserInternalHandler(ctx, {
+        actorUserId: "users:vincent",
+        name: "@opik/opik-openclaw",
+        toOwner: "opik",
+      }),
+    ).resolves.toMatchObject({
+      ok: true,
+      packageId: "packages:opik",
+      name: "@opik/opik-openclaw",
+      ownerPublisherId: "publishers:opik",
+      channel: "community",
+    });
+
+    expect(patch).toHaveBeenCalledWith("packages:opik", {
+      ownerUserId: "users:vincent",
+      ownerPublisherId: "publishers:opik",
+      channel: "community",
+      isOfficial: false,
+      updatedAt: expect.any(Number),
+    });
+    expect(patch).toHaveBeenCalledWith(
+      "packageSearchDigest:opik",
+      expect.objectContaining({
+        ownerUserId: "users:vincent",
+        ownerPublisherId: "publishers:opik",
+        channel: "community",
+        isOfficial: false,
+      }),
+    );
+    expect(patch).not.toHaveBeenCalledWith(
+      "packages:opik",
+      expect.objectContaining({ stats: expect.anything() }),
+    );
+    expect((pkg as { stats?: unknown }).stats).toEqual({
+      downloads: 42,
+      installs: 7,
+      stars: 3,
+      versions: 1,
+    });
+    expect(insert).toHaveBeenCalledWith(
+      "auditLogs",
+      expect.objectContaining({
+        action: "package.owner.transfer",
+        targetId: "packages:opik",
+        metadata: expect.objectContaining({
+          name: "@opik/opik-openclaw",
+          previousOwnerPublisherId: "publishers:vincent",
+          nextOwnerPublisherId: "publishers:opik",
+        }),
+      }),
+    );
+  });
+
+  it("rejects user package transfers without source admin access", async () => {
+    const { ctx } = makeUserTransferPackageOwnerCtx({
+      pkg: makePackageDoc({
+        name: "@opik/opik-openclaw",
+        normalizedName: "@opik/opik-openclaw",
+        ownerUserId: "users:someoneelse",
+        ownerPublisherId: "publishers:source-org",
+      }),
+      sourceMembershipRole: "publisher",
+      destinationMembershipRole: "owner",
+    });
+
+    await expect(
+      transferPackageOwnerForUserInternalHandler(ctx, {
+        actorUserId: "users:vincent",
+        name: "@opik/opik-openclaw",
+        toOwner: "opik",
+      }),
+    ).rejects.toThrow("Forbidden");
+  });
+
+  it("rejects user package transfers without destination admin access", async () => {
+    const { ctx } = makeUserTransferPackageOwnerCtx({ destinationMembershipRole: "publisher" });
+
+    await expect(
+      transferPackageOwnerForUserInternalHandler(ctx, {
+        actorUserId: "users:vincent",
+        name: "@opik/opik-openclaw",
+        toOwner: "opik",
+      }),
+    ).rejects.toThrow('admin access for "@opik"');
+  });
+
+  it("rejects scoped package transfers to a mismatched destination", async () => {
+    const { ctx } = makeUserTransferPackageOwnerCtx({ destinationMembershipRole: "owner" });
+
+    await expect(
+      transferPackageOwnerForUserInternalHandler(ctx, {
+        actorUserId: "users:vincent",
+        name: "@opik/opik-openclaw",
+        toOwner: "otherorg",
+      }),
+    ).rejects.toThrow('Package scope "@opik" can only be transferred to publisher "@opik"');
+  });
+
+  it("rejects user package transfers to missing publishers with clear guidance", async () => {
+    const { ctx } = makeUserTransferPackageOwnerCtx({
+      destinationPublisher: null,
+    });
+
+    await expect(
+      transferPackageOwnerForUserInternalHandler(ctx, {
+        actorUserId: "users:vincent",
+        name: "@opik/opik-openclaw",
+        toOwner: "opik",
+      }),
+    ).rejects.toThrow('Create the "@opik" organization');
+  });
+
   it("lets admins repair a package name and runtime id with an audit trail", async () => {
     const { ctx, patch, insert } = makeTransferPackageOwnerCtx({
       pkg: makePackageDoc({
@@ -2538,6 +2892,93 @@ describe("packages public queries", () => {
     ).rejects.toThrow("family changes are not allowed");
   });
 
+  it("rejects new releases on a soft-deleted package", async () => {
+    const ctx = makeInsertReleaseCtx(makePackageDoc({ softDeletedAt: 123 }));
+
+    await expect(
+      insertReleaseInternalHandler(ctx, {
+        actorUserId: "users:owner",
+        ownerUserId: "users:owner",
+        name: "demo-plugin",
+        displayName: "Demo Plugin",
+        family: "code-plugin",
+        version: "1.0.1",
+        changelog: "try deleted package",
+        tags: ["latest"],
+        summary: "demo",
+        files: [],
+        integritySha256: "abc123",
+      }),
+    ).rejects.toThrow("Restore it before publishing another release");
+  });
+
+  it("rejects package scopes that do not match the selected owner handle", async () => {
+    const runMutation = vi.fn();
+    const ctx = {
+      runQuery: vi
+        .fn()
+        .mockResolvedValueOnce(null)
+        .mockResolvedValueOnce({
+          _id: "users:vintageayu",
+          githubCreatedAt: Date.now() - 20 * 24 * 60 * 60 * 1000,
+        })
+        .mockResolvedValueOnce({
+          _id: "users:vintageayu",
+          role: "user",
+          githubCreatedAt: Date.now() - 20 * 24 * 60 * 60 * 1000,
+        }),
+      runMutation,
+      scheduler: {
+        runAfter: vi.fn(),
+      },
+      storage: {
+        get: vi.fn(),
+      },
+    };
+
+    await expect(
+      publishPackageForUserInternalHandler(ctx as never, {
+        actorUserId: "users:vintageayu",
+        payload: {
+          name: "@openclaw/dronzer",
+          displayName: "Dronzer Controller",
+          ownerHandle: "vintageayu",
+          family: "code-plugin",
+          version: "1.0.0",
+          changelog: "init",
+          files: [],
+        },
+      }),
+    ).rejects.toThrow('Package scope "@openclaw" must match selected owner "@vintageayu"');
+
+    expect(runMutation).not.toHaveBeenCalled();
+  });
+
+  it("rejects unscoped package names that collide with publish routes", async () => {
+    const ctx = {
+      runQuery: vi.fn(),
+      runMutation: vi.fn(),
+      scheduler: { runAfter: vi.fn() },
+      storage: { get: vi.fn() },
+    };
+
+    await expect(
+      publishPackageForUserInternalHandler(ctx as never, {
+        actorUserId: "users:owner",
+        payload: {
+          name: "publish",
+          displayName: "Publish",
+          family: "code-plugin",
+          version: "1.0.0",
+          changelog: "init",
+          files: [],
+        },
+      }),
+    ).rejects.toThrow('Package name "publish" is reserved for ClawHub routes');
+
+    expect(ctx.runMutation).not.toHaveBeenCalled();
+  });
+
   it("rejects runtime id changes on an existing code plugin package", async () => {
     const ctx = makeInsertReleaseCtx(makePackageDoc({ runtimeId: "demo.plugin" }));
 
@@ -2557,6 +2998,64 @@ describe("packages public queries", () => {
         runtimeId: "other.plugin",
       }),
     ).rejects.toThrow("runtime id changes are not allowed");
+  });
+
+  it("rejects plugin id collisions with active packages", async () => {
+    const ctx = makeInsertReleaseCtx(null, [], {}, [
+      makePackageDoc({
+        _id: "packages:claimed",
+        name: "claimed-plugin",
+        normalizedName: "claimed-plugin",
+        runtimeId: "dronzer",
+        softDeletedAt: undefined,
+      }),
+    ]);
+
+    await expect(
+      insertReleaseInternalHandler(ctx, {
+        actorUserId: "users:owner",
+        ownerUserId: "users:owner",
+        name: "dronzerclaw",
+        displayName: "Dronzer Claw",
+        family: "code-plugin",
+        version: "1.0.0",
+        changelog: "init",
+        tags: ["latest"],
+        summary: "demo",
+        files: [],
+        integritySha256: "abc123",
+        runtimeId: "dronzer",
+      }),
+    ).rejects.toThrow('Plugin id "dronzer" is already claimed by another package');
+  });
+
+  it("allows plugin ids held only by soft-deleted packages", async () => {
+    const ctx = makeInsertReleaseCtx(null, [], {}, [
+      makePackageDoc({
+        _id: "packages:deleted",
+        name: "@openclaw/dronzer",
+        normalizedName: "@openclaw/dronzer",
+        runtimeId: "dronzer",
+        softDeletedAt: 123,
+      }),
+    ]);
+
+    await expect(
+      insertReleaseInternalHandler(ctx, {
+        actorUserId: "users:owner",
+        ownerUserId: "users:owner",
+        name: "dronzerclaw",
+        displayName: "Dronzer Claw",
+        family: "code-plugin",
+        version: "1.0.0",
+        changelog: "init",
+        tags: ["latest"],
+        summary: "demo",
+        files: [],
+        integritySha256: "abc123",
+        runtimeId: "dronzer",
+      }),
+    ).resolves.toMatchObject({ ok: true, packageId: "packages:new" });
   });
 
   it("promotes existing packages to official when publisher becomes trusted", async () => {
@@ -3636,6 +4135,104 @@ describe("packages public queries", () => {
         minimumRole: "publisher",
       }),
     );
+  });
+
+  it("treats blank owner handles as omitted for scoped package publishes", async () => {
+    const runMutation = vi.fn(async (_ref: unknown, args: Record<string, unknown>) => {
+      if (args.minimumRole === "publisher") {
+        return { publisherId: "publishers:opik" };
+      }
+      return { ok: true, packageId: "packages:opik", releaseId: "releases:opik-1" };
+    });
+    const ctx = {
+      runQuery: vi
+        .fn()
+        .mockResolvedValueOnce(null)
+        .mockResolvedValueOnce({
+          _id: "users:vincent",
+          githubCreatedAt: Date.now() - 20 * 24 * 60 * 60 * 1000,
+        })
+        .mockResolvedValueOnce({
+          _id: "users:vincent",
+          role: "admin",
+          githubCreatedAt: Date.now() - 20 * 24 * 60 * 60 * 1000,
+        })
+        .mockResolvedValueOnce(null),
+      runMutation,
+      scheduler: {
+        runAfter: vi.fn(),
+      },
+      storage: {
+        get: vi.fn(),
+      },
+    };
+
+    await expect(
+      publishPackageForUserInternalHandler(ctx as never, {
+        actorUserId: "users:vincent",
+        payload: {
+          name: "@opik/opik-openclaw",
+          ownerHandle: "   ",
+          displayName: "Opik",
+          family: "bundle-plugin",
+          version: "0.2.15",
+          changelog: "beta",
+          bundle: { hostTargets: ["desktop"] },
+          files: [],
+        },
+      }),
+    ).rejects.toThrow("openclaw.plugin.json is required");
+
+    expect(runMutation).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({
+        actorUserId: "users:vincent",
+        ownerHandle: "opik",
+        minimumRole: "publisher",
+      }),
+    );
+  });
+
+  it("rejects scoped package publishes when --owner conflicts with the package scope", async () => {
+    const runMutation = vi.fn();
+    const ctx = {
+      runQuery: vi
+        .fn()
+        .mockResolvedValueOnce(null)
+        .mockResolvedValueOnce({
+          _id: "users:steipete",
+          githubCreatedAt: Date.now() - 20 * 24 * 60 * 60 * 1000,
+        })
+        .mockResolvedValueOnce({
+          _id: "users:steipete",
+          role: "user",
+          githubCreatedAt: Date.now() - 20 * 24 * 60 * 60 * 1000,
+        }),
+      runMutation,
+      scheduler: {
+        runAfter: vi.fn(),
+      },
+      storage: {
+        get: vi.fn(),
+      },
+    };
+
+    await expect(
+      publishPackageForUserInternalHandler(ctx as never, {
+        actorUserId: "users:steipete",
+        payload: {
+          name: "@opik/opik-openclaw",
+          ownerHandle: "vincentkoc",
+          displayName: "Opik",
+          family: "bundle-plugin",
+          version: "0.2.15",
+          changelog: "beta",
+          bundle: { hostTargets: ["desktop"] },
+          files: [],
+        },
+      }),
+    ).rejects.toThrow('Package scope "@opik" must match selected owner "@vincentkoc"');
+    expect(runMutation).not.toHaveBeenCalled();
   });
 
   it("keeps pending-scan packages visible to public reads", async () => {

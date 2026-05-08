@@ -11,6 +11,10 @@ import type {
 import { ConvexError } from "convex/values";
 import semver from "semver";
 import type { ActionCtx } from "../_generated/server";
+import {
+  formatReservedUnscopedPackageNameMessage,
+  isReservedUnscopedPackageName,
+} from "./publicRouteReservations";
 import { getFrontmatterValue, parseFrontmatter, sanitizePath } from "./skills";
 
 const PACKAGE_NAME_PATTERN = /^(?:@[a-z0-9][a-z0-9._-]*\/)?[a-z0-9][a-z0-9._-]*$/;
@@ -165,6 +169,9 @@ export function normalizePackageName(name: string) {
     throw new ConvexError(
       "Package name must be lowercase and npm-safe (example: @scope/name or plugin-name)",
     );
+  }
+  if (!normalized.startsWith("@") && isReservedUnscopedPackageName(normalized)) {
+    throw new ConvexError(formatReservedUnscopedPackageNameMessage(normalized));
   }
   return normalized;
 }

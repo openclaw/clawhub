@@ -222,6 +222,7 @@ describe("Header", () => {
     expect(screen.getAllByText("Plugins")).toHaveLength(1);
     expect(screen.getAllByText("Users")).toHaveLength(1);
     expect(screen.getAllByText("About")).toHaveLength(1);
+    expect(screen.getAllByText("Docs")).toHaveLength(1);
     expect(screen.queryByText("Dashboard")).toBeNull();
     expect(screen.queryByText("Manage")).toBeNull();
     expect(screen.getByPlaceholderText("Search skills, plugins, users")).toBeTruthy();
@@ -236,6 +237,7 @@ describe("Header", () => {
     expect(screen.getAllByText("Plugins")).toHaveLength(2);
     expect(screen.getAllByText("Users")).toHaveLength(2);
     expect(screen.getAllByText("About")).toHaveLength(2);
+    expect(screen.getAllByText("Docs")).toHaveLength(2);
   });
 
   it("renders the GitHub sign-in button with desktop and compact labels", () => {
@@ -383,6 +385,7 @@ describe("Header", () => {
       .filter((label): label is string => Boolean(label));
 
     expect(labels.slice(0, 2)).toEqual(["Home", "Skills"]);
+    expect(labels.slice(3, 6)).toEqual(["Users", "About", "Docs"]);
   });
 
   it("keeps Stars out of signed-in header navigation", () => {

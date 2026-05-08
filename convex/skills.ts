@@ -104,6 +104,7 @@ import {
   extractDigestFields,
   upsertSkillSearchDigest,
 } from "./lib/skillSearchDigest";
+import { assertValidSkillSlug, normalizeSkillSlug } from "./lib/skillSlugValidator";
 import { readCanonicalStat } from "./lib/skillStats";
 import { runStaticPublishScan } from "./lib/staticPublishScan";
 import { adjustUserSkillStatsForSkillChange } from "./lib/userSkillStats";
@@ -596,7 +597,10 @@ function buildAliasTakenErrorMessage(skill: Doc<"skills">, owner: SkillOwnerRef)
 }
 
 function normalizeSkillSlugKey(slug: string) {
-  return slug.trim().toLowerCase();
+  // Read-path normalization: lowercase + trim only. Intentionally lenient so
+  // that legacy rows (pre-validator) remain lookup-able. Write paths must
+  // use `normalizeSkillSlugForWrite` / `assertValidSkillSlug` instead.
+  return normalizeSkillSlug(slug);
 }
 
 type SkillOwnerRef =
@@ -610,11 +614,9 @@ type SkillOwnerRef =
   | undefined;
 
 function normalizeSkillSlugForWrite(slug: string) {
-  const normalized = normalizeSkillSlugKey(slug);
-  if (!normalized || !/^[a-z0-9][a-z0-9-]*$/.test(normalized)) {
-    throw new ConvexError("Slug must be lowercase and url-safe");
-  }
-  return normalized;
+  // Write-path: full validation (length, pattern, reserved words,
+  // no consecutive hyphens). See `lib/skillSlugValidator.ts`.
+  return assertValidSkillSlug(slug);
 }
 
 async function getSkillSlugAliasBySlug(ctx: Pick<QueryCtx | MutationCtx, "db">, slug: string) {
@@ -6218,6 +6220,16 @@ export const escalateByVtInternal = internalMutation({
     // Only hide for malicious — suspicious stays visible with a flag
     if (isMalicious) {
       basePatch.moderationStatus = "hidden";
+      // Security: reset hide provenance so the owner-undelete gate cannot
+      // mistake prior owner-initiated soft-deletes (hiddenBy === owner,
+      // moderationReason === undefined) for self-service state. The
+      // moderationReason is intentionally NOT overwritten here to preserve
+      // the aggregate LLM verdict (see function doc), but `blocked.malware`
+      // is stamped into moderationFlags above and `moderationVerdict` is
+      // "malicious", both of which the undelete gate also enforces.
+      basePatch.hiddenAt = now;
+      basePatch.hiddenBy = undefined;
+      basePatch.lastReviewedAt = now;
     } else if (nextVerdict === "clean" && !alreadyBlocked) {
       basePatch.moderationStatus = "active";
       basePatch.hiddenAt = undefined;
@@ -6920,13 +6932,11 @@ async function renameOwnedSkillByActor(
   }
 
   const now = Date.now();
-  const sourceSlug = sourceSlugArg.trim().toLowerCase();
-  const newSlug = newSlugArg.trim().toLowerCase();
+  const sourceSlug = normalizeSkillSlug(sourceSlugArg);
   if (!sourceSlug) throw new ConvexError("Current slug required");
-  if (!newSlug) throw new ConvexError("New slug required");
-  if (!/^[a-z0-9][a-z0-9-]*$/.test(newSlug)) {
-    throw new ConvexError("Invalid slug. Use lowercase letters, numbers, and hyphens only.");
-  }
+  // Full write-path validation for the new slug: length, pattern,
+  // reserved-word blocklist, no consecutive hyphens.
+  const newSlug = assertValidSkillSlug(newSlugArg);
 
   const resolved = await resolveSkillBySlugOrAlias(ctx, sourceSlug);
   const skill = resolved.skill;
@@ -7734,7 +7744,16 @@ export const insertVersion = internalMutation({
   },
   handler: async (ctx, args) => {
     const userId = args.userId;
-    const slug = normalizeSkillSlugForWrite(args.slug);
+    // Lenient normalization first so we can look up an existing skill row
+    // before deciding whether to enforce the strict write-path validator.
+    // Owners of grandfathered slugs (reserved, <3 chars, >48 chars, or other
+    // pre-validator shapes) must remain able to publish new versions; the
+    // strict reserved/length/pattern rules only apply when creating a brand
+    // new skill. The caller (publishVersionForUser) performs the same split,
+    // but the mutation re-validates defensively because it can be invoked on
+    // its own (e.g. tests, internal schedulers).
+    const normalizedSlug = normalizeSkillSlug(args.slug);
+    if (!normalizedSlug) throw new ConvexError("Slug is required.");
     const user = await ctx.db.get(userId);
     if (!user || user.deletedAt || user.deactivatedAt) throw new Error("User not found");
     const personalPublisher = await ensurePersonalPublisherForUser(ctx, user);
@@ -7752,8 +7771,13 @@ export const insertVersion = internalMutation({
 
     let skill = await ctx.db
       .query("skills")
-      .withIndex("by_slug", (q) => q.eq("slug", slug))
+      .withIndex("by_slug", (q) => q.eq("slug", normalizedSlug))
       .unique();
+
+    // Only enforce the strict write-path rules when creating a new skill.
+    // For existing rows, keep the already-persisted (possibly grandfathered)
+    // slug as-is so legacy publishers are not locked out of version updates.
+    const slug = skill ? normalizedSlug : normalizeSkillSlugForWrite(args.slug);
 
     if (!skill) {
       const alias = await getSkillSlugAliasBySlug(ctx, slug);
@@ -8207,8 +8231,141 @@ export const setSkillSoftDeletedInternal = internalMutation({
       .unique();
     if (!skill) throw new Error("Skill not found");
 
-    if (skill.ownerUserId !== args.userId) {
+    const isModeratorOrAdmin = user.role === "admin" || user.role === "moderator";
+    const isOwner = skill.ownerUserId === args.userId;
+
+    if (!isOwner && !isModeratorOrAdmin) {
+      // Preserve legacy behavior: delegate to assertModerator to produce the
+      // standard "Forbidden" error for non-owners without elevated roles.
       assertModerator(user);
+    }
+
+    // Owner-delete provenance guard: an owner must NOT be able to "re-delete"
+    // a skill that is currently in a non-owner-initiated hidden state. Such
+    // a re-delete would rewrite `hiddenBy` to the owner (and clear
+    // `moderationReason` via the data-hygiene reset below), erasing the
+    // moderator/system provenance of the current hide and letting a
+    // subsequent owner-undelete succeed — a privilege-escalation path where
+    // the owner reverses moderator actions in two calls (delete, then
+    // undelete).
+    //
+    // We only guard against hides whose current source is NOT the owner:
+    //   - skill.hiddenBy === owner: the current hide was owner-initiated
+    //     (e.g. a prior `clawhub delete`); re-delete is effectively a
+    //     no-op and must remain idempotent.
+    //   - skill.hiddenBy is some moderator/admin/system actor, OR is
+    //     undefined while the row is hidden (e.g. `auto.reports` does not
+    //     write hiddenBy): the hide is not owner-initiated, so block the
+    //     owner from re-delete. Moderators/admins keep full access via the
+    //     existing `isModeratorOrAdmin` branch.
+    //
+    // Staleness note: if a moderator previously restored the row
+    // (`setSoftDeleted(deleted=false)`), `hiddenBy` is cleared and
+    // `moderationStatus === "active"`, so this guard does NOT fire on
+    // active rows — the existing data-hygiene reset continues to handle
+    // stale `moderationReason` on active rows.
+    if (args.deleted && isOwner && !isModeratorOrAdmin) {
+      const isCurrentlyHidden = Boolean(skill.softDeletedAt) || skill.moderationStatus === "hidden";
+      const isOwnerInitiatedHide = skill.hiddenBy === args.userId;
+      if (isCurrentlyHidden && !isOwnerInitiatedHide) {
+        // Prefix with "Forbidden:" so HTTP boundary mappers
+        // (softDeleteErrorToResponse) deterministically return 403 instead of
+        // falling through to 500.
+        throw new ConvexError(
+          "Forbidden: This skill is currently hidden by moderation and cannot be re-deleted by the owner. Please contact a moderator.",
+        );
+      }
+    }
+
+    // gate: when an owner (without moderator/admin privileges) attempts to
+    // undelete a skill, only allow it if the current hidden state was produced
+    // by the owner themselves (i.e. via `clawhub delete`). Any other hidden
+    // state originates from moderation, scanning, merges, bans, or security
+    // redaction — only moderators/admins may lift those.
+    //
+    // Authorization is based on the *source of the current hide* (`hiddenBy`),
+    // plus a small deny list of `moderationReason` values that are truly
+    // bound to a non-owner current hide and therefore cannot be stale from
+    // historical moderation metadata.
+    //
+    //   - `hiddenBy === args.userId` is the necessary baseline. A moderator
+    //     hiding via `setSoftDeleted` records `hiddenBy = mod._id`, so the
+    //     owner simply fails this check. A security redaction / auto-ban
+    //     likewise records an admin/system actor, so those naturally fail.
+    //   - The deny list below is intentionally narrow: each entry is a
+    //     reason that is *only* set atomically with the current hide it
+    //     describes, so it cannot be leftover historical metadata:
+    //       * "owner.merged": merge mutation writes moderationReason,
+    //         softDeletedAt, and hiddenBy as a single atomic patch; there
+    //         is no flow that later restores the row while leaving this
+    //         reason stale.
+    //       * "user.banned": only written by the ban batch with
+    //         hiddenBy = admin; unban clears softDeletedAt and rewrites
+    //         moderationReason to "restored.unban", so a banned row never
+    //         survives into an active state with this reason.
+    //       * "security.redaction": paired with hiddenBy = security-admin;
+    //         there is no owner-reachable path that lifts redaction while
+    //         leaving this reason in place.
+    //     Notably EXCLUDED:
+    //       * "auto.reports" / "manual.report" — set by auto-hide or the
+    //         moderator report-triage flow, but `setSoftDeleted(deleted=
+    //         false)` (moderator restore) does NOT clear moderationReason.
+    //         That means a row can be `moderationStatus="active"` with a
+    //         stale `"auto.reports"` reason; if the owner later does a
+    //         normal self-delete, `hiddenBy` becomes the owner and the
+    //         current hide is owner-initiated, but the stale reason would
+    //         still block self-undelete. These are therefore enforced
+    //         solely via `hiddenBy !== owner` (auto.reports does not write
+    //         hiddenBy; manual.report writes hiddenBy = mod._id).
+    //       * "pending.scan.stale" / "pending.scan" / "scanner.*.*" — these
+    //         describe the skill's moderation state, not the cause of the
+    //         current hide, and must never block owner self-restore.
+    //   - Benign scanner / pipeline reasons such as `pending.scan`,
+    //     `scanner.aggregate.clean`, or `scanner.<scanner>.clean` describe
+    //     the skill's moderation state, not the cause of the current hide,
+    //     so they must NOT block owner self-restore.
+    //   - If `hiddenBy` is somehow missing (legacy rows, manual override
+    //     pathways that cleared it), fail closed and route the caller to a
+    //     moderator.
+    if (!args.deleted && isOwner && !isModeratorOrAdmin) {
+      // Defense-in-depth: regardless of `hiddenBy`/`moderationReason`
+      // provenance, an owner must NEVER be able to restore a skill that any
+      // scanner has marked malicious. This closes a class of bugs where a
+      // stale owner-initiated hide is left in place while a later scanner
+      // escalation upgrades the verdict to malicious without rewriting
+      // provenance fields (e.g. the VT-only escalation path intentionally
+      // does not overwrite `moderationReason` to preserve the LLM verdict).
+      const moderationFlags = (skill.moderationFlags as string[] | undefined) ?? [];
+      const isMaliciousBlocked =
+        moderationFlags.includes("blocked.malware") || skill.moderationVerdict === "malicious";
+      if (isMaliciousBlocked) {
+        throw new ConvexError(
+          "Forbidden: This skill was blocked by automated malware detection and cannot be restored by the owner. Please contact a moderator.",
+        );
+      }
+
+      // Reasons that are atomically bound to a non-owner current hide and
+      // therefore cannot survive as stale historical metadata on an
+      // owner-initiated hide. See the block comment above for why each is
+      // included, and why report-related reasons are intentionally NOT.
+      const OWNER_UNDELETE_DENIED_REASONS = new Set<string>([
+        "owner.merged",
+        "user.banned",
+        "security.redaction",
+      ]);
+      const reason = skill.moderationReason as string | undefined;
+      const ownerInitiatedHide =
+        skill.hiddenBy === args.userId &&
+        (reason === undefined || !OWNER_UNDELETE_DENIED_REASONS.has(reason));
+      if (!ownerInitiatedHide) {
+        // Prefix with "Forbidden:" so HTTP boundary mappers
+        // (softDeleteErrorToResponse) deterministically return 403 instead of
+        // falling through to 500. The suffix is preserved for clients that
+        // surface a human-readable reason.
+        throw new ConvexError(
+          "Forbidden: This skill was hidden by moderation and cannot be restored by the owner. Please contact a moderator.",
+        );
+      }
     }
 
     const now = Date.now();
@@ -8222,6 +8379,16 @@ export const setSkillSoftDeletedInternal = internalMutation({
       updatedAt: now,
     };
     if (note) patch.moderationNotes = note;
+    // Data hygiene: when the owner self-deletes (not a moderator/admin acting
+    // via this internal entry point), reset any stale `moderationReason`
+    // that may have survived from prior moderation metadata (e.g. an
+    // `auto.reports` or `manual.report` reason that a moderator restore
+    // never cleared). This keeps the row's provenance fields consistent
+    // with the current hide (owner-initiated) and prevents a future
+    // owner-undelete from tripping on historical reasons.
+    if (args.deleted && isOwner && !isModeratorOrAdmin) {
+      patch.moderationReason = undefined;
+    }
     const nextSkill = { ...skill, ...patch };
     await ctx.db.patch(skill._id, patch);
     await adjustGlobalPublicCountForSkillChange(ctx, skill, nextSkill);
@@ -8236,6 +8403,7 @@ export const setSkillSoftDeletedInternal = internalMutation({
       metadata: {
         slug,
         softDeletedAt: args.deleted ? now : null,
+        actorRole: user.role ?? "user",
         ...(note ? { reason: note } : {}),
       },
       createdAt: now,

@@ -1,4 +1,5 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
+import { DocsLinks } from "clawhub-schema";
 import type { LucideIcon } from "lucide-react";
 import {
   Banknote,
@@ -263,11 +264,7 @@ function AboutPage() {
               <Link to="/skills">Browse Skills</Link>
             </Button>
             <Button asChild>
-              <a
-                href="https://github.com/openclaw/clawhub/blob/main/docs/acceptable-usage.md"
-                target="_blank"
-                rel="noreferrer"
-              >
+              <a href={DocsLinks.clawhub.acceptableUsage} target="_blank" rel="noreferrer">
                 Reviewer Doc
               </a>
             </Button>

@@ -301,16 +301,30 @@ export default function Header() {
                   ) : null}
                   {primaryItems.map((item) => (
                     <SheetClose key={item.to + item.label} asChild>
-                      <Link to={item.to} search={item.search ?? {}} className="mobile-nav-link">
+                      <Link
+                        to={item.to}
+                        search={(item.search ?? {}) as never}
+                        className="mobile-nav-link"
+                      >
                         {item.label}
                       </Link>
                     </SheetClose>
                   ))}
                   {secondaryItems.map((item) => (
-                    <SheetClose key={item.to + item.label} asChild>
-                      <Link to={item.to} search={item.search ?? {}} className="mobile-nav-link">
-                        {item.label}
-                      </Link>
+                    <SheetClose key={(item.href ?? item.to ?? "") + item.label} asChild>
+                      {item.href ? (
+                        <a href={item.href} className="mobile-nav-link">
+                          {item.label}
+                        </a>
+                      ) : (
+                        <Link
+                          to={item.to}
+                          search={(item.search ?? {}) as never}
+                          className="mobile-nav-link"
+                        >
+                          {item.label}
+                        </Link>
+                      )}
                     </SheetClose>
                   ))}
                 </div>
@@ -528,7 +542,7 @@ export default function Header() {
                   key={item.to + item.label}
                   to={item.to}
                   className="navbar-tab"
-                  search={item.search ?? {}}
+                  search={(item.search ?? {}) as never}
                   data-status={isActiveByPrefix ? "active" : undefined}
                 >
                   {Icon ? <Icon size={14} className="opacity-50" aria-hidden="true" /> : null}
@@ -542,11 +556,19 @@ export default function Header() {
               const isActiveByPrefix = item.activePathPrefixes?.some((prefix) =>
                 location.pathname.startsWith(prefix),
               );
-              return (
+              return item.href ? (
+                <a
+                  key={item.href + item.label}
+                  href={item.href}
+                  className="navbar-tab navbar-tab-secondary"
+                >
+                  {item.label}
+                </a>
+              ) : (
                 <Link
-                  key={item.to + item.label}
+                  key={(item.to ?? "") + item.label}
                   to={item.to}
-                  search={item.search ?? {}}
+                  search={(item.search ?? {}) as never}
                   className="navbar-tab navbar-tab-secondary"
                   data-status={isActiveByPrefix ? "active" : undefined}
                 >

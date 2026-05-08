@@ -19,7 +19,7 @@ These rules are intentionally practical. We care most about end-to-end abuse wor
 - UI5 JavaScript-to-TypeScript conversion that preserves comments, uses concrete UI5 types, and keeps generated control interfaces reviewable.
 - Defensive security review, moderation tooling, and abuse-detection prompts that show evidence and keep human approval boundaries clear.
 - Consent-based workflow automation for personal or team accounts with explicit credentials, transparent setup, and dry-run or preview modes.
-- Docs, migration runbooks, local developer utilities, and test fixtures scoped to the repository they support.
+- Documentation, migration runbooks, developer utilities, and test fixtures scoped to the software they support.
 
 ## Not okay
 
