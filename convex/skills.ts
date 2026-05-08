@@ -8145,6 +8145,43 @@ export const setSkillSoftDeletedInternal = internalMutation({
       assertModerator(user);
     }
 
+    // Owner-delete provenance guard: an owner must NOT be able to "re-delete"
+    // a skill that is currently in a non-owner-initiated hidden state. Such
+    // a re-delete would rewrite `hiddenBy` to the owner (and clear
+    // `moderationReason` via the data-hygiene reset below), erasing the
+    // moderator/system provenance of the current hide and letting a
+    // subsequent owner-undelete succeed — a privilege-escalation path where
+    // the owner reverses moderator actions in two calls (delete, then
+    // undelete).
+    //
+    // We only guard against hides whose current source is NOT the owner:
+    //   - skill.hiddenBy === owner: the current hide was owner-initiated
+    //     (e.g. a prior `clawhub delete`); re-delete is effectively a
+    //     no-op and must remain idempotent.
+    //   - skill.hiddenBy is some moderator/admin/system actor, OR is
+    //     undefined while the row is hidden (e.g. `auto.reports` does not
+    //     write hiddenBy): the hide is not owner-initiated, so block the
+    //     owner from re-delete. Moderators/admins keep full access via the
+    //     existing `isModeratorOrAdmin` branch.
+    //
+    // Staleness note: if a moderator previously restored the row
+    // (`setSoftDeleted(deleted=false)`), `hiddenBy` is cleared and
+    // `moderationStatus === "active"`, so this guard does NOT fire on
+    // active rows — the existing data-hygiene reset continues to handle
+    // stale `moderationReason` on active rows.
+    if (args.deleted && isOwner && !isModeratorOrAdmin) {
+      const isCurrentlyHidden = Boolean(skill.softDeletedAt) || skill.moderationStatus === "hidden";
+      const isOwnerInitiatedHide = skill.hiddenBy === args.userId;
+      if (isCurrentlyHidden && !isOwnerInitiatedHide) {
+        // Prefix with "Forbidden:" so HTTP boundary mappers
+        // (softDeleteErrorToResponse) deterministically return 403 instead of
+        // falling through to 500.
+        throw new ConvexError(
+          "Forbidden: This skill is currently hidden by moderation and cannot be re-deleted by the owner. Please contact a moderator.",
+        );
+      }
+    }
+
     // gate: when an owner (without moderator/admin privileges) attempts to
     // undelete a skill, only allow it if the current hidden state was produced
     // by the owner themselves (i.e. via `clawhub delete`). Any other hidden

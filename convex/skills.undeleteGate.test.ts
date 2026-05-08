@@ -569,6 +569,235 @@ describe("setSkillSoftDeletedInternal B1 undelete gate", () => {
     );
   });
 
+  // BLOCKER regression: the owner MUST NOT be able to "re-delete" a skill
+  // that is currently hidden by a moderator/system. Without this guard,
+  // the delete patch would rewrite `hiddenBy` to the owner (and clear
+  // `moderationReason`), so a subsequent owner-undelete would pass the
+  // provenance-based gate and reverse the moderator's hide — a
+  // privilege-escalation chain in two API calls.
+  it("rejects owner delete (deleted=true) when skill is currently moderator-hidden", async () => {
+    const skill = makeSkill({
+      moderationStatus: "hidden",
+      softDeletedAt: 1_000,
+      hiddenAt: 1_000,
+      hiddenBy: "users:mod",
+      moderationReason: "manual.quality",
+    });
+    const { ctx, patch, insert } = makeCtx({
+      skill,
+      actor: { _id: "users:owner", role: "user" },
+    });
+
+    await expect(
+      setSkillSoftDeletedInternalHandler(ctx, {
+        userId: "users:owner",
+        slug: "demo",
+        deleted: true,
+      }),
+    ).rejects.toThrow(/^Forbidden:/i);
+
+    // Critically: no patch must land — otherwise hiddenBy/moderationReason
+    // would be corrupted and the follow-up undelete could succeed.
+    expect(patch).not.toHaveBeenCalled();
+    expect(insert).not.toHaveBeenCalled();
+  });
+
+  // Chain verification: even if the guard were bypassed, the full two-call
+  // exploit (owner delete → owner undelete) must fail at the boundary.
+  // This test drives the chain end-to-end using the actual handler: the
+  // first call (delete) is expected to reject, so the stored provenance
+  // remains intact and the subsequent undelete still hits the moderator
+  // hide.
+  it("owner delete on moderator-hidden skill does NOT enable a subsequent owner undelete", async () => {
+    // Shared mutable skill state so patch() modifications (if any) persist
+    // across the two handler invocations.
+    const skillState: Record<string, unknown> = {
+      _id: "skills:1",
+      slug: "demo",
+      ownerUserId: "users:owner",
+      moderationStatus: "hidden",
+      softDeletedAt: 1_000,
+      hiddenAt: 1_000,
+      hiddenBy: "users:mod",
+      moderationReason: "manual.quality",
+    };
+
+    const patch = vi.fn(async (_id: string, p: Record<string, unknown>) => {
+      Object.assign(skillState, p);
+    });
+    const insert = vi.fn(async () => "auditLogs:1");
+    const actor = { _id: "users:owner", role: "user" as const };
+
+    const db = {
+      normalizeId: vi.fn(),
+      get: vi.fn(async (id: string) => {
+        if (id === actor._id) return actor;
+        return null;
+      }),
+      query: vi.fn((table: string) => {
+        if (table === "skills") {
+          return {
+            withIndex: (name: string) => {
+              if (name !== "by_slug") throw new Error(`unexpected skills index ${name}`);
+              return { unique: async () => skillState };
+            },
+          };
+        }
+        if (table === "skillEmbeddings") {
+          return { withIndex: () => ({ collect: async () => [] }) };
+        }
+        if (table === "globalStats") {
+          return { withIndex: () => ({ unique: async () => null }) };
+        }
+        if (table === "skillSearchDigest") {
+          return { withIndex: () => ({ unique: async () => null }) };
+        }
+        throw new Error(`unexpected table ${table}`);
+      }),
+      patch,
+      insert,
+    };
+    const ctx = { db } as never;
+
+    // Step 1: owner delete must be rejected by the provenance guard.
+    await expect(
+      setSkillSoftDeletedInternalHandler(ctx, {
+        userId: "users:owner",
+        slug: "demo",
+        deleted: true,
+      }),
+    ).rejects.toThrow(/^Forbidden:/i);
+
+    // Provenance must be untouched.
+    expect(skillState.hiddenBy).toBe("users:mod");
+    expect(skillState.moderationReason).toBe("manual.quality");
+
+    // Step 2: owner undelete must also be rejected, because the current
+    // hide is still moderator-provenance.
+    await expect(
+      setSkillSoftDeletedInternalHandler(ctx, {
+        userId: "users:owner",
+        slug: "demo",
+        deleted: false,
+      }),
+    ).rejects.toThrow(/^Forbidden:/i);
+
+    expect(patch).not.toHaveBeenCalled();
+  });
+
+  it("rejects owner delete (deleted=true) when skill is hidden with no hiddenBy (auto.reports)", async () => {
+    const skill = makeSkill({
+      moderationStatus: "hidden",
+      softDeletedAt: 1_000,
+      hiddenAt: 1_000,
+      hiddenBy: undefined,
+      moderationReason: "auto.reports",
+    });
+    const { ctx, patch } = makeCtx({
+      skill,
+      actor: { _id: "users:owner", role: "user" },
+    });
+
+    await expect(
+      setSkillSoftDeletedInternalHandler(ctx, {
+        userId: "users:owner",
+        slug: "demo",
+        deleted: true,
+      }),
+    ).rejects.toThrow(/^Forbidden:/i);
+
+    expect(patch).not.toHaveBeenCalled();
+  });
+
+  it("rejects owner delete (deleted=true) when skill is security-redaction hidden", async () => {
+    const skill = makeSkill({
+      moderationStatus: "hidden",
+      softDeletedAt: 1_000,
+      hiddenAt: 1_000,
+      hiddenBy: "users:security-admin",
+      moderationReason: "security.redaction",
+    });
+    const { ctx, patch } = makeCtx({
+      skill,
+      actor: { _id: "users:owner", role: "user" },
+    });
+
+    await expect(
+      setSkillSoftDeletedInternalHandler(ctx, {
+        userId: "users:owner",
+        slug: "demo",
+        deleted: true,
+      }),
+    ).rejects.toThrow(/^Forbidden:/i);
+
+    expect(patch).not.toHaveBeenCalled();
+  });
+
+  // Idempotency: if the current hide is already owner-initiated, re-delete
+  // must remain a safe no-op-ish operation (provenance does not change
+  // meaningfully because hiddenBy is still the owner).
+  it("allows owner delete (deleted=true) when skill is already owner-hidden (idempotent)", async () => {
+    const skill = makeSkill({
+      moderationStatus: "hidden",
+      softDeletedAt: 1_000,
+      hiddenAt: 1_000,
+      hiddenBy: "users:owner",
+      moderationReason: undefined,
+    });
+    const { ctx, patch } = makeCtx({
+      skill,
+      actor: { _id: "users:owner", role: "user" },
+    });
+
+    await expect(
+      setSkillSoftDeletedInternalHandler(ctx, {
+        userId: "users:owner",
+        slug: "demo",
+        deleted: true,
+      }),
+    ).resolves.toEqual({ ok: true });
+
+    expect(patch).toHaveBeenCalledWith(
+      "skills:1",
+      expect.objectContaining({
+        moderationStatus: "hidden",
+        hiddenBy: "users:owner",
+      }),
+    );
+  });
+
+  // Moderators and admins must retain full access via this internal entry
+  // point — the provenance guard applies only to non-privileged owners.
+  it("allows moderator to delete (deleted=true) a skill regardless of provenance guard", async () => {
+    const skill = makeSkill({
+      moderationStatus: "active",
+      softDeletedAt: undefined,
+      hiddenAt: undefined,
+      hiddenBy: undefined,
+      moderationReason: undefined,
+    });
+    const { ctx, patch } = makeCtx({
+      skill,
+      actor: { _id: "users:mod", role: "moderator" },
+    });
+
+    await expect(
+      setSkillSoftDeletedInternalHandler(ctx, {
+        userId: "users:mod",
+        slug: "demo",
+        deleted: true,
+      }),
+    ).resolves.toEqual({ ok: true });
+
+    expect(patch).toHaveBeenCalledWith(
+      "skills:1",
+      expect.objectContaining({
+        moderationStatus: "hidden",
+        hiddenBy: "users:mod",
+      }),
+    );
+  });
+
   it("rejects non-owner non-moderator callers with Forbidden", async () => {
     const skill = makeSkill({ moderationReason: undefined, hiddenBy: "users:owner" });
     const { ctx, patch } = makeCtx({
