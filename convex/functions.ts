@@ -20,6 +20,10 @@ import {
   upsertPackageSearchDigest,
 } from "./lib/packageSearchDigest";
 import { getOwnerPublisher } from "./lib/publishers";
+import {
+  adjustPublisherStatsForPackageChange,
+  adjustPublisherStatsForSkillChange,
+} from "./lib/publisherStats";
 import { extractDigestFields, upsertSkillSearchDigest } from "./lib/skillSearchDigest";
 
 const triggers = new Triggers<DataModel>();
@@ -370,6 +374,11 @@ export async function repointPackageLatestRelease(
 }
 
 triggers.register("skills", async (ctx, change) => {
+  await adjustPublisherStatsForSkillChange(
+    ctx,
+    change.operation === "insert" ? null : change.oldDoc,
+    change.operation === "delete" ? null : change.newDoc,
+  );
   if (change.operation === "delete") {
     await scheduleGitHubBackupDeletionForSkill(ctx, change.oldDoc);
     const existing = await ctx.db
@@ -390,6 +399,11 @@ triggers.register("skills", async (ctx, change) => {
 });
 
 triggers.register("packages", async (ctx, change) => {
+  await adjustPublisherStatsForPackageChange(
+    ctx,
+    change.operation === "insert" ? null : change.oldDoc,
+    change.operation === "delete" ? null : change.newDoc,
+  );
   if (change.operation === "delete") {
     await deletePackageSearchDigests(ctx, change.id);
     return;
@@ -430,6 +444,17 @@ triggers.register("users", async (ctx, change) => {
 });
 
 triggers.register("publishers", async (ctx, change) => {
+  if (
+    change.operation === "update" &&
+    change.oldDoc.handle === change.newDoc.handle &&
+    change.oldDoc.kind === change.newDoc.kind &&
+    change.oldDoc.displayName === change.newDoc.displayName &&
+    change.oldDoc.image === change.newDoc.image &&
+    change.oldDoc.deletedAt === change.newDoc.deletedAt &&
+    change.oldDoc.deactivatedAt === change.newDoc.deactivatedAt
+  ) {
+    return;
+  }
   const ownerPublisherId = change.operation === "delete" ? change.id : change.newDoc._id;
   await scheduleOwnerPublisherDigestSync(ctx, ownerPublisherId);
 });

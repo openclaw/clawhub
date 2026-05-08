@@ -10,7 +10,7 @@
 - Web: polish browse/listing surfaces across skills, plugins, and search, including plugin card view parity, clearer search controls, visible safety filtering, and more consistent card metadata treatment (#2084) (thanks @vyctorbrzezowski).
 - Web: rename the skills and plugins browse alternate view from Cards to Grid while keeping legacy `view=cards` URLs compatible (#2119) (thanks @vyctorbrzezowski).
 - Web: allow skill owners and publisher admins to edit a skill summary from the detail page (#1411) (thanks @SylvanXiao).
-
+- Web: replace the Users directory with a Publishers discovery surface covering builders and organizations, add `/publishers` as the canonical route, and keep `/users` compatibility (#2087) (thanks @vyctorbrzezowski).
 ### Fixes
 
 - Security: add an admin-only moderation hold lift path for false-positive publisher holds, with audited skill restoration that preserves independently hidden skills (#1133) (thanks @Justincredible-tech).

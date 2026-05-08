@@ -67,7 +67,7 @@ const SOULS_SEARCH = {
   focus: undefined,
 } as const;
 
-const USERS_SEARCH = { q: undefined } as const;
+const PUBLISHERS_SEARCH = { q: undefined } as const;
 
 // ---------------------------------------------------------------------------
 // Primary nav items (desktop tabs row + mobile dropdown top section)
@@ -118,9 +118,9 @@ export const PRIMARY_NAV_ITEMS: NavItem[] = [
 
 export const SECONDARY_NAV_ITEMS: NavItem[] = [
   {
-    label: "Users",
-    to: "/users",
-    search: USERS_SEARCH,
+    label: "Publishers",
+    to: "/publishers",
+    search: PUBLISHERS_SEARCH,
     authRequired: false,
     staffOnly: false,
     soulModeOnly: false,

@@ -1,10 +1,10 @@
-import { FileText, Package, Plug, User } from "lucide-react";
+import { Building2, FileText, Package, Plug, User } from "lucide-react";
 
 type MarketplaceIconProps = {
-  kind: "skill" | "plugin" | "soul" | "user";
+  kind: "skill" | "plugin" | "soul" | "user" | "org";
   label: string;
   imageUrl?: string | null;
-  size?: "sm" | "md";
+  size?: "xs" | "sm" | "md";
 };
 
 const TONES = [
@@ -28,6 +28,8 @@ function getIcon(kind: MarketplaceIconProps["kind"]) {
       return FileText;
     case "user":
       return User;
+    case "org":
+      return Building2;
     default:
       return Package;
   }
@@ -39,7 +41,7 @@ export function MarketplaceIcon({ kind, label, imageUrl, size = "sm" }: Marketpl
 
   return (
     <span
-      className={`marketplace-icon marketplace-icon-${size}`}
+      className={`marketplace-icon marketplace-icon-${kind} marketplace-icon-${size}`}
       style={
         {
           "--marketplace-icon-accent": tone.accent,
