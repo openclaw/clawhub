@@ -24,7 +24,6 @@ import {
   ApiV1PackageVersionListResponseSchema,
   ApiV1PackageVersionResponseSchema,
   ApiV1PublishTokenMintResponseSchema,
-  getPackageScopeOwnerMismatch,
   normalizeOpenClawExternalPluginCompatibility,
   type PackageArtifactSummary,
   type PackageCapabilitySummary,
@@ -615,9 +614,6 @@ export async function cmdPublishPackage(
   let plan: PackagePublishPlan | undefined;
   try {
     plan = await preparePackagePublishPlan(opts, sourceArg, options);
-
-    const ownerMismatch = getPackageScopeOwnerMismatch(plan.payload.name, plan.payload.ownerHandle);
-    if (ownerMismatch) fail(ownerMismatch.message);
 
     if (options.dryRun) {
       if (options.json) {
