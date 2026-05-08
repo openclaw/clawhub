@@ -4,6 +4,7 @@
 
 ### Fixes
 
+- Security: block owner delete/undelete paths from overriding moderator or scanner hides, and return explicit 403 authz responses for owner restore denials (#2078) (thanks @momothemage).
 - CLI/API: allow skill publishes to target an org/user publisher with `--owner` / `ownerHandle`, and keep root `SKILL.md` publishable even when broad ignore rules match Markdown files (thanks @deepujain).
 - Packages: expose owned plugin/package soft-delete in the CLI and dashboard, keep moderator takedown access, and remove deleted packages from package search surfaces (thanks @Patrick-Erichsen).
 - Packages: support monorepo package publishes, infer package owners from scoped names, and keep dry-run publishes metadata-only.
