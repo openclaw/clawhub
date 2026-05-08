@@ -146,6 +146,7 @@ Stores your API token + cached registry URL.
 - Requires semver: `--version 1.2.3`.
 - `--owner <handle>` publishes under an org/user publisher handle when the
   actor has publisher access.
+- Owner and review behavior is explained in `docs/publishing.md`.
 - Publishing a skill means it is released under `MIT-0` on ClawHub.
 - Published skills are free to use, modify, and redistribute without attribution.
 - ClawHub does not support paid skills or per-skill pricing.
@@ -413,6 +414,7 @@ clawhub package migration-status @openclaw/example-plugin
 - `--dry-run` previews the resolved publish payload without uploading.
 - `--json` emits machine-readable output for CI.
 - `--owner <handle>` publishes under a user or org publisher handle when the actor has publisher access.
+- Scoped package names must match the selected owner. See `docs/publishing.md`.
 - Existing flags (`--family`, `--name`, `--version`, `--source-repo`, `--source-commit`, `--source-ref`, `--source-path`) still work as overrides.
 - Private GitHub repos require `GITHUB_TOKEN`.
 

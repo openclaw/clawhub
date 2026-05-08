@@ -353,6 +353,12 @@ describe("plugins publish route", () => {
       ).toBeTruthy();
     });
 
+    const docsLink = screen.getByRole("link", { name: /Learn how publishing works/i });
+    expect(docsLink.getAttribute("href")).toBe(
+      "https://github.com/openclaw/clawhub/blob/main/docs/publishing.md",
+    );
+    expect(docsLink.getAttribute("target")).toBe("_blank");
+    expect(docsLink.getAttribute("rel")).toBe("noopener noreferrer");
     expect(screen.getByRole("button", { name: "Publish" }).getAttribute("disabled")).not.toBeNull();
     expect(publishRelease).not.toHaveBeenCalled();
   });

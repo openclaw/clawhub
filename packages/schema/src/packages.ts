@@ -19,7 +19,7 @@ export function getPackageScopeOwnerMismatch(name: string, ownerHandle: string |
     scope,
     selectedOwner,
     suggestedName: `@${selectedOwner}/${packageSlug}`,
-    message: `Package scope "@${scope}" must match selected owner "@${selectedOwner}". Select "@${scope}" or rename this package to "@${selectedOwner}/${packageSlug}".`,
+    message: `Package scope "@${scope}" must match selected owner "@${selectedOwner}". Publish as "@${scope}" or rename this package to "@${selectedOwner}/${packageSlug}".`,
   };
 }
 

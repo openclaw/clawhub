@@ -13,11 +13,12 @@ Reading order (new contributor):
 2. `docs/quickstart.md`: end-to-end: search → install → publish → sync.
 3. `docs/architecture.md`: how the pieces fit (TanStack Start + Convex + CLI).
 4. `docs/skill-format.md`: what a “skill” is on disk + on the registry.
-5. `docs/cli.md`: CLI reference (flags, config, lockfiles, sync rules).
-6. `docs/http-api.md`: HTTP endpoints used by the CLI + public API.
-7. `docs/auth.md`: GitHub OAuth + API tokens + CLI loopback login.
-8. `docs/deploy.md`: Convex + Vercel deployment + rewrites.
-9. `docs/troubleshooting.md`: common failure modes.
+5. `docs/publishing.md`: owner-scoped skill/plugin publishing flow.
+6. `docs/cli.md`: CLI reference (flags, config, lockfiles, sync rules).
+7. `docs/http-api.md`: HTTP endpoints used by the CLI + public API.
+8. `docs/auth.md`: GitHub OAuth + API tokens + CLI loopback login.
+9. `docs/deploy.md`: Convex + Vercel deployment + rewrites.
+10. `docs/troubleshooting.md`: common failure modes.
 
 Feature/ops docs (already present):
 
@@ -28,6 +29,7 @@ Feature/ops docs (already present):
 - `docs/diffing.md`: version-to-version diff UI spec.
 - `docs/manual-testing.md`: CLI smoke scripts.
 - `docs/slug-routing.md`: skill/plugin slug redirects + package URL contract.
+- `docs/publishing.md`: user-facing publish flow, owner scopes, and review state.
 
 Docs tooling:
 

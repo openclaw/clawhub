@@ -44,6 +44,7 @@ const apiRefs = api as unknown as {
 };
 
 const SHOW_CLAWPACK_ONBOARDING_BANNER = false;
+const PUBLISHING_DOCS_URL = "https://github.com/openclaw/clawhub/blob/main/docs/publishing.md";
 
 export function PublishPluginRoute() {
   const search = useSearch({ from: "/plugins/publish" });
@@ -236,7 +237,19 @@ export function PublishPluginRoute() {
               disabled={metadataDisabled}
               onChange={(event) => setName(event.target.value)}
             />
-            {ownerScopeError ? <Badge variant="accent">{ownerScopeError}</Badge> : null}
+            {ownerScopeError ? (
+              <Badge variant="accent">
+                <span>{ownerScopeError}</span>
+                <a
+                  href={PUBLISHING_DOCS_URL}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="underline underline-offset-2"
+                >
+                  Learn how publishing works
+                </a>
+              </Badge>
+            ) : null}
             <Input
               placeholder="Display name"
               value={displayName}

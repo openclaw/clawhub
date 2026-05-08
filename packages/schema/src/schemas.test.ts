@@ -85,7 +85,7 @@ describe("clawhub-schema", () => {
       selectedOwner: "vintageayu",
       suggestedName: "@vintageayu/dronzer",
       message:
-        'Package scope "@openclaw" must match selected owner "@vintageayu". Select "@openclaw" or rename this package to "@vintageayu/dronzer".',
+        'Package scope "@openclaw" must match selected owner "@vintageayu". Publish as "@openclaw" or rename this package to "@vintageayu/dronzer".',
     });
   });
 
