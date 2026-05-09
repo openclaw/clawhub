@@ -10,7 +10,7 @@ export type PublicPublisher = Pick<
   "_id" | "_creationTime" | "kind" | "handle" | "displayName" | "image" | "bio" | "linkedUserId"
 >;
 
-export type PublicPublisherStats = {
+type PublicPublisherStats = {
   skills: number;
   packages: number;
   installs: number;

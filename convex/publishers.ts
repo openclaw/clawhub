@@ -185,6 +185,19 @@ function getPublisherPublishedItems(rows: PublisherPublishedRows): PublisherPubl
     .slice(0, 3);
 }
 
+function buildPluginDetailHref(name: string) {
+  const trimmed = name.trim();
+  if (!trimmed.startsWith("@")) return `/plugins/${encodeURIComponent(trimmed)}`;
+  const slashIndex = trimmed.indexOf("/");
+  if (slashIndex <= 1 || slashIndex === trimmed.length - 1) {
+    return `/plugins/${encodeURIComponent(trimmed)}`;
+  }
+  const scope = trimmed.slice(1, slashIndex);
+  const packageName = trimmed.slice(slashIndex + 1);
+  if (packageName.includes("/")) return `/plugins/${encodeURIComponent(trimmed)}`;
+  return `/plugins/@${encodeURIComponent(scope)}/${encodeURIComponent(packageName)}`;
+}
+
 function comparePublisherCatalogItems(sort: PublisherCatalogSort) {
   return (a: PublisherCatalogItem, b: PublisherCatalogItem) => {
     if (sort === "recent") {
@@ -226,7 +239,7 @@ function getPublisherCatalogItems(
       kind: "plugin" as const,
       displayName: pkg.displayName,
       summary: pkg.summary ?? null,
-      href: `/plugins/${encodeURIComponent(pkg.name)}`,
+      href: buildPluginDetailHref(pkg.name),
       downloads: pkg.stats.downloads,
       stars: pkg.stats.stars,
       updatedAt: pkg.updatedAt,
@@ -985,62 +998,26 @@ export const listPublicPage = query({
     const kindFilter = args.kind as PublicPublisherKindFilter | undefined;
     const numItems = clampInt(args.paginationOpts.numItems, 1, 50);
     const queryText = args.query?.trim();
-    if (queryText) {
-      const activeRows = await ctx.db
-        .query("publishers")
-        .withIndex("by_active_total_downloads", (q) =>
-          q.eq("deletedAt", undefined).eq("deactivatedAt", undefined),
-        )
-        .order("desc")
-        .take(MAX_PUBLIC_PUBLISHER_LIST_LIMIT);
-      const publisherItems = (
-        await Promise.all(
-          activeRows.map((publisher) =>
-            toPublisherListItem(ctx, publisher, { includePublishedItems: true }),
-          ),
-        )
-      )
-        .filter((item): item is PublisherListItem => Boolean(item))
-        .filter((item) => item.stats.skills + item.stats.packages > 0);
-      const filtered = filterPublisherListItems(publisherItems, {
-        kind: kindFilter,
-        query: queryText,
-      }).sort(comparePublisherListItems);
-      const items = filtered.slice(0, numItems);
-      const globalCounts = await getPublicPublisherCounts(ctx);
-      const counts = {
-        all: filtered.length,
-        organizations: filtered.filter((i) => i.kind === "org").length,
-        individuals: filtered.filter((i) => i.kind === "user").length,
-      };
-
-      return {
-        page: items,
-        counts,
-        globalCounts,
-        continueCursor: null,
-        isDone: true,
-      };
-    }
-
-    const page = kindFilter
+    const offset = args.paginationOpts.cursor ? Number(args.paginationOpts.cursor) : 0;
+    const safeOffset = Number.isFinite(offset) && offset > 0 ? Math.trunc(offset) : 0;
+    const activeRows = kindFilter
       ? await ctx.db
           .query("publishers")
           .withIndex("by_active_kind_total_downloads", (q) =>
             q.eq("deletedAt", undefined).eq("deactivatedAt", undefined).eq("kind", kindFilter),
           )
           .order("desc")
-          .paginate({ cursor: args.paginationOpts.cursor, numItems })
+          .take(MAX_PUBLIC_PUBLISHER_LIST_LIMIT)
       : await ctx.db
           .query("publishers")
           .withIndex("by_active_total_downloads", (q) =>
             q.eq("deletedAt", undefined).eq("deactivatedAt", undefined),
           )
           .order("desc")
-          .paginate({ cursor: args.paginationOpts.cursor, numItems });
+          .take(MAX_PUBLIC_PUBLISHER_LIST_LIMIT);
     const publisherItems = (
       await Promise.all(
-        page.page.map((publisher) =>
+        activeRows.map((publisher) =>
           toPublisherListItem(ctx, publisher, { includePublishedItems: true }),
         ),
       )
@@ -1049,16 +1026,25 @@ export const listPublicPage = query({
       .filter((item) => item.stats.skills + item.stats.packages > 0);
     const items = filterPublisherListItems(publisherItems, {
       kind: kindFilter,
-      query: args.query,
+      query: queryText,
     }).sort(comparePublisherListItems);
-    const counts = await getPublicPublisherCounts(ctx);
+    const globalCounts = await getPublicPublisherCounts(ctx);
+    const counts = queryText
+      ? {
+          all: items.length,
+          organizations: items.filter((i) => i.kind === "org").length,
+          individuals: items.filter((i) => i.kind === "user").length,
+        }
+      : globalCounts;
+    const nextOffset = safeOffset + numItems;
+    const page = items.slice(safeOffset, nextOffset);
 
     return {
-      page: items,
+      page,
       counts,
-      globalCounts: counts,
-      continueCursor: page.continueCursor,
-      isDone: page.isDone,
+      globalCounts,
+      continueCursor: nextOffset < items.length ? String(nextOffset) : "",
+      isDone: nextOffset >= items.length,
     };
   },
 });

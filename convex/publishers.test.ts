@@ -6,6 +6,7 @@ import {
   listPublicPage,
   listPublic,
   listMine,
+  listPublishedPage,
   migrateLegacyPublisherHandleToOrgInternal,
   removeMember,
   updateProfile,
@@ -79,6 +80,20 @@ const listPublicPageHandler = (
       page: Array<{ handle: string; kind: "user" | "org"; stats: { downloads: number } }>;
       counts: { all: number; individuals: number; organizations: number };
       globalCounts: { all: number; individuals: number; organizations: number };
+      continueCursor: string;
+      isDone: boolean;
+    }
+  >
+)._handler;
+
+const listPublishedPageHandler = (
+  listPublishedPage as unknown as WrappedHandler<
+    {
+      handle: string;
+      paginationOpts: { cursor: string | null; numItems: number };
+    },
+    {
+      page: Array<{ displayName: string; href: string }>;
       continueCursor: string;
       isDone: boolean;
     }
@@ -358,11 +373,9 @@ describe("publishers membership controls", () => {
             if (table === "publishers" && indexName === "by_active_kind_total_downloads") {
               return {
                 order: vi.fn(() => ({
-                  paginate: vi.fn(async () => ({
-                    page: publisherRows.filter((publisher) => publisher.kind === fields.kind),
-                    continueCursor: "",
-                    isDone: true,
-                  })),
+                  take: vi.fn(async () =>
+                    publisherRows.filter((publisher) => publisher.kind === fields.kind),
+                  ),
                 })),
               };
             }
@@ -401,6 +414,70 @@ describe("publishers membership controls", () => {
     expect(result.counts).toEqual({ all: 1, individuals: 1, organizations: 0 });
     expect(result.globalCounts).toEqual({ all: 3, individuals: 2, organizations: 1 });
     expect(result.page.map((item) => item.handle)).toEqual(["alice"]);
+  });
+
+  it("builds scoped plugin profile links with route segments", async () => {
+    const publisher = {
+      _id: "publishers:openclaw",
+      _creationTime: 1,
+      kind: "org",
+      handle: "openclaw",
+      displayName: "OpenClaw",
+      createdAt: 1,
+      updatedAt: 1,
+    };
+    const ctx = {
+      db: {
+        get: vi.fn(async (id: string) => (id === "publishers:openclaw" ? publisher : null)),
+        query: vi.fn((table: string) => ({
+          withIndex: vi.fn((indexName: string, buildQuery: (q: unknown) => unknown) => {
+            const fields: Record<string, unknown> = {};
+            const q = {
+              eq: (field: string, value: unknown) => {
+                fields[field] = value;
+                return q;
+              },
+            };
+            buildQuery(q);
+            if (table === "publishers" && indexName === "by_handle") {
+              return {
+                unique: vi.fn(async () => (fields.handle === "openclaw" ? publisher : null)),
+              };
+            }
+            if (table === "skills" && indexName === "by_owner_publisher_active_updated") {
+              return { collect: vi.fn(async () => []) };
+            }
+            if (table === "packages" && indexName === "by_owner_publisher_active_updated") {
+              return {
+                collect: vi.fn(async () => [
+                  {
+                    _id: "packages:plugin",
+                    ownerPublisherId: "publishers:openclaw",
+                    softDeletedAt: undefined,
+                    family: "code-plugin",
+                    name: "@openclaw/example-plugin",
+                    displayName: "Example Plugin",
+                    summary: "Scoped plugin",
+                    stats: { downloads: 7, installs: 3, stars: 1, versions: 1 },
+                    updatedAt: 5,
+                  },
+                ]),
+              };
+            }
+            throw new Error(`unexpected ${table} index ${indexName}`);
+          }),
+        })),
+      },
+    };
+
+    const result = await listPublishedPageHandler(ctx as never, {
+      handle: "openclaw",
+      paginationOpts: { cursor: null, numItems: 12 },
+    });
+
+    expect(result.page).toMatchObject([
+      { displayName: "Example Plugin", href: "/plugins/@openclaw/example-plugin" },
+    ]);
   });
 
   it("prevents admins from promoting members to owner", async () => {

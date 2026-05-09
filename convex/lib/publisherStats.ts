@@ -42,6 +42,55 @@ export function getPackagePublisherContribution(pkg: Doc<"packages">): Publisher
   };
 }
 
+function publisherHasStats(publisher: Doc<"publishers">): publisher is Doc<"publishers"> & {
+  publishedSkills: number;
+  publishedPackages: number;
+  totalInstalls: number;
+  totalDownloads: number;
+  totalStars: number;
+} {
+  return (
+    typeof publisher.publishedSkills === "number" &&
+    typeof publisher.publishedPackages === "number" &&
+    typeof publisher.totalInstalls === "number" &&
+    typeof publisher.totalDownloads === "number" &&
+    typeof publisher.totalStars === "number"
+  );
+}
+
+async function recomputePublisherStats(
+  ctx: Pick<MutationCtx, "db">,
+  publisherId: Id<"publishers">,
+): Promise<PublisherStatsContribution> {
+  const [skills, packages] = await Promise.all([
+    ctx.db
+      .query("skills")
+      .withIndex("by_owner_publisher_active_updated", (q) =>
+        q.eq("ownerPublisherId", publisherId).eq("softDeletedAt", undefined),
+      )
+      .collect(),
+    ctx.db
+      .query("packages")
+      .withIndex("by_owner_publisher_active_updated", (q) =>
+        q.eq("ownerPublisherId", publisherId).eq("softDeletedAt", undefined),
+      )
+      .collect(),
+  ]);
+  return [
+    ...skills.map(getSkillPublisherContribution),
+    ...packages.map(getPackagePublisherContribution),
+  ].reduce(
+    (total, contribution) => ({
+      publishedSkills: total.publishedSkills + contribution.publishedSkills,
+      publishedPackages: total.publishedPackages + contribution.publishedPackages,
+      totalInstalls: total.totalInstalls + contribution.totalInstalls,
+      totalDownloads: total.totalDownloads + contribution.totalDownloads,
+      totalStars: total.totalStars + contribution.totalStars,
+    }),
+    emptyPublisherStatsContribution(),
+  );
+}
+
 async function patchPublisherStats(
   ctx: Pick<MutationCtx, "db">,
   publisherId: Id<"publishers">,
@@ -50,12 +99,17 @@ async function patchPublisherStats(
   const publisher = await ctx.db.get(publisherId);
   if (!publisher) return;
 
+  if (!publisherHasStats(publisher)) {
+    await ctx.db.patch(publisherId, await recomputePublisherStats(ctx, publisherId));
+    return;
+  }
+
   await ctx.db.patch(publisherId, {
-    publishedSkills: Math.max(0, (publisher.publishedSkills ?? 0) + delta.publishedSkills),
-    publishedPackages: Math.max(0, (publisher.publishedPackages ?? 0) + delta.publishedPackages),
-    totalInstalls: Math.max(0, (publisher.totalInstalls ?? 0) + delta.totalInstalls),
-    totalDownloads: Math.max(0, (publisher.totalDownloads ?? 0) + delta.totalDownloads),
-    totalStars: Math.max(0, (publisher.totalStars ?? 0) + delta.totalStars),
+    publishedSkills: Math.max(0, publisher.publishedSkills + delta.publishedSkills),
+    publishedPackages: Math.max(0, publisher.publishedPackages + delta.publishedPackages),
+    totalInstalls: Math.max(0, publisher.totalInstalls + delta.totalInstalls),
+    totalDownloads: Math.max(0, publisher.totalDownloads + delta.totalDownloads),
+    totalStars: Math.max(0, publisher.totalStars + delta.totalStars),
   });
 }
 
