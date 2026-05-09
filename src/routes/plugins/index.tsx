@@ -220,6 +220,7 @@ function PluginsIndex() {
           ...prev,
           cursor: undefined,
           featured: true,
+          family: undefined,
           sort: undefined,
         }),
       });
@@ -233,6 +234,7 @@ function PluginsIndex() {
         featured: undefined,
         sort: parsePluginSort(value),
       }),
+      replace: true,
     });
   };
 
@@ -247,6 +249,7 @@ function PluginsIndex() {
             q: cat.keywords[0],
             featured: undefined,
           }),
+          replace: true,
         });
         return;
       }
@@ -258,6 +261,7 @@ function PluginsIndex() {
         q: undefined,
         featured: undefined,
       }),
+      replace: true,
     });
   };
 
@@ -293,6 +297,7 @@ function PluginsIndex() {
         featured: undefined,
         sort: undefined,
       }),
+      replace: true,
     });
     setQuery("");
   };

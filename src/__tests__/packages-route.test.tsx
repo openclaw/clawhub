@@ -527,7 +527,10 @@ describe("plugins route", () => {
 
     render(<Component />);
 
-    const list = screen.getByText("Alpha Plugin");
-    expect(list).toBeTruthy();
+    const listItems = screen.getAllByText(/Plugin$/i);
+    expect(listItems.map((el) => el.textContent)).toEqual([
+      "Alpha Plugin",
+      "Zebra Plugin",
+    ]);
   });
 });
