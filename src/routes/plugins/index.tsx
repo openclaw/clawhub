@@ -152,12 +152,10 @@ function PluginsIndex() {
   const activeCategory = useMemo(() => {
     if (!search.q) return undefined;
     const trimmed = search.q.trim().toLowerCase();
-    return (
-      PLUGIN_CATEGORIES.find((c) => c.keywords.some((k) => k === trimmed))?.slug ?? undefined
-    );
+    return PLUGIN_CATEGORIES.find((c) => c.keywords.some((k) => k === trimmed))?.slug ?? undefined;
   }, [search.q]);
 
-  const activeSort = search.featured ? "featured" : search.sort ?? "updated";
+  const activeSort = search.featured ? "featured" : (search.sort ?? "updated");
 
   const sortOptions = useMemo(() => {
     if (hasQuery) {

@@ -428,12 +428,8 @@ describe("plugins route", () => {
       search: Record<string, unknown>,
     ) => Record<string, unknown>;
 
-    expect(validateSearch({ sort: "newest" })).toEqual(
-      expect.objectContaining({ sort: "newest" }),
-    );
-    expect(validateSearch({ sort: "name" })).toEqual(
-      expect.objectContaining({ sort: "name" }),
-    );
+    expect(validateSearch({ sort: "newest" })).toEqual(expect.objectContaining({ sort: "newest" }));
+    expect(validateSearch({ sort: "name" })).toEqual(expect.objectContaining({ sort: "name" }));
     expect(validateSearch({ sort: "relevance" })).toEqual(
       expect.objectContaining({ sort: "relevance" }),
     );
@@ -528,9 +524,6 @@ describe("plugins route", () => {
     render(<Component />);
 
     const listItems = screen.getAllByText(/Plugin$/i);
-    expect(listItems.map((el) => el.textContent)).toEqual([
-      "Alpha Plugin",
-      "Zebra Plugin",
-    ]);
+    expect(listItems.map((el) => el.textContent)).toEqual(["Alpha Plugin", "Zebra Plugin"]);
   });
 });
