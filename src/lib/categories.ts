@@ -57,7 +57,7 @@ export const PLUGIN_CATEGORIES: SkillCategory[] = [
     slug: "mcp-tooling",
     label: "MCP & Tooling",
     icon: "plug",
-    keywords: ["mcp", "tool", "server", "protocol", "provider", "harness"],
+    keywords: ["mcp", "server", "protocol", "provider", "harness"],
   },
   {
     slug: "data",

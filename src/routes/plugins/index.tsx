@@ -1,4 +1,4 @@
-import { createFileRoute, Link } from "@tanstack/react-router";
+import { createFileRoute, Link, redirect } from "@tanstack/react-router";
 import { PackageSearch, Search } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { BrowseSidebar } from "../../components/BrowseSidebar";
@@ -77,6 +77,20 @@ export const Route = createFileRoute("/plugins/")({
     sort: parsePluginSort(search.sort),
     view: normalizePluginView(search.view),
   }),
+  beforeLoad: ({ search }) => {
+    const hasQuery = Boolean(search.q?.trim());
+    const browseOnlySort = !hasQuery && search.sort && search.sort !== "updated";
+    if (browseOnlySort) {
+      throw redirect({
+        to: "/plugins",
+        search: {
+          ...search,
+          sort: undefined,
+        },
+        replace: true,
+      });
+    }
+  },
   loaderDeps: ({ search }) => ({
     q: search.q,
     cursor: search.cursor,
