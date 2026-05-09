@@ -1063,9 +1063,10 @@ code {
 }
 
 .user-menu-chevron {
-  font-size: 0.8rem;
   color: var(--ink-soft);
   flex-shrink: 0;
+  width: 16px;
+  height: 16px;
 }
 
 /* @deprecated — use <Button> from components/ui/button.tsx */

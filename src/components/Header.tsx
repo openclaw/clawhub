@@ -1,6 +1,6 @@
 import { useAuthActions } from "@convex-dev/auth/react";
 import { Link, useLocation, useNavigate } from "@tanstack/react-router";
-import { ArrowRight, Ghost, Menu, Monitor, Moon, Plug, Search, Sun, Wrench } from "lucide-react";
+import { ArrowRight, ChevronDown, Ghost, Menu, Monitor, Moon, Plug, Search, Sun, Wrench } from "lucide-react";
 import { type ComponentType, useEffect, useMemo, useRef, useState } from "react";
 import { getUserFacingAuthError } from "../lib/authErrorMessage";
 import { gravatarUrl } from "../lib/gravatar";
@@ -450,7 +450,7 @@ export default function Header() {
                       <span className="user-menu-fallback">{initial}</span>
                     )}
                     <span className="mono truncate">@{handle}</span>
-                    <span className="user-menu-chevron">▾</span>
+                    <ChevronDown className="user-menu-chevron" size={16} />
                   </button>
                 </DropdownMenuTrigger>
                 <DropdownMenuContent align="end">
