@@ -137,6 +137,21 @@ describe("plugins route", () => {
     ).toThrow();
   });
 
+  it("redirects browse-only sorts back to default when search is active", async () => {
+    const route = await loadRoute();
+    const beforeLoad = (
+      route.__config as never as {
+        beforeLoad?: (args: { search: Record<string, unknown> }) => void;
+      }
+    ).beforeLoad;
+
+    expect(() =>
+      beforeLoad?.({
+        search: { q: "security", sort: "updated" },
+      }),
+    ).toThrow();
+  });
+
   it("uses grid as the canonical browse view in search state", async () => {
     const route = await loadRoute();
     const validateSearch = route.__config.validateSearch as (
@@ -475,6 +490,46 @@ describe("plugins route", () => {
     );
   });
 
+  it("does not render unsupported plugin categories", async () => {
+    const route = await loadRoute();
+    const Component = route.__config.component as ComponentType;
+
+    render(<Component />);
+
+    expect(screen.queryByRole("radio", { name: "Other" })).toBeNull();
+  });
+
+  it("submitting search clears browse-only state", async () => {
+    searchMock = { featured: true, sort: "updated" };
+    const route = await loadRoute();
+    const Component = route.__config.component as ComponentType;
+
+    render(<Component />);
+
+    const input = screen.getByPlaceholderText("Search plugins...");
+    fireEvent.change(input, { target: { value: "security" } });
+    fireEvent.submit(input.closest("form") as HTMLFormElement);
+
+    expect(navigateMock).toHaveBeenCalled();
+    const lastCall = navigateMock.mock.calls.at(-1)?.[0] as {
+      search: (prev: Record<string, unknown>) => Record<string, unknown>;
+    };
+    expect(
+      lastCall.search({
+        cursor: "cursor:current",
+        family: "code-plugin",
+        featured: true,
+        sort: "updated",
+      }),
+    ).toEqual({
+      cursor: undefined,
+      family: undefined,
+      featured: undefined,
+      q: "security",
+      sort: undefined,
+    });
+  });
+
   it("shows only relevance sort when a category query is active", async () => {
     searchMock = { q: "security" };
     loaderDataMock = {
@@ -502,5 +557,18 @@ describe("plugins route", () => {
     expect(screen.getByRole("radio", { name: "Relevance" })).toBeTruthy();
     expect(screen.queryByRole("radio", { name: "Newest" })).toBeNull();
     expect(screen.queryByRole("radio", { name: "Name" })).toBeNull();
+  });
+
+  it("keeps search sort visible even if a stale featured flag is present", async () => {
+    searchMock = { q: "security", featured: true };
+    const route = await loadRoute();
+    const Component = route.__config.component as ComponentType;
+
+    render(<Component />);
+
+    expect(screen.getByRole("radio", { name: "Relevance" }).getAttribute("aria-checked")).toBe(
+      "true",
+    );
+    expect(screen.queryByRole("radio", { name: "Featured" })).toBeNull();
   });
 });
