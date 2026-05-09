@@ -4,7 +4,7 @@
 
 ### Changes
 
-- Web: add keyword-based plugin categories (Channels, MCP, Data, Security, Observability, Automation, Deployment, Dev Tools) and richer sort controls (Relevance, Updated, Newest, Name) to the plugin browse page, matching the existing Skills discovery pattern (#2118) (thanks @vyctorbrzezowski).
+- Web: add keyword-based plugin categories (Channels, MCP, Data, Security, Observability, Automation, Deployment, Dev Tools) and clarify plugin browse/search controls without adding unsupported global search sorting (#2118) (thanks @vyctorbrzezowski).
 
 ### Fixes
 
