@@ -137,7 +137,10 @@ function normalizeCategoryText(value) {
 }
 function signalMatches(text, signal) {
     const normalizedText = ` ${text.replace(/[^a-z0-9]+/g, " ")} `;
-    const normalizedSignal = ` ${signal.trim().toLowerCase().replace(/[^a-z0-9]+/g, " ")} `;
+    const normalizedSignal = ` ${signal
+        .trim()
+        .toLowerCase()
+        .replace(/[^a-z0-9]+/g, " ")} `;
     return normalizedText.includes(normalizedSignal);
 }
 export function derivePluginCategoryTags(input) {
