@@ -306,6 +306,46 @@ describe("SkillsIndex", () => {
     );
   });
 
+  it("hides the suspicious filter when loaded results are clean", async () => {
+    convexHttpMock.query.mockResolvedValue({
+      page: [makeListResult("clean-skill", "Clean Skill")],
+      hasMore: false,
+      nextCursor: null,
+    });
+
+    render(<SkillsIndex />);
+    await act(async () => {});
+
+    expect(screen.queryByLabelText("Hide suspicious")).toBeNull();
+  });
+
+  it("shows the suspicious filter when loaded results include a suspicious skill", async () => {
+    convexHttpMock.query.mockResolvedValue({
+      page: [makeListResult("suspicious-skill", "Suspicious Skill", { isSuspicious: true })],
+      hasMore: false,
+      nextCursor: null,
+    });
+
+    render(<SkillsIndex />);
+    await act(async () => {});
+
+    expect(screen.getByLabelText("Hide suspicious")).toBeTruthy();
+  });
+
+  it("keeps the suspicious filter visible while active", async () => {
+    searchMock = { nonSuspicious: true };
+    convexHttpMock.query.mockResolvedValue({
+      page: [makeListResult("clean-skill", "Clean Skill")],
+      hasMore: false,
+      nextCursor: null,
+    });
+
+    render(<SkillsIndex />);
+    await act(async () => {});
+
+    expect(screen.getByLabelText("Hide suspicious")).toBeTruthy();
+  });
+
   it("passes highlightedOnly to list query when filter is active", async () => {
     searchMock = { highlighted: true };
     render(<SkillsIndex />);
@@ -358,7 +398,11 @@ describe("SkillsIndex", () => {
   });
 });
 
-function makeListResult(slug: string, displayName: string) {
+function makeListResult(
+  slug: string,
+  displayName: string,
+  options: { isSuspicious?: boolean } = {},
+) {
   return {
     skill: {
       _id: `skill_${slug}`,
@@ -374,6 +418,7 @@ function makeListResult(slug: string, displayName: string) {
         versions: 1,
         comments: 0,
       },
+      isSuspicious: options.isSuspicious,
       createdAt: 0,
       updatedAt: 0,
     },

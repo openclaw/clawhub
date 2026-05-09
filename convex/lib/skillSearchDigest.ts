@@ -36,6 +36,7 @@ const SHARED_KEYS = [
   "moderationStatus",
   "moderationFlags",
   "moderationReason",
+  "isSuspicious",
   "createdAt",
   "updatedAt",
 ] as const satisfies readonly SharedSkillKey[];
@@ -47,7 +48,6 @@ export type SkillSearchDigestFields = Pick<Doc<"skills">, (typeof SHARED_KEYS)[n
   normalizedSlugFirstToken?: string;
   normalizedDisplayName?: string;
   normalizedDisplayNameFirstToken?: string;
-  isSuspicious?: boolean;
   ownerHandle?: string;
   ownerKind?: "user" | "org";
   ownerName?: string;
@@ -64,7 +64,6 @@ export function extractDigestFields(skill: Doc<"skills">): SkillSearchDigestFiel
     normalizedSlugFirstToken: getFirstSearchToken(skill.slug),
     normalizedDisplayName: normalizeSkillSearchText(skill.displayName),
     normalizedDisplayNameFirstToken: getFirstSearchToken(skill.displayName),
-    isSuspicious: skill.isSuspicious,
   };
 }
 

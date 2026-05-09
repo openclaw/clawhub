@@ -254,6 +254,8 @@ export function useSkillsBrowseModel({
   }, [baseItems, dir, hasQuery, isOtherCategory, sort]);
 
   const isLoadingSkills = hasQuery ? isSearching && searchResults.length === 0 : isLoadingList;
+  const hasSuspiciousResults = sorted.some((entry) => entry.skill.isSuspicious === true);
+  const showSuspiciousFilter = nonSuspiciousOnly || hasSuspiciousResults;
   const canLoadMore = hasQuery
     ? !isSearching && searchResults.length === searchLimit && searchResults.length > 0
     : canLoadMoreList;
@@ -409,6 +411,8 @@ export function useSkillsBrowseModel({
     canLoadMore,
     dir,
     hasQuery,
+    hasSuspiciousResults,
+    showSuspiciousFilter,
     featuredOnly,
     isLoadingMore,
     isLoadingSkills,

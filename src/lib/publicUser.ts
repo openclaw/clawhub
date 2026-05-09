@@ -26,6 +26,7 @@ export type PublicSkill = Pick<
   | "capabilityTags"
   | "badges"
   | "stats"
+  | "isSuspicious"
   | "createdAt"
   | "updatedAt"
 >;

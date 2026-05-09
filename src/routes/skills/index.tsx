@@ -203,14 +203,16 @@ export function SkillsIndex() {
               ) : null}
             </span>
             <div className="browse-results-actions">
-              <label className="browse-toolbar-checkbox">
-                <input
-                  type="checkbox"
-                  checked={model.nonSuspiciousOnly}
-                  onChange={model.onToggleNonSuspicious}
-                />
-                <span>Hide suspicious</span>
-              </label>
+              {model.showSuspiciousFilter ? (
+                <label className="browse-toolbar-checkbox">
+                  <input
+                    type="checkbox"
+                    checked={model.nonSuspiciousOnly}
+                    onChange={model.onToggleNonSuspicious}
+                  />
+                  <span>Hide suspicious</span>
+                </label>
+              ) : null}
               <div className="browse-view-toggle">
                 <button
                   className={`browse-view-btn${model.view === "list" ? " is-active" : ""}`}

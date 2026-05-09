@@ -1,7 +1,11 @@
 /* @vitest-environment node */
 
 import { describe, expect, it } from "vitest";
-import { extractDigestFields, digestToOwnerInfo } from "./skillSearchDigest";
+import {
+  digestToHydratableSkill,
+  extractDigestFields,
+  digestToOwnerInfo,
+} from "./skillSearchDigest";
 
 function makeSkillDoc(overrides: Record<string, unknown> = {}) {
   return {
@@ -141,6 +145,13 @@ describe("extractDigestFields", () => {
     expect(fakeDoc.ownerUserId).toBe("users:owner");
     expect(fakeDoc.tags).toEqual({});
     expect(fakeDoc.stats).toBeDefined();
+  });
+
+  it("preserves suspicious state through digest hydration", () => {
+    const digest = extractDigestFields(makeSkillDoc({ isSuspicious: true }) as never);
+    const hydratable = digestToHydratableSkill(digest as never);
+
+    expect(hydratable.isSuspicious).toBe(true);
   });
 });
 
