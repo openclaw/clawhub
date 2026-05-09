@@ -5069,7 +5069,7 @@ form.summary-edit-form .summary-textarea:focus {
     width: 56px;
     min-width: 56px;
     height: 56px;
-    padding: 0;
+    padding: 3px;
     justify-content: center;
     border-radius: var(--r-md);
   }
