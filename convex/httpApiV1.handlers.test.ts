@@ -3673,6 +3673,28 @@ describe("httpApiV1 handlers", () => {
     ]);
   });
 
+  it("plugins list ignores stale plugin search cursors", async () => {
+    const runQuery = vi.fn().mockResolvedValue({ page: [], isDone: true, continueCursor: "" });
+    const runMutation = vi.fn().mockResolvedValue(okRate());
+    const staleSearchCursor = `pkgpluginsearch:${JSON.stringify({
+      codePlugins: { cursor: "code-search", offset: 0, pageSize: 2, done: false },
+      bundlePlugins: { cursor: null, offset: 0, pageSize: 2, done: true },
+    })}`;
+
+    const response = await __handlers.listPluginsV1Handler(
+      makeCtx({ runQuery, runMutation }),
+      new Request(
+        `https://example.com/api/v1/plugins?limit=7&cursor=${encodeURIComponent(staleSearchCursor)}`,
+      ),
+    );
+
+    expect(response.status).toBe(200);
+    const packageCalls = runQuery.mock.calls
+      .map(([, args]) => args as { family?: string; paginationOpts?: { cursor: string | null } })
+      .filter((args) => args.family === "code-plugin" || args.family === "bundle-plugin");
+    expect(packageCalls.map((args) => args.paginationOpts?.cursor ?? null)).toEqual([null, null]);
+  });
+
   it("packages search supports family=skill on the generic route", async () => {
     const runQuery = vi.fn().mockResolvedValue([]);
     const runMutation = vi.fn().mockResolvedValue(okRate());
@@ -3929,6 +3951,31 @@ describe("httpApiV1 handlers", () => {
       "next-code",
     ]);
     expect(json.nextCursor).toBeNull();
+  });
+
+  it("plugins search ignores stale plugin browse cursors", async () => {
+    const runQuery = vi.fn().mockResolvedValue({ page: [], isDone: true, continueCursor: "" });
+    const runMutation = vi.fn().mockResolvedValue(okRate());
+    const staleBrowseCursor = `pkgplugins:${JSON.stringify({
+      codePlugins: { cursor: "code-browse", offset: 0, pageSize: 2, done: false },
+      bundlePlugins: { cursor: null, offset: 0, pageSize: 2, done: true },
+    })}`;
+    const url = new URL("https://example.com/api/v1/plugins/search");
+    url.searchParams.set("q", "plugin");
+    url.searchParams.set("sort", "name");
+    url.searchParams.set("limit", "2");
+    url.searchParams.set("cursor", staleBrowseCursor);
+
+    const response = await __handlers.pluginsGetRouterV1Handler(
+      makeCtx({ runQuery, runMutation }),
+      new Request(url),
+    );
+
+    expect(response.status).toBe(200);
+    const searchCalls = runQuery.mock.calls
+      .map(([, args]) => args as { family?: string; cursor?: string | null })
+      .filter((args) => args.family === "code-plugin" || args.family === "bundle-plugin");
+    expect(searchCalls.map((args) => args.cursor ?? null)).toEqual([null, null]);
   });
 
   it("packages list forwards viewerUserId for authenticated private package browsing", async () => {

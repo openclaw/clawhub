@@ -630,6 +630,11 @@ type CatalogSourceState<T> = {
 const UNIFIED_CATALOG_CURSOR_PREFIX = "pkgcatalog:";
 const PLUGIN_CATALOG_CURSOR_PREFIX = "pkgplugins:";
 const PLUGIN_SEARCH_CURSOR_PREFIX = "pkgpluginsearch:";
+const CATALOG_CURSOR_PREFIXES = [
+  UNIFIED_CATALOG_CURSOR_PREFIX,
+  PLUGIN_CATALOG_CURSOR_PREFIX,
+  PLUGIN_SEARCH_CURSOR_PREFIX,
+];
 
 function defaultCatalogSourceCursorState(): CatalogSourceCursorState {
   return { cursor: null, offset: 0, pageSize: null, done: false };
@@ -639,10 +644,17 @@ function encodeUnifiedCatalogCursor(state: UnifiedCatalogCursorState) {
   return `${UNIFIED_CATALOG_CURSOR_PREFIX}${JSON.stringify(state)}`;
 }
 
+function isKnownCatalogCursor(raw: string | null | undefined) {
+  return Boolean(raw && CATALOG_CURSOR_PREFIXES.some((prefix) => raw.startsWith(prefix)));
+}
+
 function decodeUnifiedCatalogCursor(raw: string | null | undefined): UnifiedCatalogCursorState {
   if (!raw?.startsWith(UNIFIED_CATALOG_CURSOR_PREFIX)) {
     return {
-      packages: { ...defaultCatalogSourceCursorState(), cursor: raw ?? null },
+      packages: {
+        ...defaultCatalogSourceCursorState(),
+        cursor: isKnownCatalogCursor(raw) ? null : (raw ?? null),
+      },
       skills: defaultCatalogSourceCursorState(),
     };
   }
@@ -689,7 +701,10 @@ function decodeMultiPluginCursor(
 
   if (!raw?.startsWith(prefix)) {
     return {
-      codePlugins: { ...defaultCatalogSourceCursorState(), cursor: raw ?? null },
+      codePlugins: {
+        ...defaultCatalogSourceCursorState(),
+        cursor: isKnownCatalogCursor(raw) ? null : (raw ?? null),
+      },
       bundlePlugins: defaultCatalogSourceCursorState(),
     };
   }
