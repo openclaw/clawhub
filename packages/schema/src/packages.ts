@@ -227,6 +227,7 @@ export const PackagePublishRequestSchema = type({
   family: PackageFamilySchema,
   version: "string",
   changelog: "string",
+  clawScanNote: "string?",
   manualOverrideReason: "string?",
   channel: PackageChannelSchema.optional(),
   tags: "string[]?",

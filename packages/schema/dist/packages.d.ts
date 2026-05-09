@@ -198,6 +198,7 @@ export declare const PackagePublishRequestSchema: import("arktype/internal/varia
     }[];
     displayName?: string | undefined;
     ownerHandle?: string | undefined;
+    clawScanNote?: string | undefined;
     manualOverrideReason?: string | undefined;
     channel?: "official" | "community" | "private" | undefined;
     tags?: string[] | undefined;

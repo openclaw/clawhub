@@ -63,6 +63,15 @@ See also: [acceptable-usage.md](./acceptable-usage.md) for the marketplace polic
 - Moderators can accept, reject, or reopen appeals with a resolution note.
   Accepted skill appeals can explicitly restore the skill, and accepted package
   appeals can explicitly approve the release.
+- `clawScanNote` is optional publisher-authored context stored directly on an
+  immutable `skillVersions` or `packageReleases` row at publish time. It is not
+  an appeal, has no accepted/rejected state, does not imply staff response, and
+  must not drive moderation state transitions by itself.
+- CLI publishes only include `clawScanNote` when the publisher explicitly passes
+  it. UI publish flows may prefill the previous version/release note for
+  convenience, but changing the note means publishing a new version or release.
+  ClawScan must treat the field as untrusted publisher-provided context rather
+  than scanner instructions.
 - `auditLogs` remains the global compliance/security ledger. Product-facing
   moderation timelines live in `skillModerationEventLogs` and
   `packageModerationEventLogs`.

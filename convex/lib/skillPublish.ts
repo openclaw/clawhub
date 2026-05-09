@@ -55,6 +55,7 @@ export type PublishVersionArgs = {
   displayName: string;
   version: string;
   changelog: string;
+  clawScanNote?: string;
   tags?: string[];
   forkOf?: { slug: string; version?: string };
   source?: {
@@ -128,6 +129,7 @@ export async function publishVersionForUser(
   const slug = normalizedSlug;
 
   const suppliedChangelog = args.changelog.trim();
+  const clawScanNote = args.clawScanNote?.trim();
   const changelogSource = suppliedChangelog ? ("user" as const) : ("auto" as const);
 
   const sanitizedFiles = args.files.map((file) => ({
@@ -309,6 +311,7 @@ export async function publishVersionForUser(
     displayName,
     version,
     changelog: changelogText,
+    clawScanNote: clawScanNote || undefined,
     changelogSource,
     tags: args.tags?.map((tag) => tag.trim()).filter(Boolean),
     fingerprint,

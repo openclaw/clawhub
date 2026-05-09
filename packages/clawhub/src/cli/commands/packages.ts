@@ -91,6 +91,7 @@ type PackagePublishOptions = {
   owner?: string;
   version?: string;
   changelog?: string;
+  clawscanNote?: string;
   manualOverrideReason?: string;
   tags?: string;
   bundleFormat?: string;
@@ -188,6 +189,7 @@ type PackagePublishPayload = {
   family: "code-plugin" | "bundle-plugin";
   version: string;
   changelog: string;
+  clawScanNote?: string;
   manualOverrideReason?: string;
   tags: string[];
   source?: NonNullable<PackagePublishSource>;
@@ -1734,6 +1736,7 @@ async function preparePackagePublishPlan(
     parsedClawpack?.packageVersion ||
     packageJsonString(packageJson, "version");
   const changelog = options.changelog ?? "";
+  const clawScanNote = options.clawscanNote?.trim();
   const tags = parseTags(options.tags ?? "latest");
   const source = buildSource(options, inferredSource);
 
@@ -1793,6 +1796,7 @@ async function preparePackagePublishPlan(
     family,
     version,
     changelog,
+    ...(clawScanNote ? { clawScanNote } : {}),
     ...(options.manualOverrideReason?.trim()
       ? { manualOverrideReason: options.manualOverrideReason.trim() }
       : {}),

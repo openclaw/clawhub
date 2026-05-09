@@ -61,6 +61,7 @@ describe("cmdPublish", () => {
         version: "1.0.0",
         changelog: "",
         tags: "latest",
+        clawscanNote: "This skill needs network access to call the user's configured API.",
       });
 
       const publishCall = httpMocks.apiRequestForm.mock.calls.find((call) => {
@@ -76,6 +77,9 @@ describe("cmdPublish", () => {
       expect(payload.displayName).toBe("My Skill");
       expect(payload.version).toBe("1.0.0");
       expect(payload.changelog).toBe("");
+      expect(payload.clawScanNote).toBe(
+        "This skill needs network access to call the user's configured API.",
+      );
       expect(payload.acceptLicenseTerms).toBe(true);
       expect(payload.tags).toEqual(["latest"]);
       const files = publishForm.getAll("files") as Array<Blob & { name?: string }>;

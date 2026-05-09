@@ -1116,6 +1116,7 @@ describe("package commands", () => {
         sourceRepo: "openclaw/demo-plugin",
         sourceCommit: "abc123",
         sourceRef: "refs/tags/v1.0.0",
+        clawscanNote: "This plugin shells out only to the bundled helper binary.",
       });
 
       expect(getPublishPayload()).toEqual({
@@ -1125,6 +1126,7 @@ describe("package commands", () => {
         family: "code-plugin",
         version: "1.0.0",
         changelog: "",
+        clawScanNote: "This plugin shells out only to the bundled helper binary.",
         tags: ["latest"],
         source: {
           kind: "github",

@@ -21,6 +21,7 @@ export async function cmdPublish(
     changelog?: string;
     tags?: string;
     forkOf?: string;
+    clawscanNote?: string;
     migrateOwner?: boolean;
   },
 ) {
@@ -40,6 +41,7 @@ export async function cmdPublish(
   const ownerHandle = options.owner?.trim().replace(/^@+/, "");
   const version = options.version;
   const changelog = options.changelog ?? "";
+  const clawScanNote = options.clawscanNote?.trim();
   const tagsValue = options.tags ?? "latest";
   const tags = tagsValue
     .split(",")
@@ -76,6 +78,7 @@ export async function cmdPublish(
         ...(options.migrateOwner ? { migrateOwner: true } : {}),
         version,
         changelog,
+        ...(clawScanNote ? { clawScanNote } : {}),
         acceptLicenseTerms: true,
         tags,
         ...(forkOf ? { forkOf } : {}),

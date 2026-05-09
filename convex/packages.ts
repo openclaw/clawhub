@@ -3847,6 +3847,7 @@ async function publishPackageImpl(
   const family = payload.family;
   const name = normalizePackageName(payload.name);
   const version = assertPackageVersion(family, payload.version);
+  const clawScanNote = payload.clawScanNote?.trim() || undefined;
   const existingPackage = await runQueryRef<Doc<"packages"> | null>(
     ctx,
     internalRefs.packages.getPackageByNameInternal,
@@ -4092,6 +4093,7 @@ async function publishPackageImpl(
     family,
     version,
     changelog: payload.changelog.trim(),
+    clawScanNote,
     tags: payload.tags?.map((tag: string) => tag.trim()).filter(Boolean) ?? ["latest"],
     summary,
     sourceRepo: effectiveSource?.repo || effectiveSource?.url,
@@ -4655,6 +4657,7 @@ export const insertReleaseInternal = internalMutation({
     family: v.union(v.literal("skill"), v.literal("code-plugin"), v.literal("bundle-plugin")),
     version: v.string(),
     changelog: v.string(),
+    clawScanNote: v.optional(v.string()),
     tags: v.array(v.string()),
     summary: v.string(),
     sourceRepo: v.optional(v.string()),
@@ -4835,6 +4838,7 @@ export const insertReleaseInternal = internalMutation({
       packageId: pkgId,
       version: args.version,
       changelog: args.changelog,
+      ...(args.clawScanNote?.trim() ? { clawScanNote: args.clawScanNote.trim() } : {}),
       summary: args.summary,
       distTags: effectiveTags,
       files: args.files,

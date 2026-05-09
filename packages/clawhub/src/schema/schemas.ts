@@ -86,6 +86,7 @@ export const CliPublishRequestSchema = type({
   migrateOwner: "boolean?",
   version: "string",
   changelog: "string",
+  clawScanNote: "string?",
   acceptLicenseTerms: "boolean?",
   tags: "string[]?",
   source: PublishSourceSchema.optional(),

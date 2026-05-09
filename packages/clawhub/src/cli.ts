@@ -311,6 +311,7 @@ registerCommand(program, ["publish"])
   .option("--version <version>", "Version (semver)")
   .option("--fork-of <slug[@version]>", "Mark as a fork of an existing skill")
   .option("--changelog <text>", "Changelog text")
+  .option("--clawscan-note <text>", "Publisher note to include as ClawScan context")
   .option("--tags <tags>", "Comma-separated tags", "latest")
   .action(async (folder, options) => {
     const opts = await resolveGlobalOpts();
@@ -372,6 +373,7 @@ registerCommand(skill, ["skill", "publish"])
   .option("--version <version>", "Version (semver)")
   .option("--fork-of <slug[@version]>", "Mark as a fork of an existing skill")
   .option("--changelog <text>", "Changelog text")
+  .option("--clawscan-note <text>", "Publisher note to include as ClawScan context")
   .option("--tags <tags>", "Comma-separated tags", "latest")
   .action(async (folder, options) => {
     const opts = await resolveGlobalOpts();
@@ -559,6 +561,7 @@ registerCommand(packageCmd, ["package", "publish"])
   .option("--owner <handle>", "Publish under this owner/publisher handle")
   .option("--version <version>", "Version")
   .option("--changelog <text>", "Changelog text")
+  .option("--clawscan-note <text>", "Publisher note to include as ClawScan context")
   .option(
     "--manual-override-reason <reason>",
     "Required for manual publish when trusted publisher config exists",

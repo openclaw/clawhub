@@ -82,6 +82,7 @@ export declare const CliPublishRequestSchema: import("arktype/internal/variants/
     }[];
     ownerHandle?: string | undefined;
     migrateOwner?: boolean | undefined;
+    clawScanNote?: string | undefined;
     acceptLicenseTerms?: boolean | undefined;
     tags?: string[] | undefined;
     source?: {
