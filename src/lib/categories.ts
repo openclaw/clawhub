@@ -115,9 +115,6 @@ export const PLUGIN_CATEGORIES: SkillCategory[] = [
     icon: "wrench",
     keywords: ["dev", "debug", "lint", "test", "build", "tool", "browser"],
   },
-  { slug: "other", label: "Other", icon: "package", keywords: [] },
 ];
-
-export const ALL_PLUGIN_CATEGORY_KEYWORDS = PLUGIN_CATEGORIES.flatMap((c) => c.keywords);
 
 export const ALL_CATEGORY_KEYWORDS = SKILL_CATEGORIES.flatMap((c) => c.keywords);
