@@ -152,6 +152,21 @@ describe("plugins route", () => {
     ).toThrow();
   });
 
+  it("redirects browse-only featured URLs when search is active", async () => {
+    const route = await loadRoute();
+    const beforeLoad = (
+      route.__config as never as {
+        beforeLoad?: (args: { search: Record<string, unknown> }) => void;
+      }
+    ).beforeLoad;
+
+    expect(() =>
+      beforeLoad?.({
+        search: { q: "security", featured: true },
+      }),
+    ).toThrow();
+  });
+
   it("uses grid as the canonical browse view in search state", async () => {
     const route = await loadRoute();
     const validateSearch = route.__config.validateSearch as (

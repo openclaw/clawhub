@@ -83,11 +83,13 @@ export const Route = createFileRoute("/plugins/")({
     const incompatibleSort =
       (hasQuery && search.sort && search.sort !== "relevance") ||
       (!hasQuery && search.sort && search.sort !== "updated");
-    if (incompatibleSort) {
+    const browseOnlyFeatured = hasQuery && search.featured;
+    if (incompatibleSort || browseOnlyFeatured) {
       throw redirect({
         to: "/plugins",
         search: {
           ...search,
+          featured: browseOnlyFeatured ? undefined : search.featured,
           sort: undefined,
         },
         replace: true,
