@@ -236,6 +236,11 @@ Role semantics:
 
 Moderators/admins keep global override powers as they do today.
 
+Skill slug merges are content-management operations. They must authorize through
+publisher ownership, not only `ownerUserId`, so org owners/admins can merge two
+skills owned by the same manageable publisher. Merge aliases must keep both
+`ownerUserId` and `ownerPublisherId` aligned to the live target skill.
+
 ## Publishing Flow Changes
 
 ### Skills

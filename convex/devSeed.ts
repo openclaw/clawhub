@@ -220,6 +220,69 @@ const FEATURED_PLUGIN_SEEDS: SeedPluginSpec[] = [
   },
 ];
 
+const LOCAL_OWNER_PLUGIN_SEEDS: SeedPluginSpec[] = [
+  {
+    name: "local-merge-notes-plugin",
+    displayName: "Local Merge Notes",
+    summary: "Local owner fixture for validating plugin inventory and skill merge settings.",
+    version: "0.1.0",
+    runtimeId: "local.merge.notes",
+    sourceRepo: "openclaw/local-merge-notes-plugin",
+    isOfficial: false,
+    capabilityTags: ["notes", "local-dev", "merge-fixture"],
+    stats: { downloads: 18, installs: 6, stars: 2, versions: 1 },
+    readme: "# Local Merge Notes\n\nLocal dev plugin fixture for owner inventory screens.",
+  },
+  {
+    name: "local-merge-browser-plugin",
+    displayName: "Local Merge Browser",
+    summary: "Browser automation fixture owned by the local dev account.",
+    version: "0.1.0",
+    runtimeId: "local.merge.browser",
+    sourceRepo: "openclaw/local-merge-browser-plugin",
+    isOfficial: false,
+    capabilityTags: ["browser", "automation", "merge-fixture"],
+    stats: { downloads: 16, installs: 5, stars: 2, versions: 1 },
+    readme: "# Local Merge Browser\n\nLocal dev browser plugin fixture.",
+  },
+  {
+    name: "local-merge-terminal-plugin",
+    displayName: "Local Merge Terminal",
+    summary: "Terminal command fixture owned by the local dev account.",
+    version: "0.1.0",
+    runtimeId: "local.merge.terminal",
+    sourceRepo: "openclaw/local-merge-terminal-plugin",
+    isOfficial: false,
+    capabilityTags: ["terminal", "commands", "merge-fixture"],
+    stats: { downloads: 14, installs: 5, stars: 1, versions: 1 },
+    readme: "# Local Merge Terminal\n\nLocal dev terminal plugin fixture.",
+  },
+  {
+    name: "local-merge-calendar-plugin",
+    displayName: "Local Merge Calendar",
+    summary: "Calendar workflow fixture owned by the local dev account.",
+    version: "0.1.0",
+    runtimeId: "local.merge.calendar",
+    sourceRepo: "openclaw/local-merge-calendar-plugin",
+    isOfficial: false,
+    capabilityTags: ["calendar", "scheduling", "merge-fixture"],
+    stats: { downloads: 12, installs: 4, stars: 1, versions: 1 },
+    readme: "# Local Merge Calendar\n\nLocal dev calendar plugin fixture.",
+  },
+  {
+    name: "local-merge-git-plugin",
+    displayName: "Local Merge Git",
+    summary: "Git workflow fixture owned by the local dev account.",
+    version: "0.1.0",
+    runtimeId: "local.merge.git",
+    sourceRepo: "openclaw/local-merge-git-plugin",
+    isOfficial: false,
+    capabilityTags: ["git", "workflow", "merge-fixture"],
+    stats: { downloads: 10, installs: 3, stars: 1, versions: 1 },
+    readme: "# Local Merge Git\n\nLocal dev git workflow plugin fixture.",
+  },
+];
+
 type RoleHelpFixtureUser = {
   handle: string;
   displayName: string;
@@ -508,6 +571,36 @@ hanzi-helper words --char 大 --limit 20
 建议每天学习五个新汉字，结合组词和例句加深记忆。坚持使用听写练习功能可以有效提高汉字识别能力。
 `,
   },
+  {
+    slug: "merge-review-helper",
+    displayName: "Merge Review Helper",
+    summary: "Local dev fixture for testing skill merge and redirect flows.",
+    version: "0.1.0",
+    metadata: {
+      openclaw: {
+        requires: {
+          config: [".config/clawhub/merge-review.json"],
+        },
+        skillKey: "merge-review",
+      },
+    },
+    rawSkillMd: `---
+name: merge-review-helper
+description: Local dev fixture for testing skill merge and redirect flows.
+---
+
+# Merge Review Helper
+
+Use this skill when validating ClawHub skill ownership settings, duplicate cleanup, and merge
+redirect behavior.
+
+## Checklist
+
+- Confirm the source skill can select another owned skill as the merge target.
+- Confirm the merge creates a slug redirect for the old source slug.
+- Confirm hidden source rows disappear from browse and search listings.
+`,
+  },
 ];
 
 function injectMetadata(rawSkillMd: string, metadata: Record<string, unknown>) {
@@ -516,6 +609,34 @@ function injectMetadata(rawSkillMd: string, metadata: Record<string, unknown>) {
   return `${rawSkillMd.slice(0, frontmatterEnd)}\nmetadata: ${JSON.stringify(
     metadata,
   )}${rawSkillMd.slice(frontmatterEnd)}`;
+}
+
+async function seedPluginPackageBatch(
+  ctx: ActionCtx,
+  args: SeedActionArgs,
+  specs: SeedPluginSpec[],
+): Promise<SeedMutationResult> {
+  const storageIds = await Promise.all(
+    specs.map(async (spec) =>
+      ctx.storage.store(new Blob([spec.readme], { type: "text/markdown" })),
+    ),
+  );
+  return (await ctx.runMutation(internal.devSeed.seedFeaturedPluginPackagesMutation, {
+    reset: args.reset,
+    packages: specs.map((spec, index) => ({
+      name: spec.name,
+      displayName: spec.displayName,
+      summary: spec.summary,
+      version: spec.version,
+      runtimeId: spec.runtimeId,
+      sourceRepo: spec.sourceRepo,
+      isOfficial: spec.isOfficial,
+      capabilityTags: spec.capabilityTags,
+      stats: spec.stats,
+      storageId: storageIds[index],
+      readmeSize: spec.readme.length,
+    })),
+  })) as SeedMutationResult;
 }
 
 async function seedNixSkillsHandler(
@@ -573,31 +694,10 @@ async function seedNixSkillsHandler(
   );
   results.push({ slug: FLAGGED_SKILL_SLUG, ...fixtureResult });
 
-  const featuredPluginStorageIds = await Promise.all(
-    FEATURED_PLUGIN_SEEDS.map(async (spec) =>
-      ctx.storage.store(new Blob([spec.readme], { type: "text/markdown" })),
-    ),
-  );
-  const featuredResult: SeedMutationResult = await ctx.runMutation(
-    internal.devSeed.seedFeaturedPluginPackagesMutation,
-    {
-      reset: args.reset,
-      packages: FEATURED_PLUGIN_SEEDS.map((spec, index) => ({
-        name: spec.name,
-        displayName: spec.displayName,
-        summary: spec.summary,
-        version: spec.version,
-        runtimeId: spec.runtimeId,
-        sourceRepo: spec.sourceRepo,
-        isOfficial: spec.isOfficial,
-        capabilityTags: spec.capabilityTags,
-        stats: spec.stats,
-        storageId: featuredPluginStorageIds[index],
-        readmeSize: spec.readme.length,
-      })),
-    },
-  );
+  const featuredResult = await seedPluginPackageBatch(ctx, args, FEATURED_PLUGIN_SEEDS);
   results.push({ slug: "featured-plugins", ...featuredResult });
+  const ownerPluginResult = await seedPluginPackageBatch(ctx, args, LOCAL_OWNER_PLUGIN_SEEDS);
+  results.push({ slug: "local-owner-plugins", ...ownerPluginResult });
 
   return { ok: true, results };
 }

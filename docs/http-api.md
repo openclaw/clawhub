@@ -1175,6 +1175,15 @@ Optional JSON body:
 ```
 
 When present, `reason` is stored as the skill moderation note and copied into the audit log.
+Owner-initiated soft deletes reserve the slug for 30 days, then the slug can be claimed by
+another publisher. The delete response includes `slugReservedUntil` when this expiry applies.
+Moderator/admin hides and security removals do not expire this way.
+
+Delete response:
+
+```json
+{ "ok": true, "slugReservedUntil": 1730000000000 }
+```
 
 Status codes:
 

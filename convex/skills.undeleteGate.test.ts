@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 
 vi.mock("@convex-dev/auth/server", () => ({
   getAuthUserId: vi.fn(),
@@ -19,6 +19,10 @@ const setSkillSoftDeletedInternalHandler = (
     reason?: string;
   }>
 )._handler;
+
+afterEach(() => {
+  vi.restoreAllMocks();
+});
 
 type UserRole = "user" | "moderator" | "admin";
 
@@ -160,6 +164,7 @@ describe("setSkillSoftDeletedInternal B1 undelete gate", () => {
       expect.objectContaining({
         moderationStatus: "active",
         softDeletedAt: undefined,
+        unpublishedSlugReservedUntil: undefined,
       }),
     );
     expect(insert).toHaveBeenCalledWith(
@@ -324,7 +329,7 @@ describe("setSkillSoftDeletedInternal B1 undelete gate", () => {
         slug: "demo",
         deleted: true,
       }),
-    ).resolves.toEqual({ ok: true });
+    ).resolves.toMatchObject({ ok: true, slugReservedUntil: expect.any(Number) });
 
     expect(patch).toHaveBeenCalledWith(
       "skills:1",
@@ -540,6 +545,8 @@ describe("setSkillSoftDeletedInternal B1 undelete gate", () => {
   });
 
   it("still allows owner to soft-delete (deleted=true) their own skill regardless of gate", async () => {
+    const now = 1_700_000_000_000;
+    vi.spyOn(Date, "now").mockReturnValue(now);
     const skill = makeSkill({
       moderationStatus: "active",
       softDeletedAt: undefined,
@@ -558,13 +565,47 @@ describe("setSkillSoftDeletedInternal B1 undelete gate", () => {
         slug: "demo",
         deleted: true,
       }),
-    ).resolves.toEqual({ ok: true });
+    ).resolves.toEqual({ ok: true, slugReservedUntil: now + 30 * 24 * 60 * 60 * 1000 });
 
     expect(patch).toHaveBeenCalledWith(
       "skills:1",
       expect.objectContaining({
         moderationStatus: "hidden",
         hiddenBy: "users:owner",
+        unpublishedSlugReservedUntil: now + 30 * 24 * 60 * 60 * 1000,
+      }),
+    );
+  });
+
+  it("returns a slug reservation when an elevated owner soft-deletes their own skill", async () => {
+    const now = 1_700_000_000_000;
+    vi.spyOn(Date, "now").mockReturnValue(now);
+    const skill = makeSkill({
+      moderationStatus: "active",
+      softDeletedAt: undefined,
+      hiddenAt: undefined,
+      hiddenBy: undefined,
+      moderationReason: undefined,
+    });
+    const { ctx, patch } = makeCtx({
+      skill,
+      actor: { _id: "users:owner", role: "admin" },
+    });
+
+    await expect(
+      setSkillSoftDeletedInternalHandler(ctx, {
+        userId: "users:owner",
+        slug: "demo",
+        deleted: true,
+      }),
+    ).resolves.toEqual({ ok: true, slugReservedUntil: now + 30 * 24 * 60 * 60 * 1000 });
+
+    expect(patch).toHaveBeenCalledWith(
+      "skills:1",
+      expect.objectContaining({
+        moderationStatus: "hidden",
+        hiddenBy: "users:owner",
+        unpublishedSlugReservedUntil: now + 30 * 24 * 60 * 60 * 1000,
       }),
     );
   });
@@ -755,7 +796,7 @@ describe("setSkillSoftDeletedInternal B1 undelete gate", () => {
         slug: "demo",
         deleted: true,
       }),
-    ).resolves.toEqual({ ok: true });
+    ).resolves.toMatchObject({ ok: true, slugReservedUntil: expect.any(Number) });
 
     expect(patch).toHaveBeenCalledWith(
       "skills:1",

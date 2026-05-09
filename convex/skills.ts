@@ -148,6 +148,10 @@ const RATE_LIMIT_HOUR_MS = 60 * 60 * 1000;
 const RATE_LIMIT_DAY_MS = 24 * RATE_LIMIT_HOUR_MS;
 const SLUG_RESERVATION_DAYS = 90;
 const SLUG_RESERVATION_MS = SLUG_RESERVATION_DAYS * RATE_LIMIT_DAY_MS;
+const UNPUBLISHED_SLUG_RESERVATION_DAYS = 30;
+const UNPUBLISHED_SLUG_RESERVATION_MS = UNPUBLISHED_SLUG_RESERVATION_DAYS * RATE_LIMIT_DAY_MS;
+const MAX_SKILL_SLUG_ALIASES_PER_SKILL = 5;
+const MAX_SKILL_SLUG_ALIASES_PER_OWNER = 25;
 const LOW_TRUST_ACCOUNT_AGE_MS = 30 * RATE_LIMIT_DAY_MS;
 const MAX_MANUAL_OVERRIDE_NOTE_LENGTH = 1200;
 const DEFAULT_STAFF_AUDIT_LOG_LIMIT = 10;
@@ -587,11 +591,54 @@ function buildAliasTakenErrorMessage(skill: Doc<"skills">, owner: SkillOwnerRef)
   return `${base} Existing skill: ${url}`;
 }
 
+function formatUnpublishedSlugReservationMessage(slug: string, expiresAt: number) {
+  return (
+    `Slug "${slug}" is reserved by an unpublished skill until ` +
+    `${new Date(expiresAt).toISOString()}. Publish or restore it before then to keep the slug; ` +
+    "after that another publisher can claim it."
+  );
+}
+
+function getUnpublishedSlugReservationExpiresAt(
+  skill: Pick<
+    Doc<"skills">,
+    "softDeletedAt" | "hiddenBy" | "ownerUserId" | "unpublishedSlugReservedUntil"
+  >,
+) {
+  if (!skill.softDeletedAt) return null;
+  if (typeof skill.unpublishedSlugReservedUntil === "number") {
+    return skill.unpublishedSlugReservedUntil;
+  }
+  if (skill.hiddenBy === skill.ownerUserId) {
+    return skill.softDeletedAt + UNPUBLISHED_SLUG_RESERVATION_MS;
+  }
+  return null;
+}
+
+function buildReleasedUnpublishedSkillSlug(skill: Pick<Doc<"skills">, "_id">) {
+  const idPart = String(skill._id)
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "");
+  return `unpublished-${idPart}`;
+}
+
 function normalizeSkillSlugKey(slug: string) {
   // Read-path normalization: lowercase + trim only. Intentionally lenient so
   // that legacy rows (pre-validator) remain lookup-able. Write paths must
   // use `normalizeSkillSlugForWrite` / `assertValidSkillSlug` instead.
   return normalizeSkillSlug(slug);
+}
+
+function slugValidationAvailabilityFailure(error: unknown) {
+  const message =
+    error instanceof ConvexError && typeof error.data === "string" ? error.data : "Invalid slug.";
+  return {
+    available: false,
+    reason: /reserved|protected/i.test(message) ? ("reserved" as const) : ("taken" as const),
+    message,
+    url: null,
+  };
 }
 
 type SkillOwnerRef =
@@ -626,6 +673,117 @@ async function listSkillSlugAliasesForSkill(
     .query("skillSlugAliases")
     .withIndex("by_skill", (q) => q.eq("skillId", skillId))
     .collect();
+}
+
+function sameSkillSlugAliasOwner(
+  alias: Pick<Doc<"skillSlugAliases">, "ownerUserId" | "ownerPublisherId">,
+  ownerUserId: Id<"users">,
+  ownerPublisherId: Id<"publishers"> | undefined,
+) {
+  return (
+    alias.ownerUserId === ownerUserId &&
+    (alias.ownerPublisherId ?? null) === (ownerPublisherId ?? null)
+  );
+}
+
+async function countSkillSlugAliasesForOwnerQuota(
+  ctx: Pick<QueryCtx | MutationCtx, "db">,
+  ownerUserId: Id<"users">,
+  ownerPublisherId: Id<"publishers"> | undefined,
+) {
+  if (ownerPublisherId) {
+    const aliases = await ctx.db
+      .query("skillSlugAliases")
+      .withIndex("by_owner_publisher", (q) => q.eq("ownerPublisherId", ownerPublisherId))
+      .take(MAX_SKILL_SLUG_ALIASES_PER_OWNER + 1);
+    return aliases.length;
+  }
+
+  const aliases = await ctx.db
+    .query("skillSlugAliases")
+    .withIndex("by_owner", (q) => q.eq("ownerUserId", ownerUserId))
+    .take(MAX_SKILL_SLUG_ALIASES_PER_OWNER + 1);
+  return aliases.length;
+}
+
+async function assertSkillSlugAliasQuota(
+  ctx: Pick<QueryCtx | MutationCtx, "db">,
+  params: {
+    targetSkillId: Id<"skills">;
+    ownerUserId: Id<"users">;
+    ownerPublisherId: Id<"publishers"> | undefined;
+    currentSkillAliasCount?: number;
+    addedSkillAliases: number;
+    removedSkillAliases?: number;
+    addedOwnerAliases: number;
+    removedOwnerAliases?: number;
+  },
+) {
+  const addedSkillAliases = Math.max(0, params.addedSkillAliases);
+  const removedSkillAliases = Math.max(0, params.removedSkillAliases ?? 0);
+  const addedOwnerAliases = Math.max(0, params.addedOwnerAliases);
+  const removedOwnerAliases = Math.max(0, params.removedOwnerAliases ?? 0);
+
+  const currentSkillAliasCount =
+    params.currentSkillAliasCount ??
+    (await listSkillSlugAliasesForSkill(ctx, params.targetSkillId)).length;
+  const nextSkillAliasCount =
+    Math.max(0, currentSkillAliasCount - removedSkillAliases) + addedSkillAliases;
+  if (nextSkillAliasCount > MAX_SKILL_SLUG_ALIASES_PER_SKILL) {
+    throw new ConvexError(
+      "Too many historical slugs are already reserved for this skill. " +
+        `A skill can keep at most ${MAX_SKILL_SLUG_ALIASES_PER_SKILL} old slug redirects. ` +
+        "Contact support@openclaw.ai if this is a legitimate migration.",
+    );
+  }
+
+  if (addedOwnerAliases === 0 && removedOwnerAliases === 0) return;
+
+  const currentOwnerAliasCount = await countSkillSlugAliasesForOwnerQuota(
+    ctx,
+    params.ownerUserId,
+    params.ownerPublisherId,
+  );
+  const nextOwnerAliasCount =
+    Math.max(0, currentOwnerAliasCount - removedOwnerAliases) + addedOwnerAliases;
+  if (nextOwnerAliasCount > MAX_SKILL_SLUG_ALIASES_PER_OWNER) {
+    throw new ConvexError(
+      "Too many historical slugs are already reserved by this owner. " +
+        `An owner can keep at most ${MAX_SKILL_SLUG_ALIASES_PER_OWNER} old slug redirects. ` +
+        "Contact support@openclaw.ai if this is a legitimate migration.",
+    );
+  }
+}
+
+async function releaseExpiredUnpublishedSkillSlug(
+  ctx: MutationCtx,
+  skill: Doc<"skills">,
+  now: number,
+) {
+  const reservedUntil = getUnpublishedSlugReservationExpiresAt(skill);
+  if (reservedUntil === null || reservedUntil > now) return false;
+
+  const releasedSlug = buildReleasedUnpublishedSkillSlug(skill);
+  await ctx.db.patch(skill._id, {
+    slug: releasedSlug,
+    unpublishedOriginalSlug: skill.unpublishedOriginalSlug ?? skill.slug,
+    unpublishedSlugReservedUntil: undefined,
+    unpublishedSlugReleasedAt: now,
+    updatedAt: now,
+  });
+  await ctx.db.insert("auditLogs", {
+    actorUserId: skill.ownerUserId,
+    action: "skill.slug.unpublished_release",
+    targetType: "skill",
+    targetId: skill._id,
+    metadata: {
+      from: skill.slug,
+      to: releasedSlug,
+      reservedUntil,
+    },
+    createdAt: now,
+  });
+  return true;
 }
 
 async function resolveSkillBySlugOrAlias(
@@ -1774,10 +1932,42 @@ export const checkSlugAvailability = query({
           url: null,
         };
       }
+      try {
+        assertValidSkillSlug(slug);
+      } catch (error) {
+        return slugValidationAvailabilityFailure(error);
+      }
       return {
         available: true,
         reason: "available" as const,
         message: null,
+        url: null,
+      };
+    }
+
+    const unpublishedReservationExpiresAt = getUnpublishedSlugReservationExpiresAt(skill);
+    if (
+      skill.softDeletedAt &&
+      unpublishedReservationExpiresAt !== null &&
+      (!userId || skill.ownerUserId !== userId)
+    ) {
+      if (unpublishedReservationExpiresAt <= Date.now()) {
+        try {
+          assertValidSkillSlug(slug);
+        } catch (error) {
+          return slugValidationAvailabilityFailure(error);
+        }
+        return {
+          available: true,
+          reason: "available" as const,
+          message: null,
+          url: null,
+        };
+      }
+      return {
+        available: false,
+        reason: "reserved" as const,
+        message: formatUnpublishedSlugReservationMessage(slug, unpublishedReservationExpiresAt),
         url: null,
       };
     }
@@ -6891,6 +7081,33 @@ async function renameOwnedSkillByActor(
     throw new ConvexError(formatReservedSlugCooldownMessage(newSlug, reservation.expiresAt));
   }
 
+  const aliasesForSkill = await listSkillSlugAliasesForSkill(ctx, skill._id);
+  const aliasRemovedForNewSlug =
+    existingAlias && existingAlias.skillId === skill._id ? existingAlias : null;
+  const previousAlias = await getSkillSlugAliasBySlug(ctx, skill.slug);
+  const addedSkillAliases = previousAlias?.skillId === skill._id ? 0 : 1;
+  const removedSkillAliases = aliasRemovedForNewSlug ? 1 : 0;
+  const addedOwnerAliases = previousAlias
+    ? sameSkillSlugAliasOwner(previousAlias, skill.ownerUserId, skill.ownerPublisherId)
+      ? 0
+      : 1
+    : 1;
+  const removedOwnerAliases =
+    aliasRemovedForNewSlug &&
+    sameSkillSlugAliasOwner(aliasRemovedForNewSlug, skill.ownerUserId, skill.ownerPublisherId)
+      ? 1
+      : 0;
+  await assertSkillSlugAliasQuota(ctx, {
+    targetSkillId: skill._id,
+    ownerUserId: skill.ownerUserId,
+    ownerPublisherId: skill.ownerPublisherId,
+    currentSkillAliasCount: aliasesForSkill.length,
+    addedSkillAliases,
+    removedSkillAliases,
+    addedOwnerAliases,
+    removedOwnerAliases,
+  });
+
   if (existingAlias && existingAlias.skillId === skill._id) {
     await ctx.db.delete(existingAlias._id);
   }
@@ -6901,18 +7118,19 @@ async function renameOwnedSkillByActor(
   });
   await releaseActiveReservationsForSlug(ctx, newSlug, now);
 
-  const previousAlias = await getSkillSlugAliasBySlug(ctx, skill.slug);
   if (previousAlias) {
     await ctx.db.patch(previousAlias._id, {
       skillId: skill._id,
-      ownerUserId: actorUserId,
+      ownerUserId: skill.ownerUserId,
+      ownerPublisherId: skill.ownerPublisherId,
       updatedAt: now,
     });
   } else {
     await ctx.db.insert("skillSlugAliases", {
       slug: skill.slug,
       skillId: skill._id,
-      ownerUserId: actorUserId,
+      ownerUserId: skill.ownerUserId,
+      ownerPublisherId: skill.ownerPublisherId,
       createdAt: now,
       updatedAt: now,
     });
@@ -6966,16 +7184,61 @@ async function mergeOwnedSkillIntoCanonicalByActor(
   if (source._id === target._id) {
     throw new ConvexError("Source and target must be different skills");
   }
-  if (source.ownerUserId !== actorUserId || target.ownerUserId !== actorUserId) {
-    throw new ConvexError("Forbidden");
-  }
+  await assertCanManageOwnedResource(ctx, {
+    actor: user,
+    ownerUserId: source.ownerUserId,
+    ownerPublisherId: source.ownerPublisherId,
+  });
+  await assertCanManageOwnedResource(ctx, {
+    actor: user,
+    ownerUserId: target.ownerUserId,
+    ownerPublisherId: target.ownerPublisherId,
+  });
 
   const targetLatestVersion = target.latestVersionId
     ? await ctx.db.get(target.latestVersionId)
     : null;
   const targetCanonicalSkillId = target.canonicalSkillId ?? target._id;
 
+  const targetAliases = await listSkillSlugAliasesForSkill(ctx, target._id);
+  const targetAliasSlugs = new Set(targetAliases.map((alias) => alias.slug));
   const aliases = await listSkillSlugAliasesForSkill(ctx, source._id);
+  const sourceAlias = await getSkillSlugAliasBySlug(ctx, source.slug);
+  const addedSkillAliasSlugs = new Set<string>();
+  const addedOwnerAliasSlugs = new Set<string>();
+
+  for (const alias of aliases) {
+    if (alias.slug === target.slug) continue;
+    if (!targetAliasSlugs.has(alias.slug)) {
+      addedSkillAliasSlugs.add(alias.slug);
+    }
+    if (!sameSkillSlugAliasOwner(alias, target.ownerUserId, target.ownerPublisherId)) {
+      addedOwnerAliasSlugs.add(alias.slug);
+    }
+  }
+  if (sourceAlias) {
+    if (sourceAlias.skillId !== target._id && !targetAliasSlugs.has(source.slug)) {
+      addedSkillAliasSlugs.add(source.slug);
+    }
+    if (!sameSkillSlugAliasOwner(sourceAlias, target.ownerUserId, target.ownerPublisherId)) {
+      addedOwnerAliasSlugs.add(source.slug);
+    }
+  } else {
+    if (!targetAliasSlugs.has(source.slug)) {
+      addedSkillAliasSlugs.add(source.slug);
+    }
+    addedOwnerAliasSlugs.add(source.slug);
+  }
+
+  await assertSkillSlugAliasQuota(ctx, {
+    targetSkillId: target._id,
+    ownerUserId: target.ownerUserId,
+    ownerPublisherId: target.ownerPublisherId,
+    currentSkillAliasCount: targetAliases.length,
+    addedSkillAliases: addedSkillAliasSlugs.size,
+    addedOwnerAliases: addedOwnerAliasSlugs.size,
+  });
+
   for (const alias of aliases) {
     if (alias.slug === target.slug) {
       await ctx.db.delete(alias._id);
@@ -6984,15 +7247,16 @@ async function mergeOwnedSkillIntoCanonicalByActor(
     await ctx.db.patch(alias._id, {
       skillId: target._id,
       ownerUserId: target.ownerUserId,
+      ownerPublisherId: target.ownerPublisherId,
       updatedAt: now,
     });
   }
 
-  const sourceAlias = await getSkillSlugAliasBySlug(ctx, source.slug);
   if (sourceAlias) {
     await ctx.db.patch(sourceAlias._id, {
       skillId: target._id,
       ownerUserId: target.ownerUserId,
+      ownerPublisherId: target.ownerPublisherId,
       updatedAt: now,
     });
   } else {
@@ -7000,6 +7264,7 @@ async function mergeOwnedSkillIntoCanonicalByActor(
       slug: source.slug,
       skillId: target._id,
       ownerUserId: target.ownerUserId,
+      ownerPublisherId: target.ownerPublisherId,
       createdAt: now,
       updatedAt: now,
     });
@@ -7032,6 +7297,7 @@ async function mergeOwnedSkillIntoCanonicalByActor(
   const nextSkill = { ...source, ...patch };
   await ctx.db.patch(source._id, patch);
   await adjustGlobalPublicCountForSkillChange(ctx, source, nextSkill);
+  await adjustUserSkillStatsForSkillChange(ctx, source, nextSkill);
   await setSkillEmbeddingsSoftDeleted(ctx, source._id, true, now);
 
   await ctx.db.insert("auditLogs", {
@@ -7703,6 +7969,23 @@ export const insertVersion = internalMutation({
       .withIndex("by_slug", (q) => q.eq("slug", normalizedSlug))
       .unique();
 
+    if (skill && skill.softDeletedAt && skill.ownerUserId !== userId) {
+      const unpublishedReservationExpiresAt = getUnpublishedSlugReservationExpiresAt(skill);
+      if (unpublishedReservationExpiresAt !== null) {
+        if (unpublishedReservationExpiresAt > now) {
+          throw new ConvexError(
+            formatUnpublishedSlugReservationMessage(
+              normalizedSlug,
+              unpublishedReservationExpiresAt,
+            ),
+          );
+        }
+        normalizeSkillSlugForWrite(args.slug);
+        await releaseExpiredUnpublishedSkillSlug(ctx, skill, now);
+        skill = null;
+      }
+    }
+
     // Only enforce the strict write-path rules when creating a new skill.
     // For existing rows, keep the already-persisted (possibly grandfathered)
     // slug as-is so legacy publishers are not locked out of version updates.
@@ -8210,6 +8493,9 @@ export const insertVersion = internalMutation({
         moderationFlags: nextFlags.length ? nextFlags : undefined,
         moderationReason: moderationReason,
       }),
+      unpublishedSlugReservedUntil: undefined,
+      unpublishedSlugReleasedAt: undefined,
+      unpublishedOriginalSlug: undefined,
       updatedAt: now,
     };
     const patch = applySkillManualOverrideToSkillPatch({
@@ -8437,11 +8723,16 @@ export const setSkillSoftDeletedInternal = internalMutation({
 
     const now = Date.now();
     const note = args.reason ? trimManualOverrideNote(args.reason) : undefined;
+    const slugReservedUntil =
+      args.deleted && isOwner ? now + UNPUBLISHED_SLUG_RESERVATION_MS : undefined;
     const patch: Partial<Doc<"skills">> = {
       softDeletedAt: args.deleted ? now : undefined,
       moderationStatus: args.deleted ? "hidden" : "active",
       hiddenAt: args.deleted ? now : undefined,
       hiddenBy: args.deleted ? args.userId : undefined,
+      unpublishedSlugReservedUntil: slugReservedUntil,
+      unpublishedSlugReleasedAt: undefined,
+      unpublishedOriginalSlug: undefined,
       lastReviewedAt: now,
       updatedAt: now,
     };
@@ -8471,12 +8762,13 @@ export const setSkillSoftDeletedInternal = internalMutation({
         slug,
         softDeletedAt: args.deleted ? now : null,
         actorRole: user.role ?? "user",
+        ...(slugReservedUntil ? { slugReservedUntil } : {}),
         ...(note ? { reason: note } : {}),
       },
       createdAt: now,
     });
 
-    return { ok: true as const };
+    return slugReservedUntil ? { ok: true as const, slugReservedUntil } : { ok: true as const };
   },
 });
 

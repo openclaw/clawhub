@@ -105,9 +105,26 @@ const RESERVED_SKILL_SLUGS: ReadonlySet<string> = new Set([
   "false",
 ]);
 
+// Protected affixes block namespace squatting such as "openclaw-foo",
+// "foo-openclaw", "official-foo", or "foo-official". Exact matches are
+// already covered by RESERVED_SKILL_SLUGS.
+const PROTECTED_SKILL_SLUG_AFFIXES = [
+  "openclaw",
+  "clawhub",
+  "clawd",
+  "clawdbot",
+  "onlycrabs",
+  "soulhub",
+  "official",
+  "verified",
+  "staff",
+  "admin",
+  "moderator",
+] as const;
+
 interface ValidateSlugOptions {
   /**
-   * Bypass the reserved-word blocklist.
+   * Bypass the reserved/protected namespace blocklists.
    * Intended for admin migrations / internal seeding only.
    */
   allowReserved?: boolean;
@@ -118,6 +135,7 @@ export const SKILL_SLUG_CONSTRAINTS = {
   maxLength: MAX_SLUG_LENGTH,
   pattern: SLUG_PATTERN,
   reserved: RESERVED_SKILL_SLUGS,
+  protectedAffixes: PROTECTED_SKILL_SLUG_AFFIXES,
 } as const;
 
 /**
@@ -218,14 +236,33 @@ export function assertValidSkillSlug(
   if (!options.allowReserved && RESERVED_SKILL_SLUGS.has(normalized)) {
     throw new ConvexError(`"${normalized}" is reserved and cannot be used as a slug.`);
   }
+  if (!options.allowReserved) {
+    const protectedAffix = getProtectedSkillSlugAffix(normalized);
+    if (protectedAffix) {
+      throw new ConvexError(
+        `"${normalized}" uses the protected "${protectedAffix}" slug namespace. ` +
+          `Choose a slug that does not start with "${protectedAffix}-" or end with ` +
+          `"-${protectedAffix}".`,
+      );
+    }
+  }
   return normalized;
 }
 
+function getProtectedSkillSlugAffix(normalizedSlug: string): string | null {
+  for (const affix of PROTECTED_SKILL_SLUG_AFFIXES) {
+    if (normalizedSlug.startsWith(`${affix}-`) || normalizedSlug.endsWith(`-${affix}`)) {
+      return affix;
+    }
+  }
+  return null;
+}
+
 /**
- * Convenience predicate: is the slug on the reserved blocklist?
+ * Convenience predicate: is the slug on the reserved/protected blocklist?
  * Exposed so callers (e.g. admin tooling) can pre-check without a throw.
  */
 export function isReservedSkillSlug(slug: string | undefined | null): boolean {
   const normalized = normalizeSkillSlug(slug);
-  return RESERVED_SKILL_SLUGS.has(normalized);
+  return RESERVED_SKILL_SLUGS.has(normalized) || getProtectedSkillSlugAffix(normalized) !== null;
 }

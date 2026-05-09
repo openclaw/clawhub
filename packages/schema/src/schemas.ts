@@ -110,6 +110,7 @@ export type CliSkillDeleteRequest = (typeof CliSkillDeleteRequestSchema)[inferre
 
 export const ApiCliSkillDeleteResponseSchema = type({
   ok: "true",
+  slugReservedUntil: "number?",
 });
 
 export const ApiSkillResolveResponseSchema = type({
@@ -413,6 +414,7 @@ export const ApiV1PublishResponseSchema = type({
 
 export const ApiV1DeleteResponseSchema = type({
   ok: "true",
+  slugReservedUntil: "number?",
 });
 
 export const ApiV1RescanResponseSchema = type({

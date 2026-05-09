@@ -166,6 +166,7 @@ Stores your API token + cached registry URL.
 
 - Soft-delete a skill (owner, moderator, or admin).
 - Calls `DELETE /api/v1/skills/{slug}`.
+- Owner-initiated soft deletes reserve the slug for 30 days; the command prints the expiry time.
 - `--reason <text>` records a moderation note on the skill and audit log.
 - `--note <text>` is an alias for `--reason`.
 - `--yes` skips confirmation.

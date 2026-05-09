@@ -43,6 +43,17 @@ describe("delete/undelete", () => {
     );
   });
 
+  it("prints the slug reservation expiry returned by delete", async () => {
+    httpMocks.apiRequest.mockResolvedValueOnce({
+      ok: true,
+      slugReservedUntil: 1_700_086_400_000,
+    });
+    await cmdDeleteSkill(makeGlobalOpts(), "demo", { yes: true }, false);
+    expect(uiMocks.spinner.succeed).toHaveBeenCalledWith(
+      "OK. Deleted demo. Slug reserved until 2023-11-15T22:13:20.000Z",
+    );
+  });
+
   it("passes a moderation reason on delete", async () => {
     httpMocks.apiRequest.mockResolvedValueOnce({ ok: true });
     await cmdDeleteSkill(makeGlobalOpts(), "demo", { yes: true, reason: "legal hold" }, false);

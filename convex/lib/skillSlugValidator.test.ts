@@ -86,9 +86,19 @@ describe("assertValidSkillSlug", () => {
     expect(() => assertValidSkillSlug("openclaw")).toThrow(/reserved/i);
   });
 
-  it("allows reserved slugs when allowReserved is set", () => {
+  it.each(["openclaw-helper", "helper-openclaw", "official-git", "git-official"])(
+    "rejects protected namespace slug %s",
+    (slug) => {
+      expect(() => assertValidSkillSlug(slug)).toThrow(/protected/i);
+    },
+  );
+
+  it("allows reserved and protected slugs when allowReserved is set", () => {
     expect(() => assertValidSkillSlug("admin", { allowReserved: true })).not.toThrow();
     expect(assertValidSkillSlug("admin", { allowReserved: true })).toBe("admin");
+    expect(assertValidSkillSlug("openclaw-helper", { allowReserved: true })).toBe(
+      "openclaw-helper",
+    );
   });
 });
 
@@ -127,6 +137,8 @@ describe("isReservedSkillSlug", () => {
     expect(isReservedSkillSlug("admin")).toBe(true);
     expect(isReservedSkillSlug("  ADMIN  ")).toBe(true);
     expect(isReservedSkillSlug("openclaw")).toBe(true);
+    expect(isReservedSkillSlug("openclaw-helper")).toBe(true);
+    expect(isReservedSkillSlug("helper-official")).toBe(true);
   });
 
   it("returns false for non-reserved slugs", () => {

@@ -1396,13 +1396,13 @@ export async function skillsPostRouterV1Handler(ctx: ActionCtx, request: Request
       const { userId } = await requireApiTokenUser(ctx, request);
       const body = await readOptionalJson(request);
       const reason = optionalStringField(body, "reason");
-      await ctx.runMutation(internal.skills.setSkillSoftDeletedInternal, {
+      const result = await ctx.runMutation(internal.skills.setSkillSoftDeletedInternal, {
         userId,
         slug,
         deleted: false,
         reason,
       });
-      return json({ ok: true }, 200, rate.headers);
+      return json(result, 200, rate.headers);
     } catch (error) {
       return softDeleteErrorToResponse("skill", error, rate.headers);
     }
@@ -1459,13 +1459,13 @@ export async function skillsDeleteRouterV1Handler(ctx: ActionCtx, request: Reque
     const { userId } = await requireApiTokenUser(ctx, request);
     const body = await readOptionalJson(request);
     const reason = optionalStringField(body, "reason");
-    await ctx.runMutation(internal.skills.setSkillSoftDeletedInternal, {
+    const result = await ctx.runMutation(internal.skills.setSkillSoftDeletedInternal, {
       userId,
       slug,
       deleted: true,
       reason,
     });
-    return json({ ok: true }, 200, rate.headers);
+    return json(result, 200, rate.headers);
   } catch (error) {
     return softDeleteErrorToResponse("skill", error, rate.headers);
   }
