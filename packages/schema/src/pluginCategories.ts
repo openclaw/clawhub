@@ -146,7 +146,10 @@ function normalizeCategoryText(value: string | null | undefined) {
 
 function signalMatches(text: string, signal: string) {
   const normalizedText = ` ${text.replace(/[^a-z0-9]+/g, " ")} `;
-  const normalizedSignal = ` ${signal.trim().toLowerCase().replace(/[^a-z0-9]+/g, " ")} `;
+  const normalizedSignal = ` ${signal
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, " ")} `;
   return normalizedText.includes(normalizedSignal);
 }
 
