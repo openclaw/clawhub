@@ -95,13 +95,12 @@ describe("plugins route", () => {
     ) => Record<string, unknown>;
 
     expect(validateSearch({ family: "skill", q: "demo" })).toEqual({
-      family: undefined,
       q: "demo",
       cursor: undefined,
       featured: undefined,
       verified: undefined,
       executesCode: undefined,
-      sort: "updated",
+      sort: undefined,
       view: undefined,
     });
   });
@@ -113,18 +112,17 @@ describe("plugins route", () => {
     ) => Record<string, unknown>;
 
     expect(validateSearch({ family: "bundle-plugin", q: "demo" })).toEqual({
-      family: undefined,
       q: "demo",
       cursor: undefined,
       featured: undefined,
       verified: undefined,
       executesCode: undefined,
-      sort: "updated",
+      sort: undefined,
       view: undefined,
     });
   });
 
-  it("redirects non-browse sorts back to default when there is no query", async () => {
+  it("redirects search-only sorts back to default when there is no query", async () => {
     const route = await loadRoute();
     const beforeLoad = (
       route.__config as never as {
@@ -134,7 +132,7 @@ describe("plugins route", () => {
 
     expect(() =>
       beforeLoad?.({
-        search: { sort: "newest" },
+        search: { sort: "relevance" },
       }),
     ).toThrow();
   });
@@ -175,17 +173,16 @@ describe("plugins route", () => {
     await loader({
       deps: {
         cursor: "cursor:current",
-        family: "code-plugin",
       },
     });
 
     expect(fetchPluginCatalogMock).toHaveBeenCalledWith(
       expect.objectContaining({
         cursor: "cursor:current",
-        family: "code-plugin",
-        limit: 50,
+        limit: 100,
       }),
     );
+    expect(fetchPluginCatalogMock.mock.calls[0]?.[0]).not.toHaveProperty("family");
   });
 
   it("renders next-page controls for browse mode", async () => {
@@ -217,8 +214,7 @@ describe("plugins route", () => {
     const lastCall = navigateMock.mock.calls.at(-1)?.[0] as {
       search: (prev: Record<string, unknown>) => Record<string, unknown>;
     };
-    expect(lastCall.search({ family: "code-plugin" })).toEqual({
-      family: "code-plugin",
+    expect(lastCall.search({})).toEqual({
       cursor: "cursor:next",
     });
   });
@@ -347,11 +343,11 @@ describe("plugins route", () => {
 
     expect(fetchPluginCatalogMock).toHaveBeenCalledWith(
       expect.objectContaining({
-        family: "code-plugin",
         isOfficial: true,
-        limit: 50,
+        limit: 100,
       }),
     );
+    expect(fetchPluginCatalogMock.mock.calls[0]?.[0]).not.toHaveProperty("family");
   });
 
   it("selects featured from the sort group", async () => {
@@ -370,6 +366,8 @@ describe("plugins route", () => {
       family: undefined,
       cursor: undefined,
       featured: true,
+      q: undefined,
+      sort: undefined,
     });
   });
 
@@ -437,21 +435,21 @@ describe("plugins route", () => {
     expect(screen.getByText(/Try again in about 22 seconds/i)).toBeTruthy();
   });
 
-  it("parses valid sort values and defaults to updated", async () => {
+  it("parses supported sort values without inventing a URL default", async () => {
     const route = await loadRoute();
     const validateSearch = route.__config.validateSearch as (
       search: Record<string, unknown>,
     ) => Record<string, unknown>;
 
-    expect(validateSearch({ sort: "newest" })).toEqual(expect.objectContaining({ sort: "newest" }));
-    expect(validateSearch({ sort: "name" })).toEqual(expect.objectContaining({ sort: "name" }));
+    expect(validateSearch({ sort: "updated" })).toEqual(expect.objectContaining({ sort: "updated" }));
     expect(validateSearch({ sort: "relevance" })).toEqual(
       expect.objectContaining({ sort: "relevance" }),
     );
     expect(validateSearch({ sort: "invalid" })).toEqual(
-      expect.objectContaining({ sort: "updated" }),
+      expect.objectContaining({ sort: undefined }),
     );
-    expect(validateSearch({})).toEqual(expect.objectContaining({ sort: "updated" }));
+    expect(validateSearch({ sort: "name" })).toEqual(expect.objectContaining({ sort: undefined }));
+    expect(validateSearch({})).toEqual(expect.objectContaining({ sort: undefined }));
   });
 
   it("selects a category from the sidebar and searches by keyword", async () => {
@@ -470,12 +468,14 @@ describe("plugins route", () => {
       expect.objectContaining({
         q: "security",
         cursor: undefined,
+        family: undefined,
         featured: undefined,
+        sort: undefined,
       }),
     );
   });
 
-  it("shows relevance sort options when a category query is active", async () => {
+  it("shows only relevance sort when a category query is active", async () => {
     searchMock = { q: "security" };
     loaderDataMock = {
       items: [
@@ -500,45 +500,7 @@ describe("plugins route", () => {
     render(<Component />);
 
     expect(screen.getByRole("radio", { name: "Relevance" })).toBeTruthy();
-    expect(screen.getByRole("radio", { name: "Newest" })).toBeTruthy();
-    expect(screen.getByRole("radio", { name: "Name" })).toBeTruthy();
-  });
-
-  it("sorts search results by name on the client", async () => {
-    searchMock = { q: "demo", sort: "name" };
-    loaderDataMock = {
-      items: [
-        {
-          name: "zebra-plugin",
-          displayName: "Zebra Plugin",
-          family: "code-plugin",
-          channel: "community",
-          isOfficial: false,
-          executesCode: false,
-          createdAt: 2,
-          updatedAt: 2,
-        },
-        {
-          name: "alpha-plugin",
-          displayName: "Alpha Plugin",
-          family: "code-plugin",
-          channel: "community",
-          isOfficial: false,
-          executesCode: false,
-          createdAt: 1,
-          updatedAt: 1,
-        },
-      ],
-      nextCursor: null,
-      rateLimited: false,
-      retryAfterSeconds: null,
-    };
-    const route = await loadRoute();
-    const Component = route.__config.component as ComponentType;
-
-    render(<Component />);
-
-    const listItems = screen.getAllByText(/Plugin$/i);
-    expect(listItems.map((el) => el.textContent)).toEqual(["Alpha Plugin", "Zebra Plugin"]);
+    expect(screen.queryByRole("radio", { name: "Newest" })).toBeNull();
+    expect(screen.queryByRole("radio", { name: "Name" })).toBeNull();
   });
 });
