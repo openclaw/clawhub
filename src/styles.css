@@ -1031,10 +1031,10 @@ code {
   display: inline-flex;
   align-items: center;
   gap: 8px;
-  height: 38px;
+  height: 46px;
   border: 1px solid var(--line);
   background: var(--surface);
-  padding: 0 12px 0 4px;
+  padding: 0 12px 0 6px;
   border-radius: var(--r-pill);
   cursor: pointer;
   transition:
@@ -1049,15 +1049,15 @@ code {
 
 .user-trigger img,
 .user-menu-fallback {
-  width: 28px;
-  height: 28px;
+  width: 36px;
+  height: 36px;
   border-radius: 50%;
   display: grid;
   place-items: center;
   background: rgba(255, 255, 255, 0.2);
   color: var(--accent-deep);
   font-weight: 700;
-  font-size: 0.85rem;
+  font-size: 0.95rem;
 }
 
 .user-menu-chevron {
@@ -5062,8 +5062,8 @@ form.summary-edit-form .summary-textarea:focus {
 
   .user-trigger img,
   .user-menu-fallback {
-    width: 24px;
-    height: 24px;
+    width: 48px;
+    height: 48px;
   }
 
   .user-trigger .mono,
