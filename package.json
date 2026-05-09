@@ -121,7 +121,7 @@
     "oxlint": "^1.63.0",
     "oxlint-tsgolint": "0.22.1",
     "typescript": "6.0.3",
-    "undici": "8.2.0",
+    "undici": "7.25.0",
     "vite": "8.0.11",
     "vitest": "^4.1.5"
   },
