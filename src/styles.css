@@ -1069,6 +1069,16 @@ code {
   height: 16px;
 }
 
+/* Remove global link underline and focus outline from user dropdown items */
+.user-dropdown-content a,
+.user-dropdown-content a:hover {
+  text-decoration: none;
+}
+
+.user-dropdown-content [data-slot="dropdown-menu-item"]:focus-visible {
+  outline: none;
+}
+
 /* @deprecated — use <Button> from components/ui/button.tsx */
 .btn {
   border: 1px solid var(--border-ui);
