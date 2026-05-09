@@ -1037,6 +1037,8 @@ code {
   padding: 0 12px 0 6px;
   border-radius: var(--r-pill);
   cursor: pointer;
+  min-width: 0;
+  overflow: hidden;
   transition:
     border-color 0.15s ease,
     box-shadow 0.15s ease;
@@ -1063,6 +1065,7 @@ code {
 .user-menu-chevron {
   font-size: 0.8rem;
   color: var(--ink-soft);
+  flex-shrink: 0;
 }
 
 /* @deprecated — use <Button> from components/ui/button.tsx */

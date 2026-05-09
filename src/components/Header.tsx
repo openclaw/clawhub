@@ -84,8 +84,9 @@ export default function Header() {
   const location = useLocation();
 
   const avatar = me?.image ?? (me?.email ? gravatarUrl(me.email) : undefined);
-  const handle = me?.handle ?? me?.displayName ?? "user";
-  const initial = (me?.displayName ?? me?.name ?? handle).charAt(0).toUpperCase();
+  const rawHandle = me?.handle ?? me?.displayName ?? "user";
+  const handle = rawHandle.length > 25 ? `${rawHandle.slice(0, 25)}…` : rawHandle;
+  const initial = (me?.displayName ?? me?.name ?? rawHandle).charAt(0).toUpperCase();
   const isStaff = isModerator(me);
   const hasResolvedUser = Boolean(me);
   const navCtx = useMemo(
@@ -448,7 +449,7 @@ export default function Header() {
                     ) : (
                       <span className="user-menu-fallback">{initial}</span>
                     )}
-                    <span className="mono">@{handle}</span>
+                    <span className="mono truncate">@{handle}</span>
                     <span className="user-menu-chevron">▾</span>
                   </button>
                 </DropdownMenuTrigger>
