@@ -1528,6 +1528,30 @@ const apiTokens = defineTable({
   .index("by_user", ["userId"])
   .index("by_hash", ["tokenHash"]);
 
+const cliDeviceCodes = defineTable({
+  deviceCodeHash: v.string(),
+  userCodeHash: v.string(),
+  userCode: v.string(),
+  label: v.string(),
+  scope: v.string(),
+  status: v.union(
+    v.literal("pending"),
+    v.literal("approved"),
+    v.literal("denied"),
+    v.literal("consumed"),
+    v.literal("expired"),
+  ),
+  approvedByUserId: v.optional(v.id("users")),
+  createdAt: v.number(),
+  expiresAt: v.number(),
+  approvedAt: v.optional(v.number()),
+  consumedAt: v.optional(v.number()),
+  deniedAt: v.optional(v.number()),
+})
+  .index("by_device_code_hash", ["deviceCodeHash"])
+  .index("by_user_code_hash", ["userCodeHash"])
+  .index("by_status_expires", ["status", "expiresAt"]);
+
 const rateLimits = defineTable({
   key: v.string(),
   windowStart: v.number(),
@@ -1700,6 +1724,7 @@ export default defineSchema({
   vtScanLogs,
   rescanRequests,
   apiTokens,
+  cliDeviceCodes,
   rateLimits,
   rateLimitShards,
   downloadDedupes,

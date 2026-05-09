@@ -8,7 +8,7 @@
  * enabling headless agents and remote servers to authenticate.
  */
 
-export type DeviceCodeResponse = {
+type DeviceCodeResponse = {
   device_code: string;
   user_code: string;
   verification_uri: string;
@@ -16,20 +16,22 @@ export type DeviceCodeResponse = {
   interval: number;
 };
 
-export type DeviceTokenResponse = {
+type DeviceTokenResponse = {
   access_token: string;
   token_type: string;
   scope: string;
 };
 
-export type DeviceTokenErrorResponse = {
+type DeviceTokenErrorResponse = {
   error: string;
   error_description?: string;
   interval?: number;
 };
 
-export type DeviceFlowConfig = {
-  /** The ClawHub site URL that exposes device flow endpoints */
+type DeviceFlowConfig = {
+  /** The ClawHub API URL that exposes device flow endpoints */
+  apiUrl: string;
+  /** The ClawHub site URL that hosts the verification page */
   siteUrl: string;
   /** Client ID for the OAuth app (provided by ClawHub) */
   clientId?: string;
@@ -43,10 +45,11 @@ const DEFAULT_SCOPE = "read write";
  * Request a device code from the ClawHub device flow endpoint.
  */
 export async function requestDeviceCode(config: DeviceFlowConfig): Promise<DeviceCodeResponse> {
-  const url = new URL("/cli/device/code", config.siteUrl);
+  const url = new URL("/api/cli/device/code", config.apiUrl);
 
   const body: Record<string, string> = {
     scope: config.scope ?? DEFAULT_SCOPE,
+    site_url: config.siteUrl,
   };
   if (config.clientId) {
     body.client_id = config.clientId;
@@ -86,7 +89,7 @@ export async function pollForDeviceToken(
   deviceCode: string,
   options: { interval: number; expiresIn: number },
 ): Promise<DeviceTokenResponse> {
-  const url = new URL("/cli/device/token", config.siteUrl);
+  const url = new URL("/api/cli/device/token", config.apiUrl);
   const deadline = Date.now() + options.expiresIn * 1000;
   let interval = options.interval * 1000;
 

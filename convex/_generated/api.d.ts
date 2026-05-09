@@ -10,6 +10,7 @@
 
 import type * as appMeta from "../appMeta.js";
 import type * as auth from "../auth.js";
+import type * as cliDeviceAuth from "../cliDeviceAuth.js";
 import type * as commentModeration from "../commentModeration.js";
 import type * as comments from "../comments.js";
 import type * as crons from "../crons.js";
@@ -140,6 +141,7 @@ import type {
 declare const fullApi: ApiFromModules<{
   appMeta: typeof appMeta;
   auth: typeof auth;
+  cliDeviceAuth: typeof cliDeviceAuth;
   commentModeration: typeof commentModeration;
   comments: typeof comments;
   crons: typeof crons;

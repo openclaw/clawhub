@@ -138,7 +138,7 @@ function PluginsIndex() {
   const handleFilterToggle = (key: string) => {
     if (key === "verified") {
       void navigate({
-        search: (prev) => ({
+        search: (prev: PluginSearchState) => ({
           ...prev,
           cursor: undefined,
           verified: prev.verified ? undefined : true,
@@ -146,7 +146,7 @@ function PluginsIndex() {
       });
     } else if (key === "executesCode") {
       void navigate({
-        search: (prev) => ({
+        search: (prev: PluginSearchState) => ({
           ...prev,
           cursor: undefined,
           executesCode: prev.executesCode ? undefined : true,
@@ -158,7 +158,7 @@ function PluginsIndex() {
   const handleFamilySort = (value: string) => {
     if (value === "featured") {
       void navigate({
-        search: (prev) => ({
+        search: (prev: PluginSearchState) => ({
           ...prev,
           cursor: undefined,
           featured: true,
@@ -170,7 +170,7 @@ function PluginsIndex() {
 
     const family = value === "code-plugin" ? value : undefined;
     void navigate({
-      search: (prev) => ({
+      search: (prev: PluginSearchState) => ({
         ...prev,
         cursor: undefined,
         featured: undefined,
@@ -182,7 +182,7 @@ function PluginsIndex() {
   const handleSearch = (e: React.FormEvent) => {
     e.preventDefault();
     void navigate({
-      search: (prev) => ({
+      search: (prev: PluginSearchState) => ({
         ...prev,
         cursor: undefined,
         q: query.trim() || undefined,
@@ -192,7 +192,7 @@ function PluginsIndex() {
 
   const handleToggleView = () => {
     void navigate({
-      search: (prev) => ({
+      search: (prev: PluginSearchState) => ({
         ...prev,
         view: normalizePluginView(prev.view) === "grid" ? undefined : "grid",
       }),
@@ -316,7 +316,7 @@ function PluginsIndex() {
                   type="button"
                   onClick={() => {
                     void navigate({
-                      search: (prev) => ({ ...prev, cursor: undefined }),
+                      search: (prev: PluginSearchState) => ({ ...prev, cursor: undefined }),
                     });
                   }}
                 >
@@ -329,7 +329,7 @@ function PluginsIndex() {
                   type="button"
                   onClick={() => {
                     void navigate({
-                      search: (prev) => ({ ...prev, cursor: nextCursor }),
+                      search: (prev: PluginSearchState) => ({ ...prev, cursor: nextCursor }),
                     });
                   }}
                 >
