@@ -2140,7 +2140,7 @@ async function searchPackages(
           decodedCursor.bundlePlugins,
         );
         const pageSize = limit;
-        const results: CatalogSearchEntry[] = [];
+        const sortedResults: CatalogSearchEntry[] = [];
         const fetchPluginPage = async (
           pluginFamily: "code-plugin" | "bundle-plugin",
           pageCursor: string | null,
@@ -2161,7 +2161,7 @@ async function searchPackages(
           });
         };
 
-        while (results.length < limit) {
+        while (sortedResults.length < limit) {
           const [codePluginCandidate, bundlePluginCandidate] = await Promise.all([
             options.pluginFamilies.includes("code-plugin")
               ? ensureCatalogSourcePage(codePluginSource, pageSize, (pageCursor, numItems) =>
@@ -2185,10 +2185,10 @@ async function searchPackages(
                 sort,
               ) <= 0)
           ) {
-            results.push(codePluginCandidate!);
+            sortedResults.push(codePluginCandidate!);
             codePluginSource.index += 1;
           } else {
-            results.push(bundlePluginCandidate);
+            sortedResults.push(bundlePluginCandidate);
             bundlePluginSource.index += 1;
           }
         }
@@ -2204,7 +2204,7 @@ async function searchPackages(
           nextState.bundlePlugins.offset === 0;
         return json(
           {
-            results,
+            results: sortedResults,
             nextCursor: isDoneAll ? null : encodePluginSearchCursor(nextState),
           },
           200,
