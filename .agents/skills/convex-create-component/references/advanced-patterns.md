@@ -1,10 +1,13 @@
 # Advanced Component Patterns
 
-Additional patterns for Convex components that go beyond the basics covered in the main skill file.
+Additional patterns for Convex components that go beyond the basics covered in
+the main skill file.
 
 ## Function Handles for callbacks
 
-When the app needs to pass a callback function to the component, use function handles. This is common for components that run app-defined logic on a schedule or in a workflow.
+When the app needs to pass a callback function to the component, use function
+handles. This is common for components that run app-defined logic on a schedule
+or in a workflow.
 
 ```ts
 // App side: create a handle and pass it to the component
@@ -37,7 +40,8 @@ export const enqueue = mutation({
 
 ## Deriving validators from schema
 
-Instead of manually repeating field types in return validators, extend the schema validator:
+Instead of manually repeating field types in return validators, extend the
+schema validator:
 
 ```ts
 import { v } from "convex/values";
@@ -59,7 +63,8 @@ export const getLatest = query({
 
 ## Static configuration with a globals table
 
-A common pattern for component configuration is a single-document "globals" table:
+A common pattern for component configuration is a single-document "globals"
+table:
 
 ```ts
 // schema.ts
@@ -91,7 +96,8 @@ export const configure = mutation({
 
 ## Class-based client wrappers
 
-For components with many functions or configuration options, a class-based client provides a cleaner API. This pattern is common in published components.
+For components with many functions or configuration options, a class-based
+client provides a cleaner API. This pattern is common in published components.
 
 ```ts
 // src/client/index.ts

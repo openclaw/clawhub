@@ -28,6 +28,7 @@ eval/cache/
 eval/results/
 playwright-report
 test-results
+search-metrics.local/
 .playwright
 convex/_generated/*
 !convex/_generated/ai/
