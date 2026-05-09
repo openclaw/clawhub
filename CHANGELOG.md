@@ -6,6 +6,7 @@
 
 ### Fixes
 
+- Skills: repair publisher-owned skill merges, bound historical slug redirects, block protected slug namespaces, and expire owner-unpublished slug reservations after 30 days (#2115) (thanks @fuller-stack-dev).
 - Skills: allow confirmed owner migration when republishing an existing skill to another publisher, preserving versions, stats, aliases, and audit history (#1998, #2102) (thanks @momothemage).
 - Security: block owner delete/undelete paths from overriding moderator or scanner hides, and return explicit 403 authz responses for owner restore denials (#2078) (thanks @momothemage).
 
