@@ -1,4 +1,4 @@
-import { ShieldCheck } from "lucide-react";
+import { Fingerprint, ShieldCheck } from "lucide-react";
 import { useState } from "react";
 import { Badge } from "./ui/badge";
 
@@ -91,6 +91,7 @@ export type StaticFinding = {
 type SecurityScanResultsProps = {
   sha256hash?: string;
   vtAnalysis?: VtAnalysis | null;
+  trentAnalysis?: TrentAnalysis | null;
   llmAnalysis?: LlmAnalysis | null;
   staticFindings?: StaticFinding[];
   capabilityTags?: string[] | null;
@@ -120,6 +121,10 @@ function VirusTotalIcon({ className }: { className?: string }) {
 
 function ClawScanIcon({ className }: { className?: string }) {
   return <ShieldCheck className={className} aria-label="ClawScan" />;
+}
+
+function TrentClawIcon({ className }: { className?: string }) {
+  return <Fingerprint className={className} aria-label="TrentClaw" />;
 }
 
 export function getScanStatusInfo(status: string) {
@@ -531,6 +536,7 @@ function StaticAnalysisDetail({
 export function SecurityScanResults({
   sha256hash,
   vtAnalysis,
+  trentAnalysis,
   llmAnalysis,
   staticFindings,
   capabilityTags,
@@ -539,7 +545,13 @@ export function SecurityScanResults({
 }: SecurityScanResultsProps) {
   const visibleCapabilityTags = (capabilityTags ?? []).filter(Boolean);
   const hasStaticFindings = staticFindings && staticFindings.length > 0;
-  if (!sha256hash && !llmAnalysis && !hasStaticFindings && visibleCapabilityTags.length === 0) {
+  if (
+    !sha256hash &&
+    !trentAnalysis &&
+    !llmAnalysis &&
+    !hasStaticFindings &&
+    visibleCapabilityTags.length === 0
+  ) {
     return null;
   }
 
@@ -548,6 +560,12 @@ export function SecurityScanResults({
   const vtStatusInfo = getScanStatusInfo(vtStatus);
   const isCodeInsight = vtAnalysis?.source === "code_insight";
   const aiAnalysis = vtAnalysis?.analysis;
+
+  const trentHash = sha256hash ?? trentAnalysis?.skillSha256;
+  const trentStatusInfo = trentAnalysis ? getScanStatusInfo(trentAnalysis.verdict) : null;
+  const trentUrl = trentHash
+    ? `https://api.trent.ai/v1/humber-agent/openclaw/skills/verdict/${trentHash}`
+    : null;
 
   const llmVerdict = llmAnalysis?.verdict ?? llmAnalysis?.status;
   const llmStatusInfo = llmVerdict ? getScanStatusInfo(llmVerdict) : null;
@@ -573,6 +591,32 @@ export function SecurityScanResults({
             {scannerBasePath ? (
               <a
                 href={`${scannerBasePath}/virustotal`}
+                className="version-scan-link"
+                onClick={(event) => event.stopPropagation()}
+              >
+                Details
+              </a>
+            ) : null}
+          </div>
+        ) : null}
+        {trentStatusInfo ? (
+          <div className="version-scan-badge">
+            <TrentClawIcon className="version-scan-icon version-scan-icon-trent" />
+            <span className={trentStatusInfo.className}>{trentStatusInfo.label}</span>
+            {trentUrl ? (
+              <a
+                href={trentUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="version-scan-link"
+                onClick={(event) => event.stopPropagation()}
+              >
+                ↗
+              </a>
+            ) : null}
+            {scannerBasePath ? (
+              <a
+                href={`${scannerBasePath}/trentclaw`}
                 className="version-scan-link"
                 onClick={(event) => event.stopPropagation()}
               >
@@ -650,6 +694,32 @@ export function SecurityScanResults({
           <div className={`code-insight-analysis ${vtStatus}`}>
             <div className="code-insight-label">Code Insight</div>
             <p className="code-insight-text">{aiAnalysis}</p>
+          </div>
+        ) : null}
+        {trentStatusInfo ? (
+          <div className="scan-result-row">
+            <div className="scan-result-scanner">
+              <TrentClawIcon className="scan-result-icon scan-result-icon-trent" />
+              <span className="scan-result-scanner-name">TrentClaw</span>
+            </div>
+            <div className={`scan-result-status ${trentStatusInfo.className}`}>
+              {trentStatusInfo.label}
+            </div>
+            {trentUrl ? (
+              <a
+                href={trentUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="scan-result-link"
+              >
+                View API response →
+              </a>
+            ) : null}
+            {scannerBasePath ? (
+              <a href={`${scannerBasePath}/trentclaw`} className="scan-result-link">
+                Details →
+              </a>
+            ) : null}
           </div>
         ) : null}
         {llmStatusInfo && llmAnalysis ? (

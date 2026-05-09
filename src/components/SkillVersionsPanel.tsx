@@ -51,10 +51,12 @@ export function SkillVersionsPanel({
                   {version.changelog}
                 </div>
                 <div className="pt-1">
-                  {!suppressScanResults && (version.sha256hash || version.llmAnalysis) ? (
+                  {!suppressScanResults &&
+                  (version.sha256hash || version.trentAnalysis || version.llmAnalysis) ? (
                     <SecurityScanResults
                       sha256hash={version.sha256hash}
                       vtAnalysis={version.vtAnalysis}
+                      trentAnalysis={version.trentAnalysis}
                       llmAnalysis={version.llmAnalysis as LlmAnalysis | undefined}
                       variant="badge"
                     />

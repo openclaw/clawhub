@@ -6312,6 +6312,10 @@ code {
   color: var(--accent);
 }
 
+.scan-result-icon-trent {
+  color: var(--ink-soft);
+}
+
 .scan-result-status {
   padding: 2px 10px;
   border-radius: var(--r-pill);
@@ -6448,6 +6452,10 @@ code {
 
 .version-scan-icon-oc {
   color: var(--accent);
+}
+
+.version-scan-icon-trent {
+  color: var(--ink-soft);
 }
 
 .version-scan-link {
