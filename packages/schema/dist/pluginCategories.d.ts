@@ -37,7 +37,7 @@ export declare const PLUGIN_CATEGORY_DEFINITIONS: readonly [{
     readonly slug: "dev-tools";
     readonly label: "Developer Tools";
     readonly icon: "wrench";
-    readonly signals: readonly ["dev", "debug", "lint", "test", "build", "tool", "browser", "terminal", "git", "repo", "code", "sdk"];
+    readonly signals: readonly ["dev", "debug", "lint", "test", "build", "tool", "tools", "browser", "terminal", "git", "repo", "code", "sdk"];
 }];
 export type PluginCategorySlug = (typeof PLUGIN_CATEGORY_DEFINITIONS)[number]["slug"];
 export declare const PLUGIN_CATEGORY_SLUGS: ("data" | "security" | "channels" | "mcp-tooling" | "observability" | "automation" | "deployment" | "dev-tools")[];

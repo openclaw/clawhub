@@ -117,6 +117,7 @@ export const PLUGIN_CATEGORY_DEFINITIONS = [
             "test",
             "build",
             "tool",
+            "tools",
             "browser",
             "terminal",
             "git",
@@ -135,7 +136,9 @@ function normalizeCategoryText(value) {
     return value?.trim().toLowerCase() ?? "";
 }
 function signalMatches(text, signal) {
-    return text === signal || text.includes(signal);
+    const normalizedText = ` ${text.replace(/[^a-z0-9]+/g, " ")} `;
+    const normalizedSignal = ` ${signal.trim().toLowerCase().replace(/[^a-z0-9]+/g, " ")} `;
+    return normalizedText.includes(normalizedSignal);
 }
 export function derivePluginCategoryTags(input) {
     if (input.family === "skill")
