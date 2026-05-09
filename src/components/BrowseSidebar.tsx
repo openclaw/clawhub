@@ -1,10 +1,13 @@
 import {
+  Activity,
   Database,
   GitBranch,
+  Key,
   MessageSquare,
   Package,
   Plug,
   RefreshCw,
+  Rocket,
   Shield,
   Wrench,
 } from "lucide-react";
@@ -41,6 +44,10 @@ const CATEGORY_ICONS: Record<string, React.ReactNode> = {
   security: <Shield size={15} />,
   automation: <RefreshCw size={15} />,
   other: <Package size={15} />,
+  "mcp-tooling": <Plug size={15} />,
+  "auth-identity": <Key size={15} />,
+  observability: <Activity size={15} />,
+  deployment: <Rocket size={15} />,
 };
 
 export function BrowseSidebar({

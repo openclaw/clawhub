@@ -101,6 +101,7 @@ describe("plugins route", () => {
       featured: undefined,
       verified: undefined,
       executesCode: undefined,
+      sort: "updated",
       view: undefined,
     });
   });
@@ -118,6 +119,7 @@ describe("plugins route", () => {
       featured: undefined,
       verified: undefined,
       executesCode: undefined,
+      sort: "updated",
       view: undefined,
     });
   });
@@ -418,5 +420,114 @@ describe("plugins route", () => {
 
     expect(screen.getByText("Plugin catalog is temporarily unavailable")).toBeTruthy();
     expect(screen.getByText(/Try again in about 22 seconds/i)).toBeTruthy();
+  });
+
+  it("parses valid sort values and defaults to updated", async () => {
+    const route = await loadRoute();
+    const validateSearch = route.__config.validateSearch as (
+      search: Record<string, unknown>,
+    ) => Record<string, unknown>;
+
+    expect(validateSearch({ sort: "newest" })).toEqual(
+      expect.objectContaining({ sort: "newest" }),
+    );
+    expect(validateSearch({ sort: "name" })).toEqual(
+      expect.objectContaining({ sort: "name" }),
+    );
+    expect(validateSearch({ sort: "relevance" })).toEqual(
+      expect.objectContaining({ sort: "relevance" }),
+    );
+    expect(validateSearch({ sort: "invalid" })).toEqual(
+      expect.objectContaining({ sort: "updated" }),
+    );
+    expect(validateSearch({})).toEqual(expect.objectContaining({ sort: "updated" }));
+  });
+
+  it("selects a category from the sidebar and searches by keyword", async () => {
+    const route = await loadRoute();
+    const Component = route.__config.component as ComponentType;
+
+    render(<Component />);
+
+    fireEvent.click(screen.getByRole("radio", { name: "Security" }));
+
+    expect(navigateMock).toHaveBeenCalled();
+    const lastCall = navigateMock.mock.calls.at(-1)?.[0] as {
+      search: (prev: Record<string, unknown>) => Record<string, unknown>;
+    };
+    expect(lastCall.search({})).toEqual(
+      expect.objectContaining({
+        q: "security",
+        cursor: undefined,
+        featured: undefined,
+      }),
+    );
+  });
+
+  it("shows relevance sort options when a category query is active", async () => {
+    searchMock = { q: "security" };
+    loaderDataMock = {
+      items: [
+        {
+          name: "demo-plugin",
+          displayName: "Demo Plugin",
+          family: "code-plugin",
+          channel: "community",
+          isOfficial: false,
+          executesCode: true,
+          createdAt: 1,
+          updatedAt: 1,
+        },
+      ],
+      nextCursor: null,
+      rateLimited: false,
+      retryAfterSeconds: null,
+    };
+    const route = await loadRoute();
+    const Component = route.__config.component as ComponentType;
+
+    render(<Component />);
+
+    expect(screen.getByRole("radio", { name: "Relevance" })).toBeTruthy();
+    expect(screen.getByRole("radio", { name: "Newest" })).toBeTruthy();
+    expect(screen.getByRole("radio", { name: "Name" })).toBeTruthy();
+  });
+
+  it("sorts search results by name on the client", async () => {
+    searchMock = { q: "demo", sort: "name" };
+    loaderDataMock = {
+      items: [
+        {
+          name: "zebra-plugin",
+          displayName: "Zebra Plugin",
+          family: "code-plugin",
+          channel: "community",
+          isOfficial: false,
+          executesCode: false,
+          createdAt: 2,
+          updatedAt: 2,
+        },
+        {
+          name: "alpha-plugin",
+          displayName: "Alpha Plugin",
+          family: "code-plugin",
+          channel: "community",
+          isOfficial: false,
+          executesCode: false,
+          createdAt: 1,
+          updatedAt: 1,
+        },
+      ],
+      nextCursor: null,
+      rateLimited: false,
+      retryAfterSeconds: null,
+    };
+    const route = await loadRoute();
+    const Component = route.__config.component as ComponentType;
+
+    render(<Component />);
+
+    const list = screen.getByText("Alpha Plugin");
+    expect(list).toBeTruthy();
   });
 });

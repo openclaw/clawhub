@@ -1,14 +1,17 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { PackageSearch, Search } from "lucide-react";
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { BrowseSidebar } from "../../components/BrowseSidebar";
 import { PluginListItem } from "../../components/PluginListItem";
 import { Button } from "../../components/ui/button";
+import { PLUGIN_CATEGORIES } from "../../lib/categories";
 import {
   fetchPluginCatalog,
   isRateLimitedPackageApiError,
   type PackageListItem,
 } from "../../lib/packageApi";
+
+type PluginSort = "relevance" | "updated" | "newest" | "name";
 
 type PluginSearchState = {
   q?: string;
@@ -17,6 +20,7 @@ type PluginSearchState = {
   featured?: boolean;
   verified?: boolean;
   executesCode?: boolean;
+  sort?: PluginSort;
   view?: LegacyPluginView;
 };
 
@@ -46,6 +50,13 @@ function formatRetryDelay(retryAfterSeconds: number | null) {
   return `in about ${minutes} minute${minutes === 1 ? "" : "s"}`;
 }
 
+function parsePluginSort(value: unknown): PluginSort {
+  if (value === "relevance" || value === "updated" || value === "newest" || value === "name") {
+    return value;
+  }
+  return "updated";
+}
+
 export const Route = createFileRoute("/plugins/")({
   validateSearch: (search): PluginSearchState => ({
     q: typeof search.q === "string" && search.q.trim() ? search.q.trim() : undefined,
@@ -63,6 +74,7 @@ export const Route = createFileRoute("/plugins/")({
       search.executesCode === true || search.executesCode === "true" || search.executesCode === "1"
         ? true
         : undefined,
+    sort: parsePluginSort(search.sort),
     view: normalizePluginView(search.view),
   }),
   loaderDeps: ({ search }) => ({
@@ -135,6 +147,52 @@ function PluginsIndex() {
     setQuery(search.q ?? "");
   }, [search.q]);
 
+  const hasQuery = Boolean(search.q?.trim());
+
+  const activeCategory = useMemo(() => {
+    if (!search.q) return undefined;
+    const trimmed = search.q.trim().toLowerCase();
+    return (
+      PLUGIN_CATEGORIES.find((c) => c.keywords.some((k) => k === trimmed))?.slug ?? undefined
+    );
+  }, [search.q]);
+
+  const activeSort = search.featured ? "featured" : search.sort ?? "updated";
+
+  const sortOptions = useMemo(() => {
+    if (hasQuery) {
+      return [
+        { value: "relevance", label: "Relevance" },
+        { value: "updated", label: "Recently updated" },
+        { value: "newest", label: "Newest" },
+        { value: "name", label: "Name" },
+      ];
+    }
+    return [
+      { value: "featured", label: "Featured" },
+      { value: "updated", label: "Recently updated" },
+    ];
+  }, [hasQuery]);
+
+  const sortedItems = useMemo(() => {
+    if (!hasQuery) return items;
+
+    const sort = search.sort ?? "relevance";
+    const sorted = [...items];
+    switch (sort) {
+      case "newest":
+        return sorted.sort((a, b) => b.createdAt - a.createdAt);
+      case "name":
+        return sorted.sort((a, b) => a.displayName.localeCompare(b.displayName));
+      case "updated":
+        return sorted.sort((a, b) => b.updatedAt - a.updatedAt);
+      case "relevance":
+      default:
+        // Search API already returns relevance-ordered results
+        return sorted;
+    }
+  }, [items, hasQuery, search.sort]);
+
   const handleFilterToggle = (key: string) => {
     if (key === "verified") {
       void navigate({
@@ -155,26 +213,50 @@ function PluginsIndex() {
     }
   };
 
-  const handleFamilySort = (value: string) => {
+  const handleSortChange = (value: string) => {
     if (value === "featured") {
       void navigate({
         search: (prev: PluginSearchState) => ({
           ...prev,
           cursor: undefined,
           featured: true,
-          family: undefined,
+          sort: undefined,
         }),
       });
       return;
     }
 
-    const family = value === "code-plugin" ? value : undefined;
     void navigate({
       search: (prev: PluginSearchState) => ({
         ...prev,
         cursor: undefined,
         featured: undefined,
-        family,
+        sort: parsePluginSort(value),
+      }),
+    });
+  };
+
+  const handleCategoryChange = (slug: string | undefined) => {
+    if (slug) {
+      const cat = PLUGIN_CATEGORIES.find((c) => c.slug === slug);
+      if (cat?.keywords[0]) {
+        void navigate({
+          search: (prev) => ({
+            ...prev,
+            cursor: undefined,
+            q: cat.keywords[0],
+            featured: undefined,
+          }),
+        });
+        return;
+      }
+    }
+    void navigate({
+      search: (prev) => ({
+        ...prev,
+        cursor: undefined,
+        q: undefined,
+        featured: undefined,
       }),
     });
   };
@@ -198,6 +280,21 @@ function PluginsIndex() {
       }),
       replace: true,
     });
+  };
+
+  const handleClear = () => {
+    void navigate({
+      search: (prev) => ({
+        ...prev,
+        cursor: undefined,
+        q: undefined,
+        verified: undefined,
+        executesCode: undefined,
+        featured: undefined,
+        sort: undefined,
+      }),
+    });
+    setQuery("");
   };
 
   return (
@@ -243,12 +340,12 @@ function PluginsIndex() {
       </form>
       <div className={`browse-layout${sidebarOpen ? " sidebar-open" : ""}`}>
         <BrowseSidebar
-          sortOptions={[
-            { value: "featured", label: "Featured" },
-            { value: "code-plugin", label: "Code plugins" },
-          ]}
-          activeSort={search.featured ? "featured" : "code-plugin"}
-          onSortChange={handleFamilySort}
+          categories={PLUGIN_CATEGORIES}
+          activeCategory={activeCategory}
+          onCategoryChange={handleCategoryChange}
+          sortOptions={sortOptions}
+          activeSort={activeSort}
+          onSortChange={handleSortChange}
           filters={[
             { key: "verified", label: "Verified only", active: search.verified ?? false },
             { key: "executesCode", label: "Executes code", active: search.executesCode ?? false },
@@ -258,7 +355,12 @@ function PluginsIndex() {
         <div className="browse-results">
           <div className="browse-results-toolbar">
             <span className="browse-results-count">
-              {items.length} result{items.length !== 1 ? "s" : ""}
+              {sortedItems.length} result{sortedItems.length !== 1 ? "s" : ""}
+              {hasQuery || search.verified || search.executesCode || search.featured ? (
+                <button className="browse-clear-btn" type="button" onClick={handleClear}>
+                  Clear
+                </button>
+              ) : null}
             </span>
             <div className="browse-view-toggle">
               <button
@@ -292,14 +394,14 @@ function PluginsIndex() {
               <p className="empty-state-title">Plugin catalog is temporarily unavailable</p>
               <p className="empty-state-body">Try again {formatRetryDelay(retryAfterSeconds)}.</p>
             </div>
-          ) : items.length === 0 ? (
+          ) : sortedItems.length === 0 ? (
             <div className="empty-state">
               <p className="empty-state-title">No plugins found</p>
               <p className="empty-state-body">Try a different search term or remove filters.</p>
             </div>
           ) : (
             <div className={view === "grid" ? "grid" : "results-list"}>
-              {items.map((item) => (
+              {sortedItems.map((item) => (
                 <PluginListItem
                   key={item.name}
                   item={item}
