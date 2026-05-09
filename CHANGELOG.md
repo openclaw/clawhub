@@ -10,6 +10,7 @@
 
 ### Fixes
 
+- Security: add an admin-only moderation hold lift path for false-positive publisher holds, with audited skill restoration that preserves independently hidden skills (#1133) (thanks @Justincredible-tech).
 - Docs/dev: document the local Convex site proxy URL and make worktree setup reject misconfigured local site URLs that break HTTP routes (#2060) (thanks @vyctorbrzezowski).
 - Dev setup: make local seed reset deterministic by cleaning stale seed lookup and badge rows for repeated Convex dev runs (#2057) (thanks @vyctorbrzezowski).
 - Skills: repair publisher-owned skill merges, bound historical slug redirects, block protected slug namespaces, and expire owner-unpublished slug reservations after 30 days (#2115) (thanks @fuller-stack-dev).

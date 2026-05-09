@@ -5818,8 +5818,14 @@ export const applyUserModerationToOwnedSkillsBatchInternal = internalMutation({
 
     let hiddenCount = 0;
     for (const skill of page) {
+      if (skill.softDeletedAt) continue;
+      const currentStatus = skill.moderationStatus ?? "active";
+      if (currentStatus !== "active") continue;
+
       const nextReason =
-        skill.moderationVerdict === "malicious" ? skill.moderationReason : USER_MODERATION_REASON;
+        skill.moderationVerdict === "malicious"
+          ? (skill.moderationReason ?? "scanner.aggregate.malicious")
+          : USER_MODERATION_REASON;
       const nextStatus = "hidden";
       const patch: Partial<Doc<"skills">> = {
         moderationStatus: nextStatus,
@@ -5970,9 +5976,7 @@ export const restoreOwnedSkillsForModerationLiftBatchInternal = internalMutation
       // Re-evaluate based on the skill's own scan data rather than blindly
       // setting to active. If the skill's own static scan was malicious,
       // keep it hidden -- only the user-level hold should be lifted.
-      const latestVersion = skill.latestVersionId
-        ? await ctx.db.get(skill.latestVersionId)
-        : null;
+      const latestVersion = skill.latestVersionId ? await ctx.db.get(skill.latestVersionId) : null;
       const ownStaticVerdict = latestVersion?.staticScan?.status;
       if (ownStaticVerdict === "malicious") continue;
 

@@ -1825,6 +1825,10 @@ describe("users.reserveHandleInternal", () => {
 });
 
 describe("users.liftModerationHoldInternal", () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
   it("clears the moderation hold and restores skills", async () => {
     vi.spyOn(Date, "now").mockReturnValue(1_700_000_100_000);
     const patch = vi.fn();
@@ -1931,7 +1935,12 @@ describe("users.liftModerationHoldInternal", () => {
     const patch = vi.fn();
     const get = vi.fn(async (id: string) => {
       if (id === "users:admin") {
-        return { _id: "users:admin", role: "admin", deletedAt: undefined, deactivatedAt: undefined };
+        return {
+          _id: "users:admin",
+          role: "admin",
+          deletedAt: undefined,
+          deactivatedAt: undefined,
+        };
       }
       if (id === "users:target") {
         return {
