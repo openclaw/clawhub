@@ -456,7 +456,9 @@ describe("plugins route", () => {
       search: Record<string, unknown>,
     ) => Record<string, unknown>;
 
-    expect(validateSearch({ sort: "updated" })).toEqual(expect.objectContaining({ sort: "updated" }));
+    expect(validateSearch({ sort: "updated" })).toEqual(
+      expect.objectContaining({ sort: "updated" }),
+    );
     expect(validateSearch({ sort: "relevance" })).toEqual(
       expect.objectContaining({ sort: "relevance" }),
     );
