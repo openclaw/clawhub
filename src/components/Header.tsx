@@ -1,6 +1,17 @@
 import { useAuthActions } from "@convex-dev/auth/react";
 import { Link, useLocation, useNavigate } from "@tanstack/react-router";
-import { ArrowRight, ChevronDown, Ghost, Menu, Monitor, Moon, Plug, Search, Sun, Wrench } from "lucide-react";
+import {
+  ArrowRight,
+  ChevronDown,
+  Ghost,
+  Menu,
+  Monitor,
+  Moon,
+  Plug,
+  Search,
+  Sun,
+  Wrench,
+} from "lucide-react";
 import { type ComponentType, useEffect, useMemo, useRef, useState } from "react";
 import { getUserFacingAuthError } from "../lib/authErrorMessage";
 import { gravatarUrl } from "../lib/gravatar";
