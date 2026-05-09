@@ -4947,8 +4947,8 @@ form.summary-edit-form .summary-textarea:focus {
   .navbar-search {
     display: flex;
     height: 56px;
-    gap: 12px;
-    padding: 0 18px;
+    gap: 8px;
+    padding: 0 12px;
   }
 
   .navbar-search-icon {
