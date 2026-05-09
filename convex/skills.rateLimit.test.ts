@@ -459,6 +459,11 @@ describe("skills anti-spam guards", () => {
             linkedUserId: "users:caller",
             deletedAt: undefined,
             deactivatedAt: undefined,
+            publishedSkills: 0,
+            publishedPackages: 0,
+            totalInstalls: 0,
+            totalDownloads: 0,
+            totalStars: 0,
           };
         }
         return null;
@@ -677,6 +682,11 @@ describe("skills anti-spam guards", () => {
             linkedUserId: "users:caller",
             deletedAt: undefined,
             deactivatedAt: undefined,
+            publishedSkills: 0,
+            publishedPackages: 0,
+            totalInstalls: 0,
+            totalDownloads: 0,
+            totalStars: 0,
           };
         }
         if (id === "publishers:previous") {

@@ -3,7 +3,10 @@ import { describe, expect, it, vi } from "vitest";
 import { assertCanManageOwnedResource } from "./lib/publishers";
 import {
   addMember,
+  listPublicPage,
+  listPublic,
   listMine,
+  listPublishedPage,
   migrateLegacyPublisherHandleToOrgInternal,
   removeMember,
   updateProfile,
@@ -54,6 +57,49 @@ const listMineHandler = (
   listMine as unknown as WrappedHandler<Record<string, never>, Array<unknown>>
 )._handler;
 
+const listPublicHandler = (
+  listPublic as unknown as WrappedHandler<
+    { limit?: number; kind?: "user" | "org" },
+    {
+      items: Array<{ handle: string; kind: "user" | "org"; stats: { downloads: number } }>;
+      total: number;
+      counts: { all: number; individuals: number; organizations: number };
+      limit: number;
+    }
+  >
+)._handler;
+
+const listPublicPageHandler = (
+  listPublicPage as unknown as WrappedHandler<
+    {
+      kind?: "user" | "org";
+      query?: string;
+      paginationOpts: { cursor: string | null; numItems: number };
+    },
+    {
+      page: Array<{ handle: string; kind: "user" | "org"; stats: { downloads: number } }>;
+      counts: { all: number; individuals: number; organizations: number };
+      globalCounts: { all: number; individuals: number; organizations: number };
+      continueCursor: string;
+      isDone: boolean;
+    }
+  >
+)._handler;
+
+const listPublishedPageHandler = (
+  listPublishedPage as unknown as WrappedHandler<
+    {
+      handle: string;
+      paginationOpts: { cursor: string | null; numItems: number };
+    },
+    {
+      page: Array<{ displayName: string; href: string }>;
+      continueCursor: string;
+      isDone: boolean;
+    }
+  >
+)._handler;
+
 const updateProfileHandler = (
   updateProfile as unknown as WrappedHandler<{
     publisherId: string;
@@ -85,6 +131,353 @@ describe("publishers membership controls", () => {
         handle: "skills",
       }),
     ).rejects.toThrow('Handle "@skills" is reserved for ClawHub routes');
+  });
+
+  it("lists individual and org publishers ranked by aggregate downloads", async () => {
+    const publisherRows = [
+      {
+        _id: "publishers:alice",
+        _creationTime: 1,
+        kind: "user",
+        handle: "alice",
+        displayName: "Alice",
+        linkedUserId: "users:alice",
+        createdAt: 1,
+        updatedAt: 1,
+      },
+      {
+        _id: "publishers:openclaw",
+        _creationTime: 1,
+        kind: "org",
+        handle: "openclaw",
+        displayName: "OpenClaw",
+        createdAt: 1,
+        updatedAt: 1,
+      },
+    ];
+    const skillRows = [
+      {
+        _id: "skills:alice",
+        ownerPublisherId: "publishers:alice",
+        softDeletedAt: undefined,
+        statsDownloads: 4,
+        statsStars: 1,
+        statsInstallsAllTime: 3,
+        stats: { downloads: 4, stars: 1, installsCurrent: 1, installsAllTime: 3 },
+      },
+      {
+        _id: "skills:openclaw",
+        ownerPublisherId: "publishers:openclaw",
+        softDeletedAt: undefined,
+        statsDownloads: 20,
+        statsStars: 2,
+        statsInstallsAllTime: 15,
+        stats: { downloads: 20, stars: 2, installsCurrent: 4, installsAllTime: 15 },
+      },
+    ];
+    const packageRows = [
+      {
+        _id: "packages:alice",
+        ownerPublisherId: "publishers:alice",
+        softDeletedAt: undefined,
+        stats: { downloads: 5, stars: 0, installs: 2, versions: 1 },
+      },
+    ];
+
+    const ctx = {
+      db: {
+        get: vi.fn(async (id: string) => {
+          if (id === "users:alice") return { _id: id, image: "https://github.com/alice.png" };
+          return null;
+        }),
+        query: vi.fn((table: string) => ({
+          withIndex: vi.fn((indexName: string, buildQuery: (q: unknown) => unknown) => {
+            const fields: Record<string, unknown> = {};
+            const q = {
+              eq: (field: string, value: unknown) => {
+                fields[field] = value;
+                return q;
+              },
+            };
+            buildQuery(q);
+            if (table === "publishers" && indexName === "by_active_total_downloads") {
+              return {
+                order: vi.fn(() => ({ collect: vi.fn(async () => publisherRows) })),
+              };
+            }
+            if (table === "skills" && indexName === "by_owner_publisher_active_updated") {
+              return {
+                collect: vi.fn(async () =>
+                  skillRows.filter((skill) => skill.ownerPublisherId === fields.ownerPublisherId),
+                ),
+              };
+            }
+            if (table === "packages" && indexName === "by_owner_publisher_active_updated") {
+              return {
+                collect: vi.fn(async () =>
+                  packageRows.filter((pkg) => pkg.ownerPublisherId === fields.ownerPublisherId),
+                ),
+              };
+            }
+            throw new Error(`unexpected ${table} index ${indexName}`);
+          }),
+        })),
+      },
+    };
+
+    const result = await listPublicHandler(ctx as never, { limit: 48 });
+
+    expect(result.total).toBe(2);
+    expect(result.counts).toEqual({ all: 2, individuals: 1, organizations: 1 });
+    expect(result.items.map((item) => item.handle)).toEqual(["openclaw", "alice"]);
+    expect(result.items.map((item) => item.kind)).toEqual(["org", "user"]);
+    expect(result.items.map((item) => item.stats.downloads)).toEqual([20, 9]);
+  });
+
+  it("filters public publisher listings by kind", async () => {
+    const publisherRows = [
+      {
+        _id: "publishers:alice",
+        _creationTime: 1,
+        kind: "user",
+        handle: "alice",
+        displayName: "Alice",
+        linkedUserId: "users:alice",
+        publishedSkills: 1,
+        publishedPackages: 0,
+        totalInstalls: 4,
+        totalDownloads: 10,
+        totalStars: 1,
+        createdAt: 1,
+        updatedAt: 1,
+      },
+      {
+        _id: "publishers:openclaw",
+        _creationTime: 1,
+        kind: "org",
+        handle: "openclaw",
+        displayName: "OpenClaw",
+        publishedSkills: 0,
+        publishedPackages: 1,
+        totalInstalls: 20,
+        totalDownloads: 40,
+        totalStars: 2,
+        createdAt: 1,
+        updatedAt: 1,
+      },
+    ];
+    const ctx = {
+      db: {
+        get: vi.fn(async (id: string) => {
+          if (id === "users:alice") return { _id: id, image: "https://github.com/alice.png" };
+          return null;
+        }),
+        query: vi.fn((table: string) => ({
+          withIndex: vi.fn((indexName: string, buildQuery: (q: unknown) => unknown) => {
+            const fields: Record<string, unknown> = {};
+            const q = {
+              eq: (field: string, value: unknown) => {
+                fields[field] = value;
+                return q;
+              },
+            };
+            buildQuery(q);
+            if (table === "publishers" && indexName === "by_active_total_downloads") {
+              return {
+                order: vi.fn(() => ({ collect: vi.fn(async () => publisherRows) })),
+              };
+            }
+            if (
+              (table === "skills" || table === "packages") &&
+              indexName === "by_owner_publisher_active_updated"
+            ) {
+              return { collect: vi.fn(async () => []) };
+            }
+            throw new Error(`unexpected ${table} index ${indexName}`);
+          }),
+        })),
+      },
+    };
+
+    const result = await listPublicHandler(ctx as never, { kind: "org" });
+
+    expect(result.total).toBe(1);
+    expect(result.counts).toEqual({ all: 2, individuals: 1, organizations: 1 });
+    expect(result.items.map((item) => item.handle)).toEqual(["openclaw"]);
+  });
+
+  it("pages public publishers by kind and query", async () => {
+    const publisherRows = [
+      {
+        _id: "publishers:alice",
+        _creationTime: 1,
+        kind: "user",
+        handle: "alice",
+        displayName: "Alice Labs",
+        linkedUserId: "users:alice",
+        publishedSkills: 1,
+        publishedPackages: 0,
+        totalInstalls: 4,
+        totalDownloads: 10,
+        totalStars: 1,
+        createdAt: 1,
+        updatedAt: 1,
+      },
+      {
+        _id: "publishers:bob",
+        _creationTime: 1,
+        kind: "user",
+        handle: "bob",
+        displayName: "Bob Tools",
+        linkedUserId: "users:bob",
+        publishedSkills: 1,
+        publishedPackages: 0,
+        totalInstalls: 2,
+        totalDownloads: 8,
+        totalStars: 1,
+        createdAt: 1,
+        updatedAt: 1,
+      },
+      {
+        _id: "publishers:openclaw",
+        _creationTime: 1,
+        kind: "org",
+        handle: "openclaw",
+        displayName: "OpenClaw",
+        publishedSkills: 0,
+        publishedPackages: 1,
+        totalInstalls: 20,
+        totalDownloads: 40,
+        totalStars: 2,
+        createdAt: 1,
+        updatedAt: 1,
+      },
+    ];
+    const ctx = {
+      db: {
+        get: vi.fn(async (id: string) => {
+          if (id === "users:alice") return { _id: id, image: "https://github.com/alice.png" };
+          if (id === "users:bob") return { _id: id, image: "https://github.com/bob.png" };
+          return null;
+        }),
+        query: vi.fn((table: string) => ({
+          withIndex: vi.fn((indexName: string, buildQuery: (q: unknown) => unknown) => {
+            const fields: Record<string, unknown> = {};
+            const q = {
+              eq: (field: string, value: unknown) => {
+                fields[field] = value;
+                return q;
+              },
+            };
+            buildQuery(q);
+            if (table === "publishers" && indexName === "by_active_kind_total_downloads") {
+              return {
+                order: vi.fn(() => ({
+                  take: vi.fn(async () =>
+                    publisherRows.filter((publisher) => publisher.kind === fields.kind),
+                  ),
+                })),
+              };
+            }
+            if (table === "publishers" && indexName === "by_active_total_downloads") {
+              return {
+                order: vi.fn(() => ({
+                  take: vi.fn(async () => publisherRows),
+                })),
+              };
+            }
+            if (table === "publishers" && indexName === "by_active_kind_handle") {
+              return {
+                collect: vi.fn(async () =>
+                  publisherRows.filter((publisher) => publisher.kind === fields.kind),
+                ),
+              };
+            }
+            if (
+              (table === "skills" || table === "packages") &&
+              indexName === "by_owner_publisher_active_updated"
+            ) {
+              return { collect: vi.fn(async () => []) };
+            }
+            throw new Error(`unexpected ${table} index ${indexName}`);
+          }),
+        })),
+      },
+    };
+
+    const result = await listPublicPageHandler(ctx as never, {
+      kind: "user",
+      query: "alice",
+      paginationOpts: { cursor: null, numItems: 25 },
+    });
+
+    expect(result.counts).toEqual({ all: 1, individuals: 1, organizations: 0 });
+    expect(result.globalCounts).toEqual({ all: 3, individuals: 2, organizations: 1 });
+    expect(result.page.map((item) => item.handle)).toEqual(["alice"]);
+  });
+
+  it("builds scoped plugin profile links with route segments", async () => {
+    const publisher = {
+      _id: "publishers:openclaw",
+      _creationTime: 1,
+      kind: "org",
+      handle: "openclaw",
+      displayName: "OpenClaw",
+      createdAt: 1,
+      updatedAt: 1,
+    };
+    const ctx = {
+      db: {
+        get: vi.fn(async (id: string) => (id === "publishers:openclaw" ? publisher : null)),
+        query: vi.fn((table: string) => ({
+          withIndex: vi.fn((indexName: string, buildQuery: (q: unknown) => unknown) => {
+            const fields: Record<string, unknown> = {};
+            const q = {
+              eq: (field: string, value: unknown) => {
+                fields[field] = value;
+                return q;
+              },
+            };
+            buildQuery(q);
+            if (table === "publishers" && indexName === "by_handle") {
+              return {
+                unique: vi.fn(async () => (fields.handle === "openclaw" ? publisher : null)),
+              };
+            }
+            if (table === "skills" && indexName === "by_owner_publisher_active_updated") {
+              return { collect: vi.fn(async () => []) };
+            }
+            if (table === "packages" && indexName === "by_owner_publisher_active_updated") {
+              return {
+                collect: vi.fn(async () => [
+                  {
+                    _id: "packages:plugin",
+                    ownerPublisherId: "publishers:openclaw",
+                    softDeletedAt: undefined,
+                    family: "code-plugin",
+                    name: "@openclaw/example-plugin",
+                    displayName: "Example Plugin",
+                    summary: "Scoped plugin",
+                    stats: { downloads: 7, installs: 3, stars: 1, versions: 1 },
+                    updatedAt: 5,
+                  },
+                ]),
+              };
+            }
+            throw new Error(`unexpected ${table} index ${indexName}`);
+          }),
+        })),
+      },
+    };
+
+    const result = await listPublishedPageHandler(ctx as never, {
+      handle: "openclaw",
+      paginationOpts: { cursor: null, numItems: 12 },
+    });
+
+    expect(result.page).toMatchObject([
+      { displayName: "Example Plugin", href: "/plugins/@openclaw/example-plugin" },
+    ]);
   });
 
   it("prevents admins from promoting members to owner", async () => {

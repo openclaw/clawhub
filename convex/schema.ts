@@ -124,6 +124,11 @@ const publishers = defineTable({
   image: v.optional(v.string()),
   linkedUserId: v.optional(v.id("users")),
   trustedPublisher: v.optional(v.boolean()),
+  publishedSkills: v.optional(v.number()),
+  publishedPackages: v.optional(v.number()),
+  totalInstalls: v.optional(v.number()),
+  totalDownloads: v.optional(v.number()),
+  totalStars: v.optional(v.number()),
   deactivatedAt: v.optional(v.number()),
   deletedAt: v.optional(v.number()),
   createdAt: v.number(),
@@ -131,7 +136,24 @@ const publishers = defineTable({
 })
   .index("by_handle", ["handle"])
   .index("by_linked_user", ["linkedUserId"])
-  .index("by_kind_handle", ["kind", "handle"]);
+  .index("by_kind_handle", ["kind", "handle"])
+  .index("by_active_kind_handle", ["deletedAt", "deactivatedAt", "kind", "handle"])
+  .index("by_active_total_downloads", ["deletedAt", "deactivatedAt", "totalDownloads", "updatedAt"])
+  .index("by_active_kind_total_downloads", [
+    "deletedAt",
+    "deactivatedAt",
+    "kind",
+    "totalDownloads",
+    "updatedAt",
+  ])
+  .index("by_active_total_installs", ["deletedAt", "deactivatedAt", "totalInstalls", "updatedAt"])
+  .index("by_active_kind_total_installs", [
+    "deletedAt",
+    "deactivatedAt",
+    "kind",
+    "totalInstalls",
+    "updatedAt",
+  ]);
 
 const publisherMembers = defineTable({
   publisherId: v.id("publishers"),
@@ -831,6 +853,7 @@ const packages = defineTable({
   .index("by_name", ["normalizedName"])
   .index("by_owner", ["ownerUserId"])
   .index("by_owner_publisher", ["ownerPublisherId"])
+  .index("by_owner_publisher_active_updated", ["ownerPublisherId", "softDeletedAt", "updatedAt"])
   .index("by_family_updated", ["family", "updatedAt"])
   .index("by_family_channel_updated", ["family", "channel", "updatedAt"])
   .index("by_family_official_updated", ["family", "isOfficial", "updatedAt"])

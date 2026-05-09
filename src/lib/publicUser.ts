@@ -10,6 +10,41 @@ export type PublicPublisher = Pick<
   "_id" | "_creationTime" | "kind" | "handle" | "displayName" | "image" | "bio" | "linkedUserId"
 >;
 
+type PublicPublisherStats = {
+  skills: number;
+  packages: number;
+  installs: number;
+  downloads: number;
+  stars: number;
+};
+
+export type PublicPublisherPublishedItem = {
+  kind: "skill" | "plugin";
+  displayName: string;
+  downloads: number;
+};
+
+export type PublicPublisherListItem = PublicPublisher & {
+  stats: PublicPublisherStats;
+  publishedItems: PublicPublisherPublishedItem[];
+  starredCount?: number;
+  affiliations?: Array<{
+    publisher: PublicPublisher;
+    role: "owner" | "admin" | "publisher";
+  }>;
+};
+
+export type PublicPublisherCatalogItem = {
+  _id: string;
+  kind: "skill" | "plugin";
+  displayName: string;
+  summary: string | null;
+  href: string;
+  downloads: number;
+  stars: number;
+  updatedAt: number;
+};
+
 export type PublicSkill = Pick<
   Doc<"skills">,
   | "_id"

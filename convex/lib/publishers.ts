@@ -25,14 +25,16 @@ function derivePersonalPublisherHandle(user: Doc<"users">) {
 function synthesizePersonalPublisher(user: Doc<"users">): Doc<"publishers"> {
   const handle = derivePersonalPublisherHandle(user);
   const now = user.updatedAt ?? user.createdAt ?? user._creationTime;
+  const displayName = user.displayName?.trim() || user.name?.trim() || handle;
+  const bio = user.bio?.trim() || undefined;
   return {
     _id: (user.personalPublisherId ??
       (`publishers:${handle}` as Id<"publishers">)) as Id<"publishers">,
     _creationTime: user._creationTime,
     kind: "user",
     handle,
-    displayName: user.displayName?.trim() || user.name?.trim() || handle,
-    bio: user.bio?.trim() || undefined,
+    displayName,
+    bio,
     image: user.image,
     linkedUserId: user._id,
     trustedPublisher: user.trustedPublisher,
@@ -188,6 +190,8 @@ export async function ensurePersonalPublisherForUser(
   if (existing && isPublisherActive(existing)) {
     const existingPublisher = existing;
     const now = Date.now();
+    const displayName = user.displayName?.trim() || user.name?.trim() || handle;
+    const bio = user.bio?.trim() || undefined;
     const conflict = await getPublisherByHandle(ctx, handle);
     if (conflict && conflict._id !== existingPublisher._id) {
       throw new ConvexError(`Publisher handle "@${handle}" is already claimed`);
@@ -195,8 +199,8 @@ export async function ensurePersonalPublisherForUser(
     try {
       await ctx.db.patch(existingPublisher._id, {
         handle,
-        displayName: user.displayName?.trim() || user.name?.trim() || handle,
-        bio: user.bio?.trim() || undefined,
+        displayName,
+        bio,
         image: user.image,
         linkedUserId: user._id,
         trustedPublisher: user.trustedPublisher,
@@ -238,14 +242,16 @@ export async function ensurePersonalPublisherForUser(
   }
 
   const now = Date.now();
+  const displayName = user.displayName?.trim() || user.name?.trim() || handle;
+  const bio = user.bio?.trim() || undefined;
   try {
     const publisherId =
       conflict?._id ??
       (await ctx.db.insert("publishers", {
         kind: "user",
         handle,
-        displayName: user.displayName?.trim() || user.name?.trim() || handle,
-        bio: user.bio?.trim() || undefined,
+        displayName,
+        bio,
         image: user.image,
         linkedUserId: user._id,
         trustedPublisher: user.trustedPublisher,
@@ -255,8 +261,8 @@ export async function ensurePersonalPublisherForUser(
 
     if (conflict) {
       await ctx.db.patch(conflict._id, {
-        displayName: user.displayName?.trim() || user.name?.trim() || handle,
-        bio: user.bio?.trim() || undefined,
+        displayName,
+        bio,
         image: user.image,
         linkedUserId: user._id,
         trustedPublisher: user.trustedPublisher,

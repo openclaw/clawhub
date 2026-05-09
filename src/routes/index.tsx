@@ -708,13 +708,13 @@ function SkillsHome() {
               <ChevronRight size={16} />
             </span>
           </Link>
-          <Link to="/users" className="home-v2-cat-item">
+          <Link to="/publishers" className="home-v2-cat-item">
             <div className="home-v2-cat-icon">
               <Users size={20} />
             </div>
             <div className="home-v2-cat-text">
-              <div className="home-v2-cat-name">Builders</div>
-              <div className="home-v2-cat-desc">Community creators</div>
+              <div className="home-v2-cat-name">Publishers</div>
+              <div className="home-v2-cat-desc">Builders and orgs</div>
             </div>
             <span className="home-v2-cat-arrow">
               <ChevronRight size={16} />
