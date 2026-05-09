@@ -6,6 +6,7 @@ import type { Doc, Id } from "../_generated/dataModel";
 import type { ActionCtx, MutationCtx } from "../_generated/server";
 import { getSkillBadgeMap, isSkillHighlighted } from "./badges";
 import { generateChangelogForPublish } from "./changelog";
+import { normalizeClawScanNoteForWrite } from "./clawScanNote";
 import { generateEmbedding } from "./embeddings";
 import { requireGitHubAccountAge } from "./githubAccount";
 import type { PublicUser } from "./public";
@@ -129,7 +130,7 @@ export async function publishVersionForUser(
   const slug = normalizedSlug;
 
   const suppliedChangelog = args.changelog.trim();
-  const clawScanNote = args.clawScanNote?.trim();
+  const clawScanNote = normalizeClawScanNoteForWrite(args.clawScanNote);
   const changelogSource = suppliedChangelog ? ("user" as const) : ("auto" as const);
 
   const sanitizedFiles = args.files.map((file) => ({

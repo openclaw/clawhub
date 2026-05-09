@@ -25,6 +25,7 @@ import {
   ApiV1PackageVersionListResponseSchema,
   ApiV1PackageVersionResponseSchema,
   ApiV1PublishTokenMintResponseSchema,
+  normalizeClawScanNote,
   normalizeOpenClawExternalPluginCompatibility,
   type PackageArtifactSummary,
   type PackageCapabilitySummary,
@@ -1736,7 +1737,12 @@ async function preparePackagePublishPlan(
     parsedClawpack?.packageVersion ||
     packageJsonString(packageJson, "version");
   const changelog = options.changelog ?? "";
-  const clawScanNote = options.clawscanNote?.trim();
+  let clawScanNote: string | undefined;
+  try {
+    clawScanNote = normalizeClawScanNote(options.clawscanNote);
+  } catch (error) {
+    fail(formatError(error));
+  }
   const tags = parseTags(options.tags ?? "latest");
   const source = buildSource(options, inferredSource);
 

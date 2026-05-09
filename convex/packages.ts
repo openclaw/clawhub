@@ -41,6 +41,7 @@ import {
   readArtifactReportStatus,
   appendPackageModerationEventLog,
 } from "./lib/artifactModeration";
+import { normalizeClawScanNoteForWrite } from "./lib/clawScanNote";
 import { requireGitHubAccountAge } from "./lib/githubAccount";
 import { normalizeGitHubRepository } from "./lib/githubActionsOidc";
 import {
@@ -3847,7 +3848,7 @@ async function publishPackageImpl(
   const family = payload.family;
   const name = normalizePackageName(payload.name);
   const version = assertPackageVersion(family, payload.version);
-  const clawScanNote = payload.clawScanNote?.trim() || undefined;
+  const clawScanNote = normalizeClawScanNoteForWrite(payload.clawScanNote);
   const existingPackage = await runQueryRef<Doc<"packages"> | null>(
     ctx,
     internalRefs.packages.getPackageByNameInternal,
@@ -4834,11 +4835,13 @@ export const insertReleaseInternal = internalMutation({
       ? Array.from(new Set([...args.tags, "latest"]))
       : args.tags;
 
+    const clawScanNote = normalizeClawScanNoteForWrite(args.clawScanNote);
+
     const releaseId = await ctx.db.insert("packageReleases", {
       packageId: pkgId,
       version: args.version,
       changelog: args.changelog,
-      ...(args.clawScanNote?.trim() ? { clawScanNote: args.clawScanNote.trim() } : {}),
+      ...(clawScanNote ? { clawScanNote } : {}),
       summary: args.summary,
       distTags: effectiveTags,
       files: args.files,

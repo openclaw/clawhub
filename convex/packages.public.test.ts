@@ -3818,6 +3818,29 @@ describe("packages public queries", () => {
     );
   });
 
+  it("rejects package release clawScanNote values beyond the write-path limit", async () => {
+    const ctx = makeInsertReleaseCtx(makePackageDoc());
+
+    await expect(
+      insertReleaseInternalHandler(ctx, {
+        actorUserId: "users:owner",
+        ownerUserId: "users:owner",
+        name: "demo-plugin",
+        displayName: "Demo Plugin",
+        family: "code-plugin",
+        version: "1.0.0",
+        changelog: "release",
+        clawScanNote: "x".repeat(4001),
+        tags: ["latest"],
+        summary: "demo",
+        files: [],
+        integritySha256: "abc123",
+      }),
+    ).rejects.toThrow("ClawScan note must be at most 4000 characters.");
+
+    expect(ctx.insert).not.toHaveBeenCalledWith("packageReleases", expect.anything());
+  });
+
   it("validates package publish payloads inside the action path", async () => {
     await expect(
       publishPackageForUserInternalHandler({} as never, {

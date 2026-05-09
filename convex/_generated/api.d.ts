@@ -47,6 +47,7 @@ import type * as lib_artifactModeration from "../lib/artifactModeration.js";
 import type * as lib_badges from "../lib/badges.js";
 import type * as lib_batching from "../lib/batching.js";
 import type * as lib_changelog from "../lib/changelog.js";
+import type * as lib_clawScanNote from "../lib/clawScanNote.js";
 import type * as lib_clawpack from "../lib/clawpack.js";
 import type * as lib_commentScamPrompt from "../lib/commentScamPrompt.js";
 import type * as lib_contentTypes from "../lib/contentTypes.js";
@@ -179,6 +180,7 @@ declare const fullApi: ApiFromModules<{
   "lib/badges": typeof lib_badges;
   "lib/batching": typeof lib_batching;
   "lib/changelog": typeof lib_changelog;
+  "lib/clawScanNote": typeof lib_clawScanNote;
   "lib/clawpack": typeof lib_clawpack;
   "lib/commentScamPrompt": typeof lib_commentScamPrompt;
   "lib/contentTypes": typeof lib_contentTypes;

@@ -34,6 +34,7 @@ import {
 import { getSkillBadgeMap, getSkillBadgeMaps, isSkillHighlighted } from "./lib/badges";
 import { scheduleNextBatchIfNeeded } from "./lib/batching";
 import { generateChangelogPreview as buildChangelogPreview } from "./lib/changelog";
+import { normalizeClawScanNoteForWrite } from "./lib/clawScanNote";
 import { mergeDepRegistryFinding } from "./lib/depRegistryScan";
 import { embeddingVisibilityFor } from "./lib/embeddingVisibility";
 import {
@@ -9215,12 +9216,14 @@ export const insertVersion = internalMutation({
       throw new ConvexError("Version already exists");
     }
 
+    const clawScanNote = normalizeClawScanNoteForWrite(args.clawScanNote);
+
     const versionId = await ctx.db.insert("skillVersions", {
       skillId: skill._id,
       version: args.version,
       fingerprint: args.fingerprint,
       changelog: args.changelog,
-      ...(args.clawScanNote?.trim() ? { clawScanNote: args.clawScanNote.trim() } : {}),
+      ...(clawScanNote ? { clawScanNote } : {}),
       changelogSource: args.changelogSource,
       files: args.files,
       parsed: args.parsed,

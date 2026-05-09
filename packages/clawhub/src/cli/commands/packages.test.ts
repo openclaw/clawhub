@@ -14,6 +14,7 @@ import {
   createUiModuleMocks,
   makeGlobalOpts,
 } from "../../../test/cliCommandTestKit.js";
+import { MAX_CLAWSCAN_NOTE_CHARS } from "../../schema/index.js";
 
 const authTokenMocks = createAuthTokenModuleMocks();
 const registryMocks = createRegistryModuleMocks();
@@ -1155,6 +1156,33 @@ describe("package commands", () => {
       expect(mockLog).not.toHaveBeenCalled();
       expect(mockWrite).not.toHaveBeenCalled();
       dateSpy.mockRestore();
+    } finally {
+      await rm(workdir, { recursive: true, force: true });
+    }
+  });
+
+  it("rejects oversized clawscan notes before uploading package files", async () => {
+    const workdir = await makeTmpWorkdir();
+    try {
+      const folder = join(workdir, "demo-plugin");
+      await mkdir(join(folder, "dist"), { recursive: true });
+      await writeFile(
+        join(folder, "package.json"),
+        makeCodePluginPackageJson({ name: "demo-plugin", version: "1.0.0" }),
+        "utf8",
+      );
+      await writeFile(
+        join(folder, "openclaw.plugin.json"),
+        JSON.stringify({ id: "demo.plugin" }),
+        "utf8",
+      );
+
+      await expect(
+        cmdPublishPackage(makeOpts(workdir), "demo-plugin", {
+          clawscanNote: "x".repeat(MAX_CLAWSCAN_NOTE_CHARS + 1),
+        }),
+      ).rejects.toThrow(`ClawScan note must be at most ${MAX_CLAWSCAN_NOTE_CHARS} characters.`);
+      expect(httpMocks.apiRequestForm).not.toHaveBeenCalled();
     } finally {
       await rm(workdir, { recursive: true, force: true });
     }

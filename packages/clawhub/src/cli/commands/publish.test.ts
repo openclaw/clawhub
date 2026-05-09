@@ -11,6 +11,7 @@ import {
   createUiModuleMocks,
   makeGlobalOpts,
 } from "../../../test/cliCommandTestKit.js";
+import { MAX_CLAWSCAN_NOTE_CHARS } from "../../schema/index.js";
 
 const authTokenMocks = createAuthTokenModuleMocks();
 const registryMocks = createRegistryModuleMocks();
@@ -84,6 +85,27 @@ describe("cmdPublish", () => {
       expect(payload.tags).toEqual(["latest"]);
       const files = publishForm.getAll("files") as Array<Blob & { name?: string }>;
       expect(files.map((file) => file.name ?? "").sort()).toEqual(["SKILL.md", "notes.md"]);
+    } finally {
+      await rm(workdir, { recursive: true, force: true });
+    }
+  });
+
+  it("rejects oversized clawscan notes before uploading skill files", async () => {
+    const workdir = await makeTmpWorkdir();
+    try {
+      const folder = join(workdir, "oversized-note");
+      await mkdir(folder, { recursive: true });
+      await writeFile(join(folder, "SKILL.md"), "# Skill\n", "utf8");
+
+      await expect(
+        cmdPublish(makeOpts(workdir), "oversized-note", {
+          slug: "oversized-note",
+          name: "Oversized Note",
+          version: "1.0.0",
+          clawscanNote: "x".repeat(MAX_CLAWSCAN_NOTE_CHARS + 1),
+        }),
+      ).rejects.toThrow(`ClawScan note must be at most ${MAX_CLAWSCAN_NOTE_CHARS} characters.`);
+      expect(httpMocks.apiRequestForm).not.toHaveBeenCalled();
     } finally {
       await rm(workdir, { recursive: true, force: true });
     }

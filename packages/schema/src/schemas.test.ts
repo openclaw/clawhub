@@ -2,6 +2,7 @@
 
 import { describe, expect, it } from "vitest";
 import { parseArk } from "./ark";
+import { MAX_CLAWSCAN_NOTE_CHARS, normalizeClawScanNote } from "./clawScanNote";
 import { DocsLinks, openClawDocsUrl } from "./docsLinks";
 import { getPackageScopeOwnerMismatch, inferPackageNameScope } from "./packages";
 import {
@@ -90,6 +91,14 @@ describe("clawhub-schema", () => {
     );
     expect(payload.ownerHandle).toBe("openclaw");
     expect(payload.migrateOwner).toBe(true);
+  });
+
+  it("normalizes ClawScan notes at the shared input boundary", () => {
+    expect(normalizeClawScanNote("  reviewer context  ")).toBe("reviewer context");
+    expect(normalizeClawScanNote("   ")).toBeUndefined();
+    expect(() => normalizeClawScanNote("x".repeat(MAX_CLAWSCAN_NOTE_CHARS + 1))).toThrow(
+      `ClawScan note must be at most ${MAX_CLAWSCAN_NOTE_CHARS} characters.`,
+    );
   });
 
   it("reports scoped package names that do not match the selected owner", () => {
