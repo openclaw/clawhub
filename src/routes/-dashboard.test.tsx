@@ -51,6 +51,8 @@ type TestSkill = {
   badges: {};
   stats: {
     downloads: number;
+    installsCurrent: number;
+    installsAllTime: number;
     stars: number;
     versions: number;
   };
@@ -135,7 +137,7 @@ function createSkill(overrides?: Partial<TestSkill>): TestSkill {
     ownerPublisherId: publishers[0].publisher._id,
     tags: {},
     badges: {},
-    stats: { downloads: 0, stars: 0, versions: 1 },
+    stats: { downloads: 1_234, installsCurrent: 12, installsAllTime: 56, stars: 7, versions: 3 },
     moderationVerdict: "suspicious",
     moderationFlags: ["flagged.suspicious"],
     isSuspicious: true,
@@ -225,7 +227,7 @@ function renderDashboard() {
   );
 }
 
-describe("Dashboard minimal rows", () => {
+describe("Dashboard rows", () => {
   beforeEach(() => {
     mocks.useQuery.mockReset();
     mocks.usePaginatedQuery.mockReset();
@@ -240,7 +242,7 @@ describe("Dashboard minimal rows", () => {
     mocks.toastError.mockReset();
   });
 
-  it("renders entry links, summaries, and aggregate statuses only", () => {
+  it("renders entry links, summaries, metrics, and aggregate statuses", () => {
     arrangeDashboard({ skills: [createSkill()], packages: [createPackage()] });
 
     renderDashboard();
@@ -249,6 +251,11 @@ describe("Dashboard minimal rows", () => {
     expect(screen.getByRole("link", { name: "Local Flagged Runtime Plugin" })).toBeTruthy();
     expect(screen.getByText("Flagged skill fixture.")).toBeTruthy();
     expect(screen.getByText("Flagged plugin fixture.")).toBeTruthy();
+    expect(screen.getByLabelText("Metrics for Local Flagged Skill")).toBeTruthy();
+    expect(screen.getByText(/1\.2k downloads/)).toBeTruthy();
+    expect(screen.getByText(/56 installs/)).toBeTruthy();
+    expect(screen.getByText(/7 stars/)).toBeTruthy();
+    expect(screen.getByText(/3 versions/)).toBeTruthy();
     expect(screen.getByText("Suspicious")).toBeTruthy();
     expect(screen.getByText("Blocked")).toBeTruthy();
     expect(screen.getByRole("button", { name: "Suspicious status reason" })).toBeTruthy();

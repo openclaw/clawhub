@@ -5801,6 +5801,32 @@ code {
   text-overflow: ellipsis;
 }
 
+.dashboard-skill-metrics {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 12px;
+  min-width: 0;
+  font-family: var(--font-mono);
+  font-size: 0.76rem;
+  line-height: 1.35;
+  color: var(--color-muted);
+}
+
+.dashboard-skill-metric {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  white-space: nowrap;
+}
+
+.dashboard-skill-metric svg {
+  width: 14px;
+  height: 14px;
+  flex: none;
+  opacity: 0.82;
+}
+
 .dashboard-list-summary {
   font-size: 0.9rem;
   line-height: 1.5;

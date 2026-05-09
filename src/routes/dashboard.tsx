@@ -1,6 +1,19 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useMutation, usePaginatedQuery, useQuery } from "convex/react";
-import { Clock, Info, Loader2, MoreVertical, Plus, RotateCw, Settings, Trash2 } from "lucide-react";
+import {
+  Clock,
+  Download,
+  History,
+  Info,
+  Loader2,
+  MoreVertical,
+  Package,
+  Plus,
+  RotateCw,
+  Settings,
+  Star,
+  Trash2,
+} from "lucide-react";
 import { useEffect, useState } from "react";
 import { toast } from "sonner";
 import { api } from "../../convex/_generated/api";
@@ -18,6 +31,7 @@ import {
 } from "../components/ui/dropdown-menu";
 import { Tooltip, TooltipContent, TooltipTrigger } from "../components/ui/tooltip";
 import { getUserFacingConvexError } from "../lib/convexError";
+import { formatCompactStat } from "../lib/numberFormat";
 
 const emptyPluginPublishSearch = {
   ownerHandle: undefined,
@@ -326,6 +340,7 @@ function SkillRow({ skill, ownerHandle }: { skill: DashboardSkill; ownerHandle: 
             {skill.displayName}
           </Link>
         </div>
+        <SkillMetrics stats={skill.stats} label={skill.displayName} />
       </div>
       <div className="dashboard-list-summary">{skill.summary ?? "No summary provided."}</div>
       <div className="dashboard-list-status">
@@ -339,6 +354,29 @@ function SkillRow({ skill, ownerHandle }: { skill: DashboardSkill; ownerHandle: 
         statusLabel={status.label}
         rescanState={skill.rescanState ?? null}
       />
+    </div>
+  );
+}
+
+function SkillMetrics({ stats, label }: { stats: DashboardSkill["stats"]; label: string }) {
+  return (
+    <div className="dashboard-skill-metrics" aria-label={`Metrics for ${label}`}>
+      <span className="dashboard-skill-metric" title="Downloads">
+        <Download className="h-3.5 w-3.5" aria-hidden="true" />
+        {formatCompactStat(stats.downloads)} downloads
+      </span>
+      <span className="dashboard-skill-metric" title="All-time installs">
+        <History className="h-3.5 w-3.5" aria-hidden="true" />
+        {formatCompactStat(stats.installsAllTime ?? 0)} installs
+      </span>
+      <span className="dashboard-skill-metric" title="Stars">
+        <Star className="h-3.5 w-3.5" aria-hidden="true" />
+        {formatCompactStat(stats.stars)} stars
+      </span>
+      <span className="dashboard-skill-metric" title="Versions">
+        <Package className="h-3.5 w-3.5" aria-hidden="true" />
+        {stats.versions ?? 0} versions
+      </span>
     </div>
   );
 }
