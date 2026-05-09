@@ -5,7 +5,11 @@ import type { ComponentType, ReactNode } from "react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const navigateMock = vi.fn();
-let searchMock: { q?: string; type?: "all" | "skills" | "plugins" } = {};
+let searchMock: {
+  q?: string;
+  type?: "all" | "skills" | "plugins";
+  nonSuspicious?: boolean;
+} = {};
 const useUnifiedSearchMock = vi.fn();
 
 vi.mock("@tanstack/react-router", () => ({
@@ -115,12 +119,96 @@ describe("search route", () => {
 
     expect(useUnifiedSearchMock).toHaveBeenLastCalledWith("weather", "skills", {
       limits: { skills: 25, plugins: 25 },
+      nonSuspiciousOnly: true,
     });
 
     fireEvent.click(screen.getByRole("button", { name: "Load more" }));
 
     expect(useUnifiedSearchMock).toHaveBeenLastCalledWith("weather", "skills", {
       limits: { skills: 50, plugins: 50 },
+      nonSuspiciousOnly: true,
     });
+  });
+
+  it("defaults nonSuspiciousOnly to true when URL param is absent", async () => {
+    searchMock = { q: "hello" };
+    const route = await loadRoute();
+    const Component = route.__config.component as ComponentType;
+
+    render(<Component />);
+
+    expect(useUnifiedSearchMock).toHaveBeenLastCalledWith(
+      "hello",
+      "all",
+      expect.objectContaining({ nonSuspiciousOnly: true }),
+    );
+  });
+
+  it("passes nonSuspiciousOnly=false to the hook when URL opts out", async () => {
+    searchMock = { q: "hello", nonSuspicious: false };
+    const route = await loadRoute();
+    const Component = route.__config.component as ComponentType;
+
+    render(<Component />);
+
+    expect(useUnifiedSearchMock).toHaveBeenLastCalledWith(
+      "hello",
+      "all",
+      expect.objectContaining({ nonSuspiciousOnly: false }),
+    );
+  });
+
+  it("shows the 'Hiding suspicious skills' chip by default and opts out on click", async () => {
+    searchMock = { q: "hello" };
+    const route = await loadRoute();
+    const Component = route.__config.component as ComponentType;
+
+    render(<Component />);
+
+    const chip = screen.getByRole("button", { name: /Hiding suspicious skills/i });
+    expect(chip.getAttribute("aria-pressed")).toBe("true");
+    expect(chip.textContent).toContain("Show all");
+
+    fireEvent.click(chip);
+
+    expect(navigateMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        to: "/search",
+        replace: true,
+        search: expect.objectContaining({ nonSuspicious: false }),
+      }),
+    );
+  });
+
+  it("shows the 'Showing all skills' chip when opted out and clears the URL param on click", async () => {
+    searchMock = { q: "hello", nonSuspicious: false };
+    const route = await loadRoute();
+    const Component = route.__config.component as ComponentType;
+
+    render(<Component />);
+
+    const chip = screen.getByRole("button", { name: /Showing all skills/i });
+    expect(chip.getAttribute("aria-pressed")).toBe("false");
+    expect(chip.textContent).toContain("Hide suspicious");
+
+    fireEvent.click(chip);
+
+    expect(navigateMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        to: "/search",
+        replace: true,
+        search: expect.objectContaining({ nonSuspicious: undefined }),
+      }),
+    );
+  });
+
+  it("hides the suspicious-filter chip on the plugins tab", async () => {
+    searchMock = { q: "hello", type: "plugins" };
+    const route = await loadRoute();
+    const Component = route.__config.component as ComponentType;
+
+    render(<Component />);
+
+    expect(screen.queryByRole("button", { name: /suspicious/i })).toBeNull();
   });
 });

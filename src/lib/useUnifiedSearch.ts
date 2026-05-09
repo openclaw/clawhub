@@ -36,6 +36,14 @@ type UnifiedSearchOptions = {
     skills?: number;
     plugins?: number;
   };
+  /**
+   * When true, suspicious skills are excluded from results at recall time.
+   * Defaults to true to preserve the moderation-safe default for top-level
+   * entry points (homepage / unified search). Callers that provide their own
+   * UI for toggling this filter (e.g. the /skills browse page) should pass
+   * the user-controlled value explicitly.
+   */
+  nonSuspiciousOnly?: boolean;
 };
 
 export function useUnifiedSearch(
@@ -55,6 +63,7 @@ export function useUnifiedSearch(
   const enabled = options.enabled ?? true;
   const skillLimit = options.limits?.skills ?? 25;
   const pluginLimit = options.limits?.plugins ?? 25;
+  const nonSuspiciousOnly = options.nonSuspiciousOnly ?? true;
 
   useEffect(() => {
     const trimmed = query.trim();
@@ -83,7 +92,7 @@ export function useUnifiedSearch(
             promises[0] = searchSkills({
               query: trimmed,
               limit: skillLimit,
-              nonSuspiciousOnly: true,
+              nonSuspiciousOnly,
             });
           }
 
@@ -151,7 +160,16 @@ export function useUnifiedSearch(
     }, debounceMs);
 
     return () => window.clearTimeout(handle);
-  }, [query, activeType, searchSkills, debounceMs, enabled, skillLimit, pluginLimit]);
+  }, [
+    query,
+    activeType,
+    searchSkills,
+    debounceMs,
+    enabled,
+    skillLimit,
+    pluginLimit,
+    nonSuspiciousOnly,
+  ]);
 
   return { results, skillResults, pluginResults, skillCount, pluginCount, isSearching };
 }
