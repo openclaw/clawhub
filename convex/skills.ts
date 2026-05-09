@@ -615,12 +615,16 @@ function getUnpublishedSlugReservationExpiresAt(
   return null;
 }
 
-function buildReleasedUnpublishedSkillSlug(skill: Pick<Doc<"skills">, "_id">) {
+function buildReleasedUnpublishedSkillSlug(skill: Pick<Doc<"skills">, "_id">, attempt = 0) {
   const idPart = String(skill._id)
     .toLowerCase()
-    .replace(/[^a-z0-9]+/g, "-")
-    .replace(/^-+|-+$/g, "");
-  return `unpublished-${idPart}`;
+    .replace(/[^a-z0-9]+/g, "_")
+    .replace(/^_+|_+$/g, "");
+  const suffix = attempt > 0 ? `_${attempt}` : "";
+  // The double-underscore namespace is intentionally not user-claimable by
+  // the public slug validator, so released hidden rows cannot squat on public
+  // slug space after their unpublished reservation expires.
+  return `__unpublished_${idPart || "skill"}${suffix}`;
 }
 
 function normalizeSkillSlugKey(slug: string) {
@@ -759,11 +763,36 @@ async function releaseExpiredUnpublishedSkillSlug(
   ctx: MutationCtx,
   skill: Doc<"skills">,
   now: number,
+  actorUserId: Id<"users">,
 ) {
   const reservedUntil = getUnpublishedSlugReservationExpiresAt(skill);
   if (reservedUntil === null || reservedUntil > now) return false;
 
-  const releasedSlug = buildReleasedUnpublishedSkillSlug(skill);
+  let releasedSlug: string | null = null;
+  for (let attempt = 0; attempt < 5; attempt += 1) {
+    const candidate = buildReleasedUnpublishedSkillSlug(skill, attempt);
+    const [conflictingSkills, conflictingAliases] = await Promise.all([
+      ctx.db
+        .query("skills")
+        .withIndex("by_slug", (q) => q.eq("slug", candidate))
+        .take(1),
+      ctx.db
+        .query("skillSlugAliases")
+        .withIndex("by_slug", (q) => q.eq("slug", candidate))
+        .take(1),
+    ]);
+    const conflictingSkill = conflictingSkills.find(
+      (candidateSkill) => candidateSkill._id !== skill._id,
+    );
+    if (!conflictingSkill && conflictingAliases.length === 0) {
+      releasedSlug = candidate;
+      break;
+    }
+  }
+  if (!releasedSlug) {
+    throw new ConvexError("Unable to release expired unpublished slug without a slug collision.");
+  }
+
   await ctx.db.patch(skill._id, {
     slug: releasedSlug,
     unpublishedOriginalSlug: skill.unpublishedOriginalSlug ?? skill.slug,
@@ -772,13 +801,14 @@ async function releaseExpiredUnpublishedSkillSlug(
     updatedAt: now,
   });
   await ctx.db.insert("auditLogs", {
-    actorUserId: skill.ownerUserId,
+    actorUserId,
     action: "skill.slug.unpublished_release",
     targetType: "skill",
     targetId: skill._id,
     metadata: {
       from: skill.slug,
       to: releasedSlug,
+      previousOwnerUserId: skill.ownerUserId,
       reservedUntil,
     },
     createdAt: now,
@@ -7981,7 +8011,7 @@ export const insertVersion = internalMutation({
           );
         }
         normalizeSkillSlugForWrite(args.slug);
-        await releaseExpiredUnpublishedSkillSlug(ctx, skill, now);
+        await releaseExpiredUnpublishedSkillSlug(ctx, skill, now, userId);
         skill = null;
       }
     }

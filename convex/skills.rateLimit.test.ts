@@ -378,7 +378,7 @@ describe("skills anti-spam guards", () => {
     );
   });
 
-  it("releases expired owner-unpublished slugs before accepting a new publish", async () => {
+  it("releases expired owner-unpublished slugs without alias collisions before accepting a new publish", async () => {
     const now = Date.now();
     const storedSkills = new Map<string, Record<string, unknown>>([
       [
@@ -406,6 +406,7 @@ describe("skills anti-spam guards", () => {
         },
       ],
     ]);
+    const aliasSlugs = new Set(["__unpublished_skills_expired"]);
     const patch = vi.fn(
       async (
         tableOrId: string,
@@ -467,6 +468,10 @@ describe("skills anti-spam guards", () => {
                     Array.from(storedSkills.values()).find(
                       (skill) => skill.slug === constraints.slug,
                     ) ?? null,
+                  take: async (limit: number) =>
+                    Array.from(storedSkills.values())
+                      .filter((skill) => skill.slug === constraints.slug)
+                      .slice(0, limit),
                 };
               }
               if (name === "by_owner") {
@@ -492,9 +497,21 @@ describe("skills anti-spam guards", () => {
         }
         if (table === "skillSlugAliases") {
           return {
-            withIndex: (name: string) => {
+            withIndex: (name: string, build?: (q: ReturnType<typeof chainEq>) => unknown) => {
               if (name !== "by_slug") throw new Error(`unexpected skillSlugAliases index ${name}`);
-              return { unique: async () => null };
+              const constraints: Record<string, unknown> = {};
+              build?.(chainEq(constraints));
+              const alias = aliasSlugs.has(String(constraints.slug))
+                ? {
+                    _id: "skillSlugAliases:collision",
+                    slug: constraints.slug,
+                    skillId: "skills:collision",
+                  }
+                : null;
+              return {
+                unique: async () => alias,
+                take: async (limit: number) => (alias && limit > 0 ? [alias] : []),
+              };
             },
           };
         }
@@ -563,7 +580,7 @@ describe("skills anti-spam guards", () => {
       "skills",
       "skills:expired",
       expect.objectContaining({
-        slug: "unpublished-skills-expired",
+        slug: "__unpublished_skills_expired_1",
         unpublishedOriginalSlug: "released-demo",
         unpublishedSlugReservedUntil: undefined,
         unpublishedSlugReleasedAt: expect.any(Number),
@@ -573,7 +590,13 @@ describe("skills anti-spam guards", () => {
       "auditLogs",
       expect.objectContaining({
         action: "skill.slug.unpublished_release",
+        actorUserId: "users:caller",
         targetId: "skills:expired",
+        metadata: expect.objectContaining({
+          from: "released-demo",
+          to: "__unpublished_skills_expired_1",
+          previousOwnerUserId: "users:previous",
+        }),
       }),
     );
     expect(insert).toHaveBeenCalledWith(
