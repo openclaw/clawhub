@@ -1,8 +1,16 @@
+import { PLUGIN_CATEGORY_DEFINITIONS } from "clawhub-schema";
+
 export type SkillCategory = {
   slug: string;
   label: string;
   icon: string;
   keywords: string[];
+};
+
+export type BrowseCategory = {
+  slug: string;
+  label: string;
+  icon: string;
 };
 
 export const SKILL_CATEGORIES: SkillCategory[] = [
@@ -46,75 +54,12 @@ export const SKILL_CATEGORIES: SkillCategory[] = [
   { slug: "other", label: "Other", icon: "package", keywords: [] },
 ];
 
-export const PLUGIN_CATEGORIES: SkillCategory[] = [
-  {
-    slug: "channels",
-    label: "Channels & Communication",
-    icon: "message-circle",
-    keywords: ["channel", "chat", "message", "communication", "voice", "call", "dm"],
-  },
-  {
-    slug: "mcp-tooling",
-    label: "MCP & Tooling",
-    icon: "plug",
-    keywords: ["mcp", "server", "protocol", "provider", "harness"],
-  },
-  {
-    slug: "data",
-    label: "Data & APIs",
-    icon: "database",
-    keywords: ["api", "data", "fetch", "http", "rest", "graphql", "source", "memory", "storage"],
-  },
-  {
-    slug: "security",
-    label: "Security",
-    icon: "shield",
-    keywords: ["security", "scan", "auth", "encrypt", "guardrail", "policy", "secret"],
-  },
-  {
-    slug: "observability",
-    label: "Observability",
-    icon: "activity",
-    keywords: [
-      "observability",
-      "log",
-      "trace",
-      "monitor",
-      "metric",
-      "telemetry",
-      "diagnostic",
-      "exporter",
-      "prometheus",
-      "otel",
-    ],
-  },
-  {
-    slug: "automation",
-    label: "Automation",
-    icon: "zap",
-    keywords: ["auto", "cron", "schedule", "bot", "workflow", "pipeline", "approval"],
-  },
-  {
-    slug: "deployment",
-    label: "Deployment",
-    icon: "rocket",
-    keywords: [
-      "deploy",
-      "release",
-      "publish",
-      "ci",
-      "cd",
-      "infrastructure",
-      "gateway",
-      "load-balanced",
-    ],
-  },
-  {
-    slug: "dev-tools",
-    label: "Developer Tools",
-    icon: "wrench",
-    keywords: ["dev", "debug", "lint", "test", "build", "tool", "browser"],
-  },
-];
+export const PLUGIN_CATEGORIES: BrowseCategory[] = PLUGIN_CATEGORY_DEFINITIONS.map(
+  ({ slug, label, icon }) => ({
+    slug,
+    label,
+    icon,
+  }),
+);
 
 export const ALL_CATEGORY_KEYWORDS = SKILL_CATEGORIES.flatMap((c) => c.keywords);

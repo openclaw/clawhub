@@ -13,6 +13,7 @@ import {
   PackageTransferRequestSchema,
   PackageTrustedPublisherUpsertRequestSchema,
   PublishTokenMintRequestSchema,
+  isPluginCategorySlug,
   parseArk,
   type PackageAppealListStatus,
   type PackageModerationQueueStatus,
@@ -281,6 +282,7 @@ type PackageListQueryArgs = {
   highlightedOnly?: boolean;
   executesCode?: boolean;
   capabilityTag?: string;
+  category?: string;
   viewerUserId?: Id<"users">;
   paginationOpts: { cursor: string | null; numItems: number };
 };
@@ -807,6 +809,7 @@ async function searchPackageCatalog(
     highlightedOnly?: boolean;
     executesCode?: boolean;
     capabilityTag?: string;
+    category?: string;
     viewerUserId?: Id<"users">;
   },
 ): Promise<CatalogSearchEntry[]> {
@@ -822,6 +825,7 @@ async function searchPackageCatalog(
       highlightedOnly: args.highlightedOnly,
       executesCode: args.executesCode,
       capabilityTag: args.capabilityTag,
+      category: args.category,
       viewerUserId: args.viewerUserId,
     },
   );
@@ -1076,6 +1080,7 @@ async function listPackages(
   const familyRaw = url.searchParams.get("family");
   const channelRaw = url.searchParams.get("channel")?.trim();
   const capabilityTag = getCapabilityTagFromQueryParams(url.searchParams);
+  const category = url.searchParams.get("category")?.trim() || undefined;
   const isOfficialRaw = url.searchParams.get("isOfficial");
   const highlightedOnly =
     url.searchParams.get("featured") === "true" ||
@@ -1097,6 +1102,16 @@ async function listPackages(
     isOfficialRaw === "true" ? true : isOfficialRaw === "false" ? false : undefined;
   const executesCode =
     executesCodeRaw === "true" ? true : executesCodeRaw === "false" ? false : undefined;
+  if (category && !isPluginCategorySlug(category)) {
+    return text("Invalid plugin category", 400, rate.headers);
+  }
+  if (category && (effectiveFamily === "skill" || includeSkills)) {
+    return text(
+      "Plugin category is only supported for plugin package endpoints",
+      400,
+      rate.headers,
+    );
+  }
 
   if (effectiveFamily === "skill") {
     const result = await runQueryRef<{
@@ -1141,6 +1156,7 @@ async function listPackages(
             highlightedOnly: highlightedOnly || undefined,
             executesCode,
             capabilityTag,
+            category,
             viewerUserId: viewerUserId ?? undefined,
             paginationOpts: { cursor: pageCursor, numItems },
           });
@@ -1225,6 +1241,7 @@ async function listPackages(
         highlightedOnly: highlightedOnly || undefined,
         executesCode,
         capabilityTag,
+        category,
         viewerUserId: viewerUserId ?? undefined,
         paginationOpts: { cursor: pageCursor, numItems },
       });
@@ -1293,6 +1310,7 @@ async function listPackages(
     highlightedOnly: highlightedOnly || undefined,
     executesCode,
     capabilityTag,
+    category,
     viewerUserId: viewerUserId ?? undefined,
     paginationOpts: { cursor, numItems: limit },
   } satisfies PackageListQueryArgs);
@@ -2039,6 +2057,7 @@ async function searchPackages(
     url.searchParams.get("highlightedOnly") === "1";
   const executesCodeRaw = url.searchParams.get("executesCode");
   const capabilityTag = getCapabilityTagFromQueryParams(url.searchParams);
+  const category = url.searchParams.get("category")?.trim() || undefined;
   const family =
     familyRaw === "skill" || familyRaw === "code-plugin" || familyRaw === "bundle-plugin"
       ? familyRaw
@@ -2052,6 +2071,16 @@ async function searchPackages(
     isOfficialRaw === "true" ? true : isOfficialRaw === "false" ? false : undefined;
   const executesCode =
     executesCodeRaw === "true" ? true : executesCodeRaw === "false" ? false : undefined;
+  if (category && !isPluginCategorySlug(category)) {
+    return text("Invalid plugin category", 400, rate.headers);
+  }
+  if (category && (family === "skill" || includeSkills)) {
+    return text(
+      "Plugin category is only supported for plugin package endpoints",
+      400,
+      rate.headers,
+    );
+  }
 
   let results: CatalogSearchEntry[];
   if (family === "skill") {
@@ -2081,6 +2110,7 @@ async function searchPackages(
             highlightedOnly: highlightedOnly || undefined,
             executesCode,
             capabilityTag,
+            category,
             viewerUserId: viewerUserId ?? undefined,
           }),
         ),
@@ -2106,6 +2136,7 @@ async function searchPackages(
         highlightedOnly: highlightedOnly || undefined,
         executesCode,
         capabilityTag,
+        category,
         viewerUserId: viewerUserId ?? undefined,
       });
     }
@@ -2119,6 +2150,7 @@ async function searchPackages(
         highlightedOnly: highlightedOnly || undefined,
         executesCode,
         capabilityTag,
+        category,
         viewerUserId: viewerUserId ?? undefined,
       }),
       runQueryRef<CatalogSearchEntry[]>(ctx, apiRefs.skills.searchPackageCatalogPublic, {

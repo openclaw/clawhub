@@ -1,11 +1,13 @@
 import {
   PackagePublishRequestSchema,
   getPackageScopeOwnerMismatch,
+  isPluginCategorySlug,
   parseArk,
   validateOpenClawExternalCodePluginPackageContents,
   type PackageArtifactSummary,
   type PackageChannel,
   type PackageFamily,
+  type PluginCategorySlug,
   type PackageModerationQueueStatus,
   type PackageOfficialMigrationListPhase,
   type PackageOfficialMigrationPhase,
@@ -458,12 +460,14 @@ type PackageDigestLike = Pick<
   | "updatedAt"
   | "latestVersion"
   | "capabilityTags"
+  | "pluginCategoryTags"
   | "executesCode"
   | "verificationTier"
   | "scanStatus"
   | "softDeletedAt"
 > & {
   capabilityTag?: string;
+  pluginCategory?: string;
 };
 type PublicPageCursorState = {
   cursor: string | null;
@@ -721,6 +725,7 @@ function digestMatchesFilters(
   args: {
     executesCode?: boolean;
     capabilityTag?: string;
+    category?: string;
   },
 ) {
   if (
@@ -730,8 +735,18 @@ function digestMatchesFilters(
     return false;
   }
   if (args.capabilityTag) {
-    if (digest.capabilityTag) return digest.capabilityTag === args.capabilityTag;
-    return (digest.capabilityTags ?? []).includes(args.capabilityTag);
+    if (digest.capabilityTag) {
+      if (digest.capabilityTag !== args.capabilityTag) return false;
+    } else if (!(digest.capabilityTags ?? []).includes(args.capabilityTag)) {
+      return false;
+    }
+  }
+  if (args.category) {
+    if (digest.pluginCategory) {
+      if (digest.pluginCategory !== args.category) return false;
+    } else if (!(digest.pluginCategoryTags ?? []).includes(args.category)) {
+      return false;
+    }
   }
   return true;
 }
@@ -744,6 +759,7 @@ function digestMatchesSearchFilters(
     isOfficial?: boolean;
     executesCode?: boolean;
     capabilityTag?: string;
+    category?: string;
   },
 ) {
   if (args.family && digest.family !== args.family) return false;
@@ -1315,6 +1331,164 @@ function buildPackageCapabilityDigestQuery(
     );
 }
 
+function buildPackagePluginCategoryDigestQuery(
+  ctx: DbReaderCtx,
+  args: {
+    category: PluginCategorySlug;
+    family?: PackageFamily;
+    channel?: PackageChannel;
+    isOfficial?: boolean;
+    executesCode?: boolean;
+  },
+) {
+  const family = args.family;
+  const channel = args.channel;
+  const isOfficial = args.isOfficial;
+  const executesCode = args.executesCode;
+
+  if (family && channel && typeof executesCode === "boolean") {
+    return ctx.db
+      .query("packagePluginCategorySearchDigest")
+      .withIndex("by_active_family_channel_category_executes_updated", (q) =>
+        q
+          .eq("softDeletedAt", undefined)
+          .eq("family", family)
+          .eq("channel", channel)
+          .eq("pluginCategory", args.category)
+          .eq("executesCode", executesCode),
+      );
+  }
+  if (family && typeof isOfficial === "boolean" && typeof executesCode === "boolean") {
+    return ctx.db
+      .query("packagePluginCategorySearchDigest")
+      .withIndex("by_active_family_official_category_executes_updated", (q) =>
+        q
+          .eq("softDeletedAt", undefined)
+          .eq("family", family)
+          .eq("isOfficial", isOfficial)
+          .eq("pluginCategory", args.category)
+          .eq("executesCode", executesCode),
+      );
+  }
+  if (channel && typeof isOfficial === "boolean" && typeof executesCode === "boolean") {
+    return ctx.db
+      .query("packagePluginCategorySearchDigest")
+      .withIndex("by_active_channel_official_category_executes_updated", (q) =>
+        q
+          .eq("softDeletedAt", undefined)
+          .eq("channel", channel)
+          .eq("isOfficial", isOfficial)
+          .eq("pluginCategory", args.category)
+          .eq("executesCode", executesCode),
+      );
+  }
+  if (family && channel) {
+    return ctx.db
+      .query("packagePluginCategorySearchDigest")
+      .withIndex("by_active_family_channel_category_updated", (q) =>
+        q
+          .eq("softDeletedAt", undefined)
+          .eq("family", family)
+          .eq("channel", channel)
+          .eq("pluginCategory", args.category),
+      );
+  }
+  if (family && typeof isOfficial === "boolean") {
+    return ctx.db
+      .query("packagePluginCategorySearchDigest")
+      .withIndex("by_active_family_official_category_updated", (q) =>
+        q
+          .eq("softDeletedAt", undefined)
+          .eq("family", family)
+          .eq("isOfficial", isOfficial)
+          .eq("pluginCategory", args.category),
+      );
+  }
+  if (channel && typeof isOfficial === "boolean") {
+    return ctx.db
+      .query("packagePluginCategorySearchDigest")
+      .withIndex("by_active_channel_official_category_updated", (q) =>
+        q
+          .eq("softDeletedAt", undefined)
+          .eq("channel", channel)
+          .eq("isOfficial", isOfficial)
+          .eq("pluginCategory", args.category),
+      );
+  }
+  if (family && typeof executesCode === "boolean") {
+    return ctx.db
+      .query("packagePluginCategorySearchDigest")
+      .withIndex("by_active_family_category_executes_updated", (q) =>
+        q
+          .eq("softDeletedAt", undefined)
+          .eq("family", family)
+          .eq("pluginCategory", args.category)
+          .eq("executesCode", executesCode),
+      );
+  }
+  if (channel && typeof executesCode === "boolean") {
+    return ctx.db
+      .query("packagePluginCategorySearchDigest")
+      .withIndex("by_active_channel_category_executes_updated", (q) =>
+        q
+          .eq("softDeletedAt", undefined)
+          .eq("channel", channel)
+          .eq("pluginCategory", args.category)
+          .eq("executesCode", executesCode),
+      );
+  }
+  if (typeof isOfficial === "boolean" && typeof executesCode === "boolean") {
+    return ctx.db
+      .query("packagePluginCategorySearchDigest")
+      .withIndex("by_active_official_category_executes_updated", (q) =>
+        q
+          .eq("softDeletedAt", undefined)
+          .eq("isOfficial", isOfficial)
+          .eq("pluginCategory", args.category)
+          .eq("executesCode", executesCode),
+      );
+  }
+  if (family) {
+    return ctx.db
+      .query("packagePluginCategorySearchDigest")
+      .withIndex("by_active_family_category_updated", (q) =>
+        q.eq("softDeletedAt", undefined).eq("family", family).eq("pluginCategory", args.category),
+      );
+  }
+  if (channel) {
+    return ctx.db
+      .query("packagePluginCategorySearchDigest")
+      .withIndex("by_active_channel_category_updated", (q) =>
+        q.eq("softDeletedAt", undefined).eq("channel", channel).eq("pluginCategory", args.category),
+      );
+  }
+  if (typeof isOfficial === "boolean") {
+    return ctx.db
+      .query("packagePluginCategorySearchDigest")
+      .withIndex("by_active_official_category_updated", (q) =>
+        q
+          .eq("softDeletedAt", undefined)
+          .eq("isOfficial", isOfficial)
+          .eq("pluginCategory", args.category),
+      );
+  }
+  if (typeof executesCode === "boolean") {
+    return ctx.db
+      .query("packagePluginCategorySearchDigest")
+      .withIndex("by_active_category_executes_updated", (q) =>
+        q
+          .eq("softDeletedAt", undefined)
+          .eq("pluginCategory", args.category)
+          .eq("executesCode", executesCode),
+      );
+  }
+  return ctx.db
+    .query("packagePluginCategorySearchDigest")
+    .withIndex("by_active_category_updated", (q) =>
+      q.eq("softDeletedAt", undefined).eq("pluginCategory", args.category),
+    );
+}
+
 async function fetchHighlightedPackageDigests(
   ctx: DbReaderCtx,
   args: {
@@ -1323,6 +1497,7 @@ async function fetchHighlightedPackageDigests(
     isOfficial?: boolean;
     executesCode?: boolean;
     capabilityTag?: string;
+    category?: string;
     viewerUserId?: Id<"users">;
   },
 ) {
@@ -1632,6 +1807,7 @@ export const listPublicPage = query({
     highlightedOnly: v.optional(v.boolean()),
     executesCode: v.optional(v.boolean()),
     capabilityTag: v.optional(v.string()),
+    category: v.optional(v.string()),
     paginationOpts: paginationOptsValidator,
   },
   handler: async (ctx, args) => {
@@ -1651,6 +1827,7 @@ export const listPageForViewerInternal = internalQuery({
     highlightedOnly: v.optional(v.boolean()),
     executesCode: v.optional(v.boolean()),
     capabilityTag: v.optional(v.string()),
+    category: v.optional(v.string()),
     viewerUserId: v.optional(v.id("users")),
     paginationOpts: paginationOptsValidator,
   },
@@ -1668,11 +1845,15 @@ async function listPackagePageImpl(
     highlightedOnly?: boolean;
     executesCode?: boolean;
     capabilityTag?: string;
+    category?: string;
     viewerUserId?: Id<"users">;
     paginationOpts: { cursor: string | null; numItems: number };
   },
 ) {
   if (args.channel === "private" && !args.viewerUserId) {
+    return { page: [], isDone: true, continueCursor: "" };
+  }
+  if (args.category && !isPluginCategorySlug(args.category)) {
     return { page: [], isDone: true, continueCursor: "" };
   }
   const viewerUserId = args.viewerUserId;
@@ -1707,21 +1888,30 @@ async function listPackagePageImpl(
   const family = args.family;
   const channel = args.channel;
   const isOfficial = args.isOfficial;
+  const category = isPluginCategorySlug(args.category) ? args.category : undefined;
 
-  const builder = args.capabilityTag
-    ? buildPackageCapabilityDigestQuery(ctx, {
-        capabilityTag: args.capabilityTag,
+  const builder = category
+    ? buildPackagePluginCategoryDigestQuery(ctx, {
+        category,
         family,
         channel,
         isOfficial,
         executesCode: args.executesCode,
       })
-    : buildPackageDigestQuery(ctx, {
-        family,
-        channel,
-        isOfficial,
-        executesCode: args.executesCode,
-      });
+    : args.capabilityTag
+      ? buildPackageCapabilityDigestQuery(ctx, {
+          capabilityTag: args.capabilityTag,
+          family,
+          channel,
+          isOfficial,
+          executesCode: args.executesCode,
+        })
+      : buildPackageDigestQuery(ctx, {
+          family,
+          channel,
+          isOfficial,
+          executesCode: args.executesCode,
+        });
   const page: {
     page: PackageDigestLike[];
     isDone: boolean;
@@ -1786,6 +1976,7 @@ export const searchPublic = query({
     highlightedOnly: v.optional(v.boolean()),
     executesCode: v.optional(v.boolean()),
     capabilityTag: v.optional(v.string()),
+    category: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
     return await searchPackagesImpl(ctx, args);
@@ -1806,6 +1997,7 @@ export const searchForViewerInternal = internalQuery({
     highlightedOnly: v.optional(v.boolean()),
     executesCode: v.optional(v.boolean()),
     capabilityTag: v.optional(v.string()),
+    category: v.optional(v.string()),
     viewerUserId: v.optional(v.id("users")),
   },
   handler: async (ctx, args) => {
@@ -1824,11 +2016,13 @@ async function searchPackagesImpl(
     highlightedOnly?: boolean;
     executesCode?: boolean;
     capabilityTag?: string;
+    category?: string;
     viewerUserId?: Id<"users">;
   },
 ) {
   const queryText = args.query.trim().toLowerCase();
   if (!queryText) return [];
+  if (args.category && !isPluginCategorySlug(args.category)) return [];
   if (args.channel === "private" && !args.viewerUserId) return [];
   const targetCount = Math.max(1, Math.min(args.limit ?? 20, 100));
   const viewerUserId = args.viewerUserId;
@@ -1856,26 +2050,36 @@ async function searchPackagesImpl(
       }));
   }
 
+  const category = isPluginCategorySlug(args.category) ? args.category : undefined;
   const buildSearchDigestQuery = () =>
-    args.capabilityTag
-      ? buildPackageCapabilityDigestQuery(ctx, {
-          capabilityTag: args.capabilityTag,
+    category
+      ? buildPackagePluginCategoryDigestQuery(ctx, {
+          category,
           family: args.family,
           channel: args.channel,
           isOfficial: args.isOfficial,
           executesCode: args.executesCode,
         })
-      : buildPackageDigestQuery(ctx, {
-          family: args.family,
-          channel: args.channel,
-          isOfficial: args.isOfficial,
-          executesCode: args.executesCode,
-        });
+      : args.capabilityTag
+        ? buildPackageCapabilityDigestQuery(ctx, {
+            capabilityTag: args.capabilityTag,
+            family: args.family,
+            channel: args.channel,
+            isOfficial: args.isOfficial,
+            executesCode: args.executesCode,
+          })
+        : buildPackageDigestQuery(ctx, {
+            family: args.family,
+            channel: args.channel,
+            isOfficial: args.isOfficial,
+            executesCode: args.executesCode,
+          });
   const matches: Array<{ score: number; package: PublicPackageListItem }> = [];
   const seen = new Set<string>();
-  const directDigests = args.capabilityTag
-    ? []
-    : await resolveDirectPackageSearchDigests(ctx, queryText);
+  const directDigests =
+    args.capabilityTag || args.category
+      ? []
+      : await resolveDirectPackageSearchDigests(ctx, queryText);
   for (const digest of directDigests) {
     if (!(await canViewPackage(digest))) continue;
     if (!digestMatchesSearchFilters(digest, args)) continue;

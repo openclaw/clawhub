@@ -1,4 +1,5 @@
 import { createFileRoute, Link, redirect } from "@tanstack/react-router";
+import { isPluginCategorySlug } from "clawhub-schema";
 import { PackageSearch, Search } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { BrowseSidebar } from "../../components/BrowseSidebar";
@@ -17,6 +18,7 @@ const PLUGINS_PAGE_SIZE = 100;
 
 type PluginSearchState = {
   q?: string;
+  category?: string;
   cursor?: string;
   family?: undefined;
   featured?: boolean;
@@ -94,6 +96,10 @@ function sortPluginSearchItems(items: PackageListItem[], sort: PluginSort) {
 export const Route = createFileRoute("/plugins/")({
   validateSearch: (search): PluginSearchState => ({
     q: typeof search.q === "string" && search.q.trim() ? search.q.trim() : undefined,
+    category:
+      typeof search.category === "string" && isPluginCategorySlug(search.category)
+        ? search.category
+        : undefined,
     cursor: typeof search.cursor === "string" && search.cursor ? search.cursor : undefined,
     featured:
       search.featured === true || search.featured === "true" || search.featured === "1"
@@ -114,11 +120,13 @@ export const Route = createFileRoute("/plugins/")({
     const hasQuery = Boolean(search.q?.trim());
     const incompatibleSort = !hasQuery && search.sort && search.sort !== "updated";
     const browseOnlyFeatured = hasQuery && search.featured;
-    if (incompatibleSort || browseOnlyFeatured) {
+    const invalidCategory = Boolean(search.category && !isPluginCategorySlug(search.category));
+    if (incompatibleSort || browseOnlyFeatured || invalidCategory) {
       throw redirect({
         to: "/plugins",
         search: {
           ...search,
+          category: invalidCategory ? undefined : search.category,
           featured: browseOnlyFeatured ? undefined : search.featured,
           sort: undefined,
         },
@@ -128,6 +136,7 @@ export const Route = createFileRoute("/plugins/")({
   },
   loaderDeps: ({ search }) => ({
     q: search.q,
+    category: search.category,
     cursor: search.cursor,
     featured: search.featured,
     verified: search.verified,
@@ -137,6 +146,7 @@ export const Route = createFileRoute("/plugins/")({
     try {
       const data = await fetchPluginCatalog({
         q: deps.q,
+        category: deps.category,
         cursor: deps.q ? undefined : deps.cursor,
         featured: deps.featured,
         isOfficial: deps.verified,
@@ -196,11 +206,7 @@ function PluginsIndex() {
 
   const hasQuery = Boolean(search.q?.trim());
 
-  const activeCategory = useMemo(() => {
-    if (!search.q) return undefined;
-    const trimmed = search.q.trim().toLowerCase();
-    return PLUGIN_CATEGORIES.find((c) => c.keywords.some((k) => k === trimmed))?.slug ?? undefined;
-  }, [search.q]);
+  const activeCategory = search.category;
 
   const activeSort = hasQuery
     ? (search.sort ?? "relevance")
@@ -289,29 +295,13 @@ function PluginsIndex() {
   };
 
   const handleCategoryChange = (slug: string | undefined) => {
-    if (slug) {
-      const cat = PLUGIN_CATEGORIES.find((c) => c.slug === slug);
-      if (cat?.keywords[0]) {
-        void navigate({
-          search: (prev) => ({
-            ...prev,
-            cursor: undefined,
-            family: undefined,
-            q: cat.keywords[0],
-            featured: undefined,
-            sort: undefined,
-          }),
-          replace: true,
-        });
-        return;
-      }
-    }
+    const category = slug && isPluginCategorySlug(slug) ? slug : undefined;
     void navigate({
       search: (prev) => ({
         ...prev,
         cursor: undefined,
         family: undefined,
-        q: undefined,
+        category,
         featured: undefined,
         sort: undefined,
       }),
@@ -350,6 +340,7 @@ function PluginsIndex() {
         cursor: undefined,
         family: undefined,
         q: undefined,
+        category: undefined,
         verified: undefined,
         executesCode: undefined,
         featured: undefined,
@@ -419,7 +410,11 @@ function PluginsIndex() {
           <div className="browse-results-toolbar">
             <span className="browse-results-count">
               {visibleItems.length} result{visibleItems.length !== 1 ? "s" : ""}
-              {hasQuery || search.verified || search.executesCode || search.featured ? (
+              {hasQuery ||
+              search.category ||
+              search.verified ||
+              search.executesCode ||
+              search.featured ? (
                 <button className="browse-clear-btn" type="button" onClick={handleClear}>
                   Clear
                 </button>

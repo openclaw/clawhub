@@ -3601,10 +3601,45 @@ describe("httpApiV1 handlers", () => {
     for (const [, args] of runQuery.mock.calls) {
       expect(args).toEqual(
         expect.objectContaining({
+          category: undefined,
           paginationOpts: { cursor: null, numItems: 7 },
         }),
       );
     }
+  });
+
+  it("plugins list forwards category to both plugin families", async () => {
+    const runQuery = vi.fn().mockResolvedValue({ page: [], isDone: true, continueCursor: "" });
+    const runMutation = vi.fn().mockResolvedValue(okRate());
+
+    const response = await __handlers.listPluginsV1Handler(
+      makeCtx({ runQuery, runMutation }),
+      new Request("https://example.com/api/v1/plugins?category=data&limit=7"),
+    );
+
+    expect(response.status).toBe(200);
+    for (const [, args] of runQuery.mock.calls) {
+      expect(args).toEqual(
+        expect.objectContaining({
+          category: "data",
+          paginationOpts: { cursor: null, numItems: 7 },
+        }),
+      );
+    }
+  });
+
+  it("plugins list rejects invalid categories", async () => {
+    const runQuery = vi.fn();
+    const runMutation = vi.fn().mockResolvedValue(okRate());
+
+    const response = await __handlers.listPluginsV1Handler(
+      makeCtx({ runQuery, runMutation }),
+      new Request("https://example.com/api/v1/plugins?category=other"),
+    );
+
+    expect(response.status).toBe(400);
+    expect(await response.text()).toBe("Invalid plugin category");
+    expect(runQuery).not.toHaveBeenCalled();
   });
 
   it("plugins list paginates with separate plugin family cursors", async () => {
@@ -3753,7 +3788,7 @@ describe("httpApiV1 handlers", () => {
 
     const response = await __handlers.pluginsGetRouterV1Handler(
       makeCtx({ runQuery, runMutation }),
-      new Request("https://example.com/api/v1/plugins/search?q=weather&limit=7"),
+      new Request("https://example.com/api/v1/plugins/search?q=weather&category=data&limit=7"),
     );
 
     expect(response.status).toBe(200);
@@ -3768,6 +3803,7 @@ describe("httpApiV1 handlers", () => {
       expect(args).toEqual(
         expect.objectContaining({
           query: "weather",
+          category: "data",
           limit: 7,
         }),
       );
@@ -3847,6 +3883,20 @@ describe("httpApiV1 handlers", () => {
 
     expect(response.status).toBe(200);
     expect((await response.json()).results).toEqual([]);
+  });
+
+  it("plugins search rejects invalid categories", async () => {
+    const runQuery = vi.fn();
+    const runMutation = vi.fn().mockResolvedValue(okRate());
+
+    const response = await __handlers.pluginsGetRouterV1Handler(
+      makeCtx({ runQuery, runMutation }),
+      new Request("https://example.com/api/v1/plugins/search?q=plugin&category=other"),
+    );
+
+    expect(response.status).toBe(400);
+    expect(await response.text()).toBe("Invalid plugin category");
+    expect(runQuery).not.toHaveBeenCalled();
   });
 
   it("packages list forwards viewerUserId for authenticated private package browsing", async () => {

@@ -1,3 +1,4 @@
+import { derivePluginCategoryTags } from "clawhub-schema";
 import type { Doc, Id } from "../_generated/dataModel";
 import type { MutationCtx } from "../_generated/server";
 
@@ -50,12 +51,38 @@ const CAPABILITY_SHARED_KEYS = [
   "updatedAt",
 ] as const satisfies readonly (keyof Doc<"packageCapabilitySearchDigest">)[];
 
+const PLUGIN_CATEGORY_SHARED_KEYS = [
+  "packageId",
+  "name",
+  "normalizedName",
+  "displayName",
+  "family",
+  "channel",
+  "isOfficial",
+  "ownerUserId",
+  "ownerPublisherId",
+  "ownerHandle",
+  "ownerKind",
+  "summary",
+  "latestVersion",
+  "runtimeId",
+  "capabilityTags",
+  "pluginCategoryTags",
+  "executesCode",
+  "verificationTier",
+  "scanStatus",
+  "softDeletedAt",
+  "createdAt",
+  "updatedAt",
+] as const satisfies readonly (keyof Doc<"packagePluginCategorySearchDigest">)[];
+
 export type PackageSearchDigestFields = Pick<Doc<"packages">, (typeof SHARED_KEYS)[number]> & {
   packageId: Id<"packages">;
   latestVersion?: string;
   ownerHandle?: string;
   ownerKind?: "user" | "org";
   verificationTier?: Doc<"packageSearchDigest">["verificationTier"];
+  pluginCategoryTags?: string[];
 };
 
 type PackageCapabilitySearchDigestFields = Pick<
@@ -65,12 +92,27 @@ type PackageCapabilitySearchDigestFields = Pick<
   capabilityTag: string;
 };
 
+type PackagePluginCategorySearchDigestFields = Pick<
+  PackageSearchDigestFields,
+  (typeof PLUGIN_CATEGORY_SHARED_KEYS)[number]
+> & {
+  pluginCategory: string;
+};
+
 export function extractPackageDigestFields(pkg: Doc<"packages">): PackageSearchDigestFields {
   return {
     ...pick(pkg, [...SHARED_KEYS]),
     packageId: pkg._id,
     latestVersion: pkg.latestVersionSummary?.version,
     verificationTier: pkg.verification?.tier,
+    pluginCategoryTags: derivePluginCategoryTags({
+      family: pkg.family,
+      name: pkg.name,
+      displayName: pkg.displayName,
+      runtimeId: pkg.runtimeId,
+      summary: pkg.summary,
+      capabilityTags: pkg.capabilityTags,
+    }),
   };
 }
 
@@ -87,10 +129,12 @@ export async function upsertPackageSearchDigest(
       await ctx.db.patch(existing._id, fields);
     }
     await syncPackageCapabilitySearchDigests(ctx, fields);
+    await syncPackagePluginCategorySearchDigests(ctx, fields);
     return;
   }
   await ctx.db.insert("packageSearchDigest", fields);
   await syncPackageCapabilitySearchDigests(ctx, fields);
+  await syncPackagePluginCategorySearchDigests(ctx, fields);
 }
 
 async function syncPackageCapabilitySearchDigests(
@@ -127,6 +171,40 @@ async function syncPackageCapabilitySearchDigests(
   }
 }
 
+async function syncPackagePluginCategorySearchDigests(
+  ctx: Pick<MutationCtx, "db">,
+  fields: PackageSearchDigestFields,
+) {
+  const existing = await ctx.db
+    .query("packagePluginCategorySearchDigest")
+    .withIndex("by_package", (q) => q.eq("packageId", fields.packageId))
+    .collect();
+  const categories = [...new Set((fields.pluginCategoryTags ?? []).filter(Boolean))];
+  const nextByCategory = new Map<string, PackagePluginCategorySearchDigestFields>();
+  for (const pluginCategory of categories) {
+    nextByCategory.set(pluginCategory, {
+      ...pick(fields, [...PLUGIN_CATEGORY_SHARED_KEYS]),
+      pluginCategory,
+    });
+  }
+  for (const row of existing) {
+    const next = nextByCategory.get(row.pluginCategory);
+    if (!next) {
+      await ctx.db.delete(row._id);
+      continue;
+    }
+    if (!hasDigestChanged(row, next)) {
+      nextByCategory.delete(row.pluginCategory);
+      continue;
+    }
+    await ctx.db.patch(row._id, next);
+    nextByCategory.delete(row.pluginCategory);
+  }
+  for (const next of nextByCategory.values()) {
+    await ctx.db.insert("packagePluginCategorySearchDigest", next);
+  }
+}
+
 export async function deletePackageSearchDigests(
   ctx: Pick<MutationCtx, "db">,
   packageId: Id<"packages">,
@@ -138,6 +216,12 @@ export async function deletePackageSearchDigests(
   if (existing) await ctx.db.delete(existing._id);
   for (const row of await ctx.db
     .query("packageCapabilitySearchDigest")
+    .withIndex("by_package", (q) => q.eq("packageId", packageId))
+    .collect()) {
+    await ctx.db.delete(row._id);
+  }
+  for (const row of await ctx.db
+    .query("packagePluginCategorySearchDigest")
     .withIndex("by_package", (q) => q.eq("packageId", packageId))
     .collect()) {
     await ctx.db.delete(row._id);

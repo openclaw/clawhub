@@ -11,7 +11,7 @@ import {
   Shield,
   Wrench,
 } from "lucide-react";
-import type { SkillCategory } from "../lib/categories";
+import type { BrowseCategory } from "../lib/categories";
 
 type FilterItem = {
   key: string;
@@ -25,7 +25,7 @@ type SortOption = {
 };
 
 type BrowseSidebarProps = {
-  categories?: SkillCategory[];
+  categories?: BrowseCategory[];
   activeCategory?: string;
   onCategoryChange?: (slug: string | undefined) => void;
   sortOptions: SortOption[];

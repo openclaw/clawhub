@@ -250,6 +250,30 @@ describe("plugins route", () => {
     expect(fetchPluginCatalogMock.mock.calls[0]?.[0]).not.toHaveProperty("sort");
   });
 
+  it("forwards category through the loader without changing the query", async () => {
+    fetchPluginCatalogMock.mockResolvedValue({ items: [], nextCursor: null });
+    const route = await loadRoute();
+    const loader = route.__config.loader as (args: {
+      deps: Record<string, unknown>;
+    }) => Promise<unknown>;
+
+    await loader({
+      deps: {
+        q: "api",
+        category: "data",
+      },
+    });
+
+    expect(fetchPluginCatalogMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        q: "api",
+        category: "data",
+        cursor: undefined,
+        limit: 100,
+      }),
+    );
+  });
+
   it("renders next-page controls for browse mode", async () => {
     loaderDataMock = {
       items: [
@@ -520,7 +544,7 @@ describe("plugins route", () => {
     expect(validateSearch({})).toEqual(expect.objectContaining({ sort: undefined }));
   });
 
-  it("selects a category from the sidebar and searches by keyword", async () => {
+  it("selects a category from the sidebar without rewriting search text", async () => {
     const route = await loadRoute();
     const Component = route.__config.component as ComponentType;
 
@@ -534,11 +558,17 @@ describe("plugins route", () => {
     };
     expect(lastCall.search({})).toEqual(
       expect.objectContaining({
-        q: "security",
         cursor: undefined,
         family: undefined,
+        category: "security",
         featured: undefined,
         sort: undefined,
+      }),
+    );
+    expect(lastCall.search({ q: "api" })).toEqual(
+      expect.objectContaining({
+        q: "api",
+        category: "security",
       }),
     );
   });
@@ -583,8 +613,8 @@ describe("plugins route", () => {
     });
   });
 
-  it("shows loaded-result sort choices when a category query is active", async () => {
-    searchMock = { q: "security" };
+  it("keeps browse sort choices when only a category is active", async () => {
+    searchMock = { category: "security" };
     loaderDataMock = {
       items: [
         {
@@ -607,10 +637,9 @@ describe("plugins route", () => {
 
     render(<Component />);
 
-    expect(screen.getByRole("radio", { name: "Relevance" })).toBeTruthy();
+    expect(screen.getByRole("radio", { name: "Featured" })).toBeTruthy();
     expect(screen.getByRole("radio", { name: "Recently updated" })).toBeTruthy();
-    expect(screen.getByRole("radio", { name: "Newest" })).toBeTruthy();
-    expect(screen.getByRole("radio", { name: "Name" })).toBeTruthy();
+    expect(screen.queryByRole("radio", { name: "Relevance" })).toBeNull();
   });
 
   it("selects loaded-result search sort without changing the query", async () => {

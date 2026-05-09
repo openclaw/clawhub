@@ -456,6 +456,10 @@ Query params:
 - `isOfficial` (optional): `true` or `false`
 - `executesCode` (optional): `true` or `false`
 - `capabilityTag` (optional): capability filter for plugin packages
+- `category` (optional): plugin category filter. Supported only when the
+  request is scoped to plugin packages (`/api/v1/plugins`,
+  `/api/v1/code-plugins`, `/api/v1/bundle-plugins`, or package endpoints with
+  `family=code-plugin`/`family=bundle-plugin`).
 - `target` / `hostTarget` (optional): shorthand for `host:<target>`
 - `os`, `arch`, `libc` (optional): shorthand for host capability filters
 - `requiresBrowser`, `requiresDesktop`, `requiresNativeDeps`,
@@ -489,6 +493,8 @@ Query params:
 - `isOfficial` (optional): `true` or `false`
 - `executesCode` (optional): `true` or `false`
 - `capabilityTag` (optional): capability filter for plugin packages
+- `category` (optional): plugin category filter. Supported only when the
+  request is scoped to plugin packages.
 - `target` / `hostTarget`, `os`, `arch`, `libc`, `requiresBrowser`,
   `requiresDesktop`, `requiresNativeDeps`, `requiresExternalService`,
   `requiresBinary`, `requiresOsPermission`, `externalService`, `binary`, and
@@ -505,6 +511,21 @@ Notes:
 - Artifact filters are backed by indexed capability tags:
   `artifact:legacy-zip`, `artifact:npm-pack`, and `npm-mirror:available`.
 
+### `GET /api/v1/plugins`
+
+Plugin-only catalog browse across code-plugin and bundle-plugin packages.
+
+Query params:
+
+- `limit` (optional): integer (1-100)
+- `cursor` (optional): pagination cursor
+- `isOfficial` (optional): `true` or `false`
+- `executesCode` (optional): `true` or `false`
+- `capabilityTag` (optional): capability filter for plugin packages
+- `category` (optional): plugin category filter. Current values:
+  `channels`, `mcp-tooling`, `data`, `security`, `observability`,
+  `automation`, `deployment`, `dev-tools`.
+
 ### `GET /api/v1/plugins/search`
 
 Plugin-only search across code-plugin and bundle-plugin packages.
@@ -516,9 +537,14 @@ Query params:
 - `isOfficial` (optional): `true` or `false`
 - `executesCode` (optional): `true` or `false`
 - `capabilityTag` (optional): capability filter for plugin packages
+- `category` (optional): plugin category filter. Current values:
+  `channels`, `mcp-tooling`, `data`, `security`, `observability`,
+  `automation`, `deployment`, `dev-tools`.
 
 Notes:
 
+- Category filtering is a real API filter backed by plugin category digest
+  rows, not a search-query rewrite.
 - Results are returned in relevance order and do not currently paginate.
 - Browser UI sort controls for plugin search reorder the loaded relevance results,
   matching the current `/skills` browse behavior.

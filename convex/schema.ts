@@ -1019,6 +1019,7 @@ const packageSearchDigest = defineTable({
   latestVersion: v.optional(v.string()),
   runtimeId: v.optional(v.string()),
   capabilityTags: v.optional(v.array(v.string())),
+  pluginCategoryTags: v.optional(v.array(v.string())),
   executesCode: v.optional(v.boolean()),
   verificationTier: v.optional(packageVerificationTierValidator),
   scanStatus: packageScanStatusValidator,
@@ -1196,6 +1197,124 @@ const packageCapabilitySearchDigest = defineTable({
     "channel",
     "isOfficial",
     "capabilityTag",
+    "executesCode",
+    "updatedAt",
+  ]);
+
+const packagePluginCategorySearchDigest = defineTable({
+  packageId: v.id("packages"),
+  name: v.string(),
+  normalizedName: v.string(),
+  displayName: v.string(),
+  family: packageFamilyValidator,
+  channel: packageChannelValidator,
+  isOfficial: v.boolean(),
+  ownerUserId: v.id("users"),
+  ownerPublisherId: v.optional(v.id("publishers")),
+  ownerHandle: v.optional(v.string()),
+  ownerKind: v.optional(v.union(v.literal("user"), v.literal("org"))),
+  summary: v.optional(v.string()),
+  latestVersion: v.optional(v.string()),
+  runtimeId: v.optional(v.string()),
+  capabilityTags: v.optional(v.array(v.string())),
+  pluginCategoryTags: v.optional(v.array(v.string())),
+  pluginCategory: v.string(),
+  executesCode: v.optional(v.boolean()),
+  verificationTier: v.optional(packageVerificationTierValidator),
+  scanStatus: packageScanStatusValidator,
+  softDeletedAt: v.optional(v.number()),
+  createdAt: v.number(),
+  updatedAt: v.number(),
+})
+  .index("by_package", ["packageId", "pluginCategory"])
+  .index("by_active_category_updated", ["softDeletedAt", "pluginCategory", "updatedAt"])
+  .index("by_active_category_executes_updated", [
+    "softDeletedAt",
+    "pluginCategory",
+    "executesCode",
+    "updatedAt",
+  ])
+  .index("by_active_family_category_updated", [
+    "softDeletedAt",
+    "family",
+    "pluginCategory",
+    "updatedAt",
+  ])
+  .index("by_active_family_category_executes_updated", [
+    "softDeletedAt",
+    "family",
+    "pluginCategory",
+    "executesCode",
+    "updatedAt",
+  ])
+  .index("by_active_channel_category_updated", [
+    "softDeletedAt",
+    "channel",
+    "pluginCategory",
+    "updatedAt",
+  ])
+  .index("by_active_channel_category_executes_updated", [
+    "softDeletedAt",
+    "channel",
+    "pluginCategory",
+    "executesCode",
+    "updatedAt",
+  ])
+  .index("by_active_official_category_updated", [
+    "softDeletedAt",
+    "isOfficial",
+    "pluginCategory",
+    "updatedAt",
+  ])
+  .index("by_active_official_category_executes_updated", [
+    "softDeletedAt",
+    "isOfficial",
+    "pluginCategory",
+    "executesCode",
+    "updatedAt",
+  ])
+  .index("by_active_family_channel_category_updated", [
+    "softDeletedAt",
+    "family",
+    "channel",
+    "pluginCategory",
+    "updatedAt",
+  ])
+  .index("by_active_family_channel_category_executes_updated", [
+    "softDeletedAt",
+    "family",
+    "channel",
+    "pluginCategory",
+    "executesCode",
+    "updatedAt",
+  ])
+  .index("by_active_family_official_category_updated", [
+    "softDeletedAt",
+    "family",
+    "isOfficial",
+    "pluginCategory",
+    "updatedAt",
+  ])
+  .index("by_active_family_official_category_executes_updated", [
+    "softDeletedAt",
+    "family",
+    "isOfficial",
+    "pluginCategory",
+    "executesCode",
+    "updatedAt",
+  ])
+  .index("by_active_channel_official_category_updated", [
+    "softDeletedAt",
+    "channel",
+    "isOfficial",
+    "pluginCategory",
+    "updatedAt",
+  ])
+  .index("by_active_channel_official_category_executes_updated", [
+    "softDeletedAt",
+    "channel",
+    "isOfficial",
+    "pluginCategory",
     "executesCode",
     "updatedAt",
   ]);
@@ -1726,6 +1845,7 @@ export default defineSchema({
   packageBadges,
   packageSearchDigest,
   packageCapabilitySearchDigest,
+  packagePluginCategorySearchDigest,
   souls,
   skillVersions,
   depRegistryCache,
