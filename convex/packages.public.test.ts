@@ -86,6 +86,7 @@ const listPublicPageHandler = (
       isOfficial?: boolean;
       executesCode?: boolean;
       capabilityTag?: string;
+      category?: string;
       paginationOpts: { cursor: string | null; numItems: number };
     },
     { page: Array<{ name: string }>; isDone: boolean; continueCursor: string }
@@ -99,6 +100,7 @@ const listPageForViewerInternalHandler = (
       isOfficial?: boolean;
       executesCode?: boolean;
       capabilityTag?: string;
+      category?: string;
       viewerUserId?: string;
       paginationOpts: { cursor: string | null; numItems: number };
     },
@@ -190,6 +192,7 @@ const searchPublicHandler = (
       isOfficial?: boolean;
       executesCode?: boolean;
       capabilityTag?: string;
+      category?: string;
     },
     Array<{ package: { name: string } }>
   >
@@ -204,6 +207,7 @@ const searchForViewerInternalHandler = (
       isOfficial?: boolean;
       executesCode?: boolean;
       capabilityTag?: string;
+      category?: string;
       viewerUserId?: string;
     },
     Array<{ package: { name: string } }>
