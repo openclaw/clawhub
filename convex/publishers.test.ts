@@ -416,6 +416,118 @@ describe("publishers membership controls", () => {
     expect(result.page.map((item) => item.handle)).toEqual(["alice"]);
   });
 
+  it("does not hydrate every publisher before filtering public publisher pages", async () => {
+    const publisherRows = Array.from({ length: 120 }, (_, index) => ({
+      _id: `publishers:user-${index}`,
+      _creationTime: index,
+      kind: "user",
+      handle: `user-${index}`,
+      displayName: `User ${index}`,
+      linkedUserId: `users:user-${index}`,
+      publishedSkills: 1,
+      publishedPackages: 0,
+      totalInstalls: 120 - index,
+      totalDownloads: 120 - index,
+      totalStars: 1,
+      createdAt: 1,
+      updatedAt: 1,
+    }));
+    const get = vi.fn(async (id: string) => ({ _id: id, image: `https://github.com/${id}.png` }));
+    const ownerPublisherQueries: string[] = [];
+    const ctx = {
+      db: {
+        get,
+        query: vi.fn((table: string) => ({
+          withIndex: vi.fn((indexName: string, buildQuery: (q: unknown) => unknown) => {
+            const fields: Record<string, unknown> = {};
+            const q = {
+              eq: (field: string, value: unknown) => {
+                fields[field] = value;
+                return q;
+              },
+            };
+            buildQuery(q);
+            if (table === "publishers" && indexName === "by_active_total_downloads") {
+              return {
+                order: vi.fn(() => ({
+                  take: vi.fn(async () => publisherRows),
+                })),
+              };
+            }
+            if (
+              (table === "skills" || table === "packages") &&
+              indexName === "by_owner_publisher_active_updated"
+            ) {
+              ownerPublisherQueries.push(String(fields.ownerPublisherId));
+              return { collect: vi.fn(async () => []) };
+            }
+            throw new Error(`unexpected ${table} index ${indexName}`);
+          }),
+        })),
+      },
+    };
+
+    const result = await listPublicPageHandler(ctx as never, {
+      paginationOpts: { cursor: null, numItems: 1 },
+    });
+
+    expect(result.page.map((item) => item.handle)).toEqual(["user-0"]);
+    expect(result.globalCounts).toEqual({ all: 120, individuals: 120, organizations: 0 });
+    expect(get).toHaveBeenCalledTimes(1);
+    expect(get).toHaveBeenCalledWith("users:user-0");
+    expect(ownerPublisherQueries).toEqual(["publishers:user-0", "publishers:user-0"]);
+  });
+
+  it("does not hydrate publishers when a public publisher search has no matches", async () => {
+    const publisherRows = Array.from({ length: 120 }, (_, index) => ({
+      _id: `publishers:user-${index}`,
+      _creationTime: index,
+      kind: "user",
+      handle: `user-${index}`,
+      displayName: `User ${index}`,
+      linkedUserId: `users:user-${index}`,
+      publishedSkills: 1,
+      publishedPackages: 0,
+      totalInstalls: 120 - index,
+      totalDownloads: 120 - index,
+      totalStars: 1,
+      createdAt: 1,
+      updatedAt: 1,
+    }));
+    const get = vi.fn();
+    const ctx = {
+      db: {
+        get,
+        query: vi.fn((table: string) => ({
+          withIndex: vi.fn((indexName: string, buildQuery: (q: unknown) => unknown) => {
+            const q = {
+              eq: () => q,
+            };
+            buildQuery(q);
+            if (table === "publishers" && indexName === "by_active_total_downloads") {
+              return {
+                order: vi.fn(() => ({
+                  take: vi.fn(async () => publisherRows),
+                })),
+              };
+            }
+            throw new Error(`unexpected ${table} index ${indexName}`);
+          }),
+        })),
+      },
+    };
+
+    const result = await listPublicPageHandler(ctx as never, {
+      query: "no matching publisher",
+      paginationOpts: { cursor: null, numItems: 25 },
+    });
+
+    expect(result.page).toEqual([]);
+    expect(result.counts).toEqual({ all: 0, individuals: 0, organizations: 0 });
+    expect(result.globalCounts).toEqual({ all: 120, individuals: 120, organizations: 0 });
+    expect(get).not.toHaveBeenCalled();
+  });
+
   it("builds scoped plugin profile links with route segments", async () => {
     const publisher = {
       _id: "publishers:openclaw",
