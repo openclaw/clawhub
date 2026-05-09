@@ -1,6 +1,6 @@
 /* @vitest-environment node */
 
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   detectSiteMode,
   detectSiteModeFromUrl,
@@ -13,6 +13,14 @@ import {
   getSiteName,
   getSiteUrlForMode,
 } from "./site";
+
+const SITE_ENV_KEYS = [
+  "SITE_URL",
+  "VITE_SITE_MODE",
+  "VITE_SITE_URL",
+  "VITE_SOULHUB_HOST",
+  "VITE_SOULHUB_SITE_URL",
+];
 
 function withServerEnv<T>(values: Record<string, string | undefined>, run: () => T): T {
   const previous = new Map<string, string | undefined>();
@@ -31,9 +39,20 @@ function withServerEnv<T>(values: Record<string, string | undefined>, run: () =>
   }
 }
 
+function clearSiteEnv() {
+  for (const key of SITE_ENV_KEYS) {
+    delete process.env[key];
+  }
+}
+
+beforeEach(() => {
+  clearSiteEnv();
+});
+
 afterEach(() => {
   vi.unstubAllGlobals();
   vi.unstubAllEnvs();
+  clearSiteEnv();
 });
 
 describe("site helpers", () => {
