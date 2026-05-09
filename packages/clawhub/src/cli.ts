@@ -35,8 +35,10 @@ import {
   cmdExplore,
   cmdInstall,
   cmdList,
+  cmdPin,
   cmdSearch,
   cmdUninstall,
+  cmdUnpin,
   cmdUpdate,
 } from "./cli/commands/skills.js";
 import { cmdStarSkill } from "./cli/commands/star.js";
@@ -241,6 +243,23 @@ registerCommand(program, ["list"])
   .action(async () => {
     const opts = await resolveGlobalOpts();
     await cmdList(opts);
+  });
+
+registerCommand(program, ["pin"])
+  .description("Pin an installed skill so update commands skip it")
+  .argument("<slug>", "Skill slug")
+  .option("--reason <text>", "Optional pin reason")
+  .action(async (slug, options) => {
+    const opts = await resolveGlobalOpts();
+    await cmdPin(opts, slug, options);
+  });
+
+registerCommand(program, ["unpin"])
+  .description("Remove a skill pin so updates can change it again")
+  .argument("<slug>", "Skill slug")
+  .action(async (slug) => {
+    const opts = await resolveGlobalOpts();
+    await cmdUnpin(opts, slug);
   });
 
 registerCommand(program, ["explore"])
