@@ -1,4 +1,5 @@
 import { createFileRoute, useNavigate, useSearch } from "@tanstack/react-router";
+import { MAX_CLAWSCAN_NOTE_CHARS, normalizeClawScanNote } from "clawhub-schema";
 import {
   PLATFORM_SKILL_LICENSE,
   PLATFORM_SKILL_LICENSE_NAME,
@@ -70,7 +71,7 @@ export function Upload() {
     | {
         skill?: { slug: string; displayName: string };
         soul?: { slug: string; displayName: string };
-        latestVersion?: { version: string };
+        latestVersion?: { version: string; clawScanNote?: string | null };
         // Present on skills.getBySlug; absent on souls.getBySlug. Used to
         // default the Owner selector to the skill's current owner in update
         // mode so a New Version publish does not silently re-own the skill.
@@ -92,7 +93,9 @@ export function Upload() {
     "idle",
   );
   const [changelogSource, setChangelogSource] = useState<"auto" | "user" | null>(null);
+  const [clawScanNote, setClawScanNote] = useState("");
   const changelogTouchedRef = useRef(false);
+  const clawScanNoteTouchedRef = useRef(false);
   const changelogRequestRef = useRef(0);
   const changelogKeyRef = useRef<string | null>(null);
   const [status, setStatus] = useState<string | null>(null);
@@ -177,6 +180,13 @@ export function Upload() {
   const trimmedSlug = slug.trim();
   const trimmedName = displayName.trim();
   const trimmedChangelog = changelog.trim();
+  const trimmedClawScanNote = clawScanNote.trim();
+  const normalizedClawScanNote =
+    !isSoulMode &&
+    trimmedClawScanNote.length > 0 &&
+    trimmedClawScanNote.length <= MAX_CLAWSCAN_NOTE_CHARS
+      ? normalizeClawScanNote(clawScanNote)
+      : undefined;
   const trimmedVersion = version.trim();
   const slugAvailability = useQuery(
     api.skills.checkSlugAvailability,
@@ -210,7 +220,10 @@ export function Upload() {
     if (name) setDisplayName(name);
     const nextVersion = semver.inc(existing.latestVersion.version, "patch");
     if (nextVersion) setVersion(nextVersion);
-  }, [existing]);
+    if (!isSoulMode && !clawScanNoteTouchedRef.current) {
+      setClawScanNote(existing.latestVersion.clawScanNote ?? "");
+    }
+  }, [existing, isSoulMode]);
 
   useEffect(() => {
     if (ownerHandle) return;
@@ -328,6 +341,9 @@ export function Upload() {
     if (!isSoulMode && !acceptedLicenseTerms) {
       issues.push("Accept the MIT-0 license terms to publish this skill.");
     }
+    if (!isSoulMode && trimmedClawScanNote.length > MAX_CLAWSCAN_NOTE_CHARS) {
+      issues.push(`ClawScan note must be at most ${MAX_CLAWSCAN_NOTE_CHARS} characters.`);
+    }
     if (files.length === 0) {
       issues.push("Add at least one file.");
     }
@@ -365,6 +381,7 @@ export function Upload() {
     trimmedSlug,
     trimmedName,
     trimmedVersion,
+    trimmedClawScanNote.length,
     parsedTags.length,
     acceptedLicenseTerms,
     files,
@@ -503,6 +520,7 @@ export function Upload() {
         displayName: trimmedName,
         version: trimmedVersion,
         changelog: trimmedChangelog,
+        ...(normalizedClawScanNote ? { clawScanNote: normalizedClawScanNote } : {}),
         acceptLicenseTerms: isSoulMode ? undefined : acceptedLicenseTerms,
         tags: parsedTags,
         files: uploaded,
@@ -780,6 +798,31 @@ export function Upload() {
                     <InlineValidationMessage id="license-validation-error" message={licenseIssue} />
                   </div>
                 </>
+              ) : null}
+              {!isSoulMode ? (
+                <div className="publish-field-group">
+                  <div className="publish-field-label-row">
+                    <Label htmlFor="clawScanNote">ClawScan note</Label>
+                    <span>
+                      {trimmedClawScanNote.length}/{MAX_CLAWSCAN_NOTE_CHARS}
+                    </span>
+                  </div>
+                  <Textarea
+                    id="clawScanNote"
+                    rows={4}
+                    value={clawScanNote}
+                    maxLength={MAX_CLAWSCAN_NOTE_CHARS + 1}
+                    onChange={(event) => {
+                      clawScanNoteTouchedRef.current = true;
+                      setClawScanNote(event.target.value);
+                    }}
+                    placeholder="Optional context for ClawScan, e.g. why this version needs network access."
+                  />
+                  <p className="publish-field-help">
+                    Publisher-provided context for this new version. When updating, this may be
+                    prefilled from the latest version, but it is stored only on the new version.
+                  </p>
+                </div>
               ) : null}
               <Label htmlFor="changelog">Changelog</Label>
               <Textarea

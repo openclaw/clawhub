@@ -147,7 +147,7 @@ describe("SkillDetailPage", () => {
     expect(screen.queryByText(/Loading skill/i)).toBeNull();
     expect((await screen.findAllByRole("heading", { name: "Weather" })).length).toBeGreaterThan(0);
     expect(screen.getByText(/Get current weather\./i)).toBeTruthy();
-    expect(screen.getByRole("button", { name: "Files" })).toBeTruthy();
+    expect(screen.getByRole("tab", { name: "Files" })).toBeTruthy();
     expect(screen.queryByRole("button", { name: "Compare" })).toBeNull();
   });
 
@@ -223,7 +223,7 @@ describe("SkillDetailPage", () => {
     );
 
     await screen.findByRole("heading", { name: "Install" });
-    const securityHeading = screen.getByRole("heading", { name: "Security Scans" });
+    const securityHeading = screen.getByRole("heading", { name: "Audits" });
 
     expect(screen.getAllByRole("heading", { name: "Install" }).length).toBeGreaterThan(0);
     expect(screen.getByText("openclaw skills install weather")).toBeTruthy();
@@ -240,7 +240,7 @@ describe("SkillDetailPage", () => {
     expect(screen.queryByRole("button", { name: "Rescan" })).toBeNull();
 
     const installHeading = screen.getAllByRole("heading", { name: "Install" })[0];
-    const filesTab = screen.getByRole("button", { name: "Files" });
+    const filesTab = screen.getByRole("tab", { name: "Files" });
     expect(
       installHeading.compareDocumentPosition(filesTab) & Node.DOCUMENT_POSITION_FOLLOWING,
     ).toBeTruthy();
@@ -343,7 +343,7 @@ describe("SkillDetailPage", () => {
       />,
     );
 
-    await screen.findByRole("heading", { name: "Security Scans" });
+    await screen.findByRole("heading", { name: "Audits" });
     expect(screen.getByText(/reviewed by staff and cleared/i)).toBeTruthy();
     expect(screen.getByRole("link", { name: /VirusTotal.*Cleared/i })).toBeTruthy();
     expect(screen.getByRole("link", { name: /ClawScan.*Cleared/i })).toBeTruthy();
@@ -351,7 +351,7 @@ describe("SkillDetailPage", () => {
     expect(screen.queryByRole("link", { name: /Suspicious/i })).toBeNull();
   });
 
-  it("shows an owner rescan action in the security summary for owned skills", async () => {
+  it("shows an owner rescan action on the settings page for owned skills", async () => {
     useAuthStatusMock.mockReturnValue({
       isAuthenticated: true,
       isLoading: false,
@@ -376,6 +376,7 @@ describe("SkillDetailPage", () => {
     render(
       <SkillDetailPage
         slug="weather"
+        mode="settings"
         initialData={{
           result: {
             skill: {
@@ -429,6 +430,7 @@ describe("SkillDetailPage", () => {
       />,
     );
 
+    expect(await screen.findByText("Request security rescan")).toBeTruthy();
     expect(await screen.findByRole("button", { name: "Rescan" })).toBeTruthy();
     expect(screen.queryByText("Owner rescan")).toBeNull();
     expect(screen.queryByText("2/3 rescans left")).toBeNull();
@@ -758,12 +760,13 @@ describe("SkillDetailPage", () => {
 
     render(<SkillDetailPage slug="weather" mode="settings" />);
 
-    expect(await screen.findByText(/Owner tools/i)).toBeTruthy();
-    expect(screen.getByRole("button", { name: /Rename and redirect/i })).toBeTruthy();
-    expect(screen.getByRole("button", { name: /Merge into target/i })).toBeTruthy();
+    expect(await screen.findByRole("heading", { name: /Skill settings/i })).toBeTruthy();
+    expect(screen.getByText("Publish a new version")).toBeTruthy();
+    expect(screen.getByText("Rename slug")).toBeTruthy();
+    expect(screen.getByText("Merge listing")).toBeTruthy();
   });
 
-  it("shows only latest-version tags in public tag surfaces", async () => {
+  it("does not render version tag cards on the simplified public detail surface", async () => {
     useQueryMock.mockImplementation((_fn: unknown, args: unknown) => {
       if (args === "skip") return undefined;
       if (args && typeof args === "object" && "skillId" in args) {
@@ -812,13 +815,14 @@ describe("SkillDetailPage", () => {
 
     render(<SkillDetailPage slug="ip-publisher" />);
 
-    expect((await screen.findAllByText("ip-publisher")).length).toBeGreaterThan(0);
-    expect(screen.getAllByText("knowledge-base").length).toBeGreaterThan(0);
+    expect((await screen.findAllByText("IP Publisher")).length).toBeGreaterThan(0);
+    expect(screen.queryByText("Version tags")).toBeNull();
+    expect(screen.queryByText("knowledge-base")).toBeNull();
     expect(screen.queryByText("content-rewrite")).toBeNull();
     expect(screen.queryByText("Historical tags")).toBeNull();
   });
 
-  it("separates historical tags for managers", async () => {
+  it("does not render historical tag controls for managers on the simplified detail surface", async () => {
     useAuthStatusMock.mockReturnValue({
       isAuthenticated: true,
       isLoading: false,
@@ -875,12 +879,14 @@ describe("SkillDetailPage", () => {
 
     render(<SkillDetailPage slug="ip-publisher" />);
 
-    expect(await screen.findByText("Historical tags")).toBeTruthy();
-    expect(screen.getByText("content-rewrite")).toBeTruthy();
-    expect(screen.getByRole("button", { name: "Delete tag content-rewrite" })).toBeTruthy();
+    expect((await screen.findAllByText("IP Publisher")).length).toBeGreaterThan(0);
+    expect(screen.queryByText("Version tags")).toBeNull();
+    expect(screen.queryByText("Historical tags")).toBeNull();
+    expect(screen.queryByText("content-rewrite")).toBeNull();
+    expect(screen.queryByRole("button", { name: "Delete tag content-rewrite" })).toBeNull();
   });
 
-  it("defers compare version query until compare tab is requested", async () => {
+  it("does not request compare versions for the simplified detail tabs", async () => {
     useQueryMock.mockImplementation((_fn: unknown, args: unknown) => {
       if (args === "skip") return undefined;
       if (
@@ -929,7 +935,9 @@ describe("SkillDetailPage", () => {
 
     render(<SkillDetailPage slug="weather" />);
     expect(await screen.findByText("Weather")).toBeTruthy();
-    expect(screen.getByRole("button", { name: /compare/i })).toBeTruthy();
+    expect(screen.getByRole("tab", { name: "SKILL.md" })).toBeTruthy();
+    expect(screen.getByRole("tab", { name: "Files" })).toBeTruthy();
+    expect(screen.queryByRole("button", { name: /compare/i })).toBeNull();
 
     expect(
       useQueryMock.mock.calls.some((call) => {
@@ -942,21 +950,5 @@ describe("SkillDetailPage", () => {
         );
       }),
     ).toBe(false);
-
-    fireEvent.click(screen.getByRole("button", { name: /compare/i }));
-
-    await waitFor(() => {
-      expect(
-        useQueryMock.mock.calls.some((call) => {
-          const args = call[1];
-          return (
-            typeof args === "object" &&
-            args !== null &&
-            "limit" in args &&
-            (args as { limit: number }).limit === 200
-          );
-        }),
-      ).toBe(true);
-    });
   });
 });

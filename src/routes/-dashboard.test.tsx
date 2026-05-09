@@ -31,9 +31,26 @@ vi.mock("@tanstack/react-router", () => ({
   createFileRoute: () => (config: unknown) => config,
   Link: ({
     children,
+    to,
+    params,
+    search: _search,
     ...props
-  }: React.AnchorHTMLAttributes<HTMLAnchorElement> & { children: React.ReactNode }) => (
-    <a href="/test" {...props}>
+  }: React.AnchorHTMLAttributes<HTMLAnchorElement> & {
+    children: React.ReactNode;
+    to?: string;
+    params?: Record<string, string>;
+    search?: unknown;
+  }) => (
+    <a
+      href={
+        to === "/$owner/$slug" && params
+          ? `/${params.owner}/${params.slug}`
+          : typeof to === "string"
+            ? to
+            : "/test"
+      }
+      {...props}
+    >
       {children}
     </a>
   ),
@@ -45,6 +62,9 @@ type TestSkill = {
   slug: string;
   displayName: string;
   summary: string;
+  ownerPath: string;
+  detailHref: string;
+  settingsHref: string;
   ownerUserId: Id<"users">;
   ownerPublisherId: Id<"publishers">;
   tags: {};
@@ -89,6 +109,7 @@ type TestPackage = {
   sourceRepo: string | null;
   summary: string;
   latestVersion: string;
+  updatedAt: number;
   stats: {
     downloads: number;
     installs: number;
@@ -133,6 +154,9 @@ function createSkill(overrides?: Partial<TestSkill>): TestSkill {
     slug: "local-flagged-skill",
     displayName: "Local Flagged Skill",
     summary: "Flagged skill fixture.",
+    ownerPath: "local",
+    detailHref: "/local/local-flagged-skill",
+    settingsHref: "/local/local-flagged-skill/settings",
     ownerUserId: me._id,
     ownerPublisherId: publishers[0].publisher._id,
     tags: {},
@@ -174,6 +198,7 @@ function createPackage(overrides?: Partial<TestPackage>): TestPackage {
     sourceRepo: null,
     summary: "Flagged plugin fixture.",
     latestVersion: "1.0.0",
+    updatedAt: 1,
     stats: { downloads: 0, installs: 0, stars: 0, versions: 1 },
     verification: null,
     scanStatus: "malicious",
@@ -242,24 +267,28 @@ describe("Dashboard rows", () => {
     mocks.toastError.mockReset();
   });
 
-  it("renders entry links, summaries, metrics, and aggregate statuses", () => {
+  it("renders rich artifact cards with status, scan, and inventory context", () => {
     arrangeDashboard({ skills: [createSkill()], packages: [createPackage()] });
 
     renderDashboard();
 
-    expect(screen.getByRole("link", { name: "Local Flagged Skill" })).toBeTruthy();
-    expect(screen.getByRole("link", { name: "Local Flagged Runtime Plugin" })).toBeTruthy();
+    expect(screen.getByRole("link", { name: "Local Flagged Skill" }).getAttribute("href")).toBe(
+      "/local/local-flagged-skill",
+    );
+    expect(
+      screen.getByRole("link", { name: "Local Flagged Runtime Plugin" }).getAttribute("href"),
+    ).toBe("/plugins/local-flagged-runtime-plugin");
     expect(screen.getByText("Flagged skill fixture.")).toBeTruthy();
     expect(screen.getByText("Flagged plugin fixture.")).toBeTruthy();
-    expect(screen.getByLabelText("Metrics for Local Flagged Skill")).toBeTruthy();
-    expect(screen.getByText(/1\.2k downloads/)).toBeTruthy();
-    expect(screen.getByText(/56 installs/)).toBeTruthy();
-    expect(screen.getByText(/7 stars/)).toBeTruthy();
-    expect(screen.getByText(/3 versions/)).toBeTruthy();
-    expect(screen.getByText("Suspicious")).toBeTruthy();
-    expect(screen.getByText("Blocked")).toBeTruthy();
-    expect(screen.getByRole("button", { name: "Suspicious status reason" })).toBeTruthy();
-    expect(screen.getByRole("button", { name: "Blocked status reason" })).toBeTruthy();
+    expect(screen.getAllByText("Review").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("Malicious").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("Scan result").length).toBe(2);
+    expect(screen.getAllByText("VT").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("LLM").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("Static").length).toBeGreaterThan(0);
+    expect(screen.getByText("2/3 rescans left")).toBeTruthy();
+    expect(screen.getByText("Limit reached (3/3)")).toBeTruthy();
+    expect(screen.getAllByText("Downloads").length).toBeGreaterThan(0);
     expect(
       screen.getByRole("button", { name: "Open actions for Local Flagged Skill" }),
     ).toBeTruthy();
@@ -278,15 +307,48 @@ describe("Dashboard rows", () => {
     expect(document.querySelectorAll(".animate-pulse").length).toBeGreaterThan(0);
   });
 
-  it("does not render row-level actions", () => {
+  it("keeps destructive and rescan actions inside the overflow menu", () => {
     arrangeDashboard({ skills: [createSkill()], packages: [createPackage()] });
 
     renderDashboard();
 
     expect(screen.queryByRole("button", { name: /request rescan/i })).toBeNull();
+    expect(screen.queryByRole("menuitem", { name: /request rescan/i })).toBeNull();
     expect(screen.queryByRole("link", { name: /new version/i })).toBeNull();
     expect(screen.queryByRole("link", { name: /new release/i })).toBeNull();
-    expect(screen.queryByRole("link", { name: /^view$/i })).toBeNull();
+  });
+
+  it("uses the canonical skill href when publisher selection is stale", () => {
+    arrangeDashboard({
+      skills: [createSkill()],
+    });
+    let unscopedQueryCount = 0;
+    mocks.useQuery.mockImplementation((_fn: unknown, args: unknown) => {
+      if (args === "skip") return undefined;
+      if (args === undefined) {
+        unscopedQueryCount += 1;
+        return unscopedQueryCount % 2 === 1
+          ? { ...me, handle: "Local Owner" }
+          : [
+              {
+                publisher: {
+                  _id: "publishers:stale" as Id<"publishers">,
+                  handle: "Local Owner",
+                  displayName: "Local Owner",
+                  kind: "user" as const,
+                },
+                role: "owner" as const,
+              },
+            ];
+      }
+      return [];
+    });
+
+    renderDashboard();
+
+    expect(screen.getByRole("link", { name: "Local Flagged Skill" }).getAttribute("href")).toBe(
+      "/local/local-flagged-skill",
+    );
   });
 
   it("exposes package delete from the plugin row action menu", () => {
@@ -301,24 +363,16 @@ describe("Dashboard rows", () => {
     expect(screen.getByRole("menuitem", { name: /delete plugin/i })).toBeTruthy();
   });
 
-  it("does not render column titles, scanner details, or plugin metadata chips", () => {
+  it("does not render legacy table column titles or scanner prefixes", () => {
     arrangeDashboard({ skills: [createSkill()], packages: [createPackage()] });
 
     renderDashboard();
 
-    expect(screen.queryByText("Skill")).toBeNull();
-    expect(screen.queryByText("Plugin")).toBeNull();
     expect(screen.queryByText("Summary")).toBeNull();
     expect(screen.queryByText("Status")).toBeNull();
     expect(screen.queryByText(/^VT:/)).toBeNull();
     expect(screen.queryByText(/^LLM:/)).toBeNull();
     expect(screen.queryByText(/^ClawScan:/)).toBeNull();
-    expect(screen.queryByText(/^Static/)).toBeNull();
-    expect(screen.queryByText(/public surfaces warn or suppress it/i)).toBeNull();
-    expect(screen.queryByText(/automated security checks found malicious content/i)).toBeNull();
-    expect(screen.queryByText("Code Plugin")).toBeNull();
-    expect(screen.queryByText("community")).toBeNull();
-    expect(screen.queryByText("2/3 rescans left")).toBeNull();
-    expect(screen.queryByText("Limit reached (3/3)")).toBeNull();
+    expect(screen.queryByText(/^Static:/)).toBeNull();
   });
 });

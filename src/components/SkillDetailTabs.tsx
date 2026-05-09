@@ -1,16 +1,13 @@
+import type { ClawdisSkillMetadata } from "clawhub-schema";
 import { lazy, Suspense } from "react";
 import ReactMarkdown, { defaultUrlTransform } from "react-markdown";
 import remarkGfm from "remark-gfm";
 import type { Doc, Id } from "../../convex/_generated/dataModel";
 import { rehypeProxyImages } from "../lib/rehypeProxyImages";
 import { resolveSkillReadmeHref } from "../lib/skillReadmeLinks";
-import { SkillVersionsPanel } from "./SkillVersionsPanel";
+import { buildSkillInstallTabs, type SkillInstallTabId } from "./SkillInstallCard";
 
 const REHYPE_PLUGINS = [rehypeProxyImages];
-
-const SkillDiffCard = lazy(() =>
-  import("./SkillDiffCard").then((module) => ({ default: module.SkillDiffCard })),
-);
 
 const SkillFilesPanel = lazy(() =>
   import("./SkillFilesPanel").then((module) => ({ default: module.SkillFilesPanel })),
@@ -18,82 +15,77 @@ const SkillFilesPanel = lazy(() =>
 
 type SkillFile = Doc<"skillVersions">["files"][number];
 
-export type DetailTab = "readme" | "files" | "compare" | "versions";
+export type DetailTab = "readme" | "files" | SkillInstallTabId;
 
 type SkillDetailTabsProps = {
   activeTab: DetailTab;
   setActiveTab: (tab: DetailTab) => void;
-  onCompareIntent: () => void;
   readmeContent: string | null;
   readmeError: string | null;
   latestFiles: SkillFile[];
   latestVersionId: Id<"skillVersions"> | null;
   skill: Doc<"skills">;
-  diffVersions: Doc<"skillVersions">[] | undefined;
-  versions: Doc<"skillVersions">[] | undefined;
-  nixPlugin: boolean;
-  suppressVersionScanResults: boolean;
-  scanResultsSuppressedMessage: string | null;
+  clawdis: ClawdisSkillMetadata | undefined;
+  osLabels: string[];
 };
 
 export function SkillDetailTabs({
   activeTab,
   setActiveTab,
-  onCompareIntent,
   readmeContent,
   readmeError,
   latestFiles,
   latestVersionId,
   skill,
-  diffVersions,
-  versions,
-  nixPlugin,
-  suppressVersionScanResults,
-  scanResultsSuppressedMessage,
+  clawdis,
+  osLabels,
 }: SkillDetailTabsProps) {
-  const compareEnabled = (versions?.length ?? 0) > 1;
+  const installTabs = buildSkillInstallTabs({ clawdis, osLabels });
+  const activeInstallTab = installTabs.find((tab) => tab.id === activeTab);
+  const selectTab = (tab: DetailTab) => {
+    setActiveTab(tab);
+    if (typeof window === "undefined") return;
+    const hash = tab === "readme" ? "" : `#${tab}`;
+    window.history.replaceState(
+      null,
+      "",
+      `${window.location.pathname}${window.location.search}${hash}`,
+    );
+  };
 
   return (
-    <div className="card tab-card">
-      <div className="tab-header">
+    <div className="tab-card">
+      <div className="tab-header" role="tablist" aria-label="Skill detail tabs">
         <button
           className={`tab-button${activeTab === "readme" ? " is-active" : ""}`}
           type="button"
-          onClick={() => setActiveTab("readme")}
+          role="tab"
+          aria-selected={activeTab === "readme"}
+          onClick={() => selectTab("readme")}
         >
-          README
+          SKILL.md
         </button>
         <button
           className={`tab-button${activeTab === "files" ? " is-active" : ""}`}
           type="button"
-          onClick={() => setActiveTab("files")}
+          role="tab"
+          aria-selected={activeTab === "files"}
+          onClick={() => selectTab("files")}
         >
           Files
         </button>
-        {compareEnabled ? (
+        {installTabs.map((tab) => (
           <button
-            className={`tab-button${activeTab === "compare" ? " is-active" : ""}`}
+            key={tab.id}
+            className={`tab-button${activeTab === tab.id ? " is-active" : ""}`}
             type="button"
-            onClick={() => setActiveTab("compare")}
-            onMouseEnter={() => {
-              onCompareIntent();
-              void import("./SkillDiffCard");
-            }}
-            onFocus={() => {
-              onCompareIntent();
-              void import("./SkillDiffCard");
-            }}
+            role="tab"
+            aria-selected={activeTab === tab.id}
+            onClick={() => selectTab(tab.id)}
           >
-            Compare
+            {tab.label}
           </button>
-        ) : null}
-        <button
-          className={`tab-button${activeTab === "versions" ? " is-active" : ""}`}
-          type="button"
-          onClick={() => setActiveTab("versions")}
-        >
-          Versions
-        </button>
+        ))}
       </div>
 
       {activeTab === "readme" ? (
@@ -129,22 +121,8 @@ export function SkillDetailTabs({
         </Suspense>
       ) : null}
 
-      {activeTab === "compare" ? (
-        <div className="tab-body">
-          <Suspense fallback={<div className="stat">Loading diff viewer...</div>}>
-            <SkillDiffCard skill={skill} versions={diffVersions ?? []} variant="embedded" />
-          </Suspense>
-        </div>
-      ) : null}
-
-      {activeTab === "versions" ? (
-        <SkillVersionsPanel
-          versions={versions}
-          nixPlugin={nixPlugin}
-          skillSlug={skill.slug}
-          suppressScanResults={suppressVersionScanResults}
-          suppressedMessage={scanResultsSuppressedMessage}
-        />
+      {activeInstallTab ? (
+        <div className="tab-body skill-install-tabs">{activeInstallTab.panel}</div>
       ) : null}
     </div>
   );

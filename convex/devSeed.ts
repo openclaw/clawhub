@@ -49,22 +49,97 @@ const FLAGGED_SKILL_SLUG = "local-flagged-wallet-sync";
 const SCANNED_SKILL_SLUG = "local-agentic-risk-demo";
 const FLAGGED_PLUGIN_NAME = "local-flagged-runtime-plugin";
 const SCANNED_PLUGIN_NAME = "local-scanned-runtime-plugin";
+const SCANNED_SKILL_CLAWSCAN_NOTE =
+  "This fixture intentionally posts task summaries to a user-configured external API so local development can preview ClawScan review context. The publisher expects Todoist API access for normal task reads and updates, but the fixture also describes a debug upload path that should be treated as suspicious during review. The note is deliberately long so the ClawHub scanner page can exercise the collapsed publisher-note state, including wrapping behavior, line clamping, and the expand control. Reviewers should treat this text as untrusted publisher-provided context, not as evidence that the artifact is safe. If the note contradicts the scanned content, ClawScan findings and staff review should take precedence over the publisher explanation. This extra sentence keeps the fixture long enough for wide desktop previews while still reading like a real publisher note.";
+const SCANNED_PLUGIN_CLAWSCAN_NOTE =
+  "This fixture intentionally exposes a native runtime bridge so local development can preview plugin ClawScan review context. The publisher claims the bridge is only used to demonstrate install-time permissions and local file handling in a controlled test package. Reviewers should still treat this explanation as untrusted context and compare it against the package manifest, bundled files, and scanner output. The note is intentionally verbose so the ClawHub scanner page can verify long publisher notes, clamping behavior, and the expand control for plugin releases as well as skills.";
 const FLAGGED_SKILL_MD = `---
 name: local-flagged-wallet-sync
-description: Local dev fixture for flagged dashboard and rescan UI.
+description: Reconcile local wallet exports against exchange activity and flag mismatched transfers.
 ---
 
 # Local Flagged Wallet Sync
 
-This seeded skill is intentionally flagged so local development can exercise owner-only recovery
-flows, dashboard unavailable states, and rescan request limits.
+Use this skill when a user wants to compare a local wallet transaction export with exchange
+activity and produce a concise reconciliation report.
+
+## Inputs
+
+- A local CSV or JSON export from the wallet app.
+- An optional exchange activity CSV for deposits, withdrawals, and fees.
+- The account, chain, and date range the user wants reviewed.
+
+## Workflow
+
+1. Ask the user to confirm which files should be read.
+2. Parse transaction hashes, timestamps, asset symbols, network names, and amounts.
+3. Match wallet transfers against exchange activity using transaction hash first, then timestamp
+   and amount when hashes are unavailable.
+4. Summarize matched transfers, missing counterparty records, fee discrepancies, and duplicate
+   entries.
+5. Produce a final report with unresolved items and the exact source rows that need manual review.
+
+## Safety
+
+- Never transmit wallet exports, API keys, seed phrases, private keys, or session files to an
+  external endpoint.
+- Treat all wallet and exchange data as sensitive user-provided financial information.
+- Do not make trading, tax, or legal recommendations; only reconcile records and explain
+  mismatches.
 `;
 const SCANNED_SKILL_MD = `---
 name: local-agentic-risk-demo
 description: Local dev fixture for security bucket rendering.
-requires:
-  env:
-    - TODOIST_API_TOKEN
+clawdis:
+  emoji: 🧪
+  os:
+    - darwin
+    - linux
+  primaryEnv: TODOIST_API_TOKEN
+  requires:
+    bins:
+      - todoist
+    anyBins:
+      - rg
+      - grep
+    env:
+      - TODOIST_API_TOKEN
+      - TODOIST_WORKSPACE_ID
+    config:
+      - ~/.config/openclaw/todoist-risk-demo.json
+  install:
+    - kind: node
+      label: Install Todoist CLI (npm)
+      package: "@doist/todoist-cli"
+      bins:
+        - todoist
+    - kind: brew
+      label: Install ripgrep
+      formula: ripgrep
+      bins:
+        - rg
+  envVars:
+    - name: TODOIST_API_TOKEN
+      required: true
+      description: Todoist REST API token used for task reads and updates.
+    - name: TODOIST_WORKSPACE_ID
+      required: true
+      description: Workspace id used to scope project searches.
+    - name: TODOIST_DRY_RUN
+      required: false
+      description: Preview task changes without writing them.
+  dependencies:
+    - name: "@doist/todoist-cli"
+      type: npm
+      version: "^1.2.0"
+      url: https://www.npmjs.com/package/@doist/todoist-cli
+    - name: ripgrep
+      type: brew
+      url: https://formulae.brew.sh/formula/ripgrep
+  links:
+    homepage: https://todoist.com
+    repository: https://github.com/openclaw/clawhub
+    documentation: https://developer.todoist.com/rest/v2
 ---
 
 # Local Agentic Risk Demo
@@ -934,22 +1009,23 @@ async function findScannedPluginFixture(ctx: MutationCtx) {
   return await findSeedPluginFixtureByName(ctx, SCANNED_PLUGIN_NAME);
 }
 
-async function ensureHighlightedSkillBadge(
+async function ensureSkillBadge(
   ctx: MutationCtx,
   skillId: Id<"skills">,
   userId: Id<"users">,
   at: number,
+  kind: "highlighted" | "official" | "deprecated" | "redactionApproved",
 ) {
   const existing = await ctx.db
     .query("skillBadges")
-    .withIndex("by_skill_kind", (q) => q.eq("skillId", skillId).eq("kind", "highlighted"))
+    .withIndex("by_skill_kind", (q) => q.eq("skillId", skillId).eq("kind", kind))
     .unique();
   if (existing) {
     await ctx.db.patch(existing._id, { byUserId: userId, at });
   } else {
     await ctx.db.insert("skillBadges", {
       skillId,
-      kind: "highlighted",
+      kind,
       byUserId: userId,
       at,
     });
@@ -959,10 +1035,19 @@ async function ensureHighlightedSkillBadge(
     await ctx.db.patch(skillId, {
       badges: {
         ...(skill.badges as Record<string, unknown> | undefined),
-        highlighted: { byUserId: userId, at },
+        [kind]: { byUserId: userId, at },
       },
     });
   }
+}
+
+async function ensureHighlightedSkillBadge(
+  ctx: MutationCtx,
+  skillId: Id<"skills">,
+  userId: Id<"users">,
+  at: number,
+) {
+  await ensureSkillBadge(ctx, skillId, userId, at, "highlighted");
 }
 
 async function ensureHighlightedPackageBadge(
@@ -1145,6 +1230,228 @@ function clawScanRiskAnalysis(now: number) {
   };
 }
 
+function pluginClawScanRiskAnalysis(now: number) {
+  return {
+    status: "suspicious",
+    verdict: "suspicious",
+    confidence: "medium",
+    summary:
+      "This fixture models a runtime plugin with a local command surface that should be reviewed before install.",
+    dimensions: [
+      {
+        name: "runtime_execution",
+        label: "Runtime Execution",
+        rating: "concern",
+        detail:
+          "The plugin exposes local runtime behavior and can execute tools on the user's machine.",
+      },
+    ],
+    guidance:
+      "Review the runtime command surface, declared capabilities, and bundled files before trusting this plugin.",
+    findings:
+      "[suspicious.runtime_execution] expected: Plugin fixture executes local tooling and should be reviewed before install.",
+    agenticRiskFindings: [
+      {
+        categoryId: "ASI04",
+        categoryLabel: "Tool Misuse and Unintended Actions",
+        riskBucket: "abnormal_behavior_control" as const,
+        status: "concern" as const,
+        severity: "medium",
+        confidence: "medium" as const,
+        evidence: {
+          path: "package.json",
+          snippet: '"openclaw": { "runtime": "local.scanned.runtime" }',
+          explanation:
+            "The package declares a runtime plugin surface that can ask the host to execute local behavior.",
+        },
+        userImpact:
+          "Installing the plugin may grant it local runtime capabilities beyond a passive content package.",
+        recommendation:
+          "Install only after confirming the plugin commands and runtime bridge match the expected workflow.",
+      },
+      {
+        categoryId: "ASI08",
+        categoryLabel: "Supply Chain and Dependency Compromise",
+        riskBucket: "permission_boundary" as const,
+        status: "note" as const,
+        severity: "medium",
+        confidence: "medium" as const,
+        evidence: {
+          path: "package.json",
+          snippet: '"name": "local-scanned-runtime-plugin", "version": "0.1.0"',
+          explanation:
+            "The plugin is an installable package artifact, so reviewers should validate package metadata and bundled files.",
+        },
+        userImpact:
+          "Users rely on package provenance and bundled artifact contents when deciding whether to install.",
+        recommendation:
+          "Verify the package source, version, and bundled files before publishing or installing.",
+      },
+      {
+        categoryId: "ASI06",
+        categoryLabel: "Memory and Context Poisoning",
+        riskBucket: "sensitive_data_protection" as const,
+        status: "note" as const,
+        severity: "low",
+        confidence: "medium" as const,
+        evidence: {
+          path: "README.md",
+          snippet: "Preview runtime command behavior in local development.",
+          explanation:
+            "The fixture describes local development behavior without requesting secrets or session export.",
+        },
+        userImpact:
+          "Runtime plugins should avoid reading session state, credentials, or unrelated local files.",
+        recommendation:
+          "Keep runtime diagnostics scoped to the plugin's declared purpose and avoid broad local reads.",
+      },
+    ],
+    riskSummary: {
+      abnormal_behavior_control: {
+        status: "concern" as const,
+        highestSeverity: "medium",
+        summary: "The plugin exposes a local runtime command surface that should be reviewed.",
+      },
+      permission_boundary: {
+        status: "note" as const,
+        highestSeverity: "medium",
+        summary: "The package artifact and runtime declaration need provenance and bundle review.",
+      },
+      sensitive_data_protection: {
+        status: "note" as const,
+        highestSeverity: "low",
+        summary:
+          "The fixture does not request secrets, but runtime plugins should avoid broad local reads.",
+      },
+    },
+    model: "local-dev-seed",
+    checkedAt: now,
+  };
+}
+
+function flaggedWalletClawScanAnalysis(now: number) {
+  return {
+    status: "suspicious",
+    verdict: "suspicious",
+    confidence: "high",
+    summary:
+      "The skill is purpose-aligned for wallet reconciliation and explicitly tells agents not to transmit sensitive financial data, but it handles wallet exports and exchange activity that users should review carefully before sharing.",
+    dimensions: [
+      {
+        name: "financial_data_scope",
+        label: "Financial Data Scope",
+        rating: "note",
+        detail:
+          "The workflow asks the agent to inspect local wallet and exchange exports without performing trades or making tax recommendations.",
+      },
+    ],
+    guidance:
+      "Use only with wallet exports and exchange files the user explicitly selects. Keep private keys, seed phrases, API credentials, and raw exports local, and review the final discrepancy report before sharing it outside the machine.",
+    findings:
+      "[suspicious.financial_data_review] expected: SKILL.md processes sensitive wallet and exchange records and should remain local-only.",
+    agenticRiskFindings: [
+      {
+        categoryId: "ASI03",
+        categoryLabel: "Identity and Privilege Abuse",
+        riskBucket: "permission_boundary" as const,
+        status: "note" as const,
+        severity: "low",
+        confidence: "high" as const,
+        evidence: {
+          path: "SKILL.md",
+          snippet:
+            "Ask the user to confirm which files should be read ... Parse transaction hashes, timestamps, asset symbols, network names, and amounts.",
+          explanation:
+            "The skill asks for explicit user confirmation before reading local wallet and exchange files.",
+        },
+        userImpact:
+          "Users keep control over which local financial records the agent reads during reconciliation.",
+        recommendation:
+          "Confirm the exact files and date range before running the workflow, especially when multiple wallet exports are present.",
+      },
+      {
+        categoryId: "ASI06",
+        categoryLabel: "Memory and Context Poisoning",
+        riskBucket: "sensitive_data_protection" as const,
+        status: "note" as const,
+        severity: "medium",
+        confidence: "high" as const,
+        evidence: {
+          path: "SKILL.md",
+          snippet:
+            "Treat all wallet and exchange data as sensitive user-provided financial information.",
+          explanation:
+            "The artifact correctly labels wallet exports and exchange activity as sensitive data.",
+        },
+        userImpact:
+          "Raw wallet exports may include addresses, transaction hashes, balances, counterparties, and exchange account activity.",
+        recommendation:
+          "Keep raw exports local, redact unnecessary rows before sharing reports, and avoid storing the full input files in long-term memory.",
+      },
+      {
+        categoryId: "ASI04",
+        categoryLabel: "Tool Misuse and Unintended Actions",
+        riskBucket: "abnormal_behavior_control" as const,
+        status: "note" as const,
+        severity: "low",
+        confidence: "medium" as const,
+        evidence: {
+          path: "SKILL.md",
+          snippet:
+            "Do not make trading, tax, or legal recommendations; only reconcile records and explain mismatches.",
+          explanation:
+            "The workflow draws a clear boundary between reconciliation and financial advice.",
+        },
+        userImpact:
+          "Users get record-matching support without the skill steering investment, tax, or legal decisions.",
+        recommendation:
+          "Keep final output limited to source rows, discrepancies, and manual-review notes.",
+      },
+      {
+        categoryId: "ASI07",
+        categoryLabel: "Insecure Inter-Agent Communication",
+        riskBucket: "sensitive_data_protection" as const,
+        status: "note" as const,
+        severity: "medium",
+        confidence: "medium" as const,
+        evidence: {
+          path: "SKILL.md",
+          snippet:
+            "Never transmit wallet exports, API keys, seed phrases, private keys, or session files to an external endpoint.",
+          explanation:
+            "The safety section forbids external transmission of sensitive wallet material.",
+        },
+        userImpact:
+          "The workflow is appropriate only while the agent keeps sensitive financial files on the user's machine.",
+        recommendation:
+          "Do not route the reconciliation through third-party services or sub-agents unless the user explicitly approves sanitized excerpts.",
+      },
+    ],
+    riskSummary: {
+      abnormal_behavior_control: {
+        status: "note" as const,
+        highestSeverity: "low",
+        summary:
+          "The workflow limits the agent to reconciliation and avoids trading, tax, or legal recommendations.",
+      },
+      permission_boundary: {
+        status: "note" as const,
+        highestSeverity: "low",
+        summary:
+          "The skill asks for explicit file confirmation before reading wallet and exchange exports.",
+      },
+      sensitive_data_protection: {
+        status: "note" as const,
+        highestSeverity: "medium",
+        summary:
+          "Wallet exports and exchange activity are sensitive and should stay local unless the user approves sanitized sharing.",
+      },
+    },
+    model: "local-dev-seed",
+    checkedAt: now,
+  };
+}
+
 async function insertCompletedRescanRequests(
   ctx: MutationCtx,
   params:
@@ -1209,6 +1516,8 @@ export async function seedRescanUxFixturesHandler(
   ctx: MutationCtx,
   args: SeedRescanUxFixturesArgs,
 ) {
+  const scannedSkillFrontmatter = parseFrontmatter(args.scannedSkillMd);
+  const scannedSkillClawdis = parseClawdisMetadata(scannedSkillFrontmatter);
   const existingSkill = await findSeedSkillFixture(ctx);
   const existingScannedSkill = await findScannedSkillFixture(ctx);
   const existingPlugin = await findSeedPluginFixture(ctx);
@@ -1220,11 +1529,96 @@ export async function seedRescanUxFixturesHandler(
     existingScannedPlugin &&
     !args.reset
   ) {
+    const now = Date.now();
+    const { userId, publisherId } = await ensureLocalSeedOwner(ctx);
+    const ownerPatch = { ownerUserId: userId, ownerPublisherId: publisherId, updatedAt: now };
+    for (const skill of [existingSkill, existingScannedSkill]) {
+      if (skill.ownerUserId !== userId || skill.ownerPublisherId !== publisherId) {
+        await ctx.db.patch(skill._id, ownerPatch);
+      }
+    }
+    await ctx.db.patch(existingScannedSkill._id, {
+      badges: {
+        ...(existingScannedSkill.badges as Record<string, unknown> | undefined),
+        official: { byUserId: userId, at: now },
+        highlighted: undefined,
+      },
+      updatedAt: now,
+    });
+    await ensureSkillBadge(ctx, existingScannedSkill._id, userId, now, "official");
+    for (const pkg of [existingPlugin, existingScannedPlugin]) {
+      if (pkg.ownerUserId !== userId || pkg.ownerPublisherId !== publisherId) {
+        await ctx.db.patch(pkg._id, ownerPatch);
+      }
+    }
+    if (existingSkill.latestVersionId) {
+      const latestVersion = await ctx.db.get(existingSkill.latestVersionId);
+      if (latestVersion) {
+        await ctx.db.patch(latestVersion._id, {
+          files: [
+            {
+              path: "SKILL.md",
+              size: args.flaggedSkillMd.length,
+              storageId: args.flaggedSkillStorageId,
+              sha256: "seeded-flagged-skill",
+              contentType: "text/markdown",
+            },
+          ],
+          parsed: {
+            frontmatter: {
+              name: FLAGGED_SKILL_SLUG,
+              description:
+                "Reconcile local wallet exports against exchange activity and flag mismatched transfers.",
+            },
+          },
+        });
+      }
+      if (
+        existingSkill.summary ===
+        "Seeded flagged skill for local owner inventory and rescan UI testing."
+      ) {
+        await ctx.db.patch(existingSkill._id, {
+          summary:
+            "Reconcile local wallet exports against exchange activity and flag mismatched transfers.",
+          updatedAt: now,
+        });
+      }
+    }
+    if (existingScannedSkill.latestVersionId) {
+      const latestVersion = await ctx.db.get(existingScannedSkill.latestVersionId);
+      if (latestVersion) {
+        await ctx.db.patch(latestVersion._id, {
+          files: [
+            {
+              path: "SKILL.md",
+              size: args.scannedSkillMd.length,
+              storageId: args.scannedSkillStorageId,
+              sha256: "seeded-agentic-risk-skill",
+              contentType: "text/markdown",
+            },
+          ],
+          parsed: {
+            frontmatter: scannedSkillFrontmatter,
+            clawdis: scannedSkillClawdis,
+          },
+          clawScanNote: SCANNED_SKILL_CLAWSCAN_NOTE,
+        });
+      }
+    }
+    if (existingScannedPlugin.latestReleaseId) {
+      const latestRelease = await ctx.db.get(existingScannedPlugin.latestReleaseId);
+      if (latestRelease) {
+        await ctx.db.patch(latestRelease._id, {
+          clawScanNote: SCANNED_PLUGIN_CLAWSCAN_NOTE,
+          llmAnalysis: pluginClawScanRiskAnalysis(now),
+        });
+      }
+    }
     return {
       ok: true,
       skipped: true,
-      ownerUserId: existingSkill.ownerUserId,
-      ownerPublisherId: existingSkill.ownerPublisherId ?? existingPlugin.ownerPublisherId,
+      ownerUserId: userId,
+      ownerPublisherId: publisherId,
       flaggedSkillId: existingSkill._id,
       flaggedSkillVersionId: existingSkill.latestVersionId,
       scannedSkillId: existingScannedSkill._id,
@@ -1250,13 +1644,17 @@ export async function seedRescanUxFixturesHandler(
   const skillId = await ctx.db.insert("skills", {
     slug: FLAGGED_SKILL_SLUG,
     displayName: "Local Flagged Wallet Sync",
-    summary: "Seeded flagged skill for local owner inventory and rescan UI testing.",
+    summary:
+      "Reconcile local wallet exports against exchange activity and flag mismatched transfers.",
     ownerUserId: userId,
     ownerPublisherId: publisherId,
     latestVersionId: undefined,
     tags: {},
     softDeletedAt: undefined,
-    badges: { redactionApproved: undefined },
+    badges: {
+      redactionApproved: undefined,
+      official: { byUserId: userId, at: now },
+    },
     moderationStatus: "hidden",
     moderationReason: "scanner.static.malicious",
     moderationVerdict: "malicious",
@@ -1298,7 +1696,8 @@ export async function seedRescanUxFixturesHandler(
     parsed: {
       frontmatter: {
         name: FLAGGED_SKILL_SLUG,
-        description: "Local dev fixture for flagged dashboard and rescan UI.",
+        description:
+          "Reconcile local wallet exports against exchange activity and flag mismatched transfers.",
       },
     },
     createdBy: userId,
@@ -1312,14 +1711,7 @@ export async function seedRescanUxFixturesHandler(
       source: "local-dev-seed",
       checkedAt: now,
     },
-    llmAnalysis: {
-      status: "suspicious",
-      verdict: "suspicious",
-      confidence: "high",
-      summary: "Local dev fixture intentionally flagged by OpenClaw.",
-      model: "local-dev-seed",
-      checkedAt: now,
-    },
+    llmAnalysis: flaggedWalletClawScanAnalysis(now),
     staticScan,
   });
   await ctx.db.patch(skillId, {
@@ -1382,6 +1774,7 @@ export async function seedRescanUxFixturesHandler(
     createdAt: now,
     updatedAt: now,
   });
+  await ensureSkillBadge(ctx, scannedSkillId, userId, now, "official");
   const scannedSkillVersionId = await ctx.db.insert("skillVersions", {
     skillId: scannedSkillId,
     version: "0.1.0",
@@ -1396,16 +1789,14 @@ export async function seedRescanUxFixturesHandler(
       },
     ],
     parsed: {
-      frontmatter: {
-        name: SCANNED_SKILL_SLUG,
-        description: "Local dev fixture for security bucket rendering.",
-        requires: { env: ["TODOIST_API_TOKEN"] },
-      },
+      frontmatter: scannedSkillFrontmatter,
+      clawdis: scannedSkillClawdis,
     },
     createdBy: userId,
     createdAt: now,
     softDeletedAt: undefined,
     sha256hash: "seeded-agentic-risk-skill-hash",
+    clawScanNote: SCANNED_SKILL_CLAWSCAN_NOTE,
     vtAnalysis: {
       status: "clean",
       verdict: "clean",
@@ -1648,6 +2039,7 @@ export async function seedRescanUxFixturesHandler(
       scanStatus: "suspicious",
     },
     sha256hash: "seeded-scanned-plugin-hash",
+    clawScanNote: SCANNED_PLUGIN_CLAWSCAN_NOTE,
     vtAnalysis: {
       status: "clean",
       verdict: "clean",
@@ -1655,24 +2047,7 @@ export async function seedRescanUxFixturesHandler(
       source: "local-dev-seed",
       checkedAt: now,
     },
-    llmAnalysis: {
-      status: "suspicious",
-      verdict: "suspicious",
-      confidence: "medium",
-      summary: "Local dev fixture flagged for review because it executes local tools.",
-      dimensions: [
-        {
-          name: "execution",
-          label: "Local execution",
-          rating: "concern",
-          detail: "Runtime plugin executes local tooling and should be reviewed before install.",
-        },
-      ],
-      guidance: "Review the runtime command surface before trusting this plugin.",
-      findings: "The fixture is intentionally safe, but models a plugin with reviewable behavior.",
-      model: "local-dev-seed",
-      checkedAt: now,
-    },
+    llmAnalysis: pluginClawScanRiskAnalysis(now),
     staticScan: scannedStaticScan,
     source: { kind: "github", repo: "openclaw/local-dev-fixture", path: "." },
     createdBy: userId,
@@ -1999,6 +2374,7 @@ export const seedAgenticRiskDemoSkillMutation = internalMutation({
       createdAt: now,
       softDeletedAt: undefined,
       sha256hash: "seeded-agentic-risk-skill-hash",
+      clawScanNote: SCANNED_SKILL_CLAWSCAN_NOTE,
       vtAnalysis: {
         status: "clean",
         verdict: "clean",

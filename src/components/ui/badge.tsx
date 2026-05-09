@@ -2,7 +2,15 @@ import * as React from "react";
 import { cn } from "../../lib/utils";
 
 export interface BadgeProps extends React.HTMLAttributes<HTMLSpanElement> {
-  variant?: "default" | "accent" | "compact" | "pending" | "success" | "warning" | "destructive";
+  variant?:
+    | "default"
+    | "accent"
+    | "compact"
+    | "pending"
+    | "success"
+    | "warning"
+    | "review"
+    | "destructive";
 }
 
 const Badge = React.forwardRef<HTMLSpanElement, BadgeProps>(
@@ -23,6 +31,8 @@ const Badge = React.forwardRef<HTMLSpanElement, BadgeProps>(
           "bg-status-success-bg px-3 py-1 text-status-success-fg border border-line",
         variant === "warning" &&
           "bg-status-warning-bg px-3 py-1 text-status-warning-fg border border-line",
+        variant === "review" &&
+          "bg-[color:color-mix(in_srgb,#6aa9ff_16%,transparent)] px-3 py-1 text-[#6aa9ff] border border-[color:color-mix(in_srgb,#6aa9ff_24%,var(--line))]",
         variant === "destructive" &&
           "bg-status-error-bg px-3 py-1 text-status-error-fg border border-line",
         className,

@@ -5,7 +5,7 @@ import { SecurityScannerPage, type ScannerSlug } from "../../../../components/Se
 import { buildSkillMeta } from "../../../../lib/og";
 import { fetchSkillPageData } from "../../../../lib/skillPage";
 
-const SCANNERS = new Set<ScannerSlug>(["virustotal", "openclaw", "static-analysis"]);
+const SCANNERS = new Set<ScannerSlug>(["virustotal", "clawscan", "static-analysis"]);
 
 function parseScanner(scanner: string): ScannerSlug {
   if (SCANNERS.has(scanner as ScannerSlug)) return scanner as ScannerSlug;
@@ -19,6 +19,13 @@ export const Route = createFileRoute("/$owner/$slug/security/$scanner")({
     if (!isHandle && !isOwnerId) {
       throw notFound();
     }
+    if (params.scanner === "openclaw") {
+      throw redirect({
+        to: "/$owner/$slug/security/$scanner",
+        params: { owner: params.owner, slug: params.slug, scanner: "clawscan" },
+        replace: true,
+      });
+    }
     parseScanner(params.scanner);
   },
   loader: async ({ params }) => {
@@ -29,7 +36,11 @@ export const Route = createFileRoute("/$owner/$slug/security/$scanner")({
     if (canonicalOwner && (canonicalOwner !== params.owner || canonicalSlug !== params.slug)) {
       throw redirect({
         to: "/$owner/$slug/security/$scanner",
-        params: { owner: canonicalOwner, slug: canonicalSlug, scanner: params.scanner },
+        params: {
+          owner: canonicalOwner,
+          slug: canonicalSlug,
+          scanner: params.scanner === "openclaw" ? "clawscan" : params.scanner,
+        },
         replace: true,
       });
     }
@@ -47,7 +58,7 @@ export const Route = createFileRoute("/$owner/$slug/security/$scanner")({
     const scannerLabel =
       scanner === "virustotal"
         ? "VirusTotal"
-        : scanner === "openclaw"
+        : scanner === "clawscan"
           ? "ClawScan"
           : "Static analysis";
     const meta = buildSkillMeta({
@@ -113,6 +124,7 @@ function SkillSecurityScannerRoute() {
       vtAnalysis={latestVersion.vtAnalysis ?? null}
       llmAnalysis={latestVersion.llmAnalysis ?? null}
       staticScan={latestVersion.staticScan ?? null}
+      clawScanNote={latestVersion.clawScanNote ?? null}
     />
   );
 }

@@ -917,6 +917,14 @@ const packageReleases = defineTable({
       ),
       guidance: v.optional(v.string()),
       findings: v.optional(v.string()),
+      agenticRiskFindings: v.optional(v.array(llmAgenticRiskFindingValidator)),
+      riskSummary: v.optional(
+        v.object({
+          abnormal_behavior_control: llmRiskSummaryBucketValidator,
+          permission_boundary: llmRiskSummaryBucketValidator,
+          sensitive_data_protection: llmRiskSummaryBucketValidator,
+        }),
+      ),
       model: v.optional(v.string()),
       checkedAt: v.number(),
     }),

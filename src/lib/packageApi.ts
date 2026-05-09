@@ -79,9 +79,45 @@ export type PackageVersionDetail = {
       }>;
       guidance?: string;
       findings?: string;
+      agenticRiskFindings?: Array<{
+        categoryId: string;
+        categoryLabel: string;
+        riskBucket:
+          | "abnormal_behavior_control"
+          | "permission_boundary"
+          | "sensitive_data_protection";
+        status: "none" | "note" | "concern";
+        severity: string;
+        confidence: "high" | "medium" | "low";
+        evidence?: {
+          path: string;
+          snippet: string;
+          explanation: string;
+        };
+        userImpact: string;
+        recommendation: string;
+      }>;
+      riskSummary?: {
+        abnormal_behavior_control: {
+          status: "none" | "note" | "concern";
+          summary: string;
+          highestSeverity?: string;
+        };
+        permission_boundary: {
+          status: "none" | "note" | "concern";
+          summary: string;
+          highestSeverity?: string;
+        };
+        sensitive_data_protection: {
+          status: "none" | "note" | "concern";
+          summary: string;
+          highestSeverity?: string;
+        };
+      };
       model?: string;
       checkedAt: number;
     } | null;
+    clawScanNote?: string | null;
     staticScan?: {
       status: string;
       reasonCodes: string[];

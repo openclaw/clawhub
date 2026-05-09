@@ -1,31 +1,39 @@
 /* @vitest-environment jsdom */
 
-import { render, screen } from "@testing-library/react";
+import { fireEvent, render, screen } from "@testing-library/react";
+import type { ClawdisSkillMetadata } from "clawhub-schema";
+import { useState } from "react";
 import { describe, expect, it, vi } from "vitest";
 import type { Doc } from "../../convex/_generated/dataModel";
-import { SkillDetailTabs } from "./SkillDetailTabs";
+import { SkillDetailTabs, type DetailTab } from "./SkillDetailTabs";
 
 function renderReadme(readmeContent: string) {
   return render(
     <SkillDetailTabs
       activeTab="readme"
       setActiveTab={vi.fn()}
-      onCompareIntent={vi.fn()}
       readmeContent={readmeContent}
       readmeError={null}
       latestFiles={[]}
       latestVersionId={null}
       skill={{ slug: "api-gateway" } as Doc<"skills">}
-      diffVersions={[]}
-      versions={[]}
-      nixPlugin={false}
-      suppressVersionScanResults={false}
-      scanResultsSuppressedMessage={null}
+      clawdis={undefined}
+      osLabels={[]}
     />,
   );
 }
 
 describe("SkillDetailTabs README links", () => {
+  it("uses the simplified detail tab order", () => {
+    renderReadme("# API Gateway");
+
+    expect(screen.getByRole("tab", { name: "SKILL.md" })).toBeTruthy();
+    expect(screen.getByRole("tab", { name: "Files" })).toBeTruthy();
+    expect(screen.queryByRole("tab", { name: "Settings" })).toBeNull();
+    expect(screen.queryByRole("tab", { name: "Versions" })).toBeNull();
+    expect(screen.queryByRole("tab", { name: "Compare" })).toBeNull();
+  });
+
   it("keeps relative skill README links inside the viewed skill", () => {
     const { container } = renderReadme(
       [
@@ -47,5 +55,44 @@ describe("SkillDetailTabs README links", () => {
       (link) => link.textContent === "Traversal",
     );
     expect(traversal?.getAttribute("href")).toBe("");
+  });
+
+  it("adds Clawdis metadata to the existing skill detail tabs", () => {
+    function TestSkillDetailTabs() {
+      const [activeTab, setActiveTab] = useState<DetailTab>("runtime");
+      return (
+        <SkillDetailTabs
+          activeTab={activeTab}
+          setActiveTab={setActiveTab}
+          readmeContent="# API Gateway"
+          readmeError={null}
+          latestFiles={[]}
+          latestVersionId={null}
+          skill={{ slug: "api-gateway" } as Doc<"skills">}
+          osLabels={["macOS"]}
+          clawdis={
+            {
+              requires: { env: ["TODOIST_API_TOKEN"] },
+              install: [{ kind: "brew", formula: "ripgrep", bins: ["rg"] }],
+              dependencies: [{ name: "ripgrep", type: "brew", url: "https://example.com/rg" }],
+              links: { homepage: "https://example.com" },
+            } as ClawdisSkillMetadata
+          }
+        />
+      );
+    }
+
+    render(<TestSkillDetailTabs />);
+
+    expect(screen.getByRole("tab", { name: "Runtime" })).toBeTruthy();
+    expect(screen.getByRole("tab", { name: "Dependencies" })).toBeTruthy();
+    expect(screen.getByRole("tab", { name: "Install" })).toBeTruthy();
+    expect(screen.getByRole("tab", { name: "Links" })).toBeTruthy();
+    expect(screen.getByText("TODOIST_API_TOKEN")).toBeTruthy();
+
+    fireEvent.click(screen.getByRole("tab", { name: "Dependencies" }));
+
+    expect(screen.getByText("ripgrep")).toBeTruthy();
+    expect(screen.getByRole("link", { name: "https://example.com/rg" })).toBeTruthy();
   });
 });

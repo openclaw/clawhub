@@ -6,7 +6,7 @@ import { convexHttp } from "../convex/client";
 import { hasOwnProperty } from "../lib/hasOwnProperty";
 import { formatCompactStat } from "../lib/numberFormat";
 import type { PublicPublisher, PublicUser } from "../lib/publicUser";
-import { Tooltip, TooltipContent, TooltipTrigger } from "./ui/tooltip";
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "./ui/tooltip";
 
 type UserBadgeProps = {
   user: PublicUser | PublicPublisher | null | undefined;
@@ -15,6 +15,8 @@ type UserBadgeProps = {
   size?: "sm" | "md";
   link?: boolean;
   showName?: boolean;
+  showHandle?: boolean;
+  disableTooltip?: boolean;
 };
 
 export function UserBadge({
@@ -24,6 +26,8 @@ export function UserBadge({
   size = "sm",
   link = true,
   showName = false,
+  showHandle = true,
+  disableTooltip = false,
 }: UserBadgeProps) {
   const userName =
     hasOwnProperty(user, "name") && typeof user.name === "string" ? user.name.trim() : undefined;
@@ -46,8 +50,8 @@ export function UserBadge({
       ? ((user as PublicPublisher).linkedUserId ?? null)
       : (user?._id ?? null);
 
-  const badge = (
-    <span className={`user-badge user-badge-${size}`}>
+  const badgeContent = (
+    <>
       {prefix ? <span className="user-badge-prefix">{prefix}</span> : null}
       <span className="user-avatar" aria-hidden="true">
         {image ? (
@@ -59,28 +63,41 @@ export function UserBadge({
       {hasUsefulName ? (
         <>
           <span className="user-name">{displayName}</span>
-          <span className="user-name-sep" aria-hidden="true">
-            ·
-          </span>
+          {showHandle ? (
+            <span className="user-name-sep" aria-hidden="true">
+              ·
+            </span>
+          ) : null}
         </>
       ) : null}
-      {link && href ? (
+      {showHandle && link && href ? (
         <a className="user-handle" href={href}>
           {label}
         </a>
-      ) : (
+      ) : showHandle ? (
         <span className="user-handle">{label}</span>
-      )}
-    </span>
+      ) : null}
+    </>
   );
 
-  if (!userId) return badge;
+  const badge =
+    !showHandle && link && href ? (
+      <a className={`user-badge user-badge-${size} user-badge-link`} href={href}>
+        {badgeContent}
+      </a>
+    ) : (
+      <span className={`user-badge user-badge-${size}`}>{badgeContent}</span>
+    );
+
+  if (!userId || disableTooltip) return badge;
 
   return (
-    <Tooltip>
-      <TooltipTrigger asChild>{badge}</TooltipTrigger>
-      <UserStatsTooltipContent userId={userId} displayName={displayName} handle={handle} />
-    </Tooltip>
+    <TooltipProvider delayDuration={400}>
+      <Tooltip>
+        <TooltipTrigger asChild>{badge}</TooltipTrigger>
+        <UserStatsTooltipContent userId={userId} displayName={displayName} handle={handle} />
+      </Tooltip>
+    </TooltipProvider>
   );
 }
 

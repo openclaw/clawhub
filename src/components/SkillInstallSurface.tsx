@@ -16,6 +16,7 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "./ui/dropdown-menu";
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "./ui/tooltip";
 
 const PROMPT_OPTIONS: Array<{
   description: string;
@@ -188,6 +189,7 @@ export function SkillCommandLineCard({
     ownerId,
     clawdis,
   });
+  const activeInstallText = activeInstallTab === "prompt" ? promptPreview : openClawCommand;
 
   return (
     <article className="skill-install-command-card">
@@ -216,23 +218,33 @@ export function SkillCommandLineCard({
       </div>
 
       <div className="skill-install-command-wrap">
-        <pre
-          className={`skill-install-command${
-            activeInstallTab === "prompt" ? " skill-install-prompt-compact" : ""
-          }`}
-        >
-          <code translate="no">
-            {activeInstallTab === "prompt" ? promptPreview : openClawCommand}
-          </code>
-        </pre>
-        <InstallCopyButton
-          text={activeInstallTab === "prompt" ? promptPreview : openClawCommand}
-          ariaLabel={
-            activeInstallTab === "prompt" ? "Copy OpenClaw prompt" : "Copy OpenClaw CLI command"
-          }
-          className="skill-install-command-inline-button"
-          showLabel={false}
-        />
+        <div className="skill-install-command-shell">
+          <TooltipProvider delayDuration={400}>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <pre
+                  className={`skill-install-command${
+                    activeInstallTab === "prompt" ? " skill-install-prompt-compact" : ""
+                  }`}
+                  tabIndex={0}
+                >
+                  <code translate="no">{activeInstallText}</code>
+                </pre>
+              </TooltipTrigger>
+              <TooltipContent side="top" align="start" className="skill-install-command-tooltip">
+                <code translate="no">{activeInstallText}</code>
+              </TooltipContent>
+            </Tooltip>
+          </TooltipProvider>
+          <InstallCopyButton
+            text={activeInstallText}
+            ariaLabel={
+              activeInstallTab === "prompt" ? "Copy OpenClaw prompt" : "Copy OpenClaw CLI command"
+            }
+            className="skill-install-command-inline-button"
+            showLabel={false}
+          />
+        </div>
       </div>
     </article>
   );

@@ -1470,6 +1470,7 @@ type PublicSkillVersion = {
     engineVersion: NonNullable<Doc<"skillVersions">["staticScan"]>["engineVersion"];
     checkedAt: NonNullable<Doc<"skillVersions">["staticScan"]>["checkedAt"];
   };
+  clawScanNote?: string;
 };
 
 type ManagementSkillEntry = {
@@ -1667,6 +1668,7 @@ function toPublicSkillVersion(
     sha256hash: version.sha256hash,
     vtAnalysis: version.vtAnalysis,
     llmAnalysis: version.llmAnalysis,
+    clawScanNote: version.clawScanNote,
     staticScan: version.staticScan
       ? {
           status: version.staticScan.status,

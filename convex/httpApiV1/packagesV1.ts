@@ -334,6 +334,7 @@ type ReleaseLike = {
   sha256hash?: string;
   vtAnalysis?: Doc<"packageReleases">["vtAnalysis"];
   llmAnalysis?: Doc<"packageReleases">["llmAnalysis"];
+  clawScanNote?: string;
   staticScan?: Doc<"packageReleases">["staticScan"];
   integritySha256?: string;
   artifactKind?: Doc<"packageReleases">["artifactKind"];
@@ -2514,6 +2515,7 @@ export async function packagesGetRouterV1Handler(ctx: ActionCtx, request: Reques
           sha256hash: result.version.sha256hash ?? null,
           vtAnalysis: result.version.vtAnalysis ?? null,
           llmAnalysis: result.version.llmAnalysis ?? null,
+          clawScanNote: result.version.clawScanNote ?? null,
           staticScan: result.version.staticScan ?? null,
         },
       },

@@ -160,6 +160,9 @@ describe("Upload route", () => {
     fireEvent.change(screen.getByPlaceholderText("latest, stable"), {
       target: { value: "latest" },
     });
+    fireEvent.change(screen.getByLabelText("ClawScan note"), {
+      target: { value: "Needs network access to call the user-configured YNAB API." },
+    });
 
     const file = new File(["hello"], "SKILL.md", { type: "text/markdown" });
     Object.defineProperty(file, "webkitRelativePath", { value: "ynab/SKILL.md" });
@@ -184,9 +187,10 @@ describe("Upload route", () => {
       ).toBe(true);
     });
     const args = publishVersion.mock.calls
-      .map((call) => call[0] as { files?: Array<{ path: string }> })
+      .map((call) => call[0] as { files?: Array<{ path: string }>; clawScanNote?: string })
       .find((call) => Array.isArray(call.files));
     expect(args?.files?.[0]?.path).toBe("SKILL.md");
+    expect(args?.clawScanNote).toBe("Needs network access to call the user-configured YNAB API.");
   });
 
   it("blocks non-text folder uploads (png)", async () => {

@@ -14,7 +14,7 @@ import {
   parseScopedPackageName,
 } from "../../../../lib/pluginRoutes";
 
-const SCANNERS = new Set<ScannerSlug>(["virustotal", "openclaw", "static-analysis"]);
+const SCANNERS = new Set<ScannerSlug>(["virustotal", "clawscan", "static-analysis"]);
 
 export type PluginSecurityLoaderData = {
   detail: PackageDetailResponse;
@@ -75,7 +75,7 @@ export function pluginSecurityHead(
   const scannerLabel =
     scanner === "virustotal"
       ? "VirusTotal"
-      : scanner === "openclaw"
+      : scanner === "clawscan"
         ? "ClawScan"
         : "Static analysis";
   return {
@@ -95,6 +95,12 @@ export function pluginSecurityHead(
 
 export const Route = createFileRoute("/plugins/$name/security/$scanner")({
   beforeLoad: ({ params }) => {
+    if (params.scanner === "openclaw") {
+      throw redirect({
+        href: buildPluginSecurityHref(params.name, "clawscan"),
+        statusCode: 308,
+      });
+    }
     parsePluginSecurityScanner(params.scanner);
     if (parseScopedPackageName(params.name)) {
       throw redirect({
@@ -165,6 +171,7 @@ export function PluginSecurityScannerPage({
       vtAnalysis={release.vtAnalysis ?? null}
       llmAnalysis={release.llmAnalysis ?? null}
       staticScan={release.staticScan ?? null}
+      clawScanNote={release.clawScanNote ?? null}
     />
   );
 }

@@ -1,32 +1,21 @@
 import { Link } from "@tanstack/react-router";
 import type { ClawdisSkillMetadata } from "clawhub-schema";
 import { PLATFORM_SKILL_LICENSE } from "clawhub-schema/licenseConstants";
-import {
-  Calendar,
-  Check,
-  Download,
-  History,
-  Package,
-  Pencil,
-  Scale,
-  Settings,
-  Star,
-  Upload,
-  X,
-} from "lucide-react";
+import { Check, Download, Flag, Pencil, Settings, Star, X } from "lucide-react";
 import type { ReactNode } from "react";
 import type { Doc, Id } from "../../convex/_generated/dataModel";
 import { getSkillBadges } from "../lib/badges";
-import { formatCompactStat, formatSkillStatsTriplet } from "../lib/numberFormat";
+import { formatSkillStatsTriplet } from "../lib/numberFormat";
 import type { PublicPublisher, PublicSkill } from "../lib/publicUser";
 import { getRuntimeEnv } from "../lib/runtimeEnv";
 import { timeAgo } from "../lib/timeAgo";
 import { DetailHero } from "./DetailPageShell";
-import { SkillInstallCard } from "./SkillInstallCard";
+import { SidebarMetadata } from "./SidebarMetadata";
+import { buildSkillHref } from "./skillDetailUtils";
 import { SkillCommandLineCard } from "./SkillInstallSurface";
 import { Badge } from "./ui/badge";
 import { Button } from "./ui/button";
-import { UserBadge } from "./UserBadge";
+import { VerifiedBadge } from "./VerifiedBadge";
 
 type SkillModerationInfo = {
   isPendingScan: boolean;
@@ -62,7 +51,7 @@ type SkillHeaderProps = {
   isStaff: boolean;
   isStarred: boolean | undefined;
   onToggleStar: () => void;
-  onOpenReport: () => void;
+  onOpenReport?: (() => void) | null;
   forkOf: SkillFork | null;
   forkOfLabel: string;
   forkOfHref: string | null;
@@ -79,7 +68,6 @@ type SkillHeaderProps = {
   configRequirements: ClawdisSkillMetadata["config"] | undefined;
   cliHelp: string | undefined;
   clawdis: ClawdisSkillMetadata | undefined;
-  osLabels: string[];
   priorityContent?: ReactNode;
   settingsHref?: string | null;
   children?: ReactNode;
@@ -99,7 +87,6 @@ export function SkillHeader({
   ownerHandle,
   latestVersion,
   modInfo,
-  canManage,
   isAuthenticated,
   isStaff,
   isStarred,
@@ -121,7 +108,6 @@ export function SkillHeader({
   configRequirements,
   cliHelp,
   clawdis,
-  osLabels,
   priorityContent,
   settingsHref,
   children,
@@ -141,8 +127,13 @@ export function SkillHeader({
     latestVersion && !nixPlugin
       ? `${convexSiteUrl}/api/v1/download?slug=${encodeURIComponent(skill.slug)}`
       : null;
-  const hasTitleActions =
-    Boolean(downloadHref) || isAuthenticated || canManage || isStaff || Boolean(settingsHref);
+  const hasTitleActions = isStaff;
+  const hasSidebarActions =
+    Boolean(downloadHref) || Boolean(onOpenReport) || isAuthenticated || Boolean(settingsHref);
+  const badges = getSkillBadges(skill);
+  const showHeroMeta = Boolean((forkOf && forkOfHref) || canonicalHref);
+  const showTitleBadges = badges.length > 0;
+  const showStaffVisibilityBadge = Boolean(isStaff && staffVisibilityTag);
 
   return (
     <>
@@ -165,19 +156,6 @@ export function SkillHeader({
               ClawHub Security found sensitive or high-impact capabilities. Review the scan results
               before using.
             </p>
-            {canManage ? (
-              <p className="pending-banner-appeal">
-                If you believe this skill has been incorrectly flagged, please{" "}
-                <a
-                  href="https://github.com/openclaw/clawhub/issues"
-                  target="_blank"
-                  rel="noopener noreferrer"
-                >
-                  submit an issue on GitHub
-                </a>{" "}
-                and we'll break down why it was flagged and what you can do.
-              </p>
-            ) : null}
           </div>
         </div>
       ) : modInfo?.isRemoved ? (
@@ -198,61 +176,99 @@ export function SkillHeader({
 
       <DetailHero
         topClassName={hasPluginBundle ? "has-plugin" : undefined}
+        sidebar={
+          <div className="skill-hero-sidebar-stack">
+            <SkillSidebarStats
+              skill={skill}
+              formattedStats={formattedStats}
+              latestVersion={latestVersion}
+            />
+            {hasSidebarActions ? (
+              <div className="skill-sidebar-actions">
+                {isAuthenticated ? (
+                  <Button
+                    variant="outline"
+                    type="button"
+                    className="skill-sidebar-action-button"
+                    onClick={onToggleStar}
+                    aria-pressed={Boolean(isStarred)}
+                    aria-label={isStarred ? "Unstar skill" : "Star skill"}
+                  >
+                    <Star size={14} aria-hidden="true" fill={isStarred ? "currentColor" : "none"} />
+                    {isStarred ? "Unstar" : "Star"}
+                    <span className="skill-action-count">{formattedStats.stars}</span>
+                  </Button>
+                ) : null}
+                {downloadHref ? (
+                  <Button asChild variant="outline" className="skill-sidebar-action-button">
+                    <a href={downloadHref}>
+                      <Download size={14} aria-hidden="true" />
+                      Download
+                    </a>
+                  </Button>
+                ) : null}
+                {onOpenReport ? (
+                  <Button
+                    variant="outline"
+                    type="button"
+                    className="skill-sidebar-action-button"
+                    onClick={onOpenReport}
+                  >
+                    <Flag size={14} aria-hidden="true" />
+                    Report
+                  </Button>
+                ) : null}
+                {settingsHref ? (
+                  <Button asChild variant="outline" className="skill-sidebar-action-button">
+                    <a href={settingsHref}>
+                      <Settings size={14} aria-hidden="true" />
+                      Settings
+                    </a>
+                  </Button>
+                ) : null}
+              </div>
+            ) : null}
+          </div>
+        }
         main={
           <>
             <div className="skill-hero-title">
+              <nav className="skill-hero-breadcrumbs" aria-label="Skill breadcrumbs">
+                <a href="/skills">skills</a>
+                <span aria-hidden="true">/</span>
+                <a href={ownerHandle ? `/${encodeURIComponent(ownerHandle)}` : "#"}>
+                  {ownerHandle ?? owner?.displayName ?? owner?._id ?? "unknown"}
+                </a>
+                <span aria-hidden="true">/</span>
+                <a href="/skills">skills</a>
+                <span aria-hidden="true">/</span>
+                <a href={buildSkillHref(ownerHandle, owner?._id ?? null, skill.slug)}>
+                  {skill.slug}
+                </a>
+              </nav>
               <div className="skill-hero-title-row">
                 <h1 className="skill-page-title">{skill.displayName}</h1>
-                {latestVersion?.version ? (
-                  <span className="plugin-version-badge">v{latestVersion.version}</span>
+                {showTitleBadges ? (
+                  <div className="skill-title-badges">
+                    {badges.map((badge) =>
+                      badge === "Verified" ? (
+                        <VerifiedBadge key={badge} />
+                      ) : (
+                        <Badge key={badge} variant="compact">
+                          {badge}
+                        </Badge>
+                      ),
+                    )}
+                  </div>
                 ) : null}
                 {nixPlugin ? <Badge variant="accent">Plugin bundle (nix)</Badge> : null}
                 {hasTitleActions ? (
                   <div className="skill-title-actions">
-                    {downloadHref ? (
-                      <Button asChild variant="outline" size="sm" className="skill-settings-link">
-                        <a href={downloadHref}>
-                          <Download size={14} aria-hidden="true" />
-                          Download zip
-                        </a>
-                      </Button>
-                    ) : null}
-                    {isAuthenticated ? (
-                      <>
-                        <button
-                          className={`star-toggle${isStarred ? " is-active" : ""}`}
-                          type="button"
-                          onClick={onToggleStar}
-                          aria-label={isStarred ? "Unstar skill" : "Star skill"}
-                        >
-                          <Star size={16} aria-hidden="true" />
-                        </button>
-                        <Button variant="ghost" size="sm" type="button" onClick={onOpenReport}>
-                          Report
-                        </Button>
-                      </>
-                    ) : null}
                     {isStaff ? (
                       <Button asChild variant="outline" size="sm">
                         <Link to="/management" search={{ skill: skill.slug, plugin: undefined }}>
                           Manage
                         </Link>
-                      </Button>
-                    ) : null}
-                    {canManage ? (
-                      <Button asChild variant="outline" size="sm" className="skill-settings-link">
-                        <Link to="/skills/publish" search={{ updateSlug: skill.slug }}>
-                          <Upload size={14} aria-hidden="true" />
-                          New Version
-                        </Link>
-                      </Button>
-                    ) : null}
-                    {settingsHref ? (
-                      <Button asChild variant="outline" size="sm" className="skill-settings-link">
-                        <a href={settingsHref}>
-                          <Settings size={14} aria-hidden="true" />
-                          Settings
-                        </a>
                       </Button>
                     ) : null}
                   </div>
@@ -310,6 +326,14 @@ export function SkillHeader({
                 )}
               </div>
 
+              {showStaffVisibilityBadge ? (
+                <div className="skill-hero-badges">
+                  <Badge variant={isAutoHidden || isRemoved ? "accent" : "compact"}>
+                    {staffVisibilityTag}
+                  </Badge>
+                </div>
+              ) : null}
+
               {isStaff && staffModerationNote ? (
                 <div className="skill-hero-note">{staffModerationNote}</div>
               ) : null}
@@ -319,62 +343,23 @@ export function SkillHeader({
                 </div>
               ) : null}
 
-              <div className="skill-hero-inline-meta">
-                <div className="skill-hero-stats-row">
-                  <span className="stat">
-                    <Star size={14} aria-hidden="true" /> {formattedStats.stars}
-                  </span>
-                  <span className="text-ink-soft opacity-40">·</span>
-                  <span className="stat">
-                    <Download size={14} aria-hidden="true" /> {formattedStats.downloads}
-                  </span>
-                  <span className="text-ink-soft opacity-40">·</span>
-                  <span className="stat">
-                    <Package size={14} aria-hidden="true" /> {skill.stats.versions ?? 0} versions
-                  </span>
-                  <span className="text-ink-soft opacity-40">·</span>
-                  <span className="stat">
-                    <History size={14} aria-hidden="true" />{" "}
-                    {formatCompactStat(skill.stats.installsCurrent ?? 0)} current
-                  </span>
-                  <span className="text-ink-soft opacity-40">·</span>
-                  <span className="stat">
-                    <History size={14} aria-hidden="true" /> {formattedStats.installsAllTime}{" "}
-                    all-time
-                  </span>
-                  <span className="text-ink-soft opacity-40">·</span>
-                  <span className="stat">
-                    <Calendar size={14} aria-hidden="true" /> Updated {timeAgo(skill.updatedAt)}
-                  </span>
-                  <span className="text-ink-soft opacity-40">·</span>
-                  <span className="stat">
-                    <Scale size={14} aria-hidden="true" /> {PLATFORM_SKILL_LICENSE}
-                  </span>
-                </div>
+              {showHeroMeta ? (
                 <div className="skill-hero-meta-row">
-                  <UserBadge
-                    user={owner}
-                    fallbackHandle={ownerHandle}
-                    prefix="by"
-                    size="md"
-                    showName
-                  />
                   {forkOf && forkOfHref ? (
-                    <>
-                      <span className="text-ink-soft opacity-40">·</span>
-                      <span className="stat">
-                        {forkOfLabel}{" "}
-                        <a href={forkOfHref}>
-                          {forkOfOwnerHandle ? `@${forkOfOwnerHandle}/` : ""}
-                          {forkOf.skill.slug}
-                        </a>
-                        {forkOf.version ? ` (${forkOf.version})` : null}
-                      </span>
-                    </>
+                    <span className="stat">
+                      {forkOfLabel}{" "}
+                      <a href={forkOfHref}>
+                        {forkOfOwnerHandle ? `@${forkOfOwnerHandle}/` : ""}
+                        {forkOf.skill.slug}
+                      </a>
+                      {forkOf.version ? ` (${forkOf.version})` : null}
+                    </span>
                   ) : null}
                   {canonicalHref ? (
                     <>
-                      <span className="text-ink-soft opacity-40">·</span>
+                      {forkOf && forkOfHref ? (
+                        <span className="text-ink-soft opacity-40">·</span>
+                      ) : null}
                       <span className="stat">
                         canonical:{" "}
                         <a href={canonicalHref}>
@@ -385,34 +370,20 @@ export function SkillHeader({
                     </>
                   ) : null}
                 </div>
-              </div>
-
-              <div className="skill-hero-badges">
-                {getSkillBadges(skill).map((badge) => (
-                  <Badge key={badge} variant="compact">
-                    {badge}
-                  </Badge>
-                ))}
-                {isStaff && staffVisibilityTag ? (
-                  <Badge variant={isAutoHidden || isRemoved ? "accent" : "compact"}>
-                    {staffVisibilityTag}
-                  </Badge>
-                ) : null}
-              </div>
+              ) : null}
             </div>
           </>
         }
       >
-        <div className="skill-hero-action-grid">
-          {priorityContent}
-          <SkillCommandLineCard
-            slug={skill.slug}
-            displayName={skill.displayName}
-            ownerHandle={ownerHandle}
-            ownerId={installOwnerId}
-            clawdis={clawdis}
-          />
-        </div>
+        {priorityContent}
+
+        <SkillCommandLineCard
+          slug={skill.slug}
+          displayName={skill.displayName}
+          ownerHandle={ownerHandle}
+          ownerId={installOwnerId}
+          clawdis={clawdis}
+        />
 
         {children}
 
@@ -454,8 +425,41 @@ export function SkillHeader({
             ) : null}
           </div>
         ) : null}
-        <SkillInstallCard clawdis={clawdis} osLabels={osLabels} />
       </DetailHero>
     </>
+  );
+}
+
+function SkillSidebarStats({
+  skill,
+  formattedStats,
+  latestVersion,
+}: {
+  skill: Doc<"skills"> | PublicSkill;
+  formattedStats: ReturnType<typeof formatSkillStatsTriplet>;
+  latestVersion: Doc<"skillVersions"> | null;
+}) {
+  const versionCount = skill.stats.versions ?? 0;
+
+  return (
+    <SidebarMetadata
+      ariaLabel="Skill metadata"
+      blocks={[
+        { label: "Installs", value: formattedStats.installsAllTime, large: true },
+        {
+          grid: [
+            {
+              label: "Current version",
+              value: latestVersion?.version ? `v${latestVersion.version}` : "None",
+            },
+            { label: "Versions", value: versionCount },
+          ],
+        },
+        {
+          grid: [{ label: "License", value: PLATFORM_SKILL_LICENSE }],
+        },
+        { label: "Last updated", value: timeAgo(skill.updatedAt) },
+      ]}
+    />
   );
 }

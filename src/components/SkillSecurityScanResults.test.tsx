@@ -180,12 +180,16 @@ describe("SecurityScanResults static guidance", () => {
     fireEvent.click(screen.getByRole("button", { name: /Collects workspace secrets/i }));
 
     expect(screen.getByText("Findings")).toBeTruthy();
-    expect(screen.getByText("Permission boundary")).toBeTruthy();
-    expect(screen.getAllByText("Sensitive data protection").length).toBeGreaterThan(0);
-    expect(screen.getByText(/Checks whether tool use/i)).toBeTruthy();
-    expect(screen.getByText("SKILL.md")).toBeTruthy();
+    expect(
+      screen.getByText("ASI03: Identity and Privilege Abuse").closest("a")?.getAttribute("href"),
+    ).toBe("https://owasp.org/www-project-agentic-skills-top-10/ast03");
+    expect(screen.getByText("ASI03: Identity and Privilege Abuse")).toBeTruthy();
+    expect(screen.getByText("ASI07: Insecure Inter-Agent Communication")).toBeTruthy();
+    expect(screen.queryByText("Permission boundary")).toBeNull();
+    expect(screen.queryByText("SKILL.md")).toBeNull();
+    expect(screen.getAllByText("Skill content").length).toBeGreaterThan(0);
     expect(screen.getByText(/curl https:\/\/collect\.example\/upload/)).toBeTruthy();
-    expect(screen.getAllByText("User impact").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("What this means").length).toBeGreaterThan(0);
     expect(
       screen.getByText("Sensitive workspace data could leave the user's machine."),
     ).toBeTruthy();
@@ -222,7 +226,7 @@ describe("SecurityScanResults static guidance", () => {
   it("shows ClawScan buckets on the dedicated ClawScan report page", () => {
     render(
       <SecurityScannerPage
-        scanner="openclaw"
+        scanner="clawscan"
         entity={{
           kind: "skill",
           title: "Todo Guard",
@@ -236,23 +240,28 @@ describe("SecurityScanResults static guidance", () => {
 
     expect(screen.getByRole("heading", { name: "Todo Guard" })).toBeTruthy();
     expect(screen.getAllByText("Review").length).toBeGreaterThan(0);
-    expect(screen.getByText(/ClawScan verdict for this skill/i)).toBeTruthy();
-    expect(screen.getByRole("heading", { name: "Analysis" })).toBeTruthy();
+    expect(screen.getByText(/Audited by ClawScan/i)).toBeTruthy();
+    expect(screen.getByRole("heading", { name: "Overview" })).toBeTruthy();
     expect(screen.getByText(/Collects workspace secrets/i)).toBeTruthy();
     expect(screen.getByRole("heading", { name: "Findings (2)" })).toBeTruthy();
     expect(screen.getByRole("heading", { name: "Scan Metadata" })).toBeTruthy();
     expect(screen.queryByText("Legacy dimensions")).toBeNull();
     expect(screen.queryByText("Scanner")).toBeNull();
     expect(screen.queryByText("Review scope")).toBeNull();
-    expect(screen.getAllByText("Permission boundary").length).toBeGreaterThan(0);
-    expect(screen.getByText("metadata")).toBeTruthy();
+    expect(screen.queryByText("Permission boundary")).toBeNull();
+    expect(
+      screen.getByText("ASI03: Identity and Privilege Abuse").closest("a")?.getAttribute("href"),
+    ).toBe("https://owasp.org/www-project-agentic-skills-top-10/ast03");
+    expect(screen.getByText("ASI03: Identity and Privilege Abuse")).toBeTruthy();
+    expect(screen.queryByText("metadata")).toBeNull();
+    expect(screen.getAllByText("Skill content").length).toBeGreaterThan(0);
     expect(screen.getByText("requires.env: TODOIST_API_TOKEN")).toBeTruthy();
   });
 
   it("keeps plugins with legacy ClawScan analysis on the generic detail page", () => {
     render(
       <SecurityScannerPage
-        scanner="openclaw"
+        scanner="clawscan"
         entity={{
           kind: "plugin",
           title: "Plugin Guard",
@@ -264,21 +273,21 @@ describe("SecurityScanResults static guidance", () => {
       />,
     );
 
-    expect(screen.getByRole("heading", { name: "ClawScan security" })).toBeTruthy();
+    expect(screen.getByRole("heading", { name: "Plugin Guard" })).toBeTruthy();
+    expect(screen.getByText(/Audited by ClawScan/i)).toBeTruthy();
     expect(screen.getByText("Legacy plugin analysis summary.")).toBeTruthy();
     expect(screen.getByText("Legacy plugin guidance.")).toBeTruthy();
     expect(screen.getByText("[legacy.rule] expected: Legacy finding text.")).toBeTruthy();
     expect(screen.getByText("Review Dimensions")).toBeTruthy();
     expect(screen.getByText("Purpose & Capability")).toBeTruthy();
     expect(screen.getByText("Legacy dimension detail.")).toBeTruthy();
-    expect(screen.queryByRole("heading", { name: "Plugin Guard" })).toBeNull();
     expect(screen.queryByRole("heading", { name: "Scan Metadata" })).toBeNull();
   });
 
   it("keeps skills with legacy-only ClawScan analysis on the generic detail page", () => {
     render(
       <SecurityScannerPage
-        scanner="openclaw"
+        scanner="clawscan"
         entity={{
           kind: "skill",
           title: "Legacy Skill",
@@ -290,18 +299,18 @@ describe("SecurityScanResults static guidance", () => {
       />,
     );
 
-    expect(screen.getByRole("heading", { name: "ClawScan security" })).toBeTruthy();
+    expect(screen.getByRole("heading", { name: "Legacy Skill" })).toBeTruthy();
+    expect(screen.getByText(/Audited by ClawScan/i)).toBeTruthy();
     expect(screen.getByText("Legacy plugin analysis summary.")).toBeTruthy();
     expect(screen.getByText("Review Dimensions")).toBeTruthy();
     expect(screen.getByText("Purpose & Capability")).toBeTruthy();
-    expect(screen.queryByRole("heading", { name: "Legacy Skill" })).toBeNull();
     expect(screen.queryByRole("heading", { name: "Scan Metadata" })).toBeNull();
   });
 
   it("shows the generic OpenClaw empty state when no analysis exists yet", () => {
     render(
       <SecurityScannerPage
-        scanner="openclaw"
+        scanner="clawscan"
         entity={{
           kind: "skill",
           title: "Pending Skill",
@@ -312,7 +321,8 @@ describe("SecurityScanResults static guidance", () => {
       />,
     );
 
-    expect(screen.getByRole("heading", { name: "ClawScan security" })).toBeTruthy();
+    expect(screen.getByRole("heading", { name: "Pending Skill" })).toBeTruthy();
+    expect(screen.getByText(/ClawScan audit pending/i)).toBeTruthy();
     expect(screen.getAllByText("Pending").length).toBeGreaterThan(0);
     expect(screen.getByText("No ClawScan analysis has been recorded yet.")).toBeTruthy();
     expect(screen.queryByText("Review Dimensions")).toBeNull();

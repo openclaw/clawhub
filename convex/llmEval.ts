@@ -612,6 +612,8 @@ export const evaluatePackageReleaseWithLlm = internalAction({
         dimensions: result.dimensions,
         guidance: result.guidance,
         findings: result.findings || undefined,
+        agenticRiskFindings: result.agenticRiskFindings,
+        riskSummary: result.riskSummary,
         model,
         checkedAt: Date.now(),
       },
